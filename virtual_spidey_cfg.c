@@ -998,3 +998,55 @@ void SpiderCfg_BootstrapGameRead(void) {
   void *fp;
   DWORD expected=0,probe=0,opened,served;
   size_t nr=0;
+  char msg[240];
+  static const BYTE loader_code[]={0x81,0xEC,0xD8,0,0,0,0x56,0x57};
+  static const BYTE fopen_code[]={0x6A,0x40,0xFF,0x74,0x24,0x0C};
+  static const BYTE fread_code[]={0x55,0x8B,0xEC,0x56};
+  static const BYTE fclose_code[]={0x56,0x8B,0x74,0x24,0x08};
+  if(!ready || !image ||
+     InterlockedCompareExchange(&bootstrap_attempted,1,0)!=0) return;
+  if((uintptr_t)image!=0x400000 ||
+     memcmp(image+(0x515680-0x400000),loader_code,sizeof(loader_code)) ||
+     memcmp(image+(0x52a9e3-0x400000),fopen_code,sizeof(fopen_code)) ||
+     memcmp(image+(0x52a9f6-0x400000),fread_code,sizeof(fread_code)) ||
+     memcmp(image+(0x52a7fc-0x400000),fclose_code,sizeof(fclose_code))) {
+    report("SPIDEY-CFG: BOOTSTRAP SKIPPED: supported game CRT/load opcodes not matched");
+    return;
+  }
+  EnterCriticalSection(&guard);
+  opened=opens;served=reads;expected=get_word(0);
+  LeaveCriticalSection(&guard);
+  /* Use precisely the game's own CRT, not our DLL's incompatible FILE type. */
+  fp=game_open((const char*)(uintptr_t)0x5690b4,
+               (const char*)(uintptr_t)0x567fec);
+  if(fp) {
+    nr=game_read(&probe,sizeof(probe),1,fp);
+    game_close(fp);
+  }
+  EnterCriticalSection(&guard);
+  if(!fp || opens<=opened || reads<=served || nr!=1 || probe!=expected) {
+    snprintf(msg,sizeof(msg),
+      "SPIDEY-CFG: BOOTSTRAP SKIPPED: CRT virtual read probe failed (opened=%lu read=%lu count=%lu expected=%lu got=%lu); game state unchanged",
+      (unsigned long)(opens-opened),(unsigned long)(reads-served),
+      (unsigned long)nr,(unsigned long)expected,(unsigned long)probe);
+    report(msg);
+    LeaveCriticalSection(&guard);
+    return;
+  }
+  LeaveCriticalSection(&guard);
+  report("SPIDEY-CFG: BOOTSTRAP PROBE OK: game CRT read verified virtual config bytes");
+  EnterCriticalSection(&guard);
+  opened=opens;served=reads;
+  LeaveCriticalSection(&guard);
+  /* The original loader restores all keys, gamepad and sound settings and
+   * applies the locked resolution/depth without modifying game executable. */
+  game_load();
+  EnterCriticalSection(&guard);
+  snprintf(msg,sizeof(msg),
+    "SPIDEY-CFG: BOOTSTRAP game loader returned: virtual opens +%lu reads +%lu; configured=%ux%u depth=32 [%s]",
+    (unsigned long)(opens-opened),(unsigned long)(reads-served),
+    policy_width,policy_height,
+    (opens>opened && reads>served) ? "READ CONFIRMED" : "WARNING UNCONFIRMED");
+  report(msg);
+  LeaveCriticalSection(&guard);
+}
