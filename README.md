@@ -8,7 +8,8 @@ It adds borderless fullscreen, desktop-resolution output, widescreen support, co
 
 SpiderManFix is **not a remake or a replacement for the game**. You must provide your own installed copy of *Spider-Man*. No game assets are distributed with this project.
 
-> **Release status:** Version 1.0.0 has been compiled and tested in-game by the project maintainer after the source cleanup. Automated builds and downloadable DLL artifacts are provided through GitHub Actions.
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/4edede76-4596-40ad-bb73-4a72386add47" />
+
 
 ## Features — Version 1.0
 
