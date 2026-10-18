@@ -1,8 +1,8 @@
-# SpiderManFix
+# SpiderMan2k1Fix
 
 **A modern compatibility and widescreen fix for Spider-Man (2001) on PC — Windows and Linux (Wine).**
 
-SpiderManFix is an **unofficial, fan-made patch** for the original Windows PC release of *Spider-Man*. It helps the game run more comfortably on modern displays and operating systems while preserving its original look when desired.
+SpiderMan2k1Fix is an **unofficial, fan-made patch** for the original Windows PC release of *Spider-Man*. It helps the game run more comfortably on modern displays and operating systems while preserving its original look when desired.
 
 It adds borderless fullscreen, desktop-resolution output, widescreen support, corrected presentation for introductory movies and comic-book artwork, improved input handling, and an integrated configuration file. It also removes the game's CD check for the supported executable.
 
