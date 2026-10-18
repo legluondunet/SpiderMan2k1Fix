@@ -18,7 +18,7 @@ fi
 version=20261006
 pkg="llvm-mingw-${version}-msvcrt-ubuntu-22.04-x86_64"
 url="https://github.com/mstorsjo/llvm-mingw/releases/download/${version}/${pkg}.tar.xz"
-cache="${XDG_CACHE_HOME:-$HOME/.cache}/spidermanfix-toolchains"
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/spiderman2k1fix-toolchains"
 root="$cache/$pkg"
 archive="$cache/$pkg.tar.xz"
 compiler="$root/bin/i686-w64-mingw32-clang"

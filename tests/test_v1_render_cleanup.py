@@ -2,7 +2,7 @@
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parents[1]
-CORE = (BASE / 'spidermanfix.c').read_text()
+CORE = (BASE / 'spiderman2k1fix.c').read_text()
 VALIDATOR = (BASE / 'ini_validation.h').read_text()
 BUILD = (BASE / 'build.sh').read_text()
 
@@ -47,7 +47,7 @@ def test_no_forwarding_only_render_hooks_or_hot_path_collectors():
 
 
 def test_logging_disabled_in_factory_and_no_unneeded_periodic_trace():
-    ini = (BASE / 'SpiderManFix.ini').read_text()
+    ini = (BASE / 'SpiderMan2k1Fix.ini').read_text()
     assert '\nLog=0\n' in ini
     assert 'if(debug_log_enabled && count%120==0)' in CORE
     assert 'if(debug_log_enabled && count<=24)' in CORE

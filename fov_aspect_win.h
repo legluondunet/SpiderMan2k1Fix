@@ -1,5 +1,5 @@
-#ifndef SPIDERMANFIX_FOV_ASPECT_WIN_H
-#define SPIDERMANFIX_FOV_ASPECT_WIN_H
+#ifndef SPIDERMAN2K1FIX_FOV_ASPECT_WIN_H
+#define SPIDERMAN2K1FIX_FOV_ASPECT_WIN_H
 #include <windows.h>
 /* Observed at RVA 0x150064; affects projection-related drawing code,
  * but camera FOV in degrees is not yet established. Never changes EXE on disk. */

@@ -1,5 +1,5 @@
-#ifndef SPIDERMANFIX_DISPLAY_PLAN_H
-#define SPIDERMANFIX_DISPLAY_PLAN_H
+#ifndef SPIDERMAN2K1FIX_DISPLAY_PLAN_H
+#define SPIDERMAN2K1FIX_DISPLAY_PLAN_H
 
 /* Pure geometry math, independent of Windows APIs and the game.
  * Fits source geometry into destination without stretching and centers it.

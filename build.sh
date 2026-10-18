@@ -21,7 +21,7 @@ fi
 # A GCC option such as -mcrtdll=msvcrt cannot reliably switch a UCRT-built
 # mingw-w64 CRT/headers/runtime library set. Probe the *linked* CRT, not the
 # GCC driver's accepted options, before spending time building the game DLLs.
-probe_dir=$(mktemp -d './spidermanfix-crt-probe.XXXXXXXX')
+probe_dir=$(mktemp -d './spiderman2k1fix-crt-probe.XXXXXXXX')
 trap 'rm -rf -- "$probe_dir"' EXIT
 printf '%s\n' \
   '#include <stdio.h>' \
@@ -51,14 +51,14 @@ printf 'CRT-PROBE: MSVCRT import verified; building DLLs.\n'
 # Build to temporary paths. Old DLLs stay intact if compilation or runtime
 # validation fails; do not let a partially compiled pair reach the game.
 "$CC" -std=gnu11 -O2 -fno-pie -mno-sse -mno-sse2 -mfpmath=387 -Wall -Wextra \
-  -static-libgcc -shared -o "$probe_dir/SpiderManFix.dll" \
-  spidermanfix.c hud_widescreen.c frame_limiter.c display_plan.c menu_scale.c comic_native.c virtual_spidey_cfg.c display_policy.c display_menu_lock.c fov_aspect.c fov_aspect_win.c input_focus_trace.c \
+  -static-libgcc -shared -o "$probe_dir/SpiderMan2k1Fix.dll" \
+  spiderman2k1fix.c hud_widescreen.c frame_limiter.c display_plan.c menu_scale.c comic_native.c virtual_spidey_cfg.c display_policy.c display_menu_lock.c fov_aspect.c fov_aspect_win.c input_focus_trace.c \
   -ladvapi32 -ldxguid -lgdi32 -Wl,--subsystem,windows
 "$CC" -std=gnu11 -O2 -fno-pie -Wall -Wextra \
   -static-libgcc -shared -o "$probe_dir/winmm.dll" \
   winmm_proxy.c winmm.def -Wl,--subsystem,windows
 
-for dll in SpiderManFix.dll winmm.dll; do
+for dll in SpiderMan2k1Fix.dll winmm.dll; do
   file="$probe_dir/$dll"
   if ! "$OBJDUMP" -f "$file" | grep -q 'pei-i386'; then
     echo "ERROR: $dll is not a 32-bit Windows PE/COFF DLL." >&2
@@ -92,5 +92,5 @@ if missing:
 print('EXPORTS: 14 required winmm entry points detected')
 PYEXPORT
 
-cp "$probe_dir/SpiderManFix.dll" "$probe_dir/winmm.dll" .
+cp "$probe_dir/SpiderMan2k1Fix.dll" "$probe_dir/winmm.dll" .
 echo 'OK: validated local Windows x86 DLLs (MSVCRT; static libgcc).'

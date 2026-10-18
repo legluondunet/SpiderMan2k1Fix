@@ -1,4 +1,4 @@
-name: Windows x86 DLLs
+name: SpiderMan2k1Fix Windows x86
 
 on:
   push:
@@ -10,12 +10,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-x86-${{ github.ref }}
+  group: spiderman2k1fix-windows-x86-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   windows-x86:
-    name: Build and test (32-bit MSVCRT)
+    name: Build SpiderMan2k1Fix (32-bit MSVCRT)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -37,13 +37,13 @@ jobs:
       - name: Package game installation files
         run: |
           mkdir -p dist/package
-          cp SpiderManFix.dll winmm.dll SpiderManFix.ini README.md CHANGELOG.md dist/package/
-          (cd dist/package && zip -9 ../SpiderManFix-Windows-x86.zip SpiderManFix.dll winmm.dll SpiderManFix.ini README.md CHANGELOG.md)
+          cp SpiderMan2k1Fix.dll winmm.dll SpiderMan2k1Fix.ini README.md CHANGELOG.md dist/package/
+          (cd dist/package && zip -9 ../SpiderMan2k1Fix-Windows-x86.zip SpiderMan2k1Fix.dll winmm.dll SpiderMan2k1Fix.ini README.md CHANGELOG.md)
 
       - name: Upload Windows DLL artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SpiderManFix-Windows-x86
-          path: dist/SpiderManFix-Windows-x86.zip
+          name: SpiderMan2k1Fix-Windows-x86
+          path: dist/SpiderMan2k1Fix-Windows-x86.zip
           if-no-files-found: error
           retention-days: 30

@@ -1,7 +1,7 @@
-#ifndef SPIDERMANFIX_INI_VALIDATION_H
-#define SPIDERMANFIX_INI_VALIDATION_H
+#ifndef SPIDERMAN2K1FIX_INI_VALIDATION_H
+#define SPIDERMAN2K1FIX_INI_VALIDATION_H
 /* Read-only INI preflight. Standalone C99: it does not rewrite the user's file.
- * Built into SpiderManFix.dll via virtual_spidey_cfg.c; testable on Linux.
+ * Built into SpiderMan2k1Fix.dll via virtual_spidey_cfg.c; testable on Linux.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -161,7 +161,7 @@ static SpiderIniResult SpiderIni_Validate(const char *path,SpiderIniIssue cb,voi
   unsigned key_count=0,section_count=0,line_number=0,i;
   int known_section=0,too_long=0,has_nul=0;
   file=fopen(path,"rb");
-  if(!file) {spider_ini_issue(&r,cb,ctx,0,1,"Cannot open SpiderManFix.ini");return r;}
+  if(!file) {spider_ini_issue(&r,cb,ctx,0,1,"Cannot open SpiderMan2k1Fix.ini");return r;}
   while(spider_ini_readline(file,line,&too_long,&has_nul)) {
     char *s,*sep,*end; size_t len;
     line_number++;
@@ -236,7 +236,7 @@ static SpiderIniResult SpiderIni_Validate(const char *path,SpiderIniIssue cb,voi
       spider_ini_issue(&r,cb,ctx,line_number,1,"Too many lines in INI");break;
     }
   }
-  if(ferror(file))spider_ini_issue(&r,cb,ctx,0,1,"Error reading SpiderManFix.ini");
+  if(ferror(file))spider_ini_issue(&r,cb,ctx,0,1,"Error reading SpiderMan2k1Fix.ini");
   fclose(file);
   return r;
 }

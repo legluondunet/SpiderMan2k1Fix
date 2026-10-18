@@ -1,5 +1,5 @@
-#ifndef SPIDERMANFIX_COMIC_NATIVE_H
-#define SPIDERMANFIX_COMIC_NATIVE_H
+#ifndef SPIDERMAN2K1FIX_COMIC_NATIVE_H
+#define SPIDERMAN2K1FIX_COMIC_NATIVE_H
 #include "menu_scale.h"
 int SpiderComicNative_IsCandidate(const SpiderMenuVertex *v,
     unsigned count, unsigned primitive, unsigned long fvf,

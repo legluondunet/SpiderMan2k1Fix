@@ -1,5 +1,5 @@
-#ifndef SPIDERMANFIX_INPUT_FOCUS_TRACE_H
-#define SPIDERMANFIX_INPUT_FOCUS_TRACE_H
+#ifndef SPIDERMAN2K1FIX_INPUT_FOCUS_TRACE_H
+#define SPIDERMAN2K1FIX_INPUT_FOCUS_TRACE_H
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 /* Opt-in focus tracing and separately opt-in guarded DirectInput8 reacquisition. */

@@ -1,12 +1,12 @@
 /*
- * SpiderManFix: scoped player-HUD 16:9 correction, stand-alone hook module.
+ * SpiderMan2k1Fix: scoped player-HUD 16:9 correction, stand-alone hook module.
  *
  * Based on the tested player_hud(2).gdb prototype from Spider-Man 2001.
  * Does NOT patch the executable on disk and does NOT require GDB.
  *
  * IMPORTANT:
  *   This module is an integration component, NOT a replacement for the
- *   original SpiderManFix proxy DLL. Integrate with the existing
+ *   original SpiderMan2k1Fix proxy DLL. Integrate with the existing
  *   early-loading and SHA-256 verification.
  *
  * Architecture: Windows x86 (32-bit) ONLY.

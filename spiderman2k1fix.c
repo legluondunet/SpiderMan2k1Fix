@@ -34,8 +34,8 @@ static void debug_log_load_setting(void) {
   debug_log_enabled=0;
   if (!n || n>=sizeof(path)) return;
   slash=strrchr(path,'\\');
-  if (!slash || (size_t)(slash-path)+strlen("SpiderManFix.ini")+1>=sizeof(path)) return;
-  strcpy(slash+1,"SpiderManFix.ini");
+  if (!slash || (size_t)(slash-path)+strlen("SpiderMan2k1Fix.ini")+1>=sizeof(path)) return;
+  strcpy(slash+1,"SpiderMan2k1Fix.ini");
   debug_log_enabled=(GetPrivateProfileIntA("Debug","Log",0,path)==1);
 }
 static void log_line(const char *s) {
@@ -44,8 +44,8 @@ static void log_line(const char *s) {
   DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
   if (!n || n>=sizeof(path)) return;
   slash=strrchr(path,'\\');
-  if (!slash || (size_t)(slash-path)+strlen("SpiderManFix.log")+1>=sizeof(path)) return;
-  strcpy(slash+1,"SpiderManFix.log");
+  if (!slash || (size_t)(slash-path)+strlen("SpiderMan2k1Fix.log")+1>=sizeof(path)) return;
+  strcpy(slash+1,"SpiderMan2k1Fix.log");
   f=fopen(path,"a"); if(f) { fprintf(f,"%s\n",s); fclose(f); }
 }
 /* Keep the exact SHA-256 guard. A failure must explain which operation
@@ -1164,11 +1164,11 @@ static void install_player_hud(BOOL exe_verified) {
   }
   memcpy(ini,exe,n+1);
   slash=strrchr(ini,'\\');
-  if (!slash || (size_t)(slash-ini)+strlen("SpiderManFix.ini")+1>=sizeof(ini)) {
+  if (!slash || (size_t)(slash-ini)+strlen("SpiderMan2k1Fix.ini")+1>=sizeof(ini)) {
     log_line("HUD: invalid INI path; correction disabled");
     return;
   }
-  strcpy(slash+1,"SpiderManFix.ini");
+  strcpy(slash+1,"SpiderMan2k1Fix.ini");
   option=GetPrivateProfileIntA("HUD","HUDWidescreenFix",0,ini);
   if(lstrcmpiA(display_aspect_setting,"4:3")==0 && option==1) {
     log_line("HUD: disabled automatically for original 4:3 mode");
@@ -1204,7 +1204,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
   BYTE *base=(BYTE*)GetModuleHandleA(NULL);
   char line[160]; (void)unused;
   debug_log_load_setting();
-  log_line("START: SpiderManFix 1.0.0");
+  log_line("START: SpiderMan2k1Fix 1.0.0");
   if (!supported_exe()) {
     log_line("ERROR: unsupported EXE SHA-256; do not use this proxy with this executable");
     return 0;
@@ -1219,7 +1219,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
     int previous_log_enabled=debug_log_enabled;
     debug_log_load_setting();
     if (debug_log_enabled && !previous_log_enabled)
-      log_line("START: SpiderManFix debug logging enabled by generated/repaired INI");
+      log_line("START: SpiderMan2k1Fix debug logging enabled by generated/repaired INI");
   }
   if (base && base[0x1163E0]==0x31 && base[0x1163E1]==0xC0 && base[0x1163E2]==0xC3)
     log_line("OK: early No-CD memory patch present at RVA 0x1163E0");
@@ -1233,9 +1233,9 @@ static DWORD WINAPI initialize(LPVOID unused) {
     DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
     int fps=30;
     if (n && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL &&
-        (size_t)(slash-path)+strlen("SpiderManFix.ini")+1<sizeof(path)) {
+        (size_t)(slash-path)+strlen("SpiderMan2k1Fix.ini")+1<sizeof(path)) {
       memcpy(ini,path,n+1);
-      strcpy(ini+(slash-path)+1,"SpiderManFix.ini");
+      strcpy(ini+(slash-path)+1,"SpiderMan2k1Fix.ini");
       {
         char fps_value[48],*end=NULL;
         long number;
@@ -1364,7 +1364,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
     DWORD n=GetModuleFileNameA(NULL,game_path,sizeof(game_path));
     if(n>0 && n<sizeof(game_path) && (slash=strrchr(game_path,'\\'))!=NULL) {
       memcpy(ini_path,game_path,n+1);
-      strcpy(ini_path+(slash-game_path)+1,"SpiderManFix.ini");
+      strcpy(ini_path+(slash-game_path)+1,"SpiderMan2k1Fix.ini");
       /* Virtual Spidey.cfg is a permanent feature for the verified EXE.
        * Keep all signature checks and safe fallback inside SpiderCfg_Install. */
       SpiderCfg_Install(ini_path,log_line);
@@ -1377,7 +1377,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
     DWORD n=GetModuleFileNameA(NULL,game_path,sizeof(game_path));
     if(n>0 && n<sizeof(game_path) && (slash=strrchr(game_path,'\\'))!=NULL) {
       memcpy(ini_path,game_path,n+1);
-      strcpy(ini_path+(slash-game_path)+1,"SpiderManFix.ini");
+      strcpy(ini_path+(slash-game_path)+1,"SpiderMan2k1Fix.ini");
       if(GetPrivateProfileIntA("Display","ExperimentalDisplayMenuLock",1,ini_path)==1)
         SpiderDisplayMenu_Install(display_resolution_setting,display_aspect_setting,log_line);
       else log_line("DISPLAY-MENU-LOCK: explicitly disabled by INI");

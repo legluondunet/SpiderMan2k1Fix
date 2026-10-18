@@ -3,11 +3,11 @@ from pathlib import Path
 import configparser
 
 ROOT = Path(__file__).resolve().parents[1]
-example = (ROOT / 'SpiderManFix.generated-example.ini').read_text()
+example = (ROOT / 'SpiderMan2k1Fix.generated-example.ini').read_text()
 virtual = (ROOT / 'virtual_spidey_cfg.c').read_text()
-core = (ROOT / 'spidermanfix.c').read_text()
+core = (ROOT / 'spiderman2k1fix.c').read_text()
 proxy = (ROOT / 'winmm_proxy.c').read_text()
-source_ini = (ROOT / 'SpiderManFix.ini').read_text()
+source_ini = (ROOT / 'SpiderMan2k1Fix.ini').read_text()
 
 
 def test_debug_example_and_exact_display_help():
@@ -28,8 +28,8 @@ def test_logging_is_gated_in_both_dlls():
     assert 'GetPrivateProfileIntA("Debug","Log",0,path)==1' in core
     assert 'if (!debug_log_enabled) return;' in core
     assert 'GetPrivateProfileIntA("Debug","Log",0,path)!=1' in proxy
-    assert 'SpiderManFix-proxy.log' not in proxy
-    assert 'SpiderManFix.log' in proxy
+    assert 'SpiderMan2k1Fix-proxy.log' not in proxy
+    assert 'SpiderMan2k1Fix.log' in proxy
     assert 'debug_log_load_setting();' in core
 
 

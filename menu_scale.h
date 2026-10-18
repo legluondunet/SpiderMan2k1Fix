@@ -1,5 +1,5 @@
-#ifndef SPIDERMANFIX_MENU_SCALE_H
-#define SPIDERMANFIX_MENU_SCALE_H
+#ifndef SPIDERMAN2K1FIX_MENU_SCALE_H
+#define SPIDERMAN2K1FIX_MENU_SCALE_H
 #include <stdint.h>
 
 /* The observed menu uses XYZRHW|DIFFUSE|TEX1 (FVF 0x144), 28 bytes/vertex.

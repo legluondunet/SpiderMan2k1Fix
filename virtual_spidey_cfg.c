@@ -287,12 +287,12 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
   unsigned i;
   const char *name;
   static const char header[]=
-    "; SpiderManFix.ini - generated automatically when missing.\r\n"
+    "; SpiderMan2k1Fix.ini - generated automatically when missing.\r\n"
     "; Changes made in the game's options are saved to this file.\r\n"
-    "; Edit this file while the game is not running. Invalid files are backed up as SpiderManFix_N.old.\r\n"
+    "; Edit this file while the game is not running. Invalid files are backed up as SpiderMan2k1Fix_N.old.\r\n"
     "\r\n"
     "[Debug]\r\n"
-    "; 1 = write SpiderManFix.log (debug); 0 = no log output. Restart to apply.\r\n"
+    "; 1 = write SpiderMan2k1Fix.log (debug); 0 = no log output. Restart to apply.\r\n"
     "Log=0\r\n"
     "\r\n"
     "[Display]\r\n"
@@ -337,7 +337,7 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
   if(file==INVALID_HANDLE_VALUE) {
     error=GetLastError();
     if((error==ERROR_FILE_EXISTS || error==ERROR_ALREADY_EXISTS) && allow_existing) return 1;
-    snprintf(line,sizeof(line),"INI-AUTO: ERROR creating SpiderManFix.ini (Win32=%lu)",(unsigned long)error);
+    snprintf(line,sizeof(line),"INI-AUTO: ERROR creating SpiderMan2k1Fix.ini (Win32=%lu)",(unsigned long)error);
     if(logger)logger(line);
     return 0;
   }
@@ -381,13 +381,13 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
   if(!write_ini_text(file,hex) || !write_ini_text(file,"\r\n"))goto write_fail;
   if(!FlushFileBuffers(file))goto write_fail;
   CloseHandle(file);
-  if(logger)logger("INI-AUTO: generated factory SpiderManFix configuration");
+  if(logger)logger("INI-AUTO: generated factory SpiderMan2k1Fix configuration");
   return 1;
 write_fail:
   error=GetLastError();
   CloseHandle(file);
   DeleteFileA(ini); /* Do not leave a truncated first-run configuration. */
-  snprintf(line,sizeof(line),"INI-AUTO: ERROR writing SpiderManFix.ini (Win32=%lu)",(unsigned long)error);
+  snprintf(line,sizeof(line),"INI-AUTO: ERROR writing SpiderMan2k1Fix.ini (Win32=%lu)",(unsigned long)error);
   if(logger)logger(line);
   return 0;
 }
@@ -399,9 +399,9 @@ static int SpiderCfg_IniPath(char *ini,size_t cap) {
   size_t prefix;
   if(!n||n>=sizeof(exe)||!(slash=strrchr(exe,'\\')))return 0;
   prefix=(size_t)(slash-exe)+1;
-  if(prefix+strlen("SpiderManFix.ini")+1>cap)return 0;
+  if(prefix+strlen("SpiderMan2k1Fix.ini")+1>cap)return 0;
   memcpy(ini,exe,prefix);
-  strcpy(ini+prefix,"SpiderManFix.ini");return 1;
+  strcpy(ini+prefix,"SpiderMan2k1Fix.ini");return 1;
 }
 int SpiderCfg_EnsureDefaultIni(void (*logger)(const char *)) {
   char ini[MAX_PATH];
@@ -414,7 +414,7 @@ int SpiderCfg_EnsureDefaultIni(void (*logger)(const char *)) {
 
 
 /* Normalize an invalid INI into the generator's canonical format.
- * The original is preserved at SpiderManFix_0.old, _1.old, ... .
+ * The original is preserved at SpiderMan2k1Fix_0.old, _1.old, ... .
  * Build the replacement separately and back up BEFORE the atomic replacement.
  * Failure leaves the original INI untouched and blocks game-origin writes.
  */
@@ -437,7 +437,7 @@ static int SpiderCfg_RepairIni(const char *ini,const SpiderIniResult *check,
   memcpy(directory,ini,prefix);directory[prefix]=0;
   /* Never overwrite an unrelated leftover temporary or an earlier backup. */
   for(serial=0;serial<10000;serial++) {
-    if(snprintf(tmp,sizeof(tmp),"%sSpiderManFix-repair_%u.tmp",directory,serial)>=(int)sizeof(tmp))goto done;
+    if(snprintf(tmp,sizeof(tmp),"%sSpiderMan2k1Fix-repair_%u.tmp",directory,serial)>=(int)sizeof(tmp))goto done;
     if(GetFileAttributesA(tmp)==INVALID_FILE_ATTRIBUTES)break;
   }
   if(serial==10000)goto done;
@@ -463,7 +463,7 @@ static int SpiderCfg_RepairIni(const char *ini,const SpiderIniResult *check,
     }
   }
   for(serial=0;serial<10000;serial++) {
-    if(snprintf(backup,sizeof(backup),"%sSpiderManFix_%u.old",directory,serial)>=(int)sizeof(backup)) {
+    if(snprintf(backup,sizeof(backup),"%sSpiderMan2k1Fix_%u.old",directory,serial)>=(int)sizeof(backup)) {
       DeleteFileA(tmp);goto done;
     }
     if(GetFileAttributesA(backup)==INVALID_FILE_ATTRIBUTES)break;
@@ -508,16 +508,16 @@ void SpiderCfg_ValidateCurrentIni(void (*logger)(const char *)) {
   if(!check.errors && !check.warnings) {
     ini_writes_permitted=1;
     SpiderCfg_ClearOldValidationReport(ini);
-    if(logger)logger("INI-CHECK: valid SpiderManFix.ini");
+    if(logger)logger("INI-CHECK: valid SpiderMan2k1Fix.ini");
     return;
   }
   ini_writes_permitted=0;
   if(!SpiderCfg_RepairIni(ini,&check,backup,sizeof(backup),&recovered,logger)) {
     if(logger)logger("INI-REPAIR: FAILED; source unchanged, game INI writes disabled");
-    MessageBoxA(NULL,"SpiderManFix.ini has errors or unknown entries, but automatic repair failed.\n"
+    MessageBoxA(NULL,"SpiderMan2k1Fix.ini has errors or unknown entries, but automatic repair failed.\n"
       "Your original INI has been kept. Game options will not overwrite it.\n"
       "Check write permissions and available disk space.",
-      "SpiderManFix - INI repair failed",MB_OK|MB_ICONWARNING|MB_TOPMOST);
+      "SpiderMan2k1Fix - INI repair failed",MB_OK|MB_ICONWARNING|MB_TOPMOST);
     return;
   }
   rebuilt=SpiderIni_Validate(ini,NULL,NULL);
@@ -528,12 +528,12 @@ void SpiderCfg_ValidateCurrentIni(void (*logger)(const char *)) {
   }
   SpiderCfg_ClearOldValidationReport(ini);
   snprintf(summary,sizeof(summary),
-    "SpiderManFix.ini contained %u error(s) and %u unknown entry/entries.\n\n"
+    "SpiderMan2k1Fix.ini contained %u error(s) and %u unknown entry/entries.\n\n"
     "A new, clean configuration was generated.\n"
     "%u recognized setting(s) were recovered.\n\n"
     "The original file was saved as:\n%s",
     check.errors,check.warnings,recovered,backup);
-  MessageBoxA(NULL,summary,"SpiderManFix - INI repaired",MB_OK|MB_ICONINFORMATION|MB_TOPMOST);
+  MessageBoxA(NULL,summary,"SpiderMan2k1Fix - INI repaired",MB_OK|MB_ICONINFORMATION|MB_TOPMOST);
 }
 
 /* Obsolete report files from the previous read-only validator are stale. */
@@ -541,8 +541,8 @@ static void SpiderCfg_ClearOldValidationReport(const char *ini) {
   char path[MAX_PATH];char *slash;
   if(strlen(ini)>=sizeof(path))return;
   strcpy(path,ini);slash=strrchr(path,'\\');if(!slash)return;
-  if((size_t)(slash-path)+strlen("SpiderManFix.ini-errors.txt")+2>=sizeof(path))return;
-  strcpy(slash+1,"SpiderManFix.ini-errors.txt");
+  if((size_t)(slash-path)+strlen("SpiderMan2k1Fix.ini-errors.txt")+2>=sizeof(path))return;
+  strcpy(slash+1,"SpiderMan2k1Fix.ini-errors.txt");
   DeleteFileA(path);
 }
 static void apply_locked_display(void) {

@@ -10,8 +10,8 @@ __pycache__/
 .pytest_cache/
 *.py[cod]
 # Temporary build artifacts
-spidermanfix-crt-probe.*/
+spiderman2k1fix-crt-probe.*/
 dist/
 *.zip
 # Personal configurations and backups
-SpiderManFix_*.old
+SpiderMan2k1Fix_*.old

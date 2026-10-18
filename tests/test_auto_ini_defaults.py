@@ -6,8 +6,8 @@ import struct
 
 ROOT = Path(__file__).resolve().parents[1]
 virtual = (ROOT / 'virtual_spidey_cfg.c').read_text()
-game = (ROOT / 'spidermanfix.c').read_text()
-example = (ROOT / 'SpiderManFix.generated-example.ini').read_text()
+game = (ROOT / 'spiderman2k1fix.c').read_text()
+example = (ROOT / 'SpiderMan2k1Fix.generated-example.ini').read_text()
 factory = (ROOT / 'spidey_cfg_template.h').read_text()
 bytes_data = bytes(int(v,16) for v in re.findall(r'0x([0-9a-fA-F]{2})',factory.split('{',1)[1].split('}',1)[0]))
 config = configparser.ConfigParser(interpolation=None)

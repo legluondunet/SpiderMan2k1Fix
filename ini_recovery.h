@@ -1,5 +1,5 @@
-#ifndef SPIDERMANFIX_INI_RECOVERY_H
-#define SPIDERMANFIX_INI_RECOVERY_H
+#ifndef SPIDERMAN2K1FIX_INI_RECOVERY_H
+#define SPIDERMAN2K1FIX_INI_RECOVERY_H
 #include "ini_validation.h"
 
 /* Recover the FIRST VALID value of each supported key, across duplicate

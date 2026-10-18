@@ -6,8 +6,8 @@ import struct
 
 ROOT = Path(__file__).resolve().parents[1]
 VIRTUAL = (ROOT / "virtual_spidey_cfg.c").read_text()
-INI = (ROOT / "SpiderManFix.ini").read_text()
-DEFAULT = (ROOT / "SpiderManFix.generated-example.ini").read_text()
+INI = (ROOT / "SpiderMan2k1Fix.ini").read_text()
+DEFAULT = (ROOT / "SpiderMan2k1Fix.generated-example.ini").read_text()
 ACTIONS = ("Up", "Down", "Left", "Right", "Jump", "Kick", "Punch", "Web", "Aim", "Zipline", "Swing")
 BUTTON_ACTIONS = ("Jump", "Kick", "Punch", "Web", "Aim", "Zipline", "Swing")
 

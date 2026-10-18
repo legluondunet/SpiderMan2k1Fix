@@ -45,11 +45,11 @@ static void log_proxy(const char *message) {
     DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
     if (!n || n>=sizeof(path)) return;
     slash=strrchr(path,'\\');
-    if (!slash || (size_t)(slash-path)+strlen("SpiderManFix.ini")+1>=sizeof(path)) return;
-    strcpy(slash+1,"SpiderManFix.ini");
+    if (!slash || (size_t)(slash-path)+strlen("SpiderMan2k1Fix.ini")+1>=sizeof(path)) return;
+    strcpy(slash+1,"SpiderMan2k1Fix.ini");
     if (GetPrivateProfileIntA("Debug","Log",0,path)!=1) return;
-    if ((size_t)(slash-path)+strlen("SpiderManFix.log")+1>=sizeof(path)) return;
-    strcpy(slash+1,"SpiderManFix.log");
+    if ((size_t)(slash-path)+strlen("SpiderMan2k1Fix.log")+1>=sizeof(path)) return;
+    strcpy(slash+1,"SpiderMan2k1Fix.log");
     f=fopen(path,"a"); if (f) { fprintf(f,"%s\n",message); fclose(f); }
 }
 static BOOL CALLBACK load_real(PINIT_ONCE unused, PVOID arg, PVOID *ctx) {
@@ -96,15 +96,15 @@ static DWORD WINAPI init_fix(LPVOID ignored) {
     (void)ignored;
     {
         char status[128];
-        snprintf(status,sizeof(status),"START: SpiderManFix 1.0.0 early No-CD patch status=%ld (1=applied)",(long)early_patch_status);
+        snprintf(status,sizeof(status),"START: SpiderMan2k1Fix 1.0.0 early No-CD patch status=%ld (1=applied)",(long)early_patch_status);
         log_proxy(status);
     }
-    log_proxy("START: winmm proxy loaded; loading SpiderManFix.dll");
+    log_proxy("START: winmm proxy loaded; loading SpiderMan2k1Fix.dll");
     n=GetModuleFileNameA(NULL,path,sizeof(path));
     if (!n || n>=sizeof(path)) return 0;
     char *slash=strrchr(path,'\\');
-    if (!slash || (size_t)(slash-path)+strlen("SpiderManFix.dll")+1>=sizeof(path)) return 0;
-    strcpy(slash+1,"SpiderManFix.dll");
+    if (!slash || (size_t)(slash-path)+strlen("SpiderMan2k1Fix.dll")+1>=sizeof(path)) return 0;
+    strcpy(slash+1,"SpiderMan2k1Fix.dll");
     {
         char report[512];
         DWORD attributes=GetFileAttributesA(path);
@@ -119,7 +119,7 @@ static DWORD WINAPI init_fix(LPVOID ignored) {
         DWORD load_error=mod ? ERROR_SUCCESS : GetLastError(); /* MUST capture immediately */
         char report[512];
         if (mod) {
-            log_proxy("OK: SpiderManFix.dll LoadLibrary succeeded");
+            log_proxy("OK: SpiderMan2k1Fix.dll LoadLibrary succeeded");
         } else {
             const char *reason;
             switch (load_error) {
@@ -130,7 +130,7 @@ static DWORD WINAPI init_fix(LPVOID ignored) {
                 case ERROR_ACCESS_DENIED: reason="access denied"; break;
                 default: reason="see Win32 error code"; break;
             }
-            snprintf(report,sizeof(report),"ERROR: SpiderManFix.dll LoadLibrary failed: winerr=%lu (%s)",
+            snprintf(report,sizeof(report),"ERROR: SpiderMan2k1Fix.dll LoadLibrary failed: winerr=%lu (%s)",
                      (unsigned long)load_error,reason);
             log_proxy(report);
         }

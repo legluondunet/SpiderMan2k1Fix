@@ -386,7 +386,7 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   log_msg=log_fn;
   n=GetModuleFileNameA(NULL,exe,sizeof(exe));
   if(!n || n>=sizeof(exe) || !(sep=strrchr(exe,'\\'))) return;
-  strcpy(ini,exe);strcpy(ini+(sep-exe)+1,"SpiderManFix.ini");
+  strcpy(ini,exe);strcpy(ini+(sep-exe)+1,"SpiderMan2k1Fix.ini");
   input_debug_logging=GetPrivateProfileIntA("Debug","Log",0,ini)==1;
   want_trace=GetPrivateProfileIntA("Input","ExperimentalFocusTrace",0,ini)==1;
   want_fix=GetPrivateProfileIntA("Input","ExperimentalAltTabReacquire",0,ini)==1;

@@ -1,5 +1,5 @@
-#ifndef SPIDERMANFIX_FOV_ASPECT_H
-#define SPIDERMANFIX_FOV_ASPECT_H
+#ifndef SPIDERMAN2K1FIX_FOV_ASPECT_H
+#define SPIDERMAN2K1FIX_FOV_ASPECT_H
 #include "menu_scale.h"
 
 /* FOV input syntax. Degrees are accepted as a future interface contract,

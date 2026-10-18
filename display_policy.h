@@ -1,5 +1,5 @@
-#ifndef SPIDERMANFIX_DISPLAY_POLICY_H
-#define SPIDERMANFIX_DISPLAY_POLICY_H
+#ifndef SPIDERMAN2K1FIX_DISPLAY_POLICY_H
+#define SPIDERMAN2K1FIX_DISPLAY_POLICY_H
 #include <stddef.h>
 /* Strictly accepts Auto or WIDTHxHEIGHT. The caller provides the desktop
  * resolution captured before exclusive fullscreen changes it. */
