@@ -1,0 +1,14 @@
+#ifndef VIRTUAL_SPIDEY_CFG_H
+#define VIRTUAL_SPIDEY_CFG_H
+#include <windows.h>
+/* Installs always-on, exe-IAT-only file/stdio interception after EXE SHA verification.
+ * Return the number of patched imports; zero means the game may use an alternate IO path.
+ */
+/* Return nonzero if the INI exists or was created. Never overwrite an existing one. */
+int SpiderCfg_EnsureDefaultIni(void (*logger)(const char *));
+void SpiderCfg_ValidateCurrentIni(void (*logger)(const char *));
+unsigned SpiderCfg_Install(const char *ini_path,void (*logger)(const char *));
+void SpiderCfg_ObserveNativeMonitor(unsigned width,unsigned height);
+/* One-time game-thread reload after verifying a real virtual CRT read. */
+void SpiderCfg_BootstrapGameRead(void);
+#endif

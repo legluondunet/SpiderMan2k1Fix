@@ -1,0 +1,17 @@
+# Local compiler outputs
+*.dll
+*.exe
+*.o
+*.obj
+*.a
+*.log
+# Python tests/cache
+__pycache__/
+.pytest_cache/
+*.py[cod]
+# Temporary build artifacts
+spidermanfix-crt-probe.*/
+dist/
+*.zip
+# Personal configurations and backups
+SpiderManFix_*.old

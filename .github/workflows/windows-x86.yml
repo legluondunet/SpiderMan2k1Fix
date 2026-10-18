@@ -1,0 +1,49 @@
+name: Windows x86 DLLs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-x86-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-x86:
+    name: Build and test (32-bit MSVCRT)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Install MinGW-w64 and binary inspection tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-i686 binutils-mingw-w64-i686 python3-pytest zip
+
+      - name: Run regression tests
+        run: |
+          python3 -m pytest -q tests
+
+      - name: Build Windows x86 DLLs
+        run: bash ./build.sh
+
+      - name: Package game installation files
+        run: |
+          mkdir -p dist/package
+          cp SpiderManFix.dll winmm.dll SpiderManFix.ini README.md CHANGELOG.md dist/package/
+          (cd dist/package && zip -9 ../SpiderManFix-Windows-x86.zip SpiderManFix.dll winmm.dll SpiderManFix.ini README.md CHANGELOG.md)
+
+      - name: Upload Windows DLL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpiderManFix-Windows-x86
+          path: dist/SpiderManFix-Windows-x86.zip
+          if-no-files-found: error
+          retention-days: 30

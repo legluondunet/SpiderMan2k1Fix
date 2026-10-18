@@ -1,0 +1,16 @@
+LIBRARY winmm.dll
+EXPORTS
+    mmioAscend = proxy_mmioAscend@12
+    mmioRead = proxy_mmioRead@12
+    mmioClose = proxy_mmioClose@8
+    mmioStringToFOURCCA = proxy_mmioStringToFOURCCA@8
+    mmioOpenA = proxy_mmioOpenA@12
+    mmioDescend = proxy_mmioDescend@16
+    timeGetTime = proxy_timeGetTime@0
+    timeEndPeriod = proxy_timeEndPeriod@4
+    timeBeginPeriod = proxy_timeBeginPeriod@4
+    timeSetEvent = proxy_timeSetEvent@20
+    timeKillEvent = proxy_timeKillEvent@4
+    mciSendCommandA = proxy_mciSendCommandA@16
+    timeGetDevCaps = proxy_timeGetDevCaps@8
+    timeGetSystemTime = proxy_timeGetSystemTime@8
