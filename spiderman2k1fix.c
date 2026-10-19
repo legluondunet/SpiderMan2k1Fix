@@ -1024,11 +1024,41 @@ static HRESULT WINAPI hooked_surface_create(void *self, DDSURFACEDESC2 *desc,
     char line[280];
     if(out) *out=NULL;
     if(!out || desktop_w<640 || desktop_h<480) return DDERR_INVALIDPARAMS;
-    if(borderless_back) {
-      IDirectDrawSurface7_Release(borderless_back);
-      borderless_back=NULL;
+    /* The game requests another flipping primary during MENU -> GAMEPLAY.
+     * Native DirectDraw rejects a second primary (0x88760234).
+     * Keep the original windowed primary/backbuffer and return a new COM
+     * reference instead. Validate dimensions so incompatible surfaces are
+     * not silently recycled across display changes.
+     */
+    if(borderless_primary && borderless_back) {
+      DDSURFACEDESC2 existing;
+      HRESULT check;
+      memset(&existing,0,sizeof(existing));
+      existing.dwSize=sizeof(existing);
+      check=IDirectDrawSurface7_GetSurfaceDesc(borderless_back,&existing);
+      if(FAILED(check) || existing.dwWidth!=desktop_w ||
+         existing.dwHeight!=desktop_h) {
+        snprintf(line,sizeof(line),
+          "BORDERLESS: ERROR existing backbuffer incompatible hr=0x%08lX old=%lux%lu requested=%lux%lu",
+          (unsigned long)check,(unsigned long)existing.dwWidth,
+          (unsigned long)existing.dwHeight,
+          (unsigned long)desktop_w,(unsigned long)desktop_h);
+        log_line(line);
+        return FAILED(check)?check:DDERR_INVALIDPARAMS;
+      }
+      IDirectDrawSurface7_AddRef(borderless_primary); /* game-owned ref */
+      *out=borderless_primary;
+      snprintf(line,sizeof(line),
+        "BORDERLESS: REUSE windowed PRIMARY=%p backbuffer=%p size=%lux%lu (menu -> gameplay)",
+        (void*)borderless_primary,(void*)borderless_back,
+        (unsigned long)desktop_w,(unsigned long)desktop_h);
+      log_line(line);
+      return DD_OK;
     }
-    borderless_primary=NULL;
+    if(borderless_primary || borderless_back) {
+      log_line("BORDERLESS: ERROR incomplete PRIMARY/BACKBUFFER ownership; refusing unsafe recreation");
+      return DDERR_INVALIDOBJECT;
+    }
     memset(&pd,0,sizeof(pd));pd.dwSize=sizeof(pd);
     pd.dwFlags=DDSD_CAPS;
     pd.ddsCaps.dwCaps=DDSCAPS_PRIMARYSURFACE;
@@ -1060,6 +1090,10 @@ static HRESULT WINAPI hooked_surface_create(void *self, DDSURFACEDESC2 *desc,
       return back_hr;
     }
     borderless_primary=primary;borderless_back=back;
+    /* CreateSurface gives the initial reference to the game. Keep one
+     * separate proxy-owned reference: the game's menu cleanup may Release
+     * its primary before requesting the gameplay primary. */
+    IDirectDrawSurface7_AddRef(primary);
     instrument_surface(primary);
     instrument_surface(back);
     *out=primary;
