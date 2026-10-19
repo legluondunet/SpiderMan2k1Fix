@@ -372,6 +372,42 @@ static HRESULT WINAPI hooked_set_render_state(void *self,D3DRENDERSTATETYPE stat
 
 static void *patched_d3d_vtable[8], *patched_device_vtable[49];
 static volatile LONG d3d_ready=0, device_ready=0, viewport_count=0;
+/* Diagnostic-only call boundary: determines whether the crash occurs inside
+ * native SetViewport or only after its HRESULT has been returned. Never
+ * swallow an exception, never alter success/failure from the real driver.
+ */
+static HRESULT call_original_set_viewport_traced(void *self,LPD3DVIEWPORT7 view,
+                                                 LONG sequence,const char *mode) {
+  HRESULT hr;
+  if(debug_log_enabled && sequence<=24) {
+    MEMORY_BASIC_INFORMATION region;
+    SIZE_T queried=0;
+    char line[256];
+    memset(&region,0,sizeof(region));
+    if(original_set_viewport)
+      queried=VirtualQuery((LPCVOID)(uintptr_t)original_set_viewport,
+                           &region,sizeof(region));
+    snprintf(line,sizeof(line),
+      "D3D7-VIEWPORT-DIAG: BEFORE #%ld mode=%s device=%p original=%p memory-state=0x%08lX protection=0x%08lX query=%lu rect=%lux%lu+%lu+%lu",
+      (long)sequence,mode,self,(void*)(uintptr_t)original_set_viewport,
+      (unsigned long)region.State,(unsigned long)region.Protect,(unsigned long)queried,
+      (unsigned long)(view?view->dwWidth:0),(unsigned long)(view?view->dwHeight:0),
+      (unsigned long)(view?view->dwX:0),(unsigned long)(view?view->dwY:0));
+    log_line(line);
+  }
+  if(!original_set_viewport) {
+    log_line("D3D7-VIEWPORT-DIAG: ERROR original SetViewport pointer is NULL");
+    return E_POINTER;
+  }
+  hr=original_set_viewport(self,view);
+  if(debug_log_enabled && sequence<=24) {
+    char line[160];
+    snprintf(line,sizeof(line),"D3D7-VIEWPORT-DIAG: AFTER #%ld mode=%s hr=0x%08lX",
+      (long)sequence,mode,(unsigned long)hr);
+    log_line(line);
+  }
+  return hr;
+}
 static HRESULT WINAPI hooked_set_viewport(void *self,LPD3DVIEWPORT7 view) {
   LONG n=InterlockedIncrement(&viewport_count);
   if(debug_log_enabled && n<=24 && view) {
@@ -393,12 +429,25 @@ static HRESULT WINAPI hooked_set_viewport(void *self,LPD3DVIEWPORT7 view) {
     physical.dwWidth=(DWORD)(game_map.right-game_map.left);
     physical.dwHeight=(DWORD)(game_map.bottom-game_map.top);
     if(debug_log_enabled && n<=24) log_line("DISPLAY-ASPECT-43: gameplay D3D7 viewport centered on native output");
-    return original_set_viewport(self,&physical);
+    return call_original_set_viewport_traced(self,&physical,n,"gameplay-4x3");
   }
   if (view && InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
       view->dwWidth==640 && view->dwHeight==480 &&
       view->dwX==0 && view->dwY==0) {
     D3DVIEWPORT7 physical=*view;
+    /* Temporary A/B test: set in the launching PowerShell session only.
+     * Unset variable after test. Default path is the unchanged 4:3 mapping.
+     * This bypasses only the viewport remap, NOT the existing proxy/hooks. */
+    {
+      char diagnostic[4]={0};
+      DWORD nbytes=GetEnvironmentVariableA("SPIDERMAN2K1FIX_VIEWPORT_LOGICAL",
+                                           diagnostic,sizeof(diagnostic));
+      if(nbytes==1 && diagnostic[0]=='1') {
+        if(debug_log_enabled && n<=24)
+          log_line("D3D7-VIEWPORT-DIAG: A/B logical 640x480 original viewport selected");
+        return call_original_set_viewport_traced(self,view,n,"menu-logical-ab");
+      }
+    }
     if (InterlockedCompareExchange(&media_viewport_4x3_enabled,0,0)==1) {
       char line[228];
       /* A centered 4:3 viewport preserves the aspect of projected geometry.
@@ -422,9 +471,9 @@ static HRESULT WINAPI hooked_set_viewport(void *self,LPD3DVIEWPORT7 view) {
       physical.dwHeight=desktop_h;
       if (n<=24) log_line("DISPLAY-TEST: menu D3D viewport 640x480 -> native monitor size (legacy)");
     }
-    return original_set_viewport(self,&physical);
+    return call_original_set_viewport_traced(self,&physical,n,"menu-mapped");
   }
-  return original_set_viewport(self,view);
+  return call_original_set_viewport_traced(self,view,n,"passthrough");
 }
 /* Forward-only draw diagnostics. Log only the first 16 calls per method. */
 typedef HRESULT (WINAPI *DrawPrimitiveFn)(void *, D3DPRIMITIVETYPE, DWORD, LPVOID, DWORD, DWORD);
