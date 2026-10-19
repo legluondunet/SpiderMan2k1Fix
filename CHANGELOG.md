@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 — first stable source release (2026-10-18)
+## 1.0.0 — first stable release (2026-10-19)
 
 - Renamed the project, main DLL, INI, logs, source file, build artifacts, and documentation to **SpiderMan2k1Fix**. The `winmm.dll` proxy retains its required name. Existing beta INI files need to be renamed manually to preserve custom settings.
 

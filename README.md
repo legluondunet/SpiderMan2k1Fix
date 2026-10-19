@@ -8,7 +8,7 @@ It adds borderless fullscreen, desktop-resolution output, widescreen support, co
 
 SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must provide your own installed copy of *Spider-Man*. No game assets are distributed with this project.
 
-> **Release status:** Version 1.0.0 has been compiled and tested in-game by the project maintainer after the source cleanup. Automated builds and downloadable DLL artifacts are provided through GitHub Actions.
+> **Stable release:** Download **[SpiderMan2k1Fix v1.0.0](https://github.com/legluondunet/SpiderMan2k1Fix/releases/tag/v1.0.0)**. Automated Windows x86 builds also remain available through GitHub Actions.
 
 ## Features — Version 1.0
 
@@ -48,7 +48,7 @@ Other executable versions, modified executables, and some third-party wrappers m
 
 1. Install *Spider-Man* normally and locate the directory containing `SpideyPC.exe`.
 2. Back up any existing `winmm.dll`, `SpiderMan2k1Fix.dll`, or `SpiderMan2k1Fix.ini` files in that directory.
-3. Get the **two compiled DLLs** from a SpiderMan2k1Fix release package once one is published. (The source archive alone is not a compiled release.)
+3. Download **`SpiderMan2k1Fix-1.0.0-Windows-x86.zip`** from [GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases/tag/v1.0.0) and extract it. (The GitHub-generated source archives do **not** include compiled DLLs.)
 4. Copy `winmm.dll` and `SpiderMan2k1Fix.dll` into the **same directory** as `SpideyPC.exe`:
 
    ```text
@@ -197,7 +197,7 @@ Look for a numbered `SpiderMan2k1Fix_N.old` backup. The previous configuration m
 
 **Controls are not responding after switching applications**
 
-Make sure you are using the latest test build for your installation. Input reacquisition is intended to restore control when returning from Alt+Tab. If the problem persists, enable the debug log and include the reproduction steps in a bug report.
+Make sure you are using the latest stable release for your installation. Input reacquisition is intended to restore control when returning from Alt+Tab. If the problem persists, enable the debug log and include the reproduction steps in a bug report.
 
 **The game has visual or audio glitches**
 
@@ -214,7 +214,7 @@ These are **planned improvements**, not features promised for version 1.0:
 
 ## Building from source
 
-GitHub Actions also creates a ZIP containing the two DLLs and configuration files. Open **Actions → Windows x86 DLLs → latest successful run → Artifacts** to download it.
+For ready-to-use DLLs, use the [latest GitHub release](https://github.com/legluondunet/SpiderMan2k1Fix/releases). GitHub Actions also makes its compiled ZIP available under **Actions → SpiderMan2k1Fix Windows x86 → successful run → Artifacts**.
 
 The source package includes scripts for building the 32-bit Windows DLLs on Linux with an **MSVCRT-targeting MinGW-w64 toolchain**:
 
