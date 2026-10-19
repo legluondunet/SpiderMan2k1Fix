@@ -105,9 +105,9 @@ MMRESULT WINAPI proxy_waveOutGetErrorTextA(MMRESULT a, LPSTR b, UINT c) {
     __typeof__(&waveOutGetErrorTextA) f=NULL; RESOLVE_INTO(waveOutGetErrorTextA, f);
     return f ? f(a,b,c) : MMSYSERR_ERROR;
 }
-MMRESULT WINAPI proxy_waveOutOpen(LPHWAVEOUT a, UINT_PTR b, LPCWAVEFORMATEX c, DWORD_PTR d, DWORD_PTR e, DWORD f) {
+MMRESULT WINAPI proxy_waveOutOpen(LPHWAVEOUT a, UINT_PTR b, LPCWAVEFORMATEX c, DWORD_PTR d, DWORD_PTR e, DWORD flags) {
     __typeof__(&waveOutOpen) f=NULL; RESOLVE_INTO(waveOutOpen, f);
-    return f ? f(a,b,c,d,e,f) : MMSYSERR_ERROR;
+    return f ? f(a,b,c,d,e,flags) : MMSYSERR_ERROR;
 }
 MMRESULT WINAPI proxy_waveOutClose(HWAVEOUT a) {
     __typeof__(&waveOutClose) f=NULL; RESOLVE_INTO(waveOutClose, f);
@@ -189,9 +189,9 @@ MMRESULT WINAPI proxy_waveInGetErrorTextA(MMRESULT a, LPSTR b, UINT c) {
     __typeof__(&waveInGetErrorTextA) f=NULL; RESOLVE_INTO(waveInGetErrorTextA, f);
     return f ? f(a,b,c) : MMSYSERR_ERROR;
 }
-MMRESULT WINAPI proxy_waveInOpen(LPHWAVEIN a, UINT_PTR b, LPCWAVEFORMATEX c, DWORD_PTR d, DWORD_PTR e, DWORD f) {
+MMRESULT WINAPI proxy_waveInOpen(LPHWAVEIN a, UINT_PTR b, LPCWAVEFORMATEX c, DWORD_PTR d, DWORD_PTR e, DWORD flags) {
     __typeof__(&waveInOpen) f=NULL; RESOLVE_INTO(waveInOpen, f);
-    return f ? f(a,b,c,d,e,f) : MMSYSERR_ERROR;
+    return f ? f(a,b,c,d,e,flags) : MMSYSERR_ERROR;
 }
 MMRESULT WINAPI proxy_waveInClose(HWAVEIN a) {
     __typeof__(&waveInClose) f=NULL; RESOLVE_INTO(waveInClose, f);
