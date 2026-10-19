@@ -192,3 +192,48 @@ Remove-Item Env:\SPIDERMAN2K1FIX_ZORDER_TEST -ErrorAction SilentlyContinue
 Try Alt+Tab several times and report cursor and window separately, with log.
 For isolation, remove either test switch in an additional run. Test code must
 not be merged before native Windows/Wine validation.
+
+## Test H — fclose(NULL) at 0052A805, exact Windows crash dump
+
+ProcDump 2026-10-19 16:10:36 local:
+- Exception C0000005, read address 0000000C, EIP 0052A805.
+- Statically linked MSVC fclose(FILE*) starts at game RVA 0x12A7FC.
+- ESI=0, EDI=FFFFFFFF, caller return 005186F8, file argument NULL.
+- The call at 005186F8 belongs to original SpideyPC.exe, not Direct3D,
+  DirectDraw, input_focus_trace or proxy code. Root cause of NULL FILE*
+  remains unknown; the crash may occur during menu/intro focus transitions.
+- First-chance exception handling can verify this diagnosis without
+  altering any valid FILE* handling or the rendering path.
+
+**Experimental workaround (OFF by default):**
+\`SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD=1\` installs a VEH after game SHA-256
+verification and checks the exact 13 opcode bytes of the embedded fclose.
+For this one error only, and only when return address and the NULL argument
+match the dump, it resumes at the original fclose epilogue returning EOF
+(-1), without changing code bytes or other exception types.
+
+Keep graphical mode, DPI and input configuration unchanged:
+
+\`\`\`powershell
+Remove-Item .\SpiderMan2k1Fix.log -ErrorAction SilentlyContinue
+Remove-Item Env:\SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE -ErrorAction SilentlyContinue
+$env:SPIDERMAN2K1FIX_D3D_INPLACE='1'
+$env:SPIDERMAN2K1FIX_FOCUS_PASSIVE='1'
+$env:SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST='1'
+$env:SPIDERMAN2K1FIX_ZORDER_TEST='1'
+$env:SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD='1'
+Start-Process .\SpideyPC.exe -Wait
+'SPIDERMAN2K1FIX_D3D_INPLACE','SPIDERMAN2K1FIX_FOCUS_PASSIVE','SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST','SPIDERMAN2K1FIX_ZORDER_TEST','SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD' | ForEach-Object { Remove-Item -Path "Env:$_" -ErrorAction SilentlyContinue }
+\`\`\`
+
+Expected log: \`FCLOSE-GUARD: EXPERIMENTAL ... armed\`, and if
+recovered rendering reaches another Flip, \`FCLOSE-GUARD: recovered 1
+fclose(NULL) call(s)\`. If the guard triggers during termination
+and no Flip follows, no recovery line will be written. Do not infer
+that no recovery occurred in that case. Re-test under ProcDump to catch
+other exceptions. If it crashes, send the complete log and minidump.
+
+This is a narrowly controlled test, NOT a production solution. Examine the
+call at game return VA 005186F8 in the exact SpideyPC.exe for the reason the
+stream was NULL before considering a permanent fix. Never merge without
+Windows and Wine verification.

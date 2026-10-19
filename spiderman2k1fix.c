@@ -132,6 +132,92 @@ done:
   if(file!=INVALID_HANDLE_VALUE) CloseHandle(file);
   return ok;
 }
+
+/* Win11 first-chance crash diagnostic for the exact verified game EXE.
+ *
+ * 2026-10-19 ProcDump: C0000005 read from address 0xC, EIP 0052A805,
+ * ESI=0, EDI=-1. This is MSVC's statically linked fclose(FILE *) at
+ * game RVA 0x12A7FC. Return address 005186F8 proves this call site's
+ * FILE* argument is NULL. fclose(NULL) has undefined behavior.
+ *
+ * Test-only: on precisely this exception and caller, skip to fclose's
+ * existing return epilogue (mov eax,edi; pop edi; pop esi; ret). This
+ * safely returns EOF (-1) to the original caller rather than pretending
+ * the file was closed. The non-null FILE* path is never changed.
+ *
+ * No game byte is patched. The VEH is opt-in, installed only after SHA256
+ * verification, with opcode and caller validation. Its handler does not
+ * perform IO, allocate or touch DirectDraw/DirectInput/windows.
+ */
+static uintptr_t null_fclose_image_base=0;
+static PVOID null_fclose_veh_handle=NULL;
+static volatile LONG null_fclose_interceptions=0;
+static volatile LONG null_fclose_reported=0;
+static LONG CALLBACK guarded_null_fclose_veh(PEXCEPTION_POINTERS info) {
+  EXCEPTION_RECORD *ex;
+  CONTEXT *ctx;
+  uintptr_t slot,base;
+  MEMORY_BASIC_INFORMATION mb;
+  if(!info || !(ex=info->ExceptionRecord) || !(ctx=info->ContextRecord))
+    return EXCEPTION_CONTINUE_SEARCH;
+  base=null_fclose_image_base;
+  if(!base || ex->ExceptionCode!=EXCEPTION_ACCESS_VIOLATION ||
+     ex->NumberParameters<2 || ex->ExceptionInformation[0]!=0 ||
+     ex->ExceptionInformation[1]!=0xC ||
+     (uintptr_t)ex->ExceptionAddress!=base+0x12A805 ||
+     (uintptr_t)ctx->Eip!=base+0x12A805 ||
+     ctx->Esi!=0 || ctx->Edi!=0xFFFFFFFFUL)
+    return EXCEPTION_CONTINUE_SEARCH;
+  /* Current position is after fclose's push esi / push edi prologue:
+   * ESP+8 is its caller's return address, ESP+12 the NULL FILE*.
+   */
+  slot=(uintptr_t)ctx->Esp+8;
+  if(slot<(uintptr_t)ctx->Esp || slot+8<slot ||
+     VirtualQuery((LPCVOID)slot,&mb,sizeof(mb))!=sizeof(mb) ||
+     mb.State!=MEM_COMMIT || (mb.Protect&(PAGE_NOACCESS|PAGE_GUARD)) ||
+     slot+8>(uintptr_t)mb.BaseAddress+mb.RegionSize)
+    return EXCEPTION_CONTINUE_SEARCH;
+  if(*(DWORD*)slot!=(DWORD)(base+0x1186F8) || *(DWORD*)(slot+4)!=0)
+    return EXCEPTION_CONTINUE_SEARCH;
+  InterlockedIncrement(&null_fclose_interceptions);
+  ctx->Eip=(DWORD)(base+0x12A828); /* original fclose error return */
+  return EXCEPTION_CONTINUE_EXECUTION;
+}
+static void install_null_fclose_crash_test(void) {
+  static const BYTE signature[]={
+    0x56,0x8B,0x74,0x24,0x08,0x57,0x83,0xCF,0xFF,
+    0xF6,0x46,0x0C,0x40
+  };
+  char env[4]={0};
+  BYTE *base=(BYTE*)GetModuleHandleA(NULL);
+  DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD",
+                                  env,sizeof(env));
+  if(n!=1 || env[0]!='1') return;
+  if(!base || (uintptr_t)base!=0x400000 ||
+     memcmp(base+0x12A7FC,signature,sizeof(signature))!=0) {
+    log_line("FCLOSE-GUARD: ERROR signature/layout mismatch; not installed");
+    return;
+  }
+  null_fclose_image_base=(uintptr_t)base;
+  null_fclose_veh_handle=AddVectoredExceptionHandler(1,guarded_null_fclose_veh);
+  if(null_fclose_veh_handle)
+    log_line("FCLOSE-GUARD: EXPERIMENTAL guarded fclose(NULL) recovery armed (one caller, no changes to valid FILE*)");
+  else {
+    null_fclose_image_base=0;
+    log_line("FCLOSE-GUARD: ERROR AddVectoredExceptionHandler failed");
+  }
+}
+static void report_null_fclose_recovery(void) {
+  LONG hits=InterlockedCompareExchange(&null_fclose_interceptions,0,0);
+  if(hits>InterlockedCompareExchange(&null_fclose_reported,0,0)) {
+    char line[180];
+    InterlockedExchange(&null_fclose_reported,hits);
+    snprintf(line,sizeof(line),
+      "FCLOSE-GUARD: recovered %ld fclose(NULL) call(s) at game EIP 0x0052A805 / caller 0x005186F8",
+      (long)hits);
+    log_line(line);
+  }
+}
 /* DirectDraw7 borderless-windowed adaptation. Never alter physical display modes. */
 typedef HRESULT (WINAPI *CreateExFn)(GUID *, void **, REFIID, IUnknown *);
 typedef HRESULT (WINAPI *CoopFn)(void *, HWND, DWORD);
@@ -902,6 +988,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
   }
   SpiderInputFocus_OnFlip(count);
+  report_null_fclose_recovery();
   if (g_frame_limiter_ready) SpiderFrameLimiter_Wait(&g_frame_limiter);
   /* Deliberately NO 1px pixel cover-up. The yellow seam remains visible if
    * rasterization is incorrect. Keep only genuine unused 4:3 letterbox/pillarbox
@@ -1386,6 +1473,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
     return 0;
   }
   log_line("OK: supported SpideyPC.exe SHA-256 verified");
+  install_null_fclose_crash_test(); /* OFF by default; exact Win11 dump signature only. */
   /* Generate complete defaults once, before any GetPrivateProfile... reads. */
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
