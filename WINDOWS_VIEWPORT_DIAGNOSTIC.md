@@ -238,54 +238,19 @@ call at game return VA 005186F8 in the exact SpideyPC.exe for the reason the
 stream was NULL before considering a permanent fix. Never merge without
 Windows and Wine verification.
 
-## Test I — native EXE DirectInput8 error-path analysis (verified SHA-256)
+## Withdrawn experiment — native DirectInput branch shims
 
-The provided \`SpideyPC.exe\` has SHA-256
-\`0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea\`.
-The exact binary contains:
-- \`0x00501590\`: create GUID_SysKeyboard, pointer global \`0x006B7A5C\`.
-- \`0x00501710\`: create GUID_SysMouse, pointer global \`0x006B7A64\`.
-- \`0x00501B80\`: buffered keyboard \`GetDeviceData\`, at \`0x00501BC3\`.
-- \`0x00501CC0\`: buffered mouse \`GetDeviceData\`, at \`0x00501D02\`.
+The test-only DirectInput call-site patch introduced in commit 2682f955
+regressed native Windows 11 startup: the verified EXE and D3D7 device
+initialized, but no first DirectDraw Flip occurred. The trace printed
+`INPUT-CALLSITE: TRACE ONLY active` before termination, and the log
+contains no DirectInput error samples. That evidence is insufficient to
+attribute the failure to `DIERR_NOTACQUIRED` or to choose a safe runtime
+repair. The test has been fully removed from the build; the previous
+working graphic, cursor, window Z-order and guarded fclose changes remain.
 
-Both error paths compare against \`DIERR_INPUTLOST=0x8007001E\`, call
-the device's own \`Acquire\` and retry the poll. However an initial
-\`DIERR_NOTACQUIRED=0x8007000C\` skips the retry entirely. The code
-checks \`DIERR_NOTACQUIRED\` only after the secondary poll.
-
-Two **off-by-default** environment controls (no change to the game's
-DirectInput IAT/vtables):
-- \`SPIDERMAN2K1FIX_DI8_POLL_TRACE=1\`: exact byte-verified x86
-  branch shims read the HRESULT and record per-device counters,
-  preserving original condition and all registers/stack.
-- \`SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY=1\`: same instrumentation;
-  only when \`DIERR_NOTACQUIRED\` occurs, jump to the **game's own**
-  existing \`Acquire\` + retry block, as if \`DIERR_INPUTLOST\` had
-  occurred. Does not Acquire in the window hook or render loop.
-  This mode implies tracing; leave \`ExperimentalFocusTrace=0\` and
-  \`ExperimentalAltTabReacquire=0\` in the INI.
-
-The two original JNE opcodes and surrounding CMPs are verified at
-\`0x00501BCB\` and \`0x00501D0A\` after the SHA check. A failed check
-leaves the EXE untouched. Generated stubs live in executable memory
-for the full process lifetime. Traces are sampled at \`Flip\` with no
-logging from the polling shims.
-
-First test TRACE ONLY to identify whether \`DIERR_NOTACQUIRED\` actually
-occurs. Then enable retry for an A/B test. Keep the working graphics,
-window and cursor flags; do not merge before native Win11 and Wine
-tests. If the game is blocked, capture an **in-process** hang dump
-before killing it, as done previously.
-
-\`\`\`powershell
-Remove-Item .\SpiderMan2k1Fix.log -ErrorAction SilentlyContinue
-$env:SPIDERMAN2K1FIX_D3D_INPLACE='1'
-$env:SPIDERMAN2K1FIX_FOCUS_PASSIVE='1'
-$env:SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST='1'
-$env:SPIDERMAN2K1FIX_ZORDER_TEST='1'
-$env:SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD='1'
-$env:SPIDERMAN2K1FIX_DI8_POLL_TRACE='1'
-# Later, in a separate run, set the recovery variable to '1'.
-Remove-Item Env:\SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY -ErrorAction SilentlyContinue
-Start-Process .\SpideyPC.exe -Wait
-\`\`\`
+Do not activate `SPIDERMAN2K1FIX_DI8_POLL_TRACE` or
+`SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY` on builds containing the
+withdrawn experiment. The new build ignores both variables. Further
+DirectInput investigation requires a live Win32 startup-crash dump or
+a non-invasive mechanism validated on native Windows.

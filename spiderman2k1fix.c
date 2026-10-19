@@ -19,7 +19,6 @@
 #include "fov_aspect.h"
 #include "fov_aspect_win.h"
 #include "input_focus_trace.h"
-#include "input_callsite_guard.h"
 #include "menu_version.h"
 #include "version_info.h"
 
@@ -989,7 +988,6 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
   }
   SpiderInputFocus_OnFlip(count);
-  SpiderDI8Callsite_Report(count);
   report_null_fclose_recovery();
   if (g_frame_limiter_ready) SpiderFrameLimiter_Wait(&g_frame_limiter);
   /* Deliberately NO 1px pixel cover-up. The yellow seam remains visible if
@@ -1476,7 +1474,6 @@ static DWORD WINAPI initialize(LPVOID unused) {
   }
   log_line("OK: supported SpideyPC.exe SHA-256 verified");
   install_null_fclose_crash_test(); /* OFF by default; exact Win11 dump signature only. */
-  SpiderDI8Callsite_Init(log_line); /* exact-game DirectInput diagnostics; OFF by default */
   /* Generate complete defaults once, before any GetPrivateProfile... reads. */
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
