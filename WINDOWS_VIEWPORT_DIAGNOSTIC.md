@@ -105,3 +105,47 @@ not been fixed yet. Report any crash and attach the log.
 
 This is an A/B experiment, not a production fix. If it crashes, return
 to `SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE=1`.
+ 
+## Test F — passive Alt+Tab tracing under native Windows 11
+
+The D3D7 `SPIDERMAN2K1FIX_D3D_INPLACE=1` mode now renders movies,
+menus, and gameplay correctly. Alt+Tab still crashes. The native Windows
+DirectInput8 interception can itself prevent startup, so **do not** turn
+`ExperimentalFocusTrace=1` or
+`ExperimentalAltTabReacquire=1` back on for this test.
+
+This test enables only an existing WndProc observer and Flip snapshots.
+It does not patch the DirectInput8 IAT, intercept device COM vtables, or
+reacquire keyboard/mouse.
+
+INI (keep the rest unchanged):
+```ini
+[Debug]
+Log=1
+[Input]
+ExperimentalAltTabReacquire=0
+ExperimentalFocusTrace=0
+```
+
+PowerShell in the game folder:
+```powershell
+Remove-Item .\SpiderMan2k1Fix.log -ErrorAction SilentlyContinue
+Remove-Item Env:\SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE -ErrorAction SilentlyContinue
+$env:SPIDERMAN2K1FIX_D3D_INPLACE='1'
+$env:SPIDERMAN2K1FIX_FOCUS_PASSIVE='1'
+Start-Process .\SpideyPC.exe -Wait
+Remove-Item Env:\SPIDERMAN2K1FIX_D3D_INPLACE
+Remove-Item Env:\SPIDERMAN2K1FIX_FOCUS_PASSIVE
+```
+
+Start a new game, wait a few seconds, Alt+Tab out once, then try
+returning to the game. Save the full log whether or not it crashes.
+Look for:
+`INPUT-FOCUS: PASSIVE ONLY - WndProc events/Flip snapshots active; DirectInput8 hook NOT installed`
+
+If the game crashes without further focus events, capture a ProcDump
+minidump for this exact run and/or Windows Application Event 1000.
+The log by itself cannot identify an exception that occurs in the original
+game or Direct3D driver. Keep the graphical in-place test setting on.
+
+This diagnostic remains opt-in and should be removed before merging the PR.

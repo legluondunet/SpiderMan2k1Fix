@@ -89,6 +89,9 @@ static const char *focus_message(UINT m) {
     case WM_MOUSEMOVE:return "WM_MOUSEMOVE";
     case WM_LBUTTONDOWN:return "WM_LBUTTONDOWN";
     case WM_RBUTTONDOWN:return "WM_RBUTTONDOWN";
+    case WM_SIZE:return "WM_SIZE";
+    case WM_DISPLAYCHANGE:return "WM_DISPLAYCHANGE";
+    case WM_WINDOWPOSCHANGED:return "WM_WINDOWPOSCHANGED";
     default:return "other";
   }
 }
@@ -120,6 +123,21 @@ static LRESULT CALLBACK focus_window_proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp
       (void*)GetForegroundWindow(),(void*)hwnd,(long)focus_epoch);
     focus_log(line);
     focus_report_window("window-event");
+  } else if(msg==WM_SIZE || msg==WM_DISPLAYCHANGE || msg==WM_WINDOWPOSCHANGED) {
+    /* Passive snapshot around Alt+Tab; no window size or focus changes
+     * are performed by this diagnostic observer. */
+    RECT window={0},client={0};
+    char line[260];
+    GetWindowRect(hwnd,&window);
+    GetClientRect(hwnd,&client);
+    snprintf(line,sizeof(line),
+      "INPUT-FOCUS: window-geometry event=%s wp=0x%08lX screen-rect=(%ld,%ld)+%ldx%ld client=%ldx%ld iconic=%d foreground=%d",
+      focus_message(msg),(unsigned long)wp,
+      (long)window.left,(long)window.top,
+      (long)(window.right-window.left),(long)(window.bottom-window.top),
+      (long)(client.right-client.left),(long)(client.bottom-client.top),
+      (int)IsIconic(hwnd),GetForegroundWindow()==hwnd);
+    focus_log(line);
   } else if(msg==WM_SYSKEYDOWN || msg==WM_KEYDOWN ||
             msg==WM_MOUSEMOVE || msg==WM_LBUTTONDOWN || msg==WM_RBUTTONDOWN) {
     LONG n;DWORD now=GetTickCount();
@@ -390,6 +408,24 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   input_debug_logging=GetPrivateProfileIntA("Debug","Log",0,ini)==1;
   want_trace=GetPrivateProfileIntA("Input","ExperimentalFocusTrace",0,ini)==1;
   want_fix=GetPrivateProfileIntA("Input","ExperimentalAltTabReacquire",0,ini)==1;
+  /* Win11 Alt+Tab fault isolation. Unlike ExperimentalFocusTrace, this
+   * mode NEVER patches the game's DirectInput8Create IAT or any DirectInput
+   * COM vtable. It only enables the already-existing game WndProc observer.
+   * This distinction matters: DirectInput8 device creation failed during
+   * native Windows startup when our previous invasive hook was enabled.
+   * Opt-in per process, no persistent INI changes, no input synthesis.
+   */
+  {
+    char passive[4]={0};
+    DWORD nbytes=GetEnvironmentVariableA("SPIDERMAN2K1FIX_FOCUS_PASSIVE",
+                                          passive,sizeof(passive));
+    if(nbytes==1 && passive[0]=='1') {
+      InterlockedExchange(&reacquire_enabled,0);
+      InterlockedExchange(&diagnostic_active,1);
+      focus_log("INPUT-FOCUS: PASSIVE ONLY - WndProc events/Flip snapshots active; DirectInput8 hook NOT installed");
+      return;
+    }
+  }
   if(!want_trace && !want_fix) {
     focus_log("INPUT-FOCUS: disabled by default ([Input] ExperimentalFocusTrace=1 or ExperimentalAltTabReacquire=1)");
     return;
