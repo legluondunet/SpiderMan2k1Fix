@@ -101,7 +101,7 @@ for dll in SpiderMan2k1Fix.dll winmm.dll; do
   fi
 done
 
-# Validate all 14 proxy export names (original game compatibility).
+# Validate all original game exports plus audio middleware forwards.
 "$OBJDUMP" -p "$probe_dir/winmm.dll" > "$probe_dir/winmm-exports.txt"
 python3 - "$probe_dir/winmm-exports.txt" <<'PYEXPORT'
 import pathlib, re, sys
@@ -109,11 +109,20 @@ content = pathlib.Path(sys.argv[1]).read_text(errors='replace')
 required = ('mmioAscend','mmioRead','mmioClose','mmioStringToFOURCCA',
             'mmioOpenA','mmioDescend','timeGetTime','timeEndPeriod',
             'timeBeginPeriod','timeSetEvent','timeKillEvent',
-            'mciSendCommandA','timeGetDevCaps','timeGetSystemTime')
+            'mciSendCommandA','timeGetDevCaps','timeGetSystemTime',
+            'waveOutGetNumDevs', 'waveOutGetDevCapsA', 'waveOutGetErrorTextA', 'waveOutOpen',
+            'waveOutClose', 'waveOutPrepareHeader', 'waveOutUnprepareHeader', 'waveOutWrite',
+            'waveOutPause', 'waveOutRestart', 'waveOutReset', 'waveOutBreakLoop',
+            'waveOutGetPosition', 'waveOutGetPitch', 'waveOutSetPitch', 'waveOutGetPlaybackRate',
+            'waveOutSetPlaybackRate', 'waveOutGetVolume', 'waveOutSetVolume', 'waveOutGetID',
+            'waveOutMessage', 'waveInGetNumDevs', 'waveInGetDevCapsA', 'waveInGetErrorTextA',
+            'waveInOpen', 'waveInClose', 'waveInPrepareHeader', 'waveInUnprepareHeader',
+            'waveInAddBuffer', 'waveInStart', 'waveInStop', 'waveInReset',
+            'waveInGetPosition', 'waveInGetID', 'waveInMessage' )
 missing = [name for name in required if not re.search(r'(?<![A-Za-z0-9_])' + re.escape(name) + r'(?![A-Za-z0-9_])', content)]
 if missing:
     sys.exit('ERROR: missing winmm exports: ' + ', '.join(missing))
-print('EXPORTS: 14 required winmm entry points detected')
+print('EXPORTS: 49 required winmm entry points detected')
 PYEXPORT
 
 cp "$probe_dir/SpiderMan2k1Fix.dll" "$probe_dir/winmm.dll" .
