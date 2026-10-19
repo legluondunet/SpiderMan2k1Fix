@@ -644,6 +644,18 @@ static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE 
 }
 static void instrument_d3d_device(IDirect3DDevice7 *device) {
   void ***obj=(void ***)device; void **vt;
+  /* Native Windows startup A/B test. Only when explicitly requested, leave
+   * the COM device's ORIGINAL vtable in place. This disables all of our
+   * device-level viewport, draw and render-state hooks while preserving the
+   * external DirectDraw hooks. Never change the default rendering path. */
+  {
+    char value[4]={0};
+    DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE",value,sizeof(value));
+    if(n==1 && value[0]=='1') {
+      log_line("D3D7-DIAG: native device vtable, viewport/draw/render-state hooks bypassed");
+      return;
+    }
+  }
   if(!obj || !(vt=*obj)) return;
   if(InterlockedCompareExchange(&device_ready,1,0)==0) {
     memcpy(patched_device_vtable,vt,sizeof(patched_device_vtable));

@@ -39,3 +39,26 @@ A/B diagnostic to isolate the crash. Please send both logs and whether a
 menu appears.
 
 Do not merge this diagnostic code until its purpose is complete.
+
+## Test C — bypass our D3D7 device hooks entirely
+
+If both prior SetViewport configurations crash inside the native Windows
+Direct3D module, test whether it depends on our patched D3D7 device vtable.
+This diagnostic is temporary, opt-in, and does **not** disable our winmm,
+DirectDraw or No-CD hooks.
+
+Leave `[Debug] Log=1` in the INI. In PowerShell, from the game's directory:
+
+```powershell
+Remove-Item .\SpiderMan2k1Fix.log -ErrorAction SilentlyContinue
+$env:SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE='1'
+Start-Process .\SpideyPC.exe -Wait
+Remove-Item Env:\SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE
+```
+
+Expected diagnostic line:
+`D3D7-DIAG: native device vtable, viewport/draw/render-state hooks bypassed`
+
+Graphics and aspect ratio may be incorrect. Send the log and indicate whether
+the game reaches the movies or main menu. If it still crashes, the cause is not
+limited to our D3D7 device-vtable replacement.
