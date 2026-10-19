@@ -3,6 +3,7 @@
 #include <mmsystem.h>
 #include <stdio.h>
 #include <string.h>
+#include "version_info.h"
 
 /* Exports required by SpideyPC.exe plus timer functions used by external wrappers.
    Resolve the real library from the Windows system directory, not by name. */
@@ -96,7 +97,7 @@ static DWORD WINAPI init_fix(LPVOID ignored) {
     (void)ignored;
     {
         char status[128];
-        snprintf(status,sizeof(status),"START: SpiderMan2k1Fix 1.0.0 early No-CD patch status=%ld (1=applied)",(long)early_patch_status);
+        snprintf(status,sizeof(status),"START: " SPIDERMAN2K1FIX_VERSION_LABEL " early No-CD patch status=%ld (1=applied)",(long)early_patch_status);
         log_proxy(status);
     }
     log_proxy("START: winmm proxy loaded; loading SpiderMan2k1Fix.dll");

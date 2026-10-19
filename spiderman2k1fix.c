@@ -19,6 +19,8 @@
 #include "fov_aspect.h"
 #include "fov_aspect_win.h"
 #include "input_focus_trace.h"
+#include "menu_version.h"
+#include "version_info.h"
 
 static const BYTE expected_sha256[32] = {
   0x0a,0x11,0xa4,0x9f,0x3f,0x63,0xd4,0xbb,
@@ -238,6 +240,10 @@ static volatile LONG gameplay_4x3_enabled=0,gameplay_4x3_active=0;
 static volatile LONG gameplay_4x3_mapped=0,gameplay_4x3_bar_errors=0;
 static volatile LONG menu_scaled_draws=0, menu_unscaled_draws=0;
 static volatile LONG menu_clear_failures=0;
+static volatile LONG menu_version_draws=0;
+static volatile LONG menu_version_movie_blits=0;
+static volatile LONG menu_version_last_movie_flip=-1000;
+static volatile LONG menu_version_logged=0;
 
 static SpiderFrameLimiter g_frame_limiter;
 static BOOL g_frame_limiter_ready=FALSE;
@@ -557,6 +563,9 @@ static void free_menu_vertices(SpiderMenuVertex *allocated) {
 }
 
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
+  if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
+     fvf==0x144UL && verts && count>=3 && count<=128)
+    InterlockedIncrement(&menu_version_draws);
   {
     SpiderMenuVertex small[64],*allocated=NULL;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
@@ -572,6 +581,9 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
   }
 }
 static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,LPWORD indices,DWORD icount,DWORD flags) {
+  if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
+     fvf==0x144UL && verts && count>=3 && count<=128)
+    InterlockedIncrement(&menu_version_draws);
   {
     SpiderMenuVertex small[64],*allocated=NULL;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
@@ -731,6 +743,9 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
         menu_map.right<=(int)desktop_w && menu_map.bottom<=(int)desktop_h &&
         menu_map.right>menu_map.left && menu_map.bottom>menu_map.top) {
       LONG hits=InterlockedIncrement(&media_native_blt_4x3_hits);
+      InterlockedIncrement(&menu_version_movie_blits);
+      InterlockedExchange(&menu_version_last_movie_flip,
+        InterlockedCompareExchange(&flip_count,0,0));
       dest_mapped.left=menu_map.left;
       dest_mapped.top=menu_map.top;
       dest_mapped.right=menu_map.right;
@@ -811,6 +826,27 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       IDirectDrawSurface7_Release(back);
     }
   }
+  int menu_active=InterlockedCompareExchange(&menu_upscale_active,0,0)==1;
+  LONG menu_draws=InterlockedExchange(&menu_version_draws,0);
+  LONG movie_blits=InterlockedExchange(&menu_version_movie_blits,0);
+  LONG movie_last=InterlockedCompareExchange(&menu_version_last_movie_flip,0,0);
+  BOOL permitted=menu_active && menu_draws>=3 && movie_blits==0 &&
+     count-movie_last>3 &&
+     menu_map.right>menu_map.left && menu_map.bottom>menu_map.top;
+  BOOL back_drawn=FALSE;
+  if(debug_log_enabled && menu_active && count%120==0) {
+    char line[180];
+    snprintf(line,sizeof(line),
+      "MENU-VERSION: flip=%ld draws=%ld movie-blits=%ld last-movie=%ld permitted=%d",
+      (long)count,(long)menu_draws,(long)movie_blits,(long)movie_last,(int)permitted);
+    log_line(line);
+  }
+  if(permitted && borderless_back) {
+    RECT content={menu_map.left,menu_map.top,menu_map.right,menu_map.bottom};
+    back_drawn=SpiderMenuVersion_DrawToSurface(borderless_back,&content);
+    if(back_drawn && InterlockedCompareExchange(&menu_version_logged,1,0)==0)
+      log_line("MENU-VERSION: drawn on DirectDraw backbuffer: " SPIDERMAN2K1FIX_VERSION_LABEL);
+  }
   if(self==(void*)borderless_primary && borderless_back && original_blt) {
       RECT rc={borderless_monitor_x,borderless_monitor_y,
         borderless_monitor_x+(LONG)desktop_w,borderless_monitor_y+(LONG)desktop_h};
@@ -822,6 +858,13 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
           snprintf(line,sizeof(line),"BORDERLESS: primary Blt FAILED hr=0x%08lX (no exclusive fallback)",(unsigned long)hr);
           log_line(line);
         }
+      }
+      /* GDI fallback only when the video-memory surface has no DC. */
+      if(SUCCEEDED(hr) && permitted && !back_drawn) {
+        RECT content={menu_map.left,menu_map.top,menu_map.right,menu_map.bottom};
+        if(SpiderMenuVersion_DrawToWindow(game_hwnd,&content) &&
+           InterlockedCompareExchange(&menu_version_logged,1,0)==0)
+          log_line("MENU-VERSION: drawn through window GDI: " SPIDERMAN2K1FIX_VERSION_LABEL);
       }
       if(debug_log_enabled && (count<=12 || count%120==0)) {
         char line[190];
