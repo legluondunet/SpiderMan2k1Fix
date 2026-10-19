@@ -149,3 +149,46 @@ The log by itself cannot identify an exception that occurs in the original
 game or Direct3D driver. Keep the graphical in-place test setting on.
 
 This diagnostic remains opt-in and should be removed before merging the PR.
+
+## Test G — native Windows cursor and Z-order A/B
+
+Win11 multi-monitor tests show that Spider-Man survives repeated Alt+Tab
+while keyboard focus, visible Z-order and system pointer diverge. The passive
+trace confirms foreground transitions, but does not determine whether
+ShowCursor's display counter, cursor shape or clipping is to blame.
+
+When \`SPIDERMAN2K1FIX_FOCUS_PASSIVE=1\`, the new test logs actual cursor
+visibility (\`GetCursorInfo\`), clipping (\`GetClipCursor\`), topmost
+status and the next higher window in the Z-order.
+
+Two independent opt-in repair switches:
+- \`SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST=1\` only when leaving Spider-Man,
+  and only if GetCursorInfo says the cursor is hidden, increment ShowCursor's
+  count up to a cap of 16; exactly reverse the increments when foreground
+  returns. Cannot cure hidden cursor shapes or unrelated drivers.
+- \`SPIDERMAN2K1FIX_ZORDER_TEST=1\` only after the game is already foreground,
+  request HWND_TOP in normal Z-order with SWP_NOACTIVATE. Never make topmost,
+  never force activation over another foreground application.
+
+Preserve the current DPI compatibility setting (Application), D3D_INPLACE,
+and [Input] ExperimentalAltTabReacquire=0, ExperimentalFocusTrace=0.
+
+From PowerShell in the game folder:
+
+\`\`\`powershell
+Remove-Item .\SpiderMan2k1Fix.log -ErrorAction SilentlyContinue
+Remove-Item Env:\SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE -ErrorAction SilentlyContinue
+$env:SPIDERMAN2K1FIX_D3D_INPLACE='1'
+$env:SPIDERMAN2K1FIX_FOCUS_PASSIVE='1'
+$env:SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST='1'
+$env:SPIDERMAN2K1FIX_ZORDER_TEST='1'
+Start-Process .\SpideyPC.exe -Wait
+Remove-Item Env:\SPIDERMAN2K1FIX_D3D_INPLACE -ErrorAction SilentlyContinue
+Remove-Item Env:\SPIDERMAN2K1FIX_FOCUS_PASSIVE -ErrorAction SilentlyContinue
+Remove-Item Env:\SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST -ErrorAction SilentlyContinue
+Remove-Item Env:\SPIDERMAN2K1FIX_ZORDER_TEST -ErrorAction SilentlyContinue
+\`\`\`
+
+Try Alt+Tab several times and report cursor and window separately, with log.
+For isolation, remove either test switch in an additional run. Test code must
+not be merged before native Windows/Wine validation.
