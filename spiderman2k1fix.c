@@ -678,6 +678,44 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
     log_line("D3D7: device vtable captured; viewport and draw hooks enabled");
     InterlockedExchange(&device_ready,2);
   }
+  /* Test-only Windows path: preserve the native COM object's original
+   * vtable POINTER and all of its unmodified entries. Our original 49-slot
+   * copy is known to work with Wine but the Windows 11 d3dim700.dll path
+   * faults at EIP=0 after SetViewport on a copied vtable. Test whether
+   * keeping the original allocation and four method substitutions helps.
+   * Keep opt-in until native Windows and Wine tests verify it.
+   */
+  {
+    char inplace[4]={0};
+    DWORD length=GetEnvironmentVariableA("SPIDERMAN2K1FIX_D3D_INPLACE",
+                                          inplace,sizeof(inplace));
+    if(length==1 && inplace[0]=='1') {
+      if(device_ready==2 && vt[13]==(void*)original_set_viewport &&
+         vt[20]==(void*)original_set_render_state &&
+         vt[25]==(void*)original_draw_primitive &&
+         vt[26]==(void*)original_draw_indexed_primitive) {
+        DWORD protection=0,unused=0;
+        if(VirtualProtect(vt,sizeof(patched_device_vtable),
+                          PAGE_READWRITE,&protection)) {
+          vt[13]=(void*)hooked_set_viewport;
+          vt[20]=(void*)hooked_set_render_state;
+          vt[25]=(void*)hooked_draw_primitive;
+          vt[26]=(void*)hooked_draw_indexed_primitive;
+          VirtualProtect(vt,sizeof(patched_device_vtable),protection,&unused);
+          log_line("D3D7-DIAG: INPLACE native device vtable patched (original pointer retained; viewport/render-state/draw hooks ON)");
+        } else {
+          char line[160];
+          snprintf(line,sizeof(line),
+            "D3D7-DIAG: ERROR INPLACE VirtualProtect failed Win32=%lu; native device retained",
+            (unsigned long)GetLastError());
+          log_line(line);
+        }
+      } else {
+        log_line("D3D7-DIAG: INPLACE device vtable not original or already hooked; leaving pointer untouched");
+      }
+      return; /* Never fall back to cloned vtable in opt-in mode. */
+    }
+  }
   if(device_ready==2 && vt[13]==(void*)original_set_viewport)
     *obj=patched_device_vtable;
 }

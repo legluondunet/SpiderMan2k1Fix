@@ -62,3 +62,46 @@ Expected diagnostic line:
 Graphics and aspect ratio may be incorrect. Send the log and indicate whether
 the game reaches the movies or main menu. If it still crashes, the cause is not
 limited to our D3D7 device-vtable replacement.
+
+## Test E — in-place D3D7 vtable, visual fixes ON
+
+Background: the Windows 11 process crashed at EIP=0 inside d3dim700.dll
+with our copied D3DDevice7 vtable. Running without device hooks reaches
+the main menu and gameplay, but disables vertex/viewport visual fixes.
+This experimental mode patches only the four device-method pointers in
+the ORIGINAL vtable while preserving its address and other entries.
+
+**Important:** turn OFF `SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE`; it overrides
+this mode and would disable all rendering hooks again. Also keep DirectInput
+reacquire OFF during this experiment.
+
+In `SpiderMan2k1Fix.ini`:
+
+```ini
+[Debug]
+Log=1
+[Input]
+ExperimentalAltTabReacquire=0
+ExperimentalFocusTrace=0
+```
+
+PowerShell in the game folder:
+
+```powershell
+Remove-Item .\SpiderMan2k1Fix.log -ErrorAction SilentlyContinue
+Remove-Item Env:\SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE -ErrorAction SilentlyContinue
+$env:SPIDERMAN2K1FIX_D3D_INPLACE='1'
+Start-Process .\SpideyPC.exe -Wait
+Remove-Item Env:\SPIDERMAN2K1FIX_D3D_INPLACE
+```
+
+Look for:
+`D3D7-DIAG: INPLACE native device vtable patched`.
+
+Check that the menu and four intro videos respect 4:3, the version
+label is visible, and gameplay renders at the native 1920x1200 output.
+**Avoid Alt+Tab in this test** since native Windows input recovery has
+not been fixed yet. Report any crash and attach the log.
+
+This is an A/B experiment, not a production fix. If it crashes, return
+to `SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE=1`.
