@@ -107,11 +107,14 @@ FOCUS-EVENT: GATE EXIT: time-in-gate elapsed-ms=P ...
 
 ### Diagnosing the original game's focus handler (second diagnostic build)
 
-The first Wine 11.17/X11 game log with this option enabled stopped right after
-`FOCUS-EVENT: WM_ACTIVATEAPP(FALSE)`, with **no subsequent gate entry or
-focus-return event**. This is not proof of a broken pause or focus return:
-the native game WndProc may block at that moment, the rendering loop may stop
-calling Flip, or the process may terminate before emitting another log.
+The first Wine 11.17/X11 log verified observer activation in a
+**start-without-Alt+Tab, then quit normally** test. It ended with
+`FOCUS-EVENT: WM_ACTIVATEAPP(FALSE)`: this may simply indicate normal
+focus loss on game exit. There was no `GATE ENTER` or focus-return
+entry, which is **expected without deliberately switching applications**.
+Do not infer a hang or missing Flip from that startup-only test.
+For a separate intentional Alt+Tab test, these events can distinguish
+whether the game's WndProc returned and whether it reached another Flip.
 
 The updated diagnostic branch therefore also emits
 `FOCUS-EVENT: WNDPROC BEFORE WM_ACTIVATEAPP wParam=0` and, if the
