@@ -264,7 +264,7 @@ static volatile LONG borderless_legacy_mode_calls=0;
  * the supported SpideyPC.exe (already verified by SHA-256). Do not assume
  * its resource ID, and do not depend on an adjacent SpideyPC.ico file.
  * ExtractIconExW uses the group resource's size variants for big/small
- * icons, unlike using a fixed MAKEINTRESOURCE(1).
+ * icons, without hardcoding the resource identifier.
  *
  * Safe default ON; extraction failure keeps the original window icon.
  * SPIDERMAN2K1FIX_WINDOW_ICON=0 disables this for A/B tests.
