@@ -170,7 +170,7 @@ Debug logging is **off by default**:
 Log=0
 ```
 
-If you need to investigate a problem, set `Log=1`, save the file, and **restart the game**. SpiderMan2k1Fix will write `SpiderMan2k1Fix.log` in the game directory. After collecting the information you need, return to `Log=0`.
+If you need to investigate a problem, set `Log=1`, save the file, and **restart the game**. Each launch now **replaces** the previous `SpiderMan2k1Fix.log` in the game directory instead of accumulating multiple sessions. The early `winmm.dll` startup messages and all subsequent `SpiderMan2k1Fix.dll` messages are preserved within that single run. **Save or rename a log before relaunching if you want to keep it.** With `Log=0`, no new debug log is written and an existing log is left untouched. After collecting the information you need, return to `Log=0`.
 
 ### Automatic INI recovery
 
