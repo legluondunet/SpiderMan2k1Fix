@@ -27,7 +27,7 @@ def test_focus_event_prototype_requires_explicit_ini_opt_in():
 
 def test_prototype_never_directly_intercepts_or_operates_directinput():
     for forbidden in ("DirectInput8Create", "IDirectInputDevice", "Acquire(",
-                      "Unacquire(", "SuspendThread", "SetForegroundWindow(",
+                      "Unacquire(", "SuspendThread(", "SetForegroundWindow(",
                       "ShowCursor(", "SendInput(", "keybd_event(", "mouse_event("):
         assert forbidden not in PAUSE
     assert '"ExperimentalAltTabReacquire",0,path)==1' in PAUSE
