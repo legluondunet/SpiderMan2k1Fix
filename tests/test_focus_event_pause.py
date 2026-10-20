@@ -49,6 +49,20 @@ def test_focus_observer_only_sets_state_never_waits():
     assert "WM_NCDESTROY" in proc
 
 
+def test_native_window_proc_focus_messages_have_return_latency_trace():
+    # The trace must wrap the real original WndProc, NOT the Flip gate,
+    # so focus-handler hangs are distinguishable from absent game Flips.
+    start = PAUSE.index("static LRESULT CALLBACK focus_pause_proc(")
+    end = PAUSE.index("void SpiderFocusEventPause_Init(", start)
+    proc = PAUSE[start:end]
+    assert 'log_wndproc_boundary(msg,wp,"BEFORE",0);' in proc
+    assert "result=chained ? CallWindowProcA(chained,hwnd,msg,wp,lp)" in proc
+    assert 'log_wndproc_boundary(msg,wp,"AFTER",GetTickCount()-started);' in proc
+    assert proc.index('log_wndproc_boundary(msg,wp,"BEFORE",0)') < proc.index("CallWindowProcA(")
+    assert proc.index("CallWindowProcA(") < proc.index('log_wndproc_boundary(msg,wp,"AFTER"')
+    assert 'write_focus("WM_ACTIVATEAPP(TRUE) received",0);' in proc
+
+
 def test_safe_flip_gate_pumps_messages_and_retains_wm_quit():
     start = PAUSE.index("void SpiderFocusEventPause_OnFlip(void)")
     gate = PAUSE[start:]
