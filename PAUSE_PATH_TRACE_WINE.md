@@ -53,6 +53,26 @@ Send the three logs along with observed audio/video behavior.
 
 ## Reading the log
 
+The new opt-in **25 ms independent foreground observer** starts after
+DirectDraw window initialization, outside the game render thread:
+
+- `PAUSE-PATH: FOCUS OBSERVER ready`: polling started.
+- `PAUSE-PATH: FOCUS LOST tick=...`: first independently observed loss of foreground.
+- `PAUSE-PATH: FOCUS BACKGROUND elapsed-ms=...`: snapshots near
+  **1, 5, 10 and 20 seconds**, even when the game is not calling Flip.
+  These include cumulative counts for the instrumented Blt and D3D draw APIs.
+- `PAUSE-PATH: FOCUS RESTORED ... background-ms=...`: independent estimate of
+  time out of focus.
+- `PAUSE-PATH: background Flip pause-check ENTER ... focus-loss-to-gate-ms=N`:
+  observed delay from focus loss to reaching the Flip pause boundary.
+  `-1` means the observer had not measured that particular focus transition;
+  it is **not** a measured zero or negative delay.
+
+Because the observer polls every 25 ms, the delay has roughly 25 ms
+sampling uncertainty (plus thread scheduling). It is a diagnostic-only
+worker and **does not dispatch window messages, intercept DirectInput,
+suspend gameplay or control audio**.
+
 - `PAUSE-PATH: background Flip pause-check ENTER` marks reaching the
   existing Flip pause boundary while Spider-Man is out of focus.
 - `PAUSE-PATH: Flip pause-check EXIT elapsed-ms=...` measures time spent
