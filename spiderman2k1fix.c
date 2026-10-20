@@ -980,6 +980,78 @@ static void borderless_intro_fill_black_bars(void *surface,const RECT *image) {
     }
   }
 }
+
+/* Additional Surface7 paths: C vtable slot order verified against Microsoft ddraw.h.
+ * These wrappers exist only on the cloned COM vtable in the explicit
+ * EXTENDED_PRESENT_TRACE diagnostic, and always call the original method. */
+typedef HRESULT (WINAPI *SurfaceBltBatchFn)(void *,LPDDBLTBATCH,DWORD,DWORD);
+typedef HRESULT (WINAPI *SurfaceBltFastFn)(void *,DWORD,DWORD,IDirectDrawSurface7 *,LPRECT,DWORD);
+typedef HRESULT (WINAPI *SurfaceGetDCFn)(void *,HDC *);
+typedef HRESULT (WINAPI *SurfaceLockFn)(void *,LPRECT,LPDDSURFACEDESC2,DWORD,HANDLE);
+typedef HRESULT (WINAPI *SurfaceReleaseDCFn)(void *,HDC);
+typedef HRESULT (WINAPI *SurfaceUnlockFn)(void *,LPRECT);
+typedef HRESULT (WINAPI *SurfaceSetOverlayPositionFn)(void *,LONG,LONG);
+typedef HRESULT (WINAPI *SurfaceUpdateOverlayFn)(void *,LPRECT,IDirectDrawSurface7 *,LPRECT,DWORD,LPDDOVERLAYFX);
+typedef HRESULT (WINAPI *SurfaceUpdateOverlayDisplayFn)(void *,DWORD);
+typedef HRESULT (WINAPI *SurfaceUpdateOverlayZOrderFn)(void *,DWORD,IDirectDrawSurface7 *);
+static SurfaceBltBatchFn original_blt_batch;
+static SurfaceBltFastFn original_blt_fast;
+static SurfaceGetDCFn original_get_dc;
+static SurfaceLockFn original_lock;
+static SurfaceReleaseDCFn original_release_dc;
+static SurfaceUnlockFn original_unlock;
+static SurfaceSetOverlayPositionFn original_set_overlay_position;
+static SurfaceUpdateOverlayFn original_update_overlay;
+static SurfaceUpdateOverlayDisplayFn original_update_overlay_display;
+static SurfaceUpdateOverlayZOrderFn original_update_overlay_z_order;
+
+static void trace_surface_ext(const char *api,void *self) {
+  SpiderPausePath_Record(api,game_hwnd,InterlockedCompareExchange(&flip_count,0,0),
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
+    self==(void*)borderless_primary?"primary":
+    self==(void*)borderless_back?"back":"other");
+}
+static HRESULT WINAPI traced_blt_batch(void *self,LPDDBLTBATCH batch,DWORD count,DWORD flags) {
+  trace_surface_ext("BltBatch",self);
+  return original_blt_batch(self,batch,count,flags);
+}
+static HRESULT WINAPI traced_blt_fast(void *self,DWORD x,DWORD y,IDirectDrawSurface7 *src,LPRECT src_rect,DWORD flags) {
+  trace_surface_ext("BltFast",self);
+  return original_blt_fast(self,x,y,src,src_rect,flags);
+}
+static HRESULT WINAPI traced_get_dc(void *self,HDC *dc) {
+  trace_surface_ext("GetDC",self);
+  return original_get_dc(self,dc);
+}
+static HRESULT WINAPI traced_lock(void *self,LPRECT area,LPDDSURFACEDESC2 desc,DWORD flags,HANDLE event) {
+  trace_surface_ext("Lock",self);
+  return original_lock(self,area,desc,flags,event);
+}
+static HRESULT WINAPI traced_release_dc(void *self,HDC dc) {
+  trace_surface_ext("ReleaseDC",self);
+  return original_release_dc(self,dc);
+}
+static HRESULT WINAPI traced_unlock(void *self,LPRECT area) {
+  trace_surface_ext("Unlock",self);
+  return original_unlock(self,area);
+}
+static HRESULT WINAPI traced_set_overlay_position(void *self,LONG x,LONG y) {
+  trace_surface_ext("SetOverlayPosition",self);
+  return original_set_overlay_position(self,x,y);
+}
+static HRESULT WINAPI traced_update_overlay(void *self,LPRECT source,IDirectDrawSurface7 *target,LPRECT dest,DWORD flags,LPDDOVERLAYFX fx) {
+  trace_surface_ext("UpdateOverlay",self);
+  return original_update_overlay(self,source,target,dest,flags,fx);
+}
+static HRESULT WINAPI traced_update_overlay_display(void *self,DWORD flags) {
+  trace_surface_ext("UpdateOverlayDisplay",self);
+  return original_update_overlay_display(self,flags);
+}
+static HRESULT WINAPI traced_update_overlay_z_order(void *self,DWORD flags,IDirectDrawSurface7 *reference) {
+  trace_surface_ext("UpdateOverlayZOrder",self);
+  return original_update_overlay_z_order(self,flags,reference);
+}
+
 static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *source,
                                   LPRECT source_rect, DWORD flags, LPDDBLTFX fx) {
   HRESULT hr; LONG count=InterlockedIncrement(&blt_count);
@@ -1273,6 +1345,32 @@ static void instrument_surface(IDirectDrawSurface7 *surface) {
     patched_surface_vtable[5]=(void *)hooked_blt;
     patched_surface_vtable[11]=(void *)hooked_flip;
     patched_surface_vtable[12]=(void *)hooked_get_attached;
+    if(SpiderPausePath_ExtendedEnabled()) {
+      /* IDirectDrawSurface7 SDK slots: 6/7 BltBatch/BltFast, 17 GetDC,
+       * 26/27 Lock/ReleaseDC, 31 SetOverlayPosition, 33 Unlock,
+       * 34/35/36 UpdateOverlay variants. Default vtable unchanged. */
+      original_blt_batch=(SurfaceBltBatchFn)vtable[6];
+      original_blt_fast=(SurfaceBltFastFn)vtable[7];
+      original_get_dc=(SurfaceGetDCFn)vtable[17];
+      original_lock=(SurfaceLockFn)vtable[26];
+      original_release_dc=(SurfaceReleaseDCFn)vtable[27];
+      original_set_overlay_position=(SurfaceSetOverlayPositionFn)vtable[31];
+      original_unlock=(SurfaceUnlockFn)vtable[33];
+      original_update_overlay=(SurfaceUpdateOverlayFn)vtable[34];
+      original_update_overlay_display=(SurfaceUpdateOverlayDisplayFn)vtable[35];
+      original_update_overlay_z_order=(SurfaceUpdateOverlayZOrderFn)vtable[36];
+      patched_surface_vtable[6]=(void*)traced_blt_batch;
+      patched_surface_vtable[7]=(void*)traced_blt_fast;
+      patched_surface_vtable[17]=(void*)traced_get_dc;
+      patched_surface_vtable[26]=(void*)traced_lock;
+      patched_surface_vtable[27]=(void*)traced_release_dc;
+      patched_surface_vtable[31]=(void*)traced_set_overlay_position;
+      patched_surface_vtable[33]=(void*)traced_unlock;
+      patched_surface_vtable[34]=(void*)traced_update_overlay;
+      patched_surface_vtable[35]=(void*)traced_update_overlay_display;
+      patched_surface_vtable[36]=(void*)traced_update_overlay_z_order;
+      log_line("PAUSE-PATH: EXTENDED Surface7 wrappers installed on cloned vtable (opt-in only)");
+    }
     log_line("DDRAW: Surface7 vtable captured; Blt/Flip/GetAttachedSurface hooks ready");
     InterlockedExchange(&surface_vtable_ready,2);
   }
