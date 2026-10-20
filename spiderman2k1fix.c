@@ -1427,6 +1427,7 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
     borderless_window_apply();
     SpiderInputFocus_AttachWindow(hwnd);
     SpiderFocusEventPause_AttachWindow(hwnd);
+    SpiderPausePath_AttachWindow(hwnd); /* opt-in observer only, no focus interception */
   }
   else {
     snprintf(line,sizeof(line),"BORDERLESS: ERROR DDSCL_NORMAL rejected hr=0x%08lX",(unsigned long)hr);
