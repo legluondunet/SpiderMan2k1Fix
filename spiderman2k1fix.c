@@ -259,16 +259,18 @@ static LONG borderless_monitor_x=0,borderless_monitor_y=0;
 static volatile LONG borderless_present_failed=0;
 static volatile LONG borderless_legacy_mode_calls=0;
 
-/* Win11 native taskbar icon experiment: set icons on the game's actual HWND.
- * SpideyPC.ico is the original separate game icon, not an embedded resource.
- * This only sets WM_SETICON; it never changes window flags, focus or Z-order.
- * Off unless SPIDERMAN2K1FIX_WINDOW_ICON_TEST=1. */
+/* Win11 taskbar window icon: when SpideyPC.ico exists alongside the game,
+ * apply its small + large icon to the actual game HWND (no EXE resource patch).
+ * Safe default ON; missing/unreadable ICO retains Windows' original icon.
+ * SPIDERMAN2K1FIX_WINDOW_ICON=0 disables this for A/B tests.
+ * Never changes focus, window positioning, Z-order or Direct3D.
+ */
 static HICON spidey_icon_small=NULL, spidey_icon_big=NULL;
 static BOOL spidey_icon_load_attempted=FALSE;
-static int spidey_icon_optin(void) {
+static int spidey_icon_enabled(void) {
   char value[4]={0};
-  DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_WINDOW_ICON_TEST",value,sizeof(value));
-  return n==1 && value[0]=='1';
+  DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_WINDOW_ICON",value,sizeof(value));
+  return !(n==1 && value[0]=='0');
 }
 static void spidey_apply_window_icon(HWND hwnd) {
   WCHAR path[MAX_PATH],*slash;
@@ -277,7 +279,7 @@ static void spidey_apply_window_icon(HWND hwnd) {
   HICON small,big;
   char line[180];
   static const WCHAR name[]=L"SpideyPC.ico";
-  if(!spidey_icon_optin() || !hwnd || !IsWindow(hwnd)) return;
+  if(!spidey_icon_enabled() || !hwnd || !IsWindow(hwnd)) return;
   if(!spidey_icon_load_attempted) {
     spidey_icon_load_attempted=TRUE;
     n=GetModuleFileNameW(NULL,path,MAX_PATH);
