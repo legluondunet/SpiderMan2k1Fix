@@ -6,6 +6,7 @@
 /* Passive diagnostic only. Enabled by environment variable and Debug Log=1.
  * Never changes focus, calls game input APIs or waits in a render path. */
 void SpiderPausePath_Init(void (*logger)(const char *),int debug_enabled);
+void SpiderPausePath_AttachWindow(HWND hwnd);
 void SpiderPausePath_Record(const char *api,HWND hwnd,LONG flip,int menu,
                             const char *surface_role);
 DWORD SpiderPausePath_FlipEnter(HWND hwnd,LONG flip,int menu);
