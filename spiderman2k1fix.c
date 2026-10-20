@@ -23,6 +23,7 @@
 #include "fov_aspect_win.h"
 #include "input_focus_trace.h"
 #include "focus_event_pause.h"
+#include "pause_path_trace.h"
 #include "input_notacquired_retry.h"
 #include "menu_version.h"
 #include "version_info.h"
@@ -789,6 +790,7 @@ static void free_menu_vertices(SpiderMenuVertex *allocated) {
 }
 
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
+  SpiderPausePath_Record("DrawPrimitive",game_hwnd,InterlockedCompareExchange(&flip_count,0,0),InterlockedCompareExchange(&menu_upscale_active,0,0)==1,"D3D7");
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
      fvf==0x144UL && verts && count>=3 && count<=128)
     InterlockedIncrement(&menu_version_draws);
@@ -807,6 +809,7 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
   }
 }
 static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,LPWORD indices,DWORD icount,DWORD flags) {
+  SpiderPausePath_Record("DrawIndexedPrimitive",game_hwnd,InterlockedCompareExchange(&flip_count,0,0),InterlockedCompareExchange(&menu_upscale_active,0,0)==1,"D3D7");
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
      fvf==0x144UL && verts && count>=3 && count<=128)
     InterlockedIncrement(&menu_version_draws);
@@ -980,6 +983,10 @@ static void borderless_intro_fill_black_bars(void *surface,const RECT *image) {
 static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *source,
                                   LPRECT source_rect, DWORD flags, LPDDBLTFX fx) {
   HRESULT hr; LONG count=InterlockedIncrement(&blt_count);
+  SpiderPausePath_Record("Blt",game_hwnd,InterlockedCompareExchange(&flip_count,0,0),
+                        InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
+                        self==(void*)borderless_primary?"primary":
+                          self==(void*)borderless_back?"back":"other");
   RECT dest_mapped;
   LPRECT presented_dest=dest;
 
@@ -1121,11 +1128,16 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
    * Both samples are passive unless the explicit cursor experiment is on. */
   {
     BOOL was_background=(game_hwnd && GetForegroundWindow()!=game_hwnd);
+    DWORD trace_entered;
     SpiderInputFocus_OnFlip(count);
+    trace_entered=SpiderPausePath_FlipEnter(game_hwnd,count,
+                     InterlockedCompareExchange(&menu_upscale_active,0,0)==1);
     if(SpiderFocusEventPause_IsEnabled())
       SpiderFocusEventPause_OnFlip();
     else
       pause_at_flip_if_background();
+    SpiderPausePath_FlipLeave(game_hwnd,trace_entered,count,
+                     InterlockedCompareExchange(&menu_upscale_active,0,0)==1);
     if(was_background &&
        InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1)
       SpiderInputFocus_OnFlip(count);
@@ -1630,6 +1642,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
     if (debug_log_enabled && !previous_log_enabled)
       log_line("START: SpiderMan2k1Fix debug logging enabled by generated/repaired INI");
   }
+  SpiderPausePath_Init(log_line,debug_log_enabled);
   if (base && base[0x1163E0]==0x31 && base[0x1163E1]==0xC0 && base[0x1163E2]==0xC3)
     log_line("OK: early No-CD memory patch present at RVA 0x1163E0");
   else {
