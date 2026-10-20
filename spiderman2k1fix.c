@@ -822,6 +822,52 @@ static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE 
     return hr;
   }
 }
+
+/* Optional Direct3DDevice7 diagnostic-only passthrough wrappers. These
+ * signatures and vtable positions are from the DirectX 7 d3d.h interface. */
+typedef HRESULT (WINAPI *D3DSceneFn)(void *);
+typedef HRESULT (WINAPI *D3DDrawStridedFn)(void *,D3DPRIMITIVETYPE,DWORD,LPD3DDRAWPRIMITIVESTRIDEDDATA,DWORD,DWORD);
+typedef HRESULT (WINAPI *D3DDrawIndexedStridedFn)(void *,D3DPRIMITIVETYPE,DWORD,LPD3DDRAWPRIMITIVESTRIDEDDATA,DWORD,LPWORD,DWORD,DWORD);
+typedef HRESULT (WINAPI *D3DDrawVBFn)(void *,D3DPRIMITIVETYPE,LPDIRECT3DVERTEXBUFFER7,DWORD,DWORD,DWORD);
+typedef HRESULT (WINAPI *D3DDrawIndexedVBFn)(void *,D3DPRIMITIVETYPE,LPDIRECT3DVERTEXBUFFER7,DWORD,DWORD,LPWORD,DWORD,DWORD);
+static D3DSceneFn original_begin_scene, original_end_scene;
+static D3DDrawStridedFn original_draw_strided;
+static D3DDrawIndexedStridedFn original_draw_indexed_strided;
+static D3DDrawVBFn original_draw_vb;
+static D3DDrawIndexedVBFn original_draw_indexed_vb;
+static void trace_d3d_extended(const char *api) {
+  SpiderPausePath_Record(api,game_hwnd,InterlockedCompareExchange(&flip_count,0,0),
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,"D3D7");
+}
+static HRESULT WINAPI traced_begin_scene(void *self) {
+  trace_d3d_extended("BeginScene");
+  return original_begin_scene(self);
+}
+static HRESULT WINAPI traced_end_scene(void *self) {
+  trace_d3d_extended("EndScene");
+  return original_end_scene(self);
+}
+static HRESULT WINAPI traced_draw_strided(void *self,D3DPRIMITIVETYPE kind,DWORD fvf,
+       LPD3DDRAWPRIMITIVESTRIDEDDATA data,DWORD count,DWORD flags) {
+  trace_d3d_extended("DrawPrimitiveStrided");
+  return original_draw_strided(self,kind,fvf,data,count,flags);
+}
+static HRESULT WINAPI traced_draw_indexed_strided(void *self,D3DPRIMITIVETYPE kind,DWORD fvf,
+       LPD3DDRAWPRIMITIVESTRIDEDDATA data,DWORD count,LPWORD indices,DWORD index_count,DWORD flags) {
+  trace_d3d_extended("DrawIndexedPrimitiveStrided");
+  return original_draw_indexed_strided(self,kind,fvf,data,count,indices,index_count,flags);
+}
+static HRESULT WINAPI traced_draw_vb(void *self,D3DPRIMITIVETYPE kind,LPDIRECT3DVERTEXBUFFER7 vb,
+       DWORD start,DWORD count,DWORD flags) {
+  trace_d3d_extended("DrawPrimitiveVB");
+  return original_draw_vb(self,kind,vb,start,count,flags);
+}
+static HRESULT WINAPI traced_draw_indexed_vb(void *self,D3DPRIMITIVETYPE kind,LPDIRECT3DVERTEXBUFFER7 vb,
+       DWORD start,DWORD count,LPWORD indices,DWORD index_count,DWORD flags) {
+  trace_d3d_extended("DrawIndexedPrimitiveVB");
+  return original_draw_indexed_vb(self,kind,vb,start,count,indices,index_count,flags);
+}
+
 /* Diagnostic: native SetViewport while preserving render-state/draw hooks. */
 static void instrument_d3d_device(IDirect3DDevice7 *device) {
   void ***obj=(void ***)device; void **vt;
@@ -856,6 +902,15 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
     original_draw_indexed_primitive=(DrawIndexedPrimitiveFn)vt[26];
     patched_device_vtable[25]=(void*)hooked_draw_primitive;
     patched_device_vtable[26]=(void*)hooked_draw_indexed_primitive;
+    if(SpiderPausePath_ExtendedEnabled()) {
+      original_begin_scene=(D3DSceneFn)vt[5];
+      original_end_scene=(D3DSceneFn)vt[6];
+      original_draw_strided=(D3DDrawStridedFn)vt[29];
+      original_draw_indexed_strided=(D3DDrawIndexedStridedFn)vt[30];
+      original_draw_vb=(D3DDrawVBFn)vt[31];
+      original_draw_indexed_vb=(D3DDrawIndexedVBFn)vt[32];
+      log_line("PAUSE-PATH: EXTENDED D3D7 scene and alternate draw wrappers captured");
+    }
     log_line("D3D7: device vtable captured; viewport and draw hooks enabled");
     InterlockedExchange(&device_ready,2);
   }
@@ -876,6 +931,16 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
       vt[20]=(void*)hooked_set_render_state;
       vt[25]=(void*)hooked_draw_primitive;
       vt[26]=(void*)hooked_draw_indexed_primitive;
+      if(SpiderPausePath_ExtendedEnabled()) {
+        /* Apply only while vtable protection is already writable. */
+        vt[5]=(void*)traced_begin_scene;
+        vt[6]=(void*)traced_end_scene;
+        vt[29]=(void*)traced_draw_strided;
+        vt[30]=(void*)traced_draw_indexed_strided;
+        vt[31]=(void*)traced_draw_vb;
+        vt[32]=(void*)traced_draw_indexed_vb;
+        log_line("PAUSE-PATH: EXTENDED D3D7 passthrough wrappers patched in native vtable");
+      }
       if(!VirtualProtect(vt,sizeof(patched_device_vtable),protection,&unused))
         log_line("D3D7: WARNING native vtable protection restore failed");
       log_line("D3D7: native device vtable patched in place (default; all four hooks ON)");
