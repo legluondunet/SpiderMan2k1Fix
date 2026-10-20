@@ -61,7 +61,7 @@ Other executable versions, modified executables, and some third-party wrappers m
 
 5. Start the game using `SpideyPC.exe`.
 
-On the first supported launch, SpiderMan2k1Fix creates `SpiderMan2k1Fix.ini` automatically if it does not already exist. You do not need to create it manually.
+On the first supported launch, SpiderMan2k1Fix creates `SpiderMan2k1Fix.ini` automatically if it does not already exist. You do not need to create it manually. **Current CI/release archives contain DLLs and documentation, not a default INI:** extracting an update must never reset the existing game settings. When upgrading from an older archive that **did** contain `SpiderMan2k1Fix.ini`, extract **only** `winmm.dll` and `SpiderMan2k1Fix.dll` to the game directory; do not overwrite your customized INI.
 
 **Upgrading from an earlier SpiderManFix beta:** Remove the old `SpiderManFix.dll` (it is no longer used). To keep your settings, rename `SpiderManFix.ini` to `SpiderMan2k1Fix.ini` **before launching** the game. If no new-named INI exists, fresh defaults will be generated. Keep a backup of your original INI.
 
@@ -70,7 +70,7 @@ On the first supported launch, SpiderMan2k1Fix creates `SpiderMan2k1Fix.ini` aut
 ### Installing on Linux with Wine
 
 1. Install *Spider-Man* in a Wine prefix and locate the directory containing `SpideyPC.exe`.
-2. Copy the **same two Windows DLLs** (`winmm.dll` and `SpiderMan2k1Fix.dll`) next to `SpideyPC.exe`.
+2. Copy the **same two Windows DLLs** (`winmm.dll` and `SpiderMan2k1Fix.dll`) next to `SpideyPC.exe`. **Preserve your existing `SpiderMan2k1Fix.ini`; never replace it with defaults from an older package.**
 3. Configure Wine to load the local `winmm.dll` **before** its built-in implementation.
 
    In `winecfg`, open **Libraries**, add `winmm` and set it to **Native then Builtin**.
