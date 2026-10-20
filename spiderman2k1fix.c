@@ -1112,8 +1112,20 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
   }
-  pause_at_flip_if_background();
-  SpiderInputFocus_OnFlip(count);
+  /* The focus-loss pause blocks at this very Flip. Sample focus/cursor
+   * BEFORE waiting so that the opt-in desktop cursor recovery can run
+   * while Spider-Man is in the background, not only after Alt+Tab back.
+   * If we waited, sample again immediately after returning to balance
+   * our temporary ShowCursor(TRUE) increments on the same game thread.
+   * Both samples are passive unless the explicit cursor experiment is on. */
+  {
+    BOOL was_background=(game_hwnd && GetForegroundWindow()!=game_hwnd);
+    SpiderInputFocus_OnFlip(count);
+    pause_at_flip_if_background();
+    if(was_background &&
+       InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1)
+      SpiderInputFocus_OnFlip(count);
+  }
   SpiderDI8Retry_OnFlip(count);
   report_null_fclose_recovery();
   if (g_frame_limiter_ready) SpiderFrameLimiter_Wait(&g_frame_limiter);
