@@ -5,8 +5,9 @@ work when the supported Windows x86 Spider-Man (2001) game runs in Wine.
 
 There are **two different levels of confidence**:
 
-1. GitHub Actions' `spiderman2k1fix-wine-smoke.yml` compiles both
-   production PE32 DLLs, launches a tiny synthetic 32-bit Windows host
+1. The existing GitHub Actions workflow first compiles both
+   production PE32 DLLs, then its separate Wine job downloads that exact
+   DLL pair and launches a tiny synthetic 32-bit Windows host
    in Wine (Xvfb), and confirms that Wine loads the local native
    `winmm.dll`, WinMM forwarding resolves, and the main fix DLL
    loads. This deliberately **cannot** validate the actual game
