@@ -68,3 +68,60 @@ def test_passive_observer_tracks_focus_independently_of_flip():
     assert "void SpiderPausePath_AttachWindow(HWND hwnd);" in HDR
     assert CORE.index("SpiderPausePath_AttachWindow(hwnd);") > CORE.index(
         "SpiderFocusEventPause_AttachWindow(hwnd);")
+
+
+def test_extended_paths_are_opt_in_besides_existing_trace_flag():
+    assert "SPIDERMAN2K1FIX_EXTENDED_PRESENT_TRACE" in MOD
+    assert 'if(n==1 && env[0]==\'1\') {' in MOD
+    assert "SpiderPausePath_ExtendedEnabled" in HDR
+    assert "if(SpiderPausePath_ExtendedEnabled())" in CORE
+    assert "static volatile LONG extended_enabled=0;" in MOD
+    assert "if(!debug_enabled || n!=1 || env[0]!='1')return;" in MOD
+
+
+def test_surface_vtable_slots_match_microsoft_ddraw7_and_passthrough():
+    # SDK order: BltBatch=6 BltFast=7 GetDC=17 Lock=26 ReleaseDC=27
+    # SetOverlayPosition=31 Unlock=33 UpdateOverlay=34..36.
+    names = {
+        6: "blt_batch", 7: "blt_fast", 17: "get_dc",
+        26: "lock", 27: "release_dc", 31: "set_overlay_position",
+        33: "unlock", 34: "update_overlay", 35: "update_overlay_display",
+        36: "update_overlay_z_order",
+    }
+    for slot, name in names.items():
+        assert f"original_{name}=" in CORE
+        assert f"vtable[{slot}]" in CORE
+        assert f"patched_surface_vtable[{slot}]=(void*)traced_{name};" in CORE
+        assert f"return original_{name}(" in CORE
+    # All new surface hooks are installed only in the opt-in branch.
+    branch = CORE.index("if(SpiderPausePath_ExtendedEnabled())", CORE.index("static void instrument_surface("))
+    for name in names.values():
+        assert CORE.index("patched_surface_vtable[", branch) < len(CORE)
+    assert "PAUSE-PATH: EXTENDED Surface7 wrappers installed" in CORE
+
+
+def test_alternate_d3d7_hooks_relay_unmodified_arguments():
+    names = {
+        5: "begin_scene", 6: "end_scene",
+        29: "draw_strided", 30: "draw_indexed_strided",
+        31: "draw_vb", 32: "draw_indexed_vb",
+    }
+    for slot,name in names.items():
+        assert f"original_{name}=(D3D" in CORE
+        assert f"vt[{slot}]" in CORE
+        assert f"vt[{slot}]=(void*)traced_{name};" in CORE
+        assert f"return original_{name}(" in CORE
+    assert "if(SpiderPausePath_ExtendedEnabled())" in CORE
+    assert "PAUSE-PATH: EXTENDED D3D7 passthrough wrappers" in CORE
+
+
+def test_extended_trace_counts_report_from_separate_observer():
+    for api in ("BltFast", "BltBatch", "Lock", "Unlock", "GetDC",
+                "ReleaseDC", "UpdateOverlay", "SetOverlayPosition",
+                "DrawPrimitiveStrided", "DrawIndexedPrimitiveStrided",
+                "DrawPrimitiveVB", "DrawIndexedPrimitiveVB",
+                "BeginScene", "EndScene"):
+        assert api in MOD
+        assert api in CORE
+    assert "PAUSE-PATH: EXTENDED SNAPSHOT" in MOD
+    assert "if(SpiderPausePath_ExtendedEnabled())" in MOD
