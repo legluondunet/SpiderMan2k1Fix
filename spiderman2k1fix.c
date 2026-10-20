@@ -1065,12 +1065,51 @@ static HRESULT WINAPI hooked_get_attached(void *self,LPDDSCAPS2 caps,
   if(SUCCEEDED(hr) && out && *out) instrument_surface(*out);
   return hr;
 }
+/* Experimental cooperative pause at the DirectDraw presentation boundary.
+ * Keep the GUI message queue responsive so WM_ACTIVATEAPP/WM_SETFOCUS can
+ * arrive while the gameplay thread is waiting. This is NOT a Bink/movie
+ * decoder hook; movies with independent timing can continue running.
+ * Never suspend threads or modify focus / window Z-order here. */
+static volatile LONG pause_on_focus_loss=0;
+static LONG pause_ever_foreground=0;
+static LONG pause_in_progress=0;
+static void pause_at_flip_if_background(void) {
+  HWND hwnd=game_hwnd;
+  MSG msg;
+  if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
+  if(GetForegroundWindow()==hwnd) {
+    InterlockedExchange(&pause_ever_foreground,1);
+    return;
+  }
+  if(InterlockedCompareExchange(&pause_ever_foreground,0,0)!=1) return;
+  if(InterlockedCompareExchange(&pause_in_progress,1,0)!=0) return;
+  log_line("FOCUS-PAUSE: waiting for foreground at DirectDraw Flip (experimental)");
+  while(IsWindow(hwnd) && GetForegroundWindow()!=hwnd) {
+    /* Process game-thread window messages, including focus restoration;
+     * do not dispatch WM_QUIT, which must remain visible to the game. */
+    while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
+      if(msg.message==WM_QUIT) {
+        PostQuitMessage((int)msg.wParam);
+        log_line("FOCUS-PAUSE: WM_QUIT observed, aborting wait");
+        InterlockedExchange(&pause_in_progress,0);
+        return;
+      }
+      TranslateMessage(&msg);
+      DispatchMessageA(&msg);
+    }
+    if(GetForegroundWindow()==hwnd) break;
+    MsgWaitForMultipleObjectsEx(0,NULL,50,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
+  }
+  log_line("FOCUS-PAUSE: foreground restored or window destroyed");
+  InterlockedExchange(&pause_in_progress,0);
+}
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
   }
+  pause_at_flip_if_background();
   SpiderInputFocus_OnFlip(count);
   SpiderDI8Retry_OnFlip(count);
   report_null_fclose_recovery();
@@ -1734,6 +1773,19 @@ static DWORD WINAPI initialize(LPVOID unused) {
     }
   }
   install_ddraw_hook();
+  /* Disabled by default: prototype only, not a full engine/movie pause. */
+  {
+    char path[MAX_PATH],*slash;
+    DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
+    if(n>0 && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL) {
+      strcpy(slash+1,"SpiderMan2k1Fix.ini");
+      InterlockedExchange(&pause_on_focus_loss,
+        GetPrivateProfileIntA("Input","PauseOnFocusLoss",0,path)==1);
+    }
+    log_line(InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1 ?
+      "FOCUS-PAUSE: experimental Flip-boundary pause ENABLED" :
+      "FOCUS-PAUSE: experimental Flip-boundary pause disabled");
+  }
   SpiderInputFocus_Install(log_line);
   return 0;
 }
