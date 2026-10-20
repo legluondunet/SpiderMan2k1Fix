@@ -292,7 +292,7 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "; Edit this file while the game is not running. Invalid files are backed up as SpiderMan2k1Fix_N.old.\r\n"
     "\r\n"
     "[Debug]\r\n"
-    "; 1 = write SpiderMan2k1Fix.log (debug); 0 = no log output. Restart to apply.\r\n"
+    "; 1 = replace SpiderMan2k1Fix.log at each launch (one run); 0 = no logging. Restart to apply.\r\n"
     "Log=0\r\n"
     "\r\n"
     "[Display]\r\n"
