@@ -41,11 +41,30 @@ def test_tracing_never_changes_game_state_or_waits():
     forbidden = (
         "SuspendThread(", "ResumeThread(", "SetForegroundWindow(",
         "SendInput(", "DirectInput8Create", "Acquire(", "Unacquire(",
-        "PeekMessage(", "MsgWaitForMultipleObjects", "Sleep(",
+        "PeekMessage(", "MsgWaitForMultipleObjects",
         "SetWindowLong", "VirtualProtect(", "WriteProcessMemory(",
     )
     for forbidden_call in forbidden:
         assert forbidden_call not in MOD
+    # Only the opt-in observer thread may sleep; never stall the game's
+    # intercepted rendering call on a timer or window-message loop.
+    render_paths = MOD[MOD.index("void SpiderPausePath_Record("):]
+    assert "Sleep(" not in render_paths
+    assert "WaitForSingleObject(" not in render_paths
     assert "void SpiderPausePath_Init" in HDR
     assert '#include "pause_path_trace.h"' in CORE
     assert "pause_path_trace.c" in BUILD
+
+
+def test_passive_observer_tracks_focus_independently_of_flip():
+    assert "SPIDERMAN2K1FIX_PAUSE_PATH_TRACE" in MOD
+    assert "CreateThread(NULL,0,observe_foreground" in MOD
+    assert "PAUSE-PATH: FOCUS LOST tick=" in MOD
+    assert "PAUSE-PATH: FOCUS RESTORED tick=" in MOD
+    assert "PAUSE-PATH: FOCUS BACKGROUND elapsed-ms=" in MOD
+    assert "focus-loss-to-gate-ms=%ld" in MOD
+    assert "Sleep(25);" in MOD
+    assert "SpiderPausePath_AttachWindow(hwnd);" in CORE
+    assert "void SpiderPausePath_AttachWindow(HWND hwnd);" in HDR
+    assert CORE.index("SpiderPausePath_AttachWindow(hwnd);") > CORE.index(
+        "SpiderFocusEventPause_AttachWindow(hwnd);")
