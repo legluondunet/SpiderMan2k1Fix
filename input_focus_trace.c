@@ -63,8 +63,11 @@ static LONG foreground_events=0,background_events=0;
 static LONG focus_key_messages=0,focus_mouse_messages=0;
 static volatile LONG last_focus_foreground=-1;
 static DWORD last_winmsg_sample=0;
-/* Test-only, opt-in Win11 cursor and window Z-order diagnostics. */
+/* Desktop cursor recovery defaults ON (configurable in [Input]).
+ * Taskbar Z-order experiment remains strictly opt-in.
+ * Normal cursor-only tracking does not subclass WndProc or hook DirectInput. */
 static volatile LONG cursor_visibility_test=0, zorder_test=0;
+static volatile LONG cursor_only_mode=0;
 static LONG cursor_display_increments=0;
 
 static void focus_log(const char *msg) { if(log_msg) log_msg(msg); }
@@ -161,6 +164,13 @@ static LRESULT CALLBACK focus_window_proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp
 void SpiderInputFocus_AttachWindow(HWND hwnd) {
   WNDPROC old;char line[180];DWORD error;
   if(!diagnostic_active || !hwnd || !IsWindow(hwnd)) return;
+  if(InterlockedCompareExchange(&cursor_only_mode,0,0)==1) {
+    if(tracked_window!=hwnd) {
+      tracked_window=hwnd;
+      focus_log("INPUT-CURSOR: tracking game HWND only (no WndProc subclass or DirectInput hooks)");
+    }
+    return;
+  }
   if(tracked_window==hwnd && previous_proc) return;
   if(tracked_window && tracked_window!=hwnd && IsWindow(tracked_window) &&
      previous_proc && (WNDPROC)GetWindowLongPtrA(tracked_window,GWLP_WNDPROC)==focus_window_proc) {
@@ -403,7 +413,7 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   char exe[MAX_PATH],ini[MAX_PATH],*sep,line[200];DWORD n;
   BYTE *base=(BYTE*)GetModuleHandleA(NULL);
   IMAGE_DOS_HEADER *dos;IMAGE_NT_HEADERS32 *nt;
-  void **slot;HMODULE dll;FARPROC target;DWORD old,ignored;LONG want_trace,want_fix;
+  void **slot;HMODULE dll;FARPROC target;DWORD old,ignored;LONG want_trace,want_fix,want_cursor;
   log_msg=log_fn;
   n=GetModuleFileNameA(NULL,exe,sizeof(exe));
   if(!n || n>=sizeof(exe) || !(sep=strrchr(exe,'\\'))) return;
@@ -411,35 +421,43 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   input_debug_logging=GetPrivateProfileIntA("Debug","Log",0,ini)==1;
   want_trace=GetPrivateProfileIntA("Input","ExperimentalFocusTrace",0,ini)==1;
   want_fix=GetPrivateProfileIntA("Input","ExperimentalAltTabReacquire",0,ini)==1;
-  /* Win11 Alt+Tab fault isolation. Unlike ExperimentalFocusTrace, this
-   * mode NEVER patches the game's DirectInput8Create IAT or any DirectInput
-   * COM vtable. It only enables the already-existing game WndProc observer.
-   * This distinction matters: DirectInput8 device creation failed during
-   * native Windows startup when our previous invasive hook was enabled.
-   * Opt-in per process, no persistent INI changes, no input synthesis.
+  /* Default 1 also covers pre-existing user INIs with no such key. */
+  want_cursor=GetPrivateProfileIntA("Input","RestoreCursorOnFocusLoss",1,ini)==1;
+  InterlockedExchange(&cursor_visibility_test,want_cursor);
+  /* This explicit diagnostic switch still provides WndProc focus/geometry
+   * snapshots without patching the DirectInput8 import or COM vtables.
+   * Cursor visibility follows the INI even in this diagnostic mode;
+   * SPIDERMAN2K1FIX_ZORDER_TEST stays separate and opt-in.
    */
   {
-    char passive[4]={0},cursor[4]={0},zorder[4]={0};
+    char passive[4]={0},zorder[4]={0};
     DWORD nbytes=GetEnvironmentVariableA("SPIDERMAN2K1FIX_FOCUS_PASSIVE",
                                           passive,sizeof(passive));
     if(nbytes==1 && passive[0]=='1') {
-      DWORD nc=GetEnvironmentVariableA("SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST",
-                                        cursor,sizeof(cursor));
       DWORD nz=GetEnvironmentVariableA("SPIDERMAN2K1FIX_ZORDER_TEST",
                                         zorder,sizeof(zorder));
-      InterlockedExchange(&cursor_visibility_test,nc==1 && cursor[0]=='1');
       InterlockedExchange(&zorder_test,nz==1 && zorder[0]=='1');
       InterlockedExchange(&reacquire_enabled,0);
       InterlockedExchange(&diagnostic_active,1);
       focus_log("INPUT-FOCUS: PASSIVE ONLY - WndProc events/Flip snapshots active; DirectInput8 hook NOT installed");
-      snprintf(line,sizeof(line),"INPUT-WINDOW: tests cursor=%ld zorder=%ld (DirectInput hooks OFF)",
+      snprintf(line,sizeof(line),"INPUT-WINDOW: settings cursor=%ld zorder=%ld (DirectInput hooks OFF)",
         (long)cursor_visibility_test,(long)zorder_test);
       focus_log(line);
       return;
     }
   }
+  /* Safe normal path: use the game's existing DirectDraw Flip boundary
+   * to detect background/foreground. No WndProc subclass, DirectInput
+   * hook, focus events, synthetic input, or window Z-order modification. */
+  if(!want_trace && !want_fix && want_cursor) {
+    InterlockedExchange(&reacquire_enabled,0);
+    InterlockedExchange(&cursor_only_mode,1);
+    InterlockedExchange(&diagnostic_active,1);
+    focus_log("INPUT-CURSOR: automatic desktop cursor restore ENABLED (INI; Flip-only, no input hooks)");
+    return;
+  }
   if(!want_trace && !want_fix) {
-    focus_log("INPUT-FOCUS: disabled by default ([Input] ExperimentalFocusTrace=1 or ExperimentalAltTabReacquire=1)");
+    focus_log("INPUT-CURSOR: RestoreCursorOnFocusLoss=0; automatic cursor restore disabled");
     return;
   }
   InterlockedExchange(&reacquire_enabled,want_fix);
@@ -474,7 +492,8 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
 }
 /* Passive samples on actual foreground transitions: distinguish visible
  * cursor from hidden cursor and focus from Z-order without forced activation.
- * Mutations below are enabled exclusively by environment-variable A/B tests.
+ * Cursor repair follows RestoreCursorOnFocusLoss (on by default).
+ * Z-order modification remains an explicit diagnostic A/B experiment.
  */
 static void focus_probe_window_system(const char *stage) {
   CURSORINFO ci;

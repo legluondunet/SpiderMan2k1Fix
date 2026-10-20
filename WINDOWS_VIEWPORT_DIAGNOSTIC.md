@@ -195,48 +195,47 @@ game or Direct3D driver. Keep the graphical in-place test setting on.
 
 This diagnostic remains opt-in and should be removed before merging the PR.
 
-## Test G — native Windows cursor and Z-order A/B
+## Test G — Windows desktop cursor recovery (automatic) and Z-order A/B
 
-Win11 multi-monitor tests show that Spider-Man survives repeated Alt+Tab
-while keyboard focus, visible Z-order and system pointer diverge. The passive
-trace confirms foreground transitions, but does not determine whether
-ShowCursor's display counter, cursor shape or clipping is to blame.
+Windows 11 repeatedly hid the system pointer after Alt+Tab away from
+Spider-Man. Native logs captured `cursor-showing=0` on focus loss.
+The validated experimental fix restored it with bounded `ShowCursor(TRUE)`
+calls **before** the optional Flip-boundary focus pause and balanced the
+same count on return. Eleven Alt+Tab cycles were reported as successful
+with the explicit test variables.
 
-When \`SPIDERMAN2K1FIX_FOCUS_PASSIVE=1\`, the new test logs actual cursor
-visibility (\`GetCursorInfo\`), clipping (\`GetClipCursor\`), topmost
-status and the next higher window in the Z-order.
+From PR #3 onward, `[Input] RestoreCursorOnFocusLoss=1` enables the
+cursor repair by default **without any environment variables**.
+Older INIs missing the key use the same default. To disable and compare,
+set `RestoreCursorOnFocusLoss=0`. Normal cursor-only tracking does not
+install DirectInput or WndProc hooks, nor does it change the game window
+Z-order. It only performs bounded cursor counter changes on actual
+foreground transitions observed at DirectDraw Flip.
 
-Two independent opt-in repair switches:
-- \`SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST=1\` only when leaving Spider-Man,
-  and only if GetCursorInfo says the cursor is hidden, increment ShowCursor's
-  count up to a cap of 16; exactly reverse the increments when foreground
-  returns. Cannot cure hidden cursor shapes or unrelated drivers.
-- \`SPIDERMAN2K1FIX_ZORDER_TEST=1\` only after the game is already foreground,
-  request HWND_TOP in normal Z-order with SWP_NOACTIVATE. Never make topmost,
-  never force activation over another foreground application.
+`SPIDERMAN2K1FIX_FOCUS_PASSIVE=1` explicitly enables *additional*
+WndProc/focus event diagnostics without invasive DirectInput hooks.
+`SPIDERMAN2K1FIX_ZORDER_TEST=1` is a **separate, optional experiment**
+that requests `HWND_TOP` only if the game is already foreground; it
+remains disabled by default. Do not enable this Z-order experiment
+during cursor validation.
 
-Preserve the current DPI compatibility setting (Application), D3D_INPLACE,
-and [Input] ExperimentalAltTabReacquire=0, ExperimentalFocusTrace=0.
+Example final native test (from the game directory):
 
-From PowerShell in the game folder:
-
-\`\`\`powershell
+```powershell
 Remove-Item .\SpiderMan2k1Fix.log -ErrorAction SilentlyContinue
-Remove-Item Env:\SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE -ErrorAction SilentlyContinue
-$env:SPIDERMAN2K1FIX_D3D_INPLACE='1'
-$env:SPIDERMAN2K1FIX_FOCUS_PASSIVE='1'
-$env:SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST='1'
-$env:SPIDERMAN2K1FIX_ZORDER_TEST='1'
-Start-Process .\SpideyPC.exe -Wait
-Remove-Item Env:\SPIDERMAN2K1FIX_D3D_INPLACE -ErrorAction SilentlyContinue
 Remove-Item Env:\SPIDERMAN2K1FIX_FOCUS_PASSIVE -ErrorAction SilentlyContinue
 Remove-Item Env:\SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST -ErrorAction SilentlyContinue
 Remove-Item Env:\SPIDERMAN2K1FIX_ZORDER_TEST -ErrorAction SilentlyContinue
-\`\`\`
+$p=Start-Process .\SpideyPC.exe -Wait -PassThru
+"Code de sortie : $($p.ExitCode)"
+Select-String .\SpiderMan2k1Fix.log -Pattern 'INPUT-CURSOR|CURSOR-TEST'
+```
 
-Try Alt+Tab several times and report cursor and window separately, with log.
-For isolation, remove either test switch in an additional run. Test code must
-not be merged before native Windows/Wine validation.
+The old `SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST` variable is no longer
+needed or interpreted. For the tested pause sequence, use
+`PauseOnFocusLoss=1`, `ExperimentalAltTabReacquire=0`,
+`ExperimentalFocusTrace=0` and `RestoreCursorOnFocusLoss=1`.
+See `CURSOR_FOCUS_TEST.md` for both normal and opt-out procedures.
 
 ## Test H — fclose(NULL) at 0052A805, exact Windows crash dump
 
@@ -264,11 +263,11 @@ Remove-Item .\SpiderMan2k1Fix.log -ErrorAction SilentlyContinue
 Remove-Item Env:\SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE -ErrorAction SilentlyContinue
 $env:SPIDERMAN2K1FIX_D3D_INPLACE='1'
 $env:SPIDERMAN2K1FIX_FOCUS_PASSIVE='1'
-$env:SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST='1'
+# Cursor restoration is now controlled by [Input] RestoreCursorOnFocusLoss=1
 $env:SPIDERMAN2K1FIX_ZORDER_TEST='1'
 $env:SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD='1'
 Start-Process .\SpideyPC.exe -Wait
-'SPIDERMAN2K1FIX_D3D_INPLACE','SPIDERMAN2K1FIX_FOCUS_PASSIVE','SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST','SPIDERMAN2K1FIX_ZORDER_TEST','SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD' | ForEach-Object { Remove-Item -Path "Env:$_" -ErrorAction SilentlyContinue }
+'SPIDERMAN2K1FIX_D3D_INPLACE','SPIDERMAN2K1FIX_FOCUS_PASSIVE','SPIDERMAN2K1FIX_ZORDER_TEST','SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD' | ForEach-Object { Remove-Item -Path "Env:$_" -ErrorAction SilentlyContinue }
 \`\`\`
 
 Expected log: \`FCLOSE-GUARD: EXPERIMENTAL ... armed\`, and if
@@ -339,7 +338,7 @@ Remove-Item Env:\SPIDERMAN2K1FIX_DI8_POLL_TRACE -ErrorAction SilentlyContinue
 Remove-Item Env:\SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE -ErrorAction SilentlyContinue
 $env:SPIDERMAN2K1FIX_D3D_INPLACE='1'
 $env:SPIDERMAN2K1FIX_FOCUS_PASSIVE='1'
-$env:SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST='1'
+# Cursor restoration is now controlled by [Input] RestoreCursorOnFocusLoss=1
 $env:SPIDERMAN2K1FIX_ZORDER_TEST='1'
 $env:SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD='1'
 $env:SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY='1'
@@ -359,28 +358,16 @@ Start-Process .\SpideyPC.exe
 \`\`\`
 
 
-## Windows taskbar icon trial (separate from taskbar overlay)
+## Windows game taskbar icon (PR #4, merged)
 
-The user-provided \`SpideyPC.ico\` was verified as a valid Windows ICO
-containing 16x16 and 32x32 icon images. The game shows a generic
-exclamation icon in the Windows 11 taskbar even though the original ICO
-is beside \`SpideyPC.exe\`.
+Native Windows 11 visually validated the game's original red Spider-Man
+icon in the taskbar and its window preview. The fix extracts the first
+grouped icon directly from the original `SpideyPC.exe` resources using
+`ExtractIconExW`, applies small and large icons with `WM_SETICON` and
+verifies them via `WM_GETICON`. A successful extraction can return
+`2` for small+large icons; the previous erroneous `extracted==1`
+check was corrected. No extra `.ico` file is needed.
 
-Opt-in \`SPIDERMAN2K1FIX_WINDOW_ICON_TEST=1\` uses \`GetModuleFileNameW\`
-to load \`SpideyPC.ico\` next to the running EXE via \`LoadImageW\`.
-The exact game window receives \`WM_SETICON\` (ICON_SMALL and ICON_BIG),
-with \`WM_GETICON\` verification in the diagnostic log.
-
-This does not modify EXE resources, pinned shortcuts, window class,
-window position, taskbar layering, graphics or DirectInput. When the
-ICO is missing or invalid, the original window icon is preserved.
-This test is OFF by default until checked on native Windows and Wine.
-
-PowerShell in game directory:
-\`\`\`powershell
-$env:SPIDERMAN2K1FIX_WINDOW_ICON_TEST='1'
-Start-Process .\SpideyPC.exe
-\`\`\`
-Look for \`WINDOW-ICON: applied SpideyPC.ico ... small=1 big=1\`.
-Windows may cache pinned/taskbar shortcut icons independently.
-To disable, remove the environment variable before starting the game.
+On by default. Diagnostic opt-out:
+`SPIDERMAN2K1FIX_WINDOW_ICON=0`. This does not change the taskbar
+overlay or game Z-order.

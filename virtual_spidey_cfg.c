@@ -314,6 +314,8 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "[Input]\r\n"
     "; Legacy DirectInput8 hook; keep disabled by default.\r\n"
     "ExperimentalAltTabReacquire=0\r\n"
+    "; Restore Windows desktop cursor on loss of game focus (1=on, 0=off).\r\n"
+    "RestoreCursorOnFocusLoss=1\r\n"
     "; Detailed focus diagnosis is disabled by default.\r\n"
     "ExperimentalFocusTrace=0\r\n"
     "; Experimental Flip-boundary pause while the game loses focus (0=off).\r\n"
