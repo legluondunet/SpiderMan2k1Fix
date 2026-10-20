@@ -1792,6 +1792,9 @@ static DWORD WINAPI initialize(LPVOID unused) {
       else log_line("DISPLAY-MENU-LOCK: explicitly disabled by INI");
     }
   }
+  /* Arm the opt-in focus observer before any DirectDraw callback can
+   * attach the game HWND. Never hook DirectInput from this module. */
+  SpiderFocusEventPause_Init(log_line);
   install_ddraw_hook();
   /* Disabled by default: prototype only, not a full engine/movie pause. */
   {
@@ -1807,10 +1810,6 @@ static DWORD WINAPI initialize(LPVOID unused) {
       "FOCUS-PAUSE: experimental Flip-boundary pause disabled");
   }
   SpiderInputFocus_Install(log_line);
-  /* Independent Win32/Wine focus observer; opt-in only, no DirectInput hook.
-   * Initialized after the original input settings so the two experimental
-   * observer modes can explicitly reject incompatible configurations. */
-  SpiderFocusEventPause_Init(log_line);
   return 0;
 }
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID reserved) {
