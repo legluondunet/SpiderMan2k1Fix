@@ -254,3 +254,61 @@ Do not activate `SPIDERMAN2K1FIX_DI8_POLL_TRACE` or
 withdrawn experiment. The new build ignores both variables. Further
 DirectInput investigation requires a live Win32 startup-crash dump or
 a non-invasive mechanism validated on native Windows.
+
+
+## WinDbg-confirmed DirectInput8 NOTACQUIRED error and opt-in retry
+
+The native Windows 11 debug log measured persistent
+\`DIERR_NOTACQUIRED (0x8007000C)\` from **both** keyboard and mouse
+\`IDirectInputDevice8::GetDeviceData\` polling callsites
+(\`0x00501BC3\`, \`0x00501D02\`). The game only retries
+\`Acquire\` on \`DIERR_INPUTLOST (0x8007001E)\`, so its initial
+\`DIERR_NOTACQUIRED\` exits the existing recovery path. The WinDbg
+capture did not tag whether each error occurred while in the background;
+therefore the experiment also checks the game's own active flag.
+
+This revision replaces the withdrawn **incorrectly relocated**
+branch-shim experiment. The old patch calculated a JMP offset relative
+to a temporary local array; copying those bytes to the actual EXE JNE
+produced an invalid jump and prevented startup. The new patch computes
+the offset from the **actual game instruction address**, verifies the
+exact 14-byte native signatures, and runs only at **Flip #120** on the
+game's render thread, after successful game startup.
+
+OFF by default, and supported only for the exact SHA-256-verified
+\`SpideyPC.exe\`. The two 6-byte JNEs become long JMP+NOP to RX
+trampolines that preserve all general-purpose registers and stack.
+The original \`DIERR_INPUTLOST\` route and non-error route remain
+intact. \`DIERR_NOTACQUIRED\` redirects to the ORIGINAL game
+Acquire/retry code **only while its native game-active flag is 1**.
+All other Windows/Wine graphics and input options are untouched.
+No DirectInput8Create hook, no vtable replacement, no injected input
+or synthetic focus events. Disabled or signature-mismatched means
+the original EXE is unchanged.
+
+First install the successful Windows x86 artifact from the PR's CI.
+PowerShell from the game directory (keep previously validated switches):
+\`\`\`powershell
+Remove-Item .\SpiderMan2k1Fix.log -ErrorAction SilentlyContinue
+Remove-Item Env:\SPIDERMAN2K1FIX_DI8_POLL_TRACE -ErrorAction SilentlyContinue
+Remove-Item Env:\SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE -ErrorAction SilentlyContinue
+$env:SPIDERMAN2K1FIX_D3D_INPLACE='1'
+$env:SPIDERMAN2K1FIX_FOCUS_PASSIVE='1'
+$env:SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST='1'
+$env:SPIDERMAN2K1FIX_ZORDER_TEST='1'
+$env:SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD='1'
+$env:SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY='1'
+Start-Process .\SpideyPC.exe
+\`\`\`
+
+Expect \`DI8-RETRY: EXPERIMENTAL requested\` at startup,
+\`DI8-RETRY: EXPERIMENTAL active at Flip #120\` once armed,
+then \`DI8-RETRY: redirected DIERR_NOTACQUIRED ... keyboard=N
+mouse=N\` if triggered. Test repeated Alt+Tab with no debugger.
+Send complete \`SpiderMan2k1Fix.log\` and any live hang or crash
+dump. The experimental test remains **unmerged** until verified on
+Windows 11 and Wine. To disable without replacing DLL files:
+\`\`\`powershell
+Remove-Item Env:\SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY -ErrorAction SilentlyContinue
+Start-Process .\SpideyPC.exe
+\`\`\`
