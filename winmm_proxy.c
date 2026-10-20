@@ -233,9 +233,34 @@ MMRESULT WINAPI proxy_waveInMessage(HWAVEIN a, UINT b, DWORD_PTR c, DWORD_PTR d)
     __typeof__(&waveInMessage) f=NULL; RESOLVE_INTO(waveInMessage, f);
     return f ? f(a,b,c,d) : MMSYSERR_ERROR;
 }
+/* The game is DPI-unaware by default. DirectDraw uses physical pixels,
+ * while an unaware top-level HWND sees a DPI-virtualized monitor rectangle.
+ * Request system DPI awareness before the game's window is created, so
+ * Win32 window geometry and DirectDraw surface sizes use the same pixels.
+ * Keep user32 dynamically resolved for compatibility with older systems. */
+static void enable_native_window_pixels(void) {
+    typedef BOOL (WINAPI *SetProcessDPIAwareFn)(void);
+    HMODULE user32=GetModuleHandleA("user32.dll");
+    SetProcessDPIAwareFn set_aware=NULL;
+    BOOL changed=FALSE;
+    DWORD error=ERROR_PROC_NOT_FOUND;
+    char line[160];
+    if (!user32) user32=LoadLibraryA("user32.dll");
+    if (user32)
+        set_aware=(SetProcessDPIAwareFn)(void*)GetProcAddress(user32,"SetProcessDPIAware");
+    if(set_aware) {
+        changed=set_aware();
+        error=changed ? ERROR_SUCCESS : GetLastError();
+    }
+    snprintf(line,sizeof(line),
+      "DPI-BOOT: SetProcessDPIAware result=%s Win32=%lu (system-aware native window pixels)",
+      changed?"OK":"NOT_CHANGED",(unsigned long)error);
+    log_proxy(line);
+}
 static DWORD WINAPI init_fix(LPVOID ignored) {
     char path[MAX_PATH]; DWORD n; HMODULE mod;
     (void)ignored;
+    enable_native_window_pixels();
     {
         char status[128];
         snprintf(status,sizeof(status),"START: " SPIDERMAN2K1FIX_VERSION_LABEL " early No-CD patch status=%ld (1=applied)",(long)early_patch_status);
