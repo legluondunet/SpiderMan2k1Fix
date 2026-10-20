@@ -212,6 +212,8 @@ These are **planned improvements**, not features promised for version 1.0:
 - **Widescreen 3D geometry:** investigate 3D objects that appear displaced near the left or right edges of the screen in landscape/widescreen mode.
 - **Electro:** investigate and fix the outstanding Electro-related issue.
 
+For developers testing a possible cross-platform immediate-focus pause, see the [experimental focus-event pause protocol](FOCUS_EVENT_PAUSE_PROTOTYPE.md). This prototype is **off by default**, not a verified immediate game-engine pause, and requires native Windows and Wine acceptance testing.
+
 ## Building from source
 
 For ready-to-use DLLs, use the [latest GitHub release](https://github.com/legluondunet/SpiderMan2k1Fix/releases). GitHub Actions also makes its compiled ZIP available under **Actions → SpiderMan2k1Fix Windows x86 → successful run → Artifacts**.
