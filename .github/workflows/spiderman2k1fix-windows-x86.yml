@@ -25,7 +25,7 @@ jobs:
       - name: Install MinGW-w64 and binary inspection tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-i686 binutils-mingw-w64-i686 python3-pytest zip
+          sudo apt-get install -y gcc-mingw-w64-i686 binutils-mingw-w64-i686 python3-pytest zip unzip
 
       - name: Run regression tests
         run: |
@@ -35,10 +35,13 @@ jobs:
         run: bash ./build.sh
 
       - name: Package game installation files
+        # Never package SpiderMan2k1Fix.ini: the game generates it if missing,
+        # and shipping defaults overwrites custom user settings on upgrades.
         run: |
           mkdir -p dist/package
-          cp SpiderMan2k1Fix.dll winmm.dll SpiderMan2k1Fix.ini README.md CHANGELOG.md dist/package/
-          (cd dist/package && zip -9 ../SpiderMan2k1Fix-Windows-x86.zip SpiderMan2k1Fix.dll winmm.dll SpiderMan2k1Fix.ini README.md CHANGELOG.md)
+          cp SpiderMan2k1Fix.dll winmm.dll README.md CHANGELOG.md dist/package/
+          (cd dist/package && zip -9 ../SpiderMan2k1Fix-Windows-x86.zip SpiderMan2k1Fix.dll winmm.dll README.md CHANGELOG.md)
+          if unzip -Z1 dist/SpiderMan2k1Fix-Windows-x86.zip | grep -Fxq SpiderMan2k1Fix.ini; then echo "ERROR: archive must not overwrite user INI"; exit 1; fi
 
       - name: Upload Windows DLL artifact
         uses: actions/upload-artifact@v4
