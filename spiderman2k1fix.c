@@ -135,20 +135,22 @@ done:
   return ok;
 }
 
-/* Win11 first-chance crash diagnostic for the exact verified game EXE.
+/* Exact-signature Win11 fclose(NULL) recovery for the verified game EXE.
  *
  * 2026-10-19 ProcDump: C0000005 read from address 0xC, EIP 0052A805,
  * ESI=0, EDI=-1. This is MSVC's statically linked fclose(FILE *) at
  * game RVA 0x12A7FC. Return address 005186F8 proves this call site's
  * FILE* argument is NULL. fclose(NULL) has undefined behavior.
  *
- * Test-only: on precisely this exception and caller, skip to fclose's
+ * On precisely this exception and caller, skip to fclose's
  * existing return epilogue (mov eax,edi; pop edi; pop esi; ret). This
  * safely returns EOF (-1) to the original caller rather than pretending
  * the file was closed. The non-null FILE* path is never changed.
  *
- * No game byte is patched. The VEH is opt-in, installed only after SHA256
- * verification, with opcode and caller validation. Its handler does not
+ * No game byte is patched. The VEH is armed by default only after SHA256
+ * verification, with opcode and caller validation. An explicit environment
+ * value SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD=0 disables it for diagnosis.
+ * Its handler does not
  * perform IO, allocate or touch DirectDraw/DirectInput/windows.
  */
 static uintptr_t null_fclose_image_base=0;
@@ -185,7 +187,7 @@ static LONG CALLBACK guarded_null_fclose_veh(PEXCEPTION_POINTERS info) {
   ctx->Eip=(DWORD)(base+0x12A828); /* original fclose error return */
   return EXCEPTION_CONTINUE_EXECUTION;
 }
-static void install_null_fclose_crash_test(void) {
+static void install_null_fclose_guard(void) {
   static const BYTE signature[]={
     0x56,0x8B,0x74,0x24,0x08,0x57,0x83,0xCF,0xFF,
     0xF6,0x46,0x0C,0x40
@@ -194,7 +196,10 @@ static void install_null_fclose_crash_test(void) {
   BYTE *base=(BYTE*)GetModuleHandleA(NULL);
   DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD",
                                   env,sizeof(env));
-  if(n!=1 || env[0]!='1') return;
+  if(n==1 && env[0]=='0') {
+    log_line("FCLOSE-GUARD: disabled by diagnostic override");
+    return;
+  }
   if(!base || (uintptr_t)base!=0x400000 ||
      memcmp(base+0x12A7FC,signature,sizeof(signature))!=0) {
     log_line("FCLOSE-GUARD: ERROR signature/layout mismatch; not installed");
@@ -203,7 +208,7 @@ static void install_null_fclose_crash_test(void) {
   null_fclose_image_base=(uintptr_t)base;
   null_fclose_veh_handle=AddVectoredExceptionHandler(1,guarded_null_fclose_veh);
   if(null_fclose_veh_handle)
-    log_line("FCLOSE-GUARD: EXPERIMENTAL guarded fclose(NULL) recovery armed (one caller, no changes to valid FILE*)");
+    log_line("FCLOSE-GUARD: exact-signature fclose(NULL) recovery armed (one caller, valid FILE* untouched)");
   else {
     null_fclose_image_base=0;
     log_line("FCLOSE-GUARD: ERROR AddVectoredExceptionHandler failed");
@@ -497,6 +502,16 @@ static void log_monitor(HWND hwnd) {
     (long)(mi.rcMonitor.right-mi.rcMonitor.left),(long)(mi.rcMonitor.bottom-mi.rcMonitor.top),
     (long)mi.rcMonitor.left,(long)mi.rcMonitor.top,(void*)hwnd);
   log_line(line);
+  if(desktop_w && desktop_h) {
+    const DWORD window_w=(DWORD)(mi.rcMonitor.right-mi.rcMonitor.left);
+    const DWORD window_h=(DWORD)(mi.rcMonitor.bottom-mi.rcMonitor.top);
+    snprintf(line,sizeof(line),
+      "DISPLAY-DPI: DirectDraw physical=%lux%lu HWND monitor=%lux%lu pixels %s",
+      (unsigned long)desktop_w,(unsigned long)desktop_h,
+      (unsigned long)window_w,(unsigned long)window_h,
+      (desktop_w==window_w && desktop_h==window_h)?"MATCH":"MISMATCH (DPI virtualization)");
+    log_line(line);
+  }
 }
 
 /* Direct3D7 hooks for physical viewport and vertex mapping. */
@@ -659,6 +674,8 @@ static const void *scale_menu_vertices(DWORD fvf,const void *vertices,DWORD coun
   const SpiderMenuMapping *mapping=menu_active?&menu_map:&game_map;
   *allocated=NULL;
   if(!menu_active && !game_active) return vertices;
+  /* Native viewport clips the menu to logical 640x480.
+   * Preserve vertices and upscale the composed frame during Flip. */
   if (!vertices || !count || fvf!=(D3DFVF_XYZRHW|D3DFVF_DIFFUSE|D3DFVF_TEX1)) {
     if (debug_log_enabled && (n=InterlockedIncrement(&menu_unscaled_draws))<=4) {
       char line[176];
@@ -798,6 +815,7 @@ static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE 
     return hr;
   }
 }
+/* Diagnostic: native SetViewport while preserving render-state/draw hooks. */
 static void instrument_d3d_device(IDirect3DDevice7 *device) {
   void ***obj=(void ***)device; void **vt;
   /* Native Windows startup A/B test. Only when explicitly requested, leave
@@ -834,46 +852,42 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
     log_line("D3D7: device vtable captured; viewport and draw hooks enabled");
     InterlockedExchange(&device_ready,2);
   }
-  /* Test-only Windows path: preserve the native COM object's original
-   * vtable POINTER and all of its unmodified entries. Our original 49-slot
-   * copy is known to work with Wine but the Windows 11 d3dim700.dll path
-   * faults at EIP=0 after SetViewport on a copied vtable. Test whether
-   * keeping the original allocation and four method substitutions helps.
-   * Keep opt-in until native Windows and Wine tests verify it.
+  /* On native Windows, a cloned 49-slot COM vtable caused a null
+   * indirect call within d3dim700!SetViewport. Keep the original vtable
+   * pointer and all unmodified entries; replace just the four hooks.
+   * This is the default rendering path on Windows and Wine. Do NOT fall
+   * back to the copied vtable if the native vtable cannot be patched.
    */
-  {
-    char inplace[4]={0};
-    DWORD length=GetEnvironmentVariableA("SPIDERMAN2K1FIX_D3D_INPLACE",
-                                          inplace,sizeof(inplace));
-    if(length==1 && inplace[0]=='1') {
-      if(device_ready==2 && vt[13]==(void*)original_set_viewport &&
-         vt[20]==(void*)original_set_render_state &&
-         vt[25]==(void*)original_draw_primitive &&
-         vt[26]==(void*)original_draw_indexed_primitive) {
-        DWORD protection=0,unused=0;
-        if(VirtualProtect(vt,sizeof(patched_device_vtable),
-                          PAGE_READWRITE,&protection)) {
-          vt[13]=(void*)hooked_set_viewport;
-          vt[20]=(void*)hooked_set_render_state;
-          vt[25]=(void*)hooked_draw_primitive;
-          vt[26]=(void*)hooked_draw_indexed_primitive;
-          VirtualProtect(vt,sizeof(patched_device_vtable),protection,&unused);
-          log_line("D3D7-DIAG: INPLACE native device vtable patched (original pointer retained; viewport/render-state/draw hooks ON)");
-        } else {
-          char line[160];
-          snprintf(line,sizeof(line),
-            "D3D7-DIAG: ERROR INPLACE VirtualProtect failed Win32=%lu; native device retained",
-            (unsigned long)GetLastError());
-          log_line(line);
-        }
-      } else {
-        log_line("D3D7-DIAG: INPLACE device vtable not original or already hooked; leaving pointer untouched");
-      }
-      return; /* Never fall back to cloned vtable in opt-in mode. */
+  if(device_ready==2 && vt[13]==(void*)original_set_viewport &&
+     vt[20]==(void*)original_set_render_state &&
+     vt[25]==(void*)original_draw_primitive &&
+     vt[26]==(void*)original_draw_indexed_primitive) {
+    DWORD protection=0,unused=0;
+    if(VirtualProtect(vt,sizeof(patched_device_vtable),
+                      PAGE_READWRITE,&protection)) {
+      vt[13]=(void*)hooked_set_viewport;
+      vt[20]=(void*)hooked_set_render_state;
+      vt[25]=(void*)hooked_draw_primitive;
+      vt[26]=(void*)hooked_draw_indexed_primitive;
+      if(!VirtualProtect(vt,sizeof(patched_device_vtable),protection,&unused))
+        log_line("D3D7: WARNING native vtable protection restore failed");
+      log_line("D3D7: native device vtable patched in place (default; all four hooks ON)");
+    } else {
+      char line[160];
+      snprintf(line,sizeof(line),
+        "D3D7: ERROR native vtable VirtualProtect failed Win32=%lu; leaving device unmodified",
+        (unsigned long)GetLastError());
+      log_line(line);
     }
+  } else if(device_ready==2 &&
+            vt[13]==(void*)hooked_set_viewport &&
+            vt[20]==(void*)hooked_set_render_state &&
+            vt[25]==(void*)hooked_draw_primitive &&
+            vt[26]==(void*)hooked_draw_indexed_primitive) {
+    /* COM object shares a vtable that was already patched by this fix. */
+  } else {
+    log_line("D3D7: WARNING device vtable differs from captured hooks; leaving pointer untouched");
   }
-  if(device_ready==2 && vt[13]==(void*)original_set_viewport)
-    *obj=patched_device_vtable;
 }
 static HRESULT WINAPI hooked_d3d_create_device(void *self,REFCLSID clsid,IDirectDrawSurface7 *target,IDirect3DDevice7 **out) {
   HRESULT hr=original_d3d_create_device(self,clsid,target,out);
@@ -1544,7 +1558,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
     return 0;
   }
   log_line("OK: supported SpideyPC.exe SHA-256 verified");
-  install_null_fclose_crash_test(); /* OFF by default; exact Win11 dump signature only. */
+  install_null_fclose_guard(); /* Default ON only for SHA-verified EXE and exact native opcode signature. */
   SpiderDI8Retry_Init(log_line); /* WinDbg-guided game-native Acquire retry; OFF by default */
   /* Generate complete defaults once, before any GetPrivateProfile... reads. */
   SpiderCfg_EnsureDefaultIni(log_line);
