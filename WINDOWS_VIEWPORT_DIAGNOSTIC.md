@@ -1,3 +1,48 @@
+# PR #1 consolidation — Windows D3D7 and shutdown fixes
+
+**Current PR #1 behavior (2026-10-20):** The native Direct3D7 device
+vtable is now patched **in place by default** (four methods; original
+COM vtable pointer and remaining entries preserved). The narrowly guarded
+`fclose(NULL)` exception recovery is also armed by default **only for
+the exact SHA-256-verified game executable and matching machine-code
+signature**. The early process DPI-awareness fix is included here.
+The experimental `PauseOnFocusLoss` option belongs exclusively to the stacked PR #2.
+
+There is **no PowerShell environment variables requirement** for the
+consolidated graphics and fclose fixes. For a clean native-Windows test,
+remove old diagnostic switches from the current terminal, then run:
+
+```powershell
+'SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE',
+'SPIDERMAN2K1FIX_D3D_INPLACE',
+'SPIDERMAN2K1FIX_D3D_NATIVE_VIEWPORT',
+'SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD' |
+    ForEach-Object { Remove-Item "Env:$_" -ErrorAction SilentlyContinue }
+$p = Start-Process -FilePath .\SpideyPC.exe -Wait -PassThru
+"Exit code: $($p.ExitCode)"
+```
+
+Expected debug-log entries (with `[Debug] Log=1`):
+- `DPI-BOOT: SetProcessDPIAware result=OK`
+- `D3D7: native device vtable patched in place (default; all four hooks ON)`
+- `FCLOSE-GUARD: exact-signature fclose(NULL) recovery armed`
+
+An exit code of `0` on one test confirms a normal process termination,
+**not** that the fclose guard necessarily fired; its recovery count is
+reported only if a subsequent Flip occurs.
+
+For a diagnostic A/B test, `SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD=0`
+disables only the targeted exception recovery.
+`SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE=1` bypasses the device graphics
+hooks and can distort the display; **do not use it for regular play**.
+
+The older A/B experiments below are retained as historical records.
+Commands setting `D3D_INPLACE=1` and `FCLOSE_NULL_GUARD=1` are no
+longer necessary; those modes now run by default. None of these PR
+changes should be merged before native-Windows and Wine validation.
+
+---
+
 # Windows D3D7 crash — viewport diagnostic
 
 This is a temporary diagnostic on pull request #1. It makes no default
