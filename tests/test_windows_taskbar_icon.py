@@ -35,7 +35,11 @@ def test_sets_small_and_large_window_icons_without_changing_zorder():
 
 
 def test_missing_resource_preserves_original_window_icon_and_releases_partial_icons():
-    assert 'if(extracted!=1 || !small || !big)' in SRC
+    # Windows may return 2 for the large and small handles even with nIcons=1.
+    assert 'if(extracted==0 || extracted==UINT_MAX || !small || !big)' in SRC
+    assert 'if(extracted!=1 || !small || !big)' not in SRC
+    assert 'error=(extracted==UINT_MAX)?GetLastError():0;' in SRC
+    assert 'loaded small+big extracted=%u' in SRC
     assert 'if(small) DestroyIcon(small);' in SRC
     assert 'if(big) DestroyIcon(big);' in SRC
     assert 'EXE embedded icon unavailable' in SRC
