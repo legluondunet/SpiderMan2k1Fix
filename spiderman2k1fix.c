@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <wchar.h>
+#include <shellapi.h>
 #include <wincrypt.h>
 #include <stdio.h>
 #include <string.h>
@@ -259,11 +260,15 @@ static LONG borderless_monitor_x=0,borderless_monitor_y=0;
 static volatile LONG borderless_present_failed=0;
 static volatile LONG borderless_legacy_mode_calls=0;
 
-/* Win11 taskbar window icon: when SpideyPC.ico exists alongside the game,
- * apply its small + large icon to the actual game HWND (no EXE resource patch).
- * Safe default ON; missing/unreadable ICO retains Windows' original icon.
+/* Win11 taskbar window icon: extract the FIRST icon group embedded in
+ * the supported SpideyPC.exe (already verified by SHA-256). Do not assume
+ * its resource ID, and do not depend on an adjacent SpideyPC.ico file.
+ * ExtractIconExW uses the group resource's size variants for big/small
+ * icons, unlike using a fixed MAKEINTRESOURCE(1).
+ *
+ * Safe default ON; extraction failure keeps the original window icon.
  * SPIDERMAN2K1FIX_WINDOW_ICON=0 disables this for A/B tests.
- * Never changes focus, window positioning, Z-order or Direct3D.
+ * Does not change window flags, Z-order, focus or rendering.
  */
 static HICON spidey_icon_small=NULL, spidey_icon_big=NULL;
 static BOOL spidey_icon_load_attempted=FALSE;
@@ -273,60 +278,47 @@ static int spidey_icon_enabled(void) {
   return !(n==1 && value[0]=='0');
 }
 static void spidey_apply_window_icon(HWND hwnd) {
-  WCHAR path[MAX_PATH],*slash;
-  DWORD n,attrs;
-  SIZE_T dir_len;
-  HICON small,big;
-  char line[180];
-  static const WCHAR name[]=L"SpideyPC.ico";
+  WCHAR path[MAX_PATH];
+  DWORD n,error=0;
+  UINT extracted;
+  HICON small=NULL,big=NULL;
+  char line[200];
   if(!spidey_icon_enabled() || !hwnd || !IsWindow(hwnd)) return;
   if(!spidey_icon_load_attempted) {
     spidey_icon_load_attempted=TRUE;
     n=GetModuleFileNameW(NULL,path,MAX_PATH);
-    if(!n || n>=MAX_PATH || !(slash=wcsrchr(path,L'\\'))) {
-      log_line("WINDOW-ICON: unable to locate EXE directory; icon unchanged");
+    if(!n || n>=MAX_PATH) {
+      log_line("WINDOW-ICON: cannot resolve running EXE path; icon unchanged");
       return;
     }
-    dir_len=(SIZE_T)(slash-path+1);
-    if(dir_len+sizeof(name)/sizeof(name[0])>MAX_PATH) {
-      log_line("WINDOW-ICON: ICO path too long; icon unchanged");
-      return;
-    }
-    memcpy(path+dir_len,name,sizeof(name));
-    attrs=GetFileAttributesW(path);
-    if(attrs==INVALID_FILE_ATTRIBUTES || (attrs&FILE_ATTRIBUTE_DIRECTORY)) {
-      log_line("WINDOW-ICON: SpideyPC.ico not found; original icon unchanged");
-      return;
-    }
-    small=(HICON)LoadImageW(NULL,path,IMAGE_ICON,
-       GetSystemMetrics(SM_CXSMICON),GetSystemMetrics(SM_CYSMICON),LR_LOADFROMFILE);
-    big=(HICON)LoadImageW(NULL,path,IMAGE_ICON,
-       GetSystemMetrics(SM_CXICON),GetSystemMetrics(SM_CYICON),LR_LOADFROMFILE);
-    if(!small || !big) {
-      DWORD error=GetLastError();
+    /* 0 = first RT_GROUP_ICON in the running executable. No external ICO. */
+    SetLastError(0);
+    extracted=ExtractIconExW(path,0,&big,&small,1);
+    if(extracted!=1 || !small || !big) {
+      error=GetLastError();
       if(small) DestroyIcon(small);
       if(big) DestroyIcon(big);
-      snprintf(line,sizeof(line),"WINDOW-ICON: LoadImage failed Win32=%lu; original icon unchanged",
-        (unsigned long)error);
+      snprintf(line,sizeof(line),
+        "WINDOW-ICON: EXE embedded icon unavailable extracted=%u Win32=%lu; original icon unchanged",
+        (unsigned)extracted,(unsigned long)error);
       log_line(line);
       return;
     }
     spidey_icon_small=small;
     spidey_icon_big=big;
-    log_line("WINDOW-ICON: SpideyPC.ico loaded small+big");
+    log_line("WINDOW-ICON: embedded SpideyPC.exe icon loaded small+big");
   }
   if(!spidey_icon_small || !spidey_icon_big) return;
   if((HICON)SendMessageW(hwnd,WM_GETICON,ICON_SMALL,0)==spidey_icon_small &&
      (HICON)SendMessageW(hwnd,WM_GETICON,ICON_BIG,0)==spidey_icon_big) return;
   SendMessageW(hwnd,WM_SETICON,ICON_SMALL,(LPARAM)spidey_icon_small);
   SendMessageW(hwnd,WM_SETICON,ICON_BIG,(LPARAM)spidey_icon_big);
-  snprintf(line,sizeof(line),"WINDOW-ICON: applied SpideyPC.ico hwnd=%p small=%d big=%d",
+  snprintf(line,sizeof(line),"WINDOW-ICON: applied embedded SpideyPC.exe icon hwnd=%p small=%d big=%d",
     (void*)hwnd,
     (HICON)SendMessageW(hwnd,WM_GETICON,ICON_SMALL,0)==spidey_icon_small,
     (HICON)SendMessageW(hwnd,WM_GETICON,ICON_BIG,0)==spidey_icon_big);
   log_line(line);
 }
-
 static void borderless_window_apply(void) {
   MONITORINFO mi; HMONITOR mon; LONG_PTR style,exstyle;
   RECT r; char line[240];
