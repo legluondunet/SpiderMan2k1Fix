@@ -57,7 +57,7 @@ static const char *const spider_ini_display[]={
   "ExperimentalDisplayMenuLock"
 };
 static const char *const spider_ini_hud[]={"HUDWidescreenFix"};
-static const char *const spider_ini_input[]={"ExperimentalAltTabReacquire","ExperimentalFocusTrace","PauseOnFocusLoss","RestoreCursorOnFocusLoss"};
+static const char *const spider_ini_input[]={"ExperimentalAltTabReacquire","ExperimentalFocusTrace","PauseOnFocusLoss","ExperimentalFocusEventPause","RestoreCursorOnFocusLoss"};
 static const char *const spider_ini_audio[]={"MusicSFXLevel","VoiceLevel","MovieLevel","Stereo"};
 static const char *const spider_ini_keys[]={"Up","Down","Left","Right","Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
 static const char *const spider_ini_joy[]={"Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
