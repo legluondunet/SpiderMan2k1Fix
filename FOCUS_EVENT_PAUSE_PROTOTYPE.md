@@ -105,6 +105,36 @@ FOCUS-EVENT: WM_ACTIVATEAPP(TRUE) elapsed-ms=M ...
 FOCUS-EVENT: GATE EXIT: time-in-gate elapsed-ms=P ...
 ```
 
+### Diagnosing the original game's focus handler (second diagnostic build)
+
+The first Wine 11.17/X11 game log with this option enabled stopped right after
+`FOCUS-EVENT: WM_ACTIVATEAPP(FALSE)`, with **no subsequent gate entry or
+focus-return event**. This is not proof of a broken pause or focus return:
+the native game WndProc may block at that moment, the rendering loop may stop
+calling Flip, or the process may terminate before emitting another log.
+
+The updated diagnostic branch therefore also emits
+`FOCUS-EVENT: WNDPROC BEFORE WM_ACTIVATEAPP wParam=0` and, if the
+original game WndProc returns,
+`FOCUS-EVENT: WNDPROC AFTER WM_ACTIVATEAPP wParam=0 elapsed-ms=N`.
+
+- If **BEFORE but no AFTER**, investigate the original game's
+  `WM_ACTIVATEAPP(FALSE)` callback or why the process exited; the
+  custom Flip gate was not entered.
+- If **AFTER but no GATE ENTER**, the game's loop was not observed
+  reaching another Flip while in the background; a Flip-boundary pause
+  is not sufficient.
+- If **GATE ENTER and GATE EXIT**, the gate ran and timings are
+  measurable. Only then assess whether it pauses visible game logic.
+- Focus-return messages are now logged when received even when
+  `GetForegroundWindow()` has not yet caught up. No DirectInput
+  recovery is attempted.
+
+Use a newly cleared log so one run's observations are unambiguous.
+**Never deliberately cause an Alt+Tab hang just to capture this trace**:
+start with one loss/return attempt, stop if inputs remain unusable,
+restore known-good DLLs if needed, and preserve the file.
+
 If `FOCUS-EVENT: GATE ENTER` follows `WM_ACTIVATEAPP(FALSE)`
 by >100 ms (or no gate is logged for several seconds), the Flip
 boundary is **not** prompt enough for an engine-wide pause.
