@@ -17,8 +17,13 @@ def test_pause_only_at_ddraw_flip_boundary():
     assert "static void pause_at_flip_if_background(void)" in CORE
     assert CORE.count("pause_at_flip_if_background();")==1
     start=CORE.index("static HRESULT WINAPI hooked_flip(")
-    end=CORE.index("SpiderInputFocus_OnFlip(count);",start)
-    assert "pause_at_flip_if_background();" in CORE[start:end]
+    end=CORE.index("SpiderDI8Retry_OnFlip(count);",start)
+    flip=CORE[start:end]
+    assert flip.count("pause_at_flip_if_background();")==1
+    assert flip.count("SpiderInputFocus_OnFlip(count);")==2
+    assert flip.index("SpiderInputFocus_OnFlip(count);") < flip.index("pause_at_flip_if_background();")
+    assert "if(was_background &&" in flip
+    assert flip.rindex("SpiderInputFocus_OnFlip(count);") > flip.index("pause_at_flip_if_background();")
     pause=CORE[CORE.index("static void pause_at_flip_if_background(void)") : start]
     for needle in ["GetForegroundWindow()==hwnd", "PeekMessageA", "PostQuitMessage",
                    "TranslateMessage", "DispatchMessageA", "MsgWaitForMultipleObjectsEx"]:
