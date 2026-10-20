@@ -48,17 +48,37 @@ static void mark_restored(const char *reason) {
   since=(DWORD)read_flag(&focus_loss_tick);
   write_focus(reason,now-since);
 }
+/* Trace the ORIGINAL game window procedure before and after dispatch.
+ * This distinguishes a native focus handler that never returns from a
+ * perfectly returned message followed by no further game Flip. Only four
+ * focus messages are traced, never high-frequency mouse/keyboard input. */
+static void log_wndproc_boundary(UINT msg,WPARAM wp,const char *phase,DWORD ms) {
+  char line[192];
+  const char *label=(msg==WM_ACTIVATEAPP) ? "WM_ACTIVATEAPP" :
+                    (msg==WM_KILLFOCUS) ? "WM_KILLFOCUS" :
+                    (msg==WM_SETFOCUS) ? "WM_SETFOCUS" : "other";
+  snprintf(line,sizeof(line),"FOCUS-EVENT: WNDPROC %s %s wParam=%lu elapsed-ms=%lu",
+           phase,label,(unsigned long)wp,(unsigned long)ms);
+  if(write_log) write_log(line);
+}
 static LRESULT CALLBACK focus_pause_proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
   WNDPROC chained=original_proc;
+  int trace=(msg==WM_ACTIVATEAPP || msg==WM_KILLFOCUS || msg==WM_SETFOCUS);
+  DWORD started=0;
+  LRESULT result;
   switch(msg) {
     case WM_ACTIVATEAPP:
       if(!wp) mark_lost("WM_ACTIVATEAPP(FALSE)");
-      else mark_restored("WM_ACTIVATEAPP(TRUE)");
+      else {
+        write_focus("WM_ACTIVATEAPP(TRUE) received",0);
+        mark_restored("WM_ACTIVATEAPP(TRUE)");
+      }
       break;
     case WM_KILLFOCUS:
       mark_lost("WM_KILLFOCUS");
       break;
     case WM_SETFOCUS:
+      write_focus("WM_SETFOCUS received",0);
       mark_restored("WM_SETFOCUS");
       break;
     default:
@@ -74,8 +94,15 @@ static LRESULT CALLBACK focus_pause_proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp)
     InterlockedExchange(&focus_lost,0);
     InterlockedExchange(&pause_busy,0);
   }
-  return chained ? CallWindowProcA(chained,hwnd,msg,wp,lp)
+  if(trace) {
+    started=GetTickCount();
+    log_wndproc_boundary(msg,wp,"BEFORE",0);
+  }
+  result=chained ? CallWindowProcA(chained,hwnd,msg,wp,lp)
                  : DefWindowProcA(hwnd,msg,wp,lp);
+  if(trace)
+    log_wndproc_boundary(msg,wp,"AFTER",GetTickCount()-started);
+  return result;
 }
 void SpiderFocusEventPause_Init(void (*logger)(const char *)) {
   char path[MAX_PATH],*slash;
