@@ -22,6 +22,7 @@
 #include "fov_aspect.h"
 #include "fov_aspect_win.h"
 #include "input_focus_trace.h"
+#include "focus_event_pause.h"
 #include "input_notacquired_retry.h"
 #include "menu_version.h"
 #include "version_info.h"
@@ -1121,7 +1122,10 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   {
     BOOL was_background=(game_hwnd && GetForegroundWindow()!=game_hwnd);
     SpiderInputFocus_OnFlip(count);
-    pause_at_flip_if_background();
+    if(SpiderFocusEventPause_IsEnabled())
+      SpiderFocusEventPause_OnFlip();
+    else
+      pause_at_flip_if_background();
     if(was_background &&
        InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1)
       SpiderInputFocus_OnFlip(count);
@@ -1410,6 +1414,7 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
   if(SUCCEEDED(hr)) {
     borderless_window_apply();
     SpiderInputFocus_AttachWindow(hwnd);
+    SpiderFocusEventPause_AttachWindow(hwnd);
   }
   else {
     snprintf(line,sizeof(line),"BORDERLESS: ERROR DDSCL_NORMAL rejected hr=0x%08lX",(unsigned long)hr);
@@ -1802,6 +1807,10 @@ static DWORD WINAPI initialize(LPVOID unused) {
       "FOCUS-PAUSE: experimental Flip-boundary pause disabled");
   }
   SpiderInputFocus_Install(log_line);
+  /* Independent Win32/Wine focus observer; opt-in only, no DirectInput hook.
+   * Initialized after the original input settings so the two experimental
+   * observer modes can explicitly reject incompatible configurations. */
+  SpiderFocusEventPause_Init(log_line);
   return 0;
 }
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID reserved) {
