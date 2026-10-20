@@ -41,6 +41,21 @@ static void patch_early(void) {
 }
 
 static INIT_ONCE once = INIT_ONCE_STATIC_INIT;
+/* One log per game process: winmm.dll writes the first startup messages
+ * before loading SpiderMan2k1Fix.dll. Only the proxy resets the file,
+ * exactly once on its FIRST enabled log call. Both DLLs then append.
+ * Do not perform file I/O from DllMain (loader lock).
+ */
+static INIT_ONCE log_session_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK begin_log_session(PINIT_ONCE unused, PVOID param, PVOID *ctx) {
+    const char *path=(const char *)param;
+    FILE *f;
+    (void)unused; (void)ctx;
+    f=fopen(path,"w"); /* Truncate previous run BEFORE the first log line. */
+    if (!f) return FALSE; /* Retry later; never append to a stale session. */
+    fclose(f);
+    return TRUE;
+}
 static void log_proxy(const char *message) {
     char path[MAX_PATH]; char *slash; FILE *f;
     DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
@@ -51,6 +66,7 @@ static void log_proxy(const char *message) {
     if (GetPrivateProfileIntA("Debug","Log",0,path)!=1) return;
     if ((size_t)(slash-path)+strlen("SpiderMan2k1Fix.log")+1>=sizeof(path)) return;
     strcpy(slash+1,"SpiderMan2k1Fix.log");
+    if (!InitOnceExecuteOnce(&log_session_once,begin_log_session,path,NULL)) return;
     f=fopen(path,"a"); if (f) { fprintf(f,"%s\n",message); fclose(f); }
 }
 static BOOL CALLBACK load_real(PINIT_ONCE unused, PVOID arg, PVOID *ctx) {
