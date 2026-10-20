@@ -1,5 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <wchar.h>
 #include <wincrypt.h>
 #include <stdio.h>
 #include <string.h>
@@ -19,6 +20,9 @@
 #include "fov_aspect.h"
 #include "fov_aspect_win.h"
 #include "input_focus_trace.h"
+#include "input_notacquired_retry.h"
+#include "menu_version.h"
+#include "version_info.h"
 
 static const BYTE expected_sha256[32] = {
   0x0a,0x11,0xa4,0x9f,0x3f,0x63,0xd4,0xbb,
@@ -130,6 +134,97 @@ done:
   if(file!=INVALID_HANDLE_VALUE) CloseHandle(file);
   return ok;
 }
+
+/* Exact-signature Win11 fclose(NULL) recovery for the verified game EXE.
+ *
+ * 2026-10-19 ProcDump: C0000005 read from address 0xC, EIP 0052A805,
+ * ESI=0, EDI=-1. This is MSVC's statically linked fclose(FILE *) at
+ * game RVA 0x12A7FC. Return address 005186F8 proves this call site's
+ * FILE* argument is NULL. fclose(NULL) has undefined behavior.
+ *
+ * On precisely this exception and caller, skip to fclose's
+ * existing return epilogue (mov eax,edi; pop edi; pop esi; ret). This
+ * safely returns EOF (-1) to the original caller rather than pretending
+ * the file was closed. The non-null FILE* path is never changed.
+ *
+ * No game byte is patched. The VEH is armed by default only after SHA256
+ * verification, with opcode and caller validation. An explicit environment
+ * value SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD=0 disables it for diagnosis.
+ * Its handler does not
+ * perform IO, allocate or touch DirectDraw/DirectInput/windows.
+ */
+static uintptr_t null_fclose_image_base=0;
+static PVOID null_fclose_veh_handle=NULL;
+static volatile LONG null_fclose_interceptions=0;
+static volatile LONG null_fclose_reported=0;
+static LONG CALLBACK guarded_null_fclose_veh(PEXCEPTION_POINTERS info) {
+  EXCEPTION_RECORD *ex;
+  CONTEXT *ctx;
+  uintptr_t slot,base;
+  MEMORY_BASIC_INFORMATION mb;
+  if(!info || !(ex=info->ExceptionRecord) || !(ctx=info->ContextRecord))
+    return EXCEPTION_CONTINUE_SEARCH;
+  base=null_fclose_image_base;
+  if(!base || ex->ExceptionCode!=EXCEPTION_ACCESS_VIOLATION ||
+     ex->NumberParameters<2 || ex->ExceptionInformation[0]!=0 ||
+     ex->ExceptionInformation[1]!=0xC ||
+     (uintptr_t)ex->ExceptionAddress!=base+0x12A805 ||
+     (uintptr_t)ctx->Eip!=base+0x12A805 ||
+     ctx->Esi!=0 || ctx->Edi!=0xFFFFFFFFUL)
+    return EXCEPTION_CONTINUE_SEARCH;
+  /* Current position is after fclose's push esi / push edi prologue:
+   * ESP+8 is its caller's return address, ESP+12 the NULL FILE*.
+   */
+  slot=(uintptr_t)ctx->Esp+8;
+  if(slot<(uintptr_t)ctx->Esp || slot+8<slot ||
+     VirtualQuery((LPCVOID)slot,&mb,sizeof(mb))!=sizeof(mb) ||
+     mb.State!=MEM_COMMIT || (mb.Protect&(PAGE_NOACCESS|PAGE_GUARD)) ||
+     slot+8>(uintptr_t)mb.BaseAddress+mb.RegionSize)
+    return EXCEPTION_CONTINUE_SEARCH;
+  if(*(DWORD*)slot!=(DWORD)(base+0x1186F8) || *(DWORD*)(slot+4)!=0)
+    return EXCEPTION_CONTINUE_SEARCH;
+  InterlockedIncrement(&null_fclose_interceptions);
+  ctx->Eip=(DWORD)(base+0x12A828); /* original fclose error return */
+  return EXCEPTION_CONTINUE_EXECUTION;
+}
+static void install_null_fclose_guard(void) {
+  static const BYTE signature[]={
+    0x56,0x8B,0x74,0x24,0x08,0x57,0x83,0xCF,0xFF,
+    0xF6,0x46,0x0C,0x40
+  };
+  char env[4]={0};
+  BYTE *base=(BYTE*)GetModuleHandleA(NULL);
+  DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_FCLOSE_NULL_GUARD",
+                                  env,sizeof(env));
+  if(n==1 && env[0]=='0') {
+    log_line("FCLOSE-GUARD: disabled by diagnostic override");
+    return;
+  }
+  if(!base || (uintptr_t)base!=0x400000 ||
+     memcmp(base+0x12A7FC,signature,sizeof(signature))!=0) {
+    log_line("FCLOSE-GUARD: ERROR signature/layout mismatch; not installed");
+    return;
+  }
+  null_fclose_image_base=(uintptr_t)base;
+  null_fclose_veh_handle=AddVectoredExceptionHandler(1,guarded_null_fclose_veh);
+  if(null_fclose_veh_handle)
+    log_line("FCLOSE-GUARD: exact-signature fclose(NULL) recovery armed (one caller, valid FILE* untouched)");
+  else {
+    null_fclose_image_base=0;
+    log_line("FCLOSE-GUARD: ERROR AddVectoredExceptionHandler failed");
+  }
+}
+static void report_null_fclose_recovery(void) {
+  LONG hits=InterlockedCompareExchange(&null_fclose_interceptions,0,0);
+  if(hits>InterlockedCompareExchange(&null_fclose_reported,0,0)) {
+    char line[180];
+    InterlockedExchange(&null_fclose_reported,hits);
+    snprintf(line,sizeof(line),
+      "FCLOSE-GUARD: recovered %ld fclose(NULL) call(s) at game EIP 0x0052A805 / caller 0x005186F8",
+      (long)hits);
+    log_line(line);
+  }
+}
 /* DirectDraw7 borderless-windowed adaptation. Never alter physical display modes. */
 typedef HRESULT (WINAPI *CreateExFn)(GUID *, void **, REFIID, IUnknown *);
 typedef HRESULT (WINAPI *CoopFn)(void *, HWND, DWORD);
@@ -163,6 +258,73 @@ static IDirectDrawSurface7 *borderless_back=NULL; /* one owned reference */
 static LONG borderless_monitor_x=0,borderless_monitor_y=0;
 static volatile LONG borderless_present_failed=0;
 static volatile LONG borderless_legacy_mode_calls=0;
+
+/* Win11 native taskbar icon experiment: set icons on the game's actual HWND.
+ * SpideyPC.ico is the original separate game icon, not an embedded resource.
+ * This only sets WM_SETICON; it never changes window flags, focus or Z-order.
+ * Off unless SPIDERMAN2K1FIX_WINDOW_ICON_TEST=1. */
+static HICON spidey_icon_small=NULL, spidey_icon_big=NULL;
+static BOOL spidey_icon_load_attempted=FALSE;
+static int spidey_icon_optin(void) {
+  char value[4]={0};
+  DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_WINDOW_ICON_TEST",value,sizeof(value));
+  return n==1 && value[0]=='1';
+}
+static void spidey_apply_window_icon(HWND hwnd) {
+  WCHAR path[MAX_PATH],*slash;
+  DWORD n,attrs;
+  SIZE_T dir_len;
+  HICON small,big;
+  char line[180];
+  static const WCHAR name[]=L"SpideyPC.ico";
+  if(!spidey_icon_optin() || !hwnd || !IsWindow(hwnd)) return;
+  if(!spidey_icon_load_attempted) {
+    spidey_icon_load_attempted=TRUE;
+    n=GetModuleFileNameW(NULL,path,MAX_PATH);
+    if(!n || n>=MAX_PATH || !(slash=wcsrchr(path,L'\\'))) {
+      log_line("WINDOW-ICON: unable to locate EXE directory; icon unchanged");
+      return;
+    }
+    dir_len=(SIZE_T)(slash-path+1);
+    if(dir_len+sizeof(name)/sizeof(name[0])>MAX_PATH) {
+      log_line("WINDOW-ICON: ICO path too long; icon unchanged");
+      return;
+    }
+    memcpy(path+dir_len,name,sizeof(name));
+    attrs=GetFileAttributesW(path);
+    if(attrs==INVALID_FILE_ATTRIBUTES || (attrs&FILE_ATTRIBUTE_DIRECTORY)) {
+      log_line("WINDOW-ICON: SpideyPC.ico not found; original icon unchanged");
+      return;
+    }
+    small=(HICON)LoadImageW(NULL,path,IMAGE_ICON,
+       GetSystemMetrics(SM_CXSMICON),GetSystemMetrics(SM_CYSMICON),LR_LOADFROMFILE);
+    big=(HICON)LoadImageW(NULL,path,IMAGE_ICON,
+       GetSystemMetrics(SM_CXICON),GetSystemMetrics(SM_CYICON),LR_LOADFROMFILE);
+    if(!small || !big) {
+      DWORD error=GetLastError();
+      if(small) DestroyIcon(small);
+      if(big) DestroyIcon(big);
+      snprintf(line,sizeof(line),"WINDOW-ICON: LoadImage failed Win32=%lu; original icon unchanged",
+        (unsigned long)error);
+      log_line(line);
+      return;
+    }
+    spidey_icon_small=small;
+    spidey_icon_big=big;
+    log_line("WINDOW-ICON: SpideyPC.ico loaded small+big");
+  }
+  if(!spidey_icon_small || !spidey_icon_big) return;
+  if((HICON)SendMessageW(hwnd,WM_GETICON,ICON_SMALL,0)==spidey_icon_small &&
+     (HICON)SendMessageW(hwnd,WM_GETICON,ICON_BIG,0)==spidey_icon_big) return;
+  SendMessageW(hwnd,WM_SETICON,ICON_SMALL,(LPARAM)spidey_icon_small);
+  SendMessageW(hwnd,WM_SETICON,ICON_BIG,(LPARAM)spidey_icon_big);
+  snprintf(line,sizeof(line),"WINDOW-ICON: applied SpideyPC.ico hwnd=%p small=%d big=%d",
+    (void*)hwnd,
+    (HICON)SendMessageW(hwnd,WM_GETICON,ICON_SMALL,0)==spidey_icon_small,
+    (HICON)SendMessageW(hwnd,WM_GETICON,ICON_BIG,0)==spidey_icon_big);
+  log_line(line);
+}
+
 static void borderless_window_apply(void) {
   MONITORINFO mi; HMONITOR mon; LONG_PTR style,exstyle;
   RECT r; char line[240];
@@ -180,6 +342,7 @@ static void borderless_window_apply(void) {
     (exstyle & ~(WS_EX_DLGMODALFRAME|WS_EX_WINDOWEDGE|WS_EX_CLIENTEDGE|WS_EX_STATICEDGE))|WS_EX_APPWINDOW);
   SetWindowPos(game_hwnd,HWND_NOTOPMOST,r.left,r.top,r.right-r.left,r.bottom-r.top,
     SWP_FRAMECHANGED|SWP_SHOWWINDOW|SWP_NOACTIVATE);
+  spidey_apply_window_icon(game_hwnd);
   snprintf(line,sizeof(line),"BORDERLESS: window=%p style=WS_POPUP rect=(%ld,%ld)+%ldx%ld cooperativity=WINDOWED",
     (void*)game_hwnd,(long)r.left,(long)r.top,
     (long)(r.right-r.left),(long)(r.bottom-r.top));
@@ -238,6 +401,10 @@ static volatile LONG gameplay_4x3_enabled=0,gameplay_4x3_active=0;
 static volatile LONG gameplay_4x3_mapped=0,gameplay_4x3_bar_errors=0;
 static volatile LONG menu_scaled_draws=0, menu_unscaled_draws=0;
 static volatile LONG menu_clear_failures=0;
+static volatile LONG menu_version_draws=0;
+static volatile LONG menu_version_movie_blits=0;
+static volatile LONG menu_version_last_movie_flip=-1000;
+static volatile LONG menu_version_logged=0;
 
 static SpiderFrameLimiter g_frame_limiter;
 static BOOL g_frame_limiter_ready=FALSE;
@@ -335,6 +502,16 @@ static void log_monitor(HWND hwnd) {
     (long)(mi.rcMonitor.right-mi.rcMonitor.left),(long)(mi.rcMonitor.bottom-mi.rcMonitor.top),
     (long)mi.rcMonitor.left,(long)mi.rcMonitor.top,(void*)hwnd);
   log_line(line);
+  if(desktop_w && desktop_h) {
+    const DWORD window_w=(DWORD)(mi.rcMonitor.right-mi.rcMonitor.left);
+    const DWORD window_h=(DWORD)(mi.rcMonitor.bottom-mi.rcMonitor.top);
+    snprintf(line,sizeof(line),
+      "DISPLAY-DPI: DirectDraw physical=%lux%lu HWND monitor=%lux%lu pixels %s",
+      (unsigned long)desktop_w,(unsigned long)desktop_h,
+      (unsigned long)window_w,(unsigned long)window_h,
+      (desktop_w==window_w && desktop_h==window_h)?"MATCH":"MISMATCH (DPI virtualization)");
+    log_line(line);
+  }
 }
 
 /* Direct3D7 hooks for physical viewport and vertex mapping. */
@@ -366,6 +543,42 @@ static HRESULT WINAPI hooked_set_render_state(void *self,D3DRENDERSTATETYPE stat
 
 static void *patched_d3d_vtable[8], *patched_device_vtable[49];
 static volatile LONG d3d_ready=0, device_ready=0, viewport_count=0;
+/* Diagnostic-only call boundary: determines whether the crash occurs inside
+ * native SetViewport or only after its HRESULT has been returned. Never
+ * swallow an exception, never alter success/failure from the real driver.
+ */
+static HRESULT call_original_set_viewport_traced(void *self,LPD3DVIEWPORT7 view,
+                                                 LONG sequence,const char *mode) {
+  HRESULT hr;
+  if(debug_log_enabled && sequence<=24) {
+    MEMORY_BASIC_INFORMATION region;
+    SIZE_T queried=0;
+    char line[256];
+    memset(&region,0,sizeof(region));
+    if(original_set_viewport)
+      queried=VirtualQuery((LPCVOID)(uintptr_t)original_set_viewport,
+                           &region,sizeof(region));
+    snprintf(line,sizeof(line),
+      "D3D7-VIEWPORT-DIAG: BEFORE #%ld mode=%s device=%p original=%p memory-state=0x%08lX protection=0x%08lX query=%lu rect=%lux%lu+%lu+%lu",
+      (long)sequence,mode,self,(void*)(uintptr_t)original_set_viewport,
+      (unsigned long)region.State,(unsigned long)region.Protect,(unsigned long)queried,
+      (unsigned long)(view?view->dwWidth:0),(unsigned long)(view?view->dwHeight:0),
+      (unsigned long)(view?view->dwX:0),(unsigned long)(view?view->dwY:0));
+    log_line(line);
+  }
+  if(!original_set_viewport) {
+    log_line("D3D7-VIEWPORT-DIAG: ERROR original SetViewport pointer is NULL");
+    return E_POINTER;
+  }
+  hr=original_set_viewport(self,view);
+  if(debug_log_enabled && sequence<=24) {
+    char line[160];
+    snprintf(line,sizeof(line),"D3D7-VIEWPORT-DIAG: AFTER #%ld mode=%s hr=0x%08lX",
+      (long)sequence,mode,(unsigned long)hr);
+    log_line(line);
+  }
+  return hr;
+}
 static HRESULT WINAPI hooked_set_viewport(void *self,LPD3DVIEWPORT7 view) {
   LONG n=InterlockedIncrement(&viewport_count);
   if(debug_log_enabled && n<=24 && view) {
@@ -387,12 +600,25 @@ static HRESULT WINAPI hooked_set_viewport(void *self,LPD3DVIEWPORT7 view) {
     physical.dwWidth=(DWORD)(game_map.right-game_map.left);
     physical.dwHeight=(DWORD)(game_map.bottom-game_map.top);
     if(debug_log_enabled && n<=24) log_line("DISPLAY-ASPECT-43: gameplay D3D7 viewport centered on native output");
-    return original_set_viewport(self,&physical);
+    return call_original_set_viewport_traced(self,&physical,n,"gameplay-4x3");
   }
   if (view && InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
       view->dwWidth==640 && view->dwHeight==480 &&
       view->dwX==0 && view->dwY==0) {
     D3DVIEWPORT7 physical=*view;
+    /* Temporary A/B test: set in the launching PowerShell session only.
+     * Unset variable after test. Default path is the unchanged 4:3 mapping.
+     * This bypasses only the viewport remap, NOT the existing proxy/hooks. */
+    {
+      char diagnostic[4]={0};
+      DWORD nbytes=GetEnvironmentVariableA("SPIDERMAN2K1FIX_VIEWPORT_LOGICAL",
+                                           diagnostic,sizeof(diagnostic));
+      if(nbytes==1 && diagnostic[0]=='1') {
+        if(debug_log_enabled && n<=24)
+          log_line("D3D7-VIEWPORT-DIAG: A/B logical 640x480 original viewport selected");
+        return call_original_set_viewport_traced(self,view,n,"menu-logical-ab");
+      }
+    }
     if (InterlockedCompareExchange(&media_viewport_4x3_enabled,0,0)==1) {
       char line[228];
       /* A centered 4:3 viewport preserves the aspect of projected geometry.
@@ -416,9 +642,9 @@ static HRESULT WINAPI hooked_set_viewport(void *self,LPD3DVIEWPORT7 view) {
       physical.dwHeight=desktop_h;
       if (n<=24) log_line("DISPLAY-TEST: menu D3D viewport 640x480 -> native monitor size (legacy)");
     }
-    return original_set_viewport(self,&physical);
+    return call_original_set_viewport_traced(self,&physical,n,"menu-mapped");
   }
-  return original_set_viewport(self,view);
+  return call_original_set_viewport_traced(self,view,n,"passthrough");
 }
 /* Forward-only draw diagnostics. Log only the first 16 calls per method. */
 typedef HRESULT (WINAPI *DrawPrimitiveFn)(void *, D3DPRIMITIVETYPE, DWORD, LPVOID, DWORD, DWORD);
@@ -448,6 +674,8 @@ static const void *scale_menu_vertices(DWORD fvf,const void *vertices,DWORD coun
   const SpiderMenuMapping *mapping=menu_active?&menu_map:&game_map;
   *allocated=NULL;
   if(!menu_active && !game_active) return vertices;
+  /* Native viewport clips the menu to logical 640x480.
+   * Preserve vertices and upscale the composed frame during Flip. */
   if (!vertices || !count || fvf!=(D3DFVF_XYZRHW|D3DFVF_DIFFUSE|D3DFVF_TEX1)) {
     if (debug_log_enabled && (n=InterlockedIncrement(&menu_unscaled_draws))<=4) {
       char line[176];
@@ -557,6 +785,9 @@ static void free_menu_vertices(SpiderMenuVertex *allocated) {
 }
 
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
+  if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
+     fvf==0x144UL && verts && count>=3 && count<=128)
+    InterlockedIncrement(&menu_version_draws);
   {
     SpiderMenuVertex small[64],*allocated=NULL;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
@@ -572,6 +803,9 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
   }
 }
 static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,LPWORD indices,DWORD icount,DWORD flags) {
+  if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
+     fvf==0x144UL && verts && count>=3 && count<=128)
+    InterlockedIncrement(&menu_version_draws);
   {
     SpiderMenuVertex small[64],*allocated=NULL;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
@@ -581,8 +815,21 @@ static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE 
     return hr;
   }
 }
+/* Diagnostic: native SetViewport while preserving render-state/draw hooks. */
 static void instrument_d3d_device(IDirect3DDevice7 *device) {
   void ***obj=(void ***)device; void **vt;
+  /* Native Windows startup A/B test. Only when explicitly requested, leave
+   * the COM device's ORIGINAL vtable in place. This disables all of our
+   * device-level viewport, draw and render-state hooks while preserving the
+   * external DirectDraw hooks. Never change the default rendering path. */
+  {
+    char value[4]={0};
+    DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE",value,sizeof(value));
+    if(n==1 && value[0]=='1') {
+      log_line("D3D7-DIAG: native device vtable, viewport/draw/render-state hooks bypassed");
+      return;
+    }
+  }
   if(!obj || !(vt=*obj)) return;
   if(InterlockedCompareExchange(&device_ready,1,0)==0) {
     memcpy(patched_device_vtable,vt,sizeof(patched_device_vtable));
@@ -605,8 +852,42 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
     log_line("D3D7: device vtable captured; viewport and draw hooks enabled");
     InterlockedExchange(&device_ready,2);
   }
-  if(device_ready==2 && vt[13]==(void*)original_set_viewport)
-    *obj=patched_device_vtable;
+  /* On native Windows, a cloned 49-slot COM vtable caused a null
+   * indirect call within d3dim700!SetViewport. Keep the original vtable
+   * pointer and all unmodified entries; replace just the four hooks.
+   * This is the default rendering path on Windows and Wine. Do NOT fall
+   * back to the copied vtable if the native vtable cannot be patched.
+   */
+  if(device_ready==2 && vt[13]==(void*)original_set_viewport &&
+     vt[20]==(void*)original_set_render_state &&
+     vt[25]==(void*)original_draw_primitive &&
+     vt[26]==(void*)original_draw_indexed_primitive) {
+    DWORD protection=0,unused=0;
+    if(VirtualProtect(vt,sizeof(patched_device_vtable),
+                      PAGE_READWRITE,&protection)) {
+      vt[13]=(void*)hooked_set_viewport;
+      vt[20]=(void*)hooked_set_render_state;
+      vt[25]=(void*)hooked_draw_primitive;
+      vt[26]=(void*)hooked_draw_indexed_primitive;
+      if(!VirtualProtect(vt,sizeof(patched_device_vtable),protection,&unused))
+        log_line("D3D7: WARNING native vtable protection restore failed");
+      log_line("D3D7: native device vtable patched in place (default; all four hooks ON)");
+    } else {
+      char line[160];
+      snprintf(line,sizeof(line),
+        "D3D7: ERROR native vtable VirtualProtect failed Win32=%lu; leaving device unmodified",
+        (unsigned long)GetLastError());
+      log_line(line);
+    }
+  } else if(device_ready==2 &&
+            vt[13]==(void*)hooked_set_viewport &&
+            vt[20]==(void*)hooked_set_render_state &&
+            vt[25]==(void*)hooked_draw_primitive &&
+            vt[26]==(void*)hooked_draw_indexed_primitive) {
+    /* COM object shares a vtable that was already patched by this fix. */
+  } else {
+    log_line("D3D7: WARNING device vtable differs from captured hooks; leaving pointer untouched");
+  }
 }
 static HRESULT WINAPI hooked_d3d_create_device(void *self,REFCLSID clsid,IDirectDrawSurface7 *target,IDirect3DDevice7 **out) {
   HRESULT hr=original_d3d_create_device(self,clsid,target,out);
@@ -731,6 +1012,9 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
         menu_map.right<=(int)desktop_w && menu_map.bottom<=(int)desktop_h &&
         menu_map.right>menu_map.left && menu_map.bottom>menu_map.top) {
       LONG hits=InterlockedIncrement(&media_native_blt_4x3_hits);
+      InterlockedIncrement(&menu_version_movie_blits);
+      InterlockedExchange(&menu_version_last_movie_flip,
+        InterlockedCompareExchange(&flip_count,0,0));
       dest_mapped.left=menu_map.left;
       dest_mapped.top=menu_map.top;
       dest_mapped.right=menu_map.right;
@@ -788,6 +1072,8 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
   }
   SpiderInputFocus_OnFlip(count);
+  SpiderDI8Retry_OnFlip(count);
+  report_null_fclose_recovery();
   if (g_frame_limiter_ready) SpiderFrameLimiter_Wait(&g_frame_limiter);
   /* Deliberately NO 1px pixel cover-up. The yellow seam remains visible if
    * rasterization is incorrect. Keep only genuine unused 4:3 letterbox/pillarbox
@@ -811,6 +1097,27 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       IDirectDrawSurface7_Release(back);
     }
   }
+  int menu_active=InterlockedCompareExchange(&menu_upscale_active,0,0)==1;
+  LONG menu_draws=InterlockedExchange(&menu_version_draws,0);
+  LONG movie_blits=InterlockedExchange(&menu_version_movie_blits,0);
+  LONG movie_last=InterlockedCompareExchange(&menu_version_last_movie_flip,0,0);
+  BOOL permitted=menu_active && menu_draws>=3 && movie_blits==0 &&
+     count-movie_last>3 &&
+     menu_map.right>menu_map.left && menu_map.bottom>menu_map.top;
+  BOOL back_drawn=FALSE;
+  if(debug_log_enabled && menu_active && count%120==0) {
+    char line[180];
+    snprintf(line,sizeof(line),
+      "MENU-VERSION: flip=%ld draws=%ld movie-blits=%ld last-movie=%ld permitted=%d",
+      (long)count,(long)menu_draws,(long)movie_blits,(long)movie_last,(int)permitted);
+    log_line(line);
+  }
+  if(permitted && borderless_back) {
+    RECT content={menu_map.left,menu_map.top,menu_map.right,menu_map.bottom};
+    back_drawn=SpiderMenuVersion_DrawToSurface(borderless_back,&content);
+    if(back_drawn && InterlockedCompareExchange(&menu_version_logged,1,0)==0)
+      log_line("MENU-VERSION: drawn on DirectDraw backbuffer: " SPIDERMAN2K1FIX_VERSION_LABEL);
+  }
   if(self==(void*)borderless_primary && borderless_back && original_blt) {
       RECT rc={borderless_monitor_x,borderless_monitor_y,
         borderless_monitor_x+(LONG)desktop_w,borderless_monitor_y+(LONG)desktop_h};
@@ -822,6 +1129,13 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
           snprintf(line,sizeof(line),"BORDERLESS: primary Blt FAILED hr=0x%08lX (no exclusive fallback)",(unsigned long)hr);
           log_line(line);
         }
+      }
+      /* GDI fallback only when the video-memory surface has no DC. */
+      if(SUCCEEDED(hr) && permitted && !back_drawn) {
+        RECT content={menu_map.left,menu_map.top,menu_map.right,menu_map.bottom};
+        if(SpiderMenuVersion_DrawToWindow(game_hwnd,&content) &&
+           InterlockedCompareExchange(&menu_version_logged,1,0)==0)
+          log_line("MENU-VERSION: drawn through window GDI: " SPIDERMAN2K1FIX_VERSION_LABEL);
       }
       if(debug_log_enabled && (count<=12 || count%120==0)) {
         char line[190];
@@ -920,11 +1234,41 @@ static HRESULT WINAPI hooked_surface_create(void *self, DDSURFACEDESC2 *desc,
     char line[280];
     if(out) *out=NULL;
     if(!out || desktop_w<640 || desktop_h<480) return DDERR_INVALIDPARAMS;
-    if(borderless_back) {
-      IDirectDrawSurface7_Release(borderless_back);
-      borderless_back=NULL;
+    /* The game requests another flipping primary during MENU -> GAMEPLAY.
+     * Native DirectDraw rejects a second primary (0x88760234).
+     * Keep the original windowed primary/backbuffer and return a new COM
+     * reference instead. Validate dimensions so incompatible surfaces are
+     * not silently recycled across display changes.
+     */
+    if(borderless_primary && borderless_back) {
+      DDSURFACEDESC2 existing;
+      HRESULT check;
+      memset(&existing,0,sizeof(existing));
+      existing.dwSize=sizeof(existing);
+      check=IDirectDrawSurface7_GetSurfaceDesc(borderless_back,&existing);
+      if(FAILED(check) || existing.dwWidth!=desktop_w ||
+         existing.dwHeight!=desktop_h) {
+        snprintf(line,sizeof(line),
+          "BORDERLESS: ERROR existing backbuffer incompatible hr=0x%08lX old=%lux%lu requested=%lux%lu",
+          (unsigned long)check,(unsigned long)existing.dwWidth,
+          (unsigned long)existing.dwHeight,
+          (unsigned long)desktop_w,(unsigned long)desktop_h);
+        log_line(line);
+        return FAILED(check)?check:DDERR_INVALIDPARAMS;
+      }
+      IDirectDrawSurface7_AddRef(borderless_primary); /* game-owned ref */
+      *out=borderless_primary;
+      snprintf(line,sizeof(line),
+        "BORDERLESS: REUSE windowed PRIMARY=%p backbuffer=%p size=%lux%lu (menu -> gameplay)",
+        (void*)borderless_primary,(void*)borderless_back,
+        (unsigned long)desktop_w,(unsigned long)desktop_h);
+      log_line(line);
+      return DD_OK;
     }
-    borderless_primary=NULL;
+    if(borderless_primary || borderless_back) {
+      log_line("BORDERLESS: ERROR incomplete PRIMARY/BACKBUFFER ownership; refusing unsafe recreation");
+      return DDERR_INVALIDOBJECT;
+    }
     memset(&pd,0,sizeof(pd));pd.dwSize=sizeof(pd);
     pd.dwFlags=DDSD_CAPS;
     pd.ddsCaps.dwCaps=DDSCAPS_PRIMARYSURFACE;
@@ -956,6 +1300,10 @@ static HRESULT WINAPI hooked_surface_create(void *self, DDSURFACEDESC2 *desc,
       return back_hr;
     }
     borderless_primary=primary;borderless_back=back;
+    /* CreateSurface gives the initial reference to the game. Keep one
+     * separate proxy-owned reference: the game's menu cleanup may Release
+     * its primary before requesting the gameplay primary. */
+    IDirectDrawSurface7_AddRef(primary);
     instrument_surface(primary);
     instrument_surface(back);
     *out=primary;
@@ -1210,6 +1558,8 @@ static DWORD WINAPI initialize(LPVOID unused) {
     return 0;
   }
   log_line("OK: supported SpideyPC.exe SHA-256 verified");
+  install_null_fclose_guard(); /* Default ON only for SHA-verified EXE and exact native opcode signature. */
+  SpiderDI8Retry_Init(log_line); /* WinDbg-guided game-native Acquire retry; OFF by default */
   /* Generate complete defaults once, before any GetPrivateProfile... reads. */
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */

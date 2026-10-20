@@ -3,6 +3,7 @@
 #include <mmsystem.h>
 #include <stdio.h>
 #include <string.h>
+#include "version_info.h"
 
 /* Exports required by SpideyPC.exe plus timer functions used by external wrappers.
    Resolve the real library from the Windows system directory, not by name. */
@@ -91,12 +92,178 @@ MMRESULT WINAPI proxy_timeGetSystemTime(LPMMTIME a, UINT b) {
     __typeof__(&timeGetSystemTime) f=NULL; RESOLVE_INTO(timeGetSystemTime, f);
     return f?f(a,b):MMSYSERR_ERROR;
 }
+/* Additional typed WinMM forwards for native Windows game middleware. */
+UINT WINAPI proxy_waveOutGetNumDevs(void) {
+    __typeof__(&waveOutGetNumDevs) f=NULL; RESOLVE_INTO(waveOutGetNumDevs, f);
+    return f ? f() : 0;
+}
+MMRESULT WINAPI proxy_waveOutGetDevCapsA(UINT_PTR a, LPWAVEOUTCAPSA b, UINT c) {
+    __typeof__(&waveOutGetDevCapsA) f=NULL; RESOLVE_INTO(waveOutGetDevCapsA, f);
+    return f ? f(a,b,c) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutGetErrorTextA(MMRESULT a, LPSTR b, UINT c) {
+    __typeof__(&waveOutGetErrorTextA) f=NULL; RESOLVE_INTO(waveOutGetErrorTextA, f);
+    return f ? f(a,b,c) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutOpen(LPHWAVEOUT a, UINT_PTR b, LPCWAVEFORMATEX c, DWORD_PTR d, DWORD_PTR e, DWORD flags) {
+    __typeof__(&waveOutOpen) f=NULL; RESOLVE_INTO(waveOutOpen, f);
+    return f ? f(a,b,c,d,e,flags) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutClose(HWAVEOUT a) {
+    __typeof__(&waveOutClose) f=NULL; RESOLVE_INTO(waveOutClose, f);
+    return f ? f(a) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutPrepareHeader(HWAVEOUT a, LPWAVEHDR b, UINT c) {
+    __typeof__(&waveOutPrepareHeader) f=NULL; RESOLVE_INTO(waveOutPrepareHeader, f);
+    return f ? f(a,b,c) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutUnprepareHeader(HWAVEOUT a, LPWAVEHDR b, UINT c) {
+    __typeof__(&waveOutUnprepareHeader) f=NULL; RESOLVE_INTO(waveOutUnprepareHeader, f);
+    return f ? f(a,b,c) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutWrite(HWAVEOUT a, LPWAVEHDR b, UINT c) {
+    __typeof__(&waveOutWrite) f=NULL; RESOLVE_INTO(waveOutWrite, f);
+    return f ? f(a,b,c) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutPause(HWAVEOUT a) {
+    __typeof__(&waveOutPause) f=NULL; RESOLVE_INTO(waveOutPause, f);
+    return f ? f(a) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutRestart(HWAVEOUT a) {
+    __typeof__(&waveOutRestart) f=NULL; RESOLVE_INTO(waveOutRestart, f);
+    return f ? f(a) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutReset(HWAVEOUT a) {
+    __typeof__(&waveOutReset) f=NULL; RESOLVE_INTO(waveOutReset, f);
+    return f ? f(a) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutBreakLoop(HWAVEOUT a) {
+    __typeof__(&waveOutBreakLoop) f=NULL; RESOLVE_INTO(waveOutBreakLoop, f);
+    return f ? f(a) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutGetPosition(HWAVEOUT a, LPMMTIME b, UINT c) {
+    __typeof__(&waveOutGetPosition) f=NULL; RESOLVE_INTO(waveOutGetPosition, f);
+    return f ? f(a,b,c) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutGetPitch(HWAVEOUT a, LPDWORD b) {
+    __typeof__(&waveOutGetPitch) f=NULL; RESOLVE_INTO(waveOutGetPitch, f);
+    return f ? f(a,b) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutSetPitch(HWAVEOUT a, DWORD b) {
+    __typeof__(&waveOutSetPitch) f=NULL; RESOLVE_INTO(waveOutSetPitch, f);
+    return f ? f(a,b) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutGetPlaybackRate(HWAVEOUT a, LPDWORD b) {
+    __typeof__(&waveOutGetPlaybackRate) f=NULL; RESOLVE_INTO(waveOutGetPlaybackRate, f);
+    return f ? f(a,b) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutSetPlaybackRate(HWAVEOUT a, DWORD b) {
+    __typeof__(&waveOutSetPlaybackRate) f=NULL; RESOLVE_INTO(waveOutSetPlaybackRate, f);
+    return f ? f(a,b) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutGetVolume(HWAVEOUT a, LPDWORD b) {
+    __typeof__(&waveOutGetVolume) f=NULL; RESOLVE_INTO(waveOutGetVolume, f);
+    return f ? f(a,b) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutSetVolume(HWAVEOUT a, DWORD b) {
+    __typeof__(&waveOutSetVolume) f=NULL; RESOLVE_INTO(waveOutSetVolume, f);
+    return f ? f(a,b) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutGetID(HWAVEOUT a, LPUINT b) {
+    __typeof__(&waveOutGetID) f=NULL; RESOLVE_INTO(waveOutGetID, f);
+    return f ? f(a,b) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveOutMessage(HWAVEOUT a, UINT b, DWORD_PTR c, DWORD_PTR d) {
+    __typeof__(&waveOutMessage) f=NULL; RESOLVE_INTO(waveOutMessage, f);
+    return f ? f(a,b,c,d) : MMSYSERR_ERROR;
+}
+UINT WINAPI proxy_waveInGetNumDevs(void) {
+    __typeof__(&waveInGetNumDevs) f=NULL; RESOLVE_INTO(waveInGetNumDevs, f);
+    return f ? f() : 0;
+}
+MMRESULT WINAPI proxy_waveInGetDevCapsA(UINT_PTR a, LPWAVEINCAPSA b, UINT c) {
+    __typeof__(&waveInGetDevCapsA) f=NULL; RESOLVE_INTO(waveInGetDevCapsA, f);
+    return f ? f(a,b,c) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveInGetErrorTextA(MMRESULT a, LPSTR b, UINT c) {
+    __typeof__(&waveInGetErrorTextA) f=NULL; RESOLVE_INTO(waveInGetErrorTextA, f);
+    return f ? f(a,b,c) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveInOpen(LPHWAVEIN a, UINT_PTR b, LPCWAVEFORMATEX c, DWORD_PTR d, DWORD_PTR e, DWORD flags) {
+    __typeof__(&waveInOpen) f=NULL; RESOLVE_INTO(waveInOpen, f);
+    return f ? f(a,b,c,d,e,flags) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveInClose(HWAVEIN a) {
+    __typeof__(&waveInClose) f=NULL; RESOLVE_INTO(waveInClose, f);
+    return f ? f(a) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveInPrepareHeader(HWAVEIN a, LPWAVEHDR b, UINT c) {
+    __typeof__(&waveInPrepareHeader) f=NULL; RESOLVE_INTO(waveInPrepareHeader, f);
+    return f ? f(a,b,c) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveInUnprepareHeader(HWAVEIN a, LPWAVEHDR b, UINT c) {
+    __typeof__(&waveInUnprepareHeader) f=NULL; RESOLVE_INTO(waveInUnprepareHeader, f);
+    return f ? f(a,b,c) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveInAddBuffer(HWAVEIN a, LPWAVEHDR b, UINT c) {
+    __typeof__(&waveInAddBuffer) f=NULL; RESOLVE_INTO(waveInAddBuffer, f);
+    return f ? f(a,b,c) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveInStart(HWAVEIN a) {
+    __typeof__(&waveInStart) f=NULL; RESOLVE_INTO(waveInStart, f);
+    return f ? f(a) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveInStop(HWAVEIN a) {
+    __typeof__(&waveInStop) f=NULL; RESOLVE_INTO(waveInStop, f);
+    return f ? f(a) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveInReset(HWAVEIN a) {
+    __typeof__(&waveInReset) f=NULL; RESOLVE_INTO(waveInReset, f);
+    return f ? f(a) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveInGetPosition(HWAVEIN a, LPMMTIME b, UINT c) {
+    __typeof__(&waveInGetPosition) f=NULL; RESOLVE_INTO(waveInGetPosition, f);
+    return f ? f(a,b,c) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveInGetID(HWAVEIN a, LPUINT b) {
+    __typeof__(&waveInGetID) f=NULL; RESOLVE_INTO(waveInGetID, f);
+    return f ? f(a,b) : MMSYSERR_ERROR;
+}
+MMRESULT WINAPI proxy_waveInMessage(HWAVEIN a, UINT b, DWORD_PTR c, DWORD_PTR d) {
+    __typeof__(&waveInMessage) f=NULL; RESOLVE_INTO(waveInMessage, f);
+    return f ? f(a,b,c,d) : MMSYSERR_ERROR;
+}
+/* The game is DPI-unaware by default. DirectDraw uses physical pixels,
+ * while an unaware top-level HWND sees a DPI-virtualized monitor rectangle.
+ * Request system DPI awareness before the game's window is created, so
+ * Win32 window geometry and DirectDraw surface sizes use the same pixels.
+ * Keep user32 dynamically resolved for compatibility with older systems. */
+static void enable_native_window_pixels(void) {
+    typedef BOOL (WINAPI *SetProcessDPIAwareFn)(void);
+    HMODULE user32=GetModuleHandleA("user32.dll");
+    SetProcessDPIAwareFn set_aware=NULL;
+    BOOL changed=FALSE;
+    DWORD error=ERROR_PROC_NOT_FOUND;
+    char line[160];
+    if (!user32) user32=LoadLibraryA("user32.dll");
+    if (user32)
+        set_aware=(SetProcessDPIAwareFn)(void*)GetProcAddress(user32,"SetProcessDPIAware");
+    if(set_aware) {
+        changed=set_aware();
+        error=changed ? ERROR_SUCCESS : GetLastError();
+    }
+    snprintf(line,sizeof(line),
+      "DPI-BOOT: SetProcessDPIAware result=%s Win32=%lu (system-aware native window pixels)",
+      changed?"OK":"NOT_CHANGED",(unsigned long)error);
+    log_proxy(line);
+}
 static DWORD WINAPI init_fix(LPVOID ignored) {
     char path[MAX_PATH]; DWORD n; HMODULE mod;
     (void)ignored;
+    enable_native_window_pixels();
     {
         char status[128];
-        snprintf(status,sizeof(status),"START: SpiderMan2k1Fix 1.0.0 early No-CD patch status=%ld (1=applied)",(long)early_patch_status);
+        snprintf(status,sizeof(status),"START: " SPIDERMAN2K1FIX_VERSION_LABEL " early No-CD patch status=%ld (1=applied)",(long)early_patch_status);
         log_proxy(status);
     }
     log_proxy("START: winmm proxy loaded; loading SpiderMan2k1Fix.dll");

@@ -63,6 +63,9 @@ static LONG foreground_events=0,background_events=0;
 static LONG focus_key_messages=0,focus_mouse_messages=0;
 static volatile LONG last_focus_foreground=-1;
 static DWORD last_winmsg_sample=0;
+/* Test-only, opt-in Win11 cursor and window Z-order diagnostics. */
+static volatile LONG cursor_visibility_test=0, zorder_test=0;
+static LONG cursor_display_increments=0;
 
 static void focus_log(const char *msg) { if(log_msg) log_msg(msg); }
 static FocusDevice *focus_device(void *self) {
@@ -89,6 +92,9 @@ static const char *focus_message(UINT m) {
     case WM_MOUSEMOVE:return "WM_MOUSEMOVE";
     case WM_LBUTTONDOWN:return "WM_LBUTTONDOWN";
     case WM_RBUTTONDOWN:return "WM_RBUTTONDOWN";
+    case WM_SIZE:return "WM_SIZE";
+    case WM_DISPLAYCHANGE:return "WM_DISPLAYCHANGE";
+    case WM_WINDOWPOSCHANGED:return "WM_WINDOWPOSCHANGED";
     default:return "other";
   }
 }
@@ -120,6 +126,21 @@ static LRESULT CALLBACK focus_window_proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp
       (void*)GetForegroundWindow(),(void*)hwnd,(long)focus_epoch);
     focus_log(line);
     focus_report_window("window-event");
+  } else if(msg==WM_SIZE || msg==WM_DISPLAYCHANGE || msg==WM_WINDOWPOSCHANGED) {
+    /* Passive snapshot around Alt+Tab; no window size or focus changes
+     * are performed by this diagnostic observer. */
+    RECT window={0},client={0};
+    char line[260];
+    GetWindowRect(hwnd,&window);
+    GetClientRect(hwnd,&client);
+    snprintf(line,sizeof(line),
+      "INPUT-FOCUS: window-geometry event=%s wp=0x%08lX screen-rect=(%ld,%ld)+%ldx%ld client=%ldx%ld iconic=%d foreground=%d",
+      focus_message(msg),(unsigned long)wp,
+      (long)window.left,(long)window.top,
+      (long)(window.right-window.left),(long)(window.bottom-window.top),
+      (long)(client.right-client.left),(long)(client.bottom-client.top),
+      (int)IsIconic(hwnd),GetForegroundWindow()==hwnd);
+    focus_log(line);
   } else if(msg==WM_SYSKEYDOWN || msg==WM_KEYDOWN ||
             msg==WM_MOUSEMOVE || msg==WM_LBUTTONDOWN || msg==WM_RBUTTONDOWN) {
     LONG n;DWORD now=GetTickCount();
@@ -390,6 +411,33 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   input_debug_logging=GetPrivateProfileIntA("Debug","Log",0,ini)==1;
   want_trace=GetPrivateProfileIntA("Input","ExperimentalFocusTrace",0,ini)==1;
   want_fix=GetPrivateProfileIntA("Input","ExperimentalAltTabReacquire",0,ini)==1;
+  /* Win11 Alt+Tab fault isolation. Unlike ExperimentalFocusTrace, this
+   * mode NEVER patches the game's DirectInput8Create IAT or any DirectInput
+   * COM vtable. It only enables the already-existing game WndProc observer.
+   * This distinction matters: DirectInput8 device creation failed during
+   * native Windows startup when our previous invasive hook was enabled.
+   * Opt-in per process, no persistent INI changes, no input synthesis.
+   */
+  {
+    char passive[4]={0},cursor[4]={0},zorder[4]={0};
+    DWORD nbytes=GetEnvironmentVariableA("SPIDERMAN2K1FIX_FOCUS_PASSIVE",
+                                          passive,sizeof(passive));
+    if(nbytes==1 && passive[0]=='1') {
+      DWORD nc=GetEnvironmentVariableA("SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST",
+                                        cursor,sizeof(cursor));
+      DWORD nz=GetEnvironmentVariableA("SPIDERMAN2K1FIX_ZORDER_TEST",
+                                        zorder,sizeof(zorder));
+      InterlockedExchange(&cursor_visibility_test,nc==1 && cursor[0]=='1');
+      InterlockedExchange(&zorder_test,nz==1 && zorder[0]=='1');
+      InterlockedExchange(&reacquire_enabled,0);
+      InterlockedExchange(&diagnostic_active,1);
+      focus_log("INPUT-FOCUS: PASSIVE ONLY - WndProc events/Flip snapshots active; DirectInput8 hook NOT installed");
+      snprintf(line,sizeof(line),"INPUT-WINDOW: tests cursor=%ld zorder=%ld (DirectInput hooks OFF)",
+        (long)cursor_visibility_test,(long)zorder_test);
+      focus_log(line);
+      return;
+    }
+  }
   if(!want_trace && !want_fix) {
     focus_log("INPUT-FOCUS: disabled by default ([Input] ExperimentalFocusTrace=1 or ExperimentalAltTabReacquire=1)");
     return;
@@ -424,14 +472,91 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   snprintf(line,sizeof(line),"INPUT-DI8: DirectInput8Create IAT hooked rva=0x13B01C (reacquire=%ld; no synthetic input)",(long)want_fix);
   focus_log(line);
 }
+/* Passive samples on actual foreground transitions: distinguish visible
+ * cursor from hidden cursor and focus from Z-order without forced activation.
+ * Mutations below are enabled exclusively by environment-variable A/B tests.
+ */
+static void focus_probe_window_system(const char *stage) {
+  CURSORINFO ci;
+  RECT clip={0,0,0,0};
+  HWND above;
+  char line[420];
+  BOOL ok_cursor,ok_clip;
+  LONG_PTR exstyle;
+  if(!tracked_window || !IsWindow(tracked_window)) return;
+  memset(&ci,0,sizeof(ci));ci.cbSize=sizeof(ci);
+  ok_cursor=GetCursorInfo(&ci);
+  ok_clip=GetClipCursor(&clip);
+  above=GetWindow(tracked_window,GW_HWNDPREV);
+  exstyle=GetWindowLongPtrA(tracked_window,GWL_EXSTYLE);
+  snprintf(line,sizeof(line),
+    "INPUT-WINDOW: %s fg=%d above=%p topmost=%d visible=%d iconic=%d cursor-ok=%d cursor-showing=%d cursor-handle=%p clip-ok=%d clip=(%ld,%ld)-(%ld,%ld) cursor-balance=%ld",
+    stage,(int)(GetForegroundWindow()==tracked_window),(void*)above,
+    (int)!!(exstyle&WS_EX_TOPMOST),(int)IsWindowVisible(tracked_window),
+    (int)IsIconic(tracked_window),(int)ok_cursor,
+    (int)(ok_cursor && !!(ci.flags&CURSOR_SHOWING)),
+    ok_cursor?(void*)ci.hCursor:NULL,(int)ok_clip,
+    (long)clip.left,(long)clip.top,(long)clip.right,(long)clip.bottom,
+    (long)cursor_display_increments);
+  focus_log(line);
+}
+static void focus_window_transition(int foreground) {
+  LONG i;
+  int result=0;
+  char line[220];
+  focus_probe_window_system(foreground?"foreground-before":"background-before");
+  if(!foreground && InterlockedCompareExchange(&cursor_visibility_test,0,0)==1) {
+    CURSORINFO ci;
+    memset(&ci,0,sizeof(ci));ci.cbSize=sizeof(ci);
+    if(cursor_display_increments==0 && GetCursorInfo(&ci) &&
+       !(ci.flags&CURSOR_SHOWING)) {
+      /* ShowCursor uses a display counter; balance each increment exactly.
+       * A bounded 16-call limit avoids indefinite loops on unusual drivers.
+       * Never change pointer visibility unless the real cursor is hidden.
+       */
+      for(i=0;i<16;i++) {
+        result=ShowCursor(TRUE);
+        ++cursor_display_increments;
+        if(result>=0) break;
+      }
+      snprintf(line,sizeof(line),
+        "INPUT-WINDOW: CURSOR-TEST background ShowCursor(TRUE) calls=%ld final-count=%d",
+        cursor_display_increments,result);
+      focus_log(line);
+    }
+  }
+  if(foreground && cursor_display_increments>0) {
+    LONG balanced=cursor_display_increments;
+    for(i=0;i<balanced;i++) result=ShowCursor(FALSE);
+    cursor_display_increments=0;
+    snprintf(line,sizeof(line),
+      "INPUT-WINDOW: CURSOR-TEST foreground balanced ShowCursor(FALSE) calls=%ld final-count=%d",
+      balanced,result);
+    focus_log(line);
+  }
+  if(foreground && InterlockedCompareExchange(&zorder_test,0,0)==1 &&
+     GetForegroundWindow()==tracked_window && IsWindow(tracked_window) &&
+     IsWindowVisible(tracked_window) && !IsIconic(tracked_window)) {
+    BOOL ok=SetWindowPos(tracked_window,HWND_TOP,0,0,0,0,
+      SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER);
+    snprintf(line,sizeof(line),
+      "INPUT-WINDOW: ZORDER-TEST foreground HWND_TOP ok=%d Win32=%lu (no topmost, no background activation)",
+      (int)ok,(unsigned long)(ok?0:GetLastError()));
+    focus_log(line);
+  }
+  focus_probe_window_system(foreground?"foreground-after":"background-after");
+}
 void SpiderInputFocus_OnFlip(LONG flip_number) {
-  HWND fg;LONG foreground;char line[320];LONG i;
+  HWND fg;LONG foreground,previous;char line[320];LONG i;
   if(!diagnostic_active || !tracked_window) return;
   fg=GetForegroundWindow();foreground=(fg==tracked_window)?1:0;
-  if(foreground!=InterlockedExchange(&last_focus_foreground,foreground)) {
+  previous=InterlockedExchange(&last_focus_foreground,foreground);
+  if(foreground!=previous) {
     if(foreground) InterlockedIncrement(&foreground_events);
     else InterlockedIncrement(&background_events);
     focus_report_window(foreground?"flip-foreground":"flip-background");
+    if(previous!=-1) focus_window_transition((int)foreground);
+    else focus_probe_window_system("initial"); /* No startup mutation. */
   }
   if(!input_debug_logging || (flip_number>3 && flip_number%120!=0)) return;
   snprintf(line,sizeof(line),

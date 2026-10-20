@@ -3,6 +3,30 @@ set -euo pipefail
 cd "$(dirname "$0")"
 CC=${CC:-i686-w64-mingw32-gcc}
 
+# Both DLLs use the same Git commit; source archives use "local".
+if [[ -n "${SPIDERMAN2K1FIX_COMMIT:-}" ]]; then
+  build_commit="$SPIDERMAN2K1FIX_COMMIT"
+elif git rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
+     git ls-files --error-unmatch -- spiderman2k1fix.c >/dev/null 2>&1; then
+  build_commit=$(git rev-parse --short=7 HEAD)
+  if ! git diff --quiet -- . || ! git diff --cached --quiet -- .; then
+    build_commit="${build_commit}-dirty"
+  fi
+else
+  build_commit=local
+fi
+if [[ ! "$build_commit" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$ ]]; then
+  echo "ERROR: invalid SPIDERMAN2K1FIX_COMMIT: $build_commit" >&2
+  exit 1
+fi
+version_define="-DSPIDERMAN2K1FIX_COMMIT=\"${build_commit}\""
+build_version=$(sed -n 's/^#define SPIDERMAN2K1FIX_VERSION "\([^"]*\)"/\1/p' version_info.h)
+if [[ ! "$build_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "ERROR: invalid version in version_info.h: $build_version" >&2
+  exit 1
+fi
+printf 'BUILD-VERSION: SpiderMan2k1Fix v%s-%s\n' "$build_version" "$build_commit"
+
 if ! command -v "$CC" >/dev/null 2>&1; then
   printf 'ERROR: missing 32-bit MinGW-w64 compiler: %s\n' "$CC" >&2
   printf 'Try ./build-native-msvcrt.sh (portable LLVM-MinGW; no Docker).\n' >&2
@@ -51,11 +75,11 @@ printf 'CRT-PROBE: MSVCRT import verified; building DLLs.\n'
 # Build to temporary paths. Old DLLs stay intact if compilation or runtime
 # validation fails; do not let a partially compiled pair reach the game.
 "$CC" -std=gnu11 -O2 -fno-pie -mno-sse -mno-sse2 -mfpmath=387 -Wall -Wextra \
-  -static-libgcc -shared -o "$probe_dir/SpiderMan2k1Fix.dll" \
-  spiderman2k1fix.c hud_widescreen.c frame_limiter.c display_plan.c menu_scale.c comic_native.c virtual_spidey_cfg.c display_policy.c display_menu_lock.c fov_aspect.c fov_aspect_win.c input_focus_trace.c \
+  -static-libgcc "$version_define" -shared -o "$probe_dir/SpiderMan2k1Fix.dll" \
+  spiderman2k1fix.c menu_version.c hud_widescreen.c frame_limiter.c display_plan.c menu_scale.c comic_native.c virtual_spidey_cfg.c display_policy.c display_menu_lock.c fov_aspect.c fov_aspect_win.c input_focus_trace.c input_notacquired_retry.c \
   -ladvapi32 -ldxguid -lgdi32 -Wl,--subsystem,windows
 "$CC" -std=gnu11 -O2 -fno-pie -Wall -Wextra \
-  -static-libgcc -shared -o "$probe_dir/winmm.dll" \
+  -static-libgcc "$version_define" -shared -o "$probe_dir/winmm.dll" \
   winmm_proxy.c winmm.def -Wl,--subsystem,windows
 
 for dll in SpiderMan2k1Fix.dll winmm.dll; do
@@ -77,7 +101,7 @@ for dll in SpiderMan2k1Fix.dll winmm.dll; do
   fi
 done
 
-# Validate all 14 proxy export names (original game compatibility).
+# Validate all original game exports plus audio middleware forwards.
 "$OBJDUMP" -p "$probe_dir/winmm.dll" > "$probe_dir/winmm-exports.txt"
 python3 - "$probe_dir/winmm-exports.txt" <<'PYEXPORT'
 import pathlib, re, sys
@@ -85,11 +109,20 @@ content = pathlib.Path(sys.argv[1]).read_text(errors='replace')
 required = ('mmioAscend','mmioRead','mmioClose','mmioStringToFOURCCA',
             'mmioOpenA','mmioDescend','timeGetTime','timeEndPeriod',
             'timeBeginPeriod','timeSetEvent','timeKillEvent',
-            'mciSendCommandA','timeGetDevCaps','timeGetSystemTime')
+            'mciSendCommandA','timeGetDevCaps','timeGetSystemTime',
+            'waveOutGetNumDevs', 'waveOutGetDevCapsA', 'waveOutGetErrorTextA', 'waveOutOpen',
+            'waveOutClose', 'waveOutPrepareHeader', 'waveOutUnprepareHeader', 'waveOutWrite',
+            'waveOutPause', 'waveOutRestart', 'waveOutReset', 'waveOutBreakLoop',
+            'waveOutGetPosition', 'waveOutGetPitch', 'waveOutSetPitch', 'waveOutGetPlaybackRate',
+            'waveOutSetPlaybackRate', 'waveOutGetVolume', 'waveOutSetVolume', 'waveOutGetID',
+            'waveOutMessage', 'waveInGetNumDevs', 'waveInGetDevCapsA', 'waveInGetErrorTextA',
+            'waveInOpen', 'waveInClose', 'waveInPrepareHeader', 'waveInUnprepareHeader',
+            'waveInAddBuffer', 'waveInStart', 'waveInStop', 'waveInReset',
+            'waveInGetPosition', 'waveInGetID', 'waveInMessage' )
 missing = [name for name in required if not re.search(r'(?<![A-Za-z0-9_])' + re.escape(name) + r'(?![A-Za-z0-9_])', content)]
 if missing:
     sys.exit('ERROR: missing winmm exports: ' + ', '.join(missing))
-print('EXPORTS: 14 required winmm entry points detected')
+print('EXPORTS: 49 required winmm entry points detected')
 PYEXPORT
 
 cp "$probe_dir/SpiderMan2k1Fix.dll" "$probe_dir/winmm.dll" .

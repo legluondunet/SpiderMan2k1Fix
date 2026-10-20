@@ -20,7 +20,10 @@ def test_obsolete_probes_removed():
         assert symbol not in core
     assert 'comic_aspect.c' not in (ROOT / 'build.sh').read_text()
     assert 'SpiderMan2k1Fix 1.0.0' in core
-    assert 'SpiderMan2k1Fix 1.0.0' in (ROOT / 'winmm_proxy.c').read_text()
+    proxy=(ROOT / 'winmm_proxy.c').read_text()
+    assert '#include "version_info.h"' in proxy
+    assert 'SPIDERMAN2K1FIX_VERSION_LABEL' in proxy
+    assert '#define SPIDERMAN2K1FIX_VERSION "1.0.0"' in (ROOT / 'version_info.h').read_text()
 
 
 def test_input_focus_recovery_not_removed():
@@ -29,3 +32,12 @@ def test_input_focus_recovery_not_removed():
     assert 'SpiderInputFocus_Install(log_line);' in core
     assert 'GetPrivateProfileIntA("Debug","Log",0,ini)==1' in focus
     assert 'if(!input_debug_logging' in focus
+
+
+def test_native_windows_reacquire_hook_not_on_by_default():
+    ini = (ROOT / 'SpiderMan2k1Fix.ini').read_text()
+    generated = (ROOT / 'virtual_spidey_cfg.c').read_text()
+    assert 'ExperimentalAltTabReacquire=0' in ini
+    assert '"ExperimentalAltTabReacquire=0\\r\\n"' in generated
+    assert 'PauseOnFocusLoss' not in ini
+    assert 'PauseOnFocusLoss' not in generated
