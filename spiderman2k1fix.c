@@ -294,8 +294,13 @@ static void spidey_apply_window_icon(HWND hwnd) {
     /* 0 = first RT_GROUP_ICON in the running executable. No external ICO. */
     SetLastError(0);
     extracted=ExtractIconExW(path,0,&big,&small,1);
-    if(extracted!=1 || !small || !big) {
-      error=GetLastError();
+    /* Windows may count both the large and small images in the return
+     * value (2 with nIcons=1). Nonzero is success unless UINT_MAX.
+     * Also demand both valid handles before touching the game's HWND.
+     * GetLastError is only meaningful if ExtractIconExW returned UINT_MAX.
+     */
+    if(extracted==0 || extracted==UINT_MAX || !small || !big) {
+      error=(extracted==UINT_MAX)?GetLastError():0;
       if(small) DestroyIcon(small);
       if(big) DestroyIcon(big);
       snprintf(line,sizeof(line),
@@ -306,7 +311,10 @@ static void spidey_apply_window_icon(HWND hwnd) {
     }
     spidey_icon_small=small;
     spidey_icon_big=big;
-    log_line("WINDOW-ICON: embedded SpideyPC.exe icon loaded small+big");
+    snprintf(line,sizeof(line),
+      "WINDOW-ICON: embedded SpideyPC.exe icon loaded small+big extracted=%u",
+      (unsigned)extracted);
+    log_line(line);
   }
   if(!spidey_icon_small || !spidey_icon_big) return;
   if((HICON)SendMessageW(hwnd,WM_GETICON,ICON_SMALL,0)==spidey_icon_small &&
