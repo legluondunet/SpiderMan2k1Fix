@@ -312,3 +312,30 @@ Windows 11 and Wine. To disable without replacing DLL files:
 Remove-Item Env:\SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY -ErrorAction SilentlyContinue
 Start-Process .\SpideyPC.exe
 \`\`\`
+
+
+## Windows taskbar icon trial (separate from taskbar overlay)
+
+The user-provided \`SpideyPC.ico\` was verified as a valid Windows ICO
+containing 16x16 and 32x32 icon images. The game shows a generic
+exclamation icon in the Windows 11 taskbar even though the original ICO
+is beside \`SpideyPC.exe\`.
+
+Opt-in \`SPIDERMAN2K1FIX_WINDOW_ICON_TEST=1\` uses \`GetModuleFileNameW\`
+to load \`SpideyPC.ico\` next to the running EXE via \`LoadImageW\`.
+The exact game window receives \`WM_SETICON\` (ICON_SMALL and ICON_BIG),
+with \`WM_GETICON\` verification in the diagnostic log.
+
+This does not modify EXE resources, pinned shortcuts, window class,
+window position, taskbar layering, graphics or DirectInput. When the
+ICO is missing or invalid, the original window icon is preserved.
+This test is OFF by default until checked on native Windows and Wine.
+
+PowerShell in game directory:
+\`\`\`powershell
+$env:SPIDERMAN2K1FIX_WINDOW_ICON_TEST='1'
+Start-Process .\SpideyPC.exe
+\`\`\`
+Look for \`WINDOW-ICON: applied SpideyPC.ico ... small=1 big=1\`.
+Windows may cache pinned/taskbar shortcut icons independently.
+To disable, remove the environment variable before starting the game.

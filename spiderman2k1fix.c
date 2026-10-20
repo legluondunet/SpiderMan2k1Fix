@@ -1,5 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <wchar.h>
 #include <wincrypt.h>
 #include <stdio.h>
 #include <string.h>
@@ -252,6 +253,73 @@ static IDirectDrawSurface7 *borderless_back=NULL; /* one owned reference */
 static LONG borderless_monitor_x=0,borderless_monitor_y=0;
 static volatile LONG borderless_present_failed=0;
 static volatile LONG borderless_legacy_mode_calls=0;
+
+/* Win11 native taskbar icon experiment: set icons on the game's actual HWND.
+ * SpideyPC.ico is the original separate game icon, not an embedded resource.
+ * This only sets WM_SETICON; it never changes window flags, focus or Z-order.
+ * Off unless SPIDERMAN2K1FIX_WINDOW_ICON_TEST=1. */
+static HICON spidey_icon_small=NULL, spidey_icon_big=NULL;
+static BOOL spidey_icon_load_attempted=FALSE;
+static int spidey_icon_optin(void) {
+  char value[4]={0};
+  DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_WINDOW_ICON_TEST",value,sizeof(value));
+  return n==1 && value[0]=='1';
+}
+static void spidey_apply_window_icon(HWND hwnd) {
+  WCHAR path[MAX_PATH],*slash;
+  DWORD n,attrs;
+  SIZE_T dir_len;
+  HICON small,big;
+  char line[180];
+  static const WCHAR name[]=L"SpideyPC.ico";
+  if(!spidey_icon_optin() || !hwnd || !IsWindow(hwnd)) return;
+  if(!spidey_icon_load_attempted) {
+    spidey_icon_load_attempted=TRUE;
+    n=GetModuleFileNameW(NULL,path,MAX_PATH);
+    if(!n || n>=MAX_PATH || !(slash=wcsrchr(path,L'\\'))) {
+      log_line("WINDOW-ICON: unable to locate EXE directory; icon unchanged");
+      return;
+    }
+    dir_len=(SIZE_T)(slash-path+1);
+    if(dir_len+sizeof(name)/sizeof(name[0])>MAX_PATH) {
+      log_line("WINDOW-ICON: ICO path too long; icon unchanged");
+      return;
+    }
+    memcpy(path+dir_len,name,sizeof(name));
+    attrs=GetFileAttributesW(path);
+    if(attrs==INVALID_FILE_ATTRIBUTES || (attrs&FILE_ATTRIBUTE_DIRECTORY)) {
+      log_line("WINDOW-ICON: SpideyPC.ico not found; original icon unchanged");
+      return;
+    }
+    small=(HICON)LoadImageW(NULL,path,IMAGE_ICON,
+       GetSystemMetrics(SM_CXSMICON),GetSystemMetrics(SM_CYSMICON),LR_LOADFROMFILE);
+    big=(HICON)LoadImageW(NULL,path,IMAGE_ICON,
+       GetSystemMetrics(SM_CXICON),GetSystemMetrics(SM_CYICON),LR_LOADFROMFILE);
+    if(!small || !big) {
+      DWORD error=GetLastError();
+      if(small) DestroyIcon(small);
+      if(big) DestroyIcon(big);
+      snprintf(line,sizeof(line),"WINDOW-ICON: LoadImage failed Win32=%lu; original icon unchanged",
+        (unsigned long)error);
+      log_line(line);
+      return;
+    }
+    spidey_icon_small=small;
+    spidey_icon_big=big;
+    log_line("WINDOW-ICON: SpideyPC.ico loaded small+big");
+  }
+  if(!spidey_icon_small || !spidey_icon_big) return;
+  if((HICON)SendMessageW(hwnd,WM_GETICON,ICON_SMALL,0)==spidey_icon_small &&
+     (HICON)SendMessageW(hwnd,WM_GETICON,ICON_BIG,0)==spidey_icon_big) return;
+  SendMessageW(hwnd,WM_SETICON,ICON_SMALL,(LPARAM)spidey_icon_small);
+  SendMessageW(hwnd,WM_SETICON,ICON_BIG,(LPARAM)spidey_icon_big);
+  snprintf(line,sizeof(line),"WINDOW-ICON: applied SpideyPC.ico hwnd=%p small=%d big=%d",
+    (void*)hwnd,
+    (HICON)SendMessageW(hwnd,WM_GETICON,ICON_SMALL,0)==spidey_icon_small,
+    (HICON)SendMessageW(hwnd,WM_GETICON,ICON_BIG,0)==spidey_icon_big);
+  log_line(line);
+}
+
 static void borderless_window_apply(void) {
   MONITORINFO mi; HMONITOR mon; LONG_PTR style,exstyle;
   RECT r; char line[240];
@@ -269,6 +337,7 @@ static void borderless_window_apply(void) {
     (exstyle & ~(WS_EX_DLGMODALFRAME|WS_EX_WINDOWEDGE|WS_EX_CLIENTEDGE|WS_EX_STATICEDGE))|WS_EX_APPWINDOW);
   SetWindowPos(game_hwnd,HWND_NOTOPMOST,r.left,r.top,r.right-r.left,r.bottom-r.top,
     SWP_FRAMECHANGED|SWP_SHOWWINDOW|SWP_NOACTIVATE);
+  spidey_apply_window_icon(game_hwnd);
   snprintf(line,sizeof(line),"BORDERLESS: window=%p style=WS_POPUP rect=(%ld,%ld)+%ldx%ld cooperativity=WINDOWED",
     (void*)game_hwnd,(long)r.left,(long)r.top,
     (long)(r.right-r.left),(long)(r.bottom-r.top));
