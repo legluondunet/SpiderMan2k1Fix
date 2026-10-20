@@ -30,7 +30,23 @@ In **Lutris → Configure game → System options → Environment variables**, a
 ```text
 SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY=1
 SPIDERMAN2K1FIX_PAUSE_PATH_TRACE=1
+SPIDERMAN2K1FIX_EXTENDED_PRESENT_TRACE=1
 ```
+
+The third variable enables **additional experimental COM wrappers** for otherwise
+untraced `IDirectDrawSurface7` methods (`BltBatch`, `BltFast`, `GetDC`,
+`ReleaseDC`, `Lock`, `Unlock`, and overlay operations), and alternative
+`IDirect3DDevice7` primitive methods (`Draw*Strided`, `Draw*VB`, plus
+`BeginScene`/`EndScene`). They forward all arguments and results to
+the original methods without modification. They are not injected unless both
+`SPIDERMAN2K1FIX_PAUSE_PATH_TRACE=1` and
+`SPIDERMAN2K1FIX_EXTENDED_PRESENT_TRACE=1` are set with `[Debug] Log=1`.
+
+**Experimental warning:** The extra wrappers modify the game's DirectDraw
+cloned vtable and D3D7 native device vtable, and have not been validated
+in live gameplay on native Windows. For normal or fallback testing, remove
+`SPIDERMAN2K1FIX_EXTENDED_PRESENT_TRACE`. This keeps the already tested basic
+diagnostic and DI8 input retry intact.
 
 The first variable keeps the separately validated Wine input-retry experiment.
 The second only enables passive logging. For native Windows validation,
@@ -77,6 +93,14 @@ suspend gameplay or control audio**.
   existing Flip pause boundary while Spider-Man is out of focus.
 - `PAUSE-PATH: Flip pause-check EXIT elapsed-ms=...` measures time spent
   inside **the selected existing pause handler**.
+- `PAUSE-PATH: EXTENDED DX7 ... ENABLED` confirms extra API wrappers are active.
+- `PAUSE-PATH: background BltFast`, `Lock`, `Unlock`, `UpdateOverlay`,
+  `DrawPrimitiveVB`, `DrawPrimitiveStrided`, etc. indicate alternate
+  rendering paths still called after focus loss.
+- `PAUSE-PATH: EXTENDED SNAPSHOT` appears alongside the passive observer's
+  1/5/10/20-second checkpoints. Counts remaining constant while the user
+  *sees* motion implies either buffering, an untraced API or independently
+  timed rendering/media; no single counter proves a visual frame was presented.
 - `PAUSE-PATH: background Blt ... target=primary|back|other` indicates
   DirectDraw Blt calls while unfocused. Video-related full-frame Blts may
   use this API; *not every Blt is video presentation*.
