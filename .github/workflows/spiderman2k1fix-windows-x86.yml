@@ -47,3 +47,65 @@ jobs:
           path: dist/SpiderMan2k1Fix-Windows-x86.zip
           if-no-files-found: error
           retention-days: 30
+
+  wine-x86-smoke:
+    name: Wine x86 DLL-load smoke (no game assets)
+    needs: windows-x86
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      WINEPREFIX: ${{ runner.temp }}/spiderman2k1fix-wine32
+      WINEARCH: win32
+      WINEDEBUG: -all
+      WINEDLLOVERRIDES: winmm=n,b
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install x86 MinGW-w64, 32-bit Wine and Xvfb
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            gcc-mingw-w64-i686 wine wine32:i386 xvfb xauth
+          wine --version
+
+      - name: Get the exact DLL pair built by the Windows job
+        uses: actions/download-artifact@v4
+        with:
+          name: SpiderMan2k1Fix-Windows-x86
+          path: wine-artifact
+
+      - name: Prepare minimal unsupported-EXE Wine smoke host
+        run: |
+          mkdir -p wine-smoke
+          i686-w64-mingw32-gcc -std=gnu11 -O2 -Wall -Wextra -static-libgcc \
+            -o wine-smoke/wine_proxy_smoke.exe tests/wine_proxy_smoke.c -lwinmm
+          unzip -q wine-artifact/SpiderMan2k1Fix-Windows-x86.zip -d wine-smoke
+          sed -i 's/^Log=0$/Log=1/' wine-smoke/SpiderMan2k1Fix.ini
+          grep -qx 'Log=1' wine-smoke/SpiderMan2k1Fix.ini
+
+      - name: Initialize clean Wine 32-bit prefix under Xvfb
+        run: timeout -k 10s 120s xvfb-run -a wineboot --init
+
+      - name: Check native WinMM override, forwarding and guarded DLL load
+        run: |
+          cd wine-smoke
+          timeout -k 10s 90s xvfb-run -a wine ./wine_proxy_smoke.exe 2>&1 | tee wine-console.log
+          test -s SpiderMan2k1Fix.log
+          grep -F 'START: winmm proxy loaded' SpiderMan2k1Fix.log
+          grep -F 'OK: real system winmm.dll loaded' SpiderMan2k1Fix.log
+          grep -F 'OK: SpiderMan2k1Fix.dll LoadLibrary succeeded' SpiderMan2k1Fix.log
+          grep -F 'ERROR: unsupported EXE SHA-256' SpiderMan2k1Fix.log
+          grep -F 'SMOKE OK: both native DLLs loaded under Wine' wine-console.log
+          echo 'WINE-SMOKE: PASS (native proxy, forwarding, fix DLL, safe unsupported EXE)'
+
+      - name: Upload diagnostic logs (including on failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wine-x86-smoke-logs
+          path: |
+            wine-smoke/wine-console.log
+            wine-smoke/SpiderMan2k1Fix.log
+          if-no-files-found: warn
+          retention-days: 14
