@@ -15,10 +15,22 @@ typedef struct {
 } TraceCounter;
 
 static TraceCounter counters[] = {
-  {"Blt",0,0}, {"DrawPrimitive",0,0}, {"DrawIndexedPrimitive",0,0}
+  {"Blt",0,0}, {"DrawPrimitive",0,0}, {"DrawIndexedPrimitive",0,0},
+  {"BltBatch",0,0}, {"BltFast",0,0}, {"GetDC",0,0},
+  {"Lock",0,0}, {"ReleaseDC",0,0}, {"Unlock",0,0},
+  {"SetOverlayPosition",0,0}, {"UpdateOverlay",0,0},
+  {"UpdateOverlayDisplay",0,0}, {"UpdateOverlayZOrder",0,0},
+  {"BeginScene",0,0}, {"EndScene",0,0},
+  {"DrawPrimitiveStrided",0,0}, {"DrawIndexedPrimitiveStrided",0,0},
+  {"DrawPrimitiveVB",0,0}, {"DrawIndexedPrimitiveVB",0,0}
 };
 static void (*trace_log)(const char *)=NULL;
 static volatile LONG trace_enabled=0;
+static volatile LONG extended_enabled=0;
+
+int SpiderPausePath_ExtendedEnabled(void) {
+  return InterlockedCompareExchange(&extended_enabled,0,0)==1;
+}
 
 static int tracing(void) {
   return InterlockedCompareExchange(&trace_enabled,0,0)==1;
@@ -104,6 +116,27 @@ static DWORD WINAPI observe_foreground(LPVOID unused) {
         (long)InterlockedCompareExchange(&counters[1].total,0,0),
         (long)InterlockedCompareExchange(&counters[2].total,0,0));
       emit(line);
+      if(SpiderPausePath_ExtendedEnabled()) {
+        LONG overlay=0,alt3d=0;
+        size_t k;
+        for(k=9;k<=12;k++)
+          overlay+=InterlockedCompareExchange(&counters[k].total,0,0);
+        for(k=15;k<=18;k++)
+          alt3d+=InterlockedCompareExchange(&counters[k].total,0,0);
+        snprintf(line,sizeof(line),
+          "PAUSE-PATH: EXTENDED SNAPSHOT tick=%lu bltbatch=%ld bltfast=%ld lock=%ld unlock=%ld getdc=%ld releasedc=%ld overlay=%ld alternate3d=%ld begin=%ld end=%ld",
+          (unsigned long)now,
+          (long)InterlockedCompareExchange(&counters[3].total,0,0),
+          (long)InterlockedCompareExchange(&counters[4].total,0,0),
+          (long)InterlockedCompareExchange(&counters[6].total,0,0),
+          (long)InterlockedCompareExchange(&counters[8].total,0,0),
+          (long)InterlockedCompareExchange(&counters[5].total,0,0),
+          (long)InterlockedCompareExchange(&counters[7].total,0,0),
+          (long)overlay,(long)alt3d,
+          (long)InterlockedCompareExchange(&counters[13].total,0,0),
+          (long)InterlockedCompareExchange(&counters[14].total,0,0));
+        emit(line);
+      }
       milestone++;
     }
     /* Diagnostic-only polling, on a dedicated thread, not the game thread. */
@@ -137,6 +170,12 @@ void SpiderPausePath_Init(void (*logger)(const char *),int debug_enabled) {
   if(!debug_enabled || n!=1 || env[0]!='1')return;
   InterlockedExchange(&trace_enabled,1);
   emit("PAUSE-PATH: passive background Blt/DrawPrimitive/DrawIndexedPrimitive/Flip tracing ENABLED; rate <=1 line/s per draw API");
+  memset(env,0,sizeof(env));
+  n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_EXTENDED_PRESENT_TRACE",env,sizeof(env));
+  if(n==1 && env[0]=='1') {
+    InterlockedExchange(&extended_enabled,1);
+    emit("PAUSE-PATH: EXTENDED DX7 surface and alternate D3D7 draw hooks ENABLED [experimental passthrough]");
+  }
 }
 
 void SpiderPausePath_Record(const char *api,HWND hwnd,LONG flip,int menu,
