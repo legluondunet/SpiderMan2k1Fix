@@ -32,3 +32,12 @@ def test_input_focus_recovery_not_removed():
     assert 'SpiderInputFocus_Install(log_line);' in core
     assert 'GetPrivateProfileIntA("Debug","Log",0,ini)==1' in focus
     assert 'if(!input_debug_logging' in focus
+
+
+def test_native_windows_reacquire_hook_not_on_by_default():
+    ini = (ROOT / 'SpiderMan2k1Fix.ini').read_text()
+    generated = (ROOT / 'virtual_spidey_cfg.c').read_text()
+    assert 'ExperimentalAltTabReacquire=0' in ini
+    assert '"ExperimentalAltTabReacquire=0\\r\\n"' in generated
+    assert 'PauseOnFocusLoss' not in ini
+    assert 'PauseOnFocusLoss' not in generated
