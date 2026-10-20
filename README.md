@@ -93,6 +93,8 @@ On the first supported launch, SpiderMan2k1Fix creates `SpiderMan2k1Fix.ini` aut
 
 If you use Lutris or another Wine launcher, add a DLL override with **Name:** `winmm` and **Value:** `n,b` in that game's Wine configuration (or set the equivalent environment variable). You generally do not need a separate override for `SpiderMan2k1Fix.dll`.
 
+For a compatibility/regression check after updating the DLLs, follow the [Linux/Wine test guide](WINE_REGRESSION_TEST.md). It includes a log collector for the installed game and checks for graphics, audio, controls, and Alt+Tab. Automated smoke CI alone cannot validate real gameplay.
+
 ## Using SpiderMan2k1Fix
 
 There is **no separate launcher or graphical configuration utility**. Start *Spider-Man* as usual and change its settings through the in-game menus or `SpiderMan2k1Fix.ini`.
