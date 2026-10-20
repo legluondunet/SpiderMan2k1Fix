@@ -2,7 +2,7 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = (ROOT / ".github/workflows/spiderman2k1fix-wine-smoke.yml").read_text()
+WORKFLOW = (ROOT / ".github/workflows/spiderman2k1fix-windows-x86.yml").read_text()
 HOST = (ROOT / "tests/wine_proxy_smoke.c").read_text()
 COLLECTOR = (ROOT / "tests/wine-game-regression.sh").read_text()
 DOCUMENT = (ROOT / "WINE_REGRESSION_TEST.md").read_text()
@@ -13,9 +13,12 @@ def test_wine_ci_builds_real_dll_pair_and_uses_actual_32_bit_wine():
     assert "WINEARCH: win32" in WORKFLOW
     assert "wine32:i386" in WORKFLOW
     assert "bash ./build.sh" in WORKFLOW
+    assert "needs: windows-x86" in WORKFLOW
+    assert "actions/download-artifact@v4" in WORKFLOW
     assert "winmm=n,b" in WORKFLOW
     assert "xvfb-run -a wine" in WORKFLOW
-    assert "spiderman2k1fix-windows-x86" not in WORKFLOW
+    assert "wine-x86-smoke:" in WORKFLOW
+    assert WORKFLOW.count("name: SpiderMan2k1Fix Windows x86")==1
 
 
 def test_wine_smoke_checks_proxy_exports_and_loads_fix_safely():
