@@ -45,6 +45,7 @@ int main(void) {
         fputs("SMOKE ERROR: proxy did not load SpiderMan2k1Fix.dll\n",stderr);
         return 3;
     }
+    Sleep(1500); /* Let the fix DLL worker finish its signature check and log. */
     puts("SMOKE OK: both native DLLs loaded under Wine (unsupported host untouched)");
     return 0;
 }
