@@ -1707,11 +1707,13 @@ static DWORD WINAPI initialize(LPVOID unused) {
   }
   log_line("OK: supported SpideyPC.exe SHA-256 verified");
   install_null_fclose_guard(); /* Default ON only for SHA-verified EXE and exact native opcode signature. */
-  SpiderDI8Retry_Init(log_line); /* WinDbg-guided game-native Acquire retry; OFF by default */
   /* Generate complete defaults once, before any GetPrivateProfile... reads. */
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
+   * No COM-vtable interception. The actual patch is delayed to Flip #120. */
+  SpiderDI8Retry_Init(log_line);
   /* The first-run generator or repair may have changed [Debug] Log. */
   {
     int previous_log_enabled=debug_log_enabled;
