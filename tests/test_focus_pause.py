@@ -66,3 +66,12 @@ def test_pause_key_configurable_with_safe_default():
     assert "GetPrivateProfileStringA(\"Input\",\"PauseKey\",\"F9\"" in CORE
     assert 'lstrcmpiA(key,"Space")==0' in CORE
     assert "VK_SPACE:VK_F9" in CORE
+
+def test_focus_trace_only_does_not_hook_directinput():
+    trace=(ROOT/"input_focus_trace.c").read_text()
+    safe=trace.index("if(want_trace && !want_fix)")
+    hook=trace.index("slot=(void**)(base+0x13b01c)")
+    assert safe < hook
+    assert "InterlockedExchange(&diagnostic_active,1)" in trace[safe:hook]
+    assert "return;" in trace[safe:hook]
+    assert "DirectInput8 IAT and COM vtables untouched" in trace
