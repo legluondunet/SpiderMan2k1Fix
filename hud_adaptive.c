@@ -1,6 +1,6 @@
 /*
- * Adaptive widescreen layout for two previously uncorrected Spider-Man 2001
- * game HUD groups, grounded in three Wine 1920x1080 / F12 D3D7 captures:
+ * Adaptive widescreen gameplay HUD layout, grounded in Wine 1920x1080
+ * instruction/compass traces and Windows 11 1920x1200 boss F12 traces:
  *
  *  - compass: two 64x64 textured mirrored halves (z=0, RHW=27.6000)
  *    and their untextured direction indicator (RHW=26.0678);
@@ -9,6 +9,12 @@
  *    shadow is z=0.0012/RHW=11.1764; the light foreground is a second
  *    pass at z=0.0010/RHW=12.6862, with ARGB FFC0C0FF.
  *    Both must undergo IDENTICAL X mapping to stay registered.
+ *  - boss group(s): top-right health fills (textureless z≈.0010, opaque
+ *    gradient colors), 32x32 border tiles and 64x64 portrait (z≈.0002),
+ *    plus optional short black fill marker (z≈.0007). Scorpion/J. Jonah
+ *    Jameson draw two such rows, Venom one. RHW changes across boss
+ *    scenes, so ranges are required; exact caller/region/texture/size/
+ *    color/layer combinations prevent transforming unrelated effects.
  *
  * The generic game DrawPrimitive caller RVA 0x00102C72 is NOT sufficient
  * to identify HUD: 3D world particles also go through it. Therefore we
@@ -36,7 +42,15 @@ int SpiderHudAdaptive_MightMatch(const SpiderMenuVertex *v)
             hud_near(v[0].rhw, 12.6862f, 0.10f)) ||
            (hud_near(v[0].z, 0.0f, 0.0001f) &&
             (hud_near(v[0].rhw, 27.6000f, 0.10f) ||
-             hud_near(v[0].rhw, 26.0678f, 0.10f)));
+             hud_near(v[0].rhw, 26.0678f, 0.10f))) ||
+           /* Windows 11 boss trace: depth layers are stable, but RHW
+            * varied slightly between Venom and Scorpion/Jameson. */
+           (hud_near(v[0].z, 0.0002f, 0.00012f) &&
+            v[0].rhw >= 19.0f && v[0].rhw <= 26.0f) ||
+           (hud_near(v[0].z, 0.0010f, 0.00012f) &&
+            v[0].rhw >= 10.0f && v[0].rhw <= 17.0f) ||
+           (hud_near(v[0].z, 0.0007f, 0.00012f) &&
+            v[0].rhw >= 13.0f && v[0].rhw <= 19.0f);
 }
 
 int SpiderHudAdaptive_Transform(const SpiderMenuVertex *src,
@@ -145,13 +159,70 @@ int SpiderHudAdaptive_Transform(const SpiderMenuVertex *src,
             region = SPIDER_HUD_ADAPTIVE_INSTRUCTIONS;
     }
 
+    /* Upper-right boss UI. Venom is a single bar/portrait; Scorpion
+     * also draws a shorter Jameson health bar underneath. Preserve the
+     * exact same right-edge anchor for every fill, border tile, marker
+     * and portrait. See native 1920x1200 F12 measurements 2026-10-21.
+     *
+     * Do not rely on RHW exact equality: Venom used 21.3309 and 12.6862
+     * while Scorpion/Jameson used 21.9693 and 13.6283. Their color,
+     * layer, texture dimensions, quad extent and screen region together
+     * form a safer composite signature than any single property. */
+    if (region == SPIDER_HUD_ADAPTIVE_NONE &&
+        minx >= (float)screen_w * 0.48f &&
+        centerx > (float)screen_w * 0.53f &&
+        miny >= (float)screen_h * 0.045f &&
+        maxy <= (float)screen_h * 0.34f &&
+        (src[0].diffuse >> 24) == 0xFFu) {
+        /* Solid gradient health segments, either of the two rows.
+         * Source screenshot: 40px high at h=1200; width depends on HP. */
+        if (tex_w == 0u && tex_h == 0u &&
+            hud_near(src[0].z, 0.0010f, 0.00012f) &&
+            src[0].rhw >= 10.0f && src[0].rhw <= 17.0f &&
+            height >= (float)screen_h * 0.026f &&
+            height <= (float)screen_h * 0.041f &&
+            width >= (float)screen_h * 0.008f &&
+            width <= (float)screen_h * 0.56f &&
+            (color & 0x00FFFFFFu) != 0u &&
+            ((color & 0x0000FF00u) != 0u ||
+             (color & 0x00FF0000u) != 0u))
+            region = SPIDER_HUD_ADAPTIVE_BOSS;
+        /* Small black end/empty-HP marker seen on Jameson's row. */
+        else if (tex_w == 0u && tex_h == 0u &&
+                 color == 0xFF000000u &&
+                 hud_near(src[0].z, 0.0007f, 0.00012f) &&
+                 src[0].rhw >= 13.0f && src[0].rhw <= 19.0f &&
+                 width >= (float)screen_h * 0.006f &&
+                 width <= (float)screen_h * 0.04f &&
+                 height >= (float)screen_h * 0.025f &&
+                 height <= (float)screen_h * 0.041f)
+            region = SPIDER_HUD_ADAPTIVE_BOSS;
+        /* 32x32 tiled frame segments, including shorter Jameson bar.
+         * Portrait sprites are 64x64; both share foreground z/RHW. */
+        else if (color == 0xFFFFFFFFu &&
+                 hud_near(src[0].z, 0.0002f, 0.00012f) &&
+                 src[0].rhw >= 19.0f && src[0].rhw <= 26.0f &&
+                 ((tex_w == 32u && tex_h == 32u &&
+                   width >= (float)screen_h * 0.045f &&
+                   width <= (float)screen_h * 0.095f &&
+                   height >= (float)screen_h * 0.055f &&
+                   height <= (float)screen_h * 0.075f) ||
+                  (tex_w == 64u && tex_h == 64u &&
+                   width >= (float)screen_h * 0.125f &&
+                   width <= (float)screen_h * 0.16f &&
+                   height >= (float)screen_h * 0.115f &&
+                   height <= (float)screen_h * 0.14f)))
+            region = SPIDER_HUD_ADAPTIVE_BOSS;
+    }
+
     if (region == SPIDER_HUD_ADAPTIVE_NONE)
         return region;
 
     scale = (4.0f * (float)screen_h) / (3.0f * (float)screen_w);
     memcpy(dst, src, 4u * sizeof(*dst));
     for (i = 0; i != 4u; ++i) {
-        if (region == SPIDER_HUD_ADAPTIVE_COMPASS)
+        if (region == SPIDER_HUD_ADAPTIVE_COMPASS ||
+            region == SPIDER_HUD_ADAPTIVE_BOSS)
             dst[i].x = (float)screen_w + (src[i].x - (float)screen_w) * scale;
         else
             dst[i].x = src[i].x * scale;
