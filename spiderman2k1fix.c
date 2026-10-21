@@ -1230,6 +1230,30 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
   RECT dest_mapped;
   LPRECT presented_dest=dest;
 
+  /* Read-only native DirectDraw diagnostic for an uncorrected boss health
+   * black rectangle. Some legacy UI layers may use a color-filled Blt
+   * rather than the D3D7 triangle-fan path. Only report F12-armed calls
+   * in the upper-right HUD and never change the destination or fill. */
+  if(debug_log_enabled &&
+     InterlockedCompareExchange(&hud_probe_frames,0,0)>0 &&
+     dest && dest->right>dest->left && dest->bottom>dest->top &&
+     dest->left>=(LONG)((float)desktop_w*0.42f) &&
+     dest->top>=0 && dest->top<(LONG)((float)desktop_h*0.34f) &&
+     dest->right<=(LONG)desktop_w+40 &&
+     dest->bottom<=(LONG)((float)desktop_h*0.39f)) {
+    LONG slot=InterlockedIncrement(&hud_probe_boss_blt);
+    if(slot<=24) {
+      char msg[300];
+      DWORD color=((flags&DDBLT_COLORFILL) && fx)?fx->dwFillColor:0u;
+      snprintf(msg,sizeof(msg),
+        "HUD-PROBE-BLT: slot=%ld dst=(%ld,%ld)-(%ld,%ld) src=%p flags=0x%08lX fill=%08lX",
+        (long)slot,(long)dest->left,(long)dest->top,
+        (long)dest->right,(long)dest->bottom,(void*)source,
+        (unsigned long)flags,(unsigned long)color);
+      log_line(msg);
+    }
+  }
+
   if(debug_log_enabled && count<=24) {
     char line[240];
     snprintf(line,sizeof(line),"DDRAW: Surface7::Blt #%ld dst=%p src=%p dstRect=%s srcRect=%s flags=0x%08lX",
