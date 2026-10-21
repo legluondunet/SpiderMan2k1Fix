@@ -1122,6 +1122,23 @@ static void pause_poll_key(HWND hwnd) {
     }
   }
 }
+/* Focus-only snapshot: no DirectInput hooks or synthetic activation. */
+static void pause_log_resume_focus(HWND hwnd) {
+  GUITHREADINFO gi; DWORD tid;char line[280];
+  if(!debug_log_enabled || !hwnd || !IsWindow(hwnd)) return;
+  tid=GetWindowThreadProcessId(hwnd,NULL);
+  memset(&gi,0,sizeof(gi));gi.cbSize=sizeof(gi);
+  if(GetGUIThreadInfo(tid,&gi)) {
+    snprintf(line,sizeof(line),
+      "FOCUS-PAUSE: resume-focus hwnd=%p foreground=%p active=%p focus=%p capture=%p flags=0x%08lX thread=%lu",
+      (void*)hwnd,(void*)GetForegroundWindow(),(void*)gi.hwndActive,
+      (void*)gi.hwndFocus,(void*)gi.hwndCapture,(unsigned long)gi.flags,(unsigned long)tid);
+  } else {
+    snprintf(line,sizeof(line),"FOCUS-PAUSE: resume-focus GetGUIThreadInfo failed Win32=%lu",
+      (unsigned long)GetLastError());
+  }
+  log_line(line);
+}
 static void pause_at_flip_if_background(void) {
   HWND hwnd=game_hwnd;
   MSG msg;
@@ -1155,6 +1172,7 @@ static void pause_at_flip_if_background(void) {
     MsgWaitForMultipleObjectsEx(0,NULL,50,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
   }
   log_line("FOCUS-PAUSE: explicit resume or window destroyed");
+  pause_log_resume_focus(hwnd);
   InterlockedExchange(&pause_in_progress,0);
 }
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
