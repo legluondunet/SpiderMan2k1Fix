@@ -322,6 +322,8 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "PauseKey=F9\r\n"
     "; Show centered transparent red-outline pause message when focus pause is active.\r\n"
     "PauseOverlay=1\r\n"
+    "; Darken the paused game 40 percent behind the PAUSE label (0=off).\r\n"
+    "PauseDim=1\r\n"
     "; Restore Windows desktop cursor on loss of game focus (1=on, 0=off).\r\n"
     "RestoreCursorOnFocusLoss=1\r\n"
     "; Experimental Bink audio/video pause on lost focus; default off.\r\n"
