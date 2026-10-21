@@ -696,7 +696,10 @@ static DrawIndexedPrimitiveFn original_draw_indexed_primitive;
 static int geom_rva(void *ret,DWORD *rva); /* declared below HUD sampling */
 /* Opt-in, read-only six-frame HUD sampling. No render path changes. */
 static volatile LONG hud_probe_enabled=0,hud_probe_frames=0;
-static volatile LONG hud_probe_seen=0,hud_probe_left=0,hud_probe_right=0,hud_probe_instructions=0;
+/* The read-only F12 sampler can also investigate boss health bars at top-right.
+ * Separate quotas prevent player HUD/world sprites from hiding boss quads.
+ * All probes are disabled without SPIDERMAN2K1FIX_HUD_TRACE=1 and Log=1. */
+static volatile LONG hud_probe_seen=0,hud_probe_left=0,hud_probe_right=0,hud_probe_instructions=0,hud_probe_boss=0;
 static void hud_probe_flip(void) {
   if(InterlockedCompareExchange(&hud_probe_enabled,0,0)!=1) return;
   if((GetAsyncKeyState(VK_F12)&1)!=0 && game_hwnd &&
@@ -710,6 +713,7 @@ static void hud_probe_flip(void) {
   InterlockedExchange(&hud_probe_left,0);
   InterlockedExchange(&hud_probe_right,0);
   InterlockedExchange(&hud_probe_instructions,0);
+  InterlockedExchange(&hud_probe_boss,0);
 }
 static void hud_probe_draw(void *device,D3DPRIMITIVETYPE type,DWORD fvf,
                            const void *vertices,DWORD count,void *caller) {
@@ -735,14 +739,20 @@ static void hud_probe_draw(void *device,D3DPRIMITIVETYPE type,DWORD fvf,
      r-l<2.0f || b-t<2.0f || r-l>(float)desktop_w*0.65f ||
      b-t>(float)desktop_h*0.45f) return;
   cx=(l+r)*0.5f;cy=(t+b)*0.5f;
-  if(cy>(float)desktop_h*0.63f && cx>(float)desktop_w*0.57f) region=1;
+  /* Boss portraits/bars occupy the top-right quadrant. They were missed
+   * by the original bottom-corner / top-left-only sampler. Restrict this
+   * added category to flat screen-space quads (not depthful 3D world
+   * geometry), without assuming particular textures/colors/UVs yet. */
+  if(cy<(float)desktop_h*0.35f && cx>(float)desktop_w*0.50f &&
+     v[0].z>=-0.01f && v[0].z<0.10f && v[0].rhw>0.5f) region=4;
+  else if(cy>(float)desktop_h*0.63f && cx>(float)desktop_w*0.57f) region=1;
   else if(cy>(float)desktop_h*0.65f && cx<(float)desktop_w*0.60f) region=2;
   else if(cy<(float)desktop_h*0.34f && cx<(float)desktop_w*0.42f) region=3;
   else return;
   n=InterlockedIncrement(&hud_probe_seen);
-  if(n>128)return;
-  slot=InterlockedIncrement(region==1?&hud_probe_right:region==2?&hud_probe_instructions:&hud_probe_left);
-  if(slot>16)return;
+  if(n>192)return;
+  slot=InterlockedIncrement(region==4?&hud_probe_boss:region==1?&hud_probe_right:region==2?&hud_probe_instructions:&hud_probe_left);
+  if(slot>(region==4?32:16))return;
   memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
   if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) && texture) {
     if(FAILED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc)))
@@ -754,7 +764,7 @@ static void hud_probe_draw(void *device,D3DPRIMITIVETYPE type,DWORD fvf,
     "HUD-PROBE: region=%s index=%ld rva=0x%08lX tex=%lux%lu "
     "bbox=[%.1f,%.1f..%.1f,%.1f] z=%.4f rhw=%.4f "
     "diffuse=%08lX uv=[%.3f,%.3f..%.3f,%.3f]",
-    region==1?"compass":region==2?"instructions":"player",
+    region==4?"boss":region==1?"compass":region==2?"instructions":"player",
     (long)slot,(unsigned long)rva,
     (unsigned long)desc.dwWidth,(unsigned long)desc.dwHeight,
     (double)l,(double)t,(double)r,(double)b,
