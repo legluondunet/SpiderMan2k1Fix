@@ -274,3 +274,25 @@ void SpiderPauseOverlay_Hide(void) {
   if(IsWindow(window))DestroyWindow(window);
   if(overlay_log)overlay_log("FOCUS-OVERLAY: hidden before focus-pause release");
 }
+
+
+int SpiderPauseOverlay_ExcludeFromRegion(HWND game_window,HRGN visible_region) {
+  HRGN banner_region;
+  POINT origin={0,0};
+  int ok=0;
+  if(!visible_region || !game_window || !IsWindow(game_window))return 0;
+  /* PauseOverlay=0 is legitimate: in that case, dim the whole frame. */
+  if(!overlay_hwnd || !IsWindow(overlay_hwnd))return 1;
+  if(GetParent(overlay_hwnd)!=game_window)return 0;
+  banner_region=CreateRectRgn(0,0,0,0);
+  if(!banner_region)return 0;
+  if(GetWindowRgn(overlay_hwnd,banner_region)!=ERROR) {
+    /* The shaped child is centered in parent CLIENT coordinates. */
+    MapWindowPoints(overlay_hwnd,game_window,&origin,1);
+    if(OffsetRgn(banner_region,origin.x,origin.y)!=ERROR &&
+       CombineRgn(visible_region,visible_region,banner_region,RGN_DIFF)!=ERROR)
+      ok=1;
+  }
+  DeleteObject(banner_region);
+  return ok;
+}

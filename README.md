@@ -125,6 +125,12 @@ PauseOnFocusLoss=0
 PauseKey=F9
 ; 1 = show a centered, transparent, red-outlined pause message; 0 = hide it.
 PauseOverlay=1
+; Darken the paused game behind the centered PAUSE banner (0 disables shade).
+PauseDim=1
+; Strength of black shade: 0..90 percent (default 55).
+PauseDimOpacity=55
+; Draw a fine, subtle 16-pixel grid over the shade (0 disables grid).
+PauseGrid=1
 ; Pause cinematic Bink video and the game's audio-only Bink music stream.
 PauseBinkOnFocusLoss=0
 ; Pause active game-owned secondary DirectSound effects/voices (default off).
@@ -179,6 +185,8 @@ The generated INI may contain additional internal or development-specific settin
 **Windows 11 class=Ghost false focus-loss experiment (PR #11):** If the game repeatedly pauses without Alt+Tab after about five to six seconds, capture `SpiderMan2k1Fix.log`: repeated `FOCUS-PAUSE-OWNER: ... class=Ghost` lines indicate Windows is replacing an apparently unresponsive game window with a ghost surrogate. `[Input] DisableWindowsGhosting=1` (default **0**) requests Microsoft's `DisableProcessWindowsGhosting` API at startup to prevent that replacement and test whether the repeated false pauses stop. **Restart required; it applies to the whole game process until exit and suppresses Windows' normal ability to manage a hung application via a ghost window. It does not fix a truly hung game or change the Alt+Tab pause/input behavior.** Do not enable by default before native Windows testing. See [diagnostic procedure](UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md).
 
 **Pause indicator (next PR):** With `PauseOnFocusLoss=1`, the game displays a centered `PAUSE` banner with **an unfilled red outline, fully transparent interior, and white text** during an actual focus pause. The second line is `Appuyez sur une touche`, `Appuyez sur Espace`, or `Appuyez sur F9`, according to `PauseKey`. The banner uses an unfilled native window region (only the red frame and white lettering occupy pixels), preventing the black background seen with the original color-keyed child. Its bold, italic, dark-outlined white capitals evoke the game's comic-style tips. It stays a nonactivating child of the game window, not an always-on-top desktop overlay; it disappears immediately when the pause ends. `PauseOverlay=1` enables it by default, and `PauseOverlay=0` hides only this visual hint (not the pause, Bink, or DirectSound logic).
+
+**Dimmed pause background (PR #12):** When `[Input] PauseOnFocusLoss=1`, a non-topmost, nonactivating layered **popup owned by the game window** darkens the paused scene with a **55% black tint** and a fine **16-pixel square grid**. The original red-framed comic-style `PAUSE` message stays centered and bright: the popup is cut out around the exact border and white glyphs of the existing shaped banner. The effect appears only during a latched focus pause, and both windows are destroyed before video/audio resumes. `[Input] PauseDim=1` enables the shade (default on, although the underlying focus pause remains disabled by default). `PauseDimOpacity=55` adjusts darkness from `0` to `90` percent. `PauseGrid=1` enables the fine square pattern, and `PauseGrid=0` keeps a smooth dark tint. Set `PauseDim=0` to restore the previous validated plain paused image. The grid is painted inside the same alpha popup—**no extra focus-stealing window, no change to DirectDraw, Bink, DirectSound or DirectInput**. The popup avoids the original 2001 EXE's layered-child compatibility restriction and is not desktop-topmost. Verify the final look and Z-order on native Windows 11; automated CI cannot validate the compositor.
 
 **Synchronized audio and video focus pause (PR #9):** The separately enabled `PauseBinkOnFocusLoss=1` pauses Bink cinematic streams **and the Bink-based music heard during 3D gameplay** using the game's original `BinkPause` API. `PauseDirectSoundOnFocusLoss=1` pauses currently playing game-owned secondary DirectSound buffers and resumes the same buffers from their retained cursor position. The primary buffer is untouched. Both new media options are **disabled by default**. Their combined operation was tested in Windows 11 gameplay, the menu, and cinematics with no audio desynchronization. See [technical notes and test results](FOCUS_AUDIO_VIDEO_SYNC_TEST.md) for diagnostics, compatibility limits, and rollback.
 
