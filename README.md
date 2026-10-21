@@ -272,11 +272,42 @@ changes or additional COM hooks. It is deliberately excluded from `main`.
    player-HUD-only 16-site correction. Compare in 4:3 and widescreen.
    Restore `HUDWidescreenFix=0` if any unexpected behavior occurs.
 
-The target adaptive HUD will use aspect-correct geometry and appropriate
-edge anchors, with **no change in native 4:3 mode**, and will include
-the compass, Webcart and instructions when their signatures are verified.
-Do **not** enable this unfinished experimental feature in a release until
-both Wine and native Windows 11 are tested.
+**Second experimental step (after three completed Wine F12 captures):**
+the actual gameplay 2D draw signatures are now known. Both mirrored
+64×64 compass halves and the untextured direction pointer can be
+identified by exact draw RVA, z/RHW layer, source texture and bottom-right
+bounds. The two translucent instruction backgrounds and their text glyphs
+have separate depths, colors and bottom-left bounds. Crucially, the F12
+capture also discovered **3D particles wrongly labeled 'player' by the
+loose sample**, with z≈0.9983 and RHW≈0.0229. The correction explicitly
+rejects these and any unrecognized 3D calls.
+
+This second stage is **opt-in with the existing
+`[HUD] HUDWidescreenFix=1`**; the default remains `0`. The already
+available 16-site upper-left player HUD prototype is enabled at the
+same time, while the additional strict D3D7 filters adjust:
+- compass halves plus pointer: scale X to 4:3-relative proportions and
+  **anchor to the screen's right edge**;
+- instruction panel and matching font glyphs: scale X to 4:3-relative
+  proportions and **anchor to the left edge**.
+
+At 1920×1080 the horizontal scale is 0.75. Y, Z, RHW, color, UV,
+menu/comic/video geometry and the game's original vertex buffers are
+unchanged; supported original 4:3 mode automatically disables the patch.
+
+**Wine visual A/B:** Back up the game DLLs and INI, install the DLLs from
+this experimental PR *as a matching pair*, and leave `Log=1`.
+First launch with `HUDWidescreenFix=0`, take a 16:9 3D screenshot;
+then set `HUDWidescreenFix=1`, restart and take a screenshot of the same
+scene, with player gauges, compass and instructions visible. Check
+`HUD-ADAPTIVE: region=compass` and `region=instructions` in the log.
+If anything crashes, flickers or shifts unexpectedly, revert to
+`HUDWidescreenFix=0` and preserve the log. The F12 probe can remain
+disabled during visual testing by omitting its environment variable.
+
+This feature is **not yet approved for the 1.0 release**. It needs
+visual/runtime validation under Wine and Windows 11 before it can be
+enabled by default or merged into `main`.
 
 ## Roadmap
 
