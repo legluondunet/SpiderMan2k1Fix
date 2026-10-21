@@ -42,7 +42,7 @@ static void diag_dsound(const char *phase) {
   void *device=*(void * const *)(uintptr_t)0x006B7920u;
   void *primary=*(void * const *)(uintptr_t)0x006B7924u;
   snprintf(line,sizeof(line),
-    "FOCUS-AUDIO: %s DSOUND device=%p primary-candidate=%p; no sound-buffer changes",
+    "FOCUS-AUDIO: %s DSOUND device=%p primary-candidate=%p; read-only Bink-module probe",
     phase,device,primary);
   diag(line);
 }
@@ -84,7 +84,7 @@ void SpiderFocusMedia_Init(void (*log_fn)(const char *)) {
   }
   memcpy(&native_bink_pause,&exported,sizeof(exported));
   InterlockedExchange(&enabled,1);
-  diag("FOCUS-MEDIA: experimental native BinkPause enabled; DirectSound audio NOT paused");
+  diag("FOCUS-MEDIA: experimental native BinkPause enabled; secondary DirectSound voice handling is separate");
 }
 void SpiderFocusMedia_Pause(void) {
   void *handles[2],*handle;
