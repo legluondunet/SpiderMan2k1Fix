@@ -31,8 +31,8 @@ def test_owner_diagnostic_is_passive_and_privacy_bounded():
 
 def test_focus_detection_wake_audio_and_overlay_untouched():
     assert "pause_confirmed_focus_loss(hwnd)" in SRC
-    assert "SpiderPauseOverlay_Show(hwnd);" in SRC
-    assert "SpiderPauseOverlay_Hide();" in SRC
+    assert "SpiderPauseSurface_Begin(" in SRC
+    assert "SpiderPauseSurface_End();" in SRC
     assert "SpiderFocusDSound_Pause();" in SRC
     assert "SpiderFocusMedia_Pause();" in SRC
     assert "SpiderFocusDSound_Resume();" in SRC
