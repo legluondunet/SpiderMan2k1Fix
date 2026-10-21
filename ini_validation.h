@@ -62,7 +62,7 @@ static const char *const spider_ini_hud[]={"HUDWidescreenFix"};
  * The runtime refuses both unsafe features regardless of their values.
  * Neither obsolete key is generated or documented as an active option. */
 static const char *const spider_ini_input[]={
-  "DirectInputReacquire","DisableWindowsGhosting","PauseOnFocusLoss","PauseBinkOnFocusLoss","PauseDirectSoundOnFocusLoss","PauseOverlay","PauseKey",
+  "DirectInputReacquire","DisableWindowsGhosting","PauseOnFocusLoss","PauseBinkOnFocusLoss","PauseDirectSoundOnFocusLoss","PauseOverlay","PauseDim","PauseKey",
   "RestoreCursorOnFocusLoss","ExperimentalFocusTrace","ExperimentalDI8EntryTrace",
   "ExperimentalAltTabReacquire","ExperimentalDI8CreateDeviceTrace"
 };
