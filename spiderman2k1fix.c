@@ -274,6 +274,15 @@ typedef HRESULT (WINAPI *SurfaceCreateFn)(void *, DDSURFACEDESC2 *, IDirectDrawS
 typedef HRESULT (WINAPI *SurfaceBltFn)(void *, LPRECT, IDirectDrawSurface7 *, LPRECT, DWORD, LPDDBLTFX);
 typedef HRESULT (WINAPI *SurfaceFlipFn)(void *, IDirectDrawSurface7 *, DWORD);
 typedef HRESULT (WINAPI *SurfaceGetAttachedFn)(void *, LPDDSCAPS2, IDirectDrawSurface7 **);
+/* F9 screenshot path investigation. All five diagnostic hooks are installed
+ * ONLY for SPIDERMAN2K1FIX_F9_TRACE=1 AND Debug Log=1. Read-only pass-through.
+ * IDirectDrawSurface7 vtable slots: GetDC=17 GetSurfaceDesc=22 Lock=25
+ * ReleaseDC=26 Unlock=32. No executable patch, pixel read or allocation. */
+typedef HRESULT (WINAPI *SurfaceGetDCFn)(void *, HDC *);
+typedef HRESULT (WINAPI *SurfaceGetDescFn)(void *, LPDDSURFACEDESC2);
+typedef HRESULT (WINAPI *SurfaceLockFn)(void *, LPRECT, LPDDSURFACEDESC2, DWORD, HANDLE);
+typedef HRESULT (WINAPI *SurfaceReleaseDCFn)(void *, HDC);
+typedef HRESULT (WINAPI *SurfaceUnlockFn)(void *, LPRECT);
 static CreateExFn original_create;
 static CoopFn original_coop;
 static ModeFn original_mode;
@@ -281,6 +290,13 @@ static SurfaceCreateFn original_surface_create;
 static SurfaceBltFn original_blt;
 static SurfaceFlipFn original_flip;
 static SurfaceGetAttachedFn original_get_attached;
+static SurfaceGetDCFn original_get_dc;
+static SurfaceGetDescFn original_surface_get_desc;
+static SurfaceLockFn original_surface_lock;
+static SurfaceReleaseDCFn original_release_dc;
+static SurfaceUnlockFn original_surface_unlock;
+static volatile LONG f9_trace_enabled=0,f9_trace_keydown=0;
+static volatile LONG f9_trace_until=0,f9_trace_events=0,f9_trace_logged=0;
 static void *patched_ddraw_vtable[30];
 /* IDirectDrawSurface7 has 49 vtable slots (IUnknown + 46 methods). */
 static void *patched_surface_vtable[49];
@@ -1326,6 +1342,118 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
   return hr;
 }
 /* The surface-creation hook remains responsible for installing the shared vtable. */
+/* Capture the F9 window without changing the game keyboard path. Holding
+ * the real F9 key for a moment starts six seconds of detailed readback logs.
+ * First 24 events are also logged to identify the normal baseline.
+ * Do not use the F12 HUD sampler here; this diagnostic is independent. */
+static int f9_readback_window(void) {
+  DWORD tick;
+  LONG deadline;
+  if(InterlockedCompareExchange(&f9_trace_enabled,0,0)!=1) return 0;
+  tick=GetTickCount();
+  if(GetAsyncKeyState(VK_F9)&0x8000) {
+    if(InterlockedCompareExchange(&f9_trace_keydown,1,0)==0) {
+      InterlockedExchange(&f9_trace_until,(LONG)(tick+6000u));
+      InterlockedExchange(&f9_trace_logged,0);
+      log_line("F9-TRACE: F9 key pressed; readback trace window OPEN for six seconds");
+    }
+  } else InterlockedExchange(&f9_trace_keydown,0);
+  deadline=InterlockedCompareExchange(&f9_trace_until,0,0);
+  return deadline!=0 && (LONG)((DWORD)deadline-tick)>0;
+}
+static int f9_trace_report(void) {
+  LONG event;
+  int during;
+  if(InterlockedCompareExchange(&f9_trace_enabled,0,0)!=1) return 0;
+  during=f9_readback_window();
+  event=InterlockedIncrement(&f9_trace_events);
+  if(during) return InterlockedIncrement(&f9_trace_logged)<=200;
+  return event<=24; /* Baseline: first few reads after game startup. */
+}
+static const char *f9_surface_kind(const void *surface) {
+  if(surface==(const void *)borderless_primary) return "PRIMARY";
+  if(surface==(const void *)borderless_back) return "3D-BACKBUFFER";
+  return "OTHER";
+}
+static HRESULT WINAPI hooked_f9_surface_get_dc(void *self,HDC *dc) {
+  HRESULT hr=original_get_dc(self,dc);
+  if(f9_trace_report()) {
+    DWORD rva=0; char msg[265];
+    geom_rva(__builtin_return_address(0),&rva);
+    snprintf(msg,sizeof(msg),
+      "F9-TRACE: GetDC owner=%s surface=%p caller=0x%08lX hr=0x%08lX hdc=%p",
+      f9_surface_kind(self),self,(unsigned long)rva,(unsigned long)hr,
+      (void *)(dc?*dc:NULL));
+    log_line(msg);
+  }
+  return hr;
+}
+static HRESULT WINAPI hooked_f9_surface_get_desc(void *self,LPDDSURFACEDESC2 desc) {
+  HRESULT hr=original_surface_get_desc(self,desc);
+  if(f9_trace_report()) {
+    DWORD rva=0;char msg[310];
+    geom_rva(__builtin_return_address(0),&rva);
+    snprintf(msg,sizeof(msg),
+      "F9-TRACE: GetSurfaceDesc owner=%s surface=%p caller=0x%08lX hr=0x%08lX "
+      "size=%lux%lu bpp=%lu caps=0x%08lX",
+      f9_surface_kind(self),self,(unsigned long)rva,(unsigned long)hr,
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->dwWidth:0),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->dwHeight:0),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->ddpfPixelFormat.dwRGBBitCount:0),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->ddsCaps.dwCaps:0));
+    log_line(msg);
+  }
+  return hr;
+}
+static HRESULT WINAPI hooked_f9_surface_lock(void *self,LPRECT rect,
+                                              LPDDSURFACEDESC2 desc,
+                                              DWORD flags,HANDLE event) {
+  HRESULT hr=original_surface_lock(self,rect,desc,flags,event);
+  if(f9_trace_report()) {
+    DWORD rva=0;char msg[430];
+    geom_rva(__builtin_return_address(0),&rva);
+    snprintf(msg,sizeof(msg),
+      "F9-TRACE: Lock owner=%s surface=%p caller=0x%08lX hr=0x%08lX flags=0x%08lX "
+      "rect=%s size=%lux%lu pitch=%ld ptr=%p bpp=%lu masks=%08lX/%08lX/%08lX",
+      f9_surface_kind(self),self,(unsigned long)rva,
+      (unsigned long)hr,(unsigned long)flags,rect?"set":"NULL",
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->dwWidth:0),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->dwHeight:0),
+      (long)((SUCCEEDED(hr)&&desc)?desc->lPitch:0),
+      (void *)((SUCCEEDED(hr)&&desc)?desc->lpSurface:NULL),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->ddpfPixelFormat.dwRGBBitCount:0),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->ddpfPixelFormat.dwRBitMask:0),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->ddpfPixelFormat.dwGBitMask:0),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->ddpfPixelFormat.dwBBitMask:0));
+    log_line(msg);
+  }
+  return hr;
+}
+static HRESULT WINAPI hooked_f9_surface_release_dc(void *self,HDC dc) {
+  HRESULT hr=original_release_dc(self,dc);
+  if(f9_trace_report()) {
+    DWORD rva=0;char msg[250];
+    geom_rva(__builtin_return_address(0),&rva);
+    snprintf(msg,sizeof(msg),
+      "F9-TRACE: ReleaseDC owner=%s surface=%p caller=0x%08lX hr=0x%08lX dc=%p",
+      f9_surface_kind(self),self,(unsigned long)rva,(unsigned long)hr,(void*)dc);
+    log_line(msg);
+  }
+  return hr;
+}
+static HRESULT WINAPI hooked_f9_surface_unlock(void *self,LPRECT rect) {
+  HRESULT hr=original_surface_unlock(self,rect);
+  if(f9_trace_report()) {
+    DWORD rva=0;char msg[240];
+    geom_rva(__builtin_return_address(0),&rva);
+    snprintf(msg,sizeof(msg),
+      "F9-TRACE: Unlock owner=%s surface=%p caller=0x%08lX hr=0x%08lX rect=%s",
+      f9_surface_kind(self),self,(unsigned long)rva,(unsigned long)hr,
+      rect?"set":"NULL");
+    log_line(msg);
+  }
+  return hr;
+}
 static void instrument_surface(IDirectDrawSurface7 *surface);
 static HRESULT WINAPI hooked_get_attached(void *self,LPDDSCAPS2 caps,
                                           IDirectDrawSurface7 **out) {
@@ -1558,6 +1686,10 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       SpiderInputFocus_OnFlip(count);
   }
   SpiderDI8Retry_OnFlip(count);
+  /* Observe the physical F9 press early; the game's screenshot code can
+   * run between two Flip calls, so surface hooks also sample F9. */
+  if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
+    f9_readback_window();
   hud_probe_flip();
   report_null_fclose_recovery();
   if (g_frame_limiter_ready) SpiderFrameLimiter_Wait(&g_frame_limiter);
@@ -1689,6 +1821,19 @@ static void instrument_surface(IDirectDrawSurface7 *surface) {
     patched_surface_vtable[5]=(void *)hooked_blt;
     patched_surface_vtable[11]=(void *)hooked_flip;
     patched_surface_vtable[12]=(void *)hooked_get_attached;
+    if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1) {
+      original_get_dc=(SurfaceGetDCFn)vtable[17];
+      original_surface_get_desc=(SurfaceGetDescFn)vtable[22];
+      original_surface_lock=(SurfaceLockFn)vtable[25];
+      original_release_dc=(SurfaceReleaseDCFn)vtable[26];
+      original_surface_unlock=(SurfaceUnlockFn)vtable[32];
+      patched_surface_vtable[17]=(void *)hooked_f9_surface_get_dc;
+      patched_surface_vtable[22]=(void *)hooked_f9_surface_get_desc;
+      patched_surface_vtable[25]=(void *)hooked_f9_surface_lock;
+      patched_surface_vtable[26]=(void *)hooked_f9_surface_release_dc;
+      patched_surface_vtable[32]=(void *)hooked_f9_surface_unlock;
+      log_line("F9-TRACE: read-only DirectDraw7 GetDC/GetSurfaceDesc/Lock/ReleaseDC/Unlock diagnostics installed");
+    }
     log_line("DDRAW: Surface7 vtable captured; Blt/Flip/GetAttachedSurface hooks ready");
     InterlockedExchange(&surface_vtable_ready,2);
   }
@@ -2200,6 +2345,17 @@ static DWORD WINAPI initialize(LPVOID unused) {
     }
   }
   log_line("BORDERLESS: windowed fullscreen enabled");
+  /* F9 trace must be armed before DirectDraw surface vtables are created.
+   * Never change any COM behavior in normal use. */
+  {
+    char setting[8]={0};
+    if(debug_log_enabled &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_TRACE",setting,sizeof(setting))==1 &&
+       setting[0]=='1') {
+      InterlockedExchange(&f9_trace_enabled,1);
+      log_line("F9-TRACE: opt-in native screenshot readback observation armed; press F9 in gameplay");
+    }
+  }
   install_player_hud(TRUE);
   {
     char flag[8]={0};
