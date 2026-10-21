@@ -318,7 +318,7 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "PauseOnFocusLoss=0\r\n"
     "; F9 (default), Space, or experimental Any (consume wake key).\r\n"
     "PauseKey=F9\r\n"
-    "; Show passive right-side pause message when focus pause is active.\r\n"
+    "; Show centered transparent red-outline pause message when focus pause is active.\r\n"
     "PauseOverlay=1\r\n"
     "; Restore Windows desktop cursor on loss of game focus (1=on, 0=off).\r\n"
     "RestoreCursorOnFocusLoss=1\r\n"
