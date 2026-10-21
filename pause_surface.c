@@ -134,8 +134,9 @@ static int pause_draw_text(HDC dc,HFONT font,const wchar_t *label,
 static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
                                 const RECT *content_rect) {
   RECT canvas={0,0,0,0};
+  RECT ui_rect={0,0,0,0};
   HFONT title=NULL,hint=NULL;
-  int saved,ok=1,cw,ch;
+  int saved,ok=1,cw,ch,ui_width,ui_max_width;
   int y_top,y_bottom,upper,lower,vertical,left_edge,right_edge;
   int stripe,height_band,band_top,band_end;
   canvas.right=width;canvas.bottom=height;
@@ -146,6 +147,15 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
      content_rect->bottom>content_rect->top)
     canvas=*content_rect;
   cw=canvas.right-canvas.left;ch=canvas.bottom-canvas.top;
+  /* Keep the ESC ribbon at native 4:3 width even if 3D gameplay fills a
+   * 16:9 surface. In an already centered 4:3 menu/content rectangle this
+   * is an identity mapping; dimming and saved-frame restoration stay
+   * full-frame. Limits only the ribbon, its borders and its text/icon. */
+  ui_rect=canvas;
+  ui_max_width=(ch*4)/3;
+  ui_width=cw<ui_max_width?cw:ui_max_width;
+  ui_rect.left=canvas.left+(cw-ui_width)/2;
+  ui_rect.right=ui_rect.left+ui_width;
 
   /* PauseDimOpacity is intentionally independent of the visual design. */
   if(enabled_dim && opacity>0) {
@@ -184,7 +194,7 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
    * blue-violet tint after our independent 50% focus-loss dim. */
   upper=canvas.top+esc_coordf(400.5f,ch,ESC_DESIGN_H);
   lower=canvas.top+esc_coordf(675.0f,ch,ESC_DESIGN_H);
-  if(!pause_blend_color(dc,tint_dc,canvas.left,upper,cw,lower-upper,
+  if(!pause_blend_color(dc,tint_dc,ui_rect.left,upper,ui_width,lower-upper,
                         RGB(50,50,160),127))ok=0;
   if(ok) {
     height_band=lower-upper;
@@ -192,7 +202,7 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
       band_top=upper+(height_band*stripe)/12;
       band_end=upper+(height_band*(stripe+1))/12;
       if(band_end>band_top &&
-         !pause_blend_color(dc,tint_dc,canvas.left,band_top,cw,
+         !pause_blend_color(dc,tint_dc,ui_rect.left,band_top,ui_width,
                             band_end-band_top,
                             RGB(41+3*stripe,36+2*stripe,106+stripe),24))
         ok=0;
@@ -204,19 +214,19 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
    * menu's luminous top and bottom. No new assets are distributed. */
   y_top=canvas.top+esc_coordf(396.0f,ch,ESC_DESIGN_H);
   y_bottom=canvas.top+esc_coordf(675.0f,ch,ESC_DESIGN_H);
-  left_edge=canvas.left;
-  right_edge=canvas.right;
+  left_edge=ui_rect.left;
+  right_edge=ui_rect.right;
   vertical=ch>=720?3:2;
   if(ok) {
-    ok=pause_blend_color(dc,tint_dc,left_edge,y_top,cw,vertical,
+    ok=pause_blend_color(dc,tint_dc,left_edge,y_top,ui_width,vertical,
                          RGB(169,148,251),229);
-    if(ok)ok=pause_blend_color(dc,tint_dc,left_edge,y_top+vertical,cw,1,
+    if(ok)ok=pause_blend_color(dc,tint_dc,left_edge,y_top+vertical,ui_width,1,
                               RGB(231,220,255),217);
-    if(ok)ok=pause_blend_color(dc,tint_dc,left_edge,y_top+vertical+2,cw,2,
+    if(ok)ok=pause_blend_color(dc,tint_dc,left_edge,y_top+vertical+2,ui_width,2,
                               RGB(15,12,68),88);
-    if(ok)ok=pause_blend_color(dc,tint_dc,left_edge,y_bottom,cw,vertical,
+    if(ok)ok=pause_blend_color(dc,tint_dc,left_edge,y_bottom,ui_width,vertical,
                               RGB(168,144,250),228);
-    if(ok)ok=pause_blend_color(dc,tint_dc,left_edge,y_bottom+vertical,cw,1,
+    if(ok)ok=pause_blend_color(dc,tint_dc,left_edge,y_bottom+vertical,ui_width,1,
                               RGB(224,212,255),215);
     if(ok)ok=pause_blend_color(dc,tint_dc,left_edge,y_top,vertical,
                               y_bottom-y_top+vertical,RGB(150,129,238),190);
@@ -234,12 +244,12 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
   if(ok) {
     SetBkMode(dc,TRANSPARENT);
     SetTextAlign(dc,TA_LEFT|TA_TOP|TA_NOUPDATECP);
-    ok=pause_draw_text(dc,title,L"PAUSED",canvas.left,cw,
+    ok=pause_draw_text(dc,title,L"PAUSED",ui_rect.left,ui_width,
                        canvas.top+esc_coordf(445.0f,ch,ESC_DESIGN_H),
                        RGB(240,47,69),4,0,0);
     if(ok)
       ok=pause_draw_text(dc,hint,L"PRESS ANY KEY TO RESUME",
-                         canvas.left,cw,
+                         ui_rect.left,ui_width,
                          canvas.top+esc_coordf(545.0f,ch,ESC_DESIGN_H),
                          RGB(245,240,255),2,1,
                          esc_coordf(48.0f,ch,ESC_DESIGN_H));
