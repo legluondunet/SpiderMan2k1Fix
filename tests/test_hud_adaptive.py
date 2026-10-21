@@ -225,6 +225,49 @@ def test_scorpion_and_jameson_two_rows_share_same_mapping(api):
         check_other_coordinates_unchanged(src, dst)
 
 
+@pytest.mark.parametrize("bounds", [
+    # Scorpion/Jameson full/near-full health: only a 15px black marker.
+    (1548.8, 285, 1563.8, 325),
+    # Venom damaged: the missing health region can extend far to the
+    # left of the corrected outline unless it shares the boss mapping.
+    (1080, 145, 1316, 185),
+    (1080, 145, 1548.8, 185),
+    (1080, 145, 1691.2, 185),
+])
+def test_variable_width_black_boss_damage_tracks_border(api, bounds):
+    source = quad(*bounds, z=0.0007, rhw=15.6029,
+                  diffuse=0xFF000000, u0=0, u2=1)
+    kind, result = mapped(api, source, tex=(0, 0), output=(1920, 1200))
+    assert kind == 3
+    for before, after in zip(source, result):
+        assert after.x == pytest.approx(
+            1920 + (before.x - 1920) * (5 / 6), abs=0.03)
+    check_other_coordinates_unchanged(source, result)
+
+
+def test_black_boss_mask_rejects_wrong_layer_and_wrong_row(api):
+    mask = quad(1080, 145, 1316, 185, z=0.0007,
+                rhw=15.6029, diffuse=0xFF000000)
+    for value in [0xFF020202, 0xA0000000]:
+        mask[0].diffuse = value
+        assert mapped(api, mask, tex=(0, 0), output=(1920, 1200))[0] == 0
+    mask[0].diffuse = 0xFF000000
+    mask[0].z = 0.9983
+    assert mapped(api, mask, tex=(0, 0), output=(1920, 1200))[0] == 0
+    mask[0].z = 0.0007
+    mask[0].rhw = 0.0229
+    assert mapped(api, mask, tex=(0, 0), output=(1920, 1200))[0] == 0
+    middle_of_screen = quad(1080, 600, 1316, 640, z=0.0007,
+                            rhw=15.6029, diffuse=0xFF000000)
+    assert mapped(api, middle_of_screen, tex=(0, 0),
+                  output=(1920, 1200))[0] == 0
+    too_wide = quad(990, 145, 1691.2, 185, z=0.0007,
+                    rhw=15.6029, diffuse=0xFF000000)
+    assert mapped(api, too_wide, tex=(0, 0),
+                  output=(1920, 1200))[0] == 0
+    assert mapped(api, mask, tex=(0, 0), output=(1600, 1200))[0] == 0
+
+
 def test_boss_mismatch_or_world_primitives_are_never_transformed(api):
     real = quad(1680, 80, 1848.8, 235, z=0.0002, rhw=21.9693,
                 diffuse=0xFFFFFFFF)
