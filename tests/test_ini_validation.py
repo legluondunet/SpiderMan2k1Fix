@@ -57,6 +57,16 @@ def test_media_pause_options_accept_only_boolean_values(runner, tmp_path, key):
         assert result[0] >= 1 and result[2] == 0
 
 
+
+def test_pause_overlay_ini_option_is_boolean(runner, tmp_path):
+    for value in ("0", "1"):
+        result, _ = validate(runner, tmp_path, f"[Input]\nPauseOverlay={value}\n")
+        assert result == (0, 0, 1)
+    for value in ("2", "-1", "true", "off"):
+        result, _ = validate(runner, tmp_path, f"[Input]\nPauseOverlay={value}\n")
+        assert result[0] >= 1 and result[2] == 0
+
+
 def test_unknown_section_and_key_preserved(runner, tmp_path):
     result,detail=validate(runner,tmp_path,"[Debug]\nLog=0\nUnknownKey=20\n[Plugin]\nFoo=Bar\n")
     assert result == (0,2,1)
