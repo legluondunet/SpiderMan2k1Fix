@@ -41,23 +41,38 @@ def test_violet_ribbon_uses_traced_panel_and_bright_double_edge():
     assert "original 8x8 texture pixels are NOT recovered" in P
 
 
-def test_fat_original_style_text_and_small_spider_at_start_of_hint():
-    assert 'L"PAUSED"' in P
-    assert 'L"PRESS ANY KEY TO RESUME"' in P
+def test_paused_title_is_inside_violet_panel_above_hint():
+    assert 'L"PAUSED"' in P and 'L"PRESS ANY KEY TO RESUME"' in P
+    assert "esc_coordf(400.5f,ch,ESC_DESIGN_H)" in P
+    assert "esc_coordf(675.0f,ch,ESC_DESIGN_H)" in P
+    assert "canvas.top+esc_coordf(445.0f,ch,ESC_DESIGN_H)" in P
+    assert "canvas.top+esc_coordf(545.0f,ch,ESC_DESIGN_H)" in P
+    assert "canvas.top+esc_coordf(161.0f,ch,ESC_DESIGN_H)" not in P
     assert "title=CreateFontW(-((62*ch+540)/1080)" in P
     assert "hint=CreateFontW(-((42*ch+540)/1080)" in P
     assert "RGB(240,47,69),4,0,0" in P
     assert "RGB(245,240,255),2,1," in P
+
+
+def test_main_menu_style_red_cog_spider_icon_precedes_centered_resume_text():
     assert "pause_draw_spider_icon(dc,x,y+(length.cy-icon_size)/2,icon_size)" in P
     assert "full_width=length.cx+(with_spider?icon_size+gap:0)" in P
-    assert "CreateSolidBrush(RGB(224,37,46))" in P
-    assert "Polygon(dc,pts,4)" in P
+    assert "x+=icon_size+gap;" in P
+    assert "esc_coordf(48.0f,ch,ESC_DESIGN_H)" in P
+    assert "static const POINT teeth[8][4]" in P
+    assert "for(leg=0;leg<8;leg++)" in P
+    assert "Polygon(dc,scaled,4)" in P
+    assert "CreateSolidBrush(RGB(238,34,39))" in P
+    assert "CreateSolidBrush(RGB(28,7,16))" in P
+    assert "CreateSolidBrush(RGB(255,174,151))" in P
     assert "Ellipse(dc," in P
+    assert "SelectObject(dc,old_pen);" in P
+    assert "SelectObject(dc,old_brush);" in P
+    assert "long-legged silhouette" in P
     assert "ANTIALIASED_QUALITY" in P
     assert 'L"Arial Black"' in P
-    assert "CreateWindow" not in P
-    assert "ExtractIconExW" not in P
-    assert "pause_game_icon" not in P
+    assert "CreateWindow" not in P and "ExtractIconExW" not in P
+
 
 def test_frame_saved_presented_and_restored_on_release():
     for word in ("IDirectDrawSurface7_GetDC(back,&dc)","IDirectDrawSurface7_ReleaseDC(back,dc)",
