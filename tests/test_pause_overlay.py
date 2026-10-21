@@ -79,7 +79,7 @@ def test_overlay_lifecycle_matches_focus_pause():
                CORE.index("static HRESULT WINAPI hooked_flip(")]
     assert pause.count("SpiderPauseOverlay_Show(hwnd);")==1
     assert pause.count("SpiderPauseOverlay_Hide();")==2
-    assert pause.index("SpiderPauseOverlay_Show(hwnd);") < pause.index("while(IsWindow(hwnd)")
+    assert pause.index("SpiderPauseOverlay_Show(hwnd);") > pause.index("while(IsWindow(hwnd)")
     assert pause.index("SpiderPauseAny_Begin(hwnd)") < pause.index("SpiderPauseOverlay_Show(hwnd);")
     assert pause.index("SpiderPauseOverlay_Hide();") < pause.index("SpiderFocusDSound_Resume();")
     assert CORE.index("SpiderCfg_ValidateCurrentIni(log_line);") < CORE.index("SpiderPauseOverlay_Init(log_line);")
@@ -95,9 +95,17 @@ def test_failures_dont_interrupt_original_pause():
 def test_readable_centered_banner_with_darker_round_panel_support():
     assert "#define OVERLAY_WIDTH 520" in SRC
     assert "#define OVERLAY_HEIGHT 136" in SRC
-    assert "CreateFontW(-23" in SRC
+    assert "CreateFontW(-25" in SRC
     assert "pen=CreatePen(PS_SOLID,4,OVERLAY_RED)" in SRC
     assert "CreateRoundRectRgn(4,4,width-4,height-4,12,12)" in SRC
     assert "SpiderPauseOverlay_GetBounds(HWND game_window,RECT *bounds)" in SRC
     assert "SpiderPauseOverlay_GetBounds(HWND game_window, RECT *bounds)" in HDR
     assert "SpiderPauseOverlay_ExcludeFromRegion" in SRC
+
+def test_foreground_only_and_opaque_bold_lettering():
+    assert "GetForegroundWindow()!=game_window)return;" in SRC
+    assert "FW_HEAVY,FALSE,FALSE,FALSE,DEFAULT_CHARSET" in SRC
+    assert "for(dy=-5;dy<=5 && ok;dy++)" in SRC
+    assert "dx*dx+dy*dy>26" in SRC
+    assert "for(dy=-3;dy<=3;dy++)" in SRC
+    assert "dx*dx+dy*dy>10" in SRC
