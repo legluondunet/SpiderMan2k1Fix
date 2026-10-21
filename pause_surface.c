@@ -16,7 +16,7 @@
 #include "pause_surface.h"
 
 #define PAUSE_GRID_STEP 16
-#define ESC_DESIGN_W 1920
+#define ESC_DESIGN_W 1440
 #define ESC_DESIGN_H 1080
 #define PAUSE_MAX_W 4096
 #define PAUSE_MAX_H 2160
@@ -51,7 +51,8 @@ static int pause_blend_color(HDC dest,HDC source,int x,int y,int width,
 
 
 static int pause_draw_text(HDC dc,HFONT font,const wchar_t *label,
-                           int box_left,int box_width,int y,COLORREF color) {
+                           int box_left,int box_width,int y,COLORREF color,
+                           int outline) {
   SIZE length={0,0};
   HGDIOBJ old;
   int x,dx,dy,len=lstrlenW(label);
@@ -63,67 +64,75 @@ static int pause_draw_text(HDC dc,HFONT font,const wchar_t *label,
   x=box_left+(box_width-length.cx)/2;
   if(x<box_left+8)x=box_left+8;
   SetTextColor(dc,RGB(6,5,12));
-  for(dy=-1;dy<=1;dy++)for(dx=-1;dx<=1;dx++)
-    if(dx || dy)TextOutW(dc,x+dx,y+dy,label,len);
+  for(dy=-outline;dy<=outline;dy++)
+    for(dx=-outline;dx<=outline;dx++)
+      if(dx*dx+dy*dy<=outline*outline && (dx || dy))
+        TextOutW(dc,x+dx,y+dy,label,len);
   SetTextColor(dc,color);
   TextOutW(dc,x,y,label,len);
   SelectObject(dc,old);
   return 1;
 }
 
-/* Compose the diagnostic reconstruction of the original ESC UI. Unlike
- * our earlier modern banner, this uses normalized 1920x1080 coordinates
- * observed in the native pause-menu DrawPrimitive trace.
+/* ESC artwork geometry in the original 1440x1080 D3D7 4:3 viewport.
+ * The 2026-10-21 native DrawPrimitive log recorded four exact quads PER
+ * SIDE with D3DBLEND_ZERO / D3DBLEND_INVSRCCOLOR (src=1,dst=4).
+ * Reversed-winding duplicate calls are the same visible quad, NOT extra
+ * opaque layers. GDI compositing below is an appearance approximation:
+ * native multiplicative color blending is not directly supported by
+ * AlphaBlend, and the compact central body consists of smaller primitives
+ * not included in this bounded trace. NEVER claim those pixels are exact.
+ * The violet panel and four 8x8 border strip positions are also traced.
  *
- * The fill ARGB 7F3232A0 and the measured panel rectangle and border
- * positions are confirmed. The spider-like motif is an approximation of
- * the user-supplied screenshot: only per-quad BOUNDING BOXES were recorded,
- * not actual vertices. Original 8x8 border pixels are still unknown, so
- * these are thin lavender GDI lines rather than a claimed asset copy.
- * Everything is drawn into the SAME DirectDraw backbuffer snapshot.
+ * Coordinates stay on the actual content rectangle (4:3 pillarbox-safe);
+ * no new HWNDs, input hooks, Direct3D state changes, or game file writes.
  */
-static int esc_coord(int v,int size,int design) {
-  return (int)(((long)v*(long)size+(long)design/2)/(long)design);
+typedef struct EscNativePoint {
+  float x,y;
+} EscNativePoint;
+static int esc_coordf(float v,int size,int design) {
+  float scaled=(v*(float)size)/(float)design;
+  return (int)(scaled+(scaled>=0.0f?0.5f:-0.5f));
 }
-static POINT esc_point(POINT logical,const RECT *view) {
-  POINT result;
-  result.x=view->left+esc_coord(logical.x,view->right-view->left,ESC_DESIGN_W);
-  result.y=view->top+esc_coord(logical.y,view->bottom-view->top,ESC_DESIGN_H);
-  return result;
-}
-static void esc_motif_polygon(HDC dc,HDC tint,const RECT *view,
-                               const POINT *shape,int count,int mirror,
-                               COLORREF color,BYTE alpha) {
-  POINT pts[16]; HRGN region; int state,i,l,t,r,b;
-  if(count<3 || count>16)return;
-  for(i=0;i<count;i++) {
-    POINT p=shape[i];
-    if(mirror)p.x=ESC_DESIGN_W-p.x;
-    pts[i]=esc_point(p,view);
+static void esc_tinted_quad(HDC dc,HDC tint,const RECT *view,
+                            const EscNativePoint corners[4],int mirror,
+                            COLORREF tint_color,BYTE alpha) {
+  POINT pts[4];
+  HRGN region;
+  int i,l,r,t,b,state;
+  for(i=0;i<4;i++) {
+    float x=mirror?(float)ESC_DESIGN_W-corners[i].x:corners[i].x;
+    pts[i].x=view->left+esc_coordf(x,view->right-view->left,ESC_DESIGN_W);
+    pts[i].y=view->top+esc_coordf(corners[i].y,
+                                  view->bottom-view->top,ESC_DESIGN_H);
   }
   l=r=pts[0].x;t=b=pts[0].y;
-  for(i=1;i<count;i++) {
+  for(i=1;i<4;i++) {
     if(pts[i].x<l)l=pts[i].x;
     if(pts[i].x>r)r=pts[i].x;
     if(pts[i].y<t)t=pts[i].y;
     if(pts[i].y>b)b=pts[i].y;
   }
-  if(r<=l || b<=t)return;
-  region=CreatePolygonRgn(pts,count,WINDING);
+  if(l>=r || t>=b)return;
+  region=CreatePolygonRgn(pts,4,WINDING);
   if(!region)return;
   state=SaveDC(dc);
   if(state) {
     if(ExtSelectClipRgn(dc,region,RGN_AND)!=ERROR)
-      pause_blend_color(dc,tint,l,t,r-l+1,b-t+1,color,alpha);
+      pause_blend_color(dc,tint,l,t,r-l+1,b-t+1,tint_color,alpha);
     RestoreDC(dc,state);
   }
   DeleteObject(region);
 }
-static void esc_motif_ellipse(HDC dc,HDC tint,const RECT *view) {
-  int left=view->left+esc_coord(425,view->right-view->left,ESC_DESIGN_W);
-  int right=view->left+esc_coord(1495,view->right-view->left,ESC_DESIGN_W);
-  int top=view->top+esc_coord(55,view->bottom-view->top,ESC_DESIGN_H);
-  int bottom=view->top+esc_coord(1010,view->bottom-view->top,ESC_DESIGN_H);
+static void esc_motif_core(HDC dc,HDC tint,const RECT *view) {
+  /* The narrow center/body shape has NOT been traced in full; temporarily
+   * use a subdued, clipped oval instead of the old huge faux gear spokes.
+   * Do not redistribute textures or claim this geometry is game-exact. */
+  int w=view->right-view->left,h=view->bottom-view->top;
+  int left=view->left+esc_coordf(395.0f,w,ESC_DESIGN_W);
+  int right=view->left+esc_coordf(1045.0f,w,ESC_DESIGN_W);
+  int top=view->top+esc_coordf(65.0f,h,ESC_DESIGN_H);
+  int bottom=view->top+esc_coordf(902.0f,h,ESC_DESIGN_H);
   HRGN region=CreateEllipticRgn(left,top,right,bottom);
   int state;
   if(!region)return;
@@ -131,42 +140,31 @@ static void esc_motif_ellipse(HDC dc,HDC tint,const RECT *view) {
   if(state) {
     if(ExtSelectClipRgn(dc,region,RGN_AND)!=ERROR)
       pause_blend_color(dc,tint,left,top,right-left,bottom-top,
-                        RGB(143,66,40),64);
+                        RGB(142,62,39),45);
     RestoreDC(dc,state);
   }
   DeleteObject(region);
 }
 static void esc_draw_motif(HDC dc,HDC tint,const RECT *view) {
-  /* Hand-fitted angular silhouette, mirrored like the native ESC motif.
-   * Deliberately no copyrighted bitmap embedded in the distributed DLL. */
-  static const POINT upper_outer[]={
-    {0,327},{374,55},{524,175},{476,272},{405,207},
-    {318,385},{202,455},{0,451}
+  /* Exact original ordered quad vertices (first of each duplicate pair).
+   * LEFT half: captured seq=3873,3867,3851,3849 respectively.
+   * RIGHT half is obtained by reflecting about the x=720 center line.
+   * All eight original quads have diffuse ARGB 0x80868620.
+   * D3D src=ZERO, dst=INVSRCCOLOR cannot be matched exactly by GDI alpha,
+   * so apply a subdued rust/orange tint, instead of inventing extra legs. */
+  static const EscNativePoint left[4][4]={
+    {{340.3f,58.5f},{219.4f,0.0f},{0.0f,0.0f},{255.9f,234.0f}},
+    {{255.9f,234.0f},{0.0f,0.0f},{0.0f,306.0f},{216.6f,333.0f}},
+    {{210.9f,625.5f},{0.0f,657.0f},{0.0f,864.0f},{247.5f,810.0f}},
+    {{306.6f,904.5f},{0.0f,904.5f},{0.0f,1053.0f},{430.3f,1053.0f}}
   };
-  static const POINT upper_inner[]={
-    {442,0},{682,134},{850,84},{960,61},{960,318},
-    {726,290},{616,189},{504,232}
-  };
-  static const POINT middle[]={
-    {0,420},{382,460},{645,504},{464,587},{0,584}
-  };
-  static const POINT low_middle[]={
-    {0,622},{330,672},{588,764},{377,859},{0,804}
-  };
-  static const POINT lower_outer[]={
-    {0,938},{369,854},{520,909},{729,1080},{547,1080},
-    {415,972},{232,1060}
-  };
-  int mirror;
-  esc_motif_ellipse(dc,tint,view);
-  for(mirror=0;mirror<2;mirror++) {
-    esc_motif_polygon(dc,tint,view,upper_outer,8,mirror,RGB(146,71,40),103);
-    esc_motif_polygon(dc,tint,view,upper_inner,8,mirror,RGB(146,71,40),78);
-    esc_motif_polygon(dc,tint,view,middle,5,mirror,RGB(39,111,115),78);
-    esc_motif_polygon(dc,tint,view,low_middle,5,mirror,RGB(146,71,40),100);
-    esc_motif_polygon(dc,tint,view,lower_outer,7,mirror,RGB(146,71,40),99);
-  }
+  int mirror,i;
+  esc_motif_core(dc,tint,view);
+  for(mirror=0;mirror<2;mirror++)
+    for(i=0;i<4;i++)
+      esc_tinted_quad(dc,tint,view,left[i],mirror,RGB(152,64,32),85);
 }
+
 static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
                                 const RECT *content_rect) {
   RECT canvas={0,0,0,0};
@@ -214,18 +212,19 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
   IntersectClipRect(dc,canvas.left,canvas.top,canvas.right,canvas.bottom);
   esc_draw_motif(dc,tint_dc,&canvas);
 
-  /* Exact native D3D7 panel: diffuse 0x7F3232A0, translucent untextured
-   * quads from x=-7.5..1923.8, y=400.5..675.0 (1920x1080 basis). */
-  upper=canvas.top+esc_coord(401,ch,ESC_DESIGN_H);
-  lower=canvas.top+esc_coord(675,ch,ESC_DESIGN_H);
+  /* Original panel draw: diffuse 0x7F3232A0, src=SRCALPHA,
+   * dst=INVSRCALPHA, x=-5.6..1442.8, y=400.5..675.0.
+   * GDI α=127 is a close compositing equivalent for this filled quad. */
+  upper=canvas.top+esc_coordf(400.5f,ch,ESC_DESIGN_H);
+  lower=canvas.top+esc_coordf(675.0f,ch,ESC_DESIGN_H);
   if(!pause_blend_color(dc,tint_dc,canvas.left,upper,cw,lower-upper,
                         RGB(50,50,160),127))ok=0;
 
   /* Border geometry from trace. The native 8x8 edge texels have not
    * yet been recovered; the line/rim treatment is intentionally a
    * visual placeholder, not a representation of extracted assets. */
-  y_top=canvas.top+esc_coord(396,ch,ESC_DESIGN_H);
-  y_bottom=canvas.top+esc_coord(681,ch,ESC_DESIGN_H);
+  y_top=canvas.top+esc_coordf(396.0f,ch,ESC_DESIGN_H);
+  y_bottom=canvas.top+esc_coordf(687.0f,ch,ESC_DESIGN_H);
   left_edge=canvas.left;
   right_edge=canvas.right;
   vertical=(ch>=720)?3:2;
@@ -240,7 +239,7 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
                       y_bottom-y_top+vertical,RGB(152,137,237),192);
   }
 
-  title=CreateFontW(-((47*ch+540)/1080),0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,
+  title=CreateFontW(-((53*ch+540)/1080),0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,
                     DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
                     ANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial Black");
   hint=CreateFontW(-((34*ch+540)/1080),0,0,0,FW_BOLD,TRUE,FALSE,FALSE,
@@ -251,13 +250,13 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
     SetBkMode(dc,TRANSPARENT);
     SetTextAlign(dc,TA_LEFT|TA_TOP|TA_NOUPDATECP);
     ok=pause_draw_text(dc,title,L"PAUSED",canvas.left,cw,
-                       canvas.top+esc_coord(166,ch,ESC_DESIGN_H),
-                       RGB(238,42,64));
+                       canvas.top+esc_coordf(171.0f,ch,ESC_DESIGN_H),
+                       RGB(238,42,64),3);
     if(ok)
       ok=pause_draw_text(dc,hint,L"PRESS ANY KEY TO RESUME",
                          canvas.left,cw,
-                         canvas.top+esc_coord(515,ch,ESC_DESIGN_H),
-                         RGB(244,240,255));
+                         canvas.top+esc_coordf(515.0f,ch,ESC_DESIGN_H),
+                         RGB(244,240,255),1);
   }
   if(title)DeleteObject(title);
   if(hint)DeleteObject(hint);
