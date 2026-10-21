@@ -163,6 +163,100 @@ def test_foreground_signature_mismatch_and_upper_left_player_are_safe(api):
     assert mapped(api, player_glyph, tex=(32, 32))[0] == 0
 
 
+
+def test_venom_boss_bar_and_frame_right_anchored(api):
+    # Actual Windows 11 1920x1200 Venom F12 signatures. The whole
+    # two-color fill and each border tile must shift with its portrait.
+    groups = [
+        (quad(1080, 145, 1383.8, 185, z=0.0010, rhw=12.6862,
+              diffuse=0xFF00FF00), (0, 0)),
+        (quad(1383.8, 145, 1691.2, 185, z=0.0010, rhw=12.6862,
+              diffuse=0xFFFFFF00), (0, 0)),
+        (quad(1061.2, 120, 1132.5, 200, z=0.0002, rhw=21.3309,
+              diffuse=0xFFFFFFFF, u0=0, u2=1), (32, 32)),
+        (quad(1496.2, 120, 1593.8, 200, z=0.0002, rhw=21.3309,
+              diffuse=0xFFFFFFFF, u0=0, u2=1), (32, 32)),
+        (quad(1680, 80, 1848.8, 235, z=0.0002, rhw=21.3309,
+              diffuse=0xFFFFFFFF, u0=0, u2=1), (64, 64)),
+    ]
+    for src, tex in groups:
+        kind, dst = mapped(api, src, tex=tex, output=(1920, 1200))
+        assert kind == 3
+        for v0, v1 in zip(src, dst):
+            assert v1.x == pytest.approx(1920 + (v0.x - 1920) * (5/6), abs=0.02)
+        check_other_coordinates_unchanged(src, dst)
+
+
+def test_scorpion_and_jameson_two_rows_share_same_mapping(api):
+    # Scorpion plus a shorter Jameson bar. A single runtime region
+    # handles both simultaneously without requiring any boss identity.
+    rows = [
+        (1080, 145, 1383.8, 185, 0xFF00FF00),
+        (1383.8, 145, 1691.2, 185, 0xFFFFFF00),
+        (1548.8, 285, 1620.0, 325, 0xFF00FF00),
+        (1620.0, 285, 1691.2, 325, 0xFFFFFF00),
+    ]
+    for x0, y0, x1, y1, color in rows:
+        src = quad(x0, y0, x1, y1, z=0.0010, rhw=13.6283, diffuse=color)
+        kind, dst = mapped(api, src, tex=(0, 0), output=(1920, 1200))
+        assert kind == 3
+        assert dst[0].x == pytest.approx(1920 + (x0 - 1920) * 5/6, abs=0.02)
+        check_other_coordinates_unchanged(src, dst)
+
+    # At Jameson's lower row the black 15x40 health marker moves too.
+    mark = quad(1548.8, 285, 1563.8, 325, z=0.0007,
+                rhw=15.6029, diffuse=0xFF000000)
+    kind, dst = mapped(api, mark, tex=(0, 0), output=(1920, 1200))
+    assert kind == 3
+    assert dst[0].x == pytest.approx(1610.6667, abs=0.02)
+
+    # Second row frame and second portrait, matching first row scaling.
+    segments = [
+        (quad(1526.2, 265, 1597.5, 340, z=0.0002, rhw=21.9693,
+              diffuse=0xFFFFFFFF), (32, 32)),
+        (quad(1680, 225, 1848.8, 375, z=0.0002, rhw=21.9693,
+              diffuse=0xFFFFFFFF), (64, 64)),
+    ]
+    for src, tex in segments:
+        kind, dst = mapped(api, src, tex=tex, output=(1920, 1200))
+        assert kind == 3
+        assert dst[0].x == pytest.approx(
+            1920 + (src[0].x - 1920)*5/6, abs=0.02)
+        check_other_coordinates_unchanged(src, dst)
+
+
+def test_boss_mismatch_or_world_primitives_are_never_transformed(api):
+    real = quad(1680, 80, 1848.8, 235, z=0.0002, rhw=21.9693,
+                diffuse=0xFFFFFFFF)
+    assert mapped(api, real, tex=(64, 64), output=(1920, 1200))[0] == 3
+    assert mapped(api, real, tex=(32, 32), output=(1920, 1200))[0] == 0
+    assert mapped(api, real, tex=(64, 64), output=(1600, 1200))[0] == 0
+    assert mapped(api, real, tex=(64, 64), output=(1920, 1200),
+                  rva=0x00102C71)[0] == 0
+    wrong_depth = quad(1680, 80, 1848.8, 235,
+                       z=0.9983, rhw=0.0229, diffuse=0xFFFFFFFF)
+    assert mapped(api, wrong_depth, tex=(64, 64),
+                  output=(1920, 1200))[0] == 0
+    wrong_color = quad(1680, 80, 1848.8, 235, z=0.0002,
+                       rhw=21.9693, diffuse=0x80FFFFFF)
+    assert mapped(api, wrong_color, tex=(64, 64),
+                  output=(1920, 1200))[0] == 0
+    misplaced = quad(120, 80, 288.8, 235, z=0.0002,
+                     rhw=21.9693, diffuse=0xFFFFFFFF)
+    assert mapped(api, misplaced, tex=(64, 64),
+                  output=(1920, 1200))[0] == 0
+    too_big = quad(1000, 80, 1470, 235, z=0.0002,
+                   rhw=21.9693, diffuse=0xFFFFFFFF)
+    assert mapped(api, too_big, tex=(64, 64),
+                  output=(1920, 1200))[0] == 0
+    # Boss bars and glyphs have overlapping z/RHW values, but the
+    # source regions and texture/color rules must keep them apart.
+    instruction = quad(123.8, 864, 1173.8, 931.5,
+                       z=0.0012, rhw=11.1764, diffuse=0xA0000060)
+    assert mapped(api, instruction, tex=(0, 0),
+                  output=(1920, 1080))[0] == 1
+
+
 def test_world_particles_and_wrong_depth_stay_unchanged(api):
     world = quad(775.4, 307.4, 779.2, 311.9,
                  z=0.9983, rhw=0.0229, diffuse=0x80383838)
@@ -194,3 +288,5 @@ def test_unchanged_fov_pause_and_default_ini():
     assert "if(v==verts && count==4)" in src
     assert "maybe_correct_adaptive_hud(" in src
     assert "hud_adaptive.c" in build
+    assert "SPIDER_HUD_ADAPTIVE_BOSS" in (ROOT / "hud_adaptive.h").read_text()
+    assert 'region==SPIDER_HUD_ADAPTIVE_BOSS?"boss"' in src
