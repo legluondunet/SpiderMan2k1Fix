@@ -39,7 +39,7 @@ def test_native_windows_reacquire_hook_not_on_by_default():
     generated = (ROOT / 'virtual_spidey_cfg.c').read_text()
     assert 'ExperimentalAltTabReacquire=0' in ini
     assert '"ExperimentalAltTabReacquire=0\\r\\n"' in generated
-    assert 'PauseOnFocusLoss=0' in ini
-    assert '"PauseOnFocusLoss=0\\r\\n"' in generated
+    assert 'PauseOnFocusLoss=' not in ini
+    assert '"PauseOnFocusLoss=' not in generated
     assert 'RestoreCursorOnFocusLoss=1' in ini
     assert '"RestoreCursorOnFocusLoss=1\\r\\n"' in generated
