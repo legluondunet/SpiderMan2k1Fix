@@ -45,6 +45,18 @@ def test_native_directinput_retry_option_and_legacy_ini_compat(runner, tmp_path)
         assert result[0] >= 1 and result[2] == 0
 
 
+
+@pytest.mark.parametrize("key", ["PauseBinkOnFocusLoss", "PauseDirectSoundOnFocusLoss"])
+def test_media_pause_options_accept_only_boolean_values(runner, tmp_path, key):
+    # Both media modules are opt-in and share the existing Input INI validator.
+    for value in ("0", "1"):
+        result, _ = validate(runner, tmp_path, f"[Input]\n{key}={value}\n")
+        assert result == (0, 0, 1)
+    for value in ("-1", "2", "true", "enabled"):
+        result, _ = validate(runner, tmp_path, f"[Input]\n{key}={value}\n")
+        assert result[0] >= 1 and result[2] == 0
+
+
 def test_unknown_section_and_key_preserved(runner, tmp_path):
     result,detail=validate(runner,tmp_path,"[Debug]\nLog=0\nUnknownKey=20\n[Plugin]\nFoo=Bar\n")
     assert result == (0,2,1)

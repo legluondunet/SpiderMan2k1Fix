@@ -123,6 +123,10 @@ DirectInputReacquire=0
 PauseOnFocusLoss=0
 ; F9 (default), Space or Any (consume first foreground wake key).
 PauseKey=F9
+; Pause cinematic Bink video and the game's audio-only Bink music stream.
+PauseBinkOnFocusLoss=0
+; Pause active game-owned secondary DirectSound effects/voices (default off).
+PauseDirectSoundOnFocusLoss=0
 RestoreCursorOnFocusLoss=1
 
 [Audio]
@@ -168,7 +172,9 @@ The generated INI may contain additional internal or development-specific settin
 
 **Controls:** keyboard and joystick bindings are independent. Keyboard values use physical DirectInput key names or hexadecimal scan codes. Joystick values use the same `BUTTON0`, `BUTTON1`, etc. numbering shown in the game's **Joystick Configuration** menu. Joystick movement axes/directions are handled by the game and are not configurable through this section.
 
-**Alt+Tab recovery (experimental, Windows 11):** The user-tested PR #7 configuration uses `DirectInputReacquire=1`, `PauseOnFocusLoss=1`, and `PauseKey=Any`. After switching back to the game, press and release a keyboard key: the pause ends and the key sequence is intercepted rather than intentionally passed to the game. The native DirectInput8 retry uses the original game's existing `Acquire` error path for `DIERR_NOTACQUIRED`, without wrapping COM interfaces. The user has validated the combination in menus, cinematics and 3D, but **the new INI activation itself still needs a final A/B test**. Both recovery and pause remain disabled by default in the experimental branch. The separate `SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY=1` environment variable is still accepted for existing diagnostics and overrides a disabled INI value; unset it to test the INI alone. The older `ExperimentalAltTabReacquire` and `ExperimentalDI8CreateDeviceTrace` flags are no longer generated and remain disabled in code even if present in an old INI.
+**Alt+Tab recovery (Windows 11):** Use `DirectInputReacquire=1` and `PauseOnFocusLoss=1` with `PauseKey=Any` for the tested keyboard/mouse recovery and focus-pause combination. After switching back to the game, press and release any key to resume; the wake key is consumed. The game reuses its native `DIERR_NOTACQUIRED` retry path without wrapping DirectInput COM interfaces. These options remain disabled by default; earlier unsafe COM experiments are no longer active, even if their keys remain in an older user INI. The former environment-variable override is supported for legacy diagnostic scripts, but is unnecessary with the INI setting.
+
+**Synchronized audio and video focus pause (PR #9):** The separately enabled `PauseBinkOnFocusLoss=1` pauses Bink cinematic streams **and the Bink-based music heard during 3D gameplay** using the game's original `BinkPause` API. `PauseDirectSoundOnFocusLoss=1` pauses currently playing game-owned secondary DirectSound buffers and resumes the same buffers from their retained cursor position. The primary buffer is untouched. Both new media options are **disabled by default**. Their combined operation was tested in Windows 11 gameplay, the menu, and cinematics with no audio desynchronization. See [technical notes and test results](FOCUS_AUDIO_VIDEO_SYNC_TEST.md) for diagnostics, compatibility limits, and rollback.
 
 **Audio:** the three volume levels use user-friendly percentages; `Stereo=1` enables stereo and `Stereo=0` selects mono.
 
@@ -208,7 +214,7 @@ Look for a numbered `SpiderMan2k1Fix_N.old` backup. The previous configuration m
 
 **Controls are not responding after switching applications**
 
-If testing the unmerged PR #7 experimental Windows 11 fix, keep both `DirectInputReacquire=1` and `PauseOnFocusLoss=1`, with `PauseKey=Any` for consumed-key resume. If recovery fails, check the log for `DI8-RETRY: EXPERIMENTAL requested source=INI` and `DI8-RETRY: EXPERIMENTAL active at Flip #120`, and include the reproduction steps in the bug report. Existing stable releases may behave differently.
+When testing the current development build, set `DirectInputReacquire=1`, `PauseOnFocusLoss=1`, and `PauseKey=Any`. If recovery fails, enable `[Debug] Log=1`, then check for `DI8-RETRY: EXPERIMENTAL requested source=INI` and `DI8-RETRY: EXPERIMENTAL active at Flip #120`. For synchronized sound, enable both additional media-pause settings described above. A previous report of intermittent audio crackling occurred under ProcDump but was not reproduced during ordinary launches without ProcDump; its cause remains unknown. Stable release builds may provide a different option set.
 
 **The game has visual or audio glitches**
 

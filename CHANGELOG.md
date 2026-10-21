@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — synchronized focus pause for Bink and DirectSound (PR #9)
+
+- Extend the optional Alt+Tab focus pause with `[Input] PauseBinkOnFocusLoss=1`: invoke the game's own Bink pause/resume mechanism for cinematics and audio-only Bink music.
+- Add `[Input] PauseDirectSoundOnFocusLoss=1`: stop only active voices in the original game's 32-slot secondary DirectSound table; resume the same buffers with their original looping state and preserved playback position.
+- Keep the two new options disabled by default and preserve the existing `DirectInputReacquire`, `PauseOnFocusLoss`, `PauseKey=Any`, and cursor-recovery controls.
+- Preserve exact-executable signature guards, avoid COM vtable interception, update configuration templates, tests, and rollback documentation.
+- **Windows 11 validation:** tester reports successful menu/cinematic/3D pausing with no audio desynchronization. In the recorded session, 11 and 9 playing secondary voices were stopped and successfully resumed on separate 3D focus pauses.
+- **Known observation:** intermittent audio crackling occurred under ProcDump but was not reproduced on a normal game launch without ProcDump. Cause not established; investigation deferred.
+- Not yet merged or released; final integration requires explicit approval.
+
 ## 1.0.0 — first stable release (2026-10-19)
 
 - Renamed the project, main DLL, INI, logs, source file, build artifacts, and documentation to **SpiderMan2k1Fix**. The `winmm.dll` proxy retains its required name. Existing beta INI files need to be renamed manually to preserve custom settings.

@@ -24,6 +24,8 @@
 #include "input_focus_trace.h"
 #include "input_notacquired_retry.h"
 #include "pause_any_key.h"
+#include "focus_media_pause.h"
+#include "focus_dsound_pause.h"
 #include "menu_version.h"
 #include "version_info.h"
 
@@ -1069,9 +1071,10 @@ static HRESULT WINAPI hooked_get_attached(void *self,LPDDSCAPS2 caps,
   if(SUCCEEDED(hr) && out && *out) instrument_surface(*out);
   return hr;
 }
-/* Experimental cooperative DirectDraw presentation pause for Windows 11.
- * This is not a global movie/audio pause. Keep pumping messages; never
- * suspend threads or force activation while the game is in background. */
+/* Cooperative DirectDraw Flip focus pause (opt-in).
+ * Bink and game-owned DirectSound voices can be paused separately by their
+ * native APIs; the Flip pause itself does not suspend every game thread.
+ * Keep pumping messages and never force application activation. */
 static volatile LONG pause_on_focus_loss=0;
 static LONG pause_ever_foreground=0;
 static LONG pause_in_progress=0;
@@ -1156,6 +1159,10 @@ static void pause_at_flip_if_background(void) {
   pause_poll_key(hwnd);
   if(InterlockedCompareExchange(&pause_latched,0,0)!=1) return;
   if(InterlockedCompareExchange(&pause_in_progress,1,0)!=0) return;
+  /* Bink is independent of the DirectDraw present thread; pausing a Flip
+   * alone leaves the decoder/sound running. Native Bink pause is opt-in. */
+  SpiderFocusMedia_Pause();
+  SpiderFocusDSound_Pause();
   if(pause_key_vk==0) {
     if(SpiderPauseAny_Begin(hwnd))
       log_line("FOCUS-PAUSE: Any keyboard resume ARMED; consumes press and release");
@@ -1173,6 +1180,8 @@ static void pause_at_flip_if_background(void) {
       if(msg.message==WM_QUIT) {
         PostQuitMessage((int)msg.wParam);
         SpiderPauseAny_End();
+        SpiderFocusDSound_Resume();
+        SpiderFocusMedia_Resume();
         log_line("FOCUS-PAUSE: WM_QUIT observed, aborting wait");
         InterlockedExchange(&pause_in_progress,0);
         return;
@@ -1196,6 +1205,8 @@ static void pause_at_flip_if_background(void) {
     log_line(line);
   }
   SpiderPauseAny_End();
+  SpiderFocusDSound_Resume();
+  SpiderFocusMedia_Resume();
   log_line("FOCUS-PAUSE: explicit resume or window destroyed");
   pause_log_resume_focus(hwnd);
   InterlockedExchange(&pause_in_progress,0);
@@ -1714,6 +1725,8 @@ static DWORD WINAPI initialize(LPVOID unused) {
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
    * No COM-vtable interception. The actual patch is delayed to Flip #120. */
   SpiderDI8Retry_Init(log_line);
+  SpiderFocusMedia_Init(log_line); /* Opt-in native Bink pause. */
+  SpiderFocusDSound_Init(log_line); /* Separately opt-in game-owned secondary buffers only. */
   /* The first-run generator or repair may have changed [Debug] Log. */
   {
     int previous_log_enabled=debug_log_enabled;
