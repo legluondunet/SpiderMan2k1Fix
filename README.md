@@ -212,7 +212,7 @@ These are **planned improvements**, not features promised for version 1.0:
 - **Widescreen 3D geometry:** investigate 3D objects that appear displaced near the left or right edges of the screen in landscape/widescreen mode.
 - **Electro:** investigate and fix the outstanding Electro-related issue.
 
-For developers testing a possible cross-platform immediate-focus pause, see the [experimental focus-event pause protocol](FOCUS_EVENT_PAUSE_PROTOTYPE.md). This prototype is **off by default**, not a verified immediate game-engine pause, and requires native Windows and Wine acceptance testing.
+**Automatic background pausing is not supported** on native Windows or under Wine. The retired INI keys `PauseOnFocusLoss` and `ExperimentalFocusEventPause` are accepted for compatibility with existing configurations but intentionally ignored. The existing borderless Alt+Tab behavior and keyboard/mouse recovery remain independent of pause.
 
 ## Building from source
 
