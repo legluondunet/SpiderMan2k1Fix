@@ -142,8 +142,9 @@ Do not change `ExperimentalFocusEventPause=0` or
 `ExperimentalAltTabReacquire=0` in the INI, and preserve
 `SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY=1`.
 
-These diagnostics install two **thread-local, pass-through Win32 hooks**
-(`WH_CALLWNDPROC` and `WH_CALLWNDPROCRET`) on the game's GUI thread.
+These diagnostics install three **thread-local, pass-through Win32 hooks**
+(`WH_CALLWNDPROC`, `WH_CALLWNDPROCRET`, and `WH_GETMESSAGE`) on
+the game's GUI thread.
 They log the focus messages `WM_ACTIVATEAPP`, `WM_KILLFOCUS`,
 `WM_SETFOCUS`, `WM_ACTIVATE`, `WM_NCACTIVATE` before and after the
 existing game window procedure. They do **not** replace/subclass that
@@ -154,6 +155,22 @@ Every five seconds, a separate observer records a
 as foreground**, including local wall-clock time, monotonic tick,
 `GetForegroundWindow`, and the game GUI thread's
 `GetGUIThreadInfo` active/focus windows and its success flag.
+
+The same heartbeat now also reports cumulative **real message-retrieval**
+counts (`dequeue-remove`, `dequeue-peek`, `dequeue-focus`) and the
+number of messages reaching the game HWND (`window-delivery`), with
+the last observed message ID and timestamps. `WH_GETMESSAGE` fires
+when `GetMessage`/`PeekMessage` *actually retrieves* a queued message.
+It **does not fire for empty-queue polls**. Therefore, increasing counts
+prove the game's GUI thread is processing posted messages; flat counts
+alone **cannot** distinguish a game thread polling an empty queue from
+one that is not pumping messages at all. Also, messages delivered via
+`SendMessage` may reach `WH_CALLWNDPROC` without a dequeue event.
+
+In particular, if X11 reports Firefox as active for 10+ seconds while
+Wine continues reporting `is-game=1`, a rising dequeue counter implies
+the Win32 thread is handling *some* queued messages; we must still test
+where focus notification was lost/delayed, not automatically blame Wine.
 `WIN32-FOCUS: EVENT` entries also carry wall-clock time and Win32 tick.
 
 On an X11 desktop, start `tools/spiderman-x11-focus-trace.sh` **before**
