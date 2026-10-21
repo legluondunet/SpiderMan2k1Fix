@@ -335,6 +335,30 @@ black, textureless, expected depth/RHW, 40px-tall top-right boss rows.
 Regression tests cover variable missing-health amounts and unrelated
 black geometry. Visual confirmation of this change remains pending.
 
+**Second black-mask failure, Scorpion + Jameson (21 Oct, 23:12):**
+The same displaced solid-black bar remains visible after the wider
+mask signature was accepted. Pixel inspection confirms the block still
+begins at **x=1080** (the original unscaled boss fill origin), while
+the frame and portrait have moved right. The previous 4-vertex
+`FVF=0x144` triangle-fan F12 log included colored health and a *small*
+black health marker but did **not** identify the displaced large black
+block. The cause is therefore still unverified: it may use a different
+Direct3D primitive format/vertex layout, indexed draw, or DirectDraw
+Blt. Do **not** treat the expanded width limit as a verified fix.
+
+For this *new read-only investigation*, enable `Log=1` and
+`SPIDERMAN2K1FIX_HUD_TRACE=1`, with the latest two DLLs from
+PR #21, then use F12 once **while a boss has visibly lost health**.
+The additional output `HUD-PROBE-EXTRA` covers the upper-right
+`XYZRHW|DIFFUSE` and `XYZRHW|DIFFUSE|TEX1` primitive formats,
+triangle strips/lists and indexed draws. `HUD-PROBE-BLT` records
+DirectDraw color-fill/copy operations in the same screen area. Both
+probes are six-frame, opt-in and read-only. Send the resulting log.
+If no corresponding black quad appears, deeper source analysis is
+needed rather than loosening the render-time matcher again.
+
+
+
 With `[HUD] HUDWidescreenFix=1` the boss sprites are experimentally
 **aspect-corrected and anchored to the right edge**, just like the
 already-validated compass. The same transform applies to both bars
