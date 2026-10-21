@@ -4,7 +4,7 @@ Branch: `experiment/win11-manual-persistent-pause-20261021`
 
 This new experiment changes the old focus-loss presentation-loop pause: it
 latches the paused state, and regaining focus does NOT resume the game.
-Only a new press of the physical Pause/Break key while the game is foreground
+Only a new press of the F9 key while the game is foreground
 can resume. Pressing it while the game is in background has no effect.
 The same key can request manual pause while the game is active.
 
@@ -28,10 +28,10 @@ ExperimentalFocusTrace=0
 RestoreCursorOnFocusLoss=1
 ```
 
-4. Launch the game and press Pause/Break during gameplay. It should stop at
-   the next DirectDraw Flip and stay stopped. Press Pause/Break again to resume.
+4. Launch the game and press F9 during gameplay. It should stop at
+   the next DirectDraw Flip and stay stopped. Press F9 again to resume.
 5. Repeat with Alt+Tab during gameplay. Returning focus must NOT resume the
-   game; press Pause/Break to resume.
+   game; press F9 to resume.
 6. Test menus and cutscenes separately, noting that video/audio may still
    continue in this first experiment.
 7. Repeat Alt+Tab at least 20 times; check input recovery and crash behavior.
@@ -40,7 +40,7 @@ RestoreCursorOnFocusLoss=1
 ### Diagnostics
 
 Look for `FOCUS-PAUSE: focus lost; pause latched until manual resume`,
-`FOCUS-PAUSE: waiting for foreground and explicit Pause key`, and
+`FOCUS-PAUSE: waiting for foreground and explicit F9 key`, and
 `FOCUS-PAUSE: manual resume requested` in SpiderMan2k1Fix.log.
 
 This prototype must not be merged until real Windows 11 tests are validated.
