@@ -1252,11 +1252,11 @@ static void pause_at_flip_if_background(void) {
       pause_key_vk=VK_F9;
     }
   } else log_line("FOCUS-PAUSE: waiting for foreground and explicit pause key");
-  /* First install the passive 40%-black child shade; then create the
-   * original shaped PAUSE banner above it, unaffected by dimming.
-   * Both remain tied to the game's HWND, without desktop Z-order hacks. */
-  SpiderPauseDim_Show(hwnd);
+  /* The comic PAUSE child stays exactly as validated in PR #10.
+   * Create it first, then subtract its visible shape from the hidden
+   * owned-popup shade before showing the latter (pre-Win8 EXE compatible). */
   SpiderPauseOverlay_Show(hwnd,pause_key_vk);
+  SpiderPauseDim_Show(hwnd);
   while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1) {
     while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
       if(msg.message==WM_QUIT) {
