@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — comic-style main-menu version label (PR #13)
+
+- Restyle the small bottom-right `SpiderMan2k1Fix v<version>-<commit>` footer with system **Arial Black Bold Italic**, a muted lavender face and a dark violet 8-direction glyph outline, matching the original game's graphic style more closely.
+- Keep the real version/commit text, menu-only classification, fitted 4:3 content rectangle, scaling and both existing DirectDraw backbuffer and GDI window fallback paths. Preserve DC settings and GDI font lifetime; no changes to menu items, input, audio or the game executable.
+- Native Windows 11 menu screenshots still required to approve aesthetics before merging; automated checks only verify structure and build.
+
 ## Unreleased — darker gridded focus-pause presentation (PR #12 update)
 
 - Increase the original 40% smooth darkening to **55% black** by default, retaining the full-brightness red/white PAUSE banner in the shaped cutout.
