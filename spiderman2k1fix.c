@@ -12,6 +12,7 @@
 #include <ddraw.h>
 #include <d3d.h>
 #include "hud_widescreen.h"
+#include "hud_adaptive.h"
 #include "frame_limiter.h"
 #include "display_plan.h"
 #include "menu_scale.h"
@@ -892,6 +893,55 @@ static const void *maybe_correct_horplus(D3DPRIMITIVETYPE type,DWORD fvf,
   return copy;
 }
 
+/* Source-verified gameplay HUD quads only. This path is strictly opt-in
+ * through the already SHA-gated HUDWidescreenFix=1 and does not touch any
+ * other DirectDraw/Direct3D modes or change the game's vertex memory. */
+static volatile LONG hud_adaptive_compass_count=0;
+static volatile LONG hud_adaptive_instruction_count=0;
+static const void *maybe_correct_adaptive_hud(void *device,
+                    D3DPRIMITIVETYPE type,DWORD fvf,
+                    const void *source,DWORD count,void *ret,
+                    SpiderMenuVertex *copy)
+{
+  IDirectDrawSurface7 *texture=NULL;
+  DDSURFACEDESC2 desc;
+  DWORD rva=0,texw=0,texh=0;
+  int region;
+  LONG hit;
+  char message[236];
+  if(!source || !copy || count!=4 || fvf!=0x144UL ||
+     type!=D3DPT_TRIANGLEFAN || desktop_w<640 || desktop_h<480 ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
+     !SpiderHudWidescreen_Installed() ||
+     !SpiderHudAdaptive_MightMatch((const SpiderMenuVertex*)source) ||
+     !geom_rva(ret,&rva) || rva!=0x00102C72UL)
+    return source;
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) && texture) {
+    if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc))) {
+      texw=(DWORD)desc.dwWidth;texh=(DWORD)desc.dwHeight;
+    }
+    IDirectDrawSurface7_Release(texture);
+  }
+  region=SpiderHudAdaptive_Transform((const SpiderMenuVertex*)source,copy,
+                                     (unsigned)count,(unsigned)type,(uint32_t)fvf,
+                                     (uint32_t)rva,(unsigned)texw,(unsigned)texh,
+                                     (unsigned)desktop_w,(unsigned)desktop_h);
+  if(region==SPIDER_HUD_ADAPTIVE_NONE)return source;
+  hit=InterlockedIncrement(region==SPIDER_HUD_ADAPTIVE_COMPASS?
+       &hud_adaptive_compass_count:&hud_adaptive_instruction_count);
+  if(debug_log_enabled && (hit<=4 || hit%240==0)) {
+    snprintf(message,sizeof(message),
+       "HUD-ADAPTIVE: region=%s hit=%ld scale=%.5f tex=%lux%lu x-original=%.1f x-mapped=%.1f [EXPERIMENT]",
+       region==SPIDER_HUD_ADAPTIVE_COMPASS?"compass":"instructions",
+       (long)hit,(double)(4.0f*(float)desktop_h/(3.0f*(float)desktop_w)),
+       (unsigned long)texw,(unsigned long)texh,
+       (double)((const SpiderMenuVertex*)source)[0].x,(double)copy[0].x);
+    log_line(message);
+  }
+  return copy;
+}
 static void free_menu_vertices(SpiderMenuVertex *allocated) {
   if (allocated) HeapFree(GetProcessHeap(),0,allocated);
 }
@@ -909,6 +959,9 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
                                    __builtin_return_address(0),small);
     }
     /* BD has precedence and a separate signature; never rescale it. */
+    if(v==verts && count==4)
+      v=maybe_correct_adaptive_hud(self,type,fvf,verts,count,
+                                   __builtin_return_address(0),small);
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
     HRESULT hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
     free_menu_vertices(allocated);
@@ -1865,6 +1918,7 @@ static void install_player_hud(BOOL exe_verified) {
   }
   InterlockedExchange(&fov_horplus_scopes_ready,1);
   log_line("HUD: EXPERIMENTAL native 16-site widescreen correction installed (unverified in-game)");
+  log_line("HUD-ADAPTIVE: also enabled strict depth/texture signature transform for compass and instructions [TEST ONLY]");
 }
 /* A one-shot watchdog diagnoses the crucial "60 FPS despite 30 limit"
  * case even if Flip is never intercepted. Runs in the existing worker thread
