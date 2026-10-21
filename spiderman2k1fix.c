@@ -24,8 +24,7 @@
 #include "input_focus_trace.h"
 #include "input_notacquired_retry.h"
 #include "pause_any_key.h"
-#include "pause_overlay.h"
-#include "pause_dim.h"
+#include "pause_surface.h"
 #include "focus_media_pause.h"
 #include "focus_dsound_pause.h"
 #include "menu_version.h"
@@ -1200,7 +1199,7 @@ static void pause_log_resume_focus(HWND hwnd) {
 static void pause_at_flip_if_background(void) {
   HWND hwnd=game_hwnd;
   MSG msg;
-  int banner_mode=0; /* 0=none, 1=parent-confined child, 2=foreground alpha popup */
+  RECT pause_present_rect;
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
   if(GetForegroundWindow()==hwnd) {
     pause_background_since=0;
@@ -1229,18 +1228,24 @@ static void pause_at_flip_if_background(void) {
   /* The Flip pause alone does not suspend Bink or secondary DirectSound. */
   SpiderFocusMedia_Pause();
   SpiderFocusDSound_Pause();
-  /* Always show the PAUSE message inside the game, even when it has no
-   * focus. In the background, use an ordinary clipped WS_CHILD (never a
-   * floating popup); in the foreground replace it with the atomic alpha
-   * comic banner and approved 55%-black gridded shade. Game/media stay
-   * paused across Alt+Tab and both presentation modes. */
+  /* The frame currently rendered in borderless_back is the image which
+   * would have been presented at this Flip boundary. Compose the PAUSE UI
+   * into that very game surface and Blt it exactly once to PRIMARY before
+   * waiting; the desktop window manager then sees an ordinary game frame,
+   * not any of our old floating overlay HWNDs. */
+  pause_present_rect.left=borderless_monitor_x;
+  pause_present_rect.top=borderless_monitor_y;
+  pause_present_rect.right=borderless_monitor_x+(LONG)desktop_w;
+  pause_present_rect.bottom=borderless_monitor_y+(LONG)desktop_h;
+  if(borderless_back && borderless_primary && original_blt)
+    SpiderPauseSurface_Begin(borderless_back,borderless_primary,
+                             &pause_present_rect,(SpiderPauseBltFn)original_blt);
   while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1) {
     while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
       if(msg.message==WM_QUIT) {
         PostQuitMessage((int)msg.wParam);
         SpiderPauseAny_End();
-        SpiderPauseDim_Hide();
-        SpiderPauseOverlay_Hide();
+        SpiderPauseSurface_End();
         SpiderFocusDSound_Resume();
         SpiderFocusMedia_Resume();
         log_line("FOCUS-PAUSE: WM_QUIT observed, aborting wait");
@@ -1255,28 +1260,8 @@ static void pause_at_flip_if_background(void) {
     if(SpiderPauseAny_Completed())
       InterlockedExchange(&pause_latched,0);
     if(InterlockedCompareExchange(&pause_latched,0,0)!=1) break;
-    if(SpiderPauseOverlay_GameForeground(hwnd)) {
-      if(banner_mode!=2) {
-        SpiderPauseDim_Hide();
-        SpiderPauseOverlay_Hide();
-        SpiderPauseOverlay_Show(hwnd);
-        SpiderPauseDim_Show(hwnd);
-        banner_mode=2;
-        log_line("FOCUS-PAUSE: translucent comic banner and grid (game foreground)");
-      }
-    } else if(banner_mode!=1) {
-      /* Desktop/window manager owns the foreground. Do NOT retain the
-       * independently positioned alpha popup: Wine could float it above
-       * Thunar. A normal child follows Spider-Man's desktop stacking. */
-      SpiderPauseDim_Hide();
-      SpiderPauseOverlay_Hide();
-      /* Create the sparse shade/grid FIRST so the banner sibling paints
-       * in front; both children follow the game behind Thunar/Firefox. */
-      SpiderPauseDim_ShowBackground(hwnd);
-      SpiderPauseOverlay_ShowBackground(hwnd);
-      banner_mode=1;
-      log_line("FOCUS-PAUSE: game-parented dark dither/grid and PAUSE child remain visible in background");
-    }
+    /* No show/hide transitions: a frozen DirectDraw frame naturally
+     * stays behind unrelated Xfce/Windows applications during Alt+Tab. */
     MsgWaitForMultipleObjectsEx(0,NULL,20,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
   }
   if(SpiderPauseAny_FirstKey()!=0) {
@@ -1287,8 +1272,7 @@ static void pause_at_flip_if_background(void) {
     log_line(line);
   }
   SpiderPauseAny_End();
-  SpiderPauseDim_Hide();
-  SpiderPauseOverlay_Hide();
+  SpiderPauseSurface_End();
   SpiderFocusDSound_Resume();
   SpiderFocusMedia_Resume();
   log_line("FOCUS-PAUSE: explicit resume or window destroyed");
@@ -1813,8 +1797,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
   SpiderDI8Retry_Init(log_line);
   SpiderFocusMedia_Init(log_line); /* Opt-in native Bink pause. */
   SpiderFocusDSound_Init(log_line); /* Separately opt-in game-owned secondary buffers only. */
-  SpiderPauseOverlay_Init(log_line); /* Passive centered comic-style banner. */
-  SpiderPauseDim_Init(log_line); /* 55% gridded shade plus optional dark center. */
+  SpiderPauseSurface_Init(log_line); /* Pause drawn into the game backbuffer; no HWND overlays. */
   /* The first-run generator or repair may have changed [Debug] Log. */
   {
     int previous_log_enabled=debug_log_enabled;
