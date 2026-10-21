@@ -309,6 +309,39 @@ with strict screen-region, texture and depth signatures. This adjustment
 has passed source-level regression checks but **still requires an in-game
 screenshot before validation**.
 
+**Boss HUD follow-up (Scorpion and Venom, October 21, 2026):** Actual
+Windows 11 screenshots at 1920×1200 show the upper-right boss health
+bar and portrait remain about **20% wider** in 16:10 than in the original
+4:3 (1600×1200) presentation. This differs from the player HUD and
+mission instruction panels, which have been visually checked in
+both Wine and Windows. **Boss UI is not currently corrected** and
+must be investigated before approving this PR for the 1.0 release.
+
+An updated **read-only F12 trace** on this experimental branch adds
+`HUD-PROBE: region=boss` for top-right 2D quads, with per-frame quotas,
+texture metadata, callsite, depth/RHW and source vertex bounds. It does
+not change any vertex coordinate or runtime rendering.
+
+To capture the missing signatures **under Windows 11**:
+
+1. Install the two matching x86 DLLs from the latest successful branch
+   artifact (not the previous HUD build). Keep
+   `[Debug] Log=1`, `[HUD] HUDWidescreenFix=1` and
+   `[Display] AspectRatio=auto`.
+2. In PowerShell in the game's folder:
+   `$env:SPIDERMAN2K1FIX_HUD_TRACE="1"; .\\SpideyPC.exe`.
+3. Use Level Select to enter a **Venom** or **Scorpion** boss fight;
+   with boss bars visible, press **F12 once**, allow at least six gameplay
+   frames, and quit. Send `SpiderMan2k1Fix.log`. Look for both
+   `HUD-PROBE: F12 capture START`, `HUD-PROBE: region=boss` and
+   `HUD-PROBE: F12 capture COMPLETE`. The filter rejects most depthful
+   world quads to limit noise. If no boss records appear, the geometry
+   source needs further investigation, *not* a speculative patch.
+4. Revert the experiment by removing the environment variable, without
+   changing the valid player/instruction/compass corrections. No extra
+   screenshots are required for the read-only trace: the 4:3/16:10
+   reference images are already available.
+
 **Wine visual A/B:** Back up the game DLLs and INI, install the DLLs from
 this experimental PR *as a matching pair*, and leave `Log=1`.
 First launch with `HUDWidescreenFix=0`, take a 16:9 3D screenshot;
