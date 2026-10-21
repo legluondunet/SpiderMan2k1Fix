@@ -39,5 +39,5 @@ def test_only_supported_game_and_validated_ini_can_request_suppression():
     assert "pause_confirmed_focus_loss(hwnd)" in CORE
     assert "SpiderFocusMedia_Pause()" in CORE
     assert "SpiderFocusDSound_Pause()" in CORE
-    assert "SpiderPauseOverlay_Show(hwnd,pause_key_vk)" in CORE
+    assert "SpiderPauseOverlay_Show(hwnd)" in CORE
     assert "SpiderPauseAny_Begin(hwnd)" in CORE
