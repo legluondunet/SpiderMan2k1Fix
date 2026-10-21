@@ -51,7 +51,7 @@ def test_persistent_pause_requires_manual_foreground_key():
 
 def test_focus_loss_filters_click_activation_glitches():
     focus=CORE[CORE.index("static BOOL pause_confirmed_focus_loss(HWND hwnd)"):
-               CORE.index("static void pause_poll_key(HWND hwnd)")]
+               CORE.index("/* Wake only with the foreground Any-key hook. */")]
     assert "GetWindowThreadProcessId(hwnd,&game_pid)" in focus
     assert "GetWindowThreadProcessId(fg,&fg_pid)" in focus
     assert "fg_pid==game_pid" in focus
