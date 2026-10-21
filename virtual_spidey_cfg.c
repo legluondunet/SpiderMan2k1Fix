@@ -322,6 +322,8 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "RestoreCursorOnFocusLoss=1\r\n"
     "; Experimental Bink audio/video pause on lost focus; default off.\r\n"
     "PauseBinkOnFocusLoss=0\r\n"
+    "; Experimental game-owned secondary DirectSound voice pause; default off.\r\n"
+    "PauseDirectSoundOnFocusLoss=0\r\n"
     "; Detailed focus diagnosis is disabled by default.\r\n"
     "ExperimentalFocusTrace=0\r\n"
     "; Entry-only DirectInput8 factory probe; requires ExperimentalFocusTrace=1.\r\n"
