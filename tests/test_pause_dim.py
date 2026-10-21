@@ -80,7 +80,7 @@ def test_original_centered_banner_is_preserved_above_shade():
     assert pause.count("SpiderPauseOverlay_Show(hwnd);")==1
     assert pause.index("SpiderPauseOverlay_Show(hwnd);") < pause.index("SpiderPauseDim_Show(hwnd);")
     assert pause.count("SpiderPauseDim_Hide();")==3
-    assert pause.count("SpiderPauseOverlay_Hide();")==2
+    assert pause.count("SpiderPauseOverlay_Hide();")==3
     for portion in pause.split("SpiderPauseOverlay_Hide();")[1:]:
         assert portion.index("SpiderPauseDim_Hide();") < portion.index("SpiderFocusDSound_Resume();")
     assert CORE.index("SpiderCfg_ValidateCurrentIni(log_line);") < CORE.index("SpiderPauseDim_Init(log_line);")
