@@ -16,8 +16,8 @@
 #include "pause_surface.h"
 
 #define PAUSE_GRID_STEP 16
-#define PAUSE_PANEL_W 470
-#define PAUSE_PANEL_H 108
+#define PAUSE_PANEL_W 520
+#define PAUSE_PANEL_H 128
 #define PAUSE_MAX_W 4096
 #define PAUSE_MAX_H 2160
 
@@ -50,7 +50,7 @@ static int pause_blend_color(HDC dest,HDC source,int x,int y,int width,
 }
 
 static int pause_draw_text(HDC dc,HFONT font,const wchar_t *label,
-                           int box_left,int box_width,int y) {
+                           int box_left,int box_width,int y,COLORREF color) {
   SIZE length={0,0};
   HGDIOBJ old;
   int x,dx,dy,len=lstrlenW(label);
@@ -64,15 +64,16 @@ static int pause_draw_text(HDC dc,HFONT font,const wchar_t *label,
   SetTextColor(dc,RGB(6,5,12));
   for(dy=-1;dy<=1;dy++)for(dx=-1;dx<=1;dx++)
     if(dx || dy)TextOutW(dc,x+dx,y+dy,label,len);
-  SetTextColor(dc,RGB(255,255,255));
+  SetTextColor(dc,color);
   TextOutW(dc,x,y,label,len);
   SelectObject(dc,old);
   return 1;
 }
 
-static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc) {
+static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
+                                const RECT *content_rect) {
   int x,y,box_left,box_top,box_width,box_height,saved;
-  HPEN grid=NULL,border=NULL;
+  HPEN border=NULL,separator=NULL;
   HGDIOBJ old_pen,old_brush;
   HRGN rounded=NULL;
   HFONT title=NULL,hint=NULL;
@@ -88,23 +89,41 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc) {
     if(!pause_blend_color(dc,tint_dc,0,0,width,height,RGB(0,0,0),
                           (BYTE)((opacity*255+50)/100)))return 0;
   }
+  /* The original opaque grid overwhelmed the artwork and crossed the black
+   * pillarboxes. Keep the same 16px spacing, but blend faint lines only over
+   * the current 4:3 menu/game image (full canvas for widescreen gameplay).
+   * This changes only the frozen pause frame, not any live rendering hook. */
   if(enabled_dim && enabled_grid) {
+    const RECT pixel={0,0,1,1};
+    const BLENDFUNCTION grid_blend={AC_SRC_OVER,0,28,0};
+    HBRUSH grid_brush;
     saved=SaveDC(dc);
     if(!saved)return 0;
+    if(content_rect && content_rect->left>=0 && content_rect->top>=0 &&
+       content_rect->right<=width && content_rect->bottom<=height &&
+       content_rect->right>content_rect->left &&
+       content_rect->bottom>content_rect->top)
+      IntersectClipRect(dc,content_rect->left,content_rect->top,
+                         content_rect->right,content_rect->bottom);
     if(panel)
       ExcludeClipRect(dc,box_left-5,box_top-5,
                          box_left+box_width+5,box_top+box_height+5);
-    grid=CreatePen(PS_SOLID,1,RGB(59,60,76));
-    if(!grid) {RestoreDC(dc,saved);return 0;}
-    old_pen=SelectObject(dc,grid);
+    grid_brush=CreateSolidBrush(RGB(100,104,124));
+    if(!grid_brush) {RestoreDC(dc,saved);return 0;}
+    if(!FillRect(tint_dc,&pixel,grid_brush)) {
+      DeleteObject(grid_brush);RestoreDC(dc,saved);return 0;
+    }
+    DeleteObject(grid_brush);
     for(x=PAUSE_GRID_STEP;x<width;x+=PAUSE_GRID_STEP) {
-      MoveToEx(dc,x,0,NULL);LineTo(dc,x,height);
+      if(!AlphaBlend(dc,x,0,1,height,tint_dc,0,0,1,1,grid_blend)) {
+        RestoreDC(dc,saved);return 0;
+      }
     }
     for(y=PAUSE_GRID_STEP;y<height;y+=PAUSE_GRID_STEP) {
-      MoveToEx(dc,0,y,NULL);LineTo(dc,width,y);
+      if(!AlphaBlend(dc,0,y,width,1,tint_dc,0,0,1,1,grid_blend)) {
+        RestoreDC(dc,saved);return 0;
+      }
     }
-    SelectObject(dc,old_pen);
-    DeleteObject(grid);
     RestoreDC(dc,saved);
   }
   if(!panel)return 1;
@@ -118,7 +137,7 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc) {
   if(!rounded) {RestoreDC(dc,saved);return 0;}
   ExtSelectClipRgn(dc,rounded,RGN_AND);
   if(!pause_blend_color(dc,tint_dc,box_left,box_top,
-                        box_width,box_height,RGB(15,11,25),222))ok=0;
+                        box_width,box_height,RGB(11,16,26),232))ok=0;
   RestoreDC(dc,saved);
   DeleteObject(rounded);
   if(!ok)return 0;
@@ -133,19 +152,33 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc) {
   SelectObject(dc,old_pen);
   DeleteObject(border);
 
-  title=CreateFontW(-30,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,DEFAULT_CHARSET,
+  /* Slightly larger title, calm secondary line and a small red divider.
+   * Grayscale antialiasing avoids the harsh jagged lettering of the first
+   * DirectDraw screenshot without introducing a compositor popup. */
+  title=CreateFontW(-34,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,DEFAULT_CHARSET,
                     OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
-                    NONANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial Black");
-  hint=CreateFontW(-20,0,0,0,FW_HEAVY,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+                    ANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial Black");
+  hint=CreateFontW(-19,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
                    OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
-                   NONANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial Black");
+                   ANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial Black");
   if(!title || !hint)ok=0;
   if(ok) {
     SetBkMode(dc,TRANSPARENT);
     SetTextAlign(dc,TA_LEFT|TA_TOP|TA_NOUPDATECP);
-    ok=pause_draw_text(dc,title,L"PAUSE",box_left,box_width,box_top+12) &&
-       pause_draw_text(dc,hint,L"PRESS ANY KEY TO RESUME",
-                       box_left,box_width,box_top+65);
+    ok=pause_draw_text(dc,title,L"PAUSE",box_left,box_width,box_top+14,
+                       RGB(255,255,255));
+    separator=CreatePen(PS_SOLID,1,RGB(138,54,72));
+    if(!separator)ok=0;
+    if(separator) {
+      old_pen=SelectObject(dc,separator);
+      MoveToEx(dc,width/2-75,box_top+67,NULL);
+      LineTo(dc,width/2+75,box_top+67);
+      SelectObject(dc,old_pen);
+      DeleteObject(separator);
+    }
+    if(ok)
+      ok=pause_draw_text(dc,hint,L"PRESS ANY KEY TO RESUME",
+                         box_left,box_width,box_top+79,RGB(224,227,234));
   }
   if(title)DeleteObject(title);
   if(hint)DeleteObject(hint);
@@ -196,7 +229,8 @@ void SpiderPauseSurface_End(void) {
 
 int SpiderPauseSurface_Begin(IDirectDrawSurface7 *back,
                              IDirectDrawSurface7 *primary,
-                             const RECT *primary_dest,SpiderPauseBltFn present) {
+                             const RECT *primary_dest,const RECT *content_rect,
+                             SpiderPauseBltFn present) {
   DDSURFACEDESC2 desc;
   HDC dc=NULL,tint_dc=NULL;
   HBITMAP tint=NULL,tint_old=NULL;
@@ -235,7 +269,7 @@ int SpiderPauseSurface_Begin(IDirectDrawSurface7 *back,
   if(!tint_old || tint_old==(HBITMAP)HGDI_ERROR) {
     tint_old=NULL;goto fail;
   }
-  drawn=pause_draw_composite(dc,width,height,tint_dc);
+  drawn=pause_draw_composite(dc,width,height,tint_dc,content_rect);
   SelectObject(tint_dc,tint_old);tint_old=NULL;
   DeleteObject(tint);tint=NULL;
   DeleteDC(tint_dc);tint_dc=NULL;
