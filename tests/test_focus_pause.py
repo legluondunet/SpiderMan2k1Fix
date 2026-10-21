@@ -31,8 +31,10 @@ def test_pause_only_at_ddraw_flip_boundary():
     assert "SuspendThread" not in pause
 
 def test_no_native_input_hook_is_enabled_by_default():
-    assert "ExperimentalAltTabReacquire=0" in INI
-    assert '"ExperimentalAltTabReacquire=0\\r\\n"' in GEN
+    assert "DirectInputReacquire=0" in INI
+    assert '"DirectInputReacquire=0\\r\\n"' in GEN
+    assert "ExperimentalAltTabReacquire=" not in INI
+    assert '"ExperimentalAltTabReacquire=' not in GEN
 
 def test_persistent_pause_requires_manual_foreground_key():
     pause=CORE[CORE.index("static volatile LONG pause_on_focus_loss=0;"):
@@ -117,8 +119,9 @@ def test_di8_entry_probe_is_opt_in_and_factory_only():
 
 def test_create_device_probe_requires_existing_factory_probe():
     trace=(ROOT/"input_focus_trace.c").read_text()
-    assert "ExperimentalDI8CreateDeviceTrace=0" in INI
-    assert '"ExperimentalDI8CreateDeviceTrace=0\\r\\n"' in GEN
+    # Obsolete COM-vtable probe remains accepted for old users, but not offered.
+    assert "ExperimentalDI8CreateDeviceTrace=" not in INI
+    assert '"ExperimentalDI8CreateDeviceTrace=' not in GEN
     assert '"ExperimentalDI8CreateDeviceTrace"' in VALID
     assert 'GetPrivateProfileIntA("Input","ExperimentalDI8CreateDeviceTrace",0,ini)==1' in trace
     assert "if(!want_probe) want_interface_probe=0;" in trace
