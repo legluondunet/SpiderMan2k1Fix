@@ -241,14 +241,16 @@ int SpiderPauseSurface_Begin(IDirectDrawSurface7 *back,
   DeleteDC(tint_dc);tint_dc=NULL;
   if(!drawn)goto fail;
   IDirectDrawSurface7_ReleaseDC(back,dc);dc=NULL;
+  /* Hold a separate backbuffer reference before presenting: this also
+   * guarantees the original pixels are restored if the primary Blt fails. */
+  IDirectDrawSurface7_AddRef(back);
+  saved_surface=back;
   hr=present(primary,(LPRECT)primary_dest,back,NULL,DDBLT_WAIT,NULL);
   if(FAILED(hr)) {
     pause_log_hresult("pause frame present failed",hr);
     /* No visible changes were presented; do not overwrite the user's view. */
     goto fail;
   }
-  IDirectDrawSurface7_AddRef(back);
-  saved_surface=back;
   if(pause_log) {
     char line[180];
     snprintf(line,sizeof(line),
