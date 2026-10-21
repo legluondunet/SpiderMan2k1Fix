@@ -83,3 +83,14 @@ def test_pause_key_ini_value_validation_precedes_boolean_input_rules():
     assert 'spider_ini_icmp(value,"F9")' in VALID[specific:boolean]
     assert 'spider_ini_icmp(value,"Space")' in VALID[specific:boolean]
     assert '"PauseKey=F9\\r\\n"' in GEN
+
+def test_resume_focus_diagnostic_does_not_mutate_focus():
+    start=CORE.index("static void pause_log_resume_focus(HWND hwnd)")
+    end=CORE.index("static void pause_at_flip_if_background",start)
+    diagnostic=CORE[start:end]
+    assert "GetGUIThreadInfo(tid,&gi)" in diagnostic
+    assert "resume-focus hwnd=" in diagnostic
+    assert "SetForegroundWindow" not in diagnostic
+    assert "SetFocus(" not in diagnostic
+    assert "Acquire(" not in diagnostic
+    assert "pause_log_resume_focus(hwnd);" in CORE
