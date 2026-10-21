@@ -123,6 +123,8 @@ DirectInputReacquire=0
 PauseOnFocusLoss=0
 ; F9 (default), Space or Any (consume first foreground wake key).
 PauseKey=F9
+; Experimental native Bink movie/audio pause, independent of 3D game sound.
+PauseBinkOnFocusLoss=0
 RestoreCursorOnFocusLoss=1
 
 [Audio]
@@ -169,6 +171,8 @@ The generated INI may contain additional internal or development-specific settin
 **Controls:** keyboard and joystick bindings are independent. Keyboard values use physical DirectInput key names or hexadecimal scan codes. Joystick values use the same `BUTTON0`, `BUTTON1`, etc. numbering shown in the game's **Joystick Configuration** menu. Joystick movement axes/directions are handled by the game and are not configurable through this section.
 
 **Alt+Tab recovery (experimental, Windows 11):** The user-tested PR #7 configuration uses `DirectInputReacquire=1`, `PauseOnFocusLoss=1`, and `PauseKey=Any`. After switching back to the game, press and release a keyboard key: the pause ends and the key sequence is intercepted rather than intentionally passed to the game. The native DirectInput8 retry uses the original game's existing `Acquire` error path for `DIERR_NOTACQUIRED`, without wrapping COM interfaces. The user has validated the combination in menus, cinematics and 3D, but **the new INI activation itself still needs a final A/B test**. Both recovery and pause remain disabled by default in the experimental branch. The separate `SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY=1` environment variable is still accepted for existing diagnostics and overrides a disabled INI value; unset it to test the INI alone. The older `ExperimentalAltTabReacquire` and `ExperimentalDI8CreateDeviceTrace` flags are no longer generated and remain disabled in code even if present in an old INI.
+
+**Bink video pause (experimental PR):** `PauseBinkOnFocusLoss=1` requests the game's own native Bink pause for movie streams during focus-loss pause. It does **not** suspend DirectSound music or sound effects in gameplay; see `FOCUS_AUDIO_VIDEO_SYNC_TEST.md` before testing. Disabled by default, pending Windows 11 validation.
 
 **Audio:** the three volume levels use user-friendly percentages; `Stereo=1` enables stereo and `Stereo=0` selects mono.
 
