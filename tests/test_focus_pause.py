@@ -94,3 +94,22 @@ def test_resume_focus_diagnostic_does_not_mutate_focus():
     assert "SetFocus(" not in diagnostic
     assert "Acquire(" not in diagnostic
     assert "pause_log_resume_focus(hwnd);" in CORE
+
+
+def test_di8_entry_probe_is_opt_in_and_factory_only():
+    trace=(ROOT/"input_focus_trace.c").read_text()
+    assert "ExperimentalDI8EntryTrace=0" in INI
+    assert '"ExperimentalDI8EntryTrace=0\\r\\n"' in GEN
+    assert '"ExperimentalDI8EntryTrace"' in VALID
+    assert 'GetPrivateProfileIntA("Input","ExperimentalDI8EntryTrace",0,ini)==1' in trace
+    assert "if(!want_trace) want_probe=0;" in trace
+    assert "if(!want_probe) {" in trace
+    assert "ENTRY-ONLY PROBE enabled" in trace
+    factory=trace[trace.index("static HRESULT WINAPI focus_directinput8_create("):
+                  trace.index("void SpiderInputFocus_Install(")]
+    assert "original_directinput8_create(h,version,iid,out,outer)" in factory
+    assert "InterlockedCompareExchange(&reacquire_enabled,0,0)==1" in factory
+    assert "if(SUCCEEDED(hr) && out && *out &&" in factory
+    assert "focus_instrument_device" not in factory
+    assert "d->acquire(self)" not in factory
+
