@@ -54,3 +54,12 @@ def test_swallow_press_repeat_and_release_with_foreground_filter():
 
 def test_linker_includes_hook_module():
     assert "pause_any_key.c" in BUILD
+
+def test_system_navigation_remains_available_during_foreground_pause():
+    assert 'vk==VK_MENU || vk==VK_LMENU || vk==VK_RMENU' in SOURCE
+    assert 'vk==VK_LWIN || vk==VK_RWIN' in SOURCE
+    assert '(vk==VK_TAB && (info->flags&LLKHF_ALTDOWN))' in SOURCE
+    assert 'return CallNextHookEx(hook,code,wp,lp);' in SOURCE
+    assert SOURCE.index('vk==VK_MENU || vk==VK_LMENU') < SOURCE.index('if(vk<256u && down)')
+    assert 'SpiderPauseAny_Completed()' in CORE
+    assert 'SpiderPauseAny_DiscardGameKeyMessage(&msg,hwnd)' in CORE
