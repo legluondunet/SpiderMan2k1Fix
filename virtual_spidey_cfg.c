@@ -324,6 +324,7 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "ExperimentalDI8CreateDeviceTrace=0\r\n"
     "; Experimental Flip-boundary pause while the game loses focus (0=off).\r\n"
     "PauseOnFocusLoss=0\r\n"
+    "; F9 (default), Space, or experimental Any (consume wake key).\r\n"
     "PauseKey=F9\r\n"
     "\r\n"
     "[Audio]\r\n"
