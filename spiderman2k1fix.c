@@ -692,6 +692,74 @@ typedef HRESULT (WINAPI *DrawPrimitiveFn)(void *, D3DPRIMITIVETYPE, DWORD, LPVOI
 typedef HRESULT (WINAPI *DrawIndexedPrimitiveFn)(void *, D3DPRIMITIVETYPE, DWORD, LPVOID, DWORD, LPWORD, DWORD, DWORD);
 static DrawPrimitiveFn original_draw_primitive;
 static DrawIndexedPrimitiveFn original_draw_indexed_primitive;
+/* Opt-in, read-only six-frame HUD sampling. No render path changes. */
+static volatile LONG hud_probe_enabled=0,hud_probe_frames=0;
+static volatile LONG hud_probe_seen=0,hud_probe_left=0,hud_probe_right=0,hud_probe_instructions=0;
+static void hud_probe_flip(void) {
+  if(InterlockedCompareExchange(&hud_probe_enabled,0,0)!=1) return;
+  if((GetAsyncKeyState(VK_F12)&1)!=0 && game_hwnd &&
+     GetForegroundWindow()==game_hwnd) {
+    InterlockedExchange(&hud_probe_frames,6);
+    log_line("HUD-PROBE: F12 capture START, six 3D frames; original vertices unchanged");
+  } else if(InterlockedCompareExchange(&hud_probe_frames,0,0)>0 &&
+            InterlockedDecrement(&hud_probe_frames)==0)
+    log_line("HUD-PROBE: F12 capture COMPLETE");
+  InterlockedExchange(&hud_probe_seen,0);
+  InterlockedExchange(&hud_probe_left,0);
+  InterlockedExchange(&hud_probe_right,0);
+  InterlockedExchange(&hud_probe_instructions,0);
+}
+static void hud_probe_draw(void *device,D3DPRIMITIVETYPE type,DWORD fvf,
+                           const void *vertices,DWORD count,void *caller) {
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)vertices;
+  float l,r,t,b,cx,cy;
+  LONG n,slot;int region;unsigned i;
+  IDirectDrawSurface7 *texture=NULL; DDSURFACEDESC2 desc;
+  DWORD rva=0;char line[410];
+  if(InterlockedCompareExchange(&hud_probe_frames,0,0)<=0 ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
+     fvf!=0x144UL || type!=D3DPT_TRIANGLEFAN || count!=4 ||
+     !vertices || desktop_w<640 || desktop_h<480) return;
+  l=r=v[0].x;t=b=v[0].y;
+  for(i=1;i<4;i++) {
+    if(v[i].x<l)l=v[i].x;if(v[i].x>r)r=v[i].x;
+    if(v[i].y<t)t=v[i].y;if(v[i].y>b)b=v[i].y;
+  }
+  if(!(l>=-40.0f && r<=(float)desktop_w+40.0f &&
+       t>=-40.0f && b<=(float)desktop_h+40.0f) ||
+     r-l<2.0f || b-t<2.0f || r-l>(float)desktop_w*0.65f ||
+     b-t>(float)desktop_h*0.45f) return;
+  cx=(l+r)*0.5f;cy=(t+b)*0.5f;
+  if(cy>(float)desktop_h*0.63f && cx>(float)desktop_w*0.57f) region=1;
+  else if(cy>(float)desktop_h*0.65f && cx<(float)desktop_w*0.60f) region=2;
+  else if(cy<(float)desktop_h*0.34f && cx<(float)desktop_w*0.42f) region=3;
+  else return;
+  n=InterlockedIncrement(&hud_probe_seen);
+  if(n>128)return;
+  slot=InterlockedIncrement(region==1?&hud_probe_right:region==2?&hud_probe_instructions:&hud_probe_left);
+  if(slot>16)return;
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) && texture) {
+    if(FAILED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc)))
+      desc.dwWidth=desc.dwHeight=0;
+    IDirectDrawSurface7_Release(texture);
+  }
+  geom_rva(caller,&rva);
+  snprintf(line,sizeof(line),
+    "HUD-PROBE: region=%s index=%ld rva=0x%08lX tex=%lux%lu "
+    "bbox=[%.1f,%.1f..%.1f,%.1f] z=%.4f rhw=%.4f "
+    "diffuse=%08lX uv=[%.3f,%.3f..%.3f,%.3f]",
+    region==1?"compass":region==2?"instructions":"player",
+    (long)slot,(unsigned long)rva,
+    (unsigned long)desc.dwWidth,(unsigned long)desc.dwHeight,
+    (double)l,(double)t,(double)r,(double)b,
+    (double)v[0].z,(double)v[0].rhw,
+    (unsigned long)v[0].diffuse,
+    (double)v[0].u,(double)v[0].v,(double)v[2].u,(double)v[2].v);
+  log_line(line);
+}
+
 static int geom_rva(void *ret,DWORD *rva) {
   uintptr_t base=(uintptr_t)GetModuleHandleA(NULL),addr=(uintptr_t)ret;
   IMAGE_DOS_HEADER *dos=(IMAGE_DOS_HEADER*)base;
@@ -832,6 +900,7 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
   {
     SpiderMenuVertex small[64],*allocated=NULL;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
+    hud_probe_draw(self,type,fvf,verts,count,__builtin_return_address(0));
     if(v==verts && count==4) {
       v=maybe_correct_native_comic(self,type,fvf,verts,count,
                                    __builtin_return_address(0),small);
@@ -1322,6 +1391,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       SpiderInputFocus_OnFlip(count);
   }
   SpiderDI8Retry_OnFlip(count);
+  hud_probe_flip();
   report_null_fclose_recovery();
   if (g_frame_limiter_ready) SpiderFrameLimiter_Wait(&g_frame_limiter);
   /* Deliberately NO 1px pixel cover-up. The yellow seam remains visible if
@@ -1962,6 +2032,15 @@ static DWORD WINAPI initialize(LPVOID unused) {
   }
   log_line("BORDERLESS: windowed fullscreen enabled");
   install_player_hud(TRUE);
+  {
+    char flag[8]={0};
+    if(debug_log_enabled &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_HUD_TRACE",flag,sizeof(flag))==1 &&
+       flag[0]=='1') {
+      InterlockedExchange(&hud_probe_enabled,1);
+      log_line("HUD-PROBE: read-only D3D7 gameplay capture armed; press F12 once");
+    }
+  }
   /* Always-on virtual CFG: signature-gated EXE IAT hook.
    * The hook never executes for an unverified EXE. */
   {
