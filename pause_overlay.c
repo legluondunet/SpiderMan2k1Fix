@@ -1,13 +1,14 @@
-/* Spider-Man 2001 nonactivating focus-pause indicator.
+/* Spider-Man 2001: one-piece game-owned focus-pause banner.
  *
- * Draw only the comic-style text and a thin red outline in a shaped child
- * window. SetWindowRgn physically EXCLUDES every interior/background pixel;
- * unlike a color-keyed layered child, the underlying DirectDraw
- * picture remains visible even on display drivers which compose a black
- * rectangle under a color-keyed window.
+ * Avoid shaped child HWND + alpha popups: under Wine, individual glyph
+ * region masks leave dark fragments and can paint stale pixels into the
+ * paused DirectDraw frame. Instead compose background, border and full-white
+ * lettering into ONE premultiplied 32bpp bitmap and send it to an owned
+ * nonactivating popup with UpdateLayeredWindow(ULW_ALPHA).
  *
- * No game-rendering hooks or changes to Bink, DirectSound or DirectInput.
- * The pause indicator is destroyed before normal gameplay resumes.
+ * Only display while the game is the active foreground Win32 window.
+ * A missing per-pixel alpha implementation FAILS CLOSED (no opaque fallback).
+ * Original SpideyPC.exe, DirectDraw, Bink, DirectSound and input untouched.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -15,303 +16,276 @@
 #include <string.h>
 #include "pause_overlay.h"
 
-#define OVERLAY_CLASS L"SpiderMan2k1Fix_PauseOverlay"
-#define OVERLAY_RED RGB(221,34,45)
-#define OVERLAY_WHITE RGB(255,255,255)
-#define OVERLAY_DARK RGB(18,16,28)
-#define OVERLAY_WIDTH 520
-#define OVERLAY_HEIGHT 136
+#define OVERLAY_CLASS L"SpiderMan2k1Fix_ComicPause"
+#define OVERLAY_WIDTH 470
+#define OVERLAY_HEIGHT 108
+#define PANEL_R 18
+#define PANEL_G 14
+#define PANEL_B 29
+#define PANEL_ALPHA 188 /* subdued comic banner; background still visible */
+#define PANEL_CORNER 10
 
 static HWND overlay_hwnd=NULL;
-static int overlay_enabled=1;
-static int overlay_registered=0;
-static int overlay_title_x=0,overlay_title_y=0;
-static int overlay_hint_x=0,overlay_hint_y=0;
-static HFONT overlay_title_font=NULL,overlay_hint_font=NULL;
+static HWND overlay_game=NULL;
+static int overlay_enabled=1,overlay_registered=0;
 static void (*overlay_log)(const char *)=NULL;
 
-static const wchar_t *overlay_hint(void) {
-  return L"PRESS ANY KEY TO RESUME";
+int SpiderPauseOverlay_GameForeground(HWND game_window) {
+  if(!game_window || !IsWindow(game_window) ||
+     !IsWindowVisible(game_window) || IsIconic(game_window))return 0;
+  /* Checking GetActiveWindow as well as the Windows foreground owner
+   * prevents stale Wine foreground state from leaving a popup over a
+   * native Linux application. No synthetic activation is ever issued. */
+  return GetForegroundWindow()==game_window &&
+         GetActiveWindow()==game_window;
 }
 
-/* TrueType glyph outlines can be turned into GDI window regions using
- * BeginPath/TextOut/EndPath/PathToRegion. This allows an unfilled window
- * with ONLY opaque glyph strokes and the border, without color-keying. */
-static int overlay_add_text_region(HDC dc,HRGN visible,HFONT font,
-                                   const wchar_t *string,int x,int y) {
-  HRGN letters,shifted;
-  HGDIOBJ old;
-  int dx,dy,ok=1;
-  if(!font)return 0;
-  old=SelectObject(dc,font);
-  if(!BeginPath(dc)) {SelectObject(dc,old);return 0;}
-  if(!TextOutW(dc,x,y,string,lstrlenW(string)) || !EndPath(dc)) {
-    AbortPath(dc);
-    SelectObject(dc,old);
-    return 0;
-  }
-  letters=PathToRegion(dc);
-  SelectObject(dc,old);
-  if(!letters)return 0;
-  shifted=CreateRectRgn(0,0,0,0);
-  if(!shifted){DeleteObject(letters);return 0;}
-  /* Oversize each glyph's region so neither alpha popup can cross the white
-   * pixels (Wine/GDI text rasterization may differ slightly from PathToRegion).
-   * This extra guard prevents the grid/dimmer from eating letter strokes. */
-  for(dy=-5;dy<=5 && ok;dy++)for(dx=-5;dx<=5;dx++) {
-    if(dx*dx+dy*dy>26)continue;
-    if(CombineRgn(shifted,letters,NULL,RGN_COPY)==ERROR ||
-       OffsetRgn(shifted,dx,dy)==ERROR ||
-       CombineRgn(visible,visible,shifted,RGN_OR)==ERROR) {
-      ok=0;break;
-    }
-  }
-  DeleteObject(shifted);
-  DeleteObject(letters);
-  return ok;
-}
-
-static void overlay_text_pos(HDC dc,HFONT font,const wchar_t *string,
-                             int width,int y,int *x_result,int *y_result) {
-  SIZE size={0,0};
-  HGDIOBJ old=SelectObject(dc,font);
-  if(!GetTextExtentPoint32W(dc,string,lstrlenW(string),&size))size.cx=0;
-  SelectObject(dc,old);
-  *x_result=(width-size.cx)/2;
-  if(*x_result<8)*x_result=8;
-  *y_result=y;
-}
-
-static int overlay_apply_region(HWND window,int width,int height) {
-  HDC dc;
-  HRGN outline=NULL,inside=NULL;
-  int ok=0;
-  if(!overlay_title_font || !overlay_hint_font)return 0;
-  dc=GetDC(window);
-  if(!dc)return 0;
-  SetBkMode(dc,TRANSPARENT);
-  SetTextAlign(dc,TA_LEFT|TA_TOP|TA_NOUPDATECP);
-  overlay_text_pos(dc,overlay_title_font,L"PAUSE",width,17,
-                   &overlay_title_x,&overlay_title_y);
-  overlay_text_pos(dc,overlay_hint_font,overlay_hint(),width,78,
-                   &overlay_hint_x,&overlay_hint_y);
-
-  outline=CreateRoundRectRgn(0,0,width,height,16,16);
-  inside=CreateRoundRectRgn(4,4,width-4,height-4,12,12);
-  if(outline && inside &&
-     CombineRgn(outline,outline,inside,RGN_DIFF)!=ERROR &&
-     overlay_add_text_region(dc,outline,overlay_title_font,L"PAUSE",
-                             overlay_title_x,overlay_title_y) &&
-     overlay_add_text_region(dc,outline,overlay_hint_font,overlay_hint(),
-                             overlay_hint_x,overlay_hint_y)) {
-    /* SetWindowRgn takes ownership of the region on success. If it fails,
-     * never show a rectangular child which might obscure the game. */
-    if(SetWindowRgn(window,outline,FALSE)) {
-      outline=NULL;
-      ok=1;
-    }
-  }
-  if(inside)DeleteObject(inside);
-  if(outline)DeleteObject(outline);
-  ReleaseDC(window,dc);
-  return ok;
-}
-
-static void overlay_draw_text(HDC dc,HFONT font,const wchar_t *string,int x,int y) {
-  HGDIOBJ old=SelectObject(dc,font);
-  int dx,dy;
-  SetTextColor(dc,OVERLAY_DARK);
-  for(dy=-3;dy<=3;dy++)for(dx=-3;dx<=3;dx++) {
-    if((dx==0 && dy==0) || dx*dx+dy*dy>10)continue;
-    TextOutW(dc,x+dx,y+dy,string,lstrlenW(string));
-  }
-  SetTextColor(dc,OVERLAY_WHITE);
-  TextOutW(dc,x,y,string,lstrlenW(string));
-  SelectObject(dc,old);
-}
-
-static void overlay_paint(HWND hwnd) {
-  PAINTSTRUCT ps;
-  HDC dc=BeginPaint(hwnd,&ps);
-  RECT client;
-  HPEN pen;
-  HGDIOBJ old_pen,old_brush;
-  if(!dc)return;
-  GetClientRect(hwnd,&client);
-  SetBkMode(dc,TRANSPARENT);
-  SetTextAlign(dc,TA_LEFT|TA_TOP|TA_NOUPDATECP);
-  pen=CreatePen(PS_SOLID,4,OVERLAY_RED);
-  if(pen) {
-    old_pen=SelectObject(dc,pen);
-    old_brush=SelectObject(dc,GetStockObject(HOLLOW_BRUSH));
-    RoundRect(dc,0,0,client.right,client.bottom,16,16);
-    SelectObject(dc,old_brush);
-    SelectObject(dc,old_pen);
-    DeleteObject(pen);
-  }
-  if(overlay_title_font)
-    overlay_draw_text(dc,overlay_title_font,L"PAUSE",overlay_title_x,overlay_title_y);
-  if(overlay_hint_font)
-    overlay_draw_text(dc,overlay_hint_font,overlay_hint(),overlay_hint_x,overlay_hint_y);
-  EndPaint(hwnd,&ps);
-}
-
-static void overlay_release_fonts(void) {
-  if(overlay_title_font) {DeleteObject(overlay_title_font);overlay_title_font=NULL;}
-  if(overlay_hint_font) {DeleteObject(overlay_hint_font);overlay_hint_font=NULL;}
-}
-
-static LRESULT CALLBACK overlay_proc(HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam) {
-  switch(message) {
-    case WM_ERASEBKGND:
-      return 1; /* The region has no background to erase. */
-    case WM_PAINT:
-      overlay_paint(hwnd);
-      return 0;
-    case WM_MOUSEACTIVATE:
-      return MA_NOACTIVATE;
-    case WM_NCHITTEST:
-      return HTTRANSPARENT; /* Clicks pass to the actual game window. */
+static LRESULT CALLBACK overlay_proc(HWND window,UINT msg,WPARAM wp,LPARAM lp) {
+  switch(msg) {
+    case WM_MOUSEACTIVATE:return MA_NOACTIVATE;
+    case WM_NCHITTEST:return HTTRANSPARENT;
+    case WM_ERASEBKGND:return 1;
     case WM_NCDESTROY:
-      if(overlay_hwnd==hwnd)overlay_hwnd=NULL;
-      overlay_release_fonts();
+      if(overlay_hwnd==window) {overlay_hwnd=NULL;overlay_game=NULL;}
       break;
   }
-  return DefWindowProcW(hwnd,message,wparam,lparam);
+  return DefWindowProcW(window,msg,wp,lp);
+}
+
+static void text_at(HDC dc,HFONT font,const wchar_t *value,int width,int y) {
+  SIZE size={0,0};
+  HGDIOBJ previous=SelectObject(dc,font);
+  int x,dy,dx;
+  if(!GetTextExtentPoint32W(dc,value,lstrlenW(value),&size)) {
+    SelectObject(dc,previous);return;
+  }
+  x=(width-size.cx)/2;
+  if(x<12)x=12;
+  /* A single dark outline—not wide multi-pass raster masks. GDI's text
+   * and its shadow belong to the same ULW bitmap as the opaque white face. */
+  SetTextColor(dc,RGB(8,7,16));
+  for(dy=-1;dy<=1;dy++)for(dx=-1;dx<=1;dx++)
+    if(dx || dy)TextOutW(dc,x+dx,y+dy,value,lstrlenW(value));
+  SetTextColor(dc,RGB(255,255,255));
+  TextOutW(dc,x,y,value,lstrlenW(value));
+  SelectObject(dc,previous);
+}
+
+/* The 32bpp GDI DIB has B,G,R and an alpha byte. Since traditional GDI
+ * doesn't set alpha, choose alpha explicitly after drawing. Only the dark
+ * interior is translucent; the red border and glyph strokes are 100%
+ * opaque. Premultiply every semi-transparent BGRA channel for ULW_ALPHA. */
+static int render_banner(HWND window,POINT origin,int width,int height) {
+  HDC screen=NULL,dc=NULL;
+  HBITMAP bitmap=NULL,old_bitmap=NULL;
+  HFONT title=NULL,hint=NULL;
+  HBRUSH panel_brush=NULL;
+  HPEN border=NULL;
+  HGDIOBJ old_pen=NULL,old_brush=NULL;
+  BITMAPINFO info;
+  DWORD *pixels=NULL;
+  POINT src={0,0};
+  SIZE size;
+  BLENDFUNCTION blend={AC_SRC_OVER,0,255,AC_SRC_ALPHA};
+  int x,y,ok=0;
+  const DWORD base=((DWORD)PANEL_R<<16)|((DWORD)PANEL_G<<8)|PANEL_B;
+
+  memset(&info,0,sizeof(info));
+  info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+  info.bmiHeader.biWidth=width;
+  info.bmiHeader.biHeight=-height; /* top-down, easy alpha scan */
+  info.bmiHeader.biPlanes=1;
+  info.bmiHeader.biBitCount=32;
+  info.bmiHeader.biCompression=BI_RGB;
+
+  screen=GetDC(NULL);
+  if(!screen)goto done;
+  dc=CreateCompatibleDC(screen);
+  if(!dc)goto done;
+  bitmap=CreateDIBSection(screen,&info,DIB_RGB_COLORS,(void **)&pixels,NULL,0);
+  if(!bitmap || !pixels)goto done;
+  old_bitmap=(HBITMAP)SelectObject(dc,bitmap);
+
+  /* Paint every pixel first, then specify exact alpha per pixel below. */
+  panel_brush=CreateSolidBrush(RGB(PANEL_R,PANEL_G,PANEL_B));
+  if(!panel_brush)goto done;
+  {
+    RECT full={0,0,width,height};
+    FillRect(dc,&full,panel_brush);
+  }
+
+  border=CreatePen(PS_SOLID,2,RGB(174,47,64));
+  if(!border)goto done;
+  old_pen=SelectObject(dc,border);
+  old_brush=SelectObject(dc,panel_brush);
+  RoundRect(dc,1,1,width-1,height-1,20,20);
+  SelectObject(dc,old_brush);
+  SelectObject(dc,old_pen);
+  old_brush=NULL;old_pen=NULL;
+
+  title=CreateFontW(-30,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,
+                    DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
+                    NONANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial Black");
+  hint=CreateFontW(-19,0,0,0,FW_HEAVY,FALSE,FALSE,FALSE,
+                   DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
+                   NONANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial Black");
+  if(!title||!hint)goto done;
+  SetBkMode(dc,TRANSPARENT);
+  SetTextAlign(dc,TA_LEFT|TA_TOP|TA_NOUPDATECP);
+  text_at(dc,title,L"PAUSE",width,13);
+  text_at(dc,hint,L"PRESS ANY KEY TO RESUME",width,66);
+
+  for(y=0;y<height;y++)for(x=0;x<width;x++) {
+    DWORD p=pixels[y*width+x]&0x00FFFFFF;
+    unsigned int a;
+    const int left=x<PANEL_CORNER,top=y<PANEL_CORNER;
+    const int right=x>=width-PANEL_CORNER,bottom=y>=height-PANEL_CORNER;
+    int qx=0,qy=0;
+    if(left)qx=PANEL_CORNER-x;
+    else if(right)qx=x-(width-PANEL_CORNER-1);
+    if(top)qy=PANEL_CORNER-y;
+    else if(bottom)qy=y-(height-PANEL_CORNER-1);
+    if(qx>0 && qy>0 && qx*qx+qy*qy>PANEL_CORNER*PANEL_CORNER) {
+      pixels[y*width+x]=0;
+      continue;
+    }
+    a=(p==base)?PANEL_ALPHA:255;
+    if(a!=255) {
+      unsigned int b=(p&255)*a/255;
+      unsigned int g=((p>>8)&255)*a/255;
+      unsigned int r=((p>>16)&255)*a/255;
+      p=(r<<16)|(g<<8)|b;
+    }
+    pixels[y*width+x]=(a<<24)|p;
+  }
+  size.cx=width;size.cy=height;
+  /* This paints panel and lettering atomically. No color-key, child HWND
+   * texture leak, or separate per-glyph negative region can appear. */
+  ok=UpdateLayeredWindow(window,screen,&origin,&size,dc,&src,0,&blend,ULW_ALPHA)!=0;
+
+done:
+  if(title)DeleteObject(title);
+  if(hint)DeleteObject(hint);
+  if(border)DeleteObject(border);
+  if(panel_brush)DeleteObject(panel_brush);
+  if(old_bitmap)SelectObject(dc,old_bitmap);
+  if(bitmap)DeleteObject(bitmap);
+  if(dc)DeleteDC(dc);
+  if(screen)ReleaseDC(NULL,screen);
+  return ok;
 }
 
 void SpiderPauseOverlay_Init(void (*log_fn)(const char *)) {
   char path[MAX_PATH],*slash;
   DWORD n;
   overlay_log=log_fn;
+  overlay_enabled=1;
   n=GetModuleFileNameA(NULL,path,sizeof(path));
-  if(!n || n>=sizeof(path) || !(slash=strrchr(path,'\\')) ||
-     (size_t)(slash-path)+sizeof("SpiderMan2k1Fix.ini")>sizeof(path))return;
-  strcpy(slash+1,"SpiderMan2k1Fix.ini");
-  overlay_enabled=GetPrivateProfileIntA("Input","PauseOverlay",1,path)==1;
+  if(n && n<sizeof(path) && (slash=strrchr(path,'\\')) &&
+     (size_t)(slash-path)+sizeof("SpiderMan2k1Fix.ini")<=sizeof(path)) {
+    strcpy(slash+1,"SpiderMan2k1Fix.ini");
+    overlay_enabled=GetPrivateProfileIntA("Input","PauseOverlay",1,path)==1;
+  }
   if(overlay_log)overlay_log(overlay_enabled ?
-    "FOCUS-OVERLAY: English bold any-key banner, drawn only when game is foreground" :
-    "FOCUS-OVERLAY: pause label disabled by INI");
+      "FOCUS-OVERLAY: atomic comic banner enabled (ULW_ALPHA; foreground only)" :
+      "FOCUS-OVERLAY: pause banner disabled via INI");
 }
 
 void SpiderPauseOverlay_Show(HWND game_window) {
   WNDCLASSW cls;
-  RECT bounds;
   HINSTANCE instance;
-  int width,height,banner_width,banner_height,x,y;
+  RECT game_rect;
+  POINT screen_origin={0,0},banner;
+  int width,height;
   HWND window;
-
-  if(!overlay_enabled || !game_window || !IsWindow(game_window) ||
-     GetForegroundWindow()!=game_window)return;
+  DWORD err;
+  char detail[160];
+  if(!overlay_enabled || !SpiderPauseOverlay_GameForeground(game_window))return;
   if(overlay_hwnd && IsWindow(overlay_hwnd))return;
   overlay_hwnd=NULL;
   instance=GetModuleHandleW(NULL);
-
   if(!overlay_registered) {
     memset(&cls,0,sizeof(cls));
     cls.lpfnWndProc=overlay_proc;
     cls.hInstance=instance;
     cls.lpszClassName=OVERLAY_CLASS;
-    cls.hCursor=LoadCursorA(NULL,IDC_ARROW);
     if(!RegisterClassW(&cls) && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS) {
-      if(overlay_log)overlay_log("FOCUS-OVERLAY: class registration failed; continuing without label");
+      if(overlay_log)overlay_log("FOCUS-OVERLAY: window class registration failed");
       return;
     }
     overlay_registered=1;
   }
-  if(!GetClientRect(game_window,&bounds))return;
-  width=bounds.right-bounds.left;
-  height=bounds.bottom-bounds.top;
-  if(width<250 || height<120)return;
-  banner_width=OVERLAY_WIDTH;
-  if(banner_width>width-24)banner_width=width-24;
-  banner_height=OVERLAY_HEIGHT;
-  if(banner_height>height-16)banner_height=height-16;
-  x=(width-banner_width)/2;
-  y=(height-banner_height)/2;
+  if(!GetClientRect(game_window,&game_rect) ||
+     !ClientToScreen(game_window,&screen_origin))return;
+  width=game_rect.right-game_rect.left;
+  height=game_rect.bottom-game_rect.top;
+  if(width<OVERLAY_WIDTH+24 || height<OVERLAY_HEIGHT+24)return;
+  banner.x=screen_origin.x+(width-OVERLAY_WIDTH)/2;
+  banner.y=screen_origin.y+(height-OVERLAY_HEIGHT)/2;
 
-  /* The game uses comic-style italic block letters. Arial Black is a
-   * system TrueType font, so it also supports the precise glyph-region
-   * cutout; do not ship or load third-party font files. */
-  overlay_title_font=CreateFontW(-31,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,DEFAULT_CHARSET,
-                                 OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,NONANTIALIASED_QUALITY,
-                                 DEFAULT_PITCH|FF_SWISS,L"Arial Black");
-  overlay_hint_font=CreateFontW(-25,0,0,0,FW_HEAVY,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
-                                OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,NONANTIALIASED_QUALITY,
-                                DEFAULT_PITCH|FF_SWISS,L"Arial Black");
-  if(!overlay_title_font || !overlay_hint_font) {
-    overlay_release_fonts();
-    if(overlay_log)overlay_log("FOCUS-OVERLAY: comic fonts unavailable; skipping indicator");
-    return;
-  }
-
-  window=CreateWindowExW(WS_EX_NOACTIVATE|WS_EX_NOPARENTNOTIFY,
-       OVERLAY_CLASS,L"",WS_CHILD|WS_CLIPSIBLINGS,
-       x,y,banner_width,banner_height,
-       game_window,NULL,instance,NULL);
+  /* Hidden, non-topmost and game-owned, never activated. */
+  window=CreateWindowExW(WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|
+     WS_EX_TOOLWINDOW|WS_EX_NOPARENTNOTIFY,OVERLAY_CLASS,L"",
+     WS_POPUP,banner.x,banner.y,OVERLAY_WIDTH,OVERLAY_HEIGHT,
+     game_window,NULL,instance,NULL);
   if(!window) {
-    overlay_release_fonts();
-    if(overlay_log)overlay_log("FOCUS-OVERLAY: creation failed; continuing focus pause");
+    err=GetLastError();
+    snprintf(detail,sizeof(detail),
+             "FOCUS-OVERLAY: owned popup creation failed Win32=%lu",(unsigned long)err);
+    if(overlay_log)overlay_log(detail);
     return;
   }
-  if(!overlay_apply_region(window,banner_width,banner_height)) {
-    if(overlay_log)overlay_log("FOCUS-OVERLAY: window region unavailable; skipping opaque overlay");
+  if(!render_banner(window,banner,OVERLAY_WIDTH,OVERLAY_HEIGHT)) {
+    err=GetLastError();
+    snprintf(detail,sizeof(detail),
+             "FOCUS-OVERLAY: ULW_ALPHA failed Win32=%lu, skipping panel",(unsigned long)err);
+    if(overlay_log)overlay_log(detail);
+    DestroyWindow(window);
+    return;
+  }
+  /* Recheck after GDI upload: foreground may have changed while painting. */
+  if(!SpiderPauseOverlay_GameForeground(game_window)) {
     DestroyWindow(window);
     return;
   }
   overlay_hwnd=window;
+  overlay_game=game_window;
   ShowWindow(window,SW_SHOWNOACTIVATE);
-  InvalidateRect(window,NULL,FALSE);
-  UpdateWindow(window);
-  if(overlay_log)overlay_log("FOCUS-OVERLAY: foreground-only English PAUSE; solid bold wake text with expanded glyph exclusion");
+  if(overlay_log)overlay_log("FOCUS-OVERLAY: one-piece English PAUSE banner visible; letters opaque; no shaped child");
 }
 
 void SpiderPauseOverlay_Hide(void) {
   HWND window=overlay_hwnd;
-  if(!window)return;
   overlay_hwnd=NULL;
-  if(IsWindow(window))DestroyWindow(window);
-  if(overlay_log)overlay_log("FOCUS-OVERLAY: hidden before focus-pause release");
+  overlay_game=NULL;
+  if(window && IsWindow(window))DestroyWindow(window);
+  if(window && overlay_log)overlay_log("FOCUS-OVERLAY: one-piece popup destroyed");
 }
 
+int SpiderPauseOverlay_GetBounds(HWND game_window,RECT *bounds) {
+  RECT desktop;
+  POINT pt[2];
+  if(!game_window||!bounds||!overlay_hwnd||!IsWindow(overlay_hwnd) ||
+     overlay_game!=game_window || !GetWindowRect(overlay_hwnd,&desktop))return 0;
+  pt[0].x=desktop.left;pt[0].y=desktop.top;
+  pt[1].x=desktop.right;pt[1].y=desktop.bottom;
+  MapWindowPoints(HWND_DESKTOP,game_window,pt,2);
+  bounds->left=pt[0].x;bounds->top=pt[0].y;
+  bounds->right=pt[1].x;bounds->bottom=pt[1].y;
+  return 1;
+}
 
 int SpiderPauseOverlay_ExcludeFromRegion(HWND game_window,HRGN visible_region) {
-  HRGN banner_region;
-  POINT origin={0,0};
-  int ok=0;
-  if(!visible_region || !game_window || !IsWindow(game_window))return 0;
-  /* PauseOverlay=0 is legitimate: in that case, dim the whole frame. */
-  if(!overlay_hwnd || !IsWindow(overlay_hwnd))return 1;
-  if(GetParent(overlay_hwnd)!=game_window)return 0;
-  banner_region=CreateRectRgn(0,0,0,0);
-  if(!banner_region)return 0;
-  if(GetWindowRgn(overlay_hwnd,banner_region)!=ERROR) {
-    /* The shaped child is centered in parent CLIENT coordinates. */
-    MapWindowPoints(overlay_hwnd,game_window,&origin,1);
-    if(OffsetRgn(banner_region,origin.x,origin.y)!=ERROR &&
-       CombineRgn(visible_region,visible_region,banner_region,RGN_DIFF)!=ERROR)
-      ok=1;
-  }
-  DeleteObject(banner_region);
+  RECT bounds;
+  HRGN banner;
+  int ok;
+  if(!visible_region)return 0;
+  if(!SpiderPauseOverlay_GetBounds(game_window,&bounds))return 1;
+  /* Exclude the WHOLE panel from the gridded global shade, not per-glyph
+   * masks; all white pixels now live inside one fully composited bitmap. */
+  banner=CreateRoundRectRgn(bounds.left,bounds.top,bounds.right,bounds.bottom,20,20);
+  if(!banner)return 0;
+  ok=CombineRgn(visible_region,visible_region,banner,RGN_DIFF)!=ERROR;
+  DeleteObject(banner);
   return ok;
-}
-
-/* Returns the centered banner dimensions in game CLIENT pixels. The dimmer
- * can create a separately-alpha-blended dark panel underneath it while
- * cutting out the red frame and white letters exactly. */
-int SpiderPauseOverlay_GetBounds(HWND game_window,RECT *bounds) {
-  RECT game;
-  if(!bounds || !game_window || !IsWindow(game_window))return 0;
-  if(!overlay_hwnd || !IsWindow(overlay_hwnd) ||
-     GetParent(overlay_hwnd)!=game_window)return 0;
-  if(!GetWindowRect(overlay_hwnd,bounds) ||
-     !GetClientRect(game_window,&game))return 0;
-  {
-    POINT pts[2]={{bounds->left,bounds->top},{bounds->right,bounds->bottom}};
-    MapWindowPoints(HWND_DESKTOP,game_window,pts,2);
-    bounds->left=pts[0].x;bounds->top=pts[0].y;
-    bounds->right=pts[1].x;bounds->bottom=pts[1].y;
-  }
-  return bounds->left>=game.left && bounds->top>=game.top &&
-         bounds->right<=game.right && bounds->bottom<=game.bottom;
 }
