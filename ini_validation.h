@@ -124,6 +124,8 @@ static int spider_ini_value_valid(const char *section,const char *key,const char
   if(!spider_ini_icmp(section,"Joystick"))return spider_ini_joystick(value);
   if(!spider_ini_icmp(section,"Audio"))return spider_ini_uint(value,0,
            !spider_ini_icmp(key,"Stereo")?1:100);
+  if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"PauseKey"))
+    return !spider_ini_icmp(value,"F9") || !spider_ini_icmp(value,"Space");
   if(!spider_ini_icmp(section,"Debug")||!spider_ini_icmp(section,"Input")||
      !spider_ini_icmp(section,"HUD"))return spider_ini_uint(value,0,1);
   if(!spider_ini_icmp(section,"Display")) {
