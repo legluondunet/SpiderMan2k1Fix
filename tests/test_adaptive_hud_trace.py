@@ -1,9 +1,8 @@
 """Safeguards for opt-in, read-only D3D7 HUD measurement.
 
-This is the first stage of the adaptive-HUD work. Existing 16-site
-HUDWidescreenFix=1 remains experimental and defaults to off; the F12 sampler
-locates the uncaught compass and instruction-panel quads before modifying
-their positions.
+The original F12 sampler helped identify compass/instruction quads. Its
+next read-only investigation detects uncorrected BOSS portraits/health bars
+in the upper-right quadrant. Default rendering remains unchanged.
 """
 from pathlib import Path
 
@@ -25,13 +24,13 @@ def test_sampler_captures_only_bounded_gameplay_quads_on_f12():
     assert "InterlockedExchange(&hud_probe_frames,6)" in SRC
     assert "InterlockedDecrement(&hud_probe_frames)" in SRC
     assert "InterlockedExchange(&hud_probe_seen,0)" in SRC
-    assert "n>128" in SRC
-    assert "slot>16" in SRC
+    assert "n>192" in SRC
+    assert "slot>(region==4?32:16)" in SRC
     assert "InterlockedCompareExchange(&menu_upscale_active,0,0)!=0" in SRC
     assert "InterlockedCompareExchange(&fov_game_height,0,0)<=0" in SRC
     assert "type!=D3DPT_TRIANGLEFAN || count!=4" in SRC
     assert 'fvf!=0x144UL' in SRC
-    assert 'region==1?"compass":region==2?"instructions":"player"' in SRC
+    assert 'region==4?"boss":region==1?"compass":region==2?"instructions":"player"' in SRC
 
 
 def test_probe_observes_real_texture_and_preserves_original_geometry():
@@ -48,6 +47,25 @@ def test_probe_observes_real_texture_and_preserves_original_geometry():
     assert "v[i].x=" not in probe
     assert "v[i].y=" not in probe
 
+
+
+
+def test_boss_probe_is_readonly_and_top_right_only():
+    assert "hud_probe_boss=0" in SRC
+    assert "InterlockedExchange(&hud_probe_boss,0);" in SRC
+    assert "region==4?&hud_probe_boss" in SRC
+    assert "cy<(float)desktop_h*0.35f && cx>(float)desktop_w*0.50f" in SRC
+    assert "v[0].z>=-0.01f && v[0].z<0.10f && v[0].rhw>0.5f" in SRC
+    assert 'region==4?"boss"' in SRC
+    assert "HUD-PROBE: region=%s" in SRC
+    # Preserve scope safety: this feature only collects positions/metadata
+    # while F12 trace is running and does not pass corrected vertices onward.
+    probe = SRC.split("static void hud_probe_draw(", 1)[1].split(
+        "static int geom_rva(", 1
+    )[0]
+    assert "memcpy(" not in probe
+    assert "VirtualProtect" not in probe
+    assert "hud_probe_frames" in probe
 
 def test_existing_hud_is_sha_gated_and_original_43_is_identity():
     assert "if (!image_verified" in HUD
