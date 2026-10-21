@@ -834,18 +834,31 @@ static void free_menu_vertices(SpiderMenuVertex *allocated) {
  * No new hooks, game input interception or rendering changes. When
  * SPIDERMAN2K1FIX_ESC_DRAW_TRACE=1 and [Debug] Log=1, press F12 once
  * during normal gameplay and once with the original ESC menu visible.
- * Only six frames per key press are sampled; the last 40 calls each frame
- * are reported. F12 is observed via GetAsyncKeyState, NOT consumed.
+ * Six frames per key press: retain the last 40 calls and rank large
+ * screen-space primitives drawn EARLIER, including thin horizontal/vertical
+ * borders, to find the violet ESC frame and translucent orange artwork. F12 is observed via GetAsyncKeyState, NOT consumed.
  * Measurements are made on ORIGINAL game-owned vertices before mapping.
  * ----------------------------------------------------------------------- */
 #define ESC_PROBE_RING 40
+#define ESC_PROBE_TOP_QUADS 48
+#define ESC_PROBE_TOP_TRIS 32
 typedef struct EscProbeDraw {
   DWORD rva,fvf,vertex_count,index_count,tex_width,tex_height,primitive;
-  LONG alpha;
-  float x0,y0,x1,y1;
+  DWORD diffuse;
+  uintptr_t texture_id;
+  LONG alpha,sequence;
+  float x0,y0,x1,y1,z,rhw;
   unsigned char has_bbox,is_indexed;
 } EscProbeDraw;
+typedef struct EscProbeCandidate {
+  EscProbeDraw draw;
+  double score;
+} EscProbeCandidate;
 static EscProbeDraw esc_probe_calls[ESC_PROBE_RING];
+static EscProbeCandidate esc_probe_top_quads[ESC_PROBE_TOP_QUADS];
+static EscProbeCandidate esc_probe_top_tris[ESC_PROBE_TOP_TRIS];
+static LONG esc_probe_quad_count=0,esc_probe_tri_count=0;
+static LONG esc_probe_quad_seen=0,esc_probe_tri_seen=0;
 static LONG esc_probe_frames=0,esc_probe_total=0,esc_probe_capture=0;
 static int esc_probe_last_f12=0;
 static int esc_probe_optin(void) {
@@ -859,6 +872,71 @@ static int esc_probe_optin(void) {
   }
   return enabled;
 }
+/* Keep the largest *early* primitives, not just the last 40 HUD glyphs.
+ * Separate 4-vertex quads from triangle primitives so 3D geometry cannot
+ * crowd out the large 2D pause panel. Wide/long border strips receive an
+ * explicit bonus despite their tiny area. Never mutate source vertices. */
+static void esc_probe_rank_large(const EscProbeDraw *draw) {
+  float w,h,screen_w,screen_h;
+  EscProbeCandidate *top;
+  LONG *count,*seen,max,i,weak=0;
+  double score;
+  if(!draw->has_bbox || draw->alpha!=1 ||
+     draw->vertex_count>16 || draw->vertex_count<3) return;
+  w=draw->x1-draw->x0;
+  h=draw->y1-draw->y0;
+  screen_w=(float)(desktop_w?desktop_w:1920);
+  screen_h=(float)(desktop_h?desktop_h:1080);
+  if(!(w>0.0f && h>0.0f) ||
+     !(w>=screen_w*0.32f || h>=screen_h*0.27f ||
+       w*h>=screen_w*screen_h*0.028f))return;
+  if(draw->vertex_count==4) {
+    top=esc_probe_top_quads;
+    count=&esc_probe_quad_count;seen=&esc_probe_quad_seen;
+    max=ESC_PROBE_TOP_QUADS;
+  } else {
+    top=esc_probe_top_tris;
+    count=&esc_probe_tri_count;seen=&esc_probe_tri_seen;
+    max=ESC_PROBE_TOP_TRIS;
+  }
+  (*seen)++;
+  score=(double)w*(double)h;
+  if(w>=screen_w*0.60f)score+=(double)screen_w*screen_h*0.24;
+  if(h>=screen_h*0.46f)score+=(double)screen_w*screen_h*0.18;
+  if(*count<max) {
+    top[*count].draw=*draw;
+    top[*count].score=score;
+    (*count)++;
+    return;
+  }
+  for(i=1;i<max;i++)
+    if(top[i].score<top[weak].score)weak=i;
+  if(score>top[weak].score) {
+    top[weak].draw=*draw;
+    top[weak].score=score;
+  }
+}
+static void esc_probe_dump_candidates(const char *group,
+                                      const EscProbeCandidate *top,LONG count) {
+  LONG i;
+  for(i=0;i<count;i++) {
+    const EscProbeDraw *d=&top[i].draw;
+    char line[460];
+    snprintf(line,sizeof(line),
+      "ESC-PROBE-LARGE: %s seq=%ld v=%lu prim=%lu alpha=%ld "
+      "tex=%lux%lu texid=%08lX diffuse=%08lX z=%.4f rhw=%.4f "
+      "bbox=[%.1f,%.1f..%.1f,%.1f] score=%.0f",
+      group,(long)d->sequence,(unsigned long)d->vertex_count,
+      (unsigned long)d->primitive,(long)d->alpha,
+      (unsigned long)d->tex_width,(unsigned long)d->tex_height,
+      (unsigned long)d->texture_id,(unsigned long)d->diffuse,
+      (double)d->z,(double)d->rhw,
+      (double)d->x0,(double)d->y0,(double)d->x1,(double)d->y1,
+      top[i].score);
+    log_line(line);
+  }
+}
+
 static void esc_probe_record(void *device,int indexed,D3DPRIMITIVETYPE primitive,
                              DWORD fvf,const void *verts,DWORD count,DWORD index_count,
                              void *return_address) {
@@ -869,6 +947,7 @@ static void esc_probe_record(void *device,int indexed,D3DPRIMITIVETYPE primitive
   item=&esc_probe_calls[((unsigned long)seq)%ESC_PROBE_RING];
   memset(item,0,sizeof(*item));
   item->is_indexed=(unsigned char)(indexed!=0);
+  item->sequence=seq;
   item->primitive=(DWORD)primitive;
   item->fvf=fvf;item->vertex_count=count;item->index_count=index_count;
   item->alpha=InterlockedCompareExchange(&esc_probe_alpha,0,0);
@@ -878,6 +957,8 @@ static void esc_probe_record(void *device,int indexed,D3DPRIMITIVETYPE primitive
     DWORD i;
     item->x0=item->x1=v[0].x;
     item->y0=item->y1=v[0].y;
+    item->diffuse=v[0].diffuse;
+    item->z=v[0].z;item->rhw=v[0].rhw;
     item->has_bbox=1;
     for(i=1;i<count;i++) {
       if(v[i].x<item->x0)item->x0=v[i].x;
@@ -893,6 +974,7 @@ static void esc_probe_record(void *device,int indexed,D3DPRIMITIVETYPE primitive
     if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)) && tex) {
       DDSURFACEDESC2 desc;
       memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+      item->texture_id=(uintptr_t)tex;
       if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(tex,&desc))) {
         item->tex_width=desc.dwWidth;
         item->tex_height=desc.dwHeight;
@@ -900,6 +982,7 @@ static void esc_probe_record(void *device,int indexed,D3DPRIMITIVETYPE primitive
       IDirectDrawSurface7_Release(tex);
     }
   }
+  esc_probe_rank_large(item);
 }
 static void esc_probe_on_flip(LONG flip) {
   int held;
@@ -925,7 +1008,17 @@ static void esc_probe_on_flip(LONG flip) {
         (double)d->x1,(double)d->y1);
       log_line(line);
     }
+    snprintf(line,sizeof(line),
+      "ESC-PROBE-LARGE: frame-summary capture=%ld flip=%ld qualified-quads=%ld kept-quads=%ld qualified-tris=%ld kept-tris=%ld",
+      (long)esc_probe_capture,(long)flip,
+      (long)esc_probe_quad_seen,(long)esc_probe_quad_count,
+      (long)esc_probe_tri_seen,(long)esc_probe_tri_count);
+    log_line(line);
+    esc_probe_dump_candidates("quad",esc_probe_top_quads,esc_probe_quad_count);
+    esc_probe_dump_candidates("tri",esc_probe_top_tris,esc_probe_tri_count);
     esc_probe_total=0;
+    esc_probe_quad_count=0;esc_probe_tri_count=0;
+    esc_probe_quad_seen=0;esc_probe_tri_seen=0;
     esc_probe_frames--;
     if(!esc_probe_frames) {
       snprintf(line,sizeof(line),"ESC-PROBE: capture=%ld complete",
@@ -940,6 +1033,8 @@ static void esc_probe_on_flip(LONG flip) {
     char line[160];
     esc_probe_capture++;
     esc_probe_total=0;
+    esc_probe_quad_count=0;esc_probe_tri_count=0;
+    esc_probe_quad_seen=0;esc_probe_tri_seen=0;
     esc_probe_frames=6;
     snprintf(line,sizeof(line),
       "ESC-PROBE: capture=%ld ARMED at Flip #%ld (6 frames; press F12 again for a second capture)",
