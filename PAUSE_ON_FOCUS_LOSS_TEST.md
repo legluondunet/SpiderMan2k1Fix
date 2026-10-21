@@ -74,3 +74,37 @@ First confirm that the game reaches the intro and menu with this combination.
 Then reproduce Alt+Tab, return, resume with the configured pause key, and
 record the resulting log. If a startup crash persists, switch
 ExperimentalFocusTrace back to 0. Keep reacquisition disabled.
+
+
+## Windows 11: isolated DirectInput8 factory probe (experimental)
+
+The previously crashing DirectInput8 COM-vtable tracer remains **off**. For a
+single controlled experiment, set these options in the user INI:
+
+```ini
+[Debug]
+Log=1
+[Input]
+PauseOnFocusLoss=1
+PauseKey=F9
+ExperimentalFocusTrace=1
+ExperimentalAltTabReacquire=0
+ExperimentalDI8EntryTrace=1
+RestoreCursorOnFocusLoss=1
+```
+
+The new `ExperimentalDI8EntryTrace` option defaults to **0** and requires
+`ExperimentalFocusTrace=1`. It intercepts only the EXE's supported
+`DirectInput8Create` import, records the native return code and interface
+pointer, and returns the COM object unmodified. It does **not** inspect
+`CreateDevice`, `Acquire`, `GetDeviceState`, or `GetDeviceData`; it
+cannot repair lost controls by itself. A new startup crash would implicate
+the factory/IAT observation independently of the disabled COM instrumentation.
+
+Check for `INPUT-DI8: ENTRY-ONLY PROBE enabled`,
+`INPUT-DI8: DirectInput8Create IAT hooked`, and
+`INPUT-DI8: DirectInput8Create version=... hr=...`. Reach the main menu,
+Alt+Tab once, return, resume with F9, try keyboard/mouse, and save the log.
+If the game fails to start, set `ExperimentalDI8EntryTrace=0` immediately.
+Do not enable `ExperimentalAltTabReacquire`.
+
