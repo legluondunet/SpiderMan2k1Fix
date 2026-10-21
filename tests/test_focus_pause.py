@@ -113,3 +113,26 @@ def test_di8_entry_probe_is_opt_in_and_factory_only():
     assert "focus_instrument_device" not in factory
     assert "d->acquire(self)" not in factory
 
+
+
+def test_create_device_probe_requires_existing_factory_probe():
+    trace=(ROOT/"input_focus_trace.c").read_text()
+    assert "ExperimentalDI8CreateDeviceTrace=0" in INI
+    assert '"ExperimentalDI8CreateDeviceTrace=0\\r\\n"' in GEN
+    assert '"ExperimentalDI8CreateDeviceTrace"' in VALID
+    assert 'GetPrivateProfileIntA("Input","ExperimentalDI8CreateDeviceTrace",0,ini)==1' in trace
+    assert "if(!want_probe) want_interface_probe=0;" in trace
+    assert "CREATEDEVICE PROBE enabled" in trace
+    assert "InterlockedCompareExchange(&interface_probe_enabled,0,0)==1" in trace
+
+def test_create_device_probe_does_not_replace_device_methods():
+    trace=(ROOT/"input_focus_trace.c").read_text()
+    start=trace.index("static HRESULT WINAPI focus_create_device(")
+    end=trace.index("static HRESULT WINAPI focus_directinput8_create(",start)
+    wrapper=trace[start:end]
+    assert "original_interface_create(self,guid,out,outer)" in wrapper
+    assert "InterlockedCompareExchange(&reacquire_enabled,0,0)==1" in wrapper
+    assert "focus_instrument_device(*out,guid)" in wrapper
+    assert "SetCooperativeLevel" not in wrapper
+    assert "->acquire(" not in wrapper
+
