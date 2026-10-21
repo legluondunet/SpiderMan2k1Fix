@@ -58,23 +58,37 @@ proof that the actual failing HRESULT is `DIERR_NOTACQUIRED`. The menu
 may also stop calling its polling path or ignore correctly returned events.
 We must not report one hypothetical error code as observed.
 
-## Narrow, testable hypothesis and proposal
+## Existing opt-in game-native branch experiment (found in PR #7)
 
-The next potential experiment should be confined to the supported binary,
-to the keyboard/mouse, and to a **real** lost/returned focus event. It should
-preserve the native COM objects and native error values. A one-shot opt-in
-`Acquire` on the two known device objects (only if still valid, while the
-game window is foreground, and ideally after menu focus return) is safer to
-investigate than replacing factory/device COM vtables. This is not yet
-implemented or validated; it must be disabled by default, log HRESULTs, and
-include a clean rollback path before user testing.
+The current branch **already contains** `input_notacquired_retry.c`, called
+from `SpiderDI8Retry_OnFlip` in `spiderman2k1fix.c`. It is **off by
+default**, enabled only when the environment variable
+`SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY=1` is set before startup.
 
-Prefer a safer observation of actual HRESULTs before any recovery if possible.
+Its implementation checks the same exact x86 call/compare/branch signatures
+for keyboard and mouse, allocates native code stubs, and changes only the
+six-byte original `JNE` at `0x00501BCB` and `0x00501D0A`.
+The stubs route `DIERR_NOTACQUIRED` to the **game's own Acquire/retry**
+blocks when the game's activation flag at `0x006B78F0` is `1`.
+They preserve the existing `DIERR_INPUTLOST` branch. They do not
+replace COM vtables or call DirectInput APIs from the DLL.
+
+The `0x006B78F0` value is assigned at `0x005152F8`, which is the
+`WM_ACTIVATE` case (`0x0006`) of the native window procedure. That
+connection was independently confirmed in the uploaded EXE's switch table.
+
+The source comment says that actual `DIERR_NOTACQUIRED` values were
+previously observed under WinDbg, but **this static audit did not itself
+capture runtime HRESULTs**. This opt-in patch remains experimentally risky:
+it changes native executable control flow (later at Flip #120) and still
+requires CI and careful Windows testing before any claim of recovery.
+A good first check is to verify original code signature, generated relative
+branches, installation, and rollback in tests; do not blindly enable on a
+normal installation.
+
 No in-debugger interactive breaks while a borderless foreground window owns
-the screen: the earlier x32dbg session forced Windows logout.
-
-Other major stages of the game may use different input logic. Static binary
-analysis alone cannot establish whether a specific path executes in the menu
-after Alt+Tab.
+the screen: the earlier x32dbg session forced Windows logout. Other stages
+may use different input logic; neither the static analysis nor this dormant
+experiment proves that the main menu recovers its controls.
 
 Signature: legluondunet assisted by ChatGPT (OpenAI)
