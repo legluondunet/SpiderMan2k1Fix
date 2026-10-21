@@ -273,6 +273,30 @@ Bug reports and reproducible test results are welcome, especially for different 
 *Spider-Man and all associated trademarks belong to their respective owners. This project is unofficial and is not affiliated with or endorsed by the game's original developers or publishers.*
 
 
+### Additional exact-geometry diagnostic for ESC menu art (2026-10-21)
+
+The native ESC pause motif is a pattern of ordered four-vertex, untextured
+transparent quads, with a separately drawn purple quad and four textured
+8x8 border strips. Our first visual approximation in draft PR #20 used
+bounding boxes alone and is not faithful enough. This follow-up on
+**diagnostic PR #19 only** records exact original quad coordinates:
+
+- Enable the *same* `SPIDERMAN2K1FIX_ESC_DRAW_TRACE=1` environment variable
+  and `[Debug] Log=1`, and install the matching two DLLs from this branch.
+- In 3D gameplay press `ESC` to open the original game's actual PAUSED menu.
+  Press `F12` **once** and wait at least one second, then exit the game.
+- Return the generated log. Search for `ESC-PROBE-VERTICES` entries:
+  each includes the four original ordered vertex positions, per-vertex ARGB
+  colors and source/destination blend settings. The 8x8 edges additionally
+  show `ESC-PROBE-UV` coordinates.
+- The exact vertex dump is **only on the first frame of each F12 sample**,
+  to avoid logging identical coordinates six times. It reads only the
+  pre-transform game-provided vertices; does not alter drawing or copy
+  texture pixels. The original game assets remain solely in your install.
+
+This requires another native Wine test: a successful CI is insufficient
+to prove frame-time safety. It does **not** alter PR #20, PR #18, or `main`.
+
 ### Diagnostic-only: compare active 3D with original ESC PAUSED menu (experimental branch)
 
 This optional diagnostic is **not part of the PR #18 rendering design** and is disabled by default.
