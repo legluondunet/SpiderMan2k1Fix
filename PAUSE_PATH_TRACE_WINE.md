@@ -127,3 +127,53 @@ the game's simulation.
 - This is an **unmerged draft PR** pending Wine and native Windows checks.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+## Passive Win32 focus-message comparison (new opt-in diagnostic)
+
+Set this additional environment variable **only for the comparison test**:
+
+```text
+SPIDERMAN2K1FIX_WIN32_FOCUS_MESSAGE_TRACE=1
+```
+
+It activates only if `[Debug] Log=1` and
+`SPIDERMAN2K1FIX_PAUSE_PATH_TRACE=1` are also enabled.
+Do not change `ExperimentalFocusEventPause=0` or
+`ExperimentalAltTabReacquire=0` in the INI, and preserve
+`SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY=1`.
+
+These diagnostics install two **thread-local, pass-through Win32 hooks**
+(`WH_CALLWNDPROC` and `WH_CALLWNDPROCRET`) on the game's GUI thread.
+They log the focus messages `WM_ACTIVATEAPP`, `WM_KILLFOCUS`,
+`WM_SETFOCUS`, `WM_ACTIVATE`, `WM_NCACTIVATE` before and after the
+existing game window procedure. They do **not** replace/subclass that
+WndProc, consume messages, or change focus, pause, rendering, input or audio.
+
+Every five seconds, a separate observer records a
+`WIN32-FOCUS: HEARTBEAT` line **even when Win32 still reports the game
+as foreground**, including local wall-clock time, monotonic tick,
+`GetForegroundWindow`, and the game GUI thread's
+`GetGUIThreadInfo` active/focus windows and its success flag.
+`WIN32-FOCUS: EVENT` entries also carry wall-clock time and Win32 tick.
+
+On an X11 desktop, start `tools/spiderman-x11-focus-trace.sh` **before**
+launching the game with your normal Wine command. The variable settings
+must be prepended to that same command (or configured equivalently in its
+environment); do not replace the user's custom Wine runner command.
+Perform separate >10-second Alt+Tab intervals in two different cinematics,
+return to the game, then stop the X11 logger with Ctrl+C. Save both
+`SpiderMan2k1Fix.log` and the corresponding timestamped X11 trace.
+
+**What to look for:** if X11 changes `_NET_ACTIVE_WINDOW` from a
+`WM_CLASS=spideypc.exe` window to another app while Win32 heartbeat
+still reports `is-game=1`, check whether `WIN32-FOCUS: EVENT`
+logged any focus loss. The presence or absence of the Win32 event is
+important evidence; a missing event in the log does not by itself prove
+that Wine never generated it, because these hooks observe only messages
+dispatched to the game's GUI thread.
+
+**Safety:** These hooks are a new experimental diagnostic and have only
+been built and source-tested, not tested live under Wine/Windows.
+Back up both DLLs before testing. If the game freezes or crashes,
+remove `SPIDERMAN2K1FIX_WIN32_FOCUS_MESSAGE_TRACE=1` first.
+The prior background Flip pause and DI8-RETRY remain unchanged.
