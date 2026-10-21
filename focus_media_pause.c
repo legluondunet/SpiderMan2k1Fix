@@ -1,13 +1,14 @@
-/* Spider-Man PC 2001 exact-EXE Bink focus pause experiment.
+/* Spider-Man PC 2001 opt-in native Bink focus pause.
  *
- * Static x86 disassembly: native BinkPause(handle, pause) at 0x0050BDE5,
- * import thunk 0x0053B210, live movie handles at 0x00AC0BA4 and
- * 0x00AC1020. The game's own 0x0050BDD0 native routine calls that import.
+ * Static analysis of the supported original EXE: BinkPause(handle, pause)
+ * callsite 0x0050BDE5, IAT slot 0x0053B210, cinematic handle 0x00AC0BA4,
+ * and audio-only Bink music handle 0x00AC1020. The original game's native
+ * pause routine at 0x0050BDD0 calls the same API.
  *
- * No Bink loader patching, COM vtable replacement or synthetic input.
- * Called solely at the existing focus pause Flip boundary; OFF by default.
- * NOTE: The game's movie handle lifetime may be managed on another thread.
- * This first experiment must NOT be merged until tested under ProcDump.
+ * Keep Bink playback synchronized at the focus-pause Flip boundary.
+ * No Bink loader patch, COM vtable replacement, or synthetic input.
+ * Disabled by default; calls are guarded by the known original executable.
+ * Movie handles may be managed on other threads, so retain handle checks.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -33,10 +34,9 @@ static const BYTE bink_signature[6]={0xFF,0x15,0x10,0xB2,0x53,0x00};
 static void diag(const char *message) {
   if(logger) logger(message);
 }
-/* Read only. These are the game's IDirectSound and (likely) primary
- * buffer slots, verified as written during native initialization around
- * 0x004FDF30. Their existence does NOT identify streaming/secondary buffers;
- * the DirectSound audio path remains unchanged in this experiment. */
+/* Read-only game DirectSound device and primary-buffer candidates. This
+ * diagnostic is distinct from the optional 32 secondary voice controllers
+ * in focus_dsound_pause.c. Never mutate sound interfaces here. */
 static void diag_dsound(const char *phase) {
   char line[170];
   void *device=*(void * const *)(uintptr_t)0x006B7920u;
