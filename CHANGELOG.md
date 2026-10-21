@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — background-visible PAUSE message (PR #17)
+
+- Keep the PAUSE instruction **visible inside Spider-Man even after Alt+Tab**, without drawing anything above Thunar/Firefox or another desktop window. While focus is lost, use a real **nonlayered, game-parented `WS_CHILD`** with the same small muted-plum rounded comic frame and fully white `PAUSE / PRESS ANY KEY TO RESUME` lettering.
+- On returning to the game, replace the background GDI child with the **approved per-pixel-alpha foreground banner** and show the configured 55% dark/16px grid shade again. On further Alt+Tab the shade and floating banner disappear and the game-bound child returns. The background banner uses an **opaque** panel because layered child alpha is not reliable with the original unmanifested 2001 EXE.
+- Parent clipping and child Z-order avoid independently floating windows that could cover unrelated desktop applications. No new INI settings or changes to Any-key press/release, Bink, DirectSound, DirectInput or the game's EXE.
+- Wine/Linux and Windows 11 testing remains required for foreground/background transition, appearance and audio synchronization. This PR supersedes earlier unmerged visual drafts #14–#16.
+
 ## Unreleased — one-piece atomic comic PAUSE banner (PR #16)
 
 - After native Wine/Xfce screenshot feedback, replace the fragile shaped PAUSE child and additional center-alpha popup with **one per-pixel-alpha, game-owned nonactivating comic banner**. Compose the muted translucent purple/black panel, thin muted red 2px outline and **fully opaque white lettering** in one 32bpp premultiplied BGRA bitmap via `UpdateLayeredWindow(ULW_ALPHA)`. A failed ULW operation is safe and leaves no opaque fallback.
