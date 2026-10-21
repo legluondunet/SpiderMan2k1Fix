@@ -75,6 +75,15 @@ def test_windows_ghosting_option_strict_boolean(runner, tmp_path, value, valid):
     assert (result==(0,0,1)) if valid else (result[0]>=1 and result[2]==0)
 
 
+@pytest.mark.parametrize("value,valid",[("0",True),("1",True),("2",False),("-1",False),("true",False)])
+def test_pause_dim_ini_option_is_boolean(runner, tmp_path, value, valid):
+    result, _ = validate(runner,tmp_path,f"[Input]\nPauseDim={value}\n")
+    if valid:
+        assert result == (0,0,1)
+    else:
+        assert result[0] >= 1 and result[2] == 0
+
+
 def test_unknown_section_and_key_preserved(runner, tmp_path):
     result,detail=validate(runner,tmp_path,"[Debug]\nLog=0\nUnknownKey=20\n[Plugin]\nFoo=Bar\n")
     assert result == (0,2,1)
