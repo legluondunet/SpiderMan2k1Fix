@@ -57,7 +57,15 @@ static const char *const spider_ini_display[]={
   "ExperimentalDisplayMenuLock"
 };
 static const char *const spider_ini_hud[]={"HUDWidescreenFix"};
-static const char *const spider_ini_input[]={"ExperimentalAltTabReacquire","ExperimentalFocusTrace","ExperimentalDI8EntryTrace","ExperimentalDI8CreateDeviceTrace","PauseOnFocusLoss","PauseKey","RestoreCursorOnFocusLoss"};
+/* Retain two obsolete COM keys for backward compatibility: old user INIs
+ * must NOT be treated as invalid and regenerated, losing saved controls.
+ * The runtime refuses both unsafe features regardless of their values.
+ * Neither obsolete key is generated or documented as an active option. */
+static const char *const spider_ini_input[]={
+  "DirectInputReacquire","PauseOnFocusLoss","PauseKey",
+  "RestoreCursorOnFocusLoss","ExperimentalFocusTrace","ExperimentalDI8EntryTrace",
+  "ExperimentalAltTabReacquire","ExperimentalDI8CreateDeviceTrace"
+};
 static const char *const spider_ini_audio[]={"MusicSFXLevel","VoiceLevel","MovieLevel","Stereo"};
 static const char *const spider_ini_keys[]={"Up","Down","Left","Right","Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
 static const char *const spider_ini_joy[]={"Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
