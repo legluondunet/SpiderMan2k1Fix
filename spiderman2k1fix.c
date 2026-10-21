@@ -1076,6 +1076,7 @@ static LONG pause_ever_foreground=0;
 static LONG pause_in_progress=0;
 static LONG pause_latched=0;
 static LONG pause_key_down=0;
+static int pause_key_vk=VK_F9;
 static DWORD pause_background_since=0;
 /* Ignore brief foreground changes (e.g. mouse activation quirks).
  * Real Alt+Tab is recognized only if another process stays foreground. */
@@ -1108,7 +1109,7 @@ static void pause_poll_key(HWND hwnd) {
     InterlockedExchange(&pause_key_down,1);
     return;
   }
-  down=(GetAsyncKeyState(VK_F9)&0x8000)!=0;
+  down=(GetAsyncKeyState(pause_key_vk)&0x8000)!=0;
   if(!down) {
     InterlockedExchange(&pause_key_down,0);
   } else if(InterlockedCompareExchange(&pause_key_down,1,0)==0) {
@@ -1844,11 +1845,15 @@ static DWORD WINAPI initialize(LPVOID unused) {
     DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
     if(n>0 && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL) {
       strcpy(slash+1,"SpiderMan2k1Fix.ini");
+      char key[32];
+      GetPrivateProfileStringA("Input","PauseKey","F9",key,sizeof(key),path);
+      pause_key_vk=(lstrcmpiA(key,"Space")==0)?VK_SPACE:VK_F9;
       InterlockedExchange(&pause_on_focus_loss,
         GetPrivateProfileIntA("Input","PauseOnFocusLoss",0,path)==1);
     }
     log_line(InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1 ?
-      "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (VK_F9 resumes)" :
+      (pause_key_vk==VK_SPACE ? "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (Space resumes)" :
+       "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (F9 resumes)") :
       "FOCUS-PAUSE: experimental Flip-boundary pause disabled");
   }
   SpiderInputFocus_Install(log_line);
