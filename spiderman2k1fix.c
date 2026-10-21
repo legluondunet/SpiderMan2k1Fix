@@ -24,6 +24,7 @@
 #include "input_focus_trace.h"
 #include "input_notacquired_retry.h"
 #include "pause_any_key.h"
+#include "pause_overlay.h"
 #include "focus_media_pause.h"
 #include "focus_dsound_pause.h"
 #include "menu_version.h"
@@ -1175,11 +1176,15 @@ static void pause_at_flip_if_background(void) {
       pause_key_vk=VK_F9;
     }
   } else log_line("FOCUS-PAUSE: waiting for foreground and explicit pause key");
+  /* A child of the game window, never an always-on-top desktop window.
+   * Show after the Any-key hook setup, so fallback F9 is displayed correctly. */
+  SpiderPauseOverlay_Show(hwnd,pause_key_vk);
   while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1) {
     while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
       if(msg.message==WM_QUIT) {
         PostQuitMessage((int)msg.wParam);
         SpiderPauseAny_End();
+        SpiderPauseOverlay_Hide();
         SpiderFocusDSound_Resume();
         SpiderFocusMedia_Resume();
         log_line("FOCUS-PAUSE: WM_QUIT observed, aborting wait");
@@ -1205,6 +1210,7 @@ static void pause_at_flip_if_background(void) {
     log_line(line);
   }
   SpiderPauseAny_End();
+  SpiderPauseOverlay_Hide();
   SpiderFocusDSound_Resume();
   SpiderFocusMedia_Resume();
   log_line("FOCUS-PAUSE: explicit resume or window destroyed");
@@ -1727,6 +1733,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
   SpiderDI8Retry_Init(log_line);
   SpiderFocusMedia_Init(log_line); /* Opt-in native Bink pause. */
   SpiderFocusDSound_Init(log_line); /* Separately opt-in game-owned secondary buffers only. */
+  SpiderPauseOverlay_Init(log_line); /* Passive right-side hint; defaults on only during pause. */
   /* The first-run generator or repair may have changed [Debug] Log. */
   {
     int previous_log_enabled=debug_log_enabled;

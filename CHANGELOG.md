@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — centered transparent focus pause indicator
+
+- Display `PAUSE` in the center of the game window, inside a red outline with no filled background and comic-inspired bold italic white text with a dark outline, while `PauseOnFocusLoss` is latched. Use a shaped child-window region to exclude all empty pixels (avoiding the black interior observed with DirectDraw and layered-window color keying).
+- Display the appropriate French wake hint based on `PauseKey`: any key, Space, or F9.
+- Draw the indicator in a nonactivating child window (no topmost desktop window, no replacement of the game's DirectDraw/3D drawing methods).
+- Automatically hide it before Bink and DirectSound playback resumes and if the game quits while paused.
+- Add `[Input] PauseOverlay=1` (default on for visible focus pauses; configurable to `0` for visual rollback); no change to focus/input/media pause behavior.
+
 ## Unreleased — synchronized focus pause for Bink and DirectSound (PR #9)
 
 - Extend the optional Alt+Tab focus pause with `[Input] PauseBinkOnFocusLoss=1`: invoke the game's own Bink pause/resume mechanism for cinematics and audio-only Bink music.
