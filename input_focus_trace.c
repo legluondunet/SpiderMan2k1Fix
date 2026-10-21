@@ -436,6 +436,17 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   want_fix=GetPrivateProfileIntA("Input","ExperimentalAltTabReacquire",0,ini)==1;
   want_probe=GetPrivateProfileIntA("Input","ExperimentalDI8EntryTrace",0,ini)==1;
   want_interface_probe=GetPrivateProfileIntA("Input","ExperimentalDI8CreateDeviceTrace",0,ini)==1;
+  /* Windows 11 regression confirmed 2026-10-21: replacing the native
+   * IDirectInput8 vtable causes CreateDevice to return E_INVALIDARG
+   * (0x80070057), and the game fails during initialization.
+   * Do not enter either legacy COM interception path until redesigned.
+   * Keep reading the old keys so existing user INIs remain compatible. */
+  if(want_interface_probe)
+    focus_log("INPUT-DI8: WARNING CreateDevice COM probe DISABLED: verified startup failure E_INVALIDARG 0x80070057; factory-only probe remains available");
+  if(want_fix)
+    focus_log("INPUT-DI8: WARNING legacy AltTabReacquire COM hook DISABLED: unsafe interface/device vtable interception");
+  want_interface_probe=0;
+  want_fix=0;
   /* The read-only entry probe is available only with focus diagnostics.
    * Never silently enable it in normal operation. */
   if(!want_trace) want_probe=0;
