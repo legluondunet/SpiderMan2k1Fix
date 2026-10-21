@@ -12,6 +12,7 @@
 #include <ddraw.h>
 #include <d3d.h>
 #include "hud_widescreen.h"
+#include "hud_adaptive.h"
 #include "frame_limiter.h"
 #include "display_plan.h"
 #include "menu_scale.h"
@@ -692,6 +693,158 @@ typedef HRESULT (WINAPI *DrawPrimitiveFn)(void *, D3DPRIMITIVETYPE, DWORD, LPVOI
 typedef HRESULT (WINAPI *DrawIndexedPrimitiveFn)(void *, D3DPRIMITIVETYPE, DWORD, LPVOID, DWORD, LPWORD, DWORD, DWORD);
 static DrawPrimitiveFn original_draw_primitive;
 static DrawIndexedPrimitiveFn original_draw_indexed_primitive;
+static int geom_rva(void *ret,DWORD *rva); /* declared below HUD sampling */
+/* Opt-in, read-only six-frame HUD sampling. No render path changes. */
+static volatile LONG hud_probe_enabled=0,hud_probe_frames=0;
+/* The read-only F12 sampler can also investigate boss health bars at top-right.
+ * Separate quotas prevent player HUD/world sprites from hiding boss quads.
+ * All probes are disabled without SPIDERMAN2K1FIX_HUD_TRACE=1 and Log=1. */
+static volatile LONG hud_probe_seen=0,hud_probe_left=0,hud_probe_right=0,hud_probe_instructions=0,hud_probe_boss=0;
+static volatile LONG hud_probe_boss_extra=0,hud_probe_boss_blt=0;
+static void hud_probe_flip(void) {
+  if(InterlockedCompareExchange(&hud_probe_enabled,0,0)!=1) return;
+  if((GetAsyncKeyState(VK_F12)&1)!=0 && game_hwnd &&
+     GetForegroundWindow()==game_hwnd) {
+    InterlockedExchange(&hud_probe_frames,6);
+    log_line("HUD-PROBE: F12 capture START, six 3D frames; original vertices unchanged");
+  } else if(InterlockedCompareExchange(&hud_probe_frames,0,0)>0 &&
+            InterlockedDecrement(&hud_probe_frames)==0)
+    log_line("HUD-PROBE: F12 capture COMPLETE");
+  InterlockedExchange(&hud_probe_seen,0);
+  InterlockedExchange(&hud_probe_left,0);
+  InterlockedExchange(&hud_probe_right,0);
+  InterlockedExchange(&hud_probe_instructions,0);
+  InterlockedExchange(&hud_probe_boss,0);
+  InterlockedExchange(&hud_probe_boss_extra,0);
+  InterlockedExchange(&hud_probe_boss_blt,0);
+}
+/* A separate read-only probe for black boss damage quads NOT covered by
+ * the 4-vertex TEX1 triangle-fan sampler. It records both XYZRHW|DIFFUSE
+ * (0x44, 20-byte stride) and XYZRHW|DIFFUSE|TEX1 (0x144, 28-byte
+ * stride), including triangle lists/strips and indexed draws. Inspect
+ * the original vertices only; never change game memory or device state.
+ * Kept behind the same explicitly armed six-frame F12 capture. */
+static void hud_probe_boss_unknown(void *device,D3DPRIMITIVETYPE type,
+                                    DWORD fvf,const void *vertices,
+                                    DWORD count,int indexed,void *caller) {
+  const unsigned char *p=(const unsigned char*)vertices;
+  unsigned stride,i;
+  float x,y,z,rhw,l,r,t,b,cx,cy;
+  uint32_t color;
+  LONG slot;
+  IDirectDrawSurface7 *texture=NULL;
+  DDSURFACEDESC2 desc;
+  DWORD rva=0;
+  char line[440];
+  if(InterlockedCompareExchange(&hud_probe_frames,0,0)<=0 ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
+     !vertices || count<3 || count>64 || desktop_w<640 ||
+     desktop_h<480 || (fvf!=0x44UL && fvf!=0x144UL)) return;
+  stride=(fvf==0x44UL)?20u:sizeof(SpiderMenuVertex);
+  memcpy(&l,p,sizeof(l));memcpy(&t,p+4,sizeof(t));
+  memcpy(&z,p+8,sizeof(z));memcpy(&rhw,p+12,sizeof(rhw));
+  memcpy(&color,p+16,sizeof(color));
+  r=l;b=t;
+  for(i=1;i<count;++i) {
+    memcpy(&x,p+i*stride,sizeof(x));
+    memcpy(&y,p+i*stride+4,sizeof(y));
+    if(x<l)l=x;
+    if(x>r)r=x;
+    if(y<t)t=y;
+    if(y>b)b=y;
+  }
+  if(!(l>=-40.0f && r<=(float)desktop_w+40.0f &&
+       t>=-40.0f && b<=(float)desktop_h*0.42f &&
+       r>l+2.0f && b>t+2.0f &&
+       r-l<(float)desktop_w*0.70f && b-t<(float)desktop_h*0.32f))
+    return;
+  cx=(l+r)*0.5f;cy=(t+b)*0.5f;
+  if(cx<(float)desktop_w*0.48f || cy>(float)desktop_h*0.34f)
+    return;
+  /* The ordinary fan sampler captures all non-black 4-vertex TEX1 fans.
+   * Log those again only for black primitives, where the original trace
+   * missed the source of the detached bar mask. */
+  if(fvf==0x144UL && type==D3DPT_TRIANGLEFAN && count==4 &&
+     color!=0xFF000000u) return;
+  slot=InterlockedIncrement(&hud_probe_boss_extra);
+  if(slot>64)return;
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) && texture) {
+    if(FAILED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc)))
+      desc.dwWidth=desc.dwHeight=0;
+    IDirectDrawSurface7_Release(texture);
+  }
+  geom_rva(caller,&rva);
+  snprintf(line,sizeof(line),
+    "HUD-PROBE-EXTRA: source=%s slot=%ld rva=0x%08lX fvf=0x%lX type=%lu count=%lu tex=%lux%lu "
+    "bbox=[%.1f,%.1f..%.1f,%.1f] z=%.4f rhw=%.4f diffuse=%08lX",
+    indexed?"indexed":"draw",(long)slot,(unsigned long)rva,
+    (unsigned long)fvf,(unsigned long)type,(unsigned long)count,
+    (unsigned long)desc.dwWidth,(unsigned long)desc.dwHeight,
+    (double)l,(double)t,(double)r,(double)b,
+    (double)z,(double)rhw,(unsigned long)color);
+  log_line(line);
+}
+static void hud_probe_draw(void *device,D3DPRIMITIVETYPE type,DWORD fvf,
+                           const void *vertices,DWORD count,void *caller) {
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)vertices;
+  float l,r,t,b,cx,cy;
+  LONG n,slot;int region;unsigned i;
+  IDirectDrawSurface7 *texture=NULL; DDSURFACEDESC2 desc;
+  DWORD rva=0;char line[410];
+  if(InterlockedCompareExchange(&hud_probe_frames,0,0)<=0 ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
+     fvf!=0x144UL || type!=D3DPT_TRIANGLEFAN || count!=4 ||
+     !vertices || desktop_w<640 || desktop_h<480) return;
+  l=r=v[0].x;t=b=v[0].y;
+  for(i=1;i<4;i++) {
+    if(v[i].x<l)l=v[i].x;
+    if(v[i].x>r)r=v[i].x;
+    if(v[i].y<t)t=v[i].y;
+    if(v[i].y>b)b=v[i].y;
+  }
+  if(!(l>=-40.0f && r<=(float)desktop_w+40.0f &&
+       t>=-40.0f && b<=(float)desktop_h+40.0f) ||
+     r-l<2.0f || b-t<2.0f || r-l>(float)desktop_w*0.65f ||
+     b-t>(float)desktop_h*0.45f) return;
+  cx=(l+r)*0.5f;cy=(t+b)*0.5f;
+  /* Boss portraits/bars occupy the top-right quadrant. They were missed
+   * by the original bottom-corner / top-left-only sampler. Restrict this
+   * added category to flat screen-space quads (not depthful 3D world
+   * geometry), without assuming particular textures/colors/UVs yet. */
+  if(cy<(float)desktop_h*0.35f && cx>(float)desktop_w*0.50f &&
+     v[0].z>=-0.01f && v[0].z<0.10f && v[0].rhw>0.5f) region=4;
+  else if(cy>(float)desktop_h*0.63f && cx>(float)desktop_w*0.57f) region=1;
+  else if(cy>(float)desktop_h*0.65f && cx<(float)desktop_w*0.60f) region=2;
+  else if(cy<(float)desktop_h*0.34f && cx<(float)desktop_w*0.42f) region=3;
+  else return;
+  n=InterlockedIncrement(&hud_probe_seen);
+  if(n>192)return;
+  slot=InterlockedIncrement(region==4?&hud_probe_boss:region==1?&hud_probe_right:region==2?&hud_probe_instructions:&hud_probe_left);
+  if(slot>(region==4?32:16))return;
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) && texture) {
+    if(FAILED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc)))
+      desc.dwWidth=desc.dwHeight=0;
+    IDirectDrawSurface7_Release(texture);
+  }
+  geom_rva(caller,&rva);
+  snprintf(line,sizeof(line),
+    "HUD-PROBE: region=%s index=%ld rva=0x%08lX tex=%lux%lu "
+    "bbox=[%.1f,%.1f..%.1f,%.1f] z=%.4f rhw=%.4f "
+    "diffuse=%08lX uv=[%.3f,%.3f..%.3f,%.3f]",
+    region==4?"boss":region==1?"compass":region==2?"instructions":"player",
+    (long)slot,(unsigned long)rva,
+    (unsigned long)desc.dwWidth,(unsigned long)desc.dwHeight,
+    (double)l,(double)t,(double)r,(double)b,
+    (double)v[0].z,(double)v[0].rhw,
+    (unsigned long)v[0].diffuse,
+    (double)v[0].u,(double)v[0].v,(double)v[2].u,(double)v[2].v);
+  log_line(line);
+}
+
 static int geom_rva(void *ret,DWORD *rva) {
   uintptr_t base=(uintptr_t)GetModuleHandleA(NULL),addr=(uintptr_t)ret;
   IMAGE_DOS_HEADER *dos=(IMAGE_DOS_HEADER*)base;
@@ -821,6 +974,59 @@ static const void *maybe_correct_horplus(D3DPRIMITIVETYPE type,DWORD fvf,
   return copy;
 }
 
+/* Source-verified gameplay HUD quads only. This path is strictly opt-in
+ * through the already SHA-gated HUDWidescreenFix=1 and does not touch any
+ * other DirectDraw/Direct3D modes or change the game's vertex memory. */
+static volatile LONG hud_adaptive_compass_count=0;
+static volatile LONG hud_adaptive_instruction_count=0;
+static volatile LONG hud_adaptive_boss_count=0;
+static const void *maybe_correct_adaptive_hud(void *device,
+                    D3DPRIMITIVETYPE type,DWORD fvf,
+                    const void *source,DWORD count,void *ret,
+                    SpiderMenuVertex *copy)
+{
+  IDirectDrawSurface7 *texture=NULL;
+  DDSURFACEDESC2 desc;
+  DWORD rva=0,texw=0,texh=0;
+  int region;
+  LONG hit;
+  char message[236];
+  if(!source || !copy || count!=4 || fvf!=0x144UL ||
+     type!=D3DPT_TRIANGLEFAN || desktop_w<640 || desktop_h<480 ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
+     !SpiderHudWidescreen_Installed() ||
+     !SpiderHudAdaptive_MightMatch((const SpiderMenuVertex*)source) ||
+     !geom_rva(ret,&rva) || rva!=0x00102C72UL)
+    return source;
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) && texture) {
+    if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc))) {
+      texw=(DWORD)desc.dwWidth;texh=(DWORD)desc.dwHeight;
+    }
+    IDirectDrawSurface7_Release(texture);
+  }
+  region=SpiderHudAdaptive_Transform((const SpiderMenuVertex*)source,copy,
+                                     (unsigned)count,(unsigned)type,(uint32_t)fvf,
+                                     (uint32_t)rva,(unsigned)texw,(unsigned)texh,
+                                     (unsigned)desktop_w,(unsigned)desktop_h);
+  if(region==SPIDER_HUD_ADAPTIVE_NONE)return source;
+  hit=InterlockedIncrement(region==SPIDER_HUD_ADAPTIVE_COMPASS?
+       &hud_adaptive_compass_count:
+       region==SPIDER_HUD_ADAPTIVE_BOSS?
+       &hud_adaptive_boss_count:&hud_adaptive_instruction_count);
+  if(debug_log_enabled && (hit<=4 || hit%240==0)) {
+    snprintf(message,sizeof(message),
+       "HUD-ADAPTIVE: region=%s hit=%ld scale=%.5f tex=%lux%lu x-original=%.1f x-mapped=%.1f [EXPERIMENT]",
+       region==SPIDER_HUD_ADAPTIVE_COMPASS?"compass":
+       region==SPIDER_HUD_ADAPTIVE_BOSS?"boss":"instructions",
+       (long)hit,(double)(4.0f*(float)desktop_h/(3.0f*(float)desktop_w)),
+       (unsigned long)texw,(unsigned long)texh,
+       (double)((const SpiderMenuVertex*)source)[0].x,(double)copy[0].x);
+    log_line(message);
+  }
+  return copy;
+}
 static void free_menu_vertices(SpiderMenuVertex *allocated) {
   if (allocated) HeapFree(GetProcessHeap(),0,allocated);
 }
@@ -832,11 +1038,16 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
   {
     SpiderMenuVertex small[64],*allocated=NULL;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
+    hud_probe_draw(self,type,fvf,verts,count,__builtin_return_address(0));
+    hud_probe_boss_unknown(self,type,fvf,verts,count,0,__builtin_return_address(0));
     if(v==verts && count==4) {
       v=maybe_correct_native_comic(self,type,fvf,verts,count,
                                    __builtin_return_address(0),small);
     }
     /* BD has precedence and a separate signature; never rescale it. */
+    if(v==verts && count==4)
+      v=maybe_correct_adaptive_hud(self,type,fvf,verts,count,
+                                   __builtin_return_address(0),small);
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
     HRESULT hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
     free_menu_vertices(allocated);
@@ -850,6 +1061,7 @@ static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE 
   {
     SpiderMenuVertex small[64],*allocated=NULL;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
+    hud_probe_boss_unknown(self,type,fvf,verts,count,1,__builtin_return_address(0));
     /* No indexed comic path was observed: keep it unchanged. */
     HRESULT hr=original_draw_indexed_primitive(self,type,fvf,(LPVOID)v,count,indices,icount,flags);
     free_menu_vertices(allocated);
@@ -1019,6 +1231,30 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
   HRESULT hr; LONG count=InterlockedIncrement(&blt_count);
   RECT dest_mapped;
   LPRECT presented_dest=dest;
+
+  /* Read-only native DirectDraw diagnostic for an uncorrected boss health
+   * black rectangle. Some legacy UI layers may use a color-filled Blt
+   * rather than the D3D7 triangle-fan path. Only report F12-armed calls
+   * in the upper-right HUD and never change the destination or fill. */
+  if(debug_log_enabled &&
+     InterlockedCompareExchange(&hud_probe_frames,0,0)>0 &&
+     dest && dest->right>dest->left && dest->bottom>dest->top &&
+     dest->left>=(LONG)((float)desktop_w*0.42f) &&
+     dest->top>=0 && dest->top<(LONG)((float)desktop_h*0.34f) &&
+     dest->right<=(LONG)desktop_w+40 &&
+     dest->bottom<=(LONG)((float)desktop_h*0.39f)) {
+    LONG slot=InterlockedIncrement(&hud_probe_boss_blt);
+    if(slot<=24) {
+      char msg[300];
+      DWORD color=((flags&DDBLT_COLORFILL) && fx)?fx->dwFillColor:0u;
+      snprintf(msg,sizeof(msg),
+        "HUD-PROBE-BLT: slot=%ld dst=(%ld,%ld)-(%ld,%ld) src=%p flags=0x%08lX fill=%08lX",
+        (long)slot,(long)dest->left,(long)dest->top,
+        (long)dest->right,(long)dest->bottom,(void*)source,
+        (unsigned long)flags,(unsigned long)color);
+      log_line(msg);
+    }
+  }
 
   if(debug_log_enabled && count<=24) {
     char line[240];
@@ -1322,6 +1558,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       SpiderInputFocus_OnFlip(count);
   }
   SpiderDI8Retry_OnFlip(count);
+  hud_probe_flip();
   report_null_fclose_recovery();
   if (g_frame_limiter_ready) SpiderFrameLimiter_Wait(&g_frame_limiter);
   /* Deliberately NO 1px pixel cover-up. The yellow seam remains visible if
@@ -1792,6 +2029,7 @@ static void install_player_hud(BOOL exe_verified) {
   }
   InterlockedExchange(&fov_horplus_scopes_ready,1);
   log_line("HUD: EXPERIMENTAL native 16-site widescreen correction installed (unverified in-game)");
+  log_line("HUD-ADAPTIVE: also enabled strict depth/texture signature transform for compass, instructions and boss UI [TEST ONLY]");
 }
 /* A one-shot watchdog diagnoses the crucial "60 FPS despite 30 limit"
  * case even if Flip is never intercepted. Runs in the existing worker thread
@@ -1962,6 +2200,15 @@ static DWORD WINAPI initialize(LPVOID unused) {
   }
   log_line("BORDERLESS: windowed fullscreen enabled");
   install_player_hud(TRUE);
+  {
+    char flag[8]={0};
+    if(debug_log_enabled &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_HUD_TRACE",flag,sizeof(flag))==1 &&
+       flag[0]=='1') {
+      InterlockedExchange(&hud_probe_enabled,1);
+      log_line("HUD-PROBE: read-only D3D7 gameplay capture armed; press F12 once");
+    }
+  }
   /* Always-on virtual CFG: signature-gated EXE IAT hook.
    * The hook never executes for an unverified EXE. */
   {
