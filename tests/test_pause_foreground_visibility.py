@@ -22,7 +22,10 @@ def test_pause_media_background_show_only_when_foreground_and_active():
     assert "if(banner_mode!=2)" in p
     assert "else if(banner_mode!=1)" in p
     assert 'FOCUS-PAUSE: game-parented dark dither/grid and PAUSE child remain visible in background' in p
-    assert "SpiderPauseDim_Hide();\n      SpiderPauseOverlay_Hide();\n      SpiderPauseDim_ShowBackground(hwnd);\n      SpiderPauseOverlay_ShowBackground(hwnd);" in p
+    background=p[p.index("} else if(banner_mode!=1)"):p.index("MsgWaitForMultipleObjectsEx(",p.index("} else if(banner_mode!=1)"))]
+    assert background.index("SpiderPauseDim_Hide();") < background.index("SpiderPauseOverlay_Hide();")
+    assert background.index("SpiderPauseOverlay_Hide();") < background.index("SpiderPauseDim_ShowBackground(hwnd);")
+    assert background.index("SpiderPauseDim_ShowBackground(hwnd);") < background.index("SpiderPauseOverlay_ShowBackground(hwnd);")
     assert "MsgWaitForMultipleObjectsEx(0,NULL,20,QS_ALLINPUT,MWMO_INPUTAVAILABLE)" in p
     assert "GetActiveWindow()==game_window" in OVERLAY
     assert "SpiderPauseOverlay_ShowBackground(hwnd);" in p
