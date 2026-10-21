@@ -309,38 +309,41 @@ with strict screen-region, texture and depth signatures. This adjustment
 has passed source-level regression checks but **still requires an in-game
 screenshot before validation**.
 
-**Boss HUD follow-up (Scorpion and Venom, October 21, 2026):** Actual
-Windows 11 screenshots at 1920×1200 show the upper-right boss health
-bar and portrait remain about **20% wider** in 16:10 than in the original
-4:3 (1600×1200) presentation. This differs from the player HUD and
-mission instruction panels, which have been visually checked in
-both Wine and Windows. **Boss UI is not currently corrected** and
-must be investigated before approving this PR for the 1.0 release.
+**Boss HUD experimental correction (Venom, Scorpion and J. Jonah Jameson,
+October 21, 2026):** Native Windows 11 reference screenshots (1920×1200
+16:10 versus centered 1600×1200 4:3) revealed previously uncorrected,
+~20%-stretched boss health bars. Two complete F12 trace series now
+identify the shared drawing path for **single and double boss bars**:
+colored fill (solid quad), 32×32 border tiles, 64×64 boss portrait,
+and an extra black health marker on the second row (Jameson).
+Their shared caller is `0x00102C72`, but it is *not* HUD-specific,
+so the matcher also requires bounded upper-right coordinates, exact
+texture size, layer/depth range, opaque color and plausible quad size.
+RHW changes slightly between levels: the implementation uses measured
+ranges rather than an inaccurate single numeric constant.
 
-An updated **read-only F12 trace** on this experimental branch adds
-`HUD-PROBE: region=boss` for top-right 2D quads, with per-frame quotas,
-texture metadata, callsite, depth/RHW and source vertex bounds. It does
-not change any vertex coordinate or runtime rendering.
+With `[HUD] HUDWidescreenFix=1` the boss sprites are experimentally
+**aspect-corrected and anchored to the right edge**, just like the
+already-validated compass. The same transform applies to both bars
+and both portraits. 4:3, menu, media and original game-owned vertices
+remain untouched. Source-level tests use the exact captured Venom
+and Scorpion/Jameson draw signatures; negative tests reject unrelated
+geometry. The HUD fix remains **opt-in, disabled by default**, pending
+in-game Windows 11 and Wine validation; the pull request remains DRAFT.
 
-To capture the missing signatures **under Windows 11**:
-
-1. Install the two matching x86 DLLs from the latest successful branch
-   artifact (not the previous HUD build). Keep
-   `[Debug] Log=1`, `[HUD] HUDWidescreenFix=1` and
-   `[Display] AspectRatio=auto`.
-2. In PowerShell in the game's folder:
-   `$env:SPIDERMAN2K1FIX_HUD_TRACE="1"; .\\SpideyPC.exe`.
-3. Use Level Select to enter a **Venom** or **Scorpion** boss fight;
-   with boss bars visible, press **F12 once**, allow at least six gameplay
-   frames, and quit. Send `SpiderMan2k1Fix.log`. Look for both
-   `HUD-PROBE: F12 capture START`, `HUD-PROBE: region=boss` and
-   `HUD-PROBE: F12 capture COMPLETE`. The filter rejects most depthful
-   world quads to limit noise. If no boss records appear, the geometry
-   source needs further investigation, *not* a speculative patch.
-4. Revert the experiment by removing the environment variable, without
-   changing the valid player/instruction/compass corrections. No extra
-   screenshots are required for the read-only trace: the 4:3/16:10
-   reference images are already available.
+**Next boss visual test** (no additional F12 probe or new 4:3
+reference required): install the *two matching DLLs* from the latest
+successful CI artifact of this draft branch, configure
+`[Display] AspectRatio=auto`, `[HUD] HUDWidescreenFix=1`,
+`[Debug] Log=1`, and launch Venom and Scorpion under native Windows.
+Capture one 1920×1200 image of each fight, ideally with their full
+life bars. Check that Scorpion and Jameson's two frames, health fills,
+and both portraits stay aligned, with no clipped/squashed components.
+`HUD-ADAPTIVE: region=boss` should appear in the log.
+Do not set `SPIDERMAN2K1FIX_HUD_TRACE` during this visual test;
+it is only a read-only development sampler. If there is any visual
+regression, disable `HUDWidescreenFix`, preserve the log, and avoid
+merging the PR.
 
 **Wine visual A/B:** Back up the game DLLs and INI, install the DLLs from
 this experimental PR *as a matching pair*, and leave `Log=1`.
