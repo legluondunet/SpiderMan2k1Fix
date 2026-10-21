@@ -37,7 +37,7 @@ def test_no_native_input_hook_is_enabled_by_default():
 def test_persistent_pause_requires_manual_foreground_key():
     pause=CORE[CORE.index("static volatile LONG pause_on_focus_loss=0;"):
                CORE.index("static HRESULT WINAPI hooked_flip(")]
-    assert "GetAsyncKeyState(VK_F9)" in pause
+    assert "GetAsyncKeyState(pause_key_vk)" in pause
     assert "GetForegroundWindow()!=hwnd" in pause
     assert "pause_latched" in pause
     assert "pause_key_down" in pause
@@ -59,3 +59,10 @@ def test_focus_loss_filters_click_activation_glitches():
                CORE.index("static HRESULT WINAPI hooked_flip(")]
     assert "pause_confirmed_focus_loss(hwnd)" in pause
     assert "GetAsyncKeyState(VK_LBUTTON)" not in pause
+
+def test_pause_key_configurable_with_safe_default():
+    assert "PauseKey=F9" in INI
+    assert '"PauseKey"' in VALID
+    assert "GetPrivateProfileStringA(\"Input\",\"PauseKey\",\"F9\"" in CORE
+    assert 'lstrcmpiA(key,"Space")==0' in CORE
+    assert "VK_SPACE:VK_F9" in CORE
