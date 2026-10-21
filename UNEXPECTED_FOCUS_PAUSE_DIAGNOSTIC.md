@@ -15,6 +15,39 @@ when another process owns the foreground for long enough. While the game is
 not the foreground window, the first resume key intentionally cannot wake
 it. We need to determine **which foreground window** is being reported.
 
+## Evidence from user's Windows 11 log
+
+The log `SpiderMan2k1Fix(20261021-080901).log` shows multiple actual pause latches,
+including menus and 3D, when Windows reports the *same helper PID/thread*
+`27444/42824`, window class **`Ghost`**, and a changing window handle.
+The game itself is process `32804` and owns window class `Spiderman PC`.
+Foreground loss lasts 156–204 milliseconds before latching, consistent with
+the coded 150 ms debounce. The repeated multi-second period is consistent
+with Windows ghosting windows whose UI message pump does not service
+messages for several seconds. This points toward Windows ghosting, but the
+reason the game's message loop goes unscheduled is not yet confirmed.
+
+## Experimental opt-in suppression to test
+
+```ini
+[Input]
+DisableWindowsGhosting=1
+```
+
+This new option is **OFF by default**. After restarting Spider-Man, it calls
+Microsoft's `DisableProcessWindowsGhosting` before the first game window
+appears. The API does not have a reverse operation: to restore Windows'
+normal hang-window handling, set `DisableWindowsGhosting=0` and restart.
+It suppresses the system's movable/closable 'Not Responding' ghost surrogate
+for the **entire process lifetime**. It **does not** repair a genuine hang;
+the user must still be able to exit the game normally. If Spider-Man hangs
+for real, Task Manager may be needed to terminate it.
+
+Keep `PauseOnFocusLoss=1` and `PauseKey=Any` to verify a *real* Alt+Tab
+still pauses and resumes correctly in menus, cinematic and gameplay.
+Also verify that no spontaneous pause occurs for at least a minute without
+switching applications. Report whether 3D input remains responsive.
+
 ## Safe diagnostics (no ProcDump)
 
 1. Back up `SpiderMan2k1Fix.ini` and both local DLLs.
