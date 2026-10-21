@@ -25,6 +25,8 @@ def test_hooks_are_thread_local_and_leave_original_wndproc_untouched():
     assert "GetWindowThreadProcessId(hwnd,NULL)" in MOD
     assert "SetWindowsHookExA(WH_CALLWNDPROC,focus_before_hook,module,thread)" in MOD
     assert "SetWindowsHookExA(WH_CALLWNDPROCRET,focus_after_hook,module,thread)" in MOD
+    assert "SetWindowsHookExA(WH_GETMESSAGE,focus_retrieved_hook,module,thread)" in MOD
+    assert "return CallNextHookEx(retrieved_hook,code,wp,lp);" in MOD
     assert "return CallNextHookEx(before_hook,code,wp,lp);" in MOD
     assert "return CallNextHookEx(after_hook,code,wp,lp);" in MOD
     assert "if(data->hwnd==watched_hwnd)" in MOD
@@ -69,3 +71,26 @@ def test_existing_pause_and_input_retry_untouched():
         CORE.index("static HRESULT WINAPI hooked_flip("):
         CORE.index("static HRESULT WINAPI hooked_flip(")+2300
     ]
+
+
+def test_queue_counts_only_real_getmessage_hook_observations():
+    assert "GetCurrentThreadId()==watched_thread" in MOD
+    assert "if(wp==PM_REMOVE)InterlockedIncrement(&retrieved_removed);" in MOD
+    assert "else InterlockedIncrement(&retrieved_peeked);" in MOD
+    assert "InterlockedExchange(&last_retrieved_tick,(LONG)tick);" in MOD
+    assert "InterlockedExchange(&last_retrieved_message,(LONG)msg->message);" in MOD
+    assert "InterlockedIncrement(&retrieved_focus);" in MOD
+    assert "InterlockedIncrement(&delivered);" in MOD
+    assert "InterlockedExchange(&last_dispatched_tick,(LONG)GetTickCount());" in MOD
+
+
+def test_queue_snapshot_keeps_stale_focus_independently_of_retrieval_counts():
+    assert "WIN32-FOCUS: HEARTBEAT wall=" in MOD
+    for field in ("dequeue-remove=%ld", "dequeue-peek=%ld",
+                  "dequeue-focus=%ld", "window-delivery=%ld",
+                  "last-dequeue-tick=%lu", "last-dequeue-msg=0x%04lX",
+                  "last-delivery-tick=%lu"):
+        assert field in MOD
+    assert "if(!before_hook || !after_hook || !retrieved_hook)" in MOD
+    assert "UnhookWindowsHookEx(retrieved_hook)" in MOD
+    assert "Does not" not in MOD or "PeekMessage/GetMessage" in MOD
