@@ -18,13 +18,15 @@
 #define PAUSE_GRID_STEP 16
 #define PAUSE_PANEL_W 520
 #define PAUSE_PANEL_H 128
+#define PAUSE_ICON_SIZE 96
 #define PAUSE_MAX_W 4096
 #define PAUSE_MAX_H 2160
 
 static HDC saved_dc=NULL;
 static HBITMAP saved_bitmap=NULL, saved_old=NULL;
 static IDirectDrawSurface7 *saved_surface=NULL;
-static int enabled_dim=1,enabled_grid=0,enabled_banner=1,opacity=55;
+static HICON pause_game_icon=NULL; /* first icon group from the verified SpideyPC.exe */
+static int enabled_dim=1,enabled_grid=0,enabled_banner=1,opacity=50;
 static void (*pause_log)(const char *)=NULL;
 
 static void pause_log_hresult(const char *step,HRESULT hr) {
@@ -47,6 +49,85 @@ static int pause_blend_color(HDC dest,HDC source,int x,int y,int width,
   DeleteObject(brush);
   result=AlphaBlend(dest,x,y,width,height,source,0,0,1,1,blend)!=0;
   return result;
+}
+
+
+/* Draw the supported game's own embedded icon as a translucent watermark.
+ * Icons from old Windows games may contain a monochrome AND mask instead of
+ * usable 32-bit alpha. Render once over BLACK and once over WHITE to recover
+ * coverage independently of the icon's original bit depth:
+ *   black = alpha * color, white = black + (1-alpha) * 255.
+ * The black image is then premultiplied and can safely be AlphaBlended.
+ * This is an optional decoration; failure must NEVER prevent pausing.
+ * Draw into the game's DirectDraw DC, without overlay windows or files. */
+static int pause_draw_icon_watermark(HDC dest,int x,int y) {
+  BITMAPINFO bmi;
+  HDC black_dc=NULL,white_dc=NULL;
+  HBITMAP black_bmp=NULL,white_bmp=NULL;
+  HGDIOBJ black_old=NULL,white_old=NULL;
+  DWORD *black_pixels=NULL,*white_pixels=NULL;
+  const int count=PAUSE_ICON_SIZE*PAUSE_ICON_SIZE;
+  BLENDFUNCTION blend={AC_SRC_OVER,0,88,AC_SRC_ALPHA};
+  int i,visible=0,ok=0;
+  if(!pause_game_icon)return 0;
+  memset(&bmi,0,sizeof(bmi));
+  bmi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+  bmi.bmiHeader.biWidth=PAUSE_ICON_SIZE;
+  bmi.bmiHeader.biHeight=-PAUSE_ICON_SIZE; /* top-down, tightly packed */
+  bmi.bmiHeader.biPlanes=1;
+  bmi.bmiHeader.biBitCount=32;
+  bmi.bmiHeader.biCompression=BI_RGB;
+  black_dc=CreateCompatibleDC(dest);
+  white_dc=CreateCompatibleDC(dest);
+  if(!black_dc || !white_dc)goto cleanup;
+  black_bmp=CreateDIBSection(black_dc,&bmi,DIB_RGB_COLORS,
+                             (void **)&black_pixels,NULL,0);
+  white_bmp=CreateDIBSection(white_dc,&bmi,DIB_RGB_COLORS,
+                             (void **)&white_pixels,NULL,0);
+  if(!black_bmp || !white_bmp || !black_pixels || !white_pixels)
+    goto cleanup;
+  black_old=SelectObject(black_dc,black_bmp);
+  white_old=SelectObject(white_dc,white_bmp);
+  if(!black_old || black_old==HGDI_ERROR ||
+     !white_old || white_old==HGDI_ERROR)goto cleanup;
+  for(i=0;i<count;i++) {
+    black_pixels[i]=0x00000000u;
+    white_pixels[i]=0x00FFFFFFu;
+  }
+  GdiFlush();
+  if(!DrawIconEx(black_dc,0,0,pause_game_icon,PAUSE_ICON_SIZE,
+                 PAUSE_ICON_SIZE,0,NULL,DI_NORMAL) ||
+     !DrawIconEx(white_dc,0,0,pause_game_icon,PAUSE_ICON_SIZE,
+                 PAUSE_ICON_SIZE,0,NULL,DI_NORMAL))goto cleanup;
+  GdiFlush();
+  for(i=0;i<count;i++) {
+    DWORD b=black_pixels[i],w=white_pixels[i];
+    int bb=(int)(b&255u),bg=(int)((b>>8)&255u),br=(int)((b>>16)&255u);
+    int wb=(int)(w&255u),wg=(int)((w>>8)&255u),wr=(int)((w>>16)&255u);
+    int diff=((wb-bb)+(wg-bg)+(wr-br)+1)/3;
+    int alpha;
+    if(diff<0)diff=0;
+    if(diff>255)diff=255;
+    alpha=255-diff;
+    if(alpha)visible=1;
+    /* black RGB is premultiplied, compatible with AC_SRC_ALPHA. */
+    black_pixels[i]=(b&0x00FFFFFFu)|((DWORD)alpha<<24);
+  }
+  if(visible) {
+    GdiFlush();
+    ok=AlphaBlend(dest,x,y,PAUSE_ICON_SIZE,PAUSE_ICON_SIZE,
+                  black_dc,0,0,PAUSE_ICON_SIZE,PAUSE_ICON_SIZE,blend)!=0;
+  }
+cleanup:
+  if(black_dc && black_old && black_old!=HGDI_ERROR)
+    SelectObject(black_dc,black_old);
+  if(white_dc && white_old && white_old!=HGDI_ERROR)
+    SelectObject(white_dc,white_old);
+  if(black_bmp)DeleteObject(black_bmp);
+  if(white_bmp)DeleteObject(white_bmp);
+  if(black_dc)DeleteDC(black_dc);
+  if(white_dc)DeleteDC(white_dc);
+  return ok;
 }
 
 static int pause_draw_text(HDC dc,HFONT font,const wchar_t *label,
@@ -149,6 +230,11 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
   DeleteObject(rounded);
   if(!ok)return 0;
 
+  /* Optional real Spider-Man EXE icon, faint and clear of the centered text. */
+  if(pause_game_icon && !pause_draw_icon_watermark(dc,box_left+27,
+                                                   box_top+16) && pause_log)
+    pause_log("FOCUS-SURFACE: game icon watermark unavailable; retaining plain banner");
+
   border=CreatePen(PS_SOLID,2,RGB(178,45,63));
   if(!border)return 0;
   old_pen=SelectObject(dc,border);
@@ -196,7 +282,7 @@ void SpiderPauseSurface_Init(void (*log_fn)(const char *)) {
   char path[MAX_PATH],*slash;
   DWORD n;
   pause_log=log_fn;
-  enabled_dim=1;enabled_grid=0;enabled_banner=1;opacity=55;
+  enabled_dim=1;enabled_grid=0;enabled_banner=1;opacity=50;
   n=GetModuleFileNameA(NULL,path,sizeof(path));
   if(n && n<sizeof(path) && (slash=strrchr(path,'\\')) &&
      (size_t)(slash-path)+sizeof("SpiderMan2k1Fix.ini")<=sizeof(path)) {
@@ -204,8 +290,26 @@ void SpiderPauseSurface_Init(void (*log_fn)(const char *)) {
     enabled_dim=GetPrivateProfileIntA("Input","PauseDim",1,path)==1;
     enabled_grid=GetPrivateProfileIntA("Input","PauseGrid",0,path)==1;
     enabled_banner=GetPrivateProfileIntA("Input","PauseOverlay",1,path)==1;
-    opacity=GetPrivateProfileIntA("Input","PauseDimOpacity",55,path);
+    opacity=GetPrivateProfileIntA("Input","PauseDimOpacity",50,path);
   }
+  /* Extract, do not guess a resource ID: reuse the same first embedded
+   * icon group used by the taskbar fix. No adjacent .ico or packaged assets. */
+  if(pause_game_icon) { DestroyIcon(pause_game_icon); pause_game_icon=NULL; }
+  {
+    WCHAR exe[MAX_PATH];
+    HICON large=NULL,small=NULL;
+    DWORD path_len=GetModuleFileNameW(NULL,exe,MAX_PATH);
+    if(path_len && path_len<MAX_PATH) {
+      UINT extracted=ExtractIconExW(exe,0,&large,&small,1);
+      if(extracted>0 && extracted!=UINT_MAX && large)
+        pause_game_icon=large;
+      else if(large)DestroyIcon(large);
+      if(small)DestroyIcon(small);
+    }
+  }
+  if(pause_log)pause_log(pause_game_icon ?
+    "FOCUS-SURFACE: SpideyPC.exe icon ready for optional watermark" :
+    "FOCUS-SURFACE: game icon missing; plain PAUSE banner retained");
   if(opacity<0)opacity=0;
   if(opacity>90)opacity=90;
   if(pause_log)pause_log("FOCUS-SURFACE: DirectDraw backbuffer pause renderer ready (no overlay HWND)");
@@ -295,8 +399,9 @@ int SpiderPauseSurface_Begin(IDirectDrawSurface7 *back,
   if(pause_log) {
     char line[180];
     snprintf(line,sizeof(line),
-       "FOCUS-SURFACE: frozen scene+%d%% shade+%dpx grid+English banner presented in game's own DirectDraw surface",
-       enabled_dim?opacity:0,enabled_grid?PAUSE_GRID_STEP:0);
+       "FOCUS-SURFACE: frozen scene+%d%% shade+%dpx grid+English banner%s presented in game's own DirectDraw surface",
+       enabled_dim?opacity:0,enabled_grid?PAUSE_GRID_STEP:0,
+       pause_game_icon?"+game icon watermark":"");
     pause_log(line);
   }
   return 1;
