@@ -49,7 +49,8 @@ void SpiderFocusMedia_Init(void (*log_fn)(const char *)) {
 
   logger=log_fn;
   n=GetModuleFileNameA(NULL,exe,sizeof(exe));
-  if(!n || n>=sizeof(exe) || !(slash=strrchr(exe,'\\')))return;
+  if(!n || n>=sizeof(exe) || !(slash=strrchr(exe,'\\')) ||
+     (size_t)(slash-exe)+sizeof("SpiderMan2k1Fix.ini")>sizeof(exe))return;
   strcpy(slash+1,"SpiderMan2k1Fix.ini");
   if(GetPrivateProfileIntA("Input","PauseBinkOnFocusLoss",0,exe)!=1) return;
 
