@@ -28,6 +28,13 @@ def test_english_solid_comic_text_drawn_directly():
     assert "ANTIALIASED_QUALITY" in P
     assert "RGB(224,227,234)" in P
     assert "width/2-75,box_top+67" in P
+    assert "#define PAUSE_ICON_SIZE 96" in P
+    assert "ExtractIconExW(exe,0,&large,&small,1)" in P
+    assert "pause_draw_icon_watermark(dc,box_left+27," in P
+    assert "DrawIconEx(black_dc" in P and "DrawIconEx(white_dc" in P
+    assert "AC_SRC_ALPHA" in P and "CreateDIBSection(" in P
+    assert "if(!pause_game_icon)return 0;" in P
+    assert "game icon watermark unavailable; retaining plain banner" in P
 def test_frame_saved_presented_and_restored_on_release():
     for word in ("IDirectDrawSurface7_GetDC(back,&dc)","IDirectDrawSurface7_ReleaseDC(back,dc)",
                  "BitBlt(saved_dc,0,0,width,height,dc,0,0,SRCCOPY)",
