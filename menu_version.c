@@ -26,10 +26,11 @@ static BOOL draw_label(HDC dc,const RECT *content) {
   int old_background;
   BOOL result;
   if(!dc || height<240 || width<320) return FALSE;
-  /* Smaller than menu entries; scaled to the actual 4:3 content height. */
-  font_pixels=larger(12,(height*10+240)/480);
+  /* About 20% smaller than the previously tested footer, scaled to the
+   * 4:3 menu content rather than the entire desktop or video surface. */
+  font_pixels=larger(10,(height*8+240)/480);
   pad=larger(8,(height*10+240)/480);
-  outline_pixels=larger(1,(height+479)/800);
+  outline_pixels=larger(1,(height+599)/1200);
   if(!version_font || version_font_height!=font_pixels) {
     HFONT replacement=CreateFontA(-font_pixels,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,
       DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
@@ -65,8 +66,9 @@ static BOOL draw_label(HDC dc,const RECT *content) {
     if(dx==0 && dy==0) continue;
     TextOutA(dc,x+dx*outline_pixels,y+dy*outline_pixels,label,len);
   }
-  /* Muted lavender instead of an unrelated pure-white system font. */
-  SetTextColor(dc,RGB(204,191,231));
+  /* Exact sampled violet from the game's unselected menu labels.
+   * At 1200p: 20px footer vs the previous 25px, with a finer outline. */
+  SetTextColor(dc,RGB(138,120,214));
   result=TextOutA(dc,x,y,label,len);
   SetTextColor(dc,old_color);
   SetBkMode(dc,old_background);
