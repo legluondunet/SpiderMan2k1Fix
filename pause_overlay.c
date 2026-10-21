@@ -7,6 +7,8 @@
  *
  * It appears only after the focus pause is latched, is painted with GDI
  * while the pause loop pumps messages, and disappears before audio resumes.
+ * A layered child window with a color key makes the entire interior truly
+ * transparent, leaving only a red outline and white text over the game.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -15,6 +17,11 @@
 #include "pause_overlay.h"
 
 #define OVERLAY_CLASS L"SpiderMan2k1Fix_PauseOverlay"
+/* This unique color is used ONLY for the invisible background pixels.
+ * Layered child windows and LWA_COLORKEY are supported on Windows 8+.
+ * The game continues to show through the border's unfilled interior. */
+#define OVERLAY_TRANSPARENT RGB(1,2,3)
+#define OVERLAY_RED RGB(220,38,46)
 
 static HWND overlay_hwnd=NULL;
 static int overlay_enabled=1;
@@ -26,7 +33,7 @@ static void overlay_paint(HWND hwnd) {
   PAINTSTRUCT ps;
   HDC dc=BeginPaint(hwnd,&ps);
   RECT client,title_rect,hint_rect;
-  HBRUSH background;
+  HBRUSH transparent_brush;
   HPEN border;
   HGDIOBJ old_pen,old_brush,old_font;
   HFONT title_font,hint_font;
@@ -37,38 +44,44 @@ static void overlay_paint(HWND hwnd) {
   if(overlay_resume_key==VK_SPACE)hint=L"Appuyez sur Espace";
   else if(overlay_resume_key==VK_F9)hint=L"Appuyez sur F9";
 
-  background=CreateSolidBrush(RGB(22,25,32));
-  border=CreatePen(PS_SOLID,2,RGB(214,177,83));
-  if(background && border) {
-    old_brush=SelectObject(dc,background);
+  /* Fill the color-key pixels, then draw ONLY the outline and white text.
+   * Never paint an opaque background rectangle over the game. */
+  transparent_brush=CreateSolidBrush(OVERLAY_TRANSPARENT);
+  if(transparent_brush) {
+    FillRect(dc,&client,transparent_brush);
+    DeleteObject(transparent_brush);
+  }
+  border=CreatePen(PS_SOLID,3,OVERLAY_RED);
+  if(border) {
     old_pen=SelectObject(dc,border);
-    RoundRect(dc,0,0,client.right,client.bottom,16,16);
-    SelectObject(dc,old_pen);
+    old_brush=SelectObject(dc,GetStockObject(HOLLOW_BRUSH));
+    RoundRect(dc,2,2,client.right-2,client.bottom-2,14,14);
     SelectObject(dc,old_brush);
-  } else FillRect(dc,&client,(HBRUSH)(COLOR_WINDOW+1));
-  if(border)DeleteObject(border);
-  if(background)DeleteObject(background);
+    SelectObject(dc,old_pen);
+    DeleteObject(border);
+  }
 
   SetBkMode(dc,TRANSPARENT);
-  title_font=CreateFontW(-25,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
-                          OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,
+  title_font=CreateFontW(-28,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+                          OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,NONANTIALIASED_QUALITY,
                           DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
-  hint_font=CreateFontW(-17,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
-                         OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,
+  hint_font=CreateFontW(-19,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+                         OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,NONANTIALIASED_QUALITY,
                          DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
-  title_rect=client;title_rect.left+=10;title_rect.right-=10;title_rect.top=9;title_rect.bottom=43;
+  title_rect=client;title_rect.left+=12;title_rect.right-=12;
+  title_rect.top=12;title_rect.bottom=55;
   old_font=NULL;
   if(title_font)old_font=SelectObject(dc,title_font);
-  SetTextColor(dc,RGB(245,208,109));
+  SetTextColor(dc,RGB(255,255,255));
   DrawTextW(dc,L"PAUSE",-1,&title_rect,DT_SINGLELINE|DT_CENTER|DT_VCENTER|DT_NOPREFIX);
   if(old_font)SelectObject(dc,old_font);
   if(title_font)DeleteObject(title_font);
 
-  hint_rect=client;hint_rect.left+=8;hint_rect.right-=8;
-  hint_rect.top=43;hint_rect.bottom-=7;
+  hint_rect=client;hint_rect.left+=12;hint_rect.right-=12;
+  hint_rect.top=56;hint_rect.bottom=client.bottom-9;
   old_font=NULL;
   if(hint_font)old_font=SelectObject(dc,hint_font);
-  SetTextColor(dc,RGB(246,246,246));
+  SetTextColor(dc,RGB(255,255,255));
   DrawTextW(dc,hint,-1,&hint_rect,DT_SINGLELINE|DT_CENTER|DT_VCENTER|DT_NOPREFIX);
   if(old_font)SelectObject(dc,old_font);
   if(hint_font)DeleteObject(hint_font);
@@ -103,7 +116,7 @@ void SpiderPauseOverlay_Init(void (*log_fn)(const char *)) {
   strcpy(slash+1,"SpiderMan2k1Fix.ini");
   overlay_enabled=GetPrivateProfileIntA("Input","PauseOverlay",1,path)==1;
   if(overlay_log)overlay_log(overlay_enabled ?
-    "FOCUS-OVERLAY: passive pause label enabled (right side; no activation)" :
+    "FOCUS-OVERLAY: transparent centered pause label enabled (no activation)" :
     "FOCUS-OVERLAY: pause label disabled by INI");
 }
 
@@ -111,7 +124,7 @@ void SpiderPauseOverlay_Show(HWND game_window,int resume_key) {
   WNDCLASSW cls;
   RECT bounds;
   HINSTANCE instance;
-  int width,height,margin,left,top;
+  int width,height,banner_width,banner_height,x,y;
   HWND window;
 
   if(!overlay_enabled || !game_window || !IsWindow(game_window))return;
@@ -136,29 +149,34 @@ void SpiderPauseOverlay_Show(HWND game_window,int resume_key) {
   width=bounds.right-bounds.left;
   height=bounds.bottom-bounds.top;
   if(width<250 || height<120)return;
-  margin=width/64;
-  if(margin<12)margin=12;
-  if(margin>30)margin=30;
-  left=width*30/100;
-  if(left<220)left=220;
-  if(left>340)left=340;
-  if(left>width-margin*2)left=width-margin*2;
-  top=(height-84)/2;
-  if(top<0)top=0;
+  banner_width=420;
+  if(banner_width>width-24)banner_width=width-24;
+  banner_height=104;
+  if(banner_height>height-16)banner_height=height-16;
+  x=(width-banner_width)/2;
+  y=(height-banner_height)/2;
   overlay_resume_key=resume_key;
-  window=CreateWindowExW(WS_EX_NOACTIVATE|WS_EX_NOPARENTNOTIFY,
-       OVERLAY_CLASS,L"",WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS,
-       width-left-margin,top,left,84,
+  /* Create hidden so there is no momentary opaque flash. Color-key all
+   * interior pixels before showing the layered, nonactivating child. */
+  window=CreateWindowExW(WS_EX_NOACTIVATE|WS_EX_NOPARENTNOTIFY|WS_EX_LAYERED,
+       OVERLAY_CLASS,L"",WS_CHILD|WS_CLIPSIBLINGS,
+       x,y,banner_width,banner_height,
        game_window,NULL,instance,NULL);
   if(!window){
     if(overlay_log)overlay_log("FOCUS-OVERLAY: creation failed; continuing focus pause");
     return;
   }
+  if(!SetLayeredWindowAttributes(window,OVERLAY_TRANSPARENT,0,LWA_COLORKEY)) {
+    if(overlay_log)overlay_log("FOCUS-OVERLAY: transparent color key unavailable; skipping overlay");
+    DestroyWindow(window);
+    return;
+  }
+  ShowWindow(window,SW_SHOWNOACTIVATE);
   overlay_hwnd=window;
   /* Ensure text is painted even while the game thread waits in Flip. */
   InvalidateRect(window,NULL,FALSE);
   UpdateWindow(window);
-  if(overlay_log)overlay_log("FOCUS-OVERLAY: visible on right of paused game window");
+  if(overlay_log)overlay_log("FOCUS-OVERLAY: transparent red-outline banner centered on paused game window");
 }
 
 void SpiderPauseOverlay_Hide(void) {
