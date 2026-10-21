@@ -56,7 +56,7 @@ specific Flip pause boundary.
 
 ## What remains for real 3D pause
 
-3D music and effects are handled outside the Bink movie pause. The code
+Some **3D music** appears to be streamed using the audio-only Bink handle at \`0x00AC1020\`, so this experiment may also pause that music. **Other game sound effects and DirectSound audio** run outside the Bink movie pause. The code
 records the **read-only** original game's DirectSound device and primary
 buffer candidate pointers on focus loss/resume:
 
@@ -99,7 +99,7 @@ New-Item -ItemType Directory -Force .\crash-dumps | Out-Null
 ## Status
 
 - Original DirectInput retry and Any-key wake validated on native Windows 11.
-- Native Bink video/audio pause: **implemented behind opt-in; UNTESTED**.
+- Native Bink video/audio/music pause: **implemented behind opt-in; UNTESTED**.
 - DirectSound 3D pause: **NOT IMPLEMENTED**, pending safe buffer/native-engine identification.
 
 ---
