@@ -908,6 +908,7 @@ static const void *maybe_correct_horplus(D3DPRIMITIVETYPE type,DWORD fvf,
  * other DirectDraw/Direct3D modes or change the game's vertex memory. */
 static volatile LONG hud_adaptive_compass_count=0;
 static volatile LONG hud_adaptive_instruction_count=0;
+static volatile LONG hud_adaptive_boss_count=0;
 static const void *maybe_correct_adaptive_hud(void *device,
                     D3DPRIMITIVETYPE type,DWORD fvf,
                     const void *source,DWORD count,void *ret,
@@ -940,11 +941,14 @@ static const void *maybe_correct_adaptive_hud(void *device,
                                      (unsigned)desktop_w,(unsigned)desktop_h);
   if(region==SPIDER_HUD_ADAPTIVE_NONE)return source;
   hit=InterlockedIncrement(region==SPIDER_HUD_ADAPTIVE_COMPASS?
-       &hud_adaptive_compass_count:&hud_adaptive_instruction_count);
+       &hud_adaptive_compass_count:
+       region==SPIDER_HUD_ADAPTIVE_BOSS?
+       &hud_adaptive_boss_count:&hud_adaptive_instruction_count);
   if(debug_log_enabled && (hit<=4 || hit%240==0)) {
     snprintf(message,sizeof(message),
        "HUD-ADAPTIVE: region=%s hit=%ld scale=%.5f tex=%lux%lu x-original=%.1f x-mapped=%.1f [EXPERIMENT]",
-       region==SPIDER_HUD_ADAPTIVE_COMPASS?"compass":"instructions",
+       region==SPIDER_HUD_ADAPTIVE_COMPASS?"compass":
+       region==SPIDER_HUD_ADAPTIVE_BOSS?"boss":"instructions",
        (long)hit,(double)(4.0f*(float)desktop_h/(3.0f*(float)desktop_w)),
        (unsigned long)texw,(unsigned long)texh,
        (double)((const SpiderMenuVertex*)source)[0].x,(double)copy[0].x);
@@ -1928,7 +1932,7 @@ static void install_player_hud(BOOL exe_verified) {
   }
   InterlockedExchange(&fov_horplus_scopes_ready,1);
   log_line("HUD: EXPERIMENTAL native 16-site widescreen correction installed (unverified in-game)");
-  log_line("HUD-ADAPTIVE: also enabled strict depth/texture signature transform for compass and instructions [TEST ONLY]");
+  log_line("HUD-ADAPTIVE: also enabled strict depth/texture signature transform for compass, instructions and boss UI [TEST ONLY]");
 }
 /* A one-shot watchdog diagnoses the crucial "60 FPS despite 30 limit"
  * case even if Flip is never intercepted. Runs in the existing worker thread
