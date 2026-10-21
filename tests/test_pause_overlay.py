@@ -1,4 +1,4 @@
-"""Passive pause banner stays inside the game window and never takes input focus."""
+"""Centered transparent pause banner stays over the game without taking focus."""
 from pathlib import Path
 import pytest
 
@@ -22,8 +22,9 @@ def test_default_is_on_only_when_the_focus_pause_is_active():
     assert "void SpiderPauseOverlay_Show(HWND game_window, int resume_key)" in HDR
 
 def test_overlay_uses_child_window_not_desktop_topmost_popup():
-    assert "WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS" in SRC
-    assert "WS_EX_NOACTIVATE|WS_EX_NOPARENTNOTIFY" in SRC
+    assert "WS_CHILD|WS_CLIPSIBLINGS" in SRC
+    assert "SW_SHOWNOACTIVATE" in SRC
+    assert "WS_EX_NOACTIVATE|WS_EX_NOPARENTNOTIFY|WS_EX_LAYERED" in SRC
     assert "game_window,NULL,instance,NULL" in SRC
     assert "WM_MOUSEACTIVATE" in SRC
     assert "MA_NOACTIVATE" in SRC
@@ -42,6 +43,24 @@ def test_instructions_are_dynamic_and_fr():
     assert "overlay_resume_key==VK_SPACE" in SRC
     assert "overlay_resume_key==VK_F9" in SRC
     assert "DrawTextW(" in SRC
+    assert "SetTextColor(dc,RGB(255,255,255))" in SRC
+    assert "OVERLAY_RED RGB(220,38,46)" in SRC
+
+def test_transparent_red_outline_with_centered_position():
+    assert "SetLayeredWindowAttributes(window,OVERLAY_TRANSPARENT,0,LWA_COLORKEY)" in SRC
+    assert "OVERLAY_TRANSPARENT RGB(1,2,3)" in SRC
+    assert "FillRect(dc,&client,transparent_brush)" in SRC
+    assert "GetStockObject(HOLLOW_BRUSH)" in SRC
+    assert "RoundRect(dc,2,2,client.right-2,client.bottom-2,14,14)" in SRC
+    assert "banner_width=420" in SRC
+    assert "banner_height=104" in SRC
+    assert "x=(width-banner_width)/2" in SRC
+    assert "y=(height-banner_height)/2" in SRC
+    assert "ShowWindow(window,SW_SHOWNOACTIVATE)" in SRC
+    assert SRC.index("SetLayeredWindowAttributes(") < SRC.index("ShowWindow(")
+    assert "CreateSolidBrush(RGB(22,25,32))" not in SRC
+    assert "RGB(214,177,83)" not in SRC
+
 
 def test_overlay_lifecycle_matches_focus_pause():
     pause=CORE[CORE.index("static void pause_at_flip_if_background(void)"):
