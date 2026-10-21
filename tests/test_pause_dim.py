@@ -21,18 +21,30 @@ def test_dim_is_opt_out_and_only_active_when_focus_pause_runs():
     assert "pause_dim.c" in BUILD
     assert "void SpiderPauseDim_Init(void (*log_fn)(const char *));" in HEADER
 
-def test_layered_child_uses_uniform_alpha_not_failed_color_key():
+def test_layered_owned_popup_avoids_legacy_unmanifested_child_restriction():
     assert "DIM_ALPHA 102" in DIM
-    assert "WS_EX_LAYERED|WS_EX_TRANSPARENT|" in DIM
-    assert "WS_EX_NOACTIVATE|WS_EX_NOPARENTNOTIFY" in DIM
-    assert "WS_CHILD|WS_CLIPSIBLINGS" in DIM
+    assert "WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|" in DIM
+    assert "WS_EX_TOOLWINDOW|WS_EX_NOPARENTNOTIFY" in DIM
+    assert "WS_POPUP" in DIM
+    assert "WS_CHILD" not in DIM
     assert "game_window,NULL,instance,NULL" in DIM
+    assert "ClientToScreen(game_window,&origin)" in DIM
+    assert "CreateRectRgn(0,0,width,height)" in DIM
+    assert "SpiderPauseOverlay_ExcludeFromRegion(game_window,visible_region)" in DIM
+    assert "SetWindowRgn(window,visible_region,FALSE)" in DIM
+    assert "GetWindowRgn(overlay_hwnd,banner_region)" in OVERLAY
+    assert "MapWindowPoints(overlay_hwnd,game_window,&origin,1)" in OVERLAY
+    assert "CombineRgn(visible_region,visible_region,banner_region,RGN_DIFF)" in OVERLAY
+    assert "SetWindowRgn(window,visible_region,FALSE)" not in OVERLAY
     assert "SetLayeredWindowAttributes(window,0,DIM_ALPHA,LWA_ALPHA)" in DIM
     assert "LWA_COLORKEY" not in DIM
     assert "BLACK_BRUSH" in DIM
     assert "FillRect(dc,&bounds,(HBRUSH)GetStockObject(BLACK_BRUSH))" in DIM
     assert DIM.index("SetLayeredWindowAttributes(window,0,DIM_ALPHA,LWA_ALPHA)") < DIM.index("ShowWindow(window,SW_SHOWNOACTIVATE)")
-    assert "FOCUS-DIM: alpha unavailable; skipping opaque layer" in DIM
+    assert "FOCUS-DIM: alpha unavailable Win32=" in DIM
+    assert "FOCUS-DIM: owned-popup creation failed Win32=" in DIM
+    assert "FOCUS-DIM: shaped cutout failed Win32=" in DIM
+    assert DIM.index("SpiderPauseOverlay_ExcludeFromRegion(game_window,visible_region)") < DIM.index("ShowWindow(window,SW_SHOWNOACTIVATE)")
     assert "DestroyWindow(window);" in DIM
     assert "return;" in DIM
 
@@ -53,7 +65,7 @@ def test_original_centered_banner_is_preserved_above_shade():
                CORE.index("static HRESULT WINAPI hooked_flip(")]
     assert pause.count("SpiderPauseDim_Show(hwnd);")==1
     assert pause.count("SpiderPauseOverlay_Show(hwnd,pause_key_vk);")==1
-    assert pause.index("SpiderPauseDim_Show(hwnd);") < pause.index("SpiderPauseOverlay_Show(hwnd,pause_key_vk);")
+    assert pause.index("SpiderPauseOverlay_Show(hwnd,pause_key_vk);") < pause.index("SpiderPauseDim_Show(hwnd);")
     assert pause.count("SpiderPauseDim_Hide();")==2
     assert pause.count("SpiderPauseOverlay_Hide();")==2
     for portion in pause.split("SpiderPauseOverlay_Hide();")[1:]:
@@ -64,8 +76,8 @@ def test_original_centered_banner_is_preserved_above_shade():
 
 def test_game_pause_and_audio_do_not_depend_on_shade_creation():
     assert "if(!dim_enabled || !game_window || !IsWindow(game_window))return;" in DIM
-    assert "FOCUS-DIM: creation failed; continuing pause without shade" in DIM
-    assert "FOCUS-DIM: class registration failed; skipping dim layer" in DIM
+    assert "FOCUS-DIM: owned-popup creation failed Win32=" in DIM
+    assert "FOCUS-DIM: class registration failed Win32=" in DIM
     assert "SpiderFocusMedia_Pause();" in CORE
     assert "SpiderFocusDSound_Pause();" in CORE
     assert "SpiderPauseAny_Begin(hwnd)" in CORE
