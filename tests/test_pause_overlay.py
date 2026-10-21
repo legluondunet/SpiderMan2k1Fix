@@ -22,7 +22,12 @@ def test_english_solid_comic_text_drawn_directly():
     assert "RGB(255,255,255)" in P
     assert "RGB(178,45,63)" in P
     assert "RoundRect(" in P
-    assert "RGB(15,11,25),222" in P
+    assert "RGB(11,16,26),232" in P
+    assert "#define PAUSE_PANEL_W 520" in P
+    assert "#define PAUSE_PANEL_H 128" in P
+    assert "ANTIALIASED_QUALITY" in P
+    assert "RGB(224,227,234)" in P
+    assert "width/2-75,box_top+67" in P
 def test_frame_saved_presented_and_restored_on_release():
     for word in ("IDirectDrawSurface7_GetDC(back,&dc)","IDirectDrawSurface7_ReleaseDC(back,dc)",
                  "BitBlt(saved_dc,0,0,width,height,dc,0,0,SRCCOPY)",
