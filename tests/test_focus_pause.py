@@ -136,3 +136,15 @@ def test_create_device_probe_does_not_replace_device_methods():
     assert "SetCooperativeLevel" not in wrapper
     assert "->acquire(" not in wrapper
 
+
+def test_unsafe_di8_com_paths_are_quarantined_before_hook_install():
+    trace=(ROOT/"input_focus_trace.c").read_text()
+    guard=trace.index("Windows 11 regression confirmed 2026-10-21")
+    disable_probe=trace.index("want_interface_probe=0;",guard)
+    disable_recovery=trace.index("want_fix=0;",disable_probe)
+    mode=trace.index("if(want_trace && !want_fix)",disable_recovery)
+    assert guard < disable_probe < disable_recovery < mode
+    assert "verified startup failure E_INVALIDARG 0x80070057" in trace
+    assert "legacy AltTabReacquire COM hook DISABLED" in trace
+    assert "ENTRY-ONLY PROBE enabled" in trace
+
