@@ -6,8 +6,11 @@
  * lettering into ONE premultiplied 32bpp bitmap and send it to an owned
  * nonactivating popup with UpdateLayeredWindow(ULW_ALPHA).
  *
- * Only display while the game is the active foreground Win32 window.
- * A missing per-pixel alpha implementation FAILS CLOSED (no opaque fallback).
+ * Foreground: retain the proven per-pixel-alpha popup.
+ * Background: show a conventional opaque WS_CHILD, clipped to the parent
+ * game client. Child z-order follows the game, so it cannot float ABOVE a
+ * foreground Wine/Linux desktop app. It cannot use layered-child alpha
+ * because the original 2001 game lacks a Windows 8 manifest.
  * Original SpideyPC.exe, DirectDraw, Bink, DirectSound and input untouched.
  */
 #define WIN32_LEAN_AND_MEAN
@@ -40,8 +43,68 @@ int SpiderPauseOverlay_GameForeground(HWND game_window) {
          GetActiveWindow()==game_window;
 }
 
+static void child_draw_text(HDC dc,HFONT font,const wchar_t *value,int width,int y) {
+  SIZE sz={0,0};
+  HGDIOBJ previous;
+  int x,dx,dy;
+  if(!font)return;
+  previous=SelectObject(dc,font);
+  if(GetTextExtentPoint32W(dc,value,lstrlenW(value),&sz)) {
+    x=(width-sz.cx)/2;
+    if(x<12)x=12;
+    SetTextColor(dc,RGB(8,7,16));
+    for(dy=-1;dy<=1;dy++)for(dx=-1;dx<=1;dx++)
+      if(dx||dy)TextOutW(dc,x+dx,y+dy,value,lstrlenW(value));
+    SetTextColor(dc,RGB(255,255,255));
+    TextOutW(dc,x,y,value,lstrlenW(value));
+  }
+  SelectObject(dc,previous);
+}
+
+static void child_paint(HWND window) {
+  PAINTSTRUCT ps;
+  HDC dc=BeginPaint(window,&ps);
+  HFONT title=NULL,hint=NULL;
+  HPEN pen=NULL;
+  HBRUSH fill=NULL;
+  HGDIOBJ previous_pen=NULL,previous_fill=NULL;
+  RECT rect;
+  if(!dc)return;
+  GetClientRect(window,&rect);
+  SetBkMode(dc,TRANSPARENT);
+  SetTextAlign(dc,TA_LEFT|TA_TOP|TA_NOUPDATECP);
+  fill=CreateSolidBrush(RGB(PANEL_R,PANEL_G,PANEL_B));
+  pen=CreatePen(PS_SOLID,2,RGB(174,47,64));
+  if(fill && pen) {
+    previous_fill=SelectObject(dc,fill);
+    previous_pen=SelectObject(dc,pen);
+    RoundRect(dc,1,1,rect.right-1,rect.bottom-1,20,20);
+    SelectObject(dc,previous_pen);
+    SelectObject(dc,previous_fill);
+  } else if(fill) FillRect(dc,&rect,fill);
+  title=CreateFontW(-30,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,
+                    DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
+                    NONANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial Black");
+  hint=CreateFontW(-19,0,0,0,FW_HEAVY,FALSE,FALSE,FALSE,
+                   DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
+                   NONANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial Black");
+  child_draw_text(dc,title,L"PAUSE",rect.right,13);
+  child_draw_text(dc,hint,L"PRESS ANY KEY TO RESUME",rect.right,66);
+  if(title)DeleteObject(title);
+  if(hint)DeleteObject(hint);
+  if(pen)DeleteObject(pen);
+  if(fill)DeleteObject(fill);
+  EndPaint(window,&ps);
+}
+
 static LRESULT CALLBACK overlay_proc(HWND window,UINT msg,WPARAM wp,LPARAM lp) {
   switch(msg) {
+    case WM_PAINT:
+      if(GetWindowLongPtrW(window,GWL_STYLE)&WS_CHILD) {
+        child_paint(window);
+        return 0;
+      }
+      break;
     case WM_MOUSEACTIVATE:return MA_NOACTIVATE;
     case WM_NCHITTEST:return HTTRANSPARENT;
     case WM_ERASEBKGND:return 1;
@@ -50,6 +113,21 @@ static LRESULT CALLBACK overlay_proc(HWND window,UINT msg,WPARAM wp,LPARAM lp) {
       break;
   }
   return DefWindowProcW(window,msg,wp,lp);
+}
+
+static int overlay_ensure_class(HINSTANCE instance) {
+  WNDCLASSW cls;
+  if(overlay_registered)return 1;
+  memset(&cls,0,sizeof(cls));
+  cls.lpfnWndProc=overlay_proc;
+  cls.hInstance=instance;
+  cls.lpszClassName=OVERLAY_CLASS;
+  if(!RegisterClassW(&cls) && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS) {
+    if(overlay_log)overlay_log("FOCUS-OVERLAY: window class registration failed");
+    return 0;
+  }
+  overlay_registered=1;
+  return 1;
 }
 
 static void text_at(HDC dc,HFONT font,const wchar_t *value,int width,int y) {
@@ -187,12 +265,11 @@ void SpiderPauseOverlay_Init(void (*log_fn)(const char *)) {
     overlay_enabled=GetPrivateProfileIntA("Input","PauseOverlay",1,path)==1;
   }
   if(overlay_log)overlay_log(overlay_enabled ?
-      "FOCUS-OVERLAY: atomic comic banner enabled (ULW_ALPHA; foreground only)" :
+      "FOCUS-OVERLAY: foreground translucent popup and background game-child banner enabled" :
       "FOCUS-OVERLAY: pause banner disabled via INI");
 }
 
 void SpiderPauseOverlay_Show(HWND game_window) {
-  WNDCLASSW cls;
   HINSTANCE instance;
   RECT game_rect;
   POINT screen_origin={0,0},banner;
@@ -204,17 +281,7 @@ void SpiderPauseOverlay_Show(HWND game_window) {
   if(overlay_hwnd && IsWindow(overlay_hwnd))return;
   overlay_hwnd=NULL;
   instance=GetModuleHandleW(NULL);
-  if(!overlay_registered) {
-    memset(&cls,0,sizeof(cls));
-    cls.lpfnWndProc=overlay_proc;
-    cls.hInstance=instance;
-    cls.lpszClassName=OVERLAY_CLASS;
-    if(!RegisterClassW(&cls) && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS) {
-      if(overlay_log)overlay_log("FOCUS-OVERLAY: window class registration failed");
-      return;
-    }
-    overlay_registered=1;
-  }
+  if(!overlay_ensure_class(instance))return;
   if(!GetClientRect(game_window,&game_rect) ||
      !ClientToScreen(game_window,&screen_origin))return;
   width=game_rect.right-game_rect.left;
@@ -252,6 +319,58 @@ void SpiderPauseOverlay_Show(HWND game_window) {
   overlay_game=game_window;
   ShowWindow(window,SW_SHOWNOACTIVATE);
   if(overlay_log)overlay_log("FOCUS-OVERLAY: one-piece English PAUSE banner visible; letters opaque; no shaped child");
+}
+
+/* A normal Win32 child remains geometrically and Z-order confined to
+ * SpideyPC. This intentionally uses an OPAQUE plum fill, NOT unsupported
+ * WS_EX_LAYERED on a legacy child. It will never cover Thunar/Firefox.
+ * When the game becomes active the front-facing alpha popup replaces it. */
+void SpiderPauseOverlay_ShowBackground(HWND game_window) {
+  HINSTANCE instance;
+  RECT bounds;
+  HRGN rounded;
+  HWND window;
+  int width,height,x,y;
+  DWORD err;
+  char line[152];
+
+  if(!overlay_enabled || !game_window || !IsWindow(game_window) ||
+     !IsWindowVisible(game_window) || IsIconic(game_window))return;
+  if(overlay_hwnd && IsWindow(overlay_hwnd))return;
+  instance=GetModuleHandleW(NULL);
+  if(!overlay_ensure_class(instance))return;
+  if(!GetClientRect(game_window,&bounds))return;
+  width=bounds.right-bounds.left;
+  height=bounds.bottom-bounds.top;
+  if(width<OVERLAY_WIDTH+24 || height<OVERLAY_HEIGHT+24)return;
+  x=(width-OVERLAY_WIDTH)/2;
+  y=(height-OVERLAY_HEIGHT)/2;
+
+  window=CreateWindowExW(WS_EX_NOACTIVATE|WS_EX_NOPARENTNOTIFY,
+     OVERLAY_CLASS,L"",WS_CHILD|WS_CLIPSIBLINGS,
+     x,y,OVERLAY_WIDTH,OVERLAY_HEIGHT,game_window,NULL,instance,NULL);
+  if(!window) {
+    err=GetLastError();
+    snprintf(line,sizeof(line),
+      "FOCUS-OVERLAY: background child creation failed Win32=%lu",
+      (unsigned long)err);
+    if(overlay_log)overlay_log(line);
+    return;
+  }
+  rounded=CreateRoundRectRgn(0,0,OVERLAY_WIDTH,OVERLAY_HEIGHT,20,20);
+  if(!rounded || !SetWindowRgn(window,rounded,FALSE)) {
+    if(rounded)DeleteObject(rounded);
+    DestroyWindow(window);
+    if(overlay_log)overlay_log("FOCUS-OVERLAY: background child region failed");
+    return;
+  }
+  /* SetWindowRgn takes ownership after success. */
+  overlay_hwnd=window;
+  overlay_game=game_window;
+  ShowWindow(window,SW_SHOWNOACTIVATE);
+  InvalidateRect(window,NULL,FALSE);
+  UpdateWindow(window);
+  if(overlay_log)overlay_log("FOCUS-OVERLAY: pause banner retained INSIDE background game child");
 }
 
 void SpiderPauseOverlay_Hide(void) {
