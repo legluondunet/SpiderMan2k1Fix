@@ -1,7 +1,7 @@
 /* Passive uniform-alpha shade for the verified Spider-Man 2001 game.
  *
  * The 2001 SpideyPC.exe has no Windows 8 compatibility manifest. Win32
- * can reject WS_EX_LAYERED + WS_CHILD for such a process on Windows 11.
+ * can reject a layered child for such a process on Windows 11.
  * A NON-TOPMOST, owned WS_POPUP layered window works without changing the
  * original executable/manifest, and follows the owner in normal Z-order.
  *
@@ -104,7 +104,7 @@ void SpiderPauseDim_Show(HWND game_window) {
   if(width<250 || height<120 || !ClientToScreen(game_window,&origin))return;
 
   /* Create an owned top-level popup HIDDEN. A layered child can fail for
-   * an unmanifested Windows-2001 executable. The owner (NOT an HWND_TOPMOST)
+   * an unmanifested Windows-2001 executable. The owner (NOT a desktop-topmost window)
    * retains the overlay's normal desktop ordering and lifetime. */
   window=CreateWindowExW(WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|
        WS_EX_TOOLWINDOW|WS_EX_NOPARENTNOTIFY,
