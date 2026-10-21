@@ -78,7 +78,7 @@ def test_overlay_lifecycle_matches_focus_pause():
     pause=CORE[CORE.index("static void pause_at_flip_if_background(void)"):
                CORE.index("static HRESULT WINAPI hooked_flip(")]
     assert pause.count("SpiderPauseOverlay_Show(hwnd);")==1
-    assert pause.count("SpiderPauseOverlay_Hide();")==2
+    assert pause.count("SpiderPauseOverlay_Hide();")==3
     assert pause.index("SpiderPauseOverlay_Show(hwnd);") > pause.index("while(IsWindow(hwnd)")
     assert pause.index("SpiderPauseAny_Begin(hwnd)") < pause.index("SpiderPauseOverlay_Show(hwnd);")
     assert pause.index("SpiderPauseOverlay_Hide();") < pause.index("SpiderFocusDSound_Resume();")
@@ -90,7 +90,8 @@ def test_overlay_lifecycle_matches_focus_pause():
 def test_failures_dont_interrupt_original_pause():
     assert "FOCUS-OVERLAY: creation failed; continuing focus pause" in SRC
     assert "FOCUS-OVERLAY: class registration failed; continuing without label" in SRC
-    assert "if(!overlay_enabled || !game_window || !IsWindow(game_window))return;" in SRC
+    assert "if(!overlay_enabled || !game_window || !IsWindow(game_window) ||" in SRC
+    assert "GetForegroundWindow()!=game_window)return;" in SRC
 
 def test_readable_centered_banner_with_darker_round_panel_support():
     assert "#define OVERLAY_WIDTH 520" in SRC
