@@ -1076,6 +1076,29 @@ static LONG pause_ever_foreground=0;
 static LONG pause_in_progress=0;
 static LONG pause_latched=0;
 static LONG pause_key_down=0;
+static DWORD pause_background_since=0;
+/* Ignore brief foreground changes (e.g. mouse activation quirks).
+ * Real Alt+Tab is recognized only if another process stays foreground. */
+static BOOL pause_confirmed_focus_loss(HWND hwnd) {
+  HWND fg=GetForegroundWindow();
+  DWORD game_pid=0,fg_pid=0,now;
+  if(fg==hwnd) { pause_background_since=0; return FALSE; }
+  GetWindowThreadProcessId(hwnd,&game_pid);
+  if(fg) GetWindowThreadProcessId(fg,&fg_pid);
+  /* A transient NULL foreground or another window owned by the game
+   * is not proof that Spider-Man was switched to the background. */
+  if(!fg || !game_pid || fg_pid==game_pid) {
+    pause_background_since=0;
+    return FALSE;
+  }
+  now=GetTickCount();
+  if(!pause_background_since) {
+    pause_background_since=now?now:1;
+    return FALSE;
+  }
+  return (DWORD)(now-pause_background_since)>=150;
+}
+
 
 /* Pause key is only accepted while this window owns the foreground.
  * Hold-to-repeat cannot accidentally toggle the pause repeatedly. */
@@ -1103,10 +1126,12 @@ static void pause_at_flip_if_background(void) {
   MSG msg;
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
   if(GetForegroundWindow()==hwnd) {
+    pause_background_since=0;
     InterlockedExchange(&pause_ever_foreground,1);
   } else if(InterlockedCompareExchange(&pause_ever_foreground,0,0)==1 &&
+            pause_confirmed_focus_loss(hwnd) &&
             InterlockedCompareExchange(&pause_latched,1,0)==0) {
-    log_line("FOCUS-PAUSE: focus lost; pause latched until manual resume");
+    log_line("FOCUS-PAUSE: confirmed external focus loss; pause latched until manual resume");
   }
   pause_poll_key(hwnd);
   if(InterlockedCompareExchange(&pause_latched,0,0)!=1) return;
