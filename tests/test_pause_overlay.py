@@ -21,13 +21,16 @@ def test_enabled_only_during_real_focus_pause():
     assert "SpiderPauseOverlay_GameForeground(hwnd)" in CORE
 
 
-def test_owned_popup_rather_than_legacy_shaped_child():
+def test_foreground_owned_popup_and_background_parent_confined_child():
     assert "WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|" in SRC
     assert "WS_EX_TOOLWINDOW|WS_EX_NOPARENTNOTIFY" in SRC
     assert "WS_POPUP" in SRC
     assert "game_window,NULL,instance,NULL" in SRC
-    assert "WS_CHILD" not in SRC
+    assert "WS_CHILD|WS_CLIPSIBLINGS" in SRC
+    assert "WS_EX_NOACTIVATE|WS_EX_NOPARENTNOTIFY" in SRC
+    assert "game_window,NULL,instance,NULL" in SRC
     assert "GetWindowRgn" not in SRC
+    assert "SetWindowRgn(window,rounded,FALSE)" in SRC
     assert "PathToRegion" not in SRC
     assert "BeginPath" not in SRC
     assert "WM_MOUSEACTIVATE" in SRC
@@ -73,11 +76,15 @@ def test_solid_english_comic_type_and_spacing():
 
 def test_strict_active_foreground_guard_and_cleanup():
     assert "GetForegroundWindow()==game_window" in SRC
+    assert "void SpiderPauseOverlay_ShowBackground(HWND game_window)" in SRC
+    assert "void SpiderPauseOverlay_ShowBackground(HWND game_window);" in HDR
+    assert "if(!overlay_enabled || !game_window || !IsWindow(game_window) ||" in SRC
     assert "GetActiveWindow()==game_window" in SRC
     assert "IsWindowVisible(game_window)" in SRC
     assert "IsIconic(game_window)" in SRC
     assert "if(!overlay_enabled || !SpiderPauseOverlay_GameForeground(game_window))return;" in SRC
     assert "if(!SpiderPauseOverlay_GameForeground(game_window)) {" in SRC
+    assert "if(!overlay_ensure_class(instance))return;" in SRC
     assert "DestroyWindow(window)" in SRC
     assert "void SpiderPauseOverlay_Hide(void)" in SRC
     assert "SpiderPauseOverlay_ExcludeFromRegion" in SRC
@@ -95,11 +102,37 @@ def test_focus_only_lifecycle_keeps_game_paused():
                CORE.index("static HRESULT WINAPI hooked_flip(")]
     assert pause.count("SpiderPauseOverlay_Show(hwnd);")==1
     assert pause.count("SpiderPauseDim_Show(hwnd);")==1
-    assert pause.count("SpiderPauseOverlay_Hide();")==3
-    assert pause.count("SpiderPauseDim_Hide();")==3
+    assert pause.count("SpiderPauseOverlay_Hide();")==4
+    assert pause.count("SpiderPauseDim_Hide();")==4
     assert pause.index("SpiderPauseAny_Begin(hwnd)") < pause.index("SpiderFocusMedia_Pause();")
     assert pause.index("SpiderPauseOverlay_Show(hwnd);") > pause.index("while(IsWindow(hwnd)")
     assert 'if(SpiderPauseOverlay_GameForeground(hwnd))' in pause
+    assert "SpiderPauseOverlay_ShowBackground(hwnd);" in pause
+    assert "else if(banner_mode!=1)" in pause
+    assert "if(banner_mode!=2)" in pause
     assert "SpiderPauseAny_Completed()" in pause
     assert "SpiderPauseAny_DiscardGameKeyMessage(&msg,hwnd)" in pause
     assert "PostQuitMessage((int)msg.wParam)" in pause
+
+def test_background_child_is_simple_opaque_comic_panel_no_layered_child():
+    background=SRC[SRC.index("void SpiderPauseOverlay_ShowBackground("):
+                   SRC.index("void SpiderPauseOverlay_Hide(")]
+    assert "WS_CHILD|WS_CLIPSIBLINGS" in background
+    assert "WS_EX_LAYERED" not in background
+    assert "UpdateLayeredWindow(" not in background
+    assert "SetLayeredWindowAttributes(" not in background
+    assert "GetForegroundWindow()" not in background
+    assert "SetWindowRgn(window,rounded,FALSE)" in background
+    assert "ShowWindow(window,SW_SHOWNOACTIVATE)" in background
+    assert "CreateRoundRectRgn(0,0,OVERLAY_WIDTH,OVERLAY_HEIGHT,20,20)" in background
+
+def test_child_paints_opaque_fill_with_bold_full_white_text():
+    painter=SRC[SRC.index("static void child_paint("):
+                SRC.index("static LRESULT CALLBACK overlay_proc(")]
+    assert "CreateSolidBrush(RGB(PANEL_R,PANEL_G,PANEL_B))" in painter
+    assert "RoundRect(dc,1,1,rect.right-1,rect.bottom-1,20,20)" in painter
+    assert 'child_draw_text(dc,title,L"PAUSE",rect.right,13)' in painter
+    assert 'child_draw_text(dc,hint,L"PRESS ANY KEY TO RESUME",rect.right,66)' in painter
+    assert "DeleteObject(title)" in painter
+    assert "DeleteObject(hint)" in painter
+    assert "if(GetWindowLongPtrW(window,GWL_STYLE)&WS_CHILD)" in SRC
