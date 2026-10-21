@@ -1068,28 +1068,51 @@ static HRESULT WINAPI hooked_get_attached(void *self,LPDDSCAPS2 caps,
   if(SUCCEEDED(hr) && out && *out) instrument_surface(*out);
   return hr;
 }
-/* Experimental cooperative pause at the DirectDraw presentation boundary.
- * Keep the GUI message queue responsive so WM_ACTIVATEAPP/WM_SETFOCUS can
- * arrive while the gameplay thread is waiting. This is NOT a Bink/movie
- * decoder hook; movies with independent timing can continue running.
- * Never suspend threads or modify focus / window Z-order here. */
+/* Experimental cooperative DirectDraw presentation pause for Windows 11.
+ * This is not a global movie/audio pause. Keep pumping messages; never
+ * suspend threads or force activation while the game is in background. */
 static volatile LONG pause_on_focus_loss=0;
 static LONG pause_ever_foreground=0;
 static LONG pause_in_progress=0;
+static LONG pause_latched=0;
+static LONG pause_key_down=0;
+
+/* Pause key is only accepted while this window owns the foreground.
+ * Hold-to-repeat cannot accidentally toggle the pause repeatedly. */
+static void pause_poll_key(HWND hwnd) {
+  BOOL down;
+  if(GetForegroundWindow()!=hwnd) {
+    InterlockedExchange(&pause_key_down,1);
+    return;
+  }
+  down=(GetAsyncKeyState(VK_PAUSE)&0x8000)!=0;
+  if(!down) {
+    InterlockedExchange(&pause_key_down,0);
+  } else if(InterlockedCompareExchange(&pause_key_down,1,0)==0) {
+    LONG old=InterlockedCompareExchange(&pause_latched,0,1);
+    if(old==1) {
+      log_line("FOCUS-PAUSE: manual resume requested");
+    } else {
+      InterlockedExchange(&pause_latched,1);
+      log_line("FOCUS-PAUSE: manual pause requested");
+    }
+  }
+}
 static void pause_at_flip_if_background(void) {
   HWND hwnd=game_hwnd;
   MSG msg;
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
   if(GetForegroundWindow()==hwnd) {
     InterlockedExchange(&pause_ever_foreground,1);
-    return;
+  } else if(InterlockedCompareExchange(&pause_ever_foreground,0,0)==1 &&
+            InterlockedCompareExchange(&pause_latched,1,0)==0) {
+    log_line("FOCUS-PAUSE: focus lost; pause latched until manual resume");
   }
-  if(InterlockedCompareExchange(&pause_ever_foreground,0,0)!=1) return;
+  pause_poll_key(hwnd);
+  if(InterlockedCompareExchange(&pause_latched,0,0)!=1) return;
   if(InterlockedCompareExchange(&pause_in_progress,1,0)!=0) return;
-  log_line("FOCUS-PAUSE: waiting for foreground at DirectDraw Flip (experimental)");
-  while(IsWindow(hwnd) && GetForegroundWindow()!=hwnd) {
-    /* Process game-thread window messages, including focus restoration;
-     * do not dispatch WM_QUIT, which must remain visible to the game. */
+  log_line("FOCUS-PAUSE: waiting for foreground and explicit Pause key");
+  while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1) {
     while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
       if(msg.message==WM_QUIT) {
         PostQuitMessage((int)msg.wParam);
@@ -1100,10 +1123,12 @@ static void pause_at_flip_if_background(void) {
       TranslateMessage(&msg);
       DispatchMessageA(&msg);
     }
-    if(GetForegroundWindow()==hwnd) break;
+    if(!IsWindow(hwnd)) break;
+    pause_poll_key(hwnd);
+    if(InterlockedCompareExchange(&pause_latched,0,0)!=1) break;
     MsgWaitForMultipleObjectsEx(0,NULL,50,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
   }
-  log_line("FOCUS-PAUSE: foreground restored or window destroyed");
+  log_line("FOCUS-PAUSE: explicit resume or window destroyed");
   InterlockedExchange(&pause_in_progress,0);
 }
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
@@ -1788,7 +1813,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
     }
   }
   install_ddraw_hook();
-  /* Disabled by default: prototype only, not a full engine/movie pause. */
+  /* Opt-in Windows 11 prototype: latched DirectDraw Flip pause, not full engine/movie pause. */
   {
     char path[MAX_PATH],*slash;
     DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
@@ -1798,7 +1823,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
         GetPrivateProfileIntA("Input","PauseOnFocusLoss",0,path)==1);
     }
     log_line(InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1 ?
-      "FOCUS-PAUSE: experimental Flip-boundary pause ENABLED" :
+      "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (VK_PAUSE resumes)" :
       "FOCUS-PAUSE: experimental Flip-boundary pause disabled");
   }
   SpiderInputFocus_Install(log_line);
