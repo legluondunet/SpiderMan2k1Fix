@@ -276,14 +276,14 @@ Bug reports and reproducible test results are welcome, especially for different 
 ### Diagnostic-only: compare active 3D with original ESC PAUSED menu (experimental branch)
 
 This optional diagnostic is **not part of the PR #18 rendering design** and is disabled by default.
-It reuses the existing IDirect3DDevice7 DrawPrimitive/DrawIndexedPrimitive/Flip hooks, makes **no changes** to the game-owned vertices, textures, input, focus or video output, and only logs 6 frames after an F12 press.
+It reuses the existing IDirect3DDevice7 DrawPrimitive/DrawIndexedPrimitive/Flip hooks, makes **no changes** to the game-owned vertices, textures, input, focus or video output, and only logs 6 frames after an F12 press. Besides the last 40 draw calls, it also ranks the largest *early* translucent quads (48) and triangles (32) each frame, including long thin borders. This avoids missing the full-width ESC pause panel because HUD glyphs were drawn later.
 
 To enable on Linux/Wine, set `SPIDERMAN2K1FIX_ESC_DRAW_TRACE=1` **before** launching the game, and set `[Debug] Log=1` in the existing `SpiderMan2k1Fix.ini`.
 
 1. In the first playable 3D scene, press F12 once (without opening the menu). Wait roughly a second.
 2. Press ESC to open the game's genuine `PAUSED` menu, press F12 again. Wait roughly a second.
-3. Leave the game and save `SpiderMan2k1Fix.log`. The log includes `ESC-PROBE: capture=1` (playing) and `capture=2` (ESC menu), with bounded per-frame records of draw type, callsite RVA, original vertex bounding box, texture size and alpha-blend state.
+3. Leave the game and save `SpiderMan2k1Fix.log`. The log includes `ESC-PROBE: capture=1` (playing) and `capture=2` (ESC menu), with bounded per-frame records of draw type, callsite RVA, original vertex bounding box, texture size and alpha-blend state. Inspect the new `ESC-PROBE-LARGE: frame-summary` and following candidate records for the violet panel and orange spider motif: they also include the first vertex's diffuse ARGB, Z/RHW and temporary stage-0 texture pointer ID, permitting within-run resource grouping without dumping copyrighted pixels.
 
-The diagnostic records only the latest 40 draws per frame to keep output bounded. Vertex bounds are reported **before** the existing viewport/aspect mapping. F12 is observed via `GetAsyncKeyState`, never swallowed or remapped. An unavailable F12 signal may yield no capture, and any untested F12 shortcut in the game should be checked before using it. `SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE=1` bypasses these device hooks and therefore **cannot** be combined with the draw trace.
+The diagnostic records the latest 40 draws, 48 top-ranked large quads and 32 top-ranked large triangles per frame to keep output bounded. Vertex bounds are reported **before** the existing viewport/aspect mapping. F12 is observed via `GetAsyncKeyState`, never swallowed or remapped. An unavailable F12 signal may yield no capture, and any untested F12 shortcut in the game should be checked before using it. `SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE=1` bypasses these device hooks and therefore **cannot** be combined with the draw trace.
 
 Do not treat these diagnostic captures as proof of Wine/Windows runtime stability; remove the env var and revert to the paired PR #18 DLLs after the test. This branch is experimental and must not be merged without maintainer validation.
