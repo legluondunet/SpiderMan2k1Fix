@@ -45,6 +45,8 @@ typedef struct {
 static void (*log_msg)(const char *);
 static volatile LONG diagnostic_active=0;
 static volatile LONG reacquire_enabled=0;
+/* Entry-only observer; never replaces DirectInput COM object vtables. */
+static volatile LONG entry_probe_enabled=0;
 /* Only the diagnostic snapshot needs text formatting; input recovery stays active. */
 static int input_debug_logging=0;
 /* Tracks WM_SETFOCUS after a real WM_KILLFOCUS, not mere foreground guesses. */
@@ -397,7 +399,12 @@ static HRESULT WINAPI focus_directinput8_create(HINSTANCE h,DWORD version,REFIID
   snprintf(line,sizeof(line),"INPUT-DI8: DirectInput8Create version=0x%08lX hr=0x%08lX object=%p",
     (unsigned long)version,(unsigned long)hr,(void*)(out?*out:NULL));
   focus_log(line);
-  if(SUCCEEDED(hr) && out && *out) {
+  /* When only the entry probe is enabled, record the factory call and
+   * forward the returned COM interface untouched. This is intentionally
+   * insufficient to see Acquire/GetDeviceState, but avoids the previously
+   * crashing interface/device vtable instrumentation. */
+  if(SUCCEEDED(hr) && out && *out &&
+     InterlockedCompareExchange(&reacquire_enabled,0,0)==1) {
     void ***object=(void ***)*out;void **vt=*object;
     if(!original_interface_create) {
       memcpy(interface_vtable,vt,sizeof(interface_vtable));
@@ -413,7 +420,7 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   char exe[MAX_PATH],ini[MAX_PATH],*sep,line[200];DWORD n;
   BYTE *base=(BYTE*)GetModuleHandleA(NULL);
   IMAGE_DOS_HEADER *dos;IMAGE_NT_HEADERS32 *nt;
-  void **slot;HMODULE dll;FARPROC target;DWORD old,ignored;LONG want_trace,want_fix,want_cursor;
+  void **slot;HMODULE dll;FARPROC target;DWORD old,ignored;LONG want_trace,want_fix,want_cursor,want_probe;
   log_msg=log_fn;
   n=GetModuleFileNameA(NULL,exe,sizeof(exe));
   if(!n || n>=sizeof(exe) || !(sep=strrchr(exe,'\\'))) return;
@@ -421,6 +428,11 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   input_debug_logging=GetPrivateProfileIntA("Debug","Log",0,ini)==1;
   want_trace=GetPrivateProfileIntA("Input","ExperimentalFocusTrace",0,ini)==1;
   want_fix=GetPrivateProfileIntA("Input","ExperimentalAltTabReacquire",0,ini)==1;
+  want_probe=GetPrivateProfileIntA("Input","ExperimentalDI8EntryTrace",0,ini)==1;
+  /* The read-only entry probe is available only with focus diagnostics.
+   * Never silently enable it in normal operation. */
+  if(!want_trace) want_probe=0;
+  InterlockedExchange(&entry_probe_enabled,want_probe);
   /* Default 1 also covers pre-existing user INIs with no such key. */
   want_cursor=GetPrivateProfileIntA("Input","RestoreCursorOnFocusLoss",1,ini)==1;
   InterlockedExchange(&cursor_visibility_test,want_cursor);
@@ -467,8 +479,11 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   if(want_trace && !want_fix) {
     InterlockedExchange(&reacquire_enabled,0);
     InterlockedExchange(&diagnostic_active,1);
-    focus_log("INPUT-FOCUS: SAFE PASSIVE TRACE enabled (WndProc/Flip only; DirectInput8 IAT and COM vtables untouched)");
-    return;
+    if(!want_probe) {
+      focus_log("INPUT-FOCUS: SAFE PASSIVE TRACE enabled (WndProc/Flip only; DirectInput8 IAT and COM vtables untouched)");
+      return;
+    }
+    focus_log("INPUT-DI8: ENTRY-ONLY PROBE enabled (IAT factory observation; COM vtables untouched; no reacquisition)");
   }
   InterlockedExchange(&reacquire_enabled,want_fix);
   snprintf(line,sizeof(line),
@@ -497,7 +512,9 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   }
   *slot=(void*)focus_directinput8_create;
   VirtualProtect(slot,sizeof(*slot),old,&ignored);
-  snprintf(line,sizeof(line),"INPUT-DI8: DirectInput8Create IAT hooked rva=0x13B01C (reacquire=%ld; no synthetic input)",(long)want_fix);
+  snprintf(line,sizeof(line),
+    "INPUT-DI8: DirectInput8Create IAT hooked rva=0x13B01C (reacquire=%ld entry-probe=%ld; no COM hooks unless recovery explicitly enabled)",
+    (long)want_fix,(long)entry_probe_enabled);
   focus_log(line);
 }
 /* Passive samples on actual foreground transitions: distinguish visible
