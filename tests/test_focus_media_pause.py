@@ -27,7 +27,7 @@ def test_native_bink_call_requires_original_supported_layout():
     assert "memcmp(SPIDER_BINK_CALLSITE,bink_signature,sizeof(bink_signature))" in SRC
     assert '0xFF,0x15,0x10,0xB2,0x53,0x00' in SRC
     assert "imported!=(void *)exported" in SRC
-    assert "DirectSound audio NOT paused" in SRC
+    assert "secondary DirectSound voice handling is separate" in SRC
 
 def test_media_pause_lifecycle_and_no_unsafe_hooks():
     pause=CORE[CORE.index("static void pause_at_flip_if_background(void)"):
