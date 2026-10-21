@@ -42,3 +42,20 @@ def test_optional_esc_draw_trace_is_read_only_and_never_alters_rendering():
     assert "esc_probe_record(self,1,type,fvf,verts,count,icount,__builtin_return_address(0));" in SRC
     assert "return original_draw_primitive(self,type,fvf,verts,count,flags);" not in SRC
     assert "vt[25]=(void*)hooked_draw_primitive;" in SRC
+
+
+def test_esc_probe_keeps_early_large_ui_shapes_without_altering_draw_calls():
+    # The initial diagnostic sampled only the last 40 calls, which captured
+    # native PAUSED/menu letters but missed the earlier full-width violet
+    # panel and translucent orange background.
+    assert "#define ESC_PROBE_TOP_QUADS 48" in SRC
+    assert "#define ESC_PROBE_TOP_TRIS 32" in SRC
+    assert "esc_probe_rank_large(item);" in SRC
+    assert "esc_probe_dump_candidates(\"quad\",esc_probe_top_quads,esc_probe_quad_count)" in SRC
+    assert "esc_probe_dump_candidates(\"tri\",esc_probe_top_tris,esc_probe_tri_count)" in SRC
+    assert "ESC-PROBE-LARGE: frame-summary" in SRC
+    assert "d->texture_id" in SRC
+    assert "d->diffuse" in SRC
+    assert "score=(double)w*(double)h;" in SRC
+    assert "if(draw->vertex_count==4)" in SRC
+    assert "esc_probe_quad_count=0;esc_probe_tri_count=0;" in SRC
