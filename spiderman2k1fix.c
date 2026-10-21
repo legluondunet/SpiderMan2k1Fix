@@ -749,8 +749,10 @@ static void hud_probe_boss_unknown(void *device,D3DPRIMITIVETYPE type,
   for(i=1;i<count;++i) {
     memcpy(&x,p+i*stride,sizeof(x));
     memcpy(&y,p+i*stride+4,sizeof(y));
-    if(x<l)l=x;if(x>r)r=x;
-    if(y<t)t=y;if(y>b)b=y;
+    if(x<l)l=x;
+    if(x>r)r=x;
+    if(y<t)t=y;
+    if(y>b)b=y;
   }
   if(!(l>=-40.0f && r<=(float)desktop_w+40.0f &&
        t>=-40.0f && b<=(float)desktop_h*0.42f &&
