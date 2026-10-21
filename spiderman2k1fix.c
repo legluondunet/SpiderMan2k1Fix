@@ -24,6 +24,7 @@
 #include "input_focus_trace.h"
 #include "input_notacquired_retry.h"
 #include "pause_any_key.h"
+#include "focus_media_pause.h"
 #include "menu_version.h"
 #include "version_info.h"
 
@@ -1156,6 +1157,9 @@ static void pause_at_flip_if_background(void) {
   pause_poll_key(hwnd);
   if(InterlockedCompareExchange(&pause_latched,0,0)!=1) return;
   if(InterlockedCompareExchange(&pause_in_progress,1,0)!=0) return;
+  /* Bink is independent of the DirectDraw present thread; pausing a Flip
+   * alone leaves the decoder/sound running. Native Bink pause is opt-in. */
+  SpiderFocusMedia_Pause();
   if(pause_key_vk==0) {
     if(SpiderPauseAny_Begin(hwnd))
       log_line("FOCUS-PAUSE: Any keyboard resume ARMED; consumes press and release");
@@ -1173,6 +1177,7 @@ static void pause_at_flip_if_background(void) {
       if(msg.message==WM_QUIT) {
         PostQuitMessage((int)msg.wParam);
         SpiderPauseAny_End();
+        SpiderFocusMedia_Resume();
         log_line("FOCUS-PAUSE: WM_QUIT observed, aborting wait");
         InterlockedExchange(&pause_in_progress,0);
         return;
@@ -1196,6 +1201,7 @@ static void pause_at_flip_if_background(void) {
     log_line(line);
   }
   SpiderPauseAny_End();
+  SpiderFocusMedia_Resume();
   log_line("FOCUS-PAUSE: explicit resume or window destroyed");
   pause_log_resume_focus(hwnd);
   InterlockedExchange(&pause_in_progress,0);
@@ -1714,6 +1720,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
    * No COM-vtable interception. The actual patch is delayed to Flip #120. */
   SpiderDI8Retry_Init(log_line);
+  SpiderFocusMedia_Init(log_line); /* Opt-in Bink pause; DirectSound untouched. */
   /* The first-run generator or repair may have changed [Debug] Log. */
   {
     int previous_log_enabled=debug_log_enabled;
