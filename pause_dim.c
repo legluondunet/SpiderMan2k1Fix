@@ -52,6 +52,15 @@ static LRESULT CALLBACK dim_proc(HWND window,UINT message,WPARAM wparam,LPARAM l
           if(pen) {
             HGDIOBJ previous=SelectObject(dc,pen);
             int x,y;
+            int saved=SaveDC(dc);
+            RECT center;
+            /* Never rasterize the 16px grid behind ANY center text. The
+             * popup is above the child glyphs under Wine, so clipping
+             * the complete rectangular banner is far more reliable than
+             * relying solely on GDI font-path masks at individual pixels. */
+            if(saved && SpiderPauseOverlay_GetBounds(GetWindow(window,GW_OWNER),&center))
+              ExcludeClipRect(dc,center.left-8,center.top-8,
+                                  center.right+8,center.bottom+8);
             for(x=DIM_GRID_STEP;x<bounds.right;x+=DIM_GRID_STEP) {
               MoveToEx(dc,x,0,NULL);
               LineTo(dc,x,bounds.bottom);
@@ -60,6 +69,7 @@ static LRESULT CALLBACK dim_proc(HWND window,UINT message,WPARAM wparam,LPARAM l
               MoveToEx(dc,0,y,NULL);
               LineTo(dc,bounds.right,y);
             }
+            if(saved)RestoreDC(dc,saved);
             SelectObject(dc,previous);
             DeleteObject(pen);
           }
@@ -125,7 +135,8 @@ static void dim_show_center_panel(HWND game_window,HINSTANCE instance,
   int width,height;
   DWORD error;
   char detail[160];
-  if(!SpiderPauseOverlay_GetBounds(game_window,&box))return;
+  if(GetForegroundWindow()!=game_window ||
+     !SpiderPauseOverlay_GetBounds(game_window,&box))return;
   width=box.right-box.left;
   height=box.bottom-box.top;
   if(width<100 || height<50 || box.left<0 || box.top<0 ||
@@ -188,7 +199,8 @@ void SpiderPauseDim_Show(HWND game_window) {
   DWORD error;
   char detail[160];
 
-  if(!dim_enabled || !game_window || !IsWindow(game_window))return;
+  if(!dim_enabled || !game_window || !IsWindow(game_window) ||
+     GetForegroundWindow()!=game_window)return;
   if(dim_hwnd && IsWindow(dim_hwnd))return;
   dim_hwnd=NULL;
   instance=GetModuleHandleW(NULL);
@@ -263,7 +275,7 @@ void SpiderPauseDim_Show(HWND game_window) {
   ShowWindow(window,SW_SHOWNOACTIVATE);
   if(dim_log) {
     snprintf(detail,sizeof(detail),
-      "FOCUS-DIM: owned popup alpha %u/255 opacity=%d%% grid=%s step=%dpx; center message cut out",
+      "FOCUS-DIM: foreground-only owned popup alpha %u/255 opacity=%d%% grid=%s step=%dpx; center box grid-clipped",
       (unsigned)dim_alpha,dim_opacity,dim_grid_enabled?"on":"off",DIM_GRID_STEP);
     dim_log(detail);
   }
