@@ -57,7 +57,15 @@ static const char *const spider_ini_display[]={
   "ExperimentalDisplayMenuLock"
 };
 static const char *const spider_ini_hud[]={"HUDWidescreenFix"};
-static const char *const spider_ini_input[]={"ExperimentalAltTabReacquire","ExperimentalFocusTrace","PauseOnFocusLoss","RestoreCursorOnFocusLoss"};
+/* Retain two obsolete COM keys for backward compatibility: old user INIs
+ * must NOT be treated as invalid and regenerated, losing saved controls.
+ * The runtime refuses both unsafe features regardless of their values.
+ * Neither obsolete key is generated or documented as an active option. */
+static const char *const spider_ini_input[]={
+  "DirectInputReacquire","PauseOnFocusLoss","PauseKey",
+  "RestoreCursorOnFocusLoss","ExperimentalFocusTrace","ExperimentalDI8EntryTrace",
+  "ExperimentalAltTabReacquire","ExperimentalDI8CreateDeviceTrace"
+};
 static const char *const spider_ini_audio[]={"MusicSFXLevel","VoiceLevel","MovieLevel","Stereo"};
 static const char *const spider_ini_keys[]={"Up","Down","Left","Right","Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
 static const char *const spider_ini_joy[]={"Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
@@ -124,6 +132,9 @@ static int spider_ini_value_valid(const char *section,const char *key,const char
   if(!spider_ini_icmp(section,"Joystick"))return spider_ini_joystick(value);
   if(!spider_ini_icmp(section,"Audio"))return spider_ini_uint(value,0,
            !spider_ini_icmp(key,"Stereo")?1:100);
+  if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"PauseKey"))
+    return !spider_ini_icmp(value,"F9") || !spider_ini_icmp(value,"Space") ||
+           !spider_ini_icmp(value,"Any");
   if(!spider_ini_icmp(section,"Debug")||!spider_ini_icmp(section,"Input")||
      !spider_ini_icmp(section,"HUD"))return spider_ini_uint(value,0,1);
   if(!spider_ini_icmp(section,"Display")) {

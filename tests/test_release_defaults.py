@@ -37,8 +37,12 @@ def test_input_focus_recovery_not_removed():
 def test_native_windows_reacquire_hook_not_on_by_default():
     ini = (ROOT / 'SpiderMan2k1Fix.ini').read_text()
     generated = (ROOT / 'virtual_spidey_cfg.c').read_text()
-    assert 'ExperimentalAltTabReacquire=0' in ini
-    assert '"ExperimentalAltTabReacquire=0\\r\\n"' in generated
+    assert 'DirectInputReacquire=0' in ini
+    assert '"DirectInputReacquire=0\\r\\n"' in generated
+    assert 'ExperimentalAltTabReacquire=' not in ini
+    assert '"ExperimentalAltTabReacquire=' not in generated
+    assert 'ExperimentalDI8CreateDeviceTrace=' not in ini
+    assert '"ExperimentalDI8CreateDeviceTrace=' not in generated
     assert 'PauseOnFocusLoss=0' in ini
     assert '"PauseOnFocusLoss=0\\r\\n"' in generated
     assert 'RestoreCursorOnFocusLoss=1' in ini

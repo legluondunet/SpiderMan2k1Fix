@@ -116,6 +116,15 @@ AspectRatio=Auto
 Brightness=4
 FPSLimit=30
 
+[Input]
+; Experimental Windows 11 input recovery; default OFF.
+DirectInputReacquire=0
+; Pause rendering after a real Alt+Tab; default OFF.
+PauseOnFocusLoss=0
+; F9 (default), Space or Any (consume first foreground wake key).
+PauseKey=F9
+RestoreCursorOnFocusLoss=1
+
 [Audio]
 ; Volume levels: 0..100 percent
 MusicSFXLevel=69
@@ -159,6 +168,8 @@ The generated INI may contain additional internal or development-specific settin
 
 **Controls:** keyboard and joystick bindings are independent. Keyboard values use physical DirectInput key names or hexadecimal scan codes. Joystick values use the same `BUTTON0`, `BUTTON1`, etc. numbering shown in the game's **Joystick Configuration** menu. Joystick movement axes/directions are handled by the game and are not configurable through this section.
 
+**Alt+Tab recovery (experimental, Windows 11):** The user-tested PR #7 configuration uses `DirectInputReacquire=1`, `PauseOnFocusLoss=1`, and `PauseKey=Any`. After switching back to the game, press and release a keyboard key: the pause ends and the key sequence is intercepted rather than intentionally passed to the game. The native DirectInput8 retry uses the original game's existing `Acquire` error path for `DIERR_NOTACQUIRED`, without wrapping COM interfaces. The user has validated the combination in menus, cinematics and 3D, but **the new INI activation itself still needs a final A/B test**. Both recovery and pause remain disabled by default in the experimental branch. The separate `SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY=1` environment variable is still accepted for existing diagnostics and overrides a disabled INI value; unset it to test the INI alone. The older `ExperimentalAltTabReacquire` and `ExperimentalDI8CreateDeviceTrace` flags are no longer generated and remain disabled in code even if present in an old INI.
+
 **Audio:** the three volume levels use user-friendly percentages; `Stereo=1` enables stereo and `Stereo=0` selects mono.
 
 ### Debug log
@@ -197,7 +208,7 @@ Look for a numbered `SpiderMan2k1Fix_N.old` backup. The previous configuration m
 
 **Controls are not responding after switching applications**
 
-Make sure you are using the latest stable release for your installation. Input reacquisition is intended to restore control when returning from Alt+Tab. If the problem persists, enable the debug log and include the reproduction steps in a bug report.
+If testing the unmerged PR #7 experimental Windows 11 fix, keep both `DirectInputReacquire=1` and `PauseOnFocusLoss=1`, with `PauseKey=Any` for consumed-key resume. If recovery fails, check the log for `DI8-RETRY: EXPERIMENTAL requested source=INI` and `DI8-RETRY: EXPERIMENTAL active at Flip #120`, and include the reproduction steps in the bug report. Existing stable releases may behave differently.
 
 **The game has visual or audio glitches**
 

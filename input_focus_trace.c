@@ -45,6 +45,10 @@ typedef struct {
 static void (*log_msg)(const char *);
 static volatile LONG diagnostic_active=0;
 static volatile LONG reacquire_enabled=0;
+/* Entry-only observer; never replaces DirectInput COM object vtables. */
+static volatile LONG entry_probe_enabled=0;
+/* Second-stage diagnostic, opt-in: intercept CreateDevice only. */
+static volatile LONG interface_probe_enabled=0;
 /* Only the diagnostic snapshot needs text formatting; input recovery stays active. */
 static int input_debug_logging=0;
 /* Tracks WM_SETFOCUS after a real WM_KILLFOCUS, not mere foreground guesses. */
@@ -387,7 +391,10 @@ static HRESULT WINAPI focus_create_device(void *self,REFGUID guid,void **out,LPU
   snprintf(line,sizeof(line),"INPUT-DI8: IDirectInput8::CreateDevice hr=0x%08lX object=%p",
     (unsigned long)hr,(void*)(out?*out:NULL));
   focus_log(line);
-  if(SUCCEEDED(hr) && out && *out) focus_instrument_device(*out,guid);
+  /* Device COM vtables are never replaced in observation-only mode. */
+  if(SUCCEEDED(hr) && out && *out &&
+     InterlockedCompareExchange(&reacquire_enabled,0,0)==1)
+    focus_instrument_device(*out,guid);
   return hr;
 }
 static HRESULT WINAPI focus_directinput8_create(HINSTANCE h,DWORD version,REFIID iid,LPVOID *out,LPUNKNOWN outer) {
@@ -397,7 +404,13 @@ static HRESULT WINAPI focus_directinput8_create(HINSTANCE h,DWORD version,REFIID
   snprintf(line,sizeof(line),"INPUT-DI8: DirectInput8Create version=0x%08lX hr=0x%08lX object=%p",
     (unsigned long)version,(unsigned long)hr,(void*)(out?*out:NULL));
   focus_log(line);
-  if(SUCCEEDED(hr) && out && *out) {
+  /* The factory-only probe never touches COM objects. The separately opted-in
+   * CreateDevice probe substitutes only the interface's CreateDevice slot,
+   * forwarding the call verbatim and leaving device methods untouched.
+   * Neither diagnostic observes Acquire/GetDeviceState. */
+  if(SUCCEEDED(hr) && out && *out &&
+     (InterlockedCompareExchange(&reacquire_enabled,0,0)==1 ||
+      InterlockedCompareExchange(&interface_probe_enabled,0,0)==1)) {
     void ***object=(void ***)*out;void **vt=*object;
     if(!original_interface_create) {
       memcpy(interface_vtable,vt,sizeof(interface_vtable));
@@ -413,7 +426,7 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   char exe[MAX_PATH],ini[MAX_PATH],*sep,line[200];DWORD n;
   BYTE *base=(BYTE*)GetModuleHandleA(NULL);
   IMAGE_DOS_HEADER *dos;IMAGE_NT_HEADERS32 *nt;
-  void **slot;HMODULE dll;FARPROC target;DWORD old,ignored;LONG want_trace,want_fix,want_cursor;
+  void **slot;HMODULE dll;FARPROC target;DWORD old,ignored;LONG want_trace,want_fix,want_cursor,want_probe,want_interface_probe;
   log_msg=log_fn;
   n=GetModuleFileNameA(NULL,exe,sizeof(exe));
   if(!n || n>=sizeof(exe) || !(sep=strrchr(exe,'\\'))) return;
@@ -421,6 +434,26 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   input_debug_logging=GetPrivateProfileIntA("Debug","Log",0,ini)==1;
   want_trace=GetPrivateProfileIntA("Input","ExperimentalFocusTrace",0,ini)==1;
   want_fix=GetPrivateProfileIntA("Input","ExperimentalAltTabReacquire",0,ini)==1;
+  want_probe=GetPrivateProfileIntA("Input","ExperimentalDI8EntryTrace",0,ini)==1;
+  want_interface_probe=GetPrivateProfileIntA("Input","ExperimentalDI8CreateDeviceTrace",0,ini)==1;
+  /* Windows 11 regression confirmed 2026-10-21: replacing the native
+   * IDirectInput8 vtable causes CreateDevice to return E_INVALIDARG
+   * (0x80070057), and the game fails during initialization.
+   * Do not enter either legacy COM interception path until redesigned.
+   * Keep reading the old keys so existing user INIs remain compatible. */
+  if(want_interface_probe)
+    focus_log("INPUT-DI8: WARNING CreateDevice COM probe DISABLED: verified startup failure E_INVALIDARG 0x80070057; factory-only probe remains available");
+  if(want_fix)
+    focus_log("INPUT-DI8: WARNING legacy AltTabReacquire COM hook DISABLED: unsafe interface/device vtable interception");
+  want_interface_probe=0;
+  want_fix=0;
+  /* The read-only entry probe is available only with focus diagnostics.
+   * Never silently enable it in normal operation. */
+  if(!want_trace) want_probe=0;
+  /* A CreateDevice probe requires the separately validated factory probe. */
+  if(!want_probe) want_interface_probe=0;
+  InterlockedExchange(&entry_probe_enabled,want_probe);
+  InterlockedExchange(&interface_probe_enabled,want_interface_probe);
   /* Default 1 also covers pre-existing user INIs with no such key. */
   want_cursor=GetPrivateProfileIntA("Input","RestoreCursorOnFocusLoss",1,ini)==1;
   InterlockedExchange(&cursor_visibility_test,want_cursor);
@@ -460,6 +493,21 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
     focus_log("INPUT-CURSOR: RestoreCursorOnFocusLoss=0; automatic cursor restore disabled");
     return;
   }
+  /* Keep the default trace-only mode passive. Experimental factory and
+   * interface probes are separate opt-ins; device-vtable interception remains
+   * exclusive to explicit recovery mode after prior startup regressions. */
+  if(want_trace && !want_fix) {
+    InterlockedExchange(&reacquire_enabled,0);
+    InterlockedExchange(&diagnostic_active,1);
+    if(!want_probe) {
+      focus_log("INPUT-FOCUS: SAFE PASSIVE TRACE enabled (WndProc/Flip only; DirectInput8 IAT and COM vtables untouched)");
+      return;
+    }
+    if(want_interface_probe)
+      focus_log("INPUT-DI8: CREATEDEVICE PROBE enabled (COM interface CreateDevice wrapper only; device vtables untouched; no reacquisition)");
+    else
+      focus_log("INPUT-DI8: ENTRY-ONLY PROBE enabled (IAT factory observation; COM vtables untouched; no reacquisition)");
+  }
   InterlockedExchange(&reacquire_enabled,want_fix);
   snprintf(line,sizeof(line),
     "INPUT-FIX: ExperimentalAltTabReacquire=%ld ExperimentalFocusTrace=%ld (guarded recovery after lost/returned focus)",
@@ -487,7 +535,9 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   }
   *slot=(void*)focus_directinput8_create;
   VirtualProtect(slot,sizeof(*slot),old,&ignored);
-  snprintf(line,sizeof(line),"INPUT-DI8: DirectInput8Create IAT hooked rva=0x13B01C (reacquire=%ld; no synthetic input)",(long)want_fix);
+  snprintf(line,sizeof(line),
+    "INPUT-DI8: DirectInput8Create IAT hooked rva=0x13B01C (reacquire=%ld entry-probe=%ld create-device-probe=%ld)",
+    (long)want_fix,(long)entry_probe_enabled,(long)interface_probe_enabled);
   focus_log(line);
 }
 /* Passive samples on actual foreground transitions: distinguish visible

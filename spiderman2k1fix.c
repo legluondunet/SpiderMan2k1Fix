@@ -23,6 +23,7 @@
 #include "fov_aspect_win.h"
 #include "input_focus_trace.h"
 #include "input_notacquired_retry.h"
+#include "pause_any_key.h"
 #include "menu_version.h"
 #include "version_info.h"
 
@@ -1068,42 +1069,135 @@ static HRESULT WINAPI hooked_get_attached(void *self,LPDDSCAPS2 caps,
   if(SUCCEEDED(hr) && out && *out) instrument_surface(*out);
   return hr;
 }
-/* Experimental cooperative pause at the DirectDraw presentation boundary.
- * Keep the GUI message queue responsive so WM_ACTIVATEAPP/WM_SETFOCUS can
- * arrive while the gameplay thread is waiting. This is NOT a Bink/movie
- * decoder hook; movies with independent timing can continue running.
- * Never suspend threads or modify focus / window Z-order here. */
+/* Experimental cooperative DirectDraw presentation pause for Windows 11.
+ * This is not a global movie/audio pause. Keep pumping messages; never
+ * suspend threads or force activation while the game is in background. */
 static volatile LONG pause_on_focus_loss=0;
 static LONG pause_ever_foreground=0;
 static LONG pause_in_progress=0;
+static LONG pause_latched=0;
+static LONG pause_key_down=0;
+static int pause_key_vk=VK_F9; /* 0 = Any (focus-loss resume only) */
+static DWORD pause_background_since=0;
+/* Ignore brief foreground changes (e.g. mouse activation quirks).
+ * Real Alt+Tab is recognized only if another process stays foreground. */
+static BOOL pause_confirmed_focus_loss(HWND hwnd) {
+  HWND fg=GetForegroundWindow();
+  DWORD game_pid=0,fg_pid=0,now;
+  if(fg==hwnd) { pause_background_since=0; return FALSE; }
+  GetWindowThreadProcessId(hwnd,&game_pid);
+  if(fg) GetWindowThreadProcessId(fg,&fg_pid);
+  /* A transient NULL foreground or another window owned by the game
+   * is not proof that Spider-Man was switched to the background. */
+  if(!fg || !game_pid || fg_pid==game_pid) {
+    pause_background_since=0;
+    return FALSE;
+  }
+  now=GetTickCount();
+  if(!pause_background_since) {
+    pause_background_since=now?now:1;
+    return FALSE;
+  }
+  return (DWORD)(now-pause_background_since)>=150;
+}
+
+
+/* Pause key is only accepted while this window owns the foreground.
+ * Hold-to-repeat cannot accidentally toggle the pause repeatedly. */
+static void pause_poll_key(HWND hwnd) {
+  BOOL down;
+  if(pause_key_vk==0) return; /* Any must not pause during ordinary game controls. */
+  if(GetForegroundWindow()!=hwnd) {
+    InterlockedExchange(&pause_key_down,1);
+    return;
+  }
+  down=(GetAsyncKeyState(pause_key_vk)&0x8000)!=0;
+  if(!down) {
+    InterlockedExchange(&pause_key_down,0);
+  } else if(InterlockedCompareExchange(&pause_key_down,1,0)==0) {
+    LONG old=InterlockedCompareExchange(&pause_latched,0,1);
+    if(old==1) {
+      log_line("FOCUS-PAUSE: manual resume requested");
+    } else {
+      InterlockedExchange(&pause_latched,1);
+      log_line("FOCUS-PAUSE: manual pause requested");
+    }
+  }
+}
+/* Focus-only snapshot: no DirectInput hooks or synthetic activation. */
+static void pause_log_resume_focus(HWND hwnd) {
+  GUITHREADINFO gi; DWORD tid;char line[280];
+  if(!debug_log_enabled || !hwnd || !IsWindow(hwnd)) return;
+  tid=GetWindowThreadProcessId(hwnd,NULL);
+  memset(&gi,0,sizeof(gi));gi.cbSize=sizeof(gi);
+  if(GetGUIThreadInfo(tid,&gi)) {
+    snprintf(line,sizeof(line),
+      "FOCUS-PAUSE: resume-focus hwnd=%p foreground=%p active=%p focus=%p capture=%p flags=0x%08lX thread=%lu",
+      (void*)hwnd,(void*)GetForegroundWindow(),(void*)gi.hwndActive,
+      (void*)gi.hwndFocus,(void*)gi.hwndCapture,(unsigned long)gi.flags,(unsigned long)tid);
+  } else {
+    snprintf(line,sizeof(line),"FOCUS-PAUSE: resume-focus GetGUIThreadInfo failed Win32=%lu",
+      (unsigned long)GetLastError());
+  }
+  log_line(line);
+}
 static void pause_at_flip_if_background(void) {
   HWND hwnd=game_hwnd;
   MSG msg;
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
   if(GetForegroundWindow()==hwnd) {
+    pause_background_since=0;
     InterlockedExchange(&pause_ever_foreground,1);
-    return;
+  } else if(InterlockedCompareExchange(&pause_ever_foreground,0,0)==1 &&
+            pause_confirmed_focus_loss(hwnd) &&
+            InterlockedCompareExchange(&pause_latched,1,0)==0) {
+    log_line("FOCUS-PAUSE: confirmed external focus loss; pause latched until manual resume");
   }
-  if(InterlockedCompareExchange(&pause_ever_foreground,0,0)!=1) return;
+  pause_poll_key(hwnd);
+  if(InterlockedCompareExchange(&pause_latched,0,0)!=1) return;
   if(InterlockedCompareExchange(&pause_in_progress,1,0)!=0) return;
-  log_line("FOCUS-PAUSE: waiting for foreground at DirectDraw Flip (experimental)");
-  while(IsWindow(hwnd) && GetForegroundWindow()!=hwnd) {
-    /* Process game-thread window messages, including focus restoration;
-     * do not dispatch WM_QUIT, which must remain visible to the game. */
+  if(pause_key_vk==0) {
+    if(SpiderPauseAny_Begin(hwnd))
+      log_line("FOCUS-PAUSE: Any keyboard resume ARMED; consumes press and release");
+    else {
+      char line[144];DWORD err=GetLastError();
+      snprintf(line,sizeof(line),
+        "FOCUS-PAUSE: Any keyboard hook failed Win32=%lu; falling back to F9",
+        (unsigned long)err);
+      log_line(line);
+      pause_key_vk=VK_F9;
+    }
+  } else log_line("FOCUS-PAUSE: waiting for foreground and explicit pause key");
+  while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1) {
     while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
       if(msg.message==WM_QUIT) {
         PostQuitMessage((int)msg.wParam);
+        SpiderPauseAny_End();
         log_line("FOCUS-PAUSE: WM_QUIT observed, aborting wait");
         InterlockedExchange(&pause_in_progress,0);
         return;
       }
+      if(pause_key_vk==0 && SpiderPauseAny_DiscardGameKeyMessage(&msg,hwnd)) continue;
       TranslateMessage(&msg);
       DispatchMessageA(&msg);
     }
-    if(GetForegroundWindow()==hwnd) break;
+    if(!IsWindow(hwnd)) break;
+    if(pause_key_vk==0 && SpiderPauseAny_Completed())
+      InterlockedExchange(&pause_latched,0);
+    else pause_poll_key(hwnd);
+    if(InterlockedCompareExchange(&pause_latched,0,0)!=1) break;
     MsgWaitForMultipleObjectsEx(0,NULL,50,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
   }
-  log_line("FOCUS-PAUSE: foreground restored or window destroyed");
+  if(pause_key_vk==0 && SpiderPauseAny_FirstKey()!=0) {
+    char line[128];
+    snprintf(line,sizeof(line),
+      "FOCUS-PAUSE: Any-key resume swallowed virtual-key=0x%02lX",
+      (unsigned long)SpiderPauseAny_FirstKey());
+    log_line(line);
+  }
+  SpiderPauseAny_End();
+  log_line("FOCUS-PAUSE: explicit resume or window destroyed");
+  pause_log_resume_focus(hwnd);
   InterlockedExchange(&pause_in_progress,0);
 }
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
@@ -1613,11 +1707,13 @@ static DWORD WINAPI initialize(LPVOID unused) {
   }
   log_line("OK: supported SpideyPC.exe SHA-256 verified");
   install_null_fclose_guard(); /* Default ON only for SHA-verified EXE and exact native opcode signature. */
-  SpiderDI8Retry_Init(log_line); /* WinDbg-guided game-native Acquire retry; OFF by default */
   /* Generate complete defaults once, before any GetPrivateProfile... reads. */
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
+   * No COM-vtable interception. The actual patch is delayed to Flip #120. */
+  SpiderDI8Retry_Init(log_line);
   /* The first-run generator or repair may have changed [Debug] Log. */
   {
     int previous_log_enabled=debug_log_enabled;
@@ -1788,17 +1884,23 @@ static DWORD WINAPI initialize(LPVOID unused) {
     }
   }
   install_ddraw_hook();
-  /* Disabled by default: prototype only, not a full engine/movie pause. */
+  /* Opt-in Windows 11 prototype: latched DirectDraw Flip pause, not full engine/movie pause. */
   {
     char path[MAX_PATH],*slash;
     DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
     if(n>0 && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL) {
       strcpy(slash+1,"SpiderMan2k1Fix.ini");
+      char key[32];
+      GetPrivateProfileStringA("Input","PauseKey","F9",key,sizeof(key),path);
+      pause_key_vk=(lstrcmpiA(key,"Any")==0)?0:
+                   (lstrcmpiA(key,"Space")==0)?VK_SPACE:VK_F9;
       InterlockedExchange(&pause_on_focus_loss,
         GetPrivateProfileIntA("Input","PauseOnFocusLoss",0,path)==1);
     }
     log_line(InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1 ?
-      "FOCUS-PAUSE: experimental Flip-boundary pause ENABLED" :
+      (pause_key_vk==0 ? "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (Any key consumed on release)" :
+        pause_key_vk==VK_SPACE ? "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (Space resumes)" :
+       "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (F9 resumes)") :
       "FOCUS-PAUSE: experimental Flip-boundary pause disabled");
   }
   SpiderInputFocus_Install(log_line);

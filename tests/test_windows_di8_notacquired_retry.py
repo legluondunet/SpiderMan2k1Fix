@@ -12,8 +12,12 @@ DOC=(ROOT/"WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()
 ORIGINAL_SHA256="0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea"
 
 def test_opt_in_and_exact_game_guard():
-    assert 'SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY' in SRC
-    assert "if(n==1 && value[0]=='1')" in SRC
+    assert 'SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY' in SRC  # backward-compatible override
+    assert 'GetPrivateProfileIntA("Input","DirectInputReacquire",0,ini)==1' in SRC
+    assert "enabled_env=(env_length==1 && value[0]=='1');" in SRC
+    assert "InterlockedExchange(&requested,(enabled_ini || enabled_env)?1:0)" in SRC
+    assert "source=%s%s" in SRC
+    assert MAIN.index("SpiderCfg_ValidateCurrentIni(log_line);") < MAIN.index("SpiderDI8Retry_Init(log_line);")
     assert 'sizeof(void*)!=4' in SRC
     assert 'SPIDER_IMAGE_BASE 0x00400000u' in SRC
     assert 'memcmp((void *)(uintptr_t)SPIDER_KEY_GETDATA' in SRC

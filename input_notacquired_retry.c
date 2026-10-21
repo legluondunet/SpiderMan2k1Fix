@@ -226,14 +226,40 @@ static void try_install(void) {
     write_log("DI8-RETRY: EXPERIMENTAL active at Flip #120; exact x86 branch patch verified; original Acquire/retry reused, foreground only");
 }
 void SpiderDI8Retry_Init(void (*log_fn)(const char *)) {
+  char exe[MAX_PATH],ini[MAX_PATH],*slash;
   char value[4]={0};
-  DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY",
-                                   value,sizeof(value));
+  DWORD n,env_length;
+  int enabled_ini=0,enabled_env=0;
+
   write_log=log_fn;
-  if(n==1 && value[0]=='1') {
-    InterlockedExchange(&requested,1);
-    if(write_log)
-      write_log("DI8-RETRY: EXPERIMENTAL requested; deferred branch install at Flip #120; OFF by default");
+  /* Called only after the supported EXE SHA-256 has been checked AND the
+   * default INI has been generated and validated. Do not patch the native
+   * executable until the existing Flip #120 safety boundary. */
+  n=GetModuleFileNameA(NULL,exe,sizeof(exe));
+  if(n>0 && n<sizeof(exe) && (slash=strrchr(exe,'\\'))!=NULL &&
+     (size_t)(slash-exe)+strlen("SpiderMan2k1Fix.ini")+1<sizeof(ini)) {
+    memcpy(ini,exe,n+1);
+    strcpy(ini+(slash-exe)+1,"SpiderMan2k1Fix.ini");
+    enabled_ini=GetPrivateProfileIntA("Input","DirectInputReacquire",0,ini)==1;
+  } else if(write_log) {
+    write_log("DI8-RETRY: WARNING cannot locate INI; INI setting ignored");
+  }
+
+  /* Compatibility for established Windows 11 diagnostic launch scripts:
+   * the old environment variable can still opt in. The new INI setting
+   * does not require it; unset the variable for an INI-only A/B test. */
+  env_length=GetEnvironmentVariableA("SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY",
+                                     value,sizeof(value));
+  enabled_env=(env_length==1 && value[0]=='1');
+  InterlockedExchange(&requested,(enabled_ini || enabled_env)?1:0);
+  if(snapshot(&requested)==1 && write_log) {
+    char line[160];
+    snprintf(line,sizeof(line),
+      "DI8-RETRY: EXPERIMENTAL requested source=%s%s; deferred branch install at Flip #120",
+      enabled_ini?"INI":"",enabled_env?(enabled_ini?"+environment":"environment"):"");
+    write_log(line);
+  } else if(write_log) {
+    write_log("DI8-RETRY: OFF (DirectInputReacquire=0; environment override not enabled)");
   }
 }
 void SpiderDI8Retry_OnFlip(long flip_index) {
