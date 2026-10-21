@@ -59,3 +59,24 @@ def test_esc_probe_keeps_early_large_ui_shapes_without_altering_draw_calls():
     assert "score=(double)w*(double)h;" in SRC
     assert "if(draw->vertex_count==4)" in SRC
     assert "esc_probe_quad_count=0;esc_probe_tri_count=0;" in SRC
+
+
+def test_esc_probe_records_exact_native_vertices_and_blend_read_only():
+    # Bounding boxes alone cannot reconstruct the angular orange ESC motif.
+    # Capture ordered original vertices and four per-vertex colors, and blend
+    # factors, but never modify the caller's vertex buffer.
+    assert "typedef struct EscProbeVertex" in SRC
+    assert "EscProbeVertex corners[4]" in SRC
+    assert "if(count==4 && primitive==D3DPT_TRIANGLEFAN && !indexed)" in SRC
+    assert "item->corners[i].x=v[i].x;" in SRC
+    assert "item->corners[i].y=v[i].y;" in SRC
+    assert "item->corners[i].diffuse=v[i].diffuse;" in SRC
+    assert "item->corners[i].u=v[i].u;" in SRC
+    assert "item->corners[i].v=v[i].v;" in SRC
+    assert "D3DRENDERSTATE_SRCBLEND" in SRC
+    assert "D3DRENDERSTATE_DESTBLEND" in SRC
+    assert "ESC-PROBE-VERTICES:" in SRC
+    assert "ESC-PROBE-UV:" in SRC
+    assert "if(esc_probe_frames==6)" in SRC
+    assert "esc_probe_dump_exact_geometry(esc_probe_top_quads,esc_probe_quad_count);" in SRC
+    assert "d->z>0.005f" in SRC
