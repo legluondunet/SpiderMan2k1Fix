@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — clearer English focus-pause indicator and Any-key-only wake (PR #14)
+
+- Change the center message to **PAUSE / PRESS ANY KEY TO RESUME** in English, with a larger (23px) white bold-italic hint, 4px rounded red outline and slightly larger centered box. Preserve the shaped child HWND and its pixel-precise cutout through the surrounding full-screen grid overlay.
+- Keep the validated global **55% darkening and 16px grid** intact; add a smaller, **optional** owned, nonactivating constant-alpha dark panel clipped inside the rounded PAUSE frame. A second exact red/white glyph cutout avoids shading the foreground text. The additional 35% tint yields roughly 71% combined black where panel and regular shade overlap; panel failures are logged but are nonfatal.
+- Retire distinct F9 and Space pause/resume modes and the `PauseKey` INI choice. Always resume by a foreground Any-key press/release (consumed by the existing WH_KEYBOARD_LL hook); any retained older `PauseKey` entry is accepted by validation only to prevent unnecessary INI repair, but ignored at runtime.
+- Install the Any-key hook **before** pausing Bink/DirectSound. If Windows refuses the hook, decline the pause immediately instead of freezing or falling back to F9; preserve cleanup of input/audio/video on release and window destruction.
+- No changes to game `SpideyPC.exe`, DirectDraw surface hooks, 4:3 layout, source video, FPS limiter or game control mappings. Native Windows 11 pause/menu/3D presentation remains to be confirmed before merging.
+
 ## Unreleased — comic-style main-menu version label (PR #13)
 
 - Restyle the small bottom-right `SpiderMan2k1Fix v<version>-<commit>` footer with system **Arial Black Bold Italic**, the game's own **inactive menu violet `RGB(138,120,214)`** (sampled from the `OPTIONS`, `TRAINING` and `GALLERY` lettering), and a fine dark violet 8-direction glyph outline. The initial lighter-lavender version was visually too bright; shrink text around **20%** (25 to 20 px at 1200p menu-content height) and soften the outline.
