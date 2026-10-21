@@ -212,7 +212,7 @@ void SpiderPauseOverlay_Show(HWND game_window) {
     cls.lpfnWndProc=overlay_proc;
     cls.hInstance=instance;
     cls.lpszClassName=OVERLAY_CLASS;
-    cls.hCursor=LoadCursorW(NULL,IDC_ARROW);
+    cls.hCursor=LoadCursorA(NULL,IDC_ARROW);
     if(!RegisterClassW(&cls) && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS) {
       if(overlay_log)overlay_log("FOCUS-OVERLAY: class registration failed; continuing without label");
       return;
