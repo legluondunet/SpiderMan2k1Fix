@@ -187,15 +187,27 @@ int SpiderHudAdaptive_Transform(const SpiderMenuVertex *src,
             ((color & 0x0000FF00u) != 0u ||
              (color & 0x00FF0000u) != 0u))
             region = SPIDER_HUD_ADAPTIVE_BOSS;
-        /* Small black end/empty-HP marker seen on Jameson's row. */
+        /* Black missing-health mask. In the Scorpion+Jameson trace it
+         * occupied just 15px, but its width is DYNAMIC: after Venom takes
+         * damage it can occupy hundreds of pixels. The previous <=4% H
+         * bound left that larger mask at its original x=1080 while all
+         * frame/fill/portrait quads moved right, producing a detached
+         * black rectangle outside the corrected bar (2026-10-21 Windows
+         * screenshot). Permit the full measured boss-bar width, but keep
+         * the exact textureless opaque-black layer, depth/RHW, narrow
+         * health-bar height and one of the two measured boss rows. */
         else if (tex_w == 0u && tex_h == 0u &&
                  color == 0xFF000000u &&
                  hud_near(src[0].z, 0.0007f, 0.00012f) &&
                  src[0].rhw >= 13.0f && src[0].rhw <= 19.0f &&
                  width >= (float)screen_h * 0.006f &&
-                 width <= (float)screen_h * 0.04f &&
+                 width <= (float)screen_h * 0.56f &&
                  height >= (float)screen_h * 0.025f &&
-                 height <= (float)screen_h * 0.041f)
+                 height <= (float)screen_h * 0.041f &&
+                 ((miny >= (float)screen_h * 0.10f &&
+                   miny <= (float)screen_h * 0.15f) ||
+                  (miny >= (float)screen_h * 0.22f &&
+                   miny <= (float)screen_h * 0.27f)))
             region = SPIDER_HUD_ADAPTIVE_BOSS;
         /* 32x32 tiled frame segments, including shorter Jameson bar.
          * Portrait sprites are 64x64; both share foreground z/RHW. */
