@@ -318,6 +318,8 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "RestoreCursorOnFocusLoss=1\r\n"
     "; Detailed focus diagnosis is disabled by default.\r\n"
     "ExperimentalFocusTrace=0\r\n"
+    "; Entry-only DirectInput8 factory probe; requires ExperimentalFocusTrace=1.\r\n"
+    "ExperimentalDI8EntryTrace=0\r\n"
     "; Experimental Flip-boundary pause while the game loses focus (0=off).\r\n"
     "PauseOnFocusLoss=0\r\n"
     "PauseKey=F9\r\n"
