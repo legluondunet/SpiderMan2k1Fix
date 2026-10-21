@@ -51,7 +51,7 @@ static int pause_blend_color(HDC dest,HDC source,int x,int y,int width,
 
 
 /* Full-screen spider artwork removed by design. Keep only a small,
- * self-drawn spider emblem at the start of the resume instruction.
+ * self-drawn red cog/spider emblem at the start of the resume instruction.
  * No texture extraction, Windows icon (Spidey face), or new popup HWND. */
 static int esc_coordf(float v,int size,int design) {
   float scaled=(v*(float)size)/(float)design;
@@ -64,49 +64,60 @@ static POINT pause_icon_point(int x,int y,int size,int px,int py) {
   return p;
 }
 static int pause_draw_spider_icon(HDC dc,int x,int y,int size) {
-  /* Small eight-legged red emblem inspired by the game's red compass
-   * spider. Original menu glyph pixels are not bundled in this DLL. */
-  static const POINT legs[4][4]={
-    {{23,20},{12,13},{12,4},{2,4}},
-    {{19,28},{9,26},{3,19},{3,30}},
-    {{19,38},{8,40},{3,36},{3,48}},
-    {{24,45},{14,51},{13,60},{4,60}}
+  /* The original main-menu mark is a compact red cog/spider emblem,
+   * not a long-legged silhouette. Reconstruct a ring with eight short
+   * angular teeth, a dark hollow center, and a small specular highlight.
+   * This is hand-drawn GDI art: no extracted game asset is distributed. */
+  static const POINT teeth[8][4]={
+    {{26,16},{25,3},{39,3},{38,16}},       /* top */
+    {{42,18},{51,8},{60,17},{49,27}},      /* top right */
+    {{48,26},{61,25},{61,39},{48,38}},     /* right */
+    {{48,39},{60,47},{51,56},{42,46}},     /* bottom right */
+    {{26,48},{25,61},{39,61},{38,48}},     /* bottom */
+    {{22,46},{13,56},{4,47},{16,39}},      /* bottom left */
+    {{16,26},{3,25},{3,39},{16,38}},       /* left */
+    {{16,27},{4,17},{13,8},{22,18}}       /* top left */
   };
-  HBRUSH red=NULL,dark=NULL,old_brush;
-  HPEN outline=NULL,old_pen;
-  POINT pts[4];
-  int leg,mirror,i,ok=1;
+  POINT scaled[4];
+  HBRUSH red=NULL,dark=NULL,shine=NULL,old_brush=NULL;
+  HPEN outline=NULL,old_pen=NULL;
+  int leg,i,ok=1;
   if(size<8)return 1;
-  red=CreateSolidBrush(RGB(224,37,46));
-  dark=CreateSolidBrush(RGB(28,9,19));
-  outline=CreatePen(PS_SOLID,size>=42?2:1,RGB(22,6,13));
-  if(!red || !dark || !outline) {
+  red=CreateSolidBrush(RGB(238,34,39));
+  dark=CreateSolidBrush(RGB(28,7,16));
+  shine=CreateSolidBrush(RGB(255,174,151));
+  outline=CreatePen(PS_SOLID,size>=42?2:1,RGB(52,5,12));
+  if(!red || !dark || !shine || !outline) {
     if(red)DeleteObject(red);
     if(dark)DeleteObject(dark);
+    if(shine)DeleteObject(shine);
     if(outline)DeleteObject(outline);
     return 0;
   }
   old_brush=(HBRUSH)SelectObject(dc,red);
   old_pen=(HPEN)SelectObject(dc,outline);
-  /* Draw each arm mirrored around the center of the icon. */
-  for(mirror=0;mirror<2;mirror++)
-    for(leg=0;leg<4;leg++) {
-      for(i=0;i<4;i++) {
-        int px=legs[leg][i].x;
-        pts[i]=pause_icon_point(x,y,size,mirror?64-px:px,legs[leg][i].y);
-      }
-      if(!Polygon(dc,pts,4))ok=0;
-    }
-  if(!Ellipse(dc,x+MulDiv(18,size,64),y+MulDiv(14,size,64),
-               x+MulDiv(46,size,64),y+MulDiv(50,size,64)))ok=0;
+  /* Compact outer teeth, in place of the former spidery X-shaped legs. */
+  for(leg=0;leg<8;leg++) {
+    for(i=0;i<4;i++)
+      scaled[i]=pause_icon_point(x,y,size,teeth[leg][i].x,teeth[leg][i].y);
+    if(!Polygon(dc,scaled,4))ok=0;
+  }
+  if(!Ellipse(dc,x+MulDiv(13,size,64),y+MulDiv(13,size,64),
+               x+MulDiv(51,size,64),y+MulDiv(51,size,64)))ok=0;
+  /* The true mark has a dark hollow center, not a vertical spider body. */
   SelectObject(dc,dark);
-  if(!Ellipse(dc,x+MulDiv(25,size,64),y+MulDiv(22,size,64),
-               x+MulDiv(39,size,64),y+MulDiv(42,size,64)))ok=0;
+  if(!Ellipse(dc,x+MulDiv(22,size,64),y+MulDiv(22,size,64),
+               x+MulDiv(42,size,64),y+MulDiv(42,size,64)))ok=0;
+  /* A tiny inner highlight keeps the emblem legible at 48px. */
+  SelectObject(dc,shine);
+  if(!Ellipse(dc,x+MulDiv(36,size,64),y+MulDiv(26,size,64),
+               x+MulDiv(40,size,64),y+MulDiv(30,size,64)))ok=0;
   SelectObject(dc,old_pen);
   SelectObject(dc,old_brush);
   DeleteObject(outline);
-  DeleteObject(red);
+  DeleteObject(shine);
   DeleteObject(dark);
+  DeleteObject(red);
   return ok;
 }
 static int pause_draw_text(HDC dc,HFONT font,const wchar_t *label,
@@ -245,14 +256,14 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
     SetBkMode(dc,TRANSPARENT);
     SetTextAlign(dc,TA_LEFT|TA_TOP|TA_NOUPDATECP);
     ok=pause_draw_text(dc,title,L"PAUSED",canvas.left,cw,
-                       canvas.top+esc_coordf(161.0f,ch,ESC_DESIGN_H),
+                       canvas.top+esc_coordf(445.0f,ch,ESC_DESIGN_H),
                        RGB(240,47,69),4,0,0);
     if(ok)
       ok=pause_draw_text(dc,hint,L"PRESS ANY KEY TO RESUME",
                          canvas.left,cw,
-                         canvas.top+esc_coordf(503.0f,ch,ESC_DESIGN_H),
+                         canvas.top+esc_coordf(545.0f,ch,ESC_DESIGN_H),
                          RGB(245,240,255),2,1,
-                         esc_coordf(54.0f,ch,ESC_DESIGN_H));
+                         esc_coordf(48.0f,ch,ESC_DESIGN_H));
   }
   if(title)DeleteObject(title);
   if(hint)DeleteObject(hint);
