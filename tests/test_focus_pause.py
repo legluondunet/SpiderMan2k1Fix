@@ -40,7 +40,8 @@ def test_persistent_pause_requires_manual_foreground_key():
     pause=CORE[CORE.index("static volatile LONG pause_on_focus_loss=0;"):
                CORE.index("static HRESULT WINAPI hooked_flip(")]
     assert "SpiderPauseAny_Completed()" in pause
-    assert "GetForegroundWindow()!=hwnd" in pause
+    assert "GetForegroundWindow()==hwnd" in pause
+    assert "SpiderPauseAny_Completed()" in pause
     assert "pause_latched" in pause
     assert "pause_key_down" not in pause
     assert 'while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1)' in pause
