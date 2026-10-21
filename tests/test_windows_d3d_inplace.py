@@ -27,3 +27,18 @@ def test_explicit_native_diagnostic_bypass_precedes_default_patch():
     inplace=SRC.index("if(device_ready==2 && vt[13]==(void*)original_set_viewport")
     assert bypass<inplace
     assert "D3D7-DIAG: native device vtable" in SRC
+
+
+def test_optional_esc_draw_trace_is_read_only_and_never_alters_rendering():
+    assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_ESC_DRAW_TRACE"' in SRC
+    assert "debug_log_enabled && n==1 && value[0]=='1'" in SRC
+    assert "GetAsyncKeyState(VK_F12)" in SRC
+    assert "esc_probe_frames=6;" in SRC
+    assert "#define ESC_PROBE_RING 40" in SRC
+    assert "IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)" in SRC
+    assert "IDirectDrawSurface7_Release(tex)" in SRC
+    assert "esc_probe_on_flip(count);" in SRC
+    assert "esc_probe_record(self,0,type,fvf,verts,count,0,__builtin_return_address(0));" in SRC
+    assert "esc_probe_record(self,1,type,fvf,verts,count,icount,__builtin_return_address(0));" in SRC
+    assert "return original_draw_primitive(self,type,fvf,verts,count,flags);" not in SRC
+    assert "vt[25]=(void*)hooked_draw_primitive;" in SRC
