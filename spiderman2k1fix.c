@@ -570,7 +570,7 @@ static D3DSetRenderStateFn original_set_render_state;
 /* D3D7 state is recorded only when a successful driver call confirms it. */
 static volatile LONG fov_z_state_known=0, fov_z_state_enabled=0;
 /* Diagnostic-only recording of alpha state; no render-state changes. */
-static volatile LONG esc_probe_alpha=-1;
+static volatile LONG esc_probe_alpha=-1,esc_probe_srcblend=-1,esc_probe_dstblend=-1;
 static volatile LONG fov_game_height=0;
 static volatile LONG fov_horplus_scopes_ready=0, fov_horplus_skips_hud=0;
 static volatile LONG fov_horplus_calls=0, fov_horplus_skips_unknown=0,
@@ -583,6 +583,10 @@ static HRESULT WINAPI hooked_set_render_state(void *self,D3DRENDERSTATETYPE stat
   }
   if(SUCCEEDED(hr) && state==D3DRENDERSTATE_ALPHABLENDENABLE)
     InterlockedExchange(&esc_probe_alpha,value!=FALSE);
+  if(SUCCEEDED(hr) && state==D3DRENDERSTATE_SRCBLEND)
+    InterlockedExchange(&esc_probe_srcblend,(LONG)value);
+  if(SUCCEEDED(hr) && state==D3DRENDERSTATE_DESTBLEND)
+    InterlockedExchange(&esc_probe_dstblend,(LONG)value);
   return hr;
 }
 
@@ -842,13 +846,18 @@ static void free_menu_vertices(SpiderMenuVertex *allocated) {
 #define ESC_PROBE_RING 40
 #define ESC_PROBE_TOP_QUADS 48
 #define ESC_PROBE_TOP_TRIS 32
+typedef struct EscProbeVertex {
+  float x,y,u,v;
+  DWORD diffuse;
+} EscProbeVertex;
 typedef struct EscProbeDraw {
   DWORD rva,fvf,vertex_count,index_count,tex_width,tex_height,primitive;
   DWORD diffuse;
   uintptr_t texture_id;
-  LONG alpha,sequence;
+  LONG alpha,sequence,srcblend,dstblend;
   float x0,y0,x1,y1,z,rhw;
-  unsigned char has_bbox,is_indexed;
+  EscProbeVertex corners[4];
+  unsigned char has_bbox,is_indexed,has_corners;
 } EscProbeDraw;
 typedef struct EscProbeCandidate {
   EscProbeDraw draw;
@@ -937,6 +946,50 @@ static void esc_probe_dump_candidates(const char *group,
   }
 }
 
+/* Exact x/y + per-vertex color of the original ESC UI motif. The first
+ * F12-captured frame only, never all 6: typically 28 untextured motif
+ * primitives, one violet panel primitive and four 8x8 border quads.
+ * Reading from the pre-transform verts buffer cannot change the game.
+ * Texture pixels and archive assets are NOT copied or dumped. */
+static void esc_probe_dump_exact_geometry(const EscProbeCandidate *top,LONG count) {
+  LONG i;
+  for(i=0;i<count;i++) {
+    const EscProbeDraw *d=&top[i].draw;
+    char line[540];
+    if(!d->has_corners || d->fvf!=0x144UL ||
+       d->is_indexed || d->primitive!=D3DPT_TRIANGLEFAN ||
+       d->alpha!=1 || d->z<0.0005f || d->z>0.005f ||
+       !(d->tex_width==0 && d->tex_height==0) &&
+       !(d->tex_width==8 && d->tex_height==8)) continue;
+    snprintf(line,sizeof(line),
+      "ESC-PROBE-VERTICES: seq=%ld tex=%lux%lu alpha=%ld src=%ld dst=%ld "
+      "rgba=%08lX,%08lX,%08lX,%08lX "
+      "xy=[%.1f,%.1f|%.1f,%.1f|%.1f,%.1f|%.1f,%.1f]",
+      (long)d->sequence,(unsigned long)d->tex_width,
+      (unsigned long)d->tex_height,(long)d->alpha,
+      (long)d->srcblend,(long)d->dstblend,
+      (unsigned long)d->corners[0].diffuse,
+      (unsigned long)d->corners[1].diffuse,
+      (unsigned long)d->corners[2].diffuse,
+      (unsigned long)d->corners[3].diffuse,
+      (double)d->corners[0].x,(double)d->corners[0].y,
+      (double)d->corners[1].x,(double)d->corners[1].y,
+      (double)d->corners[2].x,(double)d->corners[2].y,
+      (double)d->corners[3].x,(double)d->corners[3].y);
+    log_line(line);
+    if(d->tex_width==8 && d->tex_height==8) {
+      snprintf(line,sizeof(line),
+        "ESC-PROBE-UV: seq=%ld uv=[%.4f,%.4f|%.4f,%.4f|%.4f,%.4f|%.4f,%.4f]",
+        (long)d->sequence,
+        (double)d->corners[0].u,(double)d->corners[0].v,
+        (double)d->corners[1].u,(double)d->corners[1].v,
+        (double)d->corners[2].u,(double)d->corners[2].v,
+        (double)d->corners[3].u,(double)d->corners[3].v);
+      log_line(line);
+    }
+  }
+}
+
 static void esc_probe_record(void *device,int indexed,D3DPRIMITIVETYPE primitive,
                              DWORD fvf,const void *verts,DWORD count,DWORD index_count,
                              void *return_address) {
@@ -951,6 +1004,8 @@ static void esc_probe_record(void *device,int indexed,D3DPRIMITIVETYPE primitive
   item->primitive=(DWORD)primitive;
   item->fvf=fvf;item->vertex_count=count;item->index_count=index_count;
   item->alpha=InterlockedCompareExchange(&esc_probe_alpha,0,0);
+  item->srcblend=InterlockedCompareExchange(&esc_probe_srcblend,0,0);
+  item->dstblend=InterlockedCompareExchange(&esc_probe_dstblend,0,0);
   geom_rva(return_address,&item->rva);
   if(fvf==0x144UL && verts && count>=3 && count<=64) {
     const SpiderMenuVertex *v=(const SpiderMenuVertex*)verts;
@@ -960,6 +1015,16 @@ static void esc_probe_record(void *device,int indexed,D3DPRIMITIVETYPE primitive
     item->diffuse=v[0].diffuse;
     item->z=v[0].z;item->rhw=v[0].rhw;
     item->has_bbox=1;
+    if(count==4 && primitive==D3DPT_TRIANGLEFAN && !indexed) {
+      item->has_corners=1;
+      for(i=0;i<4;i++) {
+        item->corners[i].x=v[i].x;
+        item->corners[i].y=v[i].y;
+        item->corners[i].diffuse=v[i].diffuse;
+        item->corners[i].u=v[i].u;
+        item->corners[i].v=v[i].v;
+      }
+    }
     for(i=1;i<count;i++) {
       if(v[i].x<item->x0)item->x0=v[i].x;
       if(v[i].x>item->x1)item->x1=v[i].x;
@@ -1016,6 +1081,10 @@ static void esc_probe_on_flip(LONG flip) {
     log_line(line);
     esc_probe_dump_candidates("quad",esc_probe_top_quads,esc_probe_quad_count);
     esc_probe_dump_candidates("tri",esc_probe_top_tris,esc_probe_tri_count);
+    if(esc_probe_frames==6) {
+      log_line("ESC-PROBE-VERTICES: first-frame exact UI geometry follows");
+      esc_probe_dump_exact_geometry(esc_probe_top_quads,esc_probe_quad_count);
+    }
     esc_probe_total=0;
     esc_probe_quad_count=0;esc_probe_tri_count=0;
     esc_probe_quad_seen=0;esc_probe_tri_seen=0;
