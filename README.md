@@ -123,6 +123,8 @@ DirectInputReacquire=0
 PauseOnFocusLoss=0
 ; F9 (default), Space or Any (consume first foreground wake key).
 PauseKey=F9
+; 1 = show a nonactivating right-side message while paused, 0 = hide it.
+PauseOverlay=1
 ; Pause cinematic Bink video and the game's audio-only Bink music stream.
 PauseBinkOnFocusLoss=0
 ; Pause active game-owned secondary DirectSound effects/voices (default off).
@@ -173,6 +175,8 @@ The generated INI may contain additional internal or development-specific settin
 **Controls:** keyboard and joystick bindings are independent. Keyboard values use physical DirectInput key names or hexadecimal scan codes. Joystick values use the same `BUTTON0`, `BUTTON1`, etc. numbering shown in the game's **Joystick Configuration** menu. Joystick movement axes/directions are handled by the game and are not configurable through this section.
 
 **Alt+Tab recovery (Windows 11):** Use `DirectInputReacquire=1` and `PauseOnFocusLoss=1` with `PauseKey=Any` for the tested keyboard/mouse recovery and focus-pause combination. After switching back to the game, press and release any key to resume; the wake key is consumed. The game reuses its native `DIERR_NOTACQUIRED` retry path without wrapping DirectInput COM interfaces. These options remain disabled by default; earlier unsafe COM experiments are no longer active, even if their keys remain in an older user INI. The former environment-variable override is supported for legacy diagnostic scripts, but is unnecessary with the INI setting.
+
+**Pause indicator (next PR):** With `PauseOnFocusLoss=1`, the game displays a small dark and gold-bordered `PAUSE` banner at the right of its own window during an actual focus pause. The second line is `Appuyez sur une touche`, `Appuyez sur Espace`, or `Appuyez sur F9`, according to `PauseKey`. The banner is a nonactivating child of the game window, not an always-on-top desktop overlay; it disappears immediately when the pause ends. `PauseOverlay=1` enables it by default, and `PauseOverlay=0` hides only this visual hint (not the pause, Bink, or DirectSound logic).
 
 **Synchronized audio and video focus pause (PR #9):** The separately enabled `PauseBinkOnFocusLoss=1` pauses Bink cinematic streams **and the Bink-based music heard during 3D gameplay** using the game's original `BinkPause` API. `PauseDirectSoundOnFocusLoss=1` pauses currently playing game-owned secondary DirectSound buffers and resumes the same buffers from their retained cursor position. The primary buffer is untouched. Both new media options are **disabled by default**. Their combined operation was tested in Windows 11 gameplay, the menu, and cinematics with no audio desynchronization. See [technical notes and test results](FOCUS_AUDIO_VIDEO_SYNC_TEST.md) for diagnostics, compatibility limits, and rollback.
 
