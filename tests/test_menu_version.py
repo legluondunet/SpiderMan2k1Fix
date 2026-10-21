@@ -45,3 +45,44 @@ def test_preprocessor_version_expansion():
     result=subprocess.run(["gcc","-E","-P","-x","c","-I",str(ROOT),"-"],
                           input=src,text=True,capture_output=True,check=True)
     assert '"SpiderMan2k1Fix v" "1.0.0" "-" "local"' in result.stdout
+
+def test_comic_style_matches_original_menu_without_changing_version():
+    # Visual effect is limited to GDI glyphs in the existing menu footer.
+    assert 'CreateFontA(-font_pixels,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,' in MENU
+    assert 'ANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,"Arial Black"' in MENU
+    assert 'font_pixels=larger(10,(height*8+240)/480)' in MENU
+    assert 'outline_pixels=larger(1,(height+599)/1200)' in MENU
+    assert 'RGB(19,13,38)' in MENU
+    assert 'RGB(138,120,214)' in MENU
+    assert 'RGB(204,191,231)' not in MENU
+    assert 'TextOutA(dc,x+dx*outline_pixels,y+dy*outline_pixels,label,len)' in MENU
+    assert 'result=TextOutA(dc,x,y,label,len)' in MENU
+    assert MENU.index('RGB(19,13,38)') < MENU.index('RGB(138,120,214)')
+    assert 'const char *label=SPIDERMAN2K1FIX_VERSION_LABEL' in MENU
+
+def test_version_footer_stays_in_menu_client_rect_and_preserves_dc_state():
+    assert 'GetTextExtentPoint32A(dc,label,len,&measure)' in MENU
+    assert 'x=content->right-pad-measure.cx-outline_pixels' in MENU
+    assert 'y=content->bottom-pad-measure.cy-outline_pixels' in MENU
+    assert 'x<content->left+pad+outline_pixels' in MENU
+    assert 'SetBkMode(dc,TRANSPARENT)' in MENU
+    assert 'SetTextColor(dc,old_color)' in MENU
+    assert 'SetBkMode(dc,old_background)' in MENU
+    assert 'SelectObject(dc,old_font)' in MENU
+    assert 'if(!dc || height<240 || width<320)' in MENU
+    assert 'SpiderMenuVersion_DrawToSurface' in MENU
+    assert 'SpiderMenuVersion_DrawToWindow' in MENU
+    assert 'WS_EX_TOPMOST' not in MENU
+    assert 'CreateWindow' not in MENU
+    assert 'SetForegroundWindow' not in MENU
+    assert 'DirectDrawCreate' not in MENU
+
+def test_footer_matches_reference_inactive_menu_violet_and_small_scale():
+    # Visual reference 1920x1080 screenshot of menu at user workstation:
+    # OPTIONS, GALLERY and TRAINING core fill (138,120,214). At a real
+    # fitted 1200px-tall content area, use a 20px font instead of 25px.
+    assert 'RGB(138,120,214)' in MENU
+    assert 'RGB(204,191,231)' not in MENU
+    assert 'font_pixels=larger(10,(height*8+240)/480)' in MENU
+    assert 'outline_pixels=larger(1,(height+599)/1200)' in MENU
+    assert 'RGB(19,13,38)' in MENU

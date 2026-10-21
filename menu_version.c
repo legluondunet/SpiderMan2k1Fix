@@ -7,6 +7,8 @@
 
 /* Draw on the menu backbuffer before presenting. The driver may reject
  * GetDC on a video-memory surface; the caller can then draw to the window.
+ * Match the game's bold italic comic menu lettering, but remain a subdued
+ * footer and never alter the version string or presentation coordinates.
  */
 static HFONT version_font=NULL;
 static int version_font_height=0;
@@ -18,18 +20,21 @@ static BOOL draw_label(HDC dc,const RECT *content) {
   const int height=content?content->bottom-content->top:0;
   const int width=content?content->right-content->left:0;
   HFONT old_font;
-  int font_pixels,pad,x,y;
+  int font_pixels,pad,outline_pixels,x,y,dx,dy;
   SIZE measure;
   COLORREF old_color;
   int old_background;
   BOOL result;
   if(!dc || height<240 || width<320) return FALSE;
-  font_pixels=larger(12,(height*11+240)/480);
+  /* About 20% smaller than the previously tested footer, scaled to the
+   * 4:3 menu content rather than the entire desktop or video surface. */
+  font_pixels=larger(10,(height*8+240)/480);
   pad=larger(8,(height*10+240)/480);
+  outline_pixels=larger(1,(height+599)/1200);
   if(!version_font || version_font_height!=font_pixels) {
-    HFONT replacement=CreateFontA(-font_pixels,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,
+    HFONT replacement=CreateFontA(-font_pixels,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,
       DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
-      ANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,"Arial");
+      ANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,"Arial Black");
     if(!replacement) return FALSE;
     if(version_font) DeleteObject(version_font);
     version_font=replacement;
@@ -46,18 +51,24 @@ static BOOL draw_label(HDC dc,const RECT *content) {
     SelectObject(dc,old_font);
     return FALSE;
   }
-  x=content->right-pad-measure.cx;
-  y=content->bottom-pad-measure.cy;
-  if(x<content->left+pad || y<content->top) {
+  /* Account for the outline and italic overhang in bottom/right padding. */
+  x=content->right-pad-measure.cx-outline_pixels;
+  y=content->bottom-pad-measure.cy-outline_pixels;
+  if(x<content->left+pad+outline_pixels || y<content->top+outline_pixels) {
     SetTextColor(dc,old_color);
     SetBkMode(dc,old_background);
     SelectObject(dc,old_font);
     return FALSE;
   }
-  SetTextColor(dc,RGB(0,0,0));
-  TextOutA(dc,x+1,y+1,label,len);
-  TextOutA(dc,x-1,y+1,label,len);
-  SetTextColor(dc,RGB(235,235,235));
+  /* Dark violet outline echoes the menu's inked comic typography. */
+  SetTextColor(dc,RGB(19,13,38));
+  for(dy=-1;dy<=1;dy++) for(dx=-1;dx<=1;dx++) {
+    if(dx==0 && dy==0) continue;
+    TextOutA(dc,x+dx*outline_pixels,y+dy*outline_pixels,label,len);
+  }
+  /* Exact sampled violet from the game's unselected menu labels.
+   * At 1200p: 20px footer vs the previous 25px, with a finer outline. */
+  SetTextColor(dc,RGB(138,120,214));
   result=TextOutA(dc,x,y,label,len);
   SetTextColor(dc,old_color);
   SetBkMode(dc,old_background);
