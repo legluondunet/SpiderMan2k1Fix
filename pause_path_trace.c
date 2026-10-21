@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "pause_path_trace.h"
+#include "win32_focus_message_trace.h"
 
 typedef struct {
   const char *name;
@@ -139,6 +140,8 @@ static DWORD WINAPI observe_foreground(LPVOID unused) {
       }
       milestone++;
     }
+    /* Also log a 5s Win32 heartbeat even if foreground never changes. */
+    SpiderWin32FocusTrace_Heartbeat(hwnd,now);
     /* Diagnostic-only polling, on a dedicated thread, not the game thread. */
     Sleep(25);
   }
