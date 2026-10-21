@@ -1115,8 +1115,6 @@ static volatile LONG pause_on_focus_loss=0;
 static LONG pause_ever_foreground=0;
 static LONG pause_in_progress=0;
 static LONG pause_latched=0;
-static LONG pause_key_down=0;
-static int pause_key_vk=VK_F9; /* 0 = Any (focus-loss resume only) */
 static DWORD pause_background_since=0;
 
 /* Diagnostic only: report WHICH other executable owns the foreground when
@@ -1181,28 +1179,7 @@ static BOOL pause_confirmed_focus_loss(HWND hwnd) {
 }
 
 
-/* Pause key is only accepted while this window owns the foreground.
- * Hold-to-repeat cannot accidentally toggle the pause repeatedly. */
-static void pause_poll_key(HWND hwnd) {
-  BOOL down;
-  if(pause_key_vk==0) return; /* Any must not pause during ordinary game controls. */
-  if(GetForegroundWindow()!=hwnd) {
-    InterlockedExchange(&pause_key_down,1);
-    return;
-  }
-  down=(GetAsyncKeyState(pause_key_vk)&0x8000)!=0;
-  if(!down) {
-    InterlockedExchange(&pause_key_down,0);
-  } else if(InterlockedCompareExchange(&pause_key_down,1,0)==0) {
-    LONG old=InterlockedCompareExchange(&pause_latched,0,1);
-    if(old==1) {
-      log_line("FOCUS-PAUSE: manual resume requested");
-    } else {
-      InterlockedExchange(&pause_latched,1);
-      log_line("FOCUS-PAUSE: manual pause requested");
-    }
-  }
-}
+/* Wake only with the foreground Any-key hook. */
 /* Focus-only snapshot: no DirectInput hooks or synthetic activation. */
 static void pause_log_resume_focus(HWND hwnd) {
   GUITHREADINFO gi; DWORD tid;char line[280];
@@ -1233,29 +1210,28 @@ static void pause_at_flip_if_background(void) {
     log_line("FOCUS-PAUSE: confirmed external focus loss; pause latched until manual resume");
     pause_log_foreground_owner(hwnd,GetForegroundWindow(),"external-foreground-latched");
   }
-  pause_poll_key(hwnd);
   if(InterlockedCompareExchange(&pause_latched,0,0)!=1) return;
   if(InterlockedCompareExchange(&pause_in_progress,1,0)!=0) return;
-  /* Bink is independent of the DirectDraw present thread; pausing a Flip
-   * alone leaves the decoder/sound running. Native Bink pause is opt-in. */
+  /* Arm Any-key wake BEFORE stopping the game. Never fall back to F9 or
+   * Space: if the low-level hook fails, skip this pause rather than hang. */
+  if(!SpiderPauseAny_Begin(hwnd)) {
+    char line[160];DWORD err=GetLastError();
+    snprintf(line,sizeof(line),
+      "FOCUS-PAUSE: Any-key hook failed Win32=%lu; skip focus pause (no fallback)",
+      (unsigned long)err);
+    log_line(line);
+    InterlockedExchange(&pause_latched,0);
+    InterlockedExchange(&pause_in_progress,0);
+    return;
+  }
+  log_line("FOCUS-PAUSE: Any keyboard resume ARMED; consumes press and release");
+  /* The Flip pause alone does not suspend Bink or secondary DirectSound. */
   SpiderFocusMedia_Pause();
   SpiderFocusDSound_Pause();
-  if(pause_key_vk==0) {
-    if(SpiderPauseAny_Begin(hwnd))
-      log_line("FOCUS-PAUSE: Any keyboard resume ARMED; consumes press and release");
-    else {
-      char line[144];DWORD err=GetLastError();
-      snprintf(line,sizeof(line),
-        "FOCUS-PAUSE: Any keyboard hook failed Win32=%lu; falling back to F9",
-        (unsigned long)err);
-      log_line(line);
-      pause_key_vk=VK_F9;
-    }
-  } else log_line("FOCUS-PAUSE: waiting for foreground and explicit pause key");
   /* The comic PAUSE child stays exactly as validated in PR #10.
    * Create it first, then subtract its visible shape from the hidden
    * owned-popup shade before showing the latter (pre-Win8 EXE compatible). */
-  SpiderPauseOverlay_Show(hwnd,pause_key_vk);
+  SpiderPauseOverlay_Show(hwnd);
   SpiderPauseDim_Show(hwnd);
   while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1) {
     while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
@@ -1270,18 +1246,17 @@ static void pause_at_flip_if_background(void) {
         InterlockedExchange(&pause_in_progress,0);
         return;
       }
-      if(pause_key_vk==0 && SpiderPauseAny_DiscardGameKeyMessage(&msg,hwnd)) continue;
+      if(SpiderPauseAny_DiscardGameKeyMessage(&msg,hwnd)) continue;
       TranslateMessage(&msg);
       DispatchMessageA(&msg);
     }
     if(!IsWindow(hwnd)) break;
-    if(pause_key_vk==0 && SpiderPauseAny_Completed())
+    if(SpiderPauseAny_Completed())
       InterlockedExchange(&pause_latched,0);
-    else pause_poll_key(hwnd);
     if(InterlockedCompareExchange(&pause_latched,0,0)!=1) break;
     MsgWaitForMultipleObjectsEx(0,NULL,50,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
   }
-  if(pause_key_vk==0 && SpiderPauseAny_FirstKey()!=0) {
+  if(SpiderPauseAny_FirstKey()!=0) {
     char line[128];
     snprintf(line,sizeof(line),
       "FOCUS-PAUSE: Any-key resume swallowed virtual-key=0x%02lX",
@@ -1816,7 +1791,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
   SpiderFocusMedia_Init(log_line); /* Opt-in native Bink pause. */
   SpiderFocusDSound_Init(log_line); /* Separately opt-in game-owned secondary buffers only. */
   SpiderPauseOverlay_Init(log_line); /* Passive centered comic-style banner. */
-  SpiderPauseDim_Init(log_line); /* Independent 40% black shade, only on focus pause. */
+  SpiderPauseDim_Init(log_line); /* 55% gridded shade plus optional dark center. */
   /* The first-run generator or repair may have changed [Debug] Log. */
   {
     int previous_log_enabled=debug_log_enabled;
@@ -1993,17 +1968,12 @@ static DWORD WINAPI initialize(LPVOID unused) {
     DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
     if(n>0 && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL) {
       strcpy(slash+1,"SpiderMan2k1Fix.ini");
-      char key[32];
-      GetPrivateProfileStringA("Input","PauseKey","F9",key,sizeof(key),path);
-      pause_key_vk=(lstrcmpiA(key,"Any")==0)?0:
-                   (lstrcmpiA(key,"Space")==0)?VK_SPACE:VK_F9;
+      /* Historical PauseKey selections in older INIs are ignored: Any only. */
       InterlockedExchange(&pause_on_focus_loss,
         GetPrivateProfileIntA("Input","PauseOnFocusLoss",0,path)==1);
     }
     log_line(InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1 ?
-      (pause_key_vk==0 ? "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (Any key consumed on release)" :
-        pause_key_vk==VK_SPACE ? "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (Space resumes)" :
-       "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (F9 resumes)") :
+      "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (Any key exclusively; press/release consumed)" :
       "FOCUS-PAUSE: experimental Flip-boundary pause disabled");
   }
   SpiderInputFocus_Install(log_line);
