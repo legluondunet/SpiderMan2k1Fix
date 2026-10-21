@@ -1254,12 +1254,12 @@ static void pause_at_flip_if_background(void) {
     if(SpiderPauseAny_Completed())
       InterlockedExchange(&pause_latched,0);
     if(InterlockedCompareExchange(&pause_latched,0,0)!=1) break;
-    if(GetForegroundWindow()==hwnd) {
+    if(SpiderPauseOverlay_GameForeground(hwnd)) {
       if(!visuals_visible) {
         SpiderPauseOverlay_Show(hwnd);
         SpiderPauseDim_Show(hwnd);
         visuals_visible=1;
-        log_line("FOCUS-PAUSE: overlay visible (game foreground)");
+        log_line("FOCUS-PAUSE: atomically composed comic banner visible (game active foreground)");
       }
     } else if(visuals_visible) {
       /* Destroy popups immediately on another focus change; no permanent
