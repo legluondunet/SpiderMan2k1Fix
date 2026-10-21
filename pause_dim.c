@@ -22,14 +22,82 @@
 #define DIM_DEFAULT_OPACITY 55 /* Percent black; scene still visible. */
 #define DIM_GRID_STEP 16        /* Screen pixels: small comic-style cells. */
 #define DIM_GRID_COLOR RGB(54,58,67) /* Subtle light-gray lines through alpha. */
+#define BG_DITHER_PERIOD 8 /* Legacy Win32 child: quantized spatial opacity. */
+#define BG_MAX_WIDTH 4096
+#define BG_MAX_HEIGHT 2160
+#define BG_DARK_COLOR RGB(11,9,18)
+#define BG_GRID_COLOR RGB(71,63,83)
 
 static HWND dim_hwnd=NULL;
+static HWND dim_background_hwnd=NULL;
 static int dim_enabled=1;
 static int dim_opacity=DIM_DEFAULT_OPACITY;
 static BYTE dim_alpha=140;
 static int dim_grid_enabled=1;
 static int dim_registered=0;
 static void (*dim_log)(const char *)=NULL;
+
+/* A top-level layered shade can float over native Wine desktop windows.
+ * Instead, when Spider-Man is in the background, use an ordinary WS_CHILD
+ * clipped to opaque one-pixel rows and the 16px grid. Empty pixels are
+ * removed from the actual window region: the original DirectDraw frame
+ * remains visible, without relying on layered-child alpha support.
+ * Distributed row coverage approximates the configured shade opacity
+ * (55% -> 4/8 rows = 50%); the foreground retains exact alpha 55%. */
+static HRGN dim_background_region(int width,int height,int rows,int grid) {
+  HRGN region=NULL,strip=NULL;
+  int x,y;
+  if(width<=0 || height<=0 || width>BG_MAX_WIDTH || height>BG_MAX_HEIGHT)
+    return NULL;
+  region=CreateRectRgn(0,0,0,0);
+  if(!region)return NULL;
+  for(y=0;y<height;y++) {
+    if((y*5)%BG_DITHER_PERIOD>=rows && (!grid || y%DIM_GRID_STEP))continue;
+    strip=CreateRectRgn(0,y,width,y+1);
+    if(!strip || CombineRgn(region,region,strip,RGN_OR)==ERROR)goto failed;
+    DeleteObject(strip);strip=NULL;
+  }
+  if(grid)for(x=0;x<width;x+=DIM_GRID_STEP) {
+    strip=CreateRectRgn(x,0,x+1,height);
+    if(!strip || CombineRgn(region,region,strip,RGN_OR)==ERROR)goto failed;
+    DeleteObject(strip);strip=NULL;
+  }
+  return region;
+failed:
+  if(strip)DeleteObject(strip);
+  DeleteObject(region);
+  return NULL;
+}
+
+static void dim_background_paint(HWND window,HDC dc,const RECT *bounds) {
+  int x,y;
+  HBRUSH dark=CreateSolidBrush(BG_DARK_COLOR);
+  HPEN grid_pen=NULL;
+  HGDIOBJ old_pen;
+  int shade_rows=(dim_opacity*BG_DITHER_PERIOD+50)/100;
+  if(shade_rows>BG_DITHER_PERIOD)shade_rows=BG_DITHER_PERIOD;
+  if(dark) {
+    for(y=0;y<bounds->bottom;y++)if((y*5)%BG_DITHER_PERIOD<shade_rows) {
+      RECT line={0,y,bounds->right,y+1};
+      FillRect(dc,&line,dark);
+    }
+    DeleteObject(dark);
+  }
+  if(!dim_grid_enabled)return;
+  grid_pen=CreatePen(PS_SOLID,1,BG_GRID_COLOR);
+  if(!grid_pen)return;
+  old_pen=SelectObject(dc,grid_pen);
+  for(x=0;x<bounds->right;x+=DIM_GRID_STEP) {
+    MoveToEx(dc,x,0,NULL);
+    LineTo(dc,x,bounds->bottom);
+  }
+  for(y=0;y<bounds->bottom;y+=DIM_GRID_STEP) {
+    MoveToEx(dc,0,y,NULL);
+    LineTo(dc,bounds->right,y);
+  }
+  SelectObject(dc,old_pen);
+  DeleteObject(grid_pen);
+}
 
 static LRESULT CALLBACK dim_proc(HWND window,UINT message,WPARAM wparam,LPARAM lparam) {
   switch(message) {
@@ -41,6 +109,11 @@ static LRESULT CALLBACK dim_proc(HWND window,UINT message,WPARAM wparam,LPARAM l
       if(dc) {
         RECT bounds;
         GetClientRect(window,&bounds);
+        if(window==dim_background_hwnd) {
+          dim_background_paint(window,dc,&bounds);
+          EndPaint(window,&ps);
+          return 0;
+        }
         FillRect(dc,&bounds,(HBRUSH)GetStockObject(BLACK_BRUSH));
         if(dim_grid_enabled) {
           /* Draw only once when the pause shade is first painted: this
@@ -82,6 +155,7 @@ static LRESULT CALLBACK dim_proc(HWND window,UINT message,WPARAM wparam,LPARAM l
       return HTTRANSPARENT;
     case WM_NCDESTROY:
       if(dim_hwnd==window)dim_hwnd=NULL;
+      if(dim_background_hwnd==window)dim_background_hwnd=NULL;
       break;
   }
   return DefWindowProcW(window,message,wparam,lparam);
@@ -216,10 +290,87 @@ void SpiderPauseDim_Show(HWND game_window) {
   }
 }
 
+/* Paint an approximate dark tint + exact grid in a NONLAYERED game child.
+ * Window region is sparse, so undrawn pixels expose SpideyPC's original
+ * paused scene; it cannot escape the game rectangle or float over Thunar.
+ * Created before the centered PAUSE child so the text remains above it. */
+void SpiderPauseDim_ShowBackground(HWND game_window) {
+  WNDCLASSW cls;
+  HINSTANCE instance;
+  HWND window;
+  RECT bounds;
+  HRGN region=NULL;
+  int width,height,rows;
+  DWORD error;
+  char detail[164];
+  if(!dim_enabled || !game_window || !IsWindow(game_window) ||
+     !IsWindowVisible(game_window) || IsIconic(game_window))return;
+  if(dim_background_hwnd && IsWindow(dim_background_hwnd))return;
+  if(!GetClientRect(game_window,&bounds))return;
+  width=bounds.right-bounds.left;
+  height=bounds.bottom-bounds.top;
+  rows=(dim_opacity*BG_DITHER_PERIOD+50)/100;
+  if(rows>BG_DITHER_PERIOD)rows=BG_DITHER_PERIOD;
+  if((rows==0 && !dim_grid_enabled) ||
+     width<250 || height<120 || width>BG_MAX_WIDTH || height>BG_MAX_HEIGHT)
+    return;
+  instance=GetModuleHandleW(NULL);
+  if(!dim_registered) {
+    memset(&cls,0,sizeof(cls));
+    cls.lpfnWndProc=dim_proc;
+    cls.hInstance=instance;
+    cls.lpszClassName=DIM_CLASS;
+    if(!RegisterClassW(&cls) && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS) {
+      if(dim_log)dim_log("FOCUS-DIM: background child class registration failed");
+      return;
+    }
+    dim_registered=1;
+  }
+  region=dim_background_region(width,height,rows,dim_grid_enabled);
+  if(!region) {
+    if(dim_log)dim_log("FOCUS-DIM: background dither/grid region unavailable");
+    return;
+  }
+  /* WS_CHILD always follows the game's X11/Win32 desktop Z-order; no
+   * layered, topmost or owned top-level popup may exist in background. */
+  window=CreateWindowExW(WS_EX_NOACTIVATE|WS_EX_TRANSPARENT|WS_EX_NOPARENTNOTIFY,
+     DIM_CLASS,L"",WS_CHILD|WS_CLIPSIBLINGS,
+     0,0,width,height,game_window,NULL,instance,NULL);
+  if(!window) {
+    error=GetLastError();
+    DeleteObject(region);
+    snprintf(detail,sizeof(detail),
+      "FOCUS-DIM: background child creation failed Win32=%lu",
+      (unsigned long)error);
+    if(dim_log)dim_log(detail);
+    return;
+  }
+  if(!SetWindowRgn(window,region,FALSE)) {
+    DeleteObject(region);
+    DestroyWindow(window);
+    if(dim_log)dim_log("FOCUS-DIM: background child region failed");
+    return;
+  }
+  region=NULL; /* Region ownership transferred to Win32. */
+  dim_background_hwnd=window;
+  ShowWindow(window,SW_SHOWNOACTIVATE);
+  InvalidateRect(window,NULL,FALSE);
+  UpdateWindow(window);
+  if(dim_log) {
+    snprintf(detail,sizeof(detail),
+      "FOCUS-DIM: background game-child grid=%s 16px, dither=%d/%d rows (requested=%d%%)",
+      dim_grid_enabled?"on":"off",rows,BG_DITHER_PERIOD,dim_opacity);
+    dim_log(detail);
+  }
+}
+
 void SpiderPauseDim_Hide(void) {
   HWND window=dim_hwnd;
+  HWND child=dim_background_hwnd;
   dim_hwnd=NULL;
+  dim_background_hwnd=NULL;
+  if(child && IsWindow(child))DestroyWindow(child);
   if(window && IsWindow(window))DestroyWindow(window);
-  if(window && dim_log)
-    dim_log("FOCUS-DIM: gridded shade destroyed before pause release");
+  if((window || child) && dim_log)
+    dim_log("FOCUS-DIM: foreground shade/background child destroyed");
 }
