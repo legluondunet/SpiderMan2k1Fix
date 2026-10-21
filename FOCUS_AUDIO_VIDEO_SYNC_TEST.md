@@ -1,0 +1,106 @@
+# Experimental synchronized focus pause — native Bink, DirectSound investigation
+
+**Not a complete 3D audio fix. Do not merge into `main` before native Windows 11 tests.**
+
+## Confirmed from the original, SHA-256-supported game executable
+
+The 32-bit executable imports `_BinkPause@8` through its Import Address Table at
+virtual address `0x0053B210`, and **calls it itself** at `0x0050BDE5`
+with exactly two arguments: the movie handle and the pause state.
+Two movie-handle globals are used at `0x00AC0BA4` and `0x00AC1020`.
+The game's native pause flag for the latter is `0x00AC101D`.
+
+Separately, it imports the DirectSound factory by ordinal 11, calls it via
+`0x00517A70`, and stores the resulting game sound device in
+`0x006B7920`, with another interface/buffer at `0x006B7924`.
+This is **not** an enumeration of the active secondary sound buffers.
+
+## First PR stage: optional native Bink pause
+
+Add to the user's **existing** `SpiderMan2k1Fix.ini`:
+
+```ini
+[Debug]
+Log=1
+
+[Input]
+DirectInputReacquire=1
+PauseOnFocusLoss=1
+PauseKey=Any
+PauseBinkOnFocusLoss=1
+```
+
+The new option is **0 by default** in all factory INI templates.
+The original (now merged) Alt+Tab input fix is unchanged. When a real
+external focus loss latches the Flip pause, the experimental code calls
+the same `BinkPause(handle,1)` API imported by the game, for any currently
+registered movie handles. On resumption, it calls `BinkPause(handle,0)`
+**only if the handle has not changed** and the game's own movie pause flag
+does not indicate it was paused independently.
+
+If an exact native callsite signature, module or import check fails,
+the feature disables itself. It never replaces a Bink export or DirectInput
+or DirectSound COM vtable. Movie handle lifetime may involve other threads,
+so even with these guards, Windows/ProcDump tests are mandatory before merge.
+
+Expected diagnostic lines (when enabled):
+
+```text
+FOCUS-MEDIA: experimental native BinkPause enabled; DirectSound audio NOT paused
+FOCUS-MEDIA: Bink pause handle[0]=... BinkPause-result=...
+FOCUS-MEDIA: Bink resume handle[0]=... BinkPause-result=...
+```
+
+If `Bink` handle messages are absent, no eligible movie was playing at that
+specific Flip pause boundary.
+
+## What remains for real 3D pause
+
+3D music and effects are handled outside the Bink movie pause. The code
+records the **read-only** original game's DirectSound device and primary
+buffer candidate pointers on focus loss/resume:
+
+```text
+FOCUS-AUDIO: pause DSOUND device=... primary-candidate=...; no sound-buffer changes
+FOCUS-AUDIO: resume DSOUND device=... primary-candidate=...; no sound-buffer changes
+```
+
+This **does not stop** 3D audio. Stopping the primary DirectSound buffer is
+not enough: secondary buffers may continue playing even after the primary
+buffer's `Stop` method, depending on cooperative level. Correct 3D audio
+pause requires locating all active game-owned secondary buffers or a
+verified game-native music/SFX pause function, preserving playback cursors
+and playback flags, handling streaming sound and lifetime safely.
+
+Do not bluntly hook arbitrary COM vtables: an older DirectInput COM probe
+caused an `E_INVALIDARG` startup regression on Windows 11. A separate
+observation/validation stage is necessary before any sound-buffer control.
+
+## Safe test under ProcDump
+
+From PowerShell in the game directory (with ProcDump in `ProcDump`):
+
+```powershell
+Remove-Item Env:\SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force .\crash-dumps | Out-Null
+& '.\ProcDump\procdump.exe' -accepteula -ma -e -x '.\crash-dumps' '.\SpideyPC.exe'
+```
+
+1. Confirm unchanged menu/3D control recovery after Alt+Tab.
+2. Pause and resume during a **Bink cinematic**, then check whether video
+   and its own audio are now synchronized and the movie can still be skipped.
+3. In **3D gameplay**, pause and note **exactly which sounds** continue:
+   background music, ambient loop, dialogue, sound effects, or all.
+4. Keep the log/INI. If there is a crash, keep the ProcDump memory dump
+   private, as process memory can contain sensitive data.
+5. If movie behavior regresses, revert to `PauseBinkOnFocusLoss=0` only.
+   The previously validated Alt+Tab input behavior remains unchanged.
+
+## Status
+
+- Original DirectInput retry and Any-key wake validated on native Windows 11.
+- Native Bink video/audio pause: **implemented behind opt-in; UNTESTED**.
+- DirectSound 3D pause: **NOT IMPLEMENTED**, pending safe buffer/native-engine identification.
+
+---
+legluondunet assisted by ChatGPT (OpenAI)
