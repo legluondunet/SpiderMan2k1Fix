@@ -108,3 +108,36 @@ Alt+Tab once, return, resume with F9, try keyboard/mouse, and save the log.
 If the game fails to start, set `ExperimentalDI8EntryTrace=0` immediately.
 Do not enable `ExperimentalAltTabReacquire`.
 
+
+
+## Windows 11: CreateDevice-only second-stage diagnostic
+
+The 2026-10-21 entry-only test confirms successful
+`DirectInput8Create(...)=0x00000000` and a valid returned interface while the
+game enters the main menu. The log also confirms window focus returns on F9,
+but it ends with a subsequent pause, so it cannot establish control recovery.
+
+Use the latest compiled Windows x86 artifact, and retain the existing
+settings from the entry-only test. Set the second opt-in:
+
+```ini
+[Input]
+ExperimentalFocusTrace=1
+ExperimentalDI8EntryTrace=1
+ExperimentalDI8CreateDeviceTrace=1
+ExperimentalAltTabReacquire=0
+```
+
+This stage replaces only the `IDirectInput8::CreateDevice` entry in a private
+copy of the returned interface vtable. It logs the native result, forwards
+output without altering device vtables, and never calls `Acquire`. It is
+nonetheless more invasive than the validated factory-only test and could
+regress startup. The options default to zero in factory-generated INIs.
+
+If the game does not start, immediately revert only
+`ExperimentalDI8CreateDeviceTrace=0` while keeping the known-working factory
+probe. If the game starts, Alt+Tab **once** from the main menu, return, resume
+with F9, test navigation and provide the new log. Look for
+`INPUT-DI8: IDirectInput8::CreateDevice hr=...`. Do not enable automatic
+reacquisition yet.
+
