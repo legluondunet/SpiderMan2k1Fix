@@ -46,3 +46,16 @@ def test_persistent_pause_requires_manual_foreground_key():
     assert "InterlockedExchange(&pause_latched,1)" in pause
     assert "PostQuitMessage" in pause
     assert "SuspendThread" not in pause
+
+def test_focus_loss_filters_click_activation_glitches():
+    focus=CORE[CORE.index("static BOOL pause_confirmed_focus_loss(HWND hwnd)"):
+               CORE.index("static void pause_poll_key(HWND hwnd)")]
+    assert "GetWindowThreadProcessId(hwnd,&game_pid)" in focus
+    assert "GetWindowThreadProcessId(fg,&fg_pid)" in focus
+    assert "fg_pid==game_pid" in focus
+    assert "pause_background_since=0" in focus
+    assert "(DWORD)(now-pause_background_since)>=150" in focus
+    pause=CORE[CORE.index("static void pause_at_flip_if_background(void)"):
+               CORE.index("static HRESULT WINAPI hooked_flip(")]
+    assert "pause_confirmed_focus_loss(hwnd)" in pause
+    assert "GetAsyncKeyState(VK_LBUTTON)" not in pause
