@@ -28,6 +28,37 @@ def test_large_native_spider_removed_without_changing_focus_pause():
     assert "IntersectClipRect(dc,canvas.left,canvas.top,canvas.right,canvas.bottom)" in P
 
 
+def test_ribbon_ui_is_centered_native_four_by_three_not_full_widescreen():
+    # 1920x1080 gameplay must keep a 1440-pixel centered ribbon,
+    # while the existing 1440x1080 menu content is unchanged.
+    def ribbon_rect(left, width, height):
+        max_width = (height * 4) // 3
+        ribbon_width = min(width, max_width)
+        ribbon_left = left + (width - ribbon_width) // 2
+        return ribbon_left, ribbon_left + ribbon_width
+
+    assert ribbon_rect(0, 1920, 1080) == (240, 1680)
+    assert ribbon_rect(240, 1440, 1080) == (240, 1680)
+    assert ribbon_rect(0, 1440, 1080) == (0, 1440)
+    assert ribbon_rect(0, 1280, 720) == (160, 1120)
+    assert "ui_rect=canvas;" in P
+    assert "ui_max_width=(ch*4)/3;" in P
+    assert "ui_width=cw<ui_max_width?cw:ui_max_width;" in P
+    assert "ui_rect.left=canvas.left+(cw-ui_width)/2;" in P
+    assert "ui_rect.right=ui_rect.left+ui_width;" in P
+    assert "ui_rect.left,upper,ui_width,lower-upper" in P
+    assert "ui_rect.left,band_top,ui_width" in P
+    assert "left_edge=ui_rect.left;" in P
+    assert "right_edge=ui_rect.right;" in P
+    assert "left_edge,y_top,ui_width,vertical" in P
+    assert 'L"PAUSED",ui_rect.left,ui_width' in P
+    assert "ui_rect.left,ui_width,\n                         canvas.top" in P
+    # Dimming and optional grid must still cover the same original frame.
+    assert "pause_blend_color(dc,tint_dc,0,0,width,height,RGB(0,0,0)" in P
+    assert "AlphaBlend(dc,canvas.left,y,cw,1,tint_dc" in P
+    assert "canvas=*content_rect;" in P
+
+
 def test_violet_ribbon_uses_traced_panel_and_bright_double_edge():
     assert "RGB(50,50,160),127" in P
     assert "esc_coordf(400.5f,ch,ESC_DESIGN_H)" in P
