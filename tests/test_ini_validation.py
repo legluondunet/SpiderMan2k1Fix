@@ -71,7 +71,7 @@ def test_pause_overlay_ini_option_is_boolean(runner, tmp_path):
 def test_windows_ghosting_option_strict_boolean(runner, tmp_path, value, valid):
     # Experimental process-wide compatibility option. Never enable implicitly
     # or accept ambiguous values that might alter Windows hang behaviour.
-    result, _ = validate(runner,tmp_path,f"[Input]\\nDisableWindowsGhosting={value}\\n")
+    result, _ = validate(runner,tmp_path,f"[Input]\nDisableWindowsGhosting={value}\n")
     assert (result==(0,0,1)) if valid else (result[0]>=1 and result[2]==0)
 
 
