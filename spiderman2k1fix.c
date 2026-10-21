@@ -1199,7 +1199,7 @@ static void pause_log_resume_focus(HWND hwnd) {
 static void pause_at_flip_if_background(void) {
   HWND hwnd=game_hwnd;
   MSG msg;
-  RECT pause_present_rect;
+  RECT pause_present_rect,pause_content_rect;
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
   if(GetForegroundWindow()==hwnd) {
     pause_background_since=0;
@@ -1237,9 +1237,30 @@ static void pause_at_flip_if_background(void) {
   pause_present_rect.top=borderless_monitor_y;
   pause_present_rect.right=borderless_monitor_x+(LONG)desktop_w;
   pause_present_rect.bottom=borderless_monitor_y+(LONG)desktop_h;
+  /* Keep the fine grid within the actual game image: the menu and intro
+   * use a centered 4:3 viewport, while Auto gameplay can be widescreen.
+   * The black pillarboxes should stay clean, not display a desktop grid. */
+  pause_content_rect.left=0;
+  pause_content_rect.top=0;
+  pause_content_rect.right=(LONG)desktop_w;
+  pause_content_rect.bottom=(LONG)desktop_h;
+  if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
+     menu_map.right>menu_map.left && menu_map.bottom>menu_map.top) {
+    pause_content_rect.left=menu_map.left;
+    pause_content_rect.top=menu_map.top;
+    pause_content_rect.right=menu_map.right;
+    pause_content_rect.bottom=menu_map.bottom;
+  } else if(InterlockedCompareExchange(&gameplay_4x3_active,0,0)==1 &&
+            game_map.right>game_map.left && game_map.bottom>game_map.top) {
+    pause_content_rect.left=game_map.left;
+    pause_content_rect.top=game_map.top;
+    pause_content_rect.right=game_map.right;
+    pause_content_rect.bottom=game_map.bottom;
+  }
   if(borderless_back && borderless_primary && original_blt)
     SpiderPauseSurface_Begin(borderless_back,borderless_primary,
-                             &pause_present_rect,(SpiderPauseBltFn)original_blt);
+                             &pause_present_rect,&pause_content_rect,
+                             (SpiderPauseBltFn)original_blt);
   while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1) {
     while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
       if(msg.message==WM_QUIT) {
