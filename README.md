@@ -241,166 +241,67 @@ When testing the current development build, set `DirectInputReacquire=1` and `Pa
 
 Try the original `AspectRatio=4:3` mode to help isolate widescreen-specific problems. Some edge-of-screen 3D rendering issues and audio artifacts are still being investigated; see the roadmap below.
 
-## Adaptive HUD — experimental investigation for 1.0
+## Adaptive widescreen HUD
 
-The game has several distinct HUD rendering paths. The existing opt-in
-`[HUD] HUDWidescreenFix=1` (normally **0**) contains 16 strict SHA-256-
-guarded hooks for the **upper-left portrait, health/web bars, cartridge
-counter and associated glyphs**, developed from the earlier GDB prototype.
-It scales horizontal dimensions without changing original vertical
-positions, but its in-game safety and coverage are **not yet validated**.
-The **bottom-right compass** and **lower-left instruction box** are rendered
-through other paths and can still be stretched at 16:9.
+**Enabled by default.** SpiderMan2k1Fix automatically corrects the
+proportions and positioning of the gameplay HUD on supported widescreen
+resolutions. It preserves the original 4:3 presentation, menu, videos,
+world geometry and game-owned vertex buffers.
 
-A first **read-only F12 sampler** on the separate experimental HUD branch
-is available to identify those paths accurately, without any coordinate
-changes or additional COM hooks. It is deliberately excluded from `main`.
+The corrected elements include Spider-Man's portrait, life and web
+gauges, web cartridge counter, mission instructions, compass, boss
+health bars, boss portraits, damaged-health black masks, and the
+Scorpion/Jameson objective bar and icons. The game uses several
+rendering paths, so the correction uses verified original-EXE call
+sites plus conservative texture, depth and geometry checks. Unknown
+gameplay draws are passed through.
 
-1. Keep `[Debug] Log=1`, `[HUD] HUDWidescreenFix=0` for a first baseline.
-2. In the game's folder under Linux/Wine, launch
-   `SPIDERMAN2K1FIX_HUD_TRACE=1 WINEDLLOVERRIDES="winmm=n,b" wine ./SpideyPC.exe`.
-   On native Windows PowerShell, set
-   `$env:SPIDERMAN2K1FIX_HUD_TRACE="1"` before executing `.\SpideyPC.exe`.
-3. Once in **3D gameplay**, press **F12 once** and allow six frames to run,
-   then quit. Send `SpiderMan2k1Fix.log` and a gameplay screenshot.
-   The bounded `HUD-PROBE` records describe native vertex bounds,
-   D3D7 caller RVA, source texture dimensions, color and depth for the
-   player HUD, compass and instruction regions; they do not include
-   copyrighted texture pixel data.
-4. For a *separate* A/B test after backing up the original DLLs and INI,
-   enable `HUDWidescreenFix=1` to evaluate the previously implemented
-   player-HUD-only 16-site correction. Compare in 4:3 and widescreen.
-   Restore `HUDWidescreenFix=0` if any unexpected behavior occurs.
+### Configuration
 
-**Second experimental step (after three completed Wine F12 captures):**
-the actual gameplay 2D draw signatures are now known. Both mirrored
-64×64 compass halves and the untextured direction pointer can be
-identified by exact draw RVA, z/RHW layer, source texture and bottom-right
-bounds. The two translucent instruction backgrounds and their text glyphs
-have separate depths, colors and bottom-left bounds. Crucially, the F12
-capture also discovered **3D particles wrongly labeled 'player' by the
-loose sample**, with z≈0.9983 and RHW≈0.0229. The correction explicitly
-rejects these and any unrecognized 3D calls.
+```ini
+[HUD]
+HUDWidescreenFix=1
+```
 
-This second stage is **opt-in with the existing
-`[HUD] HUDWidescreenFix=1`**; the default remains `0`. The already
-available 16-site upper-left player HUD prototype is enabled at the
-same time, while the additional strict D3D7 filters adjust:
-- compass halves plus pointer: scale X to 4:3-relative proportions and
-  **anchor to the screen's right edge**;
-- instruction panel and matching font glyphs: scale X to 4:3-relative
-  proportions and **anchor to the left edge**.
+- `HUDWidescreenFix=1`: enable the adaptive HUD (**factory default**).
+- `HUDWidescreenFix=0`: explicitly disable the adaptive HUD.
+- If `[HUD]` or the setting is absent from an otherwise valid INI, the
+  correction is **enabled** as though `HUDWidescreenFix=1`.
+- With `[Display] AspectRatio=4:3`, widescreen HUD transformation is
+  automatically bypassed, regardless of the enabled setting.
 
-At 1920×1080 the horizontal scale is 0.75. Y, Z, RHW, color, UV,
-menu/comic/video geometry and the game's original vertex buffers are
-unchanged; supported original 4:3 mode automatically disables the patch.
+**Existing user settings are preserved.** If an INI written before this
+update contains `HUDWidescreenFix=0`, that is an explicit opt-out and
+continues to disable the correction. Change it to `1` (or remove the
+key from a valid INI) to enable the HUD without resetting unrelated
+settings. Missing or repaired INIs use the new default `1`.
 
-**Reference-frame correction (October 21, 2026):** Matching 4:3
-screenshots confirm that the existing blue and red panel backgrounds are
-already positioned correctly in 16:9; the blue box is x≈95–881
-(relative to the 4:3 image) vs x≈93–880 in widescreen, and the same
-red instruction box is x≈9–501 in both modes. Keep those transforms
-unchanged. The instruction font uses TWO D3D7 passes, however: dark
-shadow (`z=.0012, RHW=11.1764, ARGB FF000000`) followed by lavender
-foreground (`z=.0010, RHW=12.6862, ARGB FFC0C0FF`). The initial
-widescreen implementation resized only the dark pass, so light letters
-extended past the corrected box. Both passes are now remapped together,
-with strict screen-region, texture and depth signatures. This adjustment
-has passed source-level regression checks but **still requires an in-game
-screenshot before validation**.
+### Validation and optional diagnostics
 
-**Boss HUD experimental correction (Venom, Scorpion and J. Jonah Jameson,
-October 21, 2026):** Native Windows 11 reference screenshots (1920×1200
-16:10 versus centered 1600×1200 4:3) revealed previously uncorrected,
-~20%-stretched boss health bars. Two complete F12 trace series now
-identify the shared drawing path for **single and double boss bars**:
-colored fill (solid quad), 32×32 border tiles, 64×64 boss portrait,
-and an extra black health marker on the second row (Jameson).
-Their shared caller is `0x00102C72`, but it is *not* HUD-specific,
-so the matcher also requires bounded upper-right coordinates, exact
-texture size, layer/depth range, opaque color and plausible quad size.
-RHW changes slightly between levels: the implementation uses measured
-ranges rather than an inaccurate single numeric constant.
+Tested against original 4:3 reference screenshots, with the HUD
+visually checked under Linux/Wine at **1920×1080 (16:9)** and native
+Windows 11 at **1920×1200 (16:10)**. Tests covered player UI,
+instructions, compass, both single (Venom) and dual (Scorpion +
+J. Jonah Jameson) boss health bars, moving black lost-health areas,
+boss portraits and a horizontal objective bar with its icons. Other
+boss fights and ultrawide resolutions were not individually tested.
 
-**Damaged boss health bar regression (Windows 11, 21 Oct, 23:05):**
-The screenshot of injured Venom showed a detached black mask at
-`x=1080..1204`, exactly the original unscaled bar starting coordinate,
-while the frame, colored segments and portrait had shifted to the
-right. The underlying empty-health black quad uses the boss's separate
-`z≈.0007` layer (first measured as a 15px Jameson marker), but its
-width varies with lost health. The initial matcher wrongly capped this
-width to `4% of height`; the revised matcher accepts damaged-health
-masks up to a complete bar's measured width, **only** for the opaque
-black, textureless, expected depth/RHW, 40px-tall top-right boss rows.
-Regression tests cover variable missing-health amounts and unrelated
-black geometry. Visual confirmation of this change remains pending.
+The original game's F9 BMP capture can produce a magenta image under
+native Windows 11; that is a separate issue, not a HUD problem.
 
-**Second black-mask failure, Scorpion + Jameson (21 Oct, 23:12):**
-The same displaced solid-black bar remains visible after the wider
-mask signature was accepted. Pixel inspection confirms the block still
-begins at **x=1080** (the original unscaled boss fill origin), while
-the frame and portrait have moved right. The previous 4-vertex
-`FVF=0x144` triangle-fan F12 log included colored health and a *small*
-black health marker but did **not** identify the displaced large black
-block. The cause is therefore still unverified: it may use a different
-Direct3D primitive format/vertex layout, indexed draw, or DirectDraw
-Blt. Do **not** treat the expanded width limit as a verified fix.
-
-For this *new read-only investigation*, enable `Log=1` and
-`SPIDERMAN2K1FIX_HUD_TRACE=1`, with the latest two DLLs from
-PR #21, then use F12 once **while a boss has visibly lost health**.
-The additional output `HUD-PROBE-EXTRA` covers the upper-right
-`XYZRHW|DIFFUSE` and `XYZRHW|DIFFUSE|TEX1` primitive formats,
-triangle strips/lists and indexed draws. `HUD-PROBE-BLT` records
-DirectDraw color-fill/copy operations in the same screen area. Both
-probes are six-frame, opt-in and read-only. Send the resulting log.
-If no corresponding black quad appears, deeper source analysis is
-needed rather than loosening the render-time matcher again.
-
-
-
-With `[HUD] HUDWidescreenFix=1` the boss sprites are experimentally
-**aspect-corrected and anchored to the right edge**, just like the
-already-validated compass. The same transform applies to both bars
-and both portraits. 4:3, menu, media and original game-owned vertices
-remain untouched. Source-level tests use the exact captured Venom
-and Scorpion/Jameson draw signatures; negative tests reject unrelated
-geometry. The HUD fix remains **opt-in, disabled by default**, pending
-in-game Windows 11 and Wine validation; the pull request remains DRAFT.
-
-**Next boss visual test** (no additional F12 probe or new 4:3
-reference required): install the *two matching DLLs* from the latest
-successful CI artifact of this draft branch, configure
-`[Display] AspectRatio=auto`, `[HUD] HUDWidescreenFix=1`,
-`[Debug] Log=1`, and launch Venom and Scorpion under native Windows.
-Capture one 1920×1200 image of each fight, ideally with their full
-life bars. Check that Scorpion and Jameson's two frames, health fills,
-and both portraits stay aligned, with no clipped/squashed components.
-`HUD-ADAPTIVE: region=boss` should appear in the log.
-Do not set `SPIDERMAN2K1FIX_HUD_TRACE` during this visual test;
-it is only a read-only development sampler. If there is any visual
-regression, disable `HUDWidescreenFix`, preserve the log, and avoid
-merging the PR.
-
-**Wine visual A/B:** Back up the game DLLs and INI, install the DLLs from
-this experimental PR *as a matching pair*, and leave `Log=1`.
-First launch with `HUDWidescreenFix=0`, take a 16:9 3D screenshot;
-then set `HUDWidescreenFix=1`, restart and take a screenshot of the same
-scene, with player gauges, compass and instructions visible. Check
-`HUD-ADAPTIVE: region=compass` and `region=instructions` in the log.
-If anything crashes, flickers or shifts unexpectedly, revert to
-`HUDWidescreenFix=0` and preserve the log. The F12 probe can remain
-disabled during visual testing by omitting its environment variable.
-
-This feature is **not yet approved for the 1.0 release**. It needs
-visual/runtime validation under Wine and Windows 11 before it can be
-enabled by default or merged into `main`.
+The developer-only F12 read-only geometric diagnostic remains
+available temporarily when BOTH `[Debug] Log=1` and the environment
+variable `SPIDERMAN2K1FIX_HUD_TRACE=1` are enabled. In 3D gameplay,
+press F12 once for six frames of `HUD-PROBE` diagnostics. It is **not**
+needed for normal HUD operation and will be removed during the
+pre-1.0 cleanup. See [PR #21](https://github.com/legluondunet/SpiderMan2k1Fix/pull/21)
+for test evidence and development details.
 
 ## Roadmap
 
 These are **planned improvements**, not features promised for version 1.0:
 
-- **Fully adaptive HUD:** improve positioning and scaling of HUD elements across widescreen resolutions, beyond existing aspect-ratio protection.
+- **Further HUD coverage:** test additional boss encounters and ultrawide aspect ratios (such as 21:9).
 - **Audio improvements:** reduce or eliminate unwanted audio noise and artifacts.
 - **Widescreen 3D geometry:** investigate 3D objects that appear displaced near the left or right edges of the screen in landscape/widescreen mode.
 - **Electro:** investigate and fix the outstanding Electro-related issue.
