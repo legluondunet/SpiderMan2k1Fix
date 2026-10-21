@@ -96,15 +96,20 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
   if(enabled_dim && enabled_grid) {
     const RECT pixel={0,0,1,1};
     const BLENDFUNCTION grid_blend={AC_SRC_OVER,0,28,0};
+    int grid_left=0,grid_top=0,grid_right=width,grid_bottom=height;
     HBRUSH grid_brush;
     saved=SaveDC(dc);
     if(!saved)return 0;
     if(content_rect && content_rect->left>=0 && content_rect->top>=0 &&
        content_rect->right<=width && content_rect->bottom<=height &&
        content_rect->right>content_rect->left &&
-       content_rect->bottom>content_rect->top)
-      IntersectClipRect(dc,content_rect->left,content_rect->top,
-                         content_rect->right,content_rect->bottom);
+       content_rect->bottom>content_rect->top) {
+      grid_left=content_rect->left;
+      grid_top=content_rect->top;
+      grid_right=content_rect->right;
+      grid_bottom=content_rect->bottom;
+      IntersectClipRect(dc,grid_left,grid_top,grid_right,grid_bottom);
+    }
     if(panel)
       ExcludeClipRect(dc,box_left-5,box_top-5,
                          box_left+box_width+5,box_top+box_height+5);
@@ -114,13 +119,15 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
       DeleteObject(grid_brush);RestoreDC(dc,saved);return 0;
     }
     DeleteObject(grid_brush);
-    for(x=PAUSE_GRID_STEP;x<width;x+=PAUSE_GRID_STEP) {
-      if(!AlphaBlend(dc,x,0,1,height,tint_dc,0,0,1,1,grid_blend)) {
+    for(x=grid_left+PAUSE_GRID_STEP;x<grid_right;x+=PAUSE_GRID_STEP) {
+      if(!AlphaBlend(dc,x,grid_top,1,grid_bottom-grid_top,
+                     tint_dc,0,0,1,1,grid_blend)) {
         RestoreDC(dc,saved);return 0;
       }
     }
-    for(y=PAUSE_GRID_STEP;y<height;y+=PAUSE_GRID_STEP) {
-      if(!AlphaBlend(dc,0,y,width,1,tint_dc,0,0,1,1,grid_blend)) {
+    for(y=grid_top+PAUSE_GRID_STEP;y<grid_bottom;y+=PAUSE_GRID_STEP) {
+      if(!AlphaBlend(dc,grid_left,y,grid_right-grid_left,1,
+                     tint_dc,0,0,1,1,grid_blend)) {
         RestoreDC(dc,saved);return 0;
       }
     }
