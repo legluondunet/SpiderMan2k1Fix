@@ -5,8 +5,10 @@
  *  - compass: two 64x64 textured mirrored halves (z=0, RHW=27.6000)
  *    and their untextured direction indicator (RHW=26.0678);
  *  - mission/instruction panels: untextured A0000060 / A0600000 backdrop,
- *    and small 16x8/16x32/32x32/64x32 glyph textures sharing the
- *    z=0.0012 / RHW=11.1764 source.
+ *    and small 16x8/16x32/32x32/64x32 glyph textures. The black
+ *    shadow is z=0.0012/RHW=11.1764; the light foreground is a second
+ *    pass at z=0.0010/RHW=12.6862, with ARGB FFC0C0FF.
+ *    Both must undergo IDENTICAL X mapping to stay registered.
  *
  * The generic game DrawPrimitive caller RVA 0x00102C72 is NOT sufficient
  * to identify HUD: 3D world particles also go through it. Therefore we
@@ -28,8 +30,10 @@ static int hud_near(float value, float expected, float tolerance)
 int SpiderHudAdaptive_MightMatch(const SpiderMenuVertex *v)
 {
     if (!v) return 0;
-    return (hud_near(v[0].z, 0.0012f, 0.0002f) &&
+    return (hud_near(v[0].z, 0.0012f, 0.0001f) &&
             hud_near(v[0].rhw, 11.1764f, 0.10f)) ||
+           (hud_near(v[0].z, 0.0010f, 0.0001f) &&
+            hud_near(v[0].rhw, 12.6862f, 0.10f)) ||
            (hud_near(v[0].z, 0.0f, 0.0001f) &&
             (hud_near(v[0].rhw, 27.6000f, 0.10f) ||
              hud_near(v[0].rhw, 26.0678f, 0.10f)));
@@ -104,17 +108,24 @@ int SpiderHudAdaptive_Transform(const SpiderMenuVertex *src,
             region = SPIDER_HUD_ADAPTIVE_COMPASS;
     }
 
-    /* Both blue and red instruction backdrops; glyphs share exact depth
-     * and RHW, even where their X extends into the probe's "compass" region.
-     * Never classify the 3D decorative particles (z~0.9983, RHW~0.0229). */
+    /* Both blue and red backdrops share the shadow-pass depth and RHW.
+     * Text is two-pass: black shadow z=.0012/RHW=11.1764, foreground
+     * lavender z=.0010/RHW=12.6862 (confirmed in Wine F12 trace).
+     * Map both to the same X coordinates or bright text overruns its box.
+     * Never accept player HUD upper-left glyphs, 3D world particles
+     * (z~0.9983/RHW~0.0229), or unrelated sprites. */
     if (region == SPIDER_HUD_ADAPTIVE_NONE &&
         minx >= -64.0f &&
         maxx < (float)screen_w * 0.74f &&
         miny > (float)screen_h * 0.68f &&
         maxy < (float)screen_h * 0.96f &&
-        hud_near(src[0].z, 0.0012f, 0.0002f) &&
-        hud_near(src[0].rhw, 11.1764f, 0.10f)) {
-        if (tex_w == 0u && tex_h == 0u &&
+        ((hud_near(src[0].z, 0.0012f, 0.0001f) &&
+          hud_near(src[0].rhw, 11.1764f, 0.10f)) ||
+         (hud_near(src[0].z, 0.0010f, 0.0001f) &&
+          hud_near(src[0].rhw, 12.6862f, 0.10f)))) {
+        if (hud_near(src[0].z, 0.0012f, 0.0001f) &&
+            hud_near(src[0].rhw, 11.1764f, 0.10f) &&
+            tex_w == 0u && tex_h == 0u &&
             (color == 0xA0000060u || color == 0xA0600000u) &&
             width > (float)screen_w * 0.22f &&
             width < (float)screen_w * 0.72f &&
@@ -123,9 +134,14 @@ int SpiderHudAdaptive_Transform(const SpiderMenuVertex *src,
             region = SPIDER_HUD_ADAPTIVE_INSTRUCTIONS;
         else if ((tex_w == 16u || tex_w == 32u || tex_w == 64u) &&
                  (tex_h == 8u || tex_h == 32u) &&
-                 (color == 0xFF000000u || color == 0xFFC0C0FFu) &&
                  width >= 4.0f && width < (float)screen_h * 0.09f &&
-                 height >= 4.0f && height < (float)screen_h * 0.09f)
+                 height >= 4.0f && height < (float)screen_h * 0.09f &&
+                 ((color == 0xFF000000u &&
+                   hud_near(src[0].z, 0.0012f, 0.0001f) &&
+                   hud_near(src[0].rhw, 11.1764f, 0.10f)) ||
+                  (color == 0xFFC0C0FFu &&
+                   hud_near(src[0].z, 0.0010f, 0.0001f) &&
+                   hud_near(src[0].rhw, 12.6862f, 0.10f))))
             region = SPIDER_HUD_ADAPTIVE_INSTRUCTIONS;
     }
 
