@@ -569,6 +569,8 @@ typedef HRESULT (WINAPI *D3DSetRenderStateFn)(void *,D3DRENDERSTATETYPE,DWORD);
 static D3DSetRenderStateFn original_set_render_state;
 /* D3D7 state is recorded only when a successful driver call confirms it. */
 static volatile LONG fov_z_state_known=0, fov_z_state_enabled=0;
+/* Diagnostic-only recording of alpha state; no render-state changes. */
+static volatile LONG esc_probe_alpha=-1;
 static volatile LONG fov_game_height=0;
 static volatile LONG fov_horplus_scopes_ready=0, fov_horplus_skips_hud=0;
 static volatile LONG fov_horplus_calls=0, fov_horplus_skips_unknown=0,
@@ -579,6 +581,8 @@ static HRESULT WINAPI hooked_set_render_state(void *self,D3DRENDERSTATETYPE stat
     InterlockedExchange(&fov_z_state_enabled,value!=D3DZB_FALSE);
     InterlockedExchange(&fov_z_state_known,1);
   }
+  if(SUCCEEDED(hr) && state==D3DRENDERSTATE_ALPHABLENDENABLE)
+    InterlockedExchange(&esc_probe_alpha,value!=FALSE);
   return hr;
 }
 
@@ -825,7 +829,129 @@ static void free_menu_vertices(SpiderMenuVertex *allocated) {
   if (allocated) HeapFree(GetProcessHeap(),0,allocated);
 }
 
+/* --------------------------------------------------------------------------
+ * ESC-DRAW PROBE: separate, strictly opt-in diagnostic for native ESC UI.
+ * No new hooks, game input interception or rendering changes. When
+ * SPIDERMAN2K1FIX_ESC_DRAW_TRACE=1 and [Debug] Log=1, press F12 once
+ * during normal gameplay and once with the original ESC menu visible.
+ * Only six frames per key press are sampled; the last 40 calls each frame
+ * are reported. F12 is observed via GetAsyncKeyState, NOT consumed.
+ * Measurements are made on ORIGINAL game-owned vertices before mapping.
+ * ----------------------------------------------------------------------- */
+#define ESC_PROBE_RING 40
+typedef struct EscProbeDraw {
+  DWORD rva,fvf,vertex_count,index_count,tex_width,tex_height,primitive;
+  LONG alpha;
+  float x0,y0,x1,y1;
+  unsigned char has_bbox,is_indexed;
+} EscProbeDraw;
+static EscProbeDraw esc_probe_calls[ESC_PROBE_RING];
+static LONG esc_probe_frames=0,esc_probe_total=0,esc_probe_capture=0;
+static int esc_probe_last_f12=0;
+static int esc_probe_optin(void) {
+  static int enabled=-1;
+  if(enabled<0) {
+    char value[3]={0};
+    DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_ESC_DRAW_TRACE",value,sizeof(value));
+    enabled=(debug_log_enabled && n==1 && value[0]=='1');
+    if(enabled)
+      log_line("ESC-PROBE: ENABLED read-only D3D7 sampling; press F12 in gameplay, then F12 in ESC menu");
+  }
+  return enabled;
+}
+static void esc_probe_record(void *device,int indexed,D3DPRIMITIVETYPE primitive,
+                             DWORD fvf,const void *verts,DWORD count,DWORD index_count,
+                             void *return_address) {
+  EscProbeDraw *item;
+  LONG seq;
+  if(esc_probe_frames<=0) return;
+  seq=esc_probe_total++;
+  item=&esc_probe_calls[((unsigned long)seq)%ESC_PROBE_RING];
+  memset(item,0,sizeof(*item));
+  item->is_indexed=(unsigned char)(indexed!=0);
+  item->primitive=(DWORD)primitive;
+  item->fvf=fvf;item->vertex_count=count;item->index_count=index_count;
+  item->alpha=InterlockedCompareExchange(&esc_probe_alpha,0,0);
+  geom_rva(return_address,&item->rva);
+  if(fvf==0x144UL && verts && count>=3 && count<=64) {
+    const SpiderMenuVertex *v=(const SpiderMenuVertex*)verts;
+    DWORD i;
+    item->x0=item->x1=v[0].x;
+    item->y0=item->y1=v[0].y;
+    item->has_bbox=1;
+    for(i=1;i<count;i++) {
+      if(v[i].x<item->x0)item->x0=v[i].x;
+      if(v[i].x>item->x1)item->x1=v[i].x;
+      if(v[i].y<item->y0)item->y0=v[i].y;
+      if(v[i].y>item->y1)item->y1=v[i].y;
+    }
+  }
+  /* Only inspect texture state for candidate 2D UI primitives. Acquired
+   * COM references are released immediately. Never Lock() a surface. */
+  if(fvf==0x144UL && count>=3 && count<=16) {
+    IDirectDrawSurface7 *tex=NULL;
+    if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)) && tex) {
+      DDSURFACEDESC2 desc;
+      memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+      if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(tex,&desc))) {
+        item->tex_width=desc.dwWidth;
+        item->tex_height=desc.dwHeight;
+      }
+      IDirectDrawSurface7_Release(tex);
+    }
+  }
+}
+static void esc_probe_on_flip(LONG flip) {
+  int held;
+  if(!esc_probe_optin())return;
+  /* Flush stored draw metadata only once per completed frame. */
+  if(esc_probe_frames>0) {
+    char line[320];LONG i,n=esc_probe_total,first;
+    snprintf(line,sizeof(line),
+      "ESC-PROBE: capture=%ld flip=%ld draws=%ld retained=%ld alpha=-1 means unknown",
+      (long)esc_probe_capture,(long)flip,(long)n,
+      (long)(n<ESC_PROBE_RING?n:ESC_PROBE_RING));
+    log_line(line);
+    first=n>ESC_PROBE_RING?n-ESC_PROBE_RING:0;
+    for(i=first;i<n;i++) {
+      const EscProbeDraw *d=&esc_probe_calls[((unsigned long)i)%ESC_PROBE_RING];
+      snprintf(line,sizeof(line),
+        "ESC-PROBE: draw=%ld method=%s rva=%08lX prim=%lu fvf=%08lX v=%lu idx=%lu alpha=%ld tex=%lux%lu bbox=%s[%.1f,%.1f..%.1f,%.1f]",
+        (long)i,d->is_indexed?"indexed":"direct",(unsigned long)d->rva,
+        (unsigned long)d->primitive,(unsigned long)d->fvf,
+        (unsigned long)d->vertex_count,(unsigned long)d->index_count,
+        (long)d->alpha,(unsigned long)d->tex_width,(unsigned long)d->tex_height,
+        d->has_bbox?"":"n/a ",(double)d->x0,(double)d->y0,
+        (double)d->x1,(double)d->y1);
+      log_line(line);
+    }
+    esc_probe_total=0;
+    esc_probe_frames--;
+    if(!esc_probe_frames) {
+      snprintf(line,sizeof(line),"ESC-PROBE: capture=%ld complete",
+               (long)esc_probe_capture);
+      log_line(line);
+    }
+  }
+  /* F12 sampled passively. Do not modify keyboard state, engine menus,
+   * DirectDraw surfaces, or message queues. */
+  held=(GetAsyncKeyState(VK_F12)&0x8000)!=0;
+  if(held && !esc_probe_last_f12 && esc_probe_frames==0) {
+    char line[160];
+    esc_probe_capture++;
+    esc_probe_total=0;
+    esc_probe_frames=6;
+    snprintf(line,sizeof(line),
+      "ESC-PROBE: capture=%ld ARMED at Flip #%ld (6 frames; press F12 again for a second capture)",
+      (long)esc_probe_capture,(long)flip);
+    log_line(line);
+  }
+  esc_probe_last_f12=held;
+}
+
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
+  if(esc_probe_frames>0)
+    esc_probe_record(self,0,type,fvf,verts,count,0,__builtin_return_address(0));
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
      fvf==0x144UL && verts && count>=3 && count<=128)
     InterlockedIncrement(&menu_version_draws);
@@ -844,6 +970,8 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
   }
 }
 static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,LPWORD indices,DWORD icount,DWORD flags) {
+  if(esc_probe_frames>0)
+    esc_probe_record(self,1,type,fvf,verts,count,icount,__builtin_return_address(0));
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
      fvf==0x144UL && verts && count>=3 && count<=128)
     InterlockedIncrement(&menu_version_draws);
@@ -1303,6 +1431,7 @@ static void pause_at_flip_if_background(void) {
 }
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
+  esc_probe_on_flip(count);
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
