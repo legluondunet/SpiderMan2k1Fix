@@ -692,6 +692,7 @@ typedef HRESULT (WINAPI *DrawPrimitiveFn)(void *, D3DPRIMITIVETYPE, DWORD, LPVOI
 typedef HRESULT (WINAPI *DrawIndexedPrimitiveFn)(void *, D3DPRIMITIVETYPE, DWORD, LPVOID, DWORD, LPWORD, DWORD, DWORD);
 static DrawPrimitiveFn original_draw_primitive;
 static DrawIndexedPrimitiveFn original_draw_indexed_primitive;
+static int geom_rva(void *ret,DWORD *rva); /* declared below HUD sampling */
 /* Opt-in, read-only six-frame HUD sampling. No render path changes. */
 static volatile LONG hud_probe_enabled=0,hud_probe_frames=0;
 static volatile LONG hud_probe_seen=0,hud_probe_left=0,hud_probe_right=0,hud_probe_instructions=0;
