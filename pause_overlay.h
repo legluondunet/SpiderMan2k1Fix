@@ -7,7 +7,9 @@
 /* A passive child window within the game, never a desktop-topmost overlay.
  * Shown only during an actual focus pause. Does not intercept gameplay input. */
 void SpiderPauseOverlay_Init(void (*log_fn)(const char *));
-void SpiderPauseOverlay_Show(HWND game_window, int resume_key);
+void SpiderPauseOverlay_Show(HWND game_window);
+/* Centered banner rectangle, in game client coordinates, if visible. */
+int SpiderPauseOverlay_GetBounds(HWND game_window, RECT *bounds);
 void SpiderPauseOverlay_Hide(void);
 
 /* Remove only the visible border + glyph pixels of the centered banner
