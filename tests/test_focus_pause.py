@@ -1,4 +1,4 @@
-"""PR #2: focus pause is isolated from the base graphics and stability fixes."""
+"""Retired pause regression checks for Windows and Wine."""
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -8,10 +8,10 @@ GEN=(ROOT/"virtual_spidey_cfg.c").read_text()
 VALID=(ROOT/"ini_validation.h").read_text()
 
 def test_pause_is_opt_in_and_configured_consistently():
-    assert "PauseOnFocusLoss=0" in INI
-    assert '"PauseOnFocusLoss=0\\r\\n"' in GEN
+    assert "PauseOnFocusLoss=" not in INI
+    assert "PauseOnFocusLoss=" not in GEN
     assert '"PauseOnFocusLoss"' in VALID
-    assert 'GetPrivateProfileIntA("Input","PauseOnFocusLoss",0,path)==1' in CORE
+    assert "PauseOnFocusLoss" not in CORE
 
 def test_pause_only_at_ddraw_flip_boundary():
     assert "static void pause_at_flip_if_background(void)" in CORE
