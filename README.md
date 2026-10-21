@@ -322,6 +322,19 @@ texture size, layer/depth range, opaque color and plausible quad size.
 RHW changes slightly between levels: the implementation uses measured
 ranges rather than an inaccurate single numeric constant.
 
+**Damaged boss health bar regression (Windows 11, 21 Oct, 23:05):**
+The screenshot of injured Venom showed a detached black mask at
+`x=1080..1204`, exactly the original unscaled bar starting coordinate,
+while the frame, colored segments and portrait had shifted to the
+right. The underlying empty-health black quad uses the boss's separate
+`z≈.0007` layer (first measured as a 15px Jameson marker), but its
+width varies with lost health. The initial matcher wrongly capped this
+width to `4% of height`; the revised matcher accepts damaged-health
+masks up to a complete bar's measured width, **only** for the opaque
+black, textureless, expected depth/RHW, 40px-tall top-right boss rows.
+Regression tests cover variable missing-health amounts and unrelated
+black geometry. Visual confirmation of this change remains pending.
+
 With `[HUD] HUDWidescreenFix=1` the boss sprites are experimentally
 **aspect-corrected and anchored to the right edge**, just like the
 already-validated compass. The same transform applies to both bars
