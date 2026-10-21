@@ -75,3 +75,11 @@ def test_focus_trace_only_does_not_hook_directinput():
     assert "InterlockedExchange(&diagnostic_active,1)" in trace[safe:hook]
     assert "return;" in trace[safe:hook]
     assert "DirectInput8 IAT and COM vtables untouched" in trace
+
+def test_pause_key_ini_value_validation_precedes_boolean_input_rules():
+    specific=VALID.index('if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"PauseKey"))')
+    boolean=VALID.index('if(!spider_ini_icmp(section,"Debug")||!spider_ini_icmp(section,"Input")||')
+    assert specific < boolean
+    assert 'spider_ini_icmp(value,"F9")' in VALID[specific:boolean]
+    assert 'spider_ini_icmp(value,"Space")' in VALID[specific:boolean]
+    assert '"PauseKey=F9\\r\\n"' in GEN
