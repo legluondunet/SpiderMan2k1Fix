@@ -7,7 +7,10 @@
  * Only foreground game windows may create the comic-style banner. */
 void SpiderPauseOverlay_Init(void (*log_fn)(const char *));
 int SpiderPauseOverlay_GameForeground(HWND game_window);
+/* Foreground: composited translucent popup. Background: ordinary
+ * opaque, rounded WS_CHILD attached to the game (never desktop-floating). */
 void SpiderPauseOverlay_Show(HWND game_window);
+void SpiderPauseOverlay_ShowBackground(HWND game_window);
 void SpiderPauseOverlay_Hide(void);
 
 /* Entire one-piece panel rectangle in GAME CLIENT coordinates. */
