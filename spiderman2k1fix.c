@@ -724,8 +724,10 @@ static void hud_probe_draw(void *device,D3DPRIMITIVETYPE type,DWORD fvf,
      !vertices || desktop_w<640 || desktop_h<480) return;
   l=r=v[0].x;t=b=v[0].y;
   for(i=1;i<4;i++) {
-    if(v[i].x<l)l=v[i].x;if(v[i].x>r)r=v[i].x;
-    if(v[i].y<t)t=v[i].y;if(v[i].y>b)b=v[i].y;
+    if(v[i].x<l)l=v[i].x;
+    if(v[i].x>r)r=v[i].x;
+    if(v[i].y<t)t=v[i].y;
+    if(v[i].y>b)b=v[i].y;
   }
   if(!(l>=-40.0f && r<=(float)desktop_w+40.0f &&
        t>=-40.0f && b<=(float)desktop_h+40.0f) ||
