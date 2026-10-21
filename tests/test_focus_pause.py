@@ -39,19 +39,20 @@ def test_no_native_input_hook_is_enabled_by_default():
 def test_persistent_pause_requires_manual_foreground_key():
     pause=CORE[CORE.index("static volatile LONG pause_on_focus_loss=0;"):
                CORE.index("static HRESULT WINAPI hooked_flip(")]
-    assert "GetAsyncKeyState(pause_key_vk)" in pause
-    assert "GetForegroundWindow()!=hwnd" in pause
+    assert "SpiderPauseAny_Completed()" in pause
+    assert "GetForegroundWindow()==hwnd" in pause
+    assert "SpiderPauseAny_Completed()" in pause
     assert "pause_latched" in pause
-    assert "pause_key_down" in pause
+    assert "pause_key_down" not in pause
     assert 'while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1)' in pause
     assert "while(IsWindow(hwnd) && GetForegroundWindow()!=hwnd)" not in pause
-    assert "InterlockedExchange(&pause_latched,1)" in pause
+    assert "InterlockedCompareExchange(&pause_latched,1,0)==0" in pause  # focus-only latch
     assert "PostQuitMessage" in pause
     assert "SuspendThread" not in pause
 
 def test_focus_loss_filters_click_activation_glitches():
     focus=CORE[CORE.index("static BOOL pause_confirmed_focus_loss(HWND hwnd)"):
-               CORE.index("static void pause_poll_key(HWND hwnd)")]
+               CORE.index("/* Wake only with the foreground Any-key hook. */")]
     assert "GetWindowThreadProcessId(hwnd,&game_pid)" in focus
     assert "GetWindowThreadProcessId(fg,&fg_pid)" in focus
     assert "fg_pid==game_pid" in focus
@@ -62,12 +63,16 @@ def test_focus_loss_filters_click_activation_glitches():
     assert "pause_confirmed_focus_loss(hwnd)" in pause
     assert "GetAsyncKeyState(VK_LBUTTON)" not in pause
 
-def test_pause_key_configurable_with_safe_default():
-    assert "PauseKey=F9" in INI
-    assert '"PauseKey"' in VALID
-    assert "GetPrivateProfileStringA(\"Input\",\"PauseKey\",\"F9\"" in CORE
-    assert 'lstrcmpiA(key,"Space")==0' in CORE
-    assert "VK_SPACE:VK_F9" in CORE
+def test_only_any_key_resume_and_retired_ini_modes_inert():
+    assert "PauseKey=" not in INI
+    assert '"PauseKey"' in VALID  # legacy INI accepted but ignored
+    assert "PauseKey" not in CORE.replace("Historical PauseKey selections in older INIs are ignored: Any only.","")
+    assert 'SpiderPauseAny_Begin(hwnd)' in CORE
+    assert 'SpiderPauseAny_Completed()' in CORE
+    assert 'SpiderPauseAny_DiscardGameKeyMessage(&msg,hwnd)' in CORE
+    assert 'VK_F9' not in CORE
+    assert 'pause_poll_key' not in CORE
+
 
 def test_focus_trace_only_does_not_hook_directinput():
     trace=(ROOT/"input_focus_trace.c").read_text()
@@ -78,13 +83,15 @@ def test_focus_trace_only_does_not_hook_directinput():
     assert "return;" in trace[safe:hook]
     assert "DirectInput8 IAT and COM vtables untouched" in trace
 
-def test_pause_key_ini_value_validation_precedes_boolean_input_rules():
+def test_legacy_pause_key_value_validation_keeps_old_inis_safe():
     specific=VALID.index('if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"PauseKey"))')
     boolean=VALID.index('if(!spider_ini_icmp(section,"Debug")||!spider_ini_icmp(section,"Input")||')
     assert specific < boolean
     assert 'spider_ini_icmp(value,"F9")' in VALID[specific:boolean]
     assert 'spider_ini_icmp(value,"Space")' in VALID[specific:boolean]
-    assert '"PauseKey=F9\\r\\n"' in GEN
+    assert 'spider_ini_icmp(value,"Any")' in VALID[specific:boolean]
+    assert '"PauseKey=' not in GEN
+
 
 def test_resume_focus_diagnostic_does_not_mutate_focus():
     start=CORE.index("static void pause_log_resume_focus(HWND hwnd)")

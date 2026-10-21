@@ -1,5 +1,52 @@
 # Changelog
 
+## Unreleased — frozen DirectDraw pause frame (PR #18 experiment)
+
+- Replace the former Wine-fragile desktop alpha popups, normal child windows and dither-grid simulation with **one composited DirectDraw7 game frame**. At the confirmed focus-loss Flip boundary, save the game's backbuffer through its native surface DC, apply the configured **55% true alpha darkening, 16px square grid, and centered English comic PAUSE panel**, and present the result once using the existing validated windowed-primary `Blt`.
+- The resulting image is part of the game window's OWN pixel surface, not an HWND overlay. Its normal desktop Z-order follows Spider-Man when Thunar/Firefox or another app is active. Nothing separately floats over the desktop; foreground/background styling is identical.
+- Preserve the original backbuffer in an independent compatible bitmap, and **restore it before resuming** gameplay and Bink/DirectSound. Fail safely if surface `GetDC`, snapshot, GDI alpha blend or primary `Blt` is unavailable, without affecting the real pause or changing game surfaces permanently.
+- Keep the existing INI pause options, Any-key-only resume and Alt+Tab passthrough. Retire popup show/hide switching and stop compiling `pause_overlay.c` and `pause_dim.c`; link the surface renderer against `msimg32` for `AlphaBlend`.
+- **Experimental**: requires direct Wine/DXVK and Windows 11 runtime testing of surface `GetDC` support, scene restoration, menu/cutscene/3D rendering and media synchronization. The earlier unmerged #14–#17 visual experiments are superseded.
+
+## Unreleased — full background game-bound grid + shade (PR #17 revision)
+
+- Follow-up to the game-bound PAUSE banner: draw the **16px square grid over the entire paused Spider-Man window even when it is not foreground**, retaining normal Xfce/Thunar stacking.
+- Add a nonlayered `WS_CHILD|WS_CLIPSIBLINGS` backdrop under the game's child banner. Its Win32 region contains the grid strokes plus a **distributed opaque-pixel dither** approximating the requested `PauseDimOpacity` without unsupported legacy layered-child alpha. At the default 55%, the background approximation covers **4/8 rows (50% area)**; visual texture differs deliberately from the true foreground alpha blend.
+- Preserve the **original exact 55% alpha blend and 16px grid in the foreground**, with no changes to audio/video/input and no new INI options.
+- Failure to create a background grid logs a warning and leaves the pause and message functional. The background grid follows the game as a child, **never floating above other desktop applications**.
+- Needs native Wine / Windows 11 screenshots, especially Thunar partially obscuring the gridded game, before merging.
+
+## Unreleased — background-visible PAUSE message (PR #17)
+
+- Keep the PAUSE instruction **visible inside Spider-Man even after Alt+Tab**, without drawing anything above Thunar/Firefox or another desktop window. While focus is lost, use a real **nonlayered, game-parented `WS_CHILD`** with the same small muted-plum rounded comic frame and fully white `PAUSE / PRESS ANY KEY TO RESUME` lettering.
+- On returning to the game, replace the background GDI child with the **approved per-pixel-alpha foreground banner** and show the configured 55% dark/16px grid shade again. On further Alt+Tab the shade and floating banner disappear and the game-bound child returns. The background banner uses an **opaque** panel because layered child alpha is not reliable with the original unmanifested 2001 EXE.
+- Parent clipping and child Z-order avoid independently floating windows that could cover unrelated desktop applications. No new INI settings or changes to Any-key press/release, Bink, DirectSound, DirectInput or the game's EXE.
+- Wine/Linux and Windows 11 testing remains required for foreground/background transition, appearance and audio synchronization. This PR supersedes earlier unmerged visual drafts #14–#16.
+
+## Unreleased — one-piece atomic comic PAUSE banner (PR #16)
+
+- After native Wine/Xfce screenshot feedback, replace the fragile shaped PAUSE child and additional center-alpha popup with **one per-pixel-alpha, game-owned nonactivating comic banner**. Compose the muted translucent purple/black panel, thin muted red 2px outline and **fully opaque white lettering** in one 32bpp premultiplied BGRA bitmap via `UpdateLayeredWindow(ULW_ALPHA)`. A failed ULW operation is safe and leaves no opaque fallback.
+- Remove `GetWindowRgn` / glyph-path masks, and exclude the **entire rounded panel rectangle** from the separate, approved 55%-dark 16px-grid backdrop. No font holes, stale child pixels or scattered black remnants should remain when the game loses focus.
+- Use an active-window **AND** foreground-window gate; the popup is not shown while another application is active. Existing pause loop continues to hide both popups on background focus, resume and WM_QUIT.
+- Keep the English `PAUSE / PRESS ANY KEY TO RESUME` text, Any-key-only wake and Alt+Tab passthrough. No DirectDraw or game EXE changes.
+- Requires actual **Wine/Linux and Windows 11** screenshot and input/audio checks before merging. Supersedes #14 and #15, both remain unmerged.
+
+## Unreleased — Wine focus-only pause UI and solid lettering (PR #15)
+
+- Fix a Wine/Linux regression where the pause's owned alpha popups could remain visible on top of unrelated desktop windows (e.g. Thunar) while Spider-Man was not foreground. While focus pause is latched, **Bink/DirectSound and the game still pause immediately**, but no pause windows are shown until the *game* becomes foreground; they are destroyed again within the 20 ms pause-pump interval if foreground changes.
+- Preserve the approved 55% black and 16 px grid outside the banner, but **clip the entire centered banner rectangle out of all grid-line painting** instead of relying on per-glyph window-region masking. Keep the additional 35%-alpha black rounded panel inside it (about 71% effective darkening) with a precise glyph/frame cutout.
+- Strengthen lettering with an enlarged **25 px upright Arial Black** second line, a 3 px dark GDI outline, and expanded font-path cutouts, to prevent the grid or dimmer from visually eating white strokes under Wine's GDI/compositor.
+- Keep **PAUSE / PRESS ANY KEY TO RESUME**, the exclusive ordinary-key press-and-release wake, original binary, DirectDraw/DirectInput handling and media resume ordering. Pass Alt/Windows desktop-switch modifiers through the keyboard hook rather than consuming Alt+Tab while the foreground pause banner is shown. The PR #14 visual build is superseded and must not be merged alone.
+- **Windows 11 and Wine runtime testing is still required**: automated tests cannot prove window-manager Z-order and GDI layered-composition behavior.
+
+## Unreleased — clearer English focus-pause indicator and Any-key-only wake (PR #14)
+
+- Change the center message to **PAUSE / PRESS ANY KEY TO RESUME** in English, with a larger (23px) white bold-italic hint, 4px rounded red outline and slightly larger centered box. Preserve the shaped child HWND and its pixel-precise cutout through the surrounding full-screen grid overlay.
+- Keep the validated global **55% darkening and 16px grid** intact; add a smaller, **optional** owned, nonactivating constant-alpha dark panel clipped inside the rounded PAUSE frame. A second exact red/white glyph cutout avoids shading the foreground text. The additional 35% tint yields roughly 71% combined black where panel and regular shade overlap; panel failures are logged but are nonfatal.
+- Retire distinct F9 and Space pause/resume modes and the `PauseKey` INI choice. Always resume by a foreground Any-key press/release (consumed by the existing WH_KEYBOARD_LL hook); any retained older `PauseKey` entry is accepted by validation only to prevent unnecessary INI repair, but ignored at runtime.
+- Install the Any-key hook **before** pausing Bink/DirectSound. If Windows refuses the hook, decline the pause immediately instead of freezing or falling back to F9; preserve cleanup of input/audio/video on release and window destruction.
+- No changes to game `SpideyPC.exe`, DirectDraw surface hooks, 4:3 layout, source video, FPS limiter or game control mappings. Native Windows 11 pause/menu/3D presentation remains to be confirmed before merging.
+
 ## Unreleased — comic-style main-menu version label (PR #13)
 
 - Restyle the small bottom-right `SpiderMan2k1Fix v<version>-<commit>` footer with system **Arial Black Bold Italic**, the game's own **inactive menu violet `RGB(138,120,214)`** (sampled from the `OPTIONS`, `TRAINING` and `GALLERY` lettering), and a fine dark violet 8-direction glyph outline. The initial lighter-lavender version was visually too bright; shrink text around **20%** (25 to 20 px at 1200p menu-content height) and soften the outline.

@@ -1,4 +1,4 @@
-/* Spider-Man 2001: opt-in, focus-only Any-key resume.
+/* Spider-Man 2001: focus-pause wake exclusively through Any key.
  *
  * The WH_KEYBOARD_LL hook is temporary. Outside the game foreground we
  * ALWAYS chain, leaving Alt+Tab, the desktop and other apps unaffected.
@@ -27,6 +27,14 @@ static LRESULT CALLBACK keyboard_proc(int code,WPARAM wp,LPARAM lp) {
     DWORD vk=info ? info->vkCode : 256u;
     const int down=(wp==WM_KEYDOWN || wp==WM_SYSKEYDOWN);
     const int up=(wp==WM_KEYUP || wp==WM_SYSKEYUP);
+    /* Alt+Tab, Win+Tab and desktop switching must keep working even
+     * when Spider-Man is foreground with the pause indicator visible.
+     * OS navigation modifiers are NOT a game wake key; a subsequent
+     * ordinary key still resumes and is consumed on release. */
+    if(vk==VK_MENU || vk==VK_LMENU || vk==VK_RMENU ||
+       vk==VK_LWIN || vk==VK_RWIN ||
+       (vk==VK_TAB && (info->flags&LLKHF_ALTDOWN)))
+      return CallNextHookEx(hook,code,wp,lp);
     if(vk<256u && down) {
       if(!InterlockedCompareExchange(&received_press,0,0)) first_key=vk;
       held[vk]=1;

@@ -34,7 +34,7 @@ def test_generated_example_factory_consistency():
     assert config['Display']['FPSLimit'] == '30'
     assert config['Input']['DirectInputReacquire'] == '0'
     assert config['Input']['PauseOnFocusLoss'] == '0'
-    assert config['Input']['PauseKey'] == 'F9'
+    assert 'PauseKey' not in config['Input']  # Any-key resume is fixed, not selectable
     assert not config.has_option('Input','ExperimentalAltTabReacquire')
     assert not config.has_option('Input','ExperimentalDI8CreateDeviceTrace')
     assert config['Audio']['Stereo'] == '1'

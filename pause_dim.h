@@ -4,13 +4,13 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-/* Render only while focus pause is latched. Non-topmost owned WS_POPUP:
- * black 40% uniform alpha, NOACTIVATE, transparent hit testing, owner bound.
- * Excludes the shaped centered PAUSE banner so red/white text stays bright.
- * This works without changing the original game's compatibility manifest.
- * Default on for active pauses; [Input] PauseDim=0 to turn off. */
+/* Foreground: original 55% gridded game-owned alpha popup.
+ * Background: sparse (dithered) 16px gridded nonlayered WS_CHILD
+ * clipped to the game, never to another desktop application.
+ * Both effects are disabled by [Input] PauseDim=0. */
 void SpiderPauseDim_Init(void (*log_fn)(const char *));
 void SpiderPauseDim_Show(HWND game_window);
+void SpiderPauseDim_ShowBackground(HWND game_window);
 void SpiderPauseDim_Hide(void);
 
 #endif
