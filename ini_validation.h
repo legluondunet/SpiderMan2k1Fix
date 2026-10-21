@@ -134,6 +134,9 @@ static int spider_ini_value_valid(const char *section,const char *key,const char
            !spider_ini_icmp(key,"Stereo")?1:100);
   if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"PauseDimOpacity"))
     return spider_ini_uint(value,0,90);
+  /* Deprecated key: continue accepting old INI values to avoid resetting
+   * existing user bindings/configurations. Runtime ignores this entirely
+   * and exclusively uses the consumed Any-key hook. */
   if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"PauseKey"))
     return !spider_ini_icmp(value,"F9") || !spider_ini_icmp(value,"Space") ||
            !spider_ini_icmp(value,"Any");
