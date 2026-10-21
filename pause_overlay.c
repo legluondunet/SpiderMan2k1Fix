@@ -55,9 +55,11 @@ static int overlay_add_text_region(HDC dc,HRGN visible,HFONT font,
   if(!letters)return 0;
   shifted=CreateRectRgn(0,0,0,0);
   if(!shifted){DeleteObject(letters);return 0;}
-  /* Expand visible region to also contain the dark comic-book text outline. */
-  for(dy=-2;dy<=2 && ok;dy++)for(dx=-2;dx<=2;dx++) {
-    if(dx*dx+dy*dy>5)continue;
+  /* Oversize each glyph's region so neither alpha popup can cross the white
+   * pixels (Wine/GDI text rasterization may differ slightly from PathToRegion).
+   * This extra guard prevents the grid/dimmer from eating letter strokes. */
+  for(dy=-5;dy<=5 && ok;dy++)for(dx=-5;dx<=5;dx++) {
+    if(dx*dx+dy*dy>26)continue;
     if(CombineRgn(shifted,letters,NULL,RGN_COPY)==ERROR ||
        OffsetRgn(shifted,dx,dy)==ERROR ||
        CombineRgn(visible,visible,shifted,RGN_OR)==ERROR) {
@@ -119,8 +121,8 @@ static void overlay_draw_text(HDC dc,HFONT font,const wchar_t *string,int x,int 
   HGDIOBJ old=SelectObject(dc,font);
   int dx,dy;
   SetTextColor(dc,OVERLAY_DARK);
-  for(dy=-2;dy<=2;dy++)for(dx=-2;dx<=2;dx++) {
-    if((dx==0 && dy==0) || dx*dx+dy*dy>5)continue;
+  for(dy=-3;dy<=3;dy++)for(dx=-3;dx<=3;dx++) {
+    if((dx==0 && dy==0) || dx*dx+dy*dy>10)continue;
     TextOutW(dc,x+dx,y+dy,string,lstrlenW(string));
   }
   SetTextColor(dc,OVERLAY_WHITE);
@@ -188,7 +190,7 @@ void SpiderPauseOverlay_Init(void (*log_fn)(const char *)) {
   strcpy(slash+1,"SpiderMan2k1Fix.ini");
   overlay_enabled=GetPrivateProfileIntA("Input","PauseOverlay",1,path)==1;
   if(overlay_log)overlay_log(overlay_enabled ?
-    "FOCUS-OVERLAY: English comic PAUSE hint enabled; 4px red outline, enlarged wake text" :
+    "FOCUS-OVERLAY: English bold any-key banner, drawn only when game is foreground" :
     "FOCUS-OVERLAY: pause label disabled by INI");
 }
 
@@ -199,7 +201,8 @@ void SpiderPauseOverlay_Show(HWND game_window) {
   int width,height,banner_width,banner_height,x,y;
   HWND window;
 
-  if(!overlay_enabled || !game_window || !IsWindow(game_window))return;
+  if(!overlay_enabled || !game_window || !IsWindow(game_window) ||
+     GetForegroundWindow()!=game_window)return;
   if(overlay_hwnd && IsWindow(overlay_hwnd))return;
   overlay_hwnd=NULL;
   instance=GetModuleHandleW(NULL);
@@ -233,7 +236,7 @@ void SpiderPauseOverlay_Show(HWND game_window) {
   overlay_title_font=CreateFontW(-31,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,DEFAULT_CHARSET,
                                  OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,NONANTIALIASED_QUALITY,
                                  DEFAULT_PITCH|FF_SWISS,L"Arial Black");
-  overlay_hint_font=CreateFontW(-23,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,DEFAULT_CHARSET,
+  overlay_hint_font=CreateFontW(-25,0,0,0,FW_HEAVY,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
                                 OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,NONANTIALIASED_QUALITY,
                                 DEFAULT_PITCH|FF_SWISS,L"Arial Black");
   if(!overlay_title_font || !overlay_hint_font) {
@@ -260,7 +263,7 @@ void SpiderPauseOverlay_Show(HWND game_window) {
   ShowWindow(window,SW_SHOWNOACTIVATE);
   InvalidateRect(window,NULL,FALSE);
   UpdateWindow(window);
-  if(overlay_log)overlay_log("FOCUS-OVERLAY: English PAUSE / PRESS ANY KEY TO RESUME centered; precise shaped frame and glyph cutout");
+  if(overlay_log)overlay_log("FOCUS-OVERLAY: foreground-only English PAUSE; solid bold wake text with expanded glyph exclusion");
 }
 
 void SpiderPauseOverlay_Hide(void) {
