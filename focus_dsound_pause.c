@@ -1,17 +1,16 @@
-/* Experimental Spider-Man 2001 native DirectSound secondary-voice pause.
+/* Spider-Man 2001 opt-in native DirectSound secondary-voice pause.
  *
- * Offline disassembly of the supported SHA-256 SpideyPC.exe:
- * 0x005039F0 clears 0x60 DWORDs at 0x006BBD50 = 32 voice slots x 12 bytes.
- * 0x00504110 calls IDirectSound::DuplicateSoundBuffer into each slot.
- * 0x00504230 plays per-slot IDirectSoundBuffer with native loop flag.
- * 0x005042A0 stops per-slot IDirectSoundBuffer; vtable +0x48 = Stop.
- * 0x006BBF1C is the primary playback buffer (NOT in this table).
+ * Original SHA-256-verified SpideyPC.exe:
+ * 0x005039F0 initializes 32 game-owned 12-byte voice slots at 0x006BBD50.
+ * 0x00504110 duplicates secondary buffers into voice slots.
+ * 0x00504230 / 0x005042A0 play / stop the game-owned voices.
+ * 0x006BBF1C identifies the excluded primary playback buffer.
  *
- * Only the **currently playing** game-owned secondary voices are stopped;
- * DirectSound's Stop preserves the play cursor of secondary buffers.
- * Resume only the original pointer in the original slot and restore the
- * DS*STATUS_LOOPING playback flag. No COM vtable patching or IAT hooks.
- * Experimental, default off. Do not merge until native Win11 validation.
+ * Stop only currently playing secondary voices; DirectSound preserves
+ * their playback cursor. Resume an unchanged slot with its captured loop
+ * flag, never a replaced or already-playing buffer. Retain a COM reference
+ * across the pause. No COM vtable or import-table modification.
+ * Disabled by default, restricted to the supported executable.
  */
 #define WIN32_LEAN_AND_MEAN
 #define COBJMACROS
