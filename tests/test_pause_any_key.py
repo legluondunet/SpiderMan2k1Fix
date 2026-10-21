@@ -1,4 +1,4 @@
-"""Opt-in Any-key resume; default F9 and original DirectInput repair unchanged."""
+"""Exclusive Any-key pause wake while preserving native DirectInput repair."""
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -11,21 +11,14 @@ VALID=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
 BUILD=(ROOT/"build.sh").read_text(encoding="utf-8")
 
 
-def test_option_is_opt_in_and_ini_validator_accepts_any():
-    assert "PauseKey=F9" in INI
-    assert '"PauseKey=F9\\r\\n"' in GEN
-    assert 'spider_ini_icmp(value,"Any")' in VALID
-    assert 'lstrcmpiA(key,"Any")' in CORE
-    assert "pause_key_vk=(lstrcmpiA(key,\"Any\")==0)?0:" in CORE
-    assert "VK_SPACE:VK_F9" in CORE
-
-
-def test_any_is_not_polled_as_regular_manual_pause():
-    poll=CORE[CORE.index("static void pause_poll_key("):
-              CORE.index("static void pause_log_resume_focus(")]
-    assert "if(pause_key_vk==0) return;" in poll
-    assert "GetAsyncKeyState(pause_key_vk)" in poll
-    assert 'pause_key_vk==0 ? "FOCUS-PAUSE:' in CORE
+def test_retired_pause_key_configuration_is_not_emitted_or_used():
+    assert "PauseKey=" not in INI
+    assert '"PauseKey=' not in GEN
+    assert '"PauseKey"' in VALID  # historical values tolerated only
+    assert "GetPrivateProfileStringA(\"Input\",\"PauseKey\"" not in CORE
+    assert "pause_key_vk" not in CORE
+    assert "pause_poll_key" not in CORE
+    assert "GetAsyncKeyState(VK_F9)" not in CORE
 
 
 def test_any_hook_only_lives_during_focus_pause():
@@ -35,7 +28,11 @@ def test_any_hook_only_lives_during_focus_pause():
     assert "SpiderPauseAny_Completed()" in pause
     assert "SpiderPauseAny_DiscardGameKeyMessage(&msg,hwnd)" in pause
     assert pause.count("SpiderPauseAny_End();")==2
-    assert "pause_key_vk=VK_F9" in pause  # fallback on install error
+    assert "if(!SpiderPauseAny_Begin(hwnd))" in pause
+    assert "skip focus pause (no fallback)" in pause
+    assert pause.index("SpiderPauseAny_Begin(hwnd)") < pause.index("SpiderFocusMedia_Pause();")
+    assert pause.index("SpiderPauseAny_Begin(hwnd)") < pause.index("SpiderFocusDSound_Pause();")
+    assert "pause_key_vk" not in pause
     assert "PostQuitMessage(" in pause
     assert "SuspendThread" not in pause
 
