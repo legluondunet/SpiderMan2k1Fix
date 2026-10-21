@@ -69,7 +69,7 @@ failed:
   return NULL;
 }
 
-static void dim_background_paint(HWND window,HDC dc,const RECT *bounds) {
+static void dim_background_paint(HDC dc,const RECT *bounds) {
   int x,y;
   HBRUSH dark=CreateSolidBrush(BG_DARK_COLOR);
   HPEN grid_pen=NULL;
@@ -110,7 +110,7 @@ static LRESULT CALLBACK dim_proc(HWND window,UINT message,WPARAM wparam,LPARAM l
         RECT bounds;
         GetClientRect(window,&bounds);
         if(window==dim_background_hwnd) {
-          dim_background_paint(window,dc,&bounds);
+          dim_background_paint(dc,&bounds);
           EndPaint(window,&ps);
           return 0;
         }
