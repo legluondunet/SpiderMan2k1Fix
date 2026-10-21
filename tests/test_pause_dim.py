@@ -73,11 +73,11 @@ def test_original_centered_banner_is_preserved_above_shade():
     assert "SetWindowRgn(window,outline,FALSE)" in OVERLAY
     assert "WS_EX_LAYERED" not in OVERLAY
     assert 'L"PAUSE"' in OVERLAY
-    assert 'L"APPUYEZ SUR UNE TOUCHE"' in OVERLAY
+    assert 'L"PRESS ANY KEY TO RESUME"' in OVERLAY
     pause=CORE[CORE.index("static void pause_at_flip_if_background(void)"):
                CORE.index("static HRESULT WINAPI hooked_flip(")]
     assert pause.count("SpiderPauseDim_Show(hwnd);")==1
-    assert pause.count("SpiderPauseOverlay_Show(hwnd,pause_key_vk);")==1
+    assert pause.count("SpiderPauseOverlay_Show(hwnd);")==1
     assert pause.index("SpiderPauseOverlay_Show(hwnd,pause_key_vk);") < pause.index("SpiderPauseDim_Show(hwnd);")
     assert pause.count("SpiderPauseDim_Hide();")==2
     assert pause.count("SpiderPauseOverlay_Hide();")==2
@@ -111,8 +111,22 @@ def test_grid_never_affects_pause_or_scene_clipping():
     assert "SpiderPauseOverlay_ExcludeFromRegion(game_window,visible_region)" in DIM
     assert "SetWindowRgn(window,visible_region,FALSE)" in DIM
     assert "WS_EX_TRANSPARENT" in DIM
-    assert "FOCUS-DIM: shade destroyed before pause release" in DIM
+    assert "FOCUS-DIM: center panel and shade destroyed before pause release" in DIM
     pause=CORE[CORE.index("static void pause_at_flip_if_background(void)"):
                CORE.index("static HRESULT WINAPI hooked_flip(")]
     assert pause.index("SpiderPauseOverlay_Show(hwnd,pause_key_vk);") < pause.index("SpiderPauseDim_Show(hwnd);")
     assert pause.count("SpiderPauseDim_Hide();")==2
+
+def test_optional_inner_alpha_panel_is_clipped_around_original_letters():
+    assert "#define DIM_PANEL_ALPHA 90" in DIM
+    assert "SpiderPauseOverlay_GetBounds(game_window,&box)" in DIM
+    assert "SpiderPauseOverlay_ExcludeFromRegion(game_window,region)" in DIM
+    assert "CreateRoundRectRgn(box.left+4,box.top+4,box.right-4,box.bottom-4,16,16)" in DIM
+    assert "CombineRgn(region,region,rounded,RGN_AND)" in DIM
+    assert "OffsetRgn(region,-box.left,-box.top)" in DIM
+    assert "SetWindowRgn(panel,region,FALSE)" in DIM
+    assert "SetLayeredWindowAttributes(panel,0,DIM_PANEL_ALPHA,LWA_ALPHA)" in DIM
+    assert "dim_show_center_panel(game_window,instance,origin,width,height)" in DIM
+    assert "window!=dim_panel_hwnd" in DIM
+    assert "if(panel && IsWindow(panel))DestroyWindow(panel)" in DIM
+    assert "if(window && IsWindow(window))DestroyWindow(window)" in DIM
