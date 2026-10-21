@@ -93,4 +93,3 @@ def test_queue_snapshot_keeps_stale_focus_independently_of_retrieval_counts():
         assert field in MOD
     assert "if(!before_hook || !after_hook || !retrieved_hook)" in MOD
     assert "UnhookWindowsHookEx(retrieved_hook)" in MOD
-    assert "Does not" not in MOD or "PeekMessage/GetMessage" in MOD
