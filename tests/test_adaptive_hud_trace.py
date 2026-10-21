@@ -67,6 +67,35 @@ def test_boss_probe_is_readonly_and_top_right_only():
     assert "VirtualProtect" not in probe
     assert "hud_probe_frames" in probe
 
+
+def test_damaged_boss_probe_sees_other_primitive_shapes_and_blt():
+    # First F12 sampler only sees FVF=0x144 triangle-fan quads. The
+    # unscaled black health-loss block was absent from those signatures.
+    # Extra diagnostics extend read-only tracing to other D3D kinds
+    # and explicit color fills without any new render-state hooks.
+    assert "static void hud_probe_boss_unknown(" in SRC
+    assert "hud_probe_boss_unknown(self,type,fvf,verts,count,0," in SRC
+    assert "hud_probe_boss_unknown(self,type,fvf,verts,count,1," in SRC
+    assert 'fvf!=0x44UL && fvf!=0x144UL' in SRC
+    assert 'stride=(fvf==0x44UL)?20u:sizeof(SpiderMenuVertex)' in SRC
+    assert "if(slot>64)return;" in SRC
+    assert "HUD-PROBE-EXTRA: source=%s" in SRC
+    assert "HUD-PROBE-BLT: slot=%ld" in SRC
+    assert "InterlockedExchange(&hud_probe_boss_extra,0);" in SRC
+    assert "InterlockedExchange(&hud_probe_boss_blt,0);" in SRC
+    assert "InterlockedCompareExchange(&hud_probe_frames,0,0)>0" in SRC
+    # No extra hooks or replacements: probes never produce a replacement
+    # vertex array, and the indexed path still submits its original draw.
+    body = SRC.split("static void hud_probe_boss_unknown(", 1)[1].split(
+        "static void hud_probe_draw(", 1
+    )[0]
+    assert "VirtualProtect" not in body
+    assert "original_draw" not in body
+    assert "hud_probe_frames" in body
+    assert "memcpy(&x," in body
+    assert "memcpy(&y," in body
+
+
 def test_existing_hud_is_sha_gated_and_original_43_is_identity():
     assert "if (!image_verified" in HUD
     assert "if ((int64_t)width * 3 <= (int64_t)height * 4)" in HUD
