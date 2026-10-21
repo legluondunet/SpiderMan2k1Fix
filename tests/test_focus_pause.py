@@ -46,7 +46,7 @@ def test_persistent_pause_requires_manual_foreground_key():
     assert "pause_key_down" not in pause
     assert 'while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1)' in pause
     assert "while(IsWindow(hwnd) && GetForegroundWindow()!=hwnd)" not in pause
-    assert "InterlockedExchange(&pause_latched,1)" in pause
+    assert "InterlockedCompareExchange(&pause_latched,1,0)==0" in pause  # focus-only latch
     assert "PostQuitMessage" in pause
     assert "SuspendThread" not in pause
 
