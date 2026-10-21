@@ -24,6 +24,7 @@
 #include "input_focus_trace.h"
 #include "focus_event_pause.h"
 #include "pause_path_trace.h"
+#include "win32_focus_message_trace.h"
 #include "input_notacquired_retry.h"
 #include "menu_version.h"
 #include "version_info.h"
@@ -1591,6 +1592,7 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
     SpiderInputFocus_AttachWindow(hwnd);
     SpiderFocusEventPause_AttachWindow(hwnd);
     SpiderPausePath_AttachWindow(hwnd); /* opt-in observer only, no focus interception */
+    SpiderWin32FocusTrace_AttachWindow(hwnd); /* opt-in, thread-local passive Win32 message observer */
   }
   else {
     snprintf(line,sizeof(line),"BORDERLESS: ERROR DDSCL_NORMAL rejected hr=0x%08lX",(unsigned long)hr);
@@ -1807,6 +1809,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
       log_line("START: SpiderMan2k1Fix debug logging enabled by generated/repaired INI");
   }
   SpiderPausePath_Init(log_line,debug_log_enabled);
+  SpiderWin32FocusTrace_Init(log_line,debug_log_enabled);
   if (base && base[0x1163E0]==0x31 && base[0x1163E1]==0xC0 && base[0x1163E2]==0xC3)
     log_line("OK: early No-CD memory patch present at RVA 0x1163E0");
   else {
