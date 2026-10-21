@@ -79,7 +79,7 @@ def test_original_centered_banner_is_preserved_above_shade():
     assert pause.count("SpiderPauseDim_Show(hwnd);")==1
     assert pause.count("SpiderPauseOverlay_Show(hwnd);")==1
     assert pause.index("SpiderPauseOverlay_Show(hwnd);") < pause.index("SpiderPauseDim_Show(hwnd);")
-    assert pause.count("SpiderPauseDim_Hide();")==2
+    assert pause.count("SpiderPauseDim_Hide();")==3
     assert pause.count("SpiderPauseOverlay_Hide();")==2
     for portion in pause.split("SpiderPauseOverlay_Hide();")[1:]:
         assert portion.index("SpiderPauseDim_Hide();") < portion.index("SpiderFocusDSound_Resume();")
@@ -116,7 +116,7 @@ def test_grid_never_affects_pause_or_scene_clipping():
     pause=CORE[CORE.index("static void pause_at_flip_if_background(void)"):
                CORE.index("static HRESULT WINAPI hooked_flip(")]
     assert pause.index("SpiderPauseOverlay_Show(hwnd);") < pause.index("SpiderPauseDim_Show(hwnd);")
-    assert pause.count("SpiderPauseDim_Hide();")==2
+    assert pause.count("SpiderPauseDim_Hide();")==3
 
 def test_optional_inner_alpha_panel_is_clipped_around_original_letters():
     assert "#define DIM_PANEL_ALPHA 90" in DIM
