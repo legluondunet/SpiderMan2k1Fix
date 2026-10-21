@@ -1,5 +1,16 @@
 # Windows 11 persistent pause prototype (experimental)
 
+> **CURRENT SAFETY STATUS (2026-10-21):** Windows 11 verified the experimental
+> `IDirectInput8::CreateDevice` COM interception returns `E_INVALIDARG`
+> (0x80070057) and prevents game startup. Both
+> `ExperimentalDI8CreateDeviceTrace` and legacy
+> `ExperimentalAltTabReacquire` are now **quarantined in code**, regardless
+> of their INI values, with diagnostic warnings. Do not use the old
+> CreateDevice test procedure below; it is retained as historical context.
+> `ExperimentalDI8EntryTrace=1` remains a separate, working factory-only
+> probe. The menu still loses keyboard and mouse after Alt+Tab; this fix
+> prevents a new startup regression, not the original input issue.
+
 Branch: `experiment/win11-manual-persistent-pause-20261021`
 
 This new experiment changes the old focus-loss presentation-loop pause: it
