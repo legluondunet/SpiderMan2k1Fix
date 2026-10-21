@@ -21,8 +21,13 @@ def test_alpha_blend_and_grid_are_drawn_to_existing_directdraw_dc():
     assert "BLENDFUNCTION blend={AC_SRC_OVER,0,alpha,0}" in P
     assert "(opacity*255+50)/100" in P
     assert "ExcludeClipRect(dc,box_left-5,box_top-5," in P
-    assert "MoveToEx(dc,x,0,NULL);LineTo(dc,x,height)" in P
-    assert "MoveToEx(dc,0,y,NULL);LineTo(dc,width,y)" in P
+    assert "const BLENDFUNCTION grid_blend={AC_SRC_OVER,0,28,0};" in P
+    assert "RGB(100,104,124)" in P
+    assert "AlphaBlend(dc,x,0,1,height,tint_dc,0,0,1,1,grid_blend)" in P
+    assert "AlphaBlend(dc,0,y,width,1,tint_dc,0,0,1,1,grid_blend)" in P
+    assert "IntersectClipRect(dc,content_rect->left,content_rect->top," in P
+    assert "&pause_present_rect,&pause_content_rect," in CORE
+    assert "menu_map.left" in CORE and "game_map.left" in CORE
     assert "BG_DITHER_PERIOD" not in P
     assert "WS_EX_TRANSPARENT" not in P
     assert "pause_surface.c" in BUILD and "-lmsimg32" in BUILD
