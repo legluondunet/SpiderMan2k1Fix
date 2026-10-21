@@ -959,8 +959,8 @@ static void esc_probe_dump_exact_geometry(const EscProbeCandidate *top,LONG coun
     if(!d->has_corners || d->fvf!=0x144UL ||
        d->is_indexed || d->primitive!=D3DPT_TRIANGLEFAN ||
        d->alpha!=1 || d->z<0.0005f || d->z>0.005f ||
-       !(d->tex_width==0 && d->tex_height==0) &&
-       !(d->tex_width==8 && d->tex_height==8)) continue;
+       (!(d->tex_width==0 && d->tex_height==0) &&
+        !(d->tex_width==8 && d->tex_height==8))) continue;
     snprintf(line,sizeof(line),
       "ESC-PROBE-VERTICES: seq=%ld tex=%lux%lu alpha=%ld src=%ld dst=%ld "
       "rgba=%08lX,%08lX,%08lX,%08lX "
