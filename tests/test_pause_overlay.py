@@ -16,42 +16,48 @@ def test_no_new_overlay_windows_or_popup_modules_compiled():
     assert "pause_overlay.c" not in BUILD and "pause_dim.c" not in BUILD
     for word in ("CreateWindow","WS_CHILD","WS_EX_LAYERED","UpdateLayeredWindow","SetForegroundWindow"):
         assert word not in P
-def test_native_esc_spider_uses_exact_traced_outer_quads():
-    # Values are original 1440x1080 XY coordinates, before any 4:3
-    # content_rect mapping. All eight *unique* outer geometry quads were
-    # measured; duplicated back-facing triangles should NOT be overlaid.
+def test_large_native_spider_removed_without_changing_focus_pause():
     assert "#define ESC_DESIGN_W 1440" in P
     assert "#define ESC_DESIGN_H 1080" in P
-    assert "esc_tinted_quad(dc,tint,view,left[i],mirror" in P
-    assert "for(mirror=0;mirror<2;mirror++)" in P
-    assert "for(i=0;i<4;i++)" in P
-    assert "{340.3f,58.5f},{219.4f,0.0f},{0.0f,0.0f},{255.9f,234.0f}" in P
-    assert "{255.9f,234.0f},{0.0f,0.0f},{0.0f,306.0f},{216.6f,333.0f}" in P
-    assert "{210.9f,625.5f},{0.0f,657.0f},{0.0f,864.0f},{247.5f,810.0f}" in P
-    assert "{306.6f,904.5f},{0.0f,904.5f},{0.0f,1053.0f},{430.3f,1053.0f}" in P
-    assert "CreatePolygonRgn(pts,4,WINDING)" in P
-    assert "RGB(152,64,32),85" in P
-    assert "src=ZERO, dst=INVSRCCOLOR" in P
-    assert "has NOT been traced in full" in P
-    assert "CreateEllipticRgn(left,top,right,bottom)" in P
-    assert "upper_outer" not in P and "lower_outer" not in P
-    assert "esc_motif_polygon" not in P
-
-
-def test_traced_panel_and_text_stay_in_game_surface():
-    assert "RGB(50,50,160),127" in P
-    assert "esc_coordf(396.0f,ch,ESC_DESIGN_H)" in P
-    assert "esc_coordf(675.0f,ch,ESC_DESIGN_H)" in P
-    assert "RGB(176,163,248),228" in P
-    assert 'L"PAUSED"' in P and 'L"PRESS ANY KEY TO RESUME"' in P
-    assert "RGB(238,42,64),3" in P and "RGB(244,240,255),1" in P
-    assert 'L"Arial Black"' in P
-    assert "ANTIALIASED_QUALITY" in P
-    assert "pause_game_icon" not in P and "ExtractIconExW" not in P
+    assert "esc_draw_motif" not in P
+    assert "esc_motif_core" not in P
+    assert "esc_tinted_quad" not in P
+    assert "CreateEllipticRgn" not in P
+    assert "esc_draw_motif(dc,tint_dc,&canvas)" not in P
     assert "canvas=*content_rect;" in P
     assert "IntersectClipRect(dc,canvas.left,canvas.top,canvas.right,canvas.bottom)" in P
-    assert "RestoreDC(dc,saved)" in P
-    assert "have not" in P and "recovered" in P
+
+
+def test_violet_ribbon_uses_traced_panel_and_bright_double_edge():
+    assert "RGB(50,50,160),127" in P
+    assert "esc_coordf(400.5f,ch,ESC_DESIGN_H)" in P
+    assert "esc_coordf(675.0f,ch,ESC_DESIGN_H)" in P
+    assert "esc_coordf(396.0f,ch,ESC_DESIGN_H)" in P
+    assert "for(stripe=0;stripe<12;stripe++)" in P
+    assert "RGB(41+3*stripe,36+2*stripe,106+stripe),24" in P
+    assert "RGB(169,148,251),229" in P
+    assert "RGB(231,220,255),217" in P
+    assert "RGB(15,12,68),88" in P
+    assert "original 8x8 texture pixels are NOT recovered" in P
+
+
+def test_fat_original_style_text_and_small_spider_at_start_of_hint():
+    assert 'L"PAUSED"' in P
+    assert 'L"PRESS ANY KEY TO RESUME"' in P
+    assert "title=CreateFontW(-((62*ch+540)/1080)" in P
+    assert "hint=CreateFontW(-((42*ch+540)/1080)" in P
+    assert "RGB(240,47,69),4,0,0" in P
+    assert "RGB(245,240,255),2,1," in P
+    assert "pause_draw_spider_icon(dc,x,y+(length.cy-icon_size)/2,icon_size)" in P
+    assert "full_width=length.cx+(with_spider?icon_size+gap:0)" in P
+    assert "CreateSolidBrush(RGB(224,37,46))" in P
+    assert "Polygon(dc,pts,4)" in P
+    assert "Ellipse(dc," in P
+    assert "ANTIALIASED_QUALITY" in P
+    assert 'L"Arial Black"' in P
+    assert "CreateWindow" not in P
+    assert "ExtractIconExW" not in P
+    assert "pause_game_icon" not in P
 
 def test_frame_saved_presented_and_restored_on_release():
     for word in ("IDirectDrawSurface7_GetDC(back,&dc)","IDirectDrawSurface7_ReleaseDC(back,dc)",
