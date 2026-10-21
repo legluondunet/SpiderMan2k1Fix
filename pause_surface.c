@@ -10,6 +10,7 @@
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <shellapi.h> /* ExtractIconExW (native first executable icon group) */
 #include <ddraw.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,6 +25,7 @@
 static HDC saved_dc=NULL;
 static HBITMAP saved_bitmap=NULL, saved_old=NULL;
 static IDirectDrawSurface7 *saved_surface=NULL;
+static HICON pause_game_icon=NULL; /* biggest embedded SpideyPC.exe icon */
 static int enabled_dim=1,enabled_grid=0,enabled_banner=1,opacity=50;
 static void (*pause_log)(const char *)=NULL;
 
@@ -50,76 +52,54 @@ static int pause_blend_color(HDC dest,HDC source,int x,int y,int width,
 }
 
 
-/* Full-screen spider artwork removed by design. Keep only a small,
- * self-drawn red cog/spider emblem at the start of the resume instruction.
- * No texture extraction, Windows icon (Spidey face), or new popup HWND. */
+/* No large motif behind the ribbon. Extract the original SpideyPC.exe
+ * icon at runtime, never from a bundled .ico or a guessed resource ID.
+ * The original ICO supplied for reference contains 16x16 and 32x32:
+ * ExtractIconExW returns the OS-designated LARGE (32x32) icon group.
+ * DrawIconEx scales that original color icon to our small ribbon marker. */
 static int esc_coordf(float v,int size,int design) {
   float scaled=(v*(float)size)/(float)design;
   return (int)(scaled+(scaled>=0.0f?0.5f:-0.5f));
 }
-static POINT pause_icon_point(int x,int y,int size,int px,int py) {
-  POINT p;
-  p.x=x+MulDiv(px,size,64);
-  p.y=y+MulDiv(py,size,64);
-  return p;
-}
-static int pause_draw_spider_icon(HDC dc,int x,int y,int size) {
-  /* The original main-menu mark is a compact red cog/spider emblem,
-   * not a long-legged silhouette. Reconstruct a ring with eight short
-   * angular teeth, a dark hollow center, and a small specular highlight.
-   * This is hand-drawn GDI art: no extracted game asset is distributed. */
-  static const POINT teeth[8][4]={
-    {{26,16},{25,3},{39,3},{38,16}},       /* top */
-    {{42,18},{51,8},{60,17},{49,27}},      /* top right */
-    {{48,26},{61,25},{61,39},{48,38}},     /* right */
-    {{48,39},{60,47},{51,56},{42,46}},     /* bottom right */
-    {{26,48},{25,61},{39,61},{38,48}},     /* bottom */
-    {{22,46},{13,56},{4,47},{16,39}},      /* bottom left */
-    {{16,26},{3,25},{3,39},{16,38}},       /* left */
-    {{16,27},{4,17},{13,8},{22,18}}       /* top left */
-  };
-  POINT scaled[4];
-  HBRUSH red=NULL,dark=NULL,shine=NULL,old_brush=NULL;
-  HPEN outline=NULL,old_pen=NULL;
-  int leg,i,ok=1;
-  if(size<8)return 1;
-  red=CreateSolidBrush(RGB(238,34,39));
-  dark=CreateSolidBrush(RGB(28,7,16));
-  shine=CreateSolidBrush(RGB(255,174,151));
-  outline=CreatePen(PS_SOLID,size>=42?2:1,RGB(52,5,12));
-  if(!red || !dark || !shine || !outline) {
-    if(red)DeleteObject(red);
-    if(dark)DeleteObject(dark);
-    if(shine)DeleteObject(shine);
-    if(outline)DeleteObject(outline);
-    return 0;
+static void pause_load_game_icon(void) {
+  WCHAR exe[MAX_PATH];
+  DWORD n;
+  HICON large=NULL,small=NULL;
+  UINT extracted;
+  if(pause_game_icon) {
+    DestroyIcon(pause_game_icon);
+    pause_game_icon=NULL;
   }
-  old_brush=(HBRUSH)SelectObject(dc,red);
-  old_pen=(HPEN)SelectObject(dc,outline);
-  /* Compact outer teeth, in place of the former spidery X-shaped legs. */
-  for(leg=0;leg<8;leg++) {
-    for(i=0;i<4;i++)
-      scaled[i]=pause_icon_point(x,y,size,teeth[leg][i].x,teeth[leg][i].y);
-    if(!Polygon(dc,scaled,4))ok=0;
+  n=GetModuleFileNameW(NULL,exe,MAX_PATH);
+  if(!n || n>=MAX_PATH) {
+    if(pause_log)pause_log("FOCUS-SURFACE: game EXE path unavailable; pause icon omitted");
+    return;
   }
-  if(!Ellipse(dc,x+MulDiv(13,size,64),y+MulDiv(13,size,64),
-               x+MulDiv(51,size,64),y+MulDiv(51,size,64)))ok=0;
-  /* The true mark has a dark hollow center, not a vertical spider body. */
-  SelectObject(dc,dark);
-  if(!Ellipse(dc,x+MulDiv(22,size,64),y+MulDiv(22,size,64),
-               x+MulDiv(42,size,64),y+MulDiv(42,size,64)))ok=0;
-  /* A tiny inner highlight keeps the emblem legible at 48px. */
-  SelectObject(dc,shine);
-  if(!Ellipse(dc,x+MulDiv(36,size,64),y+MulDiv(26,size,64),
-               x+MulDiv(40,size,64),y+MulDiv(30,size,64)))ok=0;
-  SelectObject(dc,old_pen);
-  SelectObject(dc,old_brush);
-  DeleteObject(outline);
-  DeleteObject(shine);
-  DeleteObject(dark);
-  DeleteObject(red);
-  return ok;
+  extracted=ExtractIconExW(exe,0,&large,&small,1);
+  if(extracted>0 && extracted!=UINT_MAX) {
+    /* The LARGE HICON is the highest-resolution game icon supplied to
+     * legacy shell extraction (32x32 if the EXE contains 16/32 only). */
+    if(large) {
+      pause_game_icon=large;
+      large=NULL;
+    } else if(small) {
+      pause_game_icon=small;
+      small=NULL;
+    }
+  }
+  if(large)DestroyIcon(large);
+  if(small)DestroyIcon(small);
+  if(pause_log)pause_log(pause_game_icon?
+    "FOCUS-SURFACE: original SpideyPC.exe large icon extracted for ribbon":
+    "FOCUS-SURFACE: original EXE icon unavailable; retaining text-only ribbon");
 }
+static void pause_draw_game_icon(HDC dc,int x,int y,int size) {
+  /* Decoration failure must never disable focus-loss pausing or text. */
+  if(pause_game_icon && size>=8 &&
+     !DrawIconEx(dc,x,y,pause_game_icon,size,size,0,NULL,DI_NORMAL) && pause_log)
+    pause_log("FOCUS-SURFACE: DrawIconEx failed; pause text remains usable");
+}
+
 static int pause_draw_text(HDC dc,HFONT font,const wchar_t *label,
                            int box_left,int box_width,int y,COLORREF color,
                            int outline,int with_spider,int icon_size) {
@@ -132,13 +112,12 @@ static int pause_draw_text(HDC dc,HFONT font,const wchar_t *label,
   if(!GetTextExtentPoint32W(dc,label,len,&length)) {
     SelectObject(dc,old);return 0;
   }
-  if(with_spider)gap=icon_size/4;
-  full_width=length.cx+(with_spider?icon_size+gap:0);
+  if(with_spider && pause_game_icon)gap=icon_size/4;
+  full_width=length.cx+((with_spider && pause_game_icon)?icon_size+gap:0);
   x=box_left+(box_width-full_width)/2;
   if(x<box_left+8)x=box_left+8;
-  if(with_spider) {
-    if(!pause_draw_spider_icon(dc,x,y+(length.cy-icon_size)/2,icon_size))
-      ok=0;
+  if(with_spider && pause_game_icon) {
+    pause_draw_game_icon(dc,x,y+(length.cy-icon_size)/2,icon_size);
     x+=icon_size+gap;
   }
   SetTextColor(dc,RGB(7,4,15));
@@ -285,6 +264,7 @@ void SpiderPauseSurface_Init(void (*log_fn)(const char *)) {
     enabled_banner=GetPrivateProfileIntA("Input","PauseOverlay",1,path)==1;
     opacity=GetPrivateProfileIntA("Input","PauseDimOpacity",50,path);
   }
+  pause_load_game_icon();
   if(opacity<0)opacity=0;
   if(opacity>90)opacity=90;
   if(pause_log)pause_log("FOCUS-SURFACE: DirectDraw backbuffer pause renderer ready (no overlay HWND)");
