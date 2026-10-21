@@ -22,9 +22,6 @@
 #include "fov_aspect.h"
 #include "fov_aspect_win.h"
 #include "input_focus_trace.h"
-#include "focus_event_pause.h"
-#include "pause_path_trace.h"
-#include "win32_focus_message_trace.h"
 #include "input_notacquired_retry.h"
 #include "menu_version.h"
 #include "version_info.h"
@@ -791,7 +788,6 @@ static void free_menu_vertices(SpiderMenuVertex *allocated) {
 }
 
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
-  SpiderPausePath_Record("DrawPrimitive",game_hwnd,InterlockedCompareExchange(&flip_count,0,0),InterlockedCompareExchange(&menu_upscale_active,0,0)==1,"D3D7");
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
      fvf==0x144UL && verts && count>=3 && count<=128)
     InterlockedIncrement(&menu_version_draws);
@@ -810,7 +806,6 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
   }
 }
 static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,LPWORD indices,DWORD icount,DWORD flags) {
-  SpiderPausePath_Record("DrawIndexedPrimitive",game_hwnd,InterlockedCompareExchange(&flip_count,0,0),InterlockedCompareExchange(&menu_upscale_active,0,0)==1,"D3D7");
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
      fvf==0x144UL && verts && count>=3 && count<=128)
     InterlockedIncrement(&menu_version_draws);
@@ -823,52 +818,6 @@ static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE 
     return hr;
   }
 }
-
-/* Optional Direct3DDevice7 diagnostic-only passthrough wrappers. These
- * signatures and vtable positions are from the DirectX 7 d3d.h interface. */
-typedef HRESULT (WINAPI *D3DSceneFn)(void *);
-typedef HRESULT (WINAPI *D3DDrawStridedFn)(void *,D3DPRIMITIVETYPE,DWORD,LPD3DDRAWPRIMITIVESTRIDEDDATA,DWORD,DWORD);
-typedef HRESULT (WINAPI *D3DDrawIndexedStridedFn)(void *,D3DPRIMITIVETYPE,DWORD,LPD3DDRAWPRIMITIVESTRIDEDDATA,DWORD,LPWORD,DWORD,DWORD);
-typedef HRESULT (WINAPI *D3DDrawVBFn)(void *,D3DPRIMITIVETYPE,LPDIRECT3DVERTEXBUFFER7,DWORD,DWORD,DWORD);
-typedef HRESULT (WINAPI *D3DDrawIndexedVBFn)(void *,D3DPRIMITIVETYPE,LPDIRECT3DVERTEXBUFFER7,DWORD,DWORD,LPWORD,DWORD,DWORD);
-static D3DSceneFn original_begin_scene, original_end_scene;
-static D3DDrawStridedFn original_draw_strided;
-static D3DDrawIndexedStridedFn original_draw_indexed_strided;
-static D3DDrawVBFn original_draw_vb;
-static D3DDrawIndexedVBFn original_draw_indexed_vb;
-static void trace_d3d_extended(const char *api) {
-  SpiderPausePath_Record(api,game_hwnd,InterlockedCompareExchange(&flip_count,0,0),
-    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,"D3D7");
-}
-static HRESULT WINAPI traced_begin_scene(void *self) {
-  trace_d3d_extended("BeginScene");
-  return original_begin_scene(self);
-}
-static HRESULT WINAPI traced_end_scene(void *self) {
-  trace_d3d_extended("EndScene");
-  return original_end_scene(self);
-}
-static HRESULT WINAPI traced_draw_strided(void *self,D3DPRIMITIVETYPE kind,DWORD fvf,
-       LPD3DDRAWPRIMITIVESTRIDEDDATA data,DWORD count,DWORD flags) {
-  trace_d3d_extended("DrawPrimitiveStrided");
-  return original_draw_strided(self,kind,fvf,data,count,flags);
-}
-static HRESULT WINAPI traced_draw_indexed_strided(void *self,D3DPRIMITIVETYPE kind,DWORD fvf,
-       LPD3DDRAWPRIMITIVESTRIDEDDATA data,DWORD count,LPWORD indices,DWORD index_count,DWORD flags) {
-  trace_d3d_extended("DrawIndexedPrimitiveStrided");
-  return original_draw_indexed_strided(self,kind,fvf,data,count,indices,index_count,flags);
-}
-static HRESULT WINAPI traced_draw_vb(void *self,D3DPRIMITIVETYPE kind,LPDIRECT3DVERTEXBUFFER7 vb,
-       DWORD start,DWORD count,DWORD flags) {
-  trace_d3d_extended("DrawPrimitiveVB");
-  return original_draw_vb(self,kind,vb,start,count,flags);
-}
-static HRESULT WINAPI traced_draw_indexed_vb(void *self,D3DPRIMITIVETYPE kind,LPDIRECT3DVERTEXBUFFER7 vb,
-       DWORD start,DWORD count,LPWORD indices,DWORD index_count,DWORD flags) {
-  trace_d3d_extended("DrawIndexedPrimitiveVB");
-  return original_draw_indexed_vb(self,kind,vb,start,count,indices,index_count,flags);
-}
-
 /* Diagnostic: native SetViewport while preserving render-state/draw hooks. */
 static void instrument_d3d_device(IDirect3DDevice7 *device) {
   void ***obj=(void ***)device; void **vt;
@@ -903,15 +852,6 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
     original_draw_indexed_primitive=(DrawIndexedPrimitiveFn)vt[26];
     patched_device_vtable[25]=(void*)hooked_draw_primitive;
     patched_device_vtable[26]=(void*)hooked_draw_indexed_primitive;
-    if(SpiderPausePath_ExtendedEnabled()) {
-      original_begin_scene=(D3DSceneFn)vt[5];
-      original_end_scene=(D3DSceneFn)vt[6];
-      original_draw_strided=(D3DDrawStridedFn)vt[29];
-      original_draw_indexed_strided=(D3DDrawIndexedStridedFn)vt[30];
-      original_draw_vb=(D3DDrawVBFn)vt[31];
-      original_draw_indexed_vb=(D3DDrawIndexedVBFn)vt[32];
-      log_line("PAUSE-PATH: EXTENDED D3D7 scene and alternate draw wrappers captured");
-    }
     log_line("D3D7: device vtable captured; viewport and draw hooks enabled");
     InterlockedExchange(&device_ready,2);
   }
@@ -932,16 +872,6 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
       vt[20]=(void*)hooked_set_render_state;
       vt[25]=(void*)hooked_draw_primitive;
       vt[26]=(void*)hooked_draw_indexed_primitive;
-      if(SpiderPausePath_ExtendedEnabled()) {
-        /* Apply only while vtable protection is already writable. */
-        vt[5]=(void*)traced_begin_scene;
-        vt[6]=(void*)traced_end_scene;
-        vt[29]=(void*)traced_draw_strided;
-        vt[30]=(void*)traced_draw_indexed_strided;
-        vt[31]=(void*)traced_draw_vb;
-        vt[32]=(void*)traced_draw_indexed_vb;
-        log_line("PAUSE-PATH: EXTENDED D3D7 passthrough wrappers patched in native vtable");
-      }
       if(!VirtualProtect(vt,sizeof(patched_device_vtable),protection,&unused))
         log_line("D3D7: WARNING native vtable protection restore failed");
       log_line("D3D7: native device vtable patched in place (default; all four hooks ON)");
@@ -1046,85 +976,9 @@ static void borderless_intro_fill_black_bars(void *surface,const RECT *image) {
     }
   }
 }
-
-/* Additional Surface7 paths: C vtable slot order verified against Microsoft ddraw.h.
- * These wrappers exist only on the cloned COM vtable in the explicit
- * EXTENDED_PRESENT_TRACE diagnostic, and always call the original method. */
-typedef HRESULT (WINAPI *SurfaceBltBatchFn)(void *,LPDDBLTBATCH,DWORD,DWORD);
-typedef HRESULT (WINAPI *SurfaceBltFastFn)(void *,DWORD,DWORD,IDirectDrawSurface7 *,LPRECT,DWORD);
-typedef HRESULT (WINAPI *SurfaceGetDCFn)(void *,HDC *);
-typedef HRESULT (WINAPI *SurfaceLockFn)(void *,LPRECT,LPDDSURFACEDESC2,DWORD,HANDLE);
-typedef HRESULT (WINAPI *SurfaceReleaseDCFn)(void *,HDC);
-typedef HRESULT (WINAPI *SurfaceUnlockFn)(void *,LPRECT);
-typedef HRESULT (WINAPI *SurfaceSetOverlayPositionFn)(void *,LONG,LONG);
-typedef HRESULT (WINAPI *SurfaceUpdateOverlayFn)(void *,LPRECT,IDirectDrawSurface7 *,LPRECT,DWORD,LPDDOVERLAYFX);
-typedef HRESULT (WINAPI *SurfaceUpdateOverlayDisplayFn)(void *,DWORD);
-typedef HRESULT (WINAPI *SurfaceUpdateOverlayZOrderFn)(void *,DWORD,IDirectDrawSurface7 *);
-static SurfaceBltBatchFn original_blt_batch;
-static SurfaceBltFastFn original_blt_fast;
-static SurfaceGetDCFn original_get_dc;
-static SurfaceLockFn original_lock;
-static SurfaceReleaseDCFn original_release_dc;
-static SurfaceUnlockFn original_unlock;
-static SurfaceSetOverlayPositionFn original_set_overlay_position;
-static SurfaceUpdateOverlayFn original_update_overlay;
-static SurfaceUpdateOverlayDisplayFn original_update_overlay_display;
-static SurfaceUpdateOverlayZOrderFn original_update_overlay_z_order;
-
-static void trace_surface_ext(const char *api,void *self) {
-  SpiderPausePath_Record(api,game_hwnd,InterlockedCompareExchange(&flip_count,0,0),
-    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
-    self==(void*)borderless_primary?"primary":
-    self==(void*)borderless_back?"back":"other");
-}
-static HRESULT WINAPI traced_blt_batch(void *self,LPDDBLTBATCH batch,DWORD count,DWORD flags) {
-  trace_surface_ext("BltBatch",self);
-  return original_blt_batch(self,batch,count,flags);
-}
-static HRESULT WINAPI traced_blt_fast(void *self,DWORD x,DWORD y,IDirectDrawSurface7 *src,LPRECT src_rect,DWORD flags) {
-  trace_surface_ext("BltFast",self);
-  return original_blt_fast(self,x,y,src,src_rect,flags);
-}
-static HRESULT WINAPI traced_get_dc(void *self,HDC *dc) {
-  trace_surface_ext("GetDC",self);
-  return original_get_dc(self,dc);
-}
-static HRESULT WINAPI traced_lock(void *self,LPRECT area,LPDDSURFACEDESC2 desc,DWORD flags,HANDLE event) {
-  trace_surface_ext("Lock",self);
-  return original_lock(self,area,desc,flags,event);
-}
-static HRESULT WINAPI traced_release_dc(void *self,HDC dc) {
-  trace_surface_ext("ReleaseDC",self);
-  return original_release_dc(self,dc);
-}
-static HRESULT WINAPI traced_unlock(void *self,LPRECT area) {
-  trace_surface_ext("Unlock",self);
-  return original_unlock(self,area);
-}
-static HRESULT WINAPI traced_set_overlay_position(void *self,LONG x,LONG y) {
-  trace_surface_ext("SetOverlayPosition",self);
-  return original_set_overlay_position(self,x,y);
-}
-static HRESULT WINAPI traced_update_overlay(void *self,LPRECT source,IDirectDrawSurface7 *target,LPRECT dest,DWORD flags,LPDDOVERLAYFX fx) {
-  trace_surface_ext("UpdateOverlay",self);
-  return original_update_overlay(self,source,target,dest,flags,fx);
-}
-static HRESULT WINAPI traced_update_overlay_display(void *self,DWORD flags) {
-  trace_surface_ext("UpdateOverlayDisplay",self);
-  return original_update_overlay_display(self,flags);
-}
-static HRESULT WINAPI traced_update_overlay_z_order(void *self,DWORD flags,IDirectDrawSurface7 *reference) {
-  trace_surface_ext("UpdateOverlayZOrder",self);
-  return original_update_overlay_z_order(self,flags,reference);
-}
-
 static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *source,
                                   LPRECT source_rect, DWORD flags, LPDDBLTFX fx) {
   HRESULT hr; LONG count=InterlockedIncrement(&blt_count);
-  SpiderPausePath_Record("Blt",game_hwnd,InterlockedCompareExchange(&flip_count,0,0),
-                        InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
-                        self==(void*)borderless_primary?"primary":
-                          self==(void*)borderless_back?"back":"other");
   RECT dest_mapped;
   LPRECT presented_dest=dest;
 
@@ -1214,72 +1068,14 @@ static HRESULT WINAPI hooked_get_attached(void *self,LPDDSCAPS2 caps,
   if(SUCCEEDED(hr) && out && *out) instrument_surface(*out);
   return hr;
 }
-/* Experimental cooperative pause at the DirectDraw presentation boundary.
- * Keep the GUI message queue responsive so WM_ACTIVATEAPP/WM_SETFOCUS can
- * arrive while the gameplay thread is waiting. This is NOT a Bink/movie
- * decoder hook; movies with independent timing can continue running.
- * Never suspend threads or modify focus / window Z-order here. */
-static volatile LONG pause_on_focus_loss=0;
-static LONG pause_ever_foreground=0;
-static LONG pause_in_progress=0;
-static void pause_at_flip_if_background(void) {
-  HWND hwnd=game_hwnd;
-  MSG msg;
-  if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
-  if(GetForegroundWindow()==hwnd) {
-    InterlockedExchange(&pause_ever_foreground,1);
-    return;
-  }
-  if(InterlockedCompareExchange(&pause_ever_foreground,0,0)!=1) return;
-  if(InterlockedCompareExchange(&pause_in_progress,1,0)!=0) return;
-  log_line("FOCUS-PAUSE: waiting for foreground at DirectDraw Flip (experimental)");
-  while(IsWindow(hwnd) && GetForegroundWindow()!=hwnd) {
-    /* Process game-thread window messages, including focus restoration;
-     * do not dispatch WM_QUIT, which must remain visible to the game. */
-    while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
-      if(msg.message==WM_QUIT) {
-        PostQuitMessage((int)msg.wParam);
-        log_line("FOCUS-PAUSE: WM_QUIT observed, aborting wait");
-        InterlockedExchange(&pause_in_progress,0);
-        return;
-      }
-      TranslateMessage(&msg);
-      DispatchMessageA(&msg);
-    }
-    if(GetForegroundWindow()==hwnd) break;
-    MsgWaitForMultipleObjectsEx(0,NULL,50,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
-  }
-  log_line("FOCUS-PAUSE: foreground restored or window destroyed");
-  InterlockedExchange(&pause_in_progress,0);
-}
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
   }
-  /* The focus-loss pause blocks at this very Flip. Sample focus/cursor
-   * BEFORE waiting so that the opt-in desktop cursor recovery can run
-   * while Spider-Man is in the background, not only after Alt+Tab back.
-   * If we waited, sample again immediately after returning to balance
-   * our temporary ShowCursor(TRUE) increments on the same game thread.
-   * Both samples are passive unless the explicit cursor experiment is on. */
-  {
-    BOOL was_background=(game_hwnd && GetForegroundWindow()!=game_hwnd);
-    DWORD trace_entered;
-    SpiderInputFocus_OnFlip(count);
-    trace_entered=SpiderPausePath_FlipEnter(game_hwnd,count,
-                     InterlockedCompareExchange(&menu_upscale_active,0,0)==1);
-    if(SpiderFocusEventPause_IsEnabled())
-      SpiderFocusEventPause_OnFlip();
-    else
-      pause_at_flip_if_background();
-    SpiderPausePath_FlipLeave(game_hwnd,trace_entered,count,
-                     InterlockedCompareExchange(&menu_upscale_active,0,0)==1);
-    if(was_background &&
-       InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1)
-      SpiderInputFocus_OnFlip(count);
-  }
+  /* Always sample cursor focus without blocking rendering or audio. */
+  SpiderInputFocus_OnFlip(count);
   SpiderDI8Retry_OnFlip(count);
   report_null_fclose_recovery();
   if (g_frame_limiter_ready) SpiderFrameLimiter_Wait(&g_frame_limiter);
@@ -1411,32 +1207,6 @@ static void instrument_surface(IDirectDrawSurface7 *surface) {
     patched_surface_vtable[5]=(void *)hooked_blt;
     patched_surface_vtable[11]=(void *)hooked_flip;
     patched_surface_vtable[12]=(void *)hooked_get_attached;
-    if(SpiderPausePath_ExtendedEnabled()) {
-      /* IDirectDrawSurface7 SDK slots: 6/7 BltBatch/BltFast, 17 GetDC,
-       * 26/27 Lock/ReleaseDC, 31 SetOverlayPosition, 33 Unlock,
-       * 34/35/36 UpdateOverlay variants. Default vtable unchanged. */
-      original_blt_batch=(SurfaceBltBatchFn)vtable[6];
-      original_blt_fast=(SurfaceBltFastFn)vtable[7];
-      original_get_dc=(SurfaceGetDCFn)vtable[17];
-      original_lock=(SurfaceLockFn)vtable[26];
-      original_release_dc=(SurfaceReleaseDCFn)vtable[27];
-      original_set_overlay_position=(SurfaceSetOverlayPositionFn)vtable[31];
-      original_unlock=(SurfaceUnlockFn)vtable[33];
-      original_update_overlay=(SurfaceUpdateOverlayFn)vtable[34];
-      original_update_overlay_display=(SurfaceUpdateOverlayDisplayFn)vtable[35];
-      original_update_overlay_z_order=(SurfaceUpdateOverlayZOrderFn)vtable[36];
-      patched_surface_vtable[6]=(void*)traced_blt_batch;
-      patched_surface_vtable[7]=(void*)traced_blt_fast;
-      patched_surface_vtable[17]=(void*)traced_get_dc;
-      patched_surface_vtable[26]=(void*)traced_lock;
-      patched_surface_vtable[27]=(void*)traced_release_dc;
-      patched_surface_vtable[31]=(void*)traced_set_overlay_position;
-      patched_surface_vtable[33]=(void*)traced_unlock;
-      patched_surface_vtable[34]=(void*)traced_update_overlay;
-      patched_surface_vtable[35]=(void*)traced_update_overlay_display;
-      patched_surface_vtable[36]=(void*)traced_update_overlay_z_order;
-      log_line("PAUSE-PATH: EXTENDED Surface7 wrappers installed on cloned vtable (opt-in only)");
-    }
     log_line("DDRAW: Surface7 vtable captured; Blt/Flip/GetAttachedSurface hooks ready");
     InterlockedExchange(&surface_vtable_ready,2);
   }
@@ -1590,9 +1360,6 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
   if(SUCCEEDED(hr)) {
     borderless_window_apply();
     SpiderInputFocus_AttachWindow(hwnd);
-    SpiderFocusEventPause_AttachWindow(hwnd);
-    SpiderPausePath_AttachWindow(hwnd); /* opt-in observer only, no focus interception */
-    SpiderWin32FocusTrace_AttachWindow(hwnd); /* opt-in, thread-local passive Win32 message observer */
   }
   else {
     snprintf(line,sizeof(line),"BORDERLESS: ERROR DDSCL_NORMAL rejected hr=0x%08lX",(unsigned long)hr);
@@ -1808,8 +1575,6 @@ static DWORD WINAPI initialize(LPVOID unused) {
     if (debug_log_enabled && !previous_log_enabled)
       log_line("START: SpiderMan2k1Fix debug logging enabled by generated/repaired INI");
   }
-  SpiderPausePath_Init(log_line,debug_log_enabled);
-  SpiderWin32FocusTrace_Init(log_line,debug_log_enabled);
   if (base && base[0x1163E0]==0x31 && base[0x1163E1]==0xC0 && base[0x1163E2]==0xC3)
     log_line("OK: early No-CD memory patch present at RVA 0x1163E0");
   else {
@@ -1972,23 +1737,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
       else log_line("DISPLAY-MENU-LOCK: explicitly disabled by INI");
     }
   }
-  /* Arm the opt-in focus observer before any DirectDraw callback can
-   * attach the game HWND. Never hook DirectInput from this module. */
-  SpiderFocusEventPause_Init(log_line);
   install_ddraw_hook();
-  /* Disabled by default: prototype only, not a full engine/movie pause. */
-  {
-    char path[MAX_PATH],*slash;
-    DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
-    if(n>0 && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL) {
-      strcpy(slash+1,"SpiderMan2k1Fix.ini");
-      InterlockedExchange(&pause_on_focus_loss,
-        GetPrivateProfileIntA("Input","PauseOnFocusLoss",0,path)==1);
-    }
-    log_line(InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1 ?
-      "FOCUS-PAUSE: experimental Flip-boundary pause ENABLED" :
-      "FOCUS-PAUSE: experimental Flip-boundary pause disabled");
-  }
   SpiderInputFocus_Install(log_line);
   return 0;
 }
