@@ -67,6 +67,14 @@ def test_pause_overlay_ini_option_is_boolean(runner, tmp_path):
         assert result[0] >= 1 and result[2] == 0
 
 
+@pytest.mark.parametrize("value,valid",[("0",True),("1",True),("2",False),("-1",False),("on",False)])
+def test_windows_ghosting_option_strict_boolean(runner, tmp_path, value, valid):
+    # Experimental process-wide compatibility option. Never enable implicitly
+    # or accept ambiguous values that might alter Windows hang behaviour.
+    result, _ = validate(runner,tmp_path,f"[Input]\\nDisableWindowsGhosting={value}\\n")
+    assert (result==(0,0,1)) if valid else (result[0]>=1 and result[2]==0)
+
+
 def test_unknown_section_and_key_preserved(runner, tmp_path):
     result,detail=validate(runner,tmp_path,"[Debug]\nLog=0\nUnknownKey=20\n[Plugin]\nFoo=Bar\n")
     assert result == (0,2,1)
