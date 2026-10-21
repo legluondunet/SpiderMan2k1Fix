@@ -241,6 +241,53 @@ When testing the current development build, set `DirectInputReacquire=1` and `Pa
 
 Try the original `AspectRatio=4:3` mode to help isolate widescreen-specific problems. Some edge-of-screen 3D rendering issues and audio artifacts are still being investigated; see the roadmap below.
 
+### Native Windows 11: F9 screenshot produces an all-magenta BMP
+
+**Known outstanding issue (not yet fixed).** The original game creates
+`scrnNNNN.bmp` on F9, but two native Windows 11 files at 1920×1200
+contained a single color, **RGB(255,0,255)**. The same game F9 feature
+produced a valid 1920×1080 BMP under Wine. Unlike a screenshot made with
+PowerShell or another desktop capture tool, native F9 may be reading a
+DirectDraw surface that does not contain the picture Windows displays.
+
+An independent experimental branch includes **read-only DirectDraw7 F9
+readback instrumentation**. It does not fix or substitute the BMP. It
+records the existing `Lock`, `GetDC`, `GetSurfaceDesc`, `Unlock` and
+`ReleaseDC` operations, their original game call sites and whether
+they target our windowed PRIMARY or 3D BACKBUFFER. The five COM
+vtable hooks are **not installed by default**; they require both
+`[Debug] Log=1` and `SPIDERMAN2K1FIX_F9_TRACE=1`.
+
+**Diagnostic procedure with matched DLLs from the F9 experiment:**
+
+1. Back up your two game DLLs and INI. Set `[Debug] Log=1`; keep the
+   validated HUD and borderless configuration unchanged.
+2. In PowerShell, in the game directory, run:
+
+   ```powershell
+   $env:SPIDERMAN2K1FIX_F9_TRACE = "1"
+   .\\SpideyPC.exe
+   ```
+
+3. Load a normal 3D level on native Windows 11 and **press and hold F9
+   briefly** (about one second) to produce one of the legacy BMP files.
+   The diagnostic also observes F9 on each Flip, and collects surface
+   readback operations during a six-second window. If F9 generates
+   multiple files while held, release it immediately after one capture.
+4. Exit, preserve `SpiderMan2k1Fix.log`, the newly generated BMP and
+   their timestamps. Look for `F9-TRACE: F9 key pressed`,
+   `F9-TRACE: Lock` or `F9-TRACE: GetDC` and
+   `F9-TRACE: GetSurfaceDesc`. If none appears, the game's screenshot
+   routine may use a different readback mechanism.
+5. To return to normal play, clear the variable with
+   `Remove-Item Env:SPIDERMAN2K1FIX_F9_TRACE -ErrorAction SilentlyContinue`
+   and restore `Log=0` when no longer diagnosing.
+
+The goal is to **prove which surface F9 reads** before implementing a
+safe pixel-path correction. The F9 experiment is separate from the
+HUD and pre-1.0 cleanup PRs; do not merge it without native Windows
+validation.
+
 ## Adaptive widescreen HUD
 
 **Enabled by default.** SpiderMan2k1Fix automatically corrects the
