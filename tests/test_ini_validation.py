@@ -31,6 +31,20 @@ def test_valid_generated_ini(runner, tmp_path):
     assert validate(runner,tmp_path,data)[0] == (0,0,1)
 
 
+def test_native_directinput_retry_option_and_legacy_ini_compat(runner, tmp_path):
+    # New key is boolean and opt-in. Old quarantined COM flags must not cause
+    # the user's audio and keyboard options to be reset by INI repair.
+    result, _ = validate(runner, tmp_path,
+        "[Input]\\nDirectInputReacquire=1\\nPauseOnFocusLoss=1\\n"
+        "PauseKey=Any\\nExperimentalAltTabReacquire=0\\n"
+        "ExperimentalDI8CreateDeviceTrace=0\\n")
+    assert result == (0, 0, 1)
+    for value in ("2", "-1", "true", "off"):
+        result, _ = validate(runner, tmp_path,
+            f"[Input]\\nDirectInputReacquire={value}\\n")
+        assert result[0] >= 1 and result[2] == 0
+
+
 def test_unknown_section_and_key_preserved(runner, tmp_path):
     result,detail=validate(runner,tmp_path,"[Debug]\nLog=0\nUnknownKey=20\n[Plugin]\nFoo=Bar\n")
     assert result == (0,2,1)
