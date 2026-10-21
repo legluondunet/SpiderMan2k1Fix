@@ -22,11 +22,12 @@ def test_pause_media_background_show_only_when_foreground_and_active():
     assert "if(banner_mode!=2)" in p
     assert "else if(banner_mode!=1)" in p
     assert 'FOCUS-PAUSE: PAUSE message remains in background game child' in p
-    assert "SpiderPauseDim_Hide();\n      SpiderPauseOverlay_Hide();\n      SpiderPauseOverlay_ShowBackground(hwnd);" in p
+    assert "SpiderPauseDim_Hide();\n      SpiderPauseOverlay_Hide();\n      SpiderPauseDim_ShowBackground(hwnd);\n      SpiderPauseOverlay_ShowBackground(hwnd);" in p
     assert "MsgWaitForMultipleObjectsEx(0,NULL,20,QS_ALLINPUT,MWMO_INPUTAVAILABLE)" in p
     assert "GetActiveWindow()==game_window" in OVERLAY
     assert "SpiderPauseOverlay_ShowBackground(hwnd);" in p
     assert "WS_CHILD|WS_CLIPSIBLINGS" in OVERLAY
+    assert "WS_CHILD|WS_CLIPSIBLINGS" in DIM
     assert "GetForegroundWindow()==game_window" in OVERLAY
 
 
@@ -61,3 +62,18 @@ def test_any_key_and_desktop_shortcuts():
     assert "pause_key_vk" not in CORE
     assert "WS_EX_TOPMOST" not in OVERLAY
     assert "WS_EX_TOPMOST" not in DIM
+
+def test_background_dimmer_created_before_banner_and_no_floating_popup():
+    p=pause()
+    assert p.index("SpiderPauseDim_ShowBackground(hwnd);") < p.index("SpiderPauseOverlay_ShowBackground(hwnd);")
+    assert p.index("SpiderPauseDim_ShowBackground(hwnd);") > p.index("while(IsWindow(hwnd)")
+    start=DIM.index("void SpiderPauseDim_ShowBackground(HWND game_window)")
+    stop=DIM.index("void SpiderPauseDim_Hide(void)")
+    background=DIM[start:stop]
+    assert "WS_EX_LAYERED" not in background
+    assert "WS_POPUP" not in background
+    assert "WS_CHILD|WS_CLIPSIBLINGS" in background
+    assert "game_window,NULL,instance,NULL" in background
+    assert "SetWindowRgn(window,region,FALSE)" in background
+    assert "dim_background_region(width,height,rows,dim_grid_enabled)" in background
+    assert 'FOCUS-DIM: background game-child grid=' in background
