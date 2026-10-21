@@ -24,7 +24,7 @@
 static HDC saved_dc=NULL;
 static HBITMAP saved_bitmap=NULL, saved_old=NULL;
 static IDirectDrawSurface7 *saved_surface=NULL;
-static int enabled_dim=1,enabled_grid=1,enabled_banner=1,opacity=55;
+static int enabled_dim=1,enabled_grid=0,enabled_banner=1,opacity=55;
 static void (*pause_log)(const char *)=NULL;
 
 static void pause_log_hresult(const char *step,HRESULT hr) {
@@ -89,7 +89,7 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
     if(!pause_blend_color(dc,tint_dc,0,0,width,height,RGB(0,0,0),
                           (BYTE)((opacity*255+50)/100)))return 0;
   }
-  /* The original opaque grid overwhelmed the artwork and crossed the black
+  /* Optional legacy 16px grid (default OFF): the original opaque grid overwhelmed the artwork and crossed the black
    * pillarboxes. Keep the same 16px spacing, but blend faint lines only over
    * the current 4:3 menu/game image (full canvas for widescreen gameplay).
    * This changes only the frozen pause frame, not any live rendering hook. */
@@ -162,10 +162,10 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
   /* Slightly larger title, calm secondary line and a small red divider.
    * Grayscale antialiasing avoids the harsh jagged lettering of the first
    * DirectDraw screenshot without introducing a compositor popup. */
-  title=CreateFontW(-34,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,DEFAULT_CHARSET,
+  title=CreateFontW(-36,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,DEFAULT_CHARSET,
                     OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
                     ANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial Black");
-  hint=CreateFontW(-19,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
+  hint=CreateFontW(-18,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,
                    OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
                    ANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial Black");
   if(!title || !hint)ok=0;
@@ -196,13 +196,13 @@ void SpiderPauseSurface_Init(void (*log_fn)(const char *)) {
   char path[MAX_PATH],*slash;
   DWORD n;
   pause_log=log_fn;
-  enabled_dim=1;enabled_grid=1;enabled_banner=1;opacity=55;
+  enabled_dim=1;enabled_grid=0;enabled_banner=1;opacity=55;
   n=GetModuleFileNameA(NULL,path,sizeof(path));
   if(n && n<sizeof(path) && (slash=strrchr(path,'\\')) &&
      (size_t)(slash-path)+sizeof("SpiderMan2k1Fix.ini")<=sizeof(path)) {
     strcpy(slash+1,"SpiderMan2k1Fix.ini");
     enabled_dim=GetPrivateProfileIntA("Input","PauseDim",1,path)==1;
-    enabled_grid=GetPrivateProfileIntA("Input","PauseGrid",1,path)==1;
+    enabled_grid=GetPrivateProfileIntA("Input","PauseGrid",0,path)==1;
     enabled_banner=GetPrivateProfileIntA("Input","PauseOverlay",1,path)==1;
     opacity=GetPrivateProfileIntA("Input","PauseDimOpacity",55,path);
   }
