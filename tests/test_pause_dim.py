@@ -26,7 +26,7 @@ def test_alpha_blend_and_grid_are_drawn_to_existing_directdraw_dc():
     assert "for(x=grid_left+PAUSE_GRID_STEP;x<grid_right;x+=PAUSE_GRID_STEP)" in P
     assert "for(y=grid_top+PAUSE_GRID_STEP;y<grid_bottom;y+=PAUSE_GRID_STEP)" in P
     assert "grid_bottom-grid_top," in P and "grid_right-grid_left,1," in P
-    assert "IntersectClipRect(dc,content_rect->left,content_rect->top," in P
+    assert "IntersectClipRect(dc,grid_left,grid_top,grid_right,grid_bottom)" in P
     assert "&pause_present_rect,&pause_content_rect," in CORE
     assert "menu_map.left" in CORE and "game_map.left" in CORE
     assert "BG_DITHER_PERIOD" not in P
