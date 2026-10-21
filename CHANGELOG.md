@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased — right-side focus pause indicator
+## Unreleased — centered transparent focus pause indicator
 
-- Display a small dark, gold-bordered `PAUSE` message on the right of the game window while `PauseOnFocusLoss` is latched.
+- Display `PAUSE` in the center of the game window, inside a red outline with no filled background and white text, while `PauseOnFocusLoss` is latched.
 - Display the appropriate French wake hint based on `PauseKey`: any key, Space, or F9.
 - Draw the indicator in a nonactivating child window (no topmost desktop window, no replacement of the game's DirectDraw/3D drawing methods).
 - Automatically hide it before Bink and DirectSound playback resumes and if the game quits while paused.
