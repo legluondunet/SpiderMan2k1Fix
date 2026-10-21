@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — full background game-bound grid + shade (PR #17 revision)
+
+- Follow-up to the game-bound PAUSE banner: draw the **16px square grid over the entire paused Spider-Man window even when it is not foreground**, retaining normal Xfce/Thunar stacking.
+- Add a nonlayered `WS_CHILD|WS_CLIPSIBLINGS` backdrop under the game's child banner. Its Win32 region contains the grid strokes plus a **distributed opaque-pixel dither** approximating the requested `PauseDimOpacity` without unsupported legacy layered-child alpha. At the default 55%, the background approximation covers **4/8 rows (50% area)**; visual texture differs deliberately from the true foreground alpha blend.
+- Preserve the **original exact 55% alpha blend and 16px grid in the foreground**, with no changes to audio/video/input and no new INI options.
+- Failure to create a background grid logs a warning and leaves the pause and message functional. The background grid follows the game as a child, **never floating above other desktop applications**.
+- Needs native Wine / Windows 11 screenshots, especially Thunar partially obscuring the gridded game, before merging.
+
 ## Unreleased — background-visible PAUSE message (PR #17)
 
 - Keep the PAUSE instruction **visible inside Spider-Man even after Alt+Tab**, without drawing anything above Thunar/Firefox or another desktop window. While focus is lost, use a real **nonlayered, game-parented `WS_CHILD`** with the same small muted-plum rounded comic frame and fully white `PAUSE / PRESS ANY KEY TO RESUME` lettering.
