@@ -1,4 +1,4 @@
-"""PR #16: Wine compositor regression, active foreground and one-piece banner."""
+"""Background pause banner stays inside Spider-Man; translucent popup only in foreground."""
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -19,15 +19,18 @@ def test_pause_media_background_show_only_when_foreground_and_active():
     assert "SpiderFocusDSound_Pause();" in p
     assert "while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1)" in p
     assert "if(SpiderPauseOverlay_GameForeground(hwnd))" in p
-    assert "if(!visuals_visible)" in p
-    assert 'FOCUS-PAUSE: overlay hidden (game background)' in p
-    assert "SpiderPauseDim_Hide();\n      SpiderPauseOverlay_Hide();" in p
+    assert "if(banner_mode!=2)" in p
+    assert "else if(banner_mode!=1)" in p
+    assert 'FOCUS-PAUSE: PAUSE message remains in background game child' in p
+    assert "SpiderPauseDim_Hide();\n      SpiderPauseOverlay_Hide();\n      SpiderPauseOverlay_ShowBackground(hwnd);" in p
     assert "MsgWaitForMultipleObjectsEx(0,NULL,20,QS_ALLINPUT,MWMO_INPUTAVAILABLE)" in p
     assert "GetActiveWindow()==game_window" in OVERLAY
+    assert "SpiderPauseOverlay_ShowBackground(hwnd);" in p
+    assert "WS_CHILD|WS_CLIPSIBLINGS" in OVERLAY
     assert "GetForegroundWindow()==game_window" in OVERLAY
 
 
-def test_simple_two_popup_composition():
+def test_foreground_alpha_popup_and_background_native_child():
     assert "CreateDIBSection(" in OVERLAY
     assert "UpdateLayeredWindow(" in OVERLAY
     assert "PANEL_ALPHA 188" in OVERLAY
@@ -35,6 +38,8 @@ def test_simple_two_popup_composition():
     assert "GetWindowRgn(" not in OVERLAY
     assert "PathToRegion(" not in OVERLAY
     assert "dim_panel_hwnd" not in DIM
+    assert "void SpiderPauseOverlay_ShowBackground(HWND game_window)" in OVERLAY
+    assert "CreateRoundRectRgn(0,0,OVERLAY_WIDTH,OVERLAY_HEIGHT,20,20)" in OVERLAY
     assert "dim_show_center_panel" not in DIM
     assert "SpiderPauseOverlay_ExcludeFromRegion(game_window,visible_region)" in DIM
 
