@@ -23,6 +23,7 @@
 #include "fov_aspect_win.h"
 #include "input_focus_trace.h"
 #include "input_notacquired_retry.h"
+#include "pause_any_key.h"
 #include "menu_version.h"
 #include "version_info.h"
 
@@ -1076,7 +1077,7 @@ static LONG pause_ever_foreground=0;
 static LONG pause_in_progress=0;
 static LONG pause_latched=0;
 static LONG pause_key_down=0;
-static int pause_key_vk=VK_F9;
+static int pause_key_vk=VK_F9; /* 0 = Any (focus-loss resume only) */
 static DWORD pause_background_since=0;
 /* Ignore brief foreground changes (e.g. mouse activation quirks).
  * Real Alt+Tab is recognized only if another process stays foreground. */
@@ -1105,6 +1106,7 @@ static BOOL pause_confirmed_focus_loss(HWND hwnd) {
  * Hold-to-repeat cannot accidentally toggle the pause repeatedly. */
 static void pause_poll_key(HWND hwnd) {
   BOOL down;
+  if(pause_key_vk==0) return; /* Any must not pause during ordinary game controls. */
   if(GetForegroundWindow()!=hwnd) {
     InterlockedExchange(&pause_key_down,1);
     return;
@@ -1154,23 +1156,46 @@ static void pause_at_flip_if_background(void) {
   pause_poll_key(hwnd);
   if(InterlockedCompareExchange(&pause_latched,0,0)!=1) return;
   if(InterlockedCompareExchange(&pause_in_progress,1,0)!=0) return;
-  log_line("FOCUS-PAUSE: waiting for foreground and explicit F9 key");
+  if(pause_key_vk==0) {
+    if(SpiderPauseAny_Begin(hwnd))
+      log_line("FOCUS-PAUSE: Any keyboard resume ARMED; consumes press and release");
+    else {
+      char line[144];DWORD err=GetLastError();
+      snprintf(line,sizeof(line),
+        "FOCUS-PAUSE: Any keyboard hook failed Win32=%lu; falling back to F9",
+        (unsigned long)err);
+      log_line(line);
+      pause_key_vk=VK_F9;
+    }
+  } else log_line("FOCUS-PAUSE: waiting for foreground and explicit pause key");
   while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1) {
     while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
       if(msg.message==WM_QUIT) {
         PostQuitMessage((int)msg.wParam);
+        SpiderPauseAny_End();
         log_line("FOCUS-PAUSE: WM_QUIT observed, aborting wait");
         InterlockedExchange(&pause_in_progress,0);
         return;
       }
+      if(pause_key_vk==0 && SpiderPauseAny_DiscardGameKeyMessage(&msg,hwnd)) continue;
       TranslateMessage(&msg);
       DispatchMessageA(&msg);
     }
     if(!IsWindow(hwnd)) break;
-    pause_poll_key(hwnd);
+    if(pause_key_vk==0 && SpiderPauseAny_Completed())
+      InterlockedExchange(&pause_latched,0);
+    else pause_poll_key(hwnd);
     if(InterlockedCompareExchange(&pause_latched,0,0)!=1) break;
     MsgWaitForMultipleObjectsEx(0,NULL,50,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
   }
+  if(pause_key_vk==0 && SpiderPauseAny_FirstKey()!=0) {
+    char line[128];
+    snprintf(line,sizeof(line),
+      "FOCUS-PAUSE: Any-key resume swallowed virtual-key=0x%02lX",
+      (unsigned long)SpiderPauseAny_FirstKey());
+    log_line(line);
+  }
+  SpiderPauseAny_End();
   log_line("FOCUS-PAUSE: explicit resume or window destroyed");
   pause_log_resume_focus(hwnd);
   InterlockedExchange(&pause_in_progress,0);
@@ -1865,12 +1890,14 @@ static DWORD WINAPI initialize(LPVOID unused) {
       strcpy(slash+1,"SpiderMan2k1Fix.ini");
       char key[32];
       GetPrivateProfileStringA("Input","PauseKey","F9",key,sizeof(key),path);
-      pause_key_vk=(lstrcmpiA(key,"Space")==0)?VK_SPACE:VK_F9;
+      pause_key_vk=(lstrcmpiA(key,"Any")==0)?0:
+                   (lstrcmpiA(key,"Space")==0)?VK_SPACE:VK_F9;
       InterlockedExchange(&pause_on_focus_loss,
         GetPrivateProfileIntA("Input","PauseOnFocusLoss",0,path)==1);
     }
     log_line(InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1 ?
-      (pause_key_vk==VK_SPACE ? "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (Space resumes)" :
+      (pause_key_vk==0 ? "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (Any key consumed on release)" :
+        pause_key_vk==VK_SPACE ? "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (Space resumes)" :
        "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (F9 resumes)") :
       "FOCUS-PAUSE: experimental Flip-boundary pause disabled");
   }
