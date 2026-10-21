@@ -314,6 +314,8 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "[Input]\r\n"
     "; Opt-in native DirectInput error recovery after Alt+Tab; default off.\r\n"
     "DirectInputReacquire=0\r\n"
+    "; Experimental Windows 11 Ghost surrogate suppression (0=default; 1=on until exit).\r\n"
+    "DisableWindowsGhosting=0\r\n"
     "; Experimental Flip-boundary pause while the game loses focus (0=off).\r\n"
     "PauseOnFocusLoss=0\r\n"
     "; F9 (default), Space, or experimental Any (consume wake key).\r\n"
