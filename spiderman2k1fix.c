@@ -888,7 +888,7 @@ static void esc_probe_rank_large(const EscProbeDraw *draw) {
   screen_w=(float)(desktop_w?desktop_w:1920);
   screen_h=(float)(desktop_h?desktop_h:1080);
   if(!(w>0.0f && h>0.0f) ||
-     !(w>=screen_w*0.32f || h>=screen_h*0.27f ||
+     !(w>=screen_w*0.32f || h>=screen_h*0.23f ||
        w*h>=screen_w*screen_h*0.028f))return;
   if(draw->vertex_count==4) {
     top=esc_probe_top_quads;
