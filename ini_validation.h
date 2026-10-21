@@ -57,6 +57,9 @@ static const char *const spider_ini_display[]={
   "ExperimentalDisplayMenuLock"
 };
 static const char *const spider_ini_hud[]={"HUDWidescreenFix"};
+/* PauseOnFocusLoss and ExperimentalFocusEventPause are legacy ignored keys.
+ * Accept them to avoid warnings in pre-existing user INIs; neither option
+ * is ever read or implemented by the current DLL on Windows or Wine. */
 static const char *const spider_ini_input[]={"ExperimentalAltTabReacquire","ExperimentalFocusTrace","PauseOnFocusLoss","ExperimentalFocusEventPause","RestoreCursorOnFocusLoss"};
 static const char *const spider_ini_audio[]={"MusicSFXLevel","VoiceLevel","MovieLevel","Stereo"};
 static const char *const spider_ini_keys[]={"Up","Down","Left","Right","Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
