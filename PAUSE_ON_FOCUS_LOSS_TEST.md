@@ -48,3 +48,16 @@ This prototype must not be merged until real Windows 11 tests are validated.
 ---
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+## Focus-loss filtering: left-click regression test
+
+This revision requires a foreign foreground process to remain active for at
+least 150 ms before latching a pause. A transient NULL foreground or another
+window belonging to the game process is ignored. A click inside the already
+focused Spider-Man window must not trigger a pause.
+
+Test on Windows 11: in menus and gameplay, click the left mouse button
+repeatedly without leaving the game, then Alt+Tab to a different app and back.
+The click must not pause; Alt+Tab must pause, and F9 must resume once the game
+is foreground. Confirm logs contain 'confirmed external focus loss' only for
+true application switches. Audio/movie synchronization remains out of scope.
