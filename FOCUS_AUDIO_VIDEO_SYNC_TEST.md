@@ -54,7 +54,7 @@ FOCUS-MEDIA: Bink resume handle[0]=... BinkPause-result=...
 If `Bink` handle messages are absent, no eligible movie was playing at that
 specific Flip pause boundary.
 
-## What remains for real 3D pause
+## Stage 1: DirectSound was not paused (superseded by stage 2 below)
 
 Some **3D music** appears to be streamed using the audio-only Bink handle at \`0x00AC1020\`, so this experiment may also pause that music. **Other game sound effects and DirectSound audio** run outside the Bink movie pause. The code
 records the **read-only** original game's DirectSound device and primary
@@ -100,7 +100,78 @@ New-Item -ItemType Directory -Force .\crash-dumps | Out-Null
 
 - Original DirectInput retry and Any-key wake validated on native Windows 11.
 - Native Bink video/audio/music pause: **implemented behind opt-in; UNTESTED**.
-- DirectSound 3D pause: **NOT IMPLEMENTED**, pending safe buffer/native-engine identification.
+- DirectSound secondary 3D voice pause: **implemented as separate opt-in in stage 2, NOT YET VALIDATED**.
+
+---
+legluondunet assisted by ChatGPT (OpenAI)
+
+## Stage 2: experimental DirectSound secondary voices (2026-10-21)
+
+**User validation of stage 1:** Bink cinematic streams and Bink-backed music now
+pause and resume successfully. In the provided `20261021-054813` log,
+14 focus pauses and wake-ups succeeded, Bink handle[0] and handle[1]
+show `BinkPause-result=1` / `BinkPause-result=0`, and native
+DirectInput error recovery reached keyboard=4, mouse=4. The one audible
+channel remaining in 3D is **suspected** to be separate DirectSound audio,
+because that test explicitly logged `no sound-buffer changes`.
+
+A more precise offline inspection of the same exact SHA-verified game EXE
+reveals **32 game-owned secondary DirectSound voice slots**, which the game
+allocates as 12-byte records starting at virtual address `0x006BBD50`.
+At `0x005039F0`, initialization clears 0x60 DWORDs = 32 slots × 12 bytes;
+at `0x00504110`, it duplicates a source buffer into an indexed voice slot;
+at `0x00504230` and `0x005042A0`, it plays/stops these voices using the
+original DirectSound interface. The **primary** buffer at `0x006BBF1C`
+is excluded.
+
+Add this **new** option to the existing INI, with the other validated options:
+
+```ini
+[Debug]
+Log=1
+
+[Input]
+DirectInputReacquire=1
+PauseOnFocusLoss=1
+PauseKey=Any
+PauseBinkOnFocusLoss=1
+PauseDirectSoundOnFocusLoss=1
+```
+
+Both media pause options default to **0** in factory configurations.
+DirectSound support is an independent opt-in; disabling it leaves the Bink
+pause and Alt+Tab input fix working as before.
+
+The experimental code uses **only the verified original game voice table**,
+not any COM-vtable/IAT interception. On the established focus Flip pause,
+it queries each existing secondary buffer's `GetStatus`, retains the
+actually playing buffers via `AddRef`, and `Stop`s only those buffers.
+On resume, it checks whether each slot still points to the same buffer,
+then `Play`s the stopped voices from the preserved playback cursor and with
+their original looping flag. It releases all temporary references. It does
+not stop the primary buffer, the Bink buffers, already stopped voices, or
+any other application's audio. Static callsite signatures and the original
+EXE hash must match before enabling the feature.
+
+Expected additional log lines:
+
+```text
+FOCUS-DSOUND: experimental secondary-voice pause enabled; 32 game-owned slots, primary excluded
+FOCUS-DSOUND: pause slots=32 occupied=N playing-stopped=M failed=0
+FOCUS-DSOUND: resume playing-restored=M slot-replaced=0 failed=0
+```
+
+**Essential test**: launch under ProcDump. Pause with an audible remaining
+3D effect or ambience, wait 5–10 seconds, and resume. Verify that it
+actually stops, resumes naturally without pitch/cursor reset, and that
+ordinary new gameplay sound effects still play afterwards. Also check
+cinematics and menus for regressions. If no secondary voice is playing
+(`playing-stopped=0`) while audible audio continues, **do not increase
+hook aggressiveness**: identify the other source using further diagnostics.
+
+**Rollback:** set `PauseDirectSoundOnFocusLoss=0`. Leave the validated
+`PauseBinkOnFocusLoss=1`, `PauseKey=Any`, and `DirectInputReacquire=1`
+unchanged. This experiment remains a draft PR, not a stable release.
 
 ---
 legluondunet assisted by ChatGPT (OpenAI)
