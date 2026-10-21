@@ -19,10 +19,15 @@
 #include "pause_overlay.h"
 
 #define DIM_CLASS L"SpiderMan2k1Fix_PauseDim"
-#define DIM_ALPHA 102 /* 40% opaque black; underlying scene retains 60% light. */
+#define DIM_DEFAULT_OPACITY 55 /* Percent black; scene still visible. */
+#define DIM_GRID_STEP 16        /* Screen pixels: small comic-style cells. */
+#define DIM_GRID_COLOR RGB(54,58,67) /* Subtle light-gray lines through alpha. */
 
 static HWND dim_hwnd=NULL;
 static int dim_enabled=1;
+static int dim_opacity=DIM_DEFAULT_OPACITY;
+static BYTE dim_alpha=140;
+static int dim_grid_enabled=1;
 static int dim_registered=0;
 static void (*dim_log)(const char *)=NULL;
 
@@ -37,6 +42,26 @@ static LRESULT CALLBACK dim_proc(HWND window,UINT message,WPARAM wparam,LPARAM l
         RECT bounds;
         GetClientRect(window,&bounds);
         FillRect(dc,&bounds,(HBRUSH)GetStockObject(BLACK_BRUSH));
+        if(dim_grid_enabled) {
+          /* Draw only once when the pause shade is first painted: this
+           * popup is static until the user resumes. Window region still
+           * clips out the centered red outline and white letters. */
+          HPEN pen=CreatePen(PS_SOLID,1,DIM_GRID_COLOR);
+          if(pen) {
+            HGDIOBJ previous=SelectObject(dc,pen);
+            int x,y;
+            for(x=DIM_GRID_STEP;x<bounds.right;x+=DIM_GRID_STEP) {
+              MoveToEx(dc,x,0,NULL);
+              LineTo(dc,x,bounds.bottom);
+            }
+            for(y=DIM_GRID_STEP;y<bounds.bottom;y+=DIM_GRID_STEP) {
+              MoveToEx(dc,0,y,NULL);
+              LineTo(dc,bounds.right,y);
+            }
+            SelectObject(dc,previous);
+            DeleteObject(pen);
+          }
+        }
         EndPaint(window,&ps);
       }
       return 0;
@@ -57,15 +82,29 @@ void SpiderPauseDim_Init(void (*log_fn)(const char *)) {
   DWORD n;
   dim_log=log_fn;
   dim_enabled=1;
+  dim_opacity=DIM_DEFAULT_OPACITY;
+  dim_grid_enabled=1;
   n=GetModuleFileNameA(NULL,path,sizeof(path));
   if(n && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL &&
      (size_t)(slash-path)+sizeof("SpiderMan2k1Fix.ini")<=sizeof(path)) {
     strcpy(slash+1,"SpiderMan2k1Fix.ini");
     dim_enabled=GetPrivateProfileIntA("Input","PauseDim",1,path)==1;
+    dim_opacity=GetPrivateProfileIntA("Input","PauseDimOpacity",DIM_DEFAULT_OPACITY,path);
+    dim_grid_enabled=GetPrivateProfileIntA("Input","PauseGrid",1,path)==1;
   }
-  if(dim_log)dim_log(dim_enabled ?
-      "FOCUS-DIM: uniform-alpha shade enabled (40% black; only during focus pause)" :
-      "FOCUS-DIM: disabled via [Input] PauseDim=0");
+  /* The INI validator rejects values above 90 or below zero; keep a
+   * secondary bound in this isolated module as defense in depth. */
+  if(dim_opacity<0)dim_opacity=0;
+  if(dim_opacity>90)dim_opacity=90;
+  dim_alpha=(BYTE)((dim_opacity*255+50)/100);
+  if(dim_log) {
+    char detail[160];
+    snprintf(detail,sizeof(detail),
+      "FOCUS-DIM: %s; opacity=%d%% alpha=%u/255 grid=%s step=%dpx",
+      dim_enabled?"enabled":"disabled",dim_opacity,
+      (unsigned)dim_alpha,dim_grid_enabled?"on":"off",DIM_GRID_STEP);
+    dim_log(detail);
+  }
 }
 
 void SpiderPauseDim_Show(HWND game_window) {
@@ -139,7 +178,7 @@ void SpiderPauseDim_Show(HWND game_window) {
 
   /* Uniform alpha must be installed BEFORE showing the window. On any
    * error destroy the hidden popup, never flash an opaque black rectangle. */
-  if(!SetLayeredWindowAttributes(window,0,DIM_ALPHA,LWA_ALPHA)) {
+  if(!SetLayeredWindowAttributes(window,0,dim_alpha,LWA_ALPHA)) {
     error=GetLastError();
     snprintf(detail,sizeof(detail),
         "FOCUS-DIM: alpha unavailable Win32=%lu; skipping opaque layer",
@@ -152,7 +191,12 @@ void SpiderPauseDim_Show(HWND game_window) {
   InvalidateRect(window,NULL,FALSE);
   UpdateWindow(window);
   ShowWindow(window,SW_SHOWNOACTIVATE);
-  if(dim_log)dim_log("FOCUS-DIM: owned popup alpha 102/255, center message cut out, shade shown without activation");
+  if(dim_log) {
+    snprintf(detail,sizeof(detail),
+      "FOCUS-DIM: owned popup alpha %u/255 opacity=%d%% grid=%s step=%dpx; center message cut out",
+      (unsigned)dim_alpha,dim_opacity,dim_grid_enabled?"on":"off",DIM_GRID_STEP);
+    dim_log(detail);
+  }
 }
 
 void SpiderPauseDim_Hide(void) {
