@@ -61,3 +61,16 @@ repeatedly without leaving the game, then Alt+Tab to a different app and back.
 The click must not pause; Alt+Tab must pause, and F9 must resume once the game
 is foreground. Confirm logs contain 'confirmed external focus loss' only for
 true application switches. Audio/movie synchronization remains out of scope.
+
+## Windows 11 regression: safe focus trace
+
+With ExperimentalAltTabReacquire=0 and ExperimentalFocusTrace=1,
+the tracer now observes window events and Flip snapshots without modifying
+the DirectInput8 import or COM vtables. This intentionally does not collect
+Acquire/GetDeviceState device-level calls; do not interpret zero tracked
+DirectInput devices as proof that the game is not reading input.
+
+First confirm that the game reaches the intro and menu with this combination.
+Then reproduce Alt+Tab, return, resume with the configured pause key, and
+record the resulting log. If a startup crash persists, switch
+ExperimentalFocusTrace back to 0. Keep reacquisition disabled.
