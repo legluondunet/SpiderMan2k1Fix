@@ -58,6 +58,40 @@ static void log_line(const char *s) {
   strcpy(slash+1,"SpiderMan2k1Fix.log");
   f=fopen(path,"a"); if(f) { fprintf(f,"%s\n",s); fclose(f); }
 }
+/* Windows creates a class="Ghost" surrogate after several seconds without
+ * normal window-message retrieval. Our focus guard can then mistake that
+ * surrogate for an Alt+Tab to a different program. This opt-in process
+ * compatibility experiment prevents creation of Ghost windows, WITHOUT
+ * disabling real focus-loss detection or modifying the game's input loops.
+ * It is irreversible until the process exits; OFF by default. Call only
+ * after the supported EXE hash and INI have been validated, early at boot. */
+typedef VOID (WINAPI *SpiderDisableGhostingFn)(void);
+static void pause_apply_windows_ghosting_option(void) {
+  char path[MAX_PATH],*slash;
+  DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
+  HMODULE user32;
+  SpiderDisableGhostingFn disable_ghosting;
+  if(!n || n>=sizeof(path) || !(slash=strrchr(path,'\\')) ||
+     (size_t)(slash-path)+sizeof("SpiderMan2k1Fix.ini")>sizeof(path)) {
+    log_line("FOCUS-GHOST: INI path unavailable, default Windows ghosting retained");
+    return;
+  }
+  strcpy(slash+1,"SpiderMan2k1Fix.ini");
+  if(GetPrivateProfileIntA("Input","DisableWindowsGhosting",0,path)!=1) {
+    log_line("FOCUS-GHOST: normal Windows ghosting enabled (DisableWindowsGhosting=0)");
+    return;
+  }
+  user32=GetModuleHandleA("user32.dll");
+  disable_ghosting=user32?(SpiderDisableGhostingFn)
+    GetProcAddress(user32,"DisableProcessWindowsGhosting"):NULL;
+  if(!disable_ghosting) {
+    log_line("FOCUS-GHOST: WARNING DisableProcessWindowsGhosting unavailable; continuing unchanged");
+    return;
+  }
+  disable_ghosting();
+  log_line("FOCUS-GHOST: DisableProcessWindowsGhosting CALLED; Ghost surrogate suppression requested for this run");
+}
+
 /* Keep the exact SHA-256 guard. A failure must explain which operation
  * failed, rather than labelling every file I/O or CryptoAPI problem as an
  * unsupported game binary. In particular, never fall back to an unchecked EXE.
@@ -1083,6 +1117,46 @@ static LONG pause_latched=0;
 static LONG pause_key_down=0;
 static int pause_key_vk=VK_F9; /* 0 = Any (focus-loss resume only) */
 static DWORD pause_background_since=0;
+
+/* Diagnostic only: report WHICH other executable owns the foreground when
+ * Windows reports sustained focus loss. No activation/focus operations.
+ * Log the program filename (not its path or potentially private title). */
+static void pause_log_foreground_owner(HWND game,HWND foreground,const char *why) {
+  DWORD game_pid=0,fg_pid=0,game_tid=0,fg_tid=0;
+  char fg_class[96]="?",fg_program[128]="?",line[460];
+  HANDLE process=NULL;
+  DWORD len;
+  char full[MAX_PATH],*basename;
+  if(!debug_log_enabled)return;
+  if(game && IsWindow(game))game_tid=GetWindowThreadProcessId(game,&game_pid);
+  if(foreground && IsWindow(foreground)) {
+    fg_tid=GetWindowThreadProcessId(foreground,&fg_pid);
+    GetClassNameA(foreground,fg_class,sizeof(fg_class));
+  }
+  if(fg_pid) {
+    process=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,fg_pid);
+    if(process) {
+      len=sizeof(full);
+      if(QueryFullProcessImageNameA(process,0,full,&len)) {
+        basename=strrchr(full,'\\');
+        basename=basename?basename+1:full;
+        snprintf(fg_program,sizeof(fg_program),"%s",basename);
+      }
+      CloseHandle(process);
+    }
+  }
+  snprintf(line,sizeof(line),
+    "FOCUS-PAUSE-OWNER: %s game=%p pid=%lu tid=%lu "
+    "foreground=%p pid=%lu tid=%lu class=%s exe=%s "
+    "visible=%d iconic=%d paused-after-ms=%lu",
+    why,(void*)game,(unsigned long)game_pid,(unsigned long)game_tid,
+    (void*)foreground,(unsigned long)fg_pid,(unsigned long)fg_tid,
+    fg_class,fg_program,(int)(foreground?IsWindowVisible(foreground):0),
+    (int)(foreground?IsIconic(foreground):0),
+    (unsigned long)(pause_background_since?
+     (DWORD)(GetTickCount()-pause_background_since):0));
+  log_line(line);
+}
 /* Ignore brief foreground changes (e.g. mouse activation quirks).
  * Real Alt+Tab is recognized only if another process stays foreground. */
 static BOOL pause_confirmed_focus_loss(HWND hwnd) {
@@ -1156,6 +1230,7 @@ static void pause_at_flip_if_background(void) {
             pause_confirmed_focus_loss(hwnd) &&
             InterlockedCompareExchange(&pause_latched,1,0)==0) {
     log_line("FOCUS-PAUSE: confirmed external focus loss; pause latched until manual resume");
+    pause_log_foreground_owner(hwnd,GetForegroundWindow(),"external-foreground-latched");
   }
   pause_poll_key(hwnd);
   if(InterlockedCompareExchange(&pause_latched,0,0)!=1) return;
@@ -1214,6 +1289,7 @@ static void pause_at_flip_if_background(void) {
   SpiderFocusDSound_Resume();
   SpiderFocusMedia_Resume();
   log_line("FOCUS-PAUSE: explicit resume or window destroyed");
+  pause_log_foreground_owner(hwnd,GetForegroundWindow(),"resume-foreground-state");
   pause_log_resume_focus(hwnd);
   InterlockedExchange(&pause_in_progress,0);
 }
@@ -1728,6 +1804,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
    * No COM-vtable interception. The actual patch is delayed to Flip #120. */
   SpiderDI8Retry_Init(log_line);

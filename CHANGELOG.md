@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Windows Ghost-window false-focus experiment (PR #11)
+
+- Diagnose repeated spontaneous 5–6-second menu/cinematic/3D pauses: external foreground window `class=Ghost` with the same helper PID/thread across all occurrences, indicating Windows' unresponsive-window surrogate, not a verified user Alt+Tab.
+- Add `[Input] DisableWindowsGhosting=1` **opt-in** (default 0): calls Microsoft's `DisableProcessWindowsGhosting` after supported EXE/INI validation, before first game window; the change lasts for the process lifetime and removes the Windows ghost-window fallback.
+- Preserve real focus-loss pausing, Any-key wake, Bink and DirectSound synchronization, windowed rendering, and diagnostic foreground-owner logs. Keep Windows' normal ghost-window behavior by default pending tests.
+- Add regression tests, diagnostics and rollback instructions; this is a test experiment, **not yet a verified release fix**.
+
 ## Unreleased — centered transparent focus pause indicator
 
 - Display `PAUSE` in the center of the game window, inside a red outline with no filled background and comic-inspired bold italic white text with a dark outline, while `PauseOnFocusLoss` is latched. Use a shaped child-window region to exclude all empty pixels (avoiding the black interior observed with DirectDraw and layered-window color keying).
