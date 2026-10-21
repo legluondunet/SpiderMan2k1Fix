@@ -1085,7 +1085,7 @@ static void pause_poll_key(HWND hwnd) {
     InterlockedExchange(&pause_key_down,1);
     return;
   }
-  down=(GetAsyncKeyState(VK_PAUSE)&0x8000)!=0;
+  down=(GetAsyncKeyState(VK_F9)&0x8000)!=0;
   if(!down) {
     InterlockedExchange(&pause_key_down,0);
   } else if(InterlockedCompareExchange(&pause_key_down,1,0)==0) {
@@ -1111,7 +1111,7 @@ static void pause_at_flip_if_background(void) {
   pause_poll_key(hwnd);
   if(InterlockedCompareExchange(&pause_latched,0,0)!=1) return;
   if(InterlockedCompareExchange(&pause_in_progress,1,0)!=0) return;
-  log_line("FOCUS-PAUSE: waiting for foreground and explicit Pause key");
+  log_line("FOCUS-PAUSE: waiting for foreground and explicit F9 key");
   while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1) {
     while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
       if(msg.message==WM_QUIT) {
@@ -1823,7 +1823,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
         GetPrivateProfileIntA("Input","PauseOnFocusLoss",0,path)==1);
     }
     log_line(InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1 ?
-      "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (VK_PAUSE resumes)" :
+      "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (VK_F9 resumes)" :
       "FOCUS-PAUSE: experimental Flip-boundary pause disabled");
   }
   SpiderInputFocus_Install(log_line);
