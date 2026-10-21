@@ -41,6 +41,18 @@ static void patch_early(void) {
 }
 
 static INIT_ONCE once = INIT_ONCE_STATIC_INIT;
+/* First proxy message of each game process starts a fresh diagnostics file.
+ * InitOnce serializes simultaneous proxy calls, avoiding a later truncation
+ * that could erase an earlier startup line. All subsequent writes (including
+ * SpiderMan2k1Fix.dll's) append to the SAME launch's log. */
+static INIT_ONCE log_reset_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK reset_log_on_first_write(PINIT_ONCE init, PVOID arg, PVOID *ctx) {
+    FILE *f;
+    (void)init; (void)ctx;
+    f=fopen((const char*)arg,"w");
+    if(f) fclose(f);
+    return TRUE;
+}
 static void log_proxy(const char *message) {
     char path[MAX_PATH]; char *slash; FILE *f;
     DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
@@ -51,6 +63,9 @@ static void log_proxy(const char *message) {
     if (GetPrivateProfileIntA("Debug","Log",0,path)!=1) return;
     if ((size_t)(slash-path)+strlen("SpiderMan2k1Fix.log")+1>=sizeof(path)) return;
     strcpy(slash+1,"SpiderMan2k1Fix.log");
+    /* Do this before the first line (DPI-BOOT / START), not in the main DLL,
+     * which loads later and would erase the proxy's earliest diagnostics. */
+    InitOnceExecuteOnce(&log_reset_once,reset_log_on_first_write,path,NULL);
     f=fopen(path,"a"); if (f) { fprintf(f,"%s\n",message); fclose(f); }
 }
 static BOOL CALLBACK load_real(PINIT_ONCE unused, PVOID arg, PVOID *ctx) {
