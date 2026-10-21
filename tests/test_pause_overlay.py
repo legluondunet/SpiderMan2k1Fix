@@ -24,7 +24,7 @@ def test_default_is_on_only_when_the_focus_pause_is_active():
 def test_overlay_uses_child_window_not_desktop_topmost_popup():
     assert "WS_CHILD|WS_CLIPSIBLINGS" in SRC
     assert "SW_SHOWNOACTIVATE" in SRC
-    assert "WS_EX_NOACTIVATE|WS_EX_NOPARENTNOTIFY|WS_EX_LAYERED" in SRC
+    assert "WS_EX_NOACTIVATE|WS_EX_NOPARENTNOTIFY" in SRC
     assert "game_window,NULL,instance,NULL" in SRC
     assert "WM_MOUSEACTIVATE" in SRC
     assert "MA_NOACTIVATE" in SRC
@@ -37,30 +37,43 @@ def test_overlay_uses_child_window_not_desktop_topmost_popup():
 
 def test_instructions_are_dynamic_and_fr():
     assert 'L"PAUSE"' in SRC
-    assert 'L"Appuyez sur une touche"' in SRC
-    assert 'L"Appuyez sur Espace"' in SRC
-    assert 'L"Appuyez sur F9"' in SRC
+    assert 'L"APPUYEZ SUR UNE TOUCHE"' in SRC
+    assert 'L"APPUYEZ SUR ESPACE"' in SRC
+    assert 'L"APPUYEZ SUR F9"' in SRC
     assert "overlay_resume_key==VK_SPACE" in SRC
     assert "overlay_resume_key==VK_F9" in SRC
-    assert "DrawTextW(" in SRC
-    assert "SetTextColor(dc,RGB(255,255,255))" in SRC
-    assert "OVERLAY_RED RGB(220,38,46)" in SRC
+    assert "TextOutW(" in SRC
+    assert "OVERLAY_WHITE RGB(255,255,255)" in SRC
+    assert "OVERLAY_DARK RGB(18,16,28)" in SRC
+    assert "OVERLAY_RED RGB(221,34,45)" in SRC
+    assert "FW_HEAVY,TRUE" in SRC
+    assert 'L"Arial Black"' in SRC
 
-def test_transparent_red_outline_with_centered_position():
-    assert "SetLayeredWindowAttributes(window,OVERLAY_TRANSPARENT,0,LWA_COLORKEY)" in SRC
-    assert "OVERLAY_TRANSPARENT RGB(1,2,3)" in SRC
-    assert "FillRect(dc,&client,transparent_brush)" in SRC
+def test_unfilled_red_frame_and_comic_text_use_real_window_region():
+    # Excluding background pixels from the child HWND avoids a black box
+    # when color-keyed layered windows interact with DirectDraw presentation.
+    assert "CreateRoundRectRgn(0,0,width,height,16,16)" in SRC
+    assert "CreateRoundRectRgn(3,3,width-3,height-3,13,13)" in SRC
+    assert "CombineRgn(outline,outline,inside,RGN_DIFF)" in SRC
+    assert "BeginPath(dc)" in SRC
+    assert "PathToRegion(dc)" in SRC
+    assert "CombineRgn(visible,visible,shifted,RGN_OR)" in SRC
+    assert "SetWindowRgn(window,outline,FALSE)" in SRC
     assert "GetStockObject(HOLLOW_BRUSH)" in SRC
-    assert "RoundRect(dc,2,2,client.right-2,client.bottom-2,14,14)" in SRC
-    assert "banner_width=420" in SRC
-    assert "banner_height=104" in SRC
+    assert "SetBkMode(dc,TRANSPARENT)" in SRC
     assert "x=(width-banner_width)/2" in SRC
     assert "y=(height-banner_height)/2" in SRC
     assert "ShowWindow(window,SW_SHOWNOACTIVATE)" in SRC
-    assert SRC.index("SetLayeredWindowAttributes(") < SRC.index("ShowWindow(")
-    assert "CreateSolidBrush(RGB(22,25,32))" not in SRC
-    assert "RGB(214,177,83)" not in SRC
+    assert SRC.index("SetWindowRgn(window,outline,FALSE)") < SRC.index("ShowWindow(window,SW_SHOWNOACTIVATE)")
+    assert "WS_EX_LAYERED" not in SRC
+    assert "SetLayeredWindowAttributes" not in SRC
+    assert "LWA_COLORKEY" not in SRC
+    assert "FillRect(dc,&client" not in SRC
 
+def test_no_opaque_window_if_glyph_region_is_unavailable():
+    assert "if(!overlay_apply_region(window,banner_width,banner_height))" in SRC
+    assert "FOCUS-OVERLAY: window region unavailable; skipping opaque overlay" in SRC
+    assert "DestroyWindow(window)" in SRC
 
 def test_overlay_lifecycle_matches_focus_pause():
     pause=CORE[CORE.index("static void pause_at_flip_if_background(void)"):
