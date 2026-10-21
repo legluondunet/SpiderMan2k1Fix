@@ -44,7 +44,7 @@ def test_media_pause_lifecycle_and_no_unsafe_hooks():
 
 def test_audio_probe_has_no_directsound_mutation():
     assert "FOCUS-AUDIO:" in SRC
-    assert "no sound-buffer changes" in SRC
+    assert "read-only Bink-module probe" in SRC
     assert "0x006B7920u" in SRC and "0x006B7924u" in SRC
 
 def test_optional_original_exe_bink_signature():
