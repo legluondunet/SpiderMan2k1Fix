@@ -116,6 +116,53 @@ def test_instruction_letters_in_right_half_are_not_compass(api):
     assert dst[0].x == pytest.approx(846.0, abs=0.01)
 
 
+def test_instruction_shadow_and_bright_foreground_both_scale_identically(api):
+    # D3D7 F12 traces record two glyph passes with same physical position,
+    # but different z/RHW/diffuse. The previous code scaled black shadow
+    # and left lavender bright glyphs at full-width, outside their panel.
+    origin = (1128.0, 877.0, 1166.0, 918.0)
+    shadow = quad(*origin, z=0.0012, rhw=11.1764,
+                  diffuse=0xFF000000, u0=0, u2=0.875)
+    light = quad(*origin, z=0.0010, rhw=12.6862,
+                 diffuse=0xFFC0C0FF, u0=0, u2=0.875)
+    s_type, s_mapped = mapped(api, shadow, tex=(32, 32))
+    l_type, l_mapped = mapped(api, light, tex=(32, 32))
+    assert (s_type, l_type) == (1, 1)
+    assert [(s_mapped[i].x, s_mapped[i].y) for i in range(4)] == [
+        (l_mapped[i].x, l_mapped[i].y) for i in range(4)
+    ]
+    assert s_mapped[0].x == pytest.approx(846, abs=0.01)
+    check_other_coordinates_unchanged(shadow, s_mapped)
+    check_other_coordinates_unchanged(light, l_mapped)
+
+
+@pytest.mark.parametrize("texture", [(16, 8), (16, 32), (32, 32), (64, 32)])
+def test_instruction_bright_glyph_all_captured_atlas_sizes(api, texture):
+    source = quad(345, 877, 399, 913, z=0.0010,
+                  rhw=12.6862, diffuse=0xFFC0C0FF, u0=0, u2=0.875)
+    kind, dest = mapped(api, source, tex=texture)
+    assert kind == 1
+    assert dest[0].x == pytest.approx(258.75, abs=0.01)
+
+
+def test_foreground_signature_mismatch_and_upper_left_player_are_safe(api):
+    foreground = quad(1128, 877, 1166, 918, z=0.0010,
+                      rhw=12.6862, diffuse=0xFFC0C0FF, u0=0, u2=0.875)
+    kind, _ = mapped(api, foreground, tex=(32, 32))
+    assert kind == 1
+    foreground[0].diffuse = 0xFFFFFFFF
+    assert mapped(api, foreground, tex=(32, 32))[0] == 0
+    foreground[0].diffuse = 0xFFC0C0FF
+    foreground[0].rhw = 11.1764
+    assert mapped(api, foreground, tex=(32, 32))[0] == 0
+    player = quad(217.5, 112.5, 333.8, 139.5,
+                  z=0.0010, rhw=12.6862, diffuse=0xFFFF0000)
+    assert mapped(api, player, tex=(0, 0))[0] == 0
+    player_glyph = quad(217.5, 112.5, 272.0, 139.5,
+                        z=0.0010, rhw=12.6862, diffuse=0xFFC0C0FF)
+    assert mapped(api, player_glyph, tex=(32, 32))[0] == 0
+
+
 def test_world_particles_and_wrong_depth_stay_unchanged(api):
     world = quad(775.4, 307.4, 779.2, 311.9,
                  z=0.9983, rhw=0.0229, diffuse=0x80383838)
