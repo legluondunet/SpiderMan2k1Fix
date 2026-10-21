@@ -88,7 +88,8 @@ def test_original_centered_banner_is_preserved_above_shade():
     assert "SpiderPauseDim_Hide();" in CORE
 
 def test_game_pause_and_audio_do_not_depend_on_shade_creation():
-    assert "if(!dim_enabled || !game_window || !IsWindow(game_window))return;" in DIM
+    assert "if(!dim_enabled || !game_window || !IsWindow(game_window) ||" in DIM
+    assert "GetForegroundWindow()!=game_window)return;" in DIM
     assert "FOCUS-DIM: owned-popup creation failed Win32=" in DIM
     assert "FOCUS-DIM: class registration failed Win32=" in DIM
     assert "SpiderFocusMedia_Pause();" in CORE
@@ -130,3 +131,12 @@ def test_optional_inner_alpha_panel_is_clipped_around_original_letters():
     assert "window!=dim_panel_hwnd" in DIM
     assert "if(panel && IsWindow(panel))DestroyWindow(panel)" in DIM
     assert "if(window && IsWindow(window))DestroyWindow(window)" in DIM
+
+def test_grid_does_not_cross_banner_even_if_glyph_mask_differs_on_wine():
+    assert 'SpiderPauseOverlay_GetBounds(GetWindow(window,GW_OWNER),&center)' in DIM
+    assert 'ExcludeClipRect(dc,center.left-8,center.top-8,' in DIM
+    assert 'center.right+8,center.bottom+8)' in DIM
+    assert 'SaveDC(dc)' in DIM
+    assert 'RestoreDC(dc,saved)' in DIM
+    assert DIM.index('ExcludeClipRect(dc,center.left-8,center.top-8,') < DIM.index('for(x=DIM_GRID_STEP;')
+    assert "GetForegroundWindow()!=game_window" in DIM
