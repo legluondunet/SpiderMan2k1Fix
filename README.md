@@ -241,6 +241,43 @@ When testing the current development build, set `DirectInputReacquire=1` and `Pa
 
 Try the original `AspectRatio=4:3` mode to help isolate widescreen-specific problems. Some edge-of-screen 3D rendering issues and audio artifacts are still being investigated; see the roadmap below.
 
+## Adaptive HUD — experimental investigation for 1.0
+
+The game has several distinct HUD rendering paths. The existing opt-in
+`[HUD] HUDWidescreenFix=1` (normally **0**) contains 16 strict SHA-256-
+guarded hooks for the **upper-left portrait, health/web bars, cartridge
+counter and associated glyphs**, developed from the earlier GDB prototype.
+It scales horizontal dimensions without changing original vertical
+positions, but its in-game safety and coverage are **not yet validated**.
+The **bottom-right compass** and **lower-left instruction box** are rendered
+through other paths and can still be stretched at 16:9.
+
+A first **read-only F12 sampler** on the separate experimental HUD branch
+is available to identify those paths accurately, without any coordinate
+changes or additional COM hooks. It is deliberately excluded from `main`.
+
+1. Keep `[Debug] Log=1`, `[HUD] HUDWidescreenFix=0` for a first baseline.
+2. In the game's folder under Linux/Wine, launch
+   `SPIDERMAN2K1FIX_HUD_TRACE=1 WINEDLLOVERRIDES="winmm=n,b" wine ./SpideyPC.exe`.
+   On native Windows PowerShell, set
+   `$env:SPIDERMAN2K1FIX_HUD_TRACE="1"` before executing `.\SpideyPC.exe`.
+3. Once in **3D gameplay**, press **F12 once** and allow six frames to run,
+   then quit. Send `SpiderMan2k1Fix.log` and a gameplay screenshot.
+   The bounded `HUD-PROBE` records describe native vertex bounds,
+   D3D7 caller RVA, source texture dimensions, color and depth for the
+   player HUD, compass and instruction regions; they do not include
+   copyrighted texture pixel data.
+4. For a *separate* A/B test after backing up the original DLLs and INI,
+   enable `HUDWidescreenFix=1` to evaluate the previously implemented
+   player-HUD-only 16-site correction. Compare in 4:3 and widescreen.
+   Restore `HUDWidescreenFix=0` if any unexpected behavior occurs.
+
+The target adaptive HUD will use aspect-correct geometry and appropriate
+edge anchors, with **no change in native 4:3 mode**, and will include
+the compass, Webcart and instructions when their signatures are verified.
+Do **not** enable this unfinished experimental feature in a release until
+both Wine and native Windows 11 are tested.
+
 ## Roadmap
 
 These are **planned improvements**, not features promised for version 1.0:
