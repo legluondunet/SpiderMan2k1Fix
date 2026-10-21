@@ -125,6 +125,8 @@ PauseOnFocusLoss=0
 PauseKey=F9
 ; Experimental native Bink movie/audio pause, independent of 3D game sound.
 PauseBinkOnFocusLoss=0
+; Experimental DirectSound effects/voice pause (default off).
+PauseDirectSoundOnFocusLoss=0
 RestoreCursorOnFocusLoss=1
 
 [Audio]
@@ -172,7 +174,7 @@ The generated INI may contain additional internal or development-specific settin
 
 **Alt+Tab recovery (experimental, Windows 11):** The user-tested PR #7 configuration uses `DirectInputReacquire=1`, `PauseOnFocusLoss=1`, and `PauseKey=Any`. After switching back to the game, press and release a keyboard key: the pause ends and the key sequence is intercepted rather than intentionally passed to the game. The native DirectInput8 retry uses the original game's existing `Acquire` error path for `DIERR_NOTACQUIRED`, without wrapping COM interfaces. The user has validated the combination in menus, cinematics and 3D, but **the new INI activation itself still needs a final A/B test**. Both recovery and pause remain disabled by default in the experimental branch. The separate `SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY=1` environment variable is still accepted for existing diagnostics and overrides a disabled INI value; unset it to test the INI alone. The older `ExperimentalAltTabReacquire` and `ExperimentalDI8CreateDeviceTrace` flags are no longer generated and remain disabled in code even if present in an old INI.
 
-**Bink video pause (experimental PR):** `PauseBinkOnFocusLoss=1` requests the game's own native Bink pause for cinematic video and audio-only Bink music streams during focus-loss pause. It does **not** suspend separate DirectSound sound effects in gameplay; see `FOCUS_AUDIO_VIDEO_SYNC_TEST.md` before testing. Disabled by default, pending Windows 11 validation.
+**Synchronized Bink and DirectSound focus pause (experimental PR):** `PauseBinkOnFocusLoss=1` requests the game's own native Bink pause for cinematic video and audio-only Bink music streams during focus-loss pause. It does **not** suspend separate DirectSound sound effects in gameplay; see `FOCUS_AUDIO_VIDEO_SYNC_TEST.md` before testing. For secondary game sound effects, the separately optional `PauseDirectSoundOnFocusLoss=1` stops only voices that are currently playing and resumes those same voices through the original game-owned DirectSound buffer objects. Neither new option is enabled by default. Windows 11 tests are required.
 
 **Audio:** the three volume levels use user-friendly percentages; `Stereo=1` enables stereo and `Stereo=0` selects mono.
 
