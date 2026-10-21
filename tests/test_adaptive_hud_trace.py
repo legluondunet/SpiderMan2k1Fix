@@ -15,8 +15,8 @@ def test_sampler_is_opt_in_and_never_forces_hud_hook():
     assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_HUD_TRACE"' in SRC
     assert "if(debug_log_enabled &&" in SRC
     assert "InterlockedExchange(&hud_probe_enabled,1);" in SRC
-    assert 'HUDWidescreenFix=0' in INI
-    assert 'GetPrivateProfileIntA("HUD","HUDWidescreenFix",0,ini)' in SRC
+    assert 'HUDWidescreenFix=1' in INI
+    assert 'GetPrivateProfileIntA("HUD","HUDWidescreenFix",1,ini)' in SRC
 
 
 def test_sampler_captures_only_bounded_gameplay_quads_on_f12():
@@ -100,7 +100,7 @@ def test_existing_hud_is_sha_gated_and_original_43_is_identity():
     assert "if (!image_verified" in HUD
     assert "if ((int64_t)width * 3 <= (int64_t)height * 4)" in HUD
     assert "return 1.0f;" in HUD
-    assert 'option=GetPrivateProfileIntA("HUD","HUDWidescreenFix",0,ini)' in SRC
+    assert 'option=GetPrivateProfileIntA("HUD","HUDWidescreenFix",1,ini)' in SRC
     assert 'HUD: disabled automatically for original 4:3 mode' in SRC
 
 
