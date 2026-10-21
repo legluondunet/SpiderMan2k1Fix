@@ -700,6 +700,7 @@ static volatile LONG hud_probe_enabled=0,hud_probe_frames=0;
  * Separate quotas prevent player HUD/world sprites from hiding boss quads.
  * All probes are disabled without SPIDERMAN2K1FIX_HUD_TRACE=1 and Log=1. */
 static volatile LONG hud_probe_seen=0,hud_probe_left=0,hud_probe_right=0,hud_probe_instructions=0,hud_probe_boss=0;
+static volatile LONG hud_probe_boss_extra=0,hud_probe_boss_blt=0;
 static void hud_probe_flip(void) {
   if(InterlockedCompareExchange(&hud_probe_enabled,0,0)!=1) return;
   if((GetAsyncKeyState(VK_F12)&1)!=0 && game_hwnd &&
@@ -714,6 +715,74 @@ static void hud_probe_flip(void) {
   InterlockedExchange(&hud_probe_right,0);
   InterlockedExchange(&hud_probe_instructions,0);
   InterlockedExchange(&hud_probe_boss,0);
+  InterlockedExchange(&hud_probe_boss_extra,0);
+  InterlockedExchange(&hud_probe_boss_blt,0);
+}
+/* A separate read-only probe for black boss damage quads NOT covered by
+ * the 4-vertex TEX1 triangle-fan sampler. It records both XYZRHW|DIFFUSE
+ * (0x44, 20-byte stride) and XYZRHW|DIFFUSE|TEX1 (0x144, 28-byte
+ * stride), including triangle lists/strips and indexed draws. Inspect
+ * the original vertices only; never change game memory or device state.
+ * Kept behind the same explicitly armed six-frame F12 capture. */
+static void hud_probe_boss_unknown(void *device,D3DPRIMITIVETYPE type,
+                                    DWORD fvf,const void *vertices,
+                                    DWORD count,int indexed,void *caller) {
+  const unsigned char *p=(const unsigned char*)vertices;
+  unsigned stride,i;
+  float x,y,z,rhw,l,r,t,b,cx,cy;
+  uint32_t color;
+  LONG slot;
+  IDirectDrawSurface7 *texture=NULL;
+  DDSURFACEDESC2 desc;
+  DWORD rva=0;
+  char line[440];
+  if(InterlockedCompareExchange(&hud_probe_frames,0,0)<=0 ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
+     !vertices || count<3 || count>64 || desktop_w<640 ||
+     desktop_h<480 || (fvf!=0x44UL && fvf!=0x144UL)) return;
+  stride=(fvf==0x44UL)?20u:sizeof(SpiderMenuVertex);
+  memcpy(&l,p,sizeof(l));memcpy(&t,p+4,sizeof(t));
+  memcpy(&z,p+8,sizeof(z));memcpy(&rhw,p+12,sizeof(rhw));
+  memcpy(&color,p+16,sizeof(color));
+  r=l;b=t;
+  for(i=1;i<count;++i) {
+    memcpy(&x,p+i*stride,sizeof(x));
+    memcpy(&y,p+i*stride+4,sizeof(y));
+    if(x<l)l=x;if(x>r)r=x;
+    if(y<t)t=y;if(y>b)b=y;
+  }
+  if(!(l>=-40.0f && r<=(float)desktop_w+40.0f &&
+       t>=-40.0f && b<=(float)desktop_h*0.42f &&
+       r>l+2.0f && b>t+2.0f &&
+       r-l<(float)desktop_w*0.70f && b-t<(float)desktop_h*0.32f))
+    return;
+  cx=(l+r)*0.5f;cy=(t+b)*0.5f;
+  if(cx<(float)desktop_w*0.48f || cy>(float)desktop_h*0.34f)
+    return;
+  /* The ordinary fan sampler captures all non-black 4-vertex TEX1 fans.
+   * Log those again only for black primitives, where the original trace
+   * missed the source of the detached bar mask. */
+  if(fvf==0x144UL && type==D3DPT_TRIANGLEFAN && count==4 &&
+     color!=0xFF000000u) return;
+  slot=InterlockedIncrement(&hud_probe_boss_extra);
+  if(slot>64)return;
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) && texture) {
+    if(FAILED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc)))
+      desc.dwWidth=desc.dwHeight=0;
+    IDirectDrawSurface7_Release(texture);
+  }
+  geom_rva(caller,&rva);
+  snprintf(line,sizeof(line),
+    "HUD-PROBE-EXTRA: source=%s slot=%ld rva=0x%08lX fvf=0x%lX type=%lu count=%lu tex=%lux%lu "
+    "bbox=[%.1f,%.1f..%.1f,%.1f] z=%.4f rhw=%.4f diffuse=%08lX",
+    indexed?"indexed":"draw",(long)slot,(unsigned long)rva,
+    (unsigned long)fvf,(unsigned long)type,(unsigned long)count,
+    (unsigned long)desc.dwWidth,(unsigned long)desc.dwHeight,
+    (double)l,(double)t,(double)r,(double)b,
+    (double)z,(double)rhw,(unsigned long)color);
+  log_line(line);
 }
 static void hud_probe_draw(void *device,D3DPRIMITIVETYPE type,DWORD fvf,
                            const void *vertices,DWORD count,void *caller) {
@@ -968,6 +1037,7 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     SpiderMenuVertex small[64],*allocated=NULL;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
     hud_probe_draw(self,type,fvf,verts,count,__builtin_return_address(0));
+    hud_probe_boss_unknown(self,type,fvf,verts,count,0,__builtin_return_address(0));
     if(v==verts && count==4) {
       v=maybe_correct_native_comic(self,type,fvf,verts,count,
                                    __builtin_return_address(0),small);
@@ -989,6 +1059,7 @@ static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE 
   {
     SpiderMenuVertex small[64],*allocated=NULL;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
+    hud_probe_boss_unknown(self,type,fvf,verts,count,1,__builtin_return_address(0));
     /* No indexed comic path was observed: keep it unchanged. */
     HRESULT hr=original_draw_indexed_primitive(self,type,fvf,(LPVOID)v,count,indices,icount,flags);
     free_menu_vertices(allocated);
