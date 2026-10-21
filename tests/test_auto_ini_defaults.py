@@ -32,7 +32,11 @@ def test_generated_example_factory_consistency():
     assert config['Display']['Resolution'] == 'Auto'
     assert config['Display']['Brightness'] == '4'
     assert config['Display']['FPSLimit'] == '30'
-    assert config['Input']['ExperimentalAltTabReacquire'] == '1'
+    assert config['Input']['DirectInputReacquire'] == '0'
+    assert config['Input']['PauseOnFocusLoss'] == '0'
+    assert config['Input']['PauseKey'] == 'F9'
+    assert not config.has_option('Input','ExperimentalAltTabReacquire')
+    assert not config.has_option('Input','ExperimentalDI8CreateDeviceTrace')
     assert config['Audio']['Stereo'] == '1'
     for key,off,maxval in [('MusicSFXLevel',236,16383),('VoiceLevel',244,255),('MovieLevel',240,255)]:
         raw = struct.unpack_from('<I',bytes_data,off)[0]
