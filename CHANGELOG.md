@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — frozen DirectDraw pause frame (PR #18 experiment)
+
+- Replace the former Wine-fragile desktop alpha popups, normal child windows and dither-grid simulation with **one composited DirectDraw7 game frame**. At the confirmed focus-loss Flip boundary, save the game's backbuffer through its native surface DC, apply the configured **55% true alpha darkening, 16px square grid, and centered English comic PAUSE panel**, and present the result once using the existing validated windowed-primary `Blt`.
+- The resulting image is part of the game window's OWN pixel surface, not an HWND overlay. Its normal desktop Z-order follows Spider-Man when Thunar/Firefox or another app is active. Nothing separately floats over the desktop; foreground/background styling is identical.
+- Preserve the original backbuffer in an independent compatible bitmap, and **restore it before resuming** gameplay and Bink/DirectSound. Fail safely if surface `GetDC`, snapshot, GDI alpha blend or primary `Blt` is unavailable, without affecting the real pause or changing game surfaces permanently.
+- Keep the existing INI pause options, Any-key-only resume and Alt+Tab passthrough. Retire popup show/hide switching and stop compiling `pause_overlay.c` and `pause_dim.c`; link the surface renderer against `msimg32` for `AlphaBlend`.
+- **Experimental**: requires direct Wine/DXVK and Windows 11 runtime testing of surface `GetDC` support, scene restoration, menu/cutscene/3D rendering and media synchronization. The earlier unmerged #14–#17 visual experiments are superseded.
+
 ## Unreleased — full background game-bound grid + shade (PR #17 revision)
 
 - Follow-up to the game-bound PAUSE banner: draw the **16px square grid over the entire paused Spider-Man window even when it is not foreground**, retaining normal Xfce/Thunar stacking.
