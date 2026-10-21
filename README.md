@@ -295,6 +295,20 @@ At 1920×1080 the horizontal scale is 0.75. Y, Z, RHW, color, UV,
 menu/comic/video geometry and the game's original vertex buffers are
 unchanged; supported original 4:3 mode automatically disables the patch.
 
+**Reference-frame correction (October 21, 2026):** Matching 4:3
+screenshots confirm that the existing blue and red panel backgrounds are
+already positioned correctly in 16:9; the blue box is x≈95–881
+(relative to the 4:3 image) vs x≈93–880 in widescreen, and the same
+red instruction box is x≈9–501 in both modes. Keep those transforms
+unchanged. The instruction font uses TWO D3D7 passes, however: dark
+shadow (`z=.0012, RHW=11.1764, ARGB FF000000`) followed by lavender
+foreground (`z=.0010, RHW=12.6862, ARGB FFC0C0FF`). The initial
+widescreen implementation resized only the dark pass, so light letters
+extended past the corrected box. Both passes are now remapped together,
+with strict screen-region, texture and depth signatures. This adjustment
+has passed source-level regression checks but **still requires an in-game
+screenshot before validation**.
+
 **Wine visual A/B:** Back up the game DLLs and INI, install the DLLs from
 this experimental PR *as a matching pair*, and leave `Log=1`.
 First launch with `HUDWidescreenFix=0`, take a 16:9 3D screenshot;
