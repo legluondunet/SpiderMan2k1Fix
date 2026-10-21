@@ -35,13 +35,13 @@ def test_native_directinput_retry_option_and_legacy_ini_compat(runner, tmp_path)
     # New key is boolean and opt-in. Old quarantined COM flags must not cause
     # the user's audio and keyboard options to be reset by INI repair.
     result, _ = validate(runner, tmp_path,
-        "[Input]\\nDirectInputReacquire=1\\nPauseOnFocusLoss=1\\n"
-        "PauseKey=Any\\nExperimentalAltTabReacquire=0\\n"
-        "ExperimentalDI8CreateDeviceTrace=0\\n")
+        "[Input]\nDirectInputReacquire=1\nPauseOnFocusLoss=1\n"
+        "PauseKey=Any\nExperimentalAltTabReacquire=0\n"
+        "ExperimentalDI8CreateDeviceTrace=0\n")
     assert result == (0, 0, 1)
     for value in ("2", "-1", "true", "off"):
         result, _ = validate(runner, tmp_path,
-            f"[Input]\\nDirectInputReacquire={value}\\n")
+            f"[Input]\nDirectInputReacquire={value}\n")
         assert result[0] >= 1 and result[2] == 0
 
 
