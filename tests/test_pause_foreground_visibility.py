@@ -21,7 +21,7 @@ def test_pause_media_background_show_only_when_foreground_and_active():
     assert "if(SpiderPauseOverlay_GameForeground(hwnd))" in p
     assert "if(banner_mode!=2)" in p
     assert "else if(banner_mode!=1)" in p
-    assert 'FOCUS-PAUSE: PAUSE message remains in background game child' in p
+    assert 'FOCUS-PAUSE: game-parented dark dither/grid and PAUSE child remain visible in background' in p
     assert "SpiderPauseDim_Hide();\n      SpiderPauseOverlay_Hide();\n      SpiderPauseDim_ShowBackground(hwnd);\n      SpiderPauseOverlay_ShowBackground(hwnd);" in p
     assert "MsgWaitForMultipleObjectsEx(0,NULL,20,QS_ALLINPUT,MWMO_INPUTAVAILABLE)" in p
     assert "GetActiveWindow()==game_window" in OVERLAY
