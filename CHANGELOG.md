@@ -3,7 +3,7 @@
 ## Unreleased — dimmed pause scene (PR #12)
 
 - Add a 40%-opaque black tint across the *game client area* only during a confirmed focus pause. The underlying scene remains visible; the previous white comic-style `PAUSE` message with red frame stays centered above it at full brightness.
-- A separate nonactivating and mouse-transparent Windows 11 layered child is created **before** the existing shaped PAUSE banner; it uses constant alpha (`LWA_ALPHA`), not the previously unreliable color key, and aborts visibly if the alpha API is unavailable.
+- Native log exposed repeated `FOCUS-DIM: creation failed` from the layered child. Replace it with a **non-topmost owned layered popup**, supported for unmanifested 2001 executables, and exclude the validated shaped child banner's *exact* red/white pixels from the popup region. The popup uses constant alpha (`LWA_ALPHA`), not the previously unreliable color key, and is skipped if creation, region masking or alpha setup fails. Each failure now logs its Win32 code.
 - Add `[Input] PauseDim=1` (default on for active focus pauses; `0` disables only dimming). Focus pause itself remains opt-in. Destroy dim child on explicit resume and `WM_QUIT`, before DirectSound/Bink resume; no changes to input hooks, audio, timing, rendering surfaces or the game EXE.
 - Runtime visual validation is required on native Windows 11 and DirectDraw; CI alone does not prove transparent compositor behavior.
 
