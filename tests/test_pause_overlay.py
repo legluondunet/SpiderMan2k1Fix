@@ -54,24 +54,29 @@ def test_paused_title_is_inside_violet_panel_above_hint():
     assert "RGB(245,240,255),2,1," in P
 
 
-def test_main_menu_style_red_cog_spider_icon_precedes_centered_resume_text():
-    assert "pause_draw_spider_icon(dc,x,y+(length.cy-icon_size)/2,icon_size)" in P
-    assert "full_width=length.cx+(with_spider?icon_size+gap:0)" in P
+def test_original_executable_large_icon_precedes_resume_text_without_assets():
+    assert "#include <shellapi.h>" in P
+    assert "static HICON pause_game_icon=NULL;" in P
+    assert "n=GetModuleFileNameW(NULL,exe,MAX_PATH);" in P
+    assert "ExtractIconExW(exe,0,&large,&small,1)" in P
+    assert "if(large)" in P and "pause_game_icon=large;" in P
+    assert "else if(small)" in P and "pause_game_icon=small;" in P
+    assert "if(large)DestroyIcon(large);" in P
+    assert "if(small)DestroyIcon(small);" in P
+    assert "pause_load_game_icon();" in P
+    assert "DrawIconEx(dc,x,y,pause_game_icon,size,size,0,NULL,DI_NORMAL)" in P
+    assert "pause_draw_game_icon(dc,x,y+(length.cy-icon_size)/2,icon_size);" in P
+    assert "with_spider && pause_game_icon" in P
+    assert "full_width=length.cx+((with_spider && pause_game_icon)?icon_size+gap:0)" in P
     assert "x+=icon_size+gap;" in P
     assert "esc_coordf(48.0f,ch,ESC_DESIGN_H)" in P
-    assert "static const POINT teeth[8][4]" in P
-    assert "for(leg=0;leg<8;leg++)" in P
-    assert "Polygon(dc,scaled,4)" in P
-    assert "CreateSolidBrush(RGB(238,34,39))" in P
-    assert "CreateSolidBrush(RGB(28,7,16))" in P
-    assert "CreateSolidBrush(RGB(255,174,151))" in P
-    assert "Ellipse(dc," in P
-    assert "SelectObject(dc,old_pen);" in P
-    assert "SelectObject(dc,old_brush);" in P
-    assert "long-legged silhouette" in P
+    assert "original EXE icon unavailable; retaining text-only ribbon" in P
+    assert "DrawIconEx failed; pause text remains usable" in P
+    assert "pause_draw_spider_icon" not in P
+    assert "CreateSolidBrush(RGB(238,34,39))" not in P
+    assert "no new popup HWND" not in P or "CreateWindow" not in P
     assert "ANTIALIASED_QUALITY" in P
     assert 'L"Arial Black"' in P
-    assert "CreateWindow" not in P and "ExtractIconExW" not in P
 
 
 def test_frame_saved_presented_and_restored_on_release():
