@@ -24,7 +24,7 @@
 
 typedef int (WINAPI *BinkPauseFn)(void *movie,int pause);
 static BinkPauseFn native_bink_pause=NULL;
-static void *paused[2]={NULL,NULL};
+static void *paused[2]={NULL,NULL}; /* movie/video plus Bink soundtrack */
 static volatile LONG enabled=0;
 static volatile LONG in_media_pause=0;
 static void (*logger)(const char *)=NULL;
@@ -98,7 +98,7 @@ void SpiderFocusMedia_Pause(void) {
     handle=handles[i];
     duplicate=0;
     for(j=0;j<i;j++)if(handles[j]==handle)duplicate=1;
-    /* Native movie B has an independent game pause state. Do not unpause
+    /* Audio-only Bink music has an independent game pause state. Do not unpause
      * a movie the game already paused for its own reasons. */
     if(!handle || duplicate ||
        (i==1 && *SPIDER_BINK_GAME_PAUSE!=0)) continue;
