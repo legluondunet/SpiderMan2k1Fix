@@ -1,21 +1,17 @@
 #ifndef SPIDERMAN2K1FIX_PAUSE_OVERLAY_H
 #define SPIDERMAN2K1FIX_PAUSE_OVERLAY_H
-
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-/* A passive child window within the game, never a desktop-topmost overlay.
- * Shown only during an actual focus pause. Does not intercept gameplay input. */
+/* One atomic nonactivating owned popup (ULW_ALPHA). No old shaped child.
+ * Only foreground game windows may create the comic-style banner. */
 void SpiderPauseOverlay_Init(void (*log_fn)(const char *));
+int SpiderPauseOverlay_GameForeground(HWND game_window);
 void SpiderPauseOverlay_Show(HWND game_window);
-/* Centered banner rectangle, in game client coordinates, if visible. */
-int SpiderPauseOverlay_GetBounds(HWND game_window, RECT *bounds);
 void SpiderPauseOverlay_Hide(void);
 
-/* Remove only the visible border + glyph pixels of the centered banner
- * from a proposed dimming region (coordinates relative to game client).
- * Returns 1 when exclusion succeeded or when no banner exists, 0 on error.
- * The caller retains ownership of visible_region. */
+/* Entire one-piece panel rectangle in GAME CLIENT coordinates. */
+int SpiderPauseOverlay_GetBounds(HWND game_window, RECT *bounds);
+/* Exclude the FULL rounded panel from the game-wide alpha shade/grid. */
 int SpiderPauseOverlay_ExcludeFromRegion(HWND game_window, HRGN visible_region);
-
 #endif
