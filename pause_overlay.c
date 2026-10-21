@@ -2,7 +2,7 @@
  *
  * Draw only the comic-style text and a thin red outline in a shaped child
  * window. SetWindowRgn physically EXCLUDES every interior/background pixel;
- * unlike a layered child with LWA_COLORKEY, the underlying DirectDraw
+ * unlike a color-keyed layered child, the underlying DirectDraw
  * picture remains visible even on display drivers which compose a black
  * rectangle under a color-keyed window.
  *
