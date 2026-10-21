@@ -152,3 +152,50 @@ with F9, test navigation and provide the new log. Look for
 `INPUT-DI8: IDirectInput8::CreateDevice hr=...`. Do not enable automatic
 reacquisition yet.
 
+
+
+## Windows 11: opt-in Any-key focus-pause resume (experimental)
+
+New selection in `[Input]`:
+
+```ini
+[Debug]
+Log=1
+[Input]
+PauseOnFocusLoss=1
+PauseKey=Any
+ExperimentalAltTabReacquire=0
+ExperimentalDI8CreateDeviceTrace=0
+```
+
+For the independently validated menu input reacquisition, launch the game with
+`SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY=1` (still controlled separately from
+the INI). Retain the existing ProcDump launch command.
+
+**Behavior:** After a real focus loss, the game pauses at its next
+DirectDraw `Flip`. Switching back to the game does not auto-resume. Once
+the Spider-Man window is foreground, pressing **any keyboard key** starts a
+single-use resume sequence. The experimental Win32 `WH_KEYBOARD_LL` hook
+suppresses foreground Win32 keydown, repeat, and keyup events; the pause
+releases **only after all intercepted keys have been released**. This avoids
+the first wake key remaining held during the next game frame. `PauseKey=Any`
+**does not** let ordinary gameplay keys manually trigger a pause. The default
+remains `PauseKey=F9`; `PauseKey=Space` is still accepted.
+
+The hook is installed only while this focus-loss pause is active and removed
+on resume/quit. It always chains events when another application is
+foreground. If installation fails it logs an error and falls back to F9 for
+that process. Do not treat the hook as complete interception of
+DirectInput/Raw Input; that part **requires validation on native Windows 11**.
+Likewise the pause still only blocks Flip, not asynchronous media/audio.
+
+**First test:** from the menu, Alt+Tab away and return, use a direction key,
+Enter and then Space in separate sessions to resume. Check whether the wake
+key causes any unexpected menu navigation or selection. Inspect
+`FOCUS-PAUSE: Any keyboard resume ARMED` and
+`FOCUS-PAUSE: Any-key resume swallowed virtual-key=...`. Then test
+cinematics and 3D gameplay with ProcDump. If any wake key leaks into gameplay
+or Alt+Tab becomes unreliable, revert `PauseKey=F9` in the INI and keep PR #7
+unmerged. Do not test system-reserved combinations as wake keys.
+
+This trial is not a release-ready guarantee of native DirectInput suppression.
