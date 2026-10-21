@@ -33,6 +33,20 @@ static const BYTE bink_signature[6]={0xFF,0x15,0x10,0xB2,0x53,0x00};
 static void diag(const char *message) {
   if(logger) logger(message);
 }
+/* Read only. These are the game's IDirectSound and (likely) primary
+ * buffer slots, verified as written during native initialization around
+ * 0x004FDF30. Their existence does NOT identify streaming/secondary buffers;
+ * the DirectSound audio path remains unchanged in this experiment. */
+static void diag_dsound(const char *phase) {
+  char line[170];
+  void *device=*(void * const *)(uintptr_t)0x006B7920u;
+  void *primary=*(void * const *)(uintptr_t)0x006B7924u;
+  snprintf(line,sizeof(line),
+    "FOCUS-AUDIO: %s DSOUND device=%p primary-candidate=%p; no sound-buffer changes",
+    phase,device,primary);
+  diag(line);
+}
+
 static void log_movie(const char *phase,int index,void *handle,int result) {
   char line[160];
   snprintf(line,sizeof(line),
@@ -77,6 +91,7 @@ void SpiderFocusMedia_Pause(void) {
   int i,j,duplicate;
   if(InterlockedCompareExchange(&enabled,0,0)!=1 ||
      InterlockedCompareExchange(&in_media_pause,1,0)!=0) return;
+  diag_dsound("pause");
   handles[0]=*SPIDER_MOVIE_A;
   handles[1]=*SPIDER_MOVIE_B;
   for(i=0;i<2;i++) {
@@ -95,6 +110,7 @@ void SpiderFocusMedia_Resume(void) {
   void *now[2];
   int i;
   if(InterlockedCompareExchange(&in_media_pause,0,1)!=1) return;
+  diag_dsound("resume");
   now[0]=*SPIDER_MOVIE_A;
   now[1]=*SPIDER_MOVIE_B;
   for(i=0;i<2;i++) {
