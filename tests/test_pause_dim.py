@@ -78,7 +78,7 @@ def test_original_centered_banner_is_preserved_above_shade():
                CORE.index("static HRESULT WINAPI hooked_flip(")]
     assert pause.count("SpiderPauseDim_Show(hwnd);")==1
     assert pause.count("SpiderPauseOverlay_Show(hwnd);")==1
-    assert pause.index("SpiderPauseOverlay_Show(hwnd,pause_key_vk);") < pause.index("SpiderPauseDim_Show(hwnd);")
+    assert pause.index("SpiderPauseOverlay_Show(hwnd);") < pause.index("SpiderPauseDim_Show(hwnd);")
     assert pause.count("SpiderPauseDim_Hide();")==2
     assert pause.count("SpiderPauseOverlay_Hide();")==2
     for portion in pause.split("SpiderPauseOverlay_Hide();")[1:]:
@@ -97,7 +97,7 @@ def test_game_pause_and_audio_do_not_depend_on_shade_creation():
 
 def test_grid_is_drawn_into_same_nonactivating_popup_not_a_new_window():
     paint=DIM[DIM.index("case WM_PAINT:"):DIM.index("case WM_MOUSEACTIVATE:")]
-    assert "if(dim_grid_enabled)" in paint
+    assert "if(dim_grid_enabled && window!=dim_panel_hwnd)" in paint
     assert "CreatePen(PS_SOLID,1,DIM_GRID_COLOR)" in paint
     assert "for(x=DIM_GRID_STEP;x<bounds.right;x+=DIM_GRID_STEP)" in paint
     assert "for(y=DIM_GRID_STEP;y<bounds.bottom;y+=DIM_GRID_STEP)" in paint
@@ -114,7 +114,7 @@ def test_grid_never_affects_pause_or_scene_clipping():
     assert "FOCUS-DIM: center panel and shade destroyed before pause release" in DIM
     pause=CORE[CORE.index("static void pause_at_flip_if_background(void)"):
                CORE.index("static HRESULT WINAPI hooked_flip(")]
-    assert pause.index("SpiderPauseOverlay_Show(hwnd,pause_key_vk);") < pause.index("SpiderPauseDim_Show(hwnd);")
+    assert pause.index("SpiderPauseOverlay_Show(hwnd);") < pause.index("SpiderPauseDim_Show(hwnd);")
     assert pause.count("SpiderPauseDim_Hide();")==2
 
 def test_optional_inner_alpha_panel_is_clipped_around_original_letters():
