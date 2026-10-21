@@ -58,6 +58,40 @@ static void log_line(const char *s) {
   strcpy(slash+1,"SpiderMan2k1Fix.log");
   f=fopen(path,"a"); if(f) { fprintf(f,"%s\n",s); fclose(f); }
 }
+/* Windows creates a class="Ghost" surrogate after several seconds without
+ * normal window-message retrieval. Our focus guard can then mistake that
+ * surrogate for an Alt+Tab to a different program. This opt-in process
+ * compatibility experiment prevents creation of Ghost windows, WITHOUT
+ * disabling real focus-loss detection or modifying the game's input loops.
+ * It is irreversible until the process exits; OFF by default. Call only
+ * after the supported EXE hash and INI have been validated, early at boot. */
+typedef VOID (WINAPI *SpiderDisableGhostingFn)(void);
+static void pause_apply_windows_ghosting_option(void) {
+  char path[MAX_PATH],*slash;
+  DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
+  HMODULE user32;
+  SpiderDisableGhostingFn disable_ghosting;
+  if(!n || n>=sizeof(path) || !(slash=strrchr(path,'\\')) ||
+     (size_t)(slash-path)+sizeof("SpiderMan2k1Fix.ini")>sizeof(path)) {
+    log_line("FOCUS-GHOST: INI path unavailable, default Windows ghosting retained");
+    return;
+  }
+  strcpy(slash+1,"SpiderMan2k1Fix.ini");
+  if(GetPrivateProfileIntA("Input","DisableWindowsGhosting",0,path)!=1) {
+    log_line("FOCUS-GHOST: normal Windows ghosting enabled (DisableWindowsGhosting=0)");
+    return;
+  }
+  user32=GetModuleHandleA("user32.dll");
+  disable_ghosting=user32?(SpiderDisableGhostingFn)
+    GetProcAddress(user32,"DisableProcessWindowsGhosting"):NULL;
+  if(!disable_ghosting) {
+    log_line("FOCUS-GHOST: WARNING DisableProcessWindowsGhosting unavailable; continuing unchanged");
+    return;
+  }
+  disable_ghosting();
+  log_line("FOCUS-GHOST: DisableProcessWindowsGhosting CALLED; Ghost surrogate suppression requested for this run");
+}
+
 /* Keep the exact SHA-256 guard. A failure must explain which operation
  * failed, rather than labelling every file I/O or CryptoAPI problem as an
  * unsupported game binary. In particular, never fall back to an unchecked EXE.
@@ -1770,6 +1804,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
    * No COM-vtable interception. The actual patch is delayed to Flip #120. */
   SpiderDI8Retry_Init(log_line);
