@@ -1083,6 +1083,46 @@ static LONG pause_latched=0;
 static LONG pause_key_down=0;
 static int pause_key_vk=VK_F9; /* 0 = Any (focus-loss resume only) */
 static DWORD pause_background_since=0;
+
+/* Diagnostic only: report WHICH other executable owns the foreground when
+ * Windows reports sustained focus loss. No activation/focus operations.
+ * Log the program filename (not its path or potentially private title). */
+static void pause_log_foreground_owner(HWND game,HWND foreground,const char *why) {
+  DWORD game_pid=0,fg_pid=0,game_tid=0,fg_tid=0;
+  char fg_class[96]="?",fg_program[128]="?",line[460];
+  HANDLE process=NULL;
+  DWORD len;
+  char full[MAX_PATH],*basename;
+  if(!debug_log_enabled)return;
+  if(game && IsWindow(game))game_tid=GetWindowThreadProcessId(game,&game_pid);
+  if(foreground && IsWindow(foreground)) {
+    fg_tid=GetWindowThreadProcessId(foreground,&fg_pid);
+    GetClassNameA(foreground,fg_class,sizeof(fg_class));
+  }
+  if(fg_pid) {
+    process=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,fg_pid);
+    if(process) {
+      len=sizeof(full);
+      if(QueryFullProcessImageNameA(process,0,full,&len)) {
+        basename=strrchr(full,'\\');
+        basename=basename?basename+1:full;
+        snprintf(fg_program,sizeof(fg_program),"%s",basename);
+      }
+      CloseHandle(process);
+    }
+  }
+  snprintf(line,sizeof(line),
+    "FOCUS-PAUSE-OWNER: %s game=%p pid=%lu tid=%lu "
+    "foreground=%p pid=%lu tid=%lu class=%s exe=%s "
+    "visible=%d iconic=%d paused-after-ms=%lu",
+    why,(void*)game,(unsigned long)game_pid,(unsigned long)game_tid,
+    (void*)foreground,(unsigned long)fg_pid,(unsigned long)fg_tid,
+    fg_class,fg_program,(int)(foreground?IsWindowVisible(foreground):0),
+    (int)(foreground?IsIconic(foreground):0),
+    (unsigned long)(pause_background_since?
+     (DWORD)(GetTickCount()-pause_background_since):0));
+  log_line(line);
+}
 /* Ignore brief foreground changes (e.g. mouse activation quirks).
  * Real Alt+Tab is recognized only if another process stays foreground. */
 static BOOL pause_confirmed_focus_loss(HWND hwnd) {
@@ -1156,6 +1196,7 @@ static void pause_at_flip_if_background(void) {
             pause_confirmed_focus_loss(hwnd) &&
             InterlockedCompareExchange(&pause_latched,1,0)==0) {
     log_line("FOCUS-PAUSE: confirmed external focus loss; pause latched until manual resume");
+    pause_log_foreground_owner(hwnd,GetForegroundWindow(),"external-foreground-latched");
   }
   pause_poll_key(hwnd);
   if(InterlockedCompareExchange(&pause_latched,0,0)!=1) return;
@@ -1214,6 +1255,7 @@ static void pause_at_flip_if_background(void) {
   SpiderFocusDSound_Resume();
   SpiderFocusMedia_Resume();
   log_line("FOCUS-PAUSE: explicit resume or window destroyed");
+  pause_log_foreground_owner(hwnd,GetForegroundWindow(),"resume-foreground-state");
   pause_log_resume_focus(hwnd);
   InterlockedExchange(&pause_in_progress,0);
 }
