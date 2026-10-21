@@ -19,12 +19,11 @@
 #define OVERLAY_RED RGB(221,34,45)
 #define OVERLAY_WHITE RGB(255,255,255)
 #define OVERLAY_DARK RGB(18,16,28)
-#define OVERLAY_WIDTH 440
-#define OVERLAY_HEIGHT 112
+#define OVERLAY_WIDTH 520
+#define OVERLAY_HEIGHT 136
 
 static HWND overlay_hwnd=NULL;
 static int overlay_enabled=1;
-static int overlay_resume_key=0;
 static int overlay_registered=0;
 static int overlay_title_x=0,overlay_title_y=0;
 static int overlay_hint_x=0,overlay_hint_y=0;
@@ -32,9 +31,7 @@ static HFONT overlay_title_font=NULL,overlay_hint_font=NULL;
 static void (*overlay_log)(const char *)=NULL;
 
 static const wchar_t *overlay_hint(void) {
-  if(overlay_resume_key==VK_SPACE)return L"APPUYEZ SUR ESPACE";
-  if(overlay_resume_key==VK_F9)return L"APPUYEZ SUR F9";
-  return L"APPUYEZ SUR UNE TOUCHE";
+  return L"PRESS ANY KEY TO RESUME";
 }
 
 /* TrueType glyph outlines can be turned into GDI window regions using
@@ -92,13 +89,13 @@ static int overlay_apply_region(HWND window,int width,int height) {
   if(!dc)return 0;
   SetBkMode(dc,TRANSPARENT);
   SetTextAlign(dc,TA_LEFT|TA_TOP|TA_NOUPDATECP);
-  overlay_text_pos(dc,overlay_title_font,L"PAUSE",width,14,
+  overlay_text_pos(dc,overlay_title_font,L"PAUSE",width,17,
                    &overlay_title_x,&overlay_title_y);
-  overlay_text_pos(dc,overlay_hint_font,overlay_hint(),width,68,
+  overlay_text_pos(dc,overlay_hint_font,overlay_hint(),width,78,
                    &overlay_hint_x,&overlay_hint_y);
 
   outline=CreateRoundRectRgn(0,0,width,height,16,16);
-  inside=CreateRoundRectRgn(3,3,width-3,height-3,13,13);
+  inside=CreateRoundRectRgn(4,4,width-4,height-4,12,12);
   if(outline && inside &&
      CombineRgn(outline,outline,inside,RGN_DIFF)!=ERROR &&
      overlay_add_text_region(dc,outline,overlay_title_font,L"PAUSE",
@@ -141,7 +138,7 @@ static void overlay_paint(HWND hwnd) {
   GetClientRect(hwnd,&client);
   SetBkMode(dc,TRANSPARENT);
   SetTextAlign(dc,TA_LEFT|TA_TOP|TA_NOUPDATECP);
-  pen=CreatePen(PS_SOLID,3,OVERLAY_RED);
+  pen=CreatePen(PS_SOLID,4,OVERLAY_RED);
   if(pen) {
     old_pen=SelectObject(dc,pen);
     old_brush=SelectObject(dc,GetStockObject(HOLLOW_BRUSH));
@@ -191,11 +188,11 @@ void SpiderPauseOverlay_Init(void (*log_fn)(const char *)) {
   strcpy(slash+1,"SpiderMan2k1Fix.ini");
   overlay_enabled=GetPrivateProfileIntA("Input","PauseOverlay",1,path)==1;
   if(overlay_log)overlay_log(overlay_enabled ?
-    "FOCUS-OVERLAY: centered outlined comic-style hint enabled (unfilled window region)" :
+    "FOCUS-OVERLAY: English comic PAUSE hint enabled; 4px red outline, enlarged wake text" :
     "FOCUS-OVERLAY: pause label disabled by INI");
 }
 
-void SpiderPauseOverlay_Show(HWND game_window,int resume_key) {
+void SpiderPauseOverlay_Show(HWND game_window) {
   WNDCLASSW cls;
   RECT bounds;
   HINSTANCE instance;
@@ -229,7 +226,6 @@ void SpiderPauseOverlay_Show(HWND game_window,int resume_key) {
   if(banner_height>height-16)banner_height=height-16;
   x=(width-banner_width)/2;
   y=(height-banner_height)/2;
-  overlay_resume_key=resume_key;
 
   /* The game uses comic-style italic block letters. Arial Black is a
    * system TrueType font, so it also supports the precise glyph-region
@@ -237,7 +233,7 @@ void SpiderPauseOverlay_Show(HWND game_window,int resume_key) {
   overlay_title_font=CreateFontW(-31,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,DEFAULT_CHARSET,
                                  OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,NONANTIALIASED_QUALITY,
                                  DEFAULT_PITCH|FF_SWISS,L"Arial Black");
-  overlay_hint_font=CreateFontW(-19,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,DEFAULT_CHARSET,
+  overlay_hint_font=CreateFontW(-23,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,DEFAULT_CHARSET,
                                 OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,NONANTIALIASED_QUALITY,
                                 DEFAULT_PITCH|FF_SWISS,L"Arial Black");
   if(!overlay_title_font || !overlay_hint_font) {
@@ -264,7 +260,7 @@ void SpiderPauseOverlay_Show(HWND game_window,int resume_key) {
   ShowWindow(window,SW_SHOWNOACTIVATE);
   InvalidateRect(window,NULL,FALSE);
   UpdateWindow(window);
-  if(overlay_log)overlay_log("FOCUS-OVERLAY: outlined comic-style PAUSE centered; empty area cut out");
+  if(overlay_log)overlay_log("FOCUS-OVERLAY: English PAUSE / PRESS ANY KEY TO RESUME centered; precise shaped frame and glyph cutout");
 }
 
 void SpiderPauseOverlay_Hide(void) {
@@ -295,4 +291,24 @@ int SpiderPauseOverlay_ExcludeFromRegion(HWND game_window,HRGN visible_region) {
   }
   DeleteObject(banner_region);
   return ok;
+}
+
+/* Returns the centered banner dimensions in game CLIENT pixels. The dimmer
+ * can create a separately-alpha-blended dark panel underneath it while
+ * cutting out the red frame and white letters exactly. */
+int SpiderPauseOverlay_GetBounds(HWND game_window,RECT *bounds) {
+  RECT game;
+  if(!bounds || !game_window || !IsWindow(game_window))return 0;
+  if(!overlay_hwnd || !IsWindow(overlay_hwnd) ||
+     GetParent(overlay_hwnd)!=game_window)return 0;
+  if(!GetWindowRect(overlay_hwnd,bounds) ||
+     !GetClientRect(game_window,&game))return 0;
+  {
+    POINT pts[2]={{bounds->left,bounds->top},{bounds->right,bounds->bottom}};
+    MapWindowPoints(HWND_DESKTOP,game_window,pts,2);
+    bounds->left=pts[0].x;bounds->top=pts[0].y;
+    bounds->right=pts[1].x;bounds->bottom=pts[1].y;
+  }
+  return bounds->left>=game.left && bounds->top>=game.top &&
+         bounds->right<=game.right && bounds->bottom<=game.bottom;
 }
