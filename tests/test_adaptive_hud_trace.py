@@ -31,7 +31,7 @@ def test_sampler_captures_only_bounded_gameplay_quads_on_f12():
     assert "InterlockedCompareExchange(&fov_game_height,0,0)<=0" in SRC
     assert "type!=D3DPT_TRIANGLEFAN || count!=4" in SRC
     assert 'fvf!=0x144UL' in SRC
-    assert "region==1?\\"compass\\":region==2?\\"instructions\\":\\"player\\"" in SRC
+    assert 'region==1?"compass":region==2?"instructions":"player"' in SRC
 
 
 def test_probe_observes_real_texture_and_preserves_original_geometry():
