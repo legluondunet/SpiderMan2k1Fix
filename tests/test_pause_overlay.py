@@ -19,7 +19,7 @@ def test_default_is_on_only_when_the_focus_pause_is_active():
     assert '"PauseOverlay"' in VALID
     assert 'GetPrivateProfileIntA("Input","PauseOverlay",1,path)==1' in SRC
     assert "pause_overlay.c" in BUILD
-    assert "void SpiderPauseOverlay_Show(HWND game_window, int resume_key)" in HDR
+    assert "void SpiderPauseOverlay_Show(HWND game_window)" in HDR
 
 def test_overlay_uses_child_window_not_desktop_topmost_popup():
     assert "WS_CHILD|WS_CLIPSIBLINGS" in SRC
@@ -35,13 +35,12 @@ def test_overlay_uses_child_window_not_desktop_topmost_popup():
                    "IDirectSoundBuffer_", "BinkPause("):
         assert unsafe not in SRC
 
-def test_instructions_are_dynamic_and_fr():
+def test_only_english_any_key_instructions():
     assert 'L"PAUSE"' in SRC
-    assert 'L"APPUYEZ SUR UNE TOUCHE"' in SRC
-    assert 'L"APPUYEZ SUR ESPACE"' in SRC
-    assert 'L"APPUYEZ SUR F9"' in SRC
-    assert "overlay_resume_key==VK_SPACE" in SRC
-    assert "overlay_resume_key==VK_F9" in SRC
+    assert 'L"PRESS ANY KEY TO RESUME"' in SRC
+    assert "APPUYEZ" not in SRC
+    assert "VK_SPACE" not in SRC
+    assert "VK_F9" not in SRC
     assert "TextOutW(" in SRC
     assert "OVERLAY_WHITE RGB(255,255,255)" in SRC
     assert "OVERLAY_DARK RGB(18,16,28)" in SRC
@@ -53,7 +52,7 @@ def test_unfilled_red_frame_and_comic_text_use_real_window_region():
     # Excluding background pixels from the child HWND avoids a black box
     # when color-keyed layered windows interact with DirectDraw presentation.
     assert "CreateRoundRectRgn(0,0,width,height,16,16)" in SRC
-    assert "CreateRoundRectRgn(3,3,width-3,height-3,13,13)" in SRC
+    assert "CreateRoundRectRgn(4,4,width-4,height-4,12,12)" in SRC
     assert "CombineRgn(outline,outline,inside,RGN_DIFF)" in SRC
     assert "BeginPath(dc)" in SRC
     assert "PathToRegion(dc)" in SRC
@@ -78,10 +77,10 @@ def test_no_opaque_window_if_glyph_region_is_unavailable():
 def test_overlay_lifecycle_matches_focus_pause():
     pause=CORE[CORE.index("static void pause_at_flip_if_background(void)"):
                CORE.index("static HRESULT WINAPI hooked_flip(")]
-    assert pause.count("SpiderPauseOverlay_Show(hwnd,pause_key_vk);")==1
+    assert pause.count("SpiderPauseOverlay_Show(hwnd);")==1
     assert pause.count("SpiderPauseOverlay_Hide();")==2
-    assert pause.index("SpiderPauseOverlay_Show(hwnd,pause_key_vk);") < pause.index("while(IsWindow(hwnd)")
-    assert pause.index("SpiderPauseAny_Begin(hwnd)") < pause.index("SpiderPauseOverlay_Show(hwnd,pause_key_vk);")
+    assert pause.index("SpiderPauseOverlay_Show(hwnd);") < pause.index("while(IsWindow(hwnd)")
+    assert pause.index("SpiderPauseAny_Begin(hwnd)") < pause.index("SpiderPauseOverlay_Show(hwnd);")
     assert pause.index("SpiderPauseOverlay_Hide();") < pause.index("SpiderFocusDSound_Resume();")
     assert CORE.index("SpiderCfg_ValidateCurrentIni(log_line);") < CORE.index("SpiderPauseOverlay_Init(log_line);")
     assert CORE.index("if (!supported_exe())") < CORE.index("SpiderPauseOverlay_Init(log_line);")
@@ -92,3 +91,13 @@ def test_failures_dont_interrupt_original_pause():
     assert "FOCUS-OVERLAY: creation failed; continuing focus pause" in SRC
     assert "FOCUS-OVERLAY: class registration failed; continuing without label" in SRC
     assert "if(!overlay_enabled || !game_window || !IsWindow(game_window))return;" in SRC
+
+def test_readable_centered_banner_with_darker_round_panel_support():
+    assert "#define OVERLAY_WIDTH 520" in SRC
+    assert "#define OVERLAY_HEIGHT 136" in SRC
+    assert "CreateFontW(-23" in SRC
+    assert "pen=CreatePen(PS_SOLID,4,OVERLAY_RED)" in SRC
+    assert "CreateRoundRectRgn(4,4,width-4,height-4,12,12)" in SRC
+    assert "SpiderPauseOverlay_GetBounds(HWND game_window,RECT *bounds)" in SRC
+    assert "SpiderPauseOverlay_GetBounds(HWND game_window, RECT *bounds)" in HDR
+    assert "SpiderPauseOverlay_ExcludeFromRegion" in SRC
