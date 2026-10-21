@@ -1071,9 +1071,10 @@ static HRESULT WINAPI hooked_get_attached(void *self,LPDDSCAPS2 caps,
   if(SUCCEEDED(hr) && out && *out) instrument_surface(*out);
   return hr;
 }
-/* Experimental cooperative DirectDraw presentation pause for Windows 11.
- * This is not a global movie/audio pause. Keep pumping messages; never
- * suspend threads or force activation while the game is in background. */
+/* Cooperative DirectDraw Flip focus pause (opt-in).
+ * Bink and game-owned DirectSound voices can be paused separately by their
+ * native APIs; the Flip pause itself does not suspend every game thread.
+ * Keep pumping messages and never force application activation. */
 static volatile LONG pause_on_focus_loss=0;
 static LONG pause_ever_foreground=0;
 static LONG pause_in_progress=0;
