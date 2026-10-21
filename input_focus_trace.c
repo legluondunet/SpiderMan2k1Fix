@@ -460,6 +460,16 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
     focus_log("INPUT-CURSOR: RestoreCursorOnFocusLoss=0; automatic cursor restore disabled");
     return;
   }
+  /* Trace-only mode must NEVER alter DirectInput COM objects. The old
+   * trace path replaced interface/device vtables and caused a startup
+   * regression on Windows 11. Keep WndProc and Flip observation only;
+   * invasive device tracing is reserved for the explicit recovery experiment. */
+  if(want_trace && !want_fix) {
+    InterlockedExchange(&reacquire_enabled,0);
+    InterlockedExchange(&diagnostic_active,1);
+    focus_log("INPUT-FOCUS: SAFE PASSIVE TRACE enabled (WndProc/Flip only; DirectInput8 IAT and COM vtables untouched)");
+    return;
+  }
   InterlockedExchange(&reacquire_enabled,want_fix);
   snprintf(line,sizeof(line),
     "INPUT-FIX: ExperimentalAltTabReacquire=%ld ExperimentalFocusTrace=%ld (guarded recovery after lost/returned focus)",
