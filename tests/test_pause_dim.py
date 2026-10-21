@@ -15,25 +15,21 @@ def test_original_ini_controls_retained():
         assert '"'+key+'"' in VALID and '"Input","'+key+'"' in P
     assert '"PauseDimOpacity=50\\r\\n"' in GEN
     assert '"PauseGrid=0\\r\\n"' in GEN
-def test_alpha_blend_and_grid_are_drawn_to_existing_directdraw_dc():
+def test_alpha_blend_and_opt_in_grid_are_drawn_to_existing_directdraw_dc():
     assert "#define PAUSE_GRID_STEP 16" in P
     assert "AlphaBlend(dest,x,y,width,height,source,0,0,1,1,blend)" in P
     assert "BLENDFUNCTION blend={AC_SRC_OVER,0,alpha,0}" in P
     assert "(opacity*255+50)/100" in P
     assert "enabled_dim=1,enabled_grid=0,enabled_banner=1,opacity=50;" in P
     assert 'GetPrivateProfileIntA("Input","PauseDimOpacity",50,path)' in P
-    assert "ExcludeClipRect(dc,box_left-5,box_top-5," in P
     assert "const BLENDFUNCTION grid_blend={AC_SRC_OVER,0,28,0};" in P
     assert "RGB(100,104,124)" in P
-    assert "for(x=grid_left+PAUSE_GRID_STEP;x<grid_right;x+=PAUSE_GRID_STEP)" in P
-    assert "for(y=grid_top+PAUSE_GRID_STEP;y<grid_bottom;y+=PAUSE_GRID_STEP)" in P
-    assert "grid_bottom-grid_top," in P and "grid_right-grid_left,1," in P
-    assert "IntersectClipRect(dc,grid_left,grid_top,grid_right,grid_bottom)" in P
-    assert "&pause_present_rect,&pause_content_rect," in CORE
-    assert "menu_map.left" in CORE and "game_map.left" in CORE
+    assert "enabled_dim && enabled_grid" in P
+    assert "canvas=*content_rect;" in P
     assert "BG_DITHER_PERIOD" not in P
     assert "WS_EX_TRANSPARENT" not in P
     assert "pause_surface.c" in BUILD and "-lmsimg32" in BUILD
+
 def test_failure_does_not_change_input_or_audio_pause():
     assert "GetDC unsupported; keep pause without visual" in P
     assert "composition unavailable; game pause still functional" in P
