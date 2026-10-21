@@ -37,7 +37,7 @@ def test_no_native_input_hook_is_enabled_by_default():
 def test_persistent_pause_requires_manual_foreground_key():
     pause=CORE[CORE.index("static volatile LONG pause_on_focus_loss=0;"):
                CORE.index("static HRESULT WINAPI hooked_flip(")]
-    assert "GetAsyncKeyState(VK_PAUSE)" in pause
+    assert "GetAsyncKeyState(VK_F9)" in pause
     assert "GetForegroundWindow()!=hwnd" in pause
     assert "pause_latched" in pause
     assert "pause_key_down" in pause
