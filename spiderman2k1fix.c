@@ -1270,9 +1270,12 @@ static void pause_at_flip_if_background(void) {
        * Thunar. A normal child follows Spider-Man's desktop stacking. */
       SpiderPauseDim_Hide();
       SpiderPauseOverlay_Hide();
+      /* Create the sparse shade/grid FIRST so the banner sibling paints
+       * in front; both children follow the game behind Thunar/Firefox. */
+      SpiderPauseDim_ShowBackground(hwnd);
       SpiderPauseOverlay_ShowBackground(hwnd);
       banner_mode=1;
-      log_line("FOCUS-PAUSE: PAUSE message remains in background game child");
+      log_line("FOCUS-PAUSE: game-parented dark dither/grid and PAUSE child remain visible in background");
     }
     MsgWaitForMultipleObjectsEx(0,NULL,20,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
   }
