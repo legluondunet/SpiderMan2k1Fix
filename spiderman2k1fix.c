@@ -1200,7 +1200,7 @@ static void pause_log_resume_focus(HWND hwnd) {
 static void pause_at_flip_if_background(void) {
   HWND hwnd=game_hwnd;
   MSG msg;
-  int visuals_visible=0; /* Only show when the GAME owns foreground. */
+  int banner_mode=0; /* 0=none, 1=parent-confined child, 2=foreground alpha popup */
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
   if(GetForegroundWindow()==hwnd) {
     pause_background_since=0;
@@ -1229,10 +1229,11 @@ static void pause_at_flip_if_background(void) {
   /* The Flip pause alone does not suspend Bink or secondary DirectSound. */
   SpiderFocusMedia_Pause();
   SpiderFocusDSound_Pause();
-  /* Do not show owned popup windows while the game is in the background.
-   * Under Wine, an owned alpha popup can cover unrelated foreground apps.
-   * The scene and media remain PAUSED while the user is elsewhere; display
-   * the hint only after they return to Spider-Man. */
+  /* Always show the PAUSE message inside the game, even when it has no
+   * focus. In the background, use an ordinary clipped WS_CHILD (never a
+   * floating popup); in the foreground replace it with the atomic alpha
+   * comic banner and approved 55%-black gridded shade. Game/media stay
+   * paused across Alt+Tab and both presentation modes. */
   while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1) {
     while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
       if(msg.message==WM_QUIT) {
@@ -1255,19 +1256,23 @@ static void pause_at_flip_if_background(void) {
       InterlockedExchange(&pause_latched,0);
     if(InterlockedCompareExchange(&pause_latched,0,0)!=1) break;
     if(SpiderPauseOverlay_GameForeground(hwnd)) {
-      if(!visuals_visible) {
+      if(banner_mode!=2) {
+        SpiderPauseDim_Hide();
+        SpiderPauseOverlay_Hide();
         SpiderPauseOverlay_Show(hwnd);
         SpiderPauseDim_Show(hwnd);
-        visuals_visible=1;
-        log_line("FOCUS-PAUSE: atomically composed comic banner visible (game active foreground)");
+        banner_mode=2;
+        log_line("FOCUS-PAUSE: translucent comic banner and grid (game foreground)");
       }
-    } else if(visuals_visible) {
-      /* Destroy popups immediately on another focus change; no permanent
-       * desktop overlay or always-on-top window may survive Alt+Tab. */
+    } else if(banner_mode!=1) {
+      /* Desktop/window manager owns the foreground. Do NOT retain the
+       * independently positioned alpha popup: Wine could float it above
+       * Thunar. A normal child follows Spider-Man's desktop stacking. */
       SpiderPauseDim_Hide();
       SpiderPauseOverlay_Hide();
-      visuals_visible=0;
-      log_line("FOCUS-PAUSE: overlay hidden (game background)");
+      SpiderPauseOverlay_ShowBackground(hwnd);
+      banner_mode=1;
+      log_line("FOCUS-PAUSE: PAUSE message remains in background game child");
     }
     MsgWaitForMultipleObjectsEx(0,NULL,20,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
   }
