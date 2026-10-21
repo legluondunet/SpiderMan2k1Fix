@@ -1,4 +1,4 @@
-"""Pause-only 40% black shade must never obscure input or original banner."""
+"""Pause-only configurable 55% black shade and 16px grid leave banner intact."""
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -14,15 +14,28 @@ BUILD=(ROOT/"build.sh").read_text(encoding="utf-8")
 
 def test_dim_is_opt_out_and_only_active_when_focus_pause_runs():
     assert "PauseDim=1" in INI
+    assert "PauseDimOpacity=55" in INI
+    assert "PauseGrid=1" in INI
     assert "PauseDim=1" in EXAMPLE
+    assert "PauseDimOpacity=55" in EXAMPLE
+    assert "PauseGrid=1" in EXAMPLE
     assert '"PauseDim=1\\r\\n"' in GEN
+    assert '"PauseDimOpacity=55\\r\\n"' in GEN
+    assert '"PauseGrid=1\\r\\n"' in GEN
     assert '"PauseDim"' in VALID
+    assert '"PauseDimOpacity"' in VALID
+    assert '"PauseGrid"' in VALID
+    assert 'spider_ini_uint(value,0,90)' in VALID
     assert 'GetPrivateProfileIntA("Input","PauseDim",1,path)==1' in DIM
+    assert 'GetPrivateProfileIntA("Input","PauseDimOpacity",DIM_DEFAULT_OPACITY,path)' in DIM
+    assert 'GetPrivateProfileIntA("Input","PauseGrid",1,path)==1' in DIM
     assert "pause_dim.c" in BUILD
     assert "void SpiderPauseDim_Init(void (*log_fn)(const char *));" in HEADER
 
 def test_layered_owned_popup_avoids_legacy_unmanifested_child_restriction():
-    assert "DIM_ALPHA 102" in DIM
+    assert "DIM_DEFAULT_OPACITY 55" in DIM
+    assert "DIM_GRID_STEP 16" in DIM
+    assert "dim_alpha=(BYTE)((dim_opacity*255+50)/100)" in DIM
     assert "WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|" in DIM
     assert "WS_EX_TOOLWINDOW|WS_EX_NOPARENTNOTIFY" in DIM
     assert "WS_POPUP" in DIM
@@ -36,11 +49,11 @@ def test_layered_owned_popup_avoids_legacy_unmanifested_child_restriction():
     assert "MapWindowPoints(overlay_hwnd,game_window,&origin,1)" in OVERLAY
     assert "CombineRgn(visible_region,visible_region,banner_region,RGN_DIFF)" in OVERLAY
     assert "SetWindowRgn(window,visible_region,FALSE)" not in OVERLAY
-    assert "SetLayeredWindowAttributes(window,0,DIM_ALPHA,LWA_ALPHA)" in DIM
+    assert "SetLayeredWindowAttributes(window,0,dim_alpha,LWA_ALPHA)" in DIM
     assert "LWA_COLORKEY" not in DIM
     assert "BLACK_BRUSH" in DIM
     assert "FillRect(dc,&bounds,(HBRUSH)GetStockObject(BLACK_BRUSH))" in DIM
-    assert DIM.index("SetLayeredWindowAttributes(window,0,DIM_ALPHA,LWA_ALPHA)") < DIM.index("ShowWindow(window,SW_SHOWNOACTIVATE)")
+    assert DIM.index("SetLayeredWindowAttributes(window,0,dim_alpha,LWA_ALPHA)") < DIM.index("ShowWindow(window,SW_SHOWNOACTIVATE)")
     assert "FOCUS-DIM: alpha unavailable Win32=" in DIM
     assert "FOCUS-DIM: owned-popup creation failed Win32=" in DIM
     assert "FOCUS-DIM: shaped cutout failed Win32=" in DIM
@@ -81,3 +94,25 @@ def test_game_pause_and_audio_do_not_depend_on_shade_creation():
     assert "SpiderFocusMedia_Pause();" in CORE
     assert "SpiderFocusDSound_Pause();" in CORE
     assert "SpiderPauseAny_Begin(hwnd)" in CORE
+
+def test_grid_is_drawn_into_same_nonactivating_popup_not_a_new_window():
+    paint=DIM[DIM.index("case WM_PAINT:"):DIM.index("case WM_MOUSEACTIVATE:")]
+    assert "if(dim_grid_enabled)" in paint
+    assert "CreatePen(PS_SOLID,1,DIM_GRID_COLOR)" in paint
+    assert "for(x=DIM_GRID_STEP;x<bounds.right;x+=DIM_GRID_STEP)" in paint
+    assert "for(y=DIM_GRID_STEP;y<bounds.bottom;y+=DIM_GRID_STEP)" in paint
+    assert paint.count("LineTo(")==2
+    assert "SelectObject(dc,previous)" in paint
+    assert "DeleteObject(pen)" in paint
+    assert "FillRect(dc,&bounds,(HBRUSH)GetStockObject(BLACK_BRUSH))" in paint
+    assert "EndPaint(window,&ps)" in paint
+
+def test_grid_never_affects_pause_or_scene_clipping():
+    assert "SpiderPauseOverlay_ExcludeFromRegion(game_window,visible_region)" in DIM
+    assert "SetWindowRgn(window,visible_region,FALSE)" in DIM
+    assert "WS_EX_TRANSPARENT" in DIM
+    assert "FOCUS-DIM: shade destroyed before pause release" in DIM
+    pause=CORE[CORE.index("static void pause_at_flip_if_background(void)"):
+               CORE.index("static HRESULT WINAPI hooked_flip(")]
+    assert pause.index("SpiderPauseOverlay_Show(hwnd,pause_key_vk);") < pause.index("SpiderPauseDim_Show(hwnd);")
+    assert pause.count("SpiderPauseDim_Hide();")==2
