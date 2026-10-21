@@ -79,8 +79,8 @@ def test_nonactivating_focus_shade_and_safe_failure():
 def test_resume_and_wm_quit_destroy_both_before_audio():
     pause=CORE[CORE.index("static void pause_at_flip_if_background(void)"):
                CORE.index("static HRESULT WINAPI hooked_flip(")]
-    assert pause.count("SpiderPauseDim_Hide();")==3
-    assert pause.count("SpiderPauseOverlay_Hide();")==3
+    assert pause.count("SpiderPauseDim_Hide();")==4
+    assert pause.count("SpiderPauseOverlay_Hide();")==4
     assert pause.count("SpiderFocusDSound_Resume();")==2
     assert pause.count("SpiderFocusMedia_Resume();")==2
     assert "SpiderPauseDim_Hide();\\n        SpiderPauseOverlay_Hide();\\n        SpiderFocusDSound_Resume();".replace("\\n","\n") in pause
