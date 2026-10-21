@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — one-piece atomic comic PAUSE banner (PR #16)
+
+- After native Wine/Xfce screenshot feedback, replace the fragile shaped PAUSE child and additional center-alpha popup with **one per-pixel-alpha, game-owned nonactivating comic banner**. Compose the muted translucent purple/black panel, thin muted red 2px outline and **fully opaque white lettering** in one 32bpp premultiplied BGRA bitmap via `UpdateLayeredWindow(ULW_ALPHA)`. A failed ULW operation is safe and leaves no opaque fallback.
+- Remove `GetWindowRgn` / glyph-path masks, and exclude the **entire rounded panel rectangle** from the separate, approved 55%-dark 16px-grid backdrop. No font holes, stale child pixels or scattered black remnants should remain when the game loses focus.
+- Use an active-window **AND** foreground-window gate; the popup is not shown while another application is active. Existing pause loop continues to hide both popups on background focus, resume and WM_QUIT.
+- Keep the English `PAUSE / PRESS ANY KEY TO RESUME` text, Any-key-only wake and Alt+Tab passthrough. No DirectDraw or game EXE changes.
+- Requires actual **Wine/Linux and Windows 11** screenshot and input/audio checks before merging. Supersedes #14 and #15, both remain unmerged.
+
 ## Unreleased — Wine focus-only pause UI and solid lettering (PR #15)
 
 - Fix a Wine/Linux regression where the pause's owned alpha popups could remain visible on top of unrelated desktop windows (e.g. Thunar) while Spider-Man was not foreground. While focus pause is latched, **Bink/DirectSound and the game still pause immediately**, but no pause windows are shown until the *game* becomes foreground; they are destroyed again within the 20 ms pause-pump interval if foreground changes.
