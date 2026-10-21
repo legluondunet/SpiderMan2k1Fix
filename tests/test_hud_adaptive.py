@@ -325,7 +325,7 @@ def test_unchanged_fov_pause_and_default_ini():
     build = (ROOT / "build.sh").read_text()
     assert '#include "hud_adaptive.h"' in src
     assert "SpiderHudWidescreen_Installed()" in src
-    assert 'HUDWidescreenFix=0' in ini
+    assert 'HUDWidescreenFix=1' in ini
     assert "pause_at_flip_if_background();" in src
     assert "maybe_correct_native_comic(" in src
     assert "if(v==verts && count==4)" in src

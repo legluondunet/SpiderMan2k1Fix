@@ -974,9 +974,9 @@ static const void *maybe_correct_horplus(D3DPRIMITIVETYPE type,DWORD fvf,
   return copy;
 }
 
-/* Source-verified gameplay HUD quads only. This path is strictly opt-in
- * through the already SHA-gated HUDWidescreenFix=1 and does not touch any
- * other DirectDraw/Direct3D modes or change the game's vertex memory. */
+/* Source-verified gameplay HUD quads only. Enabled by default unless
+ * HUDWidescreenFix=0 is explicitly configured; always SHA-gated and a
+ * no-op in original 4:3. No game-owned vertex memory is changed. */
 static volatile LONG hud_adaptive_compass_count=0;
 static volatile LONG hud_adaptive_instruction_count=0;
 static volatile LONG hud_adaptive_boss_count=0;
@@ -2003,12 +2003,13 @@ static void install_player_hud(BOOL exe_verified) {
     return;
   }
   strcpy(slash+1,"SpiderMan2k1Fix.ini");
-  option=GetPrivateProfileIntA("HUD","HUDWidescreenFix",0,ini);
-  if(lstrcmpiA(display_aspect_setting,"4:3")==0 && option==1) {
+  /* Missing option means enabled. Existing explicit zero keeps the fix disabled. */
+  option=GetPrivateProfileIntA("HUD","HUDWidescreenFix",1,ini);
+  if(lstrcmpiA(display_aspect_setting,"4:3")==0 && option!=0) {
     log_line("HUD: disabled automatically for original 4:3 mode");
     option=0;
   }
-  if (option!=1) {
+  if (option==0) {
     log_line("HUD: widescreen transformation OFF (HUDWidescreenFix=0)");
     if(lstrcmpiA(display_aspect_setting,"4:3")!=0 &&
        GetPrivateProfileIntA("Display","ExperimentalFOVHorPlus",0,ini)==1) {
@@ -2028,8 +2029,8 @@ static void install_player_hud(BOOL exe_verified) {
     return;
   }
   InterlockedExchange(&fov_horplus_scopes_ready,1);
-  log_line("HUD: EXPERIMENTAL native 16-site widescreen correction installed (unverified in-game)");
-  log_line("HUD-ADAPTIVE: also enabled strict depth/texture signature transform for compass, instructions and boss UI [TEST ONLY]");
+  log_line("HUD: adaptive widescreen correction enabled (native 16-site player HUD installed)");
+  log_line("HUD-ADAPTIVE: strict geometry correction enabled for compass, instructions and boss UI");
 }
 /* A one-shot watchdog diagnoses the crucial "60 FPS despite 30 limit"
  * case even if Flip is never intercepted. Runs in the existing worker thread
