@@ -1,4 +1,4 @@
-/* Spider-Man 2001: opt-in, focus-only Any-key resume.
+/* Spider-Man 2001: focus-pause wake exclusively through Any key.
  *
  * The WH_KEYBOARD_LL hook is temporary. Outside the game foreground we
  * ALWAYS chain, leaving Alt+Tab, the desktop and other apps unaffected.
