@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — dimmed pause scene (PR #12)
+
+- Add a 40%-opaque black tint across the *game client area* only during a confirmed focus pause. The underlying scene remains visible; the previous white comic-style `PAUSE` message with red frame stays centered above it at full brightness.
+- A separate nonactivating and mouse-transparent Windows 11 layered child is created **before** the existing shaped PAUSE banner; it uses constant alpha (`LWA_ALPHA`), not the previously unreliable color key, and aborts visibly if the alpha API is unavailable.
+- Add `[Input] PauseDim=1` (default on for active focus pauses; `0` disables only dimming). Focus pause itself remains opt-in. Destroy dim child on explicit resume and `WM_QUIT`, before DirectSound/Bink resume; no changes to input hooks, audio, timing, rendering surfaces or the game EXE.
+- Runtime visual validation is required on native Windows 11 and DirectDraw; CI alone does not prove transparent compositor behavior.
+
 ## Unreleased — Windows Ghost-window false-focus experiment (PR #11)
 
 - Diagnose repeated spontaneous 5–6-second menu/cinematic/3D pauses: external foreground window `class=Ghost` with the same helper PID/thread across all occurrences, indicating Windows' unresponsive-window surrogate, not a verified user Alt+Tab.
