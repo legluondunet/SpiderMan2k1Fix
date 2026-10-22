@@ -46,7 +46,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/spiderman2k1fix-apt-archives
-          key: apt-ubuntu2404-${{ runner.arch }}-mingw32-pytest-v1-${{ hashFiles('.github/workflows/spiderman2k1fix-windows-x86.yml') }}
+          key: apt-ubuntu2404-${{ runner.arch }}-mingw32-pytest-v2-${{ hashFiles('.github/workflows/spiderman2k1fix-windows-x86.yml') }}
           restore-keys: |
             apt-ubuntu2404-${{ runner.arch }}-mingw32-pytest-v1-
 
@@ -60,6 +60,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$APT_ARCHIVES/partial"
+          # The runner's Azure Ubuntu mirror stalled for several minutes
+          # downloading MinGW packages (run #415). Switch to Ubuntu's public
+          # archive instead of retrying the same failing regional mirror.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' \
+              /etc/apt/apt-mirrors.txt
+          fi
           # APT keeps its downloaded archives for reuse on later builds.
           sudo timeout --signal=TERM --kill-after=10s 150s apt-get \
             -o Acquire::Retries=2 \
@@ -72,7 +79,7 @@ jobs:
             -o Acquire::http::Timeout=20 \
             -o Acquire::https::Timeout=20 \
             install -y --no-install-recommends \
-            gcc-mingw-w64-i686 binutils-mingw-w64-i686 python3-pytest
+            gcc-mingw-w64-i686-win32 binutils-mingw-w64-i686 python3-pytest
 
       - name: Verify build tools
         shell: bash
