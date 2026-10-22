@@ -72,8 +72,8 @@ try {
     $shortcutObserved = $false
     if ($null -ne $recentLog) {
         $lines = Get-Content -LiteralPath $recentLog.FullName -Tail 180 -ErrorAction SilentlyContinue
-        $shortcutObserved = [bool]($lines | Select-String -SimpleMatch "QUICK-EXIT-F12: native Shell_MainMenu Quit activated: slot=3 action=18")
-        Write-Host "Game log: $($recentLog.Name); native MENU Quit command trace present=$shortcutObserved"
+        $shortcutObserved = [bool]($lines | Select-String -Pattern "QUICK-EXIT-F12: (native Shell_MainMenu Quit activated: slot=3 action=18|four native movie calls completed; intro transition cleanup finished; engine Quit flag set BEFORE top-level 0x455E50 check)")
+        Write-Host "Game log: $($recentLog.Name); native Quit-request trace present=$shortcutObserved"
     } else {
         Write-Warning "No recent game log found. Enable [Debug] Log=1 to verify that F12 caused the exit."
     }
