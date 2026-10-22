@@ -131,3 +131,42 @@ def test_png_only_bypasses_original_bmp_without_touching_unrelated_game_code():
     # SPIDERMAN2K1FIX_F9_PNG_ONLY is not explicitly selected.
     assert 'rva==0x001034D4u' in CORE
     assert 'rva==0x00103537u' in CORE
+
+
+def test_f9_menu_and_intro_capture_visible_presentation_not_3d_backbuffer():
+    assert "static int f9_capture_menu_presented_frame(void)" in CORE
+    assert "IDirectDrawSurface7_GetDC(borderless_primary,&dc)" in CORE
+    assert "IDirectDrawSurface7_ReleaseDC(borderless_primary,dc)" in CORE
+    assert "GetDC(game_hwnd)" in CORE
+    assert "ReleaseDC(game_hwnd,dc)" in CORE
+    assert 'f9_capture_presented_dc(dc,0,0,"WINDOW-DC")' in CORE
+    assert 'f9_capture_presented_dc(dc,borderless_monitor_x,' in CORE
+    assert "SpiderF9PNG_Queue(&frame,log_line)" in CORE
+    dispatch = CORE.split("static void __cdecl hooked_f9_png_only(void)",1)[1].split(
+        "static void install_f9_png_only_dispatch(void)",1
+    )[0]
+    assert "if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1)" in dispatch
+    assert "f9_capture_menu_presented_frame();" in dispatch
+    assert dispatch.index("f9_capture_menu_presented_frame();") < dispatch.index("back=borderless_back;")
+    assert "IDirectDrawSurface7_Lock(back,NULL,&desc," in dispatch
+
+
+def test_f9_menu_readback_uses_safe_top_down_32bpp_dib():
+    begin = CORE.index("static int f9_capture_presented_dc(")
+    end = CORE.index("static void __cdecl hooked_f9_png_only(",begin)
+    part = CORE[begin:end]
+    assert "bitmap.bmiHeader.biHeight=-(LONG)desktop_h;" in part
+    assert "bitmap.bmiHeader.biBitCount=32;" in part
+    assert "bitmap.bmiHeader.biCompression=BI_RGB;" in part
+    assert "CreateDIBSection(source_dc,&bitmap,DIB_RGB_COLORS,&pixels,NULL,0)" in part
+    assert "BitBlt(memory_dc,0,0,(int)desktop_w,(int)desktop_h," in part
+    assert "frame.lPitch=(LONG)desktop_w*4;" in part
+    assert "frame.ddpfPixelFormat.dwRBitMask=0x00ff0000u;" in part
+    assert "frame.ddpfPixelFormat.dwGBitMask=0x0000ff00u;" in part
+    assert "frame.ddpfPixelFormat.dwBBitMask=0x000000ffu;" in part
+    assert "SpiderF9PNG_Queue(&frame,log_line)" in part
+    assert "SelectObject(memory_dc,previous);" in part
+    assert "DeleteObject(image);" in part
+    assert "DeleteDC(memory_dc);" in part
+    assert "IDirectDrawSurface7_Lock(borderless_primary" not in part
+    assert "SpiderF9Toast_PublishError" in part
