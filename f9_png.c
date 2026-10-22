@@ -41,6 +41,7 @@ typedef struct SpiderPNGJob {
   DWORD width,height;
   LONG stride;
   void (*log_fn)(const char *);
+  BOOL static_comic;
 } SpiderPNGJob;
 
 static volatile LONG spider_png_busy=0;
@@ -169,7 +170,8 @@ static DWORD WINAPI spider_png_thread(void *ctx) {
                (unsigned)n,(unsigned long)job->width,(unsigned long)job->height);
       spider_png_log(job,msg);
       /* Inform the game thread only after the final PNG exists. */
-      SpiderF9Toast_PublishSavedPath(dest);
+      if(job->static_comic)SpiderF9Toast_PublishSavedPathComic(dest);
+      else SpiderF9Toast_PublishSavedPath(dest);
       saved=1;
       break;
     }
@@ -199,7 +201,9 @@ done:
   return 0;
 }
 
-int SpiderF9PNG_Queue(const DDSURFACEDESC2 *frame,void (*log_fn)(const char *)) {
+static int spider_png_queue_internal(const DDSURFACEDESC2 *frame,
+                                     void (*log_fn)(const char *),
+                                     BOOL static_comic) {
   SpiderPNGJob *job;
   DWORD width,height,y;
   SIZE_T row_bytes,total;
@@ -239,6 +243,7 @@ int SpiderF9PNG_Queue(const DDSURFACEDESC2 *frame,void (*log_fn)(const char *)) 
   job->height=height;
   job->stride=(LONG)row_bytes;
   job->log_fn=log_fn;
+  job->static_comic=static_comic;
   base=(const BYTE*)frame->lpSurface;
   /* Copy while locked. The worker can never read the DirectDraw surface. */
   for(y=0;y<height;y++)
@@ -258,4 +263,12 @@ fail:
   if(log_fn)log_fn("F9-PNG: buffer allocation/thread creation failed");
   SpiderF9Toast_PublishError(L"Cannot allocate screenshot buffer or start encoder");
   return 0;
+}
+
+int SpiderF9PNG_Queue(const DDSURFACEDESC2 *frame,void (*log_fn)(const char *)) {
+  return spider_png_queue_internal(frame,log_fn,FALSE);
+}
+int SpiderF9PNG_QueueComic(const DDSURFACEDESC2 *frame,
+                           void (*log_fn)(const char *)) {
+  return spider_png_queue_internal(frame,log_fn,TRUE);
 }
