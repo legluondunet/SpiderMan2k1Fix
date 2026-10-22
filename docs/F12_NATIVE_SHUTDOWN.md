@@ -69,7 +69,7 @@ exit code 0 and no Windows crash event, validates closure.
   at `0x00455E50`. Thus the correct log message “Quit flag set”
   in build #483 does **not** prove that the conditional Quit branch
   was ever executed.
-- `0x00455F24`: `MOV EAX,[0x0060CFA4]` reads current engine mode.
+- `0x00455F24`: `MOV EAX,[0x0060CFA4]` reads a **pending controller transition request**, not a continuously updated active-scene identifier.
   `0x00455F4C` decrements it; `0x00455F56` jumps via
   `0x00456274`, a table of **11 modes**. The jump destinations are:
 
@@ -88,8 +88,41 @@ exit code 0 and no Windows crash event, validates closure.
 | 11 | `0x00456177` | Unknown |
 
 The table is extracted from the verified executable's `.text` data, not
-deduced from screenshots. **Do not guess which numeric mode is 3D, comics,
-static startup image, or menu before tracing the real game.**
+deduced from screenshots. **These are controller action codes, not
+one-to-one scene IDs.** Do not guess which action owns 3D, comic
+images, splash screens, or the real menu. A value of zero occurs
+throughout several very different scenes.
+
+### Where transition requests originate (additional verified x86 writer sites)
+
+The following instructions **write** the global `0x0060CFA4`. They
+are candidates for tracing what a scene is *requesting*, not for
+invoking its teardown blindly:
+
+| Writer VA | Request value(s) | Verified surrounding disassembly |
+|---|---|---|
+| `0x0044108A` | 7 | When a tick-counter difference from `[0x006B4CA0]` exceeds `0x78`; nearby owner-local state `[0x005FAED8]` is reset |
+| `0x0044174E` | 8 | Conditional branch after a call to `0x004E6560`; no proven scene label |
+| `0x00441A92` | 6 | Precedes `CALL 0x00471C50`; no proven shutdown semantics |
+| `0x00441D00` | 3 | Follows checks/calls to `0x0043D8C0` and `0x0043D820` |
+| `0x0047BE6F`, `0x0047BE7B`, `0x0047BE87` | 7, 10, 8 | Three branches of one routine, selected by comparing the byte at object offset `+0x14` |
+| `0x004B28B3` | 2 | Checks `[0x006A7F98]` against `0x78`, writes request, calls `0x0043D800` |
+| `0x004B297B` | 8 | Branch after an object method call at `0x004C1460` and a comparison involving offset `+0xE8E` |
+| `0x004BD2DC` | 7 | Branch conditional on `[0x0068293C]`; no proven scene label |
+| `0x004BE027` | 2 | One return path of an object method; no proven shutdown semantics |
+| `0x004E28BE` / `0x004E28CA` | 9 / 3 | Two neighboring paths that lead to `CALL 0x004E65E0` |
+
+Only verified code addresses may be used for future signature-gated hooks.
+
+### Practical consequence for game-mode-specific F12
+
+A **3D gameplay update** is not identified merely because the global
+event request becomes 2, 7 or 8; these codes have multiple possible
+writers. We must locate the genuine owner of the 3D loop and
+observe its normal graceful exit, then separately trace the controller's
+final cleanup. Likewise, Bink and comic render callbacks are **activity
+markers**, not permission to release COM/video resources from a callback.
+
 
 ### Main menu (already user-validated)
 
@@ -123,24 +156,26 @@ cleanup should be used as the F12 shutdown implementation.
 ## Diagnostic phase: read-only engine-state instrumentation
 
 The existing `IDirectDrawSurface7::Flip` hook now calls
-`SpiderQuickExitF12_ObserveEngineState(count)` when
+`SpiderQuickExitF12_ObserveEngineState(count, renderer_menu)` when
 `[System] QuickExitF12=1`. It **reads only**:
 
-- `0x0060CFA4`: native engine mode (for dispatch mapping).
+- `0x0060CFA4`: pending native controller action/request (for dispatch mapping, **not active scene**).
 - `0x0060CF88`: native Quit byte.
-- `0x006B4C9C`: transition/async state, observed in native spin loop.
+- `0x006B4C9C`: two-part transition countdown (high-word then low-word decreasing).
 - `0x0054A510`: native task/status variable used by the controller.
-- Existing patch-local observations: whether main-menu callback was
-  observed, intro F12 intent and whether post-movie forwarding executed.
+- The already-owned render policy (`renderer2d`), a recent real
+  `Shell_MainMenu` frame (`menu_recent`), a recent decoded Bink
+  presentation (`movie_recent`), and the lifetime latch `menu_seen`.
+- Existing patch-local observations: intro F12 intent and whether
+  post-movie forwarding executed.
 
-It logs only when mode/quit/async state changes, or after five seconds
-without a snapshot. It does **not** install a new executable machine-code
+It logs only when the pending action, Quit byte, **countdown active/inactive state**, or 2D rendering policy changes, or after five seconds without a snapshot. It does **not** install a new executable machine-code
 hook, mutate game-state pointers, or trigger a shutdown.
 
 Example expected log shape (example values intentionally omitted):
 
 ```text
-QUICK-EXIT-F12: ENGINE-STATE flip=... mode=... async=... task=... quit=... menu_seen=... intro_request=... intro_forwarded=...
+QUICK-EXIT-F12: ENGINE-STATE flip=... renderer2d=... mode_request=... countdown=... countdown_active=... task=... quit=... menu_recent=... movie_recent=... menu_seen=... intro_request=... intro_forwarded=...
 ```
 
 Collect **separate log files** while viewing (a) the first static screen
@@ -149,9 +184,11 @@ main menu, (d) comic pages, and (e) actual 3D gameplay. The original
 F12 during unsupported modes need not be pressed; passive snapshots
 alone are enough to establish the mode/state mapping.
 
-Only after mapping the mode values to scene types should separate,
-signature-gated **mode-owned exit hooks** be implemented and tested
-individually on Windows 11.
+Only after identifying the actual native **scene owner** and its
+safe exit/cleanup branch should separate, signature-gated
+**mode-owned exit hooks** be implemented and tested individually
+on Windows 11. It is specifically **not enough** to map values of
+`mode_request` to the currently visible scene.
 
 ## Validation gates
 
