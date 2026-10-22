@@ -1,7 +1,8 @@
-/* Short-lived F9 screenshot confirmation, composited into a cached
- * DirectDraw OFFSCREEN presentation surface before a single PRIMARY blit.
- * No overlay HWND, keyboard hook, GDI writes on PRIMARY, or drawing into
- * the 3D backbuffer; the screenshot itself never contains its confirmation.
+/* Short-lived F9 screenshot confirmation, normally composited into a
+ * DirectDraw OFFSCREEN surface before one PRIMARY blit. Static comic panels
+ * have no Flip, so ONLY then a no-focus, click-through, layered popup drawn
+ * by a separate window thread displays the same artwork for two seconds.
+ * Neither route modifies the screenshot backbuffer or the game's input.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -23,6 +24,21 @@ static DWORD toast_expires_at=0;
 static DWORD toast_published_at=0;
 static DWORD toast_generation=0;
 static DWORD toast_displayed_generation=0;
+static HWND toast_game_window=NULL;
+static void (*toast_logger)(const char*)=NULL;
+static volatile LONG toast_popup_generation=0;
+static DWORD WINAPI toast_popup_thread(LPVOID arg);
+
+void SpiderF9Toast_SetGameWindow(HWND hwnd,void (*logger)(const char*)) {
+  toast_game_window=hwnd;
+  toast_logger=logger;
+}
+static void toast_start_no_flip_fallback(DWORD gen) {
+  HANDLE worker;
+  if(!toast_game_window)return;
+  worker=CreateThread(NULL,0,toast_popup_thread,(LPVOID)(ULONG_PTR)gen,0,NULL);
+  if(worker)CloseHandle(worker);
+}
 
 void SpiderF9Toast_GetDisplayStatus(DWORD *published,DWORD *displayed) {
   AcquireSRWLockShared(&toast_mutex);
@@ -45,7 +61,10 @@ void SpiderF9Toast_PublishSavedPath(const WCHAR *full_path) {
   toast_published_at=GetTickCount();
   toast_expires_at=0; /* No countdown before first actual presentation. */
   ++toast_generation;
-  ReleaseSRWLockExclusive(&toast_mutex);
+  {DWORD published=toast_generation;
+   ReleaseSRWLockExclusive(&toast_mutex);
+   toast_start_no_flip_fallback(published);
+  }
 }
 
 void SpiderF9Toast_PublishError(const WCHAR *reason) {
@@ -59,7 +78,10 @@ void SpiderF9Toast_PublishError(const WCHAR *reason) {
   toast_published_at=GetTickCount();
   toast_expires_at=0; /* No countdown before first actual presentation. */
   ++toast_generation;
-  ReleaseSRWLockExclusive(&toast_mutex);
+  {DWORD published=toast_generation;
+   ReleaseSRWLockExclusive(&toast_mutex);
+   toast_start_no_flip_fallback(published);
+  }
 }
 
 static int toast_max(int a,int b) {return a>b?a:b;}
@@ -218,10 +240,6 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
     SetBkMode(dc,old_mode);
     ok=TRUE;
   }
-  if(ok) {
-    toast_panel_region=panel;
-    toast_panel_valid=TRUE;
-  }
   if(old_pen && old_pen!=HGDI_ERROR)SelectObject(dc,old_pen);
   if(old_brush && old_brush!=HGDI_ERROR)SelectObject(dc,old_brush);
   DeleteObject(border);
@@ -238,8 +256,6 @@ font_done:
  * A single PRIMARY Blt transfers the scene and notice together; no more GDI
  * writes to the visible PRIMARY racing the next frame. */
 static IDirectDrawSurface7 *toast_stage=NULL;
-static RECT toast_panel_region; /* GDI-drawn region in toast_stage */
-static BOOL toast_panel_valid=FALSE;
 static IDirectDrawSurface7 *toast_stage_back=NULL; /* weak identity only */
 static DWORD toast_stage_width=0,toast_stage_height=0;
 static BOOL toast_prefer_system_memory=FALSE;
@@ -247,7 +263,6 @@ static BOOL toast_prefer_system_memory=FALSE;
 static void toast_discard_stage(void) {
   if(toast_stage) IDirectDrawSurface7_Release(toast_stage);
   toast_stage=NULL;
-  toast_panel_valid=FALSE;
   toast_stage_back=NULL;
   toast_stage_width=toast_stage_height=0;
 }
@@ -283,27 +298,146 @@ static BOOL toast_create_stage(IDirectDrawSurface7 *back,DWORD width,
   return TRUE;
 }
 
-/* On rare comic panels, legacy code may Blt to PRIMARY after the main
- * Flip. Only the SMALL notification rectangle is re-applied from the already
- * composited stage so the late game Blt cannot hide the notification.
- * Called only on the game rendering thread: no HWND, GDI-on-PRIMARY or
- * asynchronous DirectDraw access. Returns FALSE for inactive/expired toasts. */
-BOOL SpiderF9Toast_GetComposedPanel(IDirectDrawSurface7 **out_stage,RECT *out_rect) {
-  BOOL active;
-  DWORD published,shown,expiration;
-  if(!out_stage || !out_rect)return FALSE;
-  *out_stage=NULL;
+/* The game's comic page can remain visible for many seconds without a
+ * single DirectDraw Flip. Rather than forcing Flip (which would disrupt the
+ * game), provide a self-contained, input-transparent layered window only if
+ * the normal compositor has NOT presented the notification after 160 ms.
+ * This window has its own short-lived message pump and does not subclass or
+ * post keyboard messages to the game window.
+ */
+static LRESULT CALLBACK toast_popup_wndproc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
+  if(msg==WM_NCHITTEST)return HTTRANSPARENT;
+  if(msg==WM_MOUSEACTIVATE)return MA_NOACTIVATE;
+  return DefWindowProcW(hwnd,msg,wp,lp);
+}
+
+static DWORD WINAPI toast_popup_thread(LPVOID arg) {
+  const DWORD gen=(DWORD)(ULONG_PTR)arg;
+  const WCHAR classname[]=L"SpiderMan2k1Fix-F9-StaticNotice";
+  const DWORD delay_ms=160u;
+  HWND game=NULL,popup=NULL;
+  HINSTANCE instance=GetModuleHandleW(NULL);
+  HDC screen=NULL,mem=NULL;
+  HBITMAP bitmap=NULL,old_bitmap=NULL;
+  BITMAPINFO info;
+  WNDCLASSW wc;
+  BLENDFUNCTION blend={AC_SRC_OVER,0,255,AC_SRC_ALPHA};
+  RECT game_rect;
+  POINT pos,src={0,0};
+  SIZE size;
+  WCHAR path[MAX_PATH];
+  BOOL success=FALSE,ready=FALSE,shown=FALSE;
+  DWORD *pixels=NULL;
+  DWORD i,n,until=0;
+  DWORD bg=0;
+  HRESULT ignored=0; /* Keep window setup independent of DirectDraw. */
+  (void)ignored;
+  Sleep(delay_ms);
   AcquireSRWLockShared(&toast_mutex);
-  published=toast_generation;
-  shown=toast_displayed_generation;
-  expiration=toast_expires_at;
-  active=expiration && (LONG)(expiration-GetTickCount())>0 &&
-         published==shown;
+  if(toast_generation==gen && toast_displayed_generation!=gen &&
+     toast_path[0] && (DWORD)(GetTickCount()-toast_published_at) <
+                                SPIDER_F9_TOAST_GRACE_MS) {
+    memcpy(path,toast_path,sizeof(path));
+    success=toast_success;
+    ready=TRUE;
+  }
   ReleaseSRWLockShared(&toast_mutex);
-  if(!active || !toast_stage || !toast_panel_valid)return FALSE;
-  *out_stage=toast_stage; /* game-thread-only borrowed ref */
-  *out_rect=toast_panel_region;
-  return TRUE;
+  game=toast_game_window;
+  if(!ready || !game || !IsWindow(game) ||
+     GetForegroundWindow()!=game || !GetWindowRect(game,&game_rect))return 0;
+  size.cx=game_rect.right-game_rect.left;
+  size.cy=game_rect.bottom-game_rect.top;
+  if(size.cx<320 || size.cy<240 || size.cx>8192 || size.cy>8192)return 0;
+  screen=GetDC(NULL); /* Never obtain or write a DirectDraw PRIMARY DC. */
+  if(!screen)goto end;
+  mem=CreateCompatibleDC(screen);
+  if(!mem)goto end;
+  memset(&info,0,sizeof(info));
+  info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+  info.bmiHeader.biWidth=size.cx;
+  info.bmiHeader.biHeight=-size.cy;
+  info.bmiHeader.biPlanes=1;
+  info.bmiHeader.biBitCount=32;
+  info.bmiHeader.biCompression=BI_RGB;
+  bitmap=CreateDIBSection(screen,&info,DIB_RGB_COLORS,(void**)&pixels,NULL,0);
+  if(!bitmap || !pixels)goto end;
+  old_bitmap=(HBITMAP)SelectObject(mem,bitmap);
+  if(!old_bitmap || old_bitmap==(HBITMAP)HGDI_ERROR) {
+    old_bitmap=NULL;goto end;
+  }
+  n=(DWORD)size.cx*(DWORD)size.cy;
+  memset(pixels,0,(size_t)n*sizeof(DWORD));
+  if(!toast_draw_dc(mem,(DWORD)size.cx,(DWORD)size.cy,path,success))goto end;
+  /* The existing compositor alpha-blends violet against an initially black
+   * DIB, producing premultiplied (32,32,104) for its 65%-opacity fill.
+   * Preserve that premultiplied fill; make heading/text/rim fully opaque
+   * and all unused space fully transparent for UpdateLayeredWindow. */
+  bg=(DWORD)((50u*SPIDER_F9_PANEL_ALPHA+127u)/255u) |
+     ((DWORD)((50u*SPIDER_F9_PANEL_ALPHA+127u)/255u)<<8) |
+     ((DWORD)((160u*SPIDER_F9_PANEL_ALPHA+127u)/255u)<<16);
+  for(i=0;i<n;i++) {
+    DWORD rgb=pixels[i]&0x00ffffffu;
+    if(!rgb) pixels[i]=0u;
+    else if(rgb==bg)pixels[i]=rgb|((DWORD)SPIDER_F9_PANEL_ALPHA<<24);
+    else pixels[i]=rgb|0xff000000u;
+  }
+
+  memset(&wc,0,sizeof(wc));
+  wc.lpfnWndProc=toast_popup_wndproc;
+  wc.hInstance=instance;
+  wc.lpszClassName=classname;
+  if(!RegisterClassW(&wc) && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS)goto end;
+  popup=CreateWindowExW(WS_EX_LAYERED|WS_EX_TRANSPARENT|
+        WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW|WS_EX_TOPMOST,
+        classname,L"",WS_POPUP,game_rect.left,game_rect.top,size.cx,size.cy,
+        game,NULL,instance,NULL);
+  if(!popup)goto end;
+  pos.x=game_rect.left;pos.y=game_rect.top;
+  if(!UpdateLayeredWindow(popup,screen,&pos,&size,mem,&src,0,&blend,ULW_ALPHA))
+    goto end;
+  AcquireSRWLockExclusive(&toast_mutex);
+  if(toast_generation==gen && toast_displayed_generation!=gen &&
+     GetForegroundWindow()==game) {
+    toast_displayed_generation=gen;
+    toast_expires_at=GetTickCount()+SPIDER_F9_TOAST_MS;
+    InterlockedExchange(&toast_popup_generation,(LONG)gen);
+    shown=TRUE;
+  }
+  ReleaseSRWLockExclusive(&toast_mutex);
+  if(!shown)goto end;
+  ShowWindow(popup,SW_SHOWNOACTIVATE);
+  SetWindowPos(popup,HWND_TOPMOST,pos.x,pos.y,size.cx,size.cy,
+               SWP_NOACTIVATE|SWP_SHOWWINDOW);
+  if(toast_logger) {
+    char msg[150];
+    snprintf(msg,sizeof(msg),
+      "F9-TOAST-STATIC: generation=%lu displayed without Flip (layered no-focus HWND)",
+      (unsigned long)gen);
+    toast_logger(msg);
+  }
+  until=GetTickCount()+SPIDER_F9_TOAST_MS;
+  while((LONG)(until-GetTickCount())>0) {
+    MSG msg;
+    if(GetForegroundWindow()!=game || !IsWindow(game))break;
+    AcquireSRWLockShared(&toast_mutex);
+    ready=(toast_generation==gen);
+    ReleaseSRWLockShared(&toast_mutex);
+    if(!ready)break;
+    while(PeekMessageW(&msg,NULL,0,0,PM_REMOVE)) {
+      if(msg.message==WM_QUIT)goto end;
+      TranslateMessage(&msg);
+      DispatchMessageW(&msg);
+    }
+    MsgWaitForMultipleObjects(0,NULL,FALSE,40,QS_ALLINPUT);
+  }
+end:
+  if(shown)InterlockedCompareExchange(&toast_popup_generation,0,(LONG)gen);
+  if(popup)DestroyWindow(popup);
+  if(old_bitmap)SelectObject(mem,old_bitmap);
+  if(bitmap)DeleteObject(bitmap);
+  if(mem)DeleteDC(mem);
+  if(screen)ReleaseDC(NULL,screen);
+  return 0;
 }
 
 IDirectDrawSurface7 *SpiderF9Toast_CompositeFrame(
@@ -323,6 +457,10 @@ IDirectDrawSurface7 *SpiderF9Toast_CompositeFrame(
     memcpy(path,toast_path,sizeof(path));
   else path[0]=L'\\0';
   ReleaseSRWLockShared(&toast_mutex);
+  /* The independent fallback owns the notice while a still comic page
+   * has no Flip. Do not render a second one when gameplay resumes. */
+  if((DWORD)InterlockedCompareExchange(&toast_popup_generation,0,0)==generation)
+    return NULL;
   if(path[0]==L'\\0') {
     toast_discard_stage(); /* No per-frame memory or blit cost while inactive. */
     return NULL;
