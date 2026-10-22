@@ -19,7 +19,7 @@ IDirectDrawSurface7 *SpiderF9Toast_CompositeFrame(IDirectDrawSurface7 *back,
 void SpiderF9Toast_ResetPresentation(void);
 /* Register the game window for no-Flip still-frame fallback. The normal
  * DirectDraw compositor remains the default presentation path. */
-void SpiderF9Toast_SetGameWindow(HWND hwnd);
+void SpiderF9Toast_SetGameWindow(HWND hwnd,void (*logger)(const char*));
 /* Thread-safe publication and FIRST actual onscreen presentation counters;
  * logs can diagnose static scenes with no Flip without altering game input. */
 void SpiderF9Toast_GetDisplayStatus(DWORD *published,DWORD *displayed);
