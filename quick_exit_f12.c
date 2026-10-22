@@ -27,8 +27,11 @@
  * The real interactive menu F12 path is unchanged. No WM_CLOSE, no
  * process kill, no direct BinkClose.
  *
- * Comic screens / 3D remain unsupported. Exact code bytes MUST match
- * before any hook is installed.
+ * Comic screens remain unsupported. An additional strictly opt-in 3D
+ * proof-of-concept waits for native 3D owner cleanup and its top-level
+ * request-7 post-cleanup call BEFORE choosing the original engine's
+ * final shutdown branch at 0x45620c. No off-thread game mutation.
+ * Exact code bytes MUST match before any hook is installed.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -141,6 +144,16 @@ static volatile LONG input_native_invocations=0;
 static volatile LONG input_native_requested7=0;
 static volatile LONG native_game_cleanup_count=0;
 static volatile LONG native_controller7_count=0;
+/* Strict opt-in: [System] ExperimentalQuickExitF12In3D=1. F12 watcher
+ * only records intent. The *native game thread* performs the state
+ * transitions at a game-input owner frame and after owner cleanup. */
+static volatile LONG experimental_game3d_enabled=0;
+static volatile LONG last_native_game_input_ms=0;
+static volatile LONG last_game3d_flip_ms=0;
+/* 0 idle, 1 requested, 2 native request 7 dispatched, 3 final exit. */
+static volatile LONG game3d_exit_state=0;
+static volatile LONG game3d_cleanup_baseline=0;
+static volatile LONG game3d_cleanup_confirmed=0;
 static PVOID volatile game_hwnd=NULL;
 static void (*logger)(const char *)=NULL;
 
@@ -179,6 +192,8 @@ void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,
   char line[440];
   if(!SpiderQuickExitF12_Enabled())return;
   now=GetTickCount();
+  if(renderer_menu==0)
+    InterlockedExchange(&last_game3d_flip_ms,(LONG)now);
   mode=*SPIDER_ENGINE_MODE;
   async=*SPIDER_ENGINE_ASYNC_STATE;
   async_active=(async!=0u)?1:0;
@@ -289,8 +304,28 @@ static void __cdecl spider_observe_native_game_input(void) {
       (unsigned long)before_timer,(unsigned)before_1,(unsigned)before_2);
     say(line);
   }
+  /* Native owner is guaranteed to be on the actual 3D game thread.
+   * Do not request controller action 7 from the F12 polling thread.
+   * The original 0x455a90 checks the request after its frame update
+   * returns, then follows the native 0x455bf3 3D cleanup branch. */
+  InterlockedExchange(&last_native_game_input_ms,(LONG)GetTickCount());
   SPIDER_NATIVE_GAME_INPUT_UPDATE();
   after_request=*SPIDER_ENGINE_MODE;
+  if(InterlockedCompareExchange(&game3d_exit_state,2,1)==1) {
+    if(InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
+       before_request==0u && after_request==0u &&
+       *SPIDER_GAME_BINK_ACTIVE==0u) {
+      InterlockedExchange(&game3d_cleanup_baseline,
+        InterlockedCompareExchange(&native_game_cleanup_count,0,0));
+      InterlockedExchange(&game3d_cleanup_confirmed,0);
+      *(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;
+      after_request=7u;
+      say("QUICK-EXIT-F12: 3D game-thread frame completed; native request 7 queued for original 0x455BF3 cleanup");
+    } else {
+      InterlockedExchange(&game3d_exit_state,0);
+      say("QUICK-EXIT-F12: 3D request cancelled: owner has changed or Bink active");
+    }
+  }
   after_timer=*SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE;
   after_1=*SPIDER_NATIVE_GAME_INPUT_FLAG_1;
   after_2=*SPIDER_NATIVE_GAME_INPUT_FLAG_2;
@@ -338,6 +373,14 @@ static void __cdecl spider_observe_native_game_cleanup(void) {
     (long)n,(unsigned long)request);
   say(line);
   SPIDER_NATIVE_GAME_CLEANUP();
+  if(InterlockedCompareExchange(&game3d_exit_state,0,0)==2 &&
+     request==7u &&
+     n>InterlockedCompareExchange(&game3d_cleanup_baseline,0,0)) {
+    /* Only the successful return of the REAL game-owned 0x4302d0
+     * validates the initial 3D cleanup checkpoint. */
+    InterlockedExchange(&game3d_cleanup_confirmed,1);
+    say("QUICK-EXIT-F12: 3D native cleanup checkpoint returned; awaiting controller-7 finalization");
+  }
   snprintf(line,sizeof(line),
     "QUICK-EXIT-F12: NATIVE-3D-CLEANUP completed n=%ld request=%lu",
     (long)n,(unsigned long)*SPIDER_ENGINE_MODE);
@@ -369,6 +412,27 @@ static void __cdecl spider_observe_controller7_finish(void) {
   SPIDER_NATIVE_CONTROLLER7_FINISH();
   after_bit=*SPIDER_NATIVE_CONTROLLER7_EXIT_FLAGS;
   after_status=*SPIDER_NATIVE_CONTROLLER7_EXIT_STATUS;
+  /* This owner-safe site follows the original complete 3D loop exit,
+   * original 0x443ad0(0) transition cleanup AND original 0x48a820.
+   * The immediately following unchanged original game instruction
+   * 0x45619d tests bit 4, and jumps to true native FINAL cleanup
+   * 0x45620c if set. Preserve all unrelated flag bits. This never
+   * fires for normal user-initiated "quit to main menu". */
+  if(request==7u &&
+     InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
+     InterlockedCompareExchange(&game3d_exit_state,0,0)==2 &&
+     InterlockedCompareExchange(&game3d_cleanup_confirmed,0,0)==1 &&
+     InterlockedCompareExchange(&native_game_cleanup_count,0,0)>
+       InterlockedCompareExchange(&game3d_cleanup_baseline,0,0)) {
+    if((after_bit&4u)==0u && after_status<0) {
+      *(volatile BYTE *)(uintptr_t)0x02E0988Cu=(BYTE)(after_bit|4u);
+      after_bit=*SPIDER_NATIVE_CONTROLLER7_EXIT_FLAGS;
+      say("QUICK-EXIT-F12: 3D owner+controller cleanup complete; engine native final-exit flag set at 0x45619D");
+    } else {
+      say("QUICK-EXIT-F12: 3D native final cleanup already selected by original engine");
+    }
+    InterlockedExchange(&game3d_exit_state,3);
+  }
   if(request==7u) {
     const char *outcome=((after_bit&4u)!=0u||after_status>=0)
                          ?"NATIVE-FINAL-CLEANUP":"RETURN-TO-CONTROLLER";
@@ -632,8 +696,20 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
          * the top-level engine's startup-state check. */
         if(InterlockedCompareExchange(&intro_quit_pending,1,0)==0)
            say("QUICK-EXIT-F12: intro movie exit requested; native Bink cleanup then top-level engine Quit");
+      } else if(InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
+                InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
+                *SPIDER_ENGINE_MODE==0u &&
+                *SPIDER_GAME_BINK_ACTIVE==0u &&
+                InterlockedCompareExchange(&last_native_game_input_ms,0,0)!=0 &&
+                (DWORD)(now-(DWORD)InterlockedCompareExchange(&last_native_game_input_ms,0,0))<350u &&
+                InterlockedCompareExchange(&last_game3d_flip_ms,0,0)!=0 &&
+                (DWORD)(now-(DWORD)InterlockedCompareExchange(&last_game3d_flip_ms,0,0))<350u) {
+        /* F12 thread records ONLY the intent. Original game thread
+         * must run the 3D frame, mode cleanup and top-level dispatch. */
+        if(InterlockedCompareExchange(&game3d_exit_state,1,0)==0)
+          say("QUICK-EXIT-F12: 3D native exit intent queued; waiting for original gameplay tick");
       } else {
-        say("QUICK-EXIT-F12: REAL Shell_MainMenu or startup movie not active; F12 safely ignored");
+        say("QUICK-EXIT-F12: REAL Shell_MainMenu, startup movie or recognized 3D owner not active; F12 safely ignored");
       }
     }
     Sleep(25);
@@ -658,6 +734,10 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   memcpy(ini,exe,(size_t)(slash-exe)+1);
   strcpy(ini+(slash-exe)+1,"SpiderMan2k1Fix.ini");
   GetPrivateProfileStringA("System","QuickExitF12","0",val,sizeof(val),ini);
+  /* Separate extra opt-in for risky native gameplay shutdown prototype.
+   * Enabling QuickExitF12 alone retains the previous menu/Bink behavior. */
+  InterlockedExchange(&experimental_game3d_enabled,
+    GetPrivateProfileIntA("System","ExperimentalQuickExitF12In3D",0,ini)==1 ? 1 : 0);
   /* Even with opt-in OFF, suppress the game's original unsafe
    * VK_F12 -> WM_CLOSE, which is known to orphan Bink and the process. */
   if(strcmp(val,"1")!=0) {
@@ -762,5 +842,8 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     return;
   }
   CloseHandle(thread);
-  say("QUICK-EXIT-F12: menu Quit validated; passive 3D owner + top-level controller-7 exit gate probes installed; comic/3D F12 unsupported");
+  if(InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1)
+    say("QUICK-EXIT-F12: EXPERIMENTAL 3D native exit enabled (game-thread cleanup then controller-7 final branch); not Windows-validated");
+  else
+    say("QUICK-EXIT-F12: menu native Quit validated; 3D native exit OFF by default (ExperimentalQuickExitF12In3D=0); comics unsupported");
 }
