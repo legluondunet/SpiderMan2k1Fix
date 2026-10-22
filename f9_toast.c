@@ -10,14 +10,14 @@
 #include <wchar.h>
 #include "f9_toast.h"
 
-#define SPIDER_F9_TOAST_MS 2500u
+#define SPIDER_F9_TOAST_MS 2000u
 #define SPIDER_F9_TOAST_MAX_LINES 32
 static SRWLOCK toast_mutex=SRWLOCK_INIT;
 static WCHAR toast_path[MAX_PATH];
 static BOOL toast_success=TRUE;
 static DWORD toast_expires_at=0;
 /* An idle comic panel may have no Flip while the worker saves its PNG.
- * Start the 2.5s timer on first ACTUAL presentation, with a 10s grace
+ * Start the 2.0s timer on first ACTUAL presentation, with a 10s grace
  * window to avoid displaying an old notification far into the next scene. */
 #define SPIDER_F9_TOAST_GRACE_MS 10000u
 static DWORD toast_published_at=0;
@@ -218,6 +218,10 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
     SetBkMode(dc,old_mode);
     ok=TRUE;
   }
+  if(ok) {
+    toast_panel_region=panel;
+    toast_panel_valid=TRUE;
+  }
   if(old_pen && old_pen!=HGDI_ERROR)SelectObject(dc,old_pen);
   if(old_brush && old_brush!=HGDI_ERROR)SelectObject(dc,old_brush);
   DeleteObject(border);
@@ -234,6 +238,8 @@ font_done:
  * A single PRIMARY Blt transfers the scene and notice together; no more GDI
  * writes to the visible PRIMARY racing the next frame. */
 static IDirectDrawSurface7 *toast_stage=NULL;
+static RECT toast_panel_region; /* GDI-drawn region in toast_stage */
+static BOOL toast_panel_valid=FALSE;
 static IDirectDrawSurface7 *toast_stage_back=NULL; /* weak identity only */
 static DWORD toast_stage_width=0,toast_stage_height=0;
 static BOOL toast_prefer_system_memory=FALSE;
@@ -241,6 +247,7 @@ static BOOL toast_prefer_system_memory=FALSE;
 static void toast_discard_stage(void) {
   if(toast_stage) IDirectDrawSurface7_Release(toast_stage);
   toast_stage=NULL;
+  toast_panel_valid=FALSE;
   toast_stage_back=NULL;
   toast_stage_width=toast_stage_height=0;
 }
@@ -273,6 +280,29 @@ static BOOL toast_create_stage(IDirectDrawSurface7 *back,DWORD width,
   toast_stage_back=back;
   toast_stage_width=width;
   toast_stage_height=height;
+  return TRUE;
+}
+
+/* On rare comic panels, legacy code may Blt to PRIMARY after the main
+ * Flip. Only the SMALL notification rectangle is re-applied from the already
+ * composited stage so the late game Blt cannot hide the notification.
+ * Called only on the game rendering thread: no HWND, GDI-on-PRIMARY or
+ * asynchronous DirectDraw access. Returns FALSE for inactive/expired toasts. */
+BOOL SpiderF9Toast_GetComposedPanel(IDirectDrawSurface7 **out_stage,RECT *out_rect) {
+  BOOL active;
+  DWORD published,shown,expiration;
+  if(!out_stage || !out_rect)return FALSE;
+  *out_stage=NULL;
+  AcquireSRWLockShared(&toast_mutex);
+  published=toast_generation;
+  shown=toast_displayed_generation;
+  expiration=toast_expires_at;
+  active=expiration && (LONG)(expiration-GetTickCount())>0 &&
+         published==shown;
+  ReleaseSRWLockShared(&toast_mutex);
+  if(!active || !toast_stage || !toast_panel_valid)return FALSE;
+  *out_stage=toast_stage; /* game-thread-only borrowed ref */
+  *out_rect=toast_panel_region;
   return TRUE;
 }
 
