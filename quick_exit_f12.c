@@ -62,6 +62,9 @@ static volatile LONG last_movie_frame_ms=0;
  * Only the already verified real menu Quit routine consumes it. */
 static volatile LONG intro_quit_pending=0;
 static volatile LONG intro_tick_shortcircuited=0;
+/* Limit automatic movie->Quit handoff to the FOUR startup clips,
+ * never to later Bink videos during comics or gameplay. */
+static volatile LONG real_main_menu_seen=0;
 static PVOID volatile game_hwnd=NULL;
 static void (*logger)(const char *)=NULL;
 
@@ -102,6 +105,7 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
 int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void) {
   LONG n=InterlockedIncrement(&menu_frame_count);
   InterlockedExchange(&last_menu_frame_ms,(LONG)GetTickCount());
+  InterlockedExchange(&real_main_menu_seen,1);
   if(n==1)
     say("QUICK-EXIT-F12: REAL Shell_MainMenu frame callback observed (0x493DD6)");
   /* The game's main sequence calls Shell_MainMenu only after finishing
@@ -241,16 +245,9 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
       LONG menu_time=InterlockedCompareExchange(&last_menu_frame_ms,0,0);
       LONG movie_time=InterlockedCompareExchange(&last_movie_frame_ms,0,0);
       previously_down=TRUE;
-      if((movie_time && (DWORD)(now-(DWORD)movie_time)<750u) ||
-         *SPIDER_GAME_BINK_ACTIVE!=0u) {
-        /* Set a one-shot intent: Bink tick wrappers will finish the
-         * current clip and all remaining intro movies via game-owned
-         * BinkClose, then Shell_MainMenu takes its native Quit branch. */
-        if(InterlockedCompareExchange(&intro_quit_pending,1,0)==0)
-          say("QUICK-EXIT-F12: intro movie exit requested; native Bink cleanup then real Shell_MainMenu Quit");
-      } else if(!menu_time || (DWORD)(now-(DWORD)menu_time)>400u) {
-        say("QUICK-EXIT-F12: REAL Shell_MainMenu not active; F12 safely ignored");
-      } else {
+      if(menu_time && (DWORD)(now-(DWORD)menu_time)<=400u) {
+        /* Give the previously Windows-validated main-menu path priority,
+         * including a key press just after the last decoded intro frame. */
         unsigned elapsed=0;
         InterlockedExchange(&delivered,0);
         InterlockedExchange(&pending,1);
@@ -262,6 +259,16 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
         InterlockedExchange(&pending,0);
         if(InterlockedCompareExchange(&delivered,0,0)==0)
           say("QUICK-EXIT-F12: native menu frame not reached within 800ms; no exit");
+      } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==0 &&
+                ((movie_time && (DWORD)(now-(DWORD)movie_time)<750u) ||
+                 *SPIDER_GAME_BINK_ACTIVE!=0u)) {
+        /* Set a one-shot intent: Bink tick wrappers finish the current
+         * clip and remaining startup movies through game-owned cleanup,
+         * then the first Shell_MainMenu frame executes native Quit. */
+        if(InterlockedCompareExchange(&intro_quit_pending,1,0)==0)
+          say("QUICK-EXIT-F12: intro movie exit requested; native Bink cleanup then real Shell_MainMenu Quit");
+      } else {
+        say("QUICK-EXIT-F12: REAL Shell_MainMenu or startup movie not active; F12 safely ignored");
       }
     }
     Sleep(25);
