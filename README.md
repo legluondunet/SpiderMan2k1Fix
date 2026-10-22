@@ -29,38 +29,47 @@ SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must prov
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 
-### Optional F12 quick exit
+### Optional F12 quick exit (experimental)
 
-To enable F12 as a one-press exit shortcut, edit `SpiderMan2k1Fix.ini` while the game is closed:
+F12 quick exit is **disabled by default**. To opt in, edit `SpiderMan2k1Fix.ini`:
 
 ```ini
 [System]
 QuickExitF12=1
 ```
 
-The default is `QuickExitF12=0`. With the game in the foreground, a new F12 press requests `WM_CLOSE` once through the game's own window/message loop, without a confirmation added by SpiderMan2k1Fix. The patch does not call `ExitProcess` or `TerminateProcess`. Polling is independent of DirectDraw `Flip` so it also works while a comic is static. The original game's actual shutdown/no-confirmation behavior still needs runtime verification. When this option is enabled, F12 HUD diagnostics are suppressed.
+The original 2001 game has an unsafe historical F12 shortcut that posts
+`WM_CLOSE` directly from its WndProc at VA `0x00515373`. On Windows 11
+that hides the game but does **not** stop its renderer, audio or process.
+SpiderMan2k1Fix suppresses that exact call after verifying its machine bytes.
 
-### Verifying native F12 shutdown on Windows
+**Native game Quit path (verified by disassembly of the supported SHA-256 EXE):**
+the original game's Quit action at `0x004A238A` sets byte `0x0060CF88` to `1`.
+The main game routine tests that byte at `0x00455E50` and follows the native
+engine cleanup at `0x004561F2`, then returns through WinMain cleanup.
 
-The supported `SpideyPC.exe` (SHA-256 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`) contains the original Windows F12 path:
+The new F12 watcher requests **this game-native Quit flag**, never
+`PostMessageA(WM_CLOSE)`, `DestroyWindow`, `TerminateProcess` or `ExitProcess`.
+During introduction movies it also requests completion through the game's
+original Bink frame-tick loop so the game's own video routine runs its cleanup.
 
-- At **VA 0x00515368**: `WM_KEYDOWN` / `VK_F12` posts `WM_CLOSE` with `PostMessageA`.
-- At **VA 0x00515336**: its `WM_CLOSE` handler calls `DestroyWindow`.
-- At **VA 0x00515306**: its `WM_DESTROY` handler calls `PostQuitMessage(0)`, letting the normal main message loop finish.
+**Limitations:** Live Windows 11 validation is still required. This native
+quit flag is checked after the opening movies; it is not yet established
+that every later game mode consumes it promptly. An unsupported situation
+may leave the window open instead of destroying it prematurely.
 
-SpiderMan2k1Fix uses that **same native WM_CLOSE path**, changing only how the F12 press is detected in gameplay and during static scenes. The game's menu-level *Really quit?* choice is separate from the original F12 shortcut.
-
-**Opening-movie safety:** Testing exposed that the game's **original** `WM_KEYDOWN` / `VK_F12` handler independently posts `WM_CLOSE` while a Bink intro is still playing, destroying the window but leaving video/audio and the process running. When `[System] QuickExitF12=1`, the fix suppresses only that exact six-byte native `PostMessageA` call at VA `0x00515373` and takes sole responsibility for the shortcut; with the option disabled, the original unsafe F12 call is also suppressed. Both patch sites are signature-checked against the supported executable. The F12 worker monitors actual decoded DirectDraw intro movie presentations **as well as** the game's internal movie-active flag, which can be zero while video is still visible. During playback it asks the game's original frame-tick code to report completion and waits for a confirmed native tick, cleared native flag, and at least 600 ms without another decoded movie frame **before** posting `WM_CLOSE`. If any condition is unverified after three seconds, the game window stays open rather than stranding a headless process. All of this remains experimental until verified on Windows with the four opening cinematics.
-
-To verify runtime shutdown rather than just a disappearing window, download [`tools/Verify-F12QuickExit.ps1`](tools/Verify-F12QuickExit.ps1) into your game folder, enable `[System] QuickExitF12=1` and `[Debug] Log=1`, and launch from Windows PowerShell:
+To test process exit independently, place
+[`tools/Verify-F12QuickExit.ps1`](tools/Verify-F12QuickExit.ps1)
+in the game folder, enable `[Debug] Log=1`, and run:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Verify-F12QuickExit.ps1
 ```
 
-Press F12 while the game has focus. The **independent** test script checks the game's exit code, absence of a remaining `SpideyPC.exe` process, the F12 → `WM_CLOSE` log entry, and any matching Windows Application Error / WER event that is already readable. If the exit does not complete before its 120-second default timeout, the script reports the hang and **does not forcibly kill the game**.
-
-When a process ends, Windows reclaims its private memory and process-owned operating-system handles. A passing test does **not** prove that each DirectDraw, DirectSound, DirectInput, or other native resource was explicitly released before exit. That finer-grained claim would require runtime instrumentation or a dedicated debugger. The original `WM_CLOSE` → `WM_DESTROY` route avoids bypassing the game's normal cleanup code.
+The watcher checks the exit code, absence of residual SpideyPC.exe processes,
+and Windows Application Error / WER events. It never forcibly stops the game.
+An OS process exit reclaims its memory and process-owned handles but does not
+prove that every COM object was explicitly released before exit.
 
 ## Requirements and compatibility
 
