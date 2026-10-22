@@ -78,17 +78,26 @@ def test_readme_identifies_exact_verified_original_f12_route():
     assert "tools/Verify-F12QuickExit.ps1" in readme
 
 
+def test_native_f12_wndproc_is_signature_gated_and_bypassed_without_subclass():
+    # Verified original SpideyPC.exe WM_KEYDOWN -> VK_F12 jump table
+    # lands at 0x515368 and posts WM_CLOSE at 0x515373.
+    assert "#define SPIDER_NATIVE_F12_POST ((BYTE *)(uintptr_t)0x00515373u)" in SRC
+    assert "0xFF,0x15,0x70,0xB1,0x53,0x00" in SRC
+    assert "0x83,0xC4,0x10,0x90,0x90,0x90" in SRC
+    assert "memcmp(SPIDER_NATIVE_F12_POST,native_f12_original,6)" in SRC
+    assert "native_f12_suppress_unsafe_window_close()" in SRC
+    assert "native_f12_restore();" in SRC
+    assert "FlushInstructionCache(GetCurrentProcess(),SPIDER_NATIVE_F12_POST,6);" in SRC
+    assert "SetWindowLongPtr(" not in SRC
+
+
 def test_bink_intro_exit_uses_original_cleanup_not_window_destruction():
-    # The verified EXE's 0x0047081D / 0x0047085F calls tick at 0x0050B5A0.
-    # The 0x00470871 continuation calls native movie destructor 0x0050B790.
-    # WM_CLOSE before this cleanup hid the window but left video/audio running.
-    assert "SPIDER_INTRO_CALL_1" in SRC
-    assert "0x0047081Du" in SRC
-    assert "0x0047085Fu" in SRC
-    assert "0x0050B5A0u" in SRC
-    assert "0x006151F8u" in SRC
-    assert "0xE8,0x7E,0xAD,0x09,0x00" in SRC
-    assert "0xE8,0x3C,0xAD,0x09,0x00" in SRC
+    # SHA-pinned Bink tick CALLs in original game:
+    # 0x47081d and 0x47085f call 0x50b5a0; native cleanup at 0x470871.
+    for marker in ("0x0047081Du","0x0047085Fu","0x0050B5A0u",
+                   "0x006151F8u", "0xE8,0x7E,0xAD,0x09,0x00",
+                   "0xE8,0x3C,0xAD,0x09,0x00"):
+        assert marker in SRC
     assert "memcmp(SPIDER_INTRO_CALL_1,intro_call_1_original,5)" in SRC
     assert "memcmp(SPIDER_INTRO_CALL_2,intro_call_2_original,5)" in SRC
     assert "static BYTE __cdecl quick_exit_intro_tick(void)" in SRC
@@ -98,19 +107,36 @@ def test_bink_intro_exit_uses_original_cleanup_not_window_destruction():
     assert "FlushInstructionCache(GetCurrentProcess(),address,5);" in SRC
     assert "restore_intro_call(SPIDER_INTRO_CALL_1,intro_call_1_original);" in SRC
     assert "if(!install_intro_exit_calls())" in SRC
-    assert "DISABLED: supported intro Bink CALL signatures unavailable" in SRC
+    assert "DISABLED: native F12/Bink call signatures unavailable" in SRC
 
 
-def test_close_occurs_only_after_bink_movie_owner_reports_cleanup():
-    active = SRC.index("if(*SPIDER_INTRO_ACTIVE!=0u)")
-    drain = SRC.index("*SPIDER_INTRO_ACTIVE==0u",active)
-    posted = SRC.index("if(PostMessageA(hwnd,WM_CLOSE,0,0))",drain)
-    assert active < drain < posted
+def test_f12_movie_guard_requires_real_video_frame_quiet_even_when_native_flag_zero():
+    # Regression: original SPIDER_INTRO_ACTIVE can read zero while video/audio
+    # are still playing; the old code destroyed HWND and orphaned Bink.
+    assert "void SpiderQuickExitF12_ObserveMovieFrame(void)" in HDR
+    assert "void SpiderQuickExitF12_ObserveMovieFrame(void)" in SRC
+    assert "InterlockedExchange(&intro_last_movie_blt_ms,(LONG)GetTickCount());" in SRC
+    assert "InterlockedIncrement(&intro_movie_blt_count);" in SRC
+    assert "SpiderQuickExitF12_ObserveMovieFrame();" in CORE
+    start=CORE.index("if(SUCCEEDED(hr) && f9_movie_present && source)")
+    assert CORE.index("SpiderQuickExitF12_ObserveMovieFrame();",start) < CORE.index("if(source!=f9_movie_source)",start)
+    assert "BOOL seen_movie=movie_frame_recent(now,1500u);" in SRC
+    assert "if(seen_movie||native_active)" in SRC
+    assert "!movie_frame_recent(now,600u)" in SRC
+    assert "InterlockedCompareExchange(&intro_abort_seen,0,0)==1" in SRC
+    assert "*SPIDER_INTRO_ACTIVE==0u" in SRC
+    assert "WM_CLOSE SUPPRESSED" in SRC
+    assert "WM_CLOSE allowed" in SRC
+
+
+def test_close_only_after_native_video_completion_or_when_no_active_movie():
+    start = SRC.index("if(seen_movie||native_active)")
+    quiet = SRC.index("!movie_frame_recent(now,600u)",start)
+    posted = SRC.index("if(PostMessageA(hwnd,WM_CLOSE,0,0))",quiet)
+    assert start < quiet < posted
     assert "InterlockedExchange(&intro_abort_requested,1);" in SRC
-    assert "native intro completed; Bink released by original game" in SRC
-    assert "WM_CLOSE NOT posted" in SRC
-    assert "movie active; requesting native Bink completion BEFORE WM_CLOSE" in SRC
+    assert "native movie tick returned completion" in SRC
     assert "game window destroyed; verify process exit independently" in SRC
-    assert "BinkClose(" not in SRC  # native owner does cleanup itself
+    assert "BinkClose(" not in SRC
     assert "TerminateProcess(" not in SRC
     assert "ExitProcess(" not in SRC
