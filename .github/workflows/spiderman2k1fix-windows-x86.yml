@@ -48,7 +48,7 @@ jobs:
           path: ${{ runner.temp }}/spiderman2k1fix-apt-archives
           key: apt-ubuntu2404-${{ runner.arch }}-mingw32-pytest-v2-${{ hashFiles('.github/workflows/spiderman2k1fix-windows-x86.yml') }}
           restore-keys: |
-            apt-ubuntu2404-${{ runner.arch }}-mingw32-pytest-v1-
+            apt-ubuntu2404-${{ runner.arch }}-mingw32-pytest-v2-
 
       - name: Install missing Windows x86 build dependencies
         if: steps.build-tools.outputs.install_needed == 'true'
