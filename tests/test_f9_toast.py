@@ -22,7 +22,7 @@ def test_screenshot_confirmation_is_english_and_includes_full_path():
     assert 'L"\\\\' not in TOAST or "toast_wrap_path" in TOAST
     assert "toast_wrap_path(" in TOAST
     assert "DrawTextW(" not in TOAST  # No truncating label/path drawing
-    assert "SPIDER_F9_TOAST_MS 2500u" in TOAST
+    assert "SPIDER_F9_TOAST_MS 2000u" in TOAST
 
 
 def test_confirmation_published_only_after_image_is_actually_saved():
@@ -138,3 +138,22 @@ def test_toast_timer_starts_on_first_actual_display_in_sparse_comic_scenes():
     assert "SpiderF9Toast_GetDisplayStatus(&published,&displayed);" in CORE
     assert "F9-TOAST: generation=%lu first subsequent Flip=" in CORE
     assert "F9-TOAST: generation=%lu FIRST displayed at Flip=" in CORE
+
+
+def test_comic_late_blt_can_only_reapply_cached_panel_without_gdi_on_primary():
+    assert "SpiderF9Toast_GetComposedPanel(" in HEADER
+    assert "BOOL SpiderF9Toast_GetComposedPanel(" in TOAST
+    assert "toast_panel_region=panel;" in TOAST
+    assert "toast_panel_valid=TRUE;" in TOAST
+    assert "toast_panel_valid=FALSE;" in TOAST
+    assert "published==shown" in TOAST
+    assert "static volatile LONG f9_comic_last_draw_tick=0;" in CORE
+    assert "InterlockedExchange(&f9_comic_last_draw_tick,(LONG)GetTickCount());" in CORE
+    blt=CORE.split("static HRESULT WINAPI hooked_blt(",1)[1].split(
+        "/* The surface-creation hook remains responsible",1)[0]
+    assert "self==(void*)borderless_primary" in blt
+    assert "SpiderF9Toast_GetComposedPanel(&panel_stage,&panel)" in blt
+    assert "IntersectRect(&overlap,presented_dest,&dest_panel)" in blt
+    assert "original_blt(self,&dest_panel,panel_stage,&panel," in blt
+    assert "F9-TOAST-COMIC: PRIMARY Blt" in blt
+    assert "GetDC(" not in blt
