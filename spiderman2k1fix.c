@@ -1379,6 +1379,10 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
   /* Only retain surfaces actually presented as recognized intro video.
    * Same game thread as F9; no worker accesses DirectDraw objects. */
   if(SUCCEEDED(hr) && f9_movie_present && source) {
+    /* A decoded intro video can continue even with the original
+     * 0x006151F8 'movie active' bit zero. Always record the actual
+     * successful movie presentation for F12 shutdown safety. */
+    SpiderQuickExitF12_ObserveMovieFrame();
     if(source!=f9_movie_source) {
       IDirectDrawSurface7_AddRef(source);
       if(f9_movie_source) IDirectDrawSurface7_Release(f9_movie_source);
