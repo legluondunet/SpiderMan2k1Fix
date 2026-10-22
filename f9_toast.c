@@ -16,6 +16,20 @@ static SRWLOCK toast_mutex=SRWLOCK_INIT;
 static WCHAR toast_path[MAX_PATH];
 static BOOL toast_success=TRUE;
 static DWORD toast_expires_at=0;
+/* An idle comic panel may have no Flip while the worker saves its PNG.
+ * Start the 2.5s timer on first ACTUAL presentation, with a 10s grace
+ * window to avoid displaying an old notification far into the next scene. */
+#define SPIDER_F9_TOAST_GRACE_MS 10000u
+static DWORD toast_published_at=0;
+static DWORD toast_generation=0;
+static DWORD toast_displayed_generation=0;
+
+void SpiderF9Toast_GetDisplayStatus(DWORD *published,DWORD *displayed) {
+  AcquireSRWLockShared(&toast_mutex);
+  if(published)*published=toast_generation;
+  if(displayed)*displayed=toast_displayed_generation;
+  ReleaseSRWLockShared(&toast_mutex);
+}
 
 void SpiderF9Toast_PublishSavedPath(const WCHAR *full_path) {
   DWORD attrs;
@@ -28,7 +42,9 @@ void SpiderF9Toast_PublishSavedPath(const WCHAR *full_path) {
   AcquireSRWLockExclusive(&toast_mutex);
   memcpy(toast_path,full_path,(len+1u)*sizeof(WCHAR));
   toast_success=TRUE;
-  toast_expires_at=GetTickCount()+SPIDER_F9_TOAST_MS;
+  toast_published_at=GetTickCount();
+  toast_expires_at=0; /* No countdown before first actual presentation. */
+  ++toast_generation;
   ReleaseSRWLockExclusive(&toast_mutex);
 }
 
@@ -40,7 +56,9 @@ void SpiderF9Toast_PublishError(const WCHAR *reason) {
   AcquireSRWLockExclusive(&toast_mutex);
   memcpy(toast_path,reason,(len+1u)*sizeof(WCHAR));
   toast_success=FALSE;
-  toast_expires_at=GetTickCount()+SPIDER_F9_TOAST_MS;
+  toast_published_at=GetTickCount();
+  toast_expires_at=0; /* No countdown before first actual presentation. */
+  ++toast_generation;
   ReleaseSRWLockExclusive(&toast_mutex);
 }
 
@@ -261,13 +279,17 @@ static BOOL toast_create_stage(IDirectDrawSurface7 *back,DWORD width,
 IDirectDrawSurface7 *SpiderF9Toast_CompositeFrame(
     IDirectDrawSurface7 *back,HWND window,DWORD width,DWORD height) {
   WCHAR path[MAX_PATH];
-  DWORD expires;
+  DWORD expires,published,generation;
   BOOL success;
   int attempt;
   AcquireSRWLockShared(&toast_mutex);
   expires=toast_expires_at;
+  published=toast_published_at;
+  generation=toast_generation;
   success=toast_success;
-  if(expires && (LONG)(expires-GetTickCount())>0)
+  if(toast_path[0] &&
+     ((expires && (LONG)(expires-GetTickCount())>0) ||
+      (!expires && (DWORD)(GetTickCount()-published) < SPIDER_F9_TOAST_GRACE_MS)))
     memcpy(path,toast_path,sizeof(path));
   else path[0]=L'\\0';
   ReleaseSRWLockShared(&toast_mutex);
@@ -297,7 +319,17 @@ IDirectDrawSurface7 *SpiderF9Toast_CompositeFrame(
     if(SUCCEEDED(hr) && dc) {
       drawn=toast_draw_dc(dc,width,height,path,success);
       IDirectDrawSurface7_ReleaseDC(toast_stage,dc);
-      if(drawn)return toast_stage;
+      if(drawn) {
+        AcquireSRWLockExclusive(&toast_mutex);
+        /* A newer worker publication may have arrived mid-composition.
+         * Never start its countdown with the older notification's frame. */
+        if(toast_generation==generation) {
+          if(!toast_expires_at)toast_expires_at=GetTickCount()+SPIDER_F9_TOAST_MS;
+          toast_displayed_generation=generation;
+        }
+        ReleaseSRWLockExclusive(&toast_mutex);
+        return toast_stage;
+      }
     }
     toast_discard_stage();
     toast_prefer_system_memory=TRUE; /* Retry with a GDI-compatible surface. */
