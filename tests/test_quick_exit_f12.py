@@ -1,8 +1,7 @@
-"""F12 native-menu-dispatch prototype regression checks.
+"""F12 REAL Shell_MainMenu native Quit path source checks.
 
-Source checks cannot establish that the game exits cleanly on Windows.
-The new menu-only native dispatcher must be runtime tested before the feature
-can be marked complete or promoted outside a draft PR.
+Passing tests cannot prove a clean process exit on Windows. The user's
+previous build #468 test ruled out 0x4A1A26: that was not the main menu.
 """
 from pathlib import Path
 
@@ -16,126 +15,96 @@ INI=(ROOT/"SpiderMan2k1Fix.generated-example.ini").read_text(encoding="utf-8")
 BUILD=(ROOT/"build.sh").read_text(encoding="utf-8")
 
 
-def test_f12_opt_in_and_original_unsafe_default_disabled():
+def test_default_off_and_ini_section_validated():
     assert "QuickExitF12=0" in INI
     assert '"[System]\\r\\n"' in GEN
     assert '"QuickExitF12=0\\r\\n"' in GEN
     assert '"Debug","System","Display"' in VAL
     assert 'spider_ini_system[]={"QuickExitF12"}' in VAL
     assert 'GetPrivateProfileStringA("System","QuickExitF12","0"' in SRC
-    assert 'if(strcmp(value,"1")!=0)' in SRC
-    assert 'suppress_native_f12_close()' in SRC
-    assert 'original unsafe F12/WM_CLOSE suppressed' in SRC
+    assert 'if(strcmp(val,"1")!=0)' in SRC
+    assert 'OFF; unsafe original F12 WM_CLOSE suppressed' in SRC
 
 
-def test_exact_native_menu_quit_path_verification():
-    # SHA-pinned 2001 EXE, call at 0x4A202F -> 0x493990.
-    # Native main-menu action 18 -> table index 7 -> 0x4A238A
-    # and call 0x48D880 at 0x4A2391 on the game's thread.
-    for address in ("0x004A202Fu", "0x00493990u", "0x004A238Au",
-                    "0x004A2391u", "0x00455E50u", "0x00515373u"):
-        assert address in SRC
-    for signature in ("0xE8,0x5C,0x19,0xFF,0xFF",
-                      "0xC6,0x05,0x88,0xCF,0x60,0x00,0x01",
-                      "0xE8,0xEA,0xB4,0xFE,0xFF",
-                      "0x38,0x1D,0x88,0xCF,0x60,0x00"):
-        assert signature in SRC
-    assert "#define SPIDER_MENU_QUIT_ID 18" in SRC
-    assert "return SPIDER_MENU_QUIT_ID;" in SRC
-    assert "static int __cdecl hooked_native_menu_selection(int argument)" in SRC
-    assert "int selected=SPIDER_MENU_SELECTOR(argument);" in SRC
-    assert "native MENU Quit command 18 delivered on game thread" in SRC
-    assert "install_rel32_call(SPIDER_MENU_SELECTOR_CALL" in SRC
+def test_verified_real_shell_menu_tick_and_quit_selection():
+    assert "0x00493990" in SRC  # REAL Shell_MainMenu
+    assert "0x00493DD6u" in SRC
+    assert "0x00505720u" in SRC
+    assert "0x004941D5u" in SRC
+    assert "0x00552AA8u" in SRC
+    assert "0xE8,0x45,0x19,0x07,0x00" in SRC
+    assert "0x6A,0x00,0x68,0x00,0x20" in SRC
+    assert "SPIDER_SHELL_MENU_ITEMS+3*40+12" in SRC
+    assert "!=0x12u" in SRC
+    assert 'real Shell_MainMenu code/table signature mismatch' in SRC
+    assert 'REAL Shell_MainMenu frame callback observed' in SRC
+    # This is NOT the previously mistaken secondary-menu 0x4A1A26 hook:
+    assert "0x004A1A26" in SRC  # only in historical explanation
+    assert "#define SPIDER_MENU_LOOP_READ_CALL" not in SRC
 
 
-def test_f12_input_worker_only_queues_request_without_engine_mutation():
+def test_f12_game_thread_uses_native_menu_cleanup_without_calls_from_worker():
+    assert "native Shell_MainMenu Quit activated: slot=3 action=18" in SRC
+    assert "InterlockedCompareExchange(&pending,0,1)==1" in SRC
+    assert "movl $3, 0x68(%esp)" in SRC
+    assert "movl $0x004941D5, 0x24(%esp)" in SRC
+    assert "pushfl" in SRC and "pushal" in SRC
+    assert "popal" in SRC and "popfl" in SRC
+    assert "call _SpiderQuickExitF12_ConsumeRealMenuRequest" in SRC
+    assert '__attribute__((naked,used))' in SRC
+    assert "movl $0x00505720, %eax" in SRC
+    assert "call *%eax" in SRC
+    # No direct invocation of the native cleanup or Win32 close functions.
+    for forbidden in ("TerminateProcess(", "ExitProcess(", "PostMessageA(",
+                      "DestroyWindow(", "SetWindowLongPtr(", "SendInput(",
+                      "keybd_event(", "SetWindowsHookEx(",
+                      "0x0048D880u", "*SPIDER_GAME_QUIT_FLAG="):
+        assert forbidden not in SRC
+
+
+def test_foreground_key_detection_and_menu_only_fail_closed():
     assert "GetAsyncKeyState(VK_F12)&0x8000" in SRC
     assert "GetForegroundWindow()==hwnd" in SRC
     assert "previously_down=TRUE;" in SRC
     assert "Sleep(25);" in SRC
-    assert "InterlockedExchange(&menu_quit_pending,1);" in SRC
-    assert "InterlockedExchange(&menu_quit_pending,0);" in SRC
-    assert "SPIDER_F12_DISPATCH_TIMEOUT_MS 1200u" in SRC
-    assert "menu loop not reached" in SRC
-    assert "movie active; no native menu Quit dispatch yet" in SRC
-    assert "SPIDER_MENU_SELECTOR(argument)" in SRC
+    assert "REAL Shell_MainMenu not active; F12 safely ignored" in SRC
+    assert "opening movie active; native menu-only exit NOT requested" in SRC
+    assert "F12 queued for REAL Shell_MainMenu" in SRC
+    assert "InterlockedExchange(&pending,1);" in SRC
+    assert "InterlockedExchange(&pending,0);" in SRC
+    assert "native menu frame not reached within 800ms; no exit" in SRC
     assert "SpiderQuickExitF12_AttachWindow(hwnd);" in CORE
     assert "SpiderQuickExitF12_Init(log_line);" in CORE
     assert "SpiderQuickExitF12_ObserveMovieFrame();" in CORE
-    assert "quick_exit_f12.c" in BUILD
     assert "SpiderQuickExitF12_Enabled()" in CORE
+    assert "quick_exit_f12.c" in BUILD
     assert "SpiderQuickExitF12_ObserveMovieFrame(void);" in HDR
-    # No speculative worker-side native teardown, quit-flag writes or input.
-    for forbidden in ("*SPIDER_GAME_QUIT_FLAG=", "0x0048D880u",
-                      "TerminateProcess(", "ExitProcess(", "PostMessageA(",
-                      "DestroyWindow(", "SetWindowLongPtr(",
-                      "SendInput(", "keybd_event(", "SetWindowsHookEx("):
-        assert forbidden not in SRC
 
 
-def test_installer_rolls_back_partial_hooks():
+def test_native_site_patch_reverts_if_f12_suppression_fails():
     assert "memcmp(SPIDER_NATIVE_F12_POST,native_f12_original,6)" in SRC
-    assert "memcmp(SPIDER_MENU_SELECTOR_CALL,menu_selector_original,5)" in SRC
-    assert "memcmp(SPIDER_MENU_LOOP_READ_CALL,menu_loop_read_original,5)" in SRC
-    assert "memcmp(SPIDER_MENU_LOOP_READ_CALL+5,menu_loop_exit_compare_signature,4)" in SRC
-    assert "if(!install_menu_loop_read())" in SRC
-    assert "restore_menu_loop_read();" in SRC
-    assert "if(!install_menu_dispatcher())" in SRC
-    assert "if(!suppress_native_f12_close())" in SRC
-    assert "restore_menu_dispatcher();" in SRC
-    assert "restore_native_f12_close();" in SRC
-    assert "FlushInstructionCache(GetCurrentProcess(),site,count);" in SRC
-    assert "FlushInstructionCache(GetCurrentProcess(),site,5);" in SRC
+    assert "memcmp(SPIDER_SHELL_MENU_TICK,shell_menu_tick_original,5)" in SRC
+    assert "memcmp(SPIDER_SHELL_MENU_QUIT_RETURN" in SRC
+    assert "if(!install_real_menu_hook())" in SRC
+    assert "if(!suppress_unsafe_native_f12())" in SRC
+    assert "restore_original_menu_tick();" in SRC
+    assert "FlushInstructionCache(GetCurrentProcess(),address,count);" in SRC
+    assert "FlushInstructionCache(GetCurrentProcess(),SPIDER_SHELL_MENU_TICK,5);" in SRC
 
 
-def test_external_windows_watcher_is_readonly():
+def test_windows_process_watch_has_no_kill_side_effects():
     script=(ROOT/"tools/Verify-F12QuickExit.ps1").read_text(encoding="utf-8")
     assert "Start-Process -FilePath $exe -WorkingDirectory $folder -PassThru" in script
-    assert "$watch.WaitForExit(500)" in script
     assert "$watch.ExitCode" in script
-    assert 'Get-Process -Name "SpideyPC"' in script
     assert "Get-WinEvent -FilterHashtable" in script
-    assert "Stop-Process" not in script
-    assert ".Kill(" not in script
-    assert "TerminateProcess" not in script
+    assert "Stop-Process" not in script and ".Kill(" not in script
 
 
-def test_readme_stays_clear_about_partial_menu_only_support():
+def test_readme_describes_main_menu_only_and_no_runtime_validation():
     readme=(ROOT/"README.md").read_text(encoding="utf-8")
-    assert "main-menu" in readme.lower()
+    assert "Shell_MainMenu" in readme
+    assert "0x00493DD6" in readme
+    assert "main menu" in readme.lower()
     assert "cinematics" in readme.lower()
     assert "not yet" in readme.lower()
     assert "tools/Verify-F12QuickExit.ps1" in readme
-
-
-def test_native_menu_loop_exit_read_replaces_only_expected_mov():
-    # Exact game loop:
-    # 004A1A21 CALL 0x505720 (normal frame tick)
-    # 004A1A26 MOV EAX,[0x006B4CA0] (5 bytes)
-    # 004A1A2B CMP EAX,EDI; JA 0x004A1A36 (normal cleanup)
-    assert "#define SPIDER_MENU_LOOP_READ_CALL ((BYTE *)(uintptr_t)0x004A1A26u)" in SRC
-    assert "#define SPIDER_MENU_LOOP_READ_PTR ((const volatile DWORD *)(uintptr_t)0x006B4CA0u)" in SRC
-    assert "0xA1,0xA0,0x4C,0x6B,0x00" in SRC
-    assert "0x3B,0xC7,0x77,0x07" in SRC
-    assert "static DWORD __cdecl hooked_menu_loop_exit_read(void)" in SRC
-    assert "DWORD original=*SPIDER_MENU_LOOP_READ_PTR;" in SRC
-    assert "return 0xFFFFFFFFu;" in SRC
-    assert "return original;" in SRC
-    assert "native MENU loop exit branch requested on game thread" in SRC
-    assert "install_rel32_call(SPIDER_MENU_LOOP_READ_CALL" in SRC
-    assert "InterlockedCompareExchange(&menu_quit_pending,0,1)==1" in SRC
-    assert "InterlockedExchange(&menu_quit_armed,1);" in SRC
-    assert "InterlockedCompareExchange(&menu_quit_armed,0,1)==1" in SRC
-    assert "native MENU loop exited; awaiting native Quit dispatch after cleanup" in SRC
-    assert "abandoned stale native menu Quit after 15s" in SRC
-    assert "MENU Quit command 18 delivered" in SRC
-    assert "restore_menu_loop_read();" in SRC
-    # The previous build #464 only intercepted 0x4A202F, after the menu
-    # loop returned; it had no effect from idle menu.
-    assert "menu loop not reached; F12 safely ignored outside menu" in SRC
-
-
-def test_watcher_rejects_obsolete_flag_only_f12_success():
-    script=(ROOT/"tools/Verify-F12QuickExit.ps1").read_text(encoding="utf-8")
-    assert "native MENU Quit command 18 delivered on game thread" in script
-    assert "game-native quit requested flag=1" not in script
