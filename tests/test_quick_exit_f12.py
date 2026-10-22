@@ -274,3 +274,32 @@ def test_native_game_pause_handler_probe_calls_original_once_without_mutation():
                       "*SPIDER_PAUSE_CONTEXT=", "*SPIDER_PAUSE_OPTION_MENU=",
                       "*SPIDER_ENGINE_MODE=", "SPIDER_NATIVE_PAUSE_HANDLER(1"):
         assert forbidden not in observer
+
+
+def test_native_game_input_handler_observer_covers_alternative_request_7_writer():
+    # Unlike pause handler 0x47BC40, the 0x440EF0 routine executes
+    # immediately before the game's pause-context check at 0x455540.
+    # 0x44108A can request transition 7 from engine flags + timer.
+    assert "#define SPIDER_NATIVE_GAME_INPUT_CALL ((BYTE *)(uintptr_t)0x0045553Bu)" in SRC
+    assert "#define SPIDER_NATIVE_GAME_INPUT_UPDATE ((void (__cdecl *)(void))(uintptr_t)0x00440EF0u)" in SRC
+    assert "native_game_input_call_original[5]={0xE8,0xB0,0xB9,0xFE,0xFF}" in SRC
+    assert "memcmp(SPIDER_NATIVE_GAME_INPUT_CALL,native_game_input_call_original,5)!=0" in SRC
+    assert "if(!install_passive_game_input_probe())" in SRC
+    assert "restore_passive_game_input_probe();" in SRC
+    start=SRC.index("static void __cdecl spider_observe_native_game_input(void)")
+    end=SRC.index("/* Native BinkFrame tick wrapper",start)
+    observer=SRC[start:end]
+    assert observer.count("SPIDER_NATIVE_GAME_INPUT_UPDATE();")==1
+    assert "NATIVE-GAME-INPUT owner ENTER" in observer
+    assert "NATIVE REQUEST 7 produced by 0x440EF0" in observer
+    assert "if(after_request==7u && before_request!=7u)" in observer
+    assert "SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE" in observer
+    assert "SPIDER_NATIVE_GAME_INPUT_FLAG_1" in observer
+    assert "SPIDER_NATIVE_GAME_INPUT_FLAG_2" in observer
+    for forbidden in ("VirtualProtect(", "ExitProcess(", "TerminateProcess(",
+                      "PostMessageA(", "DestroyWindow(", "SendInput(",
+                      "*SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE=",
+                      "*SPIDER_NATIVE_GAME_INPUT_FLAG_1=",
+                      "*SPIDER_NATIVE_GAME_INPUT_FLAG_2=",
+                      "*SPIDER_ENGINE_MODE=", "*SPIDER_GAME_QUIT_FLAG="):
+        assert forbidden not in observer
