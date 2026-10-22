@@ -45,7 +45,7 @@ def test_foreground_edge_trigger_is_independent_of_flip_and_directinput():
 def test_exit_uses_normal_window_shutdown_and_reports_if_unhandled():
     assert "PostMessageA(hwnd,WM_CLOSE,0,0)" in SRC
     assert "IsWindow(hwnd)" in SRC
-    assert "game window destroyed after WM_CLOSE (normal path)" in SRC
+    assert "game window destroyed; verify process exit independently" in SRC
     assert "game window still exists after 5s" in SRC
     for forbidden in ("TerminateProcess(", "ExitProcess(", "PostQuitMessage(", "WM_DESTROY,",
                       "SendInput(", "keybd_event(", "SetWindowsHookEx("):
