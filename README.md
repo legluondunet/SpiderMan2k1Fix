@@ -29,6 +29,17 @@ SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must prov
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 
+### Optional F12 quick exit
+
+To enable F12 as a one-press exit shortcut, edit `SpiderMan2k1Fix.ini` while the game is closed:
+
+```ini
+[System]
+QuickExitF12=1
+```
+
+The default is `QuickExitF12=0`. With the game in the foreground, a new F12 press requests `WM_CLOSE` once through the game's own window/message loop, without a confirmation added by SpiderMan2k1Fix. The patch does not call `ExitProcess` or `TerminateProcess`. Polling is independent of DirectDraw `Flip` so it also works while a comic is static. The original game's actual shutdown/no-confirmation behavior still needs runtime verification. When this option is enabled, F12 HUD diagnostics are suppressed.
+
 ## Requirements and compatibility
 
 - An installed copy of the **original Windows PC version of Spider-Man**, including its game data.
