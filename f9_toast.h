@@ -17,6 +17,9 @@ void SpiderF9Toast_PublishError(const WCHAR *reason);
 IDirectDrawSurface7 *SpiderF9Toast_CompositeFrame(IDirectDrawSurface7 *back,
                                   HWND window,DWORD width,DWORD height);
 void SpiderF9Toast_ResetPresentation(void);
+/* Borrow the composed notification region for game-thread reapplication after
+ * a late comic PRIMARY Blt. Never paint the original screenshot surface. */
+BOOL SpiderF9Toast_GetComposedPanel(IDirectDrawSurface7 **out_stage,RECT *out_rect);
 /* Thread-safe publication and FIRST actual onscreen presentation counters;
  * logs can diagnose static scenes with no Flip without altering game input. */
 void SpiderF9Toast_GetDisplayStatus(DWORD *published,DWORD *displayed);
