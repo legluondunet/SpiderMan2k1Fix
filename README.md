@@ -241,52 +241,65 @@ When testing the current development build, set `DirectInputReacquire=1` and `Pa
 
 Try the original `AspectRatio=4:3` mode to help isolate widescreen-specific problems. Some edge-of-screen 3D rendering issues and audio artifacts are still being investigated; see the roadmap below.
 
-### Native Windows 11: F9 screenshot produces an all-magenta BMP
+### Native Windows 11: experimental F9 screenshot repair
 
-**Known outstanding issue (not yet fixed).** The original game creates
-`scrnNNNN.bmp` on F9, but two native Windows 11 files at 1920×1200
-contained a single color, **RGB(255,0,255)**. The same game F9 feature
-produced a valid 1920×1080 BMP under Wine. Unlike a screenshot made with
-PowerShell or another desktop capture tool, native F9 may be reading a
-DirectDraw surface that does not contain the picture Windows displays.
+On native Windows 11 the game has produced `scrnNNNN.bmp` at
+1920×1200 containing only **RGB(255,0,255)**, even though the game is
+visible on screen. The same F9 shortcut captures a valid 1920×1080 BMP
+under Wine; the two hosts simply use different display resolutions.
 
-An independent experimental branch includes **read-only DirectDraw7 F9
-readback instrumentation**. It does not fix or substitute the BMP. It
-records the existing `Lock`, `GetDC`, `GetSurfaceDesc`, `Unlock` and
-`ReleaseDC` operations, their original game call sites and whether
-they target our windowed PRIMARY or 3D BACKBUFFER. The five COM
-vtable hooks are **not installed by default**; they require both
-`[Debug] Log=1` and `SPIDERMAN2K1FIX_F9_TRACE=1`.
+**The root cause is now localized.** Native Windows F9 logs show the
+SHA-verified game calls `IDirectDrawSurface7::Lock` on the **windowed
+PRIMARY** at game RVA `0x001034D4`, with `DDLOCK_READONLY`,
+1920×1200, 32-bit color and HRESULT success, then `Unlock` at RVA
+`0x00103537`. The 3D scene is actually rendered into a separate
+`borderless_back` surface and copied to PRIMARY during each Flip. It
+appears native DirectDraw returns stale/magenta pixels when PRIMARY is
+locked for CPU readback, even though the window itself is displaying
+valid frames; this still needs verification with a fresh BMP.
 
-**Diagnostic procedure with matched DLLs from the F9 experiment:**
+**Experimental fix (disabled by default):** the separate F9 PR #24
+allows `SPIDERMAN2K1FIX_F9_BACKBUFFER=1` with `[Debug] Log=1`.
+When enabled, only this exact screenshot `Lock` call is transparently
+redirected to the real 3D backbuffer, and only its matching `Unlock`
+is redirected back. All other Lock/Unlock calls and the rest of the
+game continue unchanged. The backbuffer lock is accepted only when it
+returns a full-resolution 32-bit buffer with expected pitch. If the
+lock or format fails, the game falls back to the original PRIMARY
+readback, and the log records the failure.
 
-1. Back up your two game DLLs and INI. Set `[Debug] Log=1`; keep the
-   validated HUD and borderless configuration unchanged.
-2. In PowerShell, in the game directory, run:
+**Native Windows 11 test (both matching DLLs from the latest PR #24
+artifact):**
+
+1. Back up the existing DLLs and INI. Enable `[Debug] Log=1` but
+   leave all validated HUD, pause, aspect ratio and borderless options
+   unchanged.
+2. In PowerShell from the game folder, launch with both diagnostics
+   and experimental fix enabled:
 
    ```powershell
    $env:SPIDERMAN2K1FIX_F9_TRACE = "1"
+   $env:SPIDERMAN2K1FIX_F9_BACKBUFFER = "1"
    .\\SpideyPC.exe
    ```
 
-3. Load a normal 3D level on native Windows 11 and **press and hold F9
-   briefly** (about one second) to produce one of the legacy BMP files.
-   The diagnostic also observes F9 on each Flip, and collects surface
-   readback operations during a six-second window. If F9 generates
-   multiple files while held, release it immediately after one capture.
-4. Exit, preserve `SpiderMan2k1Fix.log`, the newly generated BMP and
-   their timestamps. Look for `F9-TRACE: F9 key pressed`,
-   `F9-TRACE: Lock` or `F9-TRACE: GetDC` and
-   `F9-TRACE: GetSurfaceDesc`. If none appears, the game's screenshot
-   routine may use a different readback mechanism.
-5. To return to normal play, clear the variable with
-   `Remove-Item Env:SPIDERMAN2K1FIX_F9_TRACE -ErrorAction SilentlyContinue`
-   and restore `Log=0` when no longer diagnosing.
+3. Start a 3D level and press **F9 once**. Quit normally, then inspect
+   the fresh `scrnNNNN.bmp` and `SpiderMan2k1Fix.log`.
+4. Look for `F9-FIX: BACKBUFFER Lock success` followed by
+   `F9-FIX: BACKBUFFER Unlock`, or a clean fallback reason.
+   **Success is only established if the new BMP contains the scene**.
+   If the game crashes or its display changes unexpectedly, restore
+   the previous DLLs and provide the log.
+5. To disable the experiment in PowerShell:
+   `Remove-Item Env:SPIDERMAN2K1FIX_F9_BACKBUFFER -ErrorAction SilentlyContinue`
+   and `Remove-Item Env:SPIDERMAN2K1FIX_F9_TRACE -ErrorAction SilentlyContinue`.
 
-The goal is to **prove which surface F9 reads** before implementing a
-safe pixel-path correction. The F9 experiment is separate from the
-HUD and pre-1.0 cleanup PRs; do not merge it without native Windows
-validation.
+Read-only observation without redirection is still available by
+setting only `SPIDERMAN2K1FIX_F9_TRACE=1` together with `Log=1`.
+Neither setting is added to the default INI or enabled for normal
+users. PR #24 remains **DRAFT** pending native Windows and Wine
+validation; this change is deliberately isolated from HUD/default-on
+and pre-1.0 cleanup PRs.
 
 ## Adaptive widescreen HUD
 
