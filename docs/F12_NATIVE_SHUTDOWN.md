@@ -93,6 +93,16 @@ one-to-one scene IDs.** Do not guess which action owns 3D, comic
 images, splash screens, or the real menu. A value of zero occurs
 throughout several very different scenes.
 
+**Verified action 7 path:** dispatch from `0x00455F56` to
+`0x00456185`, calls `0x00443AD0(0)` and `0x0048A820`, then
+tests a native bit at `0x02E0988C` and status at `0x00568FB0`.
+Depending on those conditions it **either** continues the top-level
+loop at `0x00455D98` **or** branches toward cleanup at
+`0x0045620C`. Therefore request 7 (seen after gameplay in
+build #488) is demonstrably **not a universal “Quit now” command**.
+Do not write it as an F12 shortcut without verifying the owner
+state and cleanup conditions.
+
 ### Where transition requests originate (additional verified x86 writer sites)
 
 The following instructions **write** the global `0x0060CFA4`. They
