@@ -280,6 +280,87 @@ assuming that menu selection invoked one of the monitored owners.
 This remains a **diagnostic only**; F12 gameplay exit is still
 disabled, and the previously validated main-menu F12 is unchanged.
 
+## Windows build #503 validation: actual 3D input owner confirmed
+
+The user supplied `SpiderMan2k1Fix(20261022-181331).log`.
+It explicitly confirms the *game-owned* `0x00440EF0` routine
+generated `mode_request=7` during native 3D gameplay:
+
+```text
+QUICK-EXIT-F12: NATIVE-GAME-INPUT owner ENTER n=1 request=0 timer_active=0 flag1=0 flag2=1
+QUICK-EXIT-F12: NATIVE-GAME-INPUT owner EXIT n=358 NATIVE REQUEST 7 produced by 0x440EF0; timer_before=0 flag1=0 flag2=1
+QUICK-EXIT-F12: ENGINE-STATE flip=635 renderer2d=1 mode_request=7 countdown=1704026 ...
+QUICK-EXIT-F12: F12 queued for REAL Shell_MainMenu (0x493DD6)
+QUICK-EXIT-F12: native Shell_MainMenu Quit activated: slot=3 action=18 ...
+```
+
+No `NATIVE-PAUSE` owner marker appeared. This identifies **the
+observed 3D-to-menu transition's origin**, not an untested game-wide
+F12 shutdown path.
+
+### Verified native 3D loop handoff and cleanup
+
+The relevant original executable control flow is:
+
+```text
+0x00455A8B CALL 0x00455400    ; original 3D update/frame
+0x00455A90 CMP  [0x0060CFA4], 0
+0x00455A96 JNE  0x00455BF3    ; native 3D-owner cleanup on pending request
+... otherwise normal gameplay loop ...
+0x00455BF3 MOV  [0x0056FC74], 0
+0x00455BF9 CALL 0x004302D0    ; original per-mode cleanup checkpoint
+... conditional native audio/engine cleanup ...
+0x00455C12 CALL 0x004CB0B0
+0x00455C17 MOV  EAX,[0x0060CFA4]
+0x00455C2F CALL 0x00472340
+0x00455C34 CALL 0x00479E30
+0x00455C3D RET                 ; hands control back to top-level dispatcher
+```
+
+The **actual, game-owned** input function `0x00440EF0` writes
+controller request 7 at `0x0044108A`, only after:
+
+- Both game-owned input flags `[0x006611F0]` and `[0x006611E0]`
+  are nonzero when checked inside this native function.
+- If inactive, it arms `[0x005FAED8]` and records tick counter
+  `[0x006B4CA0]` into `[0x005FAEDC]`.
+- It later compares elapsed ticks with `0x78` (**120 ticks**), and
+  requests 7 when elapsed ticks are strictly greater than 120.
+  The input owner also updates a stack-local transition marker.
+- The first "enter" snapshot showed flag1=0, flag2=1.
+  The later request-7 snapshot reports those same **pre-call**
+  values; native flags can change *during* `0x440EF0`, so the
+  pre-call zeros cannot disprove the conditional gate.
+
+**Critical safety constraint:** We must **not** assume writing
+`mode_request=7` from an F12 worker thread is equivalent to
+activating this native path. Its owner also manages elapsed-tick
+state and an internal transition marker. The 3D loop's own
+native cleanup must be observed before any F12 extension is tried.
+
+### Additional opt-in, PASS-THROUGH diagnostic (no F12-in-3D yet)
+
+At `0x00455BF9`, the original 3D owner calls `0x004302D0`
+with the exact CALL bytes `E8 D2 A6 FD FF`. The new
+signature-gated wrapper executes that original function **exactly
+once** on the game thread and logs entry / successful return:
+
+```text
+QUICK-EXIT-F12: NATIVE-3D-CLEANUP begin n=1 request=7
+QUICK-EXIT-F12: NATIVE-3D-CLEANUP completed n=1 request=7
+```
+
+The game-input observer additionally reports **post-call**
+values of both input flags and timer arming state when the
+native request-7 transition occurs, to verify its actual
+conditional gate. It never mutates either flag, the timer,
+or the pending controller request.
+
+Passing these diagnostics still does **not** prove that invoking
+native Quit during live 3D gameplay is safe, or that program
+shutdown can omit the real main menu. We must validate the
+game owner's native cleanup first.
+
 ## Agreed architecture
 
 1. Capture F12 once while the real game is foreground and latch an
