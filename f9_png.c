@@ -17,6 +17,7 @@
 #include <string.h>
 #include <wchar.h>
 #include "f9_png.h"
+#include "f9_toast.h"
 
 #define SPIDER_PNG_PIXEL_FORMAT_32BPP_RGB 0x00022009
 #define SPIDER_PNG_MAX_DIMENSION 8192u
@@ -135,6 +136,8 @@ static DWORD WINAPI spider_png_thread(void *ctx) {
       snprintf(msg,sizeof(msg),"F9-PNG: saved scrn%04u.png %lux%lu (native lossless)",
                (unsigned)n,(unsigned long)job->width,(unsigned long)job->height);
       spider_png_log(job,msg);
+      /* Inform the game thread only after the final PNG exists. */
+      SpiderF9Toast_PublishSavedPath(dest);
       saved=1;
       break;
     }
