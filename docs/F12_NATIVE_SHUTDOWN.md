@@ -222,6 +222,64 @@ markers**, not permission to release COM/video resources from a callback.
 - This success does **not** imply that calling menu cleanup while in 3D,
   Bink or a static splash is safe.
 
+## Build #500 Windows diagnostic: pause owner was NOT observed
+
+User log `SpiderMan2k1Fix(20261022-180341).log`, on the current
+Windows x86 build, shows native 3D rendering with HUD, a transition
+`mode_request=7` and then the validated Shell_MainMenu Quit action
+18 after F12. **There are no NATIVE-PAUSE owner ENTER or EXIT markers**,
+even though the signature-gated pause-handler call probe was installed.
+The three passive pointer-presence indicators also remained zero.
+
+This rules out the particular instrumented
+`0x00455549 -> 0x0047BC40` caller as the observed source of
+transition 7 for this run. It does **not** prove that no pause menu
+was shown, nor that every pause implementation is unused. The
+controller transition request 7 has multiple distinct native writers.
+
+### Second, independently identified game-input owner
+
+Disassembly of the SHA-verified executable shows the per-tick sequence:
+
+```text
+0x00455536 CALL 0x00430880
+0x0045553B CALL 0x00440EF0    ; E8 B0 B9 FE FF
+0x00455540 MOV  EAX,[0x00682950]
+0x00455545 TEST EAX,EAX
+0x00455547 JE   0x0045554E
+0x00455549 CALL 0x0047BC40    ; E8 F2 66 02 00
+0x0045554E CALL 0x00458940
+```
+
+`0x00440EF0` includes a **different writer** at
+`0x0044108A` of native controller request `7`. That writer
+is guarded by bytes `[0x006611F0]`, `[0x006611E0]` and a
+`>0x78` comparison of the elapsed game tick counter relative to
+`[0x005FAEDC]` (with arming state at `[0x005FAED8]`).
+This makes it a plausible but **not yet confirmed** source of
+the user-observed return to the menu.
+
+The new opt-in diagnostic intercepts **only the existing original
+gameplay CALL** at `0x0045553B`, after exact signature verification.
+Its wrapper calls `0x00440EF0` exactly once with the original
+no-argument cdecl ABI. It logs first entry and when the original
+call itself changes the transition request from another value to
+7. It also records, read-only, the arming state and two input flags
+at the call boundary. No game state or native input is changed.
+
+Expected evidence for this distinct route:
+
+```text
+QUICK-EXIT-F12: NATIVE-GAME-INPUT owner ENTER n=1 ...
+QUICK-EXIT-F12: NATIVE-GAME-INPUT owner EXIT n=... NATIVE REQUEST 7 produced by 0x440EF0 ...
+```
+
+If a request-7 transition occurs with neither native owner marker,
+we must investigate further native writer sites rather than
+assuming that menu selection invoked one of the monitored owners.
+This remains a **diagnostic only**; F12 gameplay exit is still
+disabled, and the previously validated main-menu F12 is unchanged.
+
 ## Agreed architecture
 
 1. Capture F12 once while the real game is foreground and latch an
