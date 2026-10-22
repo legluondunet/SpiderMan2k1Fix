@@ -21,9 +21,11 @@
  * CALL sites. An opt-in F12 request makes those ticks return "finished",
  * so the ORIGINAL 0x470871 BinkClose path runs in the video-owning
  * game thread. All four sequential movie calls take this same path.
- * On entry to the REAL main menu, the already Windows-validated Quit
- * item is selected on the normal menu thread, before the first menu
- * frame is presented. No WM_CLOSE, no process kill, no direct BinkClose.
+ * After the four movies, the original transition cleanup is called
+ * on the game thread, and ONLY THEN the pending intro Quit flag is
+ * forwarded to the native engine's top-level Quit check at 0x455E50.
+ * The real interactive menu F12 path is unchanged. No WM_CLOSE, no
+ * process kill, no direct BinkClose.
  *
  * Comic screens / 3D remain unsupported. Exact code bytes MUST match
  * before any hook is installed.
@@ -71,8 +73,8 @@ static volatile LONG delivered=0;
 static volatile LONG menu_frame_count=0;
 static volatile LONG last_menu_frame_ms=0;
 static volatile LONG last_movie_frame_ms=0;
-/* The request persists across the four native movie calls.
- * Only the already verified real menu Quit routine consumes it. */
+/* The request persists across the four native movie calls,
+ * and is delivered to the top-level Quit path after transition cleanup. */
 static volatile LONG intro_quit_pending=0;
 static volatile LONG intro_tick_shortcircuited=0;
 static volatile LONG intro_native_quit_forwarded=0;
@@ -300,11 +302,12 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
       } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==0 &&
                 ((movie_time && (DWORD)(now-(DWORD)movie_time)<750u) ||
                  *SPIDER_GAME_BINK_ACTIVE!=0u)) {
-        /* Set a one-shot intent: Bink tick wrappers finish the current
-         * clip and remaining startup movies through game-owned cleanup,
-         * then the first Shell_MainMenu frame executes native Quit. */
+        /* Set a one-shot intent: Bink tick wrappers finish remaining
+         * startup movies through game-owned cleanup; the original
+         * post-movie transition then forwards native Quit before
+         * the top-level engine's startup-state check. */
         if(InterlockedCompareExchange(&intro_quit_pending,1,0)==0)
-          say("QUICK-EXIT-F12: intro movie exit requested; native Bink cleanup then real Shell_MainMenu Quit");
+           say("QUICK-EXIT-F12: intro movie exit requested; native Bink cleanup then top-level engine Quit");
       } else {
         say("QUICK-EXIT-F12: REAL Shell_MainMenu or startup movie not active; F12 safely ignored");
       }
