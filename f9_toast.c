@@ -10,7 +10,7 @@
 #include <wchar.h>
 #include "f9_toast.h"
 
-#define SPIDER_F9_TOAST_MS 3500u
+#define SPIDER_F9_TOAST_MS 2500u
 #define SPIDER_F9_TOAST_MAX_LINES 32
 static SRWLOCK toast_mutex=SRWLOCK_INIT;
 static WCHAR toast_path[MAX_PATH];
