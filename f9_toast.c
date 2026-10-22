@@ -115,9 +115,8 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path) {
   if(old_brush && old_brush!=HGDI_ERROR && old_pen &&
      old_pen!=HGDI_ERROR) {
     RoundRect(dc,panel.left,panel.top,panel.right,panel.bottom,10,10);
-    SetBkMode(dc,TRANSPARENT);
-    old_mode=TRANSPARENT; /* Saved separately below through SetBkMode. */
-    (void)old_mode;
+    old_mode=SetBkMode(dc,TRANSPARENT);
+    old_color=GetTextColor(dc);
     SetTextColor(dc,RGB(242,205,124));
     TextOutW(dc,x+pad,y+pad,heading,
              (int)(sizeof(heading)/sizeof(heading[0])-1));
@@ -125,6 +124,8 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path) {
     for(i=0;i<lines;i++)
       TextOutW(dc,x+pad,y+pad+(i+1)*step,
                path+starts[i],lengths[i]);
+    SetTextColor(dc,old_color);
+    SetBkMode(dc,old_mode);
     ok=TRUE;
   }
   if(old_pen && old_pen!=HGDI_ERROR)SelectObject(dc,old_pen);
