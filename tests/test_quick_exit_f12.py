@@ -20,7 +20,10 @@ def test_default_off_and_ini_section_validated():
     assert '"[System]\\r\\n"' in GEN
     assert '"QuickExitF12=0\\r\\n"' in GEN
     assert '"Debug","System","Display"' in VAL
-    assert 'spider_ini_system[]={"QuickExitF12"}' in VAL
+    assert 'spider_ini_system[]={"QuickExitF12","ExperimentalQuickExitF12In3D"}' in VAL
+    assert "ExperimentalQuickExitF12In3D=0" in INI
+    assert '"ExperimentalQuickExitF12In3D=0\\r\\n"' in GEN
+    assert 'GetPrivateProfileIntA("System","ExperimentalQuickExitF12In3D",0,ini)' in SRC
     assert 'GetPrivateProfileStringA("System","QuickExitF12","0"' in SRC
     assert 'if(strcmp(val,"1")!=0)' in SRC
     assert 'OFF; unsafe original F12 WM_CLOSE suppressed' in SRC
@@ -371,3 +374,72 @@ def test_top_level_native_controller7_exit_decision_is_passively_observed():
                       "*SPIDER_NATIVE_CONTROLLER7_EXIT_STATUS=",
                       "*SPIDER_ENGINE_MODE=", "*SPIDER_GAME_QUIT_FLAG="):
         assert forbidden not in observer
+
+
+def test_3d_f12_is_separately_opted_in_and_menu_keeps_priority():
+    assert "static volatile LONG experimental_game3d_enabled=0;" in SRC
+    assert "GetPrivateProfileIntA(\"System\",\"ExperimentalQuickExitF12In3D\",0,ini)" in SRC
+    assert "QuickExitF12=0" in INI
+    assert "ExperimentalQuickExitF12In3D=0" in INI
+    assert 'if(strcmp(val,"1")!=0)' in SRC
+    assert "game3d_exit_state,1,0" in SRC
+    assert "last_native_game_input_ms" in SRC
+    assert "last_game3d_flip_ms" in SRC
+    assert "last_menu_frame_ms" in SRC
+    thread=SRC[SRC.index("static DWORD WINAPI f12_input_thread"):
+               SRC.index("void SpiderQuickExitF12_Init")]
+    assert thread.index("if(menu_time &&") < thread.index("experimental_game3d_enabled")
+    assert thread.index("intro_quit_pending,1,0") < thread.index("game3d_exit_state,1,0")
+    assert "*SPIDER_ENGINE_MODE=" not in thread
+    assert "*SPIDER_GAME_QUIT_FLAG=" not in thread
+    assert "0x0060CFA4u=7u" not in thread
+    assert "0x02E0988Cu=" not in thread
+    assert "TerminateProcess(" not in thread
+    assert "PostMessageA(" not in thread
+
+
+def test_3d_request_7_issued_only_on_native_owner_thread_after_input_tick():
+    start=SRC.index("static void __cdecl spider_observe_native_game_input(void)")
+    end=SRC.index("/* PASSIVE owner cleanup checkpoint",start)
+    cb=SRC[start:end]
+    assert cb.count("SPIDER_NATIVE_GAME_INPUT_UPDATE();")==1
+    assert "InterlockedCompareExchange(&game3d_exit_state,2,1)==1" in cb
+    assert "experimental_game3d_enabled" in cb
+    assert "before_request==0u && after_request==0u" in cb
+    assert "*SPIDER_GAME_BINK_ACTIVE==0u" in cb
+    assert "*(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;" in cb
+    assert cb.index("SPIDER_NATIVE_GAME_INPUT_UPDATE();") < cb.index("*(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;")
+    assert "3D game-thread frame completed; native request 7 queued for original 0x455BF3 cleanup" in cb
+    assert "game3d_cleanup_baseline" in cb
+    assert "game3d_cleanup_confirmed" in cb
+    assert "ExitProcess(" not in cb and "TerminateProcess(" not in cb
+
+
+def test_3d_final_exit_arm_is_only_after_native_owner_and_controller_cleanup():
+    start=SRC.index("static void __cdecl spider_observe_controller7_finish(void)")
+    end=SRC.index("/* Native BinkFrame tick wrapper",start)
+    cb=SRC[start:end]
+    assert cb.count("SPIDER_NATIVE_CONTROLLER7_FINISH();")==1
+    assert "request==7u" in cb
+    assert "game3d_cleanup_confirmed,0,0)==1" in cb
+    assert "game3d_exit_state,0,0)==2" in cb
+    assert "native_game_cleanup_count,0,0)>" in cb
+    assert "after_status<0" in cb
+    assert "(after_bit&4u)==0u" in cb
+    assert "*(volatile BYTE *)(uintptr_t)0x02E0988Cu=(BYTE)(after_bit|4u);" in cb
+    assert cb.index("SPIDER_NATIVE_CONTROLLER7_FINISH();") < cb.index("*(volatile BYTE *)(uintptr_t)0x02E0988Cu=(BYTE)(after_bit|4u);")
+    assert "3D owner+controller cleanup complete; engine native final-exit flag set at 0x45619D" in cb
+    assert "InterlockedExchange(&game3d_exit_state,3)" in cb
+    assert "0x0045620Cu" not in cb  # never directly jump or call native teardown
+    assert "ExitProcess(" not in cb and "TerminateProcess(" not in cb
+
+
+def test_3d_original_game_owned_cleanup_return_marks_checkpoint():
+    start=SRC.index("static void __cdecl spider_observe_native_game_cleanup(void)")
+    end=SRC.index("/* Native BinkFrame tick wrapper",start)
+    cb=SRC[start:end]
+    assert "SPIDER_NATIVE_GAME_CLEANUP();" in cb
+    assert "game3d_exit_state,0,0)==2" in cb
+    assert "request==7u" in cb
+    assert "game3d_cleanup_confirmed,1" in cb
+    assert cb.index("SPIDER_NATIVE_GAME_CLEANUP();") < cb.index("game3d_cleanup_confirmed,1")
