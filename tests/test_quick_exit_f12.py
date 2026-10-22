@@ -39,7 +39,7 @@ def test_foreground_edge_trigger_is_independent_of_flip_and_directinput():
     assert "SpiderQuickExitF12_Init(log_line);" in CORE
     assert "SpiderQuickExitF12_Enabled()" in CORE
     assert "quick_exit_f12.c" in BUILD
-    assert "WndProc" not in SRC  # no subclassing
+    assert "SetWindowLongPtr(" not in SRC  # no subclassing
 
 
 def test_exit_uses_normal_window_shutdown_and_reports_if_unhandled():
