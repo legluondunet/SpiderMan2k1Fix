@@ -63,6 +63,15 @@
 #define SPIDER_ENGINE_MODE ((const volatile DWORD *)(uintptr_t)0x0060CFA4u)
 #define SPIDER_ENGINE_ASYNC_STATE ((const volatile DWORD *)(uintptr_t)0x006B4C9Cu)
 #define SPIDER_ENGINE_TASK ((const volatile DWORD *)(uintptr_t)0x0054A510u)
+/* Native per-frame 0x455400 calls 0x47bc40 at 0x455549 when the
+ * gameplay pause context at 0x682950 is nonzero. Within 0x47bc40 the
+ * pause option object at 0x682968 holds the real user selection:
+ *   0 retry; 1 quit to training; 2 quit to main menu.
+ * Observe ONLY pointer presence from the existing Flip hook.
+ * Never dereference or mutate these game-owned COM/menu objects. */
+#define SPIDER_PAUSE_CONTEXT ((const volatile DWORD *)(uintptr_t)0x00682950u)
+#define SPIDER_PAUSE_OPTION_MENU ((const volatile DWORD *)(uintptr_t)0x00682968u)
+#define SPIDER_PAUSE_RESTART_MENU ((const volatile DWORD *)(uintptr_t)0x00682960u)
 
 static const BYTE native_f12_original[6]={0xFF,0x15,0x70,0xB1,0x53,0x00};
 static const BYTE native_f12_bypass[6]={0x83,0xC4,0x10,0x90,0x90,0x90};
@@ -115,11 +124,14 @@ void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,
                                           LONG renderer_menu) {
   static LONG previous_mode=-1,previous_quit=-1;
   static LONG previous_async_active=-1,previous_renderer_menu=-1;
+  static LONG previous_pause_context=-1,previous_pause_options=-1;
+  static LONG previous_pause_restart=-1;
   static DWORD last_snapshot=0;
   DWORD now,mode,async,task,menu_last,movie_last;
   LONG quit,menu_seen,menu_recent,movie_recent,async_active;
+  LONG pause_context,pause_options,pause_restart;
   LONG intro_requested,forwarded;
-  char line[360];
+  char line[440];
   if(!SpiderQuickExitF12_Enabled())return;
   now=GetTickCount();
   mode=*SPIDER_ENGINE_MODE;
@@ -127,14 +139,23 @@ void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,
   async_active=(async!=0u)?1:0;
   task=*SPIDER_ENGINE_TASK;
   quit=(LONG)*SPIDER_GAME_QUIT_FLAG;
+  pause_context=(*SPIDER_PAUSE_CONTEXT!=0u);
+  pause_options=(*SPIDER_PAUSE_OPTION_MENU!=0u);
+  pause_restart=(*SPIDER_PAUSE_RESTART_MENU!=0u);
   if(previous_mode==(LONG)mode && previous_quit==quit &&
      previous_async_active==async_active &&
      previous_renderer_menu==renderer_menu &&
+     previous_pause_context==pause_context &&
+     previous_pause_options==pause_options &&
+     previous_pause_restart==pause_restart &&
      last_snapshot && (DWORD)(now-last_snapshot)<5000u)return;
   previous_mode=(LONG)mode;
   previous_quit=quit;
   previous_async_active=async_active;
   previous_renderer_menu=renderer_menu;
+  previous_pause_context=pause_context;
+  previous_pause_options=pause_options;
+  previous_pause_restart=pause_restart;
   last_snapshot=now;
   menu_seen=InterlockedCompareExchange(&real_main_menu_seen,0,0);
   menu_last=(DWORD)InterlockedCompareExchange(&last_menu_frame_ms,0,0);
@@ -147,10 +168,11 @@ void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,
    * Bink, 2D and 3D. The async DWORD is a two-part countdown, NOT a
    * mode identifier; never emit 60 log lines just because it ticks. */
   snprintf(line,sizeof(line),
-    "QUICK-EXIT-F12: ENGINE-STATE flip=%ld renderer2d=%ld mode_request=%lu countdown=%lu countdown_active=%ld task=%lu quit=%ld menu_recent=%ld movie_recent=%ld menu_seen=%ld intro_request=%ld intro_forwarded=%ld",
+    "QUICK-EXIT-F12: ENGINE-STATE flip=%ld renderer2d=%ld mode_request=%lu countdown=%lu countdown_active=%ld task=%lu quit=%ld pause_ctx=%ld pause_options=%ld pause_restart=%ld menu_recent=%ld movie_recent=%ld menu_seen=%ld intro_request=%ld intro_forwarded=%ld",
     (long)flip_index,(long)renderer_menu,(unsigned long)mode,
     (unsigned long)async,(long)async_active,(unsigned long)task,
-    (long)quit,(long)menu_recent,(long)movie_recent,(long)menu_seen,
+    (long)quit,(long)pause_context,(long)pause_options,
+    (long)pause_restart,(long)menu_recent,(long)movie_recent,(long)menu_seen,
     (long)intro_requested,(long)forwarded);
   say(line);
 }
