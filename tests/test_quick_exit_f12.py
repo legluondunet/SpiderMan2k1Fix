@@ -76,3 +76,41 @@ def test_readme_identifies_exact_verified_original_f12_route():
     assert "VA 0x00515336" in readme
     assert "VA 0x00515306" in readme
     assert "tools/Verify-F12QuickExit.ps1" in readme
+
+
+def test_bink_intro_exit_uses_original_cleanup_not_window_destruction():
+    # The verified EXE's 0x0047081D / 0x0047085F calls tick at 0x0050B5A0.
+    # The 0x00470871 continuation calls native movie destructor 0x0050B790.
+    # WM_CLOSE before this cleanup hid the window but left video/audio running.
+    assert "SPIDER_INTRO_CALL_1" in SRC
+    assert "0x0047081Du" in SRC
+    assert "0x0047085Fu" in SRC
+    assert "0x0050B5A0u" in SRC
+    assert "0x006151F8u" in SRC
+    assert "0xE8,0x7E,0xAD,0x09,0x00" in SRC
+    assert "0xE8,0x3C,0xAD,0x09,0x00" in SRC
+    assert "memcmp(SPIDER_INTRO_CALL_1,intro_call_1_original,5)" in SRC
+    assert "memcmp(SPIDER_INTRO_CALL_2,intro_call_2_original,5)" in SRC
+    assert "static BYTE __cdecl quick_exit_intro_tick(void)" in SRC
+    assert "if(InterlockedCompareExchange(&intro_abort_requested,0,0)==1)" in SRC
+    assert "return 0; /* original game now jumps to 0x00470871 cleanup */" in SRC
+    assert "return SPIDER_INTRO_TICK();" in SRC
+    assert "FlushInstructionCache(GetCurrentProcess(),address,5);" in SRC
+    assert "restore_intro_call(SPIDER_INTRO_CALL_1,intro_call_1_original);" in SRC
+    assert "if(!install_intro_exit_calls())" in SRC
+    assert "DISABLED: supported intro Bink CALL signatures unavailable" in SRC
+
+
+def test_close_occurs_only_after_bink_movie_owner_reports_cleanup():
+    active = SRC.index("if(*SPIDER_INTRO_ACTIVE!=0u)")
+    drain = SRC.index("*SPIDER_INTRO_ACTIVE==0u",active)
+    posted = SRC.index("if(PostMessageA(hwnd,WM_CLOSE,0,0))",drain)
+    assert active < drain < posted
+    assert "InterlockedExchange(&intro_abort_requested,1);" in SRC
+    assert "native intro completed; Bink released by original game" in SRC
+    assert "WM_CLOSE NOT posted" in SRC
+    assert "movie active; requesting native Bink completion BEFORE WM_CLOSE" in SRC
+    assert "game window destroyed; verify process exit independently" in SRC
+    assert "BinkClose(" not in SRC  # native owner does cleanup itself
+    assert "TerminateProcess(" not in SRC
+    assert "ExitProcess(" not in SRC
