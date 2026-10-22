@@ -216,3 +216,15 @@ def test_intro_decoded_rgb_conversion_is_mask_aware_and_preserves_gameplay():
     assert "f9_movie_last_flip" in movie
     assert "if(!source || (current_flip-movie_flip)>8u)return 0;" in movie
     assert 'L"Unsupported decoded movie pixel format"' in movie
+
+
+def test_static_comic_context_follows_each_png_job_without_changing_encoder():
+    assert "SpiderF9PNG_QueueComic(" in HEADER
+    assert "BOOL static_comic;" in ENC
+    assert "job->static_comic=static_comic;" in ENC
+    assert "if(job->static_comic)SpiderF9Toast_PublishSavedPathComic(dest);" in ENC
+    assert "else SpiderF9Toast_PublishSavedPath(dest);" in ENC
+    assert "return spider_png_queue_internal(frame,log_fn,FALSE);" in ENC
+    assert "return spider_png_queue_internal(frame,log_fn,TRUE);" in ENC
+    assert "if(MoveFileExW(temp,dest,MOVEFILE_WRITE_THROUGH))" in ENC
+    assert "spider_png_verify(dest)" in ENC
