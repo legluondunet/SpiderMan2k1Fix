@@ -46,7 +46,19 @@ static DWORD WINAPI quick_exit_f12_thread(LPVOID unused) {
        * preserves the game's ordinary destruction, DirectDraw/DirectSound
        * releases, and CRT cleanup instead of forcibly killing it. */
       if(PostMessageA(hwnd,WM_CLOSE,0,0)) {
+        unsigned attempts;
         say("QUICK-EXIT-F12: F12 pressed in foreground; WM_CLOSE posted (normal shutdown)");
+        /* Read-only check: did the game's own WndProc destroy the window?
+         * If not, report it instead of killing the process or bypassing
+         * a possible native prompt. Ending normally is the game's job. */
+        for(attempts=0;attempts<100u;attempts++) {
+          if(!IsWindow(hwnd)) {
+            say("QUICK-EXIT-F12: game window destroyed after WM_CLOSE (normal path)");
+            return 0;
+          }
+          Sleep(50);
+        }
+        say("QUICK-EXIT-F12: WARNING WM_CLOSE posted, but game window still exists after 5s; no forced termination");
         return 0; /* one request only, no repeated exit messages */
       }
       InterlockedExchange(&closing,0);
