@@ -31,7 +31,7 @@ SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must prov
 
 ### Optional F12 quick exit — menu validated; startup cinematic exit experimental
 
-> **Windows 11 validation:** Build #471 successfully exits from the actual main menu through the native `Shell_MainMenu` Quit action (slot 3, command 18); the user verified that `SpideyPC.exe` disappears from Task Manager. In build #476, F12 during the opening videos successfully skips the **four** native Bink clips, but the game then stops on one of **two static startup screens**, the latter prompting Enter to reach the main menu. The new *full startup exit* path is **experimental and has not yet been tested on Windows**. Comic pages and 3D remain unsupported. [PR #26](https://github.com/legluondunet/SpiderMan2k1Fix/pull/26) stays a draft.
+> **Windows 11 validation:** Build #471 successfully exits from the actual main menu through the native `Shell_MainMenu` Quit action (slot 3, command 18); the user verified that `SpideyPC.exe` disappears from Task Manager. In build #476, F12 during the opening videos successfully skips the **four** native Bink clips, but the game then stops on one of **two static startup screens**, the latter prompting Enter to reach the main menu. The new *full startup exit* path is **experimental and has not yet been tested on Windows**. Comic pages remain unsupported; 3D has a separately enabled, **unvalidated** native-exit proof of concept. [PR #26](https://github.com/legluondunet/SpiderMan2k1Fix/pull/26) stays a draft.
 
 F12 is off by default. To opt into the experimental build, set:
 
@@ -52,6 +52,30 @@ The 2001 game's original VK_F12 directly posts `WM_CLOSE`, which can destroy onl
 **Important difference from #476:** The first `Shell_MainMenu` callback after the videos may belong to the **two static startup screens**, not the interactive main menu. Delivering Quit there did **not** terminate the game. Rather than entering or simulating input on those screens, this revision hooks the exact native call at `0x00455D23` to transition-cleanup function `0x00443AD0`, *executes the original cleanup first*, then, if an opening F12 request is latched, sets the game's own Quit byte at `0x0060CF88`. Its original top-level check at `0x00455E50` is downstream of that transition and branches to native engine cleanup at `0x004561F2`. This may let the game terminate **before reaching either static screen**, without invoking a native destructor from the key watcher thread.
 
 The new path is protected by exact native machine-byte signatures for the video ticks, the post-movie call and the game's Quit check. **No `WM_CLOSE`, synthetic Enter, `ExitProcess` or `TerminateProcess`** is used.
+
+**3D gameplay F12 — new, separate experimental opt-in (not yet Windows-validated):** The original 3D game loop executes `0x00440EF0` and checks the controller request immediately after each frame. Actual Windows logs #503 and #506 prove that request `7` produced during this native frame leads through game-owned cleanup. Build #508 proves that the top-level controller normally returns to menu with `bit4=0,status=-1` after the native `0x0048A820` cleanup.
+
+Enable *both* options **only when testing this development PR**:
+
+```ini
+[System]
+QuickExitF12=1
+ExperimentalQuickExitF12In3D=1
+
+[Debug]
+Log=1
+```
+
+When F12 is pressed in a recognized 3D frame, the key-watcher thread only latches an intent. At the **end of the game's own 3D input-owner callback**, the game thread requests controller transition `7`, so the original 3D loop takes its existing owner cleanup branch `0x00455BF3`. After the original cleanup at `0x004302D0` has returned, and **after** the top-level controller executes both `0x00443AD0(0)` and `0x0048A820`, the same native game thread sets **only bit 4** in the original engine shutdown flag at `0x02E0988C`. The game's **unchanged** `0x0045619D` test then enters its final cleanup `0x0045620C`. No fake keystrokes, window destruction, `ExitProcess` or `TerminateProcess` are used.
+
+This new path is isolated behind `ExperimentalQuickExitF12In3D=0` by default, and is only eligible when the real 3D owner and non-menu renderer have run recently. The owner cleanup checkpoint must be observed before any final-exit flag is set. A first live Windows test should press F12 **during actual 3D gameplay**, confirm the window, audio and `SpideyPC.exe` process all disappear, and check both these markers:
+
+```text
+QUICK-EXIT-F12: 3D game-thread frame completed; native request 7 queued for original 0x455BF3 cleanup
+QUICK-EXIT-F12: 3D owner+controller cleanup complete; engine native final-exit flag set at 0x45619D
+```
+
+The last marker alone does **not** prove an OS process exit. Check the process and crash events with the PowerShell watcher. Regression-test normal menu F12 with the new option set back to `0`. Comics and the two static startup screens are **still not implemented**.
 
 **Next Windows test:** Press F12 in the first opening cinematic, confirm the audio ends and `SpideyPC.exe` fully disappears without remaining on either static image. Inspect the log for:
 
