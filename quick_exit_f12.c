@@ -89,6 +89,15 @@
 #define SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE ((const volatile DWORD *)(uintptr_t)0x005FAED8u)
 #define SPIDER_NATIVE_GAME_INPUT_FLAG_1 ((const volatile BYTE *)(uintptr_t)0x006611F0u)
 #define SPIDER_NATIVE_GAME_INPUT_FLAG_2 ((const volatile BYTE *)(uintptr_t)0x006611E0u)
+/* Native 3D loop at 0x455A8B calls 0x455400 each frame, and the
+ * immediately following 0x455A90 CMP mode_request,0 branches to
+ * 0x455BF3 for owner-owned cleanup. At 0x455BF9 it calls 0x4302D0.
+ * Wrap THAT existing cleanup CALL only to confirm native owner exit.
+ * The original function executes once, on the original game thread. */
+#define SPIDER_NATIVE_GAME_TICK_COUNTER ((const volatile DWORD *)(uintptr_t)0x006B4CA0u)
+#define SPIDER_NATIVE_GAME_INPUT_TIMER_START ((const volatile DWORD *)(uintptr_t)0x005FAEDCu)
+#define SPIDER_NATIVE_GAME_CLEANUP_CALL ((BYTE *)(uintptr_t)0x00455BF9u)
+#define SPIDER_NATIVE_GAME_CLEANUP ((void (__cdecl *)(void))(uintptr_t)0x004302D0u)
 
 static const BYTE native_f12_original[6]={0xFF,0x15,0x70,0xB1,0x53,0x00};
 static const BYTE native_f12_bypass[6]={0x83,0xC4,0x10,0x90,0x90,0x90};
@@ -100,6 +109,7 @@ static const BYTE post_intro_cleanup_original[5]={0xE8,0xA8,0xDD,0xFE,0xFF};
 static const BYTE top_level_native_quit_test_original[6]={0x38,0x1D,0x88,0xCF,0x60,0x00};
 static const BYTE native_pause_call_original[5]={0xE8,0xF2,0x66,0x02,0x00};
 static const BYTE native_game_input_call_original[5]={0xE8,0xB0,0xB9,0xFE,0xFF};
+static const BYTE native_game_cleanup_call_original[5]={0xE8,0xD2,0xA6,0xFD,0xFF};
 
 static volatile LONG enabled=0;
 static volatile LONG pending=0;
@@ -119,6 +129,7 @@ static volatile LONG pause_native_invocations=0;
 static volatile LONG pause_native_requested7=0;
 static volatile LONG input_native_invocations=0;
 static volatile LONG input_native_requested7=0;
+static volatile LONG native_game_cleanup_count=0;
 static PVOID volatile game_hwnd=NULL;
 static void (*logger)(const char *)=NULL;
 
@@ -255,8 +266,11 @@ static void __cdecl spider_observe_native_game_input(void) {
   DWORD before_timer=*SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE;
   BYTE before_1=*SPIDER_NATIVE_GAME_INPUT_FLAG_1;
   BYTE before_2=*SPIDER_NATIVE_GAME_INPUT_FLAG_2;
-  DWORD after_request;
-  char line[260];
+  DWORD after_request,after_timer,elapsed_ticks;
+  BYTE after_1,after_2;
+  static LONG last_flags=-1,last_armed=-1;
+  LONG current_flags,current_armed;
+  char line[290];
   if(n==1) {
     snprintf(line,sizeof(line),
       "QUICK-EXIT-F12: NATIVE-GAME-INPUT owner ENTER n=%ld request=%lu timer_active=%lu flag1=%u flag2=%u",
@@ -266,13 +280,57 @@ static void __cdecl spider_observe_native_game_input(void) {
   }
   SPIDER_NATIVE_GAME_INPUT_UPDATE();
   after_request=*SPIDER_ENGINE_MODE;
+  after_timer=*SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE;
+  after_1=*SPIDER_NATIVE_GAME_INPUT_FLAG_1;
+  after_2=*SPIDER_NATIVE_GAME_INPUT_FLAG_2;
+  elapsed_ticks=(DWORD)(*SPIDER_NATIVE_GAME_TICK_COUNTER -
+                        *SPIDER_NATIVE_GAME_INPUT_TIMER_START);
+  current_flags=(LONG)((after_1!=0u?1u:0u) |
+                       (after_2!=0u?2u:0u));
+  current_armed=(after_timer!=0u)?1:0;
+  if(last_flags!=current_flags || last_armed!=current_armed) {
+    /* Only a short fixed number of phase transitions, not 60 FPS
+     * timer spam: show the edge that arms the original 120-tick exit. */
+    if(n<5000 && (current_armed || (last_armed==1 && !current_armed))) {
+      snprintf(line,sizeof(line),
+        "QUICK-EXIT-F12: NATIVE-GAME-INPUT flags n=%ld flags=%ld armed=%ld elapsed=%lu",
+        (long)n,(long)current_flags,(long)current_armed,
+        (unsigned long)elapsed_ticks);
+      say(line);
+    }
+    last_flags=current_flags;
+    last_armed=current_armed;
+  }
   if(after_request==7u && before_request!=7u) {
     InterlockedIncrement(&input_native_requested7);
     snprintf(line,sizeof(line),
-      "QUICK-EXIT-F12: NATIVE-GAME-INPUT owner EXIT n=%ld NATIVE REQUEST 7 produced by 0x440EF0; timer_before=%lu flag1=%u flag2=%u",
-      (long)n,(unsigned long)before_timer,(unsigned)before_1,(unsigned)before_2);
+      "QUICK-EXIT-F12: NATIVE-GAME-INPUT owner EXIT n=%ld NATIVE REQUEST 7 produced by 0x440EF0; timer_before=%lu timer_after=%lu flag_before=%u,%u flag_after=%u,%u elapsed=%lu",
+      (long)n,(unsigned long)before_timer,(unsigned long)after_timer,
+      (unsigned)before_1,(unsigned)before_2,
+      (unsigned)after_1,(unsigned)after_2,(unsigned long)elapsed_ticks);
     say(line);
   }
+}
+
+/* PASSIVE owner cleanup checkpoint for the real gameplay path.
+ * 0x455A90 compares mode_request to zero immediately after calling
+ * 0x455400; a pending request skips to 0x455BF3.
+ * 0x455BF9 then calls 0x4302D0. Interpose precisely at this CALL
+ * to prove the original game thread reaches cleanup before returning
+ * to the top-level controller. No F12 action or global write here. */
+static void __cdecl spider_observe_native_game_cleanup(void) {
+  LONG n=InterlockedIncrement(&native_game_cleanup_count);
+  DWORD request=*SPIDER_ENGINE_MODE;
+  char line[190];
+  snprintf(line,sizeof(line),
+    "QUICK-EXIT-F12: NATIVE-3D-CLEANUP begin n=%ld request=%lu",
+    (long)n,(unsigned long)request);
+  say(line);
+  SPIDER_NATIVE_GAME_CLEANUP();
+  snprintf(line,sizeof(line),
+    "QUICK-EXIT-F12: NATIVE-3D-CLEANUP completed n=%ld request=%lu",
+    (long)n,(unsigned long)*SPIDER_ENGINE_MODE);
+  say(line);
 }
 
 /* Native BinkFrame tick wrapper, called by the game thread at the two
@@ -423,6 +481,17 @@ static int install_intro_tick_hooks(void) {
   return 1;
 }
 
+static int install_passive_game_cleanup_probe(void) {
+  return patch_native_call(SPIDER_NATIVE_GAME_CLEANUP_CALL,
+                           native_game_cleanup_call_original,
+                           (const void *)spider_observe_native_game_cleanup);
+}
+
+static void restore_passive_game_cleanup_probe(void) {
+  restore_intro_tick_call(SPIDER_NATIVE_GAME_CLEANUP_CALL,
+                          native_game_cleanup_call_original);
+}
+
 static int install_passive_game_input_probe(void) {
   return patch_native_call(SPIDER_NATIVE_GAME_INPUT_CALL,
                            native_game_input_call_original,
@@ -550,6 +619,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
      memcmp(SPIDER_AFTER_INTRO_CLEANUP_CALL,post_intro_cleanup_original,5)!=0 ||
      memcmp(SPIDER_NATIVE_PAUSE_CALL,native_pause_call_original,5)!=0 ||
      memcmp(SPIDER_NATIVE_GAME_INPUT_CALL,native_game_input_call_original,5)!=0 ||
+     memcmp(SPIDER_NATIVE_GAME_CLEANUP_CALL,native_game_cleanup_call_original,5)!=0 ||
      memcmp(SPIDER_TOPLEVEL_NATIVE_QUIT_TEST,
             top_level_native_quit_test_original,6)!=0 ||
      memcmp(SPIDER_SHELL_MENU_QUIT_RETURN,
@@ -588,7 +658,17 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     say("QUICK-EXIT-F12: DISABLED: native game input probe signature mismatch or install failed");
     return;
   }
+  if(!install_passive_game_cleanup_probe()) {
+    restore_passive_game_input_probe();
+    restore_passive_pause_probe();
+    restore_post_intro_checkpoint();
+    restore_intro_tick_hooks();
+    restore_original_menu_tick();
+    say("QUICK-EXIT-F12: DISABLED: passive native 3D cleanup probe could not be installed");
+    return;
+  }
   if(!suppress_unsafe_native_f12()) {
+    restore_passive_game_cleanup_probe();
     restore_passive_game_input_probe();
     restore_passive_pause_probe();
     restore_post_intro_checkpoint();
@@ -601,6 +681,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   thread=CreateThread(NULL,0,f12_input_thread,NULL,0,NULL);
   if(!thread) {
     InterlockedExchange(&enabled,0);
+    restore_passive_game_cleanup_probe();
     restore_passive_game_input_probe();
     restore_passive_pause_probe();
     restore_post_intro_checkpoint();
@@ -610,5 +691,5 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     return;
   }
   CloseHandle(thread);
-  say("QUICK-EXIT-F12: menu native Quit validated; passive 3D pause and input-owner probes installed; F12 in comic/3D unsupported");
+  say("QUICK-EXIT-F12: menu native Quit validated; passive 3D input, pause and cleanup probes installed; F12 in comic/3D unsupported");
 }
