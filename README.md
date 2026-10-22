@@ -241,6 +241,42 @@ When testing the current development build, set `DirectInputReacquire=1` and `Pa
 
 Try the original `AspectRatio=4:3` mode to help isolate widescreen-specific problems. Some edge-of-screen 3D rendering issues and audio artifacts are still being investigated; see the roadmap below.
 
+### New F9-to-PNG prototype — separate draft PR
+
+The native F9 screenshot can now **also** be captured as a lossless PNG
+directly from the real 3D backbuffer without decoding or converting a
+BMP. The new `f9_png.c` module copies the pixels out of the DirectDraw
+Lock immediately, then calls the Windows GDI+ PNG encoder on a worker
+thread. It saves `scrn0000.png`, `scrn0001.png`, etc. without overwriting
+existing files. GDI+ is loaded only when this opt-in prototype executes,
+so normal game startup gets no new DLL imports or requirements.
+
+**Prototype limitation:** the legacy game **still also writes its BMP**
+in this phase. We cannot safely skip the game's screenshot encoder from
+the known RVA of its surface Lock alone: this is not the entry point of
+the game's complete screenshot routine. The old BMP is retained as a
+control sample until we identify and signature-verify the screenshot
+function and its return boundary. No claim of “PNG-only” is made yet.
+
+Try this experimental mode with **both DLLs built from the PNG PR**:
+
+```powershell
+$env:SPIDERMAN2K1FIX_F9_PNG = "1"
+$env:SPIDERMAN2K1FIX_F9_TRACE = "1"
+.\\SpideyPC.exe
+```
+
+Set `[Debug] Log=1` in `SpiderMan2k1Fix.ini` first. Load a 3D level
+and press F9 once. Check `SpiderMan2k1Fix.log` for
+`F9-PNG: frame copied` then `F9-PNG: saved scrnNNNN.png`. Confirm
+that the PNG shows the correct scene in both Windows 11 and Wine, with
+no vertical flip, channel swap, missing HUD, or noticeable pause. BMP
+is still expected in this early comparison stage.
+
+To disable, clear `SPIDERMAN2K1FIX_F9_PNG` in the launching
+PowerShell. The original F9 fix in PR #24 is unchanged, and the
+pre-1.0 cleanup PR #23 is independent.
+
 ### Native Windows 11: experimental F9 screenshot repair
 
 On native Windows 11 the game has produced `scrnNNNN.bmp` at
