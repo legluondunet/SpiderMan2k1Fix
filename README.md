@@ -29,11 +29,11 @@ SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must prov
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 
-### Optional F12 quick exit — experimental menu-only prototype
+### Optional F12 quick exit — experimental real-menu-only prototype
 
-> **NOT YET VALIDATED ON WINDOWS.** The earlier F12 implementations (builds #439–#460) failed in live Windows 11 testing. The new revision does **not** claim to work in cinematics, comic panels or 3D gameplay. It only tests the original main-menu Quit dispatcher, without making out-of-context calls to the game's resource teardown. PR [#26](https://github.com/legluondunet/SpiderMan2k1Fix/pull/26) remains a **draft**.
+> **NOT YET VALIDATED ON WINDOWS.** Earlier experimental F12 builds #439–#468 failed live tests. The new version uses the *real* Shell_MainMenu code, rather than a secondary shell/menu routine, but it **does not yet** handle opening cinematics, comic panels or gameplay. The [PR #26](https://github.com/legluondunet/SpiderMan2k1Fix/pull/26) remains a draft.
 
-This feature is off by default. For the experimental **main menu only** test, configure:
+F12 is disabled by default. To test the **main menu only**, configure:
 
 ```ini
 [System]
@@ -43,21 +43,25 @@ QuickExitF12=1
 Log=1
 ```
 
-The original `SpideyPC.exe` handles F12 through an unsafe `WM_CLOSE` path that can destroy the window while the game and its sound continue running. The patch signature-verifies and suppresses that native call, including when the optional feature is disabled.
+The historical game's F12 handler posted `WM_CLOSE` and could leave the rendering and sound running after the game window disappeared. This DLL suppresses that exact unsafe native call with a strict code-signature check.
 
-For the new prototype, a F12 press queues a short-lived (1.2-second) request. The #464 test confirmed that the **menu command dispatcher is not called while the menu is idle**. The revised version therefore intercepts the game's actual per-frame menu-loop comparison at `0x004A1A26` (`MOV EAX,[0x006B4CA0]` followed by `CMP EAX,EDI; JA 0x004A1A36`). When F12 is pending, it supplies an EAX result that causes the **game's own normal menu-loop exit and cleanup**; outside F12 it supplies the original EAX unchanged. After that cleanup returns, the normal menu command dispatcher is reached and its result is replaced with **action 18**, which leads to original menu Quit case `0x004A238A`. No original menu pointers or resource objects are overwritten. That native game-thread case sets its Quit flag, calls mode cleanup at `0x0048D880`, and returns to the game's higher-level shutdown code. The patch **never calls that cleanup function directly**.
+**New disassembly findings:** The real `Shell_MainMenu` begins at `0x00493990`, and its native **per-frame** call to `0x00505720` is at `0x00493DD6`. The eight menu entries are in a static table at `0x00552AA8`; entry **index 3** is the visible **Quit** item with native command **18** (`0x12`). Earlier attempts wrongly hooked a secondary menu at `0x004A1A26`, which explained their missing callback logs.
 
-While an opening movie is presenting decoded frames, F12 does nothing, with a log explaining why. Outside the main-menu dispatcher, the request times out and is discarded, with no delayed automatic exit. This is intentional until all-scenes shutdown can be proved safe.
+When F12 is pressed **while the actual main menu is active**, a short-lived request is consumed inside the native menu's existing game-thread frame call. The wrapper completes the original tick, sets the caller's local selection index to the genuine Quit item, then takes the original item-activation/cleanup branch at `0x004941D5`. It does **not** call a cleanup function from a background thread, post `WM_CLOSE`, or terminate the process.
 
-The next Windows test must first establish that F12 at the **main menu** reaches action 18 and that `SpideyPC.exe` actually exits with code zero; only then will cinematics, comic covers and gameplay be investigated. Automated source tests and a successful CI build alone cannot establish that.
+During the four intro cinematics and in 3D, the shortcut currently does nothing. This is intentional until the main-menu path has been proved safe. If the expected native menu callback is not reached, the request expires and the game continues.
 
-For independent process-exit verification, place [`tools/Verify-F12QuickExit.ps1`](tools/Verify-F12QuickExit.ps1) in the game folder and run from PowerShell:
+**Next Windows test:** At the visible main menu, press F12 and verify that `SpideyPC.exe` **actually disappears**, with no residual sound, no crash, and exit code zero. In the debug log look for the two markers:
+- `QUICK-EXIT-F12: REAL Shell_MainMenu frame callback observed (0x493DD6)`
+- `QUICK-EXIT-F12: native Shell_MainMenu Quit activated: slot=3 action=18`
+
+You may independently verify process exit using [`tools/Verify-F12QuickExit.ps1`](tools/Verify-F12QuickExit.ps1) beside the game:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\\Verify-F12QuickExit.ps1
 ```
 
-The watcher checks that no process remains, records its exit code, and looks for readable Windows crash events. It never forcibly stops the game. A successful exit frees OS-owned memory and handles, but does not itself prove that all engine COM resources were explicitly released before exit.
+The watcher checks process exit, code and Windows crash reports without forcibly stopping the game. It cannot prove all native COM objects are explicitly released before termination.
 
 ## Requirements and compatibility
 
