@@ -40,6 +40,26 @@ QuickExitF12=1
 
 The default is `QuickExitF12=0`. With the game in the foreground, a new F12 press requests `WM_CLOSE` once through the game's own window/message loop, without a confirmation added by SpiderMan2k1Fix. The patch does not call `ExitProcess` or `TerminateProcess`. Polling is independent of DirectDraw `Flip` so it also works while a comic is static. The original game's actual shutdown/no-confirmation behavior still needs runtime verification. When this option is enabled, F12 HUD diagnostics are suppressed.
 
+### Verifying native F12 shutdown on Windows
+
+The supported `SpideyPC.exe` (SHA-256 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`) contains the original Windows F12 path:
+
+- At **VA 0x00515368**: `WM_KEYDOWN` / `VK_F12` posts `WM_CLOSE` with `PostMessageA`.
+- At **VA 0x00515336**: its `WM_CLOSE` handler calls `DestroyWindow`.
+- At **VA 0x00515306**: its `WM_DESTROY` handler calls `PostQuitMessage(0)`, letting the normal main message loop finish.
+
+SpiderMan2k1Fix uses that **same native WM_CLOSE path**, changing only how the F12 press is detected in gameplay and during static scenes. The game's menu-level *Really quit?* choice is separate from the original F12 shortcut.
+
+To verify runtime shutdown rather than just a disappearing window, download [`tools/Verify-F12QuickExit.ps1`](tools/Verify-F12QuickExit.ps1) into your game folder, enable `[System] QuickExitF12=1` and `[Debug] Log=1`, and launch from Windows PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Verify-F12QuickExit.ps1
+```
+
+Press F12 while the game has focus. The **independent** test script checks the game's exit code, absence of a remaining `SpideyPC.exe` process, the F12 → `WM_CLOSE` log entry, and any matching Windows Application Error / WER event that is already readable. If the exit does not complete before its 120-second default timeout, the script reports the hang and **does not forcibly kill the game**.
+
+When a process ends, Windows reclaims its private memory and process-owned operating-system handles. A passing test does **not** prove that each DirectDraw, DirectSound, DirectInput, or other native resource was explicitly released before exit. That finer-grained claim would require runtime instrumentation or a dedicated debugger. The original `WM_CLOSE` → `WM_DESTROY` route avoids bypassing the game's normal cleanup code.
+
 ## Requirements and compatibility
 
 - An installed copy of the **original Windows PC version of Spider-Man**, including its game data.
