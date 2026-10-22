@@ -156,6 +156,7 @@ static DWORD WINAPI quick_exit_f12_thread(LPVOID unused) {
     }
     Sleep(25);
   }
+  return 0; /* Unreachable in normal operation; satisfy WINAPI contract. */
 }
 
 void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
