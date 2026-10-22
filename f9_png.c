@@ -46,6 +46,10 @@ typedef struct SpiderPNGJob {
 static volatile LONG spider_png_busy=0;
 static volatile LONG spider_png_serial=0;
 
+static void spider_png_log(SpiderPNGJob *job,const char *line) {
+  if(job && job->log_fn)job->log_fn(line);
+}
+
 /* Check final on-disk PNG rather than trusting only GDI+ and rename status. */
 static int spider_png_verify(const WCHAR *path) {
   static const BYTE magic[8]={137,80,78,71,13,10,26,10};
@@ -70,9 +74,6 @@ static void spider_png_fail(SpiderPNGJob *job,const char *log,
 }
 
 
-static void spider_png_log(SpiderPNGJob *job,const char *line) {
-  if(job && job->log_fn)job->log_fn(line);
-}
 
 static DWORD WINAPI spider_png_thread(void *ctx) {
   static const CLSID png_encoder={
