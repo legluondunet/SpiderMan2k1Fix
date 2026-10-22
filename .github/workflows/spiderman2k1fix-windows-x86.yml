@@ -22,10 +22,65 @@ jobs:
       - name: Check out sources
         uses: actions/checkout@v4
 
-      - name: Install MinGW-w64 and binary inspection tools
+      # GitHub-hosted Ubuntu runners sometimes already provide these tools.
+      # Skip APT entirely in that case: package mirrors are our main CI delay.
+      - name: Check preinstalled build tools
+        id: build-tools
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-i686 binutils-mingw-w64-i686 python3-pytest zip
+          set -euo pipefail
+          if command -v i686-w64-mingw32-gcc >/dev/null 2>&1 &&
+             command -v i686-w64-mingw32-objdump >/dev/null 2>&1 &&
+             python3 -m pytest --version >/dev/null 2>&1; then
+            echo "install_needed=false" >> "$GITHUB_OUTPUT"
+            echo "All build tools already available; skipping APT."
+          else
+            echo "install_needed=true" >> "$GITHUB_OUTPUT"
+            echo "Some build tools are missing; installing with bounded timeouts."
+          fi
+
+      # Cache downloaded .deb files only, not an unpacked system toolchain.
+      # APT still checks Ubuntu's signed package indexes before installing.
+      - name: Restore downloaded APT packages
+        if: steps.build-tools.outputs.install_needed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/spiderman2k1fix-apt-archives
+          key: apt-ubuntu2404-${{ runner.arch }}-mingw32-pytest-v1-${{ hashFiles('.github/workflows/spiderman2k1fix-windows-x86.yml') }}
+          restore-keys: |
+            apt-ubuntu2404-${{ runner.arch }}-mingw32-pytest-v1-
+
+      - name: Install missing Windows x86 build dependencies
+        if: steps.build-tools.outputs.install_needed == 'true'
+        timeout-minutes: 6
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          APT_ARCHIVES: ${{ runner.temp }}/spiderman2k1fix-apt-archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$APT_ARCHIVES/partial"
+          # APT keeps its downloaded archives for reuse on later builds.
+          sudo timeout --signal=TERM --kill-after=10s 150s apt-get \
+            -o Acquire::Retries=2 \
+            -o Acquire::http::Timeout=20 \
+            -o Acquire::https::Timeout=20 update
+          sudo timeout --signal=TERM --kill-after=10s 180s apt-get \
+            -o Dir::Cache::archives="$APT_ARCHIVES" \
+            -o APT::Keep-Downloaded-Packages=true \
+            -o Acquire::Retries=2 \
+            -o Acquire::http::Timeout=20 \
+            -o Acquire::https::Timeout=20 \
+            install -y --no-install-recommends \
+            gcc-mingw-w64-i686 binutils-mingw-w64-i686 python3-pytest
+
+      - name: Verify build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          i686-w64-mingw32-gcc --version | head -n 1
+          i686-w64-mingw32-objdump --version | head -n 1
+          python3 -m pytest --version
 
       - name: Run regression tests
         run: |
