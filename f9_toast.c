@@ -25,6 +25,7 @@ static DWORD toast_expires_at=0;
 static DWORD toast_published_at=0;
 static DWORD toast_generation=0;
 static DWORD toast_displayed_generation=0;
+static BOOL toast_current_is_comic=FALSE;
 static HWND toast_game_window=NULL;
 static void (*toast_logger)(const char*)=NULL;
 static volatile LONG toast_popup_generation=0;
@@ -48,24 +49,33 @@ void SpiderF9Toast_GetDisplayStatus(DWORD *published,DWORD *displayed) {
   ReleaseSRWLockShared(&toast_mutex);
 }
 
-void SpiderF9Toast_PublishSavedPath(const WCHAR *full_path) {
-  DWORD attrs;
+/* Comic context is delivered by each PNG worker, never shared between
+ * concurrent screenshot requests. On comics, the window is the only renderer.
+ * Moving frames retain their previous no-HWND DirectDraw presentation. */
+static void toast_publish_saved(const WCHAR *full_path,BOOL comic) {
+  DWORD attrs,generation;
   size_t len;
-  if(!full_path) return;
+  if(!full_path)return;
   len=wcslen(full_path);
-  if(!len || len>=MAX_PATH) return;
+  if(!len || len>=MAX_PATH)return;
   attrs=GetFileAttributesW(full_path);
   if(attrs==INVALID_FILE_ATTRIBUTES || (attrs&FILE_ATTRIBUTE_DIRECTORY))return;
   AcquireSRWLockExclusive(&toast_mutex);
   memcpy(toast_path,full_path,(len+1u)*sizeof(WCHAR));
   toast_success=TRUE;
+  toast_current_is_comic=comic;
   toast_published_at=GetTickCount();
-  toast_expires_at=0; /* No countdown before first actual presentation. */
-  ++toast_generation;
-  {DWORD published=toast_generation;
-   ReleaseSRWLockExclusive(&toast_mutex);
-   toast_start_no_flip_fallback(published);
-  }
+  toast_expires_at=0; /* Display starts the countdown. */
+  generation=++toast_generation;
+  ReleaseSRWLockExclusive(&toast_mutex);
+  if(comic)toast_start_no_flip_fallback(generation);
+}
+
+void SpiderF9Toast_PublishSavedPath(const WCHAR *full_path) {
+  toast_publish_saved(full_path,FALSE);
+}
+void SpiderF9Toast_PublishSavedPathComic(const WCHAR *full_path) {
+  toast_publish_saved(full_path,TRUE);
 }
 
 void SpiderF9Toast_PublishError(const WCHAR *reason) {
@@ -76,13 +86,11 @@ void SpiderF9Toast_PublishError(const WCHAR *reason) {
   AcquireSRWLockExclusive(&toast_mutex);
   memcpy(toast_path,reason,(len+1u)*sizeof(WCHAR));
   toast_success=FALSE;
+  toast_current_is_comic=FALSE;
   toast_published_at=GetTickCount();
-  toast_expires_at=0; /* No countdown before first actual presentation. */
+  toast_expires_at=0;
   ++toast_generation;
-  {DWORD published=toast_generation;
-   ReleaseSRWLockExclusive(&toast_mutex);
-   toast_start_no_flip_fallback(published);
-  }
+  ReleaseSRWLockExclusive(&toast_mutex);
 }
 
 static int toast_max(int a,int b) {return a>b?a:b;}
@@ -432,8 +440,23 @@ static DWORD WINAPI toast_popup_thread(LPVOID arg) {
     MsgWaitForMultipleObjects(0,NULL,FALSE,40,QS_ALLINPUT);
   }
 end:
+  if(popup) {
+    /* Force Windows to remove the layered popup even if the game has not
+     * produced a single DirectDraw Flip. This cleanup runs on its owner
+     * thread, without calling any game callback. */
+    ShowWindow(popup,SW_HIDE);
+    SetWindowPos(popup,NULL,0,0,0,0,
+                 SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_HIDEWINDOW);
+    DestroyWindow(popup);
+    if(shown && toast_logger) {
+      char msg[144];
+      snprintf(msg,sizeof(msg),
+        "F9-TOAST-STATIC: generation=%lu hidden and destroyed after 2s",
+        (unsigned long)gen);
+      toast_logger(msg);
+    }
+  }
   if(shown)InterlockedCompareExchange(&toast_popup_generation,0,(LONG)gen);
-  if(popup)DestroyWindow(popup);
   if(old_bitmap)SelectObject(mem,old_bitmap);
   if(bitmap)DeleteObject(bitmap);
   if(mem)DeleteDC(mem);
@@ -445,21 +468,27 @@ IDirectDrawSurface7 *SpiderF9Toast_CompositeFrame(
     IDirectDrawSurface7 *back,HWND window,DWORD width,DWORD height) {
   WCHAR path[MAX_PATH];
   DWORD expires,published,generation;
-  BOOL success;
+  BOOL success,comic;
   int attempt;
   AcquireSRWLockShared(&toast_mutex);
   expires=toast_expires_at;
   published=toast_published_at;
   generation=toast_generation;
   success=toast_success;
+  comic=toast_current_is_comic;
   if(toast_path[0] &&
      ((expires && (LONG)(expires-GetTickCount())>0) ||
       (!expires && (DWORD)(GetTickCount()-published) < SPIDER_F9_TOAST_GRACE_MS)))
     memcpy(path,toast_path,sizeof(path));
   else path[0]=L'\\0';
   ReleaseSRWLockShared(&toast_mutex);
-  /* The independent fallback owns the notice while a still comic page
-   * has no Flip. Do not render a second one when gameplay resumes. */
+  /* Never paint a comic notification into a frozen DirectDraw framebuffer:
+   * after the last Flip it could remain visible indefinitely. The layered
+   * window has its own expiration and needs no further game presentation. */
+  if(comic) {
+    toast_discard_stage();
+    return NULL;
+  }
   if((DWORD)InterlockedCompareExchange(&toast_popup_generation,0,0)==generation)
     return NULL;
   if(path[0]==L'\\0') {
