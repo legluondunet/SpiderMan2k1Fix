@@ -1,9 +1,8 @@
-/* Optional F12 quick exit using the game's normal WM_CLOSE path.
- * A small polling thread is used instead of a DirectDraw Flip callback:
- * comics and opening stills can stop flipping for an arbitrary duration,
- * and DirectInput gameplay may not dispatch WM_KEYDOWN.
- * No TerminateProcess, ExitProcess, forced WM_QUIT, keyboard hooks, or
- * subclassing of the game's WndProc. No exit is triggered in the background.
+/* Optional F12 quick exit through the original game's native Quit byte.
+ * A small polling thread is independent of DirectDraw Flip and DirectInput.
+ * NO WM_CLOSE, DestroyWindow, TerminateProcess or ExitProcess: the game
+ * must complete its own Bink cleanup and return through WinMain.
+ * A failed Quit request leaves the game window visible for diagnosis.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
