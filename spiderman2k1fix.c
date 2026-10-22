@@ -297,6 +297,17 @@ static SurfaceReleaseDCFn original_release_dc;
 static SurfaceUnlockFn original_surface_unlock;
 static volatile LONG f9_trace_enabled=0,f9_trace_keydown=0;
 static volatile LONG f9_trace_until=0,f9_trace_events=0,f9_trace_logged=0;
+/* Experimental screenshot-only readback redirection; disabled by default.
+ * The original game locks PRIMARY at RVA 0x1034D4 on F9, then unlocks
+ * PRIMARY at 0x103537. Under Win11 its windowed PRIMARY Lock returns a
+ * magenta image despite a successful GPU Blt from the real D3D backbuffer.
+ * Redirect that one Lock/Unlock pair to the game-rendered backbuffer.
+ * Use one owned COM ref for the duration of the lock to avoid dangling
+ * surfaces on shutdown; never touch other Lock callers. */
+static volatile LONG f9_backbuffer_fix_enabled=0;
+static volatile LONG f9_backbuffer_lock_active=0;
+static DWORD f9_backbuffer_lock_thread=0;
+static IDirectDrawSurface7 *f9_backbuffer_locked_surface=NULL;
 static void *patched_ddraw_vtable[30];
 /* IDirectDrawSurface7 has 49 vtable slots (IUnknown + 46 methods). */
 static void *patched_surface_vtable[49];
@@ -1408,7 +1419,53 @@ static HRESULT WINAPI hooked_f9_surface_get_desc(void *self,LPDDSURFACEDESC2 des
 static HRESULT WINAPI hooked_f9_surface_lock(void *self,LPRECT rect,
                                               LPDDSURFACEDESC2 desc,
                                               DWORD flags,HANDLE event) {
-  HRESULT hr=original_surface_lock(self,rect,desc,flags,event);
+  HRESULT hr;
+  DWORD rva=0;
+  geom_rva(__builtin_return_address(0),&rva);
+  if(InterlockedCompareExchange(&f9_backbuffer_fix_enabled,0,0)==1 &&
+     self==(void *)borderless_primary && borderless_back &&
+     rva==0x001034D4u && (flags&DDLOCK_READONLY)!=0 &&
+     rect==NULL && desc && desc->dwSize==sizeof(*desc) &&
+     desktop_w>=640 && desktop_h>=480 &&
+     InterlockedCompareExchange(&f9_backbuffer_lock_active,1,0)==0) {
+    IDirectDrawSurface7 *back=borderless_back;
+    DDSURFACEDESC2 requested=*desc;
+    HRESULT back_hr;
+    char msg[300];
+    IDirectDrawSurface7_AddRef(back);
+    /* Same native 32-bit XY layout and full-screen size expected from
+     * the original PRIMARY readback. No extra Blt or frame clearing. */
+    back_hr=original_surface_lock(back,rect,desc,flags,event);
+    if(SUCCEEDED(back_hr) &&
+       desc->dwWidth==desktop_w && desc->dwHeight==desktop_h &&
+       desc->ddpfPixelFormat.dwRGBBitCount==32 &&
+       desc->lPitch>=(LONG)(desktop_w*4u) &&
+       desc->lpSurface!=NULL) {
+      f9_backbuffer_locked_surface=back;
+      f9_backbuffer_lock_thread=GetCurrentThreadId();
+      snprintf(msg,sizeof(msg),
+        "F9-FIX: BACKBUFFER Lock success primary=%p back=%p "
+        "caller=0x%08lX size=%lux%lu pitch=%ld; redirect one Unlock",
+        self,(void *)back,(unsigned long)rva,
+        (unsigned long)desc->dwWidth,(unsigned long)desc->dwHeight,
+        (long)desc->lPitch);
+      log_line(msg);
+      /* The caller's original game code now sees the real 3D image,
+       * with its original BMP encoder and original output filename. */
+      return back_hr;
+    }
+    if(SUCCEEDED(back_hr))
+      original_surface_unlock(back,rect);
+    IDirectDrawSurface7_Release(back);
+    InterlockedExchange(&f9_backbuffer_lock_active,0);
+    *desc=requested; /* The fallback PRIMARY Lock owns its descriptor. */
+    snprintf(msg,sizeof(msg),
+      "F9-FIX: backbuffer Lock/format rejected hr=0x%08lX; "
+      "falling back to untouched PRIMARY screenshot",
+      (unsigned long)back_hr);
+    log_line(msg);
+  }
+  hr=original_surface_lock(self,rect,desc,flags,event);
   if(f9_trace_report()) {
     DWORD rva=0;char msg[430];
     geom_rva(__builtin_return_address(0),&rva);
@@ -1442,7 +1499,30 @@ static HRESULT WINAPI hooked_f9_surface_release_dc(void *self,HDC dc) {
   return hr;
 }
 static HRESULT WINAPI hooked_f9_surface_unlock(void *self,LPRECT rect) {
-  HRESULT hr=original_surface_unlock(self,rect);
+  HRESULT hr;
+  DWORD rva=0;
+  geom_rva(__builtin_return_address(0),&rva);
+  if(self==(void *)borderless_primary &&
+     rva==0x00103537u && rect==NULL &&
+     InterlockedCompareExchange(&f9_backbuffer_fix_enabled,0,0)==1 &&
+     InterlockedCompareExchange(&f9_backbuffer_lock_active,0,0)==1 &&
+     f9_backbuffer_lock_thread==GetCurrentThreadId() &&
+     f9_backbuffer_locked_surface!=NULL) {
+    IDirectDrawSurface7 *back=f9_backbuffer_locked_surface;
+    char msg[230];
+    hr=original_surface_unlock(back,rect);
+    snprintf(msg,sizeof(msg),
+      "F9-FIX: BACKBUFFER Unlock hr=0x%08lX "
+      "caller=0x%08lX; original PRIMARY remains unlocked",
+      (unsigned long)hr,(unsigned long)rva);
+    log_line(msg);
+    f9_backbuffer_locked_surface=NULL;
+    f9_backbuffer_lock_thread=0;
+    InterlockedExchange(&f9_backbuffer_lock_active,0);
+    IDirectDrawSurface7_Release(back);
+  } else {
+    hr=original_surface_unlock(self,rect);
+  }
   if(f9_trace_report()) {
     DWORD rva=0;char msg[240];
     geom_rva(__builtin_return_address(0),&rva);
@@ -1821,7 +1901,8 @@ static void instrument_surface(IDirectDrawSurface7 *surface) {
     patched_surface_vtable[5]=(void *)hooked_blt;
     patched_surface_vtable[11]=(void *)hooked_flip;
     patched_surface_vtable[12]=(void *)hooked_get_attached;
-    if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1) {
+    if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1 ||
+       InterlockedCompareExchange(&f9_backbuffer_fix_enabled,0,0)==1) {
       original_get_dc=(SurfaceGetDCFn)vtable[17];
       original_surface_get_desc=(SurfaceGetDescFn)vtable[22];
       original_surface_lock=(SurfaceLockFn)vtable[25];
@@ -2345,16 +2426,26 @@ static DWORD WINAPI initialize(LPVOID unused) {
     }
   }
   log_line("BORDERLESS: windowed fullscreen enabled");
-  /* F9 trace must be armed before DirectDraw surface vtables are created.
-   * Never change any COM behavior in normal use. */
+  /* Only the exact game screenshot Lock caller can be redirected.
+   * Both experimental environment variables additionally require Log=1.
+   * In production the five diagnostic COM vtable methods remain untouched. */
   {
     char setting[8]={0};
     if(debug_log_enabled &&
-       GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_TRACE",setting,sizeof(setting))==1 &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_BACKBUFFER",setting,sizeof(setting))==1 &&
        setting[0]=='1') {
-      InterlockedExchange(&f9_trace_enabled,1);
-      log_line("F9-TRACE: opt-in native screenshot readback observation armed; press F9 in gameplay");
+      InterlockedExchange(&f9_backbuffer_fix_enabled,1);
+      log_line("F9-FIX: experimental primary screenshot readback -> 3D backbuffer enabled");
     }
+    memset(setting,0,sizeof(setting));
+    if(debug_log_enabled &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_TRACE",setting,sizeof(setting))==1 &&
+       setting[0]=='1')
+      InterlockedExchange(&f9_trace_enabled,1);
+    if(InterlockedCompareExchange(&f9_backbuffer_fix_enabled,0,0)==1)
+      InterlockedExchange(&f9_trace_enabled,1);
+    if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
+      log_line("F9-TRACE: opt-in native screenshot readback observation armed; press F9 in gameplay");
   }
   install_player_hud(TRUE);
   {
