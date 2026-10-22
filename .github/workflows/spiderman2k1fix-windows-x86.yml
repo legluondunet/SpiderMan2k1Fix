@@ -38,12 +38,11 @@ jobs:
         run: |
           mkdir -p dist/package
           cp SpiderMan2k1Fix.dll winmm.dll SpiderMan2k1Fix.ini README.md CHANGELOG.md dist/package/
-          (cd dist/package && zip -9 ../SpiderMan2k1Fix-Windows-x86.zip SpiderMan2k1Fix.dll winmm.dll SpiderMan2k1Fix.ini README.md CHANGELOG.md)
 
       - name: Upload Windows DLL artifact
         uses: actions/upload-artifact@v4
         with:
           name: SpiderMan2k1Fix-Windows-x86
-          path: dist/SpiderMan2k1Fix-Windows-x86.zip
+          path: dist/package/
           if-no-files-found: error
           retention-days: 30
