@@ -307,6 +307,8 @@ static volatile LONG f9_trace_until=0,f9_trace_events=0,f9_trace_logged=0;
  * surfaces on shutdown; never touch other Lock callers. */
 static volatile LONG f9_backbuffer_fix_enabled=0;
 static volatile LONG f9_native_png_enabled=0;
+static volatile LONG f9_png_only_enabled=0;
+static volatile LONG f9_png_capture_active=0;
 static volatile LONG f9_backbuffer_lock_active=0;
 static DWORD f9_backbuffer_lock_thread=0;
 static IDirectDrawSurface7 *f9_backbuffer_locked_surface=NULL;
@@ -1539,6 +1541,117 @@ static HRESULT WINAPI hooked_f9_surface_unlock(void *self,LPRECT rect) {
   }
   return hr;
 }
+/* The original game's SHA-verified F9 dispatch calls its BMP writer at
+ * exactly TWO CALL rel32 sites (RVA 0x10A1DC and 0x10A62B). The calls
+ * follow the native DIK_F9 (0x43) polling and the game owns its 500ms
+ * debounce. Replace only those 5-byte CALL operands, not DirectInput.
+ *
+ * Actual original file SHA256: 0a11a49f...4689dea
+ * Original writer entry RVA: 0x1033E0 (no parameters, __cdecl).
+ * Its internal COM Lock return site is RVA 0x1034D4, but that is NOT
+ * a safe entry point for skipping the BMP writer. */
+static void __cdecl hooked_f9_png_only(void) {
+  IDirectDrawSurface7 *back;
+  DDSURFACEDESC2 desc;
+  HRESULT hr,unlock_hr;
+  char msg[210];
+  int queued=0;
+  if(InterlockedCompareExchange(&f9_png_only_enabled,0,0)!=1) return;
+  if(InterlockedCompareExchange(&f9_png_capture_active,1,0)!=0) {
+    log_line("F9-PNG-ONLY: duplicate F9 capture while backbuffer busy; skipped");
+    return;
+  }
+  back=borderless_back;
+  if(!back || !original_surface_lock || !original_surface_unlock ||
+     desktop_w<640 || desktop_h<480) {
+    log_line("F9-PNG-ONLY: no valid 3D backbuffer; PNG capture skipped");
+    goto done;
+  }
+  IDirectDrawSurface7_AddRef(back);
+  memset(&desc,0,sizeof(desc));
+  desc.dwSize=sizeof(desc);
+  hr=original_surface_lock(back,NULL,&desc,
+                           DDLOCK_READONLY|DDLOCK_WAIT,NULL);
+  if(SUCCEEDED(hr)) {
+    /* SpiderF9PNG_Queue copies pixels synchronously. Its worker receives
+     * only private memory, so the DirectDraw surface is unlocked before
+     * any PNG compression and before continuing native gameplay. */
+    queued=SpiderF9PNG_Queue(&desc,log_line);
+    unlock_hr=original_surface_unlock(back,NULL);
+    snprintf(msg,sizeof(msg),
+      "F9-PNG-ONLY: backbuffer capture=%s %lux%lu Lock=OK Unlock=0x%08lX",
+      queued?"queued":"skipped",
+      (unsigned long)desc.dwWidth,(unsigned long)desc.dwHeight,
+      (unsigned long)unlock_hr);
+    log_line(msg);
+  } else {
+    snprintf(msg,sizeof(msg),
+      "F9-PNG-ONLY: backbuffer Lock failed hr=0x%08lX; no BMP created",
+      (unsigned long)hr);
+    log_line(msg);
+  }
+  IDirectDrawSurface7_Release(back);
+done:
+  InterlockedExchange(&f9_png_capture_active,0);
+}
+
+/* Install the PNG-only game call replacement only at exact verified CALL
+ * sites; preflight BOTH original signatures before writing either. The
+ * game is single-threaded at startup, well before F9 can be triggered.
+ * A 32-bit x86 CALL rel32 wraps modulo 2^32, so it reaches any DLL
+ * address within this process without an executable trampoline. */
+static void install_f9_png_only_dispatch(void) {
+  static const struct {
+    DWORD rva;
+    BYTE original[5];
+  } calls[2]={
+    {0x0010A1DCu,{0xE8,0xFF,0x91,0xFF,0xFF}},
+    {0x0010A62Bu,{0xE8,0xB0,0x8D,0xFF,0xFF}}
+  };
+  BYTE *base=(BYTE*)GetModuleHandleA(NULL);
+  BYTE *p[2];
+  DWORD previous[2]={0,0},ignored;
+  unsigned i;
+  char msg[192];
+  if(!base || (uintptr_t)base!=0x00400000u ||
+     InterlockedCompareExchange(&f9_native_png_enabled,0,0)!=1 ||
+     InterlockedCompareExchange(&f9_png_only_enabled,0,0)!=1) {
+    log_line("F9-PNG-ONLY: unsupported EXE layout or PNG disabled; no hooks installed");
+    return;
+  }
+  for(i=0;i<2;i++) {
+    p[i]=base+calls[i].rva;
+    if(memcmp(p[i],calls[i].original,sizeof(calls[i].original))!=0) {
+      snprintf(msg,sizeof(msg),
+        "F9-PNG-ONLY: signature mismatch at RVA 0x%08lX; leaving original game intact",
+        (unsigned long)calls[i].rva);
+      log_line(msg);
+      return;
+    }
+  }
+  if(!VirtualProtect(p[0],5,PAGE_EXECUTE_READWRITE,&previous[0])) {
+    log_line("F9-PNG-ONLY: cannot make first CALL writable; original unchanged");
+    return;
+  }
+  if(!VirtualProtect(p[1],5,PAGE_EXECUTE_READWRITE,&previous[1])) {
+    VirtualProtect(p[0],5,previous[0],&ignored);
+    log_line("F9-PNG-ONLY: cannot make second CALL writable; original unchanged");
+    return;
+  }
+  for(i=0;i<2;i++) {
+    uintptr_t target=(uintptr_t)&hooked_f9_png_only;
+    DWORD relative=(DWORD)(target-((uintptr_t)p[i]+5u));
+    p[i][0]=0xE8; /* CALL rel32; the original game handles the F9 key. */
+    memcpy(p[i]+1,&relative,sizeof(relative));
+  }
+  FlushInstructionCache(GetCurrentProcess(),p[0],5);
+  FlushInstructionCache(GetCurrentProcess(),p[1],5);
+  if(!VirtualProtect(p[1],5,previous[1],&ignored))
+    log_line("F9-PNG-ONLY: WARNING failed to restore second code-page protection");
+  if(!VirtualProtect(p[0],5,previous[0],&ignored))
+    log_line("F9-PNG-ONLY: WARNING failed to restore first code-page protection");
+  log_line("F9-PNG-ONLY: two SHA-verified F9 call sites now call native PNG capture; legacy BMP writer bypassed");
+}
 static void instrument_surface(IDirectDrawSurface7 *surface);
 static HRESULT WINAPI hooked_get_attached(void *self,LPDDSCAPS2 caps,
                                           IDirectDrawSurface7 **out) {
@@ -2460,6 +2573,17 @@ static DWORD WINAPI initialize(LPVOID unused) {
     if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
       log_line("F9-TRACE: opt-in native screenshot readback observation armed; press F9 in gameplay");
   }
+  if(debug_log_enabled) {
+    char only[8]={0};
+    if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_PNG_ONLY",
+                               only,sizeof(only))==1 && only[0]=='1') {
+      InterlockedExchange(&f9_native_png_enabled,1);
+      InterlockedExchange(&f9_png_only_enabled,1);
+      log_line("F9-PNG-ONLY: opt-in direct F9 to PNG requested");
+    }
+  }
+  if(InterlockedCompareExchange(&f9_png_only_enabled,0,0)==1)
+    install_f9_png_only_dispatch();
   install_player_hud(TRUE);
   {
     char flag[8]={0};
