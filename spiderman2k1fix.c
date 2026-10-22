@@ -1551,6 +1551,111 @@ static HRESULT WINAPI hooked_f9_surface_unlock(void *self,LPRECT rect) {
  * Original writer entry RVA: 0x1033E0 (no parameters, __cdecl).
  * Its internal COM Lock return site is RVA 0x1034D4, but that is NOT
  * a safe entry point for skipping the BMP writer. */
+/* Intro movies and the 640x480 menus present via DirectDraw Blt paths.
+ * Their *visible* picture is not necessarily in the D3D7 BACKBUFFER that
+ * we capture during gameplay. In menu mode take a top-down 32-bit DIB copy
+ * of the already presented windowed PRIMARY, leaving its pixels and its
+ * locks untouched. Never use the old broken PRIMARY Lock/BMP writer.
+ * This is invoked only on an F9 event, not once per frame.
+ *
+ * A successful BitBlt provides exactly the format expected by our existing
+ * asynchronous, lossless PNG encoder (which copies the DIB synchronously).
+ * Fallback to the window DC is only attempted if PRIMARY DC/readback fails.
+ */
+static int f9_capture_presented_dc(HDC source_dc,int source_x,int source_y,
+                                    const char *source_name) {
+  BITMAPINFO bitmap;
+  DDSURFACEDESC2 frame;
+  HDC memory_dc=NULL;
+  HBITMAP image=NULL,previous=NULL;
+  void *pixels=NULL;
+  BOOL copied=FALSE;
+  int queued=0;
+  char msg[200];
+  memory_dc=CreateCompatibleDC(source_dc);
+  if(!memory_dc)goto done;
+  memset(&bitmap,0,sizeof(bitmap));
+  bitmap.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+  bitmap.bmiHeader.biWidth=(LONG)desktop_w;
+  bitmap.bmiHeader.biHeight=-(LONG)desktop_h; /* top-down DIB */
+  bitmap.bmiHeader.biPlanes=1;
+  bitmap.bmiHeader.biBitCount=32;
+  bitmap.bmiHeader.biCompression=BI_RGB;
+  image=CreateDIBSection(source_dc,&bitmap,DIB_RGB_COLORS,&pixels,NULL,0);
+  if(!image || !pixels)goto done;
+  previous=(HBITMAP)SelectObject(memory_dc,image);
+  if(!previous || previous==(HBITMAP)HGDI_ERROR) {
+    previous=NULL;
+    goto done;
+  }
+  copied=BitBlt(memory_dc,0,0,(int)desktop_w,(int)desktop_h,
+                source_dc,source_x,source_y,SRCCOPY);
+  if(!copied)goto done;
+  memset(&frame,0,sizeof(frame));
+  frame.dwSize=sizeof(frame);
+  frame.dwFlags=DDSD_WIDTH|DDSD_HEIGHT|DDSD_PITCH|DDSD_PIXELFORMAT;
+  frame.dwWidth=desktop_w;
+  frame.dwHeight=desktop_h;
+  frame.lPitch=(LONG)desktop_w*4;
+  frame.lpSurface=pixels;
+  frame.ddpfPixelFormat.dwSize=sizeof(frame.ddpfPixelFormat);
+  frame.ddpfPixelFormat.dwFlags=DDPF_RGB;
+  frame.ddpfPixelFormat.dwRGBBitCount=32;
+  frame.ddpfPixelFormat.dwRBitMask=0x00ff0000u;
+  frame.ddpfPixelFormat.dwGBitMask=0x0000ff00u;
+  frame.ddpfPixelFormat.dwBBitMask=0x000000ffu;
+  queued=SpiderF9PNG_Queue(&frame,log_line);
+  snprintf(msg,sizeof(msg),
+           "F9-PNG-MENU: source=%s BitBlt=OK %lux%lu capture=%s",
+           source_name,(unsigned long)desktop_w,(unsigned long)desktop_h,
+           queued?"queued":"rejected");
+  log_line(msg);
+done:
+  if(previous)SelectObject(memory_dc,previous);
+  if(image)DeleteObject(image);
+  if(memory_dc)DeleteDC(memory_dc);
+  return copied? (queued?1:2):0;
+}
+
+/* Return 1 on a queued frame. Source acquisition/readback failures produce
+ * a clear notification, not a misleading black success image. Queue
+ * rejections are already explained by SpiderF9PNG_Queue. */
+static int f9_capture_menu_presented_frame(void) {
+  HDC dc=NULL;
+  HRESULT hr=DDERR_INVALIDOBJECT;
+  int status=0;
+  if(!borderless_primary || !game_hwnd || !IsWindow(game_hwnd) ||
+     GetForegroundWindow()!=game_hwnd ||
+     desktop_w<640 || desktop_h<480 || desktop_w>8192 || desktop_h>8192) {
+    log_line("F9-PNG-MENU: PRIMARY/window unavailable; no screenshot");
+    SpiderF9Toast_PublishError(L"Menu picture unavailable for screenshot");
+    return 0;
+  }
+  /* PRIMARY may be the entire monitor rather than client-relative.
+   * Use the same monitor offset as our successful windowed present. */
+  hr=IDirectDrawSurface7_GetDC(borderless_primary,&dc);
+  if(SUCCEEDED(hr) && dc) {
+    status=f9_capture_presented_dc(dc,borderless_monitor_x,
+                                    borderless_monitor_y,"PRIMARY-DC");
+    IDirectDrawSurface7_ReleaseDC(borderless_primary,dc);
+    if(status) return status==1;
+  } else {
+    char msg[152];
+    snprintf(msg,sizeof(msg),"F9-PNG-MENU: PRIMARY GetDC failed hr=0x%08lX; trying window DC",
+             (unsigned long)hr);
+    log_line(msg);
+  }
+  dc=GetDC(game_hwnd);
+  if(dc) {
+    status=f9_capture_presented_dc(dc,0,0,"WINDOW-DC");
+    ReleaseDC(game_hwnd,dc);
+    if(status) return status==1;
+  }
+  log_line("F9-PNG-MENU: PRIMARY/window GDI readback failed; PNG not saved");
+  SpiderF9Toast_PublishError(L"Cannot read the displayed menu/video frame");
+  return 0;
+}
+
 static void __cdecl hooked_f9_png_only(void) {
   IDirectDrawSurface7 *back;
   DDSURFACEDESC2 desc;
@@ -1562,6 +1667,12 @@ static void __cdecl hooked_f9_png_only(void) {
     log_line("F9-PNG-ONLY: duplicate F9 capture while backbuffer busy; skipped");
     SpiderF9Toast_PublishError(L"Screenshot capture is busy");
     return;
+  }
+  /* During intro FMVs/menus, the 3D backbuffer is often entirely black
+   * even when DirectDraw visibly presents a complete picture. */
+  if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1) {
+    f9_capture_menu_presented_frame();
+    goto done;
   }
   back=borderless_back;
   if(!back || desktop_w<640 || desktop_h<480) {
