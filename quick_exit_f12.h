@@ -12,6 +12,6 @@ void SpiderQuickExitF12_AttachWindow(HWND game_window);
 int SpiderQuickExitF12_Enabled(void);
 void SpiderQuickExitF12_ObserveMovieFrame(void);
 /* Read-only engine-mode snapshots at the existing DirectDraw Flip site. */
-void SpiderQuickExitF12_ObserveEngineState(LONG flip_index);
+void SpiderQuickExitF12_ObserveEngineState(LONG flip_index, LONG renderer_menu);
 
 #endif
