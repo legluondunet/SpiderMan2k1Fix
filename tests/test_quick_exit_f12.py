@@ -58,7 +58,7 @@ def test_f12_game_thread_uses_native_menu_cleanup_without_calls_from_worker():
     for forbidden in ("TerminateProcess(", "ExitProcess(", "PostMessageA(",
                       "DestroyWindow(", "SetWindowLongPtr(", "SendInput(",
                       "keybd_event(", "SetWindowsHookEx(",
-                      "0x0048D880u", "*SPIDER_GAME_QUIT_FLAG="):
+                      "0x0048D880u"):
         assert forbidden not in SRC
 
 
@@ -68,7 +68,7 @@ def test_foreground_key_detection_and_movie_to_native_quit_handoff():
     assert "previously_down=TRUE;" in SRC
     assert "Sleep(25);" in SRC
     assert "REAL Shell_MainMenu or startup movie not active; F12 safely ignored" in SRC
-    assert "intro movie exit requested; native Bink cleanup then real Shell_MainMenu Quit" in SRC
+    assert "intro movie exit requested; native Bink cleanup then top-level engine Quit" in SRC
     assert "F12 queued for REAL Shell_MainMenu" in SRC
     assert "InterlockedExchange(&pending,1);" in SRC
     assert "InterlockedExchange(&pending,0);" in SRC
@@ -77,6 +77,12 @@ def test_foreground_key_detection_and_movie_to_native_quit_handoff():
     assert "SpiderQuickExitF12_Init(log_line);" in CORE
     assert "SpiderQuickExitF12_ObserveMovieFrame();" in CORE
     assert "SpiderQuickExitF12_Enabled()" in CORE
+    # Only game-owned code at the post-intro transition writes this
+    # native Quit flag. The F12 polling thread never directly requests
+    # engine shutdown from an arbitrary graphics/audio state.
+    begin=SRC.index("static DWORD WINAPI f12_input_thread")
+    end=SRC.index("void SpiderQuickExitF12_Init",begin)
+    assert "*SPIDER_GAME_QUIT_FLAG=" not in SRC[begin:end]
     assert "quick_exit_f12.c" in BUILD
     assert "SpiderQuickExitF12_ObserveMovieFrame(void);" in HDR
 
