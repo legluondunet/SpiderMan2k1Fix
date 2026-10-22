@@ -1560,11 +1560,13 @@ static void __cdecl hooked_f9_png_only(void) {
   if(InterlockedCompareExchange(&f9_png_only_enabled,0,0)!=1) return;
   if(InterlockedCompareExchange(&f9_png_capture_active,1,0)!=0) {
     log_line("F9-PNG-ONLY: duplicate F9 capture while backbuffer busy; skipped");
+    SpiderF9Toast_PublishError(L"Screenshot capture is busy");
     return;
   }
   back=borderless_back;
   if(!back || desktop_w<640 || desktop_h<480) {
     log_line("F9-PNG-ONLY: no valid 3D backbuffer; PNG capture skipped");
+    SpiderF9Toast_PublishError(L"3D backbuffer unavailable");
     goto done;
   }
   IDirectDrawSurface7_AddRef(back);
@@ -1589,6 +1591,7 @@ static void __cdecl hooked_f9_png_only(void) {
       "F9-PNG-ONLY: backbuffer Lock failed hr=0x%08lX; no BMP created",
       (unsigned long)hr);
     log_line(msg);
+    SpiderF9Toast_PublishError(L"Cannot read the 3D backbuffer");
   }
   IDirectDrawSurface7_Release(back);
 done:
