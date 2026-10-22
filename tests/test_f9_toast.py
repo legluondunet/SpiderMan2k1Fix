@@ -198,3 +198,10 @@ def test_comic_screenshot_toast_is_popup_exclusive_and_self_expiring():
     assert "#define SPIDER_F9_TOAST_MS 2000u" in TOAST
     assert "SpiderF9Toast_PublishSavedPath(dest);" in ENC
     assert "SpiderF9Toast_PublishSavedPathComic(dest);" in ENC
+
+
+def test_popup_is_not_owned_by_non_pumping_game_window():
+    assert 'NULL,NULL,instance,NULL); /* never own game HWND across threads */' in TOAST
+    assert "cross-thread" in TOAST
+    assert "ShowWindow(popup,SW_HIDE);" in TOAST
+    assert "DestroyWindow(popup);" in TOAST
