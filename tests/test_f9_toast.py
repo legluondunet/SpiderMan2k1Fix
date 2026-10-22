@@ -1,9 +1,8 @@
-"""Native F9 screenshot notification regression checks.
+"""F9 PNG notification regression checks.
 
-The asynchronous worker is the only producer, and the DirectDraw Flip game
-thread is the only renderer. The overlay is composited on a distinct offscreen surface BEFORE a single
-PRIMARY blit. PNG encoding reads only the pristine 3D BACKBUFFER. Failed or
-queued captures must never trigger a success toast.
+The DirectDraw Flip compositor handles normal moving gameplay. A separate,
+input-transparent window is allowed only if a static comic page has no Flip.
+Neither display route may modify the PNG's original backbuffer.
 """
 from pathlib import Path
 
@@ -140,20 +139,12 @@ def test_toast_timer_starts_on_first_actual_display_in_sparse_comic_scenes():
     assert "F9-TOAST: generation=%lu FIRST displayed at Flip=" in CORE
 
 
-def test_comic_late_blt_can_only_reapply_cached_panel_without_gdi_on_primary():
-    assert "SpiderF9Toast_GetComposedPanel(" in HEADER
-    assert "BOOL SpiderF9Toast_GetComposedPanel(" in TOAST
-    assert "toast_panel_region=panel;" in TOAST
-    assert "toast_panel_valid=TRUE;" in TOAST
-    assert "toast_panel_valid=FALSE;" in TOAST
-    assert "published==shown" in TOAST
-    assert "static volatile LONG f9_comic_last_draw_tick=0;" in CORE
-    assert "InterlockedExchange(&f9_comic_last_draw_tick,(LONG)GetTickCount());" in CORE
-    blt=CORE.split("static HRESULT WINAPI hooked_blt(",1)[1].split(
-        "/* The surface-creation hook remains responsible",1)[0]
-    assert "self==(void*)borderless_primary" in blt
-    assert "SpiderF9Toast_GetComposedPanel(&panel_stage,&panel)" in blt
-    assert "IntersectRect(&overlap,presented_dest,&dest_panel)" in blt
-    assert "original_blt(self,&dest_panel,panel_stage,&panel," in blt
-    assert "F9-TOAST-COMIC: PRIMARY Blt" in blt
-    assert "GetDC(" not in blt
+def test_static_comic_fallback_does_not_modify_game_video_or_input_hooks():
+    assert "SpiderF9Toast_SetGameWindow(hwnd);" in CORE
+    assert "SpiderF9Toast_SetGameWindow(HWND hwnd);" in HEADER
+    assert "f9_comic_last_draw_tick" not in CORE
+    assert "SpiderF9Toast_GetComposedPanel" not in CORE
+    blt = CORE.split("static HRESULT WINAPI hooked_blt(", 1)[1].split(
+        "/* The surface-creation hook remains responsible", 1)[0]
+    assert "F9-TOAST-COMIC: PRIMARY Blt" not in blt
+    assert "original_blt(self,&dest_panel,panel_stage" not in blt
