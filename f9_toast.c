@@ -93,8 +93,8 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
   COLORREF old_color;
   BOOL ok=FALSE;
   if(!dc || !path || w<320 || h<240 || w>8192 || h>8192)return FALSE;
-  font_px=toast_min(21,toast_max(13,(int)h/65));
-  pad=toast_max(10,font_px/2+4);
+  font_px=toast_min(19,toast_max(12,(int)h/75));
+  pad=toast_max(9,font_px/2+3);
   step=font_px+6;
   font=CreateFontW(-font_px,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,
                    DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
@@ -108,7 +108,7 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
   if(path_len==0 || !GetTextExtentPoint32W(dc,heading,
        (int)wcslen(heading),&heading_size) ||
      !GetTextExtentPoint32W(dc,path,path_len,&path_size))goto restore_font;
-  max_w=toast_min((int)w-24,(int)((w*7u)/10u));
+  max_w=toast_min((int)w-24,(int)((w*55u)/100u));
   if(max_w<=2*pad+30)goto restore_font;
   box_w=toast_min(max_w,toast_max(heading_size.cx,path_size.cx)+2*pad);
   max_path_w=box_w-2*pad;
@@ -119,8 +119,10 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
   y=(int)h-toast_max(16,(int)h/50)-box_h;
   if(y<0)goto restore_font;
   panel.left=x;panel.top=y;panel.right=x+box_w;panel.bottom=y+box_h;
-  brush=CreateSolidBrush(RGB(19,20,37));
-  border=CreatePen(PS_SOLID,1,RGB(112,103,168));
+  /* Compact variant of the native ESC pause ribbon: blue-violet fill,
+   * luminous lavender edges, pale text and red outlined heading. */
+  brush=CreateSolidBrush(RGB(50,50,160));
+  border=CreatePen(PS_SOLID,2,RGB(169,148,251));
   if(!brush || !border) {
     if(brush)DeleteObject(brush);
     if(border)DeleteObject(border);
@@ -130,13 +132,21 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
   old_pen=(HPEN)SelectObject(dc,border);
   if(old_brush && old_brush!=HGDI_ERROR && old_pen &&
      old_pen!=HGDI_ERROR) {
-    RoundRect(dc,panel.left,panel.top,panel.right,panel.bottom,10,10);
+    HBRUSH rim=CreateSolidBrush(RGB(231,220,255));
+    RoundRect(dc,panel.left,panel.top,panel.right,panel.bottom,8,8);
+    if(rim) {
+      RECT top={panel.left+3,panel.top+3,panel.right-3,panel.top+4};
+      RECT bottom={panel.left+3,panel.bottom-4,panel.right-3,panel.bottom-3};
+      FillRect(dc,&top,rim);
+      FillRect(dc,&bottom,rim);
+      DeleteObject(rim);
+    }
     old_mode=SetBkMode(dc,TRANSPARENT);
     old_color=GetTextColor(dc);
-    SetTextColor(dc,success?RGB(242,205,124):RGB(255,150,150));
+    SetTextColor(dc,success?RGB(240,47,69):RGB(255,120,120));
     TextOutW(dc,x+pad,y+pad,heading,
-             (int)(sizeof(heading)/sizeof(heading[0])-1));
-    SetTextColor(dc,RGB(242,244,255));
+             (int)wcslen(heading));
+    SetTextColor(dc,RGB(245,240,255));
     for(i=0;i<lines;i++)
       TextOutW(dc,x+pad,y+pad+(i+1)*step,
                path+starts[i],lengths[i]);
