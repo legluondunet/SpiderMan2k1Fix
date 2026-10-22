@@ -1,9 +1,9 @@
-"""Native F9 success toast regression checks.
+"""Native F9 screenshot notification regression checks.
 
 The asynchronous worker is the only producer, and the DirectDraw Flip game
-thread is the only renderer. The overlay is drawn AFTER presenting the scene
-to PRIMARY; PNG encoding reads only BACKBUFFER. It never writes into the
-screenshot, and failed/queued captures must never trigger a success toast.
+thread is the only renderer. The overlay is composited on a distinct offscreen surface BEFORE a single
+PRIMARY blit. PNG encoding reads only the pristine 3D BACKBUFFER. Failed or
+queued captures must never trigger a success toast.
 """
 from pathlib import Path
 
@@ -37,19 +37,35 @@ def test_confirmation_published_only_after_image_is_actually_saved():
     assert "SpiderF9Toast_PublishSavedPath" in HEADER
 
 
-def test_overlay_only_renders_after_present_on_primary_not_into_png():
+def test_toast_is_composited_before_one_primary_blt_without_touching_png_source():
     start = CORE.index("static HRESULT WINAPI hooked_flip(")
     flip = CORE[start:CORE.index("static void instrument_surface(",start)]
-    assert "hr=original_blt(self,&rc,borderless_back,NULL,DDBLT_WAIT,NULL);" in flip
-    assert "SpiderF9Toast_DrawAfterPresent((IDirectDrawSurface7 *)self," in flip
-    assert flip.index("SpiderF9Toast_DrawAfterPresent") > flip.index(
-        "hr=original_blt(self,&rc,borderless_back,NULL,DDBLT_WAIT,NULL);"
-    )
-    assert "InterlockedCompareExchange(&f9_native_png_enabled,0,0)==1" in flip
-    assert "IDirectDrawSurface7_GetDC(primary,&dc)" in TOAST
-    assert "GetDC(window)" in TOAST
-    assert "IDirectDrawSurface7_GetDC(borderless_back" not in TOAST
-    assert "SpiderF9Toast_DrawAfterPresent(" in HEADER
+    assert "SpiderF9Toast_CompositeFrame(borderless_back,game_hwnd,desktop_w,desktop_h)" in flip
+    assert "hr=original_blt(self,&rc,present_source,NULL,DDBLT_WAIT,NULL);" in flip
+    assert flip.index("SpiderF9Toast_CompositeFrame(") < flip.index(
+        "hr=original_blt(self,&rc,present_source,NULL,DDBLT_WAIT,NULL);")
+    assert "SpiderF9Toast_DrawAfterPresent" not in flip
+    assert "IDirectDrawSurface7_GetDDInterface(back,(void**)&dd)" in TOAST
+    assert "DDSCAPS_OFFSCREENPLAIN" in TOAST
+    assert "IDirectDrawSurface7_Blt(toast_stage,NULL,back,NULL,DDBLT_WAIT,NULL)" in TOAST
+    assert "IDirectDrawSurface7_GetDC(toast_stage,&dc)" in TOAST
+    assert "IDirectDrawSurface7_ReleaseDC(toast_stage,dc)" in TOAST
+    assert "IDirectDrawSurface7_GetDC(back,&dc)" not in TOAST
+    assert "IDirectDrawSurface7_GetDC(primary,&dc)" not in TOAST
+    assert "GetDC(window)" not in TOAST
+    assert "SpiderF9Toast_CompositeFrame(" in HEADER
+
+
+def test_staging_surface_lifetime_and_failure_preserves_gameplay():
+    assert "toast_discard_stage();" in TOAST
+    assert "toast_stage_width!=width || toast_stage_height!=height" in TOAST
+    assert "DDSCAPS_SYSTEMMEMORY" in TOAST
+    assert "DDSCAPS_VIDEOMEMORY" in TOAST
+    assert "SpiderF9Toast_ResetPresentation();" in CORE
+    assert "hr=original_blt(self,&rc,borderless_back,NULL,DDBLT_WAIT,NULL);" in CORE
+    assert "return NULL; /* Present the untouched game frame if composing fails." in TOAST
+    assert "GetForegroundWindow()!=window" in TOAST
+
 
 
 def test_thread_safe_success_expiration_and_no_window_focus_intrusion():
