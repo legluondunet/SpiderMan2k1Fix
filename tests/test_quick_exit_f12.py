@@ -205,15 +205,18 @@ def test_intro_exit_is_not_consumed_on_early_shell_main_menu_splash():
 def test_engine_phase_tracer_is_passive_throttled_and_gated():
     # No new EXE-byte patch or standalone worker is allowed for stage discovery.
     # The preexisting DirectDraw Flip hook owns these read-only snapshots.
-    assert "SpiderQuickExitF12_ObserveEngineState(count);" in CORE
-    assert "void SpiderQuickExitF12_ObserveEngineState(LONG flip_index);" in HDR
+    assert "SpiderQuickExitF12_ObserveEngineState(count,InterlockedCompareExchange(&menu_upscale_active,0,0)==1);" in CORE
+    assert "void SpiderQuickExitF12_ObserveEngineState(LONG flip_index, LONG renderer_menu);" in HDR
     assert "0x0060CFA4u" in SRC  # top-level switch read at 0x455F24
     assert "0x006B4C9Cu" in SRC  # native async transition
     assert "0x0054A510u" in SRC  # native mode task
     assert 'if(!SpiderQuickExitF12_Enabled())return;' in SRC
-    assert "ENGINE-STATE flip=%ld mode=%lu async=%lu task=%lu quit=%ld" in SRC
+    assert "ENGINE-STATE flip=%ld renderer2d=%ld mode_request=%lu countdown=%lu countdown_active=%ld task=%lu quit=%ld" in SRC
+    assert "previous_async_active==async_active" in SRC
+    assert "previous_renderer_menu==renderer_menu" in SRC
+    assert "menu_recent=" in SRC and "movie_recent=" in SRC
     assert "(DWORD)(now-last_snapshot)<5000u" in SRC
-    observer=SRC[SRC.index("void SpiderQuickExitF12_ObserveEngineState(LONG flip_index)"):
+    observer=SRC[SRC.index("void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,"):
                  SRC.index("/* Native BinkFrame tick wrapper")]
     for forbidden in ("VirtualProtect(", "PostMessageA(", "DestroyWindow(",
                       "*SPIDER_GAME_QUIT_FLAG=", "*SPIDER_ENGINE_MODE=",
