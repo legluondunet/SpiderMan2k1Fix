@@ -248,3 +248,28 @@ def test_three_native_3d_pause_actions_are_documented_but_not_mutated():
     assert "*SPIDER_PAUSE_OPTION_MENU=" not in observer
     assert "*SPIDER_PAUSE_RESTART_MENU=" not in observer
     assert "0x0047BC40u" not in SRC # no unauthorized direct native cleanup call
+
+
+def test_native_game_pause_handler_probe_calls_original_once_without_mutation():
+    # 00455540 MOV EAX,[0x682950]; TEST EAX,EAX; JE 0x45554E
+    # 00455549 CALL 0x47BC40 (bytes E8 F2 66 02 00)
+    # Game code itself decides whether this handler executes.
+    assert "#define SPIDER_NATIVE_PAUSE_CALL ((BYTE *)(uintptr_t)0x00455549u)" in SRC
+    assert "#define SPIDER_NATIVE_PAUSE_HANDLER ((void (__cdecl *)(void))(uintptr_t)0x0047BC40u)" in SRC
+    assert "native_pause_call_original[5]={0xE8,0xF2,0x66,0x02,0x00}" in SRC
+    assert "memcmp(SPIDER_NATIVE_PAUSE_CALL,native_pause_call_original,5)!=0" in SRC
+    assert "if(!install_passive_pause_probe())" in SRC
+    assert "restore_passive_pause_probe();" in SRC
+    start=SRC.index("static void __cdecl spider_observe_native_pause_handler(void)")
+    end=SRC.index("/* Native BinkFrame tick wrapper",start)
+    observer=SRC[start:end]
+    assert observer.count("SPIDER_NATIVE_PAUSE_HANDLER();")==1
+    assert "NATIVE-PAUSE owner ENTER" in observer
+    assert "NATIVE-PAUSE owner EXIT" in observer
+    assert "native request 7 from pause" in observer
+    assert "if(after_mode==7u && before_mode!=7u)" in observer
+    for forbidden in ("VirtualProtect(", "ExitProcess(", "TerminateProcess(",
+                      "PostMessageA(", "DestroyWindow(", "SendInput(",
+                      "*SPIDER_PAUSE_CONTEXT=", "*SPIDER_PAUSE_OPTION_MENU=",
+                      "*SPIDER_ENGINE_MODE=", "SPIDER_NATIVE_PAUSE_HANDLER(1"):
+        assert forbidden not in observer
