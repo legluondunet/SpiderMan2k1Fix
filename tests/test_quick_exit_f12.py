@@ -70,7 +70,7 @@ def test_foreground_key_detection_and_movie_to_native_quit_handoff():
     assert "GetForegroundWindow()==hwnd" in SRC
     assert "previously_down=TRUE;" in SRC
     assert "Sleep(25);" in SRC
-    assert "REAL Shell_MainMenu or startup movie not active; F12 safely ignored" in SRC
+    assert "REAL Shell_MainMenu, startup movie or recognized 3D owner not active; F12 safely ignored" in SRC
     assert "intro movie exit requested; native Bink cleanup then top-level engine Quit" in SRC
     assert "F12 queued for REAL Shell_MainMenu" in SRC
     assert "InterlockedExchange(&pending,1);" in SRC
@@ -390,7 +390,7 @@ def test_3d_f12_is_separately_opted_in_and_menu_keeps_priority():
                SRC.index("void SpiderQuickExitF12_Init")]
     assert thread.index("if(menu_time &&") < thread.index("experimental_game3d_enabled")
     assert thread.index("intro_quit_pending,1,0") < thread.index("game3d_exit_state,1,0")
-    assert "*SPIDER_ENGINE_MODE=" not in thread
+    assert "*(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;" not in thread
     assert "*SPIDER_GAME_QUIT_FLAG=" not in thread
     assert "0x0060CFA4u=7u" not in thread
     assert "0x02E0988Cu=" not in thread
