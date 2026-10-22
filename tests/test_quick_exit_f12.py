@@ -341,3 +341,33 @@ def test_native_3d_transition_7_condition_tracer_is_read_only():
     assert "elapsed_ticks=" in observer
     assert "*SPIDER_NATIVE_GAME_INPUT_TIMER_START=" not in observer
     assert "*SPIDER_NATIVE_GAME_TICK_COUNTER=" not in observer
+
+
+def test_top_level_native_controller7_exit_decision_is_passively_observed():
+    # Original x86 456198 CALL 48A820, then unmodified 45619D:
+    # TEST BYTE [2E0988C],4; JNE 45620C
+    # CMP DWORD [568FB0],0; JGE 45620C; otherwise JMP 455D98.
+    assert "0x00456198u" in SRC
+    assert "0x0048A820u" in SRC
+    assert "0x02E0988Cu" in SRC
+    assert "0x00568FB0u" in SRC
+    assert "native_controller7_finish_call_original[5]={0xE8,0x83,0x46,0x03,0x00}" in SRC
+    assert "memcmp(SPIDER_NATIVE_CONTROLLER7_FINISH_CALL,native_controller7_finish_call_original,5)!=0" in SRC
+    assert "if(!install_passive_controller7_probe())" in SRC
+    assert "restore_passive_controller7_probe();" in SRC
+    start=SRC.index("static void __cdecl spider_observe_controller7_finish(void)")
+    end=SRC.index("/* Native BinkFrame tick wrapper",start)
+    observer=SRC[start:end]
+    assert observer.count("SPIDER_NATIVE_CONTROLLER7_FINISH();")==1
+    assert "CONTROLLER-7 native teardown ENTER" in observer
+    assert "CONTROLLER-7 native teardown COMPLETED" in observer
+    assert "NATIVE-FINAL-CLEANUP" in observer
+    assert "RETURN-TO-CONTROLLER" in observer
+    assert "after_status>=0" in observer
+    assert "(after_bit&4u)!=0u" in observer
+    for forbidden in ("VirtualProtect(", "TerminateProcess(", "ExitProcess(",
+                      "DestroyWindow(", "SendInput(", "PostMessageA(",
+                      "*SPIDER_NATIVE_CONTROLLER7_EXIT_FLAGS=",
+                      "*SPIDER_NATIVE_CONTROLLER7_EXIT_STATUS=",
+                      "*SPIDER_ENGINE_MODE=", "*SPIDER_GAME_QUIT_FLAG="):
+        assert forbidden not in observer
