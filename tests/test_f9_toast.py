@@ -21,7 +21,7 @@ def test_screenshot_confirmation_is_english_and_includes_full_path():
     assert 'memcpy(toast_path,full_path,(len+1u)*sizeof(WCHAR));' in TOAST
     assert 'L"\\\\' not in TOAST or "toast_wrap_path" in TOAST
     assert "toast_wrap_path(" in TOAST
-    assert "DT_END_ELLIPSIS" not in TOAST
+    assert "DrawTextW(" not in TOAST  # No truncating label/path drawing
     assert "SPIDER_F9_TOAST_MS 3500u" in TOAST
 
 
