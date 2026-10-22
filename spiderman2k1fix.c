@@ -310,6 +310,7 @@ static volatile LONG f9_backbuffer_fix_enabled=0;
 static volatile LONG f9_native_png_enabled=0;
 static volatile LONG f9_png_only_enabled=0;
 static volatile LONG f9_png_capture_active=0;
+static BOOL f9_static_comic_capture=FALSE; /* F9 game thread only */
 static volatile LONG f9_backbuffer_lock_active=0;
 static DWORD f9_backbuffer_lock_thread=0;
 static IDirectDrawSurface7 *f9_backbuffer_locked_surface=NULL;
@@ -474,6 +475,8 @@ static volatile LONG media_native_blt_4x3_hits=0;
 /* New opt-in ONLY for native full-screen comic textures, no MENU changes. */
 static volatile LONG comic_native_aspect_enabled=0;
 static volatile LONG comic_native_aspect_matches=0;
+/* Comic stills do not require Flip while visible. */
+static volatile LONG f9_comic_last_draw_flip=-100000;
 
 static DWORD desktop_w=0, desktop_h=0;
 /* The INI's single resolution target. Display backends still require
@@ -973,6 +976,8 @@ static const void *maybe_correct_native_comic(void *device,D3DPRIMITIVETYPE type
        (unsigned)desktop_w,(unsigned)desktop_h)) return source;
   if(!SpiderComicNative_Transform((const SpiderMenuVertex*)source,copy,
                 (unsigned)count,(unsigned)desktop_w,(unsigned)desktop_h)) return source;
+  InterlockedExchange(&f9_comic_last_draw_flip,
+                      InterlockedCompareExchange(&flip_count,0,0));
   hit=InterlockedIncrement(&comic_native_aspect_matches);
   if(hit<=8 || hit%120==0) {
     char msg[286];
@@ -1809,6 +1814,14 @@ static void __cdecl hooked_f9_png_only(void) {
      * to any PRIMARY GDI readback: native Windows returned purple pixels. */
     goto done;
   }
+  /* Comic screenshots must not bake the toast into a frozen DirectDraw frame. */
+  {
+    LONG flip=InterlockedCompareExchange(&flip_count,0,0);
+    LONG last=InterlockedCompareExchange(&f9_comic_last_draw_flip,0,0);
+    f9_static_comic_capture=(last>=0 && flip-last<=2);
+    if(f9_static_comic_capture)
+      log_line("F9-TOAST-COMIC: static comic recognized; popup-only notification");
+  }
   back=borderless_back;
   if(!back || desktop_w<640 || desktop_h<480) {
     log_line("F9-PNG-ONLY: no valid 3D backbuffer; PNG capture skipped");
@@ -1824,7 +1837,9 @@ static void __cdecl hooked_f9_png_only(void) {
     /* SpiderF9PNG_Queue copies pixels synchronously. Its worker receives
      * only private memory, so the DirectDraw surface is unlocked before
      * any PNG compression and before continuing native gameplay. */
-    queued=SpiderF9PNG_Queue(&desc,log_line);
+    queued=f9_static_comic_capture?
+           SpiderF9PNG_QueueComic(&desc,log_line):
+           SpiderF9PNG_Queue(&desc,log_line);
     unlock_hr=IDirectDrawSurface7_Unlock(back,NULL);
     snprintf(msg,sizeof(msg),
       "F9-PNG-ONLY: backbuffer capture=%s %lux%lu Lock=OK Unlock=0x%08lX",
