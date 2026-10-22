@@ -25,8 +25,9 @@ def to_raw(pct, maximum):
 def test_generated_example_factory_consistency():
     assert len(bytes_data) == 252
     assert bytes.fromhex(config['Internal']['RawHex']) == bytes_data
-    assert set(config.sections()) == {'Debug','Display','HUD','Input','Audio','Keyboard','Joystick','Internal'}
+    assert set(config.sections()) == {'Debug','System','Display','HUD','Input','Audio','Keyboard','Joystick','Internal'}
     assert config['Debug']['Log'] == '0'
+    assert config['System']['QuickExitF12'] == '0'
     assert not config.has_option('Internal','VirtualSpideyCfg')
     assert not config.has_option('Internal','BootstrapGameConfig')
     assert config['Display']['Resolution'] == 'Auto'
