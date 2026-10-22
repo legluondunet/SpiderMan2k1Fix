@@ -111,32 +111,46 @@ void SpiderQuickExitF12_ObserveMovieFrame(void) {
  * Throttle to mode/quit/async transitions and a five-second heartbeat.
  * Useful for correlating static startup screens, comic mode and 3D with
  * real top-level switch 0x455F24. Opt-in QuickExitF12=1 only. */
-void SpiderQuickExitF12_ObserveEngineState(LONG flip_index) {
-  static LONG previous_mode=-1,previous_quit=-1,previous_async=-1;
+void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,
+                                          LONG renderer_menu) {
+  static LONG previous_mode=-1,previous_quit=-1;
+  static LONG previous_async_active=-1,previous_renderer_menu=-1;
   static DWORD last_snapshot=0;
-  DWORD now,mode,async,task;
-  LONG quit,menu_seen,intro_requested,forwarded;
-  char line[280];
+  DWORD now,mode,async,task,menu_last,movie_last;
+  LONG quit,menu_seen,menu_recent,movie_recent,async_active;
+  LONG intro_requested,forwarded;
+  char line[360];
   if(!SpiderQuickExitF12_Enabled())return;
   now=GetTickCount();
   mode=*SPIDER_ENGINE_MODE;
   async=*SPIDER_ENGINE_ASYNC_STATE;
+  async_active=(async!=0u)?1:0;
   task=*SPIDER_ENGINE_TASK;
   quit=(LONG)*SPIDER_GAME_QUIT_FLAG;
   if(previous_mode==(LONG)mode && previous_quit==quit &&
-     previous_async==(LONG)async && last_snapshot &&
-     (DWORD)(now-last_snapshot)<5000u)return;
+     previous_async_active==async_active &&
+     previous_renderer_menu==renderer_menu &&
+     last_snapshot && (DWORD)(now-last_snapshot)<5000u)return;
   previous_mode=(LONG)mode;
   previous_quit=quit;
-  previous_async=(LONG)async;
+  previous_async_active=async_active;
+  previous_renderer_menu=renderer_menu;
   last_snapshot=now;
   menu_seen=InterlockedCompareExchange(&real_main_menu_seen,0,0);
+  menu_last=(DWORD)InterlockedCompareExchange(&last_menu_frame_ms,0,0);
+  movie_last=(DWORD)InterlockedCompareExchange(&last_movie_frame_ms,0,0);
+  menu_recent=menu_last && (DWORD)(now-menu_last)<400u ? 1:0;
+  movie_recent=movie_last && (DWORD)(now-movie_last)<750u ? 1:0;
   intro_requested=InterlockedCompareExchange(&intro_quit_pending,0,0);
   forwarded=InterlockedCompareExchange(&intro_native_quit_forwarded,0,0);
+  /* The mode is a NEXT DISPATCH request: often zero during active
+   * Bink, 2D and 3D. The async DWORD is a two-part countdown, NOT a
+   * mode identifier; never emit 60 log lines just because it ticks. */
   snprintf(line,sizeof(line),
-    "QUICK-EXIT-F12: ENGINE-STATE flip=%ld mode=%lu async=%lu task=%lu quit=%ld menu_seen=%ld intro_request=%ld intro_forwarded=%ld",
-    (long)flip_index,(unsigned long)mode,(unsigned long)async,
-    (unsigned long)task,(long)quit,(long)menu_seen,
+    "QUICK-EXIT-F12: ENGINE-STATE flip=%ld renderer2d=%ld mode_request=%lu countdown=%lu countdown_active=%ld task=%lu quit=%ld menu_recent=%ld movie_recent=%ld menu_seen=%ld intro_request=%ld intro_forwarded=%ld",
+    (long)flip_index,(long)renderer_menu,(unsigned long)mode,
+    (unsigned long)async,(long)async_active,(unsigned long)task,
+    (long)quit,(long)menu_recent,(long)movie_recent,(long)menu_seen,
     (long)intro_requested,(long)forwarded);
   say(line);
 }
