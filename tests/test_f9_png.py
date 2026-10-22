@@ -159,9 +159,11 @@ def test_menu_screenshot_captures_only_rendered_menu_before_present_and_clear():
     pending = CORE.index("static void f9_capture_completed_menu_flip(")
     capture = CORE[pending:CORE.index("/* Source-frame capture for intro FMVs only.",pending)]
     assert "menu_draws>=3 && movie_blits==0" in flip
+    assert "BOOL f9_still_ready=menu_active && menu_draws>=1 && movie_blits==0" in flip
+    assert "f9_capture_completed_menu_flip(count,f9_still_ready);" in flip
     assert "count-movie_last>3" in flip
-    assert "f9_capture_completed_menu_flip(count,permitted);" in flip
-    assert flip.index("f9_capture_completed_menu_flip(count,permitted);") < flip.index(
+    assert "f9_capture_completed_menu_flip(count,f9_still_ready);" in flip
+    assert flip.index("f9_capture_completed_menu_flip(count,f9_still_ready);") < flip.index(
         "hr=original_blt(self,&rc,present_source,NULL,DDBLT_WAIT,NULL);")
     assert flip.index("f9_capture_completed_menu_flip(count,permitted);") < flip.index(
         "cleared=original_blt(back,NULL,NULL,NULL,DDBLT_COLORFILL|DDBLT_WAIT,&fill);")
