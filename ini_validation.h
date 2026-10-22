@@ -46,8 +46,9 @@ static int spider_ini_in(const char *name,const char *const *items,size_t count)
   return 0;
 }
 #define SPIDER_INI_IN(value,array) spider_ini_in(value,array,sizeof(array)/sizeof((array)[0]))
-static const char *const spider_ini_sections[]={"Debug","Display","HUD","Input","Audio","Keyboard","Joystick","Internal"};
+static const char *const spider_ini_sections[]={"Debug","System","Display","HUD","Input","Audio","Keyboard","Joystick","Internal"};
 static const char *const spider_ini_debug[]={"Log"};
+static const char *const spider_ini_system[]={"QuickExitF12"};
 static const char *const spider_ini_display[]={
   "Resolution","AspectRatio","Brightness","FPSLimit","FOV",
   "ExperimentalFOVAspect","ExperimentalFOVHorPlus",
@@ -72,6 +73,7 @@ static const char *const spider_ini_joy[]={"Jump","Kick","Punch","Web","Aim","Zi
 static const char *const spider_ini_internal[]={"RawHex"};
 static int spider_ini_key_known(const char *section,const char *key) {
   if(!spider_ini_icmp(section,"Debug"))return SPIDER_INI_IN(key,spider_ini_debug);
+  if(!spider_ini_icmp(section,"System"))return SPIDER_INI_IN(key,spider_ini_system);
   if(!spider_ini_icmp(section,"Display"))return SPIDER_INI_IN(key,spider_ini_display);
   if(!spider_ini_icmp(section,"HUD"))return SPIDER_INI_IN(key,spider_ini_hud);
   if(!spider_ini_icmp(section,"Input"))return SPIDER_INI_IN(key,spider_ini_input);
@@ -140,7 +142,8 @@ static int spider_ini_value_valid(const char *section,const char *key,const char
   if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"PauseKey"))
     return !spider_ini_icmp(value,"F9") || !spider_ini_icmp(value,"Space") ||
            !spider_ini_icmp(value,"Any");
-  if(!spider_ini_icmp(section,"Debug")||!spider_ini_icmp(section,"Input")||
+  if(!spider_ini_icmp(section,"Debug")||!spider_ini_icmp(section,"System")||
+     !spider_ini_icmp(section,"Input")||
      !spider_ini_icmp(section,"HUD"))return spider_ini_uint(value,0,1);
   if(!spider_ini_icmp(section,"Display")) {
     if(!spider_ini_icmp(key,"Resolution"))return spider_ini_resolution(value);
