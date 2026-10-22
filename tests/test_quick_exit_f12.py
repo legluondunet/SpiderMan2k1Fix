@@ -51,3 +51,28 @@ def test_exit_uses_normal_window_shutdown_and_reports_if_unhandled():
                       "SendInput(", "keybd_event(", "SetWindowsHookEx("):
         assert forbidden not in SRC
     assert "QuickExitF12" in HDR
+
+
+def test_external_windows_watcher_verifies_exit_without_forcing_termination():
+    script = (ROOT/"tools/Verify-F12QuickExit.ps1").read_text(encoding="utf-8")
+    assert "Start-Process -FilePath $exe -WorkingDirectory $folder -PassThru" in script
+    assert "Press F12 in the game window" in script
+    assert "$watch.WaitForExit(500)" in script
+    assert "$watch.ExitCode" in script
+    assert "Get-Process -Id $pidToWatch" in script
+    assert 'Get-Process -Name "SpideyPC"' in script
+    assert "Get-WinEvent -FilterHashtable" in script
+    assert "QUICK-EXIT-F12: F12 pressed in foreground; WM_CLOSE posted" in script
+    assert "OS-owned process memory and handles are released" in script
+    assert "this does not prove that every native COM object was explicitly released" in script
+    assert "Stop-Process" not in script
+    assert ".Kill(" not in script
+    assert "TerminateProcess" not in script
+
+
+def test_readme_identifies_exact_verified_original_f12_route():
+    readme = (ROOT/"README.md").read_text(encoding="utf-8")
+    assert "VA 0x00515368" in readme
+    assert "VA 0x00515336" in readme
+    assert "VA 0x00515306" in readme
+    assert "tools/Verify-F12QuickExit.ps1" in readme
