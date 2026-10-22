@@ -8,6 +8,8 @@
 /* Called only after the GDI+ PNG encoder has successfully published its
  * final image filename. The worker publishes data; the game thread draws. */
 void SpiderF9Toast_PublishSavedPath(const WCHAR *full_path);
+/* Display a user-readable failure instead of a false saved confirmation. */
+void SpiderF9Toast_PublishError(const WCHAR *reason);
 
 /* The caller must invoke this AFTER the backbuffer has been Blt'ed to the
  * windowed primary, so the confirmation can NEVER enter the PNG readback. */
