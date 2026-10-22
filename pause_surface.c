@@ -26,7 +26,7 @@ static HDC saved_dc=NULL;
 static HBITMAP saved_bitmap=NULL, saved_old=NULL;
 static IDirectDrawSurface7 *saved_surface=NULL;
 static HICON pause_game_icon=NULL; /* biggest embedded SpideyPC.exe icon */
-static int enabled_dim=1,enabled_grid=0,enabled_banner=1,opacity=50;
+static int enabled_dim=1,enabled_grid=0,enabled_banner=1,opacity=60;
 static void (*pause_log)(const char *)=NULL;
 
 static void pause_log_hresult(const char *step,HRESULT hr) {
@@ -264,7 +264,7 @@ void SpiderPauseSurface_Init(void (*log_fn)(const char *)) {
   char path[MAX_PATH],*slash;
   DWORD n;
   pause_log=log_fn;
-  enabled_dim=1;enabled_grid=0;enabled_banner=1;opacity=50;
+  enabled_dim=1;enabled_grid=0;enabled_banner=1;opacity=60;
   n=GetModuleFileNameA(NULL,path,sizeof(path));
   if(n && n<sizeof(path) && (slash=strrchr(path,'\\')) &&
      (size_t)(slash-path)+sizeof("SpiderMan2k1Fix.ini")<=sizeof(path)) {
@@ -272,7 +272,7 @@ void SpiderPauseSurface_Init(void (*log_fn)(const char *)) {
     enabled_dim=GetPrivateProfileIntA("Input","PauseDim",1,path)==1;
     enabled_grid=GetPrivateProfileIntA("Input","PauseGrid",0,path)==1;
     enabled_banner=GetPrivateProfileIntA("Input","PauseOverlay",1,path)==1;
-    opacity=GetPrivateProfileIntA("Input","PauseDimOpacity",50,path);
+    opacity=GetPrivateProfileIntA("Input","PauseDimOpacity",60,path);
   }
   pause_load_game_icon();
   if(opacity<0)opacity=0;
