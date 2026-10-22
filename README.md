@@ -274,6 +274,13 @@ from the latest draft PR #25 build:**
    **without any new `scrnNNNN.bmp`**. Inspect the PNG for correct
    colors, HUD, and orientation. Press F9 multiple times at least
    500 ms apart; test Alt+Tab and both supported aspect ratios.
+   **After the PNG is actually saved**, the game briefly displays
+   `Screenshot saved to:` followed by the **full absolute path** of
+   the new PNG. The notification disappears after about 3.5 seconds
+   and is painted over the visible primary surface **after** the
+   backbuffer is presented, so it is **not embedded in F9 PNGs**.
+   On a narrow display the complete path wraps onto additional lines.
+   The message does not appear for unsuccessful/skipped captures.
 3. Check the log for `F9-PNG-ONLY: two SHA-verified F9 call sites`,
    `F9-PNG-ONLY: backbuffer capture=queued`, and
    `F9-PNG: saved scrnNNNN.png`. A lock/encoder failure is logged and
