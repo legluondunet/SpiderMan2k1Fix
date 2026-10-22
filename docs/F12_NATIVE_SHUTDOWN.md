@@ -432,6 +432,67 @@ If the controller instead takes `NATIVE-FINAL-CLEANUP`,
 the game should exit normally; this has not yet been proved
 during runtime. The established menu-quit action remains unchanged.
 
+## Build #508 result and subsequent opt-in 3D native F12 experiment
+
+User log `SpiderMan2k1Fix(20261022-183549).log` confirms:
+
+```text
+NATIVE-GAME-INPUT owner EXIT n=507 NATIVE REQUEST 7 produced by 0x440EF0
+NATIVE-3D-CLEANUP begin n=1 request=7
+NATIVE-3D-CLEANUP completed n=1 request=7
+CONTROLLER-7 native teardown ENTER n=1 bit4=0 status=-1 3D-checkpoint=1
+CONTROLLER-7 native teardown COMPLETED n=1 bit4=0 status=-1 outcome=RETURN-TO-CONTROLLER
+```
+
+After the original controller's native `0x48A820` call, `0x45619D`
+tests `[0x02E0988C]&4`; if nonzero it enters the original final
+program cleanup at `0x45620C`. If the bit is clear,
+`0x4561A6` compares signed `[0x00568FB0]` against zero and
+also exits when nonnegative. For the user-observed return to
+menu, both conditions were false: bit 4 clear, status -1.
+
+### New game-thread-only 3D shutdown prototype (strictly opt-in)
+
+* Config: `[System] QuickExitF12=1` **and**
+  `[System] ExperimentalQuickExitF12In3D=1`. Both are disabled by
+  default in the generated and example INIs. The new key is accepted
+  by `ini_validation.h`.
+* F12 watcher must see recent native gameplay-owner callback
+  `0x440EF0` AND recent non-menu DirectDraw Flip; it **only latches**
+  the exit intent on the polling thread, never modifying native code,
+  graphics objects, or game globals there.
+* The instrumented, SHA/signature-checked native game-input CALL
+  at `0x45553B` executes the **original `0x440EF0` exactly once**.
+  After it returns, provided the owner is still in normal gameplay
+  (`mode_request=0`, no active Bink), the original game thread sets
+  `mode_request=7`, allowing the original `0x455A90` check to
+  enter native 3D cleanup at `0x455BF3`.
+* The original `0x455BF9 CALL 0x4302D0` returns; only then is a
+  `game3d_cleanup_confirmed` latch set. The owner continues the rest
+  of its **unchanged** native teardown and returns.
+* The original request-7 controller then executes native
+  `0x443AD0(0)` and original `0x48A820`. Only **after the latter
+  returns** may our wrapper set bit 4 in `[0x02E0988C]`, retaining
+  all unrelated bits. It is guarded by *all* conditions: opt-in flag,
+  a matching pending 3D F12 state, actual request 7, and confirmed
+  owner cleanup count beyond the pre-request baseline.
+* The game itself tests the flag at `0x45619D` and jumps to
+  `0x45620C`, the native **process final-cleanup** sequence.
+  The patch does **not** call destructors, manipulate Windows
+  HWND, synthesize Enter, or terminate the process.
+
+This approach is **new and unvalidated on Windows**. It is a targeted
+hypothesis informed by a verified native control-flow path, *not*
+proof of full termination. Unlike the earlier read-only probes, it
+intentionally updates two original game globals **on the owning native
+game thread only**. The first test must check that F12 during
+actual 3D closes the OS process (no audio leftovers or crash),
+and that it does not regress the known-good main-menu F12.
+If owner recognition fails, F12 must be ignored rather than
+destroying the game window. The comic and fixed-splash paths remain
+unsupported. **Do not merge PR #26 until user validation and explicit
+approval.**
+
 ## Agreed architecture
 
 1. Capture F12 once while the real game is foreground and latch an
