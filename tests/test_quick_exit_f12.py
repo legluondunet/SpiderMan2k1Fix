@@ -62,13 +62,13 @@ def test_f12_game_thread_uses_native_menu_cleanup_without_calls_from_worker():
         assert forbidden not in SRC
 
 
-def test_foreground_key_detection_and_menu_only_fail_closed():
+def test_foreground_key_detection_and_movie_to_native_quit_handoff():
     assert "GetAsyncKeyState(VK_F12)&0x8000" in SRC
     assert "GetForegroundWindow()==hwnd" in SRC
     assert "previously_down=TRUE;" in SRC
     assert "Sleep(25);" in SRC
     assert "REAL Shell_MainMenu not active; F12 safely ignored" in SRC
-    assert "opening movie active; native menu-only exit NOT requested" in SRC
+    assert "intro movie exit requested; native Bink cleanup then real Shell_MainMenu Quit" in SRC
     assert "F12 queued for REAL Shell_MainMenu" in SRC
     assert "InterlockedExchange(&pending,1);" in SRC
     assert "InterlockedExchange(&pending,0);" in SRC
@@ -100,7 +100,7 @@ def test_windows_process_watch_has_no_kill_side_effects():
     assert "Stop-Process" not in script and ".Kill(" not in script
 
 
-def test_readme_describes_main_menu_only_and_no_runtime_validation():
+def test_readme_describes_menu_validated_and_movies_experimental():
     readme=(ROOT/"README.md").read_text(encoding="utf-8")
     assert "Shell_MainMenu" in readme
     assert "0x00493DD6" in readme
@@ -108,3 +108,46 @@ def test_readme_describes_main_menu_only_and_no_runtime_validation():
     assert "cinematics" in readme.lower()
     assert "not yet" in readme.lower()
     assert "tools/Verify-F12QuickExit.ps1" in readme
+
+
+def test_four_intro_movies_run_original_bink_cleanup_on_game_thread():
+    # Four sequential 0x470750 game calls (intro slates/cinematics) share
+    # two exact original BinkFrame tick sites, whose false-result path
+    # branches to the native 0x470871 BinkClose cleanup continuation.
+    assert "#define SPIDER_INTRO_TICK_CALL_1 ((BYTE *)(uintptr_t)0x0047081Du)" in SRC
+    assert "#define SPIDER_INTRO_TICK_CALL_2 ((BYTE *)(uintptr_t)0x0047085Fu)" in SRC
+    assert "0x0050B5A0u" in SRC
+    assert "0x006151F8u" in SRC
+    assert "0xE8,0x7E,0xAD,0x09,0x00" in SRC
+    assert "0xE8,0x3C,0xAD,0x09,0x00" in SRC
+    assert "static BYTE __cdecl spider_f12_native_intro_tick(void)" in SRC
+    assert "if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1)" in SRC
+    assert "return 0;" in SRC
+    assert "return SPIDER_NATIVE_BINK_FRAME_TICK();" in SRC
+    assert "native Bink tick returned finished; original game video cleanup will run" in SRC
+    assert "BinkClose(" not in SRC
+    assert "PostMessageA(" not in SRC
+    assert "TerminateProcess(" not in SRC
+
+
+def test_intro_exit_latch_survives_all_movies_then_consumed_by_validated_menu():
+    assert "static volatile LONG intro_quit_pending=0;" in SRC
+    assert "InterlockedCompareExchange(&intro_quit_pending,1,0)==0" in SRC
+    assert "InterlockedCompareExchange(&intro_quit_pending,0,1)==1" in SRC
+    assert SRC.index("InterlockedCompareExchange(&intro_quit_pending,0,1)==1") < SRC.index("if(InterlockedCompareExchange(&pending,0,1)==1)")
+    assert "intro Bink cleanup completed; native Shell_MainMenu Quit activated" in SRC
+    assert "movl $3, 0x68(%esp)" in SRC
+    assert "movl $0x004941D5, 0x24(%esp)" in SRC
+    assert "*SPIDER_GAME_BINK_ACTIVE!=0u" in SRC
+    assert "movie_time)<750u" in SRC
+
+
+def test_intro_calls_are_signature_checked_and_install_rollbacks_complete():
+    assert "memcmp(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1,5)" in SRC
+    assert "memcmp(SPIDER_INTRO_TICK_CALL_2,intro_tick_call_original_2,5)" in SRC
+    assert "if(!patch_intro_tick_call(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1))" in SRC
+    assert "if(!patch_intro_tick_call(SPIDER_INTRO_TICK_CALL_2,intro_tick_call_original_2))" in SRC
+    assert "restore_intro_tick_call(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1);" in SRC
+    assert "if(!install_intro_tick_hooks())" in SRC
+    assert "restore_intro_tick_hooks();" in SRC
+    assert "FlushInstructionCache(GetCurrentProcess(),site,5);" in SRC
