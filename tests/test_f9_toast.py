@@ -136,7 +136,7 @@ def test_toast_timer_starts_on_first_actual_display_in_sparse_comic_scenes():
     assert "#define SPIDER_F9_TOAST_MS 2000u" in TOAST
     assert "#define SPIDER_F9_TOAST_GRACE_MS 10000u" in TOAST
     assert "toast_published_at=GetTickCount();" in TOAST
-    assert "toast_expires_at=0; /* No countdown before first actual presentation. */" in TOAST
+    assert "toast_expires_at=0; /* Display starts the countdown. */" in TOAST
     assert "if(!toast_expires_at)toast_expires_at=GetTickCount()+SPIDER_F9_TOAST_MS;" in TOAST
     assert "if(toast_generation==generation)" in TOAST
     assert "toast_displayed_generation=generation;" in TOAST
@@ -177,3 +177,24 @@ def test_no_flip_comic_toast_is_shown_without_directdraw_or_input_hooks():
     assert "GetDC(NULL)" in popup
     assert "CreateDIBSection(" in popup
     assert "toast_draw_dc(mem," in popup
+
+
+def test_comic_screenshot_toast_is_popup_exclusive_and_self_expiring():
+    assert "SpiderF9PNG_QueueComic(&desc,log_line)" in CORE
+    assert "f9_comic_last_draw_flip" in CORE
+    assert "flip-last<=2" in CORE
+    assert "toast_current_is_comic=comic;" in TOAST
+    assert "if(comic)toast_start_no_flip_fallback(generation);" in TOAST
+    assert "void SpiderF9Toast_PublishSavedPathComic(" in TOAST
+    start = TOAST.index("IDirectDrawSurface7 *SpiderF9Toast_CompositeFrame(")
+    part = TOAST[start:]
+    assert "if(comic) {" in part
+    assert "toast_discard_stage();" in part
+    assert part.index("if(comic) {") < part.index("toast_create_stage(")
+    assert "ShowWindow(popup,SW_HIDE);" in TOAST
+    assert "DestroyWindow(popup);" in TOAST
+    assert "SWP_HIDEWINDOW" in TOAST
+    assert "F9-TOAST-STATIC: generation=%lu hidden and destroyed after 2s" in TOAST
+    assert "#define SPIDER_F9_TOAST_MS 2000u" in TOAST
+    assert "SpiderF9Toast_PublishSavedPath(dest);" in ENC
+    assert "SpiderF9Toast_PublishSavedPathComic(dest);" in ENC
