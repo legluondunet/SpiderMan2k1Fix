@@ -247,7 +247,8 @@ def test_three_native_3d_pause_actions_are_documented_but_not_mutated():
     assert "*SPIDER_PAUSE_CONTEXT=" not in observer
     assert "*SPIDER_PAUSE_OPTION_MENU=" not in observer
     assert "*SPIDER_PAUSE_RESTART_MENU=" not in observer
-    assert "0x0047BC40u" not in SRC # no unauthorized direct native cleanup call
+    assert "SPIDER_NATIVE_PAUSE_HANDLER();" in SRC  # original owner called once by passive wrapper
+    assert "0x0047BC40u" in SRC  # only native pause owner, never a destructor
 
 
 def test_native_game_pause_handler_probe_calls_original_once_without_mutation():
