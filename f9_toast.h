@@ -11,9 +11,11 @@ void SpiderF9Toast_PublishSavedPath(const WCHAR *full_path);
 /* Display a user-readable failure instead of a false saved confirmation. */
 void SpiderF9Toast_PublishError(const WCHAR *reason);
 
-/* The caller must invoke this AFTER the backbuffer has been Blt'ed to the
- * windowed primary, so the confirmation can NEVER enter the PNG readback. */
-BOOL SpiderF9Toast_DrawAfterPresent(IDirectDrawSurface7 *primary,HWND window,
-                                     DWORD width,DWORD height);
+/* A complete scene + notification is composed into a cached offscreen
+ * presentation surface before the ONE blit to PRIMARY. Returns NULL when no
+ * notice is active or the surface cannot be composed. Never modifies BACK. */
+IDirectDrawSurface7 *SpiderF9Toast_CompositeFrame(IDirectDrawSurface7 *back,
+                                  HWND window,DWORD width,DWORD height);
+void SpiderF9Toast_ResetPresentation(void);
 
 #endif
