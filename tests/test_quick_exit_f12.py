@@ -73,11 +73,12 @@ def test_external_windows_watcher_verifies_exit_without_forcing_termination():
     assert "TerminateProcess" not in script
 
 
-def test_readme_identifies_exact_verified_original_f12_route():
+def test_readme_identifies_native_quit_and_unsafe_original_f12():
     readme = (ROOT/"README.md").read_text(encoding="utf-8")
-    assert "VA 0x00515368" in readme
-    assert "VA 0x00515336" in readme
-    assert "VA 0x00515306" in readme
+    assert "0x00515373" in readme
+    assert "0x004A238A" in readme
+    assert "0x00455E50" in readme
+    assert "0x0060CF88" in readme
     assert "tools/Verify-F12QuickExit.ps1" in readme
 
 
