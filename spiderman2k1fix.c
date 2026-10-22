@@ -31,6 +31,7 @@
 #include "menu_version.h"
 #include "version_info.h"
 #include "f9_png.h"
+#include "f9_toast.h"
 
 static const BYTE expected_sha256[32] = {
   0x0a,0x11,0xa4,0x9f,0x3f,0x63,0xd4,0xbb,
@@ -1945,6 +1946,12 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
           log_line(line);
         }
       }
+      /* Display screenshot confirmation only after backbuffer->PRIMARY.
+       * F9 reads BACKBUFFER, so the notification is excluded from PNGs. */
+      if(SUCCEEDED(hr) &&
+         InterlockedCompareExchange(&f9_native_png_enabled,0,0)==1)
+        SpiderF9Toast_DrawAfterPresent((IDirectDrawSurface7 *)self,
+                                       game_hwnd,desktop_w,desktop_h);
       /* GDI fallback only when the video-memory surface has no DC. */
       if(SUCCEEDED(hr) && permitted && !back_drawn) {
         RECT content={menu_map.left,menu_map.top,menu_map.right,menu_map.bottom};
