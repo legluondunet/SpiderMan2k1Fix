@@ -41,6 +41,58 @@ static void (*quick_exit_log)(const char *)=NULL;
 
 static volatile LONG intro_abort_requested=0;
 static volatile LONG intro_abort_seen=0;
+/* The movie runtime can be visible while SPIDER_INTRO_ACTIVE is zero.
+ * The renderer's confirmed native video Blts are our authoritative
+ * evidence for whether a Bink frame is still on screen. */
+static volatile LONG intro_last_movie_blt_ms=0;
+static volatile LONG intro_movie_blt_count=0;
+static volatile LONG intro_abort_frame_count=0;
+
+/* Original WndProc 0x00515368 handles WM_KEYDOWN/F12 by directly calling
+ * PostMessageA(WM_CLOSE) here. If we leave this call in place, the original
+ * WndProc destroys the window BEFORE our Bink-cleanup guard even runs.
+ * 0x00515373: FF 15 70 B1 53 00 = CALL [PostMessageA IAT]
+ * Stack at this site contains exactly four stdcall arguments.
+ * Replace the six bytes with ADD ESP,16; NOP; NOP; NOP only when the
+ * user expressly enables QuickExitF12. No WndProc subclass and no
+ * changes to any other game keyboard or DirectInput action. */
+#define SPIDER_NATIVE_F12_POST ((BYTE *)(uintptr_t)0x00515373u)
+static const BYTE native_f12_original[6]={0xFF,0x15,0x70,0xB1,0x53,0x00};
+static const BYTE native_f12_bypass[6]={0x83,0xC4,0x10,0x90,0x90,0x90};
+
+static int native_f12_suppress_unsafe_window_close(void) {
+  DWORD prot,ignored;
+  if(memcmp(SPIDER_NATIVE_F12_POST,native_f12_original,6))return 0;
+  if(!VirtualProtect(SPIDER_NATIVE_F12_POST,6,PAGE_EXECUTE_READWRITE,&prot))
+    return 0;
+  memcpy(SPIDER_NATIVE_F12_POST,native_f12_bypass,6);
+  FlushInstructionCache(GetCurrentProcess(),SPIDER_NATIVE_F12_POST,6);
+  VirtualProtect(SPIDER_NATIVE_F12_POST,6,prot,&ignored);
+  return 1;
+}
+
+static void native_f12_restore(void) {
+  DWORD prot,ignored;
+  if(memcmp(SPIDER_NATIVE_F12_POST,native_f12_bypass,6))return;
+  if(VirtualProtect(SPIDER_NATIVE_F12_POST,6,PAGE_EXECUTE_READWRITE,&prot)) {
+    memcpy(SPIDER_NATIVE_F12_POST,native_f12_original,6);
+    FlushInstructionCache(GetCurrentProcess(),SPIDER_NATIVE_F12_POST,6);
+    VirtualProtect(SPIDER_NATIVE_F12_POST,6,prot,&ignored);
+  }
+}
+
+/* Called only for a SUCCESSFUL decoded FMV Blt, after the original renderer
+ * has processed it. Works for all four opening clips, independently of the
+ * game's unreliable SPIDER_INTRO_ACTIVE flag. */
+void SpiderQuickExitF12_ObserveMovieFrame(void) {
+  InterlockedExchange(&intro_last_movie_blt_ms,(LONG)GetTickCount());
+  InterlockedIncrement(&intro_movie_blt_count);
+}
+
+static int movie_frame_recent(DWORD now,DWORD window_ms) {
+  LONG last=InterlockedCompareExchange(&intro_last_movie_blt_ms,0,0);
+  return last!=0 && (DWORD)(now-(DWORD)last)<window_ms;
+}
 static const BYTE intro_call_1_original[5]={0xE8,0x7E,0xAD,0x09,0x00};
 static const BYTE intro_call_2_original[5]={0xE8,0x3C,0xAD,0x09,0x00};
 
@@ -49,6 +101,8 @@ static BYTE __cdecl quick_exit_intro_tick(void) {
    * decides whether to continue Bink frames or invoke BinkClose. */
   if(InterlockedCompareExchange(&intro_abort_requested,0,0)==1) {
     InterlockedExchange(&intro_abort_seen,1);
+    InterlockedExchange(&intro_abort_frame_count,
+                        InterlockedCompareExchange(&intro_movie_blt_count,0,0));
     return 0; /* original game now jumps to 0x00470871 cleanup */
   }
   return SPIDER_INTRO_TICK();
@@ -128,26 +182,45 @@ static DWORD WINAPI quick_exit_f12_thread(LPVOID unused) {
        * Ask the native frame loop to end first. Our game-thread hook
        * returns "movie finished" and the game's own code calls BinkClose
        * and clears SPIDER_INTRO_ACTIVE before we send WM_CLOSE. */
-      if(*SPIDER_INTRO_ACTIVE!=0u) {
-        unsigned attempts;
-        char info[180];
-        say("QUICK-EXIT-F12: opening movie active; requesting native Bink completion BEFORE WM_CLOSE");
-        for(attempts=0;attempts<300u;attempts++) {
-          if(InterlockedCompareExchange(&intro_abort_seen,0,0)==1 &&
-             *SPIDER_INTRO_ACTIVE==0u)break;
-          Sleep(10);
-        }
-        if(attempts==300u) {
+      {
+        DWORD now=GetTickCount();
+        BOOL seen_movie=movie_frame_recent(now,1500u);
+        BOOL native_active=*SPIDER_INTRO_ACTIVE!=0u;
+        if(seen_movie||native_active) {
+          unsigned attempts;
+          LONG frames_at_request=InterlockedCompareExchange(
+                               &intro_movie_blt_count,0,0);
+          char info[250];
           snprintf(info,sizeof(info),
-            "QUICK-EXIT-F12: WARNING intro completion not confirmed (active=%lu seen=%ld); WM_CLOSE NOT posted",
-            (unsigned long)*SPIDER_INTRO_ACTIVE,
-            (long)InterlockedCompareExchange(&intro_abort_seen,0,0));
+            "QUICK-EXIT-F12: media exit guarded; active=%d recent_blt=%d blts=%ld; request native cleanup BEFORE WM_CLOSE",
+            (int)native_active,(int)seen_movie,(long)frames_at_request);
           say(info);
-          /* Keep the cancel request latched for the native game thread.
-           * Do not destroy the window while Bink is still rendering. */
-          return 0;
+          /* No window close until the native hook has actually run AND
+           * both the game flag AND the decoded video frames have stopped.
+           * Some clips leave the game's flag at zero while still playing.
+           * Require at least 600ms without movie frames. */
+          for(attempts=0;attempts<300u;attempts++) {
+            now=GetTickCount();
+            if(InterlockedCompareExchange(&intro_abort_seen,0,0)==1 &&
+               *SPIDER_INTRO_ACTIVE==0u &&
+               !movie_frame_recent(now,600u))break;
+            Sleep(10);
+          }
+          if(attempts==300u) {
+            snprintf(info,sizeof(info),
+              "QUICK-EXIT-F12: WARNING movie stop not verified active=%lu hook=%ld blts=%ld; WM_CLOSE SUPPRESSED",
+              (unsigned long)*SPIDER_INTRO_ACTIVE,
+              (long)InterlockedCompareExchange(&intro_abort_seen,0,0),
+              (long)InterlockedCompareExchange(&intro_movie_blt_count,0,0));
+            say(info);
+            /* Keep HWND and input alive rather than orphaning Bink.
+             * Diagnostic proves whether opening FMV uses these hook sites. */
+            return 0;
+          }
+          say("QUICK-EXIT-F12: native movie tick returned completion; no FMV Blt for >=600ms; WM_CLOSE allowed");
+        } else {
+          say("QUICK-EXIT-F12: no recent FMV Blt or active native movie; WM_CLOSE allowed");
         }
-        say("QUICK-EXIT-F12: native intro completed; Bink released by original game");
       }
       /* WM_CLOSE is requested only AFTER the movie owner's cleanup. The
        * game's window/message teardown remains authoritative. */
@@ -198,16 +271,32 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     say("QUICK-EXIT-F12: disabled by default ([System] QuickExitF12=0)");
     return;
   }
-  if(!install_intro_exit_calls()) {
-    say("QUICK-EXIT-F12: DISABLED: supported intro Bink CALL signatures unavailable");
+  /* All three patch points must match exact verified game bytes. */
+  if(memcmp(SPIDER_NATIVE_F12_POST,native_f12_original,6)!=0 ||
+     memcmp(SPIDER_INTRO_CALL_1,intro_call_1_original,5)!=0 ||
+     memcmp(SPIDER_INTRO_CALL_2,intro_call_2_original,5)!=0) {
+    say("QUICK-EXIT-F12: DISABLED: native F12/Bink call signatures unavailable");
     return;
   }
-  say("QUICK-EXIT-F12: native intro completion hooks installed (two signature-guarded CALLs)");
+  if(!install_intro_exit_calls()) {
+    say("QUICK-EXIT-F12: DISABLED: intro Bink tick hooks could not be installed");
+    return;
+  }
+  if(!native_f12_suppress_unsafe_window_close()) {
+    restore_intro_call(SPIDER_INTRO_CALL_1,intro_call_1_original);
+    restore_intro_call(SPIDER_INTRO_CALL_2,intro_call_2_original);
+    say("QUICK-EXIT-F12: DISABLED: native F12 window close could not be suppressed");
+    return;
+  }
+  say("QUICK-EXIT-F12: original WM_KEYDOWN/F12 direct WM_CLOSE disabled; guarded native Bink hooks active");
   InterlockedExchange(&enabled,1);
   thread=CreateThread(NULL,0,quick_exit_f12_thread,NULL,0,NULL);
   if(!thread) {
     InterlockedExchange(&enabled,0);
-    say("QUICK-EXIT-F12: ERROR thread creation failed; feature disabled");
+    native_f12_restore();
+    restore_intro_call(SPIDER_INTRO_CALL_1,intro_call_1_original);
+    restore_intro_call(SPIDER_INTRO_CALL_2,intro_call_2_original);
+    say("QUICK-EXIT-F12: ERROR thread creation failed; restored original F12");
     return;
   }
   CloseHandle(thread);
