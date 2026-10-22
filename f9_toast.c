@@ -7,6 +7,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <ddraw.h>
+#include <stdio.h>
 #include <string.h>
 #include <wchar.h>
 #include "f9_toast.h"
@@ -330,8 +331,6 @@ static DWORD WINAPI toast_popup_thread(LPVOID arg) {
   DWORD *pixels=NULL;
   DWORD i,n,until=0;
   DWORD bg=0;
-  HRESULT ignored=0; /* Keep window setup independent of DirectDraw. */
-  (void)ignored;
   Sleep(delay_ms);
   AcquireSRWLockShared(&toast_mutex);
   if(toast_generation==gen && toast_displayed_generation!=gen &&
@@ -372,9 +371,11 @@ static DWORD WINAPI toast_popup_thread(LPVOID arg) {
    * DIB, producing premultiplied (32,32,104) for its 65%-opacity fill.
    * Preserve that premultiplied fill; make heading/text/rim fully opaque
    * and all unused space fully transparent for UpdateLayeredWindow. */
-  bg=(DWORD)((50u*SPIDER_F9_PANEL_ALPHA+127u)/255u) |
+  /* DWORD layout of a top-down 32-bit DIB is 0x00RRGGBB,
+   * even though byte addresses are BGRA little-endian. */
+  bg=(DWORD)((160u*SPIDER_F9_PANEL_ALPHA+127u)/255u) |
      ((DWORD)((50u*SPIDER_F9_PANEL_ALPHA+127u)/255u)<<8) |
-     ((DWORD)((160u*SPIDER_F9_PANEL_ALPHA+127u)/255u)<<16);
+     ((DWORD)((50u*SPIDER_F9_PANEL_ALPHA+127u)/255u)<<16);
   for(i=0;i<n;i++) {
     DWORD rgb=pixels[i]&0x00ffffffu;
     if(!rgb) pixels[i]=0u;
