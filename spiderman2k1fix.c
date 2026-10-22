@@ -30,6 +30,7 @@
 #include "focus_dsound_pause.h"
 #include "menu_version.h"
 #include "version_info.h"
+#include "f9_png.h"
 
 static const BYTE expected_sha256[32] = {
   0x0a,0x11,0xa4,0x9f,0x3f,0x63,0xd4,0xbb,
@@ -305,6 +306,7 @@ static volatile LONG f9_trace_until=0,f9_trace_events=0,f9_trace_logged=0;
  * Use one owned COM ref for the duration of the lock to avoid dangling
  * surfaces on shutdown; never touch other Lock callers. */
 static volatile LONG f9_backbuffer_fix_enabled=0;
+static volatile LONG f9_native_png_enabled=0;
 static volatile LONG f9_backbuffer_lock_active=0;
 static DWORD f9_backbuffer_lock_thread=0;
 static IDirectDrawSurface7 *f9_backbuffer_locked_surface=NULL;
@@ -1450,8 +1452,11 @@ static HRESULT WINAPI hooked_f9_surface_lock(void *self,LPRECT rect,
         (unsigned long)desc->dwWidth,(unsigned long)desc->dwHeight,
         (long)desc->lPitch);
       log_line(msg);
-      /* The caller's original game code now sees the real 3D image,
-       * with its original BMP encoder and original output filename. */
+      /* PNG prototype: copy the same 3D frame before the game consumes
+       * it. The worker only sees our own memory, never DirectDraw.
+       * Legacy BMP remains enabled until its entry point is verified. */
+      if(InterlockedCompareExchange(&f9_native_png_enabled,0,0)==1)
+        SpiderF9PNG_Queue(desc,log_line);
       return back_hr;
     }
     if(SUCCEEDED(back_hr))
@@ -2426,9 +2431,9 @@ static DWORD WINAPI initialize(LPVOID unused) {
     }
   }
   log_line("BORDERLESS: windowed fullscreen enabled");
-  /* Only the exact game screenshot Lock caller can be redirected.
-   * Both experimental environment variables additionally require Log=1.
-   * In production the five diagnostic COM vtable methods remain untouched. */
+  /* Only the exact game F9 Lock caller can be redirected. The independent
+   * PNG prototype retains the legacy BMP as a safe baseline. Both test
+   * flags require Log=1; normal play has no additional COM hooks. */
   {
     char setting[8]={0};
     if(debug_log_enabled &&
@@ -2436,6 +2441,14 @@ static DWORD WINAPI initialize(LPVOID unused) {
        setting[0]=='1') {
       InterlockedExchange(&f9_backbuffer_fix_enabled,1);
       log_line("F9-FIX: experimental primary screenshot readback -> 3D backbuffer enabled");
+    }
+    memset(setting,0,sizeof(setting));
+    if(debug_log_enabled &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_PNG",setting,sizeof(setting))==1 &&
+       setting[0]=='1') {
+      InterlockedExchange(&f9_native_png_enabled,1);
+      InterlockedExchange(&f9_backbuffer_fix_enabled,1);
+      log_line("F9-PNG: native PNG prototype active; original BMP retained during test");
     }
     memset(setting,0,sizeof(setting));
     if(debug_log_enabled &&
