@@ -79,7 +79,13 @@ static DWORD WINAPI spider_png_thread(void *ctx) {
     goto done;
   }
   start=(SpiderGdipStartupFn)GetProcAddress(lib,"GdiplusStartup");
-  shutdown=(SpiderGdipShutdownFn)GetProcAddress(lib,"GdiplusShutdown");
+  /* GetProcAddress uses FARPROC returning INT; the documented
+   * GdiplusShutdown ABI returns void. Copy the function pointer's bits
+   * without an incompatible function-pointer cast (-Wcast-function-type). */
+  {
+    FARPROC proc=GetProcAddress(lib,"GdiplusShutdown");
+    memcpy(&shutdown,&proc,sizeof(shutdown));
+  }
   bitmap_create=(SpiderGdipBitmapFn)GetProcAddress(lib,"GdipCreateBitmapFromScan0");
   image_save=(SpiderGdipSaveFn)GetProcAddress(lib,"GdipSaveImageToFile");
   image_dispose=(SpiderGdipDisposeFn)GetProcAddress(lib,"GdipDisposeImage");
