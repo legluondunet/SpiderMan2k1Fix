@@ -214,6 +214,17 @@ def test_engine_phase_tracer_is_passive_throttled_and_gated():
     assert "ENGINE-STATE flip=%ld renderer2d=%ld mode_request=%lu countdown=%lu countdown_active=%ld task=%lu quit=%ld" in SRC
     assert "previous_async_active==async_active" in SRC
     assert "previous_renderer_menu==renderer_menu" in SRC
+    assert "previous_pause_context==pause_context" in SRC
+    assert "previous_pause_options==pause_options" in SRC
+    assert "previous_pause_restart==pause_restart" in SRC
+    assert "0x00682950u" in SRC
+    assert "0x00682968u" in SRC
+    assert "0x00682960u" in SRC
+    assert "pause_ctx=%ld pause_options=%ld pause_restart=%ld" in SRC
+    assert "(*SPIDER_PAUSE_CONTEXT!=0u)" in SRC
+    assert "(*SPIDER_PAUSE_OPTION_MENU!=0u)" in SRC
+    assert "(*SPIDER_PAUSE_RESTART_MENU!=0u)" in SRC
+
     assert "menu_recent=" in SRC and "movie_recent=" in SRC
     assert "(DWORD)(now-last_snapshot)<5000u" in SRC
     observer=SRC[SRC.index("void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,"):
@@ -223,3 +234,17 @@ def test_engine_phase_tracer_is_passive_throttled_and_gated():
                       "*SPIDER_ENGINE_ASYNC_STATE=", "TerminateProcess(",
                       "ExitProcess(", "SetWindowLongPtr("):
         assert forbidden not in observer
+
+
+def test_three_native_3d_pause_actions_are_documented_but_not_mutated():
+    # These native option slots are the literal strings from SpideyPC.exe
+    # reachable from the game-owned pause UI, not a synthetic selection.
+    # The experiment only reports pointer presence; it never alters
+    # selected-item memory, request 7, or the owning native return path.
+    assert "0 retry; 1 quit to training; 2 quit to main menu." in SRC
+    observer=SRC[SRC.index("void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,"):
+                 SRC.index("/* Native BinkFrame tick wrapper")]
+    assert "*SPIDER_PAUSE_CONTEXT=" not in observer
+    assert "*SPIDER_PAUSE_OPTION_MENU=" not in observer
+    assert "*SPIDER_PAUSE_RESTART_MENU=" not in observer
+    assert "0x0047BC40u" not in SRC # no unauthorized direct native cleanup call
