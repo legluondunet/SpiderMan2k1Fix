@@ -200,3 +200,23 @@ def test_intro_exit_is_not_consumed_on_early_shell_main_menu_splash():
     assert "*SPIDER_GAME_QUIT_FLAG=" not in cb
     assert "InterlockedCompareExchange(&pending,0,1)==1" in cb
     assert "native Shell_MainMenu Quit activated: slot=3 action=18" in cb
+
+
+def test_engine_phase_tracer_is_passive_throttled_and_gated():
+    # No new EXE-byte patch or standalone worker is allowed for stage discovery.
+    # The preexisting DirectDraw Flip hook owns these read-only snapshots.
+    assert "SpiderQuickExitF12_ObserveEngineState(count);" in CORE
+    assert "void SpiderQuickExitF12_ObserveEngineState(LONG flip_index);" in HDR
+    assert "0x0060CFA4u" in SRC  # top-level switch read at 0x455F24
+    assert "0x006B4C9Cu" in SRC  # native async transition
+    assert "0x0054A510u" in SRC  # native mode task
+    assert 'if(!SpiderQuickExitF12_Enabled())return;' in SRC
+    assert "ENGINE-STATE flip=%ld mode=%lu async=%lu task=%lu quit=%ld" in SRC
+    assert "(DWORD)(now-last_snapshot)<5000u" in SRC
+    observer=SRC[SRC.index("void SpiderQuickExitF12_ObserveEngineState(LONG flip_index)"):
+                 SRC.index("/* Native BinkFrame tick wrapper")]
+    for forbidden in ("VirtualProtect(", "PostMessageA(", "DestroyWindow(",
+                      "*SPIDER_GAME_QUIT_FLAG=", "*SPIDER_ENGINE_MODE=",
+                      "*SPIDER_ENGINE_ASYNC_STATE=", "TerminateProcess(",
+                      "ExitProcess(", "SetWindowLongPtr("):
+        assert forbidden not in observer
