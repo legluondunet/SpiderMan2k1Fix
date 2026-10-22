@@ -32,6 +32,7 @@
 #include "version_info.h"
 #include "f9_png.h"
 #include "f9_toast.h"
+#include "quick_exit_f12.h"
 
 static const BYTE expected_sha256[32] = {
   0x0a,0x11,0xa4,0x9f,0x3f,0x63,0xd4,0xbb,
@@ -752,6 +753,7 @@ static volatile LONG hud_probe_enabled=0,hud_probe_frames=0;
 static volatile LONG hud_probe_seen=0,hud_probe_left=0,hud_probe_right=0,hud_probe_instructions=0,hud_probe_boss=0;
 static volatile LONG hud_probe_boss_extra=0,hud_probe_boss_blt=0;
 static void hud_probe_flip(void) {
+  if(SpiderQuickExitF12_Enabled())return; /* F12 reserved for quick exit. */
   if(InterlockedCompareExchange(&hud_probe_enabled,0,0)!=1) return;
   if((GetAsyncKeyState(VK_F12)&1)!=0 && game_hwnd &&
      GetForegroundWindow()==game_hwnd) {
@@ -2492,6 +2494,7 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
            (void*)hwnd,(unsigned long)flags);
   log_line(line);
   game_hwnd=hwnd;
+  SpiderQuickExitF12_AttachWindow(hwnd);
   /* Only the idle-scene notification fallback uses a separate no-focus
    * translucent HWND, and only if the game stops issuing Flip. */
   SpiderF9Toast_SetGameWindow(hwnd,log_line);
@@ -2711,6 +2714,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
    * No COM-vtable interception. The actual patch is delayed to Flip #120. */
