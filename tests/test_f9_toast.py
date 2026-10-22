@@ -87,3 +87,13 @@ def test_failed_png_is_reported_and_final_file_is_verified():
     assert "DeleteFileW(dest);" in ENC
     assert 'L"Access denied while saving PNG"' in ENC
     assert 'L"Disk full while saving PNG"' in ENC
+
+
+def test_heading_uses_real_wide_string_length_and_pause_palette():
+    assert 'TextOutW(dc,x+pad,y+pad,heading,' in TOAST
+    assert '(int)wcslen(heading));' in TOAST
+    assert 'sizeof(heading)/sizeof(heading[0])' not in TOAST
+    assert 'RGB(50,50,160)' in TOAST
+    assert 'RGB(169,148,251)' in TOAST
+    assert 'RGB(231,220,255)' in TOAST
+    assert 'RGB(245,240,255)' in TOAST
