@@ -361,6 +361,77 @@ native Quit during live 3D gameplay is safe, or that program
 shutdown can omit the real main menu. We must validate the
 game owner's native cleanup first.
 
+## Build #506 validation: 3D cleanup checkpoint executes, final controller choice still unknown
+
+In user-uploaded `SpiderMan2k1Fix(20261022-182342).log`,
+the following native sequence was observed:
+
+```text
+NATIVE-GAME-INPUT owner EXIT n=506 NATIVE REQUEST 7 produced by 0x440EF0;
+ timer_before=0 timer_after=0 flag_before=0,1 flag_after=0,1 elapsed=2370
+NATIVE-3D-CLEANUP begin n=1 request=7
+NATIVE-3D-CLEANUP completed n=1 request=7
+ENGINE-STATE flip=831 renderer2d=1 mode_request=7 countdown=1769562
+QUICK-EXIT-F12: native Shell_MainMenu Quit activated: slot=3 action=18
+```
+
+This proves the true 3D update requested 7, and the original
+`0x004302D0` call at the beginning of the 3D owner's exit cleanup
+**returned normally**, before the original top-level controller
+successfully re-entered menu rendering. The marker named
+`NATIVE-3D-CLEANUP completed` verifies that **one cleanup
+checkpoint** completed; there are further native owner cleanup
+calls at `0x00455C12`, `0x00455C2F` and `0x00455C34` before
+the owner returns at `0x00455C3D`.
+
+### Correction: request-7 specific writer within 0x440EF0 not yet proven
+
+Both the original game's input flags `0x006611F0` and
+`0x006611E0` need to be nonzero *inside* the native function
+to take its branch containing the direct write at `0x0044108A`.
+Yet the trace recorded `flag1=0,flag2=1` immediately before
+**and after** the wrapper call, with `timer_before=0` and
+`timer_after=0`. A transient internal change is still possible,
+as is a different nested writer. We can conclusively attribute
+the observed request 7 to the **execution of 0x440EF0 as a
+whole**, but not yet to direct instruction `0x0044108A`.
+Do not simulate that instruction or its inferred timing in F12.
+
+### NEW passive native controller-7 final-branch observation
+
+After the native 3D owner finishes and returns, original request
+7 is dispatched by the top-level switch at `0x00456185`:
+
+```text
+0x00456185 PUSH EBX
+0x00456190 CALL 0x00443AD0   ; native mode transition cleanup (0)
+0x00456198 CALL 0x0048A820   ; native post-mode cleanup
+0x0045619D TEST BYTE [0x02E0988C],4
+0x004561A4 JNE 0x0045620C  ; final process cleanup
+0x004561A6 CMP DWORD [0x00568FB0],EBX
+0x004561AC JGE 0x0045620C  ; final process cleanup
+0x004561AE JMP 0x00455D98  ; resume controller loop
+```
+
+A new exact-signature-checked **pass-through** observer wraps
+`CALL 0x0048A820` at `0x00456198`, preserving original
+execution and normal CPU flags. It logs the *post-cleanup* exit
+conditions (bit-4 and signed status) and whether the unmodified
+branch will **return to the controller** or **enter native final
+process cleanup**. No F12-in-3D behavior is enabled; the observer
+never mutates either condition or calls a destructor itself.
+
+Expected evidence:
+
+```text
+QUICK-EXIT-F12: CONTROLLER-7 native teardown ENTER n=1 ...
+QUICK-EXIT-F12: CONTROLLER-7 native teardown COMPLETED n=1 ... outcome=RETURN-TO-CONTROLLER
+```
+
+If the controller instead takes `NATIVE-FINAL-CLEANUP`,
+the game should exit normally; this has not yet been proved
+during runtime. The established menu-quit action remains unchanged.
+
 ## Agreed architecture
 
 1. Capture F12 once while the real game is foreground and latch an
