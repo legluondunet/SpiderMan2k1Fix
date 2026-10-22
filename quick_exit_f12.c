@@ -59,7 +59,7 @@ static int patch_intro_call(BYTE *address,const BYTE expected[5],
   BYTE patched[5];
   DWORD old_protect,ignored;
   int32_t displacement;
-  intptr_t delta=(const BYTE *)replacement-(address+5);
+  intptr_t delta=(intptr_t)replacement-(intptr_t)(address+5);
   if(memcmp(address,expected,5)!=0 ||
      delta<(intptr_t)INT32_MIN || delta>(intptr_t)INT32_MAX)return 0;
   displacement=(int32_t)delta;
@@ -121,6 +121,9 @@ static DWORD WINAPI quick_exit_f12_thread(LPVOID unused) {
       previous_down=FALSE;
     } else if(!previous_down &&
               InterlockedCompareExchange(&closing,1,0)==0) {
+      /* Keep the request latched even if a subsequent opening film begins
+       * in the small gap between finishing the current clip and WM_CLOSE. */
+      InterlockedExchange(&intro_abort_requested,1);
       /* The intro Bink loop may keep working even AFTER DestroyWindow.
        * Ask the native frame loop to end first. Our game-thread hook
        * returns "movie finished" and the game's own code calls BinkClose
@@ -129,7 +132,6 @@ static DWORD WINAPI quick_exit_f12_thread(LPVOID unused) {
         unsigned attempts;
         char info[180];
         say("QUICK-EXIT-F12: opening movie active; requesting native Bink completion BEFORE WM_CLOSE");
-        InterlockedExchange(&intro_abort_requested,1);
         for(attempts=0;attempts<300u;attempts++) {
           if(InterlockedCompareExchange(&intro_abort_seen,0,0)==1 &&
              *SPIDER_INTRO_ACTIVE==0u)break;
