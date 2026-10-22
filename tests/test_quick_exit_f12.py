@@ -196,6 +196,7 @@ def test_intro_transition_runs_original_cleanup_before_setting_native_quit():
 def test_intro_exit_is_not_consumed_on_early_shell_main_menu_splash():
     cb=SRC[SRC.index("int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void)"):
            SRC.index("/* x86 stack at entry")]
-    assert "intro_quit_pending" not in cb
+    assert "InterlockedCompareExchange(&intro_quit_pending,0,1)" not in cb
+    assert "*SPIDER_GAME_QUIT_FLAG=" not in cb
     assert "InterlockedCompareExchange(&pending,0,1)==1" in cb
     assert "native Shell_MainMenu Quit activated: slot=3 action=18" in cb
