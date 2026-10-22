@@ -29,51 +29,35 @@ SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must prov
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 
-### Optional F12 quick exit
+### Optional F12 quick exit — experimental menu-only prototype
 
-> **EXPERIMENTAL — NOT WORKING (Windows 11, build #460).** The F12 shortcut is detected, but the process does not exit reliably in the opening movies, menu, comic panels or 3D gameplay. Do not enable it for regular use. The project's [PR #26](https://github.com/legluondunet/SpiderMan2k1Fix/pull/26) remains in draft until the game's actual native cleanup path is safely integrated. The original UI Quit action does more than set the `0x0060CF88` flag: it also calls `0x0048D880`. That function must not be invoked speculatively from the F12 polling thread or a DirectDraw callback.
+> **NOT YET VALIDATED ON WINDOWS.** The earlier F12 implementations (builds #439–#460) failed in live Windows 11 testing. The new revision does **not** claim to work in cinematics, comic panels or 3D gameplay. It only tests the original main-menu Quit dispatcher, without making out-of-context calls to the game's resource teardown. PR [#26](https://github.com/legluondunet/SpiderMan2k1Fix/pull/26) remains a **draft**.
 
- (experimental)
-
-F12 quick exit is **disabled by default**. To opt in, edit `SpiderMan2k1Fix.ini`:
+This feature is off by default. For the experimental **main menu only** test, configure:
 
 ```ini
 [System]
 QuickExitF12=1
+
+[Debug]
+Log=1
 ```
 
-The original 2001 game has an unsafe historical F12 shortcut that posts
-`WM_CLOSE` directly from its WndProc at VA `0x00515373`. On Windows 11
-that hides the game but does **not** stop its renderer, audio or process.
-SpiderMan2k1Fix suppresses that exact call after verifying its machine bytes.
+The original `SpideyPC.exe` handles F12 through an unsafe `WM_CLOSE` path that can destroy the window while the game and its sound continue running. The patch signature-verifies and suppresses that native call, including when the optional feature is disabled.
 
-**Native game Quit path (verified by disassembly of the supported SHA-256 EXE):**
-the original game's Quit action at `0x004A238A` sets byte `0x0060CF88` to `1`.
-The main game routine tests that byte at `0x00455E50` and follows the native
-engine cleanup at `0x004561F2`, then returns through WinMain cleanup.
+For the new prototype, a F12 press queues a short-lived (1.2-second) request. **Only if the game's actual main-menu command dispatcher executes** is its normal selection result replaced with **action 18**, which leads to original menu Quit case `0x004A238A`. That native game-thread case sets its Quit flag, calls mode cleanup at `0x0048D880`, and returns to the game's higher-level shutdown code. The patch **never calls that cleanup function directly**.
 
-The new F12 watcher requests **this game-native Quit flag**, never
-`PostMessageA(WM_CLOSE)`, `DestroyWindow`, `TerminateProcess` or `ExitProcess`.
-During introduction movies it also requests completion through the game's
-original Bink frame-tick loop so the game's own video routine runs its cleanup.
+While an opening movie is presenting decoded frames, F12 does nothing, with a log explaining why. Outside the main-menu dispatcher, the request times out and is discarded, with no delayed automatic exit. This is intentional until all-scenes shutdown can be proved safe.
 
-**Limitations:** Live Windows 11 validation is still required. This native
-quit flag is checked after the opening movies; it is not yet established
-that every later game mode consumes it promptly. An unsupported situation
-may leave the window open instead of destroying it prematurely.
+The next Windows test must first establish that F12 at the **main menu** reaches action 18 and that `SpideyPC.exe` actually exits with code zero; only then will cinematics, comic covers and gameplay be investigated. Automated source tests and a successful CI build alone cannot establish that.
 
-To test process exit independently, place
-[`tools/Verify-F12QuickExit.ps1`](tools/Verify-F12QuickExit.ps1)
-in the game folder, enable `[Debug] Log=1`, and run:
+For independent process-exit verification, place [`tools/Verify-F12QuickExit.ps1`](tools/Verify-F12QuickExit.ps1) in the game folder and run from PowerShell:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\Verify-F12QuickExit.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\\Verify-F12QuickExit.ps1
 ```
 
-The watcher checks the exit code, absence of residual SpideyPC.exe processes,
-and Windows Application Error / WER events. It never forcibly stops the game.
-An OS process exit reclaims its memory and process-owned handles but does not
-prove that every COM object was explicitly released before exit.
+The watcher checks that no process remains, records its exit code, and looks for readable Windows crash events. It never forcibly stops the game. A successful exit frees OS-owned memory and handles, but does not itself prove that all engine COM resources were explicitly released before exit.
 
 ## Requirements and compatibility
 
