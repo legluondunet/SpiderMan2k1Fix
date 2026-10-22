@@ -125,3 +125,16 @@ def test_pause_style_transparency_uses_rounded_alpha_blend_offscreen():
     assert "SpiderF9Toast_CompositeFrame(" in TOAST
     assert "IDirectDrawSurface7_Blt(toast_stage,NULL,back,NULL,DDBLT_WAIT,NULL)" in TOAST
     assert "SpiderF9Toast_DrawAfterPresent" not in TOAST
+
+
+def test_toast_timer_starts_on_first_actual_display_in_sparse_comic_scenes():
+    assert "#define SPIDER_F9_TOAST_MS 2500u" in TOAST
+    assert "#define SPIDER_F9_TOAST_GRACE_MS 10000u" in TOAST
+    assert "toast_published_at=GetTickCount();" in TOAST
+    assert "toast_expires_at=0; /* No countdown before first actual presentation. */" in TOAST
+    assert "if(!toast_expires_at)toast_expires_at=GetTickCount()+SPIDER_F9_TOAST_MS;" in TOAST
+    assert "if(toast_generation==generation)" in TOAST
+    assert "toast_displayed_generation=generation;" in TOAST
+    assert "SpiderF9Toast_GetDisplayStatus(&published,&displayed);" in CORE
+    assert "F9-TOAST: generation=%lu first subsequent Flip=" in CORE
+    assert "F9-TOAST: generation=%lu FIRST displayed at Flip=" in CORE
