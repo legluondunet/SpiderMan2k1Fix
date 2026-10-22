@@ -133,43 +133,47 @@ def test_png_only_bypasses_original_bmp_without_touching_unrelated_game_code():
     assert 'rva==0x00103537u' in CORE
 
 
-def test_f9_menu_and_intro_capture_visible_presentation_not_3d_backbuffer():
-    assert "static int f9_capture_menu_presented_frame(void)" in CORE
-    assert "IDirectDrawSurface7_GetDC(borderless_primary,&dc)" in CORE
-    assert "IDirectDrawSurface7_ReleaseDC(borderless_primary,dc)" in CORE
-    assert "GetDC(game_hwnd)" in CORE
-    assert "ReleaseDC(game_hwnd,dc)" in CORE
-    assert 'f9_capture_presented_dc(dc,0,0,"WINDOW-DC")' in CORE
-    assert 'f9_capture_presented_dc(dc,borderless_monitor_x,' in CORE
-    assert "SpiderF9PNG_Queue(&frame,log_line)" in CORE
+def test_main_menu_f9_is_deferred_until_complete_flip_and_never_reads_primary():
+    # On native Windows PRIMARY-DC returned magenta; BACK is cleared at the
+    # end of every menu Flip, so capturing immediately on the F9 key is black.
+    assert "static volatile LONG f9_menu_png_pending=0;" in CORE
+    assert "static void f9_capture_completed_menu_flip(LONG flip,BOOL rendered_menu)" in CORE
+    assert 'F9-PNG-MENU: deferred until next completed menu Flip' in CORE
+    assert "f9_capture_menu_presented_frame()" not in CORE
+    assert "f9_capture_presented_dc(" not in CORE
+    assert "IDirectDrawSurface7_GetDC(borderless_primary,&dc)" not in CORE
+    assert 'source=PRIMARY-DC' not in CORE
     dispatch = CORE.split("static void __cdecl hooked_f9_png_only(void)",1)[1].split(
-        "static void install_f9_png_only_dispatch(void)",1
-    )[0]
-    assert "if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1)" in dispatch
-    assert "f9_capture_menu_presented_frame();" in dispatch
-    assert dispatch.index("f9_capture_menu_presented_frame();") < dispatch.index("back=borderless_back;")
-    assert "IDirectDrawSurface7_Lock(back,NULL,&desc," in dispatch
+        "static void install_f9_png_only_dispatch(void)",1)[0]
+    assert "int movie=f9_capture_decoded_movie_frame();" in dispatch
+    assert "if(movie==0)" in dispatch
+    assert "InterlockedCompareExchange(&f9_menu_png_pending,1,0)==0" in dispatch
+    assert "InterlockedExchange(&f9_menu_png_requested_flip," in dispatch
+    assert "back=borderless_back;" in dispatch
+    assert dispatch.index("if(movie==0)") < dispatch.index("back=borderless_back;")
 
 
-def test_f9_menu_readback_uses_safe_top_down_32bpp_dib():
-    begin = CORE.index("static int f9_capture_presented_dc(")
-    end = CORE.index("static void __cdecl hooked_f9_png_only(",begin)
-    part = CORE[begin:end]
-    assert "bitmap.bmiHeader.biHeight=-(LONG)desktop_h;" in part
-    assert "bitmap.bmiHeader.biBitCount=32;" in part
-    assert "bitmap.bmiHeader.biCompression=BI_RGB;" in part
-    assert "CreateDIBSection(source_dc,&bitmap,DIB_RGB_COLORS,&pixels,NULL,0)" in part
-    assert "BitBlt(memory_dc,0,0,(int)desktop_w,(int)desktop_h," in part
-    assert "frame.lPitch=(LONG)desktop_w*4;" in part
-    assert "frame.ddpfPixelFormat.dwRBitMask=0x00ff0000u;" in part
-    assert "frame.ddpfPixelFormat.dwGBitMask=0x0000ff00u;" in part
-    assert "frame.ddpfPixelFormat.dwBBitMask=0x000000ffu;" in part
-    assert "SpiderF9PNG_Queue(&frame,log_line)" in part
-    assert "SelectObject(memory_dc,previous);" in part
-    assert "DeleteObject(image);" in part
-    assert "DeleteDC(memory_dc);" in part
-    assert "IDirectDrawSurface7_Lock(borderless_primary" not in part
-    assert "SpiderF9Toast_PublishError" in part
+def test_menu_screenshot_captures_only_rendered_menu_before_present_and_clear():
+    start = CORE.index("static HRESULT WINAPI hooked_flip(")
+    flip = CORE[start:CORE.index("static void instrument_surface(",start)]
+    pending = CORE.index("static void f9_capture_completed_menu_flip(")
+    capture = CORE[pending:CORE.index("/* Source-frame capture for intro FMVs only.",pending)]
+    assert "menu_draws>=3 && movie_blits==0" in flip
+    assert "count-movie_last>3" in flip
+    assert "f9_capture_completed_menu_flip(count,permitted);" in flip
+    assert flip.index("f9_capture_completed_menu_flip(count,permitted);") < flip.index(
+        "hr=original_blt(self,&rc,present_source,NULL,DDBLT_WAIT,NULL);")
+    assert flip.index("f9_capture_completed_menu_flip(count,permitted);") < flip.index(
+        "cleared=original_blt(back,NULL,NULL,NULL,DDBLT_COLORFILL|DDBLT_WAIT,&fill);")
+    assert "if(!rendered_menu)return;" in capture
+    assert "flip-requested>120" in capture
+    assert "IDirectDrawSurface7_Lock(back,NULL,&desc,DDLOCK_READONLY|DDLOCK_WAIT,NULL)" in capture
+    assert "SpiderF9PNG_Queue(&desc,log_line);" in capture
+    assert "IDirectDrawSurface7_Unlock(back,NULL);" in capture
+    assert "InterlockedExchange(&f9_menu_png_pending,0);" in capture
+    assert "F9-PNG-MENU: completed Flip=" in capture
+    assert "GetDC(" not in capture
+    assert "GetAsyncKeyState" not in capture
 
 
 def test_intro_movie_uses_decoded_blt_surface_not_broken_primary_gdi():
@@ -186,7 +190,7 @@ def test_intro_movie_uses_decoded_blt_surface_not_broken_primary_gdi():
     dispatch = CORE.split("static void __cdecl hooked_f9_png_only(void)",1)[1].split(
         "static void install_f9_png_only_dispatch(void)",1)[0]
     assert "int movie=f9_capture_decoded_movie_frame();" in dispatch
-    assert "if(movie==0) f9_capture_menu_presented_frame();" in dispatch
+    assert "if(movie==0)" in dispatch\n    assert "InterlockedCompareExchange(&f9_menu_png_pending,1,0)==0" in dispatch
     assert "back=borderless_back;" in dispatch
 
 
