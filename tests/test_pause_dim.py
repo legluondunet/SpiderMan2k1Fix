@@ -1,4 +1,4 @@
-"""No desktop alpha windows: 50% shade, optional 16px grid, frozen frame."""
+"""No desktop alpha windows: 60% shade, optional 16px grid, frozen frame."""
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 P=(ROOT/"pause_surface.c").read_text()
@@ -21,7 +21,7 @@ def test_alpha_blend_and_opt_in_grid_are_drawn_to_existing_directdraw_dc():
     assert "BLENDFUNCTION blend={AC_SRC_OVER,0,alpha,0}" in P
     assert "(opacity*255+50)/100" in P
     assert "enabled_dim=1,enabled_grid=0,enabled_banner=1,opacity=60;" in P
-    assert 'GetPrivateProfileIntA("Input","PauseDimOpacity",50,path)' in P
+    assert 'GetPrivateProfileIntA("Input","PauseDimOpacity",60,path)' in P
     assert "const BLENDFUNCTION grid_blend={AC_SRC_OVER,0,28,0};" in P
     assert "RGB(100,104,124)" in P
     assert "enabled_dim && enabled_grid" in P
