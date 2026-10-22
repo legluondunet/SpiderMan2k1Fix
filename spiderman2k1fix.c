@@ -2479,7 +2479,7 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
   game_hwnd=hwnd;
   /* Only the idle-scene notification fallback uses a separate no-focus
    * translucent HWND, and only if the game stops issuing Flip. */
-  SpiderF9Toast_SetGameWindow(hwnd);
+  SpiderF9Toast_SetGameWindow(hwnd,log_line);
   probe_desktop_mode(hwnd);
   log_monitor(hwnd);
   hr=original_coop(self,hwnd,DDSCL_NORMAL);
