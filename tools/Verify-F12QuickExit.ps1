@@ -79,18 +79,21 @@ try {
     }
 
     $crashEvents = @()
+    $werChecked = $false
     try {
+        # Check that Windows exposes the Application event log.
+        $null = Get-WinEvent -ListLog "Application" -ErrorAction Stop
+        $werChecked = $true
+        # If no matching events exist, suppress NoMatchingEventsFound.
         $crashEvents = @(Get-WinEvent -FilterHashtable @{
             LogName = "Application"
             Id = 1000,1001
             StartTime = $started.AddSeconds(-2)
-        } -ErrorAction Stop | Where-Object {
+        } -ErrorAction SilentlyContinue | Where-Object {
             $_.Message -match '(?i)SpideyPC\.exe'
         })
     } catch {
-        # No matching events or no log access; never treat that as proof
-        # that Windows Error Reporting found no crash.
-        Write-Host "Windows Event Log: no readable matching crash event (or log unavailable)."
+        Write-Warning "Cannot read Windows Application log: crash check is inconclusive."
     }
     if ($crashEvents.Count -gt 0) {
         Write-Warning "FAIL: Windows reported an Application Error / WER event for SpideyPC.exe."
@@ -98,6 +101,11 @@ try {
             Write-Host ("Event {0}, time {1}, provider {2}" -f $event.Id,$event.TimeCreated,$event.ProviderName)
         }
         exit 1
+    }
+
+    if (-not $werChecked) {
+        Write-Warning "INCONCLUSIVE: Windows crash event log was unavailable."
+        exit 3
     }
 
     if ($exitCode -ne 0) {
