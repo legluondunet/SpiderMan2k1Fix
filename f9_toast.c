@@ -165,35 +165,97 @@ font_done:
   return ok;
 }
 
-BOOL SpiderF9Toast_DrawAfterPresent(IDirectDrawSurface7 *primary,
-                                     HWND window,DWORD width,DWORD height) {
+/* Compose BEFORE presentation onto a temporary DirectDraw offscreen
+ * surface. The original backbuffer stays byte-for-byte untouched, including
+ * for a second F9 capture while the notification is still visible.
+ * A single PRIMARY Blt transfers the scene and notice together; no more GDI
+ * writes to the visible PRIMARY racing the next frame. */
+static IDirectDrawSurface7 *toast_stage=NULL;
+static IDirectDrawSurface7 *toast_stage_back=NULL; /* weak identity only */
+static DWORD toast_stage_width=0,toast_stage_height=0;
+static BOOL toast_prefer_system_memory=FALSE;
+
+static void toast_discard_stage(void) {
+  if(toast_stage) IDirectDrawSurface7_Release(toast_stage);
+  toast_stage=NULL;
+  toast_stage_back=NULL;
+  toast_stage_width=toast_stage_height=0;
+}
+
+void SpiderF9Toast_ResetPresentation(void) {
+  toast_discard_stage();
+  toast_prefer_system_memory=FALSE;
+}
+
+static BOOL toast_create_stage(IDirectDrawSurface7 *back,DWORD width,
+                               DWORD height,BOOL system_memory) {
+  IDirectDraw7 *dd=NULL;
+  DDSURFACEDESC2 desc;
+  HRESULT hr;
+  if(FAILED(IDirectDrawSurface7_GetDDInterface(back,(void**)&dd)) || !dd)
+    return FALSE;
+  memset(&desc,0,sizeof(desc));
+  desc.dwSize=sizeof(desc);
+  desc.dwFlags=DDSD_CAPS|DDSD_WIDTH|DDSD_HEIGHT;
+  desc.dwWidth=width;
+  desc.dwHeight=height;
+  desc.ddsCaps.dwCaps=DDSCAPS_OFFSCREENPLAIN|
+                      (system_memory?DDSCAPS_SYSTEMMEMORY:DDSCAPS_VIDEOMEMORY);
+  hr=IDirectDraw7_CreateSurface(dd,&desc,&toast_stage,NULL);
+  IDirectDraw7_Release(dd);
+  if(FAILED(hr) || !toast_stage) {
+    toast_stage=NULL;
+    return FALSE;
+  }
+  toast_stage_back=back;
+  toast_stage_width=width;
+  toast_stage_height=height;
+  return TRUE;
+}
+
+IDirectDrawSurface7 *SpiderF9Toast_CompositeFrame(
+    IDirectDrawSurface7 *back,HWND window,DWORD width,DWORD height) {
   WCHAR path[MAX_PATH];
   DWORD expires;
   BOOL success;
-  HDC dc=NULL;
-  HRESULT hr=DDERR_INVALIDOBJECT;
-  BOOL result;
+  int attempt;
   AcquireSRWLockShared(&toast_mutex);
   expires=toast_expires_at;
   success=toast_success;
   if(expires && (LONG)(expires-GetTickCount())>0)
     memcpy(path,toast_path,sizeof(path));
-  else path[0]=L'\0';
+  else path[0]=L'\\0';
   ReleaseSRWLockShared(&toast_mutex);
-  if(path[0]==L'\0' || !window || !IsWindow(window) ||
-     GetForegroundWindow()!=window)return FALSE;
-  /* Never touch the 3D backbuffer: the PRIMARY receives the final frame
-   * first, then this short-lived overlay. Prefer DirectDraw's matching
-   * primary HDC; use the visible game window HDC if unavailable. */
-  if(primary)hr=IDirectDrawSurface7_GetDC(primary,&dc);
-  if(SUCCEEDED(hr) && dc) {
-    result=toast_draw_dc(dc,width,height,path,success);
-    IDirectDrawSurface7_ReleaseDC(primary,dc);
-    return result;
+  if(path[0]==L'\\0') {
+    toast_discard_stage(); /* No per-frame memory or blit cost while inactive. */
+    return NULL;
   }
-  dc=GetDC(window);
-  if(!dc)return FALSE;
-  result=toast_draw_dc(dc,width,height,path,success);
-  ReleaseDC(window,dc);
-  return result;
+  if(!back || !window || !IsWindow(window) ||
+     GetForegroundWindow()!=window || width<320 || height<240 ||
+     width>8192 || height>8192)return NULL;
+  if(toast_stage && (toast_stage_back!=back ||
+     toast_stage_width!=width || toast_stage_height!=height)) {
+    SpiderF9Toast_ResetPresentation();
+  }
+  for(attempt=0;attempt<2;attempt++) {
+    HDC dc=NULL;
+    HRESULT hr;
+    BOOL drawn=FALSE;
+    if(!toast_stage &&
+       !toast_create_stage(back,width,height,toast_prefer_system_memory)) {
+      toast_prefer_system_memory=TRUE;
+      continue;
+    }
+    /* The 3D source is copied untouched into a distinct present surface. */
+    hr=IDirectDrawSurface7_Blt(toast_stage,NULL,back,NULL,DDBLT_WAIT,NULL);
+    if(SUCCEEDED(hr))hr=IDirectDrawSurface7_GetDC(toast_stage,&dc);
+    if(SUCCEEDED(hr) && dc) {
+      drawn=toast_draw_dc(dc,width,height,path,success);
+      IDirectDrawSurface7_ReleaseDC(toast_stage,dc);
+      if(drawn)return toast_stage;
+    }
+    toast_discard_stage();
+    toast_prefer_system_memory=TRUE; /* Retry with a GDI-compatible surface. */
+  }
+  return NULL; /* Present the untouched game frame if composing fails. */
 }
