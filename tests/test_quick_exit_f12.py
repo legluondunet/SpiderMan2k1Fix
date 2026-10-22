@@ -303,3 +303,41 @@ def test_native_game_input_handler_observer_covers_alternative_request_7_writer(
                       "*SPIDER_NATIVE_GAME_INPUT_FLAG_2=",
                       "*SPIDER_ENGINE_MODE=", "*SPIDER_GAME_QUIT_FLAG="):
         assert forbidden not in observer
+
+
+def test_native_gameplay_controller_cleanup_is_instrumented_without_mutation():
+    # 455A8B calls the original game-owned frame 455400; immediately at
+    # 455A90, mode_request != 0 skips to 455BF3 for owner cleanup.
+    # 455BF9 CALL 4302D0 is part of that original game-owned cleanup.
+    assert "#define SPIDER_NATIVE_GAME_CLEANUP_CALL ((BYTE *)(uintptr_t)0x00455BF9u)" in SRC
+    assert "#define SPIDER_NATIVE_GAME_CLEANUP ((void (__cdecl *)(void))(uintptr_t)0x004302D0u)" in SRC
+    assert "native_game_cleanup_call_original[5]={0xE8,0xD2,0xA6,0xFD,0xFF}" in SRC
+    assert "memcmp(SPIDER_NATIVE_GAME_CLEANUP_CALL,native_game_cleanup_call_original,5)!=0" in SRC
+    assert "if(!install_passive_game_cleanup_probe())" in SRC
+    assert "restore_passive_game_cleanup_probe();" in SRC
+    start=SRC.index("static void __cdecl spider_observe_native_game_cleanup(void)")
+    end=SRC.index("/* Native BinkFrame tick wrapper",start)
+    observer=SRC[start:end]
+    assert observer.count("SPIDER_NATIVE_GAME_CLEANUP();")==1
+    assert "NATIVE-3D-CLEANUP begin" in observer
+    assert "NATIVE-3D-CLEANUP completed" in observer
+    for forbidden in ("VirtualProtect(", "TerminateProcess(", "ExitProcess(",
+                      "DestroyWindow(", "SendInput(", "PostMessageA(",
+                      "*SPIDER_ENGINE_MODE=", "*SPIDER_GAME_QUIT_FLAG="):
+        assert forbidden not in observer
+
+
+def test_native_3d_transition_7_condition_tracer_is_read_only():
+    assert "#define SPIDER_NATIVE_GAME_TICK_COUNTER ((const volatile DWORD *)(uintptr_t)0x006B4CA0u)" in SRC
+    assert "#define SPIDER_NATIVE_GAME_INPUT_TIMER_START ((const volatile DWORD *)(uintptr_t)0x005FAEDCu)" in SRC
+    begin=SRC.index("static void __cdecl spider_observe_native_game_input(void)")
+    end=SRC.index("/* PASSIVE owner cleanup checkpoint",begin)
+    observer=SRC[begin:end]
+    assert "SPIDER_NATIVE_GAME_INPUT_UPDATE();" in observer
+    assert "timer_before=%lu timer_after=%lu" in observer
+    assert "flag_before=%u,%u flag_after=%u,%u" in observer
+    assert "NATIVE-GAME-INPUT flags" in observer
+    assert "current_armed" in observer
+    assert "elapsed_ticks=" in observer
+    assert "*SPIDER_NATIVE_GAME_INPUT_TIMER_START=" not in observer
+    assert "*SPIDER_NATIVE_GAME_TICK_COUNTER=" not in observer
