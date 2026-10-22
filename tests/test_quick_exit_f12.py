@@ -130,12 +130,17 @@ def test_four_intro_movies_run_original_bink_cleanup_on_game_thread():
     assert "TerminateProcess(" not in SRC
 
 
-def test_intro_exit_latch_survives_all_movies_then_consumed_by_validated_menu():
+def test_intro_exit_latch_survives_four_movies_into_native_top_level_quit_check():
     assert "static volatile LONG intro_quit_pending=0;" in SRC
     assert "InterlockedCompareExchange(&intro_quit_pending,1,0)==0" in SRC
-    assert "InterlockedCompareExchange(&intro_quit_pending,0,1)==1" in SRC
-    assert SRC.index("InterlockedCompareExchange(&intro_quit_pending,0,1)==1") < SRC.index("if(InterlockedCompareExchange(&pending,0,1)==1)")
-    assert "intro Bink cleanup completed; native Shell_MainMenu Quit activated" in SRC
+    assert "InterlockedCompareExchange(&intro_quit_pending,0,0)==1" in SRC
+    assert "InterlockedCompareExchange(&intro_quit_pending,0,1)==1" not in SRC
+    assert "static void __cdecl spider_after_intro_cleanup(int mode)" in SRC
+    assert "SPIDER_AFTER_INTRO_CLEANUP(mode);" in SRC
+    assert "*SPIDER_GAME_QUIT_FLAG=1u;" in SRC
+    assert "engine Quit flag set BEFORE top-level 0x455E50 check" in SRC
+    assert "0x00455E50u" in SRC
+    assert "0x00455D23u" in SRC
     assert "movl $3, 0x68(%esp)" in SRC
     assert "movl $0x004941D5, 0x24(%esp)" in SRC
     assert "*SPIDER_GAME_BINK_ACTIVE!=0u" in SRC
@@ -145,8 +150,8 @@ def test_intro_exit_latch_survives_all_movies_then_consumed_by_validated_menu():
 def test_intro_calls_are_signature_checked_and_install_rollbacks_complete():
     assert "memcmp(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1,5)" in SRC
     assert "memcmp(SPIDER_INTRO_TICK_CALL_2,intro_tick_call_original_2,5)" in SRC
-    assert "if(!patch_intro_tick_call(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1))" in SRC
-    assert "if(!patch_intro_tick_call(SPIDER_INTRO_TICK_CALL_2,intro_tick_call_original_2))" in SRC
+    assert "if(!patch_native_call(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1," in SRC
+    assert "if(!patch_native_call(SPIDER_INTRO_TICK_CALL_2,intro_tick_call_original_2," in SRC
     assert "restore_intro_tick_call(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1);" in SRC
     assert "if(!install_intro_tick_hooks())" in SRC
     assert "restore_intro_tick_hooks();" in SRC
@@ -159,3 +164,32 @@ def test_only_initial_four_movies_can_trigger_deferred_quit():
     assert "InterlockedCompareExchange(&real_main_menu_seen,0,0)==0" in SRC
     assert "if(menu_time && (DWORD)(now-(DWORD)menu_time)<=400u)" in SRC
     assert SRC.index("if(menu_time && (DWORD)(now-(DWORD)menu_time)<=400u)") < SRC.index("InterlockedCompareExchange(&real_main_menu_seen,0,0)==0")
+
+
+def test_intro_transition_runs_original_cleanup_before_setting_native_quit():
+    # Original x86:
+    # 00455D22 PUSH EBX
+    # 00455D23 CALL 0x443AD0
+    # 00455D28 ADD ESP,4
+    # ... 00455E50 CMP BYTE [0x60CF88],BL; JNE 0x4561F2.
+    assert "0xE8,0xA8,0xDD,0xFE,0xFF" in SRC
+    assert "0x38,0x1D,0x88,0xCF,0x60,0x00" in SRC
+    assert "memcmp(SPIDER_AFTER_INTRO_CLEANUP_CALL,post_intro_cleanup_original,5)" in SRC
+    assert "memcmp(SPIDER_TOPLEVEL_NATIVE_QUIT_TEST," in SRC
+    begin=SRC.index("static void __cdecl spider_after_intro_cleanup(int mode)")
+    next_fn=SRC.index("/* Returns nonzero ONLY",begin)
+    checkpoint=SRC[begin:next_fn]
+    assert checkpoint.index("SPIDER_AFTER_INTRO_CLEANUP(mode);") < checkpoint.index("*SPIDER_GAME_QUIT_FLAG=1u;")
+    assert "if(!install_post_intro_checkpoint())" in SRC
+    assert "restore_post_intro_checkpoint();" in SRC
+    assert "intro_quit_pending" in checkpoint
+    assert "intro_quit_pending,0,1" not in checkpoint
+    assert "InterlockedExchange(&intro_native_quit_forwarded,1);" in checkpoint
+
+
+def test_intro_exit_is_not_consumed_on_early_shell_main_menu_splash():
+    cb=SRC[SRC.index("int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void)"):
+           SRC.index("/* x86 stack at entry")]
+    assert "intro_quit_pending" not in cb
+    assert "InterlockedCompareExchange(&pending,0,1)==1" in cb
+    assert "native Shell_MainMenu Quit activated: slot=3 action=18" in cb
