@@ -90,3 +90,50 @@ def test_f9_trace_keeps_gameplay_fix_and_pause_unchanged():
         assert part in SRC
     assert "F9-TRACE: opt-in native screenshot readback observation armed" in SRC
     assert "F9-TRACE: F9 key pressed; readback trace window OPEN" in SRC
+
+def test_opt_in_backbuffer_readback_reuses_native_f9_encoding():
+    # 0x1034D4/0x103537 were measured from a real Win11 F9 log:
+    # the legacy game reads PRIMARY and creates all-magenta BMPs.
+    assert 'SPIDERMAN2K1FIX_F9_BACKBUFFER' in SRC
+    assert 'static volatile LONG f9_backbuffer_fix_enabled=0;' in SRC
+    assert 'rva==0x001034D4u' in SRC
+    assert 'rva==0x00103537u' in SRC
+    assert 'self==(void *)borderless_primary && borderless_back' in SRC
+    assert '(flags&DDLOCK_READONLY)!=0' in SRC
+    assert 'rect==NULL && desc && desc->dwSize==sizeof(*desc)' in SRC
+    assert 'original_surface_lock(back,rect,desc,flags,event)' in SRC
+    assert 'original_surface_unlock(back,rect)' in SRC
+    assert 'IDirectDrawSurface7_AddRef(back);' in SRC
+    assert 'IDirectDrawSurface7_Release(back);' in SRC
+    assert 'f9_backbuffer_lock_thread==GetCurrentThreadId()' in SRC
+    assert 'f9_backbuffer_locked_surface=back;' in SRC
+    assert 'f9_backbuffer_locked_surface=NULL;' in SRC
+    assert 'InterlockedExchange(&f9_backbuffer_lock_active,0);' in SRC
+
+
+def test_failed_redirect_falls_back_to_unmodified_primary():
+    lock = SRC.split('static HRESULT WINAPI hooked_f9_surface_lock(',1)[1].split(
+        'static HRESULT WINAPI hooked_f9_surface_release_dc(',1
+    )[0]
+    assert 'if(SUCCEEDED(back_hr))' in lock
+    assert 'original_surface_unlock(back,rect);' in lock
+    assert '*desc=requested;' in lock
+    assert 'falling back to untouched PRIMARY screenshot' in lock
+    assert 'hr=original_surface_lock(self,rect,desc,flags,event);' in lock
+    assert 'desc->ddpfPixelFormat.dwRGBBitCount==32' in lock
+    assert 'desc->dwWidth==desktop_w && desc->dwHeight==desktop_h' in lock
+    assert 'desc->lPitch>=(LONG)(desktop_w*4u)' in lock
+    assert 'desc->lpSurface!=NULL' in lock
+    assert 'DDLOCK_WRITEONLY' not in lock
+
+
+def test_screenshot_fix_does_not_change_ordinary_lock_or_alt_tab():
+    assert "static volatile LONG f9_backbuffer_fix_enabled=0" in SRC
+    assert 'if(debug_log_enabled &&' in SRC
+    assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_BACKBUFFER"' in SRC
+    assert 'InterlockedCompareExchange(&f9_backbuffer_fix_enabled,0,0)==1' in SRC
+    assert "hr=original_surface_unlock(self,rect);" in SRC
+    for f in ('maybe_correct_adaptive_hud(', 'pause_at_flip_if_background();',
+              'SpiderInputFocus_OnFlip(count);', 'SpiderDI8Retry_OnFlip(count);',
+              'SpiderHudWidescreen_Install(exe_verified,TRUE)'):
+        assert f in SRC
