@@ -17,6 +17,24 @@ static volatile LONG closing=0;
 static PVOID volatile game_hwnd=NULL;
 static void (*quick_exit_log)(const char *)=NULL;
 
+/* Native game quit signal (verified in SHA-pinned SpideyPC.exe):
+ * 0x004A238A sets ds:[0x0060CF88] to 1 for the game's own Quit action.
+ * 0x00455E50 compares ds:[0x0060CF88] to zero and jumps directly to
+ * 0x004561F2, the native engine cleanup and return from 0x00455C90.
+ * WinMain (0x00515CBE onwards) then performs its final cleanup.
+ *
+ * WM_CLOSE from outside that state machine destroys HWND but the engine
+ * continues to call DirectDraw Flip, as proven by Windows logs #439-#454.
+ * The quick-exit shortcut must NEVER use WM_CLOSE. Set the original
+ * game quit flag and let native cleanup finish on the game's thread.
+ */
+#define SPIDER_GAME_QUIT_FLAG ((volatile BYTE *)(uintptr_t)0x0060CF88u)
+#define SPIDER_GAME_MODE ((const volatile DWORD *)(uintptr_t)0x0060CFA4u)
+#define SPIDER_NATIVE_QUIT_SETTER ((const BYTE *)(uintptr_t)0x004A238Au)
+#define SPIDER_NATIVE_QUIT_CHECK ((const BYTE *)(uintptr_t)0x00455E50u)
+static const BYTE game_quit_set_signature[7]={0xC6,0x05,0x88,0xCF,0x60,0x00,0x01};
+static const BYTE game_quit_check_signature[6]={0x38,0x1D,0x88,0xCF,0x60,0x00};
+
 /* The supported 2001 executable has one native movie playback routine:
  * 0x0047081D and 0x0047085F both CALL 0x0050B5A0 (Bink frame tick).
  * The owning game routine at 0x00470871 calls the native 0x0050B790
@@ -175,74 +193,46 @@ static DWORD WINAPI quick_exit_f12_thread(LPVOID unused) {
       previous_down=FALSE;
     } else if(!previous_down &&
               InterlockedCompareExchange(&closing,1,0)==0) {
-      /* Keep the request latched even if a subsequent opening film begins
-       * in the small gap between finishing the current clip and WM_CLOSE. */
-      InterlockedExchange(&intro_abort_requested,1);
-      /* The intro Bink loop may keep working even AFTER DestroyWindow.
-       * Ask the native frame loop to end first. Our game-thread hook
-       * returns "movie finished" and the game's own code calls BinkClose
-       * and clears SPIDER_INTRO_ACTIVE before we send WM_CLOSE. */
+      /* Never close HWND directly: WM_CLOSE/WM_DESTROY do not stop
+       * the 2001 engine's own rendering or audio loops. */
       {
         DWORD now=GetTickCount();
-        BOOL seen_movie=movie_frame_recent(now,1500u);
-        BOOL native_active=*SPIDER_INTRO_ACTIVE!=0u;
-        if(seen_movie||native_active) {
+        LONG blts=InterlockedCompareExchange(&intro_movie_blt_count,0,0);
+        BOOL movie=movie_frame_recent(now,1500u)||
+                   (*SPIDER_INTRO_ACTIVE!=0u);
+        char info[240];
+        InterlockedExchange(&intro_abort_requested,1);
+        /* The game itself uses exactly this flag when its Quit action
+         * is selected. This is the only exit request performed here. */
+        *SPIDER_GAME_QUIT_FLAG=1u;
+        snprintf(info,sizeof(info),
+          "QUICK-EXIT-F12: game-native quit requested flag=1, movie=%d, blts=%ld, mode=%lu; NO WM_CLOSE",
+          (int)movie,(long)blts,(unsigned long)*SPIDER_GAME_MODE);
+        say(info);
+        if(movie) {
+          /* The next Bink tick(s) will return completion, causing the
+           * original game thread to close each clip. After the four
+           * opening movies the original quit-state check leads into
+           * native cleanup without destroying the window prematurely. */
           unsigned attempts;
-          LONG frames_at_request=InterlockedCompareExchange(
-                               &intro_movie_blt_count,0,0);
-          char info[250];
-          snprintf(info,sizeof(info),
-            "QUICK-EXIT-F12: media exit guarded; active=%d recent_blt=%d blts=%ld; request native cleanup BEFORE WM_CLOSE",
-            (int)native_active,(int)seen_movie,(long)frames_at_request);
-          say(info);
-          /* No window close until the native hook has actually run AND
-           * both the game flag AND the decoded video frames have stopped.
-           * Some clips leave the game's flag at zero while still playing.
-           * Require at least 600ms without movie frames. */
-          for(attempts=0;attempts<300u;attempts++) {
-            now=GetTickCount();
+          for(attempts=0;attempts<600u;attempts++) {
             if(InterlockedCompareExchange(&intro_abort_seen,0,0)==1 &&
                *SPIDER_INTRO_ACTIVE==0u &&
-               !movie_frame_recent(now,600u))break;
+               !movie_frame_recent(GetTickCount(),600u))
+              break;
             Sleep(10);
           }
-          if(attempts==300u) {
-            snprintf(info,sizeof(info),
-              "QUICK-EXIT-F12: WARNING movie stop not verified active=%lu hook=%ld blts=%ld; WM_CLOSE SUPPRESSED",
-              (unsigned long)*SPIDER_INTRO_ACTIVE,
-              (long)InterlockedCompareExchange(&intro_abort_seen,0,0),
-              (long)InterlockedCompareExchange(&intro_movie_blt_count,0,0));
-            say(info);
-            /* Keep HWND and input alive rather than orphaning Bink.
-             * Diagnostic proves whether opening FMV uses these hook sites. */
-            return 0;
+          if(attempts==600u) {
+            say("QUICK-EXIT-F12: native movie cleanup unconfirmed after 6s; window kept intact, NO WM_CLOSE");
+          } else {
+            say("QUICK-EXIT-F12: native movie frames stopped; waiting for game's Quit cleanup, NO WM_CLOSE");
           }
-          say("QUICK-EXIT-F12: native movie tick returned completion; no FMV Blt for >=600ms; WM_CLOSE allowed");
-        } else {
-          say("QUICK-EXIT-F12: no recent FMV Blt or active native movie; WM_CLOSE allowed");
         }
+        /* Avoid duplicating exit requests. The external Windows process
+         * watcher verifies whether the original cleanup really exits.
+         * Never interpret a vanished HWND as proof of success. */
+        return 0;
       }
-      /* WM_CLOSE is requested only AFTER the movie owner's cleanup. The
-       * game's window/message teardown remains authoritative. */
-      if(PostMessageA(hwnd,WM_CLOSE,0,0)) {
-        unsigned attempts;
-        say("QUICK-EXIT-F12: F12 pressed in foreground; WM_CLOSE posted (normal shutdown)");
-        /* Read-only check: did the game's own WndProc destroy the window?
-         * If not, report it instead of killing the process or bypassing
-         * a possible native prompt. Ending normally is the game's job. */
-        for(attempts=0;attempts<100u;attempts++) {
-          if(!IsWindow(hwnd)) {
-            say("QUICK-EXIT-F12: game window destroyed; verify process exit independently");
-            return 0;
-          }
-          Sleep(50);
-        }
-        say("QUICK-EXIT-F12: WARNING WM_CLOSE posted, but game window still exists after 5s; no forced termination");
-        return 0; /* one request only, no repeated exit messages */
-      }
-      InterlockedExchange(&closing,0);
-      say("QUICK-EXIT-F12: ERROR could not post WM_CLOSE; game left running");
-      previous_down=TRUE;
     }
     Sleep(25);
   }
@@ -277,7 +267,13 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     else say("QUICK-EXIT-F12: WARNING disabled option, native F12 call signature unmatched");
     return;
   }
-  /* All three patch points must match exact verified game bytes. */
+  /* Guard both original game quit instruction sites, the native F12
+   * close and the exact Bink calls before installing any x86 patch. */
+  if(memcmp(SPIDER_NATIVE_QUIT_SETTER,game_quit_set_signature,7)!=0 ||
+     memcmp(SPIDER_NATIVE_QUIT_CHECK,game_quit_check_signature,6)!=0) {
+    say("QUICK-EXIT-F12: DISABLED: native game Quit flag/check signature mismatch");
+    return;
+  }
   if(memcmp(SPIDER_NATIVE_F12_POST,native_f12_original,6)!=0 ||
      memcmp(SPIDER_INTRO_CALL_1,intro_call_1_original,5)!=0 ||
      memcmp(SPIDER_INTRO_CALL_2,intro_call_2_original,5)!=0) {
@@ -294,7 +290,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     say("QUICK-EXIT-F12: DISABLED: native F12 window close could not be suppressed");
     return;
   }
-  say("QUICK-EXIT-F12: original WM_KEYDOWN/F12 direct WM_CLOSE disabled; guarded native Bink hooks active");
+  say("QUICK-EXIT-F12: original F12 WM_CLOSE suppressed; game-native Quit flag path active with Bink hooks");
   InterlockedExchange(&enabled,1);
   thread=CreateThread(NULL,0,quick_exit_f12_thread,NULL,0,NULL);
   if(!thread) {
@@ -306,5 +302,5 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     return;
   }
   CloseHandle(thread);
-  say("QUICK-EXIT-F12: enabled; foreground F12 will post WM_CLOSE once");
+  say("QUICK-EXIT-F12: enabled; foreground F12 requests native game Quit (NEVER WM_CLOSE)");
 }
