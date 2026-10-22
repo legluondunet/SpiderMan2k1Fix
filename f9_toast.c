@@ -1,7 +1,7 @@
-/* Short-lived native screenshot confirmation, rendered only on the
- * windowed DirectDraw PRIMARY after presenting the completed game frame.
- * No overlay HWND, no keyboard hook and no drawing into the 3D backbuffer.
- * This guarantees the screenshot itself cannot contain its confirmation.
+/* Short-lived F9 screenshot confirmation, composited into a cached
+ * DirectDraw OFFSCREEN presentation surface before a single PRIMARY blit.
+ * No overlay HWND, keyboard hook, GDI writes on PRIMARY, or drawing into
+ * the 3D backbuffer; the screenshot itself never contains its confirmation.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
