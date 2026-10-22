@@ -76,6 +76,52 @@ static int toast_wrap_path(HDC dc,const WCHAR *text,int width,
   return offset==total?lines:0;
 }
 
+
+/* Same native GDI AlphaBlend technique as the ESC pause ribbon: tint only a
+ * rounded region on the distinct DirectDraw staging surface. The rendered
+ * scene behind the notification remains visible and F9's original backbuffer
+ * is never changed. */
+#define SPIDER_F9_PANEL_ALPHA 165u /* ~65% opaque; 35% scene visible. */
+static BOOL toast_draw_translucent_panel(HDC dc,const RECT *panel) {
+  const BLENDFUNCTION blend={AC_SRC_OVER,0,SPIDER_F9_PANEL_ALPHA,0};
+  HDC tint=NULL;
+  HBITMAP pixel=NULL,old_pixel=NULL;
+  HBRUSH color=NULL;
+  HRGN rounded=NULL;
+  RECT dot={0,0,1,1};
+  int saved=0;
+  BOOL ok=FALSE;
+  if(!dc || !panel || panel->right<=panel->left ||
+     panel->bottom<=panel->top)return FALSE;
+  tint=CreateCompatibleDC(dc);
+  if(!tint)goto done;
+  pixel=CreateCompatibleBitmap(dc,1,1);
+  color=CreateSolidBrush(RGB(50,50,160));
+  rounded=CreateRoundRectRgn(panel->left,panel->top,panel->right,
+                             panel->bottom,8,8);
+  if(!pixel || !color || !rounded)goto done;
+  old_pixel=(HBITMAP)SelectObject(tint,pixel);
+  if(!old_pixel || old_pixel==(HBITMAP)HGDI_ERROR) {
+    old_pixel=NULL;
+    goto done;
+  }
+  if(!FillRect(tint,&dot,color))goto done;
+  saved=SaveDC(dc);
+  if(!saved)goto done;
+  if(ExtSelectClipRgn(dc,rounded,RGN_AND)!=ERROR)
+    ok=AlphaBlend(dc,panel->left,panel->top,
+                  panel->right-panel->left,panel->bottom-panel->top,
+                  tint,0,0,1,1,blend)!=FALSE;
+  RestoreDC(dc,saved);
+done:
+  if(old_pixel)SelectObject(tint,old_pixel);
+  if(rounded)DeleteObject(rounded);
+  if(color)DeleteObject(color);
+  if(pixel)DeleteObject(pixel);
+  if(tint)DeleteDC(tint);
+  return ok;
+}
+
 static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success) {
   static const WCHAR saved_heading[]=L"Screenshot saved to:";
   static const WCHAR error_heading[]=L"Screenshot failed:";
@@ -119,12 +165,12 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
   y=(int)h-toast_max(16,(int)h/50)-box_h;
   if(y<0)goto restore_font;
   panel.left=x;panel.top=y;panel.right=x+box_w;panel.bottom=y+box_h;
-  /* Compact variant of the native ESC pause ribbon: blue-violet fill,
-   * luminous lavender edges, pale text and red outlined heading. */
-  brush=CreateSolidBrush(RGB(50,50,160));
-  border=CreatePen(PS_SOLID,2,RGB(169,148,251));
+  /* Native ESC palette, transparent blue-violet fill and subtle lavender
+   * outline. Paint only on the offscreen composed frame. */
+  if(!toast_draw_translucent_panel(dc,&panel))goto restore_font;
+  brush=(HBRUSH)GetStockObject(HOLLOW_BRUSH);
+  border=CreatePen(PS_SOLID,1,RGB(169,148,251));
   if(!brush || !border) {
-    if(brush)DeleteObject(brush);
     if(border)DeleteObject(border);
     goto restore_font;
   }
@@ -157,7 +203,6 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
   if(old_pen && old_pen!=HGDI_ERROR)SelectObject(dc,old_pen);
   if(old_brush && old_brush!=HGDI_ERROR)SelectObject(dc,old_brush);
   DeleteObject(border);
-  DeleteObject(brush);
 restore_font:
   SelectObject(dc,old_font);
 font_done:
