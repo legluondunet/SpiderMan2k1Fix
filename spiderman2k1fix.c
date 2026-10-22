@@ -1602,8 +1602,9 @@ static void f9_capture_completed_menu_flip(LONG flip,BOOL rendered_menu) {
     SpiderF9Toast_PublishError(L"Menu frame unavailable for screenshot");
     return;
   }
-  /* The same 'permitted' predicate used for the menu version label
-   * guarantees actual D3D menu primitives and no recent movie blits. */
+  /* Intro splash stills use ONE D3D primitive per frame. The original
+   * menu-version overlay requires three+ primitives, but PNG capture should
+   * accept one as soon as there is no active 4:3 movie Blt. */
   if(!rendered_menu)return;
   back=borderless_back;
   if(!back) {
@@ -2181,11 +2182,18 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
     if(back_drawn && InterlockedCompareExchange(&menu_version_logged,1,0)==0)
       log_line("MENU-VERSION: drawn on DirectDraw backbuffer: " SPIDERMAN2K1FIX_VERSION_LABEL);
   }
-  /* Capture only an actually rendered menu frame, BEFORE presenting and
-   * clearing BACK. A screenshot never includes its own notification. */
+  /* F9 also supports the two static title/slate screens before the main
+   * menu: these draw a single 3D primitive each frame. Keep the stricter
+   * "permitted" predicate above for the menu-version overlay, while PNG
+   * needs only a fresh frame with some geometry and no active movie Blt.
+   * Capture BEFORE presentation and backbuffer clear. */
   if(InterlockedCompareExchange(&f9_png_only_enabled,0,0)==1 &&
-     InterlockedCompareExchange(&f9_menu_png_pending,0,0)==1)
-    f9_capture_completed_menu_flip(count,permitted);
+     InterlockedCompareExchange(&f9_menu_png_pending,0,0)==1) {
+    BOOL f9_still_ready=menu_active && menu_draws>=1 && movie_blits==0 &&
+      count-movie_last>3 && menu_map.right>menu_map.left &&
+      menu_map.bottom>menu_map.top;
+    f9_capture_completed_menu_flip(count,f9_still_ready);
+  }
   if(self==(void*)borderless_primary && borderless_back && original_blt) {
       RECT rc={borderless_monitor_x,borderless_monitor_y,
         borderless_monitor_x+(LONG)desktop_w,borderless_monitor_y+(LONG)desktop_h};
