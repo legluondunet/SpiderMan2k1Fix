@@ -124,6 +124,59 @@ invoking its teardown blindly:
 
 Only verified code addresses may be used for future signature-gated hooks.
 
+### Native in-game pause menu: first proven game-owned route out of 3D
+
+Further disassembly of the supported `SpideyPC.exe` identified the actual
+in-game pause option routine. This is more precise than a generic
+`mode_request=7` heuristic.
+
+1. `0x00455400` is a game frame/tick function; it updates other
+   world/game input state and invokes `0x00440EF0` at `0x0045553B`.
+2. It reads `[0x00682950]` at `0x00455540`; **only if nonzero** does
+   it call `0x0047BC40` at `0x00455549`. This gates execution of
+   the game's actual pause option handler, on the current game thread.
+3. `0x0047BC40` creates/updates the pause menu object
+   `[0x00682968]`; the menu text is loaded from original game
+   pointers `[0x0054BA94]`, `[0x0054BA98]`, `[0x0054BA9C]`:
+   **"retry", "quit to training", "quit to main menu"**.
+4. After the normal input confirmation (`0x0047BDAE` or
+   `0x0047BE1B` branches), `0x0047BE62` reads the native option
+   index byte from `[menu+0x14]`, and dispatches:
+
+| Native option index | User-visible menu text | Instruction | Transition request at `0x0060CFA4` |
+|---|---|---|---|
+| 0 | retry | `0x0047BE87` | 8 |
+| 1 | quit to training | `0x0047BE7B` | 10 |
+| 2 | **quit to main menu** | `0x0047BE6F` | **7** |
+
+5. **The same game-owned routine** then destroys both menu objects
+   when present (virtual destructors at `0x0047BEA0` and
+   `0x0047BEB6`), clears pointers `0x00682960` and
+   `0x00682968`, and returns naturally.
+6. The top-level controller processes request 7 at `0x00456185`:
+   it calls native `0x00443AD0(0)` and `0x0048A820`,
+   checks `[0x02E0988C]&4` and signed `[0x00568FB0]`,
+   then **either** loops or exits. Importantly, **"quit to main
+   menu" is not identical to "terminate the process"**.
+
+**Design implication:** The game already offers a real, mode-owned
+mechanism to leave 3D gameplay and perform its normal pause/transition
+cleanup. Future F12 can potentially use this *owner* and its genuine
+cleanup sequence, then request a separate native top-level shutdown.
+But F12 must not merely write the global request 7 or call the
+menu's destructor out of context. Native mode exit and final program
+exit are distinct phases; both need Windows validation.
+
+**Read-only probe added (no new executable hook):** The existing
+DirectDraw Flip diagnostic records only whether these global objects
+exist: `pause_ctx` for `[0x00682950]`, `pause_options` for
+`[0x00682968]`, `pause_restart` for `[0x00682960]`.
+It **never dereferences menu objects**, alters selections, or
+calls native cleanup. Snapshots log on a boolean change or five-second
+heartbeat. A test with gameplay paused, selecting **quit to main
+menu**, then returning to the menu should establish the real lifetime
+of these objects.
+
 ### Practical consequence for game-mode-specific F12
 
 A **3D gameplay update** is not identified merely because the global
@@ -176,6 +229,10 @@ The existing `IDirectDrawSurface7::Flip` hook now calls
 - The already-owned render policy (`renderer2d`), a recent real
   `Shell_MainMenu` frame (`menu_recent`), a recent decoded Bink
   presentation (`movie_recent`), and the lifetime latch `menu_seen`.
+- Three game-owned pause-menu object pointers by **presence only**:
+  `[0x00682950]` (pause context), `[0x00682968]` (option menu),
+  and `[0x00682960]` (restart/selection menu), with log labels
+  `pause_ctx`, `pause_options`, `pause_restart`.
 - Existing patch-local observations: intro F12 intent and whether
   post-movie forwarding executed.
 
@@ -185,7 +242,7 @@ hook, mutate game-state pointers, or trigger a shutdown.
 Example expected log shape (example values intentionally omitted):
 
 ```text
-QUICK-EXIT-F12: ENGINE-STATE flip=... renderer2d=... mode_request=... countdown=... countdown_active=... task=... quit=... menu_recent=... movie_recent=... menu_seen=... intro_request=... intro_forwarded=...
+QUICK-EXIT-F12: ENGINE-STATE flip=... renderer2d=... mode_request=... countdown=... countdown_active=... task=... quit=... pause_ctx=... pause_options=... pause_restart=... menu_recent=... movie_recent=... menu_seen=... intro_request=... intro_forwarded=...
 ```
 
 Collect **separate log files** while viewing (a) the first static screen
