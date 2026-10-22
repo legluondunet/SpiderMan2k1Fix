@@ -10,17 +10,17 @@ GEN=(ROOT/"virtual_spidey_cfg.c").read_text()
 VALID=(ROOT/"ini_validation.h").read_text()
 def test_original_ini_controls_retained():
     for src in (INI,EXAMPLE):
-        for key in ("PauseDim=1","PauseDimOpacity=50","PauseGrid=0"):assert key in src
+        for key in ("PauseDim=1","PauseDimOpacity=60","PauseGrid=0"):assert key in src
     for key in ("PauseDim","PauseDimOpacity","PauseGrid","PauseOverlay"):
         assert '"'+key+'"' in VALID and '"Input","'+key+'"' in P
-    assert '"PauseDimOpacity=50\\r\\n"' in GEN
+    assert '"PauseDimOpacity=60\\r\\n"' in GEN
     assert '"PauseGrid=0\\r\\n"' in GEN
 def test_alpha_blend_and_opt_in_grid_are_drawn_to_existing_directdraw_dc():
     assert "#define PAUSE_GRID_STEP 16" in P
     assert "AlphaBlend(dest,x,y,width,height,source,0,0,1,1,blend)" in P
     assert "BLENDFUNCTION blend={AC_SRC_OVER,0,alpha,0}" in P
     assert "(opacity*255+50)/100" in P
-    assert "enabled_dim=1,enabled_grid=0,enabled_banner=1,opacity=50;" in P
+    assert "enabled_dim=1,enabled_grid=0,enabled_banner=1,opacity=60;" in P
     assert 'GetPrivateProfileIntA("Input","PauseDimOpacity",50,path)' in P
     assert "const BLENDFUNCTION grid_blend={AC_SRC_OVER,0,28,0};" in P
     assert "RGB(100,104,124)" in P
