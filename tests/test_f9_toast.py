@@ -113,3 +113,15 @@ def test_heading_uses_real_wide_string_length_and_pause_palette():
     assert 'RGB(169,148,251)' in TOAST
     assert 'RGB(231,220,255)' in TOAST
     assert 'RGB(245,240,255)' in TOAST
+
+def test_pause_style_transparency_uses_rounded_alpha_blend_offscreen():
+    assert "SPIDER_F9_PANEL_ALPHA 165u" in TOAST
+    assert "CreateCompatibleBitmap(dc,1,1)" in TOAST
+    assert "CreateRoundRectRgn(" in TOAST
+    assert "ExtSelectClipRgn(dc,rounded,RGN_AND)" in TOAST
+    assert "AlphaBlend(dc,panel->left,panel->top," in TOAST
+    assert "GetStockObject(HOLLOW_BRUSH)" in TOAST
+    assert "CreateSolidBrush(RGB(50,50,160))" in TOAST
+    assert "SpiderF9Toast_CompositeFrame(" in TOAST
+    assert "IDirectDrawSurface7_Blt(toast_stage,NULL,back,NULL,DDBLT_WAIT,NULL)" in TOAST
+    assert "SpiderF9Toast_DrawAfterPresent" not in TOAST
