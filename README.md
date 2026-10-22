@@ -29,7 +29,11 @@ SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must prov
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 
-### Optional F12 quick exit (experimental)
+### Optional F12 quick exit
+
+> **EXPERIMENTAL — NOT WORKING (Windows 11, build #460).** The F12 shortcut is detected, but the process does not exit reliably in the opening movies, menu, comic panels or 3D gameplay. Do not enable it for regular use. The project's [PR #26](https://github.com/legluondunet/SpiderMan2k1Fix/pull/26) remains in draft until the game's actual native cleanup path is safely integrated. The original UI Quit action does more than set the `0x0060CF88` flag: it also calls `0x0048D880`. That function must not be invoked speculatively from the F12 polling thread or a DirectDraw callback.
+
+ (experimental)
 
 F12 quick exit is **disabled by default**. To opt in, edit `SpiderMan2k1Fix.ini`:
 
