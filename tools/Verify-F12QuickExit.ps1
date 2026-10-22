@@ -72,8 +72,8 @@ try {
     $shortcutObserved = $false
     if ($null -ne $recentLog) {
         $lines = Get-Content -LiteralPath $recentLog.FullName -Tail 180 -ErrorAction SilentlyContinue
-        $shortcutObserved = [bool]($lines | Select-String -SimpleMatch "QUICK-EXIT-F12: F12 pressed in foreground; WM_CLOSE posted")
-        Write-Host "Game log: $($recentLog.Name); WM_CLOSE trace present=$shortcutObserved"
+        $shortcutObserved = [bool]($lines | Select-String -SimpleMatch "QUICK-EXIT-F12: game-native quit requested flag=1")
+        Write-Host "Game log: $($recentLog.Name); native Quit trace present=$shortcutObserved"
     } else {
         Write-Warning "No recent game log found. Enable [Debug] Log=1 to verify that F12 caused the exit."
     }
@@ -113,10 +113,10 @@ try {
         exit 1
     }
     if (-not $shortcutObserved) {
-        Write-Warning "INCONCLUSIVE: normal exit detected, but no F12 -> WM_CLOSE line was verified. Enable Log=1 and repeat."
+        Write-Warning "INCONCLUSIVE: normal exit detected, but no F12 -> native Quit line was verified. Enable Log=1 and repeat."
         exit 3
     }
-    Write-Host "PASS: F12 -> WM_CLOSE logged, exit code 0, process gone, no matching crash event found."
+    Write-Host "PASS: F12 -> native Quit logged, exit code 0, process gone, no matching crash event found."
     Write-Host "Note: this does not prove that every native COM object was explicitly released before exit."
     exit 0
 }
