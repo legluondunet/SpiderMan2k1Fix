@@ -1940,7 +1940,18 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   if(self==(void*)borderless_primary && borderless_back && original_blt) {
       RECT rc={borderless_monitor_x,borderless_monitor_y,
         borderless_monitor_x+(LONG)desktop_w,borderless_monitor_y+(LONG)desktop_h};
-      hr=original_blt(self,&rc,borderless_back,NULL,DDBLT_WAIT,NULL);
+      IDirectDrawSurface7 *present_source=borderless_back;
+      if(InterlockedCompareExchange(&f9_native_png_enabled,0,0)==1) {
+        IDirectDrawSurface7 *composite=
+          SpiderF9Toast_CompositeFrame(borderless_back,game_hwnd,desktop_w,desktop_h);
+        if(composite)present_source=composite;
+      }
+      hr=original_blt(self,&rc,present_source,NULL,DDBLT_WAIT,NULL);
+      if(FAILED(hr) && present_source!=borderless_back) {
+        /* A lost/unsupported staging surface must not blank gameplay. */
+        SpiderF9Toast_ResetPresentation();
+        hr=original_blt(self,&rc,borderless_back,NULL,DDBLT_WAIT,NULL);
+      }
       if(FAILED(hr)) {
         LONG failures=InterlockedIncrement(&borderless_present_failed);
         if(failures<=12) {
@@ -1949,12 +1960,8 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
           log_line(line);
         }
       }
-      /* Display screenshot confirmation only after backbuffer->PRIMARY.
-       * F9 reads BACKBUFFER, so the notification is excluded from PNGs. */
-      if(SUCCEEDED(hr) &&
-         InterlockedCompareExchange(&f9_native_png_enabled,0,0)==1)
-        SpiderF9Toast_DrawAfterPresent((IDirectDrawSurface7 *)self,
-                                       game_hwnd,desktop_w,desktop_h);
+      /* One DirectDraw Blt above includes the notice when active. Never
+       * paint PRIMARY asynchronously after presenting the finished frame. */
       /* GDI fallback only when the video-memory surface has no DC. */
       if(SUCCEEDED(hr) && permitted && !back_drawn) {
         RECT content={menu_map.left,menu_map.top,menu_map.right,menu_map.bottom};
