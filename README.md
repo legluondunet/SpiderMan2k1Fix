@@ -29,11 +29,11 @@ SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must prov
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 
-### Optional F12 quick exit — menu validated; intro-movie path experimental
+### Optional F12 quick exit — menu validated; startup cinematic exit experimental
 
-> **Windows 11 validated:** Build #471 successfully exits from the visible main menu by executing Spider-Man's **own Shell_MainMenu Quit action (slot 3 / command 18)**. The user confirmed `SpideyPC.exe` disappears from Task Manager. The **new intro-movie F12 extension is not yet validated**; neither comics nor gameplay are supported. The [PR #26](https://github.com/legluondunet/SpiderMan2k1Fix/pull/26) remains a draft.
+> **Windows 11 validation:** Build #471 successfully exits from the actual main menu through the native `Shell_MainMenu` Quit action (slot 3, command 18); the user verified that `SpideyPC.exe` disappears from Task Manager. In build #476, F12 during the opening videos successfully skips the **four** native Bink clips, but the game then stops on one of **two static startup screens**, the latter prompting Enter to reach the main menu. The new *full startup exit* path is **experimental and has not yet been tested on Windows**. Comic pages and 3D remain unsupported. [PR #26](https://github.com/legluondunet/SpiderMan2k1Fix/pull/26) stays a draft.
 
-The feature is disabled by default. For experimental testing, set:
+F12 is off by default. To opt into the experimental build, set:
 
 ```ini
 [System]
@@ -43,29 +43,32 @@ QuickExitF12=1
 Log=1
 ```
 
-The original game's VK_F12 sends `WM_CLOSE`; during Bink opening movies this destroys only the window while game audio and process keep running. SpiderMan2k1Fix strictly signature-checks and suppresses that unsafe original instruction even when the option is off.
+The 2001 game's original VK_F12 directly posts `WM_CLOSE`, which can destroy only the game window while native Bink audio and DirectDraw continue forever. SpiderMan2k1Fix disables that exact signature-checked native shortcut to avoid a headless process.
 
-**Validated main menu:** The genuine `Shell_MainMenu` at `0x00493990` has a frame tick at `0x00493DD6`. The native menu table at `0x00552AA8` contains **Quit, index 3, command 18**. An F12 request on the actual main menu makes the game itself use its native selection/cleanup branch at `0x004941D5`. No forced process shutdown, extra `WM_CLOSE` or synthetic key input.
+**Validated menu:** The real `Shell_MainMenu` at `0x00493990` executes the game-owned frame tick at `0x00493DD6`. When F12 is pressed in the interactive main menu, the original game receives selection **3**, corresponding to **Quit command 18**, and follows its own cleanup branch at `0x004941D5`. The native menu mechanism is unchanged from the user-validated build #471.
 
-**Experimental intro-cinematic extension:** The game's main startup procedure calls its own movie routine `0x00470750` four times, with two Bink frame ticks at `0x0047081D` and `0x0047085F`. F12 during a decoded opening movie sets a persistent exit request. Both native frame-tick sites then return `finished` on the **game thread**, following the original cleanup path at `0x00470871` which calls Bink close and releases movie state. Subsequent intro movie calls finish the same way. Once Spider-Man enters `Shell_MainMenu`, the saved request triggers the **same game-owned Quit action already validated on Windows 11**, rather than displaying the menu or destroying the window prematurely.
+**Opening movie shutdown — revised mechanism:** The game's startup at `0x00455C90` calls movie owner `0x00470750` **four times**. F12 during these movies latches a startup exit request; the original Bink frame-tick CALLs at `0x0047081D` and `0x0047085F` can then report completion. The video-owning game thread follows its existing Bink cleanup at `0x00470871` for all remaining startup clips.
 
-If F12 is pressed outside recognized movie playback or the main menu, no exit is requested. Pochettes BD, 3D gameplay and other menus are **not yet implemented**.
+**Important difference from #476:** The first `Shell_MainMenu` callback after the videos may belong to the **two static startup screens**, not the interactive main menu. Delivering Quit there did **not** terminate the game. Rather than entering or simulating input on those screens, this revision hooks the exact native call at `0x00455D23` to transition-cleanup function `0x00443AD0`, *executes the original cleanup first*, then, if an opening F12 request is latched, sets the game's own Quit byte at `0x0060CF88`. Its original top-level check at `0x00455E50` is downstream of that transition and branches to native engine cleanup at `0x004561F2`. This may let the game terminate **before reaching either static screen**, without invoking a native destructor from the key watcher thread.
 
-**Windows validation required for this new extension:** Press F12 during each opening cinematic; confirm audio stops, `SpideyPC.exe` disappears and no Windows crash report is created. Look for these log markers:
+The new path is protected by exact native machine-byte signatures for the video ticks, the post-movie call and the game's Quit check. **No `WM_CLOSE`, synthetic Enter, `ExitProcess` or `TerminateProcess`** is used.
+
+**Next Windows test:** Press F12 in the first opening cinematic, confirm the audio ends and `SpideyPC.exe` fully disappears without remaining on either static image. Inspect the log for:
 
 ```text
-QUICK-EXIT-F12: intro movie exit requested; native Bink cleanup then real Shell_MainMenu Quit
-QUICK-EXIT-F12: native Bink tick returned finished; original game video cleanup will run
-QUICK-EXIT-F12: intro Bink cleanup completed; native Shell_MainMenu Quit activated: slot=3 action=18
+QUICK-EXIT-F12: intro movie exit requested
+QUICK-EXIT-F12: four native movie calls completed; intro transition cleanup finished; engine Quit flag set BEFORE top-level 0x455E50 check
 ```
 
-For process-exit code and crash checks, run [`tools/Verify-F12QuickExit.ps1`](tools/Verify-F12QuickExit.ps1) from the game folder:
+If the second marker occurs but the game still remains, the top-level native check may not have been reached on that startup path. This would require further investigation; do not call it a successful exit.
+
+For external process-exit and Windows crash-event checks, run [`tools/Verify-F12QuickExit.ps1`](tools/Verify-F12QuickExit.ps1) from the game folder:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\\Verify-F12QuickExit.ps1
 ```
 
-This read-only watcher reports process state and Windows error events. It never forcibly stops the game. Process exit implies OS reclamation of private memory and handles, not proof of every COM reference being explicitly released.
+This read-only watcher reports the game exit code and checks for leftover processes. It never kills the game. A stopped process releases Windows-owned handles/memory but does not prove that every COM resource was explicitly released by the game.
 
 ## Requirements and compatibility
 
