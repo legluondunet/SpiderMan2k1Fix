@@ -166,3 +166,18 @@ def test_integration_blocks_saving_before_writing():
     assert "MessageBoxA(NULL,summary" in src
     assert "SpiderMan2k1Fix_" in src
     assert "SpiderCfg_RepairIni" in src
+
+
+def test_system_quick_exit_is_known_and_opt_in(runner, tmp_path):
+    for value in ("0", "1"):
+        result, _ = validate(runner, tmp_path, f"[System]\nQuickExitF12={value}\n")
+        assert result == (0, 0, 1)
+    for value in ("2", "-1", "true", "off"):
+        result, _ = validate(runner, tmp_path, f"[System]\nQuickExitF12={value}\n")
+        assert result[0] >= 1 and result[2] == 0
+
+
+def test_example_exposes_disabled_quick_exit():
+    data = (ROOT / "SpiderMan2k1Fix.generated-example.ini").read_text()
+    assert "[System]\n" in data
+    assert "QuickExitF12=0" in data
