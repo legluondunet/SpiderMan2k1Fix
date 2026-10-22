@@ -10,5 +10,7 @@
 void SpiderQuickExitF12_Init(void (*log_fn)(const char *));
 void SpiderQuickExitF12_AttachWindow(HWND game_window);
 int SpiderQuickExitF12_Enabled(void);
+/* Passive: reports a successfully rendered FMV frame to the shutdown guard. */
+void SpiderQuickExitF12_ObserveMovieFrame(void);
 
 #endif
