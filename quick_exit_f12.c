@@ -17,8 +17,16 @@
  * branch 0x004941D5. This is identical in effect to selecting "quit" on
  * the real menu. NEVER post WM_CLOSE or call native resource destructors.
  *
- * Intro movies/comics/3D are intentionally unsupported in this prototype.
- * Exact code bytes MUST match or F12 stays disabled.
+ * Opening cinematics now use the game's two native Bink frame-tick
+ * CALL sites. An opt-in F12 request makes those ticks return "finished",
+ * so the ORIGINAL 0x470871 BinkClose path runs in the video-owning
+ * game thread. All four sequential movie calls take this same path.
+ * On entry to the REAL main menu, the already Windows-validated Quit
+ * item is selected on the normal menu thread, before the first menu
+ * frame is presented. No WM_CLOSE, no process kill, no direct BinkClose.
+ *
+ * Comic screens / 3D remain unsupported. Exact code bytes MUST match
+ * before any hook is installed.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -32,11 +40,17 @@
 #define SPIDER_SHELL_MENU_QUIT_RETURN ((const BYTE *)(uintptr_t)0x004941D5u)
 #define SPIDER_SHELL_MENU_ITEMS ((const BYTE *)(uintptr_t)0x00552AA8u)
 #define SPIDER_NATIVE_MENU_TICK ((void (__cdecl *)(void))(uintptr_t)0x00505720u)
+#define SPIDER_INTRO_TICK_CALL_1 ((BYTE *)(uintptr_t)0x0047081Du)
+#define SPIDER_INTRO_TICK_CALL_2 ((BYTE *)(uintptr_t)0x0047085Fu)
+#define SPIDER_NATIVE_BINK_FRAME_TICK ((BYTE (__cdecl *)(void))(uintptr_t)0x0050B5A0u)
+#define SPIDER_GAME_BINK_ACTIVE ((const volatile DWORD *)(uintptr_t)0x006151F8u)
 
 static const BYTE native_f12_original[6]={0xFF,0x15,0x70,0xB1,0x53,0x00};
 static const BYTE native_f12_bypass[6]={0x83,0xC4,0x10,0x90,0x90,0x90};
 static const BYTE shell_menu_tick_original[5]={0xE8,0x45,0x19,0x07,0x00};
 static const BYTE shell_menu_quit_return_signature[5]={0x6A,0x00,0x68,0x00,0x20};
+static const BYTE intro_tick_call_original_1[5]={0xE8,0x7E,0xAD,0x09,0x00};
+static const BYTE intro_tick_call_original_2[5]={0xE8,0x3C,0xAD,0x09,0x00};
 
 static volatile LONG enabled=0;
 static volatile LONG pending=0;
@@ -44,6 +58,10 @@ static volatile LONG delivered=0;
 static volatile LONG menu_frame_count=0;
 static volatile LONG last_menu_frame_ms=0;
 static volatile LONG last_movie_frame_ms=0;
+/* The request persists across the four native movie calls.
+ * Only the already verified real menu Quit routine consumes it. */
+static volatile LONG intro_quit_pending=0;
+static volatile LONG intro_tick_shortcircuited=0;
 static PVOID volatile game_hwnd=NULL;
 static void (*logger)(const char *)=NULL;
 
@@ -63,6 +81,20 @@ void SpiderQuickExitF12_ObserveMovieFrame(void) {
   InterlockedExchange(&last_movie_frame_ms,(LONG)GetTickCount());
 }
 
+/* Native BinkFrame tick wrapper, called by the game thread at the two
+ * original 0x470750 video-loop sites. False makes the owning caller
+ * branch to 0x470871 and invoke original BinkClose, audio reset and
+ * movie-active clearing. Never call BinkClose or access Bink handles in
+ * this hook, and never destroy HWND while the video loop is alive. */
+static BYTE __cdecl spider_f12_native_intro_tick(void) {
+  if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1) {
+    if(InterlockedCompareExchange(&intro_tick_shortcircuited,1,0)==0)
+      say("QUICK-EXIT-F12: native Bink tick returned finished; original game video cleanup will run");
+    return 0;
+  }
+  return SPIDER_NATIVE_BINK_FRAME_TICK();
+}
+
 /* Returns nonzero ONLY when a recent, explicitly requested F12 action
  * may be delivered inside the ACTUAL Shell_MainMenu frame loop. This
  * never mutates engine state or executes resource cleanup itself.
@@ -72,6 +104,15 @@ int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void) {
   InterlockedExchange(&last_menu_frame_ms,(LONG)GetTickCount());
   if(n==1)
     say("QUICK-EXIT-F12: REAL Shell_MainMenu frame callback observed (0x493DD6)");
+  /* The game's main sequence calls Shell_MainMenu only after finishing
+   * its four opening 0x470750 movies. Transfer a latched intro F12 to
+   * the PREVIOUSLY USER-VALIDATED native Quit item here. Never issue a
+   * WndProc close or write a game global quit flag. */
+  if(InterlockedCompareExchange(&intro_quit_pending,0,1)==1) {
+    InterlockedExchange(&delivered,1);
+    say("QUICK-EXIT-F12: intro Bink cleanup completed; native Shell_MainMenu Quit activated: slot=3 action=18");
+    return 1;
+  }
   if(InterlockedCompareExchange(&pending,0,1)==1) {
     InterlockedExchange(&delivered,1);
     say("QUICK-EXIT-F12: native Shell_MainMenu Quit activated: slot=3 action=18, native cleanup branch=0x4941D5");
@@ -142,6 +183,43 @@ static int install_real_menu_hook(void) {
   return write_code(SPIDER_SHELL_MENU_TICK,shell_menu_tick_original,patched,5);
 }
 
+static int patch_intro_tick_call(BYTE *site,const BYTE original[5]) {
+  intptr_t delta=(intptr_t)(void *)spider_f12_native_intro_tick-
+                 (intptr_t)(site+5);
+  int32_t rel;
+  BYTE call_bytes[5]={0xE8,0,0,0,0};
+  if(delta<(intptr_t)INT32_MIN || delta>(intptr_t)INT32_MAX)return 0;
+  rel=(int32_t)delta;
+  memcpy(call_bytes+1,&rel,4);
+  return write_code(site,original,call_bytes,5);
+}
+
+static void restore_intro_tick_call(BYTE *site,const BYTE original[5]) {
+  DWORD old_protect,ignored;
+  if(!VirtualProtect(site,5,PAGE_EXECUTE_READWRITE,&old_protect))return;
+  memcpy(site,original,5);
+  FlushInstructionCache(GetCurrentProcess(),site,5);
+  VirtualProtect(site,5,old_protect,&ignored);
+}
+
+static int install_intro_tick_hooks(void) {
+  if(memcmp(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1,5)!=0 ||
+     memcmp(SPIDER_INTRO_TICK_CALL_2,intro_tick_call_original_2,5)!=0)
+    return 0;
+  if(!patch_intro_tick_call(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1))
+    return 0;
+  if(!patch_intro_tick_call(SPIDER_INTRO_TICK_CALL_2,intro_tick_call_original_2)) {
+    restore_intro_tick_call(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1);
+    return 0;
+  }
+  return 1;
+}
+
+static void restore_intro_tick_hooks(void) {
+  restore_intro_tick_call(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1);
+  restore_intro_tick_call(SPIDER_INTRO_TICK_CALL_2,intro_tick_call_original_2);
+}
+
 static int suppress_unsafe_native_f12(void) {
   return write_code(SPIDER_NATIVE_F12_POST,native_f12_original,
                     native_f12_bypass,sizeof(native_f12_original));
@@ -163,8 +241,13 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
       LONG menu_time=InterlockedCompareExchange(&last_menu_frame_ms,0,0);
       LONG movie_time=InterlockedCompareExchange(&last_movie_frame_ms,0,0);
       previously_down=TRUE;
-      if(movie_time && (DWORD)(now-(DWORD)movie_time)<500u) {
-        say("QUICK-EXIT-F12: opening movie active; native menu-only exit NOT requested");
+      if((movie_time && (DWORD)(now-(DWORD)movie_time)<750u) ||
+         *SPIDER_GAME_BINK_ACTIVE!=0u) {
+        /* Set a one-shot intent: Bink tick wrappers will finish the
+         * current clip and all remaining intro movies via game-owned
+         * BinkClose, then Shell_MainMenu takes its native Quit branch. */
+        if(InterlockedCompareExchange(&intro_quit_pending,1,0)==0)
+          say("QUICK-EXIT-F12: intro movie exit requested; native Bink cleanup then real Shell_MainMenu Quit");
       } else if(!menu_time || (DWORD)(now-(DWORD)menu_time)>400u) {
         say("QUICK-EXIT-F12: REAL Shell_MainMenu not active; F12 safely ignored");
       } else {
@@ -217,6 +300,8 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
    * both exact game code sites before touching ANY instruction. */
   if(memcmp(SPIDER_NATIVE_F12_POST,native_f12_original,6)!=0 ||
      memcmp(SPIDER_SHELL_MENU_TICK,shell_menu_tick_original,5)!=0 ||
+     memcmp(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1,5)!=0 ||
+     memcmp(SPIDER_INTRO_TICK_CALL_2,intro_tick_call_original_2,5)!=0 ||
      memcmp(SPIDER_SHELL_MENU_QUIT_RETURN,
             shell_menu_quit_return_signature,5)!=0 ||
      *(const DWORD *)(SPIDER_SHELL_MENU_ITEMS+3*40+12)!=0x12u) {
@@ -227,7 +312,13 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     say("QUICK-EXIT-F12: DISABLED: real Shell_MainMenu tick hook failed");
     return;
   }
+  if(!install_intro_tick_hooks()) {
+    restore_original_menu_tick();
+    say("QUICK-EXIT-F12: DISABLED: original Bink tick hooks could not be installed");
+    return;
+  }
   if(!suppress_unsafe_native_f12()) {
+    restore_intro_tick_hooks();
     restore_original_menu_tick();
     say("QUICK-EXIT-F12: DISABLED: native F12 WM_CLOSE suppression failed");
     return;
@@ -236,10 +327,11 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   thread=CreateThread(NULL,0,f12_input_thread,NULL,0,NULL);
   if(!thread) {
     InterlockedExchange(&enabled,0);
+    restore_intro_tick_hooks();
     restore_original_menu_tick();
     say("QUICK-EXIT-F12: DISABLED: F12 input thread could not start");
     return;
   }
   CloseHandle(thread);
-  say("QUICK-EXIT-F12: experimental REAL Shell_MainMenu Quit hook enabled; movie/comic/3D not supported");
+  say("QUICK-EXIT-F12: native Shell_MainMenu Quit hook active; intro movies use native Bink cleanup before Quit; comic/3D unsupported");
 }
