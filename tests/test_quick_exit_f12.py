@@ -1,7 +1,6 @@
 """Opt-in F12 clean-shutdown regression checks.
 
-These are source/INI checks; actual WM_CLOSE cleanup and absence of a native
-confirmation dialog must also be validated against SpideyPC.exe on Windows/Wine.
+These are source/INI checks; actual native engine cleanup still requires Windows testing.
 """
 from pathlib import Path
 
@@ -42,15 +41,19 @@ def test_foreground_edge_trigger_is_independent_of_flip_and_directinput():
     assert "SetWindowLongPtr(" not in SRC  # no subclassing
 
 
-def test_exit_uses_normal_window_shutdown_and_reports_if_unhandled():
-    assert "PostMessageA(hwnd,WM_CLOSE,0,0)" in SRC
-    assert "IsWindow(hwnd)" in SRC
-    assert "game window destroyed; verify process exit independently" in SRC
-    assert "game window still exists after 5s" in SRC
-    for forbidden in ("TerminateProcess(", "ExitProcess(", "PostQuitMessage(", "WM_DESTROY,",
-                      "SendInput(", "keybd_event(", "SetWindowsHookEx("):
+def test_native_quit_flag_replaces_unsafe_wm_close():
+    for s in ("0x0060CF88u", "0x004A238Au", "0x00455E50u",
+              "0xC6,0x05,0x88,0xCF,0x60,0x00,0x01",
+              "0x38,0x1D,0x88,0xCF,0x60,0x00"):
+        assert s in SRC
+    assert "*SPIDER_GAME_QUIT_FLAG=1u;" in SRC
+    assert "game-native quit requested flag=1" in SRC
+    assert "memcmp(SPIDER_NATIVE_QUIT_SETTER,game_quit_set_signature,7)" in SRC
+    assert "memcmp(SPIDER_NATIVE_QUIT_CHECK,game_quit_check_signature,6)" in SRC
+    assert "PostMessageA(hwnd,WM_CLOSE,0,0)" not in SRC
+    for forbidden in ("TerminateProcess(", "ExitProcess(", "DestroyWindow(",
+                      "PostQuitMessage(", "SendInput(", "SetWindowsHookEx("):
         assert forbidden not in SRC
-    assert "QuickExitF12" in HDR
 
 
 def test_external_windows_watcher_verifies_exit_without_forcing_termination():
@@ -62,7 +65,7 @@ def test_external_windows_watcher_verifies_exit_without_forcing_termination():
     assert "Get-Process -Id $pidToWatch" in script
     assert 'Get-Process -Name "SpideyPC"' in script
     assert "Get-WinEvent -FilterHashtable" in script
-    assert "QUICK-EXIT-F12: F12 pressed in foreground; WM_CLOSE posted" in script
+    assert "QUICK-EXIT-F12: game-native quit requested flag=1" in script
     assert "OS-owned process memory and handles are released" in script
     assert "this does not prove that every native COM object was explicitly released" in script
     assert "Stop-Process" not in script
@@ -110,33 +113,16 @@ def test_bink_intro_exit_uses_original_cleanup_not_window_destruction():
     assert "DISABLED: native F12/Bink call signatures unavailable" in SRC
 
 
-def test_f12_movie_guard_requires_real_video_frame_quiet_even_when_native_flag_zero():
-    # Regression: original SPIDER_INTRO_ACTIVE can read zero while video/audio
-    # are still playing; the old code destroyed HWND and orphaned Bink.
+def test_bink_safe_native_exit_and_video_frame_observation():
     assert "void SpiderQuickExitF12_ObserveMovieFrame(void)" in HDR
-    assert "void SpiderQuickExitF12_ObserveMovieFrame(void)" in SRC
-    assert "InterlockedExchange(&intro_last_movie_blt_ms,(LONG)GetTickCount());" in SRC
-    assert "InterlockedIncrement(&intro_movie_blt_count);" in SRC
     assert "SpiderQuickExitF12_ObserveMovieFrame();" in CORE
-    start=CORE.index("if(SUCCEEDED(hr) && f9_movie_present && source)")
-    assert CORE.index("SpiderQuickExitF12_ObserveMovieFrame();",start) < CORE.index("if(source!=f9_movie_source)",start)
-    assert "BOOL seen_movie=movie_frame_recent(now,1500u);" in SRC
-    assert "if(seen_movie||native_active)" in SRC
-    assert "!movie_frame_recent(now,600u)" in SRC
-    assert "InterlockedCompareExchange(&intro_abort_seen,0,0)==1" in SRC
-    assert "*SPIDER_INTRO_ACTIVE==0u" in SRC
-    assert "WM_CLOSE SUPPRESSED" in SRC
-    assert "WM_CLOSE allowed" in SRC
-
-
-def test_close_only_after_native_video_completion_or_when_no_active_movie():
-    start = SRC.index("if(seen_movie||native_active)")
-    quiet = SRC.index("!movie_frame_recent(now,600u)",start)
-    posted = SRC.index("if(PostMessageA(hwnd,WM_CLOSE,0,0))",quiet)
-    assert start < quiet < posted
+    assert "InterlockedIncrement(&intro_movie_blt_count);" in SRC
     assert "InterlockedExchange(&intro_abort_requested,1);" in SRC
-    assert "native movie tick returned completion" in SRC
-    assert "game window destroyed; verify process exit independently" in SRC
-    assert "BinkClose(" not in SRC
-    assert "TerminateProcess(" not in SRC
-    assert "ExitProcess(" not in SRC
+    assert "*SPIDER_GAME_QUIT_FLAG=1u;" in SRC
+    assert "BOOL movie=movie_frame_recent(now,1500u)" in SRC
+    assert "native movie frames stopped; waiting for game's Quit cleanup" in SRC
+    assert "window kept intact, NO WM_CLOSE" in SRC
+    assert "return 0; /* original game now jumps to 0x00470871 cleanup */" in SRC
+    assert "native_f12_suppress_unsafe_window_close()" in SRC
+    assert "native_f12_restore();" in SRC
+    assert "if(PostMessageA(hwnd,WM_CLOSE,0,0))" not in SRC
