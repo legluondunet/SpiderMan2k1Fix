@@ -165,7 +165,7 @@ def test_menu_screenshot_captures_only_rendered_menu_before_present_and_clear():
     assert "f9_capture_completed_menu_flip(count,f9_still_ready);" in flip
     assert flip.index("f9_capture_completed_menu_flip(count,f9_still_ready);") < flip.index(
         "hr=original_blt(self,&rc,present_source,NULL,DDBLT_WAIT,NULL);")
-    assert flip.index("f9_capture_completed_menu_flip(count,permitted);") < flip.index(
+    assert flip.index("f9_capture_completed_menu_flip(count,f9_still_ready);") < flip.index(
         "cleared=original_blt(back,NULL,NULL,NULL,DDBLT_COLORFILL|DDBLT_WAIT,&fill);")
     assert "if(!rendered_menu)return;" in capture
     assert "flip-requested>120" in capture
