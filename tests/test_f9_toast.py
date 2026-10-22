@@ -22,7 +22,7 @@ def test_screenshot_confirmation_is_english_and_includes_full_path():
     assert 'L"\\\\' not in TOAST or "toast_wrap_path" in TOAST
     assert "toast_wrap_path(" in TOAST
     assert "DrawTextW(" not in TOAST  # No truncating label/path drawing
-    assert "SPIDER_F9_TOAST_MS 3500u" in TOAST
+    assert "SPIDER_F9_TOAST_MS 2500u" in TOAST
 
 
 def test_confirmation_published_only_after_image_is_actually_saved():
