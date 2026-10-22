@@ -167,15 +167,40 @@ But F12 must not merely write the global request 7 or call the
 menu's destructor out of context. Native mode exit and final program
 exit are distinct phases; both need Windows validation.
 
-**Read-only probe added (no new executable hook):** The existing
-DirectDraw Flip diagnostic records only whether these global objects
-exist: `pause_ctx` for `[0x00682950]`, `pause_options` for
-`[0x00682968]`, `pause_restart` for `[0x00682960]`.
-It **never dereferences menu objects**, alters selections, or
-calls native cleanup. Snapshots log on a boolean change or five-second
-heartbeat. A test with gameplay paused, selecting **quit to main
-menu**, then returning to the menu should establish the real lifetime
-of these objects.
+**Diagnostic probe update after Windows build #496:** The uploaded
+`SpiderMan2k1Fix(20261022-175550).log` shows genuine 3D gameplay
+(renderer2d=0 and HUD), return to menu rendering, native pending
+request `7` during that transition, followed by a successful call
+to the already proven native menu Quit action 18. Yet
+`pause_ctx=0`, `pause_options=0`, `pause_restart=0` at **every
+DirectDraw Flip snapshot**, including the 3D frames. These
+snapshots **cannot confirm or rule out** that a pause selection occurred:
+the native owner can create/use/free its objects between Flip calls;
+moreover, request 7 has several separate writer sites.
+
+To resolve this ambiguity, the new diagnostic installs a
+**signature-checked pass-through CALL wrapper** at `0x00455549`
+(original `E8 F2 66 02 00`) on the *game's own thread*.
+The wrapper invokes the original `0x0047BC40` exactly once and
+observes **only** entry, native request before/after, and object
+presence before/after. It never chooses the menu item, writes the
+transition request, sends keyboard input, or invokes native
+destructors itself.
+
+Expected log markers **only if the actual native pause owner executes**:
+
+```text
+QUICK-EXIT-F12: NATIVE-PAUSE owner ENTER n=1 ...
+QUICK-EXIT-F12: NATIVE-PAUSE owner EXIT n=... native request 7 from pause; ctx=0 options=0
+```
+
+If these are absent despite the menu visually appearing, the
+`0x0047BC40` owner was not reached, the game uses another pause
+path, or the logger missed the call. The values are diagnostic,
+**not proof of full-process shutdown**. F12 during 3D remains disabled
+pending separate user tests. Unlike the Flip sampler, this test
+does add one signature-verified native instruction patch and
+therefore must be regression-tested before merging.
 
 ### Practical consequence for game-mode-specific F12
 
