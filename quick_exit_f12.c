@@ -24,6 +24,8 @@
 
 #define SPIDER_NATIVE_F12_POST ((BYTE *)(uintptr_t)0x00515373u)
 #define SPIDER_MENU_SELECTOR_CALL ((BYTE *)(uintptr_t)0x004A202Fu)
+#define SPIDER_MENU_LOOP_READ_CALL ((BYTE *)(uintptr_t)0x004A1A26u)
+#define SPIDER_MENU_LOOP_READ_PTR ((const volatile DWORD *)(uintptr_t)0x006B4CA0u)
 #define SPIDER_MENU_SELECTOR ((int (__cdecl *)(int))(uintptr_t)0x00493990u)
 #define SPIDER_MENU_QUIT_CASE ((const BYTE *)(uintptr_t)0x004A238Au)
 #define SPIDER_MENU_QUIT_CLEANUP_CALL ((const BYTE *)(uintptr_t)0x004A2391u)
@@ -32,6 +34,13 @@
 static const BYTE native_f12_original[6]={0xFF,0x15,0x70,0xB1,0x53,0x00};
 static const BYTE native_f12_bypass[6]={0x83,0xC4,0x10,0x90,0x90,0x90};
 static const BYTE menu_selector_original[5]={0xE8,0x5C,0x19,0xFF,0xFF};
+/* The original 0x004A1A26 MOV EAX,[0x006B4CA0] is followed by
+ * CMP EAX,EDI / JA 0x004A1A36, the menu loop's own teardown path.
+ * Replace only that MOV with a cdecl CALL returning the same EAX by
+ * default; on F12 return 0xffffffff to take the native exit branch.
+ * No global engine pointers, menu resources or WndProc are mutated. */
+static const BYTE menu_loop_read_original[5]={0xA1,0xA0,0x4C,0x6B,0x00};
+static const BYTE menu_loop_exit_compare_signature[4]={0x3B,0xC7,0x77,0x07};
 static const BYTE menu_quit_case_signature[7]={0xC6,0x05,0x88,0xCF,0x60,0x00,0x01};
 static const BYTE menu_quit_cleanup_signature[5]={0xE8,0xEA,0xB4,0xFE,0xFF};
 static const BYTE top_level_check_signature[6]={0x38,0x1D,0x88,0xCF,0x60,0x00};
@@ -42,6 +51,8 @@ static const BYTE top_level_check_signature[6]={0x38,0x1D,0x88,0xCF,0x60,0x00};
 static volatile LONG enabled=0;
 static volatile LONG menu_quit_pending=0;
 static volatile LONG menu_quit_delivered=0;
+static volatile LONG menu_quit_armed=0;
+static volatile LONG menu_quit_arm_ms=0;
 static volatile LONG movie_last_frame_at=0;
 static volatile LONG movie_frame_count=0;
 static PVOID volatile game_hwnd=NULL;
@@ -65,13 +76,34 @@ void SpiderQuickExitF12_ObserveMovieFrame(void) {
   InterlockedIncrement(&movie_frame_count);
 }
 
-/* Called by the game's EXISTING native menu command dispatcher.
- * Never call the native mode/resource cleanup ourselves. */
+/* Executed on the real menu game thread, once per native menu frame.
+ * Preserve its exact MOV semantics when F12 is not pending. By returning
+ * UINT32_MAX (larger than the real menu sentinel in EDI), we let the
+ * original JA perform all of the menu's normal teardown before Quit. */
+static DWORD __cdecl hooked_menu_loop_exit_read(void) {
+  DWORD original=*SPIDER_MENU_LOOP_READ_PTR;
+  if(InterlockedCompareExchange(&menu_quit_pending,0,1)==1) {
+    InterlockedExchange(&menu_quit_arm_ms,(LONG)GetTickCount());
+    InterlockedExchange(&menu_quit_armed,1);
+    say("QUICK-EXIT-F12: native MENU loop exit branch requested on game thread");
+    return 0xFFFFFFFFu;
+  }
+  return original;
+}
+
+/* Called AFTER the menu's own cleanup has returned, on the game thread.
+ * The original menu selector runs first unless our F12 request is armed. */
 static int __cdecl hooked_native_menu_selection(int argument) {
   int selected=SPIDER_MENU_SELECTOR(argument);
-  if(InterlockedCompareExchange(&menu_quit_pending,0,1)==1) {
+  if(InterlockedCompareExchange(&menu_quit_armed,0,1)==1) {
+    DWORD age=(DWORD)(GetTickCount()-
+                       (DWORD)InterlockedCompareExchange(&menu_quit_arm_ms,0,0));
+    if(age>15000u) {
+      say("QUICK-EXIT-F12: abandoned stale native menu Quit after 15s");
+      return selected;
+    }
     InterlockedExchange(&menu_quit_delivered,1);
-    say("QUICK-EXIT-F12: native MENU Quit command 18 delivered on game thread");
+    say("QUICK-EXIT-F12: native MENU Quit command 18 delivered on game thread after native menu cleanup");
     return SPIDER_MENU_QUIT_ID;
   }
   return selected;
@@ -98,6 +130,15 @@ static void restore_native_f12_close(void) {
       native_f12_bypass,native_f12_original,sizeof(native_f12_original));
 }
 
+static void restore_menu_loop_read(void) {
+  BYTE *site=SPIDER_MENU_LOOP_READ_CALL;
+  DWORD old_protect,ignored;
+  if(!VirtualProtect(site,5,PAGE_EXECUTE_READWRITE,&old_protect))return;
+  memcpy(site,menu_loop_read_original,5);
+  FlushInstructionCache(GetCurrentProcess(),site,5);
+  VirtualProtect(site,5,old_protect,&ignored);
+}
+
 static void restore_menu_dispatcher(void) {
   BYTE *site=SPIDER_MENU_SELECTOR_CALL;
   DWORD old_protect,ignored;
@@ -107,17 +148,26 @@ static void restore_menu_dispatcher(void) {
   VirtualProtect(site,5,old_protect,&ignored);
 }
 
-static int install_menu_dispatcher(void) {
-  intptr_t disp=(intptr_t)(void *)hooked_native_menu_selection-
-                (intptr_t)(SPIDER_MENU_SELECTOR_CALL+5);
+static int install_rel32_call(BYTE *site,const BYTE expected[5],
+                              const void *callback) {
+  intptr_t disp=(intptr_t)callback-(intptr_t)(site+5);
   int32_t relative;
   BYTE patched[5];
   if(disp<(intptr_t)INT32_MIN || disp>(intptr_t)INT32_MAX)return 0;
   relative=(int32_t)disp;
   patched[0]=0xE8;
-  memcpy(patched+1,&relative,sizeof(relative));
-  return replace_exact_bytes(SPIDER_MENU_SELECTOR_CALL,
-                             menu_selector_original,patched,5);
+  memcpy(patched+1,&relative,4);
+  return replace_exact_bytes(site,expected,patched,5);
+}
+
+static int install_menu_dispatcher(void) {
+  return install_rel32_call(SPIDER_MENU_SELECTOR_CALL,
+     menu_selector_original,(const void *)hooked_native_menu_selection);
+}
+
+static int install_menu_loop_read(void) {
+  return install_rel32_call(SPIDER_MENU_LOOP_READ_CALL,
+     menu_loop_read_original,(const void *)hooked_menu_loop_exit_read);
 }
 
 static DWORD WINAPI quick_exit_f12_thread(LPVOID unused) {
@@ -145,13 +195,22 @@ static DWORD WINAPI quick_exit_f12_thread(LPVOID unused) {
         InterlockedExchange(&menu_quit_pending,1);
         say("QUICK-EXIT-F12: waiting up to 1.2s for native menu command dispatcher");
         for(;;) {
-          if(InterlockedCompareExchange(&menu_quit_delivered,0,0)==1)break;
+          if(InterlockedCompareExchange(&menu_quit_armed,0,0)==1)break;
           if((DWORD)(GetTickCount()-begun)>=SPIDER_F12_DISPATCH_TIMEOUT_MS)break;
           Sleep(20);
         }
         InterlockedExchange(&menu_quit_pending,0);
-        if(InterlockedCompareExchange(&menu_quit_delivered,0,0)==0)
-          say("QUICK-EXIT-F12: native menu dispatcher not reached; F12 safely ignored outside menu");
+        if(InterlockedCompareExchange(&menu_quit_armed,0,0)==1) {
+          DWORD cleanup_begin=GetTickCount();
+          say("QUICK-EXIT-F12: native MENU loop exited; awaiting native Quit dispatch after cleanup");
+          while(InterlockedCompareExchange(&menu_quit_delivered,0,0)==0 &&
+                (DWORD)(GetTickCount()-cleanup_begin)<15000u)
+            Sleep(20);
+          if(InterlockedCompareExchange(&menu_quit_delivered,0,0)==0)
+            say("QUICK-EXIT-F12: WARNING menu Quit not dispatched within 15s; no forced shutdown");
+        } else {
+          say("QUICK-EXIT-F12: menu loop not reached; F12 safely ignored outside menu");
+        }
       }
     }
     Sleep(25);
@@ -188,6 +247,8 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   }
   if(memcmp(SPIDER_NATIVE_F12_POST,native_f12_original,6) ||
      memcmp(SPIDER_MENU_SELECTOR_CALL,menu_selector_original,5) ||
+     memcmp(SPIDER_MENU_LOOP_READ_CALL,menu_loop_read_original,5) ||
+     memcmp(SPIDER_MENU_LOOP_READ_CALL+5,menu_loop_exit_compare_signature,4) ||
      memcmp(SPIDER_MENU_QUIT_CASE,menu_quit_case_signature,7) ||
      memcmp(SPIDER_MENU_QUIT_CLEANUP_CALL,menu_quit_cleanup_signature,5) ||
      memcmp(SPIDER_TOPLEVEL_QUIT_CHECK,top_level_check_signature,6)) {
@@ -200,7 +261,13 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     say("QUICK-EXIT-F12: disabled: native menu selector hook failed");
     return;
   }
+  if(!install_menu_loop_read()) {
+    restore_menu_dispatcher();
+    say("QUICK-EXIT-F12: disabled: native menu loop MOV hook failed");
+    return;
+  }
   if(!suppress_native_f12_close()) {
+    restore_menu_loop_read();
     restore_menu_dispatcher();
     say("QUICK-EXIT-F12: disabled: native F12 suppression failed");
     return;
@@ -210,10 +277,11 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   if(!thread) {
     InterlockedExchange(&enabled,0);
     restore_native_f12_close();
+    restore_menu_loop_read();
     restore_menu_dispatcher();
     say("QUICK-EXIT-F12: disabled: key watcher thread creation failed");
     return;
   }
   CloseHandle(thread);
-  say("QUICK-EXIT-F12: experimental native MENU Quit dispatcher enabled; 3D/comics not supported yet");
+  say("QUICK-EXIT-F12: experimental native MENU loop-exit and Quit dispatch installed; 3D/comics not supported");
 }
