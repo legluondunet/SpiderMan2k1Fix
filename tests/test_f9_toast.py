@@ -74,3 +74,16 @@ def test_existing_game_hooks_and_png_image_bytes_unchanged():
     assert "maybe_correct_adaptive_hud(" in CORE
     assert "memcpy(job->pixels+(SIZE_T)y*row_bytes," in ENC
     assert "CreateThread(NULL,0,spider_png_thread,job,0,NULL)" in ENC
+
+
+def test_failed_png_is_reported_and_final_file_is_verified():
+    assert "SpiderF9Toast_PublishError" in HEADER
+    assert 'L"Screenshot failed:"' in TOAST
+    assert "spider_png_verify(dest)" in ENC
+    assert "GetFileSizeEx(f,&length)" in ENC
+    assert "ReadFile(f,prefix,sizeof(prefix),&got,NULL)" in ENC
+    assert "SpiderF9Toast_PublishSavedPath(dest);" in ENC
+    assert ENC.index("spider_png_verify(dest)") < ENC.index("SpiderF9Toast_PublishSavedPath(dest);")
+    assert "DeleteFileW(dest);" in ENC
+    assert 'L"Access denied while saving PNG"' in ENC
+    assert 'L"Disk full while saving PNG"' in ENC
