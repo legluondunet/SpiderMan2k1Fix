@@ -396,10 +396,13 @@ static DWORD WINAPI toast_popup_thread(LPVOID arg) {
   wc.hInstance=instance;
   wc.lpszClassName=classname;
   if(!RegisterClassW(&wc) && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS)goto end;
+  /* The game thread may stop pumping all messages while a BD page is
+   * static. Do NOT make the popup owned by the game HWND: cross-thread
+   * owner/window notifications can delay window destruction. */
   popup=CreateWindowExW(WS_EX_LAYERED|WS_EX_TRANSPARENT|
         WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW|WS_EX_TOPMOST,
         classname,L"",WS_POPUP,game_rect.left,game_rect.top,size.cx,size.cy,
-        game,NULL,instance,NULL);
+        NULL,NULL,instance,NULL); /* never own game HWND across threads */
   if(!popup)goto end;
   pos.x=game_rect.left;pos.y=game_rect.top;
   if(!UpdateLayeredWindow(popup,screen,&pos,&size,mem,&src,0,&blend,ULW_ALPHA))
