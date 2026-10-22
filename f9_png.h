@@ -10,5 +10,7 @@
  * Returns 1 if queued, 0 if skipped/failed. Never takes ownership of
  * the locked surface or changes its pixels. */
 int SpiderF9PNG_Queue(const DDSURFACEDESC2 *frame,void (*log_fn)(const char *));
+/* Same pixels and encoder; carries static comic context through worker. */
+int SpiderF9PNG_QueueComic(const DDSURFACEDESC2 *frame,void (*log_fn)(const char *));
 
 #endif
