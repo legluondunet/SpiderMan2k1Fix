@@ -72,6 +72,12 @@
 #define SPIDER_PAUSE_CONTEXT ((const volatile DWORD *)(uintptr_t)0x00682950u)
 #define SPIDER_PAUSE_OPTION_MENU ((const volatile DWORD *)(uintptr_t)0x00682968u)
 #define SPIDER_PAUSE_RESTART_MENU ((const volatile DWORD *)(uintptr_t)0x00682960u)
+/* Original gameplay update CALL at 0x455549 (the only control-flow gate
+ * to the game-owned pause option handler 0x47BC40). Its 5-byte encoding
+ * is checked before a PASSIVE wrapper is installed. No synthetic menu
+ * item selection, no input injection, no native cleanup from our thread. */
+#define SPIDER_NATIVE_PAUSE_CALL ((BYTE *)(uintptr_t)0x00455549u)
+#define SPIDER_NATIVE_PAUSE_HANDLER ((void (__cdecl *)(void))(uintptr_t)0x0047BC40u)
 
 static const BYTE native_f12_original[6]={0xFF,0x15,0x70,0xB1,0x53,0x00};
 static const BYTE native_f12_bypass[6]={0x83,0xC4,0x10,0x90,0x90,0x90};
@@ -81,6 +87,7 @@ static const BYTE intro_tick_call_original_1[5]={0xE8,0x7E,0xAD,0x09,0x00};
 static const BYTE intro_tick_call_original_2[5]={0xE8,0x3C,0xAD,0x09,0x00};
 static const BYTE post_intro_cleanup_original[5]={0xE8,0xA8,0xDD,0xFE,0xFF};
 static const BYTE top_level_native_quit_test_original[6]={0x38,0x1D,0x88,0xCF,0x60,0x00};
+static const BYTE native_pause_call_original[5]={0xE8,0xF2,0x66,0x02,0x00};
 
 static volatile LONG enabled=0;
 static volatile LONG pending=0;
@@ -96,6 +103,8 @@ static volatile LONG intro_native_quit_forwarded=0;
 /* Limit automatic movie->Quit handoff to the FOUR startup clips,
  * never to later Bink videos during comics or gameplay. */
 static volatile LONG real_main_menu_seen=0;
+static volatile LONG pause_native_invocations=0;
+static volatile LONG pause_native_requested7=0;
 static PVOID volatile game_hwnd=NULL;
 static void (*logger)(const char *)=NULL;
 
@@ -175,6 +184,49 @@ void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,
     (long)pause_restart,(long)menu_recent,(long)movie_recent,(long)menu_seen,
     (long)intro_requested,(long)forwarded);
   say(line);
+}
+
+/* Diagnostic wrapper for the EXACT ORIGINAL pause-owner call.
+ * The executable's game update only calls 0x47BC40 when native
+ * [0x682950] is set. A DirectDraw Flip snapshot may miss its entire
+ * lifecycle if game-owned pause objects are created/released between
+ * frames, so observe entry and return on the GAME THREAD instead.
+ *
+ * NEVER mutate selection, request code, pause objects or the HWND.
+ * Always run the original handler once with the same no-arg ABI.
+ * The caller ignores EAX and calls 0x458940 immediately afterward. */
+static void __cdecl spider_observe_native_pause_handler(void) {
+  LONG n=InterlockedIncrement(&pause_native_invocations);
+  DWORD before_mode=*SPIDER_ENGINE_MODE;
+  DWORD before_ctx=*SPIDER_PAUSE_CONTEXT;
+  DWORD before_opts=*SPIDER_PAUSE_OPTION_MENU;
+  DWORD after_mode,after_ctx,after_opts;
+  char line[240];
+  if(n==1) {
+    snprintf(line,sizeof(line),
+      "QUICK-EXIT-F12: NATIVE-PAUSE owner ENTER n=%ld ctx=%lu options=%lu request=%lu",
+      (long)n,(unsigned long)(before_ctx!=0u),
+      (unsigned long)(before_opts!=0u),(unsigned long)before_mode);
+    say(line);
+  }
+  SPIDER_NATIVE_PAUSE_HANDLER();
+  after_mode=*SPIDER_ENGINE_MODE;
+  after_ctx=*SPIDER_PAUSE_CONTEXT;
+  after_opts=*SPIDER_PAUSE_OPTION_MENU;
+  if(after_mode==7u && before_mode!=7u) {
+    InterlockedIncrement(&pause_native_requested7);
+    snprintf(line,sizeof(line),
+      "QUICK-EXIT-F12: NATIVE-PAUSE owner EXIT n=%ld native request 7 from pause; ctx=%lu options=%lu",
+      (long)n,(unsigned long)(after_ctx!=0u),
+      (unsigned long)(after_opts!=0u));
+    say(line);
+  } else if(before_ctx!=0u && after_ctx==0u) {
+    snprintf(line,sizeof(line),
+      "QUICK-EXIT-F12: NATIVE-PAUSE owner EXIT n=%ld context cleared; request=%lu options=%lu",
+      (long)n,(unsigned long)after_mode,
+      (unsigned long)(after_opts!=0u));
+    say(line);
+  }
 }
 
 /* Native BinkFrame tick wrapper, called by the game thread at the two
@@ -325,6 +377,17 @@ static int install_intro_tick_hooks(void) {
   return 1;
 }
 
+static int install_passive_pause_probe(void) {
+  return patch_native_call(SPIDER_NATIVE_PAUSE_CALL,
+                           native_pause_call_original,
+                           (const void *)spider_observe_native_pause_handler);
+}
+
+static void restore_passive_pause_probe(void) {
+  restore_intro_tick_call(SPIDER_NATIVE_PAUSE_CALL,
+                          native_pause_call_original);
+}
+
 static int install_post_intro_checkpoint(void) {
   return patch_native_call(SPIDER_AFTER_INTRO_CLEANUP_CALL,
                            post_intro_cleanup_original,
@@ -428,6 +491,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
      memcmp(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1,5)!=0 ||
      memcmp(SPIDER_INTRO_TICK_CALL_2,intro_tick_call_original_2,5)!=0 ||
      memcmp(SPIDER_AFTER_INTRO_CLEANUP_CALL,post_intro_cleanup_original,5)!=0 ||
+     memcmp(SPIDER_NATIVE_PAUSE_CALL,native_pause_call_original,5)!=0 ||
      memcmp(SPIDER_TOPLEVEL_NATIVE_QUIT_TEST,
             top_level_native_quit_test_original,6)!=0 ||
      memcmp(SPIDER_SHELL_MENU_QUIT_RETURN,
@@ -451,7 +515,15 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     say("QUICK-EXIT-F12: DISABLED: native post-intro cleanup hook could not be installed");
     return;
   }
+  if(!install_passive_pause_probe()) {
+    restore_post_intro_checkpoint();
+    restore_intro_tick_hooks();
+    restore_original_menu_tick();
+    say("QUICK-EXIT-F12: WARNING: native pause probe not installed; F12 remains disabled for safety");
+    return;
+  }
   if(!suppress_unsafe_native_f12()) {
+    restore_passive_pause_probe();
     restore_post_intro_checkpoint();
     restore_intro_tick_hooks();
     restore_original_menu_tick();
@@ -462,6 +534,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   thread=CreateThread(NULL,0,f12_input_thread,NULL,0,NULL);
   if(!thread) {
     InterlockedExchange(&enabled,0);
+    restore_passive_pause_probe();
     restore_post_intro_checkpoint();
     restore_intro_tick_hooks();
     restore_original_menu_tick();
@@ -469,5 +542,5 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     return;
   }
   CloseHandle(thread);
-  say("QUICK-EXIT-F12: main-menu native Quit validated; intro Bink->transition cleanup->top-level engine Quit armed; comic/3D unsupported");
+  say("QUICK-EXIT-F12: main-menu native Quit validated; passive 3D pause-owner call probe installed; F12 in comic/3D unsupported");
 }
