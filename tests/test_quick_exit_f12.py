@@ -67,7 +67,7 @@ def test_foreground_key_detection_and_movie_to_native_quit_handoff():
     assert "GetForegroundWindow()==hwnd" in SRC
     assert "previously_down=TRUE;" in SRC
     assert "Sleep(25);" in SRC
-    assert "REAL Shell_MainMenu not active; F12 safely ignored" in SRC
+    assert "REAL Shell_MainMenu or startup movie not active; F12 safely ignored" in SRC
     assert "intro movie exit requested; native Bink cleanup then real Shell_MainMenu Quit" in SRC
     assert "F12 queued for REAL Shell_MainMenu" in SRC
     assert "InterlockedExchange(&pending,1);" in SRC
@@ -151,3 +151,11 @@ def test_intro_calls_are_signature_checked_and_install_rollbacks_complete():
     assert "if(!install_intro_tick_hooks())" in SRC
     assert "restore_intro_tick_hooks();" in SRC
     assert "FlushInstructionCache(GetCurrentProcess(),site,5);" in SRC
+
+
+def test_only_initial_four_movies_can_trigger_deferred_quit():
+    assert "static volatile LONG real_main_menu_seen=0;" in SRC
+    assert "InterlockedExchange(&real_main_menu_seen,1);" in SRC
+    assert "InterlockedCompareExchange(&real_main_menu_seen,0,0)==0" in SRC
+    assert "if(menu_time && (DWORD)(now-(DWORD)menu_time)<=400u)" in SRC
+    assert SRC.index("if(menu_time && (DWORD)(now-(DWORD)menu_time)<=400u)") < SRC.index("InterlockedCompareExchange(&real_main_menu_seen,0,0)==0")
