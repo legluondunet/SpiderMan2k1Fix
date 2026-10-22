@@ -2195,6 +2195,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
     f9_capture_completed_menu_flip(count,f9_still_ready);
   }
   if(self==(void*)borderless_primary && borderless_back && original_blt) {
+      static DWORD last_toast_pub_log=0,last_toast_shown_log=0;
       RECT rc={borderless_monitor_x,borderless_monitor_y,
         borderless_monitor_x+(LONG)desktop_w,borderless_monitor_y+(LONG)desktop_h};
       IDirectDrawSurface7 *present_source=borderless_back;
@@ -2215,6 +2216,28 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
           char line[180];
           snprintf(line,sizeof(line),"BORDERLESS: primary Blt FAILED hr=0x%08lX (no exclusive fallback)",(unsigned long)hr);
           log_line(line);
+        }
+      }
+      /* Report first observed Flip and first ACTUAL onscreen presentation
+       * for a PNG notification. Comic stills may not Flip during 2.5s. */
+      if(debug_log_enabled && InterlockedCompareExchange(&f9_png_only_enabled,0,0)==1) {
+        DWORD published=0,displayed=0;
+        SpiderF9Toast_GetDisplayStatus(&published,&displayed);
+        if(published && published!=last_toast_pub_log) {
+          char msg[160];
+          snprintf(msg,sizeof(msg),
+            "F9-TOAST: generation=%lu first subsequent Flip=%ld painted=%d",
+            (unsigned long)published,(long)count,displayed==published);
+          log_line(msg);
+          last_toast_pub_log=published;
+        }
+        if(displayed && displayed!=last_toast_shown_log) {
+          char msg[150];
+          snprintf(msg,sizeof(msg),
+            "F9-TOAST: generation=%lu FIRST displayed at Flip=%ld",
+            (unsigned long)displayed,(long)count);
+          log_line(msg);
+          last_toast_shown_log=displayed;
         }
       }
       /* One DirectDraw Blt above includes the notice when active. Never
