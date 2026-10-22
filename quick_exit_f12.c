@@ -57,6 +57,12 @@
 #define SPIDER_AFTER_INTRO_CLEANUP ((void (__cdecl *)(int))(uintptr_t)0x00443AD0u)
 #define SPIDER_GAME_QUIT_FLAG ((volatile BYTE *)(uintptr_t)0x0060CF88u)
 #define SPIDER_TOPLEVEL_NATIVE_QUIT_TEST ((const BYTE *)(uintptr_t)0x00455E50u)
+/* Top-level dispatch state is observed, never written, from the already
+ * installed IDirectDraw7::Flip hook. These are fixed BSS addresses of the
+ * SHA-gated 2001 executable; mode labels require runtime correlation. */
+#define SPIDER_ENGINE_MODE ((const volatile DWORD *)(uintptr_t)0x0060CFA4u)
+#define SPIDER_ENGINE_ASYNC_STATE ((const volatile DWORD *)(uintptr_t)0x006B4C9Cu)
+#define SPIDER_ENGINE_TASK ((const volatile DWORD *)(uintptr_t)0x0054A510u)
 
 static const BYTE native_f12_original[6]={0xFF,0x15,0x70,0xB1,0x53,0x00};
 static const BYTE native_f12_bypass[6]={0x83,0xC4,0x10,0x90,0x90,0x90};
@@ -98,6 +104,41 @@ void SpiderQuickExitF12_AttachWindow(HWND hwnd) {
 
 void SpiderQuickExitF12_ObserveMovieFrame(void) {
   InterlockedExchange(&last_movie_frame_ms,(LONG)GetTickCount());
+}
+
+/* Read-only stage discovery on the existing game rendering thread.
+ * No new native code hook, object access, VTable edits, or control writes.
+ * Throttle to mode/quit/async transitions and a five-second heartbeat.
+ * Useful for correlating static startup screens, comic mode and 3D with
+ * real top-level switch 0x455F24. Opt-in QuickExitF12=1 only. */
+void SpiderQuickExitF12_ObserveEngineState(LONG flip_index) {
+  static LONG previous_mode=-1,previous_quit=-1,previous_async=-1;
+  static DWORD last_snapshot=0;
+  DWORD now,mode,async,task;
+  LONG quit,menu_seen,intro_requested,forwarded;
+  char line[280];
+  if(!SpiderQuickExitF12_Enabled())return;
+  now=GetTickCount();
+  mode=*SPIDER_ENGINE_MODE;
+  async=*SPIDER_ENGINE_ASYNC_STATE;
+  task=*SPIDER_ENGINE_TASK;
+  quit=(LONG)*SPIDER_GAME_QUIT_FLAG;
+  if(previous_mode==(LONG)mode && previous_quit==quit &&
+     previous_async==(LONG)async && last_snapshot &&
+     (DWORD)(now-last_snapshot)<5000u)return;
+  previous_mode=(LONG)mode;
+  previous_quit=quit;
+  previous_async=(LONG)async;
+  last_snapshot=now;
+  menu_seen=InterlockedCompareExchange(&real_main_menu_seen,0,0);
+  intro_requested=InterlockedCompareExchange(&intro_quit_pending,0,0);
+  forwarded=InterlockedCompareExchange(&intro_native_quit_forwarded,0,0);
+  snprintf(line,sizeof(line),
+    "QUICK-EXIT-F12: ENGINE-STATE flip=%ld mode=%lu async=%lu task=%lu quit=%ld menu_seen=%ld intro_request=%ld intro_forwarded=%ld",
+    (long)flip_index,(unsigned long)mode,(unsigned long)async,
+    (unsigned long)task,(long)quit,(long)menu_seen,
+    (long)intro_requested,(long)forwarded);
+  say(line);
 }
 
 /* Native BinkFrame tick wrapper, called by the game thread at the two
