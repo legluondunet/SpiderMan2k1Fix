@@ -75,9 +75,15 @@ def test_thread_safe_success_expiration_and_no_window_focus_intrusion():
     assert "ReleaseSRWLockShared(&toast_mutex)" in TOAST
     assert "(LONG)(expires-GetTickCount())>0" in TOAST
     assert "GetForegroundWindow()!=window" in TOAST
-    assert "CreateWindow" not in TOAST
+    assert "WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW|WS_EX_TOPMOST" in TOAST
+    assert "WS_EX_LAYERED|WS_EX_TRANSPARENT" in TOAST
+    assert "toast_popup_thread(" in TOAST
+    assert "toast_displayed_generation!=gen" in TOAST
+    assert "GetForegroundWindow()!=game" in TOAST
+    assert "UpdateLayeredWindow(" in TOAST
+    assert "DestroyWindow(popup)" in TOAST
     assert "GetAsyncKeyState" not in TOAST
-    assert "SetWindowPos" not in TOAST
+    assert "SWP_NOACTIVATE|SWP_SHOWWINDOW" in TOAST
     assert "f9_toast.c" in BUILD
 
 
@@ -127,7 +133,7 @@ def test_pause_style_transparency_uses_rounded_alpha_blend_offscreen():
 
 
 def test_toast_timer_starts_on_first_actual_display_in_sparse_comic_scenes():
-    assert "#define SPIDER_F9_TOAST_MS 2500u" in TOAST
+    assert "#define SPIDER_F9_TOAST_MS 2000u" in TOAST
     assert "#define SPIDER_F9_TOAST_GRACE_MS 10000u" in TOAST
     assert "toast_published_at=GetTickCount();" in TOAST
     assert "toast_expires_at=0; /* No countdown before first actual presentation. */" in TOAST
@@ -140,11 +146,34 @@ def test_toast_timer_starts_on_first_actual_display_in_sparse_comic_scenes():
 
 
 def test_static_comic_fallback_does_not_modify_game_video_or_input_hooks():
-    assert "SpiderF9Toast_SetGameWindow(hwnd);" in CORE
-    assert "SpiderF9Toast_SetGameWindow(HWND hwnd);" in HEADER
+    assert "SpiderF9Toast_SetGameWindow(hwnd,log_line);" in CORE
+    assert "SpiderF9Toast_SetGameWindow(HWND hwnd,void (*logger)(const char*));" in HEADER
     assert "f9_comic_last_draw_tick" not in CORE
     assert "SpiderF9Toast_GetComposedPanel" not in CORE
     blt = CORE.split("static HRESULT WINAPI hooked_blt(", 1)[1].split(
         "/* The surface-creation hook remains responsible", 1)[0]
     assert "F9-TOAST-COMIC: PRIMARY Blt" not in blt
     assert "original_blt(self,&dest_panel,panel_stage" not in blt
+
+
+def test_no_flip_comic_toast_is_shown_without_directdraw_or_input_hooks():
+    assert "Sleep(delay_ms);" in TOAST
+    assert "const DWORD delay_ms=160u;" in TOAST
+    assert "toast_displayed_generation!=gen" in TOAST
+    assert "if(!ready || !game || !IsWindow(game) ||" in TOAST
+    assert "toast_popup_wndproc" in TOAST
+    assert "if(msg==WM_NCHITTEST)return HTTRANSPARENT;" in TOAST
+    assert "if(msg==WM_MOUSEACTIVATE)return MA_NOACTIVATE;" in TOAST
+    assert "WS_EX_LAYERED|WS_EX_TRANSPARENT" in TOAST
+    assert "UpdateLayeredWindow(" in TOAST
+    assert "SPIDER_F9_TOAST_MS 2000u" in TOAST
+    assert "toast_popup_generation" in TOAST
+    assert "if((DWORD)InterlockedCompareExchange(&toast_popup_generation,0,0)==generation)" in TOAST
+    assert "F9-TOAST-STATIC: generation=" in TOAST
+    popup = TOAST.split("static DWORD WINAPI toast_popup_thread(LPVOID arg) {",1)[1].split(
+        "IDirectDrawSurface7 *SpiderF9Toast_CompositeFrame(",1)[0]
+    assert "IDirectDrawSurface7" not in popup
+    assert "IDirectDrawSurface7_Lock" not in popup
+    assert "GetDC(NULL)" in popup
+    assert "CreateDIBSection(" in popup
+    assert "toast_draw_dc(mem," in popup
