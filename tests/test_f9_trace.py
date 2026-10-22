@@ -31,7 +31,8 @@ def test_surface_vtable_indices_and_callbacks():
     for slot, symbol in ((5, "hooked_blt"), (11, "hooked_flip"),
                          (12, "hooked_get_attached")):
         assert f"patched_surface_vtable[{slot}]=(void *){symbol};" in SRC
-    assert "if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1) {" in SRC
+    assert "if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1 ||" in SRC
+    assert "InterlockedCompareExchange(&f9_backbuffer_fix_enabled,0,0)==1) {" in SRC
 
 
 def test_f9_trace_passes_through_directdraw_calls():
