@@ -328,6 +328,20 @@ static volatile LONG flip_hook_mismatches=0;
 static HWND game_hwnd=NULL;
 static IDirectDrawSurface7 *borderless_primary=NULL; /* weak, game-owned */
 static IDirectDrawSurface7 *borderless_back=NULL; /* one owned reference */
+/* Most recent *decoded* DirectDraw source of an intro movie Blt. Video is
+ * presented AFTER Flip into PRIMARY, so PRIMARY-DC GDI readback is unreliable
+ * (magenta/purple frames under native Windows). Keep a game-thread-only COM
+ * reference to the decoded source and read it only on F9. */
+static IDirectDrawSurface7 *f9_movie_source=NULL;
+static volatile LONG f9_movie_last_flip=-10000;
+static void f9_movie_drop_source(void) {
+  if(f9_movie_source) {
+    IDirectDrawSurface7_Release(f9_movie_source);
+    f9_movie_source=NULL;
+  }
+  InterlockedExchange(&f9_movie_last_flip,-10000);
+}
+
 static LONG borderless_monitor_x=0,borderless_monitor_y=0;
 static volatile LONG borderless_present_failed=0;
 static volatile LONG borderless_legacy_mode_calls=0;
@@ -1263,6 +1277,7 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
   HRESULT hr; LONG count=InterlockedIncrement(&blt_count);
   RECT dest_mapped;
   LPRECT presented_dest=dest;
+  BOOL f9_movie_present=FALSE;
 
   /* Read-only native DirectDraw diagnostic for an uncorrected boss health
    * black rectangle. Some legacy UI layers may use a color-filled Blt
@@ -1332,6 +1347,7 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
        * opening-video presentation is nonetheless always 4:3. */
       borderless_intro_fill_black_bars(self,&dest_mapped);
       presented_dest=&dest_mapped;
+      f9_movie_present=TRUE;
       if (debug_log_enabled && (hits<=8 || hits%120==0 ||
           ((sd.dwWidth!=640 || sd.dwHeight!=480) && hits<=1024 && hits%30==0))) {
         char msg[260];
@@ -1352,6 +1368,17 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
     presented_dest=&dest_mapped;
   }
   hr=original_blt(self,presented_dest,source,source_rect,flags,fx);
+  /* Only retain surfaces actually presented as recognized intro video.
+   * Same game thread as F9; no worker accesses DirectDraw objects. */
+  if(SUCCEEDED(hr) && f9_movie_present && source) {
+    if(source!=f9_movie_source) {
+      IDirectDrawSurface7_AddRef(source);
+      if(f9_movie_source) IDirectDrawSurface7_Release(f9_movie_source);
+      f9_movie_source=source;
+    }
+    InterlockedExchange(&f9_movie_last_flip,
+                        InterlockedCompareExchange(&flip_count,0,0));
+  }
   if(debug_log_enabled && count<=24) {
     char line[100]; snprintf(line,sizeof(line),"DDRAW: Surface7::Blt result=0x%08lX",(unsigned long)hr); log_line(line);
   }
@@ -1656,6 +1683,145 @@ static int f9_capture_menu_presented_frame(void) {
   return 0;
 }
 
+/* Source-frame capture for intro FMVs only. A PRIMARY GetDC/BitBlt call
+ * can report success while returning purple pixels unrelated to the movie.
+ * Instead, obtain the decoded RGB pixels from the source of the latest
+ * successful native 4:3 media Blt. Convert RGB555/RGB565 or XRGB8888
+ * explicitly, fit the whole frame to the same 4:3 presentation rectangle,
+ * and pass it to the already-tested PNG writer. Do not touch gameplay,
+ * comics, menu GDI, DirectInput, PRIMARY pixels or Bink internals. */
+static BOOL f9_movie_prepare_mask(DWORD mask,unsigned *shift,DWORD *maxval) {
+  unsigned n=0;
+  DWORD v=mask;
+  if(!mask)return FALSE;
+  while((v&1u)==0 && n<32) {v>>=1; ++n;}
+  if(!v || (v&(v+1u))!=0)return FALSE; /* contiguous RGB mask */
+  *shift=n;
+  *maxval=v;
+  return TRUE;
+}
+static BYTE f9_movie_expand(DWORD pixel,DWORD mask,unsigned shift,DWORD maximum) {
+  DWORD component=(pixel&mask)>>shift;
+  return (BYTE)((component*255u+maximum/2u)/maximum);
+}
+/*  0: no current movie (use existing menu/BD capture);
+ *  1: decoded movie queued;
+ * -1: movie readback attempted but failed; never emit a false success. */
+static int f9_capture_decoded_movie_frame(void) {
+  IDirectDrawSurface7 *source=f9_movie_source;
+  DDSURFACEDESC2 sd,frame;
+  DWORD current_flip=(DWORD)InterlockedCompareExchange(&flip_count,0,0);
+  DWORD movie_flip=(DWORD)InterlockedCompareExchange(&f9_movie_last_flip,0,0);
+  DWORD rm,gm,bm,sw,sh,dw=desktop_w,dh=desktop_h;
+  unsigned rs,gs,bs,bpp,x,y;
+  DWORD rmax,gmax,bmax;
+  BYTE *pixels=NULL;
+  DWORD *output=NULL;
+  LONG dx=menu_map.left,dy=menu_map.top;
+  LONG vw=menu_map.right-menu_map.left,vh=menu_map.bottom-menu_map.top;
+  HRESULT hr,unlock_hr=DD_OK;
+  int queued=0,locked=0;
+  char msg[270];
+  if(!source || (current_flip-movie_flip)>8u)return 0;
+  if(dw>8192u || dh>8192u || dw<640u || dh<480u ||
+     vw<=0 || vh<=0 || dx<0 || dy<0 ||
+     dx+vw>(LONG)dw || dy+vh>(LONG)dh) {
+    log_line("F9-PNG-MOVIE: invalid displayed movie dimensions");
+    SpiderF9Toast_PublishError(L"Invalid movie screenshot geometry");
+    return -1;
+  }
+  memset(&sd,0,sizeof(sd));
+  sd.dwSize=sizeof(sd);
+  hr=IDirectDrawSurface7_Lock(source,NULL,&sd,
+                              DDLOCK_READONLY|DDLOCK_WAIT,NULL);
+  if(FAILED(hr)) {
+    snprintf(msg,sizeof(msg),"F9-PNG-MOVIE: decoder source Lock failed hr=0x%08lX",
+             (unsigned long)hr);
+    log_line(msg);
+    SpiderF9Toast_PublishError(L"Cannot read the decoded movie frame");
+    return -1;
+  }
+  locked=1;
+  sw=sd.dwWidth;sh=sd.dwHeight;
+  bpp=sd.ddpfPixelFormat.dwRGBBitCount;
+  rm=sd.ddpfPixelFormat.dwRBitMask;
+  gm=sd.ddpfPixelFormat.dwGBitMask;
+  bm=sd.ddpfPixelFormat.dwBBitMask;
+  snprintf(msg,sizeof(msg),
+    "F9-PNG-MOVIE: decoded source=%lux%lu bpp=%u pitch=%ld RGB=%08lX/%08lX/%08lX",
+    (unsigned long)sw,(unsigned long)sh,bpp,(long)sd.lPitch,
+    (unsigned long)rm,(unsigned long)gm,(unsigned long)bm);
+  log_line(msg);
+  if(!sd.lpSurface || !sw || !sh || sw>4096u || sh>4096u ||
+     (bpp!=16 && bpp!=32) ||
+     !(sd.ddpfPixelFormat.dwFlags&DDPF_RGB) ||
+     sd.lPitch<(LONG)(sw*(bpp/8u)) ||
+     (rm&gm) || (rm&bm) || (gm&bm) ||
+     !f9_movie_prepare_mask(rm,&rs,&rmax) ||
+     !f9_movie_prepare_mask(gm,&gs,&gmax) ||
+     !f9_movie_prepare_mask(bm,&bs,&bmax)) {
+    log_line("F9-PNG-MOVIE: unsupported decoded movie RGB pixel format");
+    SpiderF9Toast_PublishError(L"Unsupported decoded movie pixel format");
+    goto done;
+  }
+  pixels=(BYTE*)calloc((size_t)dw*(size_t)dh,4u);
+  if(!pixels) {
+    SpiderF9Toast_PublishError(L"Cannot allocate movie screenshot buffer");
+    goto done;
+  }
+  output=(DWORD*)pixels;
+  for(y=0;y<(unsigned)vh;y++) {
+    unsigned sy=(unsigned)(((unsigned long long)y*(unsigned long long)sh)/
+                            (unsigned long long)(unsigned)vh);
+    const BYTE *src=(const BYTE*)sd.lpSurface+(size_t)sy*(size_t)sd.lPitch;
+    DWORD *dst=output+(size_t)(dy+(LONG)y)*(size_t)dw+(size_t)dx;
+    for(x=0;x<(unsigned)vw;x++) {
+      unsigned sx=(unsigned)(((unsigned long long)x*(unsigned long long)sw)/
+                             (unsigned long long)(unsigned)vw);
+      DWORD pixel;
+      if(bpp==16) {
+        WORD rgb16;
+        memcpy(&rgb16,src+(size_t)sx*2u,sizeof(rgb16));
+        pixel=(DWORD)rgb16;
+      } else memcpy(&pixel,src+(size_t)sx*4u,sizeof(pixel));
+      dst[x]=((DWORD)f9_movie_expand(pixel,rm,rs,rmax)<<16) |
+             ((DWORD)f9_movie_expand(pixel,gm,gs,gmax)<<8) |
+              (DWORD)f9_movie_expand(pixel,bm,bs,bmax);
+    }
+  }
+done:
+  if(locked) {
+    unlock_hr=IDirectDrawSurface7_Unlock(source,NULL);
+    if(FAILED(unlock_hr)) {
+      snprintf(msg,sizeof(msg),"F9-PNG-MOVIE: source Unlock failed hr=0x%08lX",
+               (unsigned long)unlock_hr);
+      log_line(msg);
+      SpiderF9Toast_PublishError(L"Cannot release decoded movie pixels");
+    }
+  }
+  if(pixels && SUCCEEDED(unlock_hr)) {
+    memset(&frame,0,sizeof(frame));
+    frame.dwSize=sizeof(frame);
+    frame.dwFlags=DDSD_WIDTH|DDSD_HEIGHT|DDSD_PITCH|DDSD_PIXELFORMAT;
+    frame.dwWidth=dw;frame.dwHeight=dh;
+    frame.lPitch=(LONG)(dw*4u);
+    frame.lpSurface=pixels;
+    frame.ddpfPixelFormat.dwSize=sizeof(frame.ddpfPixelFormat);
+    frame.ddpfPixelFormat.dwFlags=DDPF_RGB;
+    frame.ddpfPixelFormat.dwRGBBitCount=32;
+    frame.ddpfPixelFormat.dwRBitMask=0x00ff0000u;
+    frame.ddpfPixelFormat.dwGBitMask=0x0000ff00u;
+    frame.ddpfPixelFormat.dwBBitMask=0x000000ffu;
+    queued=SpiderF9PNG_Queue(&frame,log_line);
+    snprintf(msg,sizeof(msg),
+      "F9-PNG-MOVIE: decoded RGB screenshot %lux%lu queued=%d [no PRIMARY-DC]",
+      (unsigned long)dw,(unsigned long)dh,queued);
+    log_line(msg);
+  }
+  if(pixels)free(pixels);
+  return queued?1:-1;
+}
+
 static void __cdecl hooked_f9_png_only(void) {
   IDirectDrawSurface7 *back;
   DDSURFACEDESC2 desc;
@@ -1671,7 +1837,10 @@ static void __cdecl hooked_f9_png_only(void) {
   /* During intro FMVs/menus, the 3D backbuffer is often entirely black
    * even when DirectDraw visibly presents a complete picture. */
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1) {
-    f9_capture_menu_presented_frame();
+    int movie=f9_capture_decoded_movie_frame();
+    if(movie==0) f9_capture_menu_presented_frame();
+    /* If a decoded movie was detected but unreadable, do not fall back
+     * to PRIMARY-DC: native GDI readback produced purple screenshots. */
     goto done;
   }
   back=borderless_back;
@@ -2392,6 +2561,7 @@ static HRESULT WINAPI hooked_mode(void *self,DWORD w,DWORD h,DWORD bpp,DWORD hz,
       log_line(line);
     }
     if (InterlockedExchange(&menu_upscale_active,0)==1) {
+        f9_movie_drop_source(); /* No retained intro decoder surface in 3D. */
         log_line("BORDERLESS: MENU exited; windowed gameplay presentation active");
     }
   }
