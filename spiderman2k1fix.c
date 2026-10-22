@@ -1562,22 +1562,21 @@ static void __cdecl hooked_f9_png_only(void) {
     return;
   }
   back=borderless_back;
-  if(!back || !original_surface_lock || !original_surface_unlock ||
-     desktop_w<640 || desktop_h<480) {
+  if(!back || desktop_w<640 || desktop_h<480) {
     log_line("F9-PNG-ONLY: no valid 3D backbuffer; PNG capture skipped");
     goto done;
   }
   IDirectDrawSurface7_AddRef(back);
   memset(&desc,0,sizeof(desc));
   desc.dwSize=sizeof(desc);
-  hr=original_surface_lock(back,NULL,&desc,
-                           DDLOCK_READONLY|DDLOCK_WAIT,NULL);
+  hr=IDirectDrawSurface7_Lock(back,NULL,&desc,
+                              DDLOCK_READONLY|DDLOCK_WAIT,NULL);
   if(SUCCEEDED(hr)) {
     /* SpiderF9PNG_Queue copies pixels synchronously. Its worker receives
      * only private memory, so the DirectDraw surface is unlocked before
      * any PNG compression and before continuing native gameplay. */
     queued=SpiderF9PNG_Queue(&desc,log_line);
-    unlock_hr=original_surface_unlock(back,NULL);
+    unlock_hr=IDirectDrawSurface7_Unlock(back,NULL);
     snprintf(msg,sizeof(msg),
       "F9-PNG-ONLY: backbuffer capture=%s %lux%lu Lock=OK Unlock=0x%08lX",
       queued?"queued":"skipped",
