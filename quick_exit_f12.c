@@ -98,6 +98,15 @@
 #define SPIDER_NATIVE_GAME_INPUT_TIMER_START ((const volatile DWORD *)(uintptr_t)0x005FAEDCu)
 #define SPIDER_NATIVE_GAME_CLEANUP_CALL ((BYTE *)(uintptr_t)0x00455BF9u)
 #define SPIDER_NATIVE_GAME_CLEANUP ((void (__cdecl *)(void))(uintptr_t)0x004302D0u)
+/* At top-level native request-7 dispatch 0x456185, AFTER owner-specific
+ * cleanup, the controller calls original 0x48A820 at 0x456198 then
+ * checks 0x2E0988C bit 2 and signed 0x568FB0. Neither is a universal
+ * Quit flag. This probe simply records which of those original
+ * conditions will return to startup loop or finish program cleanup. */
+#define SPIDER_NATIVE_CONTROLLER7_FINISH_CALL ((BYTE *)(uintptr_t)0x00456198u)
+#define SPIDER_NATIVE_CONTROLLER7_FINISH ((void (__cdecl *)(void))(uintptr_t)0x0048A820u)
+#define SPIDER_NATIVE_CONTROLLER7_EXIT_FLAGS ((const volatile BYTE *)(uintptr_t)0x02E0988Cu)
+#define SPIDER_NATIVE_CONTROLLER7_EXIT_STATUS ((const volatile LONG *)(uintptr_t)0x00568FB0u)
 
 static const BYTE native_f12_original[6]={0xFF,0x15,0x70,0xB1,0x53,0x00};
 static const BYTE native_f12_bypass[6]={0x83,0xC4,0x10,0x90,0x90,0x90};
@@ -110,6 +119,7 @@ static const BYTE top_level_native_quit_test_original[6]={0x38,0x1D,0x88,0xCF,0x
 static const BYTE native_pause_call_original[5]={0xE8,0xF2,0x66,0x02,0x00};
 static const BYTE native_game_input_call_original[5]={0xE8,0xB0,0xB9,0xFE,0xFF};
 static const BYTE native_game_cleanup_call_original[5]={0xE8,0xD2,0xA6,0xFD,0xFF};
+static const BYTE native_controller7_finish_call_original[5]={0xE8,0x83,0x46,0x03,0x00};
 
 static volatile LONG enabled=0;
 static volatile LONG pending=0;
@@ -130,6 +140,7 @@ static volatile LONG pause_native_requested7=0;
 static volatile LONG input_native_invocations=0;
 static volatile LONG input_native_requested7=0;
 static volatile LONG native_game_cleanup_count=0;
+static volatile LONG native_controller7_count=0;
 static PVOID volatile game_hwnd=NULL;
 static void (*logger)(const char *)=NULL;
 
@@ -333,6 +344,42 @@ static void __cdecl spider_observe_native_game_cleanup(void) {
   say(line);
 }
 
+/* Native controller request-7 checkpoint after all prior owner
+ * cleanup calls. The original 0x48A820 runs once, and the code's
+ * original test at 0x45619D will execute unmodified afterward.
+ * Merely record whether native bit-4 or signed status would send the
+ * controller to its COMMON final cleanup 0x45620C, or back to 0x455D98.
+ * No exit request, native global modification, or menu traversal. */
+static void __cdecl spider_observe_controller7_finish(void) {
+  LONG n=InterlockedIncrement(&native_controller7_count);
+  DWORD request=*SPIDER_ENGINE_MODE;
+  BYTE before_bit=*SPIDER_NATIVE_CONTROLLER7_EXIT_FLAGS;
+  LONG before_status=*SPIDER_NATIVE_CONTROLLER7_EXIT_STATUS;
+  BYTE after_bit;
+  LONG after_status;
+  char line[240];
+  if(request==7u) {
+    snprintf(line,sizeof(line),
+      "QUICK-EXIT-F12: CONTROLLER-7 native teardown ENTER n=%ld bit4=%u status=%ld 3D-checkpoint=%ld",
+      (long)n,(unsigned)((before_bit&4u)!=0u),
+      (long)before_status,
+      (long)InterlockedCompareExchange(&native_game_cleanup_count,0,0));
+    say(line);
+  }
+  SPIDER_NATIVE_CONTROLLER7_FINISH();
+  after_bit=*SPIDER_NATIVE_CONTROLLER7_EXIT_FLAGS;
+  after_status=*SPIDER_NATIVE_CONTROLLER7_EXIT_STATUS;
+  if(request==7u) {
+    const char *outcome=((after_bit&4u)!=0u||after_status>=0)
+                         ?"NATIVE-FINAL-CLEANUP":"RETURN-TO-CONTROLLER";
+    snprintf(line,sizeof(line),
+      "QUICK-EXIT-F12: CONTROLLER-7 native teardown COMPLETED n=%ld bit4=%u status=%ld outcome=%s",
+      (long)n,(unsigned)((after_bit&4u)!=0u),
+      (long)after_status,outcome);
+    say(line);
+  }
+}
+
 /* Native BinkFrame tick wrapper, called by the game thread at the two
  * original 0x470750 video-loop sites. False makes the owning caller
  * branch to 0x470871 and invoke original BinkClose, audio reset and
@@ -481,6 +528,17 @@ static int install_intro_tick_hooks(void) {
   return 1;
 }
 
+static int install_passive_controller7_probe(void) {
+  return patch_native_call(SPIDER_NATIVE_CONTROLLER7_FINISH_CALL,
+                           native_controller7_finish_call_original,
+                           (const void *)spider_observe_controller7_finish);
+}
+
+static void restore_passive_controller7_probe(void) {
+  restore_intro_tick_call(SPIDER_NATIVE_CONTROLLER7_FINISH_CALL,
+                          native_controller7_finish_call_original);
+}
+
 static int install_passive_game_cleanup_probe(void) {
   return patch_native_call(SPIDER_NATIVE_GAME_CLEANUP_CALL,
                            native_game_cleanup_call_original,
@@ -620,6 +678,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
      memcmp(SPIDER_NATIVE_PAUSE_CALL,native_pause_call_original,5)!=0 ||
      memcmp(SPIDER_NATIVE_GAME_INPUT_CALL,native_game_input_call_original,5)!=0 ||
      memcmp(SPIDER_NATIVE_GAME_CLEANUP_CALL,native_game_cleanup_call_original,5)!=0 ||
+     memcmp(SPIDER_NATIVE_CONTROLLER7_FINISH_CALL,native_controller7_finish_call_original,5)!=0 ||
      memcmp(SPIDER_TOPLEVEL_NATIVE_QUIT_TEST,
             top_level_native_quit_test_original,6)!=0 ||
      memcmp(SPIDER_SHELL_MENU_QUIT_RETURN,
@@ -667,7 +726,18 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     say("QUICK-EXIT-F12: DISABLED: passive native 3D cleanup probe could not be installed");
     return;
   }
+  if(!install_passive_controller7_probe()) {
+    restore_passive_game_cleanup_probe();
+    restore_passive_game_input_probe();
+    restore_passive_pause_probe();
+    restore_post_intro_checkpoint();
+    restore_intro_tick_hooks();
+    restore_original_menu_tick();
+    say("QUICK-EXIT-F12: DISABLED: native controller-7 gate probe could not be installed");
+    return;
+  }
   if(!suppress_unsafe_native_f12()) {
+    restore_passive_controller7_probe();
     restore_passive_game_cleanup_probe();
     restore_passive_game_input_probe();
     restore_passive_pause_probe();
@@ -681,6 +751,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   thread=CreateThread(NULL,0,f12_input_thread,NULL,0,NULL);
   if(!thread) {
     InterlockedExchange(&enabled,0);
+    restore_passive_controller7_probe();
     restore_passive_game_cleanup_probe();
     restore_passive_game_input_probe();
     restore_passive_pause_probe();
@@ -691,5 +762,5 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     return;
   }
   CloseHandle(thread);
-  say("QUICK-EXIT-F12: menu native Quit validated; passive 3D input, pause and cleanup probes installed; F12 in comic/3D unsupported");
+  say("QUICK-EXIT-F12: menu Quit validated; passive 3D owner + top-level controller-7 exit gate probes installed; comic/3D F12 unsupported");
 }
