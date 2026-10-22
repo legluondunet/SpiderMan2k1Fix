@@ -8,6 +8,8 @@
 /* Called only after the GDI+ PNG encoder has successfully published its
  * final image filename. The worker publishes data; the game thread draws. */
 void SpiderF9Toast_PublishSavedPath(const WCHAR *full_path);
+/* Comic screenshot notice uses a 2s independent window, never DirectDraw. */
+void SpiderF9Toast_PublishSavedPathComic(const WCHAR *full_path);
 /* Display a user-readable failure instead of a false saved confirmation. */
 void SpiderF9Toast_PublishError(const WCHAR *reason);
 
