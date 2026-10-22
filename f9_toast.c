@@ -14,6 +14,7 @@
 #define SPIDER_F9_TOAST_MAX_LINES 32
 static SRWLOCK toast_mutex=SRWLOCK_INIT;
 static WCHAR toast_path[MAX_PATH];
+static BOOL toast_success=TRUE;
 static DWORD toast_expires_at=0;
 
 void SpiderF9Toast_PublishSavedPath(const WCHAR *full_path) {
@@ -26,6 +27,19 @@ void SpiderF9Toast_PublishSavedPath(const WCHAR *full_path) {
   if(attrs==INVALID_FILE_ATTRIBUTES || (attrs&FILE_ATTRIBUTE_DIRECTORY))return;
   AcquireSRWLockExclusive(&toast_mutex);
   memcpy(toast_path,full_path,(len+1u)*sizeof(WCHAR));
+  toast_success=TRUE;
+  toast_expires_at=GetTickCount()+SPIDER_F9_TOAST_MS;
+  ReleaseSRWLockExclusive(&toast_mutex);
+}
+
+void SpiderF9Toast_PublishError(const WCHAR *reason) {
+  size_t len;
+  if(!reason)return;
+  len=wcslen(reason);
+  if(!len || len>=MAX_PATH)return;
+  AcquireSRWLockExclusive(&toast_mutex);
+  memcpy(toast_path,reason,(len+1u)*sizeof(WCHAR));
+  toast_success=FALSE;
   toast_expires_at=GetTickCount()+SPIDER_F9_TOAST_MS;
   ReleaseSRWLockExclusive(&toast_mutex);
 }
@@ -62,8 +76,10 @@ static int toast_wrap_path(HDC dc,const WCHAR *text,int width,
   return offset==total?lines:0;
 }
 
-static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path) {
-  static const WCHAR heading[]=L"Screenshot saved to:";
+static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success) {
+  static const WCHAR saved_heading[]=L"Screenshot saved to:";
+  static const WCHAR error_heading[]=L"Screenshot failed:";
+  const WCHAR *heading=success?saved_heading:error_heading;
   int font_px,pad,step,max_w,max_path_w,box_w,box_h;
   int starts[SPIDER_F9_TOAST_MAX_LINES],lengths[SPIDER_F9_TOAST_MAX_LINES];
   int lines,path_len,x,y,i;
@@ -90,7 +106,7 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path) {
   memset(&path_size,0,sizeof(path_size));
   path_len=(int)wcslen(path);
   if(path_len==0 || !GetTextExtentPoint32W(dc,heading,
-       (int)(sizeof(heading)/sizeof(heading[0])-1),&heading_size) ||
+       (int)wcslen(heading),&heading_size) ||
      !GetTextExtentPoint32W(dc,path,path_len,&path_size))goto restore_font;
   max_w=toast_min((int)w-24,(int)((w*7u)/10u));
   if(max_w<=2*pad+30)goto restore_font;
@@ -117,7 +133,7 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path) {
     RoundRect(dc,panel.left,panel.top,panel.right,panel.bottom,10,10);
     old_mode=SetBkMode(dc,TRANSPARENT);
     old_color=GetTextColor(dc);
-    SetTextColor(dc,RGB(242,205,124));
+    SetTextColor(dc,success?RGB(242,205,124):RGB(255,150,150));
     TextOutW(dc,x+pad,y+pad,heading,
              (int)(sizeof(heading)/sizeof(heading[0])-1));
     SetTextColor(dc,RGB(242,244,255));
@@ -143,11 +159,13 @@ BOOL SpiderF9Toast_DrawAfterPresent(IDirectDrawSurface7 *primary,
                                      HWND window,DWORD width,DWORD height) {
   WCHAR path[MAX_PATH];
   DWORD expires;
+  BOOL success;
   HDC dc=NULL;
   HRESULT hr=DDERR_INVALIDOBJECT;
   BOOL result;
   AcquireSRWLockShared(&toast_mutex);
   expires=toast_expires_at;
+  success=toast_success;
   if(expires && (LONG)(expires-GetTickCount())>0)
     memcpy(path,toast_path,sizeof(path));
   else path[0]=L'\0';
@@ -159,13 +177,13 @@ BOOL SpiderF9Toast_DrawAfterPresent(IDirectDrawSurface7 *primary,
    * primary HDC; use the visible game window HDC if unavailable. */
   if(primary)hr=IDirectDrawSurface7_GetDC(primary,&dc);
   if(SUCCEEDED(hr) && dc) {
-    result=toast_draw_dc(dc,width,height,path);
+    result=toast_draw_dc(dc,width,height,path,success);
     IDirectDrawSurface7_ReleaseDC(primary,dc);
     return result;
   }
   dc=GetDC(window);
   if(!dc)return FALSE;
-  result=toast_draw_dc(dc,width,height,path);
+  result=toast_draw_dc(dc,width,height,path,success);
   ReleaseDC(window,dc);
   return result;
 }
