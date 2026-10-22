@@ -170,3 +170,42 @@ def test_f9_menu_readback_uses_safe_top_down_32bpp_dib():
     assert "DeleteDC(memory_dc);" in part
     assert "IDirectDrawSurface7_Lock(borderless_primary" not in part
     assert "SpiderF9Toast_PublishError" in part
+
+
+def test_intro_movie_uses_decoded_blt_surface_not_broken_primary_gdi():
+    assert "static IDirectDrawSurface7 *f9_movie_source=NULL;" in CORE
+    assert "if(SUCCEEDED(hr) && f9_movie_present && source)" in CORE
+    assert "IDirectDrawSurface7_AddRef(source);" in CORE
+    assert "IDirectDrawSurface7_Release(f9_movie_source);" in CORE
+    assert "f9_movie_drop_source();" in CORE
+    assert "static int f9_capture_decoded_movie_frame(void)" in CORE
+    assert "IDirectDrawSurface7_Lock(source,NULL,&sd," in CORE
+    assert "IDirectDrawSurface7_Unlock(source,NULL)" in CORE
+    assert "F9-PNG-MOVIE: decoded source=" in CORE
+    assert "F9-PNG-MOVIE: decoded RGB screenshot" in CORE
+    dispatch = CORE.split("static void __cdecl hooked_f9_png_only(void)",1)[1].split(
+        "static void install_f9_png_only_dispatch(void)",1)[0]
+    assert "int movie=f9_capture_decoded_movie_frame();" in dispatch
+    assert "if(movie==0) f9_capture_menu_presented_frame();" in dispatch
+    assert "back=borderless_back;" in dispatch
+
+
+def test_intro_decoded_rgb_conversion_is_mask_aware_and_preserves_gameplay():
+    start = CORE.index("static int f9_capture_decoded_movie_frame(void)")
+    end = CORE.index("static void __cdecl hooked_f9_png_only(void)",start)
+    movie = CORE[start:end]
+    assert "bpp!=16 && bpp!=32" in movie
+    assert "DDPF_RGB" in movie
+    assert "f9_movie_prepare_mask(rm,&rs,&rmax)" in movie
+    assert "f9_movie_prepare_mask(gm,&gs,&gmax)" in movie
+    assert "f9_movie_prepare_mask(bm,&bs,&bmax)" in movie
+    assert "f9_movie_expand(pixel,rm,rs,rmax)" in movie
+    assert "f9_movie_expand(pixel,gm,gs,gmax)" in movie
+    assert "f9_movie_expand(pixel,bm,bs,bmax)" in movie
+    assert "menu_map.left" in movie and "menu_map.bottom" in movie
+    assert "calloc((size_t)dw*(size_t)dh,4u)" in movie
+    assert "SpiderF9PNG_Queue(&frame,log_line)" in movie
+    assert "free(pixels)" in movie
+    assert "f9_movie_last_flip" in movie
+    assert "if(!source || (current_flip-movie_flip)>8u)return 0;" in movie
+    assert 'L"Unsupported decoded movie pixel format"' in movie
