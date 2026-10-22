@@ -474,6 +474,9 @@ static volatile LONG media_native_blt_4x3_hits=0;
 /* New opt-in ONLY for native full-screen comic textures, no MENU changes. */
 static volatile LONG comic_native_aspect_enabled=0;
 static volatile LONG comic_native_aspect_matches=0;
+/* Last time the original game drew a fullscreen comic texture. We only
+ * protect F9 notification pixels from late PRIMARY Blts near that draw. */
+static volatile LONG f9_comic_last_draw_tick=0;
 static DWORD desktop_w=0, desktop_h=0;
 /* The INI's single resolution target. Display backends still require
  * native-run validation for every non-Auto monitor mode. */
@@ -972,6 +975,7 @@ static const void *maybe_correct_native_comic(void *device,D3DPRIMITIVETYPE type
        (unsigned)desktop_w,(unsigned)desktop_h)) return source;
   if(!SpiderComicNative_Transform((const SpiderMenuVertex*)source,copy,
                 (unsigned)count,(unsigned)desktop_w,(unsigned)desktop_h)) return source;
+  InterlockedExchange(&f9_comic_last_draw_tick,(LONG)GetTickCount());
   hit=InterlockedIncrement(&comic_native_aspect_matches);
   if(hit<=8 || hit%120==0) {
     char msg[286];
@@ -1368,6 +1372,37 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
     presented_dest=&dest_mapped;
   }
   hr=original_blt(self,presented_dest,source,source_rect,flags,fx);
+  /* Native comic artwork may issue one last DirectDraw Blt to PRIMARY
+   * AFTER the full-scene Flip. In that case the already composited F9
+   * notice could be overwritten despite the earlier FIRST-displayed log.
+   * Restore ONLY its rectangle (not the full old frame), with a single
+   * synchronous DirectDraw Blt, and do not touch the source backbuffer.
+   * Guard by a very recent confirmed comic drawing, an active F9 notice,
+   * and a PRIMARY destination: normal menu/video/gameplay paths unchanged. */
+  if(SUCCEEDED(hr) && self==(void*)borderless_primary &&
+     InterlockedCompareExchange(&f9_png_only_enabled,0,0)==1 &&
+     (DWORD)(GetTickCount()-
+       (DWORD)InterlockedCompareExchange(&f9_comic_last_draw_tick,0,0))
+        <5000u) {
+    IDirectDrawSurface7 *panel_stage=NULL;
+    RECT panel,dest_panel,overlap;
+    if(SpiderF9Toast_GetComposedPanel(&panel_stage,&panel)) {
+      dest_panel=panel;
+      OffsetRect(&dest_panel,borderless_monitor_x,borderless_monitor_y);
+      if(!presented_dest || IntersectRect(&overlap,presented_dest,&dest_panel)) {
+        HRESULT panel_hr=original_blt(self,&dest_panel,panel_stage,&panel,
+                                      DDBLT_WAIT,NULL);
+        if(debug_log_enabled && (count<=48 || count%120==0)) {
+          char info[190];
+          snprintf(info,sizeof(info),
+            "F9-TOAST-COMIC: PRIMARY Blt #%ld restored panel=%s hr=0x%08lX",
+            (long)count,SUCCEEDED(panel_hr)?"yes":"FAILED",
+            (unsigned long)panel_hr);
+          log_line(info);
+        }
+      }
+    }
+  }
   /* Only retain surfaces actually presented as recognized intro video.
    * Same game thread as F9; no worker accesses DirectDraw objects. */
   if(SUCCEEDED(hr) && f9_movie_present && source) {
