@@ -50,6 +50,8 @@ The supported `SpideyPC.exe` (SHA-256 `0a11a49f3f63d4bb15650f322d654553fc47234b0
 
 SpiderMan2k1Fix uses that **same native WM_CLOSE path**, changing only how the F12 press is detected in gameplay and during static scenes. The game's menu-level *Really quit?* choice is separate from the original F12 shortcut.
 
+**Opening-movie safety:** On the four Bink intro cinematics, the original key-to-`WM_CLOSE` sequence can destroy the window without interrupting the active video decoding loop. This patch checks two exact signature-gated native frame-tick CALL instructions in the verified 2001 EXE. If F12 is pressed during an intro, the native frame loop is first asked to complete; the game's original movie owner then executes its Bink cleanup and only after the movie-active flag clears does SpiderMan2k1Fix post `WM_CLOSE`. A timeout or signature mismatch never triggers a forced process termination. The behavior requires manual Windows testing; see the external verification below.
+
 To verify runtime shutdown rather than just a disappearing window, download [`tools/Verify-F12QuickExit.ps1`](tools/Verify-F12QuickExit.ps1) into your game folder, enable `[System] QuickExitF12=1` and `[Debug] Log=1`, and launch from Windows PowerShell:
 
 ```powershell
