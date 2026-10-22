@@ -190,7 +190,8 @@ def test_intro_movie_uses_decoded_blt_surface_not_broken_primary_gdi():
     dispatch = CORE.split("static void __cdecl hooked_f9_png_only(void)",1)[1].split(
         "static void install_f9_png_only_dispatch(void)",1)[0]
     assert "int movie=f9_capture_decoded_movie_frame();" in dispatch
-    assert "if(movie==0)" in dispatch\n    assert "InterlockedCompareExchange(&f9_menu_png_pending,1,0)==0" in dispatch
+    assert "if(movie==0)" in dispatch
+    assert "InterlockedCompareExchange(&f9_menu_png_pending,1,0)==0" in dispatch
     assert "back=borderless_back;" in dispatch
 
 
