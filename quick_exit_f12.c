@@ -268,7 +268,13 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
    * Missing [System] or QuickExitF12, including older INIs, means off. */
   GetPrivateProfileStringA("System","QuickExitF12","0",value,sizeof(value),ini);
   if(strcmp(value,"1")!=0) {
-    say("QUICK-EXIT-F12: disabled by default ([System] QuickExitF12=0)");
+    /* Optional feature is OFF: the original WM_KEYDOWN/F12 code can still
+     * reach WM_CLOSE during intro movies. Suppress just that exact native
+     * six-byte call, or F12 would remain partially active despite INI=0.
+     * This safe one-site change leaves all other keyboard paths alone. */
+    if(native_f12_suppress_unsafe_window_close())
+      say("QUICK-EXIT-F12: disabled; original unsafe F12 WM_CLOSE also suppressed");
+    else say("QUICK-EXIT-F12: WARNING disabled option, native F12 call signature unmatched");
     return;
   }
   /* All three patch points must match exact verified game bytes. */
