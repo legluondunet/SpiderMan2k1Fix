@@ -627,6 +627,55 @@ def test_intro_transition_runs_original_cleanup_before_setting_native_quit():
     assert "InterlockedExchange(&intro_native_quit_forwarded,1);" in checkpoint
 
 
+
+def test_opening_movie_single_f12_survives_bypassed_quit_test_by_native_still_handoff():
+    """Windows #589: quit=1 after four Binks, but original startup
+    branches can BYPASS 0x455E50 and advance to the first still.
+    The *same* F12 must carry into native still cleanup when opted in.
+    Do not manufacture another keypress or bypass original page owners.
+    """
+    begin=SRC.index("static void __cdecl spider_after_intro_cleanup(int mode)")
+    end=SRC.index("/* Wrapper for ORIGINAL 0x4A1896 input check",begin)
+    checkpoint=SRC[begin:end]
+    assert "0x455DC8 / 0x455DD0" in checkpoint
+    assert "0x455E50" in checkpoint
+    assert checkpoint.index("SPIDER_AFTER_INTRO_CLEANUP(mode);") < checkpoint.index(
+        "post_intro_cleanup_seen,1,0")
+    assert checkpoint.index("post_intro_cleanup_seen,1,0") < checkpoint.index(
+        "intro_quit_pending,0,0")
+    assert checkpoint.index("*SPIDER_GAME_QUIT_FLAG=1u;") < checkpoint.index(
+        "intro_still_exit_state,1,0")
+    for guard in (
+        "SpiderQuickExitF12_Enabled()",
+        "intro_still_opt_in,0,0)==1",
+        "intro_still_hook_installed,0,0)==1",
+        "real_main_menu_seen,0,0)==0",
+        "intro_still_exit_state,0,0)==0",
+    ):
+        assert guard in checkpoint
+    assert "InterlockedExchange(&intro_still_request_ms,(LONG)GetTickCount());" in checkpoint
+    assert "InterlockedCompareExchange(&intro_still_exit_state,1,0)==0" in checkpoint
+    assert "INTRO-MOVIE single F12 carried into original timed/input-wait still cleanup" in checkpoint
+
+    native_input=SRC[SRC.index("static BYTE __cdecl spider_f12_intro_still_native_input("):
+                     SRC.index("/* Returns nonzero ONLY",begin)]
+    assert "SPIDER_INTRO_STILL_NATIVE_INPUT(mask,arg1,arg2)" in native_input
+    assert "intro_still_exit_state,2,1" in native_input
+    assert "InterlockedExchange(&pending,1);" in native_input
+    assert "return 1;" in native_input
+    assert "INTRO-STILL native page owner returned; original Shell_MainMenu Quit now activated" in SRC
+
+    watchdog=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
+                 SRC.index("void SpiderQuickExitF12_Init(")]
+    assert "(DWORD)(GetTickCount()-start)>15000u" in watchdog
+    assert "intro_still_exit_state,0,state" in watchdog
+    assert "if(state==2)InterlockedExchange(&pending,0);" in watchdog
+    for forbidden in ("ExitProcess(", "TerminateProcess(", "DestroyWindow(",
+                      "PostMessageA(", "SendInput(", "keybd_event(",
+                      "BinkClose("):
+        assert forbidden not in checkpoint
+
+
 def test_intro_exit_is_not_consumed_on_early_shell_main_menu_splash():
     cb=SRC[SRC.index("int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void)"):
            SRC.index("/* x86 stack at entry")]
