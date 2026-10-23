@@ -1,8 +1,8 @@
-"""Constrain the opt-in F9 PNG prototype without claiming BMP suppression.
+"""Regression checks for the two separately opted-in F9 PNG modes.
 
-The confirmed Windows fix used the game's own F9 Lock at RVA 0x1034D4.
-The first PNG stage clones the backbuffer pixels to private memory, then
-writes a lossless PNG on a worker using only Win32's built-in GDI+ DLL.
+Dual-format comparison retains the original BMP. PNG-only redirects both
+SHA-verified native F9 calls and does not invoke the BMP writer. Both use
+copied pixels and an independent Win32 GDI+ encoder worker.
 """
 from pathlib import Path
 
@@ -68,7 +68,7 @@ def test_filename_and_failure_safety():
     assert "if(!saved)" in ENC
 
 
-def test_first_stage_must_not_pretend_legacy_bmp_is_suppressed():
+def test_dual_format_comparison_still_retains_original_bmp():
     assert "original BMP retained during test" in CORE
     assert "original_surface_lock(back,rect,desc,flags,event)" in CORE
     assert "original_surface_unlock(back,rect)" in CORE
@@ -228,3 +228,13 @@ def test_static_comic_context_follows_each_png_job_without_changing_encoder():
     assert "return spider_png_queue_internal(frame,log_fn,TRUE);" in ENC
     assert "if(MoveFileExW(temp,dest,MOVEFILE_WRITE_THROUGH))" in ENC
     assert "spider_png_verify(dest)" in ENC
+
+def test_readme_reports_wine_png_only_validation_without_claiming_windows():
+    readme=(ROOT/"README.md").read_text(encoding="utf-8")
+    section=readme.split("### Optional native F9-to-PNG screenshots",1)[1]
+    section=section.split("### Native Windows 11: experimental F9 screenshot repair",1)[0]
+    assert "build #717" in section
+    assert "scrn0010.png" in section
+    assert "disabled by default" in section
+    assert "Windows 11" in section
+    assert "not" in section.lower()

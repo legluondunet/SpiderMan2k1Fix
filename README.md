@@ -321,7 +321,7 @@ When testing the current development build, set `DirectInputReacquire=1` and `Pa
 
 Try the original `AspectRatio=4:3` mode to help isolate widescreen-specific problems. Some edge-of-screen 3D rendering issues and audio artifacts are still being investigated; see the roadmap below.
 
-### Experimental native F9-to-PNG screenshots — PR #25
+### Optional native F9-to-PNG screenshots
 
 The original game detects F9 via DirectInput. In the supported SHA-256
 verified executable, its screenshot writer lives at RVA `0x001033E0`.
@@ -330,7 +330,7 @@ verified executable, its screenshot writer lives at RVA `0x001033E0`.
 disassembling the user's exact `SpideyPC.exe` (1,507,328 bytes). Both
 calls follow the game's own F9 polling and 500-ms repeat limit.
 
-Our **second-stage experimental PNG-only mode** replaces just those two
+The **opt-in PNG-only mode** replaces just those two
 5-byte x86 `CALL rel32` instructions after verifying their original
 bytes. It leaves the native DirectInput polling, sound, debounce,
 gameplay, and UI code unchanged. When F9 fires, SpiderMan2k1Fix locks
@@ -340,8 +340,7 @@ PNG on a worker thread through Windows/Wine GDI+ (loaded dynamically).
 Only `scrnNNNN.png` is created; the original BMP routine is **never
 called** while both PNG-only hooks are installed successfully.
 
-**Test PNG-only (Windows 11 and then Wine) using matching DLLs
-from the latest draft PR #25 build:**
+**Enable PNG-only mode** (using both matching DLLs from one build):
 
 1. Back up both DLLs, set `[Debug] Log=1` in the INI, and launch with:
 
@@ -369,17 +368,29 @@ from the latest draft PR #25 build:**
    `Remove-Item Env:SPIDERMAN2K1FIX_F9_PNG_ONLY -ErrorAction SilentlyContinue`.
 
 **Safety:** signature mismatch or protection failure leaves both
-original F9 calls intact. The mode is disabled by default; this is
-still an unmerged experiment. Only the supported EXE SHA-256 may be
+original F9 calls intact. The mode stays **disabled by default** and
+must be explicitly enabled through the environment variable shown
+above, with `[Debug] Log=1`. Only the supported EXE SHA-256 may be
 patched. No global keyboard or COM DirectInput vtable hooks are added.
+
+**Validation:** tested under Wine using PR #25's build #717.
+The user confirmed successful PNG-only captures of four opening Bink
+videos, three menu screens, a static comic page, and three 3D scenes,
+all at 1920×1080. The log records `scrn0000.png` through
+`scrn0010.png` saved, with screenshot notifications displayed and
+no capture errors. Enter on the final Bink movie also preserved the
+first 3D cinematic with the F10-independent release safeguard.
+No new BMP file was reported, although the log alone is not a
+filesystem audit. This does **not** constitute native Windows 11
+validation of the PNG-only replacement or every DirectDraw driver.
 
 **Original dual-format comparison test remains available** by setting
 `SPIDERMAN2K1FIX_F9_PNG=1` (not `PNG_ONLY`) with `Log=1`. It
 captures the same real backbuffer to PNG while letting the game write
 its original BMP for pixel comparison. The Windows 11 dual-format test
 previously found **99.9977% RGB-identical pixels** in a 1920x1200
-capture, correctly oriented, with intact HUD. The original magenta-BMP
-fix is maintained separately in PR #24. No new external codec
+capture, correctly oriented, with intact HUD. The earlier magenta-BMP
+research and optional fix remain documented separately in PR #24. No new external codec
 install is needed on normal Windows or Wine installations.
 
 ### Native Windows 11: experimental F9 screenshot repair

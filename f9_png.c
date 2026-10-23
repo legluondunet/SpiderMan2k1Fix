@@ -1,12 +1,13 @@
-/* SpiderMan2k1Fix native lossless screenshot prototype.
+/* SpiderMan2k1Fix F9 lossless PNG encoder.
  * No external image package or imported gdiplus dependency at startup:
  * Win32 GDI+ flat functions are resolved dynamically on the encoder thread.
  * The DirectDraw surface is NEVER accessed by this worker.
  *
- * Experimental: this first pass deliberately preserves the old BMP output,
- * to verify correct color/orientation and Wine interoperability BEFORE the
- * native game's BMP routine is disabled by a separately signature-verified
- * game patch. Do not claim the old F9 BMP has been suppressed yet.
+ * Two independent opt-ins share this encoder:
+ * - F9_PNG: compare PNG output alongside the original native BMP writer.
+ * - F9_PNG_ONLY: redirect both SHA-verified native F9 dispatch CALLs to
+ *   backbuffer readback; suppress the old BMP writer when hooks succeed.
+ * The caller handles native hooks, the original F9 debounce and Lock/Unlock.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
