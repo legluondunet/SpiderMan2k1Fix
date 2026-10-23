@@ -89,7 +89,7 @@ def test_f9_trace_keeps_gameplay_fix_and_pause_unchanged():
         "if (!supported_exe()) {",
     ):
         assert part in SRC
-    assert "F9-TRACE: opt-in native screenshot readback observation armed" in SRC
+    assert "F9-TRACE: optional native screenshot readback observation armed" in SRC
     assert "F9-TRACE: F9 key pressed; readback trace window OPEN" in SRC
 
 def test_historical_backbuffer_readback_path_remains_inactive():

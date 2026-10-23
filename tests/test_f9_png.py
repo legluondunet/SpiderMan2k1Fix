@@ -118,7 +118,7 @@ def test_png_only_bypasses_original_bmp_without_touching_unrelated_game_code():
     assert '0x0010A1DCu' in patch and '0x0010A62Bu' in patch
     assert '0x001033E0' in CORE or '0x1033E0' in CORE
     assert 'only those 5-byte CALL operands' in CORE
-    assert 'legacy BMP writer bypassed' in CORE
+    assert 'native BMP bypassed' in CORE
     assert 'IDirectDrawSurface7_Lock(back' in CORE
     assert 'VirtualProtect(p[0],5,previous[0],&ignored)' in CORE
     assert 'VirtualProtect(p[1],5,previous[1],&ignored)' in CORE
