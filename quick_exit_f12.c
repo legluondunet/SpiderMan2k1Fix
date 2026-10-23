@@ -192,6 +192,10 @@ static volatile LONG post_intro_cleanup_seen=0;
 /* Separate experimental intro-still F12 route. 0 idle, 1 pending,
  * 2 native input-wait finished, 3 original Shell_MainMenu Quit. */
 static volatile LONG intro_still_opt_in=0;
+/* [Debug] F12TestMode=1: F12 pre-menu -> NORMAL main menu, in 3D ->
+ * existing native controller-7 final exit. OFF by default. The older
+ * F12 Quit behavior remains intact when this debug mode is OFF. */
+static volatile LONG debug_f12_test_mode=0;
 static volatile LONG intro_still_exit_state=0;
 static volatile LONG intro_still_request_ms=0;
 static volatile LONG intro_still_hook_installed=0;
@@ -816,7 +820,21 @@ static void __cdecl spider_after_intro_cleanup(int mode) {
   if(InterlockedCompareExchange(&post_intro_cleanup_seen,1,0)==0 &&
      InterlockedCompareExchange(&static_screen_trace_enabled,0,0)==1)
     say("QUICK-EXIT-F12: STARTUP-STATIC-PROBE original four-movie transition cleanup 0x455D23 completed [READ-ONLY]");
-  if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1) {
+  if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1 &&
+     InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {
+    /* The initial F12 is a menu SKIP, not a Quit request. The original
+     * four Bink owners and 0x443AD0 have already cleaned up. Leave the
+     * game Quit byte untouched. Complete the native timed still normally,
+     * then finish input-wait via its verified 0x4A18AE native teardown. */
+    if(InterlockedCompareExchange(&intro_still_opt_in,0,0)==1 &&
+       InterlockedCompareExchange(&intro_still_hook_installed,0,0)==1 &&
+       InterlockedCompareExchange(&real_main_menu_seen,0,0)==0 &&
+       InterlockedCompareExchange(&intro_still_exit_state,0,0)==0) {
+      InterlockedExchange(&intro_still_request_ms,(LONG)GetTickCount());
+      if(InterlockedCompareExchange(&intro_still_exit_state,1,0)==0)
+        say("QUICK-EXIT-F12: DEBUG-MENU-SKIP opening Bink cleanup completed; F12 routed into original timed/input-wait pages (NO QUIT)");
+    }
+  } else if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1) {
     /* Original x86 0x455D23 -> 0x455E50 is NOT unconditional:
      * branches at 0x455DC8 / 0x455DD0 may skip the 0x455E50
      * Quit-byte comparison entirely. Windows #589 showed quit=1
@@ -873,9 +891,15 @@ static BYTE __cdecl spider_f12_intro_still_native_input(
        InterlockedCompareExchange(&intro_still_exit_state,2,1)==1) {
       /* Only the original REAL Shell_MainMenu frame may consume this
        * request; it follows this page's own resource/SEH teardown. */
-      InterlockedExchange(&delivered,0);
-      InterlockedExchange(&pending,1);
-      say("QUICK-EXIT-F12: INTRO-STILL original input-wait owner 0x4A1896 verified; normal TRUE completion for 0x4A18AE native page cleanup; menu Quit queued [EXPERIMENTAL]");
+      if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {
+        /* Do not queue real-menu Quit. The original input-wait owner
+         * destroys its resources before original Shell_MainMenu runs. */
+        say("QUICK-EXIT-F12: DEBUG-MENU-SKIP original 0x4A1896 input-wait TRUE completion; 0x4A18AE page cleanup, main menu allowed (NO QUIT)");
+      } else {
+        InterlockedExchange(&delivered,0);
+        InterlockedExchange(&pending,1);
+        say("QUICK-EXIT-F12: INTRO-STILL original input-wait owner 0x4A1896 verified; normal TRUE completion for 0x4A18AE native page cleanup; menu Quit queued [EXPERIMENTAL]");
+      }
       return 1;
     }
   }
@@ -892,6 +916,11 @@ int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void) {
   InterlockedExchange(&real_main_menu_seen,1);
   if(n==1)
     say("QUICK-EXIT-F12: REAL Shell_MainMenu frame callback observed (0x493DD6)");
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {
+    if(InterlockedCompareExchange(&intro_still_exit_state,3,2)==2)
+      say("QUICK-EXIT-F12: DEBUG-MENU-SKIP real Shell_MainMenu reached, input-wait page cleaned, no native Quit action");
+    return 0;
+  }
   /* Intentionally do NOT consume intro_quit_pending here: this callback
    * also runs around the two pre-menu static images. The intro exit
    * goes through the top-level native Quit check (0x455E50), after
@@ -1120,7 +1149,41 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
       LONG menu_time=InterlockedCompareExchange(&last_menu_frame_ms,0,0);
       LONG movie_time=InterlockedCompareExchange(&last_movie_frame_ms,0,0);
       previously_down=TRUE;
-      if(InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 &&
+      if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {
+        if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==0 &&
+           InterlockedCompareExchange(&post_intro_cleanup_seen,0,0)==1 &&
+           *SPIDER_GAME_BINK_ACTIVE==0u &&
+           *SPIDER_BINK_VIDEO_HANDLE==0u &&
+           *SPIDER_TRACE_MENU_CONTEXT!=0u &&
+           *SPIDER_TRACE_TIMED_PAGE_ONCE==1u &&
+           *SPIDER_ENGINE_MODE==0u) {
+          /* Native first timed page finishes normally. The original
+           * second-page input-wait owner then completes without Quit. */
+          if(InterlockedCompareExchange(&intro_still_exit_state,0,0)==0) {
+            InterlockedExchange(&intro_still_request_ms,(LONG)now);
+            if(InterlockedCompareExchange(&intro_still_exit_state,1,0)==0)
+              say("QUICK-EXIT-F12: DEBUG-MENU-SKIP F12 on startup still; awaiting game-owned page completion (NO QUIT)");
+          }
+        } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==0 &&
+                  ((movie_time && (DWORD)(now-(DWORD)movie_time)<750u) ||
+                   *SPIDER_GAME_BINK_ACTIVE!=0u)) {
+          if(InterlockedCompareExchange(&intro_quit_pending,1,0)==0)
+            say("QUICK-EXIT-F12: DEBUG-MENU-SKIP F12 in opening Bink; native video cleanup then main menu (NO QUIT)");
+        } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
+                  InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
+                  *SPIDER_ENGINE_MODE==0u &&
+                  *SPIDER_GAME_BINK_ACTIVE==0u &&
+                  *SPIDER_BINK_VIDEO_HANDLE==0u &&
+                  InterlockedCompareExchange(&last_native_game_input_ms,0,0)!=0 &&
+                  (DWORD)(now-(DWORD)InterlockedCompareExchange(&last_native_game_input_ms,0,0))<350u &&
+                  InterlockedCompareExchange(&last_game3d_flip_ms,0,0)!=0 &&
+                  (DWORD)(now-(DWORD)InterlockedCompareExchange(&last_game3d_flip_ms,0,0))<350u) {
+          if(InterlockedCompareExchange(&game3d_exit_state,1,0)==0)
+            say("QUICK-EXIT-F12: DEBUG-3D-EXIT native gameplay exit queued; waiting for original controller-7 cleanup");
+        } else {
+          say("QUICK-EXIT-F12: DEBUG F12 ignored outside pre-menu and active 3D gameplay");
+        }
+      } else if(InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 &&
                 InterlockedCompareExchange(&postmovie_opt_in,0,0)==1 &&
                 InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
                 InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
@@ -1234,6 +1297,13 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   memcpy(ini,exe,(size_t)(slash-exe)+1);
   strcpy(ini+(slash-exe)+1,"SpiderMan2k1Fix.ini");
   GetPrivateProfileStringA("System","QuickExitF12","0",val,sizeof(val),ini);
+  if(GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1) {
+    /* One diagnostic switch is sufficient: retain the proven native
+     * hook setup without requiring any legacy System F12 option. */
+    InterlockedExchange(&debug_f12_test_mode,1);
+    strcpy(val,"1");
+    say("QUICK-EXIT-F12: [Debug] F12TestMode=1 — pre-menu F12 to main menu, 3D F12 native exit; overrides old F12 behavior [EXPERIMENTAL]");
+  }
   memset(trace,0,sizeof(trace));
   if(GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
      GetEnvironmentVariableA("SPIDERMAN2K1FIX_F12_PARENT_TRACE",
@@ -1253,7 +1323,8 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   /* Separate extra opt-in for risky native gameplay shutdown prototype.
    * Enabling QuickExitF12 alone retains the previous menu/Bink behavior. */
   InterlockedExchange(&experimental_game3d_enabled,
-    GetPrivateProfileIntA("System","ExperimentalQuickExitF12In3D",0,ini)==1 ? 1 : 0);
+    (InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 ||
+     GetPrivateProfileIntA("System","ExperimentalQuickExitF12In3D",0,ini)==1) ? 1 : 0);
   memset(movie_trial,0,sizeof(movie_trial));
   /* The explicit INI options make tested Wine installations easier
    * to configure. Keep the original one-process environment switches
@@ -1280,8 +1351,9 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     say("QUICK-EXIT-F12: COMIC F12 deferred-to-Bink experiment armed (12s timeout; comic native timing unchanged) [EXPERIMENTAL; NOT YET WINDOWS-VALIDATED]");
   }
   if(strcmp(val,"1")==0 &&
-     GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
-     GetPrivateProfileIntA("System","ExperimentalQuickExitF12InIntroStills",0,ini)==1) {
+     (InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 ||
+      (GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
+       GetPrivateProfileIntA("System","ExperimentalQuickExitF12InIntroStills",0,ini)==1))) {
     InterlockedExchange(&intro_still_opt_in,1);
     say("QUICK-EXIT-F12: INTRO-STILL F12 opt-in enabled (exact 0x4A1896 native owner; Windows/Wine UNVALIDATED)");
   }
@@ -1366,7 +1438,12 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   if(InterlockedCompareExchange(&intro_still_opt_in,0,0)==1 &&
      !install_intro_still_input_hook()) {
     InterlockedExchange(&intro_still_opt_in,0);
-    say("QUICK-EXIT-F12: INTRO-STILL native hook failed; still prototype disabled, other modes preserved");
+    if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {
+      InterlockedExchange(&debug_f12_test_mode,0);
+      InterlockedExchange(&experimental_game3d_enabled,0);
+      say("QUICK-EXIT-F12: DEBUG F12TestMode disabled: native still input hook unavailable (fail closed)");
+    } else
+      say("QUICK-EXIT-F12: INTRO-STILL native hook failed; still prototype disabled, other modes preserved");
   }
   if(!suppress_unsafe_native_f12()) {
     restore_intro_still_input_hook();
