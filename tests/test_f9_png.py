@@ -227,8 +227,8 @@ def test_static_comic_context_follows_each_png_job_without_changing_encoder():
 
 def test_readme_reports_wine_png_only_validation_without_claiming_windows():
     readme=(ROOT/"README.md").read_text(encoding="utf-8")
-    section=readme.split("### Optional native F9-to-PNG screenshots",1)[1]
-    section=section.split("### Native Windows 11: experimental F9 screenshot repair",1)[0]
+    section=readme.split("### F9 screenshots — always lossless PNG",1)[1]
+    section=section.split("## Adaptive widescreen HUD",1)[0]
     assert "build #717" in section
     assert "scrn0010.png" in section
     assert "PNG is the only selectable format" in section
