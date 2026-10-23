@@ -1,3 +1,56 @@
+## 2026-10-23 — Wine #560 comic-still F12: deferred route reaches native final cleanup
+
+The user supplied a new full Wine/Lutris-prefix test log,
+`SpiderMan2k1Fix(20261023-080423).log`, from version
+`v1.0.0-750dcaf` (original game EXE SHA-256 verified:
+`0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`).
+Both independent experimental environment switches were armed:
+`SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT=1` and
+`SPIDERMAN2K1FIX_F12_COMIC_EXIT=1`, with 3D native exit enabled.
+
+The full log, with **365 lines**, records:
+
+```text
+COMIC-RENDER-CANDIDATE draw=1 flip=640 ... bink_active=0 native_3d_owner_calls=0
+COMIC F12 deferred until native New Game movie 4; comic continues normally
+POSTMENU-MOVIE verified native movie owner 0x4279FB; original Bink completion and 0x470871 teardown follows; source=DEFERRED-COMIC elapsed_since_F12_ms=4453
+NATIVE-GAME-INPUT owner ENTER n=1 request=0 timer_active=0 flag1=0 flag2=0
+POSTMENU-MOVIE original Bink + script returned; native input checkpoint complete; request 7 for original cleanup
+NATIVE-3D-CLEANUP completed n=1 request=7
+ENGINE-STATE flip=642 ... mode_request=7 bink_flag=0 video_handle_present=0 native_3d_owner_seen=1
+CONTROLLER-7 native teardown COMPLETED n=1 bit4=1 status=-1 outcome=NATIVE-FINAL-CLEANUP
+POSTMENU-MOVIE FINAL-TEARDOWN-CHECKPOINT elapsed_since_F12_ms=4516 [NO PRESENT/COLOR CLAIM]
+```
+
+**Outcome proven by this log:** F12 was correctly latched during
+the auto-timed New Game comic still, the still was **not** aborted,
+and 4,453 ms after F12 the verified native movie #4 received a
+"finished" tick for normal original Bink cleanup. The complete
+original native input → controller request 7 → owner cleanup →
+controller-7 final teardown chain executed successfully; the last
+logged controller checkpoint is **4,516 ms** after F12, only
+**63 ms** after the video interruption. This confirms the deferred
+comic path reached the same native final teardown established by
+the earlier Wine movie test.
+
+**Not established by this log:** whether the process actually
+disappeared, whether a yellow surface flashed again, and exactly
+how much wall-clock time elapsed between the last engine log and
+the OS/window closing. The previous user confirmation of zero
+residual processes applies to the separate **movie-stage** test,
+not automatically to this new **comic-stage** run. The user
+still needs to confirm process state and visual behavior for
+this run. The all-yellow visual regression remains open,
+not fixed or explained.
+
+The F12 comic still is not closed immediately: the current
+approach explicitly preserves the game's native timer and
+then uses the verified Bink movie owner as an exit handoff.
+No behavior or default-option changes were made as part of
+this evidence report. PR #26 remains draft and unmerged.
+
+---
+
 ## 2026-10-23 — Yellow frame during Wine movie shutdown; deferred comic F12 prototype
 
 **Important Wine user observation, after the clean build #552
