@@ -297,6 +297,8 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "; F12 debug fast-test: before menu -> menu, active 3D -> native exit. OFF.\r\n"
     "; Overrides legacy [System] F12 options while enabled.\r\n"
     "F12TestMode=0\r\n"
+    "; Experimental: initial F12 menu clock wait fallback, OFF.\r\n"
+    "F12SkipInitialMenuWait=0\r\n"
     "\r\n"
     "[System]\r\n"
     "; F12 native game-owned Quit at real menu. Default OFF.\r\n"
