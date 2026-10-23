@@ -155,6 +155,9 @@ static volatile LONG native_controller7_count=0;
  * only records intent. The *native game thread* performs the state
  * transitions at a game-input owner frame and after owner cleanup. */
 static volatile LONG experimental_game3d_enabled=0;
+/* Optional, strictly read-only parent return-address trace: never enabled
+ * by regular F12 or normal Debug Log alone. One sample per process only. */
+static volatile LONG parent_trace_enabled=0;
 static volatile LONG last_native_game_input_ms=0;
 static volatile LONG last_game3d_flip_ms=0;
 /* 0 idle, 1 requested, 2 native request 7 dispatched, 3 final exit. */
@@ -516,6 +519,66 @@ static void __cdecl spider_observe_controller7_finish(void) {
   }
 }
 
+/* A static whitelist from the SHA-verified, unmodified SpideyPC.exe:
+ * original direct CALL 0x470750 addresses + 5 (return addresses).
+ * This is not a general stack unwinder.  Only use for the exact two
+ * native tick CALL sites at 0x47081D/0x47085F while their standard
+ * x86 call stack is still active. No game memory is written. */
+static int spider_f12_known_bink_parent_return(DWORD ret_addr) {
+  static const DWORD known[]={
+    0x00427A00u,0x00427A16u,0x00427AA5u,0x00427AC1u,
+    0x00427AD7u,0x00427AEDu,0x00427B03u,0x00427B94u,
+    0x00427BB0u,0x00427BC6u,0x00427C57u,0x00427C73u,
+    0x00427C89u,0x00427C9Fu,0x00427CB5u,0x00427CCBu,
+    0x00427CEBu,0x00427D01u,0x00427D17u,0x00427D37u,
+    0x00427D4Du,0x00427D63u,0x00427D79u,0x00427D8Fu,
+    0x00443BECu,0x00455CF6u,0x00455D03u,0x00455D11u,
+    0x00455D1Fu,0x0049D659u
+  };
+  unsigned i;
+  for(i=0;i<sizeof(known)/sizeof(known[0]);i++)
+    if(ret_addr==known[i])return 1;
+  return 0;
+}
+
+/* Collect only once, only if explicitly requested with a debug-only
+ * environment switch. GCC's __builtin_frame_address(0) forces the
+ * current x86 wrapper frame. On these two *verified native CALL sites*
+ * the original 0x470750 has push esi (0x470750) and push ebx
+ * (0x470809) before calling this wrapper; both are still stacked.
+ *
+ *   frame[1] = native tick CALL return (must be 0x470822/0x470864)
+ *   frame[2] = game owner's saved EBX
+ *   frame[3] = game owner's saved ESI
+ *   frame[4] = direct caller return address of native 0x470750
+ *   frame[5] = movie ID (caller's first argument)
+ *   frame[6] = allow-skip (caller's second argument)
+ *
+ * If the first return address differs, DO NOT inspect deeper stack.
+ * Even a whitelisted parent identifies only a callsite, NOT authority
+ * to initiate a native F12 game-exit/cleanup from within this wrapper. */
+static void spider_f12_trace_native_bink_parent(const uintptr_t *frame) {
+  DWORD tick_return=(DWORD)frame[1];
+  DWORD parent_return,movie_id,allow_skip;
+  char line[260];
+  if(tick_return!=0x00470822u && tick_return!=0x00470864u) {
+    snprintf(line,sizeof(line),
+      "QUICK-EXIT-F12: POST-SHELL-BINK-PARENT unsupported native wrapper return=0x%08lX [FRAME-READ-ONLY; NOT IDENTIFIED]",
+      (unsigned long)tick_return);
+    say(line);
+    return;
+  }
+  parent_return=(DWORD)frame[4];
+  movie_id=(DWORD)frame[5];
+  allow_skip=(DWORD)frame[6];
+  snprintf(line,sizeof(line),
+    "QUICK-EXIT-F12: POST-SHELL-BINK-PARENT native_tick_return=0x%08lX parent_return=0x%08lX known_original_site=%d movie_id=%lu allow_skip=%lu [FRAME-READ-ONLY; NO EXIT AUTHORITY]",
+    (unsigned long)tick_return,(unsigned long)parent_return,
+    spider_f12_known_bink_parent_return(parent_return),
+    (unsigned long)movie_id,(unsigned long)allow_skip);
+  say(line);
+}
+
 /* Native BinkFrame tick wrapper, called by the game thread at the two
  * original 0x470750 video-loop sites. False makes the owning caller
  * branch to 0x470871 and invoke original BinkClose, audio reset and
@@ -541,8 +604,12 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
              InterlockedCompareExchange(&real_main_menu_seen,0,0)==1;
   if(post_shell) {
     n=InterlockedIncrement(&after_shell_ticks);
-    if(n==1)
+    if(n==1) {
       say("QUICK-EXIT-F12: POST-SHELL-BINK-TICK-CALLSITE original 0x470750 tick observed [OWNER-IDENTITY NOT PROVEN]");
+      if(InterlockedCompareExchange(&parent_trace_enabled,0,0)==1)
+        spider_f12_trace_native_bink_parent(
+          (const uintptr_t *)__builtin_frame_address(0));
+    }
   }
   native_result=SPIDER_NATIVE_BINK_FRAME_TICK();
   if(post_shell) {
@@ -837,7 +904,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
 }
 
 void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
-  char exe[MAX_PATH],ini[MAX_PATH],val[24],*slash;
+  char exe[MAX_PATH],ini[MAX_PATH],val[24],trace[8],*slash;
   DWORD n;
   HANDLE thread;
   logger=log_fn;
@@ -853,6 +920,13 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   memcpy(ini,exe,(size_t)(slash-exe)+1);
   strcpy(ini+(slash-exe)+1,"SpiderMan2k1Fix.ini");
   GetPrivateProfileStringA("System","QuickExitF12","0",val,sizeof(val),ini);
+  memset(trace,0,sizeof(trace));
+  if(GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
+     GetEnvironmentVariableA("SPIDERMAN2K1FIX_F12_PARENT_TRACE",
+                             trace,sizeof(trace))==1 && trace[0]=='1') {
+    InterlockedExchange(&parent_trace_enabled,1);
+    say("QUICK-EXIT-F12: optional passive native Bink parent trace armed (one sample after interactive menu)");
+  }
   /* Separate extra opt-in for risky native gameplay shutdown prototype.
    * Enabling QuickExitF12 alone retains the previous menu/Bink behavior. */
   InterlockedExchange(&experimental_game3d_enabled,
