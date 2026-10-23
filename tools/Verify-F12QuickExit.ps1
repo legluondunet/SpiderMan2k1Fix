@@ -2,11 +2,14 @@
 # Launch this from the game's directory:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\Verify-F12QuickExit.ps1
 # Requires [System] QuickExitF12=1 and [Debug] Log=1 in SpiderMan2k1Fix.ini.
+# For 3D shutdown also enable ExperimentalQuickExitF12In3D=1.
+# To require a direct native 3D exit: -ExpectedMode 3D.
 # Press F12 manually. This script never injects input or terminates the game.
 [CmdletBinding()]
 param(
     [string]$GameExe = ".\SpideyPC.exe",
-    [ValidateRange(5,900)][int]$TimeoutSeconds = 120
+    [ValidateRange(5,900)][int]$TimeoutSeconds = 120,
+    [ValidateSet("Any","Menu","3D","Intro")][string]$ExpectedMode = "Any"
 )
 
 $ErrorActionPreference = "Stop"
@@ -70,10 +73,23 @@ try {
         Where-Object { $_.LastWriteTime -ge $started.AddSeconds(-2) } |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
     $shortcutObserved = $false
+    $exitPath = "None"
     if ($null -ne $recentLog) {
         $lines = Get-Content -LiteralPath $recentLog.FullName -Tail 180 -ErrorAction SilentlyContinue
-        $shortcutObserved = [bool]($lines | Select-String -Pattern "QUICK-EXIT-F12: (native Shell_MainMenu Quit activated: slot=3 action=18|four native movie calls completed; intro transition cleanup finished; engine Quit flag set BEFORE top-level 0x455E50 check)")
-        Write-Host "Game log: $($recentLog.Name); native Quit-request trace present=$shortcutObserved"
+        $menuObserved = [bool]($lines | Select-String -SimpleMatch "QUICK-EXIT-F12: native Shell_MainMenu Quit activated: slot=3 action=18")
+        $introObserved = [bool]($lines | Select-String -SimpleMatch "four native movie calls completed; intro transition cleanup finished; engine Quit flag set BEFORE top-level 0x455E50 check")
+        $game3dIntent = [bool]($lines | Select-String -SimpleMatch "QUICK-EXIT-F12: 3D game-thread frame completed; native request 7 queued")
+        $game3dCleanup = [bool]($lines | Select-String -SimpleMatch "QUICK-EXIT-F12: NATIVE-3D-CLEANUP completed")
+        $game3dFinal = [bool]($lines | Select-String -Pattern "QUICK-EXIT-F12: CONTROLLER-7 native teardown COMPLETED .*bit4=1 .*outcome=NATIVE-FINAL-CLEANUP")
+        if ($menuObserved) {
+            $exitPath = "Menu"
+        } elseif ($game3dIntent -and $game3dCleanup -and $game3dFinal) {
+            $exitPath = "3D"
+        } elseif ($introObserved) {
+            $exitPath = "Intro"
+        }
+        $shortcutObserved = $exitPath -ne "None"
+        Write-Host "Game log: $($recentLog.Name); verified native F12 exit path=$exitPath"
     } else {
         Write-Warning "No recent game log found. Enable [Debug] Log=1 to verify that F12 caused the exit."
     }
@@ -113,10 +129,14 @@ try {
         exit 1
     }
     if (-not $shortcutObserved) {
-        Write-Warning "INCONCLUSIVE: normal exit detected, but no F12 -> MENU Quit dispatch line was verified. Enable Log=1 and repeat."
+        Write-Warning "INCONCLUSIVE: normal exit detected, but no recognized native F12 shutdown trace found. Enable Log=1 and repeat."
         exit 3
     }
-    Write-Host "PASS: F12 -> original MENU Quit logged, exit code 0, process gone, no matching crash event found."
+    if ($ExpectedMode -ne "Any" -and $ExpectedMode -ne $exitPath) {
+        Write-Warning "INCONCLUSIVE: expected native F12 mode $ExpectedMode, observed $exitPath."
+        exit 3
+    }
+    Write-Host "PASS: native F12 $exitPath exit logged, exit code 0, process gone, no matching crash event found."
     Write-Host "Note: this does not prove that every native COM object was explicitly released before exit."
     exit 0
 }
