@@ -18,7 +18,11 @@ def test_retired_pause_key_configuration_is_not_emitted_or_used():
     assert "GetPrivateProfileStringA(\"Input\",\"PauseKey\"" not in CORE
     assert "pause_key_vk" not in CORE
     assert "pause_poll_key" not in CORE
-    assert "GetAsyncKeyState(VK_F9)" not in CORE
+    # Keep the no-F9-wake guarantee scoped to the pause implementation.
+    # A separate, opt-in F9 readback trace is not part of pause handling.
+    pause = CORE[CORE.index("static void pause_at_flip_if_background(void)"):
+                 CORE.index("static HRESULT WINAPI hooked_flip(")]
+    assert "GetAsyncKeyState(VK_F9)" not in pause
 
 
 def test_any_hook_only_lives_during_focus_pause():

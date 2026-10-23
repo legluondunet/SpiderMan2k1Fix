@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — optional F9 PNG screenshots (PR #25)
+
+- Replace both original SHA-verified F9 BMP callsites with lossless `scrnNNNN.png` capture **only when explicitly enabled** with `SPIDERMAN2K1FIX_F9_PNG_ONLY=1` and `[Debug] Log=1`. Preserve the game's own F9 input polling and debounce; leave the original BMP path untouched when the option is off or the signature preflight fails.
+- Capture Bink movies, menu frames, static comic pages and 3D scenes from the validated DirectDraw sources. Copy pixels before encoding them on a worker using dynamically loaded GDI+, with unique names, failure reporting and a brief confirmation notification. The earlier optional dual-format BMP/PNG comparison remains available separately.
+- **Wine validation:** PR #25 build #717 saved `scrn0000.png` through `scrn0010.png` (1920×1080) across opening movies, menus, comic and 3D. No capture error was logged. Native Windows PNG-only runtime validation remains outstanding.
+- Integrate on top of the already merged F10 shortcut and independent Bink-to-3D key-release safeguard; no changes to their native cleanup paths.
+
 ## Unreleased — frozen DirectDraw pause frame (PR #18 experiment)
 
 - Replace the former Wine-fragile desktop alpha popups, normal child windows and dither-grid simulation with **one composited DirectDraw7 game frame**. At the confirmed focus-loss Flip boundary, save the game's backbuffer through its native surface DC, apply the configured **55% true alpha darkening, 16px square grid, and centered English comic PAUSE panel**, and present the result once using the existing validated windowed-primary `Blt`.

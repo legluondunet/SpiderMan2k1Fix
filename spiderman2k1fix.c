@@ -30,6 +30,8 @@
 #include "focus_dsound_pause.h"
 #include "menu_version.h"
 #include "version_info.h"
+#include "f9_png.h"
+#include "f9_toast.h"
 #include "quick_exit_f12.h"
 
 static const BYTE expected_sha256[32] = {
@@ -275,6 +277,15 @@ typedef HRESULT (WINAPI *SurfaceCreateFn)(void *, DDSURFACEDESC2 *, IDirectDrawS
 typedef HRESULT (WINAPI *SurfaceBltFn)(void *, LPRECT, IDirectDrawSurface7 *, LPRECT, DWORD, LPDDBLTFX);
 typedef HRESULT (WINAPI *SurfaceFlipFn)(void *, IDirectDrawSurface7 *, DWORD);
 typedef HRESULT (WINAPI *SurfaceGetAttachedFn)(void *, LPDDSCAPS2, IDirectDrawSurface7 **);
+/* F9 screenshot path investigation. All five diagnostic hooks are installed
+ * ONLY for SPIDERMAN2K1FIX_F9_TRACE=1 AND Debug Log=1. Read-only pass-through.
+ * IDirectDrawSurface7 vtable slots: GetDC=17 GetSurfaceDesc=22 Lock=25
+ * ReleaseDC=26 Unlock=32. No executable patch, pixel read or allocation. */
+typedef HRESULT (WINAPI *SurfaceGetDCFn)(void *, HDC *);
+typedef HRESULT (WINAPI *SurfaceGetDescFn)(void *, LPDDSURFACEDESC2);
+typedef HRESULT (WINAPI *SurfaceLockFn)(void *, LPRECT, LPDDSURFACEDESC2, DWORD, HANDLE);
+typedef HRESULT (WINAPI *SurfaceReleaseDCFn)(void *, HDC);
+typedef HRESULT (WINAPI *SurfaceUnlockFn)(void *, LPRECT);
 static CreateExFn original_create;
 static CoopFn original_coop;
 static ModeFn original_mode;
@@ -282,6 +293,28 @@ static SurfaceCreateFn original_surface_create;
 static SurfaceBltFn original_blt;
 static SurfaceFlipFn original_flip;
 static SurfaceGetAttachedFn original_get_attached;
+static SurfaceGetDCFn original_get_dc;
+static SurfaceGetDescFn original_surface_get_desc;
+static SurfaceLockFn original_surface_lock;
+static SurfaceReleaseDCFn original_release_dc;
+static SurfaceUnlockFn original_surface_unlock;
+static volatile LONG f9_trace_enabled=0,f9_trace_keydown=0;
+static volatile LONG f9_trace_until=0,f9_trace_events=0,f9_trace_logged=0;
+/* Experimental screenshot-only readback redirection; disabled by default.
+ * The original game locks PRIMARY at RVA 0x1034D4 on F9, then unlocks
+ * PRIMARY at 0x103537. Under Win11 its windowed PRIMARY Lock returns a
+ * magenta image despite a successful GPU Blt from the real D3D backbuffer.
+ * Redirect that one Lock/Unlock pair to the game-rendered backbuffer.
+ * Use one owned COM ref for the duration of the lock to avoid dangling
+ * surfaces on shutdown; never touch other Lock callers. */
+static volatile LONG f9_backbuffer_fix_enabled=0;
+static volatile LONG f9_native_png_enabled=0;
+static volatile LONG f9_png_only_enabled=0;
+static volatile LONG f9_png_capture_active=0;
+static BOOL f9_static_comic_capture=FALSE; /* F9 game thread only */
+static volatile LONG f9_backbuffer_lock_active=0;
+static DWORD f9_backbuffer_lock_thread=0;
+static IDirectDrawSurface7 *f9_backbuffer_locked_surface=NULL;
 static void *patched_ddraw_vtable[30];
 /* IDirectDrawSurface7 has 49 vtable slots (IUnknown + 46 methods). */
 static void *patched_surface_vtable[49];
@@ -297,6 +330,20 @@ static volatile LONG flip_hook_mismatches=0;
 static HWND game_hwnd=NULL;
 static IDirectDrawSurface7 *borderless_primary=NULL; /* weak, game-owned */
 static IDirectDrawSurface7 *borderless_back=NULL; /* one owned reference */
+/* Most recent *decoded* DirectDraw source of an intro movie Blt. Video is
+ * presented AFTER Flip into PRIMARY, so PRIMARY-DC GDI readback is unreliable
+ * (magenta/purple frames under native Windows). Keep a game-thread-only COM
+ * reference to the decoded source and read it only on F9. */
+static IDirectDrawSurface7 *f9_movie_source=NULL;
+static volatile LONG f9_movie_last_flip=-10000;
+static void f9_movie_drop_source(void) {
+  if(f9_movie_source) {
+    IDirectDrawSurface7_Release(f9_movie_source);
+    f9_movie_source=NULL;
+  }
+  InterlockedExchange(&f9_movie_last_flip,-10000);
+}
+
 static LONG borderless_monitor_x=0,borderless_monitor_y=0;
 static volatile LONG borderless_present_failed=0;
 static volatile LONG borderless_legacy_mode_calls=0;
@@ -429,6 +476,9 @@ static volatile LONG media_native_blt_4x3_hits=0;
 /* New opt-in ONLY for native full-screen comic textures, no MENU changes. */
 static volatile LONG comic_native_aspect_enabled=0;
 static volatile LONG comic_native_aspect_matches=0;
+/* Comic stills do not require Flip while visible. */
+static volatile LONG f9_comic_last_draw_flip=-100000;
+
 static DWORD desktop_w=0, desktop_h=0;
 /* The INI's single resolution target. Display backends still require
  * native-run validation for every non-Auto monitor mode. */
@@ -703,7 +753,7 @@ static volatile LONG hud_probe_enabled=0,hud_probe_frames=0;
 static volatile LONG hud_probe_seen=0,hud_probe_left=0,hud_probe_right=0,hud_probe_instructions=0,hud_probe_boss=0;
 static volatile LONG hud_probe_boss_extra=0,hud_probe_boss_blt=0;
 static void hud_probe_flip(void) {
-  if(SpiderQuickExitF12_Enabled())return; /* The legacy F12 HUD diagnostic is off in F10 shortcut mode. */
+  if(SpiderQuickExitF12_Enabled())return; /* Disable legacy F12 HUD probe while F10 debug is active. */
   if(InterlockedCompareExchange(&hud_probe_enabled,0,0)!=1) return;
   if((GetAsyncKeyState(VK_F12)&1)!=0 && game_hwnd &&
      GetForegroundWindow()==game_hwnd) {
@@ -926,11 +976,13 @@ static const void *maybe_correct_native_comic(void *device,D3DPRIMITIVETYPE type
        (unsigned)count,(unsigned)type,(unsigned long)fvf,(unsigned long)rva,
        (unsigned)desc.dwWidth,(unsigned)desc.dwHeight,
        (unsigned)desktop_w,(unsigned)desktop_h)) return source;
-  /* Candidate render observation; no cinematic authority inferred. */
+  /* Rendering only; never treat a candidate quad as native scene ownership. */
   SpiderQuickExitF12_ObserveComicRender(InterlockedCompareExchange(&flip_count,0,0),
                                         rva,desc.dwWidth,desc.dwHeight);
   if(!SpiderComicNative_Transform((const SpiderMenuVertex*)source,copy,
                 (unsigned)count,(unsigned)desktop_w,(unsigned)desktop_h)) return source;
+  InterlockedExchange(&f9_comic_last_draw_flip,
+                      InterlockedCompareExchange(&flip_count,0,0));
   hit=InterlockedIncrement(&comic_native_aspect_matches);
   if(hit<=8 || hit%120==0) {
     char msg[286];
@@ -1236,7 +1288,7 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
   HRESULT hr; LONG count=InterlockedIncrement(&blt_count);
   RECT dest_mapped;
   LPRECT presented_dest=dest;
-  BOOL f10_native_movie_blt=FALSE;
+  BOOL f9_movie_present=FALSE;
 
   /* Read-only native DirectDraw diagnostic for an uncorrected boss health
    * black rectangle. Some legacy UI layers may use a color-filled Blt
@@ -1306,7 +1358,7 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
        * opening-video presentation is nonetheless always 4:3. */
       borderless_intro_fill_black_bars(self,&dest_mapped);
       presented_dest=&dest_mapped;
-      f10_native_movie_blt=TRUE;
+      f9_movie_present=TRUE;
       if (debug_log_enabled && (hits<=8 || hits%120==0 ||
           ((sd.dwWidth!=640 || sd.dwHeight!=480) && hits<=1024 && hits%30==0))) {
         char msg[260];
@@ -1327,16 +1379,552 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
     presented_dest=&dest_mapped;
   }
   hr=original_blt(self,presented_dest,source,source_rect,flags,fx);
-  /* Same verified opening Bink presentation condition as the F9
-   * experiment, without including or enabling any F9 code. */
-  if(SUCCEEDED(hr) && f10_native_movie_blt && source)
+  /* Only retain surfaces actually presented as recognized intro video.
+   * Same game thread as F9; no worker accesses DirectDraw objects. */
+  if(SUCCEEDED(hr) && f9_movie_present && source) {
+    /* A decoded intro video can continue even with the original
+     * 0x006151F8 'movie active' bit zero. Always record the actual
+     * successful movie presentation for F12 shutdown safety. */
     SpiderQuickExitF12_ObserveMovieFrame();
+    if(source!=f9_movie_source) {
+      IDirectDrawSurface7_AddRef(source);
+      if(f9_movie_source) IDirectDrawSurface7_Release(f9_movie_source);
+      f9_movie_source=source;
+    }
+    InterlockedExchange(&f9_movie_last_flip,
+                        InterlockedCompareExchange(&flip_count,0,0));
+  }
   if(debug_log_enabled && count<=24) {
     char line[100]; snprintf(line,sizeof(line),"DDRAW: Surface7::Blt result=0x%08lX",(unsigned long)hr); log_line(line);
   }
   return hr;
 }
 /* The surface-creation hook remains responsible for installing the shared vtable. */
+/* Capture the F9 window without changing the game keyboard path. Holding
+ * the real F9 key for a moment starts six seconds of detailed readback logs.
+ * First 24 events are also logged to identify the normal baseline.
+ * Do not use the F12 HUD sampler here; this diagnostic is independent. */
+static int f9_readback_window(void) {
+  DWORD tick;
+  LONG deadline;
+  if(InterlockedCompareExchange(&f9_trace_enabled,0,0)!=1) return 0;
+  tick=GetTickCount();
+  if(GetAsyncKeyState(VK_F9)&0x8000) {
+    if(InterlockedCompareExchange(&f9_trace_keydown,1,0)==0) {
+      InterlockedExchange(&f9_trace_until,(LONG)(tick+6000u));
+      InterlockedExchange(&f9_trace_logged,0);
+      log_line("F9-TRACE: F9 key pressed; readback trace window OPEN for six seconds");
+    }
+  } else InterlockedExchange(&f9_trace_keydown,0);
+  deadline=InterlockedCompareExchange(&f9_trace_until,0,0);
+  return deadline!=0 && (LONG)((DWORD)deadline-tick)>0;
+}
+static int f9_trace_report(void) {
+  LONG event;
+  int during;
+  if(InterlockedCompareExchange(&f9_trace_enabled,0,0)!=1) return 0;
+  during=f9_readback_window();
+  event=InterlockedIncrement(&f9_trace_events);
+  if(during) return InterlockedIncrement(&f9_trace_logged)<=200;
+  return event<=24; /* Baseline: first few reads after game startup. */
+}
+static const char *f9_surface_kind(const void *surface) {
+  if(surface==(const void *)borderless_primary) return "PRIMARY";
+  if(surface==(const void *)borderless_back) return "3D-BACKBUFFER";
+  return "OTHER";
+}
+static HRESULT WINAPI hooked_f9_surface_get_dc(void *self,HDC *dc) {
+  HRESULT hr=original_get_dc(self,dc);
+  if(f9_trace_report()) {
+    DWORD rva=0; char msg[265];
+    geom_rva(__builtin_return_address(0),&rva);
+    snprintf(msg,sizeof(msg),
+      "F9-TRACE: GetDC owner=%s surface=%p caller=0x%08lX hr=0x%08lX hdc=%p",
+      f9_surface_kind(self),self,(unsigned long)rva,(unsigned long)hr,
+      (void *)(dc?*dc:NULL));
+    log_line(msg);
+  }
+  return hr;
+}
+static HRESULT WINAPI hooked_f9_surface_get_desc(void *self,LPDDSURFACEDESC2 desc) {
+  HRESULT hr=original_surface_get_desc(self,desc);
+  if(f9_trace_report()) {
+    DWORD rva=0;char msg[310];
+    geom_rva(__builtin_return_address(0),&rva);
+    snprintf(msg,sizeof(msg),
+      "F9-TRACE: GetSurfaceDesc owner=%s surface=%p caller=0x%08lX hr=0x%08lX "
+      "size=%lux%lu bpp=%lu caps=0x%08lX",
+      f9_surface_kind(self),self,(unsigned long)rva,(unsigned long)hr,
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->dwWidth:0),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->dwHeight:0),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->ddpfPixelFormat.dwRGBBitCount:0),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->ddsCaps.dwCaps:0));
+    log_line(msg);
+  }
+  return hr;
+}
+static HRESULT WINAPI hooked_f9_surface_lock(void *self,LPRECT rect,
+                                              LPDDSURFACEDESC2 desc,
+                                              DWORD flags,HANDLE event) {
+  HRESULT hr;
+  DWORD rva=0;
+  geom_rva(__builtin_return_address(0),&rva);
+  if(InterlockedCompareExchange(&f9_backbuffer_fix_enabled,0,0)==1 &&
+     self==(void *)borderless_primary && borderless_back &&
+     rva==0x001034D4u && (flags&DDLOCK_READONLY)!=0 &&
+     rect==NULL && desc && desc->dwSize==sizeof(*desc) &&
+     desktop_w>=640 && desktop_h>=480 &&
+     InterlockedCompareExchange(&f9_backbuffer_lock_active,1,0)==0) {
+    IDirectDrawSurface7 *back=borderless_back;
+    DDSURFACEDESC2 requested=*desc;
+    HRESULT back_hr;
+    char msg[300];
+    IDirectDrawSurface7_AddRef(back);
+    /* Same native 32-bit XY layout and full-screen size expected from
+     * the original PRIMARY readback. No extra Blt or frame clearing. */
+    back_hr=original_surface_lock(back,rect,desc,flags,event);
+    if(SUCCEEDED(back_hr) &&
+       desc->dwWidth==desktop_w && desc->dwHeight==desktop_h &&
+       desc->ddpfPixelFormat.dwRGBBitCount==32 &&
+       desc->lPitch>=(LONG)(desktop_w*4u) &&
+       desc->lpSurface!=NULL) {
+      f9_backbuffer_locked_surface=back;
+      f9_backbuffer_lock_thread=GetCurrentThreadId();
+      snprintf(msg,sizeof(msg),
+        "F9-FIX: BACKBUFFER Lock success primary=%p back=%p "
+        "caller=0x%08lX size=%lux%lu pitch=%ld; redirect one Unlock",
+        self,(void *)back,(unsigned long)rva,
+        (unsigned long)desc->dwWidth,(unsigned long)desc->dwHeight,
+        (long)desc->lPitch);
+      log_line(msg);
+      /* PNG prototype: copy the same 3D frame before the game consumes
+       * it. The worker only sees our own memory, never DirectDraw.
+       * Legacy BMP remains enabled until its entry point is verified. */
+      if(InterlockedCompareExchange(&f9_native_png_enabled,0,0)==1)
+        SpiderF9PNG_Queue(desc,log_line);
+      return back_hr;
+    }
+    if(SUCCEEDED(back_hr))
+      original_surface_unlock(back,rect);
+    IDirectDrawSurface7_Release(back);
+    InterlockedExchange(&f9_backbuffer_lock_active,0);
+    *desc=requested; /* The fallback PRIMARY Lock owns its descriptor. */
+    snprintf(msg,sizeof(msg),
+      "F9-FIX: backbuffer Lock/format rejected hr=0x%08lX; "
+      "falling back to untouched PRIMARY screenshot",
+      (unsigned long)back_hr);
+    log_line(msg);
+  }
+  hr=original_surface_lock(self,rect,desc,flags,event);
+  if(f9_trace_report()) {
+    DWORD rva=0;char msg[430];
+    geom_rva(__builtin_return_address(0),&rva);
+    snprintf(msg,sizeof(msg),
+      "F9-TRACE: Lock owner=%s surface=%p caller=0x%08lX hr=0x%08lX flags=0x%08lX "
+      "rect=%s size=%lux%lu pitch=%ld ptr=%p bpp=%lu masks=%08lX/%08lX/%08lX",
+      f9_surface_kind(self),self,(unsigned long)rva,
+      (unsigned long)hr,(unsigned long)flags,rect?"set":"NULL",
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->dwWidth:0),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->dwHeight:0),
+      (long)((SUCCEEDED(hr)&&desc)?desc->lPitch:0),
+      (void *)((SUCCEEDED(hr)&&desc)?desc->lpSurface:NULL),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->ddpfPixelFormat.dwRGBBitCount:0),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->ddpfPixelFormat.dwRBitMask:0),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->ddpfPixelFormat.dwGBitMask:0),
+      (unsigned long)((SUCCEEDED(hr)&&desc)?desc->ddpfPixelFormat.dwBBitMask:0));
+    log_line(msg);
+  }
+  return hr;
+}
+static HRESULT WINAPI hooked_f9_surface_release_dc(void *self,HDC dc) {
+  HRESULT hr=original_release_dc(self,dc);
+  if(f9_trace_report()) {
+    DWORD rva=0;char msg[250];
+    geom_rva(__builtin_return_address(0),&rva);
+    snprintf(msg,sizeof(msg),
+      "F9-TRACE: ReleaseDC owner=%s surface=%p caller=0x%08lX hr=0x%08lX dc=%p",
+      f9_surface_kind(self),self,(unsigned long)rva,(unsigned long)hr,(void*)dc);
+    log_line(msg);
+  }
+  return hr;
+}
+static HRESULT WINAPI hooked_f9_surface_unlock(void *self,LPRECT rect) {
+  HRESULT hr;
+  DWORD rva=0;
+  geom_rva(__builtin_return_address(0),&rva);
+  if(self==(void *)borderless_primary &&
+     rva==0x00103537u && rect==NULL &&
+     InterlockedCompareExchange(&f9_backbuffer_fix_enabled,0,0)==1 &&
+     InterlockedCompareExchange(&f9_backbuffer_lock_active,0,0)==1 &&
+     f9_backbuffer_lock_thread==GetCurrentThreadId() &&
+     f9_backbuffer_locked_surface!=NULL) {
+    IDirectDrawSurface7 *back=f9_backbuffer_locked_surface;
+    char msg[230];
+    hr=original_surface_unlock(back,rect);
+    snprintf(msg,sizeof(msg),
+      "F9-FIX: BACKBUFFER Unlock hr=0x%08lX "
+      "caller=0x%08lX; original PRIMARY remains unlocked",
+      (unsigned long)hr,(unsigned long)rva);
+    log_line(msg);
+    f9_backbuffer_locked_surface=NULL;
+    f9_backbuffer_lock_thread=0;
+    InterlockedExchange(&f9_backbuffer_lock_active,0);
+    IDirectDrawSurface7_Release(back);
+  } else {
+    hr=original_surface_unlock(self,rect);
+  }
+  if(f9_trace_report()) {
+    DWORD rva=0;char msg[240];
+    geom_rva(__builtin_return_address(0),&rva);
+    snprintf(msg,sizeof(msg),
+      "F9-TRACE: Unlock owner=%s surface=%p caller=0x%08lX hr=0x%08lX rect=%s",
+      f9_surface_kind(self),self,(unsigned long)rva,(unsigned long)hr,
+      rect?"set":"NULL");
+    log_line(msg);
+  }
+  return hr;
+}
+/* The original game's SHA-verified F9 dispatch calls its BMP writer at
+ * exactly TWO CALL rel32 sites (RVA 0x10A1DC and 0x10A62B). The calls
+ * follow the native DIK_F9 (0x43) polling and the game owns its 500ms
+ * debounce. Replace only those 5-byte CALL operands, not DirectInput.
+ *
+ * Actual original file SHA256: 0a11a49f...4689dea
+ * Original writer entry RVA: 0x1033E0 (no parameters, __cdecl).
+ * Its internal COM Lock return site is RVA 0x1034D4, but that is NOT
+ * a safe entry point for skipping the BMP writer. */
+/* Main-menu F9 requests are fulfilled at the NEXT completed DirectDraw
+ * Flip, before the backbuffer is presented and cleared. Reading PRIMARY via
+ * GDI returned purple pixels, while reading BACK immediately on F9 sometimes
+ * returned black because Flip clears the menu backbuffer each frame.
+ * Only menu screenshots are deferred; video and 3D stay as validated. */
+static volatile LONG f9_menu_png_pending=0;
+static volatile LONG f9_menu_png_requested_flip=0;
+
+static void f9_capture_completed_menu_flip(LONG flip,BOOL rendered_menu) {
+  IDirectDrawSurface7 *back;
+  DDSURFACEDESC2 desc;
+  HRESULT hr,unlock_hr;
+  LONG requested;
+  int queued;
+  char line[220];
+  if(InterlockedCompareExchange(&f9_menu_png_pending,0,0)!=1)return;
+  requested=InterlockedCompareExchange(&f9_menu_png_requested_flip,0,0);
+  if(InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 ||
+     flip-requested>120) {
+    InterlockedExchange(&f9_menu_png_pending,0);
+    log_line("F9-PNG-MENU: no completed menu frame within 120 flips; capture cancelled");
+    SpiderF9Toast_PublishError(L"Menu frame unavailable for screenshot");
+    return;
+  }
+  /* Intro splash stills use ONE D3D primitive per frame. The original
+   * menu-version overlay requires three+ primitives, but PNG capture should
+   * accept one as soon as there is no active 4:3 movie Blt. */
+  if(!rendered_menu)return;
+  back=borderless_back;
+  if(!back) {
+    InterlockedExchange(&f9_menu_png_pending,0);
+    SpiderF9Toast_PublishError(L"Menu backbuffer unavailable");
+    return;
+  }
+  IDirectDrawSurface7_AddRef(back);
+  memset(&desc,0,sizeof(desc));
+  desc.dwSize=sizeof(desc);
+  hr=IDirectDrawSurface7_Lock(back,NULL,&desc,DDLOCK_READONLY|DDLOCK_WAIT,NULL);
+  if(SUCCEEDED(hr)) {
+    /* Queue duplicates pixels before unlocking; the worker never touches
+     * the DirectDraw surface and the on-screen toast is excluded. */
+    queued=SpiderF9PNG_Queue(&desc,log_line);
+    unlock_hr=IDirectDrawSurface7_Unlock(back,NULL);
+    snprintf(line,sizeof(line),
+      "F9-PNG-MENU: completed Flip=%ld BACKBUFFER %lux%lu capture=%s Lock=OK Unlock=0x%08lX",
+      (long)flip,(unsigned long)desc.dwWidth,(unsigned long)desc.dwHeight,
+      queued?"queued":"skipped",(unsigned long)unlock_hr);
+    log_line(line);
+  } else {
+    snprintf(line,sizeof(line),
+      "F9-PNG-MENU: completed BACKBUFFER Lock failed hr=0x%08lX",
+      (unsigned long)hr);
+    log_line(line);
+    SpiderF9Toast_PublishError(L"Cannot read the completed menu frame");
+  }
+  IDirectDrawSurface7_Release(back);
+  InterlockedExchange(&f9_menu_png_pending,0);
+}
+
+/* Source-frame capture for intro FMVs only. A PRIMARY GetDC/BitBlt call
+ * can report success while returning purple pixels unrelated to the movie.
+ * Instead, obtain the decoded RGB pixels from the source of the latest
+ * successful native 4:3 media Blt. Convert RGB555/RGB565 or XRGB8888
+ * explicitly, fit the whole frame to the same 4:3 presentation rectangle,
+ * and pass it to the already-tested PNG writer. Do not touch gameplay,
+ * comics, menu GDI, DirectInput, PRIMARY pixels or Bink internals. */
+static BOOL f9_movie_prepare_mask(DWORD mask,unsigned *shift,DWORD *maxval) {
+  unsigned n=0;
+  DWORD v=mask;
+  if(!mask)return FALSE;
+  while((v&1u)==0 && n<32) {v>>=1; ++n;}
+  if(!v || (v&(v+1u))!=0)return FALSE; /* contiguous RGB mask */
+  *shift=n;
+  *maxval=v;
+  return TRUE;
+}
+static BYTE f9_movie_expand(DWORD pixel,DWORD mask,unsigned shift,DWORD maximum) {
+  DWORD component=(pixel&mask)>>shift;
+  return (BYTE)((component*255u+maximum/2u)/maximum);
+}
+/*  0: no current movie (use existing menu/BD capture);
+ *  1: decoded movie queued;
+ * -1: movie readback attempted but failed; never emit a false success. */
+static int f9_capture_decoded_movie_frame(void) {
+  IDirectDrawSurface7 *source=f9_movie_source;
+  DDSURFACEDESC2 sd,frame;
+  DWORD current_flip=(DWORD)InterlockedCompareExchange(&flip_count,0,0);
+  DWORD movie_flip=(DWORD)InterlockedCompareExchange(&f9_movie_last_flip,0,0);
+  DWORD rm,gm,bm,sw,sh,dw=desktop_w,dh=desktop_h;
+  unsigned rs,gs,bs,bpp,x,y;
+  DWORD rmax,gmax,bmax;
+  BYTE *pixels=NULL;
+  DWORD *output=NULL;
+  LONG dx=menu_map.left,dy=menu_map.top;
+  LONG vw=menu_map.right-menu_map.left,vh=menu_map.bottom-menu_map.top;
+  HRESULT hr,unlock_hr=DD_OK;
+  int queued=0,locked=0;
+  char msg[270];
+  if(!source || (current_flip-movie_flip)>8u)return 0;
+  if(dw>8192u || dh>8192u || dw<640u || dh<480u ||
+     vw<=0 || vh<=0 || dx<0 || dy<0 ||
+     dx+vw>(LONG)dw || dy+vh>(LONG)dh) {
+    log_line("F9-PNG-MOVIE: invalid displayed movie dimensions");
+    SpiderF9Toast_PublishError(L"Invalid movie screenshot geometry");
+    return -1;
+  }
+  memset(&sd,0,sizeof(sd));
+  sd.dwSize=sizeof(sd);
+  hr=IDirectDrawSurface7_Lock(source,NULL,&sd,
+                              DDLOCK_READONLY|DDLOCK_WAIT,NULL);
+  if(FAILED(hr)) {
+    snprintf(msg,sizeof(msg),"F9-PNG-MOVIE: decoder source Lock failed hr=0x%08lX",
+             (unsigned long)hr);
+    log_line(msg);
+    SpiderF9Toast_PublishError(L"Cannot read the decoded movie frame");
+    return -1;
+  }
+  locked=1;
+  sw=sd.dwWidth;sh=sd.dwHeight;
+  bpp=sd.ddpfPixelFormat.dwRGBBitCount;
+  rm=sd.ddpfPixelFormat.dwRBitMask;
+  gm=sd.ddpfPixelFormat.dwGBitMask;
+  bm=sd.ddpfPixelFormat.dwBBitMask;
+  snprintf(msg,sizeof(msg),
+    "F9-PNG-MOVIE: decoded source=%lux%lu bpp=%u pitch=%ld RGB=%08lX/%08lX/%08lX",
+    (unsigned long)sw,(unsigned long)sh,bpp,(long)sd.lPitch,
+    (unsigned long)rm,(unsigned long)gm,(unsigned long)bm);
+  log_line(msg);
+  if(!sd.lpSurface || !sw || !sh || sw>4096u || sh>4096u ||
+     (bpp!=16 && bpp!=32) ||
+     !(sd.ddpfPixelFormat.dwFlags&DDPF_RGB) ||
+     sd.lPitch<(LONG)(sw*(bpp/8u)) ||
+     (rm&gm) || (rm&bm) || (gm&bm) ||
+     !f9_movie_prepare_mask(rm,&rs,&rmax) ||
+     !f9_movie_prepare_mask(gm,&gs,&gmax) ||
+     !f9_movie_prepare_mask(bm,&bs,&bmax)) {
+    log_line("F9-PNG-MOVIE: unsupported decoded movie RGB pixel format");
+    SpiderF9Toast_PublishError(L"Unsupported decoded movie pixel format");
+    goto done;
+  }
+  pixels=(BYTE*)calloc((size_t)dw*(size_t)dh,4u);
+  if(!pixels) {
+    SpiderF9Toast_PublishError(L"Cannot allocate movie screenshot buffer");
+    goto done;
+  }
+  output=(DWORD*)pixels;
+  for(y=0;y<(unsigned)vh;y++) {
+    unsigned sy=(unsigned)(((unsigned long long)y*(unsigned long long)sh)/
+                            (unsigned long long)(unsigned)vh);
+    const BYTE *src=(const BYTE*)sd.lpSurface+(size_t)sy*(size_t)sd.lPitch;
+    DWORD *dst=output+(size_t)(dy+(LONG)y)*(size_t)dw+(size_t)dx;
+    for(x=0;x<(unsigned)vw;x++) {
+      unsigned sx=(unsigned)(((unsigned long long)x*(unsigned long long)sw)/
+                             (unsigned long long)(unsigned)vw);
+      DWORD pixel;
+      if(bpp==16) {
+        WORD rgb16;
+        memcpy(&rgb16,src+(size_t)sx*2u,sizeof(rgb16));
+        pixel=(DWORD)rgb16;
+      } else memcpy(&pixel,src+(size_t)sx*4u,sizeof(pixel));
+      dst[x]=((DWORD)f9_movie_expand(pixel,rm,rs,rmax)<<16) |
+             ((DWORD)f9_movie_expand(pixel,gm,gs,gmax)<<8) |
+              (DWORD)f9_movie_expand(pixel,bm,bs,bmax);
+    }
+  }
+done:
+  if(locked) {
+    unlock_hr=IDirectDrawSurface7_Unlock(source,NULL);
+    if(FAILED(unlock_hr)) {
+      snprintf(msg,sizeof(msg),"F9-PNG-MOVIE: source Unlock failed hr=0x%08lX",
+               (unsigned long)unlock_hr);
+      log_line(msg);
+      SpiderF9Toast_PublishError(L"Cannot release decoded movie pixels");
+    }
+  }
+  if(pixels && SUCCEEDED(unlock_hr)) {
+    memset(&frame,0,sizeof(frame));
+    frame.dwSize=sizeof(frame);
+    frame.dwFlags=DDSD_WIDTH|DDSD_HEIGHT|DDSD_PITCH|DDSD_PIXELFORMAT;
+    frame.dwWidth=dw;frame.dwHeight=dh;
+    frame.lPitch=(LONG)(dw*4u);
+    frame.lpSurface=pixels;
+    frame.ddpfPixelFormat.dwSize=sizeof(frame.ddpfPixelFormat);
+    frame.ddpfPixelFormat.dwFlags=DDPF_RGB;
+    frame.ddpfPixelFormat.dwRGBBitCount=32;
+    frame.ddpfPixelFormat.dwRBitMask=0x00ff0000u;
+    frame.ddpfPixelFormat.dwGBitMask=0x0000ff00u;
+    frame.ddpfPixelFormat.dwBBitMask=0x000000ffu;
+    queued=SpiderF9PNG_Queue(&frame,log_line);
+    snprintf(msg,sizeof(msg),
+      "F9-PNG-MOVIE: decoded RGB screenshot %lux%lu queued=%d [no PRIMARY-DC]",
+      (unsigned long)dw,(unsigned long)dh,queued);
+    log_line(msg);
+  }
+  if(pixels)free(pixels);
+  return queued?1:-1;
+}
+
+static void __cdecl hooked_f9_png_only(void) {
+  IDirectDrawSurface7 *back;
+  DDSURFACEDESC2 desc;
+  HRESULT hr,unlock_hr;
+  char msg[210];
+  int queued=0;
+  if(InterlockedCompareExchange(&f9_png_only_enabled,0,0)!=1) return;
+  if(InterlockedCompareExchange(&f9_png_capture_active,1,0)!=0) {
+    log_line("F9-PNG-ONLY: duplicate F9 capture while backbuffer busy; skipped");
+    SpiderF9Toast_PublishError(L"Screenshot capture is busy");
+    return;
+  }
+  /* During intro FMVs/menus, the 3D backbuffer is often entirely black
+   * even when DirectDraw visibly presents a complete picture. */
+  if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1) {
+    int movie=f9_capture_decoded_movie_frame();
+    if(movie==0) {
+      /* Do not read PRIMARY-DC and do not read BACK mid-frame: it is
+       * cleared after every menu Flip. Capture its NEXT complete frame. */
+      if(InterlockedCompareExchange(&f9_menu_png_pending,1,0)==0) {
+        InterlockedExchange(&f9_menu_png_requested_flip,
+                            InterlockedCompareExchange(&flip_count,0,0));
+        log_line("F9-PNG-MENU: deferred until next completed menu Flip");
+      } else {
+        log_line("F9-PNG-MENU: prior menu screenshot still pending");
+        SpiderF9Toast_PublishError(L"Menu screenshot is still pending");
+      }
+    }
+    /* If a decoded movie was detected but unreadable, do not fall back
+     * to any PRIMARY GDI readback: native Windows returned purple pixels. */
+    goto done;
+  }
+  /* Comic screenshots must not bake the toast into a frozen DirectDraw frame. */
+  {
+    LONG flip=InterlockedCompareExchange(&flip_count,0,0);
+    LONG last=InterlockedCompareExchange(&f9_comic_last_draw_flip,0,0);
+    f9_static_comic_capture=(last>=0 && flip-last<=2);
+    if(f9_static_comic_capture)
+      log_line("F9-TOAST-COMIC: static comic recognized; popup-only notification");
+  }
+  back=borderless_back;
+  if(!back || desktop_w<640 || desktop_h<480) {
+    log_line("F9-PNG-ONLY: no valid 3D backbuffer; PNG capture skipped");
+    SpiderF9Toast_PublishError(L"3D backbuffer unavailable");
+    goto done;
+  }
+  IDirectDrawSurface7_AddRef(back);
+  memset(&desc,0,sizeof(desc));
+  desc.dwSize=sizeof(desc);
+  hr=IDirectDrawSurface7_Lock(back,NULL,&desc,
+                              DDLOCK_READONLY|DDLOCK_WAIT,NULL);
+  if(SUCCEEDED(hr)) {
+    /* SpiderF9PNG_Queue copies pixels synchronously. Its worker receives
+     * only private memory, so the DirectDraw surface is unlocked before
+     * any PNG compression and before continuing native gameplay. */
+    queued=f9_static_comic_capture?
+           SpiderF9PNG_QueueComic(&desc,log_line):
+           SpiderF9PNG_Queue(&desc,log_line);
+    unlock_hr=IDirectDrawSurface7_Unlock(back,NULL);
+    snprintf(msg,sizeof(msg),
+      "F9-PNG-ONLY: backbuffer capture=%s %lux%lu Lock=OK Unlock=0x%08lX",
+      queued?"queued":"skipped",
+      (unsigned long)desc.dwWidth,(unsigned long)desc.dwHeight,
+      (unsigned long)unlock_hr);
+    log_line(msg);
+  } else {
+    snprintf(msg,sizeof(msg),
+      "F9-PNG-ONLY: backbuffer Lock failed hr=0x%08lX; no BMP created",
+      (unsigned long)hr);
+    log_line(msg);
+    SpiderF9Toast_PublishError(L"Cannot read the 3D backbuffer");
+  }
+  IDirectDrawSurface7_Release(back);
+done:
+  InterlockedExchange(&f9_png_capture_active,0);
+}
+
+/* Install the PNG-only game call replacement only at exact verified CALL
+ * sites; preflight BOTH original signatures before writing either. The
+ * game is single-threaded at startup, well before F9 can be triggered.
+ * A 32-bit x86 CALL rel32 wraps modulo 2^32, so it reaches any DLL
+ * address within this process without an executable trampoline. */
+static void install_f9_png_only_dispatch(void) {
+  static const struct {
+    DWORD rva;
+    BYTE original[5];
+  } calls[2]={
+    {0x0010A1DCu,{0xE8,0xFF,0x91,0xFF,0xFF}},
+    {0x0010A62Bu,{0xE8,0xB0,0x8D,0xFF,0xFF}}
+  };
+  BYTE *base=(BYTE*)GetModuleHandleA(NULL);
+  BYTE *p[2];
+  DWORD previous[2]={0,0},ignored;
+  unsigned i;
+  char msg[192];
+  if(!base || (uintptr_t)base!=0x00400000u ||
+     InterlockedCompareExchange(&f9_native_png_enabled,0,0)!=1 ||
+     InterlockedCompareExchange(&f9_png_only_enabled,0,0)!=1) {
+    log_line("F9-PNG-ONLY: unsupported EXE layout or PNG disabled; no hooks installed");
+    return;
+  }
+  for(i=0;i<2;i++) {
+    p[i]=base+calls[i].rva;
+    if(memcmp(p[i],calls[i].original,sizeof(calls[i].original))!=0) {
+      snprintf(msg,sizeof(msg),
+        "F9-PNG-ONLY: signature mismatch at RVA 0x%08lX; leaving original game intact",
+        (unsigned long)calls[i].rva);
+      log_line(msg);
+      return;
+    }
+  }
+  if(!VirtualProtect(p[0],5,PAGE_EXECUTE_READWRITE,&previous[0])) {
+    log_line("F9-PNG-ONLY: cannot make first CALL writable; original unchanged");
+    return;
+  }
+  if(!VirtualProtect(p[1],5,PAGE_EXECUTE_READWRITE,&previous[1])) {
+    VirtualProtect(p[0],5,previous[0],&ignored);
+    log_line("F9-PNG-ONLY: cannot make second CALL writable; original unchanged");
+    return;
+  }
+  for(i=0;i<2;i++) {
+    uintptr_t target=(uintptr_t)&hooked_f9_png_only;
+    DWORD relative=(DWORD)(target-((uintptr_t)p[i]+5u));
+    p[i][0]=0xE8; /* CALL rel32; the original game handles the F9 key. */
+    memcpy(p[i]+1,&relative,sizeof(relative));
+  }
+  FlushInstructionCache(GetCurrentProcess(),p[0],5);
+  FlushInstructionCache(GetCurrentProcess(),p[1],5);
+  if(!VirtualProtect(p[1],5,previous[1],&ignored))
+    log_line("F9-PNG-ONLY: WARNING failed to restore second code-page protection");
+  if(!VirtualProtect(p[0],5,previous[0],&ignored))
+    log_line("F9-PNG-ONLY: WARNING failed to restore first code-page protection");
+  log_line("F9-PNG-ONLY: two SHA-verified F9 call sites now call native PNG capture; legacy BMP writer bypassed");
+}
 static void instrument_surface(IDirectDrawSurface7 *surface);
 static HRESULT WINAPI hooked_get_attached(void *self,LPDDSCAPS2 caps,
                                           IDirectDrawSurface7 **out) {
@@ -1550,7 +2138,7 @@ static void pause_at_flip_if_background(void) {
 }
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
-  SpiderQuickExitF12_ObserveEngineState(count,InterlockedCompareExchange(&menu_upscale_active,0,0)==1);
+  SpiderQuickExitF12_ObserveEngineState(count,InterlockedCompareExchange(&menu_upscale_active,0,0)==1); /* passive native mode+2D renderer tracing */
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
@@ -1570,6 +2158,10 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       SpiderInputFocus_OnFlip(count);
   }
   SpiderDI8Retry_OnFlip(count);
+  /* Observe the physical F9 press early; the game's screenshot code can
+   * run between two Flip calls, so surface hooks also sample F9. */
+  if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
+    f9_readback_window();
   hud_probe_flip();
   report_null_fclose_recovery();
   if (g_frame_limiter_ready) SpiderFrameLimiter_Wait(&g_frame_limiter);
@@ -1616,10 +2208,34 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
     if(back_drawn && InterlockedCompareExchange(&menu_version_logged,1,0)==0)
       log_line("MENU-VERSION: drawn on DirectDraw backbuffer: " SPIDERMAN2K1FIX_VERSION_LABEL);
   }
+  /* F9 also supports the two static title/slate screens before the main
+   * menu: these draw a single 3D primitive each frame. Keep the stricter
+   * "permitted" predicate above for the menu-version overlay, while PNG
+   * needs only a fresh frame with some geometry and no active movie Blt.
+   * Capture BEFORE presentation and backbuffer clear. */
+  if(InterlockedCompareExchange(&f9_png_only_enabled,0,0)==1 &&
+     InterlockedCompareExchange(&f9_menu_png_pending,0,0)==1) {
+    BOOL f9_still_ready=menu_active && menu_draws>=1 && movie_blits==0 &&
+      count-movie_last>3 && menu_map.right>menu_map.left &&
+      menu_map.bottom>menu_map.top;
+    f9_capture_completed_menu_flip(count,f9_still_ready);
+  }
   if(self==(void*)borderless_primary && borderless_back && original_blt) {
+      static DWORD last_toast_pub_log=0,last_toast_shown_log=0;
       RECT rc={borderless_monitor_x,borderless_monitor_y,
         borderless_monitor_x+(LONG)desktop_w,borderless_monitor_y+(LONG)desktop_h};
-      hr=original_blt(self,&rc,borderless_back,NULL,DDBLT_WAIT,NULL);
+      IDirectDrawSurface7 *present_source=borderless_back;
+      if(InterlockedCompareExchange(&f9_native_png_enabled,0,0)==1) {
+        IDirectDrawSurface7 *composite=
+          SpiderF9Toast_CompositeFrame(borderless_back,game_hwnd,desktop_w,desktop_h);
+        if(composite)present_source=composite;
+      }
+      hr=original_blt(self,&rc,present_source,NULL,DDBLT_WAIT,NULL);
+      if(FAILED(hr) && present_source!=borderless_back) {
+        /* A lost/unsupported staging surface must not blank gameplay. */
+        SpiderF9Toast_ResetPresentation();
+        hr=original_blt(self,&rc,borderless_back,NULL,DDBLT_WAIT,NULL);
+      }
       if(FAILED(hr)) {
         LONG failures=InterlockedIncrement(&borderless_present_failed);
         if(failures<=12) {
@@ -1628,6 +2244,30 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
           log_line(line);
         }
       }
+      /* Report first observed Flip and first ACTUAL onscreen presentation
+       * for a PNG notification. Comic stills may not Flip during 2.5s. */
+      if(debug_log_enabled && InterlockedCompareExchange(&f9_png_only_enabled,0,0)==1) {
+        DWORD published=0,displayed=0;
+        SpiderF9Toast_GetDisplayStatus(&published,&displayed);
+        if(published && published!=last_toast_pub_log) {
+          char msg[160];
+          snprintf(msg,sizeof(msg),
+            "F9-TOAST: generation=%lu first subsequent Flip=%ld painted=%d",
+            (unsigned long)published,(long)count,displayed==published);
+          log_line(msg);
+          last_toast_pub_log=published;
+        }
+        if(displayed && displayed!=last_toast_shown_log) {
+          char msg[150];
+          snprintf(msg,sizeof(msg),
+            "F9-TOAST: generation=%lu FIRST displayed at Flip=%ld",
+            (unsigned long)displayed,(long)count);
+          log_line(msg);
+          last_toast_shown_log=displayed;
+        }
+      }
+      /* One DirectDraw Blt above includes the notice when active. Never
+       * paint PRIMARY asynchronously after presenting the finished frame. */
       /* GDI fallback only when the video-memory surface has no DC. */
       if(SUCCEEDED(hr) && permitted && !back_drawn) {
         RECT content={menu_map.left,menu_map.top,menu_map.right,menu_map.bottom};
@@ -1701,6 +2341,20 @@ static void instrument_surface(IDirectDrawSurface7 *surface) {
     patched_surface_vtable[5]=(void *)hooked_blt;
     patched_surface_vtable[11]=(void *)hooked_flip;
     patched_surface_vtable[12]=(void *)hooked_get_attached;
+    if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1 ||
+       InterlockedCompareExchange(&f9_backbuffer_fix_enabled,0,0)==1) {
+      original_get_dc=(SurfaceGetDCFn)vtable[17];
+      original_surface_get_desc=(SurfaceGetDescFn)vtable[22];
+      original_surface_lock=(SurfaceLockFn)vtable[25];
+      original_release_dc=(SurfaceReleaseDCFn)vtable[26];
+      original_surface_unlock=(SurfaceUnlockFn)vtable[32];
+      patched_surface_vtable[17]=(void *)hooked_f9_surface_get_dc;
+      patched_surface_vtable[22]=(void *)hooked_f9_surface_get_desc;
+      patched_surface_vtable[25]=(void *)hooked_f9_surface_lock;
+      patched_surface_vtable[26]=(void *)hooked_f9_surface_release_dc;
+      patched_surface_vtable[32]=(void *)hooked_f9_surface_unlock;
+      log_line("F9-TRACE: read-only DirectDraw7 GetDC/GetSurfaceDesc/Lock/ReleaseDC/Unlock diagnostics installed");
+    }
     log_line("DDRAW: Surface7 vtable captured; Blt/Flip/GetAttachedSurface hooks ready");
     InterlockedExchange(&surface_vtable_ready,2);
   }
@@ -1849,6 +2503,9 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
   log_line(line);
   game_hwnd=hwnd;
   SpiderQuickExitF12_AttachWindow(hwnd);
+  /* Only the idle-scene notification fallback uses a separate no-focus
+   * translucent HWND, and only if the game stops issuing Flip. */
+  SpiderF9Toast_SetGameWindow(hwnd,log_line);
   probe_desktop_mode(hwnd);
   log_monitor(hwnd);
   hr=original_coop(self,hwnd,DDSCL_NORMAL);
@@ -1934,6 +2591,7 @@ static HRESULT WINAPI hooked_mode(void *self,DWORD w,DWORD h,DWORD bpp,DWORD hz,
       log_line(line);
     }
     if (InterlockedExchange(&menu_upscale_active,0)==1) {
+        f9_movie_drop_source(); /* No retained intro decoder surface in 3D. */
         log_line("BORDERLESS: MENU exited; windowed gameplay presentation active");
     }
   }
@@ -2064,7 +2722,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
-  SpiderQuickExitF12_Init(log_line); /* Optional F10; Bink-to-3D safety is independent. */
+  SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
    * No COM-vtable interception. The actual patch is delayed to Flip #120. */
@@ -2214,6 +2872,46 @@ static DWORD WINAPI initialize(LPVOID unused) {
     }
   }
   log_line("BORDERLESS: windowed fullscreen enabled");
+  /* Only the exact game F9 Lock caller can be redirected. The independent
+   * PNG prototype retains the legacy BMP as a safe baseline. Both test
+   * flags require Log=1; normal play has no additional COM hooks. */
+  {
+    char setting[8]={0};
+    if(debug_log_enabled &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_BACKBUFFER",setting,sizeof(setting))==1 &&
+       setting[0]=='1') {
+      InterlockedExchange(&f9_backbuffer_fix_enabled,1);
+      log_line("F9-FIX: experimental primary screenshot readback -> 3D backbuffer enabled");
+    }
+    memset(setting,0,sizeof(setting));
+    if(debug_log_enabled &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_PNG",setting,sizeof(setting))==1 &&
+       setting[0]=='1') {
+      InterlockedExchange(&f9_native_png_enabled,1);
+      InterlockedExchange(&f9_backbuffer_fix_enabled,1);
+      log_line("F9-PNG: native PNG prototype active; original BMP retained during test");
+    }
+    memset(setting,0,sizeof(setting));
+    if(debug_log_enabled &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_TRACE",setting,sizeof(setting))==1 &&
+       setting[0]=='1')
+      InterlockedExchange(&f9_trace_enabled,1);
+    if(InterlockedCompareExchange(&f9_backbuffer_fix_enabled,0,0)==1)
+      InterlockedExchange(&f9_trace_enabled,1);
+    if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
+      log_line("F9-TRACE: opt-in native screenshot readback observation armed; press F9 in gameplay");
+  }
+  if(debug_log_enabled) {
+    char only[8]={0};
+    if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_PNG_ONLY",
+                               only,sizeof(only))==1 && only[0]=='1') {
+      InterlockedExchange(&f9_native_png_enabled,1);
+      InterlockedExchange(&f9_png_only_enabled,1);
+      log_line("F9-PNG-ONLY: opt-in direct F9 to PNG requested");
+    }
+  }
+  if(InterlockedCompareExchange(&f9_png_only_enabled,0,0)==1)
+    install_f9_png_only_dispatch();
   install_player_hud(TRUE);
   {
     char flag[8]={0};

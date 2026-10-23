@@ -70,7 +70,11 @@ def test_only_any_key_resume_and_retired_ini_modes_inert():
     assert 'SpiderPauseAny_Begin(hwnd)' in CORE
     assert 'SpiderPauseAny_Completed()' in CORE
     assert 'SpiderPauseAny_DiscardGameKeyMessage(&msg,hwnd)' in CORE
-    assert 'VK_F9' not in CORE
+    # F9 is independently observed by the optional screenshot diagnostic.
+    # The Alt+Tab PAUSE implementation must not use F9 as a wake key.
+    pause = CORE[CORE.index("static void pause_at_flip_if_background(void)"):
+                 CORE.index("static HRESULT WINAPI hooked_flip(")]
+    assert 'VK_F9' not in pause
     assert 'pause_poll_key' not in CORE
 
 

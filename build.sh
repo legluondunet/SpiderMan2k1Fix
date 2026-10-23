@@ -76,7 +76,7 @@ printf 'CRT-PROBE: MSVCRT import verified; building DLLs.\n'
 # validation fails; do not let a partially compiled pair reach the game.
 "$CC" -std=gnu11 -O2 -fno-pie -mno-sse -mno-sse2 -mfpmath=387 -Wall -Wextra \
   -static-libgcc "$version_define" -shared -o "$probe_dir/SpiderMan2k1Fix.dll" \
-  spiderman2k1fix.c quick_exit_f12.c menu_version.c hud_widescreen.c hud_adaptive.c frame_limiter.c display_plan.c menu_scale.c comic_native.c virtual_spidey_cfg.c display_policy.c display_menu_lock.c fov_aspect.c fov_aspect_win.c input_focus_trace.c input_notacquired_retry.c pause_any_key.c pause_surface.c focus_media_pause.c focus_dsound_pause.c \
+  spiderman2k1fix.c quick_exit_f12.c f9_png.c f9_toast.c menu_version.c hud_widescreen.c hud_adaptive.c frame_limiter.c display_plan.c menu_scale.c comic_native.c virtual_spidey_cfg.c display_policy.c display_menu_lock.c fov_aspect.c fov_aspect_win.c input_focus_trace.c input_notacquired_retry.c pause_any_key.c pause_surface.c focus_media_pause.c focus_dsound_pause.c \
   -ladvapi32 -ldxguid -lgdi32 -lmsimg32 -lshell32 -Wl,--subsystem,windows
 "$CC" -std=gnu11 -O2 -fno-pie -Wall -Wextra \
   -static-libgcc "$version_define" -shared -o "$probe_dir/winmm.dll" \
