@@ -29,70 +29,92 @@ SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must prov
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 
-### Optional F12 quick exit — menu validated; startup cinematic exit experimental
+### Optional F12 quick exit — native cleanup, experimental stages
 
-> **Windows 11 validation:** Build #471 successfully exits from the actual main menu through the native `Shell_MainMenu` Quit action (slot 3, command 18); the user verified that `SpideyPC.exe` disappears from Task Manager. In build #476, F12 during the opening videos successfully skips the **four** native Bink clips, but the game then stops on one of **two static startup screens**, the latter prompting Enter to reach the main menu. The new *full startup exit* path is **experimental and has not yet been tested on Windows**. Comic pages remain unsupported; 3D has a separately enabled, **unvalidated** native-exit proof of concept. [PR #26](https://github.com/legluondunet/SpiderMan2k1Fix/pull/26) stays a draft.
+**F12 is OFF by default.** The original 2001 game shortcut can
+post `WM_CLOSE` before the game's Bink, DirectDraw and audio
+resources are cleaned up, sometimes leaving a headless process.
+This fix suppresses that unsafe shortcut and uses the game's
+native cleanup paths instead. No `ExitProcess`,
+`TerminateProcess`, synthetic Enter or forced window destruction
+is used. Changes are being developed in
+[draft PR #26](https://github.com/legluondunet/SpiderMan2k1Fix/pull/26);
+**the PR is not merged**.
 
-F12 is off by default. To opt into the experimental build, set:
+| Stage | Implementation and manual validation |
+| --- | --- |
+| Four opening Bink videos | Original game video cleanup and top-level Quit handoff; previously tested |
+| Interactive main menu | Original `Shell_MainMenu` Quit command (slot 3, action 18); **validated on Windows 11** |
+| New Game comic still | **Validated under Linux/Wine** with delayed exit: it retains the comic's automatic timing, then uses movie #4 |
+| New Game Bink cinematic | **Validated under Linux/Wine**: verified movie #4 owner, original Bink cleanup, then native final teardown |
+| 3D gameplay | **Validated on Windows 11 and Linux/Wine** through native game-owner and controller-7 cleanup |
+
+**Process exit was independently confirmed by the user for the
+Wine comic, cinematic and gameplay tests:** no residual game or
+Wine process. This does **not** mean the experimental comic and
+New Game cinematic paths have yet been verified on Windows.
+Two pre-menu static title/Enter screens also lack a separate
+stage-specific F12 validation.
+
+Enable only the desired stages in `SpiderMan2k1Fix.ini`
+while using the experimental PR build:
 
 ```ini
-[System]
-QuickExitF12=1
-
 [Debug]
 Log=1
-```
 
-The 2001 game's original VK_F12 directly posts `WM_CLOSE`, which can destroy only the game window while native Bink audio and DirectDraw continue forever. SpiderMan2k1Fix disables that exact signature-checked native shortcut to avoid a headless process.
-
-**Validated menu:** The real `Shell_MainMenu` at `0x00493990` executes the game-owned frame tick at `0x00493DD6`. When F12 is pressed in the interactive main menu, the original game receives selection **3**, corresponding to **Quit command 18**, and follows its own cleanup branch at `0x004941D5`. The native menu mechanism is unchanged from the user-validated build #471.
-
-**Opening movie shutdown — revised mechanism:** The game's startup at `0x00455C90` calls movie owner `0x00470750` **four times**. F12 during these movies latches a startup exit request; the original Bink frame-tick CALLs at `0x0047081D` and `0x0047085F` can then report completion. The video-owning game thread follows its existing Bink cleanup at `0x00470871` for all remaining startup clips.
-
-**Important difference from #476:** The first `Shell_MainMenu` callback after the videos may belong to the **two static startup screens**, not the interactive main menu. Delivering Quit there did **not** terminate the game. Rather than entering or simulating input on those screens, this revision hooks the exact native call at `0x00455D23` to transition-cleanup function `0x00443AD0`, *executes the original cleanup first*, then, if an opening F12 request is latched, sets the game's own Quit byte at `0x0060CF88`. Its original top-level check at `0x00455E50` is downstream of that transition and branches to native engine cleanup at `0x004561F2`. This may let the game terminate **before reaching either static screen**, without invoking a native destructor from the key watcher thread.
-
-The new path is protected by exact native machine-byte signatures for the video ticks, the post-movie call and the game's Quit check. **No `WM_CLOSE`, synthetic Enter, `ExitProcess` or `TerminateProcess`** is used.
-
-**3D gameplay F12 — new, separate experimental opt-in (not yet Windows-validated):** The original 3D game loop executes `0x00440EF0` and checks the controller request immediately after each frame. Actual Windows logs #503 and #506 prove that request `7` produced during this native frame leads through game-owned cleanup. Build #508 proves that the top-level controller normally returns to menu with `bit4=0,status=-1` after the native `0x0048A820` cleanup.
-
-Enable *both* options **only when testing this development PR**:
-
-```ini
 [System]
 QuickExitF12=1
 ExperimentalQuickExitF12In3D=1
-
-[Debug]
-Log=1
+ExperimentalQuickExitF12InNewGameMovie=1
+ExperimentalQuickExitF12InNewGameComic=1
 ```
 
-When F12 is pressed in a recognized 3D frame, the key-watcher thread only latches an intent. At the **end of the game's own 3D input-owner callback**, the game thread requests controller transition `7`, so the original 3D loop takes its existing owner cleanup branch `0x00455BF3`. After the original cleanup at `0x004302D0` has returned, and **after** the top-level controller executes both `0x00443AD0(0)` and `0x0048A820`, the same native game thread sets **only bit 4** in the original engine shutdown flag at `0x02E0988C`. The game's **unchanged** `0x0045619D` test then enters its final cleanup `0x0045620C`. No fake keystrokes, window destruction, `ExitProcess` or `TerminateProcess` are used.
+- `QuickExitF12` activates the main menu and opening-video handling.
+- `ExperimentalQuickExitF12In3D` allows the native 3D shutdown.
+- `ExperimentalQuickExitF12InNewGameMovie` additionally allows
+  clean shutdown during **New Game Bink movie #4**, after native
+  video cleanup; it requires `QuickExitF12=1`,
+  `ExperimentalQuickExitF12In3D=1`, and `[Debug] Log=1`.
+- `ExperimentalQuickExitF12InNewGameComic` enables **deferred**
+  F12 while the New Game comic still is visible. It requires
+  the preceding movie option; the comic is *not immediately
+  interrupted*, and a 12-second timeout cancels an unmatched
+  request. The normal comic lasts around five seconds in
+  the tested sequence.
 
-This new path is isolated behind `ExperimentalQuickExitF12In3D=0` by default, and is only eligible when the real 3D owner and non-menu renderer have run recently. The owner cleanup checkpoint must be observed before any final-exit flag is set. A first live Windows test should press F12 **during actual 3D gameplay**, confirm the window, audio and `SpideyPC.exe` process all disappear, and check both these markers:
+All four INI settings default to `0`. The two New Game
+options are alternatives to the existing **per-process**
+environment switches
+`SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT=1` and
+`SPIDERMAN2K1FIX_F12_COMIC_EXIT=1`; those older switches
+are retained for compatibility, and still require the same
+base F12, 3D and debug gates. If using the INI settings above,
+**no environment variables are needed**, including under Wine
+or Lutris.
 
-```text
-QUICK-EXIT-F12: 3D game-thread frame completed; native request 7 queued for original 0x455BF3 cleanup
-QUICK-EXIT-F12: 3D owner+controller cleanup complete; engine native final-exit flag set at 0x45619D
-```
+The New Game movie shutdown relies on original movie-owner
+CALL `0x004279FB` and the game's cleanup at
+`0x00470871`. The comic exit waits until this same movie
+starts. Both reuse the normal post-script input checkpoint,
+owner cleanup at `0x00455BF9`, and original controller-7
+final teardown at `0x0045619D`/`0x0045620C`.
+This is why the comic stage does not close instantly.
 
-The last marker alone does **not** prove an OS process exit. Check the process and crash events with the PowerShell watcher. Regression-test normal menu F12 with the new option set back to `0`. Comics and the two static startup screens are **still not implemented**.
+**Known visual caveat:** a user saw a fully yellow screen for
+1–2 seconds before the clean Wine *cinematic* shutdown. The
+cause is not established and no renderer workaround is
+implemented; compare with Windows later. Native cleanup
+and disappearance of processes were successful in that
+Wine run.
 
-**Next Windows test:** Press F12 in the first opening cinematic, confirm the audio ends and `SpideyPC.exe` fully disappears without remaining on either static image. Inspect the log for:
-
-```text
-QUICK-EXIT-F12: intro movie exit requested
-QUICK-EXIT-F12: four native movie calls completed; intro transition cleanup finished; engine Quit flag set BEFORE top-level 0x455E50 check
-```
-
-If the second marker occurs but the game still remains, the top-level native check may not have been reached on that startup path. This would require further investigation; do not call it a successful exit.
-
-For external process-exit and Windows crash-event checks, run [`tools/Verify-F12QuickExit.ps1`](tools/Verify-F12QuickExit.ps1) from the game folder:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\\Verify-F12QuickExit.ps1
-```
-
-This read-only watcher reports the game exit code and checks for leftover processes. It never kills the game. A stopped process releases Windows-owned handles/memory but does not prove that every COM resource was explicitly released by the game.
+For detailed disassembly, stage guards, test logs, safety
+constraints and the verification plan, see
+[`docs/F12_NATIVE_SHUTDOWN.md`](docs/F12_NATIVE_SHUTDOWN.md).
+The read-only Windows process watcher
+[`tools/Verify-F12QuickExit.ps1`](tools/Verify-F12QuickExit.ps1)
+can help confirm that `SpideyPC.exe` terminates rather than
+leaving only its window closed.
 
 ## Requirements and compatibility
 
