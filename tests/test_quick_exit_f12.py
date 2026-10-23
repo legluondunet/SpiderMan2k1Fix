@@ -2026,7 +2026,7 @@ def test_movie_enter_release_is_gated_before_first_original_3d_input():
     Exact movie-to-3D first-owner barrier must not modify DirectInput,
     touch native skip byte or apply to F10-armed intros.
     """
-    src=SRC[SRC.index("static void spider_newgame_enter_release_barrier(void)"):
+    src=SRC[SRC.index("static void spider_newgame_enter_release_barrier(int confirmed_movie4)"):
             SRC.index("/* Native game-input owner wrapper at 0x45553B:")]
     for predicate in ("GetAsyncKeyState(VK_RETURN)",
                       "GetAsyncKeyState(VK_SPACE)",
@@ -2048,8 +2048,8 @@ def test_movie_enter_release_is_gated_before_first_original_3d_input():
         assert forbidden not in src
     owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
               SRC.index("static void __cdecl spider_observe_native_game_cleanup(")]
-    assert "if(n==1)spider_newgame_enter_release_barrier();" in owner
-    assert owner.index("if(n==1)spider_newgame_enter_release_barrier();") < owner.index(
+    assert "if(n==1)spider_newgame_enter_release_barrier(0);" in owner
+    assert owner.index("if(n==1)spider_newgame_enter_release_barrier(0);") < owner.index(
         "SPIDER_NATIVE_GAME_INPUT_UPDATE();")
     assert owner.count("SPIDER_NATIVE_GAME_INPUT_UPDATE();")==1
     assert "GetAsyncKeyState(VK_RETURN)" not in owner
@@ -2057,7 +2057,7 @@ def test_movie_enter_release_is_gated_before_first_original_3d_input():
 
 def test_enter_only_cannot_arm_intro_auto_skip_during_release_barrier():
     """The new barrier is not an alternate F10 origin or movie-skip request."""
-    segment=SRC[SRC.index("static void spider_newgame_enter_release_barrier(void)"):
+    segment=SRC[SRC.index("static void spider_newgame_enter_release_barrier(int confirmed_movie4)"):
                 SRC.index("/* Native game-input owner wrapper at 0x45553B:")]
     assert "debug_auto3d_f10_origin,0,0)!=0" in segment
     assert "debug_auto3d_state,0,0)!=0" in segment
