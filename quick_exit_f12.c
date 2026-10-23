@@ -943,6 +943,21 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
          * the top-level engine's startup-state check. */
         if(InterlockedCompareExchange(&intro_quit_pending,1,0)==0)
            say("QUICK-EXIT-F12: intro movie exit requested; native Bink cleanup then top-level engine Quit");
+      } else if(InterlockedCompareExchange(&postmovie_opt_in,0,0)==1 &&
+                InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
+                InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
+                InterlockedCompareExchange(&input_native_invocations,0,0)==0 &&
+                InterlockedCompareExchange(&last_comic_candidate_ms,0,0)!=0 &&
+                (DWORD)(now-(DWORD)InterlockedCompareExchange(
+                  &last_comic_candidate_ms,0,0))<180000u &&
+                *SPIDER_GAME_BINK_ACTIVE!=0u &&
+                *SPIDER_BINK_VIDEO_HANDLE!=0u) {
+        /* F12 worker only queues intent: native tick wrapper will
+         * verify the specific movie owner before interrupting it. */
+        if(InterlockedCompareExchange(&postmovie_state,1,0)==0) {
+          InterlockedExchange(&postmovie_request_ms,(LONG)now);
+          say("QUICK-EXIT-F12: POSTMENU-MOVIE F12 intent requested; original Bink owner verification pending [EXPERIMENTAL]");
+        }
       } else if(InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
                 InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
                 *SPIDER_ENGINE_MODE==0u &&
