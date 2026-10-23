@@ -816,9 +816,30 @@ static void __cdecl spider_after_intro_cleanup(int mode) {
      InterlockedCompareExchange(&static_screen_trace_enabled,0,0)==1)
     say("QUICK-EXIT-F12: STARTUP-STATIC-PROBE original four-movie transition cleanup 0x455D23 completed [READ-ONLY]");
   if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1) {
+    /* Original x86 0x455D23 -> 0x455E50 is NOT unconditional:
+     * branches at 0x455DC8 / 0x455DD0 may skip the 0x455E50
+     * Quit-byte comparison entirely. Windows #589 showed quit=1
+     * yet the engine continued to the first still. Preserve the
+     * original flag for paths that do reach its native check, AND
+     * carry this SAME F12 into the already validated input-wait
+     * page cleanup when that separate option is enabled. */
     *SPIDER_GAME_QUIT_FLAG=1u;
     InterlockedExchange(&intro_native_quit_forwarded,1);
-    say("QUICK-EXIT-F12: four native movie calls completed; intro transition cleanup finished; engine Quit flag set BEFORE top-level 0x455E50 check");
+    say("QUICK-EXIT-F12: four native movie calls completed; original transition cleanup finished; Quit byte forwarded (top-level 0x455E50 may be bypassed by startup branches)");
+    if(SpiderQuickExitF12_Enabled() &&
+       InterlockedCompareExchange(&intro_still_opt_in,0,0)==1 &&
+       InterlockedCompareExchange(&intro_still_hook_installed,0,0)==1 &&
+       InterlockedCompareExchange(&real_main_menu_seen,0,0)==0 &&
+       InterlockedCompareExchange(&intro_still_exit_state,0,0)==0) {
+      /* Do NOT trigger a second synthetic F12 or skip native page
+       * lifetime. The timed still finishes normally and the original
+       * 0x4A1896 input-wait call takes native TRUE -> 0x4A18AE
+       * page cleanup -> real Shell_MainMenu Quit action 18.
+       * Timeout handling is shared with manual F12 on either still. */
+      InterlockedExchange(&intro_still_request_ms,(LONG)GetTickCount());
+      if(InterlockedCompareExchange(&intro_still_exit_state,1,0)==0)
+        say("QUICK-EXIT-F12: INTRO-MOVIE single F12 carried into original timed/input-wait still cleanup; no second keypress required [EXPERIMENTAL]");
+    }
   }
 }
 
