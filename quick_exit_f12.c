@@ -523,20 +523,48 @@ static void __cdecl spider_observe_controller7_finish(void) {
  * this hook, and never destroy HWND while the video loop is alive. */
 static BYTE __cdecl spider_f12_native_intro_tick(void) {
   static volatile LONG after_shell_ticks=0;
+  static volatile LONG after_shell_previous_result=-1;
+  static volatile LONG after_shell_previous_space=0;
+  BYTE native_result;
+  LONG post_shell=0,n=0;
   if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1) {
     if(InterlockedCompareExchange(&intro_tick_shortcircuited,1,0)==0)
       say("QUICK-EXIT-F12: native Bink tick returned finished; original game video cleanup will run");
     return 0;
   }
-  /* Check whether the post-New-Game cinematic reuses either of the
-   * ALREADY hooked native 0x470750 Bink frame-tick callsites.
-   * This is a one-time log and changes no original Bink execution. */
-  if(SpiderQuickExitF12_Enabled() &&
-     InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
-     InterlockedIncrement(&after_shell_ticks)==1) {
-    say("QUICK-EXIT-F12: POST-SHELL-BINK-TICK-CALLSITE original 0x470750 tick observed [OWNER-IDENTITY NOT PROVEN]");
+  /* The existing native 0x470750 Bink loop is also reached after
+   * New Game. Keep the exact original tick result and call it ONCE.
+   * The sampled space-key state is only correlation evidence, not proof
+   * of the game input event that ended the movie. */
+  post_shell=SpiderQuickExitF12_Enabled() &&
+             InterlockedCompareExchange(&real_main_menu_seen,0,0)==1;
+  if(post_shell) {
+    n=InterlockedIncrement(&after_shell_ticks);
+    if(n==1)
+      say("QUICK-EXIT-F12: POST-SHELL-BINK-TICK-CALLSITE original 0x470750 tick observed [OWNER-IDENTITY NOT PROVEN]");
   }
-  return SPIDER_NATIVE_BINK_FRAME_TICK();
+  native_result=SPIDER_NATIVE_BINK_FRAME_TICK();
+  if(post_shell) {
+    LONG space_down=(GetAsyncKeyState(VK_SPACE)&0x8000)!=0;
+    LONG old_result=InterlockedExchange(&after_shell_previous_result,(LONG)native_result);
+    LONG old_space=InterlockedExchange(&after_shell_previous_space,space_down);
+    if(n<=4 || n%120==0 ||
+       (native_result==0 && old_result!=0) ||
+       (space_down && !old_space)) {
+      DWORD now=GetTickCount();
+      DWORD comic_ms=(DWORD)InterlockedCompareExchange(&last_comic_candidate_ms,0,0);
+      char line[320];
+      snprintf(line,sizeof(line),
+        "QUICK-EXIT-F12: POST-SHELL-BINK-TICK-RESULT n=%ld native_result=%u previous_result=%ld space_down_sampled=%ld bink_flag=%lu video_handle_present=%lu native_3d_owner_seen=%lu ms_since_comic=%lu [READ-ONLY; SKIP-REASON UNKNOWN]",
+        (long)n,(unsigned)native_result,(long)old_result,(long)space_down,
+        (unsigned long)(*SPIDER_GAME_BINK_ACTIVE!=0u),
+        (unsigned long)(*SPIDER_BINK_VIDEO_HANDLE!=0u),
+        (unsigned long)(InterlockedCompareExchange(&input_native_invocations,0,0)>0),
+        (unsigned long)(comic_ms?(DWORD)(now-comic_ms):0u));
+      say(line);
+    }
+  }
+  return native_result;
 }
 
 /* This wrapper executes ON THE ORIGINAL GAME THREAD immediately
