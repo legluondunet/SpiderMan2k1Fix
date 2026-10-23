@@ -857,14 +857,19 @@ def test_external_windows_watcher_verifies_direct_3d_f12_cleanup_and_expected_mo
     assert "Stop-Process" not in script and ".Kill(" not in script
 
 
-def test_readme_describes_menu_validated_and_movies_experimental():
+def test_readme_describes_current_f10_native_skips_and_experimental_scope():
+    """The F12 disassembly history moved to docs; README states F10
+    behavior and remaining unverified in-level cinematic cases."""
     readme=(ROOT/"README.md").read_text(encoding="utf-8")
-    assert "Shell_MainMenu" in readme
-    assert "0x00493DD6" in readme
-    assert "main menu" in readme.lower()
-    assert "cinematics" in readme.lower()
-    assert "not yet" in readme.lower()
-    assert "tools/Verify-F12QuickExit.ps1" in readme
+    assert "F10 is the only SpiderMan2k1Fix physical shortcut" in readme
+    assert "F10Auto3DScripts=1" in readme
+    assert "F10GameplayExit=1" in readme
+    assert "F10VerboseTrace=0" in readme
+    assert "CutSceneScript" in readme
+    assert "original 3D cleanup" in readme
+    assert "not yet in arbitrary later in-level cutscenes" in readme
+    assert "docs/F10_VALIDATION_MATRIX.md" in readme
+    assert "docs/F12_DEBUG_TEST_MODE.md" in readme
 
 
 def test_four_intro_movies_run_original_bink_cleanup_on_game_thread():
