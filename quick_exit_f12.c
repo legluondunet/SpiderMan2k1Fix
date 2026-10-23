@@ -358,6 +358,12 @@ static volatile LONG debug_auto3d_state=0;
 static volatile LONG debug_auto3d_first_owner=0;
 static volatile LONG debug_auto3d_first_last_ip=0;
 static volatile LONG debug_auto3d_begin_ms=0;
+/* Independent opt-in for F10 in-game exit. The two script endings
+ * AND both original native skip request completions must be proven. */
+static volatile LONG debug_f10_gameplay_exit_opt_in=0;
+static volatile LONG debug_cutscene_lifecycle=0;
+static volatile LONG debug_intro_generation=0;
+static volatile LONG debug_lifecycle_generation=-1;
 static volatile LONG debug_newgame_3d_first_ms=0;
 /* Native New Game L1COV timer hook. No new INI option.
  * 0/1 installed; fastforward_observed records that the original
@@ -667,11 +673,15 @@ static void __cdecl spider_observe_native_game_input(void) {
       InterlockedExchange(&debug_newgame_3d_first_ms,(LONG)GetTickCount());
       say("QUICK-EXIT-F12: DEBUG-NEWGAME-3D native input owner reached after verified movie-4 owner; INTRO vs GAMEPLAY UNKNOWN; F12 exit BLOCKED until positively identified [READ-ONLY]");
     }
-    /* Extra fail-closed protection for a request queued on an exact
-     * scene-boundary frame: never forward an old exit to controller 7. */
+    /* Never deliver stale F10 exit requests from a scripted intro. */
     if(InterlockedCompareExchange(&debug_newgame_progress,0,0)>=1 &&
-       InterlockedCompareExchange(&game3d_exit_state,0,1)==1)
-      say("QUICK-EXIT-F12: DEBUG-NEWGAME-3D cancelled pending EXIT request at intro boundary [NO CONTROLLER 7]");
+       InterlockedCompareExchange(&game3d_exit_state,0,0)==1 &&
+       (InterlockedCompareExchange(&debug_f10_gameplay_exit_opt_in,0,0)!=1 ||
+        InterlockedCompareExchange(&debug_cutscene_lifecycle,0,0)!=6 ||
+        InterlockedCompareExchange(&debug_auto3d_state,0,0)!=7)) {
+      InterlockedCompareExchange(&game3d_exit_state,0,1);
+      say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT stale request ABORTED during script");
+    }
   }
   /* Passive 3D phase trace. The physical SPACE key skips BOTH native
    * 3D intro scenes (Stan Lee narration, then another 3D cinematic);
@@ -929,13 +939,23 @@ static void __cdecl spider_observe_native_game_input(void) {
       {
         static DWORD tracked_owner=0u,first_last_ip=0u,second_last_ip=0u;
         static LONG scene_stage=0u,lifecycle_logs=0;
+        LONG generation=InterlockedCompareExchange(&debug_intro_generation,0,0);
         const char *event_name=0;
+        if(InterlockedCompareExchange(&debug_lifecycle_generation,generation,generation)!=generation) {
+          InterlockedExchange(&debug_lifecycle_generation,generation);
+          tracked_owner=0u;
+          first_last_ip=0u;
+          second_last_ip=0u;
+          scene_stage=0;
+          InterlockedExchange(&debug_cutscene_lifecycle,0);
+        }
         DWORD now_stage=(DWORD)scene_stage;
         if(!readable || owner!=tracked_owner) {
           tracked_owner=readable?owner:0u;
           first_last_ip=0u;
           second_last_ip=0u;
           scene_stage=0;
+          InterlockedExchange(&debug_cutscene_lifecycle,0);
           now_stage=0u;
         }
         if(readable && scene_context==1u && script_active==1u &&
@@ -976,6 +996,7 @@ static void __cdecl spider_observe_native_game_input(void) {
         } else if(readable && scene_context==0u && script_active==0u &&
                   now_stage==5u) {
           scene_stage=6;
+          InterlockedExchange(&debug_cutscene_lifecycle,6);
           event_name="SECOND_SCRIPT_ENDED_CANDIDATE_GAMEPLAY";
         }
         if(event_name && lifecycle_logs<24 &&
@@ -1223,7 +1244,37 @@ static void __cdecl spider_observe_native_game_input(void) {
     }
   }
   if(InterlockedCompareExchange(&game3d_exit_state,2,1)==1) {
-    if(InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
+    /* Native-game-thread FINAL eligibility. Revalidate game-owned
+     * script manager, not just copied counters from the worker. */
+    int scripts_idle=0;
+    if(InterlockedCompareExchange(&debug_f10_gameplay_exit_opt_in,0,0)==1 &&
+       InterlockedCompareExchange(&debug_cutscene_lifecycle,0,0)==6 &&
+       InterlockedCompareExchange(&debug_auto3d_state,0,0)==7 &&
+       InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
+       *SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST==0u &&
+       *SPIDER_PAUSE_CONTEXT==0u &&
+       *SPIDER_BINK_VIDEO_HANDLE==0u) {
+      DWORD owner=*SPIDER_NATIVE_CUTSCENE_OWNER_PTR;
+      MEMORY_BASIC_INFORMATION mbi;
+      if(owner>=0x10000u &&
+         VirtualQuery((LPCVOID)(uintptr_t)owner,&mbi,sizeof(mbi))==sizeof(mbi) &&
+         mbi.State==MEM_COMMIT &&
+         !(mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)) &&
+         ((mbi.Protect&0xffu)==PAGE_READONLY ||
+          (mbi.Protect&0xffu)==PAGE_READWRITE ||
+          (mbi.Protect&0xffu)==PAGE_WRITECOPY ||
+          (mbi.Protect&0xffu)==PAGE_EXECUTE_READ ||
+          (mbi.Protect&0xffu)==PAGE_EXECUTE_READWRITE ||
+          (mbi.Protect&0xffu)==PAGE_EXECUTE_WRITECOPY) &&
+         (uintptr_t)owner>=(uintptr_t)mbi.BaseAddress &&
+         (uintptr_t)owner-(uintptr_t)mbi.BaseAddress<=mbi.RegionSize &&
+         mbi.RegionSize-((uintptr_t)owner-(uintptr_t)mbi.BaseAddress)>=0x1bcu) {
+        const volatile BYTE *scene=(const volatile BYTE *)(uintptr_t)owner;
+        scripts_idle=(scene[0x1acu]==0u && scene[0x1b4u]==0u);
+      }
+    }
+    if(scripts_idle &&
+       InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
        before_request==0u && after_request==0u &&
        *SPIDER_GAME_BINK_ACTIVE==0u) {
       InterlockedExchange(&game3d_cleanup_baseline,
@@ -1231,10 +1282,10 @@ static void __cdecl spider_observe_native_game_input(void) {
       InterlockedExchange(&game3d_cleanup_confirmed,0);
       *(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;
       after_request=7u;
-      say("QUICK-EXIT-F12: 3D game-thread frame completed; native request 7 queued for original 0x455BF3 cleanup");
+      say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT original owner script idle; native request 7 for original cleanup");
     } else {
       InterlockedExchange(&game3d_exit_state,0);
-      say("QUICK-EXIT-F12: 3D request cancelled: owner has changed or Bink active");
+      say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT request REJECTED on game thread (script/owner/bink changed)");
     }
   }
   after_timer=*SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE;
@@ -2537,6 +2588,8 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
             InterlockedExchange(&postmovie_request_ms,(LONG)now);
             if(InterlockedCompareExchange(&postmovie_state,4,0)==0) {
               if(InterlockedCompareExchange(&debug_auto3d_opt_in,0,0)==1) {
+                InterlockedIncrement(&debug_intro_generation);
+                InterlockedExchange(&debug_cutscene_lifecycle,0);
                 InterlockedExchange(&debug_auto3d_first_owner,0);
                 InterlockedExchange(&debug_auto3d_first_last_ip,0);
                 InterlockedExchange(&debug_auto3d_begin_ms,(LONG)now);
@@ -2559,13 +2612,33 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
               say("QUICK-EXIT-F12: DEBUG-NEWGAME-MOVIE F12 queued for exact native Enter-equivalent Bink termination, NO EXIT");
           }
         } else if(InterlockedCompareExchange(&debug_newgame_progress,0,0)>=1) {
-          /* Movie #4 conclusively preceded this phase. TWO subsequent
-           * 3D scenes can be skipped with SPACE: Stan Lee's narrated
-           * introduction and the next 3D cinematic. Neither scene's
-           * native end condition or playable boundary has been mapped.
-           * An unclassified F12 must NEVER become a controller-7 exit.
-           * Capture evidence and consume the key edge safely. */
-          say("QUICK-EXIT-F12: DEBUG-NEWGAME-3D F10 consumed: auto cinematic skips are opt-in; gameplay EXIT BLOCKED [NO INPUT INJECTION]");
+          /* The native movie-4 handoff precedes TWO 3D cutscenes.
+           * Authorize full exit ONLY after BOTH native script endings,
+           * both original skip requests consumed, and an explicit
+           * additional opt-in. F10 input thread queues intent only. */
+          LONG lifecycle=InterlockedCompareExchange(&debug_cutscene_lifecycle,0,0);
+          LONG auto_stage=InterlockedCompareExchange(&debug_auto3d_state,0,0);
+          DWORD owner_tick=(DWORD)InterlockedCompareExchange(&last_native_game_input_ms,0,0);
+          DWORD render_tick=(DWORD)InterlockedCompareExchange(&last_game3d_flip_ms,0,0);
+          if(InterlockedCompareExchange(&debug_f10_gameplay_exit_opt_in,0,0)==1 &&
+             InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
+             InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
+             lifecycle==6 && auto_stage==7 &&
+             *SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST==0u &&
+             *SPIDER_ENGINE_MODE==0u && *SPIDER_PAUSE_CONTEXT==0u &&
+             *SPIDER_GAME_BINK_ACTIVE==0u && *SPIDER_BINK_VIDEO_HANDLE==0u &&
+             owner_tick && (DWORD)(now-owner_tick)<350u &&
+             render_tick && (DWORD)(now-render_tick)<350u) {
+            if(InterlockedCompareExchange(&game3d_exit_state,1,0)==0)
+              say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT F10 accepted after TWO script endings; native teardown pending");
+          } else {
+            char why[320];
+            snprintf(why,sizeof(why),
+              "QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT BLOCKED optin=%ld lifecycle=%ld auto=%ld request=%u [NO CONTROLLER 7]",
+              (long)InterlockedCompareExchange(&debug_f10_gameplay_exit_opt_in,0,0),
+              (long)lifecycle,(long)auto_stage,(unsigned)*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST);
+            say(why);
+          }
         } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
                   InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
                   *SPIDER_ENGINE_MODE==0u &&
@@ -2737,6 +2810,13 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
       GetPrivateProfileIntA("Debug","F10Auto3DScripts",0,ini)==1)) {
     InterlockedExchange(&debug_auto3d_opt_in,1);
     say("QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE F10Auto3DScripts=1 (or legacy F12Auto3DScripts=1) enabled; only verified New Game comic F10 arms two native script skip requests; gameplay exit BLOCKED [EXPERIMENTAL]");
+  }
+  /* Never activate full in-game exit via F10TestMode alone. */
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+     GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
+     GetPrivateProfileIntA("Debug","F10GameplayExit",0,ini)==1) {
+    InterlockedExchange(&debug_f10_gameplay_exit_opt_in,1);
+    say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT opt-in enabled; two original native script endings required [EXPERIMENTAL]");
   }
   memset(movie_trial,0,sizeof(movie_trial));
   /* The explicit INI options make tested Wine installations easier
