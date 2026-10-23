@@ -2030,6 +2030,52 @@ static BYTE __cdecl spider_f12_intro_still_native_input(
   return original;
 }
 
+/* A New Game -> native pause Exit/Yes -> Shell_MainMenu cycle does
+ * NOT restart SpiderMan2k1Fix.dll. The first scene sets both
+ * debug_newgame_progress=3 and input_native_invocations>0; the
+ * L1COV.bmp F10 route REQUIRES progress==0 and no live 3D owner.
+ * Never reset them from the input polling worker, timers or a video:
+ * the original menu owner (0x493DD6) is the positive boundary.
+ * The original game state and input buffer are NEVER written here. */
+static void spider_f10_reset_session_on_native_menu(void) {
+  LONG old_progress,old_owner,old_auto;
+  char msg[280];
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)!=1 ||
+     *SPIDER_GAME_BINK_ACTIVE!=0u ||
+     *SPIDER_BINK_VIDEO_HANDLE!=0u)return;
+  old_progress=InterlockedCompareExchange(&debug_newgame_progress,0,0);
+  old_owner=InterlockedCompareExchange(&input_native_invocations,0,0);
+  old_auto=InterlockedCompareExchange(&debug_auto3d_state,0,0);
+  if(old_progress==0 && old_owner==0 && old_auto==0)return;
+  /* This executes in the verified original Shell_MainMenu game thread,
+   * not during an active movie, active original 3D owner, or comic.
+   * Clear ONLY our per-run latches and cached owner/scene observations;
+   * preserve user opt-ins, permanent native hooks and lifetime totals. */
+  InterlockedExchange(&debug_newgame_progress,0);
+  InterlockedExchange(&input_native_invocations,0);
+  InterlockedExchange(&postmovie_state,0);
+  InterlockedExchange(&postmovie_request_ms,0);
+  InterlockedExchange(&debug_newgame_comic_fastforward_observed,0);
+  InterlockedExchange(&last_comic_candidate_ms,0);
+  InterlockedExchange(&debug_auto3d_state,0);
+  InterlockedExchange(&debug_auto3d_first_owner,0);
+  InterlockedExchange(&debug_auto3d_first_last_ip,0);
+  InterlockedExchange(&debug_auto3d_begin_ms,0);
+  InterlockedExchange(&debug_cutscene_lifecycle,0);
+  InterlockedExchange(&debug_live_cutscene_active,-1);
+  InterlockedIncrement(&debug_intro_generation);
+  InterlockedExchange(&debug_newgame_3d_first_ms,0);
+  InterlockedExchange(&debug_newgame_3d_space_edges,0);
+  InterlockedExchange(&last_native_game_input_ms,0);
+  InterlockedExchange(&last_game3d_flip_ms,0);
+  InterlockedExchange(&game3d_exit_state,0);
+  InterlockedExchange(&game3d_cleanup_confirmed,0);
+  snprintf(msg,sizeof(msg),
+    "QUICK-EXIT-F12: DEBUG-F10-SESSION-RESET native Shell_MainMenu reached after game session; previous_progress=%ld previous_3d_owner_calls=%ld previous_auto_stage=%ld; New Game comic F10 REARMED [OUR LATCHES ONLY]",
+    (long)old_progress,(long)old_owner,(long)old_auto);
+  say(msg);
+}
+
 /* Returns nonzero ONLY when a recent, explicitly requested F12 action
  * may be delivered inside the ACTUAL Shell_MainMenu frame loop. This
  * never mutates engine state or executes resource cleanup itself.
@@ -2048,6 +2094,10 @@ int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void) {
   LONG n=InterlockedIncrement(&menu_frame_count);
   InterlockedExchange(&last_menu_frame_ms,(LONG)GetTickCount());
   InterlockedExchange(&real_main_menu_seen,1);
+  /* This original game-thread frame, not a guessed pause/menu bit,
+   * proves the previous gameplay session returned to the real menu.
+   * Re-arm F10 before the NEXT native New Game comic can be drawn. */
+  spider_f10_reset_session_on_native_menu();
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
      InterlockedCompareExchange(&intro_still_exit_state,0,0)>=2 &&
      n<=65) {

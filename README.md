@@ -72,6 +72,13 @@ older research probes (raw keyboard states, dispatch lists, actor
 state and menu timing). Disabling verbose output **does not
 disable the underlying read-only probes**.
 
+**Repeated New Game:** after returning to the actual main menu through
+Esc → Exit → Yes, the next New Game comic should accept F10 again.
+The DLL resets its own per-session cinematic markers on the
+game-owned Shell_MainMenu callback, without restarting the process.
+See the two-session regression protocol in
+[the validation matrix](docs/F10_VALIDATION_MATRIX.md).
+
 This is an experimental, explicitly opted-in feature while the PR
 is under review. It has been validated in the New Game sequence
 on Wine, **not yet in arbitrary later in-level cutscenes**. Other

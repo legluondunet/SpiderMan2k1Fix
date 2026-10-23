@@ -41,6 +41,43 @@ then `DEBUG-F10-GAMEPLAY-EXIT F10 accepted`,
 This validates the engine's shutdown path, not every possible
 Wine/Windows process outcome.
 
+## Regression: two consecutive New Games in the same process
+
+**Reported reproduction (2026-10-23):** New Game -> F10 on the
+L1COV.bmp comic -> playable 3D -> Esc -> Pause menu `Exit`
+-> `Yes` -> original main menu -> New Game -> comic.
+Before the fix, F10 on the second comic and subsequent video did
+not respond.
+
+**Root cause in source:** `debug_newgame_progress` stayed 3 after
+the first movie-4/3D session, although the exact 0x4279B8
+comic-clock original hook requires it to be **0**. The F10 input
+worker also requires `input_native_invocations == 0` to classify
+a new L1COV comic. This monotonic counter never reset on returning
+to the menu, so second-session F10 failed its detection.
+The remembered lifecycle, postmovie and auto-skip states also
+required resetting before the next introductory pair.
+
+**Fix:** use the EXISTING original `Shell_MainMenu` game-thread
+callback at 0x493DD6 / `SpiderQuickExitF12_ConsumeRealMenuRequest`.
+Only after returning to that verified native menu with no Bink
+active, reset the DLL's per-game-session latches, script generations,
+F10 native exit intent and stale comic candidate. Keep actual
+game-owned memory, permanent instruction hooks, opt-ins and config
+unchanged. The reset is idempotent across subsequent menu frames.
+
+**Test to perform under Wine:** start process once, F10 on
+first New Game comic -> verify 2 native intro skips and player
+controls -> Esc -> Exit -> Yes -> New Game -> F10 again
+on second L1COV.bmp -> verify Bink #4 and both scripts again.
+Repeat a third time if practical. Look for one
+`DEBUG-F10-SESSION-RESET` after every return to the
+main menu, and fresh `DEBUG-3D-AUTO-NATIVE ARMED` each
+time. F10 during actual 3D gameplay should continue using
+the original cleanup (when explicitly enabled). Avoid
+using it for this repro because that exits the process
+rather than returning to the menu.
+
 ## Still to be tested on real gameplay
 
 | Test | Procedure | Expected safe behavior |
@@ -52,7 +89,7 @@ Wine/Windows process outcome.
 | Different cutscene engine | Find a scene that does not use CutSceneScript | Treat as unverified; do not assume safety from this guard alone |
 | Pause screen | Press F10 while paused | No new native exit request |
 | Alt+Tab / focus loss | Press F10 while game is not foreground; return and test | Focus handling must prevent an off-focus quit |
-| Restart New Game | Complete a run, restart a new campaign, repeat F10 | Prior script stage must not authorize a new premature exit |
+| Restart New Game in the same process | Esc → Exit → Yes → New Game → press F10 on second comic | Previous 3D owner/intro script states reset only in original menu; F10 auto-skips two new scripts |
 | Windows 11 native | Repeat these actions without Wine | Not yet validated for this F10 consolidated build |
 
 For any unexpected behavior, disable `F10GameplayExit=0`

@@ -1,3 +1,41 @@
+## 2026-10-23 — Fix: F10 fails on a second New Game without quitting process
+
+The user found a regression in an already validated F10 build:
+first New Game -> F10 on L1COV.bmp -> 3D gameplay -> Esc ->
+Pause Exit -> Yes -> main menu -> SECOND New Game -> L1COV.bmp
+-> F10 does NOT work, nor during the following video.
+
+This is explained directly by C state lifetime:
+`debug_newgame_progress` is set from 0 -> 1 -> 2 -> 3 for
+the first campaign and never reset, even though the original
+`spider_f12_debug_comic_clock` (0x4279B8) REQUIRES zero.
+`input_native_invocations` is a cumulative counter and the
+first-session New Game comic F10 input route requires ZERO,
+so the second comic is never classified. Per-run intro/auto
+script and native owner generations also persisted through
+the game's normal pause Exit -> Yes return to main menu.
+
+Fix: add **no hook**. On the EXISTING verified native
+`Shell_MainMenu` game-thread callback (0x493DD6),
+when a previous 3D/newgame session exists and NO Bink is
+active, reset ONLY the DLL's per-session latches. This
+includes `debug_newgame_progress`, 3D owner call count,
+postmovie state, comic fast-forward observed, cached comic
+timestamp, independent two-script auto-skip state, lifecycle
+generation, current live scene status, old native 3D frame
+timestamps and queued F10 native-exit intent. Preserve all
+game memory, Bink/DirectDraw game objects, permanent code
+hooks, existing user opt-ins and the original F12 WM_CLOSE
+suppression. Idempotence on subsequent menu frames.
+
+This can re-arm F10 for second/third/further New Game
+sessions without restarting SpideyPC.exe. Static regression
+tests assert the EXACT old blocking gates and native-menu
+reset path; CI does not replace the still necessary
+Wine runtime validation.
+
+---
+
 ## 2026-10-23 — F10 consolidation and in-level cinematic protection
 
 The active physical shortcut is F10, not F12. The original

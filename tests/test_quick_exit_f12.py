@@ -1778,3 +1778,60 @@ def test_f10_refuses_later_active_cutscene_even_with_intro_complete():
                        owner.index("after_timer=*SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE")]
     assert "InterlockedCompareExchange(&debug_live_cutscene_active,0,0)==0" in owner_guard
     assert "scene[0x1acu]==0u && scene[0x1b4u]==0u" in owner_guard
+
+
+def test_f10_second_new_game_rearms_only_on_real_native_menu_return():
+    """Regression: first F10 on L1COV, 3D, Esc->Exit->Yes, second
+    New Game L1COV and F10 without restarting the EXE/DLL."""
+    assert "static void spider_f10_reset_session_on_native_menu(void)" in SRC
+    helper=SRC[SRC.index("static void spider_f10_reset_session_on_native_menu(void)"):
+               SRC.index("/* Returns nonzero ONLY when a recent", SRC.index("static void spider_f10_reset_session_on_native_menu(void)"))]
+    assert "debug_newgame_progress=3" in helper
+    assert "input_native_invocations>0" in helper
+    assert "debug_f12_test_mode,0,0)!=1" in helper
+    assert "*SPIDER_GAME_BINK_ACTIVE!=0u" in helper
+    assert "*SPIDER_BINK_VIDEO_HANDLE!=0u" in helper
+    assert "old_progress==0 && old_owner==0 && old_auto==0" in helper
+    reset_fields=("debug_newgame_progress","input_native_invocations",
+                  "postmovie_state","postmovie_request_ms",
+                  "debug_newgame_comic_fastforward_observed",
+                  "last_comic_candidate_ms","debug_auto3d_state",
+                  "debug_auto3d_first_owner","debug_auto3d_first_last_ip",
+                  "debug_auto3d_begin_ms","debug_cutscene_lifecycle",
+                  "debug_newgame_3d_first_ms","debug_newgame_3d_space_edges",
+                  "last_native_game_input_ms","last_game3d_flip_ms",
+                  "game3d_exit_state","game3d_cleanup_confirmed")
+    for field in reset_fields:
+        assert f"InterlockedExchange(&{field},0);" in helper
+    assert "InterlockedExchange(&debug_live_cutscene_active,-1);" in helper
+    assert "InterlockedIncrement(&debug_intro_generation);" in helper
+    assert "DEBUG-F10-SESSION-RESET" in helper
+    assert "[OUR LATCHES ONLY]" in helper
+    for dangerous in ("*SPIDER_ENGINE_MODE=","*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST=",
+                      "SendInput(", "PostMessageA(", "ExitProcess(",
+                      "TerminateProcess(", "SPIDER_NATIVE_GAME_CLEANUP();"):
+        assert dangerous not in helper
+    menu=SRC[SRC.index("int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void)"):
+             SRC.index("/* x86 stack at entry", SRC.index("int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void)"))]
+    assert menu.index("InterlockedExchange(&real_main_menu_seen,1);") < menu.index(
+        "spider_f10_reset_session_on_native_menu();")
+    assert menu.index("spider_f10_reset_session_on_native_menu();") < menu.index(
+        "if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1")
+    assert "spider_f10_reset_session_on_native_menu();" not in SRC[
+        SRC.index("static DWORD WINAPI f12_input_thread("):
+        SRC.index("void SpiderQuickExitF12_Init(")
+    ]
+
+
+def test_comic_and_movie_second_session_require_reset_latches():
+    """Both original owners must be eligible again after native menu reset."""
+    assert '"cmpl $0, _debug_newgame_progress\\n\\t"' in SRC
+    worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
+               SRC.index("void SpiderQuickExitF12_Init(")]
+    assert "input_native_invocations,0,0)==0" in worker
+    assert "postmovie_state,4,0" in worker
+    wrapper=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick("):
+                SRC.index("/* The L1COV.bmp NEW GAME timed image")]
+    assert "debug_newgame_progress,1,0" in wrapper
+    assert "postmovie_state,2,stage" in wrapper
+    assert "debug_auto3d_state,1" in worker
