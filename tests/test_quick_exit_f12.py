@@ -2122,3 +2122,15 @@ def test_movie4_input_release_safety_remains_enabled_when_f10_shortcut_off():
     assert "GetTickCount()-began)<1500u" in barrier
     assert "Sleep(40);" in barrier
     assert "InterlockedExchange(&debug_auto3d_state" not in barrier
+
+def test_movie4_safety_rearms_after_return_to_menu_when_f10_off():
+    """Both consecutive New Games receive the same first-frame input barrier."""
+    tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):]
+    assert "LONG state=InterlockedCompareExchange(&movie4_input_release_state,0,0);" in tick
+    assert "state!=1" in tick
+    assert "InterlockedCompareExchange(&movie4_input_release_state,1,state)==state" in tick
+    assert "F10 OFF; PASSIVE; REARMED" in tick
+    owner=SRC[SRC.index("static void __cdecl spider_movie4_safety_only_game_input(void)"):
+              SRC.index("/* Native game-input owner wrapper at 0x45553B:")]
+    assert "movie4_input_release_state,2,1" in owner
+    assert owner.count("SPIDER_NATIVE_GAME_INPUT_UPDATE();")==1

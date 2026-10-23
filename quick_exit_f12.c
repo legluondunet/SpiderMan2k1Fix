@@ -1924,9 +1924,15 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
          InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
          InterlockedCompareExchange(&debug_newgame_progress,1,0)==0)
         say("QUICK-EXIT-F12: DEBUG-NEWGAME-MOVIE original movie-4 owner identified (0x4279FB); future 3D F12 is guarded until playable intro boundary proven");
-      if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)!=1 &&
-         InterlockedCompareExchange(&movie4_input_release_state,1,0)==0)
-        say("QUICK-EXIT-F12: BINK-4-SAFETY original movie #4 confirmed; first 3D input will wait for Enter/Space release [F10 OFF; PASSIVE]");
+      /* Each new New Game Bink movie re-arms the safety barrier:
+       * state 2 means the PREVIOUS session consumed it. The exact
+       * movie-owner stack cannot occur again until a fresh Bink #4. */
+      if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)!=1) {
+        LONG state=InterlockedCompareExchange(&movie4_input_release_state,0,0);
+        if(state!=1 &&
+           InterlockedCompareExchange(&movie4_input_release_state,1,state)==state)
+          say("QUICK-EXIT-F12: BINK-4-SAFETY original movie #4 confirmed; first 3D input will wait for Enter/Space release [F10 OFF; PASSIVE; REARMED]");
+      }
     }
   }
   /* Movie 4's owner was proven by Windows caller trace and original
