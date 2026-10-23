@@ -1,3 +1,49 @@
+## 2026-10-23 — Wine validation: F12 from New Game Bink movie exits cleanly
+
+**User-confirmed SUCCESS under Linux/Wine**, using the opt-in
+post-menu movie prototype from build #552 with
+`SpiderMan2k1Fix(20261023-065347).log`
+(`SpiderMan2k1Fix v1.0.0-a058960`, original
+`SpideyPC.exe` SHA-256
+`0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`).
+The user explicitly checked the process state after pressing F12
+**during the Bink cinematic following New Game** and confirmed
+**clean exit, with no residual process**.
+
+The log establishes this original game-owned sequence:
+
+```text
+COMIC-RENDER-CANDIDATE draw=1 flip=316 ... bink_active=0
+ENGINE-STATE flip=318 ... bink_flag=1 video_handle_present=1 native_3d_owner_seen=0
+POSTMENU-MOVIE F12 intent requested; original Bink owner verification pending
+POSTMENU-MOVIE verified native movie owner 0x4279FB; original Bink completion and 0x470871 teardown follows
+NATIVE-GAME-INPUT owner ENTER n=1 request=0 timer_active=0 flag1=0 flag2=0
+POSTMENU-MOVIE original Bink + script returned; native input checkpoint complete; request 7 for original cleanup
+NATIVE-3D-CLEANUP begin n=1 request=7
+NATIVE-3D-CLEANUP completed n=1 request=7
+ENGINE-STATE flip=374 ... mode_request=7 bink_flag=0 video_handle_present=0 native_3d_owner_seen=1
+CONTROLLER-7 native teardown ENTER n=1 bit4=0 status=-1 3D-checkpoint=1
+3D owner+controller cleanup complete; engine native final-exit flag set at 0x45619D
+CONTROLLER-7 native teardown COMPLETED n=1 bit4=1 status=-1 outcome=NATIVE-FINAL-CLEANUP
+```
+
+**Scope of the validation:** Wine validates the opt-in New Game
+Bink **movie #4** exit and no orphan process in this test run.
+The native `0x45553B` input-owner checkpoint does run once as
+a handoff, but the log does not establish whether any 3D frame
+was visible before process exit. The earlier comic still
+(`flip=316`, while Bink is inactive) is **not covered** by
+this feature or by the user's validation. Windows 11
+movie-stage F12 validation also remains to be done.
+
+**Do not enable the separate experimental environment opt-in by
+default** until the remaining stage tests and regressions are
+reviewed. Previously user-validated main-menu, four-startup-video
+and 3D F12 paths must be preserved. The project PR #26 stays
+in draft, unmerged pending explicit approval.
+
+---
+
 ## 2026-10-23 — Opt-in post-New-Game Bink F12 prototype (NOT YET VALIDATED)
 
 The original EXE's New Game video #4 is called at
