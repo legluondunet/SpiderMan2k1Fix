@@ -180,7 +180,7 @@ def test_system_quick_exit_is_known_and_opt_in(runner, tmp_path):
 def test_example_exposes_disabled_quick_exit():
     data = (ROOT / "SpiderMan2k1Fix.generated-example.ini").read_text()
     assert "[System]\n" in data
-    assert "QuickExitF12=0" in data
+    assert "QuickExitF10=0" in data
 
 
 @pytest.mark.parametrize("value,valid", [
@@ -213,7 +213,7 @@ def test_complete_3d_opt_in_is_accepted_and_example_defaults_off(runner, tmp_pat
 @pytest.mark.parametrize("key", ["F10TestMode","F10Auto3DScripts","F12TestMode","F12Auto3DScripts"])
 @pytest.mark.parametrize("value,valid",[("0",True),("1",True),("2",False),("-1",False),("yes",False)])
 def test_f10_canonical_and_legacy_f12_debug_keys_are_strict_boolean(runner,tmp_path,key,value,valid):
-    outcome,detail=validate(runner,tmp_path,f"[Debug]\\n{key}={value}\\n")
+    outcome,detail=validate(runner,tmp_path,f"[Debug]\n{key}={value}\n")
     if valid:
         assert outcome==(0,0,1),detail
     else:
@@ -225,4 +225,4 @@ def test_f10_canonical_and_legacy_f12_debug_keys_are_strict_boolean(runner,tmp_p
     "ExperimentalQuickExitF10InIntroStills"])
 def test_f10_system_options_known_and_disabled_or_enabled(runner,tmp_path,key):
     for n in ("0","1"):
-        assert validate(runner,tmp_path,f"[System]\\n{key}={n}\\n")[0]==(0,0,1)
+        assert validate(runner,tmp_path,f"[System]\n{key}={n}\n")[0]==(0,0,1)

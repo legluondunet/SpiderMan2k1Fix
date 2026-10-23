@@ -31,7 +31,7 @@ def test_generated_example_factory_consistency():
     assert config['Debug']['F10TestMode'] == '0'
     assert '"F10Auto3DScripts=0\\r\\n"' in virtual
     assert 'F10Auto3DScripts=0' in (ROOT / 'SpiderMan2k1Fix.ini').read_text()
-    assert config['System']['QuickExitF12'] == '0'
+    assert config['System']['QuickExitF10'] == '0'
     assert not config.has_option('Internal','VirtualSpideyCfg')
     assert not config.has_option('Internal','BootstrapGameConfig')
     assert config['Display']['Resolution'] == 'Auto'

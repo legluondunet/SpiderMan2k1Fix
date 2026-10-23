@@ -2775,7 +2775,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   }
   /* Always suppress the ORIGINAL game's unsafe VK_F12 -> WM_CLOSE.
    * Its Win32 WndProc at 0x5152B0 is REGISTERED at 0x515A18;
-   * original WM_KEYDOWN(VK_F12) maps to PostMessageA(WM_CLOSE)
+   * original WM_KEYDOWN(VK_F12) maps to PostMessageA sending WM_CLOSE
    * at 0x515373. We keep suppressing this even though our NEW
    * physical hotkey uses F10 exclusively. */
   if(strcmp(val,"1")!=0) {

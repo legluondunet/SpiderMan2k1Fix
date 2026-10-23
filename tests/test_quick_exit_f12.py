@@ -373,8 +373,8 @@ def test_new_game_movie_and_comic_ini_require_existing_f12_and_debug_gates():
     # users, and new INI fields do not automatically enable either stage.
     assert "SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT" in movie
     assert "SPIDERMAN2K1FIX_F12_COMIC_EXIT" in comic
-    for option in ("ExperimentalQuickExitF12InNewGameMovie",
-                   "ExperimentalQuickExitF12InNewGameComic"):
+    for option in ("ExperimentalQuickExitF10InNewGameMovie",
+                   "ExperimentalQuickExitF10InNewGameComic"):
         assert f"{option}=0" in INI
         assert f'"{option}=0\\r\\n"' in GEN
 
@@ -429,8 +429,8 @@ def test_default_off_and_ini_section_validated():
     assert '"QuickExitF10=0\\r\\n"' in GEN
     assert '"Debug","System","Display"' in VAL
     assert 'spider_ini_system[]={"QuickExitF10","ExperimentalQuickExitF10In3D","ExperimentalQuickExitF10InNewGameMovie","ExperimentalQuickExitF10InNewGameComic","ExperimentalQuickExitF10InIntroStills","QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic","ExperimentalQuickExitF12InIntroStills"}' in VAL
-    for option in ("ExperimentalQuickExitF12InNewGameMovie",
-                   "ExperimentalQuickExitF12InNewGameComic"):
+    for option in ("ExperimentalQuickExitF10InNewGameMovie",
+                   "ExperimentalQuickExitF10InNewGameComic"):
         assert f"{option}=0" in INI
         assert f'"{option}=0\\r\\n"' in GEN
         assert f'GetPrivateProfileIntA("System","{option}",0,ini)' in SRC
@@ -1283,8 +1283,8 @@ def test_f12_newgame_movie_skip_does_not_use_shutdown_controller():
                SRC.index("} else if(InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 &&",SRC.index("static DWORD WINAPI f12_input_thread("))]
     assert "DEBUG-NEWGAME-COMIC F12 armed" in worker
     assert "DEBUG-NEWGAME-MOVIE F12 queued" in worker
-    assert "DEBUG-NEWGAME-3D F12 consumed" in worker
-    assert worker.index("DEBUG-NEWGAME-3D F12 consumed") < worker.index(
+    assert "DEBUG-NEWGAME-3D F10 consumed" in worker
+    assert worker.index("DEBUG-NEWGAME-3D F10 consumed") < worker.index(
         "DEBUG-3D-EXIT native gameplay exit queued")
     assert "InterlockedCompareExchange(&debug_newgame_progress,0,0)>=1" in worker
     assert "postmovie_state,4,0" in worker
@@ -1339,8 +1339,8 @@ def test_newgame_f12_3d_two_space_skippable_scenes_remain_distinct_from_gameplay
     assert "InterlockedIncrement(&debug_newgame_3d_space_edges)" in worker
     assert "previous_3d_space==0 && space_down" in worker
     assert "RAW PHYSICAL PRESS ONLY; MAY BE GAMEPLAY JUMP; NO SCENE OR EXIT AUTHORITY" in worker
-    assert "TWO SPACE-skippable 3D introductions vs gameplay NOT YET VERIFIED" in worker
-    assert worker.index("DEBUG-NEWGAME-3D F12 consumed") < worker.index(
+    assert "auto cinematic skips are opt-in; gameplay EXIT BLOCKED" in worker
+    assert worker.index("DEBUG-NEWGAME-3D F10 consumed") < worker.index(
         "DEBUG-3D-EXIT native gameplay exit queued")
     assert "SendInput(" not in worker
 
@@ -1689,7 +1689,7 @@ def test_auto_native_two_script_skip_opt_in_is_guarded_and_fail_closed():
     assert 'InterlockedExchange(&debug_auto3d_opt_in,1);' in init
     worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):]
     assert 'InterlockedExchange(&debug_auto3d_state,1);' in worker
-    assert 'DEBUG-3D-AUTO-NATIVE ARMED by F12 on original L1COV.bmp' in worker
+    assert 'DEBUG-3D-AUTO-NATIVE ARMED by F10 on original L1COV.bmp' in worker
     owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
               SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
     section=owner[owner.index("Optional one-F12 native 3D skip experiment"):

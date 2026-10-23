@@ -99,9 +99,9 @@ def test_repair_excludes_invalid_f12_auto3d_values(recover_runner, tmp_path):
 
 
 def test_canonical_f10_and_legacy_f12_config_retained_through_recovery(recover_runner,tmp_path):
-    user_ini=("[Debug]\\nLog=1\\nF10TestMode=1\\nF10Auto3DScripts=1\\n"
-       "F12TestMode=0\\nF12Auto3DScripts=0\\n[System]\\n"
-       "QuickExitF10=1\\nQuickExitF12=0\\n[Audio]\\nVoiceLevel=71\\n")
+    user_ini=("[Debug]\nLog=1\nF10TestMode=1\nF10Auto3DScripts=1\n"
+       "F12TestMode=0\nF12Auto3DScripts=0\n[System]\n"
+       "QuickExitF10=1\nQuickExitF12=0\n[Audio]\nVoiceLevel=71\n")
     lines=recover(recover_runner,tmp_path,user_ini)
     for entry in ("[Debug] F10TestMode=1","[Debug] F10Auto3DScripts=1",
                   "[Debug] F12TestMode=0","[System] QuickExitF10=1",
