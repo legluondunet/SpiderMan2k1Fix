@@ -1,3 +1,73 @@
+## 2026-10-23 — Windows 11 build #605: FIRST F12 during opening Bink now quits, no yellow or orphan
+
+The user performed the controlled native Windows 11 regression
+of the opening-movie single-F12 handoff in **build #605**
+(`SpiderMan2k1Fix v1.0.0-286f8ac`), providing
+`SpiderMan2k1Fix(20261023-103934).log`.
+The supported original `SpideyPC.exe` SHA-256 is
+`0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
+The user explicitly confirmed: **one F12 press worked**,
+**no yellow window**, **only a very brief glimpse of the main menu**,
+and **no remaining `SpideyPC.exe` process in Task Manager**.
+
+The exact game-owned trace in the uploaded log:
+
+```text
+QUICK-EXIT-F12: intro movie exit requested; native Bink cleanup then top-level engine Quit
+QUICK-EXIT-F12: native Bink tick returned finished; original game video cleanup will run
+QUICK-EXIT-F12: four native movie calls completed; original transition cleanup finished; Quit byte forwarded (top-level 0x455E50 may be bypassed by startup branches)
+QUICK-EXIT-F12: INTRO-MOVIE single F12 carried into original timed/input-wait still cleanup; no second keypress required [EXPERIMENTAL]
+QUICK-EXIT-F12: ENGINE-STATE flip=33 ... quit=1 ... intro_request=1 intro_forwarded=1 bink_flag=0 video_handle_present=0
+QUICK-EXIT-F12: ENGINE-STATE flip=164 ... quit=1 ... intro_request=1 intro_forwarded=1 bink_flag=0 video_handle_present=0
+QUICK-EXIT-F12: INTRO-STILL original input-wait owner 0x4A1896 verified; normal TRUE completion for 0x4A18AE native page cleanup; menu Quit queued [EXPERIMENTAL]
+QUICK-EXIT-F12: REAL Shell_MainMenu frame callback observed (0x493DD6)
+QUICK-EXIT-F12: INTRO-STILL native page owner returned; original Shell_MainMenu Quit now activated [EXPERIMENTAL]
+QUICK-EXIT-F12: native Shell_MainMenu Quit activated: slot=3 action=18, native cleanup branch=0x4941D5
+```
+
+**Result: PASS on native Windows 11** for **ONE F12
+during the opening Bink videos**, including game-owned
+Bink cleanup, the additional native still cleanup
+handoff, original Shell_MainMenu Quit action 18, and
+the user-verified absence of a residual game process.
+The previous build #589 regression requiring a
+**second** F12 is fixed.
+
+The glimpse of the main menu is **a remaining cosmetic
+transient**, compatible with the current deliberate
+use of original `Shell_MainMenu` to request native Quit.
+Its precise on-screen lifetime was not measured;
+we should not claim the log proves the duration
+or exact frame source. Do not bypass the real
+menu owner merely to hide this flash, unless a
+separately safe original pre-menu shutdown path is
+verified and regression-tested.
+
+**Yellow-screen control:** no yellow was seen when
+exiting via ONE F12 from an opening Bink, although
+yellow had been reproduced on Windows 11 after F12
+from the New Game comic and from the post-menu
+Bink #4 cinematic. Windows 11 3D gameplay F12
+also exited without yellow. This narrows the
+visual anomaly to the *post-menu New Game
+video-originated path or its graphics state*;
+it does not establish exactly which surface
+displays yellow or which action produces it.
+
+**Provenance and limits:** this is a single successful
+Windows regression, not a comprehensive test of
+each of the four intro clips or all operating
+systems with the newest one-key handoff.
+The `ExperimentalQuickExitF12InIntroStills`
+setting remains default OFF, and the single-key
+opening fallback requires it explicitly enabled
+along with `QuickExitF12=1`. Code is unchanged
+in this evidence update. All changes remain on
+**draft, unmerged PR #26**, awaiting explicit
+approval.
+
+---
+
 ## 2026-10-23 — Windows opening-movie F12: original quit-branch bypass, one-key native still handoff trial
 
 **New failing native Windows 11 behavior discovered (build #589):**
