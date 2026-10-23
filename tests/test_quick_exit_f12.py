@@ -269,7 +269,11 @@ def test_postmenu_movie_opt_in_is_off_by_default_and_verified_per_owner():
     assert "SPIDER_BINK_VIDEO_HANDLE!=0u" in tick
     assert tick.count("native_result=SPIDER_NATIVE_BINK_FRAME_TICK();")==1
     assert "return native_result;" in tick
-    assert tick.index("tick_return==") < tick.index("frame[4]") < tick.index("frame[6]")
+    # Scope the order check to the original native movie-exit guard:
+    # F12TestMode additionally observes the exact movie-4 stack before
+    # this block, and that read-only probe has its own signature check.
+    verified=tick[tick.index("if(stage==1 || stage==4) {"):]
+    assert verified.index("tick_return==") < verified.index("frame[4]") < verified.index("frame[6]")
     for forbidden in ("ExitProcess(", "TerminateProcess(", "PostMessageA(",
                       "DestroyWindow(", "BinkClose(", "SPIDER_NATIVE_BINK_FRAME_TICK(1)"):
         assert forbidden not in tick
