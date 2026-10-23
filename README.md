@@ -51,8 +51,10 @@ is used. Changes are being developed in
 
 **Process exit was independently confirmed by the user for the
 Wine comic, cinematic and gameplay tests:** no residual game or
-Wine process. This does **not** mean the experimental comic and
-New Game cinematic paths have yet been verified on Windows.
+Wine process. The real `Shell_MainMenu` native frame tick at
+`0x00493DD6` selects the game's own Quit action.
+The experimental New Game comic and post-menu cinematics are
+**not yet validated on Windows 11**.
 Two pre-menu static title/Enter screens also lack a separate
 stage-specific F12 validation.
 
