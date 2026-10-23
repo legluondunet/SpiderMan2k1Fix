@@ -1279,7 +1279,7 @@ def test_f12_newgame_movie_skip_does_not_use_shutdown_controller():
     """Movie #4 may be ended natively, but not via process-exit action 7."""
     worker=SRC[SRC.index("if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {",SRC.index("static DWORD WINAPI f12_input_thread(")):
                SRC.index("} else if(InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 &&",SRC.index("static DWORD WINAPI f12_input_thread("))]
-    assert "DEBUG-NEWGAME-COMIC F12 deferred" in worker
+    assert "DEBUG-NEWGAME-COMIC F12 armed" in worker
     assert "DEBUG-NEWGAME-MOVIE F12 queued" in worker
     assert "DEBUG-NEWGAME-3D F12 consumed" in worker
     assert worker.index("DEBUG-NEWGAME-3D F12 consumed") < worker.index(
