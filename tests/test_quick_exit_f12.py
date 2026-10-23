@@ -710,7 +710,11 @@ def test_opening_movie_single_f12_survives_bypassed_quit_test_by_native_still_ha
         "post_intro_cleanup_seen,1,0")
     assert checkpoint.index("post_intro_cleanup_seen,1,0") < checkpoint.index(
         "intro_quit_pending,0,0")
-    assert checkpoint.index("*SPIDER_GAME_QUIT_FLAG=1u;") < checkpoint.index(
+    # The legacy exit branch still forwards Quit first; Debug F12TestMode
+    # is a different branch and must NOT write the game Quit flag.
+    legacy=checkpoint[checkpoint.index(
+        "} else if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1) {"):]
+    assert legacy.index("*SPIDER_GAME_QUIT_FLAG=1u;") < legacy.index(
         "intro_still_exit_state,1,0")
     for guard in (
         "SpiderQuickExitF12_Enabled()",
