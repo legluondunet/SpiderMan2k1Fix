@@ -1,3 +1,44 @@
+## 2026-10-23 — New Game F12: native movie skip + fail-closed 3D phase tracing
+
+**Current code, partial implementation (F12TestMode=1 only):**
+
+- Identifies original New Game Bink movie #4 by original tick return
+  0x470822/0x470864, movie-owner return 0x427A00 and allow-skip=1.
+- F12 on the comic-render candidate keeps the comic timer and defers
+  a one-shot skip until movie #4 begins. F12 during movie #4 requests
+  the same owner-verified Bink completion and game-owned teardown
+  (no controller request 7 or process exit).
+- Movie #4 completion is observed even if the user pressed Enter rather
+  than F12. Once the original native 3D game-input owner returns, a
+  throttled read-only trace records original mode/task/async and input
+  flags, timer, pause-context presence and physical Enter presses.
+- Crucial conflict guard: after movie #4, the engine's original Stan Lee
+  3D intro and actual playable-level state are **not yet distinguishable**
+  using a positively verified scene flag. Therefore F12 **fails closed**
+  rather than running native request 7, for *both* this introduction and
+  later gameplay in the same unclassified New Game session.
+  This is deliberate: F12 cannot accidentally quit during narration.
+- No synthetic keys or DirectInput/WM_CLOSE injections. The existing
+  native gameplay-exit code is retained for future re-enablement once
+  a genuine game-owned playable-ready condition is identified.
+- A comic may be detected only if the native comic candidate renderer
+  is instrumented; if not observed, F12 is not force-applied globally.
+
+**Test next on Windows or Wine:** enable `[Debug] F12TestMode=1`
+and `Log=1`, start New Game, press F12 during the comic or Bink,
+then **manually press Enter during Stan Lee's 3D introduction**.
+After the first level is clearly playable, press F12 separately to
+confirm the unclassified guard does not exit; attach the entire log.
+The `DEBUG-NEWGAME-3D-PHASE` traces are needed to compare original
+3D state before and after Enter and select a defensible native
+playable-ready condition. Until then, this is *not* a completed
+one-press skip-to-gameplay feature.
+
+This change is only on draft PR #26; user validation is required and
+nothing is merged.
+
+---
+
 ## 2026-10-23 — Decision: restore original menu clock waits
 
 The first-menu clock-wait bypass experiment and its INI switch were

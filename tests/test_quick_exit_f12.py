@@ -1269,3 +1269,34 @@ def test_3d_original_game_owned_cleanup_return_marks_checkpoint():
     assert "request==7u" in cb
     assert "game3d_cleanup_confirmed,1" in cb
     assert cb.index("SPIDER_NATIVE_GAME_CLEANUP();") < cb.index("game3d_cleanup_confirmed,1")
+
+
+def test_f12_newgame_movie_skip_does_not_use_shutdown_controller():
+    """Movie #4 may be ended natively, but not via process-exit action 7."""
+    worker=SRC[SRC.index("if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {",SRC.index("static DWORD WINAPI f12_input_thread(")):
+               SRC.index("} else if(InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 &&",SRC.index("static DWORD WINAPI f12_input_thread("))]
+    assert "DEBUG-NEWGAME-COMIC F12 deferred" in worker
+    assert "DEBUG-NEWGAME-MOVIE F12 queued" in worker
+    assert "DEBUG-NEWGAME-3D F12 consumed" in worker
+    assert worker.index("DEBUG-NEWGAME-3D F12 consumed") < worker.index(
+        "DEBUG-3D-EXIT native gameplay exit queued")
+    assert "InterlockedCompareExchange(&debug_newgame_progress,0,0)>=2" in worker
+    assert "postmovie_state,4,0" in worker
+    assert "postmovie_state,1,0" in worker
+    assert "SendInput(" not in worker
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("static void __cdecl spider_observe_native_game_cleanup(",SRC.index("static void __cdecl spider_observe_native_game_input(void)"))]
+    assert "DEBUG-NEWGAME-MOVIE original Bink/script returned" in owner
+    assert "InterlockedCompareExchange(&postmovie_state,0,2)==2" in owner
+    assert owner.index("InterlockedCompareExchange(&postmovie_state,0,2)==2") < owner.index(
+        "if(InterlockedCompareExchange(&postmovie_state,0,0)==2) {")
+    assert "DEBUG-NEWGAME-3D-PHASE" in owner
+    assert "GetAsyncKeyState(VK_RETURN)" in owner
+    assert "PLAYABLE NOT VERIFIED" in owner
+    wrapper=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
+                SRC.index("static void __cdecl spider_after_intro_cleanup(",SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"))]
+    assert "InterlockedCompareExchange(&debug_newgame_progress,1,0)" in wrapper
+    assert "(DWORD)frame[4]==0x00427A00u" in wrapper
+    assert "InterlockedCompareExchange(&debug_newgame_progress,2,1)" in wrapper
+    assert "native_result=SPIDER_NATIVE_BINK_FRAME_TICK();" in wrapper
+    assert "DEBUG-NEWGAME-MOVIE original movie-4 finished" in wrapper

@@ -232,6 +232,13 @@ static volatile LONG intro_timed_clock_hook_installed=0;
 static volatile LONG debug_timed_accelerated=0;
 static volatile LONG debug_menu_wait_hooks_installed=0;
 static volatile LONG debug_menu_wait_exit_hook_installed=0;
+/* New Game single-F12 experiment (F12TestMode only):
+ * 0 unknown/unseen, 1 exact movie-4 owner observed, 2 movie-4 native
+ * completion requested/observed, 3 game-thread post-video 3D reached.
+ * State 3 is NOT proof that the Stan Lee intro has ended; NEVER use it
+ * to authorize a native 3D EXIT. The native scene boundary is unknown. */
+static volatile LONG debug_newgame_progress=0;
+static volatile LONG debug_newgame_3d_first_ms=0;
 static volatile LONG last_native_game_input_ms=0;
 static volatile LONG last_game3d_flip_ms=0;
 /* 0 idle, 1 requested, 2 native request 7 dispatched, 3 final exit. */
@@ -504,6 +511,52 @@ static void __cdecl spider_observe_native_game_input(void) {
   SPIDER_NATIVE_GAME_INPUT_UPDATE();
   after_request=*SPIDER_ENGINE_MODE;
   native_after_request=after_request; /* immutable pre-F12 snapshot */
+  /* This stage is shared with an older, separately opted-in *exit*
+   * prototype. Debug F12 must NOT enter its request-7 process shutdown.
+   * Both original Bink teardown and script update have already run. */
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+     InterlockedCompareExchange(&postmovie_state,0,2)==2) {
+    InterlockedCompareExchange(&debug_newgame_progress,2,1);
+    say("QUICK-EXIT-F12: DEBUG-NEWGAME-MOVIE original Bink/script returned; continuing to native 3D, NO controller-7 EXIT");
+  }
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+     InterlockedCompareExchange(&debug_newgame_progress,0,0)==2 &&
+     *SPIDER_GAME_BINK_ACTIVE==0u && *SPIDER_BINK_VIDEO_HANDLE==0u &&
+     InterlockedCompareExchange(&debug_newgame_progress,3,2)==2) {
+    InterlockedExchange(&debug_newgame_3d_first_ms,(LONG)GetTickCount());
+    say("QUICK-EXIT-F12: DEBUG-NEWGAME-3D native input owner reached after movie 4; INTRO vs GAMEPLAY UNKNOWN; F12 exit BLOCKED until positively identified [READ-ONLY]");
+  }
+  /* Passive 3D phase trace. The Enter key skips Stan Lee's narrated
+   * intro in the original engine. Observe its native input owner while
+   * Enter changes; DO NOT inject a key or assume Enter means playable. */
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+     InterlockedCompareExchange(&debug_newgame_progress,0,0)==3) {
+    static LONG last_enter=-1;
+    static DWORD last_sample=0;
+    static LONG sample_count=0;
+    DWORD now=GetTickCount();
+    DWORD start=(DWORD)InterlockedCompareExchange(&debug_newgame_3d_first_ms,0,0);
+    LONG enter=(GetAsyncKeyState(VK_RETURN)&0x8000)!=0;
+    if((!start || (DWORD)(now-start)<90000u) &&
+       (last_enter!=enter || sample_count<6 ||
+        (!last_sample || (DWORD)(now-last_sample)>=1500u)) &&
+       sample_count<75) {
+      char trace[370];
+      snprintf(trace,sizeof(trace),
+        "QUICK-EXIT-F12: DEBUG-NEWGAME-3D-PHASE sample=%ld since_3d_ms=%lu enter_down=%ld mode=%lu task=%lu async=%lu flag1=%u flag2=%u native_timer=%lu pause_ctx=%lu [READ-ONLY; PLAYABLE NOT VERIFIED]",
+        (long)(sample_count+1),(unsigned long)(start?(DWORD)(now-start):0u),
+        (long)enter,(unsigned long)*SPIDER_ENGINE_MODE,
+        (unsigned long)*SPIDER_ENGINE_TASK,(unsigned long)*SPIDER_ENGINE_ASYNC_STATE,
+        (unsigned)*SPIDER_NATIVE_GAME_INPUT_FLAG_1,
+        (unsigned)*SPIDER_NATIVE_GAME_INPUT_FLAG_2,
+        (unsigned long)*SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE,
+        (unsigned long)(*SPIDER_PAUSE_CONTEXT!=0u));
+      say(trace);
+      sample_count++;
+      last_sample=now;
+    }
+    last_enter=enter;
+  }
   /* 0x45553B is reached only AFTER the 0x45551D game-owned script
    * dispatcher returned and after the native 0x440EF0 tick finished.
    * Allow original native cleanup (0x455BF9, controller 7) to run,
@@ -755,6 +808,20 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
       say("QUICK-EXIT-F12: native Bink tick returned finished; original game video cleanup will run");
     return 0;
   }
+  /* Identify New Game movie #4 from its EXACT original native stack,
+   * whether or not F12 was pressed. This is positive cinematic-stage
+   * evidence: the 3D intro must not be mistaken for playable gameplay.
+   * The native owner and stack signature are already Windows-proven. */
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+     InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
+     *SPIDER_GAME_BINK_ACTIVE!=0u && *SPIDER_BINK_VIDEO_HANDLE!=0u) {
+    const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+    DWORD return_address=(DWORD)frame[1];
+    if((return_address==0x00470822u || return_address==0x00470864u) &&
+       (DWORD)frame[4]==0x00427A00u && (DWORD)frame[6]==1u &&
+       InterlockedCompareExchange(&debug_newgame_progress,1,0)==0)
+      say("QUICK-EXIT-F12: DEBUG-NEWGAME-MOVIE original movie-4 owner identified (0x4279FB); future 3D F12 is guarded until playable intro boundary proven");
+  }
   /* Movie 4's owner was proven by Windows caller trace and original
    * EXE: call 0x4279FB, return 0x427A00, allow-skip argument 1.
    * Verify the current native tick CALL return before deeper stack reads.
@@ -769,9 +836,11 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
         if(InterlockedCompareExchange(&postmovie_state,0,stage)==stage)
           say("QUICK-EXIT-F12: POSTMENU-MOVIE or deferred COMIC request expired; original playback untouched");
       } else if(SpiderQuickExitF12_Enabled() &&
-                InterlockedCompareExchange(&postmovie_opt_in,0,0)==1 &&
+                (InterlockedCompareExchange(&postmovie_opt_in,0,0)==1 ||
+                 InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) &&
                 (stage!=4 ||
-                 InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1) &&
+                 InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 ||
+                 InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) &&
                 InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
                 InterlockedCompareExchange(&input_native_invocations,0,0)==0 &&
                 *SPIDER_GAME_BINK_ACTIVE!=0u &&
@@ -788,6 +857,8 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
             stage==4 ? "DEFERRED-COMIC" : "CINEMATIC",
             (unsigned long)(DWORD)(GetTickCount()-started));
           say(line);
+          if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1)
+            InterlockedCompareExchange(&debug_newgame_progress,2,1);
           return 0;
         }
       }
@@ -809,6 +880,19 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
     }
   }
   native_result=SPIDER_NATIVE_BINK_FRAME_TICK();
+  /* Even a manual Enter movie-skip must retain a "scripted 3D may
+   * follow" guard. No F12 skip request is needed for this observation. */
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+     native_result==0 &&
+     InterlockedCompareExchange(&debug_newgame_progress,0,0)==1 &&
+     *SPIDER_GAME_BINK_ACTIVE!=0u) {
+    const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+    DWORD return_address=(DWORD)frame[1];
+    if((return_address==0x00470822u || return_address==0x00470864u) &&
+       (DWORD)frame[4]==0x00427A00u && (DWORD)frame[6]==1u &&
+       InterlockedCompareExchange(&debug_newgame_progress,2,1)==1)
+      say("QUICK-EXIT-F12: DEBUG-NEWGAME-MOVIE original movie-4 finished (possibly via Enter); awaiting 3D owner [READ-ONLY]");
+  }
   if(post_shell) {
     LONG old_result=InterlockedExchange(&after_shell_previous_result,(LONG)native_result);
     /* The native loop called its Bink tick >880,000 times in ~16s on
@@ -1370,7 +1454,8 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
     /* A comic page has a finite automatic lifetime. Fail closed:
      * do not leave an F12 request armed if the expected video never
      * begins. No original game resources are modified here. */
-    if(InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 &&
+    if((InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 ||
+        InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) &&
        InterlockedCompareExchange(&postmovie_state,0,0)==4) {
       DWORD start=(DWORD)InterlockedCompareExchange(&postmovie_request_ms,0,0);
       if(!start || (DWORD)(GetTickCount()-start)>12000u) {
@@ -1421,6 +1506,37 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
           if(InterlockedCompareExchange(&intro_quit_pending,1,0)==0)
             say("QUICK-EXIT-F12: DEBUG-MENU-SKIP F12 in opening Bink; native video cleanup then main menu (NO QUIT)");
         } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
+                  InterlockedCompareExchange(&input_native_invocations,0,0)==0 &&
+                  *SPIDER_ENGINE_MODE==0u &&
+                  *SPIDER_GAME_BINK_ACTIVE==0u &&
+                  *SPIDER_BINK_VIDEO_HANDLE==0u &&
+                  InterlockedCompareExchange(&last_comic_candidate_ms,0,0)!=0 &&
+                  (DWORD)(now-(DWORD)InterlockedCompareExchange(&last_comic_candidate_ms,0,0))<=6500u) {
+          /* F12 during the fixed comic: preserve its native timer.
+           * The one-shot intent will be consumed only by exact native
+           * movie #4, after game-owned comic completion. */
+          if(InterlockedCompareExchange(&postmovie_state,0,0)==0) {
+            InterlockedExchange(&postmovie_request_ms,(LONG)now);
+            if(InterlockedCompareExchange(&postmovie_state,4,0)==0)
+              say("QUICK-EXIT-F12: DEBUG-NEWGAME-COMIC F12 deferred to original movie #4; comic timer untouched (NO EXIT)");
+          }
+        } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
+                  InterlockedCompareExchange(&debug_newgame_progress,0,0)==1 &&
+                  *SPIDER_ENGINE_MODE==0u &&
+                  *SPIDER_GAME_BINK_ACTIVE!=0u &&
+                  *SPIDER_BINK_VIDEO_HANDLE!=0u) {
+          if(InterlockedCompareExchange(&postmovie_state,0,0)==0) {
+            InterlockedExchange(&postmovie_request_ms,(LONG)now);
+            if(InterlockedCompareExchange(&postmovie_state,1,0)==0)
+              say("QUICK-EXIT-F12: DEBUG-NEWGAME-MOVIE F12 queued for exact native Enter-equivalent Bink termination, NO EXIT");
+          }
+        } else if(InterlockedCompareExchange(&debug_newgame_progress,0,0)>=2) {
+          /* Movie #4 conclusively preceded this phase, but the original
+           * Enter-handled Stan Lee intro / playable boundary is UNMAPPED.
+           * An unclassified F12 must NEVER become a controller-7 exit.
+           * Capture evidence and consume the key edge safely. */
+          say("QUICK-EXIT-F12: DEBUG-NEWGAME-3D F12 consumed: Stan Lee intro vs playable gameplay NOT YET VERIFIED; native EXIT BLOCKED [NO INPUT INJECTION]");
+        } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
                   InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
                   *SPIDER_ENGINE_MODE==0u &&
                   *SPIDER_GAME_BINK_ACTIVE==0u &&
@@ -1432,7 +1548,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
           if(InterlockedCompareExchange(&game3d_exit_state,1,0)==0)
             say("QUICK-EXIT-F12: DEBUG-3D-EXIT native gameplay exit queued; waiting for original controller-7 cleanup");
         } else {
-          say("QUICK-EXIT-F12: DEBUG F12 ignored outside pre-menu and active 3D gameplay");
+          say("QUICK-EXIT-F12: DEBUG F12 ignored outside recognized startup/New Game stages and active 3D gameplay");
         }
       } else if(InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 &&
                 InterlockedCompareExchange(&postmovie_opt_in,0,0)==1 &&

@@ -45,10 +45,20 @@ auto-timed page is now **accelerated** by its own native timeout
 comparison, without waiting several seconds or bypassing its
 resource/SEH cleanup. **F12 in active 3D gameplay quits the game**
 via the existing native controller-7 exit.
-F12 in the main menu, comic or subsequent New Game cinematic is
-ignored. The single `[Debug] F12TestMode` option overrides the
-older `[System]` F12 controls and defaults to `0`; `Log=1` is
-recommended but not required.
+F12 in the main menu is ignored. **New Game skip development (partial):**
+F12 on a recognized comic still keeps the original short comic timer
+and queues a one-shot skip of the specific New Game Bink movie #4; F12
+during that movie also uses its original completion/cleanup path.
+The 3D Stan Lee introduction and the first genuinely playable frame
+are not yet distinguishable using a verified native signal: after
+movie #4, F12 is intentionally blocked from shutting down the process
+until that scene boundary is mapped. **F12 does NOT yet skip Stan Lee's
+3D narration or re-enable gameplay exit in that unclassified run.**
+With `Log=1` the patch records Enter-related native 3D phase traces
+for the next investigation. No synthetic Enter, process termination
+or arbitrary controller transition is used.
+The single `[Debug] F12TestMode` option overrides the older
+`[System]` F12 controls and defaults to `0`; `Log=1` is recommended.
 
 The complete previously validated F12 implementation was archived
 at [`backup/f12-native-exit-validated-20261023`](https://github.com/legluondunet/SpiderMan2k1Fix/tree/backup/f12-native-exit-validated-20261023)
