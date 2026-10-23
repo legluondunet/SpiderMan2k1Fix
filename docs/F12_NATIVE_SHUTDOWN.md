@@ -1,3 +1,89 @@
+## 2026-10-23 — Native callers and top-level dispatcher: static control-flow audit
+
+The uploaded original `SpideyPC.exe` (SHA-256
+`0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`)
+was statically disassembled again with `objdump -d -M intel`.
+There are exactly **30 direct `call 0x470750`** instructions
+in the original `.text` image, grouped into:
+
+| Caller sites, original VAs | Count | Caller behavior established |
+|---|---:|---|
+| `0x455CF1`, `0x455CFE`, `0x455D0C`, `0x455D1A` | 4 | Top-level startup's four pre-menu movies; then `0x455D23: call 0x443AD0` |
+| `0x443BE7` | 1 | Nested inside `0x443AD0`; optional movie ID read from `[0x54F570]`, guarded against `0xFFFFFFFF` |
+| `0x49D654` | 1 | UI/sequence loop; after the movie, `test al,al; sete byte ptr [esp+0x13]`, then branches back to its own control loop at `0x49D34E` |
+| `0x4279FB` through `0x427D8A` | 24 | Switch/table-driven cinematic/event routines; use diverse numeric movie IDs and return to their own callers |
+
+Specific parent evidence for `0x443BE7`:
+
+```asm
+00443BB9 mov eax,[0x54F570] ; pending video identifier
+00443BC4 cmp eax,-1
+00443BDB je  0x443BEF     ; no video requested
+00443BDD push 0x3F800000
+00443BE2 push 1
+00443BE4 push 1
+00443BE6 push eax
+00443BE7 call 0x470750
+00443BEC add  esp,0x10
+00443BEF mov  dword ptr [0x54F570],0xFFFFFFFF
+00443BF9 call 0x479B70
+00443C01 ret
+```
+
+This establishes that `0x443AD0` **can** own optional video
+playback and continues its own cleanup/state reset after the
+movie owner returns. It does **not** prove that this is the
+particular caller reached by New Game in the Windows log.
+Other original callers also use `0x470750`, so a global
+F12 shortcut applied to its return is not safe.
+
+Important top-level engine control details verified from the
+same EXE:
+
+- `0x455F24` loads next-dispatch request from `[0x60CFA4]`;
+  `0x455F56` dispatches through the native jump table at
+  `0x456274` for requests 1–11.
+- Request **7** maps to `0x456185` (the already investigated
+  original engine teardown checkpoint), then executes
+  `0x456198: call 0x48A820` and `0x45619D` condition/exit
+  handling; only the existing validated 3D F12 approach
+  currently establishes the prerequisite final-shutdown state.
+- The top-level native Quit test `0x455E50` reads the quit
+  byte `[0x60CF88]` and jumps to `0x4561F2` if set.
+  Critically, this test is on the **startup/initialization
+  entry path**, while the later dispatcher loop returns via
+  `0x455F19` / `0x455D98`; simply setting the startup
+  Quit byte while a *post-menu* cinematic is nested within
+  the dispatcher does not establish that the engine will
+  read it before starting 3D gameplay.
+- The common final engine teardown enters at `0x45620C`,
+  where there are additional game-owned resource releases.
+  Jumping directly there from a nested video callback
+  would bypass the caller's stack unwinding and cleanup,
+  so is **not** an acceptable F12 strategy.
+
+**Crucial correction to the previous static-disassembly entry:**
+the second argument (native `allow-skip`) is `1` for **all
+four startup movies as well as `0x443BE7`**, not `0` as
+previously stated. The `0x470826` access to `[esp+0x10]`
+occurs after `push ebx`, so it addresses the second
+original C argument. This is established directly by the
+original push instructions.
+
+**Conclusion:** Native keyboard skip and native Bink cleanup
+are verified, and the caller-dependent post-video flows
+are mapped. **A clean F12 post-video Quit is not yet
+proven or implemented.** Next diagnostic must establish
+which of the 30 native callers actually owns the specific
+New Game cinematic, and identify a game-thread exit
+handoff **after the matching parent has run its cleanup**,
+not via arbitrary `[0x60CFA4]` writes, direct BinkClose,
+direct return-address rewrites, `ExitProcess`, or a
+blind jump to `0x45620C`. No game behavior changed in
+this documentation-only audit.
+
+---
+
 ## 2026-10-23 — Verified native cinematic Space skip and Bink teardown (original EXE)
 
 **Static disassembly of the user-provided original `SpideyPC.exe`:**
@@ -71,9 +157,15 @@ game-owned teardown at `0x470871`**.
 
 The 60 threshold is measured in **loop iterations**, not
 necessarily frames or elapsed seconds. The `allow-skip`
-argument is visibly true at non-startup call sites such as
-`0x443BE7` (`push 1` as the second argument); the four
-startup movie call sites around `0x455CF1` pass zero.
+argument is visibly **1 at both** the non-startup `0x443BE7`
+and **all four** startup movie call sites `0x455CF1`, `0x455CFE`,
+`0x455D0C`, `0x455D1A`. The stack offset in `mov bl,[esp+0x10]`
+at `0x470826` is relative to the additional `push ebx` inside
+`0x470750`; it reads the **second argument** (1). An earlier
+statement here incorrectly asserted that startup calls pass zero;
+that assertion is now corrected. The flag only allows a skip
+branch after the threshold; it does **not** demonstrate whether
+the user actually skips any particular startup film.
 Not all cinematics are proved to use the same immediate
 call site, but `0x470750` is reused both before and after
 the menu.
