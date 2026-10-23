@@ -19,8 +19,9 @@ F10VerboseTrace=0
 **Important:** all F10 switches are disabled by default.
 For troubleshooting, set `F10VerboseTrace=1` to restore
 the detailed read-only reverse-engineering log messages.
-Do not enable the experimental shutdown in an otherwise
-untested game session or assume arbitrary cinematics are supported.
+Do not assume arbitrary cinematics are supported. The legacy
+`F10GameplayExit=1` option now requests return to the main menu,
+NOT process shutdown.
 
 ## Confirmed baseline
 
@@ -29,8 +30,9 @@ untested game session or assume arbitrary cinematics are supported.
 | First F10 on New Game comic | Original L1COV.bmp timer branch, Bink movie #4 owner and native teardown | Validated in Wine |
 | Automatic Stan Lee 3D introduction skip | Original first CutSceneScript skip permission, request, native end | Validated in Wine |
 | Automatic second 3D introduction skip | Distinct original CutSceneScript, independently allowed/requested/ended | Validated in Wine |
-| Later F10 during initial playable New Game level | Native request 7, game-owned 3D cleanup and controller-7 final-exit flag | Validated in Wine #687 |
-| Process exit code / no orphan process | Not contained in the supplied #687 log itself | Confirm separately when desired |
+| Earlier F10 process-quit prototype | Native request 7, original 3D cleanup and final-exit bit | Old mode validated in Wine #687; superseded |
+| New F10 during playable 3D | Native request 7, game-owned cleanup and controller-7 return to original menu (no final-exit bit write) | Pending Wine and Windows 11 runtime validation |
+| Game PID stays alive after gameplay F10 | Verify original Shell_MainMenu returns and a new game can launch | Pending runtime validation |
 
 The #687 log recorded native completion (relative to entering 3D):
 `SECOND_SCRIPT_ENDED_CANDIDATE_GAMEPLAY stage=6` and
@@ -73,10 +75,9 @@ on second L1COV.bmp -> verify Bink #4 and both scripts again.
 Repeat a third time if practical. Look for one
 `DEBUG-F10-SESSION-RESET` after every return to the
 main menu, and fresh `DEBUG-3D-AUTO-NATIVE ARMED` each
-time. F10 during actual 3D gameplay should continue using
-the original cleanup (when explicitly enabled). Avoid
-using it for this repro because that exits the process
-rather than returning to the menu.
+time. With `F10GameplayExit=1`, F10 during verified playable 3D now
+requests normal owner cleanup and a native RETURN TO MENU rather
+than the old process exit. Test the new behavior separately.
 
 ## Still to be tested on real gameplay
 
@@ -89,7 +90,9 @@ rather than returning to the menu.
 | Different cutscene engine | Find a scene that does not use CutSceneScript | Treat as unverified; do not assume safety from this guard alone |
 | Pause screen | Press F10 while paused | No new native exit request |
 | Alt+Tab / focus loss | Press F10 while game is not foreground; return and test | Focus handling must prevent an off-focus quit |
-| Restart New Game in the same process | Esc → Exit → Yes → New Game → press F10 on second comic | Previous 3D owner/intro script states reset only in original menu; F10 auto-skips two new scripts |
+| Restart New Game in the same process | Esc → Exit → Yes → New Game → press F10 on second comic | Session markers reset in original menu; F10 auto-skips two scripts — validated in Wine #694 |
+| Return to menu with F10 during playable 3D | Press F10 only after both initial scripts ended | Controller-7 says RETURN-TO-CONTROLLER; real main menu responds; same PID; no process final-exit flag |
+| Repeat gameplay F10 after return | New Game → F10 on comic → F10 in gameplay → New Game again | F10 works in the next comic and gameplay, with menu reset between sessions |
 | Windows 11 native | Repeat these actions without Wine | Not yet validated for this F10 consolidated build |
 
 For any unexpected behavior, disable `F10GameplayExit=0`
@@ -101,7 +104,8 @@ a substitute for original native engine cleanup.
 
 This matrix records actual observed/verified behavior separately
 from proposed tests. It does not imply the pending cases have
-already passed.
+already passed. The existing process-exit PowerShell watcher is NOT
+appropriate for the new in-game F10 return-to-menu behavior.
 
 PR #26: https://github.com/legluondunet/SpiderMan2k1Fix/pull/26
 

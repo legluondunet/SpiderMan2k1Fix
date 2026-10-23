@@ -46,12 +46,13 @@ The original New Game sequence and in-game native shutdown have been
   `CutSceneScript` skip requests **only after** each script's own
   `CutSceneSkipAllow` permission.
 - Second F10 during playable 3D: gated original 3D cleanup
-  (`0x455BF3`), request 7, controller-7 cleanup and original
-  final-exit branch (`0x45619D`). The Wine log confirmed
-  `NATIVE-FINAL-CLEANUP`, but did not itself include an OS exit code.
-- F10 **cannot request this native shutdown during an active
+  (`0x455BF3`), request 7, controller-7 cleanup, then
+  **return to the original main menu**. The native final-exit flag
+  at `0x45619D` is NOT forced for gameplay F10: the game process
+  remains alive, ready for another New Game.
+- F10 **cannot request this menu return during an active
   `CutSceneScript`**, including when one starts after the two
-  introductions. A game-thread snapshot and an independent final
+  introductions. A game-thread snapshot and independent original
   owner validation must both show no active cinematic script.
 
 For the tested F10 sequence, explicitly enable:
@@ -64,6 +65,10 @@ F10Auto3DScripts=1
 F10GameplayExit=1
 F10VerboseTrace=0
 ```
+
+`F10GameplayExit=1` is a **legacy INI name**: it now means **return to
+the native main menu**, NOT exit the program. Existing test INIs remain
+compatible.
 
 All four F10 options default to **0**. `Log=1` retains the useful
 script start/end, native skip, blocked F10, 3D cleanup and controller
@@ -81,8 +86,10 @@ See the two-session regression protocol in
 
 This is an experimental, explicitly opted-in feature while the PR
 is under review. It has been validated in the New Game sequence
-on Wine, **not yet in arbitrary later in-level cutscenes**. Other
-cutscene engines, save/load paths, pause and focus changes need
+on Wine, **not yet in arbitrary later in-level cutscenes**. The new
+gameplay F10 return-to-menu behavior is **not yet user-validated**; build
+#694 only validated F10 skipping across three consecutive New Games.
+Other cutscene engines, save/load paths, pause and focus changes need
 separate runtime validation. For an unexpected issue, restore
 `F10GameplayExit=0` or use the previous validated build.
 

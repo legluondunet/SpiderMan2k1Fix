@@ -1732,7 +1732,7 @@ def test_f10_gameplay_exit_only_after_two_verified_native_script_lifetimes():
         assert proof in worker
     owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
               SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
-    final_guard=owner[owner.index("Native-game-thread FINAL eligibility"):
+    final_guard=owner[owner.index("Native-game-thread MENU-RETURN eligibility"):
                       owner.index("after_timer=*SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE")]
     assert "game3d_exit_state,2,1" in owner
     for proof in ("VirtualQuery(", "scene[0x1acu]==0u && scene[0x1b4u]==0u",
@@ -1774,7 +1774,7 @@ def test_f10_refuses_later_active_cutscene_even_with_intro_complete():
     assert "InterlockedCompareExchange(&debug_live_cutscene_active,0,0)==0" in worker
     assert "current_cutscene=%ld" in worker
     assert "InterlockedExchange(&debug_live_cutscene_active,-1);" in worker
-    owner_guard=owner[owner.index("Native-game-thread FINAL eligibility"):
+    owner_guard=owner[owner.index("Native-game-thread MENU-RETURN eligibility"):
                        owner.index("after_timer=*SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE")]
     assert "InterlockedCompareExchange(&debug_live_cutscene_active,0,0)==0" in owner_guard
     assert "scene[0x1acu]==0u && scene[0x1b4u]==0u" in owner_guard
