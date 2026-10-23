@@ -100,7 +100,7 @@ than the old process exit. Test the new behavior separately.
 | Windows 11 native | Repeat these actions without Wine | Not yet validated for this F10 consolidated build |
 
 For unexpected behavior, remove `F10Shortcut=1`
-or set it to 0, and retain the last known working build. Attach the complete
+or explicitly set `F10Shortcut=0`, and retain the last known working build. Attach the complete
 `SpiderMan2k1Fix*.log`; native script lifecycle and exit
 decisions are retained even in compact log mode. Do not use
 `taskkill`, `TerminateProcess` or synthetic Space as
