@@ -181,6 +181,86 @@ The frozen old F12 implementation on
 No functional F12 or native menu changes are made for this
 diagnostic. PR #26 remains draft/unmerged.
 
+## 2026-10-23 — ~4-second visible menu input latency: original native menu tick vs frame-gap timing
+
+The user confirmed a persistent **~4-second** input delay once the
+main menu is visually displayed after pressing F12 during an opening
+Bink movie (`[Debug] F12TestMode=1`). Log:
+`SpiderMan2k1Fix(20261023-115419).log`, patch
+`v1.0.0-56b5e4f`, exact supported game EXE SHA verified.
+
+The preceding read-only native `0x493DD6` callback reported:
+
+```text
+DEBUG-MENU-INPUT-PROBE frame=1 ms_since_first_menu=0 native_transition=0x00000000 native_menu_input_branch=ELIGIBLE game_input_active=1
+DEBUG-MENU-INPUT-PROBE frame=15 ms_since_first_menu=3768 native_transition=0x00000000 native_menu_input_branch=ELIGIBLE game_input_active=1
+DEBUG-MENU-INPUT-PROBE frame=30 ms_since_first_menu=4282 native_transition=0x00000000 native_menu_input_branch=ELIGIBLE game_input_active=1
+DEBUG-MENU-INPUT-PROBE frame=45 ms_since_first_menu=4796 native_transition=0x00000000 native_menu_input_branch=ELIGIBLE game_input_active=1
+```
+
+A 30-FPS loop would take ~467ms for 14 frames;
+the observed first 14 inter-frame intervals took
+**3,768ms**, an excess of approximately **3,301ms**.
+Afterwards 15 frames took 514ms, essentially the
+expected 500ms. The original menu gate `[0x54D38C]`
+was **already zero at the first observed menu frame**
+and remained so, with `[0x6B78F0]=1`. This rules
+out a persistent nonzero `0x54D38C` menu gate
+as the source of that delay. It does **not** prove
+all DirectInput calls/keypresses were accepted.
+
+The optional DirectInputRetry patch installed at
+Flip #120 AFTER this first unusually slow segment.
+No DIERR_NOTACQUIRED or successful native Acquire
+retry was observed. Its installation cannot by
+itself be identified as the causal fix or cause.
+
+**Diagnostic-only code in build #634**: augment
+the *already installed* original-game call wrapper
+at `0x493DD6`. A passive entry timestamp
+immediately precedes the original
+`0x505720` native menu tick call, and the
+existing post-tick hook collects a second timestamp.
+A bounded `DEBUG-MENU-TICK-TIMING` trace for
+first 20 menu ticks (and selected subsequent
+ones up to 65) reports:
+
+- `native_0x505720_ms`: time INSIDE the original
+  `0x505720` native menu tick
+- `since_last_exit_ms`: time BETWEEN the previous
+  native menu tick's return and this tick's entry
+- `wallclock_ms`: monotonic `GetTickCount` sample
+
+This partitions the ~3.3-second excess into
+**inside-native-tick** versus **between-ticks**
+causes. It does not diagnose deeper internals
+of `0x505720` yet; do not guess an input API
+or driver root cause from frame timing alone.
+All helper calls occur on the same original
+render/menu thread within existing register/flags
+save/restore and do not change game state.
+No new EXE CALL site, DirectInput hook, timing
+override, input injection, async callback, or
+extra normal-game F12 behavior is introduced.
+
+**Next runtime regression:** test build
+[#634](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/39949796958)
+with EXACT same INI including
+`[Debug] F12TestMode=1,Log=1` and original
+`[Input] DirectInputReacquire`. Press F12 in an
+opening Bink, immediately try moving menu
+selection after menu appears, and upload the log.
+The largest `DEBUG-MENU-TICK-TIMING` entry should
+locate the side of the native `0x505720` call
+responsible for the wall-time gap. Once the
+location is known, inspect that native game
+caller's path before considering a correction.
+F12 shortcut, accelerated still, restored New
+Game Bink playback, native 3D exit remain
+untouched; previous native F12 full-exit branch
+`backup/f12-native-exit-validated-20261023`
+is preserved.
+
 ## Regression test plan
 
 1. On Windows 11, press F12 **once** during the first intro Bink movie.
