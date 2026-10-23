@@ -954,9 +954,12 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
                 *SPIDER_BINK_VIDEO_HANDLE!=0u) {
         /* F12 worker only queues intent: native tick wrapper will
          * verify the specific movie owner before interrupting it. */
-        if(InterlockedCompareExchange(&postmovie_state,1,0)==0) {
+        if(InterlockedCompareExchange(&postmovie_state,0,0)==0) {
+          /* Publish timestamp BEFORE state=1: the native Bink tick
+           * executes on a separate thread and may consume immediately. */
           InterlockedExchange(&postmovie_request_ms,(LONG)now);
-          say("QUICK-EXIT-F12: POSTMENU-MOVIE F12 intent requested; original Bink owner verification pending [EXPERIMENTAL]");
+          if(InterlockedCompareExchange(&postmovie_state,1,0)==0)
+            say("QUICK-EXIT-F12: POSTMENU-MOVIE F12 intent requested; original Bink owner verification pending [EXPERIMENTAL]");
         }
       } else if(InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
                 InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
