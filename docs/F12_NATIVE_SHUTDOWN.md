@@ -1,3 +1,45 @@
+## 2026-10-23 — Passive video-path diagnostics after New Game
+
+The user's observed sequence is one automatically timed illustrated
+still → one cinematic → gameplay 3D. Existing source knowledge supports
+several separate, **read-only** indicators to compare during this sequence:
+
+- The existing real native frame-tick wrapper within the original
+  `0x470750` Bink loop (CALLs at `0x47081D` and `0x47085F`) can
+  report a *single first post-Shell_MainMenu callback* if that same loop
+  is reused; silence does not rule out Bink elsewhere.
+- The already installed DirectDraw `Blt` recognition can report the
+  first few successful **post-Shell** remapped movie-like presentations.
+  These are **presentations only**, not proof of a Bink decode or
+  native resource ownership.
+- The preexisting `Flip` stage observer now logs edge transitions for
+  the known game-owned video Bink handle slot `0x00AC0BA4`, soundtrack
+  handle slot `0x00AC1020`, the existing
+  `0x006151F8` movie-active flag, and first observed native
+  3D-input-owner invocation. Non-null handles indicate presence
+  only, **not** that playback is taking place.
+
+All changes are in the **existing** video-tick, native draw and Flip
+callbacks. No additional EXE hook, COM method call, playback pause,
+F12 trigger, cleanup, global game-state write or scene-specific exit.
+A post-New-Game cinematic may instead be *rendered in-engine*; the
+results must be interpreted conservatively. The exact native
+still→cinematic→3D owners remain unknown.
+
+Windows test procedure: use the build containing these passive logs,
+with `[System] QuickExitF12=1`,
+`ExperimentalQuickExitF12In3D=1`,
+`[Display] ExperimentalComicNativeAspect=1`, and `[Debug] Log=1`.
+Start a new game; **let the still disappear automatically**; watch
+the cinematic normally, without pressing F12 during the still or
+cinematic; enter 3D and quit using the validated F12. Upload the log.
+Compare `COMIC-RENDER-CANDIDATE`,
+`POST-SHELL-BINK-TICK-CALLSITE`, `POST-SHELL-MEDIA-BLT`,
+`ENGINE-STATE` handle edges and `NATIVE-GAME-INPUT owner ENTER`.
+**No new F12 behavior is enabled in those unsupported scenes.**
+
+---
+
 ## 2026-10-23 — User clarification: New Game comic is auto-timed, followed by a cinematic
 
 **User-observed game sequence (not independently established by the
