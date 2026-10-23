@@ -598,7 +598,12 @@ def test_only_initial_four_movies_can_trigger_deferred_quit():
     assert "InterlockedExchange(&real_main_menu_seen,1);" in SRC
     assert "InterlockedCompareExchange(&real_main_menu_seen,0,0)==0" in SRC
     assert "if(menu_time && (DWORD)(now-(DWORD)menu_time)<=400u)" in SRC
-    assert SRC.index("if(menu_time && (DWORD)(now-(DWORD)menu_time)<=400u)") < SRC.index("InterlockedCompareExchange(&real_main_menu_seen,0,0)==0")
+    watcher=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
+                SRC.index("void SpiderQuickExitF12_Init(")]
+    # The NEW early-still wrapper also checks menu_seen==0. The original
+    # main-menu priority assertion is only about the F12 watcher order.
+    assert watcher.index("if(menu_time && (DWORD)(now-(DWORD)menu_time)<=400u)") < watcher.index(
+        "intro movie exit requested")
 
 
 def test_intro_transition_runs_original_cleanup_before_setting_native_quit():
