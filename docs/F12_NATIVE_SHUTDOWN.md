@@ -1,3 +1,43 @@
+## 2026-10-23 — Windows build #525: passive comic renderer trace confirmed
+
+User log `SpiderMan2k1Fix(20261023-031026).log` reports
+`v1.0.0-23ce956` and confirms the new read-only instrumentation
+fires exactly once for the recognized quad:
+
+```text
+QUICK-EXIT-F12: REAL Shell_MainMenu frame callback observed (0x493DD6)
+BORDERLESS: MENU exited; windowed gameplay presentation active
+QUICK-EXIT-F12: COMIC-RENDER-CANDIDATE draw=1 flip=314 caller_rva=0x00102C72 texture=512x256 mode_request=0 bink_active=0 menu_seen=1 native_3d_owner_calls=0 native_3d_owner_age_ms=0 [RENDER-ONLY; comic owner UNKNOWN]
+COMIC-NATIVE-FIX: #1 stage=NATIVE rva=0x00102C72 texture=512x256
+QUICK-EXIT-F12: ENGINE-STATE flip=315 renderer2d=0 mode_request=0
+QUICK-EXIT-F12: NATIVE-GAME-INPUT owner ENTER n=1 request=0 timer_active=0 flag1=0 flag2=1
+QUICK-EXIT-F12: 3D game-thread frame completed; native request 7 queued for original 0x455BF3 cleanup
+QUICK-EXIT-F12: NATIVE-3D-CLEANUP completed n=1 request=7
+QUICK-EXIT-F12: CONTROLLER-7 native teardown COMPLETED n=1 bit4=1 status=-1 outcome=NATIVE-FINAL-CLEANUP
+```
+
+The comic-shaped draw occurs **before the first observed gameplay
+input-owner invocation**; the 3D F12 path still chooses native final
+cleanup. This is evidence of **draw/3D-owner ordering**, not of
+native comic scene ownership, page advancement or resource cleanup.
+Only **one matching quad** was observed. Flip numbers cannot be
+translated into elapsed wall-clock time: an image can remain visible
+with few/no additional Flip calls.
+
+Next controlled diagnostic (existing build, no code change): during
+New Game, **hold on the first illustrated page for 10–15 seconds**,
+then manually advance through any remaining pages with deliberate
+pauses, without pressing F12 on those pages. Enter actual 3D and
+use the already-validated F12 native exit. A separate log from this
+run can establish whether further matching
+`COMIC-RENDER-CANDIDATE` events appear for page changes. If not,
+the current geometry signature is insufficient to identify the
+actual page controller. Do not implement F12 comic exit by
+mutating `mode_request` or by inferring ownership from renderer
+state; the native comic owner remains unknown.
+
+---
+
 ## 2026-10-23 — first passive comic-stage correlation (Windows log)
 
 User supplied `SpiderMan2k1Fix(20261023-030218).log` from
