@@ -1,3 +1,87 @@
+## 2026-10-23 — Opt-in post-New-Game Bink F12 prototype (NOT YET VALIDATED)
+
+The original EXE's New Game video #4 is called at
+`0x4279FB`, returning to `0x427A00`, inside the native
+scene script dispatcher. The original frame update
+`0x455400` calls the scene queue at `0x45551D` and
+only **after it returns** calls the native input update
+at `0x45553B`. This provides a potential post-script,
+game-owned cleanup checkpoint, but it is not a separately
+verified pre-3D exit mechanism.
+
+Experimental design (no extra EXE instruction hooks):
+
+1. A new **separate, default-OFF opt-in** makes the F12
+   watcher record intent **only** while a post-menu
+   Bink video is present and the first native 3D input
+   callback has not run, with a prior comic candidate.
+2. The existing native Bink tick wrapper checks original
+   tick call return VA `0x470822/0x470864`, the verified
+   original video owner return `0x427A00` (movie #4),
+   original allow-skip argument 1, live Bink handle/flag,
+   and a F12 intent less than 5 seconds old. Only then
+   does the wrapper return `0`, which makes the game
+   perform **its own original `0x470871` video/audio
+   cleanup**, then unwind the parent and scene interpreter.
+3. At the **original `0x45553B` game-input callback**
+   after the script interpreter has returned, the
+   native `0x440EF0` still executes exactly once.
+   The opt-in wrapper checks both Bink flag and video
+   handle absent, the engine still requesting 0,
+   the original game input checkpoint completed,
+   the movie exit initiated <15 seconds earlier and
+   the 3D exit option enabled. It then arms request
+   7 via the **same original owner cleanup**
+   `0x455BF9` and controller-7 `0x45619D` final
+   teardown path already validated in Windows/Wine.
+4. Failed guards cancel the trial: no generic
+   `ExitProcess`, direct `BinkClose`,
+   stack/script return rewriting, `WM_CLOSE`,
+   or jump into engine shutdown. **F12 during the
+   preceding comic still remains unsupported.**
+
+This still executes a native 3D input/game checkpoint
+to reach cleanup, even if no playable/visible 3D frame
+appears. Therefore it **does not yet prove** the
+requested purely pre-3D shutdown. Its behavior and
+safety must be manually checked on Windows 11 and
+Wine before any broader enablement.
+
+For a *controlled Windows test only*, set in the INI:
+
+```ini
+[System]
+QuickExitF12=1
+ExperimentalQuickExitF12In3D=1
+[Debug]
+Log=1
+```
+
+In PowerShell in the game directory:
+
+```powershell
+$env:SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT = "1"
+.\SpideyPC.exe
+```
+
+Go to New Game, allow the still to disappear
+automatically, and **press F12 directly during
+the Bink cinematic** (do not press Space).
+Record whether the process exits cleanly and
+whether a gameplay frame flashes. Keep the log.
+Disable the trial afterwards with:
+
+```powershell
+Remove-Item Env:SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT
+```
+
+This environment variable is required **in addition**
+to the INI settings. Without it, all existing
+previously validated F12 behavior is unchanged.
+The PR remains **draft and unmerged**.
+
+---
+
 ## 2026-10-23 — Wine/Lutris-prefix regression: Bink → 3D → native F12 teardown
 
 The user provided `SpiderMan2k1Fix(20261023-062647).log`
