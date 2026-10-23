@@ -1531,3 +1531,15 @@ def test_original_3d_live_keymap_space_audit_is_read_only():
     assert "space_action_mask=0x%08lX" in owner
     assert "keymap_logged=1;" in owner
     assert "keymap[2*i]=" not in owner
+
+
+def test_3d_space_event_counter_never_labels_all_edges_as_cutscene_skips():
+    """In Wine 2026-10-23 15:57:30, the user's third Space press was
+    a gameplay JUMP; only first TWO pressed Space keys skipped intros."""
+    worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):]
+    assert "DEBUG-NEWGAME-3D-SPACE-EVENT edge=%ld" in worker
+    assert "MAY BE GAMEPLAY JUMP; NO SCENE OR EXIT AUTHORITY" in worker
+    assert "TWO ORIGINAL SPACE-SKIPPABLE SCENES; SCENE ID UNKNOWN" not in worker
+    assert "InterlockedIncrement(&debug_newgame_3d_space_edges)" in worker
+    assert "raw physical event" in worker
+    assert "controller-7 shutdown permission" in worker

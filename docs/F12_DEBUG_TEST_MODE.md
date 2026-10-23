@@ -1,3 +1,54 @@
+## 2026-10-23 — User-confirmed interpretation of Wine 15:57:30 log (build #669)
+
+**Crucial first-hand correction:** of the THREE physical SPACE edges in
+`SpiderMan2k1Fix(20261023-155730).log`, ONLY the first
+TWO skipped the original 3D intro cinematics:
+
+- +**1684 ms**: original Stan Lee 3D narration -> second cinematic.
+- +**2713 ms**: second cinematic -> playable gameplay.
+- +**4573 ms**: an **accidental extra SPACE press in gameplay** which
+  made Spider-Man **jump**. This MUST NOT be counted as a third
+  cinematic, third scripted skip or a gameplay-ready transition.
+
+The game-owned `0x006B7965` DirectInput SPACE byte
+records the physical keyboard changes across all three events.
+The first `HUD-ADAPTIVE region=instructions hit=1` line happens
+after the third event in this particular run; this is merely
+render diagnostic timing. Combined with the user's visual confirmation,
+it establishes that first HUD-draw time and physical press count
+are **NOT** valid detectors of native cinematic completion.
+
+**Key new positive finding:** the game's actual `0x568398`
+runtime action map contains **13 entries**, and exactly **one**
+DIK_SPACE (`0x39`) entry mapped to **action bit `0x00000010`**.
+The user confirms SPACE makes the playable Spider-Man jump.
+Thus the same physical SPACE key has a gameplay action; its
+use during scripted 3D cinematics must be mediated by a separate
+original scene/skip state or that action in a different context.
+The runtime keymap itself does **not** prove which native routine
+ends either cinematic. `0x50A190` action conversion and
+`0x50C180` action-mask handling merit static follow-up,
+but the next F12 skip must not blindly synthesize jump
+input twice or assume gameplay becomes ready on edge #2.
+
+The diagnostic SPACE-event string previously mentioned “TWO
+ORIGINAL SPACE-SKIPPABLE SCENES” on *every* raw physical
+edge, which was misleading when edge #3 was a jump. This
+has been amended to `RAW PHYSICAL PRESS ONLY; MAY BE GAMEPLAY
+JUMP; NO SCENE OR EXIT AUTHORITY`. No game hook behavior
+was altered; the event count remains raw telemetry and does
+not authorize F12 native exit. The validated F12-on-comic
+original native Bink #4 completion remains **1 ms**.
+
+**Classification is per this user-confirmed run only.**
+Subsequent runs must identify ORIGINAL game-owned scene
+completion and positive playable state, not simply rely on
+press-count thresholds. The user's desired one-F12
+completion of both 3D intros and safe gameplay-only
+F12 shutdown are still pending.
+
+---
+
 ## 2026-10-23 — 15:42:54 Wine: original DirectInput SPACE byte observed; audit live action mapping
 
 The user-supplied log `SpiderMan2k1Fix(20261023-154254).log`

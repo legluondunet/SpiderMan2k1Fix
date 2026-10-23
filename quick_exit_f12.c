@@ -1954,10 +1954,13 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
     HWND hwnd=(HWND)InterlockedCompareExchangePointer(&game_hwnd,NULL,NULL);
     BOOL focused=hwnd && IsWindow(hwnd) && GetForegroundWindow()==hwnd;
     BOOL down=(GetAsyncKeyState(VK_F12)&0x8000)!=0;
-    /* Observe each separate physical SPACE press between Bink movie #4
-     * and playable gameplay, without delivering input to the game.
-     * The count is DIAGNOSTIC, not a proof of either 3D scene boundary:
-     * no request 7 can be authorized from these events alone. */
+    /* Observe each separate physical SPACE press after Bink movie #4,
+     * without delivering input to the game. Unlike the first two
+     * SPACE presses in the user's 2026-10-23 15:57:30 Wine test, its
+     * THIRD press was a player JUMP during active gameplay, NOT a
+     * third cinematic. This counter is ONLY a raw physical event
+     * count; never derive cinematic count, gameplay readiness or
+     * controller-7 shutdown permission from it. */
     if(focused &&
        InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
        InterlockedCompareExchange(&debug_newgame_progress,0,0)==3) {
@@ -1969,7 +1972,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
         if(count<=8) {
           char line[280];
           snprintf(line,sizeof(line),
-            "QUICK-EXIT-F12: DEBUG-NEWGAME-3D-SPACE-EVENT edge=%ld since_3d_ms=%lu [READ-ONLY; TWO ORIGINAL SPACE-SKIPPABLE SCENES; SCENE ID UNKNOWN; NO EXIT AUTHORITY]",
+            "QUICK-EXIT-F12: DEBUG-NEWGAME-3D-SPACE-EVENT edge=%ld since_3d_ms=%lu [READ-ONLY; RAW PHYSICAL PRESS ONLY; MAY BE GAMEPLAY JUMP; NO SCENE OR EXIT AUTHORITY]",
             (long)count,(unsigned long)(since?(DWORD)(now-since):0u));
           say(line);
         }
