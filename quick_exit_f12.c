@@ -551,15 +551,16 @@ static int spider_f12_known_bink_parent_return(DWORD ret_addr) {
  *   frame[2] = game owner's saved EBX
  *   frame[3] = game owner's saved ESI
  *   frame[4] = direct caller return address of native 0x470750
- *   frame[5] = movie ID (caller's first argument)
- *   frame[6] = allow-skip (caller's second argument)
+ *   frame[5] = REUSED stack scratch, not the original video ID:
+ *              owner 0x4707E4 overwrites its first-argument slot.
+ *   frame[6] = allow-skip (preserved original second argument)
  *
  * If the first return address differs, DO NOT inspect deeper stack.
  * Even a whitelisted parent identifies only a callsite, NOT authority
  * to initiate a native F12 game-exit/cleanup from within this wrapper. */
 static void spider_f12_trace_native_bink_parent(const uintptr_t *frame) {
   DWORD tick_return=(DWORD)frame[1];
-  DWORD parent_return,movie_id,allow_skip;
+  DWORD parent_return,allow_skip;
   char line[260];
   if(tick_return!=0x00470822u && tick_return!=0x00470864u) {
     snprintf(line,sizeof(line),
@@ -569,13 +570,15 @@ static void spider_f12_trace_native_bink_parent(const uintptr_t *frame) {
     return;
   }
   parent_return=(DWORD)frame[4];
-  movie_id=(DWORD)frame[5];
+  /* The original first argument at frame[5] was already OVERWRITTEN
+   * by 0x4707E4 before the tick callback; video IDs must instead
+   * be inferred from the SHA-verified native callsite, if constant. */
   allow_skip=(DWORD)frame[6];
   snprintf(line,sizeof(line),
-    "QUICK-EXIT-F12: POST-SHELL-BINK-PARENT native_tick_return=0x%08lX parent_return=0x%08lX known_original_site=%d movie_id=%lu allow_skip=%lu [FRAME-READ-ONLY; NO EXIT AUTHORITY]",
+    "QUICK-EXIT-F12: POST-SHELL-BINK-PARENT native_tick_return=0x%08lX parent_return=0x%08lX known_original_site=%d allow_skip=%lu [FRAME-READ-ONLY; ID MUST COME FROM CALLSITE; NO EXIT AUTHORITY]",
     (unsigned long)tick_return,(unsigned long)parent_return,
     spider_f12_known_bink_parent_return(parent_return),
-    (unsigned long)movie_id,(unsigned long)allow_skip);
+    (unsigned long)allow_skip);
   say(line);
 }
 
