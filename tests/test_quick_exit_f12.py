@@ -1341,3 +1341,54 @@ def test_newgame_f12_3d_two_space_skippable_scenes_remain_distinct_from_gameplay
     assert worker.index("DEBUG-NEWGAME-3D F12 consumed") < worker.index(
         "DEBUG-3D-EXIT native gameplay exit queued")
     assert "SendInput(" not in worker
+
+
+def test_new_game_comic_native_l1cov_timer_is_skipped_without_clock_or_script_writes():
+    """The native L1COV.bmp loop compares delta clock ticks to 0x12c,
+    then falls through the real native expiry branch to video #4.
+    Only the original 6-byte game-clock *read* may be replaced."""
+    assert "SPIDER_NEWGAME_COMIC_CLOCK_SITE ((BYTE *)(uintptr_t)0x004279B8u)" in SRC
+    assert "SPIDER_NEWGAME_L1COV_OWNER ((const BYTE *)(uintptr_t)0x0042796Du)" in SRC
+    assert "SPIDER_NEWGAME_MOVIE4_OPCODE ((const BYTE *)(uintptr_t)0x004279F9u)" in SRC
+    assert "newgame_comic_clock_original[6]={0x8B,0x15,0xA0,0x4C,0x6B,0x00}" in SRC
+    assert "newgame_l1cov_owner_signature[5]={0x68,0x14,0x92,0x54,0x00}" in SRC
+    assert "newgame_movie4_opcode_signature[7]={0x6A,0x04,0xE8,0x50,0x8D,0x04,0x00}" in SRC
+    asm=SRC[SRC.index("__attribute__((naked,used)) static void spider_f12_debug_comic_clock(void)"):
+            SRC.index("/* Wrapper for ORIGINAL 0x4A1896 input check")]
+    assert '"movl 0x006B4CA0, %edx' in asm
+    for gate in ('cmpl $1, _debug_f12_test_mode',
+                 'cmpl $1, _debug_newgame_comic_clock_hook_installed',
+                 'cmpl $4, _postmovie_state',
+                 'cmpl $1, _real_main_menu_seen',
+                 'cmpl $0, _debug_newgame_progress',
+                 'cmpl $0, 0x006151F8',
+                 'cmpl $0, 0x00AC0BA4'):
+        assert gate in asm
+    assert '"leal 0x12c(%esi), %edx' in asm
+    assert '"movl $1, _debug_newgame_comic_fastforward_observed' in asm
+    assert 'ret' in asm
+    for forbidden in ('movl %edx, 0x006B4CA0', 'jmp 0x4279f0',
+                      'ExitProcess(', 'TerminateProcess(', 'SendInput('):
+        assert forbidden not in asm
+    install=SRC[SRC.index("static int install_newgame_comic_clock_hook(void)"):
+                SRC.index("static int install_intro_still_input_hook(void)")]
+    assert "BYTE patched[6]={0xE8,0,0,0,0,0x90}" in install
+    assert "SPIDER_NEWGAME_COMIC_CLOCK_SITE+5" in install
+    assert "newgame_l1cov_owner_signature" in install
+    assert "newgame_movie4_opcode_signature" in install
+    assert "newgame_comic_clock_original,patched,6" in install
+    assert "PAGE_EXECUTE_READWRITE" in install
+    assert "memcpy(SPIDER_NEWGAME_COMIC_CLOCK_SITE,newgame_comic_clock_original,6)" in install
+    worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
+               SRC.index("void SpiderQuickExitF12_Init(")]
+    assert "DEBUG-NEWGAME-COMIC F12 armed" in worker
+    assert "postmovie_state,4,0" in worker
+    assert "DEBUG-NEWGAME-COMIC native clock hook unavailable" in worker
+    assert "SPIDER_GAME_BINK_ACTIVE=0" not in asm
+    init=SRC[SRC.index("void SpiderQuickExitF12_Init("):]
+    assert "install_newgame_comic_clock_hook()" in init
+    assert "restore_newgame_comic_clock_hook();" in init
+    movie=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
+              SRC.index("/* Wrapper on the ORIGINAL GAME THREAD")]
+    assert "DEBUG-NEWGAME-COMIC-FINISHED" in movie
+    assert "postmovie_state,2,stage" in movie

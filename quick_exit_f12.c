@@ -106,6 +106,19 @@
  * Replace ONLY this second clock read with a CALL in Debug F12TestMode.
  * Never modify the shared native clock, duration, page objects or SEH. */
 #define SPIDER_INTRO_TIMED_CLOCK_SITE ((BYTE *)(uintptr_t)0x004A1A26u)
+/* Exact original L1COV.bmp New Game comic on SHA-matched SpideyPC.exe:
+ * 0x42796D pushes "L1COV.bmp" and invokes game-owned image preparation.
+ * 0x427983 loads ESI=initial game clock; 0x4279B8 MOV EDX,[0x6B4CA0]
+ * (6 bytes) followed by SUB EDX,ESI / CMP EDX,0x12C.
+ * The original JAE at 0x4279C6 leads to 0x4279F0, pushing Bink ID 4
+ * after the complete comic loop returns via its normal branch.
+ * Hook ONLY the clock READ inside that one specific original loop:
+ * supply a virtual elapsed 300-tick delta in EDX after user F12.
+ * NEVER change shared clock, script interpreter, object pointers,
+ * or native opcodes. Other game covers retain original timers. */
+#define SPIDER_NEWGAME_COMIC_CLOCK_SITE ((BYTE *)(uintptr_t)0x004279B8u)
+#define SPIDER_NEWGAME_L1COV_OWNER ((const BYTE *)(uintptr_t)0x0042796Du)
+#define SPIDER_NEWGAME_MOVIE4_OPCODE ((const BYTE *)(uintptr_t)0x004279F9u)
 /* Original 0x4A17A0 input-wait page CALL: 0x4A1896: call 0x50C180.
  * Original arguments: (0x40010,1,1), expected return VA 0x4A189B.
  * Its regular true-result branch at 0x4A18AE performs all original
@@ -172,6 +185,10 @@ static const BYTE intro_tick_call_original_2[5]={0xE8,0x3C,0xAD,0x09,0x00};
 static const BYTE post_intro_cleanup_original[5]={0xE8,0xA8,0xDD,0xFE,0xFF};
 static const BYTE intro_still_input_original[5]={0xE8,0xE5,0xA8,0x06,0x00};
 static const BYTE intro_timed_clock_original[5]={0xA1,0xA0,0x4C,0x6B,0x00};
+/* SHA-verified New Game L1 cover clock read, cover owner, movie #4. */
+static const BYTE newgame_comic_clock_original[6]={0x8B,0x15,0xA0,0x4C,0x6B,0x00};
+static const BYTE newgame_l1cov_owner_signature[5]={0x68,0x14,0x92,0x54,0x00};
+static const BYTE newgame_movie4_opcode_signature[7]={0x6A,0x04,0xE8,0x50,0x8D,0x04,0x00};
 static const BYTE menu_wait_cond_original[5]={0xE8,0x00,0x1C,0x05,0x00};
 static const BYTE menu_wait_always_original[5]={0xE8,0xEC,0x1B,0x05,0x00};
 static const BYTE menu_wait_exit_original[5]={0xE8,0x52,0x1B,0x05,0x00};
@@ -242,6 +259,11 @@ static volatile LONG debug_menu_wait_exit_hook_installed=0;
  * reliable native "playable" gate has NOT yet been mapped. */
 static volatile LONG debug_newgame_progress=0;
 static volatile LONG debug_newgame_3d_first_ms=0;
+/* Native New Game L1COV timer hook. No new INI option.
+ * 0/1 installed; fastforward_observed records that the original
+ * 0x4279C6 branch was made eligible without modifying the clock. */
+static volatile LONG debug_newgame_comic_clock_hook_installed=0;
+static volatile LONG debug_newgame_comic_fastforward_observed=0;
 /* Passive count of physical SPACE key-down edges after the original
  * movie-4 -> 3D owner transition. This NEVER unlocks gameplay F12 exit. */
 static volatile LONG debug_newgame_3d_space_edges=0;
@@ -880,6 +902,9 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
             stage==4 ? "DEFERRED-COMIC" : "CINEMATIC",
             (unsigned long)(DWORD)(GetTickCount()-started));
           say(line);
+          if(stage==4 &&
+             InterlockedCompareExchange(&debug_newgame_comic_fastforward_observed,0,0)==1)
+            say("QUICK-EXIT-F12: DEBUG-NEWGAME-COMIC-FINISHED native L1COV.bmp 300-tick threshold satisfied at 0x4279B8; original 0x4279C6 JAE and Bink owner #4 reached [GLOBAL CLOCK UNMODIFIED]");
           if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1)
             InterlockedCompareExchange(&debug_newgame_progress,2,1);
           return 0;
@@ -1049,6 +1074,43 @@ __attribute__((naked,used)) static DWORD spider_f12_debug_timed_clock(void) {
     "je 1f\n\t"
     "leal 1(%edi), %eax\n\t"
     "movl $1, _debug_timed_accelerated\n\t"
+    "1:\n\t"
+    "ret\n\t"
+  );
+}
+
+/* The L1COV.bmp NEW GAME timed image belongs to native 0x427910,
+ * not the separate PRE-MENU timed still at 0x4A1930.
+ * The overwritten 6-byte instruction is MOV EDX,[0x6B4CA0] at
+ * 0x4279B8. ESI holds the original comic-entry clock tick.
+ *
+ * A verified focused F12 on the comic latches postmovie_state=4.
+ * On the game thread, return synthetic local time EDX=ESI+300,
+ * causing original SUB EDX,ESI / CMP 0x12C / JAE 0x4279F0 to run.
+ * As with ordinary expiration the original loop first calls 0x505720,
+ * polls original input, and leaves normally; Bink #4 then starts.
+ * All original registers EXCEPT EDX are untouched, no clock write,
+ * no forced jump, no bypass of game-owned cleanup. This hook is
+ * installed only after original bytes and owner signatures match. */
+__attribute__((naked,used)) static void spider_f12_debug_comic_clock(void) {
+  __asm__ __volatile__(
+    "movl 0x006B4CA0, %edx\n\t"
+    "cmpl $1, _debug_f12_test_mode\n\t"
+    "jne 1f\n\t"
+    "cmpl $1, _debug_newgame_comic_clock_hook_installed\n\t"
+    "jne 1f\n\t"
+    "cmpl $4, _postmovie_state\n\t"
+    "jne 1f\n\t"
+    "cmpl $1, _real_main_menu_seen\n\t"
+    "jne 1f\n\t"
+    "cmpl $0, _debug_newgame_progress\n\t"
+    "jne 1f\n\t"
+    "cmpl $0, 0x006151F8\n\t"
+    "jne 1f\n\t"
+    "cmpl $0, 0x00AC0BA4\n\t"
+    "jne 1f\n\t"
+    "leal 0x12c(%esi), %edx\n\t"
+    "movl $1, _debug_newgame_comic_fastforward_observed\n\t"
     "1:\n\t"
     "ret\n\t"
   );
@@ -1444,6 +1506,38 @@ static void restore_intro_timed_clock_hook(void) {
                             intro_timed_clock_original);
 }
 
+/* The New Game comic's clock read uses six ORIGINAL bytes, unlike
+ * the five-byte pre-menu timed still. CALL rel32 + NOP is instruction-
+ * boundary exact and returns to the original SUB EDX,ESI at 0x4279BE.
+ * Reject any version mismatch before writing a single instruction. */
+static int install_newgame_comic_clock_hook(void) {
+  intptr_t delta=(intptr_t)(const void *)spider_f12_debug_comic_clock-
+                 (intptr_t)(SPIDER_NEWGAME_COMIC_CLOCK_SITE+5);
+  int32_t rel;
+  BYTE patched[6]={0xE8,0,0,0,0,0x90};
+  if(memcmp(SPIDER_NEWGAME_L1COV_OWNER,newgame_l1cov_owner_signature,5)!=0 ||
+     memcmp(SPIDER_NEWGAME_MOVIE4_OPCODE,newgame_movie4_opcode_signature,7)!=0)
+    return 0;
+  if(delta<(intptr_t)INT32_MIN || delta>(intptr_t)INT32_MAX)return 0;
+  rel=(int32_t)delta;
+  memcpy(patched+1,&rel,4);
+  if(!write_code(SPIDER_NEWGAME_COMIC_CLOCK_SITE,
+                 newgame_comic_clock_original,patched,6))return 0;
+  InterlockedExchange(&debug_newgame_comic_clock_hook_installed,1);
+  return 1;
+}
+
+static void restore_newgame_comic_clock_hook(void) {
+  DWORD old_protect,ignored;
+  if(InterlockedCompareExchange(&debug_newgame_comic_clock_hook_installed,0,1)!=1)
+    return;
+  if(!VirtualProtect(SPIDER_NEWGAME_COMIC_CLOCK_SITE,6,
+                     PAGE_EXECUTE_READWRITE,&old_protect))return;
+  memcpy(SPIDER_NEWGAME_COMIC_CLOCK_SITE,newgame_comic_clock_original,6);
+  FlushInstructionCache(GetCurrentProcess(),SPIDER_NEWGAME_COMIC_CLOCK_SITE,6);
+  VirtualProtect(SPIDER_NEWGAME_COMIC_CLOCK_SITE,6,old_protect,&ignored);
+}
+
 static int install_intro_still_input_hook(void) {
   if(!patch_native_call(SPIDER_INTRO_STILL_INPUT_CALL,intro_still_input_original,
                         (const void *)spider_f12_intro_still_native_input))
@@ -1560,13 +1654,17 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
                   *SPIDER_BINK_VIDEO_HANDLE==0u &&
                   InterlockedCompareExchange(&last_comic_candidate_ms,0,0)!=0 &&
                   (DWORD)(now-(DWORD)InterlockedCompareExchange(&last_comic_candidate_ms,0,0))<=6500u) {
-          /* F12 during the fixed comic: preserve its native timer.
-           * The one-shot intent will be consumed only by exact native
-           * movie #4, after game-owned comic completion. */
+          /* F12 during L1COV.bmp: the exact native clock-read hook
+           * at 0x4279B8 (when installed) supplies a locally expired
+           * tick so original 0x4279C6 cleanup/continuation runs now.
+           * The one-shot request stays live for verified Bink #4.
+           * A mismatched hook safely falls back to normal timeout. */
           if(InterlockedCompareExchange(&postmovie_state,0,0)==0) {
             InterlockedExchange(&postmovie_request_ms,(LONG)now);
             if(InterlockedCompareExchange(&postmovie_state,4,0)==0)
-              say("QUICK-EXIT-F12: DEBUG-NEWGAME-COMIC F12 deferred to original movie #4; comic timer untouched (NO EXIT)");
+              say(InterlockedCompareExchange(&debug_newgame_comic_clock_hook_installed,0,0)==1 ?
+                  "QUICK-EXIT-F12: DEBUG-NEWGAME-COMIC F12 armed; original L1COV.bmp 300-tick completion will be met at next 0x4279B8 poll, followed by native movie #4 (NO EXIT)" :
+                  "QUICK-EXIT-F12: DEBUG-NEWGAME-COMIC native clock hook unavailable; fallback to original comic timer before movie #4 (NO EXIT)");
           }
         } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
                   InterlockedCompareExchange(&debug_newgame_progress,0,0)==1 &&
@@ -1907,7 +2005,17 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
       say("QUICK-EXIT-F12: DEBUG-MENU-CLOCK-WAIT signature mismatch; original waits preserved (optional read-only probe disabled)");
     }
   }
+  /* The comic's original L1COV.bmp owner and Bink #4 are verified by
+   * the supported EXE's bytes, not inferred from drawing geometry.
+   * If not exact, leave timer untouched and retain deferred fallback. */
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {
+    if(install_newgame_comic_clock_hook())
+      say("QUICK-EXIT-F12: DEBUG-NEWGAME-COMIC native L1COV.bmp 0x4279B8 clock-read hook installed (F12 local 300-tick expiry; original 0x4279C6 branch retained)");
+    else
+      say("QUICK-EXIT-F12: DEBUG-NEWGAME-COMIC exact owner/clock signature mismatch; native comic timer unchanged, deferred movie-4 fallback");
+  }
   if(!suppress_unsafe_native_f12()) {
+    restore_newgame_comic_clock_hook();
     restore_debug_menu_wait_hooks();
     restore_intro_timed_clock_hook();
     restore_intro_still_input_hook();
@@ -1925,6 +2033,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   thread=CreateThread(NULL,0,f12_input_thread,NULL,0,NULL);
   if(!thread) {
     InterlockedExchange(&enabled,0);
+    restore_newgame_comic_clock_hook();
     restore_debug_menu_wait_hooks();
     restore_intro_timed_clock_hook();
     restore_intro_still_input_hook();

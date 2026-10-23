@@ -1,3 +1,54 @@
+## 2026-10-23 — Original executable disassembled: direct F12 comic timer expiry
+
+The user supplied the unchanged original `SpideyPC.exe` (1,507,328
+bytes, SHA-256
+`0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`).
+The original code itself resolves the previously unknown first New
+Game comic owner: original `0x427910`, reached from the native
+scene-script interpreter at `0x4E0461`.
+
+In that owner, `0x42796D: push 0x549214` supplies the literal
+`L1COV.bmp` to original `0x4151D0`; `0x427983` saves the initial
+native clock in ESI and the code loops through original
+`0x505720` frame update + original `0x50C180` input polling.
+The initial clock reading for each later wait check is precisely
+`0x4279B8: mov edx,[0x6B4CA0]` (6 bytes).
+Original `0x4279BE: sub edx,esi`, `0x4279C0: cmp edx,0x12c`,
+`0x4279C6: jae 0x4279f0` is the true native timer-expired exit.
+`0x4279F9: push 4` then invokes native Bink movie #4 at
+`0x4279FB`. No separate comic-specific cleanup is jumped over:
+the hook returns into the ORIGINAL threshold compare.
+
+**New branch code:** only with `[Debug] F12TestMode=1`, verify exact
+bytes of the L1 cover owner (`68 14 92 54 00`), the Bink #4
+call (`6A 04 E8 50 8D 04 00`), and the original clock-read
+(`8B 15 A0 4C 6B 00`). Replace ONLY that original six-byte
+MOV with CALL rel32 + NOP, whose naked wrapper normally returns
+the actual game clock in EDX. When F12 has been explicitly latched
+for an active comic (postmovie_state=4), with main menu seen,
+no Bink video and no prior movie #4 owner, the wrapper returns
+ESI+0x12c in EDX. Game-owned SUB/CMP/JAE then handles normal
+timeout-to-video continuation. The global clock remains untouched.
+The same latched F12 subsequently completes exact Bink owner #4
+through the already validated native tick path.
+
+If any signature fails, the hook is not installed and F12 retains
+its older fail-safe deferred-movie behavior, rather than patching an
+unknown 2001 executable. This still needs runtime validation on
+Windows 11 and Wine. The separate **two SPACE-skippable 3D
+cinematics** remain protected from controller-7 F12 exit until the
+original playable-ready gate has been positively identified.
+
+**Proposed test:** F12 soon after first L1 comic appears. Expect
+`DEBUG-NEWGAME-COMIC F12 armed`, then the Bink owner and
+`DEBUG-NEWGAME-COMIC-FINISHED` with elapsed time far under the
+previous ~4,041 ms. Movie #4 should be skipped, with Stan Lee's
+3D scene then shown. Use Space twice to pass both distinct 3D
+intros and confirm normal playable input. F12 still must NOT
+quit during either unidentified 3D scene. Full log required.
+
+---
+
 ## 2026-10-23 — Corrected New Game scene sequence and native SPACE diagnostics
 
 **User-confirmed original sequence:**

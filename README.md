@@ -46,9 +46,16 @@ comparison, without waiting several seconds or bypassing its
 resource/SEH cleanup. **F12 in active 3D gameplay quits the game**
 via the existing native controller-7 exit.
 F12 in the main menu is ignored. **New Game skip development (partial):**
-F12 on a recognized comic still keeps the original short comic timer
-and queues a one-shot skip of the specific New Game Bink movie #4; F12
-during that movie also uses its original completion/cleanup path.
+F12 during the first New Game cover `L1COV.bmp` now satisfies the
+original **300-native-tick expiry test immediately** on the game
+thread: the game itself advances through its existing native branch
+to Bink movie #4. The patch intercepts only the original local
+clock READ at `0x4279B8`, never the shared game clock or script
+dispatcher, and only after verifying the exact `L1COV.bmp`
+and movie #4 instruction signatures. The same single F12 request
+then ends movie #4 via its original video cleanup. If signature
+validation fails, the old timed-cover fallback is preserved.
+**This new comic acceleration is not yet runtime-validated.**
 After the Bink movie (which can be skipped using Enter), there are
 **two consecutive skippable 3D scenes**: Stan Lee's narrated introduction,
 then another 3D cinematic. **Space skips each 3D scene separately**.
