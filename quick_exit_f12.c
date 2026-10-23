@@ -164,6 +164,11 @@ static volatile LONG last_game3d_flip_ms=0;
 static volatile LONG game3d_exit_state=0;
 static volatile LONG game3d_cleanup_baseline=0;
 static volatile LONG game3d_cleanup_confirmed=0;
+/* Separate experimental New Game movie #4 F12 request, disabled normally.
+ * 0 idle; 1 armed; 2 native Bink stop; 3 controller-7 queued. */
+static volatile LONG postmovie_opt_in=0;
+static volatile LONG postmovie_state=0;
+static volatile LONG postmovie_request_ms=0;
 static PVOID volatile game_hwnd=NULL;
 static void (*logger)(const char *)=NULL;
 
@@ -907,7 +912,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
 }
 
 void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
-  char exe[MAX_PATH],ini[MAX_PATH],val[24],trace[8],*slash;
+  char exe[MAX_PATH],ini[MAX_PATH],val[24],trace[8],movie_trial[8],*slash;
   DWORD n;
   HANDLE thread;
   logger=log_fn;
@@ -934,6 +939,16 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
    * Enabling QuickExitF12 alone retains the previous menu/Bink behavior. */
   InterlockedExchange(&experimental_game3d_enabled,
     GetPrivateProfileIntA("System","ExperimentalQuickExitF12In3D",0,ini)==1 ? 1 : 0);
+  memset(movie_trial,0,sizeof(movie_trial));
+  if(strcmp(val,"1")==0 &&
+     GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
+     InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
+     GetEnvironmentVariableA("SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT",
+                             movie_trial,sizeof(movie_trial))==1 &&
+     movie_trial[0]=='1') {
+    InterlockedExchange(&postmovie_opt_in,1);
+    say("QUICK-EXIT-F12: POSTMENU-MOVIE opt-in enabled for New Game Bink video 4 only [EXPERIMENTAL; UNVALIDATED]");
+  }
   /* Even with opt-in OFF, suppress the game's original unsafe
    * VK_F12 -> WM_CLOSE, which is known to orphan Bink and the process. */
   if(strcmp(val,"1")!=0) {
