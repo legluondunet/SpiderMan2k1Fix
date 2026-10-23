@@ -376,12 +376,55 @@ def test_new_game_movie_and_comic_ini_require_existing_f12_and_debug_gates():
 
 
 
+
+def test_intro_still_f12_is_separate_default_off_and_preserves_native_cleanup():
+    assert "ExperimentalQuickExitF12InIntroStills=0" in INI
+    assert '"ExperimentalQuickExitF12InIntroStills=0\\r\\n"' in GEN
+    assert '"ExperimentalQuickExitF12InIntroStills"' in VAL
+    assert 'GetPrivateProfileIntA("System","ExperimentalQuickExitF12InIntroStills",0,ini)==1' in SRC
+    assert "static volatile LONG intro_still_opt_in=0;" in SRC
+    assert "static volatile LONG intro_still_exit_state=0;" in SRC
+    assert "SPIDER_INTRO_STILL_INPUT_CALL ((BYTE *)(uintptr_t)0x004A1896u)" in SRC
+    assert "intro_still_input_original[5]={0xE8,0xE5,0xA8,0x06,0x00}" in SRC
+    assert "SPIDER_INTRO_STILL_NATIVE_INPUT ((BYTE (__cdecl *)(DWORD,DWORD,DWORD))(uintptr_t)0x0050C180u)" in SRC
+
+    owner=SRC[SRC.index("static BYTE __cdecl spider_f12_intro_still_native_input("):
+              SRC.index("/* Returns nonzero ONLY when a recent")]
+    assert "SPIDER_INTRO_STILL_NATIVE_INPUT(mask,arg1,arg2)" in owner
+    assert "(DWORD)frame[1]==0x004A189Bu" in owner
+    assert "mask==0x40010u && arg1==1u && arg2==1u" in owner
+    assert "post_intro_cleanup_seen,0,0)==1" in owner
+    assert "real_main_menu_seen,0,0)==0" in owner
+    assert "intro_still_exit_state,2,1" in owner
+    assert "InterlockedExchange(&pending,1);" in owner
+    assert "return 1;" in owner
+    assert "return original;" in owner
+    for forbidden in ("ExitProcess(", "TerminateProcess(", "DestroyWindow(",
+                      "PostMessageA(", "BinkClose(", "SPIDER_GAME_QUIT_FLAG=",
+                      "0x4A18AEu;"):
+        assert forbidden not in owner
+
+    watcher=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
+                SRC.index("void SpiderQuickExitF12_Init(")]
+    assert "INTRO-STILL F12 latched after original Bink cleanup" in watcher
+    assert "intro_still_exit_state,1,0" in watcher
+    assert "intro_still_exit_state,0,state" in watcher
+    assert "(DWORD)(GetTickCount()-start)>15000u" in watcher
+    assert watcher.index("intro_still_exit_state,1,0") < watcher.index(
+        "intro movie exit requested")
+    assert "INTRO-STILL native page owner returned; original Shell_MainMenu Quit now activated" in SRC
+    assert "install_intro_still_input_hook()" in SRC
+    assert "restore_intro_still_input_hook()" in SRC
+    assert "intro_still_hook_installed,0,1" in SRC
+
+
+
 def test_default_off_and_ini_section_validated():
     assert "QuickExitF12=0" in INI
     assert '"[System]\\r\\n"' in GEN
     assert '"QuickExitF12=0\\r\\n"' in GEN
     assert '"Debug","System","Display"' in VAL
-    assert 'spider_ini_system[]={"QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic"}' in VAL
+    assert 'spider_ini_system[]={"QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic","ExperimentalQuickExitF12InIntroStills"}' in VAL
     for option in ("ExperimentalQuickExitF12InNewGameMovie",
                    "ExperimentalQuickExitF12InNewGameComic"):
         assert f"{option}=0" in INI
