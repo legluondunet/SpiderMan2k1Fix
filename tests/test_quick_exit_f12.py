@@ -444,9 +444,11 @@ def test_default_off_and_ini_section_validated():
 
 
 def test_f12_debug_fast_test_mode_default_off_and_valid_ini_key():
-    assert "F10TestMode=0" in INI
-    assert '"F10TestMode=0\\r\\n"' in GEN
-    assert 'spider_ini_debug[]={"Log","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts"}' in VAL
+    for option in ("F10Shortcut", "F10TestMode", "F10Auto3DScripts", "F10GameplayExit"):
+        assert f"{option}=" not in INI
+        assert f'"{option}=0\\r\\n"' not in GEN
+    assert 'spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts"}' in VAL
+    assert 'GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1' in SRC
     assert 'GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1' in SRC
     assert "static volatile LONG debug_f12_test_mode=0;" in SRC
 
@@ -862,9 +864,9 @@ def test_readme_describes_current_f10_native_skips_and_experimental_scope():
     behavior and remaining unverified in-level cinematic cases."""
     readme=(ROOT/"README.md").read_text(encoding="utf-8")
     assert "F10 is the only SpiderMan2k1Fix physical shortcut" in readme
-    assert "F10Auto3DScripts=1" in readme
-    assert "F10GameplayExit=1" in readme
-    assert "F10VerboseTrace=0" in readme
+    assert "F10Shortcut=1" in readme
+    assert "not generated" in readme
+    assert "F10VerboseTrace=1" in readme
     assert "CutSceneScript" in readme
     assert "original 3D cleanup" in readme
     assert "not yet in arbitrary later in-level cutscenes" in readme
@@ -2061,3 +2063,28 @@ def test_enter_only_cannot_arm_intro_auto_skip_during_release_barrier():
     assert "debug_auto3d_state,0,0)!=0" in segment
     assert "InterlockedExchange(&debug_auto3d_state" not in segment
     assert "InterlockedExchange(&debug_auto3d_f10_origin" not in segment
+
+def test_f10_shortcut_single_hidden_debug_flag_all_stages_no_log_needed():
+    """One manual [Debug] flag enables all validated F10 actions."""
+    init=SRC[SRC.index("void SpiderQuickExitF12_Init(void (*log_fn)(const char *))"):]
+    assert 'f10_shortcut=GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1;' in init
+    assert "if(f10_shortcut ||" in init
+    assert 'InterlockedExchange(&debug_f12_test_mode,1);' in init
+    assert 'strcpy(val,"1");' in init
+    scene=init[init.index("/* F10Shortcut enables ALL tested stages.") :
+               init.index("memset(movie_trial,0,sizeof(movie_trial));")]
+    assert scene.count("f10_shortcut ||")==2
+    assert "InterlockedExchange(&debug_auto3d_opt_in,1);" in scene
+    assert "InterlockedExchange(&debug_f10_gameplay_exit_opt_in,1);" in scene
+    # Log only gates legacy separate opt-ins, not F10Shortcut.
+    assert scene.count('GetPrivateProfileIntA("Debug","Log",0,ini)==1')==2
+    assert scene.index("f10_shortcut ||")<scene.index('GetPrivateProfileIntA("Debug","Log",0,ini)==1')
+    for old in ("F10TestMode", "F10Auto3DScripts", "F10GameplayExit"):
+        assert f'GetPrivateProfileIntA("Debug","{old}",0,ini)==1' in init
+
+def test_default_generated_ini_omits_development_f10_shortcut():
+    for option in ("F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit"):
+        assert f"{option}=" not in INI
+        assert f'"{option}=0\\r\\n"' not in GEN
+    assert "F10VerboseTrace=0" in INI
+    assert '"F10VerboseTrace=0\\r\\n"' in GEN

@@ -3067,6 +3067,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   char exe[MAX_PATH],ini[MAX_PATH],val[24],trace[8],static_trace[8],movie_trial[8],comic_trial[8],*slash;
   DWORD n;
   HANDLE thread;
+  int f10_shortcut;
   logger=log_fn;
   n=GetModuleFileNameA(NULL,exe,sizeof(exe));
   if(!n || n>=sizeof(exe) || !(slash=strrchr(exe,'\\'))) {
@@ -3079,6 +3080,9 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   }
   memcpy(ini,exe,(size_t)(slash-exe)+1);
   strcpy(ini+(slash-exe)+1,"SpiderMan2k1Fix.ini");
+  /* Hidden development option: omitted from default generated INI,
+   * disabled when absent; Log=1 is not required for the unified F10. */
+  f10_shortcut=GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1;
   /* Ordinary Log=1 keeps all native state/cleanup outcomes, while
    * heavy read-only reverse-engineering snapshots need extra opt-in. */
   if(GetPrivateProfileIntA("Debug","F10VerboseTrace",0,ini)==1) {
@@ -3090,13 +3094,15 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   GetPrivateProfileStringA("System","QuickExitF12","0",val,sizeof(val),ini);
   if(GetPrivateProfileIntA("System","QuickExitF10",0,ini)==1)
     strcpy(val,"1");
-  if(GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1 ||
+  if(f10_shortcut ||
+     GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1 ||
      GetPrivateProfileIntA("Debug","F10TestMode",0,ini)==1) {
-    /* One diagnostic switch is sufficient: retain the proven native
-     * hook setup without requiring any legacy System F12 option. */
+    /* Keep legacy debug switches readable for existing user INIs. */
     InterlockedExchange(&debug_f12_test_mode,1);
     strcpy(val,"1");
-    say("QUICK-EXIT-F12: HOTKEY=F10 (F10TestMode=1 or legacy F12TestMode=1): opening intro F10 -> main menu; New Game F10 -> native comic/Bink/script skip; gameplay F10 menu return separately guarded; original F12 WM_CLOSE suppressed");
+    say(f10_shortcut
+        ? "QUICK-EXIT-F12: HOTKEY=F10 [Debug] F10Shortcut=1: intro -> main menu; New Game -> gameplay; gameplay -> main menu; Log independent"
+        : "QUICK-EXIT-F12: HOTKEY=F10 legacy F10TestMode/F12TestMode; legacy cinematic/menu toggles remain separate");
   }
   memset(trace,0,sizeof(trace));
   if(GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
@@ -3120,23 +3126,26 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     (InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 ||
      (GetPrivateProfileIntA("System","ExperimentalQuickExitF12In3D",0,ini)==1 ||
        GetPrivateProfileIntA("System","ExperimentalQuickExitF10In3D",0,ini)==1)) ? 1 : 0);
-  /* Stage-mutating cinematic skips are intentionally OFF by default.
-   * F12TestMode by itself still only observes the two 3D intros;
-   * opt in explicitly with [Debug] F12Auto3DScripts=1 plus Log=1. */
+  /* F10Shortcut enables ALL tested stages. Old individual options
+   * remain supported under their original Log=1 requirement. */
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
-     GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
-     (GetPrivateProfileIntA("Debug","F12Auto3DScripts",0,ini)==1 ||
-      GetPrivateProfileIntA("Debug","F10Auto3DScripts",0,ini)==1)) {
+     (f10_shortcut ||
+      (GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
+       (GetPrivateProfileIntA("Debug","F12Auto3DScripts",0,ini)==1 ||
+        GetPrivateProfileIntA("Debug","F10Auto3DScripts",0,ini)==1)))) {
     InterlockedExchange(&debug_auto3d_opt_in,1);
-    say("QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE F10Auto3DScripts=1 (or legacy F12Auto3DScripts=1) enabled; verified comic or active 3D CutSceneScript F10 requests native skips after permission; gameplay exit BLOCKED [EXPERIMENTAL]");
+    say(f10_shortcut
+       ? "QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE F10Shortcut=1; CutSceneSkipAllow required"
+       : "QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE legacy auto-script opt-in");
   }
-  /* Legacy F10GameplayExit enables native return-to-menu, not process quit.
-   * F10TestMode alone does not authorize the 3D transition. */
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
-     GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
-     GetPrivateProfileIntA("Debug","F10GameplayExit",0,ini)==1) {
+     (f10_shortcut ||
+      (GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
+       GetPrivateProfileIntA("Debug","F10GameplayExit",0,ini)==1))) {
     InterlockedExchange(&debug_f10_gameplay_exit_opt_in,1);
-    say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-MENU legacy F10GameplayExit=1 enabled; native return-to-menu after both script endings [EXPERIMENTAL]");
+    say(f10_shortcut
+       ? "QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-MENU F10Shortcut=1; native return to menu, NO QUIT"
+       : "QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-MENU legacy F10GameplayExit=1");
   }
   memset(movie_trial,0,sizeof(movie_trial));
   /* The explicit INI options make tested Wine installations easier

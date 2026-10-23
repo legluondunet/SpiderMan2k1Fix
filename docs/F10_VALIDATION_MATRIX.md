@@ -10,32 +10,30 @@ MangoHud on Linux. Legacy F12 INI names are compatibility aliases.
 ```ini
 [Debug]
 Log=1
-F10TestMode=1
-F10Auto3DScripts=1
-F10GameplayExit=1
+F10Shortcut=1
 F10VerboseTrace=0
 ```
 
-**Important:** all F10 switches are disabled by default.
-For troubleshooting, set `F10VerboseTrace=1` to restore
-the detailed read-only reverse-engineering log messages.
-Do not assume arbitrary cinematics are supported. The legacy
-`F10GameplayExit=1` option now requests return to the main menu,
-NOT process shutdown.
+**Important:** `F10Shortcut` is not generated, and its absent
+value defaults to 0. Add `F10Shortcut=1` manually to `[Debug]`;
+`Log=1` is optional, for diagnostics only. Older F10TestMode,
+F10Auto3DScripts and F10GameplayExit keys stay accepted in existing
+INIs under their original requirements. Unverified later in-level
+cinematics are outside the validated New Game behavior.
 
 ## Confirmed baseline
 
 | Scenario | Evidence | Status |
 | --- | --- | --- |
 | First F10 on New Game comic | Original L1COV.bmp timer branch, Bink movie #4 owner and native teardown | Validated in Wine |
-| F10 in New Game Bink movie #4 | Native movie stop then two independent native 3D auto-skips | New, not yet runtime validated |
+| F10 in New Game Bink movie #4 | Native movie stop then two independent native 3D auto-skips | Validated in Wine #705 |
 | F10 during first introductory 3D script | Native permission, first skip and second skip to gameplay | Validated in Wine build #700 |
-| F10 during second introductory 3D script | Native permission then second skip to gameplay | Pending separate test |
+| F10 during second introductory 3D script | Native permission then second skip to gameplay | Validated in Wine #705 |
 | Automatic Stan Lee 3D introduction skip | Original first CutSceneScript skip permission, request, native end | Validated in Wine |
 | Automatic second 3D introduction skip | Distinct original CutSceneScript, independently allowed/requested/ended | Validated in Wine |
 | Earlier F10 process-quit prototype | Native request 7, original 3D cleanup and final-exit bit | Old mode validated in Wine #687; superseded |
-| New F10 during playable 3D | Native request 7, game-owned cleanup and controller-7 return to original menu (no final-exit bit write) | Pending Wine and Windows 11 runtime validation |
-| Game PID stays alive after gameplay F10 | Verify original Shell_MainMenu returns and a new game can launch | Pending runtime validation |
+| New F10 during playable 3D | Native request 7, game-owned cleanup and controller-7 return to original menu (no final-exit bit write) | Validated in Wine #705; Windows 11 pending |
+| Game PID stays alive after gameplay F10 | Original Shell_MainMenu returns and a new game can launch | Validated in Wine #705 |
 
 The #687 log recorded native completion (relative to entering 3D):
 `SECOND_SCRIPT_ENDED_CANDIDATE_GAMEPLAY stage=6` and
@@ -78,7 +76,7 @@ on second L1COV.bmp -> verify Bink #4 and both scripts again.
 Repeat a third time if practical. Look for one
 `DEBUG-F10-SESSION-RESET` after every return to the
 main menu, and fresh `DEBUG-3D-AUTO-NATIVE ARMED` each
-time. With `F10GameplayExit=1`, F10 during verified playable 3D now
+time. With `F10Shortcut=1`, F10 during verified playable 3D now
 requests normal owner cleanup and a native RETURN TO MENU rather
 than the old process exit. Test the new behavior separately.
 
@@ -100,8 +98,8 @@ than the old process exit. Test the new behavior separately.
 | Repeat gameplay F10 after return | New Game → F10 on comic → F10 in gameplay → New Game again | F10 works in the next comic and gameplay, with menu reset between sessions |
 | Windows 11 native | Repeat these actions without Wine | Not yet validated for this F10 consolidated build |
 
-For any unexpected behavior, disable `F10GameplayExit=0`
-and retain the last known working build. Attach the complete
+For unexpected behavior, remove `F10Shortcut=1`
+or set it to 0, and retain the last known working build. Attach the complete
 `SpiderMan2k1Fix*.log`; native script lifecycle and exit
 decisions are retained even in compact log mode. Do not use
 `taskkill`, `TerminateProcess` or synthetic Space as

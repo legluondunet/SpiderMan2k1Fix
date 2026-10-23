@@ -60,27 +60,26 @@ The original New Game sequence and in-game native shutdown have been
 - **F10 during playable 3D:** native menu return only when the
   original scene manager confirms no active scripted cinematic.
 
-For the tested F10 sequence, explicitly enable:
+The F10 shortcut is **disabled by default** and intentionally **not
+generated** in `SpiderMan2k1Fix.ini`. To enable it for development,
+manually add the following to the existing `[Debug]` section:
 
 ```ini
 [Debug]
-Log=1
-F10TestMode=1
-F10Auto3DScripts=1
-F10GameplayExit=1
-F10VerboseTrace=0
+F10Shortcut=1
 ```
 
-`F10GameplayExit=1` is a **legacy INI name**: it now means **return to
-the native main menu**, NOT exit the program. Existing test INIs remain
-compatible.
+**When absent, `F10Shortcut` defaults to `0`.** The single opt-in
+enables every validated F10 behavior, independent of `Log=1`. If the
+INI already contains `[Debug]`, add only `F10Shortcut=1` under that
+heading, not a second copy of the section.
 
-All four F10 options default to **0**. `Log=1` retains the useful
-script start/end, native skip, blocked F10, 3D cleanup and controller
-finalization events. `F10VerboseTrace=1` additionally prints
-older research probes (raw keyboard states, dispatch lists, actor
-state and menu timing). Disabling verbose output **does not
-disable the underlying read-only probes**.
+Older `F10TestMode`, `F10Auto3DScripts` and `F10GameplayExit`
+options remain supported for compatibility, with their original
+individual opt-in gates, but are no longer generated in new INIs.
+`Log=1` retains diagnostic events, and `F10VerboseTrace=1` prints
+the extra research probes. Neither is required for `F10Shortcut=1` to
+work.
 
 **Repeated New Game:** after returning to the actual main menu through
 Esc → Exit → Yes, the next New Game comic should accept F10 again.
@@ -89,14 +88,13 @@ game-owned Shell_MainMenu callback, without restarting the process.
 See the two-session regression protocol in
 [the validation matrix](docs/F10_VALIDATION_MATRIX.md).
 
-This is an experimental, explicitly opted-in feature while the PR
-is under review. It has been validated in the New Game sequence
-on Wine, **not yet in arbitrary later in-level cutscenes**. The new gameplay F10 menu return and mid-3D-script skipping both
-require runtime validation; build #694 validated repeated comic/intro
-skipping only.
-Other cutscene engines, save/load paths, pause and focus changes need
-separate runtime validation. For an unexpected issue, restore
-`F10GameplayExit=0` or use the previous validated build.
+This is still an explicitly opted-in development feature while the
+PR is under review. **The New Game F10 flows and gameplay menu return
+were validated under Wine on build #705.** Arbitrary later in-level
+scripts, other cutscene engines and native Windows 11 have not been
+fully validated. To disable the new shortcut, remove its line or set
+`F10Shortcut=0` (and ensure no old debug aliases separately enable
+the feature).
 
 See the [F10 validation matrix](docs/F10_VALIDATION_MATRIX.md)
 for the exact scenarios, required log messages and unverified
