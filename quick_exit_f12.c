@@ -1067,22 +1067,29 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   InterlockedExchange(&experimental_game3d_enabled,
     GetPrivateProfileIntA("System","ExperimentalQuickExitF12In3D",0,ini)==1 ? 1 : 0);
   memset(movie_trial,0,sizeof(movie_trial));
+  /* The explicit INI options make tested Wine installations easier
+   * to configure. Keep the original one-process environment switches
+   * as backwards-compatible alternatives for controlled experiments.
+   * Both independent stages remain OFF by default, and neither
+   * bypasses the existing QuickExitF12, 3D and Debug Log gates. */
   if(strcmp(val,"1")==0 &&
      GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
      InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
-     GetEnvironmentVariableA("SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT",
-                             movie_trial,sizeof(movie_trial))==1 &&
-     movie_trial[0]=='1') {
+     (GetPrivateProfileIntA("System","ExperimentalQuickExitF12InNewGameMovie",0,ini)==1 ||
+      (GetEnvironmentVariableA("SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT",
+                               movie_trial,sizeof(movie_trial))==1 &&
+       movie_trial[0]=='1'))) {
     InterlockedExchange(&postmovie_opt_in,1);
-    say("QUICK-EXIT-F12: POSTMENU-MOVIE opt-in enabled for New Game Bink video 4 only [EXPERIMENTAL; UNVALIDATED]");
+    say("QUICK-EXIT-F12: POSTMENU-MOVIE opt-in enabled for New Game Bink video 4 only [EXPERIMENTAL; NOT YET WINDOWS-VALIDATED]");
   }
   memset(comic_trial,0,sizeof(comic_trial));
   if(InterlockedCompareExchange(&postmovie_opt_in,0,0)==1 &&
-     GetEnvironmentVariableA("SPIDERMAN2K1FIX_F12_COMIC_EXIT",
-                             comic_trial,sizeof(comic_trial))==1 &&
-     comic_trial[0]=='1') {
+     (GetPrivateProfileIntA("System","ExperimentalQuickExitF12InNewGameComic",0,ini)==1 ||
+      (GetEnvironmentVariableA("SPIDERMAN2K1FIX_F12_COMIC_EXIT",
+                               comic_trial,sizeof(comic_trial))==1 &&
+       comic_trial[0]=='1'))) {
     InterlockedExchange(&comic_exit_opt_in,1);
-    say("QUICK-EXIT-F12: COMIC F12 deferred-to-Bink experiment armed (12s timeout; comic native timing unchanged) [UNVALIDATED]");
+    say("QUICK-EXIT-F12: COMIC F12 deferred-to-Bink experiment armed (12s timeout; comic native timing unchanged) [EXPERIMENTAL; NOT YET WINDOWS-VALIDATED]");
   }
   /* Even with opt-in OFF, suppress the game's original unsafe
    * VK_F12 -> WM_CLOSE, which is known to orphan Bink and the process. */
