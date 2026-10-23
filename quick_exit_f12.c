@@ -49,6 +49,11 @@
 #define SPIDER_INTRO_TICK_CALL_2 ((BYTE *)(uintptr_t)0x0047085Fu)
 #define SPIDER_NATIVE_BINK_FRAME_TICK ((BYTE (__cdecl *)(void))(uintptr_t)0x0050B5A0u)
 #define SPIDER_GAME_BINK_ACTIVE ((const volatile DWORD *)(uintptr_t)0x006151F8u)
+/* Game-owned Bink pointer slots (already observed by focus_media_pause.c).
+ * Observe pointer PRESENCE only; do not dereference handles, call Bink
+ * functions, or equate a non-null handle with active movie playback. */
+#define SPIDER_BINK_VIDEO_HANDLE ((const volatile DWORD *)(uintptr_t)0x00AC0BA4u)
+#define SPIDER_BINK_AUDIO_HANDLE ((const volatile DWORD *)(uintptr_t)0x00AC1020u)
 /* The original top-level 0x455c90 startup sequence calls 0x470750
  * four times, then calls 0x443AD0 at 0x455D23 to finish the intro
  * transition. Its own top-level Quit test at 0x455E50 is downstream
@@ -130,6 +135,8 @@ static volatile LONG delivered=0;
 static volatile LONG menu_frame_count=0;
 static volatile LONG last_menu_frame_ms=0;
 static volatile LONG last_movie_frame_ms=0;
+/* Diagnostic-only timestamp for correlation with the auto-timed still. */
+static volatile LONG last_comic_candidate_ms=0;
 /* The request persists across the four native movie calls,
  * and is delivered to the top-level Quit path after transition cleanup. */
 static volatile LONG intro_quit_pending=0;
@@ -170,7 +177,26 @@ void SpiderQuickExitF12_AttachWindow(HWND hwnd) {
 }
 
 void SpiderQuickExitF12_ObserveMovieFrame(void) {
-  InterlockedExchange(&last_movie_frame_ms,(LONG)GetTickCount());
+  static volatile LONG post_shell_media_frames=0;
+  LONG n;
+  DWORD now=GetTickCount();
+  /* This callback denotes a successful recognized DirectDraw movie BLT,
+   * not necessarily any Bink frame playing via another presentation path. */
+  InterlockedExchange(&last_movie_frame_ms,(LONG)now);
+  if(!SpiderQuickExitF12_Enabled() ||
+     InterlockedCompareExchange(&real_main_menu_seen,0,0)!=1)return;
+  n=InterlockedIncrement(&post_shell_media_frames);
+  if(n<=4 || n%120==0) {
+    DWORD comic_ms=(DWORD)InterlockedCompareExchange(&last_comic_candidate_ms,0,0);
+    char line[250];
+    snprintf(line,sizeof(line),
+      "QUICK-EXIT-F12: POST-SHELL-MEDIA-BLT frame=%ld bink_flag=%lu video_handle_present=%lu native_3d_owner_calls=%ld ms_since_comic=%lu [PRESENTATION-ONLY]",
+      (long)n,(unsigned long)(*SPIDER_GAME_BINK_ACTIVE!=0u),
+      (unsigned long)(*SPIDER_BINK_VIDEO_HANDLE!=0u),
+      (long)InterlockedCompareExchange(&input_native_invocations,0,0),
+      (unsigned long)(comic_ms?(DWORD)(now-comic_ms):0u));
+    say(line);
+  }
 }
 
 /* Passive comic-quad observation from the ALREADY installed D3D7 draw
@@ -189,6 +215,7 @@ void SpiderQuickExitF12_ObserveComicRender(LONG flip_index, DWORD caller_rva,
   n=InterlockedIncrement(&candidate_draws);
   if(n>8 && n%120!=0) return;
   now=GetTickCount();
+  InterlockedExchange(&last_comic_candidate_ms,(LONG)now);
   owner_calls=InterlockedCompareExchange(&input_native_invocations,0,0);
   last_owner=InterlockedCompareExchange(&last_native_game_input_ms,0,0);
   owner_age=last_owner ? (DWORD)(now-(DWORD)last_owner) : 0u;
@@ -213,12 +240,15 @@ void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,
   static LONG previous_async_active=-1,previous_renderer_menu=-1;
   static LONG previous_pause_context=-1,previous_pause_options=-1;
   static LONG previous_pause_restart=-1;
+  static LONG previous_bink_flag=-1,previous_video_handle=-1;
+  static LONG previous_native_owner_seen=-1;
   static DWORD last_snapshot=0;
   DWORD now,mode,async,task,menu_last,movie_last;
   LONG quit,menu_seen,menu_recent,movie_recent,async_active;
   LONG pause_context,pause_options,pause_restart;
+  LONG bink_flag,video_handle,audio_handle,native_owner_seen;
   LONG intro_requested,forwarded;
-  char line[440];
+  char line[620];
   if(!SpiderQuickExitF12_Enabled())return;
   now=GetTickCount();
   if(renderer_menu==0)
@@ -231,12 +261,19 @@ void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,
   pause_context=(*SPIDER_PAUSE_CONTEXT!=0u);
   pause_options=(*SPIDER_PAUSE_OPTION_MENU!=0u);
   pause_restart=(*SPIDER_PAUSE_RESTART_MENU!=0u);
+  bink_flag=(*SPIDER_GAME_BINK_ACTIVE!=0u);
+  video_handle=(*SPIDER_BINK_VIDEO_HANDLE!=0u);
+  audio_handle=(*SPIDER_BINK_AUDIO_HANDLE!=0u);
+  native_owner_seen=InterlockedCompareExchange(&input_native_invocations,0,0)>0 ? 1:0;
   if(previous_mode==(LONG)mode && previous_quit==quit &&
      previous_async_active==async_active &&
      previous_renderer_menu==renderer_menu &&
      previous_pause_context==pause_context &&
      previous_pause_options==pause_options &&
      previous_pause_restart==pause_restart &&
+     previous_bink_flag==bink_flag &&
+     previous_video_handle==video_handle &&
+     previous_native_owner_seen==native_owner_seen &&
      last_snapshot && (DWORD)(now-last_snapshot)<5000u)return;
   previous_mode=(LONG)mode;
   previous_quit=quit;
@@ -245,6 +282,9 @@ void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,
   previous_pause_context=pause_context;
   previous_pause_options=pause_options;
   previous_pause_restart=pause_restart;
+  previous_bink_flag=bink_flag;
+  previous_video_handle=video_handle;
+  previous_native_owner_seen=native_owner_seen;
   last_snapshot=now;
   menu_seen=InterlockedCompareExchange(&real_main_menu_seen,0,0);
   menu_last=(DWORD)InterlockedCompareExchange(&last_menu_frame_ms,0,0);
@@ -257,12 +297,13 @@ void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,
    * Bink, 2D and 3D. The async DWORD is a two-part countdown, NOT a
    * mode identifier; never emit 60 log lines just because it ticks. */
   snprintf(line,sizeof(line),
-    "QUICK-EXIT-F12: ENGINE-STATE flip=%ld renderer2d=%ld mode_request=%lu countdown=%lu countdown_active=%ld task=%lu quit=%ld pause_ctx=%ld pause_options=%ld pause_restart=%ld menu_recent=%ld movie_recent=%ld menu_seen=%ld intro_request=%ld intro_forwarded=%ld",
+    "QUICK-EXIT-F12: ENGINE-STATE flip=%ld renderer2d=%ld mode_request=%lu countdown=%lu countdown_active=%ld task=%lu quit=%ld pause_ctx=%ld pause_options=%ld pause_restart=%ld menu_recent=%ld movie_recent=%ld menu_seen=%ld intro_request=%ld intro_forwarded=%ld bink_flag=%ld video_handle_present=%ld audio_handle_present=%ld native_3d_owner_seen=%ld",
     (long)flip_index,(long)renderer_menu,(unsigned long)mode,
     (unsigned long)async,(long)async_active,(unsigned long)task,
     (long)quit,(long)pause_context,(long)pause_options,
     (long)pause_restart,(long)menu_recent,(long)movie_recent,(long)menu_seen,
-    (long)intro_requested,(long)forwarded);
+    (long)intro_requested,(long)forwarded,
+    (long)bink_flag,(long)video_handle,(long)audio_handle,(long)native_owner_seen);
   say(line);
 }
 
@@ -481,10 +522,19 @@ static void __cdecl spider_observe_controller7_finish(void) {
  * movie-active clearing. Never call BinkClose or access Bink handles in
  * this hook, and never destroy HWND while the video loop is alive. */
 static BYTE __cdecl spider_f12_native_intro_tick(void) {
+  static volatile LONG after_shell_ticks=0;
   if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1) {
     if(InterlockedCompareExchange(&intro_tick_shortcircuited,1,0)==0)
       say("QUICK-EXIT-F12: native Bink tick returned finished; original game video cleanup will run");
     return 0;
+  }
+  /* Check whether the post-New-Game cinematic reuses either of the
+   * ALREADY hooked native 0x470750 Bink frame-tick callsites.
+   * This is a one-time log and changes no original Bink execution. */
+  if(SpiderQuickExitF12_Enabled() &&
+     InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
+     InterlockedIncrement(&after_shell_ticks)==1) {
+    say("QUICK-EXIT-F12: POST-SHELL-BINK-TICK-CALLSITE original 0x470750 tick observed [OWNER-IDENTITY NOT PROVEN]");
   }
   return SPIDER_NATIVE_BINK_FRAME_TICK();
 }
