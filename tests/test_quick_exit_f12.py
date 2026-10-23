@@ -442,7 +442,7 @@ def test_default_off_and_ini_section_validated():
 def test_f12_debug_fast_test_mode_default_off_and_valid_ini_key():
     assert "F12TestMode=0" in INI
     assert '"F12TestMode=0\\r\\n"' in GEN
-    assert 'spider_ini_debug[]={"Log","F12TestMode"}' in VAL
+    assert 'spider_ini_debug[]={"Log","F12TestMode","F12SkipInitialMenuWait"}' in VAL
     assert 'GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1' in SRC
     assert "static volatile LONG debug_f12_test_mode=0;" in SRC
 
@@ -588,9 +588,9 @@ def test_debug_fast_intro_menu_tick_wall_time_partition_is_passive():
 
 def test_debug_first_menu_native_clock_busy_wait_probe_is_gated_and_read_only():
     """Original 0x4E5D60(1) loops until game clock [0x6B4CA0]
-    advances. 0x49415B and 0x49416F call it immediately after
-    native Shell_MainMenu updates; diagnostics MUST invoke it exactly
-    once rather than shortening the clock, frame, or sleep."""
+    advances. Both exact native menu callsites are wrapped and
+    normally invoke the original wait once. Only the separately enabled
+    F12SkipInitialMenuWait experiment may temporarily bypass it."""
     assert "SPIDER_MENU_WAIT_COND_SITE ((BYTE *)(uintptr_t)0x0049415Bu)" in SRC
     assert "SPIDER_MENU_WAIT_ALWAYS_SITE ((BYTE *)(uintptr_t)0x0049416Fu)" in SRC
     assert "SPIDER_NATIVE_CLOCK_WAIT ((void (__cdecl *)(DWORD))(uintptr_t)0x004E5D60u)" in SRC
@@ -619,13 +619,59 @@ def test_debug_first_menu_native_clock_busy_wait_probe_is_gated_and_read_only():
     init=SRC[SRC.index("void SpiderQuickExitF12_Init("):]
     assert 'GetPrivateProfileIntA("Debug","Log",0,ini)==1' in init
     assert "install_debug_menu_wait_hooks()" in init
-    assert "signatures mismatch; optional wait probe OFF" in init
+    assert "signature mismatch; optional initial menu fast-wait DISABLED" in init
     assert "restore_debug_menu_wait_hooks();" in init
     assert init.count("restore_debug_menu_wait_hooks();")>=2
     for forbidden in ("ExitProcess(", "TerminateProcess(", "DestroyWindow(",
                       "SetForegroundWindow(", "Acquire(", "GetDeviceData(",
                       "*SPIDER_TRACE_NATIVE_CLOCK_RAW=", "Sleep(", "PostMessageA("):
         assert forbidden not in area
+
+
+
+def test_f12_skip_initial_menu_wait_is_off_by_default_and_only_on_debug_intro_skip():
+    """Experimental alternative to a 3100ms first-frame native clock wait.
+
+    Do not touch global clock, native timer callback or pacing in 3D,
+    later menus, or when user did not opt in to this independent switch.
+    """
+    assert "F12SkipInitialMenuWait=0" in INI
+    assert '"F12SkipInitialMenuWait=0\\r\\n"' in GEN
+    assert 'spider_ini_debug[]={"Log","F12TestMode","F12SkipInitialMenuWait"}' in VAL
+    assert "static volatile LONG debug_skip_initial_menu_wait=0;" in SRC
+    assert "static volatile LONG debug_menu_wait_skip_state=0;" in SRC
+    assert 'GetPrivateProfileIntA("Debug","F12SkipInitialMenuWait",0,ini)==1' in SRC
+    body=SRC[SRC.index("static void __cdecl spider_f12_debug_menu_wait(DWORD ticks,int which)"):
+             SRC.index("static void __cdecl spider_f12_debug_menu_wait_cond(DWORD ticks)")]
+    assert "debug_skip_initial_menu_wait,0,0)==1" in body
+    assert "debug_f12_test_mode,0,0)==1" in body
+    assert "intro_still_exit_state,0,0)==3" in body
+    assert "real_main_menu_seen,0,0)==1" in body
+    assert "menu_frame_count,0,0)>=1" in body
+    assert "menu_frame_count,0,0)==1" in body
+    assert "debug_menu_wait_skip_state,1,0" in body
+    assert "before_clock!=start_clock || age>4500u" in body
+    assert "debug_menu_wait_skip_state,2" in body
+    assert "NATIVE-CLOCK-ADVANCED" in body
+    assert "4500MS-SAFETY-TIMEOUT" in body
+    assert "calls_skipped" in body
+    assert "DEBUG-MENU-FAST-WAIT bypassing stalled native sync" in body
+    assert "return;" in body
+    assert body.index("DEBUG-MENU-FAST-WAIT bypassing stalled native sync") < body.index(
+        "SPIDER_NATIVE_CLOCK_WAIT(ticks);")
+    assert body.count("SPIDER_NATIVE_CLOCK_WAIT(ticks);")==1
+    # The native-clock read must remain read-only, and both menu callsites
+    # pass through this same selective wrapper.
+    assert body.count("*SPIDER_TRACE_NATIVE_CLOCK_RAW")>=1
+    for forbidden in ("*SPIDER_TRACE_NATIVE_CLOCK_RAW=",
+                      "0x006B4CA0=", "Sleep(", "ExitProcess(",
+                      "TerminateProcess(", "DestroyWindow(", "SendInput(",
+                      "SetForegroundWindow(", "PostMessageA("):
+        assert forbidden not in body
+    init=SRC[SRC.index("void SpiderQuickExitF12_Init("):]
+    assert "install_debug_menu_wait_hooks()" in init
+    assert "InterlockedExchange(&debug_skip_initial_menu_wait,0)" in init
+    assert "original waits preserved" in init
 
 
 def test_f12_debug_shortcut_restricts_3d_exit_to_native_gameplay():
