@@ -16,8 +16,8 @@ older experimental F12 controls in `[System]`.
 
 | When F12 is pressed | Debug action |
 | --- | --- |
-| Any of the four opening Bink movies | Finish game-owned Bink/video cleanup, then leave the intro through its native timed and input-wait pages to the normal main menu |
-| First timed pre-menu still | Keep the game's original timer, automatically complete the native input-wait page, then show the menu |
+| Any of the four opening Bink movies | Finish game-owned Bink/video cleanup, accelerate the first timed still's original timeout condition, complete the input-wait page, and enter the normal main menu |
+| First timed pre-menu still | Make the game's native timed-loop deadline expire on its next check, complete the native page cleanup and input-wait page, then show the menu |
 | Second pre-menu `Press Enter` still | Complete the native `0x4A1896` input-wait page normally, then show the menu |
 | Main menu | F12 ignored (no Quit) |
 | New Game comic or Bink cinematic | F12 ignored to avoid unsupported scene interruption |
@@ -25,8 +25,18 @@ older experimental F12 controls in `[System]`.
 
 In the first three cases, F12 **does not** select the native menu's
 Quit action. Original cleanup happens before normal Shell_MainMenu is
-entered. The native timed page's programmed duration is deliberately
-respected, so a pre-menu skip is not instantaneous.
+entered. **New experimental acceleration:** when F12 was pressed before the
+main menu, the first fixed image no longer waits several seconds.
+The hook replaces only the five-byte original read of the native clock
+at `0x4A1A26`. On a guarded debug F12 request, the hook returns the
+*existing native deadline in EDI plus one*, so the game's unchanged
+`CMP EAX,EDI; JA 0x4A1A36` takes its original timed-page destructor
+and SEH return. The shared game clock, native timer setup, resource
+pointers and page objects remain untouched. Without a debug F12
+request, the clock read is unmodified. A hook-signature mismatch
+**disables the debug mode safely**, rather than skipping cleanup.
+The first page may appear for a single frame; immediate completion
+without any rendering or game-thread cleanup is not attempted.
 
 This is a test-specific behaviour, not a replacement of the previous
 validated F12 shutdown implementation. If this INI switch is `0`,
