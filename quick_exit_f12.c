@@ -550,6 +550,18 @@ static void __cdecl spider_observe_controller7_finish(void) {
       (long)n,(unsigned)((after_bit&4u)!=0u),
       (long)after_status,outcome);
     say(line);
+    /* Measure the interval to the last game-owned shutdown checkpoint.
+     * These timestamps are observational, not evidence of what color
+     * was displayed on the DirectDraw surface. */
+    if(InterlockedCompareExchange(&postmovie_state,0,0)==3) {
+      DWORD started=(DWORD)InterlockedCompareExchange(&postmovie_request_ms,0,0);
+      if(started) {
+        snprintf(line,sizeof(line),
+          "QUICK-EXIT-F12: POSTMENU-MOVIE FINAL-TEARDOWN-CHECKPOINT elapsed_since_F12_ms=%lu [NO PRESENT/COLOR CLAIM]",
+          (unsigned long)(DWORD)(GetTickCount()-started));
+        say(line);
+      }
+    }
   }
 }
 
