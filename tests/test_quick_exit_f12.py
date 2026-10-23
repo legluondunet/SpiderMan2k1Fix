@@ -199,6 +199,8 @@ def test_postmenu_movie_opt_in_is_off_by_default_and_verified_per_owner():
     assert "static volatile LONG postmovie_state=0;" in SRC
     assert "static volatile LONG postmovie_request_ms=0;" in SRC
     assert "SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT" in SRC
+    assert 'GetPrivateProfileIntA("System","ExperimentalQuickExitF12InNewGameMovie",0,ini)==1' in SRC
+    assert "movie_trial[0]=='1'" in SRC
     assert 'GetPrivateProfileIntA("Debug","Log",0,ini)==1' in SRC
     assert "postmovie_opt_in,1" in SRC
     tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
@@ -253,6 +255,8 @@ def test_deferred_comic_f12_keeps_native_still_owner_and_then_uses_movie_four():
     """The pre-film still has no proven native owner: never cut its timer."""
     assert "static volatile LONG comic_exit_opt_in=0;" in SRC
     assert "SPIDERMAN2K1FIX_F12_COMIC_EXIT" in SRC
+    assert 'GetPrivateProfileIntA("System","ExperimentalQuickExitF12InNewGameComic",0,ini)==1' in SRC
+    assert "comic_trial[0]=='1'" in SRC
     assert "comic_exit_opt_in,1" in SRC
     assert "postmovie_opt_in,0,0)==1 &&" in SRC
     watcher=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
@@ -294,12 +298,39 @@ def test_deferred_comic_f12_keeps_native_still_owner_and_then_uses_movie_four():
 
 
 
+
+def test_new_game_movie_and_comic_ini_require_existing_f12_and_debug_gates():
+    init=SRC[SRC.index("void SpiderQuickExitF12_Init(void (*log_fn)(const char *))"):]
+    movie=init[init.index('GetPrivateProfileIntA("System","ExperimentalQuickExitF12InNewGameMovie"'):]
+    comic=init[init.index('GetPrivateProfileIntA("System","ExperimentalQuickExitF12InNewGameComic"'):]
+    assert 'GetPrivateProfileIntA("Debug","Log",0,ini)==1' in init
+    assert 'InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1' in init
+    assert 'strcmp(val,"1")==0' in init
+    assert "postmovie_opt_in,1" in movie
+    assert "comic_exit_opt_in,1" in comic
+    assert "postmovie_opt_in,0,0)==1" in init
+    # Ensure both old environment variables remain available for Wine/Lutris
+    # users, and new INI fields do not automatically enable either stage.
+    assert "SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT" in movie
+    assert "SPIDERMAN2K1FIX_F12_COMIC_EXIT" in comic
+    for option in ("ExperimentalQuickExitF12InNewGameMovie",
+                   "ExperimentalQuickExitF12InNewGameComic"):
+        assert f"{option}=0" in INI
+        assert f'"{option}=0\\r\\n"' in GEN
+
+
+
 def test_default_off_and_ini_section_validated():
     assert "QuickExitF12=0" in INI
     assert '"[System]\\r\\n"' in GEN
     assert '"QuickExitF12=0\\r\\n"' in GEN
     assert '"Debug","System","Display"' in VAL
-    assert 'spider_ini_system[]={"QuickExitF12","ExperimentalQuickExitF12In3D"}' in VAL
+    assert 'spider_ini_system[]={"QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic"}' in VAL
+    for option in ("ExperimentalQuickExitF12InNewGameMovie",
+                   "ExperimentalQuickExitF12InNewGameComic"):
+        assert f"{option}=0" in INI
+        assert f'"{option}=0\\r\\n"' in GEN
+        assert f'GetPrivateProfileIntA("System","{option}",0,ini)' in SRC
     assert "ExperimentalQuickExitF12In3D=0" in INI
     assert '"ExperimentalQuickExitF12In3D=0\\r\\n"' in GEN
     assert 'GetPrivateProfileIntA("System","ExperimentalQuickExitF12In3D",0,ini)' in SRC
