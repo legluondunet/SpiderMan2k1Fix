@@ -165,8 +165,11 @@ static volatile LONG game3d_exit_state=0;
 static volatile LONG game3d_cleanup_baseline=0;
 static volatile LONG game3d_cleanup_confirmed=0;
 /* Separate experimental New Game movie #4 F12 request, disabled normally.
- * 0 idle; 1 armed; 2 native Bink stop; 3 controller-7 queued. */
+ * 0 idle; 1 movie armed; 2 native Bink stop; 3 controller-7 queued;
+ * 4 comic F12 deferred until this exact original movie owner begins.
+ * The comic path does not touch its unknown native scene owner. */
 static volatile LONG postmovie_opt_in=0;
+static volatile LONG comic_exit_opt_in=0;
 static volatile LONG postmovie_state=0;
 static volatile LONG postmovie_request_ms=0;
 static PVOID volatile game_hwnd=NULL;
@@ -635,25 +638,36 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
    * Verify the current native tick CALL return before deeper stack reads.
    * A returned zero follows game-owned 0x470871 Bink teardown and
    * normal scene-script continuation; it does NOT exit immediately. */
-  if(InterlockedCompareExchange(&postmovie_state,0,0)==1) {
-    DWORD started=(DWORD)InterlockedCompareExchange(&postmovie_request_ms,0,0);
-    if(!started || (DWORD)(GetTickCount()-started)>5000u) {
-      if(InterlockedCompareExchange(&postmovie_state,0,1)==1)
-        say("QUICK-EXIT-F12: POSTMENU-MOVIE request expired; native Bink unmodified");
-    } else if(SpiderQuickExitF12_Enabled() &&
-              InterlockedCompareExchange(&postmovie_opt_in,0,0)==1 &&
-              InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
-              InterlockedCompareExchange(&input_native_invocations,0,0)==0 &&
-              *SPIDER_GAME_BINK_ACTIVE!=0u &&
-              *SPIDER_BINK_VIDEO_HANDLE!=0u) {
-      const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
-      DWORD tick_return=(DWORD)frame[1];
-      if((tick_return==0x00470822u || tick_return==0x00470864u) &&
-         (DWORD)frame[4]==0x00427A00u &&
-         (DWORD)frame[6]==1u &&
-         InterlockedCompareExchange(&postmovie_state,2,1)==1) {
-        say("QUICK-EXIT-F12: POSTMENU-MOVIE verified native movie owner 0x4279FB; original Bink completion and 0x470871 teardown follows");
-        return 0;
+  {
+    LONG stage=InterlockedCompareExchange(&postmovie_state,0,0);
+    if(stage==1 || stage==4) {
+      DWORD started=(DWORD)InterlockedCompareExchange(&postmovie_request_ms,0,0);
+      DWORD max_age=stage==4 ? 12000u : 5000u;
+      if(!started || (DWORD)(GetTickCount()-started)>max_age) {
+        if(InterlockedCompareExchange(&postmovie_state,0,stage)==stage)
+          say("QUICK-EXIT-F12: POSTMENU-MOVIE or deferred COMIC request expired; original playback untouched");
+      } else if(SpiderQuickExitF12_Enabled() &&
+                InterlockedCompareExchange(&postmovie_opt_in,0,0)==1 &&
+                (stage!=4 ||
+                 InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1) &&
+                InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
+                InterlockedCompareExchange(&input_native_invocations,0,0)==0 &&
+                *SPIDER_GAME_BINK_ACTIVE!=0u &&
+                *SPIDER_BINK_VIDEO_HANDLE!=0u) {
+        const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+        DWORD tick_return=(DWORD)frame[1];
+        if((tick_return==0x00470822u || tick_return==0x00470864u) &&
+           (DWORD)frame[4]==0x00427A00u &&
+           (DWORD)frame[6]==1u &&
+           InterlockedCompareExchange(&postmovie_state,2,stage)==stage) {
+          char line[240];
+          snprintf(line,sizeof(line),
+            "QUICK-EXIT-F12: POSTMENU-MOVIE verified native movie owner 0x4279FB; original Bink completion and 0x470871 teardown follows; source=%s elapsed_since_F12_ms=%lu",
+            stage==4 ? "DEFERRED-COMIC" : "CINEMATIC",
+            (unsigned long)(DWORD)(GetTickCount()-started));
+          say(line);
+          return 0;
+        }
       }
     }
   }
@@ -911,6 +925,17 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
     HWND hwnd=(HWND)InterlockedCompareExchangePointer(&game_hwnd,NULL,NULL);
     BOOL focused=hwnd && IsWindow(hwnd) && GetForegroundWindow()==hwnd;
     BOOL down=(GetAsyncKeyState(VK_F12)&0x8000)!=0;
+    /* A comic page has a finite automatic lifetime. Fail closed:
+     * do not leave an F12 request armed if the expected video never
+     * begins. No original game resources are modified here. */
+    if(InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 &&
+       InterlockedCompareExchange(&postmovie_state,0,0)==4) {
+      DWORD start=(DWORD)InterlockedCompareExchange(&postmovie_request_ms,0,0);
+      if(!start || (DWORD)(GetTickCount()-start)>12000u) {
+        if(InterlockedCompareExchange(&postmovie_state,0,4)==4)
+          say("QUICK-EXIT-F12: COMIC F12 deferred intent timed out; no native movie interrupted");
+      }
+    }
     if(!focused) {
       previously_down=TRUE;
     } else if(!down) {
@@ -961,6 +986,25 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
           if(InterlockedCompareExchange(&postmovie_state,1,0)==0)
             say("QUICK-EXIT-F12: POSTMENU-MOVIE F12 intent requested; original Bink owner verification pending [EXPERIMENTAL]");
         }
+      } else if(InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 &&
+                InterlockedCompareExchange(&postmovie_opt_in,0,0)==1 &&
+                InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
+                InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
+                InterlockedCompareExchange(&input_native_invocations,0,0)==0 &&
+                *SPIDER_ENGINE_MODE==0u &&
+                *SPIDER_GAME_BINK_ACTIVE==0u &&
+                *SPIDER_BINK_VIDEO_HANDLE==0u &&
+                InterlockedCompareExchange(&last_comic_candidate_ms,0,0)!=0 &&
+                (DWORD)(now-(DWORD)InterlockedCompareExchange(
+                  &last_comic_candidate_ms,0,0))<=6500u) {
+        /* Comic native owner is not known. Never cut its timer short:
+         * defer F12 and let it finish on its own, then interrupt
+         * ONLY the exact verified New Game video #4 when it starts. */
+        if(InterlockedCompareExchange(&postmovie_state,0,0)==0) {
+          InterlockedExchange(&postmovie_request_ms,(LONG)now);
+          if(InterlockedCompareExchange(&postmovie_state,4,0)==0)
+            say("QUICK-EXIT-F12: COMIC F12 deferred until native New Game movie 4; comic continues normally [EXPERIMENTAL]");
+        }
       } else if(InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
                 InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
                 *SPIDER_ENGINE_MODE==0u &&
@@ -983,7 +1027,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
 }
 
 void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
-  char exe[MAX_PATH],ini[MAX_PATH],val[24],trace[8],movie_trial[8],*slash;
+  char exe[MAX_PATH],ini[MAX_PATH],val[24],trace[8],movie_trial[8],comic_trial[8],*slash;
   DWORD n;
   HANDLE thread;
   logger=log_fn;
@@ -1019,6 +1063,14 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
      movie_trial[0]=='1') {
     InterlockedExchange(&postmovie_opt_in,1);
     say("QUICK-EXIT-F12: POSTMENU-MOVIE opt-in enabled for New Game Bink video 4 only [EXPERIMENTAL; UNVALIDATED]");
+  }
+  memset(comic_trial,0,sizeof(comic_trial));
+  if(InterlockedCompareExchange(&postmovie_opt_in,0,0)==1 &&
+     GetEnvironmentVariableA("SPIDERMAN2K1FIX_F12_COMIC_EXIT",
+                             comic_trial,sizeof(comic_trial))==1 &&
+     comic_trial[0]=='1') {
+    InterlockedExchange(&comic_exit_opt_in,1);
+    say("QUICK-EXIT-F12: COMIC F12 deferred-to-Bink experiment armed (12s timeout; comic native timing unchanged) [UNVALIDATED]");
   }
   /* Even with opt-in OFF, suppress the game's original unsafe
    * VK_F12 -> WM_CLOSE, which is known to orphan Bink and the process. */
