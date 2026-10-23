@@ -1,3 +1,83 @@
+## 2026-10-23 — Windows 11: F12 on New Game comic clean exit; ~1-second yellow window reproduced
+
+The user tested **F12 during the New Game comic still**
+on native Windows 11 with the consolidated **build #589**,
+patch `v1.0.0-823379a`, and uploaded
+`SpiderMan2k1Fix(20261023-101238).log`.
+Supported `SpideyPC.exe` original SHA-256 verified:
+`0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
+
+User's independent runtime observations:
+- Game closes; **no `SpideyPC.exe` process remains in
+  Windows Task Manager**.
+- Immediately before final exit, a **yellow game window**
+  remains visible for approximately **one second**.
+  This confirms that the artifact previously observed
+  under Wine is **also reproducible on native Windows 11**.
+
+Relevant exact Windows trace:
+
+```text
+QUICK-EXIT-F12: COMIC-RENDER-CANDIDATE draw=1 flip=377 caller_rva=0x00102C72 texture=512x256 mode_request=0 bink_active=0 menu_seen=1 native_3d_owner_calls=0 native_3d_owner_age_ms=0 [RENDER-ONLY; comic owner UNKNOWN]
+QUICK-EXIT-F12: COMIC F12 deferred until native New Game movie 4; comic continues normally [EXPERIMENTAL]
+QUICK-EXIT-F12: POSTMENU-MOVIE verified native movie owner 0x4279FB; original Bink completion and 0x470871 teardown follows; source=DEFERRED-COMIC elapsed_since_F12_ms=4453
+QUICK-EXIT-F12: NATIVE-GAME-INPUT owner ENTER n=1 request=0 timer_active=0 flag1=0 flag2=0
+QUICK-EXIT-F12: POSTMENU-MOVIE original Bink + script returned; native input checkpoint complete; request 7 for original cleanup [EXPERIMENTAL]
+QUICK-EXIT-F12: NATIVE-3D-CLEANUP begin n=1 request=7
+QUICK-EXIT-F12: 3D native cleanup checkpoint returned; awaiting controller-7 finalization
+QUICK-EXIT-F12: NATIVE-3D-CLEANUP completed n=1 request=7
+QUICK-EXIT-F12: ENGINE-STATE flip=379 renderer2d=0 mode_request=7 ... bink_flag=0 video_handle_present=0 ... native_3d_owner_seen=1
+QUICK-EXIT-F12: CONTROLLER-7 native teardown ENTER n=1 bit4=0 status=-1 3D-checkpoint=1
+QUICK-EXIT-F12: 3D owner+controller cleanup complete; engine native final-exit flag set at 0x45619D
+QUICK-EXIT-F12: CONTROLLER-7 native teardown COMPLETED n=1 bit4=1 status=-1 outcome=NATIVE-FINAL-CLEANUP
+QUICK-EXIT-F12: POSTMENU-MOVIE FINAL-TEARDOWN-CHECKPOINT elapsed_since_F12_ms=4547 [NO PRESENT/COLOR CLAIM]
+```
+
+**Windows 11 result: PASS for F12 exit and process
+cleanup on the New Game comic**, with a separate
+**reproducible visual artifact (yellow window) remaining
+unresolved**. The F12 request stayed deferred until
+the comic's original timer finished and the known native
+Bink movie #4 owner appeared. The original Bink cleanup,
+native input/game-owner checkpoint, original 3D cleanup,
+and native controller-7 finalization all ran before
+process exit.
+
+**Measured:**
+- 4,453 ms from F12 request until the verified movie
+  #4 owner completed Bink and handed off cleanup;
+- 4,547 ms from F12 to the logged final native
+  teardown checkpoint;
+- **94 ms** between those two recorded checkpoints.
+
+**Not measured:** the yellow surface's pixel contents,
+origin or exact first display timestamp, nor actual
+process-termination time relative to the last log line.
+The estimated ~1s is the user's visual observation,
+*not* inferred from the 94ms checkpoint interval.
+Do NOT claim that the yellow appears specifically after
+controller-7 cleanup or that a DirectDraw backbuffer
+has been proven responsible. No workaround attempted.
+
+**Next discrimination test:** on native Windows 11,
+start a new game, **allow the New Game comic to finish
+without pressing F12**, and press F12 **during movie #4
+itself**. Compare the disappearance of `SpideyPC.exe`
+and whether a ~1-second yellow window still appears.
+Send the separate log. If the yellow occurs in both
+cases, the common native Bink/controller-7 teardown
+path becomes a reasonable investigation target, but
+the exact graphics origin still requires dedicated
+instrumentation/evidence. The first four opening Bink
+movies are a different owner path and should be tested
+separately.
+
+No behavior or experimental-option defaults altered.
+PR #26 stays **draft, open, unmerged** until explicit
+user approval.
+
+---
+
 ## 2026-10-23 — Windows 11 #589: FIRST timed startup still F12 exits cleanly without orphan process
 
 The user performed the next Windows 11 regression using the
