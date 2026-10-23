@@ -30,6 +30,18 @@ identify a native internal writer: the wrapper inserted request 7
 log native-owner transitions only from that value. The exact nested
 native writer on normal 3D-to-menu transitions remains unproven.
 
+For a follow-up Windows 11 direct-3D verification with explicit
+exit-code and Windows crash-event checks, run this read-only PowerShell
+watcher from the repository checkout (adjust `-GameExe` if needed):
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Verify-F12QuickExit.ps1 -GameExe .\SpideyPC.exe -ExpectedMode 3D
+```
+It launches the game, waits for the user to press F12 during 3D, and
+does not inject input or kill the process. A PASS requires all of:
+3D request trace, 3D owner cleanup, controller native final-decision
+trace, exit code 0, no residual process, and no matching Windows
+Application Error/WER event accessible in the Windows event log.
+
 Next Windows regression tests: F12 at different gameplay moments;
 native exit-to-menu (without F12) remains unchanged; main-menu F12
 still dispatches Quit (18); F12 off/background is inert; record the
