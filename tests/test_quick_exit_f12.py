@@ -446,7 +446,7 @@ def test_default_off_and_ini_section_validated():
 def test_f12_debug_fast_test_mode_default_off_and_valid_ini_key():
     assert "F12TestMode=0" in INI
     assert '"F12TestMode=0\\r\\n"' in GEN
-    assert 'spider_ini_debug[]={"Log","F12TestMode"}' in VAL
+    assert 'spider_ini_debug[]={"Log","F12TestMode","F12Auto3DScripts"}' in VAL
     assert 'GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1' in SRC
     assert "static volatile LONG debug_f12_test_mode=0;" in SRC
 
