@@ -124,6 +124,32 @@ def test_post_shell_space_skip_probe_preserves_original_bink_result():
         assert forbidden not in tick
 
 
+
+
+def test_native_bink_owner_static_inspection_is_read_only_and_sha_gated():
+    # The game EXE is deliberately NOT included in this repository/CI.
+    # This locally-run Windows PowerShell tool produces a small hex report;
+    # any candidate native instruction/branch still requires disassembly.
+    script=(ROOT/"tools/Inspect-BinkNativeCode.ps1").read_text(encoding="utf-8")
+    assert "0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea" in script
+    assert "$expectedLength = 1507328" in script
+    assert '[IO.File]::ReadAllBytes($exe)' in script
+    assert '$hash -ne $expectedHash' in script
+    assert 'Ensure-Span' in script and 'Resolve-Address' in script
+    assert '0x00470700 0x350' in script
+    assert '0x00455C80 0x200' in script
+    assert '$targetBinkOwner = [long]0x00470750' in script
+    assert '0xE8' in script
+    assert "Each candidate needs instruction-boundary verification" in script
+    assert "Do not publish raw game code in the public GitHub repository." in script
+    assert '[IO.File]::WriteAllLines($destination,$lines,[Text.Encoding]::UTF8)' in script
+    for bad in ('WriteAllBytes(', 'Set-Content -LiteralPath $exe',
+                'VirtualProtect(', 'Start-Process', 'Stop-Process',
+                'Invoke-Expression', 'Add-Type', 'GetAsyncKeyState',
+                'Set-ItemProperty', 'Patch-'):
+        assert bad not in script
+
+
 def test_default_off_and_ini_section_validated():
     assert "QuickExitF12=0" in INI
     assert '"[System]\\r\\n"' in GEN
