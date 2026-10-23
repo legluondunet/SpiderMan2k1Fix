@@ -2027,7 +2027,7 @@ def test_movie_enter_release_is_gated_before_first_original_3d_input():
     touch native skip byte or apply to F10-armed intros.
     """
     src=SRC[SRC.index("static void spider_newgame_enter_release_barrier(int confirmed_movie4)"):
-            SRC.index("/* Native game-input owner wrapper at 0x45553B:")]
+            SRC.index("/* Minimal safety-only owner for F10Shortcut=0.")]
     for predicate in ("GetAsyncKeyState(VK_RETURN)",
                       "GetAsyncKeyState(VK_SPACE)",
                       "enter_before || space_before",
@@ -2058,7 +2058,7 @@ def test_movie_enter_release_is_gated_before_first_original_3d_input():
 def test_enter_only_cannot_arm_intro_auto_skip_during_release_barrier():
     """The new barrier is not an alternate F10 origin or movie-skip request."""
     segment=SRC[SRC.index("static void spider_newgame_enter_release_barrier(int confirmed_movie4)"):
-                SRC.index("/* Native game-input owner wrapper at 0x45553B:")]
+                SRC.index("/* Minimal safety-only owner for F10Shortcut=0.")]
     assert "debug_auto3d_f10_origin,0,0)!=0" in segment
     assert "debug_auto3d_state,0,0)!=0" in segment
     assert "InterlockedExchange(&debug_auto3d_state" not in segment
@@ -2109,9 +2109,8 @@ def test_movie4_input_release_safety_remains_enabled_when_f10_shortcut_off():
     assert "*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST=" not in mini
     assert "SendInput(" not in mini
     assert "ExitProcess(" not in mini
-    tick=source[source.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
-                source.index("static void spider",source.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"))] if False else source[source.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):]
-    assert "movie4_input_release_state,1,0" in tick
+    tick=source[source.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):]
+    assert "movie4_input_release_state,1,state" in tick
     assert "(DWORD)frame[4]==0x00427A00u && (DWORD)frame[6]==1u" in tick
     assert 'BINK-4-SAFETY original movie #4 confirmed' in tick
     barrier=source[source.index("static void spider_newgame_enter_release_barrier("):
