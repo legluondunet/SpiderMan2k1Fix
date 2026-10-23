@@ -1,3 +1,103 @@
+## 2026-10-23 — Original clock wait confirmed: optional fast-menu experiment
+
+The user's new diagnostic log
+`SpiderMan2k1Fix(20261023-121645).log`
+(patch `v1.0.0-c6bec84`, original executable SHA matched)
+**confirms** the precise native cause of the initial menu freeze:
+
+```text
+DEBUG-MENU-TICK-TIMING frame=1 native_0x505720_ms=0
+DEBUG-MENU-CLOCK-WAIT site=0x0049415B frame=1 wait_arg=1 elapsed_ms=3100 native_clock_before=429 native_clock_after=430
+DEBUG-MENU-CLOCK-WAIT site=0x0049416F frame=1 wait_arg=1 elapsed_ms=0 native_clock_before=430 native_clock_after=431
+DEBUG-MENU-TICK-TIMING frame=2 since_last_exit_ms=3143 native_0x505720_ms=1
+DEBUG-MENU-CLOCK-WAIT site=0x0049415B frame=2 wait_arg=1 elapsed_ms=4 native_clock_before=431 native_clock_after=432
+```
+
+The ORIGINAL `0x4E5D60(1)` busy-wait invoked at the
+CONDITIONAL `0x49415B` menu site consumes **3,100 ms**
+of the **3,143 ms** pause between frames 1 and 2.
+The next original wait returns immediately; subsequent
+frames regain normal 30 FPS. This is the confirmed
+blocking call. Why the *independent clock source*
+does not advance for ~3 seconds before that first
+increment remains under investigation. Neither the
+native menu input gate nor a late DI8 hook installs
+accounts for the stall.
+
+**New SEPARATE experimental opt-in, default OFF**
+in `SpiderMan2k1Fix.ini`:
+
+```ini
+[Debug]
+F12TestMode=1
+F12SkipInitialMenuWait=1
+Log=1
+```
+
+This experiment is **NOT runtime validated**, and it
+changes native wait behavior; it is separate from the
+previous read-only diagnostics and from the already
+user-validated F12 intro/movie/3D paths.
+
+While both opt-ins are active, *only after* the
+original four-movie + timed-page + native input-wait
+cleanup has completed AND the actual main menu has
+been entered following a debug F12 request, two
+SHA-signature-checked call wrappers (`0x49415B`
+and `0x49416F`) may **omit the original wait** for
+the initial clock stall. The original menu, input
+processing, rendering and existing DirectDraw Flip FPS
+cap continue to execute normally.
+
+- First original menu tick: snapshot native clock.
+- If the clock **is still at that same value** and
+  fewer than **4,500 ms** have elapsed, bypass BOTH
+  original one-tick waits (else the unconditional
+  wait would simply inherit the stall).
+- As soon as the original clock advances on its own,
+  stop bypassing and restore normal calls to
+  `0x4E5D60(1)` permanently for the rest of the
+  process.
+- Safety fallback: after 4,500 ms with no native
+  clock progress, revert to original blocking waits
+  and log `4500MS-SAFETY-TIMEOUT`.
+- All native shared clocks, game timers, Bink,
+  DirectInput, engine flags and controller-7 exit
+  state remain untouched. F12 after the main menu
+  and any subsequent menus are not fast-skipped.
+
+New diagnostic markers:
+`DEBUG-MENU-FAST-WAIT armed`,
+`DEBUG-MENU-FAST-WAIT bypassing stalled native sync`,
+and `DEBUG-MENU-FAST-WAIT original synchronization
+RESTORED reason=NATIVE-CLOCK-ADVANCED`.
+
+**Important limitation:** this is a deliberately
+reversible experiment to keep input processing
+responsive *while the original timer catches up*.
+It does not prove the clock source's ~3s startup
+latency can be eliminated, and starting a game during
+that interval may reveal additional timing-dependent
+issues. Test New Game comic → Bink → 3D after F12,
+as well as F12 native 3D exit. If any fault occurs,
+immediately disable `F12SkipInitialMenuWait`; the
+original clock wait remains intact in the old path.
+
+**Rollback references:**
+- Complete previously validated legacy F12 exit:
+  `backup/f12-native-exit-validated-20261023`,
+  commit `4adf16aa13a867a3256f7a2f7ce506cc53b9b82a`.
+- Snapshot of the working F12TestMode **before this
+  new clock bypass**:
+  `backup/f12-debug-menu-wait-before-experiment-20261023`,
+  commit `f00fe26f02724c924e368960c52ea47ac3aff378`.
+
+This feature remains experimental, unmerged, pending
+a real Wine/Windows validation of both responsiveness
+and all subsequent game flows.
+
+---
+
 # Debug F12 fast-test mode (experimental)
 
 **Default: disabled.** Enable in `SpiderMan2k1Fix.ini`:
