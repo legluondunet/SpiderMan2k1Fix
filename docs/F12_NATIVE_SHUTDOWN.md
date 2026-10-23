@@ -1,3 +1,98 @@
+## 2026-10-23 — Yellow frame during Wine movie shutdown; deferred comic F12 prototype
+
+**Important Wine user observation, after the clean build #552
+New Game movie F12 exit:**
+
+> Screen went entirely yellow for roughly 1–2 seconds,
+> then the window closed. No Wine or SpideyPC process
+> remained in memory.
+
+The companion log shows the correct native chain:
+`POSTMENU-MOVIE` requested/verified owner `0x4279FB`,
+native Bink end → `0x45553B` native input checkpoint →
+request 7 → original `0x455BF9` cleanup →
+`0x45619D` final-exit branch. Its engine state at
+Flip 374 reports `mode_request=7`, Bink inactive,
+video handle absent, and a native 3D input owner seen.
+
+**Do NOT conflate process success with visual success.**
+The all-yellow frame is a **confirmed visual regression**
+for this experimental movie shutdown. The log does not
+establish the RGB producer (D3D Clear, presentation
+backbuffer or another game stage), nor exactly when
+relative to the two cleanup checkpoints the 1–2 seconds
+elapsed. We must not assert it is a game frame or prescribe
+unsafe early process exit to conceal it. The source has
+NOT yet altered the presentation path; timing/visual
+investigation is separate from clean resource teardown.
+
+**Comic page F12 — new separately opted-in trial.**
+Unlike Bink movie #4, the native **still-page owner is
+not identified**: `COMIC-RENDER-CANDIDATE` is
+a strictly rendering-side marker, not a native scene
+call stack. Rather than forcing any unknown comic
+callback to return, the new prototype:
+
+- If the user presses F12 **while the 512×256 comic
+  still is visible**, after the real menu, before any
+  native 3D input owner, with no Bink flag or video
+  handle, and within 6.5 seconds of its known
+  rendering candidate, it latches a separate
+  **deferred** F12 request. It does not change the
+  comic owner or its automatic duration.
+- At the first suitable subsequent original Bink
+  tick, it checks the same exact **New Game movie #4**
+  original stack/return VA `0x427A00`, allow-skip 1,
+  valid tick return address and live Bink handle/flag.
+  Only then does it return the native "finished"
+  result. The game **itself** closes Bink and resumes
+  the script interpreter, then uses the same previously
+  Wine-validated native controller-7 cleanup handoff
+  as the movie-only experiment.
+- The deferred request has a **12-second timeout**.
+  If the expected movie does not start, no forced
+  process exit or native resource manipulation occurs.
+- The new comic experiment requires the existing
+  movie-test opt-in **plus a second environment switch**.
+  Both remain disabled by default. The validated
+  movie-only F12 behavior remains unchanged if the
+  new comic switch is absent.
+
+**Key tradeoff:** this is a *delayed*, not an immediate,
+comic-stage exit. A F12 press during the still may
+leave the comic on screen until the original automatic
+~5-second timer completes, then exit through Bink
+and the native controller. The existing yellow frame
+may also persist. Both issues require further
+investigation. This is not a final all-stages fix.
+
+Linux/Wine test, while in the game directory (and
+with `QuickExitF12=1`,
+`ExperimentalQuickExitF12In3D=1`,
+`[Debug] Log=1`):
+
+```bash
+SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT=1 \
+SPIDERMAN2K1FIX_F12_COMIC_EXIT=1 \
+wine ./SpideyPC.exe
+```
+
+If using Lutris, set both variables to `1` in
+**Configure → System options → Environment variables**,
+and keep the normal Wine runner.
+Then: New Game → as soon as the comic still appears,
+press F12 **once**, without waiting for the cinematic.
+Observe whether it remains on screen for its native
+duration, whether yellow flashes, and whether any
+Wine/SpideyPC process persists. Upload the new log.
+With the variable absent, the still does not react
+to F12 and previously validated stages are unchanged.
+
+PR #26 remains **draft and unmerged** pending
+explicit user approval.
+
+---
+
 ## 2026-10-23 — Wine validation: F12 from New Game Bink movie exits cleanly
 
 **User-confirmed SUCCESS under Linux/Wine**, using the opt-in
