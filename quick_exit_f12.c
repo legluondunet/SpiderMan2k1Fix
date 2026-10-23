@@ -280,19 +280,20 @@ static void __cdecl spider_observe_native_pause_handler(void) {
   }
 }
 
-/* Passive native game-input owner probe at 0x45553B:
+/* Native game-input owner wrapper at 0x45553B:
  * The original 0x440EF0 executes exactly once with its original ABI,
  * before the game tests pause context at 0x455540. EAX is overwritten
- * by the original MOV at 0x455540. No shutdown is requested here.
- * If the input owner itself transitions mode_request 0->7, the
- * before/after observation resolves an otherwise ambiguous writer. */
+ * by the original MOV at 0x455540. Snapshot its return value BEFORE
+ * the separately opted-in F12 request-7 write on the same game thread.
+ * This distinguishes a real owner-produced transition from F12's
+ * post-call controller request without claiming its internal writer. */
 static void __cdecl spider_observe_native_game_input(void) {
   LONG n=InterlockedIncrement(&input_native_invocations);
   DWORD before_request=*SPIDER_ENGINE_MODE;
   DWORD before_timer=*SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE;
   BYTE before_1=*SPIDER_NATIVE_GAME_INPUT_FLAG_1;
   BYTE before_2=*SPIDER_NATIVE_GAME_INPUT_FLAG_2;
-  DWORD after_request,after_timer,elapsed_ticks;
+  DWORD after_request,native_after_request,after_timer,elapsed_ticks;
   BYTE after_1,after_2;
   static LONG last_flags=-1,last_armed=-1;
   LONG current_flags,current_armed;
@@ -311,6 +312,7 @@ static void __cdecl spider_observe_native_game_input(void) {
   InterlockedExchange(&last_native_game_input_ms,(LONG)GetTickCount());
   SPIDER_NATIVE_GAME_INPUT_UPDATE();
   after_request=*SPIDER_ENGINE_MODE;
+  native_after_request=after_request; /* immutable pre-F12 snapshot */
   if(InterlockedCompareExchange(&game3d_exit_state,2,1)==1) {
     if(InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
        before_request==0u && after_request==0u &&
@@ -347,10 +349,10 @@ static void __cdecl spider_observe_native_game_input(void) {
     last_flags=current_flags;
     last_armed=current_armed;
   }
-  if(after_request==7u && before_request!=7u) {
+  if(native_after_request==7u && before_request!=7u) {
     InterlockedIncrement(&input_native_requested7);
     snprintf(line,sizeof(line),
-      "QUICK-EXIT-F12: NATIVE-GAME-INPUT owner EXIT n=%ld NATIVE REQUEST 7 produced by 0x440EF0; timer_before=%lu timer_after=%lu flag_before=%u,%u flag_after=%u,%u elapsed=%lu",
+      "QUICK-EXIT-F12: NATIVE-GAME-INPUT owner EXIT n=%ld NATIVE REQUEST 7 observed after 0x440EF0 (internal writer unconfirmed); timer_before=%lu timer_after=%lu flag_before=%u,%u flag_after=%u,%u elapsed=%lu",
       (long)n,(unsigned long)before_timer,(unsigned long)after_timer,
       (unsigned)before_1,(unsigned)before_2,
       (unsigned)after_1,(unsigned)after_2,(unsigned long)elapsed_ticks);
