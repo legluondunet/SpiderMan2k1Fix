@@ -502,6 +502,57 @@ def test_f12_debug_shortcut_restricts_3d_exit_to_native_gameplay():
         assert forbidden not in debug
 
 
+
+def test_f12_debug_accelerates_timed_still_via_original_clock_comparison():
+    """Only the debug mode is permitted to end the timed still early.
+    An exact five-byte clock read becomes a CALL, which returns EDI+1
+    to the game's existing CMP EAX,EDI / JA normal SEH/resource cleanup.
+    """
+    assert "SPIDER_INTRO_TIMED_CLOCK_SITE ((BYTE *)(uintptr_t)0x004A1A26u)" in SRC
+    assert "intro_timed_clock_original[5]={0xA1,0xA0,0x4C,0x6B,0x00}" in SRC
+    assert "static volatile LONG intro_timed_clock_hook_installed=0;" in SRC
+    assert "static volatile LONG debug_timed_accelerated=0;" in SRC
+    begin=SRC.index("__attribute__((naked,used)) static DWORD spider_f12_debug_timed_clock(void)")
+    end=SRC.index("/* Wrapper for ORIGINAL 0x4A1896 input check",begin)
+    hook=SRC[begin:end]
+    assert '"movl 0x006B4CA0, %eax' in hook
+    assert '"cmpl $1, _debug_f12_test_mode' in hook
+    assert '"cmpl $1, _intro_still_exit_state' in hook
+    assert '"cmpl $1, _post_intro_cleanup_seen' in hook
+    assert '"cmpl $1, _intro_still_hook_installed' in hook
+    assert '"cmpl $0, _real_main_menu_seen' in hook
+    assert '"cmpb $1, 0x006A7785' in hook
+    assert '"cmpl $0, 0x006151F8' in hook
+    assert '"cmpl $0, 0x00AC0BA4' in hook
+    assert '"cmpl $-1, %edi' in hook
+    assert '"leal 1(%edi), %eax' in hook
+    assert '"movl $1, _debug_timed_accelerated' in hook
+    assert '"ret' in hook
+    for forbidden in ('movl %eax, 0x006B4CA0', 'jmp 0x4A1A36',
+                      'ExitProcess(', 'TerminateProcess(', 'DestroyWindow('):
+        assert forbidden not in hook
+
+    install=SRC[SRC.index("static int install_intro_timed_clock_hook(void)"):
+                SRC.index("static int install_intro_still_input_hook(void)")]
+    assert "patch_native_call(SPIDER_INTRO_TIMED_CLOCK_SITE" in install
+    assert "intro_timed_clock_original" in install
+    assert "restore_intro_tick_call(SPIDER_INTRO_TIMED_CLOCK_SITE" in install
+
+    init=SRC[SRC.index("void SpiderQuickExitF12_Init("):]
+    assert "debug_f12_test_mode,0,0)==1 &&" in init
+    assert "!install_intro_timed_clock_hook()" in init
+    assert "DEBUG F12TestMode DISABLED: timed-still clock signature mismatch" in init
+    assert init.count("restore_intro_timed_clock_hook();")>=2
+    assert "DEBUG first timed-page clock read 0x4A1A26 guarded hook installed" in init
+
+    owner=SRC[SRC.index("static BYTE __cdecl spider_f12_intro_still_native_input("):
+              SRC.index("/* Returns nonzero ONLY")]
+    assert "DEBUG-MENU-SKIP first timed-page deadline accelerated" in owner
+    assert "InterlockedCompareExchange(&debug_timed_accelerated,0,1)" in owner
+    assert "DEBUG-MENU-SKIP original 0x4A1896 input-wait TRUE completion" in owner
+
+
+
 def test_verified_real_shell_menu_tick_and_quit_selection():
     assert "0x00493990" in SRC  # REAL Shell_MainMenu
     assert "0x00493DD6u" in SRC
