@@ -1,3 +1,50 @@
+## 2026-10-23 — Wine 16:04:45; original Jump action-state handling is now located
+
+The user's full log `SpiderMan2k1Fix(20261023-160445).log`
+(build #671) records only TWO physical SPACE presses in the
+native 3D owner: **+2156 ms** (first intro, per prior user
+clarification) and **+4003 ms** (second intro). Its first
+HUD instruction appears immediately AFTER the second
+press in this run. The original DirectInput keyboard byte
+at `0x6B7965` changes with each press, the native keyboard
+device stays active, and the game-owned 13-entry runtime
+keymap again maps SPACE DIK `0x39` to exactly **action 0x10**.
+The prior native F12 cover+movie-4 jump remains **2 ms**.
+The game's `0x5FAECC` phase-state changes at +~14–16 s,
+long after both 3D SPACE presses, and cannot distinguish
+the two intro skip events. A native request-7 return
+occurs still later but its specific initiating input
+is unverified.
+
+**New disassembly result:** original `0x505720` calls
+`0x50A190` at `0x505738` to convert DIK presses
+into game action bits. For the first action-button
+slot, `0x5058A5` passes native keyboard action
+`0x10` to `0x479540` with state destination
+**`0x661200`**. Original `0x479540` stores a
+held state at `+0`, a newly-pressed state at
+`+1`, early-press state at `+2`, and counters
+at `+4/+8/+12`. The game's post-Bink 3D checkpoint
+now samples that original structure in read-only mode,
+logging bounded `DEBUG-3D-SPACE-ACTION` on state
+changes. Each message includes original held/new/early
+and frame counters, DIK raw keyboard state, physical
+Space and the time from native 3D entry.
+
+**Caution:** action 0x10 is ALSO the real player JUMP
+after both 3D cinematics, as the user directly verified
+in the earlier 15:57:30 test. Neither an action bit
+nor physical edge nor HUD draw can by itself identify
+the original scene-completion boundary. This probe
+will confirm the native action pipeline and whether
+scripted scenes consume/clear the same signal, not
+enable new F12 functionality without positive
+game-owned scene/playable proof. No additional native
+site is patched; no original action value is modified;
+the F12 3D guard remains fail-closed.
+
+---
+
 ## 2026-10-23 — User-confirmed interpretation of Wine 15:57:30 log (build #669)
 
 **Crucial first-hand correction:** of the THREE physical SPACE edges in

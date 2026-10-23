@@ -181,6 +181,13 @@
  * 0x501C87 writes 0xFF on keydown; 0x501C8F 0x80 on keyup.
  * DO NOT WRITE THIS GAME-OWNED KEYBOARD BUFFER. */
 #define SPIDER_NATIVE_RAW_SPACE_BYTE ((const volatile BYTE *)(uintptr_t)0x006B7965u)
+/* Original 0x505720 at 0x5058A5 passes action bit 0x10 to
+ * 0x479540 at state struct 0x661200. 0x479540 independently
+ * tracks held, just-pressed and early-press states plus counters.
+ * This is the game-owned ACTION state, NOT a proven cutscene flag.
+ * Passive telemetry samples it AFTER original 0x440EF0 returns. */
+#define SPIDER_NATIVE_SPACE_ACTION_STATE ((const volatile BYTE *)(uintptr_t)0x00661200u)
+#define SPIDER_NATIVE_SPACE_ACTION_WORDS ((const volatile DWORD *)(uintptr_t)0x00661200u)
 #define SPIDER_NATIVE_KEYBOARD_DEVICE ((const volatile DWORD *)(uintptr_t)0x006B7A5Cu)
 #define SPIDER_NATIVE_KEY_EDGE_CALL ((BYTE *)(uintptr_t)0x0050A65Du)
 #define SPIDER_NATIVE_KEY_LEVEL_CALL ((BYTE *)(uintptr_t)0x0050A674u)
@@ -688,6 +695,36 @@ static void __cdecl spider_observe_native_game_input(void) {
       byte_logs++;
     }
     previous_native_space=(LONG)native_space;
+    /* Original per-frame 0x505720/0x479540 action 0x10 state:
+     * p[0] is held, p[1] is new press, p[2] early press window;
+     * counters +4/+8/+12 are the original held/released frames.
+     * These are still present while cinematic input is being
+     * handled; they do NOT authorize F12 EXIT or scene skip. */
+    {
+      const volatile BYTE *p=SPIDER_NATIVE_SPACE_ACTION_STATE;
+      DWORD status=(DWORD)p[0]|((DWORD)p[1]<<8)|((DWORD)p[2]<<16);
+      static DWORD prior_status=0xffffffffu;
+      static DWORD last_action_log=0;
+      static LONG action_logs=0;
+      if((status!=prior_status ||
+          (space && (!last_action_log ||
+                     (DWORD)(now-last_action_log)>=1300u))) &&
+         action_logs<55 && (!start || (DWORD)(now-start)<90000u)) {
+        char actionline[380];
+        snprintf(actionline,sizeof(actionline),
+          "QUICK-EXIT-F12: DEBUG-3D-SPACE-ACTION action=0x00000010 held=%u just_pressed=%u early=%u frames_held=%lu frames_released=%lu frames_total=%lu dik_raw=0x%02X physical_space=%ld edges=%ld since_3d_ms=%lu [NATIVE 0x661200; ORIGINAL 0x479540; READ-ONLY; SCENE NOT IDENTIFIED]",
+          (unsigned)p[0],(unsigned)p[1],(unsigned)p[2],
+          (unsigned long)SPIDER_NATIVE_SPACE_ACTION_WORDS[1],
+          (unsigned long)SPIDER_NATIVE_SPACE_ACTION_WORDS[2],
+          (unsigned long)SPIDER_NATIVE_SPACE_ACTION_WORDS[3],
+          (unsigned)native_space,(long)space,(long)edges,
+          (unsigned long)(start?(DWORD)(now-start):0u));
+        say(actionline);
+        action_logs++;
+        last_action_log=now;
+      }
+      prior_status=status;
+    }
     if((!start || (DWORD)(now-start)<90000u) &&
        (last_space!=space || sample_count<6 ||
         (!last_sample || (DWORD)(now-last_sample)>=1500u)) &&

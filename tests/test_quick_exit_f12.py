@@ -1543,3 +1543,22 @@ def test_3d_space_event_counter_never_labels_all_edges_as_cutscene_skips():
     assert "InterlockedIncrement(&debug_newgame_3d_space_edges)" in worker
     assert "raw physical event" in worker
     assert "controller-7 shutdown permission" in worker
+
+
+def test_original_jump_action_state_trace_only_reads_game_owned_structure():
+    """0x505720 processes action bit 0x10 using 0x479540 at 0x661200.
+    The telemetry is passive, not evidence of a playable scene."""
+    assert "SPIDER_NATIVE_SPACE_ACTION_STATE ((const volatile BYTE *)(uintptr_t)0x00661200u)" in SRC
+    assert "SPIDER_NATIVE_SPACE_ACTION_WORDS ((const volatile DWORD *)(uintptr_t)0x00661200u)" in SRC
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
+    assert "DEBUG-3D-SPACE-ACTION action=0x00000010" in owner
+    assert "held=%u just_pressed=%u early=%u" in owner
+    assert "SPIDER_NATIVE_SPACE_ACTION_WORDS[1]" in owner
+    assert "SPIDER_NATIVE_SPACE_ACTION_WORDS[2]" in owner
+    assert "SPIDER_NATIVE_SPACE_ACTION_WORDS[3]" in owner
+    assert "dik_raw=0x%02X physical_space=%ld edges=%ld" in owner
+    assert "SCENE NOT IDENTIFIED" in owner
+    assert "SPIDER_NATIVE_SPACE_ACTION_STATE=" not in owner
+    assert "SPIDER_NATIVE_SPACE_ACTION_WORDS[" in owner
+    assert "SendInput(" not in owner
