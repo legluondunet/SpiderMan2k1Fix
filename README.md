@@ -47,7 +47,7 @@ is used. Changes are being developed in
 | First timed pre-menu still | **Validated on Windows 11 and Linux/Wine**: F12 defers to original timed-page completion and input-wait cleanup, then original menu Quit; no residual `SpideyPC.exe` in Windows Task Manager |
 | Second `Press Enter` pre-menu still | **Validated on Windows 11 and Linux/Wine**: F12 takes original input-wait completion, then original menu Quit; no residual `SpideyPC.exe` in Windows Task Manager |
 | Interactive main menu | Original `Shell_MainMenu` Quit command (slot 3, action 18); **validated on Windows 11** |
-| New Game comic still | **Validated under Linux/Wine** with delayed exit: it retains the comic's automatic timing, then uses movie #4 |
+| New Game comic still | **Validated under Windows 11 and Linux/Wine**: deferred until the comic's original timer and native movie #4 cleanup; Windows confirms no residual `SpideyPC.exe`. **Known ~1s yellow window before exit on both systems** |
 | New Game Bink cinematic | **Validated under Linux/Wine**: verified movie #4 owner, original Bink cleanup, then native final teardown |
 | 3D gameplay | **Validated on Windows 11 and Linux/Wine** through native game-owner and controller-7 cleanup |
 
@@ -55,8 +55,9 @@ is used. Changes are being developed in
 Wine comic, cinematic and gameplay tests:** no residual game or
 Wine process. The real `Shell_MainMenu` native frame tick at
 `0x00493DD6` selects the game's own Quit action.
-The experimental New Game comic and post-menu cinematics are
-**not yet validated on Windows 11**.
+The experimental New Game comic is now **validated on Windows 11**
+with a normal process exit. F12 pressed **directly during** New
+Game Bink movie #4 still needs a separate Windows regression.
 The pre-menu static screens have a **separately opt-in**
 F12 prototype. The first screen retains its native timed-page completion;
 the second uses its original input-wait completion and cleanup.
@@ -126,12 +127,17 @@ owner cleanup at `0x00455BF9`, and original controller-7
 final teardown at `0x0045619D`/`0x0045620C`.
 This is why the comic stage does not close instantly.
 
-**Known visual caveat:** a user saw a fully yellow screen for
-1–2 seconds before the clean Wine *cinematic* shutdown. The
-cause is not established and no renderer workaround is
-implemented; compare with Windows later. Native cleanup
-and disappearance of processes were successful in that
-Wine run.
+**Known visual caveat:** a yellow game window remains visible
+for approximately one second before the final F12 shutdown
+on **both native Windows 11 (New Game comic test) and Wine**.
+The original Bink, game-owner and controller-7 cleanup were
+reached, and the user confirmed no residual game process
+on Windows. The actual rendering source, first yellow frame
+and delay to process termination are **not yet measured**.
+No renderer workaround has been introduced. Test F12
+**directly during New Game movie #4** on Windows to check
+whether the same visual artifact reproduces without a
+preceding comic F12 request.
 
 For detailed disassembly, stage guards, test logs, safety
 constraints and the verification plan, see
