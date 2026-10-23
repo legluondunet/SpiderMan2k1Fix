@@ -25,7 +25,7 @@ def to_raw(pct, maximum):
 def test_generated_example_factory_consistency():
     assert len(bytes_data) == 252
     assert bytes.fromhex(config['Internal']['RawHex']) == bytes_data
-    assert set(config.sections()) == {'Debug','System','Display','HUD','Input','Audio','Keyboard','Joystick','Internal'}
+    assert set(config.sections()) == {'Debug','Display','HUD','Input','Audio','Keyboard','Joystick','Internal'}
     assert config['Debug']['Log'] == '0'
     for key in ('F10Shortcut','F10TestMode','F10Auto3DScripts','F10GameplayExit'):
         assert not config.has_option('Debug',key)
@@ -33,7 +33,7 @@ def test_generated_example_factory_consistency():
         assert f'{key}=' not in (ROOT / 'SpiderMan2k1Fix.ini').read_text()
     assert config['Debug']['F10VerboseTrace'] == '0'
     assert '"F10VerboseTrace=0\\r\\n"' in virtual
-    assert config['System']['QuickExitF10'] == '0'
+    assert not config.has_section('System')
     assert not config.has_option('Internal','VirtualSpideyCfg')
     assert not config.has_option('Internal','BootstrapGameConfig')
     assert config['Display']['Resolution'] == 'Auto'

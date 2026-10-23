@@ -1,37 +1,22 @@
-/* F12 experimental native Shell_MainMenu Quit activation.
- * Verified against SpideyPC.exe SHA-256:
+/* Optional F10 development shortcut and independent Bink-to-3D input safety.
+ * Supported original SpideyPC.exe SHA-256:
  * 0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea
  *
- * Prior fixes hooked 0x004A1A26 / 0x004A202F, part of a secondary menu
- * path that NEVER runs in the idle title menu (user Windows logs #464/#468).
- * The REAL Shell_MainMenu at 0x00493990 has a per-frame tick CALL at
- * 0x00493DD6 -> 0x00505720. Its normal item-activation branch begins
- * at 0x004941D5 and reads the selected slot at [ESP+0x40].
+ * F10Shortcut is hidden under [Debug] and defaults OFF. F10 can skip
+ * opening Bink movies to the menu, New Game comic/movie and permission-
+ * gated original 3D scripts to gameplay, or return from playable 3D to
+ * the original menu after native cleanup. Gameplay F10 never forces
+ * process exit. The Enter/Space key-up barrier is independently enabled
+ * for the original movie #4 -> first 3D script transition even with F10 OFF.
  *
- * Original native menu table at 0x00552AA8:
- *   index 3 -> text "quit" -> action 0x12 (18).
+ * Safety: signature-check game-owned CALL sites and invoke the original
+ * game-thread owner functions exactly once; no synthetic key injection,
+ * WM_CLOSE or out-of-thread native destructors. Internal F12-prefixed
+ * symbols and log tags are kept for historic diagnostic compatibility;
+ * the optional physical shortcut added by this fix is F10 alone.
  *
- * On F12, use a short-lived one-shot request. In the native Shell_MainMenu
- * game-thread frame CALL wrapper, finish the ORIGINAL tick, set the normal
- * selected item local to 3, and return to the game's own selection/cleanup
- * branch 0x004941D5. This is identical in effect to selecting "quit" on
- * the real menu. NEVER post WM_CLOSE or call native resource destructors.
- *
- * Opening cinematics now use the game's two native Bink frame-tick
- * CALL sites. An opt-in F12 request makes those ticks return "finished",
- * so the ORIGINAL 0x470871 BinkClose path runs in the video-owning
- * game thread. All four sequential movie calls take this same path.
- * After the four movies, the original transition cleanup is called
- * on the game thread, and ONLY THEN the pending intro Quit flag is
- * forwarded to the native engine's top-level Quit check at 0x455E50.
- * The real interactive menu F12 path is unchanged. No WM_CLOSE, no
- * process kill, no direct BinkClose.
- *
- * Comic screens remain unsupported. An additional strictly opt-in 3D
- * proof-of-concept waits for native 3D owner cleanup and its top-level
- * request-7 post-cleanup call BEFORE choosing the original engine's
- * final shutdown branch at 0x45620c. No off-thread game mutation.
- * Exact code bytes MUST match before any hook is installed.
+ * Older [System] F12/F10 process-Quit prototypes are still readable from
+ * legacy INIs but are not generated for new installations.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>

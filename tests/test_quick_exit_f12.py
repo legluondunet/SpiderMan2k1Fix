@@ -375,15 +375,15 @@ def test_new_game_movie_and_comic_ini_require_existing_f12_and_debug_gates():
     assert "SPIDERMAN2K1FIX_F12_COMIC_EXIT" in comic
     for option in ("ExperimentalQuickExitF10InNewGameMovie",
                    "ExperimentalQuickExitF10InNewGameComic"):
-        assert f"{option}=0" in INI
-        assert f'"{option}=0\\r\\n"' in GEN
+        assert f"{option}=" not in INI
+        assert f'"{option}=0\\r\\n"' not in GEN
 
 
 
 
 def test_intro_still_f12_is_separate_default_off_and_preserves_native_cleanup():
-    assert "ExperimentalQuickExitF10InIntroStills=0" in INI
-    assert '"ExperimentalQuickExitF10InIntroStills=0\\r\\n"' in GEN
+    assert "ExperimentalQuickExitF10InIntroStills=" not in INI
+    assert '"ExperimentalQuickExitF10InIntroStills=0\\r\\n"' not in GEN
     assert '"ExperimentalQuickExitF12InIntroStills"' in VAL
     assert 'GetPrivateProfileIntA("System","ExperimentalQuickExitF12InIntroStills",0,ini)==1' in SRC
     assert "static volatile LONG intro_still_opt_in=0;" in SRC
@@ -424,18 +424,18 @@ def test_intro_still_f12_is_separate_default_off_and_preserves_native_cleanup():
 
 
 def test_default_off_and_ini_section_validated():
-    assert "QuickExitF10=0" in INI
-    assert '"[System]\\r\\n"' in GEN
-    assert '"QuickExitF10=0\\r\\n"' in GEN
+    assert "QuickExitF10=" not in INI
+    assert '"[System]\\r\\n"' not in GEN
+    assert '"QuickExitF10=0\\r\\n"' not in GEN
     assert '"Debug","System","Display"' in VAL
     assert 'spider_ini_system[]={"QuickExitF10","ExperimentalQuickExitF10In3D","ExperimentalQuickExitF10InNewGameMovie","ExperimentalQuickExitF10InNewGameComic","ExperimentalQuickExitF10InIntroStills","QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic","ExperimentalQuickExitF12InIntroStills"}' in VAL
     for option in ("ExperimentalQuickExitF10InNewGameMovie",
                    "ExperimentalQuickExitF10InNewGameComic"):
-        assert f"{option}=0" in INI
-        assert f'"{option}=0\\r\\n"' in GEN
+        assert f"{option}=" not in INI
+        assert f'"{option}=0\\r\\n"' not in GEN
         assert f'GetPrivateProfileIntA("System","{option}",0,ini)' in SRC
-    assert "ExperimentalQuickExitF10In3D=0" in INI
-    assert '"ExperimentalQuickExitF10In3D=0\\r\\n"' in GEN
+    assert "ExperimentalQuickExitF10In3D=" not in INI
+    assert '"ExperimentalQuickExitF10In3D=0\\r\\n"' not in GEN
     assert 'GetPrivateProfileIntA("System","ExperimentalQuickExitF12In3D",0,ini)' in SRC
     assert 'GetPrivateProfileStringA("System","QuickExitF12","0"' in SRC
     assert 'if(strcmp(val,"1")!=0)' in SRC
@@ -446,7 +446,7 @@ def test_default_off_and_ini_section_validated():
 def test_f12_debug_fast_test_mode_default_off_and_valid_ini_key():
     for option in ("F10Shortcut", "F10TestMode", "F10Auto3DScripts", "F10GameplayExit"):
         assert f"{option}=" not in INI
-        assert f'"{option}=0\\r\\n"' not in GEN
+        assert f'"{option}=0\\r\\n"' not not in GEN
     assert 'spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts"}' in VAL
     assert 'GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1' in SRC
     assert 'GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1' in SRC
@@ -1196,8 +1196,8 @@ def test_top_level_native_controller7_exit_decision_is_passively_observed():
 def test_3d_f12_is_separately_opted_in_and_menu_keeps_priority():
     assert "static volatile LONG experimental_game3d_enabled=0;" in SRC
     assert "GetPrivateProfileIntA(\"System\",\"ExperimentalQuickExitF12In3D\",0,ini)" in SRC
-    assert "QuickExitF10=0" in INI
-    assert "ExperimentalQuickExitF10In3D=0" in INI
+    assert "QuickExitF10=" not in INI
+    assert "ExperimentalQuickExitF10In3D=" not in INI
     assert 'if(strcmp(val,"1")!=0)' in SRC
     assert "game3d_exit_state,1,0" in SRC
     assert "last_native_game_input_ms" in SRC
@@ -2085,7 +2085,7 @@ def test_f10_shortcut_single_hidden_debug_flag_all_stages_no_log_needed():
 def test_default_generated_ini_omits_development_f10_shortcut():
     for option in ("F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit"):
         assert f"{option}=" not in INI
-        assert f'"{option}=0\\r\\n"' not in GEN
+        assert f'"{option}=0\\r\\n"' not not in GEN
     assert "F10VerboseTrace=0" in INI
     assert '"F10VerboseTrace=0\\r\\n"' in GEN
 
@@ -2133,3 +2133,13 @@ def test_movie4_safety_rearms_after_return_to_menu_when_f10_off():
               SRC.index("/* Native game-input owner wrapper at 0x45553B:")]
     assert "movie4_input_release_state,2,1" in owner
     assert owner.count("SPIDER_NATIVE_GAME_INPUT_UPDATE();")==1
+
+def test_f10_cleanup_omits_obsolete_generated_system_switches():
+    for option in ("QuickExitF10","ExperimentalQuickExitF10In3D",
+                   "ExperimentalQuickExitF10InNewGameMovie",
+                   "ExperimentalQuickExitF10InNewGameComic",
+                   "ExperimentalQuickExitF10InIntroStills"):
+        assert f"{option}=" not in INI
+        assert option in VAL
+    assert "[System]" not in INI
+    assert 'GetPrivateProfileIntA("System","QuickExitF10",0,ini)==1' in SRC

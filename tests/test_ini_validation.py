@@ -177,10 +177,10 @@ def test_system_quick_exit_is_known_and_opt_in(runner, tmp_path):
         assert result[0] >= 1 and result[2] == 0
 
 
-def test_example_exposes_disabled_quick_exit():
+def test_example_hides_obsolete_prototype_shortcuts():
     data = (ROOT / "SpiderMan2k1Fix.generated-example.ini").read_text()
-    assert "[System]\n" in data
-    assert "QuickExitF10=0" in data
+    assert "[System]\n" not in data
+    assert "QuickExitF10=" not in data
 
 
 @pytest.mark.parametrize("value,valid", [

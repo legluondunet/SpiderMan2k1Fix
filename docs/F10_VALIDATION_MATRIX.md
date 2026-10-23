@@ -2,6 +2,9 @@
 
 Scope: the SHA-matched original Spider-Man 2001 PC executable,
 with SpiderMan2k1Fix running under Wine unless explicitly noted.
+Build #713 (commit e349132) is the latest runtime-validated Wine
+reference for both F10 OFF and F10 ON. Older trial sections below
+record historical research, not current validation status.
 F10 is the only physical shortcut; F11/F12 are reserved for
 MangoHud on Linux. Legacy F12 INI names are compatibility aliases.
 
@@ -33,8 +36,8 @@ cinematics are outside the validated New Game behavior.
 | Automatic Stan Lee 3D introduction skip | Original first CutSceneScript skip permission, request, native end | Validated in Wine |
 | Automatic second 3D introduction skip | Distinct original CutSceneScript, independently allowed/requested/ended | Validated in Wine |
 | Earlier F10 process-quit prototype | Native request 7, original 3D cleanup and final-exit bit | Old mode validated in Wine #687; superseded |
-| New F10 during playable 3D | Native request 7, game-owned cleanup and controller-7 return to original menu (no final-exit bit write) | Validated in Wine #705; Windows 11 pending |
-| Game PID stays alive after gameplay F10 | Original Shell_MainMenu returns and a new game can launch | Validated in Wine #705 |
+| New F10 during playable 3D | Native request 7, game-owned cleanup and controller-7 return to original menu (no final-exit bit write) | Validated in Wine #705 and #713; Windows 11 pending |
+| Game PID stays alive after gameplay F10 | Original Shell_MainMenu returns and a new game can launch | Validated in Wine #705 and #713 |
 
 The #687 log recorded native completion (relative to entering 3D):
 `SECOND_SCRIPT_ENDED_CANDIDATE_GAMEPLAY stage=6` and
@@ -168,3 +171,27 @@ Check for `BINK-4-SAFETY enabled independently of F10Shortcut`,
 The initial 3D scene must play normally, then the second. Separately
 regress F10Shortcut=1 (including Bink/3D/gameplay) to ensure previous
 build #705 behavior is unchanged.
+
+### Final Wine validation — build #713
+
+The same DLL pair was tested with F10 disabled and enabled:
+
+- With `F10Shortcut` absent/0, independent movie #4 tracking
+  identified the original Bink owner twice in one process.
+  Enter-to-first-3D physical key-up handoff logged
+  `space_before=1 space_after=0` at 263ms and 248ms,
+  both timeout=0; both original 3D introductions played normally.
+- With `F10Shortcut=1`, F10 from the opening Bink reached the
+  original menu. F10 on New Game comic/movie and independently during
+  the first 3D script requested both native permission-checked
+  introductory script skips.
+- Enter on New Game movie #4 did not skip the first 3D script:
+  two observed key-release barriers at 224ms and 133ms (timeout=0).
+- The last user log explicitly captured
+  `DEBUG-F10-GAMEPLAY-EXIT F10 accepted after TWO script endings`,
+  native controller-7 cleanup and return to menu with final-exit bit
+  UNCHANGED; F10 latches rearmed on a new game in the same process.
+
+Windows native and arbitrary later in-level script scenes remain
+distinct, pending test cases. Historical records above may still refer
+to older F12-prefixed internal names; there is no user F12 shortcut.

@@ -16,9 +16,8 @@ def read_ini(filename):
     assert data.count("\nRawHex=") == 1
     assert len(p['Internal']['RawHex']) == 504
     expected = {'Debug','Display','HUD','Input','Audio','Keyboard','Joystick','Internal'}
-    assert set(p.sections()) in (expected, expected | {'System'})
-    if p.has_section('System'):
-        assert p['System']['QuickExitF10'] == '0'
+    assert set(p.sections()) == expected
+    assert not p.has_section('System')
     for obsolete in ('Controls','GameConfig','Gamepad'):
         assert not p.has_section(obsolete)
     raw=bytes.fromhex(p['Internal']['RawHex'])
