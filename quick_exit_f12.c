@@ -1035,6 +1035,19 @@ static void restore_post_intro_checkpoint(void) {
                           post_intro_cleanup_original);
 }
 
+static int install_intro_still_input_hook(void) {
+  if(!patch_native_call(SPIDER_INTRO_STILL_INPUT_CALL,intro_still_input_original,
+                        (const void *)spider_f12_intro_still_native_input))
+    return 0;
+  InterlockedExchange(&intro_still_hook_installed,1);
+  return 1;
+}
+
+static void restore_intro_still_input_hook(void) {
+  if(InterlockedCompareExchange(&intro_still_hook_installed,0,1)==1)
+    restore_intro_tick_call(SPIDER_INTRO_STILL_INPUT_CALL,intro_still_input_original);
+}
+
 static void restore_intro_tick_hooks(void) {
   restore_intro_tick_call(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1);
   restore_intro_tick_call(SPIDER_INTRO_TICK_CALL_2,intro_tick_call_original_2);
@@ -1244,6 +1257,12 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     InterlockedExchange(&comic_exit_opt_in,1);
     say("QUICK-EXIT-F12: COMIC F12 deferred-to-Bink experiment armed (12s timeout; comic native timing unchanged) [EXPERIMENTAL; NOT YET WINDOWS-VALIDATED]");
   }
+  if(strcmp(val,"1")==0 &&
+     GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
+     GetPrivateProfileIntA("System","ExperimentalQuickExitF12InIntroStills",0,ini)==1) {
+    InterlockedExchange(&intro_still_opt_in,1);
+    say("QUICK-EXIT-F12: INTRO-STILL F12 opt-in enabled (exact 0x4A1896 native owner; Windows/Wine UNVALIDATED)");
+  }
   /* Even with opt-in OFF, suppress the game's original unsafe
    * VK_F12 -> WM_CLOSE, which is known to orphan Bink and the process. */
   if(strcmp(val,"1")!=0) {
@@ -1261,6 +1280,8 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
      memcmp(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1,5)!=0 ||
      memcmp(SPIDER_INTRO_TICK_CALL_2,intro_tick_call_original_2,5)!=0 ||
      memcmp(SPIDER_AFTER_INTRO_CLEANUP_CALL,post_intro_cleanup_original,5)!=0 ||
+     (InterlockedCompareExchange(&intro_still_opt_in,0,0)==1 &&
+      memcmp(SPIDER_INTRO_STILL_INPUT_CALL,intro_still_input_original,5)!=0) ||
      memcmp(SPIDER_NATIVE_PAUSE_CALL,native_pause_call_original,5)!=0 ||
      memcmp(SPIDER_NATIVE_GAME_INPUT_CALL,native_game_input_call_original,5)!=0 ||
      memcmp(SPIDER_NATIVE_GAME_CLEANUP_CALL,native_game_cleanup_call_original,5)!=0 ||
@@ -1322,7 +1343,13 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     say("QUICK-EXIT-F12: DISABLED: native controller-7 gate probe could not be installed");
     return;
   }
+  if(InterlockedCompareExchange(&intro_still_opt_in,0,0)==1 &&
+     !install_intro_still_input_hook()) {
+    InterlockedExchange(&intro_still_opt_in,0);
+    say("QUICK-EXIT-F12: INTRO-STILL native hook failed; still prototype disabled, other modes preserved");
+  }
   if(!suppress_unsafe_native_f12()) {
+    restore_intro_still_input_hook();
     restore_passive_controller7_probe();
     restore_passive_game_cleanup_probe();
     restore_passive_game_input_probe();
@@ -1337,6 +1364,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   thread=CreateThread(NULL,0,f12_input_thread,NULL,0,NULL);
   if(!thread) {
     InterlockedExchange(&enabled,0);
+    restore_intro_still_input_hook();
     restore_passive_controller7_probe();
     restore_passive_game_cleanup_probe();
     restore_passive_game_input_probe();
