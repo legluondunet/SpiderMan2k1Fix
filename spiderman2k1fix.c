@@ -1619,9 +1619,8 @@ static HRESULT WINAPI hooked_f9_surface_lock(void *self,LPRECT rect,
         (unsigned long)desc->dwWidth,(unsigned long)desc->dwHeight,
         (long)desc->lPitch);
       log_line(msg);
-      /* PNG prototype: copy the same 3D frame before the game consumes
-       * it. The worker only sees our own memory, never DirectDraw.
-       * Legacy BMP remains enabled until its entry point is verified. */
+      /* Historical readback-comparison code is inert in normal play.
+       * The always-on F9 PNG path bypasses the original BMP writer. */
       if(InterlockedCompareExchange(&f9_native_png_enabled,0,0)==1)
         SpiderF9PNG_Queue(desc,log_line);
       return back_hr;
@@ -1990,7 +1989,7 @@ done:
   InterlockedExchange(&f9_png_capture_active,0);
 }
 
-/* Install the PNG-only game call replacement only at exact verified CALL
+/* Install the default PNG game call replacement only at exact verified CALL
  * sites; preflight BOTH original signatures before writing either. The
  * game is single-threaded at startup, well before F9 can be triggered.
  * A 32-bit x86 CALL rel32 wraps modulo 2^32, so it reaches any DLL
@@ -2008,10 +2007,8 @@ static void install_f9_png_only_dispatch(void) {
   DWORD previous[2]={0,0},ignored;
   unsigned i;
   char msg[192];
-  if(!base || (uintptr_t)base!=0x00400000u ||
-     InterlockedCompareExchange(&f9_native_png_enabled,0,0)!=1 ||
-     InterlockedCompareExchange(&f9_png_only_enabled,0,0)!=1) {
-    log_line("F9-PNG-ONLY: unsupported EXE layout or PNG disabled; no hooks installed");
+  if(!base || (uintptr_t)base!=0x00400000u) {
+    log_line("F9-PNG: unsupported EXE layout; original game calls remain unchanged");
     return;
   }
   for(i=0;i<2;i++) {
@@ -2045,7 +2042,11 @@ static void install_f9_png_only_dispatch(void) {
     log_line("F9-PNG-ONLY: WARNING failed to restore second code-page protection");
   if(!VirtualProtect(p[0],5,previous[0],&ignored))
     log_line("F9-PNG-ONLY: WARNING failed to restore first code-page protection");
-  log_line("F9-PNG-ONLY: two SHA-verified F9 call sites now call native PNG capture; legacy BMP writer bypassed");
+  /* Flag active only after both native callsites have been rewritten.
+   * No user setting can change the screenshot format. */
+  InterlockedExchange(&f9_native_png_enabled,1);
+  InterlockedExchange(&f9_png_only_enabled,1);
+  log_line("F9-PNG: always ON; both SHA-verified F9 calls redirected to PNG; native BMP bypassed");
 }
 static void instrument_surface(IDirectDrawSurface7 *surface);
 static HRESULT WINAPI hooked_get_attached(void *self,LPDDSCAPS2 caps,
@@ -2995,46 +2996,22 @@ static DWORD WINAPI initialize(LPVOID unused) {
     }
   }
   log_line("BORDERLESS: windowed fullscreen enabled");
-  /* Only the exact game F9 Lock caller can be redirected. The independent
-   * PNG prototype retains the legacy BMP as a safe baseline. Both test
-   * flags require Log=1; normal play has no additional COM hooks. */
-  {
-    char setting[8]={0};
-    if(debug_log_enabled &&
-       GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_BACKBUFFER",setting,sizeof(setting))==1 &&
-       setting[0]=='1') {
-      InterlockedExchange(&f9_backbuffer_fix_enabled,1);
-      log_line("F9-FIX: experimental primary screenshot readback -> 3D backbuffer enabled");
-    }
-    memset(setting,0,sizeof(setting));
-    if(debug_log_enabled &&
-       GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_PNG",setting,sizeof(setting))==1 &&
-       setting[0]=='1') {
-      InterlockedExchange(&f9_native_png_enabled,1);
-      InterlockedExchange(&f9_backbuffer_fix_enabled,1);
-      log_line("F9-PNG: native PNG prototype active; original BMP retained during test");
-    }
-    memset(setting,0,sizeof(setting));
-    if(debug_log_enabled &&
-       GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_TRACE",setting,sizeof(setting))==1 &&
-       setting[0]=='1')
-      InterlockedExchange(&f9_trace_enabled,1);
-    if(InterlockedCompareExchange(&f9_backbuffer_fix_enabled,0,0)==1)
-      InterlockedExchange(&f9_trace_enabled,1);
-    if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
-      log_line("F9-TRACE: opt-in native screenshot readback observation armed; press F9 in gameplay");
-  }
+  /* F9 always uses lossless PNG on the SHA-verified game.
+   * No INI choice, environment toggle, or Log=1 prerequisite.
+   * Preserve game-owned DIK_F9 detection, sound and 500ms debounce.
+   * If the two exact original CALLs cannot be patched, leave game code
+   * untouched and report the safety fallback when logging is enabled. */
+  install_f9_png_only_dispatch();
+  /* Optional read-only F9 diagnostics remain independent of output format.
+   * Legacy screenshot-format environment variables are intentionally ignored. */
   if(debug_log_enabled) {
-    char only[8]={0};
-    if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_PNG_ONLY",
-                               only,sizeof(only))==1 && only[0]=='1') {
-      InterlockedExchange(&f9_native_png_enabled,1);
-      InterlockedExchange(&f9_png_only_enabled,1);
-      log_line("F9-PNG-ONLY: opt-in direct F9 to PNG requested");
+    char setting[8]={0};
+    if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_TRACE",setting,sizeof(setting))==1 &&
+       setting[0]=='1') {
+      InterlockedExchange(&f9_trace_enabled,1);
+      log_line("F9-TRACE: optional native screenshot readback observation armed");
     }
   }
-  if(InterlockedCompareExchange(&f9_png_only_enabled,0,0)==1)
-    install_f9_png_only_dispatch();
   install_player_hud(TRUE);
   {
     char flag[8]={0};
