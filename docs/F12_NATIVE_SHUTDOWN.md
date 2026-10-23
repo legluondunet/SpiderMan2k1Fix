@@ -1,3 +1,92 @@
+## 2026-10-23 — Wine startup still-page trace #573 and verified native timed/input loops
+
+The user uploaded `SpiderMan2k1Fix(20261023-084556).log`
+from build #573 (`v1.0.0-caa901f`), with the expected
+original EXE SHA-256. This was a **read-only** static-stage
+discovery run, not a F12 test on either static screen.
+
+**Dynamic Wine observations (milliseconds from first Flip):**
+
+| Elapsed ms | Original engine / probe condition |
+|---:|---|
+| 0 through 24,005 | Startup Bink active; intro cleanup not yet seen; menu context absent; transition_raw=1 |
+| 6,058–22,487 | The game LOST window focus and was paused for ~15,267 ms before manual Enter resume; elapsed time contains this interruption |
+| After 24,005, before 25,514 | Original 4-movie transition-cleanup call at `0x455D23` completed; original Bink flag/handle cleared |
+| 25,514 and 27,014 | Menu context pointer PRESENT but `real_menu_tick_count=0`; `transition_raw=1`; dispatcher raw=0, stage byte=0 |
+| 28,514 through 33,015 | Menu context pointer still PRESENT, `real_menu_tick_count=0`; `transition_raw=0` |
+| About 34,000 | The game's first real `Shell_MainMenu` tick logged (`0x493DD6`) |
+| 34,531 | Menu tick count=17, menu context present, transition_raw=0 |
+| End | F12 correctly forwarded into original menu Quit command 18 at `0x4941D5` |
+
+**Confirmed:** menu-context pointer presence begins before the
+first actual menu frame. The original transition DWORD
+`0x54D38C` goes from 1 to 0 *before* the first
+Shell_MainMenu tick. Neither variable alone proves which
+static page is visible. Also, the existing F12 launcher
+correctly waited until the interactive-menu tick before
+requesting original menu Quit; no crash is reported.
+
+**New original EXE static-code findings (same verified binary):**
+
+- `0x4A1FE7: call 0x4A1930` precedes the conditional
+  `0x4A2006: call 0x4A17A0` when
+  `[0x54D38C]` is nonzero.
+- `0x4A1930` sets byte `[0x6A7785]=1` at
+  `0x4A1953` if it was not set already.
+  The routine creates an engine-owned object, loops
+  while game-clock DWORD `[0x6B4CA0]` has not passed
+  a local deadline (compare at `0x4A1A2B`),
+  increments native frame counter `[0x60CFA8]`
+  at `0x4A1A1B`, then releases its object and
+  restores x86 SEH at the normal epilogue.
+- `0x4A17A0` creates another object, polls the
+  original game input via `0x50C180` at
+  `0x4A1896`, and repeats its original rendering
+  loop until its condition is satisfied. It increments
+  the same `[0x60CFA8]` at `0x4A1882`,
+  then releases its object, invokes game-owned cleanup
+  functions and restores SEH before returning.
+- This suggests a **timed static page followed by
+  an input-wait static page**, consistent with what
+  the user saw. **This is a hypothesis about the
+  identity of the two displayed images, not yet a
+  proven dynamic caller/owner match**. F12 must not
+  manipulate `0x54D38C`, the native input condition,
+  resource pointers, or saved return addresses merely
+  because the hypothesis is plausible.
+
+To correlate these two native loops without additional
+EXE hooks or altered control flow, the existing opt-in
+`SPIDERMAN2K1FIX_F12_STATIC_TRACE=1` observer now
+adds three **read-only scalar fields**:
+
+```text
+still_frame_count=... timed_page_once=... native_clock_raw=...
+```
+
+They refer respectively to `[0x60CFA8]` (DWORD),
+`[0x6A7785]` (BYTE) and `[0x6B4CA0]` (DWORD).
+The sample remains bounded to <=61 readings, at least
+1500 ms apart, within 90 s of first Flip; the new
+values do not grant shutdown authority. This is
+**diagnostic only**; the two static screens do not
+yet support F12.
+
+Next Wine check: same diagnostic environment variable,
+but keep the game foreground throughout intro (avoid
+15s focus pause), let the timed page progress normally,
+then remain on the second Enter page long enough to
+get >=2 samples before pressing Enter and finally
+F12 at the real menu. Upload full log to correlate
+raw native counters with the two page transitions.
+The diagnostic is optional and remains off by default.
+
+PR #26 remains draft/unmerged; yellow-frame visual
+issue deferred until actual Windows testing per
+user request.
+
+---
+
 ## 2026-10-23 — Passive startup still-screen controller probe (Wine test pending)
 
 After the independent Wine F12 validations for the four
