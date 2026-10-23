@@ -629,6 +629,43 @@ def test_debug_first_menu_native_clock_busy_wait_probe_is_gated_and_read_only():
 
 
 
+
+def test_new_game_submenu_clock_wait_probe_is_passive_and_covers_menu_exit():
+    """Original Shell_MainMenu calls 0x4E5D60 at 0x494209 AFTER
+    the menu item has been selected and the menu resources cleaned up.
+    User reports a new 3-4s stall when choosing New Game. This
+    diagnostic callsite must ALWAYS run the original wait untouched,
+    even when the initial F12 menu wait bypass is enabled.
+    """
+    assert "SPIDER_MENU_WAIT_EXIT_SITE ((BYTE *)(uintptr_t)0x00494209u)" in SRC
+    assert "menu_wait_exit_original[5]={0xE8,0x52,0x1B,0x05,0x00}" in SRC
+    assert "static volatile LONG debug_menu_wait_exit_hook_installed=0;" in SRC
+    body=SRC[SRC.index("static void __cdecl spider_f12_debug_menu_wait(DWORD ticks,int which)"):
+             SRC.index("static void __cdecl spider_f12_debug_menu_wait_cond(DWORD ticks)")]
+    assert "if(which!=3 &&" in body
+    assert "SPIDER_NATIVE_CLOCK_WAIT(ticks);" in body
+    assert body.count("SPIDER_NATIVE_CLOCK_WAIT(ticks);")==1
+    assert "if(which==3 &&" in body
+    assert "DEBUG-MENU-EXIT-CLOCK-WAIT site=0x00494209" in body
+    assert "SELECTED ACTION UNKNOWN" in body
+    assert "elapsed_ms>=100u" in body
+    assert "init_bypass_state" in body
+    assert "native_clock_before=" in body
+    assert "native_clock_after=" in body
+    install=SRC[SRC.index("static void install_debug_menu_wait_exit_probe(void)"):
+                SRC.index("static int install_intro_timed_clock_hook(void)")]
+    assert "patch_native_call(SPIDER_MENU_WAIT_EXIT_SITE" in install
+    assert "menu_wait_exit_original" in install
+    assert "spider_f12_debug_menu_wait_exit" in install
+    assert "InterlockedExchange(&debug_menu_wait_exit_hook_installed,1)" in install
+    assert "restore_intro_tick_call(SPIDER_MENU_WAIT_EXIT_SITE,menu_wait_exit_original)" in install
+    assert "if(GetPrivateProfileIntA(\"Debug\",\"Log\",0,ini)==1)" in SRC
+    assert "install_debug_menu_wait_exit_probe();" in SRC
+    for forbidden in ("ExitProcess(", "TerminateProcess(", "DestroyWindow(",
+                      "SetForegroundWindow(", "SendInput(", "GetDeviceData(",
+                      "*SPIDER_TRACE_NATIVE_CLOCK_RAW=", "Sleep("):
+        assert forbidden not in body
+
 def test_f12_skip_initial_menu_wait_follows_test_mode_unless_explicit_ini_opt_out():
     """Experimental alternative to a 3100ms first-frame native clock wait.
 
