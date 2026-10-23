@@ -43,7 +43,7 @@ is used. Changes are being developed in
 
 | Stage | Implementation and manual validation |
 | --- | --- |
-| Four opening Bink videos | Original game video cleanup and top-level Quit handoff; previously tested |
+| Four opening Bink videos | **Windows 11 build #589 revealed a bug**: first F12 stopped Bink but continued into the first still; second F12 was required to exit. **New single-F12 handoff to native still cleanup is implemented but not yet tested on Windows** (requires `ExperimentalQuickExitF12InIntroStills=1`) |
 | First timed pre-menu still | **Validated on Windows 11 and Linux/Wine**: F12 defers to original timed-page completion and input-wait cleanup, then original menu Quit; no residual `SpideyPC.exe` in Windows Task Manager |
 | Second `Press Enter` pre-menu still | **Validated on Windows 11 and Linux/Wine**: F12 takes original input-wait completion, then original menu Quit; no residual `SpideyPC.exe` in Windows Task Manager |
 | Interactive main menu | Original `Shell_MainMenu` Quit command (slot 3, action 18); **validated on Windows 11** |
@@ -84,6 +84,16 @@ ExperimentalQuickExitF12InIntroStills=1
 ```
 
 - `QuickExitF12` activates the main menu and opening-video handling.
+  **Opening-video F12 caveat:** Windows build #589 showed
+  that the original startup dispatcher can bypass its Quit-byte
+  check, reaching the first timed image after one F12. The
+  latest *unvalidated* fix preserves that SAME F12 request
+  and carries it into native pre-menu input-wait cleanup
+  when `ExperimentalQuickExitF12InIntroStills=1`.
+  The first image's original timer may finish before
+  exit; no second F12 or injected Enter should be necessary.
+  If the separate intro-still setting is OFF, this
+  single-key fallback remains unavailable.
 - `ExperimentalQuickExitF12In3D` allows the native 3D shutdown.
 - `ExperimentalQuickExitF12InNewGameMovie` additionally allows
   clean shutdown during **New Game Bink movie #4**, after native
