@@ -1,3 +1,74 @@
+## 2026-10-23 — Windows #541: New Game cinematic owned by 0x4279FB
+
+The user provided `SpiderMan2k1Fix(20261023-052925).log`
+from Windows build #541 (`v1.0.0-3cdb39c`). The opt-in,
+SHA-gated passive trace logged:
+
+```text
+POST-SHELL-BINK-PARENT native_tick_return=0x00470822 parent_return=0x00427A00 known_original_site=1 movie_id=1127284736 allow_skip=1
+```
+
+Original EXE static disassembly resolves the caller **unambiguously**
+to `0x4279FB` (return address `0x427A00`):
+
+```asm
+004279F0 push 0x3F800000     ; float 1.0 playback scalar
+004279F5 push 1              ; argument 3
+004279F7 push 1              ; argument 2 (allow-skip)
+004279F9 push 4              ; argument 1 (true video ID)
+004279FB call 0x470750
+00427A00 add  esp,0x10
+00427A03 pop  esi
+00427A04 pop  ebx
+00427A05 ret
+```
+
+**Correction to the diagnostic:** reported
+`movie_id=1127284736` is **not** a video ID.
+It is `0x43310000`, interpreted as IEEE-754 float
+`177.0`, from a temporary value the game stores
+over the argument slot at `0x4707E4` (then converts
+to floating point at `0x4707E8–0x4707EC`) *before*
+the hooked Bink tick. The native ID is **4**, established
+by the exact original `push 4` at `0x4279F9`.
+The trace now **does not read or log** that overwritten
+slot; the supported report contains parent return and
+the preserved `allow_skip=1` only.
+
+**Parent chain:** the movie-owning function
+`0x427910` is itself called at `0x4E0461` from
+the original scene script interpreter. Once native Bink
+teardown at `0x470871` runs and `0x4279FB`
+returns, the interpreter continues:
+
+```asm
+004E0466 add esp,0x0C
+004E0469 add ebx,0x02        ; advance script operand
+004E046C jmp 0x4E2B3F       ; process next scene opcode
+004E2B3F mov di,[ebx]
+004E2B42 cmp di,0xFFFF
+004E2B4B jne 0x4E029D      ; dispatch next opcode
+```
+
+Therefore emulating Space alone does **not** exit
+the process: after video cleanup, the game continues
+the scene script and eventually starts 3D. A native F12
+cinematic exit needs a proven **post-video,
+post-script cleanup** handoff to an original engine
+final-exit controller without skipping frame/exception
+unwinding, bypassing game-owned cleanup, or fabricating
+global engine state. This has not yet been established,
+and cinematic F12 remains disabled in this PR.
+
+The submitted run also shows the original movie flag
+and handle clearing, entry to native game-input owner,
+and existing 3D F12 reaching controller-7
+`outcome=NATIVE-FINAL-CLEANUP`. A menu focus-loss
+and manual-resume cycle occurred before New Game;
+no focus-related crash appears in the log.
+
+---
+
 ## 2026-10-23 — Opt-in, one-shot runtime attribution of New Game native Bink parent
 
 The verified original EXE contains **30 different CALL sites** for
@@ -19,7 +90,7 @@ Then select `New Game`, let the comic still disappear, press Space
 during the cinematic, and (if native 3D works normally) F12 in
 3D. Inspect `POST-SHELL-BINK-PARENT` once, especially
 `native_tick_return`, `parent_return`,
-`known_original_site`, `movie_id` and `allow_skip`.
+`known_original_site` and `allow_skip`. The first original argument slot is overwritten before the Bink tick; recover a constant video ID from the original callsite instead.
 
 The x86 owner at `0x470750` saves ESI and EBX before both
 frame-tick CALL instructions. The instrumented wrapper uses
@@ -27,7 +98,7 @@ GCC `__builtin_frame_address(0)` to obtain *its own*
 frame pointer on entry (not an unwinder). It first checks the
 expected original tick-return address `0x470822` or
 `0x470864`; **only if matched** does it read the video
-owner's caller return address and first two arguments
+owner's caller return address and preserved second argument
 from the same already-established stack. The parent return
 is compared to the complete static whitelist of **30 exact
 return addresses**. All numbers are observations; no return
