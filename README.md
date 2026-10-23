@@ -29,6 +29,86 @@ SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must prov
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 
+### F10 development shortcut and native game cleanup
+
+**F10 is the only SpiderMan2k1Fix physical shortcut.** F11/F12 remain
+available for MangoHud under Linux. The original game's F12 →
+`PostMessageA(WM_CLOSE)` call is still suppressed to avoid an unsafe
+window closure. F12-named INI keys are accepted as *configuration
+aliases* for F10; they do not reactivate the F12 keyboard shortcut.
+
+The original New Game sequence and in-game native shutdown have been
+**validated under Wine** using the user's original
+`SpideyPC.exe` (SHA-256 checked):
+
+- **F10 at any point from the New Game comic through both introductory
+  3D cutscenes:** advance to gameplay, skipping the remaining comic,
+  movie #4 and/or native scripts. Both scripts use their original
+  `CutSceneSkipAllow` permission and cleanup. A single F10 during
+  Bink #4 now arms BOTH subsequent automatic native script skips.
+- F10 during playable 3D: gated original 3D cleanup
+  (`0x455BF3`), request 7, controller-7 cleanup, then
+  **return to the original main menu**. The native final-exit flag
+  at `0x45619D` is NOT forced for gameplay F10: the game process
+  remains alive, ready for another New Game.
+- **F10 during an active 3D CutSceneScript:** use the original
+  `CutSceneSkipAllow` permission and native script skip request,
+  never a synthetic Space key or request 7. In the verified two
+  New Game introductions, F10 jumps through both remaining scripts
+  to gameplay. During later in-level scripts, skip one native
+  CutSceneScript at a time, only when the owner permits it.
+- **F10 during playable 3D:** native menu return only when the
+  original scene manager confirms no active scripted cinematic.
+
+The F10 shortcut is **disabled by default** and intentionally **not generated** in `SpiderMan2k1Fix.ini`. To enable it for development,
+manually add the following to the existing `[Debug]` section:
+
+```ini
+[Debug]
+F10Shortcut=1
+```
+
+**When absent, `F10Shortcut` defaults to `0`.** The single opt-in
+enables every validated F10 behavior, independent of `Log=1`. If the
+INI already contains `[Debug]`, add only `F10Shortcut=1` under that
+heading, not a second copy of the section.
+
+Older `F10TestMode`, `F10Auto3DScripts`, `F10GameplayExit` and
+`[System] QuickExitF10` options remain accepted from older INIs.
+The obsolete `[System]` prototype options are no longer generated in
+new files; none is needed to use the consolidated `F10Shortcut`.
+`Log=1` retains diagnostic events, and `F10VerboseTrace=1` prints
+the extra research probes. Neither is required for `F10Shortcut=1` to
+work.
+
+**Repeated New Game:** after returning to the actual main menu through
+Esc → Exit → Yes, the next New Game comic should accept F10 again.
+The DLL resets its own per-session cinematic markers on the
+game-owned Shell_MainMenu callback, without restarting the process.
+See the two-session regression protocol in
+[the validation matrix](docs/F10_VALIDATION_MATRIX.md).
+
+**Wine validation:** build #713 verified the unified F10 shortcut,
+opening movie/comic/native 3D skips, and explicit native gameplay
+return to the main menu without exiting the process. With F10 OFF,
+the independent Bink-to-first-3D Enter/Space release safeguard also
+passed two consecutive New Game sessions. It waits for physical
+key-up at the verified original movie #4 handoff; no game-owned
+input bytes are rewritten and no keys are injected. The source of
+the transient Space-down state remains unproven.
+Native Windows 11 and arbitrary later in-level scripts/cutscene
+engines have not been fully validated. To disable F10, remove its
+line or set `F10Shortcut=0` (and disable any legacy opt-ins).
+
+See the [F10 validation matrix](docs/F10_VALIDATION_MATRIX.md)
+for the exact scenarios, required log messages and unverified
+cases. The historical F12 development records are preserved in
+[the research log](docs/F12_DEBUG_TEST_MODE.md); their old key
+names and historical test outcomes should not be interpreted as
+current physical F12 behavior.
+
+Development and validation history: [PR #26](https://github.com/legluondunet/SpiderMan2k1Fix/pull/26).
+
 ## Requirements and compatibility
 
 - An installed copy of the **original Windows PC version of Spider-Man**, including its game data.

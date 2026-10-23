@@ -32,6 +32,7 @@
 #include "version_info.h"
 #include "f9_png.h"
 #include "f9_toast.h"
+#include "quick_exit_f12.h"
 
 static const BYTE expected_sha256[32] = {
   0x0a,0x11,0xa4,0x9f,0x3f,0x63,0xd4,0xbb,
@@ -752,6 +753,7 @@ static volatile LONG hud_probe_enabled=0,hud_probe_frames=0;
 static volatile LONG hud_probe_seen=0,hud_probe_left=0,hud_probe_right=0,hud_probe_instructions=0,hud_probe_boss=0;
 static volatile LONG hud_probe_boss_extra=0,hud_probe_boss_blt=0;
 static void hud_probe_flip(void) {
+  if(SpiderQuickExitF12_Enabled())return; /* F12 reserved for quick exit. */
   if(InterlockedCompareExchange(&hud_probe_enabled,0,0)!=1) return;
   if((GetAsyncKeyState(VK_F12)&1)!=0 && game_hwnd &&
      GetForegroundWindow()==game_hwnd) {
@@ -974,6 +976,9 @@ static const void *maybe_correct_native_comic(void *device,D3DPRIMITIVETYPE type
        (unsigned)count,(unsigned)type,(unsigned long)fvf,(unsigned long)rva,
        (unsigned)desc.dwWidth,(unsigned)desc.dwHeight,
        (unsigned)desktop_w,(unsigned)desktop_h)) return source;
+  /* Rendering only; never treat a candidate quad as native scene ownership. */
+  SpiderQuickExitF12_ObserveComicRender(InterlockedCompareExchange(&flip_count,0,0),
+                                        rva,desc.dwWidth,desc.dwHeight);
   if(!SpiderComicNative_Transform((const SpiderMenuVertex*)source,copy,
                 (unsigned)count,(unsigned)desktop_w,(unsigned)desktop_h)) return source;
   InterlockedExchange(&f9_comic_last_draw_flip,
@@ -1377,6 +1382,10 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
   /* Only retain surfaces actually presented as recognized intro video.
    * Same game thread as F9; no worker accesses DirectDraw objects. */
   if(SUCCEEDED(hr) && f9_movie_present && source) {
+    /* A decoded intro video can continue even with the original
+     * 0x006151F8 'movie active' bit zero. Always record the actual
+     * successful movie presentation for F12 shutdown safety. */
+    SpiderQuickExitF12_ObserveMovieFrame();
     if(source!=f9_movie_source) {
       IDirectDrawSurface7_AddRef(source);
       if(f9_movie_source) IDirectDrawSurface7_Release(f9_movie_source);
@@ -2129,6 +2138,7 @@ static void pause_at_flip_if_background(void) {
 }
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
+  SpiderQuickExitF12_ObserveEngineState(count,InterlockedCompareExchange(&menu_upscale_active,0,0)==1); /* passive native mode+2D renderer tracing */
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
@@ -2492,6 +2502,7 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
            (void*)hwnd,(unsigned long)flags);
   log_line(line);
   game_hwnd=hwnd;
+  SpiderQuickExitF12_AttachWindow(hwnd);
   /* Only the idle-scene notification fallback uses a separate no-focus
    * translucent HWND, and only if the game stops issuing Flip. */
   SpiderF9Toast_SetGameWindow(hwnd,log_line);
@@ -2711,6 +2722,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
    * No COM-vtable interception. The actual patch is delayed to Flip #120. */
