@@ -1336,7 +1336,7 @@ def test_newgame_f12_3d_two_space_skippable_scenes_remain_distinct_from_gameplay
     assert "DEBUG-NEWGAME-3D-SPACE-EVENT" in worker
     assert "InterlockedIncrement(&debug_newgame_3d_space_edges)" in worker
     assert "previous_3d_space==0 && space_down" in worker
-    assert "SCENE ID UNKNOWN; NO EXIT AUTHORITY" in worker
+    assert "RAW PHYSICAL PRESS ONLY; MAY BE GAMEPLAY JUMP; NO SCENE OR EXIT AUTHORITY" in worker
     assert "TWO SPACE-skippable 3D introductions vs gameplay NOT YET VERIFIED" in worker
     assert worker.index("DEBUG-NEWGAME-3D F12 consumed") < worker.index(
         "DEBUG-3D-EXIT native gameplay exit queued")
