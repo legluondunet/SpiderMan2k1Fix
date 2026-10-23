@@ -1,3 +1,43 @@
+## 2026-10-23 — Fast initial menu wait workaround: user validation on build #645
+
+The user explicitly confirmed **"test validé !"** after
+testing Windows-x86 artifact **build #645**, introducing
+the separately opt-in `[Debug] F12SkipInitialMenuWait=1`
+workaround (with `F12TestMode=1`). Record the fix as
+**user-validated in the tested configuration**: skipping
+an opening Bink video with F12 reaches a usable main
+menu without the previously reported ~3–4-second
+unresponsive interval.
+
+The validation follows the requested end-to-end check
+of **F12 during opening video → main menu → New Game
+comic → New Game Bink → 3D → F12 native exit**.
+There is **no newly uploaded diagnostic log** accompanying
+this acceptance message; do not claim measured bypass
+duration, a specific `NATIVE-CLOCK-ADVANCED` log marker,
+frame-perfect behavior, or a new cross-platform test
+from this message alone. The previously attached log
+`SpiderMan2k1Fix(20261023-121645).log` belongs to
+the pre-workaround diagnostic build #637; it proves the
+source stall, not the success of #645.
+
+**Safe defaults are unchanged:**
+`F12TestMode=0` and `F12SkipInitialMenuWait=0` in
+the generated INI. The old full F12-exit implementation
+is frozen on `backup/f12-native-exit-validated-20261023`
+(`4adf16aa13a867a3256f7a2f7ce506cc53b9b82a`).
+The immediately preceding non-bypassing F12TestMode
+implementation is also frozen on
+`backup/f12-debug-menu-wait-before-experiment-20261023`
+(`f00fe26f02724c924e368960c52ea47ac3aff378`).
+
+This update only records validation. It does not
+alter F12 runtime behavior, enable experimental
+options for other users, or merge PR #26. PR stays
+**draft/open/unmerged** until explicit approval.
+
+---
+
 ## 2026-10-23 — Original clock wait confirmed: optional fast-menu experiment
 
 The user's new diagnostic log
