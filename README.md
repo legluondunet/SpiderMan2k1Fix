@@ -356,7 +356,7 @@ choice**. Enable `Log=1` only to diagnose such failures.
 under Wine in PR #25, build #717: eleven 1920×1080 PNGs
 (`scrn0000.png` through `scrn0010.png`) from intro movies,
 menus, comics and 3D. The new *always-on* initialization still requires
-a fresh Wine and native Windows regression test.
+a fresh Wine and native Windows 11 regression test.
 
 The old `SPIDERMAN2K1FIX_F9_PNG_ONLY`, `SPIDERMAN2K1FIX_F9_PNG`
 and `SPIDERMAN2K1FIX_F9_BACKBUFFER` variables no longer select any
