@@ -1786,8 +1786,8 @@ def test_f10_second_new_game_rearms_only_on_real_native_menu_return():
     assert "static void spider_f10_reset_session_on_native_menu(void)" in SRC
     helper=SRC[SRC.index("static void spider_f10_reset_session_on_native_menu(void)"):
                SRC.index("/* Returns nonzero ONLY when a recent", SRC.index("static void spider_f10_reset_session_on_native_menu(void)"))]
-    assert "debug_newgame_progress=3" in helper
-    assert "input_native_invocations>0" in helper
+    assert "old_progress=InterlockedCompareExchange(&debug_newgame_progress,0,0);" in helper
+    assert "old_owner=InterlockedCompareExchange(&input_native_invocations,0,0);" in helper
     assert "debug_f12_test_mode,0,0)!=1" in helper
     assert "*SPIDER_GAME_BINK_ACTIVE!=0u" in helper
     assert "*SPIDER_BINK_VIDEO_HANDLE!=0u" in helper
