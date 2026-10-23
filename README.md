@@ -41,8 +41,10 @@ Log=1
 
 With this enabled, **F12 before the main menu navigates to the main
 menu**, using the original Bink and static-page cleanup. The first
-static page's original timer is still respected. **F12 in active 3D
-gameplay quits the game** via the existing native controller-7 exit.
+auto-timed page is now **accelerated** by its own native timeout
+comparison, without waiting several seconds or bypassing its
+resource/SEH cleanup. **F12 in active 3D gameplay quits the game**
+via the existing native controller-7 exit.
 F12 in the main menu, comic or subsequent New Game cinematic is
 ignored. The single `[Debug] F12TestMode` option overrides the
 older `[System]` F12 controls and defaults to `0`; `Log=1` is
@@ -52,8 +54,9 @@ The complete previously validated F12 implementation was archived
 at [`backup/f12-native-exit-validated-20261023`](https://github.com/legluondunet/SpiderMan2k1Fix/tree/backup/f12-native-exit-validated-20261023)
 (commit `4adf16aa13a867a3256f7a2f7ce506cc53b9b82a`).
 See [F12 debug mode and restoration guide](docs/F12_DEBUG_TEST_MODE.md).
-**This new mode is experimental and has not yet been manually
-validated on Windows/Wine.** PR #26 remains draft and unmerged.
+**The original fast-test mode was user-tested on Windows 11; this
+new first-still timer acceleration has not yet been manually
+validated.** PR #26 remains draft and unmerged.
 
 ### Optional F12 quick exit — native cleanup, experimental stages
 
