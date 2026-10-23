@@ -84,6 +84,12 @@
 #define SPIDER_TRACE_STILL_FRAME_COUNT ((const volatile DWORD *)(uintptr_t)0x0060CFA8u)
 #define SPIDER_TRACE_TIMED_PAGE_ONCE ((const volatile BYTE *)(uintptr_t)0x006A7785u)
 #define SPIDER_TRACE_NATIVE_CLOCK_RAW ((const volatile DWORD *)(uintptr_t)0x006B4CA0u)
+/* Original 0x4A17A0 input-wait page CALL: 0x4A1896: call 0x50C180.
+ * Original arguments: (0x40010,1,1), expected return VA 0x4A189B.
+ * Its regular true-result branch at 0x4A18AE performs all original
+ * page-specific cleanup and restores SEH before calling real menu. */
+#define SPIDER_INTRO_STILL_INPUT_CALL ((BYTE *)(uintptr_t)0x004A1896u)
+#define SPIDER_INTRO_STILL_NATIVE_INPUT ((BYTE (__cdecl *)(DWORD,DWORD,DWORD))(uintptr_t)0x0050C180u)
 /* Top-level dispatch state is observed, never written, from the already
  * installed IDirectDraw7::Flip hook. These are fixed BSS addresses of the
  * SHA-gated 2001 executable; mode labels require runtime correlation. */
@@ -142,6 +148,7 @@ static const BYTE shell_menu_quit_return_signature[5]={0x6A,0x00,0x68,0x00,0x20}
 static const BYTE intro_tick_call_original_1[5]={0xE8,0x7E,0xAD,0x09,0x00};
 static const BYTE intro_tick_call_original_2[5]={0xE8,0x3C,0xAD,0x09,0x00};
 static const BYTE post_intro_cleanup_original[5]={0xE8,0xA8,0xDD,0xFE,0xFF};
+static const BYTE intro_still_input_original[5]={0xE8,0xE5,0xA8,0x06,0x00};
 static const BYTE top_level_native_quit_test_original[6]={0x38,0x1D,0x88,0xCF,0x60,0x00};
 static const BYTE native_pause_call_original[5]={0xE8,0xF2,0x66,0x02,0x00};
 static const BYTE native_game_input_call_original[5]={0xE8,0xB0,0xB9,0xFE,0xFF};
@@ -181,6 +188,12 @@ static volatile LONG parent_trace_enabled=0;
  * No additional executable hooks, game state writes or F12 authority. */
 static volatile LONG static_screen_trace_enabled=0;
 static volatile LONG post_intro_cleanup_seen=0;
+/* Separate experimental intro-still F12 route. 0 idle, 1 pending,
+ * 2 native input-wait finished, 3 original Shell_MainMenu Quit. */
+static volatile LONG intro_still_opt_in=0;
+static volatile LONG intro_still_exit_state=0;
+static volatile LONG intro_still_request_ms=0;
+static volatile LONG intro_still_hook_installed=0;
 static volatile LONG last_native_game_input_ms=0;
 static volatile LONG last_game3d_flip_ms=0;
 /* 0 idle, 1 requested, 2 native request 7 dispatched, 3 final exit. */
@@ -809,6 +822,44 @@ static void __cdecl spider_after_intro_cleanup(int mode) {
   }
 }
 
+/* Wrapper for ORIGINAL 0x4A1896 input check, on the game's own
+ * input-wait scene thread. Never free the game-owned page directly,
+ * jump across its exception frame or post a synthetic Enter event.
+ * A verified F12 request may return the same TRUE completion as the
+ * original input, letting 0x4A18AE clean objects and restore SEH. */
+static BYTE __cdecl spider_f12_intro_still_native_input(
+    DWORD mask,DWORD arg1,DWORD arg2) {
+  BYTE original=SPIDER_INTRO_STILL_NATIVE_INPUT(mask,arg1,arg2);
+  if(InterlockedCompareExchange(&intro_still_exit_state,0,0)!=1)
+    return original;
+  {
+    const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+    DWORD started=(DWORD)InterlockedCompareExchange(&intro_still_request_ms,0,0);
+    DWORD age=started ? (DWORD)(GetTickCount()-started) : 0xFFFFFFFFu;
+    if(SpiderQuickExitF12_Enabled() &&
+       InterlockedCompareExchange(&intro_still_opt_in,0,0)==1 &&
+       InterlockedCompareExchange(&post_intro_cleanup_seen,0,0)==1 &&
+       InterlockedCompareExchange(&real_main_menu_seen,0,0)==0 &&
+       *SPIDER_GAME_BINK_ACTIVE==0u &&
+       *SPIDER_BINK_VIDEO_HANDLE==0u &&
+       *SPIDER_TRACE_MENU_CONTEXT!=0u &&
+       *SPIDER_TRACE_TIMED_PAGE_ONCE==1u &&
+       *SPIDER_ENGINE_MODE==0u &&
+       (DWORD)frame[1]==0x004A189Bu &&
+       mask==0x40010u && arg1==1u && arg2==1u &&
+       age<=15000u &&
+       InterlockedCompareExchange(&intro_still_exit_state,2,1)==1) {
+      /* Only the original REAL Shell_MainMenu frame may consume this
+       * request; it follows this page's own resource/SEH teardown. */
+      InterlockedExchange(&delivered,0);
+      InterlockedExchange(&pending,1);
+      say("QUICK-EXIT-F12: INTRO-STILL original input-wait owner 0x4A1896 verified; normal TRUE completion for 0x4A18AE native page cleanup; menu Quit queued [EXPERIMENTAL]");
+      return 1;
+    }
+  }
+  return original;
+}
+
 /* Returns nonzero ONLY when a recent, explicitly requested F12 action
  * may be delivered inside the ACTUAL Shell_MainMenu frame loop. This
  * never mutates engine state or executes resource cleanup itself.
@@ -825,6 +876,8 @@ int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void) {
    * game-owned movie and transition cleanup, not via an early menu. */
   if(InterlockedCompareExchange(&pending,0,1)==1) {
     InterlockedExchange(&delivered,1);
+    if(InterlockedCompareExchange(&intro_still_exit_state,3,2)==2)
+      say("QUICK-EXIT-F12: INTRO-STILL native page owner returned; original Shell_MainMenu Quit now activated [EXPERIMENTAL]");
     say("QUICK-EXIT-F12: native Shell_MainMenu Quit activated: slot=3 action=18, native cleanup branch=0x4941D5");
     return 1;
   }
