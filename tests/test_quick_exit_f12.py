@@ -845,7 +845,7 @@ def test_external_windows_watcher_verifies_direct_3d_f12_cleanup_and_expected_mo
     script=(ROOT/"tools/Verify-F12QuickExit.ps1").read_text(encoding="utf-8")
     assert 'ValidateSet("Any","Menu","3D","Intro")' in script
     assert '$ExpectedMode = "Any"' in script
-    assert "3D game-thread frame completed; native request 7 queued" in script
+    assert "DEBUG-F10-GAMEPLAY-EXIT original owner script idle; native request 7" in script
     assert "NATIVE-3D-CLEANUP completed" in script
     assert "CONTROLLER-7 native teardown COMPLETED" in script
     assert "bit4=1 .*outcome=NATIVE-FINAL-CLEANUP" in script
@@ -1225,7 +1225,7 @@ def test_3d_native_request_logging_excludes_post_call_f12_injection():
     assert cb.index(f12_write) < cb.index(native_condition)
     assert "if(after_request==7u && before_request!=7u)" not in cb
     assert cb.index(native_condition) < cb.index("InterlockedIncrement(&input_native_requested7)")
-    assert "3D game-thread frame completed; native request 7 queued" in cb
+    assert "DEBUG-F10-GAMEPLAY-EXIT original owner script idle; native request 7" in cb
     assert "NATIVE REQUEST 7 observed after 0x440EF0 (internal writer unconfirmed)" in cb
     # The F12-injected request must never increment the native-owner counter.
 
@@ -1241,7 +1241,7 @@ def test_3d_request_7_issued_only_on_native_owner_thread_after_input_tick():
     assert "*SPIDER_GAME_BINK_ACTIVE==0u" in cb
     assert "*(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;" in cb
     assert cb.index("SPIDER_NATIVE_GAME_INPUT_UPDATE();") < cb.index("*(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;")
-    assert "3D game-thread frame completed; native request 7 queued for original 0x455BF3 cleanup" in cb
+    assert "DEBUG-F10-GAMEPLAY-EXIT original owner script idle; native request 7 for original 0x455BF3 cleanup" in cb
     assert "game3d_cleanup_baseline" in cb
     assert "game3d_cleanup_confirmed" in cb
     assert "ExitProcess(" not in cb and "TerminateProcess(" not in cb
@@ -1319,7 +1319,7 @@ def test_f12_gameplay_exit_fails_closed_after_movie_owner_even_if_native_last_ti
                    SRC.index("static void __cdecl spider_observe_native_game_cleanup(")]
     assert "if((phase==1 || phase==2)" in game_owner
     assert "InterlockedCompareExchange(&debug_newgame_progress,3,phase)" in game_owner
-    assert "InterlockedCompareExchange(&game3d_exit_state,0,1)==1" in game_owner
+    assert "InterlockedCompareExchange(&game3d_exit_state,0,0)==1" in game_owner
     assert "NO CONTROLLER 7" in game_owner
 
 
@@ -1339,7 +1339,7 @@ def test_newgame_f12_3d_two_space_skippable_scenes_remain_distinct_from_gameplay
     assert "InterlockedIncrement(&debug_newgame_3d_space_edges)" in worker
     assert "previous_3d_space==0 && space_down" in worker
     assert "RAW PHYSICAL PRESS ONLY; MAY BE GAMEPLAY JUMP; NO SCENE OR EXIT AUTHORITY" in worker
-    assert "auto cinematic skips are opt-in; gameplay EXIT BLOCKED" in worker
+    assert "DEBUG-F10-GAMEPLAY-EXIT BLOCKED" in worker
     assert worker.index("DEBUG-F10-GAMEPLAY-EXIT BLOCKED") < worker.index(
         "DEBUG-3D-EXIT native gameplay exit queued")
     assert "SendInput(" not in worker
@@ -1729,10 +1729,10 @@ def test_f10_gameplay_exit_only_after_two_verified_native_script_lifetimes():
               SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
     final_guard=owner[owner.index("Native-game-thread FINAL eligibility"):
                       owner.index("after_timer=*SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE")]
+    assert "game3d_exit_state,2,1" in owner
     for proof in ("VirtualQuery(", "scene[0x1acu]==0u && scene[0x1b4u]==0u",
                   "debug_cutscene_lifecycle,0,0)==6", "debug_auto3d_state,0,0)==7",
-                  "scripts_idle &&", "before_request==0u && after_request==0u",
-                  "game3d_exit_state,2,1"):
+                  "scripts_idle &&", "before_request==0u && after_request==0u"):
         assert proof in final_guard
     assert "SendInput(" not in final_guard
     assert "GetAsyncKeyState(VK_F12)" not in worker

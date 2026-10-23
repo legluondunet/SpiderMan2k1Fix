@@ -680,7 +680,7 @@ static void __cdecl spider_observe_native_game_input(void) {
         InterlockedCompareExchange(&debug_cutscene_lifecycle,0,0)!=6 ||
         InterlockedCompareExchange(&debug_auto3d_state,0,0)!=7)) {
       InterlockedCompareExchange(&game3d_exit_state,0,1);
-      say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT stale request ABORTED during script");
+      say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT stale request ABORTED during script [NO CONTROLLER 7]");
     }
   }
   /* Passive 3D phase trace. The physical SPACE key skips BOTH native
@@ -1252,7 +1252,7 @@ static void __cdecl spider_observe_native_game_input(void) {
        InterlockedCompareExchange(&debug_auto3d_state,0,0)==7 &&
        InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
        *SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST==0u &&
-       *SPIDER_PAUSE_CONTEXT==0u &&
+       !(*SPIDER_PAUSE_CONTEXT) &&
        *SPIDER_BINK_VIDEO_HANDLE==0u) {
       DWORD owner=*SPIDER_NATIVE_CUTSCENE_OWNER_PTR;
       MEMORY_BASIC_INFORMATION mbi;
@@ -2625,7 +2625,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
              InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
              lifecycle==6 && auto_stage==7 &&
              *SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST==0u &&
-             *SPIDER_ENGINE_MODE==0u && *SPIDER_PAUSE_CONTEXT==0u &&
+             *SPIDER_ENGINE_MODE==0u && !(*SPIDER_PAUSE_CONTEXT) &&
              *SPIDER_GAME_BINK_ACTIVE==0u && *SPIDER_BINK_VIDEO_HANDLE==0u &&
              owner_tick && (DWORD)(now-owner_tick)<350u &&
              render_tick && (DWORD)(now-render_tick)<350u) {
