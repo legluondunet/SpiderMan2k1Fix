@@ -192,7 +192,7 @@ def test_f12_auto_3d_scripts_key_is_validated_as_strict_debug_boolean(
 ):
     """Regression: a known opt-in must never be treated as an unknown
     key and silently dropped by automatic INI recovery."""
-    config = f"[Debug]\\nLog=1\\nF12TestMode=1\\nF12Auto3DScripts={value}\\n"
+    config = f"[Debug]\nLog=1\nF12TestMode=1\nF12Auto3DScripts={value}\n"
     result, detail = validate(runner, tmp_path, config)
     if valid:
         assert result == (0, 0, 1), detail
