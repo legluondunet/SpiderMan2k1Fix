@@ -1,3 +1,43 @@
+## 2026-10-23 — first passive comic-stage correlation (Windows log)
+
+User supplied `SpiderMan2k1Fix(20261023-030218).log` from
+`v1.0.0-6668f82`, with `QuickExitF12=1` and
+`ExperimentalQuickExitF12In3D=1` and **no F12 during the comic**.
+The log contains:
+
+```text
+QUICK-EXIT-F12: REAL Shell_MainMenu frame callback observed (0x493DD6)
+BORDERLESS: MENU exited; windowed gameplay presentation active
+COMIC-NATIVE-FIX: #1 stage=NATIVE rva=0x00102C72 texture=512x256
+QUICK-EXIT-F12: ENGINE-STATE flip=405 renderer2d=0 mode_request=0 ... menu_seen=1
+QUICK-EXIT-F12: NATIVE-GAME-INPUT owner ENTER n=1 request=0 timer_active=0 flag1=0 flag2=0
+QUICK-EXIT-F12: NATIVE-GAME-INPUT owner EXIT n=255 NATIVE REQUEST 7 observed after 0x440EF0 (internal writer unconfirmed)
+QUICK-EXIT-F12: NATIVE-3D-CLEANUP completed n=1 request=7
+QUICK-EXIT-F12: CONTROLLER-7 native teardown COMPLETED n=1 bit4=0 status=-1 outcome=RETURN-TO-CONTROLLER
+```
+
+The **single logged** comic-render candidate appears between
+the menu-to-gameplay rendering switch and first native game-input owner
+entry. The log **does not** show page-by-page comic transitions or
+a game-owned comic cleanup routine. In particular, the graphics caller
+`0x00102C72` is NOT established to be a scene controller. The native
+3D exit to main menu remains unchanged and still returns to the
+controller rather than terminating the process.
+
+Next instrumentation (diagnostic only): from the existing exact
+D3D7 comic geometry/texture candidate, emit a throttled
+`COMIC-RENDER-CANDIDATE` timestamp/flip, pending engine request,
+Bink state, observed count/age of 3D owner ticks, without changing
+any exit logic, game globals, input hooks, or COM cleanup. Because
+the existing comic classifier is opt-in, this probe requires
+`[Display] ExperimentalComicNativeAspect=1` plus
+`[System] QuickExitF12=1`. **A draw event never authorizes an F12
+comic shutdown.** Correlate further Windows runs with normal
+comic-page advancement. The original executable's exact native
+comic-owner/cleanup flow is still unidentified.
+
+---
+
 ## 2026-10-23 — Windows 11: F12 disabled / original unsafe close suppressed (PASS)
 
 User manually disabled both
