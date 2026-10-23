@@ -47,7 +47,10 @@ static int spider_ini_in(const char *name,const char *const *items,size_t count)
 }
 #define SPIDER_INI_IN(value,array) spider_ini_in(value,array,sizeof(array)/sizeof((array)[0]))
 static const char *const spider_ini_sections[]={"Debug","System","Display","HUD","Input","Audio","Keyboard","Joystick","Internal"};
-static const char *const spider_ini_debug[]={"Log","F12TestMode"};
+/* Native two-cutscene F12 auto-skip opt-in: never silently discard it
+ * during INI preflight/repair. The generic Debug validator below
+ * already enforces strict boolean values (0/1). */
+static const char *const spider_ini_debug[]={"Log","F12TestMode","F12Auto3DScripts"};
 static const char *const spider_ini_system[]={"QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic","ExperimentalQuickExitF12InIntroStills"};
 static const char *const spider_ini_display[]={
   "Resolution","AspectRatio","Brightness","FPSLimit","FOV",

@@ -71,3 +71,28 @@ def test_repair_wiring_is_safe_and_atomic():
     assert src.index('SpiderIni_Validate(tmp,NULL,NULL)') < src.index('CopyFileA(ini,backup,TRUE)')
     assert 'if(!ini_writes_permitted)' in src
     assert 'SpiderCfg_ValidateCurrentIni(log_line)' in (ROOT/'spiderman2k1fix.c').read_text()
+
+
+def test_repair_preserves_f12_auto3d_opt_in_and_other_valid_settings(recover_runner, tmp_path):
+    """Recover first valid debug opt-in instead of losing it on repair."""
+    ini = (
+        "[Debug]\\nLog=1\\nF12TestMode=1\\n"
+        "F12Auto3DScripts=1\\n"
+        "[Display]\\nResolution=1920x1080\\n"
+        "[Keyboard]\\nJump=SPACE\\n"
+        "[Unknown]\\nKey=bad\\n"
+    )
+    values = recover(recover_runner, tmp_path, ini)
+    assert "[Debug] Log=1" in values
+    assert "[Debug] F12TestMode=1" in values
+    assert "[Debug] F12Auto3DScripts=1" in values
+    assert "[Display] Resolution=1920x1080" in values
+    assert "[Keyboard] Jump=SPACE" in values
+    assert not any("Unknown" in item for item in values)
+
+
+def test_repair_excludes_invalid_f12_auto3d_values(recover_runner, tmp_path):
+    values = recover(recover_runner, tmp_path,
+                     "[Debug]\\nF12Auto3DScripts=INVALID\\nF12Auto3DScripts=1\\n")
+    assert "[Debug] F12Auto3DScripts=1" in values
+    assert "[Debug] F12Auto3DScripts=INVALID" not in values

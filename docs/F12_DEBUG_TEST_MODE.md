@@ -1,3 +1,45 @@
+## 2026-10-23 — Fix: auto-skip debug setting rejected by INI validation
+
+After Windows x86 build #678, the user reported
+`[Debug] F12Auto3DScripts=1` was NOT accepted
+by the game's INI preflight. Confirmed cause:
+`quick_exit_f12.c` loads that exact key with
+`GetPrivateProfileIntA`, but the
+`ini_validation.h` `spider_ini_debug[]`
+allowlist still contained only `Log` and
+`F12TestMode`. `SpiderCfg_ValidateCurrentIni`
+treats an unknown key as a warning and invokes
+automatic canonical INI repair, where
+`SpiderIni_Recover` drops it because it is
+not considered supported. Thus the option
+disappeared and the prototype stayed off
+before testing even started.
+
+Fix: add `F12Auto3DScripts` to the STRICT
+[Debug] allowlist (values ONLY `0` or `1`),
+also add a documented `F12Auto3DScripts=0`
+default to the actual Win32 generated-template
+literal in `virtual_spidey_cfg.c`, the
+checked-in generated example and the
+checked-in base INI. Keep enabled only via
+user's explicit edit; do NOT activate by
+default or on legacy INI files. Use existing
+C99 validator/recovery regression harnesses
+to verify enabled and disabled options are
+accepted without warnings, invalid values
+still fail validation, valid `1` survives
+an INI repair alongside display and keyboard
+preferences, and the factory template
+continues to default to `0`.
+
+This change does NOT alter the previously
+unvalidated native 3D script skip implementation,
+its two one-shot requests, or full-game
+F12 shutdown guard. PR #26 stays DRAFT,
+UNMERGED without user approval.
+
+---
+
 ## 2026-10-23 — Wine 18:01:30: full six-step native cutscene lifecycle and deliberate gameplay jump confirmed
 
 The user sent `SpiderMan2k1Fix(20261023-180130).log` from build #677.

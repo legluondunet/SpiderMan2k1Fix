@@ -181,3 +181,30 @@ def test_example_exposes_disabled_quick_exit():
     data = (ROOT / "SpiderMan2k1Fix.generated-example.ini").read_text()
     assert "[System]\n" in data
     assert "QuickExitF12=0" in data
+
+
+@pytest.mark.parametrize("value,valid", [
+    ("0", True), ("1", True),
+    ("2", False), ("-1", False), ("true", False), ("enabled", False), ("", False)
+])
+def test_f12_auto_3d_scripts_key_is_validated_as_strict_debug_boolean(
+    runner, tmp_path, value, valid
+):
+    """Regression: a known opt-in must never be treated as an unknown
+    key and silently dropped by automatic INI recovery."""
+    config = f"[Debug]\\nLog=1\\nF12TestMode=1\\nF12Auto3DScripts={value}\\n"
+    result, detail = validate(runner, tmp_path, config)
+    if valid:
+        assert result == (0, 0, 1), detail
+    else:
+        assert result[0] >= 1 and result[2] == 0, detail
+
+
+def test_complete_3d_opt_in_is_accepted_and_example_defaults_off(runner, tmp_path):
+    ini = (ROOT / "SpiderMan2k1Fix.generated-example.ini").read_text()
+    assert "F12Auto3DScripts=0" in ini
+    assert validate(runner, tmp_path, ini)[0] == (0, 0, 1)
+    enabled = ini.replace("Log=0", "Log=1", 1).replace(
+        "F12TestMode=0", "F12TestMode=1", 1
+    ).replace("F12Auto3DScripts=0", "F12Auto3DScripts=1", 1)
+    assert validate(runner, tmp_path, enabled)[0] == (0, 0, 1)
