@@ -1439,9 +1439,22 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
      !install_intro_still_input_hook()) {
     InterlockedExchange(&intro_still_opt_in,0);
     if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {
+      /* Never fall back to legacy F12 Quit if the debug mode's
+       * required native menu-skip hook is missing. Undo every
+       * installed game-thread hook, preserve original F12 WM_CLOSE
+       * suppression if possible, and leave this test mode OFF. */
       InterlockedExchange(&debug_f12_test_mode,0);
       InterlockedExchange(&experimental_game3d_enabled,0);
-      say("QUICK-EXIT-F12: DEBUG F12TestMode disabled: native still input hook unavailable (fail closed)");
+      restore_passive_controller7_probe();
+      restore_passive_game_cleanup_probe();
+      restore_passive_game_input_probe();
+      restore_passive_pause_probe();
+      restore_post_intro_checkpoint();
+      restore_intro_tick_hooks();
+      restore_original_menu_tick();
+      (void)suppress_unsafe_native_f12();
+      say("QUICK-EXIT-F12: DEBUG F12TestMode DISABLED: required native still hook unavailable; all F12 actions fail closed");
+      return;
     } else
       say("QUICK-EXIT-F12: INTRO-STILL native hook failed; still prototype disabled, other modes preserved");
   }
