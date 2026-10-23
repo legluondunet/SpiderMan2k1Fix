@@ -85,6 +85,13 @@
 #define SPIDER_TRACE_STILL_FRAME_COUNT ((const volatile DWORD *)(uintptr_t)0x0060CFA8u)
 #define SPIDER_TRACE_TIMED_PAGE_ONCE ((const volatile BYTE *)(uintptr_t)0x006A7785u)
 #define SPIDER_TRACE_NATIVE_CLOCK_RAW ((const volatile DWORD *)(uintptr_t)0x006B4CA0u)
+/* SHA-verified native first-still timer loop at 0x4A1930:
+ * 0x4A19D6 reads clock and sets EDI=clock+0xB4.
+ * 0x4A1A26 MOV EAX,[clock] (five bytes), then
+ * 0x4A1A2B CMP EAX,EDI / 0x4A1A2D JA native cleanup 0x4A1A36.
+ * Replace ONLY this second clock read with a CALL in Debug F12TestMode.
+ * Never modify the shared native clock, duration, page objects or SEH. */
+#define SPIDER_INTRO_TIMED_CLOCK_SITE ((BYTE *)(uintptr_t)0x004A1A26u)
 /* Original 0x4A17A0 input-wait page CALL: 0x4A1896: call 0x50C180.
  * Original arguments: (0x40010,1,1), expected return VA 0x4A189B.
  * Its regular true-result branch at 0x4A18AE performs all original
@@ -150,6 +157,7 @@ static const BYTE intro_tick_call_original_1[5]={0xE8,0x7E,0xAD,0x09,0x00};
 static const BYTE intro_tick_call_original_2[5]={0xE8,0x3C,0xAD,0x09,0x00};
 static const BYTE post_intro_cleanup_original[5]={0xE8,0xA8,0xDD,0xFE,0xFF};
 static const BYTE intro_still_input_original[5]={0xE8,0xE5,0xA8,0x06,0x00};
+static const BYTE intro_timed_clock_original[5]={0xA1,0xA0,0x4C,0x6B,0x00};
 static const BYTE top_level_native_quit_test_original[6]={0x38,0x1D,0x88,0xCF,0x60,0x00};
 static const BYTE native_pause_call_original[5]={0xE8,0xF2,0x66,0x02,0x00};
 static const BYTE native_game_input_call_original[5]={0xE8,0xB0,0xB9,0xFE,0xFF};
@@ -199,6 +207,9 @@ static volatile LONG debug_f12_test_mode=0;
 static volatile LONG intro_still_exit_state=0;
 static volatile LONG intro_still_request_ms=0;
 static volatile LONG intro_still_hook_installed=0;
+/* Debug mode only. Clock read hook leaves all game-owned state untouched. */
+static volatile LONG intro_timed_clock_hook_installed=0;
+static volatile LONG debug_timed_accelerated=0;
 static volatile LONG last_native_game_input_ms=0;
 static volatile LONG last_game3d_flip_ms=0;
 /* 0 idle, 1 requested, 2 native request 7 dispatched, 3 final exit. */
@@ -862,6 +873,46 @@ static void __cdecl spider_after_intro_cleanup(int mode) {
   }
 }
 
+/* Executes instead of the exact ORIGINAL 0x4A1A26 MOV EAX,[0x6B4CA0].
+ * This is the game's own first-still clock comparison, immediately before
+ * CMP EAX,EDI / JA normal page cleanup at 0x4A1A36.
+ *
+ * In debug mode ONLY, when a verified pre-menu F12 is pending and the
+ * timed page actually entered, return the already computed deadline EDI+1.
+ * The game then takes its OWN timeout branch, releases its page, restores
+ * SEH and moves to the input-wait page. Nothing writes the shared clock.
+ *
+ * Naked x86 wrapper: EDI is the original native loop's deadline register.
+ * No prologue may clobber it. All caller registers except EAX are intact;
+ * CMP immediately after this call overwrites condition flags anyway. */
+__attribute__((naked,used)) static DWORD spider_f12_debug_timed_clock(void) {
+  __asm__ __volatile__(
+    "movl 0x006B4CA0, %eax\n\t"
+    "cmpl $1, _debug_f12_test_mode\n\t"
+    "jne 1f\n\t"
+    "cmpl $1, _intro_still_exit_state\n\t"
+    "jne 1f\n\t"
+    "cmpl $1, _post_intro_cleanup_seen\n\t"
+    "jne 1f\n\t"
+    "cmpl $1, _intro_still_hook_installed\n\t"
+    "jne 1f\n\t"
+    "cmpl $0, _real_main_menu_seen\n\t"
+    "jne 1f\n\t"
+    "cmpb $1, 0x006A7785\n\t"
+    "jne 1f\n\t"
+    "cmpl $0, 0x006151F8\n\t"
+    "jne 1f\n\t"
+    "cmpl $0, 0x00AC0BA4\n\t"
+    "jne 1f\n\t"
+    "cmpl $-1, %edi\n\t"
+    "je 1f\n\t"
+    "leal 1(%edi), %eax\n\t"
+    "movl $1, _debug_timed_accelerated\n\t"
+    "1:\n\t"
+    "ret\n\t"
+  );
+}
+
 /* Wrapper for ORIGINAL 0x4A1896 input check, on the game's own
  * input-wait scene thread. Never free the game-owned page directly,
  * jump across its exception frame or post a synthetic Enter event.
@@ -892,6 +943,8 @@ static BYTE __cdecl spider_f12_intro_still_native_input(
       /* Only the original REAL Shell_MainMenu frame may consume this
        * request; it follows this page's own resource/SEH teardown. */
       if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {
+        if(InterlockedCompareExchange(&debug_timed_accelerated,0,1)==1)
+          say("QUICK-EXIT-F12: DEBUG-MENU-SKIP first timed-page deadline accelerated via 0x4A1A26; original 0x4A1A36 cleanup completed [NO CLOCK WRITE]");
         /* Do not queue real-menu Quit. The original input-wait owner
          * destroys its resources before original Shell_MainMenu runs. */
         say("QUICK-EXIT-F12: DEBUG-MENU-SKIP original 0x4A1896 input-wait TRUE completion; 0x4A18AE page cleanup, main menu allowed (NO QUIT)");
@@ -1084,6 +1137,21 @@ static int install_post_intro_checkpoint(void) {
 static void restore_post_intro_checkpoint(void) {
   restore_intro_tick_call(SPIDER_AFTER_INTRO_CLEANUP_CALL,
                           post_intro_cleanup_original);
+}
+
+static int install_intro_timed_clock_hook(void) {
+  if(!patch_native_call(SPIDER_INTRO_TIMED_CLOCK_SITE,
+                        intro_timed_clock_original,
+                        (const void *)spider_f12_debug_timed_clock))
+    return 0;
+  InterlockedExchange(&intro_timed_clock_hook_installed,1);
+  return 1;
+}
+
+static void restore_intro_timed_clock_hook(void) {
+  if(InterlockedCompareExchange(&intro_timed_clock_hook_installed,0,1)==1)
+    restore_intro_tick_call(SPIDER_INTRO_TIMED_CLOCK_SITE,
+                            intro_timed_clock_original);
 }
 
 static int install_intro_still_input_hook(void) {
@@ -1458,7 +1526,30 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     } else
       say("QUICK-EXIT-F12: INTRO-STILL native hook failed; still prototype disabled, other modes preserved");
   }
+  /* Native timer clock hook is installed ONLY for F12TestMode.
+   * A missing/mismatched exact opcode cannot silently revert to an
+   * old Quit path: fail closed and restore ALL hooks. */
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+     !install_intro_timed_clock_hook()) {
+    InterlockedExchange(&debug_f12_test_mode,0);
+    InterlockedExchange(&experimental_game3d_enabled,0);
+    InterlockedExchange(&intro_still_opt_in,0);
+    restore_intro_still_input_hook();
+    restore_passive_controller7_probe();
+    restore_passive_game_cleanup_probe();
+    restore_passive_game_input_probe();
+    restore_passive_pause_probe();
+    restore_post_intro_checkpoint();
+    restore_intro_tick_hooks();
+    restore_original_menu_tick();
+    (void)suppress_unsafe_native_f12();
+    say("QUICK-EXIT-F12: DEBUG F12TestMode DISABLED: timed-still clock signature mismatch or hook failure; all F12 actions fail closed");
+    return;
+  }
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1)
+    say("QUICK-EXIT-F12: DEBUG first timed-page clock read 0x4A1A26 guarded hook installed; F12 timeout accelerated via native 0x4A1A36 [EXPERIMENTAL]");
   if(!suppress_unsafe_native_f12()) {
+    restore_intro_timed_clock_hook();
     restore_intro_still_input_hook();
     restore_passive_controller7_probe();
     restore_passive_game_cleanup_probe();
@@ -1474,6 +1565,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   thread=CreateThread(NULL,0,f12_input_thread,NULL,0,NULL);
   if(!thread) {
     InterlockedExchange(&enabled,0);
+    restore_intro_timed_clock_hook();
     restore_intro_still_input_hook();
     restore_passive_controller7_probe();
     restore_passive_game_cleanup_probe();
