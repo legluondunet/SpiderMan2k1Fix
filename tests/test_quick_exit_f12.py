@@ -542,6 +542,49 @@ def test_debug_menu_input_delay_probe_is_read_only_and_native_gated():
         assert forbidden not in menu
 
 
+
+def test_debug_fast_intro_menu_tick_wall_time_partition_is_passive():
+    """Differentiate 4-second gap *inside* original 0x505720 tick
+    from a 4-second gap between native menu ticks, with no input edits."""
+    assert "static volatile LONG debug_menu_tick_entry_ms=0;" in SRC
+    assert "static volatile LONG debug_menu_last_exit_ms=0;" in SRC
+    start=SRC.index("void __cdecl SpiderQuickExitF12_MarkMenuTickEntry(void)")
+    end=SRC.index("int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest",start)
+    entry=SRC[start:end]
+    assert "debug_f12_test_mode,0,0)==1" in entry
+    assert "intro_still_exit_state,0,0)>=2" in entry
+    assert "menu_frame_count,0,0)<65" in entry
+    assert "InterlockedExchange(&debug_menu_tick_entry_ms,(LONG)GetTickCount())" in entry
+
+    consumer=SRC[SRC.index("int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void)"):
+                 SRC.index("/* x86 stack at entry")]
+    assert "DEBUG-MENU-TICK-TIMING frame=" in consumer
+    assert "native_0x505720_ms=" in consumer
+    assert "since_last_exit_ms=" in consumer
+    assert "InterlockedExchange(&debug_menu_last_exit_ms,(LONG)exit_ms)" in consumer
+    assert "entry_ms-prev_ms" in consumer
+    assert "exit_ms-entry_ms" in consumer
+    assert "n<=20 || n%10==0 || native_ms>=100u || between_ms>=100u" in consumer
+
+    start=SRC.index("__attribute__((naked,used)) static void spider_real_menu_tick_hook(void)")
+    end=SRC.index("static int write_code(",start)
+    hook=SRC[start:end]
+    assert '"pushfl' in hook and '"pushal' in hook
+    assert '"call _SpiderQuickExitF12_MarkMenuTickEntry' in hook
+    assert hook.index('call _SpiderQuickExitF12_MarkMenuTickEntry') < hook.index(
+        'movl $0x00505720')
+    assert hook.index('movl $0x00505720') < hook.index(
+        'call _SpiderQuickExitF12_ConsumeRealMenuRequest')
+    assert '"popal' in hook and '"popfl' in hook
+    assert '"ret' in hook
+
+    for forbidden in ("ExitProcess(", "TerminateProcess(", "DestroyWindow(",
+                      "SetForegroundWindow(", "SetWindowPos(", "Acquire(",
+                      "GetDeviceData(", "*SPIDER_TRACE_TRANSITION_RAW=",
+                      "*SPIDER_ENGINE_MODE=", "*SPIDER_GAME_QUIT_FLAG="):
+        assert forbidden not in entry and forbidden not in consumer
+
+
 def test_f12_debug_shortcut_restricts_3d_exit_to_native_gameplay():
     worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
                SRC.index("void SpiderQuickExitF12_Init(")]
