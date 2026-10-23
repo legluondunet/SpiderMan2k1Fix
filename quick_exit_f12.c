@@ -168,6 +168,9 @@ static volatile LONG enabled=0;
 static volatile LONG pending=0;
 static volatile LONG delivered=0;
 static volatile LONG menu_frame_count=0;
+/* Read-only per-menu-tick timing: existing game-owned 0x493DD6 hook only. */
+static volatile LONG debug_menu_tick_entry_ms=0;
+static volatile LONG debug_menu_last_exit_ms=0;
 static volatile LONG last_menu_frame_ms=0;
 static volatile LONG last_movie_frame_ms=0;
 /* Diagnostic-only timestamp for correlation with the auto-timed still. */
@@ -975,10 +978,36 @@ static BYTE __cdecl spider_f12_intro_still_native_input(
  * may be delivered inside the ACTUAL Shell_MainMenu frame loop. This
  * never mutates engine state or executes resource cleanup itself.
  * Executed on the original game thread after the game's normal tick. */
+/* Called on the original menu thread from the already installed 0x493DD6
+ * call wrapper, immediately BEFORE the real 0x505720 menu tick.
+ * Never touches original DirectInput, scheduler, or game-owned state. */
+void __cdecl SpiderQuickExitF12_MarkMenuTickEntry(void) {
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+     InterlockedCompareExchange(&intro_still_exit_state,0,0)>=2 &&
+     InterlockedCompareExchange(&menu_frame_count,0,0)<65)
+    InterlockedExchange(&debug_menu_tick_entry_ms,(LONG)GetTickCount());
+}
+
 int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void) {
   LONG n=InterlockedIncrement(&menu_frame_count);
   InterlockedExchange(&last_menu_frame_ms,(LONG)GetTickCount());
   InterlockedExchange(&real_main_menu_seen,1);
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+     InterlockedCompareExchange(&intro_still_exit_state,0,0)>=2 &&
+     n<=65) {
+    DWORD exit_ms=GetTickCount();
+    DWORD entry_ms=(DWORD)InterlockedCompareExchange(&debug_menu_tick_entry_ms,0,0);
+    DWORD prev_ms=(DWORD)InterlockedExchange(&debug_menu_last_exit_ms,(LONG)exit_ms);
+    DWORD native_ms=entry_ms?(DWORD)(exit_ms-entry_ms):0u;
+    DWORD between_ms=(prev_ms && entry_ms)?(DWORD)(entry_ms-prev_ms):0u;
+    if(n<=20 || n%10==0 || native_ms>=100u || between_ms>=100u) {
+      char line[280];
+      snprintf(line,sizeof(line),
+        "QUICK-EXIT-F12: DEBUG-MENU-TICK-TIMING frame=%ld since_last_exit_ms=%lu native_0x505720_ms=%lu wallclock_ms=%lu [READ-ONLY]",
+        (long)n,(unsigned long)between_ms,(unsigned long)native_ms,(unsigned long)exit_ms);
+      say(line);
+    }
+  }
   if(n==1)
     say("QUICK-EXIT-F12: REAL Shell_MainMenu frame callback observed (0x493DD6)");
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {
@@ -1050,6 +1079,7 @@ __attribute__((naked,used)) static void spider_real_menu_tick_hook(void) {
   __asm__ __volatile__(
     "pushfl\n\t"
     "pushal\n\t"
+    "call _SpiderQuickExitF12_MarkMenuTickEntry\n\t"
     "movl $0x00505720, %eax\n\t"
     "call *%eax\n\t"
     "call _SpiderQuickExitF12_ConsumeRealMenuRequest\n\t"
