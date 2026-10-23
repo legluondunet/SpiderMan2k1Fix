@@ -167,11 +167,13 @@ def test_opt_in_parent_trace_reads_only_exact_verified_native_stack_frame():
     assert "tick_return!=0x00470822u && tick_return!=0x00470864u" in parent
     assert parent.index("if(tick_return!=") < parent.index("parent_return=(DWORD)frame[4]")
     assert "parent_return=(DWORD)frame[4];" in parent
-    assert "movie_id=(DWORD)frame[5];" in parent
+    assert "movie_id=(DWORD)frame[5];" not in parent
+    assert "original first argument at frame[5] was already OVERWRITTEN" in parent
+    assert "ID MUST COME FROM CALLSITE" in parent
     assert "allow_skip=(DWORD)frame[6];" in parent
     assert "POST-SHELL-BINK-PARENT" in parent
     assert "known_original_site=%d" in parent
-    assert "[FRAME-READ-ONLY; NO EXIT AUTHORITY]" in parent
+    assert "[FRAME-READ-ONLY; ID MUST COME FROM CALLSITE; NO EXIT AUTHORITY]" in parent
     # Exact list of 30 direct call-site return addresses (VA + 5).
     known=parent.split("static const DWORD known[]={",1)[1].split("};",1)[0]
     import re
