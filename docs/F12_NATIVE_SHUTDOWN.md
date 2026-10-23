@@ -1,31 +1,31 @@
 ## 2026-10-23 — Static recovery of native post-menu Bink skip and cleanup (no runtime patch)
 
 The Windows #530 log establishes that the New Game movie is driven by
-the original Bink loop at \`0x00470750\`. Its last observed frame-tick
-returned \`1\` while the user pressed Space, shortly before game-owned
+the original Bink loop at `0x00470750`. Its last observed frame-tick
+returned `1` while the user pressed Space, shortly before game-owned
 3D controller entry. Thus a **different exit condition is likely**,
 but **the precise input-handling instruction, native movie cleanup and
 higher-level exit path have not been recovered**.
 
-The supported \`SpideyPC.exe\` is not distributed in the repository.
+The supported `SpideyPC.exe` is not distributed in the repository.
 To inspect the original game rather than guess x86 instructions,
-\`tools/Inspect-BinkNativeCode.ps1\` performs **read-only** static PE
+`tools/Inspect-BinkNativeCode.ps1` performs **read-only** static PE
 parsing on the user's own SHA-256-verified executable. It produces a
-small textual hexadecimal report covering \`0x00470700\`–\`0x00470A50\`
-(video owner and expected \`0x00470871\` close path) and
-\`0x00455C80\`–\`0x00455E80\` (higher-level transition), plus
+small textual hexadecimal report covering `0x00470700`–`0x00470A50`
+(video owner and expected `0x00470871` close path) and
+`0x00455C80`–`0x00455E80` (higher-level transition), plus
 bounded neighborhoods of candidate x86 direct relative CALLs that
-target \`0x00470750\`. Raw \`E8 rel32\` hits are **not proven instruction
+target `0x00470750`. Raw `E8 rel32` hits are **not proven instruction
 boundaries** and must be disassembled before interpretation.
 
 Windows PowerShell 5.1, launched from the game's directory after
 placing the script there:
 
-\`\`\`powershell
+```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Inspect-BinkNativeCode.ps1 -GameExe .\SpideyPC.exe
-\`\`\`
+```
 
-Upload only \`SpiderMan2k1Fix-BinkNativeCode.txt\` privately for the
+Upload only `SpiderMan2k1Fix-BinkNativeCode.txt` privately for the
 next stage of analysis; **never commit the original EXE or the extracted
 game code bytes** to this public PR. This script never launches the game,
 writes to its memory, alters its executable or sends input. Its
