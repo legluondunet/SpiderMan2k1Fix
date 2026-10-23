@@ -1,3 +1,85 @@
+## 2026-10-23 — Passive startup still-screen controller probe (Wine test pending)
+
+After the independent Wine F12 validations for the four
+opening films, interactive main menu, New Game comic,
+New Game Bink movie and 3D, the two **static screens
+between intro video playback and the interactive menu**
+remain insufficiently understood. It would be unsafe to
+reuse menu F12 or write the game's top-level Quit flag
+while an unknown native screen owns the game thread.
+
+**Exact original EXE static evidence** (SHA-256
+`0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`):
+
+- `0x455CF1`, `0x455CFE`, `0x455D0C` and
+  `0x455D1A` are the original four `0x470750`
+  movie calls. After them `0x455D23` calls
+  `0x443AD0` transition cleanup.
+- `0x4A201F–0x4A202F` checks a native dispatcher
+  condition and, when it is zero, calls `0x493990`.
+  That function is also the game's Shell_MainMenu
+  implementation; seeing its frame tick at
+  `0x493DD6` alone therefore does **not** prove
+  the fully interactive main menu is displayed.
+- The original native instructions read these state
+  locations: `0x493996` reads DWORD `0x682948`
+  (sampled as pointer **presence only**),
+  `0x4A1FC3` reads BYTE `0x6828D0`,
+  `0x4A2012` reads DWORD `0x68293C`, and
+  `0x4A1FEC` reads DWORD `0x54D38C`.
+  The semantic roles and actual values on the two
+  static pages are **not yet established**.
+
+New **opt-in, passive** diagnostic built into the
+already existing DirectDraw Flip observer:
+
+```bash
+SPIDERMAN2K1FIX_F12_STATIC_TRACE=1 wine ./SpideyPC.exe
+```
+
+Keep `[System] QuickExitF12=1` and
+`[Debug] Log=1` in the INI; other currently tested
+settings can remain unchanged. No extra game EXE
+hooks are installed by this trace. It reads only
+original scalar values and native pointer presence
+(no dereferences or writes), at most 61 samples spaced
+at least 1500 ms apart, during the first 90 seconds
+of presentation. Additional milestone line is
+printed when the original `0x455D23` post-four-movie
+transition cleanup returns.
+
+New lines have the form:
+
+```text
+STARTUP-STATIC-PROBE opt-in enabled (passive, no extra hooks; 90s/61 samples max)
+STARTUP-STATIC-PROBE flip=... since_first_flip_ms=... intro_cleanup_seen=... real_menu_tick_count=... renderer2d=... mode_request=... bink_active=... video_handle_present=... menu_ctx_present=... menu_stage_byte=... dispatcher_raw=... transition_raw=... quit_byte=... [READ-ONLY; SCREEN ID UNKNOWN]
+STARTUP-STATIC-PROBE original four-movie transition cleanup 0x455D23 completed [READ-ONLY]
+```
+
+**Test procedure under Wine:** start normally; do
+**not** press F12 during this first identification
+test. Let the four original opening films finish;
+observe the first static screen, then the second
+"Press Enter" screen for a few seconds, press Enter
+when prompted, and observe the actual interactive
+main menu for a few seconds. Then exit using the
+already validated native menu F12, ensuring no Wine
+process remains. Send the full `SpiderMan2k1Fix`
+log and identify, if possible, which image appeared
+near each transition. Do not assume that a value
+change alone proves ownership: correlation with
+the user's on-screen observations is required.
+
+This is **a diagnostic build only**; it does not
+add F12 support to either startup still screen.
+Any new shutdown feature must preserve game-owned
+resource teardown and SEH unwinding. Windows
+validation remains outstanding, as agreed, including
+the deferred yellow-screen investigation. PR #26
+remains draft and unmerged pending explicit approval.
+
+---
+
 ## 2026-10-23 — Wine build #569 comic-stage F12 regression: process exit confirmed
 
 User retested the F12-on-New-Game-comic deferred-exit path
