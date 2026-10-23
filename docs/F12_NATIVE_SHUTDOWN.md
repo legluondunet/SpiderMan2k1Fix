@@ -1,3 +1,59 @@
+## 2026-10-23 — Windows #530: Space skip exits the Bink loop WITHOUT tick returning zero
+
+User file `SpiderMan2k1Fix(20261023-033828).log`
+(`v1.0.0-ba47032`) covers New Game → auto comic still →
+long Bink cinematic → user presses Space → gameplay 3D → F12.
+
+Observed:
+- Comic quad at Flip 241; Bink video flag and video handle
+  become present at Flip 243.
+- The original post-menu Bink tick wrapper was invoked at least
+  **883,403 times** before exiting the movie loop.
+- **7,366 sampled tick-result logs ALL contain
+  `native_result=1`**, including the final reported native tick.
+  No `native_result=0` appears.
+- The final tick-result trace at `n=883403` samples
+  `space_down_sampled=1` while the Bink flag/handle are still
+  present and the 3D owner has not started.
+- The *next* log is `NATIVE-GAME-INPUT owner ENTER n=1`;
+  the following `ENGINE-STATE flip=411` sees the movie handle
+  and Bink flag cleared and the native 3D owner entered.
+- F12 in 3D still reaches game-owned
+  `CONTROLLER-7 ... bit4=1 ... NATIVE-FINAL-CLEANUP`.
+
+**Inference, not proof of exact instructions:** the post-menu
+cinematic can be skipped by the game without
+`SPIDER_NATIVE_BINK_FRAME_TICK` returning 0. Space appears pressed
+immediately before exit, so the original loop's input/branch
+condition likely decides when to stop; the log does **not**
+establish its instruction address or teardown sequence.
+Do NOT reuse the existing F12 startup-video
+`native_result=0` short-circuit for the New Game cinematic
+until its own game-owned skip/cleanup/exit-control flow is
+confirmed.
+
+**Instrumentation problem found:** sampling all native ticks and
+logging every 120 calls produced 7,366 near-identical lines
+(about 1.65 MB of logs), with roughly 880k ticks in ~16 seconds.
+The diagnostic is now throttled to first four samples, an
+approximately 1-second heartbeat, original-return-value
+transitions and sampled Space key-down edges. To reduce
+interference, Space is sampled only every 128 native tick
+calls (plus any result transition), typically far more often
+than once per 10ms on this measured run. The original game
+Bink call still executes exactly once per wrapper invocation,
+its return value remains unchanged, and there is no F12
+action or movie/global-state mutation. A short key tap
+could be missed by sampled key polling; this is deliberately
+a non-invasive observational tool.
+
+Next investigation: pinpoint the original post-menu Bink
+loop's **Space branch and native Bink-close cleanup** before
+an explicitly opt-in F12 cinematic-exit prototype.
+The validated F12 menu and 3D paths remain untouched.
+
+---
+
 ## 2026-10-23 — Windows 11: New Game still → Bink → Space skip → 3D
 
 The user provided `SpiderMan2k1Fix(20261023-033124).log`
