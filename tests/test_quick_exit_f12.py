@@ -294,8 +294,8 @@ def test_native_game_input_handler_observer_covers_alternative_request_7_writer(
     observer=SRC[start:end]
     assert observer.count("SPIDER_NATIVE_GAME_INPUT_UPDATE();")==1
     assert "NATIVE-GAME-INPUT owner ENTER" in observer
-    assert "NATIVE REQUEST 7 produced by 0x440EF0" in observer
-    assert "if(after_request==7u && before_request!=7u)" in observer
+    assert "NATIVE REQUEST 7 observed after 0x440EF0 (internal writer unconfirmed)" in observer
+    assert "if(native_after_request==7u && before_request!=7u)" in observer
     assert "SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE" in observer
     assert "SPIDER_NATIVE_GAME_INPUT_FLAG_1" in observer
     assert "SPIDER_NATIVE_GAME_INPUT_FLAG_2" in observer
@@ -396,6 +396,25 @@ def test_3d_f12_is_separately_opted_in_and_menu_keeps_priority():
     assert "0x02E0988Cu=" not in thread
     assert "TerminateProcess(" not in thread
     assert "PostMessageA(" not in thread
+
+
+
+def test_3d_native_request_logging_excludes_post_call_f12_injection():
+    start=SRC.index("static void __cdecl spider_observe_native_game_input(void)")
+    end=SRC.index("/* PASSIVE owner cleanup checkpoint",start)
+    cb=SRC[start:end]
+    native_snapshot="native_after_request=after_request;"
+    f12_write="*(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;"
+    native_condition="if(native_after_request==7u && before_request!=7u)"
+    assert cb.count("SPIDER_NATIVE_GAME_INPUT_UPDATE();")==1
+    assert cb.index("SPIDER_NATIVE_GAME_INPUT_UPDATE();") < cb.index(native_snapshot)
+    assert cb.index(native_snapshot) < cb.index(f12_write)
+    assert cb.index(f12_write) < cb.index(native_condition)
+    assert "if(after_request==7u && before_request!=7u)" not in cb
+    assert cb.index(native_condition) < cb.index("InterlockedIncrement(&input_native_requested7)")
+    assert "3D game-thread frame completed; native request 7 queued" in cb
+    assert "NATIVE REQUEST 7 observed after 0x440EF0 (internal writer unconfirmed)" in cb
+    # The F12-injected request must never increment the native-owner counter.
 
 
 def test_3d_request_7_issued_only_on_native_owner_thread_after_input_tick():
