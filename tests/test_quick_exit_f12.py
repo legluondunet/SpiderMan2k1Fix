@@ -150,6 +150,47 @@ def test_native_bink_owner_static_inspection_is_read_only_and_sha_gated():
         assert bad not in script
 
 
+
+def test_opt_in_parent_trace_reads_only_exact_verified_native_stack_frame():
+    tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
+             SRC.index("/* This wrapper executes ON THE ORIGINAL GAME THREAD")]
+    parent=SRC[SRC.index("static int spider_f12_known_bink_parent_return(DWORD ret_addr)"):
+               SRC.index("/* Native BinkFrame tick wrapper")]
+    init=SRC[SRC.index("void SpiderQuickExitF12_Init(void (*log_fn)(const char *))"):]
+    assert "SPIDERMAN2K1FIX_F12_PARENT_TRACE" in init
+    assert 'GetPrivateProfileIntA("Debug","Log",0,ini)==1' in init
+    assert "static volatile LONG parent_trace_enabled=0;" in SRC
+    assert "if(InterlockedCompareExchange(&parent_trace_enabled,0,0)==1)" in tick
+    assert "spider_f12_trace_native_bink_parent(" in tick
+    assert "(const uintptr_t *)__builtin_frame_address(0)" in tick
+    assert "if(n==1)" in tick
+    assert "tick_return!=0x00470822u && tick_return!=0x00470864u" in parent
+    assert parent.index("if(tick_return!=") < parent.index("parent_return=(DWORD)frame[4]")
+    assert "parent_return=(DWORD)frame[4];" in parent
+    assert "movie_id=(DWORD)frame[5];" in parent
+    assert "allow_skip=(DWORD)frame[6];" in parent
+    assert "POST-SHELL-BINK-PARENT" in parent
+    assert "known_original_site=%d" in parent
+    assert "[FRAME-READ-ONLY; NO EXIT AUTHORITY]" in parent
+    # Exact list of 30 direct call-site return addresses (VA + 5).
+    known=parent.split("static const DWORD known[]={",1)[1].split("};",1)[0]
+    import re
+    values=re.findall(r"0x[0-9A-F]{8}u",known)
+    assert len(values)==30
+    assert len(set(values))==30
+    for expected in ("0x00443BECu","0x0049D659u",
+                     "0x00455CF6u","0x00455D03u","0x00455D11u",
+                     "0x00455D1Fu","0x00427A00u","0x00427D8Fu"):
+        assert expected in known
+    for forbidden in ("ExitProcess(", "TerminateProcess(", "BinkClose(",
+                      "PostMessageA(", "DestroyWindow(", "VirtualProtect(",
+                      "*SPIDER_GAME_QUIT_FLAG=", "*SPIDER_ENGINE_MODE="):
+        assert forbidden not in parent
+    assert tick.count("native_result=SPIDER_NATIVE_BINK_FRAME_TICK();")==1
+    assert "return native_result;" in tick
+
+
+
 def test_default_off_and_ini_section_validated():
     assert "QuickExitF12=0" in INI
     assert '"[System]\\r\\n"' in GEN
