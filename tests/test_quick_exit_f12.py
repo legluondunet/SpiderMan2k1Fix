@@ -1623,3 +1623,30 @@ def test_native_3d_dispatch_chain_probe_is_bounded_guarded_and_read_only():
     assert "node[5]=" not in probe
     assert "SendInput(" not in probe
     assert "ExitProcess(" not in probe
+
+
+def test_direct_original_cutscene_script_owner_is_observed_not_edited():
+    """CutSceneScript, CutSceneSkipAllow, EndScript have verified
+    original code paths to these precise fields; no guessed F12 gate."""
+    assert "SPIDER_NATIVE_CUTSCENE_OWNER_PTR ((const volatile DWORD *)(uintptr_t)0x006A9038u)" in SRC
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
+    section=owner[owner.index("Native cutscene-script OWNER trace"):
+                  owner.index("The FIRST original event-dispatch node")]
+    assert "DEBUG-3D-CUTSCENE-SCRIPT" in section
+    assert "VirtualQuery((LPCVOID)(uintptr_t)owner,&mbi,sizeof(mbi))" in section
+    assert "mbi.State==MEM_COMMIT" in section
+    assert "PAGE_GUARD|PAGE_NOACCESS" in section
+    assert ">=0x1bcu" in section
+    assert "scene_context=obj[0x1acu];" in section
+    assert "skip_allowed=obj[0x1a4u];" in section
+    assert "script_active=obj[0x1b4u];" in section
+    assert "script_step=*(const volatile DWORD *)(uintptr_t)(owner+0x1a8u);" in section
+    assert "script_ip=*(const volatile DWORD *)(uintptr_t)(owner+0x1b8u);" in section
+    assert "TWO INTROS UNCONFIRMED" in section
+    assert "script_logs<85" in section
+    assert "obj[0x1acu]=" not in section
+    assert "obj[0x1a4u]=" not in section
+    assert "obj[0x1b4u]=" not in section
+    for bad in ("SendInput(", "PostMessageA(", "keybd_event(", "ExitProcess(", "TerminateProcess("):
+        assert bad not in section

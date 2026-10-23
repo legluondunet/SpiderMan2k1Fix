@@ -195,6 +195,19 @@
  * Neither is PROVEN to indicate gameplay readiness. Observe only. */
 #define SPIDER_NATIVE_3D_CONTROLLER_OBJECT ((const volatile DWORD *)(uintptr_t)0x0056F3B8u)
 #define SPIDER_NATIVE_3D_DISPATCH_HEAD ((const volatile DWORD *)(uintptr_t)0x006B4708u)
+/* DIRECT original cinematic SCRIPT machinery, SHA-matched:
+ * 0x4E1485 dispatches CutSceneScript into 0x4BC1A0.
+ * Original 0x4BC1B9 sets scene owner +0x1AC = 1;
+ * 0x4BC1C0 sets active script +0x1B4 = 1;
+ * 0x4BC1C7 stores script instruction pointer +0x1B8;
+ * 0x4BC1D3 initializes skip permission +0x1A4 = 0.
+ * Original CutSceneSkipAllow at 0x4E14C3/0x4E14D9
+ * sets that permission to 1/0. Original scene update
+ * 0x4C6654/0x4C665C READS +0x1AC and +0x1A4 to branch.
+ * CutSceneEndScript 0x4BC4AF clears script +0x1B4.
+ * THESE ARE CANDIDATE SCENE/PERMISSION INDICATORS,
+ * not yet proven to cover the TWO New Game intros. */
+#define SPIDER_NATIVE_CUTSCENE_OWNER_PTR ((const volatile DWORD *)(uintptr_t)0x006A9038u)
 /* Original event dispatcher 0x4DE890 clears node byte +4;
  * 0x4DE8B0 tests byte +5; 0x4DE8D0 matches DWORD +0x0C and
  * follows next pointer +0x14. These are native event-list
@@ -826,6 +839,72 @@ static void __cdecl spider_observe_native_game_input(void) {
       old_triggered=triggered;
       old_pending=pending;
       old_physical=space;
+    }
+    /* Native cutscene-script OWNER trace (not generic input):
+     * observe whether user-skippable 3D intros actually execute
+     * CutSceneScript / CutSceneSkipAllow. No F12 skip is inferred
+     * from this state without verified per-scene transitions.
+     * VirtualQuery verifies entire span before any dereference. */
+    {
+      DWORD owner=*SPIDER_NATIVE_CUTSCENE_OWNER_PTR;
+      DWORD script_ip=0u,script_step=0u;
+      BYTE scene_context=0u,skip_allowed=0u,script_active=0u;
+      int readable=0;
+      static DWORD previous_owner=0xffffffffu,previous_ip=0xffffffffu;
+      static DWORD previous_step=0xffffffffu,last_script_log=0u;
+      static LONG previous_context=-1,previous_allow=-1;
+      static LONG previous_active=-1,previous_key=-1,script_logs=0;
+      if(owner>=0x00010000u) {
+        MEMORY_BASIC_INFORMATION mbi;
+        if(VirtualQuery((LPCVOID)(uintptr_t)owner,&mbi,sizeof(mbi))==sizeof(mbi) &&
+           mbi.State==MEM_COMMIT &&
+           !(mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)) &&
+           ((mbi.Protect&0xffu)==PAGE_READONLY ||
+            (mbi.Protect&0xffu)==PAGE_READWRITE ||
+            (mbi.Protect&0xffu)==PAGE_WRITECOPY ||
+            (mbi.Protect&0xffu)==PAGE_EXECUTE_READ ||
+            (mbi.Protect&0xffu)==PAGE_EXECUTE_READWRITE ||
+            (mbi.Protect&0xffu)==PAGE_EXECUTE_WRITECOPY)) {
+          uintptr_t base=(uintptr_t)mbi.BaseAddress;
+          if((uintptr_t)owner>=base &&
+             (uintptr_t)owner-base<=mbi.RegionSize &&
+             mbi.RegionSize-((uintptr_t)owner-base)>=0x1bcu) {
+            const volatile BYTE *obj=(const volatile BYTE *)(uintptr_t)owner;
+            scene_context=obj[0x1acu];
+            skip_allowed=obj[0x1a4u];
+            script_active=obj[0x1b4u];
+            script_step=*(const volatile DWORD *)(uintptr_t)(owner+0x1a8u);
+            script_ip=*(const volatile DWORD *)(uintptr_t)(owner+0x1b8u);
+            readable=1;
+          }
+        }
+      }
+      if((owner!=previous_owner || scene_context!=previous_context ||
+          skip_allowed!=previous_allow || script_active!=previous_active ||
+          readable==0 || space!=previous_key ||
+          ((script_ip!=previous_ip || script_step!=previous_step) &&
+           (DWORD)(now-last_script_log)>=200u) ||
+          !last_script_log || (DWORD)(now-last_script_log)>=3000u) &&
+         script_logs<85 && (!start || (DWORD)(now-start)<90000u)) {
+        char scriptline[440];
+        snprintf(scriptline,sizeof(scriptline),
+          "QUICK-EXIT-F12: DEBUG-3D-CUTSCENE-SCRIPT owner=0x%08lX readable=%d context=%u skip_allowed=%u script_active=%u script_step=0x%08lX script_ip=0x%08lX space=%ld edges=%ld since_3d_ms=%lu [CutSceneScript/SkipAllow/EndScript ORIGINAL OWNER; READ-ONLY; TWO INTROS UNCONFIRMED]",
+          (unsigned long)owner,readable,(unsigned)scene_context,
+          (unsigned)skip_allowed,(unsigned)script_active,
+          (unsigned long)script_step,(unsigned long)script_ip,
+          (long)space,(long)edges,
+          (unsigned long)(start?(DWORD)(now-start):0u));
+        say(scriptline);
+        last_script_log=now;
+        ++script_logs;
+      }
+      previous_owner=owner;
+      previous_context=scene_context;
+      previous_allow=skip_allowed;
+      previous_active=script_active;
+      previous_ip=script_ip;
+      previous_step=script_step;
+      previous_key=space;
     }
     /* The FIRST original event-dispatch node has event_id=0 and
      * unchanged 0/0 flags during BOTH 3D intros AND the gameplay

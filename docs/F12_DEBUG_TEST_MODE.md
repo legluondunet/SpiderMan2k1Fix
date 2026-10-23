@@ -1,3 +1,82 @@
+## 2026-10-23 — Original 3D cinematic script engine identified after Wine #675
+
+User log `SpiderMan2k1Fix(20261023-172652).log`,
+from build #675, confirms original F12 native comic
+`L1COV.bmp` plus Bink movie #4 teardown in **2 ms**.
+Three original 3D physical SPACE edges: **+1303 ms**
+(Stan Lee introduction skip), **+2407 ms** (second
+3D intro skip), **+3923 ms** (deliberate playable
+Spider-Man jump). All three successfully reach the
+original DIK_SPACE buffer and game action bit 0x10.
+Actor member state +0x2A0 again briefly 5->3->5
+after SPACE #1 and persistently 5->3 after SPACE #2.
+It is still NOT a proven native playable-ready flag.
+
+The newly read first TWELVE nodes of the original
+event-dispatch list ALL show `event_id=0`,
+`triggered=0`, `pending=0`, with identical
+hash `0x4AF9FE53` before/during/after both
+cinematic skips and during the gameplay jump.
+`unreadable=0`, `cycle=0`, but `truncated=1`;
+thus only this bounded 12-node PREFIX is ruled
+out as a native scene discriminator. Don't infer
+that the full linked list is inert.
+
+**DIRECT static native cutscene breakthrough**:
+The SHA-verified original `SpideyPC.exe` contains
+specific commands `CutSceneScript`,
+`CutSceneSkipAllow(%i)`, and `CutSceneEndScript`;
+it also names `SkipLib.txt`. These are actual
+interpreter cases, not speculation:
+
+- At **0x4E1485**, the original script dispatches
+  `CutSceneScript` via **0x4BC1A0**, setting
+  `[0x6A9038]+0x1AC=1` (scene context),
+  `+0x1B4=1` (script active), `+0x1B8` to
+  script instruction pointer, and `+0x1A4=0`
+  (initial skip permission).
+- At **0x4E14A5**, the original interpreter executes
+  `CutSceneSkipAllow(%i)`, setting the native
+  **`+0x1A4`** byte to 1/0 depending on argument.
+- Original **0x4C6654 / 0x4C665C** directly test
+  these `+0x1AC / +0x1A4` bytes in the scene
+  update function, conditionally changing other
+  cinematic/scene-related engine fields. This
+  proves real game logic uses those two flags.
+- `CutSceneEndScript` at **0x4BC4A2** clears
+  **`+0x1B4`** at 0x4BC4AF.
+
+This is the first confirmed, explicit *cinematic
+script mechanism* found through disassembly rather
+than generic input/actor correlation. But it
+does NOT YET establish that either of the TWO
+specific New Game 3D intros executes that script
+path or that `+0x1A4` is sufficient to skip the
+active scene. In particular the script loader may
+use level-supplied external data.
+
+**Focused next read-only runtime test**:
+The EXISTING 3D native-thread observation now
+records a compact, bounded `DEBUG-3D-CUTSCENE-SCRIPT`
+line with original `0x6A9038` manager pointer,
+`+0x1AC` scene context, `+0x1A4` skip flag,
+`+0x1B4` script active, and `+0x1A8/+0x1B8`
+script progress/pointer. It verifies committed
+readable manager memory before dereferencing any
+fields. Log changes across the TWO user-confirmed
+intro SPACE skips and the intentional gameplay
+jump; the full owner is never written, and these
+fields NEVER authorize a synthetic Space or F12
+exit. This test should confirm or disprove whether
+this particular explicit native cutscene owner is
+indeed live during the user's intro sequence.
+
+The requested one-F12 native 3D skip and positively
+verified gameplay-only EXIT are still unimplemented.
+PR #26 remains DRAFT and UNMERGED pending approval.
+
+---
+
 ## 2026-10-23 — Wine 17:13:51 (#674): first event node inert, original list is multi-node
 
 The user log SpiderMan2k1Fix(20261023-171351).log confirms native
