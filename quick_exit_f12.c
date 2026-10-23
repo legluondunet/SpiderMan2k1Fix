@@ -845,6 +845,18 @@ static void __cdecl spider_after_intro_cleanup(int mode) {
       if(InterlockedCompareExchange(&intro_still_exit_state,1,0)==0)
         say("QUICK-EXIT-F12: DEBUG-MENU-SKIP opening Bink cleanup completed; F12 routed into original timed/input-wait pages (NO QUIT)");
     }
+    /* The native 0x470750 Bink tick is shared by the FOUR opening
+     * films AND the New Game cinematic. The startup request was
+     * consumed after the original 0x443AD0 transition cleanup above:
+     * clear it NOW or the first tick of New Game movie #4 will still
+     * return 0 and instantly skip that unrelated cinematic.
+     * The separate intro_still_exit_state=1 latch persists to the
+     * exact original 0x4A1896 input-wait owner, so menu navigation
+     * still completes without another F12. In legacy Quit mode the
+     * original pending flag stays unchanged. */
+    InterlockedExchange(&intro_quit_pending,0);
+    InterlockedExchange(&intro_tick_shortcircuited,0);
+    say("QUICK-EXIT-F12: DEBUG-MENU-SKIP opening Bink request CONSUMED at native post-intro cleanup; movie #4 tick restored for future New Game playback");
   } else if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1) {
     /* Original x86 0x455D23 -> 0x455E50 is NOT unconditional:
      * branches at 0x455DC8 / 0x455DD0 may skip the 0x455E50
