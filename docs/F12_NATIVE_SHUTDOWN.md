@@ -1,3 +1,99 @@
+## 2026-10-23 — Windows opening-movie F12: original quit-branch bypass, one-key native still handoff trial
+
+**New failing native Windows 11 behavior discovered (build #589):**
+Pressing F12 in any one of the **four opening Bink videos**
+ends the videos and advances to the **first pre-menu timed
+still** instead of closing the process. The user had to
+press **F12 a SECOND time** to quit. Attached full log:
+`SpiderMan2k1Fix(20261023-102500).log`, original EXE
+SHA verified, patch `v1.0.0-823379a`.
+
+Original failing run's exact sequence:
+
+```text
+QUICK-EXIT-F12: intro movie exit requested; native Bink cleanup then top-level engine Quit
+QUICK-EXIT-F12: native Bink tick returned finished; original game video cleanup will run
+QUICK-EXIT-F12: four native movie calls completed; intro transition cleanup finished; engine Quit flag set BEFORE top-level 0x455E50 check
+QUICK-EXIT-F12: ENGINE-STATE flip=94 ... quit=1 ... intro_request=1 intro_forwarded=1 bink_flag=0 video_handle_present=0
+QUICK-EXIT-F12: ENGINE-STATE flip=222 ... quit=1 ... intro_request=1 intro_forwarded=1 bink_flag=0 video_handle_present=0
+QUICK-EXIT-F12: INTRO-STILL F12 latched after original Bink cleanup; waiting for native timed page + input-wait owner
+QUICK-EXIT-F12: INTRO-STILL original input-wait owner 0x4A1896 verified; normal TRUE completion for 0x4A18AE native page cleanup; menu Quit queued
+QUICK-EXIT-F12: REAL Shell_MainMenu frame callback observed (0x493DD6)
+QUICK-EXIT-F12: native Shell_MainMenu Quit activated: slot=3 action=18
+```
+
+The last INTRO-STILL latch was due to the **user's
+SECOND F12 keypress**, not a handoff from the first.
+
+**Confirmed root cause in SHA-verified x86 disassembly:**
+`0x455D23: call 0x443AD0` does execute and our hook
+sets byte `[0x60CF88]=1` after its original completion.
+But the following original startup code is branched:
+
+```asm
+00455DC1: test al,0x4
+00455DC8: jne 0x455E5E           ; bypasses quit check
+00455DCE: cmp eax,ebp            ; ebp is -1
+00455DD0: jne 0x455E5E           ; also bypasses quit check
+...
+00455E50: cmp byte [0x60CF88],bl ; bl is zero
+00455E56: jne 0x4561F2          ; native Quit cleanup
+```
+
+Thus the old comment "Quit flag set BEFORE the top-level
+check" wrongly assumed that check was reached on all
+paths. The log `quit=1` while both timed still pages
+are entered is consistent with bypassing it. We must
+**not** patch arbitrary branch targets or jump across
+native startup stack/SEH cleanup.
+
+**New separately opt-in one-key fix, NOT YET MANUALLY
+VALIDATED** (`ExperimentalQuickExitF12InIntroStills=1`
+and `QuickExitF12=1` with `[Debug] Log=1`):
+after the ORIGINAL four-movie `0x443AD0` cleanup returns,
+the existing F12 latch is now also published to the
+previously tested input-wait state machine (state=1),
+with a fresh 15-second handoff timeout, iff its
+exact native input call hook is already installed and
+no real menu tick has occurred. The game-owned
+**first timed still retains its own countdown**.
+When the game naturally enters `0x4A17A0`, the
+hook at original `0x4A1896` checks the exact return
+address/args, invokes native input once, then requests
+normal TRUE-result `0x4A18AE` page destruction
+and normal SEH return. Original `Shell_MainMenu`
+then consumes the *same* initial F12 intent via
+the verified native Quit action 18. The original
+Quit byte remains forwarded in case the top-level
+branch happens to evaluate it.
+
+This does **not** synthesize a second keystroke,
+call any native destructor off-thread, skip either
+page owner's cleanup, create any new hook or force
+the process/window to close. If the optional intro-
+still feature is disabled, this new handoff is
+disabled and the observed first-F12 limitation
+can persist. All F12 options remain default 0.
+
+**Next Windows 11 test:** use the **new artifact after
+the CI passes**, not prior build #589. Keep current
+INI with `QuickExitF12=1` and
+`ExperimentalQuickExitF12InIntroStills=1`,
+`[Debug] Log=1`. Press **F12 ONCE during an
+opening Bink movie**, do not press it again, do not
+Alt+Tab. Expect initial videos' original cleanup,
+natural timed still deadline, automatic native
+input-wait page cleanup then real menu Quit and no
+`SpideyPC.exe` in Windows Task Manager.
+The first still may appear briefly due to its
+original programmed duration; this is intentional.
+Keep full log and report visual yellow/non-yellow.
+
+Do not consider this corrected or merge PR #26
+before actual Windows process-level validation.
+
+---
+
 ## 2026-10-23 — Windows 11 native 3D F12: clean exit WITHOUT yellow window; controls for Bink correlation
 
 The user completed the requested independent native Windows 11
