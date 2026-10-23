@@ -1,3 +1,38 @@
+## 2026-10-23 — 15:42:54 Wine: original DirectInput SPACE byte observed; audit live action mapping
+
+The user-supplied log `SpiderMan2k1Fix(20261023-154254).log`
+confirms two original game DirectInput SPACE transitions
+(+1202 ms native `0x00 -> 0xFF`, then `0x7F`,
+release `0x00`; +2502 ms `0x00 -> 0x7F`,
+release `0x80 -> 0x00`), with the original keyboard
+device present. The first HUD instructions appear
+after the second SPACE press. Native cover + Bink #4
+completion remains **2 ms**. These observations
+do not prove original cinematic ownership or readiness
+to accept a gameplay F12 exit.
+
+The prior raw reader probes cover `0x50A650` only.
+Original game frame routine `0x505720` calls the
+keyboard-action converter `0x50A190` at `0x505738`.
+That code directly reads raw keys at `0x50A231`
+and `0x50A258` while scanning the original
+`0x568398` table of `(action,DIK)` pairs.
+The untouched original on-disk table has NO
+DIK_SPACE `0x39` default mapping, but the
+live settings may differ. A new `DEBUG-3D-KEYMAP`
+one-time snapshot of this live table in the
+existing native game-thread input owner counts
+SPACE mappings, prints their action mask and
+checks the original `0x8000` sentinel.
+No new code hook, native memory write, keyboard
+injection or F12 request-7 exit. If live SPACE
+is not bound to an action, the original cinematic
+skip mechanism must use a separate input/scene
+path instead. The 3D F12 safety guard remains
+fail-closed pending exact script/cinematic ownership.
+
+---
+
 ## 2026-10-23 — 15:29:27 Wine log: game-owned DirectInput SPACE buffer audit
 
 The user-provided log `SpiderMan2k1Fix(20261023-152927).log`

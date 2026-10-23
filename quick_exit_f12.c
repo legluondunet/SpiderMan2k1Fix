@@ -634,6 +634,32 @@ static void __cdecl spider_observe_native_game_input(void) {
    * even if a native 3D input-owner call is temporarily absent. */
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
      InterlockedCompareExchange(&debug_newgame_progress,0,0)==3) {
+    /* The original 0x505720 frame tick calls 0x50A190 at 0x505738.
+     * That converter scans the 8-byte game-owned (action,DIK) table
+     * at 0x568398, terminated by action 0x8000. The original
+     * 0x501CB0 reads it makes at 0x50A231/0x50A258 are outside the
+     * earlier 0x50A650 read probes. Snapshot the LIVE mapping once
+     * in game-thread 3D, without patching any extra native code. */
+    static LONG keymap_logged=0;
+    if(!keymap_logged) {
+      const volatile DWORD *keymap=(const volatile DWORD *)(uintptr_t)0x00568398u;
+      DWORD space_actions=0,space_bindings=0;
+      char mapline[256];
+      int i;
+      keymap_logged=1;
+      for(i=0;i<32;++i) {
+        DWORD action=keymap[2*i],dik=keymap[2*i+1];
+        if(action==0x8000u)break;
+        if((dik&0xffu)==0x39u) {
+          space_actions|=action;
+          ++space_bindings;
+        }
+      }
+      snprintf(mapline,sizeof(mapline),
+        "QUICK-EXIT-F12: DEBUG-3D-KEYMAP action_table=0x00568398 entries=%d space_bindings=%lu space_action_mask=0x%08lX [ORIGINAL LIVE MAP; READ-ONLY; SCENE UNKNOWN]",
+        i,(unsigned long)space_bindings,(unsigned long)space_actions);
+      say(mapline);
+    }
     static LONG last_space=-1;
     static DWORD last_sample=0;
     static LONG sample_count=0;

@@ -1518,3 +1518,16 @@ def test_read_only_original_directinput_space_state_audit():
     assert "DWORD result=SPIDER_NATIVE_KEY_READ(dik);" in fn
     assert "return result;" in fn
     assert "SendInput(" not in fn
+
+
+def test_original_3d_live_keymap_space_audit_is_read_only():
+    """Snapshot original (action, DIK) table without altering game state."""
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
+    assert "DEBUG-3D-KEYMAP action_table=0x00568398" in owner
+    assert "(const volatile DWORD *)(uintptr_t)0x00568398u" in owner
+    assert "if(action==0x8000u)break;" in owner
+    assert "if((dik&0xffu)==0x39u)" in owner
+    assert "space_action_mask=0x%08lX" in owner
+    assert "keymap_logged=1;" in owner
+    assert "keymap[2*i]=" not in owner
