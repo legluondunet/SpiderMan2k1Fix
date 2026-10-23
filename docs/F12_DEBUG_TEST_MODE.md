@@ -261,6 +261,111 @@ untouched; previous native F12 full-exit branch
 `backup/f12-native-exit-validated-20261023`
 is preserved.
 
+## 2026-10-23 — First-menu 3,659ms gap: game-native clock busy wait identified
+
+The user supplied `SpiderMan2k1Fix(20261023-120205).log`
+(patch `v1.0.0-40136fd`, supported original
+`SpideyPC.exe` SHA256 verified). The extra passive
+menu-tick timing shows **exactly where** the delay occurs:
+
+```text
+DEBUG-MENU-TICK-TIMING frame=1 since_last_exit_ms=0 native_0x505720_ms=0
+DEBUG-MENU-TICK-TIMING frame=2 since_last_exit_ms=3659 native_0x505720_ms=1
+DEBUG-MENU-TICK-TIMING frame=3 since_last_exit_ms=30 native_0x505720_ms=0
+DEBUG-MENU-TICK-TIMING frame=4 since_last_exit_ms=32 native_0x505720_ms=1
+DEBUG-MENU-TICK-TIMING frame=5 since_last_exit_ms=32 native_0x505720_ms=1
+DEBUG-MENU-INPUT-PROBE frame=15 ms_since_first_menu=4098 native_transition=0x00000000 native_menu_input_branch=ELIGIBLE game_input_active=1
+```
+
+**Confirmed:** the missing 3.659 seconds are **BETWEEN**
+return of the first original `0x505720` menu tick and
+entry of the next one, not inside `0x505720`.
+The native menu gate `[0x54D38C]` is already zero,
+and `[0x6B78F0]` reports game input active.
+Normal 30-FPS pacing (30–45ms/tick) resumes afterward.
+
+**New SHA-verified original x86 code finding:** the
+single original menu loop `Shell_MainMenu`, after the
+`0x493DD6 call 0x505720`, does frame processing and:
+
+```asm
+00494150 mov eax,[0x6B4CA0]   ; original game tick
+00494155 cmp eax,ecx
+00494157 jne 0x494163
+00494159 push 1
+0049415B call 0x4E5D60      ; conditional native clock wait
+00494160 add esp,4
+00494163 mov dword [0x5598B8],0
+0049416D push 1
+0049416F call 0x4E5D60      ; unconditional native clock wait
+...
+004941AA call 0x50DF80
+004941BB jmp 0x493B82      ; next original menu iteration
+```
+
+The exact body of the original `0x4E5D60` is a
+**busy wait on the original clock**, for one tick:
+
+```asm
+004E5D60 mov eax,[0x6B4CA0]
+004E5D65 mov ecx,[esp+4]
+004E5D69 add eax,ecx
+004E5D6B mov ecx,[0x6B4CA0]
+004E5D71 cmp ecx,eax
+004E5D73 jae 0x4E5D7F
+004E5D75 mov ecx,[0x6B4CA0]
+004E5D7B cmp ecx,eax
+004E5D7D jb 0x4E5D75
+004E5D7F ret
+```
+
+**Hypothesis, NOT YET CONFIRMED:** after accelerating
+the first still and reaching the real menu quickly,
+the original game clock may temporarily stop advancing
+and cause one of these two native one-tick waits to
+consume the ~3.659s. An alternative is another caller
+between the two menu ticks. No clock values were
+sampled during the stalled interval in previous logs.
+**Do not bypass or alter `0x4E5D60` yet.**
+
+**Diagnostic-only build #637:** two exact-five-byte
+CALL replacements at the original menu-only locations
+`0x49415B` and `0x49416F`, enabled ONLY when
+`[Debug] F12TestMode=1` and `Log=1`:
+- Each replacement calls the ORIGINAL
+  `0x4E5D60(ticks)` function once, with the original
+  `ticks=1` cdecl parameter and normal return
+- Logs `DEBUG-MENU-CLOCK-WAIT site=... frame=...`,
+  `elapsed_ms`, `native_clock_before` and
+  `native_clock_after` for the first few menu
+  iterations after a debug F12 intro skip
+- Exact native call bytes must match before patch
+  insertion; optional probe fails **softly** on mismatch
+  without disabling original F12
+- No acceleration, shortening, clock writes,
+  additional game-loop changes, input injections,
+  DirectInput API calls or process termination
+- The earlier frozen backup branch remains untouched
+
+CI [#637](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/39951176590):
+**295 tests passed**, Windows x86 DLL compiled and
+artifact [#12500312978](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/39951176590/artifacts/12500312978)
+uploaded.
+
+**Next runtime control:** same INI, install #637 DLLs,
+press F12 during an original opening video,
+avoid Alt+Tab, test responsiveness when the
+main menu first appears and upload the new log.
+A ~3659ms `DEBUG-MENU-CLOCK-WAIT` record will
+confirm the one-tick wait mechanism as the blocking
+location. If both waits finish quickly, inspect
+the original menu loop's other calls between
+`0x493DD6` and the next frame; do not invent
+a game clock failure.
+
+PR #26 stays draft/open/unmerged pending explicit
+approval and in-game validation.
+
 ## Regression test plan
 
 1. On Windows 11, press F12 **once** during the first intro Bink movie.
