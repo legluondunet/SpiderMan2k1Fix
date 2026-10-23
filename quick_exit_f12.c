@@ -982,8 +982,42 @@ int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void) {
   if(n==1)
     say("QUICK-EXIT-F12: REAL Shell_MainMenu frame callback observed (0x493DD6)");
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {
+    /* READ-ONLY: original Shell_MainMenu draws a frame and calls its
+     * normal input tick at 0x493DD6, but at 0x493DDB it tests
+     * [0x54D38C] and skips the game's own menu input handling
+     * while nonzero. Identify whether that gate explains the
+     * observed several-second visible-but-unresponsive interval.
+     * Also correlate the game's active-input flag [0x6B78F0]
+     * with the separate DI8 retry installation at Flip #120.
+     * No new EXE hook, DirectInput call or game-state write. */
     if(InterlockedCompareExchange(&intro_still_exit_state,3,2)==2)
       say("QUICK-EXIT-F12: DEBUG-MENU-SKIP real Shell_MainMenu reached, input-wait page cleaned, no native Quit action");
+    if(InterlockedCompareExchange(&intro_still_exit_state,0,0)==3 &&
+       n<=210) {
+      static DWORD first_tick_ms=0;
+      static LONG previous_transition=-1,previous_active=-1;
+      DWORD now=GetTickCount();
+      DWORD transition=*SPIDER_TRACE_TRANSITION_RAW;
+      DWORD active=*(const volatile DWORD *)(uintptr_t)0x006B78F0u;
+      DWORD since_request=(DWORD)InterlockedCompareExchange(&intro_still_request_ms,0,0);
+      int change=(previous_transition!=(LONG)transition ||
+                  previous_active!=(LONG)active);
+      if(!first_tick_ms)first_tick_ms=now;
+      if(change || n==1 || (n<=150 && n%15==0) || n==210) {
+        char status[320];
+        snprintf(status,sizeof(status),
+          "QUICK-EXIT-F12: DEBUG-MENU-INPUT-PROBE frame=%ld ms_since_first_menu=%lu ms_since_intro_F12_latch=%lu native_transition=0x%08lX native_menu_input_branch=%s game_input_active=%lu menu_ctx=%lu native_clock=%lu [READ-ONLY; NO DEVICE-HR CLAIM]",
+          (long)n,(unsigned long)(DWORD)(now-first_tick_ms),
+          (unsigned long)(since_request?(DWORD)(now-since_request):0u),
+          (unsigned long)transition,transition?"GATED":"ELIGIBLE",
+          (unsigned long)active,
+          (unsigned long)(*SPIDER_TRACE_MENU_CONTEXT!=0u),
+          (unsigned long)*SPIDER_TRACE_NATIVE_CLOCK_RAW);
+        say(status);
+      }
+      previous_transition=(LONG)transition;
+      previous_active=(LONG)active;
+    }
     return 0;
   }
   /* Intentionally do NOT consume intro_quit_pending here: this callback
