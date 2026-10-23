@@ -136,7 +136,7 @@ def test_post_new_game_media_diagnostics_are_passive_and_bink_ownership_unproven
     assert "(*SPIDER_GAME_BINK_ACTIVE!=0u)" in stage
 
     tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
-             SRC.index("/* This wrapper executes ON THE ORIGINAL GAME THREAD")]
+             SRC.index("/* Wrapper on the ORIGINAL GAME THREAD")]
     assert "POST-SHELL-BINK-TICK-CALLSITE" in tick
     assert "post_shell=SpiderQuickExitF12_Enabled() &&" in tick
     assert "real_main_menu_seen,0,0)==1" in tick
@@ -157,7 +157,7 @@ def test_post_new_game_media_diagnostics_are_passive_and_bink_ownership_unproven
 
 def test_post_shell_space_skip_probe_preserves_original_bink_result():
     tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
-             SRC.index("/* This wrapper executes ON THE ORIGINAL GAME THREAD")]
+             SRC.index("/* Wrapper on the ORIGINAL GAME THREAD")]
     assert tick.count("native_result=SPIDER_NATIVE_BINK_FRAME_TICK();")==1
     assert "POST-SHELL-BINK-TICK-RESULT" in tick
     assert "space_down_sampled=%ld" in tick
@@ -209,7 +209,7 @@ def test_native_bink_owner_static_inspection_is_read_only_and_sha_gated():
 
 def test_opt_in_parent_trace_reads_only_exact_verified_native_stack_frame():
     tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
-             SRC.index("/* This wrapper executes ON THE ORIGINAL GAME THREAD")]
+             SRC.index("/* Wrapper on the ORIGINAL GAME THREAD")]
     parent=SRC[SRC.index("static int spider_f12_known_bink_parent_return(DWORD ret_addr)"):
                SRC.index("/* Native BinkFrame tick wrapper")]
     init=SRC[SRC.index("void SpiderQuickExitF12_Init(void (*log_fn)(const char *))"):]
@@ -260,7 +260,7 @@ def test_postmenu_movie_opt_in_is_off_by_default_and_verified_per_owner():
     assert 'GetPrivateProfileIntA("Debug","Log",0,ini)==1' in SRC
     assert "postmovie_opt_in,1" in SRC
     tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
-             SRC.index("/* This wrapper executes ON THE ORIGINAL GAME THREAD")]
+             SRC.index("/* Wrapper on the ORIGINAL GAME THREAD")]
     assert "POSTMENU-MOVIE verified native movie owner 0x4279FB" in tick
     assert "tick_return==0x00470822u || tick_return==0x00470864u" in tick
     assert "(DWORD)frame[4]==0x00427A00u" in tick
@@ -332,7 +332,7 @@ def test_deferred_comic_f12_keeps_native_still_owner_and_then_uses_movie_four():
     assert watcher.index("InterlockedExchange(&postmovie_request_ms,(LONG)now);") < watcher.index(
         "InterlockedCompareExchange(&postmovie_state,4,0)")
     tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
-             SRC.index("/* This wrapper executes ON THE ORIGINAL GAME THREAD")]
+             SRC.index("/* Wrapper on the ORIGINAL GAME THREAD")]
     assert "stage==1 || stage==4" in tick
     assert "stage==4 ? 12000u : 5000u" in tick
     assert "comic_exit_opt_in,0,0)==1" in tick
