@@ -1,3 +1,46 @@
+## 2026-10-23 — F12TestMode automatically enables the initial-menu wait fix (explicit opt-out)
+
+**Updated configuration semantics:** `F12TestMode` is OFF by default.
+If enabled, the previously validated `F12SkipInitialMenuWait`
+workaround is **ON automatically** unless the user's actual
+`SpiderMan2k1Fix.ini` contains an **active**
+`F12SkipInitialMenuWait=0` line in `[Debug]`.
+An absent key uses the default value `1` only inside the
+`F12TestMode=1` initialization branch.
+
+```ini
+[Debug]
+F12TestMode=1
+Log=1
+;F12SkipInitialMenuWait=0  ; uncomment to opt out
+```
+
+The effective truth table:
+
+| `F12TestMode` | `F12SkipInitialMenuWait` INI | Initial-menu acceleration |
+| --- | --- | --- |
+| Missing or `0` | Any or missing | OFF |
+| `1` | Missing | ON automatically |
+| `1` | `1` | ON explicitly |
+| `1` | `0` | OFF explicitly |
+
+Both the generated example INI and the virtual template now
+**comment out** the override. This distinction matters: a
+previously generated INI with active `F12SkipInitialMenuWait=0`
+will retain that opt-out until its line is commented out or
+removed. `Log=1` is optional for behavior but recommended
+for reproducible test logs.
+
+The original native wait, 4.5-second safety fallback, native
+clock restoration, opening Bink cleanup, and 3D F12 exit
+code are unchanged by this configuration adjustment.
+The workaround was previously user-validated with build #645;
+**automatic enabling is a new configuration change** and
+should be verified in a fresh run. The PR remains draft
+and unmerged.
+
+---
+
 ## 2026-10-23 — Fast initial menu wait workaround: user validation on build #645
 
 The user explicitly confirmed **"test validé !"** after
@@ -21,9 +64,10 @@ from this message alone. The previously attached log
 the pre-workaround diagnostic build #637; it proves the
 source stall, not the success of #645.
 
-**Safe defaults are unchanged:**
-`F12TestMode=0` and `F12SkipInitialMenuWait=0` in
-the generated INI. The old full F12-exit implementation
+**Default safety behavior is preserved:** the generated
+INI sets `F12TestMode=0` and contains only a *commented*
+`;F12SkipInitialMenuWait=0` example, so the workaround
+remains OFF until debug mode is enabled. The old full F12-exit implementation
 is frozen on `backup/f12-native-exit-validated-20261023`
 (`4adf16aa13a867a3256f7a2f7ce506cc53b9b82a`).
 The immediately preceding non-bypassing F12TestMode
@@ -64,8 +108,8 @@ increment remains under investigation. Neither the
 native menu input gate nor a late DI8 hook installs
 accounts for the stall.
 
-**New SEPARATE experimental opt-in, default OFF**
-in `SpiderMan2k1Fix.ini`:
+**Initial experiment configuration (historical)** in
+`SpiderMan2k1Fix.ini`:
 
 ```ini
 [Debug]
@@ -74,12 +118,12 @@ F12SkipInitialMenuWait=1
 Log=1
 ```
 
-This experiment is **NOT runtime validated**, and it
-changes native wait behavior; it is separate from the
-previous read-only diagnostics and from the already
-user-validated F12 intro/movie/3D paths.
+This separate experiment was later **validated by the user
+on build #645**. Its configuration has since been simplified:
+`F12TestMode=1` now enables the same mechanism automatically,
+unless `F12SkipInitialMenuWait=0` explicitly disables it.
 
-While both opt-ins are active, *only after* the
+While F12TestMode and the effective menu wait workaround are active, *only after* the
 original four-movie + timed-page + native input-wait
 cleanup has completed AND the actual main menu has
 been entered following a debug F12 request, two
@@ -132,9 +176,10 @@ original clock wait remains intact in the old path.
   `backup/f12-debug-menu-wait-before-experiment-20261023`,
   commit `f00fe26f02724c924e368960c52ea47ac3aff378`.
 
-This feature remains experimental, unmerged, pending
-a real Wine/Windows validation of both responsiveness
-and all subsequent game flows.
+This section records the original investigation.
+Subsequent user acceptance confirmed the workaround on
+build #645; the revised automatic INI behavior remains
+subject to a new test. The PR is still draft/unmerged.
 
 ---
 
