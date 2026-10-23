@@ -1,3 +1,44 @@
+## 2026-10-23 Windows 11: first direct F12 exit from 3D confirmed (build #516)
+
+User-provided `SpiderMan2k1Fix(20261023-023052).log` running
+`v1.0.0-278bd74` enabled the separate
+`[System] ExperimentalQuickExitF12In3D=1` option and pressed F12
+during actual gameplay. Observed, in order:
+
+```text
+QUICK-EXIT-F12: 3D native exit intent queued; waiting for original gameplay tick
+QUICK-EXIT-F12: 3D game-thread frame completed; native request 7 queued for original 0x455BF3 cleanup
+QUICK-EXIT-F12: NATIVE-3D-CLEANUP begin n=1 request=7
+QUICK-EXIT-F12: 3D native cleanup checkpoint returned; awaiting controller-7 finalization
+QUICK-EXIT-F12: NATIVE-3D-CLEANUP completed n=1 request=7
+QUICK-EXIT-F12: CONTROLLER-7 native teardown ENTER n=1 bit4=0 status=-1 3D-checkpoint=1
+QUICK-EXIT-F12: 3D owner+controller cleanup complete; engine native final-exit flag set at 0x45619D
+QUICK-EXIT-F12: CONTROLLER-7 native teardown COMPLETED n=1 bit4=1 status=-1 outcome=NATIVE-FINAL-CLEANUP
+```
+
+The user separately confirmed `SpideyPC.exe` was absent from Windows
+Task Manager after pressing F12. Thus this is a **first successful live
+Windows functional test** of a direct 3D-to-final-cleanup exit, with no
+intermediate main menu. It does **not** establish exit code 0, Windows
+Error Reporting status, or repeated-run stability; keep the separate
+opt-in disabled by default, the PR in draft, and do not merge.
+
+**Diagnostic correction after reviewing the log:** The old line
+`NATIVE REQUEST 7 produced by 0x440EF0` on this F12 run did not
+identify a native internal writer: the wrapper inserted request 7
+*after* `0x440EF0` returned. Preserve a pre-injection snapshot and
+log native-owner transitions only from that value. The exact nested
+native writer on normal 3D-to-menu transitions remains unproven.
+
+Next Windows regression tests: F12 at different gameplay moments;
+native exit-to-menu (without F12) remains unchanged; main-menu F12
+still dispatches Quit (18); F12 off/background is inert; record the
+exit code and Windows crash events externally. Comic covers and static
+intro screens remain **unsupported** and need separate owner-safe
+shutdown paths.
+
+---
+
 ## 2026-10-22 live build #488 trace: mode global is a request, not scene ownership
 
 The user supplied `SpiderMan2k1Fix(20261022-172349).log`, comprising a normal startup, the first real menu, a native comic cover, actual 3D gameplay, and a return toward the 2D menu. There is **no F12 press** in that run. Analysis:
