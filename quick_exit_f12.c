@@ -76,6 +76,14 @@
 #define SPIDER_TRACE_MENU_STAGE_BYTE ((const volatile BYTE *)(uintptr_t)0x006828D0u)
 #define SPIDER_TRACE_DISPATCH_RAW ((const volatile DWORD *)(uintptr_t)0x0068293Cu)
 #define SPIDER_TRACE_TRANSITION_RAW ((const volatile DWORD *)(uintptr_t)0x0054D38Cu)
+/* SHA-matched original 0x4A1930 (timed loop) and 0x4A17A0
+ * (input wait) both increment DWORD 0x60CFA8 on native frame ticks.
+ * 0x4A1953 sets byte 0x6A7785 on first entered timed page;
+ * 0x4A19D6 and 0x4A18CB read the game clock at 0x6B4CA0.
+ * These are PASSIVE raw scalar samples, not stable ownership flags. */
+#define SPIDER_TRACE_STILL_FRAME_COUNT ((const volatile DWORD *)(uintptr_t)0x0060CFA8u)
+#define SPIDER_TRACE_TIMED_PAGE_ONCE ((const volatile BYTE *)(uintptr_t)0x006A7785u)
+#define SPIDER_TRACE_NATIVE_CLOCK_RAW ((const volatile DWORD *)(uintptr_t)0x006B4CA0u)
 /* Top-level dispatch state is observed, never written, from the already
  * installed IDirectDraw7::Flip hook. These are fixed BSS addresses of the
  * SHA-gated 2001 executable; mode labels require runtime correlation. */
@@ -307,19 +315,23 @@ void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,
       DWORD raw_dispatch=*SPIDER_TRACE_DISPATCH_RAW;
       DWORD raw_transition=*SPIDER_TRACE_TRANSITION_RAW;
       DWORD raw_stage=*SPIDER_TRACE_MENU_STAGE_BYTE;
+      DWORD still_frames=*SPIDER_TRACE_STILL_FRAME_COUNT;
+      DWORD timed_page_once=*SPIDER_TRACE_TIMED_PAGE_ONCE;
+      DWORD game_clock=*SPIDER_TRACE_NATIVE_CLOCK_RAW;
       LONG ticks=InterlockedCompareExchange(&menu_frame_count,0,0);
       LONG cleanup=InterlockedCompareExchange(&post_intro_cleanup_seen,0,0);
-      char snapshot[420];
+      char snapshot[590];
       last_ms=now;
       samples++;
       snprintf(snapshot,sizeof(snapshot),
-        "QUICK-EXIT-F12: STARTUP-STATIC-PROBE flip=%ld since_first_flip_ms=%lu intro_cleanup_seen=%ld real_menu_tick_count=%ld renderer2d=%ld mode_request=%lu bink_active=%ld video_handle_present=%ld menu_ctx_present=%lu menu_stage_byte=%lu dispatcher_raw=%lu transition_raw=%lu quit_byte=%ld [READ-ONLY; SCREEN ID UNKNOWN]",
+        "QUICK-EXIT-F12: STARTUP-STATIC-PROBE flip=%ld since_first_flip_ms=%lu intro_cleanup_seen=%ld real_menu_tick_count=%ld renderer2d=%ld mode_request=%lu bink_active=%ld video_handle_present=%ld menu_ctx_present=%lu menu_stage_byte=%lu dispatcher_raw=%lu transition_raw=%lu still_frame_count=%lu timed_page_once=%lu native_clock_raw=%lu quit_byte=%ld [READ-ONLY; SCREEN ID UNKNOWN]",
         (long)flip_index,(unsigned long)(DWORD)(now-start_ms),
         (long)cleanup,(long)ticks,(long)renderer_menu,
         (unsigned long)mode,(long)bink_flag,(long)video_handle,
         (unsigned long)menu_context,(unsigned long)raw_stage,
         (unsigned long)raw_dispatch,(unsigned long)raw_transition,
-        (long)quit);
+        (unsigned long)still_frames,(unsigned long)timed_page_once,
+        (unsigned long)game_clock,(long)quit);
       say(snapshot);
     }
   }
