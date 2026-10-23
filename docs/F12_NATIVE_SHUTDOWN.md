@@ -23,9 +23,14 @@ CONTROLLER-7 native teardown COMPLETED n=1 bit4=1 status=-1 outcome=NATIVE-FINAL
 ```
 
 This is a successful **logged native final-teardown path** on a
-Wine-style installation, not proof that the Wine process subsequently
-disappeared: the latter would require direct user/process observation.
-No crash/error is visible in this log. It also confirms that the
+Wine-style installation. **User follow-up validation (2026-10-23):**
+after F12 shutdown the user explicitly checked and confirmed that
+**no Wine process and no `SpideyPC.exe` remained in memory**.
+The native 3D F12 shutdown is therefore **validated in this Wine
+run both by the engine cleanup log and by the user's process check**.
+This does **not** validate F12 during the earlier comic still or
+Bink cinematic (those paths remain unsupported). No crash/error
+is visible in this log. It also confirms that the
 throttled post-menu Bink result logger is compact (about 12 result
 lines, not thousands).
 
