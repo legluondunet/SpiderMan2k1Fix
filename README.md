@@ -55,8 +55,12 @@ Wine process. The real `Shell_MainMenu` native frame tick at
 `0x00493DD6` selects the game's own Quit action.
 The experimental New Game comic and post-menu cinematics are
 **not yet validated on Windows 11**.
-Two pre-menu static title/Enter screens also lack a separate
-stage-specific F12 validation.
+The two pre-menu static screens have a new **unvalidated,
+separately opt-in** F12 prototype. The first screen keeps
+its native timer; the second uses its exact original
+input-wait completion and cleanup before the actual menu
+receives its own native Quit command. Do not consider this
+validated until a Wine/Windows process-exit check.
 
 Enable only the desired stages in `SpiderMan2k1Fix.ini`
 while using the experimental PR build:
@@ -70,6 +74,8 @@ QuickExitF12=1
 ExperimentalQuickExitF12In3D=1
 ExperimentalQuickExitF12InNewGameMovie=1
 ExperimentalQuickExitF12InNewGameComic=1
+; Optional pre-menu still-screen trial (NOT validated, 0 by default):
+ExperimentalQuickExitF12InIntroStills=1
 ```
 
 - `QuickExitF12` activates the main menu and opening-video handling.
@@ -78,6 +84,18 @@ ExperimentalQuickExitF12InNewGameComic=1
   clean shutdown during **New Game Bink movie #4**, after native
   video cleanup; it requires `QuickExitF12=1`,
   `ExperimentalQuickExitF12In3D=1`, and `[Debug] Log=1`.
+- `ExperimentalQuickExitF12InIntroStills` (default `0`) is
+  a separately guarded prototype for **both screens after
+  the opening videos but before the real main menu**.
+  F12 during the timed first page waits until it ends normally;
+  F12 during the second page takes the original input-wait
+  loop's regular completion branch `0x4A18AE`, which releases
+  its resources and restores SEH. Only after this does
+  original `Shell_MainMenu` Quit action 18 execute.
+  It requires `QuickExitF12=1` and `[Debug] Log=1`.
+  This route has **not** been user-validated; test it
+  separately before enabling permanently.
+
 - `ExperimentalQuickExitF12InNewGameComic` enables **deferred**
   F12 while the New Game comic still is visible. It requires
   the preceding movie option; the comic is *not immediately
