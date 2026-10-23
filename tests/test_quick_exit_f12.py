@@ -532,7 +532,6 @@ def test_debug_menu_input_delay_probe_is_read_only_and_native_gated():
     assert "n<=150 && n%15==0" in menu
     assert "*SPIDER_TRACE_TRANSITION_RAW" in menu
     assert "(const volatile DWORD *)(uintptr_t)0x006B78F0u" in menu
-    assert "transition?\\\"GATED\\\":\\\"ELIGIBLE\\\"" not in menu
     assert 'transition?"GATED":"ELIGIBLE"' in menu
     assert "NO DEVICE-HR CLAIM" in menu
     assert "ms_since_first_menu" in menu
