@@ -82,9 +82,10 @@ def test_post_new_game_media_diagnostics_are_passive_and_bink_ownership_unproven
     tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
              SRC.index("/* This wrapper executes ON THE ORIGINAL GAME THREAD")]
     assert "POST-SHELL-BINK-TICK-CALLSITE" in tick
-    assert "if(SpiderQuickExitF12_Enabled()" in tick
+    assert "post_shell=SpiderQuickExitF12_Enabled() &&" in tick
     assert "real_main_menu_seen,0,0)==1" in tick
-    assert "InterlockedIncrement(&after_shell_ticks)==1" in tick
+    assert "n=InterlockedIncrement(&after_shell_ticks);" in tick
+    assert "if(n==1)" in tick
     assert tick.count("SPIDER_NATIVE_BINK_FRAME_TICK();")==1
     assert "native_result=SPIDER_NATIVE_BINK_FRAME_TICK();" in tick
     assert "return native_result;" in tick
