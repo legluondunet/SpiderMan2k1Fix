@@ -226,3 +226,12 @@ def test_f10_canonical_and_legacy_f12_debug_keys_are_strict_boolean(runner,tmp_p
 def test_f10_system_options_known_and_disabled_or_enabled(runner,tmp_path,key):
     for n in ("0","1"):
         assert validate(runner,tmp_path,f"[System]\n{key}={n}\n")[0]==(0,0,1)
+
+
+@pytest.mark.parametrize("value,good",[("0",True),("1",True),("2",False),("-1",False),("yes",False)])
+def test_f10_gameplay_exit_strict_boolean(runner,tmp_path,value,good):
+    status,detail=validate(runner,tmp_path,f"[Debug]\nF10GameplayExit={value}\n")
+    if good:
+        assert status==(0,0,1),detail
+    else:
+        assert status[0]>=1 and status[2]==0,detail

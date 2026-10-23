@@ -107,3 +107,11 @@ def test_canonical_f10_and_legacy_f12_config_retained_through_recovery(recover_r
                   "[Debug] F12TestMode=0","[System] QuickExitF10=1",
                   "[System] QuickExitF12=0","[Audio] VoiceLevel=71"):
         assert entry in lines
+
+
+def test_auto_repair_preserves_f10_gameplay_exit(recover_runner,tmp_path):
+    lines=recover(recover_runner,tmp_path,
+        "[Debug]\nLog=1\nF10TestMode=1\nF10Auto3DScripts=1\nF10GameplayExit=1\n"
+        "[Keyboard]\nJump=SPACE\n[Plugin]\nUnknown=x\n")
+    assert "[Debug] F10GameplayExit=1" in lines
+    assert "[Keyboard] Jump=SPACE" in lines

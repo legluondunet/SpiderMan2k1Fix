@@ -446,7 +446,7 @@ def test_default_off_and_ini_section_validated():
 def test_f12_debug_fast_test_mode_default_off_and_valid_ini_key():
     assert "F10TestMode=0" in INI
     assert '"F10TestMode=0\\r\\n"' in GEN
-    assert 'spider_ini_debug[]={"Log","F10TestMode","F10Auto3DScripts","F12TestMode","F12Auto3DScripts"}' in VAL
+    assert 'spider_ini_debug[]={"Log","F10TestMode","F10Auto3DScripts","F10GameplayExit","F12TestMode","F12Auto3DScripts"}' in VAL
     assert 'GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1' in SRC
     assert "static volatile LONG debug_f12_test_mode=0;" in SRC
 
@@ -1283,8 +1283,8 @@ def test_f12_newgame_movie_skip_does_not_use_shutdown_controller():
                SRC.index("} else if(InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 &&",SRC.index("static DWORD WINAPI f12_input_thread("))]
     assert "DEBUG-NEWGAME-COMIC F12 armed" in worker
     assert "DEBUG-NEWGAME-MOVIE F12 queued" in worker
-    assert "DEBUG-NEWGAME-3D F10 consumed" in worker
-    assert worker.index("DEBUG-NEWGAME-3D F10 consumed") < worker.index(
+    assert "DEBUG-F10-GAMEPLAY-EXIT BLOCKED" in worker
+    assert worker.index("DEBUG-F10-GAMEPLAY-EXIT BLOCKED") < worker.index(
         "DEBUG-3D-EXIT native gameplay exit queued")
     assert "InterlockedCompareExchange(&debug_newgame_progress,0,0)>=1" in worker
     assert "postmovie_state,4,0" in worker
@@ -1340,7 +1340,7 @@ def test_newgame_f12_3d_two_space_skippable_scenes_remain_distinct_from_gameplay
     assert "previous_3d_space==0 && space_down" in worker
     assert "RAW PHYSICAL PRESS ONLY; MAY BE GAMEPLAY JUMP; NO SCENE OR EXIT AUTHORITY" in worker
     assert "auto cinematic skips are opt-in; gameplay EXIT BLOCKED" in worker
-    assert worker.index("DEBUG-NEWGAME-3D F10 consumed") < worker.index(
+    assert worker.index("DEBUG-F10-GAMEPLAY-EXIT BLOCKED") < worker.index(
         "DEBUG-3D-EXIT native gameplay exit queued")
     assert "SendInput(" not in worker
 
@@ -1709,3 +1709,30 @@ def test_auto_native_two_script_skip_opt_in_is_guarded_and_fail_closed():
                    "SPIDER_NATIVE_CUTSCENE_OWNER_PTR=","skip_allowed=1u;",
                    "*SPIDER_ENGINE_MODE=7"):
         assert banned not in section
+
+
+def test_f10_gameplay_exit_only_after_two_verified_native_script_lifetimes():
+    """A new physical F10 during either 3D cutscene must fail closed.
+    Only both independent script endings and both native skip responses
+    consumed permit a strictly opted-in native original cleanup."""
+    assert "static volatile LONG debug_f10_gameplay_exit_opt_in=0;" in SRC
+    assert "static volatile LONG debug_cutscene_lifecycle=0;" in SRC
+    assert "InterlockedIncrement(&debug_intro_generation);" in SRC
+    assert 'GetPrivateProfileIntA("Debug","F10GameplayExit",0,ini)==1' in SRC
+    worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):SRC.index("void SpiderQuickExitF12_Init(")]
+    for proof in ("lifecycle==6 && auto_stage==7",
+                  "debug_f10_gameplay_exit_opt_in,0,0)==1",
+                  "*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST==0u",
+                  "DEBUG-F10-GAMEPLAY-EXIT BLOCKED", "game3d_exit_state,1,0"):
+        assert proof in worker
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
+    final_guard=owner[owner.index("Native-game-thread FINAL eligibility"):
+                      owner.index("after_timer=*SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE")]
+    for proof in ("VirtualQuery(", "scene[0x1acu]==0u && scene[0x1b4u]==0u",
+                  "debug_cutscene_lifecycle,0,0)==6", "debug_auto3d_state,0,0)==7",
+                  "scripts_idle &&", "before_request==0u && after_request==0u",
+                  "game3d_exit_state,2,1"):
+        assert proof in final_guard
+    assert "SendInput(" not in final_guard
+    assert "GetAsyncKeyState(VK_F12)" not in worker

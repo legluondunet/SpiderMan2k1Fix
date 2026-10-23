@@ -1,3 +1,70 @@
+## 2026-10-23 — New experimental F10 in-game native quit (strictly opt-in)
+
+With the F10 intro-skip confirmed by the user in Wine, the
+next requested feature is to quit safely **from playable 3D**
+by pressing F10 again. The original 2001 game's request 7
+at 0x60CFA4 enters its own 3D owner cleanup (0x455BF3),
+followed by controller-7 cleanup and optional native FINAL
+shutdown at 0x45619D. Existing code already owns a gated
+hook for this, but previously failed closed in ALL the
+two-cinematic New Game scenes.
+
+**NEW extra [Debug] F10GameplayExit=1 (default OFF)**,
+strict boolean validated and handled by INI auto repair,
+requires Log=1 and F10TestMode=1. During this first
+conservative experiment it ONLY works after a New Game
+comic F10 with F10Auto3DScripts=1, which makes:
+- both distinct game-owned CutSceneScript lifetimes end
+  via original native cleanup (lifecycle state 6);
+- both game-owned skip request bytes are consumed
+  (native auto-skip stage 7);
+- the manager's actual cutscene context +0x1AC
+  and active-script flag +0x1B4 are both ZERO.
+The watcher also insists on current original 3D
+input-owner and renderer frames, no video, no pause,
+no pending skip request, mode=0, and user F10
+fresh key edge with the game foreground.
+The background watcher queues ONLY an intent;
+the NATIVE GAME THREAD verifies manager memory
+using VirtualQuery before setting the existing
+mode 7 request. The native 3D cleanup must return
+before controller 7 can set final shutdown bit.
+Unsolicited ORIGINAL mode7 requests, such as the
+one observed ~11 seconds into earlier Wine logs,
+cannot trigger this final shutdown because
+game3d_exit_state is not 2 for those original
+game-generated requests.
+
+A new F10 on either cinematic remains blocked;
+no unsafe timers, actor state 5/3, SPACE counts,
+graphics HUD appearances, or fake Space injection.
+New Game manual scripted skips and unclassified
+other game modes also fail closed for this initial
+feature. A second physical F10 press is required
+after the previously validated opening F10.
+F12's original unsafe WM_CLOSE stays patched away.
+
+**Next LIVE Wine test (not yet performed):**
+```ini
+[Debug]
+Log=1
+F10TestMode=1
+F10Auto3DScripts=1
+F10GameplayExit=1
+```
+Start New Game, F10 once on L1COV.bmp, allow
+both original 3D scripts to auto-skip, verify
+actual Spider-Man movement and SPACE jump,
+RELEASE then press F10 again during playable
+3D and check native 3D cleanup, original
+controller 7 final teardown and no lingering
+SpideyPC.exe process. If exit blocked, send
+full log. For errors, disable F10GameplayExit
+or restore previous known-good F10 build.
+PR #26 remains DRAFT/unmerged pending validation.
+
+---
+
 ## 2026-10-23 — Shortcut reassigned from F12 to F10 for Linux MangoHud
 
 The physical shortcut is **F10 exclusively**, to avoid MangoHud's
