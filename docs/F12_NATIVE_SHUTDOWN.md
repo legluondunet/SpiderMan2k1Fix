@@ -1,3 +1,93 @@
+## 2026-10-23 — Windows 11 direct New Game Bink F12: clean native exit and yellow window reproduced
+
+The user executed a new **native Windows 11** regression on
+build **#589**, pressing F12 **directly during the New Game
+Bink cinematic**, not on the preceding comic. Uploaded
+`SpiderMan2k1Fix(20261023-101624).log` records
+`v1.0.0-823379a`, valid INI and the original supported
+`SpideyPC.exe` SHA-256
+`0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
+
+Independent user observations: **no `SpideyPC.exe`
+left in Windows Task Manager**, but a **yellow
+window remains visible approximately one second** before
+the final game exit, just like after F12 pressed on
+the preceding New Game comic.
+
+Relevant original runtime trace (exact):
+
+```text
+QUICK-EXIT-F12: POST-SHELL-BINK-TICK-CALLSITE original 0x470750 tick observed [OWNER-IDENTITY NOT PROVEN]
+QUICK-EXIT-F12: POST-SHELL-BINK-TICK-RESULT n=1 native_result=1 previous_result=-1 space_down_sampled=0 bink_flag=1 video_handle_present=1 native_3d_owner_seen=0 ms_since_comic=5000 [READ-ONLY; SKIP-REASON UNKNOWN]
+QUICK-EXIT-F12: POST-SHELL-BINK-TICK-RESULT n=157184 native_result=1 previous_result=1 space_down_sampled=0 bink_flag=1 video_handle_present=1 native_3d_owner_seen=0 ms_since_comic=6000 [READ-ONLY; SKIP-REASON UNKNOWN]
+QUICK-EXIT-F12: POSTMENU-MOVIE F12 intent requested; original Bink owner verification pending [EXPERIMENTAL]
+rdown follows; source=CINEMATIC elapsed_since_F12_ms=0
+QUICK-EXIT-F12: NATIVE-GAME-INPUT owner ENTER n=1 request=0 timer_active=0 flag1=0 flag2=0
+QUICK-EXIT-F12: POSTMENU-MOVIE original Bink + script returned; native input checkpoint complete; request 7 for original cleanup [EXPERIMENTAL]
+QUICK-EXIT-F12: NATIVE-3D-CLEANUP begin n=1 request=7
+QUICK-EXIT-F12: 3D native cleanup checkpoint returned; awaiting controller-7 finalization
+QUICK-EXIT-F12: NATIVE-3D-CLEANUP completed n=1 request=7
+QUICK-EXIT-F12: CONTROLLER-7 native teardown ENTER n=1 bit4=0 status=-1 3D-checkpoint=1
+QUICK-EXIT-F12: 3D owner+controller cleanup complete; engine native final-exit flag set at 0x45619D
+QUICK-EXIT-F12: CONTROLLER-7 native teardown COMPLETED n=1 bit4=1 status=-1 outcome=NATIVE-FINAL-CLEANUP
+QUICK-EXIT-F12: POSTMENU-MOVIE FINAL-TEARDOWN-CHECKPOINT elapsed_since_F12_ms=78 [NO PRESENT/COLOR CLAIM]
+```
+
+**Result: PASS** for game/process exit in native Windows 11
+direct from Bink movie #4. The last native final cleanup
+checkpoint was logged **78 ms after pressing F12**.
+This is **not** the full window-exit duration.
+
+**Important logging anomaly:** between the F12 intent
+and native-input checkpoint, the log contains only the
+orphan fragment `rdown follows; source=CINEMATIC
+elapsed_since_F12_ms=0`, which looks like the end of the
+expected "verified native movie owner 0x4279FB"
+message in source. This record was *truncated or
+interleaved*: **do not cite the incomplete line as
+an independently complete owner-identity proof**.
+The subsequent original Bink/script return, input
+checkpoint, controller-7 teardown and clean process
+exit are fully present and corroborate the intended
+flow. The reason for the partial log record is not
+established and may require logger concurrency review.
+
+**Now confirmed cross-scenario/cross-platform:**
+- Wine + Windows: F12 from the **New Game comic**
+  defers until Bink #4 then performs original cleanup
+  and exits cleanly, showing ~1 s of yellow before exit.
+- Windows: F12 pressed **directly in New Game Bink #4**
+  performs original cleanup and exits cleanly, also
+  showing ~1 s of yellow.
+
+These two triggers converge in the Bink/script →
+native controller-7 cleanup route; this shared
+transition is a useful investigation target.
+**Not proven:** the exact graphics surface drawing
+yellow; whether yellow begins before/after final
+native teardown, whether a final flip/copy is
+responsible, or the actual process/window destruction
+interval. There is no visual/pixel capture in this
+log. Do not modify graphics presentation without
+additional source-specific evidence.
+
+**Next discrimination:** native Windows 11 test
+F12 **during active 3D gameplay**, with no ongoing
+Bink. Observe whether the same yellow window appears
+while checking for a residual `SpideyPC.exe` process.
+If yellow recurs, common controller-7/final teardown
+is more likely than a unique Bink-to-3D handoff.
+If yellow does not recur, focus further investigation
+on video shutdown / reused DirectDraw primary and
+backbuffer. Keep the same tested #589 build and INI.
+
+**Scope:** documentation-only, no new runtime hook,
+different buffer writes or altered F12 safety guards.
+PR #26 remains **draft and unmerged**, subject to
+explicit user validation.
+
+---
+
 ## 2026-10-23 — Windows 11: F12 on New Game comic clean exit; ~1-second yellow window reproduced
 
 The user tested **F12 during the New Game comic still**
