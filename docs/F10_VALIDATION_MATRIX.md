@@ -28,6 +28,9 @@ NOT process shutdown.
 | Scenario | Evidence | Status |
 | --- | --- | --- |
 | First F10 on New Game comic | Original L1COV.bmp timer branch, Bink movie #4 owner and native teardown | Validated in Wine |
+| F10 in New Game Bink movie #4 | Native movie stop then two independent native 3D auto-skips | New, not yet runtime validated |
+| F10 during first introductory 3D script | Native permission, first skip and second skip to gameplay | Validated in Wine build #700 |
+| F10 during second introductory 3D script | Native permission then second skip to gameplay | Pending separate test |
 | Automatic Stan Lee 3D introduction skip | Original first CutSceneScript skip permission, request, native end | Validated in Wine |
 | Automatic second 3D introduction skip | Distinct original CutSceneScript, independently allowed/requested/ended | Validated in Wine |
 | Earlier F10 process-quit prototype | Native request 7, original 3D cleanup and final-exit bit | Old mode validated in Wine #687; superseded |

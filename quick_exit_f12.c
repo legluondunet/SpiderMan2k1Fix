@@ -2812,8 +2812,24 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
                   *SPIDER_BINK_VIDEO_HANDLE!=0u) {
           if(InterlockedCompareExchange(&postmovie_state,0,0)==0) {
             InterlockedExchange(&postmovie_request_ms,(LONG)now);
-            if(InterlockedCompareExchange(&postmovie_state,1,0)==0)
+            if(InterlockedCompareExchange(&postmovie_state,1,0)==0) {
+              /* F10 on verified New Game Bink #4 must ALSO skip BOTH
+               * native 3D intros: exactly like F10 on L1COV. The
+               * real owner later validates each CutSceneSkipAllow
+               * separately before asking the original engine to skip. */
+              if(InterlockedCompareExchange(&debug_auto3d_opt_in,0,0)==1 &&
+                 InterlockedCompareExchange(&debug_auto3d_state,0,0)==0) {
+                InterlockedIncrement(&debug_intro_generation);
+                InterlockedExchange(&debug_cutscene_lifecycle,0);
+                InterlockedExchange(&debug_live_cutscene_active,-1);
+                InterlockedExchange(&debug_auto3d_first_owner,0);
+                InterlockedExchange(&debug_auto3d_first_last_ip,0);
+                InterlockedExchange(&debug_auto3d_begin_ms,(LONG)now);
+                InterlockedExchange(&debug_auto3d_state,1);
+                say("QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE ARMED by F10 on verified New Game Bink movie #4; BOTH subsequent native 3D intros will be skipped after CutSceneSkipAllow [NO EXIT]");
+              }
               say("QUICK-EXIT-F12: DEBUG-NEWGAME-MOVIE F12 queued for exact native Enter-equivalent Bink termination, NO EXIT");
+            }
           }
         } else if(InterlockedCompareExchange(&debug_newgame_progress,0,0)>=1) {
           /* The native movie-4 handoff precedes TWO 3D cutscenes.

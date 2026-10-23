@@ -41,10 +41,11 @@ The original New Game sequence and in-game native shutdown have been
 **validated under Wine** using the user's original
 `SpideyPC.exe` (SHA-256 checked):
 
-- First F10 on New Game comic `L1COV.bmp`: original comic expiry
-  branch, movie #4 native Bink teardown and two independent
-  `CutSceneScript` skip requests **only after** each script's own
-  `CutSceneSkipAllow` permission.
+- **F10 at any point from the New Game comic through both introductory
+  3D cutscenes:** advance to gameplay, skipping the remaining comic,
+  movie #4 and/or native scripts. Both scripts use their original
+  `CutSceneSkipAllow` permission and cleanup. A single F10 during
+  Bink #4 now arms BOTH subsequent automatic native script skips.
 - Second F10 during playable 3D: gated original 3D cleanup
   (`0x455BF3`), request 7, controller-7 cleanup, then
   **return to the original main menu**. The native final-exit flag

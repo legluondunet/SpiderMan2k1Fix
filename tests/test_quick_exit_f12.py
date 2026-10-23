@@ -1948,3 +1948,44 @@ def test_f10_publishes_active_intro_stage_before_native_skip_dispatch():
     assert "InterlockedExchange(&debug_cutscene_lifecycle,scene_stage);" in part
     assert part.index("InterlockedExchange(&debug_cutscene_lifecycle,scene_stage);") < part.index(
         "if(event_name && lifecycle_logs<24")
+
+def test_f10_during_verified_newgame_bink_arms_both_3d_intro_skips():
+    """Wine #700 showed Bink F10 skipped only video; second F10 needed in 3D."""
+    worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
+               SRC.index("void SpiderQuickExitF12_Init(")]
+    movie=worker[worker.index('InterlockedCompareExchange(&debug_newgame_progress,0,0)==1 &&'):
+                 worker.index('} else if(InterlockedCompareExchange(&debug_newgame_progress,0,0)>=1)')]
+    assert "InterlockedCompareExchange(&postmovie_state,1,0)==0" in movie
+    assert "debug_auto3d_opt_in,0,0)==1" in movie
+    assert "debug_auto3d_state,0,0)==0" in movie
+    for setting in ("InterlockedIncrement(&debug_intro_generation);",
+                    "InterlockedExchange(&debug_cutscene_lifecycle,0);",
+                    "InterlockedExchange(&debug_live_cutscene_active,-1);",
+                    "InterlockedExchange(&debug_auto3d_first_owner,0);",
+                    "InterlockedExchange(&debug_auto3d_first_last_ip,0);",
+                    "InterlockedExchange(&debug_auto3d_begin_ms,(LONG)now);",
+                    "InterlockedExchange(&debug_auto3d_state,1);"):
+        assert setting in movie
+    assert "ARMED by F10 on verified New Game Bink movie #4" in movie
+    assert movie.index('InterlockedExchange(&debug_auto3d_state,1);') < movie.index(
+        "DEBUG-NEWGAME-MOVIE F12 queued")
+    for forbidden in ("*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST=1u;",
+                      "0x0060CFA4u=7u", "SendInput(", "PostMessageA(", "TerminateProcess("):
+        assert forbidden not in movie
+    native=SRC[SRC.index("Optional one-F12 native 3D skip experiment"):
+               SRC.index("previous_owner=owner;")]
+    assert "auto_state==1" in native
+    assert "auto_state==2" in native and "auto_state==5" in native
+    assert native.count("*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST=1u;")==2
+    assert native.count("skip_allowed==1u")==2
+
+def test_f10_media_and_script_branches_take_priority_over_gameplay_menu():
+    worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
+               SRC.index("void SpiderQuickExitF12_Init(")]
+    assert worker.index("ARMED by F10 on original L1COV.bmp") < worker.index(
+        "ARMED by F10 on verified New Game Bink movie #4")
+    assert worker.index("ARMED by F10 on verified New Game Bink movie #4") < worker.index(
+        "DEBUG-F10-CUTSCENE-SKIP F10 queued")
+    assert worker.index("DEBUG-F10-CUTSCENE-SKIP F10 queued") < worker.index(
+        "DEBUG-F10-GAMEPLAY-EXIT F10 accepted")
+    assert "lifecycle==6 && auto_stage==7" in worker
