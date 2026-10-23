@@ -1,3 +1,48 @@
+## 2026-10-23 — Windows 11: New Game still → Bink → Space skip → 3D
+
+The user provided `SpiderMan2k1Fix(20261023-033124).log`
+(`v1.0.0-4c3f218`) and reports that pressing **Space** during the
+long New Game cinematic skips it and starts playable 3D.
+
+Observed diagnostic order:
+
+```text
+COMIC-RENDER-CANDIDATE draw=1 flip=304 caller_rva=0x00102C72 texture=512x256 ... native_3d_owner_calls=0
+ENGINE-STATE flip=305 ... bink_flag=0 video_handle_present=0 native_3d_owner_seen=0
+POST-SHELL-BINK-TICK-CALLSITE original 0x470750 tick observed [OWNER-IDENTITY NOT PROVEN]
+ENGINE-STATE flip=306 ... bink_flag=1 video_handle_present=1 native_3d_owner_seen=0
+ENGINE-STATE flip=381 ... bink_flag=1 video_handle_present=1 native_3d_owner_seen=0
+NATIVE-GAME-INPUT owner ENTER n=1 request=0 ...
+ENGINE-STATE flip=428 ... bink_flag=0 video_handle_present=0 native_3d_owner_seen=1
+QUICK-EXIT-F12: CONTROLLER-7 native teardown COMPLETED n=1 bit4=1 status=-1 outcome=NATIVE-FINAL-CLEANUP
+```
+
+This is strong temporal evidence that the post-menu cinematic
+uses the **existing original 0x470750 Bink loop** and its original
+movie handle/flag. It does **not** establish whether the native
+loop stopped because of Space, natural end-of-file, or another
+game-owned control signal; the exact native skip input and
+post-video cleanup have not been observed.
+
+Added a **strictly passive** next diagnostic in the existing
+`spider_f12_native_intro_tick` wrapper: after calling the original
+`SPIDER_NATIVE_BINK_FRAME_TICK` **exactly once**, return the
+unaltered native `BYTE` and log throttled
+`POST-SHELL-BINK-TICK-RESULT` with the result, any sampled Space
+keydown, original Bink movie flag and handle *presence*, and time
+since comic draw. A sampled key state is not proof of the
+game's true input handler. No new hook, extra native call,
+native shutdown attempt, early Bink stop, or process exit.
+
+Re-test `New Game`, allow still to disappear naturally, press
+Space ~5s into the cinematic, then after playable 3D begins use
+already validated F12 and upload the log. Only contemplate
+**opt-in** cinematic F12 once the game-owned owner/cleanup/return
+behavior is established. Do not change intro movie or 3D F12
+paths while collecting this evidence.
+
+---
+
 ## 2026-10-23 — Passive video-path diagnostics after New Game
 
 The user's observed sequence is one automatically timed illustrated
