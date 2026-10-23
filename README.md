@@ -68,8 +68,14 @@ With `Log=1` the patch captures separate physical Space key-down
 events, a read-only original `0x440EF0` phase-state snapshot, and
 the input masks/results of five signature-verified native
 `0x50C180` 3D CALL sites (the original function and BYTE result are
-preserved). These observations do not themselves mark either scene
-complete, nor identify which input mask is actually Space. No synthetic Space/Enter,
+preserved). The original input mask `0x04000000` maps to
+DIK_SPACE (`0x39`) inside `0x50C180`, but none of the five
+observed game sites uses that mask. The new `DEBUG-3D-SPACE-GATE`
+diagnostic also observes the exact original `0x455427` and
+`0x455444` **direct** Space polling sites, guarded by game-owned
+flag `0x100`, leaving both real results unchanged.
+Neither input evidence alone establishes cinematic completion
+or gameplay readiness. No synthetic Space/Enter,
 process termination, or arbitrary controller transition is used.
 The single `[Debug] F12TestMode` option overrides the older
 `[System]` F12 controls and defaults to `0`; `Log=1` is recommended.

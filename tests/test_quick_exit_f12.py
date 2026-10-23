@@ -1431,3 +1431,35 @@ def test_debug_3d_original_action_callsite_attribution_cannot_skip_or_exit():
     assert init.count("restore_debug_3d_native_input_probes();")>=2
     assert "GetPrivateProfileIntA(\"Debug\",\"Log\",0,ini)==1" in init
     assert "F12 exit guard preserved" in init
+
+
+def test_original_3d_space_direct_poll_gates_are_read_only():
+    """Two original native Space keyboard polls must never be forced."""
+    assert "SPIDER_NATIVE_3D_SPACE_CALL_1 ((BYTE *)(uintptr_t)0x00455427u)" in SRC
+    assert "SPIDER_NATIVE_3D_SPACE_CALL_2 ((BYTE *)(uintptr_t)0x00455444u)" in SRC
+    assert "spider_native_3d_space_original_1[5]={0xE8,0x24,0x52,0x0B,0x00}" in SRC
+    assert "spider_native_3d_space_original_2[5]={0xE8,0x07,0x52,0x0B,0x00}" in SRC
+    assert "SPIDER_NATIVE_3D_SPACE_POLL ((DWORD (__cdecl *)(DWORD,DWORD))(uintptr_t)0x0050A650u)" in SRC
+    assert "SPIDER_NATIVE_CUTSCENE_INPUT_FLAGS ((const volatile DWORD *)(uintptr_t)0x02E0988Cu)" in SRC
+    probe=SRC[SRC.index("static DWORD __cdecl spider_probe_3d_space_gate("):
+              SRC.index("/* PASSIVE owner cleanup checkpoint")]
+    assert "DWORD original=SPIDER_NATIVE_3D_SPACE_POLL(dik,input_mode);" in probe
+    assert "return original;" in probe
+    assert "dik==0x39u && input_mode==0u" in probe
+    assert "native_flags&0x100u" in probe
+    assert "DEBUG-3D-SPACE-GATE" in probe
+    for forbidden in ("SendInput(", "keybd_event(", "ExitProcess(",
+                      "TerminateProcess(", "PostMessageA(", "return 1;",
+                      "*(volatile DWORD *)(uintptr_t)0x0060CFA4u="):
+        assert forbidden not in probe
+    install=SRC[SRC.index("static int install_debug_3d_space_gate_probes(void)"):
+                SRC.index("/* Instrument all five exact original 3D input CALL sites")]
+    assert "memcmp(SPIDER_NATIVE_3D_SPACE_CALL_1" in install
+    assert "memcmp(SPIDER_NATIVE_3D_SPACE_CALL_2" in install
+    assert "spider_probe_3d_space_gate" in install
+    assert "restore_intro_tick_call(SPIDER_NATIVE_3D_SPACE_CALL_1" in install
+    assert "restore_intro_tick_call(SPIDER_NATIVE_3D_SPACE_CALL_2" in install
+    init=SRC[SRC.index("void SpiderQuickExitF12_Init("):]
+    assert "install_debug_3d_space_gate_probes()" in init
+    assert init.count("restore_debug_3d_space_gate_probes();")>=2
+    assert "F12 exit guard preserved" in init

@@ -1,3 +1,56 @@
+## 2026-10-23 — Wine 15:01:05 log + exact original DIK_SPACE gate found
+
+The log `SpiderMan2k1Fix(20261023-150105).log` validates native
+comic + Bink #4 completion again in **1 ms**, with direct physical
+Space edges during 3D at **+2478 ms** and **+4401 ms** and HUD
+instructions immediately after the second edge. The five
+`0x50C180` masks probed in prior CI #664 returned 0 on both
+physical Space key events. They are **not confirmed** as the
+cinematic Space-skip input handler. Later `0x5FAECC` values changed
+from 0 to 1 at ~+19.9 s and 1 to 3 at ~+21.9 s,
+**well after** both Space presses; treating them as the two
+cinematic scene boundaries would be a false inference.
+
+More precise static inspection of the supplied original executable:
+`0x50C180` tests mask bit `0x04000000` at `0x50C442`;
+the positive branch calls `0x50A650(DIK_SPACE=0x39,...)`
+at `0x50C44B`. None of the five earlier probed 3D mask sites
+passes this mask bit. Separately, inside ORIGINAL `0x455400`:
+`0x455400` checks game flags `0x02E0988C`;
+`0x455415` tests bit `0x100`; ONLY when that bit is set
+does the game enter a direct Space-release/Space-press gate:
+`0x455427: call 0x50A650(0x39,0)` (repeat while held),
+then `0x455444: call 0x50A650(0x39,0)` (wait for press
+or bit-clear), followed by original `0x5111D0` resume.
+This is **real native SPACE polling** but its relationship to
+Stan Lee / the second 3D cinematic is NOT yet confirmed.
+
+A second **passive** exact-signature pair of 5-byte CALL hooks
+now probes both `0x455427` and `0x455444` only in
+`[Debug] F12TestMode=1` + `Log=1`.
+Each wrapper calls original `0x50A650(0x39,0)`
+**exactly once** and returns its result unmodified.
+Bounded `DEBUG-3D-SPACE-GATE` logs report which original
+site, real keyboard result, physical key state, native bit
+`0x100`, key-down edge count and 3D elapsed time.
+Periodic read-only 3D phase snapshots now include
+`space_gate_bit100`. A signature mismatch leaves both
+original calls untouched. No synthetic input, forced
+scene progression, native memory writes or gameplay
+exit gate reactivation.
+
+The final one-F12 two-3D-scene skip is **still unimplemented**
+pending confirmation that these exact original Space reads
+occur at the two original scene boundaries and a separate
+positive playable-ready discriminator. Requested validation:
+New Game F12 on comic, one real Space press/release in Stan Lee
+narration, one real Space press/release in second cinematic,
+briefly play, send complete log with
+`DEBUG-3D-SPACE-GATE`, `DEBUG-NEWGAME-3D-PHASE`.
+PR #26 remains draft/unmerged.
+
+---
+
 ## 2026-10-23 — Native 3D original-input attribution before enabling F12 cutscene skip
 
 The supplied SHA-verified original executable shows that the native 3D
