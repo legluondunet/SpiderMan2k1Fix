@@ -565,7 +565,7 @@ def test_four_intro_movies_run_original_bink_cleanup_on_game_thread():
     assert "TerminateProcess(" not in SRC
 
 
-def test_intro_exit_latch_survives_four_movies_into_native_top_level_quit_check():
+def test_intro_exit_latch_survives_four_movies_even_when_top_level_quit_check_is_skipped():
     assert "static volatile LONG intro_quit_pending=0;" in SRC
     assert "InterlockedCompareExchange(&intro_quit_pending,1,0)==0" in SRC
     assert "InterlockedCompareExchange(&intro_quit_pending,0,0)==1" in SRC
@@ -573,7 +573,10 @@ def test_intro_exit_latch_survives_four_movies_into_native_top_level_quit_check(
     assert "static void __cdecl spider_after_intro_cleanup(int mode)" in SRC
     assert "SPIDER_AFTER_INTRO_CLEANUP(mode);" in SRC
     assert "*SPIDER_GAME_QUIT_FLAG=1u;" in SRC
-    assert "engine Quit flag set BEFORE top-level 0x455E50 check" in SRC
+    # The original 0x455E50 comparison exists but is not on every
+    # startup control-flow path (0x455DC8 / 0x455DD0 may bypass it).
+    assert "Quit byte forwarded (top-level 0x455E50 may be bypassed by startup branches)" in SRC
+    assert "INTRO-MOVIE single F12 carried into original timed/input-wait still cleanup" in SRC
     assert "0x00455E50u" in SRC
     assert "0x00455D23u" in SRC
     assert "movl $3, 0x68(%esp)" in SRC
