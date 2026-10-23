@@ -474,9 +474,13 @@ void SpiderQuickExitF12_ObserveComicRender(LONG flip_index, DWORD caller_rva,
   char line[384];
   if(!SpiderQuickExitF12_Enabled()) return;
   n=InterlockedIncrement(&candidate_draws);
-  if(n>8 && n%120!=0) return;
+  /* F10 eligibility must use EVERY verified comic render callback.
+   * Only the diagnostic log is throttled: on a second New Game, the
+   * lifetime draw counter can already exceed eight, and the entire
+   * second cover may end before the next multiple of 120. */
   now=GetTickCount();
   InterlockedExchange(&last_comic_candidate_ms,(LONG)now);
+  if(n>8 && n%120!=0) return;
   owner_calls=InterlockedCompareExchange(&input_native_invocations,0,0);
   last_owner=InterlockedCompareExchange(&last_native_game_input_ms,0,0);
   owner_age=last_owner ? (DWORD)(now-(DWORD)last_owner) : 0u;

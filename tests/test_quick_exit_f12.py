@@ -1823,6 +1823,22 @@ def test_f10_second_new_game_rearms_only_on_real_native_menu_return():
     ]
 
 
+def test_f10_second_comic_refreshes_candidate_timestamp_even_when_log_throttled():
+    """Second New Game comic can last fewer than 120 cumulative callbacks.
+
+    The global candidate_draws count must throttle ONLY diagnostic lines,
+    not the recency clock used by the physical F10 watcher.
+    """
+    function=SRC[SRC.index("void SpiderQuickExitF12_ObserveComicRender("):
+                 SRC.index("/* Read-only stage discovery on the existing game rendering thread.")]
+    assert "n=InterlockedIncrement(&candidate_draws);" in function
+    assert "InterlockedExchange(&last_comic_candidate_ms,(LONG)now);" in function
+    assert "if(n>8 && n%120!=0) return;" in function
+    assert function.index("InterlockedExchange(&last_comic_candidate_ms,(LONG)now);") < function.index(
+        "if(n>8 && n%120!=0) return;")
+    assert "DEBUG-F10-SESSION-RESET" in SRC
+
+
 def test_comic_and_movie_second_session_require_reset_latches():
     """Both original owners must be eligible again after native menu reset."""
     assert '"cmpl $0, _debug_newgame_progress\\n\\t"' in SRC
