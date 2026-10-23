@@ -481,6 +481,44 @@ def test_f12_debug_shortcut_uses_game_owned_menu_cleanup_without_quit():
     assert "return 0;" in menu
 
 
+
+def test_debug_intro_skip_latch_is_one_shot_and_cannot_cancel_new_game_bink():
+    """Windows/Wine log 20261023-112854: intro F12 reaches main menu,
+    then New Game comic appears but Bink #4 is missing. The original
+    0x470750 Bink tick is SHARED: a stale intro_quit_pending=1 returns
+    zero BEFORE the real tick, silently skipping the next cinematic.
+    """
+    tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
+             SRC.index("/* The original top-level",SRC.index(
+                 "static BYTE __cdecl spider_f12_native_intro_tick(void)"))]
+    assert 'if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1)' in tick
+    assert tick.index('if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1)') < tick.index(
+        "native_result=SPIDER_NATIVE_BINK_FRAME_TICK();")
+    assert "return 0;" in tick
+
+    after_intro=SRC[SRC.index("static void __cdecl spider_after_intro_cleanup(int mode)"):
+                    SRC.index("/* Executes instead of the exact ORIGINAL")]
+    assert "SPIDER_AFTER_INTRO_CLEANUP(mode);" in after_intro
+    debug=after_intro[after_intro.index(
+        "if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1 &&"):
+        after_intro.index(
+        "} else if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1) {")]
+    # Original game cleanup before publishing the still latch, then
+    # clear the shared movie-skip flag BEFORE any New Game movie.
+    assert "DEBUG-MENU-SKIP opening Bink cleanup completed" in debug
+    assert debug.index("intro_still_exit_state,1,0") < debug.index(
+        "InterlockedExchange(&intro_quit_pending,0);")
+    assert "InterlockedExchange(&intro_tick_shortcircuited,0);" in debug
+    assert "movie #4 tick restored for future New Game playback" in debug
+    assert "SPIDER_GAME_QUIT_FLAG" not in debug
+    assert "ExitProcess(" not in debug
+    legacy=after_intro[after_intro.index(
+        "} else if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1) {"):]
+    assert "*SPIDER_GAME_QUIT_FLAG=1u;" in legacy
+    assert "InterlockedExchange(&intro_quit_pending,0);" not in legacy
+
+
+
 def test_f12_debug_shortcut_restricts_3d_exit_to_native_gameplay():
     worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
                SRC.index("void SpiderQuickExitF12_Init(")]
