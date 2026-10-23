@@ -438,6 +438,70 @@ def test_default_off_and_ini_section_validated():
     assert 'OFF; unsafe original F12 WM_CLOSE suppressed' in SRC
 
 
+
+def test_f12_debug_fast_test_mode_default_off_and_valid_ini_key():
+    assert "F12TestMode=0" in INI
+    assert '"F12TestMode=0\\r\\n"' in GEN
+    assert 'spider_ini_debug[]={"Log","F12TestMode"}' in VAL
+    assert 'GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1' in SRC
+    assert "static volatile LONG debug_f12_test_mode=0;" in SRC
+
+    init=SRC[SRC.index("void SpiderQuickExitF12_Init("):]
+    assert 'strcpy(val,"1");' in init
+    assert 'InterlockedExchange(&debug_f12_test_mode,1)' in init
+    assert "debug_f12_test_mode,0,0)==1 ||" in init
+    assert "intro_still_opt_in,1" in init
+    assert "experimental_game3d_enabled" in init
+
+
+def test_f12_debug_shortcut_uses_game_owned_menu_cleanup_without_quit():
+    after_intro=SRC[SRC.index("static void __cdecl spider_after_intro_cleanup("):
+                    SRC.index("/* Wrapper for ORIGINAL 0x4A1896")]
+    assert "SPIDER_AFTER_INTRO_CLEANUP(mode);" in after_intro
+    assert "intro_quit_pending,0,0)==1 &&" in after_intro
+    assert "debug_f12_test_mode,0,0)==1" in after_intro
+    assert after_intro.index("debug_f12_test_mode,0,0)==1") < after_intro.index(
+        "*SPIDER_GAME_QUIT_FLAG=1u;")
+    assert "DEBUG-MENU-SKIP opening Bink cleanup completed" in after_intro
+
+    input_owner=SRC[SRC.index("static BYTE __cdecl spider_f12_intro_still_native_input("):
+                    SRC.index("/* Returns nonzero ONLY")]
+    assert "SPIDER_INTRO_STILL_NATIVE_INPUT(mask,arg1,arg2)" in input_owner
+    assert "intro_still_exit_state,2,1" in input_owner
+    assert "DEBUG-MENU-SKIP original 0x4A1896 input-wait TRUE completion" in input_owner
+    assert input_owner.index('debug_f12_test_mode,0,0)==1') < input_owner.index(
+        "InterlockedExchange(&pending,1);")
+    assert "return 1;" in input_owner
+
+    menu=SRC[SRC.index("int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest("):
+             SRC.index("/* x86 stack at entry")]
+    assert "DEBUG-MENU-SKIP real Shell_MainMenu reached" in menu
+    assert menu.index('debug_f12_test_mode,0,0)==1') < menu.index(
+        "InterlockedCompareExchange(&pending,0,1)==1")
+    assert "return 0;" in menu
+
+
+def test_f12_debug_shortcut_restricts_3d_exit_to_native_gameplay():
+    worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
+               SRC.index("void SpiderQuickExitF12_Init(")]
+    debug=worker[worker.index("if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {"):
+                 worker.index("} else if(InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 &&")]
+    assert "post_intro_cleanup_seen,0,0)==1" in debug
+    assert "real_main_menu_seen,0,0)==0" in debug
+    assert "DEBUG-MENU-SKIP F12 in opening Bink" in debug
+    assert "DEBUG-MENU-SKIP F12 on startup still" in debug
+    assert "DEBUG-3D-EXIT native gameplay exit queued" in debug
+    assert "last_native_game_input_ms,0,0" in debug
+    assert "last_game3d_flip_ms,0,0" in debug
+    assert "*SPIDER_GAME_BINK_ACTIVE==0u" in debug
+    assert "*SPIDER_BINK_VIDEO_HANDLE==0u" in debug
+    assert "game3d_exit_state,1,0" in debug
+    for forbidden in ("ExitProcess(", "TerminateProcess(", "DestroyWindow(",
+                      "PostMessageA(", "SendInput(", "keybd_event(",
+                      "BinkClose(", "intro_still_exit_state,3,2"):
+        assert forbidden not in debug
+
+
 def test_verified_real_shell_menu_tick_and_quit_selection():
     assert "0x00493990" in SRC  # REAL Shell_MainMenu
     assert "0x00493DD6u" in SRC
