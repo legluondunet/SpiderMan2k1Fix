@@ -65,6 +65,17 @@
 #define SPIDER_AFTER_INTRO_CLEANUP ((void (__cdecl *)(int))(uintptr_t)0x00443AD0u)
 #define SPIDER_GAME_QUIT_FLAG ((volatile BYTE *)(uintptr_t)0x0060CF88u)
 #define SPIDER_TOPLEVEL_NATIVE_QUIT_TEST ((const BYTE *)(uintptr_t)0x00455E50u)
+/* SHA-verified game menu-dispatch values for PASSIVE startup tracing:
+ * 0x493996 reads native menu context presence at 0x682948.
+ * 0x4A1FC3 reads a byte at 0x6828D0 before dispatching a menu.
+ * 0x4A2012 reads original raw dispatcher state 0x68293C.
+ * 0x4A1FEC reads transition state 0x54D38C.
+ * NEVER dereference pointers, infer static-screen ownership from a
+ * single value, or write any of these game-controlled addresses. */
+#define SPIDER_TRACE_MENU_CONTEXT ((const volatile DWORD *)(uintptr_t)0x00682948u)
+#define SPIDER_TRACE_MENU_STAGE_BYTE ((const volatile BYTE *)(uintptr_t)0x006828D0u)
+#define SPIDER_TRACE_DISPATCH_RAW ((const volatile DWORD *)(uintptr_t)0x0068293Cu)
+#define SPIDER_TRACE_TRANSITION_RAW ((const volatile DWORD *)(uintptr_t)0x0054D38Cu)
 /* Top-level dispatch state is observed, never written, from the already
  * installed IDirectDraw7::Flip hook. These are fixed BSS addresses of the
  * SHA-gated 2001 executable; mode labels require runtime correlation. */
@@ -158,6 +169,10 @@ static volatile LONG experimental_game3d_enabled=0;
 /* Optional, strictly read-only parent return-address trace: never enabled
  * by regular F12 or normal Debug Log alone. One sample per process only. */
 static volatile LONG parent_trace_enabled=0;
+/* Extra opt-in, read-only snapshots while starting and entering menus.
+ * No additional executable hooks, game state writes or F12 authority. */
+static volatile LONG static_screen_trace_enabled=0;
+static volatile LONG post_intro_cleanup_seen=0;
 static volatile LONG last_native_game_input_ms=0;
 static volatile LONG last_game3d_flip_ms=0;
 /* 0 idle, 1 requested, 2 native request 7 dispatched, 3 final exit. */
@@ -276,6 +291,38 @@ void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,
   video_handle=(*SPIDER_BINK_VIDEO_HANDLE!=0u);
   audio_handle=(*SPIDER_BINK_AUDIO_HANDLE!=0u);
   native_owner_seen=InterlockedCompareExchange(&input_native_invocations,0,0)>0 ? 1:0;
+  /* A first-menu tick is NOT proof of the interactive title menu:
+   * Shell_MainMenu is also called around the two startup stills.
+   * Sample only original scalar globals (and pointer PRESENCE) to
+   * map their differing contexts before considering any F12 change.
+   * Opt-in logs for <=90 s from the first rendered Flip, at most once
+   * per 1500 ms, with no heavy per-frame work or extra native hooks. */
+  if(InterlockedCompareExchange(&static_screen_trace_enabled,0,0)==1) {
+    static DWORD start_ms=0,last_ms=0;
+    static LONG samples=0;
+    if(!start_ms)start_ms=now;
+    if((DWORD)(now-start_ms)<=90000u &&
+       (!last_ms || (DWORD)(now-last_ms)>=1500u) && samples<61) {
+      DWORD menu_context=(*SPIDER_TRACE_MENU_CONTEXT!=0u);
+      DWORD raw_dispatch=*SPIDER_TRACE_DISPATCH_RAW;
+      DWORD raw_transition=*SPIDER_TRACE_TRANSITION_RAW;
+      DWORD raw_stage=*SPIDER_TRACE_MENU_STAGE_BYTE;
+      LONG ticks=InterlockedCompareExchange(&menu_frame_count,0,0);
+      LONG cleanup=InterlockedCompareExchange(&post_intro_cleanup_seen,0,0);
+      char snapshot[420];
+      last_ms=now;
+      samples++;
+      snprintf(snapshot,sizeof(snapshot),
+        "QUICK-EXIT-F12: STARTUP-STATIC-PROBE flip=%ld since_first_flip_ms=%lu intro_cleanup_seen=%ld real_menu_tick_count=%ld renderer2d=%ld mode_request=%lu bink_active=%ld video_handle_present=%ld menu_ctx_present=%lu menu_stage_byte=%lu dispatcher_raw=%lu transition_raw=%lu quit_byte=%ld [READ-ONLY; SCREEN ID UNKNOWN]",
+        (long)flip_index,(unsigned long)(DWORD)(now-start_ms),
+        (long)cleanup,(long)ticks,(long)renderer_menu,
+        (unsigned long)mode,(long)bink_flag,(long)video_handle,
+        (unsigned long)menu_context,(unsigned long)raw_stage,
+        (unsigned long)raw_dispatch,(unsigned long)raw_transition,
+        (long)quit);
+      say(snapshot);
+    }
+  }
   if(previous_mode==(LONG)mode && previous_quit==quit &&
      previous_async_active==async_active &&
      previous_renderer_menu==renderer_menu &&
@@ -740,6 +787,9 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
  * such early Shell_MainMenu frames must NOT consume the intro latch. */
 static void __cdecl spider_after_intro_cleanup(int mode) {
   SPIDER_AFTER_INTRO_CLEANUP(mode);
+  if(InterlockedCompareExchange(&post_intro_cleanup_seen,1,0)==0 &&
+     InterlockedCompareExchange(&static_screen_trace_enabled,0,0)==1)
+    say("QUICK-EXIT-F12: STARTUP-STATIC-PROBE original four-movie transition cleanup 0x455D23 completed [READ-ONLY]");
   if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1) {
     *SPIDER_GAME_QUIT_FLAG=1u;
     InterlockedExchange(&intro_native_quit_forwarded,1);
@@ -1039,7 +1089,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
 }
 
 void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
-  char exe[MAX_PATH],ini[MAX_PATH],val[24],trace[8],movie_trial[8],comic_trial[8],*slash;
+  char exe[MAX_PATH],ini[MAX_PATH],val[24],trace[8],static_trace[8],movie_trial[8],comic_trial[8],*slash;
   DWORD n;
   HANDLE thread;
   logger=log_fn;
@@ -1061,6 +1111,15 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
                              trace,sizeof(trace))==1 && trace[0]=='1') {
     InterlockedExchange(&parent_trace_enabled,1);
     say("QUICK-EXIT-F12: optional passive native Bink parent trace armed (one sample after interactive menu)");
+  }
+  memset(static_trace,0,sizeof(static_trace));
+  if(strcmp(val,"1")==0 &&
+     GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
+     GetEnvironmentVariableA("SPIDERMAN2K1FIX_F12_STATIC_TRACE",
+                             static_trace,sizeof(static_trace))==1 &&
+     static_trace[0]=='1') {
+    InterlockedExchange(&static_screen_trace_enabled,1);
+    say("QUICK-EXIT-F12: STARTUP-STATIC-PROBE opt-in enabled (passive, no extra hooks; 90s/61 samples max)");
   }
   /* Separate extra opt-in for risky native gameplay shutdown prototype.
    * Enabling QuickExitF12 alone retains the previous menu/Bink behavior. */
