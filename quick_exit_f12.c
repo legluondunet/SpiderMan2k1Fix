@@ -604,6 +604,33 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
       say("QUICK-EXIT-F12: native Bink tick returned finished; original game video cleanup will run");
     return 0;
   }
+  /* Movie 4's owner was proven by Windows caller trace and original
+   * EXE: call 0x4279FB, return 0x427A00, allow-skip argument 1.
+   * Verify the current native tick CALL return before deeper stack reads.
+   * A returned zero follows game-owned 0x470871 Bink teardown and
+   * normal scene-script continuation; it does NOT exit immediately. */
+  if(InterlockedCompareExchange(&postmovie_state,0,0)==1) {
+    DWORD started=(DWORD)InterlockedCompareExchange(&postmovie_request_ms,0,0);
+    if(!started || (DWORD)(GetTickCount()-started)>5000u) {
+      if(InterlockedCompareExchange(&postmovie_state,0,1)==1)
+        say("QUICK-EXIT-F12: POSTMENU-MOVIE request expired; native Bink unmodified");
+    } else if(SpiderQuickExitF12_Enabled() &&
+              InterlockedCompareExchange(&postmovie_opt_in,0,0)==1 &&
+              InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
+              InterlockedCompareExchange(&input_native_invocations,0,0)==0 &&
+              *SPIDER_GAME_BINK_ACTIVE!=0u &&
+              *SPIDER_BINK_VIDEO_HANDLE!=0u) {
+      const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+      DWORD tick_return=(DWORD)frame[1];
+      if((tick_return==0x00470822u || tick_return==0x00470864u) &&
+         (DWORD)frame[4]==0x00427A00u &&
+         (DWORD)frame[6]==1u &&
+         InterlockedCompareExchange(&postmovie_state,2,1)==1) {
+        say("QUICK-EXIT-F12: POSTMENU-MOVIE verified native movie owner 0x4279FB; original Bink completion and 0x470871 teardown follows");
+        return 0;
+      }
+    }
+  }
   /* The existing native 0x470750 Bink loop is also reached after
    * New Game. Keep the exact original tick result and call it ONCE.
    * The sampled space-key state is only correlation evidence, not proof
