@@ -1280,8 +1280,6 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
      memcmp(SPIDER_INTRO_TICK_CALL_1,intro_tick_call_original_1,5)!=0 ||
      memcmp(SPIDER_INTRO_TICK_CALL_2,intro_tick_call_original_2,5)!=0 ||
      memcmp(SPIDER_AFTER_INTRO_CLEANUP_CALL,post_intro_cleanup_original,5)!=0 ||
-     (InterlockedCompareExchange(&intro_still_opt_in,0,0)==1 &&
-      memcmp(SPIDER_INTRO_STILL_INPUT_CALL,intro_still_input_original,5)!=0) ||
      memcmp(SPIDER_NATIVE_PAUSE_CALL,native_pause_call_original,5)!=0 ||
      memcmp(SPIDER_NATIVE_GAME_INPUT_CALL,native_game_input_call_original,5)!=0 ||
      memcmp(SPIDER_NATIVE_GAME_CLEANUP_CALL,native_game_cleanup_call_original,5)!=0 ||
