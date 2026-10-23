@@ -48,7 +48,7 @@ static int spider_ini_in(const char *name,const char *const *items,size_t count)
 #define SPIDER_INI_IN(value,array) spider_ini_in(value,array,sizeof(array)/sizeof((array)[0]))
 static const char *const spider_ini_sections[]={"Debug","System","Display","HUD","Input","Audio","Keyboard","Joystick","Internal"};
 static const char *const spider_ini_debug[]={"Log"};
-static const char *const spider_ini_system[]={"QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic"};
+static const char *const spider_ini_system[]={"QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic","ExperimentalQuickExitF12InIntroStills"};
 static const char *const spider_ini_display[]={
   "Resolution","AspectRatio","Brightness","FPSLimit","FOV",
   "ExperimentalFOVAspect","ExperimentalFOVHorPlus",
