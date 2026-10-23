@@ -30,6 +30,7 @@
 #include "focus_dsound_pause.h"
 #include "menu_version.h"
 #include "version_info.h"
+#include "quick_exit_f12.h"
 
 static const BYTE expected_sha256[32] = {
   0x0a,0x11,0xa4,0x9f,0x3f,0x63,0xd4,0xbb,
@@ -702,6 +703,7 @@ static volatile LONG hud_probe_enabled=0,hud_probe_frames=0;
 static volatile LONG hud_probe_seen=0,hud_probe_left=0,hud_probe_right=0,hud_probe_instructions=0,hud_probe_boss=0;
 static volatile LONG hud_probe_boss_extra=0,hud_probe_boss_blt=0;
 static void hud_probe_flip(void) {
+  if(SpiderQuickExitF12_Enabled())return; /* The legacy F12 HUD diagnostic is off in F10 shortcut mode. */
   if(InterlockedCompareExchange(&hud_probe_enabled,0,0)!=1) return;
   if((GetAsyncKeyState(VK_F12)&1)!=0 && game_hwnd &&
      GetForegroundWindow()==game_hwnd) {
@@ -924,6 +926,9 @@ static const void *maybe_correct_native_comic(void *device,D3DPRIMITIVETYPE type
        (unsigned)count,(unsigned)type,(unsigned long)fvf,(unsigned long)rva,
        (unsigned)desc.dwWidth,(unsigned)desc.dwHeight,
        (unsigned)desktop_w,(unsigned)desktop_h)) return source;
+  /* Candidate render observation; no cinematic authority inferred. */
+  SpiderQuickExitF12_ObserveComicRender(InterlockedCompareExchange(&flip_count,0,0),
+                                        rva,desc.dwWidth,desc.dwHeight);
   if(!SpiderComicNative_Transform((const SpiderMenuVertex*)source,copy,
                 (unsigned)count,(unsigned)desktop_w,(unsigned)desktop_h)) return source;
   hit=InterlockedIncrement(&comic_native_aspect_matches);
@@ -1231,6 +1236,7 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
   HRESULT hr; LONG count=InterlockedIncrement(&blt_count);
   RECT dest_mapped;
   LPRECT presented_dest=dest;
+  BOOL f10_native_movie_blt=FALSE;
 
   /* Read-only native DirectDraw diagnostic for an uncorrected boss health
    * black rectangle. Some legacy UI layers may use a color-filled Blt
@@ -1300,6 +1306,7 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
        * opening-video presentation is nonetheless always 4:3. */
       borderless_intro_fill_black_bars(self,&dest_mapped);
       presented_dest=&dest_mapped;
+      f10_native_movie_blt=TRUE;
       if (debug_log_enabled && (hits<=8 || hits%120==0 ||
           ((sd.dwWidth!=640 || sd.dwHeight!=480) && hits<=1024 && hits%30==0))) {
         char msg[260];
@@ -1320,6 +1327,10 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
     presented_dest=&dest_mapped;
   }
   hr=original_blt(self,presented_dest,source,source_rect,flags,fx);
+  /* Same verified opening Bink presentation condition as the F9
+   * experiment, without including or enabling any F9 code. */
+  if(SUCCEEDED(hr) && f10_native_movie_blt && source)
+    SpiderQuickExitF12_ObserveMovieFrame();
   if(debug_log_enabled && count<=24) {
     char line[100]; snprintf(line,sizeof(line),"DDRAW: Surface7::Blt result=0x%08lX",(unsigned long)hr); log_line(line);
   }
@@ -1539,6 +1550,7 @@ static void pause_at_flip_if_background(void) {
 }
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
+  SpiderQuickExitF12_ObserveEngineState(count,InterlockedCompareExchange(&menu_upscale_active,0,0)==1);
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
@@ -1836,6 +1848,7 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
            (void*)hwnd,(unsigned long)flags);
   log_line(line);
   game_hwnd=hwnd;
+  SpiderQuickExitF12_AttachWindow(hwnd);
   probe_desktop_mode(hwnd);
   log_monitor(hwnd);
   hr=original_coop(self,hwnd,DDSCL_NORMAL);
@@ -2051,6 +2064,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  SpiderQuickExitF12_Init(log_line); /* Optional F10; Bink-to-3D safety is independent. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
    * No COM-vtable interception. The actual patch is delayed to Flip #120. */
