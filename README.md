@@ -37,6 +37,9 @@ For testing changes rapidly, you can enable a separate F12 mode:
 [Debug]
 F12TestMode=1
 Log=1
+; OPTIONAL EXPERIMENT: bypass the native clock wait only at the first
+; menu reached by F12 until its clock starts advancing. Default OFF.
+F12SkipInitialMenuWait=0
 ```
 
 With this enabled, **F12 before the main menu navigates to the main
@@ -53,6 +56,16 @@ recommended but not required.
 The complete previously validated F12 implementation was archived
 at [`backup/f12-native-exit-validated-20261023`](https://github.com/legluondunet/SpiderMan2k1Fix/tree/backup/f12-native-exit-validated-20261023)
 (commit `4adf16aa13a867a3256f7a2f7ce506cc53b9b82a`).
+A new independently opt-in `[Debug] F12SkipInitialMenuWait=1`
+experiment addresses the measured **3.1-second clock stall** on
+the first displayed menu frame after F12. It temporarily lets menu
+frames run at the existing Flip FPS limit without waiting for the
+game's initial clock tick, then restores the original synchronization
+when that clock advances (or after a 4.5-second safety limit).
+It does **not** write the native clock. This variant is still
+**unvalidated in-game**; keep it `0` unless testing it.
+A separate backup of the tested debug mode before this experiment
+is available at [`backup/f12-debug-menu-wait-before-experiment-20261023`](https://github.com/legluondunet/SpiderMan2k1Fix/tree/backup/f12-debug-menu-wait-before-experiment-20261023).
 See [F12 debug mode and restoration guide](docs/F12_DEBUG_TEST_MODE.md).
 **The original fast-test mode was user-tested on Windows 11; this
 new first-still timer acceleration has not yet been manually
