@@ -1,3 +1,115 @@
+## 2026-10-23 — Wine #576 identifies timed vs input-wait startup pages; opt-in native F12 trial
+
+The user uploaded a new uninterrupted foreground Wine run
+`SpiderMan2k1Fix(20261023-093138).log` (patch
+`v1.0.0-08d2638`, supported game SHA verified).
+Unlike the previous capture, **there was no focus loss/pause**.
+Read-only trace after original `0x455D23` cleanup:
+
+| First Flip elapsed | still_frame_count | timed_page_once | transition_raw | real-menu ticks | Observation |
+|---:|---:|---:|---:|---:|---|
+| 0–4,564 ms | 0 | 0 | 1 | 0 | Four opening Bink movies active |
+| 6,082 ms | 16 | 1 | 1 | 0 | First static native page |
+| 7,582 ms | 61 | 1 | 1 | 0 | Original timed-page loop continues |
+| 9,084 ms | 106 | 1 | 0 | 0 | Native page transition; no menu yet |
+| 10,615–18,115 ms | 152–377 | 1 | 0 | 0 | Native input-wait still loops at 30fps |
+| After 18,115 ms | — | — | 0 | >0 | Actual Shell_MainMenu entered |
+
+**Confirmed from this run + original x86:** the two loops
+in `0x4A1FE7` (`call 0x4A1930` native timed page)
+and `0x4A2006` (`call 0x4A17A0` native input-wait
+page) execute sequentially; original frame counter
+`[0x60CFA8]` keeps increasing through both, while
+the transition DWORD `[0x54D38C]` changes 1→0
+between their sampled phases. Their association
+with the timed first image and input-wait Enter image
+is now **strongly supported**. The log does not carry
+actual pixels or a program-counter trace, so precise
+displayed-image identification is still correlated
+from the known on-screen sequence and static code.
+
+**New separately opted-in F12 trial (unvalidated):**
+`[System] ExperimentalQuickExitF12InIntroStills=1`,
+along with `QuickExitF12=1` and `[Debug] Log=1`.
+The generated INI/sample INI/validator all default it
+to `0`.
+
+The F12 polling thread **only latches an intent** when
+original post-four-movie cleanup is confirmed,
+video Bink flag/handle are clear, first timed page
+has been initialized, menu context exists,
+request state is zero and the real Shell_MainMenu has
+never ticked. It cannot change any original game state.
+
+When the input-wait page `0x4A17A0` executes its
+**exact original** `0x4A1896: call 0x50C180`,
+the added hook calls the original `0x50C180` once,
+checks the return address `0x4A189B`, the exact
+arguments `(0x40010,1,1)`, current native scene
+guards, and a request age of no more than 15 seconds.
+Only if every condition passes does it return the
+native input-loop's ordinary TRUE completion
+`AL=1`. The game's **original** branch
+`0x4A18AE` destroys its page object, runs its own
+native cleanup functions, restores its SEH frame
+and returns to the caller `0x4A200B`. The
+unmodified dispatcher then invokes
+`0x4A202F: call Shell_MainMenu`. The already
+validated real-menu F12 hook consumes the one-shot
+Quit request via slot 3/action 18, preserving
+normal menu resource teardown.
+
+**Stage behavior:** F12 on the first timed image
+waits for its natural ~3s timeout, then completes
+the second image via its native input-wait TRUE
+result. F12 on the second image acts on its next
+original input check. This is an **experimental
+native input-result override**, *not* a Windows
+synthetic Enter event; nevertheless it must
+be tested on the game. No original renderer, Bink
+or 3D cleanup paths were changed. A 15-second
+request timeout cancels any unmatched or late
+menu-quit request. All modifications are
+SHA/code-signature guarded; no new hook is installed
+with the option disabled.
+
+**Important safety scope:** Native SEH and resource
+cleanup are *expected* from original disassembly but
+are **not yet confirmed by Wine execution traces**.
+Do not claim this feature works before manual proof
+of game shutdown and no residual Wine process.
+
+Suggested Linux/Wine testing with INI:
+
+```ini
+[Debug]
+Log=1
+
+[System]
+QuickExitF12=1
+ExperimentalQuickExitF12InIntroStills=1
+```
+
+Existing 3D/comic/movie settings may remain unchanged.
+No special environment variable is needed to enable
+the exit prototype; `SPIDERMAN2K1FIX_F12_STATIC_TRACE=1`
+may remain set for additional passive diagnostic
+evidence. First test F12 **only** on the second
+`Press Enter` screen, **without pressing Enter**,
+and verify full process shutdown. If successful,
+perform a separate fresh launch and press F12
+on the **first timed static page**. Save both
+logs and separately verify no lingering
+`SpideyPC.exe` or Wine process. If the
+game hangs or crashes, keep the full logs and
+turn the new INI option back to `0`.
+
+PR #26 remains **draft and unmerged**. Any yellow
+screen visual issue is deferred to Windows per
+the user's earlier instruction.
+
+---
+
 ## 2026-10-23 — Wine startup still-page trace #573 and verified native timed/input loops
 
 The user uploaded `SpiderMan2k1Fix(20261023-084556).log`
