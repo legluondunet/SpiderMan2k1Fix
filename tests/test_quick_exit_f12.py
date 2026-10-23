@@ -109,6 +109,22 @@ def test_windows_process_watch_has_no_kill_side_effects():
     assert "Stop-Process" not in script and ".Kill(" not in script
 
 
+def test_external_windows_watcher_verifies_direct_3d_f12_cleanup_and_expected_mode():
+    script=(ROOT/"tools/Verify-F12QuickExit.ps1").read_text(encoding="utf-8")
+    assert 'ValidateSet("Any","Menu","3D","Intro")' in script
+    assert '$ExpectedMode = "Any"' in script
+    assert "3D game-thread frame completed; native request 7 queued" in script
+    assert "NATIVE-3D-CLEANUP completed" in script
+    assert "CONTROLLER-7 native teardown COMPLETED" in script
+    assert "bit4=1 .*outcome=NATIVE-FINAL-CLEANUP" in script
+    assert "$game3dIntent -and $game3dCleanup -and $game3dFinal" in script
+    assert '$exitPath = "3D"' in script
+    assert '$ExpectedMode -ne $exitPath' in script
+    assert "$watch.ExitCode" in script
+    assert "Get-WinEvent -FilterHashtable" in script
+    assert "Stop-Process" not in script and ".Kill(" not in script
+
+
 def test_readme_describes_menu_validated_and_movies_experimental():
     readme=(ROOT/"README.md").read_text(encoding="utf-8")
     assert "Shell_MainMenu" in readme
