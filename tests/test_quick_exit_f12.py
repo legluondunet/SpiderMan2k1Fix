@@ -684,7 +684,10 @@ def test_3d_f12_is_separately_opted_in_and_menu_keeps_priority():
     assert "last_menu_frame_ms" in SRC
     thread=SRC[SRC.index("static DWORD WINAPI f12_input_thread"):
                SRC.index("void SpiderQuickExitF12_Init")]
-    assert thread.index("if(menu_time &&") < thread.index("experimental_game3d_enabled")
+    # Comic is now a separately gated pre-menu exception; native menu
+    # must still retain priority over the ordinary playable 3D exit.
+    assert thread.index("COMIC F12 deferred until") < thread.index("if(menu_time &&")
+    assert thread.index("if(menu_time &&") < thread.index("3D native exit intent queued")
     assert thread.index("intro_quit_pending,1,0") < thread.index("game3d_exit_state,1,0")
     assert "*(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;" not in thread
     assert "*SPIDER_GAME_QUIT_FLAG=" not in thread
