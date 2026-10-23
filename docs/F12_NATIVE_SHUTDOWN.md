@@ -1,3 +1,96 @@
+## 2026-10-23 — Verified native cinematic Space skip and Bink teardown (original EXE)
+
+**Static disassembly of the user-provided original `SpideyPC.exe`:**
+SHA-256 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`,
+PE32 x86, image base `0x00400000`, identical to the
+supported EXE signature. The binary was **read-only**. Addresses
+below are original **VAs**, not RVAs (subtract `0x00400000` for
+an RVA).
+
+The outer original playback routine starts at `0x00470750`.
+The two existing frame-tick patch sites are
+`0x0047081D` and `0x0047085F`, each normally calling
+`0x0050B5A0`. Contrary to a simplistic "Bink returned
+finished" interpretation, **the ordinary skip branch occurs
+between these two calls**:
+
+```asm
+00470826  mov bl, [esp+0x10]        ; caller's allow-skip argument
+0047082A  mov esi, 0x3c             ; 60 iterations
+0047082F  inc dword ptr [0x6150F4] ; iteration counter
+00470835  call 0x505720            ; input update, returns 0 in original routine
+0047083E  test bl, bl
+00470840  je   0x47085F            ; skip disabled for this video
+00470842  cmp  dword ptr [0x6150F4],esi
+00470848  jl   0x47085F            ; ignore skip until 60 iterations
+0047084A  push 1
+0047084C  push 1
+0047084E  push 0x07000000         ; accepted keys
+00470853  call 0x50C180           ; engine keyboard input query
+0047085B  test al,al
+0047085D  jne  0x47086A            ; native keyboard-driven skip
+0047085F  call 0x50B5A0           ; original next Bink tick
+00470864  test al,al
+00470866  jne  0x47082F
+00470868  jmp  0x470871           ; ordinary Bink completion
+0047086A  mov  byte ptr [0x6611E1],0
+00470871  call 0x50B790           ; original Bink/video teardown
+00470895  mov  dword ptr [0x6151F8],0
+0047089F  call 0x440920           ; original post-video transition
+004708A5  mov  al,1               ; successful video owner return
+004708A8  ret
+```
+
+The `0x50C180` input query implements the particular mask
+`0x07000000` as OR-ed tests of DirectInput scan codes:
+
+```asm
+0050C418 test ebx,0x01000000
+0050C421 push 0x1C             ; Enter
+0050C423 call 0x50A650
+0050C42D test ebx,0x02000000
+0050C436 push 0x01             ; Escape
+0050C438 call 0x50A650
+0050C442 test ebx,0x04000000
+0050C44B push 0x39             ; Space
+0050C44D call 0x50A650
+0050C457 xor eax,eax
+0050C459 test esi,esi
+0050C45D setne al             ; any accepted key -> AL=1
+```
+
+`0x0050B790` confirms real resource ownership: it checks
+the game-owned Bink video handle at `0x00AC0BA4`,
+calls the imported Bink close function via `[0x53B1F8]`,
+releases related resources via the existing game code,
+and clears `[0x00AC0BA4]`. `0x470871` then performs
+additional original video/audio transition steps and
+clears `[0x6151F8]`. Thus **the native Space-skip branch
+and ordinary Bink-finished branch converge on the same
+game-owned teardown at `0x470871`**.
+
+The 60 threshold is measured in **loop iterations**, not
+necessarily frames or elapsed seconds. The `allow-skip`
+argument is visibly true at non-startup call sites such as
+`0x443BE7` (`push 1` as the second argument); the four
+startup movie call sites around `0x455CF1` pass zero.
+Not all cinematics are proved to use the same immediate
+call site, but `0x470750` is reused both before and after
+the menu.
+
+**Safety boundary still unresolved:** an F12 intent must not
+merely simulate Space: doing so would clean up video then
+continue into gameplay. The game-owned top-level quit path
+at `0x455E50 → 0x4561F2 → 0x45620C` exists, but the
+original post-video owner-to-dispatcher return path and the
+proper **post-teardown, pre-gameplay** quit-injection point
+for the New Game sequence remain to be established.
+No cinematic F12 branch or shortcut to native destructors
+is implemented. Preserve validated main-menu/startup/3D
+behavior; keep the PR in draft pending Windows tests.
+
+---
+
 ## 2026-10-23 — Static recovery of native post-menu Bink skip and cleanup (no runtime patch)
 
 The Windows #530 log establishes that the New Game movie is driven by
