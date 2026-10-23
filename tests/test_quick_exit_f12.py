@@ -1329,7 +1329,7 @@ def test_newgame_f12_3d_two_space_skippable_scenes_remain_distinct_from_gameplay
               SRC.index("static void __cdecl spider_observe_native_game_cleanup(")]
     assert "GetAsyncKeyState(VK_SPACE)" in owner
     assert "space_down=%ld space_edges=%ld" in owner
-    assert "TWO 3D INTRO SCENES; PLAYABLE NOT VERIFIED" in owner
+    assert "space_gate_bit100=%lu [READ-ONLY; PLAYABLE NOT VERIFIED]" in owner
     assert "GetAsyncKeyState(VK_RETURN)" not in owner
     worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
                SRC.index("void SpiderQuickExitF12_Init(")]
