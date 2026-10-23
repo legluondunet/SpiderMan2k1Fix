@@ -1,3 +1,18 @@
+## 2026-10-23 — Decision: restore original menu clock waits
+
+The first-menu clock-wait bypass experiment and its INI switch were
+removed from the current branch at the user's request. With
+`[Debug] F12TestMode=1`, F12 still advances pre-menu videos and native
+static pages to the main menu, but calls to original `0x4E5D60(1)`
+are never skipped. A 3–4 second first-menu wait may therefore occur.
+The separate first *timed still* acceleration remains enabled in test
+mode. Passive clock-call diagnostics still invoke the original once.
+
+Historical investigations below refer to previous, withdrawn
+experiments and are not current INI instructions.
+
+---
+
 ## 2026-10-23 — New Game submenu freezes 3–4 seconds after clicking: passive selection-exit wait trace
 
 After validation of automatic `F12SkipInitialMenuWait` with

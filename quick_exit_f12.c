@@ -51,7 +51,7 @@
 /* Exact ORIGINAL Shell_MainMenu selection/cleanup path. Before the
  * native menu returns a selected action (including New Game), it
  * calls the SAME one-tick busy-wait at 0x494209. The first-menu
- * workaround intentionally does not touch this third callsite.
+ * native menu selection wait is independently measured at this callsite.
  * Instrument it READ-ONLY to test a newly reported 3–4s stall
  * on selecting New Game, before the subsequent submenu appears. */
 #define SPIDER_MENU_WAIT_EXIT_SITE ((BYTE *)(uintptr_t)0x00494209u)
@@ -232,15 +232,6 @@ static volatile LONG intro_timed_clock_hook_installed=0;
 static volatile LONG debug_timed_accelerated=0;
 static volatile LONG debug_menu_wait_hooks_installed=0;
 static volatile LONG debug_menu_wait_exit_hook_installed=0;
-/* Experimental fast-start experiment: entirely private state, never write
- * native game clock. Enabled with F12TestMode=1 unless the INI
- * explicitly contains F12SkipInitialMenuWait=0. F12TestMode=0 always
- * disables it. State: 0 not armed, 1 temporary bypass, 2 native sync restored. */
-static volatile LONG debug_skip_initial_menu_wait=0;
-static volatile LONG debug_menu_wait_skip_state=0;
-static volatile LONG debug_menu_wait_skip_started_ms=0;
-static volatile LONG debug_menu_wait_skip_start_clock=0;
-static volatile LONG debug_menu_wait_skipped_calls=0;
 static volatile LONG last_native_game_input_ms=0;
 static volatile LONG last_game3d_flip_ms=0;
 /* 0 idle, 1 requested, 2 native request 7 dispatched, 3 final exit. */
@@ -1251,63 +1242,6 @@ static void restore_post_intro_checkpoint(void) {
 static void __cdecl spider_f12_debug_menu_wait(DWORD ticks,int which) {
   DWORD before_ms=GetTickCount();
   DWORD before_clock=*SPIDER_TRACE_NATIVE_CLOCK_RAW;
-  /* The original first conditional 0x4E5D60 wait was measured at
-   * 3100ms while native clock was stuck at 429. In the opt-in debug
-   * experiment, let the original menu loop continue at the existing
-   * Flip FPS limit UNTIL the independent native clock advances.
-   * BOTH callsites must be treated alike or the unconditional wait
-   * would merely inherit the same 3-second block.
-   *
-   * No native clock write, timeout rewrite, input injection or fake
-   * timer callback. Limit to a previously requested pre-menu F12,
-   * a real interactive Shell_MainMenu frame and <=4500ms.
-   * If the clock never recovers, revert to the ORIGINAL blocking
-   * call rather than running indefinitely without native sync. */
-  if(which!=3 &&
-     InterlockedCompareExchange(&debug_skip_initial_menu_wait,0,0)==1 &&
-     InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
-     InterlockedCompareExchange(&intro_still_exit_state,0,0)==3 &&
-     InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
-     InterlockedCompareExchange(&menu_frame_count,0,0)>=1) {
-    LONG state=InterlockedCompareExchange(&debug_menu_wait_skip_state,0,0);
-    if(state==0 && InterlockedCompareExchange(&menu_frame_count,0,0)==1 &&
-       InterlockedCompareExchange(&debug_menu_wait_skip_state,1,0)==0) {
-      InterlockedExchange(&debug_menu_wait_skip_started_ms,(LONG)before_ms);
-      InterlockedExchange(&debug_menu_wait_skip_start_clock,(LONG)before_clock);
-      say("QUICK-EXIT-F12: DEBUG-MENU-FAST-WAIT armed after native F12 intro skip; original clock untouched, 4500ms safety window [EXPERIMENTAL]");
-      state=1;
-    }
-    if(state==1) {
-      DWORD start_ms=(DWORD)InterlockedCompareExchange(&debug_menu_wait_skip_started_ms,0,0);
-      DWORD start_clock=(DWORD)InterlockedCompareExchange(&debug_menu_wait_skip_start_clock,0,0);
-      DWORD age=(DWORD)(before_ms-start_ms);
-      if(before_clock!=start_clock || age>4500u) {
-        InterlockedExchange(&debug_menu_wait_skip_state,2);
-        {
-          char line[240];
-          snprintf(line,sizeof(line),
-            "QUICK-EXIT-F12: DEBUG-MENU-FAST-WAIT original synchronization RESTORED reason=%s elapsed_ms=%lu start_clock=%lu current_clock=%lu calls_skipped=%ld",
-            before_clock!=start_clock?"NATIVE-CLOCK-ADVANCED":"4500MS-SAFETY-TIMEOUT",
-            (unsigned long)age,(unsigned long)start_clock,
-            (unsigned long)before_clock,
-            (long)InterlockedCompareExchange(&debug_menu_wait_skipped_calls,0,0));
-          say(line);
-        }
-      } else {
-        LONG skipped=InterlockedIncrement(&debug_menu_wait_skipped_calls);
-        if(skipped==1 || skipped%60==0) {
-          char line[220];
-          snprintf(line,sizeof(line),
-            "QUICK-EXIT-F12: DEBUG-MENU-FAST-WAIT bypassing stalled native sync site=0x%08lX frame=%ld age_ms=%lu clock=%lu skipped=%ld [NATIVE CLOCK UNMODIFIED]",
-            (unsigned long)(which==1?0x0049415Bu:0x0049416Fu),
-            (long)InterlockedCompareExchange(&menu_frame_count,0,0),
-            (unsigned long)age,(unsigned long)before_clock,(long)skipped);
-          say(line);
-        }
-        return;
-      }
-    }
-  }
   SPIDER_NATIVE_CLOCK_WAIT(ticks);
   if(which==3 &&
      InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {
@@ -1319,10 +1253,9 @@ static void __cdecl spider_f12_debug_menu_wait(DWORD ticks,int which) {
     if(calls<=8 || elapsed_ms>=100u) {
       char line[300];
       snprintf(line,sizeof(line),
-        "QUICK-EXIT-F12: DEBUG-MENU-EXIT-CLOCK-WAIT site=0x00494209 call=%ld elapsed_ms=%lu wait_arg=%lu native_clock_before=%lu native_clock_after=%lu init_bypass_state=%ld [ORIGINAL WAIT CALLED; READ-ONLY; SELECTED ACTION UNKNOWN]",
+        "QUICK-EXIT-F12: DEBUG-MENU-EXIT-CLOCK-WAIT site=0x00494209 call=%ld elapsed_ms=%lu wait_arg=%lu native_clock_before=%lu native_clock_after=%lu [ORIGINAL WAIT CALLED; READ-ONLY; SELECTED ACTION UNKNOWN]",
         (long)calls,(unsigned long)elapsed_ms,(unsigned long)ticks,
-        (unsigned long)before_clock,(unsigned long)end_clock,
-        (long)InterlockedCompareExchange(&debug_menu_wait_skip_state,0,0));
+        (unsigned long)before_clock,(unsigned long)end_clock);
       say(line);
     }
   }
@@ -1351,9 +1284,8 @@ static void __cdecl spider_f12_debug_menu_wait_exit(DWORD ticks) {
   spider_f12_debug_menu_wait(ticks,3);
 }
 
-/* The third site is exclusively diagnostic and must never affect the
- * two validated F12 initial menu wait hooks. Its original 0x4E5D60
- * call ALWAYS executes, regardless of F12SkipInitialMenuWait state. */
+/* The third site is exclusively diagnostic. All three native clock wait
+ * sites execute the original 0x4E5D60 function without bypass. */
 static void install_debug_menu_wait_exit_probe(void) {
   if(!patch_native_call(SPIDER_MENU_WAIT_EXIT_SITE,
                         menu_wait_exit_original,
@@ -1622,17 +1554,6 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     InterlockedExchange(&debug_f12_test_mode,1);
     strcpy(val,"1");
     say("QUICK-EXIT-F12: [Debug] F12TestMode=1 — pre-menu F12 to main menu, 3D F12 native exit; overrides old F12 behavior [EXPERIMENTAL]");
-    /* F12TestMode implies initial-menu acceleration by default.
-     * The generated INI deliberately contains no active override.
-     * Only an EXPLICIT F12SkipInitialMenuWait=0 disables it.
-     * A legacy INI containing =0 therefore retains the user's
-     * intentional opt-out; F12TestMode=0 never enters this branch. */
-    if(GetPrivateProfileIntA("Debug","F12SkipInitialMenuWait",1,ini)==1) {
-      InterlockedExchange(&debug_skip_initial_menu_wait,1);
-      say("QUICK-EXIT-F12: [Debug] F12SkipInitialMenuWait active (automatic with F12TestMode=1 unless explicitly disabled); native sync restored when clock advances [EXPERIMENTAL]");
-    } else {
-      say("QUICK-EXIT-F12: [Debug] F12SkipInitialMenuWait=0 explicit opt-out; original initial menu clock wait preserved");
-    }
   }
   memset(trace,0,sizeof(trace));
   if(GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
@@ -1811,15 +1732,13 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1)
     say("QUICK-EXIT-F12: DEBUG first timed-page clock read 0x4A1A26 guarded hook installed; F12 timeout accelerated via native 0x4A1A36 [EXPERIMENTAL]");
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
-     (GetPrivateProfileIntA("Debug","Log",0,ini)==1 ||
-      InterlockedCompareExchange(&debug_skip_initial_menu_wait,0,0)==1)) {
+     GetPrivateProfileIntA("Debug","Log",0,ini)==1) {
     if(install_debug_menu_wait_hooks()) {
-      say("QUICK-EXIT-F12: DEBUG-MENU-CLOCK-WAIT 0x49415B/0x49416F native wait callsites instrumented; original wait unchanged unless separate fast-wait opt-in");
+      say("QUICK-EXIT-F12: DEBUG-MENU-CLOCK-WAIT 0x49415B/0x49416F native wait callsites instrumented; original native wait always called (passive trace only)");
       if(GetPrivateProfileIntA("Debug","Log",0,ini)==1)
         install_debug_menu_wait_exit_probe();
     } else {
-      InterlockedExchange(&debug_skip_initial_menu_wait,0);
-      say("QUICK-EXIT-F12: DEBUG-MENU-CLOCK-WAIT signature mismatch; optional initial menu fast-wait DISABLED; original waits preserved");
+      say("QUICK-EXIT-F12: DEBUG-MENU-CLOCK-WAIT signature mismatch; original waits preserved (optional read-only probe disabled)");
     }
   }
   if(!suppress_unsafe_native_f12()) {
