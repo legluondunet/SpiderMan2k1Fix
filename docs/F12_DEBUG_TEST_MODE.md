@@ -1,3 +1,87 @@
+## 2026-10-23 — Wine 17:50:21: BOTH New Game 3D intros positively identified as original CutSceneScript
+
+The user provided `SpiderMan2k1Fix(20261023-175021).log`,
+from Windows x86 build #676 under Wine. The new direct
+CutSceneScript/SkipAllow/EndScript field probe is decisive:
+the original script manager at **[0x6A9038]** (runtime
+object 0x059E7B80) executes TWO separate skippable 3D
+script lifetimes during exactly the user's two manual
+cinematic skips. This is no longer an attribution based
+merely on physical keyboard events, HUD or actor state.
+
+**First script / Stan Lee 3D intro**:
+- +0ms: context=1, script_active=1, skip_allowed=0,
+  script_ip=0x05B64582.
+- +68ms: skip_allowed=1, script_ip=0x05B64594.
+- +2540ms: first SPACE physical keydown; +2545ms:
+  context=0, script_active=0, skip_allowed=1.
+  This directly documents the end of that script.
+- +2568ms: new context=1, script_active=1,
+  skip_allowed=0, script_ip=**0x05B6624E** —
+  a DIFFERENT original script. The original game
+  cleaned up and transitioned between scripts
+  without forced program termination.
+
+**Second script / following 3D intro**:
+- +2702ms: context=1, script_active=1,
+  skip_allowed=0, script step=0x60.
+- +3702ms: skip_allowed=1, active/context still 1.
+- +4402ms: second manual SPACE event and
+  context=0, script_active=0. This is the SECOND
+  script's original end, after which both remain
+  zero through at least **+10702ms** (and HUD renders).
+  The underlying Space edge logger reports +4419ms
+  because it samples asynchronously to the original
+  game-thread input; do NOT confuse the logger's
+  edge timestamp with the native handler's frame.
+
+Physical Space uses action 0x10, which also means
+JUMP in playable gameplay. The script-manager's
+native context and active bytes differentiate
+the two real cinematic lifetimes. `skip_allowed`
+indicates original permission, not a complete
+safe shortcut by itself. The record does not
+show a later intentional gameplay SPACE jump:
+this particular run contains precisely TWO
+physical Space presses. Earlier user-verified
+runs establish that a third gameplay Space
+performs Spider-Man's jump, not a third scene.
+
+**New conservative life-cycle-only inference**:
+the existing original 3D game-thread probe now
+logs `DEBUG-3D-CUTSCENE-LIFECYCLE` stages:
+FIRST_SCRIPT_ACTIVE, FIRST_SKIP_ALLOWED,
+FIRST_SCRIPT_ENDED, SECOND_SCRIPT_ACTIVE,
+SECOND_SKIP_ALLOWED, SECOND_SCRIPT_ENDED_CANDIDATE_GAMEPLAY.
+It requires original context=1 / script_active=1,
+native explicit allow=1, true context=0 /
+active=0 end, and a DIFFERENT second script IP.
+The original script pointers can advance during
+a script, so the last first script IP is retained
+to compare with the new script's initial address.
+It uses neither elapsed time nor physical Space
+edge counts as the stage predicates. It is
+**ONLY LOGGING**, NOT an F12 exit permission.
+This state machine is specific to the first
+New Game intro sequence and must not be assumed
+valid during other levels, arbitrary scripted
+gameplay, or an interrupted/restarted campaign.
+
+Still missing for requested automatic one-F12
+cinematic skips: positively identify the exact
+ORIGINAL engine's native skip-request handler,
+and trigger it at the moment it accepts skipping
+without overwriting global DIK input or bypassing
+the game's script end/cleanup. Do not merely
+toggle skip_allowed from 0 to 1: the script
+itself sets that permission and the physical
+SPACE performs an additional original action.
+F12's playable-only native EXIT also stays
+unarmed pending positive controller/context
+review. PR #26 remains DRAFT and UNMERGED.
+
+---
+
 ## 2026-10-23 — Original 3D cinematic script engine identified after Wine #675
 
 User log `SpiderMan2k1Fix(20261023-172652).log`,

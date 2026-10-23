@@ -898,6 +898,83 @@ static void __cdecl spider_observe_native_game_input(void) {
         last_script_log=now;
         ++script_logs;
       }
+      /* Track the TWO independent native script lifetimes proven
+       * by 2026-10-23 Wine 17:50:21. This is STATE-ONLY telemetry.
+       * It does NOT grant F12 exit permission, write native memory,
+       * inject a key or assume that two scripts cover other levels.
+       *
+       * 0 -> first active, 1 -> first skip allowed,
+       * 2 -> first ended, 3 -> second active (different script IP),
+       * 4 -> second skip allowed, 5 -> second ended (candidate only).
+       * Capture the LAST first-script IP just before its end,
+       * because script bytecode advances normally within one script.
+       */
+      {
+        static DWORD tracked_owner=0u,first_last_ip=0u,second_last_ip=0u;
+        static LONG scene_stage=0u,lifecycle_logs=0;
+        const char *event_name=0;
+        DWORD now_stage=(DWORD)scene_stage;
+        if(!readable || owner!=tracked_owner) {
+          tracked_owner=readable?owner:0u;
+          first_last_ip=0u;
+          second_last_ip=0u;
+          scene_stage=0;
+          now_stage=0u;
+        }
+        if(readable && scene_context==1u && script_active==1u &&
+           script_ip!=0u && now_stage==0u) {
+          first_last_ip=script_ip;
+          scene_stage=1;
+          event_name="FIRST_SCRIPT_ACTIVE";
+        } else if(readable && scene_context==1u && script_active==1u &&
+                  script_ip!=0u && now_stage==1u) {
+          first_last_ip=script_ip;
+          if(skip_allowed==1u) {
+            scene_stage=2;
+            event_name="FIRST_SKIP_ALLOWED";
+          }
+        } else if(readable && scene_context==1u && script_active==1u &&
+                  script_ip!=0u && now_stage==2u) {
+          first_last_ip=script_ip;
+        } else if(readable && scene_context==0u && script_active==0u &&
+                  now_stage==2u) {
+          scene_stage=3;
+          event_name="FIRST_SCRIPT_ENDED";
+        } else if(readable && scene_context==1u && script_active==1u &&
+                  script_ip!=0u && now_stage==3u &&
+                  script_ip!=first_last_ip) {
+          second_last_ip=script_ip;
+          scene_stage=4;
+          event_name="SECOND_SCRIPT_ACTIVE";
+        } else if(readable && scene_context==1u && script_active==1u &&
+                  script_ip!=0u && now_stage==4u) {
+          second_last_ip=script_ip;
+          if(skip_allowed==1u) {
+            scene_stage=5;
+            event_name="SECOND_SKIP_ALLOWED";
+          }
+        } else if(readable && scene_context==1u && script_active==1u &&
+                  script_ip!=0u && now_stage==5u) {
+          second_last_ip=script_ip;
+        } else if(readable && scene_context==0u && script_active==0u &&
+                  now_stage==5u) {
+          scene_stage=6;
+          event_name="SECOND_SCRIPT_ENDED_CANDIDATE_GAMEPLAY";
+        }
+        if(event_name && lifecycle_logs<24 &&
+           (!start || (DWORD)(now-start)<90000u)) {
+          char lifeline[365];
+          snprintf(lifeline,sizeof(lifeline),
+            "QUICK-EXIT-F12: DEBUG-3D-CUTSCENE-LIFECYCLE event=%s stage=%ld owner=0x%08lX context=%u skip_allowed=%u script_active=%u script_ip=0x%08lX first_last_ip=0x%08lX second_last_ip=0x%08lX since_3d_ms=%lu [TWO ORIGINAL SCRIPT LIFETIMES; TELEMETRY ONLY; F12 EXIT BLOCKED]",
+            event_name,(long)scene_stage,(unsigned long)owner,
+            (unsigned)scene_context,(unsigned)skip_allowed,
+            (unsigned)script_active,(unsigned long)script_ip,
+            (unsigned long)first_last_ip,(unsigned long)second_last_ip,
+            (unsigned long)(start?(DWORD)(now-start):0u));
+          say(lifeline);
+          ++lifecycle_logs;
+        }
+      }
       previous_owner=owner;
       previous_context=scene_context;
       previous_allow=skip_allowed;

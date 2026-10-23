@@ -1650,3 +1650,28 @@ def test_direct_original_cutscene_script_owner_is_observed_not_edited():
     assert "obj[0x1b4u]=" not in section
     for bad in ("SendInput(", "PostMessageA(", "keybd_event(", "ExitProcess(", "TerminateProcess("):
         assert bad not in section
+
+
+def test_two_native_cutscene_script_lifetimes_are_distinct_and_passive():
+    """Based on 2026-10-23 17:50:21 Wine: skip-allowed first script
+    ends, a NEW script begins, then the second script ends.
+    Logging never authorizes native exit or replaces engine input."""
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
+    assert "DEBUG-3D-CUTSCENE-LIFECYCLE" in owner
+    lifecycle=owner[owner.index("Track the TWO independent native script lifetimes"):
+                    owner.index("previous_owner=owner;")]
+    for phase in ("FIRST_SCRIPT_ACTIVE","FIRST_SKIP_ALLOWED","FIRST_SCRIPT_ENDED",
+                  "SECOND_SCRIPT_ACTIVE","SECOND_SKIP_ALLOWED",
+                  "SECOND_SCRIPT_ENDED_CANDIDATE_GAMEPLAY"):
+        assert phase in lifecycle
+    assert "script_ip!=first_last_ip" in lifecycle
+    assert "scene_context==1u && script_active==1u" in lifecycle
+    assert "scene_context==0u && script_active==0u" in lifecycle
+    assert "skip_allowed==1u" in lifecycle
+    assert "TWO ORIGINAL SCRIPT LIFETIMES; TELEMETRY ONLY; F12 EXIT BLOCKED" in lifecycle
+    assert "lifecycle_logs<24" in lifecycle
+    for unsafe in ("SendInput(","keybd_event(","PostMessageA(",
+                   "ExitProcess(","TerminateProcess(","SPIDER_NATIVE_CUTSCENE_OWNER_PTR=",
+                   "InterlockedExchange(&playable","controller-7"):
+        assert unsafe not in lifecycle
