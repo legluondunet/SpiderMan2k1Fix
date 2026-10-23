@@ -1,3 +1,87 @@
+## 2026-10-23 — Windows 11 native 3D F12: clean exit WITHOUT yellow window; controls for Bink correlation
+
+The user completed the requested independent native Windows 11
+control test of F12 **in active 3D gameplay**, using consolidated
+build #589 (`SpiderMan2k1Fix v1.0.0-823379a`). Full log:
+`SpiderMan2k1Fix(20261023-102044).log`; supported exact
+original game EXE SHA-256 verified.
+
+The user checked Windows Task Manager and explicitly reported
+**no residual `SpideyPC.exe`** and **NO yellow window** during
+this exit. In contrast, the immediately preceding two
+native Windows tests of F12 from the New Game comic and directly
+in the New Game Bink cinematic showed clean process exit
+but a ~1-second yellow game window before disappearance.
+
+3D gameplay and teardown log excerpt:
+
+```text
+QUICK-EXIT-F12: NATIVE-GAME-INPUT owner ENTER n=1 request=0 timer_active=0 flag1=0 flag2=1
+QUICK-EXIT-F12: ENGINE-STATE flip=336 renderer2d=0 mode_request=0 ... bink_flag=0 video_handle_present=0 ... native_3d_owner_seen=1
+HUD-ADAPTIVE: region=instructions hit=1 scale=0.83333 ...
+HUD-ADAPTIVE: region=compass hit=1 scale=0.83333 ...
+QUICK-EXIT-F12: 3D native exit intent queued; waiting for original gameplay tick
+QUICK-EXIT-F12: 3D game-thread frame completed; native request 7 queued for original 0x455BF3 cleanup
+QUICK-EXIT-F12: NATIVE-3D-CLEANUP begin n=1 request=7
+QUICK-EXIT-F12: 3D native cleanup checkpoint returned; awaiting controller-7 finalization
+QUICK-EXIT-F12: NATIVE-3D-CLEANUP completed n=1 request=7
+QUICK-EXIT-F12: CONTROLLER-7 native teardown ENTER n=1 bit4=0 status=-1 3D-checkpoint=1
+QUICK-EXIT-F12: 3D owner+controller cleanup complete; engine native final-exit flag set at 0x45619D
+QUICK-EXIT-F12: CONTROLLER-7 native teardown COMPLETED n=1 bit4=1 status=-1 outcome=NATIVE-FINAL-CLEANUP
+```
+
+**Windows 11 3D result: PASS**, including process-level
+verification and **no yellow-window artifact**. The log confirms
+that the same original `CONTROLLER-7` final-teardown machinery
+is reached by 3D F12 as by both video-originated F12 routes.
+
+**Controlled comparison:**
+
+| Trigger on native Windows 11 | Native final controller-7 cleanup | Residual `SpideyPC.exe` | Yellow window |
+| --- | --- | --- | --- |
+| New Game comic (deferred to Bink #4) | Yes | No | Yes, ~1 s |
+| New Game Bink #4 directly | Yes | No | Yes, ~1 s |
+| Active 3D gameplay, Bink inactive | Yes | No | **No** |
+
+**Interpretation (not proven root cause):** the
+controller-7 teardown *alone* is unlikely to account
+for yellow, because the same cleanup succeeds without
+yellow after established 3D gameplay. The distinct
+starting graphics state of Bink/movie or the
+Bink-to-game-transition surface state is a stronger
+candidate. Still unknown: which DirectDraw/Direct3D
+surface presents yellow, when yellow begins relative
+to native teardown or last Flip/Blt, whether it is a
+cleared/freed/reused surface, and how long the HWND
+persists after the last recorded checkpoint. No
+surface contents or destroy-window timing were
+instrumented; DO NOT infer that the color was caused
+by a particular API.
+
+**Next noninvasive discriminator:** in a fresh native
+Windows 11 launch, press F12 during one of the **four
+opening Bink videos**, rather than a post-menu
+cinematic; verify exit and orphan-process status,
+record presence/absence of yellow. The opening
+cinematics use the top-level native Bink → Quit route
+rather than post-New-Game controller-7 cleanup.
+This can distinguish an effect specific to New Game
+Bink and reused gameplay presentation from a
+more general movie-close presentation effect.
+Then, if needed, add a new separately opt-in
+**read-only** late-Flip/Blt/DirectDraw-release/HWND
+lifetime trace to existing callbacks, without
+drawing a colored replacement frame, suppressing
+game teardown or touching the proven F12 control
+flow.
+
+This is an evidence-only documentation update.
+INI options and installed hooks are unchanged.
+PR #26 stays **draft/open/unmerged**, pending user
+approval.
+
+---
+
 ## 2026-10-23 — Windows 11 direct New Game Bink F12: clean native exit and yellow window reproduced
 
 The user executed a new **native Windows 11** regression on
