@@ -1,3 +1,32 @@
+## 2026-10-23 — Wine #589 native Press Enter still F12: game exits through original menu Quit
+
+The user tested build **#589**, reporting **"test validé, le jeu s'est correctement arrêté"** after pressing F12 on the **second pre-menu still** ("Press Enter"), without a synthetic Enter key. Attached full log:
+`SpiderMan2k1Fix(20261023-095058).log`,
+patch `v1.0.0-823379a`, SHA-verified original game EXE.
+
+Relevant game-owned execution trace:
+
+```text
+QUICK-EXIT-F12: INTRO-STILL F12 opt-in enabled (exact 0x4A1896 native owner; Windows/Wine UNVALIDATED)
+QUICK-EXIT-F12: STARTUP-STATIC-PROBE original four-movie transition cleanup 0x455D23 completed [READ-ONLY]
+QUICK-EXIT-F12: STARTUP-STATIC-PROBE flip=313 since_first_flip_ms=10527 intro_cleanup_seen=1 real_menu_tick_count=0 ... bink_active=0 video_handle_present=0 ... transition_raw=0 still_frame_count=246 timed_page_once=1
+QUICK-EXIT-F12: INTRO-STILL F12 latched after original Bink cleanup; waiting for native timed page + input-wait owner [EXPERIMENTAL]
+QUICK-EXIT-F12: INTRO-STILL original input-wait owner 0x4A1896 verified; normal TRUE completion for 0x4A18AE native page cleanup; menu Quit queued [EXPERIMENTAL]
+QUICK-EXIT-F12: REAL Shell_MainMenu frame callback observed (0x493DD6)
+QUICK-EXIT-F12: INTRO-STILL native page owner returned; original Shell_MainMenu Quit now activated [EXPERIMENTAL]
+QUICK-EXIT-F12: native Shell_MainMenu Quit activated: slot=3 action=18, native cleanup branch=0x4941D5
+```
+
+**Verified in Wine:** F12 was latched **before any real menu tick** on the input-wait page. The exact `0x4A1896` native input-check wrapper recognized the supported game-owner return/arguments, handed control to the original TRUE-completion branch `0x4A18AE` and returned through the game to the actual `Shell_MainMenu`. The already user-validated menu Quit mechanism was then invoked (slot 3/action 18), and the user confirmed the game window/process **stopped correctly**.
+
+**Limitations:** The user confirmed a successful game shutdown but did **not expressly report an independent `pgrep` check for orphan Wine/SpideyPC processes in this message**. The log ends on the original menu Quit activation: it does not by itself measure the final Windows process table. Distinguish this from the earlier separately user-confirmed zero-orphan tests on New Game comic/cinematic and gameplay. **The FIRST pre-menu timed page is still untested** with this new prototype. Native Windows 11 test is still pending. Yellow visual issue remains deferred.
+
+**Next controlled Wine test:** launch a new process with `ExperimentalQuickExitF12InIntroStills=1`, press F12 on the **first auto-timed static screen immediately after the four opening videos**, not on "Press Enter"; do not press Enter or use Alt+Tab. Expected: F12 latched during timed first page; native timer completes; `0x4A1896` uses original second-page cleanup and returns into original Shell_MainMenu Quit. Verify both window disappearance **and** `pgrep -afi 'SpideyPC\\.exe'` produces no remaining game process. Submit separate log. The prototype remains OFF by default.
+
+No F12 source changes made to record this test. PR #26 remains draft and unmerged pending explicit user approval.
+
+---
+
 ## 2026-10-23 — Wine #576 identifies timed vs input-wait startup pages; opt-in native F12 trial
 
 The user uploaded a new uninterrupted foreground Wine run
