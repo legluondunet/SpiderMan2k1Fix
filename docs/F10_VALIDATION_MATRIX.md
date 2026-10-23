@@ -130,3 +130,19 @@ flags. Check `DEBUG-BINK-ENTER-HANDOFF` and the first-script duration.
 Try a quick tap and a longer Enter hold; also verify F10 still skips
 comic / movie / both intro scripts as before. This remains a runtime
 hypothesis pending testing under Wine and Windows 11.
+
+
+### Build #705 — Bink Enter/Space physical-release investigation
+
+Build #704 log `20261023-211310`: at the **first** original 3D owner,
+`enter_before=0`, but **`physical_space=1`** and game-owned buffered
+`raw_space_before=0x7F`. First CutSceneScript became skip-allowed at
+68ms and ended at 131ms, despite `f10_origin=0` and `auto_stage=0`.
+The earlier Enter-only barrier did not run because VK_RETURN had
+already been released. Build #705 now waits for **both VK_RETURN and
+VK_SPACE physical key-up** before the first original 3D input update,
+bounded to 1500ms. It does not inject keys, write DirectInput memory,
+or request a native cutscene skip. New diagnostics show both keys'
+before/after states and raw-space byte. This is still a hypothesis:
+physical Space may be pressed or interpreted unexpectedly under Wine;
+the new test log must confirm whether key-up precedes the first scene.

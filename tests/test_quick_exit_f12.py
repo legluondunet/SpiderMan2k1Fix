@@ -2028,10 +2028,14 @@ def test_movie_enter_release_is_gated_before_first_original_3d_input():
             SRC.index("/* Native game-input owner wrapper at 0x45553B:")]
     for predicate in ("GetAsyncKeyState(VK_RETURN)",
                       "GetAsyncKeyState(VK_SPACE)",
+                      "enter_before || space_before",
+                      "enter_after || space_after",
+                      "space_before=%ld space_after=%ld",
                       "debug_auto3d_f10_origin,0,0)!=0",
                       "debug_auto3d_state,0,0)!=0",
                       "phase!=1 && phase!=2",
                       "GetTickCount()-began)<1500u",
+                      "if(!enter_after && !space_after)Sleep(40);",
                       "Sleep(10);", "Sleep(40);",
                       "DEBUG-BINK-ENTER-HANDOFF"):
         assert predicate in src

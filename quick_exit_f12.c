@@ -663,21 +663,18 @@ static void __cdecl spider_observe_native_pause_handler(void) {
   }
 }
 
-/* Prevent a held physical Enter used to end New Game Bink #4 from
- * also appearing as a 3D input on the NEXT native game-owner update.
- * Do not mutate DirectInput state, send a key, alter a cutscene flag
- * or intercept any input helper: leave all gameplay input original.
- * This runs ONCE, at the verified first 3D owner call, only when no
- * physical F10 requested an intro skip. The wait is bounded so a
- * stuck keyboard or lost focus cannot lock the game indefinitely. */
+/* Verified Wine #704: Enter had already been released when 3D
+ * began, but GetAsyncKeyState(VK_SPACE) was STILL down. The first
+ * scripted scene ended at 131ms without ANY F10 auto-skip. Wait for
+ * release of EITHER movie-skip key (VK_RETURN or VK_SPACE) before the
+ * ORIGINAL first 3D input update. No DirectInput buffer or native
+ * cutscene state is written. Only an unarmed New Game intro can wait;
+ * F10-armed introductions and normal gameplay are untouched. */
 static void spider_newgame_enter_release_barrier(void) {
   DWORD began=GetTickCount(),elapsed=0u;
-  LONG enter_before=(GetAsyncKeyState(VK_RETURN)&0x8000)!=0;
-  LONG enter_after=enter_before;
-  LONG space=(GetAsyncKeyState(VK_SPACE)&0x8000)!=0;
-  BYTE original_return=*(const volatile BYTE *)(uintptr_t)0x006B7948u;
-  BYTE original_space=*SPIDER_NATIVE_RAW_SPACE_BYTE;
-  char event[360];
+  LONG enter_before,enter_after,space_before,space_after;
+  BYTE original_return,original_space;
+  char event[420];
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)!=1 ||
      InterlockedCompareExchange(&debug_auto3d_f10_origin,0,0)!=0 ||
      InterlockedCompareExchange(&debug_auto3d_state,0,0)!=0 ||
@@ -688,21 +685,31 @@ static void spider_newgame_enter_release_barrier(void) {
     LONG phase=InterlockedCompareExchange(&debug_newgame_progress,0,0);
     if(phase!=1 && phase!=2)return;
   }
-  if(enter_before) {
-    while(enter_after && (DWORD)(GetTickCount()-began)<1500u) {
+  enter_before=(GetAsyncKeyState(VK_RETURN)&0x8000)!=0;
+  space_before=(GetAsyncKeyState(VK_SPACE)&0x8000)!=0;
+  enter_after=enter_before;
+  space_after=space_before;
+  original_return=*(const volatile BYTE *)(uintptr_t)0x006B7948u;
+  original_space=*SPIDER_NATIVE_RAW_SPACE_BYTE;
+  if(enter_before || space_before) {
+    do {
       Sleep(10);
       enter_after=(GetAsyncKeyState(VK_RETURN)&0x8000)!=0;
-    }
-    /* Give the original movie-to-3D key-release transition one input
-     * frame before processing the first game input. No fake release. */
-    if(!enter_after)Sleep(40);
+      space_after=(GetAsyncKeyState(VK_SPACE)&0x8000)!=0;
+    } while((enter_after || space_after) &&
+            (DWORD)(GetTickCount()-began)<1500u);
+    /* Allow the actual physical release to settle before invoking the
+     * original input update. Do not manufacture release events. */
+    if(!enter_after && !space_after)Sleep(40);
     elapsed=(DWORD)(GetTickCount()-began);
   }
   snprintf(event,sizeof(event),
-    "QUICK-EXIT-F12: DEBUG-BINK-ENTER-HANDOFF enter_before=%ld enter_after=%ld physical_space=%ld raw_enter_before=0x%02X raw_space_before=0x%02X waited_ms=%lu timeout=%d f10_origin=0 [FIRST 3D OWNER ONLY; NATIVE INPUT UNMODIFIED]",
-    (long)enter_before,(long)enter_after,(long)space,
+    "QUICK-EXIT-F12: DEBUG-BINK-ENTER-HANDOFF enter_before=%ld enter_after=%ld space_before=%ld space_after=%ld raw_enter_before=0x%02X raw_space_before=0x%02X raw_space_after=0x%02X waited_ms=%lu timeout=%d f10_origin=0 [FIRST 3D OWNER; NATIVE INPUT UNMODIFIED]",
+    (long)enter_before,(long)enter_after,
+    (long)space_before,(long)space_after,
     (unsigned)original_return,(unsigned)original_space,
-    (unsigned long)elapsed,(int)(enter_after && enter_before));
+    (unsigned)*SPIDER_NATIVE_RAW_SPACE_BYTE,
+    (unsigned long)elapsed,(int)(enter_after || space_after));
   say(event);
 }
 
@@ -735,9 +742,9 @@ static void __cdecl spider_observe_native_game_input(void) {
    * Do not request controller action 7 from the F12 polling thread.
    * The original 0x455a90 checks the request after its frame update
    * returns, then follows the native 0x455bf3 3D cleanup branch.
-   * On the very FIRST native 3D call after an Enter-ended movie,
-   * wait for the physical Enter release BEFORE original 0x440EF0
-   * processes input. F10-armed auto-skips bypass this barrier. */
+   * On the very FIRST native 3D call after a normally ended movie,
+   * wait for physical Enter AND Space release BEFORE 0x440EF0.
+   * F10-armed auto-skips bypass this barrier. */
   if(n==1)spider_newgame_enter_release_barrier();
   InterlockedExchange(&last_native_game_input_ms,(LONG)GetTickCount());
   SPIDER_NATIVE_GAME_INPUT_UPDATE();
