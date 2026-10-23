@@ -85,6 +85,7 @@ than the old process exit. Test the new behavior separately.
 | --- | --- | --- |
 | F10 during first introductory 3D script | Let comic/movie run, press F10 mid-Stan Lee intro | `FIRST_INTRO_ARMED_SKIP_BOTH`; skips BOTH scripts after permission to gameplay |
 | F10 during second introductory 3D script | Let first intro finish, press F10 mid-second script | `SECOND_INTRO_ARMED_SKIP_REMAINING`; skips remaining script to gameplay |
+| Observe a later 3D script before skipping | Native tracker reports `DEBUG-F10-CUTSCENE-STATUS native_context=1` | This is script-active evidence; no controller-7 menu return while active |
 | F10 during later in-level native CutSceneScript | Press F10 in another skippable script | `LATER_NATIVE_SKIP_REQUESTED` only when `CutSceneSkipAllow` permits; one native script at a time, no request 7 |
 | F10 during unknown/unskippable cinematic | Press F10 when native permission is missing | Do not force scene or controller state; pending request expires or cancels |
 | F10 after the later cinematic finishes | Wait for original script manager to report `native_context=0`; press F10 during playable 3D | Normal native cleanup is expected, but not yet runtime validated in this context |
