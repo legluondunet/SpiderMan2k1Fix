@@ -1,3 +1,63 @@
+## 2026-10-23 — Wine/Lutris-prefix regression: Bink → 3D → native F12 teardown
+
+The user provided `SpiderMan2k1Fix(20261023-062647).log`
+(`v1.0.0-996cc81`) from a `K:\\Games\\spider-man-2001\\drive_c\\...`
+game directory, strongly indicating a Linux Wine/Lutris prefix.
+The original `SpideyPC.exe` SHA-256 still matches
+`0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
+Display reports `1920x1080`, 120 Hz, borderless active and
+the 30 FPS DirectDraw Flip limiter.
+
+The observed runtime sequence was:
+
+```text
+REAL Shell_MainMenu frame callback observed
+COMIC-RENDER-CANDIDATE draw=1 flip=329
+ENGINE-STATE flip=331 ... bink_flag=1 video_handle_present=1 native_3d_owner_seen=0
+POST-SHELL-BINK-TICK-RESULT n=340864 native_result=1 ... space_down_sampled=0
+NATIVE-GAME-INPUT owner ENTER n=1
+ENGINE-STATE flip=446 ... bink_flag=0 video_handle_present=0 native_3d_owner_seen=1
+3D native exit intent queued; waiting for original gameplay tick
+NATIVE-3D-CLEANUP completed n=1 request=7
+CONTROLLER-7 native teardown COMPLETED n=1 bit4=1 status=-1 outcome=NATIVE-FINAL-CLEANUP
+```
+
+This is a successful **logged native final-teardown path** on a
+Wine-style installation, not proof that the Wine process subsequently
+disappeared: the latter would require direct user/process observation.
+No crash/error is visible in this log. It also confirms that the
+throttled post-menu Bink result logger is compact (about 12 result
+lines, not thousands).
+
+No `POST-SHELL-BINK-PARENT` line appears because the separate
+`SPIDERMAN2K1FIX_F12_PARENT_TRACE=1` diagnostic was **not armed**
+in this run (the startup `optional passive ... parent trace armed`
+line is absent). The previous Windows run already identified the
+New Game Bink caller return `0x427A00`, original call `0x4279FB`
+and original constant movie ID **4**, so no repeat parent-trace test
+is required merely to rediscover this address.
+
+The Wine trace has **no sampled Space-down event**; a key could have
+been released between polling intervals. Accordingly the precise
+trigger for stopping the movie **cannot** be inferred from this log
+alone. Original `Bink` result stayed at 1 for all sampled calls.
+
+**Additional static owner-chain observation (same SHA-verified EXE):**
+the scene interpreter at `0x4E0210` dispatches opcodes until it
+sees the `0xFFFF` end sentinel at `0x4E2B3F–0x4E2B4B`;
+its normal epilogue `0x4E2B82–0x4E2BAD` restores
+`fs:[0]` (the Windows x86 SEH chain) and unwinds saved registers
+before `ret`. Direct movie-to-engine-final-exit jumps therefore
+risk bypassing this game-owned structured-exception cleanup.
+Four direct callers of the original interpreter at
+`0x4DE806`, `0x4DEB01`, `0x4DEE36` and `0x4DEE5E`
+have distinct parent flows. **No safe mid-script F12 Quit handoff
+has yet been proven** and this entry changes documentation only.
+Do not enable F12 for post-menu cinematic or comic states on
+the basis of these observations.
+
+---
+
 ## 2026-10-23 — Windows #541: New Game cinematic owned by 0x4279FB
 
 The user provided `SpiderMan2k1Fix(20261023-052925).log`
