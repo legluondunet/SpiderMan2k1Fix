@@ -525,6 +525,7 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
   static volatile LONG after_shell_ticks=0;
   static volatile LONG after_shell_previous_result=-1;
   static volatile LONG after_shell_previous_space=0;
+  static DWORD after_shell_last_log_ms=0;
   BYTE native_result;
   LONG post_shell=0,n=0;
   if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1) {
@@ -545,23 +546,32 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
   }
   native_result=SPIDER_NATIVE_BINK_FRAME_TICK();
   if(post_shell) {
-    LONG space_down=(GetAsyncKeyState(VK_SPACE)&0x8000)!=0;
     LONG old_result=InterlockedExchange(&after_shell_previous_result,(LONG)native_result);
-    LONG old_space=InterlockedExchange(&after_shell_previous_space,space_down);
-    if(n<=4 || n%120==0 ||
-       (native_result==0 && old_result!=0) ||
-       (space_down && !old_space)) {
+    /* The native loop called its Bink tick >880,000 times in ~16s on
+     * Windows. Do NOT poll the physical key on every tight-loop call or
+     * emit a line every 120 calls (~7,300 lines per cinematic).
+     * Compare the unchanged result every tick, but sample the keyboard
+     * at most once per 128 calls and report changes / 1s heartbeat. */
+    if(n<=4 || n%128==0 || native_result!=(BYTE)old_result) {
+      LONG space_down=(GetAsyncKeyState(VK_SPACE)&0x8000)!=0;
+      LONG old_space=InterlockedExchange(&after_shell_previous_space,space_down);
       DWORD now=GetTickCount();
-      DWORD comic_ms=(DWORD)InterlockedCompareExchange(&last_comic_candidate_ms,0,0);
-      char line[320];
-      snprintf(line,sizeof(line),
-        "QUICK-EXIT-F12: POST-SHELL-BINK-TICK-RESULT n=%ld native_result=%u previous_result=%ld space_down_sampled=%ld bink_flag=%lu video_handle_present=%lu native_3d_owner_seen=%lu ms_since_comic=%lu [READ-ONLY; SKIP-REASON UNKNOWN]",
-        (long)n,(unsigned)native_result,(long)old_result,(long)space_down,
-        (unsigned long)(*SPIDER_GAME_BINK_ACTIVE!=0u),
-        (unsigned long)(*SPIDER_BINK_VIDEO_HANDLE!=0u),
-        (unsigned long)(InterlockedCompareExchange(&input_native_invocations,0,0)>0),
-        (unsigned long)(comic_ms?(DWORD)(now-comic_ms):0u));
-      say(line);
+      if(n<=4 || native_result!=(BYTE)old_result ||
+         (space_down && !old_space) ||
+         !after_shell_last_log_ms ||
+         (DWORD)(now-after_shell_last_log_ms)>=1000u) {
+        DWORD comic_ms=(DWORD)InterlockedCompareExchange(&last_comic_candidate_ms,0,0);
+        char line[320];
+        after_shell_last_log_ms=now;
+        snprintf(line,sizeof(line),
+          "QUICK-EXIT-F12: POST-SHELL-BINK-TICK-RESULT n=%ld native_result=%u previous_result=%ld space_down_sampled=%ld bink_flag=%lu video_handle_present=%lu native_3d_owner_seen=%lu ms_since_comic=%lu [READ-ONLY; SKIP-REASON UNKNOWN]",
+          (long)n,(unsigned)native_result,(long)old_result,(long)space_down,
+          (unsigned long)(*SPIDER_GAME_BINK_ACTIVE!=0u),
+          (unsigned long)(*SPIDER_BINK_VIDEO_HANDLE!=0u),
+          (unsigned long)(InterlockedCompareExchange(&input_native_invocations,0,0)>0),
+          (unsigned long)(comic_ms?(DWORD)(now-comic_ms):0u));
+        say(line);
+      }
     }
   }
   return native_result;
