@@ -1,3 +1,48 @@
+## 2026-10-23 — Additional opt-in INI switches: movie/comic (OFF by default)
+
+The Linux/Wine comic, cinematic and 3D tests have now
+all been **user-validated through complete game-owned native
+teardown and independent confirmation of no residual processes**.
+We are maintaining the PR in draft pending Windows testing
+and explicit approval, particularly for the two New Game stages.
+
+For easier configuration, the two independently gated movie
+and comic options are now also available through standard
+`[System]` INI keys, each default `0`:
+
+```ini
+[Debug]
+Log=1
+
+[System]
+QuickExitF12=1
+ExperimentalQuickExitF12In3D=1
+ExperimentalQuickExitF12InNewGameMovie=1
+ExperimentalQuickExitF12InNewGameComic=1
+```
+
+`ExperimentalQuickExitF12InNewGameMovie` enables the
+movie-owner-verified Bink stop/cleanup route;
+`ExperimentalQuickExitF12InNewGameComic` additionally
+enables the deferred comic route. The comic option only
+functions if the movie path is enabled. Both require
+the existing native 3D exit and `Log=1` safeguards
+and remain disabled unless explicitly opted into.
+
+The earlier environment variables
+`SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT=1` and
+`SPIDERMAN2K1FIX_F12_COMIC_EXIT=1` continue to function
+as alternatives; no regression in those test workflows.
+The generated INI, sample INI, key validator and tests
+have been updated together.
+
+No game-owned shutdown, input, Bink or D3D control flow
+was changed for these new configuration alternatives.
+There is still no new F12 support for the two unverified
+pre-menu static title/Enter screens.
+
+---
+
 ## 2026-10-23 — Wine #560 comic-still F12: deferred route reaches native final cleanup
 
 The user supplied a new full Wine/Lutris-prefix test log,
@@ -33,15 +78,18 @@ logged controller checkpoint is **4,516 ms** after F12, only
 comic path reached the same native final teardown established by
 the earlier Wine movie test.
 
-**Not established by this log:** whether the process actually
-disappeared, whether a yellow surface flashed again, and exactly
-how much wall-clock time elapsed between the last engine log and
-the OS/window closing. The previous user confirmation of zero
-residual processes applies to the separate **movie-stage** test,
-not automatically to this new **comic-stage** run. The user
-still needs to confirm process state and visual behavior for
-this run. The all-yellow visual regression remains open,
-not fixed or explained.
+**User follow-up (2026-10-23):** the user explicitly
+confirmed that **all game/Wine processes disappeared** after
+this deferred-comic F12 test, extending process-level validation
+to the comic stage on Linux/Wine. The earlier independently
+validated Bink cinematic and 3D F12 paths also leave no
+processes behind. The user asked to **defer investigation of the
+yellow screen** until Windows tests: it may be Wine-specific,
+but that cause has **not** been established. The renderer is
+unchanged and no yellow-screen workaround should be applied
+at this stage. The exact wall-clock interval after the final
+logged checkpoint and the pixels shown during it are still
+unmeasured.
 
 The F12 comic still is not closed immediately: the current
 approach explicitly preserves the game's native timer and
