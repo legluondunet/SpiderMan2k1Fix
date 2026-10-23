@@ -29,6 +29,32 @@ SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must prov
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 
+### F12 fast-test shortcut — [Debug], default OFF
+
+For testing changes rapidly, you can enable a separate F12 mode:
+
+```ini
+[Debug]
+F12TestMode=1
+Log=1
+```
+
+With this enabled, **F12 before the main menu navigates to the main
+menu**, using the original Bink and static-page cleanup. The first
+static page's original timer is still respected. **F12 in active 3D
+gameplay quits the game** via the existing native controller-7 exit.
+F12 in the main menu, comic or subsequent New Game cinematic is
+ignored. The single `[Debug] F12TestMode` option overrides the
+older `[System]` F12 controls and defaults to `0`; `Log=1` is
+recommended but not required.
+
+The complete previously validated F12 implementation was archived
+at [`backup/f12-native-exit-validated-20261023`](https://github.com/legluondunet/SpiderMan2k1Fix/tree/backup/f12-native-exit-validated-20261023)
+(commit `4adf16aa13a867a3256f7a2f7ce506cc53b9b82a`).
+See [F12 debug mode and restoration guide](docs/F12_DEBUG_TEST_MODE.md).
+**This new mode is experimental and has not yet been manually
+validated on Windows/Wine.** PR #26 remains draft and unmerged.
+
 ### Optional F12 quick exit — native cleanup, experimental stages
 
 **F12 is OFF by default.** The original 2001 game shortcut can
