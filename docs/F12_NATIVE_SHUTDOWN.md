@@ -1,3 +1,32 @@
+## 2026-10-23 — User clarification: New Game comic is auto-timed, followed by a cinematic
+
+**User-observed game sequence (not independently established by the
+renderer trace):** select `New Game` in the interactive main menu
+→ **one still comic-book image** appears for a few seconds and
+disappears automatically → an **in-game cinematic** plays
+→ interactive 3D gameplay begins.
+
+Correction to the previous suggested experiment: do **not** ask the
+user to hold a comic page on screen for 10–15 seconds or manually
+advance multiple pages. In this observed sequence the still is
+auto-timed, and the next stage is a cinematic. The lone
+`COMIC-RENDER-CANDIDATE` in build #525 is consistent with this
+description, but **does not prove** either the timing, cinematic
+entry, cinematic decoder identity, or the native cleanup paths.
+
+Revised read-only investigation: correlate the auto-timed
+still→cinematic and cinematic→3D transitions in the original
+game-owned scene/video control flow, including whether this
+post-menu cinematic is Bink and how its lifetime differs from the
+four startup videos. The existing F12 intro-video forwarding is
+explicitly limited to the four pre-menu movies; do not reuse
+that shutdown strategy for post-menu cinematics without
+identifying and validating their separate native owner and cleanup.
+Do not infer shutdown authority from DirectDraw Flip or comic
+render geometry, and leave existing menu/3D F12 behavior untouched.
+
+---
+
 ## 2026-10-23 — Windows build #525: passive comic renderer trace confirmed
 
 User log `SpiderMan2k1Fix(20261023-031026).log` reports
