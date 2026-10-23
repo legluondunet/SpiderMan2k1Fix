@@ -1,3 +1,31 @@
+## 2026-10-23 — Windows 11 build #520: 3D F12 shutdown verified externally (PASS)
+
+User ran the repository's read-only `tools/Verify-F12QuickExit.ps1`
+with `-ExpectedMode 3D` against the Windows x86 build #520. Exact
+PowerShell result:
+
+```text
+Process exited after 29.8 seconds, exit code 0
+Observed peak working set: 157,2 MiB; peak handle count: 1452
+OK: SpideyPC.exe process no longer exists; OS-owned process memory and handles are released.
+Game log: SpiderMan2k1Fix.log; verified native F12 exit path=3D
+PASS: native F12 3D exit logged, exit code 0, process gone, no matching crash event found.
+Note: this does not prove that every native COM object was explicitly released before exit.
+```
+
+**Status: first full Windows 11 external verification PASSED for direct
+F12 during 3D** (native 3D cleanup and controller final-exit trace, exit
+code 0, OS process gone, no matching Application Error / WER event found
+by the watcher). This evidence is from the reported single run and does
+**not** establish exhaustive COM teardown or repeated-run stability.
+The separately opted-in gameplay exit remains **default-off** until
+remaining regressions (natural 3D→menu, menu F12, F12 disabled and
+background, different 3D situations) are checked. Do not generalize this
+result to intro static pages or comics; neither has a validated native
+F12 shutdown. Keep PR #26 draft and do not merge without user approval.
+
+---
+
 ## 2026-10-23 Windows 11: first direct F12 exit from 3D confirmed (build #516)
 
 User-provided `SpiderMan2k1Fix(20261023-023052).log` running
