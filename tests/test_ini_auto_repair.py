@@ -115,3 +115,11 @@ def test_auto_repair_preserves_f10_gameplay_exit(recover_runner,tmp_path):
         "[Keyboard]\nJump=SPACE\n[Plugin]\nUnknown=x\n")
     assert "[Debug] F10GameplayExit=1" in lines
     assert "[Keyboard] Jump=SPACE" in lines
+
+
+def test_repair_keeps_f10_verbose_trace_and_native_exit(recover_runner,tmp_path):
+    lines=recover(recover_runner,tmp_path,
+        "[Debug]\nLog=1\nF10TestMode=1\nF10Auto3DScripts=1\n"
+        "F10GameplayExit=1\nF10VerboseTrace=1\n[Unknown]\nValue=3\n")
+    assert "[Debug] F10VerboseTrace=1" in lines
+    assert "[Debug] F10GameplayExit=1" in lines

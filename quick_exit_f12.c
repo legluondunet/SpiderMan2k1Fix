@@ -362,6 +362,12 @@ static volatile LONG debug_auto3d_begin_ms=0;
  * AND both original native skip request completions must be proven. */
 static volatile LONG debug_f10_gameplay_exit_opt_in=0;
 static volatile LONG debug_cutscene_lifecycle=0;
+/* -1=unknown/unreadable, 1=script active, 0=script idle.
+ * Refresh EVERY original 3D game-input frame, even after the first
+ * two introductory script lifetimes have already completed. */
+static volatile LONG debug_live_cutscene_active=-1;
+/* Verbose read-only reverse-engineering logs are opt-in. */
+static volatile LONG f10_verbose_trace=0;
 static volatile LONG debug_intro_generation=0;
 static volatile LONG debug_lifecycle_generation=-1;
 static volatile LONG debug_newgame_3d_first_ms=0;
@@ -397,7 +403,29 @@ static volatile LONG postmovie_request_ms=0;
 static PVOID volatile game_hwnd=NULL;
 static void (*logger)(const char *)=NULL;
 
+/* Hide ONLY noisy read-only probes. Native script lifecycle/auto-skip,
+ * F10 exit decisions, errors and cleanup outcomes always remain logged.
+ * The existing probes keep running: this changes logging only. */
+static int f10_is_optional_probe_line(const char *msg) {
+  static const char *const probes[]={
+    "DEBUG-3D-KEYMAP ", "DEBUG-3D-DINPUT-SPACE-BYTE ",
+    "DEBUG-3D-SPACE-ACTION ", "DEBUG-3D-SCENE-CONTEXT ",
+    "DEBUG-3D-DISPATCH-NODE ", "DEBUG-3D-DISPATCH-CHAIN ",
+    "DEBUG-3D-CUTSCENE-SCRIPT ", "DEBUG-3D-NATIVE-INPUT ",
+    "DEBUG-3D-SPACE-GATE ", "DEBUG-3D-RAW-SPACE ",
+    "DEBUG-NEWGAME-3D-PHASE ", "DEBUG-NEWGAME-3D-SPACE-EVENT ",
+    "DEBUG-MENU-TICK-TIMING ", "DEBUG-MENU-INPUT-PROBE ",
+    "DEBUG-MENU-CLOCK-WAIT ", "DEBUG-MENU-EXIT-CLOCK-WAIT "
+  };
+  unsigned i;
+  if(!msg)return 0;
+  for(i=0;i<sizeof(probes)/sizeof(probes[0]);++i)
+    if(strstr(msg,probes[i])!=NULL)return 1;
+  return 0;
+}
 static void say(const char *msg) {
+  if(InterlockedCompareExchange(&f10_verbose_trace,0,0)!=1 &&
+     f10_is_optional_probe_line(msg))return;
   if(logger)logger(msg);
 }
 
@@ -906,6 +934,22 @@ static void __cdecl spider_observe_native_game_input(void) {
           }
         }
       }
+      /* A later in-level CutSceneScript reactivates the original
+       * manager even though first-intro lifecycle stays stage 6.
+       * Current state is a separate, fail-closed exit guard. */
+      {
+        LONG state=readable?
+          ((scene_context!=0u || script_active!=0u)?1:0):-1;
+        LONG previous=InterlockedExchange(&debug_live_cutscene_active,state);
+        if(previous!=state) {
+          char statusline[196];
+          snprintf(statusline,sizeof(statusline),
+            "QUICK-EXIT-F12: DEBUG-F10-CUTSCENE-STATUS native_context=%ld previous=%ld since_3d_ms=%lu [GAME-THREAD READ-ONLY; EXIT DENIED WHILE ACTIVE OR UNKNOWN]",
+            (long)state,(long)previous,
+            (unsigned long)(start?(DWORD)(now-start):0u));
+          say(statusline);
+        }
+      }
       if((owner!=previous_owner || scene_context!=previous_context ||
           skip_allowed!=previous_allow || script_active!=previous_active ||
           readable==0 || space!=previous_key ||
@@ -1250,6 +1294,7 @@ static void __cdecl spider_observe_native_game_input(void) {
     if(InterlockedCompareExchange(&debug_f10_gameplay_exit_opt_in,0,0)==1 &&
        InterlockedCompareExchange(&debug_cutscene_lifecycle,0,0)==6 &&
        InterlockedCompareExchange(&debug_auto3d_state,0,0)==7 &&
+       InterlockedCompareExchange(&debug_live_cutscene_active,0,0)==0 &&
        InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
        *SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST==0u &&
        !(*SPIDER_PAUSE_CONTEXT) &&
@@ -2590,6 +2635,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
               if(InterlockedCompareExchange(&debug_auto3d_opt_in,0,0)==1) {
                 InterlockedIncrement(&debug_intro_generation);
                 InterlockedExchange(&debug_cutscene_lifecycle,0);
+                InterlockedExchange(&debug_live_cutscene_active,-1);
                 InterlockedExchange(&debug_auto3d_first_owner,0);
                 InterlockedExchange(&debug_auto3d_first_last_ip,0);
                 InterlockedExchange(&debug_auto3d_begin_ms,(LONG)now);
@@ -2624,6 +2670,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
              InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
              InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
              lifecycle==6 && auto_stage==7 &&
+             InterlockedCompareExchange(&debug_live_cutscene_active,0,0)==0 &&
              *SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST==0u &&
              *SPIDER_ENGINE_MODE==0u && !(*SPIDER_PAUSE_CONTEXT) &&
              *SPIDER_GAME_BINK_ACTIVE==0u && *SPIDER_BINK_VIDEO_HANDLE==0u &&
@@ -2634,9 +2681,11 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
           } else {
             char why[320];
             snprintf(why,sizeof(why),
-              "QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT BLOCKED optin=%ld lifecycle=%ld auto=%ld request=%u [NO CONTROLLER 7]",
+              "QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT BLOCKED optin=%ld lifecycle=%ld auto=%ld current_cutscene=%ld request=%u [NO CONTROLLER 7]",
               (long)InterlockedCompareExchange(&debug_f10_gameplay_exit_opt_in,0,0),
-              (long)lifecycle,(long)auto_stage,(unsigned)*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST);
+              (long)lifecycle,(long)auto_stage,
+              (long)InterlockedCompareExchange(&debug_live_cutscene_active,0,0),
+              (unsigned)*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST);
             say(why);
           }
         } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
@@ -2766,6 +2815,12 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   }
   memcpy(ini,exe,(size_t)(slash-exe)+1);
   strcpy(ini+(slash-exe)+1,"SpiderMan2k1Fix.ini");
+  /* Ordinary Log=1 keeps all native state/cleanup outcomes, while
+   * heavy read-only reverse-engineering snapshots need extra opt-in. */
+  if(GetPrivateProfileIntA("Debug","F10VerboseTrace",0,ini)==1) {
+    InterlockedExchange(&f10_verbose_trace,1);
+    say("QUICK-EXIT-F12: F10VerboseTrace=1 detailed original-game probes enabled");
+  }
   /* Old F12 INI names remain compatibility ALIASES for activating
    * the NEW F10 shortcut. They do not make F12 a shortcut again. */
   GetPrivateProfileStringA("System","QuickExitF12","0",val,sizeof(val),ini);

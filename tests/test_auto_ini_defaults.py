@@ -30,6 +30,8 @@ def test_generated_example_factory_consistency():
     assert config['Debug']['F10Auto3DScripts'] == '0'
     assert config['Debug']['F10TestMode'] == '0'
     assert config['Debug']['F10GameplayExit'] == '0'
+    assert config['Debug']['F10VerboseTrace'] == '0'
+    assert '"F10VerboseTrace=0\\r\\n"' in virtual
     assert '"F10GameplayExit=0\\r\\n"' in virtual
     assert '"F10Auto3DScripts=0\\r\\n"' in virtual
     assert 'F10Auto3DScripts=0' in (ROOT / 'SpiderMan2k1Fix.ini').read_text()

@@ -446,7 +446,7 @@ def test_default_off_and_ini_section_validated():
 def test_f12_debug_fast_test_mode_default_off_and_valid_ini_key():
     assert "F10TestMode=0" in INI
     assert '"F10TestMode=0\\r\\n"' in GEN
-    assert 'spider_ini_debug[]={"Log","F10TestMode","F10Auto3DScripts","F10GameplayExit","F12TestMode","F12Auto3DScripts"}' in VAL
+    assert 'spider_ini_debug[]={"Log","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts"}' in VAL
     assert 'GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1' in SRC
     assert "static volatile LONG debug_f12_test_mode=0;" in SRC
 
@@ -1736,3 +1736,40 @@ def test_f10_gameplay_exit_only_after_two_verified_native_script_lifetimes():
         assert proof in final_guard
     assert "SendInput(" not in final_guard
     assert "GetAsyncKeyState(VK_F12)" not in worker
+
+
+def test_f10_compact_log_only_omits_read_only_investigation_probes():
+    assert "static volatile LONG f10_verbose_trace=0;" in SRC
+    section=SRC[SRC.index("static int f10_is_optional_probe_line("):
+                SRC.index("int SpiderQuickExitF12_Enabled(void)")]
+    assert "DEBUG-3D-DISPATCH-CHAIN " in section
+    assert "DEBUG-3D-CUTSCENE-SCRIPT " in section
+    assert "DEBUG-MENU-TICK-TIMING " in section
+    assert "f10_is_optional_probe_line(msg)" in section
+    assert "if(logger)logger(msg);" in section
+    for kept in ("DEBUG-3D-CUTSCENE-LIFECYCLE",
+                 "DEBUG-3D-AUTO-NATIVE", "DEBUG-F10-GAMEPLAY-EXIT",
+                 "NATIVE-3D-CLEANUP", "CONTROLLER-7",
+                 "DEBUG-F10-CUTSCENE-STATUS"):
+        assert kept not in section
+        assert kept in SRC
+    assert 'GetPrivateProfileIntA("Debug","F10VerboseTrace",0,ini)==1' in SRC
+
+
+def test_f10_refuses_later_active_cutscene_even_with_intro_complete():
+    assert "static volatile LONG debug_live_cutscene_active=-1;" in SRC
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
+    assert "(scene_context!=0u || script_active!=0u)?1:0" in owner
+    assert "InterlockedExchange(&debug_live_cutscene_active,state)" in owner
+    assert "EXIT DENIED WHILE ACTIVE OR UNKNOWN" in owner
+    worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
+               SRC.index("void SpiderQuickExitF12_Init(")]
+    assert "lifecycle==6 && auto_stage==7" in worker
+    assert "InterlockedCompareExchange(&debug_live_cutscene_active,0,0)==0" in worker
+    assert "current_cutscene=%ld" in worker
+    assert "InterlockedExchange(&debug_live_cutscene_active,-1);" in worker
+    owner_guard=owner[owner.index("Native-game-thread FINAL eligibility"):
+                       owner.index("after_timer=*SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE")]
+    assert "InterlockedCompareExchange(&debug_live_cutscene_active,0,0)==0" in owner_guard
+    assert "scene[0x1acu]==0u && scene[0x1b4u]==0u" in owner_guard
