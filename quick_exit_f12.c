@@ -1063,6 +1063,19 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
           say("QUICK-EXIT-F12: COMIC F12 deferred intent timed out; no native movie interrupted");
       }
     }
+    /* Fail closed if native input-wait or real menu never arrives. */
+    if(InterlockedCompareExchange(&intro_still_opt_in,0,0)==1) {
+      LONG state=InterlockedCompareExchange(&intro_still_exit_state,0,0);
+      if(state==1 || state==2) {
+        DWORD start=(DWORD)InterlockedCompareExchange(&intro_still_request_ms,0,0);
+        if(!start || (DWORD)(GetTickCount()-start)>15000u) {
+          if(InterlockedCompareExchange(&intro_still_exit_state,0,state)==state) {
+            if(state==2)InterlockedExchange(&pending,0);
+            say("QUICK-EXIT-F12: INTRO-STILL request timed out; no late menu Quit will be triggered");
+          }
+        }
+      }
+    }
     if(!focused) {
       previously_down=TRUE;
     } else if(!down) {
@@ -1105,6 +1118,22 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
         InterlockedExchange(&pending,0);
         if(InterlockedCompareExchange(&delivered,0,0)==0)
           say("QUICK-EXIT-F12: native menu frame not reached within 800ms; no exit");
+      } else if(InterlockedCompareExchange(&intro_still_opt_in,0,0)==1 &&
+                 InterlockedCompareExchange(&post_intro_cleanup_seen,0,0)==1 &&
+                 InterlockedCompareExchange(&real_main_menu_seen,0,0)==0 &&
+                 InterlockedCompareExchange(&menu_frame_count,0,0)==0 &&
+                 *SPIDER_GAME_BINK_ACTIVE==0u &&
+                 *SPIDER_BINK_VIDEO_HANDLE==0u &&
+                 *SPIDER_TRACE_MENU_CONTEXT!=0u &&
+                 *SPIDER_TRACE_TIMED_PAGE_ONCE==1u &&
+                 *SPIDER_ENGINE_MODE==0u) {
+        /* First static timed page runs naturally; second page ends
+         * through its verified native 0x4A18AE completion path. */
+        if(InterlockedCompareExchange(&intro_still_exit_state,0,0)==0) {
+          InterlockedExchange(&intro_still_request_ms,(LONG)now);
+          if(InterlockedCompareExchange(&intro_still_exit_state,1,0)==0)
+            say("QUICK-EXIT-F12: INTRO-STILL F12 latched after original Bink cleanup; waiting for native timed page + input-wait owner [EXPERIMENTAL]");
+        }
       } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==0 &&
                 ((movie_time && (DWORD)(now-(DWORD)movie_time)<750u) ||
                  *SPIDER_GAME_BINK_ACTIVE!=0u)) {
