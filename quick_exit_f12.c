@@ -718,11 +718,9 @@ static void __cdecl spider_observe_native_game_input(void) {
       InterlockedExchange(&debug_newgame_3d_first_ms,(LONG)GetTickCount());
       say("QUICK-EXIT-F12: DEBUG-NEWGAME-3D native input owner reached after verified movie-4 owner; INTRO vs GAMEPLAY UNKNOWN; F12 exit BLOCKED until positively identified [READ-ONLY]");
       snprintf(entry,sizeof(entry),
-        "QUICK-EXIT-F12: DEBUG-NEWGAME-3D-ENTRY auto_stage=%ld f10_origin=%ld enter_down=%d f10_down=%d [origin=0: unarmed native cinematics]",
+        "QUICK-EXIT-F12: DEBUG-NEWGAME-3D-ENTRY auto_stage=%ld f10_origin=%ld [origin=0: unarmed native cinematics; movie Enter captured separately]",
         (long)InterlockedCompareExchange(&debug_auto3d_state,0,0),
-        (long)InterlockedCompareExchange(&debug_auto3d_f10_origin,0,0),
-        (GetAsyncKeyState(VK_RETURN)&0x8000)!=0,
-        (GetAsyncKeyState(VK_F10)&0x8000)!=0);
+        (long)InterlockedCompareExchange(&debug_auto3d_f10_origin,0,0));
       say(entry);
     }
     /* Never deliver stale F10 exit requests from a scripted intro. */
