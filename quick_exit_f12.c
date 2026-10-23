@@ -54,13 +54,14 @@
  * functions, or equate a non-null handle with active movie playback. */
 #define SPIDER_BINK_VIDEO_HANDLE ((const volatile DWORD *)(uintptr_t)0x00AC0BA4u)
 #define SPIDER_BINK_AUDIO_HANDLE ((const volatile DWORD *)(uintptr_t)0x00AC1020u)
-/* The original top-level 0x455c90 startup sequence calls 0x470750
- * four times, then calls 0x443AD0 at 0x455D23 to finish the intro
- * transition. Its own top-level Quit test at 0x455E50 is downstream
- * of that call. Deliver a pending opening-movie exit immediately AFTER
- * original transition cleanup and BEFORE the top-level Quit test.
- * Do not route an intro request through an early Shell_MainMenu frame:
- * it can run during the pre-menu "press Enter" splash sequence. */
+/* The original top-level 0x455C90 startup calls 0x470750 four
+ * times, then 0x443AD0 at 0x455D23 for intro transition cleanup.
+ * The original Quit-byte test at 0x455E50 is downstream BUT NOT
+ * unconditional: 0x455DC8 / 0x455DD0 branches can bypass it.
+ * Preserve the original Quit byte and, with the separately opted-in
+ * intro-still hook, carry the SAME F12 intent through the native
+ * timed/input-wait pages to real Shell_MainMenu Quit. Do not send
+ * the request to an early Shell_MainMenu splash callback. */
 #define SPIDER_AFTER_INTRO_CLEANUP_CALL ((BYTE *)(uintptr_t)0x00455D23u)
 #define SPIDER_AFTER_INTRO_CLEANUP ((void (__cdecl *)(int))(uintptr_t)0x00443AD0u)
 #define SPIDER_GAME_QUIT_FLAG ((volatile BYTE *)(uintptr_t)0x0060CF88u)
@@ -803,13 +804,13 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
   return native_result;
 }
 
-/* This wrapper executes ON THE ORIGINAL GAME THREAD immediately
- * after the four startup movie calls, preserving the original
- * 0x443ad0 native transition cleanup. It sets only the game's own
- * Quit byte, which the parent engine tests at 0x455e50 and handles
- * through its original final cleanup at 0x4561f2 -> 0x45620c.
- * The menu dispatcher can run before the visible interactive menu;
- * such early Shell_MainMenu frames must NOT consume the intro latch. */
+/* Wrapper on the ORIGINAL GAME THREAD, immediately after the four
+ * startup movies. Calls original 0x443AD0 native transition cleanup
+ * once. The game MAY skip its 0x455E50 Quit test; the opt-in fallback
+ * carries the opening F12 to original static input cleanup and THEN
+ * real Shell_MainMenu native Quit (not an early splash callback).
+ * When 0x455E50 is reached, original 0x4561F2 -> 0x45620C
+ * still provides its standard final shutdown. */
 static void __cdecl spider_after_intro_cleanup(int mode) {
   SPIDER_AFTER_INTRO_CLEANUP(mode);
   if(InterlockedCompareExchange(&post_intro_cleanup_seen,1,0)==0 &&
