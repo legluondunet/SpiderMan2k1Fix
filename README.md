@@ -49,7 +49,7 @@ is used. Changes are being developed in
 | Interactive main menu | Original `Shell_MainMenu` Quit command (slot 3, action 18); **validated on Windows 11** |
 | New Game comic still | **Validated under Windows 11 and Linux/Wine**: deferred until the comic's original timer and native movie #4 cleanup; Windows confirms no residual `SpideyPC.exe`. **Known ~1s yellow window before exit on both systems** |
 | New Game Bink cinematic | **Validated on Windows 11 and Linux/Wine**: original Bink/script return and controller-7 final teardown; Windows confirms no residual `SpideyPC.exe`. **Yellow window for ~1 second before exit** |
-| 3D gameplay | **Validated on Windows 11 and Linux/Wine** through native game-owner and controller-7 cleanup |
+| 3D gameplay | **Validated on Windows 11 and Linux/Wine** through native game-owner and controller-7 cleanup; Windows Task Manager confirms no orphan and **no yellow window** |
 
 **Process exit was independently confirmed by the user for the
 Wine comic, cinematic and gameplay tests:** no residual game or
@@ -137,9 +137,21 @@ cleanup checkpoints are reached, and there is no remaining
 game process. The exact surface presenting yellow and the
 interval between last native teardown and window disappearance
 are **not measured**; no display workaround has been introduced.
-The next useful control test is F12 during native **3D gameplay**:
-if yellow occurs without any Bink activity, investigate shared
-controller-7/final teardown rather than Bink alone.
+**Controlled native Windows 11 comparison:** F12 in
+active **3D gameplay**, after all Bink films have ended,
+also reaches the original controller-7 native final
+teardown, but **does not produce any yellow window**.
+Task Manager confirms no residual process in all three
+cases. The common controller-7 cleanup by itself is
+therefore unlikely to explain yellow; the starting
+Bink/graphics presentation state is a more promising
+lead, not a demonstrated root cause.
+
+The next discriminator is F12 during one of the **four
+opening Bink videos** on Windows 11, where a different
+original Bink→top-level Quit path is used. If yellow
+reproduces there, investigate common movie presentation
+and teardown rather than only the New Game cinematic.
 
 For detailed disassembly, stage guards, test logs, safety
 constraints and the verification plan, see
