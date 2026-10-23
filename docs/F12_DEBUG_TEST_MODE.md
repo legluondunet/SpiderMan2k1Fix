@@ -1,3 +1,53 @@
+## 2026-10-23 — F10 consolidation and in-level cinematic protection
+
+The active physical shortcut is F10, not F12. The original
+F12 WM_CLOSE call remains safely patched out. Earlier
+F12-named INI flags remain accepted only as compatibility
+aliases; no old flag makes the physical F12 key active.
+
+The user validated Wine build #687, whose log
+`SpiderMan2k1Fix(20261023-192206).log` shows:
+- two original independent CutSceneScript auto-skips ending
+  with lifecycle 6 and native auto-stage 7 at +1306ms,
+  original manager idle and native skip request cleared;
+- a later F10 accepted during 3D gameplay;
+- original request 7 dispatched on the native game thread,
+  followed by `NATIVE-3D-CLEANUP completed`;
+- controller-7 completed with
+  `bit4=1 status=-1 outcome=NATIVE-FINAL-CLEANUP`.
+
+The log does not include OS process exit code. User visual
+validation is positive; other levels and cinematic owners
+are still untested.
+
+New `[Debug] F10VerboseTrace=0` defaults to COMPACT logging,
+hiding only noisy passive probe messages. It never changes
+native gameplay, script handling or the probes themselves.
+Original script-lifecycle, auto-skip and native cleanup
+messages remain visible. Enable F10VerboseTrace=1 to recover
+the old detailed troubleshooting snapshots.
+
+New fail-closed native status `debug_live_cutscene_active`
+is updated every original 3D game-input owner frame:
+- -1: invalid/unreadable owner (exit forbidden)
+- 1: context or script-active byte set (exit forbidden)
+- 0: both original script bytes idle (needed to permit exit)
+
+The F10 background watcher now requires current status 0,
+in addition to lifecycle 6 + native skip stage 7 and all
+existing focus/video/pause/owner-frame guards. The game
+thread repeats this guard and directly checks the verified
+original script manager's two idle bytes before writing
+native request 7. This protects later in-level scenes
+running through the same original CutSceneScript mechanism.
+It does NOT establish that every kind of cinematic uses
+that manager. No new hook sites or forced process quit.
+
+Testing checklist: `docs/F10_VALIDATION_MATRIX.md`.
+PR #26 remains draft/unmerged pending user approval.
+
+---
+
 ## 2026-10-23 — New experimental F10 in-game native quit (strictly opt-in)
 
 With the F10 intro-skip confirmed by the user in Wine, the

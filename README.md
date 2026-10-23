@@ -29,16 +29,32 @@ SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must prov
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 
-### F10 gameplay exit — new opt-in Wine experiment
+### F10 quick actions — native game cleanup (draft PR #26)
 
-The user-validated F10 New Game cover/movie/two-3D-script auto-skip is
-unchanged. A **second physical F10 press** after those two original
-`CutSceneScript` sequences finish can now request a **native process quit**
-using the original controller-7 3D cleanup, subject to an extra
-`[Debug] F10GameplayExit=1` setting. This is **disabled by default** and
-currently limited to the verified New Game F10 auto-skip path; pressing F10
-during either cinematic, an unclassified 3D scene or a paused game does
-not request shutdown.
+**F10 is the only SpiderMan2k1Fix physical shortcut.** F11/F12 remain
+available for MangoHud under Linux. The original game's F12 →
+`PostMessageA(WM_CLOSE)` call is still suppressed to avoid an unsafe
+window closure. F12-named INI keys are accepted as *configuration
+aliases* for F10; they do not reactivate the F12 keyboard shortcut.
+
+The original New Game sequence and in-game native shutdown have been
+**validated under Wine** using the user's original
+`SpideyPC.exe` (SHA-256 checked):
+
+- First F10 on New Game comic `L1COV.bmp`: original comic expiry
+  branch, movie #4 native Bink teardown and two independent
+  `CutSceneScript` skip requests **only after** each script's own
+  `CutSceneSkipAllow` permission.
+- Second F10 during playable 3D: gated original 3D cleanup
+  (`0x455BF3`), request 7, controller-7 cleanup and original
+  final-exit branch (`0x45619D`). The Wine log confirmed
+  `NATIVE-FINAL-CLEANUP`, but did not itself include an OS exit code.
+- F10 **cannot request this native shutdown during an active
+  `CutSceneScript`**, including when one starts after the two
+  introductions. A game-thread snapshot and an independent final
+  owner validation must both show no active cinematic script.
+
+For the tested F10 sequence, explicitly enable:
 
 ```ini
 [Debug]
@@ -46,244 +62,31 @@ Log=1
 F10TestMode=1
 F10Auto3DScripts=1
 F10GameplayExit=1
+F10VerboseTrace=0
 ```
 
-To test: start New Game, press F10 on the comic, wait for both scripts
-to skip, verify Spider-Man moves/jumps normally, then release and press F10
-again in playable 3D. The native game thread must confirm the original
-script manager is idle before requesting controller 7, and native 3D
-resource cleanup must complete before final shutdown. No manual process
-kill, simulated Space key, or direct `WM_CLOSE`. If any issue occurs,
-set `F10GameplayExit=0` and retain the previous build.
+All four F10 options default to **0**. `Log=1` retains the useful
+script start/end, native skip, blocked F10, 3D cleanup and controller
+finalization events. `F10VerboseTrace=1` additionally prints
+older research probes (raw keyboard states, dispatch lists, actor
+state and menu timing). Disabling verbose output **does not
+disable the underlying read-only probes**.
 
-### F10 fast-test shortcut — [Debug], default OFF
+This is an experimental, explicitly opted-in feature while the PR
+is under review. It has been validated in the New Game sequence
+on Wine, **not yet in arbitrary later in-level cutscenes**. Other
+cutscene engines, save/load paths, pause and focus changes need
+separate runtime validation. For an unexpected issue, restore
+`F10GameplayExit=0` or use the previous validated build.
 
-For testing changes rapidly, you can enable a separate F10 mode:
+See the [F10 validation matrix](docs/F10_VALIDATION_MATRIX.md)
+for the exact scenarios, required log messages and unverified
+cases. The historical F12 development records are preserved in
+[the research log](docs/F12_DEBUG_TEST_MODE.md); their old key
+names and historical test outcomes should not be interpreted as
+current physical F12 behavior.
 
-```ini
-[Debug]
-F10TestMode=1\nF10Auto3DScripts=1
-Log=1
-```
-
-With this enabled, **F10 before the main menu navigates to the main
-menu**, using the original Bink and static-page cleanup. The first
-auto-timed page is now **accelerated** by its own native timeout
-comparison, without waiting several seconds or bypassing its
-resource/SEH cleanup. **F10 in active 3D gameplay quits the game**
-via the existing native controller-7 exit.
-F10 in the main menu is ignored. **New Game skip development (partial):**
-F10 during the first New Game cover `L1COV.bmp` now satisfies the
-original **300-native-tick expiry test immediately** on the game
-thread: the game itself advances through its existing native branch
-to Bink movie #4. The patch intercepts only the original local
-clock READ at `0x4279B8`, never the shared game clock or script
-dispatcher, and only after verifying the exact `L1COV.bmp`
-and movie #4 instruction signatures. The same single F10 request
-then ends movie #4 via its original video cleanup. If signature
-validation fails, the old timed-cover fallback is preserved.
-**This new comic acceleration is not yet runtime-validated.**
-After the Bink movie (which can be skipped using Enter), there are
-**two consecutive skippable 3D scenes**: Stan Lee's narrated introduction,
-then another 3D cinematic. **Space skips each 3D scene separately**.
-These stages and the first genuinely playable frame cannot yet be
-distinguished using verified native scene flags. After movie #4, F10
-is intentionally blocked from shutting down the process until the
-actual playable boundary is established. **F10 does NOT yet skip
-either 3D scene or re-enable gameplay exit in the unclassified run.**
-With `Log=1` the patch captures separate physical Space key-down
-events, a read-only original `0x440EF0` phase-state snapshot, and
-the input masks/results of five signature-verified native
-`0x50C180` 3D CALL sites (the original function and BYTE result are
-preserved). The original input mask `0x04000000` maps to
-DIK_SPACE (`0x39`) inside `0x50C180`, but none of the five
-observed game sites uses that mask. The read-only `DEBUG-3D-SPACE-GATE` probe observes original
-`0x455427` / `0x455444` Space polling sites, but Wine
-tests showed their native guard bit `0x100` remains clear
-during BOTH introduction skips: those are NOT their handlers.
-The `DEBUG-3D-RAW-SPACE` probe now also traces the original
-`0x50A650` central keyboard helper's two raw-read calls to
-`0x501CB0` (Space key only), including original caller VA,
-mode, and raw result, without modifying game input.
-Neither evidence alone establishes cinematic completion
-or gameplay readiness. No synthetic Space/Enter,
-process termination, or arbitrary controller transition is used.
-The single `[Debug] F10TestMode` option overrides the older
-`[System]` F10 controls and defaults to `0`; `Log=1` is recommended.
-
-The complete previously validated F10 implementation was archived
-at [`backup/f12-native-exit-validated-20261023`](https://github.com/legluondunet/SpiderMan2k1Fix/tree/backup/f12-native-exit-validated-20261023)
-(commit `4adf16aa13a867a3256f7a2f7ce506cc53b9b82a`).
-When `F10TestMode=1`, the game's original menu clock synchronization
-is **always preserved**. The experimental menu clock-wait bypass is removed
-because it can expose a visible menu before the native clock is ready.
-The original approximately 3–4-second first-menu wait may return after F10.
-The prior branch is archived at
-[`backup/f12-debug-menu-wait-before-experiment-20261023`](https://github.com/legluondunet/SpiderMan2k1Fix/tree/backup/f12-debug-menu-wait-before-experiment-20261023).
-See [F10 debug mode and restoration guide](docs/F10_DEBUG_TEST_MODE.md).
-**The accelerated startup path has been user-tested. Native clock waits are now preserved; this rollback needs fresh runtime validation.**
-The original F10 full-exit behavior remains backed up separately.
-PR #26 remains draft and unmerged.
-
-### Legacy F12-named options (now activated using F10) — native cleanup, experimental stages
-
-**F10 is the only physical shortcut recognized by SpiderMan2k1Fix.**
-F11 and F12 remain free for MangoHud on Linux. The ORIGINAL game's
-F12 -> PostMessageA(WM_CLOSE) WndProc instruction is still suppressed
-to avoid an unsafe abrupt window close. Legacy `F12TestMode`,
-`F12Auto3DScripts`, `QuickExitF12` and other existing F12-named
-INI options remain accepted as configuration aliases for F10.
-Their names **do not** reactivate the F12 keyboard shortcut.
-
-For new installations, use `[Debug] F10TestMode=1`,
-`F10Auto3DScripts=1` and `Log=1`; this enables the
-independently opt-in two-script native New Game skip with a
-single F10 on the comic. Off by default; still experimental.
-
-**F12 is OFF by default.** The original 2001 game shortcut can
-post `WM_CLOSE` before the game's Bink, DirectDraw and audio
-resources are cleaned up, sometimes leaving a headless process.
-This fix suppresses that unsafe shortcut and uses the game's
-native cleanup paths instead. No `ExitProcess`,
-`TerminateProcess`, synthetic Enter or forced window destruction
-is used. Changes are being developed in
-[draft PR #26](https://github.com/legluondunet/SpiderMan2k1Fix/pull/26);
-**the PR is not merged**.
-
-| Stage | Implementation and manual validation |
-| --- | --- |
-| Four opening Bink videos | **One F12 validated on Windows 11, build #605**: original Bink cleanup, then native timed/input-wait page cleanup and real-menu Quit; no residual `SpideyPC.exe`, **no yellow window**. A very brief main-menu flash remains. Requires `ExperimentalQuickExitF12InIntroStills=1` |
-| First timed pre-menu still | **Validated on Windows 11 and Linux/Wine**: F12 defers to original timed-page completion and input-wait cleanup, then original menu Quit; no residual `SpideyPC.exe` in Windows Task Manager |
-| Second `Press Enter` pre-menu still | **Validated on Windows 11 and Linux/Wine**: F12 takes original input-wait completion, then original menu Quit; no residual `SpideyPC.exe` in Windows Task Manager |
-| Interactive main menu | Original `Shell_MainMenu` Quit command (slot 3, action 18); **validated on Windows 11** |
-| New Game comic still | **Validated under Windows 11 and Linux/Wine**: deferred until the comic's original timer and native movie #4 cleanup; Windows confirms no residual `SpideyPC.exe`. **Known ~1s yellow window before exit on both systems** |
-| New Game Bink cinematic | **Validated on Windows 11 and Linux/Wine**: original Bink/script return and controller-7 final teardown; Windows confirms no residual `SpideyPC.exe`. **Yellow window for ~1 second before exit** |
-| 3D gameplay | **Validated on Windows 11 and Linux/Wine** through native game-owner and controller-7 cleanup; Windows Task Manager confirms no orphan and **no yellow window** |
-
-**Process exit was independently confirmed by the user for the
-Wine comic, cinematic and gameplay tests:** no residual game or
-Wine process. The real `Shell_MainMenu` native frame tick at
-`0x00493DD6` selects the game's own Quit action.
-Both F12 during the New Game comic and F12 **directly during
-New Game Bink movie #4** are now user-validated on Windows 11
-with no residual `SpideyPC.exe`. Both reproduce the same
-~1-second yellow-window anomaly before process exit.
-The pre-menu static screens have a **separately opt-in**
-F12 prototype. The first screen retains its native timed-page completion;
-the second uses its original input-wait completion and cleanup.
-**Both fixed pages are now independently user-validated under
-Windows 11 and Linux/Wine**, with the original menu Quit
-executing at the end. Windows Task Manager confirmed no
-residual `SpideyPC.exe` after F12 on either fixed page.
-
-Enable only the desired stages in `SpiderMan2k1Fix.ini`
-while using the experimental PR build:
-
-```ini
-[Debug]
-Log=1
-
-[System]
-QuickExitF12=1
-ExperimentalQuickExitF12In3D=1
-ExperimentalQuickExitF12InNewGameMovie=1
-ExperimentalQuickExitF12InNewGameComic=1
-; Optional pre-menu still-screen F12 (default 0; both pages tested under Windows and Wine):
-ExperimentalQuickExitF12InIntroStills=1
-```
-
-- `QuickExitF12` activates the main menu and opening-video handling.
-  **Opening-video F12:** the original startup dispatcher
-  may bypass its Quit-byte check (bug reproduced with
-  Windows build #589). The corrected **single-key** handoff
-  preserves that SAME F12 request through the original timed
-  page and native input-wait cleanup, followed by real
-  Shell_MainMenu Quit. **Validated under Windows 11 on
-  build #605:** the game exited with no remaining process,
-  no yellow window and only a very brief main-menu glimpse.
-  This fallback requires `ExperimentalQuickExitF12InIntroStills=1`;
-  with that separate setting OFF, the earlier limitation may
-  still be present.
-- `ExperimentalQuickExitF12In3D` allows the native 3D shutdown.
-- `ExperimentalQuickExitF12InNewGameMovie` additionally allows
-  clean shutdown during **New Game Bink movie #4**, after native
-  video cleanup; it requires `QuickExitF12=1`,
-  `ExperimentalQuickExitF12In3D=1`, and `[Debug] Log=1`.
-- `ExperimentalQuickExitF12InIntroStills` (default `0`) is
-  a separately guarded prototype for **both screens after
-  the opening videos but before the real main menu**.
-  F12 during the timed first page waits until it ends normally;
-  F12 during the second page takes the original input-wait
-  loop's regular completion branch `0x4A18AE`, which releases
-  its resources and restores SEH. Only after this does
-  original `Shell_MainMenu` Quit action 18 execute.
-  It requires `QuickExitF12=1` and `[Debug] Log=1`.
-  Both pages have been user-validated under Wine
-  **and Windows 11**. Independent Windows Task Manager
-  checks found no remaining `SpideyPC.exe` process
-  after quitting from either page.
-
-- `ExperimentalQuickExitF12InNewGameComic` enables **deferred**
-  F12 while the New Game comic still is visible. It requires
-  the preceding movie option; the comic is *not immediately
-  interrupted*, and a 12-second timeout cancels an unmatched
-  request. The normal comic lasts around five seconds in
-  the tested sequence.
-
-All five F12 INI settings default to `0`. The two New Game
-options are alternatives to the existing **per-process**
-environment switches
-`SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT=1` and
-`SPIDERMAN2K1FIX_F12_COMIC_EXIT=1`; those older switches
-are retained for compatibility, and still require the same
-base F12, 3D and debug gates. If using the INI settings above,
-**no environment variables are needed**, including under Wine
-or Lutris.
-
-The New Game movie shutdown relies on original movie-owner
-CALL `0x004279FB` and the game's cleanup at
-`0x00470871`. The comic exit waits until this same movie
-starts. Both reuse the normal post-script input checkpoint,
-owner cleanup at `0x00455BF9`, and original controller-7
-final teardown at `0x0045619D`/`0x0045620C`.
-This is why the comic stage does not close instantly.
-
-**Known visual caveat:** a yellow game window remains visible
-for approximately one second before the final F12 shutdown
-after **both comic-deferred F12 and direct Bink-movie F12
-on Windows 11** (also observed with the comic path under Wine).
-The original Bink/script, game-owner and controller-7
-cleanup checkpoints are reached, and there is no remaining
-game process. The exact surface presenting yellow and the
-interval between last native teardown and window disappearance
-are **not measured**; no display workaround has been introduced.
-**Controlled native Windows 11 comparison:** F12 in
-active **3D gameplay**, after all Bink films have ended,
-also reaches the original controller-7 native final
-teardown, but **does not produce any yellow window**.
-A fourth control test — F12 on an **opening Bink movie**
-with the single-key fix enabled — also exited with
-**no yellow window**, although it briefly displayed
-the normal main menu as the game's own Quit action ran.
-Task Manager confirms no residual process in all three
-cases. The common controller-7 cleanup by itself is
-therefore unlikely to explain yellow; the starting
-Bink/graphics presentation state is a more promising
-lead, not a demonstrated root cause.
-
-The next discriminator is F12 during one of the **four
-opening Bink videos** on Windows 11, where a different
-original Bink→top-level Quit path is used. If yellow
-reproduces there, investigate common movie presentation
-and teardown rather than only the New Game cinematic.
-
-For detailed disassembly, stage guards, test logs, safety
-constraints and the verification plan, see
-[`docs/F12_NATIVE_SHUTDOWN.md`](docs/F12_NATIVE_SHUTDOWN.md).
-The read-only Windows process watcher
-[`tools/Verify-F12QuickExit.ps1`](tools/Verify-F12QuickExit.ps1)
-can help confirm that `SpideyPC.exe` terminates rather than
-leaving only its window closed.
+**PR #26 remains a draft and must not be merged without explicit approval.**
 
 ## Requirements and compatibility
 
