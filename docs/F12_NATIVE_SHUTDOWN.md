@@ -493,6 +493,60 @@ destroying the game window. The comic and fixed-splash paths remain
 unsupported. **Do not merge PR #26 until user validation and explicit
 approval.**
 
+## Build #508 Windows validation — native controller return decision CONFIRMED
+
+User-provided `SpiderMan2k1Fix(20261022-183549).log` proves the entire
+observed mode transition, in this exact order:
+
+```text
+NATIVE-GAME-INPUT owner EXIT n=507 NATIVE REQUEST 7 produced by 0x440EF0; timer_before=0 timer_after=0 flag_before=0,1 flag_after=0,1 elapsed=2673
+NATIVE-3D-CLEANUP begin n=1 request=7
+NATIVE-3D-CLEANUP completed n=1 request=7
+CONTROLLER-7 native teardown ENTER n=1 bit4=0 status=-1 3D-checkpoint=1
+CONTROLLER-7 native teardown COMPLETED n=1 bit4=0 status=-1 outcome=RETURN-TO-CONTROLLER
+QUICK-EXIT-F12: native Shell_MainMenu Quit activated: slot=3 action=18, native cleanup branch=0x4941D5
+```
+
+In the tested normal 3D-to-menu route, original controller request
+7 performs its native teardown then **explicitly chooses to return
+to the controller**, because `[0x02E0988C]&4 == 0` and signed
+`[0x00568FB0] == -1`. These values were observed *after* the
+original `0x0048A820` call on the original game thread.
+
+This confirms that **a safe exit from 3D is not the same as
+program termination** and explains why blindly writing request
+7 cannot implement the desired universal F12 shutdown. It also
+proves the native final-cleanup branch `0x0045620C` was
+**not** taken during this normal return-to-menu test.
+
+### Proposed next implementation / safety gates
+
+- Retain the validated, unchanged interactive-menu F12 action.
+- Capture a dedicated, one-shot **3D F12 intent** only when the
+  true gameplay owner's tick is active; **no** off-thread writes
+  to `0x0060CFA4`, `0x02E0988C`, or `0x00568FB0`.
+- Locate a game-thread, native owner-approved *early exit*
+  that reaches the existing `0x00455BF3` cleanup through the
+  correct original conditions; do not assume `0x0044108A`
+  was executed, since both wrapper snapshots show flag1=0.
+- After verifying the **entire** 3D owner cleanup and returns,
+  determine whether the engine's documented native process
+  termination can be requested at the controller's actual
+  `0x0045619D` decision safely, preferably reusing an
+  existing command rather than changing the two unrelated
+  global exit-condition variables. This is **not validated yet**.
+- Separately identify native comic and static-startup owners;
+  never infer their identity from render-only signals.
+- Continue using the read-only external Windows watcher to
+  verify exit code, audio stop and absence of a residual
+  `SpideyPC.exe`.
+
+**Status:** Evidence and design are validated through the
+controller's `RETURN-TO-CONTROLLER` decision, not a native
+direct F12 exit from gameplay. The PR must remain a draft;
+no gameplay shutdown behavior should be enabled merely
+because this diagnostic returned successfully.
+
 ## Agreed architecture
 
 1. Capture F12 once while the real game is foreground and latch an
