@@ -1,3 +1,52 @@
+## 2026-10-23 — Wine build #569 comic-stage F12 regression: process exit confirmed
+
+User retested the F12-on-New-Game-comic deferred-exit path
+using the consolidated build #569, with the attached
+`SpiderMan2k1Fix(20261023-082646).log` from
+`SpiderMan2k1Fix v1.0.0-7a15a90`.
+The original supported `SpideyPC.exe` hash remains
+`0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
+
+Trace evidence:
+
+```text
+INI-CHECK: valid SpiderMan2k1Fix.ini
+POSTMENU-MOVIE opt-in enabled for New Game Bink video 4 only
+COMIC F12 deferred-to-Bink experiment armed
+COMIC-RENDER-CANDIDATE draw=1 flip=445 ... bink_active=0 ... native_3d_owner_calls=0
+COMIC F12 deferred until native New Game movie 4; comic continues normally
+POSTMENU-MOVIE verified native movie owner 0x4279FB; original Bink completion and 0x470871 teardown follows; source=DEFERRED-COMIC elapsed_since_F12_ms=4119
+NATIVE-GAME-INPUT owner ENTER n=1 request=0
+POSTMENU-MOVIE original Bink + script returned; native input checkpoint complete; request 7 for original cleanup
+NATIVE-3D-CLEANUP completed n=1 request=7
+CONTROLLER-7 native teardown COMPLETED n=1 bit4=1 status=-1 outcome=NATIVE-FINAL-CLEANUP
+POSTMENU-MOVIE FINAL-TEARDOWN-CHECKPOINT elapsed_since_F12_ms=4182
+```
+
+**Independent external verification:** the user explicitly
+confirmed **no residual Wine or SpideyPC process** after
+this shutdown. The deferred comic F12 request was received,
+original movie owner #4 handled Bink teardown, and native
+controller-7 final cleanup completed. Bink interception
+occurred 4.119 seconds after F12, native final teardown
+checkpoint at 4.182 seconds, only **63 ms later**.
+
+This user was instructed to test the newly added INI settings
+and remove old environment overrides. The log proves the
+options were enabled and the INI passed validation; it **does
+not itself identify whether activation came from an INI key
+or an environment-variable fallback**. Therefore treat
+actual INI-only activation as supported by the intended
+test procedure, not independently proven by a source-tagged
+runtime line. The added INI path uses the same runtime
+state machine as the earlier successful environment opt-in.
+
+The user elected to **defer the yellow-screen visual issue
+until Windows testing**. No yellow-screen rendering
+workaround was applied. PR #26 remains draft and unmerged.
+
+---
+
 ## 2026-10-23 — Additional opt-in INI switches: movie/comic (OFF by default)
 
 The Linux/Wine comic, cinematic and 3D tests have now
