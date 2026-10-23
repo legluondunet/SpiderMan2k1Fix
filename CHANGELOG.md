@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased — optional F9 PNG screenshots (PR #25)
+## Unreleased — always-on F9 PNG screenshots
+
+- F9 writes lossless `scrnNNNN.png` by default for the supported game, with no INI setting or environment variable to choose BMP. `Log=1` is no longer required.
+- Both original screenshot CALL sites remain signature-checked. F9 polling/debounce, native game flow, decoded movie/menu/comic/gameplay capture and the PNG confirmation panel remain unchanged.
+- Historical `F9_PNG_ONLY`, `F9_PNG` and `F9_BACKBUFFER` environment switches no longer activate a format or the old BMP comparison. Read-only `F9_TRACE` is still opt-in.
+- Unrecognized EXE/instruction signatures safely leave original executable code untouched; the previous Wine PNG implementation was validated in PR #25 but this default-on initialization still needs runtime regression tests.
+
+## Previous implementation — opt-in F9 PNG screenshots (PR #25, superseded)
 
 - Replace both original SHA-verified F9 BMP callsites with lossless `scrnNNNN.png` capture **only when explicitly enabled** with `SPIDERMAN2K1FIX_F9_PNG_ONLY=1` and `[Debug] Log=1`. Preserve the game's own F9 input polling and debounce; leave the original BMP path untouched when the option is off or the signature preflight fails.
 - Capture Bink movies, menu frames, static comic pages and 3D scenes from the validated DirectDraw sources. Copy pixels before encoding them on a worker using dynamically loaded GDI+, with unique names, failure reporting and a brief confirmation notification. The earlier optional dual-format BMP/PNG comparison remains available separately.
