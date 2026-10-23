@@ -1878,3 +1878,26 @@ def test_f10_second_game_comic_and_movie_ignore_residual_request_7():
     assert "postmovie_state,2,stage" in wrapper
 
 
+
+def test_f10_playable_3d_uses_native_return_to_menu_not_native_final_exit():
+    """The validated native request 7 remains, while F10 does NOT set bit4."""
+    assert "static volatile LONG game3d_return_to_menu_ready=0;" in SRC
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE owner cleanup checkpoint")]
+    assert "InterlockedCompareExchange(&game3d_exit_state,2,1)==1" in owner
+    assert "scripts_idle &&" in owner
+    assert "InterlockedExchange(&game3d_return_to_menu_ready,1);" in owner
+    assert owner.index("InterlockedExchange(&game3d_return_to_menu_ready,1);") < owner.index(
+        "*(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;",owner.index("InterlockedExchange(&game3d_return_to_menu_ready,1);"))
+    cb=SRC[SRC.index("static void __cdecl spider_observe_controller7_finish(void)"):
+           SRC.index("/* Native BinkFrame tick wrapper")]
+    assert cb.count("SPIDER_NATIVE_CONTROLLER7_FINISH();")==1
+    assert "if(InterlockedCompareExchange(&game3d_return_to_menu_ready,0,0)==1)" in cb
+    assert "DEBUG-F10-GAMEPLAY-MENU controller-7 cleanup complete; final-exit bit UNCHANGED; RETURN TO MAIN MENU" in cb
+    assert cb.index("if(InterlockedCompareExchange(&game3d_return_to_menu_ready,0,0)==1)") < cb.index(
+        "} else if((after_bit&4u)==0u && after_status<0)")
+    assert "*(volatile BYTE *)(uintptr_t)0x02E0988Cu=(BYTE)(after_bit|4u);" in cb  # older unrelated postmovie mode only
+    reset=SRC[SRC.index("static void spider_f10_reset_session_on_native_menu(void)"):
+              SRC.index("/* Returns nonzero ONLY when a recent")]
+    assert "InterlockedExchange(&game3d_return_to_menu_ready,0);" in reset
+

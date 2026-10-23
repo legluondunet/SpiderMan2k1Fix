@@ -390,6 +390,9 @@ static volatile LONG last_native_game_input_ms=0;
 static volatile LONG last_game3d_flip_ms=0;
 /* 0 idle, 1 requested, 2 native request 7 dispatched, 3 final exit. */
 static volatile LONG game3d_exit_state=0;
+/* F10 playable 3D uses normal controller-7 return-to-menu, not final exit.
+ * Set on the original 3D game thread before publishing request 7. */
+static volatile LONG game3d_return_to_menu_ready=0;
 static volatile LONG game3d_cleanup_baseline=0;
 static volatile LONG game3d_cleanup_confirmed=0;
 /* Separate experimental New Game movie #4 F12 request, disabled normally.
@@ -1292,7 +1295,7 @@ static void __cdecl spider_observe_native_game_input(void) {
     }
   }
   if(InterlockedCompareExchange(&game3d_exit_state,2,1)==1) {
-    /* Native-game-thread FINAL eligibility. Revalidate game-owned
+    /* Native-game-thread MENU-RETURN eligibility. Revalidate game-owned
      * script manager, not just copied counters from the worker. */
     int scripts_idle=0;
     if(InterlockedCompareExchange(&debug_f10_gameplay_exit_opt_in,0,0)==1 &&
@@ -1329,10 +1332,15 @@ static void __cdecl spider_observe_native_game_input(void) {
       InterlockedExchange(&game3d_cleanup_baseline,
         InterlockedCompareExchange(&native_game_cleanup_count,0,0));
       InterlockedExchange(&game3d_cleanup_confirmed,0);
+      /* Native Exit -> Yes follows exactly this original request 7;
+       * unlike the old F10 process-quit path, keep final-exit bit 4
+       * owned by the original game. */
+      InterlockedExchange(&game3d_return_to_menu_ready,1);
       *(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;
       after_request=7u;
-      say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT original owner script idle; native request 7 for original cleanup");
+      say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT original owner script idle; native request 7 for original cleanup [RETURN TO MAIN MENU; NO PROCESS QUIT]");
     } else {
+      InterlockedExchange(&game3d_return_to_menu_ready,0);
       InterlockedExchange(&game3d_exit_state,0);
       say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT request REJECTED on game thread (script/owner/bink changed)");
     }
@@ -1568,7 +1576,7 @@ static void __cdecl spider_observe_native_game_cleanup(void) {
     /* Only the successful return of the REAL game-owned 0x4302d0
      * validates the initial 3D cleanup checkpoint. */
     InterlockedExchange(&game3d_cleanup_confirmed,1);
-    say("QUICK-EXIT-F12: 3D native cleanup checkpoint returned; awaiting controller-7 finalization");
+    say("QUICK-EXIT-F12: 3D native cleanup checkpoint returned; awaiting original controller-7 transition");
   }
   snprintf(line,sizeof(line),
     "QUICK-EXIT-F12: NATIVE-3D-CLEANUP completed n=%ld request=%lu",
@@ -1613,7 +1621,15 @@ static void __cdecl spider_observe_controller7_finish(void) {
      InterlockedCompareExchange(&game3d_cleanup_confirmed,0,0)==1 &&
      InterlockedCompareExchange(&native_game_cleanup_count,0,0)>
        InterlockedCompareExchange(&game3d_cleanup_baseline,0,0)) {
-    if((after_bit&4u)==0u && after_status<0) {
+    if(InterlockedCompareExchange(&game3d_return_to_menu_ready,0,0)==1) {
+      /* After original 3D owner + controller cleanup, DO NOT set
+       * the native final-process bit: original action 7 resumes menu.
+       * Independently chosen original final exits are respected. */
+      if((after_bit&4u)==0u && after_status<0)
+        say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-MENU controller-7 cleanup complete; final-exit bit UNCHANGED; RETURN TO MAIN MENU");
+      else
+        say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-MENU native engine already selected final exit; no override");
+    } else if((after_bit&4u)==0u && after_status<0) {
       *(volatile BYTE *)(uintptr_t)0x02E0988Cu=(BYTE)(after_bit|4u);
       after_bit=*SPIDER_NATIVE_CONTROLLER7_EXIT_FLAGS;
       say("QUICK-EXIT-F12: 3D owner+controller cleanup complete; engine native final-exit flag set at 0x45619D");
@@ -2073,6 +2089,7 @@ static void spider_f10_reset_session_on_native_menu(void) {
   InterlockedExchange(&last_native_game_input_ms,0);
   InterlockedExchange(&last_game3d_flip_ms,0);
   InterlockedExchange(&game3d_exit_state,0);
+  InterlockedExchange(&game3d_return_to_menu_ready,0);
   InterlockedExchange(&game3d_cleanup_confirmed,0);
   snprintf(msg,sizeof(msg),
     "QUICK-EXIT-F12: DEBUG-F10-SESSION-RESET native Shell_MainMenu reached after game session; previous_progress=%ld previous_3d_owner_calls=%ld previous_auto_stage=%ld; New Game comic F10 REARMED [OUR LATCHES ONLY]",
@@ -2718,7 +2735,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
           }
         } else if(InterlockedCompareExchange(&debug_newgame_progress,0,0)>=1) {
           /* The native movie-4 handoff precedes TWO 3D cutscenes.
-           * Authorize full exit ONLY after BOTH native script endings,
+           * Authorize menu return ONLY after BOTH native script endings,
            * both original skip requests consumed, and an explicit
            * additional opt-in. F10 input thread queues intent only. */
           LONG lifecycle=InterlockedCompareExchange(&debug_cutscene_lifecycle,0,0);
@@ -2736,7 +2753,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
              owner_tick && (DWORD)(now-owner_tick)<350u &&
              render_tick && (DWORD)(now-render_tick)<350u) {
             if(InterlockedCompareExchange(&game3d_exit_state,1,0)==0)
-              say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT F10 accepted after TWO script endings; native teardown pending");
+              say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT F10 accepted after TWO script endings; native return-to-menu cleanup pending");
           } else {
             char why[320];
             snprintf(why,sizeof(why),
@@ -2891,7 +2908,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
      * hook setup without requiring any legacy System F12 option. */
     InterlockedExchange(&debug_f12_test_mode,1);
     strcpy(val,"1");
-    say("QUICK-EXIT-F12: HOTKEY=F10 (F10TestMode=1 or legacy F12TestMode=1): opening intro F10 -> main menu; New Game F10 -> native comic/Bink/script skip; gameplay exit still guarded; original F12 WM_CLOSE suppressed");
+    say("QUICK-EXIT-F12: HOTKEY=F10 (F10TestMode=1 or legacy F12TestMode=1): opening intro F10 -> main menu; New Game F10 -> native comic/Bink/script skip; gameplay F10 menu return separately guarded; original F12 WM_CLOSE suppressed");
   }
   memset(trace,0,sizeof(trace));
   if(GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
@@ -2925,12 +2942,13 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     InterlockedExchange(&debug_auto3d_opt_in,1);
     say("QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE F10Auto3DScripts=1 (or legacy F12Auto3DScripts=1) enabled; only verified New Game comic F10 arms two native script skip requests; gameplay exit BLOCKED [EXPERIMENTAL]");
   }
-  /* Never activate full in-game exit via F10TestMode alone. */
+  /* Legacy F10GameplayExit enables native return-to-menu, not process quit.
+   * F10TestMode alone does not authorize the 3D transition. */
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
      GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
      GetPrivateProfileIntA("Debug","F10GameplayExit",0,ini)==1) {
     InterlockedExchange(&debug_f10_gameplay_exit_opt_in,1);
-    say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-EXIT opt-in enabled; two original native script endings required [EXPERIMENTAL]");
+    say("QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-MENU legacy F10GameplayExit=1 enabled; native return-to-menu after both script endings [EXPERIMENTAL]");
   }
   memset(movie_trial,0,sizeof(movie_trial));
   /* The explicit INI options make tested Wine installations easier
