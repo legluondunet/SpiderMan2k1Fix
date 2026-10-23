@@ -48,6 +48,54 @@ def test_comic_render_candidate_observation_is_passive_and_owner_agnostic():
     assert "original_draw_primitive" not in drawing
 
 
+
+def test_post_new_game_media_diagnostics_are_passive_and_bink_ownership_unproven():
+    # Reading the game's known handle slots is not equivalent to playback
+    # detection: the video could have another owner/presentation path.
+    assert "#define SPIDER_BINK_VIDEO_HANDLE ((const volatile DWORD *)(uintptr_t)0x00AC0BA4u)" in SRC
+    assert "#define SPIDER_BINK_AUDIO_HANDLE ((const volatile DWORD *)(uintptr_t)0x00AC1020u)" in SRC
+    assert "static volatile LONG last_comic_candidate_ms=0;" in SRC
+    comic=SRC[SRC.index("void SpiderQuickExitF12_ObserveComicRender("):
+              SRC.index("/* Read-only stage discovery")]
+    assert "InterlockedExchange(&last_comic_candidate_ms,(LONG)now)" in comic
+
+    media=SRC[SRC.index("void SpiderQuickExitF12_ObserveMovieFrame(void)"):
+              SRC.index("/* Passive comic-quad observation")]
+    assert "POST-SHELL-MEDIA-BLT" in media
+    assert "[PRESENTATION-ONLY]" in media
+    assert "n<=4 || n%120==0" in media
+    assert "InterlockedExchange(&last_movie_frame_ms,(LONG)now)" in media
+    assert "SpiderQuickExitF12_Enabled()" in media
+    assert "real_main_menu_seen,0,0)!=1" in media
+
+    stage=SRC[SRC.index("void SpiderQuickExitF12_ObserveEngineState("):
+              SRC.index("/* Diagnostic wrapper for the EXACT ORIGINAL pause-owner call")]
+    assert "previous_bink_flag==bink_flag" in stage
+    assert "previous_video_handle==video_handle" in stage
+    assert "previous_native_owner_seen==native_owner_seen" in stage
+    assert "bink_flag=%ld video_handle_present=%ld" in stage
+    assert "native_3d_owner_seen=%ld" in stage
+    assert "(*SPIDER_BINK_VIDEO_HANDLE!=0u)" in stage
+    assert "(*SPIDER_BINK_AUDIO_HANDLE!=0u)" in stage
+    assert "(*SPIDER_GAME_BINK_ACTIVE!=0u)" in stage
+
+    tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
+             SRC.index("/* This wrapper executes ON THE ORIGINAL GAME THREAD")]
+    assert "POST-SHELL-BINK-TICK-CALLSITE" in tick
+    assert "if(SpiderQuickExitF12_Enabled()" in tick
+    assert "real_main_menu_seen,0,0)==1" in tick
+    assert "InterlockedIncrement(&after_shell_ticks)==1" in tick
+    assert tick.count("SPIDER_NATIVE_BINK_FRAME_TICK();")==1
+    assert "return SPIDER_NATIVE_BINK_FRAME_TICK();" in tick
+    assert tick.index("POST-SHELL-BINK-TICK-CALLSITE") < tick.index("return SPIDER_NATIVE_BINK_FRAME_TICK();")
+    # Never reinterpret the diagnostics as permission to quit comics/movies.
+    for observer in (media,stage,tick):
+        for forbidden in ("TerminateProcess(", "ExitProcess(", "DestroyWindow(",
+                          "PostMessageA(", "BinkClose(", "*SPIDER_ENGINE_MODE=",
+                          "*SPIDER_BINK_VIDEO_HANDLE=", "*SPIDER_BINK_AUDIO_HANDLE="):
+            assert forbidden not in observer
+
+
 def test_default_off_and_ini_section_validated():
     assert "QuickExitF12=0" in INI
     assert '"[System]\\r\\n"' in GEN
