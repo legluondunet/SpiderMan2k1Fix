@@ -1084,6 +1084,126 @@ static const void *maybe_correct_adaptive_hud(void *device,
   }
   return copy;
 }
+/* Diagnostic only: classify original in-game ESC pause menu geometry before
+ * adding any 4:3 transform. The actual pause menu is identified by the
+ * SHA-matched game-owned pointer at 0x00682950 (same one observed by F10
+ * native engine tracing), NOT the independent Alt+Tab focus pause.
+ *
+ * Enabled only with [Debug] Log=1 AND
+ * SPIDERMAN2K1FIX_PAUSE_MENU_TRACE=1; logs up to four Flip generations,
+ * 160 screen-space D3D7 primitives each. It does not patch input, alter
+ * vertices, capture pixels or read native menu object contents.
+ * This is temporary research instrumentation, separate from HUD F12 probes.
+ */
+static volatile LONG pause_menu_trace_enabled=0;
+static volatile LONG pause_menu_trace_active=0;
+static volatile LONG pause_menu_trace_last_flip=-1;
+static volatile LONG pause_menu_trace_frames=0;
+static volatile LONG pause_menu_trace_draws=0;
+static volatile LONG pause_menu_trace_session=0;
+#define SPIDER_NATIVE_ESC_PAUSE_CONTEXT ((const volatile DWORD *)(uintptr_t)0x00682950u)
+
+static void pause_menu_trace_init(void) {
+  char value[4]={0};
+  DWORD n;
+  if(!debug_log_enabled)return;
+  n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_PAUSE_MENU_TRACE",value,sizeof(value));
+  if(n==1 && value[0]=='1') {
+    InterlockedExchange(&pause_menu_trace_enabled,1);
+    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; 4 frames, 160 2D draws/frame, no aspect correction [Log=1]");
+  }
+}
+static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
+                                  DWORD fvf,const void *vertices,DWORD count,
+                                  int indexed,void *ret) {
+  LONG frame,flip,draw,session;
+  DWORD rva=0,texw=0,texh=0,texture_format=0;
+  const BYTE *raw=(const BYTE*)vertices;
+  const float *a;
+  float xmin,xmax,ymin,ymax,z,rhw;
+  unsigned i,stride;
+  IDirectDrawSurface7 *texture=NULL;
+  DDSURFACEDESC2 desc;
+  char line[310];
+  if(InterlockedCompareExchange(&pause_menu_trace_enabled,0,0)!=1)return;
+  if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 ||
+     *SPIDER_NATIVE_ESC_PAUSE_CONTEXT==0) {
+    if(InterlockedExchange(&pause_menu_trace_active,0)==1) {
+      snprintf(line,sizeof(line),
+        "PAUSE-NATIVE-PROBE: END session=%ld [NO GEOMETRY MODIFIED]",
+        (long)InterlockedCompareExchange(&pause_menu_trace_session,0,0));
+      log_line(line);
+    }
+    return;
+  }
+  if(InterlockedCompareExchange(&pause_menu_trace_active,1,0)==0) {
+    session=InterlockedIncrement(&pause_menu_trace_session);
+    InterlockedExchange(&pause_menu_trace_frames,0);
+    InterlockedExchange(&pause_menu_trace_last_flip,-1);
+    InterlockedExchange(&pause_menu_trace_draws,0);
+    snprintf(line,sizeof(line),
+      "PAUSE-NATIVE-PROBE: BEGIN session=%ld native_pause_context=present output=%lux%lu mode=%s",
+      (long)session,(unsigned long)desktop_w,(unsigned long)desktop_h,
+      display_aspect_setting);
+    log_line(line);
+  }
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  if(flip!=InterlockedCompareExchange(&pause_menu_trace_last_flip,0,0)) {
+    InterlockedExchange(&pause_menu_trace_last_flip,flip);
+    InterlockedExchange(&pause_menu_trace_draws,0);
+    frame=InterlockedIncrement(&pause_menu_trace_frames);
+    if(frame<=4) {
+      snprintf(line,sizeof(line),
+        "PAUSE-NATIVE-PROBE: FRAME %ld flip=%ld [PASSIVE]",
+        (long)frame,(long)flip);
+      log_line(line);
+    }
+  }
+  frame=InterlockedCompareExchange(&pause_menu_trace_frames,0,0);
+  if(frame<1 || frame>4 || !vertices || count<3 || count>64 ||
+     type!=D3DPT_TRIANGLEFAN || (fvf!=0x144UL && fvf!=0x44UL))
+    return;
+  stride=(fvf==0x144UL)?28u:20u;
+  a=(const float*)raw;
+  xmin=xmax=a[0];ymin=ymax=a[1];z=a[2];rhw=a[3];
+  /* Flat XYZRHW sprites only. Avoid tracing world geometry or undefined
+   * vertex formats, and never interpret FVF 0x44 as textured 28-byte data. */
+  if(!(rhw>0.5f && rhw<256.0f && z>=-0.01f && z<=0.15f))
+    return;
+  for(i=1;i<count;i++) {
+    const float *p=(const float*)(raw+(SIZE_T)i*stride);
+    if(p[0]<xmin)xmin=p[0];
+    if(p[0]>xmax)xmax=p[0];
+    if(p[1]<ymin)ymin=p[1];
+    if(p[1]>ymax)ymax=p[1];
+  }
+  if(!(xmax>xmin && ymax>ymin &&
+       xmax>0.0f && xmin<(float)desktop_w &&
+       ymax>0.0f && ymin<(float)desktop_h))
+    return;
+  draw=InterlockedIncrement(&pause_menu_trace_draws);
+  if(draw>160)return;
+  if(!geom_rva(ret,&rva))rva=0;
+  if(fvf==0x144UL &&
+     SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) &&
+     texture) {
+    memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+    if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc))) {
+      texw=desc.dwWidth;texh=desc.dwHeight;
+      texture_format=desc.ddpfPixelFormat.dwFlags;
+    }
+    IDirectDrawSurface7_Release(texture);
+  }
+  snprintf(line,sizeof(line),
+    "PAUSE-NATIVE-PROBE: frame=%ld draw=%ld caller_rva=0x%08lX indexed=%d type=%lu fvf=0x%lX count=%lu tex=%lux%lu fmt=%08lX rect=(%.1f,%.1f)-(%.1f,%.1f) z=%.5f rhw=%.3f",
+    (long)frame,(long)draw,(unsigned long)rva,indexed,
+    (unsigned long)type,(unsigned long)fvf,(unsigned long)count,
+    (unsigned long)texw,(unsigned long)texh,(unsigned long)texture_format,
+    (double)xmin,(double)ymin,(double)xmax,(double)ymax,
+    (double)z,(double)rhw);
+  log_line(line);
+}
+
 static void free_menu_vertices(SpiderMenuVertex *allocated) {
   if (allocated) HeapFree(GetProcessHeap(),0,allocated);
 }
@@ -1095,6 +1215,7 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
   {
     SpiderMenuVertex small[64],*allocated=NULL;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
+    pause_menu_trace_draw(self,type,fvf,verts,count,0,__builtin_return_address(0));
     hud_probe_draw(self,type,fvf,verts,count,__builtin_return_address(0));
     hud_probe_boss_unknown(self,type,fvf,verts,count,0,__builtin_return_address(0));
     if(v==verts && count==4) {
@@ -1118,6 +1239,7 @@ static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE 
   {
     SpiderMenuVertex small[64],*allocated=NULL;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
+    pause_menu_trace_draw(self,type,fvf,verts,count,1,__builtin_return_address(0));
     hud_probe_boss_unknown(self,type,fvf,verts,count,1,__builtin_return_address(0));
     /* No indexed comic path was observed: keep it unchanged. */
     HRESULT hr=original_draw_indexed_primitive(self,type,fvf,(LPVOID)v,count,indices,icount,flags);
@@ -2722,6 +2844,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  pause_menu_trace_init(); /* Passive native ESC pause 4:3 owner/geometry probe. */
   SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
