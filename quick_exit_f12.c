@@ -48,6 +48,13 @@
  * Read-only duration wrappers are enabled in debug F12+Log mode only. */
 #define SPIDER_MENU_WAIT_COND_SITE ((BYTE *)(uintptr_t)0x0049415Bu)
 #define SPIDER_MENU_WAIT_ALWAYS_SITE ((BYTE *)(uintptr_t)0x0049416Fu)
+/* Exact ORIGINAL Shell_MainMenu selection/cleanup path. Before the
+ * native menu returns a selected action (including New Game), it
+ * calls the SAME one-tick busy-wait at 0x494209. The first-menu
+ * workaround intentionally does not touch this third callsite.
+ * Instrument it READ-ONLY to test a newly reported 3–4s stall
+ * on selecting New Game, before the subsequent submenu appears. */
+#define SPIDER_MENU_WAIT_EXIT_SITE ((BYTE *)(uintptr_t)0x00494209u)
 #define SPIDER_NATIVE_CLOCK_WAIT ((void (__cdecl *)(DWORD))(uintptr_t)0x004E5D60u)
 #define SPIDER_SHELL_MENU_QUIT_RETURN ((const BYTE *)(uintptr_t)0x004941D5u)
 #define SPIDER_SHELL_MENU_ITEMS ((const BYTE *)(uintptr_t)0x00552AA8u)
@@ -167,6 +174,7 @@ static const BYTE intro_still_input_original[5]={0xE8,0xE5,0xA8,0x06,0x00};
 static const BYTE intro_timed_clock_original[5]={0xA1,0xA0,0x4C,0x6B,0x00};
 static const BYTE menu_wait_cond_original[5]={0xE8,0x00,0x1C,0x05,0x00};
 static const BYTE menu_wait_always_original[5]={0xE8,0xEC,0x1B,0x05,0x00};
+static const BYTE menu_wait_exit_original[5]={0xE8,0x52,0x1B,0x05,0x00};
 static const BYTE top_level_native_quit_test_original[6]={0x38,0x1D,0x88,0xCF,0x60,0x00};
 static const BYTE native_pause_call_original[5]={0xE8,0xF2,0x66,0x02,0x00};
 static const BYTE native_game_input_call_original[5]={0xE8,0xB0,0xB9,0xFE,0xFF};
@@ -223,6 +231,7 @@ static volatile LONG intro_still_hook_installed=0;
 static volatile LONG intro_timed_clock_hook_installed=0;
 static volatile LONG debug_timed_accelerated=0;
 static volatile LONG debug_menu_wait_hooks_installed=0;
+static volatile LONG debug_menu_wait_exit_hook_installed=0;
 /* Experimental fast-start experiment: entirely private state, never write
  * native game clock. Enabled with F12TestMode=1 unless the INI
  * explicitly contains F12SkipInitialMenuWait=0. F12TestMode=0 always
@@ -1254,7 +1263,8 @@ static void __cdecl spider_f12_debug_menu_wait(DWORD ticks,int which) {
    * a real interactive Shell_MainMenu frame and <=4500ms.
    * If the clock never recovers, revert to the ORIGINAL blocking
    * call rather than running indefinitely without native sync. */
-  if(InterlockedCompareExchange(&debug_skip_initial_menu_wait,0,0)==1 &&
+  if(which!=3 &&
+     InterlockedCompareExchange(&debug_skip_initial_menu_wait,0,0)==1 &&
      InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
      InterlockedCompareExchange(&intro_still_exit_state,0,0)==3 &&
      InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
@@ -1299,6 +1309,23 @@ static void __cdecl spider_f12_debug_menu_wait(DWORD ticks,int which) {
     }
   }
   SPIDER_NATIVE_CLOCK_WAIT(ticks);
+  if(which==3 &&
+     InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {
+    static volatile LONG exit_wait_calls=0;
+    LONG calls=InterlockedIncrement(&exit_wait_calls);
+    DWORD end_ms=GetTickCount();
+    DWORD end_clock=*SPIDER_TRACE_NATIVE_CLOCK_RAW;
+    DWORD elapsed_ms=(DWORD)(end_ms-before_ms);
+    if(calls<=8 || elapsed_ms>=100u) {
+      char line[300];
+      snprintf(line,sizeof(line),
+        "QUICK-EXIT-F12: DEBUG-MENU-EXIT-CLOCK-WAIT site=0x00494209 call=%ld elapsed_ms=%lu wait_arg=%lu native_clock_before=%lu native_clock_after=%lu init_bypass_state=%ld [ORIGINAL WAIT CALLED; READ-ONLY; SELECTED ACTION UNKNOWN]",
+        (long)calls,(unsigned long)elapsed_ms,(unsigned long)ticks,
+        (unsigned long)before_clock,(unsigned long)end_clock,
+        (long)InterlockedCompareExchange(&debug_menu_wait_skip_state,0,0));
+      say(line);
+    }
+  }
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
      InterlockedCompareExchange(&intro_still_exit_state,0,0)>=2 &&
      InterlockedCompareExchange(&menu_frame_count,0,0)<=3) {
@@ -1320,6 +1347,23 @@ static void __cdecl spider_f12_debug_menu_wait_cond(DWORD ticks) {
 static void __cdecl spider_f12_debug_menu_wait_always(DWORD ticks) {
   spider_f12_debug_menu_wait(ticks,2);
 }
+static void __cdecl spider_f12_debug_menu_wait_exit(DWORD ticks) {
+  spider_f12_debug_menu_wait(ticks,3);
+}
+
+/* The third site is exclusively diagnostic and must never affect the
+ * two validated F12 initial menu wait hooks. Its original 0x4E5D60
+ * call ALWAYS executes, regardless of F12SkipInitialMenuWait state. */
+static void install_debug_menu_wait_exit_probe(void) {
+  if(!patch_native_call(SPIDER_MENU_WAIT_EXIT_SITE,
+                        menu_wait_exit_original,
+                        (const void *)spider_f12_debug_menu_wait_exit)) {
+    say("QUICK-EXIT-F12: DEBUG-MENU-EXIT-CLOCK-WAIT optional 0x494209 signature mismatch; original menu transition untouched");
+    return;
+  }
+  InterlockedExchange(&debug_menu_wait_exit_hook_installed,1);
+  say("QUICK-EXIT-F12: DEBUG-MENU-EXIT-CLOCK-WAIT read-only native menu selection wait at 0x494209 armed; original 0x4E5D60 still called");
+}
 
 static int install_debug_menu_wait_hooks(void) {
   if(memcmp(SPIDER_MENU_WAIT_COND_SITE,menu_wait_cond_original,5)!=0 ||
@@ -1338,6 +1382,8 @@ static int install_debug_menu_wait_hooks(void) {
 }
 
 static void restore_debug_menu_wait_hooks(void) {
+  if(InterlockedCompareExchange(&debug_menu_wait_exit_hook_installed,0,1)==1)
+    restore_intro_tick_call(SPIDER_MENU_WAIT_EXIT_SITE,menu_wait_exit_original);
   if(InterlockedCompareExchange(&debug_menu_wait_hooks_installed,0,1)==1) {
     restore_intro_tick_call(SPIDER_MENU_WAIT_ALWAYS_SITE,menu_wait_always_original);
     restore_intro_tick_call(SPIDER_MENU_WAIT_COND_SITE,menu_wait_cond_original);
@@ -1769,6 +1815,8 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
       InterlockedCompareExchange(&debug_skip_initial_menu_wait,0,0)==1)) {
     if(install_debug_menu_wait_hooks()) {
       say("QUICK-EXIT-F12: DEBUG-MENU-CLOCK-WAIT 0x49415B/0x49416F native wait callsites instrumented; original wait unchanged unless separate fast-wait opt-in");
+      if(GetPrivateProfileIntA("Debug","Log",0,ini)==1)
+        install_debug_menu_wait_exit_probe();
     } else {
       InterlockedExchange(&debug_skip_initial_menu_wait,0);
       say("QUICK-EXIT-F12: DEBUG-MENU-CLOCK-WAIT signature mismatch; optional initial menu fast-wait DISABLED; original waits preserved");
