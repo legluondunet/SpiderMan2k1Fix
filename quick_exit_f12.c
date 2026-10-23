@@ -355,6 +355,10 @@ static volatile LONG debug_newgame_progress=0;
  * -1 aborted. This must NEVER authorize controller-7 shutdown. */
 static volatile LONG debug_auto3d_opt_in=0;
 static volatile LONG debug_auto3d_state=0;
+/* Provenance of the physical F10 that authorized intro auto-skip.
+ * 0=none, 1=L1COV comic, 2=verified Bink #4, 3=native 3D script.
+ * Ordinary VK_RETURN on Bink is never an auto-skip authorization. */
+static volatile LONG debug_auto3d_f10_origin=0;
 static volatile LONG debug_auto3d_first_owner=0;
 static volatile LONG debug_auto3d_first_last_ip=0;
 static volatile LONG debug_auto3d_begin_ms=0;
@@ -710,8 +714,16 @@ static void __cdecl spider_observe_native_game_input(void) {
     LONG phase=InterlockedCompareExchange(&debug_newgame_progress,0,0);
     if((phase==1 || phase==2) &&
        InterlockedCompareExchange(&debug_newgame_progress,3,phase)==phase) {
+      char entry[300];
       InterlockedExchange(&debug_newgame_3d_first_ms,(LONG)GetTickCount());
       say("QUICK-EXIT-F12: DEBUG-NEWGAME-3D native input owner reached after verified movie-4 owner; INTRO vs GAMEPLAY UNKNOWN; F12 exit BLOCKED until positively identified [READ-ONLY]");
+      snprintf(entry,sizeof(entry),
+        "QUICK-EXIT-F12: DEBUG-NEWGAME-3D-ENTRY auto_stage=%ld f10_origin=%ld enter_down=%d f10_down=%d [origin=0: unarmed native cinematics]",
+        (long)InterlockedCompareExchange(&debug_auto3d_state,0,0),
+        (long)InterlockedCompareExchange(&debug_auto3d_f10_origin,0,0),
+        (GetAsyncKeyState(VK_RETURN)&0x8000)!=0,
+        (GetAsyncKeyState(VK_F10)&0x8000)!=0);
+      say(entry);
     }
     /* Never deliver stale F10 exit requests from a scripted intro. */
     if(InterlockedCompareExchange(&debug_newgame_progress,0,0)>=1 &&
@@ -1104,6 +1116,7 @@ static void __cdecl spider_observe_native_game_input(void) {
             InterlockedExchange(&debug_auto3d_first_owner,(LONG)owner);
             InterlockedExchange(&debug_auto3d_first_last_ip,(LONG)script_ip);
             InterlockedExchange(&debug_auto3d_begin_ms,(LONG)now);
+            InterlockedExchange(&debug_auto3d_f10_origin,3);
             InterlockedExchange(&debug_auto3d_state,2);
             InterlockedExchange(&debug_f10_cutscene_skip_pending,0);
             event="FIRST_INTRO_ARMED_SKIP_BOTH";
@@ -1114,6 +1127,7 @@ static void __cdecl spider_observe_native_game_input(void) {
             InterlockedExchange(&debug_auto3d_first_owner,(LONG)owner);
             InterlockedExchange(&debug_auto3d_first_last_ip,0);
             InterlockedExchange(&debug_auto3d_begin_ms,(LONG)now);
+            InterlockedExchange(&debug_auto3d_f10_origin,3);
             InterlockedExchange(&debug_auto3d_state,5);
             InterlockedExchange(&debug_f10_cutscene_skip_pending,0);
             event="SECOND_INTRO_ARMED_SKIP_REMAINING";
@@ -1152,6 +1166,7 @@ static void __cdecl spider_observe_native_game_input(void) {
        * Fail closed on missing transitions, pointer reuse or timeout.
        * The lifecycle tracker above remains independently READ-ONLY. */
       if(InterlockedCompareExchange(&debug_auto3d_opt_in,0,0)==1 &&
+         InterlockedCompareExchange(&debug_auto3d_f10_origin,0,0)!=0 &&
          InterlockedCompareExchange(&debug_auto3d_state,0,0)>0 &&
          InterlockedCompareExchange(&debug_newgame_progress,0,0)==3) {
         LONG auto_state=InterlockedCompareExchange(&debug_auto3d_state,0,0);
@@ -1905,8 +1920,15 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
     DWORD return_address=(DWORD)frame[1];
     if((return_address==0x00470822u || return_address==0x00470864u) &&
        (DWORD)frame[4]==0x00427A00u && (DWORD)frame[6]==1u &&
-       InterlockedCompareExchange(&debug_newgame_progress,2,1)==1)
-      say("QUICK-EXIT-F12: DEBUG-NEWGAME-MOVIE original movie-4 finished (possibly via Enter); awaiting 3D owner [READ-ONLY]");
+       InterlockedCompareExchange(&debug_newgame_progress,2,1)==1) {
+      char msg[245];
+      snprintf(msg,sizeof(msg),
+        "QUICK-EXIT-F12: DEBUG-NEWGAME-MOVIE original movie-4 finished; f10_origin=%ld enter_down=%d auto_stage=%ld [NO F10: INTRO AUTO-SKIP UNARMED]",
+        (long)InterlockedCompareExchange(&debug_auto3d_f10_origin,0,0),
+        (GetAsyncKeyState(VK_RETURN)&0x8000)!=0,
+        (long)InterlockedCompareExchange(&debug_auto3d_state,0,0));
+      say(msg);
+    }
   }
   if(post_shell) {
     LONG old_result=InterlockedExchange(&after_shell_previous_result,(LONG)native_result);
@@ -2157,6 +2179,7 @@ static void spider_f10_reset_session_on_native_menu(void) {
   InterlockedExchange(&debug_newgame_comic_fastforward_observed,0);
   InterlockedExchange(&last_comic_candidate_ms,0);
   InterlockedExchange(&debug_auto3d_state,0);
+  InterlockedExchange(&debug_auto3d_f10_origin,0);
   InterlockedExchange(&debug_auto3d_first_owner,0);
   InterlockedExchange(&debug_auto3d_first_last_ip,0);
   InterlockedExchange(&debug_auto3d_begin_ms,0);
@@ -2795,6 +2818,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
                 InterlockedExchange(&debug_auto3d_first_owner,0);
                 InterlockedExchange(&debug_auto3d_first_last_ip,0);
                 InterlockedExchange(&debug_auto3d_begin_ms,(LONG)now);
+                InterlockedExchange(&debug_auto3d_f10_origin,1);
                 InterlockedExchange(&debug_auto3d_state,1);
                 say("QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE ARMED by F10 on original L1COV.bmp; will wait for TWO independent native CutSceneSkipAllow transitions after verified Bink #4; no gameplay EXIT");
               }
@@ -2825,6 +2849,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
                 InterlockedExchange(&debug_auto3d_first_owner,0);
                 InterlockedExchange(&debug_auto3d_first_last_ip,0);
                 InterlockedExchange(&debug_auto3d_begin_ms,(LONG)now);
+                InterlockedExchange(&debug_auto3d_f10_origin,2);
                 InterlockedExchange(&debug_auto3d_state,1);
                 say("QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE ARMED by F10 on verified New Game Bink movie #4; BOTH subsequent native 3D intros will be skipped after CutSceneSkipAllow [NO EXIT]");
               }

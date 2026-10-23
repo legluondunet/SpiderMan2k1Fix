@@ -1989,3 +1989,31 @@ def test_f10_media_and_script_branches_take_priority_over_gameplay_menu():
     assert worker.index("DEBUG-F10-CUTSCENE-SKIP F10 queued") < worker.index(
         "DEBUG-F10-GAMEPLAY-EXIT F10 accepted")
     assert "lifecycle==6 && auto_stage==7" in worker
+
+def test_enter_only_bink_does_not_authorize_f10_auto_skips():
+    """Physical Enter should finish only movie #4; no auto 3D intro skip."""
+    assert "static volatile LONG debug_auto3d_f10_origin=0;" in SRC
+    worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
+               SRC.index("void SpiderQuickExitF12_Init(")]
+    comic=worker[worker.index("InterlockedCompareExchange(&postmovie_state,4,0)==0"):
+                 worker.index("ARMED by F10 on original L1COV.bmp")]
+    movie=worker[worker.index("InterlockedCompareExchange(&debug_newgame_progress,0,0)==1 &&"):
+                 worker.index("} else if(InterlockedCompareExchange(&debug_newgame_progress,0,0)>=1)")]
+    assert "InterlockedExchange(&debug_auto3d_f10_origin,1);" in comic
+    assert "InterlockedExchange(&debug_auto3d_f10_origin,2);" in movie
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
+    auto=owner[owner.index("Optional one-F12 native 3D skip experiment"):
+               owner.index("previous_owner=owner;")]
+    assert "InterlockedCompareExchange(&debug_auto3d_f10_origin,0,0)!=0" in auto
+    manual=owner[owner.index("F10 during a live native CutSceneScript"):
+                 owner.index("Optional one-F12 native 3D skip experiment")]
+    assert manual.count("InterlockedExchange(&debug_auto3d_f10_origin,3);")==2
+    assert "DEBUG-NEWGAME-3D-ENTRY auto_stage=%ld f10_origin=%ld" in owner
+    reset=SRC[SRC.index("static void spider_f10_reset_session_on_native_menu(void)"):
+              SRC.index("/* Returns nonzero ONLY when a recent")]
+    assert "InterlockedExchange(&debug_auto3d_f10_origin,0);" in reset
+    tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
+             SRC.index("/* Wrapper on the ORIGINAL GAME THREAD",SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"))]
+    assert "DEBUG-NEWGAME-MOVIE original movie-4 finished; f10_origin=%ld enter_down=%d" in tick
+    assert "InterlockedExchange(&debug_auto3d_f10_origin" not in tick
