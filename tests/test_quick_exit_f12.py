@@ -1851,3 +1851,30 @@ def test_comic_and_movie_second_session_require_reset_latches():
     assert "debug_newgame_progress,1,0" in wrapper
     assert "postmovie_state,2,stage" in wrapper
     assert "debug_auto3d_state,1" in worker
+
+def test_f10_second_game_comic_and_movie_ignore_residual_request_7():
+    """Real Wine #693 log: second cover has mode_request=7 even after
+    DEBUG-F10-SESSION-RESET. This is a pending native dispatch request,
+    NOT a live scene number. F10 must still recognize the second L1COV
+    and the following verified Bink #4 without authorizing a 3D exit.
+    """
+    worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
+               SRC.index("void SpiderQuickExitF12_Init(")]
+    comic=worker[worker.index("InterlockedCompareExchange(&input_native_invocations,0,0)==0 &&"):
+                 worker.index("/* F12 during L1COV.bmp")]
+    assert "*SPIDER_ENGINE_MODE==0u" not in comic
+    assert "*SPIDER_GAME_BINK_ACTIVE==0u" in comic
+    assert "*SPIDER_BINK_VIDEO_HANDLE==0u" in comic
+    assert "last_comic_candidate_ms" in comic
+    movie=worker[worker.index("InterlockedCompareExchange(&debug_newgame_progress,0,0)==1 &&"):
+                 worker.index("DEBUG-NEWGAME-MOVIE F12 queued")]
+    assert "*SPIDER_ENGINE_MODE==0u" not in movie
+    assert "*SPIDER_GAME_BINK_ACTIVE!=0u" in movie
+    assert "*SPIDER_BINK_VIDEO_HANDLE!=0u" in movie
+    wrapper=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick("):
+                SRC.index("/* The L1COV.bmp NEW GAME timed image")]
+    assert "(DWORD)frame[4]==0x00427A00u" in wrapper
+    assert "(DWORD)frame[6]==1u" in wrapper
+    assert "postmovie_state,2,stage" in wrapper
+
+

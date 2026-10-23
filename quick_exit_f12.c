@@ -2673,7 +2673,10 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
             say("QUICK-EXIT-F12: DEBUG-MENU-SKIP F12 in opening Bink; native video cleanup then main menu (NO QUIT)");
         } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
                   InterlockedCompareExchange(&input_native_invocations,0,0)==0 &&
-                  *SPIDER_ENGINE_MODE==0u &&
+                  /* 0x60CFA4 is a pending dispatch REQUEST, not scene identity:
+                   * after Exit -> Yes -> New Game it may remain 7 on L1COV.
+                   * Require the verified recent comic render + no Bink +
+                   * no live 3D owner, NOT an arbitrary request value. */
                   *SPIDER_GAME_BINK_ACTIVE==0u &&
                   *SPIDER_BINK_VIDEO_HANDLE==0u &&
                   InterlockedCompareExchange(&last_comic_candidate_ms,0,0)!=0 &&
@@ -2703,7 +2706,9 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
           }
         } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
                   InterlockedCompareExchange(&debug_newgame_progress,0,0)==1 &&
-                  *SPIDER_ENGINE_MODE==0u &&
+                  /* The request-7 residue can persist into movie #4 too.
+                   * Exact Bink owner stack is checked at the native tick;
+                   * do not mistake the pending request for a scene ID. */
                   *SPIDER_GAME_BINK_ACTIVE!=0u &&
                   *SPIDER_BINK_VIDEO_HANDLE!=0u) {
           if(InterlockedCompareExchange(&postmovie_state,0,0)==0) {
