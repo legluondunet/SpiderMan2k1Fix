@@ -44,7 +44,7 @@ is used. Changes are being developed in
 | Stage | Implementation and manual validation |
 | --- | --- |
 | Four opening Bink videos | Original game video cleanup and top-level Quit handoff; previously tested |
-| First timed pre-menu still | **Validated on Linux/Wine**: F12 keeps original timer, then exits by native input-wait cleanup and real-menu Quit; Windows test pending |
+| First timed pre-menu still | **Validated on Windows 11 and Linux/Wine**: F12 defers to original timed-page completion and input-wait cleanup, then original menu Quit; no residual `SpideyPC.exe` in Windows Task Manager |
 | Second `Press Enter` pre-menu still | **Validated on Windows 11 and Linux/Wine**: F12 takes original input-wait completion, then original menu Quit; no residual `SpideyPC.exe` in Windows Task Manager |
 | Interactive main menu | Original `Shell_MainMenu` Quit command (slot 3, action 18); **validated on Windows 11** |
 | New Game comic still | **Validated under Linux/Wine** with delayed exit: it retains the comic's automatic timing, then uses movie #4 |
@@ -58,14 +58,12 @@ Wine process. The real `Shell_MainMenu` native frame tick at
 The experimental New Game comic and post-menu cinematics are
 **not yet validated on Windows 11**.
 The pre-menu static screens have a **separately opt-in**
-F12 prototype. The first screen keeps its native timer
-and has been tested under Wine; the second follows its
-original input-wait completion and cleanup, and has now
-been validated on **both Wine and Windows 11**. The
-Windows user independently confirmed there was no
-remaining `SpideyPC.exe` in Task Manager after quitting
-from the second `Press Enter` still. The first timed
-page still needs a Windows run.
+F12 prototype. The first screen retains its native timed-page completion;
+the second uses its original input-wait completion and cleanup.
+**Both fixed pages are now independently user-validated under
+Windows 11 and Linux/Wine**, with the original menu Quit
+executing at the end. Windows Task Manager confirmed no
+residual `SpideyPC.exe` after F12 on either fixed page.
 
 Enable only the desired stages in `SpiderMan2k1Fix.ini`
 while using the experimental PR build:
@@ -79,7 +77,7 @@ QuickExitF12=1
 ExperimentalQuickExitF12In3D=1
 ExperimentalQuickExitF12InNewGameMovie=1
 ExperimentalQuickExitF12InNewGameComic=1
-; Optional pre-menu still-screen F12 (default 0; Windows first-page trial pending):
+; Optional pre-menu still-screen F12 (default 0; both pages tested under Windows and Wine):
 ExperimentalQuickExitF12InIntroStills=1
 ```
 
@@ -98,10 +96,10 @@ ExperimentalQuickExitF12InIntroStills=1
   its resources and restores SEH. Only after this does
   original `Shell_MainMenu` Quit action 18 execute.
   It requires `QuickExitF12=1` and `[Debug] Log=1`.
-  Both pages have been user-validated under Wine;
-  the second `Press Enter` still has additionally been
-  validated on Windows 11. The first timed still still
-  requires a separate Windows 11 regression test.
+  Both pages have been user-validated under Wine
+  **and Windows 11**. Independent Windows Task Manager
+  checks found no remaining `SpideyPC.exe` process
+  after quitting from either page.
 
 - `ExperimentalQuickExitF12InNewGameComic` enables **deferred**
   F12 while the New Game comic still is visible. It requires
