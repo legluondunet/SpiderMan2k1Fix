@@ -1,3 +1,64 @@
+## 2026-10-23 — Wine 16:17:50: action 0x10 is indistinguishable for 3D skips and gameplay jump
+
+The user supplied complete build #672 log
+`SpiderMan2k1Fix(20261023-161750).log`, with
+three physically distinct Space presses after the
+native Bink #4 New Game transition. The test requested
+two original 3D cinematic skips followed by one
+deliberate gameplay jump:
+
+- **+1879 ms**, first Space event: native
+  `0x661200` action **0x10** held=1, then
+  just_pressed=1 and early=1 at +1902 ms.
+- **+3152 ms**, second Space edge: action 0x10
+  held=1 and just_pressed=1 at nearby +3135 ms,
+  then again just_pressed=1 / early=1 +3202 ms.
+- **+4336 ms**, third Space edge (requested
+  gameplay jump): action 0x10 held=1, native
+  keyboard byte `0x7F`; the very short
+  just_pressed window for this third event was
+  not captured by the bounded change logger.
+
+All three original keyboard events are received and
+translated by the game. The original action bit is
+**the same 0x10 for BOTH 3D scene skips and actual
+gameplay jump**, so none of `held`, `just_pressed`,
+`early`, DIK 0x39, key-edge count, or HUD instruction
+draw alone identifies an original cutscene stage or
+proves a playable frame. Native cover+Bink movie #4
+completion remains **2 ms**. Native `0x5FAECC` starts
+changing only at +7.9–9 s in this run, **well after**
+the action events, so it is NOT either scene boundary.
+A later native request 7 still has unconfirmed writer.
+
+**Original executable disassembly-guided next
+read-only attribution**: The exact original 3D update
+at `0x455582` queries a controller object pointer at
+`0x56F3B8` and tests its member DWORD at `+0x2A0`
+against `0xD`. Independently the original dispatch
+helpers `0x4DE890` / `0x4DE840` reference the
+game-owned dispatch linked-list head `0x6B4708`.
+Neither pointer nor controller state is established
+as a cutscene marker. The EXISTING native game-thread
+checkpoint now logs bounded
+`DEBUG-3D-SCENE-CONTEXT` messages with actual
+controller pointer/state, dispatch head, original
+`0x2E0988C` flags, physical SPACE and original
+action held/just-pressed state on any changes
+(and sparse heartbeat). This can reveal which
+game-owned object changes when a scripted 3D intro
+ends, *without* altering the game or treating a
+UI draw as a scene signal.
+
+No new hooked game instructions, no synthetic
+key or native scene changes, and no controller-7
+exit permission. PR #26 remains draft/unmerged,
+with single-F12 two-3D-cinematic auto-skip and
+positive gameplay-only exit boundary still pending
+runtime correlation.
+
+---
+
 ## 2026-10-23 — Wine 16:04:45; original Jump action-state handling is now located
 
 The user's full log `SpiderMan2k1Fix(20261023-160445).log`

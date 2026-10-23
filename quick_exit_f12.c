@@ -188,6 +188,13 @@
  * Passive telemetry samples it AFTER original 0x440EF0 returns. */
 #define SPIDER_NATIVE_SPACE_ACTION_STATE ((const volatile BYTE *)(uintptr_t)0x00661200u)
 #define SPIDER_NATIVE_SPACE_ACTION_WORDS ((const volatile DWORD *)(uintptr_t)0x00661200u)
+/* Additional original game-owned *candidate* scene context:
+ * 0x455582 reads a controller pointer at 0x56F3B8 and, if nonnull,
+ * compares its DWORD at +0x2A0 to 0xD. 0x4DE890/0x4DE840
+ * manage a native dispatch-linked list head at 0x6B4708.
+ * Neither is PROVEN to indicate gameplay readiness. Observe only. */
+#define SPIDER_NATIVE_3D_CONTROLLER_OBJECT ((const volatile DWORD *)(uintptr_t)0x0056F3B8u)
+#define SPIDER_NATIVE_3D_DISPATCH_HEAD ((const volatile DWORD *)(uintptr_t)0x006B4708u)
 #define SPIDER_NATIVE_KEYBOARD_DEVICE ((const volatile DWORD *)(uintptr_t)0x006B7A5Cu)
 #define SPIDER_NATIVE_KEY_EDGE_CALL ((BYTE *)(uintptr_t)0x0050A65Du)
 #define SPIDER_NATIVE_KEY_LEVEL_CALL ((BYTE *)(uintptr_t)0x0050A674u)
@@ -724,6 +731,55 @@ static void __cdecl spider_observe_native_game_input(void) {
         last_action_log=now;
       }
       prior_status=status;
+    }
+    /* Search for the ORIGINAL SCENE OWNER / playable boundary.
+     * DirectInput and native action 0x10 are identical for BOTH 3D
+     * cinematic skips and the user's confirmed gameplay jump.
+     * Compare game-owned controller state and transient dispatch
+     * head to physical Space across all THREE events instead.
+     * Never treat nonzero pointers or a particular state as a
+     * cutscene/exit permission until independently established.
+     */
+    {
+      DWORD controller=*SPIDER_NATIVE_3D_CONTROLLER_OBJECT;
+      DWORD dispatch=*SPIDER_NATIVE_3D_DISPATCH_HEAD;
+      DWORD scene_flags=*SPIDER_NATIVE_CUTSCENE_INPUT_FLAGS;
+      DWORD ctrl_state=controller?
+        ((const volatile DWORD *)(uintptr_t)controller)[0x2a0u/4u]:
+        0xffffffffu;
+      static DWORD previous_controller=0xffffffffu;
+      static DWORD previous_state=0xffffffffu;
+      static DWORD previous_dispatch=0xffffffffu;
+      static DWORD previous_flags=0xffffffffu;
+      static LONG previous_physical=-1;
+      static DWORD last_context_log=0;
+      static LONG context_logs=0;
+      LONG changed=controller!=previous_controller ||
+          ctrl_state!=previous_state ||
+          dispatch!=previous_dispatch ||
+          scene_flags!=previous_flags ||
+          space!=previous_physical;
+      if((changed || !last_context_log ||
+          (DWORD)(now-last_context_log)>=2000u) &&
+         context_logs<75 && (!start || (DWORD)(now-start)<90000u)) {
+        char ctxline[450];
+        snprintf(ctxline,sizeof(ctxline),
+          "QUICK-EXIT-F12: DEBUG-3D-SCENE-CONTEXT controller_ptr=0x%08lX controller_state=0x%08lX dispatch_head=0x%08lX flags=0x%08lX space_held=%ld edges=%ld action_held=%u action_pressed=%u since_3d_ms=%lu [ORIGINAL 0x455582 / 0x4DE890; READ-ONLY; PLAYABLE NOT PROVEN]",
+          (unsigned long)controller,(unsigned long)ctrl_state,
+          (unsigned long)dispatch,(unsigned long)scene_flags,
+          (long)space,(long)edges,
+          (unsigned)SPIDER_NATIVE_SPACE_ACTION_STATE[0],
+          (unsigned)SPIDER_NATIVE_SPACE_ACTION_STATE[1],
+          (unsigned long)(start?(DWORD)(now-start):0u));
+        say(ctxline);
+        ++context_logs;
+        last_context_log=now;
+      }
+      previous_controller=controller;
+      previous_state=ctrl_state;
+      previous_dispatch=dispatch;
+      previous_flags=scene_flags;
+      previous_physical=space;
     }
     if((!start || (DWORD)(now-start)<90000u) &&
        (last_space!=space || sample_count<6 ||

@@ -1562,3 +1562,23 @@ def test_original_jump_action_state_trace_only_reads_game_owned_structure():
     assert "SPIDER_NATIVE_SPACE_ACTION_STATE=" not in owner
     assert "SPIDER_NATIVE_SPACE_ACTION_WORDS[" in owner
     assert "SendInput(" not in owner
+
+
+def test_original_game_3d_scene_context_probe_is_read_only_and_non_authoritative():
+    """Space action 0x10 appears in BOTH cinematics and real gameplay.
+    Only sample controller/dispatch candidates, never infer F12 exit."""
+    assert "SPIDER_NATIVE_3D_CONTROLLER_OBJECT ((const volatile DWORD *)(uintptr_t)0x0056F3B8u)" in SRC
+    assert "SPIDER_NATIVE_3D_DISPATCH_HEAD ((const volatile DWORD *)(uintptr_t)0x006B4708u)" in SRC
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
+    assert "controller=*SPIDER_NATIVE_3D_CONTROLLER_OBJECT;" in owner
+    assert "dispatch=*SPIDER_NATIVE_3D_DISPATCH_HEAD;" in owner
+    assert "ctrl_state=controller?" in owner
+    assert "((const volatile DWORD *)(uintptr_t)controller)[0x2a0u/4u]" in owner
+    assert "scene_flags=*SPIDER_NATIVE_CUTSCENE_INPUT_FLAGS;" in owner
+    assert "DEBUG-3D-SCENE-CONTEXT" in owner
+    assert "PLAYABLE NOT PROVEN" in owner
+    assert "context_logs<75" in owner
+    assert "SPIDER_NATIVE_3D_CONTROLLER_OBJECT=" not in owner
+    assert "SPIDER_NATIVE_3D_DISPATCH_HEAD=" not in owner
+    assert "*(volatile DWORD *)(uintptr_t)0x0060CFA4u=" not in owner[:owner.index("/* 0x45553B is reached only AFTER")]
