@@ -86,14 +86,38 @@ def test_post_new_game_media_diagnostics_are_passive_and_bink_ownership_unproven
     assert "real_main_menu_seen,0,0)==1" in tick
     assert "InterlockedIncrement(&after_shell_ticks)==1" in tick
     assert tick.count("SPIDER_NATIVE_BINK_FRAME_TICK();")==1
-    assert "return SPIDER_NATIVE_BINK_FRAME_TICK();" in tick
-    assert tick.index("POST-SHELL-BINK-TICK-CALLSITE") < tick.index("return SPIDER_NATIVE_BINK_FRAME_TICK();")
+    assert "native_result=SPIDER_NATIVE_BINK_FRAME_TICK();" in tick
+    assert "return native_result;" in tick
+    assert tick.index("POST-SHELL-BINK-TICK-CALLSITE") < tick.index("native_result=SPIDER_NATIVE_BINK_FRAME_TICK();")
     # Never reinterpret the diagnostics as permission to quit comics/movies.
     for observer in (media,stage,tick):
         for forbidden in ("TerminateProcess(", "ExitProcess(", "DestroyWindow(",
                           "PostMessageA(", "BinkClose(", "*SPIDER_ENGINE_MODE=",
                           "*SPIDER_BINK_VIDEO_HANDLE=", "*SPIDER_BINK_AUDIO_HANDLE="):
             assert forbidden not in observer
+
+
+
+def test_post_shell_space_skip_probe_preserves_original_bink_result():
+    tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
+             SRC.index("/* This wrapper executes ON THE ORIGINAL GAME THREAD")]
+    assert tick.count("native_result=SPIDER_NATIVE_BINK_FRAME_TICK();")==1
+    assert "POST-SHELL-BINK-TICK-RESULT" in tick
+    assert "space_down_sampled=%ld" in tick
+    assert "[READ-ONLY; SKIP-REASON UNKNOWN]" in tick
+    assert "(native_result==0 && old_result!=0)" in tick
+    assert "(space_down && !old_space)" in tick
+    assert "n<=4 || n%120==0" in tick
+    assert "GetAsyncKeyState(VK_SPACE)&0x8000" in tick
+    assert "return native_result;" in tick
+    assert "intro_quit_pending,0,0)==1" in tick
+    assert tick.index("intro_quit_pending,0,0)==1") < tick.index(
+        "native_result=SPIDER_NATIVE_BINK_FRAME_TICK();")
+    for forbidden in ("SPIDER_NATIVE_BINK_FRAME_TICK(1)", "BinkClose(",
+                      "TerminateProcess(", "ExitProcess(", "PostMessageA(",
+                      "*SPIDER_GAME_QUIT_FLAG=", "*SPIDER_ENGINE_MODE=",
+                      "*SPIDER_BINK_VIDEO_HANDLE=", "DestroyWindow("):
+        assert forbidden not in tick
 
 
 def test_default_off_and_ini_section_validated():
@@ -229,7 +253,8 @@ def test_four_intro_movies_run_original_bink_cleanup_on_game_thread():
     assert "static BYTE __cdecl spider_f12_native_intro_tick(void)" in SRC
     assert "if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1)" in SRC
     assert "return 0;" in SRC
-    assert "return SPIDER_NATIVE_BINK_FRAME_TICK();" in SRC
+    assert "native_result=SPIDER_NATIVE_BINK_FRAME_TICK();" in SRC
+    assert "return native_result;" in SRC
     assert "native Bink tick returned finished; original game video cleanup will run" in SRC
     assert "BinkClose(" not in SRC
     assert "PostMessageA(" not in SRC
