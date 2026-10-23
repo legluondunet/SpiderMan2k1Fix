@@ -113,9 +113,9 @@ Emit-HexRegion "Native top-level transition" 0x00455C80 0x200
 # sections. A byte pattern is NOT proof of an instruction boundary.
 $callers = New-Object 'System.Collections.Generic.List[long]'
 foreach($section in $sections) {
-    if(($section.Characteristics -band 0x20000000L) -eq 0) { continue }
+    if(($section.Characteristics -band [long]0x20000000) -eq 0) { continue }
     $baseOffset = [long]$section.RawPointer
-    for($i=0L;$i -le ($section.RawSize-5);$i++) {
+    for([long]$i=0;$i -le ($section.RawSize-5);$i++) {
         if($bytes[[int]($baseOffset+$i)] -ne 0xE8) { continue }
         $relative = [long][BitConverter]::ToInt32($bytes,[int]($baseOffset+$i+1))
         $callVA = $imageBase+$section.RVA+$i
