@@ -1,3 +1,66 @@
+## 2026-10-23 — Wine #589 FIRST timed intro still F12: native timer preserved; original menu Quit
+
+User reports a successful game shutdown after pressing **F12
+during the FIRST fixed startup image** (after the four Bink
+opening movies and BEFORE the second "Press Enter" still).
+The user explicitly observed that, as with the New Game comic,
+the game **waited for the first image's originally programmed
+display duration** before exiting. Full attached log:
+`SpiderMan2k1Fix(20261023-095544).log`, patch
+`v1.0.0-823379a`, supported original game EXE SHA-256
+`0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`,
+experimental `ExperimentalQuickExitF12InIntroStills=1` armed.
+
+Execution evidence in original log:
+
+```text
+STARTUP-STATIC-PROBE original four-movie transition cleanup 0x455D23 completed
+INTRO-STILL F12 latched after original Bink cleanup; waiting for native timed page + input-wait owner [EXPERIMENTAL]
+STARTUP-STATIC-PROBE flip=134 since_first_flip_ms=4580 ... real_menu_tick_count=0 ... transition_raw=1 still_frame_count=37 timed_page_once=1
+STARTUP-STATIC-PROBE flip=179 since_first_flip_ms=6080 ... real_menu_tick_count=0 ... transition_raw=1 still_frame_count=82 timed_page_once=1
+STARTUP-STATIC-PROBE flip=224 since_first_flip_ms=7580 ... real_menu_tick_count=0 ... transition_raw=1 still_frame_count=127 timed_page_once=1
+INTRO-STILL original input-wait owner 0x4A1896 verified; normal TRUE completion for 0x4A18AE native page cleanup; menu Quit queued [EXPERIMENTAL]
+REAL Shell_MainMenu frame callback observed (0x493DD6)
+INTRO-STILL native page owner returned; original Shell_MainMenu Quit now activated [EXPERIMENTAL]
+native Shell_MainMenu Quit activated: slot=3 action=18, native cleanup branch=0x4941D5
+```
+
+**Wine validation:** The first startup still F12 is successfully
+latched during the original native timed-page window, but does
+NOT interrupt the original deadline/loop. At the subsequent
+original `0x4A1896` input-wait page check, it takes the
+page's original TRUE-completion cleanup/unwind, which
+returns through the real Shell_MainMenu and invokes
+the original Quit action 18. The user confirms the game
+shut down normally. This independently validates BOTH
+previously unsupported pre-menu still-screen stages on
+Linux/Wine: the first timed still in this run and the
+second "Press Enter" still in the immediately preceding
+`SpiderMan2k1Fix(20261023-095058).log` run.
+
+**Evidence limit:** The two logs end at the original menu
+Quit activation. Neither log independently captures a
+`pgrep` check of orphan Wine/SpideyPC processes; the
+user did explicitly confirm successful game shutdown
+in both. Do not claim these two runs prove no residual
+processes until such a check is reported. The user's
+visual observation establishes timer behavior; exact
+F12-to-exit wall-clock duration was not instrumented.
+
+**Project status:** Under Wine, runtime F12 shutdown
+has now been exercised and user-confirmed from the
+opening four movies, both pre-menu static stills,
+the real interactive menu, the New Game comic,
+the subsequent Bink cinematic, and 3D gameplay.
+The INI options remain **default-OFF / experimental**.
+Native Windows 11 full-stage regression and process
+checks remain outstanding; the yellow-frame question
+is intentionally deferred until Windows testing.
+Do not merge draft PR #26 without explicit user
+approval; no runtime code was modified for this result.
+
+---
+
 ## 2026-10-23 — Wine #589 native Press Enter still F12: game exits through original menu Quit
 
 The user tested build **#589**, reporting **"test validé, le jeu s'est correctement arrêté"** after pressing F12 on the **second pre-menu still** ("Press Enter"), without a synthetic Enter key. Attached full log:
