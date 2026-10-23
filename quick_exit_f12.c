@@ -224,9 +224,9 @@ static volatile LONG intro_timed_clock_hook_installed=0;
 static volatile LONG debug_timed_accelerated=0;
 static volatile LONG debug_menu_wait_hooks_installed=0;
 /* Experimental fast-start experiment: entirely private state, never write
- * native game clock. [Debug] F12SkipInitialMenuWait=1 (default OFF).
- * 0 not armed, 1 omit menu sync while the original clock is stagnant,
- * 2 original waits permanently restored for the remainder of this run. */
+ * native game clock. Enabled with F12TestMode=1 unless the INI
+ * explicitly contains F12SkipInitialMenuWait=0. F12TestMode=0 always
+ * disables it. State: 0 not armed, 1 temporary bypass, 2 native sync restored. */
 static volatile LONG debug_skip_initial_menu_wait=0;
 static volatile LONG debug_menu_wait_skip_state=0;
 static volatile LONG debug_menu_wait_skip_started_ms=0;
@@ -1576,9 +1576,16 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     InterlockedExchange(&debug_f12_test_mode,1);
     strcpy(val,"1");
     say("QUICK-EXIT-F12: [Debug] F12TestMode=1 — pre-menu F12 to main menu, 3D F12 native exit; overrides old F12 behavior [EXPERIMENTAL]");
-    if(GetPrivateProfileIntA("Debug","F12SkipInitialMenuWait",0,ini)==1) {
+    /* F12TestMode implies initial-menu acceleration by default.
+     * The generated INI deliberately contains no active override.
+     * Only an EXPLICIT F12SkipInitialMenuWait=0 disables it.
+     * A legacy INI containing =0 therefore retains the user's
+     * intentional opt-out; F12TestMode=0 never enters this branch. */
+    if(GetPrivateProfileIntA("Debug","F12SkipInitialMenuWait",1,ini)==1) {
       InterlockedExchange(&debug_skip_initial_menu_wait,1);
-      say("QUICK-EXIT-F12: [Debug] F12SkipInitialMenuWait=1 opt-in; only initial F12 menu-sync stalls bypassed until native clock moves [EXPERIMENTAL]");
+      say("QUICK-EXIT-F12: [Debug] F12SkipInitialMenuWait active (automatic with F12TestMode=1 unless explicitly disabled); native sync restored when clock advances [EXPERIMENTAL]");
+    } else {
+      say("QUICK-EXIT-F12: [Debug] F12SkipInitialMenuWait=0 explicit opt-out; original initial menu clock wait preserved");
     }
   }
   memset(trace,0,sizeof(trace));
