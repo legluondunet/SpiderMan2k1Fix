@@ -1055,6 +1055,10 @@ static void __cdecl spider_observe_native_game_input(void) {
           InterlockedExchange(&debug_cutscene_lifecycle,6);
           event_name="SECOND_SCRIPT_ENDED_CANDIDATE_GAMEPLAY";
         }
+        /* Publish native FIRST/SECOND script stages for physical F10.
+         * Previously only the final stage 6 was externally visible. */
+        if(event_name)
+          InterlockedExchange(&debug_cutscene_lifecycle,scene_stage);
         if(event_name && lifecycle_logs<24 &&
            (!start || (DWORD)(now-start)<90000u)) {
           char lifeline[365];
@@ -1113,7 +1117,7 @@ static void __cdecl spider_observe_native_game_input(void) {
             InterlockedExchange(&debug_auto3d_state,5);
             InterlockedExchange(&debug_f10_cutscene_skip_pending,0);
             event="SECOND_INTRO_ARMED_SKIP_REMAINING";
-          } else if(stage==6 && auto_state==7 &&
+          } else if(stage==6 && (auto_state==0 || auto_state==7) &&
                     InterlockedCompareExchange(&debug_auto3d_opt_in,0,0)==1) {
             /* Later in-level script: skip current owner once when
              * its original permission becomes 1, NOT entire level. */

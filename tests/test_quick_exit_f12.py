@@ -1932,7 +1932,7 @@ def test_f10_later_script_skip_requires_native_permission_and_is_bounded():
     manual=owner[owner.index("F10 during a live native CutSceneScript"):
                  owner.index("Optional one-F12 native 3D skip experiment")]
     for proof in ('(DWORD)(now-queued)>15000u','requested_owner!=owner',
-                  'scene_context!=1u || script_active!=1u','stage==6 && auto_state==7',
+                  'scene_context!=1u || script_active!=1u','stage==6 && (auto_state==0 || auto_state==7)',
                   'skip_allowed==1u','*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST==0u',
                   'event="LATER_NATIVE_SKIP_REQUESTED"'):
         assert proof in manual
@@ -1941,3 +1941,10 @@ def test_f10_later_script_skip_requires_native_permission_and_is_bounded():
               SRC.index("/* Returns nonzero ONLY when a recent")]
     for name in ("debug_f10_cutscene_skip_pending","debug_f10_cutscene_skip_ms","debug_f10_cutscene_skip_owner"):
         assert f"InterlockedExchange(&{name},0);" in reset
+
+def test_f10_publishes_active_intro_stage_before_native_skip_dispatch():
+    part=SRC[SRC.index("Track the TWO independent native script lifetimes"):
+             SRC.index("Optional one-F12 native 3D skip experiment")]
+    assert "InterlockedExchange(&debug_cutscene_lifecycle,scene_stage);" in part
+    assert part.index("InterlockedExchange(&debug_cutscene_lifecycle,scene_stage);") < part.index(
+        "if(event_name && lifecycle_logs<24")
