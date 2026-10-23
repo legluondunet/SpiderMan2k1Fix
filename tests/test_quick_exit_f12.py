@@ -193,6 +193,59 @@ def test_opt_in_parent_trace_reads_only_exact_verified_native_stack_frame():
 
 
 
+
+def test_postmenu_movie_opt_in_is_off_by_default_and_verified_per_owner():
+    assert "static volatile LONG postmovie_opt_in=0;" in SRC
+    assert "static volatile LONG postmovie_state=0;" in SRC
+    assert "static volatile LONG postmovie_request_ms=0;" in SRC
+    assert "SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT" in SRC
+    assert 'GetPrivateProfileIntA("Debug","Log",0,ini)==1' in SRC
+    assert "postmovie_opt_in,1" in SRC
+    tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
+             SRC.index("/* This wrapper executes ON THE ORIGINAL GAME THREAD")]
+    assert "POSTMENU-MOVIE verified native movie owner 0x4279FB" in tick
+    assert "tick_return==0x00470822u || tick_return==0x00470864u" in tick
+    assert "(DWORD)frame[4]==0x00427A00u" in tick
+    assert "(DWORD)frame[6]==1u" in tick
+    assert "postmovie_state,2,1" in tick
+    assert "SPIDER_BINK_VIDEO_HANDLE!=0u" in tick
+    assert tick.count("native_result=SPIDER_NATIVE_BINK_FRAME_TICK();")==1
+    assert "return native_result;" in tick
+    assert tick.index("tick_return==") < tick.index("frame[4]") < tick.index("frame[6]")
+    for forbidden in ("ExitProcess(", "TerminateProcess(", "PostMessageA(",
+                      "DestroyWindow(", "BinkClose(", "SPIDER_NATIVE_BINK_FRAME_TICK(1)"):
+        assert forbidden not in tick
+
+
+def test_postmenu_movie_handoff_is_post_native_script_and_cleanup_gated():
+    watcher=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
+                SRC.index("void SpiderQuickExitF12_Init(")]
+    assert "POSTMENU-MOVIE F12 intent requested" in watcher
+    assert "input_native_invocations,0,0)==0" in watcher
+    assert "last_comic_candidate_ms" in watcher
+    assert watcher.index("InterlockedExchange(&postmovie_request_ms,(LONG)now);") < watcher.index(
+        "InterlockedCompareExchange(&postmovie_state,1,0)")
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE owner cleanup checkpoint")]
+    assert "postmovie_state,0,0)==2" in owner
+    assert "POSTMENU-MOVIE original Bink + script returned" in owner
+    assert "SPIDER_GAME_BINK_ACTIVE==0u" in owner
+    assert "SPIDER_BINK_VIDEO_HANDLE==0u" in owner
+    assert "before_request==0u && after_request==0u" in owner
+    assert "started && (DWORD)(GetTickCount()-started)<15000u" in owner
+    assert "game3d_exit_state,2,0" in owner
+    assert "game3d_cleanup_baseline" in owner
+    assert "game3d_cleanup_confirmed,0" in owner
+    assert "postmovie_state,3" in owner
+    assert "*(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;" in owner
+    assert owner.count("SPIDER_NATIVE_GAME_INPUT_UPDATE();")==1
+    assert owner.index("SPIDER_NATIVE_GAME_INPUT_UPDATE();") < owner.index(
+        "POSTMENU-MOVIE original Bink + script returned")
+    for forbidden in ("ExitProcess(", "TerminateProcess(", "PostMessageA(",
+                      "DestroyWindow(", "BinkClose("):
+        assert forbidden not in owner
+
+
 def test_default_off_and_ini_section_validated():
     assert "QuickExitF12=0" in INI
     assert '"[System]\\r\\n"' in GEN
