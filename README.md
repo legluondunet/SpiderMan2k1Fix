@@ -103,7 +103,7 @@ ExperimentalQuickExitF12InIntroStills=1
   request. The normal comic lasts around five seconds in
   the tested sequence.
 
-All four INI settings default to `0`. The two New Game
+All five F12 INI settings default to `0`. The two New Game
 options are alternatives to the existing **per-process**
 environment switches
 `SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT=1` and
