@@ -176,6 +176,12 @@
  * The caller address remains on the original unmodified x86 stack.
  * These are READ-ONLY wrappers, not a synthetic keyboard shortcut. */
 #define SPIDER_NATIVE_KEY_READ ((DWORD (__cdecl *)(DWORD))(uintptr_t)0x00501CB0u)
+/* Original buffered DirectInput key-state storage (x86 SHA-matched):
+ * 0x501CB0 reads 0x6B792C+(DIK & 0xff); DIK_SPACE=0x39.
+ * 0x501C87 writes 0xFF on keydown; 0x501C8F 0x80 on keyup.
+ * DO NOT WRITE THIS GAME-OWNED KEYBOARD BUFFER. */
+#define SPIDER_NATIVE_RAW_SPACE_BYTE ((const volatile BYTE *)(uintptr_t)0x006B7965u)
+#define SPIDER_NATIVE_KEYBOARD_DEVICE ((const volatile DWORD *)(uintptr_t)0x006B7A5Cu)
 #define SPIDER_NATIVE_KEY_EDGE_CALL ((BYTE *)(uintptr_t)0x0050A65Du)
 #define SPIDER_NATIVE_KEY_LEVEL_CALL ((BYTE *)(uintptr_t)0x0050A674u)
 #define SPIDER_NATIVE_3D_INPUT_SITES_COUNT 5
@@ -318,6 +324,8 @@ static volatile LONG debug_newgame_3d_space_edges=0;
 static volatile LONG debug_newgame_native_input_probes_installed=0;
 static volatile LONG debug_newgame_space_gate_probes_installed=0;
 static volatile LONG debug_newgame_lowlevel_key_probes_installed=0;
+static volatile LONG debug_newgame_raw_key_reads=0;
+static volatile LONG debug_newgame_raw_space_reads=0;
 static volatile LONG last_native_game_input_ms=0;
 static volatile LONG last_game3d_flip_ms=0;
 /* 0 idle, 1 requested, 2 native request 7 dispatched, 3 final exit. */
@@ -633,6 +641,27 @@ static void __cdecl spider_observe_native_game_input(void) {
     DWORD start=(DWORD)InterlockedCompareExchange(&debug_newgame_3d_first_ms,0,0);
     LONG space=(GetAsyncKeyState(VK_SPACE)&0x8000)!=0;
     LONG edges=InterlockedCompareExchange(&debug_newgame_3d_space_edges,0,0);
+    BYTE native_space=*SPIDER_NATIVE_RAW_SPACE_BYTE;
+    static LONG previous_native_space=-1;
+    static LONG byte_logs=0;
+    /* Record game-owned DirectInput byte transitions, not a visual
+     * or timed estimate of which cinematic is currently playing. */
+    if(previous_native_space!=(LONG)native_space &&
+       byte_logs<45 &&
+       (!start || (DWORD)(now-start)<90000u)) {
+      char inputline[340];
+      snprintf(inputline,sizeof(inputline),
+        "QUICK-EXIT-F12: DEBUG-3D-DINPUT-SPACE-BYTE previous=%ld current=0x%02X physical_space=%ld edges=%ld keyboard_device=%lu raw_helper_reads=%ld raw_space_helper_reads=%ld since_3d_ms=%lu [ORIGINAL BUFFER READ-ONLY; SCENE UNKNOWN]",
+        (long)previous_native_space,(unsigned)native_space,
+        (long)space,(long)edges,
+        (unsigned long)(*SPIDER_NATIVE_KEYBOARD_DEVICE!=0u),
+        (long)InterlockedCompareExchange(&debug_newgame_raw_key_reads,0,0),
+        (long)InterlockedCompareExchange(&debug_newgame_raw_space_reads,0,0),
+        (unsigned long)(start?(DWORD)(now-start):0u));
+      say(inputline);
+      byte_logs++;
+    }
+    previous_native_space=(LONG)native_space;
     if((!start || (DWORD)(now-start)<90000u) &&
        (last_space!=space || sample_count<6 ||
         (!last_sample || (DWORD)(now-last_sample)>=1500u)) &&
@@ -858,6 +887,13 @@ static DWORD __cdecl spider_probe_3d_space_gate(
  */
 static DWORD __cdecl spider_probe_native_raw_key(DWORD dik) {
   DWORD result=SPIDER_NATIVE_KEY_READ(dik);
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+     InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
+     InterlockedCompareExchange(&debug_newgame_lowlevel_key_probes_installed,0,0)==1) {
+    InterlockedIncrement(&debug_newgame_raw_key_reads);
+    if(dik==0x39u)
+      InterlockedIncrement(&debug_newgame_raw_space_reads);
+  }
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
      InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
      InterlockedCompareExchange(&debug_newgame_lowlevel_key_probes_installed,0,0)==1 &&

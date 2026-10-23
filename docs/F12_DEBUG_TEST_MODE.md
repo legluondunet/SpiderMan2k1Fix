@@ -1,3 +1,47 @@
+## 2026-10-23 — 15:29:27 Wine log: game-owned DirectInput SPACE buffer audit
+
+The user-provided log `SpiderMan2k1Fix(20261023-152927).log`
+confirms the original native F12 cover+movie completion
+within **1 ms**, again reaching Stan Lee's 3D scene.
+Three physical SPACE presses at **+1878**, **+2774**,
+**+3813 ms** were recorded. First HUD instructions
+appeared after the **third** press in this session;
+other Wine sessions showed HUD immediately after
+the second. Physical press count is not a reliable
+number of completed native cutscene transitions.
+
+The newly added `DEBUG-3D-RAW-SPACE` probe was installed
+but logged no Space-key reads, and the 0x455427/
+0x455444 gate flag bit-0x100 stayed clear.
+This does NOT prove the engine never receives SPACE:
+those probes observe only specific polling functions.
+
+The SHA-matched EXE at original `0x501CB0` directly
+reads its buffered DirectInput keyboard-state byte at
+`0x006B792C + DIK`; for SPACE (DIK `0x39`)
+that is exactly `0x006B7965`. Buffered event handler
+`0x501C87` stores `0xFF` on keydown;
+`0x501C8F` stores `0x80` on keyup.
+The already installed original 3D input checkpoint now
+READ-ONLY logs `DEBUG-3D-DINPUT-SPACE-BYTE`
+whenever this byte changes, along with physical
+Space, native keyboard-device presence, helper poll
+counts, and native 3D relative elapsed time.
+Original `0x50A650` read wrappers also maintain
+diagnostic counts of *all* raw-helper invocations vs
+the subset reading Space, to disambiguate lack of
+key polling from a particular key not being polled.
+No new game hook, synthetic key, scene skip, game
+global write or controller-7 exit has been added.
+
+F12 remains fail-closed after verified Bink movie #4:
+a positively identified original scene/completion owner
+and playable-ready gate are still required before
+the user's automatic two-3D-cinematic skip can be
+safely implemented. PR remains DRAFT/unmerged.
+
+---
+
 ## 2026-10-23 — Wine 15:19:58 log: prior Space gate disproved, central key source traced
 
 Uploaded `SpiderMan2k1Fix(20261023-151958).log` (Windows

@@ -1499,3 +1499,22 @@ def test_native_raw_space_read_traces_caller_without_modifying_return():
     init=SRC[SRC.index("void SpiderQuickExitF12_Init("):]
     assert "install_debug_raw_space_probes()" in init
     assert init.count("restore_debug_raw_space_probes();")>=2
+
+
+def test_read_only_original_directinput_space_state_audit():
+    assert "SPIDER_NATIVE_RAW_SPACE_BYTE ((const volatile BYTE *)(uintptr_t)0x006B7965u)" in SRC
+    assert "SPIDER_NATIVE_KEYBOARD_DEVICE ((const volatile DWORD *)(uintptr_t)0x006B7A5Cu)" in SRC
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE owner cleanup checkpoint")]
+    assert "native_space=*SPIDER_NATIVE_RAW_SPACE_BYTE;" in owner
+    assert "DEBUG-3D-DINPUT-SPACE-BYTE" in owner
+    assert "current=0x%02X physical_space=%ld" in owner
+    assert "keyboard_device=%lu raw_helper_reads=%ld raw_space_helper_reads=%ld" in owner
+    assert "SPIDER_NATIVE_RAW_SPACE_BYTE=" not in owner
+    fn=SRC[SRC.index("static DWORD __cdecl spider_probe_native_raw_key("):
+           SRC.index("/* PASSIVE owner cleanup checkpoint")]
+    assert "InterlockedIncrement(&debug_newgame_raw_key_reads);" in fn
+    assert "InterlockedIncrement(&debug_newgame_raw_space_reads);" in fn
+    assert "DWORD result=SPIDER_NATIVE_KEY_READ(dik);" in fn
+    assert "return result;" in fn
+    assert "SendInput(" not in fn
