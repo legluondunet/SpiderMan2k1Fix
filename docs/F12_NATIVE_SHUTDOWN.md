@@ -1,3 +1,40 @@
+## 2026-10-23 — Windows 11: F12 disabled / original unsafe close suppressed (PASS)
+
+User manually disabled both
+`[System] QuickExitF12=0` and
+`ExperimentalQuickExitF12In3D=0`, pressed F12 while in the real
+main menu and 3D gameplay, and reported the key **inactive**.
+The provided `SpiderMan2k1Fix(20261023-025443).log`, from
+`v1.0.0-6668f82`, confirms initialization with:
+
+```text
+INI-CHECK: valid SpiderMan2k1Fix.ini
+QUICK-EXIT-F12: OFF; unsafe original F12 WM_CLOSE suppressed
+```
+
+The log then reaches 3D gameplay (FOV/HUD rendering) and returns
+to 2D/menu presentation, without any quick-exit dispatch. This
+confirms the **expected disabled-key behavior in this live Windows 11
+run**, while retaining suppression of the known unsafe original
+F12→WM_CLOSE behavior.
+
+Validated Windows 11 F12 functional scenarios so far:
+- Direct 3D F12: original 3D cleanup → native final cleanup, watcher
+  reports exit code 0, process absent and no matching WER crash event.
+- Native 3D→menu then F12 from menu: watcher reports exit code 0,
+  process absent and no matching crash event.
+- Alt+Tab away: user confirms F12 in background leaves game running;
+  after returning to the menu F12 passes watcher checks.
+- F12 disabled: user confirms inert key in menu and 3D; above log
+  confirms opt-out and suppression of original unsafe F12 path.
+
+These are per-run validations, **not** repeated stress tests. Comic
+covers and static intro screens still lack verified mode-owned native
+exit paths. Maintain draft PR #26 and default-off opt-in; do not merge
+without explicit user approval.
+
+---
+
 ## 2026-10-23 — Windows 11 build #520: 3D F12 shutdown verified externally (PASS)
 
 User ran the repository's read-only `tools/Verify-F12QuickExit.ps1`
