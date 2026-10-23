@@ -154,6 +154,20 @@
  *  It remains unmodified and executed exactly once on the game thread. */
 #define SPIDER_NATIVE_GAME_INPUT_CALL ((BYTE *)(uintptr_t)0x0045553Bu)
 #define SPIDER_NATIVE_GAME_INPUT_UPDATE ((void (__cdecl *)(void))(uintptr_t)0x00440EF0u)
+/* SHA-matched original 3D input calls inside native 0x440EF0.
+ * These belong to the gameplay AND 3D scripted intro update, so none
+ * of them alone can identify Stan Lee, the second 3D cinematic or a
+ * playable level. Interpose only READ-ONLY after 3D New Game entry.
+ * All five originally CALL 0x50C180 with (mask,1,1). */
+#define SPIDER_NATIVE_3D_INPUT_SITES_COUNT 5
+#define SPIDER_NATIVE_3D_INPUT ((BYTE (__cdecl *)(DWORD,DWORD,DWORD))(uintptr_t)0x0050C180u)
+static BYTE *const spider_native_3d_input_sites[SPIDER_NATIVE_3D_INPUT_SITES_COUNT]={
+  (BYTE *)(uintptr_t)0x00440F34u,
+  (BYTE *)(uintptr_t)0x00440F77u,
+  (BYTE *)(uintptr_t)0x00440F8Eu,
+  (BYTE *)(uintptr_t)0x00440FAFu,
+  (BYTE *)(uintptr_t)0x00441606u
+};
 #define SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE ((const volatile DWORD *)(uintptr_t)0x005FAED8u)
 #define SPIDER_NATIVE_GAME_INPUT_FLAG_1 ((const volatile BYTE *)(uintptr_t)0x006611F0u)
 #define SPIDER_NATIVE_GAME_INPUT_FLAG_2 ((const volatile BYTE *)(uintptr_t)0x006611E0u)
@@ -195,6 +209,14 @@ static const BYTE menu_wait_exit_original[5]={0xE8,0x52,0x1B,0x05,0x00};
 static const BYTE top_level_native_quit_test_original[6]={0x38,0x1D,0x88,0xCF,0x60,0x00};
 static const BYTE native_pause_call_original[5]={0xE8,0xF2,0x66,0x02,0x00};
 static const BYTE native_game_input_call_original[5]={0xE8,0xB0,0xB9,0xFE,0xFF};
+/* Exact original 2001 EXE CALL rel32 -> 0x50C180 at five 3D sites. */
+static const BYTE spider_native_3d_input_original[SPIDER_NATIVE_3D_INPUT_SITES_COUNT][5]={
+  {0xE8,0x47,0xB2,0x0C,0x00}, /* 0x440F34: 0x40040 */
+  {0xE8,0x04,0xB2,0x0C,0x00}, /* 0x440F77: 0x40000/0x40040 */
+  {0xE8,0xED,0xB1,0x0C,0x00}, /* 0x440F8E: 0x10010 */
+  {0xE8,0xCC,0xB1,0x0C,0x00}, /* 0x440FAF: 0x20220 */
+  {0xE8,0x75,0xAB,0x0C,0x00}  /* 0x441606: 0x100 */
+};
 static const BYTE native_game_cleanup_call_original[5]={0xE8,0xD2,0xA6,0xFD,0xFF};
 static const BYTE native_controller7_finish_call_original[5]={0xE8,0x83,0x46,0x03,0x00};
 
@@ -267,6 +289,9 @@ static volatile LONG debug_newgame_comic_fastforward_observed=0;
 /* Passive count of physical SPACE key-down edges after the original
  * movie-4 -> 3D owner transition. This NEVER unlocks gameplay F12 exit. */
 static volatile LONG debug_newgame_3d_space_edges=0;
+/* Optional exact CALL-site probes, always pass through original input.
+ * Used for mapping SPACE-controlled scripted scene transitions. */
+static volatile LONG debug_newgame_native_input_probes_installed=0;
 static volatile LONG last_native_game_input_ms=0;
 static volatile LONG last_game3d_flip_ms=0;
 /* 0 idle, 1 requested, 2 native request 7 dispatched, 3 final exit. */
@@ -588,14 +613,18 @@ static void __cdecl spider_observe_native_game_input(void) {
        sample_count<75) {
       char trace[370];
       snprintf(trace,sizeof(trace),
-        "QUICK-EXIT-F12: DEBUG-NEWGAME-3D-PHASE sample=%ld since_3d_ms=%lu space_down=%ld space_edges=%ld mode=%lu task=%lu async=%lu flag1=%u flag2=%u native_timer=%lu pause_ctx=%lu [READ-ONLY; TWO 3D INTRO SCENES; PLAYABLE NOT VERIFIED]",
+        "QUICK-EXIT-F12: DEBUG-NEWGAME-3D-PHASE sample=%ld since_3d_ms=%lu space_down=%ld space_edges=%ld mode=%lu task=%lu async=%lu flag1=%u flag2=%u native_timer=%lu pause_ctx=%lu movie_mode=%lu phase_obj=%lu script_slot=%lu event_raw=%lu [READ-ONLY; TWO 3D INTRO SCENES; PLAYABLE NOT VERIFIED]",
         (long)(sample_count+1),(unsigned long)(start?(DWORD)(now-start):0u),
         (long)space,(long)edges,(unsigned long)*SPIDER_ENGINE_MODE,
         (unsigned long)*SPIDER_ENGINE_TASK,(unsigned long)*SPIDER_ENGINE_ASYNC_STATE,
         (unsigned)*SPIDER_NATIVE_GAME_INPUT_FLAG_1,
         (unsigned)*SPIDER_NATIVE_GAME_INPUT_FLAG_2,
         (unsigned long)*SPIDER_NATIVE_GAME_INPUT_TIMER_ACTIVE,
-        (unsigned long)(*SPIDER_PAUSE_CONTEXT!=0u));
+        (unsigned long)(*SPIDER_PAUSE_CONTEXT!=0u),
+        (unsigned long)*(const volatile DWORD *)(uintptr_t)0x005FAECCu,
+        (unsigned long)(*(const volatile DWORD *)(uintptr_t)0x005FAED0u!=0u),
+        (unsigned long)(*(const volatile DWORD *)(uintptr_t)0x006B468Cu!=0u),
+        (unsigned long)*(const volatile DWORD *)(uintptr_t)0x0066126Cu);
       say(trace);
       sample_count++;
       last_sample=now;
@@ -673,6 +702,70 @@ static void __cdecl spider_observe_native_game_input(void) {
       (unsigned)after_1,(unsigned)after_2,(unsigned long)elapsed_ticks);
     say(line);
   }
+}
+
+/* PASSIVE, exact-site 3D input diagnostics for the user's original
+ * SHA-matched SpideyPC.exe. This wrapper executes the original
+ * 0x50C180 ONCE, returns the identical BYTE result and observes only
+ * scalar engine state + key presence. It does not pretend that
+ * VK_SPACE necessarily corresponds to any given native input MASK.
+ *
+ * In particular, no F12 request is emitted to native controller 7
+ * from this routine. We need positive proof of the two separate
+ * scripted 3D scenes AND actual playable state before any F12 SPACE
+ * skip injection or gameplay EXIT can be enabled. */
+static BYTE __cdecl spider_probe_3d_native_input(
+    DWORD mask,DWORD arg1,DWORD arg2) {
+  BYTE original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+     InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
+     InterlockedCompareExchange(&debug_newgame_native_input_probes_installed,0,0)==1) {
+    const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+    DWORD return_va=(DWORD)frame[1],now=GetTickCount();
+    static LONG last_result[SPIDER_NATIVE_3D_INPUT_SITES_COUNT]={-1,-1,-1,-1,-1};
+    static LONG last_space[SPIDER_NATIVE_3D_INPUT_SITES_COUNT]={-1,-1,-1,-1,-1};
+    static LONG last_mode[SPIDER_NATIVE_3D_INPUT_SITES_COUNT]={-1,-1,-1,-1,-1};
+    static DWORD last_emit[SPIDER_NATIVE_3D_INPUT_SITES_COUNT]={0,0,0,0,0};
+    static LONG total=0;
+    int i;
+    for(i=0;i<SPIDER_NATIVE_3D_INPUT_SITES_COUNT;++i) {
+      if(return_va==(DWORD)(uintptr_t)spider_native_3d_input_sites[i]+5u) {
+        LONG space=(GetAsyncKeyState(VK_SPACE)&0x8000)!=0;
+        LONG movie_mode=*(const volatile LONG *)(uintptr_t)0x005FAECCu;
+        DWORD first=(DWORD)InterlockedCompareExchange(&debug_newgame_3d_first_ms,0,0);
+        DWORD duration=first?(DWORD)(now-first):0u;
+        LONG changed=last_result[i]!=(LONG)(original!=0u) ||
+                     last_space[i]!=space || last_mode[i]!=movie_mode;
+        if(duration<=120000u && total<100 &&
+           (total<5 || changed ||
+            (space && (!last_emit[i] || (DWORD)(now-last_emit[i])>=750u)) ||
+            (!last_emit[i] || (DWORD)(now-last_emit[i])>=4000u))) {
+          char line[490];
+          snprintf(line,sizeof(line),
+            "QUICK-EXIT-F12: DEBUG-3D-NATIVE-INPUT site=0x%08lX mask=0x%08lX args=%lu,%lu result=%u space_down=%ld space_edges=%ld phase_state=%ld phase_object=%lu script_slots_active=%lu event_raw=%lu flag1=%u flag2=%u since_3d_ms=%lu [ORIGINAL CALLED; READ-ONLY; SCENE NOT IDENTIFIED]",
+            (unsigned long)(return_va-5u),(unsigned long)mask,
+            (unsigned long)arg1,(unsigned long)arg2,
+            (unsigned)original,(long)space,
+            (long)InterlockedCompareExchange(&debug_newgame_3d_space_edges,0,0),
+            (long)movie_mode,
+            (unsigned long)(*(const volatile DWORD *)(uintptr_t)0x005FAED0u!=0u),
+            (unsigned long)(*(const volatile DWORD *)(uintptr_t)0x006B468Cu!=0u),
+            (unsigned long)*(const volatile DWORD *)(uintptr_t)0x0066126Cu,
+            (unsigned)*SPIDER_NATIVE_GAME_INPUT_FLAG_1,
+            (unsigned)*SPIDER_NATIVE_GAME_INPUT_FLAG_2,
+            (unsigned long)duration);
+          say(line);
+          ++total;
+          last_emit[i]=now;
+        }
+        last_result[i]=(LONG)(original!=0u);
+        last_space[i]=space;
+        last_mode[i]=movie_mode;
+        break;
+      }
+    }
+  }
+  return original;
 }
 
 /* PASSIVE owner cleanup checkpoint for the real gameplay path.
@@ -1370,6 +1463,38 @@ static void restore_passive_game_cleanup_probe(void) {
                           native_game_cleanup_call_original);
 }
 
+/* Instrument all five exact original 3D input CALL sites or none.
+ * This is passive runtime attribution only; original 0x50C180
+ * result and stack ownership remain unchanged. No hidden fallback
+ * to a synthetic SPACE or controller-7 process EXIT. */
+static int install_debug_3d_native_input_probes(void) {
+  int i,j;
+  for(i=0;i<SPIDER_NATIVE_3D_INPUT_SITES_COUNT;++i)
+    if(memcmp(spider_native_3d_input_sites[i],
+              spider_native_3d_input_original[i],5)!=0)
+      return 0;
+  for(i=0;i<SPIDER_NATIVE_3D_INPUT_SITES_COUNT;++i)
+    if(!patch_native_call(spider_native_3d_input_sites[i],
+                          spider_native_3d_input_original[i],
+                          (const void *)spider_probe_3d_native_input)) {
+      for(j=i-1;j>=0;--j)
+        restore_intro_tick_call(spider_native_3d_input_sites[j],
+                                spider_native_3d_input_original[j]);
+      return 0;
+    }
+  InterlockedExchange(&debug_newgame_native_input_probes_installed,1);
+  return 1;
+}
+
+static void restore_debug_3d_native_input_probes(void) {
+  int i;
+  if(InterlockedCompareExchange(&debug_newgame_native_input_probes_installed,0,1)!=1)
+    return;
+  for(i=0;i<SPIDER_NATIVE_3D_INPUT_SITES_COUNT;++i)
+    restore_intro_tick_call(spider_native_3d_input_sites[i],
+                            spider_native_3d_input_original[i]);
+}
+
 static int install_passive_game_input_probe(void) {
   return patch_native_call(SPIDER_NATIVE_GAME_INPUT_CALL,
                            native_game_input_call_original,
@@ -2014,7 +2139,18 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     else
       say("QUICK-EXIT-F12: DEBUG-NEWGAME-COMIC exact owner/clock signature mismatch; native comic timer unchanged, deferred movie-4 fallback");
   }
+  /* Optional diagnostic requires F12TestMode and Log, and runs only
+   * from the original 3D input CALL sites. If anything mismatches,
+   * leave those calls completely untouched. */
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+     GetPrivateProfileIntA("Debug","Log",0,ini)==1) {
+    if(install_debug_3d_native_input_probes())
+      say("QUICK-EXIT-F12: DEBUG-3D-NATIVE-INPUT five original 0x50C180 3D input callsites traced (original result untouched; SPACE owner and playable boundary UNKNOWN)");
+    else
+      say("QUICK-EXIT-F12: DEBUG-3D-NATIVE-INPUT callsite signatures mismatch; passive 3D input probes disabled, F12 exit guard preserved");
+  }
   if(!suppress_unsafe_native_f12()) {
+    restore_debug_3d_native_input_probes();
     restore_newgame_comic_clock_hook();
     restore_debug_menu_wait_hooks();
     restore_intro_timed_clock_hook();
@@ -2033,6 +2169,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   thread=CreateThread(NULL,0,f12_input_thread,NULL,0,NULL);
   if(!thread) {
     InterlockedExchange(&enabled,0);
+    restore_debug_3d_native_input_probes();
     restore_newgame_comic_clock_hook();
     restore_debug_menu_wait_hooks();
     restore_intro_timed_clock_hook();

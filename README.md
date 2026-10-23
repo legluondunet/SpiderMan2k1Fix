@@ -65,8 +65,11 @@ is intentionally blocked from shutting down the process until the
 actual playable boundary is established. **F12 does NOT yet skip
 either 3D scene or re-enable gameplay exit in the unclassified run.**
 With `Log=1` the patch captures separate physical Space key-down
-events and read-only native game-input state. These observations do
-not themselves mark either scene complete. No synthetic Space/Enter,
+events, a read-only original `0x440EF0` phase-state snapshot, and
+the input masks/results of five signature-verified native
+`0x50C180` 3D CALL sites (the original function and BYTE result are
+preserved). These observations do not themselves mark either scene
+complete, nor identify which input mask is actually Space. No synthetic Space/Enter,
 process termination, or arbitrary controller transition is used.
 The single `[Debug] F12TestMode` option overrides the older
 `[System]` F12 controls and defaults to `0`; `Log=1` is recommended.

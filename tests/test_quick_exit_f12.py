@@ -1392,3 +1392,42 @@ def test_new_game_comic_native_l1cov_timer_is_skipped_without_clock_or_script_wr
               SRC.index("/* Wrapper on the ORIGINAL GAME THREAD")]
     assert "DEBUG-NEWGAME-COMIC-FINISHED" in movie
     assert "postmovie_state,2,stage" in movie
+
+
+def test_debug_3d_original_action_callsite_attribution_cannot_skip_or_exit():
+    """Five original 0x440EF0 native input calls are observed unmodified."""
+    for va,blob in (
+        ("0x00440F34u","0xE8,0x47,0xB2,0x0C,0x00"),
+        ("0x00440F77u","0xE8,0x04,0xB2,0x0C,0x00"),
+        ("0x00440F8Eu","0xE8,0xED,0xB1,0x0C,0x00"),
+        ("0x00440FAFu","0xE8,0xCC,0xB1,0x0C,0x00"),
+        ("0x00441606u","0xE8,0x75,0xAB,0x0C,0x00"),
+    ):
+        assert va in SRC
+        assert blob in SRC
+    assert "SPIDER_NATIVE_3D_INPUT_SITES_COUNT 5" in SRC
+    owner=SRC[SRC.index("static BYTE __cdecl spider_probe_3d_native_input("):
+              SRC.index("/* PASSIVE owner cleanup checkpoint")]
+    assert "BYTE original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);" in owner
+    assert "return original;" in owner
+    assert "DEBUG-3D-NATIVE-INPUT" in owner
+    assert "phase_state=%ld phase_object=%lu script_slots_active=%lu" in owner
+    assert "GetAsyncKeyState(VK_SPACE)" in owner
+    assert "SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2)" in owner
+    for bad in ("SendInput(", "keybd_event(", "PostMessageA(",
+                "ExitProcess(", "TerminateProcess(",
+                "*(volatile DWORD *)(uintptr_t)0x0060CFA4u=",
+                "return 1;"):
+        assert bad not in owner
+    hooks=SRC[SRC.index("static int install_debug_3d_native_input_probes(void)"):
+              SRC.index("static int install_passive_game_input_probe(void)")]
+    assert "memcmp(spider_native_3d_input_sites[i]" in hooks
+    assert "spider_native_3d_input_original[i],5" in hooks
+    assert "spider_probe_3d_native_input" in hooks
+    assert "for(j=i-1;j>=0;--j)" in hooks
+    assert "restore_intro_tick_call" in hooks
+    init=SRC[SRC.index("void SpiderQuickExitF12_Init("):]
+    assert "install_debug_3d_native_input_probes()" in init
+    assert init.count("restore_debug_3d_native_input_probes();")>=2
+    assert "GetPrivateProfileIntA(\"Debug\",\"Log\",0,ini)==1" in init
+    assert "F12 exit guard preserved" in init

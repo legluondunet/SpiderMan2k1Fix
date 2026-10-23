@@ -1,3 +1,45 @@
+## 2026-10-23 — Native 3D original-input attribution before enabling F12 cutscene skip
+
+The supplied SHA-verified original executable shows that the native 3D
+gameplay tick `0x45553B` calls `0x440EF0`. That game routine
+consults the ORIGINAL `0x50C180` input handler at the following
+SHA-confirmed callsites: `0x440F34` (mask `0x40040`),
+`0x440F77` (dynamic `0x40000`/`0x40040`),
+`0x440F8E` (mask `0x10010`), `0x440FAF` (mask
+`0x20220`) and `0x441606` (mask `0x100`).
+
+**Important:** a static mask and a physical SPACE key press have not
+been proven equivalent. Nor does the common 3D tick identify either
+of the two cinematic scenes or the first playable game frame.
+
+The new **read-only** native-input diagnostic is installed only with
+`[Debug] F12TestMode=1` AND `Log=1`, after all five exact instruction
+signatures are verified. It wraps all five calls with original ABI
+and invokes `0x50C180(mask,1,1)` **once per call**, returning the
+unaltered native result. It samples physical Space-down, native mask,
+actual input result, the game's own `0x5FAECC` phase mode,
+`0x5FAED0` phase object presence, `0x6B468C` script callback slot
+presence, `0x66126C` event marker and original engine flags.
+The existing periodic `DEBUG-NEWGAME-3D-PHASE` snapshot also
+records these extra game-owned scalar variables.
+
+This hook does **not** emit SPACE, alter game memory, activate any
+scene, increment any native skip counter, or unlock full-game F12.
+In the known post-Bink New Game 3D session, the existing
+fail-closed F12 EXIT guard remains untouched.
+
+**Next validation:** compile Windows x86; run New Game, press F12
+on the comic, then once during Stan Lee narration press/release
+physical SPACE, then another press/release during the second 3D
+cinematic, and finally briefly play the level. Provide log
+`DEBUG-3D-NATIVE-INPUT` plus `DEBUG-NEWGAME-3D-PHASE`.
+We will compare original mask results and phase object transitions
+at each boundary before injecting native completion or unlocking
+the gameplay EXIT action. Auto-skipping the two 3D scenes and the
+positive playable-ready boundary are **not yet implemented**.
+
+---
+
 ## 2026-10-23 — Original executable disassembled: direct F12 comic timer expiry
 
 The user supplied the unchanged original `SpideyPC.exe` (1,507,328
