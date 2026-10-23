@@ -976,6 +976,9 @@ static const void *maybe_correct_native_comic(void *device,D3DPRIMITIVETYPE type
        (unsigned)count,(unsigned)type,(unsigned long)fvf,(unsigned long)rva,
        (unsigned)desc.dwWidth,(unsigned)desc.dwHeight,
        (unsigned)desktop_w,(unsigned)desktop_h)) return source;
+  /* Rendering only; never treat a candidate quad as native scene ownership. */
+  SpiderQuickExitF12_ObserveComicRender(InterlockedCompareExchange(&flip_count,0,0),
+                                        rva,desc.dwWidth,desc.dwHeight);
   if(!SpiderComicNative_Transform((const SpiderMenuVertex*)source,copy,
                 (unsigned)count,(unsigned)desktop_w,(unsigned)desktop_h)) return source;
   InterlockedExchange(&f9_comic_last_draw_flip,
