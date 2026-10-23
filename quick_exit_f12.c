@@ -2,6 +2,9 @@
  * Supported original SpideyPC.exe SHA-256:
  * 0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea
  *
+ * Native main menu: original Shell_MainMenu 0x00493990, game-thread
+ * tick CALL 0x00493DD6 and original menu-item selection/cleanup.
+ *
  * F10Shortcut is hidden under [Debug] and defaults OFF. F10 can skip
  * opening Bink movies to the menu, New Game comic/movie and permission-
  * gated original 3D scripts to gameplay, or return from playable 3D to
