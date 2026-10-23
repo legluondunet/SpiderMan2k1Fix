@@ -1599,3 +1599,27 @@ def test_read_only_dispatch_event_node_fields_not_scene_permission():
     assert "node[4]=" not in owner
     assert "node[5]=" not in owner
     assert "SendInput(" not in owner
+
+
+def test_native_3d_dispatch_chain_probe_is_bounded_guarded_and_read_only():
+    """Compare game-owned event nodes, not just the inert list head.
+    Never use these generic event signals as F12 exit permissions."""
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
+    probe=owner[owner.index("The FIRST original event-dispatch node"):
+                owner.index("DEBUG-3D-DISPATCH-CHAIN") + 650]
+    assert "while(cursor!=0u && i<12)" in probe
+    assert "DWORD visited[12]" in probe
+    assert "VirtualQuery((LPCVOID)(uintptr_t)cursor,&mbi,sizeof(mbi))" in probe
+    assert "mbi.State!=MEM_COMMIT" in probe
+    assert "PAGE_GUARD|PAGE_NOACCESS" in probe
+    assert "mbi.RegionSize-offset<0x18u" in probe
+    assert "event_id=*(const volatile DWORD *)(uintptr_t)(cursor+0x0Cu)" in probe
+    assert "next=*(const volatile DWORD *)(uintptr_t)(cursor+0x14u)" in probe
+    assert "fingerprint!=prior_fingerprint" in probe
+    assert "chain_logs<65" in probe
+    assert "VIRTUALQUERY-GUARDED; READ-ONLY; SCENE UNKNOWN" in probe
+    assert "node[4]=" not in probe
+    assert "node[5]=" not in probe
+    assert "SendInput(" not in probe
+    assert "ExitProcess(" not in probe

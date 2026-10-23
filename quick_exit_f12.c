@@ -827,6 +827,89 @@ static void __cdecl spider_observe_native_game_input(void) {
       old_pending=pending;
       old_physical=space;
     }
+    /* The FIRST original event-dispatch node has event_id=0 and
+     * unchanged 0/0 flags during BOTH 3D intros AND the gameplay
+     * jump (Wine #674). Original 0x4DE890 traverses node->next
+     * at +0x14 and 0x4DE8D0 also uses the 256-entry event buckets.
+     * Inspect at most TWELVE original nodes, on the native thread,
+     * checking EVERY memory region before dereferencing. No
+     * traversal is ever used as skip or F12-exit authority. */
+    {
+      DWORD cursor=*SPIDER_NATIVE_3D_DISPATCH_HEAD;
+      DWORD visited[12]={0u},fingerprint=2166136261u;
+      char nodes[720],line[1000];
+      size_t used=0u;
+      int i=0,truncated=0,unreadable=0,cycle=0;
+      static DWORD prior_fingerprint=0u,last_chain_log=0u;
+      static LONG prior_physical=-1,chain_logs=0;
+      nodes[0]='\0';
+      while(cursor!=0u && i<12) {
+        MEMORY_BASIC_INFORMATION mbi;
+        uintptr_t base,offset;
+        const volatile BYTE *node;
+        DWORD event_id,next;
+        BYTE triggered,pending;
+        int j,n;
+        if(cursor<0x00010000u) {unreadable=1;break;}
+        for(j=0;j<i;j++) if(visited[j]==cursor) break;
+        if(j<i) {cycle=1;break;}
+        if(VirtualQuery((LPCVOID)(uintptr_t)cursor,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+           mbi.State!=MEM_COMMIT ||
+           (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS))!=0 ||
+           ((mbi.Protect&0xffu)!=PAGE_READONLY &&
+            (mbi.Protect&0xffu)!=PAGE_READWRITE &&
+            (mbi.Protect&0xffu)!=PAGE_WRITECOPY &&
+            (mbi.Protect&0xffu)!=PAGE_EXECUTE_READ &&
+            (mbi.Protect&0xffu)!=PAGE_EXECUTE_READWRITE &&
+            (mbi.Protect&0xffu)!=PAGE_EXECUTE_WRITECOPY)) {
+          unreadable=1;break;
+        }
+        base=(uintptr_t)mbi.BaseAddress;
+        if((uintptr_t)cursor<base){unreadable=1;break;}
+        offset=(uintptr_t)cursor-base;
+        if(offset>mbi.RegionSize || mbi.RegionSize-offset<0x18u) {
+          unreadable=1;break;
+        }
+        visited[i]=cursor;
+        node=(const volatile BYTE *)(uintptr_t)cursor;
+        triggered=node[4];
+        pending=node[5];
+        event_id=*(const volatile DWORD *)(uintptr_t)(cursor+0x0Cu);
+        next=*(const volatile DWORD *)(uintptr_t)(cursor+0x14u);
+        fingerprint=(fingerprint^cursor)*16777619u;
+        fingerprint=(fingerprint^event_id)*16777619u;
+        fingerprint=(fingerprint^triggered)*16777619u;
+        fingerprint=(fingerprint^pending)*16777619u;
+        fingerprint=(fingerprint^next)*16777619u;
+        n=snprintf(nodes+used,sizeof(nodes)-used,
+          "%s%d:%08lX/%u/%u",i?" ":"",i,
+          (unsigned long)event_id,(unsigned)triggered,(unsigned)pending);
+        if(n>0) {
+          size_t remaining=sizeof(nodes)-used;
+          used+=(size_t)n<remaining?(size_t)n:remaining-1u;
+        }
+        cursor=next;
+        ++i;
+      }
+      if(cursor!=0u && i>=12) truncated=1;
+      fingerprint=(fingerprint^(DWORD)i)*16777619u;
+      fingerprint=(fingerprint^(DWORD)unreadable)*16777619u;
+      fingerprint=(fingerprint^(DWORD)cycle)*16777619u;
+      if((fingerprint!=prior_fingerprint || space!=prior_physical ||
+          !last_chain_log || (DWORD)(now-last_chain_log)>=3000u) &&
+         chain_logs<65 && (!start || (DWORD)(now-start)<90000u)) {
+        snprintf(line,sizeof(line),
+          "QUICK-EXIT-F12: DEBUG-3D-DISPATCH-CHAIN count=%d hash=0x%08lX truncated=%d unreadable=%d cycle=%d nodes=[%s] space=%ld edges=%ld since_3d_ms=%lu [FIRST 12 GAME EVENT NODES ONLY; VIRTUALQUERY-GUARDED; READ-ONLY; SCENE UNKNOWN]",
+          i,(unsigned long)fingerprint,truncated,unreadable,cycle,
+          nodes,(long)space,(long)edges,
+          (unsigned long)(start?(DWORD)(now-start):0u));
+        say(line);
+        last_chain_log=now;
+        ++chain_logs;
+      }
+      prior_fingerprint=fingerprint;
+      prior_physical=space;
+    }
     if((!start || (DWORD)(now-start)<90000u) &&
        (last_space!=space || sample_count<6 ||
         (!last_sample || (DWORD)(now-last_sample)>=1500u)) &&

@@ -1,3 +1,63 @@
+## 2026-10-23 — Wine 17:13:51 (#674): first event node inert, original list is multi-node
+
+The user log SpiderMan2k1Fix(20261023-171351).log confirms native
+comic L1COV.bmp + Bink movie #4 skip in **1 ms**. Following
+native 3D entry, SPACE key events at **+1990 ms** and
+**+3717 ms** correlate with the two original introductory
+3D cinematic skips, followed by the separately requested
+deliberate gameplay jump at **+5121 ms**.
+The game's native 0x661200 action 0x10 activates at all
+three presses.
+
+Original actor/controller state at [0x56F3B8]+0x2A0 again
+goes **5->3->5** on the first cutscene SPACE, then
+**5->3 persistently** on the second, and remains 3 on the
+actual gameplay jump. Its 3 transient state during
+the first introduction disqualifies unguarded
+controller_state==3 as an automatic playable predicate.
+
+The new FIRST-NODE diagnostic was conclusive only about
+that particular node: the dispatch pointer stays
+0x059E8AC0, first node event_id=0, triggered=0,
+pending=0, next=0x059E8B20 for ALL three events and
+the sampled gameplay. Static disassembly proves that
+original 0x4DE890 / 0x4DE8B0 operate on the COMPLETE
+singly linked dispatch list at node +0x14, while
+0x4DE8D0 also searches event bucket chains at +0x10
+starting from hash table 0x6B4214. Reading only the
+first node is NOT evidence that the rest of the
+game-owned dispatcher is inert or has no script event
+information.
+
+New read-only, game-thread-only DEBUG-3D-DISPATCH-CHAIN
+probe in the existing original 3D owner:
+- Traverse a maximum of 12 original event list nodes
+  following the actual +0x14 link. Check EACH node's
+  entire 0x18-byte span with Windows VirtualQuery
+  (committed, readable, non-guard region) first.
+- Detect cycles and unreadable pointers without
+  dereferencing either one. Log bounds/truncation.
+- Read original node event ID +0x0C, triggered +4,
+  pending +5, and link +0x14. Emit bounded per-session
+  fingerprints and compact node snapshots on genuine
+  changes, physical SPACE state transitions and a
+  sparse heartbeat, at most 65 lines.
+- The probe DOES NOT install a new native hook, modify
+  game bytes, forge action 0x10, walk unbounded
+  pointers, or let dispatcher data authorize F12 exit.
+
+Neither the original cinematic script owner nor
+the positive gameplay-ready boundary is yet proven.
+If even the bounded chain contains no meaningful
+difference, stop adding generic keyboard or actor
+heuristics: reverse-engineer original script/camera
+director and its scene progression directly. The
+full one-F12 skip of both 3D cinematic sequences
+and playable-only exit remain unimplemented.
+PR #26 remains draft/unmerged without user approval.
+
+---
+
 ## 2026-10-23 — Analysis of user Wine 16:25:54 log, native dispatcher observation
 
 Build #673 log SpiderMan2k1Fix(20261023-162554).log shows
