@@ -945,7 +945,26 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
       LONG menu_time=InterlockedCompareExchange(&last_menu_frame_ms,0,0);
       LONG movie_time=InterlockedCompareExchange(&last_movie_frame_ms,0,0);
       previously_down=TRUE;
-      if(menu_time && (DWORD)(now-(DWORD)menu_time)<=400u) {
+      if(InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 &&
+                InterlockedCompareExchange(&postmovie_opt_in,0,0)==1 &&
+                InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
+                InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
+                InterlockedCompareExchange(&input_native_invocations,0,0)==0 &&
+                *SPIDER_ENGINE_MODE==0u &&
+                *SPIDER_GAME_BINK_ACTIVE==0u &&
+                *SPIDER_BINK_VIDEO_HANDLE==0u &&
+                InterlockedCompareExchange(&last_comic_candidate_ms,0,0)!=0 &&
+                (DWORD)(now-(DWORD)InterlockedCompareExchange(
+                  &last_comic_candidate_ms,0,0))<=6500u) {
+        /* Comic native owner is not known. Never cut its timer short:
+         * defer F12 and let it finish on its own, then interrupt
+         * ONLY the exact verified New Game video #4 when it starts. */
+        if(InterlockedCompareExchange(&postmovie_state,0,0)==0) {
+          InterlockedExchange(&postmovie_request_ms,(LONG)now);
+          if(InterlockedCompareExchange(&postmovie_state,4,0)==0)
+            say("QUICK-EXIT-F12: COMIC F12 deferred until native New Game movie 4; comic continues normally [EXPERIMENTAL]");
+        }
+      } else if(menu_time && (DWORD)(now-(DWORD)menu_time)<=400u) {
         /* Give the previously Windows-validated main-menu path priority,
          * including a key press just after the last decoded intro frame. */
         unsigned elapsed=0;
@@ -985,25 +1004,6 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
           InterlockedExchange(&postmovie_request_ms,(LONG)now);
           if(InterlockedCompareExchange(&postmovie_state,1,0)==0)
             say("QUICK-EXIT-F12: POSTMENU-MOVIE F12 intent requested; original Bink owner verification pending [EXPERIMENTAL]");
-        }
-      } else if(InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 &&
-                InterlockedCompareExchange(&postmovie_opt_in,0,0)==1 &&
-                InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
-                InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
-                InterlockedCompareExchange(&input_native_invocations,0,0)==0 &&
-                *SPIDER_ENGINE_MODE==0u &&
-                *SPIDER_GAME_BINK_ACTIVE==0u &&
-                *SPIDER_BINK_VIDEO_HANDLE==0u &&
-                InterlockedCompareExchange(&last_comic_candidate_ms,0,0)!=0 &&
-                (DWORD)(now-(DWORD)InterlockedCompareExchange(
-                  &last_comic_candidate_ms,0,0))<=6500u) {
-        /* Comic native owner is not known. Never cut its timer short:
-         * defer F12 and let it finish on its own, then interrupt
-         * ONLY the exact verified New Game video #4 when it starts. */
-        if(InterlockedCompareExchange(&postmovie_state,0,0)==0) {
-          InterlockedExchange(&postmovie_request_ms,(LONG)now);
-          if(InterlockedCompareExchange(&postmovie_state,4,0)==0)
-            say("QUICK-EXIT-F12: COMIC F12 deferred until native New Game movie 4; comic continues normally [EXPERIMENTAL]");
         }
       } else if(InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
                 InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
