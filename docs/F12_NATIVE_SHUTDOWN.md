@@ -1,3 +1,54 @@
+## 2026-10-23 — Opt-in, one-shot runtime attribution of New Game native Bink parent
+
+The verified original EXE contains **30 different CALL sites** for
+native `0x470750`. Static inspection cannot uniquely attribute the
+post-menu `New Game` cinematic to one of them. To resolve this without
+30 additional hooks, a **strictly opt-in diagnostic** now uses the
+two *already installed* native Bink frame-tick wrappers at
+`0x47081D` and `0x47085F`, once after the interactive menu.
+
+Enable only for the Windows test in PowerShell, with
+`[System] QuickExitF12=1` and `[Debug] Log=1`:
+
+```powershell
+$env:SPIDERMAN2K1FIX_F12_PARENT_TRACE = "1"
+.\SpideyPC.exe
+```
+
+Then select `New Game`, let the comic still disappear, press Space
+during the cinematic, and (if native 3D works normally) F12 in
+3D. Inspect `POST-SHELL-BINK-PARENT` once, especially
+`native_tick_return`, `parent_return`,
+`known_original_site`, `movie_id` and `allow_skip`.
+
+The x86 owner at `0x470750` saves ESI and EBX before both
+frame-tick CALL instructions. The instrumented wrapper uses
+GCC `__builtin_frame_address(0)` to obtain *its own*
+frame pointer on entry (not an unwinder). It first checks the
+expected original tick-return address `0x470822` or
+`0x470864`; **only if matched** does it read the video
+owner's caller return address and first two arguments
+from the same already-established stack. The parent return
+is compared to the complete static whitelist of **30 exact
+return addresses**. All numbers are observations; no return
+address or game-global is overwritten. If the layout is
+unexpected, no deeper stack read occurs.
+
+This one-time diagnostic is **off by default**, requires a
+separate environment switch and Debug Log=1 in addition to
+the existing QuickExitF12 option, and makes **no new game
+hook, native input invocation, Bink tick invocation or F12
+exit action**. A whitelisted caller still does *not* mean
+we have a safe post-video exit checkpoint. Only real
+Windows/Wine execution can validate the traced stack layout;
+signature gate and passive runtime log provide safe failure
+without inferring scene ownership.
+
+To clear the environment switch:
+`Remove-Item Env:SPIDERMAN2K1FIX_F12_PARENT_TRACE`.
+
+---
+
 ## 2026-10-23 — Native callers and top-level dispatcher: static control-flow audit
 
 The uploaded original `SpideyPC.exe` (SHA-256
