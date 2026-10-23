@@ -110,6 +110,77 @@ without pressing F12 again. As usual, this must be confirmed
 with a real Wine/Windows test; source assertions and cross
 compilation do not prove native runtime behavior.
 
+## Delayed menu input after pre-menu F12 (diagnostic)
+
+A further user test confirms that with `F12TestMode=1` the
+introductory videos, accelerated timed still and input-wait still
+all complete correctly, and the real menu **appears**, but menu
+keyboard/mouse control becomes responsive only **approximately
+4–5 seconds later**. User log:
+`SpiderMan2k1Fix(20261023-114209).log`
+(`v1.0.0-56a5b31`).
+
+The uploaded log confirms:
+- F12 intent consumed at original `0x443AD0` cleanup; later
+  movie #4 works normally
+- `DEBUG-MENU-SKIP first timed-page deadline accelerated`
+- `DEBUG-MENU-SKIP original 0x4A1896 input-wait TRUE completion`
+- `REAL Shell_MainMenu frame callback observed`
+- `DI8-RETRY: EXPERIMENTAL active at Flip #120`
+- `INPUT-FOCUS` still shows the game as foreground, with no
+  recorded focus loss
+- New Game comic, Bink and subsequent 3D run and exit normally
+
+**Two distinct hypotheses, not yet demonstrated causes:**
+1. The original game's `Shell_MainMenu` draws before a native
+   condition allows input: the exact SHA-verified x86 at
+   `0x493DDB` reads DWORD `[0x54D38C]` and at `0x493DE2`
+   branches to `0x4941C0` (return **before** menu input reads
+   at `0x493E1F`) while the DWORD is nonzero.
+   The flag is known to transition during startup and might
+   already be zero when the real menu begins. Do NOT alter it.
+2. The optional `[Input] DirectInputReacquire` native patch
+   is deliberately installed only at Flip **#120**, about four
+   seconds from the first Flip under FPSLimit=30. That timing
+   may correlate with input recovery, but there is **no actual
+   DirectInput error/reacquisition observed in this log**.
+   Do NOT equate installation with proof that a blocked key
+   read was repaired.
+
+The new diagnostic is **read-only** and only activates after the
+debug F12 shortcut has completed the original pre-menu pages.
+It uses the already installed native Shell_MainMenu callback.
+There is **no new executable patch**, DirectInput call, synthetic
+keypress or modified engine state. It prints a bounded
+`DEBUG-MENU-INPUT-PROBE` line at the first menu tick, each
+native transition or game-active change, and every 15 native
+menu frames up to frame 150; final checkpoint at frame 210.
+Fields:
+- `ms_since_first_menu`: independent wall-clock elapsed time
+- `ms_since_intro_F12_latch`: elapsed from the saved request latch
+- `native_transition`: original `[0x54D38C]` DWORD
+- `native_menu_input_branch=GATED|ELIGIBLE`: exactly the
+  original 0x493DE2 condition, **NOT proof of keyboard readiness**
+- `game_input_active`: original DirectInput context-active DWORD
+  `[0x6B78F0]`
+- `menu_ctx` and `native_clock`: read-only supporting context
+
+**Next comparative run:** same INI/build except updated DLLs, press
+F12 during one of the four opening movies, do not Alt+Tab, then
+repeatedly try moving the main-menu highlight with arrow keys.
+Note roughly when it first reacts and upload the log. If
+`native_menu_input_branch=GATED` persists for the delay,
+the original menu condition is strongly implicated. If it is
+`ELIGIBLE` throughout, investigate actual DirectInput data
+availability/Acquire separately instead of bypassing any timer.
+The `DI8-RETRY` activation at Flip #120 is a time marker,
+not a proven input-responsiveness cause.
+
+The frozen old F12 implementation on
+`backup/f12-native-exit-validated-20261023` remains untouched.
+No functional F12 or native menu changes are made for this
+diagnostic. PR #26 remains draft/unmerged.
+
 ## Regression test plan
 
 1. On Windows 11, press F12 **once** during the first intro Bink movie.
