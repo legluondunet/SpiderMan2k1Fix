@@ -1901,3 +1901,43 @@ def test_f10_playable_3d_uses_native_return_to_menu_not_native_final_exit():
               SRC.index("/* Returns nonzero ONLY when a recent")]
     assert "InterlockedExchange(&game3d_return_to_menu_ready,0);" in reset
 
+
+def test_f10_active_3d_script_queues_native_skip_before_menu_branch():
+    worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
+               SRC.index("void SpiderQuickExitF12_Init(")]
+    assert worker.index("DEBUG-F10-CUTSCENE-SKIP F10 queued") < worker.index(
+        "DEBUG-F10-GAMEPLAY-EXIT F10 accepted")
+    assert "debug_live_cutscene_active,0,0)==1" in worker
+    assert worker.index("InterlockedExchange(&debug_f10_cutscene_skip_ms,(LONG)now);") < worker.index(
+        "debug_f10_cutscene_skip_pending,1,0")
+    assert '0x0060CFA4u=7u' not in worker
+
+def test_f10_native_intro_script_starts_remaining_skip_chain():
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
+    manual=owner[owner.index("F10 during a live native CutSceneScript"):
+                 owner.index("Optional one-F12 native 3D skip experiment")]
+    for text in ("stage>=1 && stage<=2", "stage>=4 && stage<=5",
+                 "FIRST_INTRO_ARMED_SKIP_BOTH", "SECOND_INTRO_ARMED_SKIP_REMAINING",
+                 "debug_auto3d_state,2", "debug_auto3d_state,5", "debug_auto3d_first_owner"):
+        assert text in manual
+    automatic=owner[owner.index("Optional one-F12 native 3D skip experiment"):
+                    owner.index("previous_owner=owner;")]
+    assert "auto_state==2" in automatic and "auto_state==5" in automatic
+    assert "*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST=1u;" in automatic
+
+def test_f10_later_script_skip_requires_native_permission_and_is_bounded():
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
+    manual=owner[owner.index("F10 during a live native CutSceneScript"):
+                 owner.index("Optional one-F12 native 3D skip experiment")]
+    for proof in ('(DWORD)(now-queued)>15000u','requested_owner!=owner',
+                  'scene_context!=1u || script_active!=1u','stage==6 && auto_state==7',
+                  'skip_allowed==1u','*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST==0u',
+                  'event="LATER_NATIVE_SKIP_REQUESTED"'):
+        assert proof in manual
+    assert manual.count("*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST=1u;")==1
+    reset=SRC[SRC.index("static void spider_f10_reset_session_on_native_menu(void)"):
+              SRC.index("/* Returns nonzero ONLY when a recent")]
+    for name in ("debug_f10_cutscene_skip_pending","debug_f10_cutscene_skip_ms","debug_f10_cutscene_skip_owner"):
+        assert f"InterlockedExchange(&{name},0);" in reset

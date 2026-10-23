@@ -366,6 +366,11 @@ static volatile LONG debug_cutscene_lifecycle=0;
  * Refresh EVERY original 3D game-input frame, even after the first
  * two introductory script lifetimes have already completed. */
 static volatile LONG debug_live_cutscene_active=-1;
+/* F10 during original CutSceneScript: physical thread queues intent only.
+ * Native game-thread observer waits for game's own CutSceneSkipAllow. */
+static volatile LONG debug_f10_cutscene_skip_pending=0;
+static volatile LONG debug_f10_cutscene_skip_ms=0;
+static volatile LONG debug_f10_cutscene_skip_owner=0;
 /* Verbose read-only reverse-engineering logs are opt-in. */
 static volatile LONG f10_verbose_trace=0;
 static volatile LONG debug_intro_generation=0;
@@ -1062,6 +1067,76 @@ static void __cdecl spider_observe_native_game_input(void) {
             (unsigned long)(start?(DWORD)(now-start):0u));
           say(lifeline);
           ++lifecycle_logs;
+        }
+      }
+      /* F10 during a live native CutSceneScript. This owner and its
+       * CutSceneSkipAllow byte have been checked through VirtualQuery.
+       * Original request is consumed by 0x4BC3E0 (native cleanup).
+       * Never force request 7, skip interpreter steps or inject Space. */
+      if(InterlockedCompareExchange(&debug_f10_cutscene_skip_pending,0,0)==1) {
+        DWORD queued=(DWORD)InterlockedCompareExchange(&debug_f10_cutscene_skip_ms,0,0);
+        DWORD requested_owner=(DWORD)InterlockedCompareExchange(&debug_f10_cutscene_skip_owner,0,0);
+        LONG stage=InterlockedCompareExchange(&debug_cutscene_lifecycle,0,0);
+        LONG auto_state=InterlockedCompareExchange(&debug_auto3d_state,0,0);
+        const char *event=0;
+        if(!queued || (DWORD)(now-queued)>15000u ||
+           !readable || owner==0u ||
+           (requested_owner && requested_owner!=owner) ||
+           scene_context!=1u || script_active!=1u || script_ip==0u ||
+           *SPIDER_ENGINE_MODE!=0u || *SPIDER_GAME_BINK_ACTIVE!=0u ||
+           *SPIDER_BINK_VIDEO_HANDLE!=0u || *SPIDER_PAUSE_CONTEXT!=0u) {
+          event="CANCELLED_OWNER_SCENE_OR_TIMEOUT";
+          InterlockedExchange(&debug_f10_cutscene_skip_pending,0);
+        } else {
+          if(requested_owner==0u)
+            InterlockedExchange(&debug_f10_cutscene_skip_owner,(LONG)owner);
+          if(auto_state>=1 && auto_state<=6) {
+            InterlockedExchange(&debug_f10_cutscene_skip_pending,0);
+            event="ALREADY_AUTO_SKIPPING_INTRO";
+          } else if(InterlockedCompareExchange(&debug_auto3d_opt_in,0,0)==1 &&
+                    auto_state==0 && stage>=1 && stage<=2) {
+            /* Skip first and then second. Do not require SkipAllow=0
+             * at arm time: the physical F10 can arrive after it became 1. */
+            InterlockedExchange(&debug_auto3d_first_owner,(LONG)owner);
+            InterlockedExchange(&debug_auto3d_first_last_ip,(LONG)script_ip);
+            InterlockedExchange(&debug_auto3d_begin_ms,(LONG)now);
+            InterlockedExchange(&debug_auto3d_state,2);
+            InterlockedExchange(&debug_f10_cutscene_skip_pending,0);
+            event="FIRST_INTRO_ARMED_SKIP_BOTH";
+          } else if(InterlockedCompareExchange(&debug_auto3d_opt_in,0,0)==1 &&
+                    auto_state==0 && stage>=4 && stage<=5) {
+            /* First intro already ended. Start at known second-script
+             * skip phase and finish without touching controller 7. */
+            InterlockedExchange(&debug_auto3d_first_owner,(LONG)owner);
+            InterlockedExchange(&debug_auto3d_first_last_ip,0);
+            InterlockedExchange(&debug_auto3d_begin_ms,(LONG)now);
+            InterlockedExchange(&debug_auto3d_state,5);
+            InterlockedExchange(&debug_f10_cutscene_skip_pending,0);
+            event="SECOND_INTRO_ARMED_SKIP_REMAINING";
+          } else if(stage==6 && auto_state==7 &&
+                    InterlockedCompareExchange(&debug_auto3d_opt_in,0,0)==1) {
+            /* Later in-level script: skip current owner once when
+             * its original permission becomes 1, NOT entire level. */
+            if(skip_allowed==1u &&
+               *SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST==0u &&
+               (GetAsyncKeyState(VK_SPACE)&0x8000)==0) {
+              *SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST=1u;
+              InterlockedExchange(&debug_f10_cutscene_skip_pending,0);
+              event="LATER_NATIVE_SKIP_REQUESTED";
+            }
+          } else {
+            InterlockedExchange(&debug_f10_cutscene_skip_pending,0);
+            event="CANCELLED_UNRECOGNIZED_LIFECYCLE";
+          }
+        }
+        if(event) {
+          char msg[280];
+          snprintf(msg,sizeof(msg),
+            "QUICK-EXIT-F12: DEBUG-F10-CUTSCENE-SKIP event=%s lifecycle=%ld auto=%ld owner=0x%08lX allowed=%u active=%u request=%u [NATIVE PERMISSION; NO MENU/EXIT]",
+            event,(long)stage,(long)auto_state,(unsigned long)owner,
+            (unsigned)skip_allowed,(unsigned)script_active,
+            (unsigned)*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST);
+          say(msg);
         }
       }
       /* Optional one-F12 native 3D skip experiment, only for this
@@ -2083,6 +2158,9 @@ static void spider_f10_reset_session_on_native_menu(void) {
   InterlockedExchange(&debug_auto3d_begin_ms,0);
   InterlockedExchange(&debug_cutscene_lifecycle,0);
   InterlockedExchange(&debug_live_cutscene_active,-1);
+  InterlockedExchange(&debug_f10_cutscene_skip_pending,0);
+  InterlockedExchange(&debug_f10_cutscene_skip_ms,0);
+  InterlockedExchange(&debug_f10_cutscene_skip_owner,0);
   InterlockedIncrement(&debug_intro_generation);
   InterlockedExchange(&debug_newgame_3d_first_ms,0);
   InterlockedExchange(&debug_newgame_3d_space_edges,0);
@@ -2742,7 +2820,20 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
           LONG auto_stage=InterlockedCompareExchange(&debug_auto3d_state,0,0);
           DWORD owner_tick=(DWORD)InterlockedCompareExchange(&last_native_game_input_ms,0,0);
           DWORD render_tick=(DWORD)InterlockedCompareExchange(&last_game3d_flip_ms,0,0);
-          if(InterlockedCompareExchange(&debug_f10_gameplay_exit_opt_in,0,0)==1 &&
+          if(InterlockedCompareExchange(&debug_auto3d_opt_in,0,0)==1 &&
+             InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
+             InterlockedCompareExchange(&debug_live_cutscene_active,0,0)==1 &&
+             *SPIDER_ENGINE_MODE==0u && !(*SPIDER_PAUSE_CONTEXT) &&
+             *SPIDER_GAME_BINK_ACTIVE==0u && *SPIDER_BINK_VIDEO_HANDLE==0u &&
+             owner_tick && (DWORD)(now-owner_tick)<350u &&
+             render_tick && (DWORD)(now-render_tick)<350u) {
+            /* Publish metadata FIRST. The native 3D owner may consume
+             * on another thread immediately after pending becomes 1. */
+            InterlockedExchange(&debug_f10_cutscene_skip_ms,(LONG)now);
+            InterlockedExchange(&debug_f10_cutscene_skip_owner,0);
+            if(InterlockedCompareExchange(&debug_f10_cutscene_skip_pending,1,0)==0)
+              say("QUICK-EXIT-F12: DEBUG-F10-CUTSCENE-SKIP F10 queued while native 3D script active; native SkipAllow required, no menu or process exit");
+          } else           if(InterlockedCompareExchange(&debug_f10_gameplay_exit_opt_in,0,0)==1 &&
              InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
              InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
              lifecycle==6 && auto_stage==7 &&
@@ -2940,7 +3031,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
      (GetPrivateProfileIntA("Debug","F12Auto3DScripts",0,ini)==1 ||
       GetPrivateProfileIntA("Debug","F10Auto3DScripts",0,ini)==1)) {
     InterlockedExchange(&debug_auto3d_opt_in,1);
-    say("QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE F10Auto3DScripts=1 (or legacy F12Auto3DScripts=1) enabled; only verified New Game comic F10 arms two native script skip requests; gameplay exit BLOCKED [EXPERIMENTAL]");
+    say("QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE F10Auto3DScripts=1 (or legacy F12Auto3DScripts=1) enabled; verified comic or active 3D CutSceneScript F10 requests native skips after permission; gameplay exit BLOCKED [EXPERIMENTAL]");
   }
   /* Legacy F10GameplayExit enables native return-to-menu, not process quit.
    * F10TestMode alone does not authorize the 3D transition. */
