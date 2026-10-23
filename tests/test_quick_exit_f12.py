@@ -585,6 +585,49 @@ def test_debug_fast_intro_menu_tick_wall_time_partition_is_passive():
         assert forbidden not in entry and forbidden not in consumer
 
 
+
+def test_debug_first_menu_native_clock_busy_wait_probe_is_gated_and_read_only():
+    """Original 0x4E5D60(1) loops until game clock [0x6B4CA0]
+    advances. 0x49415B and 0x49416F call it immediately after
+    native Shell_MainMenu updates; diagnostics MUST invoke it exactly
+    once rather than shortening the clock, frame, or sleep."""
+    assert "SPIDER_MENU_WAIT_COND_SITE ((BYTE *)(uintptr_t)0x0049415Bu)" in SRC
+    assert "SPIDER_MENU_WAIT_ALWAYS_SITE ((BYTE *)(uintptr_t)0x0049416Fu)" in SRC
+    assert "SPIDER_NATIVE_CLOCK_WAIT ((void (__cdecl *)(DWORD))(uintptr_t)0x004E5D60u)" in SRC
+    assert "menu_wait_cond_original[5]={0xE8,0x00,0x1C,0x05,0x00}" in SRC
+    assert "menu_wait_always_original[5]={0xE8,0xEC,0x1B,0x05,0x00}" in SRC
+    assert "static volatile LONG debug_menu_wait_hooks_installed=0;" in SRC
+
+    area=SRC[SRC.index("static void __cdecl spider_f12_debug_menu_wait(DWORD ticks,int which)"):
+             SRC.index("static int install_intro_timed_clock_hook(void)")]
+    assert area.count("SPIDER_NATIVE_CLOCK_WAIT(ticks);")==1
+    assert area.index("SPIDER_NATIVE_CLOCK_WAIT(ticks);") < area.index(
+        "DEBUG-MENU-CLOCK-WAIT site=")
+    assert "native_clock_before=" in area
+    assert "native_clock_after=" in area
+    assert "elapsed_ms=" in area
+    assert "intro_still_exit_state,0,0)>=2" in area
+    assert "menu_frame_count,0,0)<=3" in area
+    assert "memcmp(SPIDER_MENU_WAIT_COND_SITE,menu_wait_cond_original,5)" in area
+    assert "memcmp(SPIDER_MENU_WAIT_ALWAYS_SITE,menu_wait_always_original,5)" in area
+    assert "patch_native_call(SPIDER_MENU_WAIT_COND_SITE,menu_wait_cond_original" in area
+    assert "patch_native_call(SPIDER_MENU_WAIT_ALWAYS_SITE,menu_wait_always_original" in area
+    assert "restore_intro_tick_call(SPIDER_MENU_WAIT_COND_SITE,menu_wait_cond_original)" in area
+    assert "restore_intro_tick_call(SPIDER_MENU_WAIT_ALWAYS_SITE,menu_wait_always_original)" in area
+    assert "InterlockedExchange(&debug_menu_wait_hooks_installed,1)" in area
+
+    init=SRC[SRC.index("void SpiderQuickExitF12_Init("):]
+    assert 'GetPrivateProfileIntA("Debug","Log",0,ini)==1' in init
+    assert "install_debug_menu_wait_hooks()" in init
+    assert "signatures mismatch; optional wait probe OFF" in init
+    assert "restore_debug_menu_wait_hooks();" in init
+    assert init.count("restore_debug_menu_wait_hooks();")>=2
+    for forbidden in ("ExitProcess(", "TerminateProcess(", "DestroyWindow(",
+                      "SetForegroundWindow(", "Acquire(", "GetDeviceData(",
+                      "*SPIDER_TRACE_NATIVE_CLOCK_RAW=", "Sleep(", "PostMessageA("):
+        assert forbidden not in area
+
+
 def test_f12_debug_shortcut_restricts_3d_exit_to_native_gameplay():
     worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
                SRC.index("void SpiderQuickExitF12_Init(")]
