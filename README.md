@@ -50,10 +50,14 @@ The original New Game sequence and in-game native shutdown have been
   **return to the original main menu**. The native final-exit flag
   at `0x45619D` is NOT forced for gameplay F10: the game process
   remains alive, ready for another New Game.
-- F10 **cannot request this menu return during an active
-  `CutSceneScript`**, including when one starts after the two
-  introductions. A game-thread snapshot and independent original
-  owner validation must both show no active cinematic script.
+- **F10 during an active 3D CutSceneScript:** use the original
+  `CutSceneSkipAllow` permission and native script skip request,
+  never a synthetic Space key or request 7. In the verified two
+  New Game introductions, F10 jumps through both remaining scripts
+  to gameplay. During later in-level scripts, skip one native
+  CutSceneScript at a time, only when the owner permits it.
+- **F10 during playable 3D:** native menu return only when the
+  original scene manager confirms no active scripted cinematic.
 
 For the tested F10 sequence, explicitly enable:
 
@@ -86,9 +90,9 @@ See the two-session regression protocol in
 
 This is an experimental, explicitly opted-in feature while the PR
 is under review. It has been validated in the New Game sequence
-on Wine, **not yet in arbitrary later in-level cutscenes**. The new
-gameplay F10 return-to-menu behavior is **not yet user-validated**; build
-#694 only validated F10 skipping across three consecutive New Games.
+on Wine, **not yet in arbitrary later in-level cutscenes**. The new gameplay F10 menu return and mid-3D-script skipping both
+require runtime validation; build #694 validated repeated comic/intro
+skipping only.
 Other cutscene engines, save/load paths, pause and focus changes need
 separate runtime validation. For an unexpected issue, restore
 `F10GameplayExit=0` or use the previous validated build.

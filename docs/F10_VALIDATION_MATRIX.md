@@ -83,9 +83,10 @@ than the old process exit. Test the new behavior separately.
 
 | Test | Procedure | Expected safe behavior |
 | --- | --- | --- |
-| F10 during first introductory 3D script | Press F10 before that script has ended, rather than waiting for automatic completion | No controller-7 shutdown; observe a blocked/ignored F10 |
-| F10 during second introductory 3D script | Press F10 while original second CutSceneScript remains active | No controller-7 shutdown |
-| F10 during a *later in-level* scripted cinematic | Progress to another native CutSceneScript; press F10 during playback | `DEBUG-F10-CUTSCENE-STATUS native_context=1`; `DEBUG-F10-GAMEPLAY-EXIT BLOCKED`; no cleanup request 7 |
+| F10 during first introductory 3D script | Let comic/movie run, press F10 mid-Stan Lee intro | `FIRST_INTRO_ARMED_SKIP_BOTH`; skips BOTH scripts after permission to gameplay |
+| F10 during second introductory 3D script | Let first intro finish, press F10 mid-second script | `SECOND_INTRO_ARMED_SKIP_REMAINING`; skips remaining script to gameplay |
+| F10 during later in-level native CutSceneScript | Press F10 in another skippable script | `LATER_NATIVE_SKIP_REQUESTED` only when `CutSceneSkipAllow` permits; one native script at a time, no request 7 |
+| F10 during unknown/unskippable cinematic | Press F10 when native permission is missing | Do not force scene or controller state; pending request expires or cancels |
 | F10 after the later cinematic finishes | Wait for original script manager to report `native_context=0`; press F10 during playable 3D | Normal native cleanup is expected, but not yet runtime validated in this context |
 | Different cutscene engine | Find a scene that does not use CutSceneScript | Treat as unverified; do not assume safety from this guard alone |
 | Pause screen | Press F10 while paused | No new native exit request |
