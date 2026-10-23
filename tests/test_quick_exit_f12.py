@@ -238,6 +238,8 @@ def test_postmenu_movie_handoff_is_post_native_script_and_cleanup_gated():
     assert "game3d_cleanup_confirmed,0" in owner
     assert "postmovie_state,3" in owner
     assert "*(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;" in owner
+    assert "POSTMENU-MOVIE FINAL-TEARDOWN-CHECKPOINT elapsed_since_F12_ms=" in SRC
+    assert "[NO PRESENT/COLOR CLAIM]" in SRC
     assert owner.count("SPIDER_NATIVE_GAME_INPUT_UPDATE();")==1
     assert owner.index("SPIDER_NATIVE_GAME_INPUT_UPDATE();") < owner.index(
         "POSTMENU-MOVIE original Bink + script returned")
@@ -263,6 +265,10 @@ def test_deferred_comic_f12_keeps_native_still_owner_and_then_uses_movie_four():
     assert "input_native_invocations,0,0)==0" in watcher
     assert "postmovie_state,0,4" in watcher
     assert "12000u" in watcher
+    # Native still can start less than 400 ms after a menu frame; the
+    # exactly observed comic marker must win over stale menu priority.
+    assert watcher.index("COMIC F12 deferred until") < watcher.index(
+        "F12 queued for REAL Shell_MainMenu")
     assert watcher.index("InterlockedExchange(&postmovie_request_ms,(LONG)now);") < watcher.index(
         "InterlockedCompareExchange(&postmovie_state,4,0)")
     tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
