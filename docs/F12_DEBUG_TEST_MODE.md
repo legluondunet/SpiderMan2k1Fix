@@ -1,3 +1,79 @@
+## 2026-10-23 — New Game submenu freezes 3–4 seconds after clicking: passive selection-exit wait trace
+
+After validation of automatic `F12SkipInitialMenuWait` with
+`F12TestMode=1`, the user reported a **second ~3–4-second
+freeze** when selecting **New Game** from the now-responsive
+main menu, *before* a submenu appears and becomes responsive.
+No fresh runtime log for this second transition has yet
+been submitted.
+
+**Source-supported first hypothesis:** the accepted main-menu
+fix intentionally stops bypassing its clock waits permanently
+as soon as the native clock progresses once. Its bypass is
+restricted to the two per-frame menu callsites
+`0x49415B` and `0x49416F`. Disassembly of the exact
+SHA-verified original 2001 `SpideyPC.exe` shows a THIRD
+call to the SAME original `0x4E5D60(1)` wait, but
+at `0x494209`, inside the **native
+`Shell_MainMenu` selection/cleanup/return** path:
+
+```asm
+004941D5: ... original menu item selection path
+00494202: call 0x4437E0       ; original menu transition housekeeping
+00494207: push 1
+00494209: call 0x4E5D60      ; original one-tick wait
+0049420E: ... rest of original selected-action cleanup
+00494256: ... return native menu action
+```
+
+Because the current first-menu bypass state is
+permanently `2` after restoration and because
+`0x494209` was NOT hooked by the earlier bypass,
+it is plausible that a **fresh native clock stall**
+on menu selection causes the reported second freeze.
+This is a hypothesis; no timing measurement yet shows
+a slow `0x494209` call. If its elapsed time is near
+zero, the delay must be sought in another transition
+function or the next submenu's per-frame waits.
+
+**New diagnostic-only change (new Windows build):**
+install a third **exact-opcode-verified** call wrapper
+at `0x494209`, expected bytes `E8 52 1B 05 00`,
+when `[Debug] F12TestMode=1, Log=1` and the earlier
+two probes install. The wrapper ALWAYS calls original
+`0x4E5D60(ticks)` exactly once, and reports:
+
+```text
+QUICK-EXIT-F12: DEBUG-MENU-EXIT-CLOCK-WAIT site=0x00494209 call=... elapsed_ms=... wait_arg=1 native_clock_before=... native_clock_after=... init_bypass_state=... [ORIGINAL WAIT CALLED; READ-ONLY; SELECTED ACTION UNKNOWN]
+```
+
+Logging is bounded to the first 8 such calls, plus
+any later call exceeding 100ms. There is **NO**
+skip of this third wait, modification to native clock,
+input injection, resource-lifetime bypass, F12 action
+change, or assumption about which particular menu
+item was selected. Signature mismatch leaves the
+original `0x494209` call untouched and does not
+disable the already validated F12 behavior.
+Its restoration is independent of the original two hooks.
+
+**Next test:** install the updated DLLs while keeping
+the same INI (`F12TestMode=1`, no active
+`F12SkipInitialMenuWait=0`, `Log=1`). Press F12
+during an opening video, let the main menu appear,
+then click **New Game exactly once**, observe the
+second pause and upload the complete log. Compare
+the new `DEBUG-MENU-EXIT-CLOCK-WAIT elapsed_ms`
+with the reported 3–4s. Do not change/bypass
+the selected-action transition until its native
+blocking site is confirmed.
+
+This remains within draft, **unmerged PR #26**.
+The full native F12 exit and the pre-clock-workaround
+debug mode are independently backed up.
+
+---
+
 ## 2026-10-23 — F12TestMode automatically enables the initial-menu wait fix (explicit opt-out)
 
 **Updated configuration semantics:** `F12TestMode` is OFF by default.
