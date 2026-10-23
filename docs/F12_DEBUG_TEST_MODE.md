@@ -1,3 +1,96 @@
+## 2026-10-23 — Wine 18:01:30: full six-step native cutscene lifecycle and deliberate gameplay jump confirmed
+
+The user sent `SpiderMan2k1Fix(20261023-180130).log` from build #677.
+The precise original CutSceneScript lifecycle diagnostic now emits
+**ALL SIX states** in the expected original game-owned order:
+FIRST_SCRIPT_ACTIVE +0ms; FIRST_SKIP_ALLOWED +68ms;
+FIRST_SCRIPT_ENDED +1489ms; SECOND_SCRIPT_ACTIVE
++1502ms (different script bytecode address);
+SECOND_SKIP_ALLOWED **+2635ms**; SECOND_SCRIPT_ENDED
++2669ms. The first Space press occurred around +1484ms;
+the second physical Space press at **+2369ms**, notably
+**266ms BEFORE** the second script's native
+`CutSceneSkipAllow` becomes 1, yet that script
+ends only at +2669ms. This proves any automation
+must WAIT for each original script's independent
+skip permission, rather than assume physical
+edge count or issue back-to-back skips immediately.
+The third Space at +4269ms is a deliberate gameplay
+JUMP: both native context and active remain ZERO,
+and the lifecycle state correctly stays stage 6.
+Original comic/Bink #4 completion remains **1ms**.
+Native unrelated request-7 at ~+8.6s still has an
+unconfirmed writer and MUST NOT be treated as
+successful F12 gameplay exit.
+
+**STATIC native chain confirmed in supplied original
+SpideyPC.exe**:
+- `0x4C6654/0x4C665C` check native cutscene context
+  and original skip permission.
+- `0x4C66A6` sets exactly BYTE `0x0060CFC4=1`
+  after additional original native input conditions.
+- `0x4BC3E0` reads this byte. If nonzero, original
+  `0x4BC3EF` clears active script +0x1B4, and
+  iterates original pending-script action list for
+  full native cleanup.
+- `0x4BC17E` clears original request byte when
+  initializing the next script. Do not alter the
+  cinematic manager's own permission byte or
+  press-space DirectInput buffer.
+
+**First controlled automated-skip experiment**:
+This commit adds NEW explicit opt-in INI setting
+`[Debug] F12Auto3DScripts=1`, off by default
+(also requires `F12TestMode=1` AND `Log=1`).
+Only the already-supported New Game F12 on comic
+`L1COV.bmp` arms this sequence. On the verified
+post-Bink original 3D game thread, a separate
+fail-closed state machine observes first active
+with permission=0, then independently waits
+permission=1 before it writes the exact original
+one-byte skip REQUEST at 0x60CFC4 **ONCE**.
+It waits for original manager context+active
+both becoming zero (first script fully ended),
+requires a second distinct script with
+permission reset to 0, waits that script's
+own permission=1, issues exactly ONE more
+request, and observes its original end.
+It NEVER forges Space, alters action 0x10,
+overrides cutscene permission, bypasses
+the original script cleanup, or authorizes
+F12 gameplay exit.
+
+The experimental state aborts if original
+manager data become unreadable, owner changes,
+native game mode/movie unexpectedly changes,
+native skip request is already pending, or
+the sequence takes over 15s. A failure keeps
+native Space fallback intact and never writes
+a late request. The original READ-ONLY
+six-step tracker remains independently active
+whether this optional mutation is enabled
+or not. **Neither the two-auto-skip logic
+nor gameplay safety is runtime validated yet.**
+It is an isolated, explicitly opted-in
+test under draft PR #26.
+
+To test: set `[Debug] F12TestMode=1`,
+`Log=1`, `F12Auto3DScripts=1` in
+SpiderMan2k1Fix.ini. New Game -> F12
+ONCE on L1COV.bmp, then do NOT press
+Space during either intro. Check that
+both original 3D intros end normally and
+Spider-Man can move/jump afterwards;
+send whole debug log, especially
+`DEBUG-3D-AUTO-NATIVE`. No F12 gameplay
+exit is enabled. If native owner does
+not process either request, switch
+`F12Auto3DScripts=0` and use manual
+Space until this experimental path is
+fixed. No merge without explicit approval.
+
+---
+
 ## 2026-10-23 — Wine 17:50:21: BOTH New Game 3D intros positively identified as original CutSceneScript
 
 The user provided `SpiderMan2k1Fix(20261023-175021).log`,

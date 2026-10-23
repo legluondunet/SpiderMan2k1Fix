@@ -1675,3 +1675,35 @@ def test_two_native_cutscene_script_lifetimes_are_distinct_and_passive():
                    "ExitProcess(","TerminateProcess(","SPIDER_NATIVE_CUTSCENE_OWNER_PTR=",
                    "InterlockedExchange(&playable","controller-7"):
         assert unsafe not in lifecycle
+
+
+def test_auto_native_two_script_skip_opt_in_is_guarded_and_fail_closed():
+    """Only a separate opt-in + original New Game comic F12
+    may request original 0x4BC3E0 cutscene cleanup, never a fake key."""
+    assert '#define SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST ((volatile BYTE *)(uintptr_t)0x0060CFC4u)' in SRC
+    init=SRC[SRC.index("void SpiderQuickExitF12_Init(void"): ]
+    assert 'GetPrivateProfileIntA("Debug","F12Auto3DScripts",0,ini)==1' in init
+    assert 'GetPrivateProfileIntA("Debug","Log",0,ini)==1' in init
+    assert 'InterlockedExchange(&debug_auto3d_opt_in,1);' in init
+    worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):]
+    assert 'InterlockedExchange(&debug_auto3d_state,1);' in worker
+    assert 'DEBUG-3D-AUTO-NATIVE ARMED by F12 on original L1COV.bmp' in worker
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
+    section=owner[owner.index("Optional one-F12 native 3D skip experiment"):
+                  owner.index("previous_owner=owner;")]
+    assert 'debug_newgame_progress,0,0)==3' in section
+    assert 'DEBUG-3D-AUTO-NATIVE event=%s' in section
+    assert section.count("*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST=1u;")==2
+    assert 'GetAsyncKeyState(VK_SPACE)&0x8000)==0' in section
+    assert section.count('skip_allowed==1u')==2
+    assert 'script_ip!=first_last_ip' in section
+    assert 'scene_context==0u && script_active==0u' in section
+    assert 'ABORT_OWNER_OR_TIMEOUT' in section
+    assert 'ABORT_ALREADY_REQUESTED' in section
+    assert 'TWO_SCRIPTS_ENDED_NO_GAMEPLAY_EXIT' in section
+    assert 'NO KEY INJECTION; EXIT BLOCKED' in section
+    for banned in ("SendInput(","PostMessageA(","keybd_event(","ExitProcess(","TerminateProcess(",
+                   "SPIDER_NATIVE_CUTSCENE_OWNER_PTR=","skip_allowed=1u;",
+                   "*SPIDER_ENGINE_MODE=7"):
+        assert banned not in section
