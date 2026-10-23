@@ -49,6 +49,52 @@ def test_comic_render_candidate_observation_is_passive_and_owner_agnostic():
 
 
 
+
+def test_startup_static_screen_probe_is_extra_opt_in_bounded_and_read_only():
+    """Two intro stills share game menu infrastructure; don't guess owner."""
+    assert "SPIDERMAN2K1FIX_F12_STATIC_TRACE" in SRC
+    assert "static volatile LONG static_screen_trace_enabled=0;" in SRC
+    assert "static volatile LONG post_intro_cleanup_seen=0;" in SRC
+    assert "static_trace[0]=='1'" in SRC
+    init=SRC[SRC.index("void SpiderQuickExitF12_Init("):]
+    assert 'GetPrivateProfileIntA("Debug","Log",0,ini)==1' in init
+    assert 'strcmp(val,"1")==0' in init
+    assert "STARTUP-STATIC-PROBE opt-in enabled" in init
+
+    observer=SRC[SRC.index("void SpiderQuickExitF12_ObserveEngineState("):
+                 SRC.index("/* Diagnostic wrapper for the EXACT ORIGINAL pause-owner call")]
+    assert "static_screen_trace_enabled,0,0)==1" in observer
+    assert "STARTUP-STATIC-PROBE flip=%ld" in observer
+    assert "[READ-ONLY; SCREEN ID UNKNOWN]" in observer
+    assert "(DWORD)(now-start_ms)<=90000u" in observer
+    assert "samples<61" in observer
+    assert "(DWORD)(now-last_ms)>=1500u" in observer
+    assert "menu_ctx_present=%lu" in observer
+    assert "menu_stage_byte=%lu" in observer
+    assert "dispatcher_raw=%lu" in observer
+    assert "transition_raw=%lu" in observer
+    assert "real_menu_tick_count=%ld" in observer
+    for name in ("SPIDER_TRACE_MENU_CONTEXT", "SPIDER_TRACE_MENU_STAGE_BYTE",
+                 "SPIDER_TRACE_DISPATCH_RAW", "SPIDER_TRACE_TRANSITION_RAW"):
+        assert name in observer
+        assert f"*{name}=" not in observer
+    for forbidden in ("ExitProcess(", "TerminateProcess(", "DestroyWindow(",
+                      "PostMessageA(", "BinkClose(", "*SPIDER_ENGINE_MODE=",
+                      "*SPIDER_GAME_QUIT_FLAG="):
+        assert forbidden not in observer
+
+    checkpoint=SRC[SRC.index("static void __cdecl spider_after_intro_cleanup(int mode)"):
+                   SRC.index("/* Returns nonzero ONLY when a recent")]
+    assert "SPIDER_AFTER_INTRO_CLEANUP(mode);" in checkpoint
+    assert checkpoint.index("SPIDER_AFTER_INTRO_CLEANUP(mode);") < checkpoint.index(
+        "post_intro_cleanup_seen,1,0")
+    assert "STARTUP-STATIC-PROBE original four-movie transition cleanup" in checkpoint
+    # Opt-in diagnostic is not an extra game binary instruction hook.
+    assert "patch_native_call(" not in observer
+    assert "install_real_menu_hook(" not in observer
+
+
+
 def test_post_new_game_media_diagnostics_are_passive_and_bink_ownership_unproven():
     # Reading the game's known handle slots is not equivalent to playback
     # detection: the video could have another owner/presentation path.
