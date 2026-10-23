@@ -173,6 +173,35 @@ void SpiderQuickExitF12_ObserveMovieFrame(void) {
   InterlockedExchange(&last_movie_frame_ms,(LONG)GetTickCount());
 }
 
+/* Passive comic-quad observation from the ALREADY installed D3D7 draw
+ * wrapper after the known native rendering signature is confirmed.
+ * Graphics activity is NOT proof that the comic page's native owner is
+ * active or that it is safe to leave the scene. This cannot initiate
+ * F12, modify a game-global, inspect COM internals, or free a resource.
+ * The classifier in the caller remains opt-in to ComicNativeAspect. */
+void SpiderQuickExitF12_ObserveComicRender(LONG flip_index, DWORD caller_rva,
+                                          DWORD texture_w, DWORD texture_h) {
+  static volatile LONG candidate_draws=0;
+  LONG n,owner_calls,last_owner,menu_seen;
+  DWORD now,owner_age;
+  char line[384];
+  if(!SpiderQuickExitF12_Enabled()) return;
+  n=InterlockedIncrement(&candidate_draws);
+  if(n>8 && n%120!=0) return;
+  now=GetTickCount();
+  owner_calls=InterlockedCompareExchange(&input_native_invocations,0,0);
+  last_owner=InterlockedCompareExchange(&last_native_game_input_ms,0,0);
+  owner_age=last_owner ? (DWORD)(now-(DWORD)last_owner) : 0u;
+  menu_seen=InterlockedCompareExchange(&real_main_menu_seen,0,0);
+  snprintf(line,sizeof(line),
+    "QUICK-EXIT-F12: COMIC-RENDER-CANDIDATE draw=%ld flip=%ld caller_rva=0x%08lX texture=%lux%lu mode_request=%lu bink_active=%lu menu_seen=%ld native_3d_owner_calls=%ld native_3d_owner_age_ms=%lu [RENDER-ONLY; comic owner UNKNOWN]",
+    (long)n,(long)flip_index,(unsigned long)caller_rva,
+    (unsigned long)texture_w,(unsigned long)texture_h,
+    (unsigned long)*SPIDER_ENGINE_MODE,(unsigned long)*SPIDER_GAME_BINK_ACTIVE,
+    (long)menu_seen,(long)owner_calls,(unsigned long)owner_age);
+  say(line);
+}
+
 /* Read-only stage discovery on the existing game rendering thread.
  * No new native code hook, object access, VTable edits, or control writes.
  * Throttle to mode/quit/async transitions and a five-second heartbeat.
