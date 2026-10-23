@@ -1,3 +1,40 @@
+## 2026-10-23 — Corrected New Game scene sequence and native SPACE diagnostics
+
+**User-confirmed original sequence:**
+
+1. New Game comic cover: a timed static page, not skippable with Enter.
+2. Bink cinematic: **Enter** can skip this movie.
+3. First 3D scene: Stan Lee's narrated introduction, **Space** skips it.
+4. Second 3D cinematic: **Space** skips it independently.
+5. First level becomes playable **only after both 3D scenes**.
+
+This replaces the earlier mistaken claim that Enter skips Stan Lee's
+3D narration. A *single* requested F12 must ultimately skip both 3D
+scenes by their ORIGINAL native Space mechanisms; a single observed
+Space press cannot be treated as proof of reaching gameplay.
+
+**Now implemented:** the read-only 3D owner diagnostic samples
+`GetAsyncKeyState(VK_SPACE)` rather than `VK_RETURN`, records
+`space_down` and a bounded passive Space key-down edge count, and
+logs `DEBUG-NEWGAME-3D-SPACE-EVENT` from the independent 25-ms F12
+polling thread. This latter trace remains useful even if original
+3D game-input callbacks are absent during cinematic playback.
+Neither the number of physical Space presses nor the passage of time
+is sufficient authorization to unlock F12's native gameplay shutdown.
+The existing post-Bink unknown-3D guard continues to fail closed.
+No synthetic input is injected and no scene resources are modified.
+
+**Test sequence:** F12 on the comic or Bink; during the first
+Stan Lee 3D introduction **press Space once, release it**, then
+during the SECOND 3D cinematic **press Space again, release it**,
+then wait for the first level to be demonstrably playable.
+Press F12 one last time to verify that this experimental build
+does not accidentally exit during an unidentified stage. Provide
+the entire log and note the visual screen/state around each press.
+Identifying the actual original Space handlers and native
+playable-ready signal remains the next implementation step.
+
+---
 ## 2026-10-23 — New Game F12: native movie skip + fail-closed 3D phase tracing
 
 **Current code, partial implementation (F12TestMode=1 only):**
@@ -9,11 +46,12 @@
   the same owner-verified Bink completion and game-owned teardown
   (no controller request 7 or process exit).
 - Movie #4 completion is observed even if the user pressed Enter rather
-  than F12. Once the original native 3D game-input owner returns, a
-  throttled read-only trace records original mode/task/async and input
-  flags, timer, pause-context presence and physical Enter presses.
-- Crucial conflict guard: after movie #4, the engine's original Stan Lee
-  3D intro and actual playable-level state are **not yet distinguishable**
+  than F12. After that movie the game plays **two distinct 3D scenes**,
+  each skippable with **Space**. A throttled read-only trace samples
+  the native mode/task/async, input flags, timer and pause-context,
+  along with Space presses and their observed key-down edges.
+- Crucial conflict guard: after movie #4, the Stan Lee 3D narration,
+  the SECOND 3D cinematic and actual playable-level state are **not yet distinguishable**
   using a positively verified scene flag. Therefore F12 **fails closed**
   rather than running native request 7, for *both* this introduction and
   later gameplay in the same unclassified New Game session.
@@ -26,11 +64,12 @@
 
 **Test next on Windows or Wine:** enable `[Debug] F12TestMode=1`
 and `Log=1`, start New Game, press F12 during the comic or Bink,
-then **manually press Enter during Stan Lee's 3D introduction**.
-After the first level is clearly playable, press F12 separately to
-confirm the unclassified guard does not exit; attach the entire log.
+then **press Space during Stan Lee's 3D narration, release it, and
+press Space AGAIN during the next 3D cinematic**. After the first
+level is clearly playable, press F12 separately to confirm the
+unclassified guard does not exit; attach the entire log.
 The `DEBUG-NEWGAME-3D-PHASE` traces are needed to compare original
-3D state before and after Enter and select a defensible native
+3D state around BOTH Space presses and select a defensible native
 playable-ready condition. Until then, this is *not* a completed
 one-press skip-to-gameplay feature.
 

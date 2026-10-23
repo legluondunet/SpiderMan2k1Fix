@@ -1295,7 +1295,7 @@ def test_f12_newgame_movie_skip_does_not_use_shutdown_controller():
     assert owner.index("InterlockedCompareExchange(&postmovie_state,0,2)==2") < owner.index(
         "if(InterlockedCompareExchange(&postmovie_state,0,0)==2) {")
     assert "DEBUG-NEWGAME-3D-PHASE" in owner
-    assert "GetAsyncKeyState(VK_RETURN)" in owner
+    assert "GetAsyncKeyState(VK_SPACE)" in owner
     assert "PLAYABLE NOT VERIFIED" in owner
     wrapper=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
                 SRC.index("static void __cdecl spider_after_intro_cleanup(",SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"))]
@@ -1319,3 +1319,25 @@ def test_f12_gameplay_exit_fails_closed_after_movie_owner_even_if_native_last_ti
     assert "InterlockedCompareExchange(&debug_newgame_progress,3,phase)" in game_owner
     assert "InterlockedCompareExchange(&game3d_exit_state,0,1)==1" in game_owner
     assert "NO CONTROLLER 7" in game_owner
+
+
+def test_newgame_f12_3d_two_space_skippable_scenes_remain_distinct_from_gameplay():
+    """SPACE skips two consecutive native 3D scenes; their identity is
+    not established by elapsed time or the number of SPACE key edges."""
+    assert "static volatile LONG debug_newgame_3d_space_edges=0;" in SRC
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("static void __cdecl spider_observe_native_game_cleanup(")]
+    assert "GetAsyncKeyState(VK_SPACE)" in owner
+    assert "space_down=%ld space_edges=%ld" in owner
+    assert "TWO 3D INTRO SCENES; PLAYABLE NOT VERIFIED" in owner
+    assert "GetAsyncKeyState(VK_RETURN)" not in owner
+    worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
+               SRC.index("void SpiderQuickExitF12_Init(")]
+    assert "DEBUG-NEWGAME-3D-SPACE-EVENT" in worker
+    assert "InterlockedIncrement(&debug_newgame_3d_space_edges)" in worker
+    assert "previous_3d_space==0 && space_down" in worker
+    assert "SCENE ID UNKNOWN; NO EXIT AUTHORITY" in worker
+    assert "TWO SPACE-skippable 3D introductions vs gameplay NOT YET VERIFIED" in worker
+    assert worker.index("DEBUG-NEWGAME-3D F12 consumed") < worker.index(
+        "DEBUG-3D-EXIT native gameplay exit queued")
+    assert "SendInput(" not in worker

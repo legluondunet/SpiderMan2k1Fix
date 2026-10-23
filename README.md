@@ -49,14 +49,18 @@ F12 in the main menu is ignored. **New Game skip development (partial):**
 F12 on a recognized comic still keeps the original short comic timer
 and queues a one-shot skip of the specific New Game Bink movie #4; F12
 during that movie also uses its original completion/cleanup path.
-The 3D Stan Lee introduction and the first genuinely playable frame
-are not yet distinguishable using a verified native signal: after
-movie #4, F12 is intentionally blocked from shutting down the process
-until that scene boundary is mapped. **F12 does NOT yet skip Stan Lee's
-3D narration or re-enable gameplay exit in that unclassified run.**
-With `Log=1` the patch records Enter-related native 3D phase traces
-for the next investigation. No synthetic Enter, process termination
-or arbitrary controller transition is used.
+After the Bink movie (which can be skipped using Enter), there are
+**two consecutive skippable 3D scenes**: Stan Lee's narrated introduction,
+then another 3D cinematic. **Space skips each 3D scene separately**.
+These stages and the first genuinely playable frame cannot yet be
+distinguished using verified native scene flags. After movie #4, F12
+is intentionally blocked from shutting down the process until the
+actual playable boundary is established. **F12 does NOT yet skip
+either 3D scene or re-enable gameplay exit in the unclassified run.**
+With `Log=1` the patch captures separate physical Space key-down
+events and read-only native game-input state. These observations do
+not themselves mark either scene complete. No synthetic Space/Enter,
+process termination, or arbitrary controller transition is used.
 The single `[Debug] F12TestMode` option overrides the older
 `[System]` F12 controls and defaults to `0`; `Log=1` is recommended.
 
