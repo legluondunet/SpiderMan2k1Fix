@@ -166,3 +166,83 @@ def test_integration_blocks_saving_before_writing():
     assert "MessageBoxA(NULL,summary" in src
     assert "SpiderMan2k1Fix_" in src
     assert "SpiderCfg_RepairIni" in src
+
+
+def test_system_quick_exit_is_known_and_opt_in(runner, tmp_path):
+    for value in ("0", "1"):
+        result, _ = validate(runner, tmp_path, f"[System]\nQuickExitF12={value}\n")
+        assert result == (0, 0, 1)
+    for value in ("2", "-1", "true", "off"):
+        result, _ = validate(runner, tmp_path, f"[System]\nQuickExitF12={value}\n")
+        assert result[0] >= 1 and result[2] == 0
+
+
+def test_example_hides_obsolete_prototype_shortcuts():
+    data = (ROOT / "SpiderMan2k1Fix.generated-example.ini").read_text()
+    assert "[System]\n" not in data
+    assert "QuickExitF10=" not in data
+
+
+@pytest.mark.parametrize("value,valid", [
+    ("0", True), ("1", True),
+    ("2", False), ("-1", False), ("true", False), ("enabled", False), ("", False)
+])
+def test_f12_auto_3d_scripts_key_is_validated_as_strict_debug_boolean(
+    runner, tmp_path, value, valid
+):
+    """Regression: a known opt-in must never be treated as an unknown
+    key and silently dropped by automatic INI recovery."""
+    config = f"[Debug]\nLog=1\nF12TestMode=1\nF12Auto3DScripts={value}\n"
+    result, detail = validate(runner, tmp_path, config)
+    if valid:
+        assert result == (0, 0, 1), detail
+    else:
+        assert result[0] >= 1 and result[2] == 0, detail
+
+
+def test_complete_3d_opt_in_is_accepted_and_example_defaults_off(runner, tmp_path):
+    ini = (ROOT / "SpiderMan2k1Fix.generated-example.ini").read_text()
+    for key in ("F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit"):
+        assert f"{key}=" not in ini
+    assert validate(runner, tmp_path, ini)[0] == (0, 0, 1)
+    enabled = ini.replace("Log=0", "Log=0\nF10Shortcut=1", 1)
+    assert validate(runner, tmp_path, enabled)[0] == (0, 0, 1)
+    # Existing legacy INIs remain valid without resetting saved controls.
+    legacy = ini.replace("Log=0", "Log=1\nF10TestMode=1\nF10Auto3DScripts=1\nF10GameplayExit=1", 1)
+    assert validate(runner, tmp_path, legacy)[0] == (0, 0, 1)
+
+
+@pytest.mark.parametrize("key", ["F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F12TestMode","F12Auto3DScripts"])
+@pytest.mark.parametrize("value,valid",[("0",True),("1",True),("2",False),("-1",False),("yes",False)])
+def test_f10_canonical_and_legacy_f12_debug_keys_are_strict_boolean(runner,tmp_path,key,value,valid):
+    outcome,detail=validate(runner,tmp_path,f"[Debug]\n{key}={value}\n")
+    if valid:
+        assert outcome==(0,0,1),detail
+    else:
+        assert outcome[0]>=1 and outcome[2]==0,detail
+
+
+@pytest.mark.parametrize("key", ["QuickExitF10","ExperimentalQuickExitF10In3D",
+    "ExperimentalQuickExitF10InNewGameMovie","ExperimentalQuickExitF10InNewGameComic",
+    "ExperimentalQuickExitF10InIntroStills"])
+def test_f10_system_options_known_and_disabled_or_enabled(runner,tmp_path,key):
+    for n in ("0","1"):
+        assert validate(runner,tmp_path,f"[System]\n{key}={n}\n")[0]==(0,0,1)
+
+
+@pytest.mark.parametrize("value,good",[("0",True),("1",True),("2",False),("-1",False),("yes",False)])
+def test_f10_gameplay_exit_strict_boolean(runner,tmp_path,value,good):
+    status,detail=validate(runner,tmp_path,f"[Debug]\nF10GameplayExit={value}\n")
+    if good:
+        assert status==(0,0,1),detail
+    else:
+        assert status[0]>=1 and status[2]==0,detail
+
+
+@pytest.mark.parametrize("value,valid",[("0",True),("1",True),("2",False),("-1",False),("yes",False)])
+def test_f10_verbose_trace_strict_boolean(runner,tmp_path,value,valid):
+    result,detail=validate(runner,tmp_path,f"[Debug]\nF10VerboseTrace={value}\n")
+    if valid:
+        assert result==(0,0,1),detail
+    else:
+        assert result[0]>=1 and result[2]==0,detail

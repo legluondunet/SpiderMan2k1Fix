@@ -71,3 +71,55 @@ def test_repair_wiring_is_safe_and_atomic():
     assert src.index('SpiderIni_Validate(tmp,NULL,NULL)') < src.index('CopyFileA(ini,backup,TRUE)')
     assert 'if(!ini_writes_permitted)' in src
     assert 'SpiderCfg_ValidateCurrentIni(log_line)' in (ROOT/'spiderman2k1fix.c').read_text()
+
+
+def test_repair_preserves_f12_auto3d_opt_in_and_other_valid_settings(recover_runner, tmp_path):
+    """Recover first valid debug opt-in instead of losing it on repair."""
+    ini = (
+        "[Debug]\nLog=1\nF12TestMode=1\n"
+        "F12Auto3DScripts=1\n"
+        "[Display]\nResolution=1920x1080\n"
+        "[Keyboard]\nJump=SPACE\n"
+        "[Unknown]\nKey=bad\n"
+    )
+    values = recover(recover_runner, tmp_path, ini)
+    assert "[Debug] Log=1" in values
+    assert "[Debug] F12TestMode=1" in values
+    assert "[Debug] F12Auto3DScripts=1" in values
+    assert "[Display] Resolution=1920x1080" in values
+    assert "[Keyboard] Jump=SPACE" in values
+    assert not any("Unknown" in item for item in values)
+
+
+def test_repair_excludes_invalid_f12_auto3d_values(recover_runner, tmp_path):
+    values = recover(recover_runner, tmp_path,
+                     "[Debug]\nF12Auto3DScripts=INVALID\nF12Auto3DScripts=1\n")
+    assert "[Debug] F12Auto3DScripts=1" in values
+    assert "[Debug] F12Auto3DScripts=INVALID" not in values
+
+
+def test_canonical_f10_and_legacy_f12_config_retained_through_recovery(recover_runner,tmp_path):
+    user_ini=("[Debug]\nLog=1\nF10TestMode=1\nF10Auto3DScripts=1\n"
+       "F12TestMode=0\nF12Auto3DScripts=0\n[System]\n"
+       "QuickExitF10=1\nQuickExitF12=0\n[Audio]\nVoiceLevel=71\n")
+    lines=recover(recover_runner,tmp_path,user_ini)
+    for entry in ("[Debug] F10TestMode=1","[Debug] F10Auto3DScripts=1",
+                  "[Debug] F12TestMode=0","[System] QuickExitF10=1",
+                  "[System] QuickExitF12=0","[Audio] VoiceLevel=71"):
+        assert entry in lines
+
+
+def test_auto_repair_preserves_f10_gameplay_exit(recover_runner,tmp_path):
+    lines=recover(recover_runner,tmp_path,
+        "[Debug]\nLog=1\nF10TestMode=1\nF10Auto3DScripts=1\nF10GameplayExit=1\n"
+        "[Keyboard]\nJump=SPACE\n[Plugin]\nUnknown=x\n")
+    assert "[Debug] F10GameplayExit=1" in lines
+    assert "[Keyboard] Jump=SPACE" in lines
+
+
+def test_repair_keeps_f10_verbose_trace_and_native_exit(recover_runner,tmp_path):
+    lines=recover(recover_runner,tmp_path,
+        "[Debug]\nLog=1\nF10TestMode=1\nF10Auto3DScripts=1\n"
+        "F10GameplayExit=1\nF10VerboseTrace=1\n[Unknown]\nValue=3\n")
+    assert "[Debug] F10VerboseTrace=1" in lines
+    assert "[Debug] F10GameplayExit=1" in lines
