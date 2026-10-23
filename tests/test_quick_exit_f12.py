@@ -518,6 +518,31 @@ def test_debug_intro_skip_latch_is_one_shot_and_cannot_cancel_new_game_bink():
 
 
 
+
+def test_debug_menu_input_delay_probe_is_read_only_and_native_gated():
+    """Log visible-menu input eligibility vs original transition flag.
+    Native 0x493DDB gates the keyboard/mouse handling when [0x54D38C]
+    is nonzero. This does not prove that DirectInput accepted an event.
+    """
+    menu=SRC[SRC.index("int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest("):
+             SRC.index("/* x86 stack at entry")]
+    assert "DEBUG-MENU-INPUT-PROBE" in menu
+    assert "intro_still_exit_state,0,0)==3" in menu
+    assert "n<=210" in menu
+    assert "n<=150 && n%15==0" in menu
+    assert "*SPIDER_TRACE_TRANSITION_RAW" in menu
+    assert "(const volatile DWORD *)(uintptr_t)0x006B78F0u" in menu
+    assert "transition?\\\"GATED\\\":\\\"ELIGIBLE\\\"" not in menu
+    assert 'transition?"GATED":"ELIGIBLE"' in menu
+    assert "NO DEVICE-HR CLAIM" in menu
+    assert "ms_since_first_menu" in menu
+    for forbidden in ("ExitProcess(", "TerminateProcess(", "DestroyWindow(",
+                      "SetForegroundWindow(", "SetWindowPos(", "Acquire(",
+                      "GetDeviceData(", "*SPIDER_TRACE_TRANSITION_RAW=",
+                      "*SPIDER_ENGINE_MODE=", "*SPIDER_GAME_QUIT_FLAG="):
+        assert forbidden not in menu
+
+
 def test_f12_debug_shortcut_restricts_3d_exit_to_native_gameplay():
     worker=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
                SRC.index("void SpiderQuickExitF12_Init(")]
