@@ -391,6 +391,32 @@ static void __cdecl spider_observe_native_game_input(void) {
   SPIDER_NATIVE_GAME_INPUT_UPDATE();
   after_request=*SPIDER_ENGINE_MODE;
   native_after_request=after_request; /* immutable pre-F12 snapshot */
+  /* 0x45553B is reached only AFTER the 0x45551D game-owned script
+   * dispatcher returned and after the native 0x440EF0 tick finished.
+   * Allow original native cleanup (0x455BF9, controller 7) to run,
+   * exactly as on the previously user-validated 3D path. */
+  if(InterlockedCompareExchange(&postmovie_state,0,0)==2) {
+    DWORD started=(DWORD)InterlockedCompareExchange(&postmovie_request_ms,0,0);
+    if(SpiderQuickExitF12_Enabled() &&
+       InterlockedCompareExchange(&postmovie_opt_in,0,0)==1 &&
+       InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
+       InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
+       before_request==0u && after_request==0u &&
+       *SPIDER_GAME_BINK_ACTIVE==0u && *SPIDER_BINK_VIDEO_HANDLE==0u &&
+       started && (DWORD)(GetTickCount()-started)<15000u &&
+       InterlockedCompareExchange(&game3d_exit_state,2,0)==0) {
+      InterlockedExchange(&game3d_cleanup_baseline,
+        InterlockedCompareExchange(&native_game_cleanup_count,0,0));
+      InterlockedExchange(&game3d_cleanup_confirmed,0);
+      *(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;
+      after_request=7u;
+      InterlockedExchange(&postmovie_state,3);
+      say("QUICK-EXIT-F12: POSTMENU-MOVIE original Bink + script returned; native input checkpoint complete; request 7 for original cleanup [EXPERIMENTAL]");
+    } else {
+      InterlockedExchange(&postmovie_state,0);
+      say("QUICK-EXIT-F12: POSTMENU-MOVIE handoff declined; gameplay F12 still available");
+    }
+  }
   if(InterlockedCompareExchange(&game3d_exit_state,2,1)==1) {
     if(InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
        before_request==0u && after_request==0u &&
