@@ -29,30 +29,30 @@ SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must prov
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 
-### F12 fast-test shortcut — [Debug], default OFF
+### F10 fast-test shortcut — [Debug], default OFF
 
-For testing changes rapidly, you can enable a separate F12 mode:
+For testing changes rapidly, you can enable a separate F10 mode:
 
 ```ini
 [Debug]
-F12TestMode=1
+F10TestMode=1\nF10Auto3DScripts=1
 Log=1
 ```
 
-With this enabled, **F12 before the main menu navigates to the main
+With this enabled, **F10 before the main menu navigates to the main
 menu**, using the original Bink and static-page cleanup. The first
 auto-timed page is now **accelerated** by its own native timeout
 comparison, without waiting several seconds or bypassing its
-resource/SEH cleanup. **F12 in active 3D gameplay quits the game**
+resource/SEH cleanup. **F10 in active 3D gameplay quits the game**
 via the existing native controller-7 exit.
-F12 in the main menu is ignored. **New Game skip development (partial):**
-F12 during the first New Game cover `L1COV.bmp` now satisfies the
+F10 in the main menu is ignored. **New Game skip development (partial):**
+F10 during the first New Game cover `L1COV.bmp` now satisfies the
 original **300-native-tick expiry test immediately** on the game
 thread: the game itself advances through its existing native branch
 to Bink movie #4. The patch intercepts only the original local
 clock READ at `0x4279B8`, never the shared game clock or script
 dispatcher, and only after verifying the exact `L1COV.bmp`
-and movie #4 instruction signatures. The same single F12 request
+and movie #4 instruction signatures. The same single F10 request
 then ends movie #4 via its original video cleanup. If signature
 validation fails, the old timed-cover fallback is preserved.
 **This new comic acceleration is not yet runtime-validated.**
@@ -60,9 +60,9 @@ After the Bink movie (which can be skipped using Enter), there are
 **two consecutive skippable 3D scenes**: Stan Lee's narrated introduction,
 then another 3D cinematic. **Space skips each 3D scene separately**.
 These stages and the first genuinely playable frame cannot yet be
-distinguished using verified native scene flags. After movie #4, F12
+distinguished using verified native scene flags. After movie #4, F10
 is intentionally blocked from shutting down the process until the
-actual playable boundary is established. **F12 does NOT yet skip
+actual playable boundary is established. **F10 does NOT yet skip
 either 3D scene or re-enable gameplay exit in the unclassified run.**
 With `Log=1` the patch captures separate physical Space key-down
 events, a read-only original `0x440EF0` phase-state snapshot, and
@@ -81,24 +81,37 @@ mode, and raw result, without modifying game input.
 Neither evidence alone establishes cinematic completion
 or gameplay readiness. No synthetic Space/Enter,
 process termination, or arbitrary controller transition is used.
-The single `[Debug] F12TestMode` option overrides the older
-`[System]` F12 controls and defaults to `0`; `Log=1` is recommended.
+The single `[Debug] F10TestMode` option overrides the older
+`[System]` F10 controls and defaults to `0`; `Log=1` is recommended.
 
-The complete previously validated F12 implementation was archived
+The complete previously validated F10 implementation was archived
 at [`backup/f12-native-exit-validated-20261023`](https://github.com/legluondunet/SpiderMan2k1Fix/tree/backup/f12-native-exit-validated-20261023)
 (commit `4adf16aa13a867a3256f7a2f7ce506cc53b9b82a`).
-When `F12TestMode=1`, the game's original menu clock synchronization
+When `F10TestMode=1`, the game's original menu clock synchronization
 is **always preserved**. The experimental menu clock-wait bypass is removed
 because it can expose a visible menu before the native clock is ready.
-The original approximately 3–4-second first-menu wait may return after F12.
+The original approximately 3–4-second first-menu wait may return after F10.
 The prior branch is archived at
 [`backup/f12-debug-menu-wait-before-experiment-20261023`](https://github.com/legluondunet/SpiderMan2k1Fix/tree/backup/f12-debug-menu-wait-before-experiment-20261023).
-See [F12 debug mode and restoration guide](docs/F12_DEBUG_TEST_MODE.md).
+See [F10 debug mode and restoration guide](docs/F10_DEBUG_TEST_MODE.md).
 **The accelerated startup path has been user-tested. Native clock waits are now preserved; this rollback needs fresh runtime validation.**
-The original F12 full-exit behavior remains backed up separately.
+The original F10 full-exit behavior remains backed up separately.
 PR #26 remains draft and unmerged.
 
-### Optional F12 quick exit — native cleanup, experimental stages
+### Legacy F12-named options (now activated using F10) — native cleanup, experimental stages
+
+**F10 is the only physical shortcut recognized by SpiderMan2k1Fix.**
+F11 and F12 remain free for MangoHud on Linux. The ORIGINAL game's
+F12 -> PostMessageA(WM_CLOSE) WndProc instruction is still suppressed
+to avoid an unsafe abrupt window close. Legacy `F12TestMode`,
+`F12Auto3DScripts`, `QuickExitF12` and other existing F12-named
+INI options remain accepted as configuration aliases for F10.
+Their names **do not** reactivate the F12 keyboard shortcut.
+
+For new installations, use `[Debug] F10TestMode=1`,
+`F10Auto3DScripts=1` and `Log=1`; this enables the
+independently opt-in two-script native New Game skip with a
+single F10 on the comic. Off by default; still experimental.
 
 **F12 is OFF by default.** The original 2001 game shortcut can
 post `WM_CLOSE` before the game's Bink, DirectDraw and audio

@@ -27,9 +27,10 @@ def test_generated_example_factory_consistency():
     assert bytes.fromhex(config['Internal']['RawHex']) == bytes_data
     assert set(config.sections()) == {'Debug','System','Display','HUD','Input','Audio','Keyboard','Joystick','Internal'}
     assert config['Debug']['Log'] == '0'
-    assert config['Debug']['F12Auto3DScripts'] == '0'
-    assert '"F12Auto3DScripts=0\\r\\n"' in virtual
-    assert 'F12Auto3DScripts=0' in (ROOT / 'SpiderMan2k1Fix.ini').read_text()
+    assert config['Debug']['F10Auto3DScripts'] == '0'
+    assert config['Debug']['F10TestMode'] == '0'
+    assert '"F10Auto3DScripts=0\\r\\n"' in virtual
+    assert 'F10Auto3DScripts=0' in (ROOT / 'SpiderMan2k1Fix.ini').read_text()
     assert config['System']['QuickExitF12'] == '0'
     assert not config.has_option('Internal','VirtualSpideyCfg')
     assert not config.has_option('Internal','BootstrapGameConfig')

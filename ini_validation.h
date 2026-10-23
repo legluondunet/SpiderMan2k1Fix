@@ -50,8 +50,10 @@ static const char *const spider_ini_sections[]={"Debug","System","Display","HUD"
 /* Native two-cutscene F12 auto-skip opt-in: never silently discard it
  * during INI preflight/repair. The generic Debug validator below
  * already enforces strict boolean values (0/1). */
-static const char *const spider_ini_debug[]={"Log","F12TestMode","F12Auto3DScripts"};
-static const char *const spider_ini_system[]={"QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic","ExperimentalQuickExitF12InIntroStills"};
+/* F10 is the hotkey. F12-named keys are legacy INI aliases ONLY. */
+static const char *const spider_ini_debug[]={"Log","F10TestMode","F10Auto3DScripts","F12TestMode","F12Auto3DScripts"};
+/* Keep all pre-existing INIs valid without regenerating saved controls. */
+static const char *const spider_ini_system[]={"QuickExitF10","ExperimentalQuickExitF10In3D","ExperimentalQuickExitF10InNewGameMovie","ExperimentalQuickExitF10InNewGameComic","ExperimentalQuickExitF10InIntroStills","QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic","ExperimentalQuickExitF12InIntroStills"};
 static const char *const spider_ini_display[]={
   "Resolution","AspectRatio","Brightness","FPSLimit","FOV",
   "ExperimentalFOVAspect","ExperimentalFOVHorPlus",

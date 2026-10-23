@@ -1,3 +1,43 @@
+## 2026-10-23 — Shortcut reassigned from F12 to F10 for Linux MangoHud
+
+The physical shortcut is **F10 exclusively**, to avoid MangoHud's
+Linux F11/F12 bindings. This is NOT a request to enable the original
+F12 WndProc command: static x86 disassembly of SHA-verified
+SpideyPC.exe shows that original WndProc 0x5152B0 is registered
+through RegisterClassA at 0x515A18, WM_KEYDOWN wParam 0x7B (F12)
+selects the PostMessageA(WM_CLOSE) path at 0x515373. Keep the
+existing exact-signature patch which replaces ONLY the original
+PostMessageA call with stack cleanup. It does not have to be
+reinstalled for F10 and does not interfere with MangoHud's key.
+
+The F10 polling site in the existing background input watcher
+uses GetAsyncKeyState(VK_F10); no GetAsyncKeyState(VK_F12) remains.
+All existing original menu, comic, Bink and native script paths
+are unchanged; the proven Wine #681 native two-script auto-skip
+now starts on a single F10 during the original New Game comic.
+
+New canonical INI debug keys: F10TestMode and
+F10Auto3DScripts, both default 0, require the same Log/opt-in
+safety gates as their old names. New canonical System flags:
+QuickExitF10, ExperimentalQuickExitF10In3D,
+ExperimentalQuickExitF10InNewGameMovie,
+ExperimentalQuickExitF10InNewGameComic and
+ExperimentalQuickExitF10InIntroStills, all default 0.
+The corresponding old F12-named keys REMAIN VALID and
+are interpreted as config aliases for F10; if either alias
+or canonical version is enabled, the corresponding F10
+behavior may be enabled. No legacy option can make F12
+an active shortcut again. This avoids INI auto-repair
+deleting old settings and preserves saved controls.
+The existing internal C function names and historical
+QUICK-EXIT-F12 log prefix are kept for compatibility.
+
+No automatic F10 gameplay exit is authorized; controller-7
+exit still fails closed during unclassified New Game 3D.
+PR remains DRAFT/UNMERGED pending Wine test/approval.
+
+---
+
 ## 2026-10-23 — Fix: auto-skip debug setting rejected by INI validation
 
 After Windows x86 build #678, the user reported

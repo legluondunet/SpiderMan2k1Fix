@@ -2436,7 +2436,10 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
   for(;;) {
     HWND hwnd=(HWND)InterlockedCompareExchangePointer(&game_hwnd,NULL,NULL);
     BOOL focused=hwnd && IsWindow(hwnd) && GetForegroundWindow()==hwnd;
-    BOOL down=(GetAsyncKeyState(VK_F12)&0x8000)!=0;
+    /* F10 is our only physical shortcut; F11/F12 belong to MangoHud on Linux.
+     * Do NOT restore the game's original unsafe VK_F12->WM_CLOSE:
+     * the existing exact-site suppression remains deliberately intact. */
+    BOOL down=(GetAsyncKeyState(VK_F10)&0x8000)!=0;
     /* Observe each separate physical SPACE press after Bink movie #4,
      * without delivering input to the game. Unlike the first two
      * SPACE presses in the user's 2026-10-23 15:57:30 Wine test, its
@@ -2538,7 +2541,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
                 InterlockedExchange(&debug_auto3d_first_last_ip,0);
                 InterlockedExchange(&debug_auto3d_begin_ms,(LONG)now);
                 InterlockedExchange(&debug_auto3d_state,1);
-                say("QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE ARMED by F12 on original L1COV.bmp; will wait for TWO independent native CutSceneSkipAllow transitions after verified Bink #4; no gameplay EXIT");
+                say("QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE ARMED by F10 on original L1COV.bmp; will wait for TWO independent native CutSceneSkipAllow transitions after verified Bink #4; no gameplay EXIT");
               }
               say(InterlockedCompareExchange(&debug_newgame_comic_clock_hook_installed,0,0)==1 ?
                   "QUICK-EXIT-F12: DEBUG-NEWGAME-COMIC F12 armed; original L1COV.bmp 300-tick completion will be met at next 0x4279B8 poll, followed by native movie #4 (NO EXIT)" :
@@ -2562,7 +2565,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
            * native end condition or playable boundary has been mapped.
            * An unclassified F12 must NEVER become a controller-7 exit.
            * Capture evidence and consume the key edge safely. */
-          say("QUICK-EXIT-F12: DEBUG-NEWGAME-3D F12 consumed: TWO SPACE-skippable 3D introductions vs gameplay NOT YET VERIFIED; native EXIT BLOCKED [NO INPUT INJECTION]");
+          say("QUICK-EXIT-F12: DEBUG-NEWGAME-3D F10 consumed: auto cinematic skips are opt-in; gameplay EXIT BLOCKED [NO INPUT INJECTION]");
         } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
                   InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
                   *SPIDER_ENGINE_MODE==0u &&
@@ -2690,13 +2693,18 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   }
   memcpy(ini,exe,(size_t)(slash-exe)+1);
   strcpy(ini+(slash-exe)+1,"SpiderMan2k1Fix.ini");
+  /* Old F12 INI names remain compatibility ALIASES for activating
+   * the NEW F10 shortcut. They do not make F12 a shortcut again. */
   GetPrivateProfileStringA("System","QuickExitF12","0",val,sizeof(val),ini);
-  if(GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1) {
+  if(GetPrivateProfileIntA("System","QuickExitF10",0,ini)==1)
+    strcpy(val,"1");
+  if(GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1 ||
+     GetPrivateProfileIntA("Debug","F10TestMode",0,ini)==1) {
     /* One diagnostic switch is sufficient: retain the proven native
      * hook setup without requiring any legacy System F12 option. */
     InterlockedExchange(&debug_f12_test_mode,1);
     strcpy(val,"1");
-    say("QUICK-EXIT-F12: [Debug] F12TestMode=1 — pre-menu F12 to main menu, 3D F12 native exit; overrides old F12 behavior [EXPERIMENTAL]");
+    say("QUICK-EXIT-F12: HOTKEY=F10 (F10TestMode=1 or legacy F12TestMode=1): opening intro F10 -> main menu; New Game F10 -> native comic/Bink/script skip; gameplay exit still guarded; original F12 WM_CLOSE suppressed");
   }
   memset(trace,0,sizeof(trace));
   if(GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
@@ -2718,15 +2726,17 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
    * Enabling QuickExitF12 alone retains the previous menu/Bink behavior. */
   InterlockedExchange(&experimental_game3d_enabled,
     (InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 ||
-     GetPrivateProfileIntA("System","ExperimentalQuickExitF12In3D",0,ini)==1) ? 1 : 0);
+     (GetPrivateProfileIntA("System","ExperimentalQuickExitF12In3D",0,ini)==1 ||
+       GetPrivateProfileIntA("System","ExperimentalQuickExitF10In3D",0,ini)==1)) ? 1 : 0);
   /* Stage-mutating cinematic skips are intentionally OFF by default.
    * F12TestMode by itself still only observes the two 3D intros;
    * opt in explicitly with [Debug] F12Auto3DScripts=1 plus Log=1. */
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
      GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
-     GetPrivateProfileIntA("Debug","F12Auto3DScripts",0,ini)==1) {
+     (GetPrivateProfileIntA("Debug","F12Auto3DScripts",0,ini)==1 ||
+      GetPrivateProfileIntA("Debug","F10Auto3DScripts",0,ini)==1)) {
     InterlockedExchange(&debug_auto3d_opt_in,1);
-    say("QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE explicit F12Auto3DScripts=1 enabled; only verified New Game comic F12 arms two native script skip requests; game exit remains BLOCKED [EXPERIMENTAL]");
+    say("QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE F10Auto3DScripts=1 (or legacy F12Auto3DScripts=1) enabled; only verified New Game comic F10 arms two native script skip requests; gameplay exit BLOCKED [EXPERIMENTAL]");
   }
   memset(movie_trial,0,sizeof(movie_trial));
   /* The explicit INI options make tested Wine installations easier
@@ -2737,7 +2747,8 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   if(strcmp(val,"1")==0 &&
      GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
      InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
-     (GetPrivateProfileIntA("System","ExperimentalQuickExitF12InNewGameMovie",0,ini)==1 ||
+     ((GetPrivateProfileIntA("System","ExperimentalQuickExitF12InNewGameMovie",0,ini)==1 ||
+       GetPrivateProfileIntA("System","ExperimentalQuickExitF10InNewGameMovie",0,ini)==1) ||
       (GetEnvironmentVariableA("SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT",
                                movie_trial,sizeof(movie_trial))==1 &&
        movie_trial[0]=='1'))) {
@@ -2746,7 +2757,8 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   }
   memset(comic_trial,0,sizeof(comic_trial));
   if(InterlockedCompareExchange(&postmovie_opt_in,0,0)==1 &&
-     (GetPrivateProfileIntA("System","ExperimentalQuickExitF12InNewGameComic",0,ini)==1 ||
+     ((GetPrivateProfileIntA("System","ExperimentalQuickExitF12InNewGameComic",0,ini)==1 ||
+       GetPrivateProfileIntA("System","ExperimentalQuickExitF10InNewGameComic",0,ini)==1) ||
       (GetEnvironmentVariableA("SPIDERMAN2K1FIX_F12_COMIC_EXIT",
                                comic_trial,sizeof(comic_trial))==1 &&
        comic_trial[0]=='1'))) {
@@ -2756,12 +2768,16 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   if(strcmp(val,"1")==0 &&
      (InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 ||
       (GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
-       GetPrivateProfileIntA("System","ExperimentalQuickExitF12InIntroStills",0,ini)==1))) {
+       (GetPrivateProfileIntA("System","ExperimentalQuickExitF12InIntroStills",0,ini)==1 ||
+       GetPrivateProfileIntA("System","ExperimentalQuickExitF10InIntroStills",0,ini)==1)))) {
     InterlockedExchange(&intro_still_opt_in,1);
     say("QUICK-EXIT-F12: INTRO-STILL F12 opt-in enabled (exact 0x4A1896 native owner; Windows/Wine UNVALIDATED)");
   }
-  /* Even with opt-in OFF, suppress the game's original unsafe
-   * VK_F12 -> WM_CLOSE, which is known to orphan Bink and the process. */
+  /* Always suppress the ORIGINAL game's unsafe VK_F12 -> WM_CLOSE.
+   * Its Win32 WndProc at 0x5152B0 is REGISTERED at 0x515A18;
+   * original WM_KEYDOWN(VK_F12) maps to PostMessageA(WM_CLOSE)
+   * at 0x515373. We keep suppressing this even though our NEW
+   * physical hotkey uses F10 exclusively. */
   if(strcmp(val,"1")!=0) {
     if(suppress_unsafe_native_f12())
       say("QUICK-EXIT-F12: OFF; unsafe original F12 WM_CLOSE suppressed");

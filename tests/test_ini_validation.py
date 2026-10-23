@@ -202,9 +202,27 @@ def test_f12_auto_3d_scripts_key_is_validated_as_strict_debug_boolean(
 
 def test_complete_3d_opt_in_is_accepted_and_example_defaults_off(runner, tmp_path):
     ini = (ROOT / "SpiderMan2k1Fix.generated-example.ini").read_text()
-    assert "F12Auto3DScripts=0" in ini
+    assert "F10Auto3DScripts=0" in ini
     assert validate(runner, tmp_path, ini)[0] == (0, 0, 1)
     enabled = ini.replace("Log=0", "Log=1", 1).replace(
-        "F12TestMode=0", "F12TestMode=1", 1
-    ).replace("F12Auto3DScripts=0", "F12Auto3DScripts=1", 1)
+        "F10TestMode=0", "F10TestMode=1", 1
+    ).replace("F10Auto3DScripts=0", "F10Auto3DScripts=1", 1)
     assert validate(runner, tmp_path, enabled)[0] == (0, 0, 1)
+
+
+@pytest.mark.parametrize("key", ["F10TestMode","F10Auto3DScripts","F12TestMode","F12Auto3DScripts"])
+@pytest.mark.parametrize("value,valid",[("0",True),("1",True),("2",False),("-1",False),("yes",False)])
+def test_f10_canonical_and_legacy_f12_debug_keys_are_strict_boolean(runner,tmp_path,key,value,valid):
+    outcome,detail=validate(runner,tmp_path,f"[Debug]\\n{key}={value}\\n")
+    if valid:
+        assert outcome==(0,0,1),detail
+    else:
+        assert outcome[0]>=1 and outcome[2]==0,detail
+
+
+@pytest.mark.parametrize("key", ["QuickExitF10","ExperimentalQuickExitF10In3D",
+    "ExperimentalQuickExitF10InNewGameMovie","ExperimentalQuickExitF10InNewGameComic",
+    "ExperimentalQuickExitF10InIntroStills"])
+def test_f10_system_options_known_and_disabled_or_enabled(runner,tmp_path,key):
+    for n in ("0","1"):
+        assert validate(runner,tmp_path,f"[System]\\n{key}={n}\\n")[0]==(0,0,1)
