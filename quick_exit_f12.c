@@ -347,6 +347,11 @@ static volatile LONG debug_menu_wait_exit_hook_installed=0;
  * Both must end before gameplay F12 EXIT becomes permissible, but a
  * reliable native "playable" gate has NOT yet been mapped. */
 static volatile LONG debug_newgame_progress=0;
+/* Independent of F10: Bink #4's original owner is detected by its
+ * exact native return address. 0=not observed, 1=movie owner observed,
+ * 2=first native 3D input has received the key-release barrier.
+ * Used by the minimal pass-through hook when the F10 shortcut is OFF. */
+static volatile LONG movie4_input_release_state=0;
 /* Explicit additional opt-in for the first controlled NATIVE auto-skip
  * experiment. All global stage changes originate in the native game
  * thread except state=1 initialization by the original F12 comic edge.
@@ -670,19 +675,24 @@ static void __cdecl spider_observe_native_pause_handler(void) {
  * ORIGINAL first 3D input update. No DirectInput buffer or native
  * cutscene state is written. Only an unarmed New Game intro can wait;
  * F10-armed introductions and normal gameplay are untouched. */
-static void spider_newgame_enter_release_barrier(void) {
+static void spider_newgame_enter_release_barrier(int confirmed_movie4) {
   DWORD began=GetTickCount(),elapsed=0u;
   LONG enter_before,enter_after,space_before,space_after;
   BYTE original_return,original_space;
   char event[420];
-  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)!=1 ||
-     InterlockedCompareExchange(&debug_auto3d_f10_origin,0,0)!=0 ||
+  /* The original New Game movie is a verified source of input
+   * carry-over even if the optional F10Shortcut is disabled. The
+   * independent owner latch is ONLY set from Bink movie #4's exact
+   * original stack. The legacy F10 path keeps its original guards. */
+  if(InterlockedCompareExchange(&debug_auto3d_f10_origin,0,0)!=0 ||
      InterlockedCompareExchange(&debug_auto3d_state,0,0)!=0 ||
      (*SPIDER_GAME_BINK_ACTIVE)!=0u ||
      (*SPIDER_BINK_VIDEO_HANDLE)!=0u)
     return;
-  {
-    LONG phase=InterlockedCompareExchange(&debug_newgame_progress,0,0);
+  if(!confirmed_movie4) {
+    LONG phase;
+    if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)!=1)return;
+    phase=InterlockedCompareExchange(&debug_newgame_progress,0,0);
     if(phase!=1 && phase!=2)return;
   }
   enter_before=(GetAsyncKeyState(VK_RETURN)&0x8000)!=0;
@@ -711,6 +721,20 @@ static void spider_newgame_enter_release_barrier(void) {
     (unsigned)*SPIDER_NATIVE_RAW_SPACE_BYTE,
     (unsigned long)elapsed,(int)(enter_after || space_after));
   say(event);
+}
+
+/* Minimal safety-only owner for F10Shortcut=0. The F10 owner hook
+ * is deliberately NOT installed, and the original 0x440EF0 native
+ * update runs exactly once on the game thread. Only the first 3D
+ * input frame AFTER positively identified New Game Bink #4 waits for
+ * the physical Enter/Space key-up; no F10 state or request-7 writes. */
+static void __cdecl spider_movie4_safety_only_game_input(void) {
+  if(InterlockedCompareExchange(&movie4_input_release_state,0,0)==1 &&
+     *SPIDER_GAME_BINK_ACTIVE==0u &&
+     *SPIDER_BINK_VIDEO_HANDLE==0u &&
+     InterlockedCompareExchange(&movie4_input_release_state,2,1)==1)
+    spider_newgame_enter_release_barrier(1);
+  SPIDER_NATIVE_GAME_INPUT_UPDATE();
 }
 
 /* Native game-input owner wrapper at 0x45553B:
@@ -745,7 +769,7 @@ static void __cdecl spider_observe_native_game_input(void) {
    * On the very FIRST native 3D call after a normally ended movie,
    * wait for physical Enter AND Space release BEFORE 0x440EF0.
    * F10-armed auto-skips bypass this barrier. */
-  if(n==1)spider_newgame_enter_release_barrier();
+  if(n==1)spider_newgame_enter_release_barrier(0);
   InterlockedExchange(&last_native_game_input_ms,(LONG)GetTickCount());
   SPIDER_NATIVE_GAME_INPUT_UPDATE();
   after_request=*SPIDER_ENGINE_MODE;
@@ -1887,19 +1911,23 @@ static BYTE __cdecl spider_f12_native_intro_tick(void) {
       say("QUICK-EXIT-F12: native Bink tick returned finished; original game video cleanup will run");
     return 0;
   }
-  /* Identify New Game movie #4 from its EXACT original native stack,
-   * whether or not F12 was pressed. This is positive cinematic-stage
-   * evidence: the 3D intro must not be mistaken for playable gameplay.
-   * The native owner and stack signature are already Windows-proven. */
-  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
-     InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
-     *SPIDER_GAME_BINK_ACTIVE!=0u && *SPIDER_BINK_VIDEO_HANDLE!=0u) {
+  /* Identify movie #4 from the EXACT original Bink game-thread
+   * stack regardless of the F10 debug option. A verified original
+   * caller at 0x427A00 (allow-skip=1) is a positive New Game marker.
+   * No movie-stop request or synthetic input is made here. */
+  if(*SPIDER_GAME_BINK_ACTIVE!=0u && *SPIDER_BINK_VIDEO_HANDLE!=0u) {
     const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
     DWORD return_address=(DWORD)frame[1];
     if((return_address==0x00470822u || return_address==0x00470864u) &&
-       (DWORD)frame[4]==0x00427A00u && (DWORD)frame[6]==1u &&
-       InterlockedCompareExchange(&debug_newgame_progress,1,0)==0)
-      say("QUICK-EXIT-F12: DEBUG-NEWGAME-MOVIE original movie-4 owner identified (0x4279FB); future 3D F12 is guarded until playable intro boundary proven");
+       (DWORD)frame[4]==0x00427A00u && (DWORD)frame[6]==1u) {
+      if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+         InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
+         InterlockedCompareExchange(&debug_newgame_progress,1,0)==0)
+        say("QUICK-EXIT-F12: DEBUG-NEWGAME-MOVIE original movie-4 owner identified (0x4279FB); future 3D F12 is guarded until playable intro boundary proven");
+      if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)!=1 &&
+         InterlockedCompareExchange(&movie4_input_release_state,1,0)==0)
+        say("QUICK-EXIT-F12: BINK-4-SAFETY original movie #4 confirmed; first 3D input will wait for Enter/Space release [F10 OFF; PASSIVE]");
+    }
   }
   /* Movie 4's owner was proven by Windows caller trace and original
    * EXE: call 0x4279FB, return 0x427A00, allow-skip argument 1.
@@ -2562,6 +2590,14 @@ static void restore_debug_3d_native_input_probes(void) {
                             spider_native_3d_input_original[i]);
 }
 
+/* Independent safety-only 0x45553B hook, never enables F10 actions.
+ * The original-call signature is checked by patch_native_call(). */
+static int install_movie4_safety_only_game_input_hook(void) {
+  return patch_native_call(SPIDER_NATIVE_GAME_INPUT_CALL,
+                           native_game_input_call_original,
+                           (const void *)spider_movie4_safety_only_game_input);
+}
+
 static int install_passive_game_input_probe(void) {
   return patch_native_call(SPIDER_NATIVE_GAME_INPUT_CALL,
                            native_game_input_call_original,
@@ -3192,6 +3228,17 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
       say("QUICK-EXIT-F12: OFF; unsafe original F12 WM_CLOSE suppressed");
     else
       say("QUICK-EXIT-F12: OFF; native F12 signature mismatch");
+    /* F10 stays OFF: install ONLY the verified Bink tick observer and
+     * original 3D input pass-through. The Enter/Space release fix must
+     * work for ordinary gameplay without opting into a debug shortcut.
+     * If either exact site mismatches, leave all input sites original. */
+    if(!install_intro_tick_hooks())
+      say("QUICK-EXIT-F12: BINK-4-SAFETY unavailable: original movie tick signatures mismatch [F10 OFF]");
+    else if(!install_movie4_safety_only_game_input_hook()) {
+      restore_intro_tick_hooks();
+      say("QUICK-EXIT-F12: BINK-4-SAFETY unavailable: native 3D input signature mismatch [ALL SAFETY HOOKS RESTORED; F10 OFF]");
+    } else
+      say("QUICK-EXIT-F12: BINK-4-SAFETY enabled independently of F10Shortcut; original movie #4 owner and Enter/Space release only [F10 OFF]");
     return;
   }
   /* Shell_MainMenu has 8 entries. Slot 3 must be "quit" action=0x12,

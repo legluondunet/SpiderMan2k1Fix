@@ -2088,3 +2088,37 @@ def test_default_generated_ini_omits_development_f10_shortcut():
         assert f'"{option}=0\\r\\n"' not in GEN
     assert "F10VerboseTrace=0" in INI
     assert '"F10VerboseTrace=0\\r\\n"' in GEN
+
+def test_movie4_input_release_safety_remains_enabled_when_f10_shortcut_off():
+    """Regression: Enter on Bink #4 must not skip 3D intro with F10 disabled."""
+    source=SRC
+    off=source[source.index('if(strcmp(val,"1")!=0) {',source.index("void SpiderQuickExitF12_Init(")):
+               source.index('/* Shell_MainMenu has 8 entries.',source.index("void SpiderQuickExitF12_Init("))]
+    assert "install_intro_tick_hooks()" in off
+    assert "install_movie4_safety_only_game_input_hook()" in off
+    assert "restore_intro_tick_hooks();" in off
+    assert "CreateThread(" not in off
+    assert "InterlockedExchange(&enabled,1)" not in off
+    mini=source[source.index("static void __cdecl spider_movie4_safety_only_game_input(void)"):
+                source.index("/* Native game-input owner wrapper at 0x45553B:")]
+    assert mini.count("SPIDER_NATIVE_GAME_INPUT_UPDATE();")==1
+    assert "spider_newgame_enter_release_barrier(1);" in mini
+    assert "movie4_input_release_state,2,1" in mini
+    assert "SPIDER_GAME_BINK_ACTIVE==0u" in mini
+    assert "SPIDER_BINK_VIDEO_HANDLE==0u" in mini
+    assert "*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST=" not in mini
+    assert "SendInput(" not in mini
+    assert "ExitProcess(" not in mini
+    tick=source[source.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
+                source.index("static void spider",source.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"))] if False else source[source.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):]
+    assert "movie4_input_release_state,1,0" in tick
+    assert "(DWORD)frame[4]==0x00427A00u && (DWORD)frame[6]==1u" in tick
+    assert 'BINK-4-SAFETY original movie #4 confirmed' in tick
+    barrier=source[source.index("static void spider_newgame_enter_release_barrier("):
+                   source.index("/* Minimal safety-only owner for F10Shortcut=0.")]
+    assert "if(!confirmed_movie4)" in barrier
+    assert "enter_before || space_before" in barrier
+    assert "Sleep(10);" in barrier
+    assert "GetTickCount()-began)<1500u" in barrier
+    assert "Sleep(40);" in barrier
+    assert "InterlockedExchange(&debug_auto3d_state" not in barrier

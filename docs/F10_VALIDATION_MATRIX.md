@@ -145,3 +145,26 @@ or request a native cutscene skip. New diagnostics show both keys'
 before/after states and raw-space byte. This is still a hypothesis:
 physical Space may be pressed or interpreted unexpectedly under Wine;
 the new test log must confirm whether key-up precedes the first scene.
+
+
+### Build #710 — Enter/Space release safety independent from F10
+
+Build #709 under Wine with all F10 debug switches disabled logs
+`QUICK-EXIT-F12: OFF` and reproduces unintended first 3D intro
+skipping on Enter at Bink #4. Root cause: the previously validated
+Enter/Space release barrier was inside the *optional F10 input hook*,
+so when F10 was OFF the entire key-release safety behavior vanished.
+
+A minimal, independent native pass-through now installs ONLY the two
+original BinkFrame tick hooks (for positive movie #4 identification)
+and the native game input owner wrapper (for the first 3D input
+release barrier), even with F10Shortcut absent/0. The original Bink
+frame tick and 3D native input methods are still called once each.
+F10 remains OFF, no synthetic keys, and no native script skip.
+
+Check for `BINK-4-SAFETY enabled independently of F10Shortcut`,
+`BINK-4-SAFETY original movie #4 confirmed` and
+`DEBUG-BINK-ENTER-HANDOFF ... space_before=1 space_after=0`.
+The initial 3D scene must play normally, then the second. Separately
+regress F10Shortcut=1 (including Bink/3D/gameplay) to ensure previous
+build #705 behavior is unchanged.
