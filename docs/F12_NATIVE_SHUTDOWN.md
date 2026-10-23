@@ -1,3 +1,61 @@
+## 2026-10-23 — Windows 11 #589: second pre-menu Press Enter F12 clean exit confirmed
+
+The user returned to native **Windows 11** and tested the
+**second pre-menu static page ("Press Enter")** with build #589.
+The attached full native Windows log is
+`SpiderMan2k1Fix(20261023-100409).log`, patch version
+`v1.0.0-823379a`, running the supported original
+`SpideyPC.exe` with exact SHA-256
+`0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
+The user independently checked Windows Task Manager and stated
+**"pas de processus spideypc.exe dans le gestionnaire des tâches"**.
+
+This run used `ExperimentalQuickExitF12InIntroStills=1`;
+the runtime explicitly logged the opt-in and validated the INI.
+The separate passive `STARTUP-STATIC-PROBE` was *not*
+enabled in this Windows run, so no static-frame timeline
+can be inferred from its absence.
+
+Key log sequence:
+
+```text
+QUICK-EXIT-F12: INTRO-STILL F12 opt-in enabled (exact 0x4A1896 native owner; Windows/Wine UNVALIDATED)
+QUICK-EXIT-F12: ENGINE-STATE flip=147 ... bink_flag=0 video_handle_present=0 ... menu_seen=0
+QUICK-EXIT-F12: INTRO-STILL F12 latched after original Bink cleanup; waiting for native timed page + input-wait owner [EXPERIMENTAL]
+QUICK-EXIT-F12: INTRO-STILL original input-wait owner 0x4A1896 verified; normal TRUE completion for 0x4A18AE native page cleanup; menu Quit queued [EXPERIMENTAL]
+QUICK-EXIT-F12: REAL Shell_MainMenu frame callback observed (0x493DD6)
+QUICK-EXIT-F12: INTRO-STILL native page owner returned; original Shell_MainMenu Quit now activated [EXPERIMENTAL]
+QUICK-EXIT-F12: native Shell_MainMenu Quit activated: slot=3 action=18, native cleanup branch=0x4941D5
+```
+
+**Validated on Windows 11:** F12 during the second static
+"Press Enter" page requests normal completion via the
+original native input owner `0x4A1896` / regular original
+page cleanup branch `0x4A18AE`, then original
+`Shell_MainMenu` Quit action 18. The game exits and
+the user found **no residual `SpideyPC.exe` process
+in Task Manager**. These findings independently
+reproduce the successful Wine test of the same stage.
+
+The exact second-page native destructor/SEH instructions
+were not individually instrumented; the original control
+flow and successful shutdown support that cleanup path,
+not an independent audit of every resource release.
+The Windows run did not test the **first timed static page**,
+New Game comic, post-menu Bink movie, or this particular
+build's other stage regressions. Preserve those as
+separate tests. The 1–2-second yellow-screen artifact
+reported on Wine cinematics is still neither diagnosed
+nor reproduced on Windows; do not infer absence/presence
+from this unrelated still-stage run.
+
+This is an evidence/documentation-only update.
+`ExperimentalQuickExitF12InIntroStills` stays
+**default OFF**. Keep PR #26 draft and unmerged
+until the user's explicit approval.
+
+---
+
 ## 2026-10-23 — Wine #589 FIRST timed intro still F12: native timer preserved; original menu Quit
 
 User reports a successful game shutdown after pressing **F12
