@@ -70,11 +70,15 @@ the input masks/results of five signature-verified native
 `0x50C180` 3D CALL sites (the original function and BYTE result are
 preserved). The original input mask `0x04000000` maps to
 DIK_SPACE (`0x39`) inside `0x50C180`, but none of the five
-observed game sites uses that mask. The new `DEBUG-3D-SPACE-GATE`
-diagnostic also observes the exact original `0x455427` and
-`0x455444` **direct** Space polling sites, guarded by game-owned
-flag `0x100`, leaving both real results unchanged.
-Neither input evidence alone establishes cinematic completion
+observed game sites uses that mask. The read-only `DEBUG-3D-SPACE-GATE` probe observes original
+`0x455427` / `0x455444` Space polling sites, but Wine
+tests showed their native guard bit `0x100` remains clear
+during BOTH introduction skips: those are NOT their handlers.
+The `DEBUG-3D-RAW-SPACE` probe now also traces the original
+`0x50A650` central keyboard helper's two raw-read calls to
+`0x501CB0` (Space key only), including original caller VA,
+mode, and raw result, without modifying game input.
+Neither evidence alone establishes cinematic completion
 or gameplay readiness. No synthetic Space/Enter,
 process termination, or arbitrary controller transition is used.
 The single `[Debug] F12TestMode` option overrides the older

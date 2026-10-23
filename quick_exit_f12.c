@@ -168,6 +168,16 @@
 #define SPIDER_NATIVE_3D_SPACE_CALL_2 ((BYTE *)(uintptr_t)0x00455444u)
 #define SPIDER_NATIVE_3D_SPACE_POLL ((DWORD (__cdecl *)(DWORD,DWORD))(uintptr_t)0x0050A650u)
 #define SPIDER_NATIVE_CUTSCENE_INPUT_FLAGS ((const volatile DWORD *)(uintptr_t)0x02E0988Cu)
+/* The 0x455427/0x455444 Space gate is *not used* during either
+ * intro in Wine run 20261023-151958: native bit 0x100 remained
+ * clear throughout. Probe the CENTRAL original 0x50A650 keyboard
+ * helper instead, at its ONLY two 0x501CB0 READ CALL sites:
+ * 0x50A65D (event/edge mode=1) and 0x50A674 (level mode=0).
+ * The caller address remains on the original unmodified x86 stack.
+ * These are READ-ONLY wrappers, not a synthetic keyboard shortcut. */
+#define SPIDER_NATIVE_KEY_READ ((DWORD (__cdecl *)(DWORD))(uintptr_t)0x00501CB0u)
+#define SPIDER_NATIVE_KEY_EDGE_CALL ((BYTE *)(uintptr_t)0x0050A65Du)
+#define SPIDER_NATIVE_KEY_LEVEL_CALL ((BYTE *)(uintptr_t)0x0050A674u)
 #define SPIDER_NATIVE_3D_INPUT_SITES_COUNT 5
 #define SPIDER_NATIVE_3D_INPUT ((BYTE (__cdecl *)(DWORD,DWORD,DWORD))(uintptr_t)0x0050C180u)
 static BYTE *const spider_native_3d_input_sites[SPIDER_NATIVE_3D_INPUT_SITES_COUNT]={
@@ -220,6 +230,9 @@ static const BYTE native_pause_call_original[5]={0xE8,0xF2,0x66,0x02,0x00};
 static const BYTE native_game_input_call_original[5]={0xE8,0xB0,0xB9,0xFE,0xFF};
 static const BYTE spider_native_3d_space_original_1[5]={0xE8,0x24,0x52,0x0B,0x00};
 static const BYTE spider_native_3d_space_original_2[5]={0xE8,0x07,0x52,0x0B,0x00};
+/* 0x50A650 -> 0x501CB0, in both exact original x86 branches. */
+static const BYTE spider_native_key_edge_original[5]={0xE8,0x4E,0x76,0xFF,0xFF};
+static const BYTE spider_native_key_level_original[5]={0xE8,0x37,0x76,0xFF,0xFF};
 /* Exact original 2001 EXE CALL rel32 -> 0x50C180 at five 3D sites. */
 static const BYTE spider_native_3d_input_original[SPIDER_NATIVE_3D_INPUT_SITES_COUNT][5]={
   {0xE8,0x47,0xB2,0x0C,0x00}, /* 0x440F34: 0x40040 */
@@ -304,6 +317,7 @@ static volatile LONG debug_newgame_3d_space_edges=0;
  * Used for mapping SPACE-controlled scripted scene transitions. */
 static volatile LONG debug_newgame_native_input_probes_installed=0;
 static volatile LONG debug_newgame_space_gate_probes_installed=0;
+static volatile LONG debug_newgame_lowlevel_key_probes_installed=0;
 static volatile LONG last_native_game_input_ms=0;
 static volatile LONG last_game3d_flip_ms=0;
 /* 0 idle, 1 requested, 2 native request 7 dispatched, 3 final exit. */
@@ -830,6 +844,62 @@ static DWORD __cdecl spider_probe_3d_space_gate(
     }
   }
   return original;
+}
+
+/* Original 0x50A650 DOES NOT adjust ESP or save EBP before
+ * 0x50A65D/0x50A674. For a cdecl one-argument wrapped call,
+ * [our EBP+4]  = return inside 0x50A650 (0x50A662/0x50A679),
+ * [our EBP+8]  = pushed DIK argument from 0x50A650,
+ * [our EBP+12] = ORIGINAL call return VA into 0x50A650,
+ * [our EBP+16] = DIK from 0x50A650's ORIGINAL caller,
+ * [our EBP+20] = input mode from that caller.
+ * Inspect only scalars, never rewrite or dereference unknown callers.
+ * The original raw 0x501CB0 return is passed through unaltered.
+ */
+static DWORD __cdecl spider_probe_native_raw_key(DWORD dik) {
+  DWORD result=SPIDER_NATIVE_KEY_READ(dik);
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+     InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
+     InterlockedCompareExchange(&debug_newgame_lowlevel_key_probes_installed,0,0)==1 &&
+     dik==0x39u) {
+    const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+    DWORD inner=(DWORD)frame[1],caller=(DWORD)frame[3];
+    DWORD caller_key=(DWORD)frame[4],caller_mode=(DWORD)frame[5];
+    if((inner==0x0050A662u || inner==0x0050A679u) &&
+       caller_key==dik && (caller_mode==0u || caller_mode==1u)) {
+      static volatile LONG total=0;
+      static LONG last_code[2]={-1,-1};
+      static LONG last_physical[2]={-1,-1};
+      static DWORD last_emitted[2]={0,0};
+      int index=inner==0x0050A662u?1:0;
+      LONG physical=(GetAsyncKeyState(VK_SPACE)&0x8000)!=0;
+      DWORD now=GetTickCount();
+      LONG code=(LONG)(result&0xffu);
+      LONG changed=last_code[index]!=code || last_physical[index]!=physical;
+      if(InterlockedCompareExchange(&total,0,0)<100 &&
+         (changed || !last_emitted[index] ||
+          (DWORD)(now-last_emitted[index])>=3000u)) {
+        LONG n=InterlockedIncrement(&total);
+        if(n<=100) {
+          DWORD start=(DWORD)InterlockedCompareExchange(&debug_newgame_3d_first_ms,0,0);
+          char line[410];
+          snprintf(line,sizeof(line),
+            "QUICK-EXIT-F12: DEBUG-3D-RAW-SPACE origin=0x%08lX internal=0x%08lX dik=0x%02lX mode=%lu raw_code=0x%02lX physical_space=%ld edges=%ld bit100=%lu since_3d_ms=%lu [READ-ONLY; ORIGINAL RAW KEY RESULT; SCENE UNKNOWN]",
+            (unsigned long)caller,(unsigned long)(inner-5u),
+            (unsigned long)dik,(unsigned long)caller_mode,
+            (unsigned long)(result&0xffu),(long)physical,
+            (long)InterlockedCompareExchange(&debug_newgame_3d_space_edges,0,0),
+            (unsigned long)((*SPIDER_NATIVE_CUTSCENE_INPUT_FLAGS&0x100u)!=0u),
+            (unsigned long)(start?(DWORD)(now-start):0u));
+          say(line);
+        }
+        last_emitted[index]=now;
+      }
+      last_code[index]=code;
+      last_physical[index]=physical;
+    }
+  }
+  return result;
 }
 
 /* PASSIVE owner cleanup checkpoint for the real gameplay path.
@@ -1559,6 +1629,38 @@ static void restore_debug_3d_space_gate_probes(void) {
                           spider_native_3d_space_original_2);
 }
 
+/* Both original 0x50A650 branches perform a single 5-byte
+ * CALL to 0x501CB0. Trace only DIK_SPACE=0x39 in confirmed post-Bink
+ * New Game sessions. Install both READ-ONLY hooks or none.
+ * The original game owns all KEY PRESS / KEY RELEASE semantics. */
+static int install_debug_raw_space_probes(void) {
+  if(memcmp(SPIDER_NATIVE_KEY_EDGE_CALL,spider_native_key_edge_original,5)!=0 ||
+     memcmp(SPIDER_NATIVE_KEY_LEVEL_CALL,spider_native_key_level_original,5)!=0)
+    return 0;
+  if(!patch_native_call(SPIDER_NATIVE_KEY_EDGE_CALL,
+                        spider_native_key_edge_original,
+                        (const void *)spider_probe_native_raw_key))
+    return 0;
+  if(!patch_native_call(SPIDER_NATIVE_KEY_LEVEL_CALL,
+                        spider_native_key_level_original,
+                        (const void *)spider_probe_native_raw_key)) {
+    restore_intro_tick_call(SPIDER_NATIVE_KEY_EDGE_CALL,
+                            spider_native_key_edge_original);
+    return 0;
+  }
+  InterlockedExchange(&debug_newgame_lowlevel_key_probes_installed,1);
+  return 1;
+}
+
+static void restore_debug_raw_space_probes(void) {
+  if(InterlockedCompareExchange(&debug_newgame_lowlevel_key_probes_installed,0,1)!=1)
+    return;
+  restore_intro_tick_call(SPIDER_NATIVE_KEY_EDGE_CALL,
+                          spider_native_key_edge_original);
+  restore_intro_tick_call(SPIDER_NATIVE_KEY_LEVEL_CALL,
+                          spider_native_key_level_original);
+}
+
 /* Instrument all five exact original 3D input CALL sites or none.
  * This is passive runtime attribution only; original 0x50C180
  * result and stack ownership remain unchanged. No hidden fallback
@@ -2245,11 +2347,16 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     else
       say("QUICK-EXIT-F12: DEBUG-3D-NATIVE-INPUT callsite signatures mismatch; passive 3D input probes disabled, F12 exit guard preserved");
     if(install_debug_3d_space_gate_probes())
-      say("QUICK-EXIT-F12: DEBUG-3D-SPACE-GATE original 0x455427/0x455444 DIK_SPACE=0x39 and flag 0x100 gate traced (original polls unchanged)");
+      say("QUICK-EXIT-F12: DEBUG-3D-SPACE-GATE original 0x455427/0x455444 DIK_SPACE=0x39 and flag 0x100 gate traced (original polls unchanged; gate INACTIVE in previous Wine runs)");
     else
       say("QUICK-EXIT-F12: DEBUG-3D-SPACE-GATE exact original callsites mismatch; probes disabled, original SPACE and F12 guard preserved");
+    if(install_debug_raw_space_probes())
+      say("QUICK-EXIT-F12: DEBUG-3D-RAW-SPACE original 0x50A650 -> 0x501CB0 edge/level key-read sites traced (DIK_SPACE only, original raw result unchanged, origin logged)");
+    else
+      say("QUICK-EXIT-F12: DEBUG-3D-RAW-SPACE exact low-level 0x50A65D/0x50A674 signatures mismatch; probes disabled; F12 safety unchanged");
   }
   if(!suppress_unsafe_native_f12()) {
+    restore_debug_raw_space_probes();
     restore_debug_3d_space_gate_probes();
     restore_debug_3d_native_input_probes();
     restore_newgame_comic_clock_hook();
@@ -2270,6 +2377,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   thread=CreateThread(NULL,0,f12_input_thread,NULL,0,NULL);
   if(!thread) {
     InterlockedExchange(&enabled,0);
+    restore_debug_raw_space_probes();
     restore_debug_3d_space_gate_probes();
     restore_debug_3d_native_input_probes();
     restore_newgame_comic_clock_hook();

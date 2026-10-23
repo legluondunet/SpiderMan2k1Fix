@@ -1,3 +1,53 @@
+## 2026-10-23 — Wine 15:19:58 log: prior Space gate disproved, central key source traced
+
+Uploaded `SpiderMan2k1Fix(20261023-151958).log` (Windows
+x86 build #666 under Wine) confirms the original F12-on-comic
+300-tick expiry + Bink movie #4 native shutdown in **1 ms**.
+Physical SPACE events in original 3D occurred at **+1278 ms**
+and **+2643 ms**. HUD instruction geometry appeared immediately
+after the second event. The `space_gate_bit100` raw signal
+`0x02E0988C & 0x100` was continuously **0** throughout the
+observed 3D session. No `DEBUG-3D-SPACE-GATE` line was produced;
+the original `0x455427/0x455444` gate is **NOT the routine
+used to skip these two intros** in this run. Likewise the
+five earlier instrumented `0x50C180` callsite masks returned
+0 across both Space presses. Later player-like mode transitions
+(`0x5FAECC` to 1 and then 3) occur **long after the key
+events** and cannot label either intro.
+
+**Next passive attribution:** The SHA-matched original EXE's
+`0x50A650` key helper calls `0x501CB0` in two separate
+branches, at `0x50A65D` (original event mode) and
+`0x50A674` (original level mode). Unlike the previous
+`0x455427/0x455444` guard, these are the low-level
+keyboard helper's CENTRAL original raw-read sites and may
+be reached from many game and script owners. Signature-verified
+call wrappers return the original raw read exactly once
+without any key injection. **ONLY while inside the confirmed
+post-Bink New Game 3D owner** and with Debug Log enabled,
+the wrapper records calls where DIK=0x39 (SPACE), their
+original caller return VA, original mode, key result,
+physical SPACE status and 3D-relative time, bounded
+to 100 lines. The actual original caller identity will
+help locate whichever scene/script routine really reads
+Space; absence of records would instead falsify that
+source path. The x86 original `0x50A650` body has no
+prologue or stack adjustment before these CALLs, allowing
+the wrapper to observe the caller return address through
+the unchanged stack, without dereferencing game pointers.
+
+**This remains strictly diagnostic**. The exact two 3D
+cinematic skip mechanisms and a verifiable playable-ready
+signal are not yet mapped; F12 after movie #4 still fails
+closed and is NOT equivalent to SPACE yet. New log key:
+`DEBUG-3D-RAW-SPACE` (`origin`, `internal`, `mode`,
+`raw_code`, `physical_space`). Suggested next Wine
+test: F12 on New Game cover, manually press/release SPACE
+once in Stan Lee intro and once in the following cinematic,
+then control Spider-Man briefly and upload the entire log.
+
+---
+
 ## 2026-10-23 — Wine 15:01:05 log + exact original DIK_SPACE gate found
 
 The log `SpiderMan2k1Fix(20261023-150105).log` validates native

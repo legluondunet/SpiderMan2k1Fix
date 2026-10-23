@@ -1463,3 +1463,39 @@ def test_original_3d_space_direct_poll_gates_are_read_only():
     assert "install_debug_3d_space_gate_probes()" in init
     assert init.count("restore_debug_3d_space_gate_probes();")>=2
     assert "F12 exit guard preserved" in init
+
+
+def test_native_raw_space_read_traces_caller_without_modifying_return():
+    """The real 0x50A650 helper calls 0x501CB0 by exact two 5-byte CALLs.
+    Wrappers log only DIK_SPACE and pass along actual native raw result."""
+    assert "SPIDER_NATIVE_KEY_EDGE_CALL ((BYTE *)(uintptr_t)0x0050A65Du)" in SRC
+    assert "SPIDER_NATIVE_KEY_LEVEL_CALL ((BYTE *)(uintptr_t)0x0050A674u)" in SRC
+    assert "spider_native_key_edge_original[5]={0xE8,0x4E,0x76,0xFF,0xFF}" in SRC
+    assert "spider_native_key_level_original[5]={0xE8,0x37,0x76,0xFF,0xFF}" in SRC
+    assert "SPIDER_NATIVE_KEY_READ ((DWORD (__cdecl *)(DWORD))(uintptr_t)0x00501CB0u)" in SRC
+    wrapper=SRC[SRC.index("static DWORD __cdecl spider_probe_native_raw_key("):
+                SRC.index("/* PASSIVE owner cleanup checkpoint")]
+    assert "DWORD result=SPIDER_NATIVE_KEY_READ(dik);" in wrapper
+    assert "return result;" in wrapper
+    assert "frame[3]" in wrapper
+    assert "frame[4]" in wrapper
+    assert "frame[5]" in wrapper
+    assert "dik==0x39u" in wrapper
+    assert "DEBUG-3D-RAW-SPACE origin=0x%08lX" in wrapper
+    assert "raw_code=0x%02lX" in wrapper
+    for bad in ("SendInput(", "keybd_event(", "PostMessageA(",
+                "ExitProcess(", "TerminateProcess(", "return 1;",
+                "*(volatile DWORD *)(uintptr_t)0x0060CFA4u="):
+        assert bad not in wrapper
+    install=SRC[SRC.index("static int install_debug_raw_space_probes(void)"):
+                SRC.index("/* Instrument all five exact original 3D input CALL sites")]
+    assert "memcmp(SPIDER_NATIVE_KEY_EDGE_CALL" in install
+    assert "memcmp(SPIDER_NATIVE_KEY_LEVEL_CALL" in install
+    assert "patch_native_call(SPIDER_NATIVE_KEY_EDGE_CALL" in install
+    assert "patch_native_call(SPIDER_NATIVE_KEY_LEVEL_CALL" in install
+    assert "spider_probe_native_raw_key" in install
+    assert "restore_intro_tick_call(SPIDER_NATIVE_KEY_EDGE_CALL" in install
+    assert "restore_intro_tick_call(SPIDER_NATIVE_KEY_LEVEL_CALL" in install
+    init=SRC[SRC.index("void SpiderQuickExitF12_Init("):]
+    assert "install_debug_raw_space_probes()" in init
+    assert init.count("restore_debug_raw_space_probes();")>=2
