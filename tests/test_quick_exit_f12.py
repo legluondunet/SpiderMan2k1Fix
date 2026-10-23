@@ -74,6 +74,16 @@ def test_startup_static_screen_probe_is_extra_opt_in_bounded_and_read_only():
     assert "dispatcher_raw=%lu" in observer
     assert "transition_raw=%lu" in observer
     assert "real_menu_tick_count=%ld" in observer
+    assert "still_frame_count=%lu" in observer
+    assert "timed_page_once=%lu" in observer
+    assert "native_clock_raw=%lu" in observer
+    assert "#define SPIDER_TRACE_STILL_FRAME_COUNT ((const volatile DWORD *)(uintptr_t)0x0060CFA8u)" in SRC
+    assert "#define SPIDER_TRACE_TIMED_PAGE_ONCE ((const volatile BYTE *)(uintptr_t)0x006A7785u)" in SRC
+    assert "#define SPIDER_TRACE_NATIVE_CLOCK_RAW ((const volatile DWORD *)(uintptr_t)0x006B4CA0u)" in SRC
+    for scalar in ("SPIDER_TRACE_STILL_FRAME_COUNT", "SPIDER_TRACE_TIMED_PAGE_ONCE",
+                   "SPIDER_TRACE_NATIVE_CLOCK_RAW"):
+        assert f"*{scalar}" in observer
+        assert f"*{scalar}=" not in observer
     for name in ("SPIDER_TRACE_MENU_CONTEXT", "SPIDER_TRACE_MENU_STAGE_BYTE",
                  "SPIDER_TRACE_DISPATCH_RAW", "SPIDER_TRACE_TRANSITION_RAW"):
         assert name in observer
