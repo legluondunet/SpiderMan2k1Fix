@@ -207,7 +207,7 @@ def test_postmenu_movie_opt_in_is_off_by_default_and_verified_per_owner():
     assert "tick_return==0x00470822u || tick_return==0x00470864u" in tick
     assert "(DWORD)frame[4]==0x00427A00u" in tick
     assert "(DWORD)frame[6]==1u" in tick
-    assert "postmovie_state,2,1" in tick
+    assert "postmovie_state,2,stage" in tick
     assert "SPIDER_BINK_VIDEO_HANDLE!=0u" in tick
     assert tick.count("native_result=SPIDER_NATIVE_BINK_FRAME_TICK();")==1
     assert "return native_result;" in tick
@@ -244,6 +244,48 @@ def test_postmenu_movie_handoff_is_post_native_script_and_cleanup_gated():
     for forbidden in ("ExitProcess(", "TerminateProcess(", "PostMessageA(",
                       "DestroyWindow(", "BinkClose("):
         assert forbidden not in owner
+
+
+
+def test_deferred_comic_f12_keeps_native_still_owner_and_then_uses_movie_four():
+    """The pre-film still has no proven native owner: never cut its timer."""
+    assert "static volatile LONG comic_exit_opt_in=0;" in SRC
+    assert "SPIDERMAN2K1FIX_F12_COMIC_EXIT" in SRC
+    assert "comic_exit_opt_in,1" in SRC
+    assert "postmovie_opt_in,0,0)==1 &&" in SRC
+    watcher=SRC[SRC.index("static DWORD WINAPI f12_input_thread("):
+                SRC.index("void SpiderQuickExitF12_Init(")]
+    assert "COMIC F12 deferred until native New Game movie 4" in watcher
+    assert "postmovie_state,4,0" in watcher
+    assert "SPIDER_GAME_BINK_ACTIVE==0u" in watcher
+    assert "SPIDER_BINK_VIDEO_HANDLE==0u" in watcher
+    assert "last_comic_candidate_ms" in watcher
+    assert "input_native_invocations,0,0)==0" in watcher
+    assert "postmovie_state,0,4" in watcher
+    assert "12000u" in watcher
+    assert watcher.index("InterlockedExchange(&postmovie_request_ms,(LONG)now);") < watcher.index(
+        "InterlockedCompareExchange(&postmovie_state,4,0)")
+    tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
+             SRC.index("/* This wrapper executes ON THE ORIGINAL GAME THREAD")]
+    assert "stage==1 || stage==4" in tick
+    assert "stage==4 ? 12000u : 5000u" in tick
+    assert "comic_exit_opt_in,0,0)==1" in tick
+    assert "(DWORD)frame[4]==0x00427A00u" in tick
+    assert "(DWORD)frame[6]==1u" in tick
+    assert "postmovie_state,2,stage" in tick
+    assert 'stage==4 ? "DEFERRED-COMIC" : "CINEMATIC"' in tick
+    assert tick.count("native_result=SPIDER_NATIVE_BINK_FRAME_TICK();")==1
+    assert "return native_result;" in tick
+    # It is a delayed exit, never a synthetic animation skip / resource free.
+    for forbidden in ("ExitProcess(", "TerminateProcess(", "BinkClose(",
+                      "PostMessageA(", "DestroyWindow("):
+        assert forbidden not in tick
+    comic=SRC[SRC.index("void SpiderQuickExitF12_ObserveComicRender("):
+              SRC.index("/* Read-only stage discovery")]
+    assert "*SPIDER_GAME_BINK_ACTIVE=" not in comic
+    assert "*SPIDER_ENGINE_MODE=" not in comic
+    assert "SpiderQuickExitF12_ObserveComicRender" in comic
+
 
 
 def test_default_off_and_ini_section_validated():
