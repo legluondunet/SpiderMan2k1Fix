@@ -60,8 +60,7 @@ The original New Game sequence and in-game native shutdown have been
 - **F10 during playable 3D:** native menu return only when the
   original scene manager confirms no active scripted cinematic.
 
-The F10 shortcut is **disabled by default** and intentionally **not
-generated** in `SpiderMan2k1Fix.ini`. To enable it for development,
+The F10 shortcut is **disabled by default** and intentionally **not generated** in `SpiderMan2k1Fix.ini`. To enable it for development,
 manually add the following to the existing `[Debug]` section:
 
 ```ini

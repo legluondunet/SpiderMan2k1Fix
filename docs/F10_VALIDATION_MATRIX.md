@@ -18,7 +18,8 @@ F10VerboseTrace=0
 value defaults to 0. Add `F10Shortcut=1` manually to `[Debug]`;
 `Log=1` is optional, for diagnostics only. Older F10TestMode,
 F10Auto3DScripts and F10GameplayExit keys stay accepted in existing
-INIs under their original requirements. Unverified later in-level
+INIs under their original requirements. Set `F10VerboseTrace=1`
+for detailed read-only diagnostics. Unverified later in-level
 cinematics are outside the validated New Game behavior.
 
 ## Confirmed baseline
