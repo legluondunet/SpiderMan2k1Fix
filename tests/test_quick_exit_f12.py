@@ -15,6 +15,39 @@ INI=(ROOT/"SpiderMan2k1Fix.generated-example.ini").read_text(encoding="utf-8")
 BUILD=(ROOT/"build.sh").read_text(encoding="utf-8")
 
 
+
+def test_comic_render_candidate_observation_is_passive_and_owner_agnostic():
+    # A 512x256 native comic-like quad is a rendering marker, NOT the
+    # owner of the underlying game scene or permission to quit.
+    assert "void SpiderQuickExitF12_ObserveComicRender(" in HDR
+    assert "void SpiderQuickExitF12_ObserveComicRender(" in SRC
+    start=SRC.index("void SpiderQuickExitF12_ObserveComicRender(")
+    end=SRC.index("/* Read-only stage discovery",start)
+    cb=SRC[start:end]
+    assert "SpiderQuickExitF12_Enabled()" in cb
+    assert "COMIC-RENDER-CANDIDATE" in cb
+    assert "[RENDER-ONLY; comic owner UNKNOWN]" in cb
+    assert "native_3d_owner_calls" in cb
+    assert "InterlockedCompareExchange(&input_native_invocations,0,0)" in cb
+    assert "n>8 && n%120!=0" in cb
+    for forbidden in ("*SPIDER_ENGINE_MODE=", "*SPIDER_GAME_QUIT_FLAG=",
+                      "game3d_exit_state,1,0", "TerminateProcess(",
+                      "ExitProcess(", "DestroyWindow(", "PostMessageA(",
+                      "SPIDER_NATIVE_GAME_CLEANUP();", "BinkClose("):
+        assert forbidden not in cb
+    start=CORE.index("static const void *maybe_correct_native_comic")
+    end=CORE.index("static const void *maybe_correct_horplus",start)
+    drawing=CORE[start:end]
+    assert "SpiderComicNative_IsCandidate" in drawing
+    assert "SpiderQuickExitF12_ObserveComicRender(" in drawing
+    assert drawing.index("SpiderComicNative_IsCandidate") < drawing.index(
+        "SpiderQuickExitF12_ObserveComicRender(")
+    assert drawing.index("SpiderQuickExitF12_ObserveComicRender(") < drawing.index(
+        "SpiderComicNative_Transform")
+    assert drawing.count("SpiderQuickExitF12_ObserveComicRender(")==1
+    assert "original_draw_primitive" not in drawing
+
+
 def test_default_off_and_ini_section_validated():
     assert "QuickExitF12=0" in INI
     assert '"[System]\\r\\n"' in GEN
