@@ -1582,3 +1582,20 @@ def test_original_game_3d_scene_context_probe_is_read_only_and_non_authoritative
     assert "SPIDER_NATIVE_3D_CONTROLLER_OBJECT=" not in owner
     assert "SPIDER_NATIVE_3D_DISPATCH_HEAD=" not in owner
     assert "*(volatile DWORD *)(uintptr_t)0x0060CFA4u=" not in owner[:owner.index("/* 0x45553B is reached only AFTER")]
+
+
+def test_read_only_dispatch_event_node_fields_not_scene_permission():
+    """Original event node +4/+5, event ID +0xc, next +0x14.
+    Head address stays fixed while node events may change."""
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("/* PASSIVE, exact-site 3D input diagnostics")]
+    assert "DEBUG-3D-DISPATCH-NODE" in owner
+    assert "triggered=node[4];" in owner
+    assert "pending=node[5];" in owner
+    assert "event_id=*(const volatile DWORD *)(uintptr_t)(head+0x0Cu);" in owner
+    assert "next=*(const volatile DWORD *)(uintptr_t)(head+0x14u);" in owner
+    assert "event_logs<70" in owner
+    assert "SCENE UNPROVEN" in owner
+    assert "node[4]=" not in owner
+    assert "node[5]=" not in owner
+    assert "SendInput(" not in owner

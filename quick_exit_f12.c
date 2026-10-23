@@ -195,6 +195,10 @@
  * Neither is PROVEN to indicate gameplay readiness. Observe only. */
 #define SPIDER_NATIVE_3D_CONTROLLER_OBJECT ((const volatile DWORD *)(uintptr_t)0x0056F3B8u)
 #define SPIDER_NATIVE_3D_DISPATCH_HEAD ((const volatile DWORD *)(uintptr_t)0x006B4708u)
+/* Original event dispatcher 0x4DE890 clears node byte +4;
+ * 0x4DE8B0 tests byte +5; 0x4DE8D0 matches DWORD +0x0C and
+ * follows next pointer +0x14. These are native event-list
+ * fields, NOT independently verified cutscene flags. */
 #define SPIDER_NATIVE_KEYBOARD_DEVICE ((const volatile DWORD *)(uintptr_t)0x006B7A5Cu)
 #define SPIDER_NATIVE_KEY_EDGE_CALL ((BYTE *)(uintptr_t)0x0050A65Du)
 #define SPIDER_NATIVE_KEY_LEVEL_CALL ((BYTE *)(uintptr_t)0x0050A674u)
@@ -780,6 +784,48 @@ static void __cdecl spider_observe_native_game_input(void) {
       previous_dispatch=dispatch;
       previous_flags=scene_flags;
       previous_physical=space;
+    }
+    /* Passive sample of the first ORIGINAL dispatch node.
+     * Pointer 0x6B4708 stayed constant through both 3D skips and
+     * gameplay jump in Wine #673; its own event fields can change.
+     * No linked-list traversal, game memory writes or input edits. */
+    {
+      DWORD head=*SPIDER_NATIVE_3D_DISPATCH_HEAD;
+      DWORD event_id=0u,next=0u;
+      BYTE triggered=0u,pending=0u;
+      static DWORD old_head=0xffffffffu,old_event=0xffffffffu;
+      static DWORD old_next=0xffffffffu,last_emit=0u;
+      static LONG old_triggered=-1,old_pending=-1,old_physical=-1;
+      static LONG event_logs=0;
+      if(head>=0x00010000u) {
+        const volatile BYTE *node=(const volatile BYTE *)(uintptr_t)head;
+        triggered=node[4];
+        pending=node[5];
+        event_id=*(const volatile DWORD *)(uintptr_t)(head+0x0Cu);
+        next=*(const volatile DWORD *)(uintptr_t)(head+0x14u);
+      }
+      if((head!=old_head || event_id!=old_event ||
+          next!=old_next || triggered!=old_triggered ||
+          pending!=old_pending || space!=old_physical ||
+          !last_emit || (DWORD)(now-last_emit)>=2500u) &&
+         event_logs<70 && (!start || (DWORD)(now-start)<90000u)) {
+        char eventline[380];
+        snprintf(eventline,sizeof(eventline),
+          "QUICK-EXIT-F12: DEBUG-3D-DISPATCH-NODE head=0x%08lX event_id=0x%08lX triggered=%u pending=%u next=0x%08lX space=%ld edges=%ld since_3d_ms=%lu [ORIGINAL 0x4DE890 EVENT DATA; READ-ONLY; SCENE UNPROVEN]",
+          (unsigned long)head,(unsigned long)event_id,
+          (unsigned)triggered,(unsigned)pending,
+          (unsigned long)next,(long)space,(long)edges,
+          (unsigned long)(start?(DWORD)(now-start):0u));
+        say(eventline);
+        ++event_logs;
+        last_emit=now;
+      }
+      old_head=head;
+      old_event=event_id;
+      old_next=next;
+      old_triggered=triggered;
+      old_pending=pending;
+      old_physical=space;
     }
     if((!start || (DWORD)(now-start)<90000u) &&
        (last_space!=space || sample_count<6 ||

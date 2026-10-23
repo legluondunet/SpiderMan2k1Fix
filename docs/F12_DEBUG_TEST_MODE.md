@@ -1,3 +1,40 @@
+## 2026-10-23 — Analysis of user Wine 16:25:54 log, native dispatcher observation
+
+Build #673 log SpiderMan2k1Fix(20261023-162554).log shows
+two original 3D cinematic SPACE presses at +2070ms and +3269ms,
+then a deliberate gameplay jump at +4903ms. Original cover/Bink
+teardown still completes in 2ms.
+
+The original controller object at 0x56F3B8 and member +0x2A0
+starts in value 5, changes 5 -> 3 -> 5 during the FIRST intro
+press, then 5 -> 3 persistently at the SECOND cinematic skip,
+remaining 3 during the gameplay jump. This is a promising
+correlation, but 3 appears transiently even during the first
+cinematic. Static EXE disassembly shows this is an actor-state
+field with writers in 0x4162xx/0x4164xx and a generic setter
+0x4167F0. Thus treating value 3 as native playable-ready
+would be unsafe. Neither an elapsed-time threshold nor
+SPACE event counts can prove scene completion.
+
+The original dispatcher head at 0x6B4708 remains 0x059E8AC0
+through all three presses. The exact disassembly shows this
+is a linked list: original routine 0x4DE890 clears node +4,
+0x4DE8B0 tests node +5, and 0x4DE8D0 uses a DWORD event ID
+at node +0x0C, following its next pointer at +0x14.
+Therefore constant HEAD does not imply constant event data.
+
+The existing original game-thread diagnostic now PASSIVELY
+records the first node's game-owned event flag bytes +4/+5,
+event ID +0x0C, and link +0x14 in bounded
+DEBUG-3D-DISPATCH-NODE lines, correlated to physical SPACE
+and elapsed time. No additional instruction hook or
+native input/scene/clock mutation is introduced. These
+generic event flags remain unproven as cinematic detectors.
+PR #26 remains draft and unmerged; F12 auto-3D-skip and
+playable-only native exit stay disabled pending proof.
+
+---
+
 ## 2026-10-23 — Wine 16:17:50: action 0x10 is indistinguishable for 3D skips and gameplay jump
 
 The user supplied complete build #672 log
