@@ -489,8 +489,7 @@ def test_debug_intro_skip_latch_is_one_shot_and_cannot_cancel_new_game_bink():
     zero BEFORE the real tick, silently skipping the next cinematic.
     """
     tick=SRC[SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"):
-             SRC.index("/* The original top-level",SRC.index(
-                 "static BYTE __cdecl spider_f12_native_intro_tick(void)"))]
+             SRC.index("static void __cdecl spider_after_intro_cleanup(int mode)")]
     assert 'if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1)' in tick
     assert tick.index('if(InterlockedCompareExchange(&intro_quit_pending,0,0)==1)') < tick.index(
         "native_result=SPIDER_NATIVE_BINK_FRAME_TICK();")
