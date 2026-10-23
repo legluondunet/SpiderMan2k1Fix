@@ -29,6 +29,33 @@ SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must prov
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 
+### F10 gameplay exit — new opt-in Wine experiment
+
+The user-validated F10 New Game cover/movie/two-3D-script auto-skip is
+unchanged. A **second physical F10 press** after those two original
+`CutSceneScript` sequences finish can now request a **native process quit**
+using the original controller-7 3D cleanup, subject to an extra
+`[Debug] F10GameplayExit=1` setting. This is **disabled by default** and
+currently limited to the verified New Game F10 auto-skip path; pressing F10
+during either cinematic, an unclassified 3D scene or a paused game does
+not request shutdown.
+
+```ini
+[Debug]
+Log=1
+F10TestMode=1
+F10Auto3DScripts=1
+F10GameplayExit=1
+```
+
+To test: start New Game, press F10 on the comic, wait for both scripts
+to skip, verify Spider-Man moves/jumps normally, then release and press F10
+again in playable 3D. The native game thread must confirm the original
+script manager is idle before requesting controller 7, and native 3D
+resource cleanup must complete before final shutdown. No manual process
+kill, simulated Space key, or direct `WM_CLOSE`. If any issue occurs,
+set `F10GameplayExit=0` and retain the previous build.
+
 ### F10 fast-test shortcut — [Debug], default OFF
 
 For testing changes rapidly, you can enable a separate F10 mode:

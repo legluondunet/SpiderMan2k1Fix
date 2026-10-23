@@ -1,10 +1,13 @@
-# External, read-only F12 quick-exit verification for Windows PowerShell 5.1+.
+# External, read-only F10 quick-exit verification for Windows PowerShell 5.1+.
+# Legacy script filename preserved for existing workflows.
 # Launch this from the game's directory:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\Verify-F12QuickExit.ps1
-# Requires [System] QuickExitF12=1 and [Debug] Log=1 in SpiderMan2k1Fix.ini.
-# For 3D shutdown also enable ExperimentalQuickExitF12In3D=1.
+# For the verified New Game 3D prototype: [Debug] Log=1,
+# F10TestMode=1, F10Auto3DScripts=1, F10GameplayExit=1.
+# For legacy mode: [System] QuickExitF12=1 is still a config alias
+# for physical F10. Physical F12 never triggers this shortcut.
 # To require a direct native 3D exit: -ExpectedMode 3D.
-# Press F12 manually. This script never injects input or terminates the game.
+# Press F10 manually AFTER the intro has completed. No input injection or termination.
 [CmdletBinding()]
 param(
     [string]$GameExe = ".\SpideyPC.exe",
@@ -27,8 +30,8 @@ try {
         throw "Another SpideyPC.exe is already running. Close it before this test."
     }
 
-    Write-Host "F12 exit test: starting $exe"
-    Write-Host "Press F12 in the game window. This watcher never sends keys or kills the game."
+    Write-Host "F10 exit test: starting $exe"
+    Write-Host "Press F10 in the game window, after native intro cleanup. This watcher never sends keys or kills the game."
     $watch = Start-Process -FilePath $exe -WorkingDirectory $folder -PassThru
     $pidToWatch = $watch.Id
     Write-Host "PID=$pidToWatch ; timeout=$TimeoutSeconds seconds"
@@ -78,7 +81,8 @@ try {
         $lines = Get-Content -LiteralPath $recentLog.FullName -Tail 180 -ErrorAction SilentlyContinue
         $menuObserved = [bool]($lines | Select-String -SimpleMatch "QUICK-EXIT-F12: native Shell_MainMenu Quit activated: slot=3 action=18")
         $introObserved = [bool]($lines | Select-String -SimpleMatch "four native movie calls completed; intro transition cleanup finished; engine Quit flag set BEFORE top-level 0x455E50 check")
-        $game3dIntent = [bool]($lines | Select-String -SimpleMatch "QUICK-EXIT-F12: 3D game-thread frame completed; native request 7 queued")
+        # Modern F10 game-thread log, plus the older F12 branch name for archive compatibility.
+        $game3dIntent = [bool]($lines | Select-String -Pattern "QUICK-EXIT-F12: (DEBUG-F10-GAMEPLAY-EXIT original owner script idle; native request 7|3D game-thread frame completed; native request 7 queued)")
         $game3dCleanup = [bool]($lines | Select-String -SimpleMatch "QUICK-EXIT-F12: NATIVE-3D-CLEANUP completed")
         $game3dFinal = [bool]($lines | Select-String -Pattern "QUICK-EXIT-F12: CONTROLLER-7 native teardown COMPLETED .*bit4=1 .*outcome=NATIVE-FINAL-CLEANUP")
         if ($menuObserved) {
@@ -89,9 +93,9 @@ try {
             $exitPath = "Intro"
         }
         $shortcutObserved = $exitPath -ne "None"
-        Write-Host "Game log: $($recentLog.Name); verified native F12 exit path=$exitPath"
+        Write-Host "Game log: $($recentLog.Name); verified native F10 exit path=$exitPath"
     } else {
-        Write-Warning "No recent game log found. Enable [Debug] Log=1 to verify that F12 caused the exit."
+        Write-Warning "No recent game log found. Enable [Debug] Log=1 to verify that F10 caused the exit."
     }
 
     $crashEvents = @()
@@ -129,14 +133,14 @@ try {
         exit 1
     }
     if (-not $shortcutObserved) {
-        Write-Warning "INCONCLUSIVE: normal exit detected, but no recognized native F12 shutdown trace found. Enable Log=1 and repeat."
+        Write-Warning "INCONCLUSIVE: normal exit detected, but no recognized native F10 shutdown trace found. Enable Log=1 and repeat."
         exit 3
     }
     if ($ExpectedMode -ne "Any" -and $ExpectedMode -ne $exitPath) {
-        Write-Warning "INCONCLUSIVE: expected native F12 mode $ExpectedMode, observed $exitPath."
+        Write-Warning "INCONCLUSIVE: expected native F10 mode $ExpectedMode, observed $exitPath."
         exit 3
     }
-    Write-Host "PASS: native F12 $exitPath exit logged, exit code 0, process gone, no matching crash event found."
+    Write-Host "PASS: native F10 $exitPath exit logged, exit code 0, process gone, no matching crash event found."
     Write-Host "Note: this does not prove that every native COM object was explicitly released before exit."
     exit 0
 }

@@ -1241,7 +1241,7 @@ def test_3d_request_7_issued_only_on_native_owner_thread_after_input_tick():
     assert "*SPIDER_GAME_BINK_ACTIVE==0u" in cb
     assert "*(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;" in cb
     assert cb.index("SPIDER_NATIVE_GAME_INPUT_UPDATE();") < cb.index("*(volatile DWORD *)(uintptr_t)0x0060CFA4u=7u;")
-    assert "DEBUG-F10-GAMEPLAY-EXIT original owner script idle; native request 7 for original 0x455BF3 cleanup" in cb
+    assert "DEBUG-F10-GAMEPLAY-EXIT original owner script idle; native request 7 for original cleanup" in cb
     assert "game3d_cleanup_baseline" in cb
     assert "game3d_cleanup_confirmed" in cb
     assert "ExitProcess(" not in cb and "TerminateProcess(" not in cb
