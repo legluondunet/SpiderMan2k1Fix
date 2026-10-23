@@ -22,72 +22,10 @@ jobs:
       - name: Check out sources
         uses: actions/checkout@v4
 
-      # GitHub-hosted Ubuntu runners sometimes already provide these tools.
-      # Skip APT entirely in that case: package mirrors are our main CI delay.
-      - name: Check preinstalled build tools
-        id: build-tools
-        shell: bash
+      - name: Install MinGW-w64 and binary inspection tools
         run: |
-          set -euo pipefail
-          if command -v i686-w64-mingw32-gcc >/dev/null 2>&1 &&
-             command -v i686-w64-mingw32-objdump >/dev/null 2>&1 &&
-             python3 -m pytest --version >/dev/null 2>&1; then
-            echo "install_needed=false" >> "$GITHUB_OUTPUT"
-            echo "All build tools already available; skipping APT."
-          else
-            echo "install_needed=true" >> "$GITHUB_OUTPUT"
-            echo "Some build tools are missing; installing with bounded timeouts."
-          fi
-
-      # Cache downloaded .deb files only, not an unpacked system toolchain.
-      # APT still checks Ubuntu's signed package indexes before installing.
-      - name: Restore downloaded APT packages
-        if: steps.build-tools.outputs.install_needed == 'true'
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/spiderman2k1fix-apt-archives
-          key: apt-ubuntu2404-${{ runner.arch }}-mingw32-pytest-v2-${{ hashFiles('.github/workflows/spiderman2k1fix-windows-x86.yml') }}
-          restore-keys: |
-            apt-ubuntu2404-${{ runner.arch }}-mingw32-pytest-v2-
-
-      - name: Install missing Windows x86 build dependencies
-        if: steps.build-tools.outputs.install_needed == 'true'
-        timeout-minutes: 6
-        env:
-          DEBIAN_FRONTEND: noninteractive
-          APT_ARCHIVES: ${{ runner.temp }}/spiderman2k1fix-apt-archives
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$APT_ARCHIVES/partial"
-          # The runner's Azure Ubuntu mirror stalled for several minutes
-          # downloading MinGW packages (run #415). Switch to Ubuntu's public
-          # archive instead of retrying the same failing regional mirror.
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' \
-              /etc/apt/apt-mirrors.txt
-          fi
-          # APT keeps its downloaded archives for reuse on later builds.
-          sudo timeout --signal=TERM --kill-after=10s 150s apt-get \
-            -o Acquire::Retries=2 \
-            -o Acquire::http::Timeout=20 \
-            -o Acquire::https::Timeout=20 update
-          sudo timeout --signal=TERM --kill-after=10s 180s apt-get \
-            -o Dir::Cache::archives="$APT_ARCHIVES" \
-            -o APT::Keep-Downloaded-Packages=true \
-            -o Acquire::Retries=2 \
-            -o Acquire::http::Timeout=20 \
-            -o Acquire::https::Timeout=20 \
-            install -y --no-install-recommends \
-            gcc-mingw-w64-i686-win32 binutils-mingw-w64-i686 python3-pytest
-
-      - name: Verify build tools
-        shell: bash
-        run: |
-          set -euo pipefail
-          i686-w64-mingw32-gcc --version | head -n 1
-          i686-w64-mingw32-objdump --version | head -n 1
-          python3 -m pytest --version
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-i686 binutils-mingw-w64-i686 python3-pytest zip
 
       - name: Run regression tests
         run: |
@@ -100,11 +38,12 @@ jobs:
         run: |
           mkdir -p dist/package
           cp SpiderMan2k1Fix.dll winmm.dll SpiderMan2k1Fix.ini README.md CHANGELOG.md dist/package/
+          (cd dist/package && zip -9 ../SpiderMan2k1Fix-Windows-x86.zip SpiderMan2k1Fix.dll winmm.dll SpiderMan2k1Fix.ini README.md CHANGELOG.md)
 
       - name: Upload Windows DLL artifact
         uses: actions/upload-artifact@v4
         with:
           name: SpiderMan2k1Fix-Windows-x86
-          path: dist/package/
+          path: dist/SpiderMan2k1Fix-Windows-x86.zip
           if-no-files-found: error
           retention-days: 30

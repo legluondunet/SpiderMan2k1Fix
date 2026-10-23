@@ -294,7 +294,6 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "[Debug]\r\n"
     "; 1 = write SpiderMan2k1Fix.log (debug); 0 = no log output. Restart to apply.\r\n"
     "Log=0\r\n"
-
     "; Detailed F10 reverse-engineering probe lines (0 = compact log);\r\n"
     "; original script lifecycle and exit cleanup stay logged. OFF.\r\n"
     "F10VerboseTrace=0\r\n"
@@ -328,7 +327,7 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "; Dim the paused game behind the PAUSE banner; 0 disables only the shade.\r\n"
     "PauseDim=1\r\n"
     "; Black shade strength from 0 to 90 percent (default 50).\r\n"
-    "PauseDimOpacity=60\r\n"
+    "PauseDimOpacity=50\r\n"
     "; Optional 16-pixel grid (0=off by default; 1=on).\r\n"
     "PauseGrid=0\r\n"
     "; Restore Windows desktop cursor on loss of game focus (1=on, 0=off).\r\n"

@@ -753,7 +753,7 @@ static volatile LONG hud_probe_enabled=0,hud_probe_frames=0;
 static volatile LONG hud_probe_seen=0,hud_probe_left=0,hud_probe_right=0,hud_probe_instructions=0,hud_probe_boss=0;
 static volatile LONG hud_probe_boss_extra=0,hud_probe_boss_blt=0;
 static void hud_probe_flip(void) {
-  if(SpiderQuickExitF12_Enabled())return; /* F12 reserved for quick exit. */
+  if(SpiderQuickExitF12_Enabled())return; /* Disable legacy F12 HUD probe while F10 debug is active. */
   if(InterlockedCompareExchange(&hud_probe_enabled,0,0)!=1) return;
   if((GetAsyncKeyState(VK_F12)&1)!=0 && game_hwnd &&
      GetForegroundWindow()==game_hwnd) {
