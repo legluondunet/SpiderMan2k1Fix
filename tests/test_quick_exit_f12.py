@@ -1280,7 +1280,7 @@ def test_f12_newgame_movie_skip_does_not_use_shutdown_controller():
     assert "DEBUG-NEWGAME-3D F12 consumed" in worker
     assert worker.index("DEBUG-NEWGAME-3D F12 consumed") < worker.index(
         "DEBUG-3D-EXIT native gameplay exit queued")
-    assert "InterlockedCompareExchange(&debug_newgame_progress,0,0)>=2" in worker
+    assert "InterlockedCompareExchange(&debug_newgame_progress,0,0)>=1" in worker
     assert "postmovie_state,4,0" in worker
     assert "postmovie_state,1,0" in worker
     assert "SendInput(" not in worker
@@ -1300,3 +1300,18 @@ def test_f12_newgame_movie_skip_does_not_use_shutdown_controller():
     assert "InterlockedCompareExchange(&debug_newgame_progress,2,1)" in wrapper
     assert "native_result=SPIDER_NATIVE_BINK_FRAME_TICK();" in wrapper
     assert "DEBUG-NEWGAME-MOVIE original movie-4 finished" in wrapper
+
+
+def test_f12_gameplay_exit_fails_closed_after_movie_owner_even_if_native_last_tick_was_missed():
+    """A Bink/Enter boundary must not accidentally dispatch EXIT 7."""
+    worker=SRC[SRC.index("if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {",SRC.index("static DWORD WINAPI f12_input_thread(")):
+               SRC.index("} else if(InterlockedCompareExchange(&comic_exit_opt_in,0,0)==1 &&",SRC.index("static DWORD WINAPI f12_input_thread("))]
+    assert "debug_newgame_progress,0,0)>=1" in worker
+    assert worker.index("debug_newgame_progress,0,0)>=1") < worker.index(
+        "game3d_exit_state,1,0")
+    game_owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+                   SRC.index("static void __cdecl spider_observe_native_game_cleanup(")]
+    assert "if((phase==1 || phase==2)" in game_owner
+    assert "InterlockedCompareExchange(&debug_newgame_progress,3,phase)" in game_owner
+    assert "InterlockedCompareExchange(&game3d_exit_state,0,1)==1" in game_owner
+    assert "NO CONTROLLER 7" in game_owner

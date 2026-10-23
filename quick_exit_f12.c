@@ -519,12 +519,23 @@ static void __cdecl spider_observe_native_game_input(void) {
     InterlockedCompareExchange(&debug_newgame_progress,2,1);
     say("QUICK-EXIT-F12: DEBUG-NEWGAME-MOVIE original Bink/script returned; continuing to native 3D, NO controller-7 EXIT");
   }
+  /* Positive observation of the exact movie owner means the following
+   * 3D session is potentially Stan Lee's narration even if the final
+   * original Bink tick was missed (e.g. the movie ended via Enter).
+   * Never rely on observing native_result==0 to arm the safety guard. */
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
-     InterlockedCompareExchange(&debug_newgame_progress,0,0)==2 &&
-     *SPIDER_GAME_BINK_ACTIVE==0u && *SPIDER_BINK_VIDEO_HANDLE==0u &&
-     InterlockedCompareExchange(&debug_newgame_progress,3,2)==2) {
-    InterlockedExchange(&debug_newgame_3d_first_ms,(LONG)GetTickCount());
-    say("QUICK-EXIT-F12: DEBUG-NEWGAME-3D native input owner reached after movie 4; INTRO vs GAMEPLAY UNKNOWN; F12 exit BLOCKED until positively identified [READ-ONLY]");
+     *SPIDER_GAME_BINK_ACTIVE==0u && *SPIDER_BINK_VIDEO_HANDLE==0u) {
+    LONG phase=InterlockedCompareExchange(&debug_newgame_progress,0,0);
+    if((phase==1 || phase==2) &&
+       InterlockedCompareExchange(&debug_newgame_progress,3,phase)==phase) {
+      InterlockedExchange(&debug_newgame_3d_first_ms,(LONG)GetTickCount());
+      say("QUICK-EXIT-F12: DEBUG-NEWGAME-3D native input owner reached after verified movie-4 owner; INTRO vs GAMEPLAY UNKNOWN; F12 exit BLOCKED until positively identified [READ-ONLY]");
+    }
+    /* Extra fail-closed protection for a request queued on an exact
+     * scene-boundary frame: never forward an old exit to controller 7. */
+    if(InterlockedCompareExchange(&debug_newgame_progress,0,0)>=1 &&
+       InterlockedCompareExchange(&game3d_exit_state,0,1)==1)
+      say("QUICK-EXIT-F12: DEBUG-NEWGAME-3D cancelled pending EXIT request at intro boundary [NO CONTROLLER 7]");
   }
   /* Passive 3D phase trace. The Enter key skips Stan Lee's narrated
    * intro in the original engine. Observe its native input owner while
@@ -1530,7 +1541,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
             if(InterlockedCompareExchange(&postmovie_state,1,0)==0)
               say("QUICK-EXIT-F12: DEBUG-NEWGAME-MOVIE F12 queued for exact native Enter-equivalent Bink termination, NO EXIT");
           }
-        } else if(InterlockedCompareExchange(&debug_newgame_progress,0,0)>=2) {
+        } else if(InterlockedCompareExchange(&debug_newgame_progress,0,0)>=1) {
           /* Movie #4 conclusively preceded this phase, but the original
            * Enter-handled Stan Lee intro / playable boundary is UNMAPPED.
            * An unclassified F12 must NEVER become a controller-7 exit.
