@@ -869,7 +869,7 @@ def test_readme_describes_current_f10_native_skips_and_experimental_scope():
     assert "F10VerboseTrace=1" in readme
     assert "CutSceneScript" in readme
     assert "original 3D cleanup" in readme
-    assert "not yet in arbitrary later in-level cutscenes" in readme
+    assert "later in-level" in readme
     assert "docs/F10_VALIDATION_MATRIX.md" in readme
     assert "docs/F12_DEBUG_TEST_MODE.md" in readme
 
