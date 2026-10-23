@@ -42,6 +42,13 @@
 
 #define SPIDER_NATIVE_F12_POST ((BYTE *)(uintptr_t)0x00515373u)
 #define SPIDER_SHELL_MENU_TICK ((BYTE *)(uintptr_t)0x00493DD6u)
+/* SHA-verified original Shell_MainMenu frame sync, AFTER input polling.
+ * At 0x49415B (conditionally) and 0x49416F (unconditionally),
+ * the engine calls 0x4E5D60(1), which busy-waits for a native clock tick.
+ * Read-only duration wrappers are enabled in debug F12+Log mode only. */
+#define SPIDER_MENU_WAIT_COND_SITE ((BYTE *)(uintptr_t)0x0049415Bu)
+#define SPIDER_MENU_WAIT_ALWAYS_SITE ((BYTE *)(uintptr_t)0x0049416Fu)
+#define SPIDER_NATIVE_CLOCK_WAIT ((void (__cdecl *)(DWORD))(uintptr_t)0x004E5D60u)
 #define SPIDER_SHELL_MENU_QUIT_RETURN ((const BYTE *)(uintptr_t)0x004941D5u)
 #define SPIDER_SHELL_MENU_ITEMS ((const BYTE *)(uintptr_t)0x00552AA8u)
 #define SPIDER_NATIVE_MENU_TICK ((void (__cdecl *)(void))(uintptr_t)0x00505720u)
@@ -158,6 +165,8 @@ static const BYTE intro_tick_call_original_2[5]={0xE8,0x3C,0xAD,0x09,0x00};
 static const BYTE post_intro_cleanup_original[5]={0xE8,0xA8,0xDD,0xFE,0xFF};
 static const BYTE intro_still_input_original[5]={0xE8,0xE5,0xA8,0x06,0x00};
 static const BYTE intro_timed_clock_original[5]={0xA1,0xA0,0x4C,0x6B,0x00};
+static const BYTE menu_wait_cond_original[5]={0xE8,0x00,0x1C,0x05,0x00};
+static const BYTE menu_wait_always_original[5]={0xE8,0xEC,0x1B,0x05,0x00};
 static const BYTE top_level_native_quit_test_original[6]={0x38,0x1D,0x88,0xCF,0x60,0x00};
 static const BYTE native_pause_call_original[5]={0xE8,0xF2,0x66,0x02,0x00};
 static const BYTE native_game_input_call_original[5]={0xE8,0xB0,0xB9,0xFE,0xFF};
@@ -213,6 +222,7 @@ static volatile LONG intro_still_hook_installed=0;
 /* Debug mode only. Clock read hook leaves all game-owned state untouched. */
 static volatile LONG intro_timed_clock_hook_installed=0;
 static volatile LONG debug_timed_accelerated=0;
+static volatile LONG debug_menu_wait_hooks_installed=0;
 static volatile LONG last_native_game_input_ms=0;
 static volatile LONG last_game3d_flip_ms=0;
 /* 0 idle, 1 requested, 2 native request 7 dispatched, 3 final exit. */
@@ -1215,6 +1225,60 @@ static void restore_post_intro_checkpoint(void) {
                           post_intro_cleanup_original);
 }
 
+/* The two ORIGINAL Shell_MainMenu call sites supply one DWORD parameter
+ * each, and are cdecl. These diagnostic replacements call their original
+ * target exactly once, including its normal busy-wait and clock compare.
+ * There is NO bypass or mutation of the native game clock or input state.
+ * The same SHA-verified DLL is already running native menu thread hooks. */
+static void __cdecl spider_f12_debug_menu_wait(DWORD ticks,int which) {
+  DWORD before_ms=GetTickCount();
+  DWORD before_clock=*SPIDER_TRACE_NATIVE_CLOCK_RAW;
+  SPIDER_NATIVE_CLOCK_WAIT(ticks);
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+     InterlockedCompareExchange(&intro_still_exit_state,0,0)>=2 &&
+     InterlockedCompareExchange(&menu_frame_count,0,0)<=3) {
+    DWORD end_ms=GetTickCount(), end_clock=*SPIDER_TRACE_NATIVE_CLOCK_RAW;
+    char line[280];
+    snprintf(line,sizeof(line),
+      "QUICK-EXIT-F12: DEBUG-MENU-CLOCK-WAIT site=0x%08lX frame=%ld wait_arg=%lu elapsed_ms=%lu native_clock_before=%lu native_clock_after=%lu [ORIGINAL WAIT CALLED; READ-ONLY]",
+      (unsigned long)(which==1?0x0049415Bu:0x0049416Fu),
+      (long)InterlockedCompareExchange(&menu_frame_count,0,0),
+      (unsigned long)ticks,(unsigned long)(DWORD)(end_ms-before_ms),
+      (unsigned long)before_clock,(unsigned long)end_clock);
+    say(line);
+  }
+}
+
+static void __cdecl spider_f12_debug_menu_wait_cond(DWORD ticks) {
+  spider_f12_debug_menu_wait(ticks,1);
+}
+static void __cdecl spider_f12_debug_menu_wait_always(DWORD ticks) {
+  spider_f12_debug_menu_wait(ticks,2);
+}
+
+static int install_debug_menu_wait_hooks(void) {
+  if(memcmp(SPIDER_MENU_WAIT_COND_SITE,menu_wait_cond_original,5)!=0 ||
+     memcmp(SPIDER_MENU_WAIT_ALWAYS_SITE,menu_wait_always_original,5)!=0)
+    return 0;
+  if(!patch_native_call(SPIDER_MENU_WAIT_COND_SITE,menu_wait_cond_original,
+                        (const void *)spider_f12_debug_menu_wait_cond))
+    return 0;
+  if(!patch_native_call(SPIDER_MENU_WAIT_ALWAYS_SITE,menu_wait_always_original,
+                        (const void *)spider_f12_debug_menu_wait_always)) {
+    restore_intro_tick_call(SPIDER_MENU_WAIT_COND_SITE,menu_wait_cond_original);
+    return 0;
+  }
+  InterlockedExchange(&debug_menu_wait_hooks_installed,1);
+  return 1;
+}
+
+static void restore_debug_menu_wait_hooks(void) {
+  if(InterlockedCompareExchange(&debug_menu_wait_hooks_installed,0,1)==1) {
+    restore_intro_tick_call(SPIDER_MENU_WAIT_ALWAYS_SITE,menu_wait_always_original);
+    restore_intro_tick_call(SPIDER_MENU_WAIT_COND_SITE,menu_wait_cond_original);
+  }
+}
+
 static int install_intro_timed_clock_hook(void) {
   if(!patch_native_call(SPIDER_INTRO_TIMED_CLOCK_SITE,
                         intro_timed_clock_original,
@@ -1624,7 +1688,15 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   }
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1)
     say("QUICK-EXIT-F12: DEBUG first timed-page clock read 0x4A1A26 guarded hook installed; F12 timeout accelerated via native 0x4A1A36 [EXPERIMENTAL]");
+  if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
+     GetPrivateProfileIntA("Debug","Log",0,ini)==1) {
+    if(install_debug_menu_wait_hooks())
+      say("QUICK-EXIT-F12: DEBUG-MENU-CLOCK-WAIT original Shell_MainMenu 0x49415B/0x49416F callsites instrumented; read-only clock wait timing");
+    else
+      say("QUICK-EXIT-F12: DEBUG-MENU-CLOCK-WAIT signatures mismatch; optional wait probe OFF (no effect on F12)");
+  }
   if(!suppress_unsafe_native_f12()) {
+    restore_debug_menu_wait_hooks();
     restore_intro_timed_clock_hook();
     restore_intro_still_input_hook();
     restore_passive_controller7_probe();
@@ -1641,6 +1713,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   thread=CreateThread(NULL,0,f12_input_thread,NULL,0,NULL);
   if(!thread) {
     InterlockedExchange(&enabled,0);
+    restore_debug_menu_wait_hooks();
     restore_intro_timed_clock_hook();
     restore_intro_still_input_hook();
     restore_passive_controller7_probe();
