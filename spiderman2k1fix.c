@@ -1101,6 +1101,9 @@ static volatile LONG pause_menu_trace_last_flip=-1;
 static volatile LONG pause_menu_trace_frames=0;
 static volatile LONG pause_menu_trace_draws=0;
 static volatile LONG pause_menu_trace_session=0;
+static volatile LONG pause_menu_trace_escape_down=0;
+static volatile LONG pause_menu_trace_escape_edges=0;
+static volatile LONG pause_menu_trace_escape_until=-1;
 #define SPIDER_NATIVE_ESC_PAUSE_CONTEXT ((const volatile DWORD *)(uintptr_t)0x00682950u)
 
 static void pause_menu_trace_init(void) {
@@ -1110,7 +1113,46 @@ static void pause_menu_trace_init(void) {
   n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_PAUSE_MENU_TRACE",value,sizeof(value));
   if(n==1 && value[0]=='1') {
     InterlockedExchange(&pause_menu_trace_enabled,1);
-    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; 4 frames, 160 2D draws/frame, no aspect correction [Log=1]");
+    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; 4 frames, 160 2D draws/frame; native-context OR physical ESC-edge fallback [Log=1]");
+  }
+}
+/* Passive physical key observation only (high bit); no injected or consumed
+ * input. Unlike the game-owned pause-context pointer, an ESC edge can be
+ * seen even if the original native pause flag is transient or stays zero.
+ * Capture only a short window: bounded in frames and candidate draws.
+ * The player should hold ESC for at least 0.5 seconds for reliable Flip
+ * sampling under Wine's usual 30 FPS target.
+ */
+static void pause_menu_trace_on_flip(LONG flip) {
+  LONG down,prev,until;
+  char line[220];
+  if(InterlockedCompareExchange(&pause_menu_trace_enabled,0,0)!=1)return;
+  down=(GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0;
+  prev=InterlockedExchange(&pause_menu_trace_escape_down,down);
+  if(InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 && down && !prev) {
+    /* Cap the number of captured sessions to avoid runaway debug logs. */
+    LONG edge=InterlockedIncrement(&pause_menu_trace_escape_edges);
+    if(edge<=4) {
+      InterlockedExchange(&pause_menu_trace_escape_until,flip+12);
+      InterlockedExchange(&pause_menu_trace_active,0);
+      InterlockedExchange(&pause_menu_trace_frames,0);
+      InterlockedExchange(&pause_menu_trace_draws,0);
+      InterlockedExchange(&pause_menu_trace_last_flip,-1);
+      snprintf(line,sizeof(line),
+        "PAUSE-NATIVE-PROBE: ESC-EDGE #%ld flip=%ld native_pause_context=%lu [READ ONLY; short 12-Flip sampling window]",
+        (long)edge,(long)flip,(unsigned long)(*SPIDER_NATIVE_ESC_PAUSE_CONTEXT!=0));
+      log_line(line);
+    }
+  }
+  until=InterlockedCompareExchange(&pause_menu_trace_escape_until,0,0);
+  if(until>0 && flip>until) {
+    InterlockedExchange(&pause_menu_trace_escape_until,-1);
+    if(InterlockedExchange(&pause_menu_trace_active,0)==1) {
+      snprintf(line,sizeof(line),
+        "PAUSE-NATIVE-PROBE: END ESC window flip=%ld [NO GEOMETRY MODIFIED]",
+        (long)flip);
+      log_line(line);
+    }
   }
 }
 static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
@@ -1127,7 +1169,9 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
   char line[310];
   if(InterlockedCompareExchange(&pause_menu_trace_enabled,0,0)!=1)return;
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 ||
-     *SPIDER_NATIVE_ESC_PAUSE_CONTEXT==0) {
+     (*SPIDER_NATIVE_ESC_PAUSE_CONTEXT==0 &&
+      InterlockedCompareExchange(&pause_menu_trace_escape_until,0,0)<
+        InterlockedCompareExchange(&flip_count,0,0))) {
     if(InterlockedExchange(&pause_menu_trace_active,0)==1) {
       snprintf(line,sizeof(line),
         "PAUSE-NATIVE-PROBE: END session=%ld [NO GEOMETRY MODIFIED]",
@@ -1142,8 +1186,9 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
     InterlockedExchange(&pause_menu_trace_last_flip,-1);
     InterlockedExchange(&pause_menu_trace_draws,0);
     snprintf(line,sizeof(line),
-      "PAUSE-NATIVE-PROBE: BEGIN session=%ld native_pause_context=present output=%lux%lu mode=%s",
-      (long)session,(unsigned long)desktop_w,(unsigned long)desktop_h,
+      "PAUSE-NATIVE-PROBE: BEGIN session=%ld native_pause_context=%lu output=%lux%lu mode=%s",
+      (long)session,(unsigned long)(*SPIDER_NATIVE_ESC_PAUSE_CONTEXT!=0),
+      (unsigned long)desktop_w,(unsigned long)desktop_h,
       display_aspect_setting);
     log_line(line);
   }
@@ -2262,6 +2307,7 @@ static void pause_at_flip_if_background(void) {
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
   SpiderQuickExitF12_ObserveEngineState(count,InterlockedCompareExchange(&menu_upscale_active,0,0)==1); /* passive native mode+2D renderer tracing */
+  pause_menu_trace_on_flip(count); /* passive ESC-edge fallback; diagnostic opt-in only */
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);

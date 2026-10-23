@@ -30,8 +30,14 @@ cannot uniquely identify the ESC pause panel.
 The SHA-gated game code already observes pointer **0x00682950**
 as the native gameplay pause context (original pause handler
 0x0047BC40); this is separate from the Alt+Tab focus pause.
-Its nonzero presence limits passive sampling, but is not alone
-sufficient to identify individual pause sprites.
+Its nonzero presence starts passive sampling when available, but is not
+alone sufficient to identify individual pause sprites. Under Wine, the
+first combined build #728 successfully enabled the diagnostic but did not
+record any BEGIN event, while sampled pause_ctx values were zero. The
+diagnostic therefore also watches the physical ESC-down edge via the
+high bit of GetAsyncKeyState on the existing Flip hook. No input is
+consumed, inserted or rerouted; this is a short fallback observation
+window, not a pause-detection claim.
 
 The first safe step is therefore read-only identification of
 the panel/text/icon signatures: original caller RVAs, D3D primitive
@@ -55,16 +61,21 @@ game's **System options → Environment variables**, or export the
 variable before launching the game through the same environment).
 
 1. Launch at 1920×1080, **AspectRatio=Auto**.
-2. Begin a level and press **Esc** for the *original native*
-   CONTINUE / RESTART LEVEL / QUIT menu.
+2. Begin a level and **hold Esc for about half a second** to make the
+   physical key-down observable at a Flip. Let the game's original native
+   CONTINUE / RESTART LEVEL / QUIT menu open; do not use F10 for this step.
 3. Hold this menu for several seconds. Optionally move selection
    to another row, then choose CONTINUE.
 4. Quit normally and preserve `SpiderMan2k1Fix*.log`.
-5. Search for `PAUSE-NATIVE-PROBE: BEGIN`, `FRAME`,
-   `caller_rva=`, and `END`.
+5. Search for `PAUSE-NATIVE-PROBE: ESC-EDGE`, `BEGIN`, `FRAME`,
+   `caller_rva=`, and `END`. If no ESC-EDGE is present, the physical
+   ESC key was not observed in a Flip. If ESC-EDGE appears but BEGIN or
+   candidate draws do not, the chosen D3D7 path/filter may be incorrect.
 
 The trace logs up to four Flip generations and at most 160 candidate
-2D draws per frame. It does not modify rendered coordinates, pause
+2D draws per frame, from a maximum 12-Flip sampling window after each
+ESC edge (up to four ESC edges) or when the game-native context is set.
+It does not modify rendered coordinates, pause
 input, F10, F9, the camera or texture contents. If no BEGIN appears,
 the assumed native pause-context gate needs new passive research;
 **do not enable a geometry rewrite based on guessing**.

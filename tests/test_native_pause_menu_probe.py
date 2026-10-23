@@ -47,7 +47,7 @@ def test_analysis_is_bounded_and_never_changes_game_vertices():
     assert "texw=desc.dwWidth;texh=desc.dwHeight;" in probe
     assert "IDirectDrawSurface7_Release(texture)" in probe
     for forbidden in (
-        "VirtualProtect(", "FlushInstructionCache(", "GetAsyncKeyState(",
+        "VirtualProtect(", "FlushInstructionCache(",
         "SetTexture(", "SetRenderState(", "memcpy(", "HeapAlloc(",
         "dst[i].x", "src[i].x=", "WM_CLOSE", "SetWindowPos(",
     ):
@@ -78,3 +78,21 @@ def test_diagnostic_docs_define_43_reference_and_next_step():
     assert "PAUSE-NATIVE-PROBE" in DOC
     assert "F10" in DOC and "F9" in DOC
     assert "do not" in DOC.lower() or "ne pas" in DOC.lower()
+
+def test_probe_falls_back_to_bounded_passive_escape_sampling():
+    src = CORE.split("/* Diagnostic only: classify original in-game ESC pause menu geometry",1)[1]
+    init = src.split("static void pause_menu_trace_draw(",1)[0]
+    draw = src.split("static void pause_menu_trace_draw(",1)[1].split(
+        "static void free_menu_vertices(",1)[0]
+    assert "GetAsyncKeyState(VK_ESCAPE)&0x8000" in init
+    assert "pause_menu_trace_escape_until,flip+12" in init
+    assert "if(edge<=4)" in init
+    assert "InterlockedIncrement(&pause_menu_trace_escape_edges)" in init
+    assert "PAUSE-NATIVE-PROBE: ESC-EDGE" in init
+    assert "pause_menu_trace_on_flip(count);" in CORE
+    assert "pause_menu_trace_escape_until" in draw
+    assert "SPIDER_NATIVE_ESC_PAUSE_CONTEXT" in draw
+    assert "[NO GEOMETRY MODIFIED]" in draw
+    for bad in ("SetAsyncKeyState(", "SendInput(", "PostMessage(", "WM_CLOSE"):
+        assert bad not in init
+    assert "hold Esc for about half a second" in DOC
