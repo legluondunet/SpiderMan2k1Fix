@@ -108,7 +108,10 @@ def test_post_shell_space_skip_probe_preserves_original_bink_result():
     assert "[READ-ONLY; SKIP-REASON UNKNOWN]" in tick
     assert "(native_result==0 && old_result!=0)" in tick
     assert "(space_down && !old_space)" in tick
-    assert "n<=4 || n%120==0" in tick
+    assert "n<=4 || n%128==0 || native_result!=(BYTE)old_result" in tick
+    assert "(DWORD)(now-after_shell_last_log_ms)>=1000u" in tick
+    assert "static DWORD after_shell_last_log_ms=0;" in tick
+    assert "n%120==0" not in tick
     assert "GetAsyncKeyState(VK_SPACE)&0x8000" in tick
     assert "return native_result;" in tick
     assert "intro_quit_pending,0,0)==1" in tick
