@@ -629,18 +629,29 @@ def test_debug_first_menu_native_clock_busy_wait_probe_is_gated_and_read_only():
 
 
 
-def test_f12_skip_initial_menu_wait_is_off_by_default_and_only_on_debug_intro_skip():
+def test_f12_skip_initial_menu_wait_follows_test_mode_unless_explicit_ini_opt_out():
     """Experimental alternative to a 3100ms first-frame native clock wait.
 
-    Do not touch global clock, native timer callback or pacing in 3D,
-    later menus, or when user did not opt in to this independent switch.
+    With F12TestMode=1 and no active override, automatically enable the
+    clock wait workaround. Only an explicit active INI key =0 disables it.
+    Global F12TestMode=0 leaves this diagnostic workaround disabled.
     """
-    assert "F12SkipInitialMenuWait=0" in INI
-    assert '"F12SkipInitialMenuWait=0\\r\\n"' in GEN
+    assert ";F12SkipInitialMenuWait=0" in INI
+    assert not any(line.strip()=="F12SkipInitialMenuWait=0"
+                   for line in INI.splitlines())
+    assert '";F12SkipInitialMenuWait=0\\r\\n"' in GEN
+    assert '"F12SkipInitialMenuWait=0\\r\\n"' not in GEN
     assert 'spider_ini_debug[]={"Log","F12TestMode","F12SkipInitialMenuWait"}' in VAL
     assert "static volatile LONG debug_skip_initial_menu_wait=0;" in SRC
     assert "static volatile LONG debug_menu_wait_skip_state=0;" in SRC
-    assert 'GetPrivateProfileIntA("Debug","F12SkipInitialMenuWait",0,ini)==1' in SRC
+    assert 'GetPrivateProfileIntA("Debug","F12SkipInitialMenuWait",1,ini)==1' in SRC
+    assert 'GetPrivateProfileIntA("Debug","F12SkipInitialMenuWait",0,ini)==1' not in SRC
+    init=SRC[SRC.index("void SpiderQuickExitF12_Init("):]
+    mode=init.index('if(GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1) {')
+    auto=init.index('if(GetPrivateProfileIntA("Debug","F12SkipInitialMenuWait",1,ini)==1) {')
+    assert mode < auto < init.index("memset(trace,0,sizeof(trace));")
+    assert "F12SkipInitialMenuWait active (automatic with F12TestMode=1" in init
+    assert "F12SkipInitialMenuWait=0 explicit opt-out" in init
     body=SRC[SRC.index("static void __cdecl spider_f12_debug_menu_wait(DWORD ticks,int which)"):
              SRC.index("static void __cdecl spider_f12_debug_menu_wait_cond(DWORD ticks)")]
     assert "debug_skip_initial_menu_wait,0,0)==1" in body
