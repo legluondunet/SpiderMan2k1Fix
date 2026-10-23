@@ -2017,3 +2017,43 @@ def test_enter_only_bink_does_not_authorize_f10_auto_skips():
              SRC.index("/* Wrapper on the ORIGINAL GAME THREAD",SRC.index("static BYTE __cdecl spider_f12_native_intro_tick(void)"))]
     assert "DEBUG-NEWGAME-MOVIE original movie-4 finished; f10_origin=%ld enter_down=%d" in tick
     assert "InterlockedExchange(&debug_auto3d_f10_origin" not in tick
+
+def test_movie_enter_release_is_gated_before_first_original_3d_input():
+    """Wine #703: no F10, first script ended in 131ms after Enter on Bink.
+
+    Exact movie-to-3D first-owner barrier must not modify DirectInput,
+    touch native skip byte or apply to F10-armed intros.
+    """
+    src=SRC[SRC.index("static void spider_newgame_enter_release_barrier(void)"):
+            SRC.index("/* Native game-input owner wrapper at 0x45553B:")]
+    for predicate in ("GetAsyncKeyState(VK_RETURN)",
+                      "GetAsyncKeyState(VK_SPACE)",
+                      "debug_auto3d_f10_origin,0,0)!=0",
+                      "debug_auto3d_state,0,0)!=0",
+                      "phase!=1 && phase!=2",
+                      "GetTickCount()-began)<1500u",
+                      "Sleep(10);", "Sleep(40);",
+                      "DEBUG-BINK-ENTER-HANDOFF"):
+        assert predicate in src
+    for forbidden in ("*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST=",
+                      "PostMessageA(", "SendInput(", "keybd_event(",
+                      "ExitProcess(", "TerminateProcess(",
+                      "SPIDER_NATIVE_KEY_READ(", "SPIDER_NATIVE_GAME_INPUT_UPDATE("):
+        assert forbidden not in src
+    owner=SRC[SRC.index("static void __cdecl spider_observe_native_game_input(void)"):
+              SRC.index("static void __cdecl spider_observe_native_game_cleanup(")]
+    assert "if(n==1)spider_newgame_enter_release_barrier();" in owner
+    assert owner.index("if(n==1)spider_newgame_enter_release_barrier();") < owner.index(
+        "SPIDER_NATIVE_GAME_INPUT_UPDATE();")
+    assert owner.count("SPIDER_NATIVE_GAME_INPUT_UPDATE();")==1
+    assert "GetAsyncKeyState(VK_RETURN)" not in owner
+
+
+def test_enter_only_cannot_arm_intro_auto_skip_during_release_barrier():
+    """The new barrier is not an alternate F10 origin or movie-skip request."""
+    segment=SRC[SRC.index("static void spider_newgame_enter_release_barrier(void)"):
+                SRC.index("/* Native game-input owner wrapper at 0x45553B:")]
+    assert "debug_auto3d_f10_origin,0,0)!=0" in segment
+    assert "debug_auto3d_state,0,0)!=0" in segment
+    assert "InterlockedExchange(&debug_auto3d_state" not in segment
+    assert "InterlockedExchange(&debug_auto3d_f10_origin" not in segment

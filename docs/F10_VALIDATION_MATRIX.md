@@ -115,3 +115,18 @@ appropriate for the new in-game F10 return-to-menu behavior.
 PR #26: https://github.com/legluondunet/SpiderMan2k1Fix/pull/26
 
 Contributor: legluondunet assisted by ChatGPT (OpenAI)
+
+
+### Bink Enter-to-first-3D handoff (#704 experimental)
+
+When the user does NOT press F10 during the New Game comic or Bink,
+pressing Enter on the movie should only close the movie and allow the
+FIRST 3D cutscene to play. Wine #703 observed `f10_origin=0`,
+`auto_stage=0`, first script skip allowed after 68 ms and ended after
+131 ms: not an F10 auto-skip. A bounded **physical Enter release**
+barrier now runs before the first original 3D input-owner call, only
+without F10 intent. It changes no game-owned key buffer or script
+flags. Check `DEBUG-BINK-ENTER-HANDOFF` and the first-script duration.
+Try a quick tap and a longer Enter hold; also verify F10 still skips
+comic / movie / both intro scripts as before. This remains a runtime
+hypothesis pending testing under Wine and Windows 11.
