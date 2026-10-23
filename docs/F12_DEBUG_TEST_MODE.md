@@ -75,6 +75,41 @@ For a **complete** return to the prior PR source tree, use the
 frozen branch as the source for a fresh branch or the exact pinned commit.
 Do not reset/force-push the PR until the user explicitly approves it.
 
+## New Game Bink regression found after intro F12 skip
+
+A Linux/Wine trial with patch `v1.0.0-aef9397` and
+`F12TestMode=1` (`SpiderMan2k1Fix(20261023-112854).log`)
+validated the new fast pre-menu skip: the native
+`0x4A1A26` deadline hook and `0x4A1896` input-wait
+completion both ran, and the actual menu remained open.
+However, **New Game then showed the comic and skipped its Bink
+cinematic**, returning through native controller request 7.
+
+The cause was an **unconsumed pre-menu F12 skip request**:
+`intro_quit_pending=1` remained set after the real menu
+was reached. The game's `0x470750` Bink tick is used for both
+the four opening movies and later New Game movie #4. The
+hook saw this stale flag and returned 0 (movie finished)
+before calling the native Bink frame tick for New Game.
+
+**Fix (not yet runtime-validated):** the `spider_after_intro_cleanup`
+wrapper now consumes `intro_quit_pending` (and resets the
+early short-circuit diagnostic) in **debug F12TestMode only**
+AFTER calling original native intro transition cleanup and
+AFTER issuing the separate pending input-wait-page request.
+The former F12 Quit path is unchanged. No game Bink object,
+shared playback pointer, native timer, or 3D controller
+logic is modified.
+
+Expected successful regression:
+`DEBUG-MENU-SKIP opening Bink request CONSUMED at native
+post-intro cleanup; movie #4 tick restored for future New Game
+playback` appears in log; after selecting New Game, the comic
+is followed by the actual Bink cinematic before 3D gameplay,
+without pressing F12 again. As usual, this must be confirmed
+with a real Wine/Windows test; source assertions and cross
+compilation do not prove native runtime behavior.
+
 ## Regression test plan
 
 1. On Windows 11, press F12 **once** during the first intro Bink movie.
