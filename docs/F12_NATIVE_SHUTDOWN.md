@@ -1,3 +1,63 @@
+## 2026-10-23 — Windows 11 #589: FIRST timed startup still F12 exits cleanly without orphan process
+
+The user performed the next Windows 11 regression using the
+same build #589, `SpiderMan2k1Fix v1.0.0-823379a`, on the
+**first timed pre-menu still**, before the second `Press Enter`
+page. The user separately checked the Windows Task Manager
+after exiting and confirmed **no `SpideyPC.exe` process remained**.
+Attached evidence:
+`SpiderMan2k1Fix(20261023-100947).log`.
+The original EXE SHA-256 is the supported
+`0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
+
+Native Windows log sequence:
+
+```text
+QUICK-EXIT-F12: INTRO-STILL F12 opt-in enabled (exact 0x4A1896 native owner; Windows/Wine UNVALIDATED)
+QUICK-EXIT-F12: ENGINE-STATE flip=117 ... bink_flag=0 video_handle_present=0 ... menu_seen=0
+QUICK-EXIT-F12: INTRO-STILL F12 latched after original Bink cleanup; waiting for native timed page + input-wait owner [EXPERIMENTAL]
+QUICK-EXIT-F12: INTRO-STILL original input-wait owner 0x4A1896 verified; normal TRUE completion for 0x4A18AE native page cleanup; menu Quit queued [EXPERIMENTAL]
+QUICK-EXIT-F12: REAL Shell_MainMenu frame callback observed (0x493DD6)
+QUICK-EXIT-F12: INTRO-STILL native page owner returned; original Shell_MainMenu Quit now activated [EXPERIMENTAL]
+QUICK-EXIT-F12: native Shell_MainMenu Quit activated: slot=3 action=18, native cleanup branch=0x4941D5
+```
+
+**Windows 11: PASS.** F12 was handled after the original
+startup Bink cleanup and before interactive menu activity;
+the original input-wait owner completed its page through
+the game's TRUE-result cleanup path, then the real menu's
+Quit action 18 was selected. Independently of the last
+log line, **Windows Task Manager showed no residual
+`SpideyPC.exe`** (explicit user confirmation).
+
+Both pre-menu fixed-image stages are now **separately
+tested and process-level validated on native Windows 11**:
+`SpiderMan2k1Fix(20261023-100409).log` covers the
+second input-wait `Press Enter` page and
+`SpiderMan2k1Fix(20261023-100947).log` covers the
+first timed page. Both were also previously tested under
+Wine. The **passive 90-second STARTUP-STATIC-PROBE was
+not enabled** in this Windows run; the log does not
+independently timestamp the first page's complete
+original timer, although original code and the
+earlier user-observed Wine test support that behavior.
+Do not manufacture timing measurements.
+
+No runtime behavior, feature defaults or installed
+hooks changed in recording this evidence. The
+`ExperimentalQuickExitF12InIntroStills` INI flag
+still defaults to `0`; full Windows native regression
+is not complete for the New Game comic, Bink #4 and
+other independently testable transitions. The
+yellow-surface phenomenon seen under Wine is
+still unresolved and should be inspected specifically
+when testing the New Game cinematic on Windows.
+
+PR #26 stays draft/open/unmerged until the user
+explicitly authorizes merging.
+
+---
+
 ## 2026-10-23 — Windows 11 #589: second pre-menu Press Enter F12 clean exit confirmed
 
 The user returned to native **Windows 11** and tested the
