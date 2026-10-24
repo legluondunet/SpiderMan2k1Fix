@@ -1,6 +1,6 @@
 """DirectDraw-only comic pause renderer (no overlay HWNDs)."""
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 P=(ROOT/"pause_surface.c").read_text()
 H=(ROOT/"pause_surface.h").read_text()
 CORE=(ROOT/"spiderman2k1fix.c").read_text()

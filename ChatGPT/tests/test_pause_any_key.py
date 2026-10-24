@@ -1,7 +1,7 @@
 """Exclusive Any-key pause wake while preserving native DirectInput repair."""
 from pathlib import Path
 
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 CORE=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
 HEADER=(ROOT/"pause_any_key.h").read_text(encoding="utf-8")
 SOURCE=(ROOT/"pause_any_key.c").read_text(encoding="utf-8")

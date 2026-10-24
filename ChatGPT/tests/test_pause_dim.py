@@ -1,6 +1,6 @@
 """No desktop alpha windows: 50% shade, optional 16px grid, frozen frame."""
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 P=(ROOT/"pause_surface.c").read_text()
 CORE=(ROOT/"spiderman2k1fix.c").read_text()
 BUILD=(ROOT/"build.sh").read_text()

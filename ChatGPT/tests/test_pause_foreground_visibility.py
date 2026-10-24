@@ -1,6 +1,6 @@
 """A paused DirectDraw frame follows the game's normal desktop stacking."""
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 CORE=(ROOT/"spiderman2k1fix.c").read_text()
 P=(ROOT/"pause_surface.c").read_text()
 ANY=(ROOT/"pause_any_key.c").read_text()

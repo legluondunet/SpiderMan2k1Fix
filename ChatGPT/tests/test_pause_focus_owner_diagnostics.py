@@ -1,7 +1,7 @@
 """Read-only foreground-owner evidence for unexpected in-game auto-pause."""
 from pathlib import Path
 
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 SRC=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
 
 def test_focus_loss_owner_is_logged_at_actual_latch_not_every_flip():

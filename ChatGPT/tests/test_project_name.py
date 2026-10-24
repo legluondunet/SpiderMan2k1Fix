@@ -1,7 +1,7 @@
 """Verify all runtime and build filenames agree after the project rename."""
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 def test_new_dll_names_are_consistent():
     proxy = (ROOT / "winmm_proxy.c").read_text()

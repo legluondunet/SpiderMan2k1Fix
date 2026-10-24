@@ -1,6 +1,6 @@
 """Windows native DirectDraw primary reuse checks."""
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 S=(ROOT/"spiderman2k1fix.c").read_text()
 
 def test_menu_to_gameplay_reuses_primary():

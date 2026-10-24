@@ -5,7 +5,7 @@ previous build #468 test ruled out 0x4A1A26: that was not the main menu.
 """
 from pathlib import Path
 
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 CORE=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
 SRC=(ROOT/"quick_exit_f12.c").read_text(encoding="utf-8")
 HDR=(ROOT/"quick_exit_f12.h").read_text(encoding="utf-8")
@@ -186,7 +186,7 @@ def test_native_bink_owner_static_inspection_is_read_only_and_sha_gated():
     # The game EXE is deliberately NOT included in this repository/CI.
     # This locally-run Windows PowerShell tool produces a small hex report;
     # any candidate native instruction/branch still requires disassembly.
-    script=(ROOT/"tools/Inspect-BinkNativeCode.ps1").read_text(encoding="utf-8")
+    script=(ROOT/"ChatGPT/tools/Inspect-BinkNativeCode.ps1").read_text(encoding="utf-8")
     assert "0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea" in script
     assert "$expectedLength = 1507328" in script
     assert '[IO.File]::ReadAllBytes($exe)' in script
@@ -839,7 +839,7 @@ def test_native_site_patch_reverts_if_f12_suppression_fails():
 
 
 def test_windows_process_watch_has_no_kill_side_effects():
-    script=(ROOT/"tools/Verify-F12QuickExit.ps1").read_text(encoding="utf-8")
+    script=(ROOT/"ChatGPT/tools/Verify-F12QuickExit.ps1").read_text(encoding="utf-8")
     assert "Start-Process -FilePath $exe -WorkingDirectory $folder -PassThru" in script
     assert "$watch.ExitCode" in script
     assert "Get-WinEvent -FilterHashtable" in script
@@ -847,7 +847,7 @@ def test_windows_process_watch_has_no_kill_side_effects():
 
 
 def test_external_windows_watcher_verifies_direct_3d_f12_cleanup_and_expected_mode():
-    script=(ROOT/"tools/Verify-F12QuickExit.ps1").read_text(encoding="utf-8")
+    script=(ROOT/"ChatGPT/tools/Verify-F12QuickExit.ps1").read_text(encoding="utf-8")
     assert 'ValidateSet("Any","Menu","3D","Intro")' in script
     assert '$ExpectedMode = "Any"' in script
     assert "DEBUG-F10-GAMEPLAY-EXIT original owner script idle; native request 7" in script
