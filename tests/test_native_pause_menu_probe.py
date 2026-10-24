@@ -42,7 +42,7 @@ def test_analysis_is_bounded_and_never_changes_game_vertices():
     assert "if(frame<1 || frame>20" in probe
     assert "draw>8192" in probe
     assert "draw>8 && (draw%64)!=0" in probe
-    assert "draw>=3200 && draw<=3400" in probe
+    assert "draw>=3140 && draw<=3400" in probe
     assert "draw>8192" in probe
     assert "frame==1 || frame==5 || frame==12 || frame==20" in probe
     assert "PAUSE-NATIVE-PROBE: FRAME-END" in probe
@@ -109,7 +109,7 @@ def test_esc_menu_48_new_draws_are_sampled_not_repositioned():
     probe = trace_block()
     assert "3268 candidates in frames 1..4" in probe
     assert "3316 in" in probe
-    assert "draw>=3200 && draw<=3400" in probe
+    assert "draw>=3140 && draw<=3400" in probe
     assert "frame==1 || frame==5 || frame==12 || frame==20" in probe
     assert "PAUSE-NATIVE-PROBE: frame=%ld draw=%ld" in probe
     assert "draw>8192" in probe
@@ -142,3 +142,32 @@ def test_wide_screen_panel_candidates_remain_observational_only():
     assert "!wide_overlay_candidate" in probe
     assert "NO GEOMETRY MODIFIED" in probe
     assert "wide" in DOC.lower()
+
+
+def test_opt_in_native_esc_43_never_rewrites_hud_by_default():
+    probe = CORE.split("/* Experimental native ESC panel transform, opt-in only.",1)[1].split(
+        "static void free_menu_vertices(",1)[0]
+    assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_NATIVE_ESC_43"' in probe
+    assert "native_pause43_enabled=0;" in probe
+    assert "menu_upscale_active" in probe and "gameplay_4x3_active" in probe
+    assert "rva!=0x00102C72UL" in probe
+    assert "native_pause43_banner_flip" in probe
+    assert "native_pause43_banner_flip,flip" in probe
+    assert "if(!glyph)return source;" in probe
+    assert "th==32 && (tw==16 || tw==32 || tw==64)" in probe
+    assert "0.00122f" in probe and "11.176f" in probe
+    assert "0.00098f" in probe and "12.686f" in probe
+    assert "memcpy(copy,v,4*sizeof(*copy));" in probe
+    assert "copy[i].x=center+(v[i].x-center)*aspect_scale;" in probe
+    assert "SPIDERMAN2K1FIX_NATIVE_ESC_43" not in INI
+    for disallowed in ("VirtualProtect(", "SetTexture(", "PostMessage(", "SendInput(", "WM_CLOSE", "src[i].x="):
+        assert disallowed not in probe, disallowed
+    draw = CORE.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
+        "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
+    assert "maybe_correct_native_pause43(" in draw
+    assert draw.index("maybe_correct_adaptive_hud(") < draw.index("maybe_correct_native_pause43(")
+    assert draw.index("maybe_correct_native_pause43(") < draw.index("maybe_correct_horplus(")
+    assert "native_pause43_init();" in CORE
+    assert "selector not yet classified" in probe
+    assert "3140..3400" in CORE
+    assert "PAUSE-NATIVE-43:" in DOC
