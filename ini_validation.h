@@ -145,12 +145,15 @@ static int spider_ini_value_valid(const char *section,const char *key,const char
   if(!spider_ini_icmp(section,"Joystick"))return spider_ini_joystick(value);
   if(!spider_ini_icmp(section,"Audio"))return spider_ini_uint(value,0,
            !spider_ini_icmp(key,"Stereo")?1:100);
+  /* Only Auto and Off are public modes. Accept older names solely so
+   * the loader can migrate them without resetting saved controls/RawHex. */
   if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"KeyboardLayout"))
-    return !spider_ini_icmp(value,"Legacy") ||
+    return !spider_ini_icmp(value,"Auto") ||
+           !spider_ini_icmp(value,"Off") ||
+           !spider_ini_icmp(value,"Legacy") ||
            !spider_ini_icmp(value,"Physical") ||
            !spider_ini_icmp(value,"QWERTY") ||
-           !spider_ini_icmp(value,"AZERTY") ||
-           !spider_ini_icmp(value,"Auto");
+           !spider_ini_icmp(value,"AZERTY");
   if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"PauseDimOpacity"))
     return spider_ini_uint(value,0,90);
   /* Deprecated key: continue accepting old INI values to avoid resetting
