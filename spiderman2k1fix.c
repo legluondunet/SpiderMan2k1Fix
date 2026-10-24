@@ -1927,13 +1927,18 @@ static const void *maybe_correct_native_cursor43(void *device,
     if(v[i].y<top)top=v[i].y;
     if(v[i].y>bottom)bottom=v[i].y;
   }
-  /* Exact sprite bounds and separate near-foreground depth signature.
-   * The font glyphs seen at 60x50 use z=.00098 and rhw=12.686;
-   * unrelated health/instruction HUDs also fail these gates. */
+  /* The selector can legitimately move anywhere on the 1920x1080
+   * desktop. Former position gates (left>=450, right<=1480,
+   * top>=325, bottom<=800) made the 96x72 sprite revert to its
+   * 16:9-stretched aspect near the top and right: observed F9
+   * scrn0011=72px, scrn0012 (y<325)=96px,
+   * scrn0013 (right>1480)=96px. Do NOT constrain its screen position.
+   * Match its stable local 96x72 size, near-foreground Z/RHW,
+   * original 32x32 texture format, white diffuse, exact native
+   * draw call and active ESC ribbon in this same frame instead.
+   * Native font glyphs are different sizes/Z/RHW. */
   if(fabsf((right-left)-96.0f)>0.6f ||
      fabsf((bottom-top)-72.0f)>0.6f ||
-     left<450.0f || right>1480.0f ||
-     top<325.0f || bottom>800.0f ||
      fabsf(z)>0.00005f ||
      fabsf(rhw-27.519f)>0.035f)return source;
   memcpy(&diffuse,(const BYTE*)source+16,sizeof(diffuse));
