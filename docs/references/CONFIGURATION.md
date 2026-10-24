@@ -74,11 +74,35 @@ The example `RawHex` line is **illustrative only**: the generated file contains 
 
 The supported executable receives **automatic desktop resolution**, borderless fullscreen, centered 4:3 intro/menu media, native comic correction, automatic FOV/aspect adjustment, adaptive widescreen HUD and the verified in-game Display menu lock. These are no longer enabled or disabled through experimental flags; the original 4:3 mode retains its original geometry where a widescreen transform is unnecessary.
 
-**Alt+Tab and pause are permanent features:** once another application's focus loss is confirmed, the game latches pause at the original DirectDraw Flip boundary; a **press and release of any keyboard key after returning** resumes it. The frozen game frame receives the native violet/red PAUSED banner, 50% shading, and no grid. This behavior also coordinates the game's native Bink video/music streams and its game-owned secondary DirectSound voices. The native `DIERR_NOTACQUIRED` keyboard/mouse retry is requested automatically and installed only after its verified signature check at Flip #120; desktop cursor restoration is automatic. The old unsafe DirectInput COM-vtable hook stays disabled.
+**Alt+Tab and pause are permanent features:** once another application's focus loss is confirmed, the game latches pause at the original DirectDraw Flip boundary; a **press and release of any keyboard key after returning** resumes it. The frozen game frame receives the native violet/red PAUSED banner and **60% black shading by default**, with no grid. This behavior also coordinates the game's native Bink video/music streams and its game-owned secondary DirectSound voices. The native `DIERR_NOTACQUIRED` keyboard/mouse retry is requested automatically and installed only after its verified signature check at Flip #120; desktop cursor restoration is automatic. The old unsafe DirectInput COM-vtable hook stays disabled.
 
 **Windows-specific behavior:** the patch requests `DisableProcessWindowsGhosting` automatically on systems providing the API, avoiding Windows' false Ghost-window foreground transitions. This also disables Windows' normal ghost-window handling for a genuinely hung game **until the process exits**; it does not solve a real hang. Wine implementation details may differ.
 
 In all cases, the original executable's SHA-256 check and per-feature native signature checks remain active. A failed optional hook is logged and skipped instead of attempting an unchecked patch. Experimental HorPlus/AnySize modes remain disabled, not silently promoted to permanent behavior.
+
+### Optional PAUSED background opacity
+
+The focus-loss pause and its PAUSED banner are permanent, but **background
+darkening may be adjusted independently**. The generated INI intentionally
+does **not** contain `PauseDimOpacity`. When omitted, it uses **60%**.
+
+To disable only the background shade (not the PAUSED banner, game pause,
+input wake-up, Bink or DirectSound synchronization), manually add:
+
+```ini
+[Input]
+PauseDimOpacity=0
+```
+
+For a different shade, set `PauseDimOpacity` to any integer from `1` to
+`90`; for example, `PauseDimOpacity=75`. To restore the built-in default,
+remove the line (or set it to `60`). The value is applied when the game
+starts. Values outside `0..90` are rejected by the strict INI validator.
+
+The former `PauseGrid` setting and all grid-rendering code in the active
+DirectDraw pause path are removed. Old INIs containing this key are migrated
+with their other player settings preserved, including an explicit
+`PauseDimOpacity` value if previously configured.
 
 ### Upgrading existing INIs
 
