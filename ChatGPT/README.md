@@ -2,7 +2,7 @@
 
 This directory stores **internal development tooling** for SpiderMan2k1Fix. It is distinct from the public game installation and the project's maintained [technical documentation](../docs/README.md).
 
-- [Regression tests](tests/) — static/source checks, C helper runners and packaging checks
+- [Regression tests](tests/) — static/source checks, C helper runners, packaging checks and [INI fixtures](tests/fixtures/)
 - [Developer utilities](tools/) — optional PowerShell inspection and exit-verification scripts
 - [Temporary and external debugger diagnostics](diagnostics/) — WinDbg/CDB experiments and explanatory notes
 

@@ -37,7 +37,7 @@ This directory contains technical references, historical investigation notes and
 
 ## Developer-only tools and regression tests
 
-Development helpers are organized under [ChatGPT/](../ChatGPT/README.md), including automated tests, standalone debugging utilities and an external WinDbg prototype. They are not required to install or run the game.
+Development helpers are organized under [ChatGPT/](../ChatGPT/README.md), including automated tests, [INI test fixtures](../ChatGPT/tests/fixtures/README.md), standalone debugging utilities and an external WinDbg prototype. They are not required to install or run the game.
 
 ## Repository root
 
