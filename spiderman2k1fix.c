@@ -1118,7 +1118,7 @@ static void pause_menu_trace_init(void) {
   n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_PAUSE_MENU_TRACE",value,sizeof(value));
   if(n==1 && value[0]=='1') {
     InterlockedExchange(&pause_menu_trace_enabled,1);
-    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; ESC and post-ESC ENTER/SPACE edges; frames 1/5/12/20, first8 + every64th + draws 3200..3400 + wide overlay candidates; no geometry changes [Log=1]");
+    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; ESC and post-ESC ENTER/SPACE edges; frames 1/5/12/20, first8 + every64th + draws 3140..3400 + wide overlay candidates; no geometry changes [Log=1]");
   }
 }
 /* Read-only ESC observation and a limited follow-up after ENTER or SPACE.
@@ -1285,7 +1285,7 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
      InterlockedIncrement(&pause_menu_trace_wide_seen)<=12);
   if(!(frame==1 || frame==5 || frame==12 || frame==20) ||
      draw>8192 ||
-     (draw>8 && (draw%64)!=0 && !(draw>=3200 && draw<=3400) &&
+     (draw>8 && (draw%64)!=0 && !(draw>=3140 && draw<=3400) &&
       !wide_overlay_candidate))return;
   if(!geom_rva(ret,&rva))rva=0;
   if(fvf==0x144UL &&
@@ -1308,6 +1308,119 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
   log_line(line);
 }
 
+/* Experimental native ESC panel transform, opt-in only.
+ * Evidence: 2026-10-24 Wine traces #737 and #741, two menu states.
+ * Anchor on the unusually wide *untextured* purple ribbon's verified
+ * screen rectangle plus Z/RHW. Only following 2D glyphs in that SAME
+ * Flip are eligible, with their own strict depth and texture gates.
+ * Never touch world/HUD vertices or alter any game-owned input/state.
+ */
+static volatile LONG native_pause43_enabled=0;
+static volatile LONG native_pause43_banner_flip=-1;
+static volatile LONG native_pause43_banner_hits=0;
+static volatile LONG native_pause43_glyph_hits=0;
+static void native_pause43_init(void) {
+  char value[4]={0};
+  DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_NATIVE_ESC_43",value,sizeof(value));
+  if(n==1 && value[0]=='1') {
+    InterlockedExchange(&native_pause43_enabled,1);
+    log_line("PAUSE-NATIVE-43: EXPERIMENTAL 4:3 ribbon+glyph transform enabled; selector not yet classified; original vertices untouched");
+  }
+}
+static const void *maybe_correct_native_pause43(void *device,
+            D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
+            DWORD count,void *ret,SpiderMenuVertex *copy) {
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  float left,right,top,bottom,aspect_scale,center;
+  float z,rhw;
+  DWORD rva=0,tw=0,th=0; unsigned i;
+  LONG flip,hit;
+  int ribbon,glyph=0;
+  IDirectDrawSurface7 *tex=NULL;DDSURFACEDESC2 desc;
+  if(InterlockedCompareExchange(&native_pause43_enabled,0,0)!=1 ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     !source || !copy || count!=4 || type!=D3DPT_TRIANGLEFAN ||
+     fvf!=0x144UL || desktop_h<480 ||
+     desktop_w*3<=desktop_h*4 ||
+     !geom_rva(ret,&rva) || rva!=0x00102C72UL)
+    return source;
+  left=right=v[0].x;top=bottom=v[0].y;
+  z=v[0].z;rhw=v[0].rhw;
+  for(i=1;i<4;i++) {
+    if(v[i].x<left)left=v[i].x;
+    if(v[i].x>right)right=v[i].x;
+    if(v[i].y<top)top=v[i].y;
+    if(v[i].y>bottom)bottom=v[i].y;
+  }
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  /* Banner draw #3166, width ~1.006*desktop_w, y~400..675
+   * for native ESC and y~432..634 for QUIT confirmation.
+   * The tolerance supports animation, NOT arbitrary full-width draws.
+   */
+  ribbon=(left>=-30.0f && left<=20.0f &&
+       right>=(float)desktop_w-25.0f &&
+       right<=(float)desktop_w+35.0f &&
+       top>=(float)desktop_h*0.30f &&
+       top<=(float)desktop_h*0.52f &&
+       bottom>=(float)desktop_h*0.55f &&
+       bottom<(float)desktop_h*0.72f &&
+       (bottom-top)>(float)desktop_h*0.11f &&
+       fabsf(z-0.00122f)<0.00010f &&
+       fabsf(rhw-11.176f)<0.25f);
+  if(ribbon) {
+    /* The banner has no texture. Recheck the live bound texture here
+     * rather than relying solely on depth and broad geometry.
+     */
+    if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)) &&
+       tex) { IDirectDrawSurface7_Release(tex);return source; }
+    InterlockedExchange(&native_pause43_banner_flip,flip);
+  } else {
+    if(InterlockedCompareExchange(&native_pause43_banner_flip,0,0)!=flip)
+      return source;
+    /* Title: PAUSED (Y=171), REALLY QUIT? (Y=283).
+     * Choices: main menu Y=436/508/580; confirmation Y=468/540.
+     * Exclude instructions (Y=877), compass, gameplay HUD, and the
+     * still-unidentified red spider selector.
+     */
+    if(left<=(float)desktop_w*0.25f ||
+       right>=(float)desktop_w*0.75f ||
+       top<(float)desktop_h*0.13f ||
+       bottom>(float)desktop_h*0.63f ||
+       right-left<10.0f || right-left>84.0f ||
+       bottom-top<24.0f || bottom-top>83.0f)
+      return source;
+    if(!((fabsf(z-0.00098f)<0.00010f && fabsf(rhw-12.686f)<0.30f) ||
+         (fabsf(z-0.00122f)<0.00010f && fabsf(rhw-11.176f)<0.30f)))
+      return source;
+    if(FAILED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)) ||
+       !tex)return source;
+    memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+    if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(tex,&desc))) {
+      tw=desc.dwWidth;th=desc.dwHeight;
+    }
+    IDirectDrawSurface7_Release(tex);
+    glyph=(th==32 && (tw==16 || tw==32 || tw==64));
+    if(!glyph)return source;
+  }
+  center=(float)desktop_w*0.5f;
+  aspect_scale=((float)desktop_h*(4.0f/3.0f))/(float)desktop_w;
+  memcpy(copy,v,4*sizeof(*copy));
+  for(i=0;i<4;i++)
+    copy[i].x=center+(v[i].x-center)*aspect_scale;
+  if(ribbon) hit=InterlockedIncrement(&native_pause43_banner_hits);
+  else hit=InterlockedIncrement(&native_pause43_glyph_hits);
+  if(hit<=4 || (hit%600)==0) {
+    char line[230];
+    snprintf(line,sizeof(line),
+      "PAUSE-NATIVE-43: %s hit=%ld flip=%ld x=(%.1f..%.1f) scale=%.5f tex=%lux%lu [EXPERIMENT]",
+      ribbon?"ribbon":"glyph",(long)hit,(long)flip,
+      (double)left,(double)right,(double)aspect_scale,
+      (unsigned long)tw,(unsigned long)th);
+    log_line(line);
+  }
+  return copy;
+}
 static void free_menu_vertices(SpiderMenuVertex *allocated) {
   if (allocated) HeapFree(GetProcessHeap(),0,allocated);
 }
@@ -1330,6 +1443,11 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       v=maybe_correct_adaptive_hud(self,type,fvf,verts,count,
                                    __builtin_return_address(0),small);
+    /* Native ESC after known comic/HUD precedence, with its own
+     * source-vertex-only banner trigger; no rewrites in 4:3 gameplay. */
+    if(v==verts && count==4)
+      v=maybe_correct_native_pause43(self,type,fvf,verts,count,
+                                     __builtin_return_address(0),small);
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
     HRESULT hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
     free_menu_vertices(allocated);
@@ -2950,7 +3068,8 @@ static DWORD WINAPI initialize(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
-  pause_menu_trace_init(); /* Passive native ESC pause 4:3 owner/geometry probe. */
+  pause_menu_trace_init();
+  native_pause43_init(); /* Passive native ESC pause 4:3 owner/geometry probe. */
   SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
