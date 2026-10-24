@@ -53,6 +53,11 @@ additions.
   in Git history and archived technical notes.
 - Preserve all active DirectDraw, Direct3D7, DirectInput, Bink,
   DirectSound, No-CD, INI recovery, HUD and native viewport hooks.
+- Fix the **F9 toast idle-state sentinel**: replace two invalid wide
+  multicharacter constants with the proper NUL terminator, and add a
+  dedicated regression check. Remove unused locals / an obsolete FOV
+  constant and clarify an ambiguous single-line `if`; keep APIs and
+  calling conventions unchanged.
 - Retain ABI and packaging guards: **32-bit PE**, MSVCRT (not UCRT),
   static libgcc, expected winmm exports, and the early
   `SpiderMan2k1Fix_DirectDrawGate` entry.
