@@ -3156,19 +3156,9 @@ static DWORD WINAPI initialize(LPVOID unused) {
     }
   }
   install_ddraw_hook();
-  /* Opt-in Windows 11 prototype: latched DirectDraw Flip pause, not full engine/movie pause. */
-  {
-    char path[MAX_PATH],*slash;
-    DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
-    if(n>0 && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL) {
-      strcpy(slash+1,"SpiderMan2k1Fix.ini");
-      /* Focus-loss pause is permanent. Legacy PauseOnFocusLoss/PauseKey are ignored. */
-      InterlockedExchange(&pause_on_focus_loss,1);
-    }
-    log_line(InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1 ?
-      "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (Any key exclusively; press/release consumed)" :
-      "FOCUS-PAUSE: experimental Flip-boundary pause disabled");
-  }
+  /* Always pause on confirmed focus loss; legacy INI keys are ignored. */
+  InterlockedExchange(&pause_on_focus_loss,1);
+  log_line("FOCUS-PAUSE: permanent Flip-boundary pause ON; Any-key press/release resumes");
   SpiderInputFocus_Install(log_line);
   return 0;
 }
