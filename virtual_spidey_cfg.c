@@ -103,7 +103,7 @@ static const struct { const char *name; DWORD scan; } dik_names[]={
 /* The original game stores physical DIK positions. The user-facing INI can
  * optionally name the *printed letter* instead (AZERTY / OS keyboard layout).
  * Save and load must use the SAME resolved layout to preserve round-trips.
- * The original game's QWERTY menu legend is separate and remains untouched.
+ * The menu/CHEATS legend uses a separate, signature-checked RAM table patch.
  */
 static SpiderKeyboardLayout keyboard_layout_mode=SPIDER_KEYBOARD_PHYSICAL;
 static HKL keyboard_layout_hkl=NULL;
