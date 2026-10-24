@@ -2,6 +2,7 @@
 
 ## Unreleased — permanent fixes and compact player INI (PR #46)
 
+- Capture the selected game window's monitor resolution as early as the DirectDraw creation hook, before the original game reads virtual `Spidey.cfg`, to avoid using the primary monitor's dimensions on multi-monitor setups. Reconfirm at `SetCooperativeLevel`, never forward the original exclusive display-mode request, and retain physical desktop size for both `Auto` and logical `4:3` display policies.
 - Replace numbered INI `.old` copies with a single rolling `SpiderMan2k1Fix.ini.old`: recover known-good settings, validate the rebuilt file before renaming, overwrite any older backup and roll back on failed installation. Delete obsolete numbered backups after a successful repair.
 - Keep `[Display] FPSLimit=30` visible and editable by players (`0` disables, `1..240` target FPS). Retain editable `AspectRatio`, `Brightness`, `KeyboardLayout`, audio and original game bindings.
 - Make native desktop borderless output, automatic FOV, widescreen HUD/native ESC geometry, comic/intro 4:3 handling, game Display menu lock and cursor focus restoration permanent when supported native signatures match.
