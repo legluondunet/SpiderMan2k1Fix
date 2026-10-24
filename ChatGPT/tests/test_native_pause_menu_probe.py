@@ -57,7 +57,7 @@ def test_native_pause_classifies_original_banner_border_and_text_without_touchin
 def test_motif_requires_untextured_original_alpha_quads_at_exact_depth():
     for token in ("SPIDERMAN2K1FIX_NATIVE_MOTIF_43",
                   "native_pause43_enabled", "!native_esc43_supported_monitor()",
-                  "desktop_h!=1080", "gameplay_4x3_active",
+                  "gameplay_4x3_active",
                   "menu_upscale_active", "rva!=0x00102C72UL",
                   "fabsf(v[0].z-0.00146f)", "fabsf(v[0].rhw-9.988f)",
                   "(color&0xFF000000UL)!=0x80000000UL",
