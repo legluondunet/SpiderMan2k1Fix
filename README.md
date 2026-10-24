@@ -8,9 +8,9 @@ It adds borderless fullscreen, desktop-resolution output, widescreen support, co
 
 SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must provide your own installed copy of *Spider-Man*. No game assets are distributed with this project.
 
-> **Stable release:** Download **[SpiderMan2k1Fix v1.0.0](https://github.com/legluondunet/SpiderMan2k1Fix/releases/tag/v1.0.0)**. Automated Windows x86 builds also remain available through GitHub Actions.
+> **Development build — not a stable release.** The fix is still being tested and may not work reliably. Experimental Windows x86 DLL builds can be found in [GitHub Actions](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml).
 
-## Features — Version 1.0
+## Features under development
 
 - **No-CD:** removes the disc check in memory, without modifying the original executable on disk.
 - **Native desktop resolution:** automatically uses your monitor's resolution (`Resolution=Auto`).
@@ -128,7 +128,7 @@ Other executable versions, modified executables, and some third-party wrappers m
 
 1. Install *Spider-Man* normally and locate the directory containing `SpideyPC.exe`.
 2. Back up any existing `winmm.dll`, `SpiderMan2k1Fix.dll`, or `SpiderMan2k1Fix.ini` files in that directory.
-3. Download **`SpiderMan2k1Fix-1.0.0-Windows-x86.zip`** from [GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases/tag/v1.0.0) and extract it. (The GitHub-generated source archives do **not** include compiled DLLs.)
+3. For **testing only**, download the `SpiderMan2k1Fix-Windows-x86` artifact from a successful [GitHub Actions Windows x86 run](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml) and extract its DLL files. No stable release is available.
 4. Copy `winmm.dll` and `SpiderMan2k1Fix.dll` into the **same directory** as `SpideyPC.exe`:
 
    ```text
@@ -143,7 +143,7 @@ Other executable versions, modified executables, and some third-party wrappers m
 
 On the first supported launch, SpiderMan2k1Fix creates `SpiderMan2k1Fix.ini` automatically if it does not already exist. You do not need to create it manually.
 
-**Configuration during upgrades:** New GitHub Actions artifacts and future release packages omit the INI to avoid overwriting personal settings. Keep your existing `SpiderMan2k1Fix.ini` when updating the DLLs. The previously published v1.0.0 archive may still contain a default INI; do not overwrite your own copy.
+**Configuration during testing and upgrades:** GitHub Actions artifacts contain only the two DLLs and public README/CHANGELOG; they do not include an INI. Keep your existing `SpiderMan2k1Fix.ini` when updating the DLLs to avoid losing personal settings.
 
 **Upgrading from an earlier SpiderManFix beta:** Remove the old `SpiderManFix.dll` (it is no longer used). To keep your settings, rename `SpiderManFix.ini` to `SpiderMan2k1Fix.ini` **before launching** the game. If no new-named INI exists, fresh defaults will be generated. Keep a backup of your original INI.
 
@@ -317,7 +317,7 @@ Look for a numbered `SpiderMan2k1Fix_N.old` backup. The previous configuration m
 
 **Controls are not responding after switching applications**
 
-When testing the current development build, set `DirectInputReacquire=1` and `PauseOnFocusLoss=1`. Any keyboard key now resumes after focus returns; the old `PauseKey` selection is ignored. If recovery fails, enable `[Debug] Log=1`, then check for `DI8-RETRY: EXPERIMENTAL requested source=INI` and `DI8-RETRY: EXPERIMENTAL active at Flip #120`. For synchronized sound, enable both additional media-pause settings described above. A previous report of intermittent audio crackling occurred under ProcDump but was not reproduced during ordinary launches without ProcDump; its cause remains unknown. Stable release builds may provide a different option set.
+When testing the current development build, set `DirectInputReacquire=1` and `PauseOnFocusLoss=1`. Any keyboard key now resumes after focus returns; the old `PauseKey` selection is ignored. If recovery fails, enable `[Debug] Log=1`, then check for `DI8-RETRY: EXPERIMENTAL requested source=INI` and `DI8-RETRY: EXPERIMENTAL active at Flip #120`. For synchronized sound, enable both additional media-pause settings described above. A previous report of intermittent audio crackling occurred under ProcDump but was not reproduced during ordinary launches without ProcDump; its cause remains unknown. Future builds may provide a different option set.
 
 **The game has visual or audio glitches**
 
@@ -465,7 +465,7 @@ Historical HUD research logs and before/after evidence are documented in
 
 ## Roadmap
 
-These are **planned improvements**, not features promised for version 1.0:
+These are **planned improvements** rather than confirmed working features:
 
 - **Further HUD coverage:** test additional boss encounters and ultrawide aspect ratios (such as 21:9).
 - **Audio improvements:** reduce or eliminate unwanted audio noise and artifacts.
@@ -474,7 +474,7 @@ These are **planned improvements**, not features promised for version 1.0:
 
 ## Building from source
 
-For ready-to-use DLLs, use the [latest GitHub release](https://github.com/legluondunet/SpiderMan2k1Fix/releases). GitHub Actions also makes its compiled ZIP available under **Actions → SpiderMan2k1Fix Windows x86 → successful run → Artifacts**.
+For **experimental, unvalidated builds**, GitHub Actions makes compiled DLLs available under **Actions → SpiderMan2k1Fix Windows x86 → successful run → Artifacts**. A successful CI build is not evidence that the game works correctly.
 
 The source package includes scripts for building the 32-bit Windows DLLs on Linux with an **MSVCRT-targeting MinGW-w64 toolchain**:
 
@@ -484,7 +484,7 @@ The source package includes scripts for building the 32-bit Windows DLLs on Linu
 
 If your system compiler targets UCRT instead, consult `build-native-msvcrt.sh` in the source tree. The build scripts check the 32-bit Windows architecture and expected imports/exports. The resulting `winmm.dll` and `SpiderMan2k1Fix.dll` are Windows DLLs even when built on Linux.
 
-Developer-only tests, PowerShell utilities and WinDbg experiments live under [ChatGPT/](ChatGPT/README.md). Run the regression suite from the repository root with `python3 -m pytest -q ChatGPT/tests`; GitHub Actions uses the same path. These developer tools are not part of the binary release.
+Developer-only tests, PowerShell utilities and WinDbg experiments live under [ChatGPT/](ChatGPT/README.md). Run the regression suite from the repository root with `python3 -m pytest -q ChatGPT/tests`; GitHub Actions uses the same path. These developer tools are not included in the CI DLL artifact.
 
 ## Project and contributions
 

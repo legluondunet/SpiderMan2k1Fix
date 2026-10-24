@@ -129,7 +129,7 @@
 - **Known observation:** intermittent audio crackling occurred under ProcDump but was not reproduced on a normal game launch without ProcDump. Cause not established; investigation deferred.
 - Not yet merged or released; final integration requires explicit approval.
 
-## 1.0.0 — first stable release (2026-10-19)
+## Unreleased — initial project consolidation (2026-10-19)
 
 - Renamed the project, main DLL, INI, logs, source file, build artifacts, and documentation to **SpiderMan2k1Fix**. The `winmm.dll` proxy retains its required name. Existing beta INI files need to be renamed manually to preserve custom settings.
 
@@ -139,7 +139,7 @@
 - Removed obsolete sprite-entry trampoline and 31-callsite profiling, geometry/draw histograms, drawing-phase shortcuts, comic and intro-video tracing, and forwarding-only Lock, BltFast, projection and vertex-buffer diagnostic hooks.
 - Removed unverified native-edge experiments: raster bias, culling/Z A/B tests, pixel readbacks, synthetic/original triangle witnesses, diagnostic Clear and EndScene hooks.
 - Removed the corresponding obsolete INI keys from the validation allowlist. Existing invalid/obsolete keys are handled by the existing INI auto-repair and backed up.
-- Added release-specific regression checks for hook preservation and removal of obsolete diagnostic paths.
+- Added regression checks for hook preservation and removal of obsolete diagnostic paths.
 - No alteration was made to the SHA-256 executable guard or to the existing virtual configuration and input recovery implementations.
 
-The cleaned 1.0.0 source has been compiled and validated in-game by the maintainer. No measured FPS performance claim is made.
+Compilation and targeted in-game checks were performed during development. Overall compatibility is not yet considered validated; no performance claim is made.

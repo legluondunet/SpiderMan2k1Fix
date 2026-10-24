@@ -44,6 +44,6 @@ The [ChatGPT workspace](../ChatGPT/README.md) contains the automated regression 
 
 ## Repository root
 
-The public-facing documents remain [README.md](../README.md), [CHANGELOG.md](../CHANGELOG.md) and [RELEASE_NOTES_v1.0.0.md](../RELEASE_NOTES_v1.0.0.md).
+The main project files at the repository root are [README.md](../README.md) and [CHANGELOG.md](../CHANGELOG.md). Development builds are available through GitHub Actions; no stable release is available for the current project state.
 
 Historical external URLs to the previous file paths (issues, commits and comments) are not automatically updated by this move.
