@@ -50,6 +50,7 @@ static void patch_early(void) {
  * thunk after the existing native No-CD opcode guard passed. All LoadLibrary,
  * logging, INI repair and synchronization happen later in the real game
  * thread's DirectDrawCreateEx call -- never inside DllMain. */
+static void log_proxy(const char *message); /* defined below */
 typedef HRESULT (WINAPI *ProxyDDrawCreateFn)(GUID *,void **,REFIID,IUnknown *);
 typedef HRESULT (__cdecl *ProxyCoreDDrawGateFn)(
     GUID *,void **,REFIID,IUnknown *,void *);
