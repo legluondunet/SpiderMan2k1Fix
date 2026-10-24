@@ -70,6 +70,43 @@ The example `RawHex` line is **illustrative only**: the generated file contains 
 | `[Keyboard]` / `[Joystick]` | The eleven original keyboard actions and seven joystick button bindings, also saved from the game's menus. |
 | `[Internal] RawHex` | Lossless copy of the game's original 252-byte configuration record. Not a player-facing control. |
 
+### Display resolution: native monitor first
+
+**Physical output resolution is not an INI setting.** At launch, SpiderMan2k1Fix
+uses the **current resolution of the monitor hosting the Spider-Man window**.
+The game remains borderless (`WS_POPUP`, `DDSCL_NORMAL`), with a monitor-sized
+window; no `ChangeDisplaySettings` or exclusive DirectDraw `SetDisplayMode`
+call changes the desktop's actual display mode. The original game's
+`640×480×16` intro/menu request is intercepted and acknowledged internally
+rather than sent to the monitor.
+
+On Windows 11 and Wine, the patch identifies the game's window on the
+DirectDraw creation thread (`GetActiveWindow` /
+`EnumThreadWindows` with process validation), then queries
+`MonitorFromWindow`, `GetMonitorInfoA` and
+`EnumDisplaySettingsA(info.szDevice, ENUM_CURRENT_SETTINGS)`.
+It supplies this monitor-specific width/height to
+`SpiderCfg_ObserveNativeMonitor` **before**
+`SpiderCfg_BootstrapGameRead` copies the virtual `Spidey.cfg` values into
+the original engine. `SetCooperativeLevel` confirms the authoritative HWND
+and can correct an early window/monitor mismatch before the first game mode.
+If no window is discoverable early, the existing primary-monitor fallback is
+used temporarily; its dimensions are corrected once the real HWND arrives,
+though already-loaded original game state cannot always be retroactively
+reloaded. This edge case is a useful regression test on multi-display systems.
+
+`AspectRatio=Auto` fills the selected monitor for 3D gameplay with
+automatic horizontal FOV/aspect adjustment. `AspectRatio=4:3` keeps
+the **same native physical output** but centers a logical 4:3 viewport
+with pillarboxing; menus and source videos always keep their intended 4:3
+presentation. Neither mode changes the Windows/Wine screen resolution.
+
+Turn on `[Debug] Log=1` to verify `DISPLAY-NATIVE`,
+`DISPLAY-PROBE`, `DISPLAY-POLICY` and `BORDERLESS` records.
+In particular, the reported monitor resolution and
+`BORDERLESS: window ... +WIDTHxHEIGHT` should agree with the
+selected monitor's active Windows/Wine resolution.
+
 ### Built-in fixes: no INI switches
 
 The supported executable receives **automatic desktop resolution**, borderless fullscreen, centered 4:3 intro/menu media, native comic correction, automatic FOV/aspect adjustment, adaptive widescreen HUD and the verified in-game Display menu lock. These are no longer enabled or disabled through experimental flags; the original 4:3 mode retains its original geometry where a widescreen transform is unnecessary.
