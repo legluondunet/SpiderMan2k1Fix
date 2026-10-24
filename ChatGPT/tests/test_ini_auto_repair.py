@@ -17,7 +17,7 @@ def recover_runner(tmp_path_factory):
     return output
 
 def recover(runner,tmp_path,data):
-    cfg=tmp_path/'ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini'
+    cfg=tmp_path/'SpiderMan2k1Fix.ini'
     cfg.write_bytes(data.encode() if isinstance(data,str) else data)
     r=subprocess.run([str(runner),str(cfg)],capture_output=True,text=True,check=True)
     lines=r.stdout.splitlines()
