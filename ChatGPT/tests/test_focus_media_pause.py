@@ -10,11 +10,11 @@ GEN=(ROOT/"virtual_spidey_cfg.c").read_text()
 VALID=(ROOT/"ini_validation.h").read_text()
 BUILD=(ROOT/"build.sh").read_text()
 
-def test_bink_sync_requires_explicit_opt_in():
-    assert "PauseBinkOnFocusLoss=0" in INI
-    assert '"PauseBinkOnFocusLoss=0\\r\\n"' in GEN
+def test_bink_sync_is_permanent_but_signature_guarded():
+    assert '"PauseBinkOnFocusLoss=0\\r\\n"' not in GEN
     assert '"PauseBinkOnFocusLoss"' in VALID
-    assert 'GetPrivateProfileIntA("Input","PauseBinkOnFocusLoss",0,exe)!=1' in SRC
+    assert 'GetPrivateProfileIntA("Input","PauseBinkOnFocusLoss"' not in SRC
+    assert "SpiderFocusMedia_Init(log_line);" in CORE
     assert "focus_media_pause.c" in BUILD
 
 def test_native_bink_call_requires_original_supported_layout():
