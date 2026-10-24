@@ -28,7 +28,7 @@ Brightness=4
 FPSLimit=30
 
 [Input]
-; Letter naming: Auto for new INIs, AZERTY, QWERTY or Physical (legacy).
+; Auto detects the active keyboard layout; Off keeps original US positions.
 KeyboardLayout=Auto
 ; Experimental Windows 11 input recovery; default OFF.
 DirectInputReacquire=0
@@ -94,34 +94,34 @@ The generated INI may contain additional internal or development-specific settin
 
 **Alt+Tab recovery (Windows 11):** Use `DirectInputReacquire=1` and `PauseOnFocusLoss=1` for the tested keyboard/mouse recovery and focus-pause combination. After switching back to the game, press and release any key to resume; the wake key is consumed. The game reuses its native `DIERR_NOTACQUIRED` retry path without wrapping DirectInput COM interfaces. These options remain disabled by default; earlier unsafe COM experiments are no longer active, even if their keys remain in an older user INI. The former environment-variable override is supported for legacy diagnostic scripts, but is unnecessary with the INI setting.
 
-## Keyboard layout (AZERTY, QWERTY and Wine)
+## Keyboard layout (Auto or Off)
 
-The original *Spider-Man* 2001 game reads **physical DirectInput DIK scan codes**. Those scan codes are based on keyboard position, **not on the letters printed on your keyboard**. This is why on an AZERTY keyboard a physical **M** may appear as **;** in the original game's key-binding screen, and **Z/W** or **A/Q** can look swapped.
+The original *Spider-Man* 2001 reads **physical DirectInput scan codes**, whereas its CHEATS character-entry and keyboard configuration menu use a separate fixed US QWERTY key-name table. This is why a French AZERTY M originally behaves like US semicolon, while the French comma enters M.
 
-SpiderMan2k1Fix adds a layout option for **letter names in the INI**, while retaining the original physical codes used by the game:
+There are exactly **two user-facing modes**:
 
 ```ini
 [Input]
-KeyboardLayout=AZERTY
+KeyboardLayout=Auto
+```
 
+| Value | Behavior |
+| --- | --- |
+| `Auto` (default for new INIs) | Read the active Windows/Wine input layout using `GetKeyboardLayout` and `MapVirtualKeyEx`. Build a complete, unique A-Z physical scan-code map. Use it for the 11 INI keyboard actions and the original game's CHEATS and keyboard-menu key names. |
+| `Off` | No translation. Preserve the original game's US QWERTY key names and physical DirectInput behavior. |
+
+**Automatic detection is based on the active system layout, not the keyboard's manufacturer or engraving.** If Windows/Wine misreports that layout, an application cannot know the physical keyboard's printed letters reliably. An incomplete/ambiguous letter mapping falls back to original physical codes instead of partially remapping controls. Layout is sampled during game startup; restart the game after switching your operating-system keyboard layout.
+
+For compatibility, existing INIs **without** `KeyboardLayout` default to `Off`, preserving saved physical control names. The deprecated values `AZERTY` (migrated to `Auto`) and `QWERTY`/`Physical`/`Legacy` (migrated to `Off`) are accepted only to upgrade older configuration files automatically. No other modes are generated or documented as current options.
+
+```ini
 [Keyboard]
 Kick=M
 ```
 
-Available values:
+With `Auto` and a French layout, `M` resolves to physical DirectInput `0x27` rather than QWERTY `0x32`, and `A/Q` and `Z/W` also resolve to their printed physical positions. Named non-letter controls and explicitly entered hexadecimal `0xNN` bindings retain physical semantics. Joystick bindings are unchanged.
 
-| `[Input] KeyboardLayout` | Meaning |
-| --- | --- |
-| `Auto` | For **newly generated INIs**: use the active Windows/Wine keyboard layout reported by `GetKeyboardLayout` and `MapVirtualKeyEx`. This is the new default for first-time installs. |
-| `AZERTY` | Force French AZERTY letter positions, including **A/Q, Z/W and M/;**, even when Wine does not report the expected layout. |
-| `QWERTY` | Force the standard US/QWERTY physical mapping of letter names. |
-| `Physical` or `Legacy` | Keep the **historical positional meaning** of the project's original INI key names (also equivalent to QWERTY). This is the default when `KeyboardLayout` is **absent** from an existing INI, avoiding silent changes to older saved bindings. |
-
-For example, `[Keyboard] Kick=M` becomes **DIK scan `0x27`** with `AZERTY`, versus **`0x32`** with `Physical`/QWERTY. AZERTY also maps `Z` to `0x11` (original `DIK_W`) and `W` to `0x2C` (original `DIK_Z`). The 11 action bindings remain stored as physical scan codes in the virtual 252-byte configuration; joystick controls are independent.
-
-**Existing users:** add `KeyboardLayout=AZERTY` under the existing `[Input]` section while the game is closed, then restart it. Do not add a second `[Input]` section; the INI validator rejects duplicates. If automatic detection is incorrect under Wine/Proton, prefer explicit `AZERTY`. The layout is sampled on startup; changing the system layout while the game is running requires restarting the game.
-
-**Experimental CHEATS text entry and keyboard-menu correction:** Analysis of the SHA-verified retail `SpideyPC.exe` identified `Shell_InputName()` at `0x0048DC10`, its call to `DXINPUT_GetKeyName()` at `0x00501550`, and the game's fixed QWERTY name-pointer table at `0x00562FF4`. A second stage of this fix, limited to `KeyboardLayout=AZERTY` or `Auto` resolving to the verified French layout, remaps six table entries **in RAM**, reusing the game's original strings: A/Q, Z/W and M/comma. In CHEATS, the physical AZERTY M (`0x27`) should then enter `M`, and the physical comma (`0x32`) should no longer enter `M`. Original keyboard configuration menu key legends use the same lookup. The patch checks both original function bytes and unchanged table pointers; any mismatch skips the correction. **Windows and Wine gameplay validation is still required.** It does not modify the EXE on disk, intercept DirectInput events, or change game/joystick bindings. Other non-French text-input layouts remain unsupported by this table correction. Named non-letter keys (`SPACE`, arrows, function keys) and explicit `0xNN` raw keycodes retain their original physical meaning.
+**Experimental original CHEATS and keyboard-label correction:** For the supported SHA-verified 2001 executable, the fix checks the original `Shell_InputName` → `DXINPUT_GetKeyName` path and the native table of keyboard names. When `Auto` resolves a valid non-QWERTY layout, it patches only the necessary table entries in memory, reusing the game's original letter-name strings. Displaced original US letter positions are relabeled with native punctuation names when available, or a non-letter `KEY` label to avoid a duplicate CHEATS letter. This never modifies the EXE on disk or intercepts DirectInput events. **Requires real-game testing under Windows and Wine:** successful CI compilation does not prove a particular layout's text entry works.
 
 ## Optional Windows focus diagnostics
 
