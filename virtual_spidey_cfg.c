@@ -708,10 +708,7 @@ void SpiderCfg_ValidateCurrentIni(void (*logger)(const char *)) {
   ini_writes_permitted=0;
   if(!SpiderCfg_RepairIni(ini,&check,backup,sizeof(backup),&recovered,logger)) {
     if(logger)logger("INI-REPAIR: FAILED; source unchanged, game INI writes disabled");
-    MessageBoxA(NULL,"SpiderMan2k1Fix.ini has errors or unknown entries, but automatic repair failed.\n"
-      "Your original INI has been kept. Game options will not overwrite it.\n"
-      "Check write permissions and available disk space.",
-      "SpiderMan2k1Fix - INI repair failed",MB_OK|MB_ICONWARNING|MB_TOPMOST);
+    if(logger)logger("INI-REPAIR: startup continues without a modal dialog; original INI retained and game-origin saving disabled");
     return;
   }
   rebuilt=SpiderIni_Validate(ini,NULL,NULL);
@@ -727,7 +724,7 @@ void SpiderCfg_ValidateCurrentIni(void (*logger)(const char *)) {
     "%u recognized setting(s) were recovered.\n\n"
     "The original file was saved as:\n%s",
     check.errors,check.warnings,recovered,backup);
-  MessageBoxA(NULL,summary,"SpiderMan2k1Fix - INI repaired",MB_OK|MB_ICONINFORMATION|MB_TOPMOST);
+  if(logger)logger(summary); /* No window/modal block during graphics initialization. */
 }
 
 /* Obsolete report files from the previous read-only validator are stale. */
