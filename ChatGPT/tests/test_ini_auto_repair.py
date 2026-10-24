@@ -17,14 +17,14 @@ def recover_runner(tmp_path_factory):
     return output
 
 def recover(runner,tmp_path,data):
-    cfg=tmp_path/'SpiderMan2k1Fix.ini'
+    cfg=tmp_path/'ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini'
     cfg.write_bytes(data.encode() if isinstance(data,str) else data)
     r=subprocess.run([str(runner),str(cfg)],capture_output=True,text=True,check=True)
     lines=r.stdout.splitlines()
     return lines[1:]
 
 def test_valid_ini_preserves_known(recover_runner,tmp_path):
-    values=recover(recover_runner,tmp_path,(ROOT/'SpiderMan2k1Fix.generated-example.ini').read_text())
+    values=recover(recover_runner,tmp_path,(ROOT/'ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini').read_text())
     assert '[Audio] MusicSFXLevel=69' in values
     assert '[Keyboard] Jump=SPACE' in values
     assert '[Audio] Stereo=1' in values

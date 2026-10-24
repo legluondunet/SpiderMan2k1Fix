@@ -9,9 +9,9 @@ ROOT = Path(__file__).resolve().parents[2]
 CORE = (ROOT / "spiderman2k1fix.c").read_text(encoding="utf-8")
 GENERATOR = (ROOT / "virtual_spidey_cfg.c").read_text(encoding="utf-8")
 INIS = (
-    "SpiderMan2k1Fix.ini",
-    "SpiderMan2k1Fix.generated-example.ini",
-    "examples/SpiderMan2k1Fix.user-clean.ini",
+    "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini",
+    "ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini",
+    "ChatGPT/tests/fixtures/SpiderMan2k1Fix.user-clean.ini",
 )
 
 

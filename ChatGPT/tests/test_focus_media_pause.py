@@ -5,7 +5,7 @@ import os,struct,hashlib
 ROOT=Path(__file__).resolve().parents[2]
 SRC=(ROOT/"focus_media_pause.c").read_text()
 CORE=(ROOT/"spiderman2k1fix.c").read_text()
-INI=(ROOT/"SpiderMan2k1Fix.ini").read_text()
+INI=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text()
 GEN=(ROOT/"virtual_spidey_cfg.c").read_text()
 VALID=(ROOT/"ini_validation.h").read_text()
 BUILD=(ROOT/"build.sh").read_text()

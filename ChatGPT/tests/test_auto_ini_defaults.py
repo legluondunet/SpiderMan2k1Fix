@@ -7,7 +7,7 @@ import struct
 ROOT = Path(__file__).resolve().parents[2]
 virtual = (ROOT / 'virtual_spidey_cfg.c').read_text()
 game = (ROOT / 'spiderman2k1fix.c').read_text()
-example = (ROOT / 'SpiderMan2k1Fix.generated-example.ini').read_text()
+example = (ROOT / 'ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini').read_text()
 factory = (ROOT / 'spidey_cfg_template.h').read_text()
 bytes_data = bytes(int(v,16) for v in re.findall(r'0x([0-9a-fA-F]{2})',factory.split('{',1)[1].split('}',1)[0]))
 config = configparser.ConfigParser(interpolation=None)
@@ -30,7 +30,7 @@ def test_generated_example_factory_consistency():
     for key in ('F10Shortcut','F10TestMode','F10Auto3DScripts','F10GameplayExit'):
         assert not config.has_option('Debug',key)
         assert f'"{key}=0\\r\\n"' not in virtual
-        assert f'{key}=' not in (ROOT / 'SpiderMan2k1Fix.ini').read_text()
+        assert f'{key}=' not in (ROOT / 'ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini').read_text()
     assert config['Debug']['F10VerboseTrace'] == '0'
     assert '"F10VerboseTrace=0\\r\\n"' in virtual
     assert not config.has_section('System')

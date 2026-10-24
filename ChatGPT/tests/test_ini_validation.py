@@ -19,7 +19,7 @@ def runner(tmp_path_factory):
 
 
 def validate(runner, tmp_path, contents):
-    p = tmp_path / "SpiderMan2k1Fix.ini"
+    p = tmp_path / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini"
     p.write_text(contents, encoding="ascii")
     r = subprocess.run([str(runner), str(p)], capture_output=True, text=True, check=True)
     results = tuple(map(int,re.search(r"RESULT:(\d+):(\d+):(\d+)",r.stdout).groups()))
@@ -27,7 +27,7 @@ def validate(runner, tmp_path, contents):
 
 
 def test_valid_generated_ini(runner, tmp_path):
-    data = (ROOT / "SpiderMan2k1Fix.generated-example.ini").read_text()
+    data = (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text()
     assert validate(runner,tmp_path,data)[0] == (0,0,1)
 
 
@@ -156,14 +156,14 @@ def test_invalid_data_detected(runner,tmp_path,data):
 
 
 def test_bom_allowed(runner,tmp_path):
-    p=tmp_path/"SpiderMan2k1Fix.ini"
+    p=tmp_path/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini"
     p.write_bytes(b"\xef\xbb\xbf[Debug]\nLog=1\n")
     output=subprocess.run([str(runner),str(p)],capture_output=True,text=True,check=True).stdout
     assert "RESULT:0:0:1" in output
 
 
 def test_binary_null_is_error(runner,tmp_path):
-    p=tmp_path/"SpiderMan2k1Fix.ini"
+    p=tmp_path/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini"
     p.write_bytes(b"[Audio]\nVoiceLevel=79\x00extra\n")
     output=subprocess.run([str(runner),str(p)],capture_output=True,text=True,check=True).stdout
     assert "Binary NUL byte" in output
@@ -191,7 +191,7 @@ def test_system_quick_exit_is_known_and_opt_in(runner, tmp_path):
 
 
 def test_example_hides_obsolete_prototype_shortcuts():
-    data = (ROOT / "SpiderMan2k1Fix.generated-example.ini").read_text()
+    data = (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text()
     assert "[System]\n" not in data
     assert "QuickExitF10=" not in data
 
@@ -214,7 +214,7 @@ def test_f12_auto_3d_scripts_key_is_validated_as_strict_debug_boolean(
 
 
 def test_complete_3d_opt_in_is_accepted_and_example_defaults_off(runner, tmp_path):
-    ini = (ROOT / "SpiderMan2k1Fix.generated-example.ini").read_text()
+    ini = (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text()
     for key in ("F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit"):
         assert f"{key}=" not in ini
     assert validate(runner, tmp_path, ini)[0] == (0, 0, 1)

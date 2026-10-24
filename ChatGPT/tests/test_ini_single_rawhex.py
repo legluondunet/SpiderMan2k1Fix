@@ -39,9 +39,9 @@ def test_shipped_examples_and_rawhex():
     factory=bytes(int(v,16) for v in re.findall(
         r'0x([0-9a-fA-F]{2})',
         (ROOT/'spidey_cfg_template.h').read_text().split('{',1)[1].split('}',1)[0]))
-    assert factory==read_ini('SpiderMan2k1Fix.ini')
-    assert factory==read_ini('SpiderMan2k1Fix.generated-example.ini')
-    assert read_ini('examples/SpiderMan2k1Fix.user-clean.ini')[0x50] == 2
+    assert factory==read_ini('ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini')
+    assert factory==read_ini('ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini')
+    assert read_ini('ChatGPT/tests/fixtures/SpiderMan2k1Fix.user-clean.ini')[0x50] == 2
     assert factory[0x50] == 3
 
 

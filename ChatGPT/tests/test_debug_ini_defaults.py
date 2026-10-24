@@ -3,11 +3,11 @@ from pathlib import Path
 import configparser
 
 ROOT = Path(__file__).resolve().parents[2]
-example = (ROOT / 'SpiderMan2k1Fix.generated-example.ini').read_text()
+example = (ROOT / 'ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini').read_text()
 virtual = (ROOT / 'virtual_spidey_cfg.c').read_text()
 core = (ROOT / 'spiderman2k1fix.c').read_text()
 proxy = (ROOT / 'winmm_proxy.c').read_text()
-source_ini = (ROOT / 'SpiderMan2k1Fix.ini').read_text()
+source_ini = (ROOT / 'ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini').read_text()
 
 
 def test_debug_example_and_exact_display_help():

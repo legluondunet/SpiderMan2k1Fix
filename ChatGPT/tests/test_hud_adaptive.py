@@ -321,7 +321,7 @@ def test_unsafe_calls_and_original_four_by_three_fail_closed(api):
 
 def test_unchanged_fov_pause_and_default_ini():
     src = (ROOT / "spiderman2k1fix.c").read_text()
-    ini = (ROOT / "SpiderMan2k1Fix.ini").read_text()
+    ini = (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text()
     build = (ROOT / "build.sh").read_text()
     assert '#include "hud_adaptive.h"' in src
     assert "SpiderHudWidescreen_Installed()" in src
