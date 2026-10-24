@@ -24,7 +24,7 @@ def test_hud_is_permanent_on_widescreen_and_signature_guarded():
 def test_original_four_by_three_retains_native_geometry():
     assert 'lstrcmpiA(display_aspect_setting,"4:3")==0' in CORE
     assert "original 4:3 game geometry; widescreen correction not needed" in CORE
-    assert "if (!SpiderHudWidescreen_Install(exe_verified,TRUE))" in CORE
+    assert "if(!SpiderHudWidescreen_Install(exe_verified,TRUE))" in CORE
 
 def test_factory_ini_exposes_no_hud_switches():
     generated=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text()
