@@ -411,6 +411,46 @@ Even a positive match will still require two new visual screenshots,
 mouse pointer movement and confirming the menu text remains intact
 before merging PR #28.
 
+### Build #767 — selector-shaped native draw sampler (read-only)
+
+Wine test of CI #766, `SpiderMan2k1Fix(20261024-082835).log`:
+the two new lossless PNGs are **still 96x65** red-pixel bounding boxes
+(`scrn0005(2).png`, `scrn0006(1).png`); reference main-menu cursor
+is **72x65** using the same red threshold. Neither matching method
+identified the presumed `PCSHELL_DrawMouseCursor` frame: stack trace
+`depth=0`, x86 fallback checked **758 DWORDs** three times and
+returned `owner-not-found [NO CHANGE]`. The 60x50 DrawPrimitive
+"candidates" in the log line up with textured menu **font glyphs**,
+not the wider red icon. The decomp PCShell function is a *hypothesis* for
+the gameplay ESC selector, not yet established by the drawing evidence.
+
+Do NOT make cursor width changes from a guessed owner, texture size
+or from the previous `CURSOR-CANDIDATE`/ `SPIDER-POSE` names.
+Those labels never proved object identity. Continue to keep the owner
+experiment disabled when collecting diagnostic frames.
+
+The separate `SELECTOR-SHAPE` probe, enabled **only by the existing**
+`SPIDERMAN2K1FIX_PAUSE_MENU_TRACE=1` and `[Debug] Log=1`,
+records source 2D quads with roughly **78–170px width** and
+**52–130px height** in the central ESC menu region. Both ordinary
+and indexed primitive calls and both supported vertex formats are
+eligible. Crucially, the first **32 independent matches per frame**
+are logged even when the previous 100 shared font candidates already
+filled their quota. The metadata includes original quad bounding box,
+native caller RVA, texture dimensions and COM identity, diffuse color,
+UV0, and Z/RHW, on bounded F9-sampled frames 1/5/12/20.
+No render vertices or input are changed by this sampler.
+
+For next run, enable `SPIDERMAN2K1FIX_NATIVE_ESC_43=1` and
+`SPIDERMAN2K1FIX_PAUSE_MENU_TRACE=1` but **omit**
+`SPIDERMAN2K1FIX_NATIVE_CURSOR_43=1` (the owner hypothesis is
+currently unsupported). Take F9 screenshots of the same ESC and
+REALLY QUIT? positions while leaving each state visible for seconds,
+and provide the log. Look for `PAUSE-NATIVE-PROBE: SELECTOR-SHAPE`.
+If no candidates match the screenshots, search a different draw path
+(DirectDraw surface Blt or different 2D geometry); do not patch the
+menu based on an unverified guess.
+
 ## Test the passive diagnostic (Wine or native Windows)
 
 Use both DLLs from the same build on the diagnostic PR branch.
