@@ -74,7 +74,7 @@ static const char *const spider_ini_hud[]={
  * The runtime refuses both unsafe features regardless of their values.
  * Neither obsolete key is generated or documented as an active option. */
 static const char *const spider_ini_input[]={
-  "DirectInputReacquire","DisableWindowsGhosting","PauseOnFocusLoss","PauseBinkOnFocusLoss","PauseDirectSoundOnFocusLoss","PauseOverlay","PauseDim","PauseDimOpacity","PauseGrid","PauseKey",
+  "KeyboardLayout","DirectInputReacquire","DisableWindowsGhosting","PauseOnFocusLoss","PauseBinkOnFocusLoss","PauseDirectSoundOnFocusLoss","PauseOverlay","PauseDim","PauseDimOpacity","PauseGrid","PauseKey",
   "RestoreCursorOnFocusLoss","ExperimentalFocusTrace","ExperimentalDI8EntryTrace",
   "ExperimentalAltTabReacquire","ExperimentalDI8CreateDeviceTrace"
 };
@@ -145,6 +145,11 @@ static int spider_ini_value_valid(const char *section,const char *key,const char
   if(!spider_ini_icmp(section,"Joystick"))return spider_ini_joystick(value);
   if(!spider_ini_icmp(section,"Audio"))return spider_ini_uint(value,0,
            !spider_ini_icmp(key,"Stereo")?1:100);
+  if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"KeyboardLayout"))
+    return !spider_ini_icmp(value,"Physical") ||
+           !spider_ini_icmp(value,"QWERTY") ||
+           !spider_ini_icmp(value,"AZERTY") ||
+           !spider_ini_icmp(value,"Auto");
   if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"PauseDimOpacity"))
     return spider_ini_uint(value,0,90);
   /* Deprecated key: continue accepting old INI values to avoid resetting
