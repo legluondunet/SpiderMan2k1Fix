@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <wchar.h>
 #include "spidey_cfg_template.h"
+#include "keyboard_layout.h"
 #include "virtual_spidey_cfg.h"
 #include "display_policy.h"
 #include "ini_validation.h"
@@ -98,10 +99,52 @@ static const struct { const char *name; DWORD scan; } dik_names[]={
   {"HOME",0xC7},{"END",0xCF},{"DELETE",0xD3},{"INSERT",0xD2},
   {"PAGEUP",0xC9},{"PAGEDOWN",0xD1}
 };
+/* The original game stores physical DIK positions. The user-facing INI can
+ * optionally name the *printed letter* instead (AZERTY / OS keyboard layout).
+ * Save and load must use the SAME resolved layout to preserve round-trips.
+ * The original game's QWERTY menu legend is separate and remains untouched.
+ */
+static SpiderKeyboardLayout keyboard_layout_mode=SPIDER_KEYBOARD_PHYSICAL;
+static HKL keyboard_layout_hkl=NULL;
+
+static DWORD letter_scan(char letter,DWORD physical) {
+  UINT os_scan=0;
+  if(keyboard_layout_mode==SPIDER_KEYBOARD_AUTO && keyboard_layout_hkl)
+    os_scan=MapVirtualKeyExA((UINT)(unsigned char)letter,MAPVK_VK_TO_VSC,keyboard_layout_hkl);
+  return (DWORD)SpiderKeyboard_MapLetter(keyboard_layout_mode,letter,
+                                         (unsigned)physical,(unsigned)os_scan);
+}
+static void load_keyboard_layout(void) {
+  char value[32],msg[245];
+  /* No setting in an older user INI retains QWERTY/physical semantics.
+   * Only newly generated INIs contain KeyboardLayout=Auto by default. */
+  GetPrivateProfileStringA("Input","KeyboardLayout","Physical",
+                           value,sizeof(value),ini_file);
+  keyboard_layout_mode=SPIDER_KEYBOARD_PHYSICAL;
+  if(!lstrcmpiA(value,"Auto"))keyboard_layout_mode=SPIDER_KEYBOARD_AUTO;
+  else if(!lstrcmpiA(value,"AZERTY"))keyboard_layout_mode=SPIDER_KEYBOARD_AZERTY;
+  else if(!lstrcmpiA(value,"QWERTY"))keyboard_layout_mode=SPIDER_KEYBOARD_QWERTY;
+  /* The validator rejects bad values before this loader is reached. */
+  keyboard_layout_hkl=GetKeyboardLayout(0);
+  snprintf(msg,sizeof(msg),
+    "SPIDEY-CFG: keyboard letter layout=%s HKL=0x%04lX A=0x%02lX Z=0x%02lX W=0x%02lX M=0x%02lX (physical DirectInput; original menu key labels may remain QWERTY)",
+    value,(unsigned long)((ULONG_PTR)keyboard_layout_hkl&0xFFFF),
+    (unsigned long)letter_scan('A',0x1E),
+    (unsigned long)letter_scan('Z',0x2C),
+    (unsigned long)letter_scan('W',0x11),
+    (unsigned long)letter_scan('M',0x32));
+  report(msg);
+}
 static int decode_key(const char *name,DWORD *scan) {
   unsigned i;
   for(i=0;i<sizeof(dik_names)/sizeof(dik_names[0]);i++)
-    if(!lstrcmpiA(name,dik_names[i].name)) { *scan=dik_names[i].scan;return 1; }
+    if(!lstrcmpiA(name,dik_names[i].name)) {
+      DWORD physical=dik_names[i].scan;
+      *scan=(strlen(dik_names[i].name)==1 &&
+             dik_names[i].name[0]>='A' && dik_names[i].name[0]<='Z')
+        ? letter_scan(dik_names[i].name[0],physical) : physical;
+      return 1;
+    }
   /* Lossless 32-bit fallback for as-yet-unidentified action binding codes. */
   if(name[0]=='0' && (name[1]=='x' || name[1]=='X')) {
     char *end=NULL;
@@ -117,8 +160,19 @@ static int decode_key(const char *name,DWORD *scan) {
 }
 static const char *encode_key(DWORD scan) {
   unsigned i;
-  for(i=0;i<sizeof(dik_names)/sizeof(dik_names[0]);i++)
-    if(scan==dik_names[i].scan) return dik_names[i].name;
+  /* Look up printable letters via the same layout used for reading.
+   * In AZERTY, e.g., physical DIK_SEMICOLON (0x27) represents M.
+   * A QWERTY-only symbol with no safe letter name stays as 0xNN. */
+  for(i=0;i<sizeof(dik_names)/sizeof(dik_names[0]);i++) {
+    const char *key=dik_names[i].name;
+    if(strlen(key)==1 && key[0]>='A' && key[0]<='Z' &&
+       scan==letter_scan(key[0],dik_names[i].scan))return key;
+  }
+  for(i=0;i<sizeof(dik_names)/sizeof(dik_names[0]);i++) {
+    const char *key=dik_names[i].name;
+    if(strlen(key)==1 && key[0]>='A' && key[0]<='Z')continue;
+    if(scan==dik_names[i].scan)return key;
+  }
   return NULL;
 }
 static void load_keyboard(void) {
@@ -315,6 +369,9 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "HUDWidescreenFix=1\r\n"
     "\r\n"
     "[Input]\r\n"
+    "; KeyboardLayout: Auto (new install), AZERTY, QWERTY, Physical (legacy).\r\n"
+    "; Determines how [Keyboard] letters resolve to physical DirectInput keys.\r\n"
+    "KeyboardLayout=Auto\r\n"
     "; Opt-in native DirectInput error recovery after Alt+Tab; default off.\r\n"
     "DirectInputReacquire=0\r\n"
     "; Experimental Windows 11 Ghost surrogate suppression (0=default; 1=on until exit).\r\n"
@@ -345,8 +402,9 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "; All levels are 0..100 percent, with lossless raw values kept below.\r\n";
   static const char keyboard_header[]=
     "\r\n[Keyboard]\r\n"
-    "; Keyboard actions use physical DirectInput scan codes.\r\n"
-    "; Use names like SPACE, F, UP or numeric 0xNNNNNNNN.\r\n"
+    "; Keyboard actions store physical DirectInput scan codes.\r\n"
+    "; Letter names follow [Input] KeyboardLayout; 0xNN bypasses layout.\r\n"
+    "; Use names like SPACE, F, M, UP or numeric 0xNNNNNNNN.\r\n"
     "; Unrecognized raw binding codes are preserved as 0xNNNNNNNN.\r\n";
   static const char joystick_header[]=
     "\r\n[Joystick]\r\n"
@@ -605,6 +663,7 @@ static void load_settings(void) {
     report("SPIDEY-CFG: WARNING Display Resolution invalid/unavailable; temporary safe 640x480 pending monitor probe");
   }
   apply_locked_display();
+  load_keyboard_layout();
   load_keyboard();
   load_joystick();
   load_audio();
