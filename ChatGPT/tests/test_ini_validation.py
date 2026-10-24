@@ -193,7 +193,7 @@ def test_integration_blocks_saving_before_writing():
     assert loader.index("SpiderCfg_ValidateCurrentIni(log_line)") < loader.index('GetPrivateProfileStringA("Display","FPSLimit"')
     assert src.index("if(!ini_writes_permitted)") < src.index('WritePrivateProfileStringA("Internal","RawHex"')
     assert "MessageBoxA(NULL,summary" in src
-    assert "SpiderMan2k1Fix_" in src
+    assert 'snprintf(backup,sizeof(backup),"%s.old",ini)' in src
     assert "SpiderCfg_RepairIni" in src
 
 
