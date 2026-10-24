@@ -60,6 +60,36 @@ catches the last 48 candidates while preserving the same bounded
 window, disabled-by-default opt-in and strict read-only operation.
 No gameplay HUD or native pause vertices are transformed.
 
+### New Wine evidence: build #737
+
+The 24 October Wine trace `SpiderMan2k1Fix(20261024-063105).log`
+recorded three ESC-triggered sessions at 1920x1080 Auto:
+
+- Session 1: 3062 to 3111 eligible primitives as the overlay appeared.
+- Session 2: 3244 candidates in frames 1–4, then 3292 from frame 5
+  (48 additional late 2D primitives).
+- Session 3: a stable 3292 candidates throughout.
+
+In session 2, the new four-vertex glyph rows occupy native Y=436,
+508 and 580. Their positions match CONTINUE, RESTART LEVEL and QUIT.
+They share caller RVA 0x00102C72, a caller also used by HUD/world
+sprites, so caller RVA alone is **not** a safe mapping gate.
+A moving 96x72, 32x32-textured quad near the selection rows is a
+candidate for the red spider cursor, but its texture identity is not
+proved. The full-width purple panel has not been positively isolated.
+**The NO/YES confirmation screen was not identified in the original
+24-Flip windows**; do not treat these logs as validation of its glyphs.
+
+The next probe remains strictly read-only and adds only:
+- Up to three additional 24-Flip capture windows after Enter/Space
+  key-down edges for up to 1800 Flips following each observed ESC
+  (roughly one minute at 30 FPS). These are **observation triggers**,
+  not assertions that QUIT or the confirmation menu is open.
+- A bounded (maximum twelve per sampled frame) search for wide
+  screen-space middle-of-screen quads, to help identify the ribbon.
+- The same first 8, every 64th and indices 3200..3400, sampled on
+  frames 1/5/12/20. No drawing/texture/input modification.
+
 The first safe step is therefore read-only identification of
 the panel/text/icon signatures: original caller RVAs, D3D primitive
 types, FVF, source vertex rectangles, depth/RHW and bound texture
@@ -85,22 +115,34 @@ variable before launching the game through the same environment).
 2. Begin a level and **hold Esc for about half a second** to make the
    physical key-down observable at a Flip. Let the game's original native
    CONTINUE / RESTART LEVEL / QUIT menu open; do not use F10 for this step.
-3. Hold this menu for several seconds. Optionally move selection
-   to another row, then choose CONTINUE.
-4. Quit normally and preserve `SpiderMan2k1Fix*.log`.
-5. Search for `PAUSE-NATIVE-PROBE: ESC-EDGE`, `BEGIN`,
-   `SAMPLE-FRAME`, `FRAME-END`, `caller_rva=` and `END`.
+3. Hold the CONTINUE / RESTART LEVEL / QUIT menu for two seconds.
+   Move to QUIT and **hold Enter for half a second** to open the
+   REALLY QUIT? / NO / YES confirmation menu; leave the confirmation
+   visible for two seconds. Alternatively, hold Space if that is
+   your actual confirmation key. Do not click YES to end the session
+   before the samples have been recorded.
+4. Optionally move the spider selector from NO to YES without confirming,
+   then return to NO and choose it to go back to gameplay.
+5. Quit normally and preserve `SpiderMan2k1Fix*.log`.
+6. Search for `PAUSE-NATIVE-PROBE: ESC-EDGE`, `KEY-EDGE`,
+   `BEGIN`, `SAMPLE-FRAME`, `FRAME-END`, `caller_rva=` and `END`.
    If no ESC-EDGE is present, the physical
    ESC key was not observed in a Flip. If ESC-EDGE appears but BEGIN or
    candidate draws do not, the chosen D3D7 path/filter may be incorrect.
 
 The diagnostic observes a maximum **24-Flip window** after each of
-up to four ESC edges. It counts eligible geometry candidates in the
-first 20 frames and logs `FRAME-END candidates=` for each frame.
+up to four ESC edges, plus at most **three** further short windows
+per ESC from physically observed Enter/Space key-down edges occurring
+within 1800 Flips. It counts eligible geometry candidates in the
+first 20 frames of each window and logs `FRAME-END candidates=` for
+each frame. An Enter/Space edge is not proof that a menu was active.
 It records bounded details at **sample frames 1, 5, 12 and 20**:
 the first eight candidates, every 64th candidate, **and every
 candidate from draw 3200 through draw 3400**, up to 8192.
-This reveals the extra end-of-frame primitives without logging every world
+In addition, it reports up to twelve candidate **wide** screen-space
+quads in the middle of each sampled frame, even outside the numbered
+range. These are provisional panel candidates only. This reveals
+potential end-of-frame menu primitives without logging every world
 triangle. The early frame's x/y pairs may be **projected 3D scene
 geometry, not menu positions**; do not apply a 4:3 transform from
 these readings until the overlay has been independently identified.
