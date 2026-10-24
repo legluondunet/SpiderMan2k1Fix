@@ -167,14 +167,14 @@ void SpiderPauseDim_Init(void (*log_fn)(const char *)) {
   dim_log=log_fn;
   dim_enabled=1;
   dim_opacity=DIM_DEFAULT_OPACITY;
-  dim_grid_enabled=1;
+  dim_grid_enabled=0;
   n=GetModuleFileNameA(NULL,path,sizeof(path));
   if(n && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL &&
      (size_t)(slash-path)+sizeof("SpiderMan2k1Fix.ini")<=sizeof(path)) {
     strcpy(slash+1,"SpiderMan2k1Fix.ini");
     dim_enabled=GetPrivateProfileIntA("Input","PauseDim",1,path)==1;
     dim_opacity=GetPrivateProfileIntA("Input","PauseDimOpacity",DIM_DEFAULT_OPACITY,path);
-    dim_grid_enabled=GetPrivateProfileIntA("Input","PauseGrid",1,path)==1;
+    dim_grid_enabled=0; /* Legacy renderer: grid feature retired. */
   }
   /* The INI validator rejects values above 90 or below zero; keep a
    * secondary bound in this isolated module as defense in depth. */
