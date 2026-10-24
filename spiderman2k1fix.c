@@ -1836,7 +1836,7 @@ static void native_motif43_restore_gutters(void *device,
   const float left_edge=240.0f,right_edge=1680.0f;
   float left=original[0].x,right=original[0].x;
   SpiderMenuVertex tri[3],out[5];
-  unsigned i,j,n;
+  unsigned i,n;
   LONG hit;
   int gutter,any=0;
   if(!original || !device)return;
