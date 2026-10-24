@@ -1112,6 +1112,7 @@ static volatile LONG pause_menu_trace_up_down=0;
 static volatile LONG pause_menu_trace_down_down=0;
 static volatile LONG pause_menu_trace_action_edges=0;
 static volatile LONG pause_menu_trace_wide_seen=0;
+static volatile LONG pause_menu_trace_selector_seen=0;
 #define SPIDER_NATIVE_ESC_PAUSE_CONTEXT ((const volatile DWORD *)(uintptr_t)0x00682950u)
 
 static void pause_menu_trace_init(void) {
@@ -1121,7 +1122,7 @@ static void pause_menu_trace_init(void) {
   n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_PAUSE_MENU_TRACE",value,sizeof(value));
   if(n==1 && value[0]=='1') {
     InterlockedExchange(&pause_menu_trace_enabled,1);
-    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; ESC and post-ESC ENTER/SPACE/UP/DOWN edges; frames 1/5/12/20, first8 + every64th + draws 3140..3400 + wide overlay candidates; no geometry changes [Log=1]");
+    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; ESC and post-ESC ENTER/SPACE/UP/DOWN edges; frames 1/5/12/20, first8 + every64th + geometric CURSOR-CANDIDATE quads (max 100/frame) + wide overlays; no geometry changes [Log=1]");
   }
 }
 /* Read-only ESC observation and a limited follow-up after menu navigation keys.
@@ -1207,8 +1208,10 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
   unsigned i,stride;
   IDirectDrawSurface7 *texture=NULL;
   DDSURFACEDESC2 desc;
-  char line[310];
-  int wide_overlay_candidate;
+  char line[440];
+  DWORD diffuse=0;
+  const void *tex_identity=NULL;
+  int wide_overlay_candidate,selector_candidate=0,selector_sample=0;
   if(InterlockedCompareExchange(&pause_menu_trace_enabled,0,0)!=1)return;
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 ||
      (*SPIDER_NATIVE_ESC_PAUSE_CONTEXT==0 &&
@@ -1246,6 +1249,7 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
     }
     InterlockedExchange(&pause_menu_trace_last_flip,flip);
     InterlockedExchange(&pause_menu_trace_wide_seen,0);
+    InterlockedExchange(&pause_menu_trace_selector_seen,0);
     frame=InterlockedIncrement(&pause_menu_trace_frames);
     if(frame<=20 && (frame==1 || frame==5 || frame==12 || frame==20)) {
       snprintf(line,sizeof(line),
@@ -1277,18 +1281,29 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
        ymax>0.0f && ymin<(float)desktop_h))
     return;
   draw=InterlockedIncrement(&pause_menu_trace_draws);
-  /* Wine build #730: 3268 candidates in frames 1..4, and 3316 in
-   * frames 5..20 immediately after native ESC. The +48 primitives occur
-   * too close to the end of the 2D stream for every-64th sampling to
-   * reveal their exact bounds. Record all candidates 3200..3400 in
-   * four spaced frames, in addition to the existing sparse samples.
-   * Keep the trace read-only, explicitly opt-in and bounded; do not
-   * infer from the candidate count alone that a quad is pause UI. */
-  /* Log a few broad 2D quads in the middle third of the display even
-   * when their draw index is outside 3200..3400. These are only possible
-   * ribbon backgrounds, NOT a confirmed native pause-menu signature.
-   * A maximum of twelve per sampled frame prevents trace explosions.
+  /* Historical draw 3140..3400 sampling missed the cursor in #747:
+   * the exact same ribbon now occurs around draw 1439. Do not rely on
+   * numeric draw IDs, which depend on level and world complexity.
+   *
+   * Read-only candidates in the native ESC selector area: 4-vertex
+   * textured sprites, 16..160 pixels wide, 16..150 high, original
+   * coordinates left/center of the ribbon. Filter by native 2D caller
+   * and depth/RHW but NOT by texture size/color: both are what we
+   * need to discover. Log <=100 candidates per sampled frame.
+   * This is candidate sampling, NOT a proven sprite identity.
    */
+  if(fvf==0x144UL && count==4 &&
+     xmin>=(float)desktop_w*0.08f &&
+     xmax<=(float)desktop_w*0.66f &&
+     ymin>=(float)desktop_h*0.24f &&
+     ymax<=(float)desktop_h*0.68f &&
+     xmax-xmin>=16.0f && xmax-xmin<=160.0f &&
+     ymax-ymin>=16.0f && ymax-ymin<=150.0f &&
+     z>=0.00070f && z<=0.0030f &&
+     rhw>=7.0f && rhw<=16.0f &&
+     geom_rva(ret,&rva) && rva==0x00102C72UL)
+    selector_candidate=1;
+  /* Preserve a bounded look at unusually wide native UI backgrounds. */
   wide_overlay_candidate=(fvf==0x144UL && count==4 &&
      (xmax-xmin)>(float)desktop_w*0.60f &&
      ymin>(float)desktop_h*0.18f &&
@@ -1296,19 +1311,38 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
      (ymax-ymin)>(float)desktop_h*0.10f &&
      InterlockedIncrement(&pause_menu_trace_wide_seen)<=12);
   if(!(frame==1 || frame==5 || frame==12 || frame==20) ||
-     draw>8192 ||
-     (draw>8 && (draw%64)!=0 && !(draw>=3140 && draw<=3400) &&
-      !wide_overlay_candidate))return;
-  if(!geom_rva(ret,&rva))rva=0;
+     draw>8192)return;
+  if(selector_candidate &&
+     InterlockedIncrement(&pause_menu_trace_selector_seen)<=100)
+    selector_sample=1;
+  if(draw>8 && (draw%64)!=0 && !wide_overlay_candidate &&
+     !selector_sample)return;
+  if(!rva && !geom_rva(ret,&rva))rva=0;
   if(fvf==0x144UL &&
      SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) &&
      texture) {
+    tex_identity=texture;  /* Compare pointer IDs within this run only. */
     memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
     if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc))) {
       texw=desc.dwWidth;texh=desc.dwHeight;
       texture_format=desc.ddpfPixelFormat.dwFlags;
     }
     IDirectDrawSurface7_Release(texture);
+  }
+  if(selector_sample) {
+    float u0=0.0f,v0=0.0f;
+    memcpy(&diffuse,raw+16,sizeof(diffuse));
+    memcpy(&u0,raw+20,sizeof(u0));
+    memcpy(&v0,raw+24,sizeof(v0));
+    snprintf(line,sizeof(line),
+      "PAUSE-NATIVE-PROBE: CURSOR-CANDIDATE frame=%ld flip=%ld draw=%ld caller_rva=0x%08lX tex=%lux%lu texid=%p diffuse=0x%08lX uv0=(%.4f,%.4f) rect=(%.1f,%.1f)-(%.1f,%.1f) z=%.5f rhw=%.3f [READ ONLY; IDENTITY UNVERIFIED]",
+      (long)frame,(long)flip,(long)draw,(unsigned long)rva,
+      (unsigned long)texw,(unsigned long)texh,tex_identity,
+      (unsigned long)diffuse,(double)u0,(double)v0,
+      (double)xmin,(double)ymin,(double)xmax,(double)ymax,
+      (double)z,(double)rhw);
+    log_line(line);
+    return;
   }
   snprintf(line,sizeof(line),
     "PAUSE-NATIVE-PROBE: frame=%ld draw=%ld caller_rva=0x%08lX indexed=%d type=%lu fvf=0x%lX count=%lu tex=%lux%lu fmt=%08lX rect=(%.1f,%.1f)-(%.1f,%.1f) z=%.5f rhw=%.3f",
