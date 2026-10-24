@@ -549,6 +549,19 @@ static int SpiderCfg_RepairIni(const char *ini,const SpiderIniResult *check,
   }
   if(serial==10000)goto done;
   if(!SpiderCfg_WriteDefaultIniAt(tmp,0,logger))goto done;
+  /* Compatibility: an older user INI without KeyboardLayout had physical
+   * QWERTY semantics. The new generator uses Auto; do not silently change
+   * old user's saved key bindings when compacting that INI. */
+  {
+    char prior[32];
+    GetPrivateProfileStringA("Input","KeyboardLayout","\x01",
+                             prior,sizeof(prior),ini);
+    if(prior[0]=='\x01' &&
+       !WritePrivateProfileStringA("Input","KeyboardLayout","Off",tmp)) {
+      DeleteFileA(tmp);
+      goto done;
+    }
+  }
   for(i=0;i<values->count;i++) {
     SpiderIniRecoveredEntry *e=&values->entries[i];
     if(deprecated_ini_key(e->section,e->key))continue;
