@@ -520,10 +520,47 @@ static unsigned deprecated_ini_count(const char *path) {
 }
 
 
-/* Normalize an invalid INI into the generator's canonical format.
- * The original is preserved at SpiderMan2k1Fix_0.old, _1.old, ... .
- * Build the replacement separately and back up BEFORE the atomic replacement.
- * Failure leaves the original INI untouched and blocks game-origin writes.
+/* Only files created by the previous numbered-backup scheme are pruned.
+ * Match SpiderMan2k1Fix_<decimal>.old exactly: do not delete arbitrary
+ * user files or directories merely matching the wildcard. */
+static void SpiderCfg_PruneNumberedOldFiles(const char *directory,
+                                           void (*logger)(const char *)) {
+  const char *prefix="SpiderMan2k1Fix_";
+  const size_t prefix_len=strlen(prefix);
+  WIN32_FIND_DATAA found;
+  HANDLE search;
+  char pattern[MAX_PATH],path[MAX_PATH],msg[200];
+  const char *p;
+  unsigned removed=0,failed=0;
+  if(snprintf(pattern,sizeof(pattern),"%sSpiderMan2k1Fix_*.old",
+              directory)>=(int)sizeof(pattern))return;
+  search=FindFirstFileA(pattern,&found);
+  if(search==INVALID_HANDLE_VALUE)return;
+  do {
+    if(found.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)continue;
+    if(strncmp(found.cFileName,prefix,prefix_len)!=0)continue;
+    p=found.cFileName+prefix_len;
+    if(*p<'0' || *p>'9')continue;
+    while(*p>='0' && *p<='9')p++;
+    if(strcmp(p,".old")!=0)continue;
+    if(snprintf(path,sizeof(path),"%s%s",directory,found.cFileName)
+        >=(int)sizeof(path)) {failed++;continue;}
+    if(DeleteFileA(path))removed++;
+    else failed++;
+  }while(FindNextFileA(search,&found));
+  FindClose(search);
+  if((removed||failed) && logger) {
+    snprintf(msg,sizeof(msg),
+      "INI-REPAIR: removed %u legacy numbered backup(s); %u could not be removed",
+      removed,failed);
+    logger(msg);
+  }
+}
+
+/* Normalize malformed or legacy INIs using one rolling .ini.old backup.
+ * Build and validate a replacement first. Rename the current INI over the
+ * previous .old only after the replacement is ready, then install it.
+ * If installation fails, try to roll back .old to its original INI name.
  */
 static int SpiderCfg_RepairIni(const char *ini,const SpiderIniResult *check,
                              char *backup_out,size_t backup_cap,unsigned *restored,
@@ -583,27 +620,43 @@ static int SpiderCfg_RepairIni(const char *ini,const SpiderIniResult *check,
       DeleteFileA(tmp);goto done;
     }
   }
-  for(serial=0;serial<10000;serial++) {
-    if(snprintf(backup,sizeof(backup),"%sSpiderMan2k1Fix_%u.old",directory,serial)>=(int)sizeof(backup)) {
-      DeleteFileA(tmp);goto done;
-    }
-    if(GetFileAttributesA(backup)==INVALID_FILE_ATTRIBUTES)break;
+  /* Exactly one rolling backup: the previous INI is RENAMED to .ini.old.
+   * MoveFileEx with REPLACE_EXISTING replaces the former .old atomically
+   * in the same directory. No backup-number allocation is needed. */
+  if(snprintf(backup,sizeof(backup),"%s.old",ini)>=(int)sizeof(backup)) {
+    DeleteFileA(tmp);goto done;
   }
-  if(serial==10000) {DeleteFileA(tmp);goto done;}
-  /* CopyFile fail_if_exists protects numbered backups even against a race. */
-  if(!CopyFileA(ini,backup,TRUE)) {
+  if(!MoveFileExA(ini,backup,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)) {
     err=GetLastError();
-    snprintf(msg,sizeof(msg),"INI-REPAIR: original backup failed (Win32=%lu), INI unchanged",(unsigned long)err);
+    snprintf(msg,sizeof(msg),
+      "INI-REPAIR: cannot rename INI to rolling .old (Win32=%lu); original unchanged",
+      (unsigned long)err);
     if(logger)logger(msg);
     DeleteFileA(tmp);goto done;
   }
-  /* Same-directory atomic replacement; original bytes are in numbered backup. */
-  if(!MoveFileExA(tmp,ini,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)) {
-    err=GetLastError();
-    snprintf(msg,sizeof(msg),"INI-REPAIR: replacing INI failed (Win32=%lu), backup preserved",(unsigned long)err);
+  /* The destination no longer exists; do not overwrite a file created
+   * by another process between the two renames. */
+  if(!MoveFileExA(tmp,ini,MOVEFILE_WRITE_THROUGH)) {
+    DWORD install_err=GetLastError(),restore_err=ERROR_SUCCESS;
+    /* Restore the original INI. If rename fails, a copy preserves .old
+     * while giving the game its previous INI wherever possible. */
+    if(!MoveFileExA(backup,ini,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH) &&
+       !CopyFileA(backup,ini,TRUE))
+      restore_err=GetLastError();
+    if(restore_err==ERROR_SUCCESS)
+      snprintf(msg,sizeof(msg),
+        "INI-REPAIR: installing new INI failed (Win32=%lu); original INI restored",
+        (unsigned long)install_err);
+    else
+      snprintf(msg,sizeof(msg),
+        "INI-REPAIR: installing INI failed Win32=%lu, rollback failed Win32=%lu; original saved as %s",
+        (unsigned long)install_err,(unsigned long)restore_err,backup);
     if(logger)logger(msg);
     DeleteFileA(tmp);goto done;
   }
+  /* Only after successful replacement, remove the older numbered backups
+   * created by previous versions of this patch. */
+  SpiderCfg_PruneNumberedOldFiles(directory,logger);
   /* Flush any cached Win32-profile interpretation of the old INI. */
   WritePrivateProfileStringA(NULL,NULL,NULL,ini);
   if(backup_cap>strlen(backup))strcpy(backup_out,backup);
