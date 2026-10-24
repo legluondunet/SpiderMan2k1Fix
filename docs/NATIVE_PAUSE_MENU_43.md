@@ -239,6 +239,52 @@ Send both screenshots and the complete diagnostic log. Once a unique
 textured, stable draw signature is confirmed against the visible
 red icon, a narrowly gated X-only correction can be added.
 
+### Build #755 — F9-correlated red spider sprite trace (24 Oct 2026)
+
+The build #754 log `SpiderMan2k1Fix(20261024-073722).log`
+recorded exactly **one ESC-EDGE at Flip #153**, collected one
+24-Flip session (until #178), but **no post-ESC KEY-EDGE**.
+The captured F9 screenshots occurred much later (~Flips #649, #865);
+therefore the earlier diagnostic window did **not** cover the visible
+icon positions. The key polling limitation is significant under Wine.
+
+The user-supplied **full-size** screenshots, not the reduced chat
+previews, show different poses:
+- `scrn0010.png`: native ESC menu, selected RESTART LEVEL,
+  red spider approx. **x=1121..1217, y=589..655**
+- `scrn0011.png`: REALLY QUIT? selected NO,
+  red spider approx. **x=937..1033, y=652..718**
+
+Both red icons appear around **96×66** pixels; a 0.75 X-only
+aspect correction would yield about **72×66**, subject to verifying
+the exact native draw identity first. Previous statements that the icon
+was at x=502..597 referred to an incorrectly scaled preview and
+are **superseded** by these source PNG measurements.
+
+When the opt-in probe is enabled, a *successful native F9 screenshot*
+now triggers an independent **`PAUSE-NATIVE-PROBE: F9-SNAPSHOT`**
+diagnostic session, capturing the *next* 24 Flips. This samples the
+pose corresponding to the captured PNG (assuming the user keeps the
+selection stationary) and does not require VK_UP/VK_DOWN detection.
+Only the first four F9 captures after a detected ESC and within 1800
+Flips are traced. The screenshot and all game input remain unchanged.
+
+The supplementary **`PAUSE-NATIVE-PROBE: SPIDER-POSE`** records
+3/4/6-vertex 2D draws in the original full-resolution icon region,
+broadly across callers/FVF/triangle primitive types, with tight Z/RHW
+gates and a 100-entry frame cap. Text sprites or unrelated geometry
+can still appear and must not be treated as a proven selector.
+
+**Test:** With `[Debug] Log=1`,
+`SPIDERMAN2K1FIX_NATIVE_ESC_43=1`, and
+`SPIDERMAN2K1FIX_PAUSE_MENU_TRACE=1`, press ESC, take F9
+at RESTART LEVEL then F9 at REALLY QUIT? / NO. Leave the same
+selection highlighted for about one second after each F9.
+The log should now contain **F9-SNAPSHOT**, **SAMPLE-FRAME**,
+and **SPIDER-POSE** lines corresponding to the two captures.
+Compare texture/callsite/rectangle/depth before attempting any
+rendering fix.
+
 ## Test the passive diagnostic (Wine or native Windows)
 
 Use both DLLs from the same build on the diagnostic PR branch.
