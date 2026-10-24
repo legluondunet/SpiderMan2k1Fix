@@ -6,7 +6,11 @@ SpiderMan2k1Fix is an **unofficial, fan-made patch** for the original Windows PC
 
 It adds borderless fullscreen, desktop-resolution output, widescreen support, corrected presentation for introductory movies and comic-book artwork, improved input handling, and an integrated configuration file. It also removes the game's CD check for the supported executable.
 
-SpiderMan2k1Fix is **not a remake or a replacement for the game**. You must provide your own installed copy of *Spider-Man*. No game assets are distributed with this project.
+**License:** The SpiderMan2k1Fix source code is distributed under the [GNU General Public License, version 3](LICENSE) (**GPL-3.0-only**). This license covers the project's own code, **not** the original game or its assets.
+
+**Original game required:** SpiderMan2k1Fix is a compatibility patch, not a remake or a replacement for the game. **No files from the original game are included**: this repository does not distribute `SpideyPC.exe`, game data, textures, audio, videos or other game assets. You must provide your **own legally obtained copy of the original Windows PC game**.
+
+**Independent fan project:** SpiderMan2k1Fix is **not affiliated with, sponsored by, or endorsed by Activision, Neversoft, LTI Gray Matter / Gray Matter Interactive, or any other developer, publisher, distributor or rights holder associated with the original game**. *Spider-Man* and all related trademarks and game content remain the property of their respective owners.
 
 > **Development build — not a stable release.** The fix is still being tested and may not work reliably. Experimental Windows x86 DLL builds can be found in [GitHub Actions](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml).
 
@@ -494,4 +498,10 @@ Bug reports and reproducible test results are welcome, especially for different 
 
 **Project repository:** <https://github.com/legluondunet/SpiderMan2k1Fix>
 
-*Spider-Man and all associated trademarks belong to their respective owners. This project is unofficial and is not affiliated with or endorsed by the game's original developers or publishers.*
+## License and third-party rights
+
+SpiderMan2k1Fix is released under the **[GNU General Public License v3.0](LICENSE) (GPL-3.0-only)**. The license applies to the code provided by this project; **it does not grant any rights to the original *Spider-Man* game, its executables, artwork, sound, or other proprietary content**.
+
+This project distributes **no original game files**. You must supply your own legally obtained copy of *Spider-Man* for Windows.
+
+This is an **unofficial, independent fan project**. It is not affiliated with, endorsed by, or sponsored by Activision, Neversoft, LTI Gray Matter / Gray Matter Interactive, or any other company or rights holder involved in the original game's development, publication or distribution. *Spider-Man* and associated intellectual property belong to their respective owners.

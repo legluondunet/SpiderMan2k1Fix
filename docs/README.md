@@ -42,6 +42,12 @@ This directory contains the maintained technical documentation and an index of s
 
 The [ChatGPT workspace](../ChatGPT/README.md) contains the automated regression tests, [INI fixtures](../ChatGPT/tests/fixtures/README.md), PowerShell utilities and an external WinDbg prototype. Reports and explanatory Markdown formerly stored alongside these tools are now collected under `docs/references/`.
 
+## License, game files and non-affiliation
+
+- **License:** SpiderMan2k1Fix's own source code is licensed under [GNU GPL version 3](../LICENSE) (**GPL-3.0-only**). The license does not apply to the proprietary original game.
+- **Original game required:** No game executable or original assets are distributed here. Users must provide their own legally obtained copy of the original *Spider-Man* Windows PC game.
+- **Independent project:** Not affiliated with, sponsored by, or endorsed by Activision, Neversoft, LTI Gray Matter / Gray Matter Interactive, or any other original developer, publisher, distributor or rights holder.
+
 ## Repository root
 
 The main project files at the repository root are [README.md](../README.md) and [CHANGELOG.md](../CHANGELOG.md). Development builds are available through GitHub Actions; no stable release is available for the current project state.
