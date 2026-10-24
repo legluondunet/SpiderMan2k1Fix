@@ -162,7 +162,8 @@ def test_opt_in_native_esc_43_never_rewrites_hud_by_default():
     assert "0.00122f" in probe and "11.176f" in probe
     assert "0.00098f" in probe and "12.686f" in probe
     assert "memcpy(copy,v,4*sizeof(*copy));" in probe
-    assert "copy[i].x=center+(v[i].x-center)*aspect_scale;" in probe
+    assert "float mapped=center+(v[i].x-center)*aspect_scale;" in probe
+    assert "copy[i].x=mapped;" in probe
     assert "SPIDERMAN2K1FIX_NATIVE_ESC_43" not in INI
     for disallowed in ("VirtualProtect(", "SetTexture(", "PostMessage(", "SendInput(", "WM_CLOSE", "src[i].x="):
         assert disallowed not in probe, disallowed
@@ -198,7 +199,8 @@ def test_native_esc_border_sprites_have_independent_shape_and_texture_gate():
     assert "if(!glyph)return source;" in source
     assert 'border?"border":"glyph"' in source
     assert "memcpy(copy,v,4*sizeof(*copy));" in source
-    assert "copy[i].x=center+(v[i].x-center)*aspect_scale;" in source
+    assert "float mapped=center+(v[i].x-center)*aspect_scale;" in source
+    assert "copy[i].x=mapped;" in source
     assert "SPIDERMAN2K1FIX_NATIVE_ESC_43" not in INI
     assert "8x8" in DOC and "selector" in DOC.lower()
     for unsafe in ("SetTexture(", "PostMessage(", "SendInput(", "keybd_event(", "src[i].x="):
@@ -346,4 +348,51 @@ def test_build_767_selector_shape_probe_is_read_only_and_not_glyph_quota():
     assert "96x65" in DOC and "SELECTOR-SHAPE" in DOC
     # The diagnostic must never modify vertices or device state.
     for forbidden in ("VirtualProtect(", "DrawPrimitive(", "SetTexture(", "SendInput(", "PostMessage(", "keybd_event(", "SpiderMenu_TransformVertices("):
+        assert forbidden not in probe
+
+
+def test_esc_panel_original_43_outline_is_pixel_calibrated_without_touching_glyphs():
+    block=CORE.split("static const void *maybe_correct_native_pause43(",1)[1].split(
+        "/* Native gameplay ESC red selector:",1)[0]
+    assert "if(desktop_w==1920 && desktop_h==1080)" in block
+    assert "if(border)" in block
+    assert "else if(ribbon)" in block
+    assert "1439.0f/1479.0f" in block
+    assert "1439.0f/1448.5f" in block
+    assert "mapped-963.0f" in block
+    assert "mapped-958.6f" in block
+    assert "copy[i].x=mapped" in block
+    assert "copy[i].y=" not in block
+    # The original screenshot: border x=241..1679 (1439-pixel row).
+    # Current wide screenshot: border x=224..1702 (1479 pixels).
+    # Center-of-extent correction is intentionally separated from
+    # the untextured fill and from all text glyphs.
+    calibrate_border=lambda x: 960.0+(x-963.0)*(1439.0/1479.0)
+    assert abs(calibrate_border(224)-241)<=1
+    assert abs(calibrate_border(1702)-1679)<=1
+    # Native untextured ribbon x=-7.5..1923.8 maps differently from
+    # the outer corners; shrinking it by the border factor would clip
+    # its interior too aggressively.
+    calibrate_fill=lambda x:960.0+(x-958.6)*(1439.0/1448.5)
+    for original,target in [(-7.5,241),(1923.8,1679)]:
+        mapped=960+(original-960)*0.75
+        assert abs(calibrate_fill(mapped)-target)<=2
+    assert "if(border)" in block and "else if(ribbon)" in block
+
+
+def test_backdrop_motif_probe_is_passive_and_not_world_scaling():
+    probe=trace_block()
+    assert "pause_menu_trace_motif_seen=0;" in probe
+    assert "InterlockedExchange(&pause_menu_trace_motif_seen,0);" in probe
+    assert "MOTIF-CANDIDATE" in probe
+    assert "SCENE OR UI UNKNOWN; READ ONLY" in probe
+    assert "InterlockedIncrement(&pause_menu_trace_motif_seen)<=28" in probe
+    assert "(draw<=16 || (draw%67)==0)" in probe
+    assert "(frame==1 || frame==5 || frame==12 || frame==20)" in probe
+    assert "GetTexture(" in probe and "IDirectDrawSurface7_Release(surf)" in probe
+    assert "memcpy(&color,raw+16,sizeof(color));" in probe
+    assert "if(fvf==0x144UL" in probe
+    assert "MOTIF-CANDIDATE" in DOC
+    assert "not yet identified" in DOC.lower()
+    for forbidden in ("VirtualProtect(", "memcpy(copy", "SetTexture(", "DrawPrimitive(", "SendInput(", "PostMessage("):
         assert forbidden not in probe
