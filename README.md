@@ -457,13 +457,11 @@ Historical native F9 BMP capture could produce a magenta image under
 Windows 11. The current lossless PNG screenshot path avoids that legacy
 capture format; it is independent of the widescreen HUD.
 
-The developer-only F12 read-only geometric diagnostic remains
-available temporarily when BOTH `[Debug] Log=1` and the environment
-variable `SPIDERMAN2K1FIX_HUD_TRACE=1` are enabled. In 3D gameplay,
-press F12 once for six frames of `HUD-PROBE` diagnostics. It is **not**
-needed for normal HUD operation and will be removed during the
-pre-1.0 cleanup. See [PR #21](https://github.com/legluondunet/SpiderMan2k1Fix/pull/21)
-for test evidence and development details.
+The temporary F12 HUD research sampler has been removed after the
+widescreen correction was validated. Regular F9 PNG screenshots, optional
+F10/F12 game controls, native ESC corrections and HUD operation remain intact.
+Historical HUD research logs and before/after evidence are documented in
+[PR #21](https://github.com/legluondunet/SpiderMan2k1Fix/pull/21).
 
 ## Roadmap
 

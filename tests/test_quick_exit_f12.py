@@ -813,7 +813,10 @@ def test_foreground_key_detection_and_movie_to_native_quit_handoff():
     assert "SpiderQuickExitF12_AttachWindow(hwnd);" in CORE
     assert "SpiderQuickExitF12_Init(log_line);" in CORE
     assert "SpiderQuickExitF12_ObserveMovieFrame();" in CORE
-    assert "SpiderQuickExitF12_Enabled()" in CORE
+    # The old Enabled() call belonged only to the retired HUD F12 sampler.
+    # Preserve real game-owned transition observers instead.
+    assert "SpiderQuickExitF12_ObserveEngineState(" in CORE
+    assert "SpiderQuickExitF12_ObserveComicRender(" in CORE
     # Only game-owned code at the post-intro transition writes this
     # native Quit flag. The F12 polling thread never directly requests
     # engine shutdown from an arbitrary graphics/audio state.

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — HUD research probe cleanup (PR #23)
+
+- Remove temporary F12 six-frame HUD research sampling, including D3D7 draw/indexed-draw and DirectDraw Blt instrumentation and the old `SPIDERMAN2K1FIX_HUD_TRACE` switch.
+- Retain the verified adaptive HUD and compass/boss corrections, native ESC 4:3 menu, F9 PNG screenshots, F10/F12 game controls, focus and input-retry behavior.
+- Replace obsolete probe tests with targeted regression coverage and remove their user-facing instructions. No changes to gameplay rendering or configuration defaults.
+
 ## Unreleased — Native ESC defaults follow HUDWidescreenFix
 
 - Enable the previously validated ESC ribbon, translucent motif/full-screen tint and red spider cursor aspect corrections by default when `HUDWidescreenFix=1` (factory default), after successful full HUD installation.
