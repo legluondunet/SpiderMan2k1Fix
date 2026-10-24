@@ -197,9 +197,50 @@ Log=0
 
 If you need to investigate a problem, set `Log=1`, save the file, and **restart the game**. SpiderMan2k1Fix will write `SpiderMan2k1Fix.log` in the game directory. **Each game launch starts a fresh log:** the previous session is overwritten (the proxy startup lines and main DLL diagnostics are retained together). Copy or rename the log before your next launch if you need to keep it. After collecting the information you need, return to `Log=0`.
 
+## Startup safety: no modal INI dialogs before native DirectDraw
+
+An invalid INI must **never** open a topmost `MessageBoxA` while the
+original game starts its graphics device. Repair and migration now write
+diagnostics only; game startup continues without a modal interruption, even
+if the original INI cannot be replaced. If repair fails, the original INI
+remains intact and game-origin INI writes are disabled.
+
+To eliminate the initialization race between the game's primary thread and
+the patch's background loader threads, the initial `winmm.dll` proxy
+installs a narrowly scoped **first-DirectDrawCreateEx gate** in the
+SHA-/opcode-guarded supported game's original IAT, at RVA `0x13B010`.
+Only minimal memory checks and the IAT write run in the loader callback.
+When the game makes its first `DirectDrawCreateEx` call **outside the
+loader lock**, the gate locates the main patch DLL and calls
+`SpiderMan2k1Fix_DirectDrawGate`. This invokes or joins one-time
+`InitOnceExecuteOnce` initialization: virtual config and the DirectDraw
+interception must be ready **before** the real DirectDraw device is
+created. If the DLL is absent or unsupported, the guarded call fails
+rather than forwarding the original game's unsafe exclusive 640×480
+startup request.
+
+This is separate from native-monitor detection: after initializing the
+patch, the game-thread hook identifies the actual game HWND/monitor before
+reading virtual `Spidey.cfg`, preserving the OS monitor mode and 4:3
+letter/pillarbox policies. A broken INI does not reinstate a physical
+`Resolution` setting or bypass the borderless requirement.
+
+**Diagnostic identifiers:** `DDRAW-STARTUP: early IAT gate status=1` in
+the proxy, `DDRAW-STARTUP: initial hook and configuration ready ...` in
+the main DLL, plus `INI-REPAIR` and `DISPLAY-NATIVE` messages. Note
+that `[Debug] Log=1` is needed for log output and may itself be absent
+or corrupted; the absence of log lines alone is not proof of failure.
+
+**Runtime verification is still required on Windows 11 and Linux/Wine:**
+deliberately add an unknown INI entry, launch the game, confirm no modal
+dialog and a monitor-sized borderless window from the first visible frame,
+then verify gameplay 3D, 4:3 menus/video and Alt+Tab. Static tests and CI
+compilation do not establish all native DirectDraw timings or display
+backend behaviors.
+
 ## Automatic INI recovery
 
-When `SpiderMan2k1Fix.ini` does not exist, the patch generates a new one using its defaults. When it is **corrupted or invalid** (malformed lines, unknown sections/options, bad values or duplicates), it recovers all recognized **valid** settings using a safe rebuild:
+When `SpiderMan2k1Fix.ini` does not exist, the patch generates a new one using its defaults. When it is **corrupted or invalid** (malformed lines, unknown sections/options, bad values or duplicates), it silently recovers all recognized **valid** settings using a safe rebuild, without showing a startup dialog:
 
 1. Parse the existing `SpiderMan2k1Fix.ini` and keep the **first valid** occurrence of each supported key. Discard malformed, unknown and retired entries.
 2. Create a temporary INI from factory defaults, apply recovered values (controls, joystick, volumes, FPS, aspect, brightness, optional pause opacity and valid `RawHex`), then validate the **entire** replacement.
