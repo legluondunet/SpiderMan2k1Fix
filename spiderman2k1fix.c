@@ -1607,11 +1607,13 @@ static BYTE *native_cursor43_owner=NULL;
 static volatile LONG native_cursor43_enabled=0;
 static volatile LONG native_cursor43_hits=0;
 static volatile LONG native_cursor43_samples=0;
+static volatile LONG native_cursor43_cap_logs=0;
 static volatile LONG native_cursor43_last_flip=-1;
 static volatile LONG native_cursor43_attempts_this_flip=0;
 static void native_cursor43_init(void) {
   char value[4]={0},line[220];
   HMODULE kernel,ntdll,exe;
+  FARPROC symbol=NULL;
   MEMORY_BASIC_INFORMATION mem;
   DWORD i;
   int n;
@@ -1638,17 +1640,20 @@ static void native_cursor43_init(void) {
   kernel=GetModuleHandleA("kernel32.dll");
   ntdll=GetModuleHandleA("ntdll.dll");
   if(kernel)
-    native_cursor43_trace=(SpiderStackTraceFn)GetProcAddress(kernel,"RtlCaptureStackBackTrace");
-  if(!native_cursor43_trace && kernel)
-    native_cursor43_trace=(SpiderStackTraceFn)GetProcAddress(kernel,"CaptureStackBackTrace");
-  if(!native_cursor43_trace && ntdll)
-    native_cursor43_trace=(SpiderStackTraceFn)GetProcAddress(ntdll,"RtlCaptureStackBackTrace");
-  if(!native_cursor43_trace) {
+    symbol=GetProcAddress(kernel,"RtlCaptureStackBackTrace");
+  if(!symbol && kernel)
+    symbol=GetProcAddress(kernel,"CaptureStackBackTrace");
+  if(!symbol && ntdll)
+    symbol=GetProcAddress(ntdll,"RtlCaptureStackBackTrace");
+  if(!symbol) {
     log_line("NATIVE-CURSOR-43: no native stack walker; disabled");
     return;
   }
+  /* FARPROC and StackTraceFn share the x86 function pointer ABI; copy
+   * the address without GCC's incompatible-function-type cast warning. */
+  memcpy(&native_cursor43_trace,&symbol,sizeof(native_cursor43_trace));
   n=snprintf(line,sizeof(line),
-     "NATIVE-CURSOR-43: opt-in stack-verified owner RVA=0x0010C470..0x0010C4B0; code[0..11]=");
+     "NATIVE-CURSOR-43: opt-in stack-guarded owner RVA=0x0010C470..0x0010C4B0; code[0..11]=");
   if(n<0 || n>=(int)sizeof(line)-3)return;
   for(i=0;i<12 && (size_t)n+3<sizeof(line);i++) {
     int written=snprintf(line+n,sizeof(line)-(size_t)n,
@@ -1716,8 +1721,19 @@ static const void *maybe_correct_native_cursor43(void *device,
     }
   }
   if(!matched) {
+    LONG sample=InterlockedIncrement(&native_cursor43_samples);
+    if(sample<=3) {
+      char line[232];
+      snprintf(line,sizeof(line),
+        "NATIVE-CURSOR-43: stack SAMPLE=%ld depth=%u flip=%ld quad=%.0fx%.0f frames=[%p,%p,%p,%p] [NO MATCH, NO CHANGE]",
+        (long)sample,(unsigned)depth,(long)flip,
+        (double)(right-left),(double)(bottom-top),
+        depth>0?frames[0]:NULL,depth>1?frames[1]:NULL,
+        depth>2?frames[2]:NULL,depth>3?frames[3]:NULL);
+      log_line(line);
+    }
     if(attempts==180 &&
-       InterlockedIncrement(&native_cursor43_samples)<=3) {
+       InterlockedIncrement(&native_cursor43_cap_logs)<=3) {
       log_line("NATIVE-CURSOR-43: 180 geometrical candidates/Flip inspected; no PCSHELL_DrawMouseCursor stack owner (no changes)");
     }
     return source;
