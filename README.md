@@ -2,6 +2,9 @@
 
 **A modern compatibility and widescreen fix for Spider-Man (2001) on PC — Windows and Linux (Wine).**
 
+[![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
+[![Linux / Wine / Proton compatible](https://img.shields.io/badge/Linux%20%2F%20Wine%20%2F%20Proton-compatible-428b40?logo=linux&logoColor=white)](#installing-on-linux-with-wine)
+
 SpiderMan2k1Fix is an **unofficial, fan-made patch** for the original Windows PC release of *Spider-Man*. It helps the game run more comfortably on modern displays and operating systems while preserving its original look when desired.
 
 It adds borderless fullscreen, desktop-resolution output, widescreen support, corrected presentation for introductory movies and comic-book artwork, improved input handling, and an integrated configuration file. It also removes the game's CD check for the supported executable.
@@ -178,6 +181,14 @@ On the first supported launch, SpiderMan2k1Fix creates `SpiderMan2k1Fix.ini` aut
 **Wine override explained:** `winmm=n,b` means **native, then built-in**. This allows Wine to load SpiderMan2k1Fix's local `winmm.dll` proxy first. The proxy forwards the original multimedia functions while loading `SpiderMan2k1Fix.dll`.
 
 If you use Lutris or another Wine launcher, add a DLL override with **Name:** `winmm` and **Value:** `n,b` in that game's Wine configuration (or set the equivalent environment variable). You generally do not need a separate override for `SpiderMan2k1Fix.dll`.
+
+**Proton (Steam):** Proton uses Wine's DLL-loading mechanism. If you run the Windows game through Steam/Proton, place the same two DLLs next to `SpideyPC.exe` and add this to the game's **Steam → Properties → Launch Options**:
+
+```text
+WINEDLLOVERRIDES="winmm=n,b" %command%
+```
+
+**Badge note:** The **Windows x86 build** badge reports GitHub Actions compilation/test status. The **Linux / Wine / Proton compatible** badge describes the intended compatibility layer for those same Windows x86 DLLs; **it is informational, not the result of a Linux/Proton gameplay CI test**. Individual Wine or Proton versions may require additional testing.
 
 ## Using SpiderMan2k1Fix
 
@@ -497,6 +508,10 @@ SpiderMan2k1Fix is an independent compatibility project maintained by **[legluon
 Bug reports and reproducible test results are welcome, especially for different Windows versions, Wine versions, GPUs, resolutions and controller models. When reporting an issue, include your platform, game executable checksum, relevant INI settings, and a debug log when available.
 
 **Project repository:** <https://github.com/legluondunet/SpiderMan2k1Fix>
+
+## Credits and acknowledgements
+
+Special thanks to **[Krystalgamer](https://github.com/krystalgamer)** for making their work on the original *Spider-Man* PC game publicly available, including the [partial PC decompilation](https://github.com/krystalgamer/spidey-decomp) and [research into the game's CD check](https://krystalgamer.github.io/spidey-breaking/index.html). These references have helped the community understand the original game's internals and have been valuable background material for this compatibility project.
 
 ## License and third-party rights
 
