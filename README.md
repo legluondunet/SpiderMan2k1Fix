@@ -25,7 +25,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** that improves how the origin
 - **Modern display modes:** use the game window's monitor resolution (including secondary screens), borderless fullscreen without switching display modes, and widescreen 3D or classic 4:3 with automatic FOV.
 - **Original-looking 2D content:** introductory videos, comic artwork and menus retain their intended proportions. The HUD, compass and mission instructions are adapted for supported widescreen resolutions.
 - **Game compatibility:** memory-only CD-check bypass for the supported executable and a default **30 FPS** limiter to avoid timing problems.
-- **Settings and input:** configurable display, sound, keyboard and gamepad controls, with automatic OS keyboard-layout detection (`Auto`/`Off`) for gameplay bindings, CHEATS entry and keyboard menu labels (validated on Windows 11 and Linux/Wine with French AZERTY). The keyboard-name correction operates only in memory; focus/Alt+Tab recovery is Wine-tested but not yet Windows 11 retested.
+- **Settings and input:** configurable display, sound, keyboard and gamepad controls, with automatic OS keyboard-layout detection (`Auto`/`Off`) for gameplay bindings, CHEATS entry and keyboard menu labels (validated on Windows 11 and Linux/Wine with French AZERTY). The keyboard-name correction operates only in memory; focus/Alt+Tab recovery was Wine-tested.
 - **Screenshots:** **F9** saves lossless PNG files (`scrnNNNN.png`) beside the game executable. The capture path still needs broader Windows/Wine runtime testing.
 
 These features are under active development; some resolutions, gameplay scenes and combinations of settings have not been validated. For technical details and known limitations, see the [project documentation](docs/README.md).
@@ -84,7 +84,7 @@ The Linux / Wine / Proton badge is **informational, not the result of a Linux/Pr
 
 There is **no separate launcher**. Run `SpideyPC.exe` normally; the patch creates `SpiderMan2k1Fix.ini` next to it. **Close the game before editing the INI**, and keep that file when replacing the DLLs with a newer build.
 
-The generated file now contains **player choices only**. Gameplay fixes, HUD and media aspect corrections, desktop-native borderless output and focus-loss pause are always part of the patch for the supported executable.
+The INI contains **player choices only**. For the supported EXE, gameplay, HUD, media aspect, native borderless and focus-pause fixes are built in.
 
 ```ini
 [Debug]
@@ -106,7 +106,7 @@ KeyboardLayout=Auto
 
 Keyboard, joystick and audio settings remain editable and can also be saved from the game's own menus. `[Internal] RawHex` still preserves original binary settings and **must not be edited**. Older INIs with obsolete switches are backed up and migrated without losing FPS, controls, audio or `RawHex`.
 
-See the [configuration and migration guide](docs/references/CONFIGURATION.md), [startup/INI technical analysis](docs/references/STARTUP_INI_RECOVERY_TECHNICAL.md), [keyboard reference](docs/references/KEYBOARD_LAYOUT_TECHNICAL.md) and [documentation index](docs/README.md).
+See [INI/configuration](docs/references/CONFIGURATION.md), [startup technical design](docs/references/STARTUP_INI_RECOVERY_TECHNICAL.md), [keyboard notes](docs/references/KEYBOARD_LAYOUT_TECHNICAL.md) and [docs index](docs/README.md).
 
 ## Troubleshooting
 
