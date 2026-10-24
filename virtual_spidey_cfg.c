@@ -631,7 +631,8 @@ static void load_settings(void) {
     if(i!=CFG_SIZE) { memcpy(cfg,spidey_cfg_factory,CFG_SIZE); report("SPIDEY-CFG: invalid RawHex; factory layout restored"); }
   } else if(buf[0]) report("SPIDEY-CFG: RawHex must contain exactly 504 hexadecimal characters; ignored");
   /* One authoritative resolution setting: [Display]. */
-  GetPrivateProfileStringA("Display","Resolution","Auto",configured_resolution,sizeof(configured_resolution),ini_file);
+  /* Desktop resolution is permanent; stale INI Resolution is ignored. */
+  strcpy(configured_resolution,"Auto");
   GetPrivateProfileStringA("Display","AspectRatio","Auto",configured_aspect,sizeof(configured_aspect),ini_file);
   policy_is_auto=!lstrcmpiA(configured_resolution,"Auto");
   memset(&mode,0,sizeof(mode));mode.dmSize=sizeof(mode);
