@@ -222,7 +222,7 @@ def test_red_spider_selector_trace_logs_stable_signature_without_moving_vertices
     assert 'selector_sample?"CURSOR-CANDIDATE":"ICON-REGION"' in probe
     assert "IDENTITY UNVERIFIED" in probe
     assert "texid=%p" in probe
-    assert "if(selector_sample || icon_region_sample || spider_pose_sample)" in probe
+    assert "if(selector_shape_sample || selector_sample || icon_region_sample || spider_pose_sample)" in probe
     assert "SPIDERMAN2K1FIX_SELECTOR_FIX" not in CORE
     assert "CURSOR-CANDIDATE" in DOC
     for forbidden in ("SetTexture(", "memcpy(copy", "SetRenderState(", "PostMessage(", "SendInput("):
