@@ -1108,6 +1108,8 @@ static volatile LONG pause_menu_trace_escape_until=-1;
 static volatile LONG pause_menu_trace_action_armed_until=-1;
 static volatile LONG pause_menu_trace_enter_down=0;
 static volatile LONG pause_menu_trace_space_down=0;
+static volatile LONG pause_menu_trace_up_down=0;
+static volatile LONG pause_menu_trace_down_down=0;
 static volatile LONG pause_menu_trace_action_edges=0;
 static volatile LONG pause_menu_trace_wide_seen=0;
 #define SPIDER_NATIVE_ESC_PAUSE_CONTEXT ((const volatile DWORD *)(uintptr_t)0x00682950u)
@@ -1119,18 +1121,20 @@ static void pause_menu_trace_init(void) {
   n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_PAUSE_MENU_TRACE",value,sizeof(value));
   if(n==1 && value[0]=='1') {
     InterlockedExchange(&pause_menu_trace_enabled,1);
-    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; ESC and post-ESC ENTER/SPACE edges; frames 1/5/12/20, first8 + every64th + draws 3140..3400 + wide overlay candidates; no geometry changes [Log=1]");
+    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; ESC and post-ESC ENTER/SPACE/UP/DOWN edges; frames 1/5/12/20, first8 + every64th + draws 3140..3400 + wide overlay candidates; no geometry changes [Log=1]");
   }
 }
-/* Read-only ESC observation and a limited follow-up after ENTER or SPACE.
+/* Read-only ESC observation and a limited follow-up after menu navigation keys.
  * Native pause_context is zero in the observed Wine runs; do NOT treat the
  * key edge as proof of the menu state. A post-ESC key is simply a convenient
- * sampling trigger for QUIT -> NO/YES; no key is consumed, synthesized or
- * rerouted. Up to three follow-up 24-Flip windows, armed for 1800 Flips
+ * sampling trigger for QUIT -> NO/YES and selector movements; no key is
+ * consumed, synthesized or rerouted. Up to six follow-up 24-Flip windows,
+ * armed for 1800 Flips
  * (about one minute at 30 FPS), per observed ESC edge.
  */
 static void pause_menu_trace_on_flip(LONG flip) {
   LONG down,prev,until,enter_down,enter_prev,space_down,space_prev,armed;
+  LONG up_down,up_prev,down_down,down_prev;
   char line[220];
   if(InterlockedCompareExchange(&pause_menu_trace_enabled,0,0)!=1)return;
   down=(GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0;
@@ -1139,6 +1143,10 @@ static void pause_menu_trace_on_flip(LONG flip) {
   enter_prev=InterlockedExchange(&pause_menu_trace_enter_down,enter_down);
   space_down=(GetAsyncKeyState(VK_SPACE)&0x8000)!=0;
   space_prev=InterlockedExchange(&pause_menu_trace_space_down,space_down);
+  up_down=(GetAsyncKeyState(VK_UP)&0x8000)!=0;
+  up_prev=InterlockedExchange(&pause_menu_trace_up_down,up_down);
+  down_down=(GetAsyncKeyState(VK_DOWN)&0x8000)!=0;
+  down_prev=InterlockedExchange(&pause_menu_trace_down_down,down_down);
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 && down && !prev) {
     /* Cap ESC sessions and post-ESC action sessions to avoid runaway logs. */
     LONG edge=InterlockedIncrement(&pause_menu_trace_escape_edges);
@@ -1156,12 +1164,13 @@ static void pause_menu_trace_on_flip(LONG flip) {
       log_line(line);
     }
   } else if(InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
-            ((enter_down && !enter_prev) || (space_down && !space_prev))) {
+            ((enter_down && !enter_prev) || (space_down && !space_prev) ||
+             (up_down && !up_prev) || (down_down && !down_prev))) {
     armed=InterlockedCompareExchange(&pause_menu_trace_action_armed_until,0,0);
     if(armed>=flip && flip>0 &&
        InterlockedCompareExchange(&pause_menu_trace_escape_edges,0,0)>0) {
       LONG n=InterlockedIncrement(&pause_menu_trace_action_edges);
-      if(n<=3) {
+      if(n<=6) {
         InterlockedExchange(&pause_menu_trace_escape_until,flip+24);
         InterlockedExchange(&pause_menu_trace_active,0);
         InterlockedExchange(&pause_menu_trace_frames,0);
@@ -1169,7 +1178,9 @@ static void pause_menu_trace_on_flip(LONG flip) {
         InterlockedExchange(&pause_menu_trace_last_flip,-1);
         snprintf(line,sizeof(line),
           "PAUSE-NATIVE-PROBE: KEY-EDGE #%ld key=%s flip=%ld [READ ONLY; post-ESC observation, menu state UNVERIFIED]",
-          (long)n,enter_down && !enter_prev?"ENTER":"SPACE",(long)flip);
+          (long)n,enter_down && !enter_prev?"ENTER":
+          space_down && !space_prev?"SPACE":
+          up_down && !up_prev?"UP":"DOWN",(long)flip);
         log_line(line);
       }
     }
@@ -1319,13 +1330,16 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
 static volatile LONG native_pause43_enabled=0;
 static volatile LONG native_pause43_banner_flip=-1;
 static volatile LONG native_pause43_banner_hits=0;
+static volatile LONG native_pause43_border_hits=0;
+static volatile LONG native_pause43_banner_top=0;
+static volatile LONG native_pause43_banner_bottom=0;
 static volatile LONG native_pause43_glyph_hits=0;
 static void native_pause43_init(void) {
   char value[4]={0};
   DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_NATIVE_ESC_43",value,sizeof(value));
   if(n==1 && value[0]=='1') {
     InterlockedExchange(&native_pause43_enabled,1);
-    log_line("PAUSE-NATIVE-43: EXPERIMENTAL 4:3 ribbon+glyph transform enabled; selector not yet classified; original vertices untouched");
+    log_line("PAUSE-NATIVE-43: EXPERIMENTAL 4:3 ribbon+borders+glyphs transform enabled; spider selector not yet classified; original vertices untouched");
   }
 }
 static const void *maybe_correct_native_pause43(void *device,
@@ -1335,8 +1349,8 @@ static const void *maybe_correct_native_pause43(void *device,
   float left,right,top,bottom,aspect_scale,center;
   float z,rhw;
   DWORD rva=0,tw=0,th=0; unsigned i;
-  LONG flip,hit;
-  int ribbon,glyph=0;
+  LONG flip,hit,bt=0,bb=0;
+  int ribbon,glyph=0,border=0;
   IDirectDrawSurface7 *tex=NULL;DDSURFACEDESC2 desc;
   if(InterlockedCompareExchange(&native_pause43_enabled,0,0)!=1 ||
      InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
@@ -1375,22 +1389,20 @@ static const void *maybe_correct_native_pause43(void *device,
      */
     if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)) &&
        tex) { IDirectDrawSurface7_Release(tex);return source; }
+    InterlockedExchange(&native_pause43_banner_top,(LONG)top);
+    InterlockedExchange(&native_pause43_banner_bottom,(LONG)bottom);
     InterlockedExchange(&native_pause43_banner_flip,flip);
   } else {
     if(InterlockedCompareExchange(&native_pause43_banner_flip,0,0)!=flip)
       return source;
-    /* Title: PAUSED (Y=171), REALLY QUIT? (Y=283).
-     * Choices: main menu Y=436/508/580; confirmation Y=468/540.
-     * Exclude instructions (Y=877), compass, gameplay HUD, and the
-     * still-unidentified red spider selector.
+    /* The 8x8-textured border pieces immediately follow the untextured
+     * banner in the *same Flip*: 2 horizontal strokes, 2 vertical caps,
+     * 4 small corners. Validate texture, z/RHW, and shape relative to
+     * the banner recorded above; draw indices are not stable.
+     * Do NOT touch the 32x32 red selection icon until identified.
      */
-    if(left<=(float)desktop_w*0.25f ||
-       right>=(float)desktop_w*0.75f ||
-       top<(float)desktop_h*0.13f ||
-       bottom>(float)desktop_h*0.63f ||
-       right-left<10.0f || right-left>84.0f ||
-       bottom-top<24.0f || bottom-top>83.0f)
-      return source;
+    bt=InterlockedCompareExchange(&native_pause43_banner_top,0,0);
+    bb=InterlockedCompareExchange(&native_pause43_banner_bottom,0,0);
     if(!((fabsf(z-0.00098f)<0.00010f && fabsf(rhw-12.686f)<0.30f) ||
          (fabsf(z-0.00122f)<0.00010f && fabsf(rhw-11.176f)<0.30f)))
       return source;
@@ -1401,8 +1413,44 @@ static const void *maybe_correct_native_pause43(void *device,
       tw=desc.dwWidth;th=desc.dwHeight;
     }
     IDirectDrawSurface7_Release(tex);
-    glyph=(th==32 && (tw==16 || tw==32 || tw==64));
-    if(!glyph)return source;
+    if(tw==8 && th==8 && bb>bt+55 &&
+       fabsf(z-0.00122f)<0.00010f &&
+       fabsf(rhw-11.176f)<0.25f) {
+      int near_left=(left>=-42.0f && left<=-12.0f &&
+                     right>=7.0f && right<=38.0f);
+      int near_right=(left>=(float)desktop_w-17.0f &&
+                      left<=(float)desktop_w+13.0f &&
+                      right>=(float)desktop_w+16.0f &&
+                      right<=(float)desktop_w+70.0f);
+      int at_top=fabsf(top-((float)bt-4.5f))<5.0f;
+      int at_bottom=fabsf(top-((float)bb-9.0f))<5.0f;
+      int horizontal=(fabsf(left)<12.0f &&
+          fabsf(right-(float)desktop_w)<20.0f &&
+          bottom-top>=14.0f && bottom-top<=24.0f &&
+          (at_top || fabsf(top-(float)bb)<5.0f));
+      int side=(near_left || near_right) &&
+          fabsf((bottom-top)-((float)bb-(float)bt-9.0f))<18.0f &&
+          fabsf(top-((float)bt+4.5f))<8.0f;
+      int corner=(near_left || near_right) &&
+          bottom-top>=18.0f && bottom-top<=30.0f &&
+          (at_top || at_bottom);
+      border=horizontal || side || corner;
+    }
+    if(!border) {
+      /* Title: PAUSED (Y=171), REALLY QUIT? (Y=283).
+       * Choices: main menu Y=436/508/580; confirmation Y=468/540.
+       * Exclude instructions (Y=877), compass, gameplay HUD, and
+       * the still-unidentified red spider selector. */
+      if(left<=(float)desktop_w*0.25f ||
+         right>=(float)desktop_w*0.75f ||
+         top<(float)desktop_h*0.13f ||
+         bottom>(float)desktop_h*0.63f ||
+         right-left<10.0f || right-left>84.0f ||
+         bottom-top<24.0f || bottom-top>83.0f)
+        return source;
+      glyph=(th==32 && (tw==16 || tw==32 || tw==64));
+      if(!glyph)return source;
+    }
   }
   center=(float)desktop_w*0.5f;
   aspect_scale=((float)desktop_h*(4.0f/3.0f))/(float)desktop_w;
@@ -1410,12 +1458,13 @@ static const void *maybe_correct_native_pause43(void *device,
   for(i=0;i<4;i++)
     copy[i].x=center+(v[i].x-center)*aspect_scale;
   if(ribbon) hit=InterlockedIncrement(&native_pause43_banner_hits);
+  else if(border) hit=InterlockedIncrement(&native_pause43_border_hits);
   else hit=InterlockedIncrement(&native_pause43_glyph_hits);
   if(hit<=4 || (hit%600)==0) {
     char line[230];
     snprintf(line,sizeof(line),
       "PAUSE-NATIVE-43: %s hit=%ld flip=%ld x=(%.1f..%.1f) scale=%.5f tex=%lux%lu [EXPERIMENT]",
-      ribbon?"ribbon":"glyph",(long)hit,(long)flip,
+      ribbon?"ribbon":border?"border":"glyph",(long)hit,(long)flip,
       (double)left,(double)right,(double)aspect_scale,
       (unsigned long)tw,(unsigned long)th);
     log_line(line);
