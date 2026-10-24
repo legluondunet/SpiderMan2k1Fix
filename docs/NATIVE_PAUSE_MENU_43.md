@@ -325,6 +325,51 @@ and **SPIDER-POSE** lines corresponding to the two captures.
 Compare texture/callsite/rectangle/depth before attempting any
 rendering fix.
 
+### Experimental cursor 4:3 via verified native call stack (post-#757)
+
+The decompilation's mouse cursor owner at **PCSHELL_DrawMouseCursor**
+(VA `0x0050C470`, RVA `0x0010C470`, next function at RVA
+`0x0010C4B0`) is a credible candidate for the red movable icon,
+but direct comparison of function bytes against the SHA-verified game
+executable has **not yet been completed**.
+
+A **separate, OFF-by-default** visual experiment is now available:
+`SPIDERMAN2K1FIX_NATIVE_CURSOR_43=1`. It requires
+`SPIDERMAN2K1FIX_NATIVE_ESC_43=1`, the already verified supported
+SpideyPC.exe SHA-256, an executable memory page at the candidate RVA
+and Windows' `RtlCaptureStackBackTrace` entry point. It records the
+first 12 candidate function bytes **for follow-up verification**;
+this alone is **not** an identity proof.
+
+During a 3D game's native ESC ribbon draw frame, it checks the **entire
+call stack** of bounded, appropriately sized 2D sprites. Only if a
+return address is inside **0x0050C470–0x0050C4AF** does it modify
+the quad's X coordinates. The specific correction compresses the
+**sprite horizontally about its existing center by 0.75**. It does
+not change Y, UV, mouse coordinates, gameplay hit testing or shared
+texture surfaces. It never touches the generic 32×32 text glyphs based
+on texture size alone. Maximum **180 candidates/Flip** are examined.
+
+The prefix `NATIVE-CURSOR-43:` logs initialization, unmatched candidate
+caps and every early **owner MATCH**. If there are **no owner MATCH**
+lines, the experiment intentionally applies **no correction**.
+A successful compilation and static unit tests are not evidence that
+the cursor owner is correct: only a native Wine/Windows screenshot
+can validate this.
+
+For the next Wine test:
+```bash
+SPIDERMAN2K1FIX_NATIVE_ESC_43=1 SPIDERMAN2K1FIX_NATIVE_CURSOR_43=1 SPIDERMAN2K1FIX_PAUSE_MENU_TRACE=1 WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe
+```
+
+Retain `[Debug] Log=1` in the existing INI, then capture the
+regular ESC menu and REALLY QUIT? / NO / YES with F9, including
+at least two cursor positions. Check the red sprite's width/height
+and make sure **all text and the purple panel remain unchanged**.
+Send both PNGs and the full log. If the candidate owner stack never
+matches, stop and investigate call-stack availability or the original
+Sprite2 draw owner; do **not** relax the guard based on texture size.
+
 ## Test the passive diagnostic (Wine or native Windows)
 
 Use both DLLs from the same build on the diagnostic PR branch.
