@@ -1,3 +1,13 @@
+## Cursor aspect regression — native ESC selector outside the central rectangle (2026-10-24)
+
+**Wine F9 pixel evidence, 1920x1080, menu ESC open**: user confirmed the full-screen violet tint/gutter restoration is now working. `scrn0011(1).png` red selector visible box is **72×67 px** near x=1272, y=529; `scrn0012(1).png` is **96×67 px** near x=1308, y=264; `scrn0013(1).png` is **96×67 px** near x=1466, y=516. The textured native quad remains 96×72 (the visible pixels exclude transparent texture borders); the expected aspect correction is x-only 0.75, producing a **72×72 quad**.
+
+**Root cause in `maybe_correct_native_cursor43`**: the initial exact quad classifier also required `left>=450, right<=1480, top>=325, bottom<=800`, despite the cursor legitimately moving to other screen positions. Screenshot 0012 has `top<325`; screenshot 0013 has `right>1480`. Both incorrectly bypassed the known 0.75 x-scale and displayed the original 96px wide sprite. The native sprite/texture itself does *not* change aspect with position.
+
+**Targeted correction**: remove only the position limits; retain **all** guards: opt-in environment variable `SPIDERMAN2K1FIX_NATIVE_CURSOR_43`, exact native ESC same-frame ribbon signal, gameplay 1920×1080 only, disabled for 4:3 mode/main menu, original call site `0x00102C72`, triangle fan FVF `0x144`, 4 vertices, 96×72 native size, exact `Z=0` / `RHW=27.519`, white diffuse color, valid bound 32×32 DirectDraw texture with format flags 0x41. Preserve x center, original y, texture coords and vertices; only local x dimension is compressed to 72px. This does not touch the backdrop/tint, orange motif, purple ribbon, HUD or the red compass arrow.
+
+**Validation still needed on Wine**: move the ESC cursor from center to top and right; F9 screenshots at the same three locations should show matching 72px rendered red icon width (roughly 67px visible red pixels high). Ensure no unintended 96×72 HUD element is altered. PR #28 remains draft.
+
 ## After build #780 — 16:9 pause tint gutter regression and experimental restoration (2026-10-24)
 
 Pixel evidence from the user-provided native 1920x1080 captures:
