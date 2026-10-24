@@ -447,3 +447,73 @@ def test_motif_signature_independent_of_passive_3d_scene_candidates():
     assert "GetTexture(" in block
     assert "0.75f" in block
     assert "This is an explicit experimental opt-in" in block
+
+
+def test_781_gutter_replay_restores_purple_dim_with_original_native_blend():
+    src=CORE.split("/* Restore only the screen-wide pause tint",1)[1].split(
+        "/* Native gameplay ESC red selector:",1)[0]
+    assert "Build #780 compressed ALL native alpha=0x80 UI quads" in src
+    assert "left_edge=240.0f,right_edge=1680.0f" in src
+    assert "native_motif43_restore_gutters(" in src
+    assert "native_motif43_clip_triangle(" in src
+    assert "native_motif43_interpolate(" in src
+    # Preserve original projected depth and texture coordinates at clip edges.
+    assert "r.y=a->y+(b->y-a->y)*t" in src
+    assert "r.z=a->z+(b->z-a->z)*t" in src
+    assert "r.rhw=a->rhw+(b->rhw-a->rhw)*t" in src
+    assert "memcpy((BYTE*)&r+16u,&c,sizeof(c))" in src
+    assert "memcpy((BYTE*)&r+offs,&uv,sizeof(uv))" in src
+    assert "tri[0]=original[0];tri[1]=original[i+1u];tri[2]=original[i+2u]" in src
+    assert "original_draw_primitive(device,D3DPT_TRIANGLEFAN,0x144UL" in src
+    assert "GUTTER-REPLAY" in src
+    draw=CORE.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
+        "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
+    assert draw.index("v=maybe_correct_native_motif43(")<draw.index(
+        "native_motif43_restore_gutters(")<draw.index("original_draw_primitive(")
+    assert "if(v!=verts)" in draw
+    assert "native_motif43_restore_gutters(self,(const SpiderMenuVertex*)verts,flags)" in draw
+    assert "if(v==verts && count==4)" in draw
+    assert "SPIDERMAN2K1FIX_NATIVE_MOTIF_43" in CORE
+    # No new INI option, HWND overlay, color grading guess or raw backbuffer Lock.
+    assert "NATIVE-MOTIF-43" not in INI
+    for forbidden in ("VirtualProtect(", "IDirectDrawSurface7_Lock(",
+                      "SetWindowLong(", "SetRenderState(", "DrawPrimitiveUP("):
+        assert forbidden not in src
+
+
+def test_781_clip_gutters_keep_native_fullscreen_borders_without_center_overdraw():
+    """Independent model of two native triangle fan triangles and clipping."""
+    left,right=240,1680
+
+    def clip(poly,edge,keep_left):
+        out=[]
+        for i,b in enumerate(poly):
+            a=poly[i-1]
+            ina=a[0]<=edge if keep_left else a[0]>=edge
+            inb=b[0]<=edge if keep_left else b[0]>=edge
+            if ina!=inb:
+                t=(edge-a[0])/(b[0]-a[0])
+                out.append((edge,a[1]+t*(b[1]-a[1])))
+            if inb:
+                out.append(b)
+        return out
+
+    # Original wide translucent quadrilateral split into two native triangles.
+    verts=[(0,0),(1920,0),(1920,1080),(0,1080)]
+    triangles=[(verts[0],verts[1],verts[2]),
+               (verts[0],verts[2],verts[3])]
+    gutters=[(0,left,True),(right,1920,False)]
+    for lo,hi,keep_left in gutters:
+        pieces=[clip(t,left if keep_left else right,keep_left)
+                for t in triangles]
+        assert all(all(lo<=p[0]<=hi for p in poly)
+                   for poly in pieces for p in poly)
+        assert sum(len(poly)>=3 for poly in pieces)==2
+        assert {tuple(p) for poly in pieces for p in poly} >= {
+            (lo,0),(hi,0),(lo,1080),(hi,1080)}
+    # Interior artwork and the 1440-pixel native 4:3 panel are untouched.
+    inside=[(520,200),(1400,200),(1400,800),(520,800)]
+    for lo,hi,keep_left in gutters:
+        assert all(len(clip(t,left if keep_left else right,keep_left))==0
+                   for t in [(inside[0],inside[1],inside[2]),
+                             (inside[0],inside[2],inside[3])])
