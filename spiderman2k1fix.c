@@ -1114,6 +1114,7 @@ static volatile LONG pause_menu_trace_action_edges=0;
 static volatile LONG pause_menu_trace_wide_seen=0;
 static volatile LONG pause_menu_trace_selector_seen=0;
 static volatile LONG pause_menu_trace_icon_seen=0;
+static volatile LONG pause_menu_trace_shape_seen=0;
 static volatile LONG pause_menu_trace_f9_events=0;
 #define SPIDER_NATIVE_ESC_PAUSE_CONTEXT ((const volatile DWORD *)(uintptr_t)0x00682950u)
 
@@ -1124,7 +1125,7 @@ static void pause_menu_trace_init(void) {
   n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_PAUSE_MENU_TRACE",value,sizeof(value));
   if(n==1 && value[0]=='1') {
     InterlockedExchange(&pause_menu_trace_enabled,1);
-    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; ESC and post-ESC ENTER/SPACE/UP/DOWN edges; frames 1/5/12/20, first8 + every64th + geometric CURSOR-CANDIDATE quads (100/frame), ICON-REGION quads (100/frame), F9 snapshot sampling, wide overlays; no geometry changes [Log=1]");
+    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; ESC and post-ESC ENTER/SPACE/UP/DOWN edges; frames 1/5/12/20, first8 + every64th + CURSOR-CANDIDATE (100/frame), independent SELECTOR-SHAPE (32/frame), F9 sampling; no geometry changes [Log=1]");
   }
 }
 /* Read-only ESC observation and a limited follow-up after menu navigation keys.
@@ -1245,6 +1246,7 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
   int wide_overlay_candidate,selector_candidate=0,selector_sample=0;
   int icon_region_candidate=0,icon_region_sample=0;
   int spider_pose_candidate=0,spider_pose_sample=0;
+  int selector_shape_candidate=0,selector_shape_sample=0;
   if(InterlockedCompareExchange(&pause_menu_trace_enabled,0,0)!=1)return;
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 ||
      (*SPIDER_NATIVE_ESC_PAUSE_CONTEXT==0 &&
@@ -1284,6 +1286,7 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
     InterlockedExchange(&pause_menu_trace_wide_seen,0);
     InterlockedExchange(&pause_menu_trace_selector_seen,0);
     InterlockedExchange(&pause_menu_trace_icon_seen,0);
+    InterlockedExchange(&pause_menu_trace_shape_seen,0);
     frame=InterlockedIncrement(&pause_menu_trace_frames);
     if(frame<=20 && (frame==1 || frame==5 || frame==12 || frame==20)) {
       snprintf(line,sizeof(line),
@@ -1379,6 +1382,28 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
      z>=-0.0010f && z<=0.0040f &&
      rhw>=5.0f && rhw<=25.0f)
     spider_pose_candidate=1;
+  /* #766 proved our owner-based cursor attempt was observing 60x50
+   * GLYPHS, not the visible 96x65 red selector. On the F9 ESC and QUIT
+   * PNGs the red bounding boxes are at (1147..1242,440..504) and
+   * (828..923,526..590). The true native UI draw quad must cover the
+   * red pixels but may have some transparent padding.
+   *
+   * Log plausible selector-SHAPED 2D quads independently of the shared
+   * 100-quad "SPIDER-POSE" quota (consumed by font glyphs first).
+   * This remains READ ONLY, collects all callers/textures/FVF 0x44 and
+   * 0x144, indexed and non-indexed, and is capped to 32 per sample frame.
+   * Never select a render patch from these spatial clues alone.
+   */
+  if((count==3 || count==4 || count==6) &&
+     xmin>(float)desktop_w*0.20f &&
+     xmax<(float)desktop_w*0.83f &&
+     ymin>(float)desktop_h*0.27f &&
+     ymax<(float)desktop_h*0.80f &&
+     xmax-xmin>=78.0f && xmax-xmin<=170.0f &&
+     ymax-ymin>=52.0f && ymax-ymin<=130.0f &&
+     z>=-0.001f && z<=0.0060f &&
+     rhw>=4.5f && rhw<=30.0f)
+    selector_shape_candidate=1;
   /* Preserve a bounded look at unusually wide native UI backgrounds. */
   wide_overlay_candidate=(type==D3DPT_TRIANGLEFAN && fvf==0x144UL && count==4 &&
      (xmax-xmin)>(float)desktop_w*0.60f &&
@@ -1388,6 +1413,9 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
      InterlockedIncrement(&pause_menu_trace_wide_seen)<=12);
   if(!(frame==1 || frame==5 || frame==12 || frame==20) ||
      draw>8192)return;
+  if(selector_shape_candidate &&
+     InterlockedIncrement(&pause_menu_trace_shape_seen)<=32)
+    selector_shape_sample=1;
   if(selector_candidate &&
      InterlockedIncrement(&pause_menu_trace_selector_seen)<=100)
     selector_sample=1;
@@ -1398,7 +1426,8 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
      InterlockedIncrement(&pause_menu_trace_icon_seen)<=100)
     icon_region_sample=1;
   if(draw>8 && (draw%64)!=0 && !wide_overlay_candidate &&
-     !selector_sample && !icon_region_sample && !spider_pose_sample)return;
+     !selector_sample && !icon_region_sample && !spider_pose_sample &&
+     !selector_shape_sample)return;
   if(!rva && !geom_rva(ret,&rva))rva=0;
   if(fvf==0x144UL &&
      SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) &&
@@ -1411,7 +1440,7 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
     }
     IDirectDrawSurface7_Release(texture);
   }
-  if(selector_sample || icon_region_sample || spider_pose_sample) {
+  if(selector_shape_sample || selector_sample || icon_region_sample || spider_pose_sample) {
     float u0=0.0f,v0=0.0f;
     memcpy(&diffuse,raw+16,sizeof(diffuse));
     if(fvf==0x144UL) {
@@ -1420,7 +1449,7 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
     }
     snprintf(line,sizeof(line),
       "PAUSE-NATIVE-PROBE: %s frame=%ld flip=%ld draw=%ld caller_rva=0x%08lX indexed=%d type=%lu fvf=0x%lX count=%lu tex=%lux%lu texid=%p diffuse=0x%08lX uv0=(%.4f,%.4f) rect=(%.1f,%.1f)-(%.1f,%.1f) z=%.5f rhw=%.3f [READ ONLY; IDENTITY UNVERIFIED]",
-      spider_pose_sample?"SPIDER-POSE":(selector_sample?"CURSOR-CANDIDATE":"ICON-REGION"),
+      selector_shape_sample?"SELECTOR-SHAPE":(spider_pose_sample?"SPIDER-POSE":(selector_sample?"CURSOR-CANDIDATE":"ICON-REGION")),
       (long)frame,(long)flip,(long)draw,(unsigned long)rva,
       indexed,(unsigned long)type,(unsigned long)fvf,(unsigned long)count,
       (unsigned long)texw,(unsigned long)texh,tex_identity,
