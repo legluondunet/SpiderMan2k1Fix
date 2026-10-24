@@ -84,25 +84,29 @@ The Linux / Wine / Proton badge is **informational, not the result of a Linux/Pr
 
 There is **no separate launcher**. Run `SpideyPC.exe` normally; the patch creates `SpiderMan2k1Fix.ini` next to it. **Close the game before editing the INI**, and keep that file when replacing the DLLs with a newer build.
 
-A few common settings:
+The generated file now contains **player choices only**. Gameplay fixes, HUD and media aspect corrections, desktop-native borderless output and focus-loss pause are always part of the patch for the supported executable.
 
 ```ini
+[Debug]
+Log=0
+
 [Display]
-Resolution=Auto
 AspectRatio=Auto
+Brightness=4
 FPSLimit=30
 
-[HUD]
-HUDWidescreenFix=1
+[Input]
+KeyboardLayout=Auto
 ```
 
-- `AspectRatio=Auto`: adapt to the desktop aspect ratio; `AspectRatio=4:3`: classic 4:3 display.
-- `FPSLimit=30`: default frame-rate limit.
-- `HUDWidescreenFix=1`: apply supported HUD/menu aspect corrections; set `0` to disable them.
+- **`FPSLimit=30` remains fully configurable:** use `0` for no limiter, or a target from `1` to `240`. Frame rates above 30 may break original game timing.
+- `AspectRatio=Auto` uses the desktop aspect ratio; `AspectRatio=4:3` uses the classic presentation.
+- `KeyboardLayout=Auto` resolves the active Windows/Wine keyboard layout for controls and CHEATS; `Off` preserves original QWERTY positions.
+- On a confirmed Alt+Tab focus loss, the game and synchronized audio/video pause automatically. Return to the game and press/release any key to resume. No pause-related INI switches are needed.
 
-**Keyboard layout:** Newly generated INIs use `KeyboardLayout=Auto` to detect the active Windows/Wine layout for controls, CHEATS text entry and keyboard-menu labels. Set `KeyboardLayout=Off` to keep the original QWERTY key positions and labels. The French AZERTY path has been validated under Windows 11 and Linux/Wine; other layouts still need broader runtime testing. [Keyboard layout details](docs/references/CONFIGURATION.md#keyboard-layout-auto-or-off).
+Keyboard, joystick and audio settings remain editable and can also be saved from the game's own menus. `[Internal] RawHex` still preserves original binary settings and **must not be edited**. Older INIs with obsolete switches are backed up and migrated without losing FPS, controls, audio or `RawHex`.
 
-For audio, controls, Alt+Tab options, INI repair and other settings, see the **[configuration guide](docs/references/CONFIGURATION.md)**.
+See the [complete configuration and migration guide](docs/references/CONFIGURATION.md), [technical keyboard reference](docs/references/KEYBOARD_LAYOUT_TECHNICAL.md) and [project documentation](docs/README.md).
 
 ## Troubleshooting
 
