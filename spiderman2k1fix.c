@@ -1608,8 +1608,64 @@ static volatile LONG native_cursor43_enabled=0;
 static volatile LONG native_cursor43_hits=0;
 static volatile LONG native_cursor43_samples=0;
 static volatile LONG native_cursor43_cap_logs=0;
+static volatile LONG native_cursor43_manual_matches=0;
+static volatile LONG native_cursor43_scan_samples=0;
 static volatile LONG native_cursor43_last_flip=-1;
 static volatile LONG native_cursor43_attempts_this_flip=0;
+/* Wine Staging 11.x can return 0 from RtlCaptureStackBackTrace even
+ * while x86 call/return addresses are present on the live thread stack.
+ * Inspect ONLY this thread's committed stack region (up to 8192 bytes),
+ * with no stack unwinding and no writes. The owner return address must
+ * belong to the verified PCShell function AND follow a CALL opcode.
+ * This is not a general stack unwinder: absent evidence => no change.
+ */
+static int native_cursor43_return_follows_call(const BYTE *ret) {
+  if(!native_cursor43_owner ||
+     ret<native_cursor43_owner+12u ||
+     ret>=native_cursor43_owner+0x40u)return 0;
+  if(ret[-5]==0xE8u) return 1; /* CALL rel32 */
+  if((ret[-2]==0xFFu && (ret[-1]&0x38u)==0x10u) ||
+     (ret[-3]==0xFFu && (ret[-2]&0x38u)==0x10u) ||
+     (ret[-4]==0xFFu && (ret[-3]&0x38u)==0x10u) ||
+     (ret[-6]==0xFFu && (ret[-5]&0x38u)==0x10u))
+    return 1; /* CALL r/m32, ModRM /2, supported operand lengths */
+  return 0;
+}
+static int native_cursor43_scan_live_stack(DWORD *matched_rva) {
+  volatile DWORD stack_anchor=0;
+  MEMORY_BASIC_INFORMATION info;
+  uintptr_t current,limit,position;
+  unsigned checked=0;
+  if(!native_cursor43_owner || !matched_rva) return 0;
+  *matched_rva=0;
+  if(!VirtualQuery((LPCVOID)&stack_anchor,&info,sizeof(info)) ||
+     info.State!=MEM_COMMIT || (info.Protect&PAGE_GUARD) ||
+     (info.Protect&PAGE_NOACCESS))return 0;
+  current=(uintptr_t)&stack_anchor;
+  limit=(uintptr_t)info.BaseAddress+info.RegionSize;
+  if(current>=limit || limit-current<sizeof(DWORD))return 0;
+  /* Scan upward (from deeper frames toward the original game caller).
+   * Never cross the committed region returned by VirtualQuery. */
+  position=(current+sizeof(DWORD)-1u)&~(uintptr_t)(sizeof(DWORD)-1u);
+  if(limit-position>8192u)limit=position+8192u;
+  for(;position+sizeof(DWORD)<=limit;position+=sizeof(DWORD)) {
+    const BYTE *candidate=(const BYTE*)(uintptr_t)
+                            (*(const volatile DWORD*)(uintptr_t)position);
+    ++checked;
+    if(native_cursor43_return_follows_call(candidate)) {
+      *matched_rva=(DWORD)(candidate-(BYTE*)GetModuleHandleA(NULL));
+      return 1;
+    }
+  }
+  if(InterlockedIncrement(&native_cursor43_scan_samples)<=3) {
+    char line[180];
+    snprintf(line,sizeof(line),
+      "NATIVE-CURSOR-43: fallback x86 stack scan checked=%u DWORDs owner-not-found [NO CHANGE]",
+      checked);
+    log_line(line);
+  }
+  return 0;
+}
 static void native_cursor43_init(void) {
   char value[4]={0},line[220];
   HMODULE kernel,ntdll,exe;
@@ -1635,6 +1691,18 @@ static void native_cursor43_init(void) {
        (mem.Protect & 0xff)==PAGE_EXECUTE_WRITECOPY)) {
     native_cursor43_owner=NULL;
     log_line("NATIVE-CURSOR-43: candidate RVA 0x0010C470 is not executable; disabled");
+    return;
+  }
+  /* Guard known x86 instruction SHAPE (not volatile global addresses).
+   * The original supported EXE hash was already verified by startup.
+   * Refuse manual stack classification on any unknown function layout. */
+  if(!(native_cursor43_owner[0]==0xF6u &&
+       native_cursor43_owner[1]==0x05u &&
+       native_cursor43_owner[6]==0x10u &&
+       native_cursor43_owner[7]==0x75u &&
+       native_cursor43_owner[9]==0xA1u)) {
+    native_cursor43_owner=NULL;
+    log_line("NATIVE-CURSOR-43: x86 function opcode signature mismatch; disabled");
     return;
   }
   kernel=GetModuleHandleA("kernel32.dll");
@@ -1712,12 +1780,42 @@ static const void *maybe_correct_native_cursor43(void *device,
   }
   attempts=InterlockedIncrement(&native_cursor43_attempts_this_flip);
   if(attempts>180)return source; /* bounded work each Flip */
+  /* Actual cursor.bmp is 32x32. Do not inspect untextured quads,
+   * 8x8 banner borders, or differently sized interface sprites.
+   * This is ONLY an extra rejection gate; owner evidence remains required. */
+  {
+    IDirectDrawSurface7 *texture=NULL;
+    DDSURFACEDESC2 desc;
+    HRESULT hr=IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture);
+    if(FAILED(hr) || !texture)return source;
+    memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+    hr=IDirectDrawSurface7_GetSurfaceDesc(texture,&desc);
+    IDirectDrawSurface7_Release(texture);
+    if(FAILED(hr) || desc.dwWidth!=32 || desc.dwHeight!=32)return source;
+  }
   memset(frames,0,sizeof(frames));
   depth=native_cursor43_trace(0,20,frames,NULL);
   for(i=0;i<depth;i++) {
     if((BYTE*)frames[i]>=native_cursor43_owner &&
        (BYTE*)frames[i]<native_cursor43_owner+0x40u) {
       matched=1;break;
+    }
+  }
+  /* Under Wine native stack capture may report depth=0. Fall back only
+   * after that explicit failure, and require a real CALL-return address
+   * in the exact original PCSHELL_DrawMouseCursor function. */
+  if(!matched && depth==0) {
+    DWORD owner_rva=0;
+    if(native_cursor43_scan_live_stack(&owner_rva)) {
+      LONG n=InterlockedIncrement(&native_cursor43_manual_matches);
+      if(n<=8 || n%600==0) {
+        char line[190];
+        snprintf(line,sizeof(line),
+          "NATIVE-CURSOR-43: x86 owner CALL-RETURN MATCH #%ld rva=0x%08lX [Wine fallback]",
+          (long)n,(unsigned long)owner_rva);
+        log_line(line);
+      }
+      matched=1;
     }
   }
   if(!matched) {
