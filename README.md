@@ -112,7 +112,7 @@ See the [complete configuration and migration guide](docs/references/CONFIGURATI
 
 - **The patch does not load:** check that both DLLs are next to the supported `SpideyPC.exe`. On Wine/Proton, verify the `winmm=n,b` override.
 - **Controls stop responding after Alt+Tab, or audio/graphics look wrong:** these areas are still being investigated. See [troubleshooting and experimental input options](docs/references/CONFIGURATION.md#troubleshooting-cases).
-- **Your settings changed unexpectedly:** check for an automatic `SpiderMan2k1Fix_N.old` backup. [INI recovery details](docs/references/CONFIGURATION.md#automatic-ini-recovery).
+- **Your settings changed unexpectedly:** check for the single rolling backup `SpiderMan2k1Fix.ini.old` (overwritten on each repair). [INI recovery details](docs/references/CONFIGURATION.md#automatic-ini-recovery).
 - **Need a log?** Set `Log=1` under `[Debug]` in the INI and restart the game. The file `SpiderMan2k1Fix.log` is **overwritten at each launch**, so save it before restarting. Turn logging off afterward.
 
 For more help, read the [full documentation](docs/README.md), [F9 capture notes](docs/references/F9_PNG_CAPTURE.md) and [widescreen/HUD research](docs/DEVELOPMENT.md#7-display-and-rendering-research).
