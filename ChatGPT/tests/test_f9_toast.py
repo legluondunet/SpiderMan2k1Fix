@@ -205,3 +205,11 @@ def test_popup_is_not_owned_by_non_pumping_game_window():
     assert "cross-thread" in TOAST
     assert "ShowWindow(popup,SW_HIDE);" in TOAST
     assert "DestroyWindow(popup);" in TOAST
+
+
+def test_toast_inactive_path_is_true_wide_nul_not_multichar_constant():
+    # A doubled backslash inside a wide character constant is not NUL.
+    assert r"L'\0'" in TOAST
+    assert r"L'\\0'" not in TOAST
+    assert "else path[0]=" in TOAST
+    assert "if(path[0]==" in TOAST
