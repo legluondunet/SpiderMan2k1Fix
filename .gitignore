@@ -15,3 +15,6 @@ dist/
 *.zip
 # Personal configurations and backups
 SpiderMan2k1Fix_*.old
+
+# The game creates its INI next to the executable; do not commit personal settings.
+/SpiderMan2k1Fix.ini

@@ -484,6 +484,8 @@ The source package includes scripts for building the 32-bit Windows DLLs on Linu
 
 If your system compiler targets UCRT instead, consult `build-native-msvcrt.sh` in the source tree. The build scripts check the 32-bit Windows architecture and expected imports/exports. The resulting `winmm.dll` and `SpiderMan2k1Fix.dll` are Windows DLLs even when built on Linux.
 
+Developer-only tests, PowerShell utilities and WinDbg experiments live under [ChatGPT/](ChatGPT/README.md). Run the regression suite from the repository root with `python3 -m pytest -q ChatGPT/tests`; GitHub Actions uses the same path. These developer tools are not part of the binary release.
+
 ## Project and contributions
 
 SpiderMan2k1Fix is an independent compatibility project maintained by **[legluondunet](https://github.com/legluondunet)**.
