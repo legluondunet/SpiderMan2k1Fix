@@ -1,5 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <unknwn.h>
 #include <mmsystem.h>
 #include <stdio.h>
 #include <string.h>
@@ -38,6 +39,108 @@ static void patch_early(void) {
     FlushInstructionCache(GetCurrentProcess(),target,sizeof(patch));
     if (!VirtualProtect(target,sizeof(patch),old,&ignored)) { early_patch_status=-6; return; }
     early_patch_status=1;
+}
+
+/* The initial loader-bound winmm proxy owns the game's very first
+ * DirectDrawCreateEx call. A background DLL worker alone is not a startup
+ * barrier: a broken INI used to show a modal MessageBox before the renderer
+ * hook was installed, allowing physical 640x480 startup on the game thread.
+ *
+ * Under loader lock, patch only the EXACT supported EXE's imported DDraw
+ * thunk after the existing native No-CD opcode guard passed. All LoadLibrary,
+ * logging, INI repair and synchronization happen later in the real game
+ * thread's DirectDrawCreateEx call -- never inside DllMain. */
+typedef HRESULT (WINAPI *ProxyDDrawCreateFn)(GUID *,void **,REFIID,IUnknown *);
+typedef HRESULT (__cdecl *ProxyCoreDDrawGateFn)(
+    GUID *,void **,REFIID,IUnknown *,void *);
+static ProxyDDrawCreateFn real_ddraw_create;
+static volatile LONG early_ddraw_gate_status=0;
+
+static HMODULE proxy_load_fix_module(void) {
+    HMODULE module=GetModuleHandleA("SpiderMan2k1Fix.dll");
+    char path[MAX_PATH],*slash;
+    DWORD n;
+    if(module)return module;
+    n=GetModuleFileNameA(NULL,path,sizeof(path));
+    if(!n || n>=sizeof(path))return NULL;
+    slash=strrchr(path,'\\');
+    if(!slash || (size_t)(slash-path)+strlen("SpiderMan2k1Fix.dll")+1>=sizeof(path))
+        return NULL;
+    strcpy(slash+1,"SpiderMan2k1Fix.dll");
+    return LoadLibraryA(path);
+}
+static HRESULT WINAPI proxy_first_directdraw(GUID *guid,void **out,
+                                              REFIID iid,IUnknown *outer) {
+    HMODULE core;
+    FARPROC exported;
+    ProxyCoreDDrawGateFn run;
+    if(!real_ddraw_create)return E_FAIL;
+    /* Synchronously join or perform the same once-only initialization as
+     * the main DLL's worker. No unsafe fallthrough to exclusive fullscreen. */
+    core=proxy_load_fix_module();
+    exported=core?GetProcAddress(core,"SpiderMan2k1Fix_DirectDrawGate"):NULL;
+    if(!exported) {
+        log_proxy("DDRAW-STARTUP: ERROR main DLL missing or startup gate unavailable; blocked legacy 640x480 launch");
+        return E_FAIL;
+    }
+    run=(ProxyCoreDDrawGateFn)(void*)exported;
+    return run(guid,out,iid,outer,(void*)real_ddraw_create);
+}
+
+static void install_early_ddraw_gate(void) {
+    BYTE *base=(BYTE*)GetModuleHandleA(NULL);
+    IMAGE_DOS_HEADER *dos;
+    IMAGE_NT_HEADERS32 *nt;
+    IMAGE_IMPORT_DESCRIPTOR *imp;
+    BYTE *slot_address;
+    DWORD old,ignored;
+    if(early_patch_status!=1 || !base) {
+        early_ddraw_gate_status=-1;return;
+    }
+    dos=(IMAGE_DOS_HEADER*)base;
+    if(dos->e_magic!=IMAGE_DOS_SIGNATURE || dos->e_lfanew<=0 ||
+       dos->e_lfanew>0x1000) {early_ddraw_gate_status=-2;return;}
+    nt=(IMAGE_NT_HEADERS32*)(base+dos->e_lfanew);
+    if(nt->Signature!=IMAGE_NT_SIGNATURE ||
+       nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR32_MAGIC ||
+       nt->OptionalHeader.ImageBase!=0x400000 ||
+       (uintptr_t)base!=0x400000 ||
+       nt->OptionalHeader.SizeOfImage<=0x13b014 ||
+       !nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress) {
+        early_ddraw_gate_status=-3;return;
+    }
+    slot_address=base+0x13b010;
+    imp=(IMAGE_IMPORT_DESCRIPTOR*)(base+
+      nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
+    for(;imp->Name;imp++) {
+        IMAGE_THUNK_DATA32 *thunk,*names;
+        const char *library=(const char*)(base+imp->Name);
+        if(lstrcmpiA(library,"ddraw.dll") || !imp->OriginalFirstThunk ||
+           !imp->FirstThunk)continue;
+        thunk=(IMAGE_THUNK_DATA32*)(base+imp->FirstThunk);
+        names=(IMAGE_THUNK_DATA32*)(base+imp->OriginalFirstThunk);
+        for(;names->u1.AddressOfData;thunk++,names++) {
+            const char *name;
+            void **slot;
+            if((BYTE*)thunk!=slot_address ||
+               IMAGE_SNAP_BY_ORDINAL32(names->u1.Ordinal))continue;
+            name=(const char*)((IMAGE_IMPORT_BY_NAME*)(base+names->u1.AddressOfData))->Name;
+            if(strcmp(name,"DirectDrawCreateEx")!=0)continue;
+            slot=(void**)slot_address;
+            if(!*slot || *slot==(void*)proxy_first_directdraw) {
+                early_ddraw_gate_status=-4;return;
+            }
+            real_ddraw_create=(ProxyDDrawCreateFn)*slot;
+            if(!VirtualProtect(slot,sizeof(*slot),PAGE_READWRITE,&old)) {
+                early_ddraw_gate_status=-5;return;
+            }
+            *slot=(void*)proxy_first_directdraw;
+            VirtualProtect(slot,sizeof(*slot),old,&ignored);
+            early_ddraw_gate_status=1;
+            return;
+        }
+    }
+    early_ddraw_gate_status=-6;
 }
 
 static INIT_ONCE once = INIT_ONCE_STATIC_INIT;
@@ -281,6 +384,13 @@ static DWORD WINAPI init_fix(LPVOID ignored) {
         snprintf(status,sizeof(status),"START: " SPIDERMAN2K1FIX_VERSION_LABEL " early No-CD patch status=%ld (1=applied)",(long)early_patch_status);
         log_proxy(status);
     }
+    {
+        char gate_status[120];
+        snprintf(gate_status,sizeof(gate_status),
+          "DDRAW-STARTUP: early IAT gate status=%ld (1=installed)",
+          (long)early_ddraw_gate_status);
+        log_proxy(gate_status);
+    }
     log_proxy("START: winmm proxy loaded; loading SpiderMan2k1Fix.dll");
     n=GetModuleFileNameA(NULL,path,sizeof(path));
     if (!n || n>=sizeof(path)) return 0;
@@ -325,6 +435,7 @@ BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID reserved) {
         HANDLE thread;
         DisableThreadLibraryCalls(instance);
         patch_early();
+        install_early_ddraw_gate(); /* No blocking or library loading under loader lock. */
         thread=CreateThread(NULL,0,init_fix,NULL,0,NULL);
         if (thread) CloseHandle(thread);
     }
