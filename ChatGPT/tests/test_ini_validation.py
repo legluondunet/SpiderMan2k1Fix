@@ -19,7 +19,7 @@ def runner(tmp_path_factory):
 
 
 def validate(runner, tmp_path, contents):
-    p = tmp_path / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini"
+    p = tmp_path / "SpiderMan2k1Fix.ini"
     p.write_text(contents, encoding="ascii")
     r = subprocess.run([str(runner), str(p)], capture_output=True, text=True, check=True)
     results = tuple(map(int,re.search(r"RESULT:(\d+):(\d+):(\d+)",r.stdout).groups()))
@@ -156,14 +156,14 @@ def test_invalid_data_detected(runner,tmp_path,data):
 
 
 def test_bom_allowed(runner,tmp_path):
-    p=tmp_path/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini"
+    p=tmp_path/"SpiderMan2k1Fix.ini"
     p.write_bytes(b"\xef\xbb\xbf[Debug]\nLog=1\n")
     output=subprocess.run([str(runner),str(p)],capture_output=True,text=True,check=True).stdout
     assert "RESULT:0:0:1" in output
 
 
 def test_binary_null_is_error(runner,tmp_path):
-    p=tmp_path/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini"
+    p=tmp_path/"SpiderMan2k1Fix.ini"
     p.write_bytes(b"[Audio]\nVoiceLevel=79\x00extra\n")
     output=subprocess.run([str(runner),str(p)],capture_output=True,text=True,check=True).stdout
     assert "Binary NUL byte" in output
