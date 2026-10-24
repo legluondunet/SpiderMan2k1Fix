@@ -219,11 +219,33 @@ def test_red_spider_selector_trace_logs_stable_signature_without_moving_vertices
     assert "memcpy(&diffuse,raw+16,sizeof(diffuse));" in probe
     assert "memcpy(&u0,raw+20,sizeof(u0));" in probe
     assert "memcpy(&v0,raw+24,sizeof(v0));" in probe
-    assert "CURSOR-CANDIDATE frame=%ld flip=%ld draw=%ld" in probe
+    assert 'selector_sample?"CURSOR-CANDIDATE":"ICON-REGION"' in probe
     assert "IDENTITY UNVERIFIED" in probe
     assert "texid=%p" in probe
     assert "if(selector_sample)" in probe
     assert "SPIDERMAN2K1FIX_SELECTOR_FIX" not in CORE
     assert "CURSOR-CANDIDATE" in DOC
     for forbidden in ("SetTexture(", "memcpy(copy", "SetRenderState(", "PostMessage(", "SendInput("):
+        assert forbidden not in probe
+
+
+def test_red_icon_region_diagnostic_is_bounded_read_only_and_not_cursor_fix():
+    probe = trace_block()
+    assert "pause_menu_trace_icon_seen=0;" in probe
+    assert "InterlockedExchange(&pause_menu_trace_icon_seen,0);" in probe
+    assert "InterlockedIncrement(&pause_menu_trace_icon_seen)<=100" in probe
+    assert "icon_region_candidate=1;" in probe
+    assert "icon_region_sample=1;" in probe
+    assert "type!=D3DPT_TRIANGLESTRIP" in probe
+    assert "type!=D3DPT_TRIANGLELIST" in probe
+    assert "(count==4 || count==6)" in probe
+    assert "z>=-0.0010f && z<=0.065f" in probe
+    assert "rhw>=0.45f && rhw<=30.0f" in probe
+    assert "if(fvf==0x144UL)" in probe
+    assert "memcpy(&diffuse,raw+16,sizeof(diffuse));" in probe
+    assert "PAUSE-NATIVE-PROBE: %s frame=%ld flip=%ld draw=%ld" in probe
+    assert "ICON-REGION" in probe and "IDENTITY UNVERIFIED" in probe
+    assert "SPIDERMAN2K1FIX_PAUSE_MENU_TRACE" in probe
+    assert "ICON-REGION" in DOC
+    for forbidden in ("SetTexture(", "memcpy(copy", "SetRenderState(", "SendInput(", "PostMessage("):
         assert forbidden not in probe
