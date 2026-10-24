@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — Native gameplay ESC menu 4:3 (PR #28)
+
+- Preserve the original proportions of the gameplay ESC purple ribbon, its border and text, the translucent orange/blue background motif, and the red spider selector in 1920×1080 Auto mode.
+- Maintain the original full-screen violet dimming over both widescreen gutters by clipped native D3D7 triangle replay without recoloring the 4:3 center.
+- Correct the selector at all screen coordinates, including the upper and right edges (native 96×72 quad, scaled to 72×72).
+- Handle both the normal ESC menu and the QUIT confirmation (NO / YES). Keep 3D world geometry, HUD, 4:3 gameplay mode, main menu and input behavior unchanged.
+- Strictly guard the native rendering transforms by signature and opt-in environment variables `SPIDERMAN2K1FIX_NATIVE_ESC_43`, `SPIDERMAN2K1FIX_NATIVE_MOTIF_43`, `SPIDERMAN2K1FIX_NATIVE_CURSOR_43`; current visual validation is Linux/Wine at 1920×1080 only.
+- Remove the temporary passive ESC trace instrumentation, replace the research log with concise implementation documentation, and retain focused regression tests. Visually validated on Wine October 24, 2026.
+
 ## Unreleased — always-on F9 PNG screenshots
 
 - F9 writes lossless `scrnNNNN.png` by default for the supported game, with no INI setting or environment variable to choose BMP. `Log=1` is no longer required.
