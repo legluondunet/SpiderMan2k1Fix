@@ -396,3 +396,54 @@ def test_backdrop_motif_probe_is_passive_and_not_world_scaling():
     assert "not yet" in DOC.lower() and "identified" in DOC.lower()
     for forbidden in ("VirtualProtect(", "memcpy(copy", "SetTexture(", "DrawPrimitive(", "SendInput(", "PostMessage("):
         assert forbidden not in probe
+
+
+def test_779_translucent_native_motif_fix_is_opt_in_and_does_not_target_world():
+    block=CORE.split("/* Native ESC translucent geometric motif,",1)[1].split(
+        "/* Native gameplay ESC red selector:",1)[0]
+    assert 'SPIDERMAN2K1FIX_NATIVE_MOTIF_43' in block
+    assert "native_motif43_enabled=0;" in block
+    assert "native_pause43_enabled,0,0)!=1" in block
+    assert "desktop_w!=1920 || desktop_h!=1080" in block
+    assert "menu_upscale_active" in block
+    assert "gameplay_4x3_active" in block
+    assert "rva!=0x00102C72UL" in block
+    assert "type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4" in block
+    assert "fabsf(v[0].z-0.00146f)>0.00004f" in block
+    assert "fabsf(v[0].rhw-9.988f)>0.060f" in block
+    assert "(color&0xFF000000UL)!=0x80000000UL" in block
+    assert "GetTexture(" in block
+    assert "IDirectDrawSurface7_Release(tex)" in block
+    assert "r-l<16.0f || b-t<16.0f" in block
+    assert "(r-l)>(float)desktop_w*0.80f" in block
+    assert "(b-t)>(float)desktop_h*0.86f" in block
+    assert "memcpy(copy,v,4*sizeof(*copy))" in block
+    assert "copy[i].x=center+(v[i].x-center)*0.75f" in block
+    assert "copy[i].y=" not in block
+    assert "copy[i].z=" not in block
+    assert "NATIVE-MOTIF-43: QUAD-MATCH" in block
+    for forbidden in ("VirtualProtect(", "SetTexture(", "PostMessage(", "SendInput(", "SetMousePos("):
+        assert forbidden not in block
+    draw=CORE.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
+        "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
+    assert "maybe_correct_native_motif43(" in draw
+    assert draw.index("maybe_correct_adaptive_hud(") < draw.index("maybe_correct_native_motif43(")
+    assert draw.index("maybe_correct_native_motif43(") < draw.index("maybe_correct_native_cursor43(")
+    assert draw.index("maybe_correct_native_cursor43(") < draw.index("maybe_correct_native_pause43(")
+    assert "native_motif43_init();" in CORE
+    assert "SPIDERMAN2K1FIX_NATIVE_MOTIF_43" not in INI
+    assert "NATIVE-MOTIF-43: QUAD-MATCH" in DOC
+
+
+def test_motif_signature_independent_of_passive_3d_scene_candidates():
+    block=CORE.split("/* Native ESC translucent geometric motif,",1)[1].split(
+        "/* Native gameplay ESC red selector:",1)[0]
+    # The early passive MOTIF-CANDIDATE lines were projected WORLD triangles,
+    # not the 2D overlay. The actual overlay is a different 4-vertex group.
+    assert "0x00103389" in block
+    assert "0x00102C72" in block
+    assert "(color&0xFF000000UL)!=0x80000000UL" in block
+    assert "0.00146f" in block and "9.988f" in block
+    assert "GetTexture(" in block
+    assert "0.75f" in block
+    assert "This is an explicit experimental opt-in" in block
