@@ -137,3 +137,23 @@ def test_recovery_preserves_hidden_native_esc_debug_optouts(recover_runner,tmp_p
     assert not any("[Unknown]" in line for line in lines)
 
 
+
+
+def test_recovery_discards_retired_grid_but_keeps_user_pause_opacity(recover_runner,tmp_path):
+    ini=("[Input]\\nPauseGrid=1\\nPauseDimOpacity=78\\n"
+         "[Display]\\nFPSLimit=45\\nAspectRatio=4:3\\n"
+         "[Keyboard]\\nJump=SPACE\\n[Audio]\\nVoiceLevel=72\\n")
+    values=recover(recover_runner,tmp_path,ini)
+    assert "[Input] PauseDimOpacity=78" in values
+    assert "[Display] FPSLimit=45" in values
+    assert "[Display] AspectRatio=4:3" in values
+    assert "[Keyboard] Jump=SPACE" in values
+    assert "[Audio] VoiceLevel=72" in values
+    assert not any("PauseGrid" in line for line in values)
+
+
+def test_optional_zero_shade_survives_recovery(recover_runner,tmp_path):
+    values=recover(recover_runner,tmp_path,
+                   "[Input]\\nPauseDimOpacity=0\\nPauseGrid=0\\n")
+    assert "[Input] PauseDimOpacity=0" in values
+    assert not any("PauseGrid" in line for line in values)
