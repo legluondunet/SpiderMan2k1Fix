@@ -82,7 +82,7 @@ rather than sent to the monitor.
 
 On Windows 11 and Wine, the patch identifies the game's window on the
 DirectDraw creation thread (`GetActiveWindow` /
-`EnumThreadWindows` with process validation), then queries
+`EnumThreadWindows`, with a same-process `EnumWindows` fallback), then queries
 `MonitorFromWindow`, `GetMonitorInfoA` and
 `EnumDisplaySettingsA(info.szDevice, ENUM_CURRENT_SETTINGS)`.
 It supplies this monitor-specific width/height to
