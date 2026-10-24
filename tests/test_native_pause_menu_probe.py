@@ -127,7 +127,7 @@ def test_post_esc_confirm_probe_is_passive_time_bounded_and_key_triggered():
     assert "if(n<=3)" in probe
     assert "PAUSE-NATIVE-PROBE: KEY-EDGE" in probe
     assert "menu state UNVERIFIED" in probe
-    assert "post-ESC" in DOC and "NO/YES" in DOC
+    assert "confirmation" in DOC.lower() and "NO/YES" in DOC
     for unsafe in ("SendInput(", "keybd_event(", "PostMessage(", "SetWindowLong("):
         assert unsafe not in probe
 
