@@ -3,10 +3,8 @@
 #include <windows.h>
 #include "keyboard_layout.h"
 
-/* Update only the original game's DIK-to-name table, after EXE SHA validation.
- * This does not intercept DirectInput, change raw scan codes, or rewrite the EXE.
- * Returns 1 only when a signature-checked French AZERTY mapping was installed.
- */
-int SpiderKeyNames_Install(SpiderKeyboardLayout layout, HKL hkl,
+/* Retail-game key-name table correction, in RAM only after EXE SHA check. */
+int SpiderKeyNames_Install(SpiderKeyboardLayout mode,HKL hkl,
+                           const unsigned char letter_scans[26],int map_valid,
                            void (*logger)(const char *));
 #endif
