@@ -143,6 +143,8 @@ Other executable versions, modified executables, and some third-party wrappers m
 
 On the first supported launch, SpiderMan2k1Fix creates `SpiderMan2k1Fix.ini` automatically if it does not already exist. You do not need to create it manually.
 
+**Configuration during upgrades:** New GitHub Actions artifacts and future release packages omit the INI to avoid overwriting personal settings. Keep your existing `SpiderMan2k1Fix.ini` when updating the DLLs. The previously published v1.0.0 archive may still contain a default INI; do not overwrite your own copy.
+
 **Upgrading from an earlier SpiderManFix beta:** Remove the old `SpiderManFix.dll` (it is no longer used). To keep your settings, rename `SpiderManFix.ini` to `SpiderMan2k1Fix.ini` **before launching** the game. If no new-named INI exists, fresh defaults will be generated. Keep a backup of your original INI.
 
 **Important:** Do not overwrite another mod's `winmm.dll` without backing it up first. Two different `winmm.dll` proxy mods cannot normally occupy the same location under the same filename.
