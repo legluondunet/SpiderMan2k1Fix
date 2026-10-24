@@ -37,10 +37,10 @@ def test_hidden_hud_esc_debug_switches_validated_without_ini_regeneration(runner
     # recognized, validated and preserved during automatic repair.
     for value in ("0", "1"):
         result, detail = validate(runner, tmp_path,
-            f"[HUD]\\nHUDWidescreenFix=1\\n{key}={value}\\n")
+            f"[HUD]\nHUDWidescreenFix=1\n{key}={value}\n")
         assert result == (0, 0, 1), detail
     for value in ("-1", "2", "on", "true", ""):
-        result, detail = validate(runner, tmp_path, f"[HUD]\\n{key}={value}\\n")
+        result, detail = validate(runner, tmp_path, f"[HUD]\n{key}={value}\n")
         assert result[0] >= 1 and result[2] == 0, detail
 
 
