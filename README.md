@@ -150,10 +150,6 @@ Invalid INI settings can trigger automatic repair with a numbered `SpiderMan2k1F
 
 Press **F9** to capture a lossless PNG beside `SpideyPC.exe`. The original game key and its debounce are preserved. See [capture behavior, verification status and optional diagnostics](docs/references/F9_PNG_CAPTURE.md).
 
-### Native ESC menu in widescreen
-
-The gameplay ESC menu retains its original 4:3 proportions on supported widescreen displays. This correction follows the `[HUD] HUDWidescreenFix` switch. [Scope, child options and 1920×1080 Wine validation](docs/references/NATIVE_PAUSE_MENU_43.md).
-
 ## Adaptive widescreen HUD
 
 Enabled by default with `HUDWidescreenFix=1`, the fix adjusts the player HUD, compass, mission instructions and supported boss UI while leaving game world geometry alone. Not every boss and resolution has been visually tested. See the [HUD implementation, source signatures and validation notes](docs/DEVELOPMENT.md#7-display-and-rendering-research).
