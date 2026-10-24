@@ -9,14 +9,14 @@ BUILD=(ROOT/"build.sh").read_text()
 EXAMPLE=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text()
 GEN=(ROOT/"virtual_spidey_cfg.c").read_text()
 VALID=(ROOT/"ini_validation.h").read_text()
-LEGACY=(ROOT/"pause_dim.c").read_text()
+LEGACY_FILES=("pause_dim.c","pause_dim.h","pause_overlay.c","pause_overlay.h")
 
 
 def test_grid_removed_from_live_renderer_and_ini_schema():
     assert "PauseGrid" not in P
     assert "PauseGrid" not in VALID
     assert "PauseGrid" not in GEN
-    assert "PauseGrid" not in LEGACY
+    assert all(not (ROOT/name).exists() for name in LEGACY_FILES)
     assert "PAUSE_GRID_STEP" not in P
     assert "enabled_grid" not in P
     assert "grid_blend" not in P

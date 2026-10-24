@@ -741,7 +741,7 @@ static void apply_locked_display(void) {
 }
 static void load_settings(void) {
   char buf[CFG_SIZE*2+8],msg[270];
-  DWORD i,a,b,brightness;
+  DWORD i,a,b;
   DEVMODEA mode;
   unsigned w,h;
   memcpy(cfg,spidey_cfg_factory,CFG_SIZE);
@@ -789,7 +789,6 @@ static void load_settings(void) {
       else report("SPIDEY-CFG: invalid Brightness (allowed 0..9); preserved raw value");
     }
   }
-  brightness=get_word(12);
   snprintf(msg,sizeof(msg),"SPIDEY-CFG: virtual template bytes=%d authoritative [Display] Resolution=%s AspectRatio=%s -> %ux%u; color depth LOCKED=32; brightness=%lu (240 other bytes preserved)",
     CFG_SIZE,configured_resolution,configured_aspect,policy_width,policy_height,
     (unsigned long)get_word(12));
@@ -949,7 +948,9 @@ static DWORD WINAPI hooked_GetFileSize(HANDLE h,LPDWORD high) {
   EnterCriticalSection(&guard);v=get_handle(h);val=v?CFG_SIZE:0;
   LeaveCriticalSection(&guard);
   if(!v)return GetFileSize(h,high);
-  if(high)*high=0;SetLastError(ERROR_SUCCESS);return val;
+  if(high)*high=0;
+  SetLastError(ERROR_SUCCESS);
+  return val;
 }
 static BOOL WINAPI hooked_GetFileSizeEx(HANDLE h,PLARGE_INTEGER size) {
   VHandle *v;

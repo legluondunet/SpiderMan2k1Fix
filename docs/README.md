@@ -5,6 +5,7 @@ This directory contains the maintained technical documentation and an index of s
 ## Main documentation
 
 - [Development and original EXE reverse engineering](DEVELOPMENT.md) — synthesized architecture, implementation decisions, and known limitations
+- [Version 1.0.0 candidate — source/code audit and release-readiness gates](references/RELEASE_1_0_AUDIT.md) — evidence, cleanup, regression risks and publication checklist
 
 ## Configuration and gameplay reference
 

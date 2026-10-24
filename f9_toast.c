@@ -483,7 +483,7 @@ IDirectDrawSurface7 *SpiderF9Toast_CompositeFrame(
      ((expires && (LONG)(expires-GetTickCount())>0) ||
       (!expires && (DWORD)(GetTickCount()-published) < SPIDER_F9_TOAST_GRACE_MS)))
     memcpy(path,toast_path,sizeof(path));
-  else path[0]=L'\\0';
+  else path[0]=L'\0';
   ReleaseSRWLockShared(&toast_mutex);
   /* Never paint a comic notification into a frozen DirectDraw framebuffer:
    * after the last Flip it could remain visible indefinitely. The layered
@@ -494,7 +494,7 @@ IDirectDrawSurface7 *SpiderF9Toast_CompositeFrame(
   }
   if((DWORD)InterlockedCompareExchange(&toast_popup_generation,0,0)==generation)
     return NULL;
-  if(path[0]==L'\\0') {
+  if(path[0]==L'\0') {
     toast_discard_stage(); /* No per-frame memory or blit cost while inactive. */
     return NULL;
   }

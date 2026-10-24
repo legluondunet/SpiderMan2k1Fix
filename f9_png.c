@@ -3,10 +3,9 @@
  * Win32 GDI+ flat functions are resolved dynamically on the encoder thread.
  * The DirectDraw surface is NEVER accessed by this worker.
  *
- * Two independent opt-ins share this encoder:
- * - F9_PNG: compare PNG output alongside the original native BMP writer.
- * - F9_PNG_ONLY: redirect both SHA-verified native F9 dispatch CALLs to
- *   backbuffer readback; suppress the old BMP writer when hooks succeed.
+ * The permanent F9 capture path uses this encoder after SHA-verified
+ * native dispatch interceptions, suppressing the old BMP writer where
+ * the guarded PNG hooks are active.
  * The caller handles native hooks, the original F9 debounce and Lock/Unlock.
  */
 #define WIN32_LEAN_AND_MEAN
