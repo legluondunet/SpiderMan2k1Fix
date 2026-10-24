@@ -194,8 +194,11 @@ def test_native_esc_hidden_manual_ini_children_and_parent_chain():
     assert "InterlockedCompareExchange(&native_pause43_enabled,0,0)==1" in motif
     assert "InterlockedCompareExchange(&native_pause43_enabled,0,0)==1" in cursor
     for name in ("NativeESC4x3","NativeMotif4x3","NativeCursor4x3"):
-        assert name not in INI
         assert name in DOC
+        for ini in ("SpiderMan2k1Fix.ini","SpiderMan2k1Fix.generated-example.ini",
+                    "examples/SpiderMan2k1Fix.user-clean.ini"):
+            assert name not in (ROOT / ini).read_text(encoding="utf-8")
+        assert name not in (ROOT / "virtual_spidey_cfg.c").read_text(encoding="utf-8")
     for env in ("SPIDERMAN2K1FIX_NATIVE_ESC_43",
                 "SPIDERMAN2K1FIX_NATIVE_MOTIF_43",
                 "SPIDERMAN2K1FIX_NATIVE_CURSOR_43"):
