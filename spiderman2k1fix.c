@@ -1091,7 +1091,7 @@ static const void *maybe_correct_adaptive_hud(void *device,
  *
  * Enabled only with [Debug] Log=1 AND
  * SPIDERMAN2K1FIX_PAUSE_MENU_TRACE=1; logs up to four Flip generations,
- * 160 screen-space D3D7 primitives each. It does not patch input, alter
+ * up to 136 spatial samples in each of four spaced frames. It does not patch input, alter
  * vertices, capture pixels or read native menu object contents.
  * This is temporary research instrumentation, separate from HUD F12 probes.
  */
@@ -1113,15 +1113,15 @@ static void pause_menu_trace_init(void) {
   n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_PAUSE_MENU_TRACE",value,sizeof(value));
   if(n==1 && value[0]=='1') {
     InterlockedExchange(&pause_menu_trace_enabled,1);
-    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; 4 frames, 160 2D draws/frame; native-context OR physical ESC-edge fallback [Log=1]");
+    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; 20-frame ESC window, sample frames 1/5/12/20, first8 + every64th draw; no geometry changes [Log=1]");
   }
 }
 /* Passive physical key observation only (high bit); no injected or consumed
  * input. Unlike the game-owned pause-context pointer, an ESC edge can be
  * seen even if the original native pause flag is transient or stays zero.
- * Capture only a short window: bounded in frames and candidate draws.
- * The player should hold ESC for at least 0.5 seconds for reliable Flip
- * sampling under Wine's usual 30 FPS target.
+ * Capture only a bounded 24-Flip window. Detailed geometry is sampled in
+ * frames 1, 5, 12 and 20 so late menu overlays are not hidden by early
+ * recurring world draws. Input is never consumed, patched or synthesized.
  */
 static void pause_menu_trace_on_flip(LONG flip) {
   LONG down,prev,until;
@@ -1133,13 +1133,13 @@ static void pause_menu_trace_on_flip(LONG flip) {
     /* Cap the number of captured sessions to avoid runaway debug logs. */
     LONG edge=InterlockedIncrement(&pause_menu_trace_escape_edges);
     if(edge<=4) {
-      InterlockedExchange(&pause_menu_trace_escape_until,flip+12);
+      InterlockedExchange(&pause_menu_trace_escape_until,flip+24);
       InterlockedExchange(&pause_menu_trace_active,0);
       InterlockedExchange(&pause_menu_trace_frames,0);
       InterlockedExchange(&pause_menu_trace_draws,0);
       InterlockedExchange(&pause_menu_trace_last_flip,-1);
       snprintf(line,sizeof(line),
-        "PAUSE-NATIVE-PROBE: ESC-EDGE #%ld flip=%ld native_pause_context=%lu [READ ONLY; short 12-Flip sampling window]",
+        "PAUSE-NATIVE-PROBE: ESC-EDGE #%ld flip=%ld native_pause_context=%lu [READ ONLY; 24-Flip sampling window]",
         (long)edge,(long)flip,(unsigned long)(*SPIDER_NATIVE_ESC_PAUSE_CONTEXT!=0));
       log_line(line);
     }
@@ -1194,18 +1194,25 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
   }
   flip=InterlockedCompareExchange(&flip_count,0,0);
   if(flip!=InterlockedCompareExchange(&pause_menu_trace_last_flip,0,0)) {
-    InterlockedExchange(&pause_menu_trace_last_flip,flip);
-    InterlockedExchange(&pause_menu_trace_draws,0);
-    frame=InterlockedIncrement(&pause_menu_trace_frames);
-    if(frame<=4) {
+    LONG previous_frame=InterlockedCompareExchange(&pause_menu_trace_frames,0,0);
+    LONG previous_candidates=InterlockedExchange(&pause_menu_trace_draws,0);
+    if(previous_frame>=1 && previous_frame<=20) {
       snprintf(line,sizeof(line),
-        "PAUSE-NATIVE-PROBE: FRAME %ld flip=%ld [PASSIVE]",
+        "PAUSE-NATIVE-PROBE: FRAME-END frame=%ld candidates=%ld [READ ONLY]",
+        (long)previous_frame,(long)previous_candidates);
+      log_line(line);
+    }
+    InterlockedExchange(&pause_menu_trace_last_flip,flip);
+    frame=InterlockedIncrement(&pause_menu_trace_frames);
+    if(frame<=20 && (frame==1 || frame==5 || frame==12 || frame==20)) {
+      snprintf(line,sizeof(line),
+        "PAUSE-NATIVE-PROBE: SAMPLE-FRAME %ld flip=%ld [PASSIVE]",
         (long)frame,(long)flip);
       log_line(line);
     }
   }
   frame=InterlockedCompareExchange(&pause_menu_trace_frames,0,0);
-  if(frame<1 || frame>4 || !vertices || count<3 || count>64 ||
+  if(frame<1 || frame>20 || !vertices || count<3 || count>64 ||
      type!=D3DPT_TRIANGLEFAN || (fvf!=0x144UL && fvf!=0x44UL))
     return;
   stride=(fvf==0x144UL)?28u:20u;
@@ -1227,7 +1234,13 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
        ymax>0.0f && ymin<(float)desktop_h))
     return;
   draw=InterlockedIncrement(&pause_menu_trace_draws);
-  if(draw>160)return;
+  /* The previous first-160-only sample captured identical world primitives
+   * in all four frames and missed later pause UI draws. Count candidates
+   * across 20 frames, but query textures and log coordinates in only four
+   * spaced frames, taking the first eight and every 64th after that.
+   * Limit to 8,192 candidates/frame and never touch game-owned vertices. */
+  if(!(frame==1 || frame==5 || frame==12 || frame==20) ||
+     draw>8192 || (draw>8 && (draw%64)!=0))return;
   if(!geom_rva(ret,&rva))rva=0;
   if(fvf==0x144UL &&
      SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) &&

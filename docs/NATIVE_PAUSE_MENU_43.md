@@ -33,7 +33,11 @@ as the native gameplay pause context (original pause handler
 Its nonzero presence starts passive sampling when available, but is not
 alone sufficient to identify individual pause sprites. Under Wine, the
 first combined build #728 successfully enabled the diagnostic but did not
-record any BEGIN event, while sampled pause_ctx values were zero. The
+record any BEGIN event, while sampled pause_ctx values were zero. The next successful Wine log
+`SpiderMan2k1Fix(20261024-013833).log` showed ESC-EDGE at Flip 257,
+but the first 160 matching triangles in frames 1–4 were nearly identical
+world geometry from `caller_rva=0x00103389`. This is **not** a safe
+pause-menu signature; the initial cap hid later primitive calls. The
 diagnostic therefore also watches the physical ESC-down edge via the
 high bit of GetAsyncKeyState on the existing Flip hook. No input is
 consumed, inserted or rerouted; this is a short fallback observation
@@ -67,16 +71,23 @@ variable before launching the game through the same environment).
 3. Hold this menu for several seconds. Optionally move selection
    to another row, then choose CONTINUE.
 4. Quit normally and preserve `SpiderMan2k1Fix*.log`.
-5. Search for `PAUSE-NATIVE-PROBE: ESC-EDGE`, `BEGIN`, `FRAME`,
-   `caller_rva=`, and `END`. If no ESC-EDGE is present, the physical
+5. Search for `PAUSE-NATIVE-PROBE: ESC-EDGE`, `BEGIN`,
+   `SAMPLE-FRAME`, `FRAME-END`, `caller_rva=` and `END`.
+   If no ESC-EDGE is present, the physical
    ESC key was not observed in a Flip. If ESC-EDGE appears but BEGIN or
    candidate draws do not, the chosen D3D7 path/filter may be incorrect.
 
-The trace logs up to four Flip generations and at most 160 candidate
-2D draws per frame, from a maximum 12-Flip sampling window after each
-ESC edge (up to four ESC edges) or when the game-native context is set.
-It does not modify rendered coordinates, pause
-input, F10, F9, the camera or texture contents. If no BEGIN appears,
+The diagnostic observes a maximum **24-Flip window** after each of
+up to four ESC edges. It counts eligible geometry candidates in the
+first 20 frames and logs `FRAME-END candidates=` for each frame.
+It records bounded details at **sample frames 1, 5, 12 and 20**:
+the first eight candidates, then every 64th candidate up to 8192.
+This reveals later rendering stages without logging every world
+triangle. The early frame's x/y pairs may be **projected 3D scene
+geometry, not menu positions**; do not apply a 4:3 transform from
+these readings until the overlay has been independently identified.
+It does not modify rendered coordinates, pause input, F10, F9,
+the camera or texture contents. If no BEGIN appears,
 the assumed native pause-context gate needs new passive research;
 **do not enable a geometry rewrite based on guessing**.
 

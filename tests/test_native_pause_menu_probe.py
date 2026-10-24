@@ -39,8 +39,11 @@ def test_native_gameplay_pause_identity_is_not_focus_pause():
 
 def test_analysis_is_bounded_and_never_changes_game_vertices():
     probe = trace_block()
-    assert "if(frame<1 || frame>4" in probe
-    assert "if(draw>160)return;" in probe
+    assert "if(frame<1 || frame>20" in probe
+    assert "draw>8192" in probe
+    assert "draw>8 && (draw%64)!=0" in probe
+    assert "frame==1 || frame==5 || frame==12 || frame==20" in probe
+    assert "PAUSE-NATIVE-PROBE: FRAME-END" in probe
     assert "fvf!=0x144UL && fvf!=0x44UL" in probe
     assert "stride=(fvf==0x144UL)?28u:20u;" in probe
     assert "count<3 || count>64" in probe
@@ -85,8 +88,11 @@ def test_probe_falls_back_to_bounded_passive_escape_sampling():
     draw = src.split("static void pause_menu_trace_draw(",1)[1].split(
         "static void free_menu_vertices(",1)[0]
     assert "GetAsyncKeyState(VK_ESCAPE)&0x8000" in init
-    assert "pause_menu_trace_escape_until,flip+12" in init
+    assert "pause_menu_trace_escape_until,flip+24" in init
     assert "if(edge<=4)" in init
+    assert "20-frame ESC window" in init
+    assert "PAUSE-NATIVE-PROBE: SAMPLE-FRAME" in draw
+    assert "GetTexture(" in draw
     assert "InterlockedIncrement(&pause_menu_trace_escape_edges)" in init
     assert "PAUSE-NATIVE-PROBE: ESC-EDGE" in init
     assert "pause_menu_trace_on_flip(count);" in CORE
