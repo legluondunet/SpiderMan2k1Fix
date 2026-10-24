@@ -18,10 +18,34 @@ All virtual addresses (VA) in this document assume this exact binary and image b
 ## 2. Loading and patch architecture
 
 - The fix loads through a local `winmm.dll` proxy, which loads `SpiderMan2k1Fix.dll`. The original game executable is not rewritten on disk.
-- The supported in-memory No-CD patch avoids the game disc check. Historical diagnostic records identify a CheckCD tracing hook at **RVA `0x1163E0`**; this must not be confused with a universal patch point for arbitrary EXEs.
+- The supported early in-memory No-CD patch bypasses the original disc-check routine at **RVA `0x001163E0`**; unlike a passive tracing hook, this is a **signature-checked function-entry replacement** installed by `winmm_proxy.c` on process attach (see §2.1).
 - Display compatibility uses borderless fullscreen at desktop resolution, with widescreen/4:3 modes. Game-native and DLL-owned settings are consolidated in `SpiderMan2k1Fix.ini`.
 - A default 30 FPS cap preserves game timing; historical Scorpion encounters motivated avoiding high frame rates.
 - The project has investigated original DirectDraw/Direct3D 7 presentation, Bink movies, native input ownership and script cleanup. The game is not fully decompiled.
+
+### 2.1 Original disc check: discovered callsites, entry and early No-CD patch
+
+The supported original `SpideyPC.exe` invokes a **disc-check function** at **VA `0x005163E0` / RVA `0x001163E0`**, with at least the following two SHA-pinned original **direct CALL instructions**. Their destination is verified both by the bytes in the project and by x86 `E8 rel32` target arithmetic:
+
+| Item | VA | RVA | Original instruction bytes and meaning |
+| --- | --- | --- | --- |
+| Disc-check entry | `0x005163E0` | `0x001163E0` | Entry begins `81 EC 20 02 00 00 56 8B B4 24 28 02 00 00`: `sub esp,0x220; push esi; mov esi,[esp+0x228]` |
+| First known direct caller | `0x005159AC` | `0x001159AC` | `E8 2F 0A 00 00` — `call 0x005163E0` |
+| Second known direct caller | `0x00515D85` | `0x00115D85` | `E8 56 06 00 00` — `call 0x005163E0` |
+
+**What the original routine does, at the available level of proof:** it is the game disc-check entry used by these call paths; the original function has a stack frame and reads a pointer argument as its prologue begins. With the unmodified check bypassed, the game's CD requirement no longer blocks normal startup in validated historical runs. **The full unpatched body is not reproduced or exhaustively interpreted here**: the specific media/drive/file probes, individual failure branches, potential message-dialog path and precise meaning of every original return value are **not established by this repository source alone**. Do not infer that this address is a general-purpose program-exit routine.
+
+**How the current fix works (patch-owned logic, not original game code):**
+
+1. The local `winmm.dll` proxy is loaded with the game. Its `DllMain(DLL_PROCESS_ATTACH)` invokes `patch_early()` **before** creating the worker thread that loads `SpiderMan2k1Fix.dll`.
+2. The patch checks the in-memory PE DOS/NT headers, the original image base `0x00400000`, the image size, the **14-byte original function-entry signature**, and **both** original 5-byte CALL signatures above. A mismatch aborts the patch without intentionally changing the target bytes.
+3. It temporarily changes the code page protection using `VirtualProtect`, replaces **only the first three bytes** of the function entry with `31 C0 C3` (`xor eax,eax; ret`), flushes the instruction cache and restores the previous protection. The remainder of the function body and both original CALL instructions remain unchanged. The original function is no longer executed past that three-byte early return on those calls.
+4. The proxy records status `1` when applied; other internal statuses indicate load, PE, signature or protection failures. During main DLL initialization, `spiderman2k1fix.c` verifies the three-byte post-patch signature and can log `OK: early No-CD memory patch present at RVA 0x1163E0`, or a diagnostic failure.
+5. **No on-disk EXE modification** and no separate No-CD user option are required. This is deliberately tied to the exact supported binary layout. The proxy's early patch is **distinct** from a generic `MessageBoxA` or CD-warning interception and from any later menu/video/3D exit hooks.
+
+The patch changes the disc-check function's *return behavior* but does **not** change scene owners, clean up Bink resources, close the game window or implement a general exit. Its correct position in the game lifecycle is an **early startup prerequisite**, not an exit point for the menu or a cinematic.
+
+**Source of record:** [`winmm_proxy.c`](../winmm_proxy.c) (`patch_early()`, original CALL signatures and `DllMain`), [`spiderman2k1fix.c`](../spiderman2k1fix.c) (post-patch signature/status log), [README No-CD feature](../README.md). The [external disc-check research](https://krystalgamer.github.io/spidey-breaking/index.html) is background material; it was **not** used to infer undocumented original instruction behavior here.
 
 ## 3. DirectInput 8: static findings
 
@@ -336,6 +360,8 @@ This is a **flow/exit-point map** for the exact supported original 2001 binary. 
 
 ### 9.1 At-a-glance phase transition map
 
+The early disc-check call gate (VA `0x005163E0`, §2.1) is a **separate prerequisite**, not a screen/movie/script exit; its exact execution order relative to all startup substeps is not inferred merely from its two CALL addresses.
+
 ```text
 STARTUP / MAIN CONTROLLER   0x00455C90
    |
@@ -383,6 +409,7 @@ The line from **Main Menu → New Game** is an observed scene progression; the e
 
 | Phase being left | Original exit trigger / decision | Original point of exit and cleanup | Destination and confidence |
 | --- | --- | --- | --- |
+| **Startup disc check (not an end-of-scene)** | Original callers `0x005159AC` and `0x00515D85` invoke function `0x005163E0` | Original full disc-verification logic is **not exhaustively decoded**; current proxy signature-checks and replaces its first three bytes with `xor eax,eax; ret` before the normal game loader thread starts | Returns 0 immediately to the original caller instead of proceeding through its disc check. **Not** a menu/game process exit; its precise original status-code semantics remain unproven |
 | **Each of the four opening videos** | Natural Bink end, or keyboard skip only if the video's caller permits it; shared playback loop uses frame ticks `0x0047081D`, `0x0047085F` | `0x00470750` movie owner; normal/skip paths converge at `0x00470871 → 0x0050B790` video teardown. The **four** startup CALLs are `0x00455CF1`, `0x00455CFE`, `0x00455D0C`, `0x00455D1A` | Back to the startup controller; after the four calls `0x00455D23 → 0x00443AD0` performs further transition cleanup. **Static recovery + runtime traces**, not an immediate jump to the menu |
 | **First startup static screen (timed)** | The original clock deadline inside `0x004A1930`; code includes `0x004A1A26` clock read and `0x004A1A2B` compare / `0x004A1A2D` branch to native exit `0x004A1A36` | The **timed screen's own** loop, object release and SEH epilogue | Then the original input-wait screen `0x004A17A0`; **static code + Wine phase correlation** |
 | **Second startup static screen (Press Enter / input-wait)** | `0x004A1896 → 0x0050C180` polls original input; success proceeds via `0x004A18AE` | `0x004A17A0` native input-screen cleanup, object/SEH epilogue | Genuine interactive `Shell_MainMenu` callback `0x00493DD6`; **static + Wine**. The exact displayed pixel content was not inferred from code alone |
