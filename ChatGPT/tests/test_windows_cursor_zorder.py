@@ -9,14 +9,13 @@ VALID = (ROOT / "ini_validation.h").read_text()
 DOC = (ROOT / "docs/references/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()
 
 
-def test_cursor_restore_enabled_by_default_including_old_user_ini():
-    assert "RestoreCursorOnFocusLoss=1" in INI
-    assert '"RestoreCursorOnFocusLoss=1\\r\\n"' in GEN
+def test_cursor_restore_is_permanent_even_with_legacy_ini():
+    assert '"RestoreCursorOnFocusLoss=1\\r\\n"' not in GEN
     assert '"RestoreCursorOnFocusLoss"' in VALID
-    assert 'GetPrivateProfileIntA("Input","RestoreCursorOnFocusLoss",1,ini)==1' in S
+    assert 'GetPrivateProfileIntA("Input","RestoreCursorOnFocusLoss"' not in S
+    assert "want_cursor=1;" in S
     assert 'InterlockedExchange(&cursor_visibility_test,want_cursor);' in S
     assert 'SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST' not in S
-
 
 def test_cursor_only_tracking_never_subclasses_or_hooks_directinput():
     anchor = S.index('if(!want_trace && !want_fix && want_cursor) {')
