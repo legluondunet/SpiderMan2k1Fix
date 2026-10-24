@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — automatic keyboard layout (Auto/Off)
+
+- Document the native CHEATS call chain, exact x86 addresses, Windows APIs, signature verification, safe fallback and test results in [`docs/references/KEYBOARD_LAYOUT_TECHNICAL.md`](docs/references/KEYBOARD_LAYOUT_TECHNICAL.md).
+- Add signature-verified native CHEATS text-entry and keyboard-menu name translation for valid OS-detected non-QWERTY layouts. In-memory mapping includes A/Q, Z/W and physical M/comma on French AZERTY; DirectInput events remain unchanged.
+- Expose only `[Input] KeyboardLayout=Auto|Off`. `Auto` validates the full OS-reported A-Z key map and updates bindings and CHEATS/menu key labels; `Off` retains the original game behavior. Old mode values migrate safely to these two choices.
+- Newly generated INIs default to `Auto`; older INIs without `KeyboardLayout` keep original physical/QWERTY semantics (`Off`). OS misreporting remains a limitation, especially under Wine; partial layouts fail back safely.
+- Save converted bindings using the same selected layout so textual INI names round-trip correctly. Keep raw `0xNN` assignments as explicit physical scan codes, and retain strict INI validation/recovery.
+- The original game's keyboard setup menu and CHEATS names are patched in memory after signature checks for valid non-QWERTY layouts. User-validated on Windows 11 and Linux/Wine (French AZERTY); other layouts remain outside that acceptance scope.
+
 ## Unreleased — HUD research probe cleanup (PR #23)
 
 - Remove temporary F12 six-frame HUD research sampling, including D3D7 draw/indexed-draw and DirectDraw Blt instrumentation and the old `SPIDERMAN2K1FIX_HUD_TRACE` switch.
