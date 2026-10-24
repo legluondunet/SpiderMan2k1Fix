@@ -78,7 +78,7 @@ Alternatively, in **winecfg → Libraries**, set `winmm` to **Native then Builti
 WINEDLLOVERRIDES="winmm=n,b" %command%
 ```
 
-The Linux / Wine / Proton badge is **informational, not the result of a Linux/Proton gameplay CI test**. Compatibility can vary with the Wine/Proton version, runner and graphics setup.
+The Linux / Wine / Proton badge is **informational, not a Linux/Proton gameplay CI result**. Compatibility can vary with the Wine/Proton version, runner and graphics setup.
 
 ## Configuration
 
