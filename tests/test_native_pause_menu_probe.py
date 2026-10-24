@@ -122,9 +122,13 @@ def test_post_esc_confirm_probe_is_passive_time_bounded_and_key_triggered():
     probe = trace_block()
     assert "GetAsyncKeyState(VK_RETURN)&0x8000" in probe
     assert "GetAsyncKeyState(VK_SPACE)&0x8000" in probe
+    assert "GetAsyncKeyState(VK_UP)&0x8000" in probe
+    assert "GetAsyncKeyState(VK_DOWN)&0x8000" in probe
+    assert "up_down && !up_prev" in probe
+    assert "down_down && !down_prev" in probe
     assert "pause_menu_trace_action_armed_until,flip+1800" in probe
     assert "pause_menu_trace_action_edges" in probe
-    assert "if(n<=3)" in probe
+    assert "if(n<=6)" in probe
     assert "PAUSE-NATIVE-PROBE: KEY-EDGE" in probe
     assert "menu state UNVERIFIED" in probe
     assert "confirmation" in DOC.lower() and "NO/YES" in DOC
@@ -171,3 +175,31 @@ def test_opt_in_native_esc_43_never_rewrites_hud_by_default():
     assert "selector not yet classified" in probe
     assert "3140..3400" in CORE
     assert "PAUSE-NATIVE-43" in DOC
+
+
+def test_native_esc_border_sprites_have_independent_shape_and_texture_gate():
+    source = CORE.split("/* Experimental native ESC panel transform, opt-in only.",1)[1].split(
+        "static void free_menu_vertices(",1)[0]
+    # The 8x8 textured sides, two lines, and four corner quads were
+    # independently observed in the 1920x1080 Wine trace. Their bounds are
+    # relative to the preceding untextured banner in the same Flip.
+    assert "native_pause43_banner_top" in source
+    assert "native_pause43_banner_bottom" in source
+    assert "native_pause43_border_hits" in source
+    assert "native_pause43_banner_flip,0,0)!=flip" in source
+    assert "tw==8 && th==8" in source
+    assert "fabsf(z-0.00122f)<0.00010f" in source
+    assert "fabsf(rhw-11.176f)<0.25f" in source
+    assert "int horizontal=" in source
+    assert "int side=" in source
+    assert "int corner=" in source
+    assert "border=horizontal || side || corner;" in source
+    assert "if(!border)" in source
+    assert "if(!glyph)return source;" in source
+    assert 'border?"border":"glyph"' in source
+    assert "memcpy(copy,v,4*sizeof(*copy));" in source
+    assert "copy[i].x=center+(v[i].x-center)*aspect_scale;" in source
+    assert "SPIDERMAN2K1FIX_NATIVE_ESC_43" not in INI
+    assert "8x8" in DOC and "selector" in DOC.lower()
+    for unsafe in ("SetTexture(", "PostMessage(", "SendInput(", "keybd_event(", "src[i].x="):
+        assert unsafe not in source
