@@ -209,6 +209,36 @@ rectangles can be correlated with each selection. Once the moving
 selector has a consistent, distinct signature, the next patch can
 safely add an X-only centered 4:3 transform for that one quad.
 
+### Build #751 — detect the remaining red menu icon (read-only)
+
+The build #750 Wine log `SpiderMan2k1Fix(20261024-072204).log`
+confirms seven native pause-menu diagnostic windows and ~1,250
+`CURSOR-CANDIDATE` records. It successfully detects font sprites,
+but **no textured primitive matches the red icon** observed at
+**x=502..597, y=494..558** in both 1920x1080 F9 screenshots.
+In particular, the logged untextured pair at x=382.5..498.8,
+y=450..585 is not evidence that it is the red icon. The red symbol
+appears at the same location on both the regular ESC menu and the
+REALLY QUIT? confirmation screen.
+
+To avoid incorrectly scaling some other object, the opt-in
+passive sampler now adds the label **`PAUSE-NATIVE-PROBE: ICON-REGION`**.
+This independent geometric window includes nearby 4- or 6-vertex
+draws (fan/list/strip, with both observed pre-transformed FVF formats)
+from any caller; it records callsite, primitive type, source rectangle,
+depth/RHW, texture identity/dimensions and diffuse color. It allows at
+most 100 new region records per sampled frame, only within the existing
+ESC and navigation-key 24-Flip windows and only if `[Debug] Log=1`
+and the trace environment variable are enabled. This is **read-only**;
+the accepted ribbon, borders, letters, gameplay HUD and F9 controls
+are untouched. No red-icon transform is enabled.
+
+The next F9 test should include the regular pause menu with selected
+CONTINUE, RESTART and QUIT, and the confirmation with NO and YES.
+Send both screenshots and the complete diagnostic log. Once a unique
+textured, stable draw signature is confirmed against the visible
+red icon, a narrowly gated X-only correction can be added.
+
 ## Test the passive diagnostic (Wine or native Windows)
 
 Use both DLLs from the same build on the diagnostic PR branch.
