@@ -239,6 +239,46 @@ Send both screenshots and the complete diagnostic log. Once a unique
 textured, stable draw signature is confirmed against the visible
 red icon, a narrowly gated X-only correction can be added.
 
+### Build #757 — screenshot-correlated Wine verification
+
+Two 1920×1080 F9 captures (`scrn0012.png`, `scrn0013.png`) and
+`SpiderMan2k1Fix(20261024-074900).log` confirm that `F9-SNAPSHOT`
+activates correctly at Flips **438** and **873**. The respective
+24-Flip windows produced `SPIDER-POSE` candidate lines, but the sampled
+sprites belong predominantly to the **text glyphs** (32×32 textures
+around y=508 and y=540), not a positively identified red icon.
+Do **not** add a texture-size-only correction to the existing 2D
+menu pipeline: it would distort text.
+
+Direct color-mask measurements of the user's unscaled PNGs:
+- `scrn0012.png`, confirmation REALLY QUIT?: red cursor bounding
+  box **(911,507) 96×67 pixels**
+- `scrn0013.png`, regular ESC pause menu: red cursor bounding
+  box **(900,552) 96×67 pixels**
+
+The exact width/height stability supports X-only 0.75 as the
+future **render correction target**, but the render identity
+remains unverified.
+
+**New source clue:** krystalgamer's partial **PC-port**
+decompilation has `PCSHELL_DrawMouseCursor()`, which calls
+`gCursorSprite->draw(gShellMouseX,gShellMouseY,0,0)`.
+`PCSHELL_Initialize()` constructs this `Sprite2` from
+`lti\\cursor.bmp` with a 32×32 mouse-bounds setup.
+Reference:
+https://github.com/krystalgamer/spidey-decomp/blob/master/PCShell.cpp
+The accompanying `tools/names.json` suggests original
+`PCSHELL_DrawMouseCursor` entry **0x0050C470**
+(RVA **0x0010C470**), but its bytes must be validated against
+the exact supported SHA-256 executable before using a native detour:
+https://github.com/krystalgamer/spidey-decomp/blob/master/tools/names.json
+
+**Next investigation:** verify the cursor asset/draw caller and
+bound texture in the supported executable. Any eventual correction
+must be scoped to the cursor's draw alone, preserving center/height
+and mouse hit testing. **No game-code hook or cursor transform is
+validated yet.**
+
 ### Build #755 — F9-correlated red spider sprite trace (24 Oct 2026)
 
 The build #754 log `SpiderMan2k1Fix(20261024-073722).log`
