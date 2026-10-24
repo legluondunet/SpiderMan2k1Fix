@@ -979,6 +979,18 @@ static int native_esc43_hud_setting_enabled(const char *key,
   return SpiderHudWidescreen_Installed()!=0;
 }
 
+/* Guard the original native ESC draw signatures to the two measured
+ * 1920-wide outputs. Other monitor sizes remain untouched. */
+static int native_esc43_supported_monitor(void) {
+  return desktop_w==1920 && (desktop_h==1080 || desktop_h==1200);
+}
+static float native_esc43_scale(void) {
+  return ((float)desktop_h*(4.0f/3.0f))/(float)desktop_w;
+}
+static float native_esc43_left_gutter(void) {
+  return ((float)desktop_w-(float)desktop_h*(4.0f/3.0f))*0.5f;
+}
+
 /* Native gameplay ESC 4:3 panel correction (HUD-controlled).
  * Evidence: 2026-10-24 Wine traces #737 and #741, two menu states.
  * Anchor on the unusually wide *untextured* purple ribbon's verified
@@ -1112,7 +1124,7 @@ static const void *maybe_correct_native_pause43(void *device,
     }
   }
   center=(float)desktop_w*0.5f;
-  aspect_scale=((float)desktop_h*(4.0f/3.0f))/(float)desktop_w;
+  aspect_scale=native_esc43_scale();
   memcpy(copy,v,4*sizeof(*copy));
   for(i=0;i<4;i++) {
     float mapped=center+(v[i].x-center)*aspect_scale;
@@ -1154,7 +1166,8 @@ static const void *maybe_correct_native_pause43(void *device,
  * Z=0.00146, RHW=9.988, vertex diffuse ALPHA=0x80.
  * The same geometry recurs in ESC and confirmation frames before the
  * purple ribbon, so cannot use the ribbon's current-frame marker.
- * HUD-controlled by default; Wine-validated at 1920x1080 ONLY.
+ * HUD-controlled by default; 1920x1080 Wine-validated, 1920x1200
+ * Windows verification pending.
  */
 static volatile LONG native_motif43_enabled=0;
 static volatile LONG native_motif43_hits=0;
@@ -1178,7 +1191,7 @@ static const void *maybe_correct_native_motif43(void *device,
   unsigned i;
   if(InterlockedCompareExchange(&native_motif43_enabled,0,0)!=1 ||
      !source || !copy || !device ||
-     desktop_w!=1920 || desktop_h!=1080 ||
+     !native_esc43_supported_monitor() ||
      InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
      InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
      type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4 ||
@@ -1218,7 +1231,7 @@ static const void *maybe_correct_native_motif43(void *device,
   center=(float)desktop_w*0.5f;
   memcpy(copy,v,4*sizeof(*copy));
   for(i=0;i<4;i++)
-    copy[i].x=center+(v[i].x-center)*0.75f;
+    copy[i].x=center+(v[i].x-center)*native_esc43_scale();
   hit=InterlockedIncrement(&native_motif43_hits);
   if(hit<=12 || hit%800==0) {
     char line[260];
@@ -1298,13 +1311,16 @@ static unsigned native_motif43_clip_triangle(
 }
 static void native_motif43_restore_gutters(void *device,
     const SpiderMenuVertex *original,DWORD flags) {
-  const float left_edge=240.0f,right_edge=1680.0f;
+  float left_edge,right_edge;
   float left,right;
   SpiderMenuVertex tri[3],out[5];
   unsigned i,n;
   LONG hit;
   int gutter,any=0;
-  if(!original || !device)return;
+  if(!original || !device || !native_esc43_supported_monitor())return;
+  left_edge=native_esc43_left_gutter();
+  right_edge=(float)desktop_w-left_edge;
+  if(left_edge<=0.0f || right_edge<left_edge)return;
   left=right=original[0].x;
   for(i=1;i<4;i++) {
     if(original[i].x<left)left=original[i].x;
@@ -1332,13 +1348,14 @@ static void native_motif43_restore_gutters(void *device,
     if(hit<=8 || hit%10000==0) {
       char line[240];
       snprintf(line,sizeof(line),
-        "NATIVE-MOTIF-43: GUTTER-REPLAY hit=%ld source-x=(%.1f..%.1f) clip=(0..240,1680..1920) [ORIGINAL COLOR/BLEND; CENTER UNTOUCHED]",
-        (long)hit,(double)left,(double)right);
+        "NATIVE-MOTIF-43: GUTTER-REPLAY hit=%ld source-x=(%.1f..%.1f) clip=(0..%.1f,%.1f..%lu) [ORIGINAL COLOR/BLEND; CENTER UNTOUCHED]",
+        (long)hit,(double)left,(double)right,
+        (double)left_edge,(double)right_edge,(unsigned long)desktop_w);
       log_line(line);
     }
   }
 }
-/* Native gameplay ESC red selector: HUD-controlled, Wine-validated 1920x1080.
+/* Native gameplay ESC red selector: strict owner/texture signature.
  * A 32x32 texture in an exact screen quad (96x72), z=0, rhw=27.519,
  * diffuse white, native D3D7 caller 0x00102C72 and validated purple
  * ESC banner drawn in the SAME Flip. This is independent of the
@@ -1358,14 +1375,14 @@ static void native_cursor43_init(void) {
       "NativeCursor4x3","SPIDERMAN2K1FIX_NATIVE_CURSOR_43");
   InterlockedExchange(&native_cursor43_enabled,enabled?1:0);
   log_line(enabled?
-    "NATIVE-CURSOR-43: native red selector 4:3 ON (HUD master; 1920x1080 Auto)" :
+    "NATIVE-CURSOR-43: native red selector 4:3 ON (1920x1080/1920x1200 Auto)" :
     "NATIVE-CURSOR-43: OFF (HUD master, NativeESC4x3 or NativeCursor4x3=0)");
 }
 static const void *maybe_correct_native_cursor43(void *device,
     D3DPRIMITIVETYPE type,DWORD fvf,const void *source,DWORD count,
     void *ret,SpiderMenuVertex *copy) {
   const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
-  float left,right,top,bottom,cx,z,rhw;
+  float left,right,top,bottom,cx,z,rhw,expected_width,expected_height,icon_scale;
   DWORD rva=0,diffuse=0;
   IDirectDrawSurface7 *tex=NULL;
   DDSURFACEDESC2 desc;
@@ -1375,7 +1392,7 @@ static const void *maybe_correct_native_cursor43(void *device,
   if(InterlockedCompareExchange(&native_cursor43_enabled,0,0)!=1 ||
      !source || !copy || !device ||
      type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4 ||
-     desktop_w!=1920 || desktop_h!=1080 ||
+     !native_esc43_supported_monitor() ||
      InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
      InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
      !geom_rva(ret,&rva) || rva!=0x00102C72UL)return source;
@@ -1390,8 +1407,8 @@ static const void *maybe_correct_native_cursor43(void *device,
     if(v[i].y<top)top=v[i].y;
     if(v[i].y>bottom)bottom=v[i].y;
   }
-  /* The selector can legitimately move anywhere on the 1920x1080
-   * desktop. Former position gates (left>=450, right<=1480,
+  /* The selector can legitimately move anywhere on the supported
+   * widescreen desktop. Former position gates (left>=450, right<=1480,
    * top>=325, bottom<=800) made the 96x72 sprite revert to its
    * 16:9-stretched aspect near the top and right: observed F9
    * scrn0011=72px, scrn0012 (y<325)=96px,
@@ -1400,8 +1417,14 @@ static const void *maybe_correct_native_cursor43(void *device,
    * original 32x32 texture format, white diffuse, exact native
    * draw call and active ESC ribbon in this same frame instead.
    * Native font glyphs are different sizes/Z/RHW. */
-  if(fabsf((right-left)-96.0f)>0.6f ||
-     fabsf((bottom-top)-72.0f)>0.6f ||
+  /* Allow the native 96x80 height-scaled form on 1920x1200 as well as
+   * the original 96x72 form. Exact owner, Z/RHW, diffuse, texture and
+   * same-Flip ribbon guards below remain mandatory. */
+  expected_width=96.0f*((float)desktop_w/1920.0f);
+  expected_height=72.0f*((float)desktop_h/1080.0f);
+  if(fabsf((right-left)-expected_width)>0.8f ||
+     (fabsf((bottom-top)-expected_height)>1.1f &&
+      !(desktop_h==1200 && fabsf((bottom-top)-72.0f)<0.8f)) ||
      fabsf(z)>0.00005f ||
      fabsf(rhw-27.519f)>0.035f)return source;
   memcpy(&diffuse,(const BYTE*)source+16,sizeof(diffuse));
@@ -1418,16 +1441,18 @@ static const void *maybe_correct_native_cursor43(void *device,
   if(FAILED(hr) || desc.dwWidth!=32 || desc.dwHeight!=32 ||
      desc.ddpfPixelFormat.dwFlags!=0x41UL)return source;
   cx=(left+right)*0.5f;
+  icon_scale=(bottom-top)/(right-left);
   memcpy(copy,v,4*sizeof(*copy));
   for(i=0;i<4;i++)
-    copy[i].x=cx+0.75f*(v[i].x-cx);
+    copy[i].x=cx+icon_scale*(v[i].x-cx);
   hits=InterlockedIncrement(&native_cursor43_hits);
   if(hits<=8 || hits%600==0) {
     char line[230];
     snprintf(line,sizeof(line),
-      "NATIVE-CURSOR-43: QUAD-MATCH hit=%ld flip=%ld source=(%.0f..%.0f,%.0f..%.0f) output-width=72.0 z=%.5f rhw=%.3f [X-ONLY]",
+      "NATIVE-CURSOR-43: QUAD-MATCH hit=%ld flip=%ld source=(%.0f..%.0f,%.0f..%.0f) output-width=%.1f scale=%.5f z=%.5f rhw=%.3f [X-ONLY]",
       (long)hits,(long)flip,(double)left,(double)right,
-      (double)top,(double)bottom,(double)z,(double)rhw);
+      (double)top,(double)bottom,(double)(right-left)*icon_scale,
+      (double)icon_scale,(double)z,(double)rhw);
     log_line(line);
   }
   return copy;

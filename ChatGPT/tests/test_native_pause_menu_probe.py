@@ -56,21 +56,22 @@ def test_native_pause_classifies_original_banner_border_and_text_without_touchin
 
 def test_motif_requires_untextured_original_alpha_quads_at_exact_depth():
     for token in ("SPIDERMAN2K1FIX_NATIVE_MOTIF_43",
-                  "native_pause43_enabled", "desktop_w!=1920",
-                  "desktop_h!=1080", "gameplay_4x3_active",
+                  "native_pause43_enabled", "!native_esc43_supported_monitor()",
+                  "gameplay_4x3_active",
                   "menu_upscale_active", "rva!=0x00102C72UL",
                   "fabsf(v[0].z-0.00146f)", "fabsf(v[0].rhw-9.988f)",
                   "(color&0xFF000000UL)!=0x80000000UL",
                   "vertex_color&0xFF000000UL",
                   "IDirect3DDevice7_GetTexture(", "IDirectDrawSurface7_Release(tex)",
-                  "copy[i].x=center+(v[i].x-center)*0.75f"):
+                  "copy[i].x=center+(v[i].x-center)*native_esc43_scale()"):
         assert token in MOTIF
     assert "type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4" in MOTIF
 
 
 def test_gutter_replay_clips_original_triangles_without_center_overdraw():
     for token in ("native_motif43_restore_gutters(",
-                  "left_edge=240.0f,right_edge=1680.0f",
+                  "left_edge=native_esc43_left_gutter()",
+                  "right_edge=(float)desktop_w-left_edge",
                   "tri[0]=original[0];tri[1]=original[i+1u];tri[2]=original[i+2u]",
                   "native_motif43_clip_triangle(",
                   "original_draw_primitive(device,D3DPT_TRIANGLEFAN,0x144UL",
@@ -97,30 +98,62 @@ def test_clipping_model_covers_both_gutters_never_middle():
             if ib:
                 out.append(b)
         return out
-    triangles = [
-        ((0, 0), (1920, 0), (1920, 1080)),
-        ((0, 0), (1920, 1080), (0, 1080)),
-    ]
-    for lo, hi, keep_left in ((0, 240, True), (1680, 1920, False)):
-        edges = [clip(t, 240 if keep_left else 1680, keep_left)
-                 for t in triangles]
-        assert all(lo <= x <= hi for p in edges for x, _ in p)
-        assert sum(len(p) >= 3 for p in edges) == 2
-        for x, y in ((lo, 0), (hi, 0), (lo, 1080), (hi, 1080)):
-            assert any((x, y) in p for p in edges)
+
+    for screen_w, screen_h, expected_gutter in (
+        (1920, 1080, 240), (1920, 1200, 160)
+    ):
+        left = (screen_w - screen_h * (4.0 / 3.0)) / 2
+        right = screen_w - left
+        assert abs(left - expected_gutter) < 1.0e-4
+        triangles = [
+            ((0, 0), (screen_w, 0), (screen_w, screen_h)),
+            ((0, 0), (screen_w, screen_h), (0, screen_h)),
+        ]
+        for lo, hi, keep_left in (
+            (0, left, True), (right, screen_w, False)
+        ):
+            edges = [clip(t, left if keep_left else right, keep_left)
+                     for t in triangles]
+            assert all(lo <= x <= hi for p in edges for x, _ in p)
+            assert sum(len(p) >= 3 for p in edges) == 2
+            for x, y in ((lo, 0), (hi, 0), (lo, screen_h), (hi, screen_h)):
+                assert any((x, y) in p for p in edges)
+
+
+def test_native_esc_43_geometry_at_16_9_16_10_and_classic_4_3():
+    # Widescreen Auto: full-size physical target, 4:3-only native UI geometry.
+    for width, height, target_x, target_w, factor in (
+        (1920, 1080, 240, 1440, 0.75),
+        (1920, 1200, 160, 1600, 5.0 / 6.0),
+    ):
+        scale = (height * (4.0 / 3.0)) / width
+        assert abs(scale - factor) < 1e-7
+        x0 = width / 2 + (0 - width / 2) * scale
+        x1 = width / 2 + (width - width / 2) * scale
+        assert abs(x0 - target_x) < 1e-5
+        assert abs(x1 - (target_x + target_w)) < 1e-5
+        assert x1 - x0 == target_w
+    # A genuine classic 4:3 output must not be transformed twice.
+    assert (1440 * 3) == (1080 * 4)
+    assert "InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0" in PAUSE
+    assert "InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0" in MOTIF
+    assert "InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0" in CURSOR
+    assert "return desktop_w==1920 && (desktop_h==1080 || desktop_h==1200)" in CORE
+    assert "native_esc43_left_gutter(void)" in CORE
+    assert "native_esc43_scale(void)" in CORE
 
 
 def test_cursor_recognition_not_limited_to_old_screen_rectangle():
     for token in ("SPIDERMAN2K1FIX_NATIVE_CURSOR_43",
                   "native_pause43_banner_flip",
-                  "desktop_w!=1920 || desktop_h!=1080",
+                  "!native_esc43_supported_monitor()",
                   "rva!=0x00102C72UL",
-                  "(right-left)-96.0f", "(bottom-top)-72.0f",
+                  "expected_width", "expected_height",
                   "fabsf(z)>0.00005f", "fabsf(rhw-27.519f)",
                   "diffuse!=0xFFFFFFFFUL",
                   "desc.dwWidth!=32 || desc.dwHeight!=32",
                   "desc.ddpfPixelFormat.dwFlags!=0x41UL",
-                  "copy[i].x=cx+0.75f*(v[i].x-cx)"):
+                  "copy[i].x=cx+icon_scale*(v[i].x-cx)"):
         assert token in CURSOR
     guard = CURSOR.split("  /* The selector can legitimately", 1)[1].split(
         "  memcpy(&diffuse", 1)[0]
@@ -132,16 +165,25 @@ def test_cursor_recognition_not_limited_to_old_screen_rectangle():
         assert forbidden not in CURSOR
 
 
-def test_selector_width_is_72_on_center_top_and_screen_edges():
-    # Native D3D7 quad 96x72; its transparent sprite edges explain ~67
-    # visible red pixels high in F9 images.
-    for x, y in ((911, 504), (1308, 260), (1466, 512), (0, 0), (1824, 1008)):
-        center = x + 48.0
-        left = center + 0.75 * (x - center)
-        right = center + 0.75 * (x + 96 - center)
-        assert right - left == 72
-        assert (left + right) / 2 == center
-        assert y + 72 - y == 72
+def test_selector_preserves_square_aspect_in_both_widescreen_modes():
+    # The expected 96px-wide sprite may retain its 72px height or scale
+    # to 80px in 16:10; both should render square after correcting X only.
+    for width, height, quad_height in (
+        (1920, 1080, 72), (1920, 1200, 80), (1920, 1200, 72)
+    ):
+        assert width == 1920
+        for x, y in ((911, 504), (1308, 260), (1466, 512),
+                     (0, 0), (1824, height-72)):
+            quad_width = 96
+            center = x + quad_width / 2
+            scale = quad_height / quad_width
+            left = center + scale * (x - center)
+            right = center + scale * (x + quad_width - center)
+            assert abs((right-left) - quad_height) < 1e-9
+            assert (left + right) / 2 == center
+            assert (y + quad_height - y) == quad_height
+    assert "icon_scale=(bottom-top)/(right-left);" in CURSOR
+    assert "(double)(right-left)*icon_scale" in CURSOR
 
 
 def test_hook_order_preserves_other_3d_2d_and_hud_transforms():
