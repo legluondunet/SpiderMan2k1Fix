@@ -41,7 +41,7 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           zip -j -9 dist/SpiderMan2k1Fix-1.0.0-Windows-x86.zip \
-            winmm.dll SpiderMan2k1Fix.dll SpiderMan2k1Fix.ini README.md CHANGELOG.md
+            winmm.dll SpiderMan2k1Fix.dll README.md CHANGELOG.md
           unzip -t dist/SpiderMan2k1Fix-1.0.0-Windows-x86.zip
           (cd dist && sha256sum SpiderMan2k1Fix-1.0.0-Windows-x86.zip > SHA256SUMS.txt)
 
