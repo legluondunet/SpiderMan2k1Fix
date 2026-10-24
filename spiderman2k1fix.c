@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <math.h>
 #include <errno.h>
 #include <ddraw.h>
 #include <d3d.h>
