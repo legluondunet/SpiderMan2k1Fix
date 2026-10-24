@@ -1164,7 +1164,7 @@ static const void *maybe_correct_native_pause43(void *device,
      * banner in the *same Flip*: 2 horizontal strokes, 2 vertical caps,
      * 4 small corners. Validate texture, z/RHW, and shape relative to
      * the banner recorded above; draw indices are not stable.
-     * Do NOT touch the 32x32 red selection icon until identified.
+     * Do not touch the separately matched 32x32 red selection icon.
      */
     bt=InterlockedCompareExchange(&native_pause43_banner_top,0,0);
     bb=InterlockedCompareExchange(&native_pause43_banner_bottom,0,0);
@@ -1205,7 +1205,7 @@ static const void *maybe_correct_native_pause43(void *device,
       /* Title: PAUSED (Y=171), REALLY QUIT? (Y=283).
        * Choices: main menu Y=436/508/580; confirmation Y=468/540.
        * Exclude instructions (Y=877), compass, gameplay HUD, and
-       * the still-unidentified red spider selector. */
+       * the separately handled red spider selector. */
       if(left<=(float)desktop_w*0.25f ||
          right>=(float)desktop_w*0.75f ||
          top<(float)desktop_h*0.13f ||
@@ -1243,7 +1243,7 @@ static const void *maybe_correct_native_pause43(void *device,
   if(hit<=4 || (hit%600)==0) {
     char line[230];
     snprintf(line,sizeof(line),
-      "PAUSE-NATIVE-43: %s hit=%ld flip=%ld x=(%.1f..%.1f) scale=%.5f tex=%lux%lu [EXPERIMENT]",
+      "PAUSE-NATIVE-43: %s hit=%ld flip=%ld x=(%.1f..%.1f) scale=%.5f tex=%lux%lu [NATIVE-ESC-43]",
       ribbon?"ribbon":border?"border":"glyph",(long)hit,(long)flip,
       (double)left,(double)right,(double)aspect_scale,
       (unsigned long)tw,(unsigned long)th);
@@ -1260,7 +1260,7 @@ static const void *maybe_correct_native_pause43(void *device,
  * Z=0.00146, RHW=9.988, vertex diffuse ALPHA=0x80.
  * The same geometry recurs in ESC and confirmation frames before the
  * purple ribbon, so cannot use the ribbon's current-frame marker.
- * This is an explicit experimental opt-in at 1920x1080 ONLY.
+ * Explicit, Wine-validated opt-in at 1920x1080 ONLY.
  */
 static volatile LONG native_motif43_enabled=0;
 static volatile LONG native_motif43_hits=0;
@@ -1339,10 +1339,8 @@ static const void *maybe_correct_native_motif43(void *device,
   return copy;
 }
 /* Preserve native full-width scene tint in the two 240px gutters.
- * Build #780 compressed ALL native alpha=0x80 UI quads with the orange/
- * blue motif, including the original scene dimming. Pixel comparison of
- * scrn0005(3) vs scrn0007(2) and scrn0004(3) proves exactly:
- * x=0..239 and x=1680..1919 are no longer tinted, while center is.
+ * The same 4:3 geometry compression would narrow native full-screen
+ * violet dimming. Preserve its coverage outside the central 4:3 area.
  *
  * Replay the ORIGINAL native 2D quads, clipped STRICTLY to the gutters,
  * using the game's own color/blend state. Then draw the 4:3-corrected
@@ -1409,12 +1407,13 @@ static unsigned native_motif43_clip_triangle(
 static void native_motif43_restore_gutters(void *device,
     const SpiderMenuVertex *original,DWORD flags) {
   const float left_edge=240.0f,right_edge=1680.0f;
-  float left=original[0].x,right=original[0].x;
+  float left,right;
   SpiderMenuVertex tri[3],out[5];
   unsigned i,n;
   LONG hit;
   int gutter,any=0;
   if(!original || !device)return;
+  left=right=original[0].x;
   for(i=1;i<4;i++) {
     if(original[i].x<left)left=original[i].x;
     if(original[i].x>right)right=original[i].x;
@@ -1451,13 +1450,11 @@ static void native_motif43_restore_gutters(void *device,
  * A 32x32 texture in an exact screen quad (96x72), z=0, rhw=27.519,
  * diffuse white, native D3D7 caller 0x00102C72 and validated purple
  * ESC banner drawn in the SAME Flip. This is independent of the
- * unproven PCSHELL_DrawMouseCursor stack-owner hypothesis (Wine had
- * depth=0 and 758 DWORD return scans found no owner).
+ * the original game menu or ordinary gameplay HUD.
  *
- * Render-only experiment, opt-in through NATIVE_CURSOR_43, OFF by
- * default. Match all observed independent attributes; texture pointer
- * values are NOT portable between game runs. Initially limit this
- * strictly to the tested 1920x1080 mode. Only X vertex coordinates
+ * Opt-in through NATIVE_CURSOR_43, OFF by default. Match the validated
+ * signature instead of ephemeral texture pointer identities. Limit this
+ * strictly to the Wine-tested 1920x1080 mode. Only X vertex coordinates
  * are modified; keep Y, Z, RHW, UV, texture, game input unchanged.
  */
 static volatile LONG native_cursor43_enabled=0;
