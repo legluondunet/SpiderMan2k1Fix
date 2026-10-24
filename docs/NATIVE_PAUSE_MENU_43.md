@@ -1,3 +1,16 @@
+## After build #780 — 16:9 pause tint gutter regression and experimental restoration (2026-10-24)
+
+Pixel evidence from the user-provided native 1920x1080 captures:
+- `scrn0005(3).png` and `scrn0006(2).png`: original **full-screen violet/blue dimming** before motif correction.
+- `scrn0007(2).png` and `scrn0008(2).png`: orange/blue motif aspect **looks correct**, original center panel and selector remain correct, but the full-screen **dimming is absent in the 240-pixel gutters** x=0..239 and x=1680..1919. The margins show normal untinted world graphics, while x=240..1679 is darkened.
+- Direct pixel comparison against normal gameplay `scrn0004(3).png`: at y=10..30 and y=1020..1050, the build #780 gutters are **pixel-identical** to normal gameplay, unlike the previous dimmed version. This confirms the aspect transformation also moved the full-screen tint into the 4:3 interior. There is no need to retune the violet panel, cursor, glyphs, or 3D backdrop.
+
+**Candidate fix**: Retain build #780 exact, opt-in native alpha=0x80, no-texture 2D quad classifier and X-only motif transform. For each *positively classified* transformed native 4-vertex triangle fan at 1920x1080 Auto only, replay its **two original triangles**, Sutherland-Hodgman-clipped independently to the **left (x<=240)** and **right (x>=1680)** gutters. Replay uses the **original D3D7 draw**, the game's **current render state and blending**, the same source **Z/RHW/UV/diffuse**, and interpolated edge colors. It draws **nothing in x=240..1680**, so there is no double tint over the center, no guessed purple color, and no modifications to original comic, HUD, world, ribbon, text or cursor.
+Only the original alpha UI quads actually intersecting the gutters are re-rendered, minimizing extra GPU work. Guards and opt-in remain `SPIDERMAN2K1FIX_NATIVE_ESC_43=1` + `SPIDERMAN2K1FIX_NATIVE_MOTIF_43=1` (no new INI option).
+This is an experimental graphics correction, **not yet validated in Wine**.
+
+Look for `NATIVE-MOTIF-43: GUTTER-REPLAY` in `Log=1`. On the next Wine test take F9 screenshots in 3D normal, ESC, and REALLY QUIT?; verify both 240px gutters match the previous **uniform full-screen violet tint**, motif remains 4:3, banner/selector and HUD stay sharp, and no colored motif extends improperly beyond x=240..1680. If unexpected artifacts occur, unset `NATIVE_MOTIF_43` to revert **only the motif experiment**, keeping other validated patches. Keep PR #28 draft.
+
 # Native ESC pause menu: centered 4:3 diagnosis
 
 ## Current experiment: Wine build after #770 (2026-10-24)
