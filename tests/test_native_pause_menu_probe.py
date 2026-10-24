@@ -92,7 +92,7 @@ def test_probe_falls_back_to_bounded_passive_escape_sampling():
     assert "GetAsyncKeyState(VK_ESCAPE)&0x8000" in init
     assert "pause_menu_trace_escape_until,flip+24" in init
     assert "if(edge<=4)" in init
-    assert "20-frame ESC window" in init
+    assert "frames 1/5/12/20" in init
     assert "PAUSE-NATIVE-PROBE: SAMPLE-FRAME" in draw
     assert "GetTexture(" in draw
     assert "InterlockedIncrement(&pause_menu_trace_escape_edges)" in init
