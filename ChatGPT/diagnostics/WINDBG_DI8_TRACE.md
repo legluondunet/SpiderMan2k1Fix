@@ -17,13 +17,13 @@ disturb timing: this is not a non-invasive attach.
 - Install Microsoft Debugging Tools for Windows, x86, from the Windows SDK.
   The launcher looks for Windows Kits\10\Debuggers\x86\cdb.exe.
 - Have run_directinput8_trace.ps1 and trace_directinput8_windbg.js next to
-  one another in the PR #7 diagnostics directory. Node.js is NOT required.
+  one another in the ChatGPT/diagnostics directory. Node.js is NOT required.
 
 ## Run once on Windows 11
 
 Open PowerShell in your clone of the PR #7 branch and execute this command:
 
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\diagnostics\run_directinput8_trace.ps1 -GameDir 'C:\Users\saccor\Downloads\Spider-Man'
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\ChatGPT\diagnostics\run_directinput8_trace.ps1 -GameDir 'C:\Users\saccor\Downloads\Spider-Man'
 
 If necessary, add -CdbPath 'C:\full\path\to\x86\cdb.exe'.
 

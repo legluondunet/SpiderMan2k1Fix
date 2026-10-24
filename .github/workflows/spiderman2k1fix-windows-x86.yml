@@ -29,7 +29,7 @@ jobs:
 
       - name: Run regression tests
         run: |
-          python3 -m pytest -q tests
+          python3 -m pytest -q ChatGPT/tests
 
       - name: Build Windows x86 DLLs
         run: bash ./build.sh

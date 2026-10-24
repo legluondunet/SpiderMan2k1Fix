@@ -3,3 +3,6 @@
 # GitHub's automatically generated Source code (zip/tar.gz) uses git archive.
 # Binary artifacts are independently whitelisted by their Actions workflows.
 /docs/ export-ignore
+
+# Developer-only tests, research utilities and scratch diagnostics.
+/ChatGPT/ export-ignore
