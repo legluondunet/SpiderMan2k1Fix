@@ -1,9 +1,6 @@
-"""AZERTY key positions and safe legacy INI compatibility.
-
-The pure-C policy is tested on Linux; native GetKeyboardLayout and Wine menu
-labels still require a real game run, not merely a successful DLL build.
+"""Only Auto/Off is user-facing; validate scan-map consistency on the host.
+Windows and Wine CHEATS/menu behavior still require hands-on game testing.
 """
-
 from pathlib import Path
 import shutil
 import subprocess
@@ -13,9 +10,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 VIRTUAL = (ROOT / "virtual_spidey_cfg.c").read_text(encoding="utf-8")
 HEADER = (ROOT / "keyboard_layout.h").read_text(encoding="utf-8")
+NAMES = (ROOT / "keyboard_names.c").read_text(encoding="utf-8")
 
-
-def test_legacy_and_azerty_semantic_binding_positions(tmp_path):
+def test_complete_layout_mapping_off_and_safe_fallback(tmp_path):
     if not shutil.which("gcc"):
         pytest.skip("host C compiler unavailable")
     src = tmp_path / "layout.c"
@@ -23,71 +20,74 @@ def test_legacy_and_azerty_semantic_binding_positions(tmp_path):
     src.write_text(r'''
 #include <assert.h>
 #include "keyboard_layout.h"
-
 int main(void) {
-  /* Legacy physical names preserve the original DIK layout. */
-  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_PHYSICAL,'A',0x1E,0x10)==0x1E);
-  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_PHYSICAL,'M',0x32,0x27)==0x32);
-  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_QWERTY,'Z',0x2C,0x11)==0x2C);
-  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_QWERTY,'W',0x11,0x2C)==0x11);
-  /* French AZERTY maps letter names onto the user's physical letter keys. */
-  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AZERTY,'A',0x1E,0)==0x10);
-  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AZERTY,'Q',0x10,0)==0x1E);
-  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AZERTY,'Z',0x2C,0)==0x11);
-  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AZERTY,'W',0x11,0)==0x2C);
-  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AZERTY,'M',0x32,0)==0x27);
-  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AZERTY,'F',0x21,0)==0x21);
-  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AZERTY,'C',0x2E,0)==0x2E);
-  /* Auto uses a valid host scan, otherwise fails closed to physical. */
-  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AUTO,'M',0x32,0x27)==0x27);
-  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AUTO,'M',0x32,0)==0x32);
-  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AUTO,'W',0x11,0x200)==0x11);
+  unsigned host[26], i;
+  unsigned char active[26]={0};
+  /* US/QWERTY is an identity transform. */
+  for(i=0;i<26;i++)host[i]=spider_us_letter_scans[i];
+  assert(SpiderKeyboard_ValidateMap(host,active)==1);
+  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AUTO,'M',0x32,active,1)==0x32);
+  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_OFF,'M',0x32,active,1)==0x32);
+  /* All letters on standard French AZERTY, including physical M/semicolon. */
+  host['A'-'A']=0x10;host['Q'-'A']=0x1e;
+  host['Z'-'A']=0x11;host['W'-'A']=0x2c;
+  host['M'-'A']=0x27;
+  assert(SpiderKeyboard_ValidateMap(host,active)==1);
+  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AUTO,'A',0x1e,active,1)==0x10);
+  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AUTO,'Q',0x10,active,1)==0x1e);
+  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AUTO,'Z',0x2c,active,1)==0x11);
+  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AUTO,'W',0x11,active,1)==0x2c);
+  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AUTO,'M',0x32,active,1)==0x27);
+  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_OFF,'M',0x32,active,1)==0x32);
+  /* A different valid layout, QWERTZ, must not require a hard-coded mode. */
+  for(i=0;i<26;i++)host[i]=spider_us_letter_scans[i];
+  host['Y'-'A']=0x2c;host['Z'-'A']=0x15;
+  assert(SpiderKeyboard_ValidateMap(host,active)==1);
+  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AUTO,'Z',0x2c,active,1)==0x15);
+  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AUTO,'Y',0x15,active,1)==0x2c);
+  /* Never use an incomplete, extended or duplicate layout map. */
+  host['A'-'A']=host['B'-'A'];
+  assert(SpiderKeyboard_ValidateMap(host,active)==0);
+  assert(SpiderKeyboard_MapLetter(SPIDER_KEYBOARD_AUTO,'M',0x32,active,0)==0x32);
+  host['A'-'A']=0x140;
+  assert(SpiderKeyboard_ValidateMap(host,active)==0);
+  host['A'-'A']=0;
+  assert(SpiderKeyboard_ValidateMap(host,active)==0);
   return 0;
 }
 ''', encoding="utf-8")
-    subprocess.run(
-        ["gcc", "-std=c99", "-Wall", "-Wextra", "-Werror",
-         "-I", str(ROOT), str(src), "-o", str(binary)],
-        check=True, capture_output=True, text=True
-    )
-    subprocess.run([str(binary)], check=True, capture_output=True, text=True)
+    subprocess.run(["gcc","-std=c99","-Wall","-Wextra","-Werror",
+                    "-I",str(ROOT),str(src),"-o",str(binary)],
+                   check=True,capture_output=True,text=True)
+    subprocess.run([str(binary)],check=True,capture_output=True,text=True)
 
+def test_autodetection_runtime_and_deprecated_ini_migration():
+    assert 'GetPrivateProfileStringA("Input","KeyboardLayout","Off"' in VIRTUAL
+    assert 'keyboard_layout_mode=SPIDER_KEYBOARD_OFF;' in VIRTUAL
+    assert 'keyboard_layout_mode=SPIDER_KEYBOARD_AUTO;' in VIRTUAL
+    assert "MapVirtualKeyExA('A'+i,MAPVK_VK_TO_VSC,keyboard_layout_hkl)" in VIRTUAL
+    assert "SpiderKeyboard_ValidateMap(mapped,keyboard_scans)" in VIRTUAL
+    assert "SpiderKeyboard_MapLetter(keyboard_layout_mode,letter" in VIRTUAL
+    assert 'WritePrivateProfileStringA("Input","KeyboardLayout",effective,ini_file)' in VIRTUAL
+    assert "SpiderKeyNames_Install(keyboard_layout_mode,keyboard_layout_hkl," in VIRTUAL
+    assert "SPIDER_KEYBOARD_AZERTY" not in VIRTUAL
+    assert "SPIDER_KEYBOARD_QWERTY" not in VIRTUAL
 
-def test_runtime_maps_ini_letter_names_without_touching_directinput():
-    assert 'MapVirtualKeyExA(' in VIRTUAL
-    assert 'GetKeyboardLayout(0)' in VIRTUAL
-    assert 'GetPrivateProfileStringA("Input","KeyboardLayout","Physical"' in VIRTUAL
-    assert "SPIDER_KEYBOARD_AZERTY" in VIRTUAL
-    assert "SpiderKeyboard_MapLetter(" in VIRTUAL
-    assert "decode_key(value,&code)" in VIRTUAL
-    assert "letter_scan(key[0],dik_names[i].scan)" in VIRTUAL
-    assert "physical DirectInput" in VIRTUAL
-    assert "original menu key labels may remain QWERTY" in VIRTUAL
-    assert 'keyboard_layout_mode=SPIDER_KEYBOARD_PHYSICAL;' in VIRTUAL
-
-
-def test_game_settings_stay_raw_and_other_devices_unchanged():
-    assert 'set_word(action_offsets[i],code);' in VIRTUAL
-    assert "joystick_offsets[7]={0x50,0x54,0x58,0x5C,0x60,0x64,0x68}" in VIRTUAL
-    assert "0x27u" in HEADER
-    assert "virtual mode ENABLED" in VIRTUAL
-
-
-def test_cheats_native_key_name_remap_is_narrow_and_signature_guarded():
-    names = (ROOT / "keyboard_names.c").read_text(encoding="utf-8")
+def test_cheats_table_is_guarded_and_reuses_original_letter_names():
     build = (ROOT / "build.sh").read_text(encoding="utf-8")
     assert "keyboard_names.c" in build
-    assert '#include "keyboard_names.h"' in VIRTUAL
-    assert "SpiderKeyNames_Install(keyboard_layout_mode,keyboard_layout_hkl,report);" in VIRTUAL
-    assert "0x0048E048u" in names and "0x00501550u" in names
-    assert "0x00562FF4u" in names
-    assert "original_text_path_verified()" in names
-    assert "memcmp(" in names
-    assert "VirtualProtect(" in names
-    assert "MapVirtualKeyExA('M',MAPVK_VK_TO_VSC,hkl)==0x27" in names
-    for entry in ("table[0x10]=old_a", "table[0x1E]=old_q",
-                  "table[0x11]=old_z", "table[0x2C]=old_w",
-                  "table[0x27]=old_m", "table[0x32]=old_comma"):
-        assert entry in names
-    assert "GetDeviceData" not in names
-    assert "DirectInput8Create" not in names
+    assert "0x0048E048u" in NAMES and "0x00501550u" in NAMES
+    assert "0x00562FF4u" in NAMES
+    assert "original_text_path_verified()" in NAMES
+    assert "memcmp(" in NAMES
+    assert "VirtualProtect(" in NAMES
+    assert "spider_us_letter_scans[i]" in NAMES
+    assert "replacement[letter_scans[i]]=original[spider_us_letter_scans[i]];" in NAMES
+    assert "native_nonletter_name" in NAMES
+    assert "GetDeviceData" not in NAMES
+    assert "DirectInput8Create" not in NAMES
+
+def test_action_controls_and_other_devices_remain_physical():
+    assert 'set_word(action_offsets[i],code);' in VIRTUAL
+    assert "joystick_offsets[7]={0x50,0x54,0x58,0x5C,0x60,0x64,0x68}" in VIRTUAL
+    assert "virtual mode ENABLED" in VIRTUAL
