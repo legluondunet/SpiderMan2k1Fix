@@ -175,6 +175,40 @@ within the same bounded 1800-Flip post-ESC period. All sampling is
 read-only and opt-in, without virtual key injection or native menu
 state modification.
 
+
+### Targeted moving spider cursor diagnosis — after build #747
+
+Build #747 showed the 4:3 **purple panel, corner pieces, top and bottom
+borders, and both groups of texts properly centered**. The red
+spider-shaped selection pointer is still separate and remains at its
+uncorrected horizontal position. In
+`SpiderMan2k1Fix(20261024-070917).log`, the native panel begins
+around draw **1439**, not the older 3140–3400 range. As a result,
+the previous sampler missed the relevant sprite even though UP/DOWN
+key events and six follow-up sampling windows were recorded.
+
+The new `PAUSE-NATIVE-PROBE: CURSOR-CANDIDATE` line samples by
+**original screen geometry**, not a fixed draw number. It keeps the
+original native 2D call site, a bounded depth/RHW range, and four
+vertices in the middle-left panel region, but does **not** assume a
+texture size or color. Each sampled candidate records its draw index,
+screen rectangle, texture dimensions, **texture pointer ID** (only
+comparable within the same process run), diffuse vertex color and
+initial UV coordinates. At most **100** such candidates are logged
+in each sampled frame (frames 1, 5, 12, 20) and no native vertices
+are changed by the probe. The candidate label **does not mean the
+red sprite has been identified**.
+
+Run with both experimental variables as in the example above.
+Open the ESC menu and leave the default selection visible for two
+seconds, then press DOWN once and leave the next selection visible
+for two seconds. Repeat for a third option. Open the QUIT confirmation
+and record separate NO and YES selections, preferably including F9
+captures. Send the entire new log so texture IDs, UVs and screen
+rectangles can be correlated with each selection. Once the moving
+selector has a consistent, distinct signature, the next patch can
+safely add an X-only centered 4:3 transform for that one quad.
+
 ## Test the passive diagnostic (Wine or native Windows)
 
 Use both DLLs from the same build on the diagnostic PR branch.
@@ -219,11 +253,12 @@ within 1800 Flips. It counts eligible geometry candidates in the
 first 20 frames of each window and logs `FRAME-END candidates=` for
 each frame. These key edges are not proof that a menu was active.
 It records bounded details at **sample frames 1, 5, 12 and 20**:
-the first eight candidates, every 64th candidate, **and every
-candidate from draw 3140 through draw 3400**, up to 8192.
-In addition, it reports up to twelve candidate **wide** screen-space
-quads in the middle of each sampled frame, even outside the numbered
-range. These are provisional panel candidates only. This reveals
+the first eight candidates and every 64th candidate, plus up to
+**100 geometric CURSOR-CANDIDATE sprites per sampled frame**, up to
+8192 eligible primitives. It no longer relies on the historical
+3140–3400 draw indices. In addition, it reports up to twelve candidate
+**wide** screen-space quads in the middle of each sampled frame,
+even outside the numbered range. These are provisional panel candidates only. This reveals
 potential end-of-frame menu primitives without logging every world
 triangle. The early frame's x/y pairs may be **projected 3D scene
 geometry, not menu positions**; do not apply a 4:3 transform from
