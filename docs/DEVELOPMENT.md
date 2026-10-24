@@ -116,7 +116,83 @@ Historical F12 shutdown experiments achieved specific Windows 11 process exits, 
 - Original game requests included low-resolution 640×480 modes that caused trouble on modern displays. The compatibility approach avoids exclusive fullscreen and keeps desktop display mode unchanged.
 - Widescreen 3D uses aspect-dependent framing/FOV; menus, intro media, comic artwork and other 2D content require appropriate 4:3 treatment. There is an optional full-game 4:3 pillarbox mode.
 - DirectDraw/Direct3D 7 state differs among Bink playback, menus, 2D artwork and playable 3D. A historically observed short **yellow window** on some native Windows movie-originated exits was absent in a control test exiting directly from 3D. That comparison **does not identify** the offending surface, draw call or teardown operation.
-- HUD and comic-viewport investigations have separate logs and implementation headers; no general claim should be made that every 2D overlay has been fully reverse-engineered.
+- The game HUD has **separately identified native player-HUD CALL sites** and **D3D7 draw-primitive signatures** for instructions, compass and boss UI. These are documented below; do not assume every 2D primitive is HUD.
+
+### 7.1 Original player-HUD CALL-site inventory (16 SHA-pinned hooks)
+
+The earlier `player_hud(2).gdb` prototype isolated a group of original x86 `CALL rel32` instructions handling the upper-left Spider-Man portrait, health/web gauges, rectangular bars, HUD counters and text. Their exact target addresses are checked by `hud_widescreen.c` before any in-memory detour is installed. This is a **verified hook inventory**, not a claim that we possess fully reconstructed source or semantic names for all original routines.
+
+| Hook kind | Original game CALL sites (VA) | Expected original callee (VA) |
+| --- | --- | --- |
+| Six player-HUD sprite calls | `0x00465D08`, `0x00465F46`, `0x00466176`, `0x004663AA`, `0x004665D1`, `0x004667F6` | `0x00507910` |
+| HUD/Webcart text scope | `0x00465A83` | `0x00458700` |
+| Glyph draw sink | `0x005068CB` | `0x00507470` |
+| Three rectangle scope calls | `0x0046687B`, `0x00466931`, `0x004669C7` | `0x00462FB0` |
+| Three bar scope calls | `0x004668D1`, `0x00466A1B`, `0x00466A65` | `0x00462D60` |
+| Bar draw sink | `0x00462EB3` | `0x00507470` |
+| Rectangle draw sink | `0x004631A4` | `0x00507910` |
+
+The original player HUD appears near the **top-left** (e.g. approximately X=56–461 at 1920×1080 in historical traces). The hook transforms sprite-quad X arguments at byte offsets `+0,+20,+40,+60`, and scoped bar/glyph X and width arguments at `+0,+8`. It tracks thread-local scope entry/exit so that shared text/bar/rectangle sinks outside a HUD scope are not indiscriminately changed.
+
+The original resolution globals read by this module are `0x00568154` (width) and `0x00568158` (height). For any aspect wider than 4:3, the correction factor is:
+
+```text
+scale = (4 * screen_height) / (3 * screen_width)
+player-HUD left anchor: x' = x * scale
+1920x1080: scale = 0.75
+1920x1200: scale = 5/6
+```
+
+Only horizontal geometry is corrected; vertical coordinates stay unchanged. Original 4:3 is unchanged. These hooks preserve CPU registers, EFLAGS and legacy x87 state, and require the exact verified EXE, CALL targets and initialization before rendering. An earlier GDB prototype reported corrected thousands of sprites, rectangles and glyphs; **instrumentation counts alone do not prove every HUD asset was individually classified**.
+
+### 7.2 Direct3D7 path shared by compass, mission instructions and boss UI
+
+The more targeted adaptive filter in [`hud_adaptive.c`](../hud_adaptive.c) recognizes original game **four-vertex triangle fans**, primitive type `6`, FVF `0x144`, from the caller **RVA `0x00102C72`** (VA `0x00502C72`). This is a **shared draw path**, not an exclusive HUD function: unrelated 3D world particles also reach it.
+
+Consequently, recognition additionally checks original per-vertex screen bounds, **Z, RHW, diffuse color, texture dimensions and UVs**. The DLL works on **copies** of four original vertices and leaves `Y`, `Z`, `RHW`, colors and UV coordinates bit-preserved. Unrecognized primitives are passed through unchanged. The filter returns region identifiers `INSTRUCTIONS=1`, `COMPASS=2`, `BOSS=3` or `NONE=0`.
+
+| Identified object | Representative original signatures | Anchor and behavior |
+| --- | --- | --- |
+| Bottom-right compass | Two mirrored **64×64** textured halves, `Z≈0`, `RHW≈27.6000`, opposite U orientation; untextured direction pointer `RHW≈26.0678` | Right anchored; measured at 1920×1080: halves X≈1428.8–1620 and X≈1616.2–1807.5, Y≈823.5–1003.5 |
+| Bottom-left/center instructions | Solid translucent backdrop `0xA0000060` / `0xA0600000`; shadow glyphs `Z≈0.0012`, `RHW≈11.1764`, `0xFF000000`; light lavender glyphs `Z≈0.0010`, `RHW≈12.6862`, `0xFFC0C0FF` | Left anchored; panel examples X≈123.8–1173.8 at Y≈864–931.5 and X≈11.2–667.5 at Y≈774–891 |
+| Boss portrait | **64×64** atlas texture, `Z≈0.0002`, opaque white, `RHW≈19–26` | Upper-right, right anchored |
+| Boss bar frame | **32×32** tiles, same approximate foreground depth range | Upper-right, right anchored |
+| Boss health fill | Untextured, opaque gradient, `Z≈0.0010`, `RHW≈10–17`; width varies with HP | Upper-right, right anchored; one row for Venom, two rows for Scorpion / J. Jonah Jameson |
+| Boss missing-health mask | Opaque black `0xFF000000`, untextured, `Z≈0.0007`, `RHW≈13–19`; dynamically changing width | Must use *same* right anchor as the bar/frame; a former narrow-only match left a detached black rectangle when Venom was damaged |
+
+Instruction glyph atlases measured in the source use **16×8, 16×32, 32×32 and 64×32** textures. Both dark shadow and bright foreground passes must be transformed identically or glyphs detach from their shadows/backdrops.
+
+For compass and boss right-edge UI, the adaptive horizontal transform is:
+
+```text
+x' = screen_width + (x - screen_width) * scale
+```
+
+The mission-instruction region uses the left-edge transform `x' = x * scale`. The original 4:3 mode produces no adaptive transform. At 1920×1200 the boss scale is **5/6**; at 1920×1080 compass/instructions use **0.75**. These specific coordinates are **observed samples**, not absolute thresholds that apply unchanged to every resolution.
+
+**Evidence:** Wine 1920×1080 compass/instruction traces and native Windows 11 1920×1200 boss traces, with regression cases in [`tests/test_hud_adaptive.py`](../tests/test_hud_adaptive.py). Tests additionally reject mismatched caller addresses, textures, colors, depth/RHW or region; especially **world particles** (e.g. `Z≈0.9983`, `RHW≈0.0229`) must not be modified. The observed and unit-tested signatures do not prove all bosses, levels or resolutions are covered.
+
+### 7.3 In-game ESC/pause menu: separate native 2D primitives
+
+The **original gameplay ESC overlay** is distinct from the normal HUD, although its fixes use the same `[HUD] HUDWidescreenFix` master option. It contains:
+
+- Purple options ribbon, border tiles and menu labels; original 4:3 target width approximately **1440 pixels at 1920×1080**.
+- Orange/blue translucent geometric motif, with **`Z≈0.00146`**, **`RHW≈9.988`**, alpha `0x80`, drawn over the 3D scene. Its X geometry is scaled **0.75 around display center**.
+- Violet full-screen darkening; after shrinking the motif, the two outer strips (**X 0–240 and 1680–1920**) are rendered via clipped original geometry to retain the tint across the entire 16:9 screen, rather than painting a second central overlay.
+- Red spider-shaped selector: original **96×72 quad** from a **32×32 texture**, `Z≈0`, `RHW≈27.519`. Scale its X width 0.75 **around its own center** to produce 72×72 without changing its position.
+
+These signatures operate on copied Direct3D7 vertices with gameplay/menu and resolution guards. They were **visually validated under Wine, 1920×1080 Auto, on 2026-10-24**, both for the ESC menu and **REALLY QUIT? → NO / YES**. The background game world and normal HUD remain unaffected in those tests. The motif and cursor-specific matches have **not been validated at arbitrary resolutions or on native Windows graphics drivers**. Detailed findings: [`docs/NATIVE_PAUSE_MENU_43.md`](NATIVE_PAUSE_MENU_43.md).
+
+### 7.4 Activation, validation and remaining gaps
+
+- `[HUD] HUDWidescreenFix=1` is the **current default** for the exact supported EXE. `HUDWidescreenFix=0` explicitly disables the full player/adaptive HUD transforms and the three dependent ESC corrections. Original display aspect `4:3` also disables widescreen transforms.
+- Hidden optional `[HUD]` keys `NativeESC4x3`, `NativeMotif4x3`, `NativeCursor4x3` default to 1 and can individually be set to 0 for troubleshooting; they are **not** normally generated in the INI. `NativeESC4x3=0` also disables its motif/cursor children.
+- Scoped hook installation alone (used experimentally to exclude native HUD drawing from Hor+ projection diagnostics) does **not** enable geometry correction.
+- The fixed-screen player HUD and adaptive lower-screen/boss HUD use **different native interception strategies**; do not conflate the 16 `CALL` sites with the shared D3D7 `DrawPrimitive` caller.
+- Runtime Wine captures support portrait, life/web bars, compass, instructions and boss-layout work; Windows 11 native boss traces support representative signatures. Some other HUD forms, rare in-level prompts, dynamic bosses, unusual aspect ratios and multiple display drivers still need separate screenshots and runtime verification. No full original HUD source reconstruction is claimed.
+
+Primary sources: [`hud_widescreen.c`](../hud_widescreen.c), [`hud_widescreen.h`](../hud_widescreen.h), [`hud_adaptive.c`](../hud_adaptive.c), [`hud_adaptive.h`](../hud_adaptive.h), [HUD tests](../tests/test_hud_adaptive.py), [native ESC analysis](NATIVE_PAUSE_MENU_43.md). Historical development: [HUD PR #21](https://github.com/legluondunet/SpiderMan2k1Fix/pull/21) and [native ESC PR #28](https://github.com/legluondunet/SpiderMan2k1Fix/pull/28).
+
 
 ## 8. Known validation and open questions
 
