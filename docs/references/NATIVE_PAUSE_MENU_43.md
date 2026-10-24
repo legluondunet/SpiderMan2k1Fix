@@ -33,8 +33,9 @@ The motif and selector signatures were visually calibrated at
 **1920×1200 Auto (16:10)** using the same native owner/FVF/Z/RHW and
 texture signatures. User-supplied native Windows screenshots and log
 (2026-10-24) now confirm that the new 16:10 branches execute and render;
-final subjective visual acceptance and separate Linux/Wine 16:10 regression
-are still outstanding. Other resolutions are deliberately left unchanged
+the maintainer also reports successful Windows and Wine tests with no
+regressions observed. These reports supplement, rather than replace, the
+specific Windows screenshots and logs below. Other resolutions are deliberately left unchanged
 by the motif and selector correction until the signatures are measured.
 Both are disabled in main menus and classic 4:3 gameplay.
 
@@ -118,10 +119,15 @@ together with `SpiderMan2k1Fix(20261024-202129).log`, verify:
   design feature, so a screenshot alone is not a proof of the artist's
   intended geometry.
 
-**Limitations:** only one native Windows 16:10 rendering configuration
-was captured. This does not establish 1920×1080 *nonregression*, classic
-4:3 bypass in real gameplay, or the same effect on Wine 16:10.
-The user has not yet expressly approved merging PR #47.
+**Additional maintainer validation (2026-10-24):** Windows and Wine
+runtime tests are reported **successful, with no regressions observed**.
+This closes the previously requested Windows/Wine non-regression check by
+maintainer report. The supplied screenshots and the detailed ESC draw log
+specifically document Windows at 1920×1200; no separate Wine log or
+screenshots were provided with this confirmation, so other resolutions,
+DPI setups and hardware cannot be independently certified from the files.
+
+**Merge status:** PR #47 remains unmerged pending explicit approval.
 
 **Classic 4:3 regression:** verify no additional x-compression is applied
 when `AspectRatio=4:3` is selected. Keep Bink/video/main-menu 4:3 and
