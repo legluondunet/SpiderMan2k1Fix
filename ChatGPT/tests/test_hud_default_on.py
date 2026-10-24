@@ -15,47 +15,28 @@ INIS = (
 )
 
 
-def test_missing_option_activates_hud_and_zero_is_explicit_opt_out():
-    # A missing section/key yields 1, but existing HUDWidescreenFix=0 is
-    # honored exactly (the game must not rewrite the user's existing INI).
-    assert 'option=GetPrivateProfileIntA("HUD","HUDWidescreenFix",1,ini);' in CORE
-    assert 'if (option==0) {' in CORE
-    assert 'if (option!=1) {' not in CORE
-    assert 'GetPrivateProfileIntA("HUD","HUDWidescreenFix",0,ini)' not in CORE
+def test_hud_is_permanent_on_widescreen_and_signature_guarded():
+    assert 'GetPrivateProfileIntA("HUD","HUDWidescreenFix"' not in CORE
     assert "SpiderHudWidescreen_Install(exe_verified,TRUE)" in CORE
-
-
-def test_original_four_by_three_never_installs_widescreen_transforms():
-    assert 'lstrcmpiA(display_aspect_setting,"4:3")==0 && option!=0' in CORE
-    assert 'log_line("HUD: disabled automatically for original 4:3 mode")' in CORE
-    assert 'SpiderHudWidescreen_InstallScopesOnly(exe_verified)' in CORE
-    assert "if (!SpiderHudWidescreen_Install(exe_verified,TRUE))" in CORE
+    assert "SpiderHudWidescreen_Installed()" in CORE
     assert "supported_exe()" in CORE
 
+def test_original_four_by_three_retains_native_geometry():
+    assert 'lstrcmpiA(display_aspect_setting,"4:3")==0' in CORE
+    assert "original 4:3 game geometry; widescreen correction not needed" in CORE
+    assert "if (!SpiderHudWidescreen_Install(exe_verified,TRUE))" in CORE
 
-def test_every_factory_ini_enables_hud():
-    for path in INIS:
-        contents = (ROOT / path).read_text(encoding="utf-8")
-        assert contents.count("HUDWidescreenFix=1") == 1, path
-        assert "HUDWidescreenFix=0" not in contents, path
-        assert "0 explicitly disables it" in contents, path
-
-
-def test_created_ini_and_existing_user_ini_behave_differently():
-    assert '"HUDWidescreenFix=1\\r\\n"' in GENERATOR
-    assert '"HUDWidescreenFix=0\\r\\n"' not in GENERATOR
+def test_factory_ini_exposes_no_hud_switches():
+    generated=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text()
+    assert "[HUD]" not in generated
+    assert '"HUDWidescreenFix=1\\r\\n"' not in GENERATOR
+    assert "deprecated_ini_key(e->section,e->key)" in GENERATOR
     assert "SpiderCfg_EnsureDefaultIni" in GENERATOR
-    # Existing-user values pass validation/repair and remain valid opt-outs.
-    validator = (ROOT / "ini_validation.h").read_text(encoding="utf-8")
-    assert '"HUDWidescreenFix","NativeESC4x3","NativeMotif4x3","NativeCursor4x3"' in validator
-    assert "option==0" in CORE
+    assert "HUDWidescreenFix" in (ROOT/"ini_validation.h").read_text()
 
-
-def test_logging_no_longer_calls_feature_unvalidated():
-    assert "HUD: adaptive widescreen correction enabled" in CORE
-    assert "HUD: EXPERIMENTAL native 16-site widescreen correction installed" not in CORE
+def test_native_logging_describes_permanent_hud():
+    assert "HUD: permanent widescreen correction enabled" in CORE
     assert "HUD-ADAPTIVE: strict geometry correction enabled" in CORE
-
 
 def test_obsolete_f12_hud_sampling_removed_without_touching_validated_hooks():
     # Former F12 six-frame HUD probe is no longer needed at runtime.
