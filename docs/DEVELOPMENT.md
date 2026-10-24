@@ -55,7 +55,7 @@ Analogous locations: `GetDeviceData` at `0x00501D02`, comparison at `0x00501D05`
 
 ### 3.3 Activation and Alt+Tab
 
-The original window procedure assigns the activation flag at `0x005152F8`, in the `WM_ACTIVATE = 0x0006` case. The static findings therefore suggest a **possible** failure to reacquire on `DIERR_NOTACQUIRED` after Alt+Tab. This is **not proof** that this is the failing HRESULT in every real incident, that the menu continues polling, or that a particular retry fixes the bug.
+The original window procedure assigns the activation flag at `0x005152F8`, in the `WM_ACTIVATE = 0x0006` case. The static findings therefore suggest a **possible** failure to reacquire on `DIERR_NOTACQUIRED` after Alt+Tab. This alone does not prove the failing runtime HRESULT. **Separately, native Windows 11 WinDbg did observe persistent `DIERR_NOTACQUIRED (0x8007000C)` at both keyboard `0x00501BC3` and mouse `0x00501D02` GetDeviceData sites**; see [Windows viewport/WinDbg diagnostic](../WINDOWS_VIEWPORT_DIAGNOSTIC.md). That capture did **not** timestamp each error against foreground/background focus or prove that any proposed retry fixed the main menu.
 
 An experimental branch-native `DIERR_NOTACQUIRED` retry exists in `input_notacquired_retry.c`. Historical analysis describes it as **off by default**, opt-in using `SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY=1`; it patches only signature-matched branches and attempts to reuse the game's own Acquire/retry code. It was not thereby validated as a general solution. An earlier experimental COM vtable wrapper produced `E_INVALIDARG` under Windows 11. **Do not enable either experiment by default or infer runtime success from static analysis.**
 
@@ -194,7 +194,141 @@ These signatures operate on copied Direct3D7 vertices with gameplay/menu and res
 Primary sources: [`hud_widescreen.c`](../hud_widescreen.c), [`hud_widescreen.h`](../hud_widescreen.h), [`hud_adaptive.c`](../hud_adaptive.c), [`hud_adaptive.h`](../hud_adaptive.h), [HUD tests](../tests/test_hud_adaptive.py), [native ESC analysis](NATIVE_PAUSE_MENU_43.md). Historical development: [HUD PR #21](https://github.com/legluondunet/SpiderMan2k1Fix/pull/21) and [native ESC PR #28](https://github.com/legluondunet/SpiderMan2k1Fix/pull/28).
 
 
-## 8. Known validation and open questions
+## 8. Additional recovered native functions and structures — full repository audit
+
+This section inventories **previously missing positively identified functions, branches and data layouts** in the SHA-verified original EXE. It is based on repository code and historical static/runtime records, **not on a new independent disassembly of the copyrighted EXE**. All addresses below are **VA**, except where expressly marked RVA. Experimental patch code and observed game code are kept distinct.
+
+### 8.1 Main controller, request dispatch and original cleanup
+
+| Game address | Recovered original function |
+| --- | --- |
+| \`0x00455C90\` | Main startup controller; calls video owner \`0x00470750\` four times at \`0x00455CF1\`, \`0x00455CFE\`, \`0x00455D0C\`, \`0x00455D1A\` |
+| \`0x00455D23 → 0x00443AD0\` | Original post-movie transition/cleanup; the callee optionally launches a further movie at \`0x00443BE7\` using pending ID \`[0x0054F570]\`, then clears it |
+| \`[0x0060CFA4]\` | **Next transition request**, not a continuous current-scene identifier |
+| \`0x00455F24\` / \`0x00455F56\` | Reads/dispatches transition request via original **11-entry** jump table \`0x00456274\` |
+| \`0x00456185\` / \`0x00456198 → 0x0048A820\` | Request-7 controller path and native controller finalization |
+| \`[0x02E0988C]\` / \`[0x00568FB0]\` | Game flags and status consulted during controller-7 exit; neither is by itself a universal quit signal |
+| \`0x00455E50\` / \`[0x0060CF88]\` | Native Quit-byte test; can be bypassed by upstream branches at \`0x00455DC8\` and \`0x00455DD0\` |
+| \`0x00455D98\` / \`0x0045620C\` | Controller loop continuation / final cleanup path |
+| \`0x004E5C10\` / \`[0x006B4C9C]\` | Countdown processing, **not** an active scene identifier |
+
+Confirmed **writers** to the request field include \`0x0044108A\` (7), \`0x0044174E\` (8), \`0x00441A92\` (6), \`0x00441D00\` (3), \`0x0047BE6F\`/\`0x0047BE7B\`/\`0x0047BE87\` (7/10/8), \`0x004B28B3\` (2), \`0x004B297B\` (8), \`0x004BD2DC\` (7), \`0x004BE027\` (2) and \`0x004E28BE\`/\`0x004E28CA\` (9/3). The **write action** is known, but most writers' higher-level scene identities are **not**. Do not relabel all 11 dispatch actions as scenes. Detailed disassembly and transition table: [F12 native shutdown research](F12_NATIVE_SHUTDOWN.md).
+
+### 8.2 Shell_MainMenu and the two original startup still screens
+
+| Game address | Recovered original behavior |
+| --- | --- |
+| \`0x00493990\` | Native \`Shell_MainMenu\` entry; native frame callback \`0x00493DD6\` calls \`0x00505720\` |
+| \`0x004E5D60\` | **Clock busy-wait**: polls game clock \`[0x006B4CA0]\` until increment has elapsed |
+| \`0x0049415B\`, \`0x0049416F\` | Conditional and unconditional calls to that clock wait in the original menu loop |
+| \`0x00494209\` | Additional native clock wait as the menu processes a selection / exits |
+| \`0x004941D5\` | Original menu Quit/selection cleanup, action 18 in slot 3 |
+| \`0x004A1FE7 → 0x004A1930\` | Timed opening still page, using native clock, frame counter \`[0x0060CFA8]\`, one-time marker \`[0x006A7785]\` and original object/SEH cleanup |
+| \`0x004A2006 → 0x004A17A0\` | Subsequent native **input-wait** page; polls \`0x0050C180\` at \`0x004A1896\`, proceeds to native page cleanup at \`0x004A18AE\` |
+| \`[0x0054D38C]\` | Startup transition variable; 1→0 observed between still-page stages |
+
+Read-only menu fields \`[0x00682948]\` (context), \`[0x006828D0]\` (stage) and \`[0x0068293C]\` (dispatcher) were identified, but **none alone identifies which still is actually visible**. A 3.659-second gap between menu frame callbacks was observed; the specific clock-stall cause was **not conclusively established**. The initial-menu wait workaround was tested in a debug configuration, not independently validated across every release. Source: [native startup research](F12_NATIVE_SHUTDOWN.md) and [historical debug menu timing](F12_DEBUG_TEST_MODE.md).
+
+### 8.3 New Game comic and native Bink playback
+
+| Game address | Recovered original behavior |
+| --- | --- |
+| \`0x004E0461 → 0x00427910\` | Script interpreter invokes the New Game comic owner |
+| \`0x0042796D → 0x004151D0\` | Supplies literal **L1COV.bmp** (\`0x00549214\`) to the original image setup |
+| \`0x00427983\` / \`0x004279B8\` | Saves initial game clock / reads current clock |
+| \`0x004279BE\` / \`0x004279C0\` / \`0x004279C6\` | Subtracts start, compares with **\`0x12C = 300\` clock ticks**, branches on elapsed time |
+| \`0x004279F9 → 0x004279FB\` | Pushes **Bink video ID 4** and calls native \`0x00470750\`; return site \`0x00427A00\` |
+| \`0x00470750\` | Shared game-native Bink video owner; **30 direct callsites** across startup and scripted sequences, not a dedicated New Game method |
+| \`0x0047081D\`, \`0x0047085F\` | Calls to Bink frame tick \`0x0050B5A0\` |
+| \`0x00470835\` / \`0x0047084E\` | Native input/frame update, then skippable movie input \`0x0050C180\` (after 60 iterations and only if skip allowed); mask **\`0x07000000\` = Enter/Esc/Space** |
+| \`0x00470871 → 0x0050B790\` | Original Bink cleanup and handoff; playback exit **does not imply process exit** |
+| \`[0x006151F8]\` / \`[0x00AC0BA4]\` | Movie-active flag / Bink video handle, not universally sufficient to identify owner |
+
+The **original script interpreter resumes after Bink**: \`0x004E0466\` advances its operand and \`0x004E2B3F\` dispatches the next scene opcode. Static caller grouping also identifies startup calls, optional nested \`0x00443BE7\`, UI/sequence caller \`0x0049D654\` and 24 scripted callers \`0x004279FB\`–\`0x00427D8A\`. **Do not assume every caller has the same owner or exit cleanup.** An earlier trace's apparent huge movie ID was an overwritten floating-point temporary; the real New Game movie argument is **4**.
+
+Sources: [Bink assembly and Windows 11 parent trace](F12_NATIVE_SHUTDOWN.md), [script debugging](F12_DEBUG_TEST_MODE.md).
+
+### 8.4 DIK input path, 3D action mapping and real CutSceneScript interpreter
+
+| Game address | Recovered original function or field |
+| --- | --- |
+| \`0x0045553B → 0x00440EF0\` | Native 3D game/input update; shared by scripted intro and playable gameplay |
+| \`0x00440F34\`, \`0x00440F77\`, \`0x00440F8E\`, \`0x00440FAF\`, \`0x00441606\` | Original \`0x0050C180\` input calls with different native masks; not five separate scene types |
+| \`0x0050A650\` / \`0x00501CB0\` | Original DIK polling helper and raw buffered keyboard reader |
+| \`[0x006B792C+DIK]\` / \`[0x006B7965]\` | Game's keyboard-state buffer and \`DIK_SPACE=0x39\` slot; \`0x00501C87\` writes 0xFF on key-down; \`0x00501C8F\` writes 0x80 on key-up |
+| \`0x00505720 → 0x0050A190\` | Game frame update and key-to-action converter; mapping array \`0x00568398\` |
+| \`0x005058A5 → 0x00479540\` | Original **action 0x10** transition, state at \`[0x00661200]\`: held, just-pressed, early and counters. In tested keymap, Space maps to 0x10 |
+| \`0x00455427\`, \`0x00455444\` | Original direct Space release/press gate; guarded by bit 0x100 at \`[0x02E0988C]\`. **Not** proven to own the two New Game scene skips |
+| \`0x004E1485 → 0x004BC1A0\` | \`CutSceneScript\` interpreter: sets manager \`+0x1AC\` context, \`+0x1B4\` active, \`+0x1B8\` script IP and resets \`+0x1A4\` skip permission |
+| \`0x004E14A5\` (related cases \`0x004E14C3\`/\`0x004E14D9\`) | \`CutSceneSkipAllow(%i)\` updates original manager \`+0x1A4\` |
+| \`0x004C6654\`, \`0x004C665C\` | Original scene update checks context and skip permission |
+| \`0x004C66A6\` / \`[0x0060CFC4]\` | Sends original one-byte native skip request; \`0x004BC3E0\` consumes it and performs scene cleanup |
+| \`0x004BC3EF\`, \`0x004BC4A2\`/\`0x004BC4AF\` | Original script-active clearing and \`CutSceneEndScript\`; \`0x004BC17E\` clears skip request for next script |
+| \`[0x006A9038]\` | Pointer to the original cinematic script manager; observed in **two distinct** New Game 3D script lifetimes |
+| \`0x004DE890\`, \`0x004DE8B0\`, \`0x004DE8D0\` | Original event list clear/test/search; head \`[0x006B4708]\`, hash buckets \`0x006B4214\`, node fields \`+4\` triggered, \`+5\` pending, \`+0x0C\` ID, \`+0x14\` next |
+
+Live Wine traces positively distinguish **first Stan Lee CutSceneScript**, **second separate CutSceneScript**, and **playable 3D**. The original skip permission is granted independently during each script. Space/action 0x10 can skip a cutscene **or perform Jump in gameplay**; it does not prove script ownership. Actor controller \`[0x0056F3B8]+0x2A0\`, phase \`[0x005FAECC]\`, the generic event list and HUD appearance were considered **insufficient as scene discriminators**. The inspected first 12 event nodes were unchanged; this does not prove the full list is inert.
+
+Source: [six-stage lifecycle and input disassembly](F12_DEBUG_TEST_MODE.md), [F10 validation](F10_VALIDATION_MATRIX.md).
+
+### 8.5 Original gameplay ESC/pause and 3D cleanup owners
+
+- \`0x00455549 → 0x0047BC40\`: native per-game-frame **ESC pause-option handler**, with context \`[0x00682950]\` and option menu \`[0x00682968]\`. Its original action choices are **0 retry**, **1 quit to training**, **2 quit to main menu**; an additional menu pointer is at \`[0x00682960]\`.
+- \`0x00455A8B → 0x00455400\`: original 3D tick. When the pending controller request triggers owner cleanup, it reaches \`0x00455BF3\` and \`0x00455BF9 → 0x004302D0\`.
+- Top-level controller-7 completion at \`0x00456198 → 0x0048A820\` must check native exit conditions. Request **7 is not a universal “quit now” command**.
+- Original in-game ESC rendering and its primitives are separately cataloged in **§7.3**. Our **focus-loss pause experiments** are not part of the game's original pause-menu mechanism, and past stability problems preclude treating them as validated.
+
+### 8.6 Recovered binary layout of Spidey.cfg (252 bytes)
+
+[\`virtual_spidey_cfg.c\`](../virtual_spidey_cfg.c) records the original 252-byte configuration layout recovered from factory data and game setting changes. The **INI and virtualized file I/O are our fix**, not original executable features.
+
+| Original byte offsets | Meaning |
+| --- | --- |
+| \`0x00\`, \`0x04\`, \`0x08\` | Little-endian 32-bit resolution width, height, color depth |
+| \`0x0C\` | Brightness 0..9 |
+| \`0x14\` through \`0x3C\` step 4 | **11 DIK keyboard bindings**: Up, Down, Left, Right, Jump, Kick, Punch, Web, Aim, Zipline, Swing |
+| \`0x50\` through \`0x68\` step 4 | **7 joystick button bindings**: Jump, Kick, Punch, Web, Aim, Zipline, Swing |
+| \`0xEC\` | Music/SFX volume, 0..\`0x3FFF\` |
+| \`0xF0\`, \`0xF4\` | Movie volume / voice volume, 0..255 |
+| \`0xF8\` | Mono=1 / stereo=0 |
+
+Joystick movement bytes **\`0x40\`–\`0x4C\` remain undecoded**; unknown fields should be preserved verbatim through \`[Internal] RawHex\`, not relabeled.
+
+### 8.7 Original Display menu branches and a tentative FOV scalar
+
+The game's **Display option-selection** code at **RVA \`0x0010DD19\`** (VA \`0x0050DD19\`) handles **0 screen size, 1 color depth, 2 brightness**. The **original print-time field reads** are **RVA \`0x0010DB3F\` (height)**, **\`0x0010DB44\` (width)**, **\`0x0010DBAA\` (depth)**; all four are exact-signature checked in [\`display_menu_lock.c\`](../display_menu_lock.c), without changing the real renderer's surface pixel format. The 32bpp policy is a **patch decision**, not an original hardware limitation.
+
+The aspect-related [\`fov_aspect_win.c\`](../fov_aspect_win.c) experiment uses original float scalar **RVA \`0x00150064\`** (VA \`0x00550064\`), default bits \`0x3F800000\` (1.0). **Do not call this a calibrated camera-FOV-in-degrees location**: the camera baseline and actual degree conversion were not established. Original menu/title rendering uses D3D7 **caller RVA \`0x00103389\`**, distinct from gameplay/HUD/comic **caller RVA \`0x00102C72\`**.
+
+The game-owned 2D comic art includes a **512×256 texture**, displayed with V span **0..240/256**. This signature supports the [\`comic_native.c\`](../comic_native.c) centered 4:3 correction, rather than proving every comic/image source uses that format.
+
+### 8.8 Bink and DirectSound audio internals (focus research, not a stable pause claim)
+
+| Native function/data | Understood meaning |
+| --- | --- |
+| \`0x0050BDD0\`, \`0x0050BDE5\`, IAT \`0x0053B210\` | Original game \`_BinkPause@8\` call |
+| \`[0x00AC0BA4]\`, \`[0x00AC1020]\`, \`[0x00AC101D]\` | Video handle, separate audio-only Bink music handle, and game's existing audio pause state |
+| \`0x005039F0\`, \`[0x006BBD50]\` | Initializes original **32 DirectSound voice records of 12 bytes** |
+| \`0x00504110\` | Duplicates game-owned secondary voice buffers |
+| \`0x00504230\`, \`0x005042A0\` | Native voice play and stop |
+| \`[0x006BBF1C]\` | Original primary sound buffer, excluded from individual-voice manipulation |
+| \`[0x006B7920]\` / \`[0x006B7924]\` | Read-only DirectSound device/primary candidates in diagnostics |
+
+The patch's optional synchronized focus-pausing reused these **original APIs and data structures**. The original engine ownership is mapped, but the focus pause experiment was **not proven generally reliable**. Sources: [focus audio/video diagnostics](../FOCUS_AUDIO_VIDEO_SYNC_TEST.md), [Bink focus module](../focus_media_pause.c), [DirectSound voice module](../focus_dsound_pause.c).
+
+### 8.9 Original F9 screenshot path and statically linked CRT fault
+
+- Native F9 already polls **\`DIK_F9=0x43\`**, with approximately **500 ms debounce**, then calls its **BMP writer** at **RVA \`0x0010A1DC\` / \`0x0010A62B\`** (VA \`0x0050A1DC\` / \`0x0050A62B\`). The fix's PNG dispatch replaces only these verified call instructions; it does not create the original keyboard binding.
+- Original screenshot readback from DirectDraw **PRIMARY** uses **Lock caller RVA \`0x001034D4\`** and **Unlock caller RVA \`0x00103537\`**. The fix distinguishes the native primary and the completed backbuffer for borderless frame capture; that is a targeted screenshot observation, not a rule for all DirectDraw operations.
+- An original statically linked CRT **\`fclose(FILE*)\`** starts at **RVA \`0x0012A7FC\`**, according to the Windows crash/disassembly audit. The actual fault at **VA \`0x0052A805\`** received a **NULL \`FILE*\`** from game caller **\`0x005186F8\`**. The invalid call is documented, but **what caused NULL remains unknown**. The defensive VEH workaround was experimental. See [Windows crash research](../WINDOWS_VIEWPORT_DIAGNOSTIC.md).
+
+### 8.10 Explicit unknowns and coverage boundary
+
+Do not turn the following into “understood functions”: most 11-mode dispatch action *scene labels*, all event-node semantic meanings, all actor states, unobserved level-specific cutscene systems, complete 3D projection/FOV in degrees, the underlying reason for \`fclose(NULL)\`, why Alt+Tab loses input, missing joystick-axis bytes, exact cause of the temporary yellow frame, or as-yet-unclassified HUD primitives.
+
+**Completeness means:** all **functionally identified findings located in the current repository's source and research documents** were compared during this audit, with the major previously missing address/data groups now indexed here. It **does not** mean the game has been fully decompiled or every unpublished past GDB observation can be recovered. The retail EXE is not included in the repository, so this audit did not re-disassemble it byte for byte.
+
+## 9. Known validation and open questions
 
 | Area | Evidence | Boundary |
 | --- | --- | --- |
@@ -207,7 +341,7 @@ Primary sources: [`hud_widescreen.c`](../hud_widescreen.c), [`hud_widescreen.h`]
 
 Automated tests confirm signatures and code properties; **they do not prove game runtime behavior**. Keep Wine and Windows 11 regressions distinct, and record exact commit/build, INI, original EXE hash, diagnostic log, steps to reproduce and whether the process actually exits or returns to the menu.
 
-## 9. Research references and next steps
+## 10. Research references and next steps
 
 Repository sources:
 - [DirectInput static audit](../DIRECTINPUT_STATIC_ANALYSIS.md)
