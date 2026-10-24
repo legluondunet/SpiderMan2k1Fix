@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — permanent fixes and compact player INI (PR #46)
+
+- Keep `[Display] FPSLimit=30` visible and editable by players (`0` disables, `1..240` target FPS). Retain editable `AspectRatio`, `Brightness`, `KeyboardLayout`, audio and original game bindings.
+- Make native desktop borderless output, automatic FOV, widescreen HUD/native ESC geometry, comic/intro 4:3 handling, game Display menu lock and cursor focus restoration permanent when supported native signatures match.
+- Enable confirmed Alt+Tab pause with any-key resume, native keyboard/mouse DIERR_NOTACQUIRED recovery at Flip #120, Bink video/music synchronization, and game-owned secondary DirectSound voice pause as built-in compatibility behavior. Use a fixed 50%-dimmed native PAUSED ribbon, no grid.
+- Automatically request Windows process ghost-window suppression where the API exists to avoid false focus changes. This disables the OS's ghost UI for actual hangs and therefore requires Windows/Wine regression testing before merging.
+- Generate only player-facing settings (plus required `[Internal] RawHex`). A legacy INI with obsolete switches is backed up and atomically normalized through the existing validation/recovery pipeline, preserving FPS, display aspect/brightness, controls, audio, joystick and `RawHex`.
+- Do **not** promote unsafe DirectInput COM hook experiments, HorPlus or blanket video AnySize remapping. Those remain disabled, with existing SHA/signature guards unchanged.
+- Update first-run fixtures, tests, README and configuration reference. This PR remains experimental until user gameplay acceptance on Windows 11 and Linux/Wine.
+
 ## Unreleased — automatic keyboard layout (Auto/Off)
 
 - Document the native CHEATS call chain, exact x86 addresses, Windows APIs, signature verification, safe fallback and test results in [`docs/references/KEYBOARD_LAYOUT_TECHNICAL.md`](docs/references/KEYBOARD_LAYOUT_TECHNICAL.md).
