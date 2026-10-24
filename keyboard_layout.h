@@ -18,7 +18,7 @@ static const unsigned char spider_us_letter_scans[26]={
   0x31,0x18,0x19,0x10,0x13,0x1F,0x14,0x16,0x2F,0x11,0x2D,0x15,0x2C
 };
 
-static int SpiderKeyboard_ValidateMap(const unsigned host_scans[26],
+static inline int SpiderKeyboard_ValidateMap(const unsigned host_scans[26],
                                        unsigned char output_scans[26]) {
   unsigned i,j;
   for(i=0;i<26;i++) {
@@ -30,7 +30,7 @@ static int SpiderKeyboard_ValidateMap(const unsigned host_scans[26],
   return 1;
 }
 
-static unsigned SpiderKeyboard_MapLetter(SpiderKeyboardLayout mode,
+static inline unsigned SpiderKeyboard_MapLetter(SpiderKeyboardLayout mode,
                                          char uppercase_letter,
                                          unsigned physical_dik,
                                          const unsigned char scanned_letters[26],
