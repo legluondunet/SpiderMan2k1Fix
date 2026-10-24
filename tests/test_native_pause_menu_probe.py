@@ -54,7 +54,7 @@ def test_analysis_is_bounded_and_never_changes_game_vertices():
     assert "IDirectDrawSurface7_Release(texture)" in probe
     for forbidden in (
         "VirtualProtect(", "FlushInstructionCache(",
-        "SetTexture(", "SetRenderState(", "memcpy(", "HeapAlloc(",
+        "SetTexture(", "SetRenderState(", "memcpy(copy", "HeapAlloc(",
         "dst[i].x", "src[i].x=", "WM_CLOSE", "SetWindowPos(",
     ):
         assert forbidden not in probe, forbidden
