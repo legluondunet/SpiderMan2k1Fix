@@ -2,6 +2,7 @@
 
 ## Unreleased — permanent fixes and compact player INI (PR #46)
 
+- Replace numbered INI `.old` copies with a single rolling `SpiderMan2k1Fix.ini.old`: recover known-good settings, validate the rebuilt file before renaming, overwrite any older backup and roll back on failed installation. Delete obsolete numbered backups after a successful repair.
 - Keep `[Display] FPSLimit=30` visible and editable by players (`0` disables, `1..240` target FPS). Retain editable `AspectRatio`, `Brightness`, `KeyboardLayout`, audio and original game bindings.
 - Make native desktop borderless output, automatic FOV, widescreen HUD/native ESC geometry, comic/intro 4:3 handling, game Display menu lock and cursor focus restoration permanent when supported native signatures match.
 - Enable confirmed Alt+Tab pause with any-key resume, native keyboard/mouse DIERR_NOTACQUIRED recovery at Flip #120, Bink video/music synchronization, and game-owned secondary DirectSound voice pause as built-in compatibility behavior. Use a native PAUSED ribbon with default 60% shading (configurable 0–90% via optional `PauseDimOpacity`); remove grid rendering and retire `PauseGrid`.
