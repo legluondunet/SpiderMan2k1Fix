@@ -218,6 +218,88 @@ These signatures operate on copied Direct3D7 vertices with gameplay/menu and res
 Primary sources: [`hud_widescreen.c`](../hud_widescreen.c), [`hud_widescreen.h`](../hud_widescreen.h), [`hud_adaptive.c`](../hud_adaptive.c), [`hud_adaptive.h`](../hud_adaptive.h), [HUD tests](../tests/test_hud_adaptive.py), [native ESC analysis](NATIVE_PAUSE_MENU_43.md). Historical development: [HUD PR #21](https://github.com/legluondunet/SpiderMan2k1Fix/pull/21) and [native ESC PR #28](https://github.com/legluondunet/SpiderMan2k1Fix/pull/28).
 
 
+### 7.5 Original graphics capabilities and exclusive fullscreen limits
+
+The stock executable uses **DirectDraw 7** to create/present video surfaces and **Direct3D 7** to render 3D and a substantial part of the **2D UI**; its early-2000s original display path used **exclusive fullscreen**, not a borderless desktop-size window. These are **original-game behaviors** as reconstructed from the source-level interceptions and original runtime mode requests.
+
+| Original game behavior / evidence | What is established, and what is not |
+| --- | --- |
+| **Original fullscreen ownership** | Original code requests a DirectDraw **exclusive/fullscreen cooperative mode**, switches the **physical video mode** with `IDirectDraw7::SetDisplayMode`, and sets up a flipping primary surface with `DDSCAPS_PRIMARYSURFACE | DDSCAPS_FLIP` and a backbuffer. The patch intercepts these native COM calls; their **exact original call instructions/VA**, and a complete enumeration of device capabilities, are not yet disassembled here |
+| **Original menu's logical render mode** | The game issues a **640×480, 16-bpp** mode request for menus/early 2D. Its own menu/2D drawing space is 640×480. This was **observed directly at the DirectDraw boundary** and was a modern-monitor black-screen trigger under original exclusive handling |
+| **Original game configuration** | The retail `Spidey.cfg` factory record starts with **width 640, height 480, color depth 16** (little-endian DWORDs `0x00/0x04/0x08`); the game's native Display submenu also exposes changing resolution, color depth and brightness (§8.6–8.7) |
+| **Gameplay mode / depth** | Gameplay calls the same underlying mode-switching APIs with a game-configured logical width/height; our fix **forces 32-bpp** and skips physical mode switches. **Do not retroactively describe the retail game's 32-bpp support as its sole original bit depth** |
+| **Original resolution menu** | The native menu can select a mode, but **the complete original selectable-mode table or display-driver enumeration has not been recovered**. Only **640×480** is securely established as a default/legacy original request in these records. Historical 1400×1050, 1440×1080 or 1920×1080 displays under our compatibility layer are **not proof** of those modes appearing in the retail selection list |
+| **UI aspect / pixels** | Menus and overlays use 4:3-origin coordinates, while videos include observed source frames **640×480**, **320×240** and **320×192**. Those are **media source/frame dimensions**, not selectable 3D display modes |
+
+**Native exclusive-mode limitations:** the original engine assumes it owns the physical display's resolution/format and a flipping-primary presentation arrangement. Under modern monitors/Wine this produced an unsupported 640×480/16-bpp display, stretching of 4:3 art, and an exclusive-fullscreen Alt+Tab crash in prior observations. These are observed compatibility problems, **not evidence that Direct3D7 cannot draw higher-resolution imagery**. Rendering menu sprites at 640×480 and changing monitor mode are separate concerns.
+
+**Our patch-owned replacement, not native functionality:** `spiderman2k1fix.c` intercepts `SetCooperativeLevel` and forwards **`DDSCL_NORMAL`**, acknowledges the game's legacy `SetDisplayMode` without changing the monitor, substitutes a **windowed PRIMARY plus offscreen render/backbuffer** for the original exclusive flip chain, and presents by **Blt** inside a borderless desktop-size window. The UI's 640×480 logical coordinates map into the centered 4:3 region. `display_policy.c` accepts a broad range of user-supplied logical resolutions for the **fix** (not a proven stock-mode list), locks game settings to 32 bits and supports an internal centered 4:3 canvas. The original game EXE is unchanged on disk.
+
+**Source references:** [`spiderman2k1fix.c`](../spiderman2k1fix.c) (`hooked_set_cooperative_level`, `hooked_set_display_mode`, `hooked_create_surface`, `hooked_flip`), [`spidey_cfg_template.h`](../spidey_cfg_template.h), [`display_menu_lock.c`](../display_menu_lock.c), [`display_policy.c`](../display_policy.c). Precise original resolution-enumeration routine/addresses remain a future reverse-engineering task.
+
+### 7.6 Original ESC menu: purple ribbon, bitmap-textured border and red selector
+
+The **actual ESC gameplay pause UI** is a D3D7 overlay created **by the original game**, different from our optional **Alt+Tab PAUSED screen** drawn with Win32 GDI in `pause_surface.c`. The original ESC scene contains **separate draw calls** for banner, border, text, motif/tint and cursor; a single global screen bitmap does not account for the traced geometry.
+
+| Original ESC element | Specific recovered graphical evidence |
+| --- | --- |
+| **Violet-blue main ribbon** | **Untextured**, four-vertex D3D7 triangle fan `FVF=0x144` (28-byte XYZRHW/diffuse/UV vertex); diffuse **ARGB `0x7F3232A0`** (alpha 0x7F; R=0x32 G=0x32 B=0xA0). Original representative bounding box at **1440×1080**: **X −5.6..1442.8, Y 400.5..675.0** |
+| **Really Quit? confirmation ribbon** | Same general UI mechanism, but different vertical extent, approximately **Y 432..634** in the measured 1920×1080 Auto recording |
+| **Decorative frame** | **Eight textured quadrilaterals:** two horizontal strokes, two vertical sides and four corners. The renderer binds native **8×8 textures**. A representative draw sequence is **3173–3180**, but draw sequence numbers are per capture, **not stable original addresses**. Color/detail pixels inside the original 8×8 textures and corresponding precise file names **have not been recovered** |
+| **Text** | Separate quads for bitmap-font glyphs, mostly texture dimensions **16×32, 32×32 or 64×32**, and characteristic `Z≈0.00098,\ RHW≈12.686` (foreground) or `Z≈0.00122,\ RHW≈11.176` (related pass). Samples include **PAUSED** near Y≈171, **REALLY QUIT?** near Y≈283 and native option labels near Y≈436/508/580 or Y≈468/540; these are **measured output geometry**, not source-line numbers |
+| **Red spider selector** | Original **32×32 bound texture**, drawn as a **96×72** sprite quad at **Z≈0, RHW≈27.519**, diffuse white `0xFFFFFFFF`; its position legitimately moves anywhere across the screen. The patch corrects width to 72 at 1920×1080 by transforming only X around the quad's center. Historical archive candidate: **`lti/cursor.bmp`**, but that filename's direct connection to the live 32×32 ESC texture has **not been proven** |
+| **Native dim/tint** | Additional original untextured translucent geometry, potentially spanning beyond the central ESC UI. The patch clips/replays the original geometry in the 240-pixel lateral margins at 1920×1080 to preserve screen-wide tint |
+
+**Distinguish bitmap resources from GPU textures:** eight small **8×8 GPU-bound textures** were observed at the original border draws; their source **might** be BMP files or data packed inside an archive/resource, but no specific BMP↔border-texture mapping is established. Likewise, the 32×32 ESC selector texture size does not prove the on-disk filename. The fix's **independent** Alt+Tab GDI pause ribbon only **approximates** the original border using colored lines, with `Arial Black` fonts and the original icon extracted from `SpideyPC.exe`—these are not the retail ESC artwork files.
+
+Original D3D7 identification is guarded on the native draw **caller RVA `0x00102C72`** (VA `0x00502C72`), `D3DPT_TRIANGLEFAN`, four vertices, `FVF `0x144`, texture presence/dimensions, depth, RHW, same-Flip banner ownership and native game mode. At 1920×1080 the goal is original centered **1440×1080** art with **240-pixel margins**; screen X maps about display center `x' = 960+(x-960)*0.75`. The panel/border use **small experimentally calibrated** corrections at 1920×1080 after that mapping. Preserve Y, depth, UV and game memory. [Native ESC study](NATIVE_PAUSE_MENU_43.md).
+
+### 7.7 How the original orange-and-blue spider-shaped backdrop is drawn
+
+The motif is **not a large BMP pasted behind the ESC menu**. Previous original D3D7 tracing identified **eight distinct large, symmetric/mirrored, untextured quadrilaterals**, with original vertex winding/ordering variations. A representative original diffuse **ARGB `0x80868620`** (alpha `0x80`) and the recovered rendering-state sample `source blend=1, destination blend=4` are characteristic of that observed pass. That blend state is **not ordinary SRCALPHA/INVSRCALPHA blending**; together with the colored primitives it produces a translucent/multiplicative-looking overlay. A blue/darker companion and native full-screen dimming use related geometry; individual pass ownership must not be guessed from a color alone.
+
+**Exact executable draw signature:** `caller RVA 0x00102C72` (`VA 0x00502C72`), non-indexed **four-vertex** `D3DPT_TRIANGLEFAN`, `FVF 0x144`, **no stage-0 texture**, `Z≈0.00146`, `RHW≈9.988`, vertex diffuse alpha `0x80`. Motif quads must also have plausible 2D on-screen bounds and must **not** be classified as 3D scenery (commonly caller `RVA 0x00103389` with different textures/depth), thin HUD rules, the purple band or cursor.
+
+**Vertex layout and exact coordinate status:**
+
+```c
+// Original D3D7 28-byte transformed/lit vertex interpretation
+struct SpiderMenuVertex {
+    float x;          // +0x00 : screen X
+    float y;          // +0x04 : screen Y
+    float z;          // +0x08 : normalized depth
+    float rhw;        // +0x0C : reciprocal homogeneous W
+    uint32_t diffuse; // +0x10 : ARGB
+    float u;          // +0x14 : texture U (unused by motif)
+    float v;          // +0x18 : texture V (unused by motif)
+};
+```
+
+The eight quads' **complete original per-vertex `(x,y)` coordinates are not preserved in the current repository or its summarized development notes**. Historical capture discussions confirm that coordinates were collected in a separate diagnostic log, but those original logs/vertices are **not present in the GitHub project snapshot audited**. Therefore, **do not invent 32 point pairs** or treat the patch's *recognition bounds* as the eight original vertex lists. Original panel bounds **X −5.6..1442.8/Y 400.5..675** (§7.6) are **the banner**, not the spider motif's vertex coordinates.
+
+What **is** exact in our patch: on a **1920×1080 Auto** image the original motif's matching four vertices are **copied, then only X changes** with `x' = 960 + (x-960) * 0.75`; Y, Z, RHW, diffuse and UV remain identical. Its native full-width tint is preserved by splitting the original triangle fans into triangles and clipping against **X=240** and **X=1680**, interpolating original Z, RHW, color and UV in the two outer gutters **X 0..240** and **1680..1920**. No new large spider bitmap was generated, and the world is left alone. The live classifier is in [`spiderman2k1fix.c`](../spiderman2k1fix.c), `maybe_correct_native_motif43()` and `native_motif43_restore_gutters()`. The original individual vertex coordinates can be reliably recovered **only by rerunning an original-vertex trace before our transformation** and recording all four XY pairs for each of eight unique quads, with their full diffuse/color/render-state and draw phase.
+
+### 7.8 Original game fonts, known bitmap resource paths and confidence
+
+**Font machinery recovered in the [partial PC decompilation](https://github.com/krystalgamer/spidey-decomp):**
+
+- [`mess.cpp`](https://github.com/krystalgamer/spidey-decomp/blob/master/mess.cpp) implements **`Mess_LoadFont` → `FontManager::LoadFont`**, **`Mess_SetCurrentFont` → `FontManager::GetFont`**, **`Mess_DrawText` → `Font::draw`**. The selected font, drawing scale, justification, top/bottom tint and text/shadow colors are stateful, not a call to Windows `TextOut`.
+- [`FontTools.cpp`](https://github.com/krystalgamer/spidey-decomp/blob/master/FontTools.cpp) decodes a **font's character count, per-glyph width/height/baseline/slice width, 16-color palette (CLUT) and glyph image data** from the font buffer. It constructs per-character **`SlicedImage2`** graphics, then packs them into the game’s texture system. The glyphs are therefore **bitmap/texture-based**, rather than ordinary TrueType glyph rendering. Some unrelated `Font::draw` portions are not reconstructed in that partial decompilation.
+- [`pshell.cpp`](https://github.com/krystalgamer/spidey-decomp/blob/master/pshell.cpp) selects `sp_fnt00.fnt` for normal text, `sp_fnt02.fnt` for small/instructional text and `font_big.fnt` for big text. [`shell.cpp`](https://github.com/krystalgamer/spidey-decomp/blob/master/shell.cpp) loads `font_big.fnt`, `sp_fnt02.fnt`, `sp_fnt03.fnt` during shell initialization. The original [`front.cpp`](https://github.com/krystalgamer/spidey-decomp/blob/master/front.cpp) contains `PrintPaused(): Mess_SetScale(256); Mess_SetRGB(0x7F,0x19,0x21,0); Mess_DrawText(256,50,"Paused",0,0x1000)`. This gives an **original game-level text rendering function**, not proof that this call renders every menu glyph in precisely the same context.
+- Original 1920×1080 ESC traces show **textured quad glyphs** with differing atlas dimensions and depth/RHW (§7.6). Both the per-character texture work and drawn glyph passes need their X-coordinate adjustment to preserve 4:3 typography in widescreen. The existing [`hud_widescreen.c`](../hud_widescreen.c) and native-ESC matcher implement scoped glyph fixes, rather than changing `.fnt` files.
+
+**Resource container vs directories:** previous project archive investigations identified original assets **inside the game's `data.pkr` archive**, with reported *internal* paths/names such as:
+
+| Earlier archive inventory / candidate | Interpreted content | Confidence / limitations |
+| --- | --- | --- |
+| `data/sp_fnt00.bmp` … `data/sp_fnt03.bmp` | Related bitmap font artwork candidates | Reported from earlier asset inventory, **not reopened/byte-verified during this audit**; cannot assume these BMPs are loaded instead of the actual `.fnt` glyph data |
+| `sp_fnt00.fnt`, `sp_fnt02.fnt`, `sp_fnt03.fnt`, `font_big.fnt` | Fonts *explicitly named and loaded* by the PC code | **Source-confirmed filenames**; precise inner paths must be checked against the original archive |
+| `data/shell_bg.bmp` | Shell/menu background image candidate | Archive-inventory finding, **not** a proven source for the ESC purple banner, spider motif or 8×8 border |
+| `data/shell.psx`, `data/Icons.PSX` | Other shell/icon resources | Candidate archive contents, **not direct evidence for an ESC BMP frame** |
+| `lti/cursor.bmp` | Historical red-menu-cursor candidate | Archive-path attribution from prior research; the actual original ESC 32×32 bound texture has **not been individually file-matched** |
+
+The **outer** `data.pkr` archive should be examined or extracted to inspect these file names/resources; `data/sp_fnt00.bmp` or `lti/cursor.bmp` are reported **archive-internal paths**, *not necessarily loose files adjacent to `SpideyPC.exe`*. The project's [partial decompilation `pkr.cpp`](https://github.com/krystalgamer/spidey-decomp/blob/master/pkr.cpp) documents directory/file lookup and reading from a `.pkr` archive, but **neither the retail archive nor the relevant source textures are committed to our fix repository**. To identify the *specific ESC border BMPs*, one still needs a verified archive index and a runtime texture-content/caller correlation. **No border-file basename, eight-quad motif vertex table or complete retail resolution list is presently proven.**
+
 ## 8. Additional recovered native functions and structures — full repository audit
 
 This section inventories **previously missing positively identified functions, branches and data layouts** in the SHA-verified original EXE. It is based on repository code and historical static/runtime records, **not on a new independent disassembly of the copyrighted EXE**. All addresses below are **VA**, except where expressly marked RVA. Experimental patch code and observed game code are kept distinct.
