@@ -495,7 +495,7 @@ static const struct {const char *section,*key;} deprecated_ini_keys[]={
   {"Input","DirectInputReacquire"},{"Input","DisableWindowsGhosting"},
   {"Input","PauseOnFocusLoss"},{"Input","PauseBinkOnFocusLoss"},
   {"Input","PauseDirectSoundOnFocusLoss"},{"Input","PauseOverlay"},
-  {"Input","PauseDim"},{"Input","PauseDimOpacity"},{"Input","PauseGrid"},
+  {"Input","PauseDim"},
   {"Input","PauseKey"},{"Input","RestoreCursorOnFocusLoss"},
   {"Input","ExperimentalFocusTrace"},{"Input","ExperimentalDI8EntryTrace"},
   {"Input","ExperimentalAltTabReacquire"},{"Input","ExperimentalDI8CreateDeviceTrace"}
