@@ -439,6 +439,30 @@ Source: [six-stage lifecycle and input disassembly](F12_DEBUG_TEST_MODE.md), [F1
 | `0xF0`, `0xF4` | Movie volume / voice volume, 0..255 |
 | `0xF8` | Mono=1 / stereo=0 |
 
+#### Original retail keyboard controls vs SpiderMan2k1Fix defaults
+
+**Why the default controls differ:** the original **2001 Windows release** assigns most of its seven action buttons to the **numeric keypad**. Many current laptop, tenkeyless (TKL) and compact keyboards **have no dedicated numeric keypad**, forcing users to remap the original controls before playing. SpiderMan2k1Fix therefore changes the **default keyboard configuration**, not the game's combat or action semantics: **arrow keys remain unchanged**, Jump moves to the full-size **Spacebar**, and the six other actions use ordinary **X/C/V/D/F/G** letter keys. This removes the numpad dependency, keeps the actions grouped on widely available keys and avoids assigning the game's movement to a different control scheme. These are **intentional project defaults**, not retail-original assignments.
+
+| Native action / INI key | **Original 2001 Windows retail default** | **SpiderMan2k1Fix default** | Original DirectInput DIK | Fix DirectInput DIK |
+| --- | --- | --- | --- | --- |
+| Forward / `Up` | Up arrow | **Up arrow** *(unchanged)* | `0xC8` | `0xC8` |
+| Backward / `Down` | Down arrow | **Down arrow** *(unchanged)* | `0xD0` | `0xD0` |
+| Move left / `Left` | Left arrow | **Left arrow** *(unchanged)* | `0xCB` | `0xCB` |
+| Move right / `Right` | Right arrow | **Right arrow** *(unchanged)* | `0xCD` | `0xCD` |
+| Jump / `Jump` | **Numpad 2** (`KP2`) | **Space** | `0x50` | `0x39` |
+| Kick / `Kick` | **Numpad 6** (`KP6`) | **X** | `0x4D` | `0x2D` |
+| Punch / `Punch` | **Numpad 4** (`KP4`) | **C** | `0x4B` | `0x2E` |
+| Web trap/shoot / `Web` | **Numpad 8** (`KP8`) | **V** | `0x48` | `0x2F` |
+| Web target mode / `Aim` | **Numpad 7** (`KP7`) | **D** | `0x47` | `0x20` |
+| Zip-line / `Zipline` | **Numpad 3** (`KP3`) | **F** | `0x51` | `0x21` |
+| Web swing / `Swing` | **Numpad 9** (`KP9`) | **G** | `0x49` | `0x22` |
+
+**Evidence:** the retail-original arrow/numpad mapping is independently enumerated in [StrategyWiki: Spider-Man (2000) / Controls](https://strategywiki.org/wiki/Spider-Man_%282000%29/Controls) (PC column) and cross-checked by a [2017 Controller Companion profile for the 2001 PC game](https://steamcommunity.com/sharedfiles/filedetails/?id=926103929), whose documented mappings explicitly require **Default Settings** in the game's keyboard menu. The **current fix defaults** are verified in [`SpiderMan2k1Fix.ini`](../SpiderMan2k1Fix.ini), [`spidey_cfg_template.h`](../spidey_cfg_template.h), and the `dik_names` / `action_offsets` arrays in [`virtual_spidey_cfg.c`](../virtual_spidey_cfg.c). The **retail-original numeric DIK codes** in the table are standard DirectInput `DIK_NUMPAD` constants corresponding to those named buttons; they are **not claimed to have been extracted byte-for-byte from a pristine retail `Spidey.cfg` in this audit**. The committed `spidey_cfg_factory` template was already **modified to use the fix's keys**, despite its historic “factory” label; it is **not** a reliable unmodified-retail keyboard-default source.
+
+**Configuration behavior:** `SpiderMan2k1Fix.ini` contains the `[Keyboard]` actions as `Up=UP`, `Down=DOWN`, `Left=LEFT`, `Right=RIGHT`, `Jump=SPACE`, `Kick=X`, `Punch=C`, `Web=V`, `Aim=D`, `Zipline=F`, `Swing=G`. The fix translates these names into **physical DirectInput scan codes** and updates the eleven original 32-bit little-endian fields at offsets **`0x14`–`0x3C`** within the 252-byte virtual `Spidey.cfg`. The game still exposes its normal rebindable control menus; users may choose other keys, and the new assignments are not hard-coded into gameplay. They are applied when the fix generates its default INI or when those settings are explicitly configured. Existing user-modified INI bindings must **not** be replaced merely to enforce this recommended layout.
+
+**Separately managed keys:** **Esc** remains the native pause/menu key, **Enter** remains a menu/skip key, and the game's **F9** remains its native screenshot trigger (the fix changes BMP output to PNG). Optional **F10** is a separate developer shortcut, not one of the eleven retail action bindings; the dangerous original F12→`WM_CLOSE` path is suppressed. **Joystick button defaults remain separate** and were intentionally preserved when the keyboard was modernized.
+
 Joystick movement bytes **`0x40`–`0x4C` remain undecoded**; unknown fields should be preserved verbatim through `[Internal] RawHex`, not relabeled.
 
 ### 8.7 Original Display menu branches and a tentative FOV scalar
