@@ -2886,6 +2886,7 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
 }
 static HRESULT WINAPI hooked_mode(void *self,DWORD w,DWORD h,DWORD bpp,DWORD hz,DWORD flags) {
   char line[240]; HRESULT hr;
+  (void)self;
   snprintf(line,sizeof(line),"DDRAW: SetDisplayMode REQUEST %lux%lu %lu bpp refresh=%lu flags=0x%08lX",
            (unsigned long)w,(unsigned long)h,(unsigned long)bpp,(unsigned long)hz,(unsigned long)flags);
   log_line(line);
