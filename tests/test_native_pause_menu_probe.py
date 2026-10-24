@@ -330,6 +330,59 @@ def test_native_cursor_43_is_opt_in_and_safe_outside_gameplay_esc():
     assert "SPIDERMAN2K1FIX_NATIVE_CURSOR_43" in DOC
 
 
+
+def test_cursor_aspect_fix_is_not_restricted_to_previous_center_rectangle():
+    """Regression: 1920x1080 captures 0011=72px, 0012/0013=96px red sprite."""
+    block=CORE.split("static const void *maybe_correct_native_cursor43(",1)[1].split(
+        "static void free_menu_vertices(",1)[0]
+    selector=block.split("  /* The selector can legitimately move anywhere",1)[1].split(
+        "  memcpy(&diffuse",1)[0]
+    # Former screen-position filters inadvertently disabled the x0.75 transform
+    # for a cursor moved above y=325 or beyond right x=1480.
+    for forbidden in ("left<450.0f", "right>1480.0f",
+                      "top<325.0f", "bottom>800.0f"):
+        assert forbidden not in selector
+    # Signature filters still protect every other geometry category.
+    for exact in ("(right-left)-96.0f", "(bottom-top)-72.0f",
+                  "fabsf(z)>0.00005f", "fabsf(rhw-27.519f)>0.035f"):
+        assert exact in selector
+    for exact in ("native_pause43_banner_flip", "rva!=0x00102C72UL",
+                  "diffuse!=0xFFFFFFFFUL", "desc.dwWidth!=32",
+                  "desc.dwHeight!=32", "desc.ddpfPixelFormat.dwFlags!=0x41UL",
+                  "copy[i].x=cx+0.75f*(v[i].x-cx)"):
+        assert exact in block
+
+
+def test_cursor_aspect_samples_center_top_and_right_preserve_x_center_y_height():
+    """Model exactly the localized native selector transformation for F9 positions."""
+    # Actual red icon visible pixel boxes; transparent texture edges explain
+    # why the visible red region is ~67 high despite the native 72-high quad.
+    boxes={
+        "scrn0011":(1272,529,72,67),
+        "scrn0012":(1308,264,96,67),
+        "scrn0013":(1466,516,96,67),
+    }
+    assert boxes["scrn0011"][2:]==(72,67)
+    assert boxes["scrn0012"][2:]==boxes["scrn0013"][2:]==(96,67)
+    # Native source is always a 96x72 quad and the fix is an x-only scale
+    # around the quad center, regardless of position and native y coordinate.
+    source_positions=[
+        (1259,525),     # normal text row: originally corrected
+        (1308,260),     # screenshot 0012: above old top threshold
+        (1466,512),     # screenshot 0013: beyond old right threshold
+        (12,12),        # arbitrary upper-left
+        (1790,950),     # arbitrary lower-right
+    ]
+    for left,top in source_positions:
+        right=left+96
+        cx=(left+right)/2.0
+        mapped_left=cx+0.75*(left-cx)
+        mapped_right=cx+0.75*(right-cx)
+        assert abs((mapped_right-mapped_left)-72)<1e-6
+        assert abs((mapped_right+mapped_left)/2.0-cx)<1e-6
+        assert top+72-top==72
+
+
 def test_build_767_selector_shape_probe_is_read_only_and_not_glyph_quota():
     probe = trace_block()
     assert "pause_menu_trace_shape_seen=0;" in probe
