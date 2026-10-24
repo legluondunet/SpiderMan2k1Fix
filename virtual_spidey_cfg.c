@@ -100,43 +100,63 @@ static const struct { const char *name; DWORD scan; } dik_names[]={
   {"HOME",0xC7},{"END",0xCF},{"DELETE",0xD3},{"INSERT",0xD2},
   {"PAGEUP",0xC9},{"PAGEDOWN",0xD1}
 };
-/* The original game stores physical DIK positions. The user-facing INI can
- * optionally name the *printed letter* instead (AZERTY / OS keyboard layout).
- * Save and load must use the SAME resolved layout to preserve round-trips.
- * The menu/CHEATS legend uses a separate, signature-checked RAM table patch.
- */
-static SpiderKeyboardLayout keyboard_layout_mode=SPIDER_KEYBOARD_PHYSICAL;
+/* The game stores physical DIK codes. Expose just Auto and Off; Auto
+ * resolves a complete A-Z layout map once, shared by INI and CHEATS. */
+static SpiderKeyboardLayout keyboard_layout_mode=SPIDER_KEYBOARD_OFF;
 static HKL keyboard_layout_hkl=NULL;
+static unsigned char keyboard_scans[26]={0};
+static int keyboard_scans_valid=0;
 
 static DWORD letter_scan(char letter,DWORD physical) {
-  UINT os_scan=0;
-  if(keyboard_layout_mode==SPIDER_KEYBOARD_AUTO && keyboard_layout_hkl)
-    os_scan=MapVirtualKeyExA((UINT)(unsigned char)letter,MAPVK_VK_TO_VSC,keyboard_layout_hkl);
   return (DWORD)SpiderKeyboard_MapLetter(keyboard_layout_mode,letter,
-                                         (unsigned)physical,(unsigned)os_scan);
+               (unsigned)physical,keyboard_scans,keyboard_scans_valid);
 }
+
 static void load_keyboard_layout(void) {
   char value[32],msg[245];
-  /* No setting in an older user INI retains QWERTY/physical semantics.
-   * Only newly generated INIs contain KeyboardLayout=Auto by default. */
-  GetPrivateProfileStringA("Input","KeyboardLayout","Physical",
+  const char *effective="Off";
+  unsigned mapped[26],i;
+  int migrate=0;
+  /* Old INIs with no key retain their physical bindings. Newly generated
+   * INIs explicitly contain Auto. Deprecated values are normalized in place
+   * so users retain their controls and only see the two supported modes. */
+  GetPrivateProfileStringA("Input","KeyboardLayout","Off",
                            value,sizeof(value),ini_file);
-  keyboard_layout_mode=SPIDER_KEYBOARD_PHYSICAL;
-  if(!lstrcmpiA(value,"Auto"))keyboard_layout_mode=SPIDER_KEYBOARD_AUTO;
-  else if(!lstrcmpiA(value,"AZERTY"))keyboard_layout_mode=SPIDER_KEYBOARD_AZERTY;
-  else if(!lstrcmpiA(value,"QWERTY"))keyboard_layout_mode=SPIDER_KEYBOARD_QWERTY;
-  /* The validator rejects bad values before this loader is reached. */
+  keyboard_layout_mode=SPIDER_KEYBOARD_OFF;
+  if(!lstrcmpiA(value,"Auto") || !lstrcmpiA(value,"AZERTY")) {
+    keyboard_layout_mode=SPIDER_KEYBOARD_AUTO;
+    effective="Auto";
+    migrate=lstrcmpiA(value,"Auto")!=0;
+  } else if(!lstrcmpiA(value,"Legacy") ||
+            !lstrcmpiA(value,"Physical") ||
+            !lstrcmpiA(value,"QWERTY")) {
+    migrate=1;
+  }
+  if(migrate) {
+    if(WritePrivateProfileStringA("Input","KeyboardLayout",effective,ini_file))
+      report("SPIDEY-CFG: deprecated KeyboardLayout value migrated to Auto/Off");
+    else report("SPIDEY-CFG: WARNING cannot migrate old KeyboardLayout value");
+  }
   keyboard_layout_hkl=GetKeyboardLayout(0);
+  keyboard_scans_valid=0;
+  if(keyboard_layout_mode==SPIDER_KEYBOARD_AUTO && keyboard_layout_hkl) {
+    for(i=0;i<26;i++)
+      mapped[i]=MapVirtualKeyExA('A'+i,MAPVK_VK_TO_VSC,keyboard_layout_hkl);
+    keyboard_scans_valid=SpiderKeyboard_ValidateMap(mapped,keyboard_scans);
+    if(!keyboard_scans_valid)
+      report("SPIDEY-CFG: Auto layout missing or ambiguous A-Z mapping; safe original physical fallback");
+  }
   snprintf(msg,sizeof(msg),
-    "SPIDEY-CFG: keyboard letter layout=%s HKL=0x%04lX A=0x%02lX Z=0x%02lX W=0x%02lX M=0x%02lX (physical DirectInput; original menu key labels may remain QWERTY)",
-    value,(unsigned long)((ULONG_PTR)keyboard_layout_hkl&0xFFFF),
+    "SPIDEY-CFG: keyboard letter layout=%s HKL=0x%04lX valid=%d A=0x%02lX Z=0x%02lX W=0x%02lX M=0x%02lX (physical DirectInput untouched)",
+    effective,(unsigned long)((ULONG_PTR)keyboard_layout_hkl&0xFFFF),
+    keyboard_scans_valid,
     (unsigned long)letter_scan('A',0x1E),
     (unsigned long)letter_scan('Z',0x2C),
     (unsigned long)letter_scan('W',0x11),
     (unsigned long)letter_scan('M',0x32));
   report(msg);
-  /* Original Shell_InputName and the keyboard menu share this name table. */
-  SpiderKeyNames_Install(keyboard_layout_mode,keyboard_layout_hkl,report);
+  SpiderKeyNames_Install(keyboard_layout_mode,keyboard_layout_hkl,
+                          keyboard_scans,keyboard_scans_valid,report);
 }
 static int decode_key(const char *name,DWORD *scan) {
   unsigned i;
@@ -372,7 +392,7 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "HUDWidescreenFix=1\r\n"
     "\r\n"
     "[Input]\r\n"
-    "; KeyboardLayout: Auto (new install), AZERTY, QWERTY, Physical/Legacy.\r\n"
+    "; KeyboardLayout: Auto (default), Off (original physical QWERTY behavior).\r\n"
     "; Determines how [Keyboard] letters resolve to physical DirectInput keys.\r\n"
     "KeyboardLayout=Auto\r\n"
     "; Opt-in native DirectInput error recovery after Alt+Tab; default off.\r\n"
