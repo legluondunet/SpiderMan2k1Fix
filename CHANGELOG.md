@@ -6,7 +6,7 @@
 - Expose only `[Input] KeyboardLayout=Auto|Off`. `Auto` validates the full OS-reported A-Z key map and updates bindings and CHEATS/menu key labels; `Off` retains the original game behavior. Old mode values migrate safely to these two choices.
 - Newly generated INIs default to `Auto`; older INIs without `KeyboardLayout` keep original physical/QWERTY semantics (`Off`). OS misreporting remains a limitation, especially under Wine; partial layouts fail back safely.
 - Save converted bindings using the same selected layout so textual INI names round-trip correctly. Keep raw `0xNN` assignments as explicit physical scan codes, and retain strict INI validation/recovery.
-- The original game's keyboard setup menu may still display QWERTY key legends; it has not been binary-patched. In-game runtime validation under Windows and Wine is still needed.
+- The original game's keyboard setup menu and CHEATS names are patched in memory after signature checks for valid non-QWERTY layouts; Windows and Wine runtime validation remains required.
 
 ## Unreleased — HUD research probe cleanup (PR #23)
 
