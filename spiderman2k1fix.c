@@ -3230,7 +3230,7 @@ static DWORD WINAPI initialize_worker(LPVOID unused) {
  * on the GAME's own first DirectDrawCreateEx call, outside the loader lock.
  * A failed/unsupported game cannot proceed through an unsafe physical
  * 640x480 mode: fail this DirectDraw request instead of forwarding it. */
-__declspec(dllexport) HRESULT WINAPI SpiderMan2k1Fix_DirectDrawGate(
+__declspec(dllexport) HRESULT __cdecl SpiderMan2k1Fix_DirectDrawGate(
     GUID *guid,void **out,REFIID iid,IUnknown *outer,void *real_create) {
   if(!real_create || !InitOnceExecuteOnce(&core_start_once,
        core_initialize_once,NULL,NULL) ||
