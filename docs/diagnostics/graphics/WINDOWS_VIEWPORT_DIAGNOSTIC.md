@@ -235,7 +235,7 @@ The old `SPIDERMAN2K1FIX_CURSOR_VISIBILITY_TEST` variable is no longer
 needed or interpreted. For the tested pause sequence, use
 `PauseOnFocusLoss=1`, `ExperimentalAltTabReacquire=0`,
 `ExperimentalFocusTrace=0` and `RestoreCursorOnFocusLoss=1`.
-See `CURSOR_FOCUS_TEST.md` for both normal and opt-out procedures.
+See [cursor visibility tests](../focus/CURSOR_FOCUS_TEST.md) for both normal and opt-out procedures.
 
 ## Test H — fclose(NULL) at 0052A805, exact Windows crash dump
 
