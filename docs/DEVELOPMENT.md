@@ -78,7 +78,7 @@ The patch changes the disc-check function's *return behavior* but does **not** c
 
 ## 3. DirectInput 8: static findings
 
-The detailed source of record is [DIRECTINPUT_STATIC_ANALYSIS.md](../DIRECTINPUT_STATIC_ANALYSIS.md) (2026-10-21). These findings come from **offline static examination** of the SHA-matched EXE.
+The detailed source of record is [DIRECTINPUT_STATIC_ANALYSIS.md](diagnostics/directinput/DIRECTINPUT_STATIC_ANALYSIS.md) (2026-10-21). These findings come from **offline static examination** of the SHA-matched EXE.
 
 | Item | Game VA / detail |
 | --- | --- |
@@ -108,7 +108,7 @@ Analogous locations: `GetDeviceData` at `0x00501D02`, comparison at `0x00501D05`
 
 ### 3.3 Activation and Alt+Tab
 
-The original window procedure assigns the activation flag at `0x005152F8`, in the `WM_ACTIVATE = 0x0006` case. The static findings therefore suggest a **possible** failure to reacquire on `DIERR_NOTACQUIRED` after Alt+Tab. This alone does not prove the failing runtime HRESULT. **Separately, native Windows 11 WinDbg did observe persistent `DIERR_NOTACQUIRED (0x8007000C)` at both keyboard `0x00501BC3` and mouse `0x00501D02` GetDeviceData sites**; see [Windows viewport/WinDbg diagnostic](../WINDOWS_VIEWPORT_DIAGNOSTIC.md). That capture did **not** timestamp each error against foreground/background focus or prove that any proposed retry fixed the main menu.
+The original window procedure assigns the activation flag at `0x005152F8`, in the `WM_ACTIVATE = 0x0006` case. The static findings therefore suggest a **possible** failure to reacquire on `DIERR_NOTACQUIRED` after Alt+Tab. This alone does not prove the failing runtime HRESULT. **Separately, native Windows 11 WinDbg did observe persistent `DIERR_NOTACQUIRED (0x8007000C)` at both keyboard `0x00501BC3` and mouse `0x00501D02` GetDeviceData sites**; see [Windows viewport/WinDbg diagnostic](diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md). That capture did **not** timestamp each error against foreground/background focus or prove that any proposed retry fixed the main menu.
 
 An experimental branch-native `DIERR_NOTACQUIRED` retry exists in `input_notacquired_retry.c`. Historical analysis describes it as **off by default**, opt-in using `SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY=1`; it patches only signature-matched branches and attempts to reuse the game's own Acquire/retry code. It was not thereby validated as a general solution. An earlier experimental COM vtable wrapper produced `E_INVALIDARG` under Windows 11. **Do not enable either experiment by default or infer runtime success from static analysis.**
 
@@ -505,17 +505,17 @@ The game-owned 2D comic art includes a **512×256 texture**, displayed with V sp
 | `[0x006BBF1C]` | Original primary sound buffer, excluded from individual-voice manipulation |
 | `[0x006B7920]` / `[0x006B7924]` | Read-only DirectSound device/primary candidates in diagnostics |
 
-The patch's optional synchronized focus-pausing reused these **original APIs and data structures**. The original engine ownership is mapped, but the focus pause experiment was **not proven generally reliable**. Sources: [focus audio/video diagnostics](../FOCUS_AUDIO_VIDEO_SYNC_TEST.md), [Bink focus module](../focus_media_pause.c), [DirectSound voice module](../focus_dsound_pause.c).
+The patch's optional synchronized focus-pausing reused these **original APIs and data structures**. The original engine ownership is mapped, but the focus pause experiment was **not proven generally reliable**. Sources: [focus audio/video diagnostics](diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md), [Bink focus module](../focus_media_pause.c), [DirectSound voice module](../focus_dsound_pause.c).
 
 ### 8.9 Original F9 screenshot path and statically linked CRT fault
 
 - Native F9 already polls **`DIK_F9=0x43`**, with approximately **500 ms debounce**, then calls its **BMP writer** at **RVA `0x0010A1DC` / `0x0010A62B`** (VA `0x0050A1DC` / `0x0050A62B`). The fix's PNG dispatch replaces only these verified call instructions; it does not create the original keyboard binding.
 - Original screenshot readback from DirectDraw **PRIMARY** uses **Lock caller RVA `0x001034D4`** and **Unlock caller RVA `0x00103537`**. The fix distinguishes the native primary and the completed backbuffer for borderless frame capture; that is a targeted screenshot observation, not a rule for all DirectDraw operations.
-- An original statically linked CRT **`fclose(FILE*)`** starts at **RVA `0x0012A7FC`**, according to the Windows crash/disassembly audit. The actual fault at **VA `0x0052A805`** received a **NULL `FILE*`** from game caller **`0x005186F8`**. The invalid call is documented, but **what caused NULL remains unknown**. The defensive VEH workaround was experimental. See [Windows crash research](../WINDOWS_VIEWPORT_DIAGNOSTIC.md).
+- An original statically linked CRT **`fclose(FILE*)`** starts at **RVA `0x0012A7FC`**, according to the Windows crash/disassembly audit. The actual fault at **VA `0x0052A805`** received a **NULL `FILE*`** from game caller **`0x005186F8`**. The invalid call is documented, but **what caused NULL remains unknown**. The defensive VEH workaround was experimental. See [Windows crash research](diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md).
 
 ### 8.10 Original media/audio owners and the multi-component focus-pause mechanism
 
-The 2001 game has **separate presentation, Bink video, Bink soundtrack and DirectSound voice paths**. An Alt+Tab pause of the **gameplay/render thread** is **not** sufficient to stop all of them. This distinction was discovered and exercised in the [focus audio/video Windows test](../FOCUS_AUDIO_VIDEO_SYNC_TEST.md), the original native structures cataloged in §8.8, and the current source.
+The 2001 game has **separate presentation, Bink video, Bink soundtrack and DirectSound voice paths**. An Alt+Tab pause of the **gameplay/render thread** is **not** sufficient to stop all of them. This distinction was discovered and exercised in the [focus audio/video Windows test](diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md), the original native structures cataloged in §8.8, and the current source.
 
 **Original game-owned sites and objects relevant to pausing:**
 
@@ -530,7 +530,7 @@ The 2001 game has **separate presentation, Bink video, Bink soundtrack and Direc
 
 **Current optional pause sequence, from [`spiderman2k1fix.c`](../spiderman2k1fix.c):**
 
-1. With `[Input] PauseOnFocusLoss=1` (factory default **0**), `hooked_flip()` observes foreground state. The game must **previously have been foreground** and another process's window must remain foreground for at least **150 ms**. A transient NULL foreground or same-process window is ignored. Windows 11 sometimes reported a **`Ghost`** helper window, spuriously satisfying this test; that case remains diagnostic/experimental (see [unexpected focus pause](../UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md)).
+1. With `[Input] PauseOnFocusLoss=1` (factory default **0**), `hooked_flip()` observes foreground state. The game must **previously have been foreground** and another process's window must remain foreground for at least **150 ms**. A transient NULL foreground or same-process window is ignored. Windows 11 sometimes reported a **`Ghost`** helper window, spuriously satisfying this test; that case remains diagnostic/experimental (see [unexpected focus pause](diagnostics/focus/UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md)).
 2. Upon the next Flip, `pause_at_flip_if_background()` latches the pause and first installs a **temporary** keyboard wake hook via [`pause_any_key.c`](../pause_any_key.c), `SetWindowsHookExA(WH_KEYBOARD_LL,...)`. The hook only swallows an ordinary key **when the game is foreground**. It deliberately preserves OS Alt/Win/Tab navigation. If hook installation fails, the code **abandons** this pause rather than risk a stuck game.
 3. It calls **`SpiderFocusMedia_Pause()`** ([`focus_media_pause.c`](../focus_media_pause.c)) and **`SpiderFocusDSound_Pause()`** ([`focus_dsound_pause.c`](../focus_dsound_pause.c)) **separately**. Both audio modules are **opt-in independently**, default **0** (`PauseBinkOnFocusLoss`, `PauseDirectSoundOnFocusLoss`). A Flip pause without those options does **not** prove Bink/music/effects stopped.
 4. It paints a pause display **inside the existing DirectDraw backbuffer**, via [`pause_surface.c`](../pause_surface.c): saves its pixels using GDI, dims/renders a native-ESC-inspired violet ribbon and original game icon, performs **one** `Blt` to the PRIMARY and preserves the original backbuffer until resuming. There are **no separate overlay HWNDs**; failure to draw the label does not imply failure to pause. Content bounds respect the 4:3/pillarbox region.
@@ -547,7 +547,7 @@ PauseDirectSoundOnFocusLoss=1
 ; DirectInputReacquire=1  ; independent input recovery; validate for target OS/build
 ```
 
-**Runtime evidence (2026-10-21 Windows 11):** [`FOCUS_AUDIO_VIDEO_SYNC_TEST.md`](../FOCUS_AUDIO_VIDEO_SYNC_TEST.md) records one tester successfully pausing/resuming Bink video and music and stopping/resuming **11**, then **9**, playing DirectSound secondary voices in two separate 3D focus pauses, with reported `failed=0`. It does **not** establish unconditional correctness in all sequences, Windows/Wine configurations, driver versions, sound devices or input-recovery paths. The later [`UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md`](../UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md) documents spontaneous pauses associated with Windows `Ghost` foreground windows; this is a **distinct unresolved reliability issue**. Focus pausing and the **game's original ESC pause menu (§8.5 / §9)** are different operations.
+**Runtime evidence (2026-10-21 Windows 11):** [`FOCUS_AUDIO_VIDEO_SYNC_TEST.md`](diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md) records one tester successfully pausing/resuming Bink video and music and stopping/resuming **11**, then **9**, playing DirectSound secondary voices in two separate 3D focus pauses, with reported `failed=0`. It does **not** establish unconditional correctness in all sequences, Windows/Wine configurations, driver versions, sound devices or input-recovery paths. The later [`UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md`](diagnostics/focus/UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md) documents spontaneous pauses associated with Windows `Ghost` foreground windows; this is a **distinct unresolved reliability issue**. Focus pausing and the **game's original ESC pause menu (§8.5 / §9)** are different operations.
 
 **Research lesson:** a real simultaneous pause requires separate treatment of **frame production**, **Bink decoding/playback**, **Bink music**, **DirectSound secondary effects**, **foreground/input recovery** and **visible paused frame**. The fix uses those known original APIs/structures, but has **not** recovered a single global original engine pause switch.
 
@@ -721,11 +721,11 @@ DPI fixes do not solve **cursor counter state**. The invisible system mouse afte
 
 | Area | Primary repo evidence |
 | --- | --- |
-| Native Windows Direct3D7 EIP=0, `fclose(NULL)`, early DPI, Alt+Tab and cursor | [WINDOWS_VIEWPORT_DIAGNOSTIC.md](../WINDOWS_VIEWPORT_DIAGNOSTIC.md), [winmm_proxy.c](../winmm_proxy.c), [spiderman2k1fix.c](../spiderman2k1fix.c) |
-| Original DirectInput HRESULTs, branch shims, safe startup and INI-only validation | [DIRECTINPUT_STATIC_ANALYSIS.md](../DIRECTINPUT_STATIC_ANALYSIS.md), [DIRECTINPUT_INI_FINAL_TEST.md](../DIRECTINPUT_INI_FINAL_TEST.md), [input_notacquired_retry.c](../input_notacquired_retry.c) |
+| Native Windows Direct3D7 EIP=0, `fclose(NULL)`, early DPI, Alt+Tab and cursor | [WINDOWS_VIEWPORT_DIAGNOSTIC.md](diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md), [winmm_proxy.c](../winmm_proxy.c), [spiderman2k1fix.c](../spiderman2k1fix.c) |
+| Original DirectInput HRESULTs, branch shims, safe startup and INI-only validation | [DIRECTINPUT_STATIC_ANALYSIS.md](diagnostics/directinput/DIRECTINPUT_STATIC_ANALYSIS.md), [DIRECTINPUT_INI_FINAL_TEST.md](diagnostics/directinput/DIRECTINPUT_INI_FINAL_TEST.md), [input_notacquired_retry.c](../input_notacquired_retry.c) |
 | F9 magenta BMP root mechanism, original sites, deferred menu frames and decoded Bink PNG | [spiderman2k1fix.c](../spiderman2k1fix.c), [f9_png.c](../f9_png.c), [F9 troubleshooting/validation](../README.md) |
 | Original F12 suppression, owner-safe transitions, current F10 and second-session fixes | [quick_exit_f12.c](../quick_exit_f12.c), [F12 shutdown record](F12_NATIVE_SHUTDOWN.md), [F10 test matrix](F10_VALIDATION_MATRIX.md) |
-| Focus pause false triggers, Bink/audio testing and cursor disappearance | [UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md](../UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md), [FOCUS_AUDIO_VIDEO_SYNC_TEST.md](../FOCUS_AUDIO_VIDEO_SYNC_TEST.md), [CURSOR_FOCUS_TEST.md](../CURSOR_FOCUS_TEST.md) |
+| Focus pause false triggers, Bink/audio testing and cursor disappearance | [UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md](diagnostics/focus/UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md), [FOCUS_AUDIO_VIDEO_SYNC_TEST.md](diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md), [CURSOR_FOCUS_TEST.md](diagnostics/focus/CURSOR_FOCUS_TEST.md) |
 | Screens and UI issues / FPS | [Native ESC study](NATIVE_PAUSE_MENU_43.md), [HUD sections](DEVELOPMENT.md#7-display-and-rendering-research), [CHANGELOG.md](../CHANGELOG.md) |
 
 **Audit limits:** every implementation described here is **based on source and historical logs**, not a new end-to-end native Windows+Wine release test. Some historical notes describe old experiments that were withdrawn or replaced; the **current compiled source and currently enabled settings** take precedence over historical test instructions. An OS exit code, a completed direct source-level hook test and a game-looking-responsive screenshot are **different evidence levels**. Do not report a crash as fixed solely because a matching guard was armed.
@@ -746,7 +746,7 @@ Automated tests confirm signatures and code properties; **they do not prove game
 ## 12. Research references and next steps
 
 Repository sources:
-- [DirectInput static audit](../DIRECTINPUT_STATIC_ANALYSIS.md)
+- [DirectInput static audit](diagnostics/directinput/DIRECTINPUT_STATIC_ANALYSIS.md)
 - [F10 validation matrix](F10_VALIDATION_MATRIX.md)
 - [F12 debugging research (historical)](F12_DEBUG_TEST_MODE.md)
 - [Native shutdown and Windows test records](F12_NATIVE_SHUTDOWN.md)

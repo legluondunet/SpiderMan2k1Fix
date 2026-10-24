@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 S = (ROOT / "spiderman2k1fix.c").read_text()
-DOC = (ROOT / "WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()
+DOC = (ROOT / "docs/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()
 
 
 def test_default_guard_with_diagnostic_opt_out_and_verified_game():

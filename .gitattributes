@@ -1,0 +1,5 @@
+# The internal research notes belong in Git and in development checkouts,
+# but are not part of distributable release archives.
+# GitHub's automatically generated Source code (zip/tar.gz) uses git archive.
+# Binary artifacts are independently whitelisted by their Actions workflows.
+/docs/ export-ignore
