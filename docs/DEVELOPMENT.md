@@ -610,7 +610,7 @@ Do not turn the following into “understood functions”: most 11-mode dispatch
 
 The original **game-progress save file** is independent of the patch's
 virtual `Spidey.cfg` / `SpiderMan2k1Fix.ini`. Public partial decompilation
-of `buInit` places saves under `save\\` relative to the process
+of `buInit` places saves under `save\` relative to the process
 **working directory**. `Card_Load` / `Card_Write` use a single
 `SPIDRMAN.DAT`; **eight** `SSaveGame` slots (`0xBC` bytes each)
 are held in one `0xA24`-byte backup-image with a 4-byte size prefix,
