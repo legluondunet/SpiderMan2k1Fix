@@ -9,22 +9,17 @@ EXAMPLE=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").re
 GENERATOR=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
 VALIDATOR=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
 
-def test_optional_process_ghost_suppression_is_off_by_default():
-    assert "DisableWindowsGhosting=0" in INI
-    assert "DisableWindowsGhosting=0" in EXAMPLE
-    assert '"DisableWindowsGhosting=0\\r\\n"' in GENERATOR
+def test_ghost_suppression_is_automatic_and_has_no_ini_option():
+    assert "DisableWindowsGhosting=0" not in EXAMPLE
+    assert '"DisableWindowsGhosting=0\\r\\n"' not in GENERATOR
     assert '"DisableWindowsGhosting"' in VALIDATOR
-    assert 'GetPrivateProfileIntA("Input","DisableWindowsGhosting",0,path)!=1' in CORE
-
-def test_no_foreground_hacks_or_media_changes_in_ghosting_function():
     code=CORE[CORE.index("static void pause_apply_windows_ghosting_option(void)"):
               CORE.index("/* Keep the exact SHA-256 guard.")]
     assert '"DisableProcessWindowsGhosting"' in code
     assert "GetProcAddress(" in code
     assert "disable_ghosting();" in code
-    assert 'FOCUS-GHOST: DisableProcessWindowsGhosting CALLED' in code
-    assert 'FOCUS-GHOST: normal Windows ghosting enabled' in code
-    assert "GetPrivateProfileIntA" in code
+    assert "GetPrivateProfileIntA" not in code
+    assert "process ghost-window suppression active" in code
     for banned in ("SetForegroundWindow(", "SetActiveWindow(", "SetFocus(",
                    "PostMessage(", "SendMessage(", "AttachThreadInput(",
                    "TerminateThread(", "SuspendThread(", "Sleep("):
