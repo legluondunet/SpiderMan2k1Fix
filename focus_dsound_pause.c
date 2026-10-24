@@ -1,4 +1,4 @@
-/* Spider-Man 2001 opt-in native DirectSound secondary-voice pause.
+/* Spider-Man 2001 permanent native DirectSound secondary-voice focus pause.
  *
  * Original SHA-256-verified SpideyPC.exe:
  * 0x005039F0 initializes 32 game-owned 12-byte voice slots at 0x006BBD50.
@@ -10,7 +10,7 @@
  * their playback cursor. Resume an unchanged slot with its captured loop
  * flag, never a replaced or already-playing buffer. Retain a COM reference
  * across the pause. No COM vtable or import-table modification.
- * Disabled by default, restricted to the supported executable.
+ * Permanent with the fix, restricted to the SHA-verified game executable.
  */
 #define WIN32_LEAN_AND_MEAN
 #define COBJMACROS
@@ -54,7 +54,7 @@ void SpiderFocusDSound_Init(void (*log_fn)(const char *)){
     return;
   }
   InterlockedExchange(&enabled,1);
-  diag("FOCUS-DSOUND: experimental secondary-voice pause enabled; 32 game-owned slots, primary excluded");
+  diag("FOCUS-DSOUND: guarded secondary-voice pause enabled; 32 game-owned slots, primary excluded");
 }
 void SpiderFocusDSound_Pause(void){
   unsigned i,found=0,stopped=0,failed=0;

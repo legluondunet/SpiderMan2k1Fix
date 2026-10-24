@@ -1,4 +1,4 @@
-/* Spider-Man 2001 (PC): experimental native DirectInput8 reacquisition
+/* Spider-Man 2001 (PC): guarded native DirectInput8 reacquisition
  * after DIERR_NOTACQUIRED, reusing the game's already-existing Acquire/retry.
  *
  * Observed under WinDbg on Windows 11:
@@ -13,7 +13,7 @@
  * their original paths. Never calls DirectInput itself from the DLL.
  *
  * Strict safety measures:
- * - off by default and exact SHA-256-checked caller
+ * - permanently requested, with an exact SHA-256-checked caller
  * - 32-bit image must have original 0x400000 base and complete signatures
  * - install only from game's render thread, at Flip #120 (not at startup)
  * - two six-byte JNE replacements; no DirectInput interface or IAT hooks
@@ -223,7 +223,7 @@ static void try_install(void) {
   retained_executable_page=page;
   InterlockedExchange(&installed,1);
   if(write_log)
-    write_log("DI8-RETRY: EXPERIMENTAL active at Flip #120; exact x86 branch patch verified; original Acquire/retry reused, foreground only");
+    write_log("DI8-RETRY: active at Flip #120; exact x86 branch patch verified; original Acquire/retry reused, foreground only");
 }
 void SpiderDI8Retry_Init(void (*log_fn)(const char *)) {
   write_log=log_fn;

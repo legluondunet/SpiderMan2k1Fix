@@ -1,8 +1,8 @@
 #ifndef SPIDERMAN2K1FIX_VERSION_INFO_H
 #define SPIDERMAN2K1FIX_VERSION_INFO_H
 
-/* Placeholder for unversioned development snapshots; commit ID comes from build.sh. */
-#define SPIDERMAN2K1FIX_VERSION "0.0.0"
+/* Semantic version; build.sh appends the exact source commit for traceability. */
+#define SPIDERMAN2K1FIX_VERSION "1.0.0"
 #ifndef SPIDERMAN2K1FIX_COMMIT
 #define SPIDERMAN2K1FIX_COMMIT "local"
 #endif
