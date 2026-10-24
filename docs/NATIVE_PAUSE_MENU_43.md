@@ -38,7 +38,7 @@ vertex data or input state. Native `DrawPrimitive` and exact owner RVA
 Z/RHW and current render mode distinguish the ESC UI from the world and HUD.
 
 - **Ribbon:** Match the wide untextured pause band, then consider only
-  exact 8×8 border textures and text glyphs in the *same frame*.
+  exact 8x8 border textures and text glyphs in the *same frame*.
   Empirical outline calibration gives the original 4:3 width
   (approximately 1440px at 1920×1080).
 - **Motif:** Match *untextured* 2D alpha-0x80 primitives at Z≈0.00146,
