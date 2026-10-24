@@ -273,3 +273,43 @@ def test_f9_screenshot_arms_post_capture_menu_sprite_sampling():
     assert "scrn0010.png" in DOC and "scrn0011.png" in DOC
     for forbidden in ("SetTexture(", "SendInput(", "PostMessage(", "SetRenderState(", "memcpy(copy"):
         assert forbidden not in probe
+
+
+def test_native_mouse_cursor_transform_requires_exact_game_callstack():
+    code=CORE.split("/* Mouse cursor hook experiment, OFF by default.",1)[1].split(
+        "static void free_menu_vertices(",1)[0]
+    assert "SPIDERMAN2K1FIX_NATIVE_CURSOR_43" in code
+    assert "native_cursor43_enabled=0;" in code
+    assert "native_cursor43_owner=(BYTE*)exe+0x0010C470u;" in code
+    assert "PAGE_EXECUTE_READ" in code
+    assert "RtlCaptureStackBackTrace" in code
+    assert "native_cursor43_trace(0,20,frames,NULL)" in code
+    assert "(BYTE*)frames[i]>=native_cursor43_owner" in code
+    assert "(BYTE*)frames[i]<native_cursor43_owner+0x40u" in code
+    assert "if(!matched)" in code
+    assert "native_pause43_banner_flip,0,0)!=flip" in code
+    assert "attempts>180" in code
+    assert "native_cursor43_enabled,0,0)!=1" in code
+    assert "cx+0.75f*(v[i].x-cx)" in code
+    assert "memcpy(copy,v,4*sizeof(*copy));" in code
+    assert "SPIDERMAN2K1FIX_NATIVE_CURSOR_43" not in INI
+    assert "NATIVE-CURSOR-43:" in DOC
+    for unsafe in ("VirtualProtect(", "PostMessage(", "SendInput(", "SetMousePos(", "SetTexture("):
+        assert unsafe not in code
+    draw=CORE.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
+        "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
+    assert "maybe_correct_native_cursor43(" in draw
+    assert draw.index("maybe_correct_adaptive_hud(") < draw.index("maybe_correct_native_cursor43(")
+    assert draw.index("maybe_correct_native_cursor43(") < draw.index("maybe_correct_native_pause43(")
+    assert "native_cursor43_init();" in CORE
+
+
+def test_cursor_width_transform_is_centered_only_and_opt_in():
+    block=CORE.split("static const void *maybe_correct_native_cursor43(",1)[1].split(
+        "static void free_menu_vertices(",1)[0]
+    assert "for(i=0;i<4;i++)" in block
+    assert "copy[i].x=cx+0.75f*(v[i].x-cx)" in block
+    assert "copy[i].y=" not in block
+    assert "copy[i].z=" not in block
+    assert "copy[i].rhw=" not in block
+    assert "SPIDERMAN2K1FIX_NATIVE_CURSOR_43" in DOC
