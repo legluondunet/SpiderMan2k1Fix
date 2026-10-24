@@ -22,7 +22,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** that improves how the origin
 
 ## What does the patch do?
 
-- **Modern display modes:** borderless fullscreen at the desktop resolution, widescreen 3D or classic 4:3 presentation, and automatic aspect/FOV adjustments.
+- **Modern display modes:** detect the actual game-window monitor's resolution at startup (including secondary monitors when discoverable), use borderless fullscreen without changing the OS display mode, and render widescreen 3D or centered classic 4:3 with automatic aspect/FOV adjustments.
 - **Original-looking 2D content:** introductory videos, comic artwork and menus retain their intended proportions. The HUD, compass and mission instructions are adapted for supported widescreen resolutions.
 - **Game compatibility:** memory-only CD-check bypass for the supported executable and a default **30 FPS** limiter to avoid timing problems.
 - **Settings and input:** configurable display, sound, keyboard and gamepad controls, with automatic OS keyboard-layout detection (`Auto`/`Off`) for gameplay bindings, CHEATS entry and keyboard menu labels (validated on Windows 11 and Linux/Wine with French AZERTY). The keyboard-name correction operates only in memory; focus/Alt+Tab recovery remains experimental.
@@ -100,7 +100,7 @@ KeyboardLayout=Auto
 ```
 
 - **`FPSLimit=30` remains fully configurable:** use `0` for no limiter, or a target from `1` to `240`. Frame rates above 30 may break original game timing.
-- `AspectRatio=Auto` uses the desktop aspect ratio; `AspectRatio=4:3` uses the classic presentation.
+- `AspectRatio=Auto` uses the selected monitor's native resolution for 3D rendering; `AspectRatio=4:3` uses the same physical monitor size with a centered classic 4:3 gameplay canvas. Neither mode changes the operating system's display mode. There is no `Resolution` INI override.
 - `KeyboardLayout=Auto` resolves the active Windows/Wine keyboard layout for controls and CHEATS; `Off` preserves original QWERTY positions.
 - On a confirmed Alt+Tab focus loss, the game and synchronized audio/video pause automatically. Return to the game and press/release any key to resume. The background shade defaults to **60%**; you can optionally add `[Input] PauseDimOpacity=0` to disable only that shade, or choose any level from `1` to `90`. This setting is omitted from generated INIs. The old grid option has been removed.
 
