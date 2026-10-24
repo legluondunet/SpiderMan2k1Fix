@@ -100,7 +100,7 @@ HUDWidescreenFix=1
 - `FPSLimit=30`: default frame-rate limit.
 - `HUDWidescreenFix=1`: apply supported HUD/menu aspect corrections; set `0` to disable them.
 
-**AZERTY keyboard:** If physical keys appear swapped (A/Q, Z/W) or M is labeled as `;`, add `KeyboardLayout=AZERTY` under `[Input]` in the INI and restart. New INIs use `Auto` detection; this setting fixes action bindings, **not yet the labels in the original game's menus**. [Keyboard layout details](docs/references/CONFIGURATION.md#keyboard-layout-azerty-qwerty-and-wine).
+**Keyboard layout:** Newly generated INIs use `KeyboardLayout=Auto` to detect the active Windows/Wine layout for controls, CHEATS text entry and keyboard-menu labels. Set `KeyboardLayout=Off` to keep the original QWERTY key positions and labels. The CHEATS/menu correction is experimental; please test under Windows and Wine. [Keyboard layout details](docs/references/CONFIGURATION.md#keyboard-layout-azerty-qwerty-and-wine).
 
 For audio, controls, Alt+Tab options, INI repair and other settings, see the **[configuration guide](docs/references/CONFIGURATION.md)**.
 
