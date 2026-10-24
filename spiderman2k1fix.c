@@ -1591,6 +1591,157 @@ static const void *maybe_correct_native_pause43(void *device,
   }
   return copy;
 }
+/* Mouse cursor hook experiment, OFF by default. The PC-port decomp
+ * names PCSHELL_DrawMouseCursor at VA 0x0050C470 (RVA 0x0010C470,
+ * next function at VA 0x0050C4B0). Only the SHA256-verified EXE can
+ * reach this initialization. We DO NOT patch that function's code.
+ *
+ * A native stack trace must positively place the original draw inside
+ * that game function before any vertex correction is permitted. This
+ * is deliberately independent of the red sprite's 32x32 asset size:
+ * the pause-menu text contains many unrelated 32x32 textures.
+ */
+typedef USHORT (WINAPI *SpiderStackTraceFn)(ULONG,ULONG,PVOID*,PULONG);
+static SpiderStackTraceFn native_cursor43_trace=NULL;
+static BYTE *native_cursor43_owner=NULL;
+static volatile LONG native_cursor43_enabled=0;
+static volatile LONG native_cursor43_hits=0;
+static volatile LONG native_cursor43_samples=0;
+static volatile LONG native_cursor43_last_flip=-1;
+static volatile LONG native_cursor43_attempts_this_flip=0;
+static void native_cursor43_init(void) {
+  char value[4]={0},line[220];
+  HMODULE kernel,ntdll,exe;
+  MEMORY_BASIC_INFORMATION mem;
+  DWORD i;
+  int n;
+  if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_NATIVE_CURSOR_43",
+                             value,sizeof(value))!=1 || value[0]!='1')
+    return;
+  if(InterlockedCompareExchange(&native_pause43_enabled,0,0)!=1) {
+    log_line("NATIVE-CURSOR-43: disabled; requires SPIDERMAN2K1FIX_NATIVE_ESC_43=1");
+    return;
+  }
+  exe=GetModuleHandleA(NULL);
+  if(!exe) return;
+  native_cursor43_owner=(BYTE*)exe+0x0010C470u;
+  if(!VirtualQuery(native_cursor43_owner,&mem,sizeof(mem)) ||
+     mem.State!=MEM_COMMIT ||
+     !((mem.Protect & 0xff)==PAGE_EXECUTE ||
+       (mem.Protect & 0xff)==PAGE_EXECUTE_READ ||
+       (mem.Protect & 0xff)==PAGE_EXECUTE_READWRITE ||
+       (mem.Protect & 0xff)==PAGE_EXECUTE_WRITECOPY)) {
+    native_cursor43_owner=NULL;
+    log_line("NATIVE-CURSOR-43: candidate RVA 0x0010C470 is not executable; disabled");
+    return;
+  }
+  kernel=GetModuleHandleA("kernel32.dll");
+  ntdll=GetModuleHandleA("ntdll.dll");
+  if(kernel)
+    native_cursor43_trace=(SpiderStackTraceFn)GetProcAddress(kernel,"RtlCaptureStackBackTrace");
+  if(!native_cursor43_trace && kernel)
+    native_cursor43_trace=(SpiderStackTraceFn)GetProcAddress(kernel,"CaptureStackBackTrace");
+  if(!native_cursor43_trace && ntdll)
+    native_cursor43_trace=(SpiderStackTraceFn)GetProcAddress(ntdll,"RtlCaptureStackBackTrace");
+  if(!native_cursor43_trace) {
+    log_line("NATIVE-CURSOR-43: no native stack walker; disabled");
+    return;
+  }
+  n=snprintf(line,sizeof(line),
+     "NATIVE-CURSOR-43: opt-in stack-verified owner RVA=0x0010C470..0x0010C4B0; code[0..11]=");
+  if(n<0 || n>=(int)sizeof(line)-3)return;
+  for(i=0;i<12 && (size_t)n+3<sizeof(line);i++) {
+    int written=snprintf(line+n,sizeof(line)-(size_t)n,
+                        "%02X",(unsigned)native_cursor43_owner[i]);
+    if(written!=2)return;
+    n+=written;
+  }
+  log_line(line);
+  InterlockedExchange(&native_cursor43_enabled,1);
+  log_line("NATIVE-CURSOR-43: cursor X-only 0.75 scale ARMED but applies ONLY with matching native owner stack frame; no input changes");
+}
+static const void *maybe_correct_native_cursor43(void *device,
+    D3DPRIMITIVETYPE type,DWORD fvf,const void *source,DWORD count,
+    SpiderMenuVertex *copy) {
+  const SpiderMenuVertex *v=(const SpiderMenuVertex *)source;
+  float left,right,top,bottom,cx,z,rhw;
+  PVOID frames[20];
+  USHORT depth,i;
+  LONG flip,attempts,hits;
+  int matched=0;
+  if(InterlockedCompareExchange(&native_cursor43_enabled,0,0)!=1 ||
+     !native_cursor43_trace || !native_cursor43_owner ||
+     !source || !copy || type!=D3DPT_TRIANGLEFAN ||
+     fvf!=0x144UL || count!=4 ||
+     desktop_w*3<=desktop_h*4 || desktop_h<480 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0)
+    return source;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  /* The validated pause ribbon must have been drawn in this Flip. */
+  if(InterlockedCompareExchange(&native_pause43_banner_flip,0,0)!=flip)
+    return source;
+  left=right=v[0].x;top=bottom=v[0].y;z=v[0].z;rhw=v[0].rhw;
+  for(i=1;i<4;i++) {
+    if(v[i].x<left)left=v[i].x;
+    if(v[i].x>right)right=v[i].x;
+    if(v[i].y<top)top=v[i].y;
+    if(v[i].y>bottom)bottom=v[i].y;
+  }
+  /* Cursor.bmp: a 32x32 source drawn about 96x72 at 1920x1080;
+   * geometrical bounds deliberately loose, stack identity strict. */
+  if(left<(float)desktop_w*0.20f ||
+     right>(float)desktop_w*0.82f ||
+     top<(float)desktop_h*0.26f ||
+     bottom>(float)desktop_h*0.76f ||
+     right-left<(float)desktop_w*0.030f ||
+     right-left>(float)desktop_w*0.075f ||
+     bottom-top<(float)desktop_h*0.040f ||
+     bottom-top>(float)desktop_h*0.11f ||
+     z<0.00020f || z>0.0040f ||
+     rhw<5.0f || rhw>25.0f)
+    return source;
+  if(InterlockedCompareExchange(&native_cursor43_last_flip,flip,flip)!=flip) {
+    InterlockedExchange(&native_cursor43_last_flip,flip);
+    InterlockedExchange(&native_cursor43_attempts_this_flip,0);
+  }
+  attempts=InterlockedIncrement(&native_cursor43_attempts_this_flip);
+  if(attempts>180)return source; /* bounded work each Flip */
+  memset(frames,0,sizeof(frames));
+  depth=native_cursor43_trace(0,20,frames,NULL);
+  for(i=0;i<depth;i++) {
+    if((BYTE*)frames[i]>=native_cursor43_owner &&
+       (BYTE*)frames[i]<native_cursor43_owner+0x40u) {
+      matched=1;break;
+    }
+  }
+  if(!matched) {
+    if(attempts==180 &&
+       InterlockedIncrement(&native_cursor43_samples)<=3) {
+      log_line("NATIVE-CURSOR-43: 180 geometrical candidates/Flip inspected; no PCSHELL_DrawMouseCursor stack owner (no changes)");
+    }
+    return source;
+  }
+  /* Keep visible cursor CENTER and Y fixed: only its sprite X width
+   * is compressed. Do not touch global mouse position or native hit test.
+   */
+  cx=(left+right)*0.5f;
+  memcpy(copy,v,4*sizeof(*copy));
+  for(i=0;i<4;i++)
+    copy[i].x=cx+0.75f*(v[i].x-cx);
+  hits=InterlockedIncrement(&native_cursor43_hits);
+  if(hits<=8 || (hits%600)==0) {
+    char line[250];
+    snprintf(line,sizeof(line),
+      "NATIVE-CURSOR-43: owner MATCH hit=%ld frame=%ld x=(%.1f..%.1f) y=(%.1f..%.1f) size=(%.1fx%.1f) z=%.5f rhw=%.3f [X-ONLY EXPERIMENT]",
+      (long)hits,(long)flip,(double)left,(double)right,
+      (double)top,(double)bottom,(double)(right-left),
+      (double)(bottom-top),(double)z,(double)rhw);
+    log_line(line);
+  }
+  (void)device;
+  return copy;
+}
 static void free_menu_vertices(SpiderMenuVertex *allocated) {
   if (allocated) HeapFree(GetProcessHeap(),0,allocated);
 }
@@ -1613,8 +1764,13 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       v=maybe_correct_adaptive_hud(self,type,fvf,verts,count,
                                    __builtin_return_address(0),small);
-    /* Native ESC after known comic/HUD precedence, with its own
-     * source-vertex-only banner trigger; no rewrites in 4:3 gameplay. */
+    /* The cursor is gated by a positive native stack owner, not by
+     * font texture dimensions. Existing ESC ribbon/text behavior
+     * stays unchanged in all other draws.
+     */
+    if(v==verts && count==4)
+      v=maybe_correct_native_cursor43(self,type,fvf,verts,count,small);
+    /* Native ESC after known comic/HUD precedence. */
     if(v==verts && count==4)
       v=maybe_correct_native_pause43(self,type,fvf,verts,count,
                                      __builtin_return_address(0),small);
@@ -3240,7 +3396,8 @@ static DWORD WINAPI initialize(LPVOID unused) {
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
   pause_menu_trace_init();
-  native_pause43_init(); /* Passive native ESC pause 4:3 owner/geometry probe. */
+  native_pause43_init(); /* Native ESC visual correction, explicit opt-in. */
+  native_cursor43_init(); /* Stack-verified mouse-cursor opt-in; off by default. */
   SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
