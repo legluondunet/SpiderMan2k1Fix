@@ -70,8 +70,10 @@ def test_permanent_graphics_and_legacy_ini_migration_safe():
     assert "deprecated_ini_count(ini)" in GEN
     assert "if(deprecated_ini_key(e->section,e->key))continue;" in GEN
     assert 'WritePrivateProfileStringA("Input","KeyboardLayout","Off",tmp)' in GEN
-    assert 'CopyFileA(ini,backup,TRUE)' in GEN
-    assert "MoveFileExA(tmp,ini,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)" in GEN
+    assert 'snprintf(backup,sizeof(backup),"%s.old",ini)' in GEN
+    assert "MoveFileExA(ini,backup,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)" in GEN
+    assert "MoveFileExA(tmp,ini,MOVEFILE_WRITE_THROUGH)" in GEN
+    assert "SpiderCfg_PruneNumberedOldFiles(directory,logger)" in GEN
     assert "SpiderIni_Validate(tmp,NULL,NULL)" in GEN
     assert "ini_writes_permitted=0;" in GEN
     assert '"PauseOnFocusLoss"' in VALIDATOR  # accepted only for migration
