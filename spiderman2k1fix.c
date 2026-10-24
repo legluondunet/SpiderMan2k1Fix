@@ -1115,6 +1115,7 @@ static volatile LONG pause_menu_trace_wide_seen=0;
 static volatile LONG pause_menu_trace_selector_seen=0;
 static volatile LONG pause_menu_trace_icon_seen=0;
 static volatile LONG pause_menu_trace_shape_seen=0;
+static volatile LONG pause_menu_trace_motif_seen=0;
 static volatile LONG pause_menu_trace_f9_events=0;
 #define SPIDER_NATIVE_ESC_PAUSE_CONTEXT ((const volatile DWORD *)(uintptr_t)0x00682950u)
 
@@ -1287,6 +1288,7 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
     InterlockedExchange(&pause_menu_trace_selector_seen,0);
     InterlockedExchange(&pause_menu_trace_icon_seen,0);
     InterlockedExchange(&pause_menu_trace_shape_seen,0);
+    InterlockedExchange(&pause_menu_trace_motif_seen,0);
     frame=InterlockedIncrement(&pause_menu_trace_frames);
     if(frame<=20 && (frame==1 || frame==5 || frame==12 || frame==20)) {
       snprintf(line,sizeof(line),
@@ -1320,6 +1322,45 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
        ymax>0.0f && ymin<(float)desktop_h))
     return;
   draw=InterlockedIncrement(&pause_menu_trace_draws);
+  /* Passive exploration of the large translucent orange/blue background
+   * shapes seen behind ESC. They are NOT known to belong to the pause
+   * UI: some large projected quads are world/scene geometry. Unlike
+   * the exact ribbon/border matches, none of these is transformed.
+   * F9 arms short, bounded windows for comparison against screenshots.
+   * Sample a mix of early and later large draws rather than consuming
+   * the entire quota on world triangles before the UI is drawn.
+   */
+  if((frame==1 || frame==5 || frame==12 || frame==20) &&
+     (count==3 || count==4 || count==6) &&
+     (xmax-xmin)>(float)desktop_w*0.23f &&
+     (ymax-ymin)>(float)desktop_h*0.20f &&
+     xmax>0.0f && xmin<(float)desktop_w &&
+     ymax>0.0f && ymin<(float)desktop_h &&
+     (draw<=16 || (draw%67)==0) &&
+     InterlockedIncrement(&pause_menu_trace_motif_seen)<=28) {
+    DWORD color=0,tw=0,th=0;
+    IDirectDrawSurface7 *surf=NULL;
+    DDSURFACEDESC2 sd;
+    char motif_line[350];
+    memcpy(&color,raw+16,sizeof(color));
+    if(fvf==0x144UL &&
+       SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&surf)) && surf) {
+      memset(&sd,0,sizeof(sd));sd.dwSize=sizeof(sd);
+      if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(surf,&sd))) {
+        tw=sd.dwWidth;th=sd.dwHeight;
+      }
+      IDirectDrawSurface7_Release(surf);
+    }
+    if(!rva && !geom_rva(ret,&rva))rva=0;
+    snprintf(motif_line,sizeof(motif_line),
+      "PAUSE-NATIVE-PROBE: MOTIF-CANDIDATE frame=%ld flip=%ld draw=%ld indexed=%d type=%lu fvf=0x%lX count=%lu caller_rva=0x%08lX tex=%lux%lu diffuse=0x%08lX rect=(%.1f,%.1f)-(%.1f,%.1f) z=%.5f rhw=%.3f [SCENE OR UI UNKNOWN; READ ONLY]",
+      (long)frame,(long)flip,(long)draw,indexed,
+      (unsigned long)type,(unsigned long)fvf,(unsigned long)count,
+      (unsigned long)rva,(unsigned long)tw,(unsigned long)th,
+      (unsigned long)color,(double)xmin,(double)ymin,
+      (double)xmax,(double)ymax,(double)z,(double)rhw);
+    log_line(motif_line);
+  }
   /* Historical draw 3140..3400 sampling missed the cursor in #747:
    * the exact same ribbon now occurs around draw 1439. Do not rely on
    * numeric draw IDs, which depend on level and world complexity.
@@ -1604,8 +1645,23 @@ static const void *maybe_correct_native_pause43(void *device,
   center=(float)desktop_w*0.5f;
   aspect_scale=((float)desktop_h*(4.0f/3.0f))/(float)desktop_w;
   memcpy(copy,v,4*sizeof(*copy));
-  for(i=0;i<4;i++)
-    copy[i].x=center+(v[i].x-center)*aspect_scale;
+  for(i=0;i<4;i++) {
+    float mapped=center+(v[i].x-center)*aspect_scale;
+    /* Reference F9: original 4:3 outline x=241..1679 (1439px).
+     * The current 1920x1080 Auto outline is x=224..1702 (1479px),
+     * but the untextured fill is already much closer to 4:3. Do NOT
+     * indiscriminately shrink text or the entire HUD by 2.7%.
+     * Empirical calibration is intentionally exclusive to the one
+     * measured resolution until another mode is validated in-game.
+     */
+    if(desktop_w==1920 && desktop_h==1080) {
+      if(border)
+        mapped=960.0f+(mapped-963.0f)*(1439.0f/1479.0f);
+      else if(ribbon)
+        mapped=960.0f+(mapped-958.6f)*(1439.0f/1448.5f);
+    }
+    copy[i].x=mapped;
+  }
   if(ribbon) hit=InterlockedIncrement(&native_pause43_banner_hits);
   else if(border) hit=InterlockedIncrement(&native_pause43_border_hits);
   else hit=InterlockedIncrement(&native_pause43_glyph_hits);
