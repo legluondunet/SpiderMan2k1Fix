@@ -1104,6 +1104,11 @@ static volatile LONG pause_menu_trace_session=0;
 static volatile LONG pause_menu_trace_escape_down=0;
 static volatile LONG pause_menu_trace_escape_edges=0;
 static volatile LONG pause_menu_trace_escape_until=-1;
+static volatile LONG pause_menu_trace_action_armed_until=-1;
+static volatile LONG pause_menu_trace_enter_down=0;
+static volatile LONG pause_menu_trace_space_down=0;
+static volatile LONG pause_menu_trace_action_edges=0;
+static volatile LONG pause_menu_trace_wide_seen=0;
 #define SPIDER_NATIVE_ESC_PAUSE_CONTEXT ((const volatile DWORD *)(uintptr_t)0x00682950u)
 
 static void pause_menu_trace_init(void) {
@@ -1113,26 +1118,32 @@ static void pause_menu_trace_init(void) {
   n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_PAUSE_MENU_TRACE",value,sizeof(value));
   if(n==1 && value[0]=='1') {
     InterlockedExchange(&pause_menu_trace_enabled,1);
-    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; frames 1/5/12/20, first8 + every64th + all draws 3200..3400; no geometry changes [Log=1]");
+    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; ESC and post-ESC ENTER/SPACE edges; frames 1/5/12/20, first8 + every64th + draws 3200..3400 + wide overlay candidates; no geometry changes [Log=1]");
   }
 }
-/* Passive physical key observation only (high bit); no injected or consumed
- * input. Unlike the game-owned pause-context pointer, an ESC edge can be
- * seen even if the original native pause flag is transient or stays zero.
- * Capture only a bounded 24-Flip window. Detailed geometry is sampled in
- * frames 1, 5, 12 and 20 so late menu overlays are not hidden by early
- * recurring world draws. Input is never consumed, patched or synthesized.
+/* Read-only ESC observation and a limited follow-up after ENTER or SPACE.
+ * Native pause_context is zero in the observed Wine runs; do NOT treat the
+ * key edge as proof of the menu state. A post-ESC key is simply a convenient
+ * sampling trigger for QUIT -> NO/YES; no key is consumed, synthesized or
+ * rerouted. Up to three follow-up 24-Flip windows, armed for 1800 Flips
+ * (about one minute at 30 FPS), per observed ESC edge.
  */
 static void pause_menu_trace_on_flip(LONG flip) {
-  LONG down,prev,until;
+  LONG down,prev,until,enter_down,enter_prev,space_down,space_prev,armed;
   char line[220];
   if(InterlockedCompareExchange(&pause_menu_trace_enabled,0,0)!=1)return;
   down=(GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0;
   prev=InterlockedExchange(&pause_menu_trace_escape_down,down);
+  enter_down=(GetAsyncKeyState(VK_RETURN)&0x8000)!=0;
+  enter_prev=InterlockedExchange(&pause_menu_trace_enter_down,enter_down);
+  space_down=(GetAsyncKeyState(VK_SPACE)&0x8000)!=0;
+  space_prev=InterlockedExchange(&pause_menu_trace_space_down,space_down);
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 && down && !prev) {
-    /* Cap the number of captured sessions to avoid runaway debug logs. */
+    /* Cap ESC sessions and post-ESC action sessions to avoid runaway logs. */
     LONG edge=InterlockedIncrement(&pause_menu_trace_escape_edges);
     if(edge<=4) {
+      InterlockedExchange(&pause_menu_trace_action_armed_until,flip+1800);
+      InterlockedExchange(&pause_menu_trace_action_edges,0);
       InterlockedExchange(&pause_menu_trace_escape_until,flip+24);
       InterlockedExchange(&pause_menu_trace_active,0);
       InterlockedExchange(&pause_menu_trace_frames,0);
@@ -1143,13 +1154,31 @@ static void pause_menu_trace_on_flip(LONG flip) {
         (long)edge,(long)flip,(unsigned long)(*SPIDER_NATIVE_ESC_PAUSE_CONTEXT!=0));
       log_line(line);
     }
+  } else if(InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
+            ((enter_down && !enter_prev) || (space_down && !space_prev))) {
+    armed=InterlockedCompareExchange(&pause_menu_trace_action_armed_until,0,0);
+    if(armed>=flip && flip>0 &&
+       InterlockedCompareExchange(&pause_menu_trace_escape_edges,0,0)>0) {
+      LONG n=InterlockedIncrement(&pause_menu_trace_action_edges);
+      if(n<=3) {
+        InterlockedExchange(&pause_menu_trace_escape_until,flip+24);
+        InterlockedExchange(&pause_menu_trace_active,0);
+        InterlockedExchange(&pause_menu_trace_frames,0);
+        InterlockedExchange(&pause_menu_trace_draws,0);
+        InterlockedExchange(&pause_menu_trace_last_flip,-1);
+        snprintf(line,sizeof(line),
+          "PAUSE-NATIVE-PROBE: KEY-EDGE #%ld key=%s flip=%ld [READ ONLY; post-ESC observation, menu state UNVERIFIED]",
+          (long)n,enter_down && !enter_prev?"ENTER":"SPACE",(long)flip);
+        log_line(line);
+      }
+    }
   }
   until=InterlockedCompareExchange(&pause_menu_trace_escape_until,0,0);
   if(until>0 && flip>until) {
     InterlockedExchange(&pause_menu_trace_escape_until,-1);
     if(InterlockedExchange(&pause_menu_trace_active,0)==1) {
       snprintf(line,sizeof(line),
-        "PAUSE-NATIVE-PROBE: END ESC window flip=%ld [NO GEOMETRY MODIFIED]",
+        "PAUSE-NATIVE-PROBE: END key window flip=%ld [NO GEOMETRY MODIFIED]",
         (long)flip);
       log_line(line);
     }
@@ -1167,6 +1196,7 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
   IDirectDrawSurface7 *texture=NULL;
   DDSURFACEDESC2 desc;
   char line[310];
+  int wide_overlay_candidate;
   if(InterlockedCompareExchange(&pause_menu_trace_enabled,0,0)!=1)return;
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 ||
      (*SPIDER_NATIVE_ESC_PAUSE_CONTEXT==0 &&
@@ -1203,6 +1233,7 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
       log_line(line);
     }
     InterlockedExchange(&pause_menu_trace_last_flip,flip);
+    InterlockedExchange(&pause_menu_trace_wide_seen,0);
     frame=InterlockedIncrement(&pause_menu_trace_frames);
     if(frame<=20 && (frame==1 || frame==5 || frame==12 || frame==20)) {
       snprintf(line,sizeof(line),
@@ -1241,9 +1272,21 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
    * four spaced frames, in addition to the existing sparse samples.
    * Keep the trace read-only, explicitly opt-in and bounded; do not
    * infer from the candidate count alone that a quad is pause UI. */
+  /* Log a few broad 2D quads in the middle third of the display even
+   * when their draw index is outside 3200..3400. These are only possible
+   * ribbon backgrounds, NOT a confirmed native pause-menu signature.
+   * A maximum of twelve per sampled frame prevents trace explosions.
+   */
+  wide_overlay_candidate=(fvf==0x144UL && count==4 &&
+     (xmax-xmin)>(float)desktop_w*0.60f &&
+     ymin>(float)desktop_h*0.18f &&
+     ymax<(float)desktop_h*0.85f &&
+     (ymax-ymin)>(float)desktop_h*0.10f &&
+     InterlockedIncrement(&pause_menu_trace_wide_seen)<=12);
   if(!(frame==1 || frame==5 || frame==12 || frame==20) ||
      draw>8192 ||
-     (draw>8 && (draw%64)!=0 && !(draw>=3200 && draw<=3400)))return;
+     (draw>8 && (draw%64)!=0 && !(draw>=3200 && draw<=3400) &&
+      !wide_overlay_candidate))return;
   if(!geom_rva(ret,&rva))rva=0;
   if(fvf==0x144UL &&
      SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) &&
