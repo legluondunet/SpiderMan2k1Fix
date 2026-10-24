@@ -225,15 +225,16 @@ def test_static_comic_context_follows_each_png_job_without_changing_encoder():
     assert "if(MoveFileExW(temp,dest,MOVEFILE_WRITE_THROUGH))" in ENC
     assert "spider_png_verify(dest)" in ENC
 
-def test_readme_reports_wine_png_only_validation_without_claiming_windows():
+def test_f9_technical_details_moved_to_docs_without_claiming_windows():
     readme=(ROOT/"README.md").read_text(encoding="utf-8")
-    section=readme.split("### F9 screenshots — always lossless PNG",1)[1]
-    section=section.split("## Adaptive widescreen HUD",1)[0]
-    assert "build #717" in section
-    assert "scrn0010.png" in section
-    assert "PNG is the only selectable format" in section
-    assert "no INI setting" in section
-    assert "Log=1" in section
-    assert "no longer select any" in section
-    assert "Windows 11" in section
-    assert "not" in section.lower()
+    notes=(ROOT/"docs/references/F9_PNG_CAPTURE.md").read_text(encoding="utf-8")
+    index=(ROOT/"docs/README.md").read_text(encoding="utf-8")
+    assert "docs/references/F9_PNG_CAPTURE.md" in readme
+    assert "references/F9_PNG_CAPTURE.md" in index
+    assert "### F9 screenshots — always lossless PNG" not in readme
+    for evidence in ("build #717", "scrn0010.png",
+                     "PNG is the only selectable format",
+                     "no INI setting", "Log=1",
+                     "no longer select any", "Windows 11"):
+        assert evidence in notes
+    assert "not" in notes.lower()

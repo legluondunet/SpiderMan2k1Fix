@@ -862,19 +862,20 @@ def test_external_windows_watcher_verifies_direct_3d_f12_cleanup_and_expected_mo
     assert "Stop-Process" not in script and ".Kill(" not in script
 
 
-def test_readme_describes_current_f10_native_skips_and_experimental_scope():
-    """The F12 disassembly history moved to docs; README states F10
-    behavior and remaining unverified in-level cinematic cases."""
+def test_optional_f10_scope_documented_in_research_not_homepage():
+    """Keep experimental F10 native cleanup in documentation, not the project homepage."""
     readme=(ROOT/"README.md").read_text(encoding="utf-8")
-    assert "F10 is the only SpiderMan2k1Fix physical shortcut" in readme
-    assert "F10Shortcut=1" in readme
-    assert "not generated" in readme
-    assert "F10VerboseTrace=1" in readme
-    assert "CutSceneScript" in readme
-    assert "original 3D cleanup" in readme
-    assert "later in-level" in readme
-    assert "docs/references/F10_VALIDATION_MATRIX.md" in readme
-    assert "docs/references/F12_DEBUG_TEST_MODE.md" in readme
+    matrix=(ROOT/"docs/references/F10_VALIDATION_MATRIX.md").read_text(encoding="utf-8")
+    dev=(ROOT/"docs/DEVELOPMENT.md").read_text(encoding="utf-8")
+    assert "### F10 development shortcut" not in readme
+    for evidence in ("F10 is the only physical SpiderMan2k1Fix development shortcut",
+                     "F10Shortcut=1", "not generated", "F10VerboseTrace=1",
+                     "CutSceneScript", "later in-level",
+                     "Native request 7"):
+        assert evidence in matrix
+    assert "original 3D cleanup" in dev
+    assert "references/F10_VALIDATION_MATRIX.md" in dev
+    assert "references/F12_DEBUG_TEST_MODE.md" in dev
 
 
 def test_four_intro_movies_run_original_bink_cleanup_on_game_thread():
