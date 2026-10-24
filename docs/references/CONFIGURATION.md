@@ -11,7 +11,7 @@ This is the detailed companion to the [project README](../../README.md). For the
 ## Game progress saves are separate from the patch INI
 
 The original game's campaign/progress slots live in
-`save\\SPIDRMAN.DAT` **relative to the game's current working
+`save\SPIDRMAN.DAT` **relative to the game's current working
 directory** according to the partial decompilation. This single file
 contains up to **eight slots** and is **not** the original 252-byte
 `Spidey.cfg` or `SpiderMan2k1Fix.ini`. Deleting or regenerating the
