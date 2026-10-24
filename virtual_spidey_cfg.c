@@ -369,7 +369,7 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "HUDWidescreenFix=1\r\n"
     "\r\n"
     "[Input]\r\n"
-    "; KeyboardLayout: Auto (new install), AZERTY, QWERTY, Physical (legacy).\r\n"
+    "; KeyboardLayout: Auto (new install), AZERTY, QWERTY, Physical/Legacy.\r\n"
     "; Determines how [Keyboard] letters resolve to physical DirectInput keys.\r\n"
     "KeyboardLayout=Auto\r\n"
     "; Opt-in native DirectInput error recovery after Alt+Tab; default off.\r\n"
