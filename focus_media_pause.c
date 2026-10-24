@@ -55,19 +55,12 @@ static void log_movie(const char *phase,int index,void *handle,int result) {
   diag(line);
 }
 void SpiderFocusMedia_Init(void (*log_fn)(const char *)) {
-  char exe[MAX_PATH],*slash;
-  DWORD n;
   HMODULE bink;
   FARPROC exported;
   void *imported=NULL;
-
   logger=log_fn;
-  n=GetModuleFileNameA(NULL,exe,sizeof(exe));
-  if(!n || n>=sizeof(exe) || !(slash=strrchr(exe,'\\')) ||
-     (size_t)(slash-exe)+sizeof("SpiderMan2k1Fix.ini")>sizeof(exe))return;
-  strcpy(slash+1,"SpiderMan2k1Fix.ini");
-  if(GetPrivateProfileIntA("Input","PauseBinkOnFocusLoss",0,exe)!=1) return;
-
+  /* Permanent synchronized focus pause. The retail Bink callsite and
+   * native module/export/import checks below still fail closed. */
   /* Caller has already verified supported EXE SHA-256. Compare a genuine
    * native callsite and the decorated stdcall export before using a fixed VA.
    * Do not initialize/hook Bink ourselves or load alternate versions. */
