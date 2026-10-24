@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_release_logging_is_off_by_default():
-    ini = (ROOT / 'SpiderMan2k1Fix.ini').read_text()
+    ini = (ROOT / 'ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini').read_text()
     generated = (ROOT / 'virtual_spidey_cfg.c').read_text()
     assert '\n[Debug]\n' in ini
     assert '\nLog=0\n' in ini
@@ -35,7 +35,7 @@ def test_input_focus_recovery_not_removed():
 
 
 def test_native_windows_reacquire_hook_not_on_by_default():
-    ini = (ROOT / 'SpiderMan2k1Fix.ini').read_text()
+    ini = (ROOT / 'ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini').read_text()
     generated = (ROOT / 'virtual_spidey_cfg.c').read_text()
     assert 'DirectInputReacquire=0' in ini
     assert '"DirectInputReacquire=0\\r\\n"' in generated

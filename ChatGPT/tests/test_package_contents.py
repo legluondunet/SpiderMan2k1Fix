@@ -58,7 +58,10 @@ def test_default_ini_is_still_generated_on_first_launch():
     config = (ROOT / "virtual_spidey_cfg.c").read_text()
     assert "SpiderCfg_EnsureDefaultIni(log_line);" in game
     assert "CREATE_NEW" in config
-    assert (ROOT / "SpiderMan2k1Fix.ini").is_file()
+    assert (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").is_file()
+    # The developer repository does not ship any ready-made runtime INI at its root.
+    assert not (ROOT / "SpiderMan2k1Fix.ini").exists()
+    assert not (ROOT / "SpiderMan2k1Fix.generated-example.ini").exists()
 
 
 def test_ci_runs_relocated_developer_tests():

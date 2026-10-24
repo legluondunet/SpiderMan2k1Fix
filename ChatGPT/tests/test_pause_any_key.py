@@ -5,7 +5,7 @@ ROOT=Path(__file__).resolve().parents[2]
 CORE=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
 HEADER=(ROOT/"pause_any_key.h").read_text(encoding="utf-8")
 SOURCE=(ROOT/"pause_any_key.c").read_text(encoding="utf-8")
-INI=(ROOT/"SpiderMan2k1Fix.ini").read_text(encoding="utf-8")
+INI=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text(encoding="utf-8")
 GEN=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
 VALID=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
 BUILD=(ROOT/"build.sh").read_text(encoding="utf-8")

@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CORE = (ROOT / "spiderman2k1fix.c").read_text(encoding="utf-8")
-INI = (ROOT / "SpiderMan2k1Fix.ini").read_text(encoding="utf-8")
+INI = (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text(encoding="utf-8")
 DOC = (ROOT / "docs/NATIVE_PAUSE_MENU_43.md").read_text(encoding="utf-8")
 
 
@@ -195,8 +195,8 @@ def test_native_esc_hidden_manual_ini_children_and_parent_chain():
     assert "InterlockedCompareExchange(&native_pause43_enabled,0,0)==1" in cursor
     for name in ("NativeESC4x3","NativeMotif4x3","NativeCursor4x3"):
         assert name in DOC
-        for ini in ("SpiderMan2k1Fix.ini","SpiderMan2k1Fix.generated-example.ini",
-                    "examples/SpiderMan2k1Fix.user-clean.ini"):
+        for ini in ("ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini","ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini",
+                    "ChatGPT/tests/fixtures/SpiderMan2k1Fix.user-clean.ini"):
             assert name not in (ROOT / ini).read_text(encoding="utf-8")
         assert name not in (ROOT / "virtual_spidey_cfg.c").read_text(encoding="utf-8")
     for env in ("SPIDERMAN2K1FIX_NATIVE_ESC_43",

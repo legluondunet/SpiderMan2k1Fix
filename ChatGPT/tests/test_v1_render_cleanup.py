@@ -47,7 +47,7 @@ def test_no_forwarding_only_render_hooks_or_hot_path_collectors():
 
 
 def test_logging_disabled_in_factory_and_no_unneeded_periodic_trace():
-    ini = (BASE / 'SpiderMan2k1Fix.ini').read_text()
+    ini = (BASE / 'ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini').read_text()
     assert '\nLog=0\n' in ini
     assert 'if(debug_log_enabled && count%120==0)' in CORE
     assert 'if(debug_log_enabled && count<=24)' in CORE

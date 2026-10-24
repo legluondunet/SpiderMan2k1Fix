@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 S = (ROOT / "input_focus_trace.c").read_text()
-INI = (ROOT / "SpiderMan2k1Fix.ini").read_text()
+INI = (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text()
 GEN = (ROOT / "virtual_spidey_cfg.c").read_text()
 VALID = (ROOT / "ini_validation.h").read_text()
 DOC = (ROOT / "docs/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()

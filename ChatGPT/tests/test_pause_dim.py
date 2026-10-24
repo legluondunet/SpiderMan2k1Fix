@@ -4,8 +4,8 @@ ROOT=Path(__file__).resolve().parents[2]
 P=(ROOT/"pause_surface.c").read_text()
 CORE=(ROOT/"spiderman2k1fix.c").read_text()
 BUILD=(ROOT/"build.sh").read_text()
-INI=(ROOT/"SpiderMan2k1Fix.ini").read_text()
-EXAMPLE=(ROOT/"SpiderMan2k1Fix.generated-example.ini").read_text()
+INI=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text()
+EXAMPLE=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text()
 GEN=(ROOT/"virtual_spidey_cfg.c").read_text()
 VALID=(ROOT/"ini_validation.h").read_text()
 def test_original_ini_controls_retained():

@@ -20,8 +20,10 @@ def test_ini_and_logs_are_consistent():
         assert 'SpiderMan2k1Fix.ini' in data
     for name in ('spiderman2k1fix.c','winmm_proxy.c'):
         assert 'SpiderMan2k1Fix.log' in (ROOT / name).read_text()
-    assert (ROOT / 'SpiderMan2k1Fix.ini').exists()
-    assert (ROOT / 'SpiderMan2k1Fix.generated-example.ini').exists()
+    assert (ROOT / 'ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini').exists()
+    assert (ROOT / 'ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini').exists()
+    assert not (ROOT / 'SpiderMan2k1Fix.ini').exists()
+    assert not (ROOT / 'SpiderMan2k1Fix.generated-example.ini').exists()
 
 def test_no_obsolete_name_in_runtime_sources():
     for path in ROOT.iterdir():

@@ -11,7 +11,7 @@ SRC=(ROOT/"quick_exit_f12.c").read_text(encoding="utf-8")
 HDR=(ROOT/"quick_exit_f12.h").read_text(encoding="utf-8")
 VAL=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
 GEN=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
-INI=(ROOT/"SpiderMan2k1Fix.generated-example.ini").read_text(encoding="utf-8")
+INI=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text(encoding="utf-8")
 BUILD=(ROOT/"build.sh").read_text(encoding="utf-8")
 
 

@@ -4,8 +4,8 @@ import pytest
 
 ROOT=Path(__file__).resolve().parents[2]
 CORE=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
-INI=(ROOT/"SpiderMan2k1Fix.ini").read_text(encoding="utf-8")
-EXAMPLE=(ROOT/"SpiderMan2k1Fix.generated-example.ini").read_text(encoding="utf-8")
+INI=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text(encoding="utf-8")
+EXAMPLE=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text(encoding="utf-8")
 GENERATOR=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
 VALIDATOR=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
 
