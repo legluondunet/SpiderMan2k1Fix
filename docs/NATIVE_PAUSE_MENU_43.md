@@ -122,6 +122,66 @@ entries to decide whether the motif is a distinct native
 2D overlay or part of the projected world. This PR remains a
 draft until visual and platform validation.
 
+## Build after #777 — opt-in native ESC translucent motif X-correction (2026-10-24)
+
+Evidence from exact **1920x1080** F9 images:
+- `scrn0004(3).png`: same roof, Spidey and background in **normal gameplay**;
+  orange/blue large translucent shapes are **absent**.
+- `scrn0005(3).png`: ESC panel active; translucent geometric shapes
+  appear while background 3D remains the same scene.
+- `scrn0006(2).png`: REALY QUIT? / YES/NO uses the same shapes.
+- `SpiderMan2k1Fix(20261024-093324).log`: native ESC panel
+  x=241..1679 (1439 px) exactly matches original `scrn0002(3).png`.
+  Already validated red selector and menu glyph transformations remain unchanged.
+
+The #777 passive `MOTIF-CANDIDATE` group was **too broad** and
+sampled early **3D world triangles**: `caller_rva=0x00103389`,
+3 vertices, 128x128 textured, variable `z≈0.02..0.04`,
+`rhw≈0.5..1.3`. Those **must not be rescaled**.
+
+However the same log repeatedly reveals a separate, native **2D**
+family before the purple banner, seen in both pause states:
+`caller_rva=0x00102C72`, **4-vertex triangle fan**,
+`FVF=0x144`, **NO bound texture**, `z=0.00146`,
+`rhw=9.988`, vertex **alpha=0x80**, e.g.
+`diffuse=0x80101004 / 0x80868620 / 0x80208686`,
+screen quads `(1331.2,693)..(1485.0,792)`,
+`(281.2,585)..(528.8,711)`,
+`(288.8,333)..(525,459)`,
+`(435,693)..(588.8,792)`. This is a **strong**
+pause-motif candidate, distinct from 3D and from
+purple fill/borders (those have z=0.00122, rhw=11.176)
+and text (z=0.00098, rhw=12.686).
+The dynamic color animation changes RGB but maintains alpha=0x80.
+Because these drawings occur **before** the banner, a same-Flip
+banner marker cannot be used as a guard.
+
+**Experimental opt-in** `SPIDERMAN2K1FIX_NATIVE_MOTIF_43=1`:
+strictly in 1920x1080 Auto, and only when
+`SPIDERMAN2K1FIX_NATIVE_ESC_43=1` is already enabled,
+match ALL aforementioned 2D signature fields.
+Scale **only X** about 960 by 0.75 for a 4:3 shape, without
+changing Y, Z, RHW, texture, colors, game input or camera FOV.
+Exclude fullscreen-sized rectangles (potential shading layer),
+very thin or off-screen primitives. OFF by default.
+This is a **first visual hypothesis**, not proven
+until it produces `NATIVE-MOTIF-43: QUAD-MATCH` and the
+new F9 screenshots reproduce the original 4:3 geometry.
+
+Wine test command (with `[Debug] Log=1` in INI):
+
+```bash
+SPIDERMAN2K1FIX_NATIVE_ESC_43=1 SPIDERMAN2K1FIX_NATIVE_CURSOR_43=1 SPIDERMAN2K1FIX_NATIVE_MOTIF_43=1 SPIDERMAN2K1FIX_PAUSE_MENU_TRACE=1 WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe
+```
+
+Capture F9 in normal gameplay, ESC, and REALLY QUIT? states.
+Compare original 4:3 motif extents and inspect all areas
+outside the native 4:3 ribbon (world must not be cropped,
+darkening must remain full-screen). If any visual regression,
+omit `SPIDERMAN2K1FIX_NATIVE_MOTIF_43=1` and retain the
+independently validated previous ESC/cursor/band corrections.
+**PR #28 remains draft, no merge.**
+
 ## Desired visual behavior
 
 Keep the widescreen 3D world and already validated gameplay HUD
