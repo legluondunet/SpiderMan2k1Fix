@@ -284,6 +284,9 @@ def test_native_mouse_cursor_transform_requires_exact_game_callstack():
     assert "PAGE_EXECUTE_READ" in code
     assert "RtlCaptureStackBackTrace" in code
     assert "native_cursor43_trace(0,20,frames,NULL)" in code
+    assert "memcpy(&native_cursor43_trace,&symbol,sizeof(native_cursor43_trace));" in code
+    assert "NATIVE-CURSOR-43: stack SAMPLE=" in code
+    assert "native_cursor43_cap_logs" in code
     assert "(BYTE*)frames[i]>=native_cursor43_owner" in code
     assert "(BYTE*)frames[i]<native_cursor43_owner+0x40u" in code
     assert "if(!matched)" in code
