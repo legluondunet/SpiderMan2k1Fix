@@ -20,7 +20,7 @@ The original game uses a single file named **`SPIDRMAN.DAT`**, storing
 The partially decompiled game uses:
 
 - `pcdcBkup.cpp::buInit()`: `GetCurrentDirectoryA()`, appends
-  `\\save\\`, then calls `CreateDirectoryA()`.
+  `\save\`, then calls `CreateDirectoryA()`.
   **Reverse-engineered implication:** the save directory is relative to the
   process's **working directory**, not necessarily the executable directory.
   Different launchers / working directories can show seemingly missing
@@ -137,7 +137,7 @@ not claims of a reproduced bug on every Windows or Wine installation.
 
 | Area | Observed original code | Consequence / limit |
 | --- | --- | --- |
-| Relative path | `buInit` reads process working directory and appends `\\save\\` | Different launch working directories may use different save files |
+| Relative path | `buInit` reads process working directory and appends `\save\` | Different launch working directories may use different save files |
 | Overwrite | `buSaveFile` opens the file with `fopen(path, "wb")` | An existing file is truncated before the new backup-image is written; all eight slots share that file |
 | Short write | `fwrite(data, 0x200, sector_count, stream)` has no checked return and `fclose` is unchecked | Short writes / close failures may go undetected by that low-level function |
 | Short read | `fread(buffer, 0x200, sector_count, stream)` has no checked return | Returned success is not by itself evidence that every sector was read |
