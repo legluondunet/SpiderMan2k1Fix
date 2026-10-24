@@ -367,6 +367,32 @@ capture format. The separate, read-only
 `Log=1`; it does not change the image format. Historical research on
 native Windows magenta BMPs is retained in closed PR #24.
 
+### Native gameplay ESC menu — original 4:3 proportions
+
+The 3D game's ESC pause menu (purple banner, outlines and labels,
+orange/blue translucent motif, and red spider selector) can be displayed at
+the correct original 4:3 proportions, without stretching the 3D scene or HUD.
+The original violet pause tint still covers the entire widescreen display,
+including the left and right margins.
+
+**Validated under Wine at 1920×1080 Auto** on October 24, 2026 for
+`CONTINUE / RESTART LEVEL / QUIT`, `REALLY QUIT? / NO / YES`, and the cursor
+at both central and edge-of-screen positions.
+
+This correction is currently opt-in while graphics drivers and other screen
+resolutions are being tested. Set these environment variables before starting
+the game:
+
+```bash
+export SPIDERMAN2K1FIX_NATIVE_ESC_43=1
+export SPIDERMAN2K1FIX_NATIVE_MOTIF_43=1
+export SPIDERMAN2K1FIX_NATIVE_CURSOR_43=1
+```
+
+These settings are not INI keys. They only affect the native gameplay ESC
+overlay, not the main menu or the original 4:3 gameplay presentation.
+[Implementation, scope, and regression checks](docs/NATIVE_PAUSE_MENU_43.md).
+
 ## Adaptive widescreen HUD
 
 **Enabled by default.** SpiderMan2k1Fix automatically corrects the
@@ -412,8 +438,9 @@ J. Jonah Jameson) boss health bars, moving black lost-health areas,
 boss portraits and a horizontal objective bar with its icons. Other
 boss fights and ultrawide resolutions were not individually tested.
 
-The original game's F9 BMP capture can produce a magenta image under
-native Windows 11; that is a separate issue, not a HUD problem.
+Historical native F9 BMP capture could produce a magenta image under
+Windows 11. The current lossless PNG screenshot path avoids that legacy
+capture format; it is independent of the widescreen HUD.
 
 The developer-only F12 read-only geometric diagnostic remains
 available temporarily when BOTH `[Debug] Log=1` and the environment
