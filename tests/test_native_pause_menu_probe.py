@@ -275,28 +275,39 @@ def test_f9_screenshot_arms_post_capture_menu_sprite_sampling():
         assert forbidden not in probe
 
 
-def test_native_mouse_cursor_transform_requires_exact_game_callstack():
-    code=CORE.split("/* Mouse cursor hook experiment, OFF by default.",1)[1].split(
+def test_native_cursor_exact_quad_signature_replaces_unproven_stack_owner():
+    code=CORE.split("/* Native gameplay ESC red selector:",1)[1].split(
         "static void free_menu_vertices(",1)[0]
-    assert "SPIDERMAN2K1FIX_NATIVE_CURSOR_43" in code
+    assert 'SPIDERMAN2K1FIX_NATIVE_CURSOR_43' in code
     assert "native_cursor43_enabled=0;" in code
-    assert "native_cursor43_owner=(BYTE*)exe+0x0010C470u;" in code
-    assert "PAGE_EXECUTE_READ" in code
-    assert "RtlCaptureStackBackTrace" in code
-    assert "native_cursor43_trace(0,20,frames,NULL)" in code
-    assert "memcpy(&native_cursor43_trace,&symbol,sizeof(native_cursor43_trace));" in code
-    assert "NATIVE-CURSOR-43: stack SAMPLE=" in code
-    assert "native_cursor43_cap_logs" in code
-    assert "(BYTE*)frames[i]>=native_cursor43_owner" in code
-    assert "(BYTE*)frames[i]<native_cursor43_owner+0x40u" in code
-    assert "if(!matched)" in code
+    assert "native_pause43_enabled,0,0)!=1" in code
     assert "native_pause43_banner_flip,0,0)!=flip" in code
-    assert "attempts>180" in code
-    assert "native_cursor43_enabled,0,0)!=1" in code
-    assert "cx+0.75f*(v[i].x-cx)" in code
-    assert "memcpy(copy,v,4*sizeof(*copy));" in code
+    assert "desktop_w!=1920 || desktop_h!=1080" in code
+    assert "menu_upscale_active" in code
+    assert "gameplay_4x3_active" in code
+    assert "!geom_rva(ret,&rva) || rva!=0x00102C72UL" in code
+    assert "type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4" in code
+    assert "(right-left)-96.0f" in code
+    assert "(bottom-top)-72.0f" in code
+    assert "fabsf(z)>0.00005f" in code
+    assert "fabsf(rhw-27.519f)>0.035f" in code
+    assert "diffuse!=0xFFFFFFFFUL" in code
+    assert "GetTexture(" in code
+    assert "GetSurfaceDesc(" in code
+    assert "IDirectDrawSurface7_Release(tex)" in code
+    assert "desc.dwWidth!=32 || desc.dwHeight!=32" in code
+    assert "desc.ddpfPixelFormat.dwFlags!=0x41UL" in code
+    assert "memcpy(copy,v,4*sizeof(*copy))" in code
+    assert "copy[i].x=cx+0.75f*(v[i].x-cx)" in code
+    assert "copy[i].y=" not in code
+    assert "copy[i].z=" not in code
+    assert "copy[i].rhw=" not in code
+    assert "NATIVE-CURSOR-43: QUAD-MATCH" in code
+    assert "RtlCaptureStackBackTrace" not in code
+    assert "native_cursor43_scan_live_stack" not in code
+    assert "native_cursor43_owner" not in code
     assert "SPIDERMAN2K1FIX_NATIVE_CURSOR_43" not in INI
-    assert "NATIVE-CURSOR-43:" in DOC
+    assert "96x72" in DOC and "QUAD-MATCH" in DOC
     for unsafe in ("VirtualProtect(", "PostMessage(", "SendInput(", "SetMousePos(", "SetTexture("):
         assert unsafe not in code
     draw=CORE.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
@@ -307,45 +318,14 @@ def test_native_mouse_cursor_transform_requires_exact_game_callstack():
     assert "native_cursor43_init();" in CORE
 
 
-def test_cursor_width_transform_is_centered_only_and_opt_in():
+def test_native_cursor_43_is_opt_in_and_safe_outside_gameplay_esc():
     block=CORE.split("static const void *maybe_correct_native_cursor43(",1)[1].split(
         "static void free_menu_vertices(",1)[0]
+    assert "if(InterlockedCompareExchange(&native_cursor43_enabled,0,0)!=1" in block
+    assert "native_pause43_banner_flip" in block
     assert "for(i=0;i<4;i++)" in block
     assert "copy[i].x=cx+0.75f*(v[i].x-cx)" in block
-    assert "copy[i].y=" not in block
-    assert "copy[i].z=" not in block
-    assert "copy[i].rhw=" not in block
     assert "SPIDERMAN2K1FIX_NATIVE_CURSOR_43" in DOC
-
-
-def test_wine_x86_mouse_cursor_stack_fallback_is_exact_and_bounded():
-    code=CORE.split("/* Mouse cursor hook experiment, OFF by default.",1)[1].split(
-        "static void free_menu_vertices(",1)[0]
-    assert "static int native_cursor43_scan_live_stack(DWORD *matched_rva)" in code
-    assert "static int native_cursor43_return_follows_call(const BYTE *ret)" in code
-    assert "native_cursor43_return_follows_call(candidate)" in code
-    assert "ret<native_cursor43_owner+12u" in code
-    assert "ret>=native_cursor43_owner+0x40u" in code
-    assert "(ret[-1]&0x38u)==0x10u" in code
-    assert "ret[-5]==0xE8u" in code
-    assert "VirtualQuery((LPCVOID)&stack_anchor,&info,sizeof(info))" in code
-    assert "info.State!=MEM_COMMIT" in code
-    assert "info.Protect&PAGE_GUARD" in code
-    assert "if(limit-position>8192u)limit=position+8192u;" in code
-    assert "if(!matched && depth==0)" in code
-    assert "native_cursor43_scan_live_stack(&owner_rva)" in code
-    assert "desc.dwWidth!=32 || desc.dwHeight!=32" in code
-    assert "native_cursor43_owner[0]==0xF6u" in code
-    assert "native_cursor43_owner[7]==0x75u" in code
-    assert "x86 owner CALL-RETURN MATCH" in code
-    assert "owner-not-found [NO CHANGE]" in code
-    assert "if(!matched)" in code
-    assert "cx+0.75f*(v[i].x-cx)" in code
-    assert "72x66" in DOC and "96x66" in DOC
-    assert "Wine" in DOC and "depth=0" in DOC
-    assert "SPIDERMAN2K1FIX_NATIVE_CURSOR_43" not in INI
-    for forbidden in ("SetTexture(", "SendInput(", "PostMessage(", "keybd_event(", "SetMousePos(", "VirtualProtect("):
-        assert forbidden not in code
 
 
 def test_build_767_selector_shape_probe_is_read_only_and_not_glyph_quota():
