@@ -3,7 +3,7 @@
  * DXINPUT_GetKeyName (0x00501550) for each physical DIK scan code; that
  * routine dereferences a fixed QWERTY string-pointer table at 0x00562FF4.
  *
- * We replace only seven entries in that table in RAM, with pointers to the
+ * We replace only six entries in that table in RAM, with pointers to the
  * game's own original strings. Gameplay DirectInput events remain untouched.
  *
  * All addresses below apply ONLY to the supported SHA-256 verified
