@@ -156,14 +156,49 @@ def test_hook_order_preserves_other_3d_2d_and_hud_transforms():
     assert "native_motif43_restore_gutters(self,(const SpiderMenuVertex*)verts,flags)" in DRAW
 
 
-def test_esc_feature_requires_explicit_opt_ins_not_ini_or_main_menu():
-    assert "native_pause43_init();" in CORE
-    assert "native_cursor43_init();" in CORE
-    assert "native_motif43_init();" in CORE
+def test_native_esc_children_default_on_but_depend_on_installed_hud_master():
+    src=CORE.split("/* Native ESC subfeatures are hidden HUD settings",1)[1].split(
+        "/* Native gameplay ESC 4:3 panel correction",1)[0]
+    assert "SpiderHudWidescreen_Installed()" in src
+    assert 'GetPrivateProfileIntA("HUD",key,1,path)!=1' in src
+    assert "GetEnvironmentVariableA(legacy_env,override,sizeof(override))" in src
+    assert "override[0]=='0'" in src  # optional compatibility/debug opt-out
+    assert 'GetPrivateProfileIntA("HUD",key,0,path)' not in src
+    assert "return 1;" in src
+    assert "static int native_esc43_hud_setting_enabled(" in CORE
+    hud=CORE.split("static void install_player_hud(",1)[1].split(
+        "static DWORD WINAPI initialize(",1)[0]
+    assert 'option=GetPrivateProfileIntA("HUD","HUDWidescreenFix",1,ini);' in hud
+    assert "if (option==0) {" in hud
+    assert "if (!SpiderHudWidescreen_Install(exe_verified,TRUE))" in hud
+    startup=CORE.split("static DWORD WINAPI initialize(",1)[1].split(
+        "BOOL WINAPI DllMain(",1)[0]
+    assert startup.index("install_player_hud(TRUE);") < startup.index("native_pause43_init();")
+    assert startup.index("native_pause43_init();") < startup.index("native_cursor43_init();")
+    assert startup.index("native_cursor43_init();") < startup.index("native_motif43_init();")
+    assert "supported_exe()" in startup
+    assert "SpiderCfg_ValidateCurrentIni(log_line)" in startup
+    assert "if(!SpiderHudWidescreen_Installed())return 0;" in src
+
+
+def test_native_esc_hidden_manual_ini_children_and_parent_chain():
+    pause=CORE.split("static void native_pause43_init(void)",1)[1].split(
+        "static const void *maybe_correct_native_pause43(",1)[0]
+    motif=CORE.split("static void native_motif43_init(void)",1)[1].split(
+        "static const void *maybe_correct_native_motif43(",1)[0]
+    cursor=CORE.split("static void native_cursor43_init(void)",1)[1].split(
+        "static const void *maybe_correct_native_cursor43(",1)[0]
+    assert '"NativeESC4x3","SPIDERMAN2K1FIX_NATIVE_ESC_43"' in pause
+    assert '"NativeMotif4x3","SPIDERMAN2K1FIX_NATIVE_MOTIF_43"' in motif
+    assert '"NativeCursor4x3","SPIDERMAN2K1FIX_NATIVE_CURSOR_43"' in cursor
+    assert "InterlockedCompareExchange(&native_pause43_enabled,0,0)==1" in motif
+    assert "InterlockedCompareExchange(&native_pause43_enabled,0,0)==1" in cursor
+    for name in ("NativeESC4x3","NativeMotif4x3","NativeCursor4x3"):
+        assert name not in INI
+        assert name in DOC
     for env in ("SPIDERMAN2K1FIX_NATIVE_ESC_43",
                 "SPIDERMAN2K1FIX_NATIVE_MOTIF_43",
                 "SPIDERMAN2K1FIX_NATIVE_CURSOR_43"):
         assert env not in INI
-        assert env in DOC
     assert "menu_upscale_active" in CURSOR and "gameplay_4x3_active" in CURSOR
     assert "menu_upscale_active" in MOTIF and "gameplay_4x3_active" in MOTIF
