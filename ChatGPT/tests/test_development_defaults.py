@@ -1,10 +1,10 @@
-"""Release-profile regression checks (source-level, not a Windows runtime test)."""
+"""Development-default regression checks (source-level, not a Windows runtime test)."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_release_logging_is_off_by_default():
+def test_default_logging_is_off_by_default():
     ini = (ROOT / 'ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini').read_text()
     generated = (ROOT / 'virtual_spidey_cfg.c').read_text()
     assert '\n[Debug]\n' in ini
@@ -19,11 +19,11 @@ def test_obsolete_probes_removed():
                    'verify_render_callsites', 'maybe_correct_comic'):
         assert symbol not in core
     assert 'comic_aspect.c' not in (ROOT / 'build.sh').read_text()
-    assert 'SpiderMan2k1Fix 1.0.0' in core
+    assert 'log_line("START: " SPIDERMAN2K1FIX_VERSION_LABEL);' in core
     proxy=(ROOT / 'winmm_proxy.c').read_text()
     assert '#include "version_info.h"' in proxy
     assert 'SPIDERMAN2K1FIX_VERSION_LABEL' in proxy
-    assert '#define SPIDERMAN2K1FIX_VERSION "1.0.0"' in (ROOT / 'version_info.h').read_text()
+    assert '#define SPIDERMAN2K1FIX_VERSION "0.0.0"' in (ROOT / 'version_info.h').read_text()
 
 
 def test_input_focus_recovery_not_removed():

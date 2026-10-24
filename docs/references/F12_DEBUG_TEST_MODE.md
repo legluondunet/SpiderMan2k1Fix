@@ -1281,7 +1281,7 @@ options for other users, or merge PR #26. PR stays
 
 The user's new diagnostic log
 `SpiderMan2k1Fix(20261023-121645).log`
-(patch `v1.0.0-c6bec84`, original executable SHA matched)
+(patch `commit c6bec84`, original executable SHA matched)
 **confirms** the precise native cause of the initial menu freeze:
 
 ```text
@@ -1457,7 +1457,7 @@ Do not reset/force-push the PR until the user explicitly approves it.
 
 ## New Game Bink regression found after intro F12 skip
 
-A Linux/Wine trial with patch `v1.0.0-aef9397` and
+A Linux/Wine trial with patch `commit aef9397` and
 `F12TestMode=1` (`SpiderMan2k1Fix(20261023-112854).log`)
 validated the new fast pre-menu skip: the native
 `0x4A1A26` deadline hook and `0x4A1896` input-wait
@@ -1498,7 +1498,7 @@ all complete correctly, and the real menu **appears**, but menu
 keyboard/mouse control becomes responsive only **approximately
 4–5 seconds later**. User log:
 `SpiderMan2k1Fix(20261023-114209).log`
-(`v1.0.0-56a5b31`).
+(`commit 56a5b31`).
 
 The uploaded log confirms:
 - F12 intent consumed at original `0x443AD0` cleanup; later
@@ -1567,7 +1567,7 @@ The user confirmed a persistent **~4-second** input delay once the
 main menu is visually displayed after pressing F12 during an opening
 Bink movie (`[Debug] F12TestMode=1`). Log:
 `SpiderMan2k1Fix(20261023-115419).log`, patch
-`v1.0.0-56b5e4f`, exact supported game EXE SHA verified.
+`commit 56b5e4f`, exact supported game EXE SHA verified.
 
 The preceding read-only native `0x493DD6` callback reported:
 
@@ -1644,7 +1644,7 @@ is preserved.
 ## 2026-10-23 — First-menu 3,659ms gap: game-native clock busy wait identified
 
 The user supplied `SpiderMan2k1Fix(20261023-120205).log`
-(patch `v1.0.0-40136fd`, supported original
+(patch `commit 40136fd`, supported original
 `SpideyPC.exe` SHA256 verified). The extra passive
 menu-tick timing shows **exactly where** the delay occurs:
 
