@@ -1,572 +1,169 @@
-"""Read-only instrumentation for original Spider-Man gameplay ESC pause menu.
+"""Static regression checks for the Wine-validated native 4:3 ESC overlay.
 
-The native UI can only be transformed safely once exact callsite/texture and
-depth/RHW signatures are established under Wine. This stage must not change
-rendering and must remain disabled without an explicit diagnostic opt-in.
+Only verified D3D7 signatures may be transformed. The original full-screen
+dim is replayed into the 16:9 gutters without modifying game-owned vertices.
 """
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE = (ROOT / "spiderman2k1fix.c").read_text(encoding="utf-8")
-DOC = (ROOT / "docs" / "NATIVE_PAUSE_MENU_43.md").read_text(encoding="utf-8")
 INI = (ROOT / "SpiderMan2k1Fix.ini").read_text(encoding="utf-8")
+DOC = (ROOT / "docs/NATIVE_PAUSE_MENU_43.md").read_text(encoding="utf-8")
 
 
-def trace_block():
-    return CORE.split("/* Diagnostic only: classify original in-game ESC pause menu geometry", 1)[1].split(
-        "/* Experimental native ESC panel transform, opt-in only.", 1)[0]
+def section(begin, end):
+    return CORE.split(begin, 1)[1].split(end, 1)[0]
 
 
-def test_probe_requires_debug_logging_and_environment_opt_in():
-    probe = trace_block()
-    assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_PAUSE_MENU_TRACE"' in probe
-    assert "if(!debug_log_enabled)return;" in probe
-    assert 'value[0]==\'1\'' in probe
-    assert "pause_menu_trace_enabled=0;" in probe
-    assert "SPIDERMAN2K1FIX_PAUSE_MENU_TRACE" not in INI
-    assert "PAUSE-NATIVE-PROBE: READ-ONLY enabled" in probe
+PAUSE = section("/* Native gameplay ESC 4:3 panel correction",
+                "/* Native ESC translucent geometric motif")
+MOTIF = section("/* Native ESC translucent geometric motif",
+                "/* Native gameplay ESC red selector:")
+CURSOR = section("/* Native gameplay ESC red selector:",
+                 "static void free_menu_vertices(")
+DRAW = section("static HRESULT WINAPI hooked_draw_primitive(",
+               "static HRESULT WINAPI hooked_draw_indexed_primitive(")
 
 
-def test_native_gameplay_pause_identity_is_not_focus_pause():
-    probe = trace_block()
-    assert "0x00682950u" in probe
-    assert "*SPIDER_NATIVE_ESC_PAUSE_CONTEXT==0" in probe
-    assert "menu_upscale_active" in probe
-    assert "pause_on_focus_loss" not in probe
-    assert "pause_in_progress" not in probe
-    assert "pause_latched" not in probe
+def test_no_obsolete_research_trace_or_unverified_stack_scanning():
+    # Research-only diagnostic removed after user validated the image.
+    for obsolete in ("pause_menu_trace_", "PAUSE-NATIVE-PROBE",
+                     "SPIDERMAN2K1FIX_PAUSE_MENU_TRACE",
+                     "RtlCaptureStackBackTrace",
+                     "native_cursor43_scan_live_stack",
+                     "native_cursor43_owner"):
+        assert obsolete not in CORE
+    assert "static volatile LONG native_pause43_enabled=0" in PAUSE
+    assert "static volatile LONG native_motif43_enabled=0" in MOTIF
+    assert "static volatile LONG native_cursor43_enabled=0" in CURSOR
 
 
-def test_analysis_is_bounded_and_never_changes_game_vertices():
-    probe = trace_block()
-    assert "if(frame<1 || frame>20" in probe
-    assert "draw>8192" in probe
-    assert "draw>8 && (draw%64)!=0" in probe
-    assert "pause_menu_trace_selector_seen" in probe
-    assert "CURSOR-CANDIDATE" in probe
-    assert "draw>8192" in probe
-    assert "frame==1 || frame==5 || frame==12 || frame==20" in probe
-    assert "PAUSE-NATIVE-PROBE: FRAME-END" in probe
-    assert "fvf!=0x144UL && fvf!=0x44UL" in probe
-    assert "stride=(fvf==0x144UL)?28u:20u;" in probe
-    assert "count<3 || count>64" in probe
-    assert "texw=desc.dwWidth;texh=desc.dwHeight;" in probe
-    assert "IDirectDrawSurface7_Release(texture)" in probe
-    for forbidden in (
-        "VirtualProtect(", "FlushInstructionCache(",
-        "SetTexture(", "SetRenderState(", "memcpy(copy", "HeapAlloc(",
-        "dst[i].x", "src[i].x=", "WM_CLOSE", "SetWindowPos(",
-    ):
-        assert forbidden not in probe, forbidden
-    assert "[NO GEOMETRY MODIFIED]" in probe
+def test_native_pause_classifies_original_banner_border_and_text_without_touching_game_input():
+    for token in ("SPIDERMAN2K1FIX_NATIVE_ESC_43", "menu_upscale_active",
+                  "gameplay_4x3_active", "native_pause43_banner_flip",
+                  "native_pause43_banner_top", "native_pause43_banner_bottom",
+                  "rva!=0x00102C72UL", "D3DPT_TRIANGLEFAN",
+                  "fvf!=0x144UL", "count!=4", "tw==8 && th==8",
+                  "tw==16 || tw==32 || tw==64",
+                  "copy[i].x=mapped", "1439.0f/1479.0f",
+                  "1439.0f/1448.5f"):
+        assert token in PAUSE
+    for forbidden in ("PostMessage(", "SendInput(", "SetTexture(",
+                      "keybd_event(", "src[i].x=", "copy[i].y="):
+        assert forbidden not in PAUSE
+    assert "8x8" in DOC and "ribbon" in DOC
 
 
-def test_hooks_call_probe_without_affecting_existing_render_pipeline():
-    draw = CORE.split("static HRESULT WINAPI hooked_draw_primitive(", 1)[1].split(
-        "static HRESULT WINAPI hooked_draw_indexed_primitive(", 1)[0]
-    indexed = CORE.split("static HRESULT WINAPI hooked_draw_indexed_primitive(", 1)[1].split(
-        "static void instrument_d3d_device(", 1)[0]
-    assert "pause_menu_trace_draw(self,type,fvf,verts,count,0,__builtin_return_address(0))" in draw
-    assert "pause_menu_trace_draw(self,type,fvf,verts,count,1,__builtin_return_address(0))" in indexed
-    assert draw.index("pause_menu_trace_draw(") < draw.index("original_draw_primitive(")
-    assert indexed.index("pause_menu_trace_draw(") < indexed.index("original_draw_indexed_primitive(")
-    init = CORE.split("static DWORD WINAPI initialize(", 1)[1]
-    assert "SpiderCfg_ValidateCurrentIni(log_line);" in init
-    assert init.index("SpiderCfg_ValidateCurrentIni(log_line)") < init.index("pause_menu_trace_init();")
-    assert init.index("pause_menu_trace_init();") < init.index("SpiderQuickExitF12_Init(log_line);")
+def test_motif_requires_untextured_original_alpha_quads_at_exact_depth():
+    for token in ("SPIDERMAN2K1FIX_NATIVE_MOTIF_43",
+                  "native_pause43_enabled", "desktop_w!=1920",
+                  "desktop_h!=1080", "gameplay_4x3_active",
+                  "menu_upscale_active", "rva!=0x00102C72UL",
+                  "fabsf(v[0].z-0.00146f)", "fabsf(v[0].rhw-9.988f)",
+                  "(color&0xFF000000UL)!=0x80000000UL",
+                  "vertex_color&0xFF000000UL",
+                  "IDirect3DDevice7_GetTexture(", "IDirectDrawSurface7_Release(tex)",
+                  "copy[i].x=center+(v[i].x-center)*0.75f"):
+        assert token in MOTIF
+    assert "type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4" in MOTIF
 
 
-def test_diagnostic_docs_define_43_reference_and_next_step():
-    assert "1920×1080" in DOC
-    assert "1440×1080" in DOC
-    assert "240" in DOC
-    assert "0.75" in DOC
-    assert "PAUSE-NATIVE-PROBE" in DOC
-    assert "F10" in DOC and "F9" in DOC
-    assert "do not" in DOC.lower() or "ne pas" in DOC.lower()
-
-def test_probe_falls_back_to_bounded_passive_escape_sampling():
-    src = CORE.split("/* Diagnostic only: classify original in-game ESC pause menu geometry",1)[1]
-    init = src.split("static void pause_menu_trace_draw(",1)[0]
-    draw = src.split("static void pause_menu_trace_draw(",1)[1].split(
-        "static void free_menu_vertices(",1)[0]
-    assert "GetAsyncKeyState(VK_ESCAPE)&0x8000" in init
-    assert "pause_menu_trace_escape_until,flip+24" in init
-    assert "if(edge<=4)" in init
-    assert "frames 1/5/12/20" in init
-    assert "PAUSE-NATIVE-PROBE: SAMPLE-FRAME" in draw
-    assert "GetTexture(" in draw
-    assert "InterlockedIncrement(&pause_menu_trace_escape_edges)" in init
-    assert "PAUSE-NATIVE-PROBE: ESC-EDGE" in init
-    assert "pause_menu_trace_on_flip(count);" in CORE
-    assert "pause_menu_trace_escape_until" in draw
-    assert "SPIDER_NATIVE_ESC_PAUSE_CONTEXT" in draw
-    assert "[NO GEOMETRY MODIFIED]" in draw
-    for bad in ("SetAsyncKeyState(", "SendInput(", "PostMessage(", "WM_CLOSE"):
-        assert bad not in init
-    assert "hold Esc for about half a second" in DOC
-
-def test_native_esc_sampling_does_not_assume_draw_number():
-    probe = trace_block()
-    assert "Historical draw 3140..3400 sampling missed the cursor" in probe
-    assert "draw>=3140 && draw<=3400" not in probe
-    assert "frame==1 || frame==5 || frame==12 || frame==20" in probe
-    assert "PAUSE-NATIVE-PROBE: frame=%ld draw=%ld" in probe
-    assert "draw>8192" in probe
-    assert "SPIDERMAN2K1FIX_PAUSE_MENU_TRACE" not in INI
-    assert "48 primitives" in DOC
-    assert "1439" in DOC
+def test_gutter_replay_clips_original_triangles_without_center_overdraw():
+    for token in ("native_motif43_restore_gutters(",
+                  "left_edge=240.0f,right_edge=1680.0f",
+                  "tri[0]=original[0];tri[1]=original[i+1u];tri[2]=original[i+2u]",
+                  "native_motif43_clip_triangle(",
+                  "original_draw_primitive(device,D3DPT_TRIANGLEFAN,0x144UL",
+                  "NATIVE-MOTIF-43: GUTTER-REPLAY"):
+        assert token in MOTIF
+    for token in ("r.y=a->y+(b->y-a->y)*t",
+                  "r.z=a->z+(b->z-a->z)*t",
+                  "r.rhw=a->rhw+(b->rhw-a->rhw)*t",
+                  "memcpy((BYTE*)&r+16u,&c,sizeof(c))",
+                  "memcpy((BYTE*)&r+offs,&uv,sizeof(uv))"):
+        assert token in MOTIF
 
 
-def test_post_esc_confirm_probe_is_passive_time_bounded_and_key_triggered():
-    probe = trace_block()
-    assert "GetAsyncKeyState(VK_RETURN)&0x8000" in probe
-    assert "GetAsyncKeyState(VK_SPACE)&0x8000" in probe
-    assert "GetAsyncKeyState(VK_UP)&0x8000" in probe
-    assert "GetAsyncKeyState(VK_DOWN)&0x8000" in probe
-    assert "up_down && !up_prev" in probe
-    assert "down_down && !down_prev" in probe
-    assert "pause_menu_trace_action_armed_until,flip+1800" in probe
-    assert "pause_menu_trace_action_edges" in probe
-    assert "if(n<=6)" in probe
-    assert "PAUSE-NATIVE-PROBE: KEY-EDGE" in probe
-    assert "menu state UNVERIFIED" in probe
-    assert "confirmation" in DOC.lower() and "NO/YES" in DOC
-    for unsafe in ("SendInput(", "keybd_event(", "PostMessage(", "SetWindowLong("):
-        assert unsafe not in probe
-
-
-def test_wide_screen_panel_candidates_remain_observational_only():
-    probe = trace_block()
-    assert "pause_menu_trace_wide_seen" in probe
-    assert "wide_overlay_candidate=" in probe
-    assert "InterlockedIncrement(&pause_menu_trace_wide_seen)<=12" in probe
-    assert "count==4" in probe
-    assert "desktop_w*0.60f" in probe
-    assert "!wide_overlay_candidate" in probe
-    assert "NO GEOMETRY MODIFIED" in probe
-    assert "wide" in DOC.lower()
-
-
-def test_opt_in_native_esc_43_never_rewrites_hud_by_default():
-    probe = CORE.split("/* Experimental native ESC panel transform, opt-in only.",1)[1].split(
-        "static void free_menu_vertices(",1)[0]
-    assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_NATIVE_ESC_43"' in probe
-    assert "native_pause43_enabled=0;" in probe
-    assert "menu_upscale_active" in probe and "gameplay_4x3_active" in probe
-    assert "rva!=0x00102C72UL" in probe
-    assert "native_pause43_banner_flip" in probe
-    assert "native_pause43_banner_flip,flip" in probe
-    assert "if(!glyph)return source;" in probe
-    assert "th==32 && (tw==16 || tw==32 || tw==64)" in probe
-    assert "0.00122f" in probe and "11.176f" in probe
-    assert "0.00098f" in probe and "12.686f" in probe
-    assert "memcpy(copy,v,4*sizeof(*copy));" in probe
-    assert "float mapped=center+(v[i].x-center)*aspect_scale;" in probe
-    assert "copy[i].x=mapped;" in probe
-    assert "SPIDERMAN2K1FIX_NATIVE_ESC_43" not in INI
-    for disallowed in ("VirtualProtect(", "SetTexture(", "PostMessage(", "SendInput(", "WM_CLOSE", "src[i].x="):
-        assert disallowed not in probe, disallowed
-    draw = CORE.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
-        "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
-    assert "maybe_correct_native_pause43(" in draw
-    assert draw.index("maybe_correct_adaptive_hud(") < draw.index("maybe_correct_native_pause43(")
-    assert draw.index("maybe_correct_native_pause43(") < draw.index("maybe_correct_horplus(")
-    assert "native_pause43_init();" in CORE
-    assert "selector not yet classified" in probe
-    assert "CURSOR-CANDIDATE" in CORE
-    assert "PAUSE-NATIVE-43" in DOC
-
-
-def test_native_esc_border_sprites_have_independent_shape_and_texture_gate():
-    source = CORE.split("/* Experimental native ESC panel transform, opt-in only.",1)[1].split(
-        "static void free_menu_vertices(",1)[0]
-    # The 8x8 textured sides, two lines, and four corner quads were
-    # independently observed in the 1920x1080 Wine trace. Their bounds are
-    # relative to the preceding untextured banner in the same Flip.
-    assert "native_pause43_banner_top" in source
-    assert "native_pause43_banner_bottom" in source
-    assert "native_pause43_border_hits" in source
-    assert "native_pause43_banner_flip,0,0)!=flip" in source
-    assert "tw==8 && th==8" in source
-    assert "fabsf(z-0.00122f)<0.00010f" in source
-    assert "fabsf(rhw-11.176f)<0.25f" in source
-    assert "int horizontal=" in source
-    assert "int side=" in source
-    assert "int corner=" in source
-    assert "border=horizontal || side || corner;" in source
-    assert "if(!border)" in source
-    assert "if(!glyph)return source;" in source
-    assert 'border?"border":"glyph"' in source
-    assert "memcpy(copy,v,4*sizeof(*copy));" in source
-    assert "float mapped=center+(v[i].x-center)*aspect_scale;" in source
-    assert "copy[i].x=mapped;" in source
-    assert "SPIDERMAN2K1FIX_NATIVE_ESC_43" not in INI
-    assert "8x8" in DOC and "selector" in DOC.lower()
-    for unsafe in ("SetTexture(", "PostMessage(", "SendInput(", "keybd_event(", "src[i].x="):
-        assert unsafe not in source
-
-
-def test_red_spider_selector_trace_logs_stable_signature_without_moving_vertices():
-    probe = trace_block()
-    assert "pause_menu_trace_selector_seen=0;" in probe
-    assert "InterlockedExchange(&pause_menu_trace_selector_seen,0);" in probe
-    assert "InterlockedIncrement(&pause_menu_trace_selector_seen)<=100" in probe
-    assert "selector_candidate=1;" in probe
-    assert "count==4" in probe and "fvf==0x144UL" in probe
-    assert "rva==0x00102C72UL" in probe
-    assert "z>=0.00070f && z<=0.0030f" in probe
-    assert "rhw>=7.0f && rhw<=16.0f" in probe
-    assert "tex_identity=texture;" in probe
-    assert "memcpy(&diffuse,raw+16,sizeof(diffuse));" in probe
-    assert "memcpy(&u0,raw+20,sizeof(u0));" in probe
-    assert "memcpy(&v0,raw+24,sizeof(v0));" in probe
-    assert 'selector_sample?"CURSOR-CANDIDATE":"ICON-REGION"' in probe
-    assert "IDENTITY UNVERIFIED" in probe
-    assert "texid=%p" in probe
-    assert "if(selector_shape_sample || selector_sample || icon_region_sample || spider_pose_sample)" in probe
-    assert "SPIDERMAN2K1FIX_SELECTOR_FIX" not in CORE
-    assert "CURSOR-CANDIDATE" in DOC
-    for forbidden in ("SetTexture(", "memcpy(copy", "SetRenderState(", "PostMessage(", "SendInput("):
-        assert forbidden not in probe
-
-
-def test_red_icon_region_diagnostic_is_bounded_read_only_and_not_cursor_fix():
-    probe = trace_block()
-    assert "pause_menu_trace_icon_seen=0;" in probe
-    assert "InterlockedExchange(&pause_menu_trace_icon_seen,0);" in probe
-    assert "InterlockedIncrement(&pause_menu_trace_icon_seen)<=100" in probe
-    assert "icon_region_candidate=1;" in probe
-    assert "icon_region_sample=1;" in probe
-    assert "type!=D3DPT_TRIANGLESTRIP" in probe
-    assert "type!=D3DPT_TRIANGLELIST" in probe
-    assert "(count==4 || count==6)" in probe
-    assert "z>=-0.0010f && z<=0.065f" in probe
-    assert "rhw>=0.45f && rhw<=30.0f" in probe
-    assert "if(fvf==0x144UL)" in probe
-    assert "memcpy(&diffuse,raw+16,sizeof(diffuse));" in probe
-    assert "PAUSE-NATIVE-PROBE: %s frame=%ld flip=%ld draw=%ld" in probe
-    assert "ICON-REGION" in probe and "IDENTITY UNVERIFIED" in probe
-    assert "SPIDERMAN2K1FIX_PAUSE_MENU_TRACE" in probe
-    assert "ICON-REGION" in DOC
-    for forbidden in ("SetTexture(", "memcpy(copy", "SetRenderState(", "SendInput(", "PostMessage("):
-        assert forbidden not in probe
-
-
-def test_f9_screenshot_arms_post_capture_menu_sprite_sampling():
-    probe=trace_block()
-    assert "static void pause_menu_trace_on_f9(void)" in probe
-    assert "pause_menu_trace_f9_events=0;" in probe
-    assert "seen>4" in probe
-    assert "pause_menu_trace_escape_edges,0,0)<1" in probe
-    assert "pause_menu_trace_action_armed_until,0,0" in probe
-    assert "pause_menu_trace_escape_until,flip+24" in probe
-    assert "PAUSE-NATIVE-PROBE: F9-SNAPSHOT" in probe
-    assert "spider_pose_candidate=1;" in probe
-    assert "spider_pose_sample=1;" in probe
-    assert "SPIDER-POSE" in probe
-    assert "(count==3 || count==4 || count==6)" in probe
-    assert "rhw>=5.0f && rhw<=25.0f" in probe
-    hook=CORE.split("static void __cdecl hooked_f9_png_only(void)",1)[1].split(
-        "static void install_f9_png_only_dispatch(",1)[0]
-    assert "if(queued)pause_menu_trace_on_f9();" in hook
-    assert hook.index("SpiderF9PNG_Queue(&desc,log_line)") < hook.index("pause_menu_trace_on_f9();")
-    assert "F9-SNAPSHOT" in DOC
-    assert "scrn0010.png" in DOC and "scrn0011.png" in DOC
-    for forbidden in ("SetTexture(", "SendInput(", "PostMessage(", "SetRenderState(", "memcpy(copy"):
-        assert forbidden not in probe
-
-
-def test_native_cursor_exact_quad_signature_replaces_unproven_stack_owner():
-    code=CORE.split("/* Native gameplay ESC red selector:",1)[1].split(
-        "static void free_menu_vertices(",1)[0]
-    assert 'SPIDERMAN2K1FIX_NATIVE_CURSOR_43' in code
-    assert "native_cursor43_enabled=0;" in code
-    assert "native_pause43_enabled,0,0)!=1" in code
-    assert "native_pause43_banner_flip,0,0)!=flip" in code
-    assert "desktop_w!=1920 || desktop_h!=1080" in code
-    assert "menu_upscale_active" in code
-    assert "gameplay_4x3_active" in code
-    assert "!geom_rva(ret,&rva) || rva!=0x00102C72UL" in code
-    assert "type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4" in code
-    assert "(right-left)-96.0f" in code
-    assert "(bottom-top)-72.0f" in code
-    assert "fabsf(z)>0.00005f" in code
-    assert "fabsf(rhw-27.519f)>0.035f" in code
-    assert "diffuse!=0xFFFFFFFFUL" in code
-    assert "GetTexture(" in code
-    assert "GetSurfaceDesc(" in code
-    assert "IDirectDrawSurface7_Release(tex)" in code
-    assert "desc.dwWidth!=32 || desc.dwHeight!=32" in code
-    assert "desc.ddpfPixelFormat.dwFlags!=0x41UL" in code
-    assert "memcpy(copy,v,4*sizeof(*copy))" in code
-    assert "copy[i].x=cx+0.75f*(v[i].x-cx)" in code
-    assert "copy[i].y=" not in code
-    assert "copy[i].z=" not in code
-    assert "copy[i].rhw=" not in code
-    assert "NATIVE-CURSOR-43: QUAD-MATCH" in code
-    assert "RtlCaptureStackBackTrace" not in code
-    assert "native_cursor43_scan_live_stack" not in code
-    assert "native_cursor43_owner" not in code
-    assert "SPIDERMAN2K1FIX_NATIVE_CURSOR_43" not in INI
-    assert "96x72" in DOC and "QUAD-MATCH" in DOC
-    for unsafe in ("VirtualProtect(", "PostMessage(", "SendInput(", "SetMousePos(", "SetTexture("):
-        assert unsafe not in code
-    draw=CORE.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
-        "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
-    assert "maybe_correct_native_cursor43(" in draw
-    assert draw.index("maybe_correct_adaptive_hud(") < draw.index("maybe_correct_native_cursor43(")
-    assert draw.index("maybe_correct_native_cursor43(") < draw.index("maybe_correct_native_pause43(")
-    assert "native_cursor43_init();" in CORE
-
-
-def test_native_cursor_43_is_opt_in_and_safe_outside_gameplay_esc():
-    block=CORE.split("static const void *maybe_correct_native_cursor43(",1)[1].split(
-        "static void free_menu_vertices(",1)[0]
-    assert "if(InterlockedCompareExchange(&native_cursor43_enabled,0,0)!=1" in block
-    assert "native_pause43_banner_flip" in block
-    assert "for(i=0;i<4;i++)" in block
-    assert "copy[i].x=cx+0.75f*(v[i].x-cx)" in block
-    assert "SPIDERMAN2K1FIX_NATIVE_CURSOR_43" in DOC
-
-
-
-def test_cursor_aspect_fix_is_not_restricted_to_previous_center_rectangle():
-    """Regression: 1920x1080 captures 0011=72px, 0012/0013=96px red sprite."""
-    block=CORE.split("static const void *maybe_correct_native_cursor43(",1)[1].split(
-        "static void free_menu_vertices(",1)[0]
-    selector=block.split("  /* The selector can legitimately move anywhere",1)[1].split(
-        "  memcpy(&diffuse",1)[0]
-    # Former screen-position filters inadvertently disabled the x0.75 transform
-    # for a cursor moved above y=325 or beyond right x=1480.
-    for forbidden in ("left<450.0f", "right>1480.0f",
-                      "top<325.0f", "bottom>800.0f"):
-        assert forbidden not in selector
-    # Signature filters still protect every other geometry category.
-    for exact in ("(right-left)-96.0f", "(bottom-top)-72.0f",
-                  "fabsf(z)>0.00005f", "fabsf(rhw-27.519f)>0.035f"):
-        assert exact in selector
-    for exact in ("native_pause43_banner_flip", "rva!=0x00102C72UL",
-                  "diffuse!=0xFFFFFFFFUL", "desc.dwWidth!=32",
-                  "desc.dwHeight!=32", "desc.ddpfPixelFormat.dwFlags!=0x41UL",
-                  "copy[i].x=cx+0.75f*(v[i].x-cx)"):
-        assert exact in block
-
-
-def test_cursor_aspect_samples_center_top_and_right_preserve_x_center_y_height():
-    """Model exactly the localized native selector transformation for F9 positions."""
-    # Actual red icon visible pixel boxes; transparent texture edges explain
-    # why the visible red region is ~67 high despite the native 72-high quad.
-    boxes={
-        "scrn0011":(1272,529,72,67),
-        "scrn0012":(1308,264,96,67),
-        "scrn0013":(1466,516,96,67),
-    }
-    assert boxes["scrn0011"][2:]==(72,67)
-    assert boxes["scrn0012"][2:]==boxes["scrn0013"][2:]==(96,67)
-    # Native source is always a 96x72 quad and the fix is an x-only scale
-    # around the quad center, regardless of position and native y coordinate.
-    source_positions=[
-        (1259,525),     # normal text row: originally corrected
-        (1308,260),     # screenshot 0012: above old top threshold
-        (1466,512),     # screenshot 0013: beyond old right threshold
-        (12,12),        # arbitrary upper-left
-        (1790,950),     # arbitrary lower-right
-    ]
-    for left,top in source_positions:
-        right=left+96
-        cx=(left+right)/2.0
-        mapped_left=cx+0.75*(left-cx)
-        mapped_right=cx+0.75*(right-cx)
-        assert abs((mapped_right-mapped_left)-72)<1e-6
-        assert abs((mapped_right+mapped_left)/2.0-cx)<1e-6
-        assert top+72-top==72
-
-
-def test_build_767_selector_shape_probe_is_read_only_and_not_glyph_quota():
-    probe = trace_block()
-    assert "pause_menu_trace_shape_seen=0;" in probe
-    assert "InterlockedExchange(&pause_menu_trace_shape_seen,0)" in probe
-    assert "selector_shape_candidate=0,selector_shape_sample=0" in probe
-    assert "xmax-xmin>=78.0f && xmax-xmin<=170.0f" in probe
-    assert "ymax-ymin>=52.0f && ymax-ymin<=130.0f" in probe
-    assert "InterlockedIncrement(&pause_menu_trace_shape_seen)<=32" in probe
-    assert "selector_shape_sample=1" in probe
-    assert "SELECTOR-SHAPE" in probe
-    assert "selector_shape_sample?" in probe
-    assert "!selector_shape_sample)return;" in probe
-    assert "SPIDER-POSE" in probe
-    assert "CURSOR-CANDIDATE" in probe
-    assert "32/frame" in probe
-    assert "96x65" in DOC and "SELECTOR-SHAPE" in DOC
-    # The diagnostic must never modify vertices or device state.
-    for forbidden in ("VirtualProtect(", "DrawPrimitive(", "SetTexture(", "SendInput(", "PostMessage(", "keybd_event(", "SpiderMenu_TransformVertices("):
-        assert forbidden not in probe
-
-
-def test_esc_panel_original_43_outline_is_pixel_calibrated_without_touching_glyphs():
-    block=CORE.split("static const void *maybe_correct_native_pause43(",1)[1].split(
-        "/* Native gameplay ESC red selector:",1)[0]
-    assert "if(desktop_w==1920 && desktop_h==1080)" in block
-    assert "if(border)" in block
-    assert "else if(ribbon)" in block
-    assert "1439.0f/1479.0f" in block
-    assert "1439.0f/1448.5f" in block
-    assert "mapped-963.0f" in block
-    assert "mapped-958.6f" in block
-    assert "copy[i].x=mapped" in block
-    assert "copy[i].y=" not in block
-    # The original screenshot: border x=241..1679 (1439-pixel row).
-    # Current wide screenshot: border x=224..1702 (1479 pixels).
-    # Center-of-extent correction is intentionally separated from
-    # the untextured fill and from all text glyphs.
-    calibrate_border=lambda x: 960.0+(x-963.0)*(1439.0/1479.0)
-    assert abs(calibrate_border(224)-241)<=1
-    assert abs(calibrate_border(1702)-1679)<=1
-    # Native untextured ribbon x=-7.5..1923.8 maps differently from
-    # the outer corners; shrinking it by the border factor would clip
-    # its interior too aggressively.
-    calibrate_fill=lambda x:960.0+(x-958.6)*(1439.0/1448.5)
-    for original,target in [(-7.5,241),(1923.8,1679)]:
-        mapped=960+(original-960)*0.75
-        assert abs(calibrate_fill(mapped)-target)<=2
-    assert "if(border)" in block and "else if(ribbon)" in block
-
-
-def test_backdrop_motif_probe_is_passive_and_not_world_scaling():
-    probe=trace_block()
-    assert "pause_menu_trace_motif_seen=0;" in probe
-    assert "InterlockedExchange(&pause_menu_trace_motif_seen,0);" in probe
-    assert "MOTIF-CANDIDATE" in probe
-    assert "SCENE OR UI UNKNOWN; READ ONLY" in probe
-    assert "InterlockedIncrement(&pause_menu_trace_motif_seen)<=28" in probe
-    assert "(draw<=16 || (draw%67)==0)" in probe
-    assert "(frame==1 || frame==5 || frame==12 || frame==20)" in probe
-    assert "GetTexture(" in probe and "IDirectDrawSurface7_Release(surf)" in probe
-    assert "memcpy(&color,raw+16,sizeof(color));" in probe
-    assert "if(fvf==0x144UL" in probe
-    assert "MOTIF-CANDIDATE" in DOC
-    assert "not yet" in DOC.lower() and "identified" in DOC.lower()
-    for forbidden in ("VirtualProtect(", "memcpy(copy", "SetTexture(", "DrawPrimitive(", "SendInput(", "PostMessage("):
-        assert forbidden not in probe
-
-
-def test_779_translucent_native_motif_fix_is_opt_in_and_does_not_target_world():
-    block=CORE.split("/* Native ESC translucent geometric motif,",1)[1].split(
-        "/* Native gameplay ESC red selector:",1)[0]
-    assert 'SPIDERMAN2K1FIX_NATIVE_MOTIF_43' in block
-    assert "native_motif43_enabled=0;" in block
-    assert "native_pause43_enabled,0,0)!=1" in block
-    assert "desktop_w!=1920 || desktop_h!=1080" in block
-    assert "menu_upscale_active" in block
-    assert "gameplay_4x3_active" in block
-    assert "rva!=0x00102C72UL" in block
-    assert "type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4" in block
-    assert "fabsf(v[0].z-0.00146f)>0.00004f" in block
-    assert "fabsf(v[0].rhw-9.988f)>0.060f" in block
-    assert "(color&0xFF000000UL)!=0x80000000UL" in block
-    assert "GetTexture(" in block
-    assert "IDirectDrawSurface7_Release(tex)" in block
-    assert "r-l<16.0f || b-t<16.0f" in block
-    assert "(r-l)>(float)desktop_w*0.80f" in block
-    assert "(b-t)>(float)desktop_h*0.86f" in block
-    assert "memcpy(copy,v,4*sizeof(*copy))" in block
-    assert "copy[i].x=center+(v[i].x-center)*0.75f" in block
-    assert "copy[i].y=" not in block
-    assert "copy[i].z=" not in block
-    assert "NATIVE-MOTIF-43: QUAD-MATCH" in block
-    for forbidden in ("VirtualProtect(", "SetTexture(", "PostMessage(", "SendInput(", "SetMousePos("):
-        assert forbidden not in block
-    draw=CORE.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
-        "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
-    assert "maybe_correct_native_motif43(" in draw
-    assert draw.index("maybe_correct_adaptive_hud(") < draw.index("maybe_correct_native_motif43(")
-    assert draw.index("maybe_correct_native_motif43(") < draw.index("maybe_correct_native_cursor43(")
-    assert draw.index("maybe_correct_native_cursor43(") < draw.index("maybe_correct_native_pause43(")
-    assert "native_motif43_init();" in CORE
-    assert "SPIDERMAN2K1FIX_NATIVE_MOTIF_43" not in INI
-    assert "NATIVE-MOTIF-43: QUAD-MATCH" in DOC
-
-
-def test_motif_signature_independent_of_passive_3d_scene_candidates():
-    block=CORE.split("/* Native ESC translucent geometric motif,",1)[1].split(
-        "/* Native gameplay ESC red selector:",1)[0]
-    # The early passive MOTIF-CANDIDATE lines were projected WORLD triangles,
-    # not the 2D overlay. The actual overlay is a different 4-vertex group.
-    assert "0x00103389" in block
-    assert "0x00102C72" in block
-    assert "(color&0xFF000000UL)!=0x80000000UL" in block
-    assert "0.00146f" in block and "9.988f" in block
-    assert "GetTexture(" in block
-    assert "0.75f" in block
-    assert "This is an explicit experimental opt-in" in block
-
-
-def test_781_gutter_replay_restores_purple_dim_with_original_native_blend():
-    src=CORE.split("/* Restore only the screen-wide pause tint",1)[1].split(
-        "/* Native gameplay ESC red selector:",1)[0]
-    assert "Build #780 compressed ALL native alpha=0x80 UI quads" in src
-    assert "left_edge=240.0f,right_edge=1680.0f" in src
-    assert "native_motif43_restore_gutters(" in src
-    assert "native_motif43_clip_triangle(" in src
-    assert "native_motif43_interpolate(" in src
-    # Preserve original projected depth and texture coordinates at clip edges.
-    assert "r.y=a->y+(b->y-a->y)*t" in src
-    assert "r.z=a->z+(b->z-a->z)*t" in src
-    assert "r.rhw=a->rhw+(b->rhw-a->rhw)*t" in src
-    assert "memcpy((BYTE*)&r+16u,&c,sizeof(c))" in src
-    assert "memcpy((BYTE*)&r+offs,&uv,sizeof(uv))" in src
-    assert "tri[0]=original[0];tri[1]=original[i+1u];tri[2]=original[i+2u]" in src
-    assert "original_draw_primitive(device,D3DPT_TRIANGLEFAN,0x144UL" in src
-    assert "GUTTER-REPLAY" in src
-    draw=CORE.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
-        "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
-    assert draw.index("v=maybe_correct_native_motif43(")<draw.index(
-        "native_motif43_restore_gutters(")<draw.index("original_draw_primitive(")
-    assert "if(v!=verts)" in draw
-    assert "native_motif43_restore_gutters(self,(const SpiderMenuVertex*)verts,flags)" in draw
-    assert "if(v==verts && count==4)" in draw
-    assert "SPIDERMAN2K1FIX_NATIVE_MOTIF_43" in CORE
-    # No new INI option, HWND overlay, color grading guess or raw backbuffer Lock.
-    assert "NATIVE-MOTIF-43" not in INI
-    for forbidden in ("VirtualProtect(", "IDirectDrawSurface7_Lock(",
-                      "SetWindowLong(", "SetRenderState(", "DrawPrimitiveUP("):
-        assert forbidden not in src
-
-
-def test_781_clip_gutters_keep_native_fullscreen_borders_without_center_overdraw():
-    """Independent model of two native triangle fan triangles and clipping."""
-    left,right=240,1680
-
-    def clip(poly,edge,keep_left):
-        out=[]
-        for i,b in enumerate(poly):
-            a=poly[i-1]
-            ina=a[0]<=edge if keep_left else a[0]>=edge
-            inb=b[0]<=edge if keep_left else b[0]>=edge
-            if ina!=inb:
-                t=(edge-a[0])/(b[0]-a[0])
-                out.append((edge,a[1]+t*(b[1]-a[1])))
-            if inb:
+def test_clipping_model_covers_both_gutters_never_middle():
+    def clip(poly, edge, keep_left):
+        out = []
+        for i, b in enumerate(poly):
+            a = poly[i - 1]
+            ia = a[0] <= edge if keep_left else a[0] >= edge
+            ib = b[0] <= edge if keep_left else b[0] >= edge
+            if ia != ib:
+                t = (edge - a[0]) / (b[0] - a[0])
+                out.append((edge, a[1] + t * (b[1] - a[1])))
+            if ib:
                 out.append(b)
         return out
+    triangles = [
+        ((0, 0), (1920, 0), (1920, 1080)),
+        ((0, 0), (1920, 1080), (0, 1080)),
+    ]
+    for lo, hi, keep_left in ((0, 240, True), (1680, 1920, False)):
+        edges = [clip(t, 240 if keep_left else 1680, keep_left)
+                 for t in triangles]
+        assert all(lo <= x <= hi for p in edges for x, _ in p)
+        assert sum(len(p) >= 3 for p in edges) == 2
+        for x, y in ((lo, 0), (hi, 0), (lo, 1080), (hi, 1080)):
+            assert any((x, y) in p for p in edges)
 
-    # Original wide translucent quadrilateral split into two native triangles.
-    verts=[(0,0),(1920,0),(1920,1080),(0,1080)]
-    triangles=[(verts[0],verts[1],verts[2]),
-               (verts[0],verts[2],verts[3])]
-    gutters=[(0,left,True),(right,1920,False)]
-    for lo,hi,keep_left in gutters:
-        pieces=[clip(t,left if keep_left else right,keep_left)
-                for t in triangles]
-        assert all(all(lo<=p[0]<=hi for p in poly)
-                   for poly in pieces for p in poly)
-        assert sum(len(poly)>=3 for poly in pieces)==2
-        assert {tuple(p) for poly in pieces for p in poly} >= {
-            (lo,0),(hi,0),(lo,1080),(hi,1080)}
-    # Interior artwork and the 1440-pixel native 4:3 panel are untouched.
-    inside=[(520,200),(1400,200),(1400,800),(520,800)]
-    for lo,hi,keep_left in gutters:
-        assert all(len(clip(t,left if keep_left else right,keep_left))==0
-                   for t in [(inside[0],inside[1],inside[2]),
-                             (inside[0],inside[2],inside[3])])
+
+def test_cursor_recognition_not_limited_to_old_screen_rectangle():
+    for token in ("SPIDERMAN2K1FIX_NATIVE_CURSOR_43",
+                  "native_pause43_banner_flip",
+                  "desktop_w!=1920 || desktop_h!=1080",
+                  "rva!=0x00102C72UL",
+                  "(right-left)-96.0f", "(bottom-top)-72.0f",
+                  "fabsf(z)>0.00005f", "fabsf(rhw-27.519f)",
+                  "diffuse!=0xFFFFFFFFUL",
+                  "desc.dwWidth!=32 || desc.dwHeight!=32",
+                  "desc.ddpfPixelFormat.dwFlags!=0x41UL",
+                  "copy[i].x=cx+0.75f*(v[i].x-cx)"):
+        assert token in CURSOR
+    guard = CURSOR.split("  /* The selector can legitimately", 1)[1].split(
+        "  memcpy(&diffuse", 1)[0]
+    # Top-right movement previously reverted the native 96x72 sprite.
+    for old in ("left<450.0f", "right>1480.0f",
+                "top<325.0f", "bottom>800.0f"):
+        assert old not in guard
+    for forbidden in ("copy[i].y=", "SetTexture(", "SetMousePos("):
+        assert forbidden not in CURSOR
+
+
+def test_selector_width_is_72_on_center_top_and_screen_edges():
+    # Native D3D7 quad 96x72; its transparent sprite edges explain ~67
+    # visible red pixels high in F9 images.
+    for x, y in ((911, 504), (1308, 260), (1466, 512), (0, 0), (1824, 1008)):
+        center = x + 48.0
+        left = center + 0.75 * (x - center)
+        right = center + 0.75 * (x + 96 - center)
+        assert right - left == 72
+        assert (left + right) / 2 == center
+        assert y + 72 - y == 72
+
+
+def test_hook_order_preserves_other_3d_2d_and_hud_transforms():
+    order = ["maybe_correct_native_comic(", "maybe_correct_adaptive_hud(",
+             "maybe_correct_native_motif43(", "native_motif43_restore_gutters(",
+             "maybe_correct_native_cursor43(", "maybe_correct_native_pause43(",
+             "maybe_correct_horplus(", "original_draw_primitive("]
+    positions = [DRAW.index(x) for x in order]
+    assert positions == sorted(positions)
+    assert "if(v!=verts)" in DRAW
+    assert "if(v==verts && count==4)" in DRAW
+    assert "native_motif43_restore_gutters(self,(const SpiderMenuVertex*)verts,flags)" in DRAW
+
+
+def test_esc_feature_requires_explicit_opt_ins_not_ini_or_main_menu():
+    assert "native_pause43_init();" in CORE
+    assert "native_cursor43_init();" in CORE
+    assert "native_motif43_init();" in CORE
+    for env in ("SPIDERMAN2K1FIX_NATIVE_ESC_43",
+                "SPIDERMAN2K1FIX_NATIVE_MOTIF_43",
+                "SPIDERMAN2K1FIX_NATIVE_CURSOR_43"):
+        assert env not in INI
+        assert env in DOC
+    assert "menu_upscale_active" in CURSOR and "gameplay_4x3_active" in CURSOR
+    assert "menu_upscale_active" in MOTIF and "gameplay_4x3_active" in MOTIF
