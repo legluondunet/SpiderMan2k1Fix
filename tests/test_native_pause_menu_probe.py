@@ -42,6 +42,8 @@ def test_analysis_is_bounded_and_never_changes_game_vertices():
     assert "if(frame<1 || frame>20" in probe
     assert "draw>8192" in probe
     assert "draw>8 && (draw%64)!=0" in probe
+    assert "draw>=3200 && draw<=3400" in probe
+    assert "draw>8192" in probe
     assert "frame==1 || frame==5 || frame==12 || frame==20" in probe
     assert "PAUSE-NATIVE-PROBE: FRAME-END" in probe
     assert "fvf!=0x144UL && fvf!=0x44UL" in probe
@@ -102,3 +104,15 @@ def test_probe_falls_back_to_bounded_passive_escape_sampling():
     for bad in ("SetAsyncKeyState(", "SendInput(", "PostMessage(", "WM_CLOSE"):
         assert bad not in init
     assert "hold Esc for about half a second" in DOC
+
+def test_esc_menu_48_new_draws_are_sampled_not_repositioned():
+    probe = trace_block()
+    assert "3268 candidates in frames 1..4" in probe
+    assert "3316 in" in probe
+    assert "draw>=3200 && draw<=3400" in probe
+    assert "frame==1 || frame==5 || frame==12 || frame==20" in probe
+    assert "PAUSE-NATIVE-PROBE: frame=%ld draw=%ld" in probe
+    assert "draw>8192" in probe
+    assert "SPIDERMAN2K1FIX_PAUSE_MENU_TRACE" not in INI
+    assert "48 primitives" in DOC
+    assert "3200" in DOC and "3400" in DOC

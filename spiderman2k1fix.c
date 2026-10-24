@@ -1091,7 +1091,7 @@ static const void *maybe_correct_adaptive_hud(void *device,
  *
  * Enabled only with [Debug] Log=1 AND
  * SPIDERMAN2K1FIX_PAUSE_MENU_TRACE=1; logs up to four Flip generations,
- * up to 136 spatial samples in each of four spaced frames. It does not patch input, alter
+ * bounded sparse samples plus a focused late-stage range in four spaced frames. It does not patch input, alter
  * vertices, capture pixels or read native menu object contents.
  * This is temporary research instrumentation, separate from HUD F12 probes.
  */
@@ -1113,7 +1113,7 @@ static void pause_menu_trace_init(void) {
   n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_PAUSE_MENU_TRACE",value,sizeof(value));
   if(n==1 && value[0]=='1') {
     InterlockedExchange(&pause_menu_trace_enabled,1);
-    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; 20-frame ESC window, sample frames 1/5/12/20, first8 + every64th draw; no geometry changes [Log=1]");
+    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; frames 1/5/12/20, first8 + every64th + all draws 3200..3400; no geometry changes [Log=1]");
   }
 }
 /* Passive physical key observation only (high bit); no injected or consumed
@@ -1234,13 +1234,16 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
        ymax>0.0f && ymin<(float)desktop_h))
     return;
   draw=InterlockedIncrement(&pause_menu_trace_draws);
-  /* The previous first-160-only sample captured identical world primitives
-   * in all four frames and missed later pause UI draws. Count candidates
-   * across 20 frames, but query textures and log coordinates in only four
-   * spaced frames, taking the first eight and every 64th after that.
-   * Limit to 8,192 candidates/frame and never touch game-owned vertices. */
+  /* Wine build #730: 3268 candidates in frames 1..4, and 3316 in
+   * frames 5..20 immediately after native ESC. The +48 primitives occur
+   * too close to the end of the 2D stream for every-64th sampling to
+   * reveal their exact bounds. Record all candidates 3200..3400 in
+   * four spaced frames, in addition to the existing sparse samples.
+   * Keep the trace read-only, explicitly opt-in and bounded; do not
+   * infer from the candidate count alone that a quad is pause UI. */
   if(!(frame==1 || frame==5 || frame==12 || frame==20) ||
-     draw>8192 || (draw>8 && (draw%64)!=0))return;
+     draw>8192 ||
+     (draw>8 && (draw%64)!=0 && !(draw>=3200 && draw<=3400)))return;
   if(!geom_rva(ret,&rva))rva=0;
   if(fvf==0x144UL &&
      SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) &&

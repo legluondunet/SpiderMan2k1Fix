@@ -43,6 +43,23 @@ high bit of GetAsyncKeyState on the existing Flip hook. No input is
 consumed, inserted or rerouted; this is a short fallback observation
 window, not a pause-detection claim.
 
+The build #730 Wine log `SpiderMan2k1Fix(20261024-055402).log`
+provides a useful temporal comparison: `ESC-EDGE` at Flip 204,
+**3268** D3D candidates per frame in samples 1–4, then **3316**
+candidates per frame from frame 5 through frame 20. That is **48 primitives**
+appearing just after ESC. The final sampled primitives are four-vertex
+2D quads from caller RVA `0x00102C72`, but the 1-in-64 sampling still
+misses almost all of the new group. This count difference is evidence
+of a new render batch **correlated with ESC**, not yet proof of which
+quads are the native PAUSED ribbon/text/selector.
+
+To test that hypothesis, the next diagnostic logs **every candidate
+from draw 3200 through draw 3400**, along with the first eight and
+every 64th candidate elsewhere, in frames 1, 5, 12 and 20. This
+catches the last 48 candidates while preserving the same bounded
+window, disabled-by-default opt-in and strict read-only operation.
+No gameplay HUD or native pause vertices are transformed.
+
 The first safe step is therefore read-only identification of
 the panel/text/icon signatures: original caller RVAs, D3D primitive
 types, FVF, source vertex rectangles, depth/RHW and bound texture
@@ -81,8 +98,9 @@ The diagnostic observes a maximum **24-Flip window** after each of
 up to four ESC edges. It counts eligible geometry candidates in the
 first 20 frames and logs `FRAME-END candidates=` for each frame.
 It records bounded details at **sample frames 1, 5, 12 and 20**:
-the first eight candidates, then every 64th candidate up to 8192.
-This reveals later rendering stages without logging every world
+the first eight candidates, every 64th candidate, **and every
+candidate from draw 3200 through draw 3400**, up to 8192.
+This reveals the extra end-of-frame primitives without logging every world
 triangle. The early frame's x/y pairs may be **projected 3D scene
 geometry, not menu positions**; do not apply a 4:3 transform from
 these readings until the overlay has been independently identified.
