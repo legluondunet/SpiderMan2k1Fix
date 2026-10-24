@@ -123,3 +123,17 @@ def test_repair_keeps_f10_verbose_trace_and_native_exit(recover_runner,tmp_path)
         "F10GameplayExit=1\nF10VerboseTrace=1\n[Unknown]\nValue=3\n")
     assert "[Debug] F10VerboseTrace=1" in lines
     assert "[Debug] F10GameplayExit=1" in lines
+
+def test_recovery_preserves_hidden_native_esc_debug_optouts(recover_runner,tmp_path):
+    # Manual overrides are not factory settings, but valid 0/1 HUD keys.
+    ini=("[HUD]\\nHUDWidescreenFix=1\\nNativeESC4x3=0\\n"
+         "NativeMotif4x3=0\\nNativeCursor4x3=0\\n"
+         "[Audio]\\nVoiceLevel=72\\n[Unknown]\\nFoo=invalid\\n")
+    lines=recover(recover_runner,tmp_path,ini)
+    for key in ("HUDWidescreenFix","NativeESC4x3","NativeMotif4x3","NativeCursor4x3"):
+        value="1" if key=="HUDWidescreenFix" else "0"
+        assert f"[HUD] {key}={value}" in lines
+    assert "[Audio] VoiceLevel=72" in lines
+    assert not any("[Unknown]" in line for line in lines)
+
+
