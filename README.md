@@ -22,7 +22,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** that improves how the origin
 
 ## What does the patch do?
 
-- **Modern display modes:** detect the actual game-window monitor's resolution at startup (including secondary monitors when discoverable), use borderless fullscreen without changing the OS display mode, and render widescreen 3D or centered classic 4:3 with automatic aspect/FOV adjustments.
+- **Modern display modes:** use the game window's monitor resolution (including secondary screens), borderless fullscreen without switching display modes, and widescreen 3D or classic 4:3 with automatic FOV.
 - **Original-looking 2D content:** introductory videos, comic artwork and menus retain their intended proportions. The HUD, compass and mission instructions are adapted for supported widescreen resolutions.
 - **Game compatibility:** memory-only CD-check bypass for the supported executable and a default **30 FPS** limiter to avoid timing problems.
 - **Settings and input:** configurable display, sound, keyboard and gamepad controls, with automatic OS keyboard-layout detection (`Auto`/`Off`) for gameplay bindings, CHEATS entry and keyboard menu labels (validated on Windows 11 and Linux/Wine with French AZERTY). The keyboard-name correction operates only in memory; focus/Alt+Tab recovery remains experimental.
