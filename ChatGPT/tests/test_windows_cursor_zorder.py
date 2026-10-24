@@ -6,7 +6,7 @@ S = (ROOT / "input_focus_trace.c").read_text()
 INI = (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text()
 GEN = (ROOT / "virtual_spidey_cfg.c").read_text()
 VALID = (ROOT / "ini_validation.h").read_text()
-DOC = (ROOT / "docs/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()
+DOC = (ROOT / "ChatGPT/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()
 
 
 def test_cursor_restore_enabled_by_default_including_old_user_ini():
