@@ -131,7 +131,7 @@ def test_pause_dim_opacity_strict_0_to_90(runner, tmp_path, value, valid):
 
 @pytest.mark.parametrize("value",["0","1","2","yes"])
 def test_removed_pause_grid_is_unknown_and_requires_migration(runner,tmp_path,value):
-    result,detail=validate(runner,tmp_path,f"[Input]\\nPauseGrid={value}\\n")
+    result,detail=validate(runner,tmp_path,f"[Input]\nPauseGrid={value}\n")
     assert result==(0,1,1)
     assert "Unknown key [Input] PauseGrid" in detail
 
