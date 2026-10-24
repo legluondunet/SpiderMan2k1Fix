@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.0 — release candidate (not yet published)
+
+- **First stable-version candidate** for the supported, SHA-256-verified
+  Spider-Man (2001) PC executable; see
+  [1.0.0 release notes](RELEASE_NOTES_1.0.0.md) for the exact feature
+  scope, compatibility limits, installation requirements and validation
+  checklist. No public v1.0.0 tag or Release has been created yet.
+- Retire the old, **uncompiled** `pause_overlay.c/.h` and
+  `pause_dim.c/.h` Win32 popup experiments, superseded by the
+  tested DirectDraw-based `pause_surface.c`. No change to active
+  focus pause, keyboard/mouse recovery, Bink, DirectSound, Direct3D,
+  No-CD, F9 PNG or game save behavior.
+- Change the in-game menu and diagnostic label from
+  `SpiderMan2k1Fix v0.0.0-<commit>` to `v1.0.0-<commit>`.
+  Retain existing platform/ABI checks and automatic tests. All changes
+  are isolated on a review branch until maintainer validation.
+
+
 ## Unreleased — native ESC menu 16:10 geometry (PR #47)
 
 - Fix the native 3D ESC pause/quit overlay at **1920×1200 (16:10)**: extend the 16:9-only motif and red selector guards to 16:10, compute 4:3 motif scaling and side-gutter clipping from the physical monitor dimensions, and preserve the exact cursor texture/depth/owner signature with square screen-space proportions. Fullscreen borderless, 3D/HUD, Bink and classic 4:3 paths are unchanged. Windows and Wine tests reported successful with no regressions observed by the maintainer (PR #47); the captured Windows 16:10 menu/QUIT screenshots and matching native D3D7 logs support the geometry correction.
