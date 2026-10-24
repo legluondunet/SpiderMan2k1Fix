@@ -492,6 +492,35 @@ static volatile LONG menu_version_logged=0;
 static SpiderFrameLimiter g_frame_limiter;
 static BOOL g_frame_limiter_ready=FALSE;
 
+/* At the first DirectDrawCreateEx hook, the game's real window is
+ * usually already created, but SetCooperativeLevel has not run yet.
+ * Discover ONLY windows belonging to the game main thread: a foreign
+ * foreground application's HWND must never choose the output monitor. */
+typedef struct {HWND found;} SpiderEarlyWindow;
+static BOOL CALLBACK spider_find_early_window(HWND window,LPARAM context) {
+  SpiderEarlyWindow *found=(SpiderEarlyWindow *)(uintptr_t)context;
+  DWORD pid=0;
+  if(!IsWindow(window) || (GetWindowLongPtrA(window,GWL_STYLE)&WS_CHILD) ||
+     GetWindow(window,GW_OWNER)!=NULL ||
+     GetWindowThreadProcessId(window,&pid)==0 || pid!=GetCurrentProcessId())
+    return TRUE;
+  if(!found->found || IsWindowVisible(window))
+    found->found=window;
+  return !IsWindowVisible(window);
+}
+static HWND spider_find_game_window_before_ddraw(void) {
+  SpiderEarlyWindow state={NULL};
+  HWND active=GetActiveWindow();
+  DWORD pid=0;
+  if(active && IsWindow(active) &&
+     GetWindowThreadProcessId(active,&pid)!=0 && pid==GetCurrentProcessId() &&
+     !(GetWindowLongPtrA(active,GWL_STYLE)&WS_CHILD))
+    return active;
+  EnumThreadWindows(GetCurrentThreadId(),spider_find_early_window,
+                    (LPARAM)(uintptr_t)&state);
+  return state.found;
+}
+
 /* The desktop mode is probed BEFORE the game's exclusive mode change.
  * Do not replace SetDisplayMode alone: the 640x480 D3D target and viewport
  * would then be inconsistent with the primary/backbuffer dimensions.
@@ -510,20 +539,29 @@ static void probe_desktop_mode(HWND hwnd) {
   if (!EnumDisplaySettingsA(info.szDevice,ENUM_CURRENT_SETTINGS,&mode)) return;
   if (mode.dmPelsWidth<640 || mode.dmPelsHeight<480 ||
       mode.dmPelsWidth>16384 || mode.dmPelsHeight>16384) return;
-  /* Cache ONCE, before the game's first exclusive mode switch. Re-querying
-   * later would incorrectly cache the current 640x480 game resolution.
-   */
-  if (!desktop_w && !desktop_h) {
+  /* The first DDraw creation is early enough to correct the virtual CFG
+   * BEFORE the game's native loader reads it. SetCooperativeLevel supplies
+   * the authoritative HWND later. Until the first intercepted game mode,
+   * allow this actual HWND to correct an early-window monitor mismatch.
+   * After mode acknowledgement, never recapture the desktop dimensions. */
+  if ((!desktop_w || !desktop_h) ||
+      (InterlockedCompareExchange(&borderless_legacy_mode_calls,0,0)==0 &&
+       (desktop_w!=mode.dmPelsWidth || desktop_h!=mode.dmPelsHeight))) {
     unsigned selected_w=0,selected_h=0;
     SpiderMenuMapping mapping;
     /* MENU always uses the captured desktop mode; gameplay may use an
      * independent physical output, while its logical canvas is 4:3. */
-    if(SpiderMenu_MakeMapping(640,480,(int)mode.dmPelsWidth,
-                              (int)mode.dmPelsHeight,&mapping)) {
-      desktop_w=mapping.output_w;
-      desktop_h=mapping.output_h;
-      menu_map=mapping;
+    if(!SpiderMenu_MakeMapping(640,480,(int)mode.dmPelsWidth,
+                               (int)mode.dmPelsHeight,&mapping)) {
+      log_line("DISPLAY-NATIVE: ERROR native monitor mapping unavailable; refusing guessed resolution");
+      return;
     }
+    desktop_w=mapping.output_w;
+    desktop_h=mapping.output_h;
+    menu_map=mapping;
+    game_output_w=0;game_output_h=0;
+    game_logical_w=0;game_logical_h=0;
+    InterlockedExchange(&gameplay_4x3_enabled,0);
     if(SpiderDisplayPolicy_ResolveRuntime(display_resolution_setting,display_aspect_setting,
           mode.dmPelsWidth,mode.dmPelsHeight,&selected_w,&selected_h)) {
       SpiderDisplayMenu_SetTarget(selected_w,selected_h);
@@ -2895,7 +2933,19 @@ static HRESULT WINAPI hooked_mode(void *self,DWORD w,DWORD h,DWORD bpp,DWORD hz,
   return hr;
 }
 static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *outer) {
-  /* Before first video device initialization, on the game main thread. */
+  /* The display device is created before SetCooperativeLevel. Determine the
+   * actual game-window monitor NOW, before the virtual Spidey.cfg is read
+   * into the original game. This prevents primary-vs-secondary monitor
+   * resolution disagreement on Windows 11 or Wine. */
+  if(!desktop_w || !desktop_h) {
+    HWND early=spider_find_game_window_before_ddraw();
+    if(early) {
+      log_line("DISPLAY-NATIVE: pre-bootstrap game HWND identified; capturing its monitor");
+      probe_desktop_mode(early);
+    } else {
+      log_line("DISPLAY-NATIVE: WARNING game HWND unavailable before virtual config bootstrap; fallback to current primary monitor until SetCooperativeLevel");
+    }
+  }
   SpiderCfg_BootstrapGameRead();
   HRESULT hr=original_create(guid,out,iid,outer);
   if(SUCCEEDED(hr) && out && *out && iid && IsEqualGUID(iid,&IID_IDirectDraw7)) {
