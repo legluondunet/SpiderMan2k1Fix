@@ -1,7 +1,7 @@
 """PR #2: focus pause is isolated from the base graphics and stability fixes."""
 from pathlib import Path
 
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 CORE=(ROOT/"spiderman2k1fix.c").read_text()
 INI=(ROOT/"SpiderMan2k1Fix.ini").read_text()
 GEN=(ROOT/"virtual_spidey_cfg.c").read_text()

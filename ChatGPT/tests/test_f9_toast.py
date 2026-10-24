@@ -6,7 +6,7 @@ Neither display route may modify the PNG's original backbuffer.
 """
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 CORE = (ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
 ENC = (ROOT/"f9_png.c").read_text(encoding="utf-8")
 TOAST = (ROOT/"f9_toast.c").read_text(encoding="utf-8")

@@ -6,7 +6,7 @@ prove that the legacy game's screenshot bug has been fixed.
 """
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SRC = (ROOT / "spiderman2k1fix.c").read_text(encoding="utf-8")
 
 

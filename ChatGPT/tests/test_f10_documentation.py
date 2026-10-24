@@ -1,7 +1,7 @@
 """Current F10 guidance must match supported INI settings and scope."""
 from pathlib import Path
 
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 
 def test_f10_readme_describes_hidden_debug_opt_in_and_native_cleanup():
     readme=(ROOT/"README.md").read_text(encoding="utf-8")

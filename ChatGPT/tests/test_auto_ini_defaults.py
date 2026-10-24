@@ -4,7 +4,7 @@ import configparser
 import re
 import struct
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 virtual = (ROOT / 'virtual_spidey_cfg.c').read_text()
 game = (ROOT / 'spiderman2k1fix.c').read_text()
 example = (ROOT / 'SpiderMan2k1Fix.generated-example.ini').read_text()

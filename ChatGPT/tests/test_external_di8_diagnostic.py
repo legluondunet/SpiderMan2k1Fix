@@ -3,10 +3,10 @@ from pathlib import Path
 import shutil
 import subprocess
 
-ROOT = Path(__file__).resolve().parents[1]
-JS = ROOT / "diagnostics" / "trace_directinput8_windbg.js"
-PS = ROOT / "diagnostics" / "run_directinput8_trace.ps1"
-DOC = ROOT / "diagnostics" / "WINDBG_DI8_TRACE.md"
+ROOT = Path(__file__).resolve().parents[2]
+JS = ROOT / "ChatGPT/diagnostics" / "trace_directinput8_windbg.js"
+PS = ROOT / "ChatGPT/diagnostics" / "run_directinput8_trace.ps1"
+DOC = ROOT / "ChatGPT/diagnostics" / "WINDBG_DI8_TRACE.md"
 
 
 def test_external_probe_files_exist_and_are_observation_only():

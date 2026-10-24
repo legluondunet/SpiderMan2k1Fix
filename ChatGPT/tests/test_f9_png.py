@@ -6,7 +6,7 @@ owned copied pixels via Windows/Wine GDI+.
 """
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 CORE = (ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
 ENC = (ROOT/"f9_png.c").read_text(encoding="utf-8")
 HEADER = (ROOT/"f9_png.h").read_text(encoding="utf-8")

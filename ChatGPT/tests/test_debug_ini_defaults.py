@@ -2,7 +2,7 @@
 from pathlib import Path
 import configparser
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 example = (ROOT / 'SpiderMan2k1Fix.generated-example.ini').read_text()
 virtual = (ROOT / 'virtual_spidey_cfg.c').read_text()
 core = (ROOT / 'spiderman2k1fix.c').read_text()

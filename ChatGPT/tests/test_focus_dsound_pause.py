@@ -3,7 +3,7 @@ No assertions here substitute for real Win11/ProcDump audio testing.
 """
 from pathlib import Path
 import hashlib,os,struct
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 SRC=(ROOT/"focus_dsound_pause.c").read_text()
 CORE=(ROOT/"spiderman2k1fix.c").read_text()
 INI=(ROOT/"SpiderMan2k1Fix.ini").read_text()
