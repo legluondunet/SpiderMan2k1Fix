@@ -3087,29 +3087,19 @@ static DWORD WINAPI initialize(LPVOID unused) {
       }
       {
         char aspect[40];
-        unsigned chosen_w=0,chosen_h=0;
-        DEVMODEA current;
         GetPrivateProfileStringA("Display","AspectRatio","Auto",aspect,sizeof(aspect),ini);
-        /* The output resolution and FOV are now fixed to automatic policy.
-         * FPSLimit and AspectRatio remain configurable user settings. */
+        /* The physical display target is chosen only from the actual
+         * game-window monitor by probe_desktop_mode(), not from a blind
+         * EnumDisplaySettings(NULL) of the PRIMARY monitor.
+         * Both modes keep that native physical output; 4:3 is logical. */
         strcpy(display_resolution_setting,"Auto");
-        memset(&current,0,sizeof(current));current.dmSize=sizeof(current);
-        if(lstrcmpiA(aspect,"4:3")==0) {
-          if(!EnumDisplaySettingsA(NULL,ENUM_CURRENT_SETTINGS,&current) ||
-             !SpiderDisplayPolicy_ResolveRuntime("Auto",aspect,
-                  current.dmPelsWidth,current.dmPelsHeight,&chosen_w,&chosen_h) ||
-             (unsigned long long)chosen_w*3ull!=(unsigned long long)chosen_h*4ull) {
-            log_line("DISPLAY-ASPECT-43: WARNING invalid logical canvas; falling back to Auto");
-            strcpy(aspect,"Auto");
-          } else {
-            snprintf(line,sizeof(line),"DISPLAY-ASPECT-43: logical 4:3 canvas=%ux%u",chosen_w,chosen_h);
-            log_line(line);
-          }
-        } else if(lstrcmpiA(aspect,"Auto")!=0) {
-          log_line("DISPLAY-ASPECT-43: invalid AspectRatio; falling back to Auto");
+        if(lstrcmpiA(aspect,"4:3")!=0 && lstrcmpiA(aspect,"Auto")!=0) {
+          log_line("DISPLAY-ASPECT: unknown aspect policy; using Auto");
           strcpy(aspect,"Auto");
         }
         strcpy(display_aspect_setting,aspect);
+        if(lstrcmpiA(aspect,"4:3")==0)
+          log_line("DISPLAY-ASPECT-43: logical 4:3 resolution will be computed from the selected game monitor");
         SpiderFOV_Init("Auto",1,0,log_line);
         if(lstrcmpiA(aspect,"4:3")==0)
           log_line("DISPLAY-ASPECT-43: automatic FOV uses original 4:3 baseline 1.0");
