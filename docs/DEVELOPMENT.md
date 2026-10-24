@@ -322,7 +322,27 @@ Joystick movement bytes **`0x40`–`0x4C` remain undecoded**; unknown fields sho
 
 The game's **Display option-selection** code at **RVA `0x0010DD19`** (VA `0x0050DD19`) handles **0 screen size, 1 color depth, 2 brightness**. The **original print-time field reads** are **RVA `0x0010DB3F` (height)**, **`0x0010DB44` (width)**, **`0x0010DBAA` (depth)**; all four are exact-signature checked in [`display_menu_lock.c`](../display_menu_lock.c), without changing the real renderer's surface pixel format. The 32bpp policy is a **patch decision**, not an original hardware limitation.
 
-The aspect-related [`fov_aspect_win.c`](../fov_aspect_win.c) experiment uses original float scalar **RVA `0x00150064`** (VA `0x00550064`), default bits `0x3F800000` (1.0). **Do not call this a calibrated camera-FOV-in-degrees location**: the camera baseline and actual degree conversion were not established. Original menu/title rendering uses D3D7 **caller RVA `0x00103389`**, distinct from gameplay/HUD/comic **caller RVA `0x00102C72`**.
+The aspect-related [`fov_aspect_win.c`](../fov_aspect_win.c) experiment uses a **game-owned four-byte float** at **RVA `0x00150064` (VA `0x00550064`)**, whose original value is `1.0f` (IEEE-754 `0x3F800000`). This is a recovered **projection/aspect scaling variable**, **not a decoded native `SetFOV(degrees)` function or a calibrated vertical/horizontal camera angle**. Its exact original code cross-references and complete original camera pipeline are not reconstructed here.
+
+**Changing it in the supported patch:**
+- [`fov_aspect.c`](../fov_aspect.c) `SpiderFOV_AspectScalar(width,height,&value)` computes `value=(4.0/3.0)/(width/height) = 4*height/(3*width)`, valid only for screened geometries at least as wide as 4:3 (with limits/validation). Typical values: **4:3 → 1.0**, **16:10 → 0.833333**, **16:9 → 0.75**.
+- `SpiderFOV_Init()` configures an **Auto-only** runtime experiment from `[Display] FOV` (default `Auto`), `ExperimentalFOVAspect` (1 to opt in) and optional `ExperimentalFOVHorPlus` (1 to opt in). The distributed `SpiderMan2k1Fix.ini` currently uses `ExperimentalFOVAspect=1`. At **forced logical 4:3**, startup explicitly selects automatic scaling with factor **1.0**.
+- Game stage selection is observed from the game's **mode/display transitions**: `SpiderFOV_SetStage(0,...)` restores **1.0** for menu / 640×480 legacy mode; `SpiderFOV_SetStage(1,w,h)` applies the aspect scalar at the gameplay resolution. See [`spiderman2k1fix.c`](../spiderman2k1fix.c), `hooked_set_display_mode()`.
+- `update_scalar()` checks PE32 and fixed image base **`0x00400000`**, verifies current 4 bytes match the **last known expected value**, temporarily sets `PAGE_READWRITE` using `VirtualProtect`, writes the new `float` bit pattern and restores the protection. A mismatch fails closed and disables the experiment. No original EXE is modified on disk.
+- **Optional Hor+ experimental path:** changing the scalar also affects native projected on-screen vertical geometry. To counter that, `SpiderFOV_RestoreVertical()` acts only on candidate **depth-tested world quads**, using **`y' = mid_y + (y-mid_y)/scalar`**. Guardrails require an active Z-buffer and recognized HUD scopes; otherwise the code declines to transform. The D3D7 wrapper copies vertices and must avoid moving the 2D HUD, comic, menus and text. **Hor+ and the degree calibration are not established for all scenes/drivers.**
+- Although `fov_aspect.c` parses numbers in **10–170**, [`fov_aspect_win.c`](../fov_aspect_win.c) explicitly logs **`manual FOV NOT APPLIED (game camera baseline not established)`**. It does **not** convert these numbers into native camera degrees. Do not document `FOV=90` as an effective supported adjustment.
+
+An illustrative existing configuration (not a guaranteed arbitrary-FOV control):
+
+```ini
+[Display]
+AspectRatio=Auto
+FOV=Auto
+ExperimentalFOVAspect=1
+; ExperimentalFOVHorPlus=1   ; separate unverified mode; leave disabled normally
+```
+
+Original menu/title rendering uses D3D7 **caller RVA `0x00103389`**, distinct from gameplay/HUD/comic **caller RVA `0x00102C72`**.
 
 The game-owned 2D comic art includes a **512×256 texture**, displayed with V span **0..240/256**. This signature supports the [`comic_native.c`](../comic_native.c) centered 4:3 correction, rather than proving every comic/image source uses that format.
 
@@ -346,7 +366,45 @@ The patch's optional synchronized focus-pausing reused these **original APIs and
 - Original screenshot readback from DirectDraw **PRIMARY** uses **Lock caller RVA `0x001034D4`** and **Unlock caller RVA `0x00103537`**. The fix distinguishes the native primary and the completed backbuffer for borderless frame capture; that is a targeted screenshot observation, not a rule for all DirectDraw operations.
 - An original statically linked CRT **`fclose(FILE*)`** starts at **RVA `0x0012A7FC`**, according to the Windows crash/disassembly audit. The actual fault at **VA `0x0052A805`** received a **NULL `FILE*`** from game caller **`0x005186F8`**. The invalid call is documented, but **what caused NULL remains unknown**. The defensive VEH workaround was experimental. See [Windows crash research](../WINDOWS_VIEWPORT_DIAGNOSTIC.md).
 
-### 8.10 Explicit unknowns and coverage boundary
+### 8.10 Original media/audio owners and the multi-component focus-pause mechanism
+
+The 2001 game has **separate presentation, Bink video, Bink soundtrack and DirectSound voice paths**. An Alt+Tab pause of the **gameplay/render thread** is **not** sufficient to stop all of them. This distinction was discovered and exercised in the [focus audio/video Windows test](../FOCUS_AUDIO_VIDEO_SYNC_TEST.md), the original native structures cataloged in §8.8, and the current source.
+
+**Original game-owned sites and objects relevant to pausing:**
+
+| Component | Original function / address | Interpretation and safe mechanism |
+| --- | --- | --- |
+| 3D / 2D frame presentation | Game calls `IDirectDrawSurface7::Flip` through its DirectDraw path (COM method, not one universal known EXE VA) | The fix intercepts the **DirectDraw Flip boundary** in `spiderman2k1fix.c::hooked_flip` and blocks further progression of the **calling render/game thread** inside `pause_at_flip_if_background()`. This is **not a recovered original engine-wide `PauseGame()` function** and does **not** suspend all asynchronous threads |
+| Native Bink movie video | Movie object `[0x00AC0BA4]`; `_BinkPause@8` original import **IAT VA `0x0053B210`**, call at **VA `0x0050BDE5`**, within game routine `0x0050BDD0` | The fix calls the **same exported Bink API** to pause/resume a currently existing movie handle, without substituting a dummy decoder, forcing movie end or bypassing its owner |
+| Bink audio-only music | Separate handle `[0x00AC1020]`; native pause state `[0x00AC101D]` | Also pauses through Bink's API when applicable; **do not resume** a replaced handle or audio already considered paused by the game |
+| Native DirectSound effects / voices | **32 records × 12 bytes**, base `0x006BBD50`; init `0x005039F0`, duplicate `0x00504110`, play `0x00504230`, stop `0x005042A0` | Inspect game-owned slots via `IDirectSoundBuffer::GetStatus`, retain each actually playing **secondary** buffer and its looping flag, `Stop` while backgrounded, then `Play` only if the exact same slot/buffer remains valid and stopped |
+| Primary DirectSound buffer | `[0x006BBF1C]` | Excluded: stopping primary audio is not equivalent to independently pausing the game's 32 voices |
+| Window activation/keyboard return | Native `WM_ACTIVATE` state `[0x006B78F0]`; original DirectInput devices and polling (§3) | Focus restoration and input reacquisition are **separate** from stopping Flip/Bink/sounds; the patch's temporary `WH_KEYBOARD_LL` resume-key handling is not a native engine feature |
+
+**Current optional pause sequence, from [`spiderman2k1fix.c`](../spiderman2k1fix.c):**
+
+1. With `[Input] PauseOnFocusLoss=1` (factory default **0**), `hooked_flip()` observes foreground state. The game must **previously have been foreground** and another process's window must remain foreground for at least **150 ms**. A transient NULL foreground or same-process window is ignored. Windows 11 sometimes reported a **`Ghost`** helper window, spuriously satisfying this test; that case remains diagnostic/experimental (see [unexpected focus pause](../UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md)).
+2. Upon the next Flip, `pause_at_flip_if_background()` latches the pause and first installs a **temporary** keyboard wake hook via [`pause_any_key.c`](../pause_any_key.c), `SetWindowsHookExA(WH_KEYBOARD_LL,...)`. The hook only swallows an ordinary key **when the game is foreground**. It deliberately preserves OS Alt/Win/Tab navigation. If hook installation fails, the code **abandons** this pause rather than risk a stuck game.
+3. It calls **`SpiderFocusMedia_Pause()`** ([`focus_media_pause.c`](../focus_media_pause.c)) and **`SpiderFocusDSound_Pause()`** ([`focus_dsound_pause.c`](../focus_dsound_pause.c)) **separately**. Both audio modules are **opt-in independently**, default **0** (`PauseBinkOnFocusLoss`, `PauseDirectSoundOnFocusLoss`). A Flip pause without those options does **not** prove Bink/music/effects stopped.
+4. It paints a pause display **inside the existing DirectDraw backbuffer**, via [`pause_surface.c`](../pause_surface.c): saves its pixels using GDI, dims/renders a native-ESC-inspired violet ribbon and original game icon, performs **one** `Blt` to the PRIMARY and preserves the original backbuffer until resuming. There are **no separate overlay HWNDs**; failure to draw the label does not imply failure to pause. Content bounds respect the 4:3/pillarbox region.
+5. The game **stays blocked at Flip** while a loop **keeps Win32 messages pumping** with `PeekMessageA`, `TranslateMessage`, `DispatchMessageA` and `MsgWaitForMultipleObjectsEx(...,20,...)`. It does **not** freeze the entire process, suspend Bink worker threads, or guarantee that no non-render task continues elsewhere.
+6. Back in the foreground, the user must **press and release an ordinary key**; the `WH_KEYBOARD_LL` hook discards the press/release so the game cannot accidentally jump/skip a cutscene with that same Win32 key. Then the fix removes the hook, **restores the original backbuffer**, resumes only retained/eligible DirectSound voices and Bink handles, and returns to the original Flip flow. The code is explicit that Win32 hook suppression alone is **not proof** that DirectInput/Raw Input cannot observe every hardware key event. Reacquiring native DirectInput devices requires its **own** guarded input path (§3).
+
+The user-visible optional settings and boundaries are:
+
+```ini
+[Input]
+PauseOnFocusLoss=1
+PauseBinkOnFocusLoss=1
+PauseDirectSoundOnFocusLoss=1
+; DirectInputReacquire=1  ; independent input recovery; validate for target OS/build
+```
+
+**Runtime evidence (2026-10-21 Windows 11):** [`FOCUS_AUDIO_VIDEO_SYNC_TEST.md`](../FOCUS_AUDIO_VIDEO_SYNC_TEST.md) records one tester successfully pausing/resuming Bink video and music and stopping/resuming **11**, then **9**, playing DirectSound secondary voices in two separate 3D focus pauses, with reported `failed=0`. It does **not** establish unconditional correctness in all sequences, Windows/Wine configurations, driver versions, sound devices or input-recovery paths. The later [`UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md`](../UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md) documents spontaneous pauses associated with Windows `Ghost` foreground windows; this is a **distinct unresolved reliability issue**. Focus pausing and the **game's original ESC pause menu (§8.5 / §9)** are different operations.
+
+**Research lesson:** a real simultaneous pause requires separate treatment of **frame production**, **Bink decoding/playback**, **Bink music**, **DirectSound secondary effects**, **foreground/input recovery** and **visible paused frame**. The fix uses those known original APIs/structures, but has **not** recovered a single global original engine pause switch.
+
+### 8.11 Explicit unknowns and coverage boundary
 
 Do not turn the following into “understood functions”: most 11-mode dispatch action *scene labels*, all event-node semantic meanings, all actor states, unobserved level-specific cutscene systems, complete 3D projection/FOV in degrees, the underlying reason for `fclose(NULL)`, why Alt+Tab loses input, missing joystick-axis bytes, exact cause of the temporary yellow frame, or as-yet-unclassified HUD primitives.
 
