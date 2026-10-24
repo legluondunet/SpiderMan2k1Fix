@@ -373,6 +373,44 @@ Send both PNGs and the full log. If the candidate owner stack never
 matches, stop and investigate call-stack availability or the original
 Sprite2 draw owner; do **not** relax the guard based on texture size.
 
+### Build #764 — comparison with the original 4:3 mouse cursor
+
+The source PNGs supplied by the user on October 24, 2026 show a
+**72x66 pixel red cursor on the MAIN MENU** (`scrn0000(2).png`),
+and a **96x66 pixel cursor on the ESC and REALLY QUIT? screens**
+(`scrn0003(1).png` and `scrn0004(2).png`). Measurements used
+strict red-pixel connected components in the unscaled 1920x1080 PNGs.
+This resolves the desired 4:3 sprite correction exactly: multiply
+the **cursor X width by 0.75**, retain its center and unchanged height.
+The main menu's 4:3 content must NEVER be modified by this experiment.
+
+The Wine run `SpiderMan2k1Fix(20261024-081427).log` was on the
+supported SpideyPC.exe SHA-256 and enabled all three opt-ins. The
+native owner candidate at RVA 0x0010C470 is executable and begins
+`F6 05 8C 98 E0 02 10 75 2F A1 A8 12`. Despite successful
+initialization, the Windows stack walker returned **depth=0** on
+all three sampled draws. No owner match occurred and, as expected,
+the 96x66 cursor remained uncorrected.
+
+The next opt-in experiment retains the original backtrace test but
+adds a **bounded x86 stack return-address scan only when depth=0**.
+It refuses to activate unless the supported executable hash, native
+function opcode pattern, existing 4:3 ESC ribbon, sprite geometry,
+and 32x32 cursor texture all pass. It scans at most 8192 bytes in
+the COMMITTED current-thread stack region (checked via VirtualQuery),
+without modifying the stack, and only accepts a return address
+in the exact function interval **RVA 0x0010C470..0x0010C4AF**
+if the preceding instruction resembles a machine **CALL**.
+Missing matches always mean **NO RENDER MODIFICATION**.
+
+Look for `NATIVE-CURSOR-43: x86 owner CALL-RETURN MATCH` (followed by
+`owner MATCH`) or `fallback x86 stack scan ... owner-not-found`
+in the next Wine log. This logic is experimental and relies on
+native x86 return-address evidence, not a generic texture-size fix.
+Even a positive match will still require two new visual screenshots,
+mouse pointer movement and confirming the menu text remains intact
+before merging PR #28.
+
 ## Test the passive diagnostic (Wine or native Windows)
 
 Use both DLLs from the same build on the diagnostic PR branch.
