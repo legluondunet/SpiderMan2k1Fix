@@ -1,6 +1,6 @@
 # Configuration and troubleshooting
 
-This is the detailed companion to the [project README](../../README.md). Some settings, particularly input reacquisition and focus-pausing, are **experimental**. GitHub Actions passing does not establish that they work on every Windows, Wine or Proton setup.
+This is the detailed companion to the [project README](../../README.md). For the supported retail executable, focus-loss pause and native input reacquisition are **built-in compatibility features**, while their behavior across every Windows, Wine and Proton setup remains unverified. Passing GitHub Actions does not replace in-game validation.
 
 ## Upgrading from older builds
 
