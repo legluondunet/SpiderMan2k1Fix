@@ -2,6 +2,7 @@
 
 ## Unreleased — permanent fixes and compact player INI (PR #46)
 
+- Fix the corrupt-INI startup 640×480 regression: remove modal, topmost INI repair/failure MessageBox calls; initialize the patch once on the first DirectDrawCreateEx via an early signature-guarded winmm proxy IAT gate and fail closed if that initialization cannot complete. Preserve native borderless monitor sizing and original INI safeguards. CI verifies the DLL-to-DLL startup export, with real Windows/Wine validation still required.
 - Capture the selected game window's monitor resolution as early as the DirectDraw creation hook, before the original game reads virtual `Spidey.cfg`, to avoid using the primary monitor's dimensions on multi-monitor setups. Reconfirm at `SetCooperativeLevel`, never forward the original exclusive display-mode request, and retain physical desktop size for both `Auto` and logical `4:3` display policies.
 - Replace numbered INI `.old` copies with a single rolling `SpiderMan2k1Fix.ini.old`: recover known-good settings, validate the rebuilt file before renaming, overwrite any older backup and roll back on failed installation. Delete obsolete numbered backups after a successful repair.
 - Keep `[Display] FPSLimit=30` visible and editable by players (`0` disables, `1..240` target FPS). Retain editable `AspectRatio`, `Brightness`, `KeyboardLayout`, audio and original game bindings.
