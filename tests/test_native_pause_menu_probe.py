@@ -316,3 +316,33 @@ def test_cursor_width_transform_is_centered_only_and_opt_in():
     assert "copy[i].z=" not in block
     assert "copy[i].rhw=" not in block
     assert "SPIDERMAN2K1FIX_NATIVE_CURSOR_43" in DOC
+
+
+def test_wine_x86_mouse_cursor_stack_fallback_is_exact_and_bounded():
+    code=CORE.split("/* Mouse cursor hook experiment, OFF by default.",1)[1].split(
+        "static void free_menu_vertices(",1)[0]
+    assert "static int native_cursor43_scan_live_stack(DWORD *matched_rva)" in code
+    assert "static int native_cursor43_return_follows_call(const BYTE *ret)" in code
+    assert "native_cursor43_return_follows_call(candidate)" in code
+    assert "ret<native_cursor43_owner+12u" in code
+    assert "ret>=native_cursor43_owner+0x40u" in code
+    assert "(ret[-1]&0x38u)==0x10u" in code
+    assert "ret[-5]==0xE8u" in code
+    assert "VirtualQuery((LPCVOID)&stack_anchor,&info,sizeof(info))" in code
+    assert "info.State!=MEM_COMMIT" in code
+    assert "info.Protect&PAGE_GUARD" in code
+    assert "if(limit-position>8192u)limit=position+8192u;" in code
+    assert "if(!matched && depth==0)" in code
+    assert "native_cursor43_scan_live_stack(&owner_rva)" in code
+    assert "desc.dwWidth!=32 || desc.dwHeight!=32" in code
+    assert "native_cursor43_owner[0]==0xF6u" in code
+    assert "native_cursor43_owner[7]==0x75u" in code
+    assert "x86 owner CALL-RETURN MATCH" in code
+    assert "owner-not-found [NO CHANGE]" in code
+    assert "if(!matched)" in code
+    assert "cx+0.75f*(v[i].x-cx)" in code
+    assert "72x66" in DOC and "96x66" in DOC
+    assert "Wine" in DOC and "depth=0" in DOC
+    assert "SPIDERMAN2K1FIX_NATIVE_CURSOR_43" not in INI
+    for forbidden in ("SetTexture(", "SendInput(", "PostMessage(", "keybd_event(", "SetMousePos(", "VirtualProtect("):
+        assert forbidden not in code
