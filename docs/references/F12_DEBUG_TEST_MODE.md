@@ -81,7 +81,7 @@ running through the same original CutSceneScript mechanism.
 It does NOT establish that every kind of cinematic uses
 that manager. No new hook sites or forced process quit.
 
-Testing checklist: `docs/F10_VALIDATION_MATRIX.md`.
+Testing checklist: `docs/references/F10_VALIDATION_MATRIX.md`.
 PR #26 remains draft/unmerged pending user approval.
 
 ---
