@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Native ESC defaults follow HUDWidescreenFix
+
+- Enable the previously validated ESC ribbon, translucent motif/full-screen tint and red spider cursor aspect corrections by default when `HUDWidescreenFix=1` (factory default), after successful full HUD installation.
+- Respect `HUDWidescreenFix=0` as the shared master off switch, including failure/scope-only HUD mode and 4:3 gameplay, and make `NativeESC4x3=0` disable its motif and cursor children.
+- Allow optional manual debug opt-outs `[HUD] NativeESC4x3=0`, `NativeMotif4x3=0` or `NativeCursor4x3=0`; all default to 1 when absent, and **none is written** into generated/distributed INIs.
+- Recognize hidden options in strict INI validation and preserve manual choices during repair. Legacy environment switches with value 0 remain available as compatibility opt-outs.
+- Keep the native D3D7 geometry/texture signatures and 1920×1080 Auto-only visual validation scope unchanged. No changes to gameplay input, HUD placement or 3D geometry.
+
 ## Unreleased — Native gameplay ESC menu 4:3 (PR #28)
 
 - Preserve the original proportions of the gameplay ESC purple ribbon, its border and text, the translucent orange/blue background motif, and the red spider selector in 1920×1080 Auto mode.
