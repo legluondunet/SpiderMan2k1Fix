@@ -62,10 +62,13 @@ the same workflow is mandatory for this branch.
    descriptions that still described permanent Bink/DirectSound focus
    pause, F9 capture and DIERR_NOTACQUIRED recovery as opt-in or
    experimental. No audio, input or screenshot algorithms were changed.
-4. **Release material:** add release notes and a manual publishing plan;
+4. **Compiler-warning cleanup:** fix the F9 wide-character sentinel defect,
+   delete unused variables and correct an ambiguous `if` layout;
+   add a regression test for the F9 idle state.
+5. **Release material:** add release notes and a manual publishing plan;
    update the player homepage for a **candidate**, not an already
    published stable download.
-5. **Regression contract:** update structural version/packaging tests
+6. **Regression contract:** update structural version/packaging tests
    and assert the deleted legacy renderer cannot accidentally return.
 
 **Performance decision:** no speculative optimization of the frame
@@ -76,6 +79,35 @@ An unmeasured micro-optimization would have a worse release risk than
 a plausible performance gain. The dead modules were not compiled,
 so their deletion improves source maintenance, **not** expected runtime
 CPU usage or DLL size.
+
+### Additional compiler-warning audit and F9 fix
+
+The first 1.0.0 candidate CI **passed 471 tests and built both
+DLLs**, but the compiler reported the following actionable warnings:
+
+- **`f9_toast.c` (two sites):** `L'\\\\0'` was a *wide multicharacter
+  literal*, not the NUL sentinel `L'\\0'`. This could confuse the
+  idle/no-toast path. Replaced both with the correct wide NUL and added
+  a regression that rejects the doubled-backslash form.
+- **`virtual_spidey_cfg.c`:** an assigned but unused `brightness`
+  variable; removed without changing the actual setting or log.
+- **`virtual_spidey_cfg.c`:** misleading one-line `if` indentation
+  in `hooked_GetFileSize`; split statements without changing their
+  execution order.
+- **`fov_aspect_win.c`:** unused `original_bits` variable; removed,
+  retaining the active `last_bits` address guard.
+- **`keyboard_layout.h`:** header-defined keyboard helper functions
+  caused warnings in translation units where only the layout
+  constants were used; marked them `static inline`, preserving the
+  host regression implementation.
+- **`spiderman2k1fix.c`:** unused original DirectDraw
+  `SetDisplayMode` callback argument; explicitly marked intentionally
+  unused, retaining the original callback ABI.
+
+These are **targeted release fixes, not a rewrite**. The candidate
+must pass a fresh build to show that the warnings are resolved. The
+GCC warning log was not treated as evidence that the code has no
+further memory, timing or data-race defects.
 
 ## 3. Risk register and required follow-ups
 
