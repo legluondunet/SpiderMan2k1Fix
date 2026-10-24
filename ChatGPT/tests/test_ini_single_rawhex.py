@@ -4,7 +4,7 @@ import configparser
 import re
 import struct
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 ACTIONS = ("Up","Down","Left","Right","Jump","Kick","Punch","Web","Aim","Zipline","Swing")
 SCANS = (0xC8,0xD0,0xCB,0xCD,0x39,0x2D,0x2E,0x2F,0x20,0x21,0x22)
 

@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include "../ini_recovery.h"
+#include "../../ini_recovery.h"
 int main(int argc,char **argv) {
   SpiderIniRecovered *r;
   unsigned i;

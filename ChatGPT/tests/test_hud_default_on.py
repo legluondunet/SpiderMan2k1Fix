@@ -5,7 +5,7 @@ and an explicit HUDWidescreenFix=0 remain safe/no-transform configurations.
 """
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 CORE = (ROOT / "spiderman2k1fix.c").read_text(encoding="utf-8")
 GENERATOR = (ROOT / "virtual_spidey_cfg.c").read_text(encoding="utf-8")
 INIS = (

@@ -1,7 +1,7 @@
 """Ensure each game run replaces the preceding log without losing startup lines."""
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 PROXY = (ROOT / "winmm_proxy.c").read_text(encoding="utf-8")
 CORE = (ROOT / "spiderman2k1fix.c").read_text(encoding="utf-8")
 

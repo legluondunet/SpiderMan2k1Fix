@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include "../ini_validation.h"
+#include "../../ini_validation.h"
 static void issue(void *opaque,unsigned line,int error,const char *text) {
   (void)opaque;
   printf("%s:%u:%s\n",error?"ERROR":"WARNING",line,text);

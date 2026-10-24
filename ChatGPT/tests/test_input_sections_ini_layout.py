@@ -4,7 +4,7 @@ import configparser
 import re
 import struct
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 VIRTUAL = (ROOT / "virtual_spidey_cfg.c").read_text()
 INI = (ROOT / "SpiderMan2k1Fix.ini").read_text()
 DEFAULT = (ROOT / "SpiderMan2k1Fix.generated-example.ini").read_text()

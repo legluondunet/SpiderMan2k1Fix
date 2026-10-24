@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.fixture(scope="module")
 def runner(tmp_path_factory):
@@ -13,7 +13,7 @@ def runner(tmp_path_factory):
         pytest.skip("host C compiler missing")
     dest = tmp_path_factory.mktemp("ini-validator") / "test_ini_validator"
     subprocess.run(["gcc", "-std=c99", "-Wall", "-Wextra", "-Werror", "-O2",
-                    str(ROOT / "tests/test_ini_validator_runner.c"), "-o", str(dest)],
+                    str(ROOT / "ChatGPT/tests/test_ini_validator_runner.c"), "-o", str(dest)],
                    check=True, capture_output=True, text=True)
     return dest
 

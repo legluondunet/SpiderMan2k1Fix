@@ -3,7 +3,7 @@ from pathlib import Path
 import subprocess
 import shutil
 
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 CORE=(ROOT/"spiderman2k1fix.c").read_text()
 MENU=(ROOT/"menu_version.c").read_text()
 BUILD=(ROOT/"build.sh").read_text()
