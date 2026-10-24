@@ -28,6 +28,8 @@ Brightness=4
 FPSLimit=30
 
 [Input]
+; Letter naming: Auto for new INIs, AZERTY, QWERTY or Physical (legacy).
+KeyboardLayout=Auto
 ; Experimental Windows 11 input recovery; default OFF.
 DirectInputReacquire=0
 ; Pause rendering after a real Alt+Tab; default OFF.
@@ -91,6 +93,35 @@ The generated INI may contain additional internal or development-specific settin
 **Controls:** keyboard and joystick bindings are independent. Keyboard values use physical DirectInput key names or hexadecimal scan codes. Joystick values use the same `BUTTON0`, `BUTTON1`, etc. numbering shown in the game's **Joystick Configuration** menu. Joystick movement axes/directions are handled by the game and are not configurable through this section.
 
 **Alt+Tab recovery (Windows 11):** Use `DirectInputReacquire=1` and `PauseOnFocusLoss=1` for the tested keyboard/mouse recovery and focus-pause combination. After switching back to the game, press and release any key to resume; the wake key is consumed. The game reuses its native `DIERR_NOTACQUIRED` retry path without wrapping DirectInput COM interfaces. These options remain disabled by default; earlier unsafe COM experiments are no longer active, even if their keys remain in an older user INI. The former environment-variable override is supported for legacy diagnostic scripts, but is unnecessary with the INI setting.
+
+## Keyboard layout (AZERTY, QWERTY and Wine)
+
+The original *Spider-Man* 2001 game reads **physical DirectInput DIK scan codes**. Those scan codes are based on keyboard position, **not on the letters printed on your keyboard**. This is why on an AZERTY keyboard a physical **M** may appear as **;** in the original game's key-binding screen, and **Z/W** or **A/Q** can look swapped.
+
+SpiderMan2k1Fix adds a layout option for **letter names in the INI**, while retaining the original physical codes used by the game:
+
+```ini
+[Input]
+KeyboardLayout=AZERTY
+
+[Keyboard]
+Kick=M
+```
+
+Available values:
+
+| `[Input] KeyboardLayout` | Meaning |
+| --- | --- |
+| `Auto` | For **newly generated INIs**: use the active Windows/Wine keyboard layout reported by `GetKeyboardLayout` and `MapVirtualKeyEx`. This is the new default for first-time installs. |
+| `AZERTY` | Force French AZERTY letter positions, including **A/Q, Z/W and M/;**, even when Wine does not report the expected layout. |
+| `QWERTY` | Force the standard US/QWERTY physical mapping of letter names. |
+| `Physical` | Keep the **historical positional meaning** of the project's original INI key names (also equivalent to QWERTY). This is the default when `KeyboardLayout` is **absent** from an existing INI, avoiding silent changes to older saved bindings. |
+
+For example, `[Keyboard] Kick=M` becomes **DIK scan `0x27`** with `AZERTY`, versus **`0x32`** with `Physical`/QWERTY. AZERTY also maps `Z` to `0x11` (original `DIK_W`) and `W` to `0x2C` (original `DIK_Z`). The 11 action bindings remain stored as physical scan codes in the virtual 252-byte configuration; joystick controls are independent.
+
+**Existing users:** add `KeyboardLayout=AZERTY` under the existing `[Input]` section while the game is closed, then restart it. Do not add a second `[Input]` section; the INI validator rejects duplicates. If automatic detection is incorrect under Wine/Proton, prefer explicit `AZERTY`. The layout is sampled on startup; changing the system layout while the game is running requires restarting the game.
+
+**Important limitation:** this corrects the **INI names and gameplay action mapping**, but **not yet the key names drawn by the original game's configuration menu**. Its QWERTY legend can still show `;` when you press the physical AZERTY `M`; correcting that requires separate identification and safe patching of the game's original label-rendering code. This feature also does not rewrite text-entry/character input, alter DirectInput's events, or modify keyboard state globally. Named non-letter keys (`SPACE`, arrows, function keys) and explicit hexadecimal raw codes `0xNN` retain their original physical meaning.
 
 ## Optional Windows focus diagnostics
 

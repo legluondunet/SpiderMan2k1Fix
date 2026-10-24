@@ -25,7 +25,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** that improves how the origin
 - **Modern display modes:** borderless fullscreen at the desktop resolution, widescreen 3D or classic 4:3 presentation, and automatic aspect/FOV adjustments.
 - **Original-looking 2D content:** introductory videos, comic artwork and menus retain their intended proportions. The HUD, compass and mission instructions are adapted for supported widescreen resolutions.
 - **Game compatibility:** memory-only CD-check bypass for the supported executable and a default **30 FPS** limiter to avoid timing problems.
-- **Settings and input:** configurable display, sound, keyboard and gamepad controls. Optional focus/Alt+Tab recovery remains experimental.
+- **Settings and input:** configurable display, sound, keyboard and gamepad controls, with new AZERTY/QWERTY-aware INI key bindings. The original in-game key-name labels are not yet localized; focus/Alt+Tab recovery remains experimental.
 - **Screenshots:** **F9** saves lossless PNG files (`scrnNNNN.png`) beside the game executable. The capture path still needs broader Windows/Wine runtime testing.
 
 These features are under active development; some resolutions, gameplay scenes and combinations of settings have not been validated. For technical details and known limitations, see the [project documentation](docs/README.md).
@@ -99,6 +99,8 @@ HUDWidescreenFix=1
 - `AspectRatio=Auto`: adapt to the desktop aspect ratio; `AspectRatio=4:3`: classic 4:3 display.
 - `FPSLimit=30`: default frame-rate limit.
 - `HUDWidescreenFix=1`: apply supported HUD/menu aspect corrections; set `0` to disable them.
+
+**AZERTY keyboard:** If physical keys appear swapped (A/Q, Z/W) or M is labeled as `;`, add `KeyboardLayout=AZERTY` under `[Input]` in the INI and restart. New INIs use `Auto` detection; this setting fixes action bindings, **not yet the labels in the original game's menus**. [Keyboard layout details](docs/references/CONFIGURATION.md#keyboard-layout-azerty-qwerty-and-wine).
 
 For audio, controls, Alt+Tab options, INI repair and other settings, see the **[configuration guide](docs/references/CONFIGURATION.md)**.
 

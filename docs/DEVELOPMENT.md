@@ -467,6 +467,8 @@ Source: [six-stage lifecycle and input disassembly](references/F12_DEBUG_TEST_MO
 
 **Separately managed keys:** **Esc** remains the native pause/menu key, **Enter** remains a menu/skip key, and the game's **F9** remains its native screenshot trigger (the fix changes BMP output to PNG). Optional **F10** is a separate developer shortcut, not one of the eleven retail action bindings; the dangerous original F12→`WM_CLOSE` path is suppressed. **Joystick button defaults remain separate** and were intentionally preserved when the keyboard was modernized.
 
+**2026-10-24 keyboard-layout feature (development/test status):** The original **DIK** action fields remain physical keyboard positions. New `[Input] KeyboardLayout=Auto` uses the Windows/Wine `GetKeyboardLayout` + `MapVirtualKeyExA` mapping for **letter names only**, with an explicit `AZERTY` fallback for environments whose active layout is not exposed correctly. In French AZERTY, A→`0x10`, Q→`0x1E`, Z→`0x11`, W→`0x2C`, and M→`0x27` (original QWERTY semicolon position). For older INIs **without the new key**, default to `Physical` so existing saved assignments do not silently shift. Native keyboard menu legend/text input are **not yet patched**, and Wine/Windows visual acceptance tests remain necessary. Implemented in [`keyboard_layout.h`](../keyboard_layout.h) and [`virtual_spidey_cfg.c`](../virtual_spidey_cfg.c); see [layout configuration](references/CONFIGURATION.md#keyboard-layout-azerty-qwerty-and-wine).
+
 Joystick movement bytes **`0x40`–`0x4C` remain undecoded**; unknown fields should be preserved verbatim through `[Internal] RawHex`, not relabeled.
 
 ### 8.7 Original Display menu branches and a tentative FOV scalar
