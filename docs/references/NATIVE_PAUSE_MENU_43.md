@@ -31,8 +31,10 @@ D3D7 geometry signatures do not match.
 The motif and selector signatures were visually calibrated at
 **1920×1080 Auto** (borderless) under Wine. The patch also recognizes
 **1920×1200 Auto (16:10)** using the same native owner/FVF/Z/RHW and
-texture signatures; that new resolution **awaits in-game visual confirmation**
-under Windows 11 and Wine. Other resolutions are deliberately left unchanged
+texture signatures. User-supplied native Windows screenshots and log
+(2026-10-24) now confirm that the new 16:10 branches execute and render;
+final subjective visual acceptance and separate Linux/Wine 16:10 regression
+are still outstanding. Other resolutions are deliberately left unchanged
 by the motif and selector correction until the signatures are measured.
 Both are disabled in main menus and classic 4:3 gameplay.
 
@@ -91,6 +93,35 @@ top and right edge. The logical 4:3 area should be **1600×1200** centered
 at x=160..1760, while the physical window and 3D scene remain
 1920×1200. Compare against 1920×1080 screenshots; do not assume that
 passing static tests proves the on-screen motif/selector signatures match.
+
+### Observed Windows 11 runtime test (2026-10-24)
+
+Two game F9 captures from a **1920×1200 Auto** gameplay ESC menu
+(`scrn0009` and `scrn0010`, including the **REALLY QUIT?** state),
+together with `SpiderMan2k1Fix(20261024-202129).log`, verify:
+
+- The same monitored screen uses 1920×1200 borderless output; the original
+  main-menu request 640×480×16 is intercepted. The game viewport remains
+  physical 1920×1200 for 3D.
+- `PAUSE-NATIVE-43: ribbon/border/glyph` executes with the **0.83333**
+  X-only 4:3 scale.
+- `NATIVE-MOTIF-43: QUAD-MATCH` records the original translucent
+  alpha-0x80 motif with Z≈0.00146 and RHW≈9.988; its
+  `GUTTER-REPLAY` logs confirm dynamic clips
+  `(0..160,1760..1920)`.
+- `NATIVE-CURSOR-43: QUAD-MATCH` confirms an observed **96×80**
+  native selector and an **80×80** output with scale 0.83333; successful
+  matches occurred at center and near the display edges.
+- The panel text and the QUIT confirmation remain centered and legible
+  in the user screenshots; no visible 640×480 window or major border
+  misalignment. The large orange/blue motif remains a prominent native
+  design feature, so a screenshot alone is not a proof of the artist's
+  intended geometry.
+
+**Limitations:** only one native Windows 16:10 rendering configuration
+was captured. This does not establish 1920×1080 *nonregression*, classic
+4:3 bypass in real gameplay, or the same effect on Wine 16:10.
+The user has not yet expressly approved merging PR #47.
 
 **Classic 4:3 regression:** verify no additional x-compression is applied
 when `AspectRatio=4:3` is selected. Keep Bink/video/main-menu 4:3 and
