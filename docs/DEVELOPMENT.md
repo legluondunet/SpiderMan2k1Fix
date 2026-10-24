@@ -606,6 +606,40 @@ Do not turn the following into “understood functions”: most 11-mode dispatch
 
 **Completeness means:** all **functionally identified findings located in the current repository's source and research documents** were compared during this audit, with the major previously missing address/data groups now indexed here. It **does not** mean the game has been fully decompiled or every unpublished past GDB observation can be recovered. The retail EXE is not included in the repository, so this audit did not re-disassemble it byte for byte.
 
+### 8.12 Native progress saves: `SPIDRMAN.DAT` (new format research)
+
+The original **game-progress save file** is independent of the patch's
+virtual `Spidey.cfg` / `SpiderMan2k1Fix.ini`. Public partial decompilation
+of `buInit` places saves under `save\` relative to the process
+**working directory**. `Card_Load` / `Card_Write` use a single
+`SPIDRMAN.DAT`; **eight** `SSaveGame` slots (`0xBC` bytes each)
+are held in one `0xA24`-byte backup-image with a 4-byte size prefix,
+512-byte card-style header and auxiliary data. The real example
+analyzed on **2026-10-24** was `0xC00` bytes long with **one occupied
+slot, seven empty slots**, and a matching native checksum on the
+occupied slot (`0x6D478F4B`). Its sample difficulty was Hard, the
+replay flag was active and all ten costume-unlock bits were set.
+Unknown bytes and the auxiliary region have **not** been exhaustively
+decoded; the example is not included in the repository.
+
+`Shell_CalculateGameChecksum` processes 46 little-endian 32-bit words
+after each slot's stored checksum using rotate-left-one, add and final
+`OR 1`. An all-zero slot is *empty*, not automatically a corrupt slot.
+The original saving function `buSaveFile` uses `fopen(...,"wb")`
+and unchecked `fwrite` / `fclose`; therefore overwriting the shared
+file is not inherently transactional. This is a **code-level weakness**,
+not a claim that save loss was reproduced.
+
+**Project behavior:** SpiderMan2k1Fix does **not** currently intercept,
+validate, back up or repair native save files. Any future design should
+first prove the actual path under Windows and Wine, validate read-only,
+and implement tested transactional backups **before** a truncating
+write without silently modifying unknown data.
+
+See [native PC save format and checksum research](references/NATIVE_SAVE_FILE_FORMAT.md)
+for the full offset table, verified fields, source links, limitations and
+future regression plan.
+
 ## 9. Native exit points, transition ownership and cleanup by game phase
 
 **Do not conflate three different operations:** (1) ending the current screen/movie/script, (2) leaving the current gameplay owner to return to a main-menu/controller loop, and (3) terminating `SpideyPC.exe` after final program cleanup. The game reuses several low-level routines, and the **same request value can end in a controller loop or a process shutdown** depending on native state.

@@ -8,6 +8,23 @@ This is the detailed companion to the [project README](../../README.md). For the
 - **Migrating from an older SpiderManFix beta:** remove the obsolete `SpiderManFix.dll`. To preserve settings, back up your old `SpiderManFix.ini` and rename it to `SpiderMan2k1Fix.ini` **before** launching the new fix (only if no new-named INI already exists). Otherwise the patch generates fresh defaults.
 - **Other proxy mods:** `winmm.dll` is a filename shared by many mods. Back up an existing file and check for conflicts; two different proxies cannot normally occupy the same directory under that name.
 
+## Game progress saves are separate from the patch INI
+
+The original game's campaign/progress slots live in
+`save\SPIDRMAN.DAT` **relative to the game's current working
+directory** according to the partial decompilation. This single file
+contains up to **eight slots** and is **not** the original 252-byte
+`Spidey.cfg` or `SpiderMan2k1Fix.ini`. Deleting or regenerating the
+patch INI does not intentionally reset the campaign slots, and the
+patch currently does **not** repair or back up their data.
+
+If the game appears to have lost saved progress, first verify the
+working directory used to start `SpideyPC.exe`, check alternate
+`save` directories and any Windows UAC `VirtualStore` redirection,
+and **back up the file before testing**. See the
+[technical SPIDRMAN.DAT format analysis](NATIVE_SAVE_FILE_FORMAT.md).
+The normal INI `.old` recovery mechanism applies to **settings only**.
+
 ## Player INI: compact configuration
 
 SpiderMan2k1Fix automatically generates `SpiderMan2k1Fix.ini` beside the supported game executable. Edit it **only while the game is closed**. The generated file exposes only the options that a player should need:
