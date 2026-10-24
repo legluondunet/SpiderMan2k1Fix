@@ -1,6 +1,6 @@
 # SpiderMan2k1Fix
 
-**A modern compatibility and widescreen fix for Spider-Man (2001) on PC — Windows and Linux (Wine).**
+**A display and compatibility patch for the original *Spider-Man* (2001) Windows PC game.**
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 [![Linux / Wine / Proton compatible](https://img.shields.io/badge/Linux%20%2F%20Wine%20%2F%20Proton-compatible-428b40?logo=linux&logoColor=white)](#installing-on-linux-with-wine)
@@ -12,109 +12,79 @@
   <a href="assets/screenshots/gameplay.webp"><img src="assets/screenshots/gameplay.webp" alt="Spider-Man widescreen gameplay with HUD" width="49%"></a>
 </p>
 
-SpiderMan2k1Fix is an **unofficial, fan-made patch** for the original Windows PC release of *Spider-Man*. It helps the game run more comfortably on modern displays and operating systems while preserving its original look when desired.
+SpiderMan2k1Fix is an **unofficial fan-made patch** that improves how the original game runs on modern Windows PCs and under Linux with Wine/Proton.
 
-It adds borderless fullscreen, desktop-resolution output, widescreen support, corrected presentation for introductory movies and comic-book artwork, improved input handling, and an integrated configuration file. It also removes the game's CD check for the supported executable.
+> **Development status:** This project is still being tested. **No stable release is available.** GitHub Actions provides experimental Windows x86 builds, but a successful build does not guarantee that the game works correctly on your system.
 
-**License:** The SpiderMan2k1Fix source code is distributed under the [GNU General Public License, version 3](LICENSE) (**GPL-3.0-only**). This license covers the project's own code, **not** the original game or its assets.
+**Original game required:** **No files from the original game are included.** You must provide your **own legally obtained copy** of *Spider-Man* for Windows, including its original game data and `SpideyPC.exe`.
 
-**Original game required:** SpiderMan2k1Fix is a compatibility patch, not a remake or a replacement for the game. **No files from the original game are included**: this repository does not distribute `SpideyPC.exe`, game data, textures, audio, videos or other game assets. You must provide your **own legally obtained copy of the original Windows PC game**.
+[Download and install](#download-and-install) · [Configuration](#configuration) · [Troubleshooting](#troubleshooting) · [Technical documentation](docs/README.md)
 
-**Independent fan project:** SpiderMan2k1Fix is **not affiliated with, sponsored by, or endorsed by Activision, Neversoft, LTI Gray Matter / Gray Matter Interactive, or any other developer, publisher, distributor or rights holder associated with the original game**. *Spider-Man* and all related trademarks and game content remain the property of their respective owners.
+## What does the patch do?
 
-> **Development build — not a stable release.** The fix is still being tested and may not work reliably. Experimental Windows x86 DLL builds can be found in [GitHub Actions](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml).
+- **Modern display modes:** borderless fullscreen at the desktop resolution, widescreen 3D or classic 4:3 presentation, and automatic aspect/FOV adjustments.
+- **Original-looking 2D content:** introductory videos, comic artwork and menus retain their intended proportions. The HUD, compass and mission instructions are adapted for supported widescreen resolutions.
+- **Game compatibility:** memory-only CD-check bypass for the supported executable and a default **30 FPS** limiter to avoid timing problems.
+- **Settings and input:** configurable display, sound, keyboard and gamepad controls. Optional focus/Alt+Tab recovery remains experimental.
+- **Screenshots:** **F9** saves lossless PNG files (`scrnNNNN.png`) beside the game executable. The capture path still needs broader Windows/Wine runtime testing.
 
-## Features under development
+These features are under active development; some resolutions, gameplay scenes and combinations of settings have not been validated. For technical details and known limitations, see the [project documentation](docs/README.md).
 
-- **Display:** borderless fullscreen at desktop resolution, widescreen or original 4:3, automatic FOV, corrected opening videos and comic artwork.
-- **Gameplay UI:** corrected HUD layout, compass, instructions, boss bars and the in-game ESC menu at widescreen resolutions.
-- **Compatibility:** an in-memory CD check bypass, a configurable 30 FPS limiter and optional Alt+Tab/input fixes.
-- **Settings:** `SpiderMan2k1Fix.ini` for display, audio and controls, generated and repaired automatically.
-- **Screenshots:** press **F9** to capture lossless `scrnNNNN.png` files beside the game executable. This path still needs broader Windows/Wine runtime validation.
+## Download and install
 
-For detailed behavior, diagnostics and limitations, see the [documentation index](docs/README.md).
+### Before you begin
 
-## Requirements and compatibility
-
-- An installed copy of the **original Windows PC version of Spider-Man**, including its game data.
-- The supported **32-bit** `SpideyPC.exe` executable.
-- Windows, or Linux with a working **32-bit-capable Wine** installation.
-- Two SpiderMan2k1Fix DLLs: `winmm.dll` and `SpiderMan2k1Fix.dll`.
-
-SpiderMan2k1Fix currently checks the game's executable before applying its main patches. The supported `SpideyPC.exe` has this SHA-256 checksum:
+You need the original **32-bit Windows PC game** and its unmodified `SpideyPC.exe`. This is the **only executable currently supported** (SHA-256):
 
 ```text
 0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea
 ```
 
-Other executable versions, modified executables, and some third-party wrappers may not be compatible. Do not rename an unsupported executable or bypass the compatibility check.
+Other executable versions and modified files are not validated. The patch consists of **two Windows x86 DLLs**, used on Windows or through a 32-bit-capable Wine/Proton installation on Linux.
+
+**Get the test build:** Open [SpiderMan2k1Fix Windows x86 — GitHub Actions](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml), choose a successful run, and download **`SpiderMan2k1Fix-Windows-x86`** from **Artifacts**. Extract the downloaded archive. The automatically generated GitHub *source code* archives do not contain compiled DLLs.
 
 ### Installing on Windows
 
-1. Install *Spider-Man* normally and locate the directory containing `SpideyPC.exe`.
-2. Back up any existing `winmm.dll`, `SpiderMan2k1Fix.dll`, or `SpiderMan2k1Fix.ini` files in that directory.
-3. For **testing only**, download the `SpiderMan2k1Fix-Windows-x86` artifact from a successful [GitHub Actions Windows x86 run](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml) and extract its DLL files. No stable release is available.
-4. Copy `winmm.dll` and `SpiderMan2k1Fix.dll` into the **same directory** as `SpideyPC.exe`:
+1. Locate the game's `SpideyPC.exe` folder. Back up any existing `winmm.dll`, `SpiderMan2k1Fix.dll` or `SpiderMan2k1Fix.ini`.
+2. Copy **`winmm.dll`** and **`SpiderMan2k1Fix.dll`** from the downloaded artifact beside `SpideyPC.exe`:
 
    ```text
    Spider-Man/
    ├── SpideyPC.exe
    ├── winmm.dll
-   ├── SpiderMan2k1Fix.dll
-   └── SpiderMan2k1Fix.ini    # generated automatically on first launch
+   └── SpiderMan2k1Fix.dll
    ```
 
-5. Start the game using `SpideyPC.exe`.
+3. Launch `SpideyPC.exe`. The patch automatically creates `SpiderMan2k1Fix.ini` on the first supported launch.
 
-On the first supported launch, SpiderMan2k1Fix creates `SpiderMan2k1Fix.ini` automatically if it does not already exist. You do not need to create it manually.
-
-**Configuration during testing and upgrades:** GitHub Actions artifacts contain only the two DLLs and public README/CHANGELOG; they do not include an INI. Keep your existing `SpiderMan2k1Fix.ini` when updating the DLLs to avoid losing personal settings.
-
-**Upgrading from an earlier SpiderManFix beta:** Remove the old `SpiderManFix.dll` (it is no longer used). To keep your settings, rename `SpiderManFix.ini` to `SpiderMan2k1Fix.ini` **before launching** the game. If no new-named INI exists, fresh defaults will be generated. Keep a backup of your original INI.
-
-**Important:** Do not overwrite another mod's `winmm.dll` without backing it up first. Two different `winmm.dll` proxy mods cannot normally occupy the same location under the same filename.
+**Important:** If another mod already provides `winmm.dll`, do not overwrite it without a backup. See [upgrading from an older beta](docs/references/CONFIGURATION.md#upgrading-from-older-builds) if you previously used `SpiderManFix.dll`.
 
 ### Installing on Linux with Wine
 
-1. Install *Spider-Man* in a Wine prefix and locate the directory containing `SpideyPC.exe`.
-2. Copy the **same two Windows DLLs** (`winmm.dll` and `SpiderMan2k1Fix.dll`) next to `SpideyPC.exe`.
-3. Configure Wine to load the local `winmm.dll` **before** its built-in implementation.
+Use **the same Windows x86 DLLs and game files** as above, then tell Wine to load the local `winmm.dll` before its built-in version.
 
-   In `winecfg`, open **Libraries**, add `winmm` and set it to **Native then Builtin**.
+From the game folder:
 
-   Alternatively, start the game from a terminal in its directory:
+```bash
+WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe
+```
 
-   ```bash
-   WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe
-   ```
+Alternatively, in **winecfg → Libraries**, set `winmm` to **Native then Builtin**. In **Lutris**, add a DLL override named `winmm` with value `n,b`. For a custom prefix, set `WINEPREFIX` in your launch environment.
 
-   If you use a custom Wine prefix, select it explicitly:
-
-   ```bash
-   WINEPREFIX="$HOME/Games/spider-man-prefix" WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe
-   ```
-
-4. Launch the game. On a supported executable, SpiderMan2k1Fix initializes and creates `SpiderMan2k1Fix.ini` if necessary.
-
-**Wine override explained:** `winmm=n,b` means **native, then built-in**. This allows Wine to load SpiderMan2k1Fix's local `winmm.dll` proxy first. The proxy forwards the original multimedia functions while loading `SpiderMan2k1Fix.dll`.
-
-If you use Lutris or another Wine launcher, add a DLL override with **Name:** `winmm` and **Value:** `n,b` in that game's Wine configuration (or set the equivalent environment variable). You generally do not need a separate override for `SpiderMan2k1Fix.dll`.
-
-**Proton (Steam):** Proton uses Wine's DLL-loading mechanism. If you run the Windows game through Steam/Proton, place the same two DLLs next to `SpideyPC.exe` and add this to the game's **Steam → Properties → Launch Options**:
+**Steam / Proton:** Put the two DLLs beside `SpideyPC.exe`, then enter this in the game's **Steam → Properties → Launch Options**:
 
 ```text
 WINEDLLOVERRIDES="winmm=n,b" %command%
 ```
 
-**Badge note:** The **Windows x86 build** badge reports GitHub Actions compilation/test status. The **Linux / Wine / Proton compatible** badge describes the intended compatibility layer for those same Windows x86 DLLs; **it is informational, not the result of a Linux/Proton gameplay CI test**. Individual Wine or Proton versions may require additional testing.
+The Linux / Wine / Proton badge is **informational, not the result of a Linux/Proton gameplay CI test**. Compatibility can vary with the Wine/Proton version, runner and graphics setup.
 
-## Using SpiderMan2k1Fix
+## Configuration
 
-There is **no separate launcher or graphical configuration utility**. Start *Spider-Man* as usual and change its settings through the in-game menus or `SpiderMan2k1Fix.ini`.
+There is **no separate launcher**. Run `SpideyPC.exe` normally; the patch creates `SpiderMan2k1Fix.ini` next to it. **Close the game before editing the INI**, and keep that file when replacing the DLLs with a newer build.
 
-### Basic configuration
-
-The fix creates `SpiderMan2k1Fix.ini` automatically. **Close the game before editing it**; the game may otherwise overwrite your changes.
+A few common settings:
 
 ```ini
 [Display]
@@ -124,75 +94,39 @@ FPSLimit=30
 
 [HUD]
 HUDWidescreenFix=1
-
-[Debug]
-Log=0
 ```
 
-Choose `AspectRatio=4:3` for the classic game presentation. `HUDWidescreenFix=0` turns off the widescreen HUD and native ESC corrections. For all available options (audio, keyboard, joystick, experimental focus-pause settings) and INI recovery behavior, see the [configuration and troubleshooting guide](docs/references/CONFIGURATION.md).
+- `AspectRatio=Auto`: adapt to the desktop aspect ratio; `AspectRatio=4:3`: classic 4:3 display.
+- `FPSLimit=30`: default frame-rate limit.
+- `HUDWidescreenFix=1`: apply supported HUD/menu aspect corrections; set `0` to disable them.
 
-### Debug log
-
-Logging is **disabled by default** (`[Debug] Log=0`). Set `Log=1` and restart to create `SpiderMan2k1Fix.log` beside the game. Each launch overwrites the previous log. [More details](docs/references/CONFIGURATION.md#debug-logging).
-
-### Automatic INI recovery
-
-Invalid INI settings can trigger automatic repair with a numbered `SpiderMan2k1Fix_N.old` backup; recognized valid settings are recovered. Do not edit `[Internal] RawHex` manually. [Recovery details](docs/references/CONFIGURATION.md#automatic-ini-recovery).
+For audio, controls, Alt+Tab options, INI repair and other settings, see the **[configuration guide](docs/references/CONFIGURATION.md)**.
 
 ## Troubleshooting
 
-- **The fix does not load:** verify that both DLLs are beside `SpideyPC.exe`, that the game's SHA-256 matches, and that Wine/Proton uses `winmm=n,b`.
-- **Settings were reset:** inspect the numbered `SpiderMan2k1Fix_N.old` backup.
-- **Input, focus, audio or graphics problems:** these remain under development. See [detailed troubleshooting](docs/references/CONFIGURATION.md#troubleshooting-cases) and the [known issues and technical analysis](docs/DEVELOPMENT.md#10-major-bugs-root-causes-and-fixes--historical-incident-register).
-- **Need diagnostics:** temporarily set `[Debug] Log=1`, restart the game, and save its log before the next launch.
+- **The patch does not load:** check that both DLLs are next to the supported `SpideyPC.exe`. On Wine/Proton, verify the `winmm=n,b` override.
+- **Controls stop responding after Alt+Tab, or audio/graphics look wrong:** these areas are still being investigated. See [troubleshooting and experimental input options](docs/references/CONFIGURATION.md#troubleshooting-cases).
+- **Your settings changed unexpectedly:** check for an automatic `SpiderMan2k1Fix_N.old` backup. [INI recovery details](docs/references/CONFIGURATION.md#automatic-ini-recovery).
+- **Need a log?** Set `Log=1` under `[Debug]` in the INI and restart the game. The file `SpiderMan2k1Fix.log` is **overwritten at each launch**, so save it before restarting. Turn logging off afterward.
 
-### F9 PNG screenshots
+For more help, read the [full documentation](docs/README.md), [F9 capture notes](docs/references/F9_PNG_CAPTURE.md) and [widescreen/HUD research](docs/DEVELOPMENT.md#7-display-and-rendering-research).
 
-Press **F9** to capture a lossless PNG beside `SpideyPC.exe`. The original game key and its debounce are preserved. See [capture behavior, verification status and optional diagnostics](docs/references/F9_PNG_CAPTURE.md).
+## For developers
 
-## Adaptive widescreen HUD
-
-Enabled by default with `HUDWidescreenFix=1`, the fix adjusts the player HUD, compass, mission instructions and supported boss UI while leaving game world geometry alone. Not every boss and resolution has been visually tested. See the [HUD implementation, source signatures and validation notes](docs/DEVELOPMENT.md#7-display-and-rendering-research).
-
-## Roadmap
-
-These are **planned improvements** rather than confirmed working features:
-
-- **Further HUD coverage:** test additional boss encounters and ultrawide aspect ratios (such as 21:9).
-- **Audio improvements:** reduce or eliminate unwanted audio noise and artifacts.
-- **Widescreen 3D geometry:** investigate 3D objects that appear displaced near the left or right edges of the screen in landscape/widescreen mode.
-- **Electro:** investigate and fix the outstanding Electro-related issue.
-
-## Building from source
-
-For **experimental, unvalidated builds**, GitHub Actions makes compiled DLLs available under **Actions → SpiderMan2k1Fix Windows x86 → successful run → Artifacts**. A successful CI build is not evidence that the game works correctly.
-
-The source package includes scripts for building the 32-bit Windows DLLs on Linux with an **MSVCRT-targeting MinGW-w64 toolchain**:
+The source builds **Windows x86 DLLs**, even on Linux:
 
 ```bash
 ./build.sh
 ```
 
-If your system compiler targets UCRT instead, consult `build-native-msvcrt.sh` in the source tree. The build scripts check the 32-bit Windows architecture and expected imports/exports. The resulting `winmm.dll` and `SpiderMan2k1Fix.dll` are Windows DLLs even when built on Linux.
-
-Developer-only tests, PowerShell utilities and WinDbg experiments live under [ChatGPT/](ChatGPT/README.md). Run the regression suite from the repository root with `python3 -m pytest -q ChatGPT/tests`; GitHub Actions uses the same path. These developer tools are not included in the CI DLL artifact.
-
-## Project and contributions
-
-SpiderMan2k1Fix is an independent compatibility project maintained by **[legluondunet](https://github.com/legluondunet)**.
-
-Bug reports and reproducible test results are welcome, especially for different Windows versions, Wine versions, GPUs, resolutions and controller models. When reporting an issue, include your platform, game executable checksum, relevant INI settings, and a debug log when available.
-
-**Project repository:** <https://github.com/legluondunet/SpiderMan2k1Fix>
+Building requires a 32-bit **MSVCRT-targeting MinGW-w64** toolchain; alternate tooling and automated tests are documented in [ChatGPT/](ChatGPT/README.md). Bug reports and reproducible results are welcome in [GitHub Issues](https://github.com/legluondunet/SpiderMan2k1Fix/issues); please include the OS/Wine version, game EXE checksum and relevant logs. The project is maintained by [legluondunet](https://github.com/legluondunet).
 
 ## Credits and acknowledgements
 
-Special thanks to **[Krystalgamer](https://github.com/krystalgamer)** for making their work on the original *Spider-Man* PC game publicly available, including the [partial PC decompilation](https://github.com/krystalgamer/spidey-decomp) and [research into the game's CD check](https://krystalgamer.github.io/spidey-breaking/index.html). These references have helped the community understand the original game's internals and have been valuable background material for this compatibility project.
+Special thanks to **[Krystalgamer](https://github.com/krystalgamer)** for sharing their [partial PC decompilation](https://github.com/krystalgamer/spidey-decomp) and [research into the original game's CD check](https://krystalgamer.github.io/spidey-breaking/index.html). These are valuable references for understanding the original game.
 
 ## License and third-party rights
 
-SpiderMan2k1Fix is released under the **[GNU General Public License v3.0](LICENSE) (GPL-3.0-only)**. The license applies to the code provided by this project; **it does not grant any rights to the original *Spider-Man* game, its executables, artwork, sound, or other proprietary content**.
+The SpiderMan2k1Fix source code is licensed under the **[GNU General Public License, version 3](LICENSE)** (**GPL-3.0-only**). This license covers this patch, **not** the original game's executable, images, audio or other proprietary content.
 
-This project distributes **no original game files**. You must supply your own legally obtained copy of *Spider-Man* for Windows.
-
-This is an **unofficial, independent fan project**. It is not affiliated with, endorsed by, or sponsored by Activision, Neversoft, LTI Gray Matter / Gray Matter Interactive, or any other company or rights holder involved in the original game's development, publication or distribution. *Spider-Man* and associated intellectual property belong to their respective owners.
+This is an independent fan project, **not affiliated with, sponsored by, or endorsed by Activision**, Neversoft, LTI Gray Matter / Gray Matter Interactive, or any other original developer, publisher, distributor or rights holder. *Spider-Man* and its associated trademarks and game content remain the property of their respective owners.
