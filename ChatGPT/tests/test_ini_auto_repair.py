@@ -62,13 +62,25 @@ def test_unknown_lines_not_recovered(recover_runner,tmp_path):
     values=recover(recover_runner,tmp_path,'garbage\n[Plugin]\nFoo=Bar\n[Audio]\nMovieLevel=100\nWut=1\n')
     assert values==['[Audio] MovieLevel=100']
 
-def test_repair_wiring_is_safe_and_atomic():
+def test_repair_uses_exactly_one_rolling_old_file_and_rolls_back():
     src=(ROOT/'virtual_spidey_cfg.c').read_text()
     assert 'SpiderCfg_WriteDefaultIniAt(tmp,0,logger)' in src
     assert 'SpiderIni_Recover(ini,values)' in src
-    assert 'MoveFileExA(tmp,ini,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)' in src
-    assert src.index('CopyFileA(ini,backup,TRUE)') < src.index('MoveFileExA(tmp,ini,')
-    assert src.index('SpiderIni_Validate(tmp,NULL,NULL)') < src.index('CopyFileA(ini,backup,TRUE)')
+    assert 'snprintf(backup,sizeof(backup),"%s.old",ini)' in src
+    assert 'MoveFileExA(ini,backup,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)' in src
+    assert 'MoveFileExA(tmp,ini,MOVEFILE_WRITE_THROUGH)' in src
+    assert 'MoveFileExA(backup,ini,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)' in src
+    assert 'CopyFileA(backup,ini,TRUE)' in src
+    assert 'SpiderCfg_PruneNumberedOldFiles(directory,logger);' in src
+    assert 'FindFirstFileA(pattern,&found)' in src
+    assert 'strcmp(p,".old")!=0' in src
+    # First fully construct/validate the replacement, then rename the old INI.
+    assert src.index('SpiderIni_Validate(tmp,NULL,NULL)') < src.index(
+        'MoveFileExA(ini,backup,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)')
+    assert src.index('MoveFileExA(ini,backup,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)') < src.index(
+        'MoveFileExA(tmp,ini,MOVEFILE_WRITE_THROUGH)')
+    assert 'SpiderMan2k1Fix_%u.old' not in src
+    assert 'CopyFileA(ini,backup,TRUE)' not in src
     assert 'if(!ini_writes_permitted)' in src
     assert 'SpiderCfg_ValidateCurrentIni(log_line)' in (ROOT/'spiderman2k1fix.c').read_text()
 
