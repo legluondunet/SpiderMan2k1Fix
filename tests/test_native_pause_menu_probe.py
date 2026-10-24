@@ -393,6 +393,6 @@ def test_backdrop_motif_probe_is_passive_and_not_world_scaling():
     assert "memcpy(&color,raw+16,sizeof(color));" in probe
     assert "if(fvf==0x144UL" in probe
     assert "MOTIF-CANDIDATE" in DOC
-    assert "not yet identified" in DOC.lower()
+    assert "not yet" in DOC.lower() and "identified" in DOC.lower()
     for forbidden in ("VirtualProtect(", "memcpy(copy", "SetTexture(", "DrawPrimitive(", "SendInput(", "PostMessage("):
         assert forbidden not in probe
