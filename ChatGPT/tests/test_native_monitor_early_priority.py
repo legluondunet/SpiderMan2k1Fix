@@ -19,6 +19,7 @@ def test_native_game_window_monitor_is_captured_before_game_config_bootstrap():
     assert "SpiderCfg_BootstrapGameRead();" in create
     assert create.index("probe_desktop_mode(early);") < create.index("SpiderCfg_BootstrapGameRead();")
     assert "EnumThreadWindows(GetCurrentThreadId(),spider_find_early_window" in MAIN
+    assert "EnumWindows(spider_find_early_window,(LPARAM)(uintptr_t)&state)" in MAIN
     assert "GetWindowThreadProcessId(window,&pid)" in MAIN
     assert "pid!=GetCurrentProcessId()" in MAIN
     assert "GetActiveWindow()" in MAIN
