@@ -1113,6 +1113,7 @@ static volatile LONG pause_menu_trace_down_down=0;
 static volatile LONG pause_menu_trace_action_edges=0;
 static volatile LONG pause_menu_trace_wide_seen=0;
 static volatile LONG pause_menu_trace_selector_seen=0;
+static volatile LONG pause_menu_trace_icon_seen=0;
 #define SPIDER_NATIVE_ESC_PAUSE_CONTEXT ((const volatile DWORD *)(uintptr_t)0x00682950u)
 
 static void pause_menu_trace_init(void) {
@@ -1122,7 +1123,7 @@ static void pause_menu_trace_init(void) {
   n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_PAUSE_MENU_TRACE",value,sizeof(value));
   if(n==1 && value[0]=='1') {
     InterlockedExchange(&pause_menu_trace_enabled,1);
-    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; ESC and post-ESC ENTER/SPACE/UP/DOWN edges; frames 1/5/12/20, first8 + every64th + geometric CURSOR-CANDIDATE quads (max 100/frame) + wide overlays; no geometry changes [Log=1]");
+    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; ESC and post-ESC ENTER/SPACE/UP/DOWN edges; frames 1/5/12/20, first8 + every64th + geometric CURSOR-CANDIDATE quads (100/frame), ICON-REGION quads (100/frame), wide overlays; no geometry changes [Log=1]");
   }
 }
 /* Read-only ESC observation and a limited follow-up after menu navigation keys.
@@ -1212,6 +1213,7 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
   DWORD diffuse=0;
   const void *tex_identity=NULL;
   int wide_overlay_candidate,selector_candidate=0,selector_sample=0;
+  int icon_region_candidate=0,icon_region_sample=0;
   if(InterlockedCompareExchange(&pause_menu_trace_enabled,0,0)!=1)return;
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 ||
      (*SPIDER_NATIVE_ESC_PAUSE_CONTEXT==0 &&
@@ -1250,6 +1252,7 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
     InterlockedExchange(&pause_menu_trace_last_flip,flip);
     InterlockedExchange(&pause_menu_trace_wide_seen,0);
     InterlockedExchange(&pause_menu_trace_selector_seen,0);
+    InterlockedExchange(&pause_menu_trace_icon_seen,0);
     frame=InterlockedIncrement(&pause_menu_trace_frames);
     if(frame<=20 && (frame==1 || frame==5 || frame==12 || frame==20)) {
       snprintf(line,sizeof(line),
@@ -1260,7 +1263,9 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
   }
   frame=InterlockedCompareExchange(&pause_menu_trace_frames,0,0);
   if(frame<1 || frame>20 || !vertices || count<3 || count>64 ||
-     type!=D3DPT_TRIANGLEFAN || (fvf!=0x144UL && fvf!=0x44UL))
+     (type!=D3DPT_TRIANGLEFAN && type!=D3DPT_TRIANGLESTRIP &&
+      type!=D3DPT_TRIANGLELIST) ||
+     (fvf!=0x144UL && fvf!=0x44UL))
     return;
   stride=(fvf==0x144UL)?28u:20u;
   a=(const float*)raw;
@@ -1303,8 +1308,28 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
      rhw>=7.0f && rhw<=16.0f &&
      geom_rva(ret,&rva) && rva==0x00102C72UL)
     selector_candidate=1;
+  /* Build #750's filtered 1250 candidates never showed a textured quad
+   * at the red icon's observed 1920x1080 position x=502..597,
+   * y=494..558 (both ESC / REALLY QUIT screenshots). Native text
+   * quads and two untextured x=382..499 shapes did match the filter,
+   * but cannot identify a red textured icon. Widen ONLY the passive
+   * detector near that left-panel region: allow other native 2D
+   * callers, triangle lists/strips and 4/6-vertex sprite batches.
+   * Retain source coordinates; icon location is a sampling clue,
+   * NOT proof of the object's draw identity or its transform.
+   */
+  if((count==4 || count==6) &&
+     xmin>=(float)desktop_w*0.14f &&
+     xmax<=(float)desktop_w*0.45f &&
+     ymin>=(float)desktop_h*0.30f &&
+     ymax<=(float)desktop_h*0.70f &&
+     xmax-xmin>=12.0f && xmax-xmin<=260.0f &&
+     ymax-ymin>=12.0f && ymax-ymin<=240.0f &&
+     z>=-0.0010f && z<=0.065f &&
+     rhw>=0.45f && rhw<=30.0f)
+    icon_region_candidate=1;
   /* Preserve a bounded look at unusually wide native UI backgrounds. */
-  wide_overlay_candidate=(fvf==0x144UL && count==4 &&
+  wide_overlay_candidate=(type==D3DPT_TRIANGLEFAN && fvf==0x144UL && count==4 &&
      (xmax-xmin)>(float)desktop_w*0.60f &&
      ymin>(float)desktop_h*0.18f &&
      ymax<(float)desktop_h*0.85f &&
@@ -1315,8 +1340,11 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
   if(selector_candidate &&
      InterlockedIncrement(&pause_menu_trace_selector_seen)<=100)
     selector_sample=1;
+  if(icon_region_candidate && !selector_sample &&
+     InterlockedIncrement(&pause_menu_trace_icon_seen)<=100)
+    icon_region_sample=1;
   if(draw>8 && (draw%64)!=0 && !wide_overlay_candidate &&
-     !selector_sample)return;
+     !selector_sample && !icon_region_sample)return;
   if(!rva && !geom_rva(ret,&rva))rva=0;
   if(fvf==0x144UL &&
      SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) &&
@@ -1329,14 +1357,18 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
     }
     IDirectDrawSurface7_Release(texture);
   }
-  if(selector_sample) {
+  if(selector_sample || icon_region_sample) {
     float u0=0.0f,v0=0.0f;
     memcpy(&diffuse,raw+16,sizeof(diffuse));
-    memcpy(&u0,raw+20,sizeof(u0));
-    memcpy(&v0,raw+24,sizeof(v0));
+    if(fvf==0x144UL) {
+      memcpy(&u0,raw+20,sizeof(u0));
+      memcpy(&v0,raw+24,sizeof(v0));
+    }
     snprintf(line,sizeof(line),
-      "PAUSE-NATIVE-PROBE: CURSOR-CANDIDATE frame=%ld flip=%ld draw=%ld caller_rva=0x%08lX tex=%lux%lu texid=%p diffuse=0x%08lX uv0=(%.4f,%.4f) rect=(%.1f,%.1f)-(%.1f,%.1f) z=%.5f rhw=%.3f [READ ONLY; IDENTITY UNVERIFIED]",
+      "PAUSE-NATIVE-PROBE: %s frame=%ld flip=%ld draw=%ld caller_rva=0x%08lX indexed=%d type=%lu fvf=0x%lX count=%lu tex=%lux%lu texid=%p diffuse=0x%08lX uv0=(%.4f,%.4f) rect=(%.1f,%.1f)-(%.1f,%.1f) z=%.5f rhw=%.3f [READ ONLY; IDENTITY UNVERIFIED]",
+      selector_sample?"CURSOR-CANDIDATE":"ICON-REGION",
       (long)frame,(long)flip,(long)draw,(unsigned long)rva,
+      indexed,(unsigned long)type,(unsigned long)fvf,(unsigned long)count,
       (unsigned long)texw,(unsigned long)texh,tex_identity,
       (unsigned long)diffuse,(double)u0,(double)v0,
       (double)xmin,(double)ymin,(double)xmax,(double)ymax,
