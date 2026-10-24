@@ -58,6 +58,70 @@ same CI artifact):
 **Do not merge PR #28 on the basis of logging or compilation alone.**
 It requires visual Wine and native Windows validation.
 
+## Next visual calibration — ESC outline and backdrop motif (24 October 2026)
+
+Two original unscaled **1920x1080** PNGs were compared:
+
+- Original 4:3 pillarboxed `scrn0002(3).png`: violet horizontal
+  outline runs from **x=241 to x=1679**, inclusive, a 1439-pixel row.
+- Corrected Auto `scrn0000(4).png`: outline spans
+  **x=224 to x=1702**, a 1479-pixel row.
+- Both were measured from purple border pixels at screenshot y=398–402
+  and y=679–681. The original and new menus have identical
+  vertical extents. The difference is about 40 horizontal pixels.
+
+The previous 0.75 aspect transform made the **border/corner geometry**
+slightly wider than the reference, while the untextured violet fill
+was already substantially closer. Therefore this update does **not**
+apply the same 2.7% additional scaling to the entire menu.
+
+For the **already recognized native ESC ribbon and 8x8 borders**
+in **1920x1080 Auto only**, transform X as before to the 4:3
+coordinate system, then separately calibrate final X against the
+original full-resolution PNG:
+
+- Outer border/corner pieces: `960+(X-963)*(1439/1479)`
+- Untextured fill: `960+(X-958.6)*(1439/1448.5)`
+- All menu text glyphs, cursor sprite, Y, depth, RHW, textures, mouse
+  coordinates, HUD and 3D world stay **unchanged** from the previous
+  experimentally validated rendering. Other resolutions keep the old
+  transform until measured individually.
+
+The **large translucent orange/blue background motif is not yet
+identified** as belonging either to the native pause UI or to
+the projected 3D scene. Some early 128x128-textured projected world
+quads in older logs have extremely large screen rectangles, e.g.
+`caller_rva=0x00103389` with non-UI Z/RHW. Scaling them
+blindly would distort the background and gameplay geometry.
+
+Instead this build adds a **read-only, opt-in**
+`PAUSE-NATIVE-PROBE: MOTIF-CANDIDATE` line.
+During the existing F9-triggered short diagnostics, it reports a
+bounded sample (at most **28 per sampled frame**) of large triangle
+draws with caller RVA, vertex format, texture dimensions, diffuse
+color, source rectangle, Z and RHW. Samples may be **world/scene
+geometry**; their presence is not proof of identity and triggers
+**no rendering change**. Any motif correction must wait for
+correlation across normal gameplay, paused gameplay, and 4:3 screenshots.
+
+### Wine test
+
+Keep `[Debug] Log=1` in the existing INI. Launch with:
+
+```bash
+SPIDERMAN2K1FIX_NATIVE_ESC_43=1 SPIDERMAN2K1FIX_NATIVE_CURSOR_43=1 SPIDERMAN2K1FIX_PAUSE_MENU_TRACE=1 WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe
+```
+
+Open the native ESC menu. Capture F9 at CONTINUE and at
+REALLY QUIT? / NO/YES; leave each unchanged for a second.
+Capture the same scene once **without ESC** as a geometry
+reference. Save the three PNGs and the complete log. Check the
+violet border x=241..1679; check that the text and 72-pixel
+red selector remain unaffected. Compare `MOTIF-CANDIDATE`
+entries to decide whether the motif is a distinct native
+2D overlay or part of the projected world. This PR remains a
+draft until visual and platform validation.
+
 ## Desired visual behavior
 
 Keep the widescreen 3D world and already validated gameplay HUD
