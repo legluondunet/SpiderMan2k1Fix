@@ -9,6 +9,7 @@
 #include <wchar.h>
 #include "spidey_cfg_template.h"
 #include "keyboard_layout.h"
+#include "keyboard_names.h"
 #include "virtual_spidey_cfg.h"
 #include "display_policy.h"
 #include "ini_validation.h"
@@ -134,6 +135,8 @@ static void load_keyboard_layout(void) {
     (unsigned long)letter_scan('W',0x11),
     (unsigned long)letter_scan('M',0x32));
   report(msg);
+  /* Original Shell_InputName and the keyboard menu share this name table. */
+  SpiderKeyNames_Install(keyboard_layout_mode,keyboard_layout_hkl,report);
 }
 static int decode_key(const char *name,DWORD *scan) {
   unsigned i;
