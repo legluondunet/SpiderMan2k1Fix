@@ -78,7 +78,7 @@ The patch changes the disc-check function's *return behavior* but does **not** c
 
 ## 3. DirectInput 8: static findings
 
-The detailed source of record is [DIRECTINPUT_STATIC_ANALYSIS.md](../ChatGPT/diagnostics/directinput/DIRECTINPUT_STATIC_ANALYSIS.md) (2026-10-21). These findings come from **offline static examination** of the SHA-matched EXE.
+The detailed source of record is [DIRECTINPUT_STATIC_ANALYSIS.md](references/diagnostics/directinput/DIRECTINPUT_STATIC_ANALYSIS.md) (2026-10-21). These findings come from **offline static examination** of the SHA-matched EXE.
 
 | Item | Game VA / detail |
 | --- | --- |
@@ -108,7 +108,7 @@ Analogous locations: `GetDeviceData` at `0x00501D02`, comparison at `0x00501D05`
 
 ### 3.3 Activation and Alt+Tab
 
-The original window procedure assigns the activation flag at `0x005152F8`, in the `WM_ACTIVATE = 0x0006` case. The static findings therefore suggest a **possible** failure to reacquire on `DIERR_NOTACQUIRED` after Alt+Tab. This alone does not prove the failing runtime HRESULT. **Separately, native Windows 11 WinDbg did observe persistent `DIERR_NOTACQUIRED (0x8007000C)` at both keyboard `0x00501BC3` and mouse `0x00501D02` GetDeviceData sites**; see [Windows viewport/WinDbg diagnostic](../ChatGPT/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md). That capture did **not** timestamp each error against foreground/background focus or prove that any proposed retry fixed the main menu.
+The original window procedure assigns the activation flag at `0x005152F8`, in the `WM_ACTIVATE = 0x0006` case. The static findings therefore suggest a **possible** failure to reacquire on `DIERR_NOTACQUIRED` after Alt+Tab. This alone does not prove the failing runtime HRESULT. **Separately, native Windows 11 WinDbg did observe persistent `DIERR_NOTACQUIRED (0x8007000C)` at both keyboard `0x00501BC3` and mouse `0x00501D02` GetDeviceData sites**; see [Windows viewport/WinDbg diagnostic](references/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md). That capture did **not** timestamp each error against foreground/background focus or prove that any proposed retry fixed the main menu.
 
 An experimental branch-native `DIERR_NOTACQUIRED` retry exists in `input_notacquired_retry.c`. Historical analysis describes it as **off by default**, opt-in using `SPIDERMAN2K1FIX_DI8_NOTACQUIRED_RETRY=1`; it patches only signature-matched branches and attempts to reuse the game's own Acquire/retry code. It was not thereby validated as a general solution. An earlier experimental COM vtable wrapper produced `E_INVALIDARG` under Windows 11. **Do not enable either experiment by default or infer runtime success from static analysis.**
 
@@ -116,7 +116,7 @@ An experimental branch-native `DIERR_NOTACQUIRED` retry exists in `input_notacqu
 
 Static disassembly recorded the native WndProc at `0x005152B0`, registered via `RegisterClassA` at `0x00515A18`. An original `WM_KEYDOWN` with `wParam=0x7B` (F12) reaches a `PostMessageA(WM_CLOSE)` call at `0x00515373`. The fix suppresses that unsafe original call, preserving appropriate stack behavior.
 
-**Current development behavior:** physical F10 is the opt-in debug shortcut, to avoid MangoHud's F11/F12 bindings. Old F12-named configuration keys are historical aliases, not evidence that physical F12 still triggers the debug action. See [F10 validation matrix](F10_VALIDATION_MATRIX.md) and [historical F12 research](F12_DEBUG_TEST_MODE.md).
+**Current development behavior:** physical F10 is the opt-in debug shortcut, to avoid MangoHud's F11/F12 bindings. Old F12-named configuration keys are historical aliases, not evidence that physical F12 still triggers the debug action. See [F10 validation matrix](references/F10_VALIDATION_MATRIX.md) and [historical F12 research](references/F12_DEBUG_TEST_MODE.md).
 
 ## 5. Opening movies, New Game comic and 3D cutscenes
 
@@ -234,7 +234,7 @@ The **original gameplay ESC overlay** is distinct from the normal HUD, although 
 - Violet full-screen darkening; after shrinking the motif, the two outer strips (**X 0–240 and 1680–1920**) are rendered via clipped original geometry to retain the tint across the entire 16:9 screen, rather than painting a second central overlay.
 - Red spider-shaped selector: original **96×72 quad** from a **32×32 texture**, `Z≈0`, `RHW≈27.519`. Scale its X width 0.75 **around its own center** to produce 72×72 without changing its position.
 
-These signatures operate on copied Direct3D7 vertices with gameplay/menu and resolution guards. They were **visually validated under Wine, 1920×1080 Auto, on 2026-10-24**, both for the ESC menu and **REALLY QUIT? → NO / YES**. The background game world and normal HUD remain unaffected in those tests. The motif and cursor-specific matches have **not been validated at arbitrary resolutions or on native Windows graphics drivers**. Detailed findings: [`docs/NATIVE_PAUSE_MENU_43.md`](NATIVE_PAUSE_MENU_43.md).
+These signatures operate on copied Direct3D7 vertices with gameplay/menu and resolution guards. They were **visually validated under Wine, 1920×1080 Auto, on 2026-10-24**, both for the ESC menu and **REALLY QUIT? → NO / YES**. The background game world and normal HUD remain unaffected in those tests. The motif and cursor-specific matches have **not been validated at arbitrary resolutions or on native Windows graphics drivers**. Detailed findings: [`docs/NATIVE_PAUSE_MENU_43.md`](references/NATIVE_PAUSE_MENU_43.md).
 
 ### 7.4 Activation, validation and remaining gaps
 
@@ -244,7 +244,7 @@ These signatures operate on copied Direct3D7 vertices with gameplay/menu and res
 - The fixed-screen player HUD and adaptive lower-screen/boss HUD use **different native interception strategies**; do not conflate the 16 `CALL` sites with the shared D3D7 `DrawPrimitive` caller.
 - Runtime Wine captures support portrait, life/web bars, compass, instructions and boss-layout work; Windows 11 native boss traces support representative signatures. Some other HUD forms, rare in-level prompts, dynamic bosses, unusual aspect ratios and multiple display drivers still need separate screenshots and runtime verification. No full original HUD source reconstruction is claimed.
 
-Primary sources: [`hud_widescreen.c`](../hud_widescreen.c), [`hud_widescreen.h`](../hud_widescreen.h), [`hud_adaptive.c`](../hud_adaptive.c), [`hud_adaptive.h`](../hud_adaptive.h), [HUD tests](../ChatGPT/tests/test_hud_adaptive.py), [native ESC analysis](NATIVE_PAUSE_MENU_43.md). Historical development: [HUD PR #21](https://github.com/legluondunet/SpiderMan2k1Fix/pull/21) and [native ESC PR #28](https://github.com/legluondunet/SpiderMan2k1Fix/pull/28).
+Primary sources: [`hud_widescreen.c`](../hud_widescreen.c), [`hud_widescreen.h`](../hud_widescreen.h), [`hud_adaptive.c`](../hud_adaptive.c), [`hud_adaptive.h`](../hud_adaptive.h), [HUD tests](../ChatGPT/tests/test_hud_adaptive.py), [native ESC analysis](references/NATIVE_PAUSE_MENU_43.md). Historical development: [HUD PR #21](https://github.com/legluondunet/SpiderMan2k1Fix/pull/21) and [native ESC PR #28](https://github.com/legluondunet/SpiderMan2k1Fix/pull/28).
 
 
 ### 7.5 Original graphics capabilities and exclusive fullscreen limits
@@ -293,7 +293,7 @@ The **actual ESC gameplay pause UI** is a D3D7 overlay created **by the original
 
 **Distinguish bitmap resources from GPU textures:** eight small **8×8 GPU-bound textures** were observed at the original border draws; their source **might** be BMP files or data packed inside an archive/resource, but no specific BMP↔border-texture mapping is established. Likewise, the 32×32 ESC selector texture size does not prove the on-disk filename. The fix's **independent** Alt+Tab GDI pause ribbon only **approximates** the original border using colored lines, with `Arial Black` fonts and the original icon extracted from `SpideyPC.exe`—these are not the retail ESC artwork files.
 
-Original D3D7 identification is guarded on the native draw **caller RVA `0x00102C72`** (VA `0x00502C72`), `D3DPT_TRIANGLEFAN`, four vertices, FVF `0x144`, texture presence/dimensions, depth, RHW, same-Flip banner ownership and native game mode. At 1920×1080 the goal is original centered **1440×1080** art with **240-pixel margins**; screen X maps about display center `x' = 960+(x-960)*0.75`. The panel/border use **small experimentally calibrated** corrections at 1920×1080 after that mapping. Preserve Y, depth, UV and game memory. [Native ESC study](NATIVE_PAUSE_MENU_43.md).
+Original D3D7 identification is guarded on the native draw **caller RVA `0x00102C72`** (VA `0x00502C72`), `D3DPT_TRIANGLEFAN`, four vertices, FVF `0x144`, texture presence/dimensions, depth, RHW, same-Flip banner ownership and native game mode. At 1920×1080 the goal is original centered **1440×1080** art with **240-pixel margins**; screen X maps about display center `x' = 960+(x-960)*0.75`. The panel/border use **small experimentally calibrated** corrections at 1920×1080 after that mapping. Preserve Y, depth, UV and game memory. [Native ESC study](references/NATIVE_PAUSE_MENU_43.md).
 
 ### 7.7 How the original orange-and-blue spider-shaped backdrop is drawn
 
@@ -359,7 +359,7 @@ This section inventories **previously missing positively identified functions, b
 | `0x00455D98` / `0x0045620C` | Controller loop continuation / final cleanup path |
 | `0x004E5C10` / `[0x006B4C9C]` | Countdown processing, **not** an active scene identifier |
 
-Confirmed **writers** to the request field include `0x0044108A` (7), `0x0044174E` (8), `0x00441A92` (6), `0x00441D00` (3), `0x0047BE6F`/`0x0047BE7B`/`0x0047BE87` (7/10/8), `0x004B28B3` (2), `0x004B297B` (8), `0x004BD2DC` (7), `0x004BE027` (2) and `0x004E28BE`/`0x004E28CA` (9/3). The **write action** is known, but most writers' higher-level scene identities are **not**. Do not relabel all 11 dispatch actions as scenes. Detailed disassembly and transition table: [F12 native shutdown research](F12_NATIVE_SHUTDOWN.md).
+Confirmed **writers** to the request field include `0x0044108A` (7), `0x0044174E` (8), `0x00441A92` (6), `0x00441D00` (3), `0x0047BE6F`/`0x0047BE7B`/`0x0047BE87` (7/10/8), `0x004B28B3` (2), `0x004B297B` (8), `0x004BD2DC` (7), `0x004BE027` (2) and `0x004E28BE`/`0x004E28CA` (9/3). The **write action** is known, but most writers' higher-level scene identities are **not**. Do not relabel all 11 dispatch actions as scenes. Detailed disassembly and transition table: [F12 native shutdown research](references/F12_NATIVE_SHUTDOWN.md).
 
 ### 8.2 Shell_MainMenu and the two original startup still screens
 
@@ -374,7 +374,7 @@ Confirmed **writers** to the request field include `0x0044108A` (7), `0x0044174E
 | `0x004A2006 → 0x004A17A0` | Subsequent native **input-wait** page; polls `0x0050C180` at `0x004A1896`, proceeds to native page cleanup at `0x004A18AE` |
 | `[0x0054D38C]` | Startup transition variable; 1→0 observed between still-page stages |
 
-Read-only menu fields `[0x00682948]` (context), `[0x006828D0]` (stage) and `[0x0068293C]` (dispatcher) were identified, but **none alone identifies which still is actually visible**. A 3.659-second gap between menu frame callbacks was observed; the specific clock-stall cause was **not conclusively established**. The initial-menu wait workaround was tested in a debug configuration, not independently validated across every release. Source: [native startup research](F12_NATIVE_SHUTDOWN.md) and [historical debug menu timing](F12_DEBUG_TEST_MODE.md).
+Read-only menu fields `[0x00682948]` (context), `[0x006828D0]` (stage) and `[0x0068293C]` (dispatcher) were identified, but **none alone identifies which still is actually visible**. A 3.659-second gap between menu frame callbacks was observed; the specific clock-stall cause was **not conclusively established**. The initial-menu wait workaround was tested in a debug configuration, not independently validated across every release. Source: [native startup research](references/F12_NATIVE_SHUTDOWN.md) and [historical debug menu timing](references/F12_DEBUG_TEST_MODE.md).
 
 ### 8.3 New Game comic and native Bink playback
 
@@ -393,7 +393,7 @@ Read-only menu fields `[0x00682948]` (context), `[0x006828D0]` (stage) and `[0x0
 
 The **original script interpreter resumes after Bink**: `0x004E0466` advances its operand and `0x004E2B3F` dispatches the next scene opcode. Static caller grouping also identifies startup calls, optional nested `0x00443BE7`, UI/sequence caller `0x0049D654` and 24 scripted callers `0x004279FB`–`0x00427D8A`. **Do not assume every caller has the same owner or exit cleanup.** An earlier trace's apparent huge movie ID was an overwritten floating-point temporary; the real New Game movie argument is **4**.
 
-Sources: [Bink assembly and Windows 11 parent trace](F12_NATIVE_SHUTDOWN.md), [script debugging](F12_DEBUG_TEST_MODE.md).
+Sources: [Bink assembly and Windows 11 parent trace](references/F12_NATIVE_SHUTDOWN.md), [script debugging](references/F12_DEBUG_TEST_MODE.md).
 
 ### 8.4 DIK input path, 3D action mapping and real CutSceneScript interpreter
 
@@ -416,7 +416,7 @@ Sources: [Bink assembly and Windows 11 parent trace](F12_NATIVE_SHUTDOWN.md), [s
 
 Live Wine traces positively distinguish **first Stan Lee CutSceneScript**, **second separate CutSceneScript**, and **playable 3D**. The original skip permission is granted independently during each script. Space/action 0x10 can skip a cutscene **or perform Jump in gameplay**; it does not prove script ownership. Actor controller `[0x0056F3B8]+0x2A0`, phase `[0x005FAECC]`, the generic event list and HUD appearance were considered **insufficient as scene discriminators**. The inspected first 12 event nodes were unchanged; this does not prove the full list is inert.
 
-Source: [six-stage lifecycle and input disassembly](F12_DEBUG_TEST_MODE.md), [F10 validation](F10_VALIDATION_MATRIX.md).
+Source: [six-stage lifecycle and input disassembly](references/F12_DEBUG_TEST_MODE.md), [F10 validation](references/F10_VALIDATION_MATRIX.md).
 
 ### 8.5 Original gameplay ESC/pause and 3D cleanup owners
 
@@ -505,17 +505,17 @@ The game-owned 2D comic art includes a **512×256 texture**, displayed with V sp
 | `[0x006BBF1C]` | Original primary sound buffer, excluded from individual-voice manipulation |
 | `[0x006B7920]` / `[0x006B7924]` | Read-only DirectSound device/primary candidates in diagnostics |
 
-The patch's optional synchronized focus-pausing reused these **original APIs and data structures**. The original engine ownership is mapped, but the focus pause experiment was **not proven generally reliable**. Sources: [focus audio/video diagnostics](../ChatGPT/diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md), [Bink focus module](../focus_media_pause.c), [DirectSound voice module](../focus_dsound_pause.c).
+The patch's optional synchronized focus-pausing reused these **original APIs and data structures**. The original engine ownership is mapped, but the focus pause experiment was **not proven generally reliable**. Sources: [focus audio/video diagnostics](references/diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md), [Bink focus module](../focus_media_pause.c), [DirectSound voice module](../focus_dsound_pause.c).
 
 ### 8.9 Original F9 screenshot path and statically linked CRT fault
 
 - Native F9 already polls **`DIK_F9=0x43`**, with approximately **500 ms debounce**, then calls its **BMP writer** at **RVA `0x0010A1DC` / `0x0010A62B`** (VA `0x0050A1DC` / `0x0050A62B`). The fix's PNG dispatch replaces only these verified call instructions; it does not create the original keyboard binding.
 - Original screenshot readback from DirectDraw **PRIMARY** uses **Lock caller RVA `0x001034D4`** and **Unlock caller RVA `0x00103537`**. The fix distinguishes the native primary and the completed backbuffer for borderless frame capture; that is a targeted screenshot observation, not a rule for all DirectDraw operations.
-- An original statically linked CRT **`fclose(FILE*)`** starts at **RVA `0x0012A7FC`**, according to the Windows crash/disassembly audit. The actual fault at **VA `0x0052A805`** received a **NULL `FILE*`** from game caller **`0x005186F8`**. The invalid call is documented, but **what caused NULL remains unknown**. The defensive VEH workaround was experimental. See [Windows crash research](../ChatGPT/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md).
+- An original statically linked CRT **`fclose(FILE*)`** starts at **RVA `0x0012A7FC`**, according to the Windows crash/disassembly audit. The actual fault at **VA `0x0052A805`** received a **NULL `FILE*`** from game caller **`0x005186F8`**. The invalid call is documented, but **what caused NULL remains unknown**. The defensive VEH workaround was experimental. See [Windows crash research](references/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md).
 
 ### 8.10 Original media/audio owners and the multi-component focus-pause mechanism
 
-The 2001 game has **separate presentation, Bink video, Bink soundtrack and DirectSound voice paths**. An Alt+Tab pause of the **gameplay/render thread** is **not** sufficient to stop all of them. This distinction was discovered and exercised in the [focus audio/video Windows test](../ChatGPT/diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md), the original native structures cataloged in §8.8, and the current source.
+The 2001 game has **separate presentation, Bink video, Bink soundtrack and DirectSound voice paths**. An Alt+Tab pause of the **gameplay/render thread** is **not** sufficient to stop all of them. This distinction was discovered and exercised in the [focus audio/video Windows test](references/diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md), the original native structures cataloged in §8.8, and the current source.
 
 **Original game-owned sites and objects relevant to pausing:**
 
@@ -530,7 +530,7 @@ The 2001 game has **separate presentation, Bink video, Bink soundtrack and Direc
 
 **Current optional pause sequence, from [`spiderman2k1fix.c`](../spiderman2k1fix.c):**
 
-1. With `[Input] PauseOnFocusLoss=1` (factory default **0**), `hooked_flip()` observes foreground state. The game must **previously have been foreground** and another process's window must remain foreground for at least **150 ms**. A transient NULL foreground or same-process window is ignored. Windows 11 sometimes reported a **`Ghost`** helper window, spuriously satisfying this test; that case remains diagnostic/experimental (see [unexpected focus pause](../ChatGPT/diagnostics/focus/UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md)).
+1. With `[Input] PauseOnFocusLoss=1` (factory default **0**), `hooked_flip()` observes foreground state. The game must **previously have been foreground** and another process's window must remain foreground for at least **150 ms**. A transient NULL foreground or same-process window is ignored. Windows 11 sometimes reported a **`Ghost`** helper window, spuriously satisfying this test; that case remains diagnostic/experimental (see [unexpected focus pause](references/diagnostics/focus/UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md)).
 2. Upon the next Flip, `pause_at_flip_if_background()` latches the pause and first installs a **temporary** keyboard wake hook via [`pause_any_key.c`](../pause_any_key.c), `SetWindowsHookExA(WH_KEYBOARD_LL,...)`. The hook only swallows an ordinary key **when the game is foreground**. It deliberately preserves OS Alt/Win/Tab navigation. If hook installation fails, the code **abandons** this pause rather than risk a stuck game.
 3. It calls **`SpiderFocusMedia_Pause()`** ([`focus_media_pause.c`](../focus_media_pause.c)) and **`SpiderFocusDSound_Pause()`** ([`focus_dsound_pause.c`](../focus_dsound_pause.c)) **separately**. Both audio modules are **opt-in independently**, default **0** (`PauseBinkOnFocusLoss`, `PauseDirectSoundOnFocusLoss`). A Flip pause without those options does **not** prove Bink/music/effects stopped.
 4. It paints a pause display **inside the existing DirectDraw backbuffer**, via [`pause_surface.c`](../pause_surface.c): saves its pixels using GDI, dims/renders a native-ESC-inspired violet ribbon and original game icon, performs **one** `Blt` to the PRIMARY and preserves the original backbuffer until resuming. There are **no separate overlay HWNDs**; failure to draw the label does not imply failure to pause. Content bounds respect the 4:3/pillarbox region.
@@ -547,7 +547,7 @@ PauseDirectSoundOnFocusLoss=1
 ; DirectInputReacquire=1  ; independent input recovery; validate for target OS/build
 ```
 
-**Runtime evidence (2026-10-21 Windows 11):** [`FOCUS_AUDIO_VIDEO_SYNC_TEST.md`](../ChatGPT/diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md) records one tester successfully pausing/resuming Bink video and music and stopping/resuming **11**, then **9**, playing DirectSound secondary voices in two separate 3D focus pauses, with reported `failed=0`. It does **not** establish unconditional correctness in all sequences, Windows/Wine configurations, driver versions, sound devices or input-recovery paths. The later [`UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md`](../ChatGPT/diagnostics/focus/UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md) documents spontaneous pauses associated with Windows `Ghost` foreground windows; this is a **distinct unresolved reliability issue**. Focus pausing and the **game's original ESC pause menu (§8.5 / §9)** are different operations.
+**Runtime evidence (2026-10-21 Windows 11):** [`FOCUS_AUDIO_VIDEO_SYNC_TEST.md`](references/diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md) records one tester successfully pausing/resuming Bink video and music and stopping/resuming **11**, then **9**, playing DirectSound secondary voices in two separate 3D focus pauses, with reported `failed=0`. It does **not** establish unconditional correctness in all sequences, Windows/Wine configurations, driver versions, sound devices or input-recovery paths. The later [`UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md`](references/diagnostics/focus/UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md) documents spontaneous pauses associated with Windows `Ghost` foreground windows; this is a **distinct unresolved reliability issue**. Focus pausing and the **game's original ESC pause menu (§8.5 / §9)** are different operations.
 
 **Research lesson:** a real simultaneous pause requires separate treatment of **frame production**, **Bink decoding/playback**, **Bink music**, **DirectSound secondary effects**, **foreground/input recovery** and **visible paused frame**. The fix uses those known original APIs/structures, but has **not** recovered a single global original engine pause switch.
 
@@ -634,9 +634,9 @@ The line from **Main Menu → New Game** is an observed scene progression; the e
 
 **Normal, game-owned actions:** leaving a Bink player via `0x00470871`; ending a BD cover via its native 300-tick condition; ending a 3D script through the original script manager; leaving gameplay via its pause owner and native 3D cleanup; quitting the **real** main menu by item 3/action 18. They are different scopes of cleanup and **cannot be substituted** for one another.
 
-**Historical F12 process-exit experiments (superseded):** Windows 11 tests established process termination from a New Game comic and movie #4 after deferring the request through original movie/script return and native controller-7 finalization. A ~1-second yellow window appeared in both movie-origin cases. Active 3D F12 finalization did **not** show that yellow window. Another historical test exited with one F12 during an opening video by progressing through original opening-Bink cleanup, the native timed/input-wait screens and real menu Quit; this may briefly flash the main menu. These are **historical experimental** routes, not currently enabled physical F12 shortcuts. See [native shutdown test records](F12_NATIVE_SHUTDOWN.md); none proves the precise graphics cause of the yellow artifact.
+**Historical F12 process-exit experiments (superseded):** Windows 11 tests established process termination from a New Game comic and movie #4 after deferring the request through original movie/script return and native controller-7 finalization. A ~1-second yellow window appeared in both movie-origin cases. Active 3D F12 finalization did **not** show that yellow window. Another historical test exited with one F12 during an opening video by progressing through original opening-Bink cleanup, the native timed/input-wait screens and real menu Quit; this may briefly flash the main menu. These are **historical experimental** routes, not currently enabled physical F12 shortcuts. See [native shutdown test records](references/F12_NATIVE_SHUTDOWN.md); none proves the precise graphics cause of the yellow artifact.
 
-**Current project F10 development shortcut:** physical F10 is opt-in via `[Debug] F10Shortcut=1` and is **not** process Quit. Documented Wine results show: opening Bink → original main menu; New Game comic/movie → remaining native Bink and two permission-gated 3D script skips → gameplay; first/second New Game 3D script → only the remaining validated native skips → gameplay; playable 3D → owner cleanup/request 7/controller **RETURN-TO-CONTROLLER** → responsive main menu with the **same PID** and without forcing final-exit bit. Later in-level CutSceneScript is handled only when that script's native permission is present, one script at a time. These tests **do not cover all possible future level-specific script owners**, and the corresponding Windows 11 consolidated F10 behavior remained unverified in the cited matrix. See [F10 validation matrix](F10_VALIDATION_MATRIX.md) and [F10 development history](F12_DEBUG_TEST_MODE.md).
+**Current project F10 development shortcut:** physical F10 is opt-in via `[Debug] F10Shortcut=1` and is **not** process Quit. Documented Wine results show: opening Bink → original main menu; New Game comic/movie → remaining native Bink and two permission-gated 3D script skips → gameplay; first/second New Game 3D script → only the remaining validated native skips → gameplay; playable 3D → owner cleanup/request 7/controller **RETURN-TO-CONTROLLER** → responsive main menu with the **same PID** and without forcing final-exit bit. Later in-level CutSceneScript is handled only when that script's native permission is present, one script at a time. These tests **do not cover all possible future level-specific script owners**, and the corresponding Windows 11 consolidated F10 behavior remained unverified in the cited matrix. See [F10 validation matrix](references/F10_VALIDATION_MATRIX.md) and [F10 development history](references/F12_DEBUG_TEST_MODE.md).
 
 ### 9.4 Safety and regression requirements for any new exit hook
 
@@ -646,7 +646,7 @@ The line from **Main Menu → New Game** is an observed scene progression; the e
 4. **Do not jump between unrelated contexts**: no direct call to menu Quit from a Bink callback; no shortcut from comic draw to an end-of-3D branch; no off-thread native destructors; no fabricated Space, forced `WM_CLOSE` or `TerminateProcess` used as a substitute.
 5. **Test transitions distinctly**: each of the four startup movies; first/second still; actual menu; BD cover; movie #4; **each** of the two introductory scripts; later scripted scenes; gameplay → ESC → Retry/Training/Main Menu; gameplay F10 → menu and a second New Game; and true final process exit. Capture game log, validated EXE hash, build/INI, OS, visual rendering, game PID and OS exit status when relevant.
 
-**Research provenance:** [`docs/F12_NATIVE_SHUTDOWN.md`](F12_NATIVE_SHUTDOWN.md), [`docs/F12_DEBUG_TEST_MODE.md`](F12_DEBUG_TEST_MODE.md), [`docs/F10_VALIDATION_MATRIX.md`](F10_VALIDATION_MATRIX.md), [`quick_exit_f12.c`](../quick_exit_f12.c). **Unresolved:** universal exit behavior for all later levels/other cinematic systems, exact visual-frame transition timing, and whether the yellow window comes from a particular DirectDraw/Direct3D surface.
+**Research provenance:** [`docs/F12_NATIVE_SHUTDOWN.md`](references/F12_NATIVE_SHUTDOWN.md), [`docs/F12_DEBUG_TEST_MODE.md`](references/F12_DEBUG_TEST_MODE.md), [`docs/F10_VALIDATION_MATRIX.md`](references/F10_VALIDATION_MATRIX.md), [`quick_exit_f12.c`](../quick_exit_f12.c). **Unresolved:** universal exit behavior for all later levels/other cinematic systems, exact visual-frame transition timing, and whether the yellow window comes from a particular DirectDraw/Direct3D surface.
 
 ## 10. Major bugs, root causes and fixes — historical incident register
 
@@ -709,7 +709,7 @@ The **opt-in predecessor** passed 11 Wine F9 captures (intro, menu, BD/comic and
 
 The **retail executable does contain** a `VK_F12` branch in its registered WndProc; it can queue **`WM_CLOSE`** via original `PostMessageA` at **VA `0x00515373`**. What is **inactive under our fix** is this **unsafe original action**: `quick_exit_f12.c` signature-checks and suppresses its instruction every supported run. It would be a mistake to infer “retail F12 was dead code” merely because the fixed game does not react to F12.
 
-The project tested experimental F12-based native exit and debug operations, then selected **F10** as the only physical debug shortcut (opt-in `[Debug] F10Shortcut=1`; F11/F12 reserved for MangoHud). Original video/scene/3D exits have different owner guards. Legacy INI variable names and source identifiers containing F12 are **compatibility/history**, **not** activation of physical F12. [F10 validation matrix](F10_VALIDATION_MATRIX.md).
+The project tested experimental F12-based native exit and debug operations, then selected **F10** as the only physical debug shortcut (opt-in `[Debug] F10Shortcut=1`; F11/F12 reserved for MangoHud). Original video/scene/3D exits have different owner guards. Legacy INI variable names and source identifiers containing F12 are **compatibility/history**, **not** activation of physical F12. [F10 validation matrix](references/F10_VALIDATION_MATRIX.md).
 
 ### 10.6 Native DPI dimensions and focus/cursor side effects
 
@@ -721,12 +721,12 @@ DPI fixes do not solve **cursor counter state**. The invisible system mouse afte
 
 | Area | Primary repo evidence |
 | --- | --- |
-| Native Windows Direct3D7 EIP=0, `fclose(NULL)`, early DPI, Alt+Tab and cursor | [WINDOWS_VIEWPORT_DIAGNOSTIC.md](../ChatGPT/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md), [winmm_proxy.c](../winmm_proxy.c), [spiderman2k1fix.c](../spiderman2k1fix.c) |
-| Original DirectInput HRESULTs, branch shims, safe startup and INI-only validation | [DIRECTINPUT_STATIC_ANALYSIS.md](../ChatGPT/diagnostics/directinput/DIRECTINPUT_STATIC_ANALYSIS.md), [DIRECTINPUT_INI_FINAL_TEST.md](../ChatGPT/diagnostics/directinput/DIRECTINPUT_INI_FINAL_TEST.md), [input_notacquired_retry.c](../input_notacquired_retry.c) |
+| Native Windows Direct3D7 EIP=0, `fclose(NULL)`, early DPI, Alt+Tab and cursor | [WINDOWS_VIEWPORT_DIAGNOSTIC.md](references/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md), [winmm_proxy.c](../winmm_proxy.c), [spiderman2k1fix.c](../spiderman2k1fix.c) |
+| Original DirectInput HRESULTs, branch shims, safe startup and INI-only validation | [DIRECTINPUT_STATIC_ANALYSIS.md](references/diagnostics/directinput/DIRECTINPUT_STATIC_ANALYSIS.md), [DIRECTINPUT_INI_FINAL_TEST.md](references/diagnostics/directinput/DIRECTINPUT_INI_FINAL_TEST.md), [input_notacquired_retry.c](../input_notacquired_retry.c) |
 | F9 magenta BMP root mechanism, original sites, deferred menu frames and decoded Bink PNG | [spiderman2k1fix.c](../spiderman2k1fix.c), [f9_png.c](../f9_png.c), [F9 troubleshooting/validation](../README.md) |
-| Original F12 suppression, owner-safe transitions, current F10 and second-session fixes | [quick_exit_f12.c](../quick_exit_f12.c), [F12 shutdown record](F12_NATIVE_SHUTDOWN.md), [F10 test matrix](F10_VALIDATION_MATRIX.md) |
-| Focus pause false triggers, Bink/audio testing and cursor disappearance | [UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md](../ChatGPT/diagnostics/focus/UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md), [FOCUS_AUDIO_VIDEO_SYNC_TEST.md](../ChatGPT/diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md), [CURSOR_FOCUS_TEST.md](../ChatGPT/diagnostics/focus/CURSOR_FOCUS_TEST.md) |
-| Screens and UI issues / FPS | [Native ESC study](NATIVE_PAUSE_MENU_43.md), [HUD sections](DEVELOPMENT.md#7-display-and-rendering-research), [CHANGELOG.md](../CHANGELOG.md) |
+| Original F12 suppression, owner-safe transitions, current F10 and second-session fixes | [quick_exit_f12.c](../quick_exit_f12.c), [F12 shutdown record](references/F12_NATIVE_SHUTDOWN.md), [F10 test matrix](references/F10_VALIDATION_MATRIX.md) |
+| Focus pause false triggers, Bink/audio testing and cursor disappearance | [UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md](references/diagnostics/focus/UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md), [FOCUS_AUDIO_VIDEO_SYNC_TEST.md](references/diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md), [CURSOR_FOCUS_TEST.md](references/diagnostics/focus/CURSOR_FOCUS_TEST.md) |
+| Screens and UI issues / FPS | [Native ESC study](references/NATIVE_PAUSE_MENU_43.md), [HUD sections](DEVELOPMENT.md#7-display-and-rendering-research), [CHANGELOG.md](../CHANGELOG.md) |
 
 **Audit limits:** every implementation described here is **based on source and historical logs**, not a new end-to-end native Windows+Wine release test. Some historical notes describe old experiments that were withdrawn or replaced; the **current compiled source and currently enabled settings** take precedence over historical test instructions. An OS exit code, a completed direct source-level hook test and a game-looking-responsive screenshot are **different evidence levels**. Do not report a crash as fixed solely because a matching guard was armed.
 
@@ -746,10 +746,10 @@ Automated tests confirm signatures and code properties; **they do not prove game
 ## 12. Research references and next steps
 
 Repository sources:
-- [DirectInput static audit](../ChatGPT/diagnostics/directinput/DIRECTINPUT_STATIC_ANALYSIS.md)
-- [F10 validation matrix](F10_VALIDATION_MATRIX.md)
-- [F12 debugging research (historical)](F12_DEBUG_TEST_MODE.md)
-- [Native shutdown and Windows test records](F12_NATIVE_SHUTDOWN.md)
+- [DirectInput static audit](references/diagnostics/directinput/DIRECTINPUT_STATIC_ANALYSIS.md)
+- [F10 validation matrix](references/F10_VALIDATION_MATRIX.md)
+- [F12 debugging research (historical)](references/F12_DEBUG_TEST_MODE.md)
+- [Native shutdown and Windows test records](references/F12_NATIVE_SHUTDOWN.md)
 - [Project README](../README.md)
 - [External partial decompilation: krystalgamer/spidey-decomp](https://github.com/krystalgamer/spidey-decomp)
 - [External CD-check research](https://krystalgamer.github.io/spidey-breaking/index.html)
