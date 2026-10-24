@@ -15,7 +15,6 @@ static SpiderFOVSetting requested=SPIDER_FOV_AUTO;
 static double manual_degrees=0;
 static void (*log_fn)(const char *);
 static const DWORD scalar_rva=0x00150064;
-static DWORD original_bits=0x3F800000;
 static DWORD last_bits=0x3F800000;
 
 static void say(const char *s) {if(log_fn)log_fn(s);}
