@@ -9,6 +9,7 @@ This directory contains the maintained technical documentation and an index of s
 ## Configuration and gameplay reference
 
 - [Advanced configuration, INI recovery and troubleshooting](references/CONFIGURATION.md)
+- [Startup and INI recovery technical design — early DirectDraw synchronization, native resolution, rolling backup, Wine evidence](references/STARTUP_INI_RECOVERY_TECHNICAL.md)
 - [Automatic keyboard layout: Windows APIs, DIK mapping, CHEATS table patch, safety and test evidence](references/KEYBOARD_LAYOUT_TECHNICAL.md)
 - [F9 screenshot format, safety and validation](references/F9_PNG_CAPTURE.md)
 - [Historical experimental focus-pause UI notes (superseded)](references/PAUSE_UI_HISTORY.md)
