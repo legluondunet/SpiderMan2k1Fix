@@ -6,6 +6,12 @@ This directory contains the maintained technical documentation and an index of s
 
 - [Development and original EXE reverse engineering](DEVELOPMENT.md) — synthesized architecture, implementation decisions, and known limitations
 
+## Configuration and gameplay reference
+
+- [Advanced configuration, INI recovery and troubleshooting](references/CONFIGURATION.md)
+- [F9 screenshot format, safety and validation](references/F9_PNG_CAPTURE.md)
+- [Historical experimental focus-pause UI notes (superseded)](references/PAUSE_UI_HISTORY.md)
+
 ## Detailed references (`docs/references/`)
 
 ### Gameplay features and validation

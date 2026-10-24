@@ -2,6 +2,16 @@
 
 **A modern compatibility and widescreen fix for Spider-Man (2001) on PC — Windows and Linux (Wine).**
 
+[![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
+[![Linux / Wine / Proton compatible](https://img.shields.io/badge/Linux%20%2F%20Wine%20%2F%20Proton-compatible-428b40?logo=linux&logoColor=white)](#installing-on-linux-with-wine)
+
+### Screenshots
+
+<p align="center">
+  <a href="assets/screenshots/main-menu.webp"><img src="assets/screenshots/main-menu.webp" alt="Spider-Man main menu, centered 4:3" width="49%"></a>
+  <a href="assets/screenshots/gameplay.webp"><img src="assets/screenshots/gameplay.webp" alt="Spider-Man widescreen gameplay with HUD" width="49%"></a>
+</p>
+
 SpiderMan2k1Fix is an **unofficial, fan-made patch** for the original Windows PC release of *Spider-Man*. It helps the game run more comfortably on modern displays and operating systems while preserving its original look when desired.
 
 It adds borderless fullscreen, desktop-resolution output, widescreen support, corrected presentation for introductory movies and comic-book artwork, improved input handling, and an integrated configuration file. It also removes the game's CD check for the supported executable.
@@ -16,102 +26,13 @@ It adds borderless fullscreen, desktop-resolution output, widescreen support, co
 
 ## Features under development
 
-- **No-CD:** removes the disc check in memory, without modifying the original executable on disk.
-- **Native desktop resolution:** automatically uses your monitor's resolution (`Resolution=Auto`).
-- **Borderless fullscreen:** runs in a fullscreen-sized borderless window instead of exclusive fullscreen, without changing your desktop display mode.
-- **Widescreen by default:** supports modern aspect ratios while retaining an optional **original 4:3 presentation**.
-- **Automatic field-of-view adjustment:** adjusts the game's view for its display aspect ratio, without requiring manual FOV values.
-- **Intro movie presentation:** displays the opening publisher/developer movies with a centered **4:3** aspect ratio instead of stretching them across widescreen displays.
-- **In-game cinematics:** preserves the intended presentation of the game's low-resolution cinematic content rather than indiscriminately stretching it.
-- **Comic-book artwork:** corrects the presentation of comic-style images and panels across display resolutions.
-- **HUD presentation:** avoids unwanted stretching of supported HUD elements; further adaptive positioning is planned.
-- **Alt+Tab input recovery:** restores keyboard and mouse control when the game regains focus, avoiding the old loss-of-input behavior.
-- **Integrated game settings:** stores display, audio, keyboard and joystick bindings in **`SpiderMan2k1Fix.ini`**, replacing the need to maintain a separate `Spidey.cfg` for supported configurations.
-- **Automatic INI creation and repair:** generates the INI on first launch and can rebuild malformed configurations while preserving recoverable settings and making numbered backups.
-- **Optional debug logging:** writes `SpiderMan2k1Fix.log` when enabled; **disabled by default** to avoid unnecessary logging overhead.
-- **30 FPS default limit:** retains the game's intended timing, with a configurable limiter.
+- **Display:** borderless fullscreen at desktop resolution, widescreen or original 4:3, automatic FOV, corrected opening videos and comic artwork.
+- **Gameplay UI:** corrected HUD layout, compass, instructions, boss bars and the in-game ESC menu at widescreen resolutions.
+- **Compatibility:** an in-memory CD check bypass, a configurable 30 FPS limiter and optional Alt+Tab/input fixes.
+- **Settings:** `SpiderMan2k1Fix.ini` for display, audio and controls, generated and repaired automatically.
+- **Screenshots:** press **F9** to capture lossless `scrnNNNN.png` files beside the game executable. This path still needs broader Windows/Wine runtime validation.
 
-[![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
-
-### F10 development shortcut and native game cleanup
-
-**F10 is the only SpiderMan2k1Fix physical shortcut.** F11/F12 remain
-available for MangoHud under Linux. The original game's F12 →
-`PostMessageA(WM_CLOSE)` call is still suppressed to avoid an unsafe
-window closure. F12-named INI keys are accepted as *configuration
-aliases* for F10; they do not reactivate the F12 keyboard shortcut.
-
-The original New Game sequence and in-game native shutdown have been
-**validated under Wine** using the user's original
-`SpideyPC.exe` (SHA-256 checked):
-
-- **F10 at any point from the New Game comic through both introductory
-  3D cutscenes:** advance to gameplay, skipping the remaining comic,
-  movie #4 and/or native scripts. Both scripts use their original
-  `CutSceneSkipAllow` permission and cleanup. A single F10 during
-  Bink #4 now arms BOTH subsequent automatic native script skips.
-- F10 during playable 3D: gated original 3D cleanup
-  (`0x455BF3`), request 7, controller-7 cleanup, then
-  **return to the original main menu**. The native final-exit flag
-  at `0x45619D` is NOT forced for gameplay F10: the game process
-  remains alive, ready for another New Game.
-- **F10 during an active 3D CutSceneScript:** use the original
-  `CutSceneSkipAllow` permission and native script skip request,
-  never a synthetic Space key or request 7. In the verified two
-  New Game introductions, F10 jumps through both remaining scripts
-  to gameplay. During later in-level scripts, skip one native
-  CutSceneScript at a time, only when the owner permits it.
-- **F10 during playable 3D:** native menu return only when the
-  original scene manager confirms no active scripted cinematic.
-
-The F10 shortcut is **disabled by default** and intentionally **not generated** in `SpiderMan2k1Fix.ini`. To enable it for development,
-manually add the following to the existing `[Debug]` section:
-
-```ini
-[Debug]
-F10Shortcut=1
-```
-
-**When absent, `F10Shortcut` defaults to `0`.** The single opt-in
-enables every validated F10 behavior, independent of `Log=1`. If the
-INI already contains `[Debug]`, add only `F10Shortcut=1` under that
-heading, not a second copy of the section.
-
-Older `F10TestMode`, `F10Auto3DScripts`, `F10GameplayExit` and
-`[System] QuickExitF10` options remain accepted from older INIs.
-The obsolete `[System]` prototype options are no longer generated in
-new files; none is needed to use the consolidated `F10Shortcut`.
-`Log=1` retains diagnostic events, and `F10VerboseTrace=1` prints
-the extra research probes. Neither is required for `F10Shortcut=1` to
-work.
-
-**Repeated New Game:** after returning to the actual main menu through
-Esc → Exit → Yes, the next New Game comic should accept F10 again.
-The DLL resets its own per-session cinematic markers on the
-game-owned Shell_MainMenu callback, without restarting the process.
-See the two-session regression protocol in
-[the validation matrix](docs/references/F10_VALIDATION_MATRIX.md).
-
-**Wine validation:** build #713 verified the unified F10 shortcut,
-opening movie/comic/native 3D skips, and explicit native gameplay
-return to the main menu without exiting the process. With F10 OFF,
-the independent Bink-to-first-3D Enter/Space release safeguard also
-passed two consecutive New Game sessions. It waits for physical
-key-up at the verified original movie #4 handoff; no game-owned
-input bytes are rewritten and no keys are injected. The source of
-the transient Space-down state remains unproven.
-Native Windows 11 and arbitrary later in-level scripts/cutscene
-engines have not been fully validated. To disable F10, remove its
-line or set `F10Shortcut=0` (and disable any legacy opt-ins).
-
-See the [F10 validation matrix](docs/references/F10_VALIDATION_MATRIX.md)
-for the exact scenarios, required log messages and unverified
-cases. The historical F12 development records are preserved in
-[the research log](docs/references/F12_DEBUG_TEST_MODE.md); their old key
-names and historical test outcomes should not be interpreted as
-current physical F12 behavior.
-
-Development and validation history: [PR #26](https://github.com/legluondunet/SpiderMan2k1Fix/pull/26).
+For detailed behavior, diagnostics and limitations, see the [documentation index](docs/README.md).
 
 ## Requirements and compatibility
 
@@ -179,293 +100,63 @@ On the first supported launch, SpiderMan2k1Fix creates `SpiderMan2k1Fix.ini` aut
 
 If you use Lutris or another Wine launcher, add a DLL override with **Name:** `winmm` and **Value:** `n,b` in that game's Wine configuration (or set the equivalent environment variable). You generally do not need a separate override for `SpiderMan2k1Fix.dll`.
 
+**Proton (Steam):** Proton uses Wine's DLL-loading mechanism. If you run the Windows game through Steam/Proton, place the same two DLLs next to `SpideyPC.exe` and add this to the game's **Steam → Properties → Launch Options**:
+
+```text
+WINEDLLOVERRIDES="winmm=n,b" %command%
+```
+
+**Badge note:** The **Windows x86 build** badge reports GitHub Actions compilation/test status. The **Linux / Wine / Proton compatible** badge describes the intended compatibility layer for those same Windows x86 DLLs; **it is informational, not the result of a Linux/Proton gameplay CI test**. Individual Wine or Proton versions may require additional testing.
+
 ## Using SpiderMan2k1Fix
 
 There is **no separate launcher or graphical configuration utility**. Start *Spider-Man* as usual and change its settings through the in-game menus or `SpiderMan2k1Fix.ini`.
 
-### Configuration file
+### Basic configuration
 
-SpiderMan2k1Fix creates `SpiderMan2k1Fix.ini` alongside the game executable. **Close the game before editing the file manually**, because in-game settings may be saved back to it.
-
-The main options include:
+The fix creates `SpiderMan2k1Fix.ini` automatically. **Close the game before editing it**; the game may otherwise overwrite your changes.
 
 ```ini
-[Debug]
-; 0 = disabled (default), 1 = write SpiderMan2k1Fix.log
-Log=0
-
 [Display]
-; Auto = desktop monitor resolution
 Resolution=Auto
-; Auto or 4:3 for a native gaming experience
 AspectRatio=Auto
-Brightness=4
 FPSLimit=30
 
-[Input]
-; Experimental Windows 11 input recovery; default OFF.
-DirectInputReacquire=0
-; Pause rendering after a real Alt+Tab; default OFF.
-PauseOnFocusLoss=0
-; Resume only by pressing and releasing any keyboard key (consumed).
-; 1 = show a centered, transparent, red-outlined pause message; 0 = hide it.
-PauseOverlay=1
-; Darken the paused game behind the centered PAUSE banner (0 disables shade).
-PauseDim=1
-; Strength of black shade: 0..90 percent (default 50).
-PauseDimOpacity=50
-; No grid by default; set to 1 only if you prefer the optional 16px grid.
-PauseGrid=0
-; Pause cinematic Bink video and the game's audio-only Bink music stream.
-PauseBinkOnFocusLoss=0
-; Pause active game-owned secondary DirectSound effects/voices (default off).
-PauseDirectSoundOnFocusLoss=0
-RestoreCursorOnFocusLoss=1
+[HUD]
+HUDWidescreenFix=1
 
-[Audio]
-; Volume levels: 0..100 percent
-MusicSFXLevel=69
-VoiceLevel=79
-MovieLevel=69
-; 1 = Stereo, 0 = Mono
-Stereo=1
-
-[Keyboard]
-Up=UP
-Down=DOWN
-Left=LEFT
-Right=RIGHT
-Jump=SPACE
-Kick=X
-Punch=C
-Web=V
-Aim=D
-Zipline=F
-Swing=G
-
-[Joystick]
-; DirectInput button numbers start at zero
-Jump=BUTTON3
-Kick=BUTTON4
-Punch=BUTTON0
-Web=BUTTON1
-Aim=BUTTON6
-Zipline=BUTTON9
-Swing=BUTTON7
+[Debug]
+Log=0
 ```
 
-The generated INI may contain additional internal or development-specific settings depending on the release. Leave unfamiliar settings unchanged unless the release notes explain them.
-
-**Display modes:**
-
-- `AspectRatio=Auto` (default): use a modern widescreen layout matching your desktop.
-- `AspectRatio=4:3`: request the original 4:3 game presentation. The desktop is not switched to an exclusive display mode; the result should preserve the classic game proportions.
-- `Resolution=Auto` (default): use your desktop resolution. A specific `WIDTHxHEIGHT` value may also be configured where supported.
-- `FPSLimit=30` (default): preserve the intended 30 FPS cap. `FPSLimit=0` disables the limiter, although higher frame rates may affect an older game's behavior.
-
-**Controls:** keyboard and joystick bindings are independent. Keyboard values use physical DirectInput key names or hexadecimal scan codes. Joystick values use the same `BUTTON0`, `BUTTON1`, etc. numbering shown in the game's **Joystick Configuration** menu. Joystick movement axes/directions are handled by the game and are not configurable through this section.
-
-**Alt+Tab recovery (Windows 11):** Use `DirectInputReacquire=1` and `PauseOnFocusLoss=1` for the tested keyboard/mouse recovery and focus-pause combination. After switching back to the game, press and release any key to resume; the wake key is consumed. The game reuses its native `DIERR_NOTACQUIRED` retry path without wrapping DirectInput COM interfaces. These options remain disabled by default; earlier unsafe COM experiments are no longer active, even if their keys remain in an older user INI. The former environment-variable override is supported for legacy diagnostic scripts, but is unnecessary with the INI setting.
-
-**Windows 11 class=Ghost false focus-loss experiment (PR #11):** If the game repeatedly pauses without Alt+Tab after about five to six seconds, capture `SpiderMan2k1Fix.log`: repeated `FOCUS-PAUSE-OWNER: ... class=Ghost` lines indicate Windows is replacing an apparently unresponsive game window with a ghost surrogate. `[Input] DisableWindowsGhosting=1` (default **0**) requests Microsoft's `DisableProcessWindowsGhosting` API at startup to prevent that replacement and test whether the repeated false pauses stop. **Restart required; it applies to the whole game process until exit and suppresses Windows' normal ability to manage a hung application via a ghost window. It does not fix a truly hung game or change the Alt+Tab pause/input behavior.** Do not enable by default before native Windows testing. See [diagnostic procedure](docs/references/diagnostics/focus/UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md).
-
-**Pause indicator (PR #14):** With `PauseOnFocusLoss=1`, the game displays a centered, comic-style red-framed `PAUSE` message above the English-only instruction **`PRESS ANY KEY TO RESUME`**. Its white bold-italic wake hint is enlarged, and the rounded red border is strengthened to 4 px. The center of the already-validated 55% dark, 16px gridded pause shade gains an optional secondary nonactivating rounded translucent panel (~71% effective darkening), masked to keep the red frame and white letters fully bright and to attenuate the grid behind the hint. The original shaped child window remains unchanged in principle: its background is not filled with opaque pixels, so the 2001 DirectDraw frame remains visible. If the optional panel cannot be created, the regular 55% shade and indicator continue to work. The only supported pause wake is now pressing and releasing **any key** after returning to the game; the key is consumed. Legacy `PauseKey=F9`, `Space` and `Any` INI entries are tolerated for migration but do nothing. If the Any-key hook cannot be installed, the game skips the pause instead of freezing waiting for a deprecated wake key. `PauseOverlay=0` hides only the indicator, not the underlying focus pause.
-
-**Background grid and shading (PR #17 follow-up):** In addition to the game-bound PAUSE banner, an ordinary full-client `WS_CHILD` carries the **16px grid and a dark pixel dither** while Spider-Man is in the background. A sparse GDI window region removes all untouched pixels, so the paused game remains visible between strokes and the grid can never float over Thunar. Background opacity is an **approximation** (default 55% requests 4 of 8 opaque rows, or roughly 50% area coverage), not a full alpha blend, because the original unmanifested game cannot reliably create layered child windows. When the game is active, the previously approved **true 55% alpha** plus its 16px grid is unchanged. `PauseDim=0` still disables both backgrounds; `PauseGrid=0` omits the grid in either mode. Wine runtime validation required.
-
-**Experimental native ESC-inspired Alt+Tab pause artwork (draft PR #20 based on PR #18):** The original focus-loss mechanics are unchanged: keep the frozen DirectDraw7 frame, pause at the Flip boundary and restore the saved surface on Any-key resume. Based on the maintainer's comparison screenshots, the **large orange spider motif is now completely removed** (including the earlier placeholder oval). Only the original-style wide **translucent violet menu ribbon** remains, with the traced D3D7 diffuse `0x7F3232A0` panel at native y≈400.5–675.0 and a restrained 12-strip blue-to-amethyst vertical tint. The top and bottom rims have a two-tone lavender/white highlight and dark inner accent; they are **GDI approximations**, because the game's actual 8×8 border texels have not been recovered. The heavier, outlined red `PAUSED` title now sits **inside the top half of the ribbon** (native logical y≈445) with a clearly separated white `PRESS ANY KEY TO RESUME` line lower in the ribbon (y≈545). The icon before the instruction is now the **real, largest available icon extracted directly from the running `SpideyPC.exe` at runtime**. The maintainer-supplied reference ICO contains 16×16 and 32×32 images, so the Win32 `ExtractIconExW` LARGE handle selects the 32×32 game icon, which `DrawIconEx` scales to the existing 48-unit ribbon position. No game icon image is copied, committed or shipped. The title and instruction remain horizontally centered; extraction failure shows the text centered without an icon and does **not** prevent pausing. In a 16:9 gameplay frame, the purple ribbon, its borders, both texts and the original EXE icon are constrained to a **centered 4:3-sized region** (at 1920×1080, x=240–1680) rather than stretching across the full screen; the actual 4:3 menu region remains unchanged. Full-screen dimming and pause-surface capture/restoration are unchanged. All UI drawing remains in the game's content region with no overlay HWND; darkening remains `PauseDimOpacity=50` and `PauseGrid=0` by default, respecting existing INI overrides. This is an experimental visual version requiring Wine/Windows testing, not yet considered visually approved. PR #18, PR #19 and `main` are not changed or merged.
-
-**Background-visible pause hint (PR #17):** When Spider-Man is paused but another application is foreground, the English `PAUSE / PRESS ANY KEY TO RESUME` banner remains **inside the game's own client window** as a conventional `WS_CHILD`. It uses an opaque dark-plum fill and 2px muted-red frame, avoiding the unsupported layered-child alpha and inheriting game-window clipping and desktop stacking. Thunar, Firefox and other active desktop windows should cover that background banner normally. When Spider-Man becomes active again, the banner switches to its per-pixel translucent comic version and the **55%-black, 16px-grid shade** reappears; while the game is in the background, the floating grid popup stays hidden to prevent focus leakage. The underlying game/Bink/DirectSound remain paused during either mode and Any-key resume remains unchanged. Test on Wine and Windows 11 before merging.
-
-**Simplified comic PAUSE panel (PR #16):** To avoid black glyph fragments and cross-window artifacts in Wine, replace the former shaped child plus two alpha popups with a **single game-owned, nonactivating, per-pixel alpha banner** for the red frame and full-white text, plus the original independently configurable 55% grid shade behind it. The entire rounded banner is removed from the grid overlay region. The banner uses an atomic `UpdateLayeredWindow` bitmap (transparent outside rounded corners; muted dark-plum background; fully opaque glyphs/border), **not** an extra 35% panel, a color key or a layered child. Only display while Spider-Man is the Windows foreground **and active** window; otherwise keep game/audio paused but hide the visual layers. Wine and Windows 11 runtime acceptance is required; no merge/release yet.
-
-**Wine/Linux focus-only pause visuals (PR #15):** The game and enabled Bink/DirectSound streams pause as soon as actual loss of focus is confirmed, but the PAUSE panel and its game-owned translucent black/grid popups are **not shown while another application owns the foreground**. They appear only when Spider-Man is foreground again and disappear if it loses focus a second time while paused; this avoids drawing a floating red border on top of Linux desktop applications. Inside the banner, all 16 px grid strokes are clipped out and the additional darkened center remains translucent; the 25 px bold upright `PRESS ANY KEY TO RESUME` hint is protected by expanded shaped-glyph masks. Retains consumed ordinary-key resume (no dedicated F9/Space modes), while passing **Alt+Tab and Windows desktop-switch shortcuts** through so users can leave the game again during a pause. **Note:** requires real Windows 11 and Wine regression testing before release, since GDI layering and popup stacking are compositor-dependent.\n\n**Dimmed pause background (PR #12):** When `[Input] PauseOnFocusLoss=1`, a non-topmost, nonactivating layered **popup owned by the game window** darkens the paused scene with a **55% black tint** and a fine **16-pixel square grid**. The original red-framed comic-style `PAUSE` message stays centered and bright: the popup is cut out around the exact border and white glyphs of the existing shaped banner. The effect appears only during a latched focus pause, and both windows are destroyed before video/audio resumes. `[Input] PauseDim=1` enables the shade (default on, although the underlying focus pause remains disabled by default). `PauseDimOpacity=55` adjusts darkness from `0` to `90` percent. `PauseGrid=1` enables the fine square pattern, and `PauseGrid=0` keeps a smooth dark tint. Set `PauseDim=0` to restore the previous validated plain paused image. The grid is painted inside the original nonactivating alpha popup. PR #14 can add a second small **game-owned, nonactivating popup** for the darker center only; neither changes DirectDraw, Bink, DirectSound or DirectInput. The popup avoids the original 2001 EXE's layered-child compatibility restriction and is not desktop-topmost. Verify the final look and Z-order on native Windows 11; automated CI cannot validate the compositor.
-
-**Synchronized audio and video focus pause (PR #9):** The separately enabled `PauseBinkOnFocusLoss=1` pauses Bink cinematic streams **and the Bink-based music heard during 3D gameplay** using the game's original `BinkPause` API. `PauseDirectSoundOnFocusLoss=1` pauses currently playing game-owned secondary DirectSound buffers and resumes the same buffers from their retained cursor position. The primary buffer is untouched. Both new media options are **disabled by default**. Their combined operation was tested in Windows 11 gameplay, the menu, and cinematics with no audio desynchronization. See [technical notes and test results](docs/references/diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md) for diagnostics, compatibility limits, and rollback.
-
-**Audio:** the three volume levels use user-friendly percentages; `Stereo=1` enables stereo and `Stereo=0` selects mono.
+Choose `AspectRatio=4:3` for the classic game presentation. `HUDWidescreenFix=0` turns off the widescreen HUD and native ESC corrections. For all available options (audio, keyboard, joystick, experimental focus-pause settings) and INI recovery behavior, see the [configuration and troubleshooting guide](docs/references/CONFIGURATION.md).
 
 ### Debug log
 
-Debug logging is **off by default**:
-
-```ini
-[Debug]
-Log=0
-```
-
-If you need to investigate a problem, set `Log=1`, save the file, and **restart the game**. SpiderMan2k1Fix will write `SpiderMan2k1Fix.log` in the game directory. **Each game launch starts a fresh log:** the previous session is overwritten (the proxy startup lines and main DLL diagnostics are retained together). Copy or rename the log before your next launch if you need to keep it. After collecting the information you need, return to `Log=0`.
+Logging is **disabled by default** (`[Debug] Log=0`). Set `Log=1` and restart to create `SpiderMan2k1Fix.log` beside the game. Each launch overwrites the previous log. [More details](docs/references/CONFIGURATION.md#debug-logging).
 
 ### Automatic INI recovery
 
-If the configuration is missing, SpiderMan2k1Fix generates a new one. If it detects malformed lines, unknown sections/options, invalid values, or duplicates, it can:
-
-1. Rename the previous file to the next unused backup name, such as `SpiderMan2k1Fix_0.old`, `SpiderMan2k1Fix_1.old`, and so on.
-2. Generate a clean `SpiderMan2k1Fix.ini` using the recognized sections and defaults.
-3. Recover known, valid values from the old configuration. When duplicate values exist, the **first valid** one is kept.
-
-Unknown settings are retained in the `.old` backup rather than being copied into the clean INI. The `[Internal]` section contains `RawHex`, the game's 252-byte internal settings image; **do not edit this value manually**.
+Invalid INI settings can trigger automatic repair with a numbered `SpiderMan2k1Fix_N.old` backup; recognized valid settings are recovered. Do not edit `[Internal] RawHex` manually. [Recovery details](docs/references/CONFIGURATION.md#automatic-ini-recovery).
 
 ## Troubleshooting
 
-**The game launches, but SpiderMan2k1Fix does not seem active**
+- **The fix does not load:** verify that both DLLs are beside `SpideyPC.exe`, that the game's SHA-256 matches, and that Wine/Proton uses `winmm=n,b`.
+- **Settings were reset:** inspect the numbered `SpiderMan2k1Fix_N.old` backup.
+- **Input, focus, audio or graphics problems:** these remain under development. See [detailed troubleshooting](docs/references/CONFIGURATION.md#troubleshooting-cases) and the [known issues and technical analysis](docs/DEVELOPMENT.md#10-major-bugs-root-causes-and-fixes--historical-incident-register).
+- **Need diagnostics:** temporarily set `[Debug] Log=1`, restart the game, and save its log before the next launch.
 
-- Verify that both DLLs are in the same directory as `SpideyPC.exe`.
-- On Linux, check the Wine DLL override: `WINEDLLOVERRIDES="winmm=n,b"`.
-- Check that the executable is the supported version. On Linux, run `sha256sum SpideyPC.exe`; on Windows PowerShell, run `Get-FileHash .\SpideyPC.exe -Algorithm SHA256`.
-- Temporarily enable `Log=1` and check `SpiderMan2k1Fix.log`, if an INI was generated.
+### F9 PNG screenshots
 
-**The INI seems to have reset itself**
+Press **F9** to capture a lossless PNG beside `SpideyPC.exe`. The original game key and its debounce are preserved. See [capture behavior, verification status and optional diagnostics](docs/references/F9_PNG_CAPTURE.md).
 
-Look for a numbered `SpiderMan2k1Fix_N.old` backup. The previous configuration may have contained unknown or malformed entries; known valid settings should be recovered in the replacement file.
+### Native ESC menu in widescreen
 
-**Controls are not responding after switching applications**
-
-When testing the current development build, set `DirectInputReacquire=1` and `PauseOnFocusLoss=1`. Any keyboard key now resumes after focus returns; the old `PauseKey` selection is ignored. If recovery fails, enable `[Debug] Log=1`, then check for `DI8-RETRY: EXPERIMENTAL requested source=INI` and `DI8-RETRY: EXPERIMENTAL active at Flip #120`. For synchronized sound, enable both additional media-pause settings described above. A previous report of intermittent audio crackling occurred under ProcDump but was not reproduced during ordinary launches without ProcDump; its cause remains unknown. Future builds may provide a different option set.
-
-**The game has visual or audio glitches**
-
-Try the original `AspectRatio=4:3` mode to help isolate widescreen-specific problems. Some edge-of-screen 3D rendering issues and audio artifacts are still being investigated; see the roadmap below.
-
-### F9 screenshots — always lossless PNG
-
-On the supported, SHA-256-verified `SpideyPC.exe`, the original **F9**
-key now saves full-resolution, lossless `scrnNNNN.png` files.
-**PNG is the only selectable format: there is no INI setting, environment
-variable or user option to switch to BMP.** Captures work with the default
-`[Debug] Log=0`; diagnostic logging is optional.
-
-The game still performs its own DirectInput F9 polling, sound and 500 ms
-repeat delay. SpiderMan2k1Fix verifies the two original x86 screenshot
-`CALL` instruction signatures (RVA `0x0010A1DC` and `0x0010A62B`)
-and replaces those calls with a PNG encoder callback. The original BMP
-writer is bypassed whenever the signature-checked hooks are installed.
-
-**To capture a screenshot:** press **F9** during a video, menu, comic,
-cinematic or gameplay. Files are written beside `SpideyPC.exe`.
-After a successful save, the game displays a brief English confirmation
-and the full PNG path, without baking that confirmation into the image.
-The implementation captures decoded movie frames or DirectDraw
-backbuffers as appropriate, immediately copies the pixels to private
-memory, and encodes on a separate worker using Windows/Wine GDI+.
-Filename collisions are avoided; save errors are shown and never
-deliberately cause a BMP fallback.
-
-**Safety:** for an unsupported EXE SHA-256, or if one of the original
-CALL signatures cannot safely be patched, SpiderMan2k1Fix does not
-force an unsafe rewrite. In that exceptional case the game's original
-screenshot code is left untouched and may still produce BMPs. This is
-a protection against unsupported binaries, **not a configurable format
-choice**. Enable `Log=1` only to diagnose such failures.
-
-**Validation:** the user verified the preceding opt-in PNG implementation
-under Wine in PR #25, build #717: eleven 1920×1080 PNGs
-(`scrn0000.png` through `scrn0010.png`) from intro movies,
-menus, comics and 3D. The new *always-on* initialization still requires
-a fresh Wine and native Windows 11 regression test.
-
-The old `SPIDERMAN2K1FIX_F9_PNG_ONLY`, `SPIDERMAN2K1FIX_F9_PNG`
-and `SPIDERMAN2K1FIX_F9_BACKBUFFER` variables no longer select any
-capture format. The separate, read-only
-`SPIDERMAN2K1FIX_F9_TRACE=1` diagnostic remains available when
-`Log=1`; it does not change the image format. Historical research on
-native Windows magenta BMPs is retained in closed PR #24.
-
-### Native gameplay ESC menu — original 4:3 proportions
-
-The 3D game's ESC pause menu (purple banner, outlines and labels,
-orange/blue translucent motif, and red spider selector) can be displayed at
-the correct original 4:3 proportions, without stretching the 3D scene or HUD.
-The original violet pause tint still covers the entire widescreen display,
-including the left and right margins.
-
-**Validated under Wine at 1920×1080 Auto** on October 24, 2026 for
-`CONTINUE / RESTART LEVEL / QUIT`, `REALLY QUIT? / NO / YES`, and the cursor
-at both central and edge-of-screen positions.
-
-**Enabled by default** when `[HUD] HUDWidescreenFix=1` (also its factory default)
-and the full native widescreen HUD hook installs successfully. Setting
-`HUDWidescreenFix=0` disables the adaptive HUD **and every native ESC 4:3
-correction**, even if child options are explicitly set to 1.
-
-For debugging, add **only the option(s) you want to disable** manually
-under `[HUD]` in `SpiderMan2k1Fix.ini`:
-
-```ini
-[HUD]
-HUDWidescreenFix=1
-NativeESC4x3=0
-NativeMotif4x3=0
-NativeCursor4x3=0
-```
-
-All three child settings normally default to `1` and **are deliberately
-absent from generated/default INI files**. Each is a strict boolean;
-`NativeESC4x3=0` disables the entire native pause menu correction,
-including motif and cursor. `NativeMotif4x3=0` or `NativeCursor4x3=0`
-individually disables only that element. These features are still limited
-to the original verified UI draw signatures; the motif and cursor geometry
-have been visually validated only in **1920×1080 Auto under Wine**.
-Legacy environment variables with an explicit `=0` remain accepted as
-diagnostic opt-outs, but are not required for normal play and cannot
-override `HUDWidescreenFix=0`.
-
-[Implementation, scope, and regression checks](docs/references/NATIVE_PAUSE_MENU_43.md).
+The gameplay ESC menu retains its original 4:3 proportions on supported widescreen displays. This correction follows the `[HUD] HUDWidescreenFix` switch. [Scope, child options and 1920×1080 Wine validation](docs/references/NATIVE_PAUSE_MENU_43.md).
 
 ## Adaptive widescreen HUD
 
-**Enabled by default.** SpiderMan2k1Fix automatically corrects the
-proportions and positioning of the gameplay HUD on supported widescreen
-resolutions. It preserves the original 4:3 presentation, menu, videos,
-world geometry and game-owned vertex buffers.
-
-The corrected elements include Spider-Man's portrait, life and web
-gauges, web cartridge counter, mission instructions, compass, boss
-health bars, boss portraits, damaged-health black masks, and the
-Scorpion/Jameson objective bar and icons. The game uses several
-rendering paths, so the correction uses verified original-EXE call
-sites plus conservative texture, depth and geometry checks. Unknown
-gameplay draws are passed through.
-
-### Configuration
-
-```ini
-[HUD]
-HUDWidescreenFix=1
-```
-
-- `HUDWidescreenFix=1`: enable the adaptive HUD (**factory default**).
-- `HUDWidescreenFix=0`: explicitly disable the adaptive HUD.
-- If `[HUD]` or the setting is absent from an otherwise valid INI, the
-  correction is **enabled** as though `HUDWidescreenFix=1`.
-- With `[Display] AspectRatio=4:3`, widescreen HUD transformation is
-  automatically bypassed, regardless of the enabled setting.
-
-**Existing user settings are preserved.** If an INI written before this
-update contains `HUDWidescreenFix=0`, that is an explicit opt-out and
-continues to disable the correction. Change it to `1` (or remove the
-key from a valid INI) to enable the HUD without resetting unrelated
-settings. Missing or repaired INIs use the new default `1`.
-
-### Validation and optional diagnostics
-
-Tested against original 4:3 reference screenshots, with the HUD
-visually checked under Linux/Wine at **1920×1080 (16:9)** and native
-Windows 11 at **1920×1200 (16:10)**. Tests covered player UI,
-instructions, compass, both single (Venom) and dual (Scorpion +
-J. Jonah Jameson) boss health bars, moving black lost-health areas,
-boss portraits and a horizontal objective bar with its icons. Other
-boss fights and ultrawide resolutions were not individually tested.
-
-Historical native F9 BMP capture could produce a magenta image under
-Windows 11. The current lossless PNG screenshot path avoids that legacy
-capture format; it is independent of the widescreen HUD.
-
-The temporary F12 HUD research sampler has been removed after the
-widescreen correction was validated. Regular F9 PNG screenshots, optional
-F10/F12 game controls, native ESC corrections and HUD operation remain intact.
-Historical HUD research logs and before/after evidence are documented in
-[PR #21](https://github.com/legluondunet/SpiderMan2k1Fix/pull/21).
+Enabled by default with `HUDWidescreenFix=1`, the fix adjusts the player HUD, compass, mission instructions and supported boss UI while leaving game world geometry alone. Not every boss and resolution has been visually tested. See the [HUD implementation, source signatures and validation notes](docs/DEVELOPMENT.md#7-display-and-rendering-research).
 
 ## Roadmap
 
@@ -497,6 +188,10 @@ SpiderMan2k1Fix is an independent compatibility project maintained by **[legluon
 Bug reports and reproducible test results are welcome, especially for different Windows versions, Wine versions, GPUs, resolutions and controller models. When reporting an issue, include your platform, game executable checksum, relevant INI settings, and a debug log when available.
 
 **Project repository:** <https://github.com/legluondunet/SpiderMan2k1Fix>
+
+## Credits and acknowledgements
+
+Special thanks to **[Krystalgamer](https://github.com/krystalgamer)** for making their work on the original *Spider-Man* PC game publicly available, including the [partial PC decompilation](https://github.com/krystalgamer/spidey-decomp) and [research into the game's CD check](https://krystalgamer.github.io/spidey-breaking/index.html). These references have helped the community understand the original game's internals and have been valuable background material for this compatibility project.
 
 ## License and third-party rights
 

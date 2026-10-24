@@ -3,17 +3,20 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
 
-def test_f10_readme_describes_hidden_debug_opt_in_and_native_cleanup():
+def test_f10_details_live_in_technical_docs_instead_of_homepage():
     readme=(ROOT/"README.md").read_text(encoding="utf-8")
-    assert "[Debug]\nF10Shortcut=1" in readme
-    assert "not generated" in readme
-    assert "defaults to `0`" in readme
-    assert "independent of `Log=1`" in readme
-    assert "build #713" in readme
-    assert "Bink-to-first-3D Enter/Space release safeguard" in readme
-    assert "docs/references/F10_VALIDATION_MATRIX.md" in readme
-    assert "later in-level" in readme
+    matrix=(ROOT/"docs/references/F10_VALIDATION_MATRIX.md").read_text(encoding="utf-8")
+    index=(ROOT/"docs/README.md").read_text(encoding="utf-8")
+    assert "### F10 development shortcut" not in readme
+    assert "F10Shortcut=1" not in readme
+    assert "references/F10_VALIDATION_MATRIX.md" in index
+    for text in ("[Debug]", "Log=1", "F10Shortcut=1", "not generated",
+                 "defaults to `0`", "independent of `Log=1`",
+                 "build #713", "Bink-to-first-3D Enter/Space release safeguard",
+                 "later in-level"):
+        assert text in matrix
     assert "F10TestMode=1\\nF10Auto3DScripts=1" not in readme
+
 
 def test_validation_matrix_distinguishes_wine_verified_and_pending_levels():
     matrix=(ROOT/"docs/references/F10_VALIDATION_MATRIX.md").read_text(encoding="utf-8")

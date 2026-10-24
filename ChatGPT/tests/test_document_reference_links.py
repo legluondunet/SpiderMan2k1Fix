@@ -9,6 +9,9 @@ import re
 
 ROOT = Path(__file__).resolve().parents[2]
 REFERENCES = (
+    "CONFIGURATION.md",
+    "F9_PNG_CAPTURE.md",
+    "PAUSE_UI_HISTORY.md",
     "F10_VALIDATION_MATRIX.md",
     "F12_DEBUG_TEST_MODE.md",
     "F12_NATIVE_SHUTDOWN.md",
@@ -32,7 +35,7 @@ def test_reference_inventory_is_consolidated():
     reference_dir = docs / "references"
     assert reference_dir.is_dir()
 
-    # Both indexes remain at the top of docs; all 15 detailed reports do not.
+    # Both indexes remain at the top of docs; detailed references do not.
     assert sorted(p.name for p in docs.glob("*.md")) == [
         "DEVELOPMENT.md", "README.md"
     ]
@@ -60,6 +63,10 @@ def test_document_indexes_resolve_all_local_links():
         "docs/DEVELOPMENT.md",
         "ChatGPT/README.md",
         "docs/references/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md",
+        "docs/references/CONFIGURATION.md",
+        "docs/references/F9_PNG_CAPTURE.md",
+        "docs/references/PAUSE_UI_HISTORY.md",
+        "docs/references/F10_VALIDATION_MATRIX.md",
     ]
     for rel in files:
         page = ROOT / rel
@@ -77,3 +84,13 @@ def test_docs_index_lists_every_reference():
     index = (ROOT / "docs/README.md").read_text(encoding="utf-8")
     for rel in REFERENCES:
         assert f"references/{rel}" in index, rel
+
+
+def test_short_homepage_delegates_to_detailed_documentation():
+    homepage = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert len(homepage) < 19000
+    assert "### F10 development shortcut" not in homepage
+    assert "docs/references/CONFIGURATION.md" in homepage
+    assert "docs/references/F9_PNG_CAPTURE.md" in homepage
+    assert "docs/DEVELOPMENT.md#7-display-and-rendering-research" in homepage
+    assert "docs/references/NATIVE_PAUSE_MENU_43.md" in homepage
