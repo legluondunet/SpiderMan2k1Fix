@@ -347,6 +347,8 @@ The **outer** `data.pkr` archive should be examined or extracted to inspect thes
 
 This section inventories **previously missing positively identified functions, branches and data layouts** in the SHA-verified original EXE. It is based on repository code and historical static/runtime records, **not on a new independent disassembly of the copyrighted EXE**. All addresses below are **VA**, except where expressly marked RVA. Experimental patch code and observed game code are kept distinct.
 
+For a **compact function/address lookup** separated by original routines, instruction callsites, data pointers, evidence level and unknowns, see the [recovered original game function catalog](references/ORIGINAL_EXE_FUNCTION_CATALOG.md). This catalog consolidates the existing investigations; no complete original game decompilation is claimed.
+
 ### 8.1 Main controller, request dispatch and original cleanup
 
 | Game address | Recovered original function |
@@ -562,6 +564,8 @@ Do not turn the following into “understood functions”: most 11-mode dispatch
 ## 9. Native exit points, transition ownership and cleanup by game phase
 
 **Do not conflate three different operations:** (1) ending the current screen/movie/script, (2) leaving the current gameplay owner to return to a main-menu/controller loop, and (3) terminating `SpideyPC.exe` after final program cleanup. The game reuses several low-level routines, and the **same request value can end in a controller loop or a process shutdown** depending on native state.
+
+For the **historically validated physical F12 exits**, which are superseded by the current optional F10 shortcut, see the [archived phase-by-phase summary](references/F12_EXIT_ARCHIVE_SUMMARY.md). It distinguishes real OS process termination from returning to the menu, includes the Windows 11 yellow-window anomaly, and points to the complete original research journals.
 
 This is a **flow/exit-point map** for the exact supported original 2001 binary. “Normal” paths are original game-owned logic verified statically and/or through logs; experimental F10/F12 behavior is described separately. Locations are absolute game virtual addresses (VA); data addresses are enclosed in brackets. The movie, comic and gameplay code must execute its own owner/SEH/resource teardown before another owner is entered.
 

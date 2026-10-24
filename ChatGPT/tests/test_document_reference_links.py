@@ -12,6 +12,10 @@ REFERENCES = (
     "CONFIGURATION.md",
     "F9_PNG_CAPTURE.md",
     "PAUSE_UI_HISTORY.md",
+    "ORIGINAL_EXE_FUNCTION_CATALOG.md",
+    "F12_EXIT_ARCHIVE_SUMMARY.md",
+    "WINE_REGRESSION_CHECKLIST.md",
+    "BRANCH_RESEARCH_PRESERVATION.md",
     "F10_VALIDATION_MATRIX.md",
     "F12_DEBUG_TEST_MODE.md",
     "F12_NATIVE_SHUTDOWN.md",
@@ -66,6 +70,10 @@ def test_document_indexes_resolve_all_local_links():
         "docs/references/CONFIGURATION.md",
         "docs/references/F9_PNG_CAPTURE.md",
         "docs/references/PAUSE_UI_HISTORY.md",
+        "docs/references/ORIGINAL_EXE_FUNCTION_CATALOG.md",
+        "docs/references/F12_EXIT_ARCHIVE_SUMMARY.md",
+        "docs/references/WINE_REGRESSION_CHECKLIST.md",
+        "docs/references/BRANCH_RESEARCH_PRESERVATION.md",
         "docs/references/F10_VALIDATION_MATRIX.md",
     ]
     for rel in files:

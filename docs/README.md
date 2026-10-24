@@ -12,6 +12,13 @@ This directory contains the maintained technical documentation and an index of s
 - [F9 screenshot format, safety and validation](references/F9_PNG_CAPTURE.md)
 - [Historical experimental focus-pause UI notes (superseded)](references/PAUSE_UI_HISTORY.md)
 
+## Preserved reverse-engineering findings and test methodology
+
+- [Original `SpideyPC.exe` function/address catalog](references/ORIGINAL_EXE_FUNCTION_CATALOG.md) — recovered engine roles, call sites and evidence limits
+- [Historical F12 native process-exit results](references/F12_EXIT_ARCHIVE_SUMMARY.md) — Windows/Wine phase-specific passes and open yellow-window issue; **not an active shortcut**
+- [Manual Linux / Wine / Proton compatibility checklist](references/WINE_REGRESSION_CHECKLIST.md) — updated from unmerged PR #5; no implied Wine CI or full gameplay certification
+- [Branch-pruning research preservation audit](references/BRANCH_RESEARCH_PRESERVATION.md) — findings already archived and branches worth temporarily retaining for their **experimental source code**
+
 ## Detailed references (`docs/references/`)
 
 ### Gameplay features and validation
