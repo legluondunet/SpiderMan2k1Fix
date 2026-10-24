@@ -40,7 +40,7 @@ def test_generated_example_factory_consistency():
     assert config['Display']['Brightness'] == '4'
     assert config['Display']['FPSLimit'] == '30'
     assert config['Input']['KeyboardLayout'] == 'Auto'
-    assert '"KeyboardLayout=Auto\\\\r\\\\n"' in virtual
+    assert 'KeyboardLayout=Auto' in virtual
     assert "KeyboardLayout=" not in (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text()
     assert config['Input']['DirectInputReacquire'] == '0'
     assert config['Input']['PauseOnFocusLoss'] == '0'

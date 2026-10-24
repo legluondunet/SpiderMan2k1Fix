@@ -62,13 +62,13 @@ def test_native_directinput_retry_option_and_legacy_ini_compat(runner, tmp_path)
 @pytest.mark.parametrize("mode", ["Auto", "AZERTY", "QWERTY", "Physical", "azerty", "qwerty"])
 def test_keyboard_layout_names_are_valid_without_repair(runner, tmp_path, mode):
     result, detail = validate(runner, tmp_path,
-        f"[Input]\\nKeyboardLayout={mode}\\n[Keyboard]\\nJump=SPACE\\nKick=M\\n")
+        f"[Input]\nKeyboardLayout={mode}\n[Keyboard]\nJump=SPACE\nKick=M\n")
     assert result == (0, 0, 1), detail
 
 
 @pytest.mark.parametrize("mode", ["", "US", "French", "Dvorak", "1", "0", "AZERTY " + " extra"])
 def test_invalid_keyboard_layout_is_rejected_safely(runner, tmp_path, mode):
-    result, _ = validate(runner, tmp_path, f"[Input]\\nKeyboardLayout={mode}\\n")
+    result, _ = validate(runner, tmp_path, f"[Input]\nKeyboardLayout={mode}\n")
     assert result[0] >= 1 and result[2] == 0
 
 
