@@ -1,4 +1,4 @@
-/* Spider-Man PC 2001 opt-in native Bink focus pause.
+/* Spider-Man PC 2001 permanent native Bink focus pause.
  *
  * Static analysis of the supported original EXE: BinkPause(handle, pause)
  * callsite 0x0050BDE5, IAT slot 0x0053B210, cinematic handle 0x00AC0BA4,
@@ -7,7 +7,7 @@
  *
  * Keep Bink playback synchronized at the focus-pause Flip boundary.
  * No Bink loader patch, COM vtable replacement, or synthetic input.
- * Disabled by default; calls are guarded by the known original executable.
+ * Enabled with the fix; calls are guarded by the known original executable.
  * Movie handles may be managed on other threads, so retain handle checks.
  */
 #define WIN32_LEAN_AND_MEAN
@@ -77,7 +77,7 @@ void SpiderFocusMedia_Init(void (*log_fn)(const char *)) {
   }
   memcpy(&native_bink_pause,&exported,sizeof(exported));
   InterlockedExchange(&enabled,1);
-  diag("FOCUS-MEDIA: experimental native BinkPause enabled; secondary DirectSound voice handling is separate");
+  diag("FOCUS-MEDIA: guarded native BinkPause enabled; secondary DirectSound voice handling is separate");
 }
 void SpiderFocusMedia_Pause(void) {
   void *handles[2],*handle;
