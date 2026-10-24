@@ -3028,11 +3028,18 @@ static void install_player_hud(BOOL exe_verified) {
   log_line("HUD-ADAPTIVE: strict geometry correction enabled for compass, instructions and boss UI");
 }
 
+/* The proxy's early IAT gate can reach the game main thread before our
+ * background worker. InitOnce makes initialization exactly once and makes
+ * the first DirectDrawCreateEx wait until all native and virtual-config
+ * hooks are installed. Never wait under DllMain/loader lock. */
+static INIT_ONCE core_start_once=INIT_ONCE_STATIC_INIT;
+static volatile LONG core_start_success=0;
+
 /* A one-shot watchdog diagnoses the crucial "60 FPS despite 30 limit"
  * case even if Flip is never intercepted. Runs in the existing worker thread
  * after hook setup, outside the loader lock. Does not change game timing.
  */
-static DWORD WINAPI initialize(LPVOID unused) {
+static DWORD initialize_body(LPVOID unused) {
   BYTE *base=(BYTE*)GetModuleHandleA(NULL);
   char line[160]; (void)unused;
   debug_log_load_setting();
@@ -3205,13 +3212,42 @@ static DWORD WINAPI initialize(LPVOID unused) {
   InterlockedExchange(&pause_on_focus_loss,1);
   log_line("FOCUS-PAUSE: permanent Flip-boundary pause ON; Any-key press/release resumes");
   SpiderInputFocus_Install(log_line);
+  InterlockedExchange(&core_start_success,1);
   return 0;
 }
+static BOOL CALLBACK core_initialize_once(PINIT_ONCE once,PVOID arg,PVOID *context) {
+  (void)once;(void)arg;(void)context;
+  initialize_body(NULL);
+  return TRUE; /* core_start_success additionally checks the EXE verification. */
+}
+static DWORD WINAPI initialize_worker(LPVOID unused) {
+  (void)unused;
+  InitOnceExecuteOnce(&core_start_once,core_initialize_once,NULL,NULL);
+  return 0;
+}
+
+/* Called exclusively by the signature-guarded winmm.dll early IAT gate,
+ * on the GAME's own first DirectDrawCreateEx call, outside the loader lock.
+ * A failed/unsupported game cannot proceed through an unsafe physical
+ * 640x480 mode: fail this DirectDraw request instead of forwarding it. */
+__declspec(dllexport) HRESULT WINAPI SpiderMan2k1Fix_DirectDrawGate(
+    GUID *guid,void **out,REFIID iid,IUnknown *outer,void *real_create) {
+  if(!real_create || !InitOnceExecuteOnce(&core_start_once,
+       core_initialize_once,NULL,NULL) ||
+     InterlockedCompareExchange(&core_start_success,0,0)!=1) {
+    log_line("DDRAW-STARTUP: ERROR patch initialization not ready; refusing unprotected DirectDraw startup");
+    return DDERR_UNSUPPORTED;
+  }
+  original_create=(CreateExFn)real_create;
+  log_line("DDRAW-STARTUP: initial hook and configuration ready before first DirectDrawCreateEx");
+  return hooked_create(guid,out,iid,outer);
+}
+
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID reserved) {
   (void)reserved;
   if(reason==DLL_PROCESS_ATTACH) {
     HANDLE t; DisableThreadLibraryCalls(instance);
-    t=CreateThread(NULL,0,initialize,NULL,0,NULL);
+    t=CreateThread(NULL,0,initialize_worker,NULL,0,NULL);
     if(t) CloseHandle(t);
   }
   return TRUE;
