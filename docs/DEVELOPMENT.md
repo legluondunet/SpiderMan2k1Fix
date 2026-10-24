@@ -2,6 +2,35 @@
 
 > Living technical reference for the **original Spider-Man (2001) PC executable**, prepared from the project's static analyses, instrumentation and documented runtime tests. This is not a complete decompilation or a replacement for the original binary. **Addresses are executable-specific.** Historical research documents may describe superseded experiments; this document separates observations from hypotheses.
 
+## Historical overview — the original 2001 PC release
+
+**Spider-Man** is a third-person, single-player action game originally developed by **Neversoft Entertainment** for the **Sony PlayStation (2000)**. The original Windows/PC conversion was developed by **LTI Gray Matter** (also credited as Gray Matter Interactive Studios) and **published by Activision Publishing, Inc.** in **September 2001** (US release documented as **19 September 2001**). The credits in the **actual 2001 PC instruction manual** independently assign original development to Neversoft, the PC version to LTI Gray Matter and publishing to Activision. The PC adaptation was built on the console game's **Apocalypse-engine heritage**, while adding higher resolutions, color-depth choices, PC-specific DirectDraw/Direct3D presentation, Bink media and configurable keyboard/joystick input.
+
+- [Original Spider-Man Windows instruction manual, pp. 8–11 and 26–29](https://www.bestoldgames.net/download/games/spider-man/spider-man-win-manual.pdf) — original developer/PC port/publisher credits and native Video Options menu.
+- [MobyGames release records for Spider-Man (2000/2001)](https://www.mobygames.com/game/4333/spider-man/releases/) — 19 September 2001 US Windows release; 2000 PlayStation original.
+- [GameSpot interview with PC port developer LTI Gray Matter](https://www.gamespot.com/articles/spider-man-preview/1100-2798115/) — explicitly identifies the PC team and explains intended higher resolutions/depths relative to PlayStation.
+- [PCGamingWiki Spider-Man (2001)](https://www.pcgamingwiki.com/wiki/Spider-Man_%282001%29) — Windows port identity, runtime limitations and later compatibility research.
+
+### PC hardware and software requirements around launch (2001)
+
+These figures describe the **unmodified retail game in its release period**, not modern requirements for the SpiderMan2k1Fix DLL. The **original PC manual does not reproduce the minimum-specification table**: its technical support page says those numbers are printed **on the game box**. The baseline below is therefore reconstructed from **contemporary/archival PC hardware specifications**, and not presented as a verbatim Activision box quotation.
+
+| Component | Historical minimum / supported configuration | Evidence and qualification |
+| --- | --- | --- |
+| Operating system | **Windows 95 / 98 / Me / 2000** | Historical Windows-platform support; **Windows XP was not required to launch in September 2001** |
+| Processor | **Pentium II 266 MHz** or comparable | Period minimum reported by 4Gamer's historical game listing and secondary PC game-specification archives. Some contemporary editorial “playable” configurations suggested **Pentium II 400 MHz**; do not confuse the two |
+| System RAM | **64 MB** | MobyGames Windows technical specs and contemporary Japanese/French game listings |
+| 3D video | **DirectX-compatible 3D accelerator, at least 4 MB video memory** | MobyGames lists a 4 MB graphics minimum and contemporary supported 3D chipsets, including 3dfx Voodoo, ATI Rage/Radeon, Nvidia RIVA TNT/GeForce and others |
+| DirectX | **DirectX 8.0 runtime minimum** | MobyGames Windows specification; game presentation code uses **DirectDraw 7 / Direct3D 7 interfaces**, which is not a contradiction |
+| Free disk space | Approximately **200 MB** for the minimum installation | Historical PC requirements (4Gamer and secondary archives); free space varies with installer choices and swap file |
+| Optical media | **CD-ROM drive, 4× or faster** | MobyGames technical specification and the original CD-based installer/manual |
+| Audio / controls | Sound device, keyboard and mouse; optional joystick/gamepad | Original PC manual's controls/options and historical specs |
+| Display | **Fullscreen display with a 3D accelerator**; standard low-resolution PC modes | The supported stock mode list and uncertainties are detailed in **§7.5**, distinct from screen images and later widescreen patches |
+
+**Historical “recommended/playable” estimates are not standardized:** [Gamekult's PC listing](https://www.gamekult.com/jeux/spider-man-3010000034.html?page=2) gives a playable Pentium II **400 MHz** and a recommended Pentium III **500 MHz**, both with 64 MB RAM and a 3D graphics card, whereas some other archives specify higher recommendations. No single verified original **manufacturer-issued recommended** configuration has been recovered, so these must not be mixed into the documented minimum as if they came from the same box.
+
+**Sources for reconstructed minimum:** [MobyGames Windows technical specifications](https://www.mobygames.com/game/4333/spider-man/specs/), [2001-era Japanese product requirements at 4Gamer](https://document.4gamer.net/games/003/G000307/), [historical PCGamingWiki low-end table](https://www.pcgamingwiki.com/wiki/List_of_low-end_games), [original PC manual](https://www.bestoldgames.net/download/games/spider-man/spider-man-win-manual.pdf). **Evidence limitations:** original box specifications and original CD `readme` have not been individually verified.
+
 ## 1. Supported binary identity
 
 | Property | Value |
@@ -228,8 +257,20 @@ The stock executable uses **DirectDraw 7** to create/present video surfaces and 
 | **Original menu's logical render mode** | The game issues a **640×480, 16-bpp** mode request for menus/early 2D. Its own menu/2D drawing space is 640×480. This was **observed directly at the DirectDraw boundary** and was a modern-monitor black-screen trigger under original exclusive handling |
 | **Original game configuration** | The retail `Spidey.cfg` factory record starts with **width 640, height 480, color depth 16** (little-endian DWORDs `0x00/0x04/0x08`); the game's native Display submenu also exposes changing resolution, color depth and brightness (§8.6–8.7) |
 | **Gameplay mode / depth** | Gameplay calls the same underlying mode-switching APIs with a game-configured logical width/height; our fix **forces 32-bpp** and skips physical mode switches. **Do not retroactively describe the retail game's 32-bpp support as its sole original bit depth** |
-| **Original resolution menu** | The native menu can select a mode, but **the complete original selectable-mode table or display-driver enumeration has not been recovered**. Only **640×480** is securely established as a default/legacy original request in these records. Historical 1400×1050, 1440×1080 or 1920×1080 displays under our compatibility layer are **not proof** of those modes appearing in the retail selection list |
+| **Original resolution menu** | The native menu adjusts resolution and bit depth. **640×480** (retail default) and **800×600** are explicitly catalogued for the original Windows release by MobyGames; its December 2001 Windows screenshots also show both dimensions. **1024×768** appears in later archived screenshots, but their dimensions alone do **not** prove original menu enumeration. WSGF reports **1280×1024 as the highest native resolution in its tested retail version**. The **complete code-level mode list** has not yet been recovered; availability may be graphics-driver-dependent. Original 1920×1080 widescreen is unsupported. [Sources](https://www.mobygames.com/game/4333/spider-man/specs/) · [2001-era capture](https://www.mobygames.com/game/4333/spider-man/screenshots/windows/21756/) · [retail WSGF report](https://www.wsgf.org/dr/spider-man/en) |
 | **UI aspect / pixels** | Menus and overlays use 4:3-origin coordinates, while videos include observed source frames **640×480**, **320×240** and **320×192**. Those are **media source/frame dimensions**, not selectable 3D display modes |
+
+**Resolutions reported for the stock Windows release (independent sources, not a newly recovered internal mode table):**
+
+| Width × height | Evidence | Confidence for original retail support |
+| --- | --- | --- |
+| **640×480** | Factory `Spidey.cfg` and the original **640×480×16** menu request; MobyGames Windows tech-spec list and [December 2001 Windows screenshot](https://www.mobygames.com/game/4333/spider-man/screenshots/windows/21747/) | **Confirmed default and native menu mode** |
+| **800×600** | [MobyGames Windows technical specifications](https://www.mobygames.com/game/4333/spider-man/specs/) list it explicitly; [December 2001 screenshots](https://www.mobygames.com/game/4333/spider-man/screenshots/windows/21756/) are recorded at 800×600 | **Documented stock Windows resolution**; selection path still untraced in the EXE |
+| **1024×768** | [Later Windows screenshots](https://www.mobygames.com/game/4333/spider-man/screenshots/windows/692922/) are recorded as 1024×768 | **Observed image size only**; the unpatched stock menu option is not independently verified |
+| **1280×1024** | [WSGF tested retail detailed report](https://www.wsgf.org/dr/spider-man/en) names it as the **highest native** and includes a corresponding gameplay screenshot | **Community-tested native maximum**, not a directly extracted native menu table |
+| **Widescreen 16:9, 16:10; above 1280×1024** | WSGF identifies native widescreen as unsupported; later tools modify EXE/configuration | **Not stock native support**; do not confuse `SpiderMan2k1Fix` settings with retail modes |
+
+**Do not conflate** 1280×1024 (actually **5:4**) with the design aspect ratio of 4:3 menus and artwork. The values 320×192 and 320×240 are Bink/movie source resolutions, **not display-mode options**. The manual's `Video Options` instructions confirm resolution/depth adjustment without specifying individual settings. The complete native mode-list or driver-enumeration instructions remain unknown.
 
 **Native exclusive-mode limitations:** the original engine assumes it owns the physical display's resolution/format and a flipping-primary presentation arrangement. Under modern monitors/Wine this produced an unsupported 640×480/16-bpp display, stretching of 4:3 art, and an exclusive-fullscreen Alt+Tab crash in prior observations. These are observed compatibility problems, **not evidence that Direct3D7 cannot draw higher-resolution imagery**. Rendering menu sprites at 640×480 and changing monitor mode are separate concerns.
 
