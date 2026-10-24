@@ -222,7 +222,7 @@ def test_red_spider_selector_trace_logs_stable_signature_without_moving_vertices
     assert 'selector_sample?"CURSOR-CANDIDATE":"ICON-REGION"' in probe
     assert "IDENTITY UNVERIFIED" in probe
     assert "texid=%p" in probe
-    assert "if(selector_sample || icon_region_sample)" in probe
+    assert "if(selector_sample || icon_region_sample || spider_pose_sample)" in probe
     assert "SPIDERMAN2K1FIX_SELECTOR_FIX" not in CORE
     assert "CURSOR-CANDIDATE" in DOC
     for forbidden in ("SetTexture(", "memcpy(copy", "SetRenderState(", "PostMessage(", "SendInput("):
@@ -248,4 +248,28 @@ def test_red_icon_region_diagnostic_is_bounded_read_only_and_not_cursor_fix():
     assert "SPIDERMAN2K1FIX_PAUSE_MENU_TRACE" in probe
     assert "ICON-REGION" in DOC
     for forbidden in ("SetTexture(", "memcpy(copy", "SetRenderState(", "SendInput(", "PostMessage("):
+        assert forbidden not in probe
+
+
+def test_f9_screenshot_arms_post_capture_menu_sprite_sampling():
+    probe=trace_block()
+    assert "static void pause_menu_trace_on_f9(void)" in probe
+    assert "pause_menu_trace_f9_events=0;" in probe
+    assert "seen>4" in probe
+    assert "pause_menu_trace_escape_edges,0,0)<1" in probe
+    assert "pause_menu_trace_action_armed_until,0,0" in probe
+    assert "pause_menu_trace_escape_until,flip+24" in probe
+    assert "PAUSE-NATIVE-PROBE: F9-SNAPSHOT" in probe
+    assert "spider_pose_candidate=1;" in probe
+    assert "spider_pose_sample=1;" in probe
+    assert "SPIDER-POSE" in probe
+    assert "(count==3 || count==4 || count==6)" in probe
+    assert "rhw>=5.0f && rhw<=25.0f" in probe
+    hook=CORE.split("static void __cdecl hooked_f9_png_only(void)",1)[1].split(
+        "static void install_f9_png_only_dispatch(",1)[0]
+    assert "if(queued)pause_menu_trace_on_f9();" in hook
+    assert hook.index("SpiderF9PNG_Queue(&desc,log_line)") < hook.index("pause_menu_trace_on_f9();")
+    assert "F9-SNAPSHOT" in DOC
+    assert "scrn0010.png" in DOC and "scrn0011.png" in DOC
+    for forbidden in ("SetTexture(", "SendInput(", "PostMessage(", "SetRenderState(", "memcpy(copy"):
         assert forbidden not in probe
