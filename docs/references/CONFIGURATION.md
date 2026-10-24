@@ -115,7 +115,7 @@ Available values:
 | `Auto` | For **newly generated INIs**: use the active Windows/Wine keyboard layout reported by `GetKeyboardLayout` and `MapVirtualKeyEx`. This is the new default for first-time installs. |
 | `AZERTY` | Force French AZERTY letter positions, including **A/Q, Z/W and M/;**, even when Wine does not report the expected layout. |
 | `QWERTY` | Force the standard US/QWERTY physical mapping of letter names. |
-| `Physical` | Keep the **historical positional meaning** of the project's original INI key names (also equivalent to QWERTY). This is the default when `KeyboardLayout` is **absent** from an existing INI, avoiding silent changes to older saved bindings. |
+| `Physical` or `Legacy` | Keep the **historical positional meaning** of the project's original INI key names (also equivalent to QWERTY). This is the default when `KeyboardLayout` is **absent** from an existing INI, avoiding silent changes to older saved bindings. |
 
 For example, `[Keyboard] Kick=M` becomes **DIK scan `0x27`** with `AZERTY`, versus **`0x32`** with `Physical`/QWERTY. AZERTY also maps `Z` to `0x11` (original `DIK_W`) and `W` to `0x2C` (original `DIK_Z`). The 11 action bindings remain stored as physical scan codes in the virtual 252-byte configuration; joystick controls are independent.
 
