@@ -7,6 +7,14 @@
   [1.0.0 release notes](RELEASE_NOTES_1.0.0.md) for the exact feature
   scope, compatibility limits, installation requirements and validation
   checklist. No public v1.0.0 tag or Release has been created yet.
+- Correct an actual **F9 PNG confirmation bug**: the inactive-toast
+  sentinel used the multicharacter wide constant `L'\\\\0'` instead
+  of the NUL wide character `L'\\0'`. This now reliably rejects
+  inactive toast paths, with a dedicated regression test.
+- Remove unused brightness/FOV variables, eliminate misleading
+  indentation, mark test-only keyboard-layout helpers `static inline`,
+  and silence a verified unused DirectDraw mode callback argument.
+  No game timing or DirectX/DirectInput/DirectSound algorithms changed.
 - Retire the old, **uncompiled** `pause_overlay.c/.h` and
   `pause_dim.c/.h` Win32 popup experiments, superseded by the
   tested DirectDraw-based `pause_surface.c`. No change to active
