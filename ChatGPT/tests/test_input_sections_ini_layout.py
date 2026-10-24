@@ -50,5 +50,8 @@ def test_read_write_and_auto_ini():
                   'decode_joystick_button', 'joystick_offsets[7]={0x50,0x54,0x58,0x5C,0x60,0x64,0x68}',
                   r'"\r\n[Keyboard]\r\n"', r'"\r\n[Joystick]\r\n"'):
         assert token in VIRTUAL, token
+    assert 'GetPrivateProfileStringA("Input","KeyboardLayout","Physical"' in VIRTUAL
+    assert 'load_keyboard_layout();' in VIRTUAL
+    assert VIRTUAL.index('load_keyboard_layout();') < VIRTUAL.index('load_keyboard();')
     assert '"Controls"' not in VIRTUAL
     assert 'GetPrivateProfileStringA("GameConfig",' not in VIRTUAL
