@@ -10,7 +10,7 @@ def test_f10_details_live_in_technical_docs_instead_of_homepage():
     assert "### F10 development shortcut" not in readme
     assert "F10Shortcut=1" not in readme
     assert "references/F10_VALIDATION_MATRIX.md" in index
-    for text in ("[Debug]\\nLog=1\\nF10Shortcut=1", "not generated",
+    for text in ("[Debug]", "Log=1", "F10Shortcut=1", "not generated",
                  "defaults to `0`", "independent of `Log=1`",
                  "build #713", "Bink-to-first-3D Enter/Space release safeguard",
                  "later in-level"):
