@@ -8,8 +8,8 @@
   scope, compatibility limits, installation requirements and validation
   checklist. No public v1.0.0 tag or Release has been created yet.
 - Correct an actual **F9 PNG confirmation bug**: the inactive-toast
-  sentinel used the multicharacter wide constant `L'\\\\0'` instead
-  of the NUL wide character `L'\\0'`. This now reliably rejects
+  sentinel used the multicharacter wide constant `L'\\0'` instead
+  of the NUL wide character `L'\0'`. This now reliably rejects
   inactive toast paths, with a dedicated regression test.
 - Remove unused brightness/FOV variables, eliminate misleading
   indentation, mark test-only keyboard-layout helpers `static inline`,
