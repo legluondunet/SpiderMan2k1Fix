@@ -50,6 +50,7 @@ def test_future_github_source_archives_exclude_development_docs():
     # which honors export-ignore from .gitattributes at the tagged commit.
     attrs = (ROOT / ".gitattributes").read_text()
     assert re.search(r"(?m)^/docs/\s+export-ignore\s*$", attrs)
+    assert re.search(r"(?m)^/ChatGPT/\s+export-ignore\s*$", attrs)
 
 
 def test_default_ini_is_still_generated_on_first_launch():
@@ -58,3 +59,25 @@ def test_default_ini_is_still_generated_on_first_launch():
     assert "SpiderCfg_EnsureDefaultIni(log_line);" in game
     assert "CREATE_NEW" in config
     assert (ROOT / "SpiderMan2k1Fix.ini").is_file()
+
+
+def test_ci_runs_relocated_developer_tests():
+    for workflow_file in (
+        "spiderman2k1fix-windows-x86.yml", "publish-v1.0.0.yml"
+    ):
+        workflow = (ROOT / ".github/workflows" / workflow_file).read_text()
+        assert "python3 -m pytest -q ChatGPT/tests" in workflow
+
+
+def test_dev_workspace_stays_out_of_binary_packages():
+    actions = (ROOT / ".github/workflows/spiderman2k1fix-windows-x86.yml").read_text()
+    release = (ROOT / ".github/workflows/publish-v1.0.0.yml").read_text()
+    artifact_stage = actions.split("      - name: Prepare game installation files", 1)[1].split(
+        "      - name: Upload Windows DLL artifact", 1
+    )[0]
+    release_stage = release.split("      - name: Package release and checksum", 1)[1].split(
+        "      - name: Publish official v1.0.0 release", 1
+    )[0]
+    assert "ChatGPT/" not in artifact_stage
+    assert "ChatGPT/" not in release_stage
+    assert (ROOT / "ChatGPT/README.md").is_file()

@@ -35,6 +35,10 @@ This directory contains technical references, historical investigation notes and
 - [Menu version display](tests/MENU_VERSION_TEST.md)
 - [Windows taskbar icon](tests/TASKBAR_ICON_TEST.md)
 
+## Developer-only tools and regression tests
+
+Development helpers are organized under [ChatGPT/](../ChatGPT/README.md), including automated tests, standalone debugging utilities and an external WinDbg prototype. They are not required to install or run the game.
+
 ## Repository root
 
 The root retains [README.md](../README.md), [CHANGELOG.md](../CHANGELOG.md) and [RELEASE_NOTES_v1.0.0.md](../RELEASE_NOTES_v1.0.0.md) as the principal public-facing documents.

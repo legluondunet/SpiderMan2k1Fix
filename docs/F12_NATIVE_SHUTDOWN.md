@@ -1669,7 +1669,7 @@ higher-level exit path have not been recovered**.
 
 The supported `SpideyPC.exe` is not distributed in the repository.
 To inspect the original game rather than guess x86 instructions,
-`tools/Inspect-BinkNativeCode.ps1` performs **read-only** static PE
+`ChatGPT/tools/Inspect-BinkNativeCode.ps1` performs **read-only** static PE
 parsing on the user's own SHA-256-verified executable. It produces a
 small textual hexadecimal report covering `0x00470700`–`0x00470A50`
 (video owner and expected `0x00470871` close path) and
@@ -1990,7 +1990,7 @@ without explicit user approval.
 
 ## 2026-10-23 — Windows 11 build #520: 3D F12 shutdown verified externally (PASS)
 
-User ran the repository's read-only `tools/Verify-F12QuickExit.ps1`
+User ran the repository's read-only `ChatGPT/tools/Verify-F12QuickExit.ps1`
 with `-ExpectedMode 3D` against the Windows x86 build #520. Exact
 PowerShell result:
 
@@ -2052,7 +2052,7 @@ For a follow-up Windows 11 direct-3D verification with explicit
 exit-code and Windows crash-event checks, run this read-only PowerShell
 watcher from the repository checkout (adjust `-GameExe` if needed):
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Verify-F12QuickExit.ps1 -GameExe .\SpideyPC.exe -ExpectedMode 3D
+powershell -NoProfile -ExecutionPolicy Bypass -File .\ChatGPT\tools\Verify-F12QuickExit.ps1 -GameExe .\SpideyPC.exe -ExpectedMode 3D
 ```
 It launches the game, waits for the user to press F12 during 3D, and
 does not inject input or kill the process. A PASS requires all of:
