@@ -261,23 +261,14 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
 }
 
 void SpiderPauseSurface_Init(void (*log_fn)(const char *)) {
-  char path[MAX_PATH],*slash;
-  DWORD n;
   pause_log=log_fn;
-  enabled_dim=1;enabled_grid=0;enabled_banner=1;opacity=50;
-  n=GetModuleFileNameA(NULL,path,sizeof(path));
-  if(n && n<sizeof(path) && (slash=strrchr(path,'\\')) &&
-     (size_t)(slash-path)+sizeof("SpiderMan2k1Fix.ini")<=sizeof(path)) {
-    strcpy(slash+1,"SpiderMan2k1Fix.ini");
-    enabled_dim=GetPrivateProfileIntA("Input","PauseDim",1,path)==1;
-    enabled_grid=GetPrivateProfileIntA("Input","PauseGrid",0,path)==1;
-    enabled_banner=GetPrivateProfileIntA("Input","PauseOverlay",1,path)==1;
-    opacity=GetPrivateProfileIntA("Input","PauseDimOpacity",50,path);
-  }
+  /* Fixed, always-on game-surface PAUSED UI; no user-facing INI controls. */
+  enabled_dim=1;
+  enabled_grid=0;
+  enabled_banner=1;
+  opacity=50;
   pause_load_game_icon();
-  if(opacity<0)opacity=0;
-  if(opacity>90)opacity=90;
-  if(pause_log)pause_log("FOCUS-SURFACE: DirectDraw backbuffer pause renderer ready (no overlay HWND)");
+  if(pause_log)pause_log("FOCUS-SURFACE: permanent 50% shade + native PAUSED banner (grid OFF)");
 }
 
 void SpiderPauseSurface_End(void) {
