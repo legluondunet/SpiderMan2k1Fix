@@ -49,7 +49,7 @@ def test_future_github_source_archives_exclude_development_docs():
     # GitHub auto-generated Source code (zip/tar.gz) releases use git archive,
     # which honors export-ignore from .gitattributes at the tagged commit.
     attrs = (ROOT / ".gitattributes").read_text()
-    assert re.search(r"(?m)^/docs/\\s+export-ignore\\s*$", attrs)
+    assert re.search(r"(?m)^/docs/\s+export-ignore\s*$", attrs)
 
 
 def test_default_ini_is_still_generated_on_first_launch():
