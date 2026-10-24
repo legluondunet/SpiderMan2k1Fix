@@ -26,7 +26,7 @@ def test_ghost_suppression_is_automatic_and_has_no_ini_option():
         assert banned not in code
 
 def test_only_supported_game_and_validated_ini_can_request_suppression():
-    start=CORE.index("static DWORD WINAPI initialize(")
+    start=CORE.index("static DWORD initialize_body(")
     boot=CORE[start:]
     assert boot.index("supported_exe()") < boot.index("SpiderCfg_ValidateCurrentIni(log_line)")
     assert boot.index("SpiderCfg_ValidateCurrentIni(log_line)") < boot.index("pause_apply_windows_ghosting_option()")
