@@ -25,28 +25,32 @@ def to_raw(pct, maximum):
 def test_generated_example_factory_consistency():
     assert len(bytes_data) == 252
     assert bytes.fromhex(config['Internal']['RawHex']) == bytes_data
-    assert set(config.sections()) == {'Debug','Display','HUD','Input','Audio','Keyboard','Joystick','Internal'}
+    assert set(config.sections()) == {'Debug','Display','Input','Audio','Keyboard','Joystick','Internal'}
     assert config['Debug']['Log'] == '0'
     for key in ('F10Shortcut','F10TestMode','F10Auto3DScripts','F10GameplayExit'):
         assert not config.has_option('Debug',key)
         assert f'"{key}=0\\r\\n"' not in virtual
         assert f'{key}=' not in (ROOT / 'ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini').read_text()
-    assert config['Debug']['F10VerboseTrace'] == '0'
-    assert '"F10VerboseTrace=0\\r\\n"' in virtual
+    assert not config.has_option('Debug','F10VerboseTrace')
+    assert '"F10VerboseTrace=0\\r\\n"' not in virtual
     assert not config.has_section('System')
     assert not config.has_option('Internal','VirtualSpideyCfg')
     assert not config.has_option('Internal','BootstrapGameConfig')
-    assert config['Display']['Resolution'] == 'Auto'
+    assert not config.has_option('Display','Resolution')
+    assert not config.has_section('HUD')
     assert config['Display']['Brightness'] == '4'
     assert config['Display']['FPSLimit'] == '30'
     assert config['Input']['KeyboardLayout'] == 'Auto'
     assert 'KeyboardLayout=Auto' in virtual
     assert "KeyboardLayout=" not in (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text()
-    assert config['Input']['DirectInputReacquire'] == '0'
-    assert config['Input']['PauseOnFocusLoss'] == '0'
+    assert not config.has_option('Input','DirectInputReacquire')
+    assert not config.has_option('Input','PauseOnFocusLoss')
+    assert list(config['Input']) == ['keyboardlayout']
     assert 'PauseKey' not in config['Input']  # Any-key resume is fixed, not selectable
     assert not config.has_option('Input','ExperimentalAltTabReacquire')
     assert not config.has_option('Input','ExperimentalDI8CreateDeviceTrace')
+    assert config['Display']['FPSLimit'] == '30'
+    assert '"FPSLimit=30\\r\\n"' in virtual
     assert config['Audio']['Stereo'] == '1'
     for key,off,maxval in [('MusicSFXLevel',236,16383),('VoiceLevel',244,255),('MovieLevel',240,255)]:
         raw = struct.unpack_from('<I',bytes_data,off)[0]
