@@ -1676,6 +1676,93 @@ static const void *maybe_correct_native_pause43(void *device,
   }
   return copy;
 }
+/* Native ESC translucent geometric motif, Wine #777 diagnostic.
+ * Pixel evidence: large orange/blue translucent pattern is absent in
+ * normal gameplay (F9 scrn0004), appears in ESC (scrn0005) and native
+ * QUIT confirmation (scrn0006). Unlike projected world triangles at
+ * caller 0x00103389 (varying Z/RHW and textured), these quads have:
+ * caller 0x00102C72; fan/FVF 0x144/4 verts; *untextured*;
+ * Z=0.00146, RHW=9.988, vertex diffuse ALPHA=0x80.
+ * The same geometry recurs in ESC and confirmation frames before the
+ * purple ribbon, so cannot use the ribbon's current-frame marker.
+ * This is an explicit experimental opt-in at 1920x1080 ONLY.
+ */
+static volatile LONG native_motif43_enabled=0;
+static volatile LONG native_motif43_hits=0;
+static void native_motif43_init(void) {
+  char value[4]={0};
+  if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_NATIVE_MOTIF_43",
+      value,sizeof(value))!=1 || value[0]!='1') return;
+  if(InterlockedCompareExchange(&native_pause43_enabled,0,0)!=1) {
+    log_line("NATIVE-MOTIF-43: disabled; requires SPIDERMAN2K1FIX_NATIVE_ESC_43=1");
+    return;
+  }
+  InterlockedExchange(&native_motif43_enabled,1);
+  log_line("NATIVE-MOTIF-43: EXPERIMENTAL exact untextured alpha=0x80 UI quadrilaterals, Z=0.00146 RHW=9.988, X 0.75, 1920x1080 ONLY");
+}
+static const void *maybe_correct_native_motif43(void *device,
+    D3DPRIMITIVETYPE type,DWORD fvf,const void *source,DWORD count,
+    void *ret,SpiderMenuVertex *copy) {
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  IDirectDrawSurface7 *tex=NULL;
+  DWORD rva=0,color=0;
+  LONG hit;
+  float l,r,t,b,center;
+  unsigned i;
+  if(InterlockedCompareExchange(&native_motif43_enabled,0,0)!=1 ||
+     !source || !copy || !device ||
+     desktop_w!=1920 || desktop_h!=1080 ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4 ||
+     !geom_rva(ret,&rva) || rva!=0x00102C72UL ||
+     fabsf(v[0].z-0.00146f)>0.00004f ||
+     fabsf(v[0].rhw-9.988f)>0.060f) return source;
+  memcpy(&color,(const BYTE*)source+16,sizeof(color));
+  if((color&0xFF000000UL)!=0x80000000UL)return source;
+  l=r=v[0].x;t=b=v[0].y;
+  for(i=1;i<4;i++) {
+    DWORD vertex_color=0;
+    memcpy(&vertex_color,(const BYTE*)source+(SIZE_T)i*28u+16u,
+           sizeof(vertex_color));
+    if((vertex_color&0xFF000000UL)!=0x80000000UL ||
+       fabsf(v[i].z-v[0].z)>0.00005f ||
+       fabsf(v[i].rhw-v[0].rhw)>0.080f)return source;
+    if(v[i].x<l)l=v[i].x;
+    if(v[i].x>r)r=v[i].x;
+    if(v[i].y<t)t=v[i].y;
+    if(v[i].y>b)b=v[i].y;
+  }
+  /* Do not modify full-frame darkening or thin HUD/line overlays.
+   * Bounds may extend beyond the viewport for polygons at screen edges,
+   * but should have meaningful visible area. */
+  if(r-l<16.0f || b-t<16.0f ||
+     (r-l)>(float)desktop_w*0.80f ||
+     (b-t)>(float)desktop_h*0.86f ||
+     r<0.0f || l>(float)desktop_w ||
+     b<0.0f || t>(float)desktop_h)return source;
+  /* A stale texture binding on any pass MUST NOT be treated as an
+   * untextured motif. COM-owned reference must be released. */
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex))
+     && tex) {
+    IDirectDrawSurface7_Release(tex);
+    return source;
+  }
+  center=(float)desktop_w*0.5f;
+  memcpy(copy,v,4*sizeof(*copy));
+  for(i=0;i<4;i++)
+    copy[i].x=center+(v[i].x-center)*0.75f;
+  hit=InterlockedIncrement(&native_motif43_hits);
+  if(hit<=12 || hit%800==0) {
+    char line[260];
+    snprintf(line,sizeof(line),
+      "NATIVE-MOTIF-43: QUAD-MATCH hit=%ld x=(%.1f..%.1f) y=(%.1f..%.1f) diffuse=%08lX z=%.5f rhw=%.3f [X-ONLY; NO WORLD OR FULLSCREEN]",
+      (long)hit,(double)l,(double)r,(double)t,(double)b,
+      (unsigned long)color,(double)v[0].z,(double)v[0].rhw);
+    log_line(line);
+  }
+  return copy;
+}
 /* Native gameplay ESC red selector: SHA-verified 1920x1080 Wine #770.
  * A 32x32 texture in an exact screen quad (96x72), z=0, rhw=27.519,
  * diffuse white, native D3D7 caller 0x00102C72 and validated purple
@@ -1790,10 +1877,14 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       v=maybe_correct_adaptive_hud(self,type,fvf,verts,count,
                                    __builtin_return_address(0),small);
-    /* The cursor is gated by a positive native stack owner, not by
-     * font texture dimensions. Existing ESC ribbon/text behavior
-     * stays unchanged in all other draws.
-     */
+    /* Native translucent comic backdrop is separate from the
+     * panel, cursor, text and world. Keep the correction independent,
+     * opt-in, and only on its verified alpha/geometry signature. */
+    if(v==verts && count==4)
+      v=maybe_correct_native_motif43(self,type,fvf,verts,count,
+                                    __builtin_return_address(0),small);
+    /* Native red selector uses exact texture and quad signature.
+     * The older Wine stack-owner hypothesis has been retired. */
     if(v==verts && count==4)
       v=maybe_correct_native_cursor43(self,type,fvf,verts,count,
                                       __builtin_return_address(0),small);
@@ -3424,7 +3515,8 @@ static DWORD WINAPI initialize(LPVOID unused) {
   SpiderCfg_ValidateCurrentIni(log_line);
   pause_menu_trace_init();
   native_pause43_init(); /* Native ESC visual correction, explicit opt-in. */
-  native_cursor43_init(); /* Stack-verified mouse-cursor opt-in; off by default. */
+  native_cursor43_init();
+  native_motif43_init(); /* Stack-verified mouse-cursor opt-in; off by default. */
   SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
