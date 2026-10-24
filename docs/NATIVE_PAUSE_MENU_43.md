@@ -54,7 +54,7 @@ of a new render batch **correlated with ESC**, not yet proof of which
 quads are the native PAUSED ribbon/text/selector.
 
 To test that hypothesis, the next diagnostic logs **every candidate
-from draw 3200 through draw 3400**, along with the first eight and
+from draw 3140 through draw 3400**, along with the first eight and
 every 64th candidate elsewhere, in frames 1, 5, 12 and 20. This
 catches the last 48 candidates while preserving the same bounded
 window, disabled-by-default opt-in and strict read-only operation.
@@ -87,7 +87,7 @@ The next probe remains strictly read-only and adds only:
   not assertions that QUIT or the confirmation menu is open.
 - A bounded (maximum twelve per sampled frame) search for wide
   screen-space middle-of-screen quads, to help identify the ribbon.
-- The same first 8, every 64th and indices 3200..3400, sampled on
+- The same first 8, every 64th and indices 3140..3400, sampled on
   frames 1/5/12/20. No drawing/texture/input modification.
 
 The first safe step is therefore read-only identification of
@@ -95,6 +95,50 @@ the panel/text/icon signatures: original caller RVAs, D3D primitive
 types, FVF, source vertex rectangles, depth/RHW and bound texture
 sizes. A follow-up change will add tightly gated 4:3 mapping only
 to proven ESC pause components, after examining the logs.
+
+## Experimental centered 4:3 mapping (build after #741)
+
+Build #741's 24 October Wine log `SpiderMan2k1Fix(20261024-064205).log`
+confirmed both native screens in 1920x1080 Auto:
+
+- ESC at Flip 245: native purple ribbon is the **untextured quad
+  #3166** at x=(-7.5..1923.8), y=(400.5..675.0), z=0.00122,
+  RHW=11.176. Text at y=436 / 508 / 580 is the main choice group.
+- Enter at Flip 383: the same purple quad #3166 at y=(432..634.5),
+  followed by REALLY QUIT? text at y=283 and NO / YES at y=468 / 540.
+- PAUSED remains at y=171. The instruction overlay is at y=877 and
+  must never be transformed by the ESC menu correction.
+- There is a **96x72** central textured sprite around x=(911..1007),
+  y=(504..576) in both screens. Its function is not yet verified,
+  so we **do not transform it**. In particular, do not assume this
+  is the moving red spider selector merely because of its size.
+
+An opt-in **PAUSE-NATIVE-43** experiment now maps only the positively
+identified ribbon and glyphs to a centered 4:3 width, preserving Y,
+Z, RHW, colors and UVs. It arms only after the ribbon's strict
+screen rectangle, x86 caller RVA and Z/RHW signature are observed in
+the **same Flip**. Glyphs additionally require the observed font
+texture dimensions and depth. The confirmed HUD and scene are not
+subject to this transform.
+
+This is **OFF by default**, not an INI setting. To test together
+with the passive diagnostic, use:
+
+```bash
+SPIDERMAN2K1FIX_NATIVE_ESC_43=1 SPIDERMAN2K1FIX_PAUSE_MENU_TRACE=1 WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe
+```
+
+Leave `[Debug] Log=1` in your existing INI. Check both the
+CONTINUE / RESTART LEVEL / QUIT and REALLY QUIT? / NO / YES screens,
+capture screenshots of each with F9, and save the log. At 1920x1080
+the target correction is `x' = 960 + 0.75 * (x-960)`. There should be
+**no** change to the background 3D world, bottom instructions, compass,
+or gameplay health UI. This is a *visual verification build*, not
+a validated fix.
+
+To identify the red spider selector, the passive probe now samples
+draws **3140 through 3400** (previously 3140..3400). Do not turn on
+unidentified selector transforms until a distinct signature is proven.
 
 ## Test the passive diagnostic (Wine or native Windows)
 
@@ -138,7 +182,7 @@ first 20 frames of each window and logs `FRAME-END candidates=` for
 each frame. An Enter/Space edge is not proof that a menu was active.
 It records bounded details at **sample frames 1, 5, 12 and 20**:
 the first eight candidates, every 64th candidate, **and every
-candidate from draw 3200 through draw 3400**, up to 8192.
+candidate from draw 3140 through draw 3400**, up to 8192.
 In addition, it reports up to twelve candidate **wide** screen-space
 quads in the middle of each sampled frame, even outside the numbered
 range. These are provisional panel candidates only. This reveals
