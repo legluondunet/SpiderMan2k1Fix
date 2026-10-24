@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased — permanent fixes and compact player INI (PR #46)
+## Unreleased — native ESC menu 16:10 geometry (PR #47)
 
 - Fix the native 3D ESC pause/quit overlay at **1920×1200 (16:10)**: extend the 16:9-only motif and red selector guards to 16:10, compute 4:3 motif scaling and side-gutter clipping from the physical monitor dimensions, and preserve the exact cursor texture/depth/owner signature with square screen-space proportions. Fullscreen borderless, 3D/HUD, Bink and classic 4:3 paths are unchanged. Windows and Wine tests reported successful with no regressions observed by the maintainer (PR #47); the captured Windows 16:10 menu/QUIT screenshots and matching native D3D7 logs support the geometry correction.
+
+## Previous — permanent fixes and compact player INI (PR #46)
 
 - Fix the corrupt-INI startup 640×480 regression: remove modal, topmost INI repair/failure MessageBox calls; initialize the patch once on the first DirectDrawCreateEx via an early signature-guarded winmm proxy IAT gate and fail closed if that initialization cannot complete. Preserve native borderless monitor sizing and original INI safeguards. **Validated under Linux/Wine on 2026-10-24:** invalid INI repaired (8 errors, 3 warnings, 29 known settings recovered) into a single `.ini.old` backup, early DirectDraw gate confirmed, and original 640×480×16 request intercepted into 1920×1080 borderless output. Native Windows 11 and repeated-backup replacement remain unverified. See [technical trace and startup/repair design](docs/references/STARTUP_INI_RECOVERY_TECHNICAL.md).
 - Capture the selected game window's monitor resolution as early as the DirectDraw creation hook, before the original game reads virtual `Spidey.cfg`, to avoid using the primary monitor's dimensions on multi-monitor setups. Reconfirm at `SetCooperativeLevel`, never forward the original exclusive display-mode request, and retain physical desktop size for both `Auto` and logical `4:3` display policies.
