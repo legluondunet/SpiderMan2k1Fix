@@ -165,7 +165,7 @@ def test_native_esc_children_are_permanent_but_depend_on_validated_hud():
     hud=CORE.split("static void install_player_hud(",1)[1].split(
         "static DWORD WINAPI initialize(",1)[0]
     assert 'GetPrivateProfileIntA("HUD","HUDWidescreenFix"' not in hud
-    assert "if (!SpiderHudWidescreen_Install(exe_verified,TRUE))" in hud
+    assert "if(!SpiderHudWidescreen_Install(exe_verified,TRUE))" in hud
     startup=CORE.split("static DWORD WINAPI initialize(",1)[1].split(
         "BOOL WINAPI DllMain(",1)[0]
     assert startup.index("install_player_hud(TRUE);") < startup.index("native_pause43_init();")
