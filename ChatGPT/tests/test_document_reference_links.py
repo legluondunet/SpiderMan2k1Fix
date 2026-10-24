@@ -93,4 +93,6 @@ def test_short_homepage_delegates_to_detailed_documentation():
     assert "docs/references/CONFIGURATION.md" in homepage
     assert "docs/references/F9_PNG_CAPTURE.md" in homepage
     assert "docs/DEVELOPMENT.md#7-display-and-rendering-research" in homepage
-    assert "docs/references/NATIVE_PAUSE_MENU_43.md" in homepage
+    assert "### Native ESC menu in widescreen" not in homepage
+    docs_index = (ROOT / "docs/README.md").read_text(encoding="utf-8")
+    assert "references/NATIVE_PAUSE_MENU_43.md" in docs_index
