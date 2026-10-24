@@ -1763,6 +1763,115 @@ static const void *maybe_correct_native_motif43(void *device,
   }
   return copy;
 }
+/* Restore only the screen-wide pause tint in the two 240px gutters.
+ * Build #780 compressed ALL native alpha=0x80 UI quads with the orange/
+ * blue motif, including the original scene dimming. Pixel comparison of
+ * scrn0005(3) vs scrn0007(2) and scrn0004(3) proves exactly:
+ * x=0..239 and x=1680..1919 are no longer tinted, while center is.
+ *
+ * Replay the ORIGINAL native 2D quads, clipped STRICTLY to the gutters,
+ * using the game's own color/blend state. Then draw the 4:3-corrected
+ * motif in the center. Replaying is safer than guessing a purple ARGB
+ * layer: the native tint is not a fixed additive color.
+ *
+ * Split each triangle fan into its original two triangles BEFORE clipping.
+ * The original vertex order, Z, RHW, diffuse gradient, UV and state are
+ * preserved. Never affect native gameplay world geometry, HUD, cursor,
+ * purple ribbon or menu labels.
+ */
+static volatile LONG native_motif43_gutter_hits=0;
+static SpiderMenuVertex native_motif43_interpolate(
+    const SpiderMenuVertex *a,const SpiderMenuVertex *b,float t,float x) {
+  SpiderMenuVertex r=*a;
+  DWORD ca=0,cb=0,c=0;
+  float uv_a=0,uv_b=0,uv=0;
+  unsigned j;
+  if(t<0.0f)t=0.0f;
+  if(t>1.0f)t=1.0f;
+  r.x=x;
+  r.y=a->y+(b->y-a->y)*t;
+  r.z=a->z+(b->z-a->z)*t;
+  r.rhw=a->rhw+(b->rhw-a->rhw)*t;
+  memcpy(&ca,(const BYTE*)a+16u,sizeof(ca));
+  memcpy(&cb,(const BYTE*)b+16u,sizeof(cb));
+  for(j=0;j<4;j++) {
+    unsigned a8=(ca>>(j*8u))&255u,b8=(cb>>(j*8u))&255u;
+    unsigned mixed=(unsigned)((float)a8+((float)b8-(float)a8)*t+0.5f);
+    if(mixed>255u)mixed=255u;
+    c|=(DWORD)(mixed<<(j*8u));
+  }
+  memcpy((BYTE*)&r+16u,&c,sizeof(c));
+  for(j=0;j<2;j++) {
+    size_t offs=20u+j*4u;
+    memcpy(&uv_a,(const BYTE*)a+offs,sizeof(uv_a));
+    memcpy(&uv_b,(const BYTE*)b+offs,sizeof(uv_b));
+    uv=uv_a+(uv_b-uv_a)*t;
+    memcpy((BYTE*)&r+offs,&uv,sizeof(uv));
+  }
+  return r;
+}
+static unsigned native_motif43_clip_triangle(
+    const SpiderMenuVertex tri[3],float edge,int keep_left,
+    SpiderMenuVertex out[5]) {
+  unsigned i,n=0;
+  for(i=0;i<3;i++) {
+    const SpiderMenuVertex *a=&tri[(i+2u)%3u],*b=&tri[i];
+    int inside_a=keep_left ? a->x<=edge : a->x>=edge;
+    int inside_b=keep_left ? b->x<=edge : b->x>=edge;
+    if(inside_a!=inside_b) {
+      float denom=b->x-a->x;
+      if(fabsf(denom)<0.00001f)return 0u;
+      if(n>=5u)return 0u;
+      out[n++]=native_motif43_interpolate(a,b,(edge-a->x)/denom,edge);
+    }
+    if(inside_b) {
+      if(n>=5u)return 0u;
+      out[n++]=*b;
+    }
+  }
+  return n;
+}
+static void native_motif43_restore_gutters(void *device,
+    const SpiderMenuVertex *original,DWORD flags) {
+  const float left_edge=240.0f,right_edge=1680.0f;
+  float left=original[0].x,right=original[0].x;
+  SpiderMenuVertex tri[3],out[5];
+  unsigned i,j,n;
+  LONG hit;
+  int gutter,any=0;
+  if(!original || !device)return;
+  for(i=1;i<4;i++) {
+    if(original[i].x<left)left=original[i].x;
+    if(original[i].x>right)right=original[i].x;
+  }
+  if(left>=left_edge && right<=right_edge)return;
+  for(i=0;i<2;i++) {
+    tri[0]=original[0];tri[1]=original[i+1u];tri[2]=original[i+2u];
+    for(gutter=0;gutter<2;gutter++) {
+      float bound=(gutter==0)?left_edge:right_edge;
+      if((gutter==0 && left>=bound) ||
+         (gutter==1 && right<=bound)) continue;
+      n=native_motif43_clip_triangle(tri,bound,gutter==0,out);
+      if(n>=3u) {
+        /* Direct call bypasses our hook, preserves original render state.
+         * A clipped triangle fan is at most four vertices. */
+        original_draw_primitive(device,D3DPT_TRIANGLEFAN,0x144UL,
+                               (LPVOID)out,(DWORD)n,flags);
+        any=1;
+      }
+    }
+  }
+  if(any) {
+    hit=InterlockedIncrement(&native_motif43_gutter_hits);
+    if(hit<=8 || hit%10000==0) {
+      char line[240];
+      snprintf(line,sizeof(line),
+        "NATIVE-MOTIF-43: GUTTER-REPLAY hit=%ld source-x=(%.1f..%.1f) clip=(0..240,1680..1920) [ORIGINAL COLOR/BLEND; CENTER UNTOUCHED]",
+        (long)hit,(double)left,(double)right);
+      log_line(line);
+    }
+  }
+}
 /* Native gameplay ESC red selector: SHA-verified 1920x1080 Wine #770.
  * A 32x32 texture in an exact screen quad (96x72), z=0, rhw=27.519,
  * diffuse white, native D3D7 caller 0x00102C72 and validated purple
@@ -1877,12 +1986,16 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       v=maybe_correct_adaptive_hud(self,type,fvf,verts,count,
                                    __builtin_return_address(0),small);
-    /* Native translucent comic backdrop is separate from the
-     * panel, cursor, text and world. Keep the correction independent,
-     * opt-in, and only on its verified alpha/geometry signature. */
-    if(v==verts && count==4)
+    /* Correct the native translucent motif. Where these same alpha
+     * primitives previously tinted the entire 16:9 frame, replay the
+     * original triangles ONLY into the two outer 240px gutters first.
+     * Central motif and original banner/cursor stay unchanged. */
+    if(v==verts && count==4) {
       v=maybe_correct_native_motif43(self,type,fvf,verts,count,
                                     __builtin_return_address(0),small);
+      if(v!=verts)
+        native_motif43_restore_gutters(self,(const SpiderMenuVertex*)verts,flags);
+    }
     /* Native red selector uses exact texture and quad signature.
      * The older Wine stack-owner hypothesis has been retired. */
     if(v==verts && count==4)
