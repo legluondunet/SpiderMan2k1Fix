@@ -19,7 +19,8 @@ is:
 
 Do **not** alter Y, z, RHW, texture UVs, color or game-owned vertex
 memory. In original 4:3 output the mapping is identity. The formula
-is a *future* proposal, not an already enabled game patch.
+is implemented only in an explicit **experimental opt-in**; it is not
+yet a visually validated game patch.
 
 ## Why trace first?
 
@@ -113,13 +114,15 @@ confirmed both native screens in 1920x1080 Auto:
   so we **do not transform it**. In particular, do not assume this
   is the moving red spider selector merely because of its size.
 
-An opt-in **PAUSE-NATIVE-43** experiment now maps only the positively
-identified ribbon and glyphs to a centered 4:3 width, preserving Y,
+An opt-in **PAUSE-NATIVE-43** experiment maps the positively
+identified ribbon, 8x8-textured borders, and glyphs to a centered 4:3 width, preserving Y,
 Z, RHW, colors and UVs. It arms only after the ribbon's strict
 screen rectangle, x86 caller RVA and Z/RHW signature are observed in
-the **same Flip**. Glyphs additionally require the observed font
-texture dimensions and depth. The confirmed HUD and scene are not
-subject to this transform.
+the **same Flip**. The border pieces additionally require an exact
+8x8 texture, matching Z/RHW, and geometry relative to the recorded
+banner bounds. Glyphs separately require the observed font texture
+dimensions and depth. The confirmed HUD and scene are not subject
+to this transform.
 
 This is **OFF by default**, not an INI setting. To test together
 with the passive diagnostic, use:
@@ -137,8 +140,40 @@ or gameplay health UI. This is a *visual verification build*, not
 a validated fix.
 
 To identify the red spider selector, the passive probe now samples
-draws **3140 through 3400** (previously 3140..3400). Do not turn on
+draws **3140 through 3400** (originally 3200..3400). Do not turn on
 unidentified selector transforms until a distinct signature is proven.
+
+### Next experimental border/selector test (after build #745)
+
+Build #745 screenshots of both ESC screens show the large violet ribbon and
+text now occupy the centered 4:3 horizontal reference, while the thin
+top/bottom lines and the small end-caps are still full-width. Its Wine log
+`SpiderMan2k1Fix(20261024-065333).log` identifies all eight
+**8x8-textured** border quads just after the untextured ribbon:
+
+- top line: draw #3176, x=0..1920, y=396..414
+- bottom line: draw #3174, x=0..1920, y=675..693
+- left/right vertical strips: draws #3178 and #3173,
+  x=-30..22.5 and x=1916.2..1968.8
+- four corners: draws #3175, #3177, #3179 and #3180
+
+The bounds above are from **one sampled frame** at 1920x1080. They
+change with the ribbon animation and cannot be fixed pixel constants.
+The next experimental correction applies the same center-based
+X transform to these eight primitives only when an already verified
+ribbon precedes them in the same Flip, with 8x8 texture, consistent
+depth and geometric correspondence to that ribbon. It does not modify
+vertical coordinates or make the 8x8 textures blurry through scaling
+the source images; the GPU only changes the drawn X coordinates.
+
+**The moving red spider selector is still unclassified and unmodified.**
+The visible center 96x72 quad at x=911..1007 is not proof of the
+selector's identity. To localize the selector in the next log,
+the passive diagnostic re-arms a maximum of six additional 24-Flip
+windows per ESC after *UP, DOWN, ENTER or SPACE* physical key edges,
+within the same bounded 1800-Flip post-ESC period. All sampling is
+read-only and opt-in, without virtual key injection or native menu
+state modification.
 
 ## Test the passive diagnostic (Wine or native Windows)
 
@@ -160,13 +195,16 @@ variable before launching the game through the same environment).
    physical key-down observable at a Flip. Let the game's original native
    CONTINUE / RESTART LEVEL / QUIT menu open; do not use F10 for this step.
 3. Hold the CONTINUE / RESTART LEVEL / QUIT menu for two seconds.
+   Press **DOWN** once, release it, then select another row with
+   **DOWN**. Leave each new selection visible for a second.
    Move to QUIT and **hold Enter for half a second** to open the
    REALLY QUIT? / NO / YES confirmation menu; leave the confirmation
    visible for two seconds. Alternatively, hold Space if that is
    your actual confirmation key. Do not click YES to end the session
    before the samples have been recorded.
-4. Optionally move the spider selector from NO to YES without confirming,
-   then return to NO and choose it to go back to gameplay.
+4. Press **DOWN** to move the red selector from NO to YES without
+   confirming, then **UP** to return to NO. Leave each selection
+   visible for a second, then choose NO to go back to gameplay.
 5. Quit normally and preserve `SpiderMan2k1Fix*.log`.
 6. Search for `PAUSE-NATIVE-PROBE: ESC-EDGE`, `KEY-EDGE`,
    `BEGIN`, `SAMPLE-FRAME`, `FRAME-END`, `caller_rva=` and `END`.
@@ -175,11 +213,11 @@ variable before launching the game through the same environment).
    candidate draws do not, the chosen D3D7 path/filter may be incorrect.
 
 The diagnostic observes a maximum **24-Flip window** after each of
-up to four ESC edges, plus at most **three** further short windows
-per ESC from physically observed Enter/Space key-down edges occurring
+up to four ESC edges, plus at most **six** further short windows
+per ESC from physically observed Enter/Space/Up/Down key-down edges occurring
 within 1800 Flips. It counts eligible geometry candidates in the
 first 20 frames of each window and logs `FRAME-END candidates=` for
-each frame. An Enter/Space edge is not proof that a menu was active.
+each frame. These key edges are not proof that a menu was active.
 It records bounded details at **sample frames 1, 5, 12 and 20**:
 the first eight candidates, every 64th candidate, **and every
 candidate from draw 3140 through draw 3400**, up to 8192.
