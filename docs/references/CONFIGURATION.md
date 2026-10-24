@@ -174,17 +174,44 @@ With `Auto` and a French layout, `M` resolves to physical DirectInput `0x27` rat
 
 **CHEATS and keyboard-menu label correction (validated on Windows 11 and Linux/Wine with French AZERTY):** For the supported SHA-verified 2001 executable, the fix verifies the original `Shell_InputName` → `DXINPUT_GetKeyName` call path and its QWERTY name table. In `Auto`, a valid non-QWERTY layout remaps the native name pointers in **process memory**, reusing original game strings. Displaced US letter positions receive the corresponding punctuation name where possible, otherwise `KEY`, rather than a duplicate CHEATS letter. The game's DirectInput event stream and executable on disk remain unchanged. Detection requires the **active system keyboard layout** to be accurately reported; not every locale or punctuation mapping has been runtime-tested. See [the detailed technical implementation, Windows API calls, verified addresses and failure guards](KEYBOARD_LAYOUT_TECHNICAL.md).
 
-## Optional Windows focus diagnostics
+## Permanent focus-loss pause and audio synchronization
 
-**Windows 11 class=Ghost false focus-loss experiment (PR #11):** If the game repeatedly pauses without Alt+Tab after about five to six seconds, capture `SpiderMan2k1Fix.log`: repeated `FOCUS-PAUSE-OWNER: ... class=Ghost` lines indicate Windows is replacing an apparently unresponsive game window with a ghost surrogate. `[Input] DisableWindowsGhosting=1` (default **0**) requests Microsoft's `DisableProcessWindowsGhosting` API at startup to prevent that replacement and test whether the repeated false pauses stop. **Restart required; it applies to the whole game process until exit and suppresses Windows' normal ability to manage a hung application via a ghost window. It does not fix a truly hung game or change the Alt+Tab pause/input behavior.** Do not enable by default before native Windows testing. See [diagnostic procedure](diagnostics/focus/UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md).
+The supported executable initializes the **focus-loss pause**, **safe
+DirectInput reacquire retry**, **cursor restore**, **Bink stream pause** and
+**game-owned secondary DirectSound voice pause** automatically. The retired
+INI keys `PauseOnFocusLoss`, `DirectInputReacquire`,
+`RestoreCursorOnFocusLoss`, `PauseBinkOnFocusLoss` and
+`PauseDirectSoundOnFocusLoss` are **not user switches**. Removing them
+from the generated file does not disable these features.
 
-For obsolete designs, see the [historical focus-pause UI archive](PAUSE_UI_HISTORY.md). **Those older prototypes are not configuration instructions for the current build.**
+At the original DirectDraw Flip boundary, confirmed external focus loss
+latches pause; its native PAUSED ribbon uses the optional 60%-by-default
+shading described above. A complete press/release of any key after
+returning to the game resumes it. The original game's input Acquire/retry
+branch receives a signature-guarded native correction on or after
+**Flip #120**. The previous invasive DirectInput COM/vtable interception
+remains disabled.
 
-## Bink music and DirectSound focus pausing
+The permanent Bink handler calls the game's own `BinkPause` for
+cinematics and Bink-based music. The game-owned secondary DirectSound
+voice handler preserves playback positions and does not pause the primary
+sound buffer. If no voices are playing, the log may correctly show
+`occupied=0` and no stop/resume operations, without indicating failure.
+See the [historical focus-audio tests](diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md)
+and the [current technical startup/runtime trace](STARTUP_INI_RECOVERY_TECHNICAL.md).
 
-**Synchronized audio and video focus pause (PR #9):** The separately enabled `PauseBinkOnFocusLoss=1` pauses Bink cinematic streams **and the Bink-based music heard during 3D gameplay** using the game's original `BinkPause` API. `PauseDirectSoundOnFocusLoss=1` pauses currently playing game-owned secondary DirectSound buffers and resumes the same buffers from their retained cursor position. The primary buffer is untouched. Both new media options are **disabled by default**. Their combined operation was tested in Windows 11 gameplay, the menu, and cinematics with no audio desynchronization. See [technical notes and test results](diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md) for diagnostics, compatibility limits, and rollback.
+**Windows Ghost surrogate policy:** where supported, the patch now
+requests `DisableProcessWindowsGhosting` automatically. This may prevent
+a Ghost foreground window from being mistaken for intentional Alt+Tab;
+it also disables Windows' normal ghost-window recovery UI for an
+actually hung process. It cannot repair a true engine hang, and native
+Windows 11 behavior of this **permanent default** needs fresh validation.
+The earlier `DisableWindowsGhosting=1` opt-in description belongs only to
+[historical diagnostics](diagnostics/focus/UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md).
 
-**Audio:** the three volume levels use user-friendly percentages; `Stereo=1` enables stereo and `Stereo=0` selects mono.
+**Audio and in-game controls:** The three audio volume levels are editable
+percentages; `Stereo=1` selects stereo, `0` selects mono. Standard
+keyboard and joystick bindings are preserved through INI migration.
 
 ## Debug logging
 
@@ -231,12 +258,16 @@ the main DLL, plus `INI-REPAIR` and `DISPLAY-NATIVE` messages. Note
 that `[Debug] Log=1` is needed for log output and may itself be absent
 or corrupted; the absence of log lines alone is not proof of failure.
 
-**Runtime verification is still required on Windows 11 and Linux/Wine:**
-deliberately add an unknown INI entry, launch the game, confirm no modal
-dialog and a monitor-sized borderless window from the first visible frame,
-then verify gameplay 3D, 4:3 menus/video and Alt+Tab. Static tests and CI
-compilation do not establish all native DirectDraw timings or display
-backend behaviors.
+**Runtime evidence (2026-10-24):** an actual Linux/Wine
+corrupted-INI launch recovered **29 settings** after **8 errors** and
+**3 warnings**, retained `SpiderMan2k1Fix.ini.old`, activated the
+`DDRAW-STARTUP` gate, intercepted the 640×480×16 mode, and presented
+the 1920×1080 borderless window. A focus-loss and key-driven resume
+with Bink pause/resume and native input reacquisition also appeared
+in that same log. See the [technical evidence and code-path details](STARTUP_INI_RECOVERY_TECHNICAL.md).
+Native **Windows 11 runtime**, a second repair overwriting an existing
+`.old`, mixed-monitor scenarios and all 3D/audio variants remain to
+be checked; passing CI is not gameplay evidence.
 
 ## Automatic INI recovery
 
@@ -267,7 +298,15 @@ Look for `SpiderMan2k1Fix.ini.old` (the single rolling backup). The previous con
 
 **Controls are not responding after switching applications**
 
-When testing the current development build, set `DirectInputReacquire=1` and `PauseOnFocusLoss=1`. Any keyboard key now resumes after focus returns; the old `PauseKey` selection is ignored. If recovery fails, enable `[Debug] Log=1`, then check for `DI8-RETRY: EXPERIMENTAL requested source=INI` and `DI8-RETRY: EXPERIMENTAL active at Flip #120`. For synchronized sound, enable both additional media-pause settings described above. A previous report of intermittent audio crackling occurred under ProcDump but was not reproduced during ordinary launches without ProcDump; its cause remains unknown. Future builds may provide a different option set.
+The focus-loss pause and native DirectInput reacquire are **permanent**;
+do not add retired `PauseOnFocusLoss` or `DirectInputReacquire` keys.
+Enable `[Debug] Log=1`, restart the game, and check for
+`FOCUS-PAUSE: confirmed external focus loss`,
+`FOCUS-PAUSE: Any-key resume swallowed` and
+`DI8-RETRY: redirected DIERR_NOTACQUIRED to game's Acquire`.
+The underlying game focus and DirectInput state may vary across Wine
+and Windows drivers. Share the full focus/DI8 portion of the fresh
+log if the problem persists.
 
 **The game has visual or audio glitches**
 
