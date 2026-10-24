@@ -1,7 +1,7 @@
 """Windows 11 taskbar icon: use icon-group resources embedded in the game EXE."""
 from pathlib import Path
 
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 SRC=(ROOT/"spiderman2k1fix.c").read_text()
 BUILD=(ROOT/"build.sh").read_text()
 

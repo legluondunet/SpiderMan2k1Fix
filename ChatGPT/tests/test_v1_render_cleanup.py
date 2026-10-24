@@ -1,7 +1,7 @@
 """Release-specific structural guards; not a replacement for Windows/Wine tests."""
 from pathlib import Path
 
-BASE = Path(__file__).resolve().parents[1]
+BASE = Path(__file__).resolve().parents[2]
 CORE = (BASE / 'spiderman2k1fix.c').read_text()
 VALIDATOR = (BASE / 'ini_validation.h').read_text()
 BUILD = (BASE / 'build.sh').read_text()

@@ -1,7 +1,7 @@
 """Native D3D7 device-vtable bypass diagnostics remain opt-in."""
 from pathlib import Path
 
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 SOURCE=(ROOT/"spiderman2k1fix.c").read_text()
 DOC=(ROOT/"docs/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()
 

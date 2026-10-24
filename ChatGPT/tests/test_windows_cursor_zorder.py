@@ -1,7 +1,7 @@
 """Windows desktop cursor restore defaults ON; Z-order remains experimental."""
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 S = (ROOT / "input_focus_trace.c").read_text()
 INI = (ROOT / "SpiderMan2k1Fix.ini").read_text()
 GEN = (ROOT / "virtual_spidey_cfg.c").read_text()

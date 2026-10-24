@@ -1,7 +1,7 @@
 """Release-profile regression checks (source-level, not a Windows runtime test)."""
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_release_logging_is_off_by_default():

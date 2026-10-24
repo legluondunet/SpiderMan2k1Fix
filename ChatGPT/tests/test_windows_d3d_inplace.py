@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-SRC=(Path(__file__).resolve().parents[1]/"spiderman2k1fix.c").read_text()
+SRC=(Path(__file__).resolve().parents[2]/"spiderman2k1fix.c").read_text()
 
 
 def test_inplace_is_default_without_power_shell_switch():

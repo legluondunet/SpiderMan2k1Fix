@@ -1,7 +1,7 @@
 """Narrow fclose(NULL) exception recovery defaults to enabled for verified EXE."""
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 S = (ROOT / "spiderman2k1fix.c").read_text()
 DOC = (ROOT / "docs/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()
 

@@ -4,7 +4,7 @@ import hashlib
 import os
 import struct
 
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 SRC=(ROOT/"input_notacquired_retry.c").read_text()
 MAIN=(ROOT/"spiderman2k1fix.c").read_text()
 BUILD=(ROOT/"build.sh").read_text()

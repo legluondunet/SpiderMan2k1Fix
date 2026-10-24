@@ -2,7 +2,7 @@
 from pathlib import Path
 import pytest
 
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 CORE=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
 INI=(ROOT/"SpiderMan2k1Fix.ini").read_text(encoding="utf-8")
 EXAMPLE=(ROOT/"SpiderMan2k1Fix.generated-example.ini").read_text(encoding="utf-8")

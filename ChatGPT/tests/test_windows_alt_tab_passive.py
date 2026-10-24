@@ -1,6 +1,6 @@
 """Win11 native Alt+Tab passive focus tracing regression guards."""
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 S=(ROOT/"input_focus_trace.c").read_text()
 DOC=(ROOT/"docs/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()
 
