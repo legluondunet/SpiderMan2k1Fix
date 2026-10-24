@@ -42,7 +42,8 @@ def test_analysis_is_bounded_and_never_changes_game_vertices():
     assert "if(frame<1 || frame>20" in probe
     assert "draw>8192" in probe
     assert "draw>8 && (draw%64)!=0" in probe
-    assert "draw>=3140 && draw<=3400" in probe
+    assert "pause_menu_trace_selector_seen" in probe
+    assert "CURSOR-CANDIDATE" in probe
     assert "draw>8192" in probe
     assert "frame==1 || frame==5 || frame==12 || frame==20" in probe
     assert "PAUSE-NATIVE-PROBE: FRAME-END" in probe
@@ -105,17 +106,16 @@ def test_probe_falls_back_to_bounded_passive_escape_sampling():
         assert bad not in init
     assert "hold Esc for about half a second" in DOC
 
-def test_esc_menu_48_new_draws_are_sampled_not_repositioned():
+def test_native_esc_sampling_does_not_assume_draw_number():
     probe = trace_block()
-    assert "3268 candidates in frames 1..4" in probe
-    assert "3316 in" in probe
-    assert "draw>=3140 && draw<=3400" in probe
+    assert "Historical draw 3140..3400 sampling missed the cursor" in probe
+    assert "draw>=3140 && draw<=3400" not in probe
     assert "frame==1 || frame==5 || frame==12 || frame==20" in probe
     assert "PAUSE-NATIVE-PROBE: frame=%ld draw=%ld" in probe
     assert "draw>8192" in probe
     assert "SPIDERMAN2K1FIX_PAUSE_MENU_TRACE" not in INI
     assert "48 primitives" in DOC
-    assert "3140" in DOC and "3400" in DOC
+    assert "1439" in DOC
 
 
 def test_post_esc_confirm_probe_is_passive_time_bounded_and_key_triggered():
@@ -173,7 +173,7 @@ def test_opt_in_native_esc_43_never_rewrites_hud_by_default():
     assert draw.index("maybe_correct_native_pause43(") < draw.index("maybe_correct_horplus(")
     assert "native_pause43_init();" in CORE
     assert "selector not yet classified" in probe
-    assert "3140..3400" in CORE
+    assert "CURSOR-CANDIDATE" in CORE
     assert "PAUSE-NATIVE-43" in DOC
 
 
@@ -203,3 +203,27 @@ def test_native_esc_border_sprites_have_independent_shape_and_texture_gate():
     assert "8x8" in DOC and "selector" in DOC.lower()
     for unsafe in ("SetTexture(", "PostMessage(", "SendInput(", "keybd_event(", "src[i].x="):
         assert unsafe not in source
+
+
+def test_red_spider_selector_trace_logs_stable_signature_without_moving_vertices():
+    probe = trace_block()
+    assert "pause_menu_trace_selector_seen=0;" in probe
+    assert "InterlockedExchange(&pause_menu_trace_selector_seen,0);" in probe
+    assert "InterlockedIncrement(&pause_menu_trace_selector_seen)<=100" in probe
+    assert "selector_candidate=1;" in probe
+    assert "count==4" in probe and "fvf==0x144UL" in probe
+    assert "rva==0x00102C72UL" in probe
+    assert "z>=0.00070f && z<=0.0030f" in probe
+    assert "rhw>=7.0f && rhw<=16.0f" in probe
+    assert "tex_identity=texture;" in probe
+    assert "memcpy(&diffuse,raw+16,sizeof(diffuse));" in probe
+    assert "memcpy(&u0,raw+20,sizeof(u0));" in probe
+    assert "memcpy(&v0,raw+24,sizeof(v0));" in probe
+    assert "CURSOR-CANDIDATE frame=%ld flip=%ld draw=%ld" in probe
+    assert "IDENTITY UNVERIFIED" in probe
+    assert "texid=%p" in probe
+    assert "if(selector_sample)" in probe
+    assert "SPIDERMAN2K1FIX_SELECTOR_FIX" not in CORE
+    assert "CURSOR-CANDIDATE" in DOC
+    for forbidden in ("SetTexture(", "memcpy(copy", "SetRenderState(", "PostMessage(", "SendInput("):
+        assert forbidden not in probe
