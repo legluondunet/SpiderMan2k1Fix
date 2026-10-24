@@ -8,53 +8,26 @@ This is the detailed companion to the [project README](../../README.md). Some se
 - **Migrating from an older SpiderManFix beta:** remove the obsolete `SpiderManFix.dll`. To preserve settings, back up your old `SpiderManFix.ini` and rename it to `SpiderMan2k1Fix.ini` **before** launching the new fix (only if no new-named INI already exists). Otherwise the patch generates fresh defaults.
 - **Other proxy mods:** `winmm.dll` is a filename shared by many mods. Back up an existing file and check for conflicts; two different proxies cannot normally occupy the same directory under that name.
 
-## Full INI example, display and input settings
+## Player INI: compact configuration
 
-SpiderMan2k1Fix creates `SpiderMan2k1Fix.ini` alongside the game executable. **Close the game before editing the file manually**, because in-game settings may be saved back to it.
-
-The main options include:
+SpiderMan2k1Fix automatically generates `SpiderMan2k1Fix.ini` beside the supported game executable. Edit it **only while the game is closed**. The generated file exposes only the options that a player should need:
 
 ```ini
 [Debug]
-; 0 = disabled (default), 1 = write SpiderMan2k1Fix.log
 Log=0
 
 [Display]
-; Auto = desktop monitor resolution
-Resolution=Auto
-; Auto or 4:3 for a native gaming experience
 AspectRatio=Auto
 Brightness=4
 FPSLimit=30
 
 [Input]
-; Auto detects the active keyboard layout; Off keeps original US positions.
 KeyboardLayout=Auto
-; Experimental Windows 11 input recovery; default OFF.
-DirectInputReacquire=0
-; Pause rendering after a real Alt+Tab; default OFF.
-PauseOnFocusLoss=0
-; Resume only by pressing and releasing any keyboard key (consumed).
-; 1 = show a centered, transparent, red-outlined pause message; 0 = hide it.
-PauseOverlay=1
-; Darken the paused game behind the centered PAUSE banner (0 disables shade).
-PauseDim=1
-; Strength of black shade: 0..90 percent (default 50).
-PauseDimOpacity=50
-; No grid by default; set to 1 only if you prefer the optional 16px grid.
-PauseGrid=0
-; Pause cinematic Bink video and the game's audio-only Bink music stream.
-PauseBinkOnFocusLoss=0
-; Pause active game-owned secondary DirectSound effects/voices (default off).
-PauseDirectSoundOnFocusLoss=0
-RestoreCursorOnFocusLoss=1
 
 [Audio]
-; Volume levels: 0..100 percent
 MusicSFXLevel=69
 VoiceLevel=79
 MovieLevel=69
-; 1 = Stereo, 0 = Mono
 Stereo=1
 
 [Keyboard]
@@ -71,7 +44,6 @@ Zipline=F
 Swing=G
 
 [Joystick]
-; DirectInput button numbers start at zero
 Jump=BUTTON3
 Kick=BUTTON4
 Punch=BUTTON0
@@ -79,20 +51,38 @@ Web=BUTTON1
 Aim=BUTTON6
 Zipline=BUTTON9
 Swing=BUTTON7
+
+[Internal]
+; 252 original configuration bytes, written automatically
+RawHex=<504 hexadecimal characters>
 ```
 
-The generated INI may contain additional internal or development-specific settings depending on the release. Leave unfamiliar settings unchanged unless the release notes explain them.
+The example `RawHex` line is **illustrative only**: the generated file contains a genuine 504-character value. Do not manually delete, replace or edit it: unrecognized original-game settings are still preserved there.
 
-**Display modes:**
+| Setting | Meaning |
+| --- | --- |
+| `[Debug] Log` | `0` disables the log, `1` writes `SpiderMan2k1Fix.log`. |
+| `[Display] AspectRatio` | `Auto` uses the monitor's aspect ratio, `4:3` selects the classic presentation. |
+| `[Display] Brightness` | Game brightness from 0 through 9. |
+| `[Display] FPSLimit` | **Player-controlled frame limit.** Default `30`; `0` disables the limiter, `1..240` sets a target. Higher FPS can expose timing issues in the original game. |
+| `[Input] KeyboardLayout` | `Auto` detects the Windows/Wine input layout, `Off` leaves original QWERTY positions. |
+| `[Audio]` | Music/effects, voice and movie volumes (0..100%); `Stereo=1` selects stereo. |
+| `[Keyboard]` / `[Joystick]` | The eleven original keyboard actions and seven joystick button bindings, also saved from the game's menus. |
+| `[Internal] RawHex` | Lossless copy of the game's original 252-byte configuration record. Not a player-facing control. |
 
-- `AspectRatio=Auto` (default): use a modern widescreen layout matching your desktop.
-- `AspectRatio=4:3`: request the original 4:3 game presentation. The desktop is not switched to an exclusive display mode; the result should preserve the classic game proportions.
-- `Resolution=Auto` (default): use your desktop resolution. A specific `WIDTHxHEIGHT` value may also be configured where supported.
-- `FPSLimit=30` (default): preserve the intended 30 FPS cap. `FPSLimit=0` disables the limiter, although higher frame rates may affect an older game's behavior.
+### Built-in fixes: no INI switches
 
-**Controls:** keyboard and joystick bindings are independent. Keyboard values use physical DirectInput key names or hexadecimal scan codes. Joystick values use the same `BUTTON0`, `BUTTON1`, etc. numbering shown in the game's **Joystick Configuration** menu. Joystick movement axes/directions are handled by the game and are not configurable through this section.
+The supported executable receives **automatic desktop resolution**, borderless fullscreen, centered 4:3 intro/menu media, native comic correction, automatic FOV/aspect adjustment, adaptive widescreen HUD and the verified in-game Display menu lock. These are no longer enabled or disabled through experimental flags; the original 4:3 mode retains its original geometry where a widescreen transform is unnecessary.
 
-**Alt+Tab recovery (Windows 11):** Use `DirectInputReacquire=1` and `PauseOnFocusLoss=1` for the tested keyboard/mouse recovery and focus-pause combination. After switching back to the game, press and release any key to resume; the wake key is consumed. The game reuses its native `DIERR_NOTACQUIRED` retry path without wrapping DirectInput COM interfaces. These options remain disabled by default; earlier unsafe COM experiments are no longer active, even if their keys remain in an older user INI. The former environment-variable override is supported for legacy diagnostic scripts, but is unnecessary with the INI setting.
+**Alt+Tab and pause are permanent features:** once another application's focus loss is confirmed, the game latches pause at the original DirectDraw Flip boundary; a **press and release of any keyboard key after returning** resumes it. The frozen game frame receives the native violet/red PAUSED banner, 50% shading, and no grid. This behavior also coordinates the game's native Bink video/music streams and its game-owned secondary DirectSound voices. The native `DIERR_NOTACQUIRED` keyboard/mouse retry is requested automatically and installed only after its verified signature check at Flip #120; desktop cursor restoration is automatic. The old unsafe DirectInput COM-vtable hook stays disabled.
+
+**Windows-specific behavior:** the patch requests `DisableProcessWindowsGhosting` automatically on systems providing the API, avoiding Windows' false Ghost-window foreground transitions. This also disables Windows' normal ghost-window handling for a genuinely hung game **until the process exits**; it does not solve a real hang. Wine implementation details may differ.
+
+In all cases, the original executable's SHA-256 check and per-feature native signature checks remain active. A failed optional hook is logged and skipped instead of attempting an unchecked patch. Experimental HorPlus/AnySize modes remain disabled, not silently promoted to permanent behavior.
+
+### Upgrading existing INIs
+
+An existing valid INI containing retired display, HUD, pause or focus switches is **automatically migrated at startup**: the original file is copied to a numbered `SpiderMan2k1Fix_N.old` backup, and a new compact INI is installed atomically after recovery and validation. This carries over **FPSLimit, AspectRatio, Brightness, KeyboardLayout, audio volumes, keyboard/joystick mappings and `RawHex`**. Deprecated flags are removed, not merely hidden while still changing the game. Other recognized developer-only F10 settings remain available through manual configuration but are not generated by default. If migration fails, the original file stays untouched and game-origin INI saving is disabled for safety.
 
 ## Keyboard layout (Auto or Off)
 
