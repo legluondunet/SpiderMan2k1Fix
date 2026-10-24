@@ -518,6 +518,11 @@ static HWND spider_find_game_window_before_ddraw(void) {
     return active;
   EnumThreadWindows(GetCurrentThreadId(),spider_find_early_window,
                     (LPARAM)(uintptr_t)&state);
+  /* Some Wine/Win32 backends create the game HWND on a different thread
+   * from the thread performing DirectDrawCreateEx. Search the process's
+   * top-level windows as well, never arbitrary windows of other apps. */
+  if(!state.found)
+    EnumWindows(spider_find_early_window,(LPARAM)(uintptr_t)&state);
   return state.found;
 }
 
