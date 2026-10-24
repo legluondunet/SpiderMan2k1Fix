@@ -192,7 +192,9 @@ def test_integration_blocks_saving_before_writing():
     assert loader.index("SpiderCfg_EnsureDefaultIni(log_line)") < loader.index("SpiderCfg_ValidateCurrentIni(log_line)")
     assert loader.index("SpiderCfg_ValidateCurrentIni(log_line)") < loader.index('GetPrivateProfileStringA("Display","FPSLimit"')
     assert src.index("if(!ini_writes_permitted)") < src.index('WritePrivateProfileStringA("Internal","RawHex"')
-    assert "MessageBoxA(NULL,summary" in src
+    assert "MessageBoxA(NULL,summary" not in src
+    assert "MessageBoxA(NULL," not in src
+    assert 'if(logger)logger(summary);' in src
     assert 'snprintf(backup,sizeof(backup),"%s.old",ini)' in src
     assert "SpiderCfg_RepairIni" in src
 
