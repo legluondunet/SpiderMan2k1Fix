@@ -350,6 +350,9 @@ not change Y, UV, mouse coordinates, gameplay hit testing or shared
 texture surfaces. It never touches the generic 32×32 text glyphs based
 on texture size alone. Maximum **180 candidates/Flip** are examined.
 
+The prefix `NATIVE-CURSOR-43:` also logs a maximum of three early
+`stack SAMPLE` call chains (including four return addresses, if available),
+which can help diagnose failure to identify the native cursor owner.
 The prefix `NATIVE-CURSOR-43:` logs initialization, unmatched candidate
 caps and every early **owner MATCH**. If there are **no owner MATCH**
 lines, the experiment intentionally applies **no correction**.
