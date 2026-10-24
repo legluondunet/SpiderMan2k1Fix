@@ -379,18 +379,33 @@ including the left and right margins.
 `CONTINUE / RESTART LEVEL / QUIT`, `REALLY QUIT? / NO / YES`, and the cursor
 at both central and edge-of-screen positions.
 
-This correction is currently opt-in while graphics drivers and other screen
-resolutions are being tested. Set these environment variables before starting
-the game:
+**Enabled by default** when `[HUD] HUDWidescreenFix=1` (also its factory default)
+and the full native widescreen HUD hook installs successfully. Setting
+`HUDWidescreenFix=0` disables the adaptive HUD **and every native ESC 4:3
+correction**, even if child options are explicitly set to 1.
 
-```bash
-export SPIDERMAN2K1FIX_NATIVE_ESC_43=1
-export SPIDERMAN2K1FIX_NATIVE_MOTIF_43=1
-export SPIDERMAN2K1FIX_NATIVE_CURSOR_43=1
+For debugging, add **only the option(s) you want to disable** manually
+under `[HUD]` in `SpiderMan2k1Fix.ini`:
+
+```ini
+[HUD]
+HUDWidescreenFix=1
+NativeESC4x3=0
+NativeMotif4x3=0
+NativeCursor4x3=0
 ```
 
-These settings are not INI keys. They only affect the native gameplay ESC
-overlay, not the main menu or the original 4:3 gameplay presentation.
+All three child settings normally default to `1` and **are deliberately
+absent from generated/default INI files**. Each is a strict boolean;
+`NativeESC4x3=0` disables the entire native pause menu correction,
+including motif and cursor. `NativeMotif4x3=0` or `NativeCursor4x3=0`
+individually disables only that element. These features are still limited
+to the original verified UI draw signatures; the motif and cursor geometry
+have been visually validated only in **1920×1080 Auto under Wine**.
+Legacy environment variables with an explicit `=0` remain accepted as
+diagnostic opt-outs, but are not required for normal play and cannot
+override `HUDWidescreenFix=0`.
+
 [Implementation, scope, and regression checks](docs/NATIVE_PAUSE_MENU_43.md).
 
 ## Adaptive widescreen HUD

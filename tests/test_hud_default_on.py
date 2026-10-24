@@ -47,7 +47,7 @@ def test_created_ini_and_existing_user_ini_behave_differently():
     assert "SpiderCfg_EnsureDefaultIni" in GENERATOR
     # Existing-user values pass validation/repair and remain valid opt-outs.
     validator = (ROOT / "ini_validation.h").read_text(encoding="utf-8")
-    assert 'spider_ini_hud[]={"HUDWidescreenFix"}' in validator
+    assert '"HUDWidescreenFix","NativeESC4x3","NativeMotif4x3","NativeCursor4x3"' in validator
     assert "option==0" in CORE
 
 

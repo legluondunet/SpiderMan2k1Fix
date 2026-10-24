@@ -31,6 +31,19 @@ def test_valid_generated_ini(runner, tmp_path):
     assert validate(runner,tmp_path,data)[0] == (0,0,1)
 
 
+@pytest.mark.parametrize("key", ["NativeESC4x3","NativeMotif4x3","NativeCursor4x3"])
+def test_hidden_hud_esc_debug_switches_validated_without_ini_regeneration(runner, tmp_path, key):
+    # Runtime defaults to 1; explicit 0 in an existing INI must be
+    # recognized, validated and preserved during automatic repair.
+    for value in ("0", "1"):
+        result, detail = validate(runner, tmp_path,
+            f"[HUD]\nHUDWidescreenFix=1\n{key}={value}\n")
+        assert result == (0, 0, 1), detail
+    for value in ("-1", "2", "on", "true", ""):
+        result, detail = validate(runner, tmp_path, f"[HUD]\n{key}={value}\n")
+        assert result[0] >= 1 and result[2] == 0, detail
+
+
 def test_native_directinput_retry_option_and_legacy_ini_compat(runner, tmp_path):
     # New key is boolean and opt-in. Old quarantined COM flags must not cause
     # the user's audio and keyboard options to be reset by INI repair.

@@ -1085,7 +1085,34 @@ static const void *maybe_correct_adaptive_hud(void *device,
   }
   return copy;
 }
-/* Native gameplay ESC 4:3 panel correction (opt-in).
+/* Native ESC subfeatures are hidden HUD settings (default ON).
+ * Each can be explicitly set to 0 in [HUD] for debugging. They
+ * require the successfully installed *full* HUD correction.
+ * Scopes-only Hor+ installs are not enough: HUDWidescreenFix=0
+ * must disable ALL dependent native ESC geometry changes.
+ */
+static int native_esc43_hud_setting_enabled(const char *key,
+                                            const char *legacy_env) {
+  char path[MAX_PATH],*slash;
+  char override[4]={0};
+  DWORD n;
+  if(!SpiderHudWidescreen_Installed())return 0;
+  n=GetModuleFileNameA(NULL,path,sizeof(path));
+  if(!n || n>=sizeof(path) ||
+     !(slash=strrchr(path,'\\')) ||
+     (size_t)(slash-path)+strlen("SpiderMan2k1Fix.ini")+1>=sizeof(path)) {
+    log_line("NATIVE-ESC-43: unable to read HUD options; all ESC corrections disabled");
+    return 0;
+  }
+  strcpy(slash+1,"SpiderMan2k1Fix.ini");
+  if(GetPrivateProfileIntA("HUD",key,1,path)!=1)return 0;
+  /* Compatibility for earlier launch scripts; a legacy 0 may still
+   * disable a child, but legacy 1 never overrides HUD/INI master 0. */
+  n=GetEnvironmentVariableA(legacy_env,override,sizeof(override));
+  if(n==1 && override[0]=='0')return 0;
+  return 1;
+}
+/* Native gameplay ESC 4:3 panel correction (HUD-controlled).
  * Evidence: 2026-10-24 Wine traces #737 and #741, two menu states.
  * Anchor on the unusually wide *untextured* purple ribbon's verified
  * screen rectangle plus Z/RHW. Only following 2D glyphs in that SAME
@@ -1100,12 +1127,12 @@ static volatile LONG native_pause43_banner_top=0;
 static volatile LONG native_pause43_banner_bottom=0;
 static volatile LONG native_pause43_glyph_hits=0;
 static void native_pause43_init(void) {
-  char value[4]={0};
-  DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_NATIVE_ESC_43",value,sizeof(value));
-  if(n==1 && value[0]=='1') {
-    InterlockedExchange(&native_pause43_enabled,1);
-    log_line("PAUSE-NATIVE-43: 4:3 ribbon+borders+glyphs enabled [1920x1080, native ESC only]");
-  }
+  int enabled=native_esc43_hud_setting_enabled(
+       "NativeESC4x3","SPIDERMAN2K1FIX_NATIVE_ESC_43");
+  InterlockedExchange(&native_pause43_enabled,enabled?1:0);
+  log_line(enabled?
+    "PAUSE-NATIVE-43: 4:3 ribbon+borders+glyphs ON (HUDWidescreenFix master)" :
+    "PAUSE-NATIVE-43: OFF (HUD master or [HUD] NativeESC4x3=0)");
 }
 static const void *maybe_correct_native_pause43(void *device,
             D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
@@ -1260,20 +1287,18 @@ static const void *maybe_correct_native_pause43(void *device,
  * Z=0.00146, RHW=9.988, vertex diffuse ALPHA=0x80.
  * The same geometry recurs in ESC and confirmation frames before the
  * purple ribbon, so cannot use the ribbon's current-frame marker.
- * Explicit, Wine-validated opt-in at 1920x1080 ONLY.
+ * HUD-controlled by default; Wine-validated at 1920x1080 ONLY.
  */
 static volatile LONG native_motif43_enabled=0;
 static volatile LONG native_motif43_hits=0;
 static void native_motif43_init(void) {
-  char value[4]={0};
-  if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_NATIVE_MOTIF_43",
-      value,sizeof(value))!=1 || value[0]!='1') return;
-  if(InterlockedCompareExchange(&native_pause43_enabled,0,0)!=1) {
-    log_line("NATIVE-MOTIF-43: disabled; requires SPIDERMAN2K1FIX_NATIVE_ESC_43=1");
-    return;
-  }
-  InterlockedExchange(&native_motif43_enabled,1);
-  log_line("NATIVE-MOTIF-43: 4:3 motif + full-screen original tint enabled [1920x1080, native ESC only]");
+  int enabled=InterlockedCompareExchange(&native_pause43_enabled,0,0)==1 &&
+    native_esc43_hud_setting_enabled(
+      "NativeMotif4x3","SPIDERMAN2K1FIX_NATIVE_MOTIF_43");
+  InterlockedExchange(&native_motif43_enabled,enabled?1:0);
+  log_line(enabled?
+    "NATIVE-MOTIF-43: 4:3 motif + full-screen original tint ON (HUD master)" :
+    "NATIVE-MOTIF-43: OFF (HUD master, NativeESC4x3 or NativeMotif4x3=0)");
 }
 static const void *maybe_correct_native_motif43(void *device,
     D3DPRIMITIVETYPE type,DWORD fvf,const void *source,DWORD count,
@@ -1446,13 +1471,14 @@ static void native_motif43_restore_gutters(void *device,
     }
   }
 }
-/* Native gameplay ESC red selector: fixed, Wine-validated 1920x1080.
+/* Native gameplay ESC red selector: HUD-controlled, Wine-validated 1920x1080.
  * A 32x32 texture in an exact screen quad (96x72), z=0, rhw=27.519,
  * diffuse white, native D3D7 caller 0x00102C72 and validated purple
  * ESC banner drawn in the SAME Flip. This is independent of the
  * the original game menu or ordinary gameplay HUD.
  *
- * Opt-in through NATIVE_CURSOR_43, OFF by default. Match the validated
+ * Enabled by default through HUDWidescreenFix, unless manually disabled in
+ * [HUD] NativeCursor4x3=0. Match the validated
  * signature instead of ephemeral texture pointer identities. Limit this
  * strictly to the Wine-tested 1920x1080 mode. Only X vertex coordinates
  * are modified; keep Y, Z, RHW, UV, texture, game input unchanged.
@@ -1460,15 +1486,13 @@ static void native_motif43_restore_gutters(void *device,
 static volatile LONG native_cursor43_enabled=0;
 static volatile LONG native_cursor43_hits=0;
 static void native_cursor43_init(void) {
-  char value[4]={0};
-  if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_NATIVE_CURSOR_43",
-       value,sizeof(value))!=1 || value[0]!='1')return;
-  if(InterlockedCompareExchange(&native_pause43_enabled,0,0)!=1) {
-    log_line("NATIVE-CURSOR-43: disabled; requires SPIDERMAN2K1FIX_NATIVE_ESC_43=1");
-    return;
-  }
-  InterlockedExchange(&native_cursor43_enabled,1);
-  log_line("NATIVE-CURSOR-43: exact native ESC selector QUAD signature enabled [1920x1080 only, X-only 0.75, opt-in; no stack scan]");
+  int enabled=InterlockedCompareExchange(&native_pause43_enabled,0,0)==1 &&
+    native_esc43_hud_setting_enabled(
+      "NativeCursor4x3","SPIDERMAN2K1FIX_NATIVE_CURSOR_43");
+  InterlockedExchange(&native_cursor43_enabled,enabled?1:0);
+  log_line(enabled?
+    "NATIVE-CURSOR-43: native red selector 4:3 ON (HUD master; 1920x1080 Auto)" :
+    "NATIVE-CURSOR-43: OFF (HUD master, NativeESC4x3 or NativeCursor4x3=0)");
 }
 static const void *maybe_correct_native_cursor43(void *device,
     D3DPRIMITIVETYPE type,DWORD fvf,const void *source,DWORD count,
@@ -3199,9 +3223,6 @@ static DWORD WINAPI initialize(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
-  native_pause43_init(); /* Native ESC visual correction, explicit opt-in. */
-  native_cursor43_init();
-  native_motif43_init(); /* 4:3 native ESC backdrop, explicit opt-in. */
   SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
@@ -3369,6 +3390,12 @@ static DWORD WINAPI initialize(LPVOID unused) {
     }
   }
   install_player_hud(TRUE);
+  /* HUDWidescreenFix is the parent of the three native ESC children.
+   * Read hidden [HUD] child opt-outs only AFTER the verified HUD
+   * installation, so master=0 or failed HUD install disables all. */
+  native_pause43_init();
+  native_cursor43_init();
+  native_motif43_init();
   {
     char flag[8]={0};
     if(debug_log_enabled &&

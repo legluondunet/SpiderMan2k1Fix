@@ -14,21 +14,43 @@ tested. The normal gameplay HUD, compass and 3D scene are unaffected.
 
 ## Activation / supported scope
 
-These corrections are currently *opt-in* on the supported, SHA-verified
-SpideyPC.exe. Set the following environment variables to 1 before launching:
+These corrections now follow the existing **[HUD] HUDWidescreenFix** master
+(which defaults to 1). They are ON by default for the supported
+SHA-verified executable once the full HUD widescreen patch is installed.
 
-- `SPIDERMAN2K1FIX_NATIVE_ESC_43=1` — native ESC ribbon, borders and labels
-- `SPIDERMAN2K1FIX_NATIVE_MOTIF_43=1` — transparent geometric background and
-  full-screen native tint, requires the first switch
-- `SPIDERMAN2K1FIX_NATIVE_CURSOR_43=1` — red spider selector aspect,
-  requires the first switch
+- If `HUDWidescreenFix=0`, **all three native ESC corrections are OFF**,
+  regardless of individual child settings. They are also disabled when the
+  full HUD patch fails, or the original gameplay 4:3 aspect is selected.
+  Passive HUD scopes-only mode (for FOV diagnostics) does not enable them.
+- The hidden children `NativeESC4x3`, `NativeMotif4x3`, and
+  `NativeCursor4x3` are read from the **[HUD]** section. Each defaults to 1,
+  but none is included in any generated or distributed INI template.
+- The banner/labels child `NativeESC4x3=0` is the native ESC sub-master
+  and also disables the motif and cursor. The other two can be disabled
+  individually, without changing the ribbon or text.
+- The original 2026 experimental environment toggles are no longer required;
+  an explicit `SPIDERMAN2K1FIX_NATIVE_ESC_43=0`,
+  `SPIDERMAN2K1FIX_NATIVE_MOTIF_43=0`, or
+  `SPIDERMAN2K1FIX_NATIVE_CURSOR_43=0` remains a legacy debug opt-out.
+  None may force a child ON if its parent is disabled in the INI.
 
-The motif and selector signatures are verified for **1920×1080 Auto**
+For example, to disable only the orange/blue motif while investigating
+a graphics issue, add this key to your existing file:
+
+```ini
+[HUD]
+NativeMotif4x3=0
+```
+
+To disable **all** HUD corrections, use `HUDWidescreenFix=0` instead.
+Child keys are strict 0/1 values and recognized by INI validation and
+automatic recovery, which preserve legitimate manual overrides.
+
+The motif and selector signatures are validated for **1920×1080 Auto**
 (borderless) only; they are disabled for the main menu and 4:3 gameplay mode.
-The ESC ribbon has a broader aspect transform but is only calibrated at
-1920×1080. None of these switches is an INI key. Other screen resolutions
-and native Windows graphics drivers have **not** been validated for these
-specific native ESC corrections.
+The ESC ribbon has a broader aspect transform but its pixel calibration was
+tested at 1920×1080. Other screen resolutions and native Windows graphics
+drivers have **not** been validated for these specific corrections.
 
 ## Implementation details / safety
 

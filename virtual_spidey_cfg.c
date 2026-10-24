@@ -311,7 +311,7 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "ExperimentalComicNativeAspect=1\r\n"
     "\r\n"
     "[HUD]\r\n"
-    "; Adaptive HUD correction: enabled by default; 0 explicitly disables it.\r\n"
+    "; HUD and native ESC 4:3 master: enabled by default; 0 explicitly disables it.\r\n"
     "HUDWidescreenFix=1\r\n"
     "\r\n"
     "[Input]\r\n"

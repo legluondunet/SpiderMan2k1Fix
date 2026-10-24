@@ -62,7 +62,13 @@ static const char *const spider_ini_display[]={
   "ExperimentalComicNativeAspect",
   "ExperimentalDisplayMenuLock"
 };
-static const char *const spider_ini_hud[]={"HUDWidescreenFix"};
+/* Hidden debug opt-outs for the native ESC 4:3 children.
+ * All are default ON under the HUDWidescreenFix master, but must
+ * validate and survive INI recovery if explicitly set to 0.
+ * Never emit these keys in a generated/default INI. */
+static const char *const spider_ini_hud[]={
+  "HUDWidescreenFix","NativeESC4x3","NativeMotif4x3","NativeCursor4x3"
+};
 /* Retain two obsolete COM keys for backward compatibility: old user INIs
  * must NOT be treated as invalid and regenerated, losing saved controls.
  * The runtime refuses both unsafe features regardless of their values.
