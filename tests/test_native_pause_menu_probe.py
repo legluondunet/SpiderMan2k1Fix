@@ -14,7 +14,7 @@ INI = (ROOT / "SpiderMan2k1Fix.ini").read_text(encoding="utf-8")
 
 def trace_block():
     return CORE.split("/* Diagnostic only: classify original in-game ESC pause menu geometry", 1)[1].split(
-        "static void free_menu_vertices(", 1)[0]
+        "/* Experimental native ESC panel transform, opt-in only.", 1)[0]
 
 
 def test_probe_requires_debug_logging_and_environment_opt_in():
@@ -115,7 +115,7 @@ def test_esc_menu_48_new_draws_are_sampled_not_repositioned():
     assert "draw>8192" in probe
     assert "SPIDERMAN2K1FIX_PAUSE_MENU_TRACE" not in INI
     assert "48 primitives" in DOC
-    assert "3200" in DOC and "3400" in DOC
+    assert "3140" in DOC and "3400" in DOC
 
 
 def test_post_esc_confirm_probe_is_passive_time_bounded_and_key_triggered():
@@ -170,4 +170,4 @@ def test_opt_in_native_esc_43_never_rewrites_hud_by_default():
     assert "native_pause43_init();" in CORE
     assert "selector not yet classified" in probe
     assert "3140..3400" in CORE
-    assert "PAUSE-NATIVE-43:" in DOC
+    assert "PAUSE-NATIVE-43" in DOC
