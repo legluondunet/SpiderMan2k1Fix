@@ -48,9 +48,13 @@ def test_focus_system_initialized_permanently_and_guarded():
     assert 'GetPrivateProfileIntA("Input","RestoreCursorOnFocusLoss"' not in FOCUS
     assert "want_cursor=1;" in FOCUS
     assert "enabled_dim=1;" in PAUSE
-    assert "enabled_grid=0;" in PAUSE
+    assert "enabled_grid" not in PAUSE
     assert "enabled_banner=1;" in PAUSE
-    assert "opacity=50;" in PAUSE
+    assert "opacity=60;" in PAUSE
+    assert 'GetPrivateProfileIntA("Input","PauseDimOpacity",60,path)' in PAUSE
+    assert '"PauseDimOpacity=' not in GEN
+    assert '"PauseGrid"' not in VALIDATOR
+    assert '{"Input","PauseDimOpacity"}' not in GEN
     assert "DisableProcessWindowsGhosting" in CORE
     assert "want_interface_probe=0;" in FOCUS  # unsafe COM paths stay quarantined
     assert "want_fix=0;" in FOCUS
