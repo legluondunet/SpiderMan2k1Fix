@@ -14,7 +14,7 @@
 
 SpiderMan2k1Fix is an **unofficial fan-made patch** that improves how the original game runs on modern Windows PCs and under Linux with Wine/Proton.
 
-> **Development status:** This project is still being tested. **No stable release is available.** GitHub Actions provides experimental Windows x86 builds, but a successful build does not guarantee that the game works correctly on your system.
+> **1.0.0 release candidate:** The maintainer has tested core gameplay on Windows and Wine. **No stable release is available** until the reviewed tag and assets are published. GitHub Actions provides candidate builds; verify them on your system.
 
 **Original game required:** **No files from the original game are included.** You must provide your **own legally obtained copy** of *Spider-Man* for Windows, including its original game data and `SpideyPC.exe`.
 
@@ -28,7 +28,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** that improves how the origin
 - **Settings and input:** configurable display, sound, keyboard and gamepad controls, with automatic OS keyboard-layout detection (`Auto`/`Off`) for gameplay bindings, CHEATS entry and keyboard menu labels (validated on Windows 11 and Linux/Wine with French AZERTY). The keyboard-name correction operates only in memory; focus/Alt+Tab recovery was Wine-tested.
 - **Screenshots:** **F9** saves lossless PNG files (`scrnNNNN.png`) beside the game executable. The capture path still needs broader Windows/Wine runtime testing.
 
-These features are under active development; some resolutions, gameplay scenes and combinations of settings have not been validated. For technical details and known limitations, see the [project documentation](docs/README.md).
+Testing covers selected systems and resolutions, not every scene or driver. See [technical limitations](docs/README.md) and [1.0.0 release notes](RELEASE_NOTES_1.0.0.md).
 
 ## Download and install
 
@@ -42,7 +42,7 @@ You need the original **32-bit Windows PC game** and its unmodified `SpideyPC.ex
 
 Other executable versions and modified files are not validated. The patch consists of **two Windows x86 DLLs**, used on Windows or through a 32-bit-capable Wine/Proton installation on Linux.
 
-**Get the test build:** Open [SpiderMan2k1Fix Windows x86 — GitHub Actions](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml), choose a successful run, and download **`SpiderMan2k1Fix-Windows-x86`** from **Artifacts**. Extract the downloaded archive. The automatically generated GitHub *source code* archives do not contain compiled DLLs.
+**Get the 1.0.0 candidate:** Open [SpiderMan2k1Fix Windows x86 — GitHub Actions](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml), choose a successful run, and download **`SpiderMan2k1Fix-Windows-x86`** from **Artifacts**. Extract the downloaded archive. The automatically generated GitHub *source code* archives do not contain compiled DLLs.
 
 ### Installing on Windows
 
