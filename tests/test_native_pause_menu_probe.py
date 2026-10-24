@@ -116,3 +116,29 @@ def test_esc_menu_48_new_draws_are_sampled_not_repositioned():
     assert "SPIDERMAN2K1FIX_PAUSE_MENU_TRACE" not in INI
     assert "48 primitives" in DOC
     assert "3200" in DOC and "3400" in DOC
+
+
+def test_post_esc_confirm_probe_is_passive_time_bounded_and_key_triggered():
+    probe = trace_block()
+    assert "GetAsyncKeyState(VK_RETURN)&0x8000" in probe
+    assert "GetAsyncKeyState(VK_SPACE)&0x8000" in probe
+    assert "pause_menu_trace_action_armed_until,flip+1800" in probe
+    assert "pause_menu_trace_action_edges" in probe
+    assert "if(n<=3)" in probe
+    assert "PAUSE-NATIVE-PROBE: KEY-EDGE" in probe
+    assert "menu state UNVERIFIED" in probe
+    assert "post-ESC" in DOC and "NO/YES" in DOC
+    for unsafe in ("SendInput(", "keybd_event(", "PostMessage(", "SetWindowLong("):
+        assert unsafe not in probe
+
+
+def test_wide_screen_panel_candidates_remain_observational_only():
+    probe = trace_block()
+    assert "pause_menu_trace_wide_seen" in probe
+    assert "wide_overlay_candidate=" in probe
+    assert "InterlockedIncrement(&pause_menu_trace_wide_seen)<=12" in probe
+    assert "count==4" in probe
+    assert "desktop_w*0.60f" in probe
+    assert "!wide_overlay_candidate" in probe
+    assert "NO GEOMETRY MODIFIED" in probe
+    assert "wide" in DOC.lower()
