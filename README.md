@@ -102,7 +102,7 @@ KeyboardLayout=Auto
 - **`FPSLimit=30` remains fully configurable:** use `0` for no limiter, or a target from `1` to `240`. Frame rates above 30 may break original game timing.
 - `AspectRatio=Auto` uses the desktop aspect ratio; `AspectRatio=4:3` uses the classic presentation.
 - `KeyboardLayout=Auto` resolves the active Windows/Wine keyboard layout for controls and CHEATS; `Off` preserves original QWERTY positions.
-- On a confirmed Alt+Tab focus loss, the game and synchronized audio/video pause automatically. Return to the game and press/release any key to resume. No pause-related INI switches are needed.
+- On a confirmed Alt+Tab focus loss, the game and synchronized audio/video pause automatically. Return to the game and press/release any key to resume. The background shade defaults to **60%**; you can optionally add `[Input] PauseDimOpacity=0` to disable only that shade, or choose any level from `1` to `90`. This setting is omitted from generated INIs. The old grid option has been removed.
 
 Keyboard, joystick and audio settings remain editable and can also be saved from the game's own menus. `[Internal] RawHex` still preserves original binary settings and **must not be edited**. Older INIs with obsolete switches are backed up and migrated without losing FPS, controls, audio or `RawHex`.
 
