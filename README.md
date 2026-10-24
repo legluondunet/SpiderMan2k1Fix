@@ -22,10 +22,10 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** that improves how the origin
 
 ## What does the patch do?
 
-- **Modern display modes:** borderless fullscreen at the desktop resolution, widescreen 3D or classic 4:3 presentation, and automatic aspect/FOV adjustments.
+- **Modern display modes:** use the game window's monitor resolution (including secondary screens), borderless fullscreen without switching display modes, and widescreen 3D or classic 4:3 with automatic FOV.
 - **Original-looking 2D content:** introductory videos, comic artwork and menus retain their intended proportions. The HUD, compass and mission instructions are adapted for supported widescreen resolutions.
 - **Game compatibility:** memory-only CD-check bypass for the supported executable and a default **30 FPS** limiter to avoid timing problems.
-- **Settings and input:** configurable display, sound, keyboard and gamepad controls, with automatic OS keyboard-layout detection (`Auto`/`Off`) for gameplay bindings, CHEATS entry and keyboard menu labels (validated on Windows 11 and Linux/Wine with French AZERTY). The keyboard-name correction operates only in memory; focus/Alt+Tab recovery remains experimental.
+- **Settings and input:** configurable display, sound, keyboard and gamepad controls, with automatic OS keyboard-layout detection (`Auto`/`Off`) for gameplay bindings, CHEATS entry and keyboard menu labels (validated on Windows 11 and Linux/Wine with French AZERTY). The keyboard-name correction operates only in memory; focus/Alt+Tab recovery was Wine-tested.
 - **Screenshots:** **F9** saves lossless PNG files (`scrnNNNN.png`) beside the game executable. The capture path still needs broader Windows/Wine runtime testing.
 
 These features are under active development; some resolutions, gameplay scenes and combinations of settings have not been validated. For technical details and known limitations, see the [project documentation](docs/README.md).
@@ -78,37 +78,41 @@ Alternatively, in **winecfg → Libraries**, set `winmm` to **Native then Builti
 WINEDLLOVERRIDES="winmm=n,b" %command%
 ```
 
-The Linux / Wine / Proton badge is **informational, not the result of a Linux/Proton gameplay CI test**. Compatibility can vary with the Wine/Proton version, runner and graphics setup.
+The Linux / Wine / Proton badge is **informational, not the result of a Linux/Proton gameplay CI test**. Compatibility varies by Wine version.
 
 ## Configuration
 
 There is **no separate launcher**. Run `SpideyPC.exe` normally; the patch creates `SpiderMan2k1Fix.ini` next to it. **Close the game before editing the INI**, and keep that file when replacing the DLLs with a newer build.
 
-A few common settings:
+The INI contains **player choices only**. For the supported EXE, gameplay, HUD, media aspect, native borderless and focus-pause fixes are built in.
 
 ```ini
+[Debug]
+Log=0
+
 [Display]
-Resolution=Auto
 AspectRatio=Auto
+Brightness=4
 FPSLimit=30
 
-[HUD]
-HUDWidescreenFix=1
+[Input]
+KeyboardLayout=Auto
 ```
 
-- `AspectRatio=Auto`: adapt to the desktop aspect ratio; `AspectRatio=4:3`: classic 4:3 display.
-- `FPSLimit=30`: default frame-rate limit.
-- `HUDWidescreenFix=1`: apply supported HUD/menu aspect corrections; set `0` to disable them.
+- **`FPSLimit=30` remains fully configurable:** use `0` for no limiter, or a target from `1` to `240`. Frame rates above 30 may break original game timing.
+- `AspectRatio=Auto` uses the selected monitor's native resolution for 3D rendering; `AspectRatio=4:3` uses the same physical monitor size with a centered classic 4:3 gameplay canvas. Neither mode changes the operating system's display mode. There is no `Resolution` INI override.
+- `KeyboardLayout=Auto` resolves the active Windows/Wine keyboard layout for controls and CHEATS; `Off` preserves original QWERTY positions.
+- On a confirmed Alt+Tab focus loss, the game and synchronized audio/video pause automatically. Return to the game and press/release any key to resume. The background shade defaults to **60%**; you can optionally add `[Input] PauseDimOpacity=0` to disable only that shade, or choose any level from `1` to `90`. This setting is omitted from generated INIs. The old grid option has been removed.
 
-**Keyboard layout:** Newly generated INIs use `KeyboardLayout=Auto` to detect the active Windows/Wine layout for controls, CHEATS text entry and keyboard-menu labels. Set `KeyboardLayout=Off` to keep the original QWERTY key positions and labels. The French AZERTY path has been validated under Windows 11 and Linux/Wine; other layouts still need broader runtime testing. [Keyboard layout details](docs/references/CONFIGURATION.md#keyboard-layout-auto-or-off).
+Keyboard, joystick and audio settings remain editable and can also be saved from the game's own menus. `[Internal] RawHex` still preserves original binary settings and **must not be edited**. Older INIs with obsolete switches are backed up and migrated without losing FPS, controls, audio or `RawHex`.
 
-For audio, controls, Alt+Tab options, INI repair and other settings, see the **[configuration guide](docs/references/CONFIGURATION.md)**.
+See [INI/configuration](docs/references/CONFIGURATION.md), [startup technical design](docs/references/STARTUP_INI_RECOVERY_TECHNICAL.md), [keyboard notes](docs/references/KEYBOARD_LAYOUT_TECHNICAL.md) and [docs index](docs/README.md).
 
 ## Troubleshooting
 
 - **The patch does not load:** check that both DLLs are next to the supported `SpideyPC.exe`. On Wine/Proton, verify the `winmm=n,b` override.
 - **Controls stop responding after Alt+Tab, or audio/graphics look wrong:** these areas are still being investigated. See [troubleshooting and experimental input options](docs/references/CONFIGURATION.md#troubleshooting-cases).
-- **Your settings changed unexpectedly:** check for an automatic `SpiderMan2k1Fix_N.old` backup. [INI recovery details](docs/references/CONFIGURATION.md#automatic-ini-recovery).
+- **Your settings changed unexpectedly:** INI repair is automatic and silent at startup. Check the rolling backup `SpiderMan2k1Fix.ini.old` (overwritten on each repair). [INI recovery details](docs/references/CONFIGURATION.md#automatic-ini-recovery).
 - **Need a log?** Set `Log=1` under `[Debug]` in the INI and restart the game. The file `SpiderMan2k1Fix.log` is **overwritten at each launch**, so save it before restarting. Turn logging off afterward.
 
 For more help, read the [full documentation](docs/README.md), [F9 capture notes](docs/references/F9_PNG_CAPTURE.md) and [widescreen/HUD research](docs/DEVELOPMENT.md#7-display-and-rendering-research).

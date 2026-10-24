@@ -1,6 +1,6 @@
 # Configuration and troubleshooting
 
-This is the detailed companion to the [project README](../../README.md). Some settings, particularly input reacquisition and focus-pausing, are **experimental**. GitHub Actions passing does not establish that they work on every Windows, Wine or Proton setup.
+This is the detailed companion to the [project README](../../README.md). For the supported retail executable, focus-loss pause and native input reacquisition are **built-in compatibility features**, while their behavior across every Windows, Wine and Proton setup remains unverified. Passing GitHub Actions does not replace in-game validation.
 
 ## Upgrading from older builds
 
@@ -8,53 +8,26 @@ This is the detailed companion to the [project README](../../README.md). Some se
 - **Migrating from an older SpiderManFix beta:** remove the obsolete `SpiderManFix.dll`. To preserve settings, back up your old `SpiderManFix.ini` and rename it to `SpiderMan2k1Fix.ini` **before** launching the new fix (only if no new-named INI already exists). Otherwise the patch generates fresh defaults.
 - **Other proxy mods:** `winmm.dll` is a filename shared by many mods. Back up an existing file and check for conflicts; two different proxies cannot normally occupy the same directory under that name.
 
-## Full INI example, display and input settings
+## Player INI: compact configuration
 
-SpiderMan2k1Fix creates `SpiderMan2k1Fix.ini` alongside the game executable. **Close the game before editing the file manually**, because in-game settings may be saved back to it.
-
-The main options include:
+SpiderMan2k1Fix automatically generates `SpiderMan2k1Fix.ini` beside the supported game executable. Edit it **only while the game is closed**. The generated file exposes only the options that a player should need:
 
 ```ini
 [Debug]
-; 0 = disabled (default), 1 = write SpiderMan2k1Fix.log
 Log=0
 
 [Display]
-; Auto = desktop monitor resolution
-Resolution=Auto
-; Auto or 4:3 for a native gaming experience
 AspectRatio=Auto
 Brightness=4
 FPSLimit=30
 
 [Input]
-; Auto detects the active keyboard layout; Off keeps original US positions.
 KeyboardLayout=Auto
-; Experimental Windows 11 input recovery; default OFF.
-DirectInputReacquire=0
-; Pause rendering after a real Alt+Tab; default OFF.
-PauseOnFocusLoss=0
-; Resume only by pressing and releasing any keyboard key (consumed).
-; 1 = show a centered, transparent, red-outlined pause message; 0 = hide it.
-PauseOverlay=1
-; Darken the paused game behind the centered PAUSE banner (0 disables shade).
-PauseDim=1
-; Strength of black shade: 0..90 percent (default 50).
-PauseDimOpacity=50
-; No grid by default; set to 1 only if you prefer the optional 16px grid.
-PauseGrid=0
-; Pause cinematic Bink video and the game's audio-only Bink music stream.
-PauseBinkOnFocusLoss=0
-; Pause active game-owned secondary DirectSound effects/voices (default off).
-PauseDirectSoundOnFocusLoss=0
-RestoreCursorOnFocusLoss=1
 
 [Audio]
-; Volume levels: 0..100 percent
 MusicSFXLevel=69
 VoiceLevel=79
 MovieLevel=69
-; 1 = Stereo, 0 = Mono
 Stereo=1
 
 [Keyboard]
@@ -71,7 +44,6 @@ Zipline=F
 Swing=G
 
 [Joystick]
-; DirectInput button numbers start at zero
 Jump=BUTTON3
 Kick=BUTTON4
 Punch=BUTTON0
@@ -79,20 +51,99 @@ Web=BUTTON1
 Aim=BUTTON6
 Zipline=BUTTON9
 Swing=BUTTON7
+
+[Internal]
+; 252 original configuration bytes, written automatically
+RawHex=<504 hexadecimal characters>
 ```
 
-The generated INI may contain additional internal or development-specific settings depending on the release. Leave unfamiliar settings unchanged unless the release notes explain them.
+The example `RawHex` line is **illustrative only**: the generated file contains a genuine 504-character value. Do not manually delete, replace or edit it: unrecognized original-game settings are still preserved there.
 
-**Display modes:**
+| Setting | Meaning |
+| --- | --- |
+| `[Debug] Log` | `0` disables the log, `1` writes `SpiderMan2k1Fix.log`. |
+| `[Display] AspectRatio` | `Auto` uses the monitor's aspect ratio, `4:3` selects the classic presentation. |
+| `[Display] Brightness` | Game brightness from 0 through 9. |
+| `[Display] FPSLimit` | **Player-controlled frame limit.** Default `30`; `0` disables the limiter, `1..240` sets a target. Higher FPS can expose timing issues in the original game. |
+| `[Input] KeyboardLayout` | `Auto` detects the Windows/Wine input layout, `Off` leaves original QWERTY positions. |
+| `[Audio]` | Music/effects, voice and movie volumes (0..100%); `Stereo=1` selects stereo. |
+| `[Keyboard]` / `[Joystick]` | The eleven original keyboard actions and seven joystick button bindings, also saved from the game's menus. |
+| `[Internal] RawHex` | Lossless copy of the game's original 252-byte configuration record. Not a player-facing control. |
 
-- `AspectRatio=Auto` (default): use a modern widescreen layout matching your desktop.
-- `AspectRatio=4:3`: request the original 4:3 game presentation. The desktop is not switched to an exclusive display mode; the result should preserve the classic game proportions.
-- `Resolution=Auto` (default): use your desktop resolution. A specific `WIDTHxHEIGHT` value may also be configured where supported.
-- `FPSLimit=30` (default): preserve the intended 30 FPS cap. `FPSLimit=0` disables the limiter, although higher frame rates may affect an older game's behavior.
+### Display resolution: native monitor first
 
-**Controls:** keyboard and joystick bindings are independent. Keyboard values use physical DirectInput key names or hexadecimal scan codes. Joystick values use the same `BUTTON0`, `BUTTON1`, etc. numbering shown in the game's **Joystick Configuration** menu. Joystick movement axes/directions are handled by the game and are not configurable through this section.
+**Physical output resolution is not an INI setting.** At launch, SpiderMan2k1Fix
+uses the **current resolution of the monitor hosting the Spider-Man window**.
+The game remains borderless (`WS_POPUP`, `DDSCL_NORMAL`), with a monitor-sized
+window; no `ChangeDisplaySettings` or exclusive DirectDraw `SetDisplayMode`
+call changes the desktop's actual display mode. The original game's
+`640×480×16` intro/menu request is intercepted and acknowledged internally
+rather than sent to the monitor.
 
-**Alt+Tab recovery (Windows 11):** Use `DirectInputReacquire=1` and `PauseOnFocusLoss=1` for the tested keyboard/mouse recovery and focus-pause combination. After switching back to the game, press and release any key to resume; the wake key is consumed. The game reuses its native `DIERR_NOTACQUIRED` retry path without wrapping DirectInput COM interfaces. These options remain disabled by default; earlier unsafe COM experiments are no longer active, even if their keys remain in an older user INI. The former environment-variable override is supported for legacy diagnostic scripts, but is unnecessary with the INI setting.
+On Windows 11 and Wine, the patch identifies the game's window on the
+DirectDraw creation thread (`GetActiveWindow` /
+`EnumThreadWindows`, with a same-process `EnumWindows` fallback), then queries
+`MonitorFromWindow`, `GetMonitorInfoA` and
+`EnumDisplaySettingsA(info.szDevice, ENUM_CURRENT_SETTINGS)`.
+It supplies this monitor-specific width/height to
+`SpiderCfg_ObserveNativeMonitor` **before**
+`SpiderCfg_BootstrapGameRead` copies the virtual `Spidey.cfg` values into
+the original engine. `SetCooperativeLevel` confirms the authoritative HWND
+and can correct an early window/monitor mismatch before the first game mode.
+If no window is discoverable early, the existing primary-monitor fallback is
+used temporarily; its dimensions are corrected once the real HWND arrives,
+though already-loaded original game state cannot always be retroactively
+reloaded. This edge case is a useful regression test on multi-display systems.
+
+`AspectRatio=Auto` fills the selected monitor for 3D gameplay with
+automatic horizontal FOV/aspect adjustment. `AspectRatio=4:3` keeps
+the **same native physical output** but centers a logical 4:3 viewport
+with pillarboxing; menus and source videos always keep their intended 4:3
+presentation. Neither mode changes the Windows/Wine screen resolution.
+
+Turn on `[Debug] Log=1` to verify `DISPLAY-NATIVE`,
+`DISPLAY-PROBE`, `DISPLAY-POLICY` and `BORDERLESS` records.
+In particular, the reported monitor resolution and
+`BORDERLESS: window ... +WIDTHxHEIGHT` should agree with the
+selected monitor's active Windows/Wine resolution.
+
+### Built-in fixes: no INI switches
+
+The supported executable receives **automatic desktop resolution**, borderless fullscreen, centered 4:3 intro/menu media, native comic correction, automatic FOV/aspect adjustment, adaptive widescreen HUD and the verified in-game Display menu lock. These are no longer enabled or disabled through experimental flags; the original 4:3 mode retains its original geometry where a widescreen transform is unnecessary.
+
+**Alt+Tab and pause are permanent features:** once another application's focus loss is confirmed, the game latches pause at the original DirectDraw Flip boundary; a **press and release of any keyboard key after returning** resumes it. The frozen game frame receives the native violet/red PAUSED banner and **60% black shading by default**, with no grid. This behavior also coordinates the game's native Bink video/music streams and its game-owned secondary DirectSound voices. The native `DIERR_NOTACQUIRED` keyboard/mouse retry is requested automatically and installed only after its verified signature check at Flip #120; desktop cursor restoration is automatic. The old unsafe DirectInput COM-vtable hook stays disabled.
+
+**Windows-specific behavior:** the patch requests `DisableProcessWindowsGhosting` automatically on systems providing the API, avoiding Windows' false Ghost-window foreground transitions. This also disables Windows' normal ghost-window handling for a genuinely hung game **until the process exits**; it does not solve a real hang. Wine implementation details may differ.
+
+In all cases, the original executable's SHA-256 check and per-feature native signature checks remain active. A failed optional hook is logged and skipped instead of attempting an unchecked patch. Experimental HorPlus/AnySize modes remain disabled, not silently promoted to permanent behavior.
+
+### Optional PAUSED background opacity
+
+The focus-loss pause and its PAUSED banner are permanent, but **background
+darkening may be adjusted independently**. The generated INI intentionally
+does **not** contain `PauseDimOpacity`. When omitted, it uses **60%**.
+
+To disable only the background shade (not the PAUSED banner, game pause,
+input wake-up, Bink or DirectSound synchronization), manually add:
+
+```ini
+[Input]
+PauseDimOpacity=0
+```
+
+For a different shade, set `PauseDimOpacity` to any integer from `1` to
+`90`; for example, `PauseDimOpacity=75`. To restore the built-in default,
+remove the line (or set it to `60`). The value is applied when the game
+starts. Values outside `0..90` are rejected by the strict INI validator.
+
+The former `PauseGrid` setting and all grid-rendering code in the active
+DirectDraw pause path are removed. Old INIs containing this key are migrated
+with their other player settings preserved, including an explicit
+`PauseDimOpacity` value if previously configured.
+
+### Upgrading existing INIs
+
+An existing valid INI containing retired display, HUD, pause or focus switches is **automatically migrated at startup**: the old INI is renamed to the single rolling backup `SpiderMan2k1Fix.ini.old` (replacing any earlier `.ini.old`), and a new compact INI is installed after recovery and validation. This carries over **FPSLimit, AspectRatio, Brightness, KeyboardLayout, audio volumes, keyboard/joystick mappings and `RawHex`**. Deprecated flags are removed, not merely hidden while still changing the game. Other recognized developer-only F10 settings remain available through manual configuration but are not generated by default. If migration fails, the original file stays untouched and game-origin INI saving is disabled for safety.
 
 ## Keyboard layout (Auto or Off)
 
@@ -123,17 +174,44 @@ With `Auto` and a French layout, `M` resolves to physical DirectInput `0x27` rat
 
 **CHEATS and keyboard-menu label correction (validated on Windows 11 and Linux/Wine with French AZERTY):** For the supported SHA-verified 2001 executable, the fix verifies the original `Shell_InputName` → `DXINPUT_GetKeyName` call path and its QWERTY name table. In `Auto`, a valid non-QWERTY layout remaps the native name pointers in **process memory**, reusing original game strings. Displaced US letter positions receive the corresponding punctuation name where possible, otherwise `KEY`, rather than a duplicate CHEATS letter. The game's DirectInput event stream and executable on disk remain unchanged. Detection requires the **active system keyboard layout** to be accurately reported; not every locale or punctuation mapping has been runtime-tested. See [the detailed technical implementation, Windows API calls, verified addresses and failure guards](KEYBOARD_LAYOUT_TECHNICAL.md).
 
-## Optional Windows focus diagnostics
+## Permanent focus-loss pause and audio synchronization
 
-**Windows 11 class=Ghost false focus-loss experiment (PR #11):** If the game repeatedly pauses without Alt+Tab after about five to six seconds, capture `SpiderMan2k1Fix.log`: repeated `FOCUS-PAUSE-OWNER: ... class=Ghost` lines indicate Windows is replacing an apparently unresponsive game window with a ghost surrogate. `[Input] DisableWindowsGhosting=1` (default **0**) requests Microsoft's `DisableProcessWindowsGhosting` API at startup to prevent that replacement and test whether the repeated false pauses stop. **Restart required; it applies to the whole game process until exit and suppresses Windows' normal ability to manage a hung application via a ghost window. It does not fix a truly hung game or change the Alt+Tab pause/input behavior.** Do not enable by default before native Windows testing. See [diagnostic procedure](diagnostics/focus/UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md).
+The supported executable initializes the **focus-loss pause**, **safe
+DirectInput reacquire retry**, **cursor restore**, **Bink stream pause** and
+**game-owned secondary DirectSound voice pause** automatically. The retired
+INI keys `PauseOnFocusLoss`, `DirectInputReacquire`,
+`RestoreCursorOnFocusLoss`, `PauseBinkOnFocusLoss` and
+`PauseDirectSoundOnFocusLoss` are **not user switches**. Removing them
+from the generated file does not disable these features.
 
-For obsolete designs, see the [historical focus-pause UI archive](PAUSE_UI_HISTORY.md). **Those older prototypes are not configuration instructions for the current build.**
+At the original DirectDraw Flip boundary, confirmed external focus loss
+latches pause; its native PAUSED ribbon uses the optional 60%-by-default
+shading described above. A complete press/release of any key after
+returning to the game resumes it. The original game's input Acquire/retry
+branch receives a signature-guarded native correction on or after
+**Flip #120**. The previous invasive DirectInput COM/vtable interception
+remains disabled.
 
-## Bink music and DirectSound focus pausing
+The permanent Bink handler calls the game's own `BinkPause` for
+cinematics and Bink-based music. The game-owned secondary DirectSound
+voice handler preserves playback positions and does not pause the primary
+sound buffer. If no voices are playing, the log may correctly show
+`occupied=0` and no stop/resume operations, without indicating failure.
+See the [historical focus-audio tests](diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md)
+and the [current technical startup/runtime trace](STARTUP_INI_RECOVERY_TECHNICAL.md).
 
-**Synchronized audio and video focus pause (PR #9):** The separately enabled `PauseBinkOnFocusLoss=1` pauses Bink cinematic streams **and the Bink-based music heard during 3D gameplay** using the game's original `BinkPause` API. `PauseDirectSoundOnFocusLoss=1` pauses currently playing game-owned secondary DirectSound buffers and resumes the same buffers from their retained cursor position. The primary buffer is untouched. Both new media options are **disabled by default**. Their combined operation was tested in Windows 11 gameplay, the menu, and cinematics with no audio desynchronization. See [technical notes and test results](diagnostics/focus/FOCUS_AUDIO_VIDEO_SYNC_TEST.md) for diagnostics, compatibility limits, and rollback.
+**Windows Ghost surrogate policy:** where supported, the patch now
+requests `DisableProcessWindowsGhosting` automatically. This may prevent
+a Ghost foreground window from being mistaken for intentional Alt+Tab;
+it also disables Windows' normal ghost-window recovery UI for an
+actually hung process. It cannot repair a true engine hang, and native
+Windows 11 behavior of this **permanent default** needs fresh validation.
+The earlier `DisableWindowsGhosting=1` opt-in description belongs only to
+[historical diagnostics](diagnostics/focus/UNEXPECTED_FOCUS_PAUSE_DIAGNOSTIC.md).
 
-**Audio:** the three volume levels use user-friendly percentages; `Stereo=1` enables stereo and `Stereo=0` selects mono.
+**Audio and in-game controls:** The three audio volume levels are editable
+percentages; `Stereo=1` selects stereo, `0` selects mono. Standard
+keyboard and joystick bindings are preserved through INI migration.
 
 ## Debug logging
 
@@ -146,15 +224,64 @@ Log=0
 
 If you need to investigate a problem, set `Log=1`, save the file, and **restart the game**. SpiderMan2k1Fix will write `SpiderMan2k1Fix.log` in the game directory. **Each game launch starts a fresh log:** the previous session is overwritten (the proxy startup lines and main DLL diagnostics are retained together). Copy or rename the log before your next launch if you need to keep it. After collecting the information you need, return to `Log=0`.
 
+## Startup safety: no modal INI dialogs before native DirectDraw
+
+An invalid INI must **never** open a topmost `MessageBoxA` while the
+original game starts its graphics device. Repair and migration now write
+diagnostics only; game startup continues without a modal interruption, even
+if the original INI cannot be replaced. If repair fails, the original INI
+remains intact and game-origin INI writes are disabled.
+
+To eliminate the initialization race between the game's primary thread and
+the patch's background loader threads, the initial `winmm.dll` proxy
+installs a narrowly scoped **first-DirectDrawCreateEx gate** in the
+SHA-/opcode-guarded supported game's original IAT, at RVA `0x13B010`.
+Only minimal memory checks and the IAT write run in the loader callback.
+When the game makes its first `DirectDrawCreateEx` call **outside the
+loader lock**, the gate locates the main patch DLL and calls
+`SpiderMan2k1Fix_DirectDrawGate`. This invokes or joins one-time
+`InitOnceExecuteOnce` initialization: virtual config and the DirectDraw
+interception must be ready **before** the real DirectDraw device is
+created. If the DLL is absent or unsupported, the guarded call fails
+rather than forwarding the original game's unsafe exclusive 640×480
+startup request.
+
+This is separate from native-monitor detection: after initializing the
+patch, the game-thread hook identifies the actual game HWND/monitor before
+reading virtual `Spidey.cfg`, preserving the OS monitor mode and 4:3
+letter/pillarbox policies. A broken INI does not reinstate a physical
+`Resolution` setting or bypass the borderless requirement.
+
+**Diagnostic identifiers:** `DDRAW-STARTUP: early IAT gate status=1` in
+the proxy, `DDRAW-STARTUP: initial hook and configuration ready ...` in
+the main DLL, plus `INI-REPAIR` and `DISPLAY-NATIVE` messages. Note
+that `[Debug] Log=1` is needed for log output and may itself be absent
+or corrupted; the absence of log lines alone is not proof of failure.
+
+**Runtime evidence (2026-10-24):** an actual Linux/Wine
+corrupted-INI launch recovered **29 settings** after **8 errors** and
+**3 warnings**, retained `SpiderMan2k1Fix.ini.old`, activated the
+`DDRAW-STARTUP` gate, intercepted the 640×480×16 mode, and presented
+the 1920×1080 borderless window. A focus-loss and key-driven resume
+with Bink pause/resume and native input reacquisition also appeared
+in that same log. See the [technical evidence and code-path details](STARTUP_INI_RECOVERY_TECHNICAL.md).
+Native **Windows 11 runtime**, a second repair overwriting an existing
+`.old`, mixed-monitor scenarios and all 3D/audio variants remain to
+be checked; passing CI is not gameplay evidence.
+
 ## Automatic INI recovery
 
-If the configuration is missing, SpiderMan2k1Fix generates a new one. If it detects malformed lines, unknown sections/options, invalid values, or duplicates, it can:
+When `SpiderMan2k1Fix.ini` does not exist, the patch generates a new one using its defaults. When it is **corrupted or invalid** (malformed lines, unknown sections/options, bad values or duplicates), it silently recovers all recognized **valid** settings using a safe rebuild, without showing a startup dialog:
 
-1. Rename the previous file to the next unused backup name, such as `SpiderMan2k1Fix_0.old`, `SpiderMan2k1Fix_1.old`, and so on.
-2. Generate a clean `SpiderMan2k1Fix.ini` using the recognized sections and defaults.
-3. Recover known, valid values from the old configuration. When duplicate values exist, the **first valid** one is kept.
+1. Parse the existing `SpiderMan2k1Fix.ini` and keep the **first valid** occurrence of each supported key. Discard malformed, unknown and retired entries.
+2. Create a temporary INI from factory defaults, apply recovered values (controls, joystick, volumes, FPS, aspect, brightness, optional pause opacity and valid `RawHex`), then validate the **entire** replacement.
+3. Only after validation, **rename** the current `SpiderMan2k1Fix.ini` to `SpiderMan2k1Fix.ini.old`. If that backup already exists, **replace it**. There is no backup counter and no series of `_0.old`, `_1.old`, etc.
+4. Install the validated temporary file as the new `SpiderMan2k1Fix.ini`. If installation fails, attempt to restore the original file from `.ini.old`; when restoration is impossible, the original remains in the backup and an error is logged.
+5. After a successful repair, delete older **numbered backups created by previous patch versions** (matching `SpiderMan2k1Fix_<number>.old` only). Unrelated user files are not touched. Files that Windows/Wine refuses to delete are reported in the log.
 
-Unknown settings are retained in the `.old` backup rather than being copied into the clean INI. The `[Internal]` section contains `RawHex`, the game's 252-byte internal settings image; **do not edit this value manually**.
+The same process compacts an otherwise valid legacy INI that still contains retired settings. **At most one rolling `.ini.old` is normally retained**; a subsequent repair replaces it with the immediately preceding configuration, so this backup is not a permanent history. Copy it elsewhere if you wish to preserve it long-term.
+
+Unrecognized data stays in the previous version stored in `.ini.old`, but is not copied to the clean file. An invalid `[Internal] RawHex` is replaced by a valid factory image; a valid `RawHex` is preserved. **Never manually edit the 504-character RawHex value.**
 
 ## Troubleshooting cases
 
@@ -167,11 +294,19 @@ Unknown settings are retained in the `.old` backup rather than being copied into
 
 **The INI seems to have reset itself**
 
-Look for a numbered `SpiderMan2k1Fix_N.old` backup. The previous configuration may have contained unknown or malformed entries; known valid settings should be recovered in the replacement file.
+Look for `SpiderMan2k1Fix.ini.old` (the single rolling backup). The previous configuration may have contained unknown or malformed entries; known valid settings should be recovered in the replacement file.
 
 **Controls are not responding after switching applications**
 
-When testing the current development build, set `DirectInputReacquire=1` and `PauseOnFocusLoss=1`. Any keyboard key now resumes after focus returns; the old `PauseKey` selection is ignored. If recovery fails, enable `[Debug] Log=1`, then check for `DI8-RETRY: EXPERIMENTAL requested source=INI` and `DI8-RETRY: EXPERIMENTAL active at Flip #120`. For synchronized sound, enable both additional media-pause settings described above. A previous report of intermittent audio crackling occurred under ProcDump but was not reproduced during ordinary launches without ProcDump; its cause remains unknown. Future builds may provide a different option set.
+The focus-loss pause and native DirectInput reacquire are **permanent**;
+do not add retired `PauseOnFocusLoss` or `DirectInputReacquire` keys.
+Enable `[Debug] Log=1`, restart the game, and check for
+`FOCUS-PAUSE: confirmed external focus loss`,
+`FOCUS-PAUSE: Any-key resume swallowed` and
+`DI8-RETRY: redirected DIERR_NOTACQUIRED to game's Acquire`.
+The underlying game focus and DirectInput state may vary across Wine
+and Windows drivers. Share the full focus/DI8 portion of the fresh
+log if the problem persists.
 
 **The game has visual or audio glitches**
 

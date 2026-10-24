@@ -2090,8 +2090,8 @@ def test_default_generated_ini_omits_development_f10_shortcut():
     for option in ("F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit"):
         assert f"{option}=" not in INI
         assert f'"{option}=0\\r\\n"' not in GEN
-    assert "F10VerboseTrace=0" in INI
-    assert '"F10VerboseTrace=0\\r\\n"' in GEN
+    assert "F10VerboseTrace=0" not in INI
+    assert '"F10VerboseTrace=0\\r\\n"' not in GEN
 
 def test_movie4_input_release_safety_remains_enabled_when_f10_shortcut_off():
     """Regression: Enter on Bink #4 must not skip 3D intro with F10 disabled."""

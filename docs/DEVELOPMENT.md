@@ -54,6 +54,47 @@ All virtual addresses (VA) in this document assume this exact binary and image b
 - A default 30 FPS cap preserves game timing; historical Scorpion encounters motivated avoiding high frame rates.
 - The project has investigated original DirectDraw/Direct3D 7 presentation, Bink movies, native input ownership and script cleanup. The game is not fully decompiled.
 
+### 2.2 Startup safety: first DirectDraw gate and silent INI repair (PR #46)
+
+**Current behavior (2026-10-24):** The local `winmm.dll` proxy
+installs an early, retail-signature-guarded `DirectDrawCreateEx` IAT gate
+at executable **RVA `0x13B010`** before launching its DLL worker. The
+gate performs no blocking work under the loader lock. When the game calls
+DirectDraw, it resolves `SpiderMan2k1Fix_DirectDrawGate` in the main DLL
+and synchronously enters `InitOnceExecuteOnce`. This ensures that the
+supported EXE SHA-256 has been checked and the native graphics/configuration
+hooks initialized **before the first real device creation**. If the main
+DLL is unavailable or initialization fails, the gate does not forward
+the unsafe unpatched exclusive-mode request.
+
+Invalid or obsolete `SpiderMan2k1Fix.ini` files are automatically
+reconstructed **without MessageBoxA**. The patch first creates and
+validates a temporary clean INI containing all recoverable known-good
+settings, then renames the old INI to the **single rolling**
+`SpiderMan2k1Fix.ini.old`, replacing a previous backup, and installs
+the replacement. The installer attempts rollback if the final rename
+fails. Old numbered backups are pruned after a successful recovery.
+
+The first DirectDraw creation discovers the game HWND and its
+monitor-specific resolution before the original virtual `Spidey.cfg`
+read. The original `640x480x16` `SetDisplayMode` request becomes a
+logical 4:3 presentation inside a native desktop-resolution `WS_POPUP`
+borderless window using `DDSCL_NORMAL`. No user `Resolution` INI override
+is exposed. `AspectRatio=Auto|4:3` affects content geometry only.
+
+**Runtime evidence, Linux/Wine on 2026-10-24:** The user supplied a fresh
+log showing `INI-REPAIR: fixed 8 error(s), 3 unknown/other warning(s);
+recovered 29 setting(s)`, followed by the installed `DDRAW-STARTUP`
+gate, a physical **1920x1080** borderless window, and interception of
+the legacy mode. The same session recorded a real focus-loss pause with
+60% dimming, Bink pause/resume and DirectInput Acquire retry. **Native
+Windows 11 validation of this startup gate and second-backup replacement
+remain open.** These source/runtime findings supersede historical INI
+opt-in guidance below.
+
+See the full code-path, safety, rollback and test analysis:
+[Startup and INI recovery technical reference](references/STARTUP_INI_RECOVERY_TECHNICAL.md).
+
 ### 2.1 Original disc check: discovered callsites, entry and early No-CD patch
 
 The supported original `SpideyPC.exe` invokes a **disc-check function** at **VA `0x005163E0` / RVA `0x001163E0`**, with at least the following two SHA-pinned original **direct CALL instructions**. Their destination is verified both by the bytes in the project and by x86 `E8 rel32` target arithmetic:
@@ -276,7 +317,7 @@ The stock executable uses **DirectDraw 7** to create/present video surfaces and 
 
 **Native exclusive-mode limitations:** the original engine assumes it owns the physical display's resolution/format and a flipping-primary presentation arrangement. Under modern monitors/Wine this produced an unsupported 640×480/16-bpp display, stretching of 4:3 art, and an exclusive-fullscreen Alt+Tab crash in prior observations. These are observed compatibility problems, **not evidence that Direct3D7 cannot draw higher-resolution imagery**. Rendering menu sprites at 640×480 and changing monitor mode are separate concerns.
 
-**Our patch-owned replacement, not native functionality:** `spiderman2k1fix.c` intercepts `SetCooperativeLevel` and forwards **`DDSCL_NORMAL`**, acknowledges the game's legacy `SetDisplayMode` without changing the monitor, substitutes a **windowed PRIMARY plus offscreen render/backbuffer** for the original exclusive flip chain, and presents by **Blt** inside a borderless desktop-size window. The UI's 640×480 logical coordinates map into the centered 4:3 region. `display_policy.c` accepts a broad range of user-supplied logical resolutions for the **fix** (not a proven stock-mode list), locks game settings to 32 bits and supports an internal centered 4:3 canvas. The original game EXE is unchanged on disk.
+**Our patch-owned replacement, not native functionality:** `spiderman2k1fix.c` intercepts `SetCooperativeLevel` and forwards **`DDSCL_NORMAL`**, acknowledges the game's legacy `SetDisplayMode` without changing the monitor, substitutes a **windowed PRIMARY plus offscreen render/backbuffer** for the original exclusive flip chain, and presents by **Blt** inside a borderless desktop-size window. The UI's 640×480 logical coordinates map into the centered 4:3 region. The current fix forces the selected monitor's native resolution automatically, fixes color depth at 32 bits and exposes only a logical `AspectRatio=Auto|4:3` choice; `display_policy.c`'s broader internal resolution handling is **not** a current INI feature. The original game EXE is unchanged on disk.
 
 **Source references:** [`spiderman2k1fix.c`](../spiderman2k1fix.c) (`hooked_set_cooperative_level`, `hooked_set_display_mode`, `hooked_create_surface`, `hooked_flip`), [`spidey_cfg_template.h`](../spidey_cfg_template.h), [`display_menu_lock.c`](../display_menu_lock.c), [`display_policy.c`](../display_policy.c). Precise original resolution-enumeration routine/addresses remain a future reverse-engineering task.
 
@@ -666,11 +707,24 @@ This is a **diagnostic register**, not a promise that every problem is solved on
 
 ### 10.1 Symptom-to-cause-to-resolution overview
 
+**Current-status note for historical incidents:** Development-era
+`DirectInputReacquire=1`, `PauseOnFocusLoss=1`,
+`PauseBinkOnFocusLoss=1`, `PauseDirectSoundOnFocusLoss=1` and
+`DisableWindowsGhosting=1` were *experimental opt-ins* when originally
+investigated. They are now **permanent, signature-guarded or scoped
+behaviors** in PR #46, not options to add to a current INI. The unsafe
+DirectInput COM-vtable experiment remains disabled. The [current
+architecture and Wine evidence](references/STARTUP_INI_RECOVERY_TECHNICAL.md)
+take precedence over older rows' default/opt-in descriptions.
+
+
+
 | Incident | Original or patch-induced? | Cause supported by evidence | Fix or mitigation and status |
 | --- | --- | --- | --- |
 | **Alt+Tab crashes the original game after 1–3 seconds** | Original fullscreen path / compatibility | Original **DirectDraw exclusive fullscreen**, physical video-mode switching and focus-sensitive legacy resources. **Exact crashing instruction for every report was not isolated** | Replace exclusive mode with **borderless/windowed DirectDraw**, `DDSCL_NORMAL`, windowed PRIMARY/offscreen backbuffer and Blt presentation. Avoids the *original exclusive-mode* failure mechanism; **not** a universal fix for other Windows crashes |
 | **After Alt+Tab, game animates but keyboard/mouse no longer work** | Original input state, distinct from rendering | Original DirectInput8 poll only reacquires for **`DIERR_INPUTLOST`**; Windows 11 WinDbg recorded persistent **`DIERR_NOTACQUIRED`** at both `GetDeviceData` sites. Native window activation state also matters | A narrowly signature-checked **native Acquire/retry branch redirect**, enabled by `[Input] DirectInputReacquire=1`, reuses game-owned recovery only in the active state. **Validated in the documented Windows 11 + focus-pause test combination**; default **0**, no cross-system guarantee |
 | **Black screen / unsupported legacy resolution** | Original menu video-mode request + modern display | Legacy **640×480×16** physical `SetDisplayMode` request unsupported/unwanted on some modern display paths | Intercept as **logical 640×480** while physical desktop output stays native **32-bit** borderless, with centered 4:3 conversion. Observed fix for the original black-screen reproduction |
+| **Invalid INI opens a modal dialog and the game starts at 640×480** | **Patch-induced initialization race** | Earlier invalid-INI repair displayed a topmost MessageBox on another thread before DirectDraw hooks were fully installed | PR #46 removes modal repair dialogs and gates the first `DirectDrawCreateEx` on `InitOnceExecuteOnce`. **Runtime-validated in Linux/Wine:** 29 valid INI entries recovered, desktop-sized 1920×1080 borderless presentation and intercepted 640×480×16 request. Native Windows 11 remains untested |
 | **Windows startup/viewport crash EIP=0 inside `d3dim700.dll`** | **Introduced by an early version of our fix** | Our cloned **49-slot D3D7 COM vtable** changed the interface table pointer; native Windows crashed inside `SetViewport` even though bypassing hooks allowed menus/gameplay | Keep **original COM vtable pointer**, patch only the four existing slots **13, 20, 25, 26 in place** after validation. Default implementation; native Windows A/B showed the importance of this change |
 | **Windows access violation in original `fclose(FILE*)`** | Native EXE crash, cause of bad argument unknown | ProcDump 2026-10-19: **`C0000005`** reading **`0x0000000C`** at **VA `0x0052A805`**; game call return `0x005186F8` supplied **`FILE*=NULL`** to embedded CRT `fclose` (routine **RVA `0x0012A7FC`**) | Signature- and caller-guarded **vectored exception handler**, default installed for the exact supported EXE; on this *one* fault skips to original `fclose` error epilogue **VA `0x0052A828`**, returning **EOF (-1)**. **Mitigation, not an explanation of why NULL was supplied**; not proven exclusive to quitting |
 | **Crash or incomplete shutdown when forcing Quit/closing HWND at wrong game phase** | Original game's complex resource ownership + unsafe external shortcuts | Bink owner, startup stills, scene-script interpreter, gameplay, controller and menu have **different cleanup/SEH paths**. Native `[0x0060CFA4]` request and quit byte do not mean “exit immediately” everywhere | Use **original owner-specific cleanup**: Bink `0x00470871 → 0x0050B790`, cutscene `CutSceneEndScript`, 3D cleanup `0x00455BF3`, controller 7, or true `Shell_MainMenu` Quit action 18 / `0x004941D5`. Historical F12 experiments validated selected native exits; current debug F10 during gameplay **returns to menu**, not process Quit |

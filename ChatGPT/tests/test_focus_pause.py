@@ -7,11 +7,11 @@ INI=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text()
 GEN=(ROOT/"virtual_spidey_cfg.c").read_text()
 VALID=(ROOT/"ini_validation.h").read_text()
 
-def test_pause_is_opt_in_and_configured_consistently():
-    assert "PauseOnFocusLoss=0" in INI
-    assert '"PauseOnFocusLoss=0\\r\\n"' in GEN
-    assert '"PauseOnFocusLoss"' in VALID
-    assert 'GetPrivateProfileIntA("Input","PauseOnFocusLoss",0,path)==1' in CORE
+def test_focus_pause_is_permanent_and_not_user_configurable():
+    assert '"PauseOnFocusLoss=0\\r\\n"' not in GEN
+    assert '"PauseOnFocusLoss"' in VALID  # recognized for legacy migration
+    assert 'GetPrivateProfileIntA("Input","PauseOnFocusLoss"' not in CORE
+    assert "InterlockedExchange(&pause_on_focus_loss,1);" in CORE
 
 def test_pause_only_at_ddraw_flip_boundary():
     assert "static void pause_at_flip_if_background(void)" in CORE
@@ -30,9 +30,10 @@ def test_pause_only_at_ddraw_flip_boundary():
         assert needle in pause
     assert "SuspendThread" not in pause
 
-def test_no_native_input_hook_is_enabled_by_default():
-    assert "DirectInputReacquire=0" in INI
-    assert '"DirectInputReacquire=0\\r\\n"' in GEN
+def test_native_retry_is_enabled_but_unsafe_com_hooks_remain_disabled():
+    retry=(ROOT/"input_notacquired_retry.c").read_text()
+    assert '"DirectInputReacquire=0\\r\\n"' not in GEN
+    assert "InterlockedExchange(&requested,1);" in retry
     assert "ExperimentalAltTabReacquire=" not in INI
     assert '"ExperimentalAltTabReacquire=' not in GEN
 
@@ -66,7 +67,7 @@ def test_focus_loss_filters_click_activation_glitches():
 def test_only_any_key_resume_and_retired_ini_modes_inert():
     assert "PauseKey=" not in INI
     assert '"PauseKey"' in VALID  # legacy INI accepted but ignored
-    assert "PauseKey" not in CORE.replace("Historical PauseKey selections in older INIs are ignored: Any only.","")
+    assert 'GetPrivateProfileIntA("Input","PauseKey"' not in CORE
     assert 'SpiderPauseAny_Begin(hwnd)' in CORE
     assert 'SpiderPauseAny_Completed()' in CORE
     assert 'SpiderPauseAny_DiscardGameKeyMessage(&msg,hwnd)' in CORE
@@ -112,7 +113,7 @@ def test_resume_focus_diagnostic_does_not_mutate_focus():
 def test_di8_entry_probe_is_opt_in_and_factory_only():
     trace=(ROOT/"input_focus_trace.c").read_text()
     assert "ExperimentalDI8EntryTrace=0" in INI
-    assert '"ExperimentalDI8EntryTrace=0\\r\\n"' in GEN
+    assert '"ExperimentalDI8EntryTrace=0\\r\\n"' not in GEN
     assert '"ExperimentalDI8EntryTrace"' in VALID
     assert 'GetPrivateProfileIntA("Input","ExperimentalDI8EntryTrace",0,ini)==1' in trace
     assert "if(!want_trace) want_probe=0;" in trace

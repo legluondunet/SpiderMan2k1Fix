@@ -53,9 +53,10 @@ def test_ribbon_ui_is_centered_native_four_by_three_not_full_widescreen():
     assert "left_edge,y_top,ui_width,vertical" in P
     assert 'L"PAUSED",ui_rect.left,ui_width' in P
     assert "ui_rect.left,ui_width,\n                         canvas.top" in P
-    # Dimming and optional grid must still cover the same original frame.
+    # The optional shade uses the full original frame; the grid was retired.
     assert "pause_blend_color(dc,tint_dc,0,0,width,height,RGB(0,0,0)" in P
-    assert "AlphaBlend(dc,canvas.left,y,cw,1,tint_dc" in P
+    assert "AlphaBlend(dc,canvas.left,y,cw,1,tint_dc" not in P
+    assert "if(enabled_dim && opacity>0)" in P
     assert "canvas=*content_rect;" in P
 
 

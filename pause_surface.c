@@ -16,7 +16,6 @@
 #include <string.h>
 #include "pause_surface.h"
 
-#define PAUSE_GRID_STEP 16
 #define ESC_DESIGN_W 1440
 #define ESC_DESIGN_H 1080
 #define PAUSE_MAX_W 4096
@@ -26,7 +25,7 @@ static HDC saved_dc=NULL;
 static HBITMAP saved_bitmap=NULL, saved_old=NULL;
 static IDirectDrawSurface7 *saved_surface=NULL;
 static HICON pause_game_icon=NULL; /* biggest embedded SpideyPC.exe icon */
-static int enabled_dim=1,enabled_grid=0,enabled_banner=1,opacity=50;
+static int enabled_dim=1,enabled_banner=1,opacity=60;
 static void (*pause_log)(const char *)=NULL;
 
 static void pause_log_hresult(const char *step,HRESULT hr) {
@@ -162,26 +161,6 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
     if(!pause_blend_color(dc,tint_dc,0,0,width,height,RGB(0,0,0),
                           (BYTE)((opacity*255+50)/100)))return 0;
   }
-  /* Optional legacy grid remains an opt-in and is OFF by default. */
-  if(enabled_dim && enabled_grid) {
-    int x,y,step_x=PAUSE_GRID_STEP,step_y=PAUSE_GRID_STEP;
-    const BLENDFUNCTION grid_blend={AC_SRC_OVER,0,28,0};
-    HBRUSH brush=CreateSolidBrush(RGB(100,104,124));
-    RECT pixel={0,0,1,1};
-    if(brush) {
-      FillRect(tint_dc,&pixel,brush);
-      DeleteObject(brush);
-      saved=SaveDC(dc);
-      if(saved) {
-        IntersectClipRect(dc,canvas.left,canvas.top,canvas.right,canvas.bottom);
-        for(x=canvas.left+step_x;x<canvas.right;x+=step_x)
-          AlphaBlend(dc,x,canvas.top,1,ch,tint_dc,0,0,1,1,grid_blend);
-        for(y=canvas.top+step_y;y<canvas.bottom;y+=step_y)
-          AlphaBlend(dc,canvas.left,y,cw,1,tint_dc,0,0,1,1,grid_blend);
-        RestoreDC(dc,saved);
-      }
-    }
-  }
   if(!enabled_banner)return 1;
 
   saved=SaveDC(dc);
@@ -191,7 +170,7 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
   /* Native violet ESC panel: original diffuse ARGB 0x7F3232A0 with
    * SRCALPHA / INVSRCALPHA; screen-space y=400.5..675 (1440x1080).
    * Slight blue-to-amethyst shading approximates the original menu's
-   * blue-violet tint after our independent 50% focus-loss dim. */
+   * blue-violet tint after our independent focus-loss dim (default 60%). */
   upper=canvas.top+esc_coordf(400.5f,ch,ESC_DESIGN_H);
   lower=canvas.top+esc_coordf(675.0f,ch,ESC_DESIGN_H);
   if(!pause_blend_color(dc,tint_dc,ui_rect.left,upper,ui_width,lower-upper,
@@ -261,23 +240,32 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
 }
 
 void SpiderPauseSurface_Init(void (*log_fn)(const char *)) {
-  char path[MAX_PATH],*slash;
+  char path[MAX_PATH],*slash,info[150];
   DWORD n;
   pause_log=log_fn;
-  enabled_dim=1;enabled_grid=0;enabled_banner=1;opacity=50;
+  /* Permanent PAUSED panel; only the background shade opacity is
+   * configurable. The INI intentionally omits PauseDimOpacity by default.
+   * 0 = no black shade (the PAUSED panel and gameplay pause remain active);
+   * 1..90 = requested shade strength, otherwise 60% by default. */
+  enabled_dim=1;
+  enabled_banner=1;
+  opacity=60;
   n=GetModuleFileNameA(NULL,path,sizeof(path));
-  if(n && n<sizeof(path) && (slash=strrchr(path,'\\')) &&
+  if(n>0 && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL &&
      (size_t)(slash-path)+sizeof("SpiderMan2k1Fix.ini")<=sizeof(path)) {
     strcpy(slash+1,"SpiderMan2k1Fix.ini");
-    enabled_dim=GetPrivateProfileIntA("Input","PauseDim",1,path)==1;
-    enabled_grid=GetPrivateProfileIntA("Input","PauseGrid",0,path)==1;
-    enabled_banner=GetPrivateProfileIntA("Input","PauseOverlay",1,path)==1;
-    opacity=GetPrivateProfileIntA("Input","PauseDimOpacity",50,path);
+    opacity=GetPrivateProfileIntA("Input","PauseDimOpacity",60,path);
   }
+  /* The strict INI validator accepts 0..90. Fail closed on anomalous
+   * values in a missing/unreadable file without affecting focus pause. */
+  if(opacity<0 || opacity>90)opacity=60;
   pause_load_game_icon();
-  if(opacity<0)opacity=0;
-  if(opacity>90)opacity=90;
-  if(pause_log)pause_log("FOCUS-SURFACE: DirectDraw backbuffer pause renderer ready (no overlay HWND)");
+  if(pause_log) {
+    snprintf(info,sizeof(info),
+      "FOCUS-SURFACE: native PAUSED banner enabled; background opacity=%d%% (0=disabled, default=60%%)",
+      opacity);
+    pause_log(info);
+  }
 }
 
 void SpiderPauseSurface_End(void) {
@@ -364,8 +352,8 @@ int SpiderPauseSurface_Begin(IDirectDrawSurface7 *back,
   if(pause_log) {
     char line[180];
     snprintf(line,sizeof(line),
-       "FOCUS-SURFACE: frozen scene+%d%% shade + native-ESC-inspired violet ribbon and spider icon (grid=%d) presented in game's DirectDraw surface",
-       enabled_dim?opacity:0,enabled_grid?PAUSE_GRID_STEP:0);
+       "FOCUS-SURFACE: frozen scene+%d%% shade + native-ESC-inspired violet ribbon and spider icon presented in game's DirectDraw surface",
+       enabled_dim?opacity:0);
     pause_log(line);
   }
   return 1;

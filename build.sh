@@ -101,6 +101,16 @@ for dll in SpiderMan2k1Fix.dll winmm.dll; do
   fi
 done
 
+# The winmm proxy's first-DirectDraw startup gate must locate this exact
+# stable C export. Otherwise the proxy fails closed instead of launching the
+# original unsupported 640x480 exclusive mode.
+"$OBJDUMP" -p "$probe_dir/SpiderMan2k1Fix.dll" > "$probe_dir/fix-exports.txt"
+if ! grep -Eq '(^|[[:space:]])SpiderMan2k1Fix_DirectDrawGate([[:space:]]|$)' "$probe_dir/fix-exports.txt"; then
+  echo 'ERROR: missing SpiderMan2k1Fix_DirectDrawGate export required by startup proxy.' >&2
+  exit 1
+fi
+echo 'EXPORTS: early DirectDraw bootstrap gate available'
+
 # Validate all original game exports plus audio middleware forwards.
 "$OBJDUMP" -p "$probe_dir/winmm.dll" > "$probe_dir/winmm-exports.txt"
 python3 - "$probe_dir/winmm-exports.txt" <<'PYEXPORT'

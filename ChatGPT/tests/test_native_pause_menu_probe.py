@@ -156,30 +156,23 @@ def test_hook_order_preserves_other_3d_2d_and_hud_transforms():
     assert "native_motif43_restore_gutters(self,(const SpiderMenuVertex*)verts,flags)" in DRAW
 
 
-def test_native_esc_children_default_on_but_depend_on_installed_hud_master():
-    src=CORE.split("/* Native ESC subfeatures are hidden HUD settings",1)[1].split(
+def test_native_esc_children_are_permanent_but_depend_on_validated_hud():
+    src=CORE.split("static int native_esc43_hud_setting_enabled(",1)[1].split(
         "/* Native gameplay ESC 4:3 panel correction",1)[0]
-    assert "SpiderHudWidescreen_Installed()" in src
-    assert 'GetPrivateProfileIntA("HUD",key,1,path)!=1' in src
-    assert "GetEnvironmentVariableA(legacy_env,override,sizeof(override))" in src
-    assert "override[0]=='0'" in src  # optional compatibility/debug opt-out
-    assert 'GetPrivateProfileIntA("HUD",key,0,path)' not in src
-    assert "return 1;" in src
-    assert "static int native_esc43_hud_setting_enabled(" in CORE
+    assert "SpiderHudWidescreen_Installed()!=0" in src
+    assert 'GetPrivateProfileIntA("HUD"' not in src
+    assert "return SpiderHudWidescreen_Installed()!=0;" in src
     hud=CORE.split("static void install_player_hud(",1)[1].split(
-        "static DWORD WINAPI initialize(",1)[0]
-    assert 'option=GetPrivateProfileIntA("HUD","HUDWidescreenFix",1,ini);' in hud
-    assert "if (option==0) {" in hud
-    assert "if (!SpiderHudWidescreen_Install(exe_verified,TRUE))" in hud
-    startup=CORE.split("static DWORD WINAPI initialize(",1)[1].split(
+        "static DWORD initialize_body(",1)[0]
+    assert 'GetPrivateProfileIntA("HUD","HUDWidescreenFix"' not in hud
+    assert "if(!SpiderHudWidescreen_Install(exe_verified,TRUE))" in hud
+    startup=CORE.split("static DWORD initialize_body(",1)[1].split(
         "BOOL WINAPI DllMain(",1)[0]
     assert startup.index("install_player_hud(TRUE);") < startup.index("native_pause43_init();")
     assert startup.index("native_pause43_init();") < startup.index("native_cursor43_init();")
     assert startup.index("native_cursor43_init();") < startup.index("native_motif43_init();")
     assert "supported_exe()" in startup
     assert "SpiderCfg_ValidateCurrentIni(log_line)" in startup
-    assert "if(!SpiderHudWidescreen_Installed())return 0;" in src
-
 
 def test_native_esc_hidden_manual_ini_children_and_parent_chain():
     pause=CORE.split("static void native_pause43_init(void)",1)[1].split(
@@ -198,7 +191,7 @@ def test_native_esc_hidden_manual_ini_children_and_parent_chain():
         for ini in ("ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini","ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini",
                     "ChatGPT/tests/fixtures/SpiderMan2k1Fix.user-clean.ini"):
             assert name not in (ROOT / ini).read_text(encoding="utf-8")
-        assert name not in (ROOT / "virtual_spidey_cfg.c").read_text(encoding="utf-8")
+        assert f'"{name}=' not in (ROOT / "virtual_spidey_cfg.c").read_text(encoding="utf-8")
     for env in ("SPIDERMAN2K1FIX_NATIVE_ESC_43",
                 "SPIDERMAN2K1FIX_NATIVE_MOTIF_43",
                 "SPIDERMAN2K1FIX_NATIVE_CURSOR_43"):

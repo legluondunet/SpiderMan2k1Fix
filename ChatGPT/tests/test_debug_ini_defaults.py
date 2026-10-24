@@ -14,8 +14,9 @@ def test_debug_example_and_exact_display_help():
     parser = configparser.ConfigParser(interpolation=None)
     parser.read_string(example)
     assert parser['Debug']['Log'] == '0'
-    assert '; Auto = desktop monitor resolution\nResolution=Auto\n' in example
-    assert '; Auto or 4:3 for a native gaming experience\nAspectRatio=Auto\n' in example
+    assert 'Resolution=' not in example
+    assert 'AspectRatio=Auto\n' in example
+    assert 'FPSLimit=30\n' in example
     assert '[Debug]\\r\\n' in virtual
     assert 'Log=0\\r\\n' in virtual
     assert 'VirtualSpideyCfg=' not in example

@@ -43,14 +43,8 @@ static IDirectSoundBuffer *voice_at(unsigned slot){
   return *(IDirectSoundBuffer * const *)(SPIDER_VOICES+slot*12u);
 }
 void SpiderFocusDSound_Init(void (*log_fn)(const char *)){
-  char path[MAX_PATH],*slash;
-  DWORD n;
   logger=log_fn;
-  n=GetModuleFileNameA(NULL,path,sizeof(path));
-  if(!n || n>=sizeof(path) || !(slash=strrchr(path,'\\')) ||
-    (size_t)(slash-path)+sizeof("SpiderMan2k1Fix.ini")>sizeof(path))return;
-  strcpy(slash+1,"SpiderMan2k1Fix.ini");
-  if(GetPrivateProfileIntA("Input","PauseDirectSoundOnFocusLoss",0,path)!=1)return;
+  /* Native sound focus pause is permanent, with original-site validation. */
   /* The calling code has already verified the complete supported EXE hash
    * before any fixed-address access. Reject any unexpected site layout. */
   if(memcmp(SPIDER_VOICE_INIT,voice_init_signature,sizeof(voice_init_signature)) ||

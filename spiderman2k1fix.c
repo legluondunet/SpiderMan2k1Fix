@@ -72,29 +72,18 @@ static void log_line(const char *s) {
  * after the supported EXE hash and INI have been validated, early at boot. */
 typedef VOID (WINAPI *SpiderDisableGhostingFn)(void);
 static void pause_apply_windows_ghosting_option(void) {
-  char path[MAX_PATH],*slash;
-  DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
-  HMODULE user32;
-  SpiderDisableGhostingFn disable_ghosting;
-  if(!n || n>=sizeof(path) || !(slash=strrchr(path,'\\')) ||
-     (size_t)(slash-path)+sizeof("SpiderMan2k1Fix.ini")>sizeof(path)) {
-    log_line("FOCUS-GHOST: INI path unavailable, default Windows ghosting retained");
-    return;
-  }
-  strcpy(slash+1,"SpiderMan2k1Fix.ini");
-  if(GetPrivateProfileIntA("Input","DisableWindowsGhosting",0,path)!=1) {
-    log_line("FOCUS-GHOST: normal Windows ghosting enabled (DisableWindowsGhosting=0)");
-    return;
-  }
-  user32=GetModuleHandleA("user32.dll");
-  disable_ghosting=user32?(SpiderDisableGhostingFn)
+  HMODULE user32=GetModuleHandleA("user32.dll");
+  SpiderDisableGhostingFn disable_ghosting=user32?(SpiderDisableGhostingFn)
     GetProcAddress(user32,"DisableProcessWindowsGhosting"):NULL;
+  /* This avoids spurious focus-loss reports from Windows' synthetic Ghost
+   * windows during the game's long original message-processing stalls.
+   * Like all focus workarounds, this applies only to the SHA-verified game. */
   if(!disable_ghosting) {
-    log_line("FOCUS-GHOST: WARNING DisableProcessWindowsGhosting unavailable; continuing unchanged");
+    log_line("FOCUS-GHOST: DisableProcessWindowsGhosting unavailable; continuing without suppression");
     return;
   }
   disable_ghosting();
-  log_line("FOCUS-GHOST: DisableProcessWindowsGhosting CALLED; Ghost surrogate suppression requested for this run");
+  log_line("FOCUS-GHOST: process ghost-window suppression active (built-in focus protection)");
 }
 
 /* Keep the exact SHA-256 guard. A failure must explain which operation
@@ -503,6 +492,40 @@ static volatile LONG menu_version_logged=0;
 static SpiderFrameLimiter g_frame_limiter;
 static BOOL g_frame_limiter_ready=FALSE;
 
+/* At the first DirectDrawCreateEx hook, the game's real window is
+ * usually already created, but SetCooperativeLevel has not run yet.
+ * Discover ONLY windows belonging to the game main thread: a foreign
+ * foreground application's HWND must never choose the output monitor. */
+typedef struct {HWND found;} SpiderEarlyWindow;
+static BOOL CALLBACK spider_find_early_window(HWND window,LPARAM context) {
+  SpiderEarlyWindow *found=(SpiderEarlyWindow *)(uintptr_t)context;
+  DWORD pid=0;
+  if(!IsWindow(window) || (GetWindowLongPtrA(window,GWL_STYLE)&WS_CHILD) ||
+     GetWindow(window,GW_OWNER)!=NULL ||
+     GetWindowThreadProcessId(window,&pid)==0 || pid!=GetCurrentProcessId())
+    return TRUE;
+  if(!found->found || IsWindowVisible(window))
+    found->found=window;
+  return !IsWindowVisible(window);
+}
+static HWND spider_find_game_window_before_ddraw(void) {
+  SpiderEarlyWindow state={NULL};
+  HWND active=GetActiveWindow();
+  DWORD pid=0;
+  if(active && IsWindow(active) &&
+     GetWindowThreadProcessId(active,&pid)!=0 && pid==GetCurrentProcessId() &&
+     !(GetWindowLongPtrA(active,GWL_STYLE)&WS_CHILD))
+    return active;
+  EnumThreadWindows(GetCurrentThreadId(),spider_find_early_window,
+                    (LPARAM)(uintptr_t)&state);
+  /* Some Wine/Win32 backends create the game HWND on a different thread
+   * from the thread performing DirectDrawCreateEx. Search the process's
+   * top-level windows as well, never arbitrary windows of other apps. */
+  if(!state.found)
+    EnumWindows(spider_find_early_window,(LPARAM)(uintptr_t)&state);
+  return state.found;
+}
+
 /* The desktop mode is probed BEFORE the game's exclusive mode change.
  * Do not replace SetDisplayMode alone: the 640x480 D3D target and viewport
  * would then be inconsistent with the primary/backbuffer dimensions.
@@ -521,20 +544,29 @@ static void probe_desktop_mode(HWND hwnd) {
   if (!EnumDisplaySettingsA(info.szDevice,ENUM_CURRENT_SETTINGS,&mode)) return;
   if (mode.dmPelsWidth<640 || mode.dmPelsHeight<480 ||
       mode.dmPelsWidth>16384 || mode.dmPelsHeight>16384) return;
-  /* Cache ONCE, before the game's first exclusive mode switch. Re-querying
-   * later would incorrectly cache the current 640x480 game resolution.
-   */
-  if (!desktop_w && !desktop_h) {
+  /* The first DDraw creation is early enough to correct the virtual CFG
+   * BEFORE the game's native loader reads it. SetCooperativeLevel supplies
+   * the authoritative HWND later. Until the first intercepted game mode,
+   * allow this actual HWND to correct an early-window monitor mismatch.
+   * After mode acknowledgement, never recapture the desktop dimensions. */
+  if ((!desktop_w || !desktop_h) ||
+      (InterlockedCompareExchange(&borderless_legacy_mode_calls,0,0)==0 &&
+       (desktop_w!=mode.dmPelsWidth || desktop_h!=mode.dmPelsHeight))) {
     unsigned selected_w=0,selected_h=0;
     SpiderMenuMapping mapping;
     /* MENU always uses the captured desktop mode; gameplay may use an
      * independent physical output, while its logical canvas is 4:3. */
-    if(SpiderMenu_MakeMapping(640,480,(int)mode.dmPelsWidth,
-                              (int)mode.dmPelsHeight,&mapping)) {
-      desktop_w=mapping.output_w;
-      desktop_h=mapping.output_h;
-      menu_map=mapping;
+    if(!SpiderMenu_MakeMapping(640,480,(int)mode.dmPelsWidth,
+                               (int)mode.dmPelsHeight,&mapping)) {
+      log_line("DISPLAY-NATIVE: ERROR native monitor mapping unavailable; refusing guessed resolution");
+      return;
     }
+    desktop_w=mapping.output_w;
+    desktop_h=mapping.output_h;
+    menu_map=mapping;
+    game_output_w=0;game_output_h=0;
+    game_logical_w=0;game_logical_h=0;
+    InterlockedExchange(&gameplay_4x3_enabled,0);
     if(SpiderDisplayPolicy_ResolveRuntime(display_resolution_setting,display_aspect_setting,
           mode.dmPelsWidth,mode.dmPelsHeight,&selected_w,&selected_h)) {
       SpiderDisplayMenu_SetTarget(selected_w,selected_h);
@@ -940,25 +972,13 @@ static const void *maybe_correct_adaptive_hud(void *device,
  */
 static int native_esc43_hud_setting_enabled(const char *key,
                                             const char *legacy_env) {
-  char path[MAX_PATH],*slash;
-  char override[4]={0};
-  DWORD n;
-  if(!SpiderHudWidescreen_Installed())return 0;
-  n=GetModuleFileNameA(NULL,path,sizeof(path));
-  if(!n || n>=sizeof(path) ||
-     !(slash=strrchr(path,'\\')) ||
-     (size_t)(slash-path)+strlen("SpiderMan2k1Fix.ini")+1>=sizeof(path)) {
-    log_line("NATIVE-ESC-43: unable to read HUD options; all ESC corrections disabled");
-    return 0;
-  }
-  strcpy(slash+1,"SpiderMan2k1Fix.ini");
-  if(GetPrivateProfileIntA("HUD",key,1,path)!=1)return 0;
-  /* Compatibility for earlier launch scripts; a legacy 0 may still
-   * disable a child, but legacy 1 never overrides HUD/INI master 0. */
-  n=GetEnvironmentVariableA(legacy_env,override,sizeof(override));
-  if(n==1 && override[0]=='0')return 0;
-  return 1;
+  /* All native ESC/HUD aspect corrections are permanent when the validated
+   * HUD native patch is installed; old INI/environment switches are inert. */
+  (void)key;
+  (void)legacy_env;
+  return SpiderHudWidescreen_Installed()!=0;
 }
+
 /* Native gameplay ESC 4:3 panel correction (HUD-controlled).
  * Evidence: 2026-10-24 Wine traces #737 and #741, two menu states.
  * Anchor on the unusually wide *untextured* purple ribbon's verified
@@ -2918,7 +2938,19 @@ static HRESULT WINAPI hooked_mode(void *self,DWORD w,DWORD h,DWORD bpp,DWORD hz,
   return hr;
 }
 static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *outer) {
-  /* Before first video device initialization, on the game main thread. */
+  /* The display device is created before SetCooperativeLevel. Determine the
+   * actual game-window monitor NOW, before the virtual Spidey.cfg is read
+   * into the original game. This prevents primary-vs-secondary monitor
+   * resolution disagreement on Windows 11 or Wine. */
+  if(!desktop_w || !desktop_h) {
+    HWND early=spider_find_game_window_before_ddraw();
+    if(early) {
+      log_line("DISPLAY-NATIVE: pre-bootstrap game HWND identified; capturing its monitor");
+      probe_desktop_mode(early);
+    } else {
+      log_line("DISPLAY-NATIVE: WARNING game HWND unavailable before virtual config bootstrap; fallback to current primary monitor until SetCooperativeLevel");
+    }
+  }
   SpiderCfg_BootstrapGameRead();
   HRESULT hr=original_create(guid,out,iid,outer);
   if(SUCCEEDED(hr) && out && *out && iid && IsEqualGUID(iid,&IID_IDirectDraw7)) {
@@ -2979,55 +3011,35 @@ static void install_ddraw_hook(void) {
 }
 /* Called only after supported_exe() has verified the exact disk SHA-256. */
 static void install_player_hud(BOOL exe_verified) {
-  char exe[MAX_PATH], ini[MAX_PATH], *slash;
-  DWORD n;
-  int option;
-  n=GetModuleFileNameA(NULL,exe,sizeof(exe));
-  if (!n || n>=sizeof(exe)) {
-    log_line("HUD: cannot determine INI path; correction disabled");
+  /* Built in for widescreen gameplay. No HUD switch; original 4:3 keeps
+   * the original game geometry, and all native signatures still guard the
+   * patch before any write to the supported executable's memory. */
+  if(lstrcmpiA(display_aspect_setting,"4:3")==0) {
+    log_line("HUD: original 4:3 game geometry; widescreen correction not needed");
     return;
   }
-  memcpy(ini,exe,n+1);
-  slash=strrchr(ini,'\\');
-  if (!slash || (size_t)(slash-ini)+strlen("SpiderMan2k1Fix.ini")+1>=sizeof(ini)) {
-    log_line("HUD: invalid INI path; correction disabled");
-    return;
-  }
-  strcpy(slash+1,"SpiderMan2k1Fix.ini");
-  /* Missing option means enabled. Existing explicit zero keeps the fix disabled. */
-  option=GetPrivateProfileIntA("HUD","HUDWidescreenFix",1,ini);
-  if(lstrcmpiA(display_aspect_setting,"4:3")==0 && option!=0) {
-    log_line("HUD: disabled automatically for original 4:3 mode");
-    option=0;
-  }
-  if (option==0) {
-    log_line("HUD: widescreen transformation OFF (HUDWidescreenFix=0)");
-    if(lstrcmpiA(display_aspect_setting,"4:3")!=0 &&
-       GetPrivateProfileIntA("Display","ExperimentalFOVHorPlus",0,ini)==1) {
-      if(SpiderHudWidescreen_InstallScopesOnly(exe_verified)) {
-        InterlockedExchange(&fov_horplus_scopes_ready,1);
-        log_line("FOV-HOR+: passive HUD text/bar/rect scope tracking INSTALLED (no HUD transforms)");
-      } else {
-        log_line("FOV-HOR+: ERROR passive HUD scope signatures/install failed");
-        SpiderFOV_DisableUnsafeHorPlus();
-      }
-    }
-    return;
-  }
-  if (!SpiderHudWidescreen_Install(exe_verified,TRUE)) {
+  if(!SpiderHudWidescreen_Install(exe_verified,TRUE)) {
     log_line("HUD: ERROR: native 16-site install failed, HUD correction NOT enabled");
     SpiderFOV_DisableUnsafeHorPlus();
     return;
   }
   InterlockedExchange(&fov_horplus_scopes_ready,1);
-  log_line("HUD: adaptive widescreen correction enabled (native 16-site player HUD installed)");
+  log_line("HUD: permanent widescreen correction enabled (native 16-site player HUD installed)");
   log_line("HUD-ADAPTIVE: strict geometry correction enabled for compass, instructions and boss UI");
 }
+
+/* The proxy's early IAT gate can reach the game main thread before our
+ * background worker. InitOnce makes initialization exactly once and makes
+ * the first DirectDrawCreateEx wait until all native and virtual-config
+ * hooks are installed. Never wait under DllMain/loader lock. */
+static INIT_ONCE core_start_once=INIT_ONCE_STATIC_INIT;
+static volatile LONG core_start_success=0;
+
 /* A one-shot watchdog diagnoses the crucial "60 FPS despite 30 limit"
  * case even if Flip is never intercepted. Runs in the existing worker thread
  * after hook setup, outside the loader lock. Does not change game timing.
  */
-static DWORD WINAPI initialize(LPVOID unused) {
+static DWORD initialize_body(LPVOID unused) {
   BYTE *base=(BYTE*)GetModuleHandleA(NULL);
   char line[160]; (void)unused;
   debug_log_load_setting();
@@ -3086,78 +3098,34 @@ static DWORD WINAPI initialize(LPVOID unused) {
         }
       }
       {
-        char resolution[40],aspect[40],fov[40];
-        int fov_exp=GetPrivateProfileIntA("Display","ExperimentalFOVAspect",0,ini);
-        GetPrivateProfileStringA("Display","FOV","Auto",fov,sizeof(fov),ini);
-        /* Legacy FOV knobs are kept until the later cleanup. Forced 4:3
-         * restores the original game camera without Y compensation. */
+        char aspect[40];
         GetPrivateProfileStringA("Display","AspectRatio","Auto",aspect,sizeof(aspect),ini);
-        if(lstrcmpiA(aspect,"4:3")==0) {
-          DEVMODEA current;
-          unsigned chosen_w=0,chosen_h=0;
-          GetPrivateProfileStringA("Display","Resolution","Auto",resolution,sizeof(resolution),ini);
-          if(lstrcmpiA(resolution,"Auto")!=0) {
-            log_line("BORDERLESS: Resolution override ignored: full-window output always uses the current monitor resolution");
-            strcpy(resolution,"Auto");
-          }
-          memset(&current,0,sizeof(current));current.dmSize=sizeof(current);
-          if(!EnumDisplaySettingsA(NULL,ENUM_CURRENT_SETTINGS,&current) ||
-             !SpiderDisplayPolicy_ResolveRuntime(resolution,aspect,
-                  current.dmPelsWidth,current.dmPelsHeight,&chosen_w,&chosen_h) ||
-             (unsigned long long)chosen_w*3ull!=(unsigned long long)chosen_h*4ull) {
-            log_line("DISPLAY-ASPECT-43: WARNING invalid logical canvas; falling back to validated Auto widescreen");
-            strcpy(aspect,"Auto");
-          } else {
-            snprintf(line,sizeof(line),"DISPLAY-ASPECT-43: logical 4:3 canvas=%ux%u (physical native output remains independent)",chosen_w,chosen_h);
-            log_line(line);
-          }
+        /* The physical display target is chosen only from the actual
+         * game-window monitor by probe_desktop_mode(), not from a blind
+         * EnumDisplaySettings(NULL) of the PRIMARY monitor.
+         * Both modes keep that native physical output; 4:3 is logical. */
+        strcpy(display_resolution_setting,"Auto");
+        if(lstrcmpiA(aspect,"4:3")!=0 && lstrcmpiA(aspect,"Auto")!=0) {
+          log_line("DISPLAY-ASPECT: unknown aspect policy; using Auto");
+          strcpy(aspect,"Auto");
         }
-        if(lstrcmpiA(aspect,"4:3")==0) {
-          /* The automatic aspect FOV remains active; for a logical 4:3
-           * canvas its scalar is exactly 1.0, the original game baseline. */
-          SpiderFOV_Init("Auto",1,0,log_line);
-          log_line("DISPLAY-ASPECT-43: automatic FOV uses logical 4:3 aspect (original game baseline 1.0)");
-        } else {
-          if(lstrcmpiA(aspect,"Auto")!=0)
-            log_line("DISPLAY-ASPECT-43: invalid AspectRatio; falling back to Auto (valid: Auto, 4:3)");
-          SpiderFOV_Init(fov,fov_exp,GetPrivateProfileIntA("Display","ExperimentalFOVHorPlus",0,ini),log_line);
-        }
-        int menu=GetPrivateProfileIntA("Display","ExperimentalMenu4x3",0,ini);
-        int media=GetPrivateProfileIntA("Display","ExperimentalMediaAspect",0,ini);
-        int bltfix=GetPrivateProfileIntA("Display","ExperimentalMediaBlt4x3",0,ini);
-        int knownsizes=GetPrivateProfileIntA("Display","ExperimentalMediaBltKnownSizes",0,ini);
-        int video_aspect=GetPrivateProfileIntA("Display","ExperimentalIntroSourceAspect",0,ini);
-        int anysize=GetPrivateProfileIntA("Display","ExperimentalMediaBltAnySize",0,ini);
-        int comicnative=GetPrivateProfileIntA("Display","ExperimentalComicNativeAspect",0,ini);
-        if(comicnative==1 && lstrcmpiA(aspect,"4:3")!=0)
-          InterlockedExchange(&comic_native_aspect_enabled,1);
-        GetPrivateProfileStringA("Display","Resolution","Auto",resolution,sizeof(resolution),ini);
-        if(lstrcmpiA(resolution,"Auto")!=0) {
-          log_line("BORDERLESS: Resolution override ignored: full-window output always uses the current monitor resolution");
-          strcpy(resolution,"Auto");
-        }
-        strncpy(display_resolution_setting,resolution,sizeof(display_resolution_setting)-1);
-        display_resolution_setting[sizeof(display_resolution_setting)-1]=0;
-        if(lstrcmpiA(aspect,"4:3")!=0) strcpy(aspect,"Auto");
         strcpy(display_aspect_setting,aspect);
-        /* Valid explicit resolutions MUST NOT disable previously validated
-         * 4:3/menu/video corrections; their physical output is computed by
-         * probe_desktop_mode rather than gating this entire feature off. */
-        if ((lstrcmpiA(aspect,"Auto")==0 ||
-             lstrcmpiA(aspect,"4:3")==0)) {
-          if(menu!=1) log_line("BORDERLESS: menu 4:3 forced ON; ExperimentalMenu4x3 ignored");
-          InterlockedExchange(&menu_upscale_enabled,1);
-          /* Opening movies are always 4:3 on the monitor-size window.
-           * Old experimental switches remain readable for compatibility,
-           * but cannot disable or select 5:3 for these four intro movies. */
-          if(media!=1 || bltfix!=1 || knownsizes!=1 || video_aspect!=0)
-            log_line("BORDERLESS-INTRO: legacy media options overridden; all four opening movies forced to 4:3");
-          InterlockedExchange(&media_viewport_4x3_enabled,1);
-          InterlockedExchange(&media_native_blt_4x3_enabled,1);
-          InterlockedExchange(&media_native_blt_knownsizes_enabled,1);
-          /* AnySize is still opt-in and is never necessary for the intros. */
-          if (anysize==1) InterlockedExchange(&media_native_blt_anysize_enabled,1);
-        }
+        if(lstrcmpiA(aspect,"4:3")==0)
+          log_line("DISPLAY-ASPECT-43: logical 4:3 resolution will be computed from the selected game monitor");
+        SpiderFOV_Init("Auto",1,0,log_line);
+        if(lstrcmpiA(aspect,"4:3")==0)
+          log_line("DISPLAY-ASPECT-43: automatic FOV uses original 4:3 baseline 1.0");
+
+        /* The 4:3 menu, intro movie sizes and native comic correction are
+         * permanent. Unsafe AnySize and experimental HorPlus remain OFF. */
+        InterlockedExchange(&menu_upscale_enabled,1);
+        InterlockedExchange(&media_viewport_4x3_enabled,1);
+        InterlockedExchange(&media_native_blt_4x3_enabled,1);
+        InterlockedExchange(&media_native_blt_knownsizes_enabled,1);
+        InterlockedExchange(&media_native_blt_anysize_enabled,0);
+        InterlockedExchange(&comic_native_aspect_enabled,
+           lstrcmpiA(aspect,"4:3")==0?0:1);
+        log_line("BORDERLESS: native menu and opening movies preserve 4:3 (permanent)");
       }
     }
     if (fps<0 || fps>240) {
@@ -3236,34 +3204,50 @@ static DWORD WINAPI initialize(LPVOID unused) {
     if(n>0 && n<sizeof(game_path) && (slash=strrchr(game_path,'\\'))!=NULL) {
       memcpy(ini_path,game_path,n+1);
       strcpy(ini_path+(slash-game_path)+1,"SpiderMan2k1Fix.ini");
-      if(GetPrivateProfileIntA("Display","ExperimentalDisplayMenuLock",1,ini_path)==1)
-        SpiderDisplayMenu_Install(display_resolution_setting,display_aspect_setting,log_line);
-      else log_line("DISPLAY-MENU-LOCK: explicitly disabled by INI");
+      SpiderDisplayMenu_Install(display_resolution_setting,display_aspect_setting,log_line);
     }
   }
   install_ddraw_hook();
-  /* Opt-in Windows 11 prototype: latched DirectDraw Flip pause, not full engine/movie pause. */
-  {
-    char path[MAX_PATH],*slash;
-    DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
-    if(n>0 && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL) {
-      strcpy(slash+1,"SpiderMan2k1Fix.ini");
-      /* Historical PauseKey selections in older INIs are ignored: Any only. */
-      InterlockedExchange(&pause_on_focus_loss,
-        GetPrivateProfileIntA("Input","PauseOnFocusLoss",0,path)==1);
-    }
-    log_line(InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1 ?
-      "FOCUS-PAUSE: persistent Flip-boundary pause ENABLED (Any key exclusively; press/release consumed)" :
-      "FOCUS-PAUSE: experimental Flip-boundary pause disabled");
-  }
+  /* Always pause on confirmed focus loss; legacy INI keys are ignored. */
+  InterlockedExchange(&pause_on_focus_loss,1);
+  log_line("FOCUS-PAUSE: permanent Flip-boundary pause ON; Any-key press/release resumes");
   SpiderInputFocus_Install(log_line);
+  InterlockedExchange(&core_start_success,1);
   return 0;
 }
+static BOOL CALLBACK core_initialize_once(PINIT_ONCE once,PVOID arg,PVOID *context) {
+  (void)once;(void)arg;(void)context;
+  initialize_body(NULL);
+  return TRUE; /* core_start_success additionally checks the EXE verification. */
+}
+static DWORD WINAPI initialize_worker(LPVOID unused) {
+  (void)unused;
+  InitOnceExecuteOnce(&core_start_once,core_initialize_once,NULL,NULL);
+  return 0;
+}
+
+/* Called exclusively by the signature-guarded winmm.dll early IAT gate,
+ * on the GAME's own first DirectDrawCreateEx call, outside the loader lock.
+ * A failed/unsupported game cannot proceed through an unsafe physical
+ * 640x480 mode: fail this DirectDraw request instead of forwarding it. */
+__declspec(dllexport) HRESULT __cdecl SpiderMan2k1Fix_DirectDrawGate(
+    GUID *guid,void **out,REFIID iid,IUnknown *outer,void *real_create) {
+  if(!real_create || !InitOnceExecuteOnce(&core_start_once,
+       core_initialize_once,NULL,NULL) ||
+     InterlockedCompareExchange(&core_start_success,0,0)!=1) {
+    log_line("DDRAW-STARTUP: ERROR patch initialization not ready; refusing unprotected DirectDraw startup");
+    return DDERR_UNSUPPORTED;
+  }
+  original_create=(CreateExFn)real_create;
+  log_line("DDRAW-STARTUP: initial hook and configuration ready before first DirectDrawCreateEx");
+  return hooked_create(guid,out,iid,outer);
+}
+
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID reserved) {
   (void)reserved;
   if(reason==DLL_PROCESS_ATTACH) {
     HANDLE t; DisableThreadLibraryCalls(instance);
-    t=CreateThread(NULL,0,initialize,NULL,0,NULL);
+    t=CreateThread(NULL,0,initialize_worker,NULL,0,NULL);
     if(t) CloseHandle(t);
   }
   return TRUE;

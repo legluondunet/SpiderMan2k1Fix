@@ -365,61 +365,23 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
   const char *name;
   static const char header[]=
     "; SpiderMan2k1Fix.ini - generated automatically when missing.\r\n"
-    "; Changes made in the game's options are saved to this file.\r\n"
-    "; Edit this file while the game is not running. Invalid files are backed up as SpiderMan2k1Fix_N.old.\r\n"
+    "; User settings only. Built-in video/HUD/focus fixes are always enabled.\r\n"
+    "; Edit while the game is closed; invalid INIs are backed up before repair.\r\n"
     "\r\n"
     "[Debug]\r\n"
-    "; 1 = write SpiderMan2k1Fix.log (debug); 0 = no log output. Restart to apply.\r\n"
+    "; 1 = write SpiderMan2k1Fix.log; 0 = no log (default).\r\n"
     "Log=0\r\n"
-    "; Detailed F10 reverse-engineering probe lines (0 = compact log);\r\n"
-    "; original script lifecycle and exit cleanup stay logged. OFF.\r\n"
-    "F10VerboseTrace=0\r\n"
     "\r\n"
     "[Display]\r\n"
-    "; Auto = desktop monitor resolution\r\n"
-    "Resolution=Auto\r\n"
-    "; Auto or 4:3 for a native gaming experience\r\n"
+    "; Auto = monitor aspect ratio, 4:3 = original presentation.\r\n"
     "AspectRatio=Auto\r\n"
     "; Brightness: 0..9. FPSLimit: 0 disables; otherwise 1..240.\r\n"
     "Brightness=4\r\n"
     "FPSLimit=30\r\n"
-    "; Development flags needed to preserve the currently tested rendering behaviour.\r\n"
-    "ExperimentalFOVAspect=1\r\n"
-    "ExperimentalComicNativeAspect=1\r\n"
-    "\r\n"
-    "[HUD]\r\n"
-    "; HUD and native ESC 4:3 master: enabled by default; 0 explicitly disables it.\r\n"
-    "HUDWidescreenFix=1\r\n"
     "\r\n"
     "[Input]\r\n"
-    "; KeyboardLayout: Auto (default), Off (original physical QWERTY behavior).\r\n"
-    "; Determines how [Keyboard] letters resolve to physical DirectInput keys.\r\n"
+    "; Auto = OS keyboard layout; Off = original physical QWERTY positions.\r\n"
     "KeyboardLayout=Auto\r\n"
-    "; Opt-in native DirectInput error recovery after Alt+Tab; default off.\r\n"
-    "DirectInputReacquire=0\r\n"
-    "; Experimental Windows 11 Ghost surrogate suppression (0=default; 1=on until exit).\r\n"
-    "DisableWindowsGhosting=0\r\n"
-    "; Experimental Flip-boundary pause while the game loses focus (0=off).\r\n"
-    "PauseOnFocusLoss=0\r\n"
-    "; Any keyboard key resumes focus pause; the wake press/release is consumed.\r\n"
-    "; Show centered transparent red-outline pause message when focus pause is active.\r\n"
-    "PauseOverlay=1\r\n"
-    "; Dim the paused game behind the PAUSE banner; 0 disables only the shade.\r\n"
-    "PauseDim=1\r\n"
-    "; Black shade strength from 0 to 90 percent (default 50).\r\n"
-    "PauseDimOpacity=50\r\n"
-    "; Optional 16-pixel grid (0=off by default; 1=on).\r\n"
-    "PauseGrid=0\r\n"
-    "; Restore Windows desktop cursor on loss of game focus (1=on, 0=off).\r\n"
-    "RestoreCursorOnFocusLoss=1\r\n"
-    "; Experimental Bink audio/video pause on lost focus; default off.\r\n"
-    "PauseBinkOnFocusLoss=0\r\n"
-    "; Experimental game-owned secondary DirectSound voice pause; default off.\r\n"
-    "PauseDirectSoundOnFocusLoss=0\r\n"
-    "; Detailed focus diagnosis is disabled by default.\r\n"
-    "ExperimentalFocusTrace=0\r\n"
-    "; Entry-only DirectInput8 factory probe; requires ExperimentalFocusTrace=1.\r\n"
-    "ExperimentalDI8EntryTrace=0\r\n"
     "\r\n"
     "[Audio]\r\n"
     "; All levels are 0..100 percent, with lossless raw values kept below.\r\n";
@@ -517,11 +479,88 @@ int SpiderCfg_EnsureDefaultIni(void (*logger)(const char *)) {
   return SpiderCfg_WriteDefaultIniAt(ini,1,logger);
 }
 
+/* Legacy toggles from earlier development INIs are no longer user settings.
+ * Accept them in the strict parser solely to migrate existing configurations.
+ * Never remove gameplay bindings, audio, FPS, aspect, brightness or RawHex. */
+static const struct {const char *section,*key;} deprecated_ini_keys[]={
+  {"Debug","F10VerboseTrace"},
+  {"Display","Resolution"},{"Display","FOV"},
+  {"Display","ExperimentalFOVAspect"},{"Display","ExperimentalFOVHorPlus"},
+  {"Display","ExperimentalMenu4x3"},{"Display","ExperimentalMediaAspect"},
+  {"Display","ExperimentalMediaBlt4x3"},{"Display","ExperimentalMediaBltKnownSizes"},
+  {"Display","ExperimentalIntroSourceAspect"},{"Display","ExperimentalMediaBltAnySize"},
+  {"Display","ExperimentalComicNativeAspect"},{"Display","ExperimentalDisplayMenuLock"},
+  {"HUD","HUDWidescreenFix"},{"HUD","NativeESC4x3"},
+  {"HUD","NativeMotif4x3"},{"HUD","NativeCursor4x3"},
+  {"Input","DirectInputReacquire"},{"Input","DisableWindowsGhosting"},
+  {"Input","PauseOnFocusLoss"},{"Input","PauseBinkOnFocusLoss"},
+  {"Input","PauseDirectSoundOnFocusLoss"},{"Input","PauseOverlay"},
+  {"Input","PauseDim"},
+  {"Input","PauseKey"},{"Input","RestoreCursorOnFocusLoss"},
+  {"Input","ExperimentalFocusTrace"},{"Input","ExperimentalDI8EntryTrace"},
+  {"Input","ExperimentalAltTabReacquire"},{"Input","ExperimentalDI8CreateDeviceTrace"}
+};
+static int deprecated_ini_key(const char *section,const char *key) {
+  unsigned i;
+  for(i=0;i<sizeof(deprecated_ini_keys)/sizeof(deprecated_ini_keys[0]);i++)
+    if(!lstrcmpiA(section,deprecated_ini_keys[i].section) &&
+       !lstrcmpiA(key,deprecated_ini_keys[i].key))return 1;
+  return 0;
+}
+static unsigned deprecated_ini_count(const char *path) {
+  unsigned i,found=0;
+  char value[24];
+  for(i=0;i<sizeof(deprecated_ini_keys)/sizeof(deprecated_ini_keys[0]);i++) {
+    GetPrivateProfileStringA(deprecated_ini_keys[i].section,
+                             deprecated_ini_keys[i].key,"\x01",
+                             value,sizeof(value),path);
+    if(value[0]!='\x01')found++;
+  }
+  return found;
+}
 
-/* Normalize an invalid INI into the generator's canonical format.
- * The original is preserved at SpiderMan2k1Fix_0.old, _1.old, ... .
- * Build the replacement separately and back up BEFORE the atomic replacement.
- * Failure leaves the original INI untouched and blocks game-origin writes.
+
+/* Only files created by the previous numbered-backup scheme are pruned.
+ * Match SpiderMan2k1Fix_<decimal>.old exactly: do not delete arbitrary
+ * user files or directories merely matching the wildcard. */
+static void SpiderCfg_PruneNumberedOldFiles(const char *directory,
+                                           void (*logger)(const char *)) {
+  const char *prefix="SpiderMan2k1Fix_";
+  const size_t prefix_len=strlen(prefix);
+  WIN32_FIND_DATAA found;
+  HANDLE search;
+  char pattern[MAX_PATH],path[MAX_PATH],msg[200];
+  const char *p;
+  unsigned removed=0,failed=0;
+  if(snprintf(pattern,sizeof(pattern),"%sSpiderMan2k1Fix_*.old",
+              directory)>=(int)sizeof(pattern))return;
+  search=FindFirstFileA(pattern,&found);
+  if(search==INVALID_HANDLE_VALUE)return;
+  do {
+    if(found.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)continue;
+    if(strncmp(found.cFileName,prefix,prefix_len)!=0)continue;
+    p=found.cFileName+prefix_len;
+    if(*p<'0' || *p>'9')continue;
+    while(*p>='0' && *p<='9')p++;
+    if(strcmp(p,".old")!=0)continue;
+    if(snprintf(path,sizeof(path),"%s%s",directory,found.cFileName)
+        >=(int)sizeof(path)) {failed++;continue;}
+    if(DeleteFileA(path))removed++;
+    else failed++;
+  }while(FindNextFileA(search,&found));
+  FindClose(search);
+  if((removed||failed) && logger) {
+    snprintf(msg,sizeof(msg),
+      "INI-REPAIR: removed %u legacy numbered backup(s); %u could not be removed",
+      removed,failed);
+    logger(msg);
+  }
+}
+
+/* Normalize malformed or legacy INIs using one rolling .ini.old backup.
+ * Build and validate a replacement first. Rename the current INI over the
+ * previous .old only after the replacement is ready, then install it.
+ * If installation fails, try to roll back .old to its original INI name.
  */
 static int SpiderCfg_RepairIni(const char *ini,const SpiderIniResult *check,
                              char *backup_out,size_t backup_cap,unsigned *restored,
@@ -547,8 +586,22 @@ static int SpiderCfg_RepairIni(const char *ini,const SpiderIniResult *check,
   }
   if(serial==10000)goto done;
   if(!SpiderCfg_WriteDefaultIniAt(tmp,0,logger))goto done;
+  /* Compatibility: an older user INI without KeyboardLayout had physical
+   * QWERTY semantics. The new generator uses Auto; do not silently change
+   * old user's saved key bindings when compacting that INI. */
+  {
+    char prior[32];
+    GetPrivateProfileStringA("Input","KeyboardLayout","\x01",
+                             prior,sizeof(prior),ini);
+    if(prior[0]=='\x01' &&
+       !WritePrivateProfileStringA("Input","KeyboardLayout","Off",tmp)) {
+      DeleteFileA(tmp);
+      goto done;
+    }
+  }
   for(i=0;i<values->count;i++) {
     SpiderIniRecoveredEntry *e=&values->entries[i];
+    if(deprecated_ini_key(e->section,e->key))continue;
     if(!WritePrivateProfileStringA(e->section,e->key,e->value,tmp)) {
       err=GetLastError();
       snprintf(msg,sizeof(msg),"INI-REPAIR: failed writing [%s] %s, Win32=%lu",
@@ -567,27 +620,43 @@ static int SpiderCfg_RepairIni(const char *ini,const SpiderIniResult *check,
       DeleteFileA(tmp);goto done;
     }
   }
-  for(serial=0;serial<10000;serial++) {
-    if(snprintf(backup,sizeof(backup),"%sSpiderMan2k1Fix_%u.old",directory,serial)>=(int)sizeof(backup)) {
-      DeleteFileA(tmp);goto done;
-    }
-    if(GetFileAttributesA(backup)==INVALID_FILE_ATTRIBUTES)break;
+  /* Exactly one rolling backup: the previous INI is RENAMED to .ini.old.
+   * MoveFileEx with REPLACE_EXISTING replaces the former .old atomically
+   * in the same directory. No backup-number allocation is needed. */
+  if(snprintf(backup,sizeof(backup),"%s.old",ini)>=(int)sizeof(backup)) {
+    DeleteFileA(tmp);goto done;
   }
-  if(serial==10000) {DeleteFileA(tmp);goto done;}
-  /* CopyFile fail_if_exists protects numbered backups even against a race. */
-  if(!CopyFileA(ini,backup,TRUE)) {
+  if(!MoveFileExA(ini,backup,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)) {
     err=GetLastError();
-    snprintf(msg,sizeof(msg),"INI-REPAIR: original backup failed (Win32=%lu), INI unchanged",(unsigned long)err);
+    snprintf(msg,sizeof(msg),
+      "INI-REPAIR: cannot rename INI to rolling .old (Win32=%lu); original unchanged",
+      (unsigned long)err);
     if(logger)logger(msg);
     DeleteFileA(tmp);goto done;
   }
-  /* Same-directory atomic replacement; original bytes are in numbered backup. */
-  if(!MoveFileExA(tmp,ini,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)) {
-    err=GetLastError();
-    snprintf(msg,sizeof(msg),"INI-REPAIR: replacing INI failed (Win32=%lu), backup preserved",(unsigned long)err);
+  /* The destination no longer exists; do not overwrite a file created
+   * by another process between the two renames. */
+  if(!MoveFileExA(tmp,ini,MOVEFILE_WRITE_THROUGH)) {
+    DWORD install_err=GetLastError(),restore_err=ERROR_SUCCESS;
+    /* Restore the original INI. If rename fails, a copy preserves .old
+     * while giving the game its previous INI wherever possible. */
+    if(!MoveFileExA(backup,ini,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH) &&
+       !CopyFileA(backup,ini,TRUE))
+      restore_err=GetLastError();
+    if(restore_err==ERROR_SUCCESS)
+      snprintf(msg,sizeof(msg),
+        "INI-REPAIR: installing new INI failed (Win32=%lu); original INI restored",
+        (unsigned long)install_err);
+    else
+      snprintf(msg,sizeof(msg),
+        "INI-REPAIR: installing INI failed Win32=%lu, rollback failed Win32=%lu; original saved as %s",
+        (unsigned long)install_err,(unsigned long)restore_err,backup);
     if(logger)logger(msg);
     DeleteFileA(tmp);goto done;
   }
+  /* Only after successful replacement, remove the older numbered backups
+   * created by previous versions of this patch. */
+  SpiderCfg_PruneNumberedOldFiles(directory,logger);
   /* Flush any cached Win32-profile interpretation of the old INI. */
   WritePrivateProfileStringA(NULL,NULL,NULL,ini);
   if(backup_cap>strlen(backup))strcpy(backup_out,backup);
@@ -611,18 +680,35 @@ void SpiderCfg_ValidateCurrentIni(void (*logger)(const char *)) {
   }
   check=SpiderIni_Validate(ini,NULL,NULL);
   if(!check.errors && !check.warnings) {
-    ini_writes_permitted=1;
-    SpiderCfg_ClearOldValidationReport(ini);
-    if(logger)logger("INI-CHECK: valid SpiderMan2k1Fix.ini");
-    return;
+    unsigned obsolete=deprecated_ini_count(ini);
+    if(!obsolete) {
+      ini_writes_permitted=1;
+      SpiderCfg_ClearOldValidationReport(ini);
+      if(logger)logger("INI-CHECK: valid SpiderMan2k1Fix.ini");
+      return;
+    }
+    /* Use exactly the tested repair/backup/atomic-replace pipeline to prune
+     * obsolete valid settings. No MessageBox for a normal upgrade. */
+    {
+      SpiderIniResult migrate=check;
+      char info[180];
+      migrate.warnings=obsolete;
+      ini_writes_permitted=0;
+      if(SpiderCfg_RepairIni(ini,&migrate,backup,sizeof(backup),&recovered,logger)) {
+        ini_writes_permitted=1;
+        SpiderCfg_ClearOldValidationReport(ini);
+        snprintf(info,sizeof(info),
+          "INI-MIGRATE: removed %u obsolete setting(s); old file backed up, %u recognized setting(s) scanned",
+          obsolete,recovered);
+        if(logger)logger(info);
+      } else if(logger)logger("INI-MIGRATE: failed; original retained, game-origin INI saving disabled");
+      return;
+    }
   }
   ini_writes_permitted=0;
   if(!SpiderCfg_RepairIni(ini,&check,backup,sizeof(backup),&recovered,logger)) {
     if(logger)logger("INI-REPAIR: FAILED; source unchanged, game INI writes disabled");
-    MessageBoxA(NULL,"SpiderMan2k1Fix.ini has errors or unknown entries, but automatic repair failed.\n"
-      "Your original INI has been kept. Game options will not overwrite it.\n"
-      "Check write permissions and available disk space.",
-      "SpiderMan2k1Fix - INI repair failed",MB_OK|MB_ICONWARNING|MB_TOPMOST);
+    if(logger)logger("INI-REPAIR: startup continues without a modal dialog; original INI retained and game-origin saving disabled");
     return;
   }
   rebuilt=SpiderIni_Validate(ini,NULL,NULL);
@@ -638,7 +724,7 @@ void SpiderCfg_ValidateCurrentIni(void (*logger)(const char *)) {
     "%u recognized setting(s) were recovered.\n\n"
     "The original file was saved as:\n%s",
     check.errors,check.warnings,recovered,backup);
-  MessageBoxA(NULL,summary,"SpiderMan2k1Fix - INI repaired",MB_OK|MB_ICONINFORMATION|MB_TOPMOST);
+  if(logger)logger(summary); /* No window/modal block during graphics initialization. */
 }
 
 /* Obsolete report files from the previous read-only validator are stale. */
@@ -669,7 +755,8 @@ static void load_settings(void) {
     if(i!=CFG_SIZE) { memcpy(cfg,spidey_cfg_factory,CFG_SIZE); report("SPIDEY-CFG: invalid RawHex; factory layout restored"); }
   } else if(buf[0]) report("SPIDEY-CFG: RawHex must contain exactly 504 hexadecimal characters; ignored");
   /* One authoritative resolution setting: [Display]. */
-  GetPrivateProfileStringA("Display","Resolution","Auto",configured_resolution,sizeof(configured_resolution),ini_file);
+  /* Desktop resolution is permanent; stale INI Resolution is ignored. */
+  strcpy(configured_resolution,"Auto");
   GetPrivateProfileStringA("Display","AspectRatio","Auto",configured_aspect,sizeof(configured_aspect),ini_file);
   policy_is_auto=!lstrcmpiA(configured_resolution,"Auto");
   memset(&mode,0,sizeof(mode));mode.dmSize=sizeof(mode);

@@ -12,13 +12,12 @@ GEN=(ROOT/"virtual_spidey_cfg.c").read_text()
 VALID=(ROOT/"ini_validation.h").read_text()
 BUILD=(ROOT/"build.sh").read_text()
 
-def test_opt_in_config_is_disabled_by_default():
-    for content in (INI,EXAMPLE):
-        assert "PauseDirectSoundOnFocusLoss=0" in content
-        assert "PauseBinkOnFocusLoss=0" in content
-    assert '"PauseDirectSoundOnFocusLoss=0\\r\\n"' in GEN
+def test_native_secondary_audio_pause_is_permanent_and_guarded():
+    assert "PauseDirectSoundOnFocusLoss=0" not in EXAMPLE
+    assert '"PauseDirectSoundOnFocusLoss=0\\r\\n"' not in GEN
     assert '"PauseDirectSoundOnFocusLoss"' in VALID
-    assert 'GetPrivateProfileIntA("Input","PauseDirectSoundOnFocusLoss",0,path)!=1' in SRC
+    assert 'GetPrivateProfileIntA("Input","PauseDirectSoundOnFocusLoss"' not in SRC
+    assert "SpiderFocusDSound_Init(log_line);" in CORE
     assert "focus_dsound_pause.c" in BUILD
 
 def test_layout_and_signatures():
