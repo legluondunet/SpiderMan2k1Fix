@@ -3031,7 +3031,7 @@ static DWORD WINAPI initialize(LPVOID unused) {
   BYTE *base=(BYTE*)GetModuleHandleA(NULL);
   char line[160]; (void)unused;
   debug_log_load_setting();
-  log_line("START: SpiderMan2k1Fix 1.0.0");
+  log_line("START: " SPIDERMAN2K1FIX_VERSION_LABEL);
   if (!supported_exe()) {
     log_line("ERROR: unsupported EXE SHA-256; do not use this proxy with this executable");
     return 0;

@@ -2,7 +2,7 @@
 
 The user performed the controlled native Windows 11 regression
 of the opening-movie single-F12 handoff in **build #605**
-(`SpiderMan2k1Fix v1.0.0-286f8ac`), providing
+(`SpiderMan2k1Fix commit 286f8ac`), providing
 `SpiderMan2k1Fix(20261023-103934).log`.
 The supported original `SpideyPC.exe` SHA-256 is
 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
@@ -76,7 +76,7 @@ ends the videos and advances to the **first pre-menu timed
 still** instead of closing the process. The user had to
 press **F12 a SECOND time** to quit. Attached full log:
 `SpiderMan2k1Fix(20261023-102500).log`, original EXE
-SHA verified, patch `v1.0.0-823379a`.
+SHA verified, patch `commit 823379a`.
 
 Original failing run's exact sequence:
 
@@ -168,7 +168,7 @@ before actual Windows process-level validation.
 
 The user completed the requested independent native Windows 11
 control test of F12 **in active 3D gameplay**, using consolidated
-build #589 (`SpiderMan2k1Fix v1.0.0-823379a`). Full log:
+build #589 (`SpiderMan2k1Fix commit 823379a`). Full log:
 `SpiderMan2k1Fix(20261023-102044).log`; supported exact
 original game EXE SHA-256 verified.
 
@@ -254,7 +254,7 @@ The user executed a new **native Windows 11** regression on
 build **#589**, pressing F12 **directly during the New Game
 Bink cinematic**, not on the preceding comic. Uploaded
 `SpiderMan2k1Fix(20261023-101624).log` records
-`v1.0.0-823379a`, valid INI and the original supported
+`commit 823379a`, valid INI and the original supported
 `SpideyPC.exe` SHA-256
 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
 
@@ -342,7 +342,7 @@ explicit user validation.
 
 The user tested **F12 during the New Game comic still**
 on native Windows 11 with the consolidated **build #589**,
-patch `v1.0.0-823379a`, and uploaded
+patch `commit 823379a`, and uploaded
 `SpiderMan2k1Fix(20261023-101238).log`.
 Supported `SpideyPC.exe` original SHA-256 verified:
 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
@@ -421,7 +421,7 @@ user approval.
 ## 2026-10-23 — Windows 11 #589: FIRST timed startup still F12 exits cleanly without orphan process
 
 The user performed the next Windows 11 regression using the
-same build #589, `SpiderMan2k1Fix v1.0.0-823379a`, on the
+same build #589, `SpiderMan2k1Fix commit 823379a`, on the
 **first timed pre-menu still**, before the second `Press Enter`
 page. The user separately checked the Windows Task Manager
 after exiting and confirmed **no `SpideyPC.exe` process remained**.
@@ -484,7 +484,7 @@ The user returned to native **Windows 11** and tested the
 **second pre-menu static page ("Press Enter")** with build #589.
 The attached full native Windows log is
 `SpiderMan2k1Fix(20261023-100409).log`, patch version
-`v1.0.0-823379a`, running the supported original
+`commit 823379a`, running the supported original
 `SpideyPC.exe` with exact SHA-256
 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
 The user independently checked Windows Task Manager and stated
@@ -545,7 +545,7 @@ The user explicitly observed that, as with the New Game comic,
 the game **waited for the first image's originally programmed
 display duration** before exiting. Full attached log:
 `SpiderMan2k1Fix(20261023-095544).log`, patch
-`v1.0.0-823379a`, supported original game EXE SHA-256
+`commit 823379a`, supported original game EXE SHA-256
 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`,
 experimental `ExperimentalQuickExitF12InIntroStills=1` armed.
 
@@ -603,7 +603,7 @@ approval; no runtime code was modified for this result.
 
 The user tested build **#589**, reporting **"test validé, le jeu s'est correctement arrêté"** after pressing F12 on the **second pre-menu still** ("Press Enter"), without a synthetic Enter key. Attached full log:
 `SpiderMan2k1Fix(20261023-095058).log`,
-patch `v1.0.0-823379a`, SHA-verified original game EXE.
+patch `commit 823379a`, SHA-verified original game EXE.
 
 Relevant game-owned execution trace:
 
@@ -632,7 +632,7 @@ No F12 source changes made to record this test. PR #26 remains draft and unmerge
 
 The user uploaded a new uninterrupted foreground Wine run
 `SpiderMan2k1Fix(20261023-093138).log` (patch
-`v1.0.0-08d2638`, supported game SHA verified).
+`commit 08d2638`, supported game SHA verified).
 Unlike the previous capture, **there was no focus loss/pause**.
 Read-only trace after original `0x455D23` cleanup:
 
@@ -743,7 +743,7 @@ the user's earlier instruction.
 ## 2026-10-23 — Wine startup still-page trace #573 and verified native timed/input loops
 
 The user uploaded `SpiderMan2k1Fix(20261023-084556).log`
-from build #573 (`v1.0.0-caa901f`), with the expected
+from build #573 (`commit caa901f`), with the expected
 original EXE SHA-256. This was a **read-only** static-stage
 discovery run, not a F12 test on either static screen.
 
@@ -916,7 +916,7 @@ remains draft and unmerged pending explicit approval.
 User retested the F12-on-New-Game-comic deferred-exit path
 using the consolidated build #569, with the attached
 `SpiderMan2k1Fix(20261023-082646).log` from
-`SpiderMan2k1Fix v1.0.0-7a15a90`.
+`SpiderMan2k1Fix commit 7a15a90`.
 The original supported `SpideyPC.exe` hash remains
 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
 
@@ -1009,7 +1009,7 @@ pre-menu static title/Enter screens.
 
 The user supplied a new full Wine/Lutris-prefix test log,
 `SpiderMan2k1Fix(20261023-080423).log`, from version
-`v1.0.0-750dcaf` (original game EXE SHA-256 verified:
+`commit 750dcaf` (original game EXE SHA-256 verified:
 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`).
 Both independent experimental environment switches were armed:
 `SPIDERMAN2K1FIX_F12_POSTMENU_MOVIE_EXIT=1` and
@@ -1161,7 +1161,7 @@ explicit user approval.
 **User-confirmed SUCCESS under Linux/Wine**, using the opt-in
 post-menu movie prototype from build #552 with
 `SpiderMan2k1Fix(20261023-065347).log`
-(`SpiderMan2k1Fix v1.0.0-a058960`, original
+(`SpiderMan2k1Fix commit a058960`, original
 `SpideyPC.exe` SHA-256
 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`).
 The user explicitly checked the process state after pressing F12
@@ -1289,7 +1289,7 @@ The PR remains **draft and unmerged**.
 ## 2026-10-23 — Wine/Lutris-prefix regression: Bink → 3D → native F12 teardown
 
 The user provided `SpiderMan2k1Fix(20261023-062647).log`
-(`v1.0.0-996cc81`) from a `K:\\Games\\spider-man-2001\\drive_c\\...`
+(`commit 996cc81`) from a `K:\\Games\\spider-man-2001\\drive_c\\...`
 game directory, strongly indicating a Linux Wine/Lutris prefix.
 The original `SpideyPC.exe` SHA-256 still matches
 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
@@ -1354,7 +1354,7 @@ the basis of these observations.
 ## 2026-10-23 — Windows #541: New Game cinematic owned by 0x4279FB
 
 The user provided `SpiderMan2k1Fix(20261023-052925).log`
-from Windows build #541 (`v1.0.0-3cdb39c`). The opt-in,
+from Windows build #541 (`commit 3cdb39c`). The opt-in,
 SHA-gated passive trace logged:
 
 ```text
@@ -1702,7 +1702,7 @@ F12 menu, intro and 3D cleanup behavior stays untouched.
 ## 2026-10-23 — Windows #530: Space skip exits the Bink loop WITHOUT tick returning zero
 
 User file `SpiderMan2k1Fix(20261023-033828).log`
-(`v1.0.0-ba47032`) covers New Game → auto comic still →
+(`commit ba47032`) covers New Game → auto comic still →
 long Bink cinematic → user presses Space → gameplay 3D → F12.
 
 Observed:
@@ -1758,7 +1758,7 @@ The validated F12 menu and 3D paths remain untouched.
 ## 2026-10-23 — Windows 11: New Game still → Bink → Space skip → 3D
 
 The user provided `SpiderMan2k1Fix(20261023-033124).log`
-(`v1.0.0-4c3f218`) and reports that pressing **Space** during the
+(`commit 4c3f218`) and reports that pressing **Space** during the
 long New Game cinematic skips it and starts playable 3D.
 
 Observed diagnostic order:
@@ -1874,7 +1874,7 @@ render geometry, and leave existing menu/3D F12 behavior untouched.
 ## 2026-10-23 — Windows build #525: passive comic renderer trace confirmed
 
 User log `SpiderMan2k1Fix(20261023-031026).log` reports
-`v1.0.0-23ce956` and confirms the new read-only instrumentation
+`commit 23ce956` and confirms the new read-only instrumentation
 fires exactly once for the recognized quad:
 
 ```text
@@ -1914,7 +1914,7 @@ state; the native comic owner remains unknown.
 ## 2026-10-23 — first passive comic-stage correlation (Windows log)
 
 User supplied `SpiderMan2k1Fix(20261023-030218).log` from
-`v1.0.0-6668f82`, with `QuickExitF12=1` and
+`commit 6668f82`, with `QuickExitF12=1` and
 `ExperimentalQuickExitF12In3D=1` and **no F12 during the comic**.
 The log contains:
 
@@ -1958,7 +1958,7 @@ User manually disabled both
 `ExperimentalQuickExitF12In3D=0`, pressed F12 while in the real
 main menu and 3D gameplay, and reported the key **inactive**.
 The provided `SpiderMan2k1Fix(20261023-025443).log`, from
-`v1.0.0-6668f82`, confirms initialization with:
+`commit 6668f82`, confirms initialization with:
 
 ```text
 INI-CHECK: valid SpiderMan2k1Fix.ini
@@ -2019,7 +2019,7 @@ F12 shutdown. Keep PR #26 draft and do not merge without user approval.
 ## 2026-10-23 Windows 11: first direct F12 exit from 3D confirmed (build #516)
 
 User-provided `SpiderMan2k1Fix(20261023-023052).log` running
-`v1.0.0-278bd74` enabled the separate
+`commit 278bd74` enabled the separate
 `[System] ExperimentalQuickExitF12In3D=1` option and pressed F12
 during actual gameplay. Observed, in order:
 
