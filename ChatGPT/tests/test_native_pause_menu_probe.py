@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CORE = (ROOT / "spiderman2k1fix.c").read_text(encoding="utf-8")
 INI = (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text(encoding="utf-8")
-DOC = (ROOT / "docs/NATIVE_PAUSE_MENU_43.md").read_text(encoding="utf-8")
+DOC = (ROOT / "docs/references/NATIVE_PAUSE_MENU_43.md").read_text(encoding="utf-8")
 
 
 def section(begin, end):

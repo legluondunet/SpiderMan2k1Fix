@@ -2,7 +2,7 @@
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 S=(ROOT/"input_focus_trace.c").read_text()
-DOC=(ROOT/"ChatGPT/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()
+DOC=(ROOT/"docs/references/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()
 
 def test_passive_trace_does_not_install_directinput_hooks():
     anchor=S.index('GetEnvironmentVariableA("SPIDERMAN2K1FIX_FOCUS_PASSIVE"')
