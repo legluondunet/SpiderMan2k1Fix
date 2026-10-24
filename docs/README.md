@@ -29,6 +29,7 @@ This directory contains the maintained technical documentation and an index of s
 - [F10/F12 debug research](references/F12_DEBUG_TEST_MODE.md)
 - [Native shutdown research](references/F12_NATIVE_SHUTDOWN.md)
 - [Native ESC pause menu and 4:3 rendering](references/NATIVE_PAUSE_MENU_43.md)
+- [Original PC save file — `SPIDRMAN.DAT` binary format, eight slots, checksum algorithm and data-loss risks](references/NATIVE_SAVE_FILE_FORMAT.md) — reverse-engineering reference; no save-related patch installed
 
 ### DirectInput diagnostics
 
