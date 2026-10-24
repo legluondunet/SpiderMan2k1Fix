@@ -328,7 +328,95 @@ Do not turn the following into “understood functions”: most 11-mode dispatch
 
 **Completeness means:** all **functionally identified findings located in the current repository's source and research documents** were compared during this audit, with the major previously missing address/data groups now indexed here. It **does not** mean the game has been fully decompiled or every unpublished past GDB observation can be recovered. The retail EXE is not included in the repository, so this audit did not re-disassemble it byte for byte.
 
-## 9. Known validation and open questions
+## 9. Native exit points, transition ownership and cleanup by game phase
+
+**Do not conflate three different operations:** (1) ending the current screen/movie/script, (2) leaving the current gameplay owner to return to a main-menu/controller loop, and (3) terminating `SpideyPC.exe` after final program cleanup. The game reuses several low-level routines, and the **same request value can end in a controller loop or a process shutdown** depending on native state.
+
+This is a **flow/exit-point map** for the exact supported original 2001 binary. “Normal” paths are original game-owned logic verified statically and/or through logs; experimental F10/F12 behavior is described separately. Locations are absolute game virtual addresses (VA); data addresses are enclosed in brackets. The movie, comic and gameplay code must execute its own owner/SEH/resource teardown before another owner is entered.
+
+### 9.1 At-a-glance phase transition map
+
+```text
+STARTUP / MAIN CONTROLLER   0x00455C90
+   |
+   +-- Four original opening Bink calls to 0x00470750
+   |      each exits via movie-owner cleanup 0x00470871 -> 0x0050B790
+   +-- Original post-intro handoff 0x00455D23 -> 0x00443AD0
+          |
+          +-- Timed opening still 0x004A1930 (clock deadline)
+          +-- Input-wait opening still 0x004A17A0 (native input accepted)
+          |
+          v
+MAIN MENU  Shell_MainMenu 0x00493990
+   |    +-- Quit (item 3 / action 18) -> 0x004941D5 -> original final exit
+   |    +-- New Game -> original scene-script execution
+   v
+NEW GAME COMIC / BD COVER  L1COV.bmp, owner 0x00427910
+   |    +-- after 300 native clock ticks: 0x004279C6 -> 0x004279F0
+   v
+NEW GAME BINK MOVIE #4  0x004279FB -> shared owner 0x00470750
+   |    +-- natural end OR allowed Enter/Esc/Space skip
+   |    +-- 0x00470871 -> 0x0050B790 -> original movie/script return
+   v
+FIRST 3D CutSceneScript (Stan Lee)
+   |    +-- normal CutSceneEndScript OR allowed native skip
+   |    +-- 0x004BC3E0 / 0x004BC3EF / 0x004BC4AF (script cleanup)
+   v
+SECOND DISTINCT 3D CutSceneScript
+   |    +-- independent permission and native end/skip
+   v
+PLAYABLE 3D GAMEPLAY
+   |    +-- ESC -> native pause choice 'quit to main menu'
+   |    |       0x00455549 -> 0x0047BC40 -> 0x0047BE6F
+   |    +-- native request 7 at [0x0060CFA4]
+   |    +-- 3D cleanup 0x00455BF3 -> 0x004302D0
+   |    +-- top-level controller 7 at 0x00456185
+   |             +-- RETURN TO CONTROLLER -> original main menu
+   |             +-- FINAL CLEANUP -> terminate (only when guards permit)
+   |
+   +-- Later levels/cutscenes may use other owners: not all decoded
+```
+
+The line from **Main Menu → New Game** is an observed scene progression; the entire intervening menu-option-to-script call chain has **not** been reconstructed. Likewise, the diagram does **not** claim that all later game chapters reuse exactly the two introductory CutSceneScript instances.
+
+### 9.2 Exit-point reference table
+
+| Phase being left | Original exit trigger / decision | Original point of exit and cleanup | Destination and confidence |
+| --- | --- | --- | --- |
+| **Each of the four opening videos** | Natural Bink end, or keyboard skip only if the video's caller permits it; shared playback loop uses frame ticks `0x0047081D`, `0x0047085F` | `0x00470750` movie owner; normal/skip paths converge at `0x00470871 → 0x0050B790` video teardown. The **four** startup CALLs are `0x00455CF1`, `0x00455CFE`, `0x00455D0C`, `0x00455D1A` | Back to the startup controller; after the four calls `0x00455D23 → 0x00443AD0` performs further transition cleanup. **Static recovery + runtime traces**, not an immediate jump to the menu |
+| **First startup static screen (timed)** | The original clock deadline inside `0x004A1930`; code includes `0x004A1A26` clock read and `0x004A1A2B` compare / `0x004A1A2D` branch to native exit `0x004A1A36` | The **timed screen's own** loop, object release and SEH epilogue | Then the original input-wait screen `0x004A17A0`; **static code + Wine phase correlation** |
+| **Second startup static screen (Press Enter / input-wait)** | `0x004A1896 → 0x0050C180` polls original input; success proceeds via `0x004A18AE` | `0x004A17A0` native input-screen cleanup, object/SEH epilogue | Genuine interactive `Shell_MainMenu` callback `0x00493DD6`; **static + Wine**. The exact displayed pixel content was not inferred from code alone |
+| **Interactive main menu — Quit** | Original menu entry **3**, action **18**, table `0x00552AA8` | Game-owned selection and shutdown branch at `0x004941D5` from `Shell_MainMenu` (`0x00493990`) | **Program termination**, validated in historical Windows testing. Do not invoke that branch outside the menu owner |
+| **Interactive main menu — New Game** | User selects New Game through the game's native menu options | `Shell_MainMenu` returns through its own selection/cleanup logic; later the scene-script interpreter calls `0x00427910` from `0x004E0461` | New Game cover; **runtime sequence confirmed, intermediate call chain not fully identified** |
+| **New Game comic / BD cover `L1COV.bmp`** | Its native clock reaches **300 ticks (`0x12C`)** after the initial timestamp stored at `0x00427983`; clock reread `0x004279B8`, subtract `0x004279BE`, compare `0x004279C0`, branch at `0x004279C6` | Original comic loop ends through `0x004279F0`; immediately pushes movie ID **4** at `0x004279F9` and calls `0x00470750` at `0x004279FB` | Bink movie #4; **SHA-matched disassembly + Windows/Wine traces**. This is *comic timer completion*, **not** release of a Bink or termination of the process |
+| **New Game Bink movie #4** | Natural completion when tick indicates finished; allowed key skip requires caller's allow flag and **60 iterations** before `0x0047084E → 0x0050C180(0x07000000)` recognizes Enter/Esc/Space | `0x00470871 → 0x0050B790` Bink/video cleanup; `0x0047089F → 0x00440920` post-video transition; returns to comic owner at `0x00427A00`, which returns to the scene interpreter | Scene script advances at `0x004E0466` and resumes opcode dispatch at `0x004E2B3F`, eventually entering 3D. **Static + Windows owner trace**. A skipped Bink frame does **not** itself clean up 3D scenes |
+| **First New Game 3D scripted cinematic** | Original script completion, or a **single** skip request only once `CutSceneSkipAllow` for this script becomes true | Manager pointer at `[0x006A9038]`; active/context/permission at offsets `+0x1B4/+0x1AC/+0x1A4`. Native skip byte `[0x0060CFC4]` is consumed at `0x004BC3E0`, active script cleared at `0x004BC3EF`; `CutSceneEndScript` clears it at `0x004BC4AF` | Next **distinct** 3D CutSceneScript, whose skip permission starts disabled; **positive Wine two-script lifecycle traces** |
+| **Second New Game 3D scripted cinematic** | Own native end or independently permitted native skip; cannot borrow first script's permission | Same CutSceneScript cleanup machinery; `0x004BC17E` clears skip-request byte for a new script | Manager becomes idle (context and active zero), playable 3D follows; **positive Wine trace**, not proof for every other level |
+| **Gameplay → native pause menu** | Player opens ESC; original gameplay frame checks pause context `[0x00682950]` at `0x00455540` | `0x00455549 → 0x0047BC40` enters **native pause option owner** on game thread | Pause UI, **not** a game termination or a generic transition to a new engine mode |
+| **Gameplay ESC → Retry / Training / Main Menu** | Native menu choice byte `[menu+0x14]`: **0 retry, 1 training, 2 main menu** | Branches **`0x0047BE87`→request 8**, **`0x0047BE7B`→request 10**, **`0x0047BE6F`→request 7** respectively; pause objects destroyed at `0x0047BEA0` / `0x0047BEB6`; pointers cleared | Original top-level controller handles the pending request; **static mapping**. Only the *return-to-main-menu* branch is covered as a safe exit in the cited traces |
+| **Active 3D gameplay owner** | Native controller request becomes nonzero (e.g., request 7 after genuine pause/menu or input-owner logic); original 3D tick `0x00455A8B → 0x00455400` returns | `0x00455A90` checks `[0x0060CFA4]`; `0x00455A96` goes to owner cleanup `0x00455BF3`, calls `0x004302D0` at `0x00455BF9`, then later `0x004CB0B0`, `0x00472340`, `0x00479E30`; `0x00455C3D` returns | Returns to top-level dispatcher, **not necessarily to the menu or process exit**; static and Windows traces |
+| **Controller request 7 after leaving 3D** | Dispatcher `0x00455F24` / `0x00455F56` selects table `0x00456274` entry `0x00456185`; original owner-specific cleanup has happened | Calls `0x00443AD0(0)` and `0x0048A820` at `0x00456198`, then evaluates **bit 4** of `[0x02E0988C]` and signed `[0x00568FB0]` | When bit4=0 and status=-1, observed **RETURN-TO-CONTROLLER** / original main-menu continuation. With separate exit conditions it can reach final cleanup `0x0045620C`. **Both outcomes observed in historical tests**; request 7 alone does not choose them |
+| **Final game process exit** | Original main-menu Quit route or native controller final-exit conditions | Full game-owned cleanup, conditional Quit test `0x00455E50` where reachable, and final path `0x0045620C` | Process termination is confirmed only by OS-side verification (process absent/exit code); **window close, movie end or HUD disappearance do not prove this** |
+
+### 9.3 Distinct termination mechanisms and historical development shortcuts
+
+**Normal, game-owned actions:** leaving a Bink player via `0x00470871`; ending a BD cover via its native 300-tick condition; ending a 3D script through the original script manager; leaving gameplay via its pause owner and native 3D cleanup; quitting the **real** main menu by item 3/action 18. They are different scopes of cleanup and **cannot be substituted** for one another.
+
+**Historical F12 process-exit experiments (superseded):** Windows 11 tests established process termination from a New Game comic and movie #4 after deferring the request through original movie/script return and native controller-7 finalization. A ~1-second yellow window appeared in both movie-origin cases. Active 3D F12 finalization did **not** show that yellow window. Another historical test exited with one F12 during an opening video by progressing through original opening-Bink cleanup, the native timed/input-wait screens and real menu Quit; this may briefly flash the main menu. These are **historical experimental** routes, not currently enabled physical F12 shortcuts. See [native shutdown test records](F12_NATIVE_SHUTDOWN.md); none proves the precise graphics cause of the yellow artifact.
+
+**Current project F10 development shortcut:** physical F10 is opt-in via `[Debug] F10Shortcut=1` and is **not** process Quit. Documented Wine results show: opening Bink → original main menu; New Game comic/movie → remaining native Bink and two permission-gated 3D script skips → gameplay; first/second New Game 3D script → only the remaining validated native skips → gameplay; playable 3D → owner cleanup/request 7/controller **RETURN-TO-CONTROLLER** → responsive main menu with the **same PID** and without forcing final-exit bit. Later in-level CutSceneScript is handled only when that script's native permission is present, one script at a time. These tests **do not cover all possible future level-specific script owners**, and the corresponding Windows 11 consolidated F10 behavior remained unverified in the cited matrix. See [F10 validation matrix](F10_VALIDATION_MATRIX.md) and [F10 development history](F12_DEBUG_TEST_MODE.md).
+
+### 9.4 Safety and regression requirements for any new exit hook
+
+1. **Identify the owner** (movie number/caller return, real `Shell_MainMenu`, comic owner, live script context, original 3D tick or gameplay pause owner). A global `mode_request`, HUD appearing, Bink handle existing or elapsed wall-clock time alone is not enough.
+2. **Check eligibility**: native skip permission, owner-local timer, video allow-skip flag, actual menu input selection, or native controller return/final-exit conditions. Do not manufacture a universal exit by writing `[0x0060CFA4]=7`.
+3. **Let the original code clean up**: Bink `0x0050B790`, startup page object+SEH epilogues, cinematic `CutSceneEndScript`, pause menu destructors, 3D `0x00455BF3` cleanup and the original controller finalizer.
+4. **Do not jump between unrelated contexts**: no direct call to menu Quit from a Bink callback; no shortcut from comic draw to an end-of-3D branch; no off-thread native destructors; no fabricated Space, forced `WM_CLOSE` or `TerminateProcess` used as a substitute.
+5. **Test transitions distinctly**: each of the four startup movies; first/second still; actual menu; BD cover; movie #4; **each** of the two introductory scripts; later scripted scenes; gameplay → ESC → Retry/Training/Main Menu; gameplay F10 → menu and a second New Game; and true final process exit. Capture game log, validated EXE hash, build/INI, OS, visual rendering, game PID and OS exit status when relevant.
+
+**Research provenance:** [`docs/F12_NATIVE_SHUTDOWN.md`](F12_NATIVE_SHUTDOWN.md), [`docs/F12_DEBUG_TEST_MODE.md`](F12_DEBUG_TEST_MODE.md), [`docs/F10_VALIDATION_MATRIX.md`](F10_VALIDATION_MATRIX.md), [`quick_exit_f12.c`](../quick_exit_f12.c). **Unresolved:** universal exit behavior for all later levels/other cinematic systems, exact visual-frame transition timing, and whether the yellow window comes from a particular DirectDraw/Direct3D surface.
+
+## 10. Known validation and open questions
 
 | Area | Evidence | Boundary |
 | --- | --- | --- |
@@ -341,7 +429,7 @@ Do not turn the following into “understood functions”: most 11-mode dispatch
 
 Automated tests confirm signatures and code properties; **they do not prove game runtime behavior**. Keep Wine and Windows 11 regressions distinct, and record exact commit/build, INI, original EXE hash, diagnostic log, steps to reproduce and whether the process actually exits or returns to the menu.
 
-## 10. Research references and next steps
+## 11. Research references and next steps
 
 Repository sources:
 - [DirectInput static audit](../DIRECTINPUT_STATIC_ANALYSIS.md)
