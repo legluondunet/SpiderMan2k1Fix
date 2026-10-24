@@ -1,5 +1,63 @@
 # Native ESC pause menu: centered 4:3 diagnosis
 
+## Current experiment: Wine build after #770 (2026-10-24)
+
+**The actual red gameplay ESC selector was independently identified** in
+user screenshot \`scrn0007(1).png\` and
+\`SpiderMan2k1Fix(20261024-084004).log\`, which ran
+\`SpiderMan2k1Fix v1.0.0-ee64819\`. The stable Direct3D7
+\`SELECTOR-SHAPE\` draw is:
+
+- Caller RVA \`0x00102C72\`, non-indexed \`D3DPT_TRIANGLEFAN\`,
+  \`FVF=0x144\`, exactly four vertices.
+- \`32x32\` bound texture, \`diffuse=0xFFFFFFFF\`, pixel format
+  flags \`0x41\`, \`z=0.00000\`, \`rhw=27.519\`.
+- 96x72 quad at \`(982,526)-(1078,598)\` (matches the
+  screenshot's red pixel bounds within transparent sprite margins),
+  and the **same texture and signature** at
+  \`(772,495)-(868,567)\` in another menu-selection state.
+- This quad occurs *after* the independently validated wide, untextured
+  purple native ESC ribbon in the **same Flip**.
+- Font glyphs may use the same 32x32 texture dimensions, but have
+  a completely different size, z and rhw. Sprite pointer
+  \`04e1a168\` is only meaningful during this recorded Wine run and
+  **must not** be embedded as an object identity.
+
+The previous \`PCSHELL_DrawMouseCursor\` stack-owner hypothesis proved
+incorrect/unusable for this particular render: Wine reported
+\`depth=0\`; 758-DWORD x86 fallback scans never matched the supposed
+owner. The old stack walker is **now replaced** by a strict quad
+signature check. The replacement remains **OFF by default**.
+
+On this first experimental version, the adjustment is restricted to
+**1920x1080 Auto**, with \`SPIDERMAN2K1FIX_NATIVE_ESC_43=1\`
+and \`SPIDERMAN2K1FIX_NATIVE_CURSOR_43=1\` both set.
+Only the selector's X vertex coordinates are compressed around
+**that sprite's existing center** by 0.75 (96 -> 72 px); Y, Z,
+RHW, UV, colors, other UI, world and game input are untouched.
+The positional center is preserved for the first controlled visual
+test; other menu text continues to use its pre-existing correction.
+No promise is made yet about behavior at other resolutions or on
+native Windows.
+
+Next Wine test (fresh matched winmm proxy + main DLL from the
+same CI artifact):
+
+1. Set \`[Debug] Log=1\` in INI.
+2. Enable \`SPIDERMAN2K1FIX_NATIVE_ESC_43=1\` and
+   \`SPIDERMAN2K1FIX_NATIVE_CURSOR_43=1\`. The read-only
+   \`SPIDERMAN2K1FIX_PAUSE_MENU_TRACE=1\` is optional.
+3. Open native in-game ESC menu, then REALY QUIT? / YES and NO;
+   take F9 lossless PNG screenshots at multiple selector positions.
+4. Verify \`NATIVE-CURSOR-43: QUAD-MATCH\` entries, expected
+   \`output-width=72.0\`, and check that red cursor height,
+   text, panel, HUD, input and gameplay all remain unchanged.
+   On any mismatch, disable just the cursor opt-in and preserve
+   screenshots + log.
+
+**Do not merge PR #28 on the basis of logging or compilation alone.**
+It requires visual Wine and native Windows validation.
+
 ## Desired visual behavior
 
 Keep the widescreen 3D world and already validated gameplay HUD
