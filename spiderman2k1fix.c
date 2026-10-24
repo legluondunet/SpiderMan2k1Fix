@@ -1114,6 +1114,7 @@ static volatile LONG pause_menu_trace_action_edges=0;
 static volatile LONG pause_menu_trace_wide_seen=0;
 static volatile LONG pause_menu_trace_selector_seen=0;
 static volatile LONG pause_menu_trace_icon_seen=0;
+static volatile LONG pause_menu_trace_f9_events=0;
 #define SPIDER_NATIVE_ESC_PAUSE_CONTEXT ((const volatile DWORD *)(uintptr_t)0x00682950u)
 
 static void pause_menu_trace_init(void) {
@@ -1123,7 +1124,7 @@ static void pause_menu_trace_init(void) {
   n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_PAUSE_MENU_TRACE",value,sizeof(value));
   if(n==1 && value[0]=='1') {
     InterlockedExchange(&pause_menu_trace_enabled,1);
-    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; ESC and post-ESC ENTER/SPACE/UP/DOWN edges; frames 1/5/12/20, first8 + every64th + geometric CURSOR-CANDIDATE quads (100/frame), ICON-REGION quads (100/frame), wide overlays; no geometry changes [Log=1]");
+    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; ESC and post-ESC ENTER/SPACE/UP/DOWN edges; frames 1/5/12/20, first8 + every64th + geometric CURSOR-CANDIDATE quads (100/frame), ICON-REGION quads (100/frame), F9 snapshot sampling, wide overlays; no geometry changes [Log=1]");
   }
 }
 /* Read-only ESC observation and a limited follow-up after menu navigation keys.
@@ -1198,6 +1199,35 @@ static void pause_menu_trace_on_flip(LONG flip) {
     }
   }
 }
+
+/* Native F9 screenshot capture runs AFTER the backbuffer was rendered.
+ * Sample subsequent frames for a menu pose matching the user's screenshot,
+ * rather than relying on VK_UP/VK_DOWN edges (missed by Wine at 30 FPS).
+ * The original F9 handler remains fully in charge of producing its PNG.
+ * Diagnostic only: never changes vertices, input, rendering or PNG pixels.
+ */
+static void pause_menu_trace_on_f9(void) {
+  LONG flip,seen;
+  char line[196];
+  if(InterlockedCompareExchange(&pause_menu_trace_enabled,0,0)!=1 ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)==1 ||
+     InterlockedCompareExchange(&pause_menu_trace_escape_edges,0,0)<1)
+    return;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  if(flip<=0 || flip>InterlockedCompareExchange(&pause_menu_trace_action_armed_until,0,0))
+    return;
+  seen=InterlockedIncrement(&pause_menu_trace_f9_events);
+  if(seen>4)return;
+  InterlockedExchange(&pause_menu_trace_escape_until,flip+24);
+  InterlockedExchange(&pause_menu_trace_active,0);
+  InterlockedExchange(&pause_menu_trace_frames,0);
+  InterlockedExchange(&pause_menu_trace_draws,0);
+  InterlockedExchange(&pause_menu_trace_last_flip,-1);
+  snprintf(line,sizeof(line),
+    "PAUSE-NATIVE-PROBE: F9-SNAPSHOT #%ld at flip=%ld; next 24 Flips record the on-screen ESC pose [READ ONLY]",
+    (long)seen,(long)flip);
+  log_line(line);
+}
 static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
                                   DWORD fvf,const void *vertices,DWORD count,
                                   int indexed,void *ret) {
@@ -1214,6 +1244,7 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
   const void *tex_identity=NULL;
   int wide_overlay_candidate,selector_candidate=0,selector_sample=0;
   int icon_region_candidate=0,icon_region_sample=0;
+  int spider_pose_candidate=0,spider_pose_sample=0;
   if(InterlockedCompareExchange(&pause_menu_trace_enabled,0,0)!=1)return;
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 ||
      (*SPIDER_NATIVE_ESC_PAUSE_CONTEXT==0 &&
@@ -1328,6 +1359,26 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
      z>=-0.0010f && z<=0.065f &&
      rhw>=0.45f && rhw<=30.0f)
     icon_region_candidate=1;
+
+  /* F9-confirmed red icon positions in the full-size 1920x1080 PNGs:
+   * regular ESC x=1121..1217 y=589..655; confirmation
+   * x=937..1033 y=652..718. Unlike the previous left-side probe
+   * (incorrectly based on downscaled inline previews), this covers
+   * the actual physical location. Allow 3, 4 or 6 source vertices,
+   * fan/strip/list, both pre-transformed FVF formats and any caller.
+   * Restrict to near-foreground UI Z/RHW so 3D background triangles
+   * cannot consume the cap before reaching the late overlay draws.
+   */
+  if((count==3 || count==4 || count==6) &&
+     xmin>(float)desktop_w*0.39f &&
+     xmax<(float)desktop_w*0.73f &&
+     ymin>(float)desktop_h*0.37f &&
+     ymax<(float)desktop_h*0.75f &&
+     xmax-xmin>=12.0f && xmax-xmin<=200.0f &&
+     ymax-ymin>=12.0f && ymax-ymin<=180.0f &&
+     z>=-0.0010f && z<=0.0040f &&
+     rhw>=5.0f && rhw<=25.0f)
+    spider_pose_candidate=1;
   /* Preserve a bounded look at unusually wide native UI backgrounds. */
   wide_overlay_candidate=(type==D3DPT_TRIANGLEFAN && fvf==0x144UL && count==4 &&
      (xmax-xmin)>(float)desktop_w*0.60f &&
@@ -1340,11 +1391,14 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
   if(selector_candidate &&
      InterlockedIncrement(&pause_menu_trace_selector_seen)<=100)
     selector_sample=1;
-  if(icon_region_candidate && !selector_sample &&
+  if(spider_pose_candidate &&
+     InterlockedIncrement(&pause_menu_trace_icon_seen)<=100)
+    spider_pose_sample=1;
+  else if(icon_region_candidate && !selector_sample &&
      InterlockedIncrement(&pause_menu_trace_icon_seen)<=100)
     icon_region_sample=1;
   if(draw>8 && (draw%64)!=0 && !wide_overlay_candidate &&
-     !selector_sample && !icon_region_sample)return;
+     !selector_sample && !icon_region_sample && !spider_pose_sample)return;
   if(!rva && !geom_rva(ret,&rva))rva=0;
   if(fvf==0x144UL &&
      SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) &&
@@ -1357,7 +1411,7 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
     }
     IDirectDrawSurface7_Release(texture);
   }
-  if(selector_sample || icon_region_sample) {
+  if(selector_sample || icon_region_sample || spider_pose_sample) {
     float u0=0.0f,v0=0.0f;
     memcpy(&diffuse,raw+16,sizeof(diffuse));
     if(fvf==0x144UL) {
@@ -1366,7 +1420,7 @@ static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
     }
     snprintf(line,sizeof(line),
       "PAUSE-NATIVE-PROBE: %s frame=%ld flip=%ld draw=%ld caller_rva=0x%08lX indexed=%d type=%lu fvf=0x%lX count=%lu tex=%lux%lu texid=%p diffuse=0x%08lX uv0=(%.4f,%.4f) rect=(%.1f,%.1f)-(%.1f,%.1f) z=%.5f rhw=%.3f [READ ONLY; IDENTITY UNVERIFIED]",
-      selector_sample?"CURSOR-CANDIDATE":"ICON-REGION",
+      spider_pose_sample?"SPIDER-POSE":(selector_sample?"CURSOR-CANDIDATE":"ICON-REGION"),
       (long)frame,(long)flip,(long)draw,(unsigned long)rva,
       indexed,(unsigned long)type,(unsigned long)fvf,(unsigned long)count,
       (unsigned long)texw,(unsigned long)texh,tex_identity,
@@ -2309,6 +2363,7 @@ static void __cdecl hooked_f9_png_only(void) {
            SpiderF9PNG_QueueComic(&desc,log_line):
            SpiderF9PNG_Queue(&desc,log_line);
     unlock_hr=IDirectDrawSurface7_Unlock(back,NULL);
+    if(queued)pause_menu_trace_on_f9();
     snprintf(msg,sizeof(msg),
       "F9-PNG-ONLY: backbuffer capture=%s %lux%lu Lock=OK Unlock=0x%08lX",
       queued?"queued":"skipped",
