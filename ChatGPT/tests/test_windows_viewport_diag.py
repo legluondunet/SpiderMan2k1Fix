@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CORE = (ROOT / "spiderman2k1fix.c").read_text()
-DOC = (ROOT / "docs/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()
+DOC = (ROOT / "ChatGPT/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()
 
 def test_logs_boundary_around_original_setviewport():
     assert 'D3D7-VIEWPORT-DIAG: BEFORE' in CORE

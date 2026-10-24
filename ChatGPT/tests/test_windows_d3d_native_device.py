@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
 SOURCE=(ROOT/"spiderman2k1fix.c").read_text()
-DOC=(ROOT/"docs/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()
+DOC=(ROOT/"ChatGPT/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md").read_text()
 
 def test_native_d3d7_device_mode_is_opt_in():
     assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_D3D_NATIVE_DEVICE"' in SOURCE
