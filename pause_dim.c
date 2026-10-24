@@ -19,7 +19,7 @@
 #include "pause_overlay.h"
 
 #define DIM_CLASS L"SpiderMan2k1Fix_PauseDim"
-#define DIM_DEFAULT_OPACITY 55 /* Percent black; scene still visible. */
+#define DIM_DEFAULT_OPACITY 60 /* Percent black; scene still visible. */
 #define DIM_GRID_STEP 16        /* Screen pixels: small comic-style cells. */
 #define DIM_GRID_COLOR RGB(54,58,67) /* Subtle light-gray lines through alpha. */
 #define BG_DITHER_PERIOD 8 /* Legacy Win32 child: quantized spatial opacity. */
@@ -33,7 +33,7 @@ static HWND dim_background_hwnd=NULL;
 static int dim_enabled=1;
 static int dim_opacity=DIM_DEFAULT_OPACITY;
 static BYTE dim_alpha=140;
-static int dim_grid_enabled=1;
+static int dim_grid_enabled=0;
 static int dim_registered=0;
 static void (*dim_log)(const char *)=NULL;
 
