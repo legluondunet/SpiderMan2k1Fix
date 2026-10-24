@@ -8,6 +8,14 @@ record historical research, not current validation status.
 F10 is the only physical shortcut; F11/F12 are reserved for
 MangoHud on Linux. Legacy F12 INI names are compatibility aliases.
 
+## Current optional shortcut and compatibility notes
+
+**F10 is the only physical SpiderMan2k1Fix development shortcut.** The original game's F12 → `PostMessageA(WM_CLOSE)` is still suppressed for safe window handling; F11/F12 can therefore remain available to other Linux overlays such as MangoHud. Historical F12-named settings are compatibility aliases only: they do **not** activate physical F12.
+
+`[Debug] F10Shortcut=1` is **not generated** in default INIs and, when absent, **defaults to `0`**. The shortcut is independent of `Log=1`. Older `F10TestMode`, `F10Auto3DScripts`, `F10GameplayExit` and `[System] QuickExitF10` options remain accepted from some old INIs but are not needed for the unified shortcut; `F10VerboseTrace=1` only adds diagnostic traces. To disable F10, remove the setting or use `F10Shortcut=0` and disable any separate legacy opt-ins.
+
+The **Bink-to-first-3D Enter/Space release safeguard** passed development testing with F10 disabled in **build #713**, without synthetic key presses or rewriting native input buffers. This is not general Windows 11 certification or proof that later in-level cinematics are supported.
+
 ## Test configuration
 
 ```ini
