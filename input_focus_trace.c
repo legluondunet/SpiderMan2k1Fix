@@ -455,7 +455,8 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   InterlockedExchange(&entry_probe_enabled,want_probe);
   InterlockedExchange(&interface_probe_enabled,want_interface_probe);
   /* Default 1 also covers pre-existing user INIs with no such key. */
-  want_cursor=GetPrivateProfileIntA("Input","RestoreCursorOnFocusLoss",1,ini)==1;
+  /* Always restore the desktop cursor on real focus loss. */
+  want_cursor=1;
   InterlockedExchange(&cursor_visibility_test,want_cursor);
   /* This explicit diagnostic switch still provides WndProc focus/geometry
    * snapshots without patching the DirectInput8 import or COM vtables.
