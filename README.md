@@ -25,7 +25,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** that improves how the origin
 - **Modern display modes:** borderless fullscreen at the desktop resolution, widescreen 3D or classic 4:3 presentation, and automatic aspect/FOV adjustments.
 - **Original-looking 2D content:** introductory videos, comic artwork and menus retain their intended proportions. The HUD, compass and mission instructions are adapted for supported widescreen resolutions.
 - **Game compatibility:** memory-only CD-check bypass for the supported executable and a default **30 FPS** limiter to avoid timing problems.
-- **Settings and input:** configurable display, sound, keyboard and gamepad controls, with new AZERTY/QWERTY-aware INI key bindings. The original in-game key-name labels are not yet localized; focus/Alt+Tab recovery remains experimental.
+- **Settings and input:** configurable display, sound, keyboard and gamepad controls, with new AZERTY/QWERTY-aware INI key bindings. French AZERTY in-game key labels and CHEATS entry have an experimental RAM-only correction; focus/Alt+Tab recovery remains experimental.
 - **Screenshots:** **F9** saves lossless PNG files (`scrnNNNN.png`) beside the game executable. The capture path still needs broader Windows/Wine runtime testing.
 
 These features are under active development; some resolutions, gameplay scenes and combinations of settings have not been validated. For technical details and known limitations, see the [project documentation](docs/README.md).
