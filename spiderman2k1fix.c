@@ -989,7 +989,7 @@ static const void *maybe_correct_native_comic(void *device,D3DPRIMITIVETYPE type
     char msg[286];
     snprintf(msg,sizeof(msg),
       "COMIC-NATIVE-FIX: #%ld stage=NATIVE rva=0x%08lX texture=%lux%lu "
-      "x-before=(%.1f,%.1f) x-after=(%.1f,%.1f) y-unchanged [EXPERIMENT]",
+      "x-before=(%.1f,%.1f) x-after=(%.1f,%.1f) y-unchanged [NATIVE-ESC-43]",
       (long)hit,(unsigned long)rva,(unsigned long)desc.dwWidth,(unsigned long)desc.dwHeight,
       (double)((const SpiderMenuVertex*)source)[0].x,
       (double)((const SpiderMenuVertex*)source)[1].x,
@@ -1085,432 +1085,7 @@ static const void *maybe_correct_adaptive_hud(void *device,
   }
   return copy;
 }
-/* Diagnostic only: classify original in-game ESC pause menu geometry before
- * adding any 4:3 transform. The actual pause menu is identified by the
- * SHA-matched game-owned pointer at 0x00682950 (same one observed by F10
- * native engine tracing), NOT the independent Alt+Tab focus pause.
- *
- * Enabled only with [Debug] Log=1 AND
- * SPIDERMAN2K1FIX_PAUSE_MENU_TRACE=1; logs up to four Flip generations,
- * bounded sparse samples plus a focused late-stage range in four spaced frames. It does not patch input, alter
- * vertices, capture pixels or read native menu object contents.
- * This is temporary research instrumentation, separate from HUD F12 probes.
- */
-static volatile LONG pause_menu_trace_enabled=0;
-static volatile LONG pause_menu_trace_active=0;
-static volatile LONG pause_menu_trace_last_flip=-1;
-static volatile LONG pause_menu_trace_frames=0;
-static volatile LONG pause_menu_trace_draws=0;
-static volatile LONG pause_menu_trace_session=0;
-static volatile LONG pause_menu_trace_escape_down=0;
-static volatile LONG pause_menu_trace_escape_edges=0;
-static volatile LONG pause_menu_trace_escape_until=-1;
-static volatile LONG pause_menu_trace_action_armed_until=-1;
-static volatile LONG pause_menu_trace_enter_down=0;
-static volatile LONG pause_menu_trace_space_down=0;
-static volatile LONG pause_menu_trace_up_down=0;
-static volatile LONG pause_menu_trace_down_down=0;
-static volatile LONG pause_menu_trace_action_edges=0;
-static volatile LONG pause_menu_trace_wide_seen=0;
-static volatile LONG pause_menu_trace_selector_seen=0;
-static volatile LONG pause_menu_trace_icon_seen=0;
-static volatile LONG pause_menu_trace_shape_seen=0;
-static volatile LONG pause_menu_trace_motif_seen=0;
-static volatile LONG pause_menu_trace_f9_events=0;
-#define SPIDER_NATIVE_ESC_PAUSE_CONTEXT ((const volatile DWORD *)(uintptr_t)0x00682950u)
-
-static void pause_menu_trace_init(void) {
-  char value[4]={0};
-  DWORD n;
-  if(!debug_log_enabled)return;
-  n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_PAUSE_MENU_TRACE",value,sizeof(value));
-  if(n==1 && value[0]=='1') {
-    InterlockedExchange(&pause_menu_trace_enabled,1);
-    log_line("PAUSE-NATIVE-PROBE: READ-ONLY enabled; ESC and post-ESC ENTER/SPACE/UP/DOWN edges; frames 1/5/12/20, first8 + every64th + CURSOR-CANDIDATE (100/frame), independent SELECTOR-SHAPE (32/frame), F9 sampling; no geometry changes [Log=1]");
-  }
-}
-/* Read-only ESC observation and a limited follow-up after menu navigation keys.
- * Native pause_context is zero in the observed Wine runs; do NOT treat the
- * key edge as proof of the menu state. A post-ESC key is simply a convenient
- * sampling trigger for QUIT -> NO/YES and selector movements; no key is
- * consumed, synthesized or rerouted. Up to six follow-up 24-Flip windows,
- * armed for 1800 Flips
- * (about one minute at 30 FPS), per observed ESC edge.
- */
-static void pause_menu_trace_on_flip(LONG flip) {
-  LONG down,prev,until,enter_down,enter_prev,space_down,space_prev,armed;
-  LONG up_down,up_prev,down_down,down_prev;
-  char line[220];
-  if(InterlockedCompareExchange(&pause_menu_trace_enabled,0,0)!=1)return;
-  down=(GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0;
-  prev=InterlockedExchange(&pause_menu_trace_escape_down,down);
-  enter_down=(GetAsyncKeyState(VK_RETURN)&0x8000)!=0;
-  enter_prev=InterlockedExchange(&pause_menu_trace_enter_down,enter_down);
-  space_down=(GetAsyncKeyState(VK_SPACE)&0x8000)!=0;
-  space_prev=InterlockedExchange(&pause_menu_trace_space_down,space_down);
-  up_down=(GetAsyncKeyState(VK_UP)&0x8000)!=0;
-  up_prev=InterlockedExchange(&pause_menu_trace_up_down,up_down);
-  down_down=(GetAsyncKeyState(VK_DOWN)&0x8000)!=0;
-  down_prev=InterlockedExchange(&pause_menu_trace_down_down,down_down);
-  if(InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 && down && !prev) {
-    /* Cap ESC sessions and post-ESC action sessions to avoid runaway logs. */
-    LONG edge=InterlockedIncrement(&pause_menu_trace_escape_edges);
-    if(edge<=4) {
-      InterlockedExchange(&pause_menu_trace_action_armed_until,flip+1800);
-      InterlockedExchange(&pause_menu_trace_action_edges,0);
-      InterlockedExchange(&pause_menu_trace_escape_until,flip+24);
-      InterlockedExchange(&pause_menu_trace_active,0);
-      InterlockedExchange(&pause_menu_trace_frames,0);
-      InterlockedExchange(&pause_menu_trace_draws,0);
-      InterlockedExchange(&pause_menu_trace_last_flip,-1);
-      snprintf(line,sizeof(line),
-        "PAUSE-NATIVE-PROBE: ESC-EDGE #%ld flip=%ld native_pause_context=%lu [READ ONLY; 24-Flip sampling window]",
-        (long)edge,(long)flip,(unsigned long)(*SPIDER_NATIVE_ESC_PAUSE_CONTEXT!=0));
-      log_line(line);
-    }
-  } else if(InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
-            ((enter_down && !enter_prev) || (space_down && !space_prev) ||
-             (up_down && !up_prev) || (down_down && !down_prev))) {
-    armed=InterlockedCompareExchange(&pause_menu_trace_action_armed_until,0,0);
-    if(armed>=flip && flip>0 &&
-       InterlockedCompareExchange(&pause_menu_trace_escape_edges,0,0)>0) {
-      LONG n=InterlockedIncrement(&pause_menu_trace_action_edges);
-      if(n<=6) {
-        InterlockedExchange(&pause_menu_trace_escape_until,flip+24);
-        InterlockedExchange(&pause_menu_trace_active,0);
-        InterlockedExchange(&pause_menu_trace_frames,0);
-        InterlockedExchange(&pause_menu_trace_draws,0);
-        InterlockedExchange(&pause_menu_trace_last_flip,-1);
-        snprintf(line,sizeof(line),
-          "PAUSE-NATIVE-PROBE: KEY-EDGE #%ld key=%s flip=%ld [READ ONLY; post-ESC observation, menu state UNVERIFIED]",
-          (long)n,enter_down && !enter_prev?"ENTER":
-          space_down && !space_prev?"SPACE":
-          up_down && !up_prev?"UP":"DOWN",(long)flip);
-        log_line(line);
-      }
-    }
-  }
-  until=InterlockedCompareExchange(&pause_menu_trace_escape_until,0,0);
-  if(until>0 && flip>until) {
-    InterlockedExchange(&pause_menu_trace_escape_until,-1);
-    if(InterlockedExchange(&pause_menu_trace_active,0)==1) {
-      snprintf(line,sizeof(line),
-        "PAUSE-NATIVE-PROBE: END key window flip=%ld [NO GEOMETRY MODIFIED]",
-        (long)flip);
-      log_line(line);
-    }
-  }
-}
-
-/* Native F9 screenshot capture runs AFTER the backbuffer was rendered.
- * Sample subsequent frames for a menu pose matching the user's screenshot,
- * rather than relying on VK_UP/VK_DOWN edges (missed by Wine at 30 FPS).
- * The original F9 handler remains fully in charge of producing its PNG.
- * Diagnostic only: never changes vertices, input, rendering or PNG pixels.
- */
-static void pause_menu_trace_on_f9(void) {
-  LONG flip,seen;
-  char line[196];
-  if(InterlockedCompareExchange(&pause_menu_trace_enabled,0,0)!=1 ||
-     InterlockedCompareExchange(&menu_upscale_active,0,0)==1 ||
-     InterlockedCompareExchange(&pause_menu_trace_escape_edges,0,0)<1)
-    return;
-  flip=InterlockedCompareExchange(&flip_count,0,0);
-  if(flip<=0 || flip>InterlockedCompareExchange(&pause_menu_trace_action_armed_until,0,0))
-    return;
-  seen=InterlockedIncrement(&pause_menu_trace_f9_events);
-  if(seen>4)return;
-  InterlockedExchange(&pause_menu_trace_escape_until,flip+24);
-  InterlockedExchange(&pause_menu_trace_active,0);
-  InterlockedExchange(&pause_menu_trace_frames,0);
-  InterlockedExchange(&pause_menu_trace_draws,0);
-  InterlockedExchange(&pause_menu_trace_last_flip,-1);
-  snprintf(line,sizeof(line),
-    "PAUSE-NATIVE-PROBE: F9-SNAPSHOT #%ld at flip=%ld; next 24 Flips record the on-screen ESC pose [READ ONLY]",
-    (long)seen,(long)flip);
-  log_line(line);
-}
-static void pause_menu_trace_draw(void *device,D3DPRIMITIVETYPE type,
-                                  DWORD fvf,const void *vertices,DWORD count,
-                                  int indexed,void *ret) {
-  LONG frame,flip,draw,session;
-  DWORD rva=0,texw=0,texh=0,texture_format=0;
-  const BYTE *raw=(const BYTE*)vertices;
-  const float *a;
-  float xmin,xmax,ymin,ymax,z,rhw;
-  unsigned i,stride;
-  IDirectDrawSurface7 *texture=NULL;
-  DDSURFACEDESC2 desc;
-  char line[440];
-  DWORD diffuse=0;
-  const void *tex_identity=NULL;
-  int wide_overlay_candidate,selector_candidate=0,selector_sample=0;
-  int icon_region_candidate=0,icon_region_sample=0;
-  int spider_pose_candidate=0,spider_pose_sample=0;
-  int selector_shape_candidate=0,selector_shape_sample=0;
-  if(InterlockedCompareExchange(&pause_menu_trace_enabled,0,0)!=1)return;
-  if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 ||
-     (*SPIDER_NATIVE_ESC_PAUSE_CONTEXT==0 &&
-      InterlockedCompareExchange(&pause_menu_trace_escape_until,0,0)<
-        InterlockedCompareExchange(&flip_count,0,0))) {
-    if(InterlockedExchange(&pause_menu_trace_active,0)==1) {
-      snprintf(line,sizeof(line),
-        "PAUSE-NATIVE-PROBE: END session=%ld [NO GEOMETRY MODIFIED]",
-        (long)InterlockedCompareExchange(&pause_menu_trace_session,0,0));
-      log_line(line);
-    }
-    return;
-  }
-  if(InterlockedCompareExchange(&pause_menu_trace_active,1,0)==0) {
-    session=InterlockedIncrement(&pause_menu_trace_session);
-    InterlockedExchange(&pause_menu_trace_frames,0);
-    InterlockedExchange(&pause_menu_trace_last_flip,-1);
-    InterlockedExchange(&pause_menu_trace_draws,0);
-    snprintf(line,sizeof(line),
-      "PAUSE-NATIVE-PROBE: BEGIN session=%ld native_pause_context=%lu output=%lux%lu mode=%s",
-      (long)session,(unsigned long)(*SPIDER_NATIVE_ESC_PAUSE_CONTEXT!=0),
-      (unsigned long)desktop_w,(unsigned long)desktop_h,
-      display_aspect_setting);
-    log_line(line);
-  }
-  flip=InterlockedCompareExchange(&flip_count,0,0);
-  if(flip!=InterlockedCompareExchange(&pause_menu_trace_last_flip,0,0)) {
-    LONG previous_frame=InterlockedCompareExchange(&pause_menu_trace_frames,0,0);
-    LONG previous_candidates=InterlockedExchange(&pause_menu_trace_draws,0);
-    if(previous_frame>=1 && previous_frame<=20) {
-      snprintf(line,sizeof(line),
-        "PAUSE-NATIVE-PROBE: FRAME-END frame=%ld candidates=%ld [READ ONLY]",
-        (long)previous_frame,(long)previous_candidates);
-      log_line(line);
-    }
-    InterlockedExchange(&pause_menu_trace_last_flip,flip);
-    InterlockedExchange(&pause_menu_trace_wide_seen,0);
-    InterlockedExchange(&pause_menu_trace_selector_seen,0);
-    InterlockedExchange(&pause_menu_trace_icon_seen,0);
-    InterlockedExchange(&pause_menu_trace_shape_seen,0);
-    InterlockedExchange(&pause_menu_trace_motif_seen,0);
-    frame=InterlockedIncrement(&pause_menu_trace_frames);
-    if(frame<=20 && (frame==1 || frame==5 || frame==12 || frame==20)) {
-      snprintf(line,sizeof(line),
-        "PAUSE-NATIVE-PROBE: SAMPLE-FRAME %ld flip=%ld [PASSIVE]",
-        (long)frame,(long)flip);
-      log_line(line);
-    }
-  }
-  frame=InterlockedCompareExchange(&pause_menu_trace_frames,0,0);
-  if(frame<1 || frame>20 || !vertices || count<3 || count>64 ||
-     (type!=D3DPT_TRIANGLEFAN && type!=D3DPT_TRIANGLESTRIP &&
-      type!=D3DPT_TRIANGLELIST) ||
-     (fvf!=0x144UL && fvf!=0x44UL))
-    return;
-  stride=(fvf==0x144UL)?28u:20u;
-  a=(const float*)raw;
-  xmin=xmax=a[0];ymin=ymax=a[1];z=a[2];rhw=a[3];
-  /* Flat XYZRHW sprites only. Avoid tracing world geometry or undefined
-   * vertex formats, and never interpret FVF 0x44 as textured 28-byte data. */
-  if(!(rhw>0.5f && rhw<256.0f && z>=-0.01f && z<=0.15f))
-    return;
-  for(i=1;i<count;i++) {
-    const float *p=(const float*)(raw+(SIZE_T)i*stride);
-    if(p[0]<xmin)xmin=p[0];
-    if(p[0]>xmax)xmax=p[0];
-    if(p[1]<ymin)ymin=p[1];
-    if(p[1]>ymax)ymax=p[1];
-  }
-  if(!(xmax>xmin && ymax>ymin &&
-       xmax>0.0f && xmin<(float)desktop_w &&
-       ymax>0.0f && ymin<(float)desktop_h))
-    return;
-  draw=InterlockedIncrement(&pause_menu_trace_draws);
-  /* Passive exploration of the large translucent orange/blue background
-   * shapes seen behind ESC. They are NOT known to belong to the pause
-   * UI: some large projected quads are world/scene geometry. Unlike
-   * the exact ribbon/border matches, none of these is transformed.
-   * F9 arms short, bounded windows for comparison against screenshots.
-   * Sample a mix of early and later large draws rather than consuming
-   * the entire quota on world triangles before the UI is drawn.
-   */
-  if((frame==1 || frame==5 || frame==12 || frame==20) &&
-     (count==3 || count==4 || count==6) &&
-     (xmax-xmin)>(float)desktop_w*0.23f &&
-     (ymax-ymin)>(float)desktop_h*0.20f &&
-     xmax>0.0f && xmin<(float)desktop_w &&
-     ymax>0.0f && ymin<(float)desktop_h &&
-     (draw<=16 || (draw%67)==0) &&
-     InterlockedIncrement(&pause_menu_trace_motif_seen)<=28) {
-    DWORD color=0,tw=0,th=0;
-    IDirectDrawSurface7 *surf=NULL;
-    DDSURFACEDESC2 sd;
-    char motif_line[350];
-    memcpy(&color,raw+16,sizeof(color));
-    if(fvf==0x144UL &&
-       SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&surf)) && surf) {
-      memset(&sd,0,sizeof(sd));sd.dwSize=sizeof(sd);
-      if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(surf,&sd))) {
-        tw=sd.dwWidth;th=sd.dwHeight;
-      }
-      IDirectDrawSurface7_Release(surf);
-    }
-    if(!rva && !geom_rva(ret,&rva))rva=0;
-    snprintf(motif_line,sizeof(motif_line),
-      "PAUSE-NATIVE-PROBE: MOTIF-CANDIDATE frame=%ld flip=%ld draw=%ld indexed=%d type=%lu fvf=0x%lX count=%lu caller_rva=0x%08lX tex=%lux%lu diffuse=0x%08lX rect=(%.1f,%.1f)-(%.1f,%.1f) z=%.5f rhw=%.3f [SCENE OR UI UNKNOWN; READ ONLY]",
-      (long)frame,(long)flip,(long)draw,indexed,
-      (unsigned long)type,(unsigned long)fvf,(unsigned long)count,
-      (unsigned long)rva,(unsigned long)tw,(unsigned long)th,
-      (unsigned long)color,(double)xmin,(double)ymin,
-      (double)xmax,(double)ymax,(double)z,(double)rhw);
-    log_line(motif_line);
-  }
-  /* Historical draw 3140..3400 sampling missed the cursor in #747:
-   * the exact same ribbon now occurs around draw 1439. Do not rely on
-   * numeric draw IDs, which depend on level and world complexity.
-   *
-   * Read-only candidates in the native ESC selector area: 4-vertex
-   * textured sprites, 16..160 pixels wide, 16..150 high, original
-   * coordinates left/center of the ribbon. Filter by native 2D caller
-   * and depth/RHW but NOT by texture size/color: both are what we
-   * need to discover. Log <=100 candidates per sampled frame.
-   * This is candidate sampling, NOT a proven sprite identity.
-   */
-  if(fvf==0x144UL && count==4 &&
-     xmin>=(float)desktop_w*0.08f &&
-     xmax<=(float)desktop_w*0.66f &&
-     ymin>=(float)desktop_h*0.24f &&
-     ymax<=(float)desktop_h*0.68f &&
-     xmax-xmin>=16.0f && xmax-xmin<=160.0f &&
-     ymax-ymin>=16.0f && ymax-ymin<=150.0f &&
-     z>=0.00070f && z<=0.0030f &&
-     rhw>=7.0f && rhw<=16.0f &&
-     geom_rva(ret,&rva) && rva==0x00102C72UL)
-    selector_candidate=1;
-  /* Build #750's filtered 1250 candidates never showed a textured quad
-   * at the red icon's observed 1920x1080 position x=502..597,
-   * y=494..558 (both ESC / REALLY QUIT screenshots). Native text
-   * quads and two untextured x=382..499 shapes did match the filter,
-   * but cannot identify a red textured icon. Widen ONLY the passive
-   * detector near that left-panel region: allow other native 2D
-   * callers, triangle lists/strips and 4/6-vertex sprite batches.
-   * Retain source coordinates; icon location is a sampling clue,
-   * NOT proof of the object's draw identity or its transform.
-   */
-  if((count==4 || count==6) &&
-     xmin>=(float)desktop_w*0.14f &&
-     xmax<=(float)desktop_w*0.45f &&
-     ymin>=(float)desktop_h*0.30f &&
-     ymax<=(float)desktop_h*0.70f &&
-     xmax-xmin>=12.0f && xmax-xmin<=260.0f &&
-     ymax-ymin>=12.0f && ymax-ymin<=240.0f &&
-     z>=-0.0010f && z<=0.065f &&
-     rhw>=0.45f && rhw<=30.0f)
-    icon_region_candidate=1;
-
-  /* F9-confirmed red icon positions in the full-size 1920x1080 PNGs:
-   * regular ESC x=1121..1217 y=589..655; confirmation
-   * x=937..1033 y=652..718. Unlike the previous left-side probe
-   * (incorrectly based on downscaled inline previews), this covers
-   * the actual physical location. Allow 3, 4 or 6 source vertices,
-   * fan/strip/list, both pre-transformed FVF formats and any caller.
-   * Restrict to near-foreground UI Z/RHW so 3D background triangles
-   * cannot consume the cap before reaching the late overlay draws.
-   */
-  if((count==3 || count==4 || count==6) &&
-     xmin>(float)desktop_w*0.39f &&
-     xmax<(float)desktop_w*0.73f &&
-     ymin>(float)desktop_h*0.37f &&
-     ymax<(float)desktop_h*0.75f &&
-     xmax-xmin>=12.0f && xmax-xmin<=200.0f &&
-     ymax-ymin>=12.0f && ymax-ymin<=180.0f &&
-     z>=-0.0010f && z<=0.0040f &&
-     rhw>=5.0f && rhw<=25.0f)
-    spider_pose_candidate=1;
-  /* #766 proved our owner-based cursor attempt was observing 60x50
-   * GLYPHS, not the visible 96x65 red selector. On the F9 ESC and QUIT
-   * PNGs the red bounding boxes are at (1147..1242,440..504) and
-   * (828..923,526..590). The true native UI draw quad must cover the
-   * red pixels but may have some transparent padding.
-   *
-   * Log plausible selector-SHAPED 2D quads independently of the shared
-   * 100-quad "SPIDER-POSE" quota (consumed by font glyphs first).
-   * This remains READ ONLY, collects all callers/textures/FVF 0x44 and
-   * 0x144, indexed and non-indexed, and is capped to 32 per sample frame.
-   * Never select a render patch from these spatial clues alone.
-   */
-  if((count==3 || count==4 || count==6) &&
-     xmin>(float)desktop_w*0.20f &&
-     xmax<(float)desktop_w*0.83f &&
-     ymin>(float)desktop_h*0.27f &&
-     ymax<(float)desktop_h*0.80f &&
-     xmax-xmin>=78.0f && xmax-xmin<=170.0f &&
-     ymax-ymin>=52.0f && ymax-ymin<=130.0f &&
-     z>=-0.001f && z<=0.0060f &&
-     rhw>=4.5f && rhw<=30.0f)
-    selector_shape_candidate=1;
-  /* Preserve a bounded look at unusually wide native UI backgrounds. */
-  wide_overlay_candidate=(type==D3DPT_TRIANGLEFAN && fvf==0x144UL && count==4 &&
-     (xmax-xmin)>(float)desktop_w*0.60f &&
-     ymin>(float)desktop_h*0.18f &&
-     ymax<(float)desktop_h*0.85f &&
-     (ymax-ymin)>(float)desktop_h*0.10f &&
-     InterlockedIncrement(&pause_menu_trace_wide_seen)<=12);
-  if(!(frame==1 || frame==5 || frame==12 || frame==20) ||
-     draw>8192)return;
-  if(selector_shape_candidate &&
-     InterlockedIncrement(&pause_menu_trace_shape_seen)<=32)
-    selector_shape_sample=1;
-  if(selector_candidate &&
-     InterlockedIncrement(&pause_menu_trace_selector_seen)<=100)
-    selector_sample=1;
-  if(spider_pose_candidate &&
-     InterlockedIncrement(&pause_menu_trace_icon_seen)<=100)
-    spider_pose_sample=1;
-  else if(icon_region_candidate && !selector_sample &&
-     InterlockedIncrement(&pause_menu_trace_icon_seen)<=100)
-    icon_region_sample=1;
-  if(draw>8 && (draw%64)!=0 && !wide_overlay_candidate &&
-     !selector_sample && !icon_region_sample && !spider_pose_sample &&
-     !selector_shape_sample)return;
-  if(!rva && !geom_rva(ret,&rva))rva=0;
-  if(fvf==0x144UL &&
-     SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture)) &&
-     texture) {
-    tex_identity=texture;  /* Compare pointer IDs within this run only. */
-    memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
-    if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc))) {
-      texw=desc.dwWidth;texh=desc.dwHeight;
-      texture_format=desc.ddpfPixelFormat.dwFlags;
-    }
-    IDirectDrawSurface7_Release(texture);
-  }
-  if(selector_shape_sample || selector_sample || icon_region_sample || spider_pose_sample) {
-    float u0=0.0f,v0=0.0f;
-    memcpy(&diffuse,raw+16,sizeof(diffuse));
-    if(fvf==0x144UL) {
-      memcpy(&u0,raw+20,sizeof(u0));
-      memcpy(&v0,raw+24,sizeof(v0));
-    }
-    snprintf(line,sizeof(line),
-      "PAUSE-NATIVE-PROBE: %s frame=%ld flip=%ld draw=%ld caller_rva=0x%08lX indexed=%d type=%lu fvf=0x%lX count=%lu tex=%lux%lu texid=%p diffuse=0x%08lX uv0=(%.4f,%.4f) rect=(%.1f,%.1f)-(%.1f,%.1f) z=%.5f rhw=%.3f [READ ONLY; IDENTITY UNVERIFIED]",
-      selector_shape_sample?"SELECTOR-SHAPE":(spider_pose_sample?"SPIDER-POSE":(selector_sample?"CURSOR-CANDIDATE":"ICON-REGION")),
-      (long)frame,(long)flip,(long)draw,(unsigned long)rva,
-      indexed,(unsigned long)type,(unsigned long)fvf,(unsigned long)count,
-      (unsigned long)texw,(unsigned long)texh,tex_identity,
-      (unsigned long)diffuse,(double)u0,(double)v0,
-      (double)xmin,(double)ymin,(double)xmax,(double)ymax,
-      (double)z,(double)rhw);
-    log_line(line);
-    return;
-  }
-  snprintf(line,sizeof(line),
-    "PAUSE-NATIVE-PROBE: frame=%ld draw=%ld caller_rva=0x%08lX indexed=%d type=%lu fvf=0x%lX count=%lu tex=%lux%lu fmt=%08lX rect=(%.1f,%.1f)-(%.1f,%.1f) z=%.5f rhw=%.3f",
-    (long)frame,(long)draw,(unsigned long)rva,indexed,
-    (unsigned long)type,(unsigned long)fvf,(unsigned long)count,
-    (unsigned long)texw,(unsigned long)texh,(unsigned long)texture_format,
-    (double)xmin,(double)ymin,(double)xmax,(double)ymax,
-    (double)z,(double)rhw);
-  log_line(line);
-}
-
-/* Experimental native ESC panel transform, opt-in only.
+/* Native gameplay ESC 4:3 panel correction (opt-in).
  * Evidence: 2026-10-24 Wine traces #737 and #741, two menu states.
  * Anchor on the unusually wide *untextured* purple ribbon's verified
  * screen rectangle plus Z/RHW. Only following 2D glyphs in that SAME
@@ -1529,7 +1104,7 @@ static void native_pause43_init(void) {
   DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_NATIVE_ESC_43",value,sizeof(value));
   if(n==1 && value[0]=='1') {
     InterlockedExchange(&native_pause43_enabled,1);
-    log_line("PAUSE-NATIVE-43: EXPERIMENTAL 4:3 ribbon+borders+glyphs transform enabled; spider selector not yet classified; original vertices untouched");
+    log_line("PAUSE-NATIVE-43: 4:3 ribbon+borders+glyphs enabled [1920x1080, native ESC only]");
   }
 }
 static const void *maybe_correct_native_pause43(void *device,
@@ -1676,7 +1251,7 @@ static const void *maybe_correct_native_pause43(void *device,
   }
   return copy;
 }
-/* Native ESC translucent geometric motif, Wine #777 diagnostic.
+/* Native ESC translucent geometric motif correction.
  * Pixel evidence: large orange/blue translucent pattern is absent in
  * normal gameplay (F9 scrn0004), appears in ESC (scrn0005) and native
  * QUIT confirmation (scrn0006). Unlike projected world triangles at
@@ -1698,7 +1273,7 @@ static void native_motif43_init(void) {
     return;
   }
   InterlockedExchange(&native_motif43_enabled,1);
-  log_line("NATIVE-MOTIF-43: EXPERIMENTAL exact untextured alpha=0x80 UI quadrilaterals, Z=0.00146 RHW=9.988, X 0.75, 1920x1080 ONLY");
+  log_line("NATIVE-MOTIF-43: 4:3 motif + full-screen original tint enabled [1920x1080, native ESC only]");
 }
 static const void *maybe_correct_native_motif43(void *device,
     D3DPRIMITIVETYPE type,DWORD fvf,const void *source,DWORD count,
@@ -1763,7 +1338,7 @@ static const void *maybe_correct_native_motif43(void *device,
   }
   return copy;
 }
-/* Restore only the screen-wide pause tint in the two 240px gutters.
+/* Preserve native full-width scene tint in the two 240px gutters.
  * Build #780 compressed ALL native alpha=0x80 UI quads with the orange/
  * blue motif, including the original scene dimming. Pixel comparison of
  * scrn0005(3) vs scrn0007(2) and scrn0004(3) proves exactly:
@@ -1872,7 +1447,7 @@ static void native_motif43_restore_gutters(void *device,
     }
   }
 }
-/* Native gameplay ESC red selector: SHA-verified 1920x1080 Wine #770.
+/* Native gameplay ESC red selector: fixed, Wine-validated 1920x1080.
  * A 32x32 texture in an exact screen quad (96x72), z=0, rhw=27.519,
  * diffuse white, native D3D7 caller 0x00102C72 and validated purple
  * ESC banner drawn in the SAME Flip. This is independent of the
@@ -1980,7 +1555,6 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
   {
     SpiderMenuVertex small[64],*allocated=NULL;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
-    pause_menu_trace_draw(self,type,fvf,verts,count,0,__builtin_return_address(0));
     hud_probe_draw(self,type,fvf,verts,count,__builtin_return_address(0));
     hud_probe_boss_unknown(self,type,fvf,verts,count,0,__builtin_return_address(0));
     if(v==verts && count==4) {
@@ -2023,7 +1597,6 @@ static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE 
   {
     SpiderMenuVertex small[64],*allocated=NULL;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
-    pause_menu_trace_draw(self,type,fvf,verts,count,1,__builtin_return_address(0));
     hud_probe_boss_unknown(self,type,fvf,verts,count,1,__builtin_return_address(0));
     /* No indexed comic path was observed: keep it unchanged. */
     HRESULT hr=original_draw_indexed_primitive(self,type,fvf,(LPVOID)v,count,indices,icount,flags);
@@ -2755,7 +2328,6 @@ static void __cdecl hooked_f9_png_only(void) {
            SpiderF9PNG_QueueComic(&desc,log_line):
            SpiderF9PNG_Queue(&desc,log_line);
     unlock_hr=IDirectDrawSurface7_Unlock(back,NULL);
-    if(queued)pause_menu_trace_on_f9();
     snprintf(msg,sizeof(msg),
       "F9-PNG-ONLY: backbuffer capture=%s %lux%lu Lock=OK Unlock=0x%08lX",
       queued?"queued":"skipped",
@@ -3047,7 +2619,6 @@ static void pause_at_flip_if_background(void) {
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
   SpiderQuickExitF12_ObserveEngineState(count,InterlockedCompareExchange(&menu_upscale_active,0,0)==1); /* passive native mode+2D renderer tracing */
-  pause_menu_trace_on_flip(count); /* passive ESC-edge fallback; diagnostic opt-in only */
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
@@ -3631,10 +3202,9 @@ static DWORD WINAPI initialize(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
-  pause_menu_trace_init();
   native_pause43_init(); /* Native ESC visual correction, explicit opt-in. */
   native_cursor43_init();
-  native_motif43_init(); /* Stack-verified mouse-cursor opt-in; off by default. */
+  native_motif43_init(); /* 4:3 native ESC backdrop, explicit opt-in. */
   SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
