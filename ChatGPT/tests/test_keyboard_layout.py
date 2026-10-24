@@ -71,3 +71,23 @@ def test_game_settings_stay_raw_and_other_devices_unchanged():
     assert "joystick_offsets[7]={0x50,0x54,0x58,0x5C,0x60,0x64,0x68}" in VIRTUAL
     assert "0x27u" in HEADER
     assert "virtual mode ENABLED" in VIRTUAL
+
+
+def test_cheats_native_key_name_remap_is_narrow_and_signature_guarded():
+    names = (ROOT / "keyboard_names.c").read_text(encoding="utf-8")
+    build = (ROOT / "build.sh").read_text(encoding="utf-8")
+    assert "keyboard_names.c" in build
+    assert '#include "keyboard_names.h"' in VIRTUAL
+    assert "SpiderKeyNames_Install(keyboard_layout_mode,keyboard_layout_hkl,report);" in VIRTUAL
+    assert "0x0048E048u" in names and "0x00501550u" in names
+    assert "0x00562FF4u" in names
+    assert "original_text_path_verified()" in names
+    assert "memcmp(" in names
+    assert "VirtualProtect(" in names
+    assert "MapVirtualKeyExA('M',MAPVK_VK_TO_VSC,hkl)==0x27" in names
+    for entry in ("table[0x10]=old_a", "table[0x1E]=old_q",
+                  "table[0x11]=old_z", "table[0x2C]=old_w",
+                  "table[0x27]=old_m", "table[0x32]=old_comma"):
+        assert entry in names
+    assert "GetDeviceData" not in names
+    assert "DirectInput8Create" not in names
