@@ -346,3 +346,24 @@ def test_wine_x86_mouse_cursor_stack_fallback_is_exact_and_bounded():
     assert "SPIDERMAN2K1FIX_NATIVE_CURSOR_43" not in INI
     for forbidden in ("SetTexture(", "SendInput(", "PostMessage(", "keybd_event(", "SetMousePos(", "VirtualProtect("):
         assert forbidden not in code
+
+
+def test_build_767_selector_shape_probe_is_read_only_and_not_glyph_quota():
+    probe = trace_block()
+    assert "pause_menu_trace_shape_seen=0;" in probe
+    assert "InterlockedExchange(&pause_menu_trace_shape_seen,0)" in probe
+    assert "selector_shape_candidate=0,selector_shape_sample=0" in probe
+    assert "xmax-xmin>=78.0f && xmax-xmin<=170.0f" in probe
+    assert "ymax-ymin>=52.0f && ymax-ymin<=130.0f" in probe
+    assert "InterlockedIncrement(&pause_menu_trace_shape_seen)<=32" in probe
+    assert "selector_shape_sample=1" in probe
+    assert "SELECTOR-SHAPE" in probe
+    assert "selector_shape_sample?" in probe
+    assert "!selector_shape_sample)return;" in probe
+    assert "SPIDER-POSE" in probe
+    assert "CURSOR-CANDIDATE" in probe
+    assert "32/frame" in probe
+    assert "96x65" in DOC and "SELECTOR-SHAPE" in DOC
+    # The diagnostic must never modify vertices or device state.
+    for forbidden in ("VirtualProtect(", "DrawPrimitive(", "SetTexture(", "SendInput(", "PostMessage(", "keybd_event(", "SpiderMenu_TransformVertices("):
+        assert forbidden not in probe
