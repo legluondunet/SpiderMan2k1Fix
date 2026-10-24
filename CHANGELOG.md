@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — keyboard layout awareness (AZERTY, QWERTY, Auto)
+## Unreleased — automatic keyboard layout (Auto/Off)
 
 - Add signature-verified French AZERTY translation to the original CHEATS text-entry and keyboard configuration key-name table. In-memory mapping corrects A/Q, Z/W and physical M/comma, leaves DirectInput untouched and requires Windows/Wine runtime testing.
 - Add `[Input] KeyboardLayout=Auto|AZERTY|QWERTY|Physical` for layout-aware letter names in the 11 original DirectInput action bindings without modifying the game's input device or joystick controls.
