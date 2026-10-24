@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <math.h>
 #include <errno.h>
 #include <ddraw.h>
 #include <d3d.h>
@@ -988,7 +989,7 @@ static const void *maybe_correct_native_comic(void *device,D3DPRIMITIVETYPE type
     char msg[286];
     snprintf(msg,sizeof(msg),
       "COMIC-NATIVE-FIX: #%ld stage=NATIVE rva=0x%08lX texture=%lux%lu "
-      "x-before=(%.1f,%.1f) x-after=(%.1f,%.1f) y-unchanged [EXPERIMENT]",
+      "x-before=(%.1f,%.1f) x-after=(%.1f,%.1f) y-unchanged [NATIVE-ESC-43]",
       (long)hit,(unsigned long)rva,(unsigned long)desc.dwWidth,(unsigned long)desc.dwHeight,
       (double)((const SpiderMenuVertex*)source)[0].x,
       (double)((const SpiderMenuVertex*)source)[1].x,
@@ -1084,6 +1085,462 @@ static const void *maybe_correct_adaptive_hud(void *device,
   }
   return copy;
 }
+/* Native gameplay ESC 4:3 panel correction (opt-in).
+ * Evidence: 2026-10-24 Wine traces #737 and #741, two menu states.
+ * Anchor on the unusually wide *untextured* purple ribbon's verified
+ * screen rectangle plus Z/RHW. Only following 2D glyphs in that SAME
+ * Flip are eligible, with their own strict depth and texture gates.
+ * Never touch world/HUD vertices or alter any game-owned input/state.
+ */
+static volatile LONG native_pause43_enabled=0;
+static volatile LONG native_pause43_banner_flip=-1;
+static volatile LONG native_pause43_banner_hits=0;
+static volatile LONG native_pause43_border_hits=0;
+static volatile LONG native_pause43_banner_top=0;
+static volatile LONG native_pause43_banner_bottom=0;
+static volatile LONG native_pause43_glyph_hits=0;
+static void native_pause43_init(void) {
+  char value[4]={0};
+  DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_NATIVE_ESC_43",value,sizeof(value));
+  if(n==1 && value[0]=='1') {
+    InterlockedExchange(&native_pause43_enabled,1);
+    log_line("PAUSE-NATIVE-43: 4:3 ribbon+borders+glyphs enabled [1920x1080, native ESC only]");
+  }
+}
+static const void *maybe_correct_native_pause43(void *device,
+            D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
+            DWORD count,void *ret,SpiderMenuVertex *copy) {
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  float left,right,top,bottom,aspect_scale,center;
+  float z,rhw;
+  DWORD rva=0,tw=0,th=0; unsigned i;
+  LONG flip,hit,bt=0,bb=0;
+  int ribbon,glyph=0,border=0;
+  IDirectDrawSurface7 *tex=NULL;DDSURFACEDESC2 desc;
+  if(InterlockedCompareExchange(&native_pause43_enabled,0,0)!=1 ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     !source || !copy || count!=4 || type!=D3DPT_TRIANGLEFAN ||
+     fvf!=0x144UL || desktop_h<480 ||
+     desktop_w*3<=desktop_h*4 ||
+     !geom_rva(ret,&rva) || rva!=0x00102C72UL)
+    return source;
+  left=right=v[0].x;top=bottom=v[0].y;
+  z=v[0].z;rhw=v[0].rhw;
+  for(i=1;i<4;i++) {
+    if(v[i].x<left)left=v[i].x;
+    if(v[i].x>right)right=v[i].x;
+    if(v[i].y<top)top=v[i].y;
+    if(v[i].y>bottom)bottom=v[i].y;
+  }
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  /* Banner draw #3166, width ~1.006*desktop_w, y~400..675
+   * for native ESC and y~432..634 for QUIT confirmation.
+   * The tolerance supports animation, NOT arbitrary full-width draws.
+   */
+  ribbon=(left>=-30.0f && left<=20.0f &&
+       right>=(float)desktop_w-25.0f &&
+       right<=(float)desktop_w+35.0f &&
+       top>=(float)desktop_h*0.30f &&
+       top<=(float)desktop_h*0.52f &&
+       bottom>=(float)desktop_h*0.55f &&
+       bottom<(float)desktop_h*0.72f &&
+       (bottom-top)>(float)desktop_h*0.11f &&
+       fabsf(z-0.00122f)<0.00010f &&
+       fabsf(rhw-11.176f)<0.25f);
+  if(ribbon) {
+    /* The banner has no texture. Recheck the live bound texture here
+     * rather than relying solely on depth and broad geometry.
+     */
+    if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)) &&
+       tex) { IDirectDrawSurface7_Release(tex);return source; }
+    InterlockedExchange(&native_pause43_banner_top,(LONG)top);
+    InterlockedExchange(&native_pause43_banner_bottom,(LONG)bottom);
+    InterlockedExchange(&native_pause43_banner_flip,flip);
+  } else {
+    if(InterlockedCompareExchange(&native_pause43_banner_flip,0,0)!=flip)
+      return source;
+    /* The 8x8-textured border pieces immediately follow the untextured
+     * banner in the *same Flip*: 2 horizontal strokes, 2 vertical caps,
+     * 4 small corners. Validate texture, z/RHW, and shape relative to
+     * the banner recorded above; draw indices are not stable.
+     * Do not touch the separately matched 32x32 red selection icon.
+     */
+    bt=InterlockedCompareExchange(&native_pause43_banner_top,0,0);
+    bb=InterlockedCompareExchange(&native_pause43_banner_bottom,0,0);
+    if(!((fabsf(z-0.00098f)<0.00010f && fabsf(rhw-12.686f)<0.30f) ||
+         (fabsf(z-0.00122f)<0.00010f && fabsf(rhw-11.176f)<0.30f)))
+      return source;
+    if(FAILED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)) ||
+       !tex)return source;
+    memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+    if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(tex,&desc))) {
+      tw=desc.dwWidth;th=desc.dwHeight;
+    }
+    IDirectDrawSurface7_Release(tex);
+    if(tw==8 && th==8 && bb>bt+55 &&
+       fabsf(z-0.00122f)<0.00010f &&
+       fabsf(rhw-11.176f)<0.25f) {
+      int near_left=(left>=-42.0f && left<=-12.0f &&
+                     right>=7.0f && right<=38.0f);
+      int near_right=(left>=(float)desktop_w-17.0f &&
+                      left<=(float)desktop_w+13.0f &&
+                      right>=(float)desktop_w+16.0f &&
+                      right<=(float)desktop_w+70.0f);
+      int at_top=fabsf(top-((float)bt-4.5f))<5.0f;
+      int at_bottom=fabsf(top-((float)bb-9.0f))<5.0f;
+      int horizontal=(fabsf(left)<12.0f &&
+          fabsf(right-(float)desktop_w)<20.0f &&
+          bottom-top>=14.0f && bottom-top<=24.0f &&
+          (at_top || fabsf(top-(float)bb)<5.0f));
+      int side=(near_left || near_right) &&
+          fabsf((bottom-top)-((float)bb-(float)bt-9.0f))<18.0f &&
+          fabsf(top-((float)bt+4.5f))<8.0f;
+      int corner=(near_left || near_right) &&
+          bottom-top>=18.0f && bottom-top<=30.0f &&
+          (at_top || at_bottom);
+      border=horizontal || side || corner;
+    }
+    if(!border) {
+      /* Title: PAUSED (Y=171), REALLY QUIT? (Y=283).
+       * Choices: main menu Y=436/508/580; confirmation Y=468/540.
+       * Exclude instructions (Y=877), compass, gameplay HUD, and
+       * the separately handled red spider selector. */
+      if(left<=(float)desktop_w*0.25f ||
+         right>=(float)desktop_w*0.75f ||
+         top<(float)desktop_h*0.13f ||
+         bottom>(float)desktop_h*0.63f ||
+         right-left<10.0f || right-left>84.0f ||
+         bottom-top<24.0f || bottom-top>83.0f)
+        return source;
+      glyph=(th==32 && (tw==16 || tw==32 || tw==64));
+      if(!glyph)return source;
+    }
+  }
+  center=(float)desktop_w*0.5f;
+  aspect_scale=((float)desktop_h*(4.0f/3.0f))/(float)desktop_w;
+  memcpy(copy,v,4*sizeof(*copy));
+  for(i=0;i<4;i++) {
+    float mapped=center+(v[i].x-center)*aspect_scale;
+    /* Reference F9: original 4:3 outline x=241..1679 (1439px).
+     * The current 1920x1080 Auto outline is x=224..1702 (1479px),
+     * but the untextured fill is already much closer to 4:3. Do NOT
+     * indiscriminately shrink text or the entire HUD by 2.7%.
+     * Empirical calibration is intentionally exclusive to the one
+     * measured resolution until another mode is validated in-game.
+     */
+    if(desktop_w==1920 && desktop_h==1080) {
+      if(border)
+        mapped=960.0f+(mapped-963.0f)*(1439.0f/1479.0f);
+      else if(ribbon)
+        mapped=960.0f+(mapped-958.6f)*(1439.0f/1448.5f);
+    }
+    copy[i].x=mapped;
+  }
+  if(ribbon) hit=InterlockedIncrement(&native_pause43_banner_hits);
+  else if(border) hit=InterlockedIncrement(&native_pause43_border_hits);
+  else hit=InterlockedIncrement(&native_pause43_glyph_hits);
+  if(hit<=4 || (hit%600)==0) {
+    char line[230];
+    snprintf(line,sizeof(line),
+      "PAUSE-NATIVE-43: %s hit=%ld flip=%ld x=(%.1f..%.1f) scale=%.5f tex=%lux%lu [NATIVE-ESC-43]",
+      ribbon?"ribbon":border?"border":"glyph",(long)hit,(long)flip,
+      (double)left,(double)right,(double)aspect_scale,
+      (unsigned long)tw,(unsigned long)th);
+    log_line(line);
+  }
+  return copy;
+}
+/* Native ESC translucent geometric motif correction.
+ * Pixel evidence: large orange/blue translucent pattern is absent in
+ * normal gameplay (F9 scrn0004), appears in ESC (scrn0005) and native
+ * QUIT confirmation (scrn0006). Unlike projected world triangles at
+ * caller 0x00103389 (varying Z/RHW and textured), these quads have:
+ * caller 0x00102C72; fan/FVF 0x144/4 verts; *untextured*;
+ * Z=0.00146, RHW=9.988, vertex diffuse ALPHA=0x80.
+ * The same geometry recurs in ESC and confirmation frames before the
+ * purple ribbon, so cannot use the ribbon's current-frame marker.
+ * Explicit, Wine-validated opt-in at 1920x1080 ONLY.
+ */
+static volatile LONG native_motif43_enabled=0;
+static volatile LONG native_motif43_hits=0;
+static void native_motif43_init(void) {
+  char value[4]={0};
+  if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_NATIVE_MOTIF_43",
+      value,sizeof(value))!=1 || value[0]!='1') return;
+  if(InterlockedCompareExchange(&native_pause43_enabled,0,0)!=1) {
+    log_line("NATIVE-MOTIF-43: disabled; requires SPIDERMAN2K1FIX_NATIVE_ESC_43=1");
+    return;
+  }
+  InterlockedExchange(&native_motif43_enabled,1);
+  log_line("NATIVE-MOTIF-43: 4:3 motif + full-screen original tint enabled [1920x1080, native ESC only]");
+}
+static const void *maybe_correct_native_motif43(void *device,
+    D3DPRIMITIVETYPE type,DWORD fvf,const void *source,DWORD count,
+    void *ret,SpiderMenuVertex *copy) {
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  IDirectDrawSurface7 *tex=NULL;
+  DWORD rva=0,color=0;
+  LONG hit;
+  float l,r,t,b,center;
+  unsigned i;
+  if(InterlockedCompareExchange(&native_motif43_enabled,0,0)!=1 ||
+     !source || !copy || !device ||
+     desktop_w!=1920 || desktop_h!=1080 ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4 ||
+     !geom_rva(ret,&rva) || rva!=0x00102C72UL ||
+     fabsf(v[0].z-0.00146f)>0.00004f ||
+     fabsf(v[0].rhw-9.988f)>0.060f) return source;
+  memcpy(&color,(const BYTE*)source+16,sizeof(color));
+  if((color&0xFF000000UL)!=0x80000000UL)return source;
+  l=r=v[0].x;t=b=v[0].y;
+  for(i=1;i<4;i++) {
+    DWORD vertex_color=0;
+    memcpy(&vertex_color,(const BYTE*)source+(SIZE_T)i*28u+16u,
+           sizeof(vertex_color));
+    if((vertex_color&0xFF000000UL)!=0x80000000UL ||
+       fabsf(v[i].z-v[0].z)>0.00005f ||
+       fabsf(v[i].rhw-v[0].rhw)>0.080f)return source;
+    if(v[i].x<l)l=v[i].x;
+    if(v[i].x>r)r=v[i].x;
+    if(v[i].y<t)t=v[i].y;
+    if(v[i].y>b)b=v[i].y;
+  }
+  /* Do not modify full-frame darkening or thin HUD/line overlays.
+   * Bounds may extend beyond the viewport for polygons at screen edges,
+   * but should have meaningful visible area. */
+  if(r-l<16.0f || b-t<16.0f ||
+     (r-l)>(float)desktop_w*0.80f ||
+     (b-t)>(float)desktop_h*0.86f ||
+     r<0.0f || l>(float)desktop_w ||
+     b<0.0f || t>(float)desktop_h)return source;
+  /* A stale texture binding on any pass MUST NOT be treated as an
+   * untextured motif. COM-owned reference must be released. */
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex))
+     && tex) {
+    IDirectDrawSurface7_Release(tex);
+    return source;
+  }
+  center=(float)desktop_w*0.5f;
+  memcpy(copy,v,4*sizeof(*copy));
+  for(i=0;i<4;i++)
+    copy[i].x=center+(v[i].x-center)*0.75f;
+  hit=InterlockedIncrement(&native_motif43_hits);
+  if(hit<=12 || hit%800==0) {
+    char line[260];
+    snprintf(line,sizeof(line),
+      "NATIVE-MOTIF-43: QUAD-MATCH hit=%ld x=(%.1f..%.1f) y=(%.1f..%.1f) diffuse=%08lX z=%.5f rhw=%.3f [X-ONLY; NO WORLD OR FULLSCREEN]",
+      (long)hit,(double)l,(double)r,(double)t,(double)b,
+      (unsigned long)color,(double)v[0].z,(double)v[0].rhw);
+    log_line(line);
+  }
+  return copy;
+}
+/* Preserve native full-width scene tint in the two 240px gutters.
+ * The same 4:3 geometry compression would narrow native full-screen
+ * violet dimming. Preserve its coverage outside the central 4:3 area.
+ *
+ * Replay the ORIGINAL native 2D quads, clipped STRICTLY to the gutters,
+ * using the game's own color/blend state. Then draw the 4:3-corrected
+ * motif in the center. Replaying is safer than guessing a purple ARGB
+ * layer: the native tint is not a fixed additive color.
+ *
+ * Split each triangle fan into its original two triangles BEFORE clipping.
+ * The original vertex order, Z, RHW, diffuse gradient, UV and state are
+ * preserved. Never affect native gameplay world geometry, HUD, cursor,
+ * purple ribbon or menu labels.
+ */
+static volatile LONG native_motif43_gutter_hits=0;
+static SpiderMenuVertex native_motif43_interpolate(
+    const SpiderMenuVertex *a,const SpiderMenuVertex *b,float t,float x) {
+  SpiderMenuVertex r=*a;
+  DWORD ca=0,cb=0,c=0;
+  float uv_a=0,uv_b=0,uv=0;
+  unsigned j;
+  if(t<0.0f)t=0.0f;
+  if(t>1.0f)t=1.0f;
+  r.x=x;
+  r.y=a->y+(b->y-a->y)*t;
+  r.z=a->z+(b->z-a->z)*t;
+  r.rhw=a->rhw+(b->rhw-a->rhw)*t;
+  memcpy(&ca,(const BYTE*)a+16u,sizeof(ca));
+  memcpy(&cb,(const BYTE*)b+16u,sizeof(cb));
+  for(j=0;j<4;j++) {
+    unsigned a8=(ca>>(j*8u))&255u,b8=(cb>>(j*8u))&255u;
+    unsigned mixed=(unsigned)((float)a8+((float)b8-(float)a8)*t+0.5f);
+    if(mixed>255u)mixed=255u;
+    c|=(DWORD)(mixed<<(j*8u));
+  }
+  memcpy((BYTE*)&r+16u,&c,sizeof(c));
+  for(j=0;j<2;j++) {
+    size_t offs=20u+j*4u;
+    memcpy(&uv_a,(const BYTE*)a+offs,sizeof(uv_a));
+    memcpy(&uv_b,(const BYTE*)b+offs,sizeof(uv_b));
+    uv=uv_a+(uv_b-uv_a)*t;
+    memcpy((BYTE*)&r+offs,&uv,sizeof(uv));
+  }
+  return r;
+}
+static unsigned native_motif43_clip_triangle(
+    const SpiderMenuVertex tri[3],float edge,int keep_left,
+    SpiderMenuVertex out[5]) {
+  unsigned i,n=0;
+  for(i=0;i<3;i++) {
+    const SpiderMenuVertex *a=&tri[(i+2u)%3u],*b=&tri[i];
+    int inside_a=keep_left ? a->x<=edge : a->x>=edge;
+    int inside_b=keep_left ? b->x<=edge : b->x>=edge;
+    if(inside_a!=inside_b) {
+      float denom=b->x-a->x;
+      if(fabsf(denom)<0.00001f)return 0u;
+      if(n>=5u)return 0u;
+      out[n++]=native_motif43_interpolate(a,b,(edge-a->x)/denom,edge);
+    }
+    if(inside_b) {
+      if(n>=5u)return 0u;
+      out[n++]=*b;
+    }
+  }
+  return n;
+}
+static void native_motif43_restore_gutters(void *device,
+    const SpiderMenuVertex *original,DWORD flags) {
+  const float left_edge=240.0f,right_edge=1680.0f;
+  float left,right;
+  SpiderMenuVertex tri[3],out[5];
+  unsigned i,n;
+  LONG hit;
+  int gutter,any=0;
+  if(!original || !device)return;
+  left=right=original[0].x;
+  for(i=1;i<4;i++) {
+    if(original[i].x<left)left=original[i].x;
+    if(original[i].x>right)right=original[i].x;
+  }
+  if(left>=left_edge && right<=right_edge)return;
+  for(i=0;i<2;i++) {
+    tri[0]=original[0];tri[1]=original[i+1u];tri[2]=original[i+2u];
+    for(gutter=0;gutter<2;gutter++) {
+      float bound=(gutter==0)?left_edge:right_edge;
+      if((gutter==0 && left>=bound) ||
+         (gutter==1 && right<=bound)) continue;
+      n=native_motif43_clip_triangle(tri,bound,gutter==0,out);
+      if(n>=3u) {
+        /* Direct call bypasses our hook, preserves original render state.
+         * A clipped triangle fan is at most four vertices. */
+        original_draw_primitive(device,D3DPT_TRIANGLEFAN,0x144UL,
+                               (LPVOID)out,(DWORD)n,flags);
+        any=1;
+      }
+    }
+  }
+  if(any) {
+    hit=InterlockedIncrement(&native_motif43_gutter_hits);
+    if(hit<=8 || hit%10000==0) {
+      char line[240];
+      snprintf(line,sizeof(line),
+        "NATIVE-MOTIF-43: GUTTER-REPLAY hit=%ld source-x=(%.1f..%.1f) clip=(0..240,1680..1920) [ORIGINAL COLOR/BLEND; CENTER UNTOUCHED]",
+        (long)hit,(double)left,(double)right);
+      log_line(line);
+    }
+  }
+}
+/* Native gameplay ESC red selector: fixed, Wine-validated 1920x1080.
+ * A 32x32 texture in an exact screen quad (96x72), z=0, rhw=27.519,
+ * diffuse white, native D3D7 caller 0x00102C72 and validated purple
+ * ESC banner drawn in the SAME Flip. This is independent of the
+ * the original game menu or ordinary gameplay HUD.
+ *
+ * Opt-in through NATIVE_CURSOR_43, OFF by default. Match the validated
+ * signature instead of ephemeral texture pointer identities. Limit this
+ * strictly to the Wine-tested 1920x1080 mode. Only X vertex coordinates
+ * are modified; keep Y, Z, RHW, UV, texture, game input unchanged.
+ */
+static volatile LONG native_cursor43_enabled=0;
+static volatile LONG native_cursor43_hits=0;
+static void native_cursor43_init(void) {
+  char value[4]={0};
+  if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_NATIVE_CURSOR_43",
+       value,sizeof(value))!=1 || value[0]!='1')return;
+  if(InterlockedCompareExchange(&native_pause43_enabled,0,0)!=1) {
+    log_line("NATIVE-CURSOR-43: disabled; requires SPIDERMAN2K1FIX_NATIVE_ESC_43=1");
+    return;
+  }
+  InterlockedExchange(&native_cursor43_enabled,1);
+  log_line("NATIVE-CURSOR-43: exact native ESC selector QUAD signature enabled [1920x1080 only, X-only 0.75, opt-in; no stack scan]");
+}
+static const void *maybe_correct_native_cursor43(void *device,
+    D3DPRIMITIVETYPE type,DWORD fvf,const void *source,DWORD count,
+    void *ret,SpiderMenuVertex *copy) {
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  float left,right,top,bottom,cx,z,rhw;
+  DWORD rva=0,diffuse=0;
+  IDirectDrawSurface7 *tex=NULL;
+  DDSURFACEDESC2 desc;
+  LONG flip,hits;
+  unsigned i;
+  HRESULT hr;
+  if(InterlockedCompareExchange(&native_cursor43_enabled,0,0)!=1 ||
+     !source || !copy || !device ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4 ||
+     desktop_w!=1920 || desktop_h!=1080 ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     !geom_rva(ret,&rva) || rva!=0x00102C72UL)return source;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  if(InterlockedCompareExchange(&native_pause43_banner_flip,0,0)!=flip)
+    return source;
+  left=right=v[0].x;top=bottom=v[0].y;
+  z=v[0].z;rhw=v[0].rhw;
+  for(i=1;i<4;i++) {
+    if(v[i].x<left)left=v[i].x;
+    if(v[i].x>right)right=v[i].x;
+    if(v[i].y<top)top=v[i].y;
+    if(v[i].y>bottom)bottom=v[i].y;
+  }
+  /* The selector can legitimately move anywhere on the 1920x1080
+   * desktop. Former position gates (left>=450, right<=1480,
+   * top>=325, bottom<=800) made the 96x72 sprite revert to its
+   * 16:9-stretched aspect near the top and right: observed F9
+   * scrn0011=72px, scrn0012 (y<325)=96px,
+   * scrn0013 (right>1480)=96px. Do NOT constrain its screen position.
+   * Match its stable local 96x72 size, near-foreground Z/RHW,
+   * original 32x32 texture format, white diffuse, exact native
+   * draw call and active ESC ribbon in this same frame instead.
+   * Native font glyphs are different sizes/Z/RHW. */
+  if(fabsf((right-left)-96.0f)>0.6f ||
+     fabsf((bottom-top)-72.0f)>0.6f ||
+     fabsf(z)>0.00005f ||
+     fabsf(rhw-27.519f)>0.035f)return source;
+  memcpy(&diffuse,(const BYTE*)source+16,sizeof(diffuse));
+  if(diffuse!=0xFFFFFFFFUL)return source;
+  /* Validate this actual bound texture, not just the 32x32
+   * candidates' screen positions; do not capture a run-specific
+   * pointer value from logs. No texture content is modified. */
+  hr=IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex);
+  if(FAILED(hr) || !tex)return source;
+  memset(&desc,0,sizeof(desc));
+  desc.dwSize=sizeof(desc);
+  hr=IDirectDrawSurface7_GetSurfaceDesc(tex,&desc);
+  IDirectDrawSurface7_Release(tex);
+  if(FAILED(hr) || desc.dwWidth!=32 || desc.dwHeight!=32 ||
+     desc.ddpfPixelFormat.dwFlags!=0x41UL)return source;
+  cx=(left+right)*0.5f;
+  memcpy(copy,v,4*sizeof(*copy));
+  for(i=0;i<4;i++)
+    copy[i].x=cx+0.75f*(v[i].x-cx);
+  hits=InterlockedIncrement(&native_cursor43_hits);
+  if(hits<=8 || hits%600==0) {
+    char line[230];
+    snprintf(line,sizeof(line),
+      "NATIVE-CURSOR-43: QUAD-MATCH hit=%ld flip=%ld source=(%.0f..%.0f,%.0f..%.0f) output-width=72.0 z=%.5f rhw=%.3f [X-ONLY]",
+      (long)hits,(long)flip,(double)left,(double)right,
+      (double)top,(double)bottom,(double)z,(double)rhw);
+    log_line(line);
+  }
+  return copy;
+}
 static void free_menu_vertices(SpiderMenuVertex *allocated) {
   if (allocated) HeapFree(GetProcessHeap(),0,allocated);
 }
@@ -1105,6 +1562,25 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       v=maybe_correct_adaptive_hud(self,type,fvf,verts,count,
                                    __builtin_return_address(0),small);
+    /* Correct the native translucent motif. Where these same alpha
+     * primitives previously tinted the entire 16:9 frame, replay the
+     * original triangles ONLY into the two outer 240px gutters first.
+     * Central motif and original banner/cursor stay unchanged. */
+    if(v==verts && count==4) {
+      v=maybe_correct_native_motif43(self,type,fvf,verts,count,
+                                    __builtin_return_address(0),small);
+      if(v!=verts)
+        native_motif43_restore_gutters(self,(const SpiderMenuVertex*)verts,flags);
+    }
+    /* Native red selector uses exact texture and quad signature.
+     * The older Wine stack-owner hypothesis has been retired. */
+    if(v==verts && count==4)
+      v=maybe_correct_native_cursor43(self,type,fvf,verts,count,
+                                      __builtin_return_address(0),small);
+    /* Native ESC after known comic/HUD precedence. */
+    if(v==verts && count==4)
+      v=maybe_correct_native_pause43(self,type,fvf,verts,count,
+                                     __builtin_return_address(0),small);
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
     HRESULT hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
     free_menu_vertices(allocated);
@@ -1497,9 +1973,8 @@ static HRESULT WINAPI hooked_f9_surface_lock(void *self,LPRECT rect,
         (unsigned long)desc->dwWidth,(unsigned long)desc->dwHeight,
         (long)desc->lPitch);
       log_line(msg);
-      /* PNG prototype: copy the same 3D frame before the game consumes
-       * it. The worker only sees our own memory, never DirectDraw.
-       * Legacy BMP remains enabled until its entry point is verified. */
+      /* Historical readback-comparison code is inert in normal play.
+       * The always-on F9 PNG path bypasses the original BMP writer. */
       if(InterlockedCompareExchange(&f9_native_png_enabled,0,0)==1)
         SpiderF9PNG_Queue(desc,log_line);
       return back_hr;
@@ -1868,7 +2343,7 @@ done:
   InterlockedExchange(&f9_png_capture_active,0);
 }
 
-/* Install the PNG-only game call replacement only at exact verified CALL
+/* Install the default PNG game call replacement only at exact verified CALL
  * sites; preflight BOTH original signatures before writing either. The
  * game is single-threaded at startup, well before F9 can be triggered.
  * A 32-bit x86 CALL rel32 wraps modulo 2^32, so it reaches any DLL
@@ -1886,10 +2361,8 @@ static void install_f9_png_only_dispatch(void) {
   DWORD previous[2]={0,0},ignored;
   unsigned i;
   char msg[192];
-  if(!base || (uintptr_t)base!=0x00400000u ||
-     InterlockedCompareExchange(&f9_native_png_enabled,0,0)!=1 ||
-     InterlockedCompareExchange(&f9_png_only_enabled,0,0)!=1) {
-    log_line("F9-PNG-ONLY: unsupported EXE layout or PNG disabled; no hooks installed");
+  if(!base || (uintptr_t)base!=0x00400000u) {
+    log_line("F9-PNG: unsupported EXE layout; original game calls remain unchanged");
     return;
   }
   for(i=0;i<2;i++) {
@@ -1923,7 +2396,11 @@ static void install_f9_png_only_dispatch(void) {
     log_line("F9-PNG-ONLY: WARNING failed to restore second code-page protection");
   if(!VirtualProtect(p[0],5,previous[0],&ignored))
     log_line("F9-PNG-ONLY: WARNING failed to restore first code-page protection");
-  log_line("F9-PNG-ONLY: two SHA-verified F9 call sites now call native PNG capture; legacy BMP writer bypassed");
+  /* Flag active only after both native callsites have been rewritten.
+   * No user setting can change the screenshot format. */
+  InterlockedExchange(&f9_native_png_enabled,1);
+  InterlockedExchange(&f9_png_only_enabled,1);
+  log_line("F9-PNG: always ON; both SHA-verified F9 calls redirected to PNG; native BMP bypassed");
 }
 static void instrument_surface(IDirectDrawSurface7 *surface);
 static HRESULT WINAPI hooked_get_attached(void *self,LPDDSCAPS2 caps,
@@ -2722,6 +3199,9 @@ static DWORD WINAPI initialize(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  native_pause43_init(); /* Native ESC visual correction, explicit opt-in. */
+  native_cursor43_init();
+  native_motif43_init(); /* 4:3 native ESC backdrop, explicit opt-in. */
   SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
@@ -2872,46 +3352,22 @@ static DWORD WINAPI initialize(LPVOID unused) {
     }
   }
   log_line("BORDERLESS: windowed fullscreen enabled");
-  /* Only the exact game F9 Lock caller can be redirected. The independent
-   * PNG prototype retains the legacy BMP as a safe baseline. Both test
-   * flags require Log=1; normal play has no additional COM hooks. */
-  {
-    char setting[8]={0};
-    if(debug_log_enabled &&
-       GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_BACKBUFFER",setting,sizeof(setting))==1 &&
-       setting[0]=='1') {
-      InterlockedExchange(&f9_backbuffer_fix_enabled,1);
-      log_line("F9-FIX: experimental primary screenshot readback -> 3D backbuffer enabled");
-    }
-    memset(setting,0,sizeof(setting));
-    if(debug_log_enabled &&
-       GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_PNG",setting,sizeof(setting))==1 &&
-       setting[0]=='1') {
-      InterlockedExchange(&f9_native_png_enabled,1);
-      InterlockedExchange(&f9_backbuffer_fix_enabled,1);
-      log_line("F9-PNG: native PNG prototype active; original BMP retained during test");
-    }
-    memset(setting,0,sizeof(setting));
-    if(debug_log_enabled &&
-       GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_TRACE",setting,sizeof(setting))==1 &&
-       setting[0]=='1')
-      InterlockedExchange(&f9_trace_enabled,1);
-    if(InterlockedCompareExchange(&f9_backbuffer_fix_enabled,0,0)==1)
-      InterlockedExchange(&f9_trace_enabled,1);
-    if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
-      log_line("F9-TRACE: opt-in native screenshot readback observation armed; press F9 in gameplay");
-  }
+  /* F9 always uses lossless PNG on the SHA-verified game.
+   * No INI choice, environment toggle, or Log=1 prerequisite.
+   * Preserve game-owned DIK_F9 detection, sound and 500ms debounce.
+   * If the two exact original CALLs cannot be patched, leave game code
+   * untouched and report the safety fallback when logging is enabled. */
+  install_f9_png_only_dispatch();
+  /* Optional read-only F9 diagnostics remain independent of output format.
+   * Legacy screenshot-format environment variables are intentionally ignored. */
   if(debug_log_enabled) {
-    char only[8]={0};
-    if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_PNG_ONLY",
-                               only,sizeof(only))==1 && only[0]=='1') {
-      InterlockedExchange(&f9_native_png_enabled,1);
-      InterlockedExchange(&f9_png_only_enabled,1);
-      log_line("F9-PNG-ONLY: opt-in direct F9 to PNG requested");
+    char setting[8]={0};
+    if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_TRACE",setting,sizeof(setting))==1 &&
+       setting[0]=='1') {
+      InterlockedExchange(&f9_trace_enabled,1);
+      log_line("F9-TRACE: optional native screenshot readback observation armed");
     }
   }
-  if(InterlockedCompareExchange(&f9_png_only_enabled,0,0)==1)
-    install_f9_png_only_dispatch();
   install_player_hud(TRUE);
   {
     char flag[8]={0};

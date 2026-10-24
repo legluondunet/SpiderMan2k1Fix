@@ -12,7 +12,7 @@ SRC = (ROOT / "spiderman2k1fix.c").read_text(encoding="utf-8")
 
 def test_trace_is_disabled_by_default_and_must_be_requested_explicitly():
     assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_TRACE"' in SRC
-    assert "if(debug_log_enabled &&" in SRC
+    assert "if(debug_log_enabled) {" in SRC
     assert "InterlockedExchange(&f9_trace_enabled,1);" in SRC
     assert "static volatile LONG f9_trace_enabled=0" in SRC
     assert "InterlockedCompareExchange(&f9_trace_enabled,0,0)==1" in SRC
@@ -89,13 +89,13 @@ def test_f9_trace_keeps_gameplay_fix_and_pause_unchanged():
         "if (!supported_exe()) {",
     ):
         assert part in SRC
-    assert "F9-TRACE: opt-in native screenshot readback observation armed" in SRC
+    assert "F9-TRACE: optional native screenshot readback observation armed" in SRC
     assert "F9-TRACE: F9 key pressed; readback trace window OPEN" in SRC
 
-def test_opt_in_backbuffer_readback_reuses_native_f9_encoding():
+def test_historical_backbuffer_readback_path_remains_inactive():
     # 0x1034D4/0x103537 were measured from a real Win11 F9 log:
     # the legacy game reads PRIMARY and creates all-magenta BMPs.
-    assert 'SPIDERMAN2K1FIX_F9_BACKBUFFER' in SRC
+    assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_BACKBUFFER"' not in SRC
     assert 'static volatile LONG f9_backbuffer_fix_enabled=0;' in SRC
     assert 'rva==0x001034D4u' in SRC
     assert 'rva==0x00103537u' in SRC
@@ -128,11 +128,11 @@ def test_failed_redirect_falls_back_to_unmodified_primary():
     assert 'DDLOCK_WRITEONLY' not in lock
 
 
-def test_screenshot_fix_does_not_change_ordinary_lock_or_alt_tab():
+def test_png_default_does_not_enable_bmp_readback_or_change_alt_tab():
     assert "static volatile LONG f9_backbuffer_fix_enabled=0" in SRC
     assert 'if(debug_log_enabled &&' in SRC
-    assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_BACKBUFFER"' in SRC
-    assert 'InterlockedCompareExchange(&f9_backbuffer_fix_enabled,0,0)==1' in SRC
+    assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_BACKBUFFER"' not in SRC
+    assert 'InterlockedExchange(&f9_backbuffer_fix_enabled,1);' not in SRC
     assert "hr=original_surface_unlock(self,rect);" in SRC
     for f in ('maybe_correct_adaptive_hud(', 'pause_at_flip_if_background();',
               'SpiderInputFocus_OnFlip(count);', 'SpiderDI8Retry_OnFlip(count);',

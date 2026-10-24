@@ -1,8 +1,8 @@
-"""Regression checks for the two separately opted-in F9 PNG modes.
+"""Regression checks for the fixed F9 PNG screenshot format.
 
-Dual-format comparison retains the original BMP. PNG-only redirects both
-SHA-verified native F9 calls and does not invoke the BMP writer. Both use
-copied pixels and an independent Win32 GDI+ encoder worker.
+F9 now always uses the signature-verified native screenshot call redirect;
+no INI or environment option can select BMP. The PNG worker still encodes
+owned copied pixels via Windows/Wine GDI+.
 """
 from pathlib import Path
 
@@ -13,17 +13,15 @@ HEADER = (ROOT/"f9_png.h").read_text(encoding="utf-8")
 BUILD = (ROOT/"build.sh").read_text(encoding="utf-8")
 
 
-def test_png_only_runs_at_sha_verified_f9_readback_with_explicit_opt_in():
+def test_png_default_and_native_sha_verified_dispatch():
     assert "static volatile LONG f9_native_png_enabled=0;" in CORE
-    assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_PNG"' in CORE
-    assert "if(debug_log_enabled &&" in CORE
-    assert "InterlockedExchange(&f9_backbuffer_fix_enabled,1);" in CORE
-    assert "rva==0x001034D4u" in CORE
-    assert "self==(void *)borderless_primary && borderless_back" in CORE
-    assert "(flags&DDLOCK_READONLY)!=0" in CORE
-    assert "if(InterlockedCompareExchange(&f9_native_png_enabled,0,0)==1)" in CORE
-    assert "SpiderF9PNG_Queue(desc,log_line);" in CORE
+    assert "static volatile LONG f9_png_only_enabled=0;" in CORE
     assert "if (!supported_exe()) {" in CORE
+    assert "install_f9_png_only_dispatch();" in CORE
+    assert "InterlockedExchange(&f9_native_png_enabled,1);" in CORE
+    assert "InterlockedExchange(&f9_png_only_enabled,1);" in CORE
+    assert "F9-PNG: always ON" in CORE
+    assert "SpiderF9PNG_Queue(&desc,log_line)" in CORE
 
 
 def test_encoder_copies_pixels_and_unblocks_directdraw_before_compression():
@@ -68,22 +66,15 @@ def test_filename_and_failure_safety():
     assert "if(!saved)" in ENC
 
 
-def test_dual_format_comparison_still_retains_original_bmp():
-    assert "original BMP retained during test" in CORE
-    assert "original_surface_lock(back,rect,desc,flags,event)" in CORE
-    assert "original_surface_unlock(back,rect)" in CORE
-    assert "return back_hr;" in CORE
-    assert "Legacy BMP remains enabled" in CORE
-    assert "spider_png_thread" in ENC
-
-def test_png_only_native_f9_dispatch_is_strictly_opt_in_and_signature_verified():
-    assert 'SPIDERMAN2K1FIX_F9_PNG_ONLY' in CORE
-    assert 'static volatile LONG f9_png_only_enabled=0;' in CORE
+def test_no_format_switch_and_both_original_calls_verified():
+    assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_PNG_ONLY"' not in CORE
+    assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_PNG"' not in CORE
+    assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_BACKBUFFER"' not in CORE
+    assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_F9_TRACE"' in CORE
     assert 'static void __cdecl hooked_f9_png_only(void)' in CORE
     assert 'static void install_f9_png_only_dispatch(void)' in CORE
     assert '0x0010A1DCu,{0xE8,0xFF,0x91,0xFF,0xFF}' in CORE
     assert '0x0010A62Bu,{0xE8,0xB0,0x8D,0xFF,0xFF}' in CORE
-    assert '0x001033E0' in CORE or '0x1033E0' in CORE
     assert '(uintptr_t)base!=0x00400000u' in CORE
     assert 'memcmp(p[i],calls[i].original,sizeof(calls[i].original))!=0' in CORE
     assert 'VirtualProtect(p[0],5,PAGE_EXECUTE_READWRITE,&previous[0])' in CORE
@@ -91,10 +82,15 @@ def test_png_only_native_f9_dispatch_is_strictly_opt_in_and_signature_verified()
     assert 'p[i][0]=0xE8;' in CORE
     assert 'FlushInstructionCache(GetCurrentProcess(),p[0],5)' in CORE
     assert 'FlushInstructionCache(GetCurrentProcess(),p[1],5)' in CORE
-    assert "if(InterlockedCompareExchange(&f9_png_only_enabled,0,0)==1)" in CORE
-    assert 'install_f9_png_only_dispatch();' in CORE
-    assert 'if(debug_log_enabled) {' in CORE
-    assert 'supported_exe()' in CORE
+    patch = CORE.split('static void install_f9_png_only_dispatch(void)',1)[1].split(
+        'static void instrument_surface(IDirectDrawSurface7 *surface);',1)[0]
+    assert patch.index('FlushInstructionCache(GetCurrentProcess(),p[1],5)') < (
+        patch.index('InterlockedExchange(&f9_png_only_enabled,1);'))
+    assert patch.index('FlushInstructionCache(GetCurrentProcess(),p[1],5)') < (
+        patch.index('InterlockedExchange(&f9_native_png_enabled,1);'))
+    assert 'if(debug_log_enabled)' not in CORE.split(
+        '/* F9 always uses lossless PNG on the SHA-verified game.',1)[1].split(
+        'install_f9_png_only_dispatch();',1)[0]
 
 
 def test_png_only_uses_existing_game_f9_dispatch_without_hooking_keyboard():
@@ -122,13 +118,13 @@ def test_png_only_bypasses_original_bmp_without_touching_unrelated_game_code():
     assert '0x0010A1DCu' in patch and '0x0010A62Bu' in patch
     assert '0x001033E0' in CORE or '0x1033E0' in CORE
     assert 'only those 5-byte CALL operands' in CORE
-    assert 'legacy BMP writer bypassed' in CORE
+    assert 'native BMP bypassed' in CORE
     assert 'IDirectDrawSurface7_Lock(back' in CORE
     assert 'VirtualProtect(p[0],5,previous[0],&ignored)' in CORE
     assert 'VirtualProtect(p[1],5,previous[1],&ignored)' in CORE
     assert 'return;' in patch
-    # The correct, already validated old BMP path is still available when
-    # SPIDERMAN2K1FIX_F9_PNG_ONLY is not explicitly selected.
+    # Legacy Lock sites remain documented for passive diagnostics, but the
+    # default native F9 dispatch no longer calls the BMP writer.
     assert 'rva==0x001034D4u' in CORE
     assert 'rva==0x00103537u' in CORE
 
@@ -231,10 +227,13 @@ def test_static_comic_context_follows_each_png_job_without_changing_encoder():
 
 def test_readme_reports_wine_png_only_validation_without_claiming_windows():
     readme=(ROOT/"README.md").read_text(encoding="utf-8")
-    section=readme.split("### Optional native F9-to-PNG screenshots",1)[1]
-    section=section.split("### Native Windows 11: experimental F9 screenshot repair",1)[0]
+    section=readme.split("### F9 screenshots — always lossless PNG",1)[1]
+    section=section.split("## Adaptive widescreen HUD",1)[0]
     assert "build #717" in section
     assert "scrn0010.png" in section
-    assert "disabled by default" in section
+    assert "PNG is the only selectable format" in section
+    assert "no INI setting" in section
+    assert "Log=1" in section
+    assert "no longer select any" in section
     assert "Windows 11" in section
     assert "not" in section.lower()

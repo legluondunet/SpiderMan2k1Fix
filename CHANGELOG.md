@@ -1,6 +1,22 @@
 # Changelog
 
-## Unreleased — optional F9 PNG screenshots (PR #25)
+## Unreleased — Native gameplay ESC menu 4:3 (PR #28)
+
+- Preserve the original proportions of the gameplay ESC purple ribbon, its border and text, the translucent orange/blue background motif, and the red spider selector in 1920×1080 Auto mode.
+- Maintain the original full-screen violet dimming over both widescreen gutters by clipped native D3D7 triangle replay without recoloring the 4:3 center.
+- Correct the selector at all screen coordinates, including the upper and right edges (native 96×72 quad, scaled to 72×72).
+- Handle both the normal ESC menu and the QUIT confirmation (NO / YES). Keep 3D world geometry, HUD, 4:3 gameplay mode, main menu and input behavior unchanged.
+- Strictly guard the native rendering transforms by signature and opt-in environment variables `SPIDERMAN2K1FIX_NATIVE_ESC_43`, `SPIDERMAN2K1FIX_NATIVE_MOTIF_43`, `SPIDERMAN2K1FIX_NATIVE_CURSOR_43`; current visual validation is Linux/Wine at 1920×1080 only.
+- Remove the temporary passive ESC trace instrumentation, replace the research log with concise implementation documentation, and retain focused regression tests. Visually validated on Wine October 24, 2026.
+
+## Unreleased — always-on F9 PNG screenshots
+
+- F9 writes lossless `scrnNNNN.png` by default for the supported game, with no INI setting or environment variable to choose BMP. `Log=1` is no longer required.
+- Both original screenshot CALL sites remain signature-checked. F9 polling/debounce, native game flow, decoded movie/menu/comic/gameplay capture and the PNG confirmation panel remain unchanged.
+- Historical `F9_PNG_ONLY`, `F9_PNG` and `F9_BACKBUFFER` environment switches no longer activate a format or the old BMP comparison. Read-only `F9_TRACE` is still opt-in.
+- Unrecognized EXE/instruction signatures safely leave original executable code untouched; the previous Wine PNG implementation was validated in PR #25 but this default-on initialization still needs runtime regression tests.
+
+## Previous implementation — opt-in F9 PNG screenshots (PR #25, superseded)
 
 - Replace both original SHA-verified F9 BMP callsites with lossless `scrnNNNN.png` capture **only when explicitly enabled** with `SPIDERMAN2K1FIX_F9_PNG_ONLY=1` and `[Debug] Log=1`. Preserve the game's own F9 input polling and debounce; leave the original BMP path untouched when the option is off or the signature preflight fails.
 - Capture Bink movies, menu frames, static comic pages and 3D scenes from the validated DirectDraw sources. Copy pixels before encoding them on a worker using dynamically loaded GDI+, with unique names, failure reporting and a brief confirmation notification. The earlier optional dual-format BMP/PNG comparison remains available separately.

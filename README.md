@@ -323,137 +323,75 @@ When testing the current development build, set `DirectInputReacquire=1` and `Pa
 
 Try the original `AspectRatio=4:3` mode to help isolate widescreen-specific problems. Some edge-of-screen 3D rendering issues and audio artifacts are still being investigated; see the roadmap below.
 
-### Optional native F9-to-PNG screenshots
+### F9 screenshots — always lossless PNG
 
-The original game detects F9 via DirectInput. In the supported SHA-256
-verified executable, its screenshot writer lives at RVA `0x001033E0`.
-**Two independent game call sites** invoke that function: RVA
-`0x0010A1DC` and `0x0010A62B`. Both sites were confirmed by
-disassembling the user's exact `SpideyPC.exe` (1,507,328 bytes). Both
-calls follow the game's own F9 polling and 500-ms repeat limit.
+On the supported, SHA-256-verified `SpideyPC.exe`, the original **F9**
+key now saves full-resolution, lossless `scrnNNNN.png` files.
+**PNG is the only selectable format: there is no INI setting, environment
+variable or user option to switch to BMP.** Captures work with the default
+`[Debug] Log=0`; diagnostic logging is optional.
 
-The **opt-in PNG-only mode** replaces just those two
-5-byte x86 `CALL rel32` instructions after verifying their original
-bytes. It leaves the native DirectInput polling, sound, debounce,
-gameplay, and UI code unchanged. When F9 fires, SpiderMan2k1Fix locks
-the real 3D backbuffer, copies the full-resolution 32-bit pixels into
-private memory, unlocks DirectDraw, then saves the picture as a lossless
-PNG on a worker thread through Windows/Wine GDI+ (loaded dynamically).
-Only `scrnNNNN.png` is created; the original BMP routine is **never
-called** while both PNG-only hooks are installed successfully.
+The game still performs its own DirectInput F9 polling, sound and 500 ms
+repeat delay. SpiderMan2k1Fix verifies the two original x86 screenshot
+`CALL` instruction signatures (RVA `0x0010A1DC` and `0x0010A62B`)
+and replaces those calls with a PNG encoder callback. The original BMP
+writer is bypassed whenever the signature-checked hooks are installed.
 
-**Enable PNG-only mode** (using both matching DLLs from one build):
+**To capture a screenshot:** press **F9** during a video, menu, comic,
+cinematic or gameplay. Files are written beside `SpideyPC.exe`.
+After a successful save, the game displays a brief English confirmation
+and the full PNG path, without baking that confirmation into the image.
+The implementation captures decoded movie frames or DirectDraw
+backbuffers as appropriate, immediately copies the pixels to private
+memory, and encodes on a separate worker using Windows/Wine GDI+.
+Filename collisions are avoided; save errors are shown and never
+deliberately cause a BMP fallback.
 
-1. Back up both DLLs, set `[Debug] Log=1` in the INI, and launch with:
+**Safety:** for an unsupported EXE SHA-256, or if one of the original
+CALL signatures cannot safely be patched, SpiderMan2k1Fix does not
+force an unsafe rewrite. In that exceptional case the game's original
+screenshot code is left untouched and may still produce BMPs. This is
+a protection against unsupported binaries, **not a configurable format
+choice**. Enable `Log=1` only to diagnose such failures.
 
-   ```powershell
-   $env:SPIDERMAN2K1FIX_F9_PNG_ONLY = "1"
-   .\\SpideyPC.exe
-   ```
+**Validation:** the user verified the preceding opt-in PNG implementation
+under Wine in PR #25, build #717: eleven 1920×1080 PNGs
+(`scrn0000.png` through `scrn0010.png`) from intro movies,
+menus, comics and 3D. The new *always-on* initialization still requires
+a fresh Wine and native Windows 11 regression test.
 
-2. Press F9 during 3D gameplay. Confirm a new `scrnNNNN.png` appears,
-   **without any new `scrnNNNN.bmp`**. Inspect the PNG for correct
-   colors, HUD, and orientation. Press F9 multiple times at least
-   500 ms apart; test Alt+Tab and both supported aspect ratios.
-   **After the PNG is actually saved**, the game briefly displays
-   `Screenshot saved to:` followed by the **full absolute path** of
-   the new PNG. The notification disappears after about 3.5 seconds
-   and is painted over the visible primary surface **after** the
-   backbuffer is presented, so it is **not embedded in F9 PNGs**.
-   On a narrow display the complete path wraps onto additional lines.
-   The message does not appear for unsuccessful/skipped captures.
-3. Check the log for `F9-PNG-ONLY: two SHA-verified F9 call sites`,
-   `F9-PNG-ONLY: backbuffer capture=queued`, and
-   `F9-PNG: saved scrnNNNN.png`. A lock/encoder failure is logged and
-   **does not silently create a BMP** in PNG-only mode.
-4. Clear the environment variable when finished:
-   `Remove-Item Env:SPIDERMAN2K1FIX_F9_PNG_ONLY -ErrorAction SilentlyContinue`.
+The old `SPIDERMAN2K1FIX_F9_PNG_ONLY`, `SPIDERMAN2K1FIX_F9_PNG`
+and `SPIDERMAN2K1FIX_F9_BACKBUFFER` variables no longer select any
+capture format. The separate, read-only
+`SPIDERMAN2K1FIX_F9_TRACE=1` diagnostic remains available when
+`Log=1`; it does not change the image format. Historical research on
+native Windows magenta BMPs is retained in closed PR #24.
 
-**Safety:** signature mismatch or protection failure leaves both
-original F9 calls intact. The mode stays **disabled by default** and
-must be explicitly enabled through the environment variable shown
-above, with `[Debug] Log=1`. Only the supported EXE SHA-256 may be
-patched. No global keyboard or COM DirectInput vtable hooks are added.
+### Native gameplay ESC menu — original 4:3 proportions
 
-**Validation:** tested under Wine using PR #25's build #717.
-The user confirmed successful PNG-only captures of four opening Bink
-videos, three menu screens, a static comic page, and three 3D scenes,
-all at 1920×1080. The log records `scrn0000.png` through
-`scrn0010.png` saved, with screenshot notifications displayed and
-no capture errors. Enter on the final Bink movie also preserved the
-first 3D cinematic with the F10-independent release safeguard.
-No new BMP file was reported, although the log alone is not a
-filesystem audit. This does **not** constitute native Windows 11
-validation of the PNG-only replacement or every DirectDraw driver.
+The 3D game's ESC pause menu (purple banner, outlines and labels,
+orange/blue translucent motif, and red spider selector) can be displayed at
+the correct original 4:3 proportions, without stretching the 3D scene or HUD.
+The original violet pause tint still covers the entire widescreen display,
+including the left and right margins.
 
-**Original dual-format comparison test remains available** by setting
-`SPIDERMAN2K1FIX_F9_PNG=1` (not `PNG_ONLY`) with `Log=1`. It
-captures the same real backbuffer to PNG while letting the game write
-its original BMP for pixel comparison. The Windows 11 dual-format test
-previously found **99.9977% RGB-identical pixels** in a 1920x1200
-capture, correctly oriented, with intact HUD. The earlier magenta-BMP
-research and optional fix remain documented separately in PR #24. No new external codec
-install is needed on normal Windows or Wine installations.
+**Validated under Wine at 1920×1080 Auto** on October 24, 2026 for
+`CONTINUE / RESTART LEVEL / QUIT`, `REALLY QUIT? / NO / YES`, and the cursor
+at both central and edge-of-screen positions.
 
-### Native Windows 11: experimental F9 screenshot repair
+This correction is currently opt-in while graphics drivers and other screen
+resolutions are being tested. Set these environment variables before starting
+the game:
 
-On native Windows 11 the game has produced `scrnNNNN.bmp` at
-1920×1200 containing only **RGB(255,0,255)**, even though the game is
-visible on screen. The same F9 shortcut captures a valid 1920×1080 BMP
-under Wine; the two hosts simply use different display resolutions.
+```bash
+export SPIDERMAN2K1FIX_NATIVE_ESC_43=1
+export SPIDERMAN2K1FIX_NATIVE_MOTIF_43=1
+export SPIDERMAN2K1FIX_NATIVE_CURSOR_43=1
+```
 
-**The root cause is now localized.** Native Windows F9 logs show the
-SHA-verified game calls `IDirectDrawSurface7::Lock` on the **windowed
-PRIMARY** at game RVA `0x001034D4`, with `DDLOCK_READONLY`,
-1920×1200, 32-bit color and HRESULT success, then `Unlock` at RVA
-`0x00103537`. The 3D scene is actually rendered into a separate
-`borderless_back` surface and copied to PRIMARY during each Flip. It
-appears native DirectDraw returns stale/magenta pixels when PRIMARY is
-locked for CPU readback, even though the window itself is displaying
-valid frames; this still needs verification with a fresh BMP.
-
-**Experimental fix (disabled by default):** the separate F9 PR #24
-allows `SPIDERMAN2K1FIX_F9_BACKBUFFER=1` with `[Debug] Log=1`.
-When enabled, only this exact screenshot `Lock` call is transparently
-redirected to the real 3D backbuffer, and only its matching `Unlock`
-is redirected back. All other Lock/Unlock calls and the rest of the
-game continue unchanged. The backbuffer lock is accepted only when it
-returns a full-resolution 32-bit buffer with expected pitch. If the
-lock or format fails, the game falls back to the original PRIMARY
-readback, and the log records the failure.
-
-**Native Windows 11 test (both matching DLLs from the latest PR #24
-artifact):**
-
-1. Back up the existing DLLs and INI. Enable `[Debug] Log=1` but
-   leave all validated HUD, pause, aspect ratio and borderless options
-   unchanged.
-2. In PowerShell from the game folder, launch with both diagnostics
-   and experimental fix enabled:
-
-   ```powershell
-   $env:SPIDERMAN2K1FIX_F9_TRACE = "1"
-   $env:SPIDERMAN2K1FIX_F9_BACKBUFFER = "1"
-   .\\SpideyPC.exe
-   ```
-
-3. Start a 3D level and press **F9 once**. Quit normally, then inspect
-   the fresh `scrnNNNN.bmp` and `SpiderMan2k1Fix.log`.
-4. Look for `F9-FIX: BACKBUFFER Lock success` followed by
-   `F9-FIX: BACKBUFFER Unlock`, or a clean fallback reason.
-   **Success is only established if the new BMP contains the scene**.
-   If the game crashes or its display changes unexpectedly, restore
-   the previous DLLs and provide the log.
-5. To disable the experiment in PowerShell:
-   `Remove-Item Env:SPIDERMAN2K1FIX_F9_BACKBUFFER -ErrorAction SilentlyContinue`
-   and `Remove-Item Env:SPIDERMAN2K1FIX_F9_TRACE -ErrorAction SilentlyContinue`.
-
-Read-only observation without redirection is still available by
-setting only `SPIDERMAN2K1FIX_F9_TRACE=1` together with `Log=1`.
-Neither setting is added to the default INI or enabled for normal
-users. PR #24 remains **DRAFT** pending native Windows and Wine
-validation; this change is deliberately isolated from HUD/default-on
-and pre-1.0 cleanup PRs.
+These settings are not INI keys. They only affect the native gameplay ESC
+overlay, not the main menu or the original 4:3 gameplay presentation.
+[Implementation, scope, and regression checks](docs/NATIVE_PAUSE_MENU_43.md).
 
 ## Adaptive widescreen HUD
 
@@ -500,8 +438,9 @@ J. Jonah Jameson) boss health bars, moving black lost-health areas,
 boss portraits and a horizontal objective bar with its icons. Other
 boss fights and ultrawide resolutions were not individually tested.
 
-The original game's F9 BMP capture can produce a magenta image under
-native Windows 11; that is a separate issue, not a HUD problem.
+Historical native F9 BMP capture could produce a magenta image under
+Windows 11. The current lossless PNG screenshot path avoids that legacy
+capture format; it is independent of the widescreen HUD.
 
 The developer-only F12 read-only geometric diagnostic remains
 available temporarily when BOTH `[Debug] Log=1` and the environment
