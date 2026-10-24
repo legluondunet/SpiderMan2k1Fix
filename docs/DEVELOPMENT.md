@@ -25,7 +25,7 @@ All virtual addresses (VA) in this document assume this exact binary and image b
 
 ## 3. DirectInput 8: static findings
 
-The detailed source of record is [DIRECTINPUT_STATIC_ANALYSIS.md](../DIRECTINPUT_STATIC_ANALYSIS.md) (2026-10-21). These findings come from **offline static examination** of the SHA-matched EXE.
+The detailed source of record is [DIRECTINPUT_STATIC_ANALYSIS.md](diagnostics/directinput/DIRECTINPUT_STATIC_ANALYSIS.md) (2026-10-21). These findings come from **offline static examination** of the SHA-matched EXE.
 
 | Item | Game VA / detail |
 | --- | --- |
@@ -134,7 +134,7 @@ Automated tests confirm signatures and code properties; **they do not prove game
 ## 9. Research references and next steps
 
 Repository sources:
-- [DirectInput static audit](../DIRECTINPUT_STATIC_ANALYSIS.md)
+- [DirectInput static audit](diagnostics/directinput/DIRECTINPUT_STATIC_ANALYSIS.md)
 - [F10 validation matrix](F10_VALIDATION_MATRIX.md)
 - [F12 debugging research (historical)](F12_DEBUG_TEST_MODE.md)
 - [Native shutdown and Windows test records](F12_NATIVE_SHUTDOWN.md)
