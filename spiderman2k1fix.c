@@ -1620,269 +1620,96 @@ static const void *maybe_correct_native_pause43(void *device,
   }
   return copy;
 }
-/* Mouse cursor hook experiment, OFF by default. The PC-port decomp
- * names PCSHELL_DrawMouseCursor at VA 0x0050C470 (RVA 0x0010C470,
- * next function at VA 0x0050C4B0). Only the SHA256-verified EXE can
- * reach this initialization. We DO NOT patch that function's code.
+/* Native gameplay ESC red selector: SHA-verified 1920x1080 Wine #770.
+ * A 32x32 texture in an exact screen quad (96x72), z=0, rhw=27.519,
+ * diffuse white, native D3D7 caller 0x00102C72 and validated purple
+ * ESC banner drawn in the SAME Flip. This is independent of the
+ * unproven PCSHELL_DrawMouseCursor stack-owner hypothesis (Wine had
+ * depth=0 and 758 DWORD return scans found no owner).
  *
- * A native stack trace must positively place the original draw inside
- * that game function before any vertex correction is permitted. This
- * is deliberately independent of the red sprite's 32x32 asset size:
- * the pause-menu text contains many unrelated 32x32 textures.
+ * Render-only experiment, opt-in through NATIVE_CURSOR_43, OFF by
+ * default. Match all observed independent attributes; texture pointer
+ * values are NOT portable between game runs. Initially limit this
+ * strictly to the tested 1920x1080 mode. Only X vertex coordinates
+ * are modified; keep Y, Z, RHW, UV, texture, game input unchanged.
  */
-typedef USHORT (WINAPI *SpiderStackTraceFn)(ULONG,ULONG,PVOID*,PULONG);
-static SpiderStackTraceFn native_cursor43_trace=NULL;
-static BYTE *native_cursor43_owner=NULL;
 static volatile LONG native_cursor43_enabled=0;
 static volatile LONG native_cursor43_hits=0;
-static volatile LONG native_cursor43_samples=0;
-static volatile LONG native_cursor43_cap_logs=0;
-static volatile LONG native_cursor43_manual_matches=0;
-static volatile LONG native_cursor43_scan_samples=0;
-static volatile LONG native_cursor43_last_flip=-1;
-static volatile LONG native_cursor43_attempts_this_flip=0;
-/* Wine Staging 11.x can return 0 from RtlCaptureStackBackTrace even
- * while x86 call/return addresses are present on the live thread stack.
- * Inspect ONLY this thread's committed stack region (up to 8192 bytes),
- * with no stack unwinding and no writes. The owner return address must
- * belong to the verified PCShell function AND follow a CALL opcode.
- * This is not a general stack unwinder: absent evidence => no change.
- */
-static int native_cursor43_return_follows_call(const BYTE *ret) {
-  if(!native_cursor43_owner ||
-     ret<native_cursor43_owner+12u ||
-     ret>=native_cursor43_owner+0x40u)return 0;
-  if(ret[-5]==0xE8u) return 1; /* CALL rel32 */
-  if((ret[-2]==0xFFu && (ret[-1]&0x38u)==0x10u) ||
-     (ret[-3]==0xFFu && (ret[-2]&0x38u)==0x10u) ||
-     (ret[-4]==0xFFu && (ret[-3]&0x38u)==0x10u) ||
-     (ret[-6]==0xFFu && (ret[-5]&0x38u)==0x10u))
-    return 1; /* CALL r/m32, ModRM /2, supported operand lengths */
-  return 0;
-}
-static int native_cursor43_scan_live_stack(DWORD *matched_rva) {
-  volatile DWORD stack_anchor=0;
-  MEMORY_BASIC_INFORMATION info;
-  uintptr_t current,limit,position;
-  unsigned checked=0;
-  if(!native_cursor43_owner || !matched_rva) return 0;
-  *matched_rva=0;
-  if(!VirtualQuery((LPCVOID)&stack_anchor,&info,sizeof(info)) ||
-     info.State!=MEM_COMMIT || (info.Protect&PAGE_GUARD) ||
-     (info.Protect&PAGE_NOACCESS))return 0;
-  current=(uintptr_t)&stack_anchor;
-  limit=(uintptr_t)info.BaseAddress+info.RegionSize;
-  if(current>=limit || limit-current<sizeof(DWORD))return 0;
-  /* Scan upward (from deeper frames toward the original game caller).
-   * Never cross the committed region returned by VirtualQuery. */
-  position=(current+sizeof(DWORD)-1u)&~(uintptr_t)(sizeof(DWORD)-1u);
-  if(limit-position>8192u)limit=position+8192u;
-  for(;position+sizeof(DWORD)<=limit;position+=sizeof(DWORD)) {
-    const BYTE *candidate=(const BYTE*)(uintptr_t)
-                            (*(const volatile DWORD*)(uintptr_t)position);
-    ++checked;
-    if(native_cursor43_return_follows_call(candidate)) {
-      *matched_rva=(DWORD)(candidate-(BYTE*)GetModuleHandleA(NULL));
-      return 1;
-    }
-  }
-  if(InterlockedIncrement(&native_cursor43_scan_samples)<=3) {
-    char line[180];
-    snprintf(line,sizeof(line),
-      "NATIVE-CURSOR-43: fallback x86 stack scan checked=%u DWORDs owner-not-found [NO CHANGE]",
-      checked);
-    log_line(line);
-  }
-  return 0;
-}
 static void native_cursor43_init(void) {
-  char value[4]={0},line[220];
-  HMODULE kernel,ntdll,exe;
-  FARPROC symbol=NULL;
-  MEMORY_BASIC_INFORMATION mem;
-  DWORD i;
-  int n;
+  char value[4]={0};
   if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_NATIVE_CURSOR_43",
-                             value,sizeof(value))!=1 || value[0]!='1')
-    return;
+       value,sizeof(value))!=1 || value[0]!='1')return;
   if(InterlockedCompareExchange(&native_pause43_enabled,0,0)!=1) {
     log_line("NATIVE-CURSOR-43: disabled; requires SPIDERMAN2K1FIX_NATIVE_ESC_43=1");
     return;
   }
-  exe=GetModuleHandleA(NULL);
-  if(!exe) return;
-  native_cursor43_owner=(BYTE*)exe+0x0010C470u;
-  if(!VirtualQuery(native_cursor43_owner,&mem,sizeof(mem)) ||
-     mem.State!=MEM_COMMIT ||
-     !((mem.Protect & 0xff)==PAGE_EXECUTE ||
-       (mem.Protect & 0xff)==PAGE_EXECUTE_READ ||
-       (mem.Protect & 0xff)==PAGE_EXECUTE_READWRITE ||
-       (mem.Protect & 0xff)==PAGE_EXECUTE_WRITECOPY)) {
-    native_cursor43_owner=NULL;
-    log_line("NATIVE-CURSOR-43: candidate RVA 0x0010C470 is not executable; disabled");
-    return;
-  }
-  /* Guard known x86 instruction SHAPE (not volatile global addresses).
-   * The original supported EXE hash was already verified by startup.
-   * Refuse manual stack classification on any unknown function layout. */
-  if(!(native_cursor43_owner[0]==0xF6u &&
-       native_cursor43_owner[1]==0x05u &&
-       native_cursor43_owner[6]==0x10u &&
-       native_cursor43_owner[7]==0x75u &&
-       native_cursor43_owner[9]==0xA1u)) {
-    native_cursor43_owner=NULL;
-    log_line("NATIVE-CURSOR-43: x86 function opcode signature mismatch; disabled");
-    return;
-  }
-  kernel=GetModuleHandleA("kernel32.dll");
-  ntdll=GetModuleHandleA("ntdll.dll");
-  if(kernel)
-    symbol=GetProcAddress(kernel,"RtlCaptureStackBackTrace");
-  if(!symbol && kernel)
-    symbol=GetProcAddress(kernel,"CaptureStackBackTrace");
-  if(!symbol && ntdll)
-    symbol=GetProcAddress(ntdll,"RtlCaptureStackBackTrace");
-  if(!symbol) {
-    log_line("NATIVE-CURSOR-43: no native stack walker; disabled");
-    return;
-  }
-  /* FARPROC and StackTraceFn share the x86 function pointer ABI; copy
-   * the address without GCC's incompatible-function-type cast warning. */
-  memcpy(&native_cursor43_trace,&symbol,sizeof(native_cursor43_trace));
-  n=snprintf(line,sizeof(line),
-     "NATIVE-CURSOR-43: opt-in stack-guarded owner RVA=0x0010C470..0x0010C4B0; code[0..11]=");
-  if(n<0 || n>=(int)sizeof(line)-3)return;
-  for(i=0;i<12 && (size_t)n+3<sizeof(line);i++) {
-    int written=snprintf(line+n,sizeof(line)-(size_t)n,
-                        "%02X",(unsigned)native_cursor43_owner[i]);
-    if(written!=2)return;
-    n+=written;
-  }
-  log_line(line);
   InterlockedExchange(&native_cursor43_enabled,1);
-  log_line("NATIVE-CURSOR-43: cursor X-only 0.75 scale ARMED but applies ONLY with matching native owner stack frame; no input changes");
+  log_line("NATIVE-CURSOR-43: exact native ESC selector QUAD signature enabled [1920x1080 only, X-only 0.75, opt-in; no stack scan]");
 }
 static const void *maybe_correct_native_cursor43(void *device,
     D3DPRIMITIVETYPE type,DWORD fvf,const void *source,DWORD count,
-    SpiderMenuVertex *copy) {
-  const SpiderMenuVertex *v=(const SpiderMenuVertex *)source;
+    void *ret,SpiderMenuVertex *copy) {
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
   float left,right,top,bottom,cx,z,rhw;
-  PVOID frames[20];
-  USHORT depth,i;
-  LONG flip,attempts,hits;
-  int matched=0;
+  DWORD rva=0,diffuse=0;
+  IDirectDrawSurface7 *tex=NULL;
+  DDSURFACEDESC2 desc;
+  LONG flip,hits;
+  unsigned i;
+  HRESULT hr;
   if(InterlockedCompareExchange(&native_cursor43_enabled,0,0)!=1 ||
-     !native_cursor43_trace || !native_cursor43_owner ||
-     !source || !copy || type!=D3DPT_TRIANGLEFAN ||
-     fvf!=0x144UL || count!=4 ||
-     desktop_w*3<=desktop_h*4 || desktop_h<480 ||
+     !source || !copy || !device ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4 ||
+     desktop_w!=1920 || desktop_h!=1080 ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
      InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
-     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0)
-    return source;
+     !geom_rva(ret,&rva) || rva!=0x00102C72UL)return source;
   flip=InterlockedCompareExchange(&flip_count,0,0);
-  /* The validated pause ribbon must have been drawn in this Flip. */
   if(InterlockedCompareExchange(&native_pause43_banner_flip,0,0)!=flip)
     return source;
-  left=right=v[0].x;top=bottom=v[0].y;z=v[0].z;rhw=v[0].rhw;
+  left=right=v[0].x;top=bottom=v[0].y;
+  z=v[0].z;rhw=v[0].rhw;
   for(i=1;i<4;i++) {
     if(v[i].x<left)left=v[i].x;
     if(v[i].x>right)right=v[i].x;
     if(v[i].y<top)top=v[i].y;
     if(v[i].y>bottom)bottom=v[i].y;
   }
-  /* Cursor.bmp: a 32x32 source drawn about 96x72 at 1920x1080;
-   * geometrical bounds deliberately loose, stack identity strict. */
-  if(left<(float)desktop_w*0.20f ||
-     right>(float)desktop_w*0.82f ||
-     top<(float)desktop_h*0.26f ||
-     bottom>(float)desktop_h*0.76f ||
-     right-left<(float)desktop_w*0.030f ||
-     right-left>(float)desktop_w*0.075f ||
-     bottom-top<(float)desktop_h*0.040f ||
-     bottom-top>(float)desktop_h*0.11f ||
-     z<0.00020f || z>0.0040f ||
-     rhw<5.0f || rhw>25.0f)
-    return source;
-  if(InterlockedCompareExchange(&native_cursor43_last_flip,flip,flip)!=flip) {
-    InterlockedExchange(&native_cursor43_last_flip,flip);
-    InterlockedExchange(&native_cursor43_attempts_this_flip,0);
-  }
-  attempts=InterlockedIncrement(&native_cursor43_attempts_this_flip);
-  if(attempts>180)return source; /* bounded work each Flip */
-  /* Actual cursor.bmp is 32x32. Do not inspect untextured quads,
-   * 8x8 banner borders, or differently sized interface sprites.
-   * This is ONLY an extra rejection gate; owner evidence remains required. */
-  {
-    IDirectDrawSurface7 *texture=NULL;
-    DDSURFACEDESC2 desc;
-    HRESULT hr=IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture);
-    if(FAILED(hr) || !texture)return source;
-    memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
-    hr=IDirectDrawSurface7_GetSurfaceDesc(texture,&desc);
-    IDirectDrawSurface7_Release(texture);
-    if(FAILED(hr) || desc.dwWidth!=32 || desc.dwHeight!=32)return source;
-  }
-  memset(frames,0,sizeof(frames));
-  depth=native_cursor43_trace(0,20,frames,NULL);
-  for(i=0;i<depth;i++) {
-    if((BYTE*)frames[i]>=native_cursor43_owner &&
-       (BYTE*)frames[i]<native_cursor43_owner+0x40u) {
-      matched=1;break;
-    }
-  }
-  /* Under Wine native stack capture may report depth=0. Fall back only
-   * after that explicit failure, and require a real CALL-return address
-   * in the exact original PCSHELL_DrawMouseCursor function. */
-  if(!matched && depth==0) {
-    DWORD owner_rva=0;
-    if(native_cursor43_scan_live_stack(&owner_rva)) {
-      LONG n=InterlockedIncrement(&native_cursor43_manual_matches);
-      if(n<=8 || n%600==0) {
-        char line[190];
-        snprintf(line,sizeof(line),
-          "NATIVE-CURSOR-43: x86 owner CALL-RETURN MATCH #%ld rva=0x%08lX [Wine fallback]",
-          (long)n,(unsigned long)owner_rva);
-        log_line(line);
-      }
-      matched=1;
-    }
-  }
-  if(!matched) {
-    LONG sample=InterlockedIncrement(&native_cursor43_samples);
-    if(sample<=3) {
-      char line[232];
-      snprintf(line,sizeof(line),
-        "NATIVE-CURSOR-43: stack SAMPLE=%ld depth=%u flip=%ld quad=%.0fx%.0f frames=[%p,%p,%p,%p] [NO MATCH, NO CHANGE]",
-        (long)sample,(unsigned)depth,(long)flip,
-        (double)(right-left),(double)(bottom-top),
-        depth>0?frames[0]:NULL,depth>1?frames[1]:NULL,
-        depth>2?frames[2]:NULL,depth>3?frames[3]:NULL);
-      log_line(line);
-    }
-    if(attempts==180 &&
-       InterlockedIncrement(&native_cursor43_cap_logs)<=3) {
-      log_line("NATIVE-CURSOR-43: 180 geometrical candidates/Flip inspected; no PCSHELL_DrawMouseCursor stack owner (no changes)");
-    }
-    return source;
-  }
-  /* Keep visible cursor CENTER and Y fixed: only its sprite X width
-   * is compressed. Do not touch global mouse position or native hit test.
-   */
+  /* Exact sprite bounds and separate near-foreground depth signature.
+   * The font glyphs seen at 60x50 use z=.00098 and rhw=12.686;
+   * unrelated health/instruction HUDs also fail these gates. */
+  if(fabsf((right-left)-96.0f)>0.6f ||
+     fabsf((bottom-top)-72.0f)>0.6f ||
+     left<450.0f || right>1480.0f ||
+     top<325.0f || bottom>800.0f ||
+     fabsf(z)>0.00005f ||
+     fabsf(rhw-27.519f)>0.035f)return source;
+  memcpy(&diffuse,(const BYTE*)source+16,sizeof(diffuse));
+  if(diffuse!=0xFFFFFFFFUL)return source;
+  /* Validate this actual bound texture, not just the 32x32
+   * candidates' screen positions; do not capture a run-specific
+   * pointer value from logs. No texture content is modified. */
+  hr=IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex);
+  if(FAILED(hr) || !tex)return source;
+  memset(&desc,0,sizeof(desc));
+  desc.dwSize=sizeof(desc);
+  hr=IDirectDrawSurface7_GetSurfaceDesc(tex,&desc);
+  IDirectDrawSurface7_Release(tex);
+  if(FAILED(hr) || desc.dwWidth!=32 || desc.dwHeight!=32 ||
+     desc.ddpfPixelFormat.dwFlags!=0x41UL)return source;
   cx=(left+right)*0.5f;
   memcpy(copy,v,4*sizeof(*copy));
   for(i=0;i<4;i++)
     copy[i].x=cx+0.75f*(v[i].x-cx);
   hits=InterlockedIncrement(&native_cursor43_hits);
-  if(hits<=8 || (hits%600)==0) {
-    char line[250];
+  if(hits<=8 || hits%600==0) {
+    char line[230];
     snprintf(line,sizeof(line),
-      "NATIVE-CURSOR-43: owner MATCH hit=%ld frame=%ld x=(%.1f..%.1f) y=(%.1f..%.1f) size=(%.1fx%.1f) z=%.5f rhw=%.3f [X-ONLY EXPERIMENT]",
+      "NATIVE-CURSOR-43: QUAD-MATCH hit=%ld flip=%ld source=(%.0f..%.0f,%.0f..%.0f) output-width=72.0 z=%.5f rhw=%.3f [X-ONLY]",
       (long)hits,(long)flip,(double)left,(double)right,
-      (double)top,(double)bottom,(double)(right-left),
-      (double)(bottom-top),(double)z,(double)rhw);
+      (double)top,(double)bottom,(double)z,(double)rhw);
     log_line(line);
   }
-  (void)device;
   return copy;
 }
 static void free_menu_vertices(SpiderMenuVertex *allocated) {
@@ -1912,7 +1739,8 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
      * stays unchanged in all other draws.
      */
     if(v==verts && count==4)
-      v=maybe_correct_native_cursor43(self,type,fvf,verts,count,small);
+      v=maybe_correct_native_cursor43(self,type,fvf,verts,count,
+                                      __builtin_return_address(0),small);
     /* Native ESC after known comic/HUD precedence. */
     if(v==verts && count==4)
       v=maybe_correct_native_pause43(self,type,fvf,verts,count,
