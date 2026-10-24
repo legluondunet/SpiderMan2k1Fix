@@ -100,7 +100,7 @@ HUDWidescreenFix=1
 - `FPSLimit=30`: default frame-rate limit.
 - `HUDWidescreenFix=1`: apply supported HUD/menu aspect corrections; set `0` to disable them.
 
-**Keyboard layout:** Newly generated INIs use `KeyboardLayout=Auto` to detect the active Windows/Wine layout for controls, CHEATS text entry and keyboard-menu labels. Set `KeyboardLayout=Off` to keep the original QWERTY key positions and labels. The CHEATS/menu correction is experimental; please test under Windows and Wine. [Keyboard layout details](docs/references/CONFIGURATION.md#keyboard-layout-azerty-qwerty-and-wine).
+**Keyboard layout:** Newly generated INIs use `KeyboardLayout=Auto` to detect the active Windows/Wine layout for controls, CHEATS text entry and keyboard-menu labels. Set `KeyboardLayout=Off` to keep the original QWERTY key positions and labels. The CHEATS/menu correction is experimental; please test under Windows and Wine. [Keyboard layout details](docs/references/CONFIGURATION.md#keyboard-layout-auto-or-off).
 
 For audio, controls, Alt+Tab options, INI repair and other settings, see the **[configuration guide](docs/references/CONFIGURATION.md)**.
 
