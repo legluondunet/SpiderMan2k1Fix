@@ -479,6 +479,46 @@ int SpiderCfg_EnsureDefaultIni(void (*logger)(const char *)) {
   return SpiderCfg_WriteDefaultIniAt(ini,1,logger);
 }
 
+/* Legacy toggles from earlier development INIs are no longer user settings.
+ * Accept them in the strict parser solely to migrate existing configurations.
+ * Never remove gameplay bindings, audio, FPS, aspect, brightness or RawHex. */
+static const struct {const char *section,*key;} deprecated_ini_keys[]={
+  {"Debug","F10VerboseTrace"},
+  {"Display","Resolution"},{"Display","FOV"},
+  {"Display","ExperimentalFOVAspect"},{"Display","ExperimentalFOVHorPlus"},
+  {"Display","ExperimentalMenu4x3"},{"Display","ExperimentalMediaAspect"},
+  {"Display","ExperimentalMediaBlt4x3"},{"Display","ExperimentalMediaBltKnownSizes"},
+  {"Display","ExperimentalIntroSourceAspect"},{"Display","ExperimentalMediaBltAnySize"},
+  {"Display","ExperimentalComicNativeAspect"},{"Display","ExperimentalDisplayMenuLock"},
+  {"HUD","HUDWidescreenFix"},{"HUD","NativeESC4x3"},
+  {"HUD","NativeMotif4x3"},{"HUD","NativeCursor4x3"},
+  {"Input","DirectInputReacquire"},{"Input","DisableWindowsGhosting"},
+  {"Input","PauseOnFocusLoss"},{"Input","PauseBinkOnFocusLoss"},
+  {"Input","PauseDirectSoundOnFocusLoss"},{"Input","PauseOverlay"},
+  {"Input","PauseDim"},{"Input","PauseDimOpacity"},{"Input","PauseGrid"},
+  {"Input","PauseKey"},{"Input","RestoreCursorOnFocusLoss"},
+  {"Input","ExperimentalFocusTrace"},{"Input","ExperimentalDI8EntryTrace"},
+  {"Input","ExperimentalAltTabReacquire"},{"Input","ExperimentalDI8CreateDeviceTrace"}
+};
+static int deprecated_ini_key(const char *section,const char *key) {
+  unsigned i;
+  for(i=0;i<sizeof(deprecated_ini_keys)/sizeof(deprecated_ini_keys[0]);i++)
+    if(!lstrcmpiA(section,deprecated_ini_keys[i].section) &&
+       !lstrcmpiA(key,deprecated_ini_keys[i].key))return 1;
+  return 0;
+}
+static unsigned deprecated_ini_count(const char *path) {
+  unsigned i,found=0;
+  char value[24];
+  for(i=0;i<sizeof(deprecated_ini_keys)/sizeof(deprecated_ini_keys[0]);i++) {
+    GetPrivateProfileStringA(deprecated_ini_keys[i].section,
+                             deprecated_ini_keys[i].key,"\x01",
+                             value,sizeof(value),path);
+    if(value[0]!='\x01')found++;
+  }
+  return found;
+}
+
 
 /* Normalize an invalid INI into the generator's canonical format.
  * The original is preserved at SpiderMan2k1Fix_0.old, _1.old, ... .
@@ -511,6 +551,7 @@ static int SpiderCfg_RepairIni(const char *ini,const SpiderIniResult *check,
   if(!SpiderCfg_WriteDefaultIniAt(tmp,0,logger))goto done;
   for(i=0;i<values->count;i++) {
     SpiderIniRecoveredEntry *e=&values->entries[i];
+    if(deprecated_ini_key(e->section,e->key))continue;
     if(!WritePrivateProfileStringA(e->section,e->key,e->value,tmp)) {
       err=GetLastError();
       snprintf(msg,sizeof(msg),"INI-REPAIR: failed writing [%s] %s, Win32=%lu",
@@ -573,10 +614,30 @@ void SpiderCfg_ValidateCurrentIni(void (*logger)(const char *)) {
   }
   check=SpiderIni_Validate(ini,NULL,NULL);
   if(!check.errors && !check.warnings) {
-    ini_writes_permitted=1;
-    SpiderCfg_ClearOldValidationReport(ini);
-    if(logger)logger("INI-CHECK: valid SpiderMan2k1Fix.ini");
-    return;
+    unsigned obsolete=deprecated_ini_count(ini);
+    if(!obsolete) {
+      ini_writes_permitted=1;
+      SpiderCfg_ClearOldValidationReport(ini);
+      if(logger)logger("INI-CHECK: valid SpiderMan2k1Fix.ini");
+      return;
+    }
+    /* Use exactly the tested repair/backup/atomic-replace pipeline to prune
+     * obsolete valid settings. No MessageBox for a normal upgrade. */
+    {
+      SpiderIniResult migrate=check;
+      char info[180];
+      migrate.warnings=obsolete;
+      ini_writes_permitted=0;
+      if(SpiderCfg_RepairIni(ini,&migrate,backup,sizeof(backup),&recovered,logger)) {
+        ini_writes_permitted=1;
+        SpiderCfg_ClearOldValidationReport(ini);
+        snprintf(info,sizeof(info),
+          "INI-MIGRATE: removed %u obsolete setting(s); old file backed up, %u recognized setting(s) scanned",
+          obsolete,recovered);
+        if(logger)logger(info);
+      } else if(logger)logger("INI-MIGRATE: failed; original retained, game-origin INI saving disabled");
+      return;
+    }
   }
   ini_writes_permitted=0;
   if(!SpiderCfg_RepairIni(ini,&check,backup,sizeof(backup),&recovered,logger)) {
