@@ -34,16 +34,14 @@ def test_input_focus_recovery_not_removed():
     assert 'if(!input_debug_logging' in focus
 
 
-def test_native_windows_reacquire_hook_not_on_by_default():
-    ini = (ROOT / 'ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini').read_text()
+def test_native_reacquire_and_pause_are_builtin():
     generated = (ROOT / 'virtual_spidey_cfg.c').read_text()
-    assert 'DirectInputReacquire=0' in ini
-    assert '"DirectInputReacquire=0\\r\\n"' in generated
-    assert 'ExperimentalAltTabReacquire=' not in ini
-    assert '"ExperimentalAltTabReacquire=' not in generated
-    assert 'ExperimentalDI8CreateDeviceTrace=' not in ini
-    assert '"ExperimentalDI8CreateDeviceTrace=' not in generated
-    assert 'PauseOnFocusLoss=0' in ini
-    assert '"PauseOnFocusLoss=0\\r\\n"' in generated
-    assert 'RestoreCursorOnFocusLoss=1' in ini
-    assert '"RestoreCursorOnFocusLoss=1\\r\\n"' in generated
+    retry = (ROOT / 'input_notacquired_retry.c').read_text()
+    core = (ROOT / 'spiderman2k1fix.c').read_text()
+    for retired in ("DirectInputReacquire", "PauseOnFocusLoss",
+                    "RestoreCursorOnFocusLoss", "PauseBinkOnFocusLoss"):
+        assert f'"{retired}=' not in generated
+    assert "InterlockedExchange(&requested,1);" in retry
+    assert "InterlockedExchange(&pause_on_focus_loss,1);" in core
+    assert "SpiderFocusMedia_Pause();" in core
+    assert "SpiderFocusDSound_Pause();" in core
