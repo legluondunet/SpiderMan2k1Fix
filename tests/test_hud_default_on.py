@@ -55,3 +55,46 @@ def test_logging_no_longer_calls_feature_unvalidated():
     assert "HUD: adaptive widescreen correction enabled" in CORE
     assert "HUD: EXPERIMENTAL native 16-site widescreen correction installed" not in CORE
     assert "HUD-ADAPTIVE: strict geometry correction enabled" in CORE
+
+
+def test_obsolete_f12_hud_sampling_removed_without_touching_validated_hooks():
+    # Former F12 six-frame HUD probe is no longer needed at runtime.
+    for obsolete in (
+        "SPIDERMAN2K1FIX_HUD_TRACE", "HUD-PROBE:",
+        "HUD-PROBE-EXTRA:", "HUD-PROBE-BLT:",
+        "hud_probe_enabled", "hud_probe_flip(", "hud_probe_draw(",
+        "hud_probe_boss_unknown(", "hud_probe_boss_blt",
+    ):
+        assert obsolete not in CORE
+
+    for validated in (
+        "SpiderHudWidescreen_Install(exe_verified,TRUE)",
+        "maybe_correct_adaptive_hud(", "maybe_correct_native_pause43(",
+        "maybe_correct_native_motif43(", "maybe_correct_native_cursor43(",
+        "SpiderDI8Retry_OnFlip(count);",
+        "SpiderInputFocus_OnFlip(count);", "pause_at_flip_if_background();",
+        "SpiderQuickExitF12_ObserveEngineState(",
+        "install_f9_png_only_dispatch();",
+        "static int geom_rva(void *ret,DWORD *rva) {",
+    ):
+        assert validated in CORE
+
+    draw=CORE.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
+        "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
+    assert draw.index("maybe_correct_adaptive_hud(") < draw.index(
+        "maybe_correct_native_motif43(")
+    assert draw.index("maybe_correct_native_motif43(") < draw.index(
+        "maybe_correct_native_cursor43(")
+    assert draw.index("maybe_correct_native_cursor43(") < draw.index(
+        "maybe_correct_native_pause43(")
+    assert "original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags)" in draw
+
+
+def test_hud_probe_cleanup_does_not_remove_runtime_f12_or_f9_game_features():
+    assert "SpiderQuickExitF12_AttachWindow(hwnd);" in CORE
+    assert "SpiderQuickExitF12_Init(log_line);" in CORE
+    assert "SpiderQuickExitF12_ObserveComicRender(" in CORE
+    assert "SpiderQuickExitF12_ObserveMovieFrame();" in CORE
+    assert "SpiderQuickExitF12_ObserveEngineState(" in CORE
+    assert "SpiderDI8Retry_OnFlip(count);" in CORE
+    assert "install_f9_png_only_dispatch();" in CORE
