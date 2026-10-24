@@ -4,10 +4,11 @@
 
 - Keep `[Display] FPSLimit=30` visible and editable by players (`0` disables, `1..240` target FPS). Retain editable `AspectRatio`, `Brightness`, `KeyboardLayout`, audio and original game bindings.
 - Make native desktop borderless output, automatic FOV, widescreen HUD/native ESC geometry, comic/intro 4:3 handling, game Display menu lock and cursor focus restoration permanent when supported native signatures match.
-- Enable confirmed Alt+Tab pause with any-key resume, native keyboard/mouse DIERR_NOTACQUIRED recovery at Flip #120, Bink video/music synchronization, and game-owned secondary DirectSound voice pause as built-in compatibility behavior. Use a fixed 50%-dimmed native PAUSED ribbon, no grid.
+- Enable confirmed Alt+Tab pause with any-key resume, native keyboard/mouse DIERR_NOTACQUIRED recovery at Flip #120, Bink video/music synchronization, and game-owned secondary DirectSound voice pause as built-in compatibility behavior. Use a native PAUSED ribbon with default 60% shading (configurable 0–90% via optional `PauseDimOpacity`); remove grid rendering and retire `PauseGrid`.
 - Automatically request Windows process ghost-window suppression where the API exists to avoid false focus changes. This disables the OS's ghost UI for actual hangs and therefore requires Windows/Wine regression testing before merging.
 - Generate only player-facing settings (plus required `[Internal] RawHex`). A legacy INI with obsolete switches is backed up and atomically normalized through the existing validation/recovery pipeline, preserving FPS, display aspect/brightness, controls, audio, joystick and `RawHex`.
 - Do **not** promote unsafe DirectInput COM hook experiments, HorPlus or blanket video AnySize remapping. Those remain disabled, with existing SHA/signature guards unchanged.
+- Preserve explicit legacy `PauseDimOpacity` values during INI migration; omit the setting from newly generated files, so missing values use 60% and `0` disables only darkening.
 - Update first-run fixtures, tests, README and configuration reference. This PR remains experimental until user gameplay acceptance on Windows 11 and Linux/Wine.
 
 ## Unreleased — automatic keyboard layout (Auto/Off)
