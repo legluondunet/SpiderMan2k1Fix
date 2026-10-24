@@ -118,7 +118,7 @@ def test_pause_dim_ini_option_is_boolean(runner, tmp_path, value, valid):
 
 
 @pytest.mark.parametrize("value,valid",[
-    ("0",True),("1",True),("55",True),("90",True),
+    ("0",True),("1",True),("55",True),("60",True),("90",True),
     ("91",False),("100",False),("-1",False),("55%",False),("auto",False)
 ])
 def test_pause_dim_opacity_strict_0_to_90(runner, tmp_path, value, valid):
@@ -129,15 +129,11 @@ def test_pause_dim_opacity_strict_0_to_90(runner, tmp_path, value, valid):
         assert result[0]>=1 and result[2]==0
 
 
-@pytest.mark.parametrize("value,valid",[
-    ("0",True),("1",True),("2",False),("-1",False),("yes",False)
-])
-def test_pause_grid_only_boolean(runner, tmp_path, value, valid):
-    result, _ = validate(runner,tmp_path,f"[Input]\nPauseGrid={value}\n")
-    if valid:
-        assert result==(0,0,1)
-    else:
-        assert result[0]>=1 and result[2]==0
+@pytest.mark.parametrize("value",["0","1","2","yes"])
+def test_removed_pause_grid_is_unknown_and_requires_migration(runner,tmp_path,value):
+    result,detail=validate(runner,tmp_path,f"[Input]\\nPauseGrid={value}\\n")
+    assert result==(0,1,1)
+    assert "Unknown key [Input] PauseGrid" in detail
 
 
 def test_unknown_section_and_key_preserved(runner, tmp_path):
