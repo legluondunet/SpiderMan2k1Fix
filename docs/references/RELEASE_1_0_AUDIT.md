@@ -85,8 +85,8 @@ CPU usage or DLL size.
 The first 1.0.0 candidate CI **passed 471 tests and built both
 DLLs**, but the compiler reported the following actionable warnings:
 
-- **`f9_toast.c` (two sites):** `L'\\\\0'` was a *wide multicharacter
-  literal*, not the NUL sentinel `L'\\0'`. This could confuse the
+- **`f9_toast.c` (two sites):** `L'\\0'` was a *wide multicharacter
+  literal*, not the NUL sentinel `L'\0'`. This could confuse the
   idle/no-toast path. Replaced both with the correct wide NUL and added
   a regression that rejects the doubled-backslash form.
 - **`virtual_spidey_cfg.c`:** an assigned but unused `brightness`
