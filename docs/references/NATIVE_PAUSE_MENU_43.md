@@ -14,43 +14,24 @@ tested. The normal gameplay HUD, compass and 3D scene are unaffected.
 
 ## Activation / supported scope
 
-These corrections now follow the existing **[HUD] HUDWidescreenFix** master
-(which defaults to 1). They are ON by default for the supported
-SHA-verified executable once the full HUD widescreen patch is installed.
+The player INI no longer exposes a HUD switch. Widescreen HUD and the three
+native ESC 4:3 corrections are **permanently requested**, subject to the
+verified executable, the game stage and the successful full native HUD patch.
+The original `4:3` gameplay presentation retains its original geometry; the
+widescreen transform is not needed in that case.
 
-- If `HUDWidescreenFix=0`, **all three native ESC corrections are OFF**,
-  regardless of individual child settings. They are also disabled when the
-  full HUD patch fails, or the original gameplay 4:3 aspect is selected.
-  Passive HUD scopes-only mode (for FOV diagnostics) does not enable them.
-- The hidden children `NativeESC4x3`, `NativeMotif4x3`, and
-  `NativeCursor4x3` are read from the **[HUD]** section. Each defaults to 1,
-  but none is included in any generated or distributed INI template.
-- The banner/labels child `NativeESC4x3=0` is the native ESC sub-master
-  and also disables the motif and cursor. The other two can be disabled
-  individually, without changing the ribbon or text.
-- The original 2026 experimental environment toggles are no longer required;
-  an explicit `SPIDERMAN2K1FIX_NATIVE_ESC_43=0`,
-  `SPIDERMAN2K1FIX_NATIVE_MOTIF_43=0`, or
-  `SPIDERMAN2K1FIX_NATIVE_CURSOR_43=0` remains a legacy debug opt-out.
-  None may force a child ON if its parent is disabled in the INI.
+Historical development toggles `HUDWidescreenFix`, `NativeESC4x3`,
+`NativeMotif4x3`, and `NativeCursor4x3` are accepted only so existing INIs
+can be migrated safely; **they no longer disable these features**. The old
+`SPIDERMAN2K1FIX_NATIVE_ESC_43`, `SPIDERMAN2K1FIX_NATIVE_MOTIF_43`, and
+`SPIDERMAN2K1FIX_NATIVE_CURSOR_43` environment overrides are likewise inert.
+The code still refuses unsafe changes if the native HUD hook or original
+D3D7 geometry signatures do not match.
 
-For example, to disable only the orange/blue motif while investigating
-a graphics issue, add this key to your existing file:
-
-```ini
-[HUD]
-NativeMotif4x3=0
-```
-
-To disable **all** HUD corrections, use `HUDWidescreenFix=0` instead.
-Child keys are strict 0/1 values and recognized by INI validation and
-automatic recovery, which preserve legitimate manual overrides.
-
-The motif and selector signatures are validated for **1920×1080 Auto**
-(borderless) only; they are disabled for the main menu and 4:3 gameplay mode.
-The ESC ribbon has a broader aspect transform but its pixel calibration was
-tested at 1920×1080. Other screen resolutions and native Windows graphics
-drivers have **not** been validated for these specific corrections.
+The motif and selector signatures were visually calibrated and confirmed at
+**1920×1080 Auto** (borderless), not at every display resolution. They remain
+disabled in main menus and in classic 4:3 gameplay. Other resolutions and
+native graphics drivers still require coverage.
 
 ## Implementation details / safety
 
