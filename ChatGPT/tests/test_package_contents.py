@@ -1,7 +1,7 @@
 """Development artifact regression tests.
 
-CI compiles two Windows x86 DLLs. Version 1.0.0 is a candidate;
-publication is manual and not performed by CI.
+CI compiles two Windows x86 DLLs. The 1.0.0 release was published
+manually, not by CI.
 The game creates its own user INI after first successful launch.
 """
 
@@ -31,7 +31,6 @@ def test_workflow_only_builds_and_does_not_publish_releases():
     assert list(workflows.glob("*release*.yml")) == []
     assert [p.name for p in ROOT.glob("RELEASE_NOTES_*.md")] == ["RELEASE_NOTES_1.0.0.md"]
     notes=(ROOT/"RELEASE_NOTES_1.0.0.md").read_text(encoding="utf-8")
-    assert "Not published" in notes
     assert "manual; intentionally not automated" in notes
     for path in workflows.glob("*.yml"):
         src = path.read_text(encoding="utf-8")
@@ -61,12 +60,12 @@ def test_user_ini_is_generated_at_runtime_not_committed_to_repo_root():
     assert not (ROOT / "SpiderMan2k1Fix.generated-example.ini").exists()
 
 
-def test_1_0_release_candidate_version_does_not_claim_published_release():
+def test_1_0_stable_readme_links_to_releases_without_candidate_warning():
     version_header = (ROOT / "version_info.h").read_text(encoding="utf-8")
     game = (ROOT / "spiderman2k1fix.c").read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert '#define SPIDERMAN2K1FIX_VERSION "1.0.0"' in version_header
     assert 'log_line("START: " SPIDERMAN2K1FIX_VERSION_LABEL);' in game
-    assert "/releases/tag/" not in readme
-    assert "No stable release is available" in readme
-    assert "1.0.0 release candidate" in readme
+    assert "[GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases)" in readme
+    assert "No stable release is available" not in readme
+    assert "1.0.0 release candidate" not in readme
