@@ -38,6 +38,17 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **Unsupported display modes:** Prevented the game from switching to obsolete fullscreen resolutions and 16-bit display modes that could produce a black screen on modern monitors.
 - **Hidden desktop cursor:** Fixed cases where the Windows mouse pointer remained invisible after switching away from the game.
 
+## Known Issues in the Original Game
+
+The following issues are inherited from the original game and remain unresolved:
+
+- **FPS-dependent gameplay:** Certain bosses and levels may not work correctly at 30 FPS. Set `FPSLimit=20` in the INI file when needed.
+- **Audio issues:** The original game may exhibit sound glitches, including crackling and other playback artifacts.
+
+## Known Issue in SpiderMan2k1Fix
+
+- **Delayed pause under Wine:** The automatic pause triggered by loss of focus may occasionally activate with a delay. This issue remains unresolved.
+
 **Successfully tested on Windows 11 and Linux/Wine.**
 
 ## Installation on Windows and Linux (Wine)
@@ -89,18 +100,6 @@ The INI file also provides additional settings specific to SpiderMan2k1Fix:
 
 For advanced settings and detailed explanations, see the [Configuration and Troubleshooting Guide](docs/references/CONFIGURATION.md).
 
-## Troubleshooting
-
-**The patch does not load**
-
-Make sure both DLL files are located alongside the supported `SpideyPC.exe`. Under Linux/Wine, verify that the `winmm=n,b` DLL override is active.
-
-**The game behaves unexpectedly**
-
-Enable diagnostic logging by setting `Log=1` under `[Debug]` in `SpiderMan2k1Fix.ini`, then try to reproduce the issue.
-
-If the problem persists, report it through [GitHub Issues](https://github.com/legluondunet/SpiderMan2k1Fix/issues) and attach the generated `SpiderMan2k1Fix.log` file.
-
 ## Building from Source
 
 SpiderMan2k1Fix builds two 32-bit Windows DLLs (`SpiderMan2k1Fix.dll` and `winmm.dll`) using an MSVCRT-compatible MinGW-w64 toolchain.
@@ -139,6 +138,31 @@ Successful builds produce both DLLs in the project's root directory.
 Automated builds and tests are available through [GitHub Actions](https://github.com/legluondunet/SpiderMan2k1Fix/actions).
 
 Bug reports and contributions are welcome through [GitHub Issues](https://github.com/legluondunet/SpiderMan2k1Fix/issues).
+
+## Troubleshooting
+
+**The patch does not load**
+
+Make sure both DLL files are located alongside the supported `SpideyPC.exe`. Under Linux/Wine, verify that the `winmm=n,b` DLL override is active.
+
+**The game behaves unexpectedly**
+
+Enable diagnostic logging by setting `Log=1` under `[Debug]` in `SpiderMan2k1Fix.ini`, then try to reproduce the issue.
+
+If the problem persists, report it through [GitHub Issues](https://github.com/legluondunet/SpiderMan2k1Fix/issues) and attach the generated `SpiderMan2k1Fix.log` file.
+
+## Ideas for Future Versions
+
+The following are possible improvements under consideration, subject to technical feasibility. **None are guaranteed to be implemented.**
+
+- **Widescreen:** Correct 3D elements that appear misaligned near the edges of the screen.
+- **Performance:** Explore 60 FPS support and fixes for FPS-dependent boss and level issues.
+- **Quick saves:** Investigate instant game saving.
+- **Audio:** Improve sound playback and eliminate crackling and other audio artifacts.
+- **Cheats:** Add optional INI settings for costumes, God Mode, What If? mode, and other cheats.
+- **Additional content:** Explore support for *Spider-Man 2: Enter Electro*.
+- **Graphics and modding:** Improve sprites, explore HD enhancements, and investigate mod support.
+- **Achievements:** Explore an achievement system.
 
 ## Documentation
 
