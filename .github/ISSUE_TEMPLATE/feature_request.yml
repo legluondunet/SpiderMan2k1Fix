@@ -21,24 +21,6 @@ body:
         - label: "I have searched existing requests and understand that implementation is not guaranteed."
           required: true
 
-  - type: dropdown
-    id: category
-    attributes:
-      label: Area
-      options:
-        - "Display / widescreen / HUD"
-        - "Gameplay / FPS"
-        - "Audio"
-        - "Input / controls"
-        - "Saves / quality of life"
-        - "Cheats / customization"
-        - "Graphics / HD / modding"
-        - "Additional content"
-        - "Achievements"
-        - "Other"
-    validations:
-      required: true
-
   - type: textarea
     id: idea
     attributes:
