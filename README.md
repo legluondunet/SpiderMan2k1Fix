@@ -1,5 +1,8 @@
 # SpiderMan2k1Fix
 
+[![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
+[![Linux / Wine / Proton compatible](https://img.shields.io/badge/Linux%20%2F%20Wine%20%2F%20Proton-compatible-428b40?logo=linux&logoColor=white)](#installation-on-windows-and-linux-wine)
+
 SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spider-Man*, released by Activision in 2001. It improves compatibility with modern Windows systems and Linux/Wine while adding new features.
 
 ## Screenshots
@@ -75,8 +78,7 @@ The INI file also provides additional settings specific to SpiderMan2k1Fix:
 | `AspectRatio=Auto` | Automatically adapts 3D gameplay to the monitor's aspect ratio. |
 | `AspectRatio=4:3` | Uses the original 4:3 aspect ratio with centered pillarboxing. |
 | `FPSLimit=30` | Limits gameplay to 30 FPS by default. Set to `20` for timing-sensitive sections or `0` to disable the limiter. |
-| `KeyboardLayout=Auto` | Automatically detects and uses the active keyboard layout. |
-| `KeyboardLayout=Off` | Disables automatic keyboard-layout detection and preserves the original QWERTY mapping. |
+| `KeyboardLayout=Auto / Off` | `Auto` automatically detects and uses the active keyboard layout. `Off` disables automatic detection and preserves the original QWERTY mapping. |
 | `Log=1` | Enables diagnostic logging to `SpiderMan2k1Fix.log`. |
 
 **Important:**
@@ -101,13 +103,38 @@ If the problem persists, report it through [GitHub Issues](https://github.com/le
 
 ## Building from Source
 
-SpiderMan2k1Fix can be compiled on Linux using a 32-bit MSVCRT-targeting MinGW-w64 toolchain:
+SpiderMan2k1Fix builds two 32-bit Windows DLLs (`SpiderMan2k1Fix.dll` and `winmm.dll`) using an MSVCRT-compatible MinGW-w64 toolchain.
+
+### Linux
+
+Install a 32-bit MSVCRT-targeting MinGW-w64 toolchain and run the following command from the project's root directory:
 
 ```bash
 ./build.sh
 ```
 
-The build produces Windows x86 DLLs compatible with the supported game executable.
+### Windows (MSYS2)
+
+To build natively on Windows, use the [MSYS2](https://www.msys2.org/) **MINGW32** environment, which provides a 32-bit GCC toolchain targeting MSVCRT.
+
+1. Install MSYS2 and launch the **MSYS2 MINGW32** shell.
+2. Install the required tools:
+
+   ```bash
+   pacman -S --needed mingw-w64-i686-gcc git python
+   ```
+
+3. Open the SpiderMan2k1Fix source directory in the MINGW32 shell and run:
+
+   ```bash
+   CC=gcc bash ./build.sh
+   ```
+
+**Important:** Use the MINGW32 environment, not UCRT64 or CLANG64, because the patch requires a 32-bit MSVCRT-compatible build.
+
+The Windows/MSYS2 build procedure has not yet been independently validated. The project's automated Windows DLL builds currently run on Ubuntu using a cross-compiler.
+
+Successful builds produce both DLLs in the project's root directory.
 
 Automated builds and tests are available through [GitHub Actions](https://github.com/legluondunet/SpiderMan2k1Fix/actions).
 
@@ -128,7 +155,7 @@ Additional technical information is available for users and developers:
 
 Developed by **legluondunet assisted by ChatGPT (OpenAI)**.
 
-Special thanks to [Krystalgamer](https://github.com/krystalgamer) for the publicly available [partial PC game decompilation](https://github.com/krystalgamer/spidey-decomp) and [research into the original CD-ROM check](https://krystalgamer.github.io/spidey-breaking/index.html).
+Special thanks to [Krystalgamer](https://krystalgamer.github.io/index.html), whose reverse-engineering research on the original PC game was invaluable to the development of this patch.
 
 ## License and Disclaimer
 
