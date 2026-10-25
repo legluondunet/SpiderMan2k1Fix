@@ -1,136 +1,71 @@
-# SpiderMan2k1Fix 1.0.0 — Release notes (candidate)
+# SpiderMan2k1Fix v1.0.0
 
-> **Status:** Release candidate prepared for Windows 11 and Linux/Wine
-> regression testing. **Not published** until the maintainer explicitly
-> approves the 1.0.0 tag and the release assets. This document describes
-> the candidate; it is not proof of a completed stable release.
+The first stable release of SpiderMan2k1Fix, an unofficial compatibility patch for the original *Spider-Man (2001)* PC game, designed to improve compatibility with modern Windows systems and Linux/Wine.
 
-## First stable version
+## Main Features
 
-SpiderMan2k1Fix is an unofficial compatibility patch for the **original
-Spider-Man (2001) Windows PC release**. It leaves the proprietary
-`SpideyPC.exe` and game data unchanged on disk. The fix consists of two
-Windows 32-bit DLLs loaded through a local `winmm.dll` proxy.
+- **No-CD:** Bypasses the original CD-ROM check through an in-memory patch, without modifying the game executable.
+- **Modern display support:** Runs in borderless fullscreen at the monitor's native resolution, with automatic widescreen 3D (`Auto`) or a centered classic 4:3 mode. Also supports multi-monitor configurations.
+- **Automatic FOV adjustment:** Automatically adjusts the field of view to match the desktop resolution and aspect ratio, providing proper widescreen rendering without distorting the 3D scene.
+- **Aspect ratio corrections:** Preserves the original proportions of menus, cinematics, introductory videos, comic-book artwork, and other 2D elements.
+- **Widescreen HUD:** Corrects the proportions and positioning of HUD elements, including health and web gauges, compass, mission objectives, boss health bars, and in-game pause menus. Tested at 1920×1080 (16:9) and 1920×1200 (16:10).
+- **FPS limiter:** Configurable frame-rate cap, set to **30 FPS by default**. Lower limits, such as 20 FPS, can be selected for timing-sensitive gameplay.
+- **Alt+Tab stability:** Automatically pauses the game when it loses focus, synchronizes video and audio playback, and restores keyboard and mouse input when gameplay resumes. Press any key after returning to the game to resume. Also restores the Windows desktop cursor when necessary.
+- **Keyboard layouts:** Automatically detects the active keyboard layout and adapts the game's controls, keyboard labels, and cheat-code entry. The original game only supported QWERTY layouts.
+- **DPI awareness:** Handles Windows display scaling to ensure correct window dimensions and rendering on high-DPI displays.
+- **Settings preservation:** Keyboard, gamepad, audio, and brightness settings are managed through `SpiderMan2k1Fix.ini`, with automatic recovery of invalid settings and a single rolling `.ini.old` backup. The original `Spidey.cfg` is no longer used.
+- **PNG screenshots:** Press **F9** to save lossless screenshots (`scrnNNNN.png`) in the game directory.
+- **Debug logging:** Can generate a `SpiderMan2k1Fix.log` diagnostic file to help troubleshoot compatibility issues. Enable it by setting `Log=1` in the INI file.
+- **Build identification:** Displays the patch version and source commit in the game's main menu and diagnostic logs.
+- **Original taskbar icon:** Restores the game's original icon in the Windows taskbar.
 
-This version consolidates the permanent compatibility fixes developed and
-tested on native Windows 11 and Linux/Wine. Its focus is **preserving the
-original game's behavior** on modern systems, with a few quality-of-life
-additions.
+**Successfully tested on Windows 11 and Linux/Wine.**
 
-### Key features
+## Bugs Resolved
 
-- In-memory **No-CD** bypass restricted to the exact supported retail
-  executable, guarded by executable hash and original code signatures.
-- **Borderless fullscreen** at the game window's monitor resolution:
-  no original exclusive fullscreen/16-bit mode switching. Automatic
-  widescreen 3D with aspect-aware FOV, and a selectable centered classic
-  4:3 mode. Original videos, main menus and 2D artworks retain their
-  intended proportions.
-- Widescreen corrections for player HUD, compass, objectives, boss bars
-  and the native ESC pause/quit menu on verified resolutions, including
-  1920×1080 and 1920×1200.
-- Configurable **FPS limiter**, default **30 FPS**. Certain original
-  timed events may require 20 FPS: this is still a player-controlled
-  setting, **not** an automatic level-specific frame-rate switch.
-- **Alt+Tab stability** with input recovery and full focus-loss pause,
-  including coordinated native Bink video/music and DirectSound
-  secondary-voice pause and resume, with an any-key wake gesture.
-- Preserved player keyboard/gamepad/audio/brightness settings and
-  automatic layout support for French AZERTY and other supported OS
-  keyboard layouts; compatibility with unsupported layouts is not
-  guaranteed.
-- A compact `SpiderMan2k1Fix.ini` with automatic safe recovery from
-  obsolete/invalid settings and one rolling `.ini.old` backup.
-- **F9 PNG screenshots**, stored alongside the game's executable.
-- Source-derived version label **`v1.0.0-<commit>`** in the in-game
-  menu and debug logs; the suffix identifies the precise binary build.
+- **Alt+Tab crashes and input loss:** Fixed crashes and permanent loss of keyboard or mouse controls when switching between the game and other applications.
+- **Focus-loss instability:** Added automatic game pausing with synchronized video and audio playback, preventing gameplay and media synchronization issues while the game is in the background.
+- **Crash on exit:** Fixed a crash that could occur when quitting the game.
+- **Broken F9 screenshots on Windows:** Fixed screenshots that appeared entirely purple or contained no visible game graphics.
+- **Unsupported display modes:** Prevented the game from switching to obsolete fullscreen resolutions and 16-bit display modes that could produce a black screen on modern monitors.
+- **Hidden desktop cursor:** Fixed cases where the Windows mouse pointer remained invisible after switching away from the game.
 
-### 1.0.0 stabilization
+## Known Issues
 
-- Remove the **obsolete, uncompiled Win32 popup** implementations
-  `pause_overlay.c/.h` and `pause_dim.c/.h`. They are superseded by
-  the DirectDraw-surface `pause_surface.c`; their historical code remains
-  in Git history and archived technical notes.
-- Preserve all active DirectDraw, Direct3D7, DirectInput, Bink,
-  DirectSound, No-CD, INI recovery, HUD and native viewport hooks.
-- Fix the **F9 toast idle-state sentinel**: replace two invalid wide
-  multicharacter constants with the proper NUL terminator, and add a
-  dedicated regression check. Remove unused locals / an obsolete FOV
-  constant and clarify an ambiguous single-line `if`; keep APIs and
-  calling conventions unchanged.
-- Retain ABI and packaging guards: **32-bit PE**, MSVCRT (not UCRT),
-  static libgcc, expected winmm exports, and the early
-  `SpiderMan2k1Fix_DirectDrawGate` entry.
-- Review high-risk code and limit release cleanup to operations that
-  do not alter native hook timing or game memory ownership.
+The following issues remain present in v1.0.0:
 
-## Requirements and installation
+- **FPS-dependent gameplay:** Certain bosses and levels may not work correctly at 30 FPS. Set `FPSLimit=20` in `SpiderMan2k1Fix.ini` when needed.
+- **Audio issues:** The original game's crackling and other sound playback artifacts remain unresolved.
+- **Delayed pause under Wine:** Automatic pausing when the game loses focus may occasionally be delayed.
 
-- Own a legitimate copy of the original game and use **only**
-  `SpideyPC.exe` SHA-256:
-  `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
-- Extract **`winmm.dll` and `SpiderMan2k1Fix.dll`** beside
-  `SpideyPC.exe`, together with the existing game data.
-- On Windows, run the original executable.
-- On Wine, from the game folder:
-  `WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe`.
-  A 32-bit-capable Wine installation is required.
-- The patch generates `SpiderMan2k1Fix.ini` on first launch.
-  Do not replace or manually edit the original game's progress-save
-  `save/SPIDRMAN.DAT`.
+## Installation on Windows and Linux (Wine)
 
-## Compatibility and limitations
+1. Install the original *Spider-Man (2001)* PC game.
 
-- The build **does not** support alternate/modified game executables.
-- 30 FPS is the default rather than a universal fix for every
-  timing-sensitive boss/level. Players can select another FPS limit,
-  including 20, from the INI.
-- Widescreen/HUD support has been observed on selected resolutions; all
-  monitors, DPI configurations, drivers and gameplay scenes have **not**
-  been exhaustively validated.
-- Original sound mix anomalies and game-progress save corruption risks
-  have **not** been fixed or claimed fixed by this release.
-- The F10 development/debug shortcuts are *not* part of the advertised
-  standard gameplay features and remain disabled by default.
-- The `winmm.dll` proxy conflicts with other mods that need the same
-  filename unless explicitly chained (not provided by this project).
-- GitHub Actions regression tests and Windows x86 DLL compilation do
-  not replace actual Windows/Wine game testing.
+2. Download the `SpiderMan2k1Fix-1.0.0-Windows-x86.zip` archive from this release.
 
-## Release acceptance checklist
+3. Extract `winmm.dll` and `SpiderMan2k1Fix.dll` into the game's installation directory, alongside `SpideyPC.exe`.
 
-- [ ] Latest 1.0.0 candidate GitHub Actions: all tests pass and the
-      **two DLLs** compile as PE32/MSVCRT with the right exports.
-- [ ] Windows 11 full smoke: original intros, new game, menu, real 3D
-      gameplay, native ESC pause/quit, return to menu, normal exit.
-- [ ] Linux/Wine smoke: repeat menu, game, F9 PNG, Alt+Tab pause/resume,
-      input and soundtrack restoration.
-- [ ] Auto widescreen (1920×1080, 1920×1200 where available) and classic
-      4:3; confirm no 640×480 exclusive-mode switch and no stretched 2D.
-- [ ] Verify No-CD start with the **supported hash only**, 30 FPS default,
-      custom 20 FPS, INI preservation and recovery, volume and controls.
-- [ ] Confirm existing game-progress file remains intact and can still
-      load/save using the **original game's controls**.
-- [ ] Confirm tagged build logs/menu show **`v1.0.0-<commit>`**.
-- [ ] Maintainer explicitly approves PR, tag `v1.0.0` and publication.
+4. Launch the game normally under Windows.
 
-## Publishing (manual; intentionally not automated)
+   For Linux/Wine users, open a terminal in the game's installation directory and run:
 
-1. Approve/merge the stabilization PR **only after validation**.
-2. Tag the exact reviewed `main` commit as `v1.0.0`.
-3. Build both DLLs **from that tag**, verify the embedded version and
-   commit, and package only `SpiderMan2k1Fix.dll`, `winmm.dll`,
-   `README.md` and `CHANGELOG.md` in
-   `SpiderMan2k1Fix-1.0.0-Windows-x86.zip`.
-4. Verify the ZIP contents, SHA-256 and DLL exports, upload the ZIP to
-   GitHub Releases and use these notes for the release description.
-5. Only *after* publication, update user-facing links to the tagged
-   release if desired. No release tag or GitHub Release is created by
-   this document or PR.
+   ```bash
+   WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe
+   ```
+
+The patch automatically creates `SpiderMan2k1Fix.ini` on first launch.
+
+**Important:** The patch requires the original supported `SpideyPC.exe` (SHA-256):
+
+```text
+0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea
+```
+
+No original game files are included in this release.
 
 ## Credits
 
 Developed by **legluondunet assisted by ChatGPT (OpenAI)**.
-Original game and third-party rights remain with their respective owners.
-Special thanks to krystalgamer for publicly available research into
-the original PC game and disc check.
+
+Special thanks to [Krystalgamer](https://krystalgamer.github.io/index.html), whose reverse-engineering work on the original PC game contributed to the development of this patch.
