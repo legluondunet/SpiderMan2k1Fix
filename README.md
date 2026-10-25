@@ -155,7 +155,7 @@ Additional technical information is available for users and developers:
 
 Developed by **legluondunet assisted by ChatGPT (OpenAI)**.
 
-Special thanks to [Krystalgamer](https://krystalgamer.github.io/index.html), whose reverse-engineering research on the original PC game was invaluable to the development of this patch.
+Special thanks to [Krystalgamer](https://krystalgamer.github.io/index.html), whose reverse-engineering work on the original PC game contributed to the development of this patch.
 
 ## License and Disclaimer
 
