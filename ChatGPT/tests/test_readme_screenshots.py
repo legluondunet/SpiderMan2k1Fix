@@ -14,11 +14,12 @@ SHOTS = (
 )
 
 
-def test_readme_gallery_appears_below_badges_and_above_description():
-    start = README.index("### Screenshots")
+def test_readme_gallery_appears_below_intro_and_above_features():
+    start = README.index("## Screenshots")
     assert README.index("[![Windows x86 build](") < start
     assert README.index("[![Linux / Wine / Proton compatible](") < start
-    assert start < README.index("SpiderMan2k1Fix is an **unofficial")
+    assert README.index("SpiderMan2k1Fix is an **unofficial") < start
+    assert start < README.index("## Main Features")
     assert 'width="49%"' in README
     for relative in SHOTS:
         assert f'<a href="{relative}"><img src="{relative}"' in README
