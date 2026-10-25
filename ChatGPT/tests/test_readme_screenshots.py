@@ -20,9 +20,13 @@ def test_readme_gallery_appears_below_intro_and_above_features():
     assert README.index("[![Linux / Wine / Proton compatible](") < start
     assert README.index("SpiderMan2k1Fix is an **unofficial") < start
     assert start < README.index("## Main Features")
-    assert 'width="49%"' in README
+    gallery = README[start:README.index("## Main Features")]
+    assert "<table>" in gallery and "</table>" in gallery
+    assert gallery.count('<td width="50%" align="center">') == 2
+    assert gallery.count('width="100%"') == 2
     for relative in SHOTS:
-        assert f'<a href="{relative}"><img src="{relative}"' in README
+        assert f'href="{relative}"' in gallery
+        assert f'src="{relative}"' in gallery
 
 
 def test_readme_image_blobs_exist_and_have_valid_headers():
