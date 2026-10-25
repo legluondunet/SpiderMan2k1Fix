@@ -1,0 +1,126 @@
+name: "Bug report"
+description: "Report a reproducible problem with SpiderMan2k1Fix."
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting an issue! Before submitting, review the
+        [known issues](https://github.com/legluondunet/SpiderMan2k1Fix#known-issues-in-the-original-game)
+        and [troubleshooting guide](https://github.com/legluondunet/SpiderMan2k1Fix#troubleshooting).
+
+        The patch supports only the original `SpideyPC.exe` with SHA-256:
+        `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
+        Please do not attach copyrighted game files or private information.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: "I have checked the existing issues and the known limitations."
+          required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Operating system
+      options:
+        - "Windows 11"
+        - "Other Windows version"
+        - "Linux with Wine"
+        - "Linux with Proton"
+        - "Other"
+    validations:
+      required: true
+
+  - type: input
+    id: patch-version
+    attributes:
+      label: Patch version
+      description: "Use the version and commit shown in the game menu or log, if available."
+      placeholder: "e.g. v1.0.0-ae2b427, or v1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - "Startup / No-CD"
+        - "Display / widescreen / HUD"
+        - "Gameplay / FPS / boss"
+        - "Alt+Tab / pause / input"
+        - "Keyboard / gamepad"
+        - "Video / cinematics"
+        - "Audio"
+        - "Configuration / INI"
+        - "Screenshots"
+        - "Other / not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happened?
+      description: "Describe the actual behavior, including any error messages."
+      placeholder: "What goes wrong?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the game ...
+        2. Open / enter ...
+        3. Observe ...
+      description: "Mention the level or boss if relevant. Say whether it happens every time."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: "What should have happened?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Additional environment details
+      description: "If relevant: Windows or Linux distribution version, Wine/Proton version, GPU, resolution, Auto or 4:3 aspect ratio, FPSLimit, input device."
+      placeholder: |
+        Wine/Proton version:
+        GPU:
+        Resolution / AspectRatio:
+        FPSLimit:
+        Input device:
+    validations:
+      required: false
+
+  - type: input
+    id: exe-sha256
+    attributes:
+      label: Game executable SHA-256 (optional)
+      description: "Helps confirm that the supported SpideyPC.exe is in use."
+      placeholder: "SHA-256 of SpideyPC.exe"
+    validations:
+      required: false
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, screenshots, and additional information
+      description: |
+        Enable [Debug] Log=1 in SpiderMan2k1Fix.ini, reproduce the problem,
+        then attach SpiderMan2k1Fix.log or screenshots here if available.
+        Redact private paths or personal information and do not upload game assets.
+      placeholder: "Drag files into this field or describe anything else that may help."
+    validations:
+      required: false
