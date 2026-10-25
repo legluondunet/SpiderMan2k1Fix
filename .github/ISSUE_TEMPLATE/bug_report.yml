@@ -26,11 +26,26 @@ body:
     attributes:
       label: Operating system
       options:
-        - "Windows 11"
-        - "Other Windows version"
-        - "Linux with Wine"
-        - "Linux with Proton"
+        - "Linux"
+        - "Windows"
         - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: os-details
+    attributes:
+      label: Operating system and Wine/Proton details
+      description: |
+        For Windows: specify the Windows version.
+        For Linux: specify the distribution name and version, whether you
+        use Wine or Proton, and its version.
+        For other systems: specify the OS and compatibility environment.
+      placeholder: |
+        Windows version (if applicable):
+        Linux distribution and version (if applicable):
+        Wine or Proton (if applicable):
+        Wine/Proton version (if applicable):
     validations:
       required: true
 
@@ -40,24 +55,6 @@ body:
       label: Patch version
       description: "Use the version and commit shown in the game menu or log, if available."
       placeholder: "e.g. v1.0.0-ae2b427, or v1.0.0"
-    validations:
-      required: true
-
-  - type: dropdown
-    id: area
-    attributes:
-      label: Affected area
-      options:
-        - "Startup / No-CD"
-        - "Display / widescreen / HUD"
-        - "Gameplay / FPS / boss"
-        - "Alt+Tab / pause / input"
-        - "Keyboard / gamepad"
-        - "Video / cinematics"
-        - "Audio"
-        - "Configuration / INI"
-        - "Screenshots"
-        - "Other / not sure"
     validations:
       required: true
 
@@ -94,22 +91,12 @@ body:
     id: environment
     attributes:
       label: Additional environment details
-      description: "If relevant: Windows or Linux distribution version, Wine/Proton version, GPU, resolution, Auto or 4:3 aspect ratio, FPSLimit, input device."
+      description: "If relevant: GPU, resolution, Auto or 4:3 aspect ratio, FPSLimit and input device."
       placeholder: |
-        Wine/Proton version:
         GPU:
         Resolution / AspectRatio:
         FPSLimit:
         Input device:
-    validations:
-      required: false
-
-  - type: input
-    id: exe-sha256
-    attributes:
-      label: Game executable SHA-256 (optional)
-      description: "Helps confirm that the supported SpideyPC.exe is in use."
-      placeholder: "SHA-256 of SpideyPC.exe"
     validations:
       required: false
 
