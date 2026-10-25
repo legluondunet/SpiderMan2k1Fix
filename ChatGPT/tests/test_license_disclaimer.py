@@ -16,9 +16,9 @@ def test_full_gpl3_license_is_committed():
 
 def test_project_homepage_has_license_and_game_disclaimer():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "[GNU General Public License, version 3](LICENSE)" in readme
+    assert "[GNU General Public License v3.0](LICENSE)" in readme
     assert "GPL-3.0-only" in readme
-    assert "No files from the original game are included" in readme
+    assert "No original game files are included in this project." in readme
     assert "own legally obtained copy" in readme
     assert "not affiliated with, sponsored by, or endorsed by Activision" in readme
 
