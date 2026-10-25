@@ -29,6 +29,8 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **Build identification:** Displays the patch version and source commit in the game's main menu and diagnostic logs.
 - **Original taskbar icon:** Restores the game's original icon in the Windows taskbar.
 
+Successfully tested on Windows 11 and Linux/Wine.
+
 ## Bugs Resolved
 
 - **Alt+Tab crashes and input loss:** Fixed crashes and permanent loss of keyboard or mouse controls when switching between the game and other applications.
@@ -48,8 +50,6 @@ The following issues are inherited from the original game and remain unresolved:
 ## Known Issue in SpiderMan2k1Fix
 
 - **Delayed pause under Wine:** The automatic pause triggered by loss of focus may occasionally activate with a delay. This issue remains unresolved.
-
-**Successfully tested on Windows 11 and Linux/Wine.**
 
 ## Installation on Windows and Linux (Wine)
 

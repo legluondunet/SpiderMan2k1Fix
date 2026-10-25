@@ -17,7 +17,10 @@ def test_linux_wine_proton_badge_is_informational_and_has_instructions():
     assert "[![Linux / Wine / Proton compatible](https://img.shields.io/badge/" in README
     assert "](#installation-on-windows-and-linux-wine)" in README
     assert 'WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe' in README
-    assert "**Successfully tested on Windows 11 and Linux/Wine.**" in README
+    tested = "Successfully tested on Windows 11 and Linux/Wine."
+    assert tested in README
+    assert f"**{tested}**" not in README
+    assert README.index("## Main Features") < README.index(tested) < README.index("## Bugs Resolved")
 
 
 def test_krystalgamer_acknowledged_with_links_to_original_research():
