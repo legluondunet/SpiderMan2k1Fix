@@ -7,10 +7,24 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 
 ## Screenshots
 
-<p align="center">
-  <a href="assets/screenshots/main-menu.webp"><img src="assets/screenshots/main-menu.webp" alt="Spider-Man main menu, centered 4:3"></a>
-  <a href="assets/screenshots/aspect-ratio-comparison.gif"><img src="assets/screenshots/aspect-ratio-comparison.gif" alt="Animated SpiderMan2k1Fix gameplay comparison: 4:3, 16:9 and 16:10" width="49%"></a>
-</p>
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="assets/screenshots/main-menu.webp">
+        <img src="assets/screenshots/main-menu.webp" alt="Spider-Man main menu, centered 4:3" width="100%">
+      </a>
+      <br>
+      <sub><b>Main menu</b> — original 4:3 presentation</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="assets/screenshots/aspect-ratio-comparison.gif">
+        <img src="assets/screenshots/aspect-ratio-comparison.gif" alt="Animated SpiderMan2k1Fix gameplay comparison: 4:3, 16:9 and 16:10" width="100%">
+      </a>
+      <br>
+      <sub><b>Aspect ratio comparison</b> — 4:3, 16:9 and 16:10</sub>
+    </td>
+  </tr>
+</table>
 
 ## Main Features
 
