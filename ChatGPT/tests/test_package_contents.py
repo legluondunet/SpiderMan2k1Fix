@@ -31,7 +31,10 @@ def test_workflow_only_builds_and_does_not_publish_releases():
     assert list(workflows.glob("*release*.yml")) == []
     assert [p.name for p in ROOT.glob("RELEASE_NOTES_*.md")] == ["RELEASE_NOTES_1.0.0.md"]
     notes=(ROOT/"RELEASE_NOTES_1.0.0.md").read_text(encoding="utf-8")
-    assert "manual; intentionally not automated" in notes
+    assert "# SpiderMan2k1Fix v1.0.0" in notes
+    assert "## Known Issues" in notes
+    assert "Not published" not in notes
+    assert "release candidate" not in notes.lower()
     for path in workflows.glob("*.yml"):
         src = path.read_text(encoding="utf-8")
         assert "gh release create" not in src
