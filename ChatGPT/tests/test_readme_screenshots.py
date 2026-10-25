@@ -1,7 +1,7 @@
-"""Verify that README screenshots are embedded and ship as valid WebP.
+"""Verify README screenshot and animated comparison assets.
 
-The images are screenshots of the user's game, not replacement game assets.
-They are development/documentation resources, not part of Windows DLL artifacts.
+These are user-supplied gameplay captures used for documentation only,
+not replacement game assets or part of the distributable DLL artifact.
 """
 
 from pathlib import Path
@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 SHOTS = (
     "assets/screenshots/main-menu.webp",
-    "assets/screenshots/gameplay.webp",
+    "assets/screenshots/aspect-ratio-comparison.gif",
 )
 
 
@@ -25,12 +25,17 @@ def test_readme_gallery_appears_below_intro_and_above_features():
         assert f'<a href="{relative}"><img src="{relative}"' in README
 
 
-def test_screenshot_blobs_exist_and_have_webp_headers():
+def test_readme_image_blobs_exist_and_have_valid_headers():
     for relative in SHOTS:
         data = (ROOT / relative).read_bytes()
-        assert data.startswith(b"RIFF"), relative
-        assert data[8:12] == b"WEBP", relative
-        assert 4000 < len(data) < 100_000
+        if relative.endswith(".webp"):
+            assert data.startswith(b"RIFF"), relative
+            assert data[8:12] == b"WEBP", relative
+            assert 4000 < len(data) < 100_000
+        else:
+            assert relative.endswith(".gif")
+            assert data.startswith((b"GIF87a", b"GIF89a")), relative
+            assert 100_000 < len(data) < 3_000_000
 
 
 def test_ci_dll_artifact_does_not_ship_documentation_screenshots():
