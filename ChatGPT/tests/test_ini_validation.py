@@ -281,12 +281,12 @@ def test_f10_verbose_trace_strict_boolean(runner,tmp_path,value,valid):
 @pytest.mark.parametrize("value", ["0", "1"])
 def test_opt_in_audio_voice_trace_accepted(runner,tmp_path,value):
     result,detail=validate(runner,tmp_path,
-        f"[Debug]\\nLog=1\\nExperimentalAudioVoiceTrace={value}\\n")
+        f"[Debug]\nLog=1\nExperimentalAudioVoiceTrace={value}\n")
     assert result == (0,0,1),detail
 
 
 @pytest.mark.parametrize("value", ["", "2", "-1", "true", "off"])
 def test_invalid_audio_voice_trace_rejected(runner,tmp_path,value):
     result,detail=validate(runner,tmp_path,
-        f"[Debug]\\nExperimentalAudioVoiceTrace={value}\\n")
+        f"[Debug]\nExperimentalAudioVoiceTrace={value}\n")
     assert result[0]>=1 and result[2]==0,detail
