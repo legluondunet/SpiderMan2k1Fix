@@ -353,16 +353,23 @@ ExperimentalAudioVoiceTrace=1
 Default is **OFF**. Valid values are `0` and `1`. Omit or set to `0`
 to disable. Save the game log after 30–45 seconds of a 3D scene with
 `MusicSFXLevel=60` and `VoiceLevel=0`. Search for
-`AUDIO-VOICE-TRACE: 3D START` and `AUDIO-VOICE-TRACE: PLAY` lines.
-Each PLAY line includes elapsed milliseconds from the first 3D Flip,
-frame, voice slot, COM buffer pointer, status, cursors, byte capacity
-and nominal playback frequency. Trace output is capped at 600 events
-per 3D session.
+`AUDIO-VOICE-TRACE: 3D START`, `AUDIO-VOICE-TRACE: PLAY` and
+`AUDIO-VOICE-TRACE: CURSOR-REWIND` lines.
+Each event records elapsed milliseconds from the first 3D Flip,
+frame, voice slot, COM buffer pointer, status, last/current play cursor,
+write cursor, byte capacity and nominal playback frequency.
+`PLAY` means a voice became active or its buffer identity changed;
+`CURSOR-REWIND` means a continuously playing buffer's read cursor moved
+backwards between consecutive samples. This may be a natural loop wrap
+**or** an explicit rewind/restart by the game; it does not prove a glitch.
+Trace output is capped at 600 total events per 3D session.
 
-**Limitations:** sampling occurs once per DirectDraw Flip. It observes
-PLAYING transitions but does **not** hook native Play calls, so brief
-sounds and restarts between samples, as well as continuous loops, may be
-missed. Polling and logging add some overhead; compare against a normal
-build before attributing new artifacts to the game. The trace does not
-stop, start, modify, lock or release any sound buffers. Supported retail
-EXE signature checks and INI validation still apply.
+**Limitations:** sampling occurs once per DirectDraw Flip. It does **not**
+hook the original Play calls. Brief sounds, rapid restarts/rewinds between
+samples, streaming buffers and loops whose cursors cannot be observed may
+be missed. The read-cursor rewind is an observation, **not** proof of an
+audio loop boundary or an audible crackle. Polling and logging add some
+overhead; compare against a normal build before attributing new artifacts
+to the game. The trace does not stop, start, modify, lock or release any
+sound buffers. Supported retail EXE signature checks and INI validation
+still apply.
