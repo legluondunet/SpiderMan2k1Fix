@@ -174,13 +174,13 @@ def test_optional_zero_shade_survives_recovery(recover_runner,tmp_path):
 @pytest.mark.parametrize("duplicate_section", [False, True])
 def test_audio_voice_trace_survives_recovery_of_legacy_ini(recover_runner, tmp_path, duplicate_section):
     """Preserve explicitly enabled diagnostic on unrelated startup migration/repair."""
-    ini = ("[Debug]\\nLog=1\\n"
-           + (("[Debug]\\n" if duplicate_section else ""))
-           + "ExperimentalAudioVoiceTrace=1\\n"
-           "[Audio]\\nMusicSFXLevel=60\\nVoiceLevel=0\\n"
-           "[Input]\\nKeyboardLayout=Auto\\n"
-           "[Display]\\nResolution=1920x1080\\n"
-           "[Extra]\\nUnsupported=1\\n")
+    ini = ("[Debug]\nLog=1\n"
+           + (("[Debug]\n" if duplicate_section else ""))
+           + "ExperimentalAudioVoiceTrace=1\n"
+           "[Audio]\nMusicSFXLevel=60\nVoiceLevel=0\n"
+           "[Input]\nKeyboardLayout=Auto\n"
+           "[Display]\nResolution=1920x1080\n"
+           "[Extra]\nUnsupported=1\n")
     values = recover(recover_runner, tmp_path, ini)
     assert "[Debug] Log=1" in values
     assert "[Debug] ExperimentalAudioVoiceTrace=1" in values
@@ -192,6 +192,6 @@ def test_audio_voice_trace_survives_recovery_of_legacy_ini(recover_runner, tmp_p
 
 def test_audio_voice_trace_recover_first_valid_value(recover_runner, tmp_path):
     values = recover(recover_runner, tmp_path,
-                     "[Debug]\\nExperimentalAudioVoiceTrace=invalid\\n"
-                     "ExperimentalAudioVoiceTrace=1\\n")
+                     "[Debug]\nExperimentalAudioVoiceTrace=invalid\n"
+                     "ExperimentalAudioVoiceTrace=1\n")
     assert values == ["[Debug] ExperimentalAudioVoiceTrace=1"]
