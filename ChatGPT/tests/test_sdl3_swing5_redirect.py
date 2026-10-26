@@ -23,7 +23,8 @@ def test_fail_open_and_bounded_hook():
     assert 'FlushInstructionCache' in REDIRECT
     assert 'VirtualProtect(page,4096u,old,&ignored)' in REDIRECT
     assert 'GAME_PLAY(slot,looping); /* Fail OPEN' in REDIRECT
-    assert 'if(!installed || looping!=0 || slot<0 || slot>=32)' in REDIRECT
+    assert 'if(!installed || slot<0 || slot>=32)' in REDIRECT
+    assert 'if(!looping && buf && exact_corrupt_buffer(buf))' in REDIRECT
     assert 'caps.dwBufferBytes!=SWING_BYTES' in REDIRECT
     assert 'CryptGetHashParam' in REDIRECT
     assert 'memcmp(digest,corrupt_swing_sha,sizeof(digest))==0' in REDIRECT
