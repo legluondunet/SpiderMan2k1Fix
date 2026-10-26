@@ -29,6 +29,7 @@
 #include "pause_surface.h"
 #include "focus_media_pause.h"
 #include "focus_dsound_pause.h"
+#include "audio_native_lifecycle.h"
 #include "menu_version.h"
 #include "version_info.h"
 #include "f9_png.h"
@@ -2528,6 +2529,8 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
    * ExperimentalAudioVoiceTrace=1. No change to music or sound playback. */
   SpiderFocusDSound_TraceOnFlip(count,
       InterlockedCompareExchange(&menu_upscale_active,0,0)!=1);
+  SpiderNativeAudioTrace_OnFlip(count,
+      InterlockedCompareExchange(&menu_upscale_active,0,0)!=1);
   /* Experimental loop isolation: OFF unless Debug switch explicitly enabled.
    * Stops only the exact previously observed native secondary sound buffer. */
   SpiderFocusDSound_StopSuspectOnFlip(count,
@@ -3097,6 +3100,8 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderDI8Retry_Init(log_line);
   SpiderFocusMedia_Init(log_line); /* Opt-in native Bink pause. */
   SpiderFocusDSound_Init(log_line); /* Separately opt-in game-owned secondary buffers only. */
+  /* Opt-in native audio callsite telemetry, after supported hash and INI validation. */
+  SpiderNativeAudioTrace_Init(log_line);
   SpiderPauseSurface_Init(log_line); /* Pause drawn into the game backbuffer; no HWND overlays. */
   /* The first-run generator or repair may have changed [Debug] Log. */
   {
