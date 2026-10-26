@@ -39,6 +39,8 @@ static volatile LONG enabled=0,armed=0;
 static volatile LONG audio_trace_enabled=0;
 /* Mutating experiment is separately opt-in and never runs in menus. */
 static volatile LONG audio_loop_stop_enabled=0;
+static volatile LONG audio_loop_group_mask=0;
+static unsigned audio_loop_group_attempts[5];
 static unsigned audio_loop_stop_flips=0;
 static unsigned audio_loop_stop_ok=0;
 static unsigned audio_loop_stop_attempts=0;
@@ -87,6 +89,16 @@ void SpiderFocusDSound_Init(void (*log_fn)(const char *)){
       if(GetPrivateProfileIntA("Debug","ExperimentalAudioStopSuspectLoop",0,path)==1) {
         InterlockedExchange(&audio_loop_stop_enabled,1);
         diag("AUDIO-LOOP-STOP: ARMED (experimental stop of slot 3 ONLY if playing+looping, bytes=85176, hz=12000, 3D only)");
+      }
+      {
+        int mask=GetPrivateProfileIntA("Debug","ExperimentalAudioStopLoopMask",0,path);
+        if(mask>0 && mask<=31){
+          char message[190];
+          InterlockedExchange(&audio_loop_group_mask,(LONG)mask);
+          snprintf(message,sizeof(message),
+            "AUDIO-LOOP-MASK: ARMED mask=%d (bits: 1=3.549s 2=2.310s 4=2.478s 8=2.520s 16=1.030s)",mask);
+          diag(message);
+        }
       }
     }
   }
@@ -223,6 +235,59 @@ void SpiderFocusDSound_StopSuspectOnFlip(LONG flip,int in_3d){
      !audio_loop_stop_no_match_logged){
     diag("AUDIO-LOOP-STOP: NO MATCH after 600 3D Flips; no buffer stopped; cannot infer audio cause");
     audio_loop_stop_no_match_logged=1;
+  }
+}
+
+/* Fingerprints are not asset identifiers. Restrict mutating diagnosis to
+ * already-looping game-owned secondary buffers, with exact PCM byte capacity
+ * and playback frequency. Native slots can be reused between frames.
+ */
+typedef struct { unsigned bit; DWORD bytes; DWORD hz; } SpiderLoopGroup;
+static const SpiderLoopGroup audio_loop_groups[5]={
+  {1u,85176u,12000u},{2u,55444u,12000u},{4u,79308u,16000u},
+  {8u,60480u,12000u},{16u,32960u,16000u}
+};
+void SpiderFocusDSound_StopLoopGroupsOnFlip(LONG flip,int in_3d){
+  unsigned i,g;
+  LONG mask=InterlockedCompareExchange(&audio_loop_group_mask,0,0);
+  if(!mask || InterlockedCompareExchange(&enabled,0,0)!=1)return;
+  if(!in_3d){
+    memset(audio_loop_group_attempts,0,sizeof(audio_loop_group_attempts));
+    return;
+  }
+  for(i=0;i<VOICE_COUNT;i++){
+    IDirectSoundBuffer *buf=voice_at(i);
+    DWORD status=0,frequency=0;
+    DSBCAPS caps;
+    HRESULT hr;
+    if(!buf || buf==SPIDER_PRIMARY ||
+       FAILED(IDirectSoundBuffer_GetStatus(buf,&status)) ||
+       (status&(DSBSTATUS_PLAYING|DSBSTATUS_LOOPING))!=
+         (DSBSTATUS_PLAYING|DSBSTATUS_LOOPING) ||
+       (status&DSBSTATUS_BUFFERLOST))continue;
+    memset(&caps,0,sizeof(caps));
+    caps.dwSize=sizeof(caps);
+    if(FAILED(IDirectSoundBuffer_GetCaps(buf,&caps)) ||
+       FAILED(IDirectSoundBuffer_GetFrequency(buf,&frequency)))continue;
+    for(g=0;g<5u;g++){
+      const SpiderLoopGroup *group=&audio_loop_groups[g];
+      if(!(mask&(LONG)group->bit) ||
+         caps.dwBufferBytes!=group->bytes ||
+         frequency!=group->hz)continue;
+      hr=IDirectSoundBuffer_Stop(buf);
+      audio_loop_group_attempts[g]++;
+      if(audio_loop_group_attempts[g]<=12u){
+        char line[240];
+        snprintf(line,sizeof(line),
+          "AUDIO-LOOP-MASK: %s flip=%ld group=%u slot=%u buffer=%p status-before=0x%08lX bytes=%lu hz=%lu hr=0x%08lX",
+          SUCCEEDED(hr)?"STOP":"FAIL",(long)flip,group->bit,i,(void*)buf,
+          (unsigned long)status,(unsigned long)caps.dwBufferBytes,
+          (unsigned long)frequency,(unsigned long)hr);
+        diag(line);
+      }else if(audio_loop_group_attempts[g]==13u)
+        diag("AUDIO-LOOP-MASK: per-group log limit reached; still stopping matching buffers");
+      break;
+    }
   }
 }
 void SpiderFocusDSound_Pause(void){
