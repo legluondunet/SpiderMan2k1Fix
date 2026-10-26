@@ -78,7 +78,7 @@ static const char *const spider_ini_input[]={
   "RestoreCursorOnFocusLoss","ExperimentalFocusTrace","ExperimentalDI8EntryTrace",
   "ExperimentalAltTabReacquire","ExperimentalDI8CreateDeviceTrace"
 };
-static const char *const spider_ini_audio[]={"MusicSFXLevel","VoiceLevel","MovieLevel","Stereo"};
+static const char *const spider_ini_audio[]={"MusicSFXLevel","VoiceLevel","MovieLevel","Stereo","ExperimentalMusicStutterFix"};
 static const char *const spider_ini_keys[]={"Up","Down","Left","Right","Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
 static const char *const spider_ini_joy[]={"Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
 static const char *const spider_ini_internal[]={"RawHex"};
@@ -144,7 +144,7 @@ static int spider_ini_value_valid(const char *section,const char *key,const char
   if(!spider_ini_icmp(section,"Keyboard"))return spider_ini_keyboard(value);
   if(!spider_ini_icmp(section,"Joystick"))return spider_ini_joystick(value);
   if(!spider_ini_icmp(section,"Audio"))return spider_ini_uint(value,0,
-           !spider_ini_icmp(key,"Stereo")?1:100);
+           (!spider_ini_icmp(key,"Stereo") || !spider_ini_icmp(key,"ExperimentalMusicStutterFix"))?1:100);
   /* Only Auto and Off are public modes. Accept older names solely so
    * the loader can migrate them without resetting saved controls/RawHex. */
   if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"KeyboardLayout"))

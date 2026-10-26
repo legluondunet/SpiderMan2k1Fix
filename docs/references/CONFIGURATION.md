@@ -230,6 +230,34 @@ The earlier `DisableWindowsGhosting=1` opt-in description belongs only to
 percentages; `Stereo=1` selects stereo, `0` selects mono. Standard
 keyboard and joystick bindings are preserved through INI migration.
 
+### Experimental music-stutter fix (opt-in)
+
+**Testing only; OFF by default.** In the original Windows retail executable,
+a voice-slot check uses the DirectSound LOOPING bit (4) instead of the PLAYING
+bit (1). [r57zone's Spider-Man Settings](https://github.com/r57zone/Spider-Man-Settings/blob/master/Source/Unit1.pas)
+identifies this as a possible cause of background-music stuttering in the
+Scorpion level. The correction has **not yet been validated in
+SpiderMan2k1Fix** under Windows or Wine; it does not promise to fix all audio
+crackling.
+
+Close the game, then insert this **one line inside the existing [Audio]
+section** of SpiderMan2k1Fix.ini (retain your volume and Stereo settings):
+
+```ini
+ExperimentalMusicStutterFix=1
+```
+
+Restart the game to test. Use ExperimentalMusicStutterFix=0 or remove the
+line to disable the patch again. **Do not duplicate the [Audio] section.**
+For diagnostic logs, also set Log=1 in your existing [Debug] section;
+look for AUDIO-STUTTER: ON, OFF, or SKIPPED.
+
+The change is **memory-only**, activates only after the original EXE's
+SHA-256 and 10-byte opcode signature have been verified, and changes just
+one immediate byte at RVA 0x10448F (04 to 01). Compare the same section
+with the option OFF and ON, then provide your Wine/Windows version and log
+when reporting test results.
+
 ## Debug logging
 
 Debug logging is **off by default**:

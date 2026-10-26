@@ -169,6 +169,76 @@ done:
   return ok;
 }
 
+
+/* Opt-in music-stutter experiment (r57zone/Spider-Man-Settings Unit1.pas).
+ * The retail voice-slot test reads LOOPING (bit 4) instead of PLAYING (bit 1).
+ * Patch the immediate at RVA 0x10448F only after SHA256 and opcode validation.
+ * Never patch SpideyPC.exe on disk.
+ */
+static void install_experimental_music_stutter_fix(void) {
+  static const BYTE expected[10]={
+    0x8B,0x44,0x24,0x04,0x5E,0x83,0xE0,0x04,0x59,0xC3
+  };
+  char path[MAX_PATH],*slash;
+  DWORD n,old,ignored;
+  BYTE *base,*target;
+  IMAGE_DOS_HEADER *dos;
+  IMAGE_NT_HEADERS32 *nt;
+  n=GetModuleFileNameA(NULL,path,sizeof(path));
+  if(!n || n>=sizeof(path) || !(slash=strrchr(path,'\\'))) {
+    log_line("AUDIO-STUTTER: SKIPPED (cannot resolve INI path)");
+    return;
+  }
+  strcpy(slash+1,"SpiderMan2k1Fix.ini");
+  if(GetPrivateProfileIntA("Audio","ExperimentalMusicStutterFix",0,path)!=1) {
+    log_line("AUDIO-STUTTER: OFF (default)");
+    return;
+  }
+  base=(BYTE*)GetModuleHandleA(NULL);
+  if(!base || *(WORD*)base!=IMAGE_DOS_SIGNATURE) {
+    log_line("AUDIO-STUTTER: SKIPPED (invalid game image)");
+    return;
+  }
+  dos=(IMAGE_DOS_HEADER*)base;
+  if(dos->e_lfanew<0 || dos->e_lfanew>0x1000) {
+    log_line("AUDIO-STUTTER: SKIPPED (invalid PE header offset)");
+    return;
+  }
+  nt=(IMAGE_NT_HEADERS32*)(base+dos->e_lfanew);
+  if(nt->Signature!=IMAGE_NT_SIGNATURE ||
+     nt->FileHeader.Machine!=IMAGE_FILE_MACHINE_I386 ||
+     nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR32_MAGIC ||
+     nt->OptionalHeader.SizeOfImage<0x104488u+sizeof(expected)) {
+    log_line("AUDIO-STUTTER: SKIPPED (unsupported PE layout)");
+    return;
+  }
+  if(memcmp(base+0x104488u,expected,sizeof(expected))!=0) {
+    log_line("AUDIO-STUTTER: SKIPPED (voice-slot opcode signature mismatch)");
+    return;
+  }
+  target=base+0x10448Fu; /* Only the 0x04 immediate changes to 0x01. */
+  if(!VirtualProtect(target,1,PAGE_EXECUTE_READWRITE,&old)) {
+    log_line("AUDIO-STUTTER: SKIPPED (VirtualProtect failed)");
+    return;
+  }
+  if(memcmp(base+0x104488u,expected,sizeof(expected))!=0) {
+    VirtualProtect(target,1,old,&ignored);
+    log_line("AUDIO-STUTTER: SKIPPED (signature changed before write)");
+    return;
+  }
+  *target=0x01;
+  if(!FlushInstructionCache(GetCurrentProcess(),target,1)) {
+    *target=0x04;
+    FlushInstructionCache(GetCurrentProcess(),target,1);
+    VirtualProtect(target,1,old,&ignored);
+    log_line("AUDIO-STUTTER: ERROR cache flush failed; original byte restored");
+    return;
+  }
+  if(!VirtualProtect(target,1,old,&ignored))
+    log_line("AUDIO-STUTTER: WARNING page protection restore failed");
+  log_line("AUDIO-STUTTER: ON (LOOPING=4 -> PLAYING=1, RVA 0x10448F)");
+}
+
 /* Exact-signature Win11 fclose(NULL) recovery for the verified game EXE.
  *
  * 2026-10-19 ProcDump: C0000005 read from address 0xC, EIP 0052A805,
@@ -3080,6 +3150,7 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  install_experimental_music_stutter_fix(); /* SHA- and opcode-guarded; default OFF. */
   SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.

@@ -277,3 +277,16 @@ def test_f10_verbose_trace_strict_boolean(runner,tmp_path,value,valid):
         assert result==(0,0,1),detail
     else:
         assert result[0]>=1 and result[2]==0,detail
+
+
+@pytest.mark.parametrize("value,valid", [
+    ("0", True), ("1", True),
+    ("2", False), ("-1", False), ("true", False), ("100", False), ("", False)
+])
+def test_experimental_music_stutter_fix_strict_boolean(runner, tmp_path, value, valid):
+    result, detail = validate(runner, tmp_path,
+        f"[Audio]\nMusicSFXLevel=69\nExperimentalMusicStutterFix={value}\n")
+    if valid:
+        assert result == (0, 0, 1), detail
+    else:
+        assert result[0] >= 1 and result[2] == 0, detail
