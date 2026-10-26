@@ -29,6 +29,7 @@
 #include "pause_surface.h"
 #include "focus_media_pause.h"
 #include "focus_dsound_pause.h"
+#include "audio_voice_busy_fix.h"
 #include "menu_version.h"
 #include "version_info.h"
 #include "f9_png.h"
@@ -3086,7 +3087,10 @@ static DWORD initialize_body(LPVOID unused) {
    * No COM-vtable interception. The actual patch is delayed to Flip #120. */
   SpiderDI8Retry_Init(log_line);
   SpiderFocusMedia_Init(log_line); /* Opt-in native Bink pause. */
-  SpiderFocusDSound_Init(log_line); /* Separately opt-in game-owned secondary buffers only. */
+  SpiderFocusDSound_Init(log_line); /* Game-owned focus audio pause, no vtable hooks. */
+  /* Exact-executable one-byte audio repair is OFF unless [Debug] opt-in.
+   * Deliberately after SHA-256 and INI validation, before game audio startup. */
+  SpiderVoiceBusyFix_Init(log_line);
   SpiderPauseSurface_Init(log_line); /* Pause drawn into the game backbuffer; no HWND overlays. */
   /* The first-run generator or repair may have changed [Debug] Log. */
   {
