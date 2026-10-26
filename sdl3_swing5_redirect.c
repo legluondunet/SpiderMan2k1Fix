@@ -217,9 +217,13 @@ refused:
       VirtualProtect(GAME_STOP_ADDRESS,NATIVE_STOP_PATCH_BYTES,old,&ignored);
     }
   }
-  original_stop=NULL;
-  /* Keep any trampoline allocated until process exit if recovery was not
-   * fully confirmed: no dangling in-flight x86 instruction is acceptable. */
+  /* If rollback itself failed, leave the trampoline callable so an
+   * in-flight native Stop redirection can STILL invoke original Stop.
+   * Never publish a NULL original_stop while patched bytes may remain. */
+  if(memcmp(GAME_STOP_ADDRESS,expected_stop,sizeof(expected_stop))==0)
+    original_stop=NULL;
+  else if(log_fn)
+    log_fn("SDL3-SWING5: WARNING Stop rollback incomplete; trampoline retained for native Stop");
   if(!stop_patched && stop_trampoline){
     VirtualFree(stop_trampoline,0,MEM_RELEASE);
     stop_trampoline=NULL;
