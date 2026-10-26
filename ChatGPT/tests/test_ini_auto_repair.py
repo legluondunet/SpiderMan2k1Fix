@@ -169,3 +169,20 @@ def test_optional_zero_shade_survives_recovery(recover_runner,tmp_path):
                    "[Input]\nPauseDimOpacity=0\nPauseGrid=0\n")
     assert "[Input] PauseDimOpacity=0" in values
     assert not any("PauseGrid" in line for line in values)
+
+
+def test_busy_fix_recovery_preserves_experimental_settings(recover_runner,tmp_path):
+    ini=("[Debug]\nLog=1\nExperimentalAudioVoiceBusyFix=1\n"
+         "ExperimentalAudioStopLoopMask=30\n"
+         "ExperimentalAudioVoiceTrace=1\n"
+         "[Modding]\nLooseFiles=1\n"
+         "[Audio]\nMusicSFXLevel=60\nVoiceLevel=0\n"
+         "[Unknown]\nTest=1\n")
+    values=recover(recover_runner,tmp_path,ini)
+    for key in ("[Debug] ExperimentalAudioVoiceBusyFix=1",
+                "[Debug] ExperimentalAudioStopLoopMask=30",
+                "[Debug] ExperimentalAudioVoiceTrace=1",
+                "[Modding] LooseFiles=1",
+                "[Audio] MusicSFXLevel=60",
+                "[Audio] VoiceLevel=0"):
+        assert key in values
