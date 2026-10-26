@@ -18,13 +18,16 @@
 #include "audio_combat_pcm.h"
 
 #define LIMIT 24u
+#define MANUAL_SESSIONS 2u
+#define MANUAL_SESSION_LIMIT 12u
+#define F8_DEBOUNCE_MS 1200u
 #define PCM_MIN 4096u
 #define PCM_MAX 32768u
 #define SPACING_MS 250u
 typedef struct {
   BYTE data[PCM_MAX];
   DWORD size,rate,at_ms;
-  unsigned slot;
+  unsigned slot,session,ordinal;
   uint64_t hash;
 } Capture;
 static Capture samples[LIMIT];
@@ -33,9 +36,11 @@ static int on=0;
 static DWORD start_delay_ms=22000u;
 static int manual_mode=0;
 static volatile LONG f8_triggered=0;
+static volatile LONG f8_uses=0,prev_f8_time=-1;
 static volatile LONG ready_logged=0;
 static volatile LONG capture_from_ms=22000;
 static unsigned count=0;
+static unsigned session_counts[MANUAL_SESSIONS]={0u,0u};
 static volatile LONG prev_ms=0;
 static void (*emit)(const char *)=NULL;
 
@@ -87,12 +92,15 @@ static DWORD WINAPI save_wav(LPVOID argument){
   c=&samples[idx];
   inspect_seam(c,&offset,&before,&after);
   snprintf(line,sizeof(line),
-    "AUDIO-COMBAT-PCM: CAPTURE=%u t=%lums slot=%u bytes=%lu rate=%lu fnv64=%08lX%08lX last_boundary_wav_byte=%u abs_jump_before=%u abs_jump_after=%u (heuristic only)",
-    idx+1u,(unsigned long)c->at_ms,c->slot,(unsigned long)c->size,
+    "AUDIO-COMBAT-PCM: CAPTURE=%u session=%u ordinal=%u t=%lums slot=%u bytes=%lu rate=%lu fnv64=%08lX%08lX last_boundary_wav_byte=%u abs_jump_before=%u abs_jump_after=%u (heuristic only)",
+    idx+1u,c->session,c->ordinal,(unsigned long)c->at_ms,c->slot,(unsigned long)c->size,
     (unsigned long)c->rate,(unsigned long)(c->hash>>32),
     (unsigned long)(c->hash&0xFFFFFFFFu),offset,before,after);
   if(emit)emit(line);
-  snprintf(name,sizeof(name),"SpiderMan2k1Fix-CombatPCM-%02u.wav",idx+1u);
+  if(manual_mode)
+    snprintf(name,sizeof(name),"SpiderMan2k1Fix-CombatPCM-R%u-%02u.wav",c->session,c->ordinal);
+  else
+    snprintf(name,sizeof(name),"SpiderMan2k1Fix-CombatPCM-%02u.wav",idx+1u);
   n=GetTempPathA(MAX_PATH,dir);
   if(!n || n>=MAX_PATH || n+strlen(name)>=MAX_PATH){
     if(emit)emit("AUDIO-COMBAT-PCM: TEMP-PATH-FAILED");
@@ -145,13 +153,16 @@ void SpiderCombatPCM_Init(void (*log_fn)(const char *),int enabled,
   count=0;
   InterlockedExchange(&prev_ms,0);
   InterlockedExchange(&f8_triggered,0);
+  InterlockedExchange(&f8_uses,0);
+  InterlockedExchange(&prev_f8_time,-1);
+  memset(session_counts,0,sizeof(session_counts));
   InterlockedExchange(&ready_logged,0);
   InterlockedExchange(&capture_from_ms,(LONG)start_delay_ms);
   if(!on)return;
   InitializeCriticalSection(&cs);
   if(manual_mode)
     snprintf(line,sizeof(line),
-      "AUDIO-COMBAT-PCM: ARMED MANUAL-F8; press F8 once near fight; delay_after_f8=%lums; 24 unique one-shots; TEMP WAV",
+      "AUDIO-COMBAT-PCM: ARMED MANUAL-F8; press F8 twice near fights; delay_after_f8=%lums; 12 distinct samples per press; TEMP WAV",
       (unsigned long)start_delay_ms);
   else
     snprintf(line,sizeof(line),
@@ -164,6 +175,7 @@ void SpiderCombatPCM_Init(void (*log_fn)(const char *),int enabled,
 void SpiderCombatPCM_On3DStart(void){
   if(!on)return;
   InterlockedExchange(&f8_triggered,0);
+  InterlockedExchange(&prev_f8_time,-1);
   InterlockedExchange(&ready_logged,0);
   InterlockedExchange(&prev_ms,0);
   InterlockedExchange(&capture_from_ms,(LONG)start_delay_ms);
