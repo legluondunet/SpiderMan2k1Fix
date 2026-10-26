@@ -91,10 +91,10 @@ starts before the user can reach the fight, so the 24 unique captures
 fill up on unrelated sound effects.
 
 **New opt-in** `[Debug] ExperimentalAudioCombatPCMManualF8=1`:
-F8 rising edge in 3D starts the *configured delay timer* exactly once.
+F8 rising edge in 3D starts the *configured delay timer* (up to twice).
 `ExperimentalAudioCombatPCMStartMs=0` means capturing starts immediately
 on F8. Set 22000 to begin 22 seconds after manually pressing F8,
-if desired. No captures before F8, no timer reset on subsequent F8,
+if desired. No captures before F8. A second F8 starts a second separate capture window,
 and the previous F8 AFTER-CLICK history dump is **suppressed only while
 this manual mode is enabled**, to avoid false click correlations. F8
 remains available to the original game; only observer behavior changes.
@@ -117,3 +117,22 @@ ExperimentalAudioLoopTailRepair=1
 ExperimentalAudioSwing5Fingerprint=1
 ExperimentalAudioSwing5TailMute=1
 ```
+
+## 26 October – Two independent manual recordings (user request)
+
+F8 can now start **two manual recordings** in one game process. The
+first starts session 1 with up to 12 distinct PCM snapshots, the second
+starts session 2 with an independent quota of 12. The second F8 can
+happen before session 1 reaches its quota; unused session-1 slots are
+not reallocated to session 2. A short 1200-ms debounce prevents a
+mistaken double tap. Subsequent F8 presses beyond two are ignored.
+Every session applies `ExperimentalAudioCombatPCMStartMs` as its own
+post-F8 delay; use `0` to start immediately. Windows TEMP filenames
+are now:
+- `SpiderMan2k1Fix-CombatPCM-R1-01.wav` … `-R1-12.wav`
+- `SpiderMan2k1Fix-CombatPCM-R2-01.wav` … `-R2-12.wav`
+
+For manual mode, de-duplication occurs within each session. Auto mode
+(`ExperimentalAudioCombatPCMManualF8=0`) still captures 24 distinct
+sounds with its previous output filenames. This feature is diagnostic
+only, opt-in, and never alters original PCM.
