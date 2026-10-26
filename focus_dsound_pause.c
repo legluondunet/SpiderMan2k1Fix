@@ -37,6 +37,12 @@ static DWORD paused_play_flags[VOICE_COUNT];
 static volatile LONG enabled=0,armed=0;
 /* Opt-in passive debugging only. Never call Play, Stop, Lock, or Set* here. */
 static volatile LONG audio_trace_enabled=0;
+/* Mutating experiment is separately opt-in and never runs in menus. */
+static volatile LONG audio_loop_stop_enabled=0;
+static unsigned audio_loop_stop_flips=0;
+static unsigned audio_loop_stop_ok=0;
+static unsigned audio_loop_stop_attempts=0;
+static int audio_loop_stop_no_match_logged=0;
 static IDirectSoundBuffer *audio_trace_previous[VOICE_COUNT];
 static BYTE audio_trace_was_playing[VOICE_COUNT];
 /* Compare successive positions for an unchanged, playing buffer. A backward
@@ -77,6 +83,10 @@ void SpiderFocusDSound_Init(void (*log_fn)(const char *)){
       if(GetPrivateProfileIntA("Debug","ExperimentalAudioVoiceTrace",0,path)==1) {
         InterlockedExchange(&audio_trace_enabled,1);
         diag("AUDIO-VOICE-TRACE: ARMED (passive DirectSound voice snapshot at each 3D Flip; no audio changes)");
+      }
+      if(GetPrivateProfileIntA("Debug","ExperimentalAudioStopSuspectLoop",0,path)==1) {
+        InterlockedExchange(&audio_loop_stop_enabled,1);
+        diag("AUDIO-LOOP-STOP: ARMED (experimental stop of slot 3 ONLY if playing+looping, bytes=85176, hz=12000, 3D only)");
       }
     }
   }
@@ -159,6 +169,60 @@ void SpiderFocusDSound_TraceOnFlip(LONG flip,int in_3d){
     audio_trace_was_playing[i]=(BYTE)!!playing;
     audio_trace_have_read[i]=(BYTE)(playing && got_cursor);
     if(playing && got_cursor)audio_trace_last_read[i]=read_cursor;
+  }
+}
+/* Targeted A/B experiment for the observed 3.549-second looping voice.
+ * This is not an audio fix: it deliberately changes one secondary buffer.
+ * Signature and supported-EXE guards are already enforced in Init.
+ * No COM hooks, primary buffer changes, volume changes, or auto-resume.
+ */
+void SpiderFocusDSound_StopSuspectOnFlip(LONG flip,int in_3d){
+  IDirectSoundBuffer *buf;
+  DWORD status=0,frequency=0;
+  DSBCAPS caps;
+  HRESULT hr;
+  if(InterlockedCompareExchange(&enabled,0,0)!=1 ||
+     InterlockedCompareExchange(&audio_loop_stop_enabled,0,0)!=1)return;
+  if(!in_3d){
+    audio_loop_stop_flips=0;
+    audio_loop_stop_ok=0;
+    audio_loop_stop_attempts=0;
+    audio_loop_stop_no_match_logged=0;
+    return;
+  }
+  audio_loop_stop_flips++;
+  buf=voice_at(3u);
+  if(buf && buf!=SPIDER_PRIMARY &&
+     SUCCEEDED(IDirectSoundBuffer_GetStatus(buf,&status)) &&
+     (status & (DSBSTATUS_PLAYING|DSBSTATUS_LOOPING))==
+               (DSBSTATUS_PLAYING|DSBSTATUS_LOOPING) &&
+     !(status & DSBSTATUS_BUFFERLOST)){
+    memset(&caps,0,sizeof(caps));
+    caps.dwSize=sizeof(caps);
+    if(SUCCEEDED(IDirectSoundBuffer_GetCaps(buf,&caps)) &&
+       caps.dwBufferBytes==85176u &&
+       SUCCEEDED(IDirectSoundBuffer_GetFrequency(buf,&frequency)) &&
+       frequency==12000u){
+      audio_loop_stop_attempts++;
+      hr=IDirectSoundBuffer_Stop(buf);
+      if(SUCCEEDED(hr))audio_loop_stop_ok++;
+      if(audio_loop_stop_attempts<=12u){
+        char line[220];
+        snprintf(line,sizeof(line),
+          "AUDIO-LOOP-STOP: %s flip=%ld slot=3 buffer=%p status-before=0x%08lX bytes=%lu hz=%lu hr=0x%08lX success=%u",
+          SUCCEEDED(hr)?"STOP":"FAIL",(long)flip,(void *)buf,
+          (unsigned long)status,(unsigned long)caps.dwBufferBytes,
+          (unsigned long)frequency,(unsigned long)hr,audio_loop_stop_ok);
+        diag(line);
+      }else if(audio_loop_stop_attempts==13u)
+        diag("AUDIO-LOOP-STOP: further stop attempts suppressed; still stopping matched voice");
+      return;
+    }
+  }
+  if(audio_loop_stop_flips==600u && audio_loop_stop_ok==0u &&
+     !audio_loop_stop_no_match_logged){
+    diag("AUDIO-LOOP-STOP: NO MATCH after 600 3D Flips; no buffer stopped; cannot infer audio cause");
+    audio_loop_stop_no_match_logged=1;
   }
 }
 void SpiderFocusDSound_Pause(void){
