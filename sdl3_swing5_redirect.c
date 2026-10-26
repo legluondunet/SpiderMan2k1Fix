@@ -123,33 +123,106 @@ static void __cdecl maybe_play_sdl3(int slot,int looping){
   }
   GAME_PLAY(slot,looping); /* Fail OPEN for all unmatched/failed cases. */
 }
+/* Install Stop detour first: never start redirecting audio until native
+ * Stop has an exact original-signature trampoline. Either BOTH hooks
+ * install, or restore original bytes. No third-party COM vtables touched. */
 void SpiderSDL3Swing5_Init(void (*logger)(const char*),int enabled){
-  DWORD old=0,ignored=0;
+  DWORD stop_protect=0,play_protect=0,ignored=0;
   uint32_t rel;
+  BYTE patch[NATIVE_STOP_PATCH_BYTES];
   BYTE *page=(BYTE*)(uintptr_t)0x00472000u;
+  BYTE *p;
+  int stop_patched=0,play_patched=0;
   log_fn=logger;
   if(enabled!=1)return;
   if((uintptr_t)GetModuleHandleA(NULL)!=GAME_BASE ||
-     memcmp(ONE_SHOT_CALL,expected_call,sizeof(expected_call))!=0){
-    if(log_fn)log_fn("SDL3-SWING5: REFUSED unexpected executable relocation/opcodes; original DirectSound untouched");
+     memcmp(ONE_SHOT_CALL,expected_call,sizeof(expected_call))!=0 ||
+     memcmp(GAME_STOP_ADDRESS,expected_stop,sizeof(expected_stop))!=0){
+    if(log_fn)log_fn("SDL3-SWING5: REFUSED unexpected Play or Stop game opcodes; original DirectSound untouched");
     return;
   }
-  if(!VirtualProtect(page,4096u,PAGE_EXECUTE_READWRITE,&old)){
-    if(log_fn)log_fn("SDL3-SWING5: REFUSED VirtualProtect failed");
+  stop_trampoline=(BYTE*)VirtualAlloc(NULL,32u,MEM_COMMIT|MEM_RESERVE,
+                                      PAGE_EXECUTE_READWRITE);
+  if(!stop_trampoline){
+    if(log_fn)log_fn("SDL3-SWING5: REFUSED could not allocate native Stop trampoline");
     return;
   }
+  memcpy(stop_trampoline,expected_stop,sizeof(expected_stop));
+  stop_trampoline[NATIVE_STOP_PATCH_BYTES]=0xE9;
+  rel=(uint32_t)(uintptr_t)(GAME_STOP_ADDRESS+NATIVE_STOP_PATCH_BYTES)-
+      ((uint32_t)(uintptr_t)stop_trampoline+NATIVE_STOP_PATCH_BYTES+5u);
+  memcpy(stop_trampoline+NATIVE_STOP_PATCH_BYTES+1u,&rel,4u);
+  if(!FlushInstructionCache(GetCurrentProcess(),stop_trampoline,13u))
+    goto refused;
+  original_stop=(void (__cdecl *)(int))(void*)stop_trampoline;
+  if(!VirtualProtect(GAME_STOP_ADDRESS,NATIVE_STOP_PATCH_BYTES,
+                     PAGE_EXECUTE_READWRITE,&stop_protect))
+    goto refused;
+  memset(patch,0x90,sizeof(patch));
+  patch[0]=0xE9;
+  rel=(uint32_t)(uintptr_t)&maybe_stop_sdl3-
+      ((uint32_t)(uintptr_t)GAME_STOP_ADDRESS+5u);
+  memcpy(patch+1u,&rel,4u);
+  memcpy(GAME_STOP_ADDRESS,patch,sizeof(patch));
+  stop_patched=1;
+  if(!FlushInstructionCache(GetCurrentProcess(),GAME_STOP_ADDRESS,
+                            NATIVE_STOP_PATCH_BYTES)){
+    VirtualProtect(GAME_STOP_ADDRESS,NATIVE_STOP_PATCH_BYTES,
+                   stop_protect,&ignored);
+    goto refused;
+  }
+  if(!VirtualProtect(GAME_STOP_ADDRESS,NATIVE_STOP_PATCH_BYTES,
+                     stop_protect,&ignored)){
+    if(log_fn)log_fn("SDL3-SWING5: WARNING Stop patch protection restore failed");
+  }
+
+  if(!VirtualProtect(page,4096u,PAGE_EXECUTE_READWRITE,&play_protect))
+    goto refused;
+  p=ONE_SHOT_CALL;
   rel=(uint32_t)(uintptr_t)&maybe_play_sdl3-
-      ((uint32_t)(uintptr_t)ONE_SHOT_CALL+5u);
-  memcpy(ONE_SHOT_CALL+1u,&rel,4u);
-  if(!FlushInstructionCache(GetCurrentProcess(),ONE_SHOT_CALL,5u)){
-    memcpy(ONE_SHOT_CALL,expected_call,sizeof(expected_call));
-    FlushInstructionCache(GetCurrentProcess(),ONE_SHOT_CALL,5u);
-    VirtualProtect(page,4096u,old,&ignored);
-    if(log_fn)log_fn("SDL3-SWING5: REFUSED instruction-cache flush; original call restored");
-    return;
+      ((uint32_t)(uintptr_t)p+5u);
+  memcpy(p+1u,&rel,4u);
+  play_patched=1;
+  if(!FlushInstructionCache(GetCurrentProcess(),p,5u)){
+    memcpy(p,expected_call,sizeof(expected_call));
+    FlushInstructionCache(GetCurrentProcess(),p,5u);
+    VirtualProtect(page,4096u,play_protect,&ignored);
+    goto refused;
   }
-  if(!VirtualProtect(page,4096u,old,&ignored) && log_fn)
-    log_fn("SDL3-SWING5: WARNING code-page protection restore failed");
+  if(!VirtualProtect(page,4096u,play_protect,&ignored) && log_fn)
+    log_fn("SDL3-SWING5: WARNING Play code-page protection restore failed");
   installed=1;
-  if(log_fn)log_fn("SDL3-SWING5: INSTALLED exact game CALL 0x472870; corrupt PCM SHA256 gated; fallback original DirectSound enabled; experimental");
+  if(log_fn)
+    log_fn("SDL3-SWING5: INSTALLED exact game CALL 0x472870 AND native DXSOUND_Stop trampoline 0x5042A0; SHA gated; fail-open");
+  return;
+
+refused:
+  /* Roll back Stop, restoring exactly the verified original 8 bytes.
+   * A failure to restore safely means refusing any further installation. */
+  if(play_patched){
+    DWORD old=0;
+    if(VirtualProtect(page,4096u,PAGE_EXECUTE_READWRITE,&old)){
+      memcpy(ONE_SHOT_CALL,expected_call,sizeof(expected_call));
+      FlushInstructionCache(GetCurrentProcess(),ONE_SHOT_CALL,5u);
+      VirtualProtect(page,4096u,old,&ignored);
+    }
+  }
+  if(stop_patched){
+    DWORD old=0;
+    if(VirtualProtect(GAME_STOP_ADDRESS,NATIVE_STOP_PATCH_BYTES,
+                      PAGE_EXECUTE_READWRITE,&old)){
+      memcpy(GAME_STOP_ADDRESS,expected_stop,sizeof(expected_stop));
+      FlushInstructionCache(GetCurrentProcess(),GAME_STOP_ADDRESS,
+                            NATIVE_STOP_PATCH_BYTES);
+      VirtualProtect(GAME_STOP_ADDRESS,NATIVE_STOP_PATCH_BYTES,old,&ignored);
+    }
+  }
+  original_stop=NULL;
+  /* Keep any trampoline allocated until process exit if recovery was not
+   * fully confirmed: no dangling in-flight x86 instruction is acceptable. */
+  if(!stop_patched && stop_trampoline){
+    VirtualFree(stop_trampoline,0,MEM_RELEASE);
+    stop_trampoline=NULL;
+  }
+  if(log_fn)log_fn("SDL3-SWING5: REFUSED hook installation incomplete; native path preserved or rollback requested");
 }
