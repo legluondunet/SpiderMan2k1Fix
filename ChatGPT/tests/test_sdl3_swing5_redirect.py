@@ -13,7 +13,7 @@ def test_fail_open_and_bounded_hook():
     assert 'ExperimentalSDL3Swing5Replace' in INI
     assert 'GetPrivateProfileIntA("Debug","ExperimentalSDL3Swing5Replace",0,ini)==1' in MAIN
     assert 'SpiderSDL3Probe_Init(log_line,test,swing)' in MAIN
-    assert 'SpiderSDL3Swing5_Init(log_line,swing)' in MAIN
+    assert 'SpiderSDL3Swing5_Init(log_line,swing||pkr_readonly)' in MAIN
     assert 'SpiderSDL3Probe_PlaySwing5' in INTERFACE
     assert 'sdl3_swing5_redirect.c' in BUILD
     assert '#define ONE_SHOT_CALL ((BYTE*)(uintptr_t)0x00472870u)' in REDIRECT
