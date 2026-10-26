@@ -277,3 +277,14 @@ def test_f10_verbose_trace_strict_boolean(runner,tmp_path,value,valid):
         assert result==(0,0,1),detail
     else:
         assert result[0]>=1 and result[2]==0,detail
+
+
+@pytest.mark.parametrize("value",["0","1"])
+def test_modding_loose_files_known_valid(runner,tmp_path,value):
+    result,detail=validate(runner,tmp_path,f"[Modding]\nLooseFiles={value}\n")
+    assert result == (0,0,1),detail
+
+@pytest.mark.parametrize("value",["","-1","2","yes","True"])
+def test_modding_loose_files_reject_invalid(runner,tmp_path,value):
+    result,detail=validate(runner,tmp_path,f"[Modding]\nLooseFiles={value}\n")
+    assert result[0]>=1 and result[2]==0,detail
