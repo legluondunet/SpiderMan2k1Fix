@@ -2532,6 +2532,8 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
    * Stops only the exact previously observed native secondary sound buffer. */
   SpiderFocusDSound_StopSuspectOnFlip(count,
       InterlockedCompareExchange(&menu_upscale_active,0,0)!=1);
+  SpiderFocusDSound_StopLoopGroupsOnFlip(count,
+      InterlockedCompareExchange(&menu_upscale_active,0,0)!=1);
   /* Observe the physical F9 press early; the game's screenshot code can
    * run between two Flip calls, so surface hooks also sample F9. */
   if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
