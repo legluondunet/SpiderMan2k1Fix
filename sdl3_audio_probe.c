@@ -291,3 +291,163 @@ int SpiderSDL3Probe_PlaySwing5(int slot,IDirectSoundBuffer *original,LONG ds_vol
   if(logfn)logfn(message);
   return 1;
 }
+
+
+/* SDL3 voice lifecycle (still strictly Swing5 only). All routines below
+ * run on the game's native audio/Flip owner threads and serialize the
+ * stream objects with voice_cs. No native DirectSound COM vtable changes. */
+static void advance_voice_clock(SwingVoice *v,DWORD now){
+  if(!v->paused){
+    v->position_milli_frames+=(uint64_t)(DWORD)(now-v->last_tick)*v->hz;
+  }
+  v->last_tick=now;
+}
+static void close_voice(unsigned i,const char *why){
+  SwingVoice *v=&swing_voices[i];
+  char msg[160];
+  if(!v->audio)return;
+  destroy(v->audio);
+  IDirectSoundBuffer_Release(v->original);
+  memset(v,0,sizeof(*v));
+  if(logfn){
+    snprintf(msg,sizeof(msg),"SDL3-VOICE: STOP slot=%u cause=%s",i,why);
+    logfn(msg);
+  }
+}
+void SpiderSDL3Probe_StopSlot(int slot,const char *reason){
+  if(!voice_cs_ready || slot<0 || slot>=32)return;
+  EnterCriticalSection(&voice_cs);
+  close_voice((unsigned)slot,reason?reason:"native-stop");
+  LeaveCriticalSection(&voice_cs);
+}
+void SpiderSDL3Probe_PauseAll(int paused){
+  unsigned i,adjusted=0;
+  DWORD now=GetTickCount();
+  char line[150];
+  if(!voice_cs_ready)return;
+  EnterCriticalSection(&voice_cs);
+  for(i=0;i<32u;i++){
+    SwingVoice *v=&swing_voices[i];
+    if(!v->audio || v->paused==(paused!=0))continue;
+    advance_voice_clock(v,now);
+    if(paused){
+      if(!pause_audio(v->audio)){
+        close_voice(i,"pause-failed-fail-closed");
+        continue;
+      }
+      v->paused=1;
+    }else{
+      if(!resume(v->audio)){
+        close_voice(i,"resume-failed-fail-closed");
+        continue;
+      }
+      v->paused=0;
+    }
+    adjusted++;
+  }
+  LeaveCriticalSection(&voice_cs);
+  if(logfn){
+    snprintf(line,sizeof(line),"SDL3-VOICE: %s affected=%u",
+             paused?"PAUSE":"RESUME",adjusted);
+    logfn(line);
+  }
+}
+/* On a changing native pan/volume/pitch, reconstruct the remaining
+ * clean source sample, not the damaged DirectSound PCM. Use the original
+ * playback cursor estimated from a monotonic game clock. We preserve the
+ * old stream if requeue fails. Device latency can cause a short seam on
+ * mid-sound updates: verify this in game before broadening the feature. */
+static int refresh_parameters(SwingVoice *v,LONG vol,LONG pan,DWORD hz){
+  SDL3Spec fmt={0};
+  SDL3Stream *replacement;
+  int16_t *data;
+  size_t start,n,i;
+  double left,right;
+  if(!v->audio || vol>0 || vol<-10000 || pan<-10000 || pan>10000 ||
+     hz<100u || hz>100000u)return 0;
+  start=(size_t)(v->position_milli_frames/1000u);
+  if(start>=SWING_FRAMES)return 0;
+  n=SWING_FRAMES-start;
+  data=(int16_t*)HeapAlloc(GetProcessHeap(),0,n*4u);
+  if(!data)return 0;
+  left=pow(10.0,(double)(vol-(pan>0?pan:0))/2000.0);
+  right=pow(10.0,(double)(vol+(pan<0?pan:0))/2000.0);
+  for(i=0;i<n;i++){
+    size_t p=(start+i)*2u;
+    int16_t mono=(int16_t)((uint16_t)swing_source_pcm[p] |
+                     (uint16_t)((uint16_t)swing_source_pcm[p+1u]<<8));
+    data[i*2u]=(int16_t)((double)mono*left);
+    data[i*2u+1u]=(int16_t)((double)mono*right);
+  }
+  fmt.format=0x8010u;fmt.channels=2;fmt.freq=(int)hz;
+  replacement=open_device(SDL_DEFAULT_PLAYBACK,&fmt,NULL,NULL);
+  if(!replacement){
+    HeapFree(GetProcessHeap(),0,data);
+    return 0;
+  }
+  if(!put(replacement,data,(int)(n*4u)) ||
+     (!v->paused && !resume(replacement))){
+    destroy(replacement);
+    HeapFree(GetProcessHeap(),0,data);
+    return 0;
+  }
+  HeapFree(GetProcessHeap(),0,data);
+  destroy(v->audio);
+  v->audio=replacement;
+  v->volume=vol;v->pan=pan;v->hz=hz;
+  return 1;
+}
+void SpiderSDL3Probe_OnVoiceFlip(int menu_active){
+  unsigned i;
+  DWORD now;
+  static unsigned updates_reported=0;
+  if(!voice_cs_ready)return;
+  EnterCriticalSection(&voice_cs);
+  if(menu_active){
+    if(!menu_was_active){
+      for(i=0;i<32u;i++)close_voice(i,"return-to-menu");
+    }
+    menu_was_active=1;
+    LeaveCriticalSection(&voice_cs);
+    return;
+  }
+  menu_was_active=0;
+  now=GetTickCount();
+  for(i=0;i<32u;i++){
+    SwingVoice *v=&swing_voices[i];
+    IDirectSoundBuffer *current;
+    LONG vol,pan;
+    DWORD hz;
+    if(!v->audio)continue;
+    current=*(IDirectSoundBuffer**)(GAME_VOICE_TABLE+12u*i);
+    if(current!=v->original){
+      close_voice(i,"voice-reused-or-released");
+      continue;
+    }
+    advance_voice_clock(v,now);
+    /* Add 120ms tail budget for SDL3's audio device queue latency. */
+    if(v->position_milli_frames>=
+       ((uint64_t)SWING_FRAMES*1000u+(uint64_t)v->hz*120u)){
+      close_voice(i,"one-shot-finished");
+      continue;
+    }
+    if(FAILED(IDirectSoundBuffer_GetVolume(current,&vol)) ||
+       FAILED(IDirectSoundBuffer_GetPan(current,&pan)) ||
+       FAILED(IDirectSoundBuffer_GetFrequency(current,&hz)))continue;
+    if(vol!=v->volume || pan!=v->pan || hz!=v->hz){
+      LONG prev_vol=v->volume,prev_pan=v->pan;
+      DWORD prev_hz=v->hz;
+      if(refresh_parameters(v,vol,pan,hz)){
+        if(logfn && updates_reported++<32u){
+          char msg[300];
+          snprintf(msg,sizeof(msg),
+            "SDL3-VOICE: UPDATE slot=%u vol=%ld->%ld pan=%ld->%ld hz=%lu->%lu (requeued source remainder)",
+            i,(long)prev_vol,(long)vol,(long)prev_pan,(long)pan,
+            (unsigned long)prev_hz,(unsigned long)hz);
+          logfn(msg);
+        }
+      }
+    }
+  }
+  LeaveCriticalSection(&voice_cs);
+}
