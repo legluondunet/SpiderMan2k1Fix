@@ -2524,6 +2524,10 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       SpiderInputFocus_OnFlip(count);
   }
   SpiderDI8Retry_OnFlip(count);
+  /* Passive game-owned secondary voice sampling, only if [Debug]
+   * ExperimentalAudioVoiceTrace=1. No change to music or sound playback. */
+  SpiderFocusDSound_TraceOnFlip(count,
+      InterlockedCompareExchange(&menu_upscale_active,0,0)!=1);
   /* Observe the physical F9 press early; the game's screenshot code can
    * run between two Flip calls, so surface hooks also sample F9. */
   if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)

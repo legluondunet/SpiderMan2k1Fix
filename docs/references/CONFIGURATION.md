@@ -335,3 +335,34 @@ Try the original `AspectRatio=4:3` mode to help isolate widescreen-specific prob
 - [Native ESC 4:3 corrections and debug switches](NATIVE_PAUSE_MENU_43.md).
 - [F9 PNG screenshot capture](F9_PNG_CAPTURE.md).
 - [HUD scaling and original game implementation](../DEVELOPMENT.md#7-display-and-rendering-research).
+
+### Experimental DirectSound SFX diagnostic (opt-in)
+
+The game can emit a repeatable crackle while sound effects are enabled, even
+with voice playback muted. This diagnostic logs the original game's 32
+secondary DirectSound voice slots, without patching or modifying their audio.
+
+Add these keys to the *existing* `[Debug]` section (do not duplicate headers):
+
+```ini
+[Debug]
+Log=1
+ExperimentalAudioVoiceTrace=1
+```
+
+Default is **OFF**. Valid values are `0` and `1`. Omit or set to `0`
+to disable. Save the game log after 30–45 seconds of a 3D scene with
+`MusicSFXLevel=60` and `VoiceLevel=0`. Search for
+`AUDIO-VOICE-TRACE: 3D START` and `AUDIO-VOICE-TRACE: PLAY` lines.
+Each PLAY line includes elapsed milliseconds from the first 3D Flip,
+frame, voice slot, COM buffer pointer, status, cursors, byte capacity
+and nominal playback frequency. Trace output is capped at 600 events
+per 3D session.
+
+**Limitations:** sampling occurs once per DirectDraw Flip. It observes
+PLAYING transitions but does **not** hook native Play calls, so brief
+sounds and restarts between samples, as well as continuous loops, may be
+missed. Polling and logging add some overhead; compare against a normal
+build before attributing new artifacts to the game. The trace does not
+stop, start, modify, lock or release any sound buffers. Supported retail
+EXE signature checks and INI validation still apply.

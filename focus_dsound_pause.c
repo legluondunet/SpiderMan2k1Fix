@@ -35,6 +35,13 @@ static const BYTE voice_stop_signature[]={0x8B,0x44,0x24,0x04,0x56,0x8D,0x04,0x4
 static IDirectSoundBuffer *paused_voice[VOICE_COUNT];
 static DWORD paused_play_flags[VOICE_COUNT];
 static volatile LONG enabled=0,armed=0;
+/* Opt-in passive debugging only. Never call Play, Stop, Lock, or Set* here. */
+static volatile LONG audio_trace_enabled=0;
+static IDirectSoundBuffer *audio_trace_previous[VOICE_COUNT];
+static BYTE audio_trace_was_playing[VOICE_COUNT];
+static DWORD audio_trace_epoch=0;
+static unsigned audio_trace_events=0;
+static int audio_trace_in_3d=0;
 static void (*logger)(const char *)=NULL;
 
 static void diag(const char *msg){if(logger)logger(msg);}
@@ -55,6 +62,86 @@ void SpiderFocusDSound_Init(void (*log_fn)(const char *)){
   }
   InterlockedExchange(&enabled,1);
   diag("FOCUS-DSOUND: guarded secondary-voice pause enabled; 32 game-owned slots, primary excluded");
+  /* The game's supported hash and INI have already been verified by caller.
+   * The trace is OFF unless explicitly opted in under [Debug]. */
+  {
+    char path[MAX_PATH],*slash;
+    DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
+    if(n && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL &&
+       (size_t)(slash-path)+strlen("SpiderMan2k1Fix.ini")+1<sizeof(path)) {
+      strcpy(slash+1,"SpiderMan2k1Fix.ini");
+      if(GetPrivateProfileIntA("Debug","ExperimentalAudioVoiceTrace",0,path)==1) {
+        InterlockedExchange(&audio_trace_enabled,1);
+        diag("AUDIO-VOICE-TRACE: ARMED (passive DirectSound voice snapshot at each 3D Flip; no audio changes)");
+      }
+    }
+  }
+}
+/* Sample only once per presented frame, only in native 3D, on the game
+ * thread. This does NOT intercept play calls; a voice restart missed
+ * between samples or a continuously playing loop is not guaranteed visible.
+ * Keep all game-owned COM buffers untouched: no AddRef, Lock or mutation. */
+void SpiderFocusDSound_TraceOnFlip(LONG flip,int in_3d){
+  unsigned i;
+  DWORD elapsed;
+  if(InterlockedCompareExchange(&audio_trace_enabled,0,0)!=1 ||
+     InterlockedCompareExchange(&enabled,0,0)!=1)return;
+  if(!in_3d){
+    audio_trace_in_3d=0;
+    return;
+  }
+  if(!audio_trace_in_3d){
+    memset(audio_trace_previous,0,sizeof(audio_trace_previous));
+    memset(audio_trace_was_playing,0,sizeof(audio_trace_was_playing));
+    audio_trace_events=0;
+    audio_trace_epoch=GetTickCount();
+    audio_trace_in_3d=1;
+    diag("AUDIO-VOICE-TRACE: 3D START t=0ms (elapsed relative to first 3D Flip)");
+  }
+  elapsed=GetTickCount()-audio_trace_epoch;
+  for(i=0;i<VOICE_COUNT;i++){
+    IDirectSoundBuffer *buf=voice_at(i);
+    DWORD status=0;
+    HRESULT hr;
+    int playing;
+    if(!buf || buf==SPIDER_PRIMARY){
+      audio_trace_previous[i]=NULL;
+      audio_trace_was_playing[i]=0;
+      continue;
+    }
+    hr=IDirectSoundBuffer_GetStatus(buf,&status);
+    if(FAILED(hr)){
+      audio_trace_previous[i]=buf;
+      audio_trace_was_playing[i]=0;
+      continue;
+    }
+    playing=(status & DSBSTATUS_PLAYING) && !(status & DSBSTATUS_BUFFERLOST);
+    if(playing && (!audio_trace_was_playing[i] || audio_trace_previous[i]!=buf)){
+      if(audio_trace_events<600u){
+        DSBCAPS caps;
+        DWORD read_cursor=0,write_cursor=0,frequency=0;
+        char line[256];
+        memset(&caps,0,sizeof(caps));
+        caps.dwSize=sizeof(caps);
+        if(FAILED(IDirectSoundBuffer_GetCaps(buf,&caps)))caps.dwBufferBytes=0;
+        if(FAILED(IDirectSoundBuffer_GetFrequency(buf,&frequency)))frequency=0;
+        if(FAILED(IDirectSoundBuffer_GetCurrentPosition(buf,&read_cursor,&write_cursor)))
+          read_cursor=write_cursor=0;
+        snprintf(line,sizeof(line),
+          "AUDIO-VOICE-TRACE: PLAY t=%lums flip=%ld slot=%u buffer=%p status=0x%08lX read=%lu write=%lu bytes=%lu hz=%lu",
+          (unsigned long)elapsed,(long)flip,i,(void*)buf,
+          (unsigned long)status,(unsigned long)read_cursor,
+          (unsigned long)write_cursor,(unsigned long)caps.dwBufferBytes,
+          (unsigned long)frequency);
+        diag(line);
+      }else if(audio_trace_events==600u){
+        diag("AUDIO-VOICE-TRACE: LIMIT 600 play events reached; further PLAY lines suppressed");
+      }
+      audio_trace_events++;
+    }
+    audio_trace_previous[i]=buf;
+    audio_trace_was_playing[i]=(BYTE)!!playing;
+  }
 }
 void SpiderFocusDSound_Pause(void){
   unsigned i,found=0,stopped=0,failed=0;
