@@ -7,6 +7,8 @@
 void SpiderFocusDSound_Init(void (*log_fn)(const char *));
 /* Read-only per-Flip diagnostic; OFF by default. in_3d excludes menus. */
 void SpiderFocusDSound_TraceOnFlip(long flip,int in_3d);
+/* Opt-in destructive diagnostic: stops ONLY signature-matching looping voice #3. */
+void SpiderFocusDSound_StopSuspectOnFlip(long flip,int in_3d);
 void SpiderFocusDSound_Pause(void);
 void SpiderFocusDSound_Resume(void);
 #endif
