@@ -49,6 +49,72 @@ static DWORD native_play_ms[SPIDER_VOICE_COUNT];
 static IDirectSoundBuffer *native_play_buffer[SPIDER_VOICE_COUNT];
 static BYTE native_play_valid[SPIDER_VOICE_COUNT];
 
+/* The full native trace is bounded (1600 lines) to avoid enormous logs.
+ * Keep a small, passive, opt-in rolling history of EVERY native transition,
+ * including those after that limit, and flush it only on human F8 markers.
+ * No additional DirectSound calls or changes to the game's native audio.
+ * The ring uses a dedicated CRITICAL_SECTION: a game audio event may arrive
+ * on a different thread from the DirectDraw Flip/F8 observer. */
+#define NATIVE_HISTORY_CAP 256u
+#define NATIVE_HISTORY_WINDOW_MS 3000u
+#define NATIVE_HISTORY_DUMP_MAX 96u
+typedef struct {
+  DWORD time_ms;
+  char line[320];
+} NativeHistoryEntry;
+static NativeHistoryEntry native_history[NATIVE_HISTORY_CAP];
+static CRITICAL_SECTION native_history_cs;
+static int native_history_ready=0;
+static unsigned native_history_next=0,native_history_count=0;
+
+static void native_history_reset(void){
+  if(!native_history_ready)return;
+  EnterCriticalSection(&native_history_cs);
+  native_history_next=0;
+  native_history_count=0;
+  LeaveCriticalSection(&native_history_cs);
+}
+static void native_history_add(DWORD now,const char *line){
+  NativeHistoryEntry *entry;
+  if(!native_history_ready)return;
+  EnterCriticalSection(&native_history_cs);
+  entry=&native_history[native_history_next];
+  entry->time_ms=now;
+  /* The native event already fits a 320-character bounded buffer. */
+  memcpy(entry->line,line,sizeof(entry->line));
+  native_history_next=(native_history_next+1u)%NATIVE_HISTORY_CAP;
+  if(native_history_count<NATIVE_HISTORY_CAP)native_history_count++;
+  LeaveCriticalSection(&native_history_cs);
+}
+/* Snapshot inside the lock, emit outside it: the logging callback must
+ * never be invoked while holding the ring lock. Events appear oldest first
+ * so that stop/play order is preserved around the audible event. */
+static void native_history_dump(DWORD now){
+  NativeHistoryEntry recent[NATIVE_HISTORY_DUMP_MAX];
+  unsigned found=0,kept=0,i;
+  char msg[420];
+  if(!native_history_ready || !native_log)return;
+  EnterCriticalSection(&native_history_cs);
+  for(i=0;i<native_history_count;i++){
+    unsigned idx=(native_history_next+NATIVE_HISTORY_CAP-1u-i)%NATIVE_HISTORY_CAP;
+    const NativeHistoryEntry *entry=&native_history[idx];
+    if(now-entry->time_ms>NATIVE_HISTORY_WINDOW_MS)break;
+    found++;
+    if(kept<NATIVE_HISTORY_DUMP_MAX)recent[kept++]=*entry;
+  }
+  LeaveCriticalSection(&native_history_cs);
+  snprintf(msg,sizeof(msg),
+    "AUDIO-NATIVE-HISTORY: F8 PRECEDING %lu ms kept=%u total=%u truncated=%u (rolling history, active even after normal 1600-event log limit)",
+    (unsigned long)NATIVE_HISTORY_WINDOW_MS,kept,found,found-kept);
+  native_log(msg);
+  while(kept>0u){
+    const NativeHistoryEntry *event=&recent[--kept];
+    snprintf(msg,sizeof(msg),"AUDIO-NATIVE-HISTORY: before_f8_ms=%lu %s",
+      (unsigned long)(now-event->time_ms),event->line);
+    native_log(msg);
+  }
+}
+
 typedef struct {
   IDirectSoundBuffer *buffer;
   DWORD status,bytes,hz,read,write;
@@ -80,13 +146,6 @@ static void trace_event(const char *kind,int slot,int looping,
   LONG frame;
   long age=-1;
   if(InterlockedCompareExchange(&native_in_3d,0,0)!=1)return;
-  if(native_events>=1600u){
-    if(native_events==1600u && native_log)
-      native_log("AUDIO-NATIVE: LIMIT 1600 events; further voice transition events suppressed");
-    native_events++;
-    return;
-  }
-  native_events++;
   now=GetTickCount()-native_epoch;
   frame=InterlockedCompareExchange(&native_flip,0,0);
   if(slot>=0 && (unsigned)slot<SPIDER_VOICE_COUNT &&
@@ -99,7 +158,15 @@ static void trace_event(const char *kind,int slot,int looping,
     (unsigned long)info->bytes,(unsigned long)info->hz,
     (unsigned long)info->read,(unsigned long)info->write,
     age,looping);
-  if(native_log)native_log(line);
+  native_history_add(now,line);
+  if(native_events<1600u){
+    native_events++;
+    if(native_log)native_log(line);
+  }else{
+    if(native_events==1600u && native_log)
+      native_log("AUDIO-NATIVE: LIMIT 1600 events; further voice transition events suppressed (F8 ring remains active)");
+    native_events++;
+  }
 }
 static void __cdecl native_play_loop(int slot,int looping){
   VoiceInfo info;
@@ -261,7 +328,10 @@ void SpiderNativeAudioTrace_Init(void (*log_fn)(const char *)){
     GetPrivateProfileIntA("Debug","ExperimentalAudioSwing5Fingerprint",0,path)==1,
     GetPrivateProfileIntA("Debug","ExperimentalAudioSwing5Capture",0,path)==1,
     GetPrivateProfileIntA("Debug","ExperimentalAudioSwing5TailMute",0,path)==1);
+  InitializeCriticalSection(&native_history_cs);
+  native_history_ready=1;
   InterlockedExchange(&native_armed,1);
+  if(native_log)native_log("AUDIO-NATIVE-HISTORY: ARMED 256 events rolling, 3000 ms F8 retrospective, max 96 logged events per marker, no audio mutation");
   if(native_log)native_log("AUDIO-NATIVE: ARMED 11 exact original game callsites (2 Play, 9 Stop), unchanged DirectSound and all effects; F8 click marker ready");
 }
 void SpiderNativeAudioTrace_OnFlip(LONG flip,int in_3d){
@@ -273,6 +343,7 @@ void SpiderNativeAudioTrace_OnFlip(LONG flip,int in_3d){
   if(in_3d && !previous){
     native_epoch=GetTickCount();
     native_events=0;
+    native_history_reset();
     native_f8_was_down=0;
     memset(native_play_valid,0,sizeof(native_play_valid));
     if(native_log)native_log("AUDIO-NATIVE: 3D START t=0ms; on native sound events timestamps are relative to this Flip");
@@ -291,6 +362,7 @@ void SpiderNativeAudioTrace_OnFlip(LONG flip,int in_3d){
       "AUDIO-NATIVE-MARK: F8 AFTER-CLICK t=%lums flip=%ld (human reaction delay; correlate preceding events)",
       (unsigned long)(GetTickCount()-native_epoch),(long)flip);
     native_log(msg);
+    native_history_dump(GetTickCount()-native_epoch);
   }
   native_f8_was_down=f8_down;
 }

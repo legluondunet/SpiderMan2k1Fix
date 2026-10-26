@@ -98,3 +98,27 @@ def test_native_sites_against_known_original_game_image_if_provided():
                 match=binary[raw_start+rva-virtual_start:raw_start+rva-virtual_start+5]
                 break
         assert match==bytes.fromhex(text)
+
+
+def test_bounded_retroactive_f8_history_survives_native_trace_limit():
+    # Primary event logger still caps verbose tracing at 1600 events, but
+    # the ring must capture EVERY transition without additional COM calls.
+    assert "#define NATIVE_HISTORY_CAP 256u" in SRC
+    assert "#define NATIVE_HISTORY_WINDOW_MS 3000u" in SRC
+    assert "#define NATIVE_HISTORY_DUMP_MAX 96u" in SRC
+    assert "native_history_add(now,line);" in SRC
+    assert SRC.index("native_history_add(now,line);") < SRC.index("if(native_events<1600u)")
+    assert "native_history_dump(GetTickCount()-native_epoch);" in SRC
+    assert "native_history_reset();" in SRC
+    assert "InitializeCriticalSection(&native_history_cs)" in SRC
+    assert "EnterCriticalSection(&native_history_cs)" in SRC
+    assert "LeaveCriticalSection(&native_history_cs)" in SRC
+    assert "AUDIO-NATIVE-HISTORY: F8 PRECEDING" in SRC
+    assert "AUDIO-NATIVE-HISTORY: before_f8_ms=" in SRC
+    assert "found-kept" in SRC
+    assert "native_log(msg);" in SRC
+    # All diagnostic history is downstream of exact original function calls.
+    assert SRC.index("SPIDER_NATIVE_PLAY(slot,looping);") < SRC.index('trace_event("PLAY-LOOP"')
+    assert SRC.index("SPIDER_NATIVE_STOP(slot);") < SRC.index("static void __cdecl native_stop_site_470f6e")
+    assert "GetPrivateProfileIntA(\\"Debug\\",\\"ExperimentalAudioNativeLifecycleTrace\\",0,path)!=1" in SRC
+    assert "IDirectSoundBuffer_Lock(" not in SRC
