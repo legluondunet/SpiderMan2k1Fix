@@ -34,6 +34,7 @@
 #include "audio_loop_pcm.h"
 #include "audio_loop_tail_repair.h"
 #include "audio_combat_pcm.h"
+#include "audio_combat_tail_repair.h"
 
 #define SPIDER_NATIVE_BASE ((uintptr_t)0x00400000u)
 #define SPIDER_VOICE_COUNT 32u
@@ -200,6 +201,7 @@ static void __cdecl native_play_oneshot(int slot,int looping){
   trace_event("PLAY-ONESHOT",slot,looping,&info);
   /* Read the original one-shot BEFORE optional Swing5 tail mutation. */
   SpiderCombatPCM_Probe(slot,info.buffer,info.bytes,GetTickCount()-native_epoch,looping);
+  SpiderCombatTailRepair_Probe(slot,info.buffer,info.bytes,info.hz,looping);
   /* Exact-size/frequency candidates only, separately gated, max 12. */
   SpiderSwing5Fingerprint_Probe(slot,info.buffer,info.bytes,info.hz);
   SpiderLoopPCM_Probe(slot,info.buffer,info.bytes,info.hz,looping);
@@ -293,6 +295,8 @@ void SpiderNativeAudioTrace_Init(void (*log_fn)(const char *)){
       native_log("AUDIO-LOOP-TAIL: REFUSED; requires ExperimentalAudioNativeLifecycleTrace=1");
     if(GetPrivateProfileIntA("Debug","ExperimentalAudioCombatPCMCapture",0,path)==1 && native_log)
       native_log("AUDIO-COMBAT-PCM: REFUSED; requires ExperimentalAudioNativeLifecycleTrace=1");
+    if(GetPrivateProfileIntA("Debug","ExperimentalAudioCombatTailRepair",0,path)==1 && native_log)
+      native_log("AUDIO-COMBAT-TAIL: REFUSED; requires ExperimentalAudioNativeLifecycleTrace=1");
     return;
   }
   if(native_log)native_log("AUDIO-NATIVE: requested optional all 11 direct native voice Play/Stop callsites; F8 click marker enabled");
@@ -348,6 +352,8 @@ void SpiderNativeAudioTrace_Init(void (*log_fn)(const char *)){
     GetPrivateProfileIntA("Debug","ExperimentalAudioLoopPCMCapture",0,path)==1);
   SpiderLoopTailRepair_Init(native_log,
     GetPrivateProfileIntA("Debug","ExperimentalAudioLoopTailRepair",0,path)==1);
+  SpiderCombatTailRepair_Init(native_log,
+    GetPrivateProfileIntA("Debug","ExperimentalAudioCombatTailRepair",0,path)==1);
   SpiderCombatPCM_Init(native_log,
     GetPrivateProfileIntA("Debug","ExperimentalAudioCombatPCMCapture",0,path)==1,
     (DWORD)GetPrivateProfileIntA("Debug","ExperimentalAudioCombatPCMStartMs",22000,path),
