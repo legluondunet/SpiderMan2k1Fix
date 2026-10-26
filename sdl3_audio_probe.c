@@ -11,6 +11,9 @@
 #include <string.h>
 #include <math.h>
 #include <wincrypt.h>
+#define COBJMACROS
+#include <mmsystem.h>
+#include <dsound.h>
 #include "sdl3_audio_probe.h"
 
 #define SDL_AUDIO_INIT_FLAG 0x10u
@@ -23,6 +26,7 @@ typedef bool (__cdecl *LoadFn)(const char*,SDL3Spec*,uint8_t**,uint32_t*);
 typedef SDL3Stream* (__cdecl *OpenFn)(uint32_t,const SDL3Spec*,void*,void*);
 typedef bool (__cdecl *PutFn)(SDL3Stream*,const void*,int);
 typedef bool (__cdecl *ResumeFn)(SDL3Stream*);
+typedef bool (__cdecl *PauseFn)(SDL3Stream*);
 typedef void (__cdecl *DestroyFn)(SDL3Stream*);
 typedef void (__cdecl *FreeFn)(void*);
 typedef const char* (__cdecl *ErrorFn)(void);
@@ -31,7 +35,21 @@ static void (*logfn)(const char*)=NULL;
 static int on=0, attempted=0, was_f7=0, swing_mode=0;
 static int swing_source_attempted=0,swing_source_ready=0;
 static uint8_t swing_source_pcm[32632];
-static SDL3Stream *swing_streams[32];
+/* Each native slot owns at most one SDL3 stream and retains a COM
+ * reference to the exact DS buffer whose Play was suppressed. */
+typedef struct {
+  SDL3Stream *audio;
+  IDirectSoundBuffer *original;
+  LONG volume,pan;
+  DWORD hz,last_tick;
+  uint64_t position_milli_frames; /* frame index *1000; no clock drift */
+  int paused;
+} SwingVoice;
+static SwingVoice swing_voices[32];
+static CRITICAL_SECTION voice_cs;
+static int voice_cs_ready=0,menu_was_active=1;
+#define GAME_VOICE_TABLE ((BYTE*)(uintptr_t)0x006BBD50u)
+#define SWING_FRAMES (32632u/2u)
 static HMODULE module=NULL;
 static char directory[MAX_PATH];
 static SDL3Stream *stream=NULL;
@@ -40,6 +58,7 @@ static LoadFn load=NULL;
 static OpenFn open_device=NULL;
 static PutFn put=NULL;
 static ResumeFn resume=NULL;
+static PauseFn pause_audio=NULL;
 static DestroyFn destroy=NULL;
 static FreeFn sdl_free=NULL;
 static ErrorFn error_text=NULL;
@@ -66,10 +85,11 @@ static int initialize_sdl(void){
   open_device=(OpenFn)GetProcAddress(module,"SDL_OpenAudioDeviceStream");
   put=(PutFn)GetProcAddress(module,"SDL_PutAudioStreamData");
   resume=(ResumeFn)GetProcAddress(module,"SDL_ResumeAudioStreamDevice");
+  pause_audio=(PauseFn)GetProcAddress(module,"SDL_PauseAudioStreamDevice");
   destroy=(DestroyFn)GetProcAddress(module,"SDL_DestroyAudioStream");
   sdl_free=(FreeFn)GetProcAddress(module,"SDL_free");
   error_text=(ErrorFn)GetProcAddress(module,"SDL_GetError");
-  if(!init||!load||!open_device||!put||!resume||!destroy||!sdl_free||!error_text){
+  if(!init||!load||!open_device||!put||!resume||!pause_audio||!destroy||!sdl_free||!error_text){
     if(logfn)logfn("SDL3-PROBE: required SDL3 entrypoint absent; no sound played");
     FreeLibrary(module);module=NULL;return 0;
   }
@@ -86,6 +106,10 @@ void SpiderSDL3Probe_Init(void (*logger)(const char*),int enabled,int replace_sw
   logfn=logger;
   swing_mode=(replace_swing5==1);
   on=(enabled==1);
+  if(swing_mode && !voice_cs_ready){
+    InitializeCriticalSection(&voice_cs);
+    voice_cs_ready=1;
+  }
   if(!on && !swing_mode)return;
   n=GetModuleFileNameA(NULL,exe,sizeof(exe));
   if(!n||n>=sizeof(exe)||(slash=strrchr(exe,'\\'))==NULL)return;
@@ -200,7 +224,7 @@ static int load_verified_swing_source(void){
  * SDL3 receives a separate stream per native voice slot so short sounds
  * can overlap. The game-owned buffer is never modified. If SDL3 fails,
  * the original native DXSOUND_Play is called instead. */
-int SpiderSDL3Probe_PlaySwing5(int slot,LONG ds_volume,LONG ds_pan,DWORD actual_hz){
+int SpiderSDL3Probe_PlaySwing5(int slot,IDirectSoundBuffer *original,LONG ds_volume,LONG ds_pan,DWORD actual_hz){
   SDL3Spec spec={0};
   SDL3Stream *new_stream=NULL;
   int16_t *stereo=NULL;
@@ -208,7 +232,7 @@ int SpiderSDL3Probe_PlaySwing5(int slot,LONG ds_volume,LONG ds_pan,DWORD actual_
   double left,right;
   char message[300];
   const size_t frame_count=sizeof(swing_source_pcm)/2u;
-  if(!swing_mode || slot<0 || slot>=32 ||
+  if(!swing_mode || !original || !voice_cs_ready || slot<0 || slot>=32 ||
      ds_volume>0 || ds_volume<-10000 ||
      ds_pan>10000 || ds_pan<-10000 ||
      actual_hz<100u || actual_hz>100000u)
@@ -247,8 +271,20 @@ int SpiderSDL3Probe_PlaySwing5(int slot,LONG ds_volume,LONG ds_pan,DWORD actual_
     return 0;
   }
   HeapFree(GetProcessHeap(),0,stereo);
-  if(swing_streams[slot])destroy(swing_streams[slot]);
-  swing_streams[slot]=new_stream;
+  EnterCriticalSection(&voice_cs);
+  if(swing_voices[slot].audio){
+    destroy(swing_voices[slot].audio);
+    IDirectSoundBuffer_Release(swing_voices[slot].original);
+  }
+  IDirectSoundBuffer_AddRef(original);
+  memset(&swing_voices[slot],0,sizeof(swing_voices[slot]));
+  swing_voices[slot].audio=new_stream;
+  swing_voices[slot].original=original;
+  swing_voices[slot].volume=ds_volume;
+  swing_voices[slot].pan=ds_pan;
+  swing_voices[slot].hz=actual_hz;
+  swing_voices[slot].last_tick=GetTickCount();
+  LeaveCriticalSection(&voice_cs);
   snprintf(message,sizeof(message),
     "SDL3-SWING5: REPLACED slot=%d original_pcm=32632 hz=%lu ds_volume=%ld ds_pan=%ld channels=2 (original native DirectSound Play skipped)",
     slot,(unsigned long)actual_hz,(long)ds_volume,(long)ds_pan);
