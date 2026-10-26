@@ -12,6 +12,11 @@ VALID=(ROOT/"ini_validation.h").read_text()
 BUILD=(ROOT/"build.sh").read_text()
 
 ORIGINAL_SITES={
+    0x470F6E:"e8 2d 33 09 00",
+    0x4712FC:"e8 9f 2f 09 00",
+    0x471858:"e8 43 2a 09 00",
+    0x471B7C:"e8 1f 27 09 00",
+    0x47236C:"e8 2f 1f 09 00",
     0x4722F3:"e8 38 1f 09 00",
     0x472870:"e8 bb 19 09 00",
     0x4723F2:"e8 a9 1e 09 00",
@@ -22,6 +27,10 @@ ORIGINAL_SITES={
 
 def test_exact_six_original_callsites_and_read_only_forwarders():
     assert "NATIVE_HOOK_COUNT" in SRC
+    assert len(ORIGINAL_SITES)==11
+    for address in ("470f6e","4712fc","471858","471b7c","47236c"):
+        assert f"native_stop_site_{address}" in SRC
+        assert f"STOP-SITE-{address.upper()}" in SRC
     assert "memcmp(native_sites[i].call_site,native_sites[i].expected,5u)" in SRC
     for va,data in ORIGINAL_SITES.items():
         assert f"0x{va:08X}u" in SRC
@@ -51,7 +60,14 @@ def test_gated_no_per_frame_com_or_extra_mutation():
     assert "FlushInstructionCache(" in SRC
     assert "AUDIO-NATIVE: REFUSED" in SRC
     assert "AUDIO-NATIVE: ARMED" in SRC
-    assert "900u" in SRC
+    assert "1600u" in SRC
+    assert "AUDIO-NATIVE-MARK: F8 AFTER-CLICK" in SRC
+    assert "GetAsyncKeyState(VK_F8)" in SRC
+    for page in ("0x00470000u","0x00471000u","0x00472000u"):
+        assert page in SRC
+    assert "for(i=0;i<3u;i++)" in SRC
+    assert "for(j=0;j<3u;j++)" in SRC
+    assert "FlushInstructionCache(GetCurrentProcess(),pages[0],3u*4096u)" in SRC
     assert "SpiderNativeAudioTrace_OnFlip(" in CORE
     assert "SpiderNativeAudioTrace_Init(log_line);" in CORE
     assert "audio_native_lifecycle.c" in BUILD
