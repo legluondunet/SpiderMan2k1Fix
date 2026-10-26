@@ -52,9 +52,19 @@ def test_optional_manual_f8_arming_with_zero_delay():
     assert 'SpiderCombatPCM_OnF8(now)' in N
     assert 'SpiderCombatPCM_On3DStart();' in N
     assert 'SpiderCombatPCM_OnFlip(GetTickCount()-native_epoch);' in N
-    assert 'InterlockedCompareExchange(&f8_triggered,1,0)' in S
+
+    assert '#define MANUAL_SESSIONS 2u' in S
+    assert '#define MANUAL_SESSION_LIMIT 12u' in S
+    assert '#define F8_DEBOUNCE_MS 1200u' in S
+    assert 'InterlockedIncrement(&f8_uses)' in S
+    assert 'session_counts[session-1]++' in S
+    assert 'samples[idx].session=manual_mode?(unsigned)session:0u' in S
+    assert 'SpiderMan2k1Fix-CombatPCM-R%u-%02u.wav' in S
+    assert 'F8-IGNORED maximum two sessions per game' in S
     assert 'InterlockedExchange(&capture_from_ms,(LONG)(native_ms+start_delay_ms))' in S
-    assert 'if(manual_mode && InterlockedCompareExchange(&f8_triggered,0,0)==0)return;' in S
+    assert 'if(manual_mode && (session<1 || session>MANUAL_SESSIONS))return;' in S
+    assert 'session!=InterlockedCompareExchange(&f8_triggered,0,0)' in S
+    assert 'used=manual_mode?session_counts[session-1]:count' in S
     assert 'SpiderCombatPCM_IsManualF8' in H
     assert 'SpiderCombatPCM_OnF8' in H
     assert 'SpiderCombatPCM_On3DStart' in H
