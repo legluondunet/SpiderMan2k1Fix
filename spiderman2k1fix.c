@@ -2528,6 +2528,10 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
    * ExperimentalAudioVoiceTrace=1. No change to music or sound playback. */
   SpiderFocusDSound_TraceOnFlip(count,
       InterlockedCompareExchange(&menu_upscale_active,0,0)!=1);
+  /* Experimental loop isolation: OFF unless Debug switch explicitly enabled.
+   * Stops only the exact previously observed native secondary sound buffer. */
+  SpiderFocusDSound_StopSuspectOnFlip(count,
+      InterlockedCompareExchange(&menu_upscale_active,0,0)!=1);
   /* Observe the physical F9 press early; the game's screenshot code can
    * run between two Flip calls, so surface hooks also sample F9. */
   if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
