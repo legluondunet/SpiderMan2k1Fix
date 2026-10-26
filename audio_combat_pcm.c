@@ -239,8 +239,8 @@ void SpiderCombatPCM_Probe(int slot,IDirectSoundBuffer *buf,DWORD size,
   char msg[140];
   if(!on || !buf || looping || slot<0 || slot>=32 ||
      size<PCM_MIN || size>PCM_MAX || (size&1u))return;
-  /* Fail closed until F8 first triggers the manual capture window. */
-  if(manual_mode && InterlockedCompareExchange(&f8_triggered,0,0)==0)return;
+  session=manual_mode?InterlockedCompareExchange(&f8_triggered,0,0):0;
+  if(manual_mode && (session<1 || session>MANUAL_SESSIONS))return;
   if(now<(DWORD)InterlockedCompareExchange(&capture_from_ms,0,0))return;
   last=InterlockedCompareExchange(&prev_ms,0,0);
   if(now-(DWORD)last<SPACING_MS)return;
