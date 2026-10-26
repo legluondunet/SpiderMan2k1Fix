@@ -267,19 +267,32 @@ void SpiderCombatPCM_Probe(int slot,IDirectSoundBuffer *buf,DWORD size,
   }
   hash=fingerprint(copy,size);
   EnterCriticalSection(&cs);
-  for(i=0;i<count;i++)
-    if(samples[i].size==size && samples[i].hash==hash &&
-       memcmp(samples[i].data,copy,size)==0)break;
-  if(i<count || count>=LIMIT){
+  /* If another F8 triggered during DirectSound Lock, discard the old copy. */
+  if(manual_mode && session!=InterlockedCompareExchange(&f8_triggered,0,0)){
     LeaveCriticalSection(&cs);
     return;
   }
-  idx=count++;
+  base=manual_mode?(unsigned)(session-1)*MANUAL_SESSION_LIMIT:0u;
+  used=manual_mode?session_counts[session-1]:count;
+  quota=manual_mode?MANUAL_SESSION_LIMIT:LIMIT;
+  for(i=base;i<base+used;i++)
+    if(samples[i].size==size && samples[i].hash==hash &&
+       memcmp(samples[i].data,copy,size)==0)break;
+  if(i<base+used || used>=quota){
+    LeaveCriticalSection(&cs);
+    return;
+  }
+  ordinal=used+1u;
+  idx=base+used;
+  if(manual_mode)session_counts[session-1]++;
+  count++;
   memcpy(samples[idx].data,copy,size);
   samples[idx].size=size;
   samples[idx].rate=format.nSamplesPerSec;
   samples[idx].at_ms=now;
   samples[idx].slot=(unsigned)slot;
+  samples[idx].session=manual_mode?(unsigned)session:0u;
+  samples[idx].ordinal=ordinal;
   samples[idx].hash=hash;
   LeaveCriticalSection(&cs);
   thread=CreateThread(NULL,0,save_wav,(LPVOID)(uintptr_t)idx,0,NULL);
