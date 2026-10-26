@@ -37,7 +37,7 @@
 #define MAX_WAV_COUNT 2048u
 #define MAX_PCM_CACHE (128u*1024u*1024u)
 #define MIN_MATCH_BYTES 1024u
-#define MAX_LOG_MATCHES 48u
+#define MAX_LOG_MATCHES 192u
 
 typedef struct {
   char dir[33];
@@ -294,6 +294,10 @@ void SpiderPKRAudioIndex_Probe(int slot,IDirectSoundBuffer *buf,int looping){
   }
   hr=IDirectSoundBuffer_Unlock(buf,first,size1,second,size2);
   if(FAILED(hr) || !winner || reports>=MAX_LOG_MATCHES)return;
+  /* Log distinct source files rather than the same frequent footstep or
+   * swing dozens of times. This keeps the later helicopter/boss effects
+   * in the same playthrough observable without an unbounded logfile. */
+  if(winner->reports++)return;
   reports++;
   snprintf(line,sizeof(line),
     "PKR-AUDIO: %s slot=%d loop=%d original=%s/%s bytes=%lu hz=%lu matching_prefix=1024 candidates=%u (READ-ONLY)",
