@@ -180,3 +180,14 @@ def test_ini_recovery_preserves_opt_in_modding_and_audio(recover_runner,tmp_path
     assert "[Audio] MusicSFXLevel=60" in entries
     assert "[Audio] VoiceLevel=0" in entries
     assert not any("[Extra]" in entry for entry in entries)
+
+def test_recovery_preserves_trace_option_from_other_draft_pr(recover_runner,tmp_path):
+    ini=("[Debug]\nLog=1\nExperimentalAudioVoiceTrace=1\n"
+         "[Modding]\nLooseFiles=1\n"
+         "[Audio]\nMusicSFXLevel=60\nVoiceLevel=0\n"
+         "[Obsolete]\nInvalidKey=1\n")
+    values=recover(recover_runner,tmp_path,ini)
+    assert "[Debug] ExperimentalAudioVoiceTrace=1" in values
+    assert "[Modding] LooseFiles=1" in values
+    assert "[Audio] MusicSFXLevel=60" in values
+    assert "[Audio] VoiceLevel=0" in values

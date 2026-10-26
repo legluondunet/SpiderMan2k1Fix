@@ -72,3 +72,12 @@ manual Windows and Wine results.
 A standalone PKR extraction command is a separate follow-up. It should
 reuse a supported archive extractor rather than reimplement PKR decoding
 inside the game DLL.
+
+## Audio voice trace option compatibility
+
+The optional `[Debug] ExperimentalAudioVoiceTrace=1` key from the separate
+PR #62 is **recognized and preserved by this PR's INI validator and repair**,
+so switching experimental branches no longer deletes that preference.
+However, this PKR-modding DLL **does not implement** the audio trace itself:
+`AUDIO-VOICE-TRACE` messages will appear only with an audio-trace-enabled
+build. Recognizing a key does not activate the feature in this branch.
