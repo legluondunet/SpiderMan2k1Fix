@@ -24,6 +24,13 @@
 #define VOICE_STRIDE 12u
 #define ONE_SHOT_CALL ((BYTE*)(uintptr_t)0x00472870u)
 #define GAME_PLAY ((void (__cdecl *)(int,int))(uintptr_t)0x00504230u)
+#define GAME_STOP_ADDRESS ((BYTE*)(uintptr_t)0x005042A0u)
+#define NATIVE_STOP_PATCH_BYTES 8u
+static const BYTE expected_stop[NATIVE_STOP_PATCH_BYTES]={
+  0x8B,0x44,0x24,0x04,0x56,0x8D,0x04,0x40
+};
+static void (__cdecl *original_stop)(int)=NULL;
+static BYTE *stop_trampoline=NULL;
 #define SWING_BYTES 32632u
 static const BYTE expected_call[5]={0xE8,0xBB,0x19,0x09,0x00};
 static const BYTE corrupt_swing_sha[32]={
@@ -35,6 +42,10 @@ static const BYTE corrupt_swing_sha[32]={
 static void (*log_fn)(const char*)=NULL;
 static int installed=0;
 static volatile LONG matches=0,fallbacks=0;
+static void __cdecl maybe_stop_sdl3(int slot){
+  SpiderSDL3Probe_StopSlot(slot,"native-DXSOUND_Stop");
+  if(original_stop)original_stop(slot);
+}
 
 static int exact_corrupt_buffer(IDirectSoundBuffer *buf){
   DSBCAPS caps;
@@ -84,13 +95,16 @@ static void __cdecl maybe_play_sdl3(int slot,int looping){
     GAME_PLAY(slot,looping);
     return;
   }
+  /* A slot can be reused with another sound without an intervening Stop.
+   * Never let the earlier SDL3 stream continue on this newly owned slot. */
+  SpiderSDL3Probe_StopSlot(slot,"native-voice-replay");
   entry=VOICE_TABLE+(unsigned)slot*VOICE_STRIDE;
   buf=*(IDirectSoundBuffer**)entry;
   if(buf && exact_corrupt_buffer(buf)){
     if(SUCCEEDED(IDirectSoundBuffer_GetVolume(buf,&volume)) &&
        SUCCEEDED(IDirectSoundBuffer_GetPan(buf,&pan)) &&
        SUCCEEDED(IDirectSoundBuffer_GetFrequency(buf,&hz)) &&
-       SpiderSDL3Probe_PlaySwing5(slot,volume,pan,hz)){
+       SpiderSDL3Probe_PlaySwing5(slot,buf,volume,pan,hz)){
       /* Only the two metadata writes performed by original DXSOUND_Play:
        * field_8=0, field_9=(looping!=0); the native COM Play is skipped.
        * The original DirectSound voice remains stopped and reusable.
