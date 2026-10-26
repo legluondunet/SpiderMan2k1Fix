@@ -35,6 +35,7 @@
 #include "f9_toast.h"
 #include "quick_exit_f12.h"
 #include "sdl3_audio_probe.h"
+#include "sdl3_swing5_redirect.h"
 
 static const BYTE expected_sha256[32] = {
   0x0a,0x11,0xa4,0x9f,0x3f,0x63,0xd4,0xbb,
@@ -3093,12 +3094,14 @@ static DWORD initialize_body(LPVOID unused) {
   {
     char ini[MAX_PATH],*slash;
     DWORD n=GetModuleFileNameA(NULL,ini,MAX_PATH);
-    int test=0;
+    int test=0,swing=0;
     if(n && n<MAX_PATH && (slash=strrchr(ini,'\\'))!=NULL){
       strcpy(slash+1,"SpiderMan2k1Fix.ini");
       test=GetPrivateProfileIntA("Debug","ExperimentalSDL3AudioProbe",0,ini)==1;
+      swing=GetPrivateProfileIntA("Debug","ExperimentalSDL3Swing5Replace",0,ini)==1;
     }
-    SpiderSDL3Probe_Init(log_line,test);
+    SpiderSDL3Probe_Init(log_line,test,swing);
+    SpiderSDL3Swing5_Init(log_line,swing);
   }
   /* The first-run generator or repair may have changed [Debug] Log. */
   {
