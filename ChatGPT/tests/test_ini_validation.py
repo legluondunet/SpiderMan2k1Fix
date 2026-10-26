@@ -311,3 +311,17 @@ def test_audio_diagnostic_build_preserves_modding_toggle(runner,tmp_path):
         "[Debug]\nExperimentalAudioStopSuspectLoop=1\n"
         "[Modding]\nLooseFiles=1\n")
     assert result==(0,0,1),detail
+
+
+@pytest.mark.parametrize("value",["0","1","2","3","7","14","15","30","31"])
+def test_audio_loop_mask_valid_values(runner,tmp_path,value):
+    result,detail=validate(runner,tmp_path,
+        f"[Debug]\nExperimentalAudioStopLoopMask={value}\n")
+    assert result == (0,0,1),detail
+
+
+@pytest.mark.parametrize("value",["","-1","32","99","true","0x1","1.0"])
+def test_audio_loop_mask_reject_invalid(runner,tmp_path,value):
+    result,detail=validate(runner,tmp_path,
+        f"[Debug]\nExperimentalAudioStopLoopMask={value}\n")
+    assert result[0]>=1 and result[2]==0,detail
