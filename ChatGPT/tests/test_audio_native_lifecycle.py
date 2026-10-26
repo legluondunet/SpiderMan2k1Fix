@@ -55,8 +55,8 @@ def test_gated_no_per_frame_com_or_extra_mutation():
     assert 'ExperimentalAudioNativeLifecycleTrace",0,path)!=1' in SRC
     assert '"ExperimentalAudioNativeLifecycleTrace"' in VALID
     assert "GetModuleHandleA(NULL)!=SPIDER_NATIVE_BASE" in SRC
-    assert "VirtualProtect(page,4096u,PAGE_EXECUTE_READWRITE,&oldprotection)" in SRC
-    assert "VirtualProtect(page,4096u,oldprotection,&ignored)" in SRC
+    assert "VirtualProtect(pages[i],4096u,PAGE_EXECUTE_READWRITE,&oldprotection[i])" in SRC
+    assert "VirtualProtect(pages[j],4096u,oldprotection[j],&ignored)" in SRC
     assert "FlushInstructionCache(" in SRC
     assert "AUDIO-NATIVE: REFUSED" in SRC
     assert "AUDIO-NATIVE: ARMED" in SRC
