@@ -225,3 +225,18 @@ def test_loop_mask_repair_preserves_old_diag_and_modding(recover_runner,tmp_path
                 "[Modding] LooseFiles=1",
                 "[Audio] MusicSFXLevel=60","[Audio] VoiceLevel=0"):
         assert key in values
+
+
+def test_oneshot_trace_recovery_preserves_debug_and_modding(recover_runner,tmp_path):
+    ini=("[Debug]\nLog=1\nExperimentalAudioOneShotTrace=1\n"
+         "ExperimentalAudioVoiceTrace=1\nExperimentalAudioStopLoopMask=30\n"
+         "ExperimentalAudioStopSuspectLoop=1\n"
+         "[Modding]\nLooseFiles=1\n"
+         "[BadStuff]\nInvalid=1\n")
+    values=recover(recover_runner,tmp_path,ini)
+    for key in ("[Debug] ExperimentalAudioOneShotTrace=1",
+                "[Debug] ExperimentalAudioVoiceTrace=1",
+                "[Debug] ExperimentalAudioStopLoopMask=30",
+                "[Debug] ExperimentalAudioStopSuspectLoop=1",
+                "[Modding] LooseFiles=1"):
+        assert key in values
