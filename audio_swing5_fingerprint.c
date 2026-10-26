@@ -1,6 +1,7 @@
 /*
  * Experimental exact PCM fingerprint of a suspected Spider-Man 2001 WAV.
- * No buffer modifications, volume/rate changes or Stop calls. Lock/Unlock
+ * Opt-in hash-guarded tail neutralization can modify the known corrupt tail.
+ * Without that separate opt-in, no buffer modifications occur. Lock/Unlock
  * still touches the audio synchronization path; use only in short tests.
  */
 #define WIN32_LEAN_AND_MEAN
@@ -19,7 +20,12 @@
 #define MAX_PROBES 12u
 /* SHA-256 of the decoded 16-bit mono PCM bytes, not the RIFF header. */
 static const char expected_pcm_sha256[] =
- "abb6d1b0863ea9c44fc0b718115f7e0821383d90a58f7cd22d9cf6e447fb8639";
+ "730cca4057c9225c80ba1ac09946a38ac9331b1a7b491f437d0bdcd00e3d1700";
+/* Exact hash of live buffer proven corrupt from byte 30676 onward. */
+static const char corrupt_pcm_sha256[] =
+ "5b562348077ddb8cb77edabcd522e1b1789a74c6b7852c86344c1e887f6209ad";
+#define CORRUPT_TAIL_START 30676u
+#define CORRUPT_TAIL_BYTES (SUSPECT_BYTES-CORRUPT_TAIL_START)
 static void (*probe_log)(const char *)=NULL;
 static int probe_enabled=0;
 static unsigned probe_count=0;
@@ -27,6 +33,7 @@ static unsigned probe_count=0;
  * This is a diagnostic side effect, explicitly gated by the user.
  * No game buffer or game resource is modified. */
 static int capture_enabled=0;
+static int tail_mute_enabled=0;
 static volatile LONG capture_state=0; /* 0=none, 1=copy/write, 2=done */
 static BYTE captured_pcm[SUSPECT_BYTES];
 
@@ -98,16 +105,21 @@ static void log_message(const char *message){
   if(probe_log)probe_log(message);
 }
 void SpiderSwing5Fingerprint_Init(void (*log_fn)(const char *),int enabled,
-                                   int capture_wav){
+                                   int capture_wav,int tail_mute){
   probe_log=log_fn;
   probe_enabled=enabled==1;
   capture_enabled=probe_enabled && capture_wav==1;
+  tail_mute_enabled=probe_enabled && tail_mute==1;
   InterlockedExchange(&capture_state,0);
   probe_count=0;
   if(capture_wav && !probe_enabled)
     log_message("AUDIO-SWING5-CAPTURE: REFUSED; enable ExperimentalAudioSwing5Fingerprint=1 too");
   if(capture_enabled)
     log_message("AUDIO-SWING5-CAPTURE: ARMED, one WAV snapshot, original buffer unchanged; local file I/O performed on worker thread");
+  if(tail_mute && !probe_enabled)
+    log_message("AUDIO-SWING5-TAIL: REFUSED; requires ExperimentalAudioSwing5Fingerprint=1");
+  if(tail_mute_enabled)
+    log_message("AUDIO-SWING5-TAIL: ARMED opt-in known SHA-256 only, zero last 1956 PCM bytes (sample index 15338 onward), max 12 probes; native game PCM will be modified");
   if(probe_enabled)
     log_message("AUDIO-SWING5-FP: ARMED optional PCM SHA-256; 32632 bytes/16000 Hz mono16 only; max 12 probes; Lock/Unlock may affect timing");
 }
@@ -123,7 +135,7 @@ void SpiderSwing5Fingerprint_Probe(int slot,IDirectSoundBuffer *buffer,
   unsigned i,trailing_zeros=0,tail_peak=0;
   DWORD total_samples=SUSPECT_BYTES/2u;
   HRESULT hr;
-  int ok=1,unlock_ok,capture_ready=0;
+  int ok=1,unlock_ok,capture_ready=0,tail_muted=0;
 
   if(!probe_enabled || !buffer || slot<0 || slot>=32 ||
      bytes!=SUSPECT_BYTES || frequency!=SUSPECT_HZ)return;
@@ -183,6 +195,23 @@ void SpiderSwing5Fingerprint_Probe(int slot,IDirectSoundBuffer *buffer,
         if(part2_len)memcpy(captured_pcm+part1_len,p2,part2_len);
         capture_ready=1;
       }
+      /* Never mutate without an exact byte-level SHA-256 match.
+       * Byte 30676 + 44-byte WAV header = 30720 = 15 * 2048;
+       * first 30676 bytes matched user's uncorrupted Swing5.wav exactly.
+       * Expected last good PCM sample is 21/32768: directly entering
+       * silence at this boundary avoids an audible amplitude jump.
+       * Capture before mutation above, so saved WAV preserves evidence. */
+      if(tail_mute_enabled && strcmp(actual,corrupt_pcm_sha256)==0){
+        if(part1_len>CORRUPT_TAIL_START){
+          memset((BYTE*)part1+CORRUPT_TAIL_START,0u,
+                 part1_len-CORRUPT_TAIL_START);
+          if(part2_len)memset(part2,0u,part2_len);
+        }else{
+          memset((BYTE*)part2+(CORRUPT_TAIL_START-part1_len),
+                 0u,CORRUPT_TAIL_BYTES);
+        }
+        tail_muted=1;
+      }
       snprintf(message,sizeof(message),
         "AUDIO-SWING5-FP: %s slot=%d bytes=%lu hz=%lu sha256=%s tail_zero_samples=%u tail_peak_10ms=%u/32768",
         strcmp(actual,expected_pcm_sha256)==0?"MATCH":"DIFFERENT",
@@ -204,6 +233,13 @@ void SpiderSwing5Fingerprint_Probe(int slot,IDirectSoundBuffer *buffer,
     log_message(warning);
   }
   log_message(message);
+  if(tail_muted){
+    snprintf(message,sizeof(message),
+      "AUDIO-SWING5-TAIL: ZEROED slot=%d from_byte=%u bytes=%u; original hash=%s; diagnostic mutation, no other voices touched",
+      slot,(unsigned)CORRUPT_TAIL_START,(unsigned)CORRUPT_TAIL_BYTES,
+      corrupt_pcm_sha256);
+    log_message(message);
+  }
   if(capture_ready){
     HANDLE thread=CreateThread(NULL,0,write_captured_wav,NULL,0,NULL);
     if(thread){

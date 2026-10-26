@@ -11,7 +11,7 @@ def test_exact_candidate_shape_and_expected_digest():
     assert "32632u" in SRC
     assert "16000u" in SRC
     assert "MAX_PROBES 12u" in SRC
-    assert "abb6d1b0863ea9c44fc0b718115f7e0821383d90a58f7cd22d9cf6e447fb8639" in SRC
+    assert "730cca4057c9225c80ba1ac09946a38ac9331b1a7b491f437d0bdcd00e3d1700" in SRC
     for constraint in ("fmt.wFormatTag!=WAVE_FORMAT_PCM",
                        "fmt.nChannels!=1u","fmt.wBitsPerSample!=16u",
                        "fmt.nSamplesPerSec!=SUSPECT_HZ",
@@ -60,3 +60,20 @@ def test_capture_is_written_to_user_temp_without_admin():
     assert "GetTempPathA(MAX_PATH,path)" in SRC
     assert "strcpy(path+n,\"SpiderMan2k1Fix-AudioCandidate.wav\")" in SRC
     assert "GetModuleFileNameA(NULL" not in SRC
+
+
+def test_known_bad_tail_zero_is_opt_in_and_exact_hash_guarded():
+    assert '"ExperimentalAudioSwing5TailMute"' in VALID
+    assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioSwing5TailMute",0,path)==1' in NATIVE
+    assert "tail_mute_enabled=probe_enabled && tail_mute==1;" in SRC
+    assert "5b562348077ddb8cb77edabcd522e1b1789a74c6b7852c86344c1e887f6209ad" in SRC
+    assert "#define CORRUPT_TAIL_START 30676u" in SRC
+    assert "SUSPECT_BYTES-CORRUPT_TAIL_START" in SRC
+    assert 'strcmp(actual,corrupt_pcm_sha256)==0' in SRC
+    assert "memset((BYTE*)part1+CORRUPT_TAIL_START" in SRC
+    assert "memset((BYTE*)part2+(CORRUPT_TAIL_START-part1_len)" in SRC
+    assert "AUDIO-SWING5-TAIL: ZEROED" in SRC
+    assert "int capture_wav,int tail_mute" in SRC
+    assert "int capture_wav,int tail_mute" in HEADER
+    assert SRC.index("memcpy(captured_pcm,p1,part1_len)") < SRC.index('strcmp(actual,corrupt_pcm_sha256)==0')
+    assert SRC.index('strcmp(actual,corrupt_pcm_sha256)==0') < SRC.index("IDirectSoundBuffer_Unlock(")

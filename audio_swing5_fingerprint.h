@@ -5,7 +5,7 @@
 /* Explicit opt-in: a brief DirectSound Lock/Unlock is read-only for
  * samples, but can affect audio timing. Diagnostic use only. */
 void SpiderSwing5Fingerprint_Init(void (*log_fn)(const char *),int enabled,
-                                   int capture_wav);
+                                   int capture_wav,int tail_mute);
 void SpiderSwing5Fingerprint_Probe(int slot,IDirectSoundBuffer *buffer,
                                     DWORD bytes,DWORD frequency);
 #endif
