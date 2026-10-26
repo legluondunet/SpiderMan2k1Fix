@@ -108,7 +108,8 @@ def test_bounded_retroactive_f8_history_survives_native_trace_limit():
     assert "#define NATIVE_HISTORY_DUMP_MAX 96u" in SRC
     assert "native_history_add(now,line);" in SRC
     assert SRC.index("native_history_add(now,line);") < SRC.index("if(native_events<1600u)")
-    assert "native_history_dump(GetTickCount()-native_epoch);" in SRC
+    assert "native_history_dump(now);" in SRC
+    assert "else if(native_log){" in SRC  # Original retrospective F8 path preserved outside manual capture mode
     assert "native_history_reset();" in SRC
     assert "InitializeCriticalSection(&native_history_cs)" in SRC
     assert "EnterCriticalSection(&native_history_cs)" in SRC
