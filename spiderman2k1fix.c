@@ -34,6 +34,7 @@
 #include "f9_png.h"
 #include "f9_toast.h"
 #include "quick_exit_f12.h"
+#include "sdl3_audio_probe.h"
 
 static const BYTE expected_sha256[32] = {
   0x0a,0x11,0xa4,0x9f,0x3f,0x63,0xd4,0xbb,
@@ -2524,6 +2525,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       SpiderInputFocus_OnFlip(count);
   }
   SpiderDI8Retry_OnFlip(count);
+  SpiderSDL3Probe_OnFlip(game_hwnd); /* F7: explicitly opted-in standalone SDL3 test. */
   /* Observe the physical F9 press early; the game's screenshot code can
    * run between two Flip calls, so surface hooks also sample F9. */
   if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
@@ -3088,6 +3090,16 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderFocusMedia_Init(log_line); /* Opt-in native Bink pause. */
   SpiderFocusDSound_Init(log_line); /* Separately opt-in game-owned secondary buffers only. */
   SpiderPauseSurface_Init(log_line); /* Pause drawn into the game backbuffer; no HWND overlays. */
+  {
+    char ini[MAX_PATH],*slash;
+    DWORD n=GetModuleFileNameA(NULL,ini,MAX_PATH);
+    int test=0;
+    if(n && n<MAX_PATH && (slash=strrchr(ini,'\\'))!=NULL){
+      strcpy(slash+1,"SpiderMan2k1Fix.ini");
+      test=GetPrivateProfileIntA("Debug","ExperimentalSDL3AudioProbe",0,ini)==1;
+    }
+    SpiderSDL3Probe_Init(log_line,test);
+  }
   /* The first-run generator or repair may have changed [Debug] Log. */
   {
     int previous_log_enabled=debug_log_enabled;

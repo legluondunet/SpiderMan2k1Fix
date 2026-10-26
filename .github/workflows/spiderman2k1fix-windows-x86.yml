@@ -39,6 +39,23 @@ jobs:
           mkdir -p dist/package
           cp SpiderMan2k1Fix.dll winmm.dll README.md CHANGELOG.md dist/package/
 
+      - name: Bundle SDL3 x86 for opt-in standalone audio experiment
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o /tmp/sdl3-x86.zip \
+            https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18-win32-x86.zip
+          echo "99f2ee6e126d828c5e5b3d20201930f3d16a8c6e147d1de90a59f4ae6df138c9  /tmp/sdl3-x86.zip" | sha256sum -c -
+          entry=$(unzip -Z1 /tmp/sdl3-x86.zip | grep -E '(^|/)SDL3\.dll
+        with:
+          name: SpiderMan2k1Fix-Windows-x86
+          path: dist/package/
+          if-no-files-found: error
+          retention-days: 30
+ | head -n 1)
+          test -n "$entry"
+          unzip -p /tmp/sdl3-x86.zip "$entry" > dist/package/SDL3.dll
+          objdump -f dist/package/SDL3.dll | grep -q pei-i386
+
       - name: Upload Windows DLL artifact
         uses: actions/upload-artifact@v4
         with:
