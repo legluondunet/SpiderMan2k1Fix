@@ -36,6 +36,7 @@
 #include "quick_exit_f12.h"
 #include "sdl3_audio_probe.h"
 #include "sdl3_swing5_redirect.h"
+#include "pkr_audio_index.h"
 
 static const BYTE expected_sha256[32] = {
   0x0a,0x11,0xa4,0x9f,0x3f,0x63,0xd4,0xbb,
