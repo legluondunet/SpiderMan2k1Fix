@@ -80,8 +80,8 @@ static void native_history_add(DWORD now,const char *line){
   EnterCriticalSection(&native_history_cs);
   entry=&native_history[native_history_next];
   entry->time_ms=now;
-  /* The native event already fits a 320-character bounded buffer. */
-  memcpy(entry->line,line,sizeof(entry->line));
+  /* Copy only the initialized, null-terminated event string. */
+  snprintf(entry->line,sizeof(entry->line),"%s",line);
   native_history_next=(native_history_next+1u)%NATIVE_HISTORY_CAP;
   if(native_history_count<NATIVE_HISTORY_CAP)native_history_count++;
   LeaveCriticalSection(&native_history_cs);
