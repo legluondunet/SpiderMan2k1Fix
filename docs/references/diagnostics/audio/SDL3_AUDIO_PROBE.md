@@ -70,8 +70,10 @@ SDL3-SWING5: REPLACED slot=... original_pcm=32632 ...
 ```
 
 Precise behavior:
-- The only intercepted original game instruction is the x86
-  `CALL DXSOUND_Play` at 0x00472870 for one-shot sound.
+- The one-shot `CALL DXSOUND_Play` at 0x00472870 is intercepted.
+  Additionally, the native `DXSOUND_Stop` entry (0x005042A0)
+  has a signature-checked 8-byte x86 trampoline; the original native
+  Stop runs after SDL3 voice cancellation.
 - Check that the native DirectSound voice buffer contains **exactly**
   32632 bytes, PCM16 mono @16 kHz, and that its **full PCM SHA-256**
   is the already-confirmed malformed Swing5 fingerprint.
@@ -88,13 +90,28 @@ Precise behavior:
   a buffer, or initialize a sound stream **falls back** to native Play.
   No changes to original PKR contents, WAV contents, DirectSound
   PCM bytes, or game audio voice allocation.
-- **Prototype limitations:** native game Stop and pause/focus transitions
-  do not yet own/stop these SDL3 streams; they can continue playing
-  briefly across Alt+Tab or game events. Source PCM is read on first
-  matching sound, so a one-time disk read may briefly delay that frame.
-  Original native buffer is left unplayed and its slot is available for
-  immediate reuse, which may be observable in fast combat. These
-  behaviors must be tested before broadening the engine migration.
+- **Phase 3 lifecycle (needs in-game validation):** native Stop cancels
+  the matching SDL3 voice; a new native Play on the same slot first
+  releases any previous SDL3 voice; slot buffer replacement is detected
+  at the Flip boundary using a retained DirectSound COM reference.
+  One-shots expire after their estimated PCM duration plus 120ms device
+  margin. Alt+Tab confirmed-focus pause now suspends/resumes SDL3
+  devices alongside the original DirectSound voices. Return to menu
+  closes remaining SDL3 voices. Current native volume, pan, and
+  frequency are sampled each Flip; when a change occurs the remaining
+  *clean* source frames are rebuilt and queued on a new stream. Mid-sound
+  changes can still create a short discontinuity because the audio
+  device has some output latency.
+- **Remaining limitations:** this remains a single-sound proof, NOT a
+  32-voice replacement or a proven general WAV/PKR loader repair.
+  Original PCM is loaded from a separate user-provided file on first
+  match, and its initial disk read may stall that one frame. The
+  native DirectSound slot remains stopped (instead of reporting
+  `DSBSTATUS_PLAYING`) during its corresponding SDL3 sound. Any other
+  native Play caller not passing through the gated 0x00472870 site can
+  therefore bypass our replacement tracking. Native unload and full
+  process shutdown lifecycle still need dedicated validation before
+  expanding to other effects and loops.
 - Note that *no repair is attempted on the malformed native buffer*:
   this test proves only that source-original data can be played
   instead of the game-decoded version on the matching one-shot.
@@ -106,5 +123,36 @@ Do not enable separate PR #66 tail-repair experiments in this test:
 this branch is based on `main`. The existing F7 probe may still be
 enabled independently if needed. Do not merge this PR until the
 in-game Swing5 replacement has been verified by the user.
+
+legluondunet assisted by ChatGPT (OpenAI)
+
+## Phase 3 test plan – native lifecycle
+
+The user already confirmed `Swing5` sounds clean in-game (six REPLACED
+events in the previous log). With the new phase-3 CI build, keep the
+same two INI switches: `ExperimentalSDL3AudioProbe=0` and
+`ExperimentalSDL3Swing5Replace=1`.
+
+1. Swing repeatedly in one gameplay segment, vary direction and
+   camera position and listen for unexpected truncations, doubled
+   effects or crackles.
+2. During a swing, Alt+Tab to another application. Confirm the game
+   and SDL3 effect **pause together** and resume after the explicit
+   focus-return key. Check `SDL3-VOICE: PAUSE affected=...` and
+   `SDL3-VOICE: RESUME affected=...`.
+3. Return to the main menu and re-enter gameplay. Check no stale
+   swing keeps sounding from the previous session; log
+   `SDL3-VOICE: STOP ... cause=return-to-menu` when applicable.
+4. Repeat swings quickly to trigger slot reuse/native Stop; watch
+   `SDL3-VOICE: STOP ... cause=native-DXSOUND_Stop` or
+   `native-voice-replay`, and ensure the other voices remain audible.
+5. Examine `SDL3-VOICE: UPDATE` for actual mid-sound volume/pan/hz
+   changes and compare timbre. These are logged only for up to 32
+   updates to limit the trace volume.
+
+No Steam, installer, source PKR, game configuration archive or original
+WAV is modified by these tests. The option remains opt-in. CI unit
+tests and compilation are NOT substitutes for listening and gameplay
+testing under Windows/Wine.
 
 legluondunet assisted by ChatGPT (OpenAI)
