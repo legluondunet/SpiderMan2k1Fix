@@ -350,7 +350,8 @@ void SpiderNativeAudioTrace_Init(void (*log_fn)(const char *)){
     GetPrivateProfileIntA("Debug","ExperimentalAudioLoopTailRepair",0,path)==1);
   SpiderCombatPCM_Init(native_log,
     GetPrivateProfileIntA("Debug","ExperimentalAudioCombatPCMCapture",0,path)==1,
-    (DWORD)GetPrivateProfileIntA("Debug","ExperimentalAudioCombatPCMStartMs",22000,path));
+    (DWORD)GetPrivateProfileIntA("Debug","ExperimentalAudioCombatPCMStartMs",22000,path),
+    GetPrivateProfileIntA("Debug","ExperimentalAudioCombatPCMManualF8",0,path)==1);
   InitializeCriticalSection(&native_history_cs);
   native_history_ready=1;
   InterlockedExchange(&native_armed,1);
@@ -368,6 +369,7 @@ void SpiderNativeAudioTrace_OnFlip(LONG flip,int in_3d){
     native_events=0;
     native_history_reset();
     native_f8_was_down=0;
+    SpiderCombatPCM_On3DStart();
     memset(native_play_valid,0,sizeof(native_play_valid));
     if(native_log)native_log("AUDIO-NATIVE: 3D START t=0ms; on native sound events timestamps are relative to this Flip");
   }
@@ -375,17 +377,22 @@ void SpiderNativeAudioTrace_OnFlip(LONG flip,int in_3d){
     native_f8_was_down=0;
     return;
   }
-  /* Human time marker, sampled once per rendered frame. F8 is NOT
-   * swallowed: game input is unchanged. Press once just AFTER hearing
-   * the click. Natural reaction latency must be considered. */
+  /* Manual combat mode reserves F8 to arm the PCM timer exactly ONCE.
+   * Default mode keeps the previous F8-after-click history marker. F8 is
+   * sampled on the rising edge and never swallowed from game input. */
   f8_down=(BYTE)!!(GetAsyncKeyState(VK_F8)&0x8000);
-  if(f8_down && !native_f8_was_down && native_log){
-    char msg[160];
-    snprintf(msg,sizeof(msg),
-      "AUDIO-NATIVE-MARK: F8 AFTER-CLICK t=%lums flip=%ld (human reaction delay; correlate preceding events)",
-      (unsigned long)(GetTickCount()-native_epoch),(long)flip);
-    native_log(msg);
-    native_history_dump(GetTickCount()-native_epoch);
+  if(f8_down && !native_f8_was_down){
+    DWORD now=GetTickCount()-native_epoch;
+    if(SpiderCombatPCM_IsManualF8())SpiderCombatPCM_OnF8(now);
+    else if(native_log){
+      char msg[160];
+      snprintf(msg,sizeof(msg),
+        "AUDIO-NATIVE-MARK: F8 AFTER-CLICK t=%lums flip=%ld (human reaction delay; correlate preceding events)",
+        (unsigned long)now,(long)flip);
+      native_log(msg);
+      native_history_dump(now);
+    }
   }
   native_f8_was_down=f8_down;
+  SpiderCombatPCM_OnFlip(GetTickCount()-native_epoch);
 }

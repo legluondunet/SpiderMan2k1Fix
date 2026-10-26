@@ -83,3 +83,37 @@ and send them alongside their native log without pressing F8.
 
 This diagnostic is distinct from the exact-SHA Loop8 and Swing5
 workarounds. PR must remain DRAFT until validated.
+
+## 26 Oct 2026 – F8 manual trigger for combat PCM capture
+
+Problem: auto elapsed time `ExperimentalAudioCombatPCMStartMs=22000`
+starts before the user can reach the fight, so the 24 unique captures
+fill up on unrelated sound effects.
+
+**New opt-in** `[Debug] ExperimentalAudioCombatPCMManualF8=1`:
+F8 rising edge in 3D starts the *configured delay timer* exactly once.
+`ExperimentalAudioCombatPCMStartMs=0` means capturing starts immediately
+on F8. Set 22000 to begin 22 seconds after manually pressing F8,
+if desired. No captures before F8, no timer reset on subsequent F8,
+and the previous F8 AFTER-CLICK history dump is **suppressed only while
+this manual mode is enabled**, to avoid false click correlations. F8
+remains available to the original game; only observer behavior changes.
+The event log includes `AUDIO-COMBAT-PCM: F8-TRIGGER` and later
+`CAPTURE-WINDOW-OPEN`. Exiting/reentering 3D re-arms for the next
+scene without overwriting existing capture WAVs; globally max 24
+distinct WAVs per process. Existing automatic start mode is unchanged
+when ManualF8=0, and all diagnostic options remain OFF by default.
+
+Recommended configuration for punch glitch:
+```ini
+[Debug]
+Log=1
+ExperimentalAudioNativeLifecycleTrace=1
+ExperimentalAudioCombatPCMCapture=1
+ExperimentalAudioCombatPCMManualF8=1
+ExperimentalAudioCombatPCMStartMs=0
+ExperimentalAudioStopLoopMask=5
+ExperimentalAudioLoopTailRepair=1
+ExperimentalAudioSwing5Fingerprint=1
+ExperimentalAudioSwing5TailMute=1
+```

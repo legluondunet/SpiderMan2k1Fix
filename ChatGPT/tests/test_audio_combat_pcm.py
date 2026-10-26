@@ -44,3 +44,20 @@ def test_captured_before_tail_muting():
     c=N.index("SpiderCombatPCM_Probe(slot,info.buffer,info.bytes")
     m=N.index("SpiderSwing5Fingerprint_Probe(slot,info.buffer")
     assert c<m
+
+def test_optional_manual_f8_arming_with_zero_delay():
+    assert "ExperimentalAudioCombatPCMManualF8" in I
+    assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioCombatPCMManualF8",0,path)==1' in N
+    assert 'SpiderCombatPCM_Init(' in N and 'SpiderCombatPCM_IsManualF8()' in N
+    assert 'SpiderCombatPCM_OnF8(now)' in N
+    assert 'SpiderCombatPCM_On3DStart();' in N
+    assert 'SpiderCombatPCM_OnFlip(GetTickCount()-native_epoch);' in N
+    assert 'InterlockedCompareExchange(&f8_triggered,1,0)' in S
+    assert 'InterlockedExchange(&capture_from_ms,(LONG)(native_ms+start_delay_ms))' in S
+    assert 'if(manual_mode && InterlockedCompareExchange(&f8_triggered,0,0)==0)return;' in S
+    assert 'SpiderCombatPCM_IsManualF8' in H
+    assert 'SpiderCombatPCM_OnF8' in H
+    assert 'SpiderCombatPCM_On3DStart' in H
+    assert 'SpiderCombatPCM_OnFlip' in H
+    assert N.index('SpiderCombatPCM_IsManualF8()') < N.index('native_history_dump(now)')
+    assert 'CAPTURE-WINDOW-OPEN' in S

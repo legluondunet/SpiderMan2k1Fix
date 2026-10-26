@@ -4,7 +4,8 @@
  * Captures up to 24 distinct PCM16 mono one-shots for user-side listening,
  * without changing DirectSound playback or sample bytes.
  * Lock/Unlock itself may influence timing: disabled by default.
- * Capture begins at a configurable native 3D elapsed time (default 22s).
+ * Capture begins after a configurable native 3D delay or, if selected,
+ * after an explicit F8 trigger plus that delay. No fighting F8 required.
  */
 #define WIN32_LEAN_AND_MEAN
 #define COBJMACROS
@@ -29,7 +30,11 @@ typedef struct {
 static Capture samples[LIMIT];
 static CRITICAL_SECTION cs;
 static int on=0;
-static DWORD start_at=22000u;
+static DWORD start_delay_ms=22000u;
+static int manual_mode=0;
+static volatile LONG f8_triggered=0;
+static volatile LONG ready_logged=0;
+static volatile LONG capture_from_ms=22000;
 static unsigned count=0;
 static volatile LONG prev_ms=0;
 static void (*emit)(const char *)=NULL;
@@ -130,18 +135,66 @@ static DWORD WINAPI save_wav(LPVOID argument){
   if(emit)emit(line);
   return 0;
 }
-void SpiderCombatPCM_Init(void (*log_fn)(const char *),int enabled,DWORD start_ms){
-  char line[220];
+void SpiderCombatPCM_Init(void (*log_fn)(const char *),int enabled,
+                           DWORD start_ms,int manual_f8){
+  char line[260];
   emit=log_fn;
   on=enabled==1;
-  start_at=start_ms<=300000u?start_ms:22000u;
+  manual_mode=(manual_f8==1);
+  start_delay_ms=start_ms<=300000u?start_ms:22000u;
   count=0;
   InterlockedExchange(&prev_ms,0);
+  InterlockedExchange(&f8_triggered,0);
+  InterlockedExchange(&ready_logged,0);
+  InterlockedExchange(&capture_from_ms,(LONG)start_delay_ms);
   if(!on)return;
   InitializeCriticalSection(&cs);
+  if(manual_mode)
+    snprintf(line,sizeof(line),
+      "AUDIO-COMBAT-PCM: ARMED MANUAL-F8; press F8 once near fight; delay_after_f8=%lums; 24 unique one-shots; TEMP WAV",
+      (unsigned long)start_delay_ms);
+  else
+    snprintf(line,sizeof(line),
+      "AUDIO-COMBAT-PCM: ARMED AUTO first_3d_t=%lums; 24 unique one-shots; TEMP WAV",
+      (unsigned long)start_delay_ms);
+  if(emit)emit(line);
+}
+/* A transition into 3D starts a new elapsed-time epoch. Preserve already
+ * captured WAV snapshots; reset only the one-shot F8 arm state. */
+void SpiderCombatPCM_On3DStart(void){
+  if(!on)return;
+  InterlockedExchange(&f8_triggered,0);
+  InterlockedExchange(&ready_logged,0);
+  InterlockedExchange(&prev_ms,0);
+  InterlockedExchange(&capture_from_ms,(LONG)start_delay_ms);
+}
+int SpiderCombatPCM_IsManualF8(void){
+  return on && manual_mode;
+}
+/* Called only for an F8 rising edge while the game is in 3D.
+ * Further presses deliberately do not restart/extend the capture window. */
+void SpiderCombatPCM_OnF8(DWORD native_ms){
+  char line[260];
+  if(!SpiderCombatPCM_IsManualF8())return;
+  if(InterlockedCompareExchange(&f8_triggered,1,0)!=0)return;
+  InterlockedExchange(&capture_from_ms,(LONG)(native_ms+start_delay_ms));
   snprintf(line,sizeof(line),
-    "AUDIO-COMBAT-PCM: ARMED first_t=%lums, 24 distinct 4K-32K PCM16 mono one-shots, >=250ms gap; read-only Lock/Unlock; TEMP WAV",
-    (unsigned long)start_at);
+    "AUDIO-COMBAT-PCM: F8-TRIGGER t=%lums capture_start_t=%lums delay=%lums (one-shot; repeated F8 ignored)",
+    (unsigned long)native_ms,(unsigned long)(native_ms+start_delay_ms),
+    (unsigned long)start_delay_ms);
+  if(emit)emit(line);
+}
+void SpiderCombatPCM_OnFlip(DWORD native_ms){
+  char line[220];
+  DWORD first;
+  if(!on || (manual_mode && InterlockedCompareExchange(&f8_triggered,0,0)==0))
+    return;
+  first=(DWORD)InterlockedCompareExchange(&capture_from_ms,0,0);
+  if(native_ms<first)return;
+  if(InterlockedCompareExchange(&ready_logged,1,0)!=0)return;
+  snprintf(line,sizeof(line),
+    "AUDIO-COMBAT-PCM: CAPTURE-WINDOW-OPEN t=%lums trigger=%s; listening for one-shot PCM",
+    (unsigned long)native_ms,manual_mode?"F8":"automatic");
   if(emit)emit(line);
 }
 void SpiderCombatPCM_Probe(int slot,IDirectSoundBuffer *buf,DWORD size,
@@ -157,8 +210,11 @@ void SpiderCombatPCM_Probe(int slot,IDirectSoundBuffer *buf,DWORD size,
   unsigned i,idx;
   HANDLE thread;
   char msg[140];
-  if(!on || !buf || looping || slot<0 || slot>=32 || now<start_at ||
+  if(!on || !buf || looping || slot<0 || slot>=32 ||
      size<PCM_MIN || size>PCM_MAX || (size&1u))return;
+  /* Fail closed until F8 first triggers the manual capture window. */
+  if(manual_mode && InterlockedCompareExchange(&f8_triggered,0,0)==0)return;
+  if(now<(DWORD)InterlockedCompareExchange(&capture_from_ms,0,0))return;
   last=InterlockedCompareExchange(&prev_ms,0,0);
   if(now-(DWORD)last<SPACING_MS)return;
   if(InterlockedCompareExchange(&prev_ms,(LONG)now,last)!=last)return;
