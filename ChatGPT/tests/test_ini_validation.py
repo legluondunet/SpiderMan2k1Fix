@@ -290,3 +290,24 @@ def test_invalid_audio_voice_trace_rejected(runner,tmp_path,value):
     result,detail=validate(runner,tmp_path,
         f"[Debug]\nExperimentalAudioVoiceTrace={value}\n")
     assert result[0]>=1 and result[2]==0,detail
+
+
+@pytest.mark.parametrize("value", ["0","1"])
+def test_audio_loop_stop_strict_boolean_valid(runner,tmp_path,value):
+    result,detail=validate(runner,tmp_path,
+        f"[Debug]\nLog=1\nExperimentalAudioStopSuspectLoop={value}\n")
+    assert result == (0,0,1),detail
+
+
+@pytest.mark.parametrize("value", ["", "2", "-1", "true", "off"])
+def test_audio_loop_stop_strict_boolean_invalid(runner,tmp_path,value):
+    result,detail=validate(runner,tmp_path,
+        f"[Debug]\nExperimentalAudioStopSuspectLoop={value}\n")
+    assert result[0]>=1 and result[2]==0,detail
+
+
+def test_audio_diagnostic_build_preserves_modding_toggle(runner,tmp_path):
+    result,detail=validate(runner,tmp_path,
+        "[Debug]\nExperimentalAudioStopSuspectLoop=1\n"
+        "[Modding]\nLooseFiles=1\n")
+    assert result==(0,0,1),detail
