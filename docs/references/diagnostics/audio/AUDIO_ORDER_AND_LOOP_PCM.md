@@ -136,3 +136,60 @@ For manual mode, de-duplication occurs within each session. Auto mode
 (`ExperimentalAudioCombatPCMManualF8=0`) still captures 24 distinct
 sounds with its previous output filenames. This feature is diagnostic
 only, opt-in, and never alters original PCM.
+
+
+## 26 Oct 2026 – Three user-validated combat sound suffixes: opt-in exact-hash mitigation
+
+The user auditioned A/B (full original followed by a 15ms linear fade
+and silence of the anomalous suffix) and **confirmed the audible
+improvement for all three** `R2-03`, `R2-07`, `R1-08` examples.
+
+| Captured sample | PCM length | Sample rate | Bad suffix starts (PCM byte) | RIFF byte | Fade |
+|---|---:|---:|---:|---:|---:|
+| R2-03 | 29924 | 16000 Hz | 28628 | 28672 (14×2048) | 240 samples |
+| R2-07 | 15140 | 16000 Hz | 14292 | 14336 (7×2048) | 240 samples |
+| R1-08 | 10128 | 22050 Hz | 8148 | 8192 (4×2048) | 331 samples |
+
+`audio_combat_tail_repair.c/.h` implement **opt-in**
+`[Debug] ExperimentalAudioCombatTailRepair=1`, gated by
+`ExperimentalAudioNativeLifecycleTrace=1`. All other functionality
+and existing audio workarounds remain unchanged. An exact
+**SHA-256 digest of the full ORIGINAL PCM buffer**, combined with
+exact buffer length, source sample rate, mono/PCM16 format validation,
+must match one of these three captured originals before modifying the
+DirectSound buffer. The final 15ms of good data fades smoothly to
+silence, then the verified anomalous suffix is zeroed. Looping buffers
+and all other one-shots are excluded. Instrumentation copies the
+original PCM *before* this optional mutation so investigation remains
+possible. The logged `AUDIO-COMBAT-TAIL: REPAIRED` entries identify
+an exact matched sample, slot and byte boundary. All modifications
+are in memory, never writing original game assets. The probe is
+disabled by default and limited to 512 candidate buffers to avoid
+unbounded hashing. DirectSound Lock/Unlock may still affect timing.
+
+**This is a guarded symptom-level workaround, not proof of a fix
+to the underlying loader.** The same 2048-byte file offset pattern
+across multiple samples suggests a shared read/copy defect, but the
+actual responsible game file loading function remains unidentified.
+The captured PCM WAVs are not proof that original source PKR assets
+have bad tails. For root-cause investigation, compare raw game asset
+WAV data/archives with these samples, then trace game file I/O into
+the DirectSound buffer, including final partial sector handling.
+Do not apply an unguarded blanket silence to every sound at a 2048
+boundary.
+
+Suggested testing:
+```ini
+[Debug]
+Log=1
+ExperimentalAudioNativeLifecycleTrace=1
+ExperimentalAudioStopLoopMask=5
+ExperimentalAudioLoopTailRepair=1
+ExperimentalAudioSwing5Fingerprint=1
+ExperimentalAudioSwing5TailMute=1
+ExperimentalAudioCombatTailRepair=1
+```
+F8 sampling can remain disabled for a gameplay A/B test.
+No merge until user confirms in-game result.
+
+legluondunet assisted by ChatGPT (OpenAI)
