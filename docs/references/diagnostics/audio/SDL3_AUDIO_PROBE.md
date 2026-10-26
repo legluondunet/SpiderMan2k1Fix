@@ -156,3 +156,89 @@ tests and compilation are NOT substitutes for listening and gameplay
 testing under Windows/Wine.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+
+## Phase 4 – Automatic source identification from data.pkr (READ ONLY)
+
+This is the first step towards a whole-game SDL3 backend without
+hundreds of per-sample checksums. It is **NOT yet** the whole-game
+replacement; all sounds except the already-validated Swing5 remain on
+DirectSound. No WAVs need to be individually extracted for this test.
+
+Enable on a new test run:
+
+```ini
+[Debug]
+Log=1
+ExperimentalSDL3AudioProbe=0
+ExperimentalSDL3Swing5Replace=1
+ExperimentalSDL3PKRAudioIndex=1
+```
+
+The DLL reads the original `data.pkr` **read-only from the same
+directory as SpideyPC.exe**. Its private PKR3 decoder:
+- checks the archive magic, footer, directory/file counts, file offsets
+  and stored/uncompressed sizes against the original archive length;
+- accepts uncompressed (-2) or zlib-compressed (+2) entries using a
+  pinned, MIT-licensed `miniz` inflate component;
+- validates the **CRC32** of every decoded WAV candidate before its
+  PCM data may enter the in-memory index;
+- validates RIFF/WAVE chunk boundaries and native mono PCM16 format,
+  including the *actual* WAV `data` chunk position (does **not**
+  assume a fixed 44-byte header);
+- caches only supported mono16 PCM WAVs, up to 2,048 samples,
+  16 MiB per WAV, 128 MiB total. The exact byte contents are kept
+  in memory; original game archives and buffers are never written.
+
+On each 32-voice native Play (including loops) a **passive** source
+probe checks rate and exact PCM byte size. Only compatible candidates
+cause a short 1,024-byte DirectSound buffer read. A unique matching
+prefix gives a log like:
+
+```
+PKR-AUDIO: SOURCE-INDEX total=... valid=... other=...
+PKR-AUDIO: CACHE WAV PCM16 mono=... bytes=... crc_errors=0 (READ-ONLY; no SDL3 override)
+PKR-AUDIO: PROBE ARMED ...
+PKR-AUDIO: MATCH slot=... loop=0 original=.../SomeSound.wav bytes=... hz=... matching_prefix=1024 candidates=1 (READ-ONLY)
+```
+
+A partial head match is **not a full proof of source identity**. If
+multiple entries share the first 1,024 bytes, the program reports
+`AMBIGUOUS`. A buffer corrupted earlier in its first 1,024 bytes may
+not match. Neither case may be automatically redirected to SDL3
+without stronger verification and sound resource lifecycle parity.
+The game continues normal DirectSound playback for every sound except
+the existing SHA-protected Swing5 substitution. Do not mistake
+`PKR-AUDIO: MATCH` for `SDL3-SWING5: REPLACED`.
+
+There is no full PCM game-source comparison in the present build;
+source-identification diagnostics are intentionally limited to **48**
+logged matches to control log volume. No unsupported WAV is silently
+treated as valid PCM. A missing, invalid or CRC-failing archive
+disables this feature, leaving the normal game path alone. Do not use
+a different `data.pkr` from a different game/version.
+
+The next step (not yet implemented) requires checking a full original
+WAV identity, handling native `DXSOUND_IsPlaying` and resource
+allocation, and then allowing verified one-shot source PCM to be
+played by SDL3 without suppressing legitimate DirectSound sounds.
+
+### Third-party decoder
+
+`third_party/miniz/` contains the minimum pinned upstream 2026-10-04
+sources from `richgel999/miniz`, commit
+`2948eebafc5b9f1c69bebed80333e403a09bd62d`, under its own
+permissive MIT license copied verbatim into
+`third_party/miniz/LICENSE`. This license remains applicable to the
+vendored source. Unused ZIP-writing and deflate APIs are disabled.
+
+### Testing limitations
+
+Synthetic RIFF/zlib/CRC test vectors and static constraints are
+tested automatically. The user's **real** `data.pkr` archive is
+not available in this source tree or CI, so we must check the
+`PKR-AUDIO: SOURCE-INDEX` / `MATCH` output in a real game session.
+A successful 32-bit DLL compilation alone does not validate the PKR
+archive inventory against the actual game data.
+
+legluondunet assisted by ChatGPT (OpenAI)
