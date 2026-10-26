@@ -39,6 +39,10 @@ static volatile LONG enabled=0,armed=0;
 static volatile LONG audio_trace_enabled=0;
 static IDirectSoundBuffer *audio_trace_previous[VOICE_COUNT];
 static BYTE audio_trace_was_playing[VOICE_COUNT];
+/* Compare successive positions for an unchanged, playing buffer. A backward
+ * cursor may mean a loop boundary OR a game-initiated rewind/restart. */
+static DWORD audio_trace_last_read[VOICE_COUNT];
+static BYTE audio_trace_have_read[VOICE_COUNT];
 static DWORD audio_trace_epoch=0;
 static unsigned audio_trace_events=0;
 static int audio_trace_in_3d=0;
@@ -78,9 +82,10 @@ void SpiderFocusDSound_Init(void (*log_fn)(const char *)){
   }
 }
 /* Sample only once per presented frame, only in native 3D, on the game
- * thread. This does NOT intercept play calls; a voice restart missed
- * between samples or a continuously playing loop is not guaranteed visible.
- * Keep all game-owned COM buffers untouched: no AddRef, Lock or mutation. */
+ * thread. This does NOT intercept play calls. Detect new playback states
+ * and read-cursor backwards jumps on unchanged playing buffers; the latter
+ * may be an end-of-loop wrap OR a manual restart. Events between samples
+ * may be missed. No buffer mutation, AddRef, Lock or playback changes. */
 void SpiderFocusDSound_TraceOnFlip(LONG flip,int in_3d){
   unsigned i;
   DWORD elapsed;
@@ -93,6 +98,7 @@ void SpiderFocusDSound_TraceOnFlip(LONG flip,int in_3d){
   if(!audio_trace_in_3d){
     memset(audio_trace_previous,0,sizeof(audio_trace_previous));
     memset(audio_trace_was_playing,0,sizeof(audio_trace_was_playing));
+    memset(audio_trace_have_read,0,sizeof(audio_trace_have_read));
     audio_trace_events=0;
     audio_trace_epoch=GetTickCount();
     audio_trace_in_3d=1;
@@ -101,46 +107,58 @@ void SpiderFocusDSound_TraceOnFlip(LONG flip,int in_3d){
   elapsed=GetTickCount()-audio_trace_epoch;
   for(i=0;i<VOICE_COUNT;i++){
     IDirectSoundBuffer *buf=voice_at(i);
-    DWORD status=0;
+    DWORD status=0,read_cursor=0,write_cursor=0;
     HRESULT hr;
-    int playing;
+    int playing,started,rewound=0,got_cursor=0;
     if(!buf || buf==SPIDER_PRIMARY){
       audio_trace_previous[i]=NULL;
       audio_trace_was_playing[i]=0;
+      audio_trace_have_read[i]=0;
       continue;
     }
     hr=IDirectSoundBuffer_GetStatus(buf,&status);
     if(FAILED(hr)){
       audio_trace_previous[i]=buf;
       audio_trace_was_playing[i]=0;
+      audio_trace_have_read[i]=0;
       continue;
     }
     playing=(status & DSBSTATUS_PLAYING) && !(status & DSBSTATUS_BUFFERLOST);
-    if(playing && (!audio_trace_was_playing[i] || audio_trace_previous[i]!=buf)){
+    started=playing && (!audio_trace_was_playing[i] || audio_trace_previous[i]!=buf);
+    if(playing){
+      got_cursor=SUCCEEDED(IDirectSoundBuffer_GetCurrentPosition(
+                             buf,&read_cursor,&write_cursor));
+      if(got_cursor && !started && audio_trace_have_read[i] &&
+         read_cursor<audio_trace_last_read[i])
+        rewound=1;
+    }
+    if(started || rewound){
       if(audio_trace_events<600u){
         DSBCAPS caps;
-        DWORD read_cursor=0,write_cursor=0,frequency=0;
+        DWORD frequency=0;
         char line[256];
         memset(&caps,0,sizeof(caps));
         caps.dwSize=sizeof(caps);
         if(FAILED(IDirectSoundBuffer_GetCaps(buf,&caps)))caps.dwBufferBytes=0;
         if(FAILED(IDirectSoundBuffer_GetFrequency(buf,&frequency)))frequency=0;
-        if(FAILED(IDirectSoundBuffer_GetCurrentPosition(buf,&read_cursor,&write_cursor)))
-          read_cursor=write_cursor=0;
         snprintf(line,sizeof(line),
-          "AUDIO-VOICE-TRACE: PLAY t=%lums flip=%ld slot=%u buffer=%p status=0x%08lX read=%lu write=%lu bytes=%lu hz=%lu",
+          "AUDIO-VOICE-TRACE: %s t=%lums flip=%ld slot=%u buffer=%p status=0x%08lX read=%lu prev=%lu write=%lu bytes=%lu hz=%lu",
+          rewound?"CURSOR-REWIND":"PLAY",
           (unsigned long)elapsed,(long)flip,i,(void*)buf,
           (unsigned long)status,(unsigned long)read_cursor,
+          (unsigned long)(audio_trace_have_read[i]?audio_trace_last_read[i]:0),
           (unsigned long)write_cursor,(unsigned long)caps.dwBufferBytes,
           (unsigned long)frequency);
         diag(line);
       }else if(audio_trace_events==600u){
-        diag("AUDIO-VOICE-TRACE: LIMIT 600 play events reached; further PLAY lines suppressed");
+        diag("AUDIO-VOICE-TRACE: LIMIT 600 PLAY/REWIND events reached; further lines suppressed");
       }
       audio_trace_events++;
     }
     audio_trace_previous[i]=buf;
     audio_trace_was_playing[i]=(BYTE)!!playing;
+    audio_trace_have_read[i]=(BYTE)(playing && got_cursor);
+    if(playing && got_cursor)audio_trace_last_read[i]=read_cursor;
   }
 }
 void SpiderFocusDSound_Pause(void){
