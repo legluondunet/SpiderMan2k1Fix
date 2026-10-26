@@ -31,7 +31,7 @@ static volatile LONG capture_state=0; /* 0=none, 1=copy/write, 2=done */
 static BYTE captured_pcm[SUSPECT_BYTES];
 
 static DWORD WINAPI write_captured_wav(LPVOID unused){
-  char path[MAX_PATH],message[240],*slash;
+  char path[MAX_PATH],message[512];
   DWORD n,got=0;
   HANDLE file;
   BOOL success;
@@ -47,14 +47,16 @@ static DWORD WINAPI write_captured_wav(LPVOID unused){
   memcpy(header+24,&sample_rate,4u);
   memcpy(header+28,&byte_rate,4u);
   memcpy(header+40,&data_size,4u);
-  n=GetModuleFileNameA(NULL,path,MAX_PATH);
-  slash=n>0 && n<MAX_PATH?strrchr(path,'\\'):NULL;
-  if(!slash || (size_t)(slash-path)+strlen("\\SpiderMan2k1Fix-AudioCandidate.wav")>=MAX_PATH){
-    if(probe_log)probe_log("AUDIO-SWING5-CAPTURE: REFUSED game executable path too long");
+  /* The game may be installed in Program Files (non-writable). Use the
+   * current user's writable TEMP directory instead; never require admin. */
+  n=GetTempPathA(MAX_PATH,path);
+  if(!n || n>=MAX_PATH ||
+     n+strlen("SpiderMan2k1Fix-AudioCandidate.wav")>=MAX_PATH){
+    if(probe_log)probe_log("AUDIO-SWING5-CAPTURE: REFUSED TEMP path unavailable or too long");
     InterlockedExchange(&capture_state,2);
     return 0;
   }
-  strcpy(slash+1,"SpiderMan2k1Fix-AudioCandidate.wav");
+  strcpy(path+n,"SpiderMan2k1Fix-AudioCandidate.wav");
   /* CREATE_NEW protects previous captures and unrelated game data. */
   file=CreateFileA(path,GENERIC_WRITE,FILE_SHARE_READ,NULL,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,NULL);
   if(file==INVALID_HANDLE_VALUE){
@@ -73,7 +75,9 @@ static DWORD WINAPI write_captured_wav(LPVOID unused){
     DeleteFileA(path);
     if(probe_log)probe_log("AUDIO-SWING5-CAPTURE: WRITE-FAILED; incomplete output removed");
   }else{
-    if(probe_log)probe_log("AUDIO-SWING5-CAPTURE: WRITTEN SpiderMan2k1Fix-AudioCandidate.wav (44-byte WAV header + 32632 PCM bytes), no game PCM modified");
+    snprintf(message,sizeof(message),
+      "AUDIO-SWING5-CAPTURE: WRITTEN path=%s (44-byte WAV header + 32632 PCM bytes), no game PCM modified",path);
+    if(probe_log)probe_log(message);
   }
   InterlockedExchange(&capture_state,2);
   return 0;
