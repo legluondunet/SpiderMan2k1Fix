@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "sdl3_audio_probe.h"
+#include "pkr_audio_index.h"
 #include "sdl3_swing5_redirect.h"
 
 #define GAME_BASE ((uintptr_t)0x00400000u)
@@ -91,7 +92,7 @@ static void __cdecl maybe_play_sdl3(int slot,int looping){
   LONG volume=0,pan=0;
   DWORD hz=0;
   char line[220];
-  if(!installed || looping!=0 || slot<0 || slot>=32){
+  if(!installed || slot<0 || slot>=32){
     GAME_PLAY(slot,looping);
     return;
   }
@@ -100,7 +101,10 @@ static void __cdecl maybe_play_sdl3(int slot,int looping){
   SpiderSDL3Probe_StopSlot(slot,"native-voice-replay");
   entry=VOICE_TABLE+(unsigned)slot*VOICE_STRIDE;
   buf=*(IDirectSoundBuffer**)entry;
-  if(buf && exact_corrupt_buffer(buf)){
+  /* Passive PKR source identification works for looping and one-shot
+   * buffers. This probe NEVER changes bytes or suppresses native Play. */
+  SpiderPKRAudioIndex_Probe(slot,buf,looping);
+  if(!looping && buf && exact_corrupt_buffer(buf)){
     if(SUCCEEDED(IDirectSoundBuffer_GetVolume(buf,&volume)) &&
        SUCCEEDED(IDirectSoundBuffer_GetPan(buf,&pan)) &&
        SUCCEEDED(IDirectSoundBuffer_GetFrequency(buf,&hz)) &&
