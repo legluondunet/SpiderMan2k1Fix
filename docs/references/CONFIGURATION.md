@@ -335,3 +335,59 @@ Try the original `AspectRatio=4:3` mode to help isolate widescreen-specific prob
 - [Native ESC 4:3 corrections and debug switches](NATIVE_PAUSE_MENU_43.md).
 - [F9 PNG screenshot capture](F9_PNG_CAPTURE.md).
 - [HUD scaling and original game implementation](../DEVELOPMENT.md#7-display-and-rendering-research).
+
+### Experimental DirectSound voice-occupancy logic repair
+
+The upstream third-party tool [Spider-Man Settings by r57zone](https://github.com/r57zone/Spider-Man-Settings)
+documents a native audio bug. `IDirectSoundBuffer::GetStatus` returns a
+bitfield containing `PLAYING=1` and `LOOPING=4`. Original game function
+`0x00504420` determines whether a voice is busy using `and eax,4`,
+so a still-playing **one-shot** sound is falsely declared free. The original
+game's voice allocator calls it at `0x004725B0` and `0x004725CC`
+when looking for an available secondary audio voice.
+
+**Hypothesis**: an occupied one-shot voice can be reused too early, abruptly
+interrupting a web sound or landing effect and causing an audible click.
+This is not yet proven for the observed crackle, but is a stronger
+engine-level explanation than outdated PCM sample rates.
+
+To test this without modifying the original `SpideyPC.exe` file, the
+experimental opt-in `[Debug] ExperimentalAudioVoiceBusyFix=1` changes a
+**single byte in process memory** at VA `0x0050448F` from `04` to `01`
+in `83 E0 04`, producing `83 E0 01`. All other bytes are untouched.
+It verifies the complete known SHA-256 at normal DLL initialization, checks
+the native instruction tail, verifies the original image base and restores
+the previous code-page protection. The log reports
+`AUDIO-VOICE-BUSY: APPLIED` or a refusal reason.
+
+The diagnostic is **OFF by default**, executes only once at startup, and
+does not traverse the voice table every frame. All sound resources, playback
+frequencies, and sound effects remain enabled.
+
+Example, in the EXISTING `[Debug]` section:
+
+~~~ini
+[Debug]
+Log=1
+ExperimentalAudioVoiceBusyFix=1
+~~~
+
+**A/B test**: use the DLLs from this branch, remove or back up any previous
+`data/AUDIO` silent overrides, and run with the original sound assets and
+normal `[Audio]` levels. Make one fresh run with the new option `0`,
+then one with `1`, reproducing the helicopter sequence and three separate
+web flights/landings. Note whether music and all sound effects work
+normally and whether clicks are present. If the log says `REFUSED`,
+no modification occurred, so the outcome is not a valid test of the fix.
+
+**Compatibility notice**: legacy experimental INI keys used in draft
+PRs #62/#63/#64 are accepted during INI validation to avoid destructive
+config resets, but this **independent branch does not implement the
+loop-stopping controls or loose-file overrides**. Ignore them here.
+Restarting with `ExperimentalAudioVoiceBusyFix=0` restores original
+native game code. No file changes and no FPS, resampling, or music
+filtering are performed.
+
+Implementation credits: original bitmask insight and executable file offset
+from r57zone/Spider-Man-Settings. Test build must not be merged without
+both Windows 11 and Wine runtime validation.
