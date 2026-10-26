@@ -54,3 +54,9 @@ def test_exact_one_shot_wav_capture_opt_in():
     assert "IDirectSoundBuffer_Unlock(" in SRC
     for unsafe in ("IDirectSoundBuffer_SetVolume(","IDirectSoundBuffer_Stop(","IDirectSoundBuffer_Play("):
         assert unsafe not in SRC
+
+
+def test_capture_is_written_to_user_temp_without_admin():
+    assert "GetTempPathA(MAX_PATH,path)" in SRC
+    assert "strcpy(path+n,\"SpiderMan2k1Fix-AudioCandidate.wav\")" in SRC
+    assert "GetModuleFileNameA(NULL" not in SRC
