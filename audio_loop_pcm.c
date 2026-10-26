@@ -32,9 +32,9 @@ static unsigned diff(int a,int b){int d=a-b;return (unsigned)(d<0?-d:d);}
 static DWORD WINAPI save_pcm(LPVOID arg){
   unsigned n=(unsigned)(uintptr_t)arg;
   char filename[MAX_PATH],base[64],message[320];
-  BYTE header[44]={'R','I','F','F',0,0,0,0,'W','A','V','E','f','m','t',' ',
-                   16,0,0,0,1,0,1,0,0,0,0,0,0,0,2,0,16,0,
-                   'd','a','t','a',0,0,0,0};
+  BYTE header[44]={0};
+  const DWORD fmtbytes=16u;
+  const WORD format=1u,channels=1u,alignbytes=2u,bits=16u;
   DWORD len=36u+LOOP_BYTES,rate=LOOP_HZ,byterate=LOOP_HZ*2u,data=LOOP_BYTES;
   DWORD plen,written=0;
   HANDLE file;
@@ -47,6 +47,14 @@ static DWORD WINAPI save_pcm(LPVOID arg){
     return 0;
   }
   strcpy(filename+plen,base);
+  memcpy(header,"RIFF",4u);
+  memcpy(header+8,"WAVEfmt ",8u);
+  memcpy(header+16,&fmtbytes,4u);
+  memcpy(header+20,&format,2u);
+  memcpy(header+22,&channels,2u);
+  memcpy(header+32,&alignbytes,2u);
+  memcpy(header+34,&bits,2u);
+  memcpy(header+36,"data",4u);
   memcpy(header+4,&len,4u);
   memcpy(header+24,&rate,4u);
   memcpy(header+28,&byterate,4u);

@@ -32,6 +32,7 @@
 #include "audio_native_lifecycle.h"
 #include "audio_swing5_fingerprint.h"
 #include "audio_loop_pcm.h"
+#include "audio_loop_tail_repair.h"
 
 #define SPIDER_NATIVE_BASE ((uintptr_t)0x00400000u)
 #define SPIDER_VOICE_COUNT 32u
@@ -182,6 +183,7 @@ static void __cdecl native_play_loop(int slot,int looping){
   }
   trace_event("PLAY-LOOP",slot,looping,&info);
   SpiderLoopPCM_Probe(slot,info.buffer,info.bytes,info.hz,looping);
+  SpiderLoopTailRepair_Probe(slot,info.buffer,info.bytes,info.hz,looping);
 }
 static void __cdecl native_play_oneshot(int slot,int looping){
   VoiceInfo info;
@@ -198,6 +200,7 @@ static void __cdecl native_play_oneshot(int slot,int looping){
   /* Exact-size/frequency candidates only, separately gated, max 12. */
   SpiderSwing5Fingerprint_Probe(slot,info.buffer,info.bytes,info.hz);
   SpiderLoopPCM_Probe(slot,info.buffer,info.bytes,info.hz,looping);
+  SpiderLoopTailRepair_Probe(slot,info.buffer,info.bytes,info.hz,looping);
 }
 static void stop_and_trace(int slot,const char *kind){
   VoiceInfo info;
@@ -283,6 +286,8 @@ void SpiderNativeAudioTrace_Init(void (*log_fn)(const char *)){
       native_log("AUDIO-SWING5-FP: REFUSED; requires ExperimentalAudioNativeLifecycleTrace=1");
     if(GetPrivateProfileIntA("Debug","ExperimentalAudioLoopPCMProbe",0,path)==1 && native_log)
       native_log("AUDIO-LOOP-PCM: REFUSED; requires ExperimentalAudioNativeLifecycleTrace=1");
+    if(GetPrivateProfileIntA("Debug","ExperimentalAudioLoopTailRepair",0,path)==1 && native_log)
+      native_log("AUDIO-LOOP-TAIL: REFUSED; requires ExperimentalAudioNativeLifecycleTrace=1");
     return;
   }
   if(native_log)native_log("AUDIO-NATIVE: requested optional all 11 direct native voice Play/Stop callsites; F8 click marker enabled");
@@ -336,6 +341,8 @@ void SpiderNativeAudioTrace_Init(void (*log_fn)(const char *)){
   SpiderLoopPCM_Init(native_log,
     GetPrivateProfileIntA("Debug","ExperimentalAudioLoopPCMProbe",0,path)==1,
     GetPrivateProfileIntA("Debug","ExperimentalAudioLoopPCMCapture",0,path)==1);
+  SpiderLoopTailRepair_Init(native_log,
+    GetPrivateProfileIntA("Debug","ExperimentalAudioLoopTailRepair",0,path)==1);
   InitializeCriticalSection(&native_history_cs);
   native_history_ready=1;
   InterlockedExchange(&native_armed,1);

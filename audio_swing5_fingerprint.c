@@ -44,12 +44,18 @@ static DWORD WINAPI write_captured_wav(LPVOID unused){
   BOOL success;
   DWORD riff_size=36u+SUSPECT_BYTES;
   DWORD sample_rate=SUSPECT_HZ,byte_rate=2u*SUSPECT_HZ,data_size=SUSPECT_BYTES;
-  BYTE header[44]={
-    'R','I','F','F',0,0,0,0,'W','A','V','E','f','m','t',' ',
-    16,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,2,0,16,0,
-    'd','a','t','a',0,0,0,0
-  };
+  BYTE header[44]={0};
+  const DWORD fmtbytes=16u;
+  const WORD format=1u,channels=1u,alignbytes=2u,bits=16u;
   (void)unused;
+  memcpy(header,"RIFF",4u);
+  memcpy(header+8,"WAVEfmt ",8u);
+  memcpy(header+16,&fmtbytes,4u);
+  memcpy(header+20,&format,2u);
+  memcpy(header+22,&channels,2u);
+  memcpy(header+32,&alignbytes,2u);
+  memcpy(header+34,&bits,2u);
+  memcpy(header+36,"data",4u);
   memcpy(header+4,&riff_size,4u);
   memcpy(header+24,&sample_rate,4u);
   memcpy(header+28,&byte_rate,4u);
