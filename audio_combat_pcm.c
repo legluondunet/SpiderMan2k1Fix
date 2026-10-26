@@ -233,7 +233,8 @@ void SpiderCombatPCM_Probe(int slot,IDirectSoundBuffer *buf,DWORD size,
   HRESULT hr;
   LONG last;
   uint64_t hash;
-  unsigned i,idx;
+  unsigned i,idx,base,used,quota,ordinal;
+  LONG session;
   HANDLE thread;
   char msg[140];
   if(!on || !buf || looping || slot<0 || slot>=32 ||
