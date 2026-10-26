@@ -36,3 +36,21 @@ def test_fingerprint_is_opt_in_and_preserves_game_audio():
     assert '"MATCH":"DIFFERENT"' in SRC
     assert "audio_swing5_fingerprint.c" in BUILD
     assert "SpiderSwing5Fingerprint_Probe(" in HEADER
+
+
+def test_exact_one_shot_wav_capture_opt_in():
+    assert '"ExperimentalAudioSwing5Capture"' in VALID
+    assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioSwing5Capture",0,path)==1' in NATIVE
+    assert "int capture_wav" in SRC and "int capture_wav" in HEADER
+    assert "capture_enabled=probe_enabled && capture_wav==1;" in SRC
+    assert "InterlockedCompareExchange(&capture_state,1,0)==0" in SRC
+    assert "memcpy(captured_pcm,p1,part1_len)" in SRC
+    assert "if(part2_len)memcpy(captured_pcm+part1_len,p2,part2_len)" in SRC
+    assert SRC.index("IDirectSoundBuffer_Unlock(")<SRC.index("CreateThread(NULL,0,write_captured_wav")
+    assert "CREATE_NEW" in SRC and "WriteFile(file,captured_pcm,SUSPECT_BYTES" in SRC
+    assert "SpiderMan2k1Fix-AudioCandidate.wav" in SRC
+    assert "36u+SUSPECT_BYTES" in SRC and "BYTE header[44]" in SRC
+    assert "DeleteFileA(path)" in SRC
+    assert "IDirectSoundBuffer_Unlock(" in SRC
+    for unsafe in ("IDirectSoundBuffer_SetVolume(","IDirectSoundBuffer_Stop(","IDirectSoundBuffer_Play("):
+        assert unsafe not in SRC

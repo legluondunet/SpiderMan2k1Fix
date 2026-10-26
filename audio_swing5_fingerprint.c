@@ -23,6 +23,62 @@ static const char expected_pcm_sha256[] =
 static void (*probe_log)(const char *)=NULL;
 static int probe_enabled=0;
 static unsigned probe_count=0;
+/* Exactly one copied PCM snapshot. Worker writes after DirectSound Unlock.
+ * This is a diagnostic side effect, explicitly gated by the user.
+ * No game buffer or game resource is modified. */
+static int capture_enabled=0;
+static volatile LONG capture_state=0; /* 0=none, 1=copy/write, 2=done */
+static BYTE captured_pcm[SUSPECT_BYTES];
+
+static DWORD WINAPI write_captured_wav(LPVOID unused){
+  char path[MAX_PATH],message[240],*slash;
+  DWORD n,got=0;
+  HANDLE file;
+  BOOL success;
+  DWORD riff_size=36u+SUSPECT_BYTES;
+  DWORD sample_rate=SUSPECT_HZ,byte_rate=2u*SUSPECT_HZ,data_size=SUSPECT_BYTES;
+  BYTE header[44]={
+    'R','I','F','F',0,0,0,0,'W','A','V','E','f','m','t',' ',
+    16,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,2,0,16,0,
+    'd','a','t','a',0,0,0,0
+  };
+  (void)unused;
+  memcpy(header+4,&riff_size,4u);
+  memcpy(header+24,&sample_rate,4u);
+  memcpy(header+28,&byte_rate,4u);
+  memcpy(header+40,&data_size,4u);
+  n=GetModuleFileNameA(NULL,path,MAX_PATH);
+  slash=n>0 && n<MAX_PATH?strrchr(path,'\\'):NULL;
+  if(!slash || (size_t)(slash-path)+strlen("\\SpiderMan2k1Fix-AudioCandidate.wav")>=MAX_PATH){
+    if(probe_log)probe_log("AUDIO-SWING5-CAPTURE: REFUSED game executable path too long");
+    InterlockedExchange(&capture_state,2);
+    return 0;
+  }
+  strcpy(slash+1,"SpiderMan2k1Fix-AudioCandidate.wav");
+  /* CREATE_NEW protects previous captures and unrelated game data. */
+  file=CreateFileA(path,GENERIC_WRITE,FILE_SHARE_READ,NULL,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,NULL);
+  if(file==INVALID_HANDLE_VALUE){
+    DWORD err=GetLastError();
+    snprintf(message,sizeof(message),
+      "AUDIO-SWING5-CAPTURE: CREATE-FAILED win32=%lu (file exists? delete or rename old capture first)",
+      (unsigned long)err);
+    if(probe_log)probe_log(message);
+    InterlockedExchange(&capture_state,2);
+    return 0;
+  }
+  success=WriteFile(file,header,sizeof(header),&got,NULL) && got==sizeof(header);
+  if(success)success=WriteFile(file,captured_pcm,SUSPECT_BYTES,&got,NULL) && got==SUSPECT_BYTES;
+  if(!CloseHandle(file))success=FALSE;
+  if(!success){
+    DeleteFileA(path);
+    if(probe_log)probe_log("AUDIO-SWING5-CAPTURE: WRITE-FAILED; incomplete output removed");
+  }else{
+    if(probe_log)probe_log("AUDIO-SWING5-CAPTURE: WRITTEN SpiderMan2k1Fix-AudioCandidate.wav (44-byte WAV header + 32632 PCM bytes), no game PCM modified");
+  }
+  InterlockedExchange(&capture_state,2);
+  return 0;
+}
+
 
 static unsigned char byte_at(const unsigned char *a,DWORD na,
                              const unsigned char *b,DWORD offset){
@@ -37,10 +93,17 @@ static int sample_at(const unsigned char *a,DWORD na,
 static void log_message(const char *message){
   if(probe_log)probe_log(message);
 }
-void SpiderSwing5Fingerprint_Init(void (*log_fn)(const char *),int enabled){
+void SpiderSwing5Fingerprint_Init(void (*log_fn)(const char *),int enabled,
+                                   int capture_wav){
   probe_log=log_fn;
   probe_enabled=enabled==1;
+  capture_enabled=probe_enabled && capture_wav==1;
+  InterlockedExchange(&capture_state,0);
   probe_count=0;
+  if(capture_wav && !probe_enabled)
+    log_message("AUDIO-SWING5-CAPTURE: REFUSED; enable ExperimentalAudioSwing5Fingerprint=1 too");
+  if(capture_enabled)
+    log_message("AUDIO-SWING5-CAPTURE: ARMED, one WAV snapshot, original buffer unchanged; local file I/O performed on worker thread");
   if(probe_enabled)
     log_message("AUDIO-SWING5-FP: ARMED optional PCM SHA-256; 32632 bytes/16000 Hz mono16 only; max 12 probes; Lock/Unlock may affect timing");
 }
@@ -56,7 +119,7 @@ void SpiderSwing5Fingerprint_Probe(int slot,IDirectSoundBuffer *buffer,
   unsigned i,trailing_zeros=0,tail_peak=0;
   DWORD total_samples=SUSPECT_BYTES/2u;
   HRESULT hr;
-  int ok=1,unlock_ok;
+  int ok=1,unlock_ok,capture_ready=0;
 
   if(!probe_enabled || !buffer || slot<0 || slot>=32 ||
      bytes!=SUSPECT_BYTES || frequency!=SUSPECT_HZ)return;
@@ -111,6 +174,11 @@ void SpiderSwing5Fingerprint_Probe(int slot,IDirectSoundBuffer *buffer,
         unsigned absolute=(unsigned)(v<0?-v:v);
         if(absolute>tail_peak)tail_peak=absolute;
       }
+      if(capture_enabled && InterlockedCompareExchange(&capture_state,1,0)==0){
+        memcpy(captured_pcm,p1,part1_len);
+        if(part2_len)memcpy(captured_pcm+part1_len,p2,part2_len);
+        capture_ready=1;
+      }
       snprintf(message,sizeof(message),
         "AUDIO-SWING5-FP: %s slot=%d bytes=%lu hz=%lu sha256=%s tail_zero_samples=%u tail_peak_10ms=%u/32768",
         strcmp(actual,expected_pcm_sha256)==0?"MATCH":"DIFFERENT",
@@ -132,4 +200,14 @@ void SpiderSwing5Fingerprint_Probe(int slot,IDirectSoundBuffer *buffer,
     log_message(warning);
   }
   log_message(message);
+  if(capture_ready){
+    HANDLE thread=CreateThread(NULL,0,write_captured_wav,NULL,0,NULL);
+    if(thread){
+      CloseHandle(thread);
+      log_message("AUDIO-SWING5-CAPTURE: SCHEDULED one PCM WAV snapshot after buffer Unlock");
+    }else{
+      log_message("AUDIO-SWING5-CAPTURE: THREAD-FAILED; no file written");
+      InterlockedExchange(&capture_state,2);
+    }
+  }
 }

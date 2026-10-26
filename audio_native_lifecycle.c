@@ -258,7 +258,8 @@ void SpiderNativeAudioTrace_Init(void (*log_fn)(const char *)){
     if(native_log)native_log("AUDIO-NATIVE: WARNING code-page protection restore failed");
   }
   SpiderSwing5Fingerprint_Init(native_log,
-    GetPrivateProfileIntA("Debug","ExperimentalAudioSwing5Fingerprint",0,path)==1);
+    GetPrivateProfileIntA("Debug","ExperimentalAudioSwing5Fingerprint",0,path)==1,
+    GetPrivateProfileIntA("Debug","ExperimentalAudioSwing5Capture",0,path)==1);
   InterlockedExchange(&native_armed,1);
   if(native_log)native_log("AUDIO-NATIVE: ARMED 11 exact original game callsites (2 Play, 9 Stop), unchanged DirectSound and all effects; F8 click marker ready");
 }
