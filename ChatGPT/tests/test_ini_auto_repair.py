@@ -240,3 +240,17 @@ def test_oneshot_trace_recovery_preserves_debug_and_modding(recover_runner,tmp_p
                 "[Debug] ExperimentalAudioStopSuspectLoop=1",
                 "[Modding] LooseFiles=1"):
         assert key in values
+
+
+def test_native_audio_trace_survives_ini_repair(recover_runner,tmp_path):
+    original=("[Debug]\nLog=1\nExperimentalAudioNativeLifecycleTrace=1\n"
+              "ExperimentalAudioOneShotTrace=1\n"
+              "ExperimentalAudioStopLoopMask=30\n"
+              "[Keyboard]\nJump=SPACE\n"
+              "[Unknown]\nFake=1\n")
+    lines=recover(recover_runner,tmp_path,original)
+    for item in ("[Debug] ExperimentalAudioNativeLifecycleTrace=1",
+                 "[Debug] ExperimentalAudioOneShotTrace=1",
+                 "[Debug] ExperimentalAudioStopLoopMask=30",
+                 "[Keyboard] Jump=SPACE"):
+        assert item in lines
