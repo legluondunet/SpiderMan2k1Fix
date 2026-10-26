@@ -2,13 +2,18 @@
  * Spider-Man (2001) experimental native audio lifecycle telemetry.
  * Exact supported image SHA-256 and validated INI are guaranteed by caller.
  *
- * This probes ONLY six original CALL instructions into game-owned voice
+ * This probes ONLY eleven original CALL instructions into game-owned voice
  * Play/Stop functions. It does not detour DirectSound COM, change sample
  * content, or alter the original function's arguments/return path.
  *
  * Source disassembly (exact SpideyPC.exe):
  * 0x4722F3: call 0x504230 -- looping play
  * 0x472870: call 0x504230 -- one-shot play
+ * 0x470F6E: call 0x5042A0 -- cleanup path A
+ * 0x4712FC: call 0x5042A0 -- cleanup path B
+ * 0x471858: call 0x5042A0 -- cleanup path C
+ * 0x471B7C: call 0x5042A0 -- cleanup path D
+ * 0x47236C: call 0x5042A0 -- cleanup path E
  * 0x4723F2: call 0x5042A0 -- actor voice stop
  * 0x4725EE: call 0x5042A0 -- first allocator reuse
  * 0x47261F: call 0x5042A0 -- second allocator reuse
@@ -38,6 +43,7 @@ static volatile LONG native_armed=0;
 static volatile LONG native_in_3d=0,native_flip=0;
 static DWORD native_epoch=0;
 static unsigned native_events=0;
+static BYTE native_f8_was_down=0;
 static DWORD native_play_ms[SPIDER_VOICE_COUNT];
 static IDirectSoundBuffer *native_play_buffer[SPIDER_VOICE_COUNT];
 static BYTE native_play_valid[SPIDER_VOICE_COUNT];
@@ -73,9 +79,9 @@ static void trace_event(const char *kind,int slot,int looping,
   LONG frame;
   long age=-1;
   if(InterlockedCompareExchange(&native_in_3d,0,0)!=1)return;
-  if(native_events>=900u){
-    if(native_events==900u && native_log)
-      native_log("AUDIO-NATIVE: LIMIT 900 events; further voice transition events suppressed");
+  if(native_events>=1600u){
+    if(native_events==1600u && native_log)
+      native_log("AUDIO-NATIVE: LIMIT 1600 events; further voice transition events suppressed");
     native_events++;
     return;
   }
@@ -132,6 +138,24 @@ static void stop_and_trace(int slot,const char *kind){
   /* Forward to precisely the original game code; never suppress Stop. */
   SPIDER_NATIVE_STOP(slot);
 }
+/* Other five direct native stop sites were missing from the first
+ * six-callsite diagnostic. Their names describe addresses only:
+ * game-level intent has NOT been reverse engineered yet. */
+static void __cdecl native_stop_site_470f6e(int slot){
+  stop_and_trace(slot,"STOP-SITE-470F6E");
+}
+static void __cdecl native_stop_site_4712fc(int slot){
+  stop_and_trace(slot,"STOP-SITE-4712FC");
+}
+static void __cdecl native_stop_site_471858(int slot){
+  stop_and_trace(slot,"STOP-SITE-471858");
+}
+static void __cdecl native_stop_site_471b7c(int slot){
+  stop_and_trace(slot,"STOP-SITE-471B7C");
+}
+static void __cdecl native_stop_site_47236c(int slot){
+  stop_and_trace(slot,"STOP-SITE-47236C");
+}
 static void __cdecl native_stop_actor(int slot){
   stop_and_trace(slot,"STOP-ACTOR");
 }
@@ -151,6 +175,11 @@ typedef struct {
   void *wrapper;
 } NativeHookSite;
 static NativeHookSite native_sites[]={
+  {(BYTE *)(uintptr_t)0x00470F6Eu,{0xE8,0x2D,0x33,0x09,0x00},(void *)native_stop_site_470f6e},
+  {(BYTE *)(uintptr_t)0x004712FCu,{0xE8,0x9F,0x2F,0x09,0x00},(void *)native_stop_site_4712fc},
+  {(BYTE *)(uintptr_t)0x00471858u,{0xE8,0x43,0x2A,0x09,0x00},(void *)native_stop_site_471858},
+  {(BYTE *)(uintptr_t)0x00471B7Cu,{0xE8,0x1F,0x27,0x09,0x00},(void *)native_stop_site_471b7c},
+  {(BYTE *)(uintptr_t)0x0047236Cu,{0xE8,0x2F,0x1F,0x09,0x00},(void *)native_stop_site_47236c},
   {(BYTE *)(uintptr_t)0x004722F3u,{0xE8,0x38,0x1F,0x09,0x00},(void *)native_play_loop},
   {(BYTE *)(uintptr_t)0x00472870u,{0xE8,0xBB,0x19,0x09,0x00},(void *)native_play_oneshot},
   {(BYTE *)(uintptr_t)0x004723F2u,{0xE8,0xA9,0x1E,0x09,0x00},(void *)native_stop_actor},
@@ -162,10 +191,14 @@ static NativeHookSite native_sites[]={
 
 void SpiderNativeAudioTrace_Init(void (*log_fn)(const char *)){
   char path[MAX_PATH],*slash;
-  DWORD n,oldprotection=0,ignored=0;
-  unsigned i;
-  BYTE *page=(BYTE *)(uintptr_t)0x00472000u;
-  BOOL flushok,restoreok;
+  DWORD n,oldprotection[3]={0,0,0},ignored=0;
+  unsigned i,j;
+  BYTE *const pages[3]={
+    (BYTE *)(uintptr_t)0x00470000u,
+    (BYTE *)(uintptr_t)0x00471000u,
+    (BYTE *)(uintptr_t)0x00472000u
+  };
+  BOOL flushok,restoreok=TRUE;
   native_log=log_fn;
   n=GetModuleFileNameA(NULL,path,sizeof(path));
   if(!n || n>=sizeof(path))return;
@@ -174,7 +207,7 @@ void SpiderNativeAudioTrace_Init(void (*log_fn)(const char *)){
   strcpy(slash+1,"SpiderMan2k1Fix.ini");
   if(GetPrivateProfileIntA("Debug","ExperimentalAudioNativeLifecycleTrace",0,path)!=1)
     return;
-  if(native_log)native_log("AUDIO-NATIVE: requested optional six-callsite Play/Stop observation");
+  if(native_log)native_log("AUDIO-NATIVE: requested optional all 11 direct native voice Play/Stop callsites; F8 click marker enabled");
   /* Caller verified the known SHA256 and parsed INI before getting here. */
   if((uintptr_t)GetModuleHandleA(NULL)!=SPIDER_NATIVE_BASE){
     if(native_log)native_log("AUDIO-NATIVE: REFUSED relocated executable");
@@ -185,24 +218,31 @@ void SpiderNativeAudioTrace_Init(void (*log_fn)(const char *)){
       if(native_log)native_log("AUDIO-NATIVE: REFUSED unexpected callsite bytes");
       return;
     }
-  /* All 6 call instructions lie in one 4KB executable code page.
-   * Change all before the audio game loop starts, and restore the page. */
-  if(!VirtualProtect(page,4096u,PAGE_EXECUTE_READWRITE,&oldprotection)){
-    if(native_log)native_log("AUDIO-NATIVE: REFUSED VirtualProtect failed");
-    return;
+
+  /* The 11 calls occupy three 4KB pages. Acquire write permissions for
+   * all pages BEFORE changing any instruction. Fail closed on partial
+   * protection acquisition; restore every previous page on the way out. */
+  for(i=0;i<3u;i++){
+    if(!VirtualProtect(pages[i],4096u,PAGE_EXECUTE_READWRITE,&oldprotection[i])){
+      while(i>0u){--i;VirtualProtect(pages[i],4096u,oldprotection[i],&ignored);}
+      if(native_log)native_log("AUDIO-NATIVE: REFUSED VirtualProtect failed; no instruction modified");
+      return;
+    }
   }
   for(i=0;i<NATIVE_HOOK_COUNT;i++){
     uint32_t delta=(uint32_t)(uintptr_t)native_sites[i].wrapper-
                    ((uint32_t)(uintptr_t)native_sites[i].call_site+5u);
     memcpy(native_sites[i].call_site+1,&delta,sizeof(delta));
   }
-  flushok=FlushInstructionCache(GetCurrentProcess(),page,4096u);
+  flushok=FlushInstructionCache(GetCurrentProcess(),pages[0],3u*4096u);
   if(!flushok){
     for(i=0;i<NATIVE_HOOK_COUNT;i++)
       memcpy(native_sites[i].call_site,native_sites[i].expected,5u);
-    FlushInstructionCache(GetCurrentProcess(),page,4096u);
+    FlushInstructionCache(GetCurrentProcess(),pages[0],3u*4096u);
   }
-  restoreok=VirtualProtect(page,4096u,oldprotection,&ignored);
+  for(j=0;j<3u;j++)
+    if(!VirtualProtect(pages[j],4096u,oldprotection[j],&ignored))
+      restoreok=FALSE;
   if(!flushok){
     if(native_log)native_log("AUDIO-NATIVE: FAILED instruction cache flush; original calls restored");
     return;
@@ -212,17 +252,35 @@ void SpiderNativeAudioTrace_Init(void (*log_fn)(const char *)){
     if(native_log)native_log("AUDIO-NATIVE: WARNING code-page protection restore failed");
   }
   InterlockedExchange(&native_armed,1);
-  if(native_log)native_log("AUDIO-NATIVE: ARMED 6 exact original game callsites; unchanged DirectSound and all effects");
+  if(native_log)native_log("AUDIO-NATIVE: ARMED 11 exact original game callsites (2 Play, 9 Stop), unchanged DirectSound and all effects; F8 click marker ready");
 }
 void SpiderNativeAudioTrace_OnFlip(LONG flip,int in_3d){
   LONG previous;
+  BYTE f8_down;
   if(InterlockedCompareExchange(&native_armed,0,0)!=1)return;
   InterlockedExchange(&native_flip,flip);
   previous=InterlockedExchange(&native_in_3d,in_3d?1:0);
   if(in_3d && !previous){
     native_epoch=GetTickCount();
     native_events=0;
+    native_f8_was_down=0;
     memset(native_play_valid,0,sizeof(native_play_valid));
     if(native_log)native_log("AUDIO-NATIVE: 3D START t=0ms; on native sound events timestamps are relative to this Flip");
   }
+  if(!in_3d){
+    native_f8_was_down=0;
+    return;
+  }
+  /* Human time marker, sampled once per rendered frame. F8 is NOT
+   * swallowed: game input is unchanged. Press once just AFTER hearing
+   * the click. Natural reaction latency must be considered. */
+  f8_down=(BYTE)!!(GetAsyncKeyState(VK_F8)&0x8000);
+  if(f8_down && !native_f8_was_down && native_log){
+    char msg[160];
+    snprintf(msg,sizeof(msg),
+      "AUDIO-NATIVE-MARK: F8 AFTER-CLICK t=%lums flip=%ld (human reaction delay; correlate preceding events)",
+      (unsigned long)(GetTickCount()-native_epoch),(long)flip);
+    native_log(msg);
+  }
+  native_f8_was_down=f8_down;
 }
