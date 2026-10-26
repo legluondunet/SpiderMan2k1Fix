@@ -51,7 +51,7 @@ static const char *const spider_ini_sections[]={"Debug","System","Display","HUD"
  * during INI preflight/repair. The generic Debug validator below
  * already enforces strict boolean values (0/1). */
 /* F10 is the hotkey. F12-named keys are legacy INI aliases ONLY. */
-static const char *const spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts","ExperimentalAudioVoiceTrace","ExperimentalAudioStopSuspectLoop","ExperimentalAudioStopLoopMask","ExperimentalAudioOneShotTrace","ExperimentalAudioNativeLifecycleTrace","ExperimentalAudioSwing5Fingerprint","ExperimentalAudioSwing5Capture","ExperimentalAudioSwing5TailMute","ExperimentalAudioLoopPCMProbe","ExperimentalAudioLoopPCMCapture","ExperimentalAudioLoopTailRepair"};
+static const char *const spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts","ExperimentalAudioVoiceTrace","ExperimentalAudioStopSuspectLoop","ExperimentalAudioStopLoopMask","ExperimentalAudioOneShotTrace","ExperimentalAudioNativeLifecycleTrace","ExperimentalAudioSwing5Fingerprint","ExperimentalAudioSwing5Capture","ExperimentalAudioSwing5TailMute","ExperimentalAudioLoopPCMProbe","ExperimentalAudioLoopPCMCapture","ExperimentalAudioLoopTailRepair","ExperimentalAudioCombatPCMCapture","ExperimentalAudioCombatPCMStartMs"};
 /* Keep all pre-existing INIs valid without regenerating saved controls. */
 static const char *const spider_ini_system[]={"QuickExitF10","ExperimentalQuickExitF10In3D","ExperimentalQuickExitF10InNewGameMovie","ExperimentalQuickExitF10InNewGameComic","ExperimentalQuickExitF10InIntroStills","QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic","ExperimentalQuickExitF12InIntroStills"};
 static const char *const spider_ini_display[]={
@@ -150,6 +150,9 @@ static int spider_ini_value_valid(const char *section,const char *key,const char
   if(!spider_ini_icmp(section,"Debug") &&
      !spider_ini_icmp(key,"ExperimentalAudioStopLoopMask"))
     return spider_ini_uint(value,0,31);
+  if(!spider_ini_icmp(section,"Debug") &&
+     !spider_ini_icmp(key,"ExperimentalAudioCombatPCMStartMs"))
+     return spider_ini_uint(value,0,300000);
   if(!spider_ini_icmp(section,"Audio"))return spider_ini_uint(value,0,
            !spider_ini_icmp(key,"Stereo")?1:100);
   /* Only Auto and Off are public modes. Accept older names solely so
