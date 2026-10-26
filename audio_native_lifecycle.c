@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "audio_native_lifecycle.h"
+#include "audio_swing5_fingerprint.h"
 
 #define SPIDER_NATIVE_BASE ((uintptr_t)0x00400000u)
 #define SPIDER_VOICE_COUNT 32u
@@ -125,6 +126,8 @@ static void __cdecl native_play_oneshot(int slot,int looping){
     native_play_valid[slot]=1;
   }
   trace_event("PLAY-ONESHOT",slot,looping,&info);
+  /* Exact-size/frequency candidates only, separately gated, max 12. */
+  SpiderSwing5Fingerprint_Probe(slot,info.buffer,info.bytes,info.hz);
 }
 static void stop_and_trace(int slot,const char *kind){
   VoiceInfo info;
@@ -205,8 +208,11 @@ void SpiderNativeAudioTrace_Init(void (*log_fn)(const char *)){
   slash=strrchr(path,'\\');
   if(!slash || (size_t)(slash-path)+strlen("SpiderMan2k1Fix.ini")+1>=sizeof(path))return;
   strcpy(slash+1,"SpiderMan2k1Fix.ini");
-  if(GetPrivateProfileIntA("Debug","ExperimentalAudioNativeLifecycleTrace",0,path)!=1)
+  if(GetPrivateProfileIntA("Debug","ExperimentalAudioNativeLifecycleTrace",0,path)!=1){
+    if(GetPrivateProfileIntA("Debug","ExperimentalAudioSwing5Fingerprint",0,path)==1 && native_log)
+      native_log("AUDIO-SWING5-FP: REFUSED; requires ExperimentalAudioNativeLifecycleTrace=1");
     return;
+  }
   if(native_log)native_log("AUDIO-NATIVE: requested optional all 11 direct native voice Play/Stop callsites; F8 click marker enabled");
   /* Caller verified the known SHA256 and parsed INI before getting here. */
   if((uintptr_t)GetModuleHandleA(NULL)!=SPIDER_NATIVE_BASE){
@@ -251,6 +257,8 @@ void SpiderNativeAudioTrace_Init(void (*log_fn)(const char *)){
     /* Instrumentation still installed; report protection restore failure. */
     if(native_log)native_log("AUDIO-NATIVE: WARNING code-page protection restore failed");
   }
+  SpiderSwing5Fingerprint_Init(native_log,
+    GetPrivateProfileIntA("Debug","ExperimentalAudioSwing5Fingerprint",0,path)==1);
   InterlockedExchange(&native_armed,1);
   if(native_log)native_log("AUDIO-NATIVE: ARMED 11 exact original game callsites (2 Play, 9 Stop), unchanged DirectSound and all effects; F8 click marker ready");
 }

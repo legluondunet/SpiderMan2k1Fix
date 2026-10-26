@@ -71,6 +71,7 @@ def test_gated_no_per_frame_com_or_extra_mutation():
     assert "SpiderNativeAudioTrace_OnFlip(" in CORE
     assert "SpiderNativeAudioTrace_Init(log_line);" in CORE
     assert "audio_native_lifecycle.c" in BUILD
+    assert "audio_swing5_fingerprint.c" in BUILD
     assert CORE.index("if (!supported_exe())")<CORE.index("SpiderNativeAudioTrace_Init(log_line);")
     assert CORE.index("SpiderCfg_ValidateCurrentIni(log_line);")<CORE.index("SpiderNativeAudioTrace_Init(log_line);")
     f=SRC[SRC.index("void SpiderNativeAudioTrace_OnFlip("):]
