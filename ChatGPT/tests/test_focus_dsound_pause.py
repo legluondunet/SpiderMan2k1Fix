@@ -79,3 +79,22 @@ def test_optional_original_exe_sound_table_signatures():
                 found=True
                 break
         assert found
+
+
+def test_opt_in_exact_signature_audio_loop_stop_in_3d_only():
+    assert 'ExperimentalAudioStopSuspectLoop",0,path)==1' in SRC
+    assert "SpiderFocusDSound_StopSuspectOnFlip(count," in CORE
+    assert "void SpiderFocusDSound_StopSuspectOnFlip(LONG flip,int in_3d)" in SRC
+    start=SRC.index("void SpiderFocusDSound_StopSuspectOnFlip(")
+    end=SRC.index("void SpiderFocusDSound_Pause(void)",start)
+    body=SRC[start:end]
+    for required in ("if(!in_3d)", "voice_at(3u)", "buf!=SPIDER_PRIMARY",
+                     "DSBSTATUS_PLAYING", "DSBSTATUS_LOOPING",
+                     "DSBSTATUS_BUFFERLOST", "caps.dwBufferBytes==85176u",
+                     "frequency==12000u", "IDirectSoundBuffer_Stop(buf)",
+                     "AUDIO-LOOP-STOP: NO MATCH"):
+        assert required in body
+    for forbidden in ("IDirectSoundBuffer_Play(", "IDirectSoundBuffer_SetVolume",
+                      "IDirectSoundBuffer_SetCurrentPosition", "VirtualProtect",
+                      "IDirectSoundBuffer_Lock("):
+        assert forbidden not in body
