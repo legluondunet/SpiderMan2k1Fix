@@ -325,3 +325,17 @@ def test_audio_loop_mask_reject_invalid(runner,tmp_path,value):
     result,detail=validate(runner,tmp_path,
         f"[Debug]\nExperimentalAudioStopLoopMask={value}\n")
     assert result[0]>=1 and result[2]==0,detail
+
+
+@pytest.mark.parametrize("value",["0","1"])
+def test_oneshot_trace_strict_toggle(runner,tmp_path,value):
+    result,detail=validate(runner,tmp_path,
+        f"[Debug]\nExperimentalAudioOneShotTrace={value}\n")
+    assert result==(0,0,1),detail
+
+
+@pytest.mark.parametrize("value",["","-1","2","yes"])
+def test_oneshot_trace_invalid_toggle(runner,tmp_path,value):
+    result,detail=validate(runner,tmp_path,
+        f"[Debug]\nExperimentalAudioOneShotTrace={value}\n")
+    assert result[0]>=1 and result[2]==0,detail
