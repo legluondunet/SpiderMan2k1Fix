@@ -9,6 +9,8 @@ void SpiderFocusDSound_Init(void (*log_fn)(const char *));
 void SpiderFocusDSound_TraceOnFlip(long flip,int in_3d);
 /* Opt-in destructive diagnostic: stops ONLY signature-matching looping voice #3. */
 void SpiderFocusDSound_StopSuspectOnFlip(long flip,int in_3d);
+/* Opt-in multi-voice stop for precisely fingerprinted looping sounds only. */
+void SpiderFocusDSound_StopLoopGroupsOnFlip(long flip,int in_3d);
 void SpiderFocusDSound_Pause(void);
 void SpiderFocusDSound_Resume(void);
 #endif
