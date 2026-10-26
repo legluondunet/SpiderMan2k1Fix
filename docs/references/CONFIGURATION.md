@@ -478,3 +478,60 @@ can be correlated. An event near landing establishes timing correlation,
 **not yet** the buffer's actual WAV name or failure mechanism.
 
 This probe is an additional experimental diagnostic in draft PR #64.
+
+
+### Exact native voice Play/Stop event probe (experimental PR stacked on #64)
+
+The optional [Debug] `ExperimentalAudioNativeLifecycleTrace=1` switch is
+OFF by default. The SHA-256-checked original executable contains six
+native CALL instructions for the game's own voice-management functions.
+This experiment checks their exact 5-byte original signatures before
+redirecting those calls to logging wrappers, which **always** execute
+the original native Play or Stop with unchanged arguments.
+
+| Game CALL address | Original callee | Reason |
+|---|---|---|
+| 0x004722F3 | Play 0x00504230 | looped voice |
+| 0x00472870 | Play 0x00504230 | one-shot voice |
+| 0x004723F2 | Stop 0x005042A0 | actor stop |
+| 0x004725EE | Stop 0x005042A0 | allocator reuse path 1 |
+| 0x0047261F | Stop 0x005042A0 | allocator reuse path 2 |
+| 0x004729C4 | Stop 0x005042A0 | scene teardown |
+
+Events appear as `AUDIO-NATIVE: ... t=Nms flip~=N slot=N
+voice=PTR status=0x... bytes=N hz=N read=N write=N
+play_age_ms=N looping_arg=N`. For Stop events, DirectSound status
+and play cursor are sampled **before** forwarding the original Stop.
+`STOP-RECYCLE-FIRST` or `STOP-RECYCLE-SECOND` with `status=0x00000001`
+means the native allocator is stopping a **still-playing one-shot**.
+That is a plausible source of a discontinuity, but its audible
+significance is not established until it coincides with an actual click.
+
+No system-wide COM hooks, sample edits, buffer muting, resampling or
+volume changes are performed by this new probe. Six native callsites
+are changed in process memory only for instrumentation (not on disk);
+their original game functions remain in use. Unknown signatures,
+relocated image or failed code protection refuse patching. The trace
+is capped at 900 native voice events per 3D session.
+
+Suggested settings in the existing [Debug] section, with original
+game audio files:
+
+```ini
+[Debug]
+Log=1
+ExperimentalAudioVoiceTrace=1
+ExperimentalAudioOneShotTrace=1
+ExperimentalAudioNativeLifecycleTrace=1
+ExperimentalAudioStopSuspectLoop=1
+ExperimentalAudioStopLoopMask=30
+```
+
+Reproduce at least three separate web-flight landings and share the
+new log with observed clicks. The older mask=30 deliberately suppresses
+some looping ambience for **diagnostic isolation only**. It is not a
+permanent fix. The independently drafted PR #65 voice-busy fix is NOT
+part of this branch, so test results must not be conflated.
+
+CI passing only verifies build and source safeguards; all Win11/Wine
+runtime observations remain to be validated before any merge.
