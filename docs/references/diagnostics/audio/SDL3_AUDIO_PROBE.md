@@ -212,8 +212,8 @@ the existing SHA-protected Swing5 substitution. Do not mistake
 `PKR-AUDIO: MATCH` for `SDL3-SWING5: REPLACED`.
 
 There is no full PCM game-source comparison in the present build;
-source-identification diagnostics are intentionally limited to **48**
-logged matches to control log volume. No unsupported WAV is silently
+source-identification diagnostics are intentionally limited to **192 distinct WAV sources**
+logged once each to control log volume while keeping later game effects visible. No unsupported WAV is silently
 treated as valid PCM. A missing, invalid or CRC-failing archive
 disables this feature, leaving the normal game path alone. Do not use
 a different `data.pkr` from a different game/version.
