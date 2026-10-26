@@ -183,17 +183,29 @@ void SpiderCombatPCM_On3DStart(void){
 int SpiderCombatPCM_IsManualF8(void){
   return on && manual_mode;
 }
-/* Called only for an F8 rising edge while the game is in 3D.
- * Further presses deliberately do not restart/extend the capture window. */
+/* Each F8 rising edge starts an independent capture session.
+ * A short debounce prevents a double tap from consuming the second one.
+ * Two presses are permitted per process, across 3D scene transitions. */
 void SpiderCombatPCM_OnF8(DWORD native_ms){
+  LONG prev,session;
   char line[260];
   if(!SpiderCombatPCM_IsManualF8())return;
-  if(InterlockedCompareExchange(&f8_triggered,1,0)!=0)return;
+  prev=InterlockedCompareExchange(&prev_f8_time,0,0);
+  if(prev>=0 && native_ms-(DWORD)prev<F8_DEBOUNCE_MS)return;
+  if(InterlockedCompareExchange(&f8_uses,0,0)>=MANUAL_SESSIONS){
+    if(emit)emit("AUDIO-COMBAT-PCM: F8-IGNORED maximum two sessions per game");
+    return;
+  }
+  session=InterlockedIncrement(&f8_uses);
+  InterlockedExchange(&prev_f8_time,(LONG)native_ms);
+  InterlockedExchange(&ready_logged,0);
+  InterlockedExchange(&prev_ms,0);
   InterlockedExchange(&capture_from_ms,(LONG)(native_ms+start_delay_ms));
+  InterlockedExchange(&f8_triggered,session);
   snprintf(line,sizeof(line),
-    "AUDIO-COMBAT-PCM: F8-TRIGGER t=%lums capture_start_t=%lums delay=%lums (one-shot; repeated F8 ignored)",
-    (unsigned long)native_ms,(unsigned long)(native_ms+start_delay_ms),
-    (unsigned long)start_delay_ms);
+    "AUDIO-COMBAT-PCM: F8-TRIGGER session=%ld/2 t=%lums capture_start_t=%lums delay=%lums limit=12 unique sounds",
+    (long)session,(unsigned long)native_ms,
+    (unsigned long)(native_ms+start_delay_ms),(unsigned long)start_delay_ms);
   if(emit)emit(line);
 }
 void SpiderCombatPCM_OnFlip(DWORD native_ms){
@@ -205,8 +217,10 @@ void SpiderCombatPCM_OnFlip(DWORD native_ms){
   if(native_ms<first)return;
   if(InterlockedCompareExchange(&ready_logged,1,0)!=0)return;
   snprintf(line,sizeof(line),
-    "AUDIO-COMBAT-PCM: CAPTURE-WINDOW-OPEN t=%lums trigger=%s; listening for one-shot PCM",
-    (unsigned long)native_ms,manual_mode?"F8":"automatic");
+    "AUDIO-COMBAT-PCM: CAPTURE-WINDOW-OPEN t=%lums session=%ld trigger=%s; listening for one-shot PCM",
+    (unsigned long)native_ms,
+    (long)InterlockedCompareExchange(&f8_triggered,0,0),
+    manual_mode?"F8":"automatic");
   if(emit)emit(line);
 }
 void SpiderCombatPCM_Probe(int slot,IDirectSoundBuffer *buf,DWORD size,
