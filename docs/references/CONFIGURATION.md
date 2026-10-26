@@ -535,3 +535,33 @@ part of this branch, so test results must not be conflated.
 
 CI passing only verifies build and source safeguards; all Win11/Wine
 runtime observations remain to be validated before any merge.
+#### Complete direct Stop coverage and F8 click marker
+
+The first PR #66 runtime log showed **374 native STOP-RECYCLE-FIRST** calls,
+all with DirectSound status `0x00000000` (not playing). Crucially, it
+also showed **one** STOP-ACTOR while a nonlooping sound was still playing:
+`t=80742ms slot=28 bytes=56928 hz=16000 read=52160 status=0x00000001`.
+Assuming mono 16-bit PCM, this is 149ms from the buffer end.
+This is an early stop, but **not yet** proven audible at landing.
+
+Re-auditing the full original executable uncovered **five additional direct
+Stop callsites omitted from the first six-site probe**, at 0x00470F6E,
+0x004712FC, 0x00471858, 0x00471B7C and 0x0047236C. This revised
+experiment now instruments **all 9 known direct native Stop calls** plus
+the 2 Play calls. The five added sites use literal address labels
+(`STOP-SITE-470F6E`, etc.) because their semantic role is not yet proved.
+All 11 original call signatures are validated before any in-memory patch,
+and all three touched code pages have their own protection restored.
+Unknown signatures abort without modifying the EXE.
+
+**In-game click marker:** With ExperimentalAudioNativeLifecycleTrace=1,
+press **F8 immediately AFTER hearing each click** (three or four landings
+spaced apart). F8 does not suppress or modify native input; a line such
+as `AUDIO-NATIVE-MARK: F8 AFTER-CLICK t=...ms flip=...` is appended.
+The marker is subject to human reaction time and frames; correlate
+events within a practical window *before* each F8, not at the exact
+keypress. No WAV contents or file formats are changed.
+
+The previous table of six sites describes the *initial* probe, not the
+complete eleven-site revision. The new full set uses five additional
+call locations documented above.
