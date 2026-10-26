@@ -2431,6 +2431,7 @@ static void pause_at_flip_if_background(void) {
   /* The Flip pause alone does not suspend Bink or secondary DirectSound. */
   SpiderFocusMedia_Pause();
   SpiderFocusDSound_Pause();
+  SpiderSDL3Probe_PauseAll(1); /* Same focus-latched pause as native DS voices. */
   /* The frame currently rendered in borderless_back is the image which
    * would have been presented at this Flip boundary. Compose the PAUSE UI
    * into that very game surface and Blt it exactly once to PRIMARY before
@@ -2470,6 +2471,7 @@ static void pause_at_flip_if_background(void) {
         PostQuitMessage((int)msg.wParam);
         SpiderPauseAny_End();
         SpiderPauseSurface_End();
+        SpiderSDL3Probe_PauseAll(0);
         SpiderFocusDSound_Resume();
         SpiderFocusMedia_Resume();
         log_line("FOCUS-PAUSE: WM_QUIT observed, aborting wait");
@@ -2497,6 +2499,7 @@ static void pause_at_flip_if_background(void) {
   }
   SpiderPauseAny_End();
   SpiderPauseSurface_End();
+  SpiderSDL3Probe_PauseAll(0);
   SpiderFocusDSound_Resume();
   SpiderFocusMedia_Resume();
   log_line("FOCUS-PAUSE: explicit resume or window destroyed");
@@ -2527,6 +2530,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   }
   SpiderDI8Retry_OnFlip(count);
   SpiderSDL3Probe_OnFlip(game_hwnd); /* F7: explicitly opted-in standalone SDL3 test. */
+  SpiderSDL3Probe_OnVoiceFlip(InterlockedCompareExchange(&menu_upscale_active,0,0)==1);
   /* Observe the physical F9 press early; the game's screenshot code can
    * run between two Flip calls, so surface hooks also sample F9. */
   if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
