@@ -3099,14 +3099,16 @@ static DWORD initialize_body(LPVOID unused) {
   {
     char ini[MAX_PATH],*slash;
     DWORD n=GetModuleFileNameA(NULL,ini,MAX_PATH);
-    int test=0,swing=0;
+    int test=0,swing=0,pkr_readonly=0;
     if(n && n<MAX_PATH && (slash=strrchr(ini,'\\'))!=NULL){
       strcpy(slash+1,"SpiderMan2k1Fix.ini");
       test=GetPrivateProfileIntA("Debug","ExperimentalSDL3AudioProbe",0,ini)==1;
       swing=GetPrivateProfileIntA("Debug","ExperimentalSDL3Swing5Replace",0,ini)==1;
+      pkr_readonly=GetPrivateProfileIntA("Debug","ExperimentalSDL3PKRAudioIndex",0,ini)==1;
     }
     SpiderSDL3Probe_Init(log_line,test,swing);
-    SpiderSDL3Swing5_Init(log_line,swing);
+    SpiderPKRAudioIndex_Init(log_line,pkr_readonly); /* Read original data.pkr; no sound modifications. */
+    SpiderSDL3Swing5_Init(log_line,swing||pkr_readonly);
   }
   /* The first-run generator or repair may have changed [Debug] Log. */
   {
