@@ -98,3 +98,22 @@ def test_opt_in_exact_signature_audio_loop_stop_in_3d_only():
                       "IDirectSoundBuffer_SetCurrentPosition", "VirtualProtect",
                       "IDirectSoundBuffer_Lock("):
         assert forbidden not in body
+
+
+def test_loop_group_isolation_exact_filter_and_no_oneshot_changes():
+    assert "SpiderFocusDSound_StopLoopGroupsOnFlip(count," in CORE
+    assert 'ExperimentalAudioStopLoopMask",0,path)' in SRC
+    start=SRC.index("void SpiderFocusDSound_StopLoopGroupsOnFlip(")
+    end=SRC.index("void SpiderFocusDSound_Pause(void)",start)
+    body=SRC[start:end]
+    for expected in ("{1u,85176u,12000u}","{2u,55444u,12000u}",
+                     "{4u,79308u,16000u}","{8u,60480u,12000u}",
+                     "{16u,32960u,16000u}","buf==SPIDER_PRIMARY",
+                     "DSBSTATUS_PLAYING|DSBSTATUS_LOOPING",
+                     "caps.dwBufferBytes!=group->bytes",
+                     "frequency!=group->hz","IDirectSoundBuffer_Stop(buf)",
+                     "if(!in_3d)"):
+        assert expected in SRC
+    for forbidden in ("IDirectSoundBuffer_Play(", "IDirectSoundBuffer_SetVolume(",
+                      "SetCurrentPosition", "VirtualProtect", "IDirectSoundBuffer_Lock("):
+        assert forbidden not in body
