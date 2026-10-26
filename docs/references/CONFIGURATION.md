@@ -413,3 +413,35 @@ This build is stacked on the **passive audio trace PR**, not the modding PR.
 here. Restore normal game sound files for comparison; backup previous DLLs
 and test on the known supported Windows x86 executable. Never merge the
 experimental stop based on a CI build alone.
+
+### Experimental multi-loop isolation mask (PR #64)
+
+A separate diagnostic option, `[Debug] ExperimentalAudioStopLoopMask=N`,
+accepts values **0–31** (OFF by default). This bitmask chooses which
+*currently looping* secondary-buffer fingerprints to stop. It is independent
+of the older `ExperimentalAudioStopSuspectLoop` setting.
+
+| Bit | PCM bytes | Playback frequency | Suspected sound | Loop period |
+|---|---:|---:|---|---:|
+| 1 | 85176 | 12000 Hz | wind2.wav | 3.549 s |
+| 2 | 55444 | 12000 Hz | wind3.wav | 2.310 s |
+| 4 | 79308 | 16000 Hz | traffic2.wav | 2.478 s |
+| 8 | 60480 | 12000 Hz | heli1.wav | 2.520 s |
+| 16 | 32960 | 16000 Hz | unidentified | 1.030 s |
+
+Names are suggestions from format/length matches, not verified game asset IDs.
+All native voice slots are considered because game-owned slots are recycled.
+A matched `PLAYING|LOOPING` buffer is stopped and logged; no one-shot voice,
+primary buffer, or nonmatching sound is affected.
+
+Suggested A/B: preserve `ExperimentalAudioStopSuspectLoop=1` for the 3.549s
+loop, then set `ExperimentalAudioStopLoopMask=14` to additionally stop the
+2.310s, 2.478s, and 2.520s groups. If noise remains during helicopter/web
+swing events, retry with mask `30` to include the 1.030s loop. Restart
+the game for each test. Confirm `AUDIO-LOOP-MASK: STOP` log lines.
+Set mask 0 and stop switch 0 to return to native playback.
+
+This deliberately disables matching ambient audio and is **diagnostic only**,
+not a proposed gameplay fix. If web-related crackles persist after stopping
+these loops, investigate the native finishing of nonlooping DirectSound
+effects separately.
