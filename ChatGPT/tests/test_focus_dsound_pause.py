@@ -117,3 +117,25 @@ def test_loop_group_isolation_exact_filter_and_no_oneshot_changes():
     for forbidden in ("IDirectSoundBuffer_Play(", "IDirectSoundBuffer_SetVolume(",
                       "SetCurrentPosition", "VirtualProtect", "IDirectSoundBuffer_Lock("):
         assert forbidden not in body
+
+
+def test_read_only_oneshot_stop_and_replacement_probe_opt_in():
+    assert 'ExperimentalAudioOneShotTrace",0,path)==1' in SRC
+    assert 'AUDIO-ONESHOT-TRACE: ARMED' in SRC
+    assert 'AUDIO-ONESHOT-TRACE: STOPPED' in SRC
+    assert 'AUDIO-ONESHOT-TRACE: SLOT-REPLACED' in SRC
+    assert 'AUDIO-ONESHOT-TRACE: LIMIT 750' in SRC
+    assert 'audio_trace_previous[i]==buf && audio_trace_was_playing[i]' in SRC
+    assert '!audio_oneshot_was_looped[i] && !playing' in SRC
+    assert 'audio_trace_previous[i] && audio_trace_previous[i]!=buf' in SRC
+    assert 'old buffer end UNCONFIRMED' in SRC
+    assert 'cause UNKNOWN' in SRC
+    assert 'IDirectSoundBuffer_GetCaps(buf,&caps)' in SRC
+    assert 'IDirectSoundBuffer_GetFrequency(buf,&frequency)' in SRC
+    start=SRC.index("void SpiderFocusDSound_TraceOnFlip(")
+    end=SRC.index("void SpiderFocusDSound_StopSuspectOnFlip(",start)
+    body=SRC[start:end]
+    for forbidden in ("IDirectSoundBuffer_Stop(", "IDirectSoundBuffer_Play(",
+                      "IDirectSoundBuffer_SetVolume(", "IDirectSoundBuffer_Lock(",
+                      "VirtualProtect"):
+        assert forbidden not in body
