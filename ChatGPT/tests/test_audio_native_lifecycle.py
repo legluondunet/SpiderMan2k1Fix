@@ -120,5 +120,5 @@ def test_bounded_retroactive_f8_history_survives_native_trace_limit():
     # All diagnostic history is downstream of exact original function calls.
     assert SRC.index("SPIDER_NATIVE_PLAY(slot,looping);") < SRC.index('trace_event("PLAY-LOOP"')
     assert SRC.index("SPIDER_NATIVE_STOP(slot);") < SRC.index("static void __cdecl native_stop_site_470f6e")
-    assert "GetPrivateProfileIntA(\\"Debug\\",\\"ExperimentalAudioNativeLifecycleTrace\\",0,path)!=1" in SRC
+    assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioNativeLifecycleTrace",0,path)!=1' in SRC
     assert "IDirectSoundBuffer_Lock(" not in SRC
