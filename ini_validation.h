@@ -46,12 +46,12 @@ static int spider_ini_in(const char *name,const char *const *items,size_t count)
   return 0;
 }
 #define SPIDER_INI_IN(value,array) spider_ini_in(value,array,sizeof(array)/sizeof((array)[0]))
-static const char *const spider_ini_sections[]={"Debug","System","Display","HUD","Input","Audio","Keyboard","Joystick","Internal"};
+static const char *const spider_ini_sections[]={"Debug","System","Display","HUD","Input","Audio","Keyboard","Joystick","Internal","Modding"};
 /* Native two-cutscene F12 auto-skip opt-in: never silently discard it
  * during INI preflight/repair. The generic Debug validator below
  * already enforces strict boolean values (0/1). */
 /* F10 is the hotkey. F12-named keys are legacy INI aliases ONLY. */
-static const char *const spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts","ExperimentalAudioVoiceTrace"};
+static const char *const spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts","ExperimentalAudioVoiceTrace","ExperimentalAudioStopSuspectLoop"};
 /* Keep all pre-existing INIs valid without regenerating saved controls. */
 static const char *const spider_ini_system[]={"QuickExitF10","ExperimentalQuickExitF10In3D","ExperimentalQuickExitF10InNewGameMovie","ExperimentalQuickExitF10InNewGameComic","ExperimentalQuickExitF10InIntroStills","QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic","ExperimentalQuickExitF12InIntroStills"};
 static const char *const spider_ini_display[]={
@@ -79,6 +79,8 @@ static const char *const spider_ini_input[]={
   "ExperimentalAltTabReacquire","ExperimentalDI8CreateDeviceTrace"
 };
 static const char *const spider_ini_audio[]={"MusicSFXLevel","VoiceLevel","MovieLevel","Stereo"};
+/* Compatibility only: this audio-diagnostic build does not implement modding. */
+static const char *const spider_ini_modding[]={"LooseFiles"};
 static const char *const spider_ini_keys[]={"Up","Down","Left","Right","Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
 static const char *const spider_ini_joy[]={"Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
 static const char *const spider_ini_internal[]={"RawHex"};
@@ -89,6 +91,7 @@ static int spider_ini_key_known(const char *section,const char *key) {
   if(!spider_ini_icmp(section,"HUD"))return SPIDER_INI_IN(key,spider_ini_hud);
   if(!spider_ini_icmp(section,"Input"))return SPIDER_INI_IN(key,spider_ini_input);
   if(!spider_ini_icmp(section,"Audio"))return SPIDER_INI_IN(key,spider_ini_audio);
+  if(!spider_ini_icmp(section,"Modding"))return SPIDER_INI_IN(key,spider_ini_modding);
   if(!spider_ini_icmp(section,"Keyboard"))return SPIDER_INI_IN(key,spider_ini_keys);
   if(!spider_ini_icmp(section,"Joystick"))return SPIDER_INI_IN(key,spider_ini_joy);
   if(!spider_ini_icmp(section,"Internal"))return SPIDER_INI_IN(key,spider_ini_internal);
@@ -141,6 +144,7 @@ static int spider_ini_value_valid(const char *section,const char *key,const char
     for(i=0;i<504;i++)if(!isxdigit((unsigned char)value[i]))return 0;
     return 1;
   }
+  if(!spider_ini_icmp(section,"Modding"))return spider_ini_uint(value,0,1);
   if(!spider_ini_icmp(section,"Keyboard"))return spider_ini_keyboard(value);
   if(!spider_ini_icmp(section,"Joystick"))return spider_ini_joystick(value);
   if(!spider_ini_icmp(section,"Audio"))return spider_ini_uint(value,0,
