@@ -339,3 +339,17 @@ def test_oneshot_trace_invalid_toggle(runner,tmp_path,value):
     result,detail=validate(runner,tmp_path,
         f"[Debug]\nExperimentalAudioOneShotTrace={value}\n")
     assert result[0]>=1 and result[2]==0,detail
+
+
+@pytest.mark.parametrize("value",["0","1"])
+def test_native_lifecycle_trace_optional_boolean(runner,tmp_path,value):
+    result,detail=validate(runner,tmp_path,
+        f"[Debug]\nExperimentalAudioNativeLifecycleTrace={value}\n")
+    assert result==(0,0,1),detail
+
+
+@pytest.mark.parametrize("value",["","-1","2","yes"])
+def test_native_lifecycle_trace_reject_bad_toggle(runner,tmp_path,value):
+    result,detail=validate(runner,tmp_path,
+        f"[Debug]\nExperimentalAudioNativeLifecycleTrace={value}\n")
+    assert result[0]>=1 and result[2]==0,detail
