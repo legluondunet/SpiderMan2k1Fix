@@ -37,6 +37,8 @@ static DWORD paused_play_flags[VOICE_COUNT];
 static volatile LONG enabled=0,armed=0;
 /* Opt-in passive debugging only. Never call Play, Stop, Lock, or Set* here. */
 static volatile LONG audio_trace_enabled=0;
+/* Extra read-only probe of nonlooping voice endings/reuse; opt-in. */
+static volatile LONG audio_oneshot_trace_enabled=0;
 /* Mutating experiment is separately opt-in and never runs in menus. */
 static volatile LONG audio_loop_stop_enabled=0;
 static volatile LONG audio_loop_group_mask=0;
@@ -54,6 +56,11 @@ static BYTE audio_trace_have_read[VOICE_COUNT];
 static DWORD audio_trace_epoch=0;
 static unsigned audio_trace_events=0;
 static int audio_trace_in_3d=0;
+static DWORD audio_oneshot_start_ms[VOICE_COUNT];
+static DWORD audio_oneshot_bytes[VOICE_COUNT];
+static DWORD audio_oneshot_hz[VOICE_COUNT];
+static BYTE audio_oneshot_was_looped[VOICE_COUNT];
+static unsigned audio_oneshot_events=0;
 static void (*logger)(const char *)=NULL;
 
 static void diag(const char *msg){if(logger)logger(msg);}
@@ -85,6 +92,11 @@ void SpiderFocusDSound_Init(void (*log_fn)(const char *)){
       if(GetPrivateProfileIntA("Debug","ExperimentalAudioVoiceTrace",0,path)==1) {
         InterlockedExchange(&audio_trace_enabled,1);
         diag("AUDIO-VOICE-TRACE: ARMED (passive DirectSound voice snapshot at each 3D Flip; no audio changes)");
+      }
+      if(GetPrivateProfileIntA("Debug","ExperimentalAudioOneShotTrace",0,path)==1){
+        InterlockedExchange(&audio_trace_enabled,1);
+        InterlockedExchange(&audio_oneshot_trace_enabled,1);
+        diag("AUDIO-ONESHOT-TRACE: ARMED (passive PLAYING->STOPPED and slot replacement snapshots; no audio changes)");
       }
       if(GetPrivateProfileIntA("Debug","ExperimentalAudioStopSuspectLoop",0,path)==1) {
         InterlockedExchange(&audio_loop_stop_enabled,1);
@@ -122,6 +134,11 @@ void SpiderFocusDSound_TraceOnFlip(LONG flip,int in_3d){
     memset(audio_trace_was_playing,0,sizeof(audio_trace_was_playing));
     memset(audio_trace_have_read,0,sizeof(audio_trace_have_read));
     audio_trace_events=0;
+    audio_oneshot_events=0;
+    memset(audio_oneshot_start_ms,0,sizeof(audio_oneshot_start_ms));
+    memset(audio_oneshot_bytes,0,sizeof(audio_oneshot_bytes));
+    memset(audio_oneshot_hz,0,sizeof(audio_oneshot_hz));
+    memset(audio_oneshot_was_looped,0,sizeof(audio_oneshot_was_looped));
     audio_trace_epoch=GetTickCount();
     audio_trace_in_3d=1;
     diag("AUDIO-VOICE-TRACE: 3D START t=0ms (elapsed relative to first 3D Flip)");
@@ -132,6 +149,25 @@ void SpiderFocusDSound_TraceOnFlip(LONG flip,int in_3d){
     DWORD status=0,read_cursor=0,write_cursor=0;
     HRESULT hr;
     int playing,started,rewound=0,got_cursor=0;
+    /* A native table slot may be deleted or rebound before our next Flip.
+     * Emit a 'REPLACED' observation, NEVER assert an actual DirectSound Stop.
+     * The old COM pointer is not dereferenced after the game may release it. */
+    if(InterlockedCompareExchange(&audio_oneshot_trace_enabled,0,0)==1 &&
+       audio_trace_was_playing[i] && !audio_oneshot_was_looped[i] &&
+       audio_trace_previous[i] && audio_trace_previous[i]!=buf){
+      if(audio_oneshot_events<750u){
+        char line[280];
+        snprintf(line,sizeof(line),
+          "AUDIO-ONESHOT-TRACE: SLOT-REPLACED t=%lums flip=%ld slot=%u old=%p new=%p elapsed_ms=%lu bytes=%lu hz=%lu last_read=%lu (old buffer end UNCONFIRMED)",
+          (unsigned long)elapsed,(long)flip,i,(void *)audio_trace_previous[i],(void *)buf,
+          (unsigned long)(elapsed-audio_oneshot_start_ms[i]),
+          (unsigned long)audio_oneshot_bytes[i],(unsigned long)audio_oneshot_hz[i],
+          (unsigned long)(audio_trace_have_read[i]?audio_trace_last_read[i]:0));
+        diag(line);
+      }else if(audio_oneshot_events==750u)
+        diag("AUDIO-ONESHOT-TRACE: LIMIT 750 end/replacement events reached");
+      audio_oneshot_events++;
+    }
     if(!buf || buf==SPIDER_PRIMARY){
       audio_trace_previous[i]=NULL;
       audio_trace_was_playing[i]=0;
@@ -147,6 +183,35 @@ void SpiderFocusDSound_TraceOnFlip(LONG flip,int in_3d){
     }
     playing=(status & DSBSTATUS_PLAYING) && !(status & DSBSTATUS_BUFFERLOST);
     started=playing && (!audio_trace_was_playing[i] || audio_trace_previous[i]!=buf);
+    if(InterlockedCompareExchange(&audio_oneshot_trace_enabled,0,0)==1){
+      if(audio_trace_previous[i]==buf && audio_trace_was_playing[i] &&
+         !audio_oneshot_was_looped[i] && !playing){
+        if(audio_oneshot_events<750u){
+          char line[280];
+          snprintf(line,sizeof(line),
+            "AUDIO-ONESHOT-TRACE: STOPPED t=%lums flip=%ld slot=%u buffer=%p elapsed_ms=%lu bytes=%lu hz=%lu last_read=%lu status=0x%08lX (observed at Flip, cause UNKNOWN)",
+            (unsigned long)elapsed,(long)flip,i,(void *)buf,
+            (unsigned long)(elapsed-audio_oneshot_start_ms[i]),
+            (unsigned long)audio_oneshot_bytes[i],(unsigned long)audio_oneshot_hz[i],
+            (unsigned long)(audio_trace_have_read[i]?audio_trace_last_read[i]:0),
+            (unsigned long)status);
+          diag(line);
+        }else if(audio_oneshot_events==750u)
+          diag("AUDIO-ONESHOT-TRACE: LIMIT 750 end/replacement events reached");
+        audio_oneshot_events++;
+      }
+      if(started){
+        DSBCAPS caps;
+        DWORD frequency=0;
+        memset(&caps,0,sizeof(caps));caps.dwSize=sizeof(caps);
+        if(FAILED(IDirectSoundBuffer_GetCaps(buf,&caps)))caps.dwBufferBytes=0;
+        if(FAILED(IDirectSoundBuffer_GetFrequency(buf,&frequency)))frequency=0;
+        audio_oneshot_start_ms[i]=elapsed;
+        audio_oneshot_bytes[i]=caps.dwBufferBytes;
+        audio_oneshot_hz[i]=frequency;
+        audio_oneshot_was_looped[i]=(BYTE)!!(status&DSBSTATUS_LOOPING);
+      }
+    }
     if(playing){
       got_cursor=SUCCEEDED(IDirectSoundBuffer_GetCurrentPosition(
                              buf,&read_cursor,&write_cursor));
@@ -179,6 +244,7 @@ void SpiderFocusDSound_TraceOnFlip(LONG flip,int in_3d){
     }
     audio_trace_previous[i]=buf;
     audio_trace_was_playing[i]=(BYTE)!!playing;
+    if(!playing)audio_oneshot_was_looped[i]=0;
     audio_trace_have_read[i]=(BYTE)(playing && got_cursor);
     if(playing && got_cursor)audio_trace_last_read[i]=read_cursor;
   }
