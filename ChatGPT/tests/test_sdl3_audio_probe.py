@@ -10,7 +10,7 @@ W=(R/".github/workflows/spiderman2k1fix-windows-x86.yml").read_text()
 def test_optin_bounded_source_and_original_game_remains_untouched():
     assert '"ExperimentalSDL3AudioProbe"' in I
     assert 'GetPrivateProfileIntA("Debug","ExperimentalSDL3AudioProbe",0,ini)==1' in N
-    assert "SpiderSDL3Probe_Init(log_line,test)" in N
+    assert "SpiderSDL3Probe_Init(log_line,test,swing)" in N
     assert "SpiderSDL3Probe_OnFlip(game_hwnd)" in N
     assert "GetForegroundWindow()!=game" in S
     assert "GetAsyncKeyState(VK_F7)" in S
