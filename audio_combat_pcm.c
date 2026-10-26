@@ -298,9 +298,15 @@ void SpiderCombatPCM_Probe(int slot,IDirectSoundBuffer *buf,DWORD size,
   thread=CreateThread(NULL,0,save_wav,(LPVOID)(uintptr_t)idx,0,NULL);
   if(thread)CloseHandle(thread);
   else{
-    snprintf(msg,sizeof(msg),"AUDIO-COMBAT-PCM: THREAD-FAILED capture=%u",idx+1u);
+    snprintf(msg,sizeof(msg),"AUDIO-COMBAT-PCM: THREAD-FAILED session=%ld capture=%u",
+             (long)session,ordinal);
     if(emit)emit(msg);
   }
-  if(idx==LIMIT-1u && emit)
-    emit("AUDIO-COMBAT-PCM: CAPTURE-LIMIT=24 reached; no further WAVs");
+  if(ordinal==quota && emit){
+    snprintf(msg,sizeof(msg),
+      "AUDIO-COMBAT-PCM: SESSION-FULL session=%ld captured=%u; %s",
+      (long)session,quota,manual_mode && session<MANUAL_SESSIONS?
+      "press F8 again for session 2":"capture limit reached");
+    emit(msg);
+  }
 }
