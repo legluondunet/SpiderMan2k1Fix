@@ -373,3 +373,43 @@ overhead; compare against a normal build before attributing new artifacts
 to the game. The trace does not stop, start, modify, lock or release any
 sound buffers. Supported retail EXE signature checks and INI validation
 still apply.
+
+### Experimental isolation of the 3.549-second DirectSound loop (draft PR)
+
+The optional **mutating** diagnostic `ExperimentalAudioStopSuspectLoop=1`
+attempts to stop the *single* original game-owned secondary DirectSound buffer
+in slot **3**, **only** when the buffer is:
+- already playing and looping in native 3D;
+- exactly **85,176 bytes** in DirectSound;
+- running at exactly **12,000 Hz**;
+- distinct from the primary playback buffer.
+
+The experiment is OFF by default. It uses the existing supported SpideyPC.exe
+hash verification and exact native voice table signature checks. It never stops
+any other slot, sets volume, edits the original WAV files, touches the PKR files,
+or hooks Windows DirectSound. It stops a matched voice again if the game restarts
+it on a later frame. It does **not** resume the stopped voice when the option is
+enabled: restart the game with the option OFF to restore native behavior.
+
+Edit the **existing** `[Debug]` section in `SpiderMan2k1Fix.ini`:
+
+```ini
+[Debug]
+Log=1
+ExperimentalAudioVoiceTrace=1
+ExperimentalAudioStopSuspectLoop=1
+```
+
+Start a normal game with `MusicSFXLevel=60` and `VoiceLevel=0`. Keep
+`ExperimentalAudioVoiceTrace=1` for the initial playback observation (or
+set it to 0 to reduce logging). Compare 20 seconds with the stop option OFF,
+then 20 seconds ON, both from a fresh game launch. Look for log entries
+`AUDIO-LOOP-STOP: ARMED`, `AUDIO-LOOP-STOP: STOP ... slot=3` and a return
+code `hr=0x00000000`. If `NO MATCH` appears, the test did not stop the
+target buffer and cannot support an audio conclusion.
+
+This build is stacked on the **passive audio trace PR**, not the modding PR.
+`[Modding] LooseFiles=1` is *preserved* in INI but the override is not active
+here. Restore normal game sound files for comparison; backup previous DLLs
+and test on the known supported Windows x86 executable. Never merge the
+experimental stop based on a CI build alone.
