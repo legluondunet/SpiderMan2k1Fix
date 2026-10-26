@@ -195,3 +195,19 @@ def test_audio_voice_trace_recover_first_valid_value(recover_runner, tmp_path):
                      "[Debug]\nExperimentalAudioVoiceTrace=invalid\n"
                      "ExperimentalAudioVoiceTrace=1\n")
     assert values == ["[Debug] ExperimentalAudioVoiceTrace=1"]
+
+
+def test_audio_loop_stop_repair_preserves_audio_trace_and_modding(recover_runner,tmp_path):
+    ini=("[Debug]\nLog=1\nExperimentalAudioVoiceTrace=1\n"
+         "ExperimentalAudioStopSuspectLoop=1\n"
+         "[Modding]\nLooseFiles=1\n"
+         "[Audio]\nMusicSFXLevel=60\nVoiceLevel=0\n"
+         "[InvalidSection]\nWrong=1\n")
+    values=recover(recover_runner,tmp_path,ini)
+    for option in ("[Debug] ExperimentalAudioVoiceTrace=1",
+                   "[Debug] ExperimentalAudioStopSuspectLoop=1",
+                   "[Modding] LooseFiles=1",
+                   "[Audio] MusicSFXLevel=60",
+                   "[Audio] VoiceLevel=0"):
+        assert option in values
+    assert not any("InvalidSection" in line for line in values)
