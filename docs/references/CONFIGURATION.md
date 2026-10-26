@@ -445,3 +445,36 @@ This deliberately disables matching ambient audio and is **diagnostic only**,
 not a proposed gameplay fix. If web-related crackles persist after stopping
 these loops, investigate the native finishing of nonlooping DirectSound
 effects separately.
+
+### Passive one-shot ending probe for Spider-Man web-swing landing crackles
+
+The optional `[Debug] ExperimentalAudioOneShotTrace=1` enables
+additional **read-only** samples at each 3D Flip of the original game-owned
+secondary DirectSound voice table. It automatically enables the already
+available `ExperimentalAudioVoiceTrace` snapshots. It does NOT hook global
+Windows COM/DirectSound methods, modify volumes, write samples or stop a
+sound. Default **OFF**.
+
+New events:
+- `AUDIO-ONESHOT-TRACE: STOPPED` means the **same** buffer pointer was
+  PLAYING in one rendered frame and was **not PLAYING** when next observed.
+  Report includes 3D-relative time in milliseconds, native slot, buffer
+  pointer, observed lifespan, PCM buffer size, playback frequency,
+  last known cursor, and DirectSound status. It does **not** prove a natural
+  finish: the engine might have called Stop in between.
+- `AUDIO-ONESHOT-TRACE: SLOT-REPLACED` means the native game's table
+  slot now references a **different buffer** or is empty. The previous
+  buffer's final playback status is **unknown**; it is **not** evidence of
+  Stop or Release, and old pointers are never dereferenced.
+- `LIMIT 750`: bounded logging for transition/replacement events.
+
+For the user's isolated **landing-only** clicks after loop masking, preserve
+`ExperimentalAudioStopSuspectLoop=1` and `ExperimentalAudioStopLoopMask=30`,
+then enable `ExperimentalAudioOneShotTrace=1`, play the same scene, and
+perform three web swings followed by clearly separated landings.
+Do not change other settings. Capture an audio/video recording if practical
+and note when each landing occurs, so the 3D-relative trace and heard clicks
+can be correlated. An event near landing establishes timing correlation,
+**not yet** the buffer's actual WAV name or failure mechanism.
+
+This probe is an additional experimental diagnostic in draft PR #64.
