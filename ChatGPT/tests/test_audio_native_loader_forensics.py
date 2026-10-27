@@ -115,6 +115,10 @@ def test_windows_powershell_probe_matches_native_analysis_and_is_readonly():
     assert "0x00505300" in body
     assert "0x00504C80" in body and "0x005051D0" in (ROOT_FOR_NOTE := (MODULE.parents[2] / "docs/references/diagnostics/audio/NATIVE_AUDIO_LOADER_ROOT_CAUSE.md").read_text(encoding="utf-8"))
     assert "foreach ($region in $regions)" in body
+    assert "FOCUSED RAW x86 E8 CALL CANDIDATES: OTHER WAV LOADER PATHS" in body
+    assert "0x005051D0" in body and "0x00505170" in body and "0x00503B40" in body
+    assert "candidates_found=" in body
+    assert "$target -eq $focus.Address" in body
     assert "STATIC / READ-ONLY" in body
     assert "no instruction signature asserted" in body
     assert "Refusing to overwrite the input executable" in body
