@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — experimental native PKR audio repair (draft PR #67)
+
+- Added a read-only PKR3 index of original WAV files with CRC32 verification and bounded PCM caching.
+- Identified a common final partial-2KiB-sector PCM corruption pattern in DirectSound buffers.
+- Added an opt-in source-verified restoration of only the damaged PCM suffix before the game's original DirectSound Play.
+- Confirmed `Swing5.wav` plays cleanly through original DirectSound after restoration; removed the experimental SDL3 player, DLL and runtime requirement.
+- Extended the repair to damage beginning later in the partial sector, and added bounded diagnostic reasons when a buffer cannot safely be restored.
+- **Still under listening/stability testing:** occasional short fight-sound glitches have not yet been fully resolved; no release issued.
+
 ## 1.0.0 — October 25, 2026
 
 **First stable release of SpiderMan2k1Fix**, an unofficial compatibility patch for *Spider-Man (2001)* PC.
