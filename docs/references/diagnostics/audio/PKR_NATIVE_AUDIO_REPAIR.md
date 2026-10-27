@@ -1,0 +1,131 @@
+# Native PKR audio restoration (experimental)
+
+## Objective and confirmed behavior
+
+For the SHA-verified 2001 PC `SpideyPC.exe`, the original `data.pkr`
+contains 656 valid PCM16 mono WAV entries (all original CRC32 checks
+passed on the user's Windows installation). The original game often
+copies all complete 2,048-byte *WAV-file* blocks into the native
+DirectSound buffers but corrupts the **last partial block**.
+
+Complete byte comparisons against the CRC32-validated PKR WAV show
+many different sounds with the same boundary:
+
+```text
+(first differing PCM byte + 44-byte WAV header) % 2048 == 0
+```
+
+Examples: `Heli1.wav`, `wind2.wav`, `wind3.wav`,
+`achum.wav`, `WebShot3.wav`, `ThugStp4.wav`, `Swing5.wav`.
+Do not claim the exact faulty executable instruction has been located:
+this is a verified buffer-symptom signature, not a disassembly-level
+root cause.
+
+The prototype first successfully routed `Swing5.wav` to SDL3, but
+a subsequent user test on 2026-10-27 **confirmed that Swing5 also
+sounds clean using DirectSound alone after source-backed tail
+restoration**. The general repair yielded a major improvement in
+helicopters, wind and combat; some short artifacts were still audible
+during busy fights. The experimental SDL3 engine and `SDL3.dll`
+are therefore no longer needed in the patch build.
+
+## Configuration
+
+In the game's `SpiderMan2k1Fix.ini`:
+
+```ini
+[Debug]
+Log=1
+ExperimentalPKRAudioIndex=1
+ExperimentalAudioPKRTailRestore=1
+```
+
+Both PKR options default to `0`; either one triggers the read-only
+PKR archive index. Tail restoration requires a valid source index and
+is enabled **only** by `ExperimentalAudioPKRTailRestore=1`.
+For an A/B comparison disable that key and restart the game.
+
+Legacy `ExperimentalSDL3AudioProbe`,
+`ExperimentalSDL3Swing5Replace` and
+`ExperimentalSDL3PKRAudioIndex` were retired. The INI validator
+may remove them during automatic cleanup. No `SDL3.dll` is packaged.
+There is no required external `Swing5.wav` test file.
+
+## How the fix works
+
+1. Read `data.pkr` **read-only**, validate PKR3 metadata and per-file
+   original CRC32, decode zlib entries via permissively licensed,
+   pinned miniz, parse actual RIFF/WAV chunk boundaries, and cache
+   compatible PCM16 mono WAVs in memory (bounded).
+2. Intercept **one** SHA-gated original 32-voice callsite
+   `0x00472870` (the original `CALL DXSOUND_Play` to
+   `0x00504230`). Verify its exact original instruction bytes
+   before patching. There is **no** native Stop hook or alternative
+   playback engine.
+3. The read-only index probe optionally identifies the WAV source
+   by exact format, PCM byte size and initial PCM prefix, and
+   compares full buffers (up to two times per source) for diagnostics.
+4. Before native Play, only if the original secondary DirectSound
+   buffer is **stopped**, identify a unique CRC-validated original WAV
+   by format, sample rate, exact size and **every PCM byte before the
+   final incomplete 2,048-byte file sector**. Sources with a
+   non-44-byte data offset, ambiguous match or earlier mismatches
+   are never modified.
+5. The corrupted final partial sector can start with some intact
+   bytes. Find the *actual first differing byte anywhere inside that
+   final sector*, then restore only the remaining suffix, under a
+   single native buffer Lock/Unlock.
+6. **Always call the game's original DXSOUND_Play**. The game retains
+   its usual DirectSound voice allocation, IsPlaying, looping, stop,
+   stereo balance, volume, pitch and focus behavior.
+
+There is no individual list of affected sounds or per-file checksum
+workaround. The fix does not write or replace any game archive.
+
+## Useful log lines
+
+```text
+PKR-AUDIO: SOURCE-INDEX total=656 valid=656 other=0
+PKR-AUDIO: CACHE WAV PCM16 mono=656 bytes=32033406 crc_errors=0 ...
+PKR-AUDIO: TAIL-RESTORE ARMED ...
+PKR-AUDIO: PLAY-HOOK INSTALLED exact original DXSOUND_Play CALL 0x472870 ...
+PKR-AUDIO: FULL-PCM DIFF source=.../Heli1.wav ...
+PKR-AUDIO: TAIL-RESTORED slot=... loop=1 source=.../Heli1.wav pcm_bytes=60480 sector_tail_offset=59348 first_diff=59348 restored_bytes=1132 mismatched_bytes=1129 ...
+PKR-AUDIO: FULL-PCM IDENTICAL source=... ...
+```
+
+A `FULL-PCM DIFF` can be expected: diagnostics compare the buffer
+**before** tail restoration. A later `IDENTICAL` is a later,
+independent observation and does not prove that the same DirectSound
+buffer object was reused.
+
+Remaining audible glitches may arise from buffers the original game
+already has playing, unidentified/ambiguous source data, earlier-than-
+final-sector differences, or legitimate hard Stops/voice recycling.
+To distinguish them, the new code emits bounded:
+
+```text
+PKR-AUDIO: TAIL-SKIP reason=playing ...
+PKR-AUDIO: TAIL-SKIP reason=ambiguous-source ...
+PKR-AUDIO: TAIL-SKIP reason=no-source-prefix ...
+PKR-AUDIO: TAIL-SKIP reason=difference-before-final-sector ...
+PKR-AUDIO: TAIL-SKIP reason=already-identical ...
+PKR-AUDIO: TAIL-SKIP reason=lock-failed ...
+```
+
+A skip is **not an error** and never suppresses native Play. Repeated
+messages are capped at 24 per reason.
+
+## Validation boundary
+
+Cross-compilation and regression tests alone cannot establish audio
+quality. The widened sector detector, new native-only call hook,
+menu/scene re-entry, focus/Alt+Tab, fast successive web swings and
+busy combat require renewed Windows/Wine listening tests. If the
+experiment introduces audio regressions, turn off
+`ExperimentalAudioPKRTailRestore` and restart.
+
+This work remains confined to draft PR #67 until explicit user
+approval for a merge.
+
+legluondunet assisted by ChatGPT (OpenAI)
