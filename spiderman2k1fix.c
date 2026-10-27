@@ -25,6 +25,7 @@
 #include "fov_aspect.h"
 #include "fov_aspect_win.h"
 #include "input_focus_trace.h"
+#include "gamepad_start_native.h"
 #include "input_notacquired_retry.h"
 #include "pause_any_key.h"
 #include "pause_surface.h"
@@ -3084,6 +3085,17 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  /* Optional original controller Start mapping (menus/movies): absolutely
+   * no DirectInput COM hooks or synthetic keyboard events. */
+  {
+    char input_ini[MAX_PATH],*slash;
+    DWORD length=GetModuleFileNameA(NULL,input_ini,sizeof(input_ini));
+    if(length>0 && length<sizeof(input_ini) &&
+       (slash=strrchr(input_ini,'\\'))!=NULL) {
+      strcpy(slash+1,"SpiderMan2k1Fix.ini");
+      SpiderGamepadStart_Init(input_ini,log_line);
+    }
+  }
   SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
