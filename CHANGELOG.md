@@ -11,7 +11,9 @@
 - Add an optional `[Input] ExperimentalGamepadStart=BUTTONn` binding, disabled unless explicitly configured, to test native controller **Start/confirm** handling in menus and skippable cinematics.
 - Recognize only the original executable's two 14-entry controller mapping arrays in writable `.data` and alter only the `Start` button index (`0x1000` action); refuse an unverified signature or any overlap with assigned gameplay actions.
 - Preserve physical joystick axes, existing seven gamepad mappings, game-native input/skip timing, keyboard and mouse behavior. Do not intercept DirectInput COM objects or synthesize keyboard events.
-- Add host-compiled regression tests. **No gameplay confirmation yet:** the user's actual DualShock 4 button numbers and the two native start routes still require Wine/Windows testing. No changes to v1.1.0 release.
+- After the first failed DS4 test (build `v1.1.0-a807941`), move the guarded Start remap **after** the original game's configuration loader restores joystick mappings (before first DirectDraw). Previously it could be overwritten during startup.
+- Log option absence, selected button, native table scan count and explicit refusal reasons; the first failure log had no GAMEPAD-START trace, so the previous outcome was unobservable.
+- Add regression coverage for bootstrap ordering and diagnostics. **No gameplay confirmation yet:** the user's actual DualShock 4 button numbers and the two native start routes still require Wine/Windows testing. No changes to v1.1.0 release.
 
 ## 1.1.0 — October 27, 2026
 
