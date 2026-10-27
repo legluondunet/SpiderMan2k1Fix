@@ -485,6 +485,59 @@ behavior are completely unchanged; the native loader repair stays
 opt-in and legacy pre-Play restore stays as a safety net. Do not
 assert perfect Linux audio until a Linux/Wine listening run confirms it.
 
+## Native DS buffer xrefs and sound-bank manager confirmed in full Windows report
+
+User supplied `spiderman-audio-buffer-population.txt`, a **5155-line**
+SHA256-verified static disassembly/cross-reference report of original
+`SpideyPC.exe` on 27 Oct 2026. It confirms:
+
+| Original VA | Evidence and interpretation |
+| --- | --- |
+| `0x00471550` / `0x00471580` | Game audio manager opens and uses the generic, partial-sector-aware resource reader to populate a temporary block used in sound-bank preparation |
+| `0x00471822` | **Only direct `E8` reference** to original `0x00503B40`, the 64-reference-WAV DirectSound buffer creator |
+| `0x00503B40` / `0x00503EBD` / `0x00503EFF` / `0x00503F83` / `0x00503FCD` | Native WAV load → `IDirectSound::CreateSoundBuffer` → `Lock` → memory copy → `Unlock`, whose incomplete final WAV file sector is fixed by the current opt-in loader hook |
+| `0x004727F9` | **Only direct `E8` caller** of native `0x00504110`, which duplicates an original reference buffer into one of 32 game voices |
+| `0x004FBDC0` | Native sound-bank selection helper; direct references at `0x00503B5D` and `0x005040AE` |
+| `0x004711CB` / `0x004711E7` | Another audio-manager path also calls the generic resource open/transfer routines. No proof this path directly builds a DirectSound PCM template. |
+
+Across the **whole original .text** byte stream, raw exact
+4-byte VA occurrence counts were:
+
+- **112** occurrences of `0x006B7920` (game's DirectSound
+  object pointer), heavily concentrated in `0x004FD800–0x00500D00`;
+- **5** occurrences of `0x006BBAD4` (template/reference table),
+  all in the known native DirectSound module
+  `0x005039F0–0x00504135`;
+- **11** occurrences of `0x006BBD50` (secondary-voice table),
+  again in the known native DirectSound module
+  `0x005039F0–0x00504436`.
+
+These are **raw immediate patterns**, not automatically established
+decoded references or alternative sound buffers; the 112-pointer
+cluster *could be* an additional DirectSound consumer or repeated
+methods on the same object. It must be disassembled before assigning
+any audio-loader functionality to it.
+
+**Next investigation tool now included in the PR:** the read-only
+PowerShell and Python inspectors emit a raw x86 `FF /2`
+register-vtable-call census for possible
+`CreateSoundBuffer (+0x0C)`, `DuplicateSoundBuffer (+0x14)`,
+`Lock (+0x2C)`, and `Unlock (+0x4C)`. Those offsets are **not
+sufficient to identify DirectSound without object provenance**, so
+the tools also disassemble representative functions around
+`0x004FD800–0x004FDAC0`,
+`0x004FEF70–0x004FF260`,
+`0x005000B0–0x00500260`, and
+`0x00500700–0x00500940` to inspect actual call contexts.
+
+Important: **no runtime DLL, hook, WAV asset, or PKR change** in this
+forensic stage; existing 64 loader-tail repairs and 12 remaining
+legacy pre-Play fixes are unchanged. Do not disable legacy
+`ExperimentalAudioPKRTailRestore` or assume the other consumer is
+the culprit absent instruction-level proof. Windows listening
+reported no audible parasites; independent Linux/Wine listening
+is still pending.
+
 ## What will settle the true origin
 
 After examining the exact native instruction sequence, identify and
