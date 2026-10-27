@@ -51,7 +51,7 @@ static const char *const spider_ini_sections[]={"Debug","System","Display","HUD"
  * during INI preflight/repair. The generic Debug validator below
  * already enforces strict boolean values (0/1). */
 /* F10 is the hotkey. F12-named keys are legacy INI aliases ONLY. */
-static const char *const spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts","ExperimentalSDL3AudioProbe","ExperimentalSDL3Swing5Replace","ExperimentalSDL3PKRAudioIndex"};
+static const char *const spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts","ExperimentalSDL3AudioProbe","ExperimentalSDL3Swing5Replace","ExperimentalSDL3PKRAudioIndex","ExperimentalAudioPKRTailRestore"};
 /* Keep all pre-existing INIs valid without regenerating saved controls. */
 static const char *const spider_ini_system[]={"QuickExitF10","ExperimentalQuickExitF10In3D","ExperimentalQuickExitF10InNewGameMovie","ExperimentalQuickExitF10InNewGameComic","ExperimentalQuickExitF10InIntroStills","QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic","ExperimentalQuickExitF12InIntroStills"};
 static const char *const spider_ini_display[]={
