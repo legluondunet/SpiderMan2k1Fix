@@ -45,7 +45,9 @@ def test_generated_example_factory_consistency():
     assert "KeyboardLayout=" not in (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text()
     assert not config.has_option('Input','DirectInputReacquire')
     assert not config.has_option('Input','PauseOnFocusLoss')
-    assert list(config['Input']) == ['keyboardlayout']
+    assert list(config['Input']) == ['keyboardlayout','controllerprofile','controllerenterbuttons']
+    assert config['Input']['ControllerProfile']=='Auto'
+    assert config['Input']['ControllerEnterButtons']=='Both'
     assert 'PauseKey' not in config['Input']  # Any-key resume is fixed, not selectable
     assert not config.has_option('Input','ExperimentalAltTabReacquire')
     assert not config.has_option('Input','ExperimentalDI8CreateDeviceTrace')
