@@ -23,7 +23,8 @@
  * CRC32-verified originals, with any matching aliases required to agree
  * byte-for-byte on the entire unread remainder. Optional RIFF chunks after PCM
  * (observed 44 and 190 bytes) are preserved, not inferred or synthesized.
- * Original Play-time tail repair remains a separate fallback.
+ * The obsolete Play-time DirectSound tail fallback has been retired;
+ * only the independent, opt-in Heli1 two-sample declick remains.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
