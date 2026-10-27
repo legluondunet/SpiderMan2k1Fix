@@ -40,7 +40,7 @@ def test_pure_readonly_pe_parser_and_displacement_report():
     assert exe.read(0x401020, 3) == b"ABC"
     assert exe.text()[0] == 0x401000
     assert (0x401010, 0x401040) in probe.candidate_rel32_calls(exe, 0x401040, 0x401050)
-    assert "0x401030" in " ".join(probe.probe_constants(exe, 0x401000, 0x401100))
+    assert "0x00401030" in " ".join(probe.probe_constants(exe, 0x401000, 0x401100))
     try:
         exe.read(0x402000, 2)
     except ValueError as exc:
