@@ -10,7 +10,7 @@ INI = (ROOT / "ini_validation.h").read_text()
 def test_trace_is_explicitly_opt_in_and_ini_validator_knows_it():
     assert '"ExperimentalPKRAudioPlayTrace"' in INI
     assert 'GetPrivateProfileIntA("Debug","ExperimentalPKRAudioPlayTrace",0,ini)==1' in MAIN
-    assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_tail_restore||pkr_play_trace||pkr_heli_declick,pkr_play_trace)' in MAIN
+    assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_play_trace||pkr_heli_declick,pkr_play_trace)' in MAIN
     assert 'SpiderPKRAudioPlayHook_Init(void (*logger)(const char*),int enabled,int trace)' in HEAD
     assert 'trace_enabled=(trace==1);' in HOOK
 
@@ -20,7 +20,8 @@ def test_trace_uses_exact_native_play_and_read_only_queries():
     assert 'trace_voice(n,"before"' in HOOK
     assert 'trace_voice(n,"after"' in HOOK
     assert 'slot_buffer(slot)' in HOOK
-    assert 'repaired=SpiderPKRAudioIndex_TryTailRestore(slot,buffer,looping);' in HOOK
+    assert 'SpiderPKRAudioIndex_TryTailRestore' not in HOOK
+    assert 'SpiderPKRAudioIndex_TryHeli1Declick(slot,buffer,looping)' in HOOK
     assert HOOK.count('NATIVE_PLAY(slot,looping);') == 1
     assert HOOK.index('trace_voice(n,"before"') < HOOK.index('NATIVE_PLAY(slot,looping);') < HOOK.index('trace_voice(n,"after"')
     for read_api in ('GetCaps(', 'GetFormat(', 'GetStatus(', 'GetCurrentPosition('):
