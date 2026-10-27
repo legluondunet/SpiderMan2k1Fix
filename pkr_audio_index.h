@@ -28,4 +28,10 @@ int SpiderPKRAudioIndex_TryHeli1Declick(int slot,IDirectSoundBuffer *buffer,int 
 const unsigned char *SpiderPKRAudioIndex_ExpectedLoaderWavTail(
   const unsigned char *wav,unsigned complete_bytes,unsigned total_bytes,
   const char **source_name);
+/* For skipped native WAV reads ONLY: bounded, read-only original PKR
+ * index census. A shared first-sector fingerprint is merely an identity
+ * hint; it is NEVER accepted as proof for modifying PCM. */
+void SpiderPKRAudioIndex_DescribeLoaderSkip(
+  const unsigned char *wav,unsigned complete_bytes,unsigned total_bytes,
+  char *out,unsigned out_capacity);
 #endif
