@@ -309,15 +309,46 @@ is not yet proven. In particular, two impulses inside each full
 2.520-second period cannot be explained solely by one ordinary
 buffer-wrap discontinuity.
 
-A new **read-only** source diagnostic inspects the already loaded,
-CRC32-validated `Heli1.wav` PCM in memory at initialization:
-`HELI1-SOURCE` logs its first/last sample discontinuity, and up to
-eight `HELI1-SOURCE-JUMP` lines report the strongest native 12-kHz
-sample-to-sample jumps, spaced at least 120 ms apart. This adds
-neither audio writes nor a new sound engine. **Await the next
-Windows log** to compare the original PCM's transient timing with
-the captured recording before considering any source-specific
-declick, crossfade, or altered loop lengths.
+The **read-only** source diagnostic inspects CRC32-validated
+`Heli1.wav` PCM in memory at initialization. The subsequent
+27 Oct `v1.0.0-c547dcb` Windows log confirms **both original
+Heli1 plays** in distinct locations:
+
+- Second 3D cutscene: first `Heli1.wav` at slot 14 with
+  `loop=1`, **1,132 bytes** restored (all late-sector damage);
+  a concurrently started slot 15 `Heli1.wav` buffer was already
+  PCM-identical to the original.
+- Near the bank: slot 10 `Heli1.wav`, `loop=1`, again
+  **1,132 bytes** restored.
+
+Original source (from `data.pkr`, 656/656 CRC32-verified WAVs):
+`HELI1-SOURCE loop_seam_delta=703`, but internal sample-to-sample
+jumps of **30,719 at 779.917ms**, **63,488 at 1009.167ms**,
+and **20,803 at 1386.083ms**. These are signed-sample differences,
+not repaired-buffer mismatch counts, and reveal several striking
+internal discontinuities even inside the original WAV. The weak
+loop seam and the two audible impulses per repeating 2.520s
+recorded pattern disfavor the theory of a *single loop-wrap click*.
+The specific waveform intervals causing the two audible anomalies
+are not yet unambiguously mapped: 2.520s periodicity alone does
+not prove the source is responsible, and source jumps may be
+intentional rotor transients.
+
+**Next exact source comparison, opt-in only:** add
+`ExperimentalAudioHeli1SourceDump=1` under `[Debug]`.
+This writes a single new **60,524-byte** PCM WAV
+(44-byte standard WAV header + 60,480 bytes unmodified original PCM)
+to the current user's **Windows TEMP** on startup, using
+`CREATE_NEW` (never overwrite), provided `data.pkr` verified
+successfully. Look for:
+`PKR-AUDIO: HELI1-DUMP CREATED C:\\...\\SpiderMan2k1Fix-Heli1-Original-<PID>.wav`.
+The source is never played by this diagnostic, the archive and
+DirectSound buffers are not modified, and the default is **0**.
+Upload this small temporary WAV so we can compare its actual
+impulse waveforms to `spider-man-audio(5).wav` offline before
+considering any optional, source-specific declick. The dump
+is independent from tail-repair and should be disabled after
+inspection.
 
 
 
