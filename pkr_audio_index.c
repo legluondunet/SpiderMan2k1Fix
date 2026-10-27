@@ -55,8 +55,9 @@ typedef struct {
 } PKRRecord;
 typedef struct {
   char dir[33],name[33];
-  uint8_t *pcm;
-  uint32_t pcm_bytes,rate,header_bytes;
+  uint8_t *pcm; /* aliases bytes in raw; NEVER free separately */
+  uint8_t *raw; /* owned CRC-verified complete original WAV/RIFF bytes */
+  uint32_t raw_bytes,pcm_bytes,rate,header_bytes;
   unsigned reports;
   unsigned tail_restore_count;
   unsigned full_checks;
@@ -67,7 +68,7 @@ static unsigned source_count=0,index_ready=0,reports=0,full_reports=0;
 static int tail_restore_enabled=0;
 static int heli1_declick_enabled=0;
 static void (*diag)(const char *)=NULL;
-static unsigned loaded_bytes=0;
+static unsigned loaded_bytes=0,retained_bytes=0;
 /* Unique unmatched (PCM length, rate) pairs: keep noisy repeated fight effects
  * from exhausting telemetry before a newly encountered sample. */
 static struct { DWORD bytes,rate; } source_misses[MAX_SOURCE_MISS_LOGS];
@@ -275,18 +276,24 @@ static int load_audio_index(const char *path){
           }
           if(unzipped && crc32_pkraw(raw,e->length)==e->crc &&
              parse_wav(raw,e->length,&pcm,&pcm_bytes,&hz)){
-            if(pcm_bytes<=MAX_PCM_CACHE-loaded_bytes){
+            if(e->length<=MAX_PCM_CACHE-retained_bytes){
               WAVSource *dst=&sources[source_count];
-              dst->pcm=(uint8_t*)malloc(pcm_bytes);
-              if(dst->pcm){
-                memcpy(dst->pcm,pcm,pcm_bytes);
-                strcpy(dst->dir,e->dir);
-                strcpy(dst->name,e->name);
-                dst->pcm_bytes=pcm_bytes;dst->rate=hz;
-                dst->header_bytes=(uint32_t)(pcm-raw);
-                loaded_bytes+=pcm_bytes;
-                source_count++;decoded++;
-              }else invalid++;
+              uint32_t pcm_offset=(uint32_t)(pcm-raw);
+              /* Preserve the SAME independently CRC32-checked bytes used
+               * to populate PCM. One ownership/allocation, not two copies.
+               * Retaining the full file also covers optional RIFF chunks
+               * AFTER the data chunk (observed 44/190 extra bytes). */
+              dst->raw=raw;
+              dst->raw_bytes=e->length;
+              dst->pcm=raw+pcm_offset;
+              raw=NULL; /* ownership transferred to WAVSource */
+              strcpy(dst->dir,e->dir);
+              strcpy(dst->name,e->name);
+              dst->pcm_bytes=pcm_bytes;dst->rate=hz;
+              dst->header_bytes=pcm_offset;
+              retained_bytes+=e->length;
+              loaded_bytes+=pcm_bytes;
+              source_count++;decoded++;
             }else invalid++;
           }else{
             if(unzipped && crc32_pkraw(raw,e->length)!=e->crc)crc_fail++;
@@ -457,38 +464,46 @@ static int source_matches_runtime_length(const WAVSource *w,DWORD n){
     n==w->pcm_bytes+2u && (n&3u)==0u &&
     (w->pcm_bytes+44u)/2048u==(n+44u)/2048u;
 }
-/* Match the *file* bytes, not just the PCM size. The original game
- * allocates total_bytes before reading complete 2048-byte resource sectors.
- * Only a uniquely identified original 44-byte PCM16 WAV can be repaired
- * here; anything unknown is passed through to the old Play-time fallback. */
+/* Match *all the native game's already-read full resource sectors*
+ * byte-for-byte to the CRC32-verified, independently decoded WAV file.
+ * This includes the WAV container, optional chunks after data, and the
+ * complete PCM prefix. No guesswork about fixed 44-byte WAV file length.
+ *
+ * The native game always allocates total_bytes and reads floor(total/2048)
+ * blocks; we only return the original file's remainder if ONE exact source
+ * matches and the sector is known to overlap actual PCM, not just metadata.
+ * Caller verifies one native scratch-sector read against this source before
+ * ANY write. CRC is validated during PKR index construction. */
 const unsigned char *SpiderPKRAudioIndex_ExpectedLoaderWavTail(
     const unsigned char *wav,unsigned complete_bytes,unsigned total_bytes,
     const char **source_name){
-  unsigned i,matches=0,remainder,pcm_prefix;
+  unsigned i,matches=0,remainder;
   const WAVSource *match=NULL;
   if(source_name)*source_name=NULL;
-  if(!index_ready||!wav||complete_bytes<2048u||total_bytes<=complete_bytes||
-     total_bytes>MAX_PKR_ITEM||complete_bytes!=(total_bytes&~2047u)||
-     total_bytes-complete_bytes>=2048u||complete_bytes<44u)return NULL;
+  if(!index_ready||!wav||complete_bytes<2048u||
+     total_bytes<=complete_bytes||total_bytes>MAX_PKR_ITEM||
+     complete_bytes!=(total_bytes&~2047u)||
+     total_bytes-complete_bytes>=2048u)return NULL;
+  if(memcmp(wav,"RIFF",4u)!=0||memcmp(wav+8u,"WAVE",4u)!=0||
+     le32(wav+4u)!=total_bytes-8u)return NULL;
   remainder=total_bytes-complete_bytes;
-  pcm_prefix=complete_bytes-44u;
-  if(memcmp(wav,"RIFF",4)!=0||memcmp(wav+8,"WAVE",4)!=0||
-     memcmp(wav+12,"fmt ",4)!=0||memcmp(wav+36,"data",4)!=0||
-     le32(wav+4)!=total_bytes-8u||le32(wav+16)!=16u||
-     le16(wav+20)!=1u||le16(wav+22)!=1u||
-     le16(wav+34)!=16u||le16(wav+32)!=2u)return NULL;
   for(i=0;i<source_count;i++){
     const WAVSource *w=&sources[i];
-    if(w->header_bytes!=44u||w->pcm_bytes!=total_bytes-44u||
-       w->rate!=le32(wav+24)||w->pcm_bytes<pcm_prefix+remainder||
-       le32(wav+40)!=w->pcm_bytes)continue;
-    if(memcmp(wav+44u,w->pcm,pcm_prefix)!=0)continue;
-    if(++matches>1u)return NULL;
+    uint32_t pcm_end;
+    if(!w->raw||w->raw_bytes!=total_bytes||
+       w->header_bytes<44u||w->header_bytes>complete_bytes||
+       w->pcm_bytes>total_bytes-w->header_bytes||
+       w->rate<8000u||w->rate>96000u)continue;
+    pcm_end=w->header_bytes+w->pcm_bytes;
+    /* No need to patch a sector containing only non-audio metadata. */
+    if(pcm_end<=complete_bytes)continue;
+    if(memcmp(wav,w->raw,complete_bytes)!=0)continue;
+    if(++matches>1u)return NULL; /* ambiguous: do not pick arbitrarily */
     match=w;
   }
   if(matches!=1u||!match)return NULL;
   if(source_name)*source_name=match->name;
-  return match->pcm+pcm_prefix;
+  return match->raw+complete_bytes; /* full exact remainder, incl. metadata */
 }
 
 void SpiderPKRAudioIndex_EnableTailRestore(int enabled){
