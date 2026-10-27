@@ -1,134 +1,140 @@
-# Experimental DualShock / DirectInput gamepad menu and video Start support
+# DualShock 4 automatic UI profile — draft PR #73
 
-**Status: draft PR #73, not merged, not a confirmed fix.** The maintainers
-reported that a DualShock 4 works during gameplay and moves menu selection,
-but cannot enter menu choices or skip videos.
+**Status:** experimental, no physical Wine/Windows validation yet.
+The already-released v1.1.0 remains unchanged.
 
-## What the partial PC decompilation establishes
+## User-reported behavior and evidence
 
-See the community [`PCInput.cpp`](https://github.com/krystalgamer/spidey-decomp/blob/master/PCInput.cpp),
-[`pcdcPad.cpp`](https://github.com/krystalgamer/spidey-decomp/blob/master/pcdcPad.cpp),
-and [`ps2gamefmv.cpp`](https://github.com/krystalgamer/spidey-decomp/blob/master/ps2gamefmv.cpp).
+The original *Spider-Man (2001)* PC game reads DualShock 4 gameplay
+buttons and menu directions but, on this system, cannot validate a
+menu selection or bypass normal movies from the pad. The user verified
+that **Enter** (keyboard) works for menu selection, for movie skipping,
+AND for the static interactive title-screen image; **Space does not**
+work on the final still page.
 
-- The native controller mappings have fourteen eight-byte pairs
-  (`uint32 action_mask, uint32 button_index`), including four directional
-  markers, seven gameplay actions and **Start action bit `0x1000`**.
-- The default compiled-in `Start` mapping is **button 11** (zero based),
-  distinct from gameplay mapping and not exposed in the seven gameplay
-  bindings in our generated `[Joystick]` INI section.
-- `Pad_Update()` takes those mapped states and calls
-  `Pad_Button(&gSControl[0].Start, v3 & 0x1000)`.
-- `GameFMV_PlayMovie()` uses `Pad_Update()` and
-  `PCSHELL_CheckTriggers(0x7000000,1,1)` once skipping is allowed
-  after at least 60 movie-frame-loop iterations.
-- **Unresolved:** The community partial decompilation has only a stub for
-  `PCSHELL_CheckTriggers`, and we have not verified the retail binary's
-  table addresses nor the physical Options/Share button indices reported
-  by this specific DS4 under Wine or Windows.
+The first test `v1.1.0-a807941` had zero `GAMEPAD-START` lines.
+The second `v1.1.0-10aff89` log recorded:
 
-## Failed user test — 27 October 2026, build `v1.1.0-a807941`
-
-The user confirmed **no controller menu confirmation / no movie skip**.
-The supplied `SpiderMan2k1Fix(20261027-233002).log` proves that
-the supported SHA-256 game launched normally, the experimental PR #73 build
-was loaded (the hash suffix `a807941` identifies the PR test merge),
-and the virtual `Spidey.cfg` loader returned before rendering movies/menus.
-
-**Critical gap:** that entire log contains **zero** `GAMEPAD-START`
-lines. The initial implementation logged nothing when the INI opt-in
-was missing or an early executable check failed. Therefore the log
-**does not prove** whether `ExperimentalGamepadStart` was set,
-whether the game's action tables matched the detector or whether the
-requested physical DS4 button number was correct.
-
-**Confirmed ordering fault:** the first implementation called
-`SpiderGamepadStart_Init` from `initialize_body()`, **before**
-`SpiderCfg_BootstrapGameRead()` invokes the game's original config
-loader at VA `0x00515680`. The original loader explicitly restores
-joystick assignments as well as keyboard and sound. A Start mapping
-modified earlier could be silently overwritten before the interactive
-menu. The revised experimental build now attempts its one-shot remap
-**after** `SpiderCfg_BootstrapGameRead()`, still before native
-`DirectDrawCreateEx`, without additional COM/keyboard hooks.
-
-The revised build logs `GAMEPAD-START: OFF` when the key is missing,
-`GAMEPAD-START: REQUESTED` and `SCAN` for configured attempts, an
-explicit failure reason for unsupported game layout, and
-`GAMEPAD-START: EXPERIMENTAL mapping Start` only if two tables were
-modified. The first user's failure is **not yet resolved or game-tested**.
-
-## Experimental opt-in
-
-For a controlled test, keep the game's existing INI. Under `[Input]`
-add, **while the game is closed**:
-
-```ini
-[Input]
-ExperimentalGamepadStart=BUTTON8
+```
+SPIDEY-CFG: BOOTSTRAP game loader returned: ... [READ CONFIRMED]
+GAMEPAD-START: REQUESTED BUTTON8 after native game configuration bootstrap
+GAMEPAD-START: SKIPPED unsupported PE header layout
 ```
 
-The example number **8 is provisional**, **not a guaranteed DS4 Share or
-Options mapping**. Determine the physical DirectInput button index on the
-maintainer's setup (e.g. the original game's joystick configuration screen
-using keyboard navigation). Do not guess that other joystick software's
-button indices are necessarily identical to the game's.
+Thus **neither native Start-table experiment reached the target**.
+`BUTTON8` is DirectInput button index eight (often DS4 **SHARE**);
+it is **not the F8 keyboard key**. Rather than keep guessing the
+game's writable PE layout and reloading its legacy Start mapping,
+the PR removes those source files entirely.
 
-The native code attempts to remap **only** Start from BUTTON11 to the
-chosen `BUTTON0`–`BUTTON31` index. It will refuse any button that
-already belongs to one of the seven existing gameplay mappings. For
-example, factory `BUTTON9` is occupied by Zipline and will be rejected.
-Choose an otherwise unused button. To disable and revert, delete
-`ExperimentalGamepadStart` and restart the game.
+## Current design: profile tied to identified controller
 
-There is no synthetic Enter/Space key, injected button press, polling
-thread, XInput overlay, COM hook or change to the seven original
-gameplay mappings. The original native triggered/pressed handling remains
-in charge of menus and cinematics.
+### Automatically recognized
 
-### Safety gates
+The profile is selected by **DirectInput8 product GUID** with Sony
+VID `0x054C`, PID `0x05C4` (DS4 v1), `0x09CC` (DS4 v2), or
+`0x0BA0` (official Sony wireless adapter).
 
-The fix is invoked only after the supported `SpideyPC.exe` SHA256 has
-been verified. It searches the executable's writable PE `.data` for
-**exactly two** matching 14-entry arrays with the original action bits,
-disabled directional and spare bits, terminator, and Start's default
-BUTTON11. Both arrays must have writable, DWORD-aligned Start entries
-and an unassigned target button. If any check fails, it does nothing.
+For safety it must be the **one and only attached DirectInput gamepad**,
+and the Sony device must be unambiguous. Other gamepads are not changed.
+A generic `Wireless Controller` name alone is never trusted.
 
-This structural detection is an initial hypothesis drawn from the
-partial decompilation, **not proof the retail image contains two such
-tables**. A fail-closed result is expected if the original differs.
-**Note:** Start remapping is attempted after native `Spidey.cfg` config
-reload, because earlier initialization could be overwritten.
-`[Debug] Log=1` displays the exact outcome:
+This prototype creates a **separate** DirectInput8 device in
+non-exclusive foreground mode; it does **not** intercept or modify the
+game's DI8 object or original seven gameplay bindings. Another program
+or the original game might deny simultaneous Acquire; logs explain
+that failure rather than forcing any changes.
 
-- `GAMEPAD-START: OFF`: opt-in absent; no remap attempted
-- `GAMEPAD-START: REQUESTED ...` and `SCAN ...`: user opt-in read and native tables inspected
-- `GAMEPAD-START: EXPERIMENTAL mapping Start ...`: both tables changed
-- `GAMEPAD-START: expected two verified controller maps; found=...`:
-  unsupported layout, no modification
-- `GAMEPAD-START: conflicting gameplay button ...`: no modification
+### Default UI bindings
 
-## Runtime test matrix before enabling by default
+| Controller button | Standard DS4 DirectInput index | 2D UI action | 3D gameplay |
+|---|---|---|---|
+| ✕ Cross | BUTTON1 | Enter / validate | Unchanged (game native) |
+| OPTIONS | BUTTON9 | Enter / validate / movie skip | Unchanged (game native) |
+| SHARE | BUTTON8 | No special action | Unchanged |
+| Other | Original device mapping | Unchanged | Unchanged |
 
-1. On Linux/Wine with the exact supported executable, check startup log,
-   original 1.1.0 gameplay controls and analogue menu navigation.
-2. Test **main menu**: move highlight then press the selected physical
-   button once, confirm it enters exactly one menu. Return with keyboard.
-3. Test the native **SAVE GAME PROGRESS?** dialog and NO/YES selection,
-   plus title spacing from the other PR #73 change.
-4. Test each opening Bink video and the New Game movie after its normal
-   unskippable initial interval; ensure one press advances **only once**
-   and does not auto-skip following 3D scripts.
-5. Test in 3D gameplay: movement, Jump/Kick/Punch/Web/Aim/Zipline/Swing,
-   and native pause/Start if supported. Ensure the assigned button does
-   not fire an unrelated action.
-6. Run the same tests natively on Windows. Compare against 1.1.0 and
-   preserve a `SpiderMan2k1Fix.log` with `[Debug] Log=1`.
+The **two** Enter candidates are deliberate: user may refine which
+physical button should validate menus, enter the title screen or skip
+movies. The standard indices are a starting hypothesis under Wine,
+not a validated description of this user's controller.
 
-**Acceptance criteria:** exact desired gamepad menu/video semantics
-under Wine and Windows, no startup crash or gameplay regression,
-and no added keyboard/focus/DirectInput hook. If native Start alone does
-not confirm choices or skip a Bink sequence, diagnose the game-specific
-`PCSHELL_CheckTriggers` path rather than force a keyboard input.
+`[Input]` factory defaults for newly generated INIs:
+
+```ini
+ControllerProfile=Auto
+ControllerEnterButtons=Both
+```
+
+Existing INIs missing these keys also use these defaults.
+`ControllerProfile=Off` disables only the added 2D UI bridge.
+`ControllerProfile=DualShock4` explicitly selects the same
+VID/PID-verified profile and still refuses unknown devices.
+`ControllerEnterButtons` accepts `Cross`, `Options` or `Both`.
+
+**Delete the old `ExperimentalGamepadStart=BUTTON8` entry**:
+this setting is now retired/ignored (still accepted by the INI
+validator to preserve other saved settings).
+
+### UI Enter route
+
+The original PC menu/movie/still accept a keyboard Enter
+(`DIK_RETURN=0x1C`). This prototype emits a physical Enter
+scan-code down/up pair via Win32 `SendInput` on an observed
+controller press edge, with key-up on the *next* DirectDraw Flip.
+It runs on the already hooked game's Flip thread.
+
+Very strict context guards:
+- The game window must be visible and the actual foreground HWND.
+- The renderer must be in the original **2D menu/video mode**;
+  widescreen 3D gameplay is explicitly excluded.
+- Only a transition from released to pressed triggers a single
+  Enter pulse. Held controller buttons never auto-repeat.
+- Synthetic Enter is released before any possible Alt+Tab focus
+  pause, to avoid leaving a pressed key behind.
+- A failed separate controller read or unsupported GUID causes
+  **no synthetic keyboard input**.
+- Never call the original game's DXInput setters, alter its
+  DirectInput COM/vtable, or write to its game-owned keyboard bytes.
+- The original Bink/movie skip timing remains in charge.
+  The bridge never skips a video on its own.
+
+**Limitation:** even a successful `SendInput` can fail to register
+as an original DirectInput keyboard event under some Wine or
+Windows environments. Only an actual in-game test proves that.
+In that case we will inspect the game-specific verified
+`PCSHELL_CheckTriggers(0x0050C180)` behavior and design a guarded
+native return-path hook rather than claiming the feature works.
+
+## Debug messages
+
+With `[Debug] Log=1`, inspect:
+
+- `GAMEPAD-UI: config profile=Auto confirm=Both ...`
+- `GAMEPAD-UI: DISCOVERY gamepads=... SonyDualShock4=...`
+- `GAMEPAD-UI: PROFILE DualShock4 ACTIVE ...`
+- `GAMEPAD-UI: SYNTHETIC Return ...` on controller button press
+- `GAMEPAD-UI: independent DirectInput read hr=...` if polling fails
+- `GAMEPAD-UI: ... inactive ...` if the device cannot be identified
+
+A `SYNTHETIC Return` line means the Win32 request was submitted,
+**not** that the game accepted it.
+
+## Required tests to build the final profile together
+
+1. With `ControllerEnterButtons=Both`, compare separate ✕ and OPTIONS
+   presses at the static post-intro screen and the main menu.
+2. Open a submenu via the gamepad and validate NO/YES confirmations.
+3. Play a regular Bink video and press ✕ / OPTIONS *after* the original
+   skippable interval; ensure exactly one advance.
+4. Enter 3D: prove that both buttons still perform only their
+   original gameplay functions, including movement/attacks.
+5. Verify focus Alt+Tab never leaves Enter pressed. Test under
+   both Wine and native Windows; evaluate log outputs.
+6. Choose `Cross`, `Options` or `Both` as the default based on
+   actual results. Consider different DS4 transport layouts separately.
+
+This record intentionally preserves the two failed Start-table tests
+and the unverified state of our new approach.
 
 legluondunet assisted by ChatGPT (OpenAI)
