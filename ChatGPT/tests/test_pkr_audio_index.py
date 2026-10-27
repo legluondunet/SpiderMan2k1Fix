@@ -67,7 +67,9 @@ def test_original_crc_and_deflate_are_separate_from_game_pcm():
     compressed=zlib.compress(raw)
     assert zlib.decompress(compressed)==raw
     assert zlib.crc32(raw)!=zlib.crc32(raw[:-512]+bytes(512))
-    assert SRC.index('crc32_pkraw(raw,e->length)==e->crc') < SRC.index('memcpy(dst->pcm,pcm,pcm_bytes)')
+    assert SRC.index('crc32_pkraw(raw,e->length)==e->crc') < SRC.index('dst->raw=raw;')
+    assert SRC.index('dst->raw=raw;') < SRC.index('dst->pcm=raw+pcm_offset;')
+    assert 'raw=NULL; /* ownership transferred to WAVSource */' in SRC
     assert SRC.index('SpiderPKRAudioIndex_Probe') > SRC.index('SpiderPKRAudioIndex_Init')
 
 
