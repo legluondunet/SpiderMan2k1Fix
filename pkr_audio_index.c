@@ -1,5 +1,7 @@
 /*
- * Spider-Man (2001 PC) original PKR3 WAV identification, READ-ONLY.
+ * Spider-Man (2001 PC) original PKR3 WAV identification, READ-ONLY
+ * by default. A separate OFF-by-default option may restore verified
+ * corrupt partial WAV sectors in native secondary DirectSound buffers.
  *
  * User's game assets never leave this process: game-dir data.pkr is opened
  * rb, validated and decoded in memory using vendored miniz tinfl.
@@ -10,7 +12,9 @@
  * Supported compressed flags: -2 (raw), +2 (zlib), with original CRC32.
  * All archive offsets/sizes/counts are validated BEFORE reading payloads.
  *
- * No original PKR or game buffer modification, no external subprocesses.
+ * The PKR and original WAV cache are never modified. Only the optional
+ * strict tail-restore path may write to a stopped native DS buffer.
+ * No external subprocesses.
  */
 #define WIN32_LEAN_AND_MEAN
 #define COBJMACROS
@@ -51,13 +55,15 @@ typedef struct {
 typedef struct {
   char dir[33],name[33];
   uint8_t *pcm;
-  uint32_t pcm_bytes,rate;
+  uint32_t pcm_bytes,rate,header_bytes;
   unsigned reports;
+  unsigned tail_restore_count;
   unsigned full_checks;
 } WAVSource;
 
 static WAVSource *sources=NULL;
 static unsigned source_count=0,index_ready=0,reports=0,full_reports=0;
+static int tail_restore_enabled=0;
 static void (*diag)(const char *)=NULL;
 static unsigned loaded_bytes=0;
 
@@ -214,6 +220,7 @@ static int load_audio_index(const char *path){
                 strcpy(dst->dir,e->dir);
                 strcpy(dst->name,e->name);
                 dst->pcm_bytes=pcm_bytes;dst->rate=hz;
+                dst->header_bytes=(uint32_t)(pcm-raw);
                 loaded_bytes+=pcm_bytes;
                 source_count++;decoded++;
               }else invalid++;
@@ -352,4 +359,124 @@ void SpiderPKRAudioIndex_Probe(int slot,IDirectSoundBuffer *buf,int looping){
     }
     if(diag)diag(line);
   }
+}
+
+
+/* Experimental, fail-open generalized workaround for the exact recurring
+ * game-owned PCM tail fault shown in the user's 53/53 comparisons:
+ *   PCM first mismatch + RIFF data offset (44) = N * 2048.
+ *
+ * We do NOT trust a prefix alone and do NOT fill unknown buffers.
+ * Only a single CRC-verified PKR source that matches format/size and
+ * every byte before the expected 2-KiB sector boundary is eligible.
+ * The actual first mismatching byte MUST be that boundary, not just
+ * somewhere in the suffix. This is source-backed and identity guarded,
+ * but is NOT a fix for the as-yet unknown native loader instruction.
+ *
+ * Native DirectSound handles Play, loops, IsPlaying, Stop, pan, volume,
+ * pitch, game scene/focus, and all game voice allocation as before.
+ * We only repair the proven damaged PCM suffix under the same DS lock
+ * and only when the buffer is not currently playing. */
+static uint8_t ds_locked_byte(const uint8_t *a,const uint8_t *b,
+                              DWORD a_len,DWORD index){
+  return index<a_len?a[index]:b[index-a_len];
+}
+void SpiderPKRAudioIndex_EnableTailRestore(int enabled){
+  tail_restore_enabled=(enabled==1 && index_ready);
+  if(tail_restore_enabled && diag)
+    diag("PKR-AUDIO: TAIL-RESTORE ARMED (original CRC-verified WAV; strict 2048-boundary; stopped native DS buffer ONLY; no SDL3 reroute)");
+  else if(enabled==1 && diag)
+    diag("PKR-AUDIO: TAIL-RESTORE REFUSED; original data.pkr index unavailable");
+}
+int SpiderPKRAudioIndex_TryTailRestore(int slot,IDirectSoundBuffer *buf,int looping){
+  DSBCAPS caps;
+  WAVEFORMATEX fmt;
+  DWORD got=0,status=0,a_len=0,b_len=0;
+  uint8_t *a=NULL,*b=NULL;
+  WAVSource *source=NULL;
+  unsigned candidates=0,i;
+  uint32_t cut,j;
+  int changed=0;
+  HRESULT result;
+  char line[256];
+  if(!tail_restore_enabled||!buf||slot<0||slot>=32)return 0;
+  memset(&caps,0,sizeof(caps));caps.dwSize=sizeof(caps);
+  memset(&fmt,0,sizeof(fmt));
+  if(FAILED(IDirectSoundBuffer_GetCaps(buf,&caps)) ||
+     FAILED(IDirectSoundBuffer_GetFormat(buf,&fmt,sizeof(fmt),&got)) ||
+     FAILED(IDirectSoundBuffer_GetStatus(buf,&status)) ||
+     (status&DSBSTATUS_PLAYING) ||
+     got<16u || fmt.wFormatTag!=WAVE_FORMAT_PCM ||
+     fmt.nChannels!=1u || fmt.wBitsPerSample!=16u ||
+     fmt.nBlockAlign!=2u || caps.dwBufferBytes<2048u ||
+     caps.dwBufferBytes>MAX_FULL_COMPARE_BYTES)return 0;
+  /* A valid source can only be from this exact CRC-checked PKR index.
+   * A standard WAV data offset is currently required for the proven
+   * 44-byte sector alignment; other RIFF layouts remain unmodified. */
+  for(i=0;i<source_count;i++)
+    if(sources[i].header_bytes==44u &&
+       sources[i].pcm_bytes==caps.dwBufferBytes &&
+       sources[i].rate==fmt.nSamplesPerSec){candidates++;}
+  if(!candidates)return 0;
+
+  result=IDirectSoundBuffer_Lock(buf,0,caps.dwBufferBytes,
+                                 (void**)&a,&a_len,(void**)&b,&b_len,0);
+  if(FAILED(result))return 0;
+  if(!a || (a_len+b_len)!=caps.dwBufferBytes || (b_len && !b))
+    goto unlock;
+  /* Resolve uniqueness by exact size, rate and first 1024 PCM bytes.
+   * Never pick arbitrarily among two source files. */
+  for(i=0;i<source_count;i++){
+    WAVSource *w=&sources[i];
+    if(w->header_bytes!=44u ||
+       w->pcm_bytes!=caps.dwBufferBytes ||
+       w->rate!=fmt.nSamplesPerSec)continue;
+    for(j=0;j<MIN_MATCH_BYTES;j++)
+      if(ds_locked_byte(a,b,a_len,j)!=w->pcm[j])break;
+    if(j==MIN_MATCH_BYTES){
+      if(source){source=NULL;goto unlock;} /* ambiguous */
+      source=w;
+    }
+  }
+  if(!source)goto unlock;
+  /* Last fully read sector of the original WAV, expressed in PCM bytes.
+   * The supplied 44-byte header is the reason every first_diff%2048
+   * equals 2004 in the observed corruption traces. */
+  cut=((caps.dwBufferBytes+source->header_bytes)/2048u)*2048u-
+      source->header_bytes;
+  if(cut<MIN_MATCH_BYTES||cut>=caps.dwBufferBytes)goto unlock;
+  /* Source PCM must be BYTE-IDENTICAL through the last complete sector. */
+  for(j=0;j<cut;j++)
+    if(ds_locked_byte(a,b,a_len,j)!=source->pcm[j])goto unlock;
+  /* The FIRST mismatching byte must be precisely the next sector.
+   * More general changes, legitimate fades/processing and non-sector
+   * corruption are deliberately left unmodified. */
+  if(ds_locked_byte(a,b,a_len,cut)==source->pcm[cut])goto unlock;
+  /* The DirectSound Lock covers the full buffer: write only the tail,
+   * without introducing an unlock/relock race against native playback. */
+  if(cut<a_len){
+    memcpy(a+cut,source->pcm+cut,a_len-cut);
+    if(b_len)memcpy(b,source->pcm+a_len,b_len);
+  }else if(b_len){
+    memcpy(b+(cut-a_len),source->pcm+cut,caps.dwBufferBytes-cut);
+  }
+  changed=1;
+unlock:
+  result=IDirectSoundBuffer_Unlock(buf,a,a_len,b,b_len);
+  if(FAILED(result)){
+    if(diag)diag("PKR-AUDIO: TAIL-RESTORE WARNING DirectSound Unlock failed; native Play retained");
+    return 0;
+  }
+  if(changed && source){
+    source->tail_restore_count++;
+    if(source->tail_restore_count<=2u && diag){
+      snprintf(line,sizeof(line),
+        "PKR-AUDIO: TAIL-RESTORED slot=%d loop=%d source=%s/%s pcm_bytes=%lu sector_tail_offset=%lu restored_bytes=%lu occurrence=%u (native DirectSound preserved)",
+        slot,!!looping,source->dir,source->name,
+        (unsigned long)source->pcm_bytes,(unsigned long)cut,
+        (unsigned long)(source->pcm_bytes-cut),source->tail_restore_count);
+      diag(line);
+    }
+  }
+  return changed;
 }
