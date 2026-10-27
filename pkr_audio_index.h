@@ -15,4 +15,8 @@ void SpiderPKRAudioIndex_Probe(int slot,IDirectSoundBuffer *buffer,int looping);
  * Original game and all other audio semantics remain native DirectSound. */
 void SpiderPKRAudioIndex_EnableTailRestore(int enabled);
 int SpiderPKRAudioIndex_TryTailRestore(int slot,IDirectSoundBuffer *buffer,int looping);
+/* Experimental, OFF by default: correct two proven rogue PCM16 samples
+ * in uniquely identified original Heli1.wav, stopped secondary buffer. */
+void SpiderPKRAudioIndex_EnableHeli1Declick(int enabled);
+int SpiderPKRAudioIndex_TryHeli1Declick(int slot,IDirectSoundBuffer *buffer,int looping);
 #endif
