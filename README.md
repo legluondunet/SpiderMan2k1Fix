@@ -179,7 +179,7 @@ The following are possible improvements under consideration, subject to technica
 - **Achievements:** Explore an achievement system.
 - **Other game version bonus:** Add bonus from other game versions non present in PC version, like Fantastic Four torch...
 - **Shaders:** Add CRT shaders
-- ** Rendering engine:** Vukan or DirectX => 9
+- **Rendering engine:** Explore support for Vulkan or DirectX 9 and later.
 
 ## Documentation
 
