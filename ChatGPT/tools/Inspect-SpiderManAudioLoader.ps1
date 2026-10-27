@@ -309,6 +309,33 @@ foreach ($entry in $absoluteRefs) {
 }
 [void]$lines.Add('')
 
+[void]$lines.Add('RAW x86 INDIRECT VTABLE-CALL CANDIDATES (FF /2, register-indirect vtable)')
+[void]$lines.Add('All modules/COM interfaces can share these opcode sequences; no DirectSound attribution without instruction-context verification.')
+$vtOffsets = @(
+    [pscustomobject]@{ Offset=0x0C; Label='possible CreateSoundBuffer (IDirectSound)' },
+    [pscustomobject]@{ Offset=0x14; Label='possible DuplicateSoundBuffer (IDirectSound)' },
+    [pscustomobject]@{ Offset=0x2C; Label='possible Lock (IDirectSoundBuffer)' },
+    [pscustomobject]@{ Offset=0x4C; Label='possible Unlock (IDirectSoundBuffer)' }
+)
+foreach ($vt in $vtOffsets) {
+    [void]$lines.Add("$($vt.Label), x86 offset=0x$('{0:X2}' -f $vt.Offset)")
+    $seen=0
+    for ($i=0; $i -le $size-3; $i++) {
+        if ($exeBytes[$raw+$i] -ne 0xFF) { continue }
+        $modrm = [int]$exeBytes[$raw+$i+1]
+        # ff /2 call; mod=01, reg=010, rm=000..011 (EAX,ECX,EDX,EBX)
+        if ($modrm -lt 0x50 -or $modrm -gt 0x53 -or
+            $exeBytes[$raw+$i+2] -ne $vt.Offset) { continue }
+        $seen++
+        if ($seen -le 120) {
+            [void]$lines.Add("  candidate_at=$(Format-HexVa ([long]$textBaseVa+$i)) opcode=FF-$('{0:X2}' -f $modrm)-$('{0:X2}' -f $vt.Offset)")
+        }
+    }
+    [void]$lines.Add("  raw_candidate_count=$seen")
+    if ($seen -gt 120) { [void]$lines.Add('  [ADDRESS LIST TRUNCATED AT 120]') }
+}
+[void]$lines.Add('')
+
 [void]$lines.Add('NATIVE CODE NEIGHBORHOOD / objdump disassembly')
 [void]$lines.Add("VA $(Format-HexVa $windowStart)-$(Format-HexVa $windowEnd)")
 [void]$lines.Add('Review function boundaries and COM indirect calls manually.')
@@ -343,7 +370,11 @@ if ($null -ne $disassembler) {
         [pscustomobject]@{ Label='WAV container open, length query and sector read callees'; Start=[long]0x00504C80; End=[long]0x00505300 },
         [pscustomobject]@{ Label='ALTERNATIVE generic resource reader at 0x430A21 and 0x430B23,0x430B52,0x430B9E (handles short sectors)'; Start=[long]0x00430800; End=[long]0x00430DC0 },
         [pscustomobject]@{ Label='ORIGINAL GAME AUDIO MANAGER and bank-to-native DirectSound loader/voice CALLS'; Start=[long]0x00470F00; End=[long]0x00472A50 },
-        [pscustomobject]@{ Label='native sound-bank selector preceding 64-buffer DirectSound template loader'; Start=[long]0x004FBD60; End=[long]0x004FC050 }
+        [pscustomobject]@{ Label='native sound-bank selector preceding 64-buffer DirectSound template loader'; Start=[long]0x004FBD60; End=[long]0x004FC050 },
+        [pscustomobject]@{ Label='candidate alternative DirectSound object consumer A (4FD8xx / 4FDAxx)'; Start=[long]0x004FD800; End=[long]0x004FDAC0 },
+        [pscustomobject]@{ Label='candidate alternative DirectSound object consumer B (4FFxxx)'; Start=[long]0x004FEF70; End=[long]0x004FF260 },
+        [pscustomobject]@{ Label='candidate alternative DirectSound object consumer C (5000xx)'; Start=[long]0x005000B0; End=[long]0x00500260 },
+        [pscustomobject]@{ Label='candidate alternative DirectSound object consumer D (5007xx)'; Start=[long]0x00500700; End=[long]0x00500940 }
     )
     foreach ($region in $regions) {
         [void]$lines.Add('')
