@@ -6,6 +6,13 @@
 - Expand the native ESC 4:3 font-glyph eligibility only in the heading row, preserving the original central bounds for NO/YES and other menu choices. Existing owner/texture/depth/same-frame guards and classic 4:3 behavior remain unchanged.
 - Add host-compiled C geometry tests covering 16:9, 16:10 and unrelated HUD/edge cases. In-game Windows and Wine visual validation is still required; this change is **not yet released**.
 
+## Unreleased — experimental native gamepad Start / menu and video actions
+
+- Add an optional `[Input] ExperimentalGamepadStart=BUTTONn` binding, disabled unless explicitly configured, to test native controller **Start/confirm** handling in menus and skippable cinematics.
+- Recognize only the original executable's two 14-entry controller mapping arrays in writable `.data` and alter only the `Start` button index (`0x1000` action); refuse an unverified signature or any overlap with assigned gameplay actions.
+- Preserve physical joystick axes, existing seven gamepad mappings, game-native input/skip timing, keyboard and mouse behavior. Do not intercept DirectInput COM objects or synthesize keyboard events.
+- Add host-compiled regression tests. **No gameplay confirmation yet:** the user's actual DualShock 4 button numbers and the two native start routes still require Wine/Windows testing. No changes to v1.1.0 release.
+
 ## 1.1.0 — October 27, 2026
 
 - Identified the root cause of audio crackling in the original game: its native WAV loader reads only complete 2,048-byte PKR resource sectors and omits the final partial sector.
