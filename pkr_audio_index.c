@@ -437,8 +437,10 @@ static uint8_t ds_locked_byte(const uint8_t *a,const uint8_t *b,
  * complete PCM prefix. No guesswork about fixed 44-byte WAV file length.
  *
  * The native game always allocates total_bytes and reads floor(total/2048)
- * blocks; we only return the original file's remainder if ONE exact source
- * matches and the sector is known to overlap actual PCM, not just metadata.
+ * blocks; we only return the original file's remainder if a CRC-verified
+ * source matches the entire prefix and every matching source's remaining
+ * bytes agree (aliases permitted), with the sector overlapping actual PCM,
+ * not just metadata.
  * Caller verifies one native scratch-sector read against this source before
  * ANY write. CRC is validated during PKR index construction. */
 const unsigned char *SpiderPKRAudioIndex_ExpectedLoaderWavTail(

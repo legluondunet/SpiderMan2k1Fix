@@ -43,6 +43,13 @@ This directory contains the maintained technical documentation and an index of s
 - [Windows viewport and shutdown diagnosis](references/diagnostics/graphics/WINDOWS_VIEWPORT_DIAGNOSTIC.md)
 - [Windows primary-surface reuse tests](references/diagnostics/graphics/WINDOWS_PRIMARY_REUSE_TEST.md)
 
+### Original audio engine and WAV corruption root cause
+
+- [**Original audio native-function map and exact WAV-sector bug**](references/diagnostics/audio/ORIGINAL_AUDIO_FUNCTIONS_AND_WAV_BUG.md) — verified WAV loader/read/copy callsites, DirectSound voice owners, a separate correctly bounded generic resource reader, root cause, safety rules and tests
+- [Native audio root-cause investigation — chronological archive](references/diagnostics/audio/NATIVE_AUDIO_LOADER_ROOT_CAUSE.md) — full decompilation research, hypotheses, Windows/Wine probes and results
+- [Current native PKR audio repair guide](references/diagnostics/audio/PKR_NATIVE_AUDIO_REPAIR.md) — active default-on loader fix, original CRC checks, hidden opt-out and independent optional Heli1 sample declick
+- [Read-only original executable audio inspector (Python)](../ChatGPT/tools/inspect_audio_load_x86.py) / [PowerShell](../ChatGPT/tools/Inspect-SpiderManAudioLoader.ps1) — reproduce function and callsite evidence using your own verified original EXE
+
 ### Focus and synchronized media pause diagnostics
 
 - [Cursor visibility on focus loss](references/diagnostics/focus/CURSOR_FOCUS_TEST.md)

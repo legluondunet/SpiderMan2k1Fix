@@ -14,7 +14,13 @@
 > listening tests passed before making the fix default-on; native Windows
 > gameplay validation remains pending.
 
-## Status: analysis in progress; no root fix asserted
+## Current result and how to read this archive
+
+**Root cause confirmed and fixed:** the original WAV loader's `0x00503CC9–0x00503CD8` call path requests only whole 2,048-byte PKR sectors, despite allocating the whole file. Original PKR reader `0x005051D0` supports a short final block, but the WAV caller omits it. The fix is implemented in `pkr_audio_loader.c` and is default-on for the SHA-verified supported original EXE. The late DirectSound tail workaround has been removed. Linux/Wine gameplay and listening validated the final fallback-free correction; native Windows testing of the current default-on build remains pending.
+
+**Start with the [consolidated original audio function/address map](ORIGINAL_AUDIO_FUNCTIONS_AND_WAV_BUG.md)** for the recovered functions, verified assembly, exact failure mechanism, disqualified alternative generic reader and safe solution. The dated notes below are kept **unchanged as historical observations, superseded hypotheses and intermediate implementation states**, not as instructions for the current fix.
+
+## Historical starting assessment (superseded): no root fix yet asserted
 
 The **user-approved audible repairs** (generic CRC-backed native PCM sector-tail
 restoration and the two isolated original `Heli1.wav` outliers) remain unchanged.
