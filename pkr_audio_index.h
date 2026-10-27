@@ -17,4 +17,13 @@ int SpiderPKRAudioIndex_TryTailRestore(int slot,IDirectSoundBuffer *buffer,int l
  * in uniquely identified original Heli1.wav, stopped secondary buffer. */
 void SpiderPKRAudioIndex_EnableHeli1Declick(int enabled);
 int SpiderPKRAudioIndex_TryHeli1Declick(int slot,IDirectSoundBuffer *buffer,int looping);
+/* Strictly read-only matching of a WAV file ALREADY read into the game's
+ * allocated staging buffer. Returns a pointer into the independently
+ * decompressed, CRC32-verified original PCM cache only for exactly one
+ * header/length/prefix match. Caller never writes into that cache.
+ * Loader hook uses this to VERIFY any extra native partial-block read
+ * before it writes the proven remainder into the original staging buffer. */
+const unsigned char *SpiderPKRAudioIndex_ExpectedLoaderWavTail(
+  const unsigned char *wav,unsigned complete_bytes,unsigned total_bytes,
+  const char **source_name);
 #endif
