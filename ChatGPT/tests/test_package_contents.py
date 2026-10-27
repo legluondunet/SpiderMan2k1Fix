@@ -28,8 +28,12 @@ def test_ci_artifact_contains_only_two_dlls_and_public_docs():
 def test_workflow_only_builds_and_does_not_publish_releases():
     workflows = ROOT / ".github/workflows"
     assert list(workflows.glob("publish-*.yml")) == []
-    assert list(workflows.glob("*release*.yml")) == []
-    assert [p.name for p in ROOT.glob("RELEASE_NOTES_*.md")] == ["RELEASE_NOTES_1.0.0.md"]
+    assert sorted(p.name for p in workflows.glob("*release*.yml")) == ["spiderman2k1fix-v1.1.0-release.yml"]
+    assert sorted(p.name for p in ROOT.glob("RELEASE_NOTES_*.md")) == ["RELEASE_NOTES_1.0.0.md", "RELEASE_NOTES_1.1.0.md"]
+    new_notes = (ROOT / "RELEASE_NOTES_1.1.0.md").read_text(encoding="utf-8")
+    assert "# SpiderMan2k1Fix v1.1.0" in new_notes
+    assert "Linux/Wine" in new_notes
+    assert "Windows" in new_notes
     notes=(ROOT/"RELEASE_NOTES_1.0.0.md").read_text(encoding="utf-8")
     assert "# SpiderMan2k1Fix v1.0.0" in notes
     assert "## Known Issues" in notes
@@ -37,8 +41,16 @@ def test_workflow_only_builds_and_does_not_publish_releases():
     assert "release candidate" not in notes.lower()
     for path in workflows.glob("*.yml"):
         src = path.read_text(encoding="utf-8")
-        assert "gh release create" not in src
-        assert "gh release upload" not in src
+        if path.name == "spiderman2k1fix-v1.1.0-release.yml":
+            assert "github.event.head_commit.message == 'release: publish SpiderMan2k1Fix v1.1.0'" in src
+            assert "github.repository == 'legluondunet/SpiderMan2k1Fix'" in src
+            assert "python3 -m pytest -q ChatGPT/tests" in src
+            assert "bash ./build-native-msvcrt.sh" in src
+            assert "gh release create v1.1.0" in src
+            assert "RELEASE_NOTES_1.1.0.md" in src
+        else:
+            assert "gh release create" not in src
+            assert "gh release upload" not in src
 
 
 def test_ci_runs_developer_regression_tests():
@@ -67,7 +79,7 @@ def test_1_0_stable_readme_links_to_releases_without_candidate_warning():
     version_header = (ROOT / "version_info.h").read_text(encoding="utf-8")
     game = (ROOT / "spiderman2k1fix.c").read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert '#define SPIDERMAN2K1FIX_VERSION "1.0.0"' in version_header
+    assert '#define SPIDERMAN2K1FIX_VERSION "1.1.0"' in version_header
     assert 'log_line("START: " SPIDERMAN2K1FIX_VERSION_LABEL);' in game
     assert "[GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases)" in readme
     assert "No stable release is available" not in readme
