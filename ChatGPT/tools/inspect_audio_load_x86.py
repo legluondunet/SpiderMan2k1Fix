@@ -179,6 +179,40 @@ def inspect(blob: bytes, exe: Path, out: Path) -> str:
     rows += [f"caller=0x{p:08X} target=0x{t:08X}" for p, t in candidates]
     if not candidates:
         rows.append("(no raw E8 candidates found)")
+    # Read-only xrefs for the 12 residual Play-time restores. Raw candidates
+    # (including possible E8 opcode bytes within other instructions) are NOT
+    # automatically interpreted as verified CALL sites.
+    xref_targets = (
+        ("native sector read (2048-byte units)", 0x005051D0),
+        ("native resource length query", 0x00505170),
+        ("known 64-entry DirectSound WAV loader", 0x00503B40),
+        ("generic partial-sector-aware resource reader", 0x00430A40),
+        ("generic resource opener", 0x00430940),
+        ("native DirectSound voice duplication", 0x00504110),
+        ("native sound-bank lookup", 0x004FBDC0),
+    )
+    base, text = pe.text()
+    rows += ["", "FOCUSED RESOURCE/DSOUND CALL XREF CANDIDATES (RAW, UNVERIFIED)"]
+    for label, target in xref_targets:
+        refs = [p for p, t in candidate_rel32_calls(pe, target, target + 1, limit=200)]
+        rows.append(f"{label}: target=0x{target:08X} raw_candidates={len(refs)}")
+        rows += [f"  candidate_caller=0x{p:08X}" for p in refs]
+    rows += ["", "ABSOLUTE DSOUND POINTER / GAME VOICE-TABLE REFERENCES (RAW, UNVERIFIED)"]
+    for label, addr in (
+        ("DirectSound object pointer", 0x006B7920),
+        ("64 reference/template buffers", 0x006BBAD4),
+        ("32 live secondary voice descriptors", 0x006BBD50),
+    ):
+        rawaddr = struct.pack("<I", addr)
+        hits = []
+        i = text.find(rawaddr)
+        while i >= 0:
+            hits.append(base + i)
+            i = text.find(rawaddr, i + 1)
+        rows.append(f"{label}: absolute=0x{addr:08X} raw_candidates={len(hits)}")
+        rows += [f"  immediate_at=0x{p:08X}" for p in hits[:96]]
+        if len(hits) > 96:
+            rows.append("  [ADDRESS LIST TRUNCATED AT 96]")
     rows += ["", "NATIVE CODE NEIGHBORHOOD / objdump disassembly",
              f"VA 0x{WINDOW_START:08X}-0x{WINDOW_END:08X}",
              "Review function boundaries and COM indirect call instructions manually.",
@@ -198,7 +232,15 @@ def inspect(blob: bytes, exe: Path, out: Path) -> str:
              "ALTERNATIVE RESOURCE READER CALL CANDIDATES: disassembly",
              "VA 0x00430800-0x00430DC0; contains xrefs 0x430A21, 0x430B23, 0x430B52, 0x430B9E.",
              "This may be a distinct resource read path; WAV usage not yet proven.",
-             disassemble(exe, 0x00430800, 0x00430DC0)]
+             disassemble(exe, 0x00430800, 0x00430DC0),
+             "",
+             "ORIGINAL GAME AUDIO MANAGER / NATIVE SOUND TEMPLATE POPULATION",
+             "VA 0x00470F00-0x00472A50: including 0x471822 initial loader and 0x4727F9 voice duplicate.",
+             disassemble(exe, 0x00470F00, 0x00472A50),
+             "",
+             "ORIGINAL GAME BANK SELECTOR",
+             "VA 0x004FBD60-0x004FC050: helper called by 0x503B40.",
+             disassemble(exe, 0x004FBD60, 0x004FC050)]
     report = "\n".join(rows) + "\n"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report, encoding="utf-8")
