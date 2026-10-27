@@ -447,7 +447,7 @@ def test_f12_debug_fast_test_mode_default_off_and_valid_ini_key():
     for option in ("F10Shortcut", "F10TestMode", "F10Auto3DScripts", "F10GameplayExit"):
         assert f"{option}=" not in INI
         assert f'"{option}=0\\r\\n"' not in GEN
-    assert 'spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts","ExperimentalPKRAudioIndex","ExperimentalAudioPKRTailRestore"}' in VAL
+    assert 'spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts","ExperimentalPKRAudioIndex","ExperimentalAudioPKRTailRestore","ExperimentalPKRAudioPlayTrace"}' in VAL
     assert 'GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1' in SRC
     assert 'GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1' in SRC
     assert "static volatile LONG debug_f12_test_mode=0;" in SRC

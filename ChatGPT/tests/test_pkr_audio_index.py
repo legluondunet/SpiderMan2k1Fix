@@ -15,7 +15,7 @@ def test_optin_and_readonly_sound_pipeline():
     assert '"ExperimentalPKRAudioIndex"' in INI
     assert 'GetPrivateProfileIntA("Debug","ExperimentalPKRAudioIndex",0,ini)==1' in MAIN
     assert 'SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_tail_restore)' in MAIN
-    assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_tail_restore)' in MAIN
+    assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_tail_restore||pkr_play_trace,pkr_play_trace)' in MAIN
     assert 'SpiderPKRAudioIndex_Probe(slot,buffer,looping)' in PLAY
     assert 'pkr_audio_index.c' in BUILD
     assert 'third_party/miniz/miniz_tinfl.c' in BUILD

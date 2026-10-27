@@ -15,7 +15,7 @@ def test_restore_opt_in_and_no_sdl_runtime():
     assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioPKRTailRestore",0,ini)==1' in MAIN
     assert 'SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_tail_restore)' in MAIN
     assert 'SpiderPKRAudioIndex_EnableTailRestore(pkr_tail_restore)' in MAIN
-    assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_tail_restore)' in MAIN
+    assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_tail_restore||pkr_play_trace,pkr_play_trace)' in MAIN
     assert 'tail_restore_enabled=(enabled==1 && index_ready)' in SRC
     assert 'if(!tail_restore_enabled||!buf||slot<0||slot>=32)return 0;' in SRC
     assert 'SpiderPKRAudioIndex_TryTailRestore(slot,buffer,looping)' in HOOK
