@@ -498,11 +498,20 @@ const unsigned char *SpiderPKRAudioIndex_ExpectedLoaderWavTail(
     /* No need to patch a sector containing only non-audio metadata. */
     if(pcm_end<=complete_bytes)continue;
     if(memcmp(wav,w->raw,complete_bytes)!=0)continue;
-    if(++matches>1u)return NULL; /* ambiguous: do not pick arbitrarily */
-    match=w;
+    /* Several names may refer to exactly the same original WAV bytes.
+     * Multiple prefix matches are safe ONLY when all independently
+     * CRC32-verified candidates also have IDENTICAL remaining bytes.
+     * Otherwise their resource identity is ambiguous: fail closed.
+     * The loader still reads a fresh native sector and compares it
+     * against this expected remainder before any game-memory write. */
+    if(match && memcmp(match->raw+complete_bytes,
+                       w->raw+complete_bytes,remainder)!=0)return NULL;
+    if(!match)match=w;
+    matches++;
   }
-  if(matches!=1u||!match)return NULL;
-  if(source_name)*source_name=match->name;
+  if(!matches||!match)return NULL;
+  if(source_name)*source_name=matches==1u?match->name:
+    "CRC-identical WAV aliases";
   return match->raw+complete_bytes; /* full exact remainder, incl. metadata */
 }
 
