@@ -382,6 +382,11 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "[Input]\r\n"
     "; Auto = OS keyboard layout; Off = original physical QWERTY positions.\r\n"
     "KeyboardLayout=Auto\r\n"
+    "; ControllerProfile: Auto detects an original Sony DualShock4 by VID/PID.\r\n"
+    "; Other gamepads keep original controls. Off disables this UI bridge.\r\n"
+    "ControllerProfile=Auto\r\n"
+    "; In 2D menus, stills and movies: Cross/Options emit Enter, never during 3D.\r\n"
+    "ControllerEnterButtons=Both\r\n"
     "\r\n"
     "[Audio]\r\n"
     "; All levels are 0..100 percent, with lossless raw values kept below.\r\n";
