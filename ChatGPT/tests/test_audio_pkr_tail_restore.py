@@ -20,7 +20,6 @@ def test_restoration_off_by_default_and_source_index_required():
     assert HOOK.index('SpiderSDL3Probe_PlaySwing5(slot,buf,volume,pan,hz)') < HOOK.index('SpiderPKRAudioIndex_TryTailRestore(slot,buf,looping)') < HOOK.index('GAME_PLAY(slot,looping); /* Fail OPEN')
 
 def test_never_write_before_source_and_boundary_verification():
-    assert 'src' not in []  # no dynamic tests depend on an actual game archive
     for required in (
         'e->crc', 'crc32_pkraw(raw,e->length)==e->crc',
         'dst->header_bytes=(uint32_t)(pcm-raw)',
