@@ -34,9 +34,8 @@
 #include "f9_png.h"
 #include "f9_toast.h"
 #include "quick_exit_f12.h"
-#include "sdl3_audio_probe.h"
-#include "sdl3_swing5_redirect.h"
 #include "pkr_audio_index.h"
+#include "pkr_audio_play_hook.h"
 
 static const BYTE expected_sha256[32] = {
   0x0a,0x11,0xa4,0x9f,0x3f,0x63,0xd4,0xbb,
@@ -2432,7 +2431,6 @@ static void pause_at_flip_if_background(void) {
   /* The Flip pause alone does not suspend Bink or secondary DirectSound. */
   SpiderFocusMedia_Pause();
   SpiderFocusDSound_Pause();
-  SpiderSDL3Probe_PauseAll(1); /* Same focus-latched pause as native DS voices. */
   /* The frame currently rendered in borderless_back is the image which
    * would have been presented at this Flip boundary. Compose the PAUSE UI
    * into that very game surface and Blt it exactly once to PRIMARY before
@@ -2472,7 +2470,6 @@ static void pause_at_flip_if_background(void) {
         PostQuitMessage((int)msg.wParam);
         SpiderPauseAny_End();
         SpiderPauseSurface_End();
-        SpiderSDL3Probe_PauseAll(0);
         SpiderFocusDSound_Resume();
         SpiderFocusMedia_Resume();
         log_line("FOCUS-PAUSE: WM_QUIT observed, aborting wait");
@@ -2500,7 +2497,6 @@ static void pause_at_flip_if_background(void) {
   }
   SpiderPauseAny_End();
   SpiderPauseSurface_End();
-  SpiderSDL3Probe_PauseAll(0);
   SpiderFocusDSound_Resume();
   SpiderFocusMedia_Resume();
   log_line("FOCUS-PAUSE: explicit resume or window destroyed");
@@ -2530,8 +2526,6 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       SpiderInputFocus_OnFlip(count);
   }
   SpiderDI8Retry_OnFlip(count);
-  SpiderSDL3Probe_OnFlip(game_hwnd); /* F7: explicitly opted-in standalone SDL3 test. */
-  SpiderSDL3Probe_OnVoiceFlip(InterlockedCompareExchange(&menu_upscale_active,0,0)==1);
   /* Observe the physical F9 press early; the game's screenshot code can
    * run between two Flip calls, so surface hooks also sample F9. */
   if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
@@ -3099,18 +3093,15 @@ static DWORD initialize_body(LPVOID unused) {
   {
     char ini[MAX_PATH],*slash;
     DWORD n=GetModuleFileNameA(NULL,ini,MAX_PATH);
-    int test=0,swing=0,pkr_readonly=0,pkr_tail_restore=0;
+    int pkr_index=0,pkr_tail_restore=0;
     if(n && n<MAX_PATH && (slash=strrchr(ini,'\\'))!=NULL){
       strcpy(slash+1,"SpiderMan2k1Fix.ini");
-      test=GetPrivateProfileIntA("Debug","ExperimentalSDL3AudioProbe",0,ini)==1;
-      swing=GetPrivateProfileIntA("Debug","ExperimentalSDL3Swing5Replace",0,ini)==1;
-      pkr_readonly=GetPrivateProfileIntA("Debug","ExperimentalSDL3PKRAudioIndex",0,ini)==1;
+      pkr_index=GetPrivateProfileIntA("Debug","ExperimentalPKRAudioIndex",0,ini)==1;
       pkr_tail_restore=GetPrivateProfileIntA("Debug","ExperimentalAudioPKRTailRestore",0,ini)==1;
     }
-    SpiderSDL3Probe_Init(log_line,test,swing);
-    SpiderPKRAudioIndex_Init(log_line,pkr_readonly||pkr_tail_restore);
+    SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_tail_restore);
     SpiderPKRAudioIndex_EnableTailRestore(pkr_tail_restore);
-    SpiderSDL3Swing5_Init(log_line,swing||pkr_readonly||pkr_tail_restore);
+    SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_tail_restore);
   }
   /* The first-run generator or repair may have changed [Debug] Log. */
   {
