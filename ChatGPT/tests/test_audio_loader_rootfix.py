@@ -56,21 +56,64 @@ def test_loader_only_writes_exact_original_tail_after_fresh_native_read_validati
     assert 'loader_message("TAIL-RESTORED"' in SRC
 
 
-def test_source_requires_unique_verified_44byte_riff_and_pcm_prefix():
+def test_source_requires_unique_crc_verified_complete_riff_prefix_and_tail():
     assert "if(!index_ready||!wav" in MATCH
     assert "complete_bytes!=(total_bytes&~2047u)" in MATCH
-    assert 'memcmp(wav,"RIFF",4)!=0' in MATCH
-    assert 'memcmp(wav+8,"WAVE",4)!=0' in MATCH
-    assert 'memcmp(wav+12,"fmt ",4)!=0' in MATCH
-    assert 'memcmp(wav+36,"data",4)!=0' in MATCH
-    assert "le32(wav+4)!=total_bytes-8u" in MATCH
-    assert "w->header_bytes!=44u" in MATCH
-    assert "w->pcm_bytes!=total_bytes-44u" in MATCH
-    assert "memcmp(wav+44u,w->pcm,pcm_prefix)!=0" in MATCH
+    assert 'memcmp(wav,"RIFF",4u)!=0' in MATCH
+    assert 'memcmp(wav+8u,"WAVE",4u)!=0' in MATCH
+    assert "le32(wav+4u)!=total_bytes-8u" in MATCH
+    assert "w->raw_bytes!=total_bytes" in MATCH
+    assert "w->header_bytes+w->pcm_bytes" in MATCH
+    assert "if(pcm_end<=complete_bytes)continue;" in MATCH
+    assert "memcmp(wav,w->raw,complete_bytes)!=0" in MATCH
     assert "if(++matches>1u)return NULL" in MATCH
-    assert "return match->pcm+pcm_prefix" in MATCH
+    assert "return match->raw+complete_bytes" in MATCH
     assert "crc32_pkraw(raw,e->length)==e->crc" in MATCH
+    assert "dst->raw=raw;" in MATCH
+    assert "dst->pcm=raw+pcm_offset;" in MATCH
+    assert "raw=NULL; /* ownership transferred to WAVSource */" in MATCH
+    assert "retained_bytes+=e->length" in MATCH
+    assert "loaded_bytes+=pcm_bytes" in MATCH
 
+
+def test_verified_88_234_byte_wav_structures_have_pcm_missing_last_sector():
+    # Observed original WAV file lengths from 27 Oct Windows test.
+    # The 44/190 extra bytes are INSIDE the declared RIFF, after PCM.
+    cases = [
+        ("PickConf.wav", 43746, 43834, 44),
+        ("achum.wav", 32960, 33194, 190),
+        ("Crawl2.wav", 19254, 19342, 44),
+        ("Crawl1.wav", 23058, 23146, 44),
+        ("catland3.wav", 11798, 11886, 44),
+        ("Swing5.wav", 32632, 32720, 44),
+        ("WebShot10.wav", 18762, 18850, 44),
+        ("WebShot11.wav", 13852, 13940, 44),
+        ("tingle2.wav", 56926, 57160, 190),
+        ("h_hitfloor.wav", 18578, 18666, 44),
+        ("WebShot3.wav", 15596, 15684, 44),
+        ("Pistol2.wav", 22486, 22574, 44),
+        ("Pistol1.wav", 29922, 30010, 44),
+    ]
+    for name, pcm_bytes, total, trailing_metadata in cases:
+        assert total == 44 + pcm_bytes + trailing_metadata, name
+        complete = total & ~2047
+        remainder = total - complete
+        assert 0 < remainder < 2048
+        assert 44 + pcm_bytes > complete, name
+        assert complete + remainder == total
+        dst = bytearray(total)
+        source = bytes(total)
+        assert dst[complete:] == source[complete:]
+
+
+def test_full_source_staging_buffer_alias_is_single_owned_allocation():
+    assert "dst->raw=raw;" in MATCH
+    assert "dst->pcm=raw+pcm_offset;" in MATCH
+    assert "dst->raw_bytes=e->length;" in MATCH
+    assert "raw=NULL; /* ownership transferred to WAVSource */" in MATCH
+    assert "free(packed);free(raw);" in MATCH
+    assert "dst->pcm=(uint8_t*)malloc(pcm_bytes)" not in MATCH
+    assert "memcpy(dst->pcm,pcm,pcm_bytes)" not in MATCH
 
 def test_arithmetic_does_not_round_up_or_overrun_native_malloc():
     examples=[
