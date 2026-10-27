@@ -381,14 +381,60 @@ listening validation. The source WAV TEMP export added for
 forensics was **removed** from the PR since the user supplied
 the exact WAV directly.
 
-**Next validation:** build and listen to the 2nd 3D intro
-cutscene and helicopter by the bank with
-`ExperimentalAudioHeli1Declick=1` and
-`ExperimentalAudioPKRTailRestore=1`; compare to the former
-setting with Heli1Declick=0. Confirm two success log
-lines (or report explicit fail-open skips), no extra noises,
-and original sound spatialization / looping. Keep the
-declick feature OFF by default pending user approval.
+**USER LISTENING VALIDATED, 27 Oct 2026:** The user explicitly
+confirmed that the helicopter de-click correction works with their
+Wine/Windows game test ("validé!"), submitting
+`SpiderMan2k1Fix(20261027-080359).log`,
+game build `v1.0.0-57432f6`.
+
+The new log verifies the exact two previously identified samples
+were patched on native looping `Heli1.wav` buffer **slot 10 twice**:
+
+```text
+PKR-AUDIO: TAIL-RESTORED slot=10 loop=1 source=data\\audio\\/Heli1.wav pcm_bytes=60480 buffer_bytes=60480 pad_bytes=0 sector_tail_offset=59348 first_diff=59348 restored_bytes=1132 mismatched_bytes=1129 occurrence=1 (native DirectSound preserved)
+PKR-AUDIO: HELI1-DECLICK slot=10 loop=1 source=data\\audio\\/Heli1.wav samples=12095,12109 replacement=29634,-30655 (native DirectSound preserved)
+PKR-AUDIO: PLAY-TRACE n=12 phase=before ... slot=10 loop=1 repaired=1 ... status=0x00000000 play=0 ...
+PKR-AUDIO: PLAY-TRACE n=12 phase=after ... slot=10 loop=1 repaired=1 ... status=0x00000005 play=0 ...
+PKR-AUDIO: TAIL-RESTORED slot=10 loop=1 source=data\\audio\\/Heli1.wav ... restored_bytes=1132 ... occurrence=2 (native DirectSound preserved)
+PKR-AUDIO: HELI1-DECLICK slot=10 loop=1 source=data\\audio\\/Heli1.wav samples=12095,12109 replacement=29634,-30655 (native DirectSound preserved)
+PKR-AUDIO: PLAY-TRACE n=50 phase=before ... slot=10 loop=1 repaired=1 ... status=0x00000000 play=0 ...
+PKR-AUDIO: PLAY-TRACE n=50 phase=after ... slot=10 loop=1 repaired=1 ... status=0x00000005 play=0 ...
+```
+
+In the first sequence, the next `Heli1.wav` copy, native
+looping slot 11, had exactly **4 differing PCM bytes** relative to
+the original, from byte offsets `24190` through `24219`.
+These are precisely the byte regions for the **two patched
+samples** at positions 12095 and 12109 (2 bytes each), not
+another damaged WAV suffix. The `TAIL-SKIP
+reason=difference-before-final-sector` on that copy is thus
+consistent with already-declicked PCM and appropriately leaves
+the game's sound unmodified; no repair is necessary there.
+The same skip recurs on the second pass and two other 60,480-byte
+looping voices later in the session; their exact sample values
+were not dumped and cannot be asserted from the log.
+
+Across this test: **656/656 CRC-valid WAVs, 66 `TAIL-RESTORED`
+events, 28 `TAIL-SKIP` (24 `already-identical`, 4
+`difference-before-final-sector`), zero `SOURCE-MISS`,
+zero `SOURCE-PREFIX`, zero PKR-AUDIO warnings/errors**, and
+**256 complete native `PLAY-TRACE` before/after pairs with
+no nonzero DirectSound HRESULTs**. Gameplay successfully
+returned to the main menu via native 3D cleanup.
+
+At startup, INI validation also reported **one unknown/other
+configuration warning**, automatically generated a clean INI
+recovering 33 recognized settings and preserved the original as
+`SpiderMan2k1Fix.ini.old`. The log confirms that
+`HELI1-DECLICK ARMED` and `TAIL-RESTORE ARMED` remained active.
+The unknown key itself was not named in this log: do not infer
+its identity without inspecting the backed-up INI.
+
+**Scope of acceptance:** helicopter clicks are now resolved in
+the user's listening test; this does **not** constitute validation
+of all sound effects, focus changes or environments. Keep
+`ExperimentalAudioHeli1Declick` disabled by default and keep
+draft PR #67 unmerged pending explicit review/merge approval.
 
 
 
