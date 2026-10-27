@@ -242,3 +242,64 @@ A successful 32-bit DLL compilation alone does not validate the PKR
 archive inventory against the actual game data.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+## 27 October – Real PKR index validation and whole-PCM comparison
+
+User run `SpiderMan2k1Fix(20261027-000444).log` **confirmed
+the original game archive scanner works on Windows**:
+`PKR-AUDIO: SOURCE-INDEX total=656 valid=656 other=0`,
+`CACHE ... bytes=32033406 crc_errors=0`; no archive failure.
+48 native Play-to-PKR match records were logged before the old fixed
+48-message cap, covering seven original assets:
+`achum.wav`, `wind2.wav`, `wind3.wav`, `Heli1.wav`,
+`eleczap0.wav`, `ThugStp1.wav`, `ThugStp4.wav`.
+`Heli1.wav` is the 60480-byte 12 kHz native loop in slots 27/28.
+Seven clean Swing5 replacements on the existing SDL3 path were also
+recorded, with normal one-shot voice expirations. No generic audio
+replacement occurred; gameplay still uses DirectSound for all other
+sounds.
+
+**Important distinction:** this log predates the improved *one
+source per log line* build, so 48 logged records contain heavy repeated
+footstep/electrical effects. The 1024-byte prefix does not establish
+whether the corrupted suffix is present in a native secondary buffer.
+
+### New opt-in FULL-PCM read-only diagnostic
+
+Keep the same `ExperimentalSDL3PKRAudioIndex=1`. On each uniquely
+identified original WAV, also read the **entire** game-owned
+DirectSound PCM buffer via Lock/Unlock and compare it byte for byte
+with the CRC-verified original WAV already decoded in the source
+index. Compare no more than 2 times per distinct source, 256
+comparisons total, and only when the sample is at most 1 MiB. This
+bounded read-only check does not write PCM data, alter native playback
+or use source samples as replacement audio.
+
+The log reports either
+
+```
+PKR-AUDIO: FULL-PCM IDENTICAL source=data\audio\/Heli1.wav slot=27 loop=1 bytes=60480 compare=1/2 (READ-ONLY)
+```
+
+or
+
+```
+PKR-AUDIO: FULL-PCM DIFF source=... slot=... loop=... bytes=...
+          first_diff=... last_diff=... mismatched_bytes=...
+          first_mod_2048=... compare=1/2 (READ-ONLY)
+```
+
+The `first_mod_2048` field is relative to raw *PCM*, not to a RIFF
+header; do not conflate it with the previously observed WAV-file
+offset alignment. A mismatch is proof of divergence **at that
+buffer-read point**, not a proof that the original PKR loader is the
+cause. An identical PCM does not rule out loop transition, mixing or
+sound-device glitches. The user should provide another full log
+after hearing the recurring helicopter sound and several fight effects.
+
+Only once clean PKR sources and their native identities are
+established should we expand SDL3 automatic playback. Native
+`DXSOUND_IsPlaying` parity for redirected voices and loop lifetime
+handling remain blockers for general audio takeover.
+
+legluondunet assisted by ChatGPT (OpenAI)
