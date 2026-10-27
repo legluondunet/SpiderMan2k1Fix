@@ -175,6 +175,115 @@ it could make the callee write beyond the allocated buffer, which
 currently holds the original file length, and introduce a heap
 overflow. The safe fix must be based on the actual callee semantics.
 
+## 2nd disassembly: loader truncation confirmed in the native reader
+
+The user provided `spiderman-audio-root-disassembly(1).txt` from Windows
+`llvm-objdump`, exact original `SpideyPC.exe` SHA256 verified. The newly
+covered reader function at **VA `0x005051D0`** establishes the causal chain:
+
+```asm
+; caller: 0x00503CC9-0x00503CD8
+cdq
+and edx,0x7ff
+add eax,edx
+sar eax,0xb     ; blocks = floor(WAV file bytes / 2048)
+push eax
+push esi
+call 0x005051D0
+
+; reader: 0x005051D4-0x0050522B
+mov edx,[esp+8] ; number of blocks requested
+shl edx,0xb     ; requested byte count = blocks * 2048
+; clamp requested bytes to resource end
+; ... compare (cursor + byte count) vs resource length ...
+rep movsd       ; copy full dwords
+rep movsb       ; copy 0..3 leftover bytes
+; update the resource cursor by the bytes copied
+```
+
+The reader **does** clamp to the resource's physical end and can copy a
+partial 2048-byte block when requested. However the caller never
+requests the final block: it truncates the file length to whole sectors
+before the call, then allocates and copies the WAV header/PCM as if the
+entire file had been loaded. DirectSound's native template-buffer
+`CreateSoundBuffer`, `Lock`, `rep movs`, `Unlock`, and later
+`DuplicateSoundBuffer` occur only **after** this incomplete resource
+read. This directly explains all three observed last-WAV-sector lengths,
+with optional two bytes of padding in the subsequent aligned PCM
+buffer. The conclusion is about this specific defect, **not** the two
+outlier original `Heli1.wav` PCM samples, which remain a separate
+source-asset problem.
+
+**Confirmed root cause:** the original game erroneously rounds the
+requested PKR/WAV transfer **down** to a multiple of 2048 bytes. A
+native code correction is possible without replacing DirectSound.
+
+## Experimental loader-level fix — default OFF, not yet game-validated
+
+The draft PR now contains `pkr_audio_loader.c/.h` and the INI key:
+
+```ini
+[Debug]
+ExperimentalAudioLoaderTail=0
+```
+
+The new implementation is a conservative, fail-open root fix. It hooks
+ONLY the two exact calls in the original WAV loader:
+
+- `0x00503CB4` calls `0x00505170` to obtain the **actual WAV byte
+  length**, used immediately for game allocation. This value is
+  captured per-thread, not guessed from a WAV header.
+- `0x00503CD8` calls `0x005051D0` to read the full sectors. The hook
+  calls the original routine exactly as before, then considers an
+  optional remainder only when `blocks == length / 2048` and the
+  remainder is in `1..2047`.
+- The in-memory staging WAV must exactly identify **one** independently
+  decompressed original PCM16 mono WAV with a 44-byte RIFF header and
+  **matching full-sector PCM prefix**, from our CRC32-checked
+  `data.pkr` cache. Unknown or ambiguous sources remain untouched.
+- Only then, `0x005051D0` is called with **one additional sector into
+  a private 2048-byte scratch buffer** (not into the game's WAV staging
+  allocation). If and only if the returned remainder exactly matches
+  the known CRC32-valid original WAV bytes, the hook writes precisely
+  those `length % 2048` bytes at the end of the already allocated WAV.
+  No round-up, no overrun, no reimplementation of game ZIP/PKR codecs.
+- Existing native Play-time PCM sector-tail restore and the separate
+  original Heli1 two-sample declick remain unmodified fallback paths.
+  All DirectSound calls, buffer duplication, mixing and game music
+  remain native. Signature mismatches refuse installation.
+
+With `[Debug] Log=1` an applied correction will emit e.g.
+`PKR-AUDIO: LOADER-TAIL-RESTORED ... remainder=1132 ...`.
+Refused/ambiguous sources can emit `LOADER-SKIP-NO-UNIQUE-SOURCE`
+or `LOADER-SKIP-REMAINDER-MISMATCH`, capped at 96 messages
+per category. These are fail-open, not evidence that game playback
+was fixed. Static tests and CI compilation alone **cannot prove**
+runtime safety or successful audio playback.
+
+**First runtime A/B test, only after building this experiment**:
+
+```ini
+[Debug]
+Log=1
+ExperimentalAudioLoaderTail=1
+ExperimentalAudioPKRTailRestore=1
+ExperimentalAudioHeli1Declick=1
+```
+
+Test a new gameplay session with 3D cinematics, `Heli1` (helicopter)
+and fight effects; compare logs to the known-good baseline. Expect
+`LOADER-TAIL-RESTORED` for uniquely matched sounds and fewer
+Play-time `TAIL-RESTORED` events for the same assets, as their
+template buffers should already have original complete audio.
+`Heli1Declick` must remain enabled because its two wrong PCM
+samples originate inside the original WAV.
+
+Do not disable the fallback on the first run. If the new hook fails,
+remove only `ExperimentalAudioLoaderTail=1` (set to `0`) and the
+pre-existing native restore/declick remain in place. Test one
+noncritical session and inspect logs before asserting success.
+No merge or default activation without explicit maintainer approval.
+
 ## What will settle the true origin
 
 After examining the exact native instruction sequence, identify and
