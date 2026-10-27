@@ -132,3 +132,58 @@ def test_unmatched_source_prefix_probe_is_bounded_read_only_and_never_fixes_unkn
     assert 'memcpy(' not in probe
     assert 'IDirectSoundBuffer_Play(' not in probe
     assert 'IDirectSoundBuffer_SetCurrentPosition(' not in probe
+
+
+def test_four_byte_alignment_tail_repair_safety():
+    """R2-07 / ThugHit2: original 15138 bytes, game buffer 15140."""
+    source_bytes = 15138
+    native_bytes = 15140
+    assert source_bytes % 4 == 2
+    assert native_bytes == source_bytes + 2
+    sector_start = ((native_bytes + 44) // 2048) * 2048 - 44
+    assert sector_start == 14292
+    assert source_bytes - sector_start == 846
+    assert native_bytes - sector_start == 848  # 26.5 ms at 16 kHz
+    # Our repair must preserve the entire source prefix and restore
+    # even a partially intact final WAV sector, without out-of-bounds read.
+    source = bytes((i * 13 + 7) % 256 for i in range(source_bytes))
+    damaged = bytearray(source + b"\x90\xA1")
+    damaged[sector_start:] = b"\xDA" * (native_bytes - sector_start)
+    assert damaged[:sector_start] == source[:sector_start]
+    first_diff = next(i for i in range(sector_start, native_bytes)
+                      if damaged[i] != (source[i] if i < source_bytes else 0))
+    assert first_diff >= sector_start
+    damaged[first_diff:] = source[first_diff:] + b"\0\0"
+    assert damaged == source + b"\0\0"
+    assert 'source_matches_runtime_length(' in SRC
+    assert '(w->pcm_bytes&3u)==2u' in SRC
+    assert 'n==w->pcm_bytes+2u && (n&3u)==0u' in SRC
+    assert '(w->pcm_bytes+44u)/2048u==(n+44u)/2048u' in SRC
+    assert 'uint8_t expected=j<source->pcm_bytes?source->pcm[j]:0u;' in SRC
+    assert 'if(source->pcm_bytes==caps.dwBufferBytes)' in SRC
+    assert 'pad_bytes=%lu' in SRC
+    assert 'return changed;' in SRC
+
+
+def test_alignment_repair_still_rejects_large_or_wrongly_aligned_buffers():
+    def eligible(original, native):
+        return original == native or (
+            original % 4 == 2
+            and native == original + 2
+            and native % 4 == 0
+            and (original + 44) // 2048 == (native + 44) // 2048
+        )
+
+    assert eligible(15138, 15140)   # ThugHit2 WAV -> padded native DS
+    assert eligible(10232, 10232)   # existing exact-sized repairs
+    assert eligible(43746, 43748)   # PickConf WAV
+    assert not eligible(15138, 15142)
+    assert not eligible(15138, 15138 - 2)
+    assert not eligible(255480, 79308)  # truncated traffic loop
+    assert not eligible(2002, 2004)  # +2 would cross file-sector boundary
+    assert not eligible(10232, 10234)  # source was already DWORD aligned
+    assert 'matching_sources>1u' in SRC
+    assert 'if(matching_sources!=1u)' in SRC
+    assert 'if(status&DSBSTATUS_PLAYING)' in SRC
+    assert 'w->header_bytes!=44u' in SRC
+    assert 'if(j!=sector_start)' in SRC
