@@ -40,33 +40,32 @@ def test_verified_original_callsite_and_preserved_playback_semantics():
     assert 'NATIVE_PLAY(slot,looping);' in HOOK
     assert HOOK.count('NATIVE_PLAY(slot,looping);')==1
     assert 'SpiderPKRAudioIndex_Probe(slot,buffer,looping)' in HOOK
-    assert 'SpiderPKRAudioIndex_TryTailRestore(slot,buffer,looping)' in HOOK
-    assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_tail_restore||pkr_play_trace||pkr_heli_declick,pkr_play_trace)' in MAIN
-    assert 'SpiderPKRAudioIndex_EnableTailRestore(pkr_tail_restore)' in MAIN
+    assert 'SpiderPKRAudioIndex_TryTailRestore(slot,buffer,looping)' not in HOOK
+    assert 'SpiderPKRAudioIndex_TryHeli1Declick(slot,buffer,looping)' in HOOK
+    assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_play_trace||pkr_heli_declick,pkr_play_trace)' in MAIN
+    assert 'SpiderPKRAudioIndex_EnableTailRestore' not in MAIN
     assert 'SpiderSDL3' not in MAIN
     assert 'DXSOUND_Stop' not in HOOK
     assert 'IDirectSoundBuffer_Play(' not in HOOK
 
 def test_native_settings_default_off_and_obsolete_keys_removed():
     assert '"ExperimentalPKRAudioIndex"' in INI
-    assert '"ExperimentalAudioPKRTailRestore"' in INI
+    assert '"ExperimentalAudioPKRTailRestore"' not in INI
     assert '"ExperimentalSDL3' not in INI
     assert 'GetPrivateProfileIntA("Debug","ExperimentalPKRAudioIndex",0,ini)==1' in MAIN
-    assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioPKRTailRestore",0,ini)==1' in MAIN
-    assert 'SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_tail_restore||pkr_heli_declick||pkr_loader_tail)' in MAIN
-    assert 'tail_restore_enabled=(enabled==1 && index_ready)' in INDEX
+    assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioLoaderTail",0,ini)==1' in MAIN
+    assert 'SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_heli_declick||pkr_loader_tail)' in MAIN
+    assert 'tail_restore_enabled' not in INDEX
     assert 'PKR-AUDIO: PLAY-HOOK INSTALLED' in HOOK
-    assert 'PKR-AUDIO: TAIL-SKIP reason=%s' in INDEX
+    assert 'PKR-AUDIO: TAIL-SKIP reason=%s' not in INDEX
 
-def test_partial_sector_scan_keeps_verified_prefix_intact():
-    assert 'for(j=MIN_MATCH_BYTES;j<sector_start;j++)' in INDEX
-    assert 'if(j!=sector_start)' in INDEX
-    assert 'matching_sources>1u' in INDEX
-    assert 'for(j=sector_start;j<caps.dwBufferBytes;j++)' in INDEX
-    assert 'if(first_diff==UINT32_MAX)first_diff=j;' in INDEX
-    assert 'memcpy(a+first_diff,source->pcm+first_diff,a_len-first_diff);' in INDEX
-    assert 'if(status&DSBSTATUS_PLAYING)' in INDEX
-    assert 'if(!tail_restore_enabled||!buf||slot<0||slot>=32)return 0;' in INDEX
+def test_loader_keeps_crc_verified_exact_partial_sector_guards():
+    assert 'SpiderPKRAudioIndex_ExpectedLoaderWavTail(' in INDEX
+    assert 'if(pcm_end<=complete_bytes)continue;' in INDEX
+    assert 'memcmp(wav,w->raw,complete_bytes)!=0' in INDEX
+    assert 'memcmp(match->raw+complete_bytes,' in INDEX
+    assert 'w->raw+complete_bytes,remainder)!=0)return NULL;' in INDEX
     assert 'fopen(path,"rb")' in INDEX
     assert 'fopen(path,"wb")' not in INDEX
-    assert 'PKR-AUDIO: TAIL-RESTORED' in INDEX
+    assert 'PKR-AUDIO: HELI1-DECLICK' in INDEX
+    assert 'PKR-AUDIO: TAIL-RESTORED' not in INDEX
