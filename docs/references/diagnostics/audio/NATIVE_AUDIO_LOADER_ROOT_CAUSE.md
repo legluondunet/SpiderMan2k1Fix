@@ -1038,6 +1038,56 @@ prove complete coverage**, because of the two distinct
 unidentified PCM-bearing WAV lengths and pending subjective
 listening. Leave fallback enabled and PR #67 **draft/unmerged**.
 
+## Next diagnostic: strictly read-only unmatched WAV fingerprints (28 Oct 2026 research follow-up)
+
+After the successful and audibly clean Linux/Wine loader-enabled test, PR #67
+adds **diagnostic logging only** for loader calls that were already rejected
+by the existing strict source-identification guard. The audio fix,
+stored WAV source CRC checks, native read behavior, memory writes,
+source identity decisions, DirectSound, Heli1 declick, and fallback
+remain **byte-for-byte behaviorally unchanged**.
+
+When a `LOADER-SKIP-NO-UNIQUE-SOURCE` event is accompanied by
+`LOADER-SKIP-DETAIL`, a new `LOADER-SKIP-FORENSIC` line reports:
+
+- `pcm_tail_bytes`: how much of the unread RIFF remainder intersects
+  the header-declared audio data for standard 44-byte-header WAVs
+  (`0` on the identified 20-byte metadata-only tail);
+- `wav_format`, `channels`, `hz`, `bits`: read-only format fields
+  from an existing `fmt ` chunk at offset 12, when present;
+- `head2048_fnv1a` and `last_loaded2048_fnv1a`: deterministic
+  **noncryptographic** 32-bit FNV-1a fingerprints of the first and
+  last already-loaded 2,048 bytes; no raw PCM/audio is logged;
+- `indexed`: number of cached CRC-verified original `data.pkr` WAVs;
+  `same_size`: cached originals having the same **entire RIFF file length**;
+  `head2048`: cached originals with the same first 2,048 bytes
+  (regardless of length); `full_prefix`: same-sized cached originals
+  with an exact complete loaded prefix;
+- `head_hint` / `full_hint`: a filename printed only if the
+  corresponding candidate count is exactly one. A `head_hint`
+  is **not** sufficient for source identity or repair.
+
+These fields should distinguish an already-cached-but-ambiguous source
+from a WAV unrepresented in the 656-source cache, and allow later
+offline asset comparison. A zero candidate count does **not** establish
+which external or unindexed asset was involved.
+
+**Critical safety:** The new code never asks the game for an extra
+sector, reads more than the already-loaded WAV staging prefix, changes
+the correction decision or relaxes the current fail-closed matching.
+Candidate scans are capped by the existing 656-source cache and skip
+logging is capped by the existing `MAX_LOADER_DIAG` limit.
+There is no new INI key: keep
+`ExperimentalAudioLoaderTail=1` and the two independent fallback/declick
+options for testing.
+
+For the next Linux/Wine test on the new PR #67 artifact, inspect the
+`LOADER-SKIP-FORENSIC` entries for `pcm_tail_bytes=460` (twice)
+and `pcm_tail_bytes=1988` (once), then provide the resulting log.
+The test will **identify candidates**, not automatically repair
+unverified files. Keep the PR unmerged until both technical and
+listening validation are complete.
+
 ## Archived investigation plan (before native root cause was identified)
 
 The following was the former diagnostic plan, retained as historical context. The exact responsible instruction has since been established and the native loader correction validated in the Windows session above.
