@@ -3105,10 +3105,12 @@ static DWORD initialize_body(LPVOID unused) {
       test=GetPrivateProfileIntA("Debug","ExperimentalSDL3AudioProbe",0,ini)==1;
       swing=GetPrivateProfileIntA("Debug","ExperimentalSDL3Swing5Replace",0,ini)==1;
       pkr_readonly=GetPrivateProfileIntA("Debug","ExperimentalSDL3PKRAudioIndex",0,ini)==1;
+      pkr_tail_restore=GetPrivateProfileIntA("Debug","ExperimentalAudioPKRTailRestore",0,ini)==1;
     }
     SpiderSDL3Probe_Init(log_line,test,swing);
-    SpiderPKRAudioIndex_Init(log_line,pkr_readonly); /* Read original data.pkr; no sound modifications. */
-    SpiderSDL3Swing5_Init(log_line,swing||pkr_readonly);
+    SpiderPKRAudioIndex_Init(log_line,pkr_readonly||pkr_tail_restore);
+    SpiderPKRAudioIndex_EnableTailRestore(pkr_tail_restore);
+    SpiderSDL3Swing5_Init(log_line,swing||pkr_readonly||pkr_tail_restore);
   }
   /* The first-run generator or repair may have changed [Debug] Log. */
   {
