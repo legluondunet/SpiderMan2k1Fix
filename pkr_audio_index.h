@@ -19,8 +19,10 @@ void SpiderPKRAudioIndex_EnableHeli1Declick(int enabled);
 int SpiderPKRAudioIndex_TryHeli1Declick(int slot,IDirectSoundBuffer *buffer,int looping);
 /* Strictly read-only matching of a WAV file ALREADY read into the game's
  * allocated staging buffer. Returns a pointer into the independently
- * decompressed, CRC32-verified original PCM cache only for exactly one
- * header/length/prefix match. Caller never writes into that cache.
+ * decompressed, CRC32-verified original WAV/RIFF cache only for exactly
+ * one FULL original-file length and bytewise full-sector prefix match.
+ * Covers 44-byte and 190-byte legitimate RIFF metadata following PCM.
+ * Caller never writes into the independently verified source cache.
  * Loader hook uses this to VERIFY any extra native partial-block read
  * before it writes the proven remainder into the original staging buffer. */
 const unsigned char *SpiderPKRAudioIndex_ExpectedLoaderWavTail(
