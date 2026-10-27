@@ -33,11 +33,16 @@ def test_optin_and_readonly_sound_pipeline():
     assert 'memcmp(wav+8,"WAVE",4)' in SRC
     assert 'miniz' in SRC.lower()
     assert 'PKR-AUDIO: MATCH' not in SRC  # log format chooses MATCH/AMBIGUOUS
+    # The optional Heli1 debug export is the only place permitted to
+    # write a NEW TEMP WAV; this probe and all native audio paths stay
+    # read-only or perform only the separately guarded PCM tail restore.
+    no_export=(SRC.split('static void dump_heli1_source_optin(void){',1)[0]
+               +SRC.split('static void log_heli1_source_discontinuities(void){',1)[1])
     for forbidden in ('fopen(path,"wb")','fopen(path,"rb+")','fwrite(',
-                      'WriteFile(', 'IDirectSoundBuffer_Play(', 
+                      'WriteFile(', 'IDirectSoundBuffer_Play(',
                       'VirtualProtect(', 'IDirectSoundBuffer_Stop(',
                       'SDL_Audio_Play('):
-        assert forbidden not in SRC
+        assert forbidden not in no_export
 
 def test_pkr_layout_and_boundary_examples():
     assert struct.calcsize("<4sI")==8
