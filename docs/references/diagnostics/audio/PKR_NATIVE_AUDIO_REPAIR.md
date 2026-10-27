@@ -222,9 +222,13 @@ length was exactly **2 bytes shorter**. All 25 source lengths are
 `N % 4 == 2`, and all runtime lengths are `N+2`, divisible by 4.
 This is strong evidence of a **native 4-byte buffer-size
 alignment**, although the exact original engine allocation
-instruction has not yet been disassembled. The exception is a
-79,308-byte looping buffer whose short prefix matches two much
-longer sound sources; it is *not* eligible for any repair.
+instruction has not yet been disassembled. The previously ambiguous
+79,308-byte looping buffer had **two** sources sharing its first
+1,024 bytes (`traffic.wav` and `traffic2.wav`), so the forensic
+prefix was insufficient for identity. However, the later full
+pre-sector identity gate **uniquely identified** the exact +2-byte
+source `traffic2.wav` (79,306 original PCM bytes), and its
+79,308-byte stopped looping buffer was successfully restored.
 
 For `ThugHit2.wav`, the PCM mismatch in R2-07 starts at
 `14,292 + 44 = 14,336 = 7 * 2,048`, just as with the
@@ -249,19 +253,35 @@ existing strict identity and safety conditions hold, plus one
 - The existing exact-length repair remains unchanged. The log
   adds `buffer_bytes` and `pad_bytes` to
   `TAIL-RESTORED`, so padded repairs are auditable.
-- Arbitrary truncated/sliced loops (including the 79,308-byte
-  example), ambiguous originals, buffers already playing
-  and any earlier PCM mismatch remain untouched.
+- Arbitrary truncated/sliced loops, ambiguous originals,
+  buffers already playing and any earlier PCM mismatch remain
+  untouched. The 79,308-byte `traffic2.wav` loop is a verified
+  +2-byte-aligned original, **not** an arbitrary truncation.
 
-**This candidate repair has not yet been listening-validated on
-the user's Windows machine**. The next test should verify a
-`TAIL-RESTORED ... ThugHit2.wav pcm_bytes=15138
-buffer_bytes=15140 pad_bytes=2 sector_tail_offset=14292`
-message and compare combat playback against the previous
-corrupted R2-07 sound. A clean log is not proof of audible
-quality; if the candidate has regressions, disable
-`ExperimentalAudioPKRTailRestore=1` (set to `0`) and
-restart the game.
+**Listening test passed for combat, 27 Oct 2026.** The user
+explicitly confirmed that fight sounds are now OK. The supplied
+`v1.0.0-6ad8871` in-game log shows **49 native
+`TAIL-RESTORED` events across 49 distinct original WAVs**:
+**27** required precisely two allocation padding bytes and
+**22** had exact original PCM length. Among them:
+
+```text
+PKR-AUDIO: TAIL-RESTORED slot=25 loop=0 source=data\\audio\\/ThugHit2.wav pcm_bytes=15138 buffer_bytes=15140 pad_bytes=2 sector_tail_offset=14292 first_diff=14292 restored_bytes=848 mismatched_bytes=840 occurrence=1 (native DirectSound preserved)
+PKR-AUDIO: PLAY-TRACE n=188 phase=before ... slot=25 ... repaired=1 ... bytes=15140 hz=16000 status=0x00000000 play=0 write=0 ...
+PKR-AUDIO: PLAY-TRACE n=188 phase=after ... slot=25 ... repaired=1 ... status=0x00000001 ...
+PKR-AUDIO: TAIL-RESTORED slot=2 loop=1 source=data\\audio\\/traffic2.wav pcm_bytes=79306 buffer_bytes=79308 pad_bytes=2 sector_tail_offset=77780 ... (native DirectSound preserved)
+```
+
+The log has **zero** `SOURCE-MISS`, **zero** DirectSound
+HRESULT failures in the 256 traced Play pairs, **zero**
+PKR-AUDIO warnings/errors, and **24** `TAIL-SKIP` messages
+all due to `already-identical` data. It also reached gameplay
+and returned via native 3D cleanup to the menu.
+
+This validates the combat symptom and this in-game audio path,
+**not** every level, sound, focus-transition case or Windows/Wine
+configuration. If later use reveals a regression, set
+`ExperimentalAudioPKRTailRestore=0` and restart the game.
 
 ## Validation boundary
 
