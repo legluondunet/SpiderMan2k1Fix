@@ -1162,6 +1162,72 @@ events with `source=CRC-identical WAV aliases`, plus any
 remaining `LOADER-SKIP-FORENSIC` events. No merge without
 user approval and listening validation.
 
+## Linux/Wine 20:44 alias-enabled run: no regression, but coverage incomplete
+
+The user provided `SpiderMan2k1Fix(20261027-204446).log`
+(1,014 physical lines), definitively running **`v1.0.0-89946bc`**,
+the GitHub Actions build of the strict WAV alias refinement.
+The **native loader hook was armed**, all **656 of 656** WAVs
+passed the independent PKR CRC check, and the first **96**
+successful native restorations were logged (92,040 bytes of
+logged tails; 94 distinct named sources). No pre-Play
+DirectSound `TAIL-RESTORED` calls were logged; **48**
+`FULL-PCM IDENTICAL` checks passed, with **one**
+4-byte `Heli1.wav` `FULL-PCM DIFF` caused by the
+already-validated intentional two-sample declick.
+The Heli1 declick occurred twice.
+
+Only **two** `LOADER-SKIP-NO-UNIQUE-SOURCE` events
+occurred, both for `BreakFree.wav` with
+`remainder=20`, `pcm_tail_bytes=0`, and
+`full_prefix=1`: these are **metadata-only** tails
+and are intentionally not repaired.
+There were no observed 460-byte or 1,988-byte PCM-bearing
+skip entries and no `LOADER-SKIP-REMAINDER-MISMATCH`
+entries. The 3D controller-7 cleanup returned normally
+to the menu (one complete teardown).
+
+**Critical caveat:** This session only completed **one**
+native 3D teardown. The prior 19:54 Wine run had **two**
+native controller-7 returns; its two 460-byte and one
+1,988-byte PCM-bearing skips occurred **late in the
+longer run** (around log line 1153, after several
+transitions). This shorter scenario may simply have
+**never loaded those aliases**. Moreover, native success
+logging is capped at the first 96 restores and no
+`source=CRC-identical WAV aliases` entry was visible
+among those first 96. Do **not** claim runtime
+validation of the alias-specific remediation solely
+from this log. The user has not explicitly reported
+their subjective listening result for this specific
+20:44 session.
+
+### Focused follow-up: log successful aliases despite the standard cap
+
+Added **logging only** after the successful original
+native-sector reread, CRC-backed all-candidate
+identical-tail match, and exact-length original game
+memory copy: a rare repaired alias now additionally
+logs `PKR-AUDIO: LOADER-ALIAS-TAIL-RESTORED`
+(`source=CRC-identical WAV aliases`). These
+messages have their **own 24-event cap**, independent
+of the first 96 standard restoration messages.
+No source matching, native calls, memory writes,
+corrective branches, Heli1 samples, fallback,
+or DirectSound behavior is changed.
+
+**Next runtime check:** install both DLLs from the
+new PR #67 build, verify its version label at
+startup, then play through the longer scenario
+that produced the late 460- and 1,988-byte PCM
+skips. Look for `LOADER-ALIAS-TAIL-RESTORED`
+with `remainder=460` or `remainder=1988`.
+If no such entries occur, look for remaining
+`LOADER-SKIP-FORENSIC` messages and compare
+the reached gameplay transitions. Preserve
+the original fail-closed repair checks.
+User approval is required before merge.
+
 ## Archived investigation plan (before native root cause was identified)
 
 The following was the former diagnostic plan, retained as historical context. The exact responsible instruction has since been established and the native loader correction validated in the Windows session above.
