@@ -5,8 +5,8 @@
  *
  * User's game assets never leave this process: game-dir data.pkr is opened
  * rb, validated and decoded in memory using vendored miniz tinfl.
- * We NEVER feed the game's possibly corrupted PCM into SDL3 from here.
- * This probe is the prerequisite to an original-source SDL3 backend.
+ * We NEVER feed the game's possibly corrupted PCM into another player.
+ * This probe is the prerequisite to an original-source replacement audio backend backend.
  *
  * PKR3 metadata layout from krystalgamer/spidey-decomp pkr.h / pkr.cpp.
  * Supported compressed flags: -2 (raw), +2 (zlib), with original CRC32.
@@ -246,7 +246,7 @@ finished:
   if(diag){
     char line[180];
     snprintf(line,sizeof(line),
-      "PKR-AUDIO: CACHE WAV PCM16 mono=%u bytes=%u crc_errors=%u (READ-ONLY; no SDL3 override)",
+      "PKR-AUDIO: CACHE WAV PCM16 mono=%u bytes=%u crc_errors=%u (READ-ONLY; native playback unchanged)",
       source_count,loaded_bytes,crc_fail);
     diag(line);
   }
@@ -262,7 +262,7 @@ void SpiderPKRAudioIndex_Init(void (*logger)(const char*),int enabled){
   strcpy(slash+1,"data.pkr");
   index_ready=load_audio_index(path);
   if(index_ready && diag)
-    diag("PKR-AUDIO: PROBE ARMED - passive format+length+PCM prefix matching on native game Play; NO REPLACEMENT");
+    diag("PKR-AUDIO: PROBE ARMED - passive format+length+PCM prefix matching on native game Play; NATIVE PLAY UNCHANGED");
 }
 void SpiderPKRAudioIndex_Probe(int slot,IDirectSoundBuffer *buf,int looping){
   DSBCAPS caps;
@@ -384,7 +384,7 @@ static uint8_t ds_locked_byte(const uint8_t *a,const uint8_t *b,
 void SpiderPKRAudioIndex_EnableTailRestore(int enabled){
   tail_restore_enabled=(enabled==1 && index_ready);
   if(tail_restore_enabled && diag)
-    diag("PKR-AUDIO: TAIL-RESTORE ARMED (original CRC-verified WAV; strict 2048-boundary; stopped native DS buffer ONLY; no SDL3 reroute)");
+    diag("PKR-AUDIO: TAIL-RESTORE ARMED (original CRC-verified WAV; strict 2048-boundary; stopped native DS buffer ONLY; no sound engine reroute)");
   else if(enabled==1 && diag)
     diag("PKR-AUDIO: TAIL-RESTORE REFUSED; original data.pkr index unavailable");
 }
