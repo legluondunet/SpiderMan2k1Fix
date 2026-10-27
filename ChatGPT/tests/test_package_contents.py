@@ -42,7 +42,7 @@ def test_workflow_only_builds_and_does_not_publish_releases():
     for path in workflows.glob("*.yml"):
         src = path.read_text(encoding="utf-8")
         if path.name == "spiderman2k1fix-v1.1.0-release.yml":
-            assert "github.event.head_commit.message == 'release: publish SpiderMan2k1Fix v1.1.0'" in src
+            assert "startsWith(github.event.head_commit.message, 'release: publish SpiderMan2k1Fix v1.1.0')" in src
             assert "github.repository == 'legluondunet/SpiderMan2k1Fix'" in src
             assert "python3 -m pytest -q ChatGPT/tests" in src
             assert "bash ./build-native-msvcrt.sh" in src
