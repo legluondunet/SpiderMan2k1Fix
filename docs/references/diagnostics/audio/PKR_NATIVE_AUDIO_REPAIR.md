@@ -177,12 +177,32 @@ PKR-AUDIO: SOURCE-MISS reason=no-original-size-rate ... pcm_bytes=15140 hz=16000
 PKR-AUDIO: SOURCE-MISS reason=nonstandard-original-wav-header ... pcm_bytes=15140 hz=16000 same_size_rate=N
 ```
 
-These are **illustrative possible messages**, not observed results.
-Each distinct length/rate pair is reported at most once, with a
-96-pair limit. No unmatched audio is changed. The next Windows/Wine
-test must determine which reason actually occurs; do not fill an
-unidentified tail with guessed samples, or incorrectly declare a
-play-cursor repair.
+The subsequent 27 Oct 2026 `v1.0.0-4444c67` Windows log
+**confirmed** `SOURCE-MISS reason=no-original-size-rate` for
+`pcm_bytes=15140 hz=16000`, slot 21, matching the size/rate of R2-07.
+Across the session 32 distinct unmatched size/rate pairs were logged;
+all reported `same_size_rate=0`, while 25 native buffers were tail
+restored. The 256-event play trace had expired before this particular
+slot-21 report; thus this log cannot establish that effect's play
+cursor at its exact playback event. Do not assert that PCM length/rate
+alone proves audio identity.
+
+The new **read-only `SOURCE-PREFIX` probe** runs only once for each
+new unmatched size/rate combination, subject to the existing
+96-combination diagnostic cap. It compares the initial **1,024 exact
+PCM bytes** of the stopped buffer against the already CRC-validated
+`data.pkr` WAV cache **regardless of original duration or rate**.
+The log reports the number of prefix matches, number at the same
+sample rate, and the first matched original WAV's name, byte length,
+and sample rate, or `matches=0`.
+
+This tells us whether a sound omitted by the exact-size index might
+still have a differently sized original in `data.pkr`. A prefix
+match is only a **lead**, not proof sufficient to rebuild a tail.
+No unknown buffer is patched and DirectSound Play remains native.
+If `matches=0` for the 15,140-byte/16 kHz effect, investigating
+additional source archives or the native loading path becomes
+necessary; guessing the missing waveform is not acceptable.
 
 ## Validation boundary
 
