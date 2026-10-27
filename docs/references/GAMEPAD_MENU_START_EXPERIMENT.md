@@ -26,6 +26,37 @@ and [`ps2gamefmv.cpp`](https://github.com/krystalgamer/spidey-decomp/blob/master
   table addresses nor the physical Options/Share button indices reported
   by this specific DS4 under Wine or Windows.
 
+## Failed user test — 27 October 2026, build `v1.1.0-a807941`
+
+The user confirmed **no controller menu confirmation / no movie skip**.
+The supplied `SpiderMan2k1Fix(20261027-233002).log` proves that
+the supported SHA-256 game launched normally, the experimental PR #73 build
+was loaded (the hash suffix `a807941` identifies the PR test merge),
+and the virtual `Spidey.cfg` loader returned before rendering movies/menus.
+
+**Critical gap:** that entire log contains **zero** `GAMEPAD-START`
+lines. The initial implementation logged nothing when the INI opt-in
+was missing or an early executable check failed. Therefore the log
+**does not prove** whether `ExperimentalGamepadStart` was set,
+whether the game's action tables matched the detector or whether the
+requested physical DS4 button number was correct.
+
+**Confirmed ordering fault:** the first implementation called
+`SpiderGamepadStart_Init` from `initialize_body()`, **before**
+`SpiderCfg_BootstrapGameRead()` invokes the game's original config
+loader at VA `0x00515680`. The original loader explicitly restores
+joystick assignments as well as keyboard and sound. A Start mapping
+modified earlier could be silently overwritten before the interactive
+menu. The revised experimental build now attempts its one-shot remap
+**after** `SpiderCfg_BootstrapGameRead()`, still before native
+`DirectDrawCreateEx`, without additional COM/keyboard hooks.
+
+The revised build logs `GAMEPAD-START: OFF` when the key is missing,
+`GAMEPAD-START: REQUESTED` and `SCAN` for configured attempts, an
+explicit failure reason for unsupported game layout, and
+`GAMEPAD-START: EXPERIMENTAL mapping Start` only if two tables were
+modified. The first user's failure is **not yet resolved or game-tested**.
+
 ## Experimental opt-in
 
 For a controlled test, keep the game's existing INI. Under `[Input]`
@@ -66,8 +97,12 @@ and an unassigned target button. If any check fails, it does nothing.
 This structural detection is an initial hypothesis drawn from the
 partial decompilation, **not proof the retail image contains two such
 tables**. A fail-closed result is expected if the original differs.
+**Note:** Start remapping is attempted after native `Spidey.cfg` config
+reload, because earlier initialization could be overwritten.
 `[Debug] Log=1` displays the exact outcome:
 
+- `GAMEPAD-START: OFF`: opt-in absent; no remap attempted
+- `GAMEPAD-START: REQUESTED ...` and `SCAN ...`: user opt-in read and native tables inspected
 - `GAMEPAD-START: EXPERIMENTAL mapping Start ...`: both tables changed
 - `GAMEPAD-START: expected two verified controller maps; found=...`:
   unsupported layout, no modification
