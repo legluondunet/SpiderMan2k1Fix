@@ -1323,6 +1323,36 @@ code. Any disable/removal should be a **distinct
 reviewed change**, not bundled into this
 success report.
 
+## User-approved retirement of the late DirectSound tail fallback — 27 Oct 2026
+
+The user confirmed **no audible crackling** in the targeted
+`20:57` Linux/Wine test that directly proved all three
+alias repairs (two 460-byte and one 1,988-byte WAV final
+sectors), and expressly approved **removing the former
+DirectSound-buffer tail-repair fallback**.
+
+The experimental PR #67 branch consequently removes the
+late `SpiderPKRAudioIndex_TryTailRestore` path, its
+`SpiderPKRAudioIndex_EnableTailRestore` toggle and the
+obsolete `ExperimentalAudioPKRTailRestore` INI key.
+The old per-Play `TAIL-SKIP` and `TAIL-RESTORED`
+messages also disappear. The core `data.pkr` CRC-verified
+source index, the guarded **native loader** hook, its
+strict fail-closed alias proof and 2,048-byte scratch
+read, separately opted-in **Heli1 two-sample declick**,
+and optional read-only DirectSound diagnostics remain
+intact.
+
+This is a **behavioral change awaiting a fresh Wine
+listening test**, because the last successful user
+listening report applies to the native-plus-fallback
+build (although the fallback recorded **zero repairs**
+and only ambiguous-source non-writing skips in that
+run). A successful Windows x86 compile and the static
+regression suite do not replace that runtime test.
+The branch remains **draft and unmerged**. Native
+Windows testing is still pending.
+
 ## Archived investigation plan (before native root cause was identified)
 
 The following was the former diagnostic plan, retained as historical context. The exact responsible instruction has since been established and the native loader correction validated in the Windows session above.
