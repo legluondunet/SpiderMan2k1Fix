@@ -44,6 +44,7 @@
 #define MAX_LOG_MATCHES 192u
 #define MAX_FULL_COMPARE_BYTES (1024u*1024u)
 #define MAX_FULL_COMPARE_LOGS 256u
+#define MAX_SOURCE_MISS_LOGS 96u
 
 typedef struct {
   char dir[33];
@@ -66,6 +67,10 @@ static unsigned source_count=0,index_ready=0,reports=0,full_reports=0;
 static int tail_restore_enabled=0;
 static void (*diag)(const char *)=NULL;
 static unsigned loaded_bytes=0;
+/* Unique unmatched (PCM length, rate) pairs: keep noisy repeated fight effects
+ * from exhausting telemetry before a newly encountered sample. */
+static struct { DWORD bytes,rate; } source_misses[MAX_SOURCE_MISS_LOGS];
+static unsigned source_miss_count=0;
 
 static uint32_t le32(const uint8_t *p){
   return (uint32_t)p[0] | (uint32_t)p[1]<<8 |
@@ -407,13 +412,34 @@ static void log_skip(int kind,int slot,int looping,DWORD size,DWORD rate){
     reasons[kind],slot,!!looping,(unsigned long)size,(unsigned long)rate);
   diag(line);
 }
+/* Read-only format census for buffers with no eligible original source.
+ * No PCM inspection or DirectSound calls: this reports why no repair
+ * candidate was found before the normal early return. */
+static void log_source_miss(int slot,int looping,DWORD bytes,DWORD rate,
+                            unsigned same_length_and_rate){
+  unsigned i;
+  char line[240];
+  if(!diag)return;
+  for(i=0;i<source_miss_count;i++)
+    if(source_misses[i].bytes==bytes && source_misses[i].rate==rate)return;
+  if(source_miss_count>=MAX_SOURCE_MISS_LOGS)return;
+  source_misses[source_miss_count].bytes=bytes;
+  source_misses[source_miss_count].rate=rate;
+  source_miss_count++;
+  snprintf(line,sizeof(line),
+    "PKR-AUDIO: SOURCE-MISS reason=%s slot=%d loop=%d pcm_bytes=%lu hz=%lu same_size_rate=%u (native Play unchanged)",
+    same_length_and_rate?"nonstandard-original-wav-header":"no-original-size-rate",
+    slot,!!looping,(unsigned long)bytes,(unsigned long)rate,
+    same_length_and_rate);
+  diag(line);
+}
 int SpiderPKRAudioIndex_TryTailRestore(int slot,IDirectSoundBuffer *buf,int looping){
   DSBCAPS caps;
   WAVEFORMATEX fmt;
   DWORD got=0,status=0,a_len=0,b_len=0;
   uint8_t *a=NULL,*b=NULL;
   WAVSource *source=NULL;
-  unsigned candidates=0,matching_sources=0,i;
+  unsigned candidates=0,matching_sources=0,matching_formats=0,i;
   uint32_t sector_start=0,first_diff=UINT32_MAX,bad_bytes=0,j;
   int changed=0,matched_prefix=0,early_mismatch=0;
   HRESULT result;
@@ -434,11 +460,17 @@ int SpiderPKRAudioIndex_TryTailRestore(int slot,IDirectSoundBuffer *buf,int loop
   }
   /* Only CRC32-verified sources with standard WAV data offset, exact
    * length and rate can qualify for the observed 2048-sector defect. */
-  for(i=0;i<source_count;i++)
-    if(sources[i].header_bytes==44u &&
-       sources[i].pcm_bytes==caps.dwBufferBytes &&
-       sources[i].rate==fmt.nSamplesPerSec)candidates++;
-  if(!candidates)return 0;
+  for(i=0;i<source_count;i++){
+    if(sources[i].pcm_bytes!=caps.dwBufferBytes ||
+       sources[i].rate!=fmt.nSamplesPerSec)continue;
+    matching_formats++;
+    if(sources[i].header_bytes==44u)candidates++;
+  }
+  if(!candidates){
+    log_source_miss(slot,looping,caps.dwBufferBytes,
+                    fmt.nSamplesPerSec,matching_formats);
+    return 0;
+  }
   sector_start=((caps.dwBufferBytes+44u)/2048u)*2048u-44u;
   if(sector_start<MIN_MATCH_BYTES || sector_start>=caps.dwBufferBytes)return 0;
   result=IDirectSoundBuffer_Lock(buf,0,caps.dwBufferBytes,
