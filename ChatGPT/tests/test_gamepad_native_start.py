@@ -102,7 +102,25 @@ def test_runtime_opt_in_does_not_hook_directinput_or_spoof_keyboard():
     assert "ExperimentalGamepadStart" in NATIVE
     assert "ExperimentalGamepadStart" in INI
     assert "SpiderGamepadStart_Init(input_ini,log_line);" in MAIN
+    # The original game's config reload restores joystick settings; touching
+    # Start earlier in initialize_body() makes the change disappear.
+    owner = MAIN.split("static HRESULT WINAPI hooked_create(", 1)[1].split(
+        "static void install_ddraw_hook(", 1
+    )[0]
+    assert owner.index("SpiderCfg_BootstrapGameRead();") < owner.index(
+        "SpiderGamepadStart_Init(input_ini,log_line);"
+    ) < owner.index("original_create(guid,out,iid,outer)")
+    assert "SpiderGamepadStart_Init(" not in MAIN.split(
+        "static DWORD initialize_body(", 1
+    )[1].split("static BOOL CALLBACK core_initialize_once(", 1)[0]
     assert "gamepad_start_native.c" in BUILD
+    # A fresh log must make every attempted Start override traceable;
+    # otherwise a missing INI key looks exactly like an unsuccessful hook.
+    for status in ("GAMEPAD-START: OFF", "GAMEPAD-START: REQUESTED",
+                   "GAMEPAD-START: SCAN", "GAMEPAD-START: SKIPPED",
+                   "GAMEPAD-START: expected two verified controller maps"):
+        assert status in NATIVE
+    assert "g_start_init_attempted" in NATIVE
     assert "found!=2u" in NATIVE
     assert "PAGE_GUARD" in NATIVE and "VirtualQuery" in NATIVE
     assert "supported_exe()" in MAIN
