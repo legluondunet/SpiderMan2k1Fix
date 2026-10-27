@@ -283,6 +283,23 @@ This validates the combat symptom and this in-game audio path,
 configuration. If later use reveals a regression, set
 `ExperimentalAudioPKRTailRestore=0` and restart the game.
 
+## New follow-up: trace the original WAV loading code, without touching the validated playback
+
+The user approved investigating a *root-cause* fix instead of continuing
+with Play-time buffer repair alone. We have not identified the native
+instruction that corrupts last partial 2,048-byte WAV file sectors.
+The missing native implementations of `DXSOUND_CreateDSBuffer`,
+`loadWAV`, and `ParseWavHeader` must be examined in the exact
+supported `SpideyPC.exe`. This is separate from the two **source-level**
+`Heli1.wav` sample defects. A new **static, SHA-gated, read-only**
+Linux helper `ChatGPT/tools/inspect_audio_load_x86.py` disassembles the
+known native sound-code neighborhood and reports bounded candidate
+cross-references and block-size constants. See
+[NATIVE_AUDIO_LOADER_ROOT_CAUSE.md](NATIVE_AUDIO_LOADER_ROOT_CAUSE.md)
+for reproduction commands, verified native function addresses, strict
+limits on causal claims and planned next-stage instrumentation.
+The previous approved runtime repair remains unchanged.
+
 ## Open issue: helicopter loop contains repeated impulses (27 Oct 2026)
 
 After validating the fight sounds by listening, the user identified
