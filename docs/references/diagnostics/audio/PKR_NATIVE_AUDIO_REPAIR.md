@@ -204,6 +204,62 @@ If `matches=0` for the 15,140-byte/16 kHz effect, investigating
 additional source archives or the native loading path becomes
 necessary; guessing the missing waveform is not acceptable.
 
+## Confirmed 4-byte DirectSound allocation and ThugHit2 repair
+
+The subsequent 27 Oct `v1.0.0-7a497fd` log identified the
+R2-07 format (15,140 PCM bytes, 16,000 Hz) as an unambiguous
+**1,024-byte PCM-prefix match** for the original
+`data\\audio/ThugHit2.wav` (15,138 PCM bytes, 16,000 Hz).
+The same event, `PLAY-TRACE n=160` / slot 19, was stopped with
+play cursor 0 before native playback and reported `repaired=0`.
+
+Of 26 previously unmatched length/rate pairs, **25** had one
+original of the **same rate and identical first 1,024 bytes** whose
+length was exactly **2 bytes shorter**. All 25 source lengths are
+`N % 4 == 2`, and all runtime lengths are `N+2`, divisible by 4.
+This is strong evidence of a **native 4-byte buffer-size
+alignment**, although the exact original engine allocation
+instruction has not yet been disassembled. The exception is a
+79,308-byte looping buffer whose short prefix matches two much
+longer sound sources; it is *not* eligible for any repair.
+
+For `ThugHit2.wav`, the PCM mismatch in R2-07 starts at
+`14,292 + 44 = 14,336 = 7 * 2,048`, just as with the
+other repaired original WAVs. The source has 846 PCM bytes after
+this boundary and the padded native buffer has 848 bytes
+(26.5 ms at 16 kHz).
+
+The new draft repair accepts an original only when all the
+existing strict identity and safety conditions hold, plus one
+*specifically constrained* length alternative:
+
+- Runtime buffer is exactly original PCM length, **or**
+  original PCM length is `4k+2` and native buffer length is
+  exactly `N+2`, aligned to 4 bytes.
+- An extra two bytes must not cross into a new 2,048-byte
+  WAV-file sector. The same standard 44-byte header, sample
+  rate, entire matching pre-sector PCM, single unique source,
+  stopped DirectSound buffer and Lock/Unlock checks still apply.
+- The matched original trailing PCM is copied exactly and
+  the **one extra 16-bit sample** is filled with silence
+  (`0x0000`); no source is ever read out of bounds.
+- The existing exact-length repair remains unchanged. The log
+  adds `buffer_bytes` and `pad_bytes` to
+  `TAIL-RESTORED`, so padded repairs are auditable.
+- Arbitrary truncated/sliced loops (including the 79,308-byte
+  example), ambiguous originals, buffers already playing
+  and any earlier PCM mismatch remain untouched.
+
+**This candidate repair has not yet been listening-validated on
+the user's Windows machine**. The next test should verify a
+`TAIL-RESTORED ... ThugHit2.wav pcm_bytes=15138
+buffer_bytes=15140 pad_bytes=2 sector_tail_offset=14292`
+message and compare combat playback against the previous
+corrupted R2-07 sound. A clean log is not proof of audible
+quality; if the candidate has regressions, disable
+`ExperimentalAudioPKRTailRestore=1` (set to `0`) and
+restart the game.
+
 ## Validation boundary
 
 Cross-compilation and regression tests alone cannot establish audio
