@@ -112,6 +112,69 @@ modifies DirectSound, or modifies `data.pkr`; its only output is the
 explicit report path. The PowerShell syntax is also checked in CI,
 independently of the Linux Python helper.
 
+## Major finding from first actual Windows LLVM disassembly (27 Oct 2026)
+
+The user ran the PowerShell probe with `llvm-objdump.exe` and supplied
+`spiderman-audio-root-disassembly.txt` (SHA-verified supported original
+EXE, full native assembly for VA `0x005039D0–0x00504340`).
+
+We can now identify the **native loader and template buffer writer**
+at `0x00503B40`, rather than only the `DXSOUND_Open` voice duplicator:
+
+| Native VA | Original instruction/behavior | Meaning |
+| --- | --- | --- |
+| `0x00503C9C` | `call 0x00504CB0` | opens/accesses original WAV resource, precise contract still to verify |
+| `0x00503CB4` | `call 0x00505170` | writes a length used for allocation and read |
+| `0x00503CBE` | `call 0x0052A227` | allocates memory of that length |
+| `0x00503CC9–0x00503CD3` | `cdq; and edx,0x7ff; add eax,edx; sar eax,0xb` | **signed integer division by 2,048, truncated toward zero** |
+| `0x00503CD8` | `call 0x005051D0` | invokes a **suspected sector-unit read routine** with the truncated quotient and allocated memory destination |
+| `0x00503EBD` | `call [ecx+0x0C]` | native DirectSound `CreateSoundBuffer` for the original/reference/template voice |
+| `0x00503EFF` | `call [ecx+0x2C]` | DirectSound `Lock` |
+| `0x00503F83–0x00503FB2` | `rep movsd; rep movsb` | copies a specified byte length, including any remainder, into one or two locked buffer regions |
+| `0x00503FCD` | `call [eax+0x4C]` | DirectSound `Unlock` |
+| `0x00504152` | `call [eax+0x14]` | `DuplicateSoundBuffer` into game voice |
+
+Crucial distinction: `cdq / and 0x7ff / add / sar 11` is **signed
+division truncated toward zero**, **not ceiling division**. For a positive
+WAV length, the result equals `floor(length / 2048)`. Stack tracking
+shows the same length used immediately for allocation is loaded from
+`[esp+0x30]` before division. The quotient is then pushed as the
+second argument to `0x005051D0`, alongside the allocated destination
+and the resource handle.
+
+This strongly suggests an **incomplete last-block read in the
+game's original WAV resource path**. Independent byte-level forensic
+evidence matches the arithmetic exactly:
+
+| Original WAV | File size (44-byte header + PCM) | `size % 2048` | Byte count restored in native buffer |
+| --- | ---: | ---: | ---: |
+| `Heli1.wav` | 60,524 | **1,132** | **1,132** |
+| `ThugHit2.wav` | 15,182 | **846** | **848** (846 original PCM + 2 alignment bytes) |
+| `traffic2.wav` | 79,350 | **1,526** | **1,528** (1,526 original PCM + 2 alignment bytes) |
+
+The last two examples have a native 4-byte-aligned allocation
+(`PCM+2`) and are therefore expected to differ from the original
+WAV-file remainder by two padding bytes. This explains a previously
+unresolved detail in the data.
+
+**Confidence boundary:** `0x005051D0` has **not yet been disassembled**.
+The 2048 divisor and the observed missing final sector are a very
+strong connection, but do not prove the callee silently ignores the
+partial sector or that the root cause is specifically this callsite
+until its exact read semantics are checked. No root patch, blind count
+round-up, or runtime change has been made.
+
+The **PowerShell tool has been updated** to append a *second*
+read-only disassembly of `0x00504C80–0x00505300`, covering precisely
+the three newly identified callees `0x00504CB0`,
+`0x00505170` and `0x005051D0`. Repeat it on the original EXE and
+inspect the new second section to confirm whether the third
+argument truly represents a block count and how the remainder is
+handled. **Blindly replacing `floor` by `ceil` is not safe**:
+it could make the callee write beyond the allocated buffer, which
+currently holds the original file length, and introduce a heap
+overflow. The safe fix must be based on the actual callee semantics.
+
 ## What will settle the true origin
 
 After examining the exact native instruction sequence, identify and
