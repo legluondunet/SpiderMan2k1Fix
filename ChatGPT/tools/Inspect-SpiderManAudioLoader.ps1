@@ -249,6 +249,35 @@ if ($callCount -eq 0) {
 }
 
 [void]$lines.Add('')
+[void]$lines.Add('FOCUSED RAW x86 E8 CALL CANDIDATES: OTHER WAV LOADER PATHS')
+[void]$lines.Add('Candidates only, not verified instruction boundaries. Search all original .text bytes.')
+$focusTargets = @(
+    [pscustomobject]@{ Name='native 2048-byte sector reader'; Address=[long]0x005051D0 },
+    [pscustomobject]@{ Name='native resource length query'; Address=[long]0x00505170 },
+    [pscustomobject]@{ Name='known 64-entry WAV/template loader'; Address=[long]0x00503B40 }
+)
+foreach ($focus in $focusTargets) {
+    [void]$lines.Add("$($focus.Name), target=$(Format-HexVa $focus.Address)")
+    $foundCount = 0
+    for ($i = 0; $i -le $size - 5; $i++) {
+        if ($exeBytes[$raw+$i] -ne 0xE8) { continue }
+        $rel = [long]([BitConverter]::ToInt32($exeBytes, $raw+$i+1))
+        $callerVa = [long]$textBaseVa + $i
+        $target = $callerVa + 5 + $rel
+        if ($target -lt 0) { $target += 4294967296L }
+        if ($target -ge 4294967296L) { $target -= 4294967296L }
+        if ($target -eq $focus.Address) {
+            $foundCount++
+            if ($foundCount -le 100) {
+                [void]$lines.Add("  caller=$(Format-HexVa $callerVa) target=$(Format-HexVa $target)")
+            }
+        }
+    }
+    [void]$lines.Add("  candidates_found=$foundCount")
+    if ($foundCount -gt 100) { [void]$lines.Add('  [CALL ADDRESS LIST TRUNCATED AT 100]') }
+}
+
+[void]$lines.Add('')
 [void]$lines.Add('NATIVE CODE NEIGHBORHOOD / objdump disassembly')
 [void]$lines.Add("VA $(Format-HexVa $windowStart)-$(Format-HexVa $windowEnd)")
 [void]$lines.Add('Review function boundaries and COM indirect calls manually.')
