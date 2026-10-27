@@ -948,6 +948,96 @@ depend on sound assets visited. Ask the tester for
 subjective audio results to complete Wine validation.
 Leave this PR draft/unmerged.
 
+## Linux/Wine native-loader enabled run — 27 Oct 2026, 18:58
+
+The user then supplied `SpiderMan2k1Fix(20261027-185801).log`,
+the **same binary** `v1.0.0-b100f84` under Wine, with the
+`ExperimentalAudioLoaderTail` opt-in now **active**.
+
+**Result:** `PKR-AUDIO: LOADER-HOOK ARMED` occurred immediately during
+initialization, with no hook-refusal message. This test finally exercises
+the **native root-fix on Linux/Wine** rather than only the prior
+DirectSound pre-Play fallback.
+
+| Metric | Previous Wine run (loader off) | New Wine run (loader on) |
+| --- | ---: | ---: |
+| Native hook `LOADER-HOOK ARMED` | No | **Yes** |
+| Logged native `LOADER-TAIL-RESTORED` | 0 | **96 entries** |
+| Distinct source names among logged native restores | 0 | **94** |
+| Logged original WAV tail bytes loaded at native stage | 0 | **92,040** |
+| Late DirectSound `TAIL-RESTORED` | **100** | **0** |
+| Read-only `FULL-PCM IDENTICAL` | 24 | **62** |
+| Read-only `FULL-PCM DIFF` | 43 | **1** |
+| Native `LOADER-SKIP-NO-UNIQUE-SOURCE` | n/a | **6** |
+| `LOADER-SKIP-REMAINDER-MISMATCH` | n/a | **0** |
+| CRC-valid WAV source records | 656/656 | **656/656** |
+| Native 3D return-to-menu teardown | successful | **successful** |
+
+**Logging cap:** `pkr_audio_loader.c` logs at most the first **96**
+successful native load-time restorations via `MAX_LOADER_DIAG`.
+Thus 96 is the number **visible**, not a confirmed exact cumulative
+count for the whole session. There are 94 distinct names among these
+logged entries; `grenade1.wav` and `gunbutt.wav` appear twice.
+Likewise 92,040 is the sum of *logged* remainder sizes, not the
+necessarily complete lifetime total. This session contains ~7,922
+DirectDraw Flips, while the prior Wine run has >14,000, so counts
+should not be mistaken for speed/performance benchmarks.
+
+The sole `FULL-PCM DIFF` was **four bytes** in a duplicated
+`Heli1.wav` voice at original PCM offsets 24190 and 24219:
+it corresponds exactly to the two intentional Heli1 sample
+replacement positions 12095 and 12109 (two 16-bit samples). It is
+**not** a loader-tail regression. The independently opted-in Heli1
+declick was applied twice in the run.
+
+### Remaining six skipped native resources: important distinction
+
+Three repeated skips involve a **20-byte final tail** with
+`total_bytes=18452`, `complete_bytes=18432`,
+`data_chunk_bytes=18364`. PCM ends at offset
+`44+18364=18408`, **24 bytes BEFORE** the complete-sector limit,
+so **only non-PCM metadata** is missing and skipping is safe as
+far as audible content is concerned.
+
+However, three newly encountered skip events **require further
+investigation**:
+
+- Two encounters of `total_bytes=59852`, `complete_bytes=59392`,
+  `remainder=460`, `data_chunk_bytes=59808`.
+  PCM ends at `44+59808=59852`, so all **460** skipped bytes
+  could contain PCM, rather than trailer metadata.
+- One encounter of `total_bytes=10180`, `complete_bytes=8192`,
+  `remainder=1988`, `data_chunk_bytes=10136`.
+  PCM ends at `44+10136=10180`, so all **1,988** skipped bytes
+  could contain PCM.
+
+Both have RIFF/WAVE at offset 0 and self-consistent RIFF length.
+`SKIP-NO-UNIQUE-SOURCE` means there was **no unique exact
+CRC-verified candidate in the current `data.pkr` WAV index**.
+This could be an asset outside the indexed WAV sources or an
+ambiguous candidate; the existing trace cannot distinguish those
+cases or identify original filenames. The loader correctly
+**refused to guess or patch bytes**. There were **zero** late
+DirectSound repairs recorded, but this does not prove these
+three loads never affected playback. An enhanced **read-only
+source-identification probe** would be the safe follow-up.
+Do not relax unique-source/memory-integrity gates without proof.
+
+**Runtime:** The original game completed a 3D gameplay session
+and returned through native controller-7 cleanup to the menu,
+without any reported process crash or audio API failure.
+**Audible subjective quality for this new Wine run has not
+yet been reported by the user.** Their earlier confirmation
+of zero crackles applies to the **old** fallback-only Wine
+run, and must not be represented as a listening test
+of the new loader code.
+
+**Decision:** This run provides strong technical validation
+of the native WAV root-fix **under Wine**. It does **not yet
+prove complete coverage**, because of the two distinct
+unidentified PCM-bearing WAV lengths and pending subjective
+listening. Leave fallback enabled and PR #67 **draft/unmerged**.
+
 ## Archived investigation plan (before native root cause was identified)
 
 The following was the former diagnostic plan, retained as historical context. The exact responsible instruction has since been established and the native loader correction validated in the Windows session above.
