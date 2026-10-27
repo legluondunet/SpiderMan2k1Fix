@@ -150,6 +150,40 @@ after reproducing a few combat artifacts. Future diagnosis should
 correlate cursor and status transitions with an audible repro, and
 must not assume a nonzero cursor alone proves a defect.
 
+## Residual combat PCM example: R2-07
+
+An earlier native DirectSound buffer capture,
+`SpiderMan2k1Fix-CombatPCM-R2-07.wav`, is mono 16-bit PCM at
+16,000 Hz, with 15,140 PCM bytes (0.473125 s). It contains an abrupt
+new waveform beginning at **PCM byte 14,292** (0.446625 s), which
+corresponds to WAV-file offset **14,336 = 7 * 2,048**. The last 848
+file bytes (424 samples; 26.5 ms) are affected. The sample therefore
+supports **additional last-partial-sector corruption before playback**,
+not solely an incorrect DirectSound play cursor.
+
+In the user's 2026-10-27 `v1.0.0-76f862d` log, two native plays
+(`PLAY-TRACE n=145`, slot 27; `n=170`, slot 30) report the same
+PCM length and sample rate with `repaired=0`. Both buffers were
+stopped and had play cursor zero at launch. Size/rate alone does **not**
+prove either is the same original audio as R2-07.
+
+The existing restore path returned silently when no CRC-verified
+original had the same PCM length, sample rate, and a **44-byte
+WAV header**, even though other known effects were repaired.
+Read-only, bounded, deduplicated telemetry now explains this case:
+
+```text
+PKR-AUDIO: SOURCE-MISS reason=no-original-size-rate ... pcm_bytes=15140 hz=16000 same_size_rate=0
+PKR-AUDIO: SOURCE-MISS reason=nonstandard-original-wav-header ... pcm_bytes=15140 hz=16000 same_size_rate=N
+```
+
+These are **illustrative possible messages**, not observed results.
+Each distinct length/rate pair is reported at most once, with a
+96-pair limit. No unmatched audio is changed. The next Windows/Wine
+test must determine which reason actually occurs; do not fill an
+unidentified tail with guessed samples, or incorrectly declare a
+play-cursor repair.
+
 ## Validation boundary
 
 Cross-compilation and regression tests alone cannot establish audio
