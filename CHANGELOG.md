@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — native save-dialog title spacing (awaiting runtime validation)
+
+- Investigating widely separated characters in the original `SAVE GAME PROGRESS ?` confirmation heading under widescreen Auto.
+- Expand the native ESC 4:3 font-glyph eligibility only in the heading row, preserving the original central bounds for NO/YES and other menu choices. Existing owner/texture/depth/same-frame guards and classic 4:3 behavior remain unchanged.
+- Add host-compiled C geometry tests covering 16:9, 16:10 and unrelated HUD/edge cases. In-game Windows and Wine visual validation is still required; this change is **not yet released**.
+
 ## 1.1.0 — October 27, 2026
 
 - Identified the root cause of audio crackling in the original game: its native WAV loader reads only complete 2,048-byte PKR resource sectors and omits the final partial sector.
