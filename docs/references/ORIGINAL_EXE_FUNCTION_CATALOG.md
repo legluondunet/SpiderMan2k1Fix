@@ -86,6 +86,26 @@ Primary sources: [DEVELOPMENT.md](../DEVELOPMENT.md), [original native exit disa
 | **RVA** `0x0010A1DC`, `0x0010A62B` | Original **F9 screenshot call sites** (VAs `0x0050A1DC` / `0x0050A62B`). | S. They are code sites, not two different screenshot functions. See [F9 analysis](F9_PNG_CAPTURE.md). |
 | `Spidey.cfg` raw **252-byte layout** | Original resolution/brightness, eleven DIK bindings, seven joystick button bindings, audio and stereo fields. | S + project INI translation. See [recovered byte offsets](../DEVELOPMENT.md#86-recovered-binary-layout-of-spideycfg-252-bytes). **Joystick directional bytes `0x40`–`0x4C` are undecoded**; don't assign guessed meanings. |
 
+## 5. Original WAV loader, resource reader, and game-owned DirectSound voices
+
+For the full **instruction-backed** cause and safety context, see the [audio reverse-engineering map](diagnostics/audio/ORIGINAL_AUDIO_FUNCTIONS_AND_WAV_BUG.md) and its [chronological disassembly evidence](diagnostics/audio/NATIVE_AUDIO_LOADER_ROOT_CAUSE.md). The address types below are deliberately distinguished.
+
+| Original VA / site | Analyst-described role | Evidence / limits |
+| --- | --- | --- |
+| `0x00503B40` | Native **64-reference-WAV template-buffer loader**. | S + Wine. The **bugged** path: reads only complete 2,048-byte resource sectors; downstream DirectSound creation is not the cause of the missing tail. |
+| `0x00503C9C → 0x00504CB0` | Opens/accesses resource while loading WAV. | S. Complete high-level resource handle/open contract remains only partly decoded. |
+| `0x00503CB4 → 0x00505170` | Queries original full resource length, then used for allocation. | S. Function callee is distinct from this **CALL** site. |
+| `0x00503CBE → 0x0052A227` | Allocates original-length WAV staging memory. | S. |
+| `0x00503CC9–0x00503CD3` | Integer division by 2,048 **rounded down**. | S+R. **Confirmed missing-tail root cause**, not a function name. |
+| `0x00503CD8 → 0x005051D0` | Native PKR read requested for only full blocks. | S+R. The **reader** uses blocks × 2,048, clamps at resource end and supports a short final sector *if requested*. |
+| `0x00503EBD`, `0x00503EFF`, `0x00503F83–0x00503FB2`, `0x00503FCD` | Original DirectSound `CreateSoundBuffer`, `Lock`, buffer data copy, `Unlock` sites. | S. Downstream of the original incomplete PKR read. |
+| `0x00430A40` | Generic resource transfer function; **handles** partial final blocks with a scratch buffer. | S. Not established as a second WAV/DirectSound template builder; **do not patch** this path for the WAV defect. |
+| `0x004FBDC0` | Sound-bank selection/lookup helper. | S. Separate from `0x005051D0` sector reader. |
+| `0x005039F0`, `[0x006BBD50]` | Initialize and hold 32 game-owned secondary voice records × 12 bytes. | S+R. **32 voices** versus **64 reference templates**. |
+| `0x004727F9 → 0x00504110` | Native voice/reference-buffer duplication (§`DuplicateSoundBuffer` callsite `0x00504152`§). | S. |
+| `0x00504230` / `0x005042A0` | Native DirectSound voice Play / Stop routines. | S+R. Distinct from the WAV loader's earlier sector truncation. |
+| `0x00504420` | Native voice-status/busy routine used in a separate hypothesis about LOOPING vs PLAYING. | S. Historical [PR #65](https://github.com/legluondunet/SpiderMan2k1Fix/pull/65) was **closed unmerged**; the hypothesis is **not** proof of the WAV bug's cause. |
+
 ## Unresolved reverse-engineering questions
 
 1. The original **disc-check function's complete body**, every original status/failure path, and any other retail-EXE variant are not reconstructed.
