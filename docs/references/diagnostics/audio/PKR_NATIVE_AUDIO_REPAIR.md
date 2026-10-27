@@ -67,14 +67,17 @@ There is no required external `Swing5.wav` test file.
    compares full buffers (up to two times per source) for diagnostics.
 4. Before native Play, only if the original secondary DirectSound
    buffer is **stopped**, identify a unique CRC-validated original WAV
-   by format, sample rate, exact size and **every PCM byte before the
-   final incomplete 2,048-byte file sector**. Sources with a
-   non-44-byte data offset, ambiguous match or earlier mismatches
+   by format, sample rate, original PCM size (or its strictly validated
+   4-byte-aligned **+2-byte native allocation**) and **every PCM byte
+   before the final incomplete 2,048-byte file sector**. Sources with
+   a non-44-byte data offset, ambiguous match or earlier mismatches
    are never modified.
 5. The corrupted final partial sector can start with some intact
    bytes. Find the *actual first differing byte anywhere inside that
    final sector*, then restore only the remaining suffix, under a
-   single native buffer Lock/Unlock.
+   single native buffer Lock/Unlock. Where the native allocation has
+   exactly two extra alignment bytes, fill that one PCM16 sample
+   with silence rather than reading beyond the original data.
 6. **Always call the game's original DXSOUND_Play**. The game retains
    its usual DirectSound voice allocation, IsPlaying, looping, stop,
    stereo balance, volume, pitch and focus behavior.
