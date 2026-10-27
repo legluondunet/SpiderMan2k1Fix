@@ -22,17 +22,32 @@ jobs:
       - name: Check out sources
         uses: actions/checkout@v4
 
-      - name: Install MinGW-w64 and binary inspection tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-i686 binutils-mingw-w64-i686 python3-pytest
+      - name: Configure Python for regression tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install regression test runner
+        run: python -m pip install --disable-pip-version-check pytest
 
       - name: Run regression tests
-        run: |
-          python3 -m pytest -q ChatGPT/tests
+        run: python3 -m pytest -q ChatGPT/tests
 
-      - name: Build Windows x86 DLLs
-        run: bash ./build.sh
+      - name: Parse PowerShell native audio loader probe
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          $path = (Resolve-Path 'ChatGPT/tools/Inspect-SpiderManAudioLoader.ps1').Path
+          [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -ne 0) {
+            $parseErrors | Format-List | Out-String | Write-Error
+            exit 1
+          }
+          Write-Host 'PowerShell audio loader script syntax validated.'
+
+      - name: Build Windows x86 DLLs (portable LLVM-MinGW MSVCRT)
+        run: bash ./build-native-msvcrt.sh
 
       - name: Prepare game installation files
         run: |

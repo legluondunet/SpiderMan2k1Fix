@@ -57,4 +57,4 @@ echo 'COMPILER:'
 "$compiler" --version | head -n 1
 printf 'CRT: msvcrt (portable llvm-mingw %s)\n' "$version"
 echo 'BUILD: Windows x86 / PE32'
-CC="$compiler" ./build.sh
+CC="$compiler" bash ./build.sh
