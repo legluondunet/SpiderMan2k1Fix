@@ -706,17 +706,38 @@ difference, or another loader-length discrepancy.
 No file contents or archive bytes have been modified.
 
 **Next decisive diagnostic (not another huge COM scan):**
-when the original `0x00503B40` native loader calls the
-length/read wrappers, optionally capture **read-only**,
-signature-guarded diagnostic data for a bounded SKIP:
-total WAV/resource length, whether staging bytes
-start with `RIFF` (or have RIFF at offset 44),
-WAV format/chunk offsets, and a CRC-verified
-candidate identified from pre-sector PCM. Crucially:
-do not copy any unverified remainder, do not modify
-`data.pkr`, and keep existing loader and Play-time
-repairs until a specific identity is proven and
-tested on Windows AND Linux/Wine.
+The existing, strictly **opt-in and x86-signature-gated**
+native loader now logs an additional bounded, **read-only**
+`PKR-AUDIO: LOADER-SKIP-DETAIL` line, but ONLY after
+`LOADER-SKIP-NO-UNIQUE-SOURCE` and ONLY for the already
+successfully read in-bounds full WAV file sector bytes.
+No new hook or default option is required. This record
+includes the original native resource `total_bytes`,
+`complete_bytes`, `remainder`, `riff_at_0`,
+`riff_at_44`, `riff_declared_bytes`,
+`data_chunk_bytes`, and `riff_excess_bytes` =
+actual resource length minus the RIFF-declared length
+(if a bounded RIFF header can be recognized).
+It does not allocate, seek, issue extra sector reads,
+touch the source archive, or modify the input bytes.
+
+**Decisive next test:** use the newly built Windows x86 DLL
+(with `ExperimentalAudioLoaderTail=1` as previously tested)
+and upload one complete new game log after playing
+the same sequence. If the ten numeric skip matches
+show `riff_excess_bytes=44` and actual `total_bytes`
+equal to the original-source `PCM_bytes+88` for
+each uniquely matching sound, we will have substantially
+stronger evidence for an extra 44 bytes *outside*
+the RIFF-declared WAV data. If `riff_at_0` is false
+or `riff_excess_bytes` differs, revisit the hypothesis.
+Do not assign a source name on modulo-2048 match alone;
+absolute lengths, headers and source PCM should agree.
+
+Crucially, do not copy any unverified remainder, do not
+modify `data.pkr`, and keep existing loader and Play-time
+repairs until identity is proven and validated on
+Windows and Linux/Wine.
 
 ## What will settle the true origin
 
