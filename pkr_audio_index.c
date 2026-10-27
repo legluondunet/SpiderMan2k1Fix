@@ -38,6 +38,8 @@
 #define MAX_PCM_CACHE (128u*1024u*1024u)
 #define MIN_MATCH_BYTES 1024u
 #define MAX_LOG_MATCHES 192u
+#define MAX_FULL_COMPARE_BYTES (1024u*1024u)
+#define MAX_FULL_COMPARE_LOGS 256u
 
 typedef struct {
   char dir[33];
@@ -51,10 +53,11 @@ typedef struct {
   uint8_t *pcm;
   uint32_t pcm_bytes,rate;
   unsigned reports;
+  unsigned full_checks;
 } WAVSource;
 
 static WAVSource *sources=NULL;
-static unsigned source_count=0,index_ready=0,reports=0;
+static unsigned source_count=0,index_ready=0,reports=0,full_reports=0;
 static void (*diag)(const char *)=NULL;
 static unsigned loaded_bytes=0;
 
@@ -293,17 +296,60 @@ void SpiderPKRAudioIndex_Probe(int slot,IDirectSoundBuffer *buf,int looping){
     }
   }
   hr=IDirectSoundBuffer_Unlock(buf,first,size1,second,size2);
-  if(FAILED(hr) || !winner || reports>=MAX_LOG_MATCHES)return;
-  /* Log distinct source files rather than the same frequent footstep or
-   * swing dozens of times. This keeps the later helicopter/boss effects
-   * in the same playthrough observable without an unbounded logfile. */
-  if(winner->reports++)return;
-  reports++;
-  snprintf(line,sizeof(line),
-    "PKR-AUDIO: %s slot=%d loop=%d original=%s/%s bytes=%lu hz=%lu matching_prefix=1024 candidates=%u (READ-ONLY)",
-    (matches<=2)?"MATCH":"AMBIGUOUS",
-    slot,!!looping,winner->dir,winner->name,
-    (unsigned long)winner->pcm_bytes,(unsigned long)winner->rate,
-    (matches>0)?matches-1u:0u);
-  if(diag)diag(line);
+  if(FAILED(hr) || !winner)return;
+  /* Preflight matches==1 means some length+rate candidate exists.
+   * Exactly one prefix match raises matches to 2; higher is ambiguous. */
+  if(winner->reports++==0 && reports<MAX_LOG_MATCHES){
+    reports++;
+    snprintf(line,sizeof(line),
+      "PKR-AUDIO: %s slot=%d loop=%d original=%s/%s bytes=%lu hz=%lu matching_prefix=1024 candidates=%u (READ-ONLY)",
+      (matches==2)?"MATCH":"AMBIGUOUS",
+      slot,!!looping,winner->dir,winner->name,
+      (unsigned long)winner->pcm_bytes,(unsigned long)winner->rate,
+      (matches>0)?matches-1u:0u);
+    if(diag)diag(line);
+  }
+  /* Read-only, source-exact FULL PCM verification, never trust a prefix
+   * for a replacement decision. Bound both bytes/time and reporting.
+   * Sample at most twice per distinct source to detect variable tails. */
+  if(matches==2 && winner->full_checks<2u &&
+     full_reports<MAX_FULL_COMPARE_LOGS &&
+     winner->pcm_bytes<=MAX_FULL_COMPARE_BYTES){
+    DWORD a=0,b=0;
+    BYTE *p=NULL,*q=NULL;
+    uint32_t pos,first_bad=UINT32_MAX,last_bad=0,bad_count=0;
+    HRESULT unlocked;
+    hr=IDirectSoundBuffer_Lock(buf,0,winner->pcm_bytes,
+                               (void**)&p,&a,(void**)&q,&b,0);
+    if(FAILED(hr))return;
+    if(p && a+b==winner->pcm_bytes && (!b || q)){
+      for(pos=0;pos<winner->pcm_bytes;pos++){
+        uint8_t live=(pos<a)?p[pos]:q[pos-a];
+        if(live!=winner->pcm[pos]){
+          if(first_bad==UINT32_MAX)first_bad=pos;
+          last_bad=pos;
+          bad_count++;
+        }
+      }
+    }else first_bad=UINT32_MAX-1u;
+    unlocked=IDirectSoundBuffer_Unlock(buf,p,a,q,b);
+    if(FAILED(unlocked) || first_bad==UINT32_MAX-1u)return;
+    winner->full_checks++;
+    full_reports++;
+    if(first_bad==UINT32_MAX){
+      snprintf(line,sizeof(line),
+        "PKR-AUDIO: FULL-PCM IDENTICAL source=%s/%s slot=%d loop=%d bytes=%lu compare=%u/2 (READ-ONLY)",
+        winner->dir,winner->name,slot,!!looping,
+        (unsigned long)winner->pcm_bytes,winner->full_checks);
+    }else{
+      snprintf(line,sizeof(line),
+        "PKR-AUDIO: FULL-PCM DIFF source=%s/%s slot=%d loop=%d bytes=%lu first_diff=%lu last_diff=%lu mismatched_bytes=%lu first_mod_2048=%lu compare=%u/2 (READ-ONLY)",
+        winner->dir,winner->name,slot,!!looping,
+        (unsigned long)winner->pcm_bytes,
+        (unsigned long)first_bad,(unsigned long)last_bad,
+        (unsigned long)bad_count,(unsigned long)(first_bad%2048u),
+        winner->full_checks);
+    }
+    if(diag)diag(line);
+  }
 }
