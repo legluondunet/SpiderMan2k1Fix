@@ -187,7 +187,13 @@ def inspect(blob: bytes, exe: Path, out: Path) -> str:
              "  IDirectSoundBuffer::Lock +0x2C; Unlock +0x4C",
              "Offset appearance alone does NOT prove a DirectSound COM invocation.",
              "",
-             disassemble(exe, WINDOW_START, WINDOW_END)]
+             disassemble(exe, WINDOW_START, WINDOW_END),
+             "",
+             "FOLLOW-UP NATIVE RESOURCE READER CALLEES: disassembly",
+             "VA 0x00504C80-0x00505300; contains calls to 0x504CB0, 0x505170, 0x5051D0.",
+             "A floor(size/2048) quotient is passed to 0x5051D0 from the native loader;",
+             "this is a high-confidence incomplete-last-sector suspect, not yet a proven API contract.",
+             disassemble(exe, 0x00504C80, 0x00505300)]
     report = "\n".join(rows) + "\n"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report, encoding="utf-8")
