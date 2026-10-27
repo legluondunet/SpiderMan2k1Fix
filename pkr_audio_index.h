@@ -8,11 +8,6 @@
  * NO audio replacement, data mutations, or game-owned PKR calls. */
 void SpiderPKRAudioIndex_Init(void (*logger)(const char*),int enabled);
 void SpiderPKRAudioIndex_Probe(int slot,IDirectSoundBuffer *buffer,int looping);
-/* Separate opt-in: restore ONLY a source-identified, verified corrupt
- * trailing partial 2048-byte WAV sector inside a non-playing DS buffer.
- * Original game and all other audio semantics remain native DirectSound. */
-void SpiderPKRAudioIndex_EnableTailRestore(int enabled);
-int SpiderPKRAudioIndex_TryTailRestore(int slot,IDirectSoundBuffer *buffer,int looping);
 /* Experimental, OFF by default: correct two proven rogue PCM16 samples
  * in uniquely identified original Heli1.wav, stopped secondary buffer. */
 void SpiderPKRAudioIndex_EnableHeli1Declick(int enabled);
