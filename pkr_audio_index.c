@@ -506,6 +506,46 @@ const unsigned char *SpiderPKRAudioIndex_ExpectedLoaderWavTail(
   return match->raw+complete_bytes; /* full exact remainder, incl. metadata */
 }
 
+
+/* Strictly forensic: explain why a native WAV read cannot be matched to
+ * the independently CRC-verified source index. Read at most the already
+ * loaded prefix in the game's allocated WAV staging buffer; DO NOT read
+ * past complete_bytes, access the game's resource handle, or change the
+ * original source-matching gates. A first-sector hint is NOT proof of
+ * identity and must never authorize a correction. */
+void SpiderPKRAudioIndex_DescribeLoaderSkip(
+    const unsigned char *wav,unsigned complete_bytes,unsigned total_bytes,
+    char *out,unsigned out_capacity){
+  unsigned i,same_size=0,head2048=0,full_prefix=0;
+  const WAVSource *head_hint=NULL,*full_hint=NULL;
+  if(!out||!out_capacity)return;
+  out[0]=0;
+  if(!index_ready||!wav||complete_bytes<2048u||
+     complete_bytes>total_bytes){
+    snprintf(out,out_capacity,"index_unavailable=1");
+    return;
+  }
+  for(i=0;i<source_count;i++){
+    const WAVSource *w=&sources[i];
+    if(!w->raw)continue;
+    if(w->raw_bytes==total_bytes)same_size++;
+    if(w->raw_bytes>=2048u &&
+       memcmp(w->raw,wav,2048u)==0){
+      if(++head2048==1u)head_hint=w;
+    }
+    if(w->raw_bytes==total_bytes &&
+       w->raw_bytes>=complete_bytes &&
+       memcmp(w->raw,wav,complete_bytes)==0){
+      if(++full_prefix==1u)full_hint=w;
+    }
+  }
+  snprintf(out,out_capacity,
+    "indexed=%u same_size=%u head2048=%u full_prefix=%u head_hint=%s full_hint=%s",
+    source_count,same_size,head2048,full_prefix,
+    head2048==1u && head_hint?head_hint->name:"-",
+    full_prefix==1u && full_hint?full_hint->name:"-");
+}
+
 void SpiderPKRAudioIndex_EnableTailRestore(int enabled){
   tail_restore_enabled=(enabled==1 && index_ready);
   if(tail_restore_enabled && diag)
