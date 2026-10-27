@@ -125,6 +125,10 @@ static void __cdecl maybe_play_sdl3(int slot,int looping){
       log_fn(line);
     }
   }
+  /* Keep Swing5's independently verified SDL3 path first. All other
+   * sounds retain native Play, optionally with just the proven damaged
+   * partial-2048-byte sector sourced from the CRC-verified original WAV. */
+  SpiderPKRAudioIndex_TryTailRestore(slot,buf,looping);
   GAME_PLAY(slot,looping); /* Fail OPEN for all unmatched/failed cases. */
 }
 /* Install Stop detour first: never start redirecting audio until native
