@@ -59,11 +59,33 @@ Successfully tested on Windows 11 and Linux/Wine.
 The following issues are inherited from the original game and remain unresolved:
 
 - **FPS-dependent gameplay:** Certain bosses and levels may not work correctly at 30 FPS. Set `FPSLimit=20` in the INI file when needed.
-- **Audio issues:** The original game may exhibit sound glitches, including crackling and other playback artifacts.
+- **Audio issues:** The original game may exhibit crackling and other playback artifacts. An experimental native DirectSound repair in the current development PR greatly reduces PCM tail corruption, but occasional glitches during fights are still being investigated.
 
 ## Known Issue in SpiderMan2k1Fix
 
 - **Delayed pause under Wine:** The automatic pause triggered by loss of focus may occasionally activate with a delay. This issue remains unresolved.
+
+## Experimental native audio repair (development branch only)
+
+The draft audio fix automatically compares the original WAVs inside the game
+`data.pkr` archive with the game's DirectSound buffers. It can restore
+corrupted last-block PCM data while retaining **the game's original audio
+engine**. No SDL3 DLL or external WAV copy is needed.
+
+To opt in, add to `SpiderMan2k1Fix.ini`:
+
+```ini
+[Debug]
+Log=1
+ExperimentalPKRAudioIndex=1
+ExperimentalAudioPKRTailRestore=1
+```
+
+Both switches default to off. The repair has been tested by ear for
+`Swing5.wav` and dramatically improves the broader game audio, although
+occasional fight-sound artifacts remain. For an A/B comparison set
+`ExperimentalAudioPKRTailRestore=0` and restart. This feature is
+**not** yet part of the published stable release.
 
 ## Installation on Windows and Linux (Wine)
 
