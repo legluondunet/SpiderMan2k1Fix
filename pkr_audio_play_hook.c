@@ -10,6 +10,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define COBJMACROS
 #include <windows.h>
+#include <mmsystem.h>
 #include <dsound.h>
 #include <stdint.h>
 #include <string.h>
