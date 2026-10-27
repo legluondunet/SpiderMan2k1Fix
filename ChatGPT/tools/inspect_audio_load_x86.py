@@ -193,7 +193,12 @@ def inspect(blob: bytes, exe: Path, out: Path) -> str:
              "VA 0x00504C80-0x00505300; contains calls to 0x504CB0, 0x505170, 0x5051D0.",
              "A floor(size/2048) quotient is passed to 0x5051D0 from the native loader;",
              "this is a high-confidence incomplete-last-sector suspect, not yet a proven API contract.",
-             disassemble(exe, 0x00504C80, 0x00505300)]
+             disassemble(exe, 0x00504C80, 0x00505300),
+             "",
+             "ALTERNATIVE RESOURCE READER CALL CANDIDATES: disassembly",
+             "VA 0x00430800-0x00430DC0; contains xrefs 0x430A21, 0x430B23, 0x430B52, 0x430B9E.",
+             "This may be a distinct resource read path; WAV usage not yet proven.",
+             disassemble(exe, 0x00430800, 0x00430DC0)]
     report = "\n".join(rows) + "\n"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report, encoding="utf-8")
