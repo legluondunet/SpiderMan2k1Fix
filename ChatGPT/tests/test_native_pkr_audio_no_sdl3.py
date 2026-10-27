@@ -41,7 +41,7 @@ def test_verified_original_callsite_and_preserved_playback_semantics():
     assert HOOK.count('NATIVE_PLAY(slot,looping);')==1
     assert 'SpiderPKRAudioIndex_Probe(slot,buffer,looping)' in HOOK
     assert 'SpiderPKRAudioIndex_TryTailRestore(slot,buffer,looping)' in HOOK
-    assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_tail_restore||pkr_play_trace,pkr_play_trace)' in MAIN
+    assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_tail_restore||pkr_play_trace||pkr_heli_declick,pkr_play_trace)' in MAIN
     assert 'SpiderPKRAudioIndex_EnableTailRestore(pkr_tail_restore)' in MAIN
     assert 'SpiderSDL3' not in MAIN
     assert 'DXSOUND_Stop' not in HOOK
@@ -53,7 +53,7 @@ def test_native_settings_default_off_and_obsolete_keys_removed():
     assert '"ExperimentalSDL3' not in INI
     assert 'GetPrivateProfileIntA("Debug","ExperimentalPKRAudioIndex",0,ini)==1' in MAIN
     assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioPKRTailRestore",0,ini)==1' in MAIN
-    assert 'SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_tail_restore||pkr_heli_dump)' in MAIN
+    assert 'SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_tail_restore||pkr_heli_dump||pkr_heli_declick)' in MAIN
     assert 'tail_restore_enabled=(enabled==1 && index_ready)' in INDEX
     assert 'PKR-AUDIO: PLAY-HOOK INSTALLED' in HOOK
     assert 'PKR-AUDIO: TAIL-SKIP reason=%s' in INDEX
