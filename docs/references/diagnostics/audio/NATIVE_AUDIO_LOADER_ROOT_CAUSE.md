@@ -739,6 +739,99 @@ modify `data.pkr`, and keep existing loader and Play-time
 repairs until identity is proven and validated on
 Windows and Linux/Wine.
 
+## Confirmed: skipped native WAVs have valid RIFF trailers (Windows 27 Oct 11:45 log)
+
+The user retested with the **first read-only RIFF header telemetry**
+(`SpiderMan2k1Fix(20261027-114503).log`). We now have an
+unambiguous structural explanation for the strict-loader SKIPs.
+
+**Measured:**
+- The SHA-verified game successfully armed both original audio fixes.
+- **64** `LOADER-TAIL-RESTORED` events as before; strict old matcher
+  rejects **27** other WAV loads.
+- **27/27** rejects have `riff_at_0=1`, `riff_at_44=0`,
+  and `riff_declared_bytes == total_bytes`
+  (`riff_excess_bytes=0`). Original RIFF files are
+  **not oversized beyond the RIFF-declared boundary**.
+- **25/27** have `total_bytes == data_chunk_bytes + 88`;
+  **2/27** have `total_bytes == data_chunk_bytes + 234`.
+  Crucially, `data` is still at standard WAV offset 36,
+  so the PCM starts at offset 44. The original WAV contains
+  **44 or 190 additional bytes following the PCM data within RIFF**.
+  The archive reader already accepts extra RIFF chunks.
+- **13/13** later Play-time `TAIL-RESTORED` sounds have a
+  **distinct SKIP event with the exact same `data_chunk_bytes`**
+  (11 with 44 trailing bytes, and two with 190).
+
+| Late-restored WAV | PCM bytes | Native WAV total | Bytes after PCM |
+| --- | ---: | ---: | ---: |
+| `PickConf.wav` | 43746 | 43834 | 44 |
+| `achum.wav` | 32960 | 33194 | 190 |
+| `Crawl1.wav` | 23058 | 23146 | 44 |
+| `Crawl2.wav` | 19254 | 19342 | 44 |
+| `catland3.wav` | 11798 | 11886 | 44 |
+| `Swing5.wav` | 32632 | 32720 | 44 |
+| `WebShot10.wav` | 18762 | 18850 | 44 |
+| `WebShot3.wav` | 15596 | 15684 | 44 |
+| `WebShot11.wav` | 13852 | 13940 | 44 |
+| `tingle2.wav` | 56926 | 57160 | 190 |
+| `h_hitfloor.wav` | 18578 | 18666 | 44 |
+| `Pistol1.wav` | 29922 | 30010 | 44 |
+| `Pistol2.wav` | 22486 | 22574 | 44 |
+
+This **corrects the previous hypothesis**: the extra 44 bytes
+do not represent a second leading 44-byte WAV header or an
+oversized RIFF file. They are bytes AFTER the data chunk,
+inside the declared RIFF container. All sources were already
+CRC-verified by the plugin's RIFF chunk parser; the overly strict
+`SpiderPKRAudioIndex_ExpectedLoaderWavTail` had the outdated
+assumption `total_bytes = 44 + PCM_length`.
+This also explains **both previously unmatched** samples
+(`achum` and `tingle2`) and the extra
+`catland3` heard in the new session.
+
+### Opt-in native-loader full-RIFF fix prepared; runtime NOT yet validated
+
+The branch now retains each original **complete** verified WAV
+allocation instead of allocating and copying only its PCM.
+`WAVSource.raw` owns the same CRC-verified allocation;
+`WAVSource.pcm` aliases the verified data chunk, so
+the independent PCM matching/Play-time fallback retain
+their existing semantics. The original PCM cache byte counter
+remains PCM-only; the 128-MiB cache cap instead includes all
+retained RAW WAV bytes.
+
+The native loader candidate is accepted ONLY if:
+1. the game already read the full-sector prefix successfully,
+   the original RIFF declares exactly the allocated native length,
+   and the SHA/signature/opt-in guards still pass;
+2. exactly ONE independent CRC-verified original WAV has the
+   **same total RIFF length** and an **exact bytewise match of
+   ALL complete 2048-byte sectors**, including WAV header,
+   PCM prefix, and any metadata;
+3. the PCM data end extends **beyond** the complete-sector boundary.
+   We intentionally do NOT modify metadata-only last sectors;
+4. the extra native PKR reader call for one private scratch
+   sector succeeds and its remaining bytes exactly match the
+   independent verified original WAV bytes, including metadata.
+
+Only then copy the exact remaining bytes into the game's
+already-allocated native WAV staging buffer. The native
+reader and COM/DirectSound path remain unchanged.
+**No changes** to `data.pkr`, native game binary, or the
+separate stopped-DirectSound Play-time fallback; nothing
+new is enabled by default.
+
+**Next test:** the latest Windows x86 DLL from CI with
+`ExperimentalAudioLoaderTail=1`,
+`ExperimentalAudioPKRTailRestore=1`. Verify 13
+named native `LOADER-TAIL-RESTORED` messages and
+fewer or zero late `TAIL-RESTORED` events on the
+same game sequence. This is predicted, **not yet proven**.
+If any remain, preserve the fallback and inspect the log
+before changing anything else. Independent Linux/Wine
+listening confirmation remains required.
+
 ## What will settle the true origin
 
 After examining the exact native instruction sequence, identify and
