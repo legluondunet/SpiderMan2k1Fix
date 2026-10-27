@@ -609,6 +609,115 @@ tail restores and the verified loader fix intact.
 The user heard no artifacts on their Windows session;
 Linux/Wine listening validation is still planned.
 
+## DirectInput/graphics vtable false positives eliminated; new 44-byte skip correlation
+
+The user supplied the original, SHA-256 verified
+`spiderman-audio-com-interfaces.txt` (~7,271 lines) on 27 Oct 2026.
+The three latest windows give actual decoded instruction and
+argument context for the apparent second DirectSound candidate set:
+
+- **`0x005015A8` and `0x00501728`** call
+  `[ecx+0x0c]` on global object **`0x006B7A30`**, passing
+  4 arguments (object, device GUID
+  `0x0053C9E8`/`0x0053C9F8`, output pointer, NULL):
+  consistent with **`IDirectInput::CreateDevice`**.
+  Outputs go to **`0x006B7A5C`** and
+  **`0x006B7A64`**, not DirectSound templates.
+- **`0x00501629`, `0x005017A6`, and `0x00501903`**
+  call `[vtable+0x2c]` on these input devices with **one**
+  data-format pointer as input besides the object: this is
+  **`IDirectInputDevice::SetDataFormat`**, NOT the eight-argument
+  `IDirectSoundBuffer::Lock`. Confirming adjacent calls are
+  `SetCooperativeLevel (+0x34)`,
+  `Acquire (+0x1c)`, and an `EnumDevices (+0x10)`
+  callback at `0x005018AA` (enumeration routine
+  `0x00501AE0`).
+- **`0x00501AFB`** calls the input-device creation method
+  on `0x006B7A30` again; **`0x00501B31`**
+  uses `+0x0c` on a **created input device**
+  `0x006B7A2C` (capability query), not on
+  `IDirectSound`.
+- **`0x005005AC`, `0x005005E8`, `0x005029D3`**
+  use graphics-related COM objects `0x006B7904`,
+  `0x006B7908`, and **six** stack arguments including
+  `0x01000400`/`0x01000000`. They cannot be
+  `IDirectSound::DuplicateSoundBuffer`, which uses two
+  parameters plus the object. Similarly `0x00502A0B`
+  uses `0x006B7904` with **two** params plus the object;
+  this is not the eight-parameter
+  `IDirectSoundBuffer::Lock`. The exact graphics
+  interface subtype is not asserted.
+- `0x005028FE` acts on another graphics object
+  `0x006B791C` with a single object argument.
+  It is not the native sound buffer duplication path.
+  
+**Result:** NONE of the new COM candidates establishes a second
+WAV-to-DirectSound population route. The prior raw
+`FF 51 0c`/`FF 51 2c` offset-only heuristic caused false
+positives from DirectInput. Do not add a hook based on these sites.
+
+### Stronger independent correlation using 27 Oct 10:13 game audio log
+
+The *already uploaded* original
+`SpiderMan2k1Fix(20261027-101351).log` was
+cross-correlated with this disassembly. It contains
+**64 `LOADER-TAIL-RESTORED` events** (62 unique file names),
+**27 `LOADER-SKIP-NO-UNIQUE-SOURCE` events** (no file name),
+and **12 distinct legacy `TAIL-RESTORED` sound names**.
+There is **zero filename overlap** between the latter 12
+and the 64 loader fixes.
+
+For all 12 late-restored sounds, the exact native PCM corruption
+starts at the final original-WAV sector boundary. For **10/12**,
+there is a unique *value* of an earlier loader SKIP remainder
+equal to `(44 + PCM_bytes + 44) % 2048`, i.e.
+**the original WAV file-sector remainder plus precisely 44 bytes**:
+
+| Late Play-restored WAV | Original WAV remainder `(PCM+44)%2048` | Earlier loader-SKIP remainder `(PCM+88)%2048` |
+| --- | ---: | ---: |
+| PickConf.wav | 782 | 826 |
+| Crawl1.wav | 574 | 618 |
+| Crawl2.wav | 866 | 910 |
+| Swing5.wav | 1956 | 2000 |
+| WebShot10.wav | 374 | 418 |
+| WebShot3.wav | 1304 | 1348 |
+| WebShot11.wav | 1608 | 1652 |
+| h_hitfloor.wav | 190 | 234 |
+| Pistol1.wav | 1294 | 1338 |
+| Pistol2.wav | 2 | 46 |
+
+`achum.wav` (original remainder 236) and
+`tingle2.wav` (1674) do **not** match any of
+the 27 earlier skipped remainders at `+44`.
+
+For comparison, **17/17 named sources** appearing in
+both `LOADER-TAIL-RESTORED` and Play-time
+`MATCH original=...` log entries have exact ordinary
+`(PCM+44)%2048` equality (i.e. no 44-byte shift).
+
+The **10/12 numerical alignment is striking** and more
+actionable than any COM-offset raw-xref. But note:
+**skipped loader events have no source identifiers**,
+so this is NOT yet an established file-level match or
+proof of a second 44-byte header. It may indicate
+an extra 44 bytes of resource data, a WAV-container
+difference, or another loader-length discrepancy.
+`achum`/`tingle2` need independent investigation.
+No file contents or archive bytes have been modified.
+
+**Next decisive diagnostic (not another huge COM scan):**
+when the original `0x00503B40` native loader calls the
+length/read wrappers, optionally capture **read-only**,
+signature-guarded diagnostic data for a bounded SKIP:
+total WAV/resource length, whether staging bytes
+start with `RIFF` (or have RIFF at offset 44),
+WAV format/chunk offsets, and a CRC-verified
+candidate identified from pre-sector PCM. Crucially:
+do not copy any unverified remainder, do not modify
+`data.pkr`, and keep existing loader and Play-time
+repairs until a specific identity is proven and
+tested on Windows AND Linux/Wine.
+
 ## What will settle the true origin
 
 After examining the exact native instruction sequence, identify and
