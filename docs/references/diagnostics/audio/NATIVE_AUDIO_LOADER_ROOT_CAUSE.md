@@ -80,6 +80,38 @@ executable or archive, or invoke any network operation. Its output is
 an offline disassembly of only the known audio neighborhood, plus
 bounded candidate call references.
 
+## Windows PowerShell (no Python needed)
+
+For users working directly on Windows, the equivalent read-only PowerShell
+5.1+ script is
+[`Inspect-SpiderManAudioLoader.ps1`](../../../../ChatGPT/tools/Inspect-SpiderManAudioLoader.ps1).
+It applies the **same exact SHA-256/size gate**, parses PE32/i386, checks
+the previously verified original signatures, scans the same 2,048-byte
+constant patterns and raw `E8 rel32` call candidates, and writes the
+same kind of UTF-8 investigation report.
+
+From PowerShell in the game directory (adjust the EXE path if necessary):
+
+```powershell
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/legluondunet/SpiderMan2k1Fix/experiment/sdl3-audio-probe/ChatGPT/tools/Inspect-SpiderManAudioLoader.ps1' -OutFile '.\Inspect-SpiderManAudioLoader.ps1'
+Unblock-File '.\Inspect-SpiderManAudioLoader.ps1'
+.\Inspect-SpiderManAudioLoader.ps1 -ExePath '.\SpideyPC.exe' -OutputPath '.\spiderman-audio-root-disassembly.txt'
+```
+
+The script does **not** require Python, and generates a partial static
+report even without an external disassembler. To include the actual
+x86 instructions, install an `objdump.exe` or `llvm-objdump.exe` binary
+on PATH, or supply it explicitly:
+
+```powershell
+.\Inspect-SpiderManAudioLoader.ps1 -ExePath '.\SpideyPC.exe' -ObjdumpPath 'C:\LLVM\bin\llvm-objdump.exe'
+```
+
+The script **never writes the game executable**, starts the game,
+modifies DirectSound, or modifies `data.pkr`; its only output is the
+explicit report path. The PowerShell syntax is also checked in CI,
+independently of the Linux Python helper.
+
 ## What will settle the true origin
 
 After examining the exact native instruction sequence, identify and
