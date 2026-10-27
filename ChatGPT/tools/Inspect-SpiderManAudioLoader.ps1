@@ -292,11 +292,16 @@ $absoluteRefs = @(
 foreach ($entry in $absoluteRefs) {
     [void]$lines.Add("$($entry.Name), DWORD address=$(Format-HexVa $entry.Address)")
     $count = 0
+    $needle = [BitConverter]::GetBytes([uint32]$entry.Address)
     for ($i=0; $i -le $size-4; $i++) {
-        if ([BitConverter]::ToUInt32($exeBytes,$raw+$i) -eq [uint32]$entry.Address) {
-            if (++$count -le 96) {
-                [void]$lines.Add("  immediate_at=$(Format-HexVa ([long]$textBaseVa+$i))")
-            }
+        # First-byte filter avoids millions of PowerShell -> .NET calls.
+        if ($exeBytes[$raw+$i] -ne $needle[0]) { continue }
+        if ($exeBytes[$raw+$i+1] -ne $needle[1] -or
+            $exeBytes[$raw+$i+2] -ne $needle[2] -or
+            $exeBytes[$raw+$i+3] -ne $needle[3]) { continue }
+        $count++
+        if ($count -le 96) {
+            [void]$lines.Add("  immediate_at=$(Format-HexVa ([long]$textBaseVa+$i))")
         }
     }
     [void]$lines.Add("  raw_candidate_count=$count")
