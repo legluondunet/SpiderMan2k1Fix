@@ -193,7 +193,8 @@ def test_heli1_source_discontinuity_probe_is_read_only_and_matches_recording_per
     """The user's 30s capture repeats at 2.520s, exactly Heli1's PCM duration."""
     assert (60480 // 2) / 12000 == 2.52
     assert 'static void log_heli1_source_discontinuities(void)' in SRC
-    assert 'if(decoded>0 && crc_fail==0)log_heli1_source_discontinuities();' in SRC
+    assert 'if(decoded>0 && crc_fail==0){' in SRC
+    assert 'log_heli1_source_discontinuities();' in SRC
     assert 'strcmp(w->name,"Heli1.wav")!=0' in SRC
     assert 'w->rate!=12000u' in SRC
     assert 'w->pcm_bytes!=60480u' in SRC
@@ -216,7 +217,7 @@ def test_heli1_source_export_is_opt_in_non_destructive_and_temp_only():
     assert 'if(!heli1_source_dump_enabled)return;' in SRC
     assert 'if(decoded>0 && crc_fail==0)' in SRC
     assert 'dump_heli1_source_optin();' in SRC
-    assert 'w->pcm_bytes==60480u && w->rate==12000u' in SRC
+    assert 'sources[i].pcm_bytes==60480u && sources[i].rate==12000u' in SRC
     assert 'sources[i].header_bytes==44u && sources[i].pcm' in SRC
     assert 'GetTempPathA(' in SRC
     assert 'CREATE_NEW' in SRC
