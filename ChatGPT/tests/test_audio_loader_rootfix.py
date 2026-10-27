@@ -14,11 +14,15 @@ INI = (ROOT / "ini_validation.h").read_text(encoding="utf-8")
 BUILD = (ROOT / "build.sh").read_text(encoding="utf-8")
 
 
-def test_loader_rootfix_explicit_off_default_and_exact_game_code_only():
+def test_loader_rootfix_default_on_hidden_manual_opt_out_and_exact_game_code_only():
     assert '"ExperimentalAudioLoaderTail"' in INI
-    assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioLoaderTail",0,ini)==1' in MAIN
+    assert "int pkr_index=0,pkr_play_trace=0,pkr_heli_declick=0,pkr_loader_tail=1;" in MAIN
+    assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioLoaderTail",1,ini)==1' in MAIN
+    assert "PKR-AUDIO: LOADER-HOOK DISABLED by manual INI override" in SRC
+    assert "enabled by default" in SRC
     assert "SpiderPKRAudioLoader_Init(log_line,pkr_loader_tail);" in MAIN
-    assert 'if(enabled!=1)return;' in SRC
+    assert 'if(enabled!=1){' in SRC
+    assert 'if(diag)diag("PKR-AUDIO: LOADER-HOOK DISABLED by manual INI override");' in SRC
     assert 'GetModuleHandleA(NULL)!=GAME_BASE' in SRC
     assert "0x00503CB4u" in SRC
     assert "0x00503CD8u" in SRC
@@ -30,6 +34,17 @@ def test_loader_rootfix_explicit_off_default_and_exact_game_code_only():
     assert "memcmp(b,expected_sector_call,5u)!=0" in SRC
     assert "pkr_audio_loader.c" in BUILD
     assert MAIN.index("SpiderPKRAudioIndex_Init(log_line") < MAIN.index("SpiderPKRAudioLoader_Init(log_line")
+
+
+def test_factory_ini_does_not_advertise_native_audio_default_on_toggle():
+    generated=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
+    factory=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text(encoding="utf-8")
+    assert "ExperimentalAudioLoaderTail" not in generated
+    assert "ExperimentalAudioLoaderTail" not in factory
+    assert '"ExperimentalAudioLoaderTail"' in INI  # compatibility with older INIs
+    assert "SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_heli_declick||pkr_loader_tail);" in MAIN
+    assert MAIN.index("SpiderPKRAudioIndex_Init(log_line") < MAIN.index(
+        "SpiderPKRAudioLoader_Init(log_line")
 
 
 def test_loader_only_writes_exact_original_tail_after_fresh_native_read_validation():
