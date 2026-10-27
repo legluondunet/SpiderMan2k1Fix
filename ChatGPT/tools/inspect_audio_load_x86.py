@@ -264,7 +264,15 @@ def inspect(blob: bytes, exe: Path, out: Path) -> str:
              disassemble(exe, 0x004FD800, 0x004FDAC0),
              disassemble(exe, 0x004FEF70, 0x004FF260),
              disassemble(exe, 0x005000B0, 0x00500260),
-             disassemble(exe, 0x00500700, 0x00500940)]
+             disassemble(exe, 0x00500700, 0x00500940),
+             "",
+             "FOLLOW-UP UNCLASSIFIED COM VTABLE CALL SITES (not proven DirectSound)",
+             "VA 0x00501480-0x00501C20: +0x0C creation-like, +0x2C lock-like calls.",
+             "VA 0x005027F0-0x00502BB0: +0x14/+0x2C calls.",
+             "VA 0x005004C0-0x00500640: +0x14 calls.",
+             disassemble(exe, 0x00501480, 0x00501C20),
+             disassemble(exe, 0x005027F0, 0x00502BB0),
+             disassemble(exe, 0x005004C0, 0x00500640)]
     report = "\n".join(rows) + "\n"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report, encoding="utf-8")
