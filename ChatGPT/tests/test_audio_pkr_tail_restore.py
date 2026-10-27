@@ -101,7 +101,7 @@ def test_unmatched_pcm_formats_logged_once_without_changing_native_play():
     assert '"nonstandard-original-wav-header"' in SRC
     assert '"no-original-size-rate"' in SRC
     assert 'source_misses[i].bytes==bytes && source_misses[i].rate==rate' in SRC
-    assert 'if(source_miss_count>=MAX_SOURCE_MISS_LOGS)return;' in SRC
+    assert 'if(source_miss_count>=MAX_SOURCE_MISS_LOGS)return 0;' in SRC
     assert 'if(sources[i].header_bytes==44u)candidates++;' in SRC
     assert 'log_source_miss(slot,looping,caps.dwBufferBytes,' in SRC
     # Fail-open remains before any full-buffer DirectSound lock or write.
