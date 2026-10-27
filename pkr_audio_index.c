@@ -415,14 +415,14 @@ static void log_skip(int kind,int slot,int looping,DWORD size,DWORD rate){
 /* Read-only format census for buffers with no eligible original source.
  * No PCM inspection or DirectSound calls: this reports why no repair
  * candidate was found before the normal early return. */
-static void log_source_miss(int slot,int looping,DWORD bytes,DWORD rate,
-                            unsigned same_length_and_rate){
+static int log_source_miss(int slot,int looping,DWORD bytes,DWORD rate,
+                           unsigned same_length_and_rate){
   unsigned i;
   char line[240];
-  if(!diag)return;
+  if(!diag)return 0;
   for(i=0;i<source_miss_count;i++)
-    if(source_misses[i].bytes==bytes && source_misses[i].rate==rate)return;
-  if(source_miss_count>=MAX_SOURCE_MISS_LOGS)return;
+    if(source_misses[i].bytes==bytes && source_misses[i].rate==rate)return 0;
+  if(source_miss_count>=MAX_SOURCE_MISS_LOGS)return 0;
   source_misses[source_miss_count].bytes=bytes;
   source_misses[source_miss_count].rate=rate;
   source_miss_count++;
@@ -431,6 +431,53 @@ static void log_source_miss(int slot,int looping,DWORD bytes,DWORD rate,
     same_length_and_rate?"nonstandard-original-wav-header":"no-original-size-rate",
     slot,!!looping,(unsigned long)bytes,(unsigned long)rate,
     same_length_and_rate);
+  diag(line);
+  return 1;
+}
+
+/* Source lengths can differ between the native game buffer and data.pkr.
+ * On the FIRST occurrence of each unmatched length/rate, identify any
+ * CRC-verified original with the exact first 1024 PCM bytes, regardless
+ * of original length/rate. This is only a forensic hint, not sufficient
+ * identity to repair or modify the DirectSound buffer. */
+static void probe_source_miss_prefix(int slot,IDirectSoundBuffer *buf,
+                                     DWORD bytes,DWORD rate){
+  BYTE *a=NULL,*b=NULL;
+  DWORD a_len=0,b_len=0,status=0;
+  unsigned i,prefix_matches=0,same_rate=0;
+  WAVSource *first=NULL;
+  char line[310];
+  HRESULT hr;
+  if(!diag || !buf || bytes<MIN_MATCH_BYTES*2u ||
+     FAILED(IDirectSoundBuffer_GetStatus(buf,&status)) ||
+     (status&DSBSTATUS_PLAYING))return;
+  hr=IDirectSoundBuffer_Lock(buf,0,MIN_MATCH_BYTES,
+                             (void**)&a,&a_len,(void**)&b,&b_len,0);
+  if(FAILED(hr))return;
+  if(a && a_len+b_len==MIN_MATCH_BYTES && (!b_len || b)){
+    for(i=0;i<source_count;i++){
+      WAVSource *w=&sources[i];
+      if(w->pcm_bytes<MIN_MATCH_BYTES)continue;
+      if(a_len && memcmp(w->pcm,a,a_len)!=0)continue;
+      if(b_len && memcmp(w->pcm+a_len,b,b_len)!=0)continue;
+      prefix_matches++;
+      if(w->rate==rate)same_rate++;
+      if(!first)first=w;
+    }
+  }
+  hr=IDirectSoundBuffer_Unlock(buf,a,a_len,b,b_len);
+  if(FAILED(hr))return;
+  if(first){
+    snprintf(line,sizeof(line),
+      "PKR-AUDIO: SOURCE-PREFIX slot=%d pcm_bytes=%lu hz=%lu matches=%u same_rate=%u first_original=%s/%s original_bytes=%lu original_hz=%lu (READ-ONLY; no repair)",
+      slot,(unsigned long)bytes,(unsigned long)rate,
+      prefix_matches,same_rate,first->dir,first->name,
+      (unsigned long)first->pcm_bytes,(unsigned long)first->rate);
+  }else{
+    snprintf(line,sizeof(line),
+      "PKR-AUDIO: SOURCE-PREFIX slot=%d pcm_bytes=%lu hz=%lu matches=0 (READ-ONLY; no repair)",
+      slot,(unsigned long)bytes,(unsigned long)rate);
+  }
   diag(line);
 }
 int SpiderPKRAudioIndex_TryTailRestore(int slot,IDirectSoundBuffer *buf,int looping){
@@ -467,8 +514,10 @@ int SpiderPKRAudioIndex_TryTailRestore(int slot,IDirectSoundBuffer *buf,int loop
     if(sources[i].header_bytes==44u)candidates++;
   }
   if(!candidates){
-    log_source_miss(slot,looping,caps.dwBufferBytes,
-                    fmt.nSamplesPerSec,matching_formats);
+    if(log_source_miss(slot,looping,caps.dwBufferBytes,
+                       fmt.nSamplesPerSec,matching_formats))
+      probe_source_miss_prefix(slot,buf,caps.dwBufferBytes,
+                               fmt.nSamplesPerSec);
     return 0;
   }
   sector_start=((caps.dwBufferBytes+44u)/2048u)*2048u-44u;
