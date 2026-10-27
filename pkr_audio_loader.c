@@ -54,6 +54,42 @@ static void loader_message(const char *type,int handle,unsigned bytes,const char
   diag(msg);
 }
 
+/* Bounded, read-only evidence for a skipped native WAV; this does NOT
+ * change the original read result, file cursor, staging allocation,
+ * DirectSound buffer, or any source validation / repair decision.
+ * All inspected bytes lie within the original successful full-sector
+ * read (complete_bytes >= 2048; dst is non-NULL). */
+static uint32_t loader_le32(const unsigned char *p){
+  return (uint32_t)p[0] | ((uint32_t)p[1]<<8) |
+         ((uint32_t)p[2]<<16) | ((uint32_t)p[3]<<24);
+}
+static void loader_skip_detail(int handle,const void *dst,
+                               uint32_t total,uint32_t complete){
+  const unsigned char *p=(const unsigned char*)dst;
+  int riff0, riff44, data0;
+  uint32_t riff_size=0u,data_size=0u;
+  long excess=0;
+  char msg[390];
+  if(!diag||!p||complete<2048u||complete>total)return;
+  riff0=(memcmp(p,"RIFF",4u)==0 && memcmp(p+8u,"WAVE",4u)==0);
+  riff44=(memcmp(p+44u,"RIFF",4u)==0 &&
+          memcmp(p+52u,"WAVE",4u)==0);
+  data0=(riff0 && memcmp(p+36u,"data",4u)==0);
+  if(riff0){
+    riff_size=loader_le32(p+4u);
+    if(riff_size<=MAX_WAV_BYTES)
+      excess=(long)total-(long)(riff_size+8u);
+  }
+  if(data0)data_size=loader_le32(p+40u);
+  snprintf(msg,sizeof(msg),
+    "PKR-AUDIO: LOADER-SKIP-DETAIL resource=0x%08X total_bytes=%lu complete_bytes=%lu remainder=%lu riff_at_0=%d riff_at_44=%d riff_declared_bytes=%lu data_chunk_bytes=%lu riff_excess_bytes=%ld (READ-ONLY)",
+    (unsigned)handle,(unsigned long)total,(unsigned long)complete,
+    (unsigned long)(total-complete),riff0,riff44,
+    (unsigned long)(riff0 && riff_size<=MAX_WAV_BYTES?riff_size+8u:0u),
+    (unsigned long)data_size,excess);
+  diag(msg);
+}
+
 /* The loader immediately calls this original function and allocates the
  * returned WAV byte length before invoking the sector reader. Store its
  * result per-thread; NEVER infer capacity from untrusted RIFF bytes. */
@@ -97,8 +133,10 @@ static int __cdecl native_sector_read_with_tail(int handle,uint32_t blocks,void 
   expected=SpiderPKRAudioIndex_ExpectedLoaderWavTail(
     (const unsigned char*)dst,complete,length,&source);
   if(!expected){
-    if(++skipped_count<=MAX_LOADER_DIAG)
+    if(++skipped_count<=MAX_LOADER_DIAG){
       loader_message("SKIP-NO-UNIQUE-SOURCE",handle,remainder,NULL);
+      loader_skip_detail(handle,dst,length,complete);
+    }
     return result;
   }
   /* The original reader clamps to the resource's actual end. A scratch
