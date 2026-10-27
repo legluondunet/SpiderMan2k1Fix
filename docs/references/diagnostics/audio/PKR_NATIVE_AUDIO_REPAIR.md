@@ -329,26 +329,66 @@ not repaired-buffer mismatch counts, and reveal several striking
 internal discontinuities even inside the original WAV. The weak
 loop seam and the two audible impulses per repeating 2.520s
 recorded pattern disfavor the theory of a *single loop-wrap click*.
-The specific waveform intervals causing the two audible anomalies
-are not yet unambiguously mapped: 2.520s periodicity alone does
-not prove the source is responsible, and source jumps may be
-intentional rotor transients.
+The user then provided the **actual unmodified** `Heli1.wav`
+(60,524 bytes, PCM16 mono 12,000 Hz) extracted from `data.pkr`.
+The source was matched against the earlier 30.015s stereo 48-kHz
+capture by 4:1 downsampling and circular source correlation. There
+are **two copies** of the same loop with phases at 6,176 and
+26,576 original 12-kHz sample positions, i.e. **1.700s apart**
+(or 0.820s in the other circular direction). Linear least-squares
+fitting these two source copies explains about **98.1%** of the
+periodic capture waveform variance in each channel.
 
-**Next exact source comparison, opt-in only:** add
-`ExperimentalAudioHeli1SourceDump=1` under `[Debug]`.
-This writes a single new **60,524-byte** PCM WAV
-(44-byte standard WAV header + 60,480 bytes unmodified original PCM)
-to the current user's **Windows TEMP** on startup, using
-`CREATE_NEW` (never overwrite), provided `data.pkr` verified
-successfully. Look for:
-`PKR-AUDIO: HELI1-DUMP CREATED C:\\...\\SpiderMan2k1Fix-Heli1-Original-<PID>.wav`.
-The source is never played by this diagnostic, the archive and
-DirectSound buffers are not modified, and the default is **0**.
-Upload this small temporary WAV so we can compare its actual
-impulse waveforms to `spider-man-audio(5).wav` offline before
-considering any optional, source-specific declick. The dump
-is independent from tail-repair and should be disabled after
-inspection.
+Two conspicuously isolated, outlying PCM16 samples in the original
+source, immediately amid smooth neighbors:
+
+| source sample | time | original PCM | immediate neighbors | linear replacement |
+|---|---|---|---|---|
+| 12095 | 1007.917ms | -9 | +30604, +28663 | +29634 |
+| 12109 | 1009.083ms | +32765 | -30587, -30723 | -30655 |
+
+The greatest jump is from +32765 to -30723 at
+**1009.167ms**, magnitude **63,488**; replacing one sample
+with -30655 reduces this jump to **68**. Adding source
+positions to the two identified capture phase offsets predicts
+the audible impulses at **0.703833s and 1.523833s**, directly
+matching the two recorded transients 0.704s and 1.524s.
+Thus the clicks are *source-sample artefacts heard from two
+phase-offset copies*, not a repeated DirectSound sector-tail
+failure or a loop-wrap seam error.
+
+**Experimental native DirectSound correction, OFF by default:**
+`[Debug] ExperimentalAudioHeli1Declick=1`. Only after the
+regular sector-tail restore, only for a stopped looping native
+PCM16 mono 12-kHz 60,480-byte secondary buffer, and only when
+the **entire buffer** is byte-identical to the CRC-verified
+`Heli1.wav` original **except** at these two precisely checked
+sample positions (which may already contain the corrected values),
+write the two linearly interpolated values. The original source
+PCM cache and `data.pkr` remain immutable. Identical sounds
+elsewhere, other WAVs, ambiguous sources, active buffers,
+unexpected formats or samples fail open to the original
+native `DXSOUND_Play`. A successful patch logs
+`PKR-AUDIO: HELI1-DECLICK ... samples=12095,12109
+replacement=29634,-30655`.
+
+An offline `Heli1-declick-experimental.wav` was also generated
+from the user-supplied source for A/B audition. It differs in
+exactly **two 16-bit PCM samples**; its duration, WAV header,
+sample rate, sample count, and the other 30,238 samples are
+unchanged. This does **not** by itself constitute an in-game
+listening validation. The source WAV TEMP export added for
+forensics was **removed** from the PR since the user supplied
+the exact WAV directly.
+
+**Next validation:** build and listen to the 2nd 3D intro
+cutscene and helicopter by the bank with
+`ExperimentalAudioHeli1Declick=1` and
+`ExperimentalAudioPKRTailRestore=1`; compare to the former
+setting with Heli1Declick=0. Confirm two success log
+lines (or report explicit fail-open skips), no extra noises,
+and original sound spatialization / looping. Keep the
+declick feature OFF by default pending user approval.
 
 
 
