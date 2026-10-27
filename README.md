@@ -173,6 +173,7 @@ The following are possible improvements under consideration, subject to technica
 - **Performance:** Explore 60 FPS support and fixes for FPS-dependent boss and level issues.
 - **Quick saves:** Investigate instant game saving.
 - **Audio:** Improve sound playback and eliminate crackling and other audio artifacts.
+- **Subtitles:** Explore subtitle support for pre-rendered movies, in-game cinematics, and gameplay dialogue.
 - **Cheats:** Add optional INI settings for costumes, God Mode, What If? mode, and other cheats.
 - **Additional content:** Explore support for *Spider-Man 2: Enter Electro*.
 - **Graphics and modding:** Improve sprites, explore HD enhancements, and investigate mod support.
