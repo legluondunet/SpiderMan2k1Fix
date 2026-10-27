@@ -92,3 +92,21 @@ def test_native_play_untouched_and_no_sdl_dependency():
     assert 'IDirectSoundBuffer_Play(' not in SRC
     assert 'IDirectSoundBuffer_Stop(' not in SRC
     assert 'SDL3' not in SRC
+
+
+def test_unmatched_pcm_formats_logged_once_without_changing_native_play():
+    """An unknown PCM length/rate should explain a source miss, not get patched."""
+    assert 'MAX_SOURCE_MISS_LOGS 96u' in SRC
+    assert 'PKR-AUDIO: SOURCE-MISS reason=%s' in SRC
+    assert '"nonstandard-original-wav-header"' in SRC
+    assert '"no-original-size-rate"' in SRC
+    assert 'source_misses[i].bytes==bytes && source_misses[i].rate==rate' in SRC
+    assert 'if(source_miss_count>=MAX_SOURCE_MISS_LOGS)return;' in SRC
+    assert 'if(sources[i].header_bytes==44u)candidates++;' in SRC
+    assert 'log_source_miss(slot,looping,caps.dwBufferBytes,' in SRC
+    # Fail-open remains before any full-buffer DirectSound lock or write.
+    begin=SRC.index('int SpiderPKRAudioIndex_TryTailRestore(')
+    body=SRC[begin:]
+    assert body.index('if(!candidates){') < body.index('IDirectSoundBuffer_Lock(')
+    assert body.index('log_source_miss(') < body.index('IDirectSoundBuffer_Lock(')
+    assert 'NATIVE_PLAY(slot,looping);' in HOOK
