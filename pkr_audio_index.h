@@ -6,6 +6,8 @@
 /* Read-only: index original PCM16 WAVs in data.pkr, compare native game
  * buffers by format, exact length and a substantial matching prefix.
  * NO audio replacement, data mutations, or game-owned PKR calls. */
+/* Explicit off-by-default export of original Heli1 to Windows TEMP. */
+void SpiderPKRAudioIndex_SetHeli1SourceDump(int enabled);
 void SpiderPKRAudioIndex_Init(void (*logger)(const char*),int enabled);
 void SpiderPKRAudioIndex_Probe(int slot,IDirectSoundBuffer *buffer,int looping);
 /* Separate opt-in: restore ONLY a source-identified, verified corrupt
