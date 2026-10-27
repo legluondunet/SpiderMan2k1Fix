@@ -116,6 +116,40 @@ PKR-AUDIO: TAIL-SKIP reason=lock-failed ...
 A skip is **not an error** and never suppresses native Play. Repeated
 messages are capped at 24 per reason.
 
+## Diagnostic for remaining short fight noises
+
+The 27 October listening test still reported a brief sound at the end
+of some fight effects even after 25 tail repairs (17 distinct WAVs).
+All 24 logged tail skips were `already-identical`; there were no
+logged `playing`, `no-source-prefix`, or `difference-before-final-sector`
+skips. A 216-byte suffix at 22,050 Hz spans less than 5 ms, so a
+roughly one-second artifact cannot be attributed to that suffix alone.
+
+To investigate **without modifying playback**, add to `[Debug]`:
+
+```ini
+Log=1
+ExperimentalPKRAudioIndex=1
+ExperimentalAudioPKRTailRestore=1
+ExperimentalPKRAudioPlayTrace=1
+```
+
+`ExperimentalPKRAudioPlayTrace` is off by default and recognized
+by INI validation. It logs a maximum of **256 paired snapshots**
+(`PKR-AUDIO: PLAY-TRACE`), immediately before and after the original
+`DXSOUND_Play`. Each reports event number, phase, millisecond clock,
+voice slot, looping flag, whether source-backed tail repair ran,
+buffer pointer, buffer length, sample rate, playing status,
+play/write cursors and individual DirectSound query HRESULTs.
+
+This is **read-only telemetry**, not a cure: no native Play/Stop,
+SetCurrentPosition, cursor reset, voice recycling, sound routing, or
+audio archive changes are introduced. Querying DirectSound and
+writing verbose logs may have a small timing cost. Disable the trace
+after reproducing a few combat artifacts. Future diagnosis should
+correlate cursor and status transitions with an audible repro, and
+must not assume a nonzero cursor alone proves a defect.
+
 ## Validation boundary
 
 Cross-compilation and regression tests alone cannot establish audio

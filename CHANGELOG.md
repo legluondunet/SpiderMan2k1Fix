@@ -7,6 +7,7 @@
 - Added an opt-in source-verified restoration of only the damaged PCM suffix before the game's original DirectSound Play.
 - Confirmed `Swing5.wav` plays cleanly through original DirectSound after restoration; removed the experimental SDL3 player, DLL and runtime requirement.
 - Extended the repair to damage beginning later in the partial sector, and added bounded diagnostic reasons when a buffer cannot safely be restored.
+- Added opt-in, bounded read-only DirectSound Play-state/cursor tracing to diagnose remaining end-of-effect glitches without changing playback.
 - **Still under listening/stability testing:** occasional short fight-sound glitches have not yet been fully resolved; no release issued.
 
 ## 1.0.0 — October 25, 2026

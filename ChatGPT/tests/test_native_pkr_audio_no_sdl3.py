@@ -41,7 +41,7 @@ def test_verified_original_callsite_and_preserved_playback_semantics():
     assert HOOK.count('NATIVE_PLAY(slot,looping);')==1
     assert 'SpiderPKRAudioIndex_Probe(slot,buffer,looping)' in HOOK
     assert 'SpiderPKRAudioIndex_TryTailRestore(slot,buffer,looping)' in HOOK
-    assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_tail_restore)' in MAIN
+    assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_tail_restore||pkr_play_trace,pkr_play_trace)' in MAIN
     assert 'SpiderPKRAudioIndex_EnableTailRestore(pkr_tail_restore)' in MAIN
     assert 'SpiderSDL3' not in MAIN
     assert 'DXSOUND_Stop' not in HOOK
