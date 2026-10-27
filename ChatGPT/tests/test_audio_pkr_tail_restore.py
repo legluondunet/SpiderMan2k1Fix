@@ -110,3 +110,25 @@ def test_unmatched_pcm_formats_logged_once_without_changing_native_play():
     assert body.index('if(!candidates){') < body.index('IDirectSoundBuffer_Lock(')
     assert body.index('log_source_miss(') < body.index('IDirectSoundBuffer_Lock(')
     assert 'NATIVE_PLAY(slot,looping);' in HOOK
+
+
+def test_unmatched_source_prefix_probe_is_bounded_read_only_and_never_fixes_unknown_wavs():
+    """The next R2-07 probe searches by PCM prefix, but must never patch."""
+    assert 'static void probe_source_miss_prefix(' in SRC
+    assert 'PKR-AUDIO: SOURCE-PREFIX slot=%d' in SRC
+    assert 'matches=0 (READ-ONLY; no repair)' in SRC
+    assert 'prefix_matches++' in SRC
+    assert 'if(w->rate==rate)same_rate++;' in SRC
+    assert 'if(a_len && memcmp(w->pcm,a,a_len)!=0)continue;' in SRC
+    assert 'if(b_len && memcmp(w->pcm+a_len,b,b_len)!=0)continue;' in SRC
+    assert '(status&DSBSTATUS_PLAYING))return;' in SRC
+    assert 'IDirectSoundBuffer_Lock(buf,0,MIN_MATCH_BYTES,' in SRC
+    assert 'IDirectSoundBuffer_Unlock(buf,a,a_len,b,b_len)' in SRC
+    assert 'if(log_source_miss(slot,looping,caps.dwBufferBytes,' in SRC
+    # Only one probe per unique length/rate, subject to the 96-entry cap.
+    assert 'source_misses[i].bytes==bytes && source_misses[i].rate==rate)return 0;' in SRC
+    assert 'if(source_miss_count>=MAX_SOURCE_MISS_LOGS)return 0;' in SRC
+    probe=SRC.split('static void probe_source_miss_prefix(',1)[1].split('int SpiderPKRAudioIndex_TryTailRestore(',1)[0]
+    assert 'memcpy(' not in probe
+    assert 'IDirectSoundBuffer_Play(' not in probe
+    assert 'IDirectSoundBuffer_SetCurrentPosition(' not in probe
