@@ -386,6 +386,18 @@ static uint8_t ds_locked_byte(const uint8_t *a,const uint8_t *b,
                               DWORD a_len,DWORD index){
   return index<a_len?a[index]:b[index-a_len];
 }
+/* The original engine rounds some 16-bit mono PCM lengths up to a
+ * 4-byte DirectSound allocation. For a WAV of N=4k+2 bytes, native
+ * buffer size is N+2. Only that precise alignment is permitted;
+ * do not accept truncated loops or arbitrary PCM-length differences.
+ * Guard the final 2048-byte WAV-file sector against an alignment
+ * crossing, so the complete-sector identity check remains sound. */
+static int source_matches_runtime_length(const WAVSource *w,DWORD n){
+  if(w->pcm_bytes==n)return 1;
+  return (w->pcm_bytes&3u)==2u &&
+    n==w->pcm_bytes+2u && (n&3u)==0u &&
+    (w->pcm_bytes+44u)/2048u==(n+44u)/2048u;
+}
 void SpiderPKRAudioIndex_EnableTailRestore(int enabled){
   tail_restore_enabled=(enabled==1 && index_ready);
   if(tail_restore_enabled && diag)
@@ -505,10 +517,12 @@ int SpiderPKRAudioIndex_TryTailRestore(int slot,IDirectSoundBuffer *buf,int loop
     log_skip(SKIP_PLAYING,slot,looping,caps.dwBufferBytes,fmt.nSamplesPerSec);
     return 0;
   }
-  /* Only CRC32-verified sources with standard WAV data offset, exact
-   * length and rate can qualify for the observed 2048-sector defect. */
+  /* Only CRC32-verified WAVs with a standard 44-byte header and
+   * exact rate qualify. The native 4-byte allocation may contain a
+   * single additional 16-bit sample (N+2) for N=4k+2 PCM bytes;
+   * reject all other duration/length changes, including cut loops. */
   for(i=0;i<source_count;i++){
-    if(sources[i].pcm_bytes!=caps.dwBufferBytes ||
+    if(!source_matches_runtime_length(&sources[i],caps.dwBufferBytes) ||
        sources[i].rate!=fmt.nSamplesPerSec)continue;
     matching_formats++;
     if(sources[i].header_bytes==44u)candidates++;
@@ -537,7 +551,7 @@ int SpiderPKRAudioIndex_TryTailRestore(int slot,IDirectSoundBuffer *buf,int loop
   for(i=0;i<source_count;i++){
     WAVSource *w=&sources[i];
     if(w->header_bytes!=44u ||
-       w->pcm_bytes!=caps.dwBufferBytes ||
+       !source_matches_runtime_length(w,caps.dwBufferBytes) ||
        w->rate!=fmt.nSamplesPerSec)continue;
     for(j=0;j<MIN_MATCH_BYTES;j++)
       if(ds_locked_byte(a,b,a_len,j)!=w->pcm[j])break;
@@ -563,7 +577,10 @@ int SpiderPKRAudioIndex_TryTailRestore(int slot,IDirectSoundBuffer *buf,int loop
    * first bytes of the damaged partial sector can still be intact:
    * find the FIRST actual mismatched byte ANYWHERE in that final sector. */
   for(j=sector_start;j<caps.dwBufferBytes;j++){
-    if(ds_locked_byte(a,b,a_len,j)!=source->pcm[j]){
+    /* Padding represents one additional silent PCM16 sample. Never
+     * read beyond the CRC-validated original WAV's PCM allocation. */
+    uint8_t expected=j<source->pcm_bytes?source->pcm[j]:0u;
+    if(ds_locked_byte(a,b,a_len,j)!=expected){
       if(first_diff==UINT32_MAX)first_diff=j;
       bad_bytes++;
     }
@@ -574,12 +591,25 @@ int SpiderPKRAudioIndex_TryTailRestore(int slot,IDirectSoundBuffer *buf,int loop
   }
   /* Copy the true damaged suffix only, not the preceding already exact
    * sector head. DS buffer is stopped and stays locked during this copy. */
-  if(first_diff<a_len){
-    memcpy(a+first_diff,source->pcm+first_diff,a_len-first_diff);
-    if(b_len)memcpy(b,source->pcm+a_len,b_len);
-  }else if(b_len){
-    memcpy(b+(first_diff-a_len),source->pcm+first_diff,
-           caps.dwBufferBytes-first_diff);
+  if(source->pcm_bytes==caps.dwBufferBytes){
+    /* Keep the existing, byte-exact repair behavior for unpadded WAVs. */
+    if(first_diff<a_len){
+      memcpy(a+first_diff,source->pcm+first_diff,a_len-first_diff);
+      if(b_len)memcpy(b,source->pcm+a_len,b_len);
+    }else if(b_len){
+      memcpy(b+(first_diff-a_len),source->pcm+first_diff,
+             caps.dwBufferBytes-first_diff);
+    }
+  }else{
+    /* +2-byte DWORD alignment: restore original bytes, then write
+     * one zero-valued PCM16 sample into the two allocation bytes.
+     * Every pre-sector byte matched, identity was unique, and the
+     * buffer was stopped before the Lock; no other sounds are touched. */
+    for(j=first_diff;j<caps.dwBufferBytes;j++){
+      uint8_t expected=j<source->pcm_bytes?source->pcm[j]:0u;
+      if(j<a_len)a[j]=expected;
+      else b[j-a_len]=expected;
+    }
   }
   changed=1;
 unlock:
@@ -593,11 +623,13 @@ unlock:
     source->tail_restore_count++;
     if(source->tail_restore_count<=2u && diag){
       snprintf(line,sizeof(line),
-        "PKR-AUDIO: TAIL-RESTORED slot=%d loop=%d source=%s/%s pcm_bytes=%lu sector_tail_offset=%lu first_diff=%lu restored_bytes=%lu mismatched_bytes=%lu occurrence=%u (native DirectSound preserved)",
+        "PKR-AUDIO: TAIL-RESTORED slot=%d loop=%d source=%s/%s pcm_bytes=%lu buffer_bytes=%lu pad_bytes=%lu sector_tail_offset=%lu first_diff=%lu restored_bytes=%lu mismatched_bytes=%lu occurrence=%u (native DirectSound preserved)",
         slot,!!looping,source->dir,source->name,
-        (unsigned long)source->pcm_bytes,(unsigned long)sector_start,
-        (unsigned long)first_diff,
-        (unsigned long)(source->pcm_bytes-first_diff),
+        (unsigned long)source->pcm_bytes,
+        (unsigned long)caps.dwBufferBytes,
+        (unsigned long)(caps.dwBufferBytes-source->pcm_bytes),
+        (unsigned long)sector_start,(unsigned long)first_diff,
+        (unsigned long)(caps.dwBufferBytes-first_diff),
         (unsigned long)bad_bytes,source->tail_restore_count);
       diag(line);
     }
