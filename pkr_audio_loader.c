@@ -90,6 +90,43 @@ static void loader_skip_detail(int handle,const void *dst,
     (unsigned long)(riff0 && riff_size<=MAX_WAV_BYTES?riff_size+8u:0u),
     (unsigned long)data_size,excess);
   diag(msg);
+  /* Read-only identification of UNKNOWN native WAV resources. This is
+   * executed ONLY after the safe full-source matcher declined to write.
+   * The two 2048-byte FNV-1a fingerprints make later offline asset
+   * comparisons reproducible without logging raw audio or touching
+   * any live DirectSound/PKR state. */
+  {
+    char candidates[240],forensic[530];
+    uint32_t head_hash=2166136261u,tail_hash=2166136261u;
+    uint32_t pcm_end=0u,pcm_missing=0u,hz=0u;
+    unsigned i,ch=0u,bits=0u,format=0u;
+    int standard_fmt=riff0 &&
+      memcmp(p+12u,"fmt ",4u)==0 && loader_le32(p+16u)>=16u;
+    for(i=0u;i<2048u;i++){
+      head_hash=(head_hash^(uint32_t)p[i])*16777619u;
+      tail_hash=(tail_hash^(uint32_t)p[complete-2048u+i])*16777619u;
+    }
+    if(standard_fmt){
+      format=(unsigned)p[20u]|((unsigned)p[21u]<<8);
+      ch=(unsigned)p[22u]|((unsigned)p[23u]<<8);
+      hz=loader_le32(p+24u);
+      bits=(unsigned)p[34u]|((unsigned)p[35u]<<8);
+    }
+    if(data0 && data_size<=total-44u){
+      pcm_end=44u+data_size;
+      if(pcm_end>complete)pcm_missing=pcm_end-complete;
+    }
+    SpiderPKRAudioIndex_DescribeLoaderSkip(
+      p,complete,total,candidates,(unsigned)sizeof(candidates));
+    snprintf(forensic,sizeof(forensic),
+      "PKR-AUDIO: LOADER-SKIP-FORENSIC pcm_tail_bytes=%lu "
+      "wav_format=%u channels=%u hz=%lu bits=%u "
+      "head2048_fnv1a=%08lX last_loaded2048_fnv1a=%08lX "
+      "%s (READ-ONLY; no repair)",
+      (unsigned long)pcm_missing,format,ch,(unsigned long)hz,bits,
+      (unsigned long)head_hash,(unsigned long)tail_hash,candidates);
+    diag(forensic);
+  }
 }
 
 /* The loader immediately calls this original function and allocates the
