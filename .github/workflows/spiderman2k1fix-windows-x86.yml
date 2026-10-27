@@ -33,6 +33,19 @@ jobs:
       - name: Run regression tests
         run: python3 -m pytest -q ChatGPT/tests
 
+      - name: Parse PowerShell native audio loader probe
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          $path = (Resolve-Path 'ChatGPT/tools/Inspect-SpiderManAudioLoader.ps1').Path
+          [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -ne 0) {
+            $parseErrors | Format-List | Out-String | Write-Error
+            exit 1
+          }
+          Write-Host 'PowerShell audio loader script syntax validated.'
+
       - name: Build Windows x86 DLLs (portable LLVM-MinGW MSVCRT)
         run: bash ./build-native-msvcrt.sh
 
