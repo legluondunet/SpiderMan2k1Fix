@@ -53,7 +53,7 @@ def test_native_settings_default_off_and_obsolete_keys_removed():
     assert '"ExperimentalSDL3' not in INI
     assert 'GetPrivateProfileIntA("Debug","ExperimentalPKRAudioIndex",0,ini)==1' in MAIN
     assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioPKRTailRestore",0,ini)==1' in MAIN
-    assert 'SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_tail_restore||pkr_heli_declick)' in MAIN
+    assert 'SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_tail_restore||pkr_heli_declick||pkr_loader_tail)' in MAIN
     assert 'tail_restore_enabled=(enabled==1 && index_ready)' in INDEX
     assert 'PKR-AUDIO: PLAY-HOOK INSTALLED' in HOOK
     assert 'PKR-AUDIO: TAIL-SKIP reason=%s' in INDEX
