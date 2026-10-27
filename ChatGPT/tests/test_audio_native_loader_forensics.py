@@ -118,9 +118,18 @@ def test_windows_powershell_probe_matches_native_analysis_and_is_readonly():
     assert "0x00430800" in body and "0x00430DC0" in body
     assert "0x430A21" in body and "0x430B23" in body
     assert "0x430B52" in body and "0x430B9E" in body
-    assert "ALTERNATIVE resource reader" in body
+    assert "generic resource reader" in body
+    assert "0x00470F00" in body and "0x00472A50" in body
+    assert "0x004FBD60" in body and "0x004FC050" in body
+    assert "0x006B7920" in body and "0x006BBAD4" in body and "0x006BBD50" in body
+    assert "0x00430A40" in body and "0x00430940" in body
+    assert "ORIGINAL GAME AUDIO MANAGER" in body
     companion = MODULE.read_text(encoding="utf-8")
     assert "disassemble(exe, 0x00430800, 0x00430DC0)" in companion
+    assert "disassemble(exe, 0x00470F00, 0x00472A50)" in companion
+    assert "disassemble(exe, 0x004FBD60, 0x004FC050)" in companion
+    assert "FOCUSED RESOURCE/DSOUND CALL XREF CANDIDATES" in companion
+    assert "ABSOLUTE DSOUND POINTER" in companion
     assert "FOCUSED RAW x86 E8 CALL CANDIDATES: OTHER WAV LOADER PATHS" in body
     assert "0x005051D0" in body and "0x00505170" in body and "0x00503B40" in body
     assert "candidates_found=" in body
