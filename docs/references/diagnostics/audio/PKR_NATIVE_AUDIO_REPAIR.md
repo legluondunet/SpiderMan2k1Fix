@@ -1,4 +1,4 @@
-# Native PKR audio restoration (experimental development branch)
+# Native PKR WAV audio restoration (built-in correction)
 
 ## Confirmed root cause
 
@@ -43,17 +43,20 @@ checks and unsupported modes **fail closed without modifying PCM**.
 
 ### Configuration
 
-In `SpiderMan2k1Fix.ini`:
+**The native loader correction is enabled by default**, with no entry
+written to the generated `SpiderMan2k1Fix.ini`. The code verifies the
+original `SpideyPC.exe` hash and the exact loader call signatures
+before installing the fix.
 
-```ini
-[Debug]
-ExperimentalAudioLoaderTail=1
-```
+For exceptional troubleshooting, users may manually place
+`ExperimentalAudioLoaderTail=0` under `[Debug]` to turn off just
+this fix. Existing `ExperimentalAudioLoaderTail=1` settings are still
+accepted but redundant. The compatibility override is intentionally
+**not present in the factory INI**.
 
-The switch defaults to `0` until further platform validation. The
-independent `ExperimentalAudioHeli1Declick=1` opt-in corrects only two
-known `Heli1.wav` samples in a verified **stopped** secondary
-DirectSound buffer. It is **not** a partial-sector fallback.
+The independent `ExperimentalAudioHeli1Declick=1` opt-in corrects
+only two known `Heli1.wav` samples in a verified **stopped**
+secondary DirectSound buffer. It is **not** a partial-sector fallback.
 
 Optional diagnostics:
 
@@ -91,14 +94,14 @@ The user explicitly approved removing the fallback. Accordingly,
 `SpiderPKRAudioIndex_EnableTailRestore`, the corresponding
 DirectSound mutation logic and the
 `ExperimentalAudioPKRTailRestore` configuration key
-were removed from the experimental branch. The original native
+were removed from the main source code. The original native
 loader fix, strict source matching, optional Heli1 declick, and
 opt-in read-only DirectSound source diagnostics are retained.
 
 Legacy runtime audio diagnoses (`TAIL-RESTORED`, `TAIL-SKIP`,
 Play-time ambiguous-source cases) are documented in the historical
 investigation, but are **not** active fallback behavior in the
-current experimental build.
+current source build.
 
 ## Verification status
 
@@ -108,14 +111,15 @@ reports are consistently crackle-free, including in that targeted area.
 **This does not establish native Windows runtime validation**, nor does
 it prove every conceivable edition/resource has been encountered.
 
-After removing the old fallback, verify that CI tests and the Windows
-x86 build pass, followed by a fresh Wine playthrough using **both**
-DLLs from the new artifact. The key runtime expectations are:
-`LOADER-HOOK ARMED`, native restores (including alias messages in the
-targeted level), no legacy `TAIL-RESTORE ARMED` or Play-time
-`TAIL-SKIP` diagnostics, intact Heli1 declick when enabled,
-and continued clean audible playback.
+The fallback-free build was verified under Linux/Wine with the
+three alias restorations and user-confirmed clean playback.
+The new default-on configuration is covered by regression tests and
+Windows x86 compilation, but still requires a runtime smoke test
+after these defaults change. The loader should report
+`LOADER-HOOK ARMED` even when the factory INI contains no audio-fix
+key. The legacy Play-time `TAIL-SKIP` messages must not return.
+Native Windows runtime validation remains pending.
 
-No merge without explicit user approval.
+Any further changes must go through a separately reviewed PR.
 
 legluondunet assisted by ChatGPT (OpenAI)
