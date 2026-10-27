@@ -1038,7 +1038,7 @@ prove complete coverage**, because of the two distinct
 unidentified PCM-bearing WAV lengths and pending subjective
 listening. Leave fallback enabled and PR #67 **draft/unmerged**.
 
-## Next diagnostic: strictly read-only unmatched WAV fingerprints (28 Oct 2026 research follow-up)
+## Next diagnostic: strictly read-only unmatched WAV fingerprints (27 Oct 2026 research follow-up)
 
 After the successful and audibly clean Linux/Wine loader-enabled test, PR #67
 adds **diagnostic logging only** for loader calls that were already rejected
