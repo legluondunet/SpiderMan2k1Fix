@@ -25,7 +25,7 @@
 #include "fov_aspect.h"
 #include "fov_aspect_win.h"
 #include "input_focus_trace.h"
-#include "gamepad_start_native.h"
+#include "gamepad_ui_profile.h"
 #include "input_notacquired_retry.h"
 #include "pause_any_key.h"
 #include "pause_surface.h"
@@ -2510,6 +2510,12 @@ static void pause_at_flip_if_background(void) {
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
   SpiderQuickExitF12_ObserveEngineState(count,InterlockedCompareExchange(&menu_upscale_active,0,0)==1); /* passive native mode+2D renderer tracing */
+  /* The DS4 UI bridge is strictly foreground-only, 2D-only, and runs
+   * BEFORE focus pause can block Flip, so a synthetic Return KEYUP is
+   * never left pending across Alt+Tab. 3D gameplay is unchanged. */
+  SpiderGamepadUI_OnFlip(game_hwnd,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
+    InterlockedCompareExchange(&gameplay_4x3_active,0,0)==1);
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
@@ -2983,21 +2989,6 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
     }
   }
   SpiderCfg_BootstrapGameRead();
-  /* BootstrapGameRead invokes the game's original config loader, which
-   * restores joystick mappings. Applying Start before this point was
-   * overwritten before menus/movies. Do this once, on the original game
-   * thread, after native config is restored and before first DirectDraw. */
-  {
-    char input_ini[MAX_PATH],*slash;
-    DWORD length=GetModuleFileNameA(NULL,input_ini,sizeof(input_ini));
-    if(length>0 && length<sizeof(input_ini) &&
-       (slash=strrchr(input_ini,'\\'))!=NULL) {
-      strcpy(slash+1,"SpiderMan2k1Fix.ini");
-      SpiderGamepadStart_Init(input_ini,log_line);
-    } else {
-      log_line("GAMEPAD-START: SKIPPED cannot locate INI after native config bootstrap");
-    }
-  }
   HRESULT hr=original_create(guid,out,iid,outer);
   if(SUCCEEDED(hr) && out && *out && iid && IsEqualGUID(iid,&IID_IDirectDraw7)) {
     void ***object=(void ***)*out;
@@ -3100,6 +3091,20 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  /* Passive profile setup only: independent DI8 discovery begins later,
+   * on the game's real window and Flip thread, never under loader lock.
+   * All original gameplay controls are preserved. */
+  {
+    char input_ini[MAX_PATH],*slash;
+    DWORD length=GetModuleFileNameA(NULL,input_ini,sizeof(input_ini));
+    if(length>0 && length<sizeof(input_ini) &&
+       (slash=strrchr(input_ini,'\\'))!=NULL) {
+      strcpy(slash+1,"SpiderMan2k1Fix.ini");
+      SpiderGamepadUI_Init(input_ini,log_line);
+    } else {
+      log_line("GAMEPAD-UI: OFF missing executable-relative INI path");
+    }
+  }
   SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
