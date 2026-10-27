@@ -538,6 +538,77 @@ the culprit absent instruction-level proof. Windows listening
 reported no audible parasites; independent Linux/Wine listening
 is still pending.
 
+## COM-vtable census resolves repeated DirectSound references to cleanup paths (27 Oct 2026)
+
+The user delivered `spiderman-audio-dsound-callers.txt`, a **6144-line**
+SHA256-verified full native x86 disassembly/census from Windows.
+The generic raw `FF /2` short-disp register vtable call
+census found:
+
+| Potential interface vtable offset | Raw opcode candidates | Confirmed example |
+| --- | ---: | --- |
+| `+0x0C` (might mean `IDirectSound::CreateSoundBuffer`) | 97 | `0x00503EBD` known game WAV creation |
+| `+0x14` (might mean `IDirectSound::DuplicateSoundBuffer`) | 30 | `0x00504152` known game voice duplication |
+| `+0x2C` (might mean `IDirectSoundBuffer::Lock`) | 7 | `0x00503EFF` known WAV fill; `0x00503F53` retry |
+| `+0x4C` (might mean `IDirectSoundBuffer::Unlock`) | 2 | `0x00503FCD` known WAV Unlock |
+
+**Caution:** the counts represent **raw matching byte patterns
+within `.text`**, not confirmed instruction boundaries or
+DirectSound interfaces. They only recognize the 3-byte
+`FF 50–53 XX` form, not indirect calls through other registers,
+longer displacements or wrappers.
+
+Four representative disassembled windows near
+`0x004FD800`, `0x004FEF70`, `0x005000B0`, and
+`0x00500700` **resolve the large
+`0x006B7920` reference cluster**: many are repeated error
+cleanup blocks, not WAV buffer constructors.
+A representative sequence is:
+
+```asm
+4fd8a0: call 0x503af0         ; game audio cleanup
+4fd8a5: mov eax,[0x6b7920]   ; DirectSound object
+4fd8ae: mov edx,[eax]
+4fd8b0: push eax
+4fd8b1: call [edx+0x08]      ; IUnknown::Release
+...
+4fd8dc: mov [0x6b7920],ebx   ; set pointer NULL
+```
+
+The pattern also repeats at `0x004FDA41`,
+`0x004FEFB4`, `0x004FF0A1`,
+`0x005000F2`, `0x005001C0`,
+`0x005007C1` and other sites. In contrast, one of the
+`+0x14` candidates at `0x004FD972` operates on a COM
+object from **`0x006B7904`**, not `0x006B7920`
+(`0x004FD9B7` acts on `0x006B7908`); an identical offset
+is therefore **not evidence of DirectSound duplication**.
+There is **no newly proven PCM/DirectSound loader** in these
+four windows.
+
+The remaining concentrated potential method sets are
+`+0x0C` at `0x005015A8`, `0x00501728`,
+`0x00501AFB`, `0x00501B31` and
+`+0x2C` at `0x00501629`, `0x005017A6`,
+`0x00501903`, `0x00502A0B`, with
+additional `+0x14` near `0x005005AC`,
+`0x005005E8`, `0x005028FE`, and
+`0x005029D3`.
+**These are not yet decoded into proven game sound calls.**
+
+**Next read-only experiment:** add disassembly windows
+`0x00501480–0x00501C20`,
+`0x005027F0–0x00502BB0`, and
+`0x005004C0–0x00500640`, on the same hash-verified EXE.
+Classify the *underlying COM object pointers and call argument
+layout* before deciding whether any of these operations creates
+or fills WAV buffers. **No additional runtime hook, default
+change, or workaround is justified yet.** Keep all 12 Play-time
+tail restores and the verified loader fix intact.
+
+The user heard no artifacts on their Windows session;
+Linux/Wine listening validation is still planned.
+
 ## What will settle the true origin
 
 After examining the exact native instruction sequence, identify and
