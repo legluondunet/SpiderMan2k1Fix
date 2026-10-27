@@ -1,5 +1,5 @@
 /*
- * DirectSound-native PKR original PCM tail repair.
+ * DirectSound-native optional Heli1 declick and read-only audio trace.
  *
  * Valid ONLY for the already SHA256-checked supported SpideyPC.exe.
  * The single original x86 CALL at 0x00472870 points to native
@@ -77,10 +77,10 @@ static void __cdecl native_play_with_pkr(int slot,int looping){
   int trace_now=trace_enabled && trace_count<MAX_PLAY_TRACE;
   unsigned n=0;
   if(installed && buffer){
-    SpiderPKRAudioIndex_Probe(slot,buffer,looping);
-    repaired=SpiderPKRAudioIndex_TryTailRestore(slot,buffer,looping);
-    /* Independent OFF-by-default, source-specific original Heli1 click repair.
-     * Both guards require an inactive verified native DirectSound buffer. */
+    SpiderPKRAudioIndex_Probe(slot,buffer,looping); /* optional read-only */
+    /* Retain the independent, opt-in Heli1 two-sample declick.
+     * The native loader already restores missing WAV tail sectors;
+     * no late DirectSound PCM tail repair is attempted here. */
     if(SpiderPKRAudioIndex_TryHeli1Declick(slot,buffer,looping))repaired=1;
   }
   if(trace_now){
