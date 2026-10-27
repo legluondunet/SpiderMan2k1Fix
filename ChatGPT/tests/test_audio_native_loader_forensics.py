@@ -92,3 +92,31 @@ def test_source_uses_no_game_writes_runtime_patches_or_shell():
         assert forbidden not in content
     assert "read_bytes()" in content
     assert "out.write_text(report" in content
+
+
+def test_windows_powershell_probe_matches_native_analysis_and_is_readonly():
+    """PowerShell 5.1 implementation is self-contained; runtime needs Windows."""
+    ps = MODULE.with_name("Inspect-SpiderManAudioLoader.ps1")
+    body = ps.read_text(encoding="utf-8")
+    assert "[CmdletBinding()]" in body
+    assert "Get-FileHash -LiteralPath $resolvedExe -Algorithm SHA256" in body
+    assert probe.EXPECTED_SHA256 in body
+    assert "1507328" in body
+    for addr in ("0x005039F0", "0x00504110", "0x00504230", "0x005042A0",
+                 "0x00472870", "0x005039D0", "0x00504340"):
+        assert addr in body
+    for needle in ("Read-U16", "Read-U32", "Get-BytesAtVa",
+                   "0xE8", "ToInt32", "objdump.exe", "llvm-objdump.exe",
+                   "-ObjdumpPath", "0x800 (2048 bytes)", "Exact"):
+        assert needle.lower() in body.lower()
+    assert "New-Object byte[]" in body
+    assert "Get-BytesAtVa -Address $windowStart" in body
+    assert "STATIC / READ-ONLY" in body
+    assert "no instruction signature asserted" in body
+    assert "Refusing to overwrite the input executable" in body
+    # Only the report is written, after PE and all original x86 signatures.
+    for forbidden in ("Set-Content -Path $resolvedExe", "WriteAllBytes($resolvedExe",
+                      "VirtualProtect", "WriteProcessMemory", "Start-Process SpideyPC",
+                      "Start-Process wine", "Invoke-Expression", "IEX ", "python.exe"):
+        assert forbidden not in body
+    assert body.index("Get-FileHash -LiteralPath $resolvedExe") < body.index("WriteAllText($resolvedOutput")
