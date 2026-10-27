@@ -3099,7 +3099,7 @@ static DWORD initialize_body(LPVOID unused) {
   {
     char ini[MAX_PATH],*slash;
     DWORD n=GetModuleFileNameA(NULL,ini,MAX_PATH);
-    int test=0,swing=0,pkr_readonly=0;
+    int test=0,swing=0,pkr_readonly=0,pkr_tail_restore=0;
     if(n && n<MAX_PATH && (slash=strrchr(ini,'\\'))!=NULL){
       strcpy(slash+1,"SpiderMan2k1Fix.ini");
       test=GetPrivateProfileIntA("Debug","ExperimentalSDL3AudioProbe",0,ini)==1;
