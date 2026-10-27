@@ -150,6 +150,63 @@ static void log_index(const char *description,unsigned a,unsigned b,unsigned c){
            description,a,b,c);
   diag(m);
 }
+/* Read-only forensic check for the 2.520-second Heli1.wav loop.
+ * The user's 48-kHz recording contains recurring impulses with exactly
+ * this period, including pairs about 820 ms apart. Do NOT touch PCM:
+ * print the strongest isolated source-sample jumps and the loop seam
+ * to distinguish existing original content from playback artefacts.
+ * No DirectSound, file writes, or game-state changes. */
+static void log_heli1_source_discontinuities(void){
+  unsigned i,rank;
+  if(!diag)return;
+  for(i=0;i<source_count;i++){
+    const WAVSource *w=&sources[i];
+    uint32_t sample_count,first,last,seam_delta,chosen[8]={0};
+    unsigned used=0;
+    char line[260];
+    if(strcmp(w->name,"Heli1.wav")!=0 || w->rate!=12000u ||
+       w->pcm_bytes!=60480u || w->header_bytes!=44u || !w->pcm)
+      continue;
+    sample_count=w->pcm_bytes/2u;
+    first=(uint16_t)le16(w->pcm);
+    last=(uint16_t)le16(w->pcm+w->pcm_bytes-2u);
+    seam_delta=(uint32_t)abs((int)(int16_t)first-(int)(int16_t)last);
+    snprintf(line,sizeof(line),
+      "PKR-AUDIO: HELI1-SOURCE original=%s/%s samples=%lu hz=%lu duration_ms=2520 loop_seam_delta=%lu last=%d first=%d (READ-ONLY)",
+      w->dir,w->name,(unsigned long)sample_count,
+      (unsigned long)w->rate,(unsigned long)seam_delta,
+      (int)(int16_t)last,(int)(int16_t)first);
+    diag(line);
+    /* Pick up to 8 largest jumps, at least 120ms apart, without
+     * assuming that every transient is unwanted audio. */
+    for(rank=0;rank<8u;rank++){
+      uint32_t s,best_sample=0,best_delta=0;
+      int best_prev=0,best_next=0;
+      for(s=1;s<sample_count;s++){
+        unsigned p;
+        int prev,next;
+        uint32_t delta;
+        for(p=0;p<used;p++)
+          if(s+1440u>chosen[p] && s<chosen[p]+1440u)break;
+        if(p<used)continue;
+        prev=(int)(int16_t)le16(w->pcm+(s-1u)*2u);
+        next=(int)(int16_t)le16(w->pcm+s*2u);
+        delta=(uint32_t)abs(next-prev);
+        if(delta<=best_delta)continue;
+        best_delta=delta;best_sample=s;best_prev=prev;best_next=next;
+      }
+      if(!best_delta)break;
+      chosen[used++]=best_sample;
+      snprintf(line,sizeof(line),
+        "PKR-AUDIO: HELI1-SOURCE-JUMP rank=%u sample=%lu ms=%.3f delta=%lu prev=%d next=%d (READ-ONLY; no audio modification)",
+        rank+1u,(unsigned long)best_sample,
+        (double)best_sample*1000.0/(double)w->rate,
+        (unsigned long)best_delta,best_prev,best_next);
+      diag(line);
+    }
+    break;
+  }
+}
 static int load_audio_index(const char *path){
   FILE *f=NULL;
   long total_size;
@@ -255,6 +312,7 @@ finished:
       source_count,loaded_bytes,crc_fail);
     diag(line);
   }
+  if(decoded>0 && crc_fail==0)log_heli1_source_discontinuities();
   return decoded>0 && crc_fail==0;
 }
 void SpiderPKRAudioIndex_Init(void (*logger)(const char*),int enabled){
