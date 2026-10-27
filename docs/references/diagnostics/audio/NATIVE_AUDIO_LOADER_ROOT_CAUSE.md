@@ -884,6 +884,70 @@ the two opt-in audio fallback options remain available
 and unchanged.
 
 
+## Linux/Wine extended gameplay trace — 27 Oct 2026, 18:45
+
+The user supplied `SpiderMan2k1Fix(20261027-184558).log`
+(1,775 physical lines; game build `v1.0.0-b100f84`,
+a test merge commit that **does contain** the final
+CRC-verified native-loader rootfix code from `40dd036`).
+
+**CRITICAL interpretation:** The new code was **not
+active in this Wine session**. The complete log has no
+`PKR-AUDIO: LOADER-HOOK ARMED` entry, no
+`LOADER-HOOK REFUSED` entry, and zero native
+`LOADER-TAIL-RESTORED` events. In that code revision
+`SpiderPKRAudioLoader_Init` returns without logging
+when `[Debug] ExperimentalAudioLoaderTail` is not
+`1`. The INI validator reported a valid configuration,
+so the feature was almost certainly absent or set
+to zero. This is an **opt-in configuration omission,
+not evidence of a Wine-specific native-loader failure**.
+
+The older **pre-Play DirectSound fallback did run**:
+
+| Wine trace measurement | Observed |
+| --- | ---: |
+| Independent CRC-verified original PKR WAV sources | 656 of 656; 0 CRC errors |
+| Pre-Play `TAIL-RESTORED` events | **100** |
+| Distinct source WAV names repaired | **77** |
+| Total PCM tail bytes restored (across all events) | **92,780 bytes** |
+| `FULL-PCM DIFF` / `FULL-PCM IDENTICAL` messages | 43 / 24 |
+| `TAIL-SKIP` with already-identical / non-tail-only differences | 24 / 3 |
+| Read-only DirectSound Play traces | 256 complete before/after pairs (configured trace cap) |
+| Failed HRESULTs among all four API-query HRESULTs across the 256 pairs | **0** |
+| `Heli1.wav` declick | activated, including two-sample replacement |
+| Native load-time `LOADER-TAIL-RESTORED` | **0 (loader opt-in not armed)** |
+
+The source-level PCM differences still align precisely
+with the missing final partial 2,048-byte WAV sector.
+Common impacted files include `wind2.wav`, `wind3.wav`,
+`Heli1.wav`, `ThugStp*.wav`, `ThugHit*.wav`,
+`Crawl1.wav`, `Crawl2.wav`, `catland3.wav`,
+and many later fight and ambience sounds. DirectSound
+`Play` changed all 256 sampled buffers from stopped
+status 0 to 0x1/0x5; all queried buffer capability,
+format, status and position HRESULTs were zero.
+After more than 14,000 DirectDraw flips and several
+in-game scripts/levels, native controller-7 cleanup
+returned to the main menu; no logged audio failure
+or process crash. **This supports robustness of the
+fallback under Wine, not auditory absence of crackles.**
+
+**Necessary second Wine run, with no DLL rebuild
+required for this same binary:** close the game and
+set `ExperimentalAudioLoaderTail=1` under the existing
+`[Debug]` section in `SpiderMan2k1Fix.ini`.
+Keep `ExperimentalAudioPKRTailRestore=1` as a safety
+fallback and `ExperimentalAudioHeli1Declick=1` for
+the independent helicopter PCM discontinuities.
+After launch, first require `PKR-AUDIO: LOADER-HOOK
+ARMED`, then examine native `LOADER-TAIL-RESTORED`
+and any remaining late `TAIL-RESTORED` events
+(ideally none on the same paths). Exact counts will
+depend on sound assets visited. Ask the tester for
+subjective audio results to complete Wine validation.
+Leave this PR draft/unmerged.
+
 ## Archived investigation plan (before native root cause was identified)
 
 The following was the former diagnostic plan, retained as historical context. The exact responsible instruction has since been established and the native loader correction validated in the Windows session above.
