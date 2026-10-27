@@ -1088,6 +1088,80 @@ The test will **identify candidates**, not automatically repair
 unverified files. Keep the PR unmerged until both technical and
 listening validation are complete.
 
+## Linux/Wine 19:54 forensic result: the residual WAVs are aliases
+
+The user supplied `SpiderMan2k1Fix(20261027-195428).log`
+(`v1.0.0-403ec85`; 1,261 physical lines) after testing the
+read-only forensic build on Linux/Wine. The user's listening verdict
+was **no audible crackling or parasites at all**.
+
+**Audio behavior:** Native `LOADER-HOOK ARMED` confirmed.
+Exactly **96 success messages** `LOADER-TAIL-RESTORED` (the
+`MAX_LOADER_DIAG` logging ceiling, **not** the total lifetime
+repair count), **zero** pre-Play `TAIL-RESTORED`, **66**
+`FULL-PCM IDENTICAL` and **one** `FULL-PCM DIFF` of four
+bytes, caused by the intentional two-sample `Heli1.wav` declick
+in a duplicate voice. `HELI1-DECLICK` occurred four times.
+All **656 WAVs passed CRC**. More than **12,000 DirectDraw
+Flip** presentations, two complete native controller-7 teardown
+paths, and no log of a process crash or an audio repair failure.
+
+**Important breakthrough:** All seven logged native source
+skips came from **existing CRC-verified WAVs with non-unique
+names/contents in the index**, not from unknown or missing assets:
+
+| Seen | Unread RIFF remainder | Unread PCM | Unique full-file-length + loaded-prefix matches | Source evidence |
+| --- | ---: | ---: | ---: | --- |
+| Four times | 20 B | **0 B** | 1 | **`BreakFree.wav`**; source length and full loaded prefix uniquely identified, but missing tail is *metadata-only*, so intentionally left unpatched |
+| Twice | 460 B | **460 B** | **2** | Both CRC-verified WAV candidates have the same exact loaded prefix |
+| Once | 1,988 B | **1,988 B** | **6** | Six CRC-verified WAV candidates have the same exact loaded prefix |
+
+The 460-byte identical loaded prefix fingerprint is
+`8F75D1EE`; the 1,988-byte class fingerprint is
+`C9A40345` (FNV-1a of first 2,048 bytes). These
+fingerprints are investigative aids, not independent source
+proof. The reason for the previous skip is a filename/candidate
+**multiplicity**, not a corrupt CRC, incompatible WAV format or
+missing file. The new forensic counters prove identical
+already-loaded prefixes, **not** yet identical unread tails.
+
+### Strict alias-safe rootfix refinement (experimental; requires new runtime test)
+
+The native WAV matcher can safely restore a tail even if two
+or six **different source entries** match the file header,
+full RIFF file size and all already-loaded bytes, provided
+that **every candidate's entire unread remainder is
+byte-for-byte identical**. Accordingly the matcher on
+the experimental branch now:
+
+1. Requires the same CRC-verified source cache, exact
+   RIFF length, full loaded prefix, PCM tail-crossing,
+   supported rate and allocation bounds.
+2. Compares the **entire remainder, including metadata**,
+   across *all* eligible matching original candidates.
+   **Any difference returns NULL**, preserving the
+   original fail-closed behavior.
+3. Returns common bytes from a verified original only if
+   all candidates agree; logs `CRC-identical WAV aliases`
+   rather than attributing the bytes to an arbitrary filename.
+4. Still requires the hook to read a **fresh native sector
+   into a private 2,048-byte scratch buffer** and compare
+   those exact bytes before copying only the allocated
+   remainder into game memory. It does not change native
+   game calls, DirectSound, metadata, archive content,
+   optional fallback or the Heli1 declick.
+
+**This behavioral refinement is NOT YET runtime-validated.**
+The 19:54 Wine log predates it, and does not reveal whether
+the cached candidates' **unread tails** are identical.
+If they disagree, the new build must still report the
+same skip events, exactly as before; clean sound alone
+cannot establish that these three PCM tails were restored.
+Check the next PR #67 artifact's `LOADER-TAIL-RESTORED`
+events with `source=CRC-identical WAV aliases`, plus any
+remaining `LOADER-SKIP-FORENSIC` events. No merge without
+user approval and listening validation.
+
 ## Archived investigation plan (before native root cause was identified)
 
 The following was the former diagnostic plan, retained as historical context. The exact responsible instruction has since been established and the native loader correction validated in the Windows session above.
