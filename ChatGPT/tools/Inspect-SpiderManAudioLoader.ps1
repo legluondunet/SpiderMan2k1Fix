@@ -374,7 +374,10 @@ if ($null -ne $disassembler) {
         [pscustomobject]@{ Label='candidate alternative DirectSound object consumer A (4FD8xx / 4FDAxx)'; Start=[long]0x004FD800; End=[long]0x004FDAC0 },
         [pscustomobject]@{ Label='candidate alternative DirectSound object consumer B (4FFxxx)'; Start=[long]0x004FEF70; End=[long]0x004FF260 },
         [pscustomobject]@{ Label='candidate alternative DirectSound object consumer C (5000xx)'; Start=[long]0x005000B0; End=[long]0x00500260 },
-        [pscustomobject]@{ Label='candidate alternative DirectSound object consumer D (5007xx)'; Start=[long]0x00500700; End=[long]0x00500940 }
+        [pscustomobject]@{ Label='candidate alternative DirectSound object consumer D (5007xx)'; Start=[long]0x00500700; End=[long]0x00500940 },
+        [pscustomobject]@{ Label='UNCLASSIFIED COM +0x0C and +0x2C cluster / potential second buffer-construction path'; Start=[long]0x00501480; End=[long]0x00501C20 },
+        [pscustomobject]@{ Label='UNCLASSIFIED COM +0x14 and +0x2C second cluster (including 0x502A0B)'; Start=[long]0x005027F0; End=[long]0x00502BB0 },
+        [pscustomobject]@{ Label='UNCLASSIFIED COM +0x14 pair at 0x5005AC and 0x5005E8'; Start=[long]0x005004C0; End=[long]0x00500640 }
     )
     foreach ($region in $regions) {
         [void]$lines.Add('')
