@@ -19,8 +19,10 @@
  *     allocated len-byte staging buffer. No ceil-rounding, extra allocation
  *     for game data, DirectSound intercept, or writes to data.pkr.
  *
- * No modification is performed without an exact unique 44-byte PCM WAV
- * match. Original Play-time tail repair remains a separate fallback.
+ * No modification is performed without an exact unique full-file match
+ * to CRC32-verified original RIFF bytes. Optional RIFF chunks after PCM
+ * (observed 44 and 190 bytes) are preserved, not inferred or synthesized.
+ * Original Play-time tail repair remains a separate fallback.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
