@@ -11,11 +11,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import re
 import shutil
 import struct
 import subprocess
-from collections import Counter
 from pathlib import Path
 
 EXPECTED_SIZE = 1_507_328
@@ -101,7 +99,7 @@ def candidate_rel32_calls(pe: PE32, lower: int, upper: int, limit: int = 150) ->
     """Raw E8 signature candidates, NOT validated instruction boundaries."""
     base, body = pe.text()
     found = []
-    for pos in range(max(0, lower - base - 0x150000), max(0, len(body) - 4)):
+    for pos in range(max(0, len(body) - 4)):
         if body[pos] != 0xE8:
             continue
         displacement = struct.unpack_from("<i", body, pos + 1)[0]
