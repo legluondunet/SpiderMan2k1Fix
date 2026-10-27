@@ -29,6 +29,7 @@
 #include "pause_surface.h"
 #include "focus_media_pause.h"
 #include "focus_dsound_pause.h"
+#include "loose_files.h"
 #include "menu_version.h"
 #include "version_info.h"
 #include "f9_png.h"
@@ -3080,6 +3081,8 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  /* Opt-in loose-file PKR overrides: supported EXE and repaired INI only. */
+  SpiderLoose_Init(log_line);
   SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.

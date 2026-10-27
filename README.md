@@ -207,3 +207,10 @@ This license applies only to SpiderMan2k1Fix and does not cover the original gam
 This is an independent fan-made project and is not affiliated with, sponsored by, or endorsed by Activision, Neversoft, Gray Matter Interactive, or any other original developer, publisher, distributor, or rights holder.
 
 *Spider-Man* and all associated trademarks and game content remain the property of their respective owners.
+
+### Experimental modding (draft)
+
+An optional loose-file resource override lets a local `data/` directory take
+priority over the original PKR assets without altering archives. Disabled by
+default; set `[Modding] LooseFiles=1` to test. See the
+[experimental modding guide](docs/references/LOOSE_FILES_MODDING.md).
