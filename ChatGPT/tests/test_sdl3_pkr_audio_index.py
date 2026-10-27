@@ -14,8 +14,8 @@ BUILD=(R/"build.sh").read_text()
 def test_optin_and_readonly_sound_pipeline():
     assert '"ExperimentalSDL3PKRAudioIndex"' in INI
     assert 'GetPrivateProfileIntA("Debug","ExperimentalSDL3PKRAudioIndex",0,ini)==1' in MAIN
-    assert 'SpiderPKRAudioIndex_Init(log_line,pkr_readonly)' in MAIN
-    assert 'SpiderSDL3Swing5_Init(log_line,swing||pkr_readonly)' in MAIN
+    assert 'SpiderPKRAudioIndex_Init(log_line,pkr_readonly||pkr_tail_restore)' in MAIN
+    assert 'SpiderSDL3Swing5_Init(log_line,swing||pkr_readonly||pkr_tail_restore)' in MAIN
     assert 'SpiderPKRAudioIndex_Probe(slot,buf,looping)' in PLAY
     assert 'pkr_audio_index.c' in BUILD
     assert 'third_party/miniz/miniz_tinfl.c' in BUILD
