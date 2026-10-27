@@ -427,6 +427,64 @@ modifications were made during this investigation.
 Known Windows listening result: user reported no audible parasites,
 with final validation still reserved for Linux/Wine.
 
+## Forensics for 12 remaining Play-time restores: all begin at exact sector boundary
+
+Reanalysis of the **real** Windows
+`SpiderMan2k1Fix(20261027-101351).log` confirms
+**every one of the 12 remaining late repairs** has
+`first_diff == sector_tail_offset`. No late restoration starts
+in another region of PCM. These are in addition to the **64**
+already repaired at native load time.
+
+| Original WAV | First corrupt PCM offset | Bytes restored |
+| --- | ---: | ---: |
+| `PickConf.wav` | 42964 | 784 |
+| `achum.wav` | 32724 | 236 |
+| `Crawl1.wav` | 22484 | 576 |
+| `Crawl2.wav` | 18388 | 868 |
+| `Swing5.wav` | 30676 | 1956 |
+| `WebShot10.wav` | 18388 | 376 |
+| `WebShot3.wav` | 14292 | 1304 |
+| `WebShot11.wav` | 12244 | 1608 |
+| `tingle2.wav` | 55252 | 1676 |
+| `h_hitfloor.wav` | 18388 | 192 |
+| `Pistol1.wav` | 28628 | 1296 |
+| `Pistol2.wav` | 22484 | 4 |
+
+All offsets are PCM offsets **after** the 44-byte WAV header:
+`sector_tail_offset = floor((44+PCM_size)/2048)*2048 - 44`.
+For several PCM sizes ending in `2 mod 4`, the game's DirectSound
+buffer is padded with 2 bytes; those padding bytes are not the
+source-file tail and remain a separate issue.
+
+These 12 share the **exact same file-sector truncation signature**
+seen in the initially broken assets, even though the independently
+disassembled `0x00430A40` generic reader is capable of consuming
+partial sectors. The next causality test must therefore distinguish
+(1) a *caller* passing a prematurely rounded-down byte count,
+(2) another WAV-to-DirectSound construction routine dropping the
+remainder, or (3) data lost downstream of the generic resource read.
+Do not infer which one is true until code-level evidence exists.
+
+A revised SHA-gated **read-only offline** inspector now outputs:
+- `0x00470F00–0x00472A50`: game audio manager, including
+  `0x00471822` (known WAV template-loading call) and
+  `0x004727F9` (original DirectSound voice duplication call);
+- `0x004FBD60–0x004FC050`: native bank/resource lookup helper
+  near `0x004FBDC0`, used by known native loader;
+- direct `E8` call candidates into `0x00430A40`, `0x00430940`
+  and other resource/DirectSound routines;
+- candidate references to the original DirectSound object global
+  `0x006B7920`, template-buffer table `0x006BBAD4`,
+  and 32 active-voice descriptors `0x006BBD50`.
+
+**Next user evidence**: run the updated PowerShell diagnostic
+on the same SHA-verified EXE and send its new report, preferably
+`spiderman-audio-buffer-population.txt`. Code and default game
+behavior are completely unchanged; the native loader repair stays
+opt-in and legacy pre-Play restore stays as a safety net. Do not
+assert perfect Linux audio until a Linux/Wine listening run confirms it.
+
 ## What will settle the true origin
 
 After examining the exact native instruction sequence, identify and
