@@ -342,6 +342,39 @@ reader: first confirm its exact callsite, source buffer allocation
 and read contract. The current loader fix stays opt-in and the
 Play-time fallback stays on for the twelve unresolved assets.
 
+## Original executable cross-references: a second candidate resource path (27 Oct 2026)
+
+The user supplied `spiderman-audio-loader-xrefs.txt` from the
+**exact SHA256-verified** original Windows binary. The read-only raw
+x86 `E8 rel32` census produced:
+
+| Target original VA | Callsite VAs | Result |
+| --- | --- | --- |
+| `0x005051D0` (2048-byte resource reader) | `0x00430B23`, `0x00430B52`, `0x00430B9E`, `0x00503CD8` | 4 raw near-call candidates |
+| `0x00505170` (resource length query) | `0x00430A21`, `0x00503CB4` | 2 raw near-call candidates |
+| `0x00503B40` (known 64-entry native WAV loader) | `0x00471822` | 1 raw near-call candidate |
+
+The additional **three sector-reader references are clustered within
+`0x00430B00–0x00430BA0`**, with a resource length call at
+`0x00430A21`. They could form a second resource-loading routine,
+possibly used by the 12 WAVs that still need late Play-time repair.
+**The report alone does not establish function boundaries, caller
+arguments or even that these calls handle WAV/DirectSound at all.**
+Do not install a hook at these candidate addresses until this is
+verified from their actual native instructions.
+
+The PowerShell and Linux read-only tools now produce a **third static
+disassembly window**, `0x00430800–0x00430DC0`, in addition to the
+existing sound-loader/reader windows, to resolve those questions.
+All source hooks and prior CRC-backed runtime repair behaviors remain
+unchanged. No game launch, new runtime patch, or PR merge is involved
+in this stage.
+
+The user reports **no audible parasites on the current Windows PC**,
+while deliberately reserving final audio validation for a separate
+Linux/Wine PC. Do not claim Linux compatibility or overall auditory
+perfection from a single Windows listening session.
+
 ## What will settle the true origin
 
 After examining the exact native instruction sequence, identify and
