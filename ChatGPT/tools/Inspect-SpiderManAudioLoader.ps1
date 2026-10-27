@@ -304,12 +304,13 @@ if ($ObjdumpPath) {
 }
 if ($null -ne $disassembler) {
     [void]$lines.Add("Disassembler: $disassembler")
-    # Second window follows calls from 0x00503B40 through the WAV
-    # length + malloc + signed /2048 and suspected block reader.
-    # Both windows stay static/read-only and share the EXE hash gate.
+    # Three SHA-gated, static/read-only windows. The third covers
+    # previously unseen E8 xrefs at 0x430A21, 0x430B23, 0x430B52 and
+    # 0x430B9E. These are raw call candidates until decoded.
     $regions = @(
         [pscustomobject]@{ Label='native DirectSound loader / template fill'; Start=$windowStart; End=$windowEnd },
-        [pscustomobject]@{ Label='WAV container open, length query and sector read callees'; Start=[long]0x00504C80; End=[long]0x00505300 }
+        [pscustomobject]@{ Label='WAV container open, length query and sector read callees'; Start=[long]0x00504C80; End=[long]0x00505300 },
+        [pscustomobject]@{ Label='ALTERNATIVE resource reader / WAV path candidates at 0x430A21 and 0x430B23,0x430B52,0x430B9E'; Start=[long]0x00430800; End=[long]0x00430DC0 }
     )
     foreach ($region in $regions) {
         [void]$lines.Add('')
