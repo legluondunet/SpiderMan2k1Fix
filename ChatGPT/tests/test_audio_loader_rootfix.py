@@ -115,6 +115,22 @@ def test_crc_verified_aliases_are_content_unambiguous_only_when_all_tails_agree(
     assert eligible([base], b"X" * complete, len(base)) is None
 
 
+def test_alias_success_is_logged_independently_after_general_diagnostic_cap():
+    # A rare 460/1988-byte duplicate may be loaded only after the first
+    # 96 ordinary repairs; do not hide its validation behind that cap.
+    assert "#define MAX_LOADER_DIAG 96u" in SRC
+    assert "#define MAX_ALIAS_DIAG 24u" in SRC
+    assert "alias_repaired_count=0" in SRC
+    assert 'strcmp(source,"CRC-identical WAV aliases")==0' in SRC
+    assert "++alias_repaired_count<=MAX_ALIAS_DIAG" in SRC
+    assert 'loader_message("ALIAS-TAIL-RESTORED",handle,remainder,source);' in SRC
+    assert SRC.index("memcmp(scratch,expected,remainder)!=0") < SRC.index(
+        "memcpy((unsigned char*)dst+complete,scratch,remainder);") < SRC.index(
+        'loader_message("ALIAS-TAIL-RESTORED",handle,remainder,source);')
+    assert SRC.index('loader_message("ALIAS-TAIL-RESTORED",handle,remainder,source);') < SRC.index(
+        'loader_message("TAIL-RESTORED",handle,remainder,source);')
+
+
 def test_verified_88_234_byte_wav_structures_have_pcm_missing_last_sector():
     # Observed original WAV file lengths from 27 Oct Windows test.
     # The 44/190 extra bytes are INSIDE the declared RIFF, after PCM.
