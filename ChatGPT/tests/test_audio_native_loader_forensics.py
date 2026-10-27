@@ -139,6 +139,12 @@ def test_windows_powershell_probe_matches_native_analysis_and_is_readonly():
     assert "disassemble(exe, 0x004FEF70, 0x004FF260)" in companion
     assert "disassemble(exe, 0x005000B0, 0x00500260)" in companion
     assert "disassemble(exe, 0x00500700, 0x00500940)" in companion
+    assert "0x00501480" in body and "0x00501C20" in body
+    assert "0x005027F0" in body and "0x00502BB0" in body
+    assert "0x005004C0" in body and "0x00500640" in body
+    assert "disassemble(exe, 0x00501480, 0x00501C20)" in companion
+    assert "disassemble(exe, 0x005027F0, 0x00502BB0)" in companion
+    assert "disassemble(exe, 0x005004C0, 0x00500640)" in companion
 
     assert "ABSOLUTE DSOUND POINTER" in companion
     assert "FOCUSED RAW x86 E8 CALL CANDIDATES: OTHER WAV LOADER PATHS" in body
