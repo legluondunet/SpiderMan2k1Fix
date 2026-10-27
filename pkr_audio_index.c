@@ -65,6 +65,9 @@ typedef struct {
 static WAVSource *sources=NULL;
 static unsigned source_count=0,index_ready=0,reports=0,full_reports=0;
 static int tail_restore_enabled=0;
+/* User opt-in: export only CRC-verified original Heli1 PCM to a new
+ * WAV in the user's Windows TEMP folder. No game files or buffers touched. */
+static int heli1_source_dump_enabled=0;
 static void (*diag)(const char *)=NULL;
 static unsigned loaded_bytes=0;
 /* Unique unmatched (PCM length, rate) pairs: keep noisy repeated fight effects
@@ -72,6 +75,16 @@ static unsigned loaded_bytes=0;
 static struct { DWORD bytes,rate; } source_misses[MAX_SOURCE_MISS_LOGS];
 static unsigned source_miss_count=0;
 
+static void wr_le16(uint8_t *p,uint16_t v){
+  p[0]=(uint8_t)v;
+  p[1]=(uint8_t)(v>>8);
+}
+static void wr_le32(uint8_t *p,uint32_t v){
+  p[0]=(uint8_t)v;
+  p[1]=(uint8_t)(v>>8);
+  p[2]=(uint8_t)(v>>16);
+  p[3]=(uint8_t)(v>>24);
+}
 static uint32_t le32(const uint8_t *p){
   return (uint32_t)p[0] | (uint32_t)p[1]<<8 |
          (uint32_t)p[2]<<16 | (uint32_t)p[3]<<24;
@@ -149,6 +162,84 @@ static void log_index(const char *description,unsigned a,unsigned b,unsigned c){
   snprintf(m,sizeof(m),"PKR-AUDIO: %s total=%u valid=%u other=%u",
            description,a,b,c);
   diag(m);
+}
+/* An explicitly requested, one-shot WAV copy of the CRC-verified source
+ * for offline comparison with the user's helicopter recording. Only writes
+ * to a CREATE_NEW file in the current user's TEMP, never data.pkr or any
+ * game DirectSound buffer. The original PCM is passed byte-for-byte.
+ * This is a forensic capture, NOT an alternative audio backend. */
+void SpiderPKRAudioIndex_SetHeli1SourceDump(int enabled){
+  heli1_source_dump_enabled=(enabled==1);
+}
+static void dump_heli1_source_optin(void){
+  unsigned i;
+  char dir[MAX_PATH],path[MAX_PATH],line[2*MAX_PATH+80u];
+  DWORD n;
+  uint8_t hdr[44];
+  HANDLE out;
+  DWORD written=0;
+  const WAVSource *w=NULL;
+  if(!heli1_source_dump_enabled)return;
+  if(!index_ready && !sources)return;
+  for(i=0;i<source_count;i++){
+    if(strcmp(sources[i].name,"Heli1.wav")==0 &&
+       sources[i].pcm_bytes==60480u && sources[i].rate==12000u &&
+       sources[i].header_bytes==44u && sources[i].pcm){
+      w=&sources[i];break;
+    }
+  }
+  if(!w){
+    if(diag)diag("PKR-AUDIO: HELI1-DUMP REFUSED (no matching CRC-verified source)");
+    return;
+  }
+  n=GetTempPathA(sizeof(dir),dir);
+  if(!n||n>=sizeof(dir)){
+    if(diag)diag("PKR-AUDIO: HELI1-DUMP REFUSED (Windows TEMP path unavailable)");
+    return;
+  }
+  n=(DWORD)snprintf(path,sizeof(path),
+      "%sSpiderMan2k1Fix-Heli1-Original-%lu.wav",dir,
+      (unsigned long)GetCurrentProcessId());
+  if(n>=sizeof(path)){
+    if(diag)diag("PKR-AUDIO: HELI1-DUMP REFUSED (Windows TEMP path too long)");
+    return;
+  }
+  /* CREATE_NEW cannot overwrite any existing file. */
+  out=CreateFileA(path,GENERIC_WRITE,FILE_SHARE_READ,NULL,CREATE_NEW,
+                  FILE_ATTRIBUTE_NORMAL,NULL);
+  if(out==INVALID_HANDLE_VALUE){
+    if(diag)diag("PKR-AUDIO: HELI1-DUMP REFUSED (cannot create unique TEMP file)");
+    return;
+  }
+  memset(hdr,0,sizeof(hdr));
+  memcpy(hdr,"RIFF",4);
+  wr_le32(hdr+4,36u+w->pcm_bytes);
+  memcpy(hdr+8,"WAVEfmt ",8);
+  wr_le32(hdr+16,16u);
+  wr_le16(hdr+20,1u);
+  wr_le16(hdr+22,1u);
+  wr_le32(hdr+24,w->rate);
+  wr_le32(hdr+28,w->rate*2u);
+  wr_le16(hdr+32,2u);
+  wr_le16(hdr+34,16u);
+  memcpy(hdr+36,"data",4);
+  wr_le32(hdr+40,w->pcm_bytes);
+  if(!WriteFile(out,hdr,sizeof(hdr),&written,NULL) ||
+     written!=sizeof(hdr) ||
+     !WriteFile(out,w->pcm,w->pcm_bytes,&written,NULL) ||
+     written!=w->pcm_bytes){
+    CloseHandle(out);
+    DeleteFileA(path);
+    if(diag)diag("PKR-AUDIO: HELI1-DUMP REFUSED (incomplete TEMP WAV; removed)");
+    return;
+  }
+  CloseHandle(out);
+  if(diag){
+    snprintf(line,sizeof(line),
+      "PKR-AUDIO: HELI1-DUMP CREATED %s pcm_bytes=%lu rate=%lu (CRC-verified original; never played or modified)",
+      path,(unsigned long)w->pcm_bytes,(unsigned long)w->rate);
+    diag(line);
+  }
 }
 /* Read-only forensic check for the 2.520-second Heli1.wav loop.
  * The user's 48-kHz recording contains recurring impulses with exactly
@@ -312,7 +403,10 @@ finished:
       source_count,loaded_bytes,crc_fail);
     diag(line);
   }
-  if(decoded>0 && crc_fail==0)log_heli1_source_discontinuities();
+  if(decoded>0 && crc_fail==0){
+    log_heli1_source_discontinuities();
+    dump_heli1_source_optin();
+  }
   return decoded>0 && crc_fail==0;
 }
 void SpiderPKRAudioIndex_Init(void (*logger)(const char*),int enabled){
