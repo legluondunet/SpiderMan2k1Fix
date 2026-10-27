@@ -102,7 +102,7 @@ For the full **instruction-backed** cause and safety context, see the [audio rev
 | `0x00430A40` | Generic resource transfer function; **handles** partial final blocks with a scratch buffer. | S. Not established as a second WAV/DirectSound template builder; **do not patch** this path for the WAV defect. |
 | `0x004FBDC0` | Sound-bank selection/lookup helper. | S. Separate from `0x005051D0` sector reader. |
 | `0x005039F0`, `[0x006BBD50]` | Initialize and hold 32 game-owned secondary voice records × 12 bytes. | S+R. **32 voices** versus **64 reference templates**. |
-| `0x004727F9 → 0x00504110` | Native voice/reference-buffer duplication (§`DuplicateSoundBuffer` callsite `0x00504152`§). | S. |
+| `0x004727F9 → 0x00504110` | Native voice/reference-buffer duplication (`DuplicateSoundBuffer` callsite `0x00504152`). | S. |
 | `0x00504230` / `0x005042A0` | Native DirectSound voice Play / Stop routines. | S+R. Distinct from the WAV loader's earlier sector truncation. |
 | `0x00504420` | Native voice-status/busy routine used in a separate hypothesis about LOOPING vs PLAYING. | S. Historical [PR #65](https://github.com/legluondunet/SpiderMan2k1Fix/pull/65) was **closed unmerged**; the hypothesis is **not** proof of the WAV bug's cause. |
 
