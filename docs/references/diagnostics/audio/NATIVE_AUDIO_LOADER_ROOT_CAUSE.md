@@ -1,5 +1,19 @@
 # Root-cause investigation: original DirectSound WAV loader (27 Oct 2026)
 
+> **Current implementation after PR #67:** The native WAV final-sector
+> correction is built in and **enabled by default** for the supported,
+> SHA-256-verified `SpideyPC.exe`. There is **no audio loader setting
+> in the factory INI**. A manually supplied
+> `[Debug] ExperimentalAudioLoaderTail=0` remains a hidden diagnostic
+> opt-out; `=1` is redundant. Original source CRC checks, byte-exact
+> alias matching, the private native scratch-sector read, and the original
+> DirectSound engine are unchanged. The old Play-time fallback is removed.
+> The dated entries below preserve the **historical investigation**;
+> earlier off-by-default statements and pre-merge notes describe
+> previous builds, not the current source. Linux/Wine gameplay and
+> listening tests passed before making the fix default-on; native Windows
+> gameplay validation remains pending.
+
 ## Status: analysis in progress; no root fix asserted
 
 The **user-approved audible repairs** (generic CRC-backed native PCM sector-tail

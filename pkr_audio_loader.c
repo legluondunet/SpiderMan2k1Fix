@@ -1,7 +1,8 @@
 /*
  * Spider-Man (2001 PC) NATIVE WAV LOADER partial-sector correction.
  *
- * Strictly OFF by default, supported SHA256-verified SpideyPC.exe only.
+ * Enabled by default for the supported SHA256-verified SpideyPC.exe only.
+ * A manual INI opt-out is available for troubleshooting.
  * Disassembly proved 0x503CD3 truncates WAV byte length / 2048, and
  * 0x5051D0 multiplies that count by 2048 before copying game PKR data.
  *
@@ -211,7 +212,10 @@ void SpiderPKRAudioLoader_Init(void (*logger)(const char *),int enabled){
   DWORD old=0,ignored=0;
   uint32_t rel_a,rel_b;
   diag=logger;
-  if(enabled!=1)return;
+  if(enabled!=1){
+    if(diag)diag("PKR-AUDIO: LOADER-HOOK DISABLED by manual INI override");
+    return;
+  }
   if((uintptr_t)GetModuleHandleA(NULL)!=GAME_BASE||
      memcmp(a,expected_length_call,5u)!=0||
      memcmp(b,expected_sector_call,5u)!=0){
@@ -256,5 +260,5 @@ void SpiderPKRAudioLoader_Init(void (*logger)(const char *),int enabled){
   if(!VirtualProtect(a,(SIZE_T)(b+5u-a),old,&ignored)&&diag)
     diag("PKR-AUDIO: LOADER-HOOK WARNING cannot restore original code-page protection");
   installed=1;
-  if(diag)diag("PKR-AUDIO: LOADER-HOOK ARMED experimental native WAV final-sector read; original sources CRC-verified; OFF by default");
+  if(diag)diag("PKR-AUDIO: LOADER-HOOK ARMED native WAV final-sector fix; original sources CRC-verified; enabled by default");
 }
