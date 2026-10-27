@@ -375,6 +375,58 @@ while deliberately reserving final audio validation for a separate
 Linux/Wine PC. Do not claim Linux compatibility or overall auditory
 perfection from a single Windows listening session.
 
+## Second native disassembly: `0x00430A40` **already handles the short final sector** (27 Oct 2026)
+
+The user provided the original game's `llvm-objdump` of
+`0x00430800–0x00430DC0` in
+`spiderman-audio-second-path.txt`. This resolves the raw xrefs
+identified above as **real instructions** and changes our earlier
+working hypothesis. The second path is a **generic resource-transfer
+routine**, not yet established as a DirectSound/WAV template
+loader. **It does not show the same omitted-tail defect as
+`0x00503B40`.**
+
+`0x00430940` opens a game resource via `0x00504CB0`, and
+`0x00430A21` queries its byte length via `0x00505170`.
+`0x00430A40` receives an output buffer and a resource byte count;
+it also contains a branch via `0x00458130` (verify this routine
+separately if needed) and uses a reusable 2048-byte scratch buffer at
+`0x0057AD30`.
+
+The crucial native instruction paths:
+
+| VA | Real native behavior |
+| --- | --- |
+| `0x00430AF2` | compare the requested remaining byte length to `0x800` |
+| `0x00430B06` | check 32-byte destination alignment to decide whether to copy full sectors directly |
+| `0x00430B0B–0x00430B23` | on the aligned fast path, truncate the **full-sector** count, and pass that count to native `0x005051D0` |
+| `0x00430B28–0x00430B39` | subtract full-sector bytes from remaining length, advance the destination pointer |
+| `0x00430B43–0x00430B87` | for additional full sectors, read **one 2048-byte sector** into scratch and copy its 2048 bytes to the destination |
+| `0x00430B89–0x00430BA8` | when the remaining byte count is nonzero and at most 2048, request **one more sector** into scratch via `0x005051D0` |
+| `0x00430BCC–0x00430BDB` | copy **exactly the remaining requested bytes** from scratch, one byte at a time |
+
+The 2048-byte integer division at `0x00430B0B` is **not**
+the same bug. The short-sector branch at `0x00430B9E`,
+followed by `0x00430BCC–0x00430BDB`, explicitly consumes
+the remainder (and the native reader itself clamps to the resource
+end). On an unaligned destination, the code simply bypasses the
+fast full-sector copy and still performs the scratch-based reads.
+This is strong instruction-level evidence that the routine
+**does not systematically drop the trailing resource bytes**.
+
+**Updated diagnosis:** do **not** extend the loader-tail patch to the
+three `0x00430Bxx` callsites. They are valid calls but do not exhibit
+our specific truncation defect. The twelve remaining late
+`TAIL-RESTORED` events could arise from **another WAV-to-DirectSound
+loading/transfer route** or corruption **after** a resource was read
+correctly. We must inspect **where their DirectSound template buffers
+are populated**, rather than conclude that the generic
+`0x00430A40` reader needs fixing. No in-game audio or DLL
+modifications were made during this investigation.
+
+Known Windows listening result: user reported no audible parasites,
+with final validation still reserved for Linux/Wine.
+
 ## What will settle the true origin
 
 After examining the exact native instruction sequence, identify and
