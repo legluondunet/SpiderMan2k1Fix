@@ -19,8 +19,9 @@
  *     allocated len-byte staging buffer. No ceil-rounding, extra allocation
  *     for game data, DirectSound intercept, or writes to data.pkr.
  *
- * No modification is performed without an exact unique full-file match
- * to CRC32-verified original RIFF bytes. Optional RIFF chunks after PCM
+ * No modification is performed unless the complete RIFF source matches
+ * CRC32-verified originals, with any matching aliases required to agree
+ * byte-for-byte on the entire unread remainder. Optional RIFF chunks after PCM
  * (observed 44 and 190 bytes) are preserved, not inferred or synthesized.
  * Original Play-time tail repair remains a separate fallback.
  */
@@ -39,12 +40,13 @@
 #define ORIGINAL_SECTOR_READ ((int (__cdecl *)(int,uint32_t,void*))(uintptr_t)0x005051D0u)
 #define MAX_WAV_BYTES (16u*1024u*1024u)
 #define MAX_LOADER_DIAG 96u
+#define MAX_ALIAS_DIAG 24u /* separate rare-alias trace, even after first 96 restores */
 
 static const BYTE expected_length_call[5]={0xE8,0xB7,0x14,0x00,0x00};
 static const BYTE expected_sector_call[5]={0xE8,0xF3,0x14,0x00,0x00};
 static DWORD tls_len=TLS_OUT_OF_INDEXES,tls_handle=TLS_OUT_OF_INDEXES;
 static int installed=0;
-static unsigned repaired_count=0,skipped_count=0;
+static unsigned repaired_count=0,skipped_count=0,alias_repaired_count=0;
 static void (*diag)(const char *)=NULL;
 
 static void loader_message(const char *type,int handle,unsigned bytes,const char *name){
@@ -191,6 +193,13 @@ static int __cdecl native_sector_read_with_tail(int handle,uint32_t blocks,void 
   }
   memcpy((unsigned char*)dst+complete,scratch,remainder);
   ++repaired_count;
+  /* Aliases are rare and may load after the standard 96-event log cap.
+   * Record only independently CRC-verified, byte-identical aliases
+   * AFTER successful fresh-native-sector validation and the exact
+   * original-length copy. This is logging only, not a repair change. */
+  if(source && strcmp(source,"CRC-identical WAV aliases")==0 &&
+     ++alias_repaired_count<=MAX_ALIAS_DIAG)
+    loader_message("ALIAS-TAIL-RESTORED",handle,remainder,source);
   if(repaired_count<=MAX_LOADER_DIAG)
     loader_message("TAIL-RESTORED",handle,remainder,source);
   return result;
