@@ -303,3 +303,110 @@ established should we expand SDL3 automatic playback. Native
 handling remain blockers for general audio takeover.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+
+## Phase 5 – User log establishes a universal 2,048-byte WAV tail fault
+
+Real log `SpiderMan2k1Fix(20261027-001614).log` from the supported EXE:
+
+- **53 complete PCM comparisons across 30 distinct game audio resources**.
+- **53/53 DIFF, zero IDENTICAL** in this particular sampled set.
+- **Every first differing PCM byte** falls at the boundary
+  `(first_diff + 44) % 2048 == 0`, i.e. the start of a new
+  2,048-byte block of a standard RIFF/WAV with 44-byte PCM header.
+- The entire pre-boundary prefix matches the CRC-verified original
+  archive WAV, and corruption lies in the trailing partial block.
+  Examples:
+  `Heli1.wav` bytes=60480 first_diff=59348;
+  `wind2.wav` 85176/83924;
+  `Swing5.wav` 32632/30676;
+  `WebShot3.wav` 15596/14292;
+  `ThugStp4.wav` 10840/10196;
+  `SpStep2.wav` 14324/14292.
+- This strongly suggests a **shared incomplete final-block copy
+  or sector-accounting bug** during loading/copying of original WAV
+  data into game-owned DirectSound buffers. The responsible native
+  instruction is NOT YET located. We must not claim the archive
+  itself is corrupt: all 656 original WAV entries passed CRC32.
+
+### Phase 5 experimental universal tail restoration (OFF by default)
+
+Instead of adding one SHA-256 case for every damaged sound or prematurely
+emulating all 32 DirectSound voices, test a **source-backed repair of
+only the demonstrated corrupted final partial WAV block** before the
+normal native `DXSOUND_Play`.
+
+Use the following in the same `[Debug]` section:
+
+```ini
+Log=1
+ExperimentalSDL3AudioProbe=0
+ExperimentalSDL3Swing5Replace=1
+ExperimentalSDL3PKRAudioIndex=1
+ExperimentalAudioPKRTailRestore=1
+```
+
+With `ExperimentalAudioPKRTailRestore=0`, all game-owned native
+DirectSound buffers are left unchanged as before. The new opt-in repair
+works only after the CRC-verified original PKR cache is available.
+It requires *all* the following:
+
+1. A native 32-slot `DXSOUND_Play` call, mono PCM16 and rate
+   exactly matching one source, buffer up to 1MiB.
+2. A **stopped** secondary DirectSound buffer. Already-playing
+   buffers are excluded to avoid changing samples during playback.
+3. One and only one original source in `data.pkr` matching the exact
+   buffer byte size, sample rate, and original first 1024 PCM bytes.
+4. That original WAV's actual PCM data offset is exactly 44 bytes.
+   Other WAV layouts are not altered.
+5. Every byte of the game buffer **up to the final full 2048-byte
+   WAV sector** is identical to the original PCM data.
+6. The first byte at that expected sector boundary **does** differ
+   from the original. If another region differs, or the buffer was
+   already intact, leave the entire buffer alone.
+
+Only then, under the *same* DirectSound Lock/Unlock, restore the
+partial final sector from the original CRC-verified WAV in memory.
+The original `DXSOUND_Play` still executes. There is no gameplay
+sound engine rerouting, no change to native `IsPlaying`, voice
+allocation, volume, pitch, pan, loops, Stop or pause.
+
+Expected distinct first events:
+
+```
+PKR-AUDIO: TAIL-RESTORE ARMED ...
+PKR-AUDIO: FULL-PCM DIFF source=.../Heli1.wav ...
+PKR-AUDIO: TAIL-RESTORED slot=... loop=1 source=.../Heli1.wav pcm_bytes=60480 sector_tail_offset=59348 restored_bytes=1132 occurrence=1 (native DirectSound preserved)
+```
+
+The `FULL-PCM DIFF` record is expected because the read-only probe
+runs **before** the repair at each native Play. `TAIL-RESTORED`
+confirms restoration took place. To compare, set
+`ExperimentalAudioPKRTailRestore=0` and restart.
+
+The existing Swing5-specific SDL3 playback has **priority**. If it
+successfully substitutes the audio, the original DirectSound buffer is
+never played and no tail restoration is necessary. If SDL3 is
+disabled/fails, the source-backed general repair can restore Swing5
+before native Play as well.
+
+### Real-world validation still required
+
+This is a new experiment, **NOT a validated fix**. Verify recurring
+helicopter sound, wind loops and combat/grenade/web effects; listen
+for residual clicks, pitch/frequency changes, voice truncations or
+concurrent sound glitches. Watch for missing sound effects, crashes,
+or unexpected pauses. If they occur, turn off only
+`ExperimentalAudioPKRTailRestore`; the previous stable
+Swing5 SDL3 behavior will remain available.
+
+The 2048-byte alignment strongly suggests a loading-time problem but
+does not yet identify the responsible game function. Even successful
+restoration does not prove all source WAVs or other sound paths
+(including movie soundtracks, streaming effects or other PCM
+formats) are covered.
+
+Keep this test only in DRAFT PR #67, separate from PR #66; do not
+merge before user gameplay validation.
+
+legluondunet assisted by ChatGPT (OpenAI)
