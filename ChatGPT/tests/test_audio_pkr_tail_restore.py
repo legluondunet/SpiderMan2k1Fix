@@ -217,7 +217,7 @@ def test_heli1_source_export_is_opt_in_non_destructive_and_temp_only():
     assert 'if(decoded>0 && crc_fail==0)' in SRC
     assert 'dump_heli1_source_optin();' in SRC
     assert 'w->pcm_bytes==60480u && w->rate==12000u' in SRC
-    assert 'w->header_bytes==44u && sources[i].pcm' in SRC
+    assert 'sources[i].header_bytes==44u && sources[i].pcm' in SRC
     assert 'GetTempPathA(' in SRC
     assert 'CREATE_NEW' in SRC
     assert 'PKR-AUDIO: HELI1-DUMP CREATED' in SRC
