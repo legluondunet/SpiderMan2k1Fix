@@ -36,6 +36,7 @@
 #include "quick_exit_f12.h"
 #include "pkr_audio_index.h"
 #include "pkr_audio_play_hook.h"
+#include "pkr_audio_loader.h"
 
 static const BYTE expected_sha256[32] = {
   0x0a,0x11,0xa4,0x9f,0x3f,0x63,0xd4,0xbb,
@@ -3093,18 +3094,20 @@ static DWORD initialize_body(LPVOID unused) {
   {
     char ini[MAX_PATH],*slash;
     DWORD n=GetModuleFileNameA(NULL,ini,MAX_PATH);
-    int pkr_index=0,pkr_tail_restore=0,pkr_play_trace=0,pkr_heli_declick=0;
+    int pkr_index=0,pkr_tail_restore=0,pkr_play_trace=0,pkr_heli_declick=0,pkr_loader_tail=0;
     if(n && n<MAX_PATH && (slash=strrchr(ini,'\\'))!=NULL){
       strcpy(slash+1,"SpiderMan2k1Fix.ini");
       pkr_index=GetPrivateProfileIntA("Debug","ExperimentalPKRAudioIndex",0,ini)==1;
       pkr_tail_restore=GetPrivateProfileIntA("Debug","ExperimentalAudioPKRTailRestore",0,ini)==1;
       pkr_play_trace=GetPrivateProfileIntA("Debug","ExperimentalPKRAudioPlayTrace",0,ini)==1;
       pkr_heli_declick=GetPrivateProfileIntA("Debug","ExperimentalAudioHeli1Declick",0,ini)==1;
+      pkr_loader_tail=GetPrivateProfileIntA("Debug","ExperimentalAudioLoaderTail",0,ini)==1;
     }
-    SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_tail_restore||pkr_heli_declick);
+    SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_tail_restore||pkr_heli_declick||pkr_loader_tail);
     SpiderPKRAudioIndex_EnableHeli1Declick(pkr_heli_declick);
     SpiderPKRAudioIndex_EnableTailRestore(pkr_tail_restore);
     SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_tail_restore||pkr_play_trace||pkr_heli_declick,pkr_play_trace);
+    SpiderPKRAudioLoader_Init(log_line,pkr_loader_tail);
   }
   /* The first-run generator or repair may have changed [Debug] Log. */
   {
