@@ -23,7 +23,7 @@ def test_obsolete_probes_removed():
     proxy=(ROOT / 'winmm_proxy.c').read_text()
     assert '#include "version_info.h"' in proxy
     assert 'SPIDERMAN2K1FIX_VERSION_LABEL' in proxy
-    assert '#define SPIDERMAN2K1FIX_VERSION "1.0.0"' in (ROOT / 'version_info.h').read_text()
+    assert '#define SPIDERMAN2K1FIX_VERSION "1.1.0"' in (ROOT / 'version_info.h').read_text()
 
 
 def test_input_focus_recovery_not_removed():
