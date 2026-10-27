@@ -1407,18 +1407,22 @@ path and `ExperimentalAudioPKRTailRestore`.
   **but the log does not identify which unknown key**.
   Do not assert it was necessarily that option.
 
-**Important distinction:** This trace establishes a
-successful native-only loader repair in the same
-targeted alias content that previously produced
-460- and 1,988-byte skips. It is a **technical
-runtime** validation, not direct proof of
-subjective listening quality. User confirmation
-of hearing no crackles in this exact new build
-has **not yet been received**; prior listening
-validation applies to the earlier build with
-fallback code still compiled (although it made
-zero repairs). Windows native runtime testing
-remains pending.
+**Final Linux/Wine listening confirmation (27 Oct 2026):**
+After reviewing this exact fallback-free 21:25 build
+`v1.0.0-62a9fc4` and its native alias repairs, the
+user confirmed: *« rien à déclarer, le bug semble
+avoir été résolu »*. This is the **first explicit
+subjective audio validation of the fallback-free
+configuration**. Together with the technical
+evidence above, the WAV final-partial-sector
+corruption is therefore regarded as **resolved
+for the user-tested Linux/Wine configuration**,
+without any late DirectSound-buffer tail repair.
+The verdict is scoped to observed gameplay and
+this supported game edition. **Native Windows
+runtime verification remains outstanding**, as
+does separate exercise of the optional Heli1
+two-sample declick in this particular run.
 
 The fallback removal is user-approved; keep the
 PR **draft/unmerged** until additional explicit
