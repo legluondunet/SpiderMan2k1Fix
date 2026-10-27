@@ -1281,7 +1281,15 @@ sized staging buffer. No arbitrary candidate was used.
 - **12** `PKR-AUDIO: TAIL-SKIP reason=ambiguous-source`
   occur at DirectSound *Play* on duplicated source PCM
   (six 10,136-byte PCM assets, six 59,808-byte PCM
-  assets). **These are not loader failures**: the
+  assets). Read-only source diagnostics associate the
+  former six-candidate class with `l9a1beep1.wav`
+  (44+10,136=10,180 RIFF bytes; 1,988-byte remainder)
+  and the latter two-candidate class with
+  `dooropen.wav` (44+59,808=59,852 RIFF bytes;
+  460-byte remainder). These filenames are **example
+  matching candidates**, not independently proven
+  unique resource identities. **These are not loader
+  failures**: the
   separate legacy Play-time matcher still demands a
   unique source name, so it declines to *modify* already
   native-restored buffers. Some read-only FULL-PCM source
