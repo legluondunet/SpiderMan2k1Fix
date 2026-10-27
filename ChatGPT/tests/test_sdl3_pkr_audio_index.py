@@ -69,3 +69,22 @@ def test_original_crc_and_deflate_are_separate_from_game_pcm():
     assert zlib.crc32(raw)!=zlib.crc32(raw[:-512]+bytes(512))
     assert SRC.index('crc32_pkraw(raw,e->length)==e->crc') < SRC.index('memcpy(dst->pcm,pcm,pcm_bytes)')
     assert SRC.index('SpiderPKRAudioIndex_Probe') > SRC.index('SpiderPKRAudioIndex_Init')
+
+
+def test_full_pcm_diagnostic_is_bounded_and_read_only():
+    assert '#define MAX_FULL_COMPARE_BYTES (1024u*1024u)' in SRC
+    assert '#define MAX_FULL_COMPARE_LOGS 256u' in SRC
+    assert 'winner->full_checks<2u' in SRC
+    assert 'matches==2 && winner->full_checks<2u' in SRC
+    assert 'winner->pcm_bytes<=MAX_FULL_COMPARE_BYTES' in SRC
+    assert 'IDirectSoundBuffer_Lock(buf,0,winner->pcm_bytes' in SRC
+    assert 'live!=winner->pcm[pos]' in SRC
+    assert 'IDirectSoundBuffer_Unlock(buf,p,a,q,b)' in SRC
+    assert 'if(FAILED(unlocked) || first_bad==UINT32_MAX-1u)return;' in SRC
+    assert 'PKR-AUDIO: FULL-PCM IDENTICAL' in SRC
+    assert 'PKR-AUDIO: FULL-PCM DIFF' in SRC
+    assert 'first_mod_2048=' in SRC
+    assert 'bad_count++' in SRC
+    assert 'winner->reports++==0' in SRC
+    assert 'SpiderSDL3Probe_PlaySwing5' not in SRC
+    assert 'IDirectSoundBuffer_Unlock(buf,first,size1,second,size2)' in SRC
