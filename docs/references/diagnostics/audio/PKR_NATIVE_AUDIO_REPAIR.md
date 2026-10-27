@@ -283,7 +283,43 @@ This validates the combat symptom and this in-game audio path,
 configuration. If later use reveals a regression, set
 `ExperimentalAudioPKRTailRestore=0` and restart the game.
 
-## Validation boundary
+## Open issue: helicopter loop contains repeated impulses (27 Oct 2026)
+
+After validating the fight sounds by listening, the user identified
+two closely spaced unwanted clicks while approaching a helicopter.
+Their 30.015-second stereo 48-kHz PCM recording,
+`spider-man-audio(5).wav`, exhibits particularly strong, narrow
+impulses around **0.704 s and 1.524 s**, then **3.224 s and
+4.044 s** and so on, in a pattern repeating every **2.520 s**
+throughout the recording. A whole-waveform correlation at a
+2.520-second offset is about **0.842**. This precisely equals
+`Heli1.wav`'s original PCM duration:
+**60,480 bytes / (12,000 samples/s × 2 bytes/sample) = 2.520 s**.
+
+The earlier Windows in-game log confirmed that the first `Heli1.wav`
+native DirectSound loop was corrected from the CRC32-verified
+original: `TAIL-RESTORED ... source=.../Heli1.wav
+pcm_bytes=60480 buffer_bytes=60480 pad_bytes=0
+sector_tail_offset=59348 restored_bytes=1132`.
+The second concurrent helicopter buffer matched original PCM
+exactly. **The presence of repeated clicks after tail repair does
+not demonstrate renewed final-sector corruption.** Their exact
+relationship to the original asset and/or native playback processing
+is not yet proven. In particular, two impulses inside each full
+2.520-second period cannot be explained solely by one ordinary
+buffer-wrap discontinuity.
+
+A new **read-only** source diagnostic inspects the already loaded,
+CRC32-validated `Heli1.wav` PCM in memory at initialization:
+`HELI1-SOURCE` logs its first/last sample discontinuity, and up to
+eight `HELI1-SOURCE-JUMP` lines report the strongest native 12-kHz
+sample-to-sample jumps, spaced at least 120 ms apart. This adds
+neither audio writes nor a new sound engine. **Await the next
+Windows log** to compare the original PCM's transient timing with
+the captured recording before considering any source-specific
+declick, crossfade, or altered loop lengths.
+
+
 
 Cross-compilation and regression tests alone cannot establish audio
 quality. The widened sector detector, new native-only call hook,
