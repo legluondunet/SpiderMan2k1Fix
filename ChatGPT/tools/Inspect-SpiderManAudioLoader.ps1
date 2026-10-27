@@ -275,19 +275,31 @@ if ($ObjdumpPath) {
 }
 if ($null -ne $disassembler) {
     [void]$lines.Add("Disassembler: $disassembler")
-    try {
-        # Passing one argument per token safely supports EXE paths with spaces.
-        $startArg = ('--start-address=0x{0:X}' -f $windowStart)
-        $stopArg  = ('--stop-address=0x{0:X}' -f $windowEnd)
-        $output = & $disassembler -d -M intel $startArg $stopArg $resolvedExe 2>&1 | Out-String -Width 320
-        if ($LASTEXITCODE -eq 0) {
-            [void]$lines.Add($output)
-        } else {
-            [void]$lines.Add("Disassembler exit $LASTEXITCODE. Inspect tool installation.")
-            [void]$lines.Add($output)
+    # Second window follows calls from 0x00503B40 through the WAV
+    # length + malloc + signed /2048 and suspected block reader.
+    # Both windows stay static/read-only and share the EXE hash gate.
+    $regions = @(
+        [pscustomobject]@{ Label='native DirectSound loader / template fill'; Start=$windowStart; End=$windowEnd },
+        [pscustomobject]@{ Label='WAV container open, length query and sector read callees'; Start=[long]0x00504C80; End=[long]0x00505300 }
+    )
+    foreach ($region in $regions) {
+        [void]$lines.Add('')
+        [void]$lines.Add("DISASSEMBLY: $($region.Label)")
+        [void]$lines.Add("VA $(Format-HexVa $region.Start)-$(Format-HexVa $region.End)")
+        try {
+            # Passing one argument per token safely supports EXE paths with spaces.
+            $startArg = ('--start-address=0x{0:X}' -f $region.Start)
+            $stopArg  = ('--stop-address=0x{0:X}' -f $region.End)
+            $output = & $disassembler -d -M intel $startArg $stopArg $resolvedExe 2>&1 | Out-String -Width 320
+            if ($LASTEXITCODE -eq 0) {
+                [void]$lines.Add($output)
+            } else {
+                [void]$lines.Add("Disassembler exit $LASTEXITCODE. Inspect tool installation.")
+                [void]$lines.Add($output)
+            }
+        } catch {
+            [void]$lines.Add("Disassembler failed: $($_.Exception.Message)")
         }
-    } catch {
-        [void]$lines.Add("Disassembler failed: $($_.Exception.Message)")
     }
 } else {
     [void]$lines.Add('Disassembler unavailable: install GNU binutils or LLVM for Windows,')
