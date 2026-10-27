@@ -51,6 +51,7 @@ Successfully tested on Windows 11 and Linux/Wine.
 - **Focus-loss instability:** Added automatic game pausing with synchronized video and audio playback, preventing gameplay and media synchronization issues while the game is in the background.
 - **Crash on exit:** Fixed a crash that could occur when quitting the game.
 - **Broken F9 screenshots on Windows:** Fixed screenshots that appeared entirely purple or contained no visible game graphics.
+- **Audio crackling:** Fixed truncated WAV loading by restoring missing final sectors through the game's native PKR reader while preserving DirectSound playback.
 - **Unsupported display modes:** Prevented the game from switching to obsolete fullscreen resolutions and 16-bit display modes that could produce a black screen on modern monitors.
 - **Hidden desktop cursor:** Fixed cases where the Windows mouse pointer remained invisible after switching away from the game.
 
@@ -201,12 +202,13 @@ The following are possible improvements under consideration, subject to technica
 - **Performance:** Explore 60 FPS support and fixes for FPS-dependent boss and level issues.
 - **Quick saves:** Investigate instant game saving.
 - **Audio:** Improve sound playback and eliminate crackling and other audio artifacts.
+- **Subtitles:** Explore subtitle support for pre-rendered movies, in-game cinematics, and gameplay dialogue.
 - **Cheats:** Add optional INI settings for costumes, God Mode, What If? mode, and other cheats.
 - **Additional content:** Explore support for *Spider-Man 2: Enter Electro*.
 - **Graphics and modding:** Improve sprites, explore HD enhancements, and investigate mod support.
 - **Achievements:** Explore an achievement system.
 - **Other game version bonus:** Add bonus from other game versions non present in PC version, like Fantastic Four torch...
-- **Shaders:** Add CRT shaders
+- **Shaders:** Add CRT shaders.
 - **Rendering engine:** Explore support for Vulkan or DirectX 9 and later.
 
 ## Documentation
