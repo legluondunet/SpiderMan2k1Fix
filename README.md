@@ -59,42 +59,39 @@ Successfully tested on Windows 11 and Linux/Wine.
 The following issues are inherited from the original game and remain unresolved:
 
 - **FPS-dependent gameplay:** Certain bosses and levels may not work correctly at 30 FPS. Set `FPSLimit=20` in the INI file when needed.
-- **Original WAV loading bug:** The game can omit the final partial sector of certain WAV files. An experimental native PKR loader correction in the development PR has been tested without audible parasites under Linux/Wine, including duplicate-source WAVs. Native Windows testing is still required.
 
 ## Known Issue in SpiderMan2k1Fix
 
 - **Delayed pause under Wine:** The automatic pause triggered by loss of focus may occasionally activate with a delay. This issue remains unresolved.
 
-## Experimental native audio correction (development branch only)
+## Built-in native WAV audio correction
 
-The game originally reads only complete 2,048-byte sectors from its
-`data.pkr` WAV resources and can omit the final partial sector, causing
-audible crackling. The experimental correction reads the final sector using
-**the game's original native PKR loader** and verifies its contents against
-the original CRC-checked WAV sources before copying only the missing bytes
-into the game's existing allocation. The original DirectSound engine is
-preserved. When multiple WAV files share identical content, their complete
-remaining bytes must all agree or the correction refuses to modify memory.
+The original game can truncate WAV resources by reading only complete
+2,048-byte sectors from `data.pkr`. SpiderMan2k1Fix now **corrects this
+automatically**, using the game's native PKR reader and independently
+CRC-verified original WAV contents. Each missing remainder is verified
+before writing only the exact bytes into the game's allocated buffer.
+Even duplicate WAV sources must agree byte-for-byte; unsafe matches
+are skipped. The original DirectSound playback engine is preserved.
 
-To try the native correction, add to `SpiderMan2k1Fix.ini`:
+**No audio-fix setting is required or written to the factory
+`SpiderMan2k1Fix.ini`.** The correction is enabled automatically on
+the supported, SHA-256-verified `SpideyPC.exe`. If troubleshooting
+requires turning it off, advanced users may manually add
+`ExperimentalAudioLoaderTail=0` to `[Debug]`. This is a hidden
+compatibility override, not a default configuration setting.
 
-```ini
-[Debug]
-ExperimentalAudioLoaderTail=1
-```
+The separate, optional `ExperimentalAudioHeli1Declick=1` still corrects
+two known original samples in `Heli1.wav`. Optional read-only audio
+diagnostics remain available through `ExperimentalPKRAudioIndex=1`
+and `ExperimentalPKRAudioPlayTrace=1`.
 
-Optional `ExperimentalAudioHeli1Declick=1` corrects **two known original
-samples** in `Heli1.wav`, separately from the native WAV loader repair.
-`ExperimentalPKRAudioIndex=1` enables additional read-only audio
-diagnostics; `ExperimentalPKRAudioPlayTrace=1` enables bounded Play
-tracing. Debug logging can be enabled with `Log=1`.
-
-The old `ExperimentalAudioPKRTailRestore` option and its late
-DirectSound-buffer repair have been **retired** after Linux/Wine testing
-validated the native loader, including the 460-byte and 1,988-byte
-duplicate-WAV cases. Existing installations can remove that obsolete key.
-These experimental changes are **not part of the published stable release**,
-and native Windows runtime verification is still pending.
+The former late DirectSound-buffer repair
+(`ExperimentalAudioPKRTailRestore`) has been removed. The native
+correction and duplicate-source repairs have been validated without
+audible crackling under Linux/Wine; native Windows gameplay testing is
+still pending. These post-v1.0.0 source changes are not yet included in
+the published v1.0.0 release.
 
 ## Installation on Windows and Linux (Wine)
 
