@@ -79,6 +79,9 @@ static void __cdecl native_play_with_pkr(int slot,int looping){
   if(installed && buffer){
     SpiderPKRAudioIndex_Probe(slot,buffer,looping);
     repaired=SpiderPKRAudioIndex_TryTailRestore(slot,buffer,looping);
+    /* Independent OFF-by-default, source-specific original Heli1 click repair.
+     * Both guards require an inactive verified native DirectSound buffer. */
+    if(SpiderPKRAudioIndex_TryHeli1Declick(slot,buffer,looping))repaired=1;
   }
   if(trace_now){
     n=++trace_count;
