@@ -254,7 +254,11 @@ if ($callCount -eq 0) {
 $focusTargets = @(
     [pscustomobject]@{ Name='native 2048-byte sector reader'; Address=[long]0x005051D0 },
     [pscustomobject]@{ Name='native resource length query'; Address=[long]0x00505170 },
-    [pscustomobject]@{ Name='known 64-entry WAV/template loader'; Address=[long]0x00503B40 }
+    [pscustomobject]@{ Name='known 64-entry WAV/template loader'; Address=[long]0x00503B40 },
+    [pscustomobject]@{ Name='generic resource transfer with partial-sector logic'; Address=[long]0x00430A40 },
+    [pscustomobject]@{ Name='generic resource open and length query'; Address=[long]0x00430940 },
+    [pscustomobject]@{ Name='original DirectSound voice duplication'; Address=[long]0x00504110 },
+    [pscustomobject]@{ Name='native game sound-bank lookup'; Address=[long]0x004FBDC0 }
 )
 foreach ($focus in $focusTargets) {
     [void]$lines.Add("$($focus.Name), target=$(Format-HexVa $focus.Address)")
@@ -278,6 +282,28 @@ foreach ($focus in $focusTargets) {
 }
 
 [void]$lines.Add('')
+[void]$lines.Add('POTENTIAL ABSOLUTE x86 REFERENCES TO GAME DIRECTSOUND POINTER AND VOICE TABLES')
+[void]$lines.Add('Exact raw 4-byte patterns across original .text; may include immediates/data (not decoded instruction refs).')
+$absoluteRefs = @(
+    [pscustomobject]@{ Name='original IDirectSound object pointer'; Address=[long]0x006B7920 },
+    [pscustomobject]@{ Name='64 reference/template buffer pointers'; Address=[long]0x006BBAD4 },
+    [pscustomobject]@{ Name='32 active secondary voice descriptors'; Address=[long]0x006BBD50 }
+)
+foreach ($entry in $absoluteRefs) {
+    [void]$lines.Add("$($entry.Name), DWORD address=$(Format-HexVa $entry.Address)")
+    $count = 0
+    for ($i=0; $i -le $size-4; $i++) {
+        if ([BitConverter]::ToUInt32($exeBytes,$raw+$i) -eq [uint32]$entry.Address) {
+            if (++$count -le 96) {
+                [void]$lines.Add("  immediate_at=$(Format-HexVa ([long]$textBaseVa+$i))")
+            }
+        }
+    }
+    [void]$lines.Add("  raw_candidate_count=$count")
+    if ($count -gt 96) { [void]$lines.Add('  [ADDRESS LIST TRUNCATED AT 96]') }
+}
+[void]$lines.Add('')
+
 [void]$lines.Add('NATIVE CODE NEIGHBORHOOD / objdump disassembly')
 [void]$lines.Add("VA $(Format-HexVa $windowStart)-$(Format-HexVa $windowEnd)")
 [void]$lines.Add('Review function boundaries and COM indirect calls manually.')
@@ -310,7 +336,9 @@ if ($null -ne $disassembler) {
     $regions = @(
         [pscustomobject]@{ Label='native DirectSound loader / template fill'; Start=$windowStart; End=$windowEnd },
         [pscustomobject]@{ Label='WAV container open, length query and sector read callees'; Start=[long]0x00504C80; End=[long]0x00505300 },
-        [pscustomobject]@{ Label='ALTERNATIVE resource reader / WAV path candidates at 0x430A21 and 0x430B23,0x430B52,0x430B9E'; Start=[long]0x00430800; End=[long]0x00430DC0 }
+        [pscustomobject]@{ Label='ALTERNATIVE generic resource reader at 0x430A21 and 0x430B23,0x430B52,0x430B9E (handles short sectors)'; Start=[long]0x00430800; End=[long]0x00430DC0 },
+        [pscustomobject]@{ Label='ORIGINAL GAME AUDIO MANAGER and bank-to-native DirectSound loader/voice CALLS'; Start=[long]0x00470F00; End=[long]0x00472A50 },
+        [pscustomobject]@{ Label='native sound-bank selector preceding 64-buffer DirectSound template loader'; Start=[long]0x004FBD60; End=[long]0x004FC050 }
     )
     foreach ($region in $regions) {
         [void]$lines.Add('')
