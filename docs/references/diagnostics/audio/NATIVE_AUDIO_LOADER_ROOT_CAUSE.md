@@ -1228,6 +1228,93 @@ the reached gameplay transitions. Preserve
 the original fail-closed repair checks.
 User approval is required before merge.
 
+## Linux/Wine 20:57 targeted alias repair: both residual cases positively validated
+
+The user intentionally revisited the suspected in-game location and supplied
+`SpiderMan2k1Fix(20261027-205751).log` (801 physical lines,
+92,485 bytes). The verified startup build is **`v1.0.0-04b2172`**,
+the Actions PR synthetic-merge build containing the independently capped
+`LOADER-ALIAS-TAIL-RESTORED` diagnostic. Native loader
+`LOADER-HOOK ARMED` appears and all **656 / 656** source WAVs
+pass CRC verification.
+
+**Decisive result:** All three previously rejected PCM-bearing
+asset loads are **positively restored at native source load**:
+
+| Event(s) | Unread PCM/RIFF remainder | Pre-Play fallback |
+| --- | ---: | --- |
+| 2 x `PKR-AUDIO: LOADER-ALIAS-TAIL-RESTORED ... remainder=460` | 460 bytes each | No DirectSound repair |
+| 1 x `PKR-AUDIO: LOADER-ALIAS-TAIL-RESTORED ... remainder=1988` | 1,988 bytes | No DirectSound repair |
+
+The three events account for **2,908 bytes** of previously missing
+PCM restored at their original native load-time stage.
+Each is also accompanied by a normal
+`LOADER-TAIL-RESTORED` message: those are **duplicate
+log lines describing the same three repairs, not six
+separate restorations**. By construction, these success
+messages only occur **after** (a) all CRC-verified original
+candidates matching full RIFF length and loaded prefix
+have identical *entire* tails; (b) an additional native
+2048-byte sector read into a **private scratch buffer**
+has matched those exact tail bytes; and (c) the
+byte-exact remainder copy back to the game's already
+sized staging buffer. No arbitrary candidate was used.
+
+**Run-wide audio diagnostics:**
+
+- **95** ordinary `LOADER-TAIL-RESTORED` success messages
+  (including the three alias repairs), totaling **91,406
+  logged bytes**; the normal success log remains capped
+  at 96, but this run itself logs only 95. Do not assume
+  exactly 95 lifetime repairs solely from cap-limited logging.
+- **3** separately logged alias successes (2 x 460 B,
+  1 x 1,988 B).
+- **0** pre-Play DirectSound `PKR-AUDIO: TAIL-RESTORED`.
+- **44** `FULL-PCM IDENTICAL`, **0**
+  `FULL-PCM DIFF` (the scenario did not encounter the
+  `Heli1.wav` declick case).
+- **1** skip: `BreakFree.wav` with a **20-byte
+  metadata-only tail**, `pcm_tail_bytes=0`; correct
+  to leave it unpatched.
+- **0** `LOADER-SKIP-REMAINDER-MISMATCH` and no
+  PCM-bearing native loader skips.
+- **12** `PKR-AUDIO: TAIL-SKIP reason=ambiguous-source`
+  occur at DirectSound *Play* on duplicated source PCM
+  (six 10,136-byte PCM assets, six 59,808-byte PCM
+  assets). **These are not loader failures**: the
+  separate legacy Play-time matcher still demands a
+  unique source name, so it declines to *modify* already
+  native-restored buffers. Some read-only FULL-PCM source
+  probes also report duplicates. Do not relax this
+  fallback's guard simply to eliminate diagnostic noise.
+- The 3D session ended with
+  `NATIVE-3D-CLEANUP completed n=1 request=9` and
+  reached `native Shell_MainMenu` through
+  `DEBUG-F10-SESSION-RESET`. The trace does not
+  prove complete process exit. No logged crash or
+  audio API failure was found.
+
+**Conclusion:** This is the first **direct runtime
+validation on Linux/Wine** that **both categories of
+formerly unresolved audio aliases** are repairable
+by the native loader without invoking late
+DirectSound buffer repair. The earlier user listening
+feedback confirms crackle-free audio with the
+rootfix on Linux/Wine, but the user has not separately
+reported listening quality for this exact 20:57
+targeted session. Do not claim Windows runtime
+validation from a Wine log.
+
+**Recommended next step:** keep PR #67 **draft/unmerged**
+and retain the pre-Play fallback for now. After
+the user confirms this session's listening and
+optionally validates the final build under native
+Windows, consider a separate, carefully gated
+cleanup PR to reduce legacy diagnostics/fallback
+code. Any disable/removal should be a **distinct
+reviewed change**, not bundled into this
+success report.
+
 ## Archived investigation plan (before native root cause was identified)
 
 The following was the former diagnostic plan, retained as historical context. The exact responsible instruction has since been established and the native loader correction validated in the Windows session above.
