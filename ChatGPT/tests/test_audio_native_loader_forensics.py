@@ -131,6 +131,10 @@ def test_windows_powershell_probe_matches_native_analysis_and_is_readonly():
     assert "FOCUSED RESOURCE/DSOUND CALL XREF CANDIDATES" in companion
     assert "RAW x86 INDIRECT VTABLE-CALL CANDIDATES" in body
     assert "RAW x86 INDIRECT VTABLE-CALL CANDIDATES" in companion
+    assert "CONFIRMED DirectInput input-device creation and SetDataFormat" in body
+    assert "VERIFIED NON-AUDIO COM VTABLE CALL SITES" in companion
+    assert "NOT DuplicateSoundBuffer" in body
+    assert "NOT DirectSound" in companion
     assert "0x004FD800" in body and "0x004FDAC0" in body
     assert "0x004FEF70" in body and "0x004FF260" in body
     assert "0x005000B0" in body and "0x00500260" in body
