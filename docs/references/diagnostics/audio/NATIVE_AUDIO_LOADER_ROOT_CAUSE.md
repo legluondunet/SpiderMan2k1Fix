@@ -284,6 +284,64 @@ pre-existing native restore/declick remain in place. Test one
 noncritical session and inspect logs before asserting success.
 No merge or default activation without explicit maintainer approval.
 
+## First Windows gameplay log for the loader root fix (27 Oct 2026, 10:13)
+
+Original submitted game log `SpiderMan2k1Fix(20261027-101351).log`,
+running `SpiderMan2k1Fix v1.0.0-6d6584f` (the GitHub PR build's
+temporary test-merge SHA; the PR source was `528f5e3`).
+This is a **real Windows run, not merely a simulated test**:
+
+- The exact supported game SHA-256 and INI validation both succeeded.
+  656/656 original PKR audio source records were CRC-validated, zero CRC errors.
+  Native `LOADER-HOOK ARMED` and legacy source-index and Play hooks installed.
+- **64** `PKR-AUDIO: LOADER-TAIL-RESTORED` lines (62 distinct file
+  names plus `missing.wav` and `s_burn.wav` loaded again on menu
+  return). Every logged native extra-sector sample check succeeded,
+  with **no** `LOADER-SKIP-REMAINDER-MISMATCH`.
+- Exactly **27** `LOADER-SKIP-NO-UNIQUE-SOURCE` guard refusals.
+  They require separate classification (noncanonical RIFF variants,
+  unsupported resources, or ambiguous identifiers), and **must not**
+  be force-fixed without PCM identity proof.
+- The three source-forensics benchmarks repaired **at load time**:
+  `Heli1.wav` remainder **1132**, `ThugHit2.wav` remainder **846**,
+  `traffic2.wav` remainder **1526**. At Play, the helicopter
+  `FULL-PCM IDENTICAL` and `TAIL-SKIP already-identical` prove its
+  final PCM sector reached the native DirectSound secondary buffer
+  completely. Its *separate original sample outlier* is still
+  handled by `HELI1-DECLICK` (two PCM16 samples).
+- Only **12** `PKR-AUDIO: TAIL-RESTORED` Play-time fallback repairs
+  remain. Full list:
+  `PickConf.wav`, `achum.wav`, `Crawl1.wav`, `Crawl2.wav`,
+  `Swing5.wav`, `WebShot10.wav`, `WebShot3.wav`,
+  `WebShot11.wav`, `tingle2.wav`, `h_hitfloor.wav`,
+  `Pistol1.wav`, `Pistol2.wav`.
+  **None of these twelve names appears in the loader-hook successful
+  or skipped events.** Their exact predicted WAV size modulo 2048
+  also matches **none** of the 27 logged skip remainders. Strong
+  **working hypothesis**: these assets are populated through another
+  native WAV-loading callsite or path, rather than the one-time,
+  64-entry initialization function `0x00503B40`.
+  This is not yet confirmed by a distinct callsite disassembly.
+- The run progressed from intro through 3D gameplay and native
+  return-to-menu cleanup; no reported process crash or PKR-audio
+  warnings/errors. **Actual listening/auditory quality was not
+  reported by the user with this log.** A clean log alone is not
+  subjective sound validation.
+
+In comparison, the *earlier* user-tested log
+`SpiderMan2k1Fix(20261027-080359).log` (without loader hook)
+contained **66 Play-time `TAIL-RESTORED`**. The new test has 12;
+the precise gameplay/replay scope differs, so 66→12 is a
+**per-session count comparison**, not a controlled reduction rate.
+
+**Next step**: Find any other direct native `E8 rel32` callers of
+`0x00505170` (PKR resource byte length) and `0x005051D0`
+(2048-byte resource read), as well as callers of `0x00503B40`.
+Do not hook by source filename or blindly patch an unknown WAV
+reader: first confirm its exact callsite, source buffer allocation
+and read contract. The current loader fix stays opt-in and the
+Play-time fallback stays on for the twelve unresolved assets.
+
 ## What will settle the true origin
 
 After examining the exact native instruction sequence, identify and
