@@ -199,6 +199,9 @@ The following are possible improvements under consideration, subject to technica
 - **Additional content:** Explore support for *Spider-Man 2: Enter Electro*.
 - **Graphics and modding:** Improve sprites, explore HD enhancements, and investigate mod support.
 - **Achievements:** Explore an achievement system.
+- **Other game version bonus:** Add bonus from other game versions non present in PC version, like Fantastic Four torch...
+- **Shaders:** Add CRT shaders
+- **Rendering engine:** Explore support for Vulkan or DirectX 9 and later.
 
 ## Documentation
 
