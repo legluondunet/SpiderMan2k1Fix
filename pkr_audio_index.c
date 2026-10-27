@@ -68,6 +68,7 @@ static int tail_restore_enabled=0;
 /* User opt-in: export only CRC-verified original Heli1 PCM to a new
  * WAV in the user's Windows TEMP folder. No game files or buffers touched. */
 static int heli1_source_dump_enabled=0;
+static int heli1_declick_enabled=0;
 static void (*diag)(const char *)=NULL;
 static unsigned loaded_bytes=0;
 /* Unique unmatched (PCM length, rate) pairs: keep noisy repeated fight effects
@@ -785,6 +786,115 @@ unlock:
         (unsigned long)bad_bytes,source->tail_restore_count);
       diag(line);
     }
+  }
+  return changed;
+}
+
+/* Experimental / opt-in: eliminate two objectively isolated one-sample
+ * outliers in the original CRC-verified Heli1.wav (12kHz mono PCM16).
+ * This does NOT alter data.pkr or the cached original. The captured
+ * game soundtrack contains TWO phase-shifted concurrent copies of
+ * Heli1, explaining two click events 820 ms apart each 2520 ms cycle.
+ * Only these exact known signed PCM samples change:
+ *   sample 12095: -9    -> 29634  (between 30604 and 28663)
+ *   sample 12109: 32765 -> -30655 (between -30587 and -30723)
+ * Complete native buffer must exactly match the verified original
+ * EXCEPT that these two samples may already be patched.
+ * This is deliberately independent from (and occurs after) tail repair.
+ */
+void SpiderPKRAudioIndex_EnableHeli1Declick(int enabled){
+  heli1_declick_enabled=(enabled==1 && index_ready);
+  if(heli1_declick_enabled && diag)
+    diag("PKR-AUDIO: HELI1-DECLICK ARMED (two original PCM samples only; stopped native buffer; EXPERIMENTAL)");
+  else if(enabled==1 && diag)
+    diag("PKR-AUDIO: HELI1-DECLICK REFUSED (verified original source index unavailable)");
+}
+static uint16_t ds_read_u16(const uint8_t *a,const uint8_t *b,DWORD alen,DWORD sample){
+  DWORD i=sample*2u;
+  return (uint16_t)(ds_locked_byte(a,b,alen,i) |
+                    ((uint16_t)ds_locked_byte(a,b,alen,i+1u)<<8));
+}
+static void ds_write_u16(uint8_t *a,uint8_t *b,DWORD alen,DWORD sample,uint16_t v){
+  DWORD i=sample*2u;
+  if(i<alen)a[i]=(uint8_t)v;else b[i-alen]=(uint8_t)v;
+  i++;
+  if(i<alen)a[i]=(uint8_t)(v>>8);else b[i-alen]=(uint8_t)(v>>8);
+}
+int SpiderPKRAudioIndex_TryHeli1Declick(int slot,IDirectSoundBuffer *buf,int looping){
+  static const DWORD positions[2]={12095u,12109u};
+  static const int16_t original_samples[2]={-9,32765};
+  static const int16_t replacements[2]={29634,-30655};
+  WAVSource *w=NULL;
+  DSBCAPS caps;
+  WAVEFORMATEX fmt;
+  DWORD fmt_got=0,status=0,alen=0,blen=0,i,j;
+  BYTE *a=NULL,*b=NULL;
+  HRESULT hr;
+  int valid=1,changed=0;
+  unsigned s;
+  char line[200];
+  if(!heli1_declick_enabled||!buf||slot<0||slot>=32||!looping)return 0;
+  for(s=0;s<source_count;s++){
+    WAVSource *q=&sources[s];
+    if(strcmp(q->name,"Heli1.wav")==0 && q->pcm_bytes==60480u &&
+       q->rate==12000u && q->header_bytes==44u && q->pcm){
+      if(w)return 0; /* refuse duplicate named/format originals */
+      w=q;
+    }
+  }
+  if(!w)return 0;
+  for(i=0;i<2u;i++){
+    DWORD k=positions[i];
+    /* Refuse other editions with different source bytes or neighbors. */
+    if((int16_t)le16(w->pcm+2u*k)!=original_samples[i] ||
+       (i==0 && ((int16_t)le16(w->pcm+2u*(k-1u))!=30604 ||
+                 (int16_t)le16(w->pcm+2u*(k+1u))!=28663)) ||
+       (i==1 && ((int16_t)le16(w->pcm+2u*(k-1u))!=-30587 ||
+                 (int16_t)le16(w->pcm+2u*(k+1u))!=-30723)))
+      return 0;
+  }
+  memset(&caps,0,sizeof(caps));caps.dwSize=sizeof(caps);
+  memset(&fmt,0,sizeof(fmt));
+  if(FAILED(IDirectSoundBuffer_GetCaps(buf,&caps)) ||
+     FAILED(IDirectSoundBuffer_GetFormat(buf,&fmt,sizeof(fmt),&fmt_got)) ||
+     fmt_got<16u || caps.dwBufferBytes!=w->pcm_bytes ||
+     fmt.wFormatTag!=WAVE_FORMAT_PCM || fmt.nChannels!=1 ||
+     fmt.wBitsPerSample!=16 || fmt.nBlockAlign!=2 ||
+     fmt.nSamplesPerSec!=w->rate ||
+     FAILED(IDirectSoundBuffer_GetStatus(buf,&status)) ||
+     (status&DSBSTATUS_PLAYING))return 0;
+  hr=IDirectSoundBuffer_Lock(buf,0,caps.dwBufferBytes,
+                            (void**)&a,&alen,(void**)&b,&blen,0);
+  if(FAILED(hr))return 0;
+  if(!a||alen+blen!=caps.dwBufferBytes||(blen&&!b)){valid=0;goto unlock_heli;}
+  /* Whole-buffer byte identity, not only a WAV prefix: no other sounds,
+   * arbitrarily damaged buffers, or previously modified PCM qualify. */
+  for(i=0;i<w->pcm_bytes/2u;i++){
+    uint16_t got=ds_read_u16(a,b,alen,i);
+    uint16_t expected=le16(w->pcm+2u*i);
+    if(i==positions[0]||i==positions[1]){
+      unsigned k=(i==positions[0]?0u:1u);
+      if(got!=expected && got!=(uint16_t)replacements[k]){valid=0;break;}
+    }else if(got!=expected){valid=0;break;}
+  }
+  if(!valid)goto unlock_heli;
+  for(j=0;j<2u;j++){
+    if(ds_read_u16(a,b,alen,positions[j])!=(uint16_t)replacements[j]){
+      ds_write_u16(a,b,alen,positions[j],(uint16_t)replacements[j]);
+      changed=1;
+    }
+  }
+unlock_heli:
+  hr=IDirectSoundBuffer_Unlock(buf,a,alen,b,blen);
+  if(FAILED(hr)){
+    if(diag)diag("PKR-AUDIO: HELI1-DECLICK WARNING DirectSound Unlock failed; native Play retained");
+    return 0;
+  }
+  if(changed && diag){
+    snprintf(line,sizeof(line),
+      "PKR-AUDIO: HELI1-DECLICK slot=%d loop=%d source=%s/%s samples=12095,12109 replacement=29634,-30655 (native DirectSound preserved)",
+      slot,!!looping,w->dir,w->name);
+    diag(line);
   }
   return changed;
 }
