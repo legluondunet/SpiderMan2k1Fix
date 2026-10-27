@@ -187,3 +187,21 @@ def test_alignment_repair_still_rejects_large_or_wrongly_aligned_buffers():
     assert 'if(status&DSBSTATUS_PLAYING)' in SRC
     assert 'w->header_bytes!=44u' in SRC
     assert 'if(j!=sector_start)' in SRC
+
+
+def test_heli1_source_discontinuity_probe_is_read_only_and_matches_recording_period():
+    """The user's 30s capture repeats at 2.520s, exactly Heli1's PCM duration."""
+    assert (60480 // 2) / 12000 == 2.52
+    assert 'static void log_heli1_source_discontinuities(void)' in SRC
+    assert 'if(decoded>0 && crc_fail==0)log_heli1_source_discontinuities();' in SRC
+    assert 'strcmp(w->name,"Heli1.wav")!=0' in SRC
+    assert 'w->rate!=12000u' in SRC
+    assert 'w->pcm_bytes!=60480u' in SRC
+    assert 'w->header_bytes!=44u' in SRC
+    assert 'PKR-AUDIO: HELI1-SOURCE original=' in SRC
+    assert 'PKR-AUDIO: HELI1-SOURCE-JUMP rank=' in SRC
+    probe=SRC.split('static void log_heli1_source_discontinuities(void){',1)[1].split('static int load_audio_index(',1)[0]
+    assert 'le16(w->pcm' in probe
+    assert 'diag(line)' in probe
+    for forbidden in ('fopen(', 'fwrite(', 'memcpy(', 'IDirectSoundBuffer_', 'NATIVE_PLAY('):
+        assert forbidden not in probe
