@@ -164,3 +164,19 @@ def test_windows_powershell_probe_matches_native_analysis_and_is_readonly():
                       "Start-Process wine", "Invoke-Expression", "IEX ", "python.exe"):
         assert forbidden not in body
     assert body.index("Get-FileHash -LiteralPath $resolvedExe") < body.index("WriteAllText($resolvedOutput")
+
+def test_native_loader_skip_evidence_is_bounded_and_readonly():
+    """New +44 RIFF diagnostics must only run after an unsuccessful source match."""
+    native = (MODULE.parents[2] / "pkr_audio_loader.c").read_text(encoding="utf-8")
+    assert "loader_skip_detail(handle,dst,length,complete);" in native
+    assert "LOADER-SKIP-DETAIL" in native
+    assert "riff_at_0=%d riff_at_44=%d" in native
+    assert "riff_declared_bytes=%lu data_chunk_bytes=%lu riff_excess_bytes=%ld" in native
+    assert "if(++skipped_count<=MAX_LOADER_DIAG){" in native
+    assert native.index("if(!expected){") < native.index("loader_skip_detail(handle,dst,length,complete);")
+    assert native.index("loader_skip_detail(handle,dst,length,complete);") < native.index("memcpy((unsigned char*)dst+complete,scratch,remainder);")
+    assert "if(!diag||!p||complete<2048u||complete>total)return;" in native
+    assert "ORIGINAL_SECTOR_READ(handle,1u,scratch);" in native
+    assert "memcmp(scratch,expected,remainder)" in native
+    # Only the existing CRC-verified branch can write a repaired tail.
+    assert native.count("memcpy((unsigned char*)dst+complete,scratch,remainder);")==1
