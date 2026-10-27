@@ -59,33 +59,42 @@ Successfully tested on Windows 11 and Linux/Wine.
 The following issues are inherited from the original game and remain unresolved:
 
 - **FPS-dependent gameplay:** Certain bosses and levels may not work correctly at 30 FPS. Set `FPSLimit=20` in the INI file when needed.
-- **Audio issues:** The original game may exhibit crackling and other playback artifacts. An experimental native DirectSound repair in the current development PR greatly reduces PCM tail corruption, but occasional glitches during fights are still being investigated.
+- **Original WAV loading bug:** The game can omit the final partial sector of certain WAV files. An experimental native PKR loader correction in the development PR has been tested without audible parasites under Linux/Wine, including duplicate-source WAVs. Native Windows testing is still required.
 
 ## Known Issue in SpiderMan2k1Fix
 
 - **Delayed pause under Wine:** The automatic pause triggered by loss of focus may occasionally activate with a delay. This issue remains unresolved.
 
-## Experimental native audio repair (development branch only)
+## Experimental native audio correction (development branch only)
 
-The draft audio fix automatically compares the original WAVs inside the game
-`data.pkr` archive with the game's DirectSound buffers. It can restore
-corrupted last-block PCM data while retaining **the game's original audio
-engine**. No SDL3 DLL or external WAV copy is needed.
+The game originally reads only complete 2,048-byte sectors from its
+`data.pkr` WAV resources and can omit the final partial sector, causing
+audible crackling. The experimental correction reads the final sector using
+**the game's original native PKR loader** and verifies its contents against
+the original CRC-checked WAV sources before copying only the missing bytes
+into the game's existing allocation. The original DirectSound engine is
+preserved. When multiple WAV files share identical content, their complete
+remaining bytes must all agree or the correction refuses to modify memory.
 
-To opt in, add to `SpiderMan2k1Fix.ini`:
+To try the native correction, add to `SpiderMan2k1Fix.ini`:
 
 ```ini
 [Debug]
-Log=1
-ExperimentalPKRAudioIndex=1
-ExperimentalAudioPKRTailRestore=1
+ExperimentalAudioLoaderTail=1
 ```
 
-Both switches default to off. The repair has been tested by ear for
-`Swing5.wav` and dramatically improves the broader game audio, although
-occasional fight-sound artifacts remain. For an A/B comparison set
-`ExperimentalAudioPKRTailRestore=0` and restart. This feature is
-**not** yet part of the published stable release.
+Optional `ExperimentalAudioHeli1Declick=1` corrects **two known original
+samples** in `Heli1.wav`, separately from the native WAV loader repair.
+`ExperimentalPKRAudioIndex=1` enables additional read-only audio
+diagnostics; `ExperimentalPKRAudioPlayTrace=1` enables bounded Play
+tracing. Debug logging can be enabled with `Log=1`.
+
+The old `ExperimentalAudioPKRTailRestore` option and its late
+DirectSound-buffer repair have been **retired** after Linux/Wine testing
+validated the native loader, including the 460-byte and 1,988-byte
+duplicate-WAV cases. Existing installations can remove that obsolete key.
+These experimental changes are **not part of the published stable release**,
+and native Windows runtime verification is still pending.
 
 ## Installation on Windows and Linux (Wine)
 
