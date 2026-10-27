@@ -111,6 +111,10 @@ def test_windows_powershell_probe_matches_native_analysis_and_is_readonly():
         assert needle.lower() in body.lower()
     assert "New-Object byte[]" in body
     assert "Get-BytesAtVa -Address $windowStart" in body
+    assert "0x00504C80" in body
+    assert "0x00505300" in body
+    assert "0x00504C80" in body and "0x005051D0" in (ROOT_FOR_NOTE := (MODULE.parents[2] / "docs/references/diagnostics/audio/NATIVE_AUDIO_LOADER_ROOT_CAUSE.md").read_text(encoding="utf-8"))
+    assert "foreach ($region in $regions)" in body
     assert "STATIC / READ-ONLY" in body
     assert "no instruction signature asserted" in body
     assert "Refusing to overwrite the input executable" in body
