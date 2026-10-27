@@ -27,7 +27,7 @@ def test_restore_opt_in_and_no_sdl_runtime():
 def test_crc_verified_unique_original_source_before_any_pcm_write():
     for required in (
         'crc32_pkraw(raw,e->length)==e->crc',
-        'dst->header_bytes=(uint32_t)(pcm-raw)',
+        'dst->header_bytes=pcm_offset;',
         'w->header_bytes!=44u',
         'w->pcm_bytes!=caps.dwBufferBytes',
         'w->rate!=fmt.nSamplesPerSec',
