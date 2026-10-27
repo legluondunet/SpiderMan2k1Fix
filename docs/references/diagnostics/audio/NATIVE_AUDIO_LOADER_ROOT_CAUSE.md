@@ -1353,6 +1353,78 @@ regression suite do not replace that runtime test.
 The branch remains **draft and unmerged**. Native
 Windows testing is still pending.
 
+## Linux/Wine 21:25 fallback-free verification (v1.0.0-62a9fc4)
+
+User-provided trace: `SpiderMan2k1Fix(20261027-212518).log`
+(954 lines), from the first **fallback-free** build
+(`v1.0.0-62a9fc4` shown in both proxy and game startup).
+This build removes the old pre-Play DirectSound tail restoration
+path and `ExperimentalAudioPKRTailRestore`.
+
+**Result: no observable audio-repair regression.**
+
+- Original game SHA-256 checked successfully; native
+  `PKR-AUDIO: LOADER-HOOK ARMED`.
+- Original `data.pkr` index: **656/656** CRC-verified
+  PCM16 WAVs; **zero** CRC errors.
+- **95** visible successful
+  `PKR-AUDIO: LOADER-TAIL-RESTORED` messages;
+  the sum of their tails is **91,406 bytes**. This
+  count is below the usual 96-message general log cap.
+- **Three** independently emitted special
+  `LOADER-ALIAS-TAIL-RESTORED` messages, two
+  `remainder=460` and one `remainder=1988`.
+  They represent **2,908 PCM bytes** and are
+  **already included** in the 95 ordinary success
+  messages (no double counting).
+- **49** `FULL-PCM IDENTICAL` checks;
+  **zero** `FULL-PCM DIFF`.
+- **No** retired `PKR-AUDIO: TAIL-RESTORED`,
+  `PKR-AUDIO: TAIL-SKIP` or
+  `PKR-AUDIO: TAIL-RESTORE ARMED` messages.
+  This is corroborative evidence, since the
+  removed code cannot emit those messages.
+- **One** read-only `LOADER-SKIP-NO-UNIQUE-SOURCE`
+  for **`BreakFree.wav`**, a **20-byte non-PCM
+  RIFF metadata trailer** (`pcm_tail_bytes=0`),
+  intentionally left unchanged.
+  **Zero** observed PCM-bearing loader skips
+  or remainder mismatch warnings.
+- Optional independent Heli1 declick was **armed**
+  but `HELI1-DECLICK slot=` did **not** appear;
+  this run does **not** independently exercise
+  the specific Heli1 sample correction.
+- The original 3D session performed one complete
+  `NATIVE-3D-CLEANUP` and controller-7 teardown,
+  followed by `Shell_MainMenu` after the game
+  session. More than **14,760** frames were logged.
+  No explicit process exit is present; no
+  audio-related runtime errors are logged.
+- The validator reported **one unknown INI entry**;
+  it saved the prior INI as `SpiderMan2k1Fix.ini.old`
+  and regenerated/recovered 31 recognized settings.
+  This is consistent with the now-retired INI option,
+  **but the log does not identify which unknown key**.
+  Do not assert it was necessarily that option.
+
+**Important distinction:** This trace establishes a
+successful native-only loader repair in the same
+targeted alias content that previously produced
+460- and 1,988-byte skips. It is a **technical
+runtime** validation, not direct proof of
+subjective listening quality. User confirmation
+of hearing no crackles in this exact new build
+has **not yet been received**; prior listening
+validation applies to the earlier build with
+fallback code still compiled (although it made
+zero repairs). Windows native runtime testing
+remains pending.
+
+The fallback removal is user-approved; keep the
+PR **draft/unmerged** until additional explicit
+validation/merge approval. The old key is obsolete;
+automatic INI migration has been observed.
+
 ## Archived investigation plan (before native root cause was identified)
 
 The following was the former diagnostic plan, retained as historical context. The exact responsible instruction has since been established and the native loader correction validated in the Windows session above.
