@@ -79,7 +79,7 @@ static const char *const spider_ini_input[]={
   "KeyboardLayout","DirectInputReacquire","DisableWindowsGhosting","PauseOnFocusLoss","PauseBinkOnFocusLoss","PauseDirectSoundOnFocusLoss","PauseOverlay","PauseDim","PauseDimOpacity","PauseKey",
   "RestoreCursorOnFocusLoss","ExperimentalFocusTrace","ExperimentalDI8EntryTrace",
   "ExperimentalAltTabReacquire","ExperimentalDI8CreateDeviceTrace",
-  "ExperimentalGamepadStart"
+  "ExperimentalGamepadStart","ControllerProfile","ControllerEnterButtons"
 };
 static const char *const spider_ini_audio[]={"MusicSFXLevel","VoiceLevel","MovieLevel","Stereo"};
 static const char *const spider_ini_keys[]={"Up","Down","Left","Right","Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
@@ -157,18 +157,18 @@ static int spider_ini_value_valid(const char *section,const char *key,const char
            !spider_ini_icmp(value,"Physical") ||
            !spider_ini_icmp(value,"QWERTY") ||
            !spider_ini_icmp(value,"AZERTY");
-  /* Opt-in controller Start remap. Reject unknown/negative/high button IDs
-   * before an INI can trigger any game-memory change. */
-  if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"ExperimentalGamepadStart")) {
-    if(strlen(value)<7 || strlen(value)>8 ||
-       toupper((unsigned char)value[0])!='B' ||
-       toupper((unsigned char)value[1])!='U' ||
-       toupper((unsigned char)value[2])!='T' ||
-       toupper((unsigned char)value[3])!='T' ||
-       toupper((unsigned char)value[4])!='O' ||
-       toupper((unsigned char)value[5])!='N') return 0;
-    return spider_ini_uint(value+6,0,31);
-  }
+  if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"ControllerProfile"))
+    return !spider_ini_icmp(value,"Auto") ||
+           !spider_ini_icmp(value,"Off") ||
+           !spider_ini_icmp(value,"DualShock4");
+  if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"ControllerEnterButtons"))
+    return !spider_ini_icmp(value,"Cross") ||
+           !spider_ini_icmp(value,"Options") ||
+           !spider_ini_icmp(value,"Both");
+  /* Deprecated experimental BUTTONn switch is accepted for old INIs
+   * but the runtime deliberately ignores it (without re-writing INI). */
+  if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"ExperimentalGamepadStart"))
+    return spider_ini_joystick(value);
   if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"PauseDimOpacity"))
     return spider_ini_uint(value,0,90);
   /* Deprecated key: continue accepting old INI values to avoid resetting
