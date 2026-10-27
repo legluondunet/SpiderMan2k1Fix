@@ -69,8 +69,7 @@ def test_exact_sha_and_signature_gates_fail_closed(tmp_path, monkeypatch):
     text = probe.inspect(buf, exe, report)
     assert "STATIC / READ-ONLY" in text
     assert "verified prologue" in text
-    assert "0x00401010" not in text
-    assert "0x00401010" != "0x401010"
+    assert "caller=0x00401010 target=0x00401040" in text
     assert "0x00401040" in text
     assert "0x00401030" in text
     assert report.read_text() == text
