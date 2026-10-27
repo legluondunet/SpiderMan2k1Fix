@@ -457,6 +457,40 @@ static int source_matches_runtime_length(const WAVSource *w,DWORD n){
     n==w->pcm_bytes+2u && (n&3u)==0u &&
     (w->pcm_bytes+44u)/2048u==(n+44u)/2048u;
 }
+/* Match the *file* bytes, not just the PCM size. The original game
+ * allocates total_bytes before reading complete 2048-byte resource sectors.
+ * Only a uniquely identified original 44-byte PCM16 WAV can be repaired
+ * here; anything unknown is passed through to the old Play-time fallback. */
+const unsigned char *SpiderPKRAudioIndex_ExpectedLoaderWavTail(
+    const unsigned char *wav,unsigned complete_bytes,unsigned total_bytes,
+    const char **source_name){
+  unsigned i,matches=0,remainder,pcm_prefix;
+  const WAVSource *match=NULL;
+  if(source_name)*source_name=NULL;
+  if(!index_ready||!wav||complete_bytes<2048u||total_bytes<=complete_bytes||
+     total_bytes>MAX_PKR_ITEM||complete_bytes!=(total_bytes&~2047u)||
+     total_bytes-complete_bytes>=2048u||complete_bytes<44u)return NULL;
+  remainder=total_bytes-complete_bytes;
+  pcm_prefix=complete_bytes-44u;
+  if(memcmp(wav,"RIFF",4)!=0||memcmp(wav+8,"WAVE",4)!=0||
+     memcmp(wav+12,"fmt ",4)!=0||memcmp(wav+36,"data",4)!=0||
+     le32(wav+4)!=total_bytes-8u||le32(wav+16)!=16u||
+     le16(wav+20)!=1u||le16(wav+22)!=1u||
+     le16(wav+34)!=16u||le16(wav+32)!=2u)return NULL;
+  for(i=0;i<source_count;i++){
+    const WAVSource *w=&sources[i];
+    if(w->header_bytes!=44u||w->pcm_bytes!=total_bytes-44u||
+       w->rate!=le32(wav+24)||w->pcm_bytes<pcm_prefix+remainder||
+       le32(wav+40)!=w->pcm_bytes)continue;
+    if(memcmp(wav+44u,w->pcm,pcm_prefix)!=0)continue;
+    if(++matches>1u)return NULL;
+    match=w;
+  }
+  if(matches!=1u||!match)return NULL;
+  if(source_name)*source_name=match->name;
+  return match->pcm+pcm_prefix;
+}
+
 void SpiderPKRAudioIndex_EnableTailRestore(int enabled){
   tail_restore_enabled=(enabled==1 && index_ready);
   if(tail_restore_enabled && diag)
