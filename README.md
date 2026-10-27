@@ -88,11 +88,11 @@ diagnostics remain available through `ExperimentalPKRAudioIndex=1`
 and `ExperimentalPKRAudioPlayTrace=1`.
 
 The former late DirectSound-buffer repair
-(`ExperimentalAudioPKRTailRestore`) has been removed. The native
+(`ExperimentalAudioPKRTailRestore`) has been removed. This built-in native
+loader correction is introduced in **SpiderMan2k1Fix v1.1.0**. The
 correction and duplicate-source repairs have been validated without
-audible crackling under Linux/Wine; native Windows gameplay testing is
-still pending. These post-v1.0.0 source changes are not yet included in
-the published v1.0.0 release.
+audible crackling under Linux/Wine; native Windows gameplay testing of
+the new default-on configuration is still pending.
 
 ## Installation on Windows and Linux (Wine)
 
@@ -201,7 +201,7 @@ The following are possible improvements under consideration, subject to technica
 - **Widescreen:** Correct 3D elements that appear misaligned near the edges of the screen.
 - **Performance:** Explore 60 FPS support and fixes for FPS-dependent boss and level issues.
 - **Quick saves:** Investigate instant game saving.
-- **Audio:** Improve sound playback and eliminate crackling and other audio artifacts.
+- **Audio:** Investigate any remaining sound anomalies not addressed by the built-in native WAV-sector repair.
 - **Subtitles:** Explore subtitle support for pre-rendered movies, in-game cinematics, and gameplay dialogue.
 - **Cheats:** Add optional INI settings for costumes, God Mode, What If? mode, and other cheats.
 - **Additional content:** Explore support for *Spider-Man 2: Enter Electro*.
