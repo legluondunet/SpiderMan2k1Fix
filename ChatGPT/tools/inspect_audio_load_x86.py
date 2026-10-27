@@ -213,6 +213,21 @@ def inspect(blob: bytes, exe: Path, out: Path) -> str:
         rows += [f"  immediate_at=0x{p:08X}" for p in hits[:96]]
         if len(hits) > 96:
             rows.append("  [ADDRESS LIST TRUNCATED AT 96]")
+    rows += ["", "RAW x86 INDIRECT VTABLE-CALL CANDIDATES (FF /2, mod=01, EAX..EBX)",
+             "Candidates are not proven DirectSound: another COM interface can share offsets."]
+    for offset, label in (
+        (0x0C, "possible CreateSoundBuffer"),
+        (0x14, "possible DuplicateSoundBuffer"),
+        (0x2C, "possible Lock"),
+        (0x4C, "possible Unlock"),
+    ):
+        hits = [base + pos for pos in range(len(text) - 2)
+                if text[pos] == 0xFF and 0x50 <= text[pos + 1] <= 0x53
+                and text[pos + 2] == offset]
+        rows.append(f"{label}: vtable offset=0x{offset:02X} raw_candidates={len(hits)}")
+        rows += [f"  candidate_at=0x{addr:08X}" for addr in hits[:120]]
+        if len(hits) > 120:
+            rows.append("  [ADDRESS LIST TRUNCATED AT 120]")
     rows += ["", "NATIVE CODE NEIGHBORHOOD / objdump disassembly",
              f"VA 0x{WINDOW_START:08X}-0x{WINDOW_END:08X}",
              "Review function boundaries and COM indirect call instructions manually.",
@@ -240,7 +255,16 @@ def inspect(blob: bytes, exe: Path, out: Path) -> str:
              "",
              "ORIGINAL GAME BANK SELECTOR",
              "VA 0x004FBD60-0x004FC050: helper called by 0x503B40.",
-             disassemble(exe, 0x004FBD60, 0x004FC050)]
+             disassemble(exe, 0x004FBD60, 0x004FC050),
+             "",
+             "CANDIDATE ALTERNATE DIRECTSOUND OBJECT CONSUMERS",
+             "VA 0x004FD800-0x004FDAC0, 0x004FEF70-0x004FF260,",
+             "0x005000B0-0x00500260, 0x00500700-0x00500940.",
+             "Classify real COM vtable call sites and reject unrelated interfaces.",
+             disassemble(exe, 0x004FD800, 0x004FDAC0),
+             disassemble(exe, 0x004FEF70, 0x004FF260),
+             disassemble(exe, 0x005000B0, 0x00500260),
+             disassemble(exe, 0x00500700, 0x00500940)]
     report = "\n".join(rows) + "\n"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report, encoding="utf-8")
