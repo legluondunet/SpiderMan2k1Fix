@@ -2983,6 +2983,21 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
     }
   }
   SpiderCfg_BootstrapGameRead();
+  /* BootstrapGameRead invokes the game's original config loader, which
+   * restores joystick mappings. Applying Start before this point was
+   * overwritten before menus/movies. Do this once, on the original game
+   * thread, after native config is restored and before first DirectDraw. */
+  {
+    char input_ini[MAX_PATH],*slash;
+    DWORD length=GetModuleFileNameA(NULL,input_ini,sizeof(input_ini));
+    if(length>0 && length<sizeof(input_ini) &&
+       (slash=strrchr(input_ini,'\\'))!=NULL) {
+      strcpy(slash+1,"SpiderMan2k1Fix.ini");
+      SpiderGamepadStart_Init(input_ini,log_line);
+    } else {
+      log_line("GAMEPAD-START: SKIPPED cannot locate INI after native config bootstrap");
+    }
+  }
   HRESULT hr=original_create(guid,out,iid,outer);
   if(SUCCEEDED(hr) && out && *out && iid && IsEqualGUID(iid,&IID_IDirectDraw7)) {
     void ***object=(void ***)*out;
@@ -3085,17 +3100,6 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
-  /* Optional original controller Start mapping (menus/movies): absolutely
-   * no DirectInput COM hooks or synthetic keyboard events. */
-  {
-    char input_ini[MAX_PATH],*slash;
-    DWORD length=GetModuleFileNameA(NULL,input_ini,sizeof(input_ini));
-    if(length>0 && length<sizeof(input_ini) &&
-       (slash=strrchr(input_ini,'\\'))!=NULL) {
-      strcpy(slash+1,"SpiderMan2k1Fix.ini");
-      SpiderGamepadStart_Init(input_ini,log_line);
-    }
-  }
   SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
