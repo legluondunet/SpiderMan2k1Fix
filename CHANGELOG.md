@@ -6,14 +6,14 @@
 - Expand the native ESC 4:3 font-glyph eligibility only in the heading row, preserving the original central bounds for NO/YES and other menu choices. Existing owner/texture/depth/same-frame guards and classic 4:3 behavior remain unchanged.
 - Add host-compiled C geometry tests covering 16:9, 16:10 and unrelated HUD/edge cases. In-game Windows and Wine visual validation is still required; this change is **not yet released**.
 
-## Unreleased — experimental native gamepad Start / menu and video actions
+## Unreleased — automatic DualShock 4 UI profile (experimental)
 
-- Add an optional `[Input] ExperimentalGamepadStart=BUTTONn` binding, disabled unless explicitly configured, to test native controller **Start/confirm** handling in menus and skippable cinematics.
-- Recognize only the original executable's two 14-entry controller mapping arrays in writable `.data` and alter only the `Start` button index (`0x1000` action); refuse an unverified signature or any overlap with assigned gameplay actions.
-- Preserve physical joystick axes, existing seven gamepad mappings, game-native input/skip timing, keyboard and mouse behavior. Do not intercept DirectInput COM objects or synthesize keyboard events.
-- After the first failed DS4 test (build `v1.1.0-a807941`), move the guarded Start remap **after** the original game's configuration loader restores joystick mappings (before first DirectDraw). Previously it could be overwritten during startup.
-- Log option absence, selected button, native table scan count and explicit refusal reasons; the first failure log had no GAMEPAD-START trace, so the previous outcome was unobservable.
-- Add regression coverage for bootstrap ordering and diagnostics. **No gameplay confirmation yet:** the user's actual DualShock 4 button numbers and the two native start routes still require Wine/Windows testing. No changes to v1.1.0 release.
+- Retire the unsuccessful `ExperimentalGamepadStart=BUTTONn` native-controller-table rewrite. The user's second log (`v1.1.0-10aff89`) confirmed it refused an unsupported PE header layout and **never activated**.
+- Automatically recognize original Sony DualShock 4 VID/PID 054C:05C4 / 054C:09CC and the official 054C:0BA0 adapter, using a separate nonexclusive DirectInput8 gamepad device. Other controllers are left unchanged.
+- Add `[Input] ControllerProfile=Auto|Off|DualShock4` and `ControllerEnterButtons=Cross|Options|Both` (default Auto and Both). When a unique DualShock 4 is detected, map ✕ and/or OPTIONS to **Enter** for interactive 2D menus, the pre-menu still image and skippable videos; keep all native gameplay controls unchanged.
+- Trigger one debounced Enter scancode per button press using `SendInput`; release the key before focus-pause, never inject in 3D. Failure to read the separate controller or identify it unambiguously disables the bridge safely.
+- Preserve the original game's cinematic timing and keyboard events. **Still requires real Wine/Windows acceptance testing:** a successful Windows synthetic key request does not prove the original DirectInput keyboard poll will consume it.
+- Add regression tests and research notes for profile choice, context isolation and the two previously failed controller experiments. The stable v1.1.0 release remains unchanged.
 
 ## 1.1.0 — October 27, 2026
 
