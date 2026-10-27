@@ -365,7 +365,7 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
   const char *name;
   static const char header[]=
     "; SpiderMan2k1Fix.ini - generated automatically when missing.\r\n"
-    "; User settings only. Built-in video/HUD/focus fixes are always enabled.\r\n"
+    "; User settings only. Built-in video/HUD/focus/audio fixes need no settings.\r\n"
     "; Edit while the game is closed; invalid INIs are backed up before repair.\r\n"
     "\r\n"
     "[Debug]\r\n"

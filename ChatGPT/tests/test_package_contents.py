@@ -44,7 +44,7 @@ def test_workflow_only_builds_and_does_not_publish_releases():
 def test_ci_runs_developer_regression_tests():
     workflow = CI_PATH.read_text(encoding="utf-8")
     assert "python3 -m pytest -q ChatGPT/tests" in workflow
-    assert "bash ./build.sh" in workflow
+    assert "bash ./build.sh" in workflow or "bash ./build-native-msvcrt.sh" in workflow
 
 
 def test_developer_directories_are_excluded_from_future_source_archives():
