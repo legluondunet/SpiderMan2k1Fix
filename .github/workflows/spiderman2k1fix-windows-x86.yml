@@ -54,6 +54,16 @@ jobs:
           mkdir -p dist/package
           cp SpiderMan2k1Fix.dll winmm.dll README.md CHANGELOG.md dist/package/
 
+      - name: Verify packaged README and CHANGELOG
+        run: |
+          test -s dist/package/README.md
+          test -s dist/package/CHANGELOG.md
+          cmp README.md dist/package/README.md
+          cmp CHANGELOG.md dist/package/CHANGELOG.md
+          python3 -c 'import pathlib,re; s=pathlib.Path("dist/package/README.md").read_text(encoding="utf-8"); assert not re.search(r"(?m)^- \\*\\*\\s", s), "Malformed bold Markdown bullet in README.md"'
+          echo "README.md and CHANGELOG.md match the checked-out sources."
+          sha256sum README.md dist/package/README.md CHANGELOG.md dist/package/CHANGELOG.md
+
       - name: Upload Windows DLL artifact
         uses: actions/upload-artifact@v4
         with:
