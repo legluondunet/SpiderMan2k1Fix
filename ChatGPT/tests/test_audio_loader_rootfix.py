@@ -195,8 +195,12 @@ def test_arithmetic_does_not_round_up_or_overrun_native_malloc():
         assert len(destination)==total
 
 
-def test_native_rootfix_keeps_fallback_and_does_not_replace_directsound():
-    assert "SpiderPKRAudioIndex_TryTailRestore" in (ROOT/"pkr_audio_play_hook.c").read_text()
+def test_native_rootfix_replaces_late_fallback_and_keeps_heli_declick():
+    play=(ROOT/"pkr_audio_play_hook.c").read_text()
+    assert "SpiderPKRAudioIndex_TryTailRestore" not in play
+    assert "SpiderPKRAudioIndex_TryHeli1Declick" in play
+    assert "ExperimentalAudioPKRTailRestore" not in INI
+    assert "ExperimentalAudioPKRTailRestore" not in MAIN
     assert "SpiderPKRAudioIndex_TryHeli1Declick" in (ROOT/"pkr_audio_play_hook.c").read_text()
     for forbidden in ("CreateSoundBuffer", "DuplicateSoundBuffer", "IDirectSoundBuffer_Lock",
                       "IDirectSoundBuffer_Unlock", "stop_all_voices", "SDL3", "XAudio2"):
