@@ -13,7 +13,7 @@ def test_restore_opt_in_and_no_sdl_runtime():
     assert '"ExperimentalPKRAudioIndex"' in INI
     assert "ExperimentalSDL3" not in INI
     assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioPKRTailRestore",0,ini)==1' in MAIN
-    assert 'SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_tail_restore||pkr_heli_dump||pkr_heli_declick)' in MAIN
+    assert 'SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_tail_restore||pkr_heli_declick)' in MAIN
     assert 'SpiderPKRAudioIndex_EnableTailRestore(pkr_tail_restore)' in MAIN
     assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_tail_restore||pkr_play_trace||pkr_heli_declick,pkr_play_trace)' in MAIN
     assert 'tail_restore_enabled=(enabled==1 && index_ready)' in SRC
@@ -195,7 +195,7 @@ def test_heli1_source_discontinuity_probe_is_read_only_and_matches_recording_per
     """The user's 30s capture repeats at 2.520s, exactly Heli1's PCM duration."""
     assert (60480 // 2) / 12000 == 2.52
     assert 'static void log_heli1_source_discontinuities(void)' in SRC
-    assert 'if(decoded>0 && crc_fail==0){' in SRC
+    assert 'if(decoded>0 && crc_fail==0)log_heli1_source_discontinuities();' in SRC
     assert 'log_heli1_source_discontinuities();' in SRC
     assert 'strcmp(w->name,"Heli1.wav")!=0' in SRC
     assert 'w->rate!=12000u' in SRC
@@ -208,32 +208,6 @@ def test_heli1_source_discontinuity_probe_is_read_only_and_matches_recording_per
     assert 'diag(line)' in probe
     for forbidden in ('fopen(', 'fwrite(', 'memcpy(', 'IDirectSoundBuffer_', 'NATIVE_PLAY('):
         assert forbidden not in probe
-
-
-def test_heli1_source_export_is_opt_in_non_destructive_and_temp_only():
-    assert '"ExperimentalAudioHeli1SourceDump"' in INI
-    assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioHeli1SourceDump",0,ini)==1' in MAIN
-    assert 'SpiderPKRAudioIndex_SetHeli1SourceDump(pkr_heli_dump);' in MAIN
-    assert 'void SpiderPKRAudioIndex_SetHeli1SourceDump(int enabled);' in HDR
-    assert 'heli1_source_dump_enabled=(enabled==1);' in SRC
-    assert 'if(!heli1_source_dump_enabled)return;' in SRC
-    assert 'if(decoded>0 && crc_fail==0)' in SRC
-    assert 'dump_heli1_source_optin();' in SRC
-    assert 'sources[i].pcm_bytes==60480u && sources[i].rate==12000u' in SRC
-    assert 'sources[i].header_bytes==44u && sources[i].pcm' in SRC
-    assert 'GetTempPathA(' in SRC
-    assert 'CREATE_NEW' in SRC
-    assert 'PKR-AUDIO: HELI1-DUMP CREATED' in SRC
-    assert 'w->pcm_bytes' in SRC
-    assert 'WriteFile(out,w->pcm,w->pcm_bytes' in SRC
-    probe=SRC.split('static void dump_heli1_source_optin(void){',1)[1].split('static void log_heli1_source_discontinuities(void){',1)[0]
-    assert 'IDirectSoundBuffer_' not in probe
-    assert 'SetCurrentPosition' not in probe
-    assert 'NATIVE_PLAY' not in probe
-    assert 'data.pkr' not in probe.replace('never data.pkr', '')
-    assert 'FILE_SHARE_READ,NULL,CREATE_NEW' in probe
-    assert 'DeleteFileA(path);' in probe  # delete an incomplete new dump only
-    assert 44+60480 == 60524
 
 
 def test_heli1_declick_is_off_by_default_exact_two_source_samples_only():
