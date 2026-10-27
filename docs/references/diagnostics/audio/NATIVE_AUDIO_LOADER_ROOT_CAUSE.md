@@ -790,7 +790,7 @@ This also explains **both previously unmatched** samples
 (`achum` and `tingle2`) and the extra
 `catland3` heard in the new session.
 
-### Opt-in native-loader full-RIFF fix prepared; runtime NOT yet validated
+### Opt-in native-loader full-RIFF fix: Windows runtime validated 27 Oct 11:59
 
 The branch now retains each original **complete** verified WAV
 allocation instead of allocating and copying only its PCM.
@@ -822,17 +822,71 @@ reader and COM/DirectSound path remain unchanged.
 separate stopped-DirectSound Play-time fallback; nothing
 new is enabled by default.
 
-**Next test:** the latest Windows x86 DLL from CI with
-`ExperimentalAudioLoaderTail=1`,
-`ExperimentalAudioPKRTailRestore=1`. Verify 13
-named native `LOADER-TAIL-RESTORED` messages and
-fewer or zero late `TAIL-RESTORED` events on the
-same game sequence. This is predicted, **not yet proven**.
-If any remain, preserve the fallback and inspect the log
-before changing anything else. Independent Linux/Wine
-listening confirmation remains required.
+**Windows runtime outcome (user-provided log
+`SpiderMan2k1Fix(20261027-115910).log`, EXE SHA-verified):**
+the new `FULL RIFF` loader correction works. This second
+session reproduced the same intro, initial 3D and return to menu.
 
-## What will settle the true origin
+| Metric | Old Windows 11:45 log | New Windows 11:59 log |
+| --- | ---: | ---: |
+| Native `LOADER-TAIL-RESTORED` event count | 64 | **90** |
+| Distinct named WAVs restored by native loader | 62 | **88** |
+| `LOADER-SKIP-NO-UNIQUE-SOURCE` event count | 27 | **1** |
+| Native `LOADER-SKIP-REMAINDER-MISMATCH` | 0 | **0** |
+| Stopped-DirectSound pre-Play `TAIL-RESTORED` | 13 | **0** |
+| `FULL-PCM IDENTICAL` checks | 40 | **40** |
+| Indexed CRC-verified WAVs | 656 | **656, no CRC failures** |
+| Separate `Heli1.wav` two-sample declick | enabled | **still applied** |
+
+**26 of the previously 27 skipped original WAV loads**
+were promoted to full-file verified native repairs. The
+**13 distinct WAVs** previously repaired at Play are all now
+named in successful native `LOADER-TAIL-RESTORED`
+events: PickConf, achum, Crawl1, Crawl2, catland3,
+Swing5, WebShot10, WebShot3, WebShot11, tingle2,
+h_hitfloor, Pistol1, Pistol2. During this session the
+previously damaged `achum.wav`, `Swing5.wav`,
+`WebShot11.wav`, `WebShot3.wav` are explicitly
+reported `FULL-PCM IDENTICAL`; other tested sounds
+now generate `TAIL-SKIP reason=already-identical`,
+with no new `TAIL-RESTORED` events.
+
+**The single remaining native SKIP is correct by design:**
+`total_bytes=18452`, `complete_bytes=18432`,
+`remainder=20`, `data_chunk_bytes=18364`.
+The original PCM ends at byte `44+18364=18408`,
+**24 bytes BEFORE the complete-sector boundary**.
+Thus the 20-byte unread remainder is metadata-only.
+This sample corresponds to `BreakFree.wav` by
+native PCM length / subsequent exact `MATCH`
+and `FULL-PCM IDENTICAL` logs. We intentionally
+do not request an extra sector for metadata-only
+tails, because they cannot account for damaged audio.
+This one remaining SKIP is **not a defect**.
+
+The game progressed into the second 3D script, active
+gameplay, and returned to the original main menu with
+the native request-7 cleanup. The log shows no new
+audio patch failure or crash. `Heli1.wav` is
+`FULL-PCM IDENTICAL` on first playback; later
+four-byte source differences are the *intentional*
+two-sample declick shared by duplicated voices,
+not lost final sectors.
+
+**Status:** native and pre-Play audio correctness is
+**validated on this Windows runtime session**.
+This does NOT establish that every level, audio path,
+hardware, or Linux/Wine driver is artifact-free.
+Await independent subjective listening evaluation
+on user's Linux/Wine computer before promoting
+the experiment. The PR remains **draft and unmerged**;
+the two opt-in audio fallback options remain available
+and unchanged.
+
+
+## Archived investigation plan (before native root cause was identified)
+
+The following was the former diagnostic plan, retained as historical context. The exact responsible instruction has since been established and the native loader correction validated in the Windows session above.
 
 After examining the exact native instruction sequence, identify and
 verify `DXSOUND_CreateDSBuffer` / `loadWAV` / `ParseWavHeader`
