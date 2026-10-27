@@ -13,13 +13,15 @@ def test_restore_opt_in_and_no_sdl_runtime():
     assert '"ExperimentalPKRAudioIndex"' in INI
     assert "ExperimentalSDL3" not in INI
     assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioPKRTailRestore",0,ini)==1' in MAIN
-    assert 'SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_tail_restore||pkr_heli_dump)' in MAIN
+    assert 'SpiderPKRAudioIndex_Init(log_line,pkr_index||pkr_tail_restore||pkr_heli_dump||pkr_heli_declick)' in MAIN
     assert 'SpiderPKRAudioIndex_EnableTailRestore(pkr_tail_restore)' in MAIN
-    assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_tail_restore||pkr_play_trace,pkr_play_trace)' in MAIN
+    assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_tail_restore||pkr_play_trace||pkr_heli_declick,pkr_play_trace)' in MAIN
     assert 'tail_restore_enabled=(enabled==1 && index_ready)' in SRC
     assert 'if(!tail_restore_enabled||!buf||slot<0||slot>=32)return 0;' in SRC
     assert 'SpiderPKRAudioIndex_TryTailRestore(slot,buffer,looping)' in HOOK
+    assert 'SpiderPKRAudioIndex_TryHeli1Declick(slot,buffer,looping)' in HOOK
     assert HOOK.index('SpiderPKRAudioIndex_Probe(slot,buffer,looping)') < HOOK.index('SpiderPKRAudioIndex_TryTailRestore(slot,buffer,looping)') < HOOK.index('NATIVE_PLAY(slot,looping);')
+    assert HOOK.index('SpiderPKRAudioIndex_TryTailRestore(slot,buffer,looping)') < HOOK.index('SpiderPKRAudioIndex_TryHeli1Declick(slot,buffer,looping)') < HOOK.index('NATIVE_PLAY(slot,looping);')
     assert "SDL3" not in MAIN
 
 def test_crc_verified_unique_original_source_before_any_pcm_write():
@@ -232,3 +234,29 @@ def test_heli1_source_export_is_opt_in_non_destructive_and_temp_only():
     assert 'FILE_SHARE_READ,NULL,CREATE_NEW' in probe
     assert 'DeleteFileA(path);' in probe  # delete an incomplete new dump only
     assert 44+60480 == 60524
+
+
+def test_heli1_declick_is_off_by_default_exact_two_source_samples_only():
+    assert '"ExperimentalAudioHeli1Declick"' in INI
+    assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioHeli1Declick",0,ini)==1' in MAIN
+    assert 'SpiderPKRAudioIndex_EnableHeli1Declick(pkr_heli_declick);' in MAIN
+    assert 'SpiderPKRAudioIndex_EnableHeli1Declick(int enabled);' in HDR
+    assert 'SpiderPKRAudioIndex_TryHeli1Declick(int slot,IDirectSoundBuffer *buffer,int looping);' in HDR
+    assert 'heli1_declick_enabled=(enabled==1 && index_ready);' in SRC
+    assert 'if(!heli1_declick_enabled||!buf||slot<0||slot>=32||!looping)return 0;' in SRC
+    assert 'strcmp(q->name,"Heli1.wav")==0 && q->pcm_bytes==60480u' in SRC
+    assert 'q->rate==12000u && q->header_bytes==44u' in SRC
+    assert 'static const DWORD positions[2]={12095u,12109u};' in SRC
+    assert 'static const int16_t original_samples[2]={-9,32765};' in SRC
+    assert 'static const int16_t replacements[2]={29634,-30655};' in SRC
+    assert '(status&DSBSTATUS_PLAYING)' in SRC
+    assert 'if(got!=expected && got!=(uint16_t)replacements[k])' in SRC
+    assert 'else if(got!=expected){valid=0;break;}' in SRC
+    assert 'PKR-AUDIO: HELI1-DECLICK slot=' in SRC
+    assert 'SpiderPKRAudioIndex_TryHeli1Declick(slot,buffer,looping)' in HOOK
+    assert HOOK.index('SpiderPKRAudioIndex_TryTailRestore(slot,buffer,looping)') < HOOK.index('SpiderPKRAudioIndex_TryHeli1Declick(slot,buffer,looping)') < HOOK.index('NATIVE_PLAY(slot,looping);')
+    orig={12094:30604,12095:-9,12096:28663,12108:-30587,12109:32765,12110:-30723}
+    assert (orig[12094]+orig[12096]+1)//2 == 29634
+    assert (orig[12108]+orig[12110])//2 == -30655
+    assert abs(orig[12109]-orig[12110])==63488
+    assert abs(-30655-orig[12110])==68
