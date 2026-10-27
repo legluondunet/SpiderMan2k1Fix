@@ -56,7 +56,7 @@ def test_loader_only_writes_exact_original_tail_after_fresh_native_read_validati
     assert 'loader_message("TAIL-RESTORED"' in SRC
 
 
-def test_source_requires_unique_crc_verified_complete_riff_prefix_and_tail():
+def test_source_requires_crc_verified_full_prefix_and_identical_tail_across_aliases():
     assert "if(!index_ready||!wav" in MATCH
     assert "complete_bytes!=(total_bytes&~2047u)" in MATCH
     assert 'memcmp(wav,"RIFF",4u)!=0' in MATCH
@@ -66,14 +66,53 @@ def test_source_requires_unique_crc_verified_complete_riff_prefix_and_tail():
     assert "w->header_bytes+w->pcm_bytes" in MATCH
     assert "if(pcm_end<=complete_bytes)continue;" in MATCH
     assert "memcmp(wav,w->raw,complete_bytes)!=0" in MATCH
-    assert "if(++matches>1u)return NULL" in MATCH
+    # Multiple CRC-verified filenames may contain bytewise-equivalent
+    # originals. Such aliases are safe ONLY if their entire remaining
+    # RIFF/WAV bytes match. A divergent tail still fails closed.
+    assert "if(match && memcmp(match->raw+complete_bytes," in MATCH
+    assert "w->raw+complete_bytes,remainder)!=0)return NULL;" in MATCH
+    assert "if(!matches||!match)return NULL;" in MATCH
+    assert '"CRC-identical WAV aliases"' in MATCH
     assert "return match->raw+complete_bytes" in MATCH
+    assert MATCH.index("memcmp(wav,w->raw,complete_bytes)!=0") < MATCH.index(
+        "memcmp(match->raw+complete_bytes,") < MATCH.index(
+        "return match->raw+complete_bytes")
+
     assert "crc32_pkraw(raw,e->length)==e->crc" in MATCH
     assert "dst->raw=raw;" in MATCH
     assert "dst->pcm=raw+pcm_offset;" in MATCH
     assert "raw=NULL; /* ownership transferred to WAVSource */" in MATCH
     assert "retained_bytes+=e->length" in MATCH
     assert "loaded_bytes+=pcm_bytes" in MATCH
+
+
+
+def test_crc_verified_aliases_are_content_unambiguous_only_when_all_tails_agree():
+    # Regression model for two and six independently verified PKR entries
+    # with identical RIFF size + loaded prefix (Wine 27 Oct forensic log).
+    # This models the new C predicate; actual runtime must still validate
+    # a freshly read native sector against the selected expected bytes.
+    complete = 8192
+    first = b"R" * complete
+    base = first + b"A" * 1988
+    aliases = [base] * 6
+    def eligible(candidates, loaded_prefix, total):
+        matching = [wav for wav in candidates if len(wav) == total
+                    and wav[:len(loaded_prefix)] == loaded_prefix]
+        if not matching:
+            return None
+        tail = matching[0][len(loaded_prefix):]
+        if any(w[len(loaded_prefix):] != tail for w in matching[1:]):
+            return None
+        return tail
+
+    assert eligible(aliases, first, len(base)) == b"A" * 1988
+    assert eligible([base] * 2, first, len(base)) == b"A" * 1988
+    assert eligible([base, first+b"B" * 1988], first, len(base)) is None
+    assert eligible([base, first+b"A"*1987+b"B"], first, len(base)) is None
+    assert eligible([base[:-1]], first, len(base)) is None
+    assert eligible([], first, len(base)) is None
+    assert eligible([base], b"X" * complete, len(base)) is None
 
 
 def test_verified_88_234_byte_wav_structures_have_pcm_missing_last_sector():
