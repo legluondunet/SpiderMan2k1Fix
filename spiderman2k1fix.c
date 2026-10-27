@@ -14,6 +14,7 @@
 #include <d3d.h>
 #include "hud_widescreen.h"
 #include "hud_adaptive.h"
+#include "native_pause_title_bounds.h"
 #include "frame_limiter.h"
 #include "display_plan.h"
 #include "menu_scale.h"
@@ -1115,8 +1116,8 @@ static const void *maybe_correct_native_pause43(void *device,
        * Choices: main menu Y=436/508/580; confirmation Y=468/540.
        * Exclude instructions (Y=877), compass, gameplay HUD, and
        * the separately handled red spider selector. */
-      if(left<=(float)desktop_w*0.25f ||
-         right>=(float)desktop_w*0.75f ||
+      if(!SpiderNativePause43_TextInZone(
+             left,right,top,bottom,(float)desktop_w,(float)desktop_h) ||
          top<(float)desktop_h*0.13f ||
          bottom>(float)desktop_h*0.63f ||
          right-left<10.0f || right-left>84.0f ||
