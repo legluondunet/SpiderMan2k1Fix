@@ -39,7 +39,11 @@ def test_shared_readonly_patch_remains_single_install_verified_x86_and_no_keyboa
     assert "return spider_install_readonly_joystick(2u,logger);" in READONLY
     assert "return spider_install_readonly_joystick(1u,logger);" in READONLY
     assert "if(readonly_installed_mode)" in READONLY
-    assert "if(readonly_installed_mode==mode)return 1;" in READONLY
+    assert "if(readonly_label_mode!=mode)" in READONLY
+    assert "readonly_label_mode=mode;" in READONLY
+    assert "live controller labels changed to Xbox360" in READONLY
+    assert "native action mapping unchanged" in READONLY
+    assert 'SpiderXbox360_InstallReadOnlyJoystick(log_message);' in UI
     assert "readonly_installed_mode=mode;" in READONLY
     assert "readonly_label_mode=mode;" in READONLY
     assert "memcmp(location,p->original,p->size)!=0" in READONLY
