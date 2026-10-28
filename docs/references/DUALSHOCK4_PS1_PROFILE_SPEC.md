@@ -757,3 +757,24 @@ save/restore system.
   functioning features.
 - No changes to draft PR #73 during the user's present runtime test.
 - No merge until explicit maintainer validation.
+
+## Reproduced post-Quit synthetic Enter race — October 28, 2026
+
+Three real-game logs using the same `v1.1.0-ccc2f51` build distinguish:
+
+- **Trace ON** `SpiderMan2k1Fix(20261028-075753).log`: original native request 7, clean 3D teardown, main menu displayed; maintainer confirms no unexpected New Game.
+- **Trace OFF** `SpiderMan2k1Fix(20261028-080648).log`: synthetic Return #3 occurs immediately at the first 2D Flip (350) after native request 7, and New Game comic `L1COV.bmp` is drawn on that same Flip. A later return repeats this pattern.
+- **Trace OFF** `SpiderMan2k1Fix(20261028-081250).log`: a synthetic Return occurs on Flip 734, in which `renderer2d=1, mode_request=7`, then the New Game comic is drawn on the **same** Flip; this repeats on Flip 853. The original 3D teardown is successful each time.
+
+The premature synthetic Enter is a strongly supported immediate cause of unwanted New Game, while **why** the independent pad reader reports a Cross edge on this specific transition is not yet proven. Enabling the read-only QuitTrace changes timing, not semantics.
+
+New opt-in guard under `[Input]`:
+
+```ini
+ControllerPS1QuitTrace=0
+ControllerPS1PostQuitGuard=1
+```
+
+The guard applies only when the verified PS1 preview is active. It remembers valid playable 3D and looks for the first 2D frame with original `0x60CFA4` request equal to 7. On that transition it blocks **only synthetic UI Enter** for eight 2D Flip calls, consuming the physical Cross/Options edge normally. It never sends a new key, edits the original native game state, changes the original Joystick mappings, suppresses the user's real keyboard, or alters the engine's request 7. Other menus, movies, initial boot and non-request-7 transitions are unaffected. The option is off by default, and its effect must be confirmed on a real DS4 before merging or releasing.
+
+Look for `GAMEPAD-PS1: POST-QUIT-GUARD suppressed synthetic Return on first 2D menu frames after native request 7` in the new test log. If the test fails, preserve the log and revert the opt-in instead of speculating about the game's native input owners.
