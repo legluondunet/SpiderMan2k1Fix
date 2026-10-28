@@ -8,8 +8,8 @@
  * - In legacy UI bridge mode, map configurable CROSS/OPTIONS edges to
  *   Enter. In opt-in PS1 preview, ONLY CROSS generates synthetic Enter in
  *   2D/Bink/native pause. Circle backs out, SHARE owns native 3D pause.
- * - Original 3D scripted cinematic skipping remains game-owned; avoid
- *   injecting a second Escape or Enter during gameplay.
+ * - Legacy TRIANGLE cinematic skipping stays game-owned. In PS1 preview,
+ *   Jump moves to Cross; do not inject conflicting keys during 3D scripts.
  * - Bink movies can run after leaving the renderer's 2D menu mode.
  * - In 3D, OPTIONS requests Escape/Pause ONLY when the saved seven
  *   native gameplay bindings no longer assign BUTTON9 to an action.
@@ -314,7 +314,7 @@ static void detect_device(HWND hwnd) {
   }
   detected=1;
   snprintf(line,sizeof(line),
-    "GAMEPAD-UI: PROFILE DualShock4 VERIFIED Sony VID=054C PID=%04lX name=%.110s; legacy 2D/Bink confirmation=ControllerEnterButtons; PS1 preview after CRT bootstrap: Cross=BUTTON1 only, Circle=BUTTON2 back, SHARE=BUTTON8 3D pause; OPTIONS=BUTTON9 is NOT synthetic Enter in PS1",
+    "GAMEPAD-UI: PROFILE DualShock4 ACTIVE (verified device) Sony VID=054C PID=%04lX name=%.110s; legacy 2D/Bink confirmation=ControllerEnterButtons; PS1 preview after CRT bootstrap: Cross=BUTTON1 only, Circle=BUTTON2 back, SHARE=BUTTON8 3D pause; OPTIONS=BUTTON9 is NOT synthetic Enter in PS1",
     (unsigned long)d.product_id,d.name);
   report(line);
 }
