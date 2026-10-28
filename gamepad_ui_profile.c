@@ -36,6 +36,8 @@
 #include "ps1_transition_edge_ownership.h"
 #include "ps1_menu_confirm.h"
 #include "ps1_focus_pause_wake.h"
+#include "ps1_ds4_hotplug.h"
+#include "native_joystick_reconnect.h"
 #include "ps1_input_flight_recorder.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
@@ -81,6 +83,9 @@ static char profile_ini[MAX_PATH]={0};
 static unsigned pause_conflict_reports=0,outside_mode_reports=0;
 static unsigned postmenu_bink_reports=0;
 static unsigned bad_reads=0;
+static SpiderDS4Hotplug hotplug={0};
+static int hotplug_missing_logged=0;
+static int hotplug_late_preview_reported=0;
 static SpiderPausePadWake pause_wake={0};
 static int pause_wake_active=0;
 static int pause_wake_retry_logged=0;
@@ -160,12 +165,14 @@ static void release_active_key(void) {
   in.type=INPUT_KEYBOARD;
   in.ki.wScan=(WORD)active_scan;
   in.ki.dwFlags=KEYEVENTF_SCANCODE|KEYEVENTF_KEYUP;
+  SpiderNativeReconnect_LogSyntheticMenuKey(active_scan,"before KEYUP");
   if(SendInput(1,&in,sizeof(in))!=1) {
     snprintf(line,sizeof(line),
       "GAMEPAD-UI: WARNING synthetic KEYUP failed scan=0x%02X Win32=%lu",
       active_scan,(unsigned long)GetLastError());
     report(line);
   }
+  SpiderNativeReconnect_LogSyntheticMenuKey(active_scan,"after KEYUP");
   active_scan=0;
 }
 static void begin_scancode(unsigned scan,const char *action) {
@@ -176,6 +183,7 @@ static void begin_scancode(unsigned scan,const char *action) {
   in.type=INPUT_KEYBOARD;
   in.ki.wScan=(WORD)scan;
   in.ki.dwFlags=KEYEVENTF_SCANCODE;
+  SpiderNativeReconnect_LogSyntheticMenuKey(scan,"before KEYDOWN");
   if(SendInput(1,&in,sizeof(in))!=1) {
     snprintf(line,sizeof(line),
       "GAMEPAD-UI: WARNING %s KEYDOWN SendInput failed Win32=%lu",
@@ -184,6 +192,7 @@ static void begin_scancode(unsigned scan,const char *action) {
     return;
   }
   active_scan=scan;
+  SpiderNativeReconnect_LogSyntheticMenuKey(scan,"after KEYDOWN");
   number=scan==0x01u?++sent_escape:++sent_enter;
   if(number<=20) {
     snprintf(line,sizeof(line),
@@ -192,14 +201,44 @@ static void begin_scancode(unsigned scan,const char *action) {
     report(line);
   }
 }
-static void disable_profile(const char *reason) {
+static void disable_profile_with_policy(const char *reason,
+                                        int already_inputlost) {
   release_active_key();
-  if(device) {IDirectInputDevice8_Unacquire(device);
-              IDirectInputDevice8_Release(device);device=NULL;}
+  if(device) {
+    IDirectInputDevice8A *old=device;
+    device=NULL;
+    if(already_inputlost)
+      report("GAMEPAD-HOTPLUG: secondary stale device Release BEGIN (skip Unacquire after INPUTLOST)");
+    else IDirectInputDevice8_Unacquire(old);
+    IDirectInputDevice8_Release(old);
+    if(already_inputlost)
+      report("GAMEPAD-HOTPLUG: secondary stale device Release COMPLETE");
+  }
   if(di) {IDirectInput8_Release(di);di=NULL;}
   if(di_module) {FreeLibrary(di_module);di_module=NULL;}
   detected=0;
-  report(reason);
+  if(reason)report(reason);
+}
+static void disable_profile(const char *reason) {
+  disable_profile_with_policy(reason,0);
+}
+/* Called only after an independent DirectInput read failed while foreground.
+ * A physical unplug can invalidate the old handle immediately: DO NOT
+ * Acquire() that stale device in the same failing frame. Record release
+ * checkpoints so that a fault in the old game's own input path remains
+ * distinguishable from one in our secondary device shutdown. */
+static void spider_hotplug_drop_device(HRESULT hr,const char *context) {
+  char line[235];
+  snprintf(line,sizeof(line),
+    "GAMEPAD-HOTPLUG: %s hr=0x%08lX; secondary device release BEGIN (no Acquire on failed read)",
+    context,(unsigned long)hr);
+  report(line);
+  disable_profile_with_policy(NULL,hr==DIERR_INPUTLOST);
+  report("GAMEPAD-HOTPLUG: secondary device release COMPLETE; rescan deferred 2s");
+  probing=1;
+  hotplug.scan_started=1u;
+  hotplug.last_scan=GetTickCount();
+  hotplug_missing_logged=0;
 }
 void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   char choice[40],buttons[40],back_choice[40],pause_choice[40],line[260];
@@ -274,6 +313,8 @@ static void detect_device(HWND hwnd) {
   char line[300];
   HINSTANCE game=GetModuleHandleA(NULL);
   probing=1;
+  hotplug.scan_started=1u;
+  hotplug.last_scan=GetTickCount();
   if(profile==SPIDER_PROFILE_OFF) {
     report("GAMEPAD-UI: OFF; original gamepad controls untouched");
     return;
@@ -293,14 +334,19 @@ static void detect_device(HWND hwnd) {
     snprintf(line,sizeof(line),"GAMEPAD-UI: EnumDevices failed hr=0x%08lX; original controls preserved",(unsigned long)hr);
     disable_profile(line);return;
   }
-  snprintf(line,sizeof(line),
-    "GAMEPAD-UI: DISCOVERY gamepads=%u SonyDualShock4=%u last-product=%04X:%04X last-name=%.110s",
-    d.found,d.ds4_count,(unsigned)d.last_vendor,(unsigned)d.last_product,d.last_name);
-  report(line);
+  if(!hotplug_missing_logged || (d.found==1u && d.ds4_count==1u)) {
+    snprintf(line,sizeof(line),
+      "GAMEPAD-UI: DISCOVERY gamepads=%u SonyDualShock4=%u last-product=%04X:%04X last-name=%.110s",
+      d.found,d.ds4_count,(unsigned)d.last_vendor,(unsigned)d.last_product,d.last_name);
+    report(line);
+  }
   /* Never apply a Sony profile to an unidentified or ambiguously selected
    * controller: the original game picks its controller independently. */
   if(d.found!=1u || d.ds4_count!=1u) {
-    disable_profile("GAMEPAD-UI: no unique verified DualShock4; auto profile inactive; game mappings unchanged");
+    if(!hotplug_missing_logged)
+      disable_profile("GAMEPAD-UI: no unique verified DualShock4; auto profile inactive; game mappings unchanged; hotplug rescan every 2s while foreground");
+    else disable_profile(NULL);
+    hotplug_missing_logged=1;
     return;
   }
   hr=IDirectInput8_CreateDevice(di,&d.ds4_instance,&device,NULL);
@@ -321,6 +367,10 @@ static void detect_device(HWND hwnd) {
     disable_profile(line);return;
   }
   detected=1;
+  hotplug_missing_logged=0;
+  spider_ds4_hotplug_attached(&hotplug);
+  previous_buttons=0;previous_back=0;previous_pause=0;
+  previous_share=0;previous_native_start=0;
   snprintf(line,sizeof(line),
     "GAMEPAD-UI: PROFILE DualShock4 ACTIVE (verified device) Sony VID=054C PID=%04lX name=%.110s; legacy 2D/Bink confirmation=ControllerEnterButtons; PS1 preview after CRT bootstrap: Cross=BUTTON1 only, Circle=BUTTON2 back, SHARE=BUTTON8 3D pause; OPTIONS=BUTTON9 is NOT synthetic Enter in PS1",
     (unsigned long)d.product_id,d.name);
@@ -733,10 +783,12 @@ unsigned SpiderGamepadUI_PauseWake_Poll(HWND hwnd) {
   hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);
   if(FAILED(hr)) {
     memset(&pause_wake,0,sizeof(pause_wake));
-    /* The original game's own DirectInput interface is never changed. */
-    IDirectInputDevice8_Acquire(device);
+    pause_wake_active=0; /* stop polling a lost secondary device until Flip */
+    /* Do not Acquire an unplugged joystick while our Flip is frozen.
+     * The keyboard always remains a valid PAUSED wake mechanism.
+     * A lost device is released and rescanned on the normal Flip path. */
     if(!pause_wake_retry_logged) {
-      report("FOCUS-PAUSE-GAMEPAD: secondary DS4 read failed; retrying independent Acquire while foreground; keyboard wake remains available");
+      report("FOCUS-PAUSE-GAMEPAD: secondary DS4 read failed; NO stale Acquire inside PAUSED; keyboard wake remains available");
       pause_wake_retry_logged=1;
     }
     return 0;
@@ -784,6 +836,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     previous_pause=0;
     previous_share=0;
     previous_native_start=0;
+    spider_ds4_hotplug_focus_lost(&hotplug);
     return;
   }
   /* The original request 7 (3D -> main menu) is already complete on the
@@ -797,7 +850,14 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
       post_quit_block=spider_ps1_post_quit_guard_flip(&ps1_post_quit_guard,
         1,menu_2d,gameplay_3d,bink_active,native_request);
   }
-  if(!probing)detect_device(hwnd);
+  /* Discovery is foreground-only, bounded and non-invasive. A DS4 may be
+   * connected after startup, or the previously attached DS4 reconnected.
+   * Native PS1 gameplay mapping is only activated during the verified
+   * startup bootstrap; a late-first device does NOT silently rewrite the
+   * original game's controller tables or force a runtime config reload. */
+  if(!probing || spider_ds4_hotplug_scan_due(&hotplug,
+                                             (uint32_t)GetTickCount(),detected))
+    detect_device(hwnd);
   if(!detected||!device) {
     ps1_history_record(SPIDER_PS1_HISTORY_DEVICE_MISSING,native_request,
       menu_2d,gameplay_3d,bink_active,native_pause_active,
@@ -822,15 +882,52 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
         (unsigned long)hr);
       report(line);
     }
-    IDirectInputDevice8_Acquire(device);
+    /* A failed GetDeviceState was the final trace before the user's
+     * unplug crash. Never call Acquire on that possibly disconnected COM
+     * instance in the same frame. DIERR_INPUTLOST is strong enough to
+     * drop it immediately; other failures must repeat three times. */
     previous_buttons=0;
     previous_back=0;
     previous_pause=0;
     previous_share=0;
     previous_native_start=0;
+    {
+      int repeatedly_failed=spider_ds4_hotplug_read_failed(&hotplug);
+      if(hr==DIERR_INPUTLOST || repeatedly_failed)
+        spider_hotplug_drop_device(hr,
+          hr==DIERR_INPUTLOST?"INPUTLOST (unplug/focus device loss)":
+          "three consecutive read errors");
+      else
+        report("GAMEPAD-HOTPLUG: transient secondary read failure; no stale Acquire; awaiting next foreground Flip");
+    }
     return;
   }
   bad_reads=0;
+  /* The PS1 layout requires a validated pre-game native config load.
+   * If DS4 first appears after that startup moment, refuse a misleading
+   * legacy Cross/Options synthetic mapping while PS1 was requested:
+   * the user must relaunch with the DS4 already connected to activate
+   * verified seven-button gameplay mapping. Never reload game config
+   * mid-level or rewrite unknown native controller objects. */
+  if(ps1_preview_requested && !ps1_preview_active) {
+    if(!hotplug_late_preview_reported) {
+      report("GAMEPAD-HOTPLUG: DS4 discovered but PS1 gameplay preview was not loaded at startup; synthetic actions disabled until restart with controller present");
+      hotplug_late_preview_reported=1;
+    }
+    return;
+  }
+  {
+    unsigned i,held=0;
+    for(i=0;i<12u;i++)
+      if(state.rgbButtons[i]&0x80u)held|=(1u<<i);
+    if(!spider_ds4_hotplug_accept_buttons(&hotplug,held)) {
+      /* Never leak a held reconnect/focus-return button as a synthetic
+       * Return/Escape. The original native controller reads are untouched. */
+      previous_buttons=0;previous_back=0;previous_pause=0;
+      previous_share=0;previous_native_start=0;
+      return;
+    }
+  }
   pressed=(state.rgbButtons[1]&0x80u?SPIDER_CONFIRM_CROSS:0) |
           (state.rgbButtons[9]&0x80u?SPIDER_CONFIRM_OPTIONS:0);
   /* PS1 preview: Cross is the ONLY synthetic menu confirmation. The
