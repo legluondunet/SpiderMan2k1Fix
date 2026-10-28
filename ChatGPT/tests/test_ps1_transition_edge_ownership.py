@@ -17,13 +17,13 @@ def test_opt_in_owner_preserves_legacy_eight_flip_guard():
     assert "ControllerPS1TransitionEdgeOwnership=1" not in CFG
     assert 'ps1_transition_edge_ownership.h' in PAD
     assert "ps1_transition_edge_ownership_flip(" in PAD
-    assert 'TRANSITION-OWNERSHIP consumed inherited Cross/Options' in PAD
+    assert "TRANSITION-OWNERSHIP consumed inherited menu confirmation" in PAD
     assert "ControllerPS1PostQuitGuard" in PAD
     assert "ps1_post_quit_guard_flip(" in PAD
     assert PAD.index("(confirm_edges & ownership_block)) {") < PAD.index("post_quit_block) {")
-    assert "confirm_edges=(pressed & effective_confirm) & ~(unsigned)previous_buttons;" in PAD
-    assert "effective_confirm=ps1_preview_active?SPIDER_CONFIRM_CROSS:(unsigned)confirm;" in PAD
-    assert "(confirm_edges & ~ownership_block)" in PAD
+    assert "confirm_edges=spider_ps1_menu_confirm_edges(pressed,(unsigned)previous_buttons,effective_confirm);" in PAD
+    assert "effective_confirm=spider_ps1_menu_confirm_mask(ps1_preview_active,(unsigned)confirm);" in PAD
+    assert "spider_ps1_menu_confirm_unowned(confirm_edges,ownership_block)" in PAD
     assert "!(previous_buttons & (unsigned)confirm)" not in PAD
     assert "previous_buttons=(int)pressed;" in PAD
     assert 'begin_scancode(0x1Cu,"Return");' in PAD
