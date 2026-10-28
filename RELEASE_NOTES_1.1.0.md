@@ -10,7 +10,7 @@ This update improves audio playback in the original *Spider-Man (2001)* PC game.
 
 - **Crackling sound effects:** Fixed distorted and noisy audio caused by a bug in the original game.
 
-For implementation details and test results, see the [technical audio documentation](docs/references/diagnostics/audio/PKR_NATIVE_AUDIO_REPAIR.md).
+For implementation details and test results, see the [technical audio documentation](https://github.com/legluondunet/SpiderMan2k1Fix/blob/main/docs/references/diagnostics/audio/PKR_NATIVE_AUDIO_REPAIR.md).
 
 ## Known Issues
 
@@ -35,7 +35,7 @@ The following issues remain present in v1.1.0:
    WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe
    ```
 
-The patch automatically creates `SpiderMan2k1Fix.ini` on first launch.
+The patch automatically creates `SpiderMan2k1Fix.ini` on first launch if none exists. Keep your existing INI when upgrading to preserve your settings.
 
 **Important:** The patch requires the original supported `SpideyPC.exe` (SHA-256):
 
@@ -44,8 +44,6 @@ The patch automatically creates `SpiderMan2k1Fix.ini` on first launch.
 ```
 
 No original game files are included in this release.
-
-Keep your existing `SpiderMan2k1Fix.ini` when upgrading to preserve your settings.
 
 ## Credits
 
