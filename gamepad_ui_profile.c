@@ -306,9 +306,16 @@ static void xbox_rt_swing_update(long axis,int gameplay_ok) {
   INPUT in;
   char line[210];
   int should_hold;
-  if(!xbox_rt_swing_requested || !xbox360_preview_active ||
+  int native_canonical=SpiderNativeReconnect_CanonicalXboxMapping();
+  /* Startup Xbox profile OR a successfully reconnected original Xbox
+   * whose live 14-action table matches our canonical seven actions.
+   * A Sony-at-startup -> Xbox-at-runtime game MUST NOT depend on a
+   * bootstrap-only xbox360_preview_active flag which can never change.
+   * If the original game table is CUSTOM, the hot-swap path fails closed. */
+  if(!xbox_rt_swing_requested ||
+     (!xbox360_preview_active && !native_canonical) ||
      detected_kind!=SPIDER_RECONNECT_XBOX360 || !gameplay_ok) {
-    xbox_rt_swing_release("inactive game/focus/pause/controller");
+    xbox_rt_swing_release("inactive game/focus/pause/controller or unverified native Xbox map");
     return;
   }
   should_hold=spider_xbox360_rt_swing_held(
@@ -318,10 +325,15 @@ static void xbox_rt_swing_update(long axis,int gameplay_ok) {
     return;
   }
   if(xbox_rt_swing_down_scan)return;
-  scan=SpiderCfg_Xbox360SwingScan();
+  /* The native keyboard mapping is editable even when Joystick is not.
+   * Use the game-owned live keyboard table after a native hot-swap;
+   * stale virtual Spidey.cfg or the Xbox-only bootstrap flag is not
+   * authoritative after a Sony boot. */
+  scan=native_canonical?SpiderCfg_Xbox360SwingScanLive():
+                        SpiderCfg_Xbox360SwingScan();
   if(!scan) {
     if(xbox_rt_swing_denied_count++<5u)
-      report("GAMEPAD-XBOX360: RT-SWING REFUSED: original Swing keyboard DIK unset/unsafe/duplicates another action or CRT unverified");
+      report("GAMEPAD-XBOX360: RT-SWING REFUSED: live original Swing keyboard DIK unset/unsafe/duplicates another action or CRT unverified");
     return;
   }
   memset(&in,0,sizeof(in));
@@ -465,7 +477,7 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
     "GAMEPAD-XBOX360: PREVIEW REQUESTED (opt-in, unique Xbox + native readonly + CRT bootstrap required)":
     "GAMEPAD-XBOX360: PREVIEW OFF (default, original 3D bindings retained)");
   report(xbox_rt_swing_requested?
-    "GAMEPAD-XBOX360: RT-SWING REQUESTED experimental negative lZ -> held native keyboard Swing; requires active Xbox preview":
+    "GAMEPAD-XBOX360: RT-SWING REQUESTED negative lZ -> held native keyboard Swing; requires original Xbox preview OR canonical live Xbox hot-swap mapping":
     "GAMEPAD-XBOX360: RT-SWING OFF (default)");
 }
 static void detect_device(HWND hwnd) {
