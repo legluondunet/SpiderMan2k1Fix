@@ -110,7 +110,7 @@ def test_startup_ini_gating_and_build_wiring():
     assert "SpiderNativeReconnect_Init(ini,log_line)" in MAIN
     assert "SpiderNativeReconnect_OnFlip(count,game_hwnd)" in MAIN
     assert MAIN.index("SpiderNativeUnplug_OnFlip(count)") < MAIN.index("SpiderNativeReconnect_OnFlip(count,game_hwnd)")
-    assert "if(flip_index<120)return;" in SOURCE
+    assert "if(!requested || !initialized || flip_index<120)return;" in SOURCE
     assert "valid_binary_layout()" in SOURCE
     assert "memcmp((const void *)(uintptr_t)SPIDER_NATIVE_FORMAT,original_format" in SOURCE
 
