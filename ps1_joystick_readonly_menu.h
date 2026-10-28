@@ -19,8 +19,8 @@ typedef struct {
   uint8_t original[6];
 } SpiderPS1JoystickReadOnlySite;
 
-enum { SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT=7 };
-enum { SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT=6 };
+enum { SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT=8 };
+enum { SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT=6, SPIDER_PS1_JOYSTICK_EMPTY_ROW_SLOT=7 };
 static const SpiderPS1JoystickReadOnlySite spider_ps1_readonly_sites[
     SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT]={
   /* initActionMaps: joystick branch formats gKeyNames[i] using sprintf;
@@ -45,12 +45,15 @@ static const SpiderPS1JoystickReadOnlySite spider_ps1_readonly_sites[
    * Keyboard Configuration must still execute the original two PUSHes
    * and continue at 0x50D400, keeping keyboard remapping editable. */
   {0x0050D3FAu,6u,{0x55u,0x68u,0x00u,0x20u,0x00u,0x00u}},
-  /* initActionMaps' final CMenu::AddEntry("restore default settings").
-   * Address and exact five original bytes are discovered at installation:
-   * one rel32 CALL to known CMenu::AddEntry, uniquely paired with the
-   * original string push inside the SHA-pinned 0x50D0F0-0x50D2F0
-   * function. Fail closed if uniqueness or readable memory check fails. */
-  {0u,5u,{0u,0u,0u,0u,0u,0u}}
+  /* initActionMaps real final two native rows: original first column
+   * gControllerMenu (0xAC11B4) gets Restore Default through a string
+   * POINTER at 0x54B7B4 (not PUSH literal!), while gControllerMenuTwo
+   * (0xAC12A0) gets an empty placeholder via PUSH 0x56EB54.
+   * Both must be omitted TOGETHER in joystick mode so CMenu entries
+   * remain synchronized. Verified public original 501-byte function
+   * 5296368.bin: 0x50D2C8 and 0x50D2D8 both CALL 0x43FFF0. */
+  {0x0050D2C8u,5u,{0xE8u,0x23u,0x2Du,0xF3u,0xFFu,0}},
+  {0x0050D2D8u,5u,{0xE8u,0x13u,0x2Du,0xF3u,0xFFu,0}}
 };
 /* Xbox-specific labels are intentionally limited to two physically
  * observed Holtek 045E:028E DirectInput indices. Unknown indices use
