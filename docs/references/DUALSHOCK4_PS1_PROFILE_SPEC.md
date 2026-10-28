@@ -301,6 +301,67 @@ Log=1
 Do not enable the last line in `[Input]` in the normal profile; it is
 for controlled testing until the runtime confirms exact behavior.
 
+## Runtime report: 2026-10-28 01:38:39, original v1.1.0-ce217d3
+
+The user supplied `SpiderMan2k1Fix(20261028-013839).log`
+(1007 lines). This logs one verified Sony DS4 (054C:05C4), original
+EXE hash verification, seven correct PS1 overlay bindings, verified
+native CRT config read, five distinct SHARE/Escape attempts during 3D
+and native ESC ribbon draw. It confirms that the game returned to the
+native main menu. There are no explicit ERROR or WARNING entries.
+
+Three post-menu Bink Return injections are present; an injection log
+is **not** proof that the original media gate accepted a skip. The native
+script lifecycle records first/second SkipAllow but
+`ControllerPS1OptionsSkip=0`: **OPTIONS 3D skipping was not tested**.
+
+**Start diagnostic:** exactly one 14-action Start candidate at
+`RVA 0x00168408`, with `Start=BUTTON11`. Critically, the
+probe also says `truncated-regions=1`. The 1 MiB limit makes the
+observed candidate count **incomplete**, not proof that a second table
+does not exist. This justifies a separate bounded *read-only* deep
+scan before attempting any native modification.
+
+The log does NOT include a virtual `Spidey.cfg` settings write or save,
+so it does not verify restoration of saved player preferences. The
+Joystick configuration menu is still **not locked** and the original
+Start input is still **not disabled**.
+
+### Extended native Start table diagnosis (new, opt-in)
+
+The next build adds `[Input] ControllerPS1DeepStartProbe=1`.
+With the Sony DS4 PS1 preview active, it scans original executable's
+writable `.data` by committed readable memory regions. The default
+probe remains capped at 1 MiB; the optional extended diagnostic scans
+up to 64 MiB per section, with `VirtualQuery` bounds and NO writes.
+Results include `deep=1`, number of queried regions, truncation count,
+candidate addresses and total matches.
+
+This diagnostic **never** patches Start; even two matching read-only
+tables are not sufficient to conclude a safe native remap. It may add
+a one-time startup delay during the explicitly requested deeper scan.
+Leave this option absent/Off during normal play. This is separate from
+`ControllerPS1OptionsSkip=1`, which remains an unvalidated native
+script-skip modification and should not be combined with a first
+deep-scan test.
+
+Suggested diagnostic INI:
+```ini
+[Input]
+ControllerProfile=Auto
+ControllerPS1Preview=1
+ControllerPS1DeepStartProbe=1
+ControllerPS1OptionsSkip=0
+
+[Debug]
+Log=1
+```
+
+After the read-only scan, check `GAMEPAD-PS1: START-TABLE` lines
+and report no/one/multiple candidates with `truncated-regions`.
+Compare against the user-validated previous runtime behavior; do NOT
+change the joystick menu or persistent game settings during this test.
+
 ## Next phase after prototype validation
 
 - Complete native joystick-menu lock, native Start suppression, scene
