@@ -167,6 +167,33 @@ static void observe_native_swap_table(const char *phase,unsigned from_kind,
  * Customized bindings are never overwritten, and no key is injected.
  * This runs on the native game thread at the foreground Flip boundary,
  * AFTER successful neutral game-owned DirectInput device publication. */
+/* Read-only safety gate for RT Swing after a DS4 -> Xbox hot swap.
+ * A secondary pad's name alone is NOT proof that gameplay now consumes
+ * the Xbox mapping. Require the explicitly opted runtime-swap feature,
+ * original native game-owned device pointer, and the exact canonical
+ * 14-slot action table already validated by the swap probe. No writes. */
+int SpiderNativeReconnect_CanonicalXboxMapping(void) {
+  const uintptr_t table=SPIDER_NATIVE_ACTION_TABLE;
+  MEMORY_BASIC_INFORMATION mbi;
+  uint32_t buttons[SPIDER_PS1_BUTTON_COUNT];
+  uintptr_t base;
+  if(!requested || !initialized || !swap_mapping_enabled ||
+     !SpiderNativeUnplug_Installed() || !native_thread ||
+     native_thread!=GetCurrentThreadId() ||
+     !InterlockedCompareExchangePointer(
+          (PVOID volatile *)game_device_slot(),NULL,NULL) ||
+     (uintptr_t)GetModuleHandleA(NULL)!=SPIDER_NATIVE_BASE)return 0;
+  if(VirtualQuery((const void *)table,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)))
+    return 0;
+  base=(uintptr_t)mbi.BaseAddress;
+  if(table<base || table-base>=mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(table-base)<SPIDER_NATIVE_SWAP_SLOTS*8u)
+    return 0;
+  return spider_native_swap_read((const uint8_t *)table,
+             SPIDER_NATIVE_SWAP_SLOTS*8u,buttons) &&
+         spider_native_swap_preset(buttons)==SPIDER_RECONNECT_XBOX360;
+}
 static void swap_native_gameplay_mapping(unsigned to_kind) {
   const uintptr_t address=(uintptr_t)SPIDER_NATIVE_ACTION_TABLE;
   const uint32_t *target;
