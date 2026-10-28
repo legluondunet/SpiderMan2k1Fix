@@ -23,9 +23,10 @@ def test_player_only_ini_keeps_fps_as_real_control():
     assert list(cfg["Display"])==["aspectratio","brightness","fpslimit"]
     assert cfg["Display"]["FPSLimit"]=="30"
     assert cfg["Input"]["KeyboardLayout"]=="Auto"
-    assert list(cfg["Input"])==["keyboardlayout","controllerprofile","controllerenterbuttons"]
+    assert list(cfg["Input"])==["keyboardlayout","controllerprofile","controllerenterbuttons","controllerbackbutton"]
     assert cfg["Input"]["ControllerProfile"]=="Auto"
     assert cfg["Input"]["ControllerEnterButtons"]=="Both"
+    assert cfg["Input"]["ControllerBackButton"]=="Circle"
     assert cfg["Debug"]["Log"]=="0"
     assert len(cfg["Internal"]["RawHex"])==504
     assert '"FPSLimit=30\\r\\n"' in GEN
