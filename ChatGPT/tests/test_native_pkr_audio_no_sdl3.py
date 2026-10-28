@@ -44,14 +44,17 @@ def test_verified_original_callsite_and_preserved_playback_semantics():
     assert 'SpiderPKRAudioIndex_TryHeli1Declick(slot,buffer,looping)' in HOOK
     assert 'SpiderPKRAudioPlayHook_Init(log_line,pkr_index||pkr_play_trace||pkr_heli_declick,pkr_play_trace)' in MAIN
     assert 'SpiderPKRAudioIndex_EnableTailRestore' not in MAIN
-    assert 'SpiderSDL3' not in MAIN
+    # Optional SDL3 GAMEPAD-only discovery is allowed; native audio stays SDL-free.
+    assert 'SpiderSDL3Probe_OnFlip' in MAIN
+    assert 'SpiderSDL3' not in HOOK and 'SpiderSDL3' not in INDEX
     assert 'DXSOUND_Stop' not in HOOK
     assert 'IDirectSoundBuffer_Play(' not in HOOK
 
 def test_native_loader_default_on_hidden_opt_out_and_obsolete_keys_removed():
     assert '"ExperimentalPKRAudioIndex"' in INI
     assert '"ExperimentalAudioPKRTailRestore"' not in INI
-    assert '"ExperimentalSDL3' not in INI
+    assert '"ExperimentalSDL3Probe"' in INI
+    assert '"ExperimentalSDL3Audio"' not in INI
     assert 'GetPrivateProfileIntA("Debug","ExperimentalPKRAudioIndex",0,ini)==1' in MAIN
     assert 'GetPrivateProfileIntA("Debug","ExperimentalAudioLoaderTail",1,ini)==1' in MAIN
     assert "pkr_loader_tail=1;" in MAIN
