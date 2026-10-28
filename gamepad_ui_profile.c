@@ -62,6 +62,7 @@ typedef struct {
 
 static int configured=0,profile=SPIDER_PROFILE_AUTO,confirm=SPIDER_CONFIRM_BOTH;
 static unsigned selected_pad_kind=SPIDER_PAD_NONE;
+static unsigned xbox_previous_held=0,xbox_trace_count=0;
 static int back=SPIDER_BACK_CIRCLE,pause_button=SPIDER_PAUSE_OPTIONS;
 static int ps1_preview_requested=0,ps1_preview_active=0,previous_share=0;
 static int ps1_options_skip_requested=0;
@@ -228,6 +229,7 @@ static void disable_profile_with_policy(const char *reason,
   if(di_module) {FreeLibrary(di_module);di_module=NULL;}
   detected=0;
   selected_pad_kind=SPIDER_PAD_NONE;
+  xbox_previous_held=0;
   if(reason)report(reason);
 }
 static void disable_profile(const char *reason) {
@@ -388,6 +390,7 @@ static void detect_device(HWND hwnd) {
   }
   detected=1;
   selected_pad_kind=choose_ds4?SPIDER_PAD_DS4:SPIDER_PAD_XBOX360;
+  xbox_previous_held=0;
   hotplug_missing_logged=0;
   spider_ds4_hotplug_attached(&hotplug);
   previous_buttons=0;previous_back=0;previous_pause=0;
@@ -863,6 +866,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     previous_pause=0;
     previous_share=0;
     previous_native_start=0;
+    xbox_previous_held=0;
     spider_ds4_hotplug_focus_lost(&hotplug);
     return;
   }
@@ -918,6 +922,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     previous_pause=0;
     previous_share=0;
     previous_native_start=0;
+    xbox_previous_held=0;
     {
       int repeatedly_failed=spider_ds4_hotplug_read_failed(&hotplug);
       if(hr==DIERR_INPUTLOST || repeatedly_failed)
@@ -960,6 +965,26 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
    * original game\'s responsibility; never inject a guessed Start pause.
    * The A/B DirectInput indices require hardware validation on Wine/Win. */
   if(selected_pad_kind==SPIDER_PAD_XBOX360) {
+    /* Read-only, bounded first-hardware inspection. Some Wine/XInput
+     * shims reorder A/B and expose a clone's analog axes differently.
+     * Capture actual DirectInput bit indices; never guess that button
+     * events have been verified simply because VID/PID matches. */
+    unsigned i,raw_held=0,raw_rising;
+    char line[200];
+    for(i=0;i<16u;i++)
+      if(state.rgbButtons[i]&0x80u)raw_held|=1u<<i;
+    raw_rising=raw_held & ~xbox_previous_held;
+    xbox_previous_held=raw_held;
+    if(raw_rising && xbox_trace_count<48u) {
+      xbox_trace_count++;
+      snprintf(line,sizeof(line),
+        "GAMEPAD-XBOX360: RAW #%u rising=0x%04X held=0x%04X lX=%ld lY=%ld POV=%lu 2d=%d 3d=%d Bink=%d [PASSIVE DI]",
+        xbox_trace_count,raw_rising,raw_held,
+        (long)state.lX,(long)state.lY,(unsigned long)state.rgdwPOV[0],
+        menu_2d,gameplay_3d,bink_active);
+      report(line);
+    }
+    {
     unsigned held=(state.rgbButtons[SPIDER_XBOX_DI_A]&0x80u?1u:0u) |
                   (state.rgbButtons[SPIDER_XBOX_DI_B]&0x80u?2u:0u);
     unsigned edges=spider_xbox_2d_edges(held,(unsigned)previous_buttons);
@@ -970,6 +995,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     previous_buttons=(int)held;
     previous_back=0;previous_pause=0;previous_share=0;
     previous_native_start=0;
+    }
     return;
   }
   pressed=(state.rgbButtons[1]&0x80u?SPIDER_CONFIRM_CROSS:0) |
