@@ -435,6 +435,52 @@ The experiment is not approved for default enablement or release.
 PR #74 remains a dependent draft and cannot be merged until explicit
 maintainer validation.
 
+## Native Start unbinding: real runtime result, 2026-10-28 02:05
+
+The user tested `SpiderMan2k1Fix(20261028-020502).log`
+(`v1.1.0-d667441`) with
+`ControllerPS1DisableNativeStart=1`. Exact original EXE SHA-256
+and one Sony DS4 054C:05C4 were verified.
+
+**Memory modification succeeded**:
+
+```text
+GAMEPAD-PS1: START-TABLE probe data-sections=1 candidates=1 strict=1 truncated-regions=0 ... deep=1 queried-regions=1 cap-MiB=64
+GAMEPAD-PS1: NATIVE-START-UNBIND EXPERIMENT ACTIVE RVA=0x00168464 Start BUTTON11 -> native unused 0x4000
+```
+
+SHARE produced four `PS1-PREVIEW SHARE -> Escape` messages in
+3D/pause, and the original ESC ribbon was drawn. The game continued
+playing and returned to native menus using original cleanup without
+an explicit ERROR or WARNING. **This confirms the RAM write, NOT
+yet that physical BUTTON11/R3 stopped invoking native Start.** The
+log has no native physical BUTTON11 polling trace and the user has
+not explicitly reported whether the old button opened pause.
+
+A stale string `native Start button still unchanged` appeared next
+to SHARE presses even after the successful Start table update. This
+was an *outdated diagnostics message*, not a contradictory memory
+read. The follow-up build removes the misleading text, records whether
+the RAM patch was actually accepted, and logs up to 12 separate
+`ORIGINAL-BUTTON11 PHYSICAL PRESS` edges (with native-pause-at-edge),
+without altering any joystick event. Even `native-pause-current=0`
+at the instant of the press is not conclusive: the player should also
+observe whether the menu opens.
+
+**Next focused test:** In playable 3D with the experimental
+Start-unbind option enabled, first ensure SHARE opens/closes native
+pause. With the menu closed, press the old physical camera/R3 button
+**by itself**, not together with SHARE, and report whether the menu
+remains closed. Look for `Start-RAM-unbound=1` in the new
+`ORIGINAL-BUTTON11 PHYSICAL PRESS` entry. If there is no entry,
+the physical button may not actually be DS4 DirectInput BUTTON11
+on this hardware/transport. To isolate the experiment, leave
+`ControllerPS1OptionsSkip=0`. Do not change gameplay bindings.
+
+The 02:05 log **did not exercise** original settings saves
+(`SPIDEY-CFG: virtual WriteFile` absent), so it doesn't add
+additional persistence evidence beyond the previous runtime test.
+
 ## Next phase after prototype validation
 
 - Complete native joystick-menu lock, native Start suppression, scene
