@@ -3068,6 +3068,7 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
     if(early && SpiderGamepadUI_PrepareXbox360(early))
       xbox_mapped=SpiderCfg_EnableXbox360Preview();
     SpiderCfg_BootstrapGameRead();
+    SpiderCfg_InstallModernKeyboardDefaults();
     SpiderGamepadUI_ArmPS1ReadOnly();
     SpiderGamepadUI_ArmXbox360ReadOnly();
     if(mapped) {
