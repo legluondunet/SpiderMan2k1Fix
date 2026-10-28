@@ -10,6 +10,86 @@ tested. This branch does not modify PR #73 or its test artifact.
 
 Author: legluondunet assisted by ChatGPT (OpenAI)
 
+## Maintainer acceptance: read-only Joystick menu (2026-10-28 02:53)
+
+Maintainer tested `v1.1.0-84ec4fd` with original DS4 `054C:05C4`
+and explicitly confirmed that the original **Joystick Configuration
+screen is truly frozen/non-editable**, still accessible, and shows the
+seven intended PS1 controller labels correctly. Runtime log confirms
+`JOYSTICK-READONLY EXPERIMENT ACTIVE`, original Start unbound,
+and two original game settings saves with personal joystick bindings
+preserved. **Validated on this controller/setup only; leave opt-in.**
+
+### New separate user request: disable the GAME'S mouse while using DS4
+
+An original-game design issue appears when using controller-confirm
+with a mouse pointer left hovering over a different menu row: the
+mouse-highlighted row wins over the controller-selected row. Merely
+hiding the Windows cursor **does not prevent that selection error**.
+
+The original `PCShell.cpp` and `PCInput.cpp` provide a better native
+solution: `gRenderTest & 0x10` is used by the exact functions
+`PCSHELL_DrawMouseCursor` (VA `0x0050C470`),
+`PCSHELL_UpdateMouse` (flag load at VA `0x0050C4CF`), and
+`PCSHELL_IsMouseOver` (VA `0x0050C5F0`). All three read the same
+`gRenderTest` word at original VA `0x02E0988C`. The original
+`PCINPUT_Initialize` uses the same flag to skip mouse-device setup,
+although this optional fix is intentionally applied **later** so
+that it does not change device initialization.
+
+The opt-in `[Input] ControllerAutoDisableMouse=1` is **OFF by
+default**, and only activates when `ControllerPS1Preview=1` and
+a unique authentic DS4 has been acquired and the native game config
+bootstrap confirmed. It sets only the existing original game-owned
+bit `0x10`, after verifying the untouched original x86 signatures
+and writable native flag. This simultaneously hides the game-owned
+mouse sprite, stops the game's own mouse-position polling and ensures
+its menu hit-test returns false. The keyboard and UI controller input
+remain active. No Windows `ShowCursor`, no global mouse hook, no
+DirectInput COM hook, no cursor warping.
+
+On losing game foreground, hidden window, missing DS4 or failed pad
+reading, the module removes **only the bit it originally set** and
+returns the game's mouse controls. This is a game-level change only;
+the desktop cursor remains owned by the existing Alt+Tab focus recovery.
+When the option is absent, `0` or the PS1 profile is inactive,
+original mouse functionality is unchanged. Full game restart also
+resets the volatile experiment.
+
+**Experimental test plan:** enable only this additional option next
+to the previously successful PS1 read-only/controller profile. With
+the game's menu showing, move its mouse cursor over option B while
+selecting option A using the gamepad D-pad; press Cross and verify
+A is selected, not B. The red native game cursor should not be drawn
+while DS4 is active. Test both main and Options/Joystick menus, real
+mouse movement and clicks (should not affect game's menu), normal
+controller navigation and Cross/Circle, controller disconnect/read
+failure if safely possible, and Alt+Tab back to desktop (desktop
+mouse must continue working). With the option disabled and game
+restarted, normal mouse selection must return.
+
+Sample targeted INI:
+
+```ini
+[Input]
+ControllerProfile=Auto
+ControllerPS1Preview=1
+ControllerPS1ReadOnlyJoystick=1
+ControllerPS1DeepStartProbe=1
+ControllerPS1DisableNativeStart=1
+ControllerAutoDisableMouse=1
+ControllerPS1OptionsSkip=0
+
+[Debug]
+Log=1
+```
+
+Expected log: `GAMEPAD-MOUSE: ARMED verified native mouse`, then
+`GAMEPAD-MOUSE: GAME MOUSE OFF (DS4 active)`. Focus/device failure
+should produce `GAMEPAD-MOUSE: GAME MOUSE RESTORED`. Neither
+proves correct selection behavior until the maintainer checks it
+in-game. Do not promote or merge PR #74 automatically.
+
 ## Objective
 
 With a recognized, unique Sony DualShock 4, play **all** of the original
