@@ -625,3 +625,91 @@ No change to the successfully hardware-tested native rebind
 or axis code is necessary based on this clean run.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+
+## Cross-device hot swap — stage 3 readonly fingerprint (2026-10-28)
+
+The maintainer now wants to swap **DS4 ↔ Xbox 360 without restarting
+Spider-Man**. The already hardware-validated stage-1/2 native
+DirectInput guard and COM rebind are present in this branch.
+Stage 2 **already accepts exactly one DS4 OR Xbox360-compatible
+controller**, but only the DS4 has a complete physical 3D unplug/replug
+validation. A new native device with a different type cannot by
+itself update the seven original game action associations loaded
+at startup. The independent UI bridge can recognize the new pad
+but is NOT proof the original 3D controls now have the right layout.
+
+### New passive investigation — no native action writes
+
+`native_joystick_swap_probe.h` validates a 14-slot native action-mask /
+button-index table (the SHA-pinned original `0x00568408` candidate
+from earlier native Start mapping research). Slots 4..10 are the
+candidate seven game actions, and the pure C99 helper detects a
+canonical DS4 preset `1,2,0,3,4,5,7`, canonical Xbox360 preset
+`0,1,2,3,4,5,9`, or custom/unverified data.
+
+Opt in **only on the existing Windows-x86 experimental build**:
+
+```ini
+[Input]
+ControllerProfile=Auto
+ControllerPS1Preview=1
+ControllerXbox360Preview=1
+ExperimentalNativeJoystickUnplugGuard=1
+ExperimentalNativeJoystickReconnect=1
+
+[Debug]
+Log=1
+NativeJoystickSwapProbe=1
+```
+
+The probe is debug-only, OFF by default, and only runs when the
+stage-2 rebind experiment is requested and its prior stage-1
+unplug guard is active. At the first eligible original game's
+foreground Flip it enumerates the single connected approved pad
+using the **game-owned** DirectInput factory and records the
+initial table fingerprint. On successful COM rebind it records the
+previous and newly attached device kinds and samples the native
+table once more. Logs:
+
+- `NATIVE-SWAP-PROBE: startup hardware=DS4->DS4
+  native-table=VALID preset=DS4 buttons[7]=...`
+- `NATIVE-RECONNECT: REBOUND ... Xbox360-compatible ...`
+- `NATIVE-SWAP-PROBE: rebound hardware=DS4->Xbox360
+  native-table=VALID preset=DS4 ... [READ-ONLY; runtime action mapping
+  NOT changed]`
+- `NATIVE-SWAP-PROBE: PROFILE MISMATCH...` if the native binding
+  fingerprint is still canonical for the previous hardware.
+
+Those are **illustrative expected formats**, not actual hardware
+observations. If the table fingerprint is `UNVERIFIED` or `CUSTOM`,
+do not infer that the fixed address is the active runtime mapping.
+All 14 native mask DWORDs, relevant unused slots and native button
+range are checked, plus the mapped memory's readable committed
+span, before the table contents are reported.
+
+**No action-table update, game CRT runtime reloader, synthesized 3D
+controls, native COM hook or changed saved INI/RawHex is introduced
+by this probe.** It does not make cross-device gameplay swap work
+yet; it narrows the next native runtime mapping experiment to a
+specific evidence-based candidate. It is intentionally bounded at
+24 diagnostic reports and performs at most one additional attached
+controller enumeration at first eligible startup Flip. It retains
+the existing conservative 2-second reconnect polling and the
+single-supported-controller requirement.
+
+First exercise the same-type replug. Then from a real 3D game
+disconnect DS4, leave keyboard working, attach Xbox360 **alone**
+with all buttons released, and check `REBOUND` and profile fingerprint.
+Return to the menu if controls differ; do not assume correct 3D
+action behavior from a successful device acquisition. Repeat the
+other direction in a new clean run. Capture the original logs before
+any native mapping mutations. Remember that an experimental on-
+disk config profile selected at startup is still the startup
+profile after the hardware changes.
+
+If the native action table genuinely tracks the effective loaded
+mapping and the hardware swap is stable, a later **separate**
+explicitly opt-in stage can test guarded per-DWORD mutations and
+rollback, with signed-off hardware validation before enabling
+automatic profile changes. PR #77 stays DRAFT/UNMERGED.
