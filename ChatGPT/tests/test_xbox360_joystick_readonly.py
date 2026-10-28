@@ -62,7 +62,7 @@ def test_shared_readonly_patch_remains_single_install_verified_x86_and_no_keyboa
         "SpiderCfg_BootstrapGameRead();", 1)[-1]
 
 
-def test_xbox_labels_only_claim_observed_a_and_b_and_fallback_to_numeric(tmp_path):
+def test_xbox_standard_ten_button_labels_and_ds4_triggers_remain_distinct(tmp_path):
     cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
     if not cc:
         return
@@ -75,9 +75,17 @@ def test_xbox_labels_only_claim_observed_a_and_b_and_fallback_to_numeric(tmp_pat
         int main(void) {
           assert(!strcmp(spider_xbox360_native_button_label(0),"A"));
           assert(!strcmp(spider_xbox360_native_button_label(1),"B"));
-          assert(spider_xbox360_native_button_label(2)==0);
-          assert(spider_xbox360_native_button_label(7)==0);
-          assert(spider_xbox360_native_button_label(8)==0);
+          assert(!strcmp(spider_xbox360_native_button_label(2),"X"));
+          assert(!strcmp(spider_xbox360_native_button_label(3),"Y"));
+          assert(!strcmp(spider_xbox360_native_button_label(4),"LB"));
+          assert(!strcmp(spider_xbox360_native_button_label(5),"RB"));
+          assert(!strcmp(spider_xbox360_native_button_label(6),"BACK"));
+          assert(!strcmp(spider_xbox360_native_button_label(7),"START"));
+          assert(!strcmp(spider_xbox360_native_button_label(8),"L3"));
+          assert(!strcmp(spider_xbox360_native_button_label(9),"R3"));
+          assert(spider_xbox360_native_button_label(10)==0);
+          assert(!strcmp(spider_ps1_native_button_label(6),"L2"));
+          assert(!strcmp(spider_ps1_native_button_label(7),"R2"));
           assert(!strcmp(spider_ps1_native_button_label(0),"SQUARE"));
           assert(!strcmp(spider_ps1_native_button_label(1),"CROSS"));
           return 0;
@@ -86,3 +94,12 @@ def test_xbox_labels_only_claim_observed_a_and_b_and_fallback_to_numeric(tmp_pat
     subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror","-I",str(ROOT),
                     str(src),"-o",str(out)],check=True)
     subprocess.run([str(out)],check=True)
+
+
+def test_swing_joystick_label_is_r3_or_additional_rt_not_misrepresented():
+    assert "void SpiderXbox360_SetRTAlias(int enabled);" in LABELS
+    assert "void SpiderXbox360_SetRTAlias(int enabled)" in READONLY
+    assert 'readonly_label_mode==2u && button==9u && readonly_xbox_rt_alias' in READONLY
+    assert '"R3 + RT"' in READONLY
+    assert '"R3"' in LABELS
+    assert '"RT"' not in LABELS.split('spider_xbox360_native_button_label',1)[1].split('static const char *spider_ps1_native_button_label',1)[0]
