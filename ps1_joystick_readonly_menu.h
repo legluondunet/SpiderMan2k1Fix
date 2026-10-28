@@ -55,16 +55,31 @@ static const SpiderPS1JoystickReadOnlySite spider_ps1_readonly_sites[
   {0x0050D2C8u,5u,{0xE8u,0x23u,0x2Du,0xF3u,0xFFu,0}},
   {0x0050D2D8u,5u,{0xE8u,0x13u,0x2Du,0xF3u,0xFFu,0}}
 };
-/* Xbox-specific labels are intentionally limited to two physically
- * observed Holtek 045E:028E DirectInput indices. Unknown indices use
- * the original numeric fallback: do not invent X/Y/LT/RT mappings. */
+/* Standard DirectInput button layout for the selected Xbox 360 XUSB
+ * compatible device, NOT the XInput numbering. Physical A/B edges have
+ * been confirmed on the maintainer's 045E:028E pad; the other labels
+ * follow Microsoft's normal ten-button ordering and must be verified
+ * individually on that Holtek hardware. RT/LT are NOT button indices:
+ * both appear on the shared lZ AXIS, and Swing=BUTTON9 means R3 (stick
+ * click), not RT. Do not mislabel button 9 as a trigger. */
 static inline const char *spider_xbox360_native_button_label(uint32_t button) {
   switch(button) {
     case 0u: return "A";
     case 1u: return "B";
+    case 2u: return "X";
+    case 3u: return "Y";
+    case 4u: return "LB";
+    case 5u: return "RB";
+    case 6u: return "BACK";
+    case 7u: return "START";
+    case 8u: return "L3";
+    case 9u: return "R3";
     default: return NULL;
   }
 }
+/* Physical Sony DualShock 4 DirectInput indices as exposed by the
+ * verified 054C:09CC controller. R2 is digital BUTTON7 for DS4, while
+ * Xbox RT is a separate analog lZ axis and must NOT share this mapping. */
 static const char *spider_ps1_native_button_label(uint32_t button) {
   switch(button) {
     case 0u: return "SQUARE";
@@ -73,7 +88,12 @@ static const char *spider_ps1_native_button_label(uint32_t button) {
     case 3u: return "TRIANGLE";
     case 4u: return "L1";
     case 5u: return "R1";
+    case 6u: return "L2";
     case 7u: return "R2";
+    case 8u: return "SHARE";
+    case 9u: return "OPTIONS";
+    case 10u: return "L3";
+    case 11u: return "R3";
     default: return NULL;
   }
 }
