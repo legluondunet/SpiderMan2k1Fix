@@ -21,13 +21,6 @@ typedef struct {
   uint32_t active;
 } SpiderSDL3Selection;
 
-static int spider_sdl3_contains(const uint32_t *ids,unsigned count,uint32_t id) {
-  unsigned i;
-  if(!id || !ids)return 0;
-  for(i=0;i<count;i++)if(ids[i]==id)return 1;
-  return 0;
-}
-
 /* Synchronize discovered OPENED SDL gamepads. Keep an existing selection.
  * No selection when several pads exist until a clean Start press.
  * Automatically select when exactly one valid mapped pad is available. */
@@ -39,7 +32,7 @@ static void spider_sdl3_selection_sync(SpiderSDL3Selection *s,
   if(count>SPIDER_SDL3_MAX_GAMEPADS)count=SPIDER_SDL3_MAX_GAMEPADS;
   for(i=0;i<count;i++) {
     uint32_t id=ids?ids[i]:0u;
-    if(!id || spider_sdl3_contains((const uint32_t *)NULL,0,id))continue;
+    if(!id)continue;
     for(j=0;j<n;j++)if(next[j].id==id)break;
     if(j<n)continue; /* duplicate instance, never duplicate ownership */
     next[n].id=id;
