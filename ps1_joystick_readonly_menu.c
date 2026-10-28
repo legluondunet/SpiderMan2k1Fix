@@ -109,7 +109,7 @@ static int __cdecl spider_ps1_joystick_name(char *destination,
                                             unsigned button) {
   const char *name=readonly_label_mode==2u?
     spider_xbox360_native_button_label(button):
-    spider_ps1_native_button_label(button);
+    readonly_label_mode==1u?spider_ps1_native_button_label(button):NULL;
   (void)original_format;
   if(!destination)return 0;
   /* The original game binds Swing to physical BUTTON9 (R3), not Xbox
@@ -159,7 +159,7 @@ static int ps1_patch_readonly_site(BYTE *address,const BYTE *replacement,
 static int spider_install_readonly_joystick(unsigned mode,
                                            void (*logger)(const char *)) {
   ps1_menu_logger=logger;
-  if(mode!=1u && mode!=2u)return 0;
+  if(mode!=1u && mode!=2u && mode!=3u)return 0;
   if(readonly_installed_mode) {
     /* Sony and Xbox share the SAME validated eight native patch sites;
      * only the on-screen physical button names differ. A pad swap may
@@ -169,7 +169,8 @@ static int spider_install_readonly_joystick(unsigned mode,
       readonly_label_mode=mode;
       report(mode==1u?
         "GAMEPAD-READONLY: live controller labels changed to DS4 (native action mapping unchanged)":
-        "GAMEPAD-READONLY: live controller labels changed to Xbox360 (native action mapping unchanged)");
+        mode==2u?"GAMEPAD-READONLY: live controller labels changed to Xbox360 (native action mapping unchanged)":
+        "SDL3-SETUP: generic button numbers for unknown/absent native joystick (read-only)");
     }
     return 1;
   }
@@ -361,4 +362,12 @@ int SpiderPS1_InstallReadOnlyJoystick(void (*logger)(const char *)) {
 }
 int SpiderXbox360_InstallReadOnlyJoystick(void (*logger)(const char *)) {
   return spider_install_readonly_joystick(2u,logger);
+}
+
+/* Generic entry when no known Sony/Xbox device is selected. The guarded
+ * runtime patch still blocks game-owned native remapping, but lets any
+ * keyboard user open the opt-in SDL3 gamepad preview. */
+int SpiderSDL3_InstallGenericReadOnlyJoystick(void (*logger)(const char *)) {
+  if(!SpiderSDL3ControllerSetup_Enabled())return 0;
+  return spider_install_readonly_joystick(3u,logger);
 }
