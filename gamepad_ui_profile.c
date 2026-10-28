@@ -1127,6 +1127,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   unsigned pressed,back_pressed,confirm_edges,effective_confirm;
   int menu_allowed,movie_allowed,confirm_allowed,gameplay_allowed,pause_pressed;
   int share_pressed,share_edge,native_start_pressed;
+  int late_ds4_menu_only=0;
   int post_quit_block=0;
   unsigned ownership_block=0,native_request=0;
   /* Always apply game-only mouse policy, even with ControllerProfile=Off
@@ -1233,18 +1234,22 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   if(xbox_trigger_probe_requested && detected_kind==SPIDER_RECONNECT_XBOX360 &&
      gameplay_3d && !bink_active && !native_pause_active)
     xbox_trace_trigger_axes(&state);
-  /* The PS1 layout requires a validated pre-game native config load.
-   * If DS4 first appears after that startup moment, refuse a misleading
-   * legacy Cross/Options synthetic mapping while PS1 was requested:
-   * the user must relaunch with the DS4 already connected to activate
-   * verified seven-button gameplay mapping. Never reload game config
-   * mid-level or rewrite unknown native controller objects. */
-  if(detected_kind==SPIDER_RECONNECT_DS4 && ps1_preview_requested && !ps1_preview_active) {
-    if(!hotplug_late_preview_reported) {
-      report("GAMEPAD-HOTPLUG: DS4 discovered but PS1 gameplay preview was not loaded at startup; synthetic actions disabled until restart with controller present");
-      hotplug_late_preview_reported=1;
-    }
-    return;
+  /* A Sony pad attached AFTER an Xbox (or after no pad) has no Sony
+   * CRT-bootstrap overlay. The game-owned runtime 7-action swap is
+   * independent of our UI bridge. Crucially, do NOT disable Sony
+   * CROSS=BUTTON1 menu confirmation just because the Sony gameplay
+   * preview was absent at startup: menu Return/Escape are synthetic
+   * keyboard navigation, not a gameplay mapping write.
+   *
+   * Remain MENU/BINK ONLY: never activate Sony 3D SHARE/OPTIONS/Pause
+   * shortcuts or change any original game-owned input table here.
+   * The existing hotplug neutral->fresh-edge gate protects against
+   * accidental Return when connecting with CROSS held. */
+  late_ds4_menu_only=detected_kind==SPIDER_RECONNECT_DS4 &&
+                      ps1_preview_requested && !ps1_preview_active;
+  if(late_ds4_menu_only && !hotplug_late_preview_reported) {
+    report("GAMEPAD-HOTPLUG: late DS4 with no Sony CRT preview; Cross=BUTTON1 and Circle=BUTTON2 MENU/BINK bridge ENABLED after neutral+fresh edge; Sony 3D synthetic actions DISABLED (native mapping unchanged)");
+    hotplug_late_preview_reported=1;
   }
   {
     unsigned i,held=0;
@@ -1333,7 +1338,8 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
    * legacy ControllerEnterButtons choice is honored outside PS1 preview.
    * OPTIONS/Start remains free of synthetic Enter even if the old INI
    * still says Both; native Start/BUTTON11 is handled separately. */
-  effective_confirm=spider_ps1_menu_confirm_mask(ps1_preview_active,(unsigned)confirm);
+  effective_confirm=spider_ps1_menu_confirm_mask(
+    ps1_preview_active || late_ds4_menu_only,(unsigned)confirm);
   /* Per-button edges are still tracked independently for legacy mode. */
   confirm_edges=spider_ps1_menu_confirm_edges(pressed,(unsigned)previous_buttons,effective_confirm);
   ps1_history_record(SPIDER_PS1_HISTORY_READ_OK,native_request,menu_2d,
@@ -1352,7 +1358,8 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     (ps1_preview_active && native_pause_active && !movie_allowed);
   confirm_allowed=menu_allowed || movie_allowed;
   gameplay_allowed=gameplay_3d && !menu_2d && !movie_allowed &&
-                   !(ps1_preview_active && native_pause_active);
+                   !(ps1_preview_active && native_pause_active) &&
+                   !late_ds4_menu_only; /* never synthesize late Sony 3D Pause */
   pause_pressed=state.rgbButtons[9]&0x80u;
   share_pressed=state.rgbButtons[8]&0x80u;
   share_edge=share_pressed && !previous_share;
@@ -1406,6 +1413,8 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   } else if(confirm_allowed &&
             spider_ps1_menu_confirm_unowned(confirm_edges,ownership_block)) {
     begin_scancode(0x1Cu,"Return");
+    if(late_ds4_menu_only)
+      report("GAMEPAD-HOTPLUG: late DS4 fresh Cross -> synthetic Return (MENU/BINK only, no gameplay map edits)");
     if(movie_allowed && !menu_allowed && postmenu_bink_reports++<8u)
       report("GAMEPAD-UI: POST-MENU BINK Return attempted with original GameFMV_Active=1; native video skip gate remains authoritative");
   } else if(!ps1_preview_active && gameplay_allowed && pause_button==SPIDER_PAUSE_OPTIONS &&
