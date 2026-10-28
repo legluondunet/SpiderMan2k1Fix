@@ -7,6 +7,7 @@ import textwrap
 ROOT=Path(__file__).resolve().parents[2]
 PAD=(ROOT/"gamepad_ui_profile.c").read_text()
 HEADER=(ROOT/"ps1_transition_edge_ownership.h").read_text()
+COMMON=(ROOT/"native_menu_return_gate.h").read_text()
 INI=(ROOT/"ini_validation.h").read_text()
 CFG=(ROOT/"virtual_spidey_cfg.c").read_text()
 
@@ -30,7 +31,10 @@ def test_opt_in_owner_preserves_legacy_eight_flip_guard():
     for forbidden in ("SendInput(", "Sleep(", "VirtualProtect(", "WriteProcessMemory(",
                       "GetTickCount(", "fprintf("):
         assert forbidden not in HEADER
-    assert "native_request==7u" in HEADER
+    assert '"native_menu_return_gate.h"' in HEADER
+    assert "spider_native_menu_return_gate_flip(" in HEADER
+    assert "native_request==7u" in COMMON
+    assert "owner->inherited_buttons &= pressed_confirm_mask;" in COMMON
 
 
 def test_native_quit_owner_consumes_only_inherited_press_until_release(tmp_path):
