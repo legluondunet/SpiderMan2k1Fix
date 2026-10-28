@@ -35,7 +35,7 @@ def test_profile_requires_opt_in_and_known_pad_before_native_bootstrap():
     assert 'SpiderGamepadUI_ActivatePS1();' in CORE
     assert 'GetForegroundWindow()!=hwnd' in PAD
     assert 'choose_ds4=(d.found==1u && d.ds4_count==1u' in PAD
-    assert 'if(!detected)' in PAD
+    assert 'if(!detected || selected_pad_kind!=SPIDER_PAD_DS4)' in PAD
     # No options default should silently enable an unvalidated fixed profile.
     generator=CFG.split('static int SpiderCfg_WriteDefaultIniAt',1)[1]
     assert '"ControllerPS1Preview=1' not in generator
