@@ -18,6 +18,8 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *));
 /* Preview must only activate AFTER the game's verified CRT re-read. */
 int SpiderGamepadUI_PreparePS1(HWND game_window);
 void SpiderGamepadUI_ActivatePS1(void);
+int SpiderGamepadUI_PrepareXbox360(HWND game_window);
+void SpiderGamepadUI_ActivateXbox360(void);
 /* Custom Alt+Tab PAUSED screen only: foreground, already-acquired DS4;
  * a fresh digital button press+release wakes without keyboard synthesis.
  * No effect on native 3D Escape pause or original joystick bindings. */
