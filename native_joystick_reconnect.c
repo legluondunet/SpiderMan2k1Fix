@@ -202,7 +202,7 @@ static void observe_native_swap_table(const char *phase,unsigned from_kind,
  * the Xbox mapping. Require the explicitly opted runtime-swap feature,
  * original native game-owned device pointer, and the exact canonical
  * 14-slot action table already validated by the swap probe. No writes. */
-int SpiderNativeReconnect_CanonicalXboxMapping(void) {
+static int spider_native_reconnect_canonical_mapping(unsigned kind) {
   const uintptr_t table=SPIDER_NATIVE_ACTION_TABLE;
   MEMORY_BASIC_INFORMATION mbi;
   uint32_t buttons[SPIDER_PS1_BUTTON_COUNT];
@@ -222,7 +222,13 @@ int SpiderNativeReconnect_CanonicalXboxMapping(void) {
     return 0;
   return spider_native_swap_read((const uint8_t *)table,
              SPIDER_NATIVE_SWAP_SLOTS*8u,buttons) &&
-         spider_native_swap_preset(buttons)==SPIDER_RECONNECT_XBOX360;
+         spider_native_swap_preset(buttons)==kind;
+}
+int SpiderNativeReconnect_CanonicalXboxMapping(void) {
+  return spider_native_reconnect_canonical_mapping(SPIDER_RECONNECT_XBOX360);
+}
+int SpiderNativeReconnect_CanonicalDS4Mapping(void) {
+  return spider_native_reconnect_canonical_mapping(SPIDER_RECONNECT_DS4);
 }
 static void swap_native_gameplay_mapping(unsigned to_kind) {
   const uintptr_t address=(uintptr_t)SPIDER_NATIVE_ACTION_TABLE;
