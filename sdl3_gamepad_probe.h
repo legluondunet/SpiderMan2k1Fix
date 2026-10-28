@@ -15,5 +15,9 @@ int SpiderSDL3Probe_NativeOwnerEnabled(void);
 unsigned SpiderSDL3Probe_MappedCount(void);
 int SpiderSDL3Probe_SelectedIdentity(uint16_t *vid,uint16_t *pid,
                                      uint32_t *instance_id);
+/* Passive normalized RT value 0..32767 for the current selected SDL pad.
+ * No events consumed, no SDL/window state created; fails closed when
+ * no active mapped controller is available or RT axis is invalid. */
+int SpiderSDL3Probe_SelectedRT(int *normalized_rt);
 
 #endif
