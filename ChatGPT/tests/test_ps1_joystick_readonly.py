@@ -30,7 +30,23 @@ def test_ps1_readonly_menu_is_an_explicit_opt_in_only():
 
 
 def test_only_original_verified_joystick_paths_are_changed():
-    assert "SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT=6" in HEADER
+    assert "SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT=7" in HEADER
+    assert "SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT=6" in HEADER
+    assert 'Original Keyboard menu still calls' in SOURCE
+    assert "static void __fastcall spider_joystick_restore_row_addentry(" in SOURCE
+    assert "typedef void (__thiscall *SpiderCMenuAddEntry)(void *,const char *);" in SOURCE
+    assert "0x00AC129Cu!=0u" in SOURCE
+    assert "((SpiderCMenuAddEntry)(uintptr_t)0x0043FFF0u)(native_menu,label);" in SOURCE
+    assert 'Restore Default ROW OMITTED in Joystick' in SOURCE
+    assert "spider_find_native_restore_row(" in SOURCE
+    assert "const uintptr_t start=0x0050D210u,end=0x0050D2F0u;" in SOURCE
+    assert 'const char expected[]="restore default settings";' in SOURCE
+    assert "dest!=0x0043FFF0u" in SOURCE
+    assert "if(matches!=1u)return 0;" in SOURCE
+    assert 'REFUSED missing/ambiguous original Restore Default AddEntry call' in SOURCE
+    assert "memcpy(live_sites,spider_ps1_readonly_sites,sizeof(live_sites));" in SOURCE
+    assert "replacements[SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT][0]=0xE8u;" in SOURCE
+    assert "live_sites[SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT]" in SOURCE
     for original_va in ("0x0050D28Cu","0x0050D4A9u","0x0050D51Cu",
                         "0x0050D6A6u","0x0050D7ADu","0x0050D3FAu"):
         assert original_va in HEADER
@@ -106,6 +122,9 @@ def test_host_compiled_label_mapping_and_factory_signature(tmp_path):
           if(spider_ps1_readonly_sites[5].virtual_address!=0x50D3FAu)return 8;
           if(spider_ps1_readonly_sites[3].size!=6u)return 9;
           if(spider_ps1_readonly_sites[5].size!=6u)return 10;
+          if(spider_ps1_readonly_sites[6].virtual_address!=0u)return 11;
+          if(spider_ps1_readonly_sites[6].size!=5u)return 12;
+          if(SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT!=7u)return 13;
           return 0;
         }
     """),encoding="utf-8")
