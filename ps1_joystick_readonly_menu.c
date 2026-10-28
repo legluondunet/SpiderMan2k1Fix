@@ -91,6 +91,13 @@ static int __cdecl spider_ps1_joystick_name(char *destination,
     spider_ps1_native_button_label(button);
   (void)original_format;
   if(!destination)return 0;
+  /* The original game binds Swing to physical BUTTON9 (R3), not Xbox
+   * RT. When our independent RT-axis -> keyboard Swing experiment is
+   * verified and active, list the shortcut alongside the real binding.
+   * Never silently claim that the game's native BUTTON9 became RT. */
+  if(readonly_label_mode==2u && button==9u && readonly_xbox_rt_alias)
+    return snprintf(destination,SPIDER_PS1_JOYSTICK_LABEL_CAPACITY,
+                    "R3 + RT");
   if(name)return snprintf(destination,SPIDER_PS1_JOYSTICK_LABEL_CAPACITY,
                           "%s",name);
   if(button==0x4000u)return snprintf(destination,
