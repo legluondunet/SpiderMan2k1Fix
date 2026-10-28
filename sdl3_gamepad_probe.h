@@ -2,6 +2,8 @@
 #define SPIDERMAN2K1FIX_SDL3_GAMEPAD_PROBE_H
 #include <windows.h>
 #include <stdint.h>
+#include <stddef.h>
+#include "sdl3_controller_profile.h"
 
 /* OFF-by-default SDL3 discovery and selection telemetry only.
  * NO game input writes, synthetic keys, hooks or native DI device mutations.
@@ -19,5 +21,15 @@ int SpiderSDL3Probe_SelectedIdentity(uint16_t *vid,uint16_t *pid,
  * No events consumed, no SDL/window state created; fails closed when
  * no active mapped controller is available or RT axis is invalid. */
 int SpiderSDL3Probe_SelectedRT(int *normalized_rt);
+/* Explicit controller-setup dialog only. Called synchronously on the
+ * original game thread while its Flip/tick is stopped in the native
+ * Joystick menu. Poll mapped SDL3 devices without altering game-owned
+ * selection, native joystick or UI synthetic events. No auto init. */
+int SpiderSDL3Probe_SetupPump(void);
+unsigned SpiderSDL3Probe_SetupCount(void);
+int SpiderSDL3Probe_SetupRead(unsigned slot,uint32_t *instance_id,
+    uint16_t *vid,uint16_t *pid,char *name,size_t capacity,
+    SpiderSDL3ControllerSample *sample);
+
 
 #endif
