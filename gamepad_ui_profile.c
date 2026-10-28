@@ -2,8 +2,9 @@
  * SpiderMan2k1Fix / experimental DirectInput UI profile:
  * - Auto-detect ORIGINAL Sony DualShock 4 VID=054C product IDs 05C4,09CC,
  *   and the 0BA0 original adapter, strictly via DirectInput8 product GUID.
- * - Never modify the game's original DirectInput COM vtables or the native
- *   controller-action tables. All seven original gameplay mappings survive.
+ * - Never modify the game's original DirectInput COM vtables. All seven
+ *   original gameplay mappings survive. An OFF-by-default experiment may
+ *   unbind only the original Start DWORD after exact signature checks.
  * - In the original 2D UI or Bink sequence, turn a debounced DualShock
  *   CROSS/OPTIONS edge into Enter, and CIRCLE (or optional SHARE) into
  *   Escape, using the same paired scan-code injection.
@@ -53,6 +54,8 @@ static int configured=0,profile=SPIDER_PROFILE_AUTO,confirm=SPIDER_CONFIRM_BOTH;
 static int back=SPIDER_BACK_CIRCLE,pause_button=SPIDER_PAUSE_OPTIONS;
 static int ps1_preview_requested=0,ps1_preview_active=0,previous_share=0;
 static int ps1_options_skip_requested=0;
+static int ps1_native_start_unbound=0,previous_native_start=0;
+static unsigned ps1_native_start_reports=0;
 static unsigned ps1_cutscene_reports=0;
 static int probing=0,detected=0,previous_buttons=0,previous_back=0,previous_pause=0;
 static unsigned active_scan=0;
@@ -515,6 +518,7 @@ static void ps1_probe_native_start_tables(void) {
           snprintf(line,sizeof(line),
             "GAMEPAD-PS1: NATIVE-START-UNBIND EXPERIMENT ACTIVE RVA=0x%08lX Start BUTTON11 -> native unused 0x4000; one validated RAM dword; game restart restores; SHARE remains menu control",
             (unsigned long)((uintptr_t)slot-(uintptr_t)base));
+          ps1_native_start_unbound=1;
           report(line);
         } else {
           report("GAMEPAD-PS1: NATIVE-START-UNBIND REFUSED Start slot modified concurrently");
@@ -528,7 +532,7 @@ void SpiderGamepadUI_ActivatePS1(void){
   ps1_preview_active=1;
   back=SPIDER_BACK_CIRCLE;
   report("GAMEPAD-UI: PS1-PREVIEW ACTIVE, fixed gameplay RAM only; original Joystick configuration menu NOT YET locked");
-  ps1_probe_native_start_tables(); /* read-only; original Start remains */
+  ps1_probe_native_start_tables(); /* read-only scan; optional checked single-DWORD RAM experiment */
 }
 void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active) {
@@ -536,7 +540,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   HRESULT hr;
   unsigned pressed,back_pressed;
   int menu_allowed,movie_allowed,confirm_allowed,gameplay_allowed,pause_pressed;
-  int share_pressed,share_edge;
+  int share_pressed,share_edge,native_start_pressed;
   if(!configured || !hwnd || !IsWindow(hwnd))return;
   /* Critical: release injected key before focus pause can block this thread. */
   release_active_key();
@@ -545,6 +549,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     previous_back=0;
     previous_pause=0;
     previous_share=0;
+    previous_native_start=0;
     return;
   }
   if(!probing)detect_device(hwnd);
@@ -569,6 +574,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     previous_back=0;
     previous_pause=0;
     previous_share=0;
+    previous_native_start=0;
     return;
   }
   bad_reads=0;
@@ -587,6 +593,19 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   pause_pressed=state.rgbButtons[9]&0x80u;
   share_pressed=state.rgbButtons[8]&0x80u;
   share_edge=share_pressed && !previous_share;
+  native_start_pressed=(state.rgbButtons[11]&0x80u)!=0;
+  /* Passive test of the original BUTTON11/camera press. The native
+   * table modification being accepted does not by itself prove which
+   * controller table the runtime actually reads. Do NOT synthesize
+   * or suppress an input here; record only the physical press edge. */
+  if(ps1_preview_active && native_start_pressed && !previous_native_start &&
+     ps1_native_start_reports++<12u) {
+    char line[210];
+    snprintf(line,sizeof(line),
+      "GAMEPAD-PS1: ORIGINAL-BUTTON11 PHYSICAL PRESS; Start-RAM-unbound=%d native-pause-current=%d [READ-ONLY; test old button separately from SHARE]",
+      ps1_native_start_unbound,native_pause_active!=0);
+    report(line);
+  }
   if(ps1_preview_active && ps1_options_skip_requested &&
      gameplay_3d && !menu_2d && !movie_allowed && !native_pause_active &&
      pause_pressed && !previous_pause) {
@@ -597,7 +616,10 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   if(ps1_preview_active && (gameplay_allowed || native_pause_active) &&
      !movie_allowed && share_edge) {
     begin_scancode(0x01u,"Escape");
-    report("GAMEPAD-UI: PS1-PREVIEW SHARE -> Escape during 3D/pause; native Start button still unchanged");
+    if(ps1_native_start_unbound)
+      report("GAMEPAD-UI: PS1-PREVIEW SHARE -> Escape during 3D/pause; original Start RAM unbound (runtime behavior still to verify)");
+    else
+      report("GAMEPAD-UI: PS1-PREVIEW SHARE -> Escape during 3D/pause; original Start mapping retained");
   } else if(menu_allowed && (back_pressed & (unsigned)back) &&
      !(previous_back & (unsigned)back)) {
     begin_scancode(0x01u,"Escape");
@@ -622,4 +644,5 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   previous_back=(int)back_pressed;
   previous_pause=pause_pressed;
   previous_share=share_pressed;
+  previous_native_start=native_start_pressed;
 }
