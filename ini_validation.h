@@ -160,7 +160,8 @@ static int spider_ini_value_valid(const char *section,const char *key,const char
   if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"ControllerProfile"))
     return !spider_ini_icmp(value,"Auto") ||
            !spider_ini_icmp(value,"Off") ||
-           !spider_ini_icmp(value,"DualShock4");
+           !spider_ini_icmp(value,"DualShock4") ||
+           !spider_ini_icmp(value,"Xbox360");
   if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"ControllerEnterButtons"))
     return !spider_ini_icmp(value,"Cross") ||
            !spider_ini_icmp(value,"Options") ||

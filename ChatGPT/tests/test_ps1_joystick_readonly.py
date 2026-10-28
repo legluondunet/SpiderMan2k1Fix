@@ -21,7 +21,7 @@ CONFIG=(ROOT/"virtual_spidey_cfg.c").read_text()
 def test_ps1_readonly_menu_is_an_explicit_opt_in_only():
     assert '"ControllerPS1ReadOnlyJoystick"' in INI
     assert 'GetPrivateProfileIntA("Input","ControllerPS1ReadOnlyJoystick",0,ini)==1' in BRIDGE
-    assert 'if(!detected || !ps1_preview_requested)return;' in BRIDGE
+    assert 'if(!detected || selected_pad_kind!=SPIDER_PAD_DS4 || !ps1_preview_requested)return;' in BRIDGE
     assert "SpiderPS1_InstallReadOnlyJoystick(log_message)" in BRIDGE
     assert 'JOYSTICK-READONLY REFUSED' in SOURCE
     assert 'JOYSTICK-READONLY EXPERIMENT ACTIVE' in SOURCE

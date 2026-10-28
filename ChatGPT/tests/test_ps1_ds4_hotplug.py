@@ -18,14 +18,14 @@ def test_hotplug_integrates_on_foreground_flip_only():
     assert "spider_ds4_hotplug_accept_buttons(&hotplug,held)" in PAD
     assert "IDirectInput8_EnumDevices(di,DI8DEVCLASS_GAMECTRL" in PAD
     assert "DIEDFL_ATTACHEDONLY" in PAD
-    assert "if(d.found!=1u || d.ds4_count!=1u)" in PAD
+    assert "choose_ds4=(d.found==1u && d.ds4_count==1u" in PAD
     assert "DISCL_FOREGROUND|DISCL_NONEXCLUSIVE" in PAD
     assert "if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd))" in PAD
     assert "release_active_key();" in PAD
-    assert 'hotplug rescan every 2s while foreground' in PAD
+    assert "rescan every 2s" in PAD
     assert "disable_profile(NULL);" in PAD
     assert "ps1_preview_active=1;" in PAD
-    assert "if(ps1_preview_requested && !ps1_preview_active)" in PAD
+    assert "if(selected_pad_kind==SPIDER_PAD_DS4 && ps1_preview_requested && !ps1_preview_active)" in PAD
     assert "synthetic actions disabled until restart with controller present" in PAD
     # Existing startup-only verified native CFG reload must NOT happen in
     # OnFlip or from the physical reconnect path. No guessed memory writes.
@@ -117,7 +117,7 @@ def test_unplug_inputlost_never_acquires_disconnected_device_same_frame():
     assert "IDirectInputDevice8_Acquire(device);" not in paused
     # Reacquisition must open a fresh instance during scheduled rediscovery,
     # not silently reload the game's native PS1 profile in mid-game.
-    assert "IDirectInput8_CreateDevice(di,&d.ds4_instance,&device,NULL)" in PAD
+    assert "choose_ds4?&d.ds4_instance:&d.xbox_instance,&device,NULL" in PAD
     assert "hotplug.last_scan=GetTickCount();" in PAD
 
 

@@ -1,5 +1,5 @@
 /* Spider-Man (PC 2001): opt-in recovery of the ORIGINAL game-owned DirectInput8
- * joystick after a physical Sony DualShock4 unplug/replug.
+ * joystick after a physical Sony DS4/Xbox360-compatible unplug/replug.
  *
  * This is stage 2. Stage 1 detects DIERR_UNPLUGGED at the original Acquire
  * call site and safely returns from the native joystick reader. Stage 2
@@ -14,7 +14,7 @@
  * at 0x0053D0F4, original cooperative HWND at 0x006B7A60, buffer size
  * 16 events, absolute axis mode, original +/-1000 ranges at offsets 0
  * and 4, and original capability-derived button count/polled flag.
- * A fresh, acquired, neutral DS4 is published to the original game global
+ * A fresh, acquired, neutral supported pad is published to the original game global
  * ONLY after every initialization step succeeds.
  *
  * Defaults OFF. Requires ExperimentalNativeJoystickUnplugGuard=1 too.
@@ -44,16 +44,18 @@
 #define SPIDER_NATIVE_POLLED_FLAG 0x006B7928u
 
 static int requested=0,initialized=0,scan_started=0,device_missing=0;
+static unsigned allowed_pad_kind=SPIDER_PAD_NONE;
 static DWORD last_scan=0, native_thread=0;
 static LONG last_events=0;
 static unsigned scans=0,rebound=0,failed=0;
 static void (*write_log)(const char *)=NULL;
 
-typedef struct SpiderDS4List {
-  unsigned count;
+typedef struct SpiderPadList {
+  unsigned count,gamepad_count;
   GUID instance;
   DWORD product;
-} SpiderDS4List;
+  unsigned kind;
+} SpiderPadList;
 
 /* Constant signatures from the maintainer's SHA-verified retail EXE.
  * Includes native factory EnumDevices, CreateDevice, settings, data
@@ -87,17 +89,19 @@ static int valid_binary_layout(void) {
          memcmp((const void *)(uintptr_t)SPIDER_NATIVE_FORMAT,original_format,sizeof(original_format))==0;
 }
 
-static BOOL CALLBACK enumerate_ds4(const DIDEVICEINSTANCEA *inst,VOID *ctx) {
-  SpiderDS4List *list=(SpiderDS4List *)ctx;
+static BOOL CALLBACK enumerate_supported_pad(const DIDEVICEINSTANCEA *inst,VOID *ctx) {
+  SpiderPadList *list=(SpiderPadList *)ctx;
   unsigned vid,pid;
   if(!inst || !list || inst->dwSize<sizeof(DIDEVICEINSTANCEA))return DIENUM_CONTINUE;
+  list->gamepad_count++;
   vid=LOWORD(inst->guidProduct.Data1);
   pid=HIWORD(inst->guidProduct.Data1);
-  if(!spider_reconnect_sony_ds4(vid,pid))return DIENUM_CONTINUE;
+  if(spider_pad_identify(vid,pid)!=allowed_pad_kind)return DIENUM_CONTINUE;
   list->count++;
   if(list->count==1u) {
     list->instance=inst->guidInstance;
     list->product=inst->guidProduct.Data1;
+    list->kind=spider_pad_identify(vid,pid);
   }
   return DIENUM_CONTINUE;
 }
@@ -209,7 +213,7 @@ static void detach_stale_native(void) {
 static void try_rebind(HWND hwnd) {
   IDirectInput8A *di=game_factory();
   IDirectInputDevice8A *candidate=NULL;
-  SpiderDS4List list;
+  SpiderPadList list;
   DIDEVCAPS caps;
   HRESULT hr;
   char line[210];
@@ -217,12 +221,13 @@ static void try_rebind(HWND hwnd) {
   memset(&list,0,sizeof(list));
   scans++;
   hr=IDirectInput8_EnumDevices(di,DI8DEVCLASS_GAMECTRL,
-             enumerate_ds4,&list,DIEDFL_ATTACHEDONLY);
-  if(FAILED(hr) || list.count!=1u) {
+             enumerate_supported_pad,&list,DIEDFL_ATTACHEDONLY);
+  /* Fail closed when multiple game controllers are attached. */
+  if(FAILED(hr) || list.count!=1u || list.gamepad_count!=1u) {
     if(scans==1 || scans%10u==0) {
       snprintf(line,sizeof(line),
-        "NATIVE-RECONNECT: scan #%u no unique attached Sony DS4 (count=%u hr=0x%08lX); keyboard active",
-        scans,list.count,(unsigned long)hr);
+        "NATIVE-RECONNECT: scan #%u no unique requested DS4/Xbox360 (matching=%u gamepads=%u hr=0x%08lX); keyboard active",
+        scans,list.count,list.gamepad_count,(unsigned long)hr);
       report(line);
     }
     return;
@@ -233,7 +238,7 @@ static void try_rebind(HWND hwnd) {
   if(FAILED(hr))goto fail;
   if(!neutral_and_flush(candidate)) {
     if(scans==1 || scans%10u==0)
-      report("NATIVE-RECONNECT: DS4 candidate not neutral or buffered reads not ready; retry later");
+      report("NATIVE-RECONNECT: candidate not neutral or buffered reads not ready; retry later");
     close_candidate(candidate);
     return;
   }
@@ -253,8 +258,9 @@ static void try_rebind(HWND hwnd) {
   device_missing=0;
   rebound++;
   snprintf(line,sizeof(line),
-    "NATIVE-RECONNECT: REBOUND original game-owned DirectInput joystick Sony VID=054C PID=%04X; rebound=%u scan=%u buttons=%lu polled=%u; native controls restored (hardware validation pending)",
-    HIWORD(list.product),rebound,scans,(unsigned long)caps.dwButtons,
+    "NATIVE-RECONNECT: REBOUND original game-owned DirectInput joystick %s VID=%04X PID=%04X; rebound=%u scan=%u buttons=%lu polled=%u; native controls restored (Xbox hardware validation pending)",
+    list.kind==SPIDER_PAD_DS4?"Sony":"Xbox360-compatible",
+    LOWORD(list.product),HIWORD(list.product),rebound,scans,(unsigned long)caps.dwButtons,
     (unsigned)((caps.dwFlags>>8)&1u));
   report(line);
   return;
@@ -331,7 +337,16 @@ void SpiderNativeReconnect_ObserveMode(long flip_index,int menu_2d,
 }
 
 void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *)) {
+  char choice[40];
   write_log=logger;
+  allowed_pad_kind=SPIDER_PAD_DS4;
+  /* Xbox is only eligible if explicitly selected. DS4 hotplug works
+   * with Auto, Off or DualShock4 exactly as before this PR. */
+  if(ini) {
+    GetPrivateProfileStringA("Input","ControllerProfile","Auto",
+                             choice,sizeof(choice),ini);
+    if(!_stricmp(choice,"Xbox360"))allowed_pad_kind=SPIDER_PAD_XBOX360;
+  }
   requested=(ini && GetPrivateProfileIntA("Input",
       "ExperimentalNativeJoystickReconnect",0,ini)==1);
   initialized=0;
@@ -348,7 +363,7 @@ void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *)) {
     report("NATIVE-RECONNECT: DISABLED, unsupported original joystick signatures/PE layout");
     return;
   }
-  report("NATIVE-RECONNECT: requested experimental game-owned DS4 rebind, only after guard is installed and foreground");
+  report("NATIVE-RECONNECT: requested experimental game-owned DS4/Xbox360 rebind, only after guard is installed and foreground");
 }
 void SpiderNativeReconnect_OnFlip(long flip_index, HWND game_hwnd) {
   LONG events;
