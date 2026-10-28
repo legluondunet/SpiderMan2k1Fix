@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — native Start opt-in research (PR #74, UNVALIDATED)
+
+- After a successful complete, read-only .data scan on the maintainer's original game, identify exactly one 14-action Start candidate at RVA `0x00168408` (BUTTON11), with no truncated memory.
+- Add a disabled-by-default experiment `[Input] ControllerPS1DisableNativeStart=1` **requiring** `ControllerPS1Preview=1` and `ControllerPS1DeepStartProbe=1`. It refuses all writes unless the scanned native table matches the complete, strict original factory action/button layout and exactly one candidate exists. When permitted, atomically unbind only the single 32-bit Start button index in temporary process RAM by replacing BUTTON11 with the game's existing `0x4000` unused sentinel. Restarting the game restores original RAM; saved user joystick preferences are untouched.
+- This is **unvalidated in-game**, not enabled automatically, not a proof of original runtime Start handler ownership, and **does not** yet disable the game-owned Joystick Configuration menu. Test with SHARE and the original camera/R3 button before claiming the new Start binding works.
+
 ## Unreleased — contextual DS4 preview follow-up (PR #74)
 
 - Read the exact, SHA-gated native pause-menu **purple ribbon render signature** from the preceding Flip as a supplemental 3D pause indicator. The original pause pointer can be zero while the menu is displayed; this allows the experimental controller profile to distinguish the pause UI from gameplay when the exact measured widescreen renderer is active.
