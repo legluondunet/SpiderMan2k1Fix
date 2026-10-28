@@ -2571,6 +2571,10 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
    * The 3D stage must use the original menu-mode switch, NOT the optional
    * gameplay_4x3_active flag (which is false in widescreen Auto).
    * Gamepad pulse release runs before any focus-loss pause blocks Flip. */
+  /* Poll SDL3 before the UI bridge to avoid one stale frame of a previous
+   * controller's synthetic keys after a Start ownership switch. Actual
+   * native DI handoff remains AFTER unplug guard installation below. */
+  SpiderSDL3Probe_OnFlip(count,game_hwnd);
   SpiderGamepadUI_OnFlip(game_hwnd,
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
     InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
@@ -2598,10 +2602,8 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   }
   SpiderDI8Retry_OnFlip(count);
   SpiderNativeUnplug_OnFlip(count);
-  /* SDL3 must pump selection BEFORE native DI arbitration on the same
-   * render thread. The UI adapter will consume verified ownership next
-   * Flip; no gamepad injection happens before the native handoff. */
-  SpiderSDL3Probe_OnFlip(count,game_hwnd);
+  /* SDL3 selection was pumped before UI. Native device replacement now
+   * runs after its SHA-guarded disconnect patch, on the same Flip thread. */
   SpiderNativeReconnect_OnFlip(count,game_hwnd);
   /* Passive, bounded post-hotplug heartbeat: menu -> 3D -> menu. */
   SpiderNativeReconnect_ObserveMode(count,
