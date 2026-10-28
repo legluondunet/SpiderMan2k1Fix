@@ -66,6 +66,12 @@ static int configured=0,profile=SPIDER_PROFILE_AUTO,confirm=SPIDER_CONFIRM_BOTH;
 static unsigned detected_kind=SPIDER_RECONNECT_NONE;
 static uint32_t xbox_previous_mask=0;
 static unsigned xbox_button_trace_count=0;
+/* Manual passive trigger-axis diagnostic; no gameplay injection or hooks. */
+static int xbox_trigger_probe_requested=0;
+static unsigned xbox_trigger_probe_samples=0;
+static DWORD xbox_trigger_probe_tick=0;
+static DIJOYSTATE2 xbox_trigger_previous={0};
+static int xbox_trigger_probe_has_previous=0;
 /* Xbox Joystick UI must be read-only like PS1. The native patch is
  * permanent for a process: attempt only once after original bootstrap,
  * and only for an unambiguously verified Xbox device. */
@@ -273,6 +279,8 @@ static void disable_profile_with_policy(const char *reason,
   detected=0;
   detected_kind=SPIDER_RECONNECT_NONE;
   xbox_previous_mask=0;
+  xbox_trigger_probe_has_previous=0;
+  xbox_trigger_probe_samples=0;
   if(reason)report(reason);
 }
 static void disable_profile(const char *reason) {
@@ -315,6 +323,7 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
    * menu lock and Start handling are validated in the real game. */
   ps1_preview_requested=GetPrivateProfileIntA("Input","ControllerPS1Preview",0,ini)==1;
   xbox360_preview_requested=GetPrivateProfileIntA("Input","ControllerXbox360Preview",0,ini)==1;
+  xbox_trigger_probe_requested=GetPrivateProfileIntA("Debug","Xbox360TriggerProbe",0,ini)==1;
   ps1_options_skip_requested=GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1;
   ps1_readonly_menu_requested=GetPrivateProfileIntA("Input","ControllerPS1ReadOnlyJoystick",0,ini)==1;
   /* Global game-only mouse policy replaces the retired DS4-only option.
@@ -438,6 +447,8 @@ static void detect_device(HWND hwnd) {
   detected_kind=choose_ds4?SPIDER_RECONNECT_DS4:SPIDER_RECONNECT_XBOX360;
   xbox_previous_mask=0;
   xbox_button_trace_count=0;
+  xbox_trigger_probe_has_previous=0;
+  xbox_trigger_probe_samples=0;
   hotplug_missing_logged=0;
   spider_ds4_hotplug_attached(&hotplug);
   previous_buttons=0;previous_back=0;previous_pause=0;
@@ -937,6 +948,40 @@ void SpiderGamepadUI_PauseWake_End(void) {
   previous_share=0;
   previous_native_start=0;
 }
+/* Strictly passive Xbox trigger probe. Samples raw DirectInput axes from the
+ * independently acquired non-exclusive device, only in foreground 3D.
+ * Xbox RT/LT may share lZ under XUSB; Wine joystick overrides and Holtek
+ * firmware can report separate sliders or alternate axes. Never equate a
+ * particular raw axis or sign with RT without observing a real press.
+ * A bounded delta-only logger avoids altering the native controller data. */
+static void xbox_trace_trigger_axes(const DIJOYSTATE2 *now) {
+  int changed=0;
+  DWORD tick=GetTickCount();
+  const DIJOYSTATE2 *prev=&xbox_trigger_previous;
+  char line[285];
+  if(!now || xbox_trigger_probe_samples>=48u)return;
+  if(xbox_trigger_probe_has_previous) {
+    if((DWORD)(tick-xbox_trigger_probe_tick)<100u)return;
+#define XBOX_AXIS_CHANGED(field) \
+    (((int64_t)now->field-(int64_t)prev->field>4096) || \
+     ((int64_t)prev->field-(int64_t)now->field>4096))
+    changed=XBOX_AXIS_CHANGED(lZ) || XBOX_AXIS_CHANGED(lRx) ||
+      XBOX_AXIS_CHANGED(lRy) || XBOX_AXIS_CHANGED(lRz) ||
+      XBOX_AXIS_CHANGED(rglSlider[0]) || XBOX_AXIS_CHANGED(rglSlider[1]);
+#undef XBOX_AXIS_CHANGED
+    if(!changed)return;
+  }
+  snprintf(line,sizeof(line),
+    "GAMEPAD-XBOX360: TRIGGER-PROBE #%u RAW lZ=%ld lRx=%ld lRy=%ld lRz=%ld slider0=%ld slider1=%ld (passive; press RT and LT separately)",
+    xbox_trigger_probe_samples+1u,(long)now->lZ,(long)now->lRx,
+    (long)now->lRy,(long)now->lRz,(long)now->rglSlider[0],
+    (long)now->rglSlider[1]);
+  report(line);
+  xbox_trigger_previous=*now;
+  xbox_trigger_probe_has_previous=1;
+  xbox_trigger_probe_tick=tick;
+  xbox_trigger_probe_samples++;
+}
 void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active) {
   DIJOYSTATE2 state;
@@ -1034,6 +1079,9 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     return;
   }
   bad_reads=0;
+  if(xbox_trigger_probe_requested && detected_kind==SPIDER_RECONNECT_XBOX360 &&
+     gameplay_3d && !bink_active && !native_pause_active)
+    xbox_trace_trigger_axes(&state);
   /* The PS1 layout requires a validated pre-game native config load.
    * If DS4 first appears after that startup moment, refuse a misleading
    * legacy Cross/Options synthetic mapping while PS1 was requested:
