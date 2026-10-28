@@ -126,3 +126,108 @@ def test_native_joystick_capture_lock_still_on_for_gameplay():
     assert 'spider_install_readonly_joystick(2u,logger)' in native
     assert 'spider_joystick_restore_denied' in native
     assert '((SpiderCMenuAddEntry)(uintptr_t)0x0043FFF0u)(native_menu,label)' in native
+
+
+def test_setup_navigation_requires_neutral_press_edges_and_selection_reset(tmp_path):
+    cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc:
+        return
+    c=tmp_path/"nav.c"
+    exe=tmp_path/"nav"
+    c.write_text(textwrap.dedent(r"""
+      #include <assert.h>
+      #include <string.h>
+      #include "sdl3_controller_setup_nav.h"
+      int main(void) {
+        SpiderSDL3SetupNav nav={0};
+        SpiderSDL3ControllerSample pad={0};
+        uint32_t edge;
+        /* Physical A already held at dialog open cannot capture instantly. */
+        pad.buttons=1u<<SPIDER_SETUP_NAV_SOUTH;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        assert(!nav.armed);
+        pad.buttons=0;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        assert(nav.armed);
+        pad.buttons=1u<<SPIDER_SETUP_NAV_SOUTH;
+        edge=spider_sdl3_setup_nav_step(&nav,&pad);
+        assert(edge==(1u<<SPIDER_SETUP_NAV_SOUTH));
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        pad.buttons=0;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        pad.buttons=1u<<SPIDER_SETUP_NAV_DOWN;
+        assert(spider_sdl3_setup_nav_step(&nav,&pad)==
+               (1u<<SPIDER_SETUP_NAV_DOWN));
+        pad.buttons=0;
+        spider_sdl3_setup_nav_step(&nav,&pad);
+        pad.buttons=(1u<<SPIDER_SETUP_NAV_SOUTH)|
+                    (1u<<SPIDER_SETUP_NAV_EAST);
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        assert(!nav.armed);
+        pad.buttons=0;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        /* Gamepad switch Start stays reserved and forces neutral. */
+        pad.buttons=1u<<SPIDER_SDL3_BUTTON_START;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        assert(!nav.armed);
+        pad.buttons=0;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        pad.buttons=1u<<SPIDER_SETUP_NAV_RB;
+        assert(spider_sdl3_setup_nav_step(&nav,&pad)==
+               (1u<<SPIDER_SETUP_NAV_RB));
+        pad.buttons=0;
+        spider_sdl3_setup_nav_reset(&nav);
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        assert(nav.armed);
+        /* Invalid trigger data fails closed and resets input state. */
+        pad.axis[SPIDER_SDL3_AXIS_RT]=-1;
+        pad.buttons=1u<<SPIDER_SETUP_NAV_NORTH;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        assert(!nav.armed);
+        pad.axis[SPIDER_SDL3_AXIS_RT]=0;
+        pad.buttons=0;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        pad.buttons=1u<<SPIDER_SETUP_NAV_EAST;
+        assert(spider_sdl3_setup_nav_step(&nav,&pad)==
+               (1u<<SPIDER_SETUP_NAV_EAST));
+        return 0;
+      }
+    """),encoding="utf-8")
+    subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
+                    "-I",str(ROOT),str(c),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
+
+
+def test_mouse_free_keyboard_and_selected_gamepad_setup_navigation():
+    ui=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    nav=(ROOT/"sdl3_controller_setup_nav.h").read_text(encoding="utf-8")
+    assert 'static int handle_setup_keyboard(' in ui
+    assert 'handle_setup_keyboard(&ui,(UINT)msg.wParam)' in ui
+    assert 'SetFocus(ui.actions); /* Keyboard-first' in ui
+    for key in ("VK_UP","VK_DOWN","VK_RETURN","VK_PRIOR","VK_NEXT",
+                "VK_F5","VK_ESCAPE","VK_F1"):
+        assert key in ui
+    for action in ("SPIDER_SETUP_NAV_UP","SPIDER_SETUP_NAV_DOWN",
+                   "SPIDER_SETUP_NAV_LB","SPIDER_SETUP_NAV_RB",
+                   "SPIDER_SETUP_NAV_SOUTH","SPIDER_SETUP_NAV_EAST",
+                   "SPIDER_SETUP_NAV_NORTH"):
+        assert action in ui
+    assert 'spider_sdl3_setup_nav_step(&ui->nav,&s)' in ui
+    assert 'spider_sdl3_setup_nav_reset(&ui->nav)' in ui
+    assert 'if(!ui->capture.active) {' in ui
+    assert 'if(rc!=1)return;' in ui
+    assert 'GetForegroundWindow()!=ui->hwnd' in ui
+    assert 'if(focused==ui->pads)' in ui
+    assert 'if(focused==GetDlgItem(ui->hwnd,SPIDER_UI_RESET)' in ui
+    assert 'SPIDER_SETUP_NAV_SOUTH=0' in nav
+    assert 'SPIDER_SETUP_NAV_EAST=1' in nav
+    assert 'SPIDER_SETUP_NAV_UP=11' in nav
+    assert 'SPIDER_SETUP_NAV_DOWN=12' in nav
+    assert 'spider_sdl3_profile_neutral(sample)' in nav
+    assert 'spider_sdl3_setup_nav_reset(n);' in nav
+    assert not any(ord(ch)>127 for ch in ui), "ANSI game dialog must use ASCII-only labels"
+    assert 'Keyboard: Up/Down action' in ui
+    assert 'Gamepad: D-pad action' in ui
+    for forbidden in ("SendInput(", "WritePrivateProfileString",
+                      "VirtualProtect(", "CreateThread("):
+        assert forbidden not in ui
