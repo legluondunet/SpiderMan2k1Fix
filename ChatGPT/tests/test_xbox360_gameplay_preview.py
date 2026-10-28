@@ -99,7 +99,7 @@ def test_ps1_and_xbox_overlays_are_mutually_exclusive_and_saved_bytes_restored()
 def test_start_back_pause_uses_actual_live_map_and_controller_paused_ui():
     guard = UI.split("static int xbox_pause_button_free_of_native_actions(", 1)[1].split(
         "static BOOL CALLBACK enumerate_gamepad(", 1)[0]
-    assert 'if(xbox360_preview_active)' in guard
+    assert 'if(xbox360_preview_active || SpiderNativeReconnect_CanonicalXboxMapping())' in guard
     assert 'return spider_xbox360_button_free_for_pause(requested_button);' in guard
     assert 'GetPrivateProfileStringA("Joystick",native_actions[i],fallback,' in guard
     assert 'if(!parse_native_button(value,&button) || button==requested_button)' in guard
