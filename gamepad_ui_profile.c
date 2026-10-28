@@ -76,6 +76,8 @@ static int xbox_trigger_probe_requested=0;
 static int xbox_rt_swing_requested=0;
 static unsigned xbox_rt_swing_down_scan=0;
 static unsigned xbox_rt_swing_denied_count=0;
+static unsigned xbox_rt_swing_source_reports=0;
+static int xbox_rt_swing_prev_physical=0;
 static unsigned xbox_trigger_probe_samples=0;
 static DWORD xbox_trigger_probe_tick=0;
 static DIJOYSTATE2 xbox_trigger_previous={0};
@@ -317,9 +319,33 @@ static void xbox_rt_swing_release(const char *why) {
 static void xbox_rt_swing_update(long axis,int gameplay_ok) {
   unsigned scan;
   INPUT in;
-  char line[210];
-  int should_hold;
+  char line[270];
+  int should_hold,di_held,sdl3_held=0,sdl3_rt=0,sdl3_rt_available=0;
+  int was_held=xbox_rt_swing_down_scan!=0;
   int native_canonical=SpiderNativeReconnect_CanonicalXboxMapping();
+  /* The selected Xbox's original DirectInput lZ can be driver-dependent
+   * after a hot rebind. SDL3 has a separate normalized RT axis. Use BOTH
+   * only while the game-owned native Xbox mapping has been verified.
+   * Legacy single-pad behaviour continues to use only the old lZ path. */
+  int sdl3_verified=SpiderSDL3Probe_NativeOwnerEnabled() &&
+     native_canonical && sdl3_ui_instance!=0u &&
+     detected_kind==SPIDER_RECONNECT_XBOX360;
+  if(sdl3_verified)
+    sdl3_rt_available=SpiderSDL3Probe_SelectedRT(&sdl3_rt);
+  di_held=spider_xbox360_rt_swing_held(was_held,axis);
+  if(sdl3_rt_available)
+    sdl3_held=spider_xbox360_sdl3_rt_swing_held(was_held,sdl3_rt);
+  should_hold=di_held || sdl3_held;
+  if(xbox_rt_swing_requested && gameplay_ok && should_hold &&
+     !xbox_rt_swing_prev_physical && xbox_rt_swing_source_reports<12u) {
+    snprintf(line,sizeof(line),
+      "GAMEPAD-XBOX360: RT-SWING SOURCE #%u lZ=%ld SDL3-RT=%s%d DI=%d SDL=%d canonical=%d selected-id=%lu (read-only before injection)",
+      ++xbox_rt_swing_source_reports,axis,
+      sdl3_rt_available?"":"NA:",sdl3_rt,di_held,sdl3_held,
+      native_canonical,(unsigned long)sdl3_ui_instance);
+    report(line);
+  }
+  xbox_rt_swing_prev_physical=should_hold;
   SpiderXbox360_SetRTAlias(xbox_rt_swing_requested &&
     detected_kind==SPIDER_RECONNECT_XBOX360 &&
     (xbox360_preview_active || native_canonical));
@@ -331,11 +357,17 @@ static void xbox_rt_swing_update(long axis,int gameplay_ok) {
   if(!xbox_rt_swing_requested ||
      (!xbox360_preview_active && !native_canonical) ||
      detected_kind!=SPIDER_RECONNECT_XBOX360 || !gameplay_ok) {
+    if(xbox_rt_swing_requested && gameplay_ok && should_hold &&
+       xbox_rt_swing_source_reports<12u) {
+      snprintf(line,sizeof(line),
+        "GAMEPAD-XBOX360: RT-SWING BLOCKED physical RT held; native-canonical=%d startup-preview=%d profile-kind=%u; no key injection",
+        native_canonical,xbox360_preview_active,detected_kind);
+      report(line);
+      xbox_rt_swing_source_reports++;
+    }
     xbox_rt_swing_release("inactive game/focus/pause/controller or unverified native Xbox map");
     return;
   }
-  should_hold=spider_xbox360_rt_swing_held(
-    xbox_rt_swing_down_scan!=0,axis);
   if(!should_hold) {
     xbox_rt_swing_release("RT released or axis neutral/positive");
     return;
@@ -365,14 +397,15 @@ static void xbox_rt_swing_update(long axis,int gameplay_ok) {
   }
   xbox_rt_swing_down_scan=scan;
   snprintf(line,sizeof(line),
-    "GAMEPAD-XBOX360: RT-SWING DOWN lZ=%ld DIK=0x%02X (held until release/focus/context change; LT high axis ignored)",
-    axis,scan);
+    "GAMEPAD-XBOX360: RT-SWING DOWN lZ=%ld DIK=0x%02X SDL3-RT=%s%d (held until release/focus/context change; LT ignored)",
+    axis,scan,sdl3_rt_available?"":"NA:",sdl3_rt);
   report(line);
 }
 static void disable_profile_with_policy(const char *reason,
                                         int already_inputlost) {
   release_active_key();
   xbox_rt_swing_release("secondary controller disabled");
+  xbox_rt_swing_prev_physical=0;
   if(device) {
     IDirectInputDevice8A *old=device;
     device=NULL;
