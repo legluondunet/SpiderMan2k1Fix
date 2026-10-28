@@ -83,14 +83,18 @@ static void refresh_actions(SpiderSDL3SetupUI *ui) {
   if(!ui || !ui->actions)return;
   SendMessageA(ui->actions,LB_RESETCONTENT,0,0);
   if(!p)return;
-  for(i=0;i<SPIDER_SDL3_ACTION_COUNT;i++) {
+  for(i=0;i<SPIDER_SDL3_SETUP_ACTION_COUNT;i++) {
     char label[154],binding[85];
-    binding_name(p->actions[i],binding,sizeof(binding));
-    snprintf(label,sizeof(label),"%u. %-10s  :  %s",
-      i+1,spider_sdl3_action_names[i],binding);
+    const char *key=i<SPIDER_SDL3_ACTION_COUNT?
+      spider_sdl3_action_names[i]:
+      spider_sdl3_context_names[i-SPIDER_SDL3_ACTION_COUNT];
+    binding_name(spider_sdl3_profile_setup_binding(p,i),
+                 binding,sizeof(binding));
+    snprintf(label,sizeof(label),"%02u. %-4s %-13s : %s",
+      i+1,i<SPIDER_SDL3_ACTION_COUNT?"3D":"MENU",key,binding);
     SendMessageA(ui->actions,LB_ADDSTRING,0,(LPARAM)label);
   }
-  if(ui->action>=SPIDER_SDL3_ACTION_COUNT)ui->action=0;
+  if(ui->action>=SPIDER_SDL3_SETUP_ACTION_COUNT)ui->action=0;
   SendMessageA(ui->actions,LB_SETCURSEL,ui->action,0);
 }
 /* The new profile is serialized/committed BEFORE updating the live bank.
@@ -128,7 +132,7 @@ static void select_slot(SpiderSDL3SetupUI *ui,unsigned slot) {
   ui->instance=id;ui->vid=vid;ui->pid=pid;
   refresh_actions(ui);
   snprintf(line,sizeof(line),
-    "%s (%04X:%04X) - profile autosaved, gameplay unchanged. Select action and Capture.",
+    "%s (%04X:%04X) - profile v2; 3D + menu/media actions autosaved.",
     name,(unsigned)vid,(unsigned)pid);
   status(ui,line);
 }
@@ -222,11 +226,11 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
     uint32_t edge=spider_sdl3_setup_nav_step(&ui->nav,&s);
     if(edge==(1u<<SPIDER_SETUP_NAV_UP)) {
       if(ui->action)ui->action--;
-      else ui->action=SPIDER_SDL3_ACTION_COUNT-1u;
+      else ui->action=SPIDER_SDL3_SETUP_ACTION_COUNT-1u;
       refresh_actions(ui);
       status(ui,"D-pad: action selected. Press A to capture; release all controls.");
     } else if(edge==(1u<<SPIDER_SETUP_NAV_DOWN)) {
-      ui->action=(ui->action+1u)%SPIDER_SDL3_ACTION_COUNT;
+      ui->action=(ui->action+1u)%SPIDER_SDL3_SETUP_ACTION_COUNT;
       refresh_actions(ui);
       status(ui,"D-pad: action selected. Press A to capture; release all controls.");
     } else if(edge==(1u<<SPIDER_SETUP_NAV_LB) ||
@@ -270,13 +274,19 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
   }
   {
     SpiderSDL3ControllerProfile trial=*p;
-    if(!spider_sdl3_profile_assign(&trial,ui->action,candidate)) {
+    if(!(ui->action<SPIDER_SDL3_ACTION_COUNT?
+         spider_sdl3_profile_assign(&trial,ui->action,candidate):
+         spider_sdl3_profile_assign_context(&trial,
+           ui->action-SPIDER_SDL3_ACTION_COUNT,candidate))) {
       status(ui,"Binding rejected (reserved input or conflicting profile).");
       return;
     }
     binding_name(candidate,bind,sizeof(bind));
     snprintf(line,sizeof(line),"%s = %s",
-             spider_sdl3_action_names[ui->action],bind);
+             ui->action<SPIDER_SDL3_ACTION_COUNT?
+               spider_sdl3_action_names[ui->action]:
+               spider_sdl3_context_names[ui->action-SPIDER_SDL3_ACTION_COUNT],
+             bind);
     commit_profile(ui,&trial,line);
   }
 }
@@ -305,9 +315,9 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
     /* Native drop-down keyboard navigation must keep working. */
     if(focused==ui->pads)return 0;
     if(!current_profile(ui))return 1;
-    next=(ui->action+SPIDER_SDL3_ACTION_COUNT+
-      (vk==VK_UP?SPIDER_SDL3_ACTION_COUNT-1u:1u))%
-      SPIDER_SDL3_ACTION_COUNT;
+    next=(ui->action+SPIDER_SDL3_SETUP_ACTION_COUNT+
+      (vk==VK_UP?SPIDER_SDL3_SETUP_ACTION_COUNT-1u:1u))%
+      SPIDER_SDL3_SETUP_ACTION_COUNT;
     ui->action=next;
     refresh_actions(ui);
     status(ui,"Action selected. Press Enter to capture; release all buttons first.");
@@ -370,7 +380,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       ui->hwnd=hwnd;
       SetWindowLongPtrA(hwnd,GWLP_USERDATA,(LONG_PTR)(uintptr_t)ui);
       label=CreateWindowExA(0,"STATIC",
-        "SDL3 CONTROLLER SETUP - Profiles saved; gameplay controls unchanged",
+        "SDL3 CONTROLLER SETUP - 3D + menu/media bindings; saved per model",
         WS_CHILD|WS_VISIBLE,18,16,690,28,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->pads=CreateWindowExA(0,"COMBOBOX","",
@@ -414,7 +424,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       } else if(LOWORD(wp)==SPIDER_UI_ACTION &&
                 HIWORD(wp)==LBN_SELCHANGE) {
         LRESULT idx=SendMessageA(ui->actions,LB_GETCURSEL,0,0);
-        if(idx!=LB_ERR && idx<SPIDER_SDL3_ACTION_COUNT) {
+        if(idx!=LB_ERR && idx<SPIDER_SDL3_SETUP_ACTION_COUNT) {
           ui->action=(unsigned)idx;
           spider_sdl3_capture_reset(&ui->capture);
           status(ui,"Action selected. Choose Capture then release all controls.");
@@ -500,7 +510,7 @@ void SpiderSDL3ControllerSetup_Open(void) {
   ui.owner=owner;
   setup_open=1;
   window=CreateWindowExA(WS_EX_DLGMODALFRAME,cls,
-    "SpiderMan2k1Fix - SDL3 Controller Test (preview)",
+    "SpiderMan2k1Fix - Controller Setup (3D + Menus/Media)",
     WS_CAPTION|WS_SYSMENU|WS_POPUP,
     CW_USEDEFAULT,CW_USEDEFAULT,730,493,
     owner,NULL,GetModuleHandleA(NULL),&ui);
