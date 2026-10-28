@@ -505,3 +505,77 @@ input. Include a few seconds of menu time in the log. Retest Sony
 PS1 independently, unchanged by this fix.
 
 PR remains DRAFT/UNMERGED pending hardware validation.
+
+
+## Shared native return-to-menu diagnosis (2026-10-28)
+
+The recurring `Exit -> New Game` behavior has been reported with both
+Sony DS4 and Holtek Xbox 360. It is **not proven** that either pad's
+synthetic Enter caused the second New Game. The last recorded native
+request-7 flow reached `Shell_MainMenu`, but the log did not capture
+the subsequent unintended New Game action. A hardware-independent
+investigation is therefore preferable to a new per-pad suppression.
+
+### Shared synthetic-input ownership
+
+New portable `native_menu_return_gate.h` contains the **single**
+request-7 physical-confirm ownership policy. The old PS1 header
+`ps1_transition_edge_ownership.h` is retained as a source-compatible
+facade. Both the Sony and Xbox paths call the same underlying helper
+(with their own state/masks). It remembers held physical confirmation
+bits when 3D ends through mode request 7, and discards those bits only
+after real physical release. There is no new timeout or per-frame
+guess in this shared helper. This does **not** suppress original
+DirectInput input in the 2001 executable; existing optional PS1
+8-Flip settle and Xbox supplemental 8-Flip settle remain separately
+available pending root-cause analysis.
+
+### Read-only native Shell_MainMenu tracing without F10
+
+Opt in, with the game closed:
+
+```ini
+[Debug]
+Log=1
+NativeMenuReturnProbe=1
+```
+
+**This option is absent from generated INIs and defaults to OFF.**
+It is not a user-visible fix. When F10 is OFF, the code verifies
+original signatures of `0x00493DD6` and `0x00494209`, uses the
+existing exact original CALL trampoline to execute native
+`0x00505720` once per native menu tick, and installs a separate
+passive wrapper around original native wait `0x004E5D60` called
+at `0x00494209`. The F10-disabled callback explicitly refuses
+any old F12/F10 pending menu request: it can **never** dispatch native
+Quit, send a key or rewrite the menu's state.
+
+Log markers:
+- `NATIVE-MENU-RETURN-PROBE tick=... gap_ms=... mode_request=...
+  transition=... menu_dispatch_raw=... menu_context=...
+  active_input=... DIK_RETURN_raw=... [POST-NATIVE-TICK; PASSIVE;
+  selected action UNKNOWN]`. A large gap may indicate a new
+  menu session, **not proof** of 3D exit.
+- `QUICK-EXIT-F12: DEBUG-MENU-EXIT-CLOCK-WAIT site=0x00494209 ...
+  [ORIGINAL WAIT CALLED; READ-ONLY; SELECTED ACTION UNKNOWN]`.
+  This is a native action-selection checkpoint, **not evidence
+  of which action was selected**.
+- Existing `GAMEPAD-UI: SYNTHETIC Return`, Xbox
+  `POST-QUIT...` and PS1 `TRANSITION-OWNERSHIP...` messages.
+
+The native menu observer produces at most 128 bounded snapshots on
+changes/early menu frames/periodic samples, plus 64 ordinary
+selection checkpoints in probe mode. It does not install any
+controller-vtable hook or poll DirectInput independently.
+If the native game signatures differ, the probe refuses installation.
+
+**Required acceptance tests:** after starting a level, exit via the
+game's pause menu and deliberately wait at least several seconds
+without pressing any confirmation; capture the **complete** log up
+to and including any unintended New Game transition. Repeat with
+controller entirely disconnected and keyboard-only Escape/Enter
+before concluding whether the shared defect is in original native
+input or our synthetic UI bridge. Only after that observation should
+we consider a fail-closed native input-consumption patch. The current
+changes remain experimental in draft PR #77, no merge or release
+without maintainer validation.
