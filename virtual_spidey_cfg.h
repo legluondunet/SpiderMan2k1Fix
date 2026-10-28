@@ -6,6 +6,8 @@
  */
 /* Return nonzero if the INI exists or was created. Never overwrite an existing one. */
 int SpiderCfg_EnsureDefaultIni(void (*logger)(const char *));
+/* Install user's modern layout-aware default preset in the original keyboard Restore Default source table. */
+int SpiderCfg_InstallModernKeyboardDefaults(void);
 void SpiderCfg_ValidateCurrentIni(void (*logger)(const char *));
 unsigned SpiderCfg_Install(const char *ini_path,void (*logger)(const char *));
 void SpiderCfg_ObserveNativeMonitor(unsigned width,unsigned height);
