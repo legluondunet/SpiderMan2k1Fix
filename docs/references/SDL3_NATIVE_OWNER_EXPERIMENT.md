@@ -81,7 +81,11 @@ SDL3 DLL in this 32-bit game.
   VID/PID as SDL3 and does not activate until the *original game-owned*
   native device reports that product. On a handoff it drops the old
   secondary DirectInput device and synthetic key; there is no two-pad
-  key or axis summing.
+  key or axis summing. Sony stays Cross-only for confirmation, and
+  Sony SHARE / Xbox Back may synthesize 3D Escape only under the
+  verified canonical native mapping and conflict checks. The existing
+  Sony/Xbox native Quit-to-menu inherited-confirmation guards also
+  accept these strictly verified SDL3 native profiles.
 * Focus loss stops foreground polling, **preserves current selection**
   but disarms all Start switches; after Alt+Tab a held Start is ignored
   until released and freshly pressed. The original pause and keyboard
