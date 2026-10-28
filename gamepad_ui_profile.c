@@ -51,6 +51,8 @@ typedef struct {
 static int configured=0,profile=SPIDER_PROFILE_AUTO,confirm=SPIDER_CONFIRM_BOTH;
 static int back=SPIDER_BACK_CIRCLE,pause_button=SPIDER_PAUSE_OPTIONS;
 static int ps1_preview_requested=0,ps1_preview_active=0,previous_share=0;
+static int ps1_options_skip_requested=0;
+static unsigned ps1_cutscene_reports=0;
 static int probing=0,detected=0,previous_buttons=0,previous_back=0,previous_pause=0;
 static unsigned active_scan=0;
 static LONG sent_enter=0,sent_escape=0;
@@ -193,6 +195,7 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   /* Experimental only: no automatic fixed-profile activation until native
    * menu lock and Start handling are validated in the real game. */
   ps1_preview_requested=GetPrivateProfileIntA("Input","ControllerPS1Preview",0,ini)==1;
+  ps1_options_skip_requested=GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1;
   GetPrivateProfileStringA("Input","ControllerProfile","Auto",choice,sizeof(choice),ini);
   if(!_stricmp(choice,"Off"))profile=SPIDER_PROFILE_OFF;
   else if(!_stricmp(choice,"Auto"))profile=SPIDER_PROFILE_AUTO;
@@ -218,12 +221,12 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
      GetPrivateProfileStringA("Input","ExperimentalGamepadStart","",choice,sizeof(choice),ini)!=0)
     report("GAMEPAD-UI: old ExperimentalGamepadStart is RETIRED/ignored; remove BUTTON8 setting");
   snprintf(line,sizeof(line),
-    "GAMEPAD-UI: config profile=%s confirm=%s back=%s pause=%s ps1preview=%d Return=DIK_0x1C Escape=DIK_0x01",
+    "GAMEPAD-UI: config profile=%s confirm=%s back=%s pause=%s ps1preview=%d options3dskip=%d Return=DIK_0x1C Escape=DIK_0x01",
     profile==SPIDER_PROFILE_OFF?"Off":profile==SPIDER_PROFILE_AUTO?"Auto":"DualShock4",
     confirm==SPIDER_CONFIRM_CROSS?"Cross":confirm==SPIDER_CONFIRM_OPTIONS?"Options":"Both",
     back==SPIDER_BACK_OFF?"Off":back==SPIDER_BACK_CIRCLE?"Circle":"Share",
     pause_button==SPIDER_PAUSE_OFF?"Off":"Options (conflict guarded)",
-    ps1_preview_requested);
+    ps1_preview_requested,ps1_options_skip_requested);
   report(line);
 }
 static void detect_device(HWND hwnd) {
@@ -284,6 +287,49 @@ static void detect_device(HWND hwnd) {
     "GAMEPAD-UI: PROFILE DualShock4 ACTIVE Sony VID=054C PID=%04lX name=%.110s; Cross=BUTTON1 Options=BUTTON9 -> Return in 2D/Bink; Circle=BUTTON2 -> Back in 2D; OPTIONS pause guarded in 3D",
     (unsigned long)d.product_id,d.name);
   report(line);
+}
+/* This is the ORIGINAL, game-owned CutSceneSkipAllow state machine.
+ * The same addresses and per-scene conditions were mapped in the existing
+ * F10 diagnostics (quick_exit_f12.c). Never guess 3D from rendering.
+ * Memory reads require a readable COMMITTED owner span, and the write
+ * uses ONLY the original game skip-request byte after its own permission.
+ * Manually opted in (ControllerPS1OptionsSkip=1), not the Auto default.
+ * The user's Cross is already mapped to native Jump, which the game
+ * uses for 3D cinematic skip; it does NOT need a synthetic key here. */
+static int ps1_request_native_options_cutscene_skip(void) {
+  const DWORD owner=*(const volatile DWORD *)(uintptr_t)0x006A9038u;
+  const volatile BYTE *obj;
+  volatile BYTE *native_request=(volatile BYTE *)(uintptr_t)0x0060CFC4u;
+  MEMORY_BASIC_INFORMATION mbi;
+  uintptr_t base,where;
+  BYTE scene_context,skip_allowed,script_active;
+  DWORD script_ip;
+  if(owner<0x00010000u ||
+     VirtualQuery((LPCVOID)(uintptr_t)owner,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT ||
+     (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)) ||
+     !((mbi.Protect&0xffu)==PAGE_READONLY ||
+       (mbi.Protect&0xffu)==PAGE_READWRITE ||
+       (mbi.Protect&0xffu)==PAGE_WRITECOPY ||
+       (mbi.Protect&0xffu)==PAGE_EXECUTE_READ ||
+       (mbi.Protect&0xffu)==PAGE_EXECUTE_READWRITE ||
+       (mbi.Protect&0xffu)==PAGE_EXECUTE_WRITECOPY))return 0;
+  base=(uintptr_t)mbi.BaseAddress;
+  where=(uintptr_t)owner;
+  if(where<base || where-base>mbi.RegionSize ||
+     mbi.RegionSize-(where-base)<0x1bcu)return 0;
+  obj=(const volatile BYTE *)where;
+  scene_context=obj[0x1acu];
+  skip_allowed=obj[0x1a4u];
+  script_active=obj[0x1b4u];
+  script_ip=*(const volatile DWORD *)(where+0x1b8u);
+  if(scene_context!=1u || skip_allowed!=1u || script_active!=1u ||
+     script_ip==0u || *native_request!=0u)return 0;
+  /* The exact game-native 0x4C66A6 writer uses this one-byte request;
+   * original 0x4BC3E0 consumes it and cleans up scene resources. */
+  *native_request=1u;
+  report("GAMEPAD-UI: PS1-3D-OPTIONS native CutSceneSkipAllow=1 request=1 (original 0x4BC3E0 cleanup; NOT forced)");
+  return 1;
 }
 /* Early game HWND acquisition precedes the verified native CRT reload.
  * On failure retry the old unchanged UI discovery on the first Flip. */
@@ -362,6 +408,13 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   pause_pressed=state.rgbButtons[9]&0x80u;
   share_pressed=state.rgbButtons[8]&0x80u;
   share_edge=share_pressed && !previous_share;
+  if(ps1_preview_active && ps1_options_skip_requested &&
+     gameplay_3d && !menu_2d && !movie_allowed && !native_pause_active &&
+     pause_pressed && !previous_pause) {
+    if(!ps1_request_native_options_cutscene_skip() &&
+       ps1_cutscene_reports++<8u)
+      report("GAMEPAD-UI: PS1-3D-OPTIONS refused: original CutSceneSkipAllow absent, inactive, unreadable or already requested");
+  }
   if(ps1_preview_active && (gameplay_allowed || native_pause_active) &&
      !movie_allowed && share_edge) {
     begin_scancode(0x01u,"Escape");
