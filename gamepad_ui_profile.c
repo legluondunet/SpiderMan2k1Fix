@@ -140,6 +140,32 @@ static int options_free_of_native_actions(void) {
   }
   return 1;
 }
+/* Xbox Back/Start (candidate DirectInput indices 6/7) must NEVER
+ * synthesize ESC while the same native input fires a gameplay action.
+ * Re-read the user's persisted [Joystick] assignments on every fresh
+ * press: the original 2001 in-game Joystick menu remains fully editable,
+ * and the virtual CFG layer already saves its changes to the INI. */
+static int xbox_pause_button_free_of_native_actions(unsigned requested_button) {
+  unsigned i;
+  char value[50],fallback[24],line[245];
+  if(!profile_ini[0])return 0;
+  for(i=0;i<7u;i++) {
+    unsigned button;
+    snprintf(fallback,sizeof(fallback),"BUTTON%u",native_factory_buttons[i]);
+    GetPrivateProfileStringA("Joystick",native_actions[i],fallback,
+                             value,sizeof(value),profile_ini);
+    if(!parse_native_button(value,&button) || button==requested_button) {
+      if(pause_conflict_reports++<12u) {
+        snprintf(line,sizeof(line),
+          "GAMEPAD-XBOX360: PAUSE BLOCKED physical BUTTON%u: native [Joystick] %s=%s conflicts or is invalid; use the game's editable Joystick menu to free BUTTON%u",
+          requested_button,native_actions[i],value,requested_button);
+        report(line);
+      }
+      return 0;
+    }
+  }
+  return 1;
+}
 static BOOL CALLBACK enumerate_gamepad(const DIDEVICEINSTANCEA *id,VOID *ctx) {
   SpiderDIDiscovery *d=(SpiderDIDiscovery*)ctx;
   unsigned vid=(unsigned)(id->guidProduct.Data1&0xffffu);
@@ -975,7 +1001,10 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
    * Log the first 32 changed physical masks to verify driver button order. */
   if(detected_kind==SPIDER_RECONNECT_XBOX360) {
     uint32_t held=spider_xbox360_held_buttons(state.rgbButtons);
+    uint32_t fresh=held & ~xbox_previous_mask;
     unsigned action=spider_xbox360_menu_edges(held,xbox_previous_mask);
+    unsigned pause_button_index=(fresh & (1u<<7))?7u:6u;
+    int pause_requested=(fresh & ((1u<<6)|(1u<<7)))!=0;
     int ui_allowed=(menu_2d && !gameplay_3d) || bink_active ||
                    (native_pause_active && !gameplay_3d);
     if(held!=xbox_previous_mask && xbox_button_trace_count<32u) {
@@ -987,7 +1016,15 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
       report(xbox_line);
     }
     xbox_previous_mask=held;
-    if(ui_allowed && action==SPIDER_XBOX360_BACK)
+    /* Gameplay: Back/Start synthesize Escape only when UNBOUND from all
+     * original native actions. The game will still see the controller,
+     * so never fire both Swing/Aim and Pause on one physical press.
+     * No synthetic key is injected for the other 3D buttons. */
+    if((gameplay_3d || native_pause_active) && !bink_active &&
+       pause_requested && xbox_pause_button_free_of_native_actions(pause_button_index)) {
+      begin_scancode(0x01u,"Escape");
+      report("GAMEPAD-XBOX360: 3D MENU Back/Start -> Escape (no saved native action conflict)");
+    } else if(ui_allowed && action==SPIDER_XBOX360_BACK)
       begin_scancode(0x01u,"Escape");
     else if(ui_allowed && action==SPIDER_XBOX360_ENTER)
       begin_scancode(0x1Cu,"Return");
