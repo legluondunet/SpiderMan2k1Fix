@@ -1003,6 +1003,43 @@ unsigned SpiderCfg_Xbox360SwingScan(void) {
   return scan;
 }
 
+/* The controller may change from Sony to Xbox AFTER the original CRT
+ * bootstrap. In that case the startup Xbox preview is (correctly) OFF,
+ * but an opt-in native 7-action swap can prove the CURRENT Xbox mapping.
+ * Read Swing from ORIGINAL live keyboard action table, never the cached
+ * virtual cfg overlay: users may have edited Keyboard since startup.
+ * Also reject duplicate/unsafe DIK values, same checks as the original
+ * startup helper. This function does NOT validate a controller; its
+ * caller MUST first prove canonical Xbox native action ownership. */
+unsigned SpiderCfg_Xbox360SwingScanLive(void) {
+  const uintptr_t table=0x00568398u;
+  static const uint32_t masks[11]={
+    1u,2u,4u,8u,16u,32u,64u,128u,256u,512u,1024u};
+  MEMORY_BASIC_INFORMATION mbi;
+  unsigned scans[11],i,scan;
+  uintptr_t base;
+  if(!ready || !SpiderCfg_PS1BootstrapLoaded() ||
+     (uintptr_t)GetModuleHandleA(NULL)!=0x00400000u)return 0;
+  if(VirtualQuery((const void *)table,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT ||
+     (mbi.Protect&(PAGE_NOACCESS|PAGE_GUARD)))return 0;
+  base=(uintptr_t)mbi.BaseAddress;
+  if(table<base || table-base>=mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(table-base)<0x70u)return 0;
+  for(i=0;i<11u;i++) {
+    uint32_t mask,value;
+    memcpy(&mask,(const void *)(table+i*8u),4u);
+    memcpy(&value,(const void *)(table+i*8u+4u),4u);
+    if(mask!=masks[i])return 0;
+    scans[i]=(unsigned)value;
+  }
+  scan=scans[10];
+  if(scan<2u || scan>0x7fu || scan==0x1cu || scan==0x0fu ||
+     scan==0x0eu || scan==0x38u || scan==0x39u || scan==0x1du)
+    return 0;
+  for(i=0;i<10u;i++)if(scans[i]==scan)return 0;
+  return scan;
+}
 void SpiderCfg_CancelXbox360Preview(void) {
   if(!ready)return;
   EnterCriticalSection(&guard);
