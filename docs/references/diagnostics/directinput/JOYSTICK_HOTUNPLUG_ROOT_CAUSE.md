@@ -376,3 +376,83 @@ Submitted runtime evidence: `SpiderMan2k1Fix(20261028-135045).log`.
   and inspect native axis event values without guessing further.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+
+## Regression: controls and analog recover, late main-menu termination (28 October 2026)
+
+The maintainer installed `SpiderMan2k1Fix v1.1.0-40c494f` and
+reports **the DS4 reconnected successfully, the analog stick worked
+again, and both digital buttons and D-pad worked, but the game later
+crashed while testing menu controls**. The accompanying
+`SpiderMan2k1Fix(20261028-140017).log` confirms the original retail
+EXE SHA-256 and `ControllerProfile=Auto`.
+
+Observed sequence (exact log line numbers):
+- 409-410: native DI8 retry and stage-1 unplug guard installed.
+- 433-440: secondary DS4 `DIERR_INPUTLOST` and complete release;
+  original game-owned stale joystick detached and released.
+- 442: a single `DIERR_UNPLUGGED` native fatal path suppressed.
+- 455-457: Sony DS4 054C:09CC rediscovered and native
+  `REBOUND ... rebound=1 scan=7 buttons=14 polled=0`.
+- 458-464: game continues from Flip #840 through Flip #960,
+  with regular menu rendering after rebind.
+- **465, the last recorded fix message:**
+  `GAMEPAD-UI: SYNTHETIC Return (DIK 0x1C) down #7`.
+  This event is a synthetic ENTER produced by the independent
+  `ControllerProfile=Auto` UI bridge. Earlier six Return events
+  and Escape were handled before the unplug. **Temporal proximity
+  does not establish causation.** The uploaded fix log does not
+  include a fatal SEH exception, native fault address, Windows exit
+  API call, or shell exit status; the exact crash mechanism remains
+  unknown.
+
+**State: stage-1 unload PASS; stage-2 rebind and analog PASS for one
+physical replug; subsequent menu stability FAIL. Full hotplug remains
+unvalidated and PR #76 must remain DRAFT/UNMERGED.**
+
+Original retail EXE disassembly also shows the native DirectInput
+cleanup routine at `0x00501440` owns additional COM objects
+including a force-feedback effect at `[0x006B7A68]`. It is
+**possible**, but *not established*, that the game's former
+force-feedback interface or a menu-specific input handler retains
+state across joystick rebind. Do not blindly Release or NULL out
+such native COM objects until a crash location identifies the
+actual failing path.
+
+### Non-invasive new diagnostic breadcrumbs
+
+`native_joystick_reconnect.c` now includes a bounded, passive
+`SpiderNativeReconnect_LogSyntheticMenuKey`. After an actual native
+rebind, `gamepad_ui_profile.c` logs before and after each synthetic
+Enter/Escape keydown/keyup (`NATIVE-RECONNECT: POST-REBIND INPUT`),
+with the **game-owned joystick pointer**, original FFB effect pointer
+(only the value, not dereferenced), rebind number, native unplug
+counter and action phase. Up to 40 entries per run, on the same
+input thread, gated by the existing experimental rebind option.
+**No new hook, COM call, memory modification, or input behavior
+change** is introduced in this diagnostic. The log can tell if the
+synthetic event completed delivery before a native menu handler
+failed, but cannot by itself identify the faulting instruction.
+
+For an actual fatal exception/exit signature on the next reproduction,
+use the existing **external** Wine relay tool
+`ChatGPT/diagnostics/run_hotplug_exit_relay_wine.sh` to capture
+`+seh,+process` and the allowlisted `ExitProcess` family. Preserve
+the matching fix log. If Windows process fault information remains
+absent, collect relevant Wine coredump/call-stack data before applying
+a speculative code hook. A control run with
+`ControllerProfile=Off` (keeping the native guard and rebind ON)
+can separately test whether the synthetic-menu UI bridge is necessary
+for the crash. Do not assume Off disables the original game joystick.
+
+Keep the known-good unpluggable but non-reconnecting configuration
+available for regression isolation:
+
+```ini
+[Input]
+ExperimentalNativeJoystickUnplugGuard=1
+ExperimentalNativeJoystickReconnect=0
+```
+
+No current evidence warrants disabling the native joystick axis fix
+or replacing the game's DirectInput8 factory.
