@@ -23,7 +23,9 @@ def test_opt_in_preserves_existing_verified_guard_and_inputs():
     assert "ps1_history_record(SPIDER_PS1_HISTORY_READ_FAILED" in PAD
     assert "ps1_history_record(SPIDER_PS1_HISTORY_DEVICE_MISSING" in PAD
     assert "ps1_history_dump();" in PAD
-    assert PAD.index("ps1_history_dump();") > PAD.index(
+    assert PAD.count("ps1_history_dump();") == 2
+    assert PAD.index("ps1_history_dump();", PAD.index(
+        'POST-QUIT-GUARD suppressed synthetic Return')) > PAD.index(
         'POST-QUIT-GUARD suppressed synthetic Return')
     assert "begin_scancode(0x1Cu,\"Return\");" in PAD
     assert "SPIDER_PS1_HISTORY_CAPACITY 96u" in HEADER
