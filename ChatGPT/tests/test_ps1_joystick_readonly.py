@@ -12,19 +12,21 @@ import textwrap
 
 ROOT=Path(__file__).resolve().parents[2]
 HEADER=(ROOT/"ps1_joystick_readonly_menu.h").read_text()
-SOURCE=(ROOT/"gamepad_ui_profile.c").read_text()
+SOURCE=(ROOT/"ps1_joystick_readonly_menu.c").read_text()
+BRIDGE=(ROOT/"gamepad_ui_profile.c").read_text()
 INI=(ROOT/"ini_validation.h").read_text()
 CONFIG=(ROOT/"virtual_spidey_cfg.c").read_text()
 
 
 def test_ps1_readonly_menu_is_an_explicit_opt_in_only():
     assert '"ControllerPS1ReadOnlyJoystick"' in INI
-    assert 'GetPrivateProfileIntA("Input","ControllerPS1ReadOnlyJoystick",0,ini)==1' in SOURCE
-    assert 'ps1_preview_active || !detected || !ps1_readonly_menu_requested' in SOURCE
-    assert "ps1_readonly_menu_active=1;" in SOURCE
+    assert 'GetPrivateProfileIntA("Input","ControllerPS1ReadOnlyJoystick",0,ini)==1' in BRIDGE
+    assert 'if(!detected || !ps1_preview_requested)return;' in BRIDGE
+    assert "SpiderPS1_InstallReadOnlyJoystick(log_message)" in BRIDGE
     assert 'JOYSTICK-READONLY REFUSED' in SOURCE
     assert 'JOYSTICK-READONLY EXPERIMENT ACTIVE' in SOURCE
     assert 'ControllerPS1ReadOnlyJoystick=1' not in CONFIG
+    assert 'VirtualProtect(' not in BRIDGE
 
 
 def test_only_original_verified_joystick_paths_are_changed():
@@ -44,7 +46,7 @@ def test_only_original_verified_joystick_paths_are_changed():
     assert "if(installed!=SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT)" in SOURCE
     assert "while(installed>0u)" in SOURCE
     assert "nt->OptionalHeader.ImageBase!=0x00400000u" in SOURCE
-    assert "ps1_native_joystick_readonly_install()" in SOURCE
+    assert "int SpiderPS1_InstallReadOnlyJoystick(void (*logger)(const char *))" in SOURCE
     # Keyboard Configuration's original setter and update function
     # must NOT be replaced by a global keyboard/controller hook.
     assert "0x0050A4A0u" not in HEADER
