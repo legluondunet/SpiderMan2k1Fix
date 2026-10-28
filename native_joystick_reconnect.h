@@ -6,8 +6,11 @@
  * Depends on the independently validated stage-1 DIERR_UNPLUGGED guard.
  * Does not create another game-wide DirectInput factory or hook COM vtables. */
 #include <windows.h>
+#include <stdint.h>
 void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *));
 void SpiderNativeReconnect_OnFlip(long flip_index, HWND game_hwnd);
+/* True only if game-owned DirectInput device matches selected SDL3 pad. */
+int SpiderNativeReconnect_SDL3SelectionReady(uint16_t vid,uint16_t pid);
 /* Read-only, opt-in verified original Xbox action table after native hot swap. */
 int SpiderNativeReconnect_CanonicalXboxMapping(void);
 /* Passive post-rebind input breadcrumbs; never alters gameplay state. */
