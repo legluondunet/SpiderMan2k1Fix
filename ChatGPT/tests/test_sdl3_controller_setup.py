@@ -97,7 +97,7 @@ def test_wizard_entry_and_native_gameplay_remain_strictly_separated():
     assert 'SpiderSDL3Probe_SetupRead(' in ui
     assert 'SpiderSDL3Probe_SetupProfile(' in ui
     assert 'spider_sdl3_capture_feed(' in ui
-    assert 'spider_sdl3_profile_assign(' in ui
+    assert 'spider_sdl3_profile_assign_visible(' in ui
     assert 'spider_sdl3_profile_default(' in ui
     assert 'EnableWindow(owner,FALSE)' in ui
     assert 'EnableWindow(owner,TRUE)' in ui
