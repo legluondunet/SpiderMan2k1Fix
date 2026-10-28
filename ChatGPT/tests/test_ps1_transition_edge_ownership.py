@@ -21,7 +21,8 @@ def test_opt_in_owner_preserves_legacy_eight_flip_guard():
     assert "ControllerPS1PostQuitGuard" in PAD
     assert "ps1_post_quit_guard_flip(" in PAD
     assert PAD.index("(confirm_edges & ownership_block)) {") < PAD.index("post_quit_block) {")
-    assert "confirm_edges=(pressed & (unsigned)confirm) & ~(unsigned)previous_buttons;" in PAD
+    assert "confirm_edges=(pressed & effective_confirm) & ~(unsigned)previous_buttons;" in PAD
+    assert "effective_confirm=ps1_preview_active?SPIDER_CONFIRM_CROSS:(unsigned)confirm;" in PAD
     assert "(confirm_edges & ~ownership_block)" in PAD
     assert "!(previous_buttons & (unsigned)confirm)" not in PAD
     assert "previous_buttons=(int)pressed;" in PAD
