@@ -107,7 +107,8 @@ def test_hotplug_uses_live_authenticated_keyboard_scan_and_canonical_native_xbox
     assert "int SpiderNativeReconnect_CanonicalXboxMapping(void);" in head
     assert "if(!requested || !initialized || !swap_mapping_enabled" in native
     assert "spider_native_swap_read((const uint8_t *)table," in native
-    assert "spider_native_swap_preset(buttons)==SPIDER_RECONNECT_XBOX360;" in native
+    assert "spider_native_swap_preset(buttons)==kind;" in native
+    assert "spider_native_reconnect_canonical_mapping(SPIDER_RECONNECT_XBOX360)" in native
     assert "game_device_slot(),NULL,NULL" in native
     assert "unsigned SpiderCfg_Xbox360SwingScanLive(void)" in CFG
     assert "unsigned SpiderCfg_Xbox360SwingScanLive(void);" in API
