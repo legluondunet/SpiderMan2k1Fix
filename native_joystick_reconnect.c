@@ -534,7 +534,7 @@ static void sdl3_owner_reconcile(HWND hwnd) {
     PVOID live=InterlockedCompareExchangePointer(
       (PVOID volatile *)game_device_slot(),NULL,NULL);
     unsigned count=SpiderSDL3Probe_MappedCount();
-    if(live && id==sdl3_owner_last_verified_id &&
+    if(id==sdl3_owner_last_verified_id &&
        count==sdl3_owner_last_verified_count &&
        live==sdl3_owner_last_verified_ptr &&
        (uint32_t)(now-sdl3_owner_last_verify)<250u)return;
