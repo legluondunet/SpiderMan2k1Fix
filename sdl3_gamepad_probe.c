@@ -279,6 +279,28 @@ static void rescan(void) {
   last_mapped_count=mapped;last_joystick_count=total;
   sdl_free(ids);sdl_free(joysticks);
 }
+/* SDL3 exposes each trigger as a separate 0..32767 axis. The
+ * legacy XUSB DirectInput driver may instead combine LT and RT on lZ,
+ * which varies with a device rebind and driver. Read the ALREADY-open,
+ * SELECTED SDL3 handle only, on the original game/Flip thread.
+ * This never updates SDL, polls the game device or consumes events. */
+int SpiderSDL3Probe_SelectedRT(int *normalized_rt) {
+  unsigned i;
+  uint32_t selected;
+  int axis;
+  if(normalized_rt)*normalized_rt=0;
+  if(!normalized_rt || !SpiderSDL3Probe_NativeOwnerEnabled() ||
+     !selection.active || !sdl_axis)return 0;
+  selected=selection.active;
+  for(i=0;i<num_pads;i++) {
+    if(pads[i].id!=selected || !pads[i].handle)continue;
+    axis=(int)sdl_axis(pads[i].handle,SPIDER_SDL_AXIS_RIGHT_TRIGGER);
+    if(axis<0 || axis>32767)return 0;
+    *normalized_rt=axis;
+    return 1;
+  }
+  return 0;
+}
 void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
   DWORD now;
   unsigned i;
