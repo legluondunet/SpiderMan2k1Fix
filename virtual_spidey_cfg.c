@@ -394,6 +394,8 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "; ControllerProfile: Auto detects a single Sony DualShock4 or Xbox360 pad.\r\n"
     "; Xbox360 (045E:028E etc.) A/B menu bridge is experimental.\r\n"
     "; The Sony PS1 preview never applies to Xbox controllers.\r\n"
+    "; With verified Xbox360 profile, in-game Joystick bindings are read-only.\r\n"
+    "; Keyboard menu remains editable; native Joystick button mapping is unchanged.\r\n"
     "; Other gamepads keep native controls; Off disables this UI bridge.\r\n"
     "ControllerProfile=Auto\r\n"
     "; EXPERIMENTAL: 1 prevents a native game exit when a joystick is unplugged.\r\n"
