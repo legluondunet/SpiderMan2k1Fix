@@ -6,4 +6,7 @@
  * device on reconnection. Installs on the render thread at Flip #120. */
 void SpiderNativeUnplug_Init(const char *ini, void (*logger)(const char *));
 void SpiderNativeUnplug_OnFlip(long flip_index);
+/* Monotonic number of native Acquire(DIERR_UNPLUGGED) events for same-thread recovery. */
+long SpiderNativeUnplug_Events(void);
+int SpiderNativeUnplug_Installed(void);
 #endif
