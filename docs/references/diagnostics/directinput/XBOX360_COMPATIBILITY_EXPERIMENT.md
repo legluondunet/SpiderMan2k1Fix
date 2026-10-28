@@ -386,3 +386,72 @@ after the genuine trigger is measured and tested.
 This stage implements **diagnosis, NOT working physical RT Swing**.
 The branch is experimental, draft/unmerged, and Sony PS1 behavior is
 unchanged.
+
+
+## Physical Xbox 360 Holtek RT/LT report 2026-10-28 16:17:51
+
+Uploaded real Wine log `SpiderMan2k1Fix(20261028-161751).log`
+(binary `v1.1.0-794558a`). Startup proves exact supported EXE,
+one Xbox `045E:028E`, strict `JOYSTICK-READONLY ACTIVE`,
+`PREVIEW EARLY PREFLIGHT OK`, seven saved-to-RAM bindings,
+authentic game CRT `[READ CONFIRMED]`, and `PREVIEW ACTIVE`.
+Multiple `GAMEPAD-XBOX360: 3D MENU Back/Start -> Escape` entries
+and native pause-ribbon draws follow, indicating Pause works through
+the synthetic Escape bridge. This log alone does not prove that all
+six mapped digital action labels match the physical pad.
+
+The 14 passive trigger samples unequivocally show a shared `lZ`
+axis with rest=32768; low=128, high=65408, and intermediate values.
+`lRz=0` and both slider entries remain 0. Ordered groups:
+`32768 -> 128 -> 17024 -> 32768 -> 43520 -> 65408 ->
+51072 -> 32768`, then again two low/high full strokes.
+The maintainer had been instructed to press RT first and LT second.
+Therefore **low lZ=RT, high lZ=LT is the present working hypothesis,
+not independently labeled device evidence**. Ensure a physical
+user confirmation before promoting it to default.
+
+The branch now includes a **separately opt-in** experiment:
+`[Input] ControllerXbox360RTSwing=1` (default 0). It requires an
+already activated unique Xbox native-game RAM preview and executable
+original CRT load. Negative lZ below 22000 causes *one* scancode
+KEYDOWN for the actual native Swing [Keyboard] DIK value (at config
+offset `0x3c`), held until axis >=28000, focus loss, input loss,
+2D/Bink/pause, or controller removal; all these cause one KEYUP.
+The user's Swing scan is fetched from the virtual original game config
+and rejected if invalid, ambiguous with any other key action or
+dangerous/extended. No keyboard assignments or on-disk INI/raw saves
+are changed by this experiment. The analog axes are still read
+nonexclusively with `c_dfDIJoystick2`. This does **not** hook the
+game's native DirectInput COM interfaces nor claim to work yet:
+the game's 3D DirectInput keyboard response to held `SendInput`
+requires user verification under Wine.
+
+`BUTTON9` remains a separately working/unknown digital Swing fallback
+for this first hardware proof, so the player is not left without
+Swing if the trigger keyboard injection is refused. Remove this
+fallback only after RT is confirmed on the physical pad.
+
+Recommended isolated next test:
+
+```ini
+[Input]
+ControllerProfile=Auto
+ControllerXbox360Preview=1
+ControllerXbox360RTSwing=1
+
+[Debug]
+Log=1
+Xbox360TriggerProbe=1
+```
+
+Enter 3D and press RT alone, release, then LT alone, release.
+Check `GAMEPAD-XBOX360: RT-SWING DOWN lZ=...` and
+`RT-SWING UP`, and observe actual held Swing in-game;
+LT must not trigger Swing. Next, while holding RT, press Start
+and verify the keyup occurs before Pause. Confirm Keyboard remains
+editable, Joystick remains locked, personal INI/RawHex unchanged.
+Turn RTSwing option and trigger probe OFF after the experiment.
+Keep a last user-validated DLL backup.
+
+*This bridge is not yet user-validated and this PR remains DRAFT /
+unmerged; no release without explicit approval.*
