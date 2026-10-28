@@ -51,9 +51,9 @@ def test_profile_ini_codec_roundtrip_and_fail_closed(tmp_path):
         memcpy(tampered,buffer,len);
         tampered[len]=0;
         /* Version changes are incompatible, not silently accepted. */
-        start=strstr(tampered,"Version=1");
+        start=strstr(tampered,"Version=2");
         assert(start);
-        tampered[start-tampered+8]='2';
+        tampered[start-tampered+8]='3';
         assert(!spider_sdl3_ini_decode(tampered,len,0x054c,0x09cc,&decoded));
         assert(!memcmp(&decoded,&unchanged,sizeof(decoded)));
         memcpy(tampered,buffer,len);tampered[len]=0;
@@ -129,6 +129,7 @@ def test_win32_controller_storage_is_atomic_isolated_and_fallback_safe():
     assert "CREATE_NEW" in store
     assert "FILE_ATTRIBUTE_REPARSE_POINT" in store
     assert "CopyFileA(path,backup,TRUE)" in store
+    assert '"%s.v1.bak"' in store
     assert "SpiderSDL3ProfileStore_Load(" in store
     assert "SpiderSDL3ProfileStore_Save(" in store
     for forbidden in ("SendInput(", "VirtualProtect(", "IDirectInput",
