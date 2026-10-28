@@ -54,6 +54,7 @@ static unsigned scans=0,rebound=0,failed=0;
 static int swap_probe_enabled=0,swap_initial_seen=0,swap_mapping_enabled=0;
 static unsigned swap_last_kind=0,swap_probe_reports=0;
 static unsigned sdl3_owner_attempts=0;
+static uint32_t sdl3_last_claimed_id=0;
 static DWORD sdl3_owner_log_tick=0;
 static void (*write_log)(const char *)=NULL;
 
@@ -516,6 +517,7 @@ static void sdl3_owner_reconcile(HWND hwnd) {
        InterlockedCompareExchangePointer((PVOID volatile *)game_device_slot(),
                                          NULL,NULL))
       detach_stale_native();
+    sdl3_last_claimed_id=0;
     return;
   }
   memset(&target,0,sizeof(target));
@@ -543,6 +545,19 @@ static void sdl3_owner_reconcile(HWND hwnd) {
     memset(&info,0,sizeof(info));info.dwSize=sizeof(info);
     hr=IDirectInputDevice8_GetDeviceInfo(old,&info);
     if(SUCCEEDED(hr) && IsEqualGUID(&info.guidInstance,&target.instance)) {
+      /* The original game may have selected the right device at startup
+       * before SDL3 existed. Still reconcile its exact factory 7-action
+       * table once: a two-pad startup skipped both early preview profiles. */
+      if(sdl3_last_claimed_id!=id) {
+        observe_native_swap_table("sdl3-initial",swap_last_kind,target.kind);
+        swap_native_gameplay_mapping(target.kind);
+        swap_last_kind=target.kind;
+        sdl3_last_claimed_id=id;
+        snprintf(line,sizeof(line),
+          "SDL3-OWNER: ALREADY-NATIVE selected-id=%lu VID:PID=%04X:%04X native=%p; checked 3D action mapping",
+          (unsigned long)id,vid,pid,(void *)old);
+        report(line);
+      }
       device_missing=0;
       return; /* Already correct: no extra Acquire/COM teardown. */
     }
@@ -586,6 +601,7 @@ static void sdl3_owner_reconcile(HWND hwnd) {
   observe_native_swap_table("sdl3-claim",swap_last_kind,target.kind);
   swap_native_gameplay_mapping(target.kind);
   swap_last_kind=target.kind;
+  sdl3_last_claimed_id=id;
   snprintf(line,sizeof(line),
     "SDL3-OWNER: REBOUND selected-id=%lu VID:PID=%04X:%04X native=%p buttons=%lu (one game-owned DirectInput device; selection bridged)",
     (unsigned long)id,vid,pid,(void *)candidate,(unsigned long)caps.dwButtons);
