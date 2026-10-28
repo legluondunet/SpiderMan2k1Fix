@@ -62,6 +62,12 @@ def test_native_both_footer_rows_disabled_and_rebinding_gated():
     assert "((SpiderCMenuAddEntry)(uintptr_t)0x0043FFF0u)(native_menu,label);" in SOURCE
     assert "replacements[i][0]=0xE8u;" in SOURCE
     assert "0x0050D852u-(p->virtual_address+5u)" in SOURCE
+    # Native 0x50D4D7 explicitly jumps to joystick branch 0x50D683,
+    # so 0x50D51C is KEYBOARD-only. Never skip that assignment path.
+    assert "memcpy(replacements[2],live_sites[2].original,live_sites[2].size);" in SOURCE
+    assert "for(i=2;i<=3u;i++)" not in SOURCE
+    assert "replacements[3][0]=0xE9u;" in SOURCE
+    assert "replacements[2][0]=0xE9u;" not in SOURCE
     assert "memcpy(replacements[4],nop5,5u)" in SOURCE
     assert "spider_joystick_restore_denied" in SOURCE
     assert "native capture entry blocked for Joystick only" in SOURCE
