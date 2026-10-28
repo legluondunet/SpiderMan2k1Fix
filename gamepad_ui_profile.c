@@ -481,7 +481,8 @@ static void ps1_probe_native_start_tables(void) {
      * were found, or the mapping doesn't match the entire original
      * factory structure. No COM/vtable hooks or PE code patching. */
     if(!deep || truncated || sections!=1u || matches!=1u ||
-       strict_matches!=1u || !strict_candidate) {
+       strict_matches!=1u || !strict_candidate ||
+       strict_candidate!=base+0x00168408u) {
       snprintf(line,sizeof(line),
         "GAMEPAD-PS1: NATIVE-START-UNBIND REFUSED deep=%d sections=%u matches=%u strict=%u truncated=%u (original BUTTON11 retained)",
         deep,sections,matches,strict_matches,truncated);
