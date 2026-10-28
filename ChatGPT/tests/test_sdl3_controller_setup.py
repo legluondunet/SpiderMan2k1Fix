@@ -231,3 +231,33 @@ def test_mouse_free_keyboard_and_selected_gamepad_setup_navigation():
     for forbidden in ("SendInput(", "WritePrivateProfileString",
                       "VirtualProtect(", "CreateThread("):
         assert forbidden not in ui
+
+
+def test_modal_close_cannot_destroy_dialog_inside_sdl3_timer_callback():
+    """Guard candidate fix after Wine crash immediately following reset."""
+    ui=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    timer=ui.split("static void sample_device(",1)[1].split(
+        "static int handle_setup_keyboard(",1)[0]
+    assert "ui->close_pending=1;" in timer
+    assert "ui->close_requested_ms=GetTickCount();" in timer
+    assert "spider_sdl3_profile_neutral(&s)" in timer
+    assert "GetTickCount()-ui->close_requested_ms" in timer
+    assert "PostMessageA(ui->hwnd,WM_CLOSE,0,0);" in timer
+    assert "SendMessageA(ui->hwnd,WM_CLOSE,0,0)" not in timer
+    assert "DestroyWindow(" not in timer
+    assert "selected pad disconnected while CLOSE pending" in timer
+    assert "SDL3-SETUP: Reset BEGIN" in ui
+    assert "SDL3-SETUP: WM_CLOSE entered" in ui
+    assert "SDL3-SETUP: WM_DESTROY done" in ui
+    assert "SDL3-SETUP: modal message loop EXIT" in ui
+    assert "SetWindowLongPtrA(hwnd,GWLP_USERDATA,0);" in ui
+    assert "KillTimer(hwnd,SPIDER_UI_TIMER);" in ui
+    keyboard=ui.split("static int handle_setup_keyboard(",1)[1].split(
+        "static LRESULT CALLBACK setup_wndproc",1)[0]
+    assert "PostMessageA(ui->hwnd,WM_CLOSE,0,0);" in keyboard
+    assert "SendMessageA(ui->hwnd,WM_CLOSE,0,0)" not in keyboard
+    handler=ui.split("static LRESULT CALLBACK setup_wndproc",1)[1].split(
+        "void SpiderSDL3ControllerSetup_Open",1)[0]
+    assert "PostMessageA(hwnd,WM_CLOSE,0,0);" in handler
+    assert "DestroyWindow(hwnd);" in handler.split("case WM_CLOSE:",1)[1]
+    assert "DestroyWindow(hwnd);" not in handler.split("case WM_COMMAND:",1)[1].split("case WM_TIMER:",1)[0]
