@@ -42,9 +42,9 @@ FPSLimit=30
 KeyboardLayout=Auto
 
 [Audio]
-MusicSFXLevel=69
-VoiceLevel=79
-MovieLevel=69
+MusicSFXLevel=40
+VoiceLevel=60
+MovieLevel=40
 Stereo=1
 
 [Keyboard]
