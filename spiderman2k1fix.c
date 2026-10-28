@@ -2614,7 +2614,9 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       InterlockedCompareExchange(&fov_game_height,0,0)>0,
     (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
     ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
-      native_pause43_visible_near_flip(count)));
+      native_pause43_visible_near_flip(count) ||
+      InterlockedCompareExchange(&pause_latched,0,0)==1 ||
+      InterlockedCompareExchange(&pause_in_progress,0,0)==1));
   /* Passive, bounded post-hotplug heartbeat: menu -> 3D -> menu. */
   SpiderNativeReconnect_ObserveMode(count,
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
