@@ -173,7 +173,7 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
   uint32_t id=0;
   uint16_t vid=0,pid=0;
   int rc;
-  char name[110],bind[85];
+  char name[110],line[220],bind[85];
   SpiderSDL3ControllerProfile *p;
   if(!ui || !IsWindow(ui->hwnd))return;
   if(GetForegroundWindow()!=ui->hwnd) {
