@@ -122,6 +122,53 @@ SDL3 DLL in this 32-bit game.
 `ExperimentalSDL3NativeOwner=0` (or remove it) to return to the
 known-good DirectInput behaviour, and provide the complete new log.
 
+
+## Optional passive 3D acceptance trace
+
+The dual-pad owner swap has now been observed on **actual hardware** in
+`SpiderMan2k1Fix(20261028-214736).log` (DS4 → Xbox → DS4, menu/Bink).
+The sample never enters 3D, so that log does **not** validate 3D analog
+movement, attacks or mid-game Start handoff. The old run also repaired
+three INI validation errors, saving the preceding configuration to
+`SpiderMan2k1Fix.ini.old`. Identify those separately before assuming
+what was invalid.
+
+For the next physical **3D** run, you may turn on:
+
+```ini
+[Debug]
+Log=1
+SDL3GameplayTrace=1
+```
+
+Keep all owner opt-ins as listed above. This new diagnostic defaults OFF
+and is only accepted when the SDL3 owner experiment is requested.
+It samples the **already-read independent secondary** DirectInput joystick
+state from the normal UI bridge, only in the 3D game context while the
+selected physical ID matches the original game's verified native owner.
+It does **not** call native `GetDeviceState`/`GetDeviceData`,
+poll again, inject keys, change bindings or determine whether the game
+actually acted on a physical press. Each entry reports selected SDL3 ID,
+known device profile, all first 16 raw button states, raw `lX/lY/lZ`
+and POV. Button edges are logged immediately, axes on significant
+changes no more frequently than 2 seconds, and logging stops after
+64 lines per process.
+
+**Proposed test order:** Keep both pads plugged in. In the main menu,
+select Xbox via fresh Start, open actual 3D gameplay, move the left
+stick, use A/B/X/Y/LB/RB and pause/back, then press/release DS4 Start
+without unplugging and repeat with stick, Cross/Circle/Square/Triangle,
+L1/R1 and SHARE. Switch back to Xbox once more, use each pad for at
+least one 3D action and test 3D → main menu → 3D. If the native game
+does not respond, the trace helps tell apart **physical secondary
+input** from **native DirectInput ownership**; it cannot by itself
+prove a native action was consumed. Do not confuse raw `lZ` with RT
+until the separate driver-specific trigger test is validated.
+
+**Do not merge or release on the basis of a successful log alone.**
+The maintainer must verify visible game response and stability, and
+test both Windows and Wine before considering acceptance.
+
 ## Known limitations
 
 This is an experimental **native DirectInput ownership** bridge, NOT a
