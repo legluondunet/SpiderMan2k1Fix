@@ -116,7 +116,7 @@ def test_stays_on_original_input_and_uses_one_secondary_device():
     assert "return;" in xbox_branch  # no fallthrough to DS4 key mapping
 
 
-def test_native_joystick_menu_remains_user_editable_and_xbox_pause_fail_closed():
+def test_native_joystick_menu_is_readonly_and_xbox_pause_fail_closed():
     native_cfg=(ROOT/"virtual_spidey_cfg.c").read_text()
     ui=UI
     source_block=ui.split("static int xbox_pause_button_free_of_native_actions(",1)[1].split("static BOOL CALLBACK enumerate_gamepad(",1)[0]
@@ -134,3 +134,51 @@ def test_native_joystick_menu_remains_user_editable_and_xbox_pause_fail_closed()
     assert "Xbox360Preview" not in ui
     assert "load_joystick();" in native_cfg
     assert "if(!save_joystick()) goto fail;" in native_cfg
+
+
+def test_native_button_parser_accepts_game_unbound_none_without_accepting_unknown_indices(tmp_path):
+    """Compile and execute the actual parser from gamepad_ui_profile.c.
+
+    The native original game uses 0x4000 for NONE; a prior Xbox pause
+    run incorrectly classified WEB=0x00004000 as invalid. The guard must
+    keep rejecting unrecognized numbers and still block a physical
+    Back/Start button if another saved gameplay action uses it.
+    """
+    cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc: return
+    marker="static int parse_native_button(const char *value,unsigned *button) {"
+    assert UI.count(marker)==1
+    parser=marker+UI.split(marker,1)[1].split("/* Before mapping OPTIONS",1)[0]
+    src=tmp_path/"native_button_parser.c"
+    exe=tmp_path/"native_button_parser"
+    src.write_text(textwrap.dedent(r"""
+      #include <assert.h>
+      #include <stdio.h>
+      #include <stdlib.h>
+      #include <strings.h>
+      #define _strnicmp strncasecmp
+    """)+parser+textwrap.dedent(r"""
+      int main(void) {
+        unsigned n=999;
+        assert(parse_native_button("0x00004000",&n) && n==0x4000u);
+        assert(parse_native_button("16384",&n) && n==0x4000u);
+        assert(parse_native_button("BUTTON7",&n) && n==7u);
+        assert(parse_native_button("BUTTON6",&n) && n==6u);
+        assert(parse_native_button("BUTTON9",&n) && n==9u);
+        assert(!parse_native_button("BUTTON128",&n));
+        assert(!parse_native_button("0x4001",&n));
+        assert(!parse_native_button("NONE",&n));
+        assert(!parse_native_button("",&n));
+        return 0;
+      }
+    """),encoding="utf-8")
+    subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",str(src),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
+
+
+def test_xbox_readonly_screen_does_not_advertise_editing_as_pause_workaround():
+    xbox_guard=UI.split("static int xbox_pause_button_free_of_native_actions(",1)[1].split(
+        "static BOOL CALLBACK enumerate_gamepad(",1)[0]
+    assert "Joystick is read-only" in xbox_guard
+    assert "use the game's editable Joystick menu" not in xbox_guard
+    assert "requested_button,native_actions[i],value);" in xbox_guard
