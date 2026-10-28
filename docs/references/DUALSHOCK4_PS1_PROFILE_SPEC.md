@@ -791,3 +791,59 @@ Two independent native 3D `Quit → Yes` transitions were observed:
 This confirms the **behavioral fix in this tested setup**, not the as-yet-unresolved underlying cause of the spurious physical Cross edge. The feature remains **OFF by default** and PS1-preview-only pending broader regression coverage; **PR #74 remains draft and unmerged** until explicit authorization.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+## Root-cause investigation: bounded raw DI8 flight recorder (2026-10-28)
+
+**Behavioral status:** `ControllerPS1PostQuitGuard=1` is independently
+validated by the maintainer for two real native returns (`Flip 296` and
+`Flip 1046`); preserve it unchanged while investigating why the independent
+DS4 reader reports a new Cross rising edge on the first 2D frame.
+
+**Source code inspection:** `previous_buttons` is the previous successful
+raw `DIJOYSTATE2` Cross/Options mask. The code resets it to zero on lost
+foreground or a failed `GetDeviceState`. Normal menu transitions do **not**
+explicitly reset it. The earlier logs show no diagnostic failures, but did
+not record every raw button state, nor each foreground read. Therefore they
+cannot distinguish a physical release/repress, lost-input reset, or transient
+DirectInput release/repress across the original game's native device teardown.
+Do not claim any one as the proven root cause yet.
+
+New **OFF-by-default** read-only diagnostic:
+```ini
+[Input]
+ControllerPS1Preview=1
+ControllerPS1QuitTrace=0
+ControllerPS1PostQuitGuard=1
+ControllerPS1InputFlightRecorder=1
+
+[Debug]
+Log=1
+```
+
+When enabled, a pure C99 96-element ring holds the raw Sony Cross, Options,
+Circle and SHARE button bits from the independently acquired DirectInput8
+device; the pre-read synthetic-confirmation mask; 2D/3D/movie/native-pause
+classification; original engine `request`; milliseconds; and separate
+events for a missed device, lost foreground or failed `GetDeviceState`.
+Normal sampling performs no text formatting or file writes. Only when the
+**existing, already validated post-Quit guard suppresses a synthetic Return**
+does it print the buffered state transitions and last eight snapshots under
+`GAMEPAD-PS1: FLIGHT-RECORDER`.
+
+The recorder requires **all three**: authenticated PS1 preview, the already
+validated post-Quit guard enabled, and this explicit recorder key. With its
+key absent or 0, it does not read the clock or store histories, print
+messages or alter the game input path. It does not replace the working guard.
+`ControllerPS1QuitTrace` must remain 0 in this A/B to avoid its earlier
+measured timing effect.
+
+Interpret the raw state carefully: a DirectInput rising edge alone does
+**not** prove a physical new button press. Look for whether Cross was held,
+became 0, or suffered a failed read/reset just before the first 2D frame.
+Do not attempt to remove the eight-frame guard until a replacement based on
+verified menu/input ownership passes an independent real-game test.
+
+**This investigation has no root-cause runtime evidence yet.** PR #74 stays
+draft and unmerged.
+
+legluondunet assisted by ChatGPT (OpenAI)
