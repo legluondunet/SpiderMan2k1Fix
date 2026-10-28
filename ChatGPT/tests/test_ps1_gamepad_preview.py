@@ -10,6 +10,7 @@ import textwrap
 
 ROOT=Path(__file__).resolve().parents[2]
 MAP=(ROOT/"ps1_gamepad_mapping.h").read_text()
+START_MAP=(ROOT/"ps1_native_start_mapping.h").read_text()
 CFG=(ROOT/"virtual_spidey_cfg.c").read_text()
 CORE=(ROOT/"spiderman2k1fix.c").read_text()
 PAD=(ROOT/"gamepad_ui_profile.c").read_text()
@@ -176,3 +177,75 @@ def test_start_probe_is_read_only_and_removes_old_arbitrary_pe_size_limit():
     # No native memory writes to START, no native menu patch, no COM hook.
     assert "SPIDER_START_MAP_BUTTON_OFFSET" not in PAD
     assert "InterlockedExchange((volatile LONG*)(void*)" not in PAD
+
+
+def test_native_start_unbind_is_explicit_unsafe_preview_only():
+    # Strictly optional; no generated INI default and no write unless
+    # a full .data scan returns precisely one strict original map.
+    assert '"ControllerPS1DisableNativeStart"' in VALIDATOR
+    assert 'GetPrivateProfileIntA("Input","ControllerPS1DisableNativeStart",0,profile_ini)==1' in PAD
+    assert '"ControllerPS1DisableNativeStart=1' not in CFG
+    assert "if(disable_native_start)" in PAD
+    assert "!deep || truncated || sections!=1u || matches!=1u" in PAD
+    assert "strict_matches!=1u || !strict_candidate" in PAD
+    assert "spider_ps1_start_strict_factory(" in PAD
+    assert "InterlockedCompareExchange(" in PAD
+    assert "SPIDER_PS1_START_BUTTON_FACTORY" in PAD
+    assert "SPIDER_PS1_START_BUTTON_UNBOUND" in PAD
+    assert "NATIVE-START-UNBIND REFUSED" in PAD
+    assert "NATIVE-START-UNBIND EXPERIMENT ACTIVE" in PAD
+    assert "original BUTTON11 retained" in PAD
+    assert "START-TABLE candidate=" in PAD
+    assert "strict=%u truncated-regions=%u" in PAD
+    assert "SPIDER_PS1_START_BUTTON_UNBOUND 0x4000u" in START_MAP
+    assert "SPIDER_PS1_START_BUTTON_FACTORY 11u" in START_MAP
+    assert "SPIDER_PS1_START_BUTTON_OFFSET" in START_MAP
+    assert "if(button!=SPIDER_PS1_START_BUTTON_UNBOUND)return 0;" in START_MAP
+    assert "if(button!=SPIDER_PS1_START_BUTTON_FACTORY)return 0;" in START_MAP
+    assert "if(button!=0u)return 0;" in START_MAP
+
+
+def test_host_compiled_native_start_verifier_rejects_drift(tmp_path):
+    cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc:
+        return
+    src=tmp_path/"native_start.c"
+    exe=tmp_path/"native_start"
+    src.write_text(textwrap.dedent(r"""
+        #include <stdint.h>
+        #include <string.h>
+        #include "ps1_native_start_mapping.h"
+        static void put(unsigned char *p,uint32_t v){
+          p[0]=(unsigned char)v;
+          p[1]=(unsigned char)(v>>8);
+          p[2]=(unsigned char)(v>>16);
+          p[3]=(unsigned char)(v>>24);
+        }
+        int main(void) {
+          static const uint32_t actions[14]={
+            1u,2u,4u,8u,16u,32u,64u,128u,256u,512u,
+            1024u,4096u,8192u,32768u};
+          unsigned char table[SPIDER_PS1_START_MAP_BYTES];
+          unsigned i;
+          for(i=0;i<14u;i++){
+            uint32_t b=i<4u || i==12u?0x4000u:i==11u?11u:i==13u?0u:i-4u;
+            put(table+8u*i,actions[i]);
+            put(table+8u*i+4u,b);
+          }
+          if(!spider_ps1_start_strict_factory(table,sizeof(table)))return 1;
+          if(spider_ps1_start_strict_factory(table,sizeof(table)-1u))return 2;
+          if(spider_ps1_start_strict_factory(0,sizeof(table)))return 3;
+          put(table+SPIDER_PS1_START_BUTTON_OFFSET,0x4000u);
+          if(spider_ps1_start_strict_factory(table,sizeof(table)))return 4;
+          put(table+SPIDER_PS1_START_BUTTON_OFFSET,11u);
+          put(table+8u*8u,1234u);
+          if(spider_ps1_start_strict_factory(table,sizeof(table)))return 5;
+          put(table+8u*8u,actions[8u]);
+          put(table+8u*0u+4u,0u);
+          if(spider_ps1_start_strict_factory(table,sizeof(table)))return 6;
+          return 0;
+        }
+    """),encoding="utf-8")
+    subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
+                    "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
