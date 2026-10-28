@@ -21,5 +21,7 @@ void SpiderCfg_CancelPS1Preview(void);
  * overlay only RAM until authenticated game CRT bootstrap succeeds. */
 int SpiderCfg_EnableXbox360Preview(void);
 int SpiderCfg_Xbox360BootstrapLoaded(void);
+/* Returns verified unambiguous game-owned Swing DIK scan (0 if unsafe). */
+unsigned SpiderCfg_Xbox360SwingScan(void);
 void SpiderCfg_CancelXbox360Preview(void);
 #endif
