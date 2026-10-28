@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include "gamepad_ui_profile.h"
 #include "ps1_native_start_mapping.h"
+#include "ps1_mouse_mode.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
 typedef HRESULT (WINAPI *SpiderDICreateFn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
@@ -56,6 +57,7 @@ static int back=SPIDER_BACK_CIRCLE,pause_button=SPIDER_PAUSE_OPTIONS;
 static int ps1_preview_requested=0,ps1_preview_active=0,previous_share=0;
 static int ps1_options_skip_requested=0;
 static int ps1_readonly_menu_requested=0;
+static int ps1_mouse_auto_requested=0,ps1_mouse_auto_armed=0;
 static int ps1_native_start_unbound=0,previous_native_start=0;
 static unsigned ps1_native_start_reports=0;
 static unsigned ps1_cutscene_reports=0;
@@ -175,6 +177,7 @@ static void begin_scancode(unsigned scan,const char *action) {
   }
 }
 static void disable_profile(const char *reason) {
+  if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
   release_active_key();
   if(device) {IDirectInputDevice8_Unacquire(device);
               IDirectInputDevice8_Release(device);device=NULL;}
@@ -203,6 +206,7 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   ps1_preview_requested=GetPrivateProfileIntA("Input","ControllerPS1Preview",0,ini)==1;
   ps1_options_skip_requested=GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1;
   ps1_readonly_menu_requested=GetPrivateProfileIntA("Input","ControllerPS1ReadOnlyJoystick",0,ini)==1;
+  ps1_mouse_auto_requested=GetPrivateProfileIntA("Input","ControllerAutoDisableMouse",0,ini)==1;
   GetPrivateProfileStringA("Input","ControllerProfile","Auto",choice,sizeof(choice),ini);
   if(!_stricmp(choice,"Off"))profile=SPIDER_PROFILE_OFF;
   else if(!_stricmp(choice,"Auto"))profile=SPIDER_PROFILE_AUTO;
@@ -538,6 +542,13 @@ void SpiderGamepadUI_ActivatePS1(void){
   ps1_probe_native_start_tables(); /* read-only scan; optional checked single-DWORD RAM experiment */
   if(ps1_readonly_menu_requested && !SpiderPS1_InstallReadOnlyJoystick(log_message))
     report("GAMEPAD-PS1: JOYSTICK-READONLY inactive; exact native signatures missing or failed to install");
+  if(ps1_mouse_auto_requested) {
+    ps1_mouse_auto_armed=SpiderPS1Mouse_Arm(log_message);
+    if(ps1_mouse_auto_armed)
+      SpiderPS1Mouse_SetPadActive(1); /* verified/acquired DS4 before first game menu */
+    else
+      report("GAMEPAD-MOUSE: OFF failed exact original mouse-gate validation; native mouse behavior untouched");
+  }
 }
 void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active) {
@@ -546,10 +557,16 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   unsigned pressed,back_pressed;
   int menu_allowed,movie_allowed,confirm_allowed,gameplay_allowed,pause_pressed;
   int share_pressed,share_edge,native_start_pressed;
-  if(!configured || !hwnd || !IsWindow(hwnd))return;
+  if(!configured || !hwnd || !IsWindow(hwnd)){
+    if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
+    return;
+  }
   /* Critical: release injected key before focus pause can block this thread. */
   release_active_key();
   if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {
+    /* Disabling the game's mouse is only appropriate while the verified
+     * DS4 has foreground ownership. Preserve external desktop mouse. */
+    if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
     previous_buttons=0;
     previous_back=0;
     previous_pause=0;
@@ -558,7 +575,10 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     return;
   }
   if(!probing)detect_device(hwnd);
-  if(!detected||!device)return;
+  if(!detected||!device) {
+    if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
+    return;
+  }
   hr=IDirectInputDevice8_Poll(device);
   if(FAILED(hr) && hr!=DI_NOEFFECT) {
     /* Some DirectInput joysticks use implicit polling; read even when the
@@ -567,6 +587,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   memset(&state,0,sizeof(state));
   hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);
   if(FAILED(hr)) {
+    if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
     if(bad_reads++<4u) {
       char line[155];
       snprintf(line,sizeof(line),
@@ -583,6 +604,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     return;
   }
   bad_reads=0;
+  if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(1);
   pressed=(state.rgbButtons[1]&0x80u?SPIDER_CONFIRM_CROSS:0) |
           (state.rgbButtons[9]&0x80u?SPIDER_CONFIRM_OPTIONS:0);
   back_pressed=(state.rgbButtons[2]&0x80u?SPIDER_BACK_CIRCLE:0) |
