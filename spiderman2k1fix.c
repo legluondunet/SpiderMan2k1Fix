@@ -1010,6 +1010,20 @@ static volatile LONG native_pause43_border_hits=0;
 static volatile LONG native_pause43_banner_top=0;
 static volatile LONG native_pause43_banner_bottom=0;
 static volatile LONG native_pause43_glyph_hits=0;
+/* Our original game's ESC/pause object at 0x682950 is often transient:
+ * runtime logs show pause_ctx=0 while native D3D7 PAUSED menu text is
+ * visibly drawn. The SHA-gated exact ribbon detector is a stronger
+ * in-frame observation for the two already-validated widescreen modes.
+ * Fail closed (no inferred pause) if this exact graphic was not drawn
+ * in the current or immediately previous native Flip. */
+static int native_pause43_visible_near_flip(LONG now_flip) {
+  LONG ribbon_flip=InterlockedCompareExchange(&native_pause43_banner_flip,0,0);
+  return native_esc43_supported_monitor() &&
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==0 &&
+    InterlockedCompareExchange(&native_pause43_enabled,0,0)==1 &&
+    ribbon_flip>=0 && now_flip>=ribbon_flip &&
+    now_flip-ribbon_flip<=1;
+}
 static void native_pause43_init(void) {
   int enabled=native_esc43_hud_setting_enabled(
        "NativeESC4x3","SPIDERMAN2K1FIX_NATIVE_ESC_43");
@@ -2520,7 +2534,8 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
     InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
       InterlockedCompareExchange(&fov_game_height,0,0)>0,
     (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
-    (*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u);
+    ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
+      native_pause43_visible_near_flip(count)));
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
