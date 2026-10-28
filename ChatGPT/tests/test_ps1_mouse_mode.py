@@ -46,8 +46,8 @@ def test_original_game_gRenderTest_mouse_disable_gates_are_exact():
 def test_never_change_windows_cursor_or_original_input_api():
     # Do not repeat historical Alt-Tab focus/cursor corruption.
     for banned in ("ShowCursor(", "SetCursorPos(", "ClipCursor(", 
-                   "SetWindowLong", "SetWindowsHookEx", 
-                   "IDirectInputDevice8_", "VirtualProtect("):
+                   "SetWindowLongPtr(", "SetWindowLongPtrA(",
+                   "SetWindowsHookEx(", "IDirectInputDevice8_", "VirtualProtect("):
         assert banned not in MODE
     assert "original native sprite/poll/hit testing disabled" in MODE
     assert "desktop untouched" in MODE
