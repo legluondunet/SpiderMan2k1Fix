@@ -625,3 +625,294 @@ No change to the successfully hardware-tested native rebind
 or axis code is necessary based on this clean run.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+
+## Cross-device hot swap — stage 3 readonly fingerprint (2026-10-28)
+
+The maintainer now wants to swap **DS4 ↔ Xbox 360 without restarting
+Spider-Man**. The already hardware-validated stage-1/2 native
+DirectInput guard and COM rebind are present in this branch.
+Stage 2 **already accepts exactly one DS4 OR Xbox360-compatible
+controller**, but only the DS4 has a complete physical 3D unplug/replug
+validation. A new native device with a different type cannot by
+itself update the seven original game action associations loaded
+at startup. The independent UI bridge can recognize the new pad
+but is NOT proof the original 3D controls now have the right layout.
+
+### New passive investigation — no native action writes
+
+`native_joystick_swap_probe.h` validates a 14-slot native action-mask /
+button-index table (the SHA-pinned original `0x00568408` candidate
+from earlier native Start mapping research). Slots 4..10 are the
+candidate seven game actions, and the pure C99 helper detects a
+canonical DS4 preset `1,2,0,3,4,5,7`, canonical Xbox360 preset
+`0,1,2,3,4,5,9`, or custom/unverified data.
+
+Opt in **only on the existing Windows-x86 experimental build**:
+
+```ini
+[Input]
+ControllerProfile=Auto
+ControllerPS1Preview=1
+ControllerXbox360Preview=1
+ExperimentalNativeJoystickUnplugGuard=1
+ExperimentalNativeJoystickReconnect=1
+
+[Debug]
+Log=1
+F10Shortcut=0
+NativeJoystickSwapProbe=1
+```
+
+Disable the independent F10 experiment for this isolation test.
+The probe is debug-only, OFF by default, and only runs when the
+stage-2 rebind experiment is requested and its prior stage-1
+unplug guard is active. At the first eligible original game's
+foreground Flip it enumerates the single connected approved pad
+using the **game-owned** DirectInput factory and records the
+initial table fingerprint. On successful COM rebind it records the
+previous and newly attached device kinds and samples the native
+table once more. Logs:
+
+- `NATIVE-SWAP-PROBE: startup hardware=DS4->DS4
+  native-table=VALID preset=DS4 buttons[7]=...`
+- `NATIVE-RECONNECT: REBOUND ... Xbox360-compatible ...`
+- `NATIVE-SWAP-PROBE: rebound hardware=DS4->Xbox360
+  native-table=VALID preset=DS4 ... [READ-ONLY; runtime action mapping
+  NOT changed]`
+- `NATIVE-SWAP-PROBE: PROFILE MISMATCH...` if the native binding
+  fingerprint is still canonical for the previous hardware.
+
+Those are **illustrative expected formats**, not actual hardware
+observations. If the table fingerprint is `UNVERIFIED` or `CUSTOM`,
+do not infer that the fixed address is the active runtime mapping.
+All 14 native mask DWORDs, relevant unused slots and native button
+range are checked, plus the mapped memory's readable committed
+span, before the table contents are reported.
+
+**No action-table update, game CRT runtime reloader, synthesized 3D
+controls, native COM hook or changed saved INI/RawHex is introduced
+by this probe.** It does not make cross-device gameplay swap work
+yet; it narrows the next native runtime mapping experiment to a
+specific evidence-based candidate. It is intentionally bounded at
+24 diagnostic reports and performs at most one additional attached
+controller enumeration at first eligible startup Flip. It retains
+the existing conservative 2-second reconnect polling and the
+single-supported-controller requirement.
+
+First exercise the same-type replug. Then from a real 3D game
+disconnect DS4, leave keyboard working, attach Xbox360 **alone**
+with all buttons released, and check `REBOUND` and profile fingerprint.
+Return to the menu if controls differ; do not assume correct 3D
+action behavior from a successful device acquisition. Repeat the
+other direction in a new clean run. Capture the original logs before
+any native mapping mutations. Remember that an experimental on-
+disk config profile selected at startup is still the startup
+profile after the hardware changes.
+
+If the native action table genuinely tracks the effective loaded
+mapping and the hardware swap is stable, a later **separate**
+explicitly opt-in stage can test guarded per-DWORD mutations and
+rollback, with signed-off hardware validation before enabling
+automatic profile changes. PR #77 stays DRAFT/UNMERGED.
+
+
+## Separate regression: Joystick Restore Default UI hang (2026-10-28)
+
+The maintainer reports a frozen/unresponsive game after selecting
+`restore default settings` in the in-game Joystick menu, requiring
+a forced process termination. The uploaded log
+`SpiderMan2k1Fix(20261028-173412).log` reports build
+`v1.1.0-14e56bb` with **Sony PS1-readonly native menu enabled**
+and PSP Start native mapping experimentally unbound. It records
+ordinary 2D menu Flip milestones and protected virtual-config saves
+through at least Flip #1320, but **no SEH exception, native abort,
+exit code, or controller-menu action trace**, so a crash address
+or exact point of livelock cannot be asserted.
+
+The SHA-specific read-only site `0x50D4A9` originally invokes the
+void zero-argument `PCINPUT_RestoreDefaultControllerSettings()`.
+Our previous patch replaced this with five silent NOP bytes: no
+user settings were restored, but there was no way to tell if the
+native menu reached the restore row. The new experimental patch
+replaces that particular native CALL with a normal cdecl **void
+no-op CALL/RET** which emits a bounded
+`GAMEPAD-READONLY: RESTORE-DEFAULT intercepted count=...` marker
+(without touching controller action table, native cursor/menu,
+Spidey.cfg image, user INI, or Xbox/PS1 permanent overlays).
+This is a conservative diagnostic/ABI-shape adjustment, **not yet a
+proven solution to the freeze**; the exact original caller is
+already signature-checked during the existing read-only install.
+
+Controlled test of the new build: start with PS4 alone, optionally
+leave the native reconnect experiments disabled for this menu-only
+isolation test, open Joystick settings, select Restore Default
+**once**, then Escape normally if responsive and preserve a complete
+log. If it freezes, do not repeat; inspect whether the new
+`RESTORE-DEFAULT intercepted` marker appeared and capture an
+external Wine debugger backtrace if needed. With a previously
+validated copy of both DLLs saved, the feature can be isolated by
+setting `[Input] ControllerPS1ReadOnlyJoystick=0` and
+avoiding Restore Default while the native menu is editable.
+For an automatic Xbox readonly profile, it cannot currently be
+disabled independently without turning off the Xbox preview;
+do not assume changing Sony-only option disables Xbox readonly.
+Do not promote this experimental mitigation to a release/merge
+without physical confirmation.
+
+
+## Joystick Restore Default selectable-row regression — menu-level fix (2026-10-28)
+
+The second physical DS4 test log
+`SpiderMan2k1Fix(20261028-175032).log` confirms the earlier
+void no-op CALL/RET was actually reached:
+
+```
+GAMEPAD-READONLY: RESTORE-DEFAULT intercepted count=1 at original 0x50D4A9; no controller bindings changed [CALL/RET preserved]
+GAMEPAD-UI: SYNTHETIC Return (DIK 0x1C) down #16
+```
+
+The game then stopped responding. Blocking the native reset routine
+is therefore NOT sufficient: the original menu still presents and
+processes the Restore Default row and its rebuild/selection path.
+
+The follow-up experimental fix removes that **row**, not just its
+callback. Under the already validated Sony/Xbox Joystick read-only
+mode, original `initActionMaps` retains all 14 native action rows
+but omits only the final `restore default settings`
+`CMenu::AddEntry` call. `Keyboard Configuration` still delegates
+to the original `CMenu::AddEntry`, retaining Keyboard Restore
+Default and editable keyboard mappings. We do NOT modify original
+on-disk game data or the user INI.
+
+For safety, the caller is not guessed: inside the SHA-verified
+`initActionMaps` function's last instructions, the installer
+verifies exactly one direct x86 relative CALL targeting original
+`CMenu::AddEntry` at `0x0043FFF0`, with an original
+`push` of the matching `restore default settings` string.
+It captures the five bytes then participates in the same
+all-site preflight and rollback as the existing read-only patches.
+No unique, readable, committed-memory match means refusal with
+`GAMEPAD-READONLY: REFUSED missing/ambiguous original Restore Default
+AddEntry call; no patches installed`. No implicit fallback to
+a joystick menu where the row can still be selected.
+
+The replacement uses a 32-bit fastcall wrapper with dummy EDX
+argument to preserve the original thiscall callee stack cleanup.
+If native `gActionMapRelated` is nonzero, it does not add that
+final row; when zero (keyboard menu), it calls native AddEntry
+unchanged. The old restore callback no-op remains as a
+defense-in-depth guard and logs if the original code unexpectedly
+reaches it. Successful install logs `GAMEPAD-READONLY: Restore
+Default row disabled in Joystick only`; when entering the menu
+it logs `GAMEPAD-READONLY: Restore Default ROW OMITTED in Joystick`.
+
+Hardware test: install both DLLs from the **same successful CI run**,
+start with only DS4 (or only Xbox on a separate run), open Joystick
+Configuration, verify 14 action rows and NO Restore Default,
+navigate the last row with d-pad and Escape normally. Then open
+Keyboard Configuration, verify its Restore Default option is still
+present but do not invoke it in the joystick regression test.
+If Restore Default is still visible in Joystick, check for the
+`REFUSED` marker and do not select it. No runtime validation
+has yet demonstrated the menu-level fix. PR #77 remains DRAFT.
+
+
+## Corrected: detected-pad Joystick viewer + both footer rows (2026-10-28)
+
+**This supersedes the preceding single-row patch description.**
+The maintainer's `SpiderMan2k1Fix(20261028-180211).log`
+(`v1.1.0-8267462`) shows precisely:
+
+```
+GAMEPAD-UI: DISCOVERY gamepads=1 SonyDualShock4=1 Xbox360=0
+GAMEPAD-READONLY: REFUSED missing/ambiguous original Restore Default AddEntry call; no patches installed
+GAMEPAD-PS1: JOYSTICK-READONLY inactive
+```
+
+Consequently **the whole menu was editable** and Restore Default
+selectable. The one-site search was incorrect.
+
+The actual original executable's complete `initActionMaps` (public
+501-byte decomp disassembly, `tools/functions/5296368.bin`) shows
+**TWO final CMenu entries** after the 14 action entries:
+
+```asm
+0050D2BB mov ecx, [0x54B7B4]  ; original Restore Default string pointer
+0050D2C1 push ecx
+0050D2C2 mov ecx, [0xAC11B4]  ; first (action) CMenu
+0050D2C8 call 0x0043FFF0     ; E8 23 2D F3 FF
+0050D2CD mov ecx, [0xAC12A0]  ; second (value) CMenu
+0050D2D3 push 0x0056EB54
+0050D2D8 call 0x0043FFF0     ; E8 13 2D F3 FF
+```
+
+The earlier scanner looked for a `push immediate` of the literal
+"restore default settings" before a unique AddEntry CALL. The first
+column actually uses a **pointer loaded from memory**, and the
+second uses a different literal. Removing **only one** entry could
+also desynchronize the native CMenu columns.
+
+**Corrected code:** both exact original x86 callsites are pinned as
+normal required read-only installation sites, increasing the count
+from 6 to 8. The installer verifies both original rel32 instruction
+sequences **before any site patch**, and retains atomic preflight and
+rollback. The same x86 ABI-matching wrapper skips the two final
+AddEntry calls only when `gActionMapRelated` says Joystick;
+Keyboard Configuration calls the original CMenu::AddEntry normally.
+All 14 action/value pairs remain, while Restore Default and its
+corresponding empty placeholder row vanish. The existing
+joystick-only action setters, capture prompt and native restore
+routine remain blocked. No game on-disk patch or config rewrite.
+
+In addition, detection of a unique supported physical Sony DS4 now
+arms the read-only Joystick viewer immediately after original game
+config bootstrap, even if the optional 7-action PS1 preview was not
+selected. The existing Xbox readonly arm remains automatic.
+`ControllerProfile=Off` retains normal unmodified behavior.
+The legacy `ControllerPS1ReadOnlyJoystick` key is accepted by the
+INI parser but no longer controls the detected DS4 viewer.
+
+Expected logs in the new physical test:
+
+```
+GAMEPAD-PS1: JOYSTICK-READONLY EXPERIMENT ACTIVE ...
+GAMEPAD-READONLY: Restore Default and matching placeholder rows disabled in Joystick only
+GAMEPAD-READONLY: Restore Default ROW OMITTED in Joystick (and matching placeholder)
+```
+
+To validate, use a matching winmm.dll/SpiderMan2k1Fix.dll pair from
+the same CI build, start with just one DS4, open Joystick, verify all
+14 native action lines and correct Sony labels (where recognized),
+check **Restore Default absent** and attempts to rebind actions
+ignored, then navigate back/exit/re-enter. Open Keyboard to verify
+it is editable and *its own* Restore Default still appears.
+Repeat with Xbox alone if practical. Do not invoke Restore Default
+if read-only install logs `REFUSED`.
+
+**Cross-device mapping after hotplug remains a separate pending feature:**
+this menu shows the currently loaded game-owned action indices,
+which may still match the controller connected at startup. Never
+claim the new pad's physical gameplay mapping has switched merely
+because its COM device reconnects. Release and PR remain gated on
+live Windows/Wine validation. Draft PR #77 remains unmerged.
+
+
+### Late hotplug viewer activation (follow-up)
+
+The native read-only viewer is now armed after CRT bootstrap for an
+already detected Sony DS4, **regardless of optional PS1 gameplay
+preview**; the previously automatic verified Xbox lock is preserved.
+When a supported controller is first discovered later in the normal
+foreground `gamepad_ui_profile.c` Flip path, the same eight-site lock
+is armed before the next native UI action. When a Sony↔Xbox change is
+observed, the existing code hook is *not* rewritten: only its
+physical button label formatter switches between Sony and Xbox
+indices. This does NOT remap original 3D gameplay actions, so the
+currently loaded native seven-action mapping may still be inherited
+from the first controller until a separate runtime mapping swap is
+implemented. In `ControllerProfile=Off`, the native Joystick screen
+remains untouched.
+
+`ControllerPS1ReadOnlyJoystick` is retained as an accepted legacy
+INI key but is no longer a necessary opt-in for detected DS4 viewers.

@@ -13,13 +13,17 @@
 #include <stdint.h>
 
 enum { SPIDER_PS1_JOYSTICK_LABEL_CAPACITY=32 };
+/* Joystick Swing=BUTTON9 is R3; when a verified RT->keyboard Swing
+ * bridge is active, label the additional analog shortcut honestly. */
+void SpiderXbox360_SetRTAlias(int enabled);
 typedef struct {
   uint32_t virtual_address;
   uint8_t size;
   uint8_t original[6];
 } SpiderPS1JoystickReadOnlySite;
 
-enum { SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT=6 };
+enum { SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT=8 };
+enum { SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT=6, SPIDER_PS1_JOYSTICK_EMPTY_ROW_SLOT=7 };
 static const SpiderPS1JoystickReadOnlySite spider_ps1_readonly_sites[
     SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT]={
   /* initActionMaps: joystick branch formats gKeyNames[i] using sprintf;
@@ -43,8 +47,42 @@ static const SpiderPS1JoystickReadOnlySite spider_ps1_readonly_sites[
    * (0xAC129C) and only skips that entire action on Joystick screens.
    * Keyboard Configuration must still execute the original two PUSHes
    * and continue at 0x50D400, keeping keyboard remapping editable. */
-  {0x0050D3FAu,6u,{0x55u,0x68u,0x00u,0x20u,0x00u,0x00u}}
+  {0x0050D3FAu,6u,{0x55u,0x68u,0x00u,0x20u,0x00u,0x00u}},
+  /* initActionMaps real final two native rows: original first column
+   * gControllerMenu (0xAC11B4) gets Restore Default through a string
+   * POINTER at 0x54B7B4 (not PUSH literal!), while gControllerMenuTwo
+   * (0xAC12A0) gets an empty placeholder via PUSH 0x56EB54.
+   * Both must be omitted TOGETHER in joystick mode so CMenu entries
+   * remain synchronized. Verified public original 501-byte function
+   * 5296368.bin: 0x50D2C8 and 0x50D2D8 both CALL 0x43FFF0. */
+  {0x0050D2C8u,5u,{0xE8u,0x23u,0x2Du,0xF3u,0xFFu,0}},
+  {0x0050D2D8u,5u,{0xE8u,0x13u,0x2Du,0xF3u,0xFFu,0}}
 };
+/* Standard DirectInput button layout for the selected Xbox 360 XUSB
+ * compatible device, NOT the XInput numbering. Physical A/B edges have
+ * been confirmed on the maintainer's 045E:028E pad; the other labels
+ * follow Microsoft's normal ten-button ordering and must be verified
+ * individually on that Holtek hardware. RT/LT are NOT button indices:
+ * both appear on the shared lZ AXIS, and Swing=BUTTON9 means R3 (stick
+ * click), not RT. Do not mislabel button 9 as a trigger. */
+static inline const char *spider_xbox360_native_button_label(uint32_t button) {
+  switch(button) {
+    case 0u: return "A";
+    case 1u: return "B";
+    case 2u: return "X";
+    case 3u: return "Y";
+    case 4u: return "LB";
+    case 5u: return "RB";
+    case 6u: return "BACK";
+    case 7u: return "START";
+    case 8u: return "L3";
+    case 9u: return "R3";
+    default: return NULL;
+  }
+}
+/* Physical Sony DualShock 4 DirectInput indices as exposed by the
+ * verified 054C:09CC controller. R2 is digital BUTTON7 for DS4, while
+ * Xbox RT is a separate analog lZ axis and must NOT share this mapping. */
 static const char *spider_ps1_native_button_label(uint32_t button) {
   switch(button) {
     case 0u: return "SQUARE";
@@ -53,7 +91,12 @@ static const char *spider_ps1_native_button_label(uint32_t button) {
     case 3u: return "TRIANGLE";
     case 4u: return "L1";
     case 5u: return "R1";
+    case 6u: return "L2";
     case 7u: return "R2";
+    case 8u: return "SHARE";
+    case 9u: return "OPTIONS";
+    case 10u: return "L3";
+    case 11u: return "R3";
     default: return NULL;
   }
 }

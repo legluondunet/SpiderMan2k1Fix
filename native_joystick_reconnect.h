@@ -8,6 +8,8 @@
 #include <windows.h>
 void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *));
 void SpiderNativeReconnect_OnFlip(long flip_index, HWND game_hwnd);
+/* Read-only, opt-in verified original Xbox action table after native hot swap. */
+int SpiderNativeReconnect_CanonicalXboxMapping(void);
 /* Passive post-rebind input breadcrumbs; never alters gameplay state. */
 void SpiderNativeReconnect_LogSyntheticMenuKey(unsigned scan, const char *phase);
 /* Read-only original joystick pointer + render-mode health after rebind. */

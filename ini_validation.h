@@ -53,7 +53,7 @@ static const char *const spider_ini_sections[]={"Debug","System","Display","HUD"
 /* F10 is the hotkey. F12-named keys are legacy INI aliases ONLY. */
 /* ExperimentalAudioLoaderTail is a hidden manual override. WAV repair defaults
  * ON; recognize pre-existing values without adding it to generated INIs. */
-static const char *const spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts","ExperimentalPKRAudioIndex","ExperimentalPKRAudioPlayTrace","ExperimentalAudioHeli1Declick","ExperimentalAudioLoaderTail"};
+static const char *const spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts","ExperimentalPKRAudioIndex","ExperimentalPKRAudioPlayTrace","ExperimentalAudioHeli1Declick","ExperimentalAudioLoaderTail","Xbox360TriggerProbe","NativeMenuReturnProbe","NativeJoystickSwapProbe"};
 /* Keep all pre-existing INIs valid without regenerating saved controls. */
 static const char *const spider_ini_system[]={"QuickExitF10","ExperimentalQuickExitF10In3D","ExperimentalQuickExitF10InNewGameMovie","ExperimentalQuickExitF10InNewGameComic","ExperimentalQuickExitF10InIntroStills","QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic","ExperimentalQuickExitF12InIntroStills"};
 static const char *const spider_ini_display[]={
@@ -79,7 +79,7 @@ static const char *const spider_ini_input[]={
   "KeyboardLayout","DirectInputReacquire","DisableWindowsGhosting","PauseOnFocusLoss","PauseBinkOnFocusLoss","PauseDirectSoundOnFocusLoss","PauseOverlay","PauseDim","PauseDimOpacity","PauseKey",
   "RestoreCursorOnFocusLoss","ExperimentalFocusTrace","ExperimentalDI8EntryTrace",
   "ExperimentalAltTabReacquire","ExperimentalDI8CreateDeviceTrace",
-  "ExperimentalGamepadStart","ControllerProfile","ControllerEnterButtons","ControllerBackButton","ControllerPauseButton","ControllerPS1Preview","ControllerPS1OptionsSkip","ControllerPS1DeepStartProbe","ControllerPS1DisableNativeStart","ControllerPS1ReadOnlyJoystick","ControllerAutoDisableMouse","MouseEnabled","ControllerPS1QuitTrace","ControllerPS1PostQuitGuard","ControllerPS1InputFlightRecorder","ControllerPS1TransitionEdgeOwnership","ExperimentalNativeJoystickUnplugGuard","ExperimentalNativeJoystickReconnect"
+  "ExperimentalGamepadStart","ControllerProfile","ControllerEnterButtons","ControllerBackButton","ControllerPauseButton","ControllerPS1Preview","ControllerXbox360Preview","ControllerXbox360RTSwing","ControllerPS1OptionsSkip","ControllerPS1DeepStartProbe","ControllerPS1DisableNativeStart","ControllerPS1ReadOnlyJoystick","ControllerAutoDisableMouse","MouseEnabled","ControllerPS1QuitTrace","ControllerPS1PostQuitGuard","ControllerPS1InputFlightRecorder","ControllerPS1TransitionEdgeOwnership","ExperimentalNativeJoystickUnplugGuard","ExperimentalNativeJoystickReconnect","ExperimentalNativeJoystickMappingSwap"
 };
 static const char *const spider_ini_audio[]={"MusicSFXLevel","VoiceLevel","MovieLevel","Stereo"};
 static const char *const spider_ini_keys[]={"Up","Down","Left","Right","Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
@@ -160,7 +160,8 @@ static int spider_ini_value_valid(const char *section,const char *key,const char
   if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"ControllerProfile"))
     return !spider_ini_icmp(value,"Auto") ||
            !spider_ini_icmp(value,"Off") ||
-           !spider_ini_icmp(value,"DualShock4");
+           !spider_ini_icmp(value,"DualShock4") ||
+           !spider_ini_icmp(value,"Xbox360");
   if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"ControllerEnterButtons"))
     return !spider_ini_icmp(value,"Cross") ||
            !spider_ini_icmp(value,"Options") ||

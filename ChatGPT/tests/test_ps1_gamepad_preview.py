@@ -34,7 +34,9 @@ def test_profile_requires_opt_in_and_known_pad_before_native_bootstrap():
     assert 'SpiderCfg_PS1BootstrapLoaded()' in CORE
     assert 'SpiderGamepadUI_ActivatePS1();' in CORE
     assert 'GetForegroundWindow()!=hwnd' in PAD
-    assert 'd.found!=1u || d.ds4_count!=1u' in PAD
+    assert 'choose_ds4=d.found==1u && d.ds4_count==1u' in PAD
+    assert 'detected && detected_kind==SPIDER_RECONNECT_XBOX360' in PAD
+    assert 'if(!detected)' in PAD
     assert 'if(!detected)' in PAD
     # No options default should silently enable an unvalidated fixed profile.
     generator=CFG.split('static int SpiderCfg_WriteDefaultIniAt',1)[1]
@@ -46,15 +48,16 @@ def test_user_joystick_bindings_preserved_on_any_virtual_save():
     assert 'spider_ps1_snapshot(cfg,CFG_SIZE,original_joystick)' in CFG
     assert 'spider_ps1_apply(cfg,CFG_SIZE)' in CFG
     assert 'spider_ps1_restore(saved_cfg,CFG_SIZE,original_joystick)' in CFG
-    assert 'ps1_preview_active?(DWORD)original_joystick[i]' in CFG
-    assert "if(ps1_preview_active && opens>opened && reads>served)" in CFG
+    assert 'DWORD code=(ps1_preview_active || xbox360_preview_active)?' in CFG
+    assert 'spider_ps1_restore(saved_cfg,CFG_SIZE,original_joystick)' in CFG
+    assert "if((ps1_preview_active || xbox360_preview_active) && opens>opened && reads>served)" in CFG
     assert 'InterlockedExchange(&ps1_bootstrap_loaded,1)' in CFG
 
 
 def test_ps1_preview_uses_cross_only_for_menu_confirm_even_with_legacy_both():
     # Original [Input] ControllerEnterButtons=Both remains honored outside
     # PS1 preview, but OPTIONS/Start is intentionally redundant in PS1.
-    assert "effective_confirm=spider_ps1_menu_confirm_mask(ps1_preview_active,(unsigned)confirm);" in PAD
+    assert "ps1_preview_active || late_ds4_menu_only,(unsigned)confirm);" in PAD
     assert "confirm_edges=spider_ps1_menu_confirm_edges(pressed,(unsigned)previous_buttons,effective_confirm);" in PAD
     assert "native_request,pressed & effective_confirm);" in PAD
     assert "CROSS-only 2D/Bink/pause confirmation" in PAD

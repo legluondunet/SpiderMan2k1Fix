@@ -18,46 +18,62 @@ INI=(ROOT/"ini_validation.h").read_text()
 CONFIG=(ROOT/"virtual_spidey_cfg.c").read_text()
 
 
-def test_ps1_readonly_menu_is_an_explicit_opt_in_only():
-    assert '"ControllerPS1ReadOnlyJoystick"' in INI
-    assert 'GetPrivateProfileIntA("Input","ControllerPS1ReadOnlyJoystick",0,ini)==1' in BRIDGE
-    assert 'if(!detected || !ps1_preview_requested)return;' in BRIDGE
-    assert "SpiderPS1_InstallReadOnlyJoystick(log_message)" in BRIDGE
-    assert 'JOYSTICK-READONLY REFUSED' in SOURCE
-    assert 'JOYSTICK-READONLY EXPERIMENT ACTIVE' in SOURCE
+def test_detected_supported_ds4_always_gets_native_joystick_viewer():
+    assert 'void SpiderGamepadUI_ArmPS1ReadOnly(void)' in BRIDGE
+    assert 'SpiderGamepadUI_ArmPS1ReadOnly();' in (ROOT/'spiderman2k1fix.c').read_text()
+    assert 'void SpiderGamepadUI_ArmPS1ReadOnly(void);' in (ROOT/'gamepad_ui_profile.h').read_text()
+    assert 'profile==SPIDER_PROFILE_OFF' in BRIDGE
+    assert 'detected_kind!=SPIDER_RECONNECT_DS4' in BRIDGE
+    assert 'SpiderPS1_InstallReadOnlyJoystick(log_message)' in BRIDGE
+    assert 'ControllerPS1ReadOnlyJoystick' in INI  # backwards-compatible INI validation
     assert 'ControllerPS1ReadOnlyJoystick=1' not in CONFIG
+    assert 'ps1_readonly_menu_requested' not in BRIDGE
     assert 'VirtualProtect(' not in BRIDGE
 
 
-def test_only_original_verified_joystick_paths_are_changed():
-    assert "SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT=6" in HEADER
+def test_native_both_footer_rows_disabled_and_rebinding_gated():
+    assert "SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT=8" in HEADER
+    assert "SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT=6" in HEADER
+    assert "SPIDER_PS1_JOYSTICK_EMPTY_ROW_SLOT=7" in HEADER
     for original_va in ("0x0050D28Cu","0x0050D4A9u","0x0050D51Cu",
-                        "0x0050D6A6u","0x0050D7ADu","0x0050D3FAu"):
+                        "0x0050D6A6u","0x0050D7ADu","0x0050D3FAu",
+                        "0x0050D2C8u","0x0050D2D8u"):
         assert original_va in HEADER
-    assert "0x0050D852u-(p->virtual_address+5u)" in SOURCE
-    assert "replacements[0][0]=0xE8u" in SOURCE
-    assert "replacements[i][0]=0xE9u" in SOURCE
-    assert "memcpy(replacements[1],nop5,5u)" in SOURCE
-    assert "memcpy(replacements[4],nop5,5u)" in SOURCE
+    for original_bytes in (
+        "0xE8u,0x23u,0x2Du,0xF3u,0xFFu",
+        "0xE8u,0x13u,0x2Du,0xF3u,0xFFu",
+    ):
+        assert original_bytes in HEADER
+    assert "const uintptr_t start=0x0050D210u" not in SOURCE
+    assert "spider_find_native_restore_row" not in SOURCE
+    assert "memcpy(live_sites,spider_ps1_readonly_sites,sizeof(live_sites));" in SOURCE
     assert "memcmp(location,p->original,p->size)!=0" in SOURCE
     assert "VirtualQuery(location,&mbi,sizeof(mbi))" in SOURCE
     assert "VirtualProtect(address,n,PAGE_EXECUTE_READWRITE,&old)" in SOURCE
     assert "FlushInstructionCache(GetCurrentProcess(),address,n)" in SOURCE
     assert "if(installed!=SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT)" in SOURCE
     assert "while(installed>0u)" in SOURCE
-    assert "VirtualAlloc(NULL,sizeof(code)" in SOURCE
-    assert "PAGE_EXECUTE_READ,&old" in SOURCE
-    assert "capture_thunk+11" in SOURCE
-    assert "capture_thunk+22" in SOURCE
-    assert "0x0050D872u-" in SOURCE
-    assert "0x0050D400u-" in SOURCE
-    assert "0x9Cu,0x12u,0xACu,0x00u" in SOURCE
-    assert "replacement[5]=0x90u;" in SOURCE
+    assert "for(i=SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT;" in SOURCE
+    assert "i<=SPIDER_PS1_JOYSTICK_EMPTY_ROW_SLOT;i++)" in SOURCE
+    assert "spider_joystick_restore_row_addentry" in SOURCE
+    assert "static void __fastcall spider_joystick_restore_row_addentry(" in SOURCE
+    assert "typedef void (__thiscall *SpiderCMenuAddEntry)(void *,const char *);" in SOURCE
+    assert "0x00AC129Cu!=0u" in SOURCE
+    assert "((SpiderCMenuAddEntry)(uintptr_t)0x0043FFF0u)(native_menu,label);" in SOURCE
+    assert "replacements[i][0]=0xE8u;" in SOURCE
+    assert "0x0050D852u-(p->virtual_address+5u)" in SOURCE
+    # Native 0x50D4D7 explicitly jumps to joystick branch 0x50D683,
+    # so 0x50D51C is KEYBOARD-only. Never skip that assignment path.
+    assert "memcpy(replacements[2],live_sites[2].original,live_sites[2].size);" in SOURCE
+    assert "for(i=2;i<=3u;i++)" not in SOURCE
+    assert "replacements[3][0]=0xE9u;" in SOURCE
+    assert "replacements[2][0]=0xE9u;" not in SOURCE
+    assert "memcpy(replacements[4],nop5,5u)" in SOURCE
+    assert "spider_joystick_restore_denied" in SOURCE
     assert "native capture entry blocked for Joystick only" in SOURCE
     assert "nt->OptionalHeader.ImageBase!=0x00400000u" in SOURCE
-    assert "int SpiderPS1_InstallReadOnlyJoystick(void (*logger)(const char *))" in SOURCE
-    # Keyboard Configuration's original setter and update function
-    # must NOT be replaced by a global keyboard/controller hook.
+    # Keyboard configuration remains editable and its Restore Default row is preserved
+    assert "Keyboard restore preserved" in SOURCE
     assert "0x0050A4A0u" not in HEADER
     assert "0x0050A4E0u" not in HEADER
 
@@ -83,7 +99,7 @@ def test_host_compiled_label_mapping_and_factory_signature(tmp_path):
         #include "ps1_joystick_readonly_menu.h"
         int main(void) {
           static const char* expected[]={
-            "SQUARE","CROSS","CIRCLE","TRIANGLE","L1","R1",0,"R2"
+            "SQUARE","CROSS","CIRCLE","TRIANGLE","L1","R1","L2","R2"
           };
           unsigned i;
           for(i=0;i<8;i++){
@@ -100,6 +116,11 @@ def test_host_compiled_label_mapping_and_factory_signature(tmp_path):
           if(spider_ps1_readonly_sites[5].virtual_address!=0x50D3FAu)return 8;
           if(spider_ps1_readonly_sites[3].size!=6u)return 9;
           if(spider_ps1_readonly_sites[5].size!=6u)return 10;
+          if(spider_ps1_readonly_sites[6].virtual_address!=0x50D2C8u)return 11;
+          if(spider_ps1_readonly_sites[7].virtual_address!=0x50D2D8u)return 12;
+          if(spider_ps1_readonly_sites[6].size!=5u)return 13;
+          if(spider_ps1_readonly_sites[7].size!=5u)return 14;
+          if(SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT!=8u)return 15;
           return 0;
         }
     """),encoding="utf-8")

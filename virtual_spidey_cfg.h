@@ -6,6 +6,8 @@
  */
 /* Return nonzero if the INI exists or was created. Never overwrite an existing one. */
 int SpiderCfg_EnsureDefaultIni(void (*logger)(const char *));
+/* Install user's modern layout-aware default preset in the original keyboard Restore Default source table. */
+int SpiderCfg_InstallModernKeyboardDefaults(void);
 void SpiderCfg_ValidateCurrentIni(void (*logger)(const char *));
 unsigned SpiderCfg_Install(const char *ini_path,void (*logger)(const char *));
 void SpiderCfg_ObserveNativeMonitor(unsigned width,unsigned height);
@@ -17,4 +19,13 @@ int SpiderCfg_EnablePS1Preview(void);
 /* True only after an authenticated game-owned loader consumed the overlay. */
 int SpiderCfg_PS1BootstrapLoaded(void);
 void SpiderCfg_CancelPS1Preview(void);
+/* Xbox 360 gameplay candidate: verified single pad + read-only native menu;
+ * overlay only RAM until authenticated game CRT bootstrap succeeds. */
+int SpiderCfg_EnableXbox360Preview(void);
+int SpiderCfg_Xbox360BootstrapLoaded(void);
+/* Returns verified unambiguous game-owned Swing DIK scan (0 if unsafe). */
+unsigned SpiderCfg_Xbox360SwingScan(void);
+/* After verified native Xbox hot-swap: read current game keyboard Swing scan. */
+unsigned SpiderCfg_Xbox360SwingScanLive(void);
+void SpiderCfg_CancelXbox360Preview(void);
 #endif

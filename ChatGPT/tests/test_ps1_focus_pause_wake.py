@@ -107,3 +107,30 @@ def test_compiled_no_ghost_press_repeats_or_axis_wake(tmp_path):
     subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror","-I",str(ROOT),
                     str(source),"-o",str(binary)],check=True)
     subprocess.run([str(binary)],check=True)
+
+
+def test_focus_gamepad_reacquire_exactly_once_only_after_foreground_notacquired():
+    # A foreground DirectInput cooperative-level loss is not a hot-unplug.
+    # A frozen Flip cannot call normal secondary UI OnFlip recovery, so a
+    # single foreground-only Acquire on DIERR_NOTACQUIRED is necessary.
+    p=PAD.split("unsigned SpiderGamepadUI_PauseWake_Poll(HWND hwnd) {",1)[1].split(
+        "void SpiderGamepadUI_PauseWake_End(void)",1)[0]
+    assert "GetForegroundWindow()!=hwnd" in p
+    assert p.index("GetForegroundWindow()!=hwnd") < p.index("IDirectInputDevice8_Acquire(device)")
+    assert "hr==DIERR_NOTACQUIRED && pause_wake_notacquired_attempts==0u" in p
+    assert "pause_wake_notacquired_attempts=1u;" in p
+    assert "acquire_hr=IDirectInputDevice8_Acquire(device);" in p
+    assert "if(SUCCEEDED(acquire_hr))return 0;" in p
+    assert "pause_wake_active=0;" in p
+    assert "spider_pause_pad_wake_step(&pause_wake,buttons)" in p
+    assert "if(FAILED(hr)) {" in p
+    # Any physically lost peripheral (INPUTLOST/UNPLUGGED) is never
+    # reacquired during PAUSED; no simultaneous device release/enumeration.
+    assert "hr==DIERR_INPUTLOST" not in p
+    assert "hr==DIERR_UNPLUGGED" not in p
+    for bad in ("detect_device(", "disable_profile(", "SendInput(", 
+                "SpiderCfg_Enable", "GetAsyncKeyState("):
+        assert bad not in p
+    assert 'pause_wake_notacquired_attempts=0;' in PAD
+    assert 'single guarded Acquire=0x%08lX' in PAD
+    assert 'secondary controller read unavailable hr=0x%08lX' in PAD

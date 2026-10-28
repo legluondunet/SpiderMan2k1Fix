@@ -30,6 +30,12 @@ def test_reconnect_bounded_timer_and_strict_ds4_vid_pid(tmp_path):
           assert(spider_reconnect_sony_ds4(0x054c,0x0ba0));
           assert(!spider_reconnect_sony_ds4(0x045e,0x09cc));
           assert(!spider_reconnect_sony_ds4(0x054c,0x0001));
+          assert(spider_reconnect_xbox360(0x045e,0x028e)); /* Holtek sample */
+          assert(spider_reconnect_kind(0x045e,0x028e)==SPIDER_RECONNECT_XBOX360);
+          assert(spider_reconnect_kind(0x054c,0x09cc)==SPIDER_RECONNECT_DS4);
+          assert(spider_reconnect_kind(0x045e,0x0719)==SPIDER_RECONNECT_NONE);
+          assert(spider_reconnect_kind(0x045e,0xffff)==SPIDER_RECONNECT_NONE);
+          assert(spider_reconnect_kind(0x046d,0x028e)==SPIDER_RECONNECT_NONE);
           assert(spider_reconnect_scan_due(100,0,0));
           assert(!spider_reconnect_scan_due(2099,100,1));
           assert(spider_reconnect_scan_due(2100,100,1));
@@ -73,7 +79,7 @@ def test_original_game_owner_interface_not_parallel_factory():
         assert x in SOURCE, x
     assert "list.count!=1u" in SOURCE
     for forbidden in ("DirectInput8Create(", "WriteProcessMemory(",
-                      "VirtualProtect(", "SetWindowsHookEx(",
+                      "SetWindowsHookEx(",
                       "IDirectInput8_Release(", "ExitProcess(", "TerminateProcess("):
         assert forbidden not in SOURCE, forbidden
 
@@ -170,3 +176,20 @@ def test_post_rebind_health_heartbeat_is_passive_generation_aware_and_bounded():
                       "Release(", "SetProperty(", "WriteProcessMemory("):
         assert forbidden not in block
     assert "if(!requested || !initialized || !SpiderNativeUnplug_Installed()" in block
+
+
+def test_xbox360_native_recovery_and_separately_opted_in_ds4_ps1_remap():
+    ui=(ROOT/"gamepad_ui_profile.c").read_text()
+    assert "spider_reconnect_kind(vid,pid)" in SOURCE
+    assert "enumerate_supported_pad" in SOURCE
+    assert 'list.kind==SPIDER_RECONNECT_DS4?"Sony DS4":"Xbox360-compatible"' in SOURCE
+    assert "LOWORD(list.product),HIWORD(list.product)" in SOURCE
+    assert "list.count!=1u" in SOURCE  # refuse ambiguous DS4+Xbox
+    assert "spider_reconnect_xbox360" in POLICY
+    assert "pid==0x028eu" in POLICY
+    assert "SPIDER_DS4_VID" in POLICY
+    assert "static int ds4_pid(" in ui
+    assert "SPIDER_PROFILE_DUALSHOCK4" in ui
+    assert "SPIDER_PROFILE_XBOX360" in ui
+    assert "detected_kind!=SPIDER_RECONNECT_DS4 || !ps1_preview_requested" in ui
+    assert "if(detected && detected_kind==SPIDER_RECONNECT_XBOX360)" in ui

@@ -18,15 +18,25 @@ def test_hotplug_integrates_on_foreground_flip_only():
     assert "spider_ds4_hotplug_accept_buttons(&hotplug,held)" in PAD
     assert "IDirectInput8_EnumDevices(di,DI8DEVCLASS_GAMECTRL" in PAD
     assert "DIEDFL_ATTACHEDONLY" in PAD
-    assert "if(d.found!=1u || d.ds4_count!=1u)" in PAD
+    assert "choose_ds4=d.found==1u && d.ds4_count==1u" in PAD
+    assert "choose_xbox=d.found==1u && d.xbox_count==1u" in PAD
+    assert "if(!choose_ds4 && !choose_xbox)" in PAD
     assert "DISCL_FOREGROUND|DISCL_NONEXCLUSIVE" in PAD
     assert "if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd))" in PAD
     assert "release_active_key();" in PAD
     assert 'hotplug rescan every 2s while foreground' in PAD
     assert "disable_profile(NULL);" in PAD
     assert "ps1_preview_active=1;" in PAD
-    assert "if(ps1_preview_requested && !ps1_preview_active)" in PAD
-    assert "synthetic actions disabled until restart with controller present" in PAD
+    # Late Sony 054C:09CC is allowed to confirm in 2D menus even if
+    # the Xbox profile was the only one installed during CRT bootstrap.
+    # This MUST NOT activate native Sony 3D shortcuts or reload cfg.
+    assert "late_ds4_menu_only=detected_kind==SPIDER_RECONNECT_DS4 &&" in PAD
+    assert "ps1_preview_requested && !ps1_preview_active;" in PAD
+    assert "Cross=BUTTON1 and Circle=BUTTON2 MENU/BINK bridge ENABLED" in PAD
+    assert "late_ds4_menu_only,(unsigned)confirm);" in PAD
+    assert "!late_ds4_menu_only; /* never synthesize late Sony 3D Pause */" in PAD
+    assert "late DS4 fresh Cross -> synthetic Return" in PAD
+    assert "synthetic actions disabled until restart with controller present" not in PAD
     # Existing startup-only verified native CFG reload must NOT happen in
     # OnFlip or from the physical reconnect path. No guessed memory writes.
     flip=PAD.split("void SpiderGamepadUI_OnFlip(",1)[1]
@@ -103,8 +113,9 @@ def test_unplug_inputlost_never_acquires_disconnected_device_same_frame():
     assert "spider_hotplug_drop_device(hr," in PAD
     assert "secondary device release BEGIN (no Acquire on failed read)" in PAD
     assert "secondary device release COMPLETE; rescan deferred 2s" in PAD
-    assert "NO stale Acquire inside PAUSED" in PAD
-    assert "pause_wake_active=0; /* stop polling a lost secondary device until Flip */" in PAD
+    assert "no Acquire for INPUTLOST/UNPLUGGED" in PAD
+    assert "hr==DIERR_NOTACQUIRED && pause_wake_notacquired_attempts==0u" in PAD
+    assert "pause_wake_active=0; /* stop polling potentially stale input until Flip */" in PAD
     assert "disable_profile_with_policy(NULL,hr==DIERR_INPUTLOST);" in PAD
     assert "secondary stale device Release BEGIN (skip Unacquire after INPUTLOST)" in PAD
     assert "secondary stale device Release COMPLETE" in PAD
@@ -114,10 +125,13 @@ def test_unplug_inputlost_never_acquires_disconnected_device_same_frame():
     assert "IDirectInputDevice8_Acquire(device);" not in failed
     paused=PAD[PAD.index("unsigned SpiderGamepadUI_PauseWake_Poll("):
                PAD.index("void SpiderGamepadUI_PauseWake_End(")]
-    assert "IDirectInputDevice8_Acquire(device);" not in paused
+    assert paused.count("IDirectInputDevice8_Acquire(device);")==1
+    assert "hr==DIERR_NOTACQUIRED && pause_wake_notacquired_attempts==0u" in paused
+    assert "pause_wake_notacquired_attempts=1u;" in paused
+    assert "if(SUCCEEDED(acquire_hr))return 0;" in paused
     # Reacquisition must open a fresh instance during scheduled rediscovery,
     # not silently reload the game's native PS1 profile in mid-game.
-    assert "IDirectInput8_CreateDevice(di,&d.ds4_instance,&device,NULL)" in PAD
+    assert "IDirectInput8_CreateDevice(di,choose_ds4?&d.ds4_instance:&d.xbox_instance,&device,NULL)" in PAD
     assert "hotplug.last_scan=GetTickCount();" in PAD
 
 
@@ -132,3 +146,43 @@ def test_profile_off_never_creates_secondary_directinput_device():
     bootstrap=bootstrap.split("/* The retired native BUTTON11",1)[0]
     assert "profile==SPIDER_PROFILE_OFF" in bootstrap
     assert "if(!probing)detect_device(hwnd);" in bootstrap
+
+
+def test_late_ds4_cross_returns_after_neutral_but_not_during_bootstrap_gap(tmp_path):
+    cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc:return
+    src=tmp_path/"late_sony.c"
+    exe=tmp_path/"late_sony"
+    src.write_text(textwrap.dedent(r"""
+    #include <assert.h>
+    #include "ps1_ds4_hotplug.h"
+    #include "ps1_menu_confirm.h"
+    int main(void) {
+      SpiderDS4Hotplug pad={0};
+      unsigned old=0,now=SPIDER_PS1_MENU_CROSS,allowed,edge;
+      /* Sony after an Xbox bootstrap: PS1 digital gameplay preview absent,
+       * yet CROSS menu confirmation always follows fixed Sony policy. */
+      allowed=spider_ps1_menu_confirm_mask(1,SPIDER_PS1_MENU_OPTIONS);
+      assert(allowed==SPIDER_PS1_MENU_CROSS);
+      spider_ds4_hotplug_attached(&pad);
+      /* Held on reconnect is not an edge; require neutral first. */
+      assert(!spider_ds4_hotplug_accept_buttons(&pad,2u));
+      assert(!spider_ds4_hotplug_accept_buttons(&pad,0u));
+      assert(spider_ds4_hotplug_accept_buttons(&pad,2u));
+      edge=spider_ps1_menu_confirm_edges(now,old,allowed);
+      assert(edge==SPIDER_PS1_MENU_CROSS);
+      old=now;
+      assert(!spider_ps1_menu_confirm_edges(now,old,allowed));
+      assert(!spider_ps1_menu_confirm_edges(SPIDER_PS1_MENU_OPTIONS,old,allowed));
+      assert(spider_ps1_menu_confirm_unowned(edge,0)==edge);
+      /* Also exercise the shared safety primitives compiled from these
+       * two static headers, not merely suppress their compiler warnings. */
+      assert(spider_ds4_hotplug_scan_due(&pad,0u,0));
+      spider_ds4_hotplug_focus_lost(&pad);
+      assert(!spider_ds4_hotplug_read_failed(&pad));
+      return 0;
+    }
+    """),encoding="utf-8")
+    subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror","-I",str(ROOT),
+                    str(src),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
