@@ -99,7 +99,7 @@ static SpiderPS1PostQuitGuard ps1_post_quit_guard={0};
 /* Xbox also needs native request-7 -> new-menu input ownership.
  * Keep separate state so Sony legacy options remain unchanged. */
 static SpiderPS1PostQuitGuard xbox_post_quit_guard={0};
-static SpiderPS1TransitionEdgeOwnership xbox_transition_ownership={0};
+static SpiderNativeMenuReturnGate xbox_transition_ownership={0};
 static unsigned xbox_return_to_menu_reports=0;
 static unsigned ps1_quit_trace_count=0;
 static int ps1_native_start_unbound=0,previous_native_start=0;
@@ -1227,7 +1227,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
       report(xbox_line);
     }
     xbox_previous_mask=held;
-    inherited_a=spider_ps1_transition_edge_ownership_flip(
+    inherited_a=spider_native_menu_return_gate_flip(
       &xbox_transition_ownership,xbox360_preview_active,
       menu_2d,gameplay_3d,bink_active,native_request,
       held & (1u<<SPIDER_XBOX360_A_DI_BUTTON));
