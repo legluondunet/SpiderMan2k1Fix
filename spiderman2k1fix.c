@@ -3017,8 +3017,12 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
     if(early && SpiderGamepadUI_PreparePS1(early))
       mapped=SpiderCfg_EnablePS1Preview();
     SpiderCfg_BootstrapGameRead();
-    if(mapped && SpiderCfg_PS1BootstrapLoaded())
-      SpiderGamepadUI_ActivatePS1();
+    if(mapped) {
+      if(SpiderCfg_PS1BootstrapLoaded())
+        SpiderGamepadUI_ActivatePS1();
+      else
+        SpiderCfg_CancelPS1Preview();
+    }
   }
   HRESULT hr=original_create(guid,out,iid,outer);
   if(SUCCEEDED(hr) && out && *out && iid && IsEqualGUID(iid,&IID_IDirectDraw7)) {
