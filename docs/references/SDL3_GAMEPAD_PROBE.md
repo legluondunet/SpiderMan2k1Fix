@@ -78,3 +78,37 @@ Hardware **has not yet revalidated the fix**; SDL3 remains read-only and
 the legacy game will still respond only to the independently selected
 DirectInput device. The two-pad Start-to-select pathway was not exercised
 in the supplied test (active=0 until a single pad remained).
+
+## Multiple controllers connected at process startup: missing game input
+
+Maintainer supplied two comparative Windows logs using the previous CI build
+`v1.1.0-f78effa` with SDL3 3.4.18 x86:
+
+* `SpiderMan2k1Fix(20261028-210050).log`: started with **only Xbox 360**.
+  The existing DirectInput UI bridge reported `gamepads=1`, accepted Xbox,
+  and emitted real game-menu Return/Escape events. The subsequently attached
+  DS4 was detected by SDL3, and later native DirectInput rebind occurred.
+* `SpiderMan2k1Fix(20261028-210245).log`: started with **DS4 plus Xbox 360**.
+  The old model-specific bridge explicitly rejected the ambiguity
+  (`no unique allowed DS4/Xbox360; auto bridge inactive`). SDL3 successfully
+  enumerated `physical-joysticks=2 mapped-gamepads=2 opened=2 active=0`.
+  Pressing Xbox Start **did select SDL3 instance 2**, but there was NO
+  `GAMEPAD-UI: SYNTHETIC` event, because SDL3 is read-only.
+
+**This is a confirmed missing feature, not an SDL3 enumeration failure.**
+Controller selection in the SDL3 probe is not connected to either the
+legacy menu bridge or the original 2001 game-owned DirectInput device.
+Do not "fix" by only removing the legacy unique-device guard: the original
+game may still read a different device and issue inconsistent actions.
+
+A limited new startup diagnostic reports the **read-only original native
+joystick pointer** (global at `0x006B7A2C`, SHA verified) alongside SDL3
+active selection. This distinguishes a missing native device from a
+present-but-unbridged device. It does **not** implement SDL3 gameplay input.
+
+A future opt-in stage must enforce a *single input owner* through game
+menus, cinematics, and 3D, bridging the selected normalized SDL3 state at
+a verified original game input boundary while preserving keyboard, focus,
+hotplug neutralization and custom key bindings. Until then, starting with
+only one controller and attaching a second later is a **temporary
+workaround**, not universal multi-pad support.

@@ -119,6 +119,42 @@ missing:
 static int has_id(const uint32_t *ids,unsigned count,uint32_t id) {
   unsigned i;for(i=0;i<count;i++)if(ids[i]==id)return 1;return 0;
 }
+/* Read-only diagnostic of the ORIGINAL game's selected joystick.
+ * The SDL3 selection does not drive this game-owned DirectInput pointer.
+ * The fixed global is known from the SHA-verified native reconnect module.
+ * No COM invocation, pointer replacement or action table writes here. */
+#define SPIDER_NATIVE_JOYSTICK_PTR 0x006B7A2Cu
+static void sdl3_trace_native_owner(DWORD now) {
+  static uintptr_t last_pointer=UINTPTR_MAX;
+  static uint32_t last_selected=UINT32_MAX;
+  static unsigned last_count=~0u;
+  static DWORD last_time=0;
+  MEMORY_BASIC_INFORMATION mbi;
+  uintptr_t address=SPIDER_NATIVE_JOYSTICK_PTR,owner=0,base;
+  char line[270];
+  if(!selection.count || sizeof(void*)!=4 ||
+     (uintptr_t)GetModuleHandleA(NULL)!=0x00400000u ||
+     (uint32_t)(now-last_time)<200u)return;
+  last_time=now;
+  if(VirtualQuery((const void *)address,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT ||
+     (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)) ||
+     !mbi.Protect)return;
+  base=(uintptr_t)mbi.BaseAddress;
+  if(address<base || address-base>mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(address-base)<sizeof(void*))return;
+  owner=(uintptr_t)InterlockedCompareExchangePointer(
+     (PVOID volatile *)address,NULL,NULL);
+  if(owner==last_pointer && selection.active==last_selected &&
+     selection.count==last_count)return;
+  snprintf(line,sizeof(line),
+    "SDL3-PROBE: NATIVE-OWNER physical-opened=%u selected-SDL-id=%lu game-owned-DirectInput=%p (read-only; NOT bridged to SDL3)",
+    selection.count,(unsigned long)selection.active,(void *)owner);
+  say(line);
+  last_pointer=owner;
+  last_selected=selection.active;
+  last_count=selection.count;
+}
 static void sdl3_detached(uint32_t id) {
   char line[125];
   snprintf(line,sizeof(line),"SDL3-PROBE: detached id=%lu",
@@ -213,6 +249,7 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
     last_scan=now;
     rescan();
   }
+  sdl3_trace_native_owner(now);
   for(i=0;i<num_pads;i++)if(pads[i].handle) {
     int pressed=sdl_button(pads[i].handle,SPIDER_SDL_BUTTON_START)?1:0;
     if(spider_sdl3_selection_start(&selection,pads[i].id,pressed)) {
@@ -232,4 +269,6 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
       last_axis_log=now;
     }
   }
+  /* A Start claim may have changed logical ownership after the scan. */
+  sdl3_trace_native_owner(now);
 }

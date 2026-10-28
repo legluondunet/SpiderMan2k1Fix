@@ -1,5 +1,8 @@
 ## Unreleased — optional SDL3 read-only gamepad detection (draft stacked PR)
 
+- Hardware-confirmed limitation: SDL3 selection by Start does not yet provide game input with two pads connected at startup. The existing DirectInput UI bridge intentionally refuses ambiguous devices; do not claim single-logical-pad gameplay before a real input adapter exists.
+- Add passive, validated native joystick pointer telemetry for multi-pad sessions; no game memory or COM device mutations.
+
 - Fix SDL3 hot-unplug lifecycle: compact disconnected slots, close their SDL handles exactly once, and prevent repetitive detach messages/NULL handle close calls (tested with a portable 100-rescan C99 regression).
 - Add an **OFF-by-default** `ExperimentalSDL3Probe=1` diagnostic. Dynamically loads an optional executable-relative Windows x86 SDL3.dll; gameplay remains exclusively on the validated native DirectInput backend. No SDL input is injected and no SDL/audio/video replacement occurs.
 - Enumerate mapped gamepads separately from all joysticks, track SDL3 instance IDs, and log attach/detach, normalized LT/RT and a neutral-Start one-player selection experiment; preserve the existing owner when more pads arrive.
