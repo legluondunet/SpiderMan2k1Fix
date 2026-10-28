@@ -242,3 +242,38 @@ menu fix physically**. PR #77 remains DRAFT and UNMERGED.
 No merge without explicit approval.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+
+## Xbox readonly menu validated in Wine — 2026-10-28 15:28:53
+
+The maintainer uploaded a screenshot of the original **Joystick Configuration**
+screen and explicitly confirmed that it is now locked with the experimental
+Holtek Xbox controller. The same run used binary `v1.1.0-11c58c6` and
+recorded:
+
+- `gamepads=1 SonyDualShock4=0 Xbox360=1`, VID/PID `045E:028E`,
+  `ControllerProfile=Auto`.
+- `GAMEPAD-XBOX360: JOYSTICK-READONLY ACTIVE`, after the original game's
+  virtual configuration read was confirmed.
+- Native game setting writes occurred, but the screenshot and verbal
+  confirmation establish **non-editable Joystick UI**, not a byte-for-byte
+  persistence comparison. Keyboard Configuration editability remains to be
+  explicitly checked.
+- The screenshot shows JUMP=B, PUNCH=A, WEB=NONE, AIM=BUTTON6,
+  ZIPLINE=BUTTON9, SWING=BUTTON7. These are observed associations, **not**
+  a correct or validated Xbox gameplay layout.
+
+The same runtime log reports
+`PAUSE BLOCKED physical BUTTON7: native [Joystick] Web=0x00004000`.
+This exposed a parser bug: 0x4000 is the original game's **NONE/unbound**
+sentinel and must not itself conflict. A subsequent narrow correction allows
+that sentinel while rejecting all other unknown out-of-range values.
+**Crucially, Swing=BUTTON7 still conflicts with candidate Start=BUTTON7,
+and Aim=BUTTON6 still conflicts with candidate Back=BUTTON6.** Thus this
+parser correction alone does not make 3D Pause functional and is not a
+reason to bypass the conflict guard. A safe reversible Xbox gameplay preset
+needs a separately evidenced physical mapping, preserving saved user values.
+
+The read-only joystick menu is **user-validated on this Wine setup**;
+the follow-up parser correction is **not yet user-validated**. Keep this
+entire draft PR unmerged until explicit approval.
