@@ -148,3 +148,21 @@ def test_ps1_gameplay_bindings_are_fail_closed_on_bootstrap_and_virtual_writes()
     assert "spider_ps1_apply(cfg,CFG_SIZE)" in CFG
     assert "PS1-PREVIEW protected seven virtual joystick bindings" in CFG
     assert "the game's\n       * own live action array" in CFG
+
+
+def test_start_probe_is_read_only_and_removes_old_arbitrary_pe_size_limit():
+    assert "ps1_probe_native_start_tables()" in PAD
+    assert "pe->OptionalHeader.SizeOfImage>0x10000000u" in PAD
+    assert "pe->OptionalHeader.SizeOfImage>0x2000000u" not in PAD
+    assert "pe->FileHeader.NumberOfSections>32u" in PAD
+    assert "memcmp(sec[j].Name,\".data\",5)" in PAD
+    assert "!(sec[j].Characteristics&IMAGE_SCN_MEM_WRITE)" in PAD
+    assert "VirtualQuery(data,&mbi,sizeof(mbi))" in PAD
+    assert "mbi.State!=MEM_COMMIT" in PAD
+    assert "if(span>1024u*1024u)" in PAD
+    assert "START-TABLE candidate=" in PAD
+    assert "START-TABLE probe data-sections=" in PAD
+    assert "READ-ONLY; NO table edits" in PAD
+    # No native memory writes to START, no native menu patch, no COM hook.
+    assert "SPIDER_START_MAP_BUTTON_OFFSET" not in PAD
+    assert "InterlockedExchange((volatile LONG*)(void*)" not in PAD
