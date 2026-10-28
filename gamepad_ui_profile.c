@@ -35,6 +35,7 @@
 #include "ps1_post_quit_guard.h"
 #include "ps1_transition_edge_ownership.h"
 #include "ps1_menu_confirm.h"
+#include "ps1_focus_pause_wake.h"
 #include "ps1_input_flight_recorder.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
@@ -80,6 +81,9 @@ static char profile_ini[MAX_PATH]={0};
 static unsigned pause_conflict_reports=0,outside_mode_reports=0;
 static unsigned postmenu_bink_reports=0;
 static unsigned bad_reads=0;
+static SpiderPausePadWake pause_wake={0};
+static int pause_wake_active=0;
+static int pause_wake_retry_logged=0;
 static IDirectInput8A *di=NULL;
 static IDirectInputDevice8A *device=NULL;
 static HMODULE di_module=NULL;
@@ -690,6 +694,65 @@ static void ps1_history_dump(void) {
   report("GAMEPAD-PS1: FLIGHT-RECORDER END");
 }
 
+/*
+ * Poll the already-verified secondary Sony DS4 while the custom focus PAUSED
+ * surface blocks the original game's Flip. This routine deliberately never
+ * calls begin_scancode, SendInput, or modifies the native joystick mapping.
+ * A complete fresh digital press/release is required to wake; sticks/POV
+ * cannot wake the game through noise, nor can a held button upon Alt+Tab.
+ * The controller cannot take foreground on its own: user must first switch
+ * back to the game window normally. No hotplug enumeration in this path.
+ */
+void SpiderGamepadUI_PauseWake_Begin(void) {
+  memset(&pause_wake,0,sizeof(pause_wake));
+  pause_wake_active=1;
+  pause_wake_retry_logged=0;
+}
+unsigned SpiderGamepadUI_PauseWake_Poll(HWND hwnd) {
+  DIJOYSTATE2 state;
+  HRESULT hr;
+  unsigned i,buttons=0;
+  if(!pause_wake_active)return 0;
+  if(!configured || !detected || !device)return 0;
+  if(!hwnd || !IsWindow(hwnd) || !IsWindowVisible(hwnd) ||
+     GetForegroundWindow()!=hwnd) {
+    /* A pending partial press must never survive another focus loss. */
+    memset(&pause_wake,0,sizeof(pause_wake));
+    return 0;
+  }
+  hr=IDirectInputDevice8_Poll(device);
+  /* Many DirectInput devices return DI_NOEFFECT from Poll. The actual
+   * GetDeviceState result, not optional Poll, determines readiness. */
+  (void)hr;
+  memset(&state,0,sizeof(state));
+  hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);
+  if(FAILED(hr)) {
+    memset(&pause_wake,0,sizeof(pause_wake));
+    /* The original game's own DirectInput interface is never changed. */
+    IDirectInputDevice8_Acquire(device);
+    if(!pause_wake_retry_logged) {
+      report("FOCUS-PAUSE-GAMEPAD: secondary DS4 read failed; retrying independent Acquire while foreground; keyboard wake remains available");
+      pause_wake_retry_logged=1;
+    }
+    return 0;
+  }
+  pause_wake_retry_logged=0;
+  for(i=0;i<12u;i++)
+    if(state.rgbButtons[i]&0x80u)buttons|=(1u<<i);
+  return spider_pause_pad_wake_step(&pause_wake,buttons);
+}
+void SpiderGamepadUI_PauseWake_End(void) {
+  pause_wake_active=0;
+  memset(&pause_wake,0,sizeof(pause_wake));
+  pause_wake_retry_logged=0;
+  /* The normal UI bridge resumes on the next Flip. Our wake used NO
+   * synthetic key; reset its edges so the pause input cannot be inherited. */
+  previous_buttons=0;
+  previous_back=0;
+  previous_pause=0;
+  previous_share=0;
+  previous_native_start=0;
+}
 void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active) {
   DIJOYSTATE2 state;
