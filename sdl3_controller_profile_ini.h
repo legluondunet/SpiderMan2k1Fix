@@ -1,7 +1,9 @@
-/* Portable, strict v1 SDL3 model-profile serializer/parser.
- * No disk I/O, Windows APIs or game input effects. Exactly one VID:PID,
- * exactly eight validated bindings. Fail closed on corruption, unknown
- * fields, duplicates, unsupported version and extra binary content. */
+/* Portable, strict v2 SDL3 model-profile serializer/parser.
+ * Reads legacy version 1 without changing its eight gameplay bindings;
+ * initializes five new, independently contextual menu/media defaults.
+ * Writes v2 on the next explicitly confirmed binding change/reset.
+ * No disk I/O, Windows APIs or input injection. All versions fail closed
+ * on corruption, unknown fields, duplicates and incorrect VID/PID. */
 #ifndef SPIDERMAN2K1FIX_SDL3_CONTROLLER_PROFILE_INI_H
 #define SPIDERMAN2K1FIX_SDL3_CONTROLLER_PROFILE_INI_H
 #include <stdio.h>
@@ -59,7 +61,7 @@ static inline int spider_sdl3_ini_encode(
   int n;
   if(written)*written=0;
   if(!out || !cap || !spider_sdl3_profile_valid(p))return 0;
-  n=snprintf(out,cap,"[Profile]\r\nVersion=1\r\nVendor=0x%04X\r\nProduct=0x%04X\r\n[Bindings]\r\n",
+  n=snprintf(out,cap,"[Profile]\r\nVersion=2\r\nVendor=0x%04X\r\nProduct=0x%04X\r\n[Bindings]\r\n",
       (unsigned)p->vendor,(unsigned)p->product);
   if(n<0 || (size_t)n>=cap)return 0;
   used=(size_t)n;
@@ -74,6 +76,20 @@ static inline int spider_sdl3_ini_encode(
     if(n<0 || (size_t)n>=cap-used)return 0;
     used+=(size_t)n;
   }
+  n=snprintf(out+used,cap-used,"[MenuBindings]\\r\\n");
+  if(n<0 || (size_t)n>=cap-used)return 0;
+  used+=(size_t)n;
+  for(i=0;i<SPIDER_SDL3_CONTEXT_COUNT;i++) {
+    SpiderSDL3Binding b=p->context[i];
+    const char *kind=b.kind==SPIDER_SDL3_BIND_BUTTON?"button":
+                     b.kind==SPIDER_SDL3_BIND_TRIGGER?"trigger":"none";
+    n=b.kind==SPIDER_SDL3_BIND_NONE?
+      snprintf(out+used,cap-used,"%s=none\\r\\n",spider_sdl3_context_names[i]):
+      snprintf(out+used,cap-used,"%s=%s:%u\\r\\n",
+        spider_sdl3_context_names[i],kind,(unsigned)b.index);
+    if(n<0 || (size_t)n>=cap-used)return 0;
+    used+=(size_t)n;
+  }
   if(used>SPIDER_SDL3_PROFILE_INI_MAX)return 0;
   if(written)*written=used;
   return 1;
@@ -83,7 +99,9 @@ static inline int spider_sdl3_ini_decode(
     SpiderSDL3ControllerProfile *result) {
   char copy[SPIDER_SDL3_PROFILE_INI_MAX+1],*cursor,*end;
   SpiderSDL3ControllerProfile trial;
-  unsigned seen=0,section=0;
+  unsigned seen=0,section=0,version=0;
+  const unsigned gameplay_mask=(1u<<(SPIDER_SDL3_ACTION_COUNT+3u))-1u;
+  const unsigned v2_mask=(1u<<(SPIDER_SDL3_SETUP_ACTION_COUNT+3u))-1u;
   uint16_t found_vid=0,found_pid=0;
   unsigned i;
   if(!data || !result || !vid || !pid ||
@@ -107,13 +125,20 @@ static inline int spider_sdl3_ini_decode(
       if(section!=1 || (seen&7u)!=7u)return 0;
       section=2;continue;
     }
+    if(!strcmp(line,"[MenuBindings]")) {
+      if(version!=2u || section!=2 || seen!=gameplay_mask)return 0;
+      section=3;continue;
+    }
     eq=strchr(line,'=');
     if(!eq || strchr(eq+1,'=') || eq==line || !eq[1])return 0;
     *eq++=0;
     if(section==1) {
       unsigned bit=0;
       if(!strcmp(line,"Version")) {
-        bit=1u;if(strcmp(eq,"1"))return 0;
+        bit=1u;
+        if(!strcmp(eq,"1"))version=1u;
+        else if(!strcmp(eq,"2"))version=2u;
+        else return 0;
       } else if(!strcmp(line,"Vendor")) {
         bit=2u;if(!spider_sdl3_ini_hex4(eq,&found_vid) ||
                   found_vid!=vid)return 0;
@@ -135,9 +160,22 @@ static inline int spider_sdl3_ini_decode(
          !spider_sdl3_ini_binding(eq,&bind))return 0;
       trial.actions[index]=bind;
       seen|=1u<<(index+3u);
+    } else if(section==3) {
+      unsigned index=SPIDER_SDL3_CONTEXT_COUNT;
+      SpiderSDL3Binding bind;
+      for(i=0;i<SPIDER_SDL3_CONTEXT_COUNT;i++)
+        if(!strcmp(line,spider_sdl3_context_names[i])) {
+          index=i;break;
+        }
+      if(index==SPIDER_SDL3_CONTEXT_COUNT ||
+         (seen&(1u<<(index+SPIDER_SDL3_ACTION_COUNT+3u))) ||
+         !spider_sdl3_ini_binding(eq,&bind))return 0;
+      trial.context[index]=bind;
+      seen|=1u<<(index+SPIDER_SDL3_ACTION_COUNT+3u);
     } else return 0;
   }
-  if(section!=2 || seen!=((1u<<(SPIDER_SDL3_ACTION_COUNT+3u))-1u) ||
+  if(!((version==1u && section==2 && seen==gameplay_mask) ||
+       (version==2u && section==3 && seen==v2_mask)) ||
      !spider_sdl3_profile_valid(&trial))return 0;
   *result=trial;
   return 1;
