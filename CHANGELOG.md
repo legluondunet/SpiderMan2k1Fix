@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — native read-only DualShock 4 Joystick Configuration prototype (PR #74)
+
+- Introduce **disabled-by-default** `[Input] ControllerPS1ReadOnlyJoystick=1`, available only after an unambiguous Sony DualShock 4 is acquired and the PS1 gameplay overlay is successfully read by the original config loader.
+- Keep the original Joystick Configuration two-column menu, but format its seven actual fixed native action button numbers as **CROSS, CIRCLE, SQUARE, TRIANGLE, L1, R1, R2**. Preserve original 2D rendering, cursor, scrolling, exit and controller gameplay.
+- Based on original PCShell native code addresses, apply six transactional, original-bytes-verified, RAM-only joystick-menu-specific patches: intercept native button-label formatting, prevent entering the key/button reassignment prompt **only when the original menu mode indicates Joystick** (Keyboard Configuration remains editable), block the original two reassignment acceptance paths, neutralize native controller restore-default and setter call sites.
+- Move all code-page changes into a dedicated `ps1_joystick_readonly_menu.c` module; the independent DirectInput gamepad UI bridge remains code-patch-free.
+- **NOT YET VALIDATED IN GAME.** This feature will not be enabled automatically or released until physical controller, mouse and keyboard interactions verify a truly read-only Joystick menu and functioning editable Keyboard menu. Original personal `[Joystick]`/`RawHex` preferences remain preserved.
+
 ## Unreleased — native Start opt-in research (PR #74, UNVALIDATED)
 
 - After a successful complete, read-only .data scan on the maintainer's original game, identify exactly one 14-action Start candidate at RVA `0x00168408` (BUTTON11), with no truncated memory.
