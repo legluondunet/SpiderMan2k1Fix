@@ -457,7 +457,15 @@ int SpiderGamepadUI_PreparePS1(HWND hwnd) {
   if(!configured || !ps1_preview_requested || profile==SPIDER_PROFILE_OFF ||
      !hwnd || !IsWindow(hwnd) || GetForegroundWindow()!=hwnd)return 0;
   if(!probing)detect_device(hwnd);
-  if(!detected || detected_kind!=SPIDER_RECONNECT_DS4){
+  /* A verified Xbox pad is deliberately NOT a Sony PS1 preview.
+   * Keep its acquired secondary DirectInput device and probing=1;
+   * resetting probing here would recreate/leak the Xbox COM device
+   * on the first Flip while the original game is using the pad. */
+  if(detected && detected_kind==SPIDER_RECONNECT_XBOX360) {
+    report("GAMEPAD-XBOX360: PS1-PREVIEW skipped (Sony-only); retained Xbox UI device for menu A/B");
+    return 0;
+  }
+  if(!detected){
     probing=0;
     report("GAMEPAD-UI: PS1-PREVIEW deferred: early DS4 device acquisition failed; original game mappings untouched");
     return 0;
