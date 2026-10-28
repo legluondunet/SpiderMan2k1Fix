@@ -2519,7 +2519,8 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
     InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
       InterlockedCompareExchange(&fov_game_height,0,0)>0,
-    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u);
+    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
+    (*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u);
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
@@ -2992,7 +2993,18 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
       log_line("DISPLAY-NATIVE: WARNING game HWND unavailable before virtual config bootstrap; fallback to current primary monitor until SetCooperativeLevel");
     }
   }
-  SpiderCfg_BootstrapGameRead();
+  /* Preview opt-in only: acquire an unambiguous Sony DS4 with the
+   * real game HWND before the original config loader consumes Spidey.cfg.
+   * A failed preflight leaves the previous working UI bridge untouched. */
+  {
+    HWND early=spider_find_game_window_before_ddraw();
+    int mapped=0;
+    if(early && SpiderGamepadUI_PreparePS1(early))
+      mapped=SpiderCfg_EnablePS1Preview();
+    SpiderCfg_BootstrapGameRead();
+    if(mapped && SpiderCfg_PS1BootstrapLoaded())
+      SpiderGamepadUI_ActivatePS1();
+  }
   HRESULT hr=original_create(guid,out,iid,outer);
   if(SUCCEEDED(hr) && out && *out && iid && IsEqualGUID(iid,&IID_IDirectDraw7)) {
     void ***object=(void ***)*out;
