@@ -32,6 +32,7 @@
 #include "gamepad_ui_profile.h"
 #include "ps1_native_start_mapping.h"
 #include "ps1_mouse_mode.h"
+#include "ps1_post_quit_guard.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
 typedef HRESULT (WINAPI *SpiderDICreateFn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
@@ -59,6 +60,8 @@ static int ps1_options_skip_requested=0;
 static int ps1_readonly_menu_requested=0;
 static int ps1_mouse_auto_requested=0,ps1_mouse_auto_armed=0;
 static int ps1_quit_trace_requested=0;
+static int ps1_post_quit_guard_requested=0;
+static SpiderPS1PostQuitGuard ps1_post_quit_guard={0};
 static unsigned ps1_quit_trace_count=0;
 static int ps1_native_start_unbound=0,previous_native_start=0;
 static unsigned ps1_native_start_reports=0;
@@ -210,6 +213,8 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   ps1_readonly_menu_requested=GetPrivateProfileIntA("Input","ControllerPS1ReadOnlyJoystick",0,ini)==1;
   ps1_mouse_auto_requested=GetPrivateProfileIntA("Input","ControllerAutoDisableMouse",0,ini)==1;
   ps1_quit_trace_requested=GetPrivateProfileIntA("Input","ControllerPS1QuitTrace",0,ini)==1;
+  ps1_post_quit_guard_requested=GetPrivateProfileIntA("Input","ControllerPS1PostQuitGuard",0,ini)==1;
+  memset(&ps1_post_quit_guard,0,sizeof(ps1_post_quit_guard));
   GetPrivateProfileStringA("Input","ControllerProfile","Auto",choice,sizeof(choice),ini);
   if(!_stricmp(choice,"Off"))profile=SPIDER_PROFILE_OFF;
   else if(!_stricmp(choice,"Auto"))profile=SPIDER_PROFILE_AUTO;
@@ -621,6 +626,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   unsigned pressed,back_pressed;
   int menu_allowed,movie_allowed,confirm_allowed,gameplay_allowed,pause_pressed;
   int share_pressed,share_edge,native_start_pressed;
+  int post_quit_block=0;
   if(!configured || !hwnd || !IsWindow(hwnd)){
     if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
     return;
@@ -637,6 +643,15 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     previous_share=0;
     previous_native_start=0;
     return;
+  }
+  /* The original request 7 (3D -> main menu) is already complete on the
+   * FIRST 2D Flip. Cross can otherwise inject Return into New Game before
+   * the returned menu has settled. Never block native gamepad input here:
+   * only the PS1 profile's synthetic UI Return is eligible. */
+  if(ps1_preview_active && ps1_post_quit_guard_requested) {
+    post_quit_block=spider_ps1_post_quit_guard_flip(&ps1_post_quit_guard,
+      1,menu_2d,gameplay_3d,bink_active,
+      (unsigned)*(const volatile DWORD *)(uintptr_t)0x0060CFA4u);
   }
   if(!probing)detect_device(hwnd);
   if(!detected||!device) {
@@ -719,6 +734,13 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   } else if(menu_allowed && (back_pressed & (unsigned)back) &&
      !(previous_back & (unsigned)back)) {
     begin_scancode(0x01u,"Escape");
+  } else if(confirm_allowed &&
+            (pressed & (unsigned)confirm) &&
+            !(previous_buttons & (unsigned)confirm) &&
+            post_quit_block) {
+    /* The edge is still consumed by previous_buttons below, so a held
+     * Cross/Options cannot replay after the settling window expires. */
+    report("GAMEPAD-PS1: POST-QUIT-GUARD suppressed synthetic Return on first 2D menu frames after native request 7");
   } else if(confirm_allowed &&
             (pressed & (unsigned)confirm) &&
             !(previous_buttons & (unsigned)confirm)) {
