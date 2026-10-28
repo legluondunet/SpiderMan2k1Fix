@@ -354,12 +354,13 @@ static void detect_device(HWND hwnd) {
       d.found,d.ds4_count,d.xbox_count,(unsigned)d.last_vendor,(unsigned)d.last_product,d.last_name);
     report(line);
   }
-  /* Never apply a Sony profile to an unidentified or ambiguously selected
-   * controller: the original game picks its controller independently. */
+  /* Xbox 360-compatible is an explicit opt-in because Holtek/clones can
+   * borrow 045E:028E while exposing platform-specific DI button orders.
+   * Sony DS4 Auto continues to behave exactly as the tested build. */
   choose_ds4=(d.found==1u && d.ds4_count==1u &&
     (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_DUALSHOCK4));
   choose_xbox=(d.found==1u && d.xbox_count==1u &&
-    (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_XBOX360));
+    profile==SPIDER_PROFILE_XBOX360);
   if(!choose_ds4 && !choose_xbox) {
     if(!hotplug_missing_logged)
       disable_profile("GAMEPAD-UI: no unique supported Sony DS4/Xbox 360 DirectInput pad; bridge inactive; game mappings unchanged; rescan every 2s");
