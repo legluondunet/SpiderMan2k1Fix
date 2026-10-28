@@ -30,9 +30,9 @@ def test_ps1_readonly_menu_is_an_explicit_opt_in_only():
 
 
 def test_only_original_verified_joystick_paths_are_changed():
-    assert "SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT=5" in HEADER
+    assert "SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT=6" in HEADER
     for original_va in ("0x0050D28Cu","0x0050D4A9u","0x0050D51Cu",
-                        "0x0050D6A6u","0x0050D7ADu"):
+                        "0x0050D6A6u","0x0050D7ADu","0x0050D3FAu"):
         assert original_va in HEADER
     assert "0x0050D852u-(p->virtual_address+5u)" in SOURCE
     assert "replacements[0][0]=0xE8u" in SOURCE
@@ -45,6 +45,15 @@ def test_only_original_verified_joystick_paths_are_changed():
     assert "FlushInstructionCache(GetCurrentProcess(),address,n)" in SOURCE
     assert "if(installed!=SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT)" in SOURCE
     assert "while(installed>0u)" in SOURCE
+    assert "VirtualAlloc(NULL,sizeof(code)" in SOURCE
+    assert "PAGE_EXECUTE_READ,&old" in SOURCE
+    assert "capture_thunk+11" in SOURCE
+    assert "capture_thunk+22" in SOURCE
+    assert "0x0050D872u-" in SOURCE
+    assert "0x0050D400u-" in SOURCE
+    assert "0x9Cu,0x12u,0xACu,0x00u" in SOURCE
+    assert "replacement[5]=0x90u;" in SOURCE
+    assert "native capture entry blocked for Joystick only" in SOURCE
     assert "nt->OptionalHeader.ImageBase!=0x00400000u" in SOURCE
     assert "int SpiderPS1_InstallReadOnlyJoystick(void (*logger)(const char *))" in SOURCE
     # Keyboard Configuration's original setter and update function
@@ -88,7 +97,9 @@ def test_host_compiled_label_mapping_and_factory_signature(tmp_path):
           if(spider_ps1_readonly_sites[2].virtual_address!=0x50D51Cu)return 5;
           if(spider_ps1_readonly_sites[3].virtual_address!=0x50D6A6u)return 6;
           if(spider_ps1_readonly_sites[4].virtual_address!=0x50D7ADu)return 7;
-          if(spider_ps1_readonly_sites[3].size!=6u)return 8;
+          if(spider_ps1_readonly_sites[5].virtual_address!=0x50D3FAu)return 8;
+          if(spider_ps1_readonly_sites[3].size!=6u)return 9;
+          if(spider_ps1_readonly_sites[5].size!=6u)return 10;
           return 0;
         }
     """),encoding="utf-8")
