@@ -11,6 +11,53 @@ tested. This branch does not modify PR #73 or its test artifact.
 
 Author: legluondunet assisted by ChatGPT (OpenAI)
 
+## Mouse controls — confirmed menu-only; disabled by default (2026-10-28)
+
+The original Spider-Man **PC 2001** manual lists gameplay actions only for
+keyboard and joystick, and its main/options menu can be fully operated via
+arrows, Enter and Escape. The game's own Windows README likewise says menus
+can use either the mouse or keyboard. The PC developer explicitly described
+mouse functionality as **menus only** in a GameSpot interview, not as camera,
+aiming or combat controls. Do **not** confuse this 2001 game with Spider-Man:
+The Movie (2002), which supports gameplay mouse control.
+
+Sources:
+- Original PC 2001 manual:
+  https://oldgamesdownload.com/wp-content/uploads/Spider_Man_Manual_Win_EN.pdf
+- Original Windows README:
+  https://oldgamesdownload.com/readme/spider-man-windows-readme-english/
+- Developer interview:
+  https://www.gamespot.com/articles/spider-man-preview/1100-2798115/
+
+The maintainer approved **game-internal mouse disable by default** for every
+user, including **keyboard-only** configurations. `[Input] MouseEnabled=0`
+is now written into newly generated INIs, and is the default even if absent
+from an older INI. To opt back into original mouse-driven menu selection:
+
+```ini
+[Input]
+MouseEnabled=1
+```
+
+Add the key inside the **existing** `[Input]` section only; do not duplicate
+the section or the key. The original native `gRenderTest & 0x10` mouse gate
+is still verified against its exact three original instruction signatures
+and writable single game-owned flag before any change; if verification fails,
+the original mouse remains enabled. Keyboard input and controller gameplay
+are unaffected. The fix never hides/hooks/repositions the Windows/X11 desktop
+mouse. During loss of game foreground it releases **only the bit owned by the
+fix**, and reapplies suppression when the game regains the foreground.
+
+The old `ControllerAutoDisableMouse=1` setting is **retired and ignored**,
+but recognized by the INI validator to avoid deleting settings on upgrade.
+`MouseEnabled=1` unconditionally selects original game menu mouse behavior
+even if an old INI contains `ControllerAutoDisableMouse=1`. This global
+policy is independent of Sony DS4 detection, controller profile selection,
+hotplugging and DirectInput polling.
+
+This is a code+CI candidate until the maintainer validates real keyboard-only
+gameplay, 2D menus, Alt-Tab and mouse opt-in under Wine and Windows.
+
 ## Controller consolidation checkpoint (2026-10-28, verified where noted)
 
 The maintainer confirmed **PS4 OPTIONS/BUTTON9 alone does nothing** in the
@@ -36,7 +83,7 @@ ControllerPS1Preview=1
 ControllerPS1ReadOnlyJoystick=1
 ControllerPS1DeepStartProbe=1
 ControllerPS1DisableNativeStart=1
-ControllerAutoDisableMouse=1
+MouseEnabled=0
 ControllerPS1TransitionEdgeOwnership=1
 ControllerPS1PostQuitGuard=0
 ControllerPS1OptionsSkip=0
