@@ -204,6 +204,86 @@ static const char *encode_key(DWORD scan) {
   }
   return NULL;
 }
+/* Original PCINPUT_RestoreDefaultKeyboardSettings at 0x50A520 copies
+ * 0x70 bytes from gDefaultKeyboardMappings=0x53C87C into the CURRENT
+ * gKeyboardMappings=0x568398. Never patch the currently customized
+ * mappings: change only the source defaults once, after CRT bootstrap.
+ * Revert to the modern factory template (arrows, Space, X/C/V/D/F/G)
+ * instead of the game's obsolete NUMPAD presets. The six letter keys
+ * use our existing Auto/Off keyboard layout mapping, so French AZERTY
+ * retains the same user-visible defaults.
+ *
+ * Strict exact original 11 action-mask + old-key preflight and readable
+ * committed memory checks. Unknown game binary or modified originals:
+ * refuse the patch, leaving all keyboard settings intact. */
+int SpiderCfg_InstallModernKeyboardDefaults(void) {
+  static const uint32_t masks[11]={
+    1u,2u,4u,8u,0x10u,0x20u,0x40u,0x80u,0x100u,0x200u,0x400u};
+  static const uint32_t legacy[11]={
+    0xC8u,0xD0u,0xCBu,0xCDu,0x50u,0x4Du,0x4Bu,
+    0x48u,0x47u,0x51u,0x49u};
+  uint32_t modern[11];
+  const uintptr_t table=0x0053C87Cu;
+  MEMORY_BASIC_INFORMATION mbi;
+  DWORD old,ignored;
+  unsigned i;
+  char msg[200];
+  if((uintptr_t)GetModuleHandleA(NULL)!=0x00400000u)return 0;
+  if(VirtualQuery((const void *)table,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)) ||
+     table<(uintptr_t)mbi.BaseAddress ||
+     table-(uintptr_t)mbi.BaseAddress>=mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(table-(uintptr_t)mbi.BaseAddress)<0x70u) {
+    report("SPIDEY-KEYBOARD-DEFAULT: REFUSED unreadable original default keyboard map");
+    return 0;
+  }
+  for(i=0;i<11u;i++) {
+    uint32_t mask,scan;
+    memcpy(&mask,(const void *)(table+i*8u),4u);
+    memcpy(&scan,(const void *)(table+i*8u+4u),4u);
+    if(mask!=masks[i] || scan!=legacy[i]) {
+      snprintf(msg,sizeof(msg),
+        "SPIDEY-KEYBOARD-DEFAULT: REFUSED original defaults mismatch slot=%u mask=0x%lX scan=0x%lX",
+        i,(unsigned long)mask,(unsigned long)scan);
+      report(msg);
+      return 0;
+    }
+    /* Also guard against template drift on the four arrow keys and
+     * Space. Six gameplay letters are layout-aware below. */
+    modern[i]=(uint32_t)spidey_cfg_factory[action_offsets[i]] |
+              ((uint32_t)spidey_cfg_factory[action_offsets[i]+1u]<<8) |
+              ((uint32_t)spidey_cfg_factory[action_offsets[i]+2u]<<16) |
+              ((uint32_t)spidey_cfg_factory[action_offsets[i]+3u]<<24);
+  }
+  if(modern[0]!=0xC8u || modern[1]!=0xD0u ||
+     modern[2]!=0xCBu || modern[3]!=0xCDu ||
+     modern[4]!=0x39u)return 0;
+  modern[5]=letter_scan('X',0x2Du);
+  modern[6]=letter_scan('C',0x2Eu);
+  modern[7]=letter_scan('V',0x2Fu);
+  modern[8]=letter_scan('D',0x20u);
+  modern[9]=letter_scan('F',0x21u);
+  modern[10]=letter_scan('G',0x22u);
+  if(!VirtualProtect((void *)table,0x70u,PAGE_READWRITE,&old)) {
+    report("SPIDEY-KEYBOARD-DEFAULT: REFUSED could not unlock source default table");
+    return 0;
+  }
+  for(i=0;i<11u;i++)
+    memcpy((void *)(table+i*8u+4u),&modern[i],4u);
+  if(!VirtualProtect((void *)table,0x70u,old,&ignored)) {
+    /* Restore original, if possible; do not leave unknown partial state. */
+    DWORD writable;
+    if(VirtualProtect((void *)table,0x70u,PAGE_READWRITE,&writable)) {
+      for(i=0;i<11u;i++)
+        memcpy((void *)(table+i*8u+4u),&legacy[i],4u);
+      VirtualProtect((void *)table,0x70u,old,&ignored);
+    }
+    report("SPIDEY-KEYBOARD-DEFAULT: FAILED page protection restore; rollback attempted");
+    return 0;
+  }
+  report("SPIDEY-KEYBOARD-DEFAULT: ACTIVE original 2001 NUMPAD restore replaced by modern factory arrows/Space/X,C,V,D,F,G; user mappings and Keyboard menu editable");
+  return 1;
+}
 static void load_keyboard(void) {
   unsigned i; char value[64],msg[140]; DWORD code;
   for(i=0;i<11;i++) {
