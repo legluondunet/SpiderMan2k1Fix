@@ -187,6 +187,37 @@ After returning from the modal dialog, the game must still receive
 keyboard/gamepad actions and native Start switching without duplicate
 inputs or stuck focus. Keep this OFF if Windows/Wine behavior differs.
 
+## Five separately configurable menu and media controls — INI v2
+
+Status: draft PR #80, editor and persistence implemented, runtime ownership not yet connected.
+
+The keyboard/gamepad controller editor lists the original eight 3D controls plus five contextual bindings:
+
+| [MenuBindings] key | Context | Default normalized SDL3 button |
+| --- | --- | --- |
+| MenuConfirm | Menu confirmation | South / A / Cross (0) |
+| MenuBack | Menu cancellation | East / B / Circle (1) |
+| SkipVideo | Bink video skipping, subject to native permission | South (0) |
+| NextStill | The second static screen that awaits Enter | South (0) |
+| SkipCutscene | Original scripted 3D cutscene, subject to CutSceneSkipAllow | North / Y / Triangle (3) |
+
+Controls may share a physical button across different contexts: e.g. South can be both Jump in 3D and MenuConfirm and SkipVideo and NextStill. MenuConfirm/MenuBack are the only pair active in the same context; assigning a shared button swaps their two assignments. Both Start (ownership selection) and Guide (OS) remain unavailable for binding. Any contextual action can be set to none in the INI; the UI capture workflow binds buttons/triggers.
+
+The v2 file preserves [Bindings] with all eight original actions, and adds this complete section:
+
+```ini
+[MenuBindings]
+MenuConfirm=button:0
+MenuBack=button:1
+SkipVideo=button:0
+NextStill=button:0
+SkipCutscene=button:3
+```
+
+Migration: strict v1 files load with the original custom 3D commands intact and these five new defaults. On the first EXPLICIT user commit or reset, the file is rewritten as v2 atomically after a one-time exact v1 copy is saved as VID-PID.ini.v1.bak. Merely opening the game does not rewrite files. V2 requires exactly five context entries, a matching VID/PID and no unknown or duplicate fields. The previous LOCALAPPDATA fallback still works.
+
+Runtime limitation: the five new mappings are configurable and saved, but are NOT yet consumed by the game's original Bink/static/menu/cutscene input readers. The old legacy controller-to-Enter/Escape route remains active and original CutSceneSkipAllow and still timers remain authoritative. The next step is exclusive context-owner routing with neutral/focus safeguards, preserving legacy behavior whenever it cannot be proven safe. Do not infer active skip control from profile save success.
+
 ## Per-model profile persistence (experimental, draft PR #80)
 
 When `ExperimentalSDL3Probe=1` and
