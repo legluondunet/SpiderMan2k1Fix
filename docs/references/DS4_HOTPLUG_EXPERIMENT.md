@@ -132,3 +132,58 @@ The maintainer reported an immediate game crash after unplugging the Sony
   game-native controller code or secondary COM release is the faulting
   site. Do not attempt unsafe native device-memory writes or broad
   exception swallowing without that evidence.
+
+
+## Second immediate-unplug crash: native path still unresolved (28 October 2026)
+
+Maintainer explicitly confirmed **the game again crashed immediately when physically
+unplugging the DS4** after installing the defensive PR #76 build. The
+`SpiderMan2k1Fix(20261028-123031).log` startup version
+`v1.1.0-5799185` is **the correct GitHub Actions PR merge build** from run
+`40687603987`; it is not an obsolete build. Its output shows clean
+bootstrap and normal foreground rendering through Flip #480, but **no
+secondary DirectInput error or GAMEPAD-HOTPLUG release checkpoint** before
+the abrupt end. `hotplug-seh.log` contains Wine `RtlUnwindEx` traces,
+including code `80000026`, but no attributable fatal exception, fault
+address, Windows module name or backtrace. This capture does **not**
+exonerate the game, patch or Wine. In particular it gives no proof that
+the secondary device release fix can execute before the crash.
+
+**Blocking acceptance condition:** the game must survive an immediate
+controller detach before we can claim any hotplug support.
+
+Do not add a guessed native joystick pointer patch, COM-vtable override,
+or broad exception swallow based on this evidence: this project has
+previously observed native COM-vtable hooks break `CreateDevice`.
+
+### External Wine exit and driver diagnostics (read-only)
+
+A separate diagnostic launcher is included at
+`ChatGPT/diagnostics/run_hotplug_crash_wine.sh`. It does not change
+SpiderMan2k1Fix, game binaries, hooks or INI. Run from a checkout of
+PR #76, supplying the **actual game folder**:
+
+```bash
+bash ChatGPT/diagnostics/run_hotplug_crash_wine.sh '/path/to/Spider-Man'
+```
+
+- It launches the executable with `WINEDEBUG=+seh,+dinput` and existing
+  `WINEPREFIX` (if set), respecting an existing `WINEDLLOVERRIDES`
+  or defaulting to `winmm=n,b`.
+- It captures a Wine log and a separate `WINE_EXIT_CODE` status file
+  under `hotplug-crash-diagnostics/`, then returns that exit status.
+- If debug volume is excessive, set `HOTPLUG_WINEDEBUG=+seh`.
+- An exit code such as `139` is only **consistent with**, not proof
+  of, a host SIGSEGV. A clean `0` does not prove gameplay succeeded;
+  a game can deliberately terminate during device teardown.
+- The user should also retain the timestamped SpiderMan2k1Fix log.
+  If the termination is unhandled by Wine SEH, inspect matching kernel
+  or systemd coredump data separately, with consent and relevant privacy
+  precautions. Do not assume Wine `RtlUnwindEx code=80000026` indicates
+  a fault.
+
+**Next technical milestone:** determine whether the exit is a deliberate
+native-game exit on device disappearance, an unhandled Windows exception
+in a native controller read, or a host/Wine signal. Only then design
+a guarded controller device lifetime bridge (if needed); the secondary
+DirectInput8 polling alone is not sufficient.
