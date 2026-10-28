@@ -816,3 +816,83 @@ present but do not invoke it in the joystick regression test.
 If Restore Default is still visible in Joystick, check for the
 `REFUSED` marker and do not select it. No runtime validation
 has yet demonstrated the menu-level fix. PR #77 remains DRAFT.
+
+
+## Corrected: detected-pad Joystick viewer + both footer rows (2026-10-28)
+
+**This supersedes the preceding single-row patch description.**
+The maintainer's `SpiderMan2k1Fix(20261028-180211).log`
+(`v1.1.0-8267462`) shows precisely:
+
+```
+GAMEPAD-UI: DISCOVERY gamepads=1 SonyDualShock4=1 Xbox360=0
+GAMEPAD-READONLY: REFUSED missing/ambiguous original Restore Default AddEntry call; no patches installed
+GAMEPAD-PS1: JOYSTICK-READONLY inactive
+```
+
+Consequently **the whole menu was editable** and Restore Default
+selectable. The one-site search was incorrect.
+
+The actual original executable's complete `initActionMaps` (public
+501-byte decomp disassembly, `tools/functions/5296368.bin`) shows
+**TWO final CMenu entries** after the 14 action entries:
+
+```asm
+0050D2BB mov ecx, [0x54B7B4]  ; original Restore Default string pointer
+0050D2C1 push ecx
+0050D2C2 mov ecx, [0xAC11B4]  ; first (action) CMenu
+0050D2C8 call 0x0043FFF0     ; E8 23 2D F3 FF
+0050D2CD mov ecx, [0xAC12A0]  ; second (value) CMenu
+0050D2D3 push 0x0056EB54
+0050D2D8 call 0x0043FFF0     ; E8 13 2D F3 FF
+```
+
+The earlier scanner looked for a `push immediate` of the literal
+"restore default settings" before a unique AddEntry CALL. The first
+column actually uses a **pointer loaded from memory**, and the
+second uses a different literal. Removing **only one** entry could
+also desynchronize the native CMenu columns.
+
+**Corrected code:** both exact original x86 callsites are pinned as
+normal required read-only installation sites, increasing the count
+from 6 to 8. The installer verifies both original rel32 instruction
+sequences **before any site patch**, and retains atomic preflight and
+rollback. The same x86 ABI-matching wrapper skips the two final
+AddEntry calls only when `gActionMapRelated` says Joystick;
+Keyboard Configuration calls the original CMenu::AddEntry normally.
+All 14 action/value pairs remain, while Restore Default and its
+corresponding empty placeholder row vanish. The existing
+joystick-only action setters, capture prompt and native restore
+routine remain blocked. No game on-disk patch or config rewrite.
+
+In addition, detection of a unique supported physical Sony DS4 now
+arms the read-only Joystick viewer immediately after original game
+config bootstrap, even if the optional 7-action PS1 preview was not
+selected. The existing Xbox readonly arm remains automatic.
+`ControllerProfile=Off` retains normal unmodified behavior.
+The legacy `ControllerPS1ReadOnlyJoystick` key is accepted by the
+INI parser but no longer controls the detected DS4 viewer.
+
+Expected logs in the new physical test:
+
+```
+GAMEPAD-PS1: JOYSTICK-READONLY EXPERIMENT ACTIVE ...
+GAMEPAD-READONLY: Restore Default and matching placeholder rows disabled in Joystick only
+GAMEPAD-READONLY: Restore Default ROW OMITTED in Joystick (and matching placeholder)
+```
+
+To validate, use a matching winmm.dll/SpiderMan2k1Fix.dll pair from
+the same CI build, start with just one DS4, open Joystick, verify all
+14 native action lines and correct Sony labels (where recognized),
+check **Restore Default absent** and attempts to rebind actions
+ignored, then navigate back/exit/re-enter. Open Keyboard to verify
+it is editable and *its own* Restore Default still appears.
+Repeat with Xbox alone if practical. Do not invoke Restore Default
+if read-only install logs `REFUSED`.
+
+**Cross-device mapping after hotplug remains a separate pending feature:**
+this menu shows the currently loaded game-owned action indices,
+which may still match the controller connected at startup. Never
+claim the new pad's physical gameplay mapping has switched merely
+because its COM device reconnects. Release and PR remain gated on
+live Windows/Wine validation. Draft PR #77 remains unmerged.
