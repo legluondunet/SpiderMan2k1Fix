@@ -693,6 +693,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   int menu_allowed,movie_allowed,confirm_allowed,gameplay_allowed,pause_pressed;
   int share_pressed,share_edge,native_start_pressed;
   int post_quit_block=0;
+  unsigned native_request=0;
   if(!configured || !hwnd || !IsWindow(hwnd)){
     if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
     return;
@@ -703,6 +704,8 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     /* Disabling the game's mouse is only appropriate while the verified
      * DS4 has foreground ownership. Preserve external desktop mouse. */
     if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
+    ps1_history_record(SPIDER_PS1_HISTORY_FOCUS_LOST,0u,menu_2d,
+      gameplay_3d,bink_active,native_pause_active,(unsigned)previous_buttons,NULL);
     previous_buttons=0;
     previous_back=0;
     previous_pause=0;
@@ -715,13 +718,16 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
    * the returned menu has settled. Never block native gamepad input here:
    * only the PS1 profile's synthetic UI Return is eligible. */
   if(ps1_preview_active && ps1_post_quit_guard_requested) {
+    native_request=(unsigned)*(const volatile DWORD *)(uintptr_t)0x0060CFA4u;
     post_quit_block=spider_ps1_post_quit_guard_flip(&ps1_post_quit_guard,
-      1,menu_2d,gameplay_3d,bink_active,
-      (unsigned)*(const volatile DWORD *)(uintptr_t)0x0060CFA4u);
+      1,menu_2d,gameplay_3d,bink_active,native_request);
   }
   if(!probing)detect_device(hwnd);
   if(!detected||!device) {
     if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
+    ps1_history_record(SPIDER_PS1_HISTORY_DEVICE_MISSING,native_request,
+      menu_2d,gameplay_3d,bink_active,native_pause_active,
+      (unsigned)previous_buttons,NULL);
     return;
   }
   hr=IDirectInputDevice8_Poll(device);
@@ -733,6 +739,9 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);
   if(FAILED(hr)) {
     if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
+    ps1_history_record(SPIDER_PS1_HISTORY_READ_FAILED,native_request,
+      menu_2d,gameplay_3d,bink_active,native_pause_active,
+      (unsigned)previous_buttons,NULL);
     if(bad_reads++<4u) {
       char line[155];
       snprintf(line,sizeof(line),
@@ -752,6 +761,8 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(1);
   pressed=(state.rgbButtons[1]&0x80u?SPIDER_CONFIRM_CROSS:0) |
           (state.rgbButtons[9]&0x80u?SPIDER_CONFIRM_OPTIONS:0);
+  ps1_history_record(SPIDER_PS1_HISTORY_READ_OK,native_request,menu_2d,
+    gameplay_3d,bink_active,native_pause_active,(unsigned)previous_buttons,&state);
   back_pressed=(state.rgbButtons[2]&0x80u?SPIDER_BACK_CIRCLE:0) |
                (state.rgbButtons[8]&0x80u?SPIDER_BACK_SHARE:0);
   /* Original GameFMV_Active remains authoritative even outside the
@@ -807,6 +818,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     /* The edge is still consumed by previous_buttons below, so a held
      * Cross/Options cannot replay after the settling window expires. */
     report("GAMEPAD-PS1: POST-QUIT-GUARD suppressed synthetic Return on first 2D menu frames after native request 7");
+    ps1_history_dump();
   } else if(confirm_allowed &&
             (pressed & (unsigned)confirm) &&
             !(previous_buttons & (unsigned)confirm)) {
