@@ -531,3 +531,97 @@ should be attempted once, not as repeated stress tests, while
 PR #76 remains draft/unmerged. Revert
 `ExperimentalNativeJoystickReconnect=0` to retain the already
 validated unplug-guard-only behavior if any 3D instability occurs.
+
+
+## First full 3D physical hotplug acceptance under Wine: PASS (2026-10-28)
+
+**Build:** `SpiderMan2k1Fix v1.1.0-1dbacda` from the draft PR #76.
+**Game:** unchanged retail `SpideyPC.exe`, SHA-256
+`0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
+**Config:** native unplug guard and game-owned Sony DS4 reconnect ON,
+`ControllerProfile=Auto`. The maintainer confirms that **all
+controls, including analog input, functioned after physical replug in
+3D gameplay, with no crash**.
+
+Evidence is preserved in these four submitted files:
+- `SpiderMan2k1Fix(20261028-142310).log` (766 lines).
+- `hotplug-exit-relay-20261028-152120.log` (4,716 lines).
+- `hotplug-exit-status-20261028-152120.txt`.
+- `hotplug-exit-calls-20261028-152120.txt`.
+
+### Confirmed sequence
+
+1. The SHA-supported game enters native **3D** at ~Flip #503.
+   Native 3D input owner and two original script lifetimes are
+   observed; gameplay rendering continues beyond the cinematic
+   transitions.
+2. In **3D**, physical DS4 unplug: secondary DirectInput loss
+   `0x8007001E` (fix log lines 548-552), original game-owned
+   joystick COM Release and global pointer NULL (553-554),
+   stage-1 guard suppresses fatal native `DIERR_UNPLUGGED`
+   (line 566).
+3. **First successful 3D native rebind**: `rebound=1 scan=8
+   VID=054C PID=09CC buttons=14 polled=0` at line 616.
+   Passive `NATIVE-RECONNECT: HEALTH` at line 617 confirms
+   `flip=1101 mode=3D joystick=02f8dc44 native-ffb=00000000
+   rebound=1`; same pointer still live at Flip #1401 (line
+   629). The maintainer confirms gameplay and analog controls work.
+4. **Second 3D physical unplug**: secondary device release
+   lines 639-643, original native release 644-645,
+   guard suppresses native fatal HRESULT at line 647.
+   Subsequent `HEALTH` records in **3D** show
+   `joystick=00000000` while waiting to replug, meaning no stale
+   native joystick is published (lines 650,664).
+5. Original 3D engine performs native cleanup and controller-7
+   return to **main menu**; `NATIVE-RECONNECT: HEALTH` at
+   Flip #2277 reports `mode=MENU joystick=00000000`
+   (line 745). This validates the 3D -> menu transition
+   *while the DS4 is unplugged*.
+6. **Second successful native rebind occurs in MENU**, not
+   3D: `rebound=2 scan=23` at line 759, with
+   `HEALTH #6 flip=2517 mode=MENU joystick=082eb524`
+   (line 760). Synthetic Return was emitted thereafter.
+   The submitted evidence **does not** demonstrate two rebinds in
+   3D, and the report must preserve this distinction.
+
+### Independently captured normal process exit
+
+The externally captured Wine relay shows the game process
+`0228:Call KERNEL32.ExitProcess(00000000) ret=0052a1c6`;
+the matching `ntdll.NtTerminateProcess` also receives status zero.
+The shell output is **`WINE_EXIT_CODE=0`**. The return address
+`0x0052A1C6` is the same game CRT wrapper identified
+during the original failure, but the previous fatal
+`ExitProcess(0x80040209)` is **absent** in this run. A normal
+`WM_CLOSE`/window teardown occurs just before exit in
+the Wine trace. No fatal SEH access violation or unhandled exception
+is apparent in this capture.
+
+One diagnostic utility line said to confirm
+`ControllerProfile=Off`. That sentence was an **outdated
+hardcoded instruction in the relay capture script**, *not* an
+observation of the running profile. The actual fix log
+(line 15) shows **`ControllerProfile=Auto`**. The script
+is now corrected to explicitly state that it does not enforce
+Off/Auto, and tests assert the corrected wording; no runtime
+input code was modified by this follow-up.
+
+**Acceptance:** PASS for the maintainer's Sony DS4
+(VID=054C PID=09CC) hot-unplug/replug under Wine, including
+**one full rebind during 3D**, an additional detach in 3D,
+return to menu without a controller, rebind in menu, and clean
+process exit (code 0). Analog and game actions were confirmed
+by the maintainer. This is stronger than previous menu-only tests.
+
+**Still outstanding:** the one earlier intermittent post-rebind
+menu crash was not reproduced here, not proven impossible;
+long-running stress/repeated sessions, Windows-native support,
+other gamepads, and full behavior under all focus/pause/cinematic
+edges remain untested. `ExperimentalNativeJoystickUnplugGuard`
+and `ExperimentalNativeJoystickReconnect` stay **default OFF**
+pending a future maintenance/release decision. Keep PR #76
+**DRAFT, UNMERGED** until the maintainer explicitly approves.
+No change to the successfully hardware-tested native rebind
+or axis code is necessary based on this clean run.
+
+legluondunet assisted by ChatGPT (OpenAI)
