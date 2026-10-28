@@ -102,7 +102,10 @@ static BOOL CALLBACK enumerate_ds4(const DIDEVICEINSTANCEA *inst,VOID *ctx) {
 }
 static void close_candidate(IDirectInputDevice8A *device) {
   if(!device)return;
-  IDirectInputDevice8_Unacquire(device);
+  /* A newly created candidate may have disappeared between EnumDevices,
+   * Acquire and GetDeviceState. Do NOT call Unacquire on that possibly
+   * invalidated interface, as in the first disconnect crash. Its final
+   * COM Release owns underlying DirectInput teardown. */
   IDirectInputDevice8_Release(device);
 }
 static HRESULT set_native_range(IDirectInputDevice8A *device,DWORD offset) {
@@ -125,6 +128,10 @@ static HRESULT configure_candidate(IDirectInputDevice8A *device,HWND hwnd,
   caps->dwSize=sizeof(*caps);
   hr=IDirectInputDevice8_GetCapabilities(device,caps);
   if(FAILED(hr))return hr;
+  /* The original native format contains exactly 32 buffered button slots.
+   * Refuse a surprising capability report rather than let original
+   * button indexing overrun its static array. */
+  if(caps->dwButtons==0 || caps->dwButtons>32u)return DIERR_INVALIDPARAM;
   hr=IDirectInputDevice8_SetCooperativeLevel(device,hwnd,
      DISCL_FOREGROUND|DISCL_NONEXCLUSIVE);
   if(FAILED(hr))return hr;
@@ -242,8 +249,8 @@ static void try_rebind(HWND hwnd) {
   device_missing=0;
   rebound++;
   snprintf(line,sizeof(line),
-    "NATIVE-RECONNECT: REBOUND original game-owned DirectInput joystick Sony VID=054C PID=%04X; scan=%u, buttons=%lu, polled=%u; native controls restored (hardware validation pending)",
-    HIWORD(list.product),scans,(unsigned long)caps.dwButtons,
+    "NATIVE-RECONNECT: REBOUND original game-owned DirectInput joystick Sony VID=054C PID=%04X; rebound=%u scan=%u buttons=%lu polled=%u; native controls restored (hardware validation pending)",
+    HIWORD(list.product),rebound,scans,(unsigned long)caps.dwButtons,
     (unsigned)((caps.dwFlags>>8)&1u));
   report(line);
   return;
