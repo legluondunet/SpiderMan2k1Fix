@@ -51,6 +51,19 @@ def test_user_joystick_bindings_preserved_on_any_virtual_save():
     assert 'InterlockedExchange(&ps1_bootstrap_loaded,1)' in CFG
 
 
+def test_ps1_preview_uses_cross_only_for_menu_confirm_even_with_legacy_both():
+    # Original [Input] ControllerEnterButtons=Both remains honored outside
+    # PS1 preview, but OPTIONS/Start is intentionally redundant in PS1.
+    assert "effective_confirm=ps1_preview_active?SPIDER_CONFIRM_CROSS:(unsigned)confirm;" in PAD
+    assert "confirm_edges=(pressed & effective_confirm) & ~(unsigned)previous_buttons;" in PAD
+    assert "native_request,pressed & effective_confirm);" in PAD
+    assert "CROSS-only 2D/Bink/pause confirmation" in PAD
+    # Preserve the explicit 3D cutscene-only experiment as separately opt-in.
+    assert 'GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1' in PAD
+    assert "ps1_preview_active && ps1_options_skip_requested" in PAD
+    assert "ControllerPS1OptionsSkip=1" not in CFG
+
+
 def test_share_menu_uses_separate_context_and_legacy_options_does_not_fire():
     assert '0x00682950u' in CORE
     assert 'native_pause_active' in PAD
