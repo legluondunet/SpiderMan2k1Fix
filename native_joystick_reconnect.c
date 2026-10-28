@@ -512,9 +512,10 @@ static void sdl3_owner_reconcile(HWND hwnd) {
   }
   if(!SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
      spider_reconnect_kind(vid,pid)==SPIDER_RECONNECT_NONE) {
-    /* Unclaimed two-controller session: keyboard stays usable, but the
-     * original game must not keep an arbitrary first enumerated gamepad. */
-    if(SpiderSDL3Probe_MappedCount()>1u &&
+    /* No valid SDL-selected native owner: keyboard stays usable, but the
+     * original game must not keep an arbitrary controller (including
+     * an unsupported or unclaimed SDL-mapped device). */
+    if(SpiderSDL3Probe_MappedCount()>0u &&
        InterlockedCompareExchangePointer((PVOID volatile *)game_device_slot(),
                                          NULL,NULL))
       detach_stale_native();
