@@ -27,6 +27,7 @@
 #include "input_focus_trace.h"
 #include "gamepad_ui_profile.h"
 #include "input_notacquired_retry.h"
+#include "native_joystick_unplug.h"
 #include "pause_any_key.h"
 #include "pause_surface.h"
 #include "focus_media_pause.h"
@@ -2594,6 +2595,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       SpiderInputFocus_OnFlip(count);
   }
   SpiderDI8Retry_OnFlip(count);
+  SpiderNativeUnplug_OnFlip(count);
   /* Observe the physical F9 press early; the game's screenshot code can
    * run between two Flip calls, so surface hooks also sample F9. */
   if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
@@ -3184,6 +3186,16 @@ static DWORD initialize_body(LPVOID unused) {
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
    * No COM-vtable interception. The actual patch is delayed to Flip #120. */
   SpiderDI8Retry_Init(log_line);
+  /* Experimental: the original game exits on joystick DIERR_UNPLUGGED.
+   * Opt-in, SHA-pinned, game-thread-only mitigation; no native rebind yet. */
+  {
+    char ini[MAX_PATH],*slash;
+    DWORD n=GetModuleFileNameA(NULL,ini,sizeof(ini));
+    if(n>0 && n<sizeof(ini) && (slash=strrchr(ini,'\\'))!=NULL) {
+      strcpy(slash+1,"SpiderMan2k1Fix.ini");
+      SpiderNativeUnplug_Init(ini,log_line);
+    } else SpiderNativeUnplug_Init(NULL,log_line);
+  }
   SpiderFocusMedia_Init(log_line); /* Opt-in native Bink pause. */
   SpiderFocusDSound_Init(log_line); /* Separately opt-in game-owned secondary buffers only. */
   SpiderPauseSurface_Init(log_line); /* Pause drawn into the game backbuffer; no HWND overlays. */
