@@ -205,6 +205,24 @@ static void disable_profile(const char *reason) {
   detected=0;
   if(reason)report(reason);
 }
+/* Called only after an independent DirectInput read failed while foreground.
+ * A physical unplug can invalidate the old handle immediately: DO NOT
+ * Acquire() that stale device in the same failing frame. Record release
+ * checkpoints so that a fault in the old game's own input path remains
+ * distinguishable from one in our secondary device shutdown. */
+static void spider_hotplug_drop_device(HRESULT hr,const char *context) {
+  char line[235];
+  snprintf(line,sizeof(line),
+    "GAMEPAD-HOTPLUG: %s hr=0x%08lX; secondary device release BEGIN (no Acquire on failed read)",
+    context,(unsigned long)hr);
+  report(line);
+  disable_profile(NULL);
+  report("GAMEPAD-HOTPLUG: secondary device release COMPLETE; rescan deferred 2s");
+  probing=1;
+  hotplug.scan_started=1u;
+  hotplug.last_scan=GetTickCount();
+  hotplug_missing_logged=0;
+}
 void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   char choice[40],buttons[40],back_choice[40],pause_choice[40],line[260];
   log_message=logger;
@@ -748,10 +766,11 @@ unsigned SpiderGamepadUI_PauseWake_Poll(HWND hwnd) {
   hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);
   if(FAILED(hr)) {
     memset(&pause_wake,0,sizeof(pause_wake));
-    /* The original game's own DirectInput interface is never changed. */
-    IDirectInputDevice8_Acquire(device);
+    /* Do not Acquire an unplugged joystick while our Flip is frozen.
+     * The keyboard always remains a valid PAUSED wake mechanism.
+     * A lost device is released and rescanned on the normal Flip path. */
     if(!pause_wake_retry_logged) {
-      report("FOCUS-PAUSE-GAMEPAD: secondary DS4 read failed; retrying independent Acquire while foreground; keyboard wake remains available");
+      report("FOCUS-PAUSE-GAMEPAD: secondary DS4 read failed; NO stale Acquire inside PAUSED; keyboard wake remains available");
       pause_wake_retry_logged=1;
     }
     return 0;
@@ -845,21 +864,23 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
         (unsigned long)hr);
       report(line);
     }
-    IDirectInputDevice8_Acquire(device);
+    /* A failed GetDeviceState was the final trace before the user's
+     * unplug crash. Never call Acquire on that possibly disconnected COM
+     * instance in the same frame. DIERR_INPUTLOST is strong enough to
+     * drop it immediately; other failures must repeat three times. */
     previous_buttons=0;
     previous_back=0;
     previous_pause=0;
     previous_share=0;
     previous_native_start=0;
-    if(spider_ds4_hotplug_read_failed(&hotplug)) {
-      /* Three consecutive foreground read errors: release stale secondary
-       * device and rescan at a bounded rate. Transient Alt+Tab reacquire
-       * errors do not cause an immediate mistaken detach. */
-      disable_profile("GAMEPAD-HOTPLUG: lost secondary DS4 after 3 failed reads; releasing synthetic input and scheduling verified rediscovery");
-      probing=1;
-      hotplug.scan_started=1u;
-      hotplug.last_scan=GetTickCount();
-      hotplug_missing_logged=0;
+    {
+      int repeatedly_failed=spider_ds4_hotplug_read_failed(&hotplug);
+      if(hr==DIERR_INPUTLOST || repeatedly_failed)
+        spider_hotplug_drop_device(hr,
+          hr==DIERR_INPUTLOST?"INPUTLOST (unplug/focus device loss)":
+          "three consecutive read errors");
+      else
+        report("GAMEPAD-HOTPLUG: transient secondary read failure; no stale Acquire; awaiting next foreground Flip");
     }
     return;
   }
