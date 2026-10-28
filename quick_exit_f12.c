@@ -23,6 +23,7 @@
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "spider_fix_paths.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -3142,22 +3143,14 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
 }
 
 void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
-  char exe[MAX_PATH],ini[MAX_PATH],val[24],trace[8],static_trace[8],movie_trial[8],comic_trial[8],*slash;
-  DWORD n;
+  char ini[MAX_PATH],val[24],trace[8],static_trace[8],movie_trial[8],comic_trial[8];
   HANDLE thread;
   int f10_shortcut;
   logger=log_fn;
-  n=GetModuleFileNameA(NULL,exe,sizeof(exe));
-  if(!n || n>=sizeof(exe) || !(slash=strrchr(exe,'\\'))) {
+  if(!spider_path_ini_a(ini,sizeof(ini))) {
     say("QUICK-EXIT-F12: disabled (INI path unavailable)");
     return;
   }
-  if((size_t)(slash-exe)+sizeof("SpiderMan2k1Fix.ini")>sizeof(ini)) {
-    say("QUICK-EXIT-F12: disabled (INI path too long)");
-    return;
-  }
-  memcpy(ini,exe,(size_t)(slash-exe)+1);
-  strcpy(ini+(slash-exe)+1,"SpiderMan2k1Fix.ini");
   /* Hidden development option: omitted from default generated INI,
    * disabled when absent; Log=1 is not required for the unified F10. */
   f10_shortcut=GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1;
