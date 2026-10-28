@@ -350,6 +350,14 @@ int SpiderGamepadUI_PreparePS1(HWND hwnd) {
  * Read-only, one-shot replacement: examine verified writable .data pages
  * and record exact 14-entry candidate counts. No mapping writes, no hooks.
  * A positive count is still NOT proof that modifying this mapping is safe. */
+/* The normal probe reads at most 1 MiB; the read-only extended
+ * scan is manually opted in because this 2001 retail PE maps a 42 MiB
+ * writable data section. Query each committed region independently; never
+ * cross a region boundary or touch game-owned input mapping bytes.
+ *
+ * A complete scan could still miss maps stored in another section or
+ * synthesized at runtime. Do NOT use the result as permission to patch.
+ */
 static void ps1_probe_native_start_tables(void) {
   static const DWORD actions[14]={
     0x1u,0x2u,0x4u,0x8u,0x10u,0x20u,0x40u,0x80u,
@@ -358,8 +366,11 @@ static void ps1_probe_native_start_tables(void) {
   IMAGE_DOS_HEADER *dos;
   IMAGE_NT_HEADERS32 *pe;
   IMAGE_SECTION_HEADER *sec;
-  unsigned j,sections=0,matches=0,limit_hit=0;
-  char line[260];
+  unsigned j,sections=0,matches=0,truncated=0,regions=0;
+  int deep=profile_ini[0] &&
+    GetPrivateProfileIntA("Input","ControllerPS1DeepStartProbe",0,profile_ini)==1;
+  const size_t max_bytes=deep?(size_t)(64u*1024u*1024u):(size_t)(1024u*1024u);
+  char line[270];
   if(!base || (uintptr_t)base!=0x00400000u)return;
   dos=(IMAGE_DOS_HEADER *)base;
   if(dos->e_magic!=IMAGE_DOS_SIGNATURE ||
@@ -385,13 +396,9 @@ static void ps1_probe_native_start_tables(void) {
   }
   sec=IMAGE_FIRST_SECTION(pe);
   for(j=0;j<(unsigned)pe->FileHeader.NumberOfSections;j++) {
-    unsigned k;
     DWORD span=sec[j].Misc.VirtualSize;
-    DWORD offset;
+    size_t cursor=0,budget;
     BYTE *data;
-    MEMORY_BASIC_INFORMATION mbi;
-    uintptr_t region_base,data_address;
-    size_t readable;
     if(memcmp(sec[j].Name,".data",5)!=0 ||
        !(sec[j].Characteristics&IMAGE_SCN_MEM_WRITE) ||
        span<14u*8u ||
@@ -400,38 +407,64 @@ static void ps1_probe_native_start_tables(void) {
       continue;
     sections++;
     data=base+sec[j].VirtualAddress;
-    if(VirtualQuery(data,&mbi,sizeof(mbi))!=sizeof(mbi) ||
-       mbi.State!=MEM_COMMIT ||
-       (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)) ||
-       !((mbi.Protect&0xffu)==PAGE_READWRITE ||
-         (mbi.Protect&0xffu)==PAGE_EXECUTE_READWRITE ||
-         (mbi.Protect&0xffu)==PAGE_WRITECOPY ||
-         (mbi.Protect&0xffu)==PAGE_EXECUTE_WRITECOPY))continue;
-    region_base=(uintptr_t)mbi.BaseAddress;
-    data_address=(uintptr_t)data;
-    if(data_address<region_base || data_address-region_base>=mbi.RegionSize)continue;
-    readable=mbi.RegionSize-(data_address-region_base);
-    if(readable<(size_t)span){span=(DWORD)readable;limit_hit++;}
-    if(span>1024u*1024u){span=1024u*1024u;limit_hit++;}
-    if(span<14u*8u)continue;
-    for(offset=0;offset<=span-14u*8u;offset+=4u) {
-      const DWORD *v=(const DWORD *)(const void *)(data+offset);
-      if(v[0]!=actions[0])continue;
-      for(k=1;k<14u;k++)if(v[2u*k]!=actions[k])break;
-      if(k==14u && v[2u*11u+1u]==11u) {
-        matches++;
-        if(matches<=4u) {
-          snprintf(line,sizeof(line),
-            "GAMEPAD-PS1: START-TABLE candidate=%u RVA=0x%08lX Start=BUTTON11 [READ-ONLY; NO table edits]",
-            matches,(unsigned long)(sec[j].VirtualAddress+offset));
-          report(line);
-        }
+    budget=span;
+    if(budget>max_bytes){budget=max_bytes;truncated++;}
+    while(cursor+14u*8u<=budget) {
+      MEMORY_BASIC_INFORMATION mbi;
+      uintptr_t here=(uintptr_t)(data+cursor),region_start,region_end;
+      size_t safe,offset;
+      DWORD protect;
+      unsigned k;
+      if(VirtualQuery((LPCVOID)here,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+         !mbi.RegionSize) {
+        truncated++;
+        break;
       }
+      region_start=(uintptr_t)mbi.BaseAddress;
+      if(here<region_start || mbi.RegionSize>(size_t)(~(uintptr_t)0)-region_start) {
+        truncated++;
+        break;
+      }
+      region_end=region_start+mbi.RegionSize;
+      if(region_end<=here){truncated++;break;}
+      safe=region_end-here;
+      if(safe>budget-cursor)safe=budget-cursor;
+      protect=mbi.Protect&0xffu;
+      regions++;
+      if(mbi.State==MEM_COMMIT &&
+         !(mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)) &&
+         (protect==PAGE_READWRITE || protect==PAGE_EXECUTE_READWRITE ||
+          protect==PAGE_WRITECOPY || protect==PAGE_EXECUTE_WRITECOPY)) {
+        /* All sampled DWORDs must fit within this single readable
+         * allocation region. Native tables spanning a page split are
+         * intentionally omitted, never accessed speculatively. */
+        for(offset=0;offset+14u*8u<=safe;offset+=4u) {
+          const DWORD *v=(const DWORD *)(const void *)(data+cursor+offset);
+          if(v[0]!=actions[0])continue;
+          for(k=1u;k<14u;k++)if(v[2u*k]!=actions[k])break;
+          if(k==14u && v[2u*11u+1u]==11u) {
+            matches++;
+            if(matches<=10u) {
+              snprintf(line,sizeof(line),
+                "GAMEPAD-PS1: START-TABLE candidate=%u RVA=0x%08lX Start=BUTTON11 [READ-ONLY; NO table edits]",
+                matches,(unsigned long)(sec[j].VirtualAddress+cursor+offset));
+              report(line);
+            }
+          }
+        }
+      } else {
+        truncated++;
+      }
+      cursor+=safe;
+    }
+    if(budget>cursor && cursor+14u*8u>budget) {
+      /* This last sub-112-byte tail is intentionally skipped. */
     }
   }
   snprintf(line,sizeof(line),
-    "GAMEPAD-PS1: START-TABLE probe data-sections=%u candidates=%u truncated-regions=%u PE-image=0x%08lX; READ-ONLY, native Start retained",
-    sections,matches,limit_hit,(unsigned long)pe->OptionalHeader.SizeOfImage);
+    "GAMEPAD-PS1: START-TABLE probe data-sections=%u candidates=%u truncated-regions=%u PE-image=0x%08lX deep=%d queried-regions=%u cap-MiB=%u; READ-ONLY, native Start retained",
+    sections,matches,truncated,(unsigned long)pe->OptionalHeader.SizeOfImage,
+    deep,regions,(unsigned)(max_bytes/(1024u*1024u)));
   report(line);
 }
 void SpiderGamepadUI_ActivatePS1(void){
