@@ -15,14 +15,18 @@ CFG = (ROOT / "virtual_spidey_cfg.c").read_text(encoding="utf-8")
 INI = (ROOT / "ini_validation.h").read_text(encoding="utf-8")
 
 
-def test_profile_is_automatic_for_verified_sony_dualshock4_only():
+def test_profile_is_automatic_for_verified_sony_dualshock4_or_xbox360_without_ps1_leak():
+    policy=(ROOT/"native_joystick_reconnect_policy.h").read_text()
     for label in ("0x054cu", "0x05c4u", "0x09ccu", "0x0ba0u"):
-        assert label in PROFILE
-    for gate in ("d.found!=1u", "d.ds4_count!=1u", "GUID", "DirectInput8Create",
+        assert label in policy
+    for gate in ("choose_ds4=d.found==1u && d.ds4_count==1u",
+                 "choose_xbox=d.found==1u && d.xbox_count==1u",
+                 "GUID", "DirectInput8Create",
                  "IDirectInput8_EnumDevices", "DIEDFL_ATTACHEDONLY"):
         assert gate in PROFILE
     assert "PROFILE DualShock4 ACTIVE" in PROFILE
-    assert "no unique verified DualShock4" in PROFILE
+    assert "no unique allowed DS4/Xbox360" in PROFILE
+    assert "PS1-PREVIEW skipped (Sony-only)" in PROFILE
     assert "ControllerProfile=Auto" in CFG
     assert "ControllerEnterButtons=Both" in CFG
     assert "ControllerBackButton=Circle" in CFG
