@@ -88,9 +88,78 @@ Action bits in the read-only preview: 0 Jump, 1 Kick, 2 Punch, 3 Web,
 means the selected SDL3 controller physically requested Swing.
 It **does not** prove that the game performed Swing.
 
+## First opt-in in-game menu prototype (experimental Windows owner window)
+
+The supported original game's **Options > Joystick Configuration**
+screen now gains a `SDL3 TEST (PREVIEW)` row **only when explicitly opted
+in**. Its previous `Restore Default` action remains intercepted, and the
+original button-assignment capture/setter stays guarded and read-only.
+Keyboard Configuration and its Restore Default are untouched.
+The two original menu columns still gain exactly one matching row.
+
+Add the following in `SpiderMan2k1Fix.ini` with the game closed:
+
+```ini
+[Input]
+ExperimentalSDL3Probe=1
+ExperimentalSDL3ControllerSetup=1
+
+[Debug]
+Log=1
+```
+
+`ExperimentalSDL3ControllerSetup` is **OFF by default**, must never be
+added to the generated user INI, and has no effect without the original
+`ExperimentalSDL3Probe=1` opt-in and a supported 32-bit `SDL3.dll`
+beside the game EXE.
+
+In-game workflow:
+
+1. Navigate with the **keyboard** to `Options > Joystick Configuration`.
+   Even if no Sony/Xbox device works, this experimental mode attempts to
+   install the SHA-verified **generic read-only** menu patch to expose
+   the new entry. If the exact native signatures cannot be validated,
+   the patch fails closed; no unsupported game code is modified.
+2. Select `SDL3 TEST (PREVIEW)`. The game-thread native menu handler
+   opens an **owned Win32 dialog**. This is a prototype window on top
+   of the game, **not yet drawn by the original 3D renderer**. The
+   original menu tick is temporarily stopped on its call stack.
+3. Select any mapped SDL3 gamepad from the drop-down. Its actions appear
+   in a list. Use the keyboard to select an action, choose **Capture
+   selected action**, release **all** buttons/triggers to neutral, then
+   press **exactly one** new button or LT/RT. Invalid, reserved,
+   simultaneous or inherited presses cannot assign a binding.
+4. **Restore defaults (this model)** resets only that model's
+   in-memory preview, and **Close** resumes the original game.
+   Esc cancels capture first; a second Esc closes the dialog.
+   There is no special gamepad navigation requirement; keyboard works.
+5. The window pumps only the **already initialized** SDL3 subsystem
+   on the **same game thread**, while the normal Flip loop is stopped.
+   It never consumes game-owned DirectInput events, claims SDL native
+   ownership, writes game memory, creates threads or injects keys.
+   It stops reading controls if the dialog loses focus, and discards
+   pending captures on device changes or disconnection.
+
+**Limitations:** The preview's assignments are **not yet persisted** and
+**do not yet modify gameplay**. The native game continues to own 3D
+actions, including the currently unresolved Xbox RT Swing scan refusal.
+An SDL3 device listed as a raw joystick but not as a mapped gamepad
+is not yet configurable. Separate physical controllers with the same
+VID/PID currently share a model profile. Do not mistake successful
+dialog capture for a working end-to-end gamepad mapping.
+
+**Manual acceptance:** verify launching from native Joystick via
+keyboard with (a) no pad, (b) both DS4/Xbox, (c) an SDL3-mapped third
+pad, capture South and RT separately, reserved START/Guide, LT-only,
+simultaneous presses, unplug during capture, Alt+Tab during capture,
+Escape/cancel/close and return to menu/3D, including Ctrl/Enter input.
+After returning from the modal dialog, the game must still receive
+keyboard/gamepad actions and native Start switching without duplicate
+inputs or stuck focus. Keep this OFF if Windows/Wine behavior differs.
+
 ## Explicitly NOT implemented yet
 
-- No accessible in-game `Controller Setup` screen or capture prompt.
+- A first **opt-in Win32 owner-window preview** is accessible from the native Joystick menu; a complete production-ready, renderer-integrated `Controller Setup` screen is still outstanding.
 - No new saved per-model controller settings. Today's profile bank is
   **in-memory and read-only**, not a persistence format.
 - No replacement of native DirectInput by SDL3 for 3D actions; existing
