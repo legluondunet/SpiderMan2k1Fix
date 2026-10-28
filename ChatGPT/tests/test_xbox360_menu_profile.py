@@ -59,7 +59,10 @@ def test_xbox360_policy_compiled_and_edge_safe(tmp_path):
        physical[0]=0;physical[1]=0;physical[7]=0x80;
        held=spider_xbox360_held_buttons(physical);
        assert(held==(1u<<7));
-       assert(spider_xbox360_menu_edges(held,0)==0); /* no synthetic START */
+       assert(spider_xbox360_menu_edges(held,0)==SPIDER_XBOX360_ENTER); /* Start confirms menu */
+       physical[7]=0;physical[6]=0x80;
+       held=spider_xbox360_held_buttons(physical);
+       assert(spider_xbox360_menu_edges(held,0)==SPIDER_XBOX360_BACK); /* Back exits menu */
        return 0;
     }"""),encoding="utf-8")
     subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
@@ -111,3 +114,23 @@ def test_stays_on_original_input_and_uses_one_secondary_device():
     assert "IDirectInputDevice8_Release" not in xbox_branch
     assert "GetDeviceState" not in xbox_branch
     assert "return;" in xbox_branch  # no fallthrough to DS4 key mapping
+
+
+def test_native_joystick_menu_remains_user_editable_and_xbox_pause_fail_closed():
+    native_cfg=(ROOT/"virtual_spidey_cfg.c").read_text()
+    ui=UI
+    source_block=ui.split("static int xbox_pause_button_free_of_native_actions(",1)[1].split("static BOOL CALLBACK enumerate_gamepad(",1)[0]
+    assert "GetPrivateProfileStringA(\"Joystick\",native_actions[i],fallback," in source_block
+    assert "if(!parse_native_button(value,&button) || button==requested_button)" in source_block
+    assert "GAMEPAD-XBOX360: PAUSE BLOCKED physical BUTTON%u" in source_block
+    assert "xbox_pause_button_free_of_native_actions(pause_button_index)" in ui
+    assert "(gameplay_3d || native_pause_active) && !bink_active" in ui
+    assert "pause_requested=(fresh & ((1u<<6)|(1u<<7)))!=0" in ui
+    assert 'GAMEPAD-XBOX360: 3D MENU Back/Start -> Escape' in ui
+    assert '"[Joystick]"' not in source_block  # no writes from guard
+    assert "SpiderCfg_EnableXbox360Preview" not in native_cfg
+    assert "xbox360_preview_active" not in native_cfg
+    assert "spider_xbox360_apply_gameplay" not in native_cfg
+    assert "Xbox360Preview" not in ui
+    assert "load_joystick();" in native_cfg
+    assert "if(!save_joystick()) goto fail;" in native_cfg
