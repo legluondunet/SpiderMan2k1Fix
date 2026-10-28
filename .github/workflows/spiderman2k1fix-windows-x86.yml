@@ -33,6 +33,18 @@ jobs:
       - name: Run regression tests
         run: python3 -m pytest -q ChatGPT/tests
 
+      - name: Investigate native initActionMaps binary in public decomp (temporary)
+        continue-on-error: true
+        run: |
+          curl -fsSL --max-time 15 'https://raw.githubusercontent.com/krystalgamer/spidey-decomp/master/tools/functions/5296368.bin' -o /tmp/spider-initActionMaps.bin
+          echo '--- binary sha and size ---'
+          sha256sum /tmp/spider-initActionMaps.bin
+          wc -c /tmp/spider-initActionMaps.bin
+          echo '--- original x86 initActionMaps disassembly ---'
+          objdump -D -b binary -m i386 -M intel --adjust-vma=0x50d0f0 /tmp/spider-initActionMaps.bin | tail -115
+          echo '--- original restore string/search ---'
+          strings /tmp/spider-initActionMaps.bin | tail -20
+
       - name: Parse PowerShell native audio loader probe
         shell: pwsh
         run: |
