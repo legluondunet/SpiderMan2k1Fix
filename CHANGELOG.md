@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — context-aware PAUSED instruction (PR #74)
+
+- The custom Alt+Tab PAUSED screen shows `PRESS ANY KEY TO RESUME` if **no verified Sony DS4 wake device** was acquired at startup (including keyboard-only play).
+- When a Sony DS4 is already detected/acquired and its temporary wake handler is armed, show `PRESS KEY OR GAMEPAD BUTTON TO RESUME`. Snapshot once at custom pause entry; do not query DirectInput from the drawing code or let the prompt change mid-pause.
+- Use the same verified-device availability for the displayed instruction **and** the temporary pause gamepad poll; keyboard resume always works. This is not USB/Bluetooth hotplugging: detaching a pad during the frozen pause is still a separate future task, and does not change the already-drawn frame.
+
 ## Unreleased — DS4 can dismiss the custom Alt+Tab PAUSED screen (PR #74)
 
 - Fix controller wake for the **custom focus-loss PAUSED DirectDraw screen**, not the game's original Escape/3D pause. The gamepad UI bridge normally only polls during Flip, which is deliberately blocked while this pause waits for keyboard input.
