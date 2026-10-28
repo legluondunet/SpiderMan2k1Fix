@@ -50,7 +50,7 @@ def test_user_joystick_bindings_preserved_on_any_virtual_save():
     assert 'spider_ps1_restore(saved_cfg,CFG_SIZE,original_joystick)' in CFG
     assert 'DWORD code=(ps1_preview_active || xbox360_preview_active)?' in CFG
     assert 'spider_ps1_restore(saved_cfg,CFG_SIZE,original_joystick)' in CFG
-    assert "if(ps1_preview_active && opens>opened && reads>served)" in CFG
+    assert "if((ps1_preview_active || xbox360_preview_active) && opens>opened && reads>served)" in CFG
     assert 'InterlockedExchange(&ps1_bootstrap_loaded,1)' in CFG
 
 
