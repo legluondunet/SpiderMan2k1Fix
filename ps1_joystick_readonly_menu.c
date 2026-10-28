@@ -3,9 +3,12 @@
  * This module is deliberately separate from gamepad_ui_profile.c:
  * the DS4/DirectInput bridge never edits original game code or vtables.
  *
- * Caller guarantees a unique verified Sony DS4 and PS1 profile loaded
- * through original game CRT before this opt-in RAM-only installation.
- * No user preferences, original EXE on disk, or gameplay mappings change.
+ * The installer is shared by two exclusively identified profiles:
+ * Sony DS4+PS1 preview (manually opt-in) or Xbox360-compatible
+ * (automatic after the original config bootstrap). Both use the same
+ * immutable, SHA-pinned joystick-only capture lock. Never installs
+ * twice or changes keyboard editing. No on-disk EXE, gameplay
+ * mapping, or user INI preferences are modified by this module.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
