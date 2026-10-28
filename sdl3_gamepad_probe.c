@@ -283,8 +283,14 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
   DWORD now;
   unsigned i;
   char line[230];
-  if(!requested || flip<120 || !game_hwnd ||
-     !IsWindowVisible(game_hwnd) || GetForegroundWindow()!=game_hwnd)return;
+  if(!requested || flip<120)return;
+  if(!game_hwnd || !IsWindowVisible(game_hwnd) ||
+     GetForegroundWindow()!=game_hwnd) {
+    /* Never inherit a Start press acquired during the custom focus pause.
+     * Selection identity stays stable, but takeover needs neutral->press. */
+    if(ready)spider_sdl3_selection_focus_lost(&selection);
+    return;
+  }
   if(!attempted && !sdl_load())return;
   if(!ready)return;
   /* SDL3's event pump and initialization stay on the game/Flip thread. */
