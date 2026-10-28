@@ -57,3 +57,24 @@ across Wine drivers, so no universal compatibility claim yet.
    and retiring model-specific DirectInput branches.
 
 Documentation reference: https://wiki.libsdl.org/SDL3/SDL_GetGamepads
+
+## Multi-controller hardware smoke test (2026-10-28)
+
+Windows log `SpiderMan2k1Fix(20261028-205126).log` confirms SDL3
+`physical-joysticks=2 mapped-gamepads=2 opened=2 active=0` at startup:
+DS4 instance 1 plus Xbox360 instance 2. When one pad was unplugged, SDL3
+automatically selected the sole remaining mapped pad; reattached DS4 was
+instance 3 and reattached Xbox was instance 5. The previously validated
+native DirectInput unplug guard and native rebind also recovered.
+
+**Regression fixed:** first prototype retained empty slots after detaching
+a pad, repeatedly emitting `SDL3-PROBE: detached id=...` (164 duplicates
+in one test log) and invoking `SDL_CloseGamepad(NULL)` on later scans.
+The slot lifecycle now closes each non-NULL device once and compacts the
+live array before each discovery. A portable C99 test performs 100 repeat
+scans and confirms no repeated close or detachment event.
+
+Hardware **has not yet revalidated the fix**; SDL3 remains read-only and
+the legacy game will still respond only to the independently selected
+DirectInput device. The two-pad Start-to-select pathway was not exercised
+in the supplied test (active=0 until a single pad remained).

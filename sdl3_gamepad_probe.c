@@ -13,6 +13,7 @@
 #include <string.h>
 #include "sdl3_gamepad_probe.h"
 #include "sdl3_gamepad_selection.h"
+#include "sdl3_gamepad_slots.h"
 
 /* SDL3 3.2+ ABI subset; keep signatures aligned with SDL's public headers. */
 #define SPIDER_SDL_INIT_GAMEPAD 0x00002000u
@@ -36,7 +37,6 @@ typedef const char *(__cdecl *SDL_GetErrorFn)(void);
 typedef void (__cdecl *SDL_freeFn)(void *);
 typedef void (__cdecl *SDL_QuitSubSystemFn)(uint32_t);
 
-typedef struct {uint32_t id; void *handle;} SpiderSDL3Opened;
 static SpiderSDL3Opened pads[SPIDER_SDL3_MAX_GAMEPADS];
 static SpiderSDL3Selection selection={0};
 static unsigned num_pads=0;
@@ -119,6 +119,12 @@ missing:
 static int has_id(const uint32_t *ids,unsigned count,uint32_t id) {
   unsigned i;for(i=0;i<count;i++)if(ids[i]==id)return 1;return 0;
 }
+static void sdl3_detached(uint32_t id) {
+  char line[125];
+  snprintf(line,sizeof(line),"SDL3-PROBE: detached id=%lu",
+           (unsigned long)id);
+  say(line);
+}
 /* Only called on original game Flip thread. Bound allocations and polling. */
 static void rescan(void) {
   uint32_t *ids=NULL,*joysticks=NULL,opened_ids[SPIDER_SDL3_MAX_GAMEPADS];
@@ -138,14 +144,11 @@ static void rescan(void) {
   }
   n=(unsigned)mapped;
   if(n>SPIDER_SDL3_MAX_GAMEPADS)n=SPIDER_SDL3_MAX_GAMEPADS;
-  for(i=0;i<num_pads;i++)if(!has_id(ids,n,pads[i].id)) {
-    snprintf(line,sizeof(line),"SDL3-PROBE: detached id=%lu",
-             (unsigned long)pads[i].id);
-    say(line);
-    sdl_close(pads[i].handle);
-    pads[i].handle=NULL;
-    changed=1;
-  }
+  /* Unplug can happen between two scans. Remove stale instances exactly
+   * once, close only non-NULL SDL handles and compact before opening new pads.
+   * A disconnected slot must never survive to the next rescan. */
+  changed=(int)spider_sdl3_drop_absent(pads,&num_pads,ids,n,
+                                      sdl_close,sdl3_detached);
   for(i=0;i<n;i++) {
     const char *name;
     void *handle;

@@ -68,9 +68,64 @@ def test_sdl3_probe_is_optional_read_only_and_exe_relative():
     assert 'sdl3_gamepad_probe.c' in shell
     assert 'SDL_GetGamepads' in code and 'SDL_GetJoysticks' in code
     assert 'SDL_GetGamepadButton' in code and 'SDL_GetGamepadAxis' in code
+    assert 'spider_sdl3_drop_absent(pads,&num_pads,ids,n,' in code
+    assert 'sdl_close,sdl3_detached)' in code
     assert 'strcpy(slash+1,"SDL3.dll");' in code
     assert 'LoadLibraryA(path)' in code
     assert 'SpiderGamepadUI_OnFlip' in main
     for forbidden in ('SendInput(', 'WriteProcessMemory(', 'SPIDER_NATIVE_ACTION_TABLE',
                       'SetWindowLong', 'IDirectInputDevice8_'):
         assert forbidden not in code
+
+@pytest.mark.skipif(not shutil.which('gcc'),reason='gcc required for C99 slot lifecycle test')
+def test_sdl3_detach_closes_exactly_once_and_compacts_slots(tmp_path):
+    """Regression: repeated rescan after unplug must not re-close stale SDL handle."""
+    src=tmp_path/'slots.c'
+    src.write_text(r'''
+#include <assert.h>
+#include <stdint.h>
+#include "sdl3_gamepad_slots.h"
+static unsigned closes=0,notices=0;
+static uint32_t last_detached=0;
+static void close_device(void *p) {assert(p);closes++;}
+static void report_detach(uint32_t id) {notices++;last_detached=id;}
+int main(void) {
+    unsigned count=2;
+    int tokens[3]={0};
+    const uint32_t two[]={11,22},one[]={22},next[]={22,33};
+    SpiderSDL3Opened pads[SPIDER_SDL3_MAX_GAMEPADS]={{0}};
+    pads[0].id=11;pads[0].handle=&tokens[0];
+    pads[1].id=22;pads[1].handle=&tokens[1];
+    assert(spider_sdl3_drop_absent(pads,&count,two,2,close_device,report_detach)==0);
+    assert(count==2 && closes==0 && notices==0);
+    assert(spider_sdl3_drop_absent(pads,&count,one,1,close_device,report_detach)==1);
+    assert(count==1 && pads[0].id==22 && pads[0].handle==&tokens[1]);
+    assert(pads[1].id==0 && pads[1].handle==0);
+    assert(closes==1 && notices==1 && last_detached==11);
+    /* The old loop reported detached=11 on EVERY scan. */
+    for(unsigned i=0;i<100;i++) {
+      assert(spider_sdl3_drop_absent(pads,&count,one,1,close_device,report_detach)==0);
+      assert(count==1 && closes==1 && notices==1);
+    }
+    pads[1].id=33;pads[1].handle=&tokens[2];count=2;
+    assert(spider_sdl3_drop_absent(pads,&count,next,2,close_device,report_detach)==0);
+    assert(count==2 && pads[0].id==22 && pads[1].id==33);
+    assert(spider_sdl3_drop_absent(pads,&count,NULL,0,close_device,report_detach)==2);
+    assert(count==0 && closes==3 && notices==3 && last_detached==33);
+    assert(spider_sdl3_drop_absent(pads,&count,NULL,0,close_device,report_detach)==0);
+    assert(closes==3);
+    /* An already-empty slot is pruned without a null close. */
+    count=2;pads[0].id=0;pads[0].handle=NULL;
+    pads[1].id=55;pads[1].handle=&tokens[0];
+    const uint32_t fiftyfive[]={55};
+    assert(spider_sdl3_drop_absent(pads,&count,fiftyfive,1,close_device,report_detach)==0);
+    assert(count==1 && pads[0].id==55 && pads[0].handle==&tokens[0]);
+    assert(closes==3 && notices==3);
+    return 0;
+}
+''')
+    exe=tmp_path/'slots'
+    subprocess.run(['gcc','-std=c99','-Wall','-Wextra','-Werror',
+                    '-I',str(ROOT),str(src),'-o',str(exe)],
+                   capture_output=True,text=True,check=True)
+    subprocess.run([str(exe)],check=True)
