@@ -78,7 +78,7 @@ if ! WINEDEBUG=-all "$wine_bin" reg add "$key" /v RelayInclude /t REG_SZ /d "$in
 fi
 modified=1
 printf 'HOTPLUG-EXIT: temporary exit-only relay filter installed for this Wine prefix.\n'
-printf 'HOTPLUG-EXIT: launch game, unplug controller at main menu once.\n'
+printf 'HOTPLUG-EXIT: launch game and reproduce the input issue in the intended menu or gameplay mode.\n'
 printf 'HOTPLUG-EXIT: Wine log: %s\n' "$trace"
 (
   cd -- "$game_dir" || exit 2
@@ -89,7 +89,7 @@ printf 'HOTPLUG-EXIT: Wine log: %s\n' "$trace"
 exit_code=$?
 {
   printf 'WINE_EXIT_CODE=%s\n' "$exit_code"
-  printf 'Game controller profile: confirm [Input] ControllerProfile=Off in SpiderMan2k1Fix.ini and its resulting log.\n'
+  printf 'Game controller profile: read the matching SpiderMan2k1Fix log; this script does not enforce ControllerProfile=Off or Auto.\n'
   printf 'A code 9 without explicit API-call evidence does not establish who chose that code.\n'
   printf 'Wine relay may not intercept internal or forwarded calls.\n'
 } | tee "$status_file"
