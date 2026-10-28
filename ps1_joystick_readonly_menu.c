@@ -25,6 +25,25 @@ static unsigned readonly_label_mode=0;
 static void report(const char *msg) {
   if(ps1_menu_logger)ps1_menu_logger(msg);
 }
+/* Original callsite 0x50D4A9 invokes the zero-argument void native
+ * PCINPUT_RestoreDefaultControllerSettings(). Replacing CALL with five
+ * NOPs made it impossible to determine whether the menu actually took
+ * this path. Use a normal cdecl void no-op instead, preserving the
+ * original caller's CALL/RET control flow. No native mappings are
+ * restored and the on-disk joystick preferences remain untouched.
+ * Rate-limit logging because this may be reached repeatedly if the
+ * original menu is stuck awaiting a selection release. */
+static void __cdecl spider_joystick_restore_denied(void) {
+  static LONG blocked=0;
+  LONG n=InterlockedIncrement(&blocked);
+  if(n<=8 || n%64==0) {
+    char line[195];
+    snprintf(line,sizeof(line),
+      "GAMEPAD-READONLY: RESTORE-DEFAULT intercepted count=%ld at original 0x50D4A9; no controller bindings changed [CALL/RET preserved]",
+      (long)n);
+    report(line);
+  }
+}
 
 /* Called instead of just the one original joystick-only sprintf at
  * 0x50D28C. The native CMenu::AddEntry that follows keeps ownership of
@@ -51,8 +70,9 @@ static int __cdecl spider_ps1_joystick_name(char *destination,
  * assignment-entry sites makes controller key presses inert, but does
  * not change the menu's existing normal navigation and Escape/Back.
  *
- * The extra checked NOPs block native restore defaults and the
- * original setter as defense in depth. The 7-entry virtual profile and
+ * The verified restore-defaults site is replaced with a cdecl no-op
+ * CALL (retaining the native CALL/RET shape and logging activation);
+ * the original setter is NOP'd as defense in depth. The 7-entry virtual profile and
  * persistent user mapping are independent of these menu-only edits.
  * All sites are verified BEFORE any code memory is written. */
 static int ps1_patch_readonly_site(BYTE *address,const BYTE *replacement,
@@ -178,7 +198,12 @@ static int spider_install_readonly_joystick(unsigned mode,
     FlushInstructionCache(GetCurrentProcess(),capture_thunk,sizeof(code));
     (void)unused;
   }
-  memcpy(replacements[1],nop5,5u); /* native restore-defaults */
+  replacements[1][0]=0xE8u; /* original CALL/RET; safe no-op logger */
+  {
+    uint32_t rel=(uint32_t)(uintptr_t)&spider_joystick_restore_denied-
+       (spider_ps1_readonly_sites[1].virtual_address+5u);
+    memcpy(&replacements[1][1],&rel,sizeof(rel));
+  }
   memcpy(replacements[4],nop5,5u); /* native controller action setter */
   replacements[0][0]=0xE8u; /* CALL joystick-only name formatter */
   {
