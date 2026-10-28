@@ -847,3 +847,77 @@ verified menu/input ownership passes an independent real-game test.
 draft and unmerged.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+## Raw DI8 input evidence and new button ownership candidate (2026-10-28 08:44)
+
+Trace `SpiderMan2k1Fix(20261028-084402).log` (`v1.1.0-aed5f9d`)
+was collected with `ControllerPS1QuitTrace=0`,
+`ControllerPS1PostQuitGuard=1`,
+`ControllerPS1InputFlightRecorder=1` on original Sony DS4.
+
+The second successful original native `Quit/Yes` transition emitted the
+flight recorder when its first 2D `Flip=587` arrived:
+- `seq=567`: `2d=0,3d=1,pause=0,CROSS=1,previous-mask=0`.
+- `seq=568`: `pause=1,CROSS=1,previous-mask=1`.
+- `seq=572`: `pause=1,CROSS=0,previous-mask=1`.
+- `seq=573`: `pause=1,CROSS=0,previous-mask=0`.
+- `seq=586`: `pause=1,CROSS=0,previous-mask=0`, successful DI8 read.
+- `seq=587`: `2d=1,3d=0,pause=0,request=7,CROSS=1,previous-mask=0`,
+  successful DI8 read and **guarded** synthetic Enter suppression.
+- No failed DI8 reads or focus transitions in the 96-sample window preceding
+  this return. There **was** a separate focus loss and DI8 re-acquire after
+  the **earlier** successful Quit; that does not explain the second return.
+
+This excludes the hypothesis that `previous_buttons` was reset to zero
+because of a DI8 polling error or focus loss in the **last 3D → 2D
+transition**. It supports an **input ownership/routing** problem:
+the native game's Quit/Yes menu consumed an input before our independent
+per-Flip DirectInput8-to-keyboard adapter saw the state and misinterpreted
+it as a new Enter for the returned main menu.
+
+Do **not** claim hardware/physical presses are proven by sampled bits.
+A person could have pressed/released/repressed between samples; our logger
+cannot see the exact moment when the original game interpreted Yes.
+
+### No-timer replacement candidate, OFF by default
+
+New `[Input] ControllerPS1TransitionEdgeOwnership=1` runs a pure C99
+state machine: it first records that genuine gameplay 3D was observed.
+On the **first** subsequent 2D main-menu Flip with original native
+`request=7`, any Cross/Options confirm bits already depressed are marked
+as **owned by the old native Quit menu** and not re-sent as synthetic Return.
+Those inherited bits remain consumed while held, then re-arm immediately
+when the raw DI8 bit is observed released. If no button is held at return,
+no action is swallowed. No arbitrary eight-Flip timer; no native menu
+writes or input hooks.
+
+The previously real-game-validated `ControllerPS1PostQuitGuard=1`
+remains untouched and available as a fallback. To test whether ownership
+fix alone solves the bug, use the **alternative**, not both:
+
+```ini
+[Input]
+ControllerPS1Preview=1
+ControllerPS1QuitTrace=0
+ControllerPS1PostQuitGuard=0
+ControllerPS1TransitionEdgeOwnership=1
+ControllerPS1InputFlightRecorder=1
+
+[Debug]
+Log=1
+```
+
+The flight recorder now works with either the old guard or the new owner,
+and prints its buffered raw DI8 history when that selected mechanism
+suppresses a duplicate Enter. Check
+`GAMEPAD-PS1: TRANSITION-OWNERSHIP consumed inherited Cross/Options`,
+then `GAMEPAD-PS1: FLIGHT-RECORDER`, plus correct native request 7
+and original `Shell_MainMenu`. Also test an immediate intentional fresh
+press after releasing Cross on the returned main menu. If original New Game
+still starts involuntarily, immediately restore the old working setting;
+do not change other input mappings.
+
+**Only the original 8-Flip guard is user validated so far.** Do not
+merge PR #74 or publish a release before the new experiment is verified.
+
+legluondunet assisted by ChatGPT (OpenAI)
