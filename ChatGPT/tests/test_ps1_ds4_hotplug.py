@@ -105,7 +105,8 @@ def test_unplug_inputlost_never_acquires_disconnected_device_same_frame():
     assert "spider_hotplug_drop_device(hr," in PAD
     assert "secondary device release BEGIN (no Acquire on failed read)" in PAD
     assert "secondary device release COMPLETE; rescan deferred 2s" in PAD
-    assert "NO stale Acquire inside PAUSED" in PAD
+    assert "no Acquire for INPUTLOST/UNPLUGGED" in PAD
+    assert "hr==DIERR_NOTACQUIRED && pause_wake_notacquired_attempts==0u" in PAD
     assert "pause_wake_active=0; /* stop polling a lost secondary device until Flip */" in PAD
     assert "disable_profile_with_policy(NULL,hr==DIERR_INPUTLOST);" in PAD
     assert "secondary stale device Release BEGIN (skip Unacquire after INPUTLOST)" in PAD
