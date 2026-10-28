@@ -162,6 +162,8 @@ static void install_guard(void) {
   if(write_log)
     write_log("NATIVE-UNPLUG: ACTIVE at Flip #120; strict original x86 signatures; only DIERR_UNPLUGGED returns nonfatally; native rebind NOT implemented");
 }
+long SpiderNativeUnplug_Events(void) { return snapshot(&detached_events); }
+int SpiderNativeUnplug_Installed(void) { return snapshot(&installed)==1; }
 void SpiderNativeUnplug_Init(const char *ini,void (*logger)(const char *)) {
   write_log=logger;
   InterlockedExchange(&requested,
