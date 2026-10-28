@@ -128,10 +128,13 @@ def test_native_joystick_menu_is_readonly_and_xbox_pause_fail_closed():
     assert "pause_requested=(fresh & ((1u<<6)|(1u<<7)))!=0" in ui
     assert 'GAMEPAD-XBOX360: 3D MENU Back/Start -> Escape' in ui
     assert '"[Joystick]"' not in source_block  # no writes from guard
-    assert "SpiderCfg_EnableXbox360Preview" not in native_cfg
-    assert "xbox360_preview_active" not in native_cfg
+    # The optional new Xbox RAM overlay must be explicitly requested;
+    # the default old Xbox menu bridge must not alter gameplay mapping.
+    assert "SpiderCfg_EnableXbox360Preview" in native_cfg
+    assert "xbox360_preview_active" in native_cfg
+    assert 'GetPrivateProfileIntA("Input","ControllerXbox360Preview",0,ini)==1' in ui
+    assert 'ControllerXbox360Preview=0' in native_cfg
     assert "spider_xbox360_apply_gameplay" not in native_cfg
-    assert "Xbox360Preview" not in ui
     assert "load_joystick();" in native_cfg
     assert "if(!save_joystick()) goto fail;" in native_cfg
 
