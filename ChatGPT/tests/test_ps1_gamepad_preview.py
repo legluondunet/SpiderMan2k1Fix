@@ -57,7 +57,7 @@ def test_user_joystick_bindings_preserved_on_any_virtual_save():
 def test_ps1_preview_uses_cross_only_for_menu_confirm_even_with_legacy_both():
     # Original [Input] ControllerEnterButtons=Both remains honored outside
     # PS1 preview, but OPTIONS/Start is intentionally redundant in PS1.
-    assert "effective_confirm=spider_ps1_menu_confirm_mask(ps1_preview_active,(unsigned)confirm);" in PAD
+    assert "ps1_preview_active || late_ds4_menu_only,(unsigned)confirm);" in PAD
     assert "confirm_edges=spider_ps1_menu_confirm_edges(pressed,(unsigned)previous_buttons,effective_confirm);" in PAD
     assert "native_request,pressed & effective_confirm);" in PAD
     assert "CROSS-only 2D/Bink/pause confirmation" in PAD
