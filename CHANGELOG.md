@@ -12,7 +12,9 @@
 - Automatically recognize original Sony DualShock 4 VID/PID 054C:05C4 / 054C:09CC and the official 054C:0BA0 adapter, using a separate nonexclusive DirectInput8 gamepad device. Other controllers are left unchanged.
 - Add `[Input] ControllerProfile=Auto|Off|DualShock4` and `ControllerEnterButtons=Cross|Options|Both` (default Auto and Both). When a unique DualShock 4 is detected, map ✕ and/or OPTIONS to **Enter** for interactive 2D menus, the pre-menu still image and skippable videos; keep all native gameplay controls unchanged.
 - Trigger one debounced Enter scancode per button press using `SendInput`; release the key before focus-pause, never inject in 3D. Failure to read the separate controller or identify it unambiguously disables the bridge safely.
-- Preserve the original game's cinematic timing and keyboard events. **Still requires real Wine/Windows acceptance testing:** a successful Windows synthetic key request does not prove the original DirectInput keyboard poll will consume it.
+- Preserve the original game's cinematic timing and keyboard events. **DualShock 4 Enter is confirmed functional by the user under Wine**; native Windows validation remains pending.
+- Add `[Input] ControllerBackButton=Circle|Share|Off` (default `Circle`) to send **Escape** during 2D menus and cancellation dialogs, without affecting 3D gameplay. Back takes priority over Enter on simultaneous presses, and its synthetic key is always released at the next Flip.
+- Note the original Triangle button already confirms some submenus natively; do not remap Triangle to Escape until its original confirmation handler can be safely suppressed. Circle/Escape requires a new Wine/Windows acceptance test.
 - Add regression tests and research notes for profile choice, context isolation and the two previously failed controller experiments. The stable v1.1.0 release remains unchanged.
 
 ## 1.1.0 — October 27, 2026
