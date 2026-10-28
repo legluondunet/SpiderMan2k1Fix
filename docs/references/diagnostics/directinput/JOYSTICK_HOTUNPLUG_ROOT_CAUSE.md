@@ -456,3 +456,78 @@ ExperimentalNativeJoystickReconnect=0
 
 No current evidence warrants disabling the native joystick axis fix
 or replacing the game's DirectInput8 factory.
+
+
+## Extended menu soak: two unplug/replug cycles without crash (28 October 2026)
+
+Maintainer reports the previously observed late menu crash **could not be
+reproduced**. New attached fix log:
+`SpiderMan2k1Fix(20261028-141227).log`, build
+`v1.1.0-1070d30`, SHA-verified supported original EXE,
+`ControllerProfile=Auto`, both experimental native hotplug
+options active. This is a **positive repeatability test**, not proof
+that the earlier crash cannot recur.
+
+The log shows two complete physical detach/rebind cycles:
+- First secondary DirectInput loss and release: log lines 428-435;
+  native guard suppressed `DIERR_UNPLUGGED` (437); **native rebind
+  #1** at line 452, `scan=7 buttons=14 polled=0`.
+- Second detach: lines 495-503; native guard suppressed a second
+  `DIERR_UNPLUGGED`; **native rebind #2** at line 519,
+  `scan=14 buttons=14 polled=0`.
+- After both rebinds, post-rebind passive traces show balanced
+  `KEYDOWN` + `KEYUP` cycles for synthetic **Enter** and
+  **Escape** (lines 457-543), all with stable
+  `joystick=08308d5c` for generation 1 and
+  `joystick=0835caec` for generation 2. In both generations
+  `native-ffb=00000000` (no observed FFB effect pointer).
+- Menus continue to at least **Flip #3422** (line 635), over
+  3,400 rendered frames at the 30-FPS target. Two separate
+  `SPIDEY-CFG: user settings saved; original joystick bindings
+  preserved` operations (lines 611-613 and 625-627) complete
+  after the second rebind.
+- No crash, uncaught exception, DirectInput fault or unexpected exit
+  message is present in the supplied fix log. The log ends while
+  normal menu activity is in progress; it **does not establish
+  a process exit code** or test actual 3D gameplay.
+- No FFB effect was seen during this **menu-only** test, so the
+  previous hypothesis that an existing force-feedback effect
+  caused the late menu crash is unsupported by this run.
+
+**Status:** after two real Wine unplug/replug cycles the original
+controller and synthetic menu controls survived an extended menu
+session. Axis analog movement had already been user-confirmed working
+with the corrected X=0,Y=4 settings in the preceding hardware test.
+The single earlier menu crash remains **intermittent/unexplained**,
+so do not claim full stability or merge.
+
+### Next low-risk milestone: 3D controller lifetime
+
+No behavior change is warranted yet. To improve diagnostic coverage
+for 3D gameplay without adding native memory hooks, the
+experimental rebind module now:
+- Resets its **40-entry** synthetic Enter/Escape trace budget on
+  **each** successfully published native joystick generation, rather
+  than exhausting one budget across all future replug cycles.
+- Emits a **read-only** `NATIVE-RECONNECT: HEALTH` event on a
+  mode transition, on each new rebind generation, and otherwise
+  every 300 Flip calls (about 10 seconds at 30 FPS), capped at
+  80 messages per process. It logs the inferred
+  `MENU`/`3D`/`BINK`/`TRANSITION` mode, game-owned
+  joystick pointer and FFB pointer *values* (no dereference),
+  rebound number, and native unplug counter. The mode estimate
+  uses **only the same existing render flags** already supplied
+  to `SpiderGamepadUI_OnFlip`; it is not a new game-state
+  mutation or verified original engine mode detector.
+
+Suggested next single-hardware pass after the diagnostic build:
+start menu with DS4 connected, enter a 3D level, test analog and
+native actions, physically unplug **once in-game**, continue on
+keyboard, replug without held buttons, and verify analog movement
+and native actions still function. Return to a menu and exit
+normally if possible. Save the matching fix log and any Wine
+`+seh`/exit trace if an actual crash happens. This sequence
+should be attempted once, not as repeated stress tests, while
+PR #76 remains draft/unmerged. Revert
+`ExperimentalNativeJoystickReconnect=0` to retain the already
+validated unplug-guard-only behavior if any 3D instability occurs.
