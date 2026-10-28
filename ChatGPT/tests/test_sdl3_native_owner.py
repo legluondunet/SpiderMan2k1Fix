@@ -67,3 +67,20 @@ def test_native_owner_does_not_hook_di_com_vtables_or_write_game_files():
     assert "CreateThread(" not in native
     assert "WriteFile(" not in native
     assert "SetDataFormat(device," in native
+
+
+def test_sdl3_native_runtime_canonical_pause_and_return_ownership_guards():
+    native = _read("native_joystick_reconnect.c")
+    ui = _read("gamepad_ui_profile.c")
+    policy = _read("sdl3_gamepad_selection.h")
+    assert "spider_native_reconnect_canonical_mapping(SPIDER_RECONNECT_DS4)" in native
+    assert "spider_native_reconnect_canonical_mapping(SPIDER_RECONNECT_XBOX360)" in native
+    assert "SpiderNativeReconnect_CanonicalDS4Mapping()" in ui
+    assert "SpiderNativeReconnect_CanonicalXboxMapping()" in ui
+    assert "ps1_preview_active || late_ds4_menu_only || sdl3_live_sony" in ui
+    assert "xbox360_preview_active || sdl3_live_xbox" in ui
+    assert "SDL3-OWNER-UI: canonical native Sony DS4 SHARE -> Escape" in ui
+    assert "spider_sdl3_selection_focus_lost(" in policy
+    assert "spider_sdl3_selection_focus_lost(&selection)" in _read("sdl3_gamepad_probe.c")
+    assert "sdl3_owner_last_attempt=now;" in native
+    assert "sdl3_owner_last_verify=now;" in native
