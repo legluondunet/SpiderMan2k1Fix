@@ -10,6 +10,7 @@
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "spider_fix_paths.h"
 #include <shellapi.h> /* ExtractIconExW (native first executable icon group) */
 #include <ddraw.h>
 #include <stdio.h>
@@ -253,12 +254,8 @@ void SpiderPauseSurface_Init(void (*log_fn)(const char *)) {
   enabled_dim=1;
   enabled_banner=1;
   opacity=60;
-  n=GetModuleFileNameA(NULL,path,sizeof(path));
-  if(n>0 && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL &&
-     (size_t)(slash-path)+sizeof("SpiderMan2k1Fix.ini")<=sizeof(path)) {
-    strcpy(slash+1,"SpiderMan2k1Fix.ini");
+  if(spider_path_ini_a(path,sizeof(path)))
     opacity=GetPrivateProfileIntA("Input","PauseDimOpacity",60,path);
-  }
   /* The strict INI validator accepts 0..90. Fail closed on anomalous
    * values in a missing/unreadable file without affecting focus pause. */
   if(opacity<0 || opacity>90)opacity=60;
