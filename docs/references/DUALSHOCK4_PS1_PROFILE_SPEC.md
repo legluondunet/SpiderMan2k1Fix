@@ -45,8 +45,11 @@ is still verified against its exact three original instruction signatures
 and writable single game-owned flag before any change; if verification fails,
 the original mouse remains enabled. Keyboard input and controller gameplay
 are unaffected. The fix never hides/hooks/repositions the Windows/X11 desktop
-mouse. During loss of game foreground it releases **only the bit owned by the
-fix**, and reapplies suppression when the game regains the foreground.
+mouse. With `MouseEnabled=0` the game-only bit remains set across Alt+Tab
+and the custom frozen PAUSED frame. Releasing it on focus loss previously
+allowed the original game cursor to enter the frozen image. The separate
+Windows/X11 desktop cursor remains controlled by the existing focus-recovery
+mechanism; `MouseEnabled=1` restores the original game menu mouse.
 
 The old `ControllerAutoDisableMouse=1` setting is **retired and ignored**,
 but recognized by the INI validator to avoid deleting settings on upgrade.
@@ -151,8 +154,9 @@ solution: `gRenderTest & 0x10` is used by the exact functions
 although this optional fix is intentionally applied **later** so
 that it does not change device initialization.
 
-The opt-in `[Input] ControllerAutoDisableMouse=1` is **OFF by
-default**, and only activates when `ControllerPS1Preview=1` and
+**Historical DS4-only experiment (retired; superseded by global
+`MouseEnabled=0`):** The opt-in `[Input] ControllerAutoDisableMouse=1`
+was OFF by default and only activated when `ControllerPS1Preview=1` and
 a unique authentic DS4 has been acquired and the native game config
 bootstrap confirmed. It sets only the existing original game-owned
 bit `0x10`, after verifying the untouched original x86 signatures
@@ -162,9 +166,13 @@ its menu hit-test returns false. The keyboard and UI controller input
 remain active. No Windows `ShowCursor`, no global mouse hook, no
 DirectInput COM hook, no cursor warping.
 
-On losing game foreground, hidden window, missing DS4 or failed pad
-reading, the module removes **only the bit it originally set** and
-returns the game's mouse controls. This is a game-level change only;
+In that **retired implementation**, losing game foreground, a hidden
+window, missing DS4 or failed pad reading removed the owned bit and
+returned the game's mouse controls. In the **current global setting**,
+`MouseEnabled=0` instead keeps the original game's cursor/poll/hit-test
+disabled across Alt+Tab and the custom PAUSED surface; only a
+`MouseEnabled=1` configuration restores the game mouse. The desktop
+cursor remains independent of this game-level change;
 the desktop cursor remains owned by the existing Alt+Tab focus recovery.
 When the option is absent, `0` or the PS1 profile is inactive,
 original mouse functionality is unchanged. Full game restart also
