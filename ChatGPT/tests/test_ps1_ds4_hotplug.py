@@ -119,7 +119,7 @@ def test_unplug_inputlost_never_acquires_disconnected_device_same_frame():
     assert "IDirectInputDevice8_Acquire(device);" not in paused
     # Reacquisition must open a fresh instance during scheduled rediscovery,
     # not silently reload the game's native PS1 profile in mid-game.
-    assert "IDirectInput8_CreateDevice(di,&d.ds4_instance,&device,NULL)" in PAD
+    assert "IDirectInput8_CreateDevice(di,choose_ds4?&d.ds4_instance:&d.xbox_instance,&device,NULL)" in PAD
     assert "hotplug.last_scan=GetTickCount();" in PAD
 
 
