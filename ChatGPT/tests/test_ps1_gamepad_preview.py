@@ -188,6 +188,7 @@ def test_native_start_unbind_is_explicit_unsafe_preview_only():
     assert "if(disable_native_start)" in PAD
     assert "!deep || truncated || sections!=1u || matches!=1u" in PAD
     assert "strict_matches!=1u || !strict_candidate" in PAD
+    assert "strict_candidate!=base+0x00168408u" in PAD
     assert "spider_ps1_start_strict_factory(" in PAD
     assert "InterlockedCompareExchange(" in PAD
     assert "SPIDER_PS1_START_BUTTON_FACTORY" in PAD
