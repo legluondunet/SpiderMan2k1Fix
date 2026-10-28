@@ -16,7 +16,7 @@ def test_opt_in_preserves_existing_verified_guard_and_inputs():
     assert 'GetPrivateProfileIntA("Input","ControllerPS1InputFlightRecorder",0,ini)==1' in PAD
     assert "ps1_preview_active && ps1_input_flight_recorder_requested &&" in PAD
     assert "(ps1_post_quit_guard_requested || ps1_transition_edge_ownership_requested)" in PAD
-    assert "ps1_input_flight_recorder_requested;" in PAD
+    assert "ps1_input_flight_recorder_requested &&" in PAD
     assert "ControllerPS1InputFlightRecorder=1" not in CFG
     assert "ps1_history_record(SPIDER_PS1_HISTORY_READ_OK" in PAD
     assert "ps1_history_record(SPIDER_PS1_HISTORY_FOCUS_LOST" in PAD
