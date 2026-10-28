@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — PAUSED cursor visibility (PR #74)
+
+- Fixed the mouse cursor appearing over the custom PAUSED screen after Alt+Tab, while keeping normal desktop mouse behavior and `MouseEnabled=1` unchanged. Pending in-game retest.
+
 ## Unreleased — context-aware PAUSED instruction (PR #74)
 
 - The custom Alt+Tab PAUSED screen shows `PRESS ANY KEY TO RESUME` if **no verified Sony DS4 wake device** was acquired at startup (including keyboard-only play).
@@ -17,7 +21,7 @@
 
 - Original PC 2001 manual, game README and period developer interview confirm the mouse is **only used for menus**. Gameplay and all menu commands work with keyboard/joystick; do not conflate with the 2002 Movie game.
 - Add `[Input] MouseEnabled=0` to the generated configuration and default to off for pre-existing INIs with no key. Set `MouseEnabled=1` to restore original mouse navigation in menus. This policy applies with **keyboard alone**, any gamepad, or `ControllerProfile=Off`; it no longer depends on DS4 availability or `ControllerPS1Preview`.
-- Reuse the previously validated, original game-owned `gRenderTest & 0x10` gate with strict three-site native instruction verification, one atomic RAM flag and foreground-owned restoration. Never touch the Windows/Linux desktop cursor, joystick mapping, or keyboard input. The game mouse remains unchanged if native validation fails.
+- Reuse the previously validated, original game-owned `gRenderTest & 0x10` gate with strict three-site native instruction verification, one atomic RAM flag that stays disabled across focus loss. Never touch the Windows/Linux desktop cursor, joystick mapping, or keyboard input. The game mouse remains unchanged if native validation fails.
 - Retire but continue accepting the old controller-specific `ControllerAutoDisableMouse` INI key. It no longer changes behavior; `MouseEnabled=1` takes precedence and always restores the original menu mouse. The user's existing previous test with a DS4 remains evidence for the native gate; keyboard-only and native Windows require runtime validation.
 
 ## Unreleased — controller cleanup and accepted Cross-only PS1 navigation (PR #74)
