@@ -30,6 +30,7 @@ static BYTE cfg[CFG_SIZE];
 static CRITICAL_SECTION guard;
 static int ready=0,dirty=0;
 static int ps1_preview_active=0;
+static volatile LONG ps1_bootstrap_loaded=0;
 static uint32_t original_joystick[SPIDER_PS1_BUTTON_COUNT]={0};
 /* Only block saving if automatic INI repair fails. */
 static int ini_writes_permitted=1;
@@ -1229,6 +1230,9 @@ unsigned SpiderCfg_Install(const char *path,void (*logger)(const char *)) {
  * All pointers and instruction bytes are hard-coded for the SHA-verified
  * SpideyPC.exe. No EXE patch or undocumented cross-CRT FILE* exchange.
  */
+int SpiderCfg_PS1BootstrapLoaded(void){
+  return InterlockedCompareExchange(&ps1_bootstrap_loaded,0,0)==1;
+}
 void SpiderCfg_BootstrapGameRead(void) {
   typedef void *(__cdecl *GameFopen)(const char *,const char *);
   typedef size_t (__cdecl *GameFread)(void *,size_t,size_t,void *);
@@ -1286,6 +1290,8 @@ void SpiderCfg_BootstrapGameRead(void) {
    * applies the locked resolution/depth without modifying game executable. */
   game_load();
   EnterCriticalSection(&guard);
+  if(ps1_preview_active && opens>opened && reads>served)
+    InterlockedExchange(&ps1_bootstrap_loaded,1);
   snprintf(msg,sizeof(msg),
     "SPIDEY-CFG: BOOTSTRAP game loader returned: virtual opens +%lu reads +%lu; configured=%ux%u depth=32 [%s]",
     (unsigned long)(opens-opened),(unsigned long)(reads-served),
