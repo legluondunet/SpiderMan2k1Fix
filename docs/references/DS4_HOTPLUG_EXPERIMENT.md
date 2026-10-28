@@ -12,10 +12,12 @@ none of the promised Xbox 360, DualShock 2 or rumble support.
 - Foreground-only discovery, every 2,000 ms while no verified secondary
   controller is available. Never enumerate inside the custom PAUSED loop,
   background windows or the original game's controller COM objects.
-- When the already acquired secondary device repeatedly fails reads:
-  on the third consecutive foreground failure, release it, release any
-  **synthetic** key, and schedule bounded rediscovery. A one-off
-  `DIERR_NOTACQUIRED` during Alt+Tab does **not** detach it.
+- On `DIERR_INPUTLOST`, do **not** immediately call `Acquire()` on the
+  potentially unplugged secondary device. Release the secondary device
+  (with checkpoint logs), release any **synthetic** key, and schedule
+  bounded rediscovery. Other read errors require three consecutive
+  foreground failures before release. A one-off transient error does
+  not immediately detach the device.
 - Reacquisition uses the same strict unique-device rule as before:
   **exactly one attached game controller and it must be a Sony DS4**.
   Any ambiguous multiple-controller configuration leaves the bridge off.
@@ -44,6 +46,9 @@ none of the promised Xbox 360, DualShock 2 or rumble support.
   Restart the game with the controller connected to activate PS1 preview.
 - Connecting or disconnecting while the **custom Alt+Tab PAUSED screen**
   blocks Flip does not trigger rediscovery until after keyboard wake.
+  A failed read during this pause disables further pad polling until
+  the wait ends; it does not issue an immediate `Acquire()` on a
+  potentially unplugged device.
   Its static gamepad prompt is a snapshot from PAUSED entry, not a live
   device list.
 - No claim about DS4 Bluetooth device-instance persistence, USB driver
@@ -98,3 +103,31 @@ its prerequisite PR #73 unmerged until their separate validation;
 hotplug remains a stacked draft review candidate.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+
+## Disconnect crash investigation — 28 October 2026
+
+The maintainer reported an immediate game crash after unplugging the Sony
+`054C:09CC` DS4 during an experimental Wine run. Evidence:
+`SpiderMan2k1Fix(20261028-122046).log`.
+
+- Exact supported `SpideyPC.exe` SHA-256 and early PS1 bootstrap confirmed.
+- Last trace: `GAMEPAD-UI: independent DirectInput read hr=0x8007001E; no Return emitted`.
+- **No reconnection, release checkpoint or second failed read was logged.**
+  The code at that revision called `IDirectInputDevice8_Acquire(device)`
+  directly after logging the failed `GetDeviceState`; the log cannot
+  distinguish a fault inside that call from a subsequent fault inside
+  the original game's independently owned DirectInput device.
+- Candidate safety change: on `DIERR_INPUTLOST`, **do not Acquire the
+  stale secondary device**. Instead release it using logged checkpoints
+  and try a new discovery after 2 seconds. On other failures, defer
+  acquisition and require repeated errors before dropping.
+- The custom PAUSED wake loop also avoids calling `Acquire` on a
+  failed secondary read. Keyboard wake remains available.
+- **Still experimental**: this does not claim the original game's
+  native controller is hotplug-safe. The next physical run needs to
+  determine whether the game survives the unplug; if it still crashes,
+  capture a Wine `+seh` exception/backtrace to determine whether the
+  game-native controller code or secondary COM release is the faulting
+  site. Do not attempt unsafe native device-memory writes or broad
+  exception swallowing without that evidence.
