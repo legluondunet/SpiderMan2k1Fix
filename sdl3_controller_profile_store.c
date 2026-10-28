@@ -83,12 +83,6 @@ static int ensure_dirs(const char *root) {
      !join_dir(folder,sizeof(folder),root,"controllers"))return 0;
   return safe_dir(folder,1);
 }
-static int safe_parent(const char *root) {
-  char folder[SPIDER_STORE_PATH_CAP];
-  if(!safe_dir(root,0) ||
-     !join_dir(folder,sizeof(folder),root,"controllers"))return 0;
-  return safe_dir(folder,0);
-}
 /* A 0-length/oversized/unreadable or wrong-version file never gets
  * partially applied to the in-memory profile. */
 static int read_path(const char *path,uint16_t vid,uint16_t pid,
