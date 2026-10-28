@@ -129,3 +129,22 @@ def test_original_exe_signatures_and_nonintrusive_candidate_preparation():
     assert SOURCE.index("set_native_range(device,0u)") < SOURCE.index("set_native_range(device,4u)")
     assert "memcmp((const void *)(uintptr_t)0x00501AFBu,original_create" in SOURCE
     assert "game factory" in SOURCE.lower() or "GAME'S factory" in SOURCE
+
+
+
+def test_post_rebind_menu_input_breadcrumbs_are_passive_and_bounded():
+    ui=(ROOT/"gamepad_ui_profile.c").read_text()
+    header=(ROOT/"native_joystick_reconnect.h").read_text()
+    assert "void SpiderNativeReconnect_LogSyntheticMenuKey(unsigned scan, const char *phase);" in header
+    assert "void SpiderNativeReconnect_LogSyntheticMenuKey(unsigned scan,const char *phase)" in SOURCE
+    assert "if(!requested || !initialized || rebound==0 || reported>=40u)return;" in SOURCE
+    assert "native_thread!=GetCurrentThreadId()" in SOURCE
+    assert "SPIDER_NATIVE_FORCE_FEEDBACK 0x006B7A68u" in SOURCE
+    assert "NATIVE-RECONNECT: POST-REBIND INPUT" in SOURCE
+    assert 'SpiderNativeReconnect_LogSyntheticMenuKey(scan,"before KEYDOWN");' in ui
+    assert 'SpiderNativeReconnect_LogSyntheticMenuKey(scan,"after KEYDOWN");' in ui
+    assert 'SpiderNativeReconnect_LogSyntheticMenuKey(active_scan,"before KEYUP");' in ui
+    assert 'SpiderNativeReconnect_LogSyntheticMenuKey(active_scan,"after KEYUP");' in ui
+    assert ui.index('SpiderNativeReconnect_LogSyntheticMenuKey(scan,"before KEYDOWN");') < ui.index('if(SendInput(1,&in,sizeof(in))!=1) {', ui.index('static void begin_scancode'))
+    assert "IDirectInputDevice8_GetDeviceData" not in SOURCE.split("void SpiderNativeReconnect_LogSyntheticMenuKey(",1)[1].split("void SpiderNativeReconnect_Init(",1)[0]
+    assert "IDirectInputDevice8_Release" not in SOURCE.split("void SpiderNativeReconnect_LogSyntheticMenuKey(",1)[1].split("void SpiderNativeReconnect_Init(",1)[0]
