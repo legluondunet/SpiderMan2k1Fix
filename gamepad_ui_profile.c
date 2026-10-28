@@ -703,10 +703,15 @@ static void ps1_history_dump(void) {
  * The controller cannot take foreground on its own: user must first switch
  * back to the game window normally. No hotplug enumeration in this path.
  */
-void SpiderGamepadUI_PauseWake_Begin(void) {
+int SpiderGamepadUI_PauseWake_Begin(void) {
+  /* This is a snapshot of the verified device acquired during startup,
+   * not a new enumeration or hotplug mechanism. No controller -> keyboard
+   * instruction only; mouse and original native controls are unaffected. */
+  int available=configured && detected && device!=NULL;
   memset(&pause_wake,0,sizeof(pause_wake));
-  pause_wake_active=1;
+  pause_wake_active=available;
   pause_wake_retry_logged=0;
+  return available;
 }
 unsigned SpiderGamepadUI_PauseWake_Poll(HWND hwnd) {
   DIJOYSTATE2 state;
