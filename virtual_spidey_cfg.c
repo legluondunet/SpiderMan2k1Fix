@@ -892,6 +892,29 @@ int SpiderCfg_EnableXbox360Preview(void) {
 int SpiderCfg_Xbox360BootstrapLoaded(void) {
   return SpiderCfg_PS1BootstrapLoaded();
 }
+/* The game's own active Swing keyboard DIK scan, not a guessed key.
+ * Guard against unsafe/ambiguous keyboard codes, including shared
+ * actions, Enter, Escape and extended/non-plain scan-code encodings.
+ * Caller must have proved a live Xbox startup profile; this routine
+ * does NOT modify keyboard bindings or the config image.
+ */
+unsigned SpiderCfg_Xbox360SwingScan(void) {
+  unsigned i,scan;
+  if(!ready || !SpiderCfg_PS1BootstrapLoaded())return 0;
+  EnterCriticalSection(&guard);
+  if(!xbox360_preview_active) {LeaveCriticalSection(&guard);return 0;}
+  scan=(unsigned)get_word(60);
+  if(scan<2u || scan>0x7fu || scan==0x1cu || scan==0x0fu ||
+     scan==0x0eu || scan==0x38u || scan==0x39u || scan==0x1du) {
+    LeaveCriticalSection(&guard);return 0;
+  }
+  for(i=0;i<10u;i++)if((unsigned)get_word(action_offsets[i])==scan) {
+    LeaveCriticalSection(&guard);return 0;
+  }
+  LeaveCriticalSection(&guard);
+  return scan;
+}
+
 void SpiderCfg_CancelXbox360Preview(void) {
   if(!ready)return;
   EnterCriticalSection(&guard);
