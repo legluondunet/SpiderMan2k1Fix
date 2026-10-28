@@ -27,9 +27,7 @@ static inline int spider_sdl3_capture_feed(
   if(candidate)*candidate=b;
   if(!c || !s || !candidate || !c->active)return -1;
   if(s->axis[SPIDER_SDL3_AXIS_LT]<0 ||
-     s->axis[SPIDER_SDL3_AXIS_RT]<0 ||
-     s->axis[SPIDER_SDL3_AXIS_LT]>32767 ||
-     s->axis[SPIDER_SDL3_AXIS_RT]>32767) {
+     s->axis[SPIDER_SDL3_AXIS_RT]<0) {
     c->armed=0;return -1;
   }
   if(!c->armed) {
