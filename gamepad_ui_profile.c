@@ -694,11 +694,11 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active) {
   DIJOYSTATE2 state;
   HRESULT hr;
-  unsigned pressed,back_pressed;
+  unsigned pressed,back_pressed,confirm_edges;
   int menu_allowed,movie_allowed,confirm_allowed,gameplay_allowed,pause_pressed;
   int share_pressed,share_edge,native_start_pressed;
-  int post_quit_block=0,ownership_block=0;
-  unsigned native_request=0;
+  int post_quit_block=0;
+  unsigned ownership_block=0,native_request=0;
   if(!configured || !hwnd || !IsWindow(hwnd)){
     if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
     return;
@@ -768,6 +768,9 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(1);
   pressed=(state.rgbButtons[1]&0x80u?SPIDER_CONFIRM_CROSS:0) |
           (state.rgbButtons[9]&0x80u?SPIDER_CONFIRM_OPTIONS:0);
+  /* Edge detection must be per button: an already held Cross must not
+   * hide a fresh OPTIONS press, or vice versa. */
+  confirm_edges=(pressed & (unsigned)confirm) & ~(unsigned)previous_buttons;
   ps1_history_record(SPIDER_PS1_HISTORY_READ_OK,native_request,menu_2d,
     gameplay_3d,bink_active,native_pause_active,(unsigned)previous_buttons,&state);
   if(ps1_preview_active && ps1_transition_edge_ownership_requested) {
@@ -823,25 +826,19 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   } else if(menu_allowed && (back_pressed & (unsigned)back) &&
      !(previous_back & (unsigned)back)) {
     begin_scancode(0x01u,"Escape");
-  } else if(confirm_allowed &&
-            (pressed & (unsigned)confirm) &&
-            !(previous_buttons & (unsigned)confirm) &&
-            ownership_block) {
-    /* This very press belongs to the native Quit confirmation already
-     * consumed by the old menu; never send it into the returned menu. */
+  } else if(confirm_allowed && confirm_edges &&
+            !(confirm_edges & ~ownership_block) &&
+            (confirm_edges & ownership_block)) {
+    /* Only old-session confirmation bits are consumed. A fresh OTHER
+     * confirm button may still send Return even while one bit is held. */
     report("GAMEPAD-PS1: TRANSITION-OWNERSHIP consumed inherited Cross/Options confirmation on first 2D menu frame after native request 7; rearm on physical release");
     ps1_history_dump();
-  } else if(confirm_allowed &&
-            (pressed & (unsigned)confirm) &&
-            !(previous_buttons & (unsigned)confirm) &&
-            post_quit_block) {
-    /* The edge is still consumed by previous_buttons below, so a held
-     * Cross/Options cannot replay after the settling window expires. */
+  } else if(confirm_allowed && confirm_edges && post_quit_block) {
+    /* Legacy 8-Flip guard stays optional and suppresses any fresh Enter.
+     * Per-button edges are still consumed by previous_buttons below. */
     report("GAMEPAD-PS1: POST-QUIT-GUARD suppressed synthetic Return on first 2D menu frames after native request 7");
     ps1_history_dump();
-  } else if(confirm_allowed &&
-            (pressed & (unsigned)confirm) &&
-            !(previous_buttons & (unsigned)confirm)) {
+  } else if(confirm_allowed && (confirm_edges & ~ownership_block)) {
     begin_scancode(0x1Cu,"Return");
     if(movie_allowed && !menu_allowed && postmenu_bink_reports++<8u)
       report("GAMEPAD-UI: POST-MENU BINK Return attempted with original GameFMV_Active=1; native video skip gate remains authoritative");
@@ -851,9 +848,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     begin_scancode(0x01u,"Escape");
     report("GAMEPAD-UI: 3D PAUSE REQUEST OPTIONS -> Escape; no saved native BUTTON9 gameplay assignment");
   } else if(!menu_allowed && !movie_allowed && !gameplay_allowed &&
-            (pressed & (unsigned)confirm) &&
-            !(previous_buttons & (unsigned)confirm) &&
-            outside_mode_reports++<4u) {
+            confirm_edges && outside_mode_reports++<4u) {
     report("GAMEPAD-UI: unclassified engine stage; no keyboard injection");
   }
   previous_buttons=(int)pressed;
