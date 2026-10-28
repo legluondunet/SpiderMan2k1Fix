@@ -387,6 +387,9 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "ControllerProfile=Auto\r\n"
     "; In 2D menus, stills and movies: Cross/Options emit Enter, never during 3D.\r\n"
     "ControllerEnterButtons=Both\r\n"
+    "; 2D menu Back: Circle -> Escape; Off disables; Share is an alternative.\r\n"
+    "; Triangle remains the original game\'s native menu-confirm action.\r\n"
+    "ControllerBackButton=Circle\r\n"
     "\r\n"
     "[Audio]\r\n"
     "; All levels are 0..100 percent, with lossless raw values kept below.\r\n";
