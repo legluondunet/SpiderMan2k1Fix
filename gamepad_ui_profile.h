@@ -6,11 +6,15 @@
 /*
  * 2D UI profile. Own DirectInput8 enumeration/polling is independent from
  * the original game's COM objects. Never touches native controller tables.
- * Only the verified game window receives a VK_RETURN scan-code pulse, and
- * only in the 2D menu/video context (never in 3D gameplay).
+ * Only the verified game window receives scan-code pulses: Return in the
+ * 2D menu OR a native Bink movie, Escape in 2D submenus, and optionally
+ * Pause/Escape on OPTIONS in 3D only if no game action uses BUTTON9.
+ * Never overwrite the seven original gameplay mappings or 3D triangle.
  *
- * Compatibility is experimental until Windows and Wine runtime validation.
+ * Enter UI is user-validated under Wine; Bink-after-menu and 3D Pause
+ * extensions are still experimental.
  */
 void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *));
-void SpiderGamepadUI_OnFlip(HWND game_window,int menu_2d,int gameplay_3d);
+void SpiderGamepadUI_OnFlip(HWND game_window,int menu_2d,int gameplay_3d,
+                             int native_bink_active);
 #endif
