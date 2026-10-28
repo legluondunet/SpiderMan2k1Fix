@@ -5,7 +5,9 @@
  * Remove the entire stale slot before the next enumeration, compacting the
  * live array to avoid repeated SDL_CloseGamepad(NULL) and log spam. */
 #include <stdint.h>
-#include "sdl3_gamepad_selection.h"
+#ifndef SPIDER_SDL3_MAX_GAMEPADS
+#define SPIDER_SDL3_MAX_GAMEPADS 16u
+#endif
 
 typedef struct {uint32_t id; void *handle;} SpiderSDL3Opened;
 typedef void (*SpiderSDL3CloseFn)(void *);
