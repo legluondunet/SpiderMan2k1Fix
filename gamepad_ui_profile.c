@@ -37,12 +37,14 @@
 #include "ps1_menu_confirm.h"
 #include "ps1_focus_pause_wake.h"
 #include "ps1_ds4_hotplug.h"
+#include "native_joystick_reconnect_policy.h"
+#include "xbox360_menu_policy.h"
 #include "native_joystick_reconnect.h"
 #include "ps1_input_flight_recorder.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
 typedef HRESULT (WINAPI *SpiderDICreateFn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
-enum {SPIDER_PROFILE_OFF=0,SPIDER_PROFILE_AUTO=1,SPIDER_PROFILE_DUALSHOCK4=2};
+enum {SPIDER_PROFILE_OFF=0,SPIDER_PROFILE_AUTO=1,SPIDER_PROFILE_DUALSHOCK4=2,SPIDER_PROFILE_XBOX360=3};
 enum {SPIDER_CONFIRM_CROSS=1,SPIDER_CONFIRM_OPTIONS=2,SPIDER_CONFIRM_BOTH=3};
 enum {SPIDER_BACK_OFF=0,SPIDER_BACK_CIRCLE=1,SPIDER_BACK_SHARE=2};
 enum {SPIDER_PAUSE_OFF=0,SPIDER_PAUSE_OPTIONS=1};
@@ -51,15 +53,18 @@ static const char *const native_actions[7]={
 static const unsigned native_factory_buttons[7]={3u,4u,0u,1u,6u,9u,7u};
 
 typedef struct {
-  unsigned found,ds4_count;
-  GUID ds4_instance;
-  DWORD product_id;
-  char name[MAX_PATH];
+  unsigned found,ds4_count,xbox_count;
+  GUID ds4_instance,xbox_instance;
+  DWORD product_id,xbox_pid;
+  char name[MAX_PATH],xbox_name[MAX_PATH];
   unsigned short last_vendor,last_product;
   char last_name[MAX_PATH];
 } SpiderDIDiscovery;
 
 static int configured=0,profile=SPIDER_PROFILE_AUTO,confirm=SPIDER_CONFIRM_BOTH;
+static unsigned detected_kind=SPIDER_RECONNECT_NONE;
+static uint32_t xbox_previous_mask=0;
+static unsigned xbox_button_trace_count=0;
 static int back=SPIDER_BACK_CIRCLE,pause_button=SPIDER_PAUSE_OPTIONS;
 static int ps1_preview_requested=0,ps1_preview_active=0,previous_share=0;
 static int ps1_options_skip_requested=0;
@@ -96,7 +101,7 @@ static void (*log_message)(const char *)=NULL;
 
 static void report(const char *msg) {if(log_message)log_message(msg);}
 static int ds4_pid(unsigned vid,unsigned pid) {
-  return vid==0x054cu && (pid==0x05c4u || pid==0x09ccu || pid==0x0ba0u);
+  return spider_reconnect_sony_ds4(vid,pid);
 }
 static int parse_native_button(const char *value,unsigned *button) {
   const char *p=value;
@@ -151,6 +156,14 @@ static BOOL CALLBACK enumerate_gamepad(const DIDEVICEINSTANCEA *id,VOID *ctx) {
       d->product_id=(DWORD)pid;
       strncpy(d->name,id->tszProductName,sizeof(d->name)-1);
       d->name[sizeof(d->name)-1]=0;
+    }
+  } else if(spider_reconnect_xbox360(vid,pid)) {
+    d->xbox_count++;
+    if(d->xbox_count==1u) {
+      d->xbox_instance=id->guidInstance;
+      d->xbox_pid=(DWORD)pid;
+      strncpy(d->xbox_name,id->tszProductName,sizeof(d->xbox_name)-1);
+      d->xbox_name[sizeof(d->xbox_name)-1]=0;
     }
   }
   return DIENUM_CONTINUE;
@@ -217,6 +230,8 @@ static void disable_profile_with_policy(const char *reason,
   if(di) {IDirectInput8_Release(di);di=NULL;}
   if(di_module) {FreeLibrary(di_module);di_module=NULL;}
   detected=0;
+  detected_kind=SPIDER_RECONNECT_NONE;
+  xbox_previous_mask=0;
   if(reason)report(reason);
 }
 static void disable_profile(const char *reason) {
@@ -277,6 +292,7 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   if(!_stricmp(choice,"Off"))profile=SPIDER_PROFILE_OFF;
   else if(!_stricmp(choice,"Auto"))profile=SPIDER_PROFILE_AUTO;
   else if(!_stricmp(choice,"DualShock4"))profile=SPIDER_PROFILE_DUALSHOCK4;
+  else if(!_stricmp(choice,"Xbox360"))profile=SPIDER_PROFILE_XBOX360;
   else {profile=SPIDER_PROFILE_OFF;report("GAMEPAD-UI: OFF invalid ControllerProfile");}
   GetPrivateProfileStringA("Input","ControllerEnterButtons","Both",buttons,sizeof(buttons),ini);
   if(!_stricmp(buttons,"Cross"))confirm=SPIDER_CONFIRM_CROSS;
@@ -299,7 +315,8 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
     report("GAMEPAD-UI: old ExperimentalGamepadStart is RETIRED/ignored; remove BUTTON8 setting");
   snprintf(line,sizeof(line),
     "GAMEPAD-UI: config profile=%s legacy-confirm=%s legacy-back=%s legacy-pause=%s ps1preview-requested=%d options3dskip=%d Return=DIK_0x1C Escape=DIK_0x01",
-    profile==SPIDER_PROFILE_OFF?"Off":profile==SPIDER_PROFILE_AUTO?"Auto":"DualShock4",
+    profile==SPIDER_PROFILE_OFF?"Off":profile==SPIDER_PROFILE_AUTO?"Auto":
+      profile==SPIDER_PROFILE_XBOX360?"Xbox360":"DualShock4",
     confirm==SPIDER_CONFIRM_CROSS?"Cross":confirm==SPIDER_CONFIRM_OPTIONS?"Options":"Both",
     back==SPIDER_BACK_OFF?"Off":back==SPIDER_BACK_CIRCLE?"Circle":"Share",
     pause_button==SPIDER_PAUSE_OFF?"Off":"Options (conflict guarded)",
@@ -310,6 +327,7 @@ static void detect_device(HWND hwnd) {
   SpiderDIDiscovery d;
   SpiderDICreateFn create;
   HRESULT hr;
+  int choose_ds4,choose_xbox;
   char line[300];
   HINSTANCE game=GetModuleHandleA(NULL);
   probing=1;
@@ -334,22 +352,27 @@ static void detect_device(HWND hwnd) {
     snprintf(line,sizeof(line),"GAMEPAD-UI: EnumDevices failed hr=0x%08lX; original controls preserved",(unsigned long)hr);
     disable_profile(line);return;
   }
-  if(!hotplug_missing_logged || (d.found==1u && d.ds4_count==1u)) {
+  if(!hotplug_missing_logged || d.found==1u) {
     snprintf(line,sizeof(line),
-      "GAMEPAD-UI: DISCOVERY gamepads=%u SonyDualShock4=%u last-product=%04X:%04X last-name=%.110s",
-      d.found,d.ds4_count,(unsigned)d.last_vendor,(unsigned)d.last_product,d.last_name);
+      "GAMEPAD-UI: DISCOVERY gamepads=%u SonyDualShock4=%u Xbox360=%u last-product=%04X:%04X last-name=%.110s",
+      d.found,d.ds4_count,d.xbox_count,(unsigned)d.last_vendor,(unsigned)d.last_product,d.last_name);
     report(line);
   }
-  /* Never apply a Sony profile to an unidentified or ambiguously selected
-   * controller: the original game picks its controller independently. */
-  if(d.found!=1u || d.ds4_count!=1u) {
+  /* The original game picks its controller independently. Never select
+   * any UI bridge when there are two attached controllers, a mismatched
+   * forced profile, or an unknown product GUID. Xbox is never PS1. */
+  choose_ds4=d.found==1u && d.ds4_count==1u &&
+             (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_DUALSHOCK4);
+  choose_xbox=d.found==1u && d.xbox_count==1u &&
+              (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_XBOX360);
+  if(!choose_ds4 && !choose_xbox) {
     if(!hotplug_missing_logged)
-      disable_profile("GAMEPAD-UI: no unique verified DualShock4; auto profile inactive; game mappings unchanged; hotplug rescan every 2s while foreground");
+      disable_profile("GAMEPAD-UI: no unique allowed DS4/Xbox360; auto bridge inactive; game mappings unchanged; hotplug rescan every 2s while foreground");
     else disable_profile(NULL);
     hotplug_missing_logged=1;
     return;
   }
-  hr=IDirectInput8_CreateDevice(di,&d.ds4_instance,&device,NULL);
+  hr=IDirectInput8_CreateDevice(di,choose_ds4?&d.ds4_instance:&d.xbox_instance,&device,NULL);
   if(FAILED(hr)||!device) {
     snprintf(line,sizeof(line),"GAMEPAD-UI: CreateDevice failed hr=0x%08lX",(unsigned long)hr);
     disable_profile(line);return;
@@ -367,13 +390,22 @@ static void detect_device(HWND hwnd) {
     disable_profile(line);return;
   }
   detected=1;
+  detected_kind=choose_ds4?SPIDER_RECONNECT_DS4:SPIDER_RECONNECT_XBOX360;
+  xbox_previous_mask=0;
+  xbox_button_trace_count=0;
   hotplug_missing_logged=0;
   spider_ds4_hotplug_attached(&hotplug);
   previous_buttons=0;previous_back=0;previous_pause=0;
   previous_share=0;previous_native_start=0;
-  snprintf(line,sizeof(line),
-    "GAMEPAD-UI: PROFILE DualShock4 ACTIVE (verified device) Sony VID=054C PID=%04lX name=%.110s; legacy 2D/Bink confirmation=ControllerEnterButtons; PS1 preview after CRT bootstrap: Cross=BUTTON1 only, Circle=BUTTON2 back, SHARE=BUTTON8 3D pause; OPTIONS=BUTTON9 is NOT synthetic Enter in PS1",
-    (unsigned long)d.product_id,d.name);
+  if(choose_ds4) {
+    snprintf(line,sizeof(line),
+      "GAMEPAD-UI: PROFILE DualShock4 ACTIVE (verified device) Sony VID=054C PID=%04lX name=%.110s; legacy 2D/Bink confirmation=ControllerEnterButtons; PS1 preview after CRT bootstrap: Cross=BUTTON1 only, Circle=BUTTON2 back, SHARE=BUTTON8 3D pause; OPTIONS=BUTTON9 is NOT synthetic Enter in PS1",
+      (unsigned long)d.product_id,d.name);
+  } else {
+    snprintf(line,sizeof(line),
+      "GAMEPAD-UI: PROFILE Xbox360 EXPERIMENTAL ACTIVE VID=045E PID=%04lX name=%.110s; A=BUTTON0 Enter B=BUTTON1 Escape (candidate; check BUTTON-EDGE logs); original 3D gameplay unchanged; DS4 PS1 preview excluded",
+      (unsigned long)d.xbox_pid,d.xbox_name);
+  }
   report(line);
 }
 /* This is the ORIGINAL, game-owned CutSceneSkipAllow state machine.
@@ -425,7 +457,7 @@ int SpiderGamepadUI_PreparePS1(HWND hwnd) {
   if(!configured || !ps1_preview_requested || profile==SPIDER_PROFILE_OFF ||
      !hwnd || !IsWindow(hwnd) || GetForegroundWindow()!=hwnd)return 0;
   if(!probing)detect_device(hwnd);
-  if(!detected){
+  if(!detected || detected_kind!=SPIDER_RECONNECT_DS4){
     probing=0;
     report("GAMEPAD-UI: PS1-PREVIEW deferred: early DS4 device acquisition failed; original game mappings untouched");
     return 0;
@@ -612,7 +644,7 @@ static void ps1_probe_native_start_tables(void) {
   }
 }
 void SpiderGamepadUI_ActivatePS1(void){
-  if(!detected || !ps1_preview_requested)return;
+  if(!detected || detected_kind!=SPIDER_RECONNECT_DS4 || !ps1_preview_requested)return;
   ps1_preview_active=1;
   back=SPIDER_BACK_CIRCLE;
   report("GAMEPAD-UI: PS1-PREVIEW ACTIVE, fixed gameplay RAM only; CROSS-only 2D/Bink/pause confirmation (OPTIONS/Start not mapped to Enter); original Joystick read-only remains optional/strictly gated");
@@ -909,7 +941,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
    * the user must relaunch with the DS4 already connected to activate
    * verified seven-button gameplay mapping. Never reload game config
    * mid-level or rewrite unknown native controller objects. */
-  if(ps1_preview_requested && !ps1_preview_active) {
+  if(detected_kind==SPIDER_RECONNECT_DS4 && ps1_preview_requested && !ps1_preview_active) {
     if(!hotplug_late_preview_reported) {
       report("GAMEPAD-HOTPLUG: DS4 discovered but PS1 gameplay preview was not loaded at startup; synthetic actions disabled until restart with controller present");
       hotplug_late_preview_reported=1;
@@ -927,6 +959,31 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
       previous_share=0;previous_native_start=0;
       return;
     }
+  }
+  /* Xbox 360-compatible DirectInput: no DS4 PS1 mapping, no guess about
+   * native 3D controls. The Holtek VID=045E PID=028E joystick is already
+   * read by the original game for analog/POV navigation. Only bridge
+   * fresh A/B press edges to Enter/Escape in known menu/movie contexts.
+   * Log the first 32 changed physical masks to verify driver button order. */
+  if(detected_kind==SPIDER_RECONNECT_XBOX360) {
+    uint32_t held=spider_xbox360_held_buttons(state.rgbButtons);
+    unsigned action=spider_xbox360_menu_edges(held,xbox_previous_mask);
+    int ui_allowed=(menu_2d && !gameplay_3d) || bink_active ||
+                   (native_pause_active && !gameplay_3d);
+    if(held!=xbox_previous_mask && xbox_button_trace_count<32u) {
+      char xbox_line[192];
+      snprintf(xbox_line,sizeof(xbox_line),
+        "GAMEPAD-XBOX360: BUTTON-EDGE #%u held=0x%03lX changed=0x%03lX (physical DInput indexes 0..9; candidate A=0 B=1)",
+        ++xbox_button_trace_count,(unsigned long)held,
+        (unsigned long)(held^xbox_previous_mask));
+      report(xbox_line);
+    }
+    xbox_previous_mask=held;
+    if(ui_allowed && action==SPIDER_XBOX360_BACK)
+      begin_scancode(0x01u,"Escape");
+    else if(ui_allowed && action==SPIDER_XBOX360_ENTER)
+      begin_scancode(0x1Cu,"Return");
+    return;
   }
   pressed=(state.rgbButtons[1]&0x80u?SPIDER_CONFIRM_CROSS:0) |
           (state.rgbButtons[9]&0x80u?SPIDER_CONFIRM_OPTIONS:0);
