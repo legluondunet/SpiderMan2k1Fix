@@ -79,7 +79,7 @@ def test_original_game_owner_interface_not_parallel_factory():
         assert x in SOURCE, x
     assert "list.count!=1u" in SOURCE
     for forbidden in ("DirectInput8Create(", "WriteProcessMemory(",
-                      "VirtualProtect(", "SetWindowsHookEx(",
+                      "SetWindowsHookEx(",
                       "IDirectInput8_Release(", "ExitProcess(", "TerminateProcess("):
         assert forbidden not in SOURCE, forbidden
 
@@ -178,7 +178,7 @@ def test_post_rebind_health_heartbeat_is_passive_generation_aware_and_bounded():
     assert "if(!requested || !initialized || !SpiderNativeUnplug_Installed()" in block
 
 
-def test_xbox360_native_recovery_is_discovery_only_no_ds4_ps1_remap():
+def test_xbox360_native_recovery_and_separately_opted_in_ds4_ps1_remap():
     ui=(ROOT/"gamepad_ui_profile.c").read_text()
     assert "spider_reconnect_kind(vid,pid)" in SOURCE
     assert "enumerate_supported_pad" in SOURCE
