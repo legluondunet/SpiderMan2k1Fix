@@ -37,6 +37,7 @@
 #include "ps1_menu_confirm.h"
 #include "ps1_focus_pause_wake.h"
 #include "ps1_ds4_hotplug.h"
+#include "native_joystick_reconnect.h"
 #include "ps1_input_flight_recorder.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
