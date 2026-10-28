@@ -187,11 +187,90 @@ After returning from the modal dialog, the game must still receive
 keyboard/gamepad actions and native Start switching without duplicate
 inputs or stuck focus. Keep this OFF if Windows/Wine behavior differs.
 
+## Per-model profile persistence (experimental, draft PR #80)
+
+When `ExperimentalSDL3Probe=1` and
+`ExperimentalSDL3ControllerSetup=1`, SDL3 automatically loads each
+valid model profile when it first discovers that gamepad. The primary
+storage location is next to `SpideyPC.exe`:
+
+```text
+Spider-Man/
+  SpideyPC.exe
+  SpiderMan2k1Fix.ini
+  SpiderMan2k1Fix/
+    controllers/
+      054C-09CC.ini       # Sony DualShock 4
+      045E-028E.ini       # Xbox 360
+```
+
+If the game folder is not writable, for example under
+`C:\\Program Files (x86)`, the store creates a **per-user fallback** in
+`%LOCALAPPDATA%\\SpiderMan2k1Fix\\controllers\\`. Once a local
+override exists, it takes precedence over the same game's model file.
+No elevation/admin permissions are needed for the fallback. Portable
+game folders remain self-contained when writable.
+
+One versioned strict INI file is generated **only after the user
+changes a binding or restores defaults**, not merely upon discovery:
+
+```ini
+[Profile]
+Version=1
+Vendor=0x054C
+Product=0x09CC
+[Bindings]
+Jump=button:0
+Kick=button:1
+Punch=button:2
+Web=button:3
+Aim=button:9
+Zipline=button:10
+Swing=trigger:5
+Pause=button:4
+```
+
+These are SDL3-normalized button/trigger indices, not DirectInput
+indices. On load, every required field is checked: schema version,
+exact model VID/PID, all eight action names exactly once, valid button
+or trigger indices, reserved Start/Guide exclusions, mandatory bindings
+and action uniqueness. Invalid, oversized, unreadable or unknown schema
+data is never partially installed; the model retains safe defaults and
+the problem is logged. A malformed prior file is copied to
+`<VID>-<PID>.ini.invalid.bak` before the first subsequent explicit
+save; the backup is never overwritten. File writes use a unique
+same-directory temporary file, flush, then atomic replacement. If a
+save fails, **the new binding is rejected and the previous in-memory
+profile stays unchanged**; the user sees `SAVE FAILED` and can still
+navigate the original game.
+
+Changing a binding, swapping two bindings, pressing F5/Y or clicking
+Restore Defaults **saves immediately** and affects only the selected
+model. No controller file is generated for unknown/zero VID/PID or when
+the experimental setup is disabled. The main
+`SpiderMan2k1Fix.ini`, its auto-repair, and virtual
+`Spidey.cfg` continue independently.
+
+**Important scope:** Persisting these SDL3 *semantic* mappings does
+**not** yet apply them to the game's seven native 3D DirectInput
+actions. The window remains a setup preview, although the profile is
+durably saved. The separate native gameplay-owner adapter still needs
+design, implementation, and hardware validation.
+
+**Physical acceptance requested under Wine and Windows:** on a
+non-admin install in `Program Files (x86)`, customize Swing and Jump,
+quit the game, relaunch, verify the same values loaded, check the
+fallback folder and that no game executable or original config was
+rewritten. Repeat with a writable portable installation and verify the
+game-local directory. Test reset, separate DS4 and Xbox profiles,
+hot-swap, and malformed file recovery. Keep mouse disabled and ensure
+the dialog still closes without a crash.
+
 ## Explicitly NOT implemented yet
 
 - A first **opt-in Win32 owner-window preview** is accessible from the native Joystick menu; a complete production-ready, renderer-integrated `Controller Setup` screen is still outstanding.
-- No new saved per-model controller settings. Today's profile bank is
-  **in-memory and read-only**, not a persistence format.
+- Per-model settings are now saved and reloaded; there is still **no**
+  native DirectInput 3D gameplay adapter applying those semantic bindings.
 - No replacement of native DirectInput by SDL3 for 3D actions; existing
   Sony/Xbox controls and native hot-swap continue as before.
 - No automatic fixing of the logged Xbox RT -> Swing keyboard-scan
@@ -211,12 +290,10 @@ inputs or stuck focus. Keep this OFF if Windows/Wine behavior differs.
    must fully control that view. Capture one button/trigger at a time
    with explicit confirm/cancel, visible conflicts, reset and preview.
    Never silently accept a physical input held before the capture.
-3. **Persistent profiles:** write separate, schema-versioned controller
-   settings (e.g. `SpiderMan2k1Fix.controllers.ini`) to avoid the
-   existing main INI validator/repair and original 252-byte Spidey.cfg.
-   Validate every loaded binding; use atomic file replacement and
-   per-model restore. Unknown/invalid settings revert to a safe
-   default without replacing the main INI.
+3. **Persistent profiles (implemented, physical acceptance pending):**
+   versioned `SpiderMan2k1Fix/controllers/VID-PID.ini` files,
+   validated load, atomic write, per-model defaults and LOCALAPPDATA
+   fallback without modifying the main INI or virtual Spidey.cfg.
 4. **Exactly one gameplay owner:** prototype the guarded SDL3 action
    adapter with full safety and single-authority tests. During
    transition, no duplication with native DirectInput, keyboard or
