@@ -154,7 +154,19 @@ static int preserve_invalid(const char *path,uint16_t vid,uint16_t pid) {
   int rc=read_path(path,vid,pid,&trial);
   DWORD attr;
   int n;
-  if(rc==0 || rc==1)return 1;
+  if(rc==0)return 1;
+  if(rc==1) {
+    /* First explicit v2 save of an existing valid v1 controller profile:
+     * preserve the user's exact pre-migration bytes once, never rewrite
+     * the original upon LOAD. The INI decoder already verified the file. */
+    if(GetPrivateProfileIntA("Profile","Version",0,path)!=1)return 1;
+    n=snprintf(backup,sizeof(backup),"%s.v1.bak",path);
+    if(n<=0 || (size_t)n>=sizeof(backup))return 0;
+    attr=GetFileAttributesA(backup);
+    if(attr!=INVALID_FILE_ATTRIBUTES)
+      return !(attr&(FILE_ATTRIBUTE_DIRECTORY|FILE_ATTRIBUTE_REPARSE_POINT));
+    return CopyFileA(path,backup,TRUE)!=0;
+  }
   if(rc==-2)return 0;
   n=snprintf(backup,sizeof(backup),"%s.invalid.bak",path);
   if(n<=0 || (size_t)n>=sizeof(backup))return 0;
