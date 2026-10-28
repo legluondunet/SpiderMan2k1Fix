@@ -29,6 +29,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include "gamepad_ui_profile.h"
+#include "ps1_native_start_mapping.h"
 
 typedef HRESULT (WINAPI *SpiderDICreateFn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
 enum {SPIDER_PROFILE_OFF=0,SPIDER_PROFILE_AUTO=1,SPIDER_PROFILE_DUALSHOCK4=2};
@@ -366,9 +367,12 @@ static void ps1_probe_native_start_tables(void) {
   IMAGE_DOS_HEADER *dos;
   IMAGE_NT_HEADERS32 *pe;
   IMAGE_SECTION_HEADER *sec;
-  unsigned j,sections=0,matches=0,truncated=0,regions=0;
+  unsigned j,sections=0,matches=0,truncated=0,regions=0,strict_matches=0;
+  BYTE *strict_candidate=NULL;
   int deep=profile_ini[0] &&
     GetPrivateProfileIntA("Input","ControllerPS1DeepStartProbe",0,profile_ini)==1;
+  int disable_native_start=profile_ini[0] &&
+    GetPrivateProfileIntA("Input","ControllerPS1DisableNativeStart",0,profile_ini)==1;
   const size_t max_bytes=deep?(size_t)(64u*1024u*1024u):(size_t)(1024u*1024u);
   char line[270];
   if(!base || (uintptr_t)base!=0x00400000u)return;
@@ -444,6 +448,11 @@ static void ps1_probe_native_start_tables(void) {
           for(k=1u;k<14u;k++)if(v[2u*k]!=actions[k])break;
           if(k==14u && v[2u*11u+1u]==11u) {
             matches++;
+            if(spider_ps1_start_strict_factory((const uint8_t *)(const void *)v,
+                                               safe-offset)) {
+              strict_matches++;
+              if(strict_matches==1u)strict_candidate=(BYTE *)(void *)v;
+            }
             if(matches<=10u) {
               snprintf(line,sizeof(line),
                 "GAMEPAD-PS1: START-TABLE candidate=%u RVA=0x%08lX Start=BUTTON11 [READ-ONLY; NO table edits]",
@@ -466,6 +475,52 @@ static void ps1_probe_native_start_tables(void) {
     sections,matches,truncated,(unsigned long)pe->OptionalHeader.SizeOfImage,
     deep,regions,(unsigned)(max_bytes/(1024u*1024u)));
   report(line);
+  if(disable_native_start) {
+    /* A deliberate separate experiment. Fail closed if default 1 MiB
+     * scan was used, any memory was skipped, multiple native patterns
+     * were found, or the mapping doesn't match the entire original
+     * factory structure. No COM/vtable hooks or PE code patching. */
+    if(!deep || truncated || sections!=1u || matches!=1u ||
+       strict_matches!=1u || !strict_candidate) {
+      snprintf(line,sizeof(line),
+        "GAMEPAD-PS1: NATIVE-START-UNBIND REFUSED deep=%d sections=%u matches=%u strict=%u truncated=%u (original BUTTON11 retained)",
+        deep,sections,matches,strict_matches,truncated);
+      report(line);
+    } else {
+      BYTE *slot=strict_candidate+SPIDER_PS1_START_BUTTON_OFFSET;
+      MEMORY_BASIC_INFORMATION mbi;
+      uintptr_t here=(uintptr_t)slot,region;
+      DWORD prot;
+      if((here&3u) ||
+         VirtualQuery(slot,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+         mbi.State!=MEM_COMMIT ||
+         (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS))) {
+        report("GAMEPAD-PS1: NATIVE-START-UNBIND REFUSED unsafe memory protection/alignment");
+      } else {
+        region=(uintptr_t)mbi.BaseAddress;
+        prot=mbi.Protect&0xffu;
+        if(here<region || here-region>=mbi.RegionSize ||
+           mbi.RegionSize-(here-region)<sizeof(LONG) ||
+           !(prot==PAGE_READWRITE || prot==PAGE_EXECUTE_READWRITE ||
+             prot==PAGE_WRITECOPY || prot==PAGE_EXECUTE_WRITECOPY) ||
+           !spider_ps1_start_strict_factory((const uint8_t *)strict_candidate,
+                                          SPIDER_PS1_START_MAP_BYTES)) {
+          report("GAMEPAD-PS1: NATIVE-START-UNBIND REFUSED mapping changed or slot not safely writable");
+        } else if(InterlockedCompareExchange(
+                    (volatile LONG *)(void *)slot,
+                    (LONG)SPIDER_PS1_START_BUTTON_UNBOUND,
+                    (LONG)SPIDER_PS1_START_BUTTON_FACTORY)==
+                  (LONG)SPIDER_PS1_START_BUTTON_FACTORY) {
+          snprintf(line,sizeof(line),
+            "GAMEPAD-PS1: NATIVE-START-UNBIND EXPERIMENT ACTIVE RVA=0x%08lX Start BUTTON11 -> native unused 0x4000; one validated RAM dword; game restart restores; SHARE remains menu control",
+            (unsigned long)((uintptr_t)slot-(uintptr_t)base));
+          report(line);
+        } else {
+          report("GAMEPAD-PS1: NATIVE-START-UNBIND REFUSED Start slot modified concurrently");
+        }
+      }
+    }
+  }
 }
 void SpiderGamepadUI_ActivatePS1(void){
   if(!detected || !ps1_preview_requested)return;
