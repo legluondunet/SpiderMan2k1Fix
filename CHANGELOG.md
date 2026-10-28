@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — contextual DS4 preview follow-up (PR #74)
+
+- Read the exact, SHA-gated native pause-menu **purple ribbon render signature** from the preceding Flip as a supplemental 3D pause indicator. The original pause pointer can be zero while the menu is displayed; this allows the experimental controller profile to distinguish the pause UI from gameplay when the exact measured widescreen renderer is active.
+- Add manually opted-in `[Input] ControllerPS1OptionsSkip=1` for native scripted-3D cinematic skip on OPTIONS; write the original one-byte skip request only when the original CutSceneScript object is readable, active and explicitly allows skipping. Fail closed otherwise. This mode is **Off by default**, unvalidated and limited to the PS1 preview.
+- Preserve original gamepad mappings on native config bootstrap failure via automatic rollback; reassert fixed seven-button virtual mappings if the game writes its virtual config, without persisting a customized preview mapping into the user's saved INI.
+- Add one-shot **read-only** diagnostics for the native 14-action Start table. The historical native Start mapping hook never scanned the tables because of an overly restrictive executable SizeOfImage check; do not modify or disable the native BUTTON11 mapping until a real game log verifies the table shape.
+- The in-game Joystick Configuration UI is **still not locked** and the previous native Start button is still active. Real Wine/Windows tests are required before these features can be claimed complete or enabled by default.
+
 ## Unreleased — PS1-inspired DualShock 4 profile preview (PR #74, opt-in only)
 
 - Add a **disabled-by-default** `[Input] ControllerPS1Preview=1` test switch. The default `ControllerProfile=Auto` continues to use the existing experimental UI bridge unless manually opted in.
