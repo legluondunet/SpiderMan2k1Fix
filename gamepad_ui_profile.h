@@ -18,6 +18,8 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *));
 /* Preview must only activate AFTER the game's verified CRT re-read. */
 int SpiderGamepadUI_PreparePS1(HWND game_window);
 void SpiderGamepadUI_ActivatePS1(void);
+/* Strictly opt-in, only after one Sony DS4 and native profile bootstrap. */
+int SpiderPS1_InstallReadOnlyJoystick(void (*logger)(const char *));
 void SpiderGamepadUI_OnFlip(HWND game_window,int menu_2d,int gameplay_3d,
                              int native_bink_active,int native_pause_active);
 #endif
