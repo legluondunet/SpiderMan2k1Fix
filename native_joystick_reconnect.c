@@ -55,6 +55,10 @@ static int swap_probe_enabled=0,swap_initial_seen=0,swap_mapping_enabled=0;
 static unsigned swap_last_kind=0,swap_probe_reports=0;
 static unsigned sdl3_owner_attempts=0;
 static DWORD sdl3_owner_last_attempt=0;
+static DWORD sdl3_owner_last_verify=0;
+static uint32_t sdl3_owner_last_verified_id=0;
+static unsigned sdl3_owner_last_verified_count=0;
+static PVOID sdl3_owner_last_verified_ptr=NULL;
 static uint32_t sdl3_last_claimed_id=0;
 static DWORD sdl3_owner_log_tick=0;
 static void (*write_log)(const char *)=NULL;
@@ -521,6 +525,23 @@ static void sdl3_owner_reconcile(HWND hwnd) {
       detach_stale_native();
     sdl3_last_claimed_id=0;
     return;
+  }
+  /* Expensive DirectInput enumeration is bounded even at 30 FPS:
+   * recheck every 250ms when the same SDL selection, mapped count and
+   * native COM pointer persist. React immediately to Start handoff,
+   * hotplug counts, game-native pointer mutation or a missing device. */
+  {
+    PVOID live=InterlockedCompareExchangePointer(
+      (PVOID volatile *)game_device_slot(),NULL,NULL);
+    unsigned count=SpiderSDL3Probe_MappedCount();
+    if(live && id==sdl3_owner_last_verified_id &&
+       count==sdl3_owner_last_verified_count &&
+       live==sdl3_owner_last_verified_ptr &&
+       (uint32_t)(now-sdl3_owner_last_verify)<250u)return;
+    sdl3_owner_last_verify=now;
+    sdl3_owner_last_verified_id=id;
+    sdl3_owner_last_verified_count=count;
+    sdl3_owner_last_verified_ptr=live;
   }
   memset(&target,0,sizeof(target));
   target.vid=vid;target.pid=pid;
