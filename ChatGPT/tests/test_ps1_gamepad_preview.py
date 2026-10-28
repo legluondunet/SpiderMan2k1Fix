@@ -104,3 +104,47 @@ def test_host_compiled_ps1_snapshot_apply_restore_is_byte_exact(tmp_path):
     subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
                     "-I",str(ROOT),str(source),"-o",str(target)],check=True)
     subprocess.run([str(target)],check=True)
+
+
+def test_pause_uses_verified_3d_menu_ribbon_when_native_pointer_is_transient():
+    # The user's successful runtime log shows pause_ctx=0 despite the
+    # draw hook seeing the characteristic purple menu ribbon. This is a
+    # passive positive renderer observation, not a guessed native pointer.
+    assert "native_pause43_visible_near_flip(LONG now_flip)" in CORE
+    assert "native_esc43_supported_monitor()" in CORE
+    assert "InterlockedCompareExchange(&native_pause43_banner_flip,0,0)" in CORE
+    assert "now_flip-ribbon_flip<=1" in CORE
+    assert "native_pause43_visible_near_flip(count)" in CORE
+    assert "0x00682950u" in CORE
+    assert "menu_upscale_active" in CORE
+    assert "(ps1_preview_active && native_pause_active && !movie_allowed)" in PAD
+
+
+def test_scripted_3d_options_skip_is_opt_in_and_natively_permission_guarded():
+    assert 'GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1' in PAD
+    assert '"ControllerPS1OptionsSkip"' in VALIDATOR
+    assert "ps1_preview_active && ps1_options_skip_requested" in PAD
+    assert "gameplay_3d && !menu_2d && !movie_allowed && !native_pause_active" in PAD
+    assert "pause_pressed && !previous_pause" in PAD
+    assert "VirtualQuery((LPCVOID)(uintptr_t)owner,&mbi,sizeof(mbi))" in PAD
+    assert "mbi.State!=MEM_COMMIT" in PAD
+    assert "mbi.RegionSize-(where-base)<0x1bcu" in PAD
+    assert "scene_context!=1u || skip_allowed!=1u || script_active!=1u" in PAD
+    assert "script_ip==0u || *native_request!=0u" in PAD
+    assert "0x006A9038u" in PAD  # SHA verified native script-owner pointer
+    assert "0x0060CFC4u" in PAD  # original game CutSceneSkip request
+    assert "0x4BC3E0" in PAD     # original game script cleanup
+    assert "*native_request=1u;" in PAD
+    # No blind Triangle keyboard translation or always-on button injection.
+    assert "ControllerPS1OptionsSkip=1" not in CFG
+    assert 'ps1_options_skip_requested=0' in PAD
+
+
+def test_ps1_gameplay_bindings_are_fail_closed_on_bootstrap_and_virtual_writes():
+    assert "SpiderCfg_CancelPS1Preview();" in CORE
+    assert "spider_ps1_restore(cfg,CFG_SIZE,original_joystick)" in CFG
+    assert "PS1-PREVIEW ROLLBACK native game bootstrap unverified" in CFG
+    assert "if(ps1_preview_active)" in CFG
+    assert "spider_ps1_apply(cfg,CFG_SIZE)" in CFG
+    assert "PS1-PREVIEW protected seven virtual joystick bindings" in CFG
+    assert "the game's\n       * own live action array" in CFG
