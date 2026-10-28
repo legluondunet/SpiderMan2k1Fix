@@ -422,6 +422,33 @@ int SpiderSDL3Probe_SelectedRT(int *normalized_rt) {
   }
   return 0;
 }
+int SpiderSDL3Probe_SelectedSample(uint32_t *instance,uint16_t *vid,
+                                  uint16_t *pid,
+                                  SpiderSDL3ControllerSample *sample) {
+  unsigned i,j;
+  uint32_t id=0;
+  uint16_t v=0,p=0;
+  if(instance)*instance=0;
+  if(vid)*vid=0;
+  if(pid)*pid=0;
+  if(sample)memset(sample,0,sizeof(*sample));
+  if(!instance || !vid || !pid || !sample ||
+     !ready || !scanned || !sdl3_game_thread ||
+     sdl3_game_thread!=GetCurrentThreadId() ||
+     !sdl_axis || !sdl_button ||
+     !SpiderSDL3Probe_SelectedIdentity(&v,&p,&id))return 0;
+  for(i=0;i<num_pads;i++)
+    if(pads[i].id==id && pads[i].handle)break;
+  if(i==num_pads)return 0;
+  for(j=0;j<SPIDER_SDL3_BUTTON_COUNT;j++)
+    if(sdl_button(pads[i].handle,(int)j))sample->buttons|=1u<<j;
+  sample->axis[SPIDER_SDL3_AXIS_LT]=sdl_axis(pads[i].handle,SPIDER_SDL3_AXIS_LT);
+  sample->axis[SPIDER_SDL3_AXIS_RT]=sdl_axis(pads[i].handle,SPIDER_SDL3_AXIS_RT);
+  if(sample->axis[SPIDER_SDL3_AXIS_LT]<0 ||
+     sample->axis[SPIDER_SDL3_AXIS_RT]<0)return 0;
+  *instance=id;*vid=v;*pid=p;
+  return 1;
+}
 /* Optional semantic preview for a future on-screen mapping wizard.
  * Read selected SDL3 normalized state from the already-open handle
  * AFTER the once-per-Flip SDL3 event pump. Never poll/change native
