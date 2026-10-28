@@ -715,3 +715,47 @@ mapping and the hardware swap is stable, a later **separate**
 explicitly opt-in stage can test guarded per-DWORD mutations and
 rollback, with signed-off hardware validation before enabling
 automatic profile changes. PR #77 stays DRAFT/UNMERGED.
+
+
+## Separate regression: Joystick Restore Default UI hang (2026-10-28)
+
+The maintainer reports a frozen/unresponsive game after selecting
+`restore default settings` in the in-game Joystick menu, requiring
+a forced process termination. The uploaded log
+`SpiderMan2k1Fix(20261028-173412).log` reports build
+`v1.1.0-14e56bb` with **Sony PS1-readonly native menu enabled**
+and PSP Start native mapping experimentally unbound. It records
+ordinary 2D menu Flip milestones and protected virtual-config saves
+through at least Flip #1320, but **no SEH exception, native abort,
+exit code, or controller-menu action trace**, so a crash address
+or exact point of livelock cannot be asserted.
+
+The SHA-specific read-only site `0x50D4A9` originally invokes the
+void zero-argument `PCINPUT_RestoreDefaultControllerSettings()`.
+Our previous patch replaced this with five silent NOP bytes: no
+user settings were restored, but there was no way to tell if the
+native menu reached the restore row. The new experimental patch
+replaces that particular native CALL with a normal cdecl **void
+no-op CALL/RET** which emits a bounded
+`GAMEPAD-READONLY: RESTORE-DEFAULT intercepted count=...` marker
+(without touching controller action table, native cursor/menu,
+Spidey.cfg image, user INI, or Xbox/PS1 permanent overlays).
+This is a conservative diagnostic/ABI-shape adjustment, **not yet a
+proven solution to the freeze**; the exact original caller is
+already signature-checked during the existing read-only install.
+
+Controlled test of the new build: start with PS4 alone, optionally
+leave the native reconnect experiments disabled for this menu-only
+isolation test, open Joystick settings, select Restore Default
+**once**, then Escape normally if responsive and preserve a complete
+log. If it freezes, do not repeat; inspect whether the new
+`RESTORE-DEFAULT intercepted` marker appeared and capture an
+external Wine debugger backtrace if needed. With a previously
+validated copy of both DLLs saved, the feature can be isolated by
+setting `[Input] ControllerPS1ReadOnlyJoystick=0` and
+avoiding Restore Default while the native menu is editable.
+For an automatic Xbox readonly profile, it cannot currently be
+disabled independently without turning off the Xbox preview;
+do not assume changing Sony-only option disables Xbox readonly.
+Do not promote this experimental mitigation to a release/merge
+without physical confirmation.
