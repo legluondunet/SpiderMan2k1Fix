@@ -17,4 +17,12 @@ static inline int spider_xbox360_rt_swing_held(int was_held,long lz) {
   /* roughly 33% depression to press, <15% to release */
   return was_held ? lz<28000L : lz<=22000L;
 }
+/* Independent SDL3 RT axis, 0 released .. 32767 fully depressed.
+ * Keep legacy lZ thresholds untouched for older single-pad profiles.
+ * Only called for the verified currently selected Xbox in native-owner
+ * mode. Hysteresis avoids repeated presses around the trigger deadzone. */
+static inline int spider_xbox360_sdl3_rt_swing_held(int was_held,int rt) {
+  if(rt<0 || rt>32767)return 0;
+  return was_held ? rt>=5000 : rt>=11000;
+}
 #endif
