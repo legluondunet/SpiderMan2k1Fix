@@ -220,6 +220,87 @@ The branch adds:
 Only after these are resolved and proven should the user-visible
 automatic full profile be enabled by default.
 
+## Second prototype: context guards, optional native cinematic skip, read-only Start probe
+
+**Important:** These changes are on PR #74 only; they have not yet been
+verified under Wine/Windows. The user-confirmed prior build was
+`v1.1.0-480acea`. Keep that artifact for A/B comparisons.
+
+1. **Pause-menu recognition:** the user log shows the purple PAUSED
+   ribbon, confirmed by native D3D7 drawing, even when the original
+   `0x682950` pause-context pointer is zero on a sampled Flip.
+   The new classification therefore combines the old positive native
+   pointer with a 0–1-frame-old exact **widescreen native ESC ribbon**
+   signature (`native_pause43_banner_flip`), guarded to validated
+   1920×1080/1920×1200 geometry. This should allow Cross=Enter and
+   Circle=Escape in the visible pause UI, without firing Jump/Kick;
+   test both normal pause and the confirmation dialog. Classic 4:3
+   still needs separate menu-owner verification.
+2. **OPTIONS for 3D scripts is a separate manual experiment:** add
+   `ControllerPS1OptionsSkip=1` to the existing `[Input]` section
+   **only if testing this particular change**. It is absent/Off by
+   default and only works alongside `ControllerPS1Preview=1`.
+   On a fresh OPTIONS press during actual 3D, it verifies a readable
+   and game-owned CutSceneScript object (original pointer
+   `0x6A9038`), context=1, script active=1, original
+   CutSceneSkipAllow=1, nonzero script IP, and unchanged
+   `0x60CFC4` request byte=0. Only then it emits the original
+   native `0x60CFC4=1` **single skip request**, which the original
+   `0x4BC3E0` script cleanup consumes. No fake key or game exit.
+   If inactive/unreadable/unskippable/paused/Bink, it refuses with a
+   diagnostic. This native write is **unvalidated in this code path**
+   even though the earlier debug F10 experiment used the same
+   request; leave the option Off for general use.
+3. **Cross for 3D scripts:** native action Jump (`0x10`) was
+   previously bound to Triangle under the default PC gamepad map,
+   and the existing native cinematic input research found Jump also
+   participates in script skipping. The PS1 overlay now binds Jump
+   to Cross, so **Cross might already skip scripted 3D normally**.
+   Confirm this in-game before adding any further synthetic action.
+4. **Joystick configuration protection:** game-owned virtual
+   `Spidey.cfg` writes now immediately reassert the seven PS1
+   in-memory action entries. Any settings save writes back the
+   original seven mappings, never the preview mapping. If the
+   original CRT bootstrap did not consume the virtual config, the
+   overlay is rolled back. **This is NOT a UI lock:** the original
+   Joystick Configuration screen is still accessible and might alter
+   the game's separate live button/action tables until next reload.
+   Do not edit it while testing; further exact-native-menu research
+   is required to actually disable or make the screen read-only.
+5. **Start/BUTTON11 research:** the historical native table remapper
+   was rejected by its PE header check **before table discovery**.
+   PR #74 introduces a one-shot, **read-only** scan of writable
+   `.data` for the original 14-action mapping sequence, with a
+   less arbitrary PE SizeOfImage bound, VirtualQuery memory guards,
+   and a 1 MiB scan bound per data section. New log messages
+   `GAMEPAD-PS1: START-TABLE probe ...` and
+   `GAMEPAD-PS1: START-TABLE candidate ...` will tell us if the
+   previously assumed table layout is present. **NO original Start
+   button is disabled or remapped in this build.**
+
+Second-candidate acceptance checks: compare the same loaded save on
+the old successful build and new one; check SHARE and both in-game
+PAUSED/REALLY QUIT dialogs; press Cross in EACH native scripted 3D
+cinematic to verify its natural Jump action; with explicit skip opt-in,
+press OPTIONS **once after SkipAllow becomes true**; check legacy
+camera-related Start remains (expected pending native-remap); then
+inspect all `GAMEPAD-PS1` and `GAMEPAD-UI` logs.
+
+### INI for the optional 3D cinematic experiment
+
+```ini
+[Input]
+ControllerProfile=Auto
+ControllerPS1Preview=1
+ControllerPS1OptionsSkip=1
+
+[Debug]
+Log=1
+```
+
+Do not enable the last line in `[Input]` in the normal profile; it is
+for controlled testing until the runtime confirms exact behavior.
+
 ## Next phase after prototype validation
 
 - Complete native joystick-menu lock, native Start suppression, scene
