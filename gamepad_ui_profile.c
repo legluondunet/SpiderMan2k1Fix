@@ -196,14 +196,26 @@ static void begin_scancode(unsigned scan,const char *action) {
     report(line);
   }
 }
-static void disable_profile(const char *reason) {
+static void disable_profile_with_policy(const char *reason,
+                                        int already_inputlost) {
   release_active_key();
-  if(device) {IDirectInputDevice8_Unacquire(device);
-              IDirectInputDevice8_Release(device);device=NULL;}
+  if(device) {
+    IDirectInputDevice8A *old=device;
+    device=NULL;
+    if(already_inputlost)
+      report("GAMEPAD-HOTPLUG: secondary stale device Release BEGIN (skip Unacquire after INPUTLOST)");
+    else IDirectInputDevice8_Unacquire(old);
+    IDirectInputDevice8_Release(old);
+    if(already_inputlost)
+      report("GAMEPAD-HOTPLUG: secondary stale device Release COMPLETE");
+  }
   if(di) {IDirectInput8_Release(di);di=NULL;}
   if(di_module) {FreeLibrary(di_module);di_module=NULL;}
   detected=0;
   if(reason)report(reason);
+}
+static void disable_profile(const char *reason) {
+  disable_profile_with_policy(reason,0);
 }
 /* Called only after an independent DirectInput read failed while foreground.
  * A physical unplug can invalidate the old handle immediately: DO NOT
@@ -216,7 +228,7 @@ static void spider_hotplug_drop_device(HRESULT hr,const char *context) {
     "GAMEPAD-HOTPLUG: %s hr=0x%08lX; secondary device release BEGIN (no Acquire on failed read)",
     context,(unsigned long)hr);
   report(line);
-  disable_profile(NULL);
+  disable_profile_with_policy(NULL,hr==DIERR_INPUTLOST);
   report("GAMEPAD-HOTPLUG: secondary device release COMPLETE; rescan deferred 2s");
   probing=1;
   hotplug.scan_started=1u;
@@ -766,6 +778,7 @@ unsigned SpiderGamepadUI_PauseWake_Poll(HWND hwnd) {
   hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);
   if(FAILED(hr)) {
     memset(&pause_wake,0,sizeof(pause_wake));
+    pause_wake_active=0; /* stop polling a lost secondary device until Flip */
     /* Do not Acquire an unplugged joystick while our Flip is frozen.
      * The keyboard always remains a valid PAUSED wake mechanism.
      * A lost device is released and rescanned on the normal Flip path. */
