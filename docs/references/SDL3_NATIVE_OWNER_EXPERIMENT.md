@@ -82,7 +82,9 @@ SDL3 DLL in this 32-bit game.
   native device reports that product. On a handoff it drops the old
   secondary DirectInput device and synthetic key; there is no two-pad
   key or axis summing.
-* Focus loss stops foreground polling; the original pause and keyboard
+* Focus loss stops foreground polling, **preserves current selection**
+  but disarms all Start switches; after Alt+Tab a held Start is ignored
+  until released and freshly pressed. The original pause and keyboard
   wake logic remain in control. No new worker threads or SDL3 audio/video.
 
 ## Physical acceptance protocol (Windows 11 first, Wine second)
