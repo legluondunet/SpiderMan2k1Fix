@@ -345,11 +345,101 @@ int SpiderGamepadUI_PreparePS1(HWND hwnd) {
   report("GAMEPAD-UI: PS1-PREVIEW Sony DS4 acquired before native config bootstrap");
   return 1;
 }
+/* The retired native BUTTON11 Start remap never reached its table scan:
+ * its arbitrary 32 MiB PE SizeOfImage cap rejected the user's retail EXE.
+ * Read-only, one-shot replacement: examine verified writable .data pages
+ * and record exact 14-entry candidate counts. No mapping writes, no hooks.
+ * A positive count is still NOT proof that modifying this mapping is safe. */
+static void ps1_probe_native_start_tables(void) {
+  static const DWORD actions[14]={
+    0x1u,0x2u,0x4u,0x8u,0x10u,0x20u,0x40u,0x80u,
+    0x100u,0x200u,0x400u,0x1000u,0x2000u,0x8000u};
+  BYTE *base=(BYTE *)GetModuleHandleA(NULL);
+  IMAGE_DOS_HEADER *dos;
+  IMAGE_NT_HEADERS32 *pe;
+  IMAGE_SECTION_HEADER *sec;
+  unsigned j,sections=0,matches=0,limit_hit=0;
+  char line[260];
+  if(!base || (uintptr_t)base!=0x00400000u)return;
+  dos=(IMAGE_DOS_HEADER *)base;
+  if(dos->e_magic!=IMAGE_DOS_SIGNATURE ||
+     dos->e_lfanew<=0 || dos->e_lfanew>0x1000) {
+    report("GAMEPAD-PS1: START-TABLE read-only probe refused invalid DOS header");
+    return;
+  }
+  pe=(IMAGE_NT_HEADERS32 *)(base+dos->e_lfanew);
+  if(pe->Signature!=IMAGE_NT_SIGNATURE ||
+     pe->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR32_MAGIC ||
+     pe->OptionalHeader.ImageBase!=0x00400000u ||
+     pe->OptionalHeader.SizeOfImage<0x00140000u ||
+     pe->OptionalHeader.SizeOfImage>0x10000000u ||
+     pe->FileHeader.NumberOfSections<1u ||
+     pe->FileHeader.NumberOfSections>32u) {
+    snprintf(line,sizeof(line),
+      "GAMEPAD-PS1: START-TABLE read-only probe unsupported PE image=0x%08lX sections=%u base=0x%08lX (NO writes)",
+      (unsigned long)pe->OptionalHeader.SizeOfImage,
+      (unsigned)pe->FileHeader.NumberOfSections,
+      (unsigned long)pe->OptionalHeader.ImageBase);
+    report(line);
+    return;
+  }
+  sec=IMAGE_FIRST_SECTION(pe);
+  for(j=0;j<(unsigned)pe->FileHeader.NumberOfSections;j++) {
+    unsigned k;
+    DWORD span=sec[j].Misc.VirtualSize;
+    DWORD offset;
+    BYTE *data;
+    MEMORY_BASIC_INFORMATION mbi;
+    uintptr_t region_base,data_address;
+    size_t readable;
+    if(memcmp(sec[j].Name,".data",5)!=0 ||
+       !(sec[j].Characteristics&IMAGE_SCN_MEM_WRITE) ||
+       span<14u*8u ||
+       sec[j].VirtualAddress>=pe->OptionalHeader.SizeOfImage ||
+       span>pe->OptionalHeader.SizeOfImage-sec[j].VirtualAddress)
+      continue;
+    sections++;
+    data=base+sec[j].VirtualAddress;
+    if(VirtualQuery(data,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+       mbi.State!=MEM_COMMIT ||
+       (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)) ||
+       !((mbi.Protect&0xffu)==PAGE_READWRITE ||
+         (mbi.Protect&0xffu)==PAGE_EXECUTE_READWRITE ||
+         (mbi.Protect&0xffu)==PAGE_WRITECOPY ||
+         (mbi.Protect&0xffu)==PAGE_EXECUTE_WRITECOPY))continue;
+    region_base=(uintptr_t)mbi.BaseAddress;
+    data_address=(uintptr_t)data;
+    if(data_address<region_base || data_address-region_base>=mbi.RegionSize)continue;
+    readable=mbi.RegionSize-(data_address-region_base);
+    if(readable<(size_t)span){span=(DWORD)readable;limit_hit++;}
+    if(span>1024u*1024u){span=1024u*1024u;limit_hit++;}
+    if(span<14u*8u)continue;
+    for(offset=0;offset<=span-14u*8u;offset+=4u) {
+      const DWORD *v=(const DWORD *)(const void *)(data+offset);
+      if(v[0]!=actions[0])continue;
+      for(k=1;k<14u;k++)if(v[2u*k]!=actions[k])break;
+      if(k==14u && v[2u*11u+1u]==11u) {
+        matches++;
+        if(matches<=4u) {
+          snprintf(line,sizeof(line),
+            "GAMEPAD-PS1: START-TABLE candidate=%u RVA=0x%08lX Start=BUTTON11 [READ-ONLY; NO table edits]",
+            matches,(unsigned long)(sec[j].VirtualAddress+offset));
+          report(line);
+        }
+      }
+    }
+  }
+  snprintf(line,sizeof(line),
+    "GAMEPAD-PS1: START-TABLE probe data-sections=%u candidates=%u truncated-regions=%u PE-image=0x%08lX; READ-ONLY, native Start retained",
+    sections,matches,limit_hit,(unsigned long)pe->OptionalHeader.SizeOfImage);
+  report(line);
+}
 void SpiderGamepadUI_ActivatePS1(void){
   if(!detected || !ps1_preview_requested)return;
   ps1_preview_active=1;
   back=SPIDER_BACK_CIRCLE;
   report("GAMEPAD-UI: PS1-PREVIEW ACTIVE, fixed gameplay RAM only; original Joystick configuration menu NOT YET locked");
+  ps1_probe_native_start_tables(); /* read-only; original Start remains */
 }
 void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active) {
