@@ -94,7 +94,7 @@ def test_profile_v2_backward_compatible_contexts_and_corruption(tmp_path):
         assert(legacy_loaded.context[SPIDER_SDL3_CONTEXT_SKIP_VIDEO].kind==
                SPIDER_SDL3_BIND_BUTTON);
         assert(legacy_loaded.context[SPIDER_SDL3_CONTEXT_NEXT_STILL].index==0);
-        assert(legacy_loaded.context[SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE].index==3);
+        assert(legacy_loaded.context[SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE].index==0);
         assert(spider_sdl3_ini_encode(&legacy_loaded,out,sizeof(out),&length));
         assert(strstr(out,"Version=2\r\n"));
         assert(spider_sdl3_ini_decode(out,length,0x054c,0x09cc,&saved));
@@ -139,10 +139,14 @@ def test_ui_context_remapping_and_v1_backup_contract():
     ui=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
     store=(ROOT/"sdl3_controller_profile_store.c").read_text(encoding="utf-8")
     codec=(ROOT/"sdl3_controller_profile_ini.h").read_text(encoding="utf-8")
-    assert "SPIDER_SDL3_SETUP_ACTION_COUNT" in ui
-    assert "spider_sdl3_context_names" in ui
-    assert "spider_sdl3_profile_setup_binding(p,i)" in ui
-    assert "spider_sdl3_profile_assign_context(&trial," in ui
+    assert "SPIDER_SDL3_VISIBLE_ACTION_COUNT" in ui
+    assert "SPIDER_SDL3_SETUP_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT+SPIDER_SDL3_CONTEXT_COUNT" in header
+    assert "spider_sdl3_profile_shared_confirm_binding(p,&shared)" in ui
+    assert "spider_sdl3_profile_assign_visible(&trial,ui->action,candidate)" in ui
+    assert "Confirm / Skip" in ui
+    assert "Back / Cancel" in ui
+    assert "MIXED (Capture to unify)" in ui
+    assert "spider_sdl3_context_names[i]" not in ui
     assert "SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE" in header
     assert "spider_sdl3_profile_assign_setup(" in header
     assert '"[MenuBindings]' in codec
