@@ -22,6 +22,10 @@ static void (*ps1_menu_logger)(const char *)=NULL;
  * 1 = Sony/PS1 labels, 2 = Xbox A/B with numeric fallback. */
 static unsigned readonly_installed_mode=0;
 static unsigned readonly_label_mode=0;
+static unsigned readonly_xbox_rt_alias=0;
+void SpiderXbox360_SetRTAlias(int enabled) {
+  readonly_xbox_rt_alias=enabled?1u:0u;
+}
 static void report(const char *msg) {
   if(ps1_menu_logger)ps1_menu_logger(msg);
 }
