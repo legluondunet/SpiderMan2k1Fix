@@ -1,8 +1,12 @@
 # DualShock 4 automatic PS1-style profile — agreed design
 
-Status: **design specification only**. Not yet implemented or validated.
-Dependency: draft PR #73 `fix/native-save-dialog-title-spacing`, still being
-tested. This proposal must not modify, merge, or invalidate its test build.
+Status: **experimental first implementation on PR #74, manually opt-in,
+NOT ready as an automatic full controller profile**. Seven-action PS1 mappings,
+early Sony DS4 acquisition guard, in-memory virtual Spidey.cfg overlay,
+original-user-settings preservation and contextual SHARE/Escape pulse
+are now implemented. Real Wine/Windows validation remains outstanding.
+Dependency: draft PR #73 `fix/native-save-dialog-title-spacing` still being
+tested. This branch does not modify PR #73 or its test artifact.
 
 Author: legluondunet assisted by ChatGPT (OpenAI)
 
@@ -149,8 +153,77 @@ Saved keyboard and audio settings must remain independent and writable.
   multiple controllers; unsupported controller; different resolutions.
 - Confirm under Wine and native Windows with logs; build/test CI green.
 
-## Non-goals for this design-only PR
+## Prototype now implemented on this branch (not enabled by default)
 
-- No code changes, no release, no user control remapping yet.
+To test just the first candidate, keep the rest of the original INI and add:
+
+```ini
+[Debug]
+Log=1
+
+[Input]
+ControllerProfile=Auto
+ControllerPS1Preview=1
+```
+
+**This is a deliberately hidden, opt-in experiment**, not the final
+`ControllerProfile=Auto` fixed profile. Without
+`ControllerPS1Preview=1`, the previous PR #73 behaves as before.
+The INI validator accepts the new boolean option, but the first-run INI
+generator does not enable it.
+
+The branch adds:
+
+- `ps1_gamepad_mapping.h`: seven native action offsets 0x50..0x68
+  mapped to BUTTON1,2,0,3,4,5,7 (Jump, Kick, Punch, Web, Aim,
+  Zipline, Swing), independent of Windows libraries and host-tested.
+- `SpiderGamepadUI_PreparePS1`: only with a real focused game HWND
+  and **one unique Sony VID/PID verified DS4**, try an early separate
+  DirectInput8 nonexclusive Acquire before the original Spidey.cfg
+  bootstrap. If it fails, do not modify gameplay mapping.
+- `SpiderCfg_EnablePS1Preview`: memory-only overlay in the existing
+  virtual Spidey.cfg. The PS1 UI preview is marked active only if
+  the game's original CRT loader actually reads the virtual config
+  successfully in its verified bootstrap. If that check fails,
+  the original gamepad UI bridge remains unchanged.
+- `save_settings`: temporary buttons are **replaced with the
+  previous user settings in the serialized 252-byte RawHex**. The
+  seven named [Joystick] settings are likewise saved from their
+  pre-preview snapshot. No original stored controls are overwritten.
+- `SpiderGamepadUI_OnFlip`: when the preview is active, SHARE emits
+  Escape in playable 3D or the game-owned pause menu. The 3D Options
+  experiment from PR #73 is bypassed, so the original BUTTON9
+  tyrolienne collision does not produce a second synthetic pause.
+  Inside pause options, Cross/Enter confirms and Circle/Escape returns,
+  using original verified native pause-context state.
+- No global controller hooks, no edits to the original executable,
+  no persistent user mapping changes, no silent release update.
+
+**Known unimplemented blockers for the full profile:**
+
+1. The original game's *Joystick Configuration* screen is **not yet
+   disabled or read-only**. Do not open or change that screen in the
+   prototype; its native in-memory action table is not yet locked.
+2. Original Start assigned to BUTTON11 (camera-related controller
+   button according to the maintainer's observations) is not suppressed.
+   The old button may continue to open the pause menu alongside SHARE.
+3. Cross/OPTIONS replacement for native scripted 3D cinematic skipping
+   is not yet implemented. Triangle's original scene behavior is
+   unchanged and must be observed with the newly assigned Web action.
+4. R1/R2/L1 physical DirectInput indices still need real hardware tests.
+5. Disconnect/reconnect and original gamepad device acquisition
+   coexistence need real Windows/Wine validation.
+6. If `Spidey.cfg` was read before the bootstrap, or the early Sony
+   Acquire/CRT probe fails, the new fixed mapping cannot safely start;
+   read the log before assuming it is active.
+
+Only after these are resolved and proven should the user-visible
+automatic full profile be enabled by default.
+
+## Next phase after prototype validation
+
+- Complete native joystick-menu lock, native Start suppression, scene
+  classifier and fixed profile default are **future work**, not already
+  functioning features.
 - No changes to draft PR #73 during the user's present runtime test.
 - No merge until explicit maintainer validation.
