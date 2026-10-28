@@ -14,6 +14,7 @@
 #include "display_policy.h"
 #include "ini_validation.h"
 #include "ini_recovery.h"
+#include "ps1_gamepad_mapping.h"
 
 /* Always-on virtual configuration hooks ONLY imports of verified SpideyPC.exe (never patch
  * kernel32/msvcrt globally). Unknown bytes remain byte-for-byte preserved.
@@ -28,6 +29,8 @@
 static BYTE cfg[CFG_SIZE];
 static CRITICAL_SECTION guard;
 static int ready=0,dirty=0;
+static int ps1_preview_active=0;
+static uint32_t original_joystick[SPIDER_PS1_BUTTON_COUNT]={0};
 /* Only block saving if automatic INI repair fails. */
 static int ini_writes_permitted=1;
 static char ini_file[MAX_PATH];
@@ -280,7 +283,7 @@ static void load_joystick(void) {
 static int save_joystick(void) {
   unsigned i; char name[32];
   for(i=0;i<7;i++) {
-    DWORD code=get_word(joystick_offsets[i]);
+    DWORD code=ps1_preview_active?(DWORD)original_joystick[i]:get_word(joystick_offsets[i]);
     if(code<=127) snprintf(name,sizeof(name),"BUTTON%lu",(unsigned long)code);
     else snprintf(name,sizeof(name),"0x%08lX",(unsigned long)code);
     if(!WritePrivateProfileStringA("Joystick",joystick_actions[i],name,ini_file)) return 0;
@@ -788,6 +791,8 @@ static void load_settings(void) {
   load_keyboard_layout();
   load_keyboard();
   load_joystick();
+  /* This snapshot precedes any temporary PS1 profile overlay. */
+  spider_ps1_snapshot(cfg,CFG_SIZE,original_joystick);
   load_audio();
   /* Never let GetPrivateProfileIntA turn an invalid string into brightness=0. */
   {
@@ -805,6 +810,31 @@ static void load_settings(void) {
     CFG_SIZE,configured_resolution,configured_aspect,policy_width,policy_height,
     (unsigned long)get_word(12));
   report(msg);
+}
+/* Called exactly once on the verified game thread just BEFORE the
+ * signature-checked native CRT bootstrap; the independent DS4 device must
+ * already be acquired. Disabled by default, even in Auto mode.
+ * The original 7 joystick bindings are never changed in the user's INI. */
+int SpiderCfg_EnablePS1Preview(void) {
+  char line[220];
+  unsigned i;
+  if(!ready)return 0;
+  EnterCriticalSection(&guard);
+  if(ps1_preview_active) {LeaveCriticalSection(&guard);return 1;}
+  if(!spider_ps1_apply(cfg,CFG_SIZE)){
+    LeaveCriticalSection(&guard);
+    return 0;
+  }
+  ps1_preview_active=1;
+  for(i=0;i<SPIDER_PS1_BUTTON_COUNT;i++){
+    snprintf(line,sizeof(line),
+      "SPIDEY-CFG: PS1-PREVIEW runtime action=%s previous=BUTTON%lu temporary=BUTTON%lu; original INI preserved",
+      joystick_actions[i],(unsigned long)original_joystick[i],
+      (unsigned long)spider_ps1_buttons[i]);
+    report(line);
+  }
+  LeaveCriticalSection(&guard);
+  return 1;
 }
 /* Called from the existing pre-fullscreen HWND/monitor probe. For Auto this
  * corrects the initial primary-monitor fallback on multi-display systems.
@@ -832,6 +862,7 @@ void SpiderCfg_ObserveNativeMonitor(unsigned width,unsigned height) {
 }
 static int save_settings(void) {
   char hex[CFG_SIZE*2+1],value[80],msg[150];
+  BYTE saved_cfg[CFG_SIZE];
   unsigned i;
   if(!dirty) return 1;
   if(!ini_writes_permitted) {
@@ -840,7 +871,12 @@ static int save_settings(void) {
   }
   /* Never let in-game changes to screen size or color depth persist. */
   apply_locked_display();
-  for(i=0;i<CFG_SIZE;i++) sprintf(hex+i*2,"%02X",(unsigned)cfg[i]);
+  memcpy(saved_cfg,cfg,CFG_SIZE);
+  if(ps1_preview_active)
+    spider_ps1_restore(saved_cfg,CFG_SIZE,original_joystick);
+  /* The PS1 gameplay preview must NEVER overwrite a player's persistent
+   * joystick preferences in either RawHex or the named [Joystick] keys. */
+  for(i=0;i<CFG_SIZE;i++) sprintf(hex+i*2,"%02X",(unsigned)saved_cfg[i]);
   if(!WritePrivateProfileStringA("Internal","RawHex",hex,ini_file)) goto fail;
   snprintf(value,sizeof(value),"%lu",(unsigned long)get_word(12));
   if(!WritePrivateProfileStringA("Display","Brightness",value,ini_file)) goto fail;
@@ -848,7 +884,9 @@ static int save_settings(void) {
   if(!save_joystick()) goto fail;
   if(!save_audio()) goto fail;
   dirty=0;
-  report("SPIDEY-CFG: game keyboard/joystick/audio/brightness saved; resolution and color depth locked by [Display] policy");
+  report(ps1_preview_active?
+    "SPIDEY-CFG: user settings saved; original joystick bindings preserved (PS1 preview RAM only)":
+    "SPIDEY-CFG: game keyboard/joystick/audio/brightness saved; resolution and color depth locked by [Display] policy");
   return 1;
 fail:
   snprintf(msg,sizeof(msg),"SPIDEY-CFG: ERROR saving INI Win32=%lu (data still in memory)",(unsigned long)GetLastError());
