@@ -70,7 +70,6 @@ static const BYTE original_format[24]={
 };
 
 static void report(const char *s) {if(write_log)write_log(s);}
-static LONG snapshot(volatile LONG *p) {return InterlockedCompareExchange(p,0,0);}
 static volatile PVOID *game_device_slot(void) {
   return (volatile PVOID *)(uintptr_t)SPIDER_NATIVE_DEVICE;
 }
@@ -82,7 +81,7 @@ static int valid_binary_layout(void) {
   if(sizeof(void*)!=4 || (uintptr_t)GetModuleHandleA(NULL)!=SPIDER_NATIVE_BASE ||
      sizeof(DIJOYSTATE)!=0x50u) return 0;
   return memcmp((const void *)(uintptr_t)0x00501890u,original_enum,sizeof(original_enum))==0 &&
-         memcmp((const void *)(uintptr_t)0x00501AFAu,original_create,sizeof(original_create))==0 &&
+         memcmp((const void *)(uintptr_t)0x00501AFBu,original_create,sizeof(original_create))==0 &&
          memcmp((const void *)(uintptr_t)0x00501E6Du,original_joystick_null,sizeof(original_joystick_null))==0 &&
          memcmp((const void *)(uintptr_t)SPIDER_NATIVE_FORMAT,original_format,sizeof(original_format))==0;
 }
@@ -300,7 +299,7 @@ void SpiderNativeReconnect_OnFlip(long flip_index, HWND game_hwnd) {
   }
   device=InterlockedCompareExchangePointer((PVOID volatile *)game_device_slot(),
                                             NULL,NULL);
-  if(device || !device_missing && events>0)return;
+  if(device || (!device_missing && events>0))return;
   /* A pad that is absent at first startup also gets a bounded scan,
    * but never before the game has built its native factory/HWND. */
   now=GetTickCount();
