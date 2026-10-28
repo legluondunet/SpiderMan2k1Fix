@@ -4,7 +4,7 @@ This is the detailed companion to the [project README](../../README.md). For the
 
 ## Upgrading from older builds
 
-- **Updating the current fix:** back up the existing `winmm.dll`, `SpiderMan2k1Fix.dll` and `SpiderMan2k1Fix.ini` in the game folder. Replace **both DLLs from the same GitHub Actions build**, but keep your existing INI settings. The CI artifact does **not** include an INI.
+- **Updating the current fix:** back up the current `winmm.dll` and `SpiderMan2k1Fix.dll` and keep your existing `SpiderMan2k1Fix.ini`. Extract the new artifact **without flattening**: `winmm.dll` remains alongside `SpideyPC.exe`, while `SpiderMan2k1Fix.dll` and optional `SDL3.dll` are placed in `SpiderMan2k1Fix/`. On first launch, a legacy root INI is copied into `SpiderMan2k1Fix/` if no nested config already exists. The original remains untouched. The CI artifact does **not** include an INI.
 - **Migrating from an older SpiderManFix beta:** remove the obsolete `SpiderManFix.dll`. To preserve settings, back up your old `SpiderManFix.ini` and rename it to `SpiderMan2k1Fix.ini` **before** launching the new fix (only if no new-named INI already exists). Otherwise the patch generates fresh defaults.
 - **Other proxy mods:** `winmm.dll` is a filename shared by many mods. Back up an existing file and check for conflicts; two different proxies cannot normally occupy the same directory under that name.
 
@@ -27,7 +27,7 @@ The normal INI `.old` recovery mechanism applies to **settings only**.
 
 ## Player INI: compact configuration
 
-SpiderMan2k1Fix automatically generates `SpiderMan2k1Fix.ini` beside the supported game executable. Edit it **only while the game is closed**. The generated file exposes only the options that a player should need:
+SpiderMan2k1Fix automatically generates `SpiderMan2k1Fix/SpiderMan2k1Fix.ini` under the supported game executable's directory (or `%LOCALAPPDATA%/SpiderMan2k1Fix/SpiderMan2k1Fix.ini` if the installation directory cannot be written). Edit it **only while the game is closed**. The generated file exposes only the options that a player should need:
 
 ```ini
 [Debug]
@@ -254,7 +254,7 @@ Debug logging is **off by default**:
 Log=0
 ```
 
-If you need to investigate a problem, set `Log=1`, save the file, and **restart the game**. SpiderMan2k1Fix will write `SpiderMan2k1Fix.log` in the game directory. **Each game launch starts a fresh log:** the previous session is overwritten (the proxy startup lines and main DLL diagnostics are retained together). Copy or rename the log before your next launch if you need to keep it. After collecting the information you need, return to `Log=0`.
+If you need to investigate a problem, set `Log=1`, save the file, and **restart the game**. SpiderMan2k1Fix will write `SpiderMan2k1Fix.log` alongside the active INI in `SpiderMan2k1Fix/` (or `%LOCALAPPDATA%/SpiderMan2k1Fix/` if needed). **Each game launch starts a fresh log:** the previous session is overwritten (the proxy startup lines and main DLL diagnostics are retained together). Copy or rename the log before your next launch if you need to keep it. After collecting the information you need, return to `Log=0`.
 
 ## Startup safety: no modal INI dialogs before native DirectDraw
 
@@ -319,7 +319,7 @@ Unrecognized data stays in the previous version stored in `.ini.old`, but is not
 
 **The game launches, but SpiderMan2k1Fix does not seem active**
 
-- Verify that both DLLs are in the same directory as `SpideyPC.exe`.
+- Verify that **only `winmm.dll`** is alongside `SpideyPC.exe` and the main `SpiderMan2k1Fix.dll` is in `SpiderMan2k1Fix/`.
 - On Linux, check the Wine DLL override: `WINEDLLOVERRIDES="winmm=n,b"`.
 - Check that the executable is the supported version. On Linux, run `sha256sum SpideyPC.exe`; on Windows PowerShell, run `Get-FileHash .\SpideyPC.exe -Algorithm SHA256`.
 - Temporarily enable `Log=1` and check `SpiderMan2k1Fix.log`, if an INI was generated.
