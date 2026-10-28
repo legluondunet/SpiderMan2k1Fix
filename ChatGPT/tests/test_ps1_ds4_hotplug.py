@@ -93,3 +93,25 @@ def test_c99_hotplug_timing_and_neutral_gate(tmp_path):
     subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror","-I",str(ROOT),
                     str(source),"-o",str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
+
+
+def test_unplug_inputlost_never_acquires_disconnected_device_same_frame():
+    # Exact regression for the maintainer's crash log: after physical USB
+    # detach the last trace was GetDeviceState hr=0x8007001E, and legacy
+    # code immediately called Acquire(device) on the stale handle.
+    assert "if(hr==DIERR_INPUTLOST || repeatedly_failed)" in PAD
+    assert "spider_hotplug_drop_device(hr," in PAD
+    assert "secondary device release BEGIN (no Acquire on failed read)" in PAD
+    assert "secondary device release COMPLETE; rescan deferred 2s" in PAD
+    assert "NO stale Acquire inside PAUSED" in PAD
+    failed=PAD[PAD.index("hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);",
+                         PAD.index("void SpiderGamepadUI_OnFlip(")):]
+    failed=failed[:failed.index("bad_reads=0;")]
+    assert "IDirectInputDevice8_Acquire(device);" not in failed
+    paused=PAD[PAD.index("unsigned SpiderGamepadUI_PauseWake_Poll("):
+               PAD.index("void SpiderGamepadUI_PauseWake_End(")]
+    assert "IDirectInputDevice8_Acquire(device);" not in paused
+    # Reacquisition must open a fresh instance during scheduled rediscovery,
+    # not silently reload the game's native PS1 profile in mid-game.
+    assert "IDirectInput8_CreateDevice(di,&d.ds4_instance,&device,NULL)" in PAD
+    assert "hotplug.last_scan=GetTickCount();" in PAD
