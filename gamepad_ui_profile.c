@@ -5,11 +5,11 @@
  * - Never modify the game's original DirectInput COM vtables. All seven
  *   original gameplay mappings survive. An OFF-by-default experiment may
  *   unbind only the original Start DWORD after exact signature checks.
- * - In the original 2D UI or Bink sequence, turn a debounced DualShock
- *   CROSS/OPTIONS edge into Enter, and CIRCLE (or optional SHARE) into
- *   Escape, using the same paired scan-code injection.
- * - TRIANGLE triggers native menu confirmation and 3D cinematic skip on
- *   the user's game: do not override it or add a contradictory Escape.
+ * - In legacy UI bridge mode, map configurable CROSS/OPTIONS edges to
+ *   Enter. In opt-in PS1 preview, ONLY CROSS generates synthetic Enter in
+ *   2D/Bink/native pause. Circle backs out, SHARE owns native 3D pause.
+ * - Original 3D scripted cinematic skipping remains game-owned; avoid
+ *   injecting a second Escape or Enter during gameplay.
  * - Bink movies can run after leaving the renderer's 2D menu mode.
  * - In 3D, OPTIONS requests Escape/Pause ONLY when the saved seven
  *   native gameplay bindings no longer assign BUTTON9 to an action.
@@ -34,6 +34,7 @@
 #include "ps1_mouse_mode.h"
 #include "ps1_post_quit_guard.h"
 #include "ps1_transition_edge_ownership.h"
+#include "ps1_menu_confirm.h"
 #include "ps1_input_flight_recorder.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
@@ -250,7 +251,7 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
      GetPrivateProfileStringA("Input","ExperimentalGamepadStart","",choice,sizeof(choice),ini)!=0)
     report("GAMEPAD-UI: old ExperimentalGamepadStart is RETIRED/ignored; remove BUTTON8 setting");
   snprintf(line,sizeof(line),
-    "GAMEPAD-UI: config profile=%s confirm=%s back=%s pause=%s ps1preview=%d options3dskip=%d Return=DIK_0x1C Escape=DIK_0x01",
+    "GAMEPAD-UI: config profile=%s legacy-confirm=%s legacy-back=%s legacy-pause=%s ps1preview-requested=%d options3dskip=%d Return=DIK_0x1C Escape=DIK_0x01",
     profile==SPIDER_PROFILE_OFF?"Off":profile==SPIDER_PROFILE_AUTO?"Auto":"DualShock4",
     confirm==SPIDER_CONFIRM_CROSS?"Cross":confirm==SPIDER_CONFIRM_OPTIONS?"Options":"Both",
     back==SPIDER_BACK_OFF?"Off":back==SPIDER_BACK_CIRCLE?"Circle":"Share",
@@ -313,7 +314,7 @@ static void detect_device(HWND hwnd) {
   }
   detected=1;
   snprintf(line,sizeof(line),
-    "GAMEPAD-UI: PROFILE DualShock4 ACTIVE Sony VID=054C PID=%04lX name=%.110s; Cross=BUTTON1 Options=BUTTON9 -> Return in 2D/Bink; Circle=BUTTON2 -> Back in 2D; OPTIONS pause guarded in 3D",
+    "GAMEPAD-UI: PROFILE DualShock4 VERIFIED Sony VID=054C PID=%04lX name=%.110s; legacy 2D/Bink confirmation=ControllerEnterButtons; PS1 preview after CRT bootstrap: Cross=BUTTON1 only, Circle=BUTTON2 back, SHARE=BUTTON8 3D pause; OPTIONS=BUTTON9 is NOT synthetic Enter in PS1",
     (unsigned long)d.product_id,d.name);
   report(line);
 }
@@ -556,7 +557,7 @@ void SpiderGamepadUI_ActivatePS1(void){
   if(!detected || !ps1_preview_requested)return;
   ps1_preview_active=1;
   back=SPIDER_BACK_CIRCLE;
-  report("GAMEPAD-UI: PS1-PREVIEW ACTIVE, fixed gameplay RAM only; CROSS-only 2D/Bink/pause confirmation (OPTIONS/Start not mapped to Enter); original Joystick menu separately guarded");
+  report("GAMEPAD-UI: PS1-PREVIEW ACTIVE, fixed gameplay RAM only; CROSS-only 2D/Bink/pause confirmation (OPTIONS/Start not mapped to Enter); original Joystick read-only remains optional/strictly gated");
   ps1_probe_native_start_tables(); /* read-only scan; optional checked single-DWORD RAM experiment */
   if(ps1_readonly_menu_requested && !SpiderPS1_InstallReadOnlyJoystick(log_message))
     report("GAMEPAD-PS1: JOYSTICK-READONLY inactive; exact native signatures missing or failed to install");
@@ -772,9 +773,9 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
    * legacy ControllerEnterButtons choice is honored outside PS1 preview.
    * OPTIONS/Start remains free of synthetic Enter even if the old INI
    * still says Both; native Start/BUTTON11 is handled separately. */
-  effective_confirm=ps1_preview_active?SPIDER_CONFIRM_CROSS:(unsigned)confirm;
+  effective_confirm=spider_ps1_menu_confirm_mask(ps1_preview_active,(unsigned)confirm);
   /* Per-button edges are still tracked independently for legacy mode. */
-  confirm_edges=(pressed & effective_confirm) & ~(unsigned)previous_buttons;
+  confirm_edges=spider_ps1_menu_confirm_edges(pressed,(unsigned)previous_buttons,effective_confirm);
   ps1_history_record(SPIDER_PS1_HISTORY_READ_OK,native_request,menu_2d,
     gameplay_3d,bink_active,native_pause_active,(unsigned)previous_buttons,&state);
   if(ps1_preview_active && ps1_transition_edge_ownership_requested) {
@@ -831,18 +832,19 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
      !(previous_back & (unsigned)back)) {
     begin_scancode(0x01u,"Escape");
   } else if(confirm_allowed && confirm_edges &&
-            !(confirm_edges & ~ownership_block) &&
+            !spider_ps1_menu_confirm_unowned(confirm_edges,ownership_block) &&
             (confirm_edges & ownership_block)) {
     /* Only old-session confirmation bits are consumed. A fresh OTHER
      * confirm button may still send Return even while one bit is held. */
-    report("GAMEPAD-PS1: TRANSITION-OWNERSHIP consumed inherited Cross/Options confirmation on first 2D menu frame after native request 7; rearm on physical release");
+    report("GAMEPAD-PS1: TRANSITION-OWNERSHIP consumed inherited menu confirmation (PS1: Cross only; legacy: Cross/Options) on first 2D frame after native request 7; rearm on physical release");
     ps1_history_dump();
   } else if(confirm_allowed && confirm_edges && post_quit_block) {
     /* Legacy 8-Flip guard stays optional and suppresses any fresh Enter.
      * Per-button edges are still consumed by previous_buttons below. */
     report("GAMEPAD-PS1: POST-QUIT-GUARD suppressed synthetic Return on first 2D menu frames after native request 7");
     ps1_history_dump();
-  } else if(confirm_allowed && (confirm_edges & ~ownership_block)) {
+  } else if(confirm_allowed &&
+            spider_ps1_menu_confirm_unowned(confirm_edges,ownership_block)) {
     begin_scancode(0x1Cu,"Return");
     if(movie_allowed && !menu_allowed && postmenu_bink_reports++<8u)
       report("GAMEPAD-UI: POST-MENU BINK Return attempted with original GameFMV_Active=1; native video skip gate remains authoritative");
