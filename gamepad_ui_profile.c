@@ -58,6 +58,8 @@ static int ps1_preview_requested=0,ps1_preview_active=0,previous_share=0;
 static int ps1_options_skip_requested=0;
 static int ps1_readonly_menu_requested=0;
 static int ps1_mouse_auto_requested=0,ps1_mouse_auto_armed=0;
+static int ps1_quit_trace_requested=0;
+static unsigned ps1_quit_trace_count=0;
 static int ps1_native_start_unbound=0,previous_native_start=0;
 static unsigned ps1_native_start_reports=0;
 static unsigned ps1_cutscene_reports=0;
@@ -207,6 +209,7 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   ps1_options_skip_requested=GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1;
   ps1_readonly_menu_requested=GetPrivateProfileIntA("Input","ControllerPS1ReadOnlyJoystick",0,ini)==1;
   ps1_mouse_auto_requested=GetPrivateProfileIntA("Input","ControllerAutoDisableMouse",0,ini)==1;
+  ps1_quit_trace_requested=GetPrivateProfileIntA("Input","ControllerPS1QuitTrace",0,ini)==1;
   GetPrivateProfileStringA("Input","ControllerProfile","Auto",choice,sizeof(choice),ini);
   if(!_stricmp(choice,"Off"))profile=SPIDER_PROFILE_OFF;
   else if(!_stricmp(choice,"Auto"))profile=SPIDER_PROFILE_AUTO;
@@ -550,6 +553,67 @@ void SpiderGamepadUI_ActivatePS1(void){
       report("GAMEPAD-MOUSE: OFF failed exact original mouse-gate validation; native mouse behavior untouched");
   }
 }
+/* The original retail PShell_EndTrainingUpdate at 0x47BC40 uses
+ * object 0x682968 + 0x14 to dispatch index 0 -> engine request 8,
+ * 1 -> request 10, 2 -> request 7. In other 3D stages a different
+ * game-owned owner (0x440EF0) can also request 7. These samples
+ * deliberately do not assume which owner produced a transition.
+ *
+ * This diagnostic is PASSIVE: no mouse, menu, joystick, keyboard,
+ * object, engine-state or code writes. A per-Flip snapshot may miss
+ * transient objects; absence of a sample is not proof of absence.
+ */
+static int ps1_read_native_selection(DWORD owner,int *selection) {
+  MEMORY_BASIC_INFORMATION mbi;
+  uintptr_t va=(uintptr_t)owner,base;
+  DWORD protect;
+  if(!owner || owner<0x00010000u || !selection ||
+     VirtualQuery((LPCVOID)va,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)))
+    return 0;
+  base=(uintptr_t)mbi.BaseAddress;
+  protect=mbi.Protect&0xffu;
+  if(va<base || va-base>mbi.RegionSize ||
+     mbi.RegionSize-(va-base)<0x15u ||
+     !(protect==PAGE_READONLY || protect==PAGE_READWRITE ||
+       protect==PAGE_WRITECOPY || protect==PAGE_EXECUTE_READ ||
+       protect==PAGE_EXECUTE_READWRITE || protect==PAGE_EXECUTE_WRITECOPY))
+    return 0;
+  *selection=(int)*(const volatile BYTE *)(va+0x14u);
+  return 1;
+}
+static void ps1_trace_native_quit(int menu2d,int gameplay3d,
+                                   int pause_active,int cross_edge,
+                                   int circle_edge,int share_edge) {
+  static int old_selection=-2,old_restart=-2,old_request=-1,old_pause=-1;
+  static int old_context=-1;
+  DWORD confirmation_owner,restart_owner,request,mouse_flags;
+  int selection=-1,restart_selection=-1;
+  int confirmed,restarted,context;
+  char line[360];
+  if(!ps1_preview_active || !ps1_quit_trace_requested ||
+     ps1_quit_trace_count>=130u)return;
+  confirmation_owner=*(const volatile DWORD *)(uintptr_t)0x00682968u;
+  restart_owner=*(const volatile DWORD *)(uintptr_t)0x00682960u;
+  request=*(const volatile DWORD *)(uintptr_t)0x0060CFA4u;
+  context=*(const volatile DWORD *)(uintptr_t)0x00682950u ? 1:0;
+  mouse_flags=*(const volatile DWORD *)(uintptr_t)0x02E0988Cu;
+  confirmed=ps1_read_native_selection(confirmation_owner,&selection);
+  restarted=ps1_read_native_selection(restart_owner,&restart_selection);
+  if(selection!=old_selection || restart_selection!=old_restart ||
+     (int)request!=old_request || pause_active!=old_pause ||
+     context!=old_context || cross_edge || circle_edge || share_edge) {
+    snprintf(line,sizeof(line),
+      "GAMEPAD-PS1: QUIT-TRACE sample=%u 2d=%d 3d=%d pause-visible=%d native-ctx=%d confirmation-owner=%d choice=%d readable=%d restart-owner=%d restart-choice=%d readable=%d request=%lu mouse-off=%d CROSS-edge=%d CIRCLE-edge=%d SHARE-edge=%d [PASSIVE PER-FLIP]",
+      ++ps1_quit_trace_count,menu2d,gameplay3d,pause_active,context,
+      confirmation_owner!=0u,selection,confirmed,restart_owner!=0u,
+      restart_selection,restarted,(unsigned long)request,
+      (mouse_flags&0x10u)!=0u,cross_edge,circle_edge,share_edge);
+    report(line);
+    old_selection=selection;old_restart=restart_selection;
+    old_request=(int)request;old_pause=pause_active;old_context=context;
+  }
+}
 void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active) {
   DIJOYSTATE2 state;
@@ -620,6 +684,11 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   pause_pressed=state.rgbButtons[9]&0x80u;
   share_pressed=state.rgbButtons[8]&0x80u;
   share_edge=share_pressed && !previous_share;
+  if(ps1_quit_trace_requested)
+    ps1_trace_native_quit(menu_2d,gameplay_3d,native_pause_active,
+      (pressed&SPIDER_CONFIRM_CROSS) && !(previous_buttons&SPIDER_CONFIRM_CROSS),
+      (back_pressed&SPIDER_BACK_CIRCLE) && !(previous_back&SPIDER_BACK_CIRCLE),
+      share_edge);
   native_start_pressed=(state.rgbButtons[11]&0x80u)!=0;
   /* Passive test of the original BUTTON11/camera press. The native
    * table modification being accepted does not by itself prove which
