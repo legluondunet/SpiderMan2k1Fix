@@ -13,6 +13,8 @@ void SpiderNativeReconnect_OnFlip(long flip_index, HWND game_hwnd);
 int SpiderNativeReconnect_SDL3SelectionReady(uint16_t vid,uint16_t pid);
 /* Read-only, opt-in verified original Xbox action table after native hot swap. */
 int SpiderNativeReconnect_CanonicalXboxMapping(void);
+/* Strict RAM-only Sony 7-action preset verified on the native game owner. */
+int SpiderNativeReconnect_CanonicalDS4Mapping(void);
 /* Passive post-rebind input breadcrumbs; never alters gameplay state. */
 void SpiderNativeReconnect_LogSyntheticMenuKey(unsigned scan, const char *phase);
 /* Read-only original joystick pointer + render-mode health after rebind. */
