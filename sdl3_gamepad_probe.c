@@ -7,6 +7,7 @@
  * SDL3's instance ID is the only controller identity used here. */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "spider_fix_paths.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -81,7 +82,7 @@ static int sdl_load(void) {
     say("SDL3-PROBE: disabled: cannot resolve executable-relative SDL3.dll");
     return 0;
   }
-  strcpy(slash+1,"SDL3.dll");
+  if(!spider_path_code_asset_a("SDL3.dll",path,sizeof(path)))return 0;
   module=LoadLibraryA(path);
   if(!module) {
     say("SDL3-PROBE: SDL3.dll absent/unloadable beside SpideyPC.exe; legacy controller input untouched");
