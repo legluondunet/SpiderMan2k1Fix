@@ -50,6 +50,7 @@ typedef struct {
 
 static int configured=0,profile=SPIDER_PROFILE_AUTO,confirm=SPIDER_CONFIRM_BOTH;
 static int back=SPIDER_BACK_CIRCLE,pause_button=SPIDER_PAUSE_OPTIONS;
+static int ps1_preview_requested=0,ps1_preview_active=0,previous_share=0;
 static int probing=0,detected=0,previous_buttons=0,previous_back=0,previous_pause=0;
 static unsigned active_scan=0;
 static LONG sent_enter=0,sent_escape=0;
@@ -189,6 +190,9 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
     return;
   }
   strcpy(profile_ini,ini);
+  /* Experimental only: no automatic fixed-profile activation until native
+   * menu lock and Start handling are validated in the real game. */
+  ps1_preview_requested=GetPrivateProfileIntA("Input","ControllerPS1Preview",0,ini)==1;
   GetPrivateProfileStringA("Input","ControllerProfile","Auto",choice,sizeof(choice),ini);
   if(!_stricmp(choice,"Off"))profile=SPIDER_PROFILE_OFF;
   else if(!_stricmp(choice,"Auto"))profile=SPIDER_PROFILE_AUTO;
@@ -214,11 +218,12 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
      GetPrivateProfileStringA("Input","ExperimentalGamepadStart","",choice,sizeof(choice),ini)!=0)
     report("GAMEPAD-UI: old ExperimentalGamepadStart is RETIRED/ignored; remove BUTTON8 setting");
   snprintf(line,sizeof(line),
-    "GAMEPAD-UI: config profile=%s confirm=%s back=%s pause=%s Return=DIK_0x1C Escape=DIK_0x01 (menu/Bink/pause separate)",
+    "GAMEPAD-UI: config profile=%s confirm=%s back=%s pause=%s ps1preview=%d Return=DIK_0x1C Escape=DIK_0x01",
     profile==SPIDER_PROFILE_OFF?"Off":profile==SPIDER_PROFILE_AUTO?"Auto":"DualShock4",
     confirm==SPIDER_CONFIRM_CROSS?"Cross":confirm==SPIDER_CONFIRM_OPTIONS?"Options":"Both",
     back==SPIDER_BACK_OFF?"Off":back==SPIDER_BACK_CIRCLE?"Circle":"Share",
-    pause_button==SPIDER_PAUSE_OFF?"Off":"Options (conflict guarded)");
+    pause_button==SPIDER_PAUSE_OFF?"Off":"Options (conflict guarded)",
+    ps1_preview_requested);
   report(line);
 }
 static void detect_device(HWND hwnd) {
@@ -280,11 +285,33 @@ static void detect_device(HWND hwnd) {
     (unsigned long)d.product_id,d.name);
   report(line);
 }
-void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,int bink_active) {
+/* Early game HWND acquisition precedes the verified native CRT reload.
+ * On failure retry the old unchanged UI discovery on the first Flip. */
+int SpiderGamepadUI_PreparePS1(HWND hwnd) {
+  if(!configured || !ps1_preview_requested || profile==SPIDER_PROFILE_OFF ||
+     !hwnd || !IsWindow(hwnd) || GetForegroundWindow()!=hwnd)return 0;
+  if(!probing)detect_device(hwnd);
+  if(!detected){
+    probing=0;
+    report("GAMEPAD-UI: PS1-PREVIEW deferred: early DS4 device acquisition failed; original game mappings untouched");
+    return 0;
+  }
+  report("GAMEPAD-UI: PS1-PREVIEW Sony DS4 acquired before native config bootstrap");
+  return 1;
+}
+void SpiderGamepadUI_ActivatePS1(void){
+  if(!detected || !ps1_preview_requested)return;
+  ps1_preview_active=1;
+  back=SPIDER_BACK_CIRCLE;
+  report("GAMEPAD-UI: PS1-PREVIEW ACTIVE, fixed gameplay RAM only; original Joystick configuration menu NOT YET locked");
+}
+void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
+                            int bink_active,int native_pause_active) {
   DIJOYSTATE2 state;
   HRESULT hr;
   unsigned pressed,back_pressed;
   int menu_allowed,movie_allowed,confirm_allowed,gameplay_allowed,pause_pressed;
+  int share_pressed,share_edge;
   if(!configured || !hwnd || !IsWindow(hwnd))return;
   /* Critical: release injected key before focus pause can block this thread. */
   release_active_key();
@@ -292,6 +319,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,int bink_activ
     previous_buttons=0;
     previous_back=0;
     previous_pause=0;
+    previous_share=0;
     return;
   }
   if(!probing)detect_device(hwnd);
@@ -315,6 +343,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,int bink_activ
     previous_buttons=0;
     previous_back=0;
     previous_pause=0;
+    previous_share=0;
     return;
   }
   bad_reads=0;
@@ -324,12 +353,20 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,int bink_activ
                (state.rgbButtons[8]&0x80u?SPIDER_BACK_SHARE:0);
   /* Original GameFMV_Active remains authoritative even outside the
    * widescreen menu presentation. 3D triangle/script input is untouched. */
-  menu_allowed=menu_2d && !gameplay_3d;
   movie_allowed=bink_active!=0;
+  menu_allowed=(menu_2d && !gameplay_3d) ||
+    (ps1_preview_active && native_pause_active && !movie_allowed);
   confirm_allowed=menu_allowed || movie_allowed;
-  gameplay_allowed=gameplay_3d && !menu_2d && !movie_allowed;
+  gameplay_allowed=gameplay_3d && !menu_2d && !movie_allowed &&
+                   !(ps1_preview_active && native_pause_active);
   pause_pressed=state.rgbButtons[9]&0x80u;
-  if(menu_allowed && (back_pressed & (unsigned)back) &&
+  share_pressed=state.rgbButtons[8]&0x80u;
+  share_edge=share_pressed && !previous_share;
+  if(ps1_preview_active && (gameplay_allowed || native_pause_active) &&
+     !movie_allowed && share_edge) {
+    begin_scancode(0x01u,"Escape");
+    report("GAMEPAD-UI: PS1-PREVIEW SHARE -> Escape during 3D/pause; native Start button still unchanged");
+  } else if(menu_allowed && (back_pressed & (unsigned)back) &&
      !(previous_back & (unsigned)back)) {
     begin_scancode(0x01u,"Escape");
   } else if(confirm_allowed &&
@@ -338,7 +375,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,int bink_activ
     begin_scancode(0x1Cu,"Return");
     if(movie_allowed && !menu_allowed && postmenu_bink_reports++<8u)
       report("GAMEPAD-UI: POST-MENU BINK Return attempted with original GameFMV_Active=1; native video skip gate remains authoritative");
-  } else if(gameplay_allowed && pause_button==SPIDER_PAUSE_OPTIONS &&
+  } else if(!ps1_preview_active && gameplay_allowed && pause_button==SPIDER_PAUSE_OPTIONS &&
             pause_pressed && !previous_pause &&
             options_free_of_native_actions()) {
     begin_scancode(0x01u,"Escape");
@@ -352,4 +389,5 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,int bink_activ
   previous_buttons=(int)pressed;
   previous_back=(int)back_pressed;
   previous_pause=pause_pressed;
+  previous_share=share_pressed;
 }
