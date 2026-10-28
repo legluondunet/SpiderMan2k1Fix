@@ -1,4 +1,7 @@
 ## Unreleased — experimental SDL3-selected DirectInput owner (DRAFT PR #80, NOT hardware-validated)
+- **First real dual-pad hardware log** (`SpiderMan2k1Fix(20261028-214736).log`): both controllers connected, three successful original game-owned DirectInput handoffs DS4 → Xbox360 → DS4 and 2D/Bink synthetic controls; still **no in-game 3D action validation**. Intro Alt+Tab and keyboard resume observed. INI auto-repair found three errors (original saved as `.ini.old`).
+- Add **optional read-only 3D physical input trace** via `[Debug] SDL3GameplayTrace=1` (default OFF, requires explicitly requested SDL3 native owner): first 16 physical button edge mask, raw lX/lY/lZ and POV, plus selected instance and profile, max 64 entries, no native DirectInput polling, mappings or input injection. Enables correlation of actual 3D visual effects with hardware state after handoffs.
+
 
 - New hidden `[Input] ExperimentalSDL3NativeOwner=1` is **OFF by default**, additionally requires SDL3 probe and all three existing native unplug/reconnect/runtime-mapping opt-ins. If dependencies are missing, SDL3 remains passive and the existing single-controller behaviour is preserved.
 - SDL3 selected gamepad identity is bound to **exactly one** known matching native DirectInput instance, reusing the original game's factory and verified joystick pointer. Duplicate VID/PID, unknown products, active FFB effects, non-neutral buttons or unsafe native state fail closed.
