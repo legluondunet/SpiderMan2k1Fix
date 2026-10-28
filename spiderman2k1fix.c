@@ -3066,6 +3066,7 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
     if(early && SpiderGamepadUI_PreparePS1(early))
       mapped=SpiderCfg_EnablePS1Preview();
     SpiderCfg_BootstrapGameRead();
+    SpiderGamepadUI_ArmXbox360ReadOnly();
     if(mapped) {
       if(SpiderCfg_PS1BootstrapLoaded())
         SpiderGamepadUI_ActivatePS1();
