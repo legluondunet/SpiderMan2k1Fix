@@ -974,9 +974,10 @@ static BOOL WINAPI hooked_WriteFile(HANDLE h,LPCVOID buffer,DWORD len,LPDWORD do
     DWORD old_w=get_word(0),old_h=get_word(4),old_depth=get_word(8);
     memcpy(cfg+v->pos,buffer,len);v->pos+=(LONG)len;dirty=1;writes++;
     if(ps1_preview_active) {
-      /* Regardless of whether the independent, opt-in native Joystick
-       * read-only patch installed, keep the seven PS1 virtual bindings
-       * and the previous user preferences protected on game-owned writes. */
+      /* Without the separately opt-in, original joystick-menu read-only
+       * patch, the game's
+       * own live action array may still change. Always preserve the seven
+       * PS1 virtual bindings and the saved user's original preferences. */
       BYTE attempted[CFG_SIZE];
       memcpy(attempted,cfg,CFG_SIZE);
       spider_ps1_apply(cfg,CFG_SIZE);
