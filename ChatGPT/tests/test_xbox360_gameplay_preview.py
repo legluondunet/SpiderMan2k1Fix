@@ -31,6 +31,7 @@ def test_xbox_gameplay_mapping_reversible_and_reserves_start_back(tmp_path):
         uint8_t original[SPIDER_PS1_CFG_SIZE],runtime[SPIDER_PS1_CFG_SIZE];
         uint32_t saved[SPIDER_PS1_BUTTON_COUNT];
         size_t i;
+        (void)spider_ps1_apply; /* shared header PS1 function intentionally unused in Xbox-only path */
         for(i=0;i<sizeof(original);i++)original[i]=(uint8_t)(i*17u+5u);
         for(i=0;i<SPIDER_PS1_BUTTON_COUNT;i++)
           spider_ps1_write_word(original,spider_ps1_offsets[i],(uint32_t)(12u+i));
