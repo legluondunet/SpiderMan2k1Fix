@@ -29,6 +29,7 @@
 #include "input_notacquired_retry.h"
 #include "native_joystick_unplug.h"
 #include "native_joystick_reconnect.h"
+#include "sdl3_gamepad_probe.h"
 #include "pause_any_key.h"
 #include "pause_surface.h"
 #include "focus_media_pause.h"
@@ -2598,6 +2599,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   SpiderDI8Retry_OnFlip(count);
   SpiderNativeUnplug_OnFlip(count);
   SpiderNativeReconnect_OnFlip(count,game_hwnd);
+  SpiderSDL3Probe_OnFlip(count,game_hwnd);
   /* Passive, bounded post-hotplug heartbeat: menu -> 3D -> menu. */
   SpiderNativeReconnect_ObserveMode(count,
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
@@ -3214,9 +3216,11 @@ static DWORD initialize_body(LPVOID unused) {
       strcpy(slash+1,"SpiderMan2k1Fix.ini");
       SpiderNativeUnplug_Init(ini,log_line);
       SpiderNativeReconnect_Init(ini,log_line);
+      SpiderSDL3Probe_Init(ini,log_line);
     } else {
       SpiderNativeUnplug_Init(NULL,log_line);
       SpiderNativeReconnect_Init(NULL,log_line);
+      SpiderSDL3Probe_Init(NULL,log_line);
     }
   }
   SpiderFocusMedia_Init(log_line); /* Opt-in native Bink pause. */
