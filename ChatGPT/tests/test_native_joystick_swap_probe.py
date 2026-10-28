@@ -73,7 +73,7 @@ def test_no_live_original_binding_writes_in_hot_swap_probe():
     assert 'observe_native_swap_table("startup",swap_last_kind,swap_last_kind);' in NATIVE
     assert 'observe_native_swap_table("rebound",swap_last_kind,list.kind);' in NATIVE
     assert "swap_last_kind=list.kind;" in NATIVE
-    assert "original native action mapping; no unsafe runtime patch attempted" in NATIVE
+    assert "device has changed but game still uses prior native action mapping; no unsafe runtime patch attempted" in NATIVE
     observer=NATIVE.split("static void observe_native_swap_table(",1)[1].split(
       "static void close_candidate(",1)[0]
     assert "spider_native_swap_read(table," in observer
