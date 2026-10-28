@@ -16,4 +16,5 @@ void SpiderCfg_BootstrapGameRead(void);
 int SpiderCfg_EnablePS1Preview(void);
 /* True only after an authenticated game-owned loader consumed the overlay. */
 int SpiderCfg_PS1BootstrapLoaded(void);
+void SpiderCfg_CancelPS1Preview(void);
 #endif
