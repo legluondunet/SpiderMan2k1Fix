@@ -513,6 +513,86 @@ The 02:05 log **did not exercise** original settings saves
 (`SPIDEY-CFG: virtual WriteFile` absent), so it doesn't add
 additional persistence evidence beyond the previous runtime test.
 
+## Native Joystick Configuration read-only candidate (PR #74, new opt-in)
+
+The approved design keeps the **original** two-column Joystick
+Configuration screen accessible. A new manually enabled prototype now
+implements this approach using the game's own native PCShell routines,
+rather than an overlaid dialog.
+
+Source research: [krystalgamer/spidey-decomp
+`PCShell.cpp`](https://github.com/krystalgamer/spidey-decomp/blob/master/PCShell.cpp)
+describes `initActionMaps()`, `processControllerScreen()`,
+`displayControllerScreen()` and the original eleven-row UI;
+the accompanying `tools/names.json` and archived x86 function
+bytes identify their original addresses in the 2001 PC executable.
+The repository's own `PCShell.cpp` reconstruction still labels
+`processControllerScreen` as unfinished, so this prototype used
+the **original function's x86 instruction paths** to locate the
+exact input handlers rather than assuming the C++ stub was executable.
+
+The experiment requires a **unique verified Sony DS4**, an active
+PS1 virtual config bootstrap and the new key below. It is absent/Off
+by default:
+
+```ini
+[Input]
+ControllerProfile=Auto
+ControllerPS1Preview=1
+ControllerPS1ReadOnlyJoystick=1
+```
+
+On successful signature checks, it applies **five reversible-by-restart,
+RAM-only native code edits**, without modifying game assets or DLL
+DirectInput COM objects:
+
+1. At original VA `0x50D28C`, redirect only the joystick name
+   formatting call used by `initActionMaps` to display `CROSS`,
+   `CIRCLE`, `SQUARE`, `TRIANGLE`, `L1`, `R1`, or `R2`
+   according to the **actual native button index** before the
+   game's original second menu column is built. Unknown button
+   indices keep `button N`, and the existing menu draw/scroll
+   routines remain untouched.
+2. At `0x50D51C` and `0x50D6A6`, redirect the original
+   key/controller reassignment-acceptance branches to their
+   existing `0x50D852` cleanup/return, rather than allowing a
+   new button-capture path to modify the active mappings.
+3. At `0x50D4A9` and `0x50D7AD`, neutralize only the
+   original controller-restore-default and controller-action
+   setter call sites as extra protection.
+4. Verify the PE32 base, section memory, executable page
+   protections and **every original instruction byte** before
+   any write. On a failed edit, attempt to restore all previously
+   modified sites. No changes are attempted if any original
+   byte differs. The patch is installed only when the new
+   option is enabled and the native virtual config load succeeded.
+
+Look for:
+```text
+GAMEPAD-PS1: JOYSTICK-READONLY EXPERIMENT ACTIVE
+```
+
+If instead the log says `JOYSTICK-READONLY REFUSED` or
+`JOYSTICK-READONLY inactive`, **no read-only behavior is
+guaranteed**. Do not modify joystick bindings in that state.
+
+**Not yet validated:** the gameplay/menu interaction with all
+button inputs, mouse clicks, arrow navigation, Cross/Enter and
+Circle/Escape, the original Restore Default Settings row, whether
+every menu transition remains accessible, and any original key-capture
+prompt reached before the verified assignment branch. It is
+also not yet proven under Wine or native Windows for the new
+code patch. The host regression suite and CI compilation do
+not substitute for a physical in-game trial. If any control can
+still be changed or a stale prompt appears, leave the option Off
+and use the previously validated PS1 controller build.
+
+When the option is absent/Off, all these native code locations are
+left untouched; the original editable Joystick screen is retained.
+The game's saved personal `[Joystick]` and 252-byte `RawHex`
+remain preserved independently by the existing virtual config
+save/restore system.
+
 ## Next phase after prototype validation
 
 - Complete native joystick-menu lock, native Start suppression, scene
