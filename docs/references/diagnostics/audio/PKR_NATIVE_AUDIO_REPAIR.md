@@ -128,7 +128,7 @@ were shortened for players. The following is the **original technical
 preserved here as a dated record, not as a claim of validation under
 every Windows environment.
 
-## What's new
+### Original What's new
 
 - **Fixes the original WAV crackling / truncated audio:** The game's WAV loader requests only whole 2,048-byte PKR sectors and omits the final partial sector of many WAV files. SpiderMan2k1Fix restores only the verified missing bytes at the original resource-loading stage.
 - **Enabled automatically:** No new INI setting is required for the exact supported executable. The hidden troubleshooting override `[Debug] ExperimentalAudioLoaderTail=0` disables the repair.
@@ -139,7 +139,7 @@ every Windows environment.
 
 All previously released v1.0.0 compatibility, widescreen, controls and graphical features remain available.
 
-## Tested
+### Original Tested
 
 On **27 October 2026**, a Linux/Wine gameplay test of the fallback-free audio fix confirmed **no audible parasites**. The trace includes:
 
