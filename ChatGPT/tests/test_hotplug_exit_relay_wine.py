@@ -67,6 +67,7 @@ def test_restore_existing_relay_filter_and_preserve_call_log(tmp_path):
     assert "original Wine RelayInclude restored" in result.stdout
     status=next(out.glob("hotplug-exit-status-*.txt")).read_text()
     assert "WINE_EXIT_CODE=9" in status
+    assert "does not enforce ControllerProfile=Off or Auto" in status
     calls=next(out.glob("hotplug-exit-calls-*.txt")).read_text()
     assert "kernel32.ExitProcess(00000009)" in calls
     raw=next(out.glob("hotplug-exit-relay-*.log")).read_text()
@@ -96,6 +97,8 @@ def test_read_only_external_wine_diagnostic():
     assert "WINEDEBUG='+relay,+process,+seh'" in body
     assert "RtlExitUserProcess" in body
     assert "WINE_EXIT_CODE" in body
+    assert "does not enforce ControllerProfile=Off or Auto" in body
+    assert "launch game and reproduce the input issue" in body
     for unsafe in ("VirtualProtect(", "SetWindowsHookEx(", "WriteProcessMemory(",
                    "IDirectInputDevice8_Acquire(", "pkill -9", "wineserver -k"):
         assert unsafe not in body
