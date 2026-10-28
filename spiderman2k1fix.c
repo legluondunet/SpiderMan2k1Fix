@@ -30,6 +30,7 @@
 #include "native_joystick_unplug.h"
 #include "native_joystick_reconnect.h"
 #include "sdl3_gamepad_probe.h"
+#include "sdl3_gameplay_plan_probe.h"
 #include "pause_any_key.h"
 #include "pause_surface.h"
 #include "focus_media_pause.h"
@@ -2605,6 +2606,15 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   /* SDL3 selection was pumped before UI. Native device replacement now
    * runs after its SHA-guarded disconnect patch, on the same Flip thread. */
   SpiderNativeReconnect_OnFlip(count,game_hwnd);
+  /* Experimental SDL3 semantic action probe is strictly read-only and
+   * runs only AFTER the game-owned DirectInput handoff is verified. */
+  SpiderSDL3GameplayPlan_OnFlip(game_hwnd,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
+      InterlockedCompareExchange(&fov_game_height,0,0)>0,
+    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
+    ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
+      native_pause43_visible_near_flip(count)));
   /* Passive, bounded post-hotplug heartbeat: menu -> 3D -> menu. */
   SpiderNativeReconnect_ObserveMode(count,
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
@@ -3222,10 +3232,12 @@ static DWORD initialize_body(LPVOID unused) {
       SpiderNativeUnplug_Init(ini,log_line);
       SpiderNativeReconnect_Init(ini,log_line);
       SpiderSDL3Probe_Init(ini,log_line);
+      SpiderSDL3GameplayPlan_Init(ini,log_line);
     } else {
       SpiderNativeUnplug_Init(NULL,log_line);
       SpiderNativeReconnect_Init(NULL,log_line);
       SpiderSDL3Probe_Init(NULL,log_line);
+      SpiderSDL3GameplayPlan_Init(NULL,log_line);
     }
   }
   SpiderFocusMedia_Init(log_line); /* Opt-in native Bink pause. */
