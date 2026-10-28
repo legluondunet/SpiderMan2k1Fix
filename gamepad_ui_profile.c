@@ -1313,6 +1313,12 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
       post_quit_block=spider_ps1_post_quit_guard_flip(&ps1_post_quit_guard,
         1,menu_2d,gameplay_3d,bink_active,native_request);
   }
+  /* The first-run user recovery path must remain reachable with no
+   * recognized Sony/Xbox DirectInput device: keyboard navigation opens
+   * a generic read-only Joystick menu with SDL3 TEST (PREVIEW) row.
+   * Off by default and never touches native joystick bindings. */
+  if(SpiderSDL3ControllerSetup_Enabled() && (!detected || !device))
+    SpiderSDL3_InstallGenericReadOnlyJoystick(log_message);
   /* When SDL3 ownership is explicitly enabled, disable the old UI source
    * immediately on any selection loss/switch. Only a matching verified
    * GAME-OWNED DI device may enable synthetic 2D/Bink keys. No two-pad
@@ -1352,12 +1358,6 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   else if(detected && device &&
           detected_kind==SPIDER_RECONNECT_XBOX360 && xbox_readonly_active)
     SpiderXbox360_InstallReadOnlyJoystick(log_message);
-  /* The first-run user recovery path must remain reachable with no
-   * recognized Sony/Xbox DirectInput device: keyboard navigation opens
-   * a generic read-only Joystick menu with SDL3 TEST (PREVIEW) row.
-   * Off by default and never touches native joystick bindings. */
-  if(SpiderSDL3ControllerSetup_Enabled() && (!detected || !device))
-    SpiderSDL3_InstallGenericReadOnlyJoystick(log_message);
   if(!detected||!device) {
     ps1_history_record(SPIDER_PS1_HISTORY_DEVICE_MISSING,native_request,
       menu_2d,gameplay_3d,bink_active,native_pause_active,
