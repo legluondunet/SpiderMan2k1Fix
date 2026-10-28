@@ -117,6 +117,8 @@ def test_native_movie_flag_not_viewport_is_used_after_main_menu():
     assert "movie_allowed=bink_active!=0" in PROFILE
     assert "confirm_allowed=menu_allowed || movie_allowed" in PROFILE
     assert 'begin_scancode(0x1Cu,"Return");' in PROFILE
+    assert "GAMEPAD-UI: POST-MENU BINK Return attempted" in PROFILE
+    assert "movie_allowed && !menu_allowed" in PROFILE
 
 
 def test_options_3d_pause_checks_entire_original_gamepad_button_map():
