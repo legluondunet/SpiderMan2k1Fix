@@ -43,6 +43,7 @@ static SpiderSDL3Opened pads[SPIDER_SDL3_MAX_GAMEPADS];
 static SpiderSDL3Selection selection={0};
 static unsigned num_pads=0;
 static int requested=0,attempted=0,ready=0,scanned=0;
+static int native_owner_requested=0;
 static DWORD last_scan=0,last_axis_log=0;
 static int last_joystick_count=-1,last_mapped_count=-1;
 static short old_lt=-1,old_rt=-1;
@@ -69,7 +70,33 @@ static void say(const char *line) {if(report)report(line);}
 void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
   report=logger;
   requested=ini && GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1;
-  if(requested)say("SDL3-PROBE: requested (OFF by default); passive only, original DirectInput still owns gameplay");
+  native_owner_requested=requested &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1;
+  if(requested)say("SDL3-PROBE: requested (OFF by default); discovery and selection enabled");
+  if(native_owner_requested)
+    say("SDL3-OWNER: EXPERIMENT requested; selected SDL3 identity may authorize opt-in DirectInput native + UI bridge (STRICT, FAIL-CLOSED)");
+}
+
+int SpiderSDL3Probe_NativeOwnerEnabled(void) {
+  return native_owner_requested && ready && scanned;
+}
+unsigned SpiderSDL3Probe_MappedCount(void) {
+  return SpiderSDL3Probe_NativeOwnerEnabled()?selection.count:0;
+}
+int SpiderSDL3Probe_SelectedIdentity(uint16_t *vid,uint16_t *pid,
+                                     uint32_t *instance_id) {
+  uint16_t v,p;
+  if(vid)*vid=0;
+  if(pid)*pid=0;
+  if(instance_id)*instance_id=0;
+  if(!SpiderSDL3Probe_NativeOwnerEnabled() || !selection.active ||
+     !sdl_vendor || !sdl_product)return 0;
+  v=sdl_vendor(selection.active);p=sdl_product(selection.active);
+  if(!v || !p)return 0; /* A synthetic/unknown product has no safe DI match. */
+  if(vid)*vid=v;
+  if(pid)*pid=p;
+  if(instance_id)*instance_id=selection.active;
+  return 1;
 }
 
 static int sdl_load(void) {
