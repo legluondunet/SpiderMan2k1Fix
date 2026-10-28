@@ -97,3 +97,72 @@ the patch's secondary DS4 DirectInput device, is the first blocking
 dependency for hotplug. PR #76 remains experimental and unmerged.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+
+## Experimental stage 1 implemented (opt-in, PR #76 only)
+
+`native_joystick_unplug.c` adds a **single** original-game x86 guard at
+`0x00501EA6`. The original bytes at that site are
+`81 FE 05 00 07 80`, the `cmp esi,DIERR_OTHERAPPHASPRIO`
+immediately following native `IDirectInputDevice8::Acquire`.
+The guard allocates its own RX stub, replaces **only those 6 bytes**
+with a relative JMP and NOP, and restores the original compare inside
+the stub for every other HRESULT.
+
+The stub handles **only `DIERR_UNPLUGGED=0x80040209`**, clears exactly
+the original buffered joystick-button bytes
+`0x006B7A34..0x006B7A53` (32 bytes) to avoid held face buttons,
+increments a counter, then jumps to the game's own nonfatal
+`0x00501EBB` return, which sets `EAX=0` and restores the
+original stack. No successful acquisition is forged; an unplugged
+game-owned DirectInput interface remains detached. All other
+HRESULTs follow the unchanged original `cmp esi,0x80070005`
+and its native branch/formatter/exit handling. The patch checks the
+original PE image base, 32-bit architecture and **10 exact byte
+signatures** and is only requested after the existing full retail
+SHA-256 verification. It installs on the game render thread at
+Flip #120 (not under loader lock), using a permanent executable
+allocation. Failure to meet any gate preserves the original behavior.
+
+Add to the installed `SpiderMan2k1Fix.ini`:
+
+```ini
+[Input]
+ControllerProfile=Off
+ExperimentalNativeJoystickUnplugGuard=1
+
+[Debug]
+Log=1
+```
+
+`ControllerProfile=Off` isolates the native bug and avoids the
+independent DS4 UI bridge on this first test; `Off` does NOT disable
+the original game's own joystick. The new guard option **defaults to
+0** and is repaired/validated with the other INI boolean settings.
+On startup, confirm the log shows
+`NATIVE-UNPLUG: experimental guard requested` and, after 120
+frames, `NATIVE-UNPLUG: ACTIVE at Flip #120`. If the second
+entry is missing, the guard is not installed and detaching the pad
+can still intentionally exit the retail game. The next Flip after
+a suppressed error should log
+`NATIVE-UNPLUG: suppressed fatal native DIERR_UNPLUGGED`.
+A *successful* first test means the game remains open and keyboard
+controls still work when disconnecting the DS4 from the main menu.
+Do **not** test repeated unplugs or live device replacement until
+this is verified.
+
+**Limitations and risks:** (1) native DirectInput device
+re-enumeration/rebinding has **not** been implemented, so a newly
+plugged controller will likely not recover movement; (2) the original
+32-button buffer was verified statically but other analog/action caches
+may need separate clearing; (3) intercepting a native code path is
+experimental, even when SHA/signatures match. Physical Wine and
+Windows tests remain pending; CI compilation and unit tests do not
+validate runtime stability. Disable the option again if there is
+any instability. Never merge PR #76 before explicit maintainer approval.
+
+The native executable remains unchanged on disk. No global
+`ExitProcess` patch, COM vtable replacement or fabricated HRESULT
+is used.
+
+legluondunet assisted by ChatGPT (OpenAI)
