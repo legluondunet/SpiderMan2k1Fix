@@ -150,6 +150,24 @@ static inline int spider_path_log_a(char *out,size_t cap) {
   strcpy(out,ini);
   return 1;
 }
+/* Prefer new subfolder, accept root-only legacy installs until replaced.
+ * Never fall back to a different DLL if the preferred file exists but
+ * fails to load: such an installation needs an actionable error. */
+static inline int spider_path_code_asset_a(const char *filename,
+                                            char *out,size_t cap) {
+  char preferred[MAX_PATH],root[MAX_PATH],legacy[MAX_PATH];
+  if(!filename || !spider_path_asset_a(filename,preferred,sizeof(preferred)) ||
+     !spider_path_exe_dir_a(root,sizeof(root)) ||
+     !spider_path_join_a(legacy,sizeof(legacy),root,filename))return 0;
+  if(spider_path_file_a(preferred) || !spider_path_file_a(legacy)) {
+    if(strlen(preferred)+1u>cap)return 0;
+    strcpy(out,preferred);
+  } else {
+    if(strlen(legacy)+1u>cap)return 0;
+    strcpy(out,legacy);
+  }
+  return 1;
+}
 static inline int spider_path_dir_w(const WCHAR *path,int create) {
   DWORD attr;
   if(!path || !*path)return 0;
