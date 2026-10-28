@@ -660,9 +660,11 @@ ExperimentalNativeJoystickReconnect=1
 
 [Debug]
 Log=1
+F10Shortcut=0
 NativeJoystickSwapProbe=1
 ```
 
+Disable the independent F10 experiment for this isolation test.
 The probe is debug-only, OFF by default, and only runs when the
 stage-2 rebind experiment is requested and its prior stage-1
 unplug guard is active. At the first eligible original game's
