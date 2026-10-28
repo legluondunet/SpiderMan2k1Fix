@@ -37,6 +37,7 @@ enum {
   SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE,
   SPIDER_SDL3_CONTEXT_COUNT=5,
   SPIDER_SDL3_SETUP_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT+SPIDER_SDL3_CONTEXT_COUNT,
+  SPIDER_SDL3_VISIBLE_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT+2,
   SPIDER_SDL3_PROFILE_BANK_CAPACITY=16,
   SPIDER_SDL3_BUTTON_COUNT=21,
   SPIDER_SDL3_AXIS_COUNT=6,
@@ -142,7 +143,7 @@ static inline int spider_sdl3_profile_default(
   p->context[SPIDER_SDL3_CONTEXT_BACK]=spider_sdl3_bind(1,1);
   p->context[SPIDER_SDL3_CONTEXT_SKIP_VIDEO]=spider_sdl3_bind(1,0);
   p->context[SPIDER_SDL3_CONTEXT_NEXT_STILL]=spider_sdl3_bind(1,0);
-  p->context[SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE]=spider_sdl3_bind(1,3);
+  p->context[SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE]=spider_sdl3_bind(1,0);
   return spider_sdl3_profile_valid(p);
 }
 /* Atomic change for a future in-game wizard. If the new input is already
@@ -208,6 +209,86 @@ static inline SpiderSDL3Binding spider_sdl3_profile_setup_binding(
   if(action<SPIDER_SDL3_SETUP_ACTION_COUNT)
     return p->context[action-SPIDER_SDL3_ACTION_COUNT];
   return spider_sdl3_bind(SPIDER_SDL3_BIND_NONE,0);
+}
+/* Two visible menu/media commands backed by the existing five v2 INI
+ * keys. Loading an older v2 with different skip keys MUST NOT rewrite it
+ * or quietly unify settings. Only an explicit Confirm / Skip capture
+ * synchronizes all four context actions. */
+static inline int spider_sdl3_profile_shared_confirm_binding(
+    const SpiderSDL3ControllerProfile *p,SpiderSDL3Binding *binding) {
+  static const unsigned keys[4]={
+    SPIDER_SDL3_CONTEXT_CONFIRM,SPIDER_SDL3_CONTEXT_SKIP_VIDEO,
+    SPIDER_SDL3_CONTEXT_NEXT_STILL,SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE
+  };
+  unsigned i;
+  if(!p || !binding || !spider_sdl3_profile_valid(p))return 0;
+  *binding=p->context[keys[0]];
+  for(i=1;i<4u;i++)
+    if(!spider_sdl3_binding_equal(*binding,p->context[keys[i]]))
+      return 0;
+  return 1;
+}
+static inline int spider_sdl3_profile_assign_confirm_skip(
+    SpiderSDL3ControllerProfile *p,SpiderSDL3Binding binding) {
+  SpiderSDL3ControllerProfile trial;
+  static const unsigned keys[4]={
+    SPIDER_SDL3_CONTEXT_CONFIRM,SPIDER_SDL3_CONTEXT_SKIP_VIDEO,
+    SPIDER_SDL3_CONTEXT_NEXT_STILL,SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE
+  };
+  unsigned i;
+  if(!p || !spider_sdl3_profile_valid(p) ||
+     !spider_sdl3_binding_valid(binding))return 0;
+  trial=*p;
+  /* Confirm and Back share menus: swap their physical buttons. */
+  if(binding.kind!=SPIDER_SDL3_BIND_NONE &&
+     spider_sdl3_binding_equal(binding,trial.context[SPIDER_SDL3_CONTEXT_BACK]))
+    trial.context[SPIDER_SDL3_CONTEXT_BACK]=
+      trial.context[SPIDER_SDL3_CONTEXT_CONFIRM];
+  for(i=0;i<4u;i++)trial.context[keys[i]]=binding;
+  if(!spider_sdl3_profile_valid(&trial))return 0;
+  *p=trial;
+  return 1;
+}
+static inline int spider_sdl3_profile_assign_back(
+    SpiderSDL3ControllerProfile *p,SpiderSDL3Binding binding) {
+  SpiderSDL3ControllerProfile trial;
+  SpiderSDL3Binding confirm,old_back;
+  int unified;
+  if(!p || !spider_sdl3_profile_valid(p) ||
+     !spider_sdl3_binding_valid(binding))return 0;
+  trial=*p;
+  old_back=trial.context[SPIDER_SDL3_CONTEXT_BACK];
+  unified=spider_sdl3_profile_shared_confirm_binding(&trial,&confirm);
+  if(binding.kind!=SPIDER_SDL3_BIND_NONE &&
+     spider_sdl3_binding_equal(binding,
+                              trial.context[SPIDER_SDL3_CONTEXT_CONFIRM])) {
+    /* If the group was already unified, preserve that invariant and
+     * swap the whole group. For legacy mixed keys, swap menu Confirm only:
+     * keep all other saved contexts exactly as the user configured. */
+    if(unified) {
+      trial.context[SPIDER_SDL3_CONTEXT_CONFIRM]=old_back;
+      trial.context[SPIDER_SDL3_CONTEXT_SKIP_VIDEO]=old_back;
+      trial.context[SPIDER_SDL3_CONTEXT_NEXT_STILL]=old_back;
+      trial.context[SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE]=old_back;
+    } else {
+      trial.context[SPIDER_SDL3_CONTEXT_CONFIRM]=old_back;
+    }
+  }
+  trial.context[SPIDER_SDL3_CONTEXT_BACK]=binding;
+  if(!spider_sdl3_profile_valid(&trial))return 0;
+  *p=trial;
+  return 1;
+}
+static inline int spider_sdl3_profile_assign_visible(
+    SpiderSDL3ControllerProfile *p,unsigned action,
+    SpiderSDL3Binding binding) {
+  if(action<SPIDER_SDL3_ACTION_COUNT)
+    return spider_sdl3_profile_assign(p,action,binding);
+  if(action==SPIDER_SDL3_ACTION_COUNT)
+    return spider_sdl3_profile_assign_confirm_skip(p,binding);
+  if(action==SPIDER_SDL3_ACTION_COUNT+1u)
+    return spider_sdl3_profile_assign_back(p,binding);
+  return 0;
 }
 static inline void spider_sdl3_bank_reset(SpiderSDL3ProfileBank *bank) {
   if(bank)memset(bank,0,sizeof(*bank));
