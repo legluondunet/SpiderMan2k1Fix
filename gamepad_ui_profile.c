@@ -307,6 +307,9 @@ static void xbox_rt_swing_update(long axis,int gameplay_ok) {
   char line[210];
   int should_hold;
   int native_canonical=SpiderNativeReconnect_CanonicalXboxMapping();
+  SpiderXbox360_SetRTAlias(xbox_rt_swing_requested &&
+    detected_kind==SPIDER_RECONNECT_XBOX360 &&
+    (xbox360_preview_active || native_canonical));
   /* Startup Xbox profile OR a successfully reconnected original Xbox
    * whose live 14-action table matches our canonical seven actions.
    * A Sony-at-startup -> Xbox-at-runtime game MUST NOT depend on a
