@@ -174,6 +174,12 @@ def test_late_ds4_cross_returns_after_neutral_but_not_during_bootstrap_gap(tmp_p
       old=now;
       assert(!spider_ps1_menu_confirm_edges(now,old,allowed));
       assert(!spider_ps1_menu_confirm_edges(SPIDER_PS1_MENU_OPTIONS,old,allowed));
+      assert(spider_ps1_menu_confirm_unowned(edge,0)==edge);
+      /* Also exercise the shared safety primitives compiled from these
+       * two static headers, not merely suppress their compiler warnings. */
+      assert(spider_ds4_hotplug_scan_due(&pad,0u,0));
+      spider_ds4_hotplug_focus_lost(&pad);
+      assert(!spider_ds4_hotplug_read_failed(&pad));
       return 0;
     }
     """),encoding="utf-8")
