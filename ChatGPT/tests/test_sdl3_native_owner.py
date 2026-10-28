@@ -84,3 +84,27 @@ def test_sdl3_native_runtime_canonical_pause_and_return_ownership_guards():
     assert "spider_sdl3_selection_focus_lost(&selection)" in _read("sdl3_gamepad_probe.c")
     assert "sdl3_owner_last_attempt=now;" in native
     assert "sdl3_owner_last_verify=now;" in native
+
+
+def test_3d_trace_is_opt_in_read_only_bounded_and_gameplay_only():
+    ini = _read("ini_validation.h")
+    ui = _read("gamepad_ui_profile.c")
+    assert '"SDL3GameplayTrace"' in ini
+    assert 'GetPrivateProfileIntA("Debug","SDL3GameplayTrace",0,ini)==1' in ui
+    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1' in ui
+    assert "sdl3_3d_trace_lines>=64u" in ui
+    assert "selected-id=%lu kind=%s" in ui
+    assert "secondary DirectInput READ-ONLY; native game actions NOT inferred" in ui
+    block = ui.split("static void sdl3_trace_3d_readonly(", 1)[1].split(
+        "void SpiderGamepadUI_OnFlip(", 1
+    )[0]
+    for forbidden in (
+        "IDirectInputDevice8_", "IDirectInput8_", "SendInput(",
+        "VirtualProtect(", "WriteFile(", "Acquire(", "SetProperty(",
+    ):
+        assert forbidden not in block
+    assert "if(gameplay_3d && !menu_2d && !bink_active && !native_pause_active)" in ui
+    assert "sdl3_trace_3d_readonly(&state);" in ui
+    assert "sdl3_3d_trace_valid=0;" in ui
+    assert "sdl3_3d_trace_id!=sdl3_ui_instance" in block
+    assert 'first?"OWNER":changed?"BUTTON":"AXIS"' in block
