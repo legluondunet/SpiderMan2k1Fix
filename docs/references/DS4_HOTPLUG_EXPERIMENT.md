@@ -39,8 +39,9 @@ none of the promised Xbox 360, DualShock 2 or rumble support.
   before the first real game entry. If the DS4 was absent at startup,
   that verified bootstrap was skipped: late discovery does **not**
   silently call the original config loader during 3D or rewrite game
-  controller tables. In that scenario only non-PS1 legacy UI bridge
-  functions can become available until a game restart.
+  controller tables. In that scenario **synthetic UI input remains disabled** rather than
+  silently falling back to the *different* legacy Cross/Options mapping.
+  Restart the game with the controller connected to activate PS1 preview.
 - Connecting or disconnecting while the **custom Alt+Tab PAUSED screen**
   blocks Flip does not trigger rediscovery until after keyboard wake.
   Its static gamepad prompt is a snapshot from PAUSED entry, not a live
@@ -64,8 +65,9 @@ none of the promised Xbox 360, DualShock 2 or rumble support.
    checked independently of secondary synthetic menu input; if native
    input fails after replug, report that limitation explicitly.
 4. **Connect after startup with no DS4:** periodic discovery should
-   recognize the verified device, but this **must not** be reported as
-   full PS1 native gameplay profile activation.
+   recognize the verified device, but **no synthetic input** may be
+   generated and this must **not** be reported as full PS1 native gameplay
+   profile activation. Relaunch with the DS4 connected for PS1 preview.
 5. **Alt+Tab during and after reconnect:** desktop pointer works,
    PAUSED freeze persists until keyboard or previously acquired DS4
    press/release; game internal mouse remains disabled when configured.
