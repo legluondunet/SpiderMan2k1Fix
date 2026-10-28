@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — controller cleanup and accepted Cross-only PS1 navigation (PR #74)
+
+- Maintainer **visually validated** that OPTIONS/BUTTON9 alone does nothing in the native 2D title menu under Linux/X11/Wine with a Sony `054C:05C4` DS4. The separate 10:33 game log confirms Cross-only PS1 preview activation, SHARE/native pause, original Quit request 7, native 3D cleanup and successful interception of one inherited Cross edge (85 ms gap) on return to 2D. The physical source of the delayed Cross signal remains unproven.
+- Preserve **Cross as the only synthetic Enter button** in PS1 preview (even when legacy `ControllerEnterButtons=Both` is configured). Preserve all legacy settings and menu input behavior outside preview. Keep OPTIONS-only native 3D script skip disabled by default.
+- Refactor the menu-confirm policy into pure C99 helpers with host-compiled button/edge/owner regression cases; update legacy-versus-PS1 discovery and INI comments to avoid wrongly claiming that OPTIONS confirms in the PS1 profile. Clarify that the Joystick read-only protection is separately gated.
+- For routine opt-in testing, leave diagnostic `ControllerPS1QuitTrace=0` and `ControllerPS1InputFlightRecorder=0`, and favor `ControllerPS1TransitionEdgeOwnership=1` over the old optional eight-Flip `ControllerPS1PostQuitGuard=0`. Retain both options in code as fallbacks until broader hardware/Windows verification; **no default activation, release or merge**.
+
 ## Unreleased — DS4 native confirmation ownership experiment (PR #74)
 
 - Read-only `ControllerPS1InputFlightRecorder=1` trace `SpiderMan2k1Fix(20261028-084402).log` isolates the apparent duplicate Cross action: last successful 3D poll `seq=586` reports `Cross=0 previous-mask=0`; first returned 2D poll `seq=587` reports `Cross=1 previous-mask=0 request=7`. The game has already processed the native Quit/Yes. No focus loss, missing device or DirectInput failure occurs between these two polls. This is a **new observed raw input edge on the first 2D frame**, not a proven spontaneous hardware signal or reset. The exact physical press moment is unobserved.
