@@ -26,7 +26,8 @@ def test_profile_is_automatic_for_verified_sony_dualshock4_only():
     assert "ControllerProfile=Auto" in CFG
     assert "ControllerEnterButtons=Both" in CFG
     assert "ControllerBackButton=Circle" in CFG
-    assert '"ControllerProfile","ControllerEnterButtons","ControllerBackButton"' in INI
+    assert "ControllerPauseButton=Options" in CFG
+    assert '"ControllerProfile","ControllerEnterButtons","ControllerBackButton","ControllerPauseButton"' in INI
 
 
 def test_input_profile_preserves_original_gamepad_and_never_hooks_com():
@@ -44,8 +45,11 @@ def test_input_profile_preserves_original_gamepad_and_never_hooks_com():
     assert "SpiderGamepadStart_Init" not in MAIN
 
 
-def test_ui_enter_is_not_injected_into_3d_or_background():
-    assert "permitted=menu_2d && !gameplay_3d" in PROFILE
+def test_ui_enter_is_not_injected_into_ordinary_3d_or_background():
+    assert "menu_allowed=menu_2d && !gameplay_3d" in PROFILE
+    assert "movie_allowed=bink_active!=0" in PROFILE
+    assert "confirm_allowed=menu_allowed || movie_allowed" in PROFILE
+    assert "gameplay_allowed=gameplay_3d && !menu_2d && !movie_allowed" in PROFILE
     assert "GetForegroundWindow()!=hwnd" in PROFILE
     assert "else if((pressed & (unsigned)confirm)" in PROFILE
     assert "release_active_key();" in PROFILE
@@ -78,7 +82,7 @@ def test_known_ds4_buttons_and_honest_compatibility_limits():
     assert "ControllerEnterButtons" in INI
     assert "ControllerBackButton" in INI
     assert "KEYEVENTF_SCANCODE" in PROFILE
-    assert "NOT yet verified under Wine" in PROFILE
+    assert "still need" in PROFILE or "still need" in HEADER
     assert "ExperimentalGamepadStart" in PROFILE
     assert "old ExperimentalGamepadStart is RETIRED/ignored" in PROFILE
 
@@ -100,3 +104,36 @@ def test_circle_back_has_precedence_and_never_overlaps_gameplay():
     assert "state.rgbButtons[3]" not in PROFILE
     assert "KEYEVENTF_SCANCODE|KEYEVENTF_KEYUP" in PROFILE
     assert "gameplay_3d" in PROFILE
+
+
+def test_native_movie_flag_not_viewport_is_used_after_main_menu():
+    assert "0x006151F8u" in MAIN
+    assert "SpiderGamepadUI_OnFlip(game_hwnd" in MAIN
+    assert "InterlockedCompareExchange(&fov_game_height,0,0)>0" in MAIN
+    assert "(*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u" in MAIN
+    assert "gameplay_4x3_active,0,0)==1);" not in MAIN.split(
+        "SpiderGamepadUI_OnFlip(game_hwnd", 1
+    )[1][:320]
+    assert "movie_allowed=bink_active!=0" in PROFILE
+    assert "confirm_allowed=menu_allowed || movie_allowed" in PROFILE
+    assert 'begin_scancode(0x1Cu,"Return");' in PROFILE
+
+
+def test_options_3d_pause_checks_entire_original_gamepad_button_map():
+    # Original game binds BUTTON9/OPTIONS to native Zipline by default.
+    # The fix MUST NOT inject Escape and trigger Zipline in one 3D frame.
+    assert "native_factory_buttons[7]={3u,4u,0u,1u,6u,9u,7u}" in PROFILE
+    assert '"Jump","Kick","Punch","Web","Aim","Zipline","Swing"' in PROFILE
+    assert "button==9u" in PROFILE
+    assert "if(!parse_native_button(value,&button) || button==9u)" in PROFILE
+    assert 'GetPrivateProfileStringA("Joystick",native_actions[i],fallback' in PROFILE
+    assert "PAUSE BLOCKED:" in PROFILE
+    assert "options_free_of_native_actions()" in PROFILE
+    assert 'pause_button==SPIDER_PAUSE_OPTIONS' in PROFILE
+    assert "gameplay_allowed && pause_button" in PROFILE
+    assert "pause_pressed && !previous_pause" in PROFILE
+    assert 'ControllerPauseButton","Options"' in PROFILE
+    assert "ControllerPauseButton=Options" in CFG
+    assert "ControllerPauseButton" in INI
+    assert "state.rgbButtons[3]" not in PROFILE  # native Triangle untouched
+    assert "VirtualProtect(" not in PROFILE
