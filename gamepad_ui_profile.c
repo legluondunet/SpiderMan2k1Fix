@@ -87,7 +87,7 @@ static void xbox_try_readonly_menu(void);
 static int back=SPIDER_BACK_CIRCLE,pause_button=SPIDER_PAUSE_OPTIONS;
 static int ps1_preview_requested=0,ps1_preview_active=0,previous_share=0;
 static int ps1_options_skip_requested=0;
-static int ps1_readonly_menu_requested=0;
+
 /* MouseEnabled is global; no DS4-dependent mouse state lives here. */
 static int ps1_quit_trace_requested=0;
 static int ps1_post_quit_guard_requested=0;
@@ -409,7 +409,8 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   xbox_trigger_probe_requested=GetPrivateProfileIntA("Debug","Xbox360TriggerProbe",0,ini)==1;
   xbox_rt_swing_requested=GetPrivateProfileIntA("Input","ControllerXbox360RTSwing",0,ini)==1;
   ps1_options_skip_requested=GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1;
-  ps1_readonly_menu_requested=GetPrivateProfileIntA("Input","ControllerPS1ReadOnlyJoystick",0,ini)==1;
+  /* ControllerPS1ReadOnlyJoystick is legacy. A supported detected
+   * controller now always gets a read-only Joystick menu. */
   /* Global game-only mouse policy replaces the retired DS4-only option.
    * Absent MouseEnabled is intentionally OFF for existing/fresh INIs.
    * MouseEnabled=1 explicitly restores normal mouse menu interaction. */
@@ -827,6 +828,17 @@ static void xbox_try_readonly_menu(void) {
     report("GAMEPAD-XBOX360: JOYSTICK-READONLY REFUSED: original machine-code signatures not matched or patch installation failed; menu may still be editable");
   else xbox_readonly_active=1;
 }
+/* Joystick Configuration is a viewer whenever a supported physical
+ * controller is detected. This lock is NOT conditional on the optional
+ * seven-action gameplay preview; the native game action list is shown
+ * without permitting rebinding, while Keyboard remains editable. */
+void SpiderGamepadUI_ArmPS1ReadOnly(void) {
+  if(!configured || profile==SPIDER_PROFILE_OFF ||
+     profile==SPIDER_PROFILE_XBOX360 || !detected || !device ||
+     detected_kind!=SPIDER_RECONNECT_DS4)return;
+  if(!SpiderPS1_InstallReadOnlyJoystick(log_message))
+    report("GAMEPAD-PS1: JOYSTICK-READONLY inactive; exact native signatures missing or failed to install");
+}
 void SpiderGamepadUI_ArmXbox360ReadOnly(void) {
   if(!configured || profile==SPIDER_PROFILE_OFF ||
      profile==SPIDER_PROFILE_DUALSHOCK4)return;
@@ -845,8 +857,8 @@ void SpiderGamepadUI_ActivatePS1(void){
   back=SPIDER_BACK_CIRCLE;
   report("GAMEPAD-UI: PS1-PREVIEW ACTIVE, fixed gameplay RAM only; CROSS-only 2D/Bink/pause confirmation (OPTIONS/Start not mapped to Enter); original Joystick read-only remains optional/strictly gated");
   ps1_probe_native_start_tables(); /* read-only scan; optional checked single-DWORD RAM experiment */
-  if(ps1_readonly_menu_requested && !SpiderPS1_InstallReadOnlyJoystick(log_message))
-    report("GAMEPAD-PS1: JOYSTICK-READONLY inactive; exact native signatures missing or failed to install");
+  /* The viewer lock is now armed at bootstrap for a detected DS4,
+   * independently of whether the optional gameplay preview loaded. */
   /* Game mouse suppression is configured globally and verified on Flip,
    * independently of whether this optional PS1 preview is active. */
 }
