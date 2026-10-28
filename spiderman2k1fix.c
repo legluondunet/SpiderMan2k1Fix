@@ -2421,6 +2421,7 @@ static void pause_at_flip_if_background(void) {
   MSG msg;
   RECT pause_present_rect,pause_content_rect;
   int pause_gamepad_available=0;
+  int pause_previous_foreground=0;
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
   if(GetForegroundWindow()==hwnd) {
     pause_background_since=0;
@@ -2492,6 +2493,7 @@ static void pause_at_flip_if_background(void) {
                              &pause_present_rect,&pause_content_rect,
                              (SpiderPauseBltFn)original_blt,
                              pause_gamepad_available);
+  pause_previous_foreground=(GetForegroundWindow()==hwnd);
   while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1) {
     while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
       if(msg.message==WM_QUIT) {
@@ -2510,6 +2512,19 @@ static void pause_at_flip_if_background(void) {
       DispatchMessageA(&msg);
     }
     if(!IsWindow(hwnd)) break;
+    /* The normal Flip-based focus monitor cannot run until this custom
+     * PAUSED wait ends. On return to game foreground, balance its temporary
+     * background ShowCursor(TRUE) NOW, before any wake input. Otherwise the
+     * desktop cursor lingers over PAUSED until the game resumes.
+     * Call the already-existing focus transition monitor exactly once
+     * per foreground change. Do not touch the game's own mouse gate. */
+    {
+      int pause_now_foreground=GetForegroundWindow()==hwnd;
+      if(pause_now_foreground!=pause_previous_foreground) {
+        SpiderInputFocus_OnFlip(InterlockedCompareExchange(&flip_count,0,0));
+        pause_previous_foreground=pause_now_foreground;
+      }
+    }
     if(SpiderPauseAny_Completed())
       InterlockedExchange(&pause_latched,0);
     else {
