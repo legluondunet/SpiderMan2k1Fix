@@ -133,12 +133,40 @@ In-game workflow:
    in-memory preview, and **Close** resumes the original game.
    Esc cancels capture first; a second Esc closes the dialog.
    There is no special gamepad navigation requirement; keyboard works.
-5. The window pumps only the **already initialized** SDL3 subsystem
+5. **No mouse is needed.** On opening the preview, focus starts on
+   the actions list. The independent keyboard shortcuts work even with
+   `[Input] MouseEnabled=0`:
+   `Up/Down` change the selected action; `Enter` starts its capture;
+   `PageUp/PageDown` cycle between SDL3 gamepads; `F5` restores
+   defaults for the current model; `Escape` cancels capture (or closes
+   the window if not capturing); `F1` repeats the help text.
+   `Tab` and `Space` continue to operate the native Win32 controls,
+   and `Enter` activates focused Restore/Close buttons.
+   A mapped gamepad can navigate too: **D-pad Up/Down** changes the
+   action, **South (A/Cross)** starts capture, **East (B/Circle)**
+   closes the preview, **LB/RB (L1/R1)** switches between connected
+   mapped gamepads, and **North (Y/Triangle)** restores the current
+   model defaults. Physical navigation requires a first neutral
+   sample, is edge-triggered (no repeated action on held buttons),
+   discards simultaneous/Start/Guide presses, and suspends while a
+   button is being captured. A keyboard is always a fallback.
+6. The window pumps only the **already initialized** SDL3 subsystem
    on the **same game thread**, while the normal Flip loop is stopped.
    It never consumes game-owned DirectInput events, claims SDL native
    ownership, writes game memory, creates threads or injects keys.
    It stops reading controls if the dialog loses focus, and discards
    pending captures on device changes or disconnection.
+
+**Wine accessibility retest:** The first hardware capture
+`SpiderMan2k1Fix(20261028-223017).log` confirms that the native
+menu entry opens, the Xbox 360 is detected (`045E:028E`), a semantic
+binding changes in memory, restoring defaults succeeds, and closing
+returns to the original game. The maintainer's screenshot also shows
+the original game mouse disabled, so the new keyboard/gamepad
+navigation is being introduced specifically to remove the dialog's
+mouse dependency. The **new shortcuts themselves are not yet physically
+tested**; verify them with the next Windows x86 artifact. The title
+and help now use ASCII-only Win32 labels to avoid Wine ANSI mojibake.
 
 **Limitations:** The preview's assignments are **not yet persisted** and
 **do not yet modify gameplay**. The native game continues to own 3D
