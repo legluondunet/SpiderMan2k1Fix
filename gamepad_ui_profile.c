@@ -1159,6 +1159,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   int menu_allowed,movie_allowed,confirm_allowed,gameplay_allowed,pause_pressed;
   int share_pressed,share_edge,native_start_pressed;
   int late_ds4_menu_only=0;
+  int sdl3_live_sony=0;
   int post_quit_block=0;
   unsigned ownership_block=0,native_request=0;
   /* Always apply game-only mouse policy, even with ControllerProfile=Off
@@ -1294,8 +1295,12 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
    * shortcuts or change any original game-owned input table here.
    * The existing hotplug neutral->fresh-edge gate protects against
    * accidental Return when connecting with CROSS held. */
+  sdl3_live_sony=detected_kind==SPIDER_RECONNECT_DS4 &&
+    SpiderSDL3Probe_NativeOwnerEnabled() &&
+    SpiderNativeReconnect_CanonicalDS4Mapping();
   late_ds4_menu_only=detected_kind==SPIDER_RECONNECT_DS4 &&
-                      ps1_preview_requested && !ps1_preview_active;
+                      ps1_preview_requested && !ps1_preview_active &&
+                      !sdl3_live_sony;
   if(late_ds4_menu_only && !hotplug_late_preview_reported) {
     report("GAMEPAD-HOTPLUG: late DS4 with no Sony CRT preview; Cross=BUTTON1 and Circle=BUTTON2 MENU/BINK bridge ENABLED after neutral+fresh edge; Sony 3D synthetic actions DISABLED (native mapping unchanged)");
     hotplug_late_preview_reported=1;
@@ -1437,10 +1442,13 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
        ps1_cutscene_reports++<8u)
       report("GAMEPAD-UI: PS1-3D-OPTIONS refused: original CutSceneSkipAllow absent, inactive, unreadable or already requested");
   }
-  if(ps1_preview_active && (gameplay_allowed || native_pause_active) &&
+  if((ps1_preview_active || sdl3_live_sony) &&
+     (gameplay_allowed || native_pause_active) &&
      !movie_allowed && share_edge) {
     begin_scancode(0x01u,"Escape");
-    if(ps1_native_start_unbound)
+    if(sdl3_live_sony && !ps1_preview_active)
+      report("SDL3-OWNER-UI: canonical native Sony DS4 SHARE -> Escape in 3D/pause; game-owned mapping verified");
+    else if(ps1_native_start_unbound)
       report("GAMEPAD-UI: PS1-PREVIEW SHARE -> Escape during 3D/pause; original Start RAM unbound (runtime behavior still to verify)");
     else
       report("GAMEPAD-UI: PS1-PREVIEW SHARE -> Escape during 3D/pause; original Start mapping retained");
