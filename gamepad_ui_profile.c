@@ -55,6 +55,7 @@ static unsigned active_scan=0;
 static LONG sent_enter=0,sent_escape=0;
 static char profile_ini[MAX_PATH]={0};
 static unsigned pause_conflict_reports=0,outside_mode_reports=0;
+static unsigned postmenu_bink_reports=0;
 static unsigned bad_reads=0;
 static IDirectInput8A *di=NULL;
 static IDirectInputDevice8A *device=NULL;
@@ -159,7 +160,7 @@ static void begin_scancode(unsigned scan,const char *action) {
   number=scan==0x01u?++sent_escape:++sent_enter;
   if(number<=20) {
     snprintf(line,sizeof(line),
-      "GAMEPAD-UI: SYNTHETIC %s (DIK 0x%02X) down #%ld; release next Flip; 2D scope only",
+      "GAMEPAD-UI: SYNTHETIC %s (DIK 0x%02X) down #%ld; release next Flip; native menu/Bink/guarded 3D scope",
       action,scan,(long)number);
     report(line);
   }
@@ -335,6 +336,8 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,int bink_activ
             (pressed & (unsigned)confirm) &&
             !(previous_buttons & (unsigned)confirm)) {
     begin_scancode(0x1Cu,"Return");
+    if(movie_allowed && !menu_allowed && postmenu_bink_reports++<8u)
+      report("GAMEPAD-UI: POST-MENU BINK Return attempted with original GameFMV_Active=1; native video skip gate remains authoritative");
   } else if(gameplay_allowed && pause_button==SPIDER_PAUSE_OPTIONS &&
             pause_pressed && !previous_pause &&
             options_free_of_native_actions()) {
