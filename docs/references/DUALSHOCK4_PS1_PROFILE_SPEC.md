@@ -362,6 +362,79 @@ and report no/one/multiple candidates with `truncated-regions`.
 Compare against the user-validated previous runtime behavior; do NOT
 change the joystick menu or persistent game settings during this test.
 
+## Native Start/BUTTON11 disable experiment — October 28
+
+Following the first **complete** read-only DS4 runtime scan
+(`v1.1.0-1da610c`), the original verified retail `.data` contains
+**one** 14-action candidate at RVA `0x00168408` (Start=BUTTON11);
+`truncated-regions=0`, `deep=1`, `queried-regions=1`.
+The earlier two-table assumption is not supported by this scan.
+
+The **next build** adds the manually opted-in **experimental**
+`ControllerPS1DisableNativeStart=1`. This is **not** enabled in
+`ControllerProfile=Auto`, and **not** validated in-game. This
+option must **also** have `ControllerPS1Preview=1` and
+`ControllerPS1DeepStartProbe=1`; otherwise it fails closed.
+
+Even after a complete read-only scan, the original Start binding is
+modified **only if** all of the following are true:
+
+- One and only one exact original **14-action sequence** is present
+  in one fully scanned writable `.data` section; no truncated or
+  unreadable regions; only one matching **strict factory** table.
+- All original action masks are correct; unused action slots have
+  native `0x4000` sentinel, Start originally has `BUTTON11`, final
+  action slot is 0, and other native button indices are valid.
+- A **single aligned writable DWORD** at
+  `RVA 0x00168408 + (11 * 8 + 4) = 0x00168464`
+  remains mapped and Start still equals `11` during the checked,
+  atomic compare-and-swap.
+
+If and only if those checks succeed, the **one original Start button
+index** changes in **process RAM only** to the already used native
+unbound sentinel `0x4000`. No executable file, DirectInput COM
+object, joystick save or unrelated action changes. Closing and
+restarting the game discards this RAM-only change. SHARE continues
+to synthesize Escape while the PS1 preview is active.
+
+**Important risk/limitation:** the code's strict factory check is
+derived from earlier native mapping research and might fail for the
+user's real table. That is intended: no write should occur if any
+assumption is wrong. Even a successful atomic RAM write does **not**
+prove that this is the game-owned *live* Start table; the real runtime
+test must show that the old camera/R3/BUTTON11 no longer opens the
+pause menu, while SHARE still works. In addition, the original game's
+separate Joystick Configuration screen is **not yet disabled**.
+
+### Single-variable A/B test (only after the optional build is ready)
+
+Start with the same INI and game install as the successful prior run.
+For a conservative test first leave `ControllerPS1DisableNativeStart=0`
+and check `START-TABLE ... strict=1`. Then, in a separate launch:
+
+```ini
+[Input]
+ControllerProfile=Auto
+ControllerPS1Preview=1
+ControllerPS1DeepStartProbe=1
+ControllerPS1DisableNativeStart=1
+ControllerPS1OptionsSkip=0
+
+[Debug]
+Log=1
+```
+
+Find `GAMEPAD-PS1: NATIVE-START-UNBIND EXPERIMENT ACTIVE` or
+`... REFUSED`. Only when ACTIVE: open the in-game menu with SHARE,
+try the **old camera/R3** button and report whether it still opens
+the menu. Do not edit the Joystick Configuration menu during this
+test, and do not enable the unrelated unvalidated OPTIONS cinematic
+skip experiment at the same time.
+
+The experiment is not approved for default enablement or release.
+PR #74 remains a dependent draft and cannot be merged until explicit
+maintainer validation.
+
 ## Next phase after prototype validation
 
 - Complete native joystick-menu lock, native Start suppression, scene
