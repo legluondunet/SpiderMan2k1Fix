@@ -50,7 +50,7 @@ static int requested=0,initialized=0,scan_started=0,device_missing=0;
 static DWORD last_scan=0, native_thread=0;
 static LONG last_events=0;
 static unsigned scans=0,rebound=0,failed=0;
-static int swap_probe_enabled=0,swap_initial_seen=0;
+static int swap_probe_enabled=0,swap_initial_seen=0,swap_mapping_enabled=0;
 static unsigned swap_last_kind=0,swap_probe_reports=0;
 static void (*write_log)(const char *)=NULL;
 
@@ -157,6 +157,92 @@ static void observe_native_swap_table(const char *phase,unsigned from_kind,
   report(msg);
   if(valid && to_kind!=0u && preset!=0u && preset!=to_kind)
     report("NATIVE-SWAP-PROBE: PROFILE MISMATCH: device has changed but game still uses prior native action mapping; no unsafe runtime patch attempted");
+}
+/* Stage 4, explicitly opted in: switch ONLY the native 7 action/button
+ * DWORDs in gControllerMappings (0x568408), not the game default table,
+ * current keyboard actions, user INI or game executable on disk.
+ * The original PCInput.cpp gControllerMappings[0x70] is 14 (mask, button)
+ * pairs; original GetControllerMappingForAction reads THIS current table.
+ * Only a fully verified known Sony/Xbox canonical preset can be replaced.
+ * Customized bindings are never overwritten, and no key is injected.
+ * This runs on the native game thread at the foreground Flip boundary,
+ * AFTER successful neutral game-owned DirectInput device publication. */
+static void swap_native_gameplay_mapping(unsigned to_kind) {
+  const uintptr_t address=(uintptr_t)SPIDER_NATIVE_ACTION_TABLE;
+  const uint32_t *target;
+  uint32_t original[SPIDER_PS1_BUTTON_COUNT]={0};
+  uint32_t current[SPIDER_PS1_BUTTON_COUNT]={0};
+  MEMORY_BASIC_INFORMATION mbi;
+  DWORD prot,old,unused;
+  unsigned preset,i;
+  char line[215];
+  if(!swap_mapping_enabled || (to_kind!=SPIDER_RECONNECT_DS4 &&
+     to_kind!=SPIDER_RECONNECT_XBOX360))return;
+  if(sizeof(void*)!=4 || (uintptr_t)GetModuleHandleA(NULL)!=SPIDER_NATIVE_BASE ||
+     VirtualQuery((const void *)address,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)) ||
+     address<(uintptr_t)mbi.BaseAddress ||
+     address-(uintptr_t)mbi.BaseAddress>=mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(address-(uintptr_t)mbi.BaseAddress)<0x70u) {
+    report("NATIVE-SWAP: REFUSED memory layout/permissions unverified; no mapping changed");
+    return;
+  }
+  prot=mbi.Protect&0xffu;
+  if(prot!=PAGE_READWRITE && prot!=PAGE_WRITECOPY) {
+    report("NATIVE-SWAP: REFUSED original native action map is not writable data");
+    return;
+  }
+  if(!spider_native_swap_read((const uint8_t *)address,0x70u,current)) {
+    report("NATIVE-SWAP: REFUSED 14-entry native action-map integrity check failed");
+    return;
+  }
+  preset=spider_native_swap_preset(current);
+  if(preset!=SPIDER_RECONNECT_DS4 &&
+     preset!=SPIDER_RECONNECT_XBOX360) {
+    report("NATIVE-SWAP: REFUSED CUSTOM joystick mapping; preserve personal action bindings");
+    return;
+  }
+  if(preset==to_kind) {
+    report("NATIVE-SWAP: profile already matches newly acquired pad; no RAM write");
+    return;
+  }
+  target=to_kind==SPIDER_RECONNECT_DS4?
+      spider_ps1_buttons:spider_xbox360_buttons;
+  for(i=0;i<SPIDER_PS1_BUTTON_COUNT;i++)original[i]=current[i];
+  if(!VirtualProtect((void *)address,0x70u,PAGE_READWRITE,&old)) {
+    report("NATIVE-SWAP: REFUSED cannot protect native mapping table for write");
+    return;
+  }
+  for(i=0;i<SPIDER_PS1_BUTTON_COUNT;i++) {
+    uintptr_t offset=8u*(SPIDER_NATIVE_SWAP_FIRST_ACTION+i)+4u;
+    memcpy((void *)(address+offset),&target[i],4u);
+  }
+  if(!spider_native_swap_read((const uint8_t *)address,0x70u,current) ||
+     spider_native_swap_preset(current)!=to_kind) {
+    for(i=0;i<SPIDER_PS1_BUTTON_COUNT;i++) {
+      uintptr_t offset=8u*(SPIDER_NATIVE_SWAP_FIRST_ACTION+i)+4u;
+      memcpy((void *)(address+offset),&original[i],4u);
+    }
+    VirtualProtect((void *)address,0x70u,old,&unused);
+    report("NATIVE-SWAP: FAILED post-write validation, original 7 bindings restored");
+    return;
+  }
+  if(!VirtualProtect((void *)address,0x70u,old,&unused)) {
+    DWORD scratch;
+    if(VirtualProtect((void *)address,0x70u,PAGE_READWRITE,&scratch)) {
+      for(i=0;i<SPIDER_PS1_BUTTON_COUNT;i++) {
+        uintptr_t offset=8u*(SPIDER_NATIVE_SWAP_FIRST_ACTION+i)+4u;
+        memcpy((void *)(address+offset),&original[i],4u);
+      }
+      VirtualProtect((void *)address,0x70u,old,&unused);
+    }
+    report("NATIVE-SWAP: FAILED page-protection restoration; original bindings rollback attempted");
+    return;
+  }
+  snprintf(line,sizeof(line),
+    "NATIVE-SWAP: APPLIED game-owned seven-button 3D action profile %s->%s (0x568408 validated; RAM only, INI/keyboard preserved; menu refresh on reopen)",
+    swap_kind_name(preset),swap_kind_name(to_kind));
+  report(line);
 }
 static void close_candidate(IDirectInputDevice8A *device) {
   if(!device)return;
@@ -310,6 +396,7 @@ static void try_rebind(HWND hwnd) {
   device_missing=0;
   rebound++;
   observe_native_swap_table("rebound",swap_last_kind,list.kind);
+  swap_native_gameplay_mapping(list.kind);
   swap_last_kind=list.kind;
   snprintf(line,sizeof(line),
     "NATIVE-RECONNECT: REBOUND original game-owned DirectInput joystick %s VID=%04X PID=%04X; rebound=%u scan=%u buttons=%lu polled=%u; native controls restored (hardware validation pending)",
@@ -396,6 +483,7 @@ void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *)) {
       "ExperimentalNativeJoystickReconnect",0,ini)==1);
   initialized=0;
   swap_probe_enabled=0;
+  swap_mapping_enabled=0;
   swap_initial_seen=0;
   swap_last_kind=0;
   swap_probe_reports=0;
@@ -408,6 +496,8 @@ void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *)) {
   }
   swap_probe_enabled=GetPrivateProfileIntA("Debug",
       "NativeJoystickSwapProbe",0,ini)==1;
+  swap_mapping_enabled=GetPrivateProfileIntA("Input",
+      "ExperimentalNativeJoystickMappingSwap",0,ini)==1;
   initialized=valid_binary_layout();
   if(!initialized) {
     requested=0;
@@ -416,7 +506,9 @@ void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *)) {
   }
   report("NATIVE-RECONNECT: requested experimental game-owned Sony DS4 / Xbox 360 DirectInput rebind, only after guard is installed and foreground");
   if(swap_probe_enabled)
-    report("NATIVE-SWAP-PROBE: requested; fingerprint game-owned 14-slot native mapping before/after rebind; no runtime mapping writes");
+    report("NATIVE-SWAP-PROBE: requested; fingerprint game-owned 14-slot native mapping before/after rebind; optional explicitly gated runtime swaps");
+  if(swap_mapping_enabled)
+    report("NATIVE-SWAP: opt-in guarded DS4/Xbox profile switch after successful native reconnect; only canonical 7-action current RAM map, no disk/keyboard writes");
 }
 void SpiderNativeReconnect_OnFlip(long flip_index, HWND game_hwnd) {
   LONG events;
