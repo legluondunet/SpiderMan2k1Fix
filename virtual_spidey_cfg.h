@@ -17,7 +17,4 @@ int SpiderCfg_EnablePS1Preview(void);
 /* True only after an authenticated game-owned loader consumed the overlay. */
 int SpiderCfg_PS1BootstrapLoaded(void);
 void SpiderCfg_CancelPS1Preview(void);
-/* Separate, opt-in Xbox button-layout overlay; never persists to user INI. */
-int SpiderCfg_EnableXbox360Preview(void);
-void SpiderCfg_CancelXbox360Preview(void);
 #endif
