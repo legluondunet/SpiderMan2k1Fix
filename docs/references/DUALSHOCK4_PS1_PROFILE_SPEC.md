@@ -90,6 +90,74 @@ should produce `GAMEPAD-MOUSE: GAME MOUSE RESTORED`. Neither
 proves correct selection behavior until the maintainer checks it
 in-game. Do not promote or merge PR #74 automatically.
 
+## New in-game Quit → Yes regression report (Oct 28, 2026)
+
+The maintainer **confirmed the experimental** `ControllerAutoDisableMouse=1`
+**works**: the game cursor and stale mouse hover no longer override
+DualShock 4 selection.
+
+**Separate unresolved bug:** In playable 3D, pressing SHARE opens
+native pause; selecting **Quit** shows a **Yes/No confirmation**;
+confirming **Yes** unexpectedly launches a new game rather than
+returning as intended. The user reports this may also happen when the
+game mouse is enabled; **causality not yet established**. There is no
+log of this specific new incident attached yet. Do not mark it fixed.
+
+### What the verified original code shows
+
+- Original `PCSHELL_IsMouseOverText` (`0x0050C6C0`) checks
+  `gRenderTest & 0x10` and immediately returns zero when mouse is
+  disabled. This is **in addition to** the already checked original
+  cursor/mouse-update/rectangle-hover gates. Therefore a lingering
+  hit-test in this specific helper is unlikely to explain the bug
+  with `ControllerAutoDisableMouse=1`.
+- Original handler `PShell_EndTrainingUpdate` (`0x0047BC40`) has a
+  selection index at the *verified menu object* `0x682968 + 0x14`:
+  index 0 requests engine code 8, 1 requests code 10,
+  2 requests code 7 (return to main menu). **Important:** this
+  handler is named EndTrainingUpdate; do not assume every main-game
+  pause/confirmation uses the same menu object or mapping.
+  A **separate** original `0x440EF0` gameplay input owner can
+  request 7. Thus code inspection alone is not proof which branch
+  produced the user's new-game launch.
+- Previous game logs already contain genuine transitions 7 and
+  successful normal teardown; they do not record the new regression.
+  Our current gamepad bridge synthesizes a **single Enter on a Cross
+  edge** in recognized 2D/native-pause contexts. We must establish
+  whether the wrong transition happens **before** a return to menu
+  or whether a subsequent gamepad confirmation is misrouted.
+
+### Conservative diagnostic candidate (OFF by default)
+
+Enable `[Input] ControllerPS1QuitTrace=1` (and `[Debug] Log=1`)
+while retaining the otherwise functional DS4 profile. The new
+`GAMEPAD-PS1: QUIT-TRACE` messages sample the original
+`0x682968` confirmation owner, `0x682960` auxiliary owner, their
+readable selection bytes at `+0x14`, original `0x682950`
+pause context, `0x60CFA4` engine transition request,
+mouse-off bit, and **separate physical Cross/Circle/SHARE press edges**.
+The pointer reads are VirtualQuery-guarded; at most 130 changed-state
+samples are logged; no original game values are written. Native
+owners may live for less than a Flip, so a `choice=-1` does not
+prove an absent choice.
+
+On the **same save/level** and preferably with a fresh launch for
+each run, compare:
+
+1. Mouse disabled 1, confirm **Quit → Yes** with DS4 Cross.
+2. Mouse disabled 1, use **keyboard Enter** for the final Yes (not
+   Cross); avoid pressing another controller button until transition.
+3. Mouse disabled 0, repeat Cross confirmation.
+4. When the bad outcome occurs, distinguish **return to title menu
+   followed by an automatic New Game**, from **direct loading
+   of gameplay without reaching title**. These look similar but
+   require different fixes.
+
+Never patch the original mode request directly to 7 or force a Quit
+before the native menu owner is identified and the player's exact
+choice verified. Keep existing joystick read-only mapping and
+SHARE/Start safeguards unchanged. PR #74 remains draft.
+
 ## Objective
 
 With a recognized, unique Sony DualShock 4, play **all** of the original
