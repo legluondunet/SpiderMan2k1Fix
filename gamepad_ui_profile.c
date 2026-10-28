@@ -118,6 +118,10 @@ static int hotplug_late_preview_reported=0;
 static SpiderPausePadWake pause_wake={0};
 static int pause_wake_active=0;
 static int pause_wake_retry_logged=0;
+/* A backgrounded non-exclusive DirectInput handle normally loses Acquire.
+ * Permit exactly ONE guarded Acquire when foreground GetDeviceState reports
+ * DIERR_NOTACQUIRED. Never Acquire on INPUTLOST/UNPLUGGED (hardware stale). */
+static unsigned pause_wake_notacquired_attempts=0;
 static IDirectInput8A *di=NULL;
 static IDirectInputDevice8A *device=NULL;
 static HMODULE di_module=NULL;
@@ -985,6 +989,7 @@ int SpiderGamepadUI_PauseWake_Begin(void) {
   memset(&pause_wake,0,sizeof(pause_wake));
   pause_wake_active=available;
   pause_wake_retry_logged=0;
+  pause_wake_notacquired_attempts=0;
   return available;
 }
 unsigned SpiderGamepadUI_PauseWake_Poll(HWND hwnd) {
@@ -1006,13 +1011,31 @@ unsigned SpiderGamepadUI_PauseWake_Poll(HWND hwnd) {
   memset(&state,0,sizeof(state));
   hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);
   if(FAILED(hr)) {
+    char line[235];
     memset(&pause_wake,0,sizeof(pause_wake));
-    pause_wake_active=0; /* stop polling a lost secondary device until Flip */
-    /* Do not Acquire an unplugged joystick while our Flip is frozen.
-     * The keyboard always remains a valid PAUSED wake mechanism.
-     * A lost device is released and rescanned on the normal Flip path. */
+    /* DIERR_NOTACQUIRED is not a physical disconnect: a foreground-only
+     * nonexclusive device loses acquisition on Alt+Tab. We have a verified
+     * live secondary handle from before PAUSED; re-Acquire it just once,
+     * only while our exact game HWND is again foreground. Do not poll or
+     * read this same frame; next loop must first see neutral, then a new
+     * complete press/release. INPUTLOST and UNPLUGGED fail closed because
+     * the device may have been physically disconnected. */
+    if(hr==DIERR_NOTACQUIRED && pause_wake_notacquired_attempts==0u) {
+      HRESULT acquire_hr;
+      pause_wake_notacquired_attempts=1u;
+      acquire_hr=IDirectInputDevice8_Acquire(device);
+      snprintf(line,sizeof(line),
+        "FOCUS-PAUSE-GAMEPAD: foreground secondary DIERR_NOTACQUIRED=0x%08lX; single guarded Acquire=0x%08lX; fresh neutral+press+release required [NO input injection]",
+        (unsigned long)hr,(unsigned long)acquire_hr);
+      report(line);
+      if(SUCCEEDED(acquire_hr))return 0;
+    }
+    pause_wake_active=0; /* stop polling potentially stale input until Flip */
     if(!pause_wake_retry_logged) {
-      report("FOCUS-PAUSE-GAMEPAD: secondary DS4 read failed; NO stale Acquire inside PAUSED; keyboard wake remains available");
+      snprintf(line,sizeof(line),
+        "FOCUS-PAUSE-GAMEPAD: secondary controller read unavailable hr=0x%08lX; no Acquire for INPUTLOST/UNPLUGGED; keyboard wake remains available",
+        (unsigned long)hr);
+      report(line);
       pause_wake_retry_logged=1;
     }
     return 0;
@@ -1026,6 +1049,7 @@ void SpiderGamepadUI_PauseWake_End(void) {
   pause_wake_active=0;
   memset(&pause_wake,0,sizeof(pause_wake));
   pause_wake_retry_logged=0;
+  pause_wake_notacquired_attempts=0;
   /* The normal UI bridge resumes on the next Flip. Our wake used NO
    * synthetic key; reset its edges so the pause input cannot be inherited. */
   previous_buttons=0;
