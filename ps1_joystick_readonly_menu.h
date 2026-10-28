@@ -48,7 +48,7 @@ static const SpiderPS1JoystickReadOnlySite spider_ps1_readonly_sites[
 /* Xbox-specific labels are intentionally limited to two physically
  * observed Holtek 045E:028E DirectInput indices. Unknown indices use
  * the original numeric fallback: do not invent X/Y/LT/RT mappings. */
-static const char *spider_xbox360_native_button_label(uint32_t button) {
+static inline const char *spider_xbox360_native_button_label(uint32_t button) {
   switch(button) {
     case 0u: return "A";
     case 1u: return "B";
