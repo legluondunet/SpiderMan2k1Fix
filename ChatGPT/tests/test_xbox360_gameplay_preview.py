@@ -104,8 +104,8 @@ def test_start_back_pause_uses_actual_live_map_and_controller_paused_ui():
     assert 'GetPrivateProfileStringA("Joystick",native_actions[i],fallback,' in guard
     assert 'if(!parse_native_button(value,&button) || button==requested_button)' in guard
     assert 'native_pause_active;' in UI
-    assert 'pause_requested=(fresh & ((1u<<6)|(1u<<7)))!=0' in UI
-    assert 'GAMEPAD-XBOX360: 3D MENU Back/Start -> Escape' in UI
+    assert 'pause_requested=(fresh & (1u<<SPIDER_XBOX360_BACK_DI_BUTTON))!=0' in UI
+    assert 'GAMEPAD-XBOX360: 3D MENU Back -> Escape' in UI
     assert 'SPIDER_PROFILE_XBOX360' in UI
     assert 'spider_ps1_native_button_label' not in guard
 
