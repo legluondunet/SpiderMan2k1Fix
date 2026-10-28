@@ -1,11 +1,22 @@
-/* Opt-in Xbox 360-compatible DirectInput gameplay candidate for the
- * verified Holtek 045E:028E. Only A=0 and B=1 have direct runtime
- * confirmation; all other physical labels require a hardware test.
+/* Xbox 360 layout mirrors the previously accepted Sony PS1 actions:
  *
- * Exact seven original 252-byte Spidey.cfg joystick DWORD offsets.
- * Back=BUTTON6 and Start=BUTTON7 are reserved for native menus/Pause.
- * Swing=BUTTON9 is a digital fallback (not a claim about LT/RT axes).
- * No stored INI/RawHex changes are permitted.
+ * Xbox A  -> Jump    (Sony Cross)
+ * Xbox B  -> Kick    (Sony Circle)
+ * Xbox X  -> Punch   (Sony Square)
+ * Xbox Y  -> Web     (Sony Triangle / quick web)
+ * Xbox LB -> Aim     (Sony L1)
+ * Xbox RB -> Zipline (Sony R1)
+ * Xbox RT -> Swing   (Sony R2, TARGET ONLY, NOT IMPLEMENTED HERE)
+ *
+ * DirectInput indices 0..5 match Microsoft's standard XUSB layout, but
+ * only buttons 0 (A) and 1 (B) have actually been observed on the
+ * user's Holtek 045E:028E under Wine. The separate RT trigger is often
+ * represented by an axis, not a button. Until a physical axis trace
+ * proves its location, BUTTON9 (right-stick click on standard XUSB)
+ * REMAINS A TEMPORARY DIGITAL SWING FALLBACK, NOT AN RT mapping.
+ * The exact seven joystick DWORD offsets are read/write overlay only;
+ * saved INI and RawHex are never modified by this preset.
+ * Back=BUTTON6 and Start=BUTTON7 remain reserved for Pause.
  */
 #ifndef SPIDERMAN2K1FIX_XBOX360_GAMEPLAY_MAPPING_H
 #define SPIDERMAN2K1FIX_XBOX360_GAMEPLAY_MAPPING_H
