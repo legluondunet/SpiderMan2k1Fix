@@ -61,7 +61,7 @@ static int back=SPIDER_BACK_CIRCLE,pause_button=SPIDER_PAUSE_OPTIONS;
 static int ps1_preview_requested=0,ps1_preview_active=0,previous_share=0;
 static int ps1_options_skip_requested=0;
 static int ps1_readonly_menu_requested=0;
-static int ps1_mouse_auto_requested=0,ps1_mouse_auto_armed=0;
+/* MouseEnabled is global; no DS4-dependent mouse state lives here. */
 static int ps1_quit_trace_requested=0;
 static int ps1_post_quit_guard_requested=0;
 static int ps1_transition_edge_ownership_requested=0;
@@ -189,7 +189,6 @@ static void begin_scancode(unsigned scan,const char *action) {
   }
 }
 static void disable_profile(const char *reason) {
-  if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
   release_active_key();
   if(device) {IDirectInputDevice8_Unacquire(device);
               IDirectInputDevice8_Release(device);device=NULL;}
@@ -218,7 +217,12 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   ps1_preview_requested=GetPrivateProfileIntA("Input","ControllerPS1Preview",0,ini)==1;
   ps1_options_skip_requested=GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1;
   ps1_readonly_menu_requested=GetPrivateProfileIntA("Input","ControllerPS1ReadOnlyJoystick",0,ini)==1;
-  ps1_mouse_auto_requested=GetPrivateProfileIntA("Input","ControllerAutoDisableMouse",0,ini)==1;
+  /* Global game-only mouse policy replaces the retired DS4-only option.
+   * Absent MouseEnabled is intentionally OFF for existing/fresh INIs.
+   * MouseEnabled=1 explicitly restores normal mouse menu interaction. */
+  SpiderPS1Mouse_Configure(GetPrivateProfileIntA("Input","MouseEnabled",0,ini)==1,logger);
+  if(GetPrivateProfileStringA("Input","ControllerAutoDisableMouse","",choice,sizeof(choice),ini))
+    report("GAMEPAD-MOUSE: ControllerAutoDisableMouse is retired; MouseEnabled=0/1 now controls the game mouse for all players");
   ps1_quit_trace_requested=GetPrivateProfileIntA("Input","ControllerPS1QuitTrace",0,ini)==1;
   ps1_post_quit_guard_requested=GetPrivateProfileIntA("Input","ControllerPS1PostQuitGuard",0,ini)==1;
   ps1_transition_edge_ownership_requested=GetPrivateProfileIntA("Input","ControllerPS1TransitionEdgeOwnership",0,ini)==1;
@@ -561,13 +565,8 @@ void SpiderGamepadUI_ActivatePS1(void){
   ps1_probe_native_start_tables(); /* read-only scan; optional checked single-DWORD RAM experiment */
   if(ps1_readonly_menu_requested && !SpiderPS1_InstallReadOnlyJoystick(log_message))
     report("GAMEPAD-PS1: JOYSTICK-READONLY inactive; exact native signatures missing or failed to install");
-  if(ps1_mouse_auto_requested) {
-    ps1_mouse_auto_armed=SpiderPS1Mouse_Arm(log_message);
-    if(ps1_mouse_auto_armed)
-      SpiderPS1Mouse_SetPadActive(1); /* verified/acquired DS4 before first game menu */
-    else
-      report("GAMEPAD-MOUSE: OFF failed exact original mouse-gate validation; native mouse behavior untouched");
-  }
+  /* Game mouse suppression is configured globally and verified on Flip,
+   * independently of whether this optional PS1 preview is active. */
 }
 /* The original retail PShell_EndTrainingUpdate at 0x47BC40 uses
  * object 0x682968 + 0x14 to dispatch index 0 -> engine request 8,
@@ -700,16 +699,16 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   int share_pressed,share_edge,native_start_pressed;
   int post_quit_block=0;
   unsigned ownership_block=0,native_request=0;
+  /* Always apply game-only mouse policy, even with ControllerProfile=Off
+   * or no controller; no desktop mouse or keyboard hooks are installed. */
+  SpiderPS1Mouse_OnFlip(hwnd);
   if(!configured || !hwnd || !IsWindow(hwnd)){
-    if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
     return;
   }
   /* Critical: release injected key before focus pause can block this thread. */
   release_active_key();
   if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {
-    /* Disabling the game's mouse is only appropriate while the verified
-     * DS4 has foreground ownership. Preserve external desktop mouse. */
-    if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
+    /* Native game mouse state was already restored by mouse OnFlip. */
     ps1_history_record(SPIDER_PS1_HISTORY_FOCUS_LOST,0u,menu_2d,
       gameplay_3d,bink_active,native_pause_active,(unsigned)previous_buttons,NULL);
     previous_buttons=0;
@@ -732,7 +731,6 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   }
   if(!probing)detect_device(hwnd);
   if(!detected||!device) {
-    if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
     ps1_history_record(SPIDER_PS1_HISTORY_DEVICE_MISSING,native_request,
       menu_2d,gameplay_3d,bink_active,native_pause_active,
       (unsigned)previous_buttons,NULL);
@@ -746,7 +744,6 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   memset(&state,0,sizeof(state));
   hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);
   if(FAILED(hr)) {
-    if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
     ps1_history_record(SPIDER_PS1_HISTORY_READ_FAILED,native_request,
       menu_2d,gameplay_3d,bink_active,native_pause_active,
       (unsigned)previous_buttons,NULL);
@@ -766,7 +763,6 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     return;
   }
   bad_reads=0;
-  if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(1);
   pressed=(state.rgbButtons[1]&0x80u?SPIDER_CONFIRM_CROSS:0) |
           (state.rgbButtons[9]&0x80u?SPIDER_CONFIRM_OPTIONS:0);
   /* PS1 preview: Cross is the ONLY synthetic menu confirmation. The
