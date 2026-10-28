@@ -112,3 +112,20 @@ def test_controller_support_does_not_modify_dinput_kernel_driver_or_exe():
     assert "return SPIDER_PAD_NONE;" in IDENTITY
     assert "XInput" in IDENTITY
     assert "native_joystick_unplug.c" not in UI
+
+
+def test_xbox_hardware_diagnostic_reports_raw_buttons_only_and_is_bounded():
+    assert "static unsigned xbox_previous_held=0,xbox_trace_count=0;" in UI
+    assert "raw_rising=raw_held & ~xbox_previous_held;" in UI
+    assert "xbox_previous_held=raw_held;" in UI
+    assert "if(raw_rising && xbox_trace_count<48u)" in UI
+    assert "GAMEPAD-XBOX360: RAW" in UI
+    assert "state.lX" in UI and "state.lY" in UI
+    assert "state.rgdwPOV[0]" in UI
+    assert "xbox_previous_held=0;" in UI
+    # Logs are strictly from the existing secondary GetDeviceState read.
+    xbox=UI.split("if(selected_pad_kind==SPIDER_PAD_XBOX360) {",1)[1].split(
+        "pressed=(state.rgbButtons[1]",1)[0]
+    assert "IDirectInputDevice8_GetDeviceData" not in xbox
+    assert "IDirectInputDevice8_SetProperty" not in xbox
+    assert "VirtualProtect(" not in xbox
