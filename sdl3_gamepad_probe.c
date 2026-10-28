@@ -14,6 +14,7 @@
 #include "sdl3_gamepad_probe.h"
 #include "sdl3_gamepad_selection.h"
 #include "sdl3_gamepad_slots.h"
+#include "sdl3_controller_profile.h"
 
 /* SDL3 3.2+ ABI subset; keep signatures aligned with SDL's public headers. */
 #define SPIDER_SDL_INIT_GAMEPAD 0x00002000u
@@ -44,6 +45,13 @@ static SpiderSDL3Selection selection={0};
 static unsigned num_pads=0;
 static int requested=0,attempted=0,ready=0,scanned=0;
 static int native_owner_requested=0;
+static int bindings_trace_requested=0;
+/* In-memory semantic profiles for READ-ONLY preview only. Never loaded
+ * from or saved to disk until future native-input bridge acceptance. */
+static SpiderSDL3ProfileBank bindings_bank;
+static uint32_t bindings_trace_id=0,bindings_previous=0;
+static int bindings_trace_armed=0;
+static unsigned bindings_trace_lines=0;
 static DWORD last_scan=0,last_axis_log=0;
 static int last_joystick_count=-1,last_mapped_count=-1;
 static short old_lt=-1,old_rt=-1;
@@ -69,7 +77,18 @@ static SDL_QuitSubSystemFn sdl_quit_subsystem=NULL;
 static void say(const char *line) {if(report)report(line);}
 void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
   report=logger;
+  spider_sdl3_bank_reset(&bindings_bank);
+  bindings_trace_id=0;bindings_previous=0;
+  bindings_trace_armed=0;bindings_trace_lines=0;
+  bindings_trace_requested=ini &&
+    GetPrivateProfileIntA("Debug","SDL3BindingTrace",0,ini)==1;
   requested=ini && GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1;
+  if(bindings_trace_requested && !requested) {
+    bindings_trace_requested=0;
+    say("SDL3-BINDINGS: disabled because ExperimentalSDL3Probe=0");
+  }
+  if(bindings_trace_requested)
+    say("SDL3-BINDINGS: optional semantic action probe ENABLED (read-only; no gameplay remap, no UI changes; max 48 events)");
   native_owner_requested=requested &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1;
   if(native_owner_requested &&
@@ -301,6 +320,69 @@ int SpiderSDL3Probe_SelectedRT(int *normalized_rt) {
   }
   return 0;
 }
+/* Optional semantic preview for a future on-screen mapping wizard.
+ * Read selected SDL3 normalized state from the already-open handle
+ * AFTER the once-per-Flip SDL3 event pump. Never poll/change native
+ * DirectInput; never forward synthetic game actions.
+ * New selection/focus-loss requires neutral inputs before logging actions. */
+static void sdl3_binding_trace_on_flip(void) {
+  unsigned i,j;
+  uint32_t id=selection.active,held=0,fresh,released;
+  uint16_t vid=0,pid=0;
+  SpiderSDL3ControllerSample sample;
+  SpiderSDL3ControllerProfile *profile=NULL;
+  char line[250];
+  if(!bindings_trace_requested || bindings_trace_lines>=48u)return;
+  if(id!=bindings_trace_id) {
+    bindings_trace_id=id;
+    bindings_previous=0;
+    bindings_trace_armed=0;
+    if(!id)return;
+  }
+  if(!id || !sdl_button || !sdl_axis || !sdl_vendor || !sdl_product)return;
+  vid=sdl_vendor(id);pid=sdl_product(id);
+  if(!vid || !pid)return;
+  for(i=0;i<num_pads;i++)if(pads[i].id==id && pads[i].handle)break;
+  if(i>=num_pads)return;
+  memset(&sample,0,sizeof(sample));
+  for(j=0;j<SPIDER_SDL3_BUTTON_COUNT;j++)
+    if(sdl_button(pads[i].handle,(int)j))sample.buttons|=1u<<j;
+  sample.axis[SPIDER_SDL3_AXIS_LT]=
+    sdl_axis(pads[i].handle,SPIDER_SDL3_AXIS_LT);
+  sample.axis[SPIDER_SDL3_AXIS_RT]=
+    sdl_axis(pads[i].handle,SPIDER_SDL3_AXIS_RT);
+  profile=spider_sdl3_bank_get(&bindings_bank,vid,pid);
+  if(!profile)return; /* Unknown or exhausted profile bank: no guessing. */
+  if(!bindings_trace_armed) {
+    if(!spider_sdl3_profile_neutral(&sample))return;
+    bindings_trace_armed=1;
+    bindings_previous=0;
+    snprintf(line,sizeof(line),
+      "SDL3-BINDINGS: ARMED selected-id=%lu VID:PID=%04X:%04X standard-semantic-defaults (neutral observed; READ-ONLY)",
+      (unsigned long)id,(unsigned)vid,(unsigned)pid);
+    say(line);bindings_trace_lines++;
+    return;
+  }
+  if(!spider_sdl3_profile_actions(profile,&sample,
+                                   bindings_previous,&held)) {
+    bindings_previous=0;
+    bindings_trace_armed=0;
+    return; /* Bad normalized data; reset, require fresh neutral sample. */
+  }
+  fresh=held & ~bindings_previous;
+  released=bindings_previous & ~held;
+  bindings_previous=held;
+  if(!fresh && !released)return;
+  snprintf(line,sizeof(line),
+    "SDL3-BINDINGS: selected-id=%lu action-held=0x%02lX pressed=0x%02lX released=0x%02lX buttons=0x%06lX LT=%d RT=%d [READ-ONLY; NOT GAMEPLAY]",
+    (unsigned long)id,(unsigned long)held,
+    (unsigned long)fresh,(unsigned long)released,
+    (unsigned long)sample.buttons,
+    (int)sample.axis[SPIDER_SDL3_AXIS_LT],
+    (int)sample.axis[SPIDER_SDL3_AXIS_RT]);
+  say(line);
+  bindings_trace_lines++;
+}
 void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
   DWORD now;
   unsigned i;
@@ -311,6 +393,7 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
     /* Never inherit a Start press acquired during the custom focus pause.
      * Selection identity stays stable, but takeover needs neutral->press. */
     if(ready)spider_sdl3_selection_focus_lost(&selection);
+    bindings_trace_armed=0;bindings_previous=0;
     return;
   }
   if(!attempted && !sdl_load())return;
@@ -347,4 +430,5 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
   }
   /* A Start claim may have changed logical ownership after the scan. */
   sdl3_trace_native_owner(now);
+  sdl3_binding_trace_on_flip();
 }
