@@ -44,6 +44,7 @@
 #define SPIDER_NATIVE_POLLED_FLAG 0x006B7928u
 
 static int requested=0,initialized=0,scan_started=0,device_missing=0;
+static unsigned allowed_pad_kind=SPIDER_PAD_NONE;
 static DWORD last_scan=0, native_thread=0;
 static LONG last_events=0;
 static unsigned scans=0,rebound=0,failed=0;
@@ -95,7 +96,7 @@ static BOOL CALLBACK enumerate_supported_pad(const DIDEVICEINSTANCEA *inst,VOID 
   list->gamepad_count++;
   vid=LOWORD(inst->guidProduct.Data1);
   pid=HIWORD(inst->guidProduct.Data1);
-  if(!spider_reconnect_supported_pad(vid,pid))return DIENUM_CONTINUE;
+  if(spider_pad_identify(vid,pid)!=allowed_pad_kind)return DIENUM_CONTINUE;
   list->count++;
   if(list->count==1u) {
     list->instance=inst->guidInstance;
@@ -225,7 +226,7 @@ static void try_rebind(HWND hwnd) {
   if(FAILED(hr) || list.count!=1u || list.gamepad_count!=1u) {
     if(scans==1 || scans%10u==0) {
       snprintf(line,sizeof(line),
-        "NATIVE-RECONNECT: scan #%u no unique attached DS4/Xbox360 (matching=%u gamepads=%u hr=0x%08lX); keyboard active",
+        "NATIVE-RECONNECT: scan #%u no unique requested DS4/Xbox360 (matching=%u gamepads=%u hr=0x%08lX); keyboard active",
         scans,list.count,list.gamepad_count,(unsigned long)hr);
       report(line);
     }
@@ -336,7 +337,16 @@ void SpiderNativeReconnect_ObserveMode(long flip_index,int menu_2d,
 }
 
 void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *)) {
+  char choice[40];
   write_log=logger;
+  allowed_pad_kind=SPIDER_PAD_DS4;
+  /* Xbox is only eligible if explicitly selected. DS4 hotplug works
+   * with Auto, Off or DualShock4 exactly as before this PR. */
+  if(ini) {
+    GetPrivateProfileStringA("Input","ControllerProfile","Auto",
+                             choice,sizeof(choice),ini);
+    if(!_stricmp(choice,"Xbox360"))allowed_pad_kind=SPIDER_PAD_XBOX360;
+  }
   requested=(ini && GetPrivateProfileIntA("Input",
       "ExperimentalNativeJoystickReconnect",0,ini)==1);
   initialized=0;
