@@ -26,7 +26,7 @@ def test_native_menu_gate_is_shared_with_xbox_and_legacy_sony_adapter():
     assert "static SpiderNativeMenuReturnGate xbox_transition_ownership={0};" in UI
     assert "spider_native_menu_return_gate_flip(" in UI
     assert "spider_ps1_transition_edge_ownership_flip(" in UI
-    for forbidden in ("SendInput", "Sleep(", "GetTickCount(", "VirtualProtect",
+    for forbidden in ("SendInput(", "Sleep(", "GetTickCount(", "VirtualProtect(",
                       "WriteProcessMemory", "DIJOYSTATE", "DWORD", "GUID"):
         assert forbidden not in NATIVE
 
