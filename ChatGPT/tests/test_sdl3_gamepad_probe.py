@@ -75,6 +75,9 @@ def test_sdl3_probe_is_optional_read_only_and_exe_relative():
     assert 'sdl3_gamepad_probe.c' in shell
     assert 'SDL_GetGamepads' in code and 'SDL_GetJoysticks' in code
     assert 'SDL_GetGamepadButton' in code and 'SDL_GetGamepadAxis' in code
+    assert 'SDL_GetGamepadVendorForID' in code
+    assert 'SDL_GetGamepadProductForID' in code
+    assert 'selected-VID:PID=%04X:%04X' in code
     assert 'sdl3_trace_native_owner(now);' in code
     assert 'SPIDER_NATIVE_JOYSTICK_PTR 0x006B7A2Cu' in code
     assert 'NATIVE-OWNER physical-opened=' in code
