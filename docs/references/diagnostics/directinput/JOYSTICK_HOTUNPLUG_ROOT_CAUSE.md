@@ -759,3 +759,60 @@ disabled independently without turning off the Xbox preview;
 do not assume changing Sony-only option disables Xbox readonly.
 Do not promote this experimental mitigation to a release/merge
 without physical confirmation.
+
+
+## Joystick Restore Default selectable-row regression — menu-level fix (2026-10-28)
+
+The second physical DS4 test log
+`SpiderMan2k1Fix(20261028-175032).log` confirms the earlier
+void no-op CALL/RET was actually reached:
+
+```
+GAMEPAD-READONLY: RESTORE-DEFAULT intercepted count=1 at original 0x50D4A9; no controller bindings changed [CALL/RET preserved]
+GAMEPAD-UI: SYNTHETIC Return (DIK 0x1C) down #16
+```
+
+The game then stopped responding. Blocking the native reset routine
+is therefore NOT sufficient: the original menu still presents and
+processes the Restore Default row and its rebuild/selection path.
+
+The follow-up experimental fix removes that **row**, not just its
+callback. Under the already validated Sony/Xbox Joystick read-only
+mode, original `initActionMaps` retains all 14 native action rows
+but omits only the final `restore default settings`
+`CMenu::AddEntry` call. `Keyboard Configuration` still delegates
+to the original `CMenu::AddEntry`, retaining Keyboard Restore
+Default and editable keyboard mappings. We do NOT modify original
+on-disk game data or the user INI.
+
+For safety, the caller is not guessed: inside the SHA-verified
+`initActionMaps` function's last instructions, the installer
+verifies exactly one direct x86 relative CALL targeting original
+`CMenu::AddEntry` at `0x0043FFF0`, with an original
+`push` of the matching `restore default settings` string.
+It captures the five bytes then participates in the same
+all-site preflight and rollback as the existing read-only patches.
+No unique, readable, committed-memory match means refusal with
+`GAMEPAD-READONLY: REFUSED missing/ambiguous original Restore Default
+AddEntry call; no patches installed`. No implicit fallback to
+a joystick menu where the row can still be selected.
+
+The replacement uses a 32-bit fastcall wrapper with dummy EDX
+argument to preserve the original thiscall callee stack cleanup.
+If native `gActionMapRelated` is nonzero, it does not add that
+final row; when zero (keyboard menu), it calls native AddEntry
+unchanged. The old restore callback no-op remains as a
+defense-in-depth guard and logs if the original code unexpectedly
+reaches it. Successful install logs `GAMEPAD-READONLY: Restore
+Default row disabled in Joystick only`; when entering the menu
+it logs `GAMEPAD-READONLY: Restore Default ROW OMITTED in Joystick`.
+
+Hardware test: install both DLLs from the **same successful CI run**,
+start with only DS4 (or only Xbox on a separate run), open Joystick
+Configuration, verify 14 action rows and NO Restore Default,
+navigate the last row with d-pad and Escape normally. Then open
+Keyboard Configuration, verify its Restore Default option is still
+present but do not invoke it in the joystick regression test.
+If Restore Default is still visible in Joystick, check for the
+`REFUSED` marker and do not select it. No runtime validation
+has yet demonstrated the menu-level fix. PR #77 remains DRAFT.
