@@ -118,9 +118,10 @@ The maintainer reported an immediate game crash after unplugging the Sony
   directly after logging the failed `GetDeviceState`; the log cannot
   distinguish a fault inside that call from a subsequent fault inside
   the original game's independently owned DirectInput device.
-- Candidate safety change: on `DIERR_INPUTLOST`, **do not Acquire the
-  stale secondary device**. Instead release it using logged checkpoints
-  and try a new discovery after 2 seconds. On other failures, defer
+- Candidate safety change: on `DIERR_INPUTLOST`, **do not Acquire
+  or Unacquire the already-lost secondary device**. Perform a single COM
+  `Release` with logged checkpoints, then retry discovery after 2 seconds.
+  The game-owned controller is untouched. On other failures, defer
   acquisition and require repeated errors before dropping.
 - The custom PAUSED wake loop also avoids calling `Acquire` on a
   failed secondary read. Keyboard wake remains available.
