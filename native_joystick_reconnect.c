@@ -54,6 +54,7 @@ static unsigned scans=0,rebound=0,failed=0;
 static int swap_probe_enabled=0,swap_initial_seen=0,swap_mapping_enabled=0;
 static unsigned swap_last_kind=0,swap_probe_reports=0;
 static unsigned sdl3_owner_attempts=0;
+static DWORD sdl3_owner_last_attempt=0;
 static uint32_t sdl3_last_claimed_id=0;
 static DWORD sdl3_owner_log_tick=0;
 static void (*write_log)(const char *)=NULL;
@@ -565,6 +566,12 @@ static void sdl3_owner_reconcile(HWND hwnd) {
      * and release/clear buffered state BEFORE publishing a new owner. */
     detach_stale_native();
   }
+  /* Limit creation/Acquire churn if Start is still held or the driver
+   * has not settled after hotplug. A native game frame must not open
+   * and close a new DirectInput COM device 30 times per second. */
+  if(sdl3_owner_attempts && (uint32_t)(now-sdl3_owner_last_attempt)<150u)
+    return;
+  sdl3_owner_last_attempt=now;
   ++sdl3_owner_attempts;
   hr=IDirectInput8_CreateDevice(di,&target.instance,&candidate,NULL);
   if(FAILED(hr) || !candidate)goto fail;
