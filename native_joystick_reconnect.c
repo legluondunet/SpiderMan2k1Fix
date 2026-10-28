@@ -49,11 +49,12 @@ static LONG last_events=0;
 static unsigned scans=0,rebound=0,failed=0;
 static void (*write_log)(const char *)=NULL;
 
-typedef struct SpiderDS4List {
+typedef struct SpiderPadList {
   unsigned count;
   GUID instance;
   DWORD product;
-} SpiderDS4List;
+  unsigned kind;
+} SpiderPadList;
 
 /* Constant signatures from the maintainer's SHA-verified retail EXE.
  * Includes native factory EnumDevices, CreateDevice, settings, data
@@ -87,17 +88,19 @@ static int valid_binary_layout(void) {
          memcmp((const void *)(uintptr_t)SPIDER_NATIVE_FORMAT,original_format,sizeof(original_format))==0;
 }
 
-static BOOL CALLBACK enumerate_ds4(const DIDEVICEINSTANCEA *inst,VOID *ctx) {
-  SpiderDS4List *list=(SpiderDS4List *)ctx;
-  unsigned vid,pid;
+static BOOL CALLBACK enumerate_supported_pad(const DIDEVICEINSTANCEA *inst,VOID *ctx) {
+  SpiderPadList *list=(SpiderPadList *)ctx;
+  unsigned vid,pid,kind;
   if(!inst || !list || inst->dwSize<sizeof(DIDEVICEINSTANCEA))return DIENUM_CONTINUE;
   vid=LOWORD(inst->guidProduct.Data1);
   pid=HIWORD(inst->guidProduct.Data1);
-  if(!spider_reconnect_sony_ds4(vid,pid))return DIENUM_CONTINUE;
+  kind=(unsigned)spider_reconnect_kind(vid,pid);
+  if(!kind)return DIENUM_CONTINUE;
   list->count++;
   if(list->count==1u) {
     list->instance=inst->guidInstance;
     list->product=inst->guidProduct.Data1;
+    list->kind=kind;
   }
   return DIENUM_CONTINUE;
 }
@@ -209,7 +212,7 @@ static void detach_stale_native(void) {
 static void try_rebind(HWND hwnd) {
   IDirectInput8A *di=game_factory();
   IDirectInputDevice8A *candidate=NULL;
-  SpiderDS4List list;
+  SpiderPadList list;
   DIDEVCAPS caps;
   HRESULT hr;
   char line[210];
@@ -217,11 +220,11 @@ static void try_rebind(HWND hwnd) {
   memset(&list,0,sizeof(list));
   scans++;
   hr=IDirectInput8_EnumDevices(di,DI8DEVCLASS_GAMECTRL,
-             enumerate_ds4,&list,DIEDFL_ATTACHEDONLY);
+             enumerate_supported_pad,&list,DIEDFL_ATTACHEDONLY);
   if(FAILED(hr) || list.count!=1u) {
     if(scans==1 || scans%10u==0) {
       snprintf(line,sizeof(line),
-        "NATIVE-RECONNECT: scan #%u no unique attached Sony DS4 (count=%u hr=0x%08lX); keyboard active",
+        "NATIVE-RECONNECT: scan #%u no unique supported pad (DS4/Xbox360, count=%u hr=0x%08lX); keyboard active",
         scans,list.count,(unsigned long)hr);
       report(line);
     }
@@ -233,7 +236,7 @@ static void try_rebind(HWND hwnd) {
   if(FAILED(hr))goto fail;
   if(!neutral_and_flush(candidate)) {
     if(scans==1 || scans%10u==0)
-      report("NATIVE-RECONNECT: DS4 candidate not neutral or buffered reads not ready; retry later");
+      report("NATIVE-RECONNECT: controller candidate not neutral or buffered reads not ready; retry later");
     close_candidate(candidate);
     return;
   }
@@ -253,8 +256,9 @@ static void try_rebind(HWND hwnd) {
   device_missing=0;
   rebound++;
   snprintf(line,sizeof(line),
-    "NATIVE-RECONNECT: REBOUND original game-owned DirectInput joystick Sony VID=054C PID=%04X; rebound=%u scan=%u buttons=%lu polled=%u; native controls restored (hardware validation pending)",
-    HIWORD(list.product),rebound,scans,(unsigned long)caps.dwButtons,
+    "NATIVE-RECONNECT: REBOUND original game-owned DirectInput joystick %s VID=%04X PID=%04X; rebound=%u scan=%u buttons=%lu polled=%u; native controls restored (hardware validation pending)",
+    list.kind==SPIDER_RECONNECT_DS4?"Sony DS4":"Xbox360-compatible",
+    LOWORD(list.product),HIWORD(list.product),rebound,scans,(unsigned long)caps.dwButtons,
     (unsigned)((caps.dwFlags>>8)&1u));
   report(line);
   return;
@@ -348,7 +352,7 @@ void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *)) {
     report("NATIVE-RECONNECT: DISABLED, unsupported original joystick signatures/PE layout");
     return;
   }
-  report("NATIVE-RECONNECT: requested experimental game-owned DS4 rebind, only after guard is installed and foreground");
+  report("NATIVE-RECONNECT: requested experimental game-owned Sony DS4 / Xbox 360 DirectInput rebind, only after guard is installed and foreground");
 }
 void SpiderNativeReconnect_OnFlip(long flip_index, HWND game_hwnd) {
   LONG events;
