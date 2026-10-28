@@ -1,3 +1,11 @@
+## Unreleased — experimental SDL3-selected DirectInput owner (DRAFT PR #80, NOT hardware-validated)
+
+- New hidden `[Input] ExperimentalSDL3NativeOwner=1` is **OFF by default**, additionally requires SDL3 probe and all three existing native unplug/reconnect/runtime-mapping opt-ins. If dependencies are missing, SDL3 remains passive and the existing single-controller behaviour is preserved.
+- SDL3 selected gamepad identity is bound to **exactly one** known matching native DirectInput instance, reusing the original game's factory and verified joystick pointer. Duplicate VID/PID, unknown products, active FFB effects, non-neutral buttons or unsafe native state fail closed.
+- Disarm the old game-owned controller during Start selection handoffs; publish the newly acquired, neutral controller only after verification. The separate menu/Bink DirectInput UI adapter follows the same selected controller, releasing old synthetic keys rather than combining two controllers' inputs.
+- For this explicit experiment only, permit canonical DS4/Xbox action-map switching from the untouched original retail seven-action button preset. Keep custom joystick mappings, original executable, keyboard, mouse and saved INI unchanged.
+- Added CI source-contract regression tests and `docs/references/SDL3_NATIVE_OWNER_EXPERIMENT.md` with Windows 11/Wine smoke tests, rollback and limitations. **No claim of validated simultaneous physical gamepad gameplay, no merge or release.**
+
 ## Unreleased — optional SDL3 read-only gamepad detection (draft stacked PR)
 
 - Hardware-confirmed limitation: SDL3 selection by Start does not yet provide game input with two pads connected at startup. The existing DirectInput UI bridge intentionally refuses ambiguous devices; do not claim single-logical-pad gameplay before a real input adapter exists.
