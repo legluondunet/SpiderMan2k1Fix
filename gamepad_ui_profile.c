@@ -1393,7 +1393,8 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
    * OPTIONS/Start remains free of synthetic Enter even if the old INI
    * still says Both; native Start/BUTTON11 is handled separately. */
   effective_confirm=spider_ps1_menu_confirm_mask(
-    ps1_preview_active || late_ds4_menu_only,(unsigned)confirm);
+    ps1_preview_active || late_ds4_menu_only || sdl3_live_sony,
+    (unsigned)confirm);
   /* Per-button edges are still tracked independently for legacy mode. */
   confirm_edges=spider_ps1_menu_confirm_edges(pressed,(unsigned)previous_buttons,effective_confirm);
   ps1_history_record(SPIDER_PS1_HISTORY_READ_OK,native_request,menu_2d,
@@ -1409,10 +1410,12 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
    * widescreen menu presentation. 3D triangle/script input is untouched. */
   movie_allowed=bink_active!=0;
   menu_allowed=(menu_2d && !gameplay_3d) ||
-    (ps1_preview_active && native_pause_active && !movie_allowed);
+    ((ps1_preview_active || sdl3_live_sony) &&
+     native_pause_active && !movie_allowed);
   confirm_allowed=menu_allowed || movie_allowed;
   gameplay_allowed=gameplay_3d && !menu_2d && !movie_allowed &&
-                   !(ps1_preview_active && native_pause_active) &&
+                   !((ps1_preview_active || sdl3_live_sony) &&
+                     native_pause_active) &&
                    !late_ds4_menu_only; /* never synthesize late Sony 3D Pause */
   pause_pressed=state.rgbButtons[9]&0x80u;
   share_pressed=state.rgbButtons[8]&0x80u;
