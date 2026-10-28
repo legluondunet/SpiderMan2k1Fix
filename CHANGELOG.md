@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — game-native mouse suppression with DualShock 4 (PR #74, experimental)
+
+- Add **opt-in** `[Input] ControllerAutoDisableMouse=1`, active only when the supported Sony DualShock 4 PS1 profile has been authenticated and its independent gamepad read succeeds. Default is Off; other input devices and `ControllerProfile=Off` are unchanged.
+- Use the **original game's own** `gRenderTest & 0x10` no-mouse gate (not Win32 `ShowCursor`): original `PCSHELL_DrawMouseCursor`, `PCSHELL_UpdateMouse` and `PCSHELL_IsMouseOver` all use this same flag. This removes the in-game mouse sprite, stale pointer hover/selection and original mouse polling, so a controller Enter confirms the highlighted selection rather than an unrelated mouse-hover selection.
+- Strictly verify the three original 32-bit x86 mouse-gate instruction signatures, game PE layout and writable original flag before changing a **single game-owned RAM bit**. Preserve other `gRenderTest` flags atomically; release only the bit owned by the fix on Alt+Tab, invisible window, missing controller or input read failure. The system/Windows mouse, existing focus recovery and physical keyboard are untouched.
+- **Not yet tested in-game.** The existing original joystick menu read-only behavior was confirmed by the maintainer with a DualShock 4; this separate mouse-control experiment needs direct game testing. No automatic enablement, release or merge without explicit validation.
+
 ## Unreleased — native read-only DualShock 4 Joystick Configuration prototype (PR #74)
 
 - Introduce **disabled-by-default** `[Input] ControllerPS1ReadOnlyJoystick=1`, available only after an unambiguous Sony DualShock 4 is acquired and the PS1 gameplay overlay is successfully read by the original config loader.
