@@ -105,6 +105,14 @@ and log includes `GAMEPAD-UI: DISCOVERY gamepads=1 ... Xbox360=1
 last-product=045E:028E`, then
 `GAMEPAD-UI: PROFILE Xbox360 CANDIDATE`.
 
+A passive **`GAMEPAD-XBOX360: RAW`** diagnostic now records up to
+48 **rising button edges** from the already-read secondary
+`DIJOYSTATE2`, with `rising=0x...`, `held=0x...`,
+`lX`, `lY`, `POV` and current menu/3D/Bink hints.
+This is necessary because the user's Holtek compatible pad may map
+A/B differently from Microsoft's Xbox 360 directinput conventions.
+No extra input reads or separate device calls are made.
+
 Check joystick X/Y analog, D-pad and original native seven
 gameplay buttons **before** unplugging; then observe A/B
 in menus. Provisional A/B mapping must be reviewed if
