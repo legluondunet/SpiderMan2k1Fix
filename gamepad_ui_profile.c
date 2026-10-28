@@ -335,7 +335,8 @@ static void xbox_rt_swing_update(long axis,int gameplay_ok) {
   di_held=spider_xbox360_rt_swing_held(was_held,axis);
   if(sdl3_rt_available)
     sdl3_held=spider_xbox360_sdl3_rt_swing_held(was_held,sdl3_rt);
-  should_hold=di_held || sdl3_held;
+  should_hold=spider_xbox360_rt_swing_held_any(
+    was_held,axis,sdl3_rt_available,sdl3_rt);
   if(xbox_rt_swing_requested && gameplay_ok && should_hold &&
      !xbox_rt_swing_prev_physical && xbox_rt_swing_source_reports<12u) {
     snprintf(line,sizeof(line),
