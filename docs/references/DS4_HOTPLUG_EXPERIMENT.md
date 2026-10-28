@@ -187,3 +187,77 @@ native-game exit on device disappearance, an unhandled Windows exception
 in a native controller read, or a host/Wine signal. Only then design
 a guarded controller device lifetime bridge (if needed); the secondary
 DirectInput8 polling alone is not sufficient.
+
+
+## Third physical unplug: confirmed native-game re-acquire and exit code 9
+
+Evidence from maintainer-supplied `SpiderMan2k1Fix(20261028-124112).log`,
+`hotplug-dinput.log` (**313,652 lines**) and `hotplug-exit.txt`.
+These are **logs of runtime observations**, not a verified decompilation
+or source-level cause.
+
+The exact same Sony DS4 instance
+`{40b2cbcc-d2cb-11f1-8001-444553540000}`
+(`VID_054C&PID_09CC`) is opened by **two independent DirectInput8 factories**:
+
+| Owner | DInput factory | Device COM object | Evidence in Wine log |
+|---|---|---|---|
+| SpiderMan2k1Fix's secondary UI bridge | `00115AC0` | `0327A750` | Factory enumeration line 584; `CreateDevice` at line 599; its `Release`/destroy at 313630-313638 |
+| Original game's native joystick | `03273BB0` | `03316480` | `CreateDevice` line 4624 writes pointer at **`0x006B7A2C`**, a retail-game global; its `Acquire` at 4774 and **313643-313644** |
+
+At the actual unplug Wine logs **two distinct** failed HID reads:
+
+```text
+313621  0140:warn:dinput:hid_joystick_read GetOverlappedResult/ReadFile failed, error 1167
+313622  0140:trace:dinput:dinput_device_internal_unacquire iface 0327A750.
+313624  0140:warn:dinput:hid_joystick_read GetOverlappedResult/ReadFile failed, error 1167
+313625  0140:trace:dinput:dinput_device_internal_unacquire iface 03316480.
+```
+
+Win32 error **1167** is `ERROR_DEVICE_NOT_CONNECTED`. Both
+DirectInput device objects cease being acquired.
+
+The patch's own log completes **all its shutdown breadcrumbs** in sequence
+(lines 438-442): `GetDeviceState` returns `DIERR_INPUTLOST
+0x8007001E`; `Release BEGIN`; `secondary stale device Release COMPLETE`;
+`secondary device release COMPLETE; rescan deferred 2s`.
+Wine independently corroborates the old secondary object
+`0327A750` was released/destroyed (lines 313630-313638).
+
+**After that**, the original game continues trying to poll its *separate*
+`03316480` joystick:
+
+```text
+313642  012c:trace:dinput:dinput_device_a_Poll impl 03316480.
+313643  012c:trace:dinput:dinput_device_a_Acquire impl 03316480.
+313644  012c:trace:dinput:dinput_device_Acquire iface 03316480.
+313645  012c:trace:dinput:dinput8_a_Release impl 03273BB0.
+313648  012c:trace:dinput:DllMain inst 781E0000, reason 0, reserved 00000001.
+```
+
+`DllMain reason 0` is `DLL_PROCESS_DETACH`, and the nonzero
+`reserved` is consistent with process-termination DLL detach. The
+separately captured shell result is **`WINE_EXIT_CODE=9`** (an
+application/Wine process exit status, *not* shell `128+signal`).
+No `0xc0000005`, fatal SEH dispatch, stack trace or Unix signal
+was identified in the submitted trace. The last `Acquire` call does
+**not** prove that it itself failed or crashed; the game may subsequently
+choose to shut down on an error status or a device-invalid state.
+The exact branch issuing the exit status is **still unlocated**.
+
+**Substantive new conclusion:** the patch's *secondary* disconnect cleanup
+is no longer a likely immediate fault site; the original game's native
+DirectInput path is still running on the detached joystick and the process
+then exits. A fix cannot be complete until native-game device lifetime is
+understood. The current 2-second re-enumeration in the *secondary* bridge
+cannot run because the game has already terminated.
+
+Next safe engineering step: obtain an exact retail-EXE offline disassembly
+of the **native joystick Poll/Acquire failure branch and the call path
+returning status 9**, with signature validation before any future patch.
+Compare against a control trial with our DS4 secondary bridge disabled to
+attribute whether the exit predates our patch. Do **not** broadly suppress
+`ExitProcess`, hook arbitrary COM vtables, or return invented success
+HRESULTs without identifying the exact native call site. The acceptance
+blocker remains: **unplug must not kill the game**, then test original
+game movement after new DS4 acquisition.
