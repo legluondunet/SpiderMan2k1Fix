@@ -44,5 +44,6 @@ def test_readme_image_blobs_exist_and_have_valid_headers():
 
 def test_ci_dll_artifact_does_not_ship_documentation_screenshots():
     workflow = (ROOT / ".github/workflows/spiderman2k1fix-windows-x86.yml").read_text(encoding="utf-8")
-    assert "cp SpiderMan2k1Fix.dll winmm.dll README.md CHANGELOG.md dist/package/" in workflow
+    assert "cp winmm.dll dist/package/" in workflow
+    assert "cp SpiderMan2k1Fix.dll README.md CHANGELOG.md dist/package/SpiderMan2k1Fix/" in workflow
     assert "assets/screenshots/" not in workflow
