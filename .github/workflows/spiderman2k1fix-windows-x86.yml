@@ -33,6 +33,12 @@ jobs:
       - name: Run regression tests
         run: python3 -m pytest -q ChatGPT/tests
 
+      - name: Inspect shared original keyboard and controller capture branches
+        run: |
+          curl -fsSL --max-time 20 'https://raw.githubusercontent.com/krystalgamer/spidey-decomp/master/tools/functions/5296880.bin' -o /tmp/spider-processControllerScreen.bin
+          echo '===== 0x50d2f0..0x50d875 exact native x86 ====='
+          objdump -D -b binary -m i386 -M intel --adjust-vma=0x50d2f0 /tmp/spider-processControllerScreen.bin | sed -n '/50d3c0:/,/50d865:/p'
+
       - name: Parse PowerShell native audio loader probe
         shell: pwsh
         run: |
