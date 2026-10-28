@@ -1,14 +1,81 @@
 # DualShock 4 automatic PS1-style profile — agreed design
 
-Status: **experimental first implementation on PR #74, manually opt-in,
-NOT ready as an automatic full controller profile**. Seven-action PS1 mappings,
-early Sony DS4 acquisition guard, in-memory virtual Spidey.cfg overlay,
-original-user-settings preservation and contextual SHARE/Escape pulse
-are now implemented. Real Wine/Windows validation remains outstanding.
+Status: **experimental opt-in implementation on PR #74, not yet a
+released automatic controller profile**. Seven PS1 gameplay actions,
+verified DS4 acquisition, virtual Spidey.cfg preservation and SHARE/Escape
+pause have been exercised on the maintainer's Linux/X11/Wine setup.
+Native Windows, other DS4 revisions/transports and failure paths remain
+unverified.
 Dependency: draft PR #73 `fix/native-save-dialog-title-spacing` still being
 tested. This branch does not modify PR #73 or its test artifact.
 
 Author: legluondunet assisted by ChatGPT (OpenAI)
+
+## Controller consolidation checkpoint (2026-10-28, verified where noted)
+
+The maintainer confirmed **PS4 OPTIONS/BUTTON9 alone does nothing** in the
+original 2D main menu while PS1 preview is active. The runtime log
+`SpiderMan2k1Fix(20261028-103357).log` (`v1.1.0-b6e22e7`)
+also confirms unique Sony DS4 `054C:05C4`, successful original
+`Spidey.cfg` bootstrap, Cross-only preview activation, SHA-checked
+native Start/BUTTON11 unbinding, SHARE → native pause, Cross → Enter,
+native request-7 Quit/Yes teardown, and a blocked inherited Cross
+edge on the first returned 2D Flip (85 ms after the last 3D sample).
+**The origin of that delayed Cross state remains unknown.** The
+original Start/BUTTON11 physical-button no-op has not been separately
+demonstrated by this particular log. No conclusion is drawn about
+native Windows or DS4 v2/Bluetooth layouts.
+
+For regular **opt-in PS1 testing**, keep the following values inside
+the **existing** `[Input]` section of `SpiderMan2k1Fix.ini`
+(do **not** append another section with the same name):
+
+```ini
+ControllerProfile=Auto
+ControllerPS1Preview=1
+ControllerPS1ReadOnlyJoystick=1
+ControllerPS1DeepStartProbe=1
+ControllerPS1DisableNativeStart=1
+ControllerAutoDisableMouse=1
+ControllerPS1TransitionEdgeOwnership=1
+ControllerPS1PostQuitGuard=0
+ControllerPS1OptionsSkip=0
+ControllerPS1QuitTrace=0
+ControllerPS1InputFlightRecorder=0
+```
+
+Cross/BUTTON1 is always the sole **synthetic** Enter source in PS1
+preview, irrespective of the legacy `ControllerEnterButtons`
+setting. Circle backs out; SHARE opens/closes the 3D pause.
+OPTIONS/BUTTON9 neither confirms in 2D nor requests 3D script skip
+while `ControllerPS1OptionsSkip=0`. The **different** original
+Start/BUTTON11 is unbound through a strictly checked, opt-in,
+RAM-only patch; both switches must not be confused.
+
+**Experiment/diagnostic cleanup:** The legacy eight-Flip
+`ControllerPS1PostQuitGuard` is now an optional **fallback**, not the
+recommended active protection. `ControllerPS1TransitionEdgeOwnership`
+is the tested no-timeout alternative and stays explicitly opted-in.
+`ControllerPS1QuitTrace` and `ControllerPS1InputFlightRecorder`
+are diagnostic-only and can be left at 0 for routine play.
+`ControllerPS1DeepStartProbe` remains a safety precondition for
+Start unbinding: do not delete or bypass it yet. These keys remain
+recognized for compatibility and further A/B testing; do not
+automatically enable opt-in native patches on untested Windows
+configurations.
+
+**Remaining acceptance matrix:** Check the seven physical gameplay
+actions, 3D scripted cinematic skip by native Cross, repeated menu
+Quit/Yes cycles without diagnostic logging, physical old Start/BUTTON11,
+original keyboard Joystick screen isolation, disconnect/reconnect or
+GetDeviceState failure, independent game mouse restoration on focus
+loss, DS4 v2 and USB/Bluetooth mapping differences, and native Windows.
+CI regression passes do not substitute for real hardware validation.
+
+The 10:33 game launch also repaired one invalid `SpiderMan2k1Fix.ini`
+entry and backed up the original as `SpiderMan2k1Fix.ini.old`.
+The log does **not** identify the invalid key or duplicate; compare
+the old and regenerated file instead of assuming the cause.
 
 ## Maintainer acceptance: read-only Joystick menu (2026-10-28 02:53)
 
