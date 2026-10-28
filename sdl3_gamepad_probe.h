@@ -25,6 +25,8 @@ int SpiderSDL3Probe_SelectedRT(int *normalized_rt);
  * original game thread while its Flip/tick is stopped in the native
  * Joystick menu. Poll mapped SDL3 devices without altering game-owned
  * selection, native joystick or UI synthetic events. No auto init. */
+/* Shared IN-MEMORY profile bank with optional SDL3BindingTrace. */
+SpiderSDL3ControllerProfile *SpiderSDL3Probe_SetupProfile(uint16_t vid,uint16_t pid);
 int SpiderSDL3Probe_SetupPump(void);
 unsigned SpiderSDL3Probe_SetupCount(void);
 int SpiderSDL3Probe_SetupRead(unsigned slot,uint32_t *instance_id,
