@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — PS1-inspired DualShock 4 profile preview (PR #74, opt-in only)
+
+- Add a **disabled-by-default** `[Input] ControllerPS1Preview=1` test switch. The default `ControllerProfile=Auto` continues to use the existing experimental UI bridge unless manually opted in.
+- Recognize exactly one original Sony DS4 using an early, foreground-only DirectInput8 acquisition before the verified game-native `Spidey.cfg` bootstrap. If detection or bootstrap fails, do not activate the fixed preview.
+- Temporarily overlay seven virtual *in-memory* gamepad bindings: Cross=Jump, Circle=Kick, Square=Punch, Triangle=Web, L1=Aim, R1=Zipline and R2=Swing. The original user's gameplay bindings are snapshotted before the override.
+- Preserve the original seven button bindings both in `[Joystick]` and the 252-byte `RawHex` whenever the game saves settings: the PS1 preview never persists or destroys existing user customizations.
+- Route SHARE to the native Escape/pause command during gameplay and the original 3D pause menu. Cross=Enter and Circle=Escape in menus including the native pause menu. Stop the earlier 3D OPTIONS-pause synthesis in this preview.
+- **Incomplete, unvalidated full-profile features**: the original in-game Joystick Configuration menu is not yet locked, original Start/BUTTON11 remains usable, native 3D scripted scene skipping via Cross/OPTIONS is not yet implemented, and the physical mappings require real gamepad testing on Wine and Windows. Do **not** enable this profile by default or release it as a finished feature.
+- Add C99 host-compiled reversible-mapping test and structural regression tests; no merge until maintainer's validation.
+
+
 ## Unreleased — native save-dialog title spacing (awaiting runtime validation)
 
 - Investigating widely separated characters in the original `SAVE GAME PROGRESS ?` confirmation heading under widescreen Auto.
