@@ -496,6 +496,18 @@ static void sdl3_owner_reconcile(HWND hwnd) {
   PVOID replaced;
   char line[245];
   if(!di || !swap_mapping_enabled)return;
+  /* The game's native FFB effect may still reference the first controller.
+   * Refuse ALL detach/swap operations until it is absent; old DI remains
+   * untouched instead of releasing a possibly referenced COM device. */
+  if(InterlockedCompareExchangePointer(
+       (PVOID volatile *)(uintptr_t)SPIDER_NATIVE_FORCE_FEEDBACK,
+       NULL,NULL)) {
+    if((uint32_t)(now-sdl3_owner_log_tick)>=2000u) {
+      report("SDL3-OWNER: REFUSED native force-feedback effect active; original owner retained");
+      sdl3_owner_log_tick=now;
+    }
+    return;
+  }
   if(!SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
      spider_reconnect_kind(vid,pid)==SPIDER_RECONNECT_NONE) {
     /* Unclaimed two-controller session: keyboard stays usable, but the
