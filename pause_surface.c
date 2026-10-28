@@ -227,7 +227,7 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
                        canvas.top+esc_coordf(445.0f,ch,ESC_DESIGN_H),
                        RGB(240,47,69),4,0,0);
     if(ok)
-      ok=pause_draw_text(dc,hint,L"PRESS ANY KEY TO RESUME",
+      ok=pause_draw_text(dc,hint,L"PRESS KEY OR GAMEPAD BUTTON TO RESUME",
                          ui_rect.left,ui_width,
                          canvas.top+esc_coordf(545.0f,ch,ESC_DESIGN_H),
                          RGB(245,240,255),2,1,
