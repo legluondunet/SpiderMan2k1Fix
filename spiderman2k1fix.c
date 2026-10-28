@@ -2510,12 +2510,16 @@ static void pause_at_flip_if_background(void) {
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
   SpiderQuickExitF12_ObserveEngineState(count,InterlockedCompareExchange(&menu_upscale_active,0,0)==1); /* passive native mode+2D renderer tracing */
-  /* The DS4 UI bridge is strictly foreground-only, 2D-only, and runs
-   * BEFORE focus pause can block Flip, so a synthetic Return KEYUP is
-   * never left pending across Alt+Tab. 3D gameplay is unchanged. */
+  /* Game-native 0x006151F8 is GameFMV_Active in the SHA-verified
+   * original executable. A post-menu Bink can play with menu_upscale=0.
+   * The 3D stage must use the original menu-mode switch, NOT the optional
+   * gameplay_4x3_active flag (which is false in widescreen Auto).
+   * Gamepad pulse release runs before any focus-loss pause blocks Flip. */
   SpiderGamepadUI_OnFlip(game_hwnd,
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
-    InterlockedCompareExchange(&gameplay_4x3_active,0,0)==1);
+    InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
+      InterlockedCompareExchange(&fov_game_height,0,0)>0,
+    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u);
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
