@@ -190,4 +190,6 @@ def test_xbox360_native_recovery_is_discovery_only_no_ds4_ps1_remap():
     assert "SPIDER_DS4_VID" in POLICY
     assert "static int ds4_pid(" in ui
     assert "SPIDER_PROFILE_DUALSHOCK4" in ui
-    assert "SPIDER_PROFILE_XBOX360" not in ui  # PS1 mapping must not leak
+    assert "SPIDER_PROFILE_XBOX360" in ui
+    assert "detected_kind==SPIDER_RECONNECT_DS4 || !ps1_preview_requested" in ui
+    assert "if(detected && detected_kind==SPIDER_RECONNECT_XBOX360)" in ui
