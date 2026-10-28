@@ -129,9 +129,17 @@ static int spider_install_readonly_joystick(unsigned mode,
   ps1_menu_logger=logger;
   if(mode!=1u && mode!=2u)return 0;
   if(readonly_installed_mode) {
-    if(readonly_installed_mode==mode)return 1;
-    report("GAMEPAD-READONLY: REFUSED another controller profile has already installed immutable native Joystick patches");
-    return 0;
+    /* Sony and Xbox share the SAME validated eight native patch sites;
+     * only the on-screen physical button names differ. A pad swap may
+     * change the display profile without re-patching machine code or
+     * modifying the current game's seven action bindings. */
+    if(readonly_label_mode!=mode) {
+      readonly_label_mode=mode;
+      report(mode==1u?
+        "GAMEPAD-READONLY: live controller labels changed to DS4 (native action mapping unchanged)":
+        "GAMEPAD-READONLY: live controller labels changed to Xbox360 (native action mapping unchanged)");
+    }
+    return 1;
   }
   static const BYTE nop5[5]={0x90u,0x90u,0x90u,0x90u,0x90u};
   SpiderPS1JoystickReadOnlySite live_sites[SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT];
