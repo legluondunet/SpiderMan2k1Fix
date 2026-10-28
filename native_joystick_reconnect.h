@@ -8,4 +8,6 @@
 #include <windows.h>
 void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *));
 void SpiderNativeReconnect_OnFlip(long flip_index, HWND game_hwnd);
+/* Passive post-rebind input breadcrumbs; never alters gameplay state. */
+void SpiderNativeReconnect_LogSyntheticMenuKey(unsigned scan, const char *phase);
 #endif
