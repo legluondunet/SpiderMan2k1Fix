@@ -51,7 +51,7 @@ def test_ui_enter_is_not_injected_into_ordinary_3d_or_background():
     assert "confirm_allowed=menu_allowed || movie_allowed" in PROFILE
     assert "gameplay_allowed=gameplay_3d && !menu_2d && !movie_allowed" in PROFILE
     assert "GetForegroundWindow()!=hwnd" in PROFILE
-    assert "else if((pressed & (unsigned)confirm)" in PROFILE
+    assert "else if(confirm_allowed &&" in PROFILE
     assert "release_active_key();" in PROFILE
     assert "KEYEVENTF_SCANCODE|KEYEVENTF_KEYUP" in PROFILE
     assert 'begin_scancode(0x1Cu,"Return");' in PROFILE
@@ -82,7 +82,7 @@ def test_known_ds4_buttons_and_honest_compatibility_limits():
     assert "ControllerEnterButtons" in INI
     assert "ControllerBackButton" in INI
     assert "KEYEVENTF_SCANCODE" in PROFILE
-    assert "still need" in PROFILE or "still need" in HEADER
+    assert "still need" in PROFILE or "still experimental" in HEADER
     assert "ExperimentalGamepadStart" in PROFILE
     assert "old ExperimentalGamepadStart is RETIRED/ignored" in PROFILE
 
@@ -95,7 +95,7 @@ def test_circle_back_has_precedence_and_never_overlaps_gameplay():
     assert 'else if(!_stricmp(back_choice,"Circle"))' in PROFILE
     assert 'else if(!_stricmp(back_choice,"Share"))' in PROFILE
     assert "back_pressed=(state.rgbButtons[2]&0x80u?SPIDER_BACK_CIRCLE:0)" in PROFILE
-    assert "if(permitted) {" in PROFILE
+    assert "if(menu_allowed && (back_pressed & (unsigned)back)" in PROFILE
     escape = PROFILE.index('begin_scancode(0x01u,"Escape");')
     enter = PROFILE.index('begin_scancode(0x1Cu,"Return");')
     assert escape < enter
