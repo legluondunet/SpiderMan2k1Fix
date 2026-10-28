@@ -70,10 +70,13 @@ def test_mouse_restoration_on_focus_loss_and_no_win32_cursor_hook():
     assert "GetForegroundWindow()==game_hwnd" in MODE
     assert "IsWindowVisible(game_hwnd)" in MODE
     assert "if(!in_game){" in MODE
+    bg=MODE[MODE.index("if(!in_game){"):MODE.index("if(!armed && !mouse_arm_attempted)")]
+    assert "if(armed)SpiderPS1Mouse_SetPadActive(1);" in bg
+    assert "SpiderPS1Mouse_SetPadActive(0);" not in bg
     assert "SpiderPS1Mouse_SetPadActive(0);" in MODE
     assert "if(!armed && !mouse_arm_attempted)" in MODE
     assert "if(!SpiderPS1Mouse_Arm(mouse_logger))" in MODE
-    assert "GAME MOUSE RESTORED (game focus lost)" in MODE
+    assert "GAME MOUSE RESTORED (MouseEnabled=1)" in MODE
 
 
 def test_mouse_module_compiled_into_windows_x86_artifact():
