@@ -185,7 +185,7 @@ static int xbox_pause_button_free_of_native_actions(unsigned requested_button) {
   /* Original persisted Start/Back assignments can differ from live RAM.
    * When our authenticated Xbox overlay is active, compare against its
    * actual seven buttons, not the player's persisted [Joystick] values. */
-  if(xbox360_preview_active)
+  if(xbox360_preview_active || SpiderNativeReconnect_CanonicalXboxMapping())
     return spider_xbox360_button_free_for_pause(requested_button);
   if(!profile_ini[0])return 0;
   for(i=0;i<7u;i++) {
