@@ -40,6 +40,8 @@
 #include "native_joystick_reconnect_policy.h"
 #include "xbox360_menu_policy.h"
 #include "xbox360_gameplay_mapping.h"
+#include "xbox360_trigger_swing_policy.h"
+#include "virtual_spidey_cfg.h"
 #include "native_joystick_reconnect.h"
 #include "ps1_input_flight_recorder.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
@@ -68,6 +70,10 @@ static uint32_t xbox_previous_mask=0;
 static unsigned xbox_button_trace_count=0;
 /* Manual passive trigger-axis diagnostic; no gameplay injection or hooks. */
 static int xbox_trigger_probe_requested=0;
+/* Separate manual RT-to-Swing keyboard experiment (default OFF). */
+static int xbox_rt_swing_requested=0;
+static unsigned xbox_rt_swing_down_scan=0;
+static unsigned xbox_rt_swing_denied_count=0;
 static unsigned xbox_trigger_probe_samples=0;
 static DWORD xbox_trigger_probe_tick=0;
 static DIJOYSTATE2 xbox_trigger_previous={0};
@@ -261,9 +267,75 @@ static void begin_scancode(unsigned scan,const char *action) {
     report(line);
   }
 }
+/* Keep held RT-to-Swing key independent from momentary menu keys.
+ * The injected DIK scan is dynamically read from the authenticated game
+ * config and released on every focus/input/context exit, never in a loop. */
+static void xbox_rt_swing_release(const char *why) {
+  INPUT in;
+  unsigned scan=xbox_rt_swing_down_scan;
+  char line[210];
+  if(!scan)return;
+  memset(&in,0,sizeof(in));
+  in.type=INPUT_KEYBOARD;
+  in.ki.wScan=(WORD)scan;
+  in.ki.dwFlags=KEYEVENTF_SCANCODE|KEYEVENTF_KEYUP;
+  if(SendInput(1,&in,sizeof(in))!=1) {
+    snprintf(line,sizeof(line),
+      "GAMEPAD-XBOX360: RT-SWING KEYUP FAILED DIK 0x%02X reason=%s Win32=%lu; retry on next Flip",
+      scan,why?why:"unknown",(unsigned long)GetLastError());
+    report(line);
+    return;
+  }
+  xbox_rt_swing_down_scan=0;
+  snprintf(line,sizeof(line),
+    "GAMEPAD-XBOX360: RT-SWING UP DIK 0x%02X reason=%s",
+    scan,why?why:"released");
+  report(line);
+}
+static void xbox_rt_swing_update(long axis,int gameplay_ok) {
+  unsigned scan;
+  INPUT in;
+  char line[210];
+  int should_hold;
+  if(!xbox_rt_swing_requested || !xbox360_preview_active ||
+     detected_kind!=SPIDER_RECONNECT_XBOX360 || !gameplay_ok) {
+    xbox_rt_swing_release("inactive game/focus/pause/controller");
+    return;
+  }
+  should_hold=spider_xbox360_rt_swing_held(
+    xbox_rt_swing_down_scan!=0,axis);
+  if(!should_hold) {
+    xbox_rt_swing_release("RT released or axis neutral/positive");
+    return;
+  }
+  if(xbox_rt_swing_down_scan)return;
+  scan=SpiderCfg_Xbox360SwingScan();
+  if(!scan) {
+    if(xbox_rt_swing_denied_count++<5u)
+      report("GAMEPAD-XBOX360: RT-SWING REFUSED: original Swing keyboard DIK unset/unsafe/duplicates another action or CRT unverified");
+    return;
+  }
+  memset(&in,0,sizeof(in));
+  in.type=INPUT_KEYBOARD;
+  in.ki.wScan=(WORD)scan;
+  in.ki.dwFlags=KEYEVENTF_SCANCODE;
+  if(SendInput(1,&in,sizeof(in))!=1) {
+    snprintf(line,sizeof(line),
+      "GAMEPAD-XBOX360: RT-SWING KEYDOWN FAILED DIK 0x%02X Win32=%lu",
+      scan,(unsigned long)GetLastError());
+    report(line);
+    return;
+  }
+  xbox_rt_swing_down_scan=scan;
+  snprintf(line,sizeof(line),
+    "GAMEPAD-XBOX360: RT-SWING DOWN lZ=%ld DIK=0x%02X (held until release/focus/context change; LT high axis ignored)",
+    axis,scan);
+  report(line);
+}
 static void disable_profile_with_policy(const char *reason,
                                         int already_inputlost) {
   release_active_key();
+  xbox_rt_swing_release("secondary controller disabled");
   if(device) {
     IDirectInputDevice8A *old=device;
     device=NULL;
@@ -324,6 +396,7 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   ps1_preview_requested=GetPrivateProfileIntA("Input","ControllerPS1Preview",0,ini)==1;
   xbox360_preview_requested=GetPrivateProfileIntA("Input","ControllerXbox360Preview",0,ini)==1;
   xbox_trigger_probe_requested=GetPrivateProfileIntA("Debug","Xbox360TriggerProbe",0,ini)==1;
+  xbox_rt_swing_requested=GetPrivateProfileIntA("Input","ControllerXbox360RTSwing",0,ini)==1;
   ps1_options_skip_requested=GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1;
   ps1_readonly_menu_requested=GetPrivateProfileIntA("Input","ControllerPS1ReadOnlyJoystick",0,ini)==1;
   /* Global game-only mouse policy replaces the retired DS4-only option.
@@ -376,6 +449,9 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   report(xbox360_preview_requested?
     "GAMEPAD-XBOX360: PREVIEW REQUESTED (opt-in, unique Xbox + native readonly + CRT bootstrap required)":
     "GAMEPAD-XBOX360: PREVIEW OFF (default, original 3D bindings retained)");
+  report(xbox_rt_swing_requested?
+    "GAMEPAD-XBOX360: RT-SWING REQUESTED experimental negative lZ -> held native keyboard Swing; requires active Xbox preview":
+    "GAMEPAD-XBOX360: RT-SWING OFF (default)");
 }
 static void detect_device(HWND hwnd) {
   SpiderDIDiscovery d;
@@ -995,11 +1071,13 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
    * or no controller; no desktop mouse or keyboard hooks are installed. */
   SpiderPS1Mouse_OnFlip(hwnd);
   if(!configured || !hwnd || !IsWindow(hwnd)){
+    xbox_rt_swing_release("game window unavailable");
     return;
   }
   /* Critical: release injected key before focus pause can block this thread. */
   release_active_key();
   if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {
+    xbox_rt_swing_release("focus lost");
     /* Native game mouse state was already restored by mouse OnFlip. */
     ps1_history_record(SPIDER_PS1_HISTORY_FOCUS_LOST,0u,menu_2d,
       gameplay_3d,bink_active,native_pause_active,(unsigned)previous_buttons,NULL);
@@ -1051,6 +1129,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     ps1_history_record(SPIDER_PS1_HISTORY_READ_FAILED,native_request,
       menu_2d,gameplay_3d,bink_active,native_pause_active,
       (unsigned)previous_buttons,NULL);
+    xbox_rt_swing_release("secondary DirectInput read failure");
     if(bad_reads++<4u) {
       char line[155];
       snprintf(line,sizeof(line),
@@ -1100,6 +1179,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     for(i=0;i<12u;i++)
       if(state.rgbButtons[i]&0x80u)held|=(1u<<i);
     if(!spider_ds4_hotplug_accept_buttons(&hotplug,held)) {
+      xbox_rt_swing_release("controller reconnect/edge quarantine");
       /* Never leak a held reconnect/focus-return button as a synthetic
        * Return/Escape. The original native controller reads are untouched. */
       previous_buttons=0;previous_back=0;previous_pause=0;
@@ -1129,6 +1209,12 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
       report(xbox_line);
     }
     xbox_previous_mask=held;
+    /* RT is a physical analog axis; the controller native button array
+     * never sees it as BUTTON9. Sustain keyboard Swing only in unpaused
+     * live 3D and release before any Back/Start pause action. */
+    xbox_rt_swing_update((long)state.lZ,
+      gameplay_3d && !menu_2d && !bink_active && !native_pause_active &&
+      !pause_requested);
     /* Gameplay: Back/Start synthesize Escape only when UNBOUND from all
      * original native actions. The game will still see the controller,
      * so never fire both Swing/Aim and Pause on one physical press.
@@ -1143,6 +1229,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
       begin_scancode(0x1Cu,"Return");
     return;
   }
+  xbox_rt_swing_release("active device is not Xbox 360");
   pressed=(state.rgbButtons[1]&0x80u?SPIDER_CONFIRM_CROSS:0) |
           (state.rgbButtons[9]&0x80u?SPIDER_CONFIRM_OPTIONS:0);
   /* PS1 preview: Cross is the ONLY synthetic menu confirmation. The
