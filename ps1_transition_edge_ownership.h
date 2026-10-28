@@ -10,15 +10,16 @@
  * the brand-new main menu, starting New Game.
  *
  * This module is pure C99, with no time delay, OS calls, native memory
- * writes, logging or input synthesis. It only consumes the old-session
- * button bits until the first sampled release of each bit.
+ * writes, logging or input synthesis. It reports a per-button mask of
+ * old-session confirmation bits until each individual physical release.
+ * A fresh press of the OTHER confirmation button must remain eligible.
  */
 typedef struct {
   unsigned seen_3d;
   unsigned inherited_buttons;
 } SpiderPS1TransitionEdgeOwnership;
 
-static int spider_ps1_transition_edge_ownership_flip(
+static unsigned spider_ps1_transition_edge_ownership_flip(
     SpiderPS1TransitionEdgeOwnership *owner,
     int enabled,int menu2d,int gameplay3d,int movie,
     unsigned native_request,unsigned pressed_confirm_mask) {
@@ -45,7 +46,7 @@ static int spider_ps1_transition_edge_ownership_flip(
      * Cross press after release is immediately eligible for the new
      * menu, even if it is less than 8 frames after the native return. */
     owner->inherited_buttons &= pressed_confirm_mask;
-    return owner->inherited_buttons!=0u;
+    return owner->inherited_buttons;
   }
   return 0;
 }
