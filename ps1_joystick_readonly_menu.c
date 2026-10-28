@@ -45,6 +45,77 @@ static void __cdecl spider_joystick_restore_denied(void) {
   }
 }
 
+/* Native initActionMaps (0x50D0F0) appends "restore default settings"
+ * after 14 action rows. Replacing the native Restore handler with a no-op
+ * leaves that selectable row and still enters the game's refresh path.
+ * Remove the ROW instead, only for Joystick; Keyboard stays untouched.
+ *
+ * x86 ABI: original CMenu::AddEntry is thiscall (this in ECX and one
+ * stack argument, callee pops 4 bytes). A __fastcall function with one
+ * dummy EDX argument matches that ABI, including RET 4. */
+typedef void (__thiscall *SpiderCMenuAddEntry)(void *,const char *);
+static void __fastcall spider_joystick_restore_row_addentry(
+    void *native_menu,void *unused_edx,const char *label) {
+  (void)unused_edx;
+  if(*(const volatile DWORD *)(uintptr_t)0x00AC129Cu!=0u) {
+    static LONG suppressed=0;
+    if(InterlockedIncrement(&suppressed)==1)
+      report("GAMEPAD-READONLY: Restore Default ROW OMITTED in Joystick; 14 action entries kept, Keyboard restore preserved");
+    return;
+  }
+  ((SpiderCMenuAddEntry)(uintptr_t)0x0043FFF0u)(native_menu,label);
+}
+
+/* Strictly discover the final native AddEntry call (rel32 0x43FFF0)
+ * paired with the original "restore default settings" literal push.
+ * We scan only the tail of exact supported initActionMaps, saving
+ * original bytes for the same preflight/rollback as other sites.
+ * No uniquely verified call -> REFUSE entire readonly install.
+ */
+static int spider_find_native_restore_row(
+    BYTE *image,DWORD size,SpiderPS1JoystickReadOnlySite *result) {
+  const uintptr_t start=0x0050D210u,end=0x0050D2F0u;
+  const char expected[]="restore default settings";
+  const size_t label_len=sizeof(expected);
+  uintptr_t call=0,pc;
+  unsigned matches=0;
+  if(!image || !result || size<=end-0x00400000u)return 0;
+  for(pc=start;pc+5u<=end;pc++) {
+    int32_t rel;
+    uintptr_t dest,push;
+    int found_string=0;
+    if(*(const BYTE *)pc!=0xE8u)continue;
+    memcpy(&rel,(const void *)(pc+1u),sizeof(rel));
+    dest=(uintptr_t)((intptr_t)(pc+5u)+(intptr_t)rel);
+    if(dest!=0x0043FFF0u)continue;
+    for(push=pc-24u;push+5u<=pc;push++) {
+      uint32_t text_va;
+      MEMORY_BASIC_INFORMATION mbi;
+      uintptr_t region;
+      if(*(const BYTE *)push!=0x68u)continue;
+      memcpy(&text_va,(const void *)(push+1u),sizeof(text_va));
+      if(text_va<0x00400000u ||
+         (uint64_t)text_va+label_len>(uint64_t)0x00400000u+size ||
+         VirtualQuery((const void *)(uintptr_t)text_va,&mbi,sizeof(mbi))
+           !=sizeof(mbi) || mbi.State!=MEM_COMMIT ||
+         (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)))continue;
+      region=(uintptr_t)mbi.BaseAddress;
+      if((uintptr_t)text_va<region ||
+         mbi.RegionSize-((uintptr_t)text_va-region)<label_len)continue;
+      if(memcmp((const void *)(uintptr_t)text_va,expected,label_len)==0) {
+        found_string=1;break;
+      }
+    }
+    if(found_string){matches++;call=pc;}
+  }
+  if(matches!=1u)return 0;
+  result->virtual_address=(uint32_t)call;
+  result->size=5u;
+  memset(result->original,0,sizeof(result->original));
+  memcpy(result->original,(const void *)call,5u);
+  return 1;
+}
+
 /* Called instead of just the one original joystick-only sprintf at
  * 0x50D28C. The native CMenu::AddEntry that follows keeps ownership of
  * its own text and drawing, so we do not need a custom renderer. */
