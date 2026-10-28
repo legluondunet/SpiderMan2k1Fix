@@ -14,4 +14,6 @@ void SpiderCfg_BootstrapGameRead(void);
 /* Opt-in RAM-only PS1 gameplay mapping after verified DS4 acquisition.
  * Never writes the overlay into the original user INI. */
 int SpiderCfg_EnablePS1Preview(void);
+/* True only after an authenticated game-owned loader consumed the overlay. */
+int SpiderCfg_PS1BootstrapLoaded(void);
 #endif
