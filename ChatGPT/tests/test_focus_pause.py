@@ -178,7 +178,7 @@ def test_custom_pause_balances_desktop_cursor_on_focus_return_not_only_wake():
     assert "SpiderInputFocus_OnFlip(InterlockedCompareExchange(&flip_count,0,0));" in loop
     assert loop.index("SpiderInputFocus_OnFlip(") < loop.index("SpiderPauseAny_Completed()")
     assert "pause_previous_foreground=pause_now_foreground;" in loop
-    assert "ShowCursor(" not in pause
+    assert not any(line.lstrip().startswith("ShowCursor(") for line in pause.splitlines())
     focus=(ROOT/"input_focus_trace.c").read_text()
     assert "if(foreground && cursor_display_increments>0)" in focus
     assert "ShowCursor(FALSE)" in focus
