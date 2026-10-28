@@ -81,11 +81,18 @@ The *existing* original-game hotplug options are **both OFF by default**:
 ControllerProfile=Xbox360
 ControllerPS1Preview=0
 ExperimentalNativeJoystickUnplugGuard=1
-ExperimentalNativeJoystickReconnect=1
+ExperimentalNativeJoystickReconnect=0
 
 [Debug]
 Log=1
 ```
+
+For the **first baseline run**, leave native reconnect **OFF** and DO NOT
+unplug the Holtek pad. Confirm that original analog/gameplay and
+2D A/B UI actually work before introducing another experimental
+variable. If the first test is successful, enable
+\`ExperimentalNativeJoystickReconnect=1\` in a separate run to test
+one physical unplug/replug.
 
 The native reconnect now uses the game's existing DirectInput8A
 factory, original x86 data format, native +/-1000 lX/lY axis range
@@ -98,7 +105,7 @@ The existing original x86 SHA/signature guard and
 
 ## Hardware acceptance to perform
 
-First use this hardware with **one** gamepad attached. Keep
+First use this hardware with **one** gamepad attached, no DS4, and **reconnect=0**. Keep
 `ControllerPS1Preview=0` and the original seven native
 bindings unchanged. Verify the game starts, reaches the menu
 and log includes `GAMEPAD-UI: DISCOVERY gamepads=1 ... Xbox360=1
@@ -114,7 +121,7 @@ A/B differently from Microsoft's Xbox 360 directinput conventions.
 No extra input reads or separate device calls are made.
 
 Check joystick X/Y analog, D-pad and original native seven
-gameplay buttons **before** unplugging; then observe A/B
+gameplay buttons **without unplugging**; then observe A/B
 in menus. Provisional A/B mapping must be reviewed if
 Wine exposes different DirectInput button indices. Only after
 normal input is confirmed, unplug once, confirm the game
