@@ -45,6 +45,16 @@ static const SpiderPS1JoystickReadOnlySite spider_ps1_readonly_sites[
    * and continue at 0x50D400, keeping keyboard remapping editable. */
   {0x0050D3FAu,6u,{0x55u,0x68u,0x00u,0x20u,0x00u,0x00u}}
 };
+/* Xbox-specific labels are intentionally limited to two physically
+ * observed Holtek 045E:028E DirectInput indices. Unknown indices use
+ * the original numeric fallback: do not invent X/Y/LT/RT mappings. */
+static const char *spider_xbox360_native_button_label(uint32_t button) {
+  switch(button) {
+    case 0u: return "A";
+    case 1u: return "B";
+    default: return NULL;
+  }
+}
 static const char *spider_ps1_native_button_label(uint32_t button) {
   switch(button) {
     case 0u: return "SQUARE";
