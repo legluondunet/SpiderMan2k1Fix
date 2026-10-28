@@ -168,6 +168,8 @@ mouse dependency. The **new shortcuts themselves are not yet physically
 tested**; verify them with the next Windows x86 artifact. The title
 and help now use ASCII-only Win32 labels to avoid Wine ANSI mojibake.
 
+**2026-10-28 Wine crash candidate guard:** One physical test of the keyboard/gamepad navigable build (`v1.1.0-097d29f`) succeeded through several in-memory assignments and a model reset, but the process stopped without logging dialog close. This is **not yet a diagnosed exception**: no dump/stack was provided. The first mitigation removes reentrant `DestroyWindow` from the SDL3 timer's B/Circle path: it schedules close only after button release using a posted WM_CLOSE. Keyboard Escape and the Close button also queue close. `WM_CLOSE` disarms the timer and captures before destruction; the dialog logs Reset begin/result, close request, `WM_CLOSE`, `WM_DESTROY`, modal-loop exit and owner restoration. If the next Wine test still crashes, capture exception code, faulting module/stack and action used at the moment of failure, instead of assuming the same cause.
+
 **Limitations:** The preview's assignments are **not yet persisted** and
 **do not yet modify gameplay**. The native game continues to own 3D
 actions, including the currently unresolved Xbox RT Swing scan refusal.
