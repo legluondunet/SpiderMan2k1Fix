@@ -72,6 +72,13 @@ void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
   requested=ini && GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1;
   native_owner_requested=requested &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1;
+  if(native_owner_requested &&
+     (GetPrivateProfileIntA("Input","ExperimentalNativeJoystickUnplugGuard",0,ini)!=1 ||
+      GetPrivateProfileIntA("Input","ExperimentalNativeJoystickReconnect",0,ini)!=1 ||
+      GetPrivateProfileIntA("Input","ExperimentalNativeJoystickMappingSwap",0,ini)!=1)) {
+    native_owner_requested=0;
+    say("SDL3-OWNER: REFUSED missing native UnplugGuard+Reconnect+MappingSwap opt-ins; SDL3 stays passive");
+  }
   if(requested)say("SDL3-PROBE: requested (OFF by default); discovery and selection enabled");
   if(native_owner_requested)
     say("SDL3-OWNER: EXPERIMENT requested; selected SDL3 identity may authorize opt-in DirectInput native + UI bridge (STRICT, FAIL-CLOSED)");
