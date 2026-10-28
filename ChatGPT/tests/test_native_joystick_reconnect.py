@@ -64,7 +64,7 @@ def test_original_game_owner_interface_not_parallel_factory():
         "DISCL_FOREGROUND|DISCL_NONEXCLUSIVE",
         "(const DIDATAFORMAT *)(uintptr_t)SPIDER_NATIVE_FORMAT",
         "DIPROP_BUFFERSIZE", "DIPROP_AXISMODE", "DIPROP_RANGE",
-        "DIPH_BYOFFSET", "set_native_range(device,16u)",
+        "DIPH_BYOFFSET", "set_native_range(device,0u)",
         "set_native_range(device,4u)",
         "IDirectInputDevice8_GetCapabilities(device,caps)",
         "IDirectInputDevice8_Acquire(device)",
@@ -123,5 +123,9 @@ def test_original_exe_signatures_and_nonintrusive_candidate_preparation():
     assert "if(sizeof(void*)!=4" in SOURCE
     assert "0xB0,0x77,0x51,0x00" in SOURCE
     assert "DIJOYSTATE" in SOURCE
+    assert "0x005019E0" in SOURCE
+    assert "0x00501A42" in SOURCE
+    assert "set_native_range(device,16u)" not in SOURCE
+    assert SOURCE.index("set_native_range(device,0u)") < SOURCE.index("set_native_range(device,4u)")
     assert "memcmp((const void *)(uintptr_t)0x00501AFBu,original_create" in SOURCE
     assert "game factory" in SOURCE.lower() or "GAME'S factory" in SOURCE
