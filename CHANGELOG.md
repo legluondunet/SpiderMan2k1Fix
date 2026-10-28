@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — game-only mouse disabled by default (PR #74)
+
+- Original PC 2001 manual, game README and period developer interview confirm the mouse is **only used for menus**. Gameplay and all menu commands work with keyboard/joystick; do not conflate with the 2002 Movie game.
+- Add `[Input] MouseEnabled=0` to the generated configuration and default to off for pre-existing INIs with no key. Set `MouseEnabled=1` to restore original mouse navigation in menus. This policy applies with **keyboard alone**, any gamepad, or `ControllerProfile=Off`; it no longer depends on DS4 availability or `ControllerPS1Preview`.
+- Reuse the previously validated, original game-owned `gRenderTest & 0x10` gate with strict three-site native instruction verification, one atomic RAM flag and foreground-owned restoration. Never touch the Windows/Linux desktop cursor, joystick mapping, or keyboard input. The game mouse remains unchanged if native validation fails.
+- Retire but continue accepting the old controller-specific `ControllerAutoDisableMouse` INI key. It no longer changes behavior; `MouseEnabled=1` takes precedence and always restores the original menu mouse. The user's existing previous test with a DS4 remains evidence for the native gate; keyboard-only and native Windows require runtime validation.
+
 ## Unreleased — controller cleanup and accepted Cross-only PS1 navigation (PR #74)
 
 - Maintainer **visually validated** that OPTIONS/BUTTON9 alone does nothing in the native 2D title menu under Linux/X11/Wine with a Sony `054C:05C4` DS4. The separate 10:33 game log confirms Cross-only PS1 preview activation, SHARE/native pause, original Quit request 7, native 3D cleanup and successful interception of one inherited Cross edge (85 ms gap) on return to 2D. The physical source of the delayed Cross signal remains unproven.
