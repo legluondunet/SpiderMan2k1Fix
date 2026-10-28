@@ -299,6 +299,63 @@ static void rescan(void) {
   last_mapped_count=mapped;last_joystick_count=total;
   sdl_free(ids);sdl_free(joysticks);
 }
+/* A setup modal pauses the game's original Flip thread on its stack.
+ * Pump the already-loaded SDL3 gamepads through this explicit same-thread
+ * entry point. Never claim a native owner or synthesize an input here. */
+int SpiderSDL3Probe_SetupPump(void) {
+  DWORD now;
+  if(!requested || !ready || !scanned || !sdl3_game_thread ||
+     sdl3_game_thread!=GetCurrentThreadId() ||
+     !sdl_pump || !sdl_update)return 0;
+  sdl_pump();sdl_update();
+  now=GetTickCount();
+  if((uint32_t)(now-last_scan)>=SPIDER_SDL_SCAN_MS) {
+    last_scan=now;
+    rescan();
+  }
+  return 1;
+}
+SpiderSDL3ControllerProfile *SpiderSDL3Probe_SetupProfile(uint16_t vid,uint16_t pid) {
+  if(!ready || !scanned || !sdl3_game_thread ||
+     sdl3_game_thread!=GetCurrentThreadId())return NULL;
+  return spider_sdl3_bank_get(&bindings_bank,vid,pid);
+}
+unsigned SpiderSDL3Probe_SetupCount(void) {
+  return ready && scanned && sdl3_game_thread==GetCurrentThreadId()?
+         num_pads:0;
+}
+int SpiderSDL3Probe_SetupRead(unsigned slot,uint32_t *instance_id,
+    uint16_t *vid,uint16_t *pid,char *name,size_t capacity,
+    SpiderSDL3ControllerSample *sample) {
+  unsigned i;
+  const char *text_name;
+  void *handle;
+  uint32_t id;
+  if(instance_id)*instance_id=0;
+  if(vid)*vid=0;
+  if(pid)*pid=0;
+  if(name && capacity)name[0]=0;
+  if(sample)memset(sample,0,sizeof(*sample));
+  if(!sample || !ready || !scanned ||
+     sdl3_game_thread!=GetCurrentThreadId() ||
+     slot>=num_pads || !sdl_button || !sdl_axis ||
+     !sdl_vendor || !sdl_product || !sdl_name)return 0;
+  handle=pads[slot].handle;id=pads[slot].id;
+  if(!handle || !id)return 0;
+  /* A disconnected handle must not be sampled after detachment. */
+  if(!sdl_vendor(id) || !sdl_product(id))return 0;
+  for(i=0;i<SPIDER_SDL3_BUTTON_COUNT;i++)
+    if(sdl_button(handle,(int)i))sample->buttons|=1u<<i;
+  sample->axis[SPIDER_SDL3_AXIS_LT]=sdl_axis(handle,SPIDER_SDL3_AXIS_LT);
+  sample->axis[SPIDER_SDL3_AXIS_RT]=sdl_axis(handle,SPIDER_SDL3_AXIS_RT);
+  if(instance_id)*instance_id=id;
+  if(vid)*vid=sdl_vendor(id);
+  if(pid)*pid=sdl_product(id);
+  text_name=sdl_name(id);
+  if(name && capacity)
+    snprintf(name,capacity,"%s",text_name?text_name:"Mapped SDL3 gamepad");
+  return 1;
+}
 /* SDL3 exposes each trigger as a separate 0..32767 axis. The
  * legacy XUSB DirectInput driver may instead combine LT and RT on lZ,
  * which varies with a device rebind and driver. Read the ALREADY-open,
@@ -383,63 +440,6 @@ static void sdl3_binding_trace_on_flip(void) {
     (int)sample.axis[SPIDER_SDL3_AXIS_RT]);
   say(line);
   bindings_trace_lines++;
-}
-/* A setup modal pauses the game's original Flip thread on its stack.
- * Pump the already-loaded SDL3 gamepads through this explicit same-thread
- * entry point. Never claim a native owner or synthesize an input here. */
-int SpiderSDL3Probe_SetupPump(void) {
-  DWORD now;
-  if(!requested || !ready || !scanned || !sdl3_game_thread ||
-     sdl3_game_thread!=GetCurrentThreadId() ||
-     !sdl_pump || !sdl_update)return 0;
-  sdl_pump();sdl_update();
-  now=GetTickCount();
-  if((uint32_t)(now-last_scan)>=SPIDER_SDL_SCAN_MS) {
-    last_scan=now;
-    rescan();
-  }
-  return 1;
-}
-SpiderSDL3ControllerProfile *SpiderSDL3Probe_SetupProfile(uint16_t vid,uint16_t pid) {
-  if(!ready || !scanned || !sdl3_game_thread ||
-     sdl3_game_thread!=GetCurrentThreadId())return NULL;
-  return spider_sdl3_bank_get(&bindings_bank,vid,pid);
-}
-unsigned SpiderSDL3Probe_SetupCount(void) {
-  return ready && scanned && sdl3_game_thread==GetCurrentThreadId()?
-         num_pads:0;
-}
-int SpiderSDL3Probe_SetupRead(unsigned slot,uint32_t *instance_id,
-    uint16_t *vid,uint16_t *pid,char *name,size_t capacity,
-    SpiderSDL3ControllerSample *sample) {
-  unsigned i;
-  const char *text_name;
-  void *handle;
-  uint32_t id;
-  if(instance_id)*instance_id=0;
-  if(vid)*vid=0;
-  if(pid)*pid=0;
-  if(name && capacity)name[0]=0;
-  if(sample)memset(sample,0,sizeof(*sample));
-  if(!sample || !ready || !scanned ||
-     sdl3_game_thread!=GetCurrentThreadId() ||
-     slot>=num_pads || !sdl_button || !sdl_axis ||
-     !sdl_vendor || !sdl_product || !sdl_name)return 0;
-  handle=pads[slot].handle;id=pads[slot].id;
-  if(!handle || !id)return 0;
-  /* A disconnected handle must not be sampled after detachment. */
-  if(!sdl_vendor(id) || !sdl_product(id))return 0;
-  for(i=0;i<SPIDER_SDL3_BUTTON_COUNT;i++)
-    if(sdl_button(handle,(int)i))sample->buttons|=1u<<i;
-  sample->axis[SPIDER_SDL3_AXIS_LT]=sdl_axis(handle,SPIDER_SDL3_AXIS_LT);
-  sample->axis[SPIDER_SDL3_AXIS_RT]=sdl_axis(handle,SPIDER_SDL3_AXIS_RT);
-  if(instance_id)*instance_id=id;
-  if(vid)*vid=sdl_vendor(id);
-  if(pid)*pid=sdl_product(id);
-  text_name=sdl_name(id);
-  if(name && capacity)
-    snprintf(name,capacity,"%s",text_name?text_name:"Mapped SDL3 gamepad");
-  return 1;
 }
 void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
   DWORD now;
