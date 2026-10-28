@@ -44,6 +44,7 @@
 #include "virtual_spidey_cfg.h"
 #include "native_joystick_reconnect.h"
 #include "ps1_input_flight_recorder.h"
+#include "ps1_joystick_readonly_menu.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
 typedef HRESULT (WINAPI *SpiderDICreateFn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
