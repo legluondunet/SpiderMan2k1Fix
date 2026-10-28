@@ -252,12 +252,20 @@ static int spider_install_readonly_joystick(unsigned mode,
                  (spider_ps1_readonly_sites[0].virtual_address+5u);
     memcpy(&replacements[0][1],&rel,sizeof(rel));
   }
-  for(i=2;i<=3u;i++){
-    const SpiderPS1JoystickReadOnlySite *p=&live_sites[i];
+  /* CRITICAL KEYBOARD REGRESSION FIX: original processControllerScreen
+   * 0x50D51C is inside the KEYBOARD-only branch (the native test at
+   * 0x50D4D7 jumps to JOYSTICK branch 0x50D683). Our earlier unconditional
+   * JMP at 0x50D51C prevented keyboard capture from completing.
+   * Keep this original instruction UNCHANGED (verified in the 8-site
+   * preflight), while the guarded 0x50D3FA capture gate still blocks
+   * Joystick and permits Keyboard's normal PRESS A KEY process. */
+  memcpy(replacements[2],live_sites[2].original,live_sites[2].size);
+  {
+    const SpiderPS1JoystickReadOnlySite *p=&live_sites[3];
     uint32_t rel=0x0050D852u-(p->virtual_address+5u);
-    replacements[i][0]=0xE9u; /* JMP game's own cleaned return */
-    memcpy(&replacements[i][1],&rel,sizeof(rel));
-    if(p->size==6u)replacements[i][5]=0x90u;
+    replacements[3][0]=0xE9u; /* joystick-only mapping branch */
+    memcpy(&replacements[3][1],&rel,sizeof(rel));
+    if(p->size==6u)replacements[3][5]=0x90u;
   }
   {
     /* The last site replaces the entire six-byte capture-mode entry
