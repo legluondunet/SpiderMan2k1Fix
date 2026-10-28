@@ -556,7 +556,7 @@ void SpiderGamepadUI_ActivatePS1(void){
   if(!detected || !ps1_preview_requested)return;
   ps1_preview_active=1;
   back=SPIDER_BACK_CIRCLE;
-  report("GAMEPAD-UI: PS1-PREVIEW ACTIVE, fixed gameplay RAM only; original Joystick configuration menu NOT YET locked");
+  report("GAMEPAD-UI: PS1-PREVIEW ACTIVE, fixed gameplay RAM only; CROSS-only 2D/Bink/pause confirmation (OPTIONS/Start not mapped to Enter); original Joystick menu separately guarded");
   ps1_probe_native_start_tables(); /* read-only scan; optional checked single-DWORD RAM experiment */
   if(ps1_readonly_menu_requested && !SpiderPS1_InstallReadOnlyJoystick(log_message))
     report("GAMEPAD-PS1: JOYSTICK-READONLY inactive; exact native signatures missing or failed to install");
@@ -694,7 +694,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active) {
   DIJOYSTATE2 state;
   HRESULT hr;
-  unsigned pressed,back_pressed,confirm_edges;
+  unsigned pressed,back_pressed,confirm_edges,effective_confirm;
   int menu_allowed,movie_allowed,confirm_allowed,gameplay_allowed,pause_pressed;
   int share_pressed,share_edge,native_start_pressed;
   int post_quit_block=0;
@@ -768,15 +768,19 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(1);
   pressed=(state.rgbButtons[1]&0x80u?SPIDER_CONFIRM_CROSS:0) |
           (state.rgbButtons[9]&0x80u?SPIDER_CONFIRM_OPTIONS:0);
-  /* Edge detection must be per button: an already held Cross must not
-   * hide a fresh OPTIONS press, or vice versa. */
-  confirm_edges=(pressed & (unsigned)confirm) & ~(unsigned)previous_buttons;
+  /* PS1 preview: Cross is the ONLY synthetic menu confirmation. The
+   * legacy ControllerEnterButtons choice is honored outside PS1 preview.
+   * OPTIONS/Start remains free of synthetic Enter even if the old INI
+   * still says Both; native Start/BUTTON11 is handled separately. */
+  effective_confirm=ps1_preview_active?SPIDER_CONFIRM_CROSS:(unsigned)confirm;
+  /* Per-button edges are still tracked independently for legacy mode. */
+  confirm_edges=(pressed & effective_confirm) & ~(unsigned)previous_buttons;
   ps1_history_record(SPIDER_PS1_HISTORY_READ_OK,native_request,menu_2d,
     gameplay_3d,bink_active,native_pause_active,(unsigned)previous_buttons,&state);
   if(ps1_preview_active && ps1_transition_edge_ownership_requested) {
     ownership_block=spider_ps1_transition_edge_ownership_flip(
       &ps1_transition_ownership,1,menu_2d,gameplay_3d,bink_active,
-      native_request,pressed & (unsigned)confirm);
+      native_request,pressed & effective_confirm);
   }
   back_pressed=(state.rgbButtons[2]&0x80u?SPIDER_BACK_CIRCLE:0) |
                (state.rgbButtons[8]&0x80u?SPIDER_BACK_SHARE:0);
