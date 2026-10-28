@@ -34,6 +34,11 @@ typedef struct {
   unsigned slot;
   unsigned count;
   unsigned action;
+  /* Close from a physical SDL3 B must wait for its release. Never destroy
+   * our owner window synchronously inside WM_TIMER or a child callback. */
+  unsigned close_pending;
+  unsigned closing;
+  DWORD close_requested_ms;
 } SpiderSDL3SetupUI;
 static int setup_enabled=0,setup_open=0;
 static void (*setup_report)(const char *)=NULL;
@@ -171,6 +176,20 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
     refresh_pads(ui);
     return;
   }
+  if(ui->close_pending) {
+    /* The game's native menu must not inherit the closing B press.
+     * Complete close asynchronously after all face buttons and triggers
+     * are released. Escape always remains an immediate keyboard escape.
+     * A bounded deadline avoids trapping a player with a stuck button. */
+    if(spider_sdl3_profile_neutral(&s) ||
+       (uint32_t)(GetTickCount()-ui->close_requested_ms)>=2000u) {
+      ui->close_pending=0;
+      if(setup_report)
+        setup_report("SDL3-SETUP: pad close RELEASED; posting deferred WM_CLOSE outside WM_TIMER");
+      PostMessageA(ui->hwnd,WM_CLOSE,0,0);
+    }
+    return;
+  }
   if(!ui->capture.active) {
     uint32_t edge=spider_sdl3_setup_nav_step(&ui->nav,&s);
     if(edge==(1u<<SPIDER_SETUP_NAV_UP)) {
@@ -197,7 +216,14 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
         status(ui,"CAPTURE: release all controls, then press ONE button or LT/RT. Esc cancels.");
       }
     } else if(edge==(1u<<SPIDER_SETUP_NAV_EAST)) {
-      SendMessageA(ui->hwnd,WM_CLOSE,0,0);
+      /* Closing here with SendMessage(WM_CLOSE) destroys UI children
+       * reentrantly while the timer is still sampling SDL3. Queue instead. */
+      ui->close_pending=1;
+      ui->close_requested_ms=GetTickCount();
+      spider_sdl3_setup_nav_reset(&ui->nav);
+      status(ui,"Release B/Circle to return to the game's Joystick menu.");
+      if(setup_report)
+        setup_report("SDL3-SETUP: pad B requested CLOSE; waiting for physical release");
     } else if(edge==(1u<<SPIDER_SETUP_NAV_NORTH)) {
       SpiderSDL3ControllerProfile *selected=current_profile(ui);
       if(selected && spider_sdl3_profile_default(selected,ui->vid,ui->pid)) {
@@ -237,7 +263,10 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
       spider_sdl3_capture_reset(&ui->capture);
       spider_sdl3_setup_nav_reset(&ui->nav);
       status(ui,"Capture cancelled. Original gameplay mapping unchanged.");
-    } else SendMessageA(ui->hwnd,WM_CLOSE,0,0);
+    } else {
+      if(setup_report)setup_report("SDL3-SETUP: Escape requested CLOSE (deferred message)");
+      PostMessageA(ui->hwnd,WM_CLOSE,0,0);
+    }
     return 1;
   }
   if(ui->capture.active)return 0; /* Keyboard cannot be bound via SDL3. */
@@ -368,24 +397,36 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         }
       } else if(LOWORD(wp)==SPIDER_UI_RESET && HIWORD(wp)==BN_CLICKED) {
         SpiderSDL3ControllerProfile *p=current_profile(ui);
+        if(setup_report)setup_report("SDL3-SETUP: Reset BEGIN (modal window and selected model valid)");
         spider_sdl3_capture_reset(&ui->capture);
         spider_sdl3_setup_nav_reset(&ui->nav);
         if(p && spider_sdl3_profile_default(p,ui->vid,ui->pid)) {
           refresh_actions(ui);
           status(ui,"This model restored in memory only. No game controls changed.");
           if(setup_report)setup_report("SDL3-SETUP: in-memory model restored to defaults (NOT saved)");
-        }
-      } else if(LOWORD(wp)==SPIDER_UI_CLOSE && HIWORD(wp)==BN_CLICKED)
-        DestroyWindow(hwnd);
+        } else if(setup_report)setup_report("SDL3-SETUP: Reset REFUSED (no valid selected model)");
+      } else if(LOWORD(wp)==SPIDER_UI_CLOSE && HIWORD(wp)==BN_CLICKED) {
+        if(setup_report)setup_report("SDL3-SETUP: Close button requested (deferred message)");
+        PostMessageA(hwnd,WM_CLOSE,0,0);
+      }
       return 0;
     case WM_TIMER:
       if(ui && wp==SPIDER_UI_TIMER)sample_device(ui);
       return 0;
     case WM_CLOSE:
+      if(ui && !ui->closing) {
+        ui->closing=1;
+        if(setup_report)setup_report("SDL3-SETUP: WM_CLOSE entered; disarming timer and capture");
+        spider_sdl3_capture_reset(&ui->capture);
+        spider_sdl3_setup_nav_reset(&ui->nav);
+      }
+      KillTimer(hwnd,SPIDER_UI_TIMER);
       DestroyWindow(hwnd);
       return 0;
     case WM_DESTROY:
       KillTimer(hwnd,SPIDER_UI_TIMER);
+      SetWindowLongPtrA(hwnd,GWLP_USERDATA,0);
+      if(setup_report)setup_report("SDL3-SETUP: WM_DESTROY done; no active timer or captured input");
       return 0;
   }
   return DefWindowProcA(hwnd,msg,wp,lp);
@@ -455,6 +496,7 @@ void SpiderSDL3ControllerSetup_Open(void) {
     if(IsDialogMessageA(window,&msg))continue;
     TranslateMessage(&msg);DispatchMessageA(&msg);
   }
+  if(setup_report)setup_report("SDL3-SETUP: modal message loop EXIT; restoring original game owner");
   if(IsWindow(window))DestroyWindow(window);
   if(parent_enabled && IsWindow(owner))EnableWindow(owner,TRUE);
   if(IsWindow(owner))SetForegroundWindow(owner);
