@@ -15,6 +15,7 @@
 #include "sdl3_gamepad_selection.h"
 #include "sdl3_gamepad_slots.h"
 #include "sdl3_controller_profile.h"
+#include "sdl3_controller_profile_store.h"
 
 /* SDL3 3.2+ ABI subset; keep signatures aligned with SDL's public headers. */
 #define SPIDER_SDL_INIT_GAMEPAD 0x00002000u
@@ -46,9 +47,10 @@ static unsigned num_pads=0;
 static int requested=0,attempted=0,ready=0,scanned=0;
 static int native_owner_requested=0;
 static int bindings_trace_requested=0;
-/* In-memory semantic profiles for READ-ONLY preview only. Never loaded
- * from or saved to disk until future native-input bridge acceptance. */
+/* One SDL3 semantic profile per VID:PID; persisted for opted-in
+ * controller setup only. No game-owned DirectInput action writes. */
 static SpiderSDL3ProfileBank bindings_bank;
+static uint8_t bindings_loaded[SPIDER_SDL3_PROFILE_BANK_CAPACITY];
 static uint32_t bindings_trace_id=0,bindings_previous=0;
 static int bindings_trace_armed=0;
 static unsigned bindings_trace_lines=0;
@@ -76,14 +78,36 @@ static SDL_freeFn sdl_free=NULL;
 static SDL_QuitSubSystemFn sdl_quit_subsystem=NULL;
 
 static void say(const char *line) {if(report)report(line);}
+/* Load once per model, including a profile created earlier by the passive
+ * binding trace. A corrupted file is ignored without modifying the disk. */
+static SpiderSDL3ControllerProfile *spider_sdl3_get_profile(
+    uint16_t vid,uint16_t pid) {
+  SpiderSDL3ControllerProfile trial,*profile;
+  unsigned slot;
+  int load_status;
+  profile=spider_sdl3_bank_get(&bindings_bank,vid,pid);
+  if(!profile)return NULL;
+  slot=(unsigned)(profile-bindings_bank.slots);
+  if(slot>=SPIDER_SDL3_PROFILE_BANK_CAPACITY)return NULL;
+  if(!bindings_loaded[slot]) {
+    bindings_loaded[slot]=1;
+    load_status=SpiderSDL3ProfileStore_Load(vid,pid,&trial);
+    if(load_status==1 && spider_sdl3_profile_valid(&trial))
+      *profile=trial;
+  }
+  return profile;
+}
 void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
   report=logger;
   spider_sdl3_bank_reset(&bindings_bank);
+  memset(bindings_loaded,0,sizeof(bindings_loaded));
   bindings_trace_id=0;bindings_previous=0;
   bindings_trace_armed=0;bindings_trace_lines=0;
   bindings_trace_requested=ini &&
     GetPrivateProfileIntA("Debug","SDL3BindingTrace",0,ini)==1;
   requested=ini && GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1;
+  SpiderSDL3ProfileStore_Init(requested && ini &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3ControllerSetup",0,ini)==1,logger);
   if(bindings_trace_requested && !requested) {
     bindings_trace_requested=0;
     say("SDL3-BINDINGS: disabled because ExperimentalSDL3Probe=0");
@@ -296,6 +320,15 @@ static void rescan(void) {
       say("SDL3-PROBE: more than 16 mapped pads, experiment tracks first 16 only");
   }
   scanned=1;
+  /* Load existing model profiles when SDL3 discovers them at startup.
+   * No dependency on opening the UI or enabling semantic trace. */
+  if(requested && sdl_vendor && sdl_product) {
+    unsigned k;
+    for(k=0;k<num_pads;k++)
+      if(pads[k].id && pads[k].handle)
+        spider_sdl3_get_profile(sdl_vendor(pads[k].id),
+                                sdl_product(pads[k].id));
+  }
   last_mapped_count=mapped;last_joystick_count=total;
   sdl_free(ids);sdl_free(joysticks);
 }
@@ -318,7 +351,18 @@ int SpiderSDL3Probe_SetupPump(void) {
 SpiderSDL3ControllerProfile *SpiderSDL3Probe_SetupProfile(uint16_t vid,uint16_t pid) {
   if(!ready || !scanned || !sdl3_game_thread ||
      sdl3_game_thread!=GetCurrentThreadId())return NULL;
-  return spider_sdl3_bank_get(&bindings_bank,vid,pid);
+  return spider_sdl3_get_profile(vid,pid);
+}
+int SpiderSDL3Probe_SetupCommit(const SpiderSDL3ControllerProfile *candidate) {
+  SpiderSDL3ControllerProfile *profile;
+  if(!candidate || !spider_sdl3_profile_valid(candidate) ||
+     !ready || !scanned || !sdl3_game_thread ||
+     sdl3_game_thread!=GetCurrentThreadId())return 0;
+  profile=spider_sdl3_get_profile(candidate->vendor,candidate->product);
+  if(!profile || !SpiderSDL3ProfileStore_Save(candidate))return 0;
+  *profile=*candidate;
+  bindings_trace_armed=0;bindings_previous=0;
+  return 1;
 }
 unsigned SpiderSDL3Probe_SetupCount(void) {
   return ready && scanned && sdl3_game_thread==GetCurrentThreadId()?
