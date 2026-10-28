@@ -57,7 +57,7 @@ void SpiderSDL3ControllerSetup_Init(const char *ini,
     GetPrivateProfileIntA("Input","ExperimentalSDL3ControllerSetup",0,ini)==1 &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1;
   if(setup_enabled && setup_report)
-    setup_report("SDL3-SETUP: experimental native Joystick menu entry ENABLED (model-only preview, no saved/gameplay changes)");
+    setup_report("SDL3-SETUP: experimental native Joystick menu ENABLED (persistent model profiles; original gameplay unchanged)");
 }
 int SpiderSDL3ControllerSetup_Enabled(void) {return setup_enabled;}
 static void status(SpiderSDL3SetupUI *ui,const char *message) {
@@ -93,6 +93,24 @@ static void refresh_actions(SpiderSDL3SetupUI *ui) {
   if(ui->action>=SPIDER_SDL3_ACTION_COUNT)ui->action=0;
   SendMessageA(ui->actions,LB_SETCURSEL,ui->action,0);
 }
+/* The new profile is serialized/committed BEFORE updating the live bank.
+ * A failed filesystem operation cannot silently discard a good mapping. */
+static int commit_profile(SpiderSDL3SetupUI *ui,
+                          const SpiderSDL3ControllerProfile *trial,
+                          const char *label) {
+  char line[230];
+  if(!ui || !trial || !SpiderSDL3Probe_SetupCommit(trial)) {
+    status(ui,"SAVE FAILED: mapping unchanged. Check folder permissions/log.");
+    if(setup_report)setup_report("SDL3-SETUP: SAVE FAILED; in-memory mapping retained");
+    return 0;
+  }
+  refresh_actions(ui);
+  snprintf(line,sizeof(line),"%s SAVED: %04X-%04X.ini (gameplay controls unchanged)",
+    label?label:"Profile",(unsigned)trial->vendor,(unsigned)trial->product);
+  status(ui,line);
+  if(setup_report)setup_report("SDL3-SETUP: model profile committed to disk (no native gameplay change)");
+  return 1;
+}
 static void select_slot(SpiderSDL3SetupUI *ui,unsigned slot) {
   char name[120],line[230];
   SpiderSDL3ControllerSample s;
@@ -110,7 +128,7 @@ static void select_slot(SpiderSDL3SetupUI *ui,unsigned slot) {
   ui->instance=id;ui->vid=vid;ui->pid=pid;
   refresh_actions(ui);
   snprintf(line,sizeof(line),
-    "%s (%04X:%04X) - model-only preview. Select an action then Capture.",
+    "%s (%04X:%04X) - profile autosaved, gameplay unchanged. Select action and Capture.",
     name,(unsigned)vid,(unsigned)pid);
   status(ui,line);
 }
@@ -155,7 +173,7 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
   uint32_t id=0;
   uint16_t vid=0,pid=0;
   int rc;
-  char name[110],line[220],bind[85];
+  char name[110],bind[85];
   SpiderSDL3ControllerProfile *p;
   if(!ui || !IsWindow(ui->hwnd))return;
   if(GetForegroundWindow()!=ui->hwnd) {
@@ -235,12 +253,10 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
       if(setup_report)
         setup_report("SDL3-SETUP: pad B requested CLOSE; waiting for physical release");
     } else if(edge==(1u<<SPIDER_SETUP_NAV_NORTH)) {
-      SpiderSDL3ControllerProfile *selected=current_profile(ui);
-      if(selected && spider_sdl3_profile_default(selected,ui->vid,ui->pid)) {
-        refresh_actions(ui);
-        status(ui,"Y: default bindings restored for this model IN MEMORY only.");
-        if(setup_report)setup_report("SDL3-SETUP: controller Y restored model defaults (NOT saved)");
-      }
+      SpiderSDL3ControllerProfile trial,*selected=current_profile(ui);
+      if(selected && spider_sdl3_profile_default(&trial,ui->vid,ui->pid) &&
+         commit_profile(ui,&trial,"Defaults"))
+        if(setup_report)setup_report("SDL3-SETUP: controller Y defaults SAVED");
     }
     return;
   }
@@ -248,17 +264,21 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
   if(rc!=1)return;
   spider_sdl3_setup_nav_reset(&ui->nav);
   p=current_profile(ui);
-  if(!p || !spider_sdl3_profile_assign(p,ui->action,candidate)) {
-    status(ui,"Binding rejected (reserved input or conflicting profile).");
+  if(!p) {
+    status(ui,"Binding refused: no selected mapped controller.");
     return;
   }
-  binding_name(candidate,bind,sizeof(bind));
-  snprintf(line,sizeof(line),
-    "%s = %s (preview in memory ONLY; original game actions unchanged)",
-    spider_sdl3_action_names[ui->action],bind);
-  refresh_actions(ui);
-  status(ui,line);
-  if(setup_report)setup_report("SDL3-SETUP: semantic binding changed in memory (NOT game input, NOT saved)");
+  {
+    SpiderSDL3ControllerProfile trial=*p;
+    if(!spider_sdl3_profile_assign(&trial,ui->action,candidate)) {
+      status(ui,"Binding rejected (reserved input or conflicting profile).");
+      return;
+    }
+    binding_name(candidate,bind,sizeof(bind));
+    snprintf(line,sizeof(line),"%s = %s",
+             spider_sdl3_action_names[ui->action],bind);
+    commit_profile(ui,&trial,line);
+  }
 }
 /* One keyboard path independent of Win32 dialog button focus.
  * Tab/Space remain available via IsDialogMessage and ordinary button
@@ -321,12 +341,12 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
     return 1;
   }
   if(vk==VK_F5) {
+    SpiderSDL3ControllerProfile trial;
     p=current_profile(ui);
-    if(p && spider_sdl3_profile_default(p,ui->vid,ui->pid)) {
-      refresh_actions(ui);
+    if(p && spider_sdl3_profile_default(&trial,ui->vid,ui->pid) &&
+       commit_profile(ui,&trial,"Defaults")) {
       spider_sdl3_setup_nav_reset(&ui->nav);
-      status(ui,"Defaults restored for this model IN MEMORY only.");
-      if(setup_report)setup_report("SDL3-SETUP: F5 restored in-memory model defaults (NOT saved)");
+      if(setup_report)setup_report("SDL3-SETUP: F5 defaults SAVED");
     }
     return 1;
   }
@@ -350,7 +370,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       ui->hwnd=hwnd;
       SetWindowLongPtrA(hwnd,GWLP_USERDATA,(LONG_PTR)(uintptr_t)ui);
       label=CreateWindowExA(0,"STATIC",
-        "SDL3 CONTROLLER SETUP - PREVIEW ONLY (gameplay controls unchanged)",
+        "SDL3 CONTROLLER SETUP - Profiles saved; gameplay controls unchanged",
         WS_CHILD|WS_VISIBLE,18,16,690,28,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->pads=CreateWindowExA(0,"COMBOBOX","",
@@ -410,11 +430,14 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         if(setup_report)setup_report("SDL3-SETUP: Reset BEGIN (modal window and selected model valid)");
         spider_sdl3_capture_reset(&ui->capture);
         spider_sdl3_setup_nav_reset(&ui->nav);
-        if(p && spider_sdl3_profile_default(p,ui->vid,ui->pid)) {
-          refresh_actions(ui);
-          status(ui,"This model restored in memory only. No game controls changed.");
-          if(setup_report)setup_report("SDL3-SETUP: in-memory model restored to defaults (NOT saved)");
-        } else if(setup_report)setup_report("SDL3-SETUP: Reset REFUSED (no valid selected model)");
+        {
+          SpiderSDL3ControllerProfile trial;
+          if(p && spider_sdl3_profile_default(&trial,ui->vid,ui->pid) &&
+             commit_profile(ui,&trial,"Defaults")) {
+            if(setup_report)setup_report("SDL3-SETUP: model defaults restored AND SAVED");
+          } else if(setup_report)
+            setup_report("SDL3-SETUP: Reset REFUSED (no valid selected model or save failure)");
+        }
       } else if(LOWORD(wp)==SPIDER_UI_CLOSE && HIWORD(wp)==BN_CLICKED) {
         if(setup_report)setup_report("SDL3-SETUP: Close button requested (deferred message)");
         PostMessageA(hwnd,WM_CLOSE,0,0);
