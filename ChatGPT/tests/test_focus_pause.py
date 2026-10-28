@@ -163,3 +163,23 @@ def test_unsafe_di8_com_paths_are_quarantined_before_hook_install():
     assert "legacy AltTabReacquire COM hook DISABLED" in trace
     assert "ENTRY-ONLY PROBE enabled" in trace
 
+
+
+def test_custom_pause_balances_desktop_cursor_on_focus_return_not_only_wake():
+    # The pre-pause Flip restores the OS desktop pointer on background;
+    # while Flip is blocked by our custom pause, polling the foreground
+    # transition must restore visibility immediately, not upon keypress.
+    pause=CORE[CORE.index("static void pause_at_flip_if_background(void)"):
+               CORE.index("static HRESULT WINAPI hooked_flip(")]
+    loop=pause[pause.index("while(IsWindow(hwnd)"):pause.index("if(SpiderPauseAny_FirstKey()!=0)")]
+    assert "pause_previous_foreground=(GetForegroundWindow()==hwnd);" in pause
+    assert "int pause_now_foreground=GetForegroundWindow()==hwnd;" in loop
+    assert "pause_now_foreground!=pause_previous_foreground" in loop
+    assert "SpiderInputFocus_OnFlip(InterlockedCompareExchange(&flip_count,0,0));" in loop
+    assert loop.index("SpiderInputFocus_OnFlip(") < loop.index("SpiderPauseAny_Completed()")
+    assert "pause_previous_foreground=pause_now_foreground;" in loop
+    assert "ShowCursor(" not in pause
+    focus=(ROOT/"input_focus_trace.c").read_text()
+    assert "if(foreground && cursor_display_increments>0)" in focus
+    assert "ShowCursor(FALSE)" in focus
+    assert "if(!foreground && InterlockedCompareExchange(&cursor_visibility_test,0,0)==1)" in focus
