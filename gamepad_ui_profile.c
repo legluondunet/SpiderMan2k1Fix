@@ -115,7 +115,9 @@ static int parse_native_button(const char *value,unsigned *button) {
   if(_strnicmp(p,"BUTTON",6)==0)p+=6;
   if(!*p || *p=='-' || *p=='+')return 0;
   n=strtoul(p,&end,0);
-  if(!end || end==p || *end || n>127ul)return 0;
+  /* 0x4000 is the game's native unbound button sentinel (NONE), not a conflict.
+   * All other indices above the DI button range remain invalid. */
+  if(!end || end==p || *end || (n>127ul && n!=0x4000ul))return 0;
   *button=(unsigned)n;
   return 1;
 }
@@ -146,9 +148,10 @@ static int options_free_of_native_actions(void) {
 }
 /* Xbox Back/Start (candidate DirectInput indices 6/7) must NEVER
  * synthesize ESC while the same native input fires a gameplay action.
- * Re-read the user's persisted [Joystick] assignments on every fresh
- * press: the original 2001 in-game Joystick menu remains fully editable,
- * and the virtual CFG layer already saves its changes to the INI. */
+ * Re-read persisted [Joystick] assignments on each fresh press. The
+ * read-only Xbox menu cannot be used to resolve collisions; a future
+ * separately validated runtime preset must do that. NONE (0x4000)
+ * is unbound and harmless, but unknown values must fail closed. */
 static int xbox_pause_button_free_of_native_actions(unsigned requested_button) {
   unsigned i;
   char value[50],fallback[24],line[245];
@@ -161,8 +164,8 @@ static int xbox_pause_button_free_of_native_actions(unsigned requested_button) {
     if(!parse_native_button(value,&button) || button==requested_button) {
       if(pause_conflict_reports++<12u) {
         snprintf(line,sizeof(line),
-          "GAMEPAD-XBOX360: PAUSE BLOCKED physical BUTTON%u: native [Joystick] %s=%s conflicts or is invalid; use the game's editable Joystick menu to free BUTTON%u",
-          requested_button,native_actions[i],value,requested_button);
+          "GAMEPAD-XBOX360: PAUSE BLOCKED physical BUTTON%u: native [Joystick] %s=%s conflicts or is invalid; Joystick is read-only, native gameplay mapping must be fixed before enabling this pause button",
+          requested_button,native_actions[i],value);
         report(line);
       }
       return 0;
