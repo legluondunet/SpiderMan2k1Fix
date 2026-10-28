@@ -775,6 +775,19 @@ ControllerPS1QuitTrace=0
 ControllerPS1PostQuitGuard=1
 ```
 
-The guard applies only when the verified PS1 preview is active. It remembers valid playable 3D and looks for the first 2D frame with original `0x60CFA4` request equal to 7. On that transition it blocks **only synthetic UI Enter** for eight 2D Flip calls, consuming the physical Cross/Options edge normally. It never sends a new key, edits the original native game state, changes the original Joystick mappings, suppresses the user's real keyboard, or alters the engine's request 7. Other menus, movies, initial boot and non-request-7 transitions are unaffected. The option is off by default, and its effect must be confirmed on a real DS4 before merging or releasing.
+The guard applies only when the verified PS1 preview is active. It remembers valid playable 3D and looks for the first 2D frame with original `0x60CFA4` request equal to 7. On that transition it blocks **only synthetic UI Enter** for eight 2D Flip calls, consuming the physical Cross/Options edge normally. It never sends a new key, edits the original native game state, changes the original Joystick mappings, suppresses the user's real keyboard, or alters the engine's request 7. Other menus, movies, initial boot and non-request-7 transitions are unaffected. The option is off by default. Its effect has now been confirmed on the maintainer's original DS4 in the 2026-10-28 runtime A/B described below; broader validation is still needed before considering any default change or release.
 
 Look for `GAMEPAD-PS1: POST-QUIT-GUARD suppressed synthetic Return on first 2D menu frames after native request 7` in the new test log. If the test fails, preserve the log and revert the opt-in instead of speculating about the game's native input owners.
+
+### Maintainer validation: post-Quit guard works — 2026-10-28 08:24
+
+The maintainer explicitly reported **“cela fonctionne à présent normalement”** after the guarded build and supplied `SpiderMan2k1Fix(20261028-082416).log`. The running game reports `v1.1.0-89f2ef7`, the SHA-verified original `SpideyPC.exe` and Sony DS4 `054C:05C4`.
+
+Two independent native 3D `Quit → Yes` transitions were observed:
+1. First return: native `NATIVE REQUEST 7`, `NATIVE-3D-CLEANUP completed` and `CONTROLLER-7 native teardown COMPLETED` were followed by 2D `Flip=296`, `mode_request=7`. The PS1 guard logged `POST-QUIT-GUARD suppressed synthetic Return on first 2D menu frames after native request 7`, and the original `Shell_MainMenu` callback was reached.
+2. Second return: same successful request/teardown, 2D `Flip=1046`, second guard suppression and second `Shell_MainMenu` return. There was **no immediate automatic New Game on either 2D transition**.
+3. Normal later synthetic `Return` and `Escape` actions were still logged after the guard window. A later 3D game entry occurred only after additional menu activity, not as an immediate request-7 rebound.
+
+This confirms the **behavioral fix in this tested setup**, not the as-yet-unresolved underlying cause of the spurious physical Cross edge. The feature remains **OFF by default** and PS1-preview-only pending broader regression coverage; **PR #74 remains draft and unmerged** until explicit authorization.
+
+legluondunet assisted by ChatGPT (OpenAI)
