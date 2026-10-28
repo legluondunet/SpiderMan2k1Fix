@@ -79,7 +79,7 @@ static const char *const spider_ini_input[]={
   "KeyboardLayout","DirectInputReacquire","DisableWindowsGhosting","PauseOnFocusLoss","PauseBinkOnFocusLoss","PauseDirectSoundOnFocusLoss","PauseOverlay","PauseDim","PauseDimOpacity","PauseKey",
   "RestoreCursorOnFocusLoss","ExperimentalFocusTrace","ExperimentalDI8EntryTrace",
   "ExperimentalAltTabReacquire","ExperimentalDI8CreateDeviceTrace",
-  "ExperimentalGamepadStart","ControllerProfile","ControllerEnterButtons","ControllerBackButton"
+  "ExperimentalGamepadStart","ControllerProfile","ControllerEnterButtons","ControllerBackButton","ControllerPauseButton"
 };
 static const char *const spider_ini_audio[]={"MusicSFXLevel","VoiceLevel","MovieLevel","Stereo"};
 static const char *const spider_ini_keys[]={"Up","Down","Left","Right","Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
@@ -168,6 +168,9 @@ static int spider_ini_value_valid(const char *section,const char *key,const char
   if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"ControllerBackButton"))
     return !spider_ini_icmp(value,"Circle") ||
            !spider_ini_icmp(value,"Share") ||
+           !spider_ini_icmp(value,"Off");
+  if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"ControllerPauseButton"))
+    return !spider_ini_icmp(value,"Options") ||
            !spider_ini_icmp(value,"Off");
   /* Deprecated experimental BUTTONn switch is accepted for old INIs
    * but the runtime deliberately ignores it (without re-writing INI). */
