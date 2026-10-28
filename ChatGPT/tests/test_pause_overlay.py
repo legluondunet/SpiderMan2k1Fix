@@ -74,7 +74,7 @@ def test_violet_ribbon_uses_traced_panel_and_bright_double_edge():
 
 
 def test_paused_title_is_inside_violet_panel_above_hint():
-    assert 'L"PAUSED"' in P and 'L"PRESS ANY KEY TO RESUME"' in P
+    assert 'L"PAUSED"' in P and 'L"PRESS KEY OR GAMEPAD BUTTON TO RESUME"' in P
     assert "esc_coordf(400.5f,ch,ESC_DESIGN_H)" in P
     assert "esc_coordf(675.0f,ch,ESC_DESIGN_H)" in P
     assert "canvas.top+esc_coordf(445.0f,ch,ESC_DESIGN_H)" in P
