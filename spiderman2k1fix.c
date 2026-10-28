@@ -14,6 +14,7 @@
 #include <d3d.h>
 #include "hud_widescreen.h"
 #include "hud_adaptive.h"
+#include "native_pause_title_bounds.h"
 #include "frame_limiter.h"
 #include "display_plan.h"
 #include "menu_scale.h"
@@ -24,6 +25,7 @@
 #include "fov_aspect.h"
 #include "fov_aspect_win.h"
 #include "input_focus_trace.h"
+#include "gamepad_ui_profile.h"
 #include "input_notacquired_retry.h"
 #include "pause_any_key.h"
 #include "pause_surface.h"
@@ -1115,8 +1117,8 @@ static const void *maybe_correct_native_pause43(void *device,
        * Choices: main menu Y=436/508/580; confirmation Y=468/540.
        * Exclude instructions (Y=877), compass, gameplay HUD, and
        * the separately handled red spider selector. */
-      if(left<=(float)desktop_w*0.25f ||
-         right>=(float)desktop_w*0.75f ||
+      if(!SpiderNativePause43_TextInZone(
+             left,right,top,bottom,(float)desktop_w,(float)desktop_h) ||
          top<(float)desktop_h*0.13f ||
          bottom>(float)desktop_h*0.63f ||
          right-left<10.0f || right-left>84.0f ||
@@ -2508,6 +2510,16 @@ static void pause_at_flip_if_background(void) {
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
   SpiderQuickExitF12_ObserveEngineState(count,InterlockedCompareExchange(&menu_upscale_active,0,0)==1); /* passive native mode+2D renderer tracing */
+  /* Game-native 0x006151F8 is GameFMV_Active in the SHA-verified
+   * original executable. A post-menu Bink can play with menu_upscale=0.
+   * The 3D stage must use the original menu-mode switch, NOT the optional
+   * gameplay_4x3_active flag (which is false in widescreen Auto).
+   * Gamepad pulse release runs before any focus-loss pause blocks Flip. */
+  SpiderGamepadUI_OnFlip(game_hwnd,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
+      InterlockedCompareExchange(&fov_game_height,0,0)>0,
+    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u);
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
@@ -3083,6 +3095,20 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  /* Passive profile setup only: independent DI8 discovery begins later,
+   * on the game's real window and Flip thread, never under loader lock.
+   * All original gameplay controls are preserved. */
+  {
+    char input_ini[MAX_PATH],*slash;
+    DWORD length=GetModuleFileNameA(NULL,input_ini,sizeof(input_ini));
+    if(length>0 && length<sizeof(input_ini) &&
+       (slash=strrchr(input_ini,'\\'))!=NULL) {
+      strcpy(slash+1,"SpiderMan2k1Fix.ini");
+      SpiderGamepadUI_Init(input_ini,log_line);
+    } else {
+      log_line("GAMEPAD-UI: OFF missing executable-relative INI path");
+    }
+  }
   SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
