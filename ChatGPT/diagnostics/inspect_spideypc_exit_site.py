@@ -11,8 +11,9 @@ This script NEVER writes to the game binary or the Wine prefix. It gates
 all address interpretation on the exact SHA-256 retail target. If GNU
 objdump / llvm-objdump is present, it prints the x86 instructions around
 the immediate caller (not a full call stack). Otherwise raw bytes are
-printed with virtual addresses. VFW_E_NOT_CONNECTED shares the numeric
-value 0x80040209; no subsystem attribution is made from that number.
+printed with virtual addresses. DIERR_UNPLUGGED in DirectInput shares 0x80040209 with DirectShow's
+VFW_E_NOT_CONNECTED. Here the actual joystick Acquire failure path is
+established by static disassembly and the prior Wine unplug trace.
 """
 from __future__ import annotations
 
@@ -112,7 +113,41 @@ def render_report(path: Path, binary: bytes, *, enforce_sha=True, disassemble=Tr
     print(f"RETRO-EXE-AUDIT: observed ExitProcess(0x{EXIT_STATUS:08X}) return=0x{RETURN_VA:08X}")
     print("RETRO-EXE-AUDIT: return VA is the IMMEDIATE caller, not necessarily the original error source")
     print("RETRO-EXE-AUDIT: inspect preceding call and surrounding CRT wrapper; identify higher callers separately")
-    print("RETRO-EXE-AUDIT: same status is VFW_E_NOT_CONNECTED in DirectShow; subsystem attribution NOT proven")
+    print("RETRO-EXE-AUDIT: status 0x80040209 = DIERR_UNPLUGGED in dinput.h (also VFW_E_NOT_CONNECTED in DirectShow)")
+    print("RETRO-EXE-AUDIT: original joystick Poll(0x00501E79) -> Acquire(0x00501E9F)")
+    print("RETRO-EXE-AUDIT: unhandled negative Acquire HRESULT -> error formatter(0x004FC240), native CRT exit(0x00501EE7)")
+    signatures = (
+        (0x00501E79, bytes.fromhex("ff 51 64"), "native-joystick-Poll"),
+        (0x00501E7C, bytes.fromhex("3d 1e 00 07 80"), "Poll-DIERR_INPUTLOST"),
+        (0x00501E83, bytes.fromhex("3d 0c 00 07 80"), "Poll-DIERR_NOTACQUIRED"),
+        (0x00501E9F, bytes.fromhex("8b 10 ff 52 1c"), "native-joystick-Acquire"),
+        (0x00501EA6, bytes.fromhex("81 fe 05 00 07 80"), "Acquire-access-denied-graceful"),
+        (0x00501EC6, bytes.fromhex("85 f6 74 22"), "Acquire-check-HRESULT"),
+        (0x00501EDD, bytes.fromhex("85 f6 7d 0b"), "Acquire-negative-fatal"),
+        (0x00501EE6, bytes.fromhex("56"), "Acquire-push-exit-status"),
+        (0x00501EE7, bytes.fromhex("e8 15 82 02 00"), "Acquire-to-CRT-exit"),
+        (0x0052A101, bytes.fromhex("6a 00 6a 00"), "CRT-exit-wrapper"),
+        (0x0052A1C0, bytes.fromhex("ff 15 cc b0 53 00"), "CRT-import-ExitProcess"),
+    )
+    for va, expected, label in signatures:
+        off, _section = va_to_offset(va, base, sections)
+        actual = binary[off:off + len(expected)]
+        if actual != expected:
+            raise ValueError(f"Unexpected bytes at {label} 0x{va:08X}")
+        print(f"RETRO-EXE-AUDIT: verified {label} at 0x{va:08X}: {actual.hex(' ')}")
+    joystick_lo, _ = va_to_offset(0x00501E50, base, sections)
+    joystick_hi, _ = va_to_offset(0x00501F12, base, sections)
+    print("RETRO-EXE-AUDIT: original native joystick Poll/Acquire branch:")
+    joydis = (shutil.which("objdump") or shutil.which("llvm-objdump")) if disassemble else None
+    if joydis:
+        proc = subprocess.run([joydis, "-d", "-M", "intel",
+                               "--start-address", "0x00501e50",
+                               "--stop-address", "0x00501f12", str(path)],
+                              text=True, capture_output=True, check=False)
+        if proc.returncode == 0:
+            print(proc.stdout)
+    else:
+        print(binary[joystick_lo:joystick_hi].hex(" "))
     for name, rva, _, rawoff, rawsz in sections:
         print(f"RETRO-EXE-AUDIT: section {name} rva=0x{rva:08X} raw=0x{rawoff:X} size=0x{rawsz:X}")
     print(f"RETRO-EXE-AUDIT: ExitProcess immediate caller range 0x{lo:08X}..0x{hi:08X}")
