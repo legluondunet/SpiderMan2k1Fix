@@ -323,3 +323,70 @@ failure path (and whether it exits on `Poll`/`Acquire` failure),
 then add a narrowly signature-checked remedy **only if justified by
 the captured call-site**. The hotplug feature remains blocked until
 the game survives a disconnect. No new gameplay patch is proposed yet.
+
+
+## Fourth unplug: actual process termination API and Windows exit status found
+
+Evidence: `hotplug-exit-relay-20261028-135700.log` (3,786 lines),
+`hotplug-exit-calls-20261028-135700.txt`, and
+`hotplug-exit-status-20261028-135700.txt`.
+The maintainer reproduced the immediate physical DS4 unplug while
+`ControllerProfile=Off` was requested. The latter is reported by the
+maintainer and prescribed by the diagnostic; **these three files do not
+include the corresponding fix log confirming Off was read from the INI**.
+
+**BREAKTHROUGH:** this is not an unhandled access violation. In the
+**SpideyPC.exe process, thread 0160** Wine's relay shows:
+
+```text
+0160:Call KERNEL32.ExitProcess(80040209) ret=0052a1c6
+0160:Call ntdll.NtTerminateProcess(00000000,80040209) ret=6ffffc3b7d0a
+0160:Ret  ntdll.NtTerminateProcess() retval=00000000 ret=6ffffc3b7d0a
+...
+0160:Call ntdll.NtTerminateProcess(ffffffffffffffff,80040209) ret=6ffffc3a1526
+```
+
+The **Wine wrapper/parent process thread 0150** later reports
+`KERNEL32.ExitProcess(80040209) ret=140003687`. A console helper
+`ucrtbase.exit(00000000)` and `ExitProcess(00000000)` is a distinct
+process; **do not confuse those later events with the game exit**.
+
+The full 32-bit status `0x80040209` is propagated into the Wine
+process exit; the Unix shell reports only its low 8 bits,
+`WINE_EXIT_CODE=9`. This conclusively explains the earlier code 9.
+The **game process deliberately invokes the Win32 exit API**, but the
+actual *decision to terminate* might be a fatal error-handling routine
+several calls up the stack. The return address `0x0052A1C6` is the
+**immediate** ExitProcess call site in the supported 2001 EXE; it is
+NOT proof that the input poll itself issued the call.
+
+The value `0x80040209` is listed by Microsoft DirectShow/Vfwmsgs.h
+as `VFW_E_NOT_CONNECTED`, describing disconnected DirectShow pins.
+**This shared numeric code is not proof that DirectShow/video is
+the faulting subsystem.** There is still no source trace of the code's
+origin in the game's input or other handlers.
+
+**Safe next step:** run
+`ChatGPT/diagnostics/inspect_spideypc_exit_site.py` against the
+maintainer's original unmodified, SHA-verified `SpideyPC.exe`. It
+checks the PE file size and SHA-256 before interpreting addresses;
+maps the VA `0x0052A1C6` to original file offsets; prints local
+original x86 disassembly via GNU/LLVM objdump if available, otherwise
+a raw hex window; and scans the file for little-endian literal
+`09 02 04 80` (which may legitimately **not** be embedded, since
+the code could be propagated as an HRESULT from a call). No EXE
+modification or DLL build is required.
+
+```bash
+python3 ChatGPT/diagnostics/inspect_spideypc_exit_site.py   /path/to/your/SpideyPC.exe > hotplug-exit-site.txt
+```
+
+The immediate exit wrapper could be shared C runtime termination code,
+not a joystick-specific routine. Next interpret the disassembled caller
+and locate *upstream* caller(s) and branches leading to it before
+proposing a signature-pinned native code change. **No blanket
+ExitProcess suppression**, no guessed DirectInput success, and no
+unverified controller hotplug claims. Keep PR #76 **draft and blocked**.
+
+Source of Windows error-code identification:
+https://learn.microsoft.com/en-us/windows/win32/directshow/error-and-success-codes
