@@ -145,3 +145,27 @@ def test_profile_model_cannot_change_native_game_while_in_design_phase():
     assert "NATIVE-SWAP: REFUSED CUSTOM joystick mapping" in native
     lock=(ROOT/"ps1_joystick_readonly_menu.c").read_text(encoding="utf-8")
     assert "joystick-only mapping branch" in lock
+
+
+def test_readonly_selected_sdl3_profile_trace_is_opt_in_and_neutral_gated():
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    validator=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
+    assert '"SDL3BindingTrace"' in validator
+    assert 'GetPrivateProfileIntA("Debug","SDL3BindingTrace",0,ini)==1' in probe
+    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1' in probe
+    assert 'bindings_trace_lines>=48u' in probe
+    assert 'spider_sdl3_bank_reset(&bindings_bank)' in probe
+    assert 'spider_sdl3_bank_get(&bindings_bank,vid,pid)' in probe
+    assert 'spider_sdl3_profile_neutral(&sample)' in probe
+    assert 'spider_sdl3_profile_actions(profile,&sample,' in probe
+    assert 'bindings_trace_armed=0;bindings_previous=0;' in probe
+    assert 'sdl3_binding_trace_on_flip();' in probe
+    trace=probe.split('static void sdl3_binding_trace_on_flip(void) {',1)[1].split(
+        'void SpiderSDL3Probe_OnFlip(',1)[0]
+    for unsafe in ('SendInput(', 'IDirectInput', 'VirtualProtect(', 
+                   'WriteFile(', 'WritePrivateProfileString',
+                   'sdl_pump(', 'sdl_update(', 'SDL_UpdateGamepads'):
+        assert unsafe not in trace
+    assert 'SDL3-BINDINGS: selected-id=' in trace
+    assert 'READ-ONLY; NOT GAMEPLAY' in trace
+    assert 'SPIDER_SDL3_BUTTON_COUNT' in trace
