@@ -34,7 +34,9 @@ def test_profile_requires_opt_in_and_known_pad_before_native_bootstrap():
     assert 'SpiderCfg_PS1BootstrapLoaded()' in CORE
     assert 'SpiderGamepadUI_ActivatePS1();' in CORE
     assert 'GetForegroundWindow()!=hwnd' in PAD
-    assert 'd.found!=1u || d.ds4_count!=1u' in PAD
+    assert 'choose_ds4=d.found==1u && d.ds4_count==1u' in PAD
+    assert 'detected && detected_kind==SPIDER_RECONNECT_XBOX360' in PAD
+    assert 'if(!detected)' in PAD
     assert 'if(!detected)' in PAD
     # No options default should silently enable an unvalidated fixed profile.
     generator=CFG.split('static int SpiderCfg_WriteDefaultIniAt',1)[1]
