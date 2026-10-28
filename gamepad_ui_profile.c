@@ -7,8 +7,12 @@
  * - In the original 2D UI or Bink sequence, turn a debounced DualShock
  *   CROSS/OPTIONS edge into Enter, and CIRCLE (or optional SHARE) into
  *   Escape, using the same paired scan-code injection.
- * - TRIANGLE already triggers native menu confirmation on the user's game:
- *   leave it alone; sending Escape as well would create conflicting actions.
+ * - TRIANGLE triggers native menu confirmation and 3D cinematic skip on
+ *   the user's game: do not override it or add a contradictory Escape.
+ * - Bink movies can run after leaving the renderer's 2D menu mode.
+ * - In 3D, OPTIONS requests Escape/Pause ONLY when the saved seven
+ *   native gameplay bindings no longer assign BUTTON9 to an action.
+ *   Factory Zipline=BUTTON9 therefore blocks Pause, not gameplay.
  *
  * SendInput integration with the original game's mixed native keyboard
  * paths is NOT yet verified under Wine or native Windows. This is a
@@ -23,12 +27,17 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include "gamepad_ui_profile.h"
 
 typedef HRESULT (WINAPI *SpiderDICreateFn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
 enum {SPIDER_PROFILE_OFF=0,SPIDER_PROFILE_AUTO=1,SPIDER_PROFILE_DUALSHOCK4=2};
 enum {SPIDER_CONFIRM_CROSS=1,SPIDER_CONFIRM_OPTIONS=2,SPIDER_CONFIRM_BOTH=3};
 enum {SPIDER_BACK_OFF=0,SPIDER_BACK_CIRCLE=1,SPIDER_BACK_SHARE=2};
+enum {SPIDER_PAUSE_OFF=0,SPIDER_PAUSE_OPTIONS=1};
+static const char *const native_actions[7]={
+  "Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
+static const unsigned native_factory_buttons[7]={3u,4u,0u,1u,6u,9u,7u};
 
 typedef struct {
   unsigned found,ds4_count;
@@ -40,10 +49,12 @@ typedef struct {
 } SpiderDIDiscovery;
 
 static int configured=0,profile=SPIDER_PROFILE_AUTO,confirm=SPIDER_CONFIRM_BOTH;
-static int back=SPIDER_BACK_CIRCLE;
-static int probing=0,detected=0,previous_buttons=0,previous_back=0;
+static int back=SPIDER_BACK_CIRCLE,pause_button=SPIDER_PAUSE_OPTIONS;
+static int probing=0,detected=0,previous_buttons=0,previous_back=0,previous_pause=0;
 static unsigned active_scan=0;
 static LONG sent_enter=0,sent_escape=0;
+static char profile_ini[MAX_PATH]={0};
+static unsigned pause_conflict_reports=0,outside_mode_reports=0;
 static unsigned bad_reads=0;
 static IDirectInput8A *di=NULL;
 static IDirectInputDevice8A *device=NULL;
@@ -53,6 +64,43 @@ static void (*log_message)(const char *)=NULL;
 static void report(const char *msg) {if(log_message)log_message(msg);}
 static int ds4_pid(unsigned vid,unsigned pid) {
   return vid==0x054cu && (pid==0x05c4u || pid==0x09ccu || pid==0x0ba0u);
+}
+static int parse_native_button(const char *value,unsigned *button) {
+  const char *p=value;
+  char *end=NULL;
+  unsigned long n;
+  if(!p || !button)return 0;
+  if(_strnicmp(p,"BUTTON",6)==0)p+=6;
+  if(!*p || *p=='-' || *p=='+')return 0;
+  n=strtoul(p,&end,0);
+  if(!end || end==p || *end || n>127ul)return 0;
+  *button=(unsigned)n;
+  return 1;
+}
+/* Before mapping OPTIONS to Escape, verify that the original game does
+ * not assign BUTTON9 to ANY native gameplay action. A factory install
+ * maps Zipline there, so this guard refuses Pause until user rebinds
+ * Zipline in the game's Joystick settings (e.g. BUTTON5/R1). */
+static int options_free_of_native_actions(void) {
+  unsigned i;
+  char value[50],fallback[24],line[240];
+  if(!profile_ini[0])return 0;
+  for(i=0;i<7u;i++) {
+    unsigned button;
+    snprintf(fallback,sizeof(fallback),"BUTTON%u",native_factory_buttons[i]);
+    GetPrivateProfileStringA("Joystick",native_actions[i],fallback,
+                             value,sizeof(value),profile_ini);
+    if(!parse_native_button(value,&button) || button==9u) {
+      if(pause_conflict_reports++<6u) {
+        snprintf(line,sizeof(line),
+          "GAMEPAD-UI: PAUSE BLOCKED: native [Joystick] %s=%s conflicts with OPTIONS/BUTTON9 or is unknown; rebind in game's Joystick menu, e.g. Zipline to R1/BUTTON5",
+          native_actions[i],value);
+        report(line);
+      }
+      return 0;
+    }
+  }
+  return 1;
 }
 static BOOL CALLBACK enumerate_gamepad(const DIDEVICEINSTANCEA *id,VOID *ctx) {
   SpiderDIDiscovery *d=(SpiderDIDiscovery*)ctx;
@@ -126,7 +174,7 @@ static void disable_profile(const char *reason) {
   report(reason);
 }
 void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
-  char choice[40],buttons[40],back_choice[40],line[230];
+  char choice[40],buttons[40],back_choice[40],pause_choice[40],line[260];
   log_message=logger;
   configured=1;
   if(!ini||!ini[0]) {
@@ -134,6 +182,12 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
     report("GAMEPAD-UI: OFF no configuration path");
     return;
   }
+  if(strlen(ini)>=sizeof(profile_ini)) {
+    profile=SPIDER_PROFILE_OFF;
+    report("GAMEPAD-UI: OFF INI path too long");
+    return;
+  }
+  strcpy(profile_ini,ini);
   GetPrivateProfileStringA("Input","ControllerProfile","Auto",choice,sizeof(choice),ini);
   if(!_stricmp(choice,"Off"))profile=SPIDER_PROFILE_OFF;
   else if(!_stricmp(choice,"Auto"))profile=SPIDER_PROFILE_AUTO;
@@ -150,14 +204,20 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   else if(!_stricmp(back_choice,"Circle"))back=SPIDER_BACK_CIRCLE;
   else if(!_stricmp(back_choice,"Share"))back=SPIDER_BACK_SHARE;
   else {back=SPIDER_BACK_CIRCLE;report("GAMEPAD-UI: invalid ControllerBackButton; using Circle");}
+  GetPrivateProfileStringA("Input","ControllerPauseButton","Options",
+                           pause_choice,sizeof(pause_choice),ini);
+  if(!_stricmp(pause_choice,"Off"))pause_button=SPIDER_PAUSE_OFF;
+  else if(!_stricmp(pause_choice,"Options"))pause_button=SPIDER_PAUSE_OPTIONS;
+  else {pause_button=SPIDER_PAUSE_OFF;report("GAMEPAD-UI: invalid ControllerPauseButton; disabling pause bridge");}
   if(GetPrivateProfileIntA("Input","ExperimentalGamepadStart",-1,ini)!=-1 ||
      GetPrivateProfileStringA("Input","ExperimentalGamepadStart","",choice,sizeof(choice),ini)!=0)
     report("GAMEPAD-UI: old ExperimentalGamepadStart is RETIRED/ignored; remove BUTTON8 setting");
   snprintf(line,sizeof(line),
-    "GAMEPAD-UI: config profile=%s confirm=%s back=%s Return=DIK_0x1C Escape=DIK_0x01 (only 2D)",
+    "GAMEPAD-UI: config profile=%s confirm=%s back=%s pause=%s Return=DIK_0x1C Escape=DIK_0x01 (menu/Bink/pause separate)",
     profile==SPIDER_PROFILE_OFF?"Off":profile==SPIDER_PROFILE_AUTO?"Auto":"DualShock4",
     confirm==SPIDER_CONFIRM_CROSS?"Cross":confirm==SPIDER_CONFIRM_OPTIONS?"Options":"Both",
-    back==SPIDER_BACK_OFF?"Off":back==SPIDER_BACK_CIRCLE?"Circle":"Share");
+    back==SPIDER_BACK_OFF?"Off":back==SPIDER_BACK_CIRCLE?"Circle":"Share",
+    pause_button==SPIDER_PAUSE_OFF?"Off":"Options (conflict guarded)");
   report(line);
 }
 static void detect_device(HWND hwnd) {
@@ -215,21 +275,22 @@ static void detect_device(HWND hwnd) {
   }
   detected=1;
   snprintf(line,sizeof(line),
-    "GAMEPAD-UI: PROFILE DualShock4 ACTIVE Sony VID=054C PID=%04lX name=%.110s; Cross=BUTTON1 Options=BUTTON9 -> Return; Circle=BUTTON2 Share=BUTTON8 -> optional Escape (2D only)",
+    "GAMEPAD-UI: PROFILE DualShock4 ACTIVE Sony VID=054C PID=%04lX name=%.110s; Cross=BUTTON1 Options=BUTTON9 -> Return in 2D/Bink; Circle=BUTTON2 -> Back in 2D; OPTIONS pause guarded in 3D",
     (unsigned long)d.product_id,d.name);
   report(line);
 }
-void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d) {
+void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,int bink_active) {
   DIJOYSTATE2 state;
   HRESULT hr;
   unsigned pressed,back_pressed;
-  int permitted;
+  int menu_allowed,movie_allowed,confirm_allowed,gameplay_allowed,pause_pressed;
   if(!configured || !hwnd || !IsWindow(hwnd))return;
   /* Critical: release injected key before focus pause can block this thread. */
   release_active_key();
   if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {
     previous_buttons=0;
     previous_back=0;
+    previous_pause=0;
     return;
   }
   if(!probing)detect_device(hwnd);
@@ -252,6 +313,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d) {
     IDirectInputDevice8_Acquire(device);
     previous_buttons=0;
     previous_back=0;
+    previous_pause=0;
     return;
   }
   bad_reads=0;
@@ -259,17 +321,32 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d) {
           (state.rgbButtons[9]&0x80u?SPIDER_CONFIRM_OPTIONS:0);
   back_pressed=(state.rgbButtons[2]&0x80u?SPIDER_BACK_CIRCLE:0) |
                (state.rgbButtons[8]&0x80u?SPIDER_BACK_SHARE:0);
-  permitted=menu_2d && !gameplay_3d;
-  if(permitted) {
-    /* Escape wins when two UI buttons are pressed on the same Flip: never
-     * inject both contradictory menu actions in one frame. */
-    if((back_pressed & (unsigned)back) &&
-       !(previous_back & (unsigned)back))
-      begin_scancode(0x01u,"Escape");
-    else if((pressed & (unsigned)confirm) &&
-            !(previous_buttons & (unsigned)confirm))
-      begin_scancode(0x1Cu,"Return");
+  /* Original GameFMV_Active remains authoritative even outside the
+   * widescreen menu presentation. 3D triangle/script input is untouched. */
+  menu_allowed=menu_2d && !gameplay_3d;
+  movie_allowed=bink_active!=0;
+  confirm_allowed=menu_allowed || movie_allowed;
+  gameplay_allowed=gameplay_3d && !menu_2d && !movie_allowed;
+  pause_pressed=state.rgbButtons[9]&0x80u;
+  if(menu_allowed && (back_pressed & (unsigned)back) &&
+     !(previous_back & (unsigned)back)) {
+    begin_scancode(0x01u,"Escape");
+  } else if(confirm_allowed &&
+            (pressed & (unsigned)confirm) &&
+            !(previous_buttons & (unsigned)confirm)) {
+    begin_scancode(0x1Cu,"Return");
+  } else if(gameplay_allowed && pause_button==SPIDER_PAUSE_OPTIONS &&
+            pause_pressed && !previous_pause &&
+            options_free_of_native_actions()) {
+    begin_scancode(0x01u,"Escape");
+    report("GAMEPAD-UI: 3D PAUSE REQUEST OPTIONS -> Escape; no saved native BUTTON9 gameplay assignment");
+  } else if(!menu_allowed && !movie_allowed && !gameplay_allowed &&
+            (pressed & (unsigned)confirm) &&
+            !(previous_buttons & (unsigned)confirm) &&
+            outside_mode_reports++<4u) {
+    report("GAMEPAD-UI: unclassified engine stage; no keyboard injection");
   }
   previous_buttons=(int)pressed;
   previous_back=(int)back_pressed;
+  previous_pause=pause_pressed;
 }
