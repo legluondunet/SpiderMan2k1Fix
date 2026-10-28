@@ -84,6 +84,7 @@ static unsigned postmenu_bink_reports=0;
 static unsigned bad_reads=0;
 static SpiderDS4Hotplug hotplug={0};
 static int hotplug_missing_logged=0;
+static int hotplug_late_preview_reported=0;
 static SpiderPausePadWake pause_wake={0};
 static int pause_wake_active=0;
 static int pause_wake_retry_logged=0;
@@ -863,6 +864,19 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     return;
   }
   bad_reads=0;
+  /* The PS1 layout requires a validated pre-game native config load.
+   * If DS4 first appears after that startup moment, refuse a misleading
+   * legacy Cross/Options synthetic mapping while PS1 was requested:
+   * the user must relaunch with the DS4 already connected to activate
+   * verified seven-button gameplay mapping. Never reload game config
+   * mid-level or rewrite unknown native controller objects. */
+  if(ps1_preview_requested && !ps1_preview_active) {
+    if(!hotplug_late_preview_reported) {
+      report("GAMEPAD-HOTPLUG: DS4 discovered but PS1 gameplay preview was not loaded at startup; synthetic actions disabled until restart with controller present");
+      hotplug_late_preview_reported=1;
+    }
+    return;
+  }
   {
     unsigned i,held=0;
     for(i=0;i<12u;i++)
