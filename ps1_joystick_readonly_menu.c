@@ -15,6 +15,10 @@
 #include "ps1_joystick_readonly_menu.h"
 
 static void (*ps1_menu_logger)(const char *)=NULL;
+/* The native machine-code patch is immutable during this process.
+ * 1 = Sony/PS1 labels, 2 = Xbox A/B with numeric fallback. */
+static unsigned readonly_installed_mode=0;
+static unsigned readonly_label_mode=0;
 static void report(const char *msg) {
   if(ps1_menu_logger)ps1_menu_logger(msg);
 }
@@ -25,7 +29,9 @@ static void report(const char *msg) {
 static int __cdecl spider_ps1_joystick_name(char *destination,
                                             const char *original_format,
                                             unsigned button) {
-  const char *name=spider_ps1_native_button_label(button);
+  const char *name=readonly_label_mode==2u?
+    spider_xbox360_native_button_label(button):
+    spider_ps1_native_button_label(button);
   (void)original_format;
   if(!destination)return 0;
   if(name)return snprintf(destination,SPIDER_PS1_JOYSTICK_LABEL_CAPACITY,
@@ -64,8 +70,15 @@ static int ps1_patch_readonly_site(BYTE *address,const BYTE *replacement,
   }
   return 1;
 }
-int SpiderPS1_InstallReadOnlyJoystick(void (*logger)(const char *)) {
+static int spider_install_readonly_joystick(unsigned mode,
+                                           void (*logger)(const char *)) {
   ps1_menu_logger=logger;
+  if(mode!=1u && mode!=2u)return 0;
+  if(readonly_installed_mode) {
+    if(readonly_installed_mode==mode)return 1;
+    report("GAMEPAD-READONLY: REFUSED another controller profile has already installed immutable native Joystick patches");
+    return 0;
+  }
   static const BYTE nop5[5]={0x90u,0x90u,0x90u,0x90u,0x90u};
   BYTE replacements[SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT][6]={{0}};
   BYTE backups[SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT][6]={{0}};
@@ -211,6 +224,17 @@ int SpiderPS1_InstallReadOnlyJoystick(void (*logger)(const char *)) {
     report("GAMEPAD-PS1: JOYSTICK-READONLY REFUSED install failed; rollback attempted, original menu remains editable");
     return 0;
   }
-  report("GAMEPAD-PS1: JOYSTICK-READONLY EXPERIMENT ACTIVE native capture entry blocked for Joystick only, Keyboard editable; native CMenu intact; seven PS1 button names displayed, game rebind/restore calls blocked; RAM-only, requires in-game validation");
+  readonly_label_mode=mode;
+  readonly_installed_mode=mode;
+  if(mode==2u)
+    report("GAMEPAD-XBOX360: JOYSTICK-READONLY ACTIVE native joystick rebind/restore and press-a-button capture disabled; Keyboard editable; A/B labels, remaining buttons numeric; bindings untouched");
+  else
+    report("GAMEPAD-PS1: JOYSTICK-READONLY EXPERIMENT ACTIVE native capture entry blocked for Joystick only, Keyboard editable; native CMenu intact; seven PS1 button names displayed, game rebind/restore calls blocked; RAM-only, requires in-game validation");
   return 1;
+}
+int SpiderPS1_InstallReadOnlyJoystick(void (*logger)(const char *)) {
+  return spider_install_readonly_joystick(1u,logger);
+}
+int SpiderXbox360_InstallReadOnlyJoystick(void (*logger)(const char *)) {
+  return spider_install_readonly_joystick(2u,logger);
 }
