@@ -82,7 +82,7 @@ def test_auto_detects_verified_xbox_without_sony_ps1_preview():
        'detected_kind=choose_ds4?SPIDER_RECONNECT_DS4:SPIDER_RECONNECT_XBOX360;',
        'if(detected && detected_kind==SPIDER_RECONNECT_XBOX360)',
        'if(!detected || detected_kind!=SPIDER_RECONNECT_DS4 || !ps1_preview_requested)return;',
-       'if(detected_kind==SPIDER_RECONNECT_DS4 && ps1_preview_requested && !ps1_preview_active)',
+       'late_ds4_menu_only=detected_kind==SPIDER_RECONNECT_DS4 &&',
        'if(detected_kind==SPIDER_RECONNECT_XBOX360)',
        'unsigned action=spider_xbox360_menu_edges(held,xbox_previous_mask);',
        'xbox_previous_mask=held;',
