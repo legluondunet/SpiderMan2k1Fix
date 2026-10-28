@@ -2598,6 +2598,12 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   SpiderDI8Retry_OnFlip(count);
   SpiderNativeUnplug_OnFlip(count);
   SpiderNativeReconnect_OnFlip(count,game_hwnd);
+  /* Passive, bounded post-hotplug heartbeat: menu -> 3D -> menu. */
+  SpiderNativeReconnect_ObserveMode(count,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
+      InterlockedCompareExchange(&fov_game_height,0,0)>0,
+    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u);
   /* Observe the physical F9 press early; the game's screenshot code can
    * run between two Flip calls, so surface hooks also sample F9. */
   if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
