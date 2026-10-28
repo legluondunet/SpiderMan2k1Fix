@@ -18,7 +18,7 @@ def test_hotplug_integrates_on_foreground_flip_only():
     assert "spider_ds4_hotplug_accept_buttons(&hotplug,held)" in PAD
     assert "IDirectInput8_EnumDevices(di,DI8DEVCLASS_GAMECTRL" in PAD
     assert "DIEDFL_ATTACHEDONLY" in PAD
-    assert "if(d.found!=1u || d.ds4_count!=1u)" in PAD
+    assert "choose_ds4=(d.found==1u && d.ds4_count==1u" in PAD
     assert "DISCL_FOREGROUND|DISCL_NONEXCLUSIVE" in PAD
     assert "if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd))" in PAD
     assert "release_active_key();" in PAD
