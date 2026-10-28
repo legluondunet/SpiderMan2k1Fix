@@ -10,6 +10,14 @@
 
 # Changelog
 
+## Unreleased — organized installation paths (DRAFT PR #81)
+
+- Keep only the Windows loader `winmm.dll` beside the original `SpideyPC.exe`; load the main `SpiderMan2k1Fix.dll` from `SpiderMan2k1Fix/`, with root DLL fallback only for old installs.
+- Store the main INI and both startup/core diagnostics in the nested folder (or `%LOCALAPPDATA%` if the game installation is not writable); one-time copy of a legacy root INI without removing it or changing saved settings. Keep original strict INI recovery and rolling `.old` backup.
+- Write F9 lossless PNG screenshots and temporary encoder images under `SpiderMan2k1Fix/screenshots/`; keep the native notifications, non-overwrite numbering and PNG verification.
+- Update Windows x86 artifact layout and setup instructions to retain one easy-to-extract archive without mixing the patch runtime with game assets. No change to native gameplay input, original EXE resources, SDL3 controller semantics or media timing.
+
+
 ## Unreleased — PAUSED cursor visibility (PR #74)
 
 - Fixed the mouse cursor appearing over the custom PAUSED screen after Alt+Tab, while keeping normal desktop mouse behavior and `MouseEnabled=1` unchanged. Pending in-game retest.
