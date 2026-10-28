@@ -2420,6 +2420,7 @@ static void pause_at_flip_if_background(void) {
   HWND hwnd=game_hwnd;
   MSG msg;
   RECT pause_present_rect,pause_content_rect;
+  int pause_gamepad_available=0;
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
   if(GetForegroundWindow()==hwnd) {
     pause_background_since=0;
@@ -2449,8 +2450,11 @@ static void pause_at_flip_if_background(void) {
    * the synchronous focus PAUSED screen. Sample the already-verified
    * secondary DS4 here instead; require NEW digital press AND full release,
    * never wake while game is background, and never synthesize a native key. */
-  SpiderGamepadUI_PauseWake_Begin();
-  log_line("FOCUS-PAUSE: DS4 digital-button resume ARMED; foreground-only, release-gated, no injected key (keyboard always available)");
+  pause_gamepad_available=SpiderGamepadUI_PauseWake_Begin();
+  if(pause_gamepad_available)
+    log_line("FOCUS-PAUSE: DS4 digital-button resume ARMED; foreground-only, release-gated, no injected key (keyboard always available)");
+  else
+    log_line("FOCUS-PAUSE: no verified gamepad wake device; PAUSED hint remains keyboard-only");
   /* The Flip pause alone does not suspend Bink or secondary DirectSound. */
   SpiderFocusMedia_Pause();
   SpiderFocusDSound_Pause();
@@ -2486,7 +2490,8 @@ static void pause_at_flip_if_background(void) {
   if(borderless_back && borderless_primary && original_blt)
     SpiderPauseSurface_Begin(borderless_back,borderless_primary,
                              &pause_present_rect,&pause_content_rect,
-                             (SpiderPauseBltFn)original_blt);
+                             (SpiderPauseBltFn)original_blt,
+                             pause_gamepad_available);
   while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1) {
     while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
       if(msg.message==WM_QUIT) {
