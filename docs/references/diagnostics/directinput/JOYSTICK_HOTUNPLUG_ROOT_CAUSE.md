@@ -249,7 +249,7 @@ Offline SHA-pinned original 2001 PE32 x86 disassembly establishes:
   44 objects, object table `0x005177B0`).
 - Native `SetProperty` sets `DIPROP_BUFFERSIZE=16`, absolute
   axis mode, and `DIPROP_RANGE=-1000..1000` for axis offsets
-  `16` and `4`, before the original `Acquire` and buffered
+  **`0` (lX)** and **`4` (lY)**, before the original `Acquire` and buffered
   input reads. All of these match the byte-for-byte original code.
 - Original cleanup `0x00501440` Unacquires and Releases the
   original joystick pointer. Its reader `0x00501E6D` explicitly
@@ -333,5 +333,46 @@ The independent DS4 UI bridge `ControllerProfile=Auto` has **not**
 yet been tested together with native device rebinding. Keep
 `ControllerProfile=Off` for the isolated first acceptance run.
 **Do not merge the draft PR without maintainer approval.**
+
+legluondunet assisted by ChatGPT (OpenAI)
+
+
+## Wine hardware test: native rebind works, analog X axis regression found (2026-10-28)
+
+The maintainer tested the initial stage-2 Windows-x86 artifact
+`SpiderMan2k1Fix v1.1.0-ca3076f` (release from PR #76), with
+`ControllerProfile=Auto` and both
+`ExperimentalNativeJoystickUnplugGuard=1` and
+`ExperimentalNativeJoystickReconnect=1`.
+Submitted runtime evidence: `SpiderMan2k1Fix(20261028-135045).log`.
+
+- Physical DS4 reconnect **works twice**: native joystick `REBOUND`
+  after detach with `VID=054C PID=09CC`, `buttons=14`, `polled=0`.
+  Log lines report `rebound=1 scan=8` and `rebound=2 scan=14`.
+- Original native buttons and directional pad function after reconnect,
+  and the game remains alive. The maintainer explicitly reports that
+  **the analog joystick no longer responds**. This is a partial PASS
+  and analog regression, **not complete hotplug acceptance**.
+- Comparing the actual SHA-pinned retail `SpideyPC.exe` x86
+  disassembly to our stage-2 `configure_candidate()` found a precise
+  mismatch: the original game's first `DIPROP_RANGE` setter at
+  `0x005019E0` supplies `dwObj=0` (axis **lX**), and the
+  second at `0x00501A42` supplies `dwObj=4` (**lY**). Both set
+  `DIPH_BYOFFSET` and `[-1000,+1000]`. The initial stage-2
+  implementation incorrectly set **16 (lRy)** and 4, leaving native
+  X-axis with its default scaling. This is a supported cause for
+  missing or broken analog navigation after hot-rebinding.
+- **Follow-up code fix:** `native_joystick_reconnect.c` now sets
+  `DIPROP_RANGE` at offsets **0 and 4**, matching the original game.
+  `ChatGPT/tests/test_native_joystick_reconnect.py` asserts those
+  exact offsets and rejects the incorrect 16. No change to the
+  previously physically validated native-unplug guard, native
+  COM re-enumeration or button/cross recovery.
+- **Current acceptance status:** axis correction code and automated
+  tests only. **No user hardware retest of the analog stick yet**.
+  Keep the new guard/rebind options OFF by default and PR #76 draft.
+  Test original controller analog X/Y in-game after one replug, plus
+  buttons and D-pad. If analog still fails, collect the new fix log
+  and inspect native axis event values without guessing further.
 
 legluondunet assisted by ChatGPT (OpenAI)
