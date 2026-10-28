@@ -261,3 +261,65 @@ attribute whether the exit predates our patch. Do **not** broadly suppress
 HRESULTs without identifying the exact native call site. The acceptance
 blocker remains: **unplug must not kill the game**, then test original
 game movement after new DS4 acquisition.
+
+
+## Isolation test: crash persists with ControllerProfile=Off
+
+Maintainer explicitly reports that **unplugging the DS4 still immediately
+terminates the game with `[Input] ControllerProfile=Off`**. The
+implementation verifies that `Off` bypasses the SpiderMan2k1Fix
+secondary `DirectInput8Create` / `CreateDevice` path; PS1 native
+preview bootstrap also returns early. This substantially narrows the
+fault to the *retail game's own* DirectInput joystick and/or Wine's
+HID/DirectInput handling. It does **not** completely isolate an unpatched
+retail executable because independent display, focus, mouse and
+keyboard patches remain enabled. The maintainer has not yet supplied a
+fresh `profile=Off` fix log with an explicitly verified exit status,
+so treat the test as a user-reported comparison rather than a source-
+identified exit-path proof.
+
+The last full `+dinput,+seh` trace under `ControllerProfile=Auto`
+did establish native joystick object `03316480` performing `Poll`
+and `Acquire` after USB unplug, followed by process teardown with
+exit code `9`. `Acquire` may be *preceding* deliberate game shutdown,
+not itself crashing. **Do not introduce a native COM-vtable replacement
+or pretend this native device has reacquired on failure.**
+
+### Focused process-exit API trace
+
+New external script:
+`ChatGPT/diagnostics/run_hotplug_exit_relay_wine.sh`.
+
+Run from a checkout of this PR, with `ControllerProfile=Off` in the
+game's INI and no other Wine program using the same Wine prefix:
+
+```bash
+bash ChatGPT/diagnostics/run_hotplug_exit_relay_wine.sh '/path/to/Spider-Man'
+```
+
+It temporarily enables Wine's documented `+relay,+process,+seh`
+channels with a **specific allowlist** of process-exit API entrypoints
+(`kernel32.ExitProcess`, `ntdll.RtlExitUserProcess`,
+`ntdll.NtTerminateProcess`, CRT `exit`, etc.), instead of writing a
+300,000-line joystick trace. It saves a previous `REG_SZ` value of
+`HKCU\\Software\\Wine\\Debug\\RelayInclude` and restores it on
+normal return, signal-driven shell trap or nonzero exit. For safety,
+it refuses to overwrite a non-`REG_SZ` value. Like any external tool,
+abrupt SIGKILL of the launcher or power loss can prevent restoration;
+inspect the registry before running another Wine application if that
+happens. Do not run other Wine processes within the same prefix
+concurrently because the registry change applies to that prefix.
+
+Upload the three diagnostic files it writes (full filtered relay log,
+short exit-call summary, process-status file), plus the corresponding
+`SpiderMan2k1Fix(...).log`. If a call such as `ExitProcess(00000009)`
+is captured from the game process, that will help locate a specific
+termination path; if no call is present, remember Wine's relay does not
+intercept all internal/forwarded functions, so **absence alone does not
+prove an OS signal or rule out an orderly termination**.
+
+The ultimate task remains to locate the original retail joystick
+failure path (and whether it exits on `Poll`/`Acquire` failure),
+then add a narrowly signature-checked remedy **only if justified by
+the captured call-site**. The hotplug feature remains blocked until
+the game survives a disconnect. No new gameplay patch is proposed yet.
