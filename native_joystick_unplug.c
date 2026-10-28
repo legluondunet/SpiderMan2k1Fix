@@ -126,7 +126,7 @@ static void install_guard(void) {
   DWORD old,unused;
   BYTE patch[6]={0xE9,0,0,0,0x90};
   uint32_t displacement;
-  if(snapshot(&installed))return;
+  if(snapshot(&installed) || retained_stub)return;
   if(!exact_supported_site()) {
     if(write_log)write_log("NATIVE-UNPLUG: DISABLED, unsupported x86 layout/signature; game unchanged");
     return;
