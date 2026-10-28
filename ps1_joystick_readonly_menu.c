@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "ps1_joystick_readonly_menu.h"
+#include "sdl3_controller_setup.h"
 
 static void (*ps1_menu_logger)(const char *)=NULL;
 /* The native machine-code patch is immutable during this process.
@@ -39,6 +40,15 @@ static void report(const char *msg) {
  * original menu is stuck awaiting a selection release. */
 static void __cdecl spider_joystick_restore_denied(void) {
   static LONG blocked=0;
+  /* This exact callsite is inside original Joystick Configuration.
+   * In the experimental user-wizard mode it becomes a safe menu command,
+   * NEVER the original restore-defaults action. Native seven-action
+   * assignments stay locked until SDL3 gameplay bridge is validated. */
+  if(SpiderSDL3ControllerSetup_Enabled() &&
+     *(const volatile DWORD *)(uintptr_t)0x00AC129Cu!=0u) {
+    SpiderSDL3ControllerSetup_Open();
+    return;
+  }
   LONG n=InterlockedIncrement(&blocked);
   if(n<=8 || n%64==0) {
     char line[195];
@@ -63,8 +73,19 @@ static void __fastcall spider_joystick_restore_row_addentry(
   (void)unused_edx;
   if(*(const volatile DWORD *)(uintptr_t)0x00AC129Cu!=0u) {
     static LONG suppressed=0;
-    if(InterlockedIncrement(&suppressed)==1)
-      report("GAMEPAD-READONLY: Restore Default ROW OMITTED in Joystick (and matching placeholder); 14 action entries kept, Keyboard restore preserved");
+    if(SpiderSDL3ControllerSetup_Enabled()) {
+      /* Keep left/right CMenu rows aligned; no altered action indexes.
+       * The original RestoreDefaults call is already replaced above. */
+      const void *left=*(void *const volatile *)(uintptr_t)0x00AC11B4u;
+      const char *text=native_menu==left?
+                         "SDL3 TEST (PREVIEW)":" ";
+      ((SpiderCMenuAddEntry)(uintptr_t)0x0043FFF0u)(native_menu,text);
+      if(InterlockedIncrement(&suppressed)==1)
+        report("SDL3-SETUP: native Joystick preview row replaces Restore Default (paired columns; keyboard menu unchanged)");
+    } else {
+      if(InterlockedIncrement(&suppressed)==1)
+        report("GAMEPAD-READONLY: Restore Default ROW OMITTED in Joystick (and matching placeholder); 14 action entries kept, Keyboard restore preserved");
+    }
     return;
   }
   ((SpiderCMenuAddEntry)(uintptr_t)0x0043FFF0u)(native_menu,label);
@@ -324,7 +345,9 @@ static int spider_install_readonly_joystick(unsigned mode,
   readonly_label_mode=mode;
   readonly_installed_mode=mode;
   snprintf(line,sizeof(line),
-    "GAMEPAD-READONLY: Restore Default and matching placeholder rows disabled in Joystick only; native left AddEntry VA=0x%08lX; Keyboard restore preserved",
+    SpiderSDL3ControllerSetup_Enabled()?
+      "SDL3-SETUP: Joystick Restore Default replaced by preview row; native left AddEntry VA=0x%08lX; Keyboard untouched":
+      "GAMEPAD-READONLY: Restore Default and matching placeholder rows disabled in Joystick only; native left AddEntry VA=0x%08lX; Keyboard restore preserved",
     (unsigned long)live_sites[SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT].virtual_address);
   report(line);
   if(mode==2u)
