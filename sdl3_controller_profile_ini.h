@@ -76,7 +76,7 @@ static inline int spider_sdl3_ini_encode(
     if(n<0 || (size_t)n>=cap-used)return 0;
     used+=(size_t)n;
   }
-  n=snprintf(out+used,cap-used,"[MenuBindings]\\r\\n");
+  n=snprintf(out+used,cap-used,"[MenuBindings]\r\n");
   if(n<0 || (size_t)n>=cap-used)return 0;
   used+=(size_t)n;
   for(i=0;i<SPIDER_SDL3_CONTEXT_COUNT;i++) {
@@ -84,8 +84,8 @@ static inline int spider_sdl3_ini_encode(
     const char *kind=b.kind==SPIDER_SDL3_BIND_BUTTON?"button":
                      b.kind==SPIDER_SDL3_BIND_TRIGGER?"trigger":"none";
     n=b.kind==SPIDER_SDL3_BIND_NONE?
-      snprintf(out+used,cap-used,"%s=none\\r\\n",spider_sdl3_context_names[i]):
-      snprintf(out+used,cap-used,"%s=%s:%u\\r\\n",
+      snprintf(out+used,cap-used,"%s=none\r\n",spider_sdl3_context_names[i]):
+      snprintf(out+used,cap-used,"%s=%s:%u\r\n",
         spider_sdl3_context_names[i],kind,(unsigned)b.index);
     if(n<0 || (size_t)n>=cap-used)return 0;
     used+=(size_t)n;
