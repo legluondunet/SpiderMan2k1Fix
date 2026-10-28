@@ -120,6 +120,61 @@ after these defaults change. The loader should report
 key. The legacy Play-time `TAIL-SKIP` messages must not return.
 Native Windows runtime validation remains pending.
 
+## 1.1.0 release — archived original release notes (27 October 2026)
+
+The public [v1.1.0 release notes](../../../../RELEASE_NOTES_1.1.0.md)
+were shortened for players. The following is the **original technical
+`What's new` and `Tested` content** from the release-notes file,
+preserved here as a dated record, not as a claim of validation under
+every Windows environment.
+
+### Original What's new
+
+- **Fixes the original WAV crackling / truncated audio:** The game's WAV loader requests only whole 2,048-byte PKR sectors and omits the final partial sector of many WAV files. SpiderMan2k1Fix restores only the verified missing bytes at the original resource-loading stage.
+- **Enabled automatically:** No new INI setting is required for the exact supported executable. The hidden troubleshooting override `[Debug] ExperimentalAudioLoaderTail=0` disables the repair.
+- **Strict original-file verification:** Original `data.pkr` PCM16 WAVs are decoded and checked using per-resource CRC32. The correction requires an exact matching RIFF length, fully identical existing prefix, identical missing bytes across all possible source aliases, and a fresh matching native read into a private 2,048-byte scratch buffer. Unverifiable cases are left unchanged.
+- **Original DirectSound preserved:** No replacement audio backend, no game asset rewriting, and no late DirectSound-buffer tail mutation. The old `ExperimentalAudioPKRTailRestore` setting and workaround have been removed.
+- **Optional helicopter sample cleanup:** The independent `[Debug] ExperimentalAudioHeli1Declick=1` corrects two known anomalous original samples in `Heli1.wav` when explicitly enabled; it is off by default.
+- **Reverse-engineering documentation:** The original WAV/DirectSound functions, exact x86 addresses, proven cause, rejected alternatives and test evidence are preserved in [the audio research reference](https://github.com/legluondunet/SpiderMan2k1Fix/blob/main/docs/references/diagnostics/audio/ORIGINAL_AUDIO_FUNCTIONS_AND_WAV_BUG.md).
+
+All previously released v1.0.0 compatibility, widescreen, controls and graphical features remain available.
+
+### Original Tested
+
+On **27 October 2026**, a Linux/Wine gameplay test of the fallback-free audio fix confirmed **no audible parasites**. The trace includes:
+
+- 656/656 original WAVs verified by CRC32;
+- 95 logged native final-sector repairs, totaling 91,406 bytes;
+- 3 repaired duplicate-source alias loads (2 × 460 and 1 × 1,988 bytes), already included in those 95 events;
+- 49 exact full-PCM matches and zero differences;
+- no legacy DirectSound tail repairs or unmatched PCM-bearing tail requests in the observed scenario.
+
+Windows x86 MSVCRT compilation and regression tests are covered by GitHub Actions. **Native Windows gameplay validation of the final default-on configuration is still pending.** Results above are specific to the supported original executable and tested Wine scenarios, not a guarantee for all game sequences.
+
+**Previously listed under “Known limitations”:** “The built-in native
+loader fix is verified under Linux/Wine; a final native Windows gameplay
+acceptance test remains outstanding.” This is the recorded test coverage
+boundary, **not an observed audio limitation or a confirmed Windows defect**.
+
+## 1.1.0 release — archived detailed changelog (27 October 2026)
+
+The public [v1.1.0 changelog](../../../../CHANGELOG.md) intentionally
+summarizes the single player-facing improvement in two short bullets.
+The original technical release notes are archived below, rather than
+requiring players to read implementation details.
+
+- Identified the root cause of audio crackling in the original game: its native WAV loader reads only complete 2,048-byte PKR resource sectors and omits the final partial sector.
+- Added a **signature-guarded native loader correction** that restores only the missing RIFF/WAV remainder after matching the entire loaded prefix and verifying the original sources independently by CRC32.
+- Validates each additional read through the original native PKR reader in a private 2,048-byte scratch buffer before writing only the exact missing remainder to the game's preallocated WAV buffer.
+- Safely handles **duplicate original WAV sources** only if every matching source has identical remaining bytes. Leaves metadata-only remainders, ambiguous or unverified assets unchanged.
+- Retained the game's original DirectSound playback engine and the separate opt-in two-sample `Heli1.wav` declick; removed the obsolete late DirectSound tail repair and its `ExperimentalAudioPKRTailRestore` INI option.
+- Kept bounded read-only source/PCM diagnostics and optional DirectSound Play tracing; no SDL3 backend or external audio assets are required.
+- **Linux/Wine validation (27 October 2026):** confirmed native repair of the previously ambiguous two 460-byte and one 1,988-byte PCM tails, unchanged full-PCM comparison results, and user-confirmed crackle-free playback **without** the fallback.
+- **Enabled the native WAV loader correction by default** for the supported executable, without adding a setting to the generated INI. An existing manually configured `ExperimentalAudioLoaderTail=0` remains a hidden troubleshooting override; `=1` is no longer necessary.
+- Preserved the original SHA-256-bound WAV/DirectSound function addresses, disassembly, failure mechanism and rejected hypotheses in the permanent technical research documentation (PR #71).
+- **Verification:** Linux/Wine gameplay and listening confirmed no audible crackling with the late DirectSound fallback removed; Windows x86 compilation and static regression tests passed. Native Windows gameplay verification of the final default-on build remains pending.
+- **Release:** minor version 1.1.0 introduces the built-in audio repair; only the supported original `SpideyPC.exe` is compatible.
+
 Any further changes must go through a separately reviewed PR.
 
 legluondunet assisted by ChatGPT (OpenAI)
