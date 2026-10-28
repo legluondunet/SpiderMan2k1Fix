@@ -268,6 +268,27 @@ fail:
   }
   close_candidate(candidate);
 }
+/* Observe menu synthetic key transitions after a successful native
+ * rebind. No COM method calls and no changes to the original game input.
+ * Logging before SendInput is particularly useful if the subsequent
+ * native menu handler fails before the next Flip and its regular log. */
+void SpiderNativeReconnect_LogSyntheticMenuKey(unsigned scan,const char *phase) {
+  static unsigned reported=0;
+  char line[240];
+  PVOID joystick,ffb;
+  if(!requested || !initialized || rebound==0 || reported>=40u)return;
+  if(native_thread!=GetCurrentThreadId())return;
+  joystick=InterlockedCompareExchangePointer(
+    (PVOID volatile *)game_device_slot(),NULL,NULL);
+  ffb=InterlockedCompareExchangePointer(
+    (PVOID volatile *)(uintptr_t)SPIDER_NATIVE_FORCE_FEEDBACK,NULL,NULL);
+  reported++;
+  snprintf(line,sizeof(line),
+    "NATIVE-RECONNECT: POST-REBIND INPUT #%u scan=0x%02X phase=%s joystick=%p native-ffb=%p rebound=%u unplug-events=%ld [PASSIVE]",
+    reported,scan,phase?phase:"unknown",joystick,ffb,rebound,
+    (long)SpiderNativeUnplug_Events());
+  report(line);
+}
 void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *)) {
   write_log=logger;
   requested=(ini && GetPrivateProfileIntA("Input",
