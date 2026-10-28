@@ -305,7 +305,7 @@ void SpiderNativeReconnect_ObserveMode(long flip_index,int menu_2d,
                                        int gameplay_3d,int bink_active) {
   static int last_mode=-1;
   static long last_flip=0;
-  static unsigned reports=0;
+  static unsigned reports=0,observed_rebound=0;
   char line[240];
   int mode;
   PVOID joystick,ffb;
@@ -313,8 +313,10 @@ void SpiderNativeReconnect_ObserveMode(long flip_index,int menu_2d,
      rebound==0 || native_thread!=GetCurrentThreadId() || reports>=80u)
     return;
   mode=gameplay_3d?2:(bink_active?3:(menu_2d?1:0));
-  if(mode==last_mode && (flip_index-last_flip)<300)return;
+  if(mode==last_mode && observed_rebound==rebound &&
+     (flip_index-last_flip)<300)return;
   last_mode=mode;
+  observed_rebound=rebound;
   last_flip=flip_index;
   reports++;
   joystick=InterlockedCompareExchangePointer(
