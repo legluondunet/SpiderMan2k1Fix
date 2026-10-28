@@ -118,6 +118,16 @@ static SpiderDS4Hotplug hotplug={0};
 static int hotplug_missing_logged=0;
 static int hotplug_late_preview_reported=0;
 static uint32_t sdl3_ui_instance=0;
+/* Explicitly opted, bounded read-only 3D physical input trace. The source
+ * is our ALREADY-polled secondary DirectInput joystick, never the game's
+ * buffered GetDeviceData (which would consume gameplay input). */
+static int sdl3_3d_trace_requested=0;
+static unsigned sdl3_3d_trace_lines=0;
+static DWORD sdl3_3d_trace_tick=0;
+static uint32_t sdl3_3d_trace_id=0;
+static uint32_t sdl3_3d_trace_buttons=0;
+static LONG sdl3_3d_trace_x=0,sdl3_3d_trace_y=0;
+static int sdl3_3d_trace_valid=0;
 static SpiderPausePadWake pause_wake={0};
 static int pause_wake_active=0;
 static int pause_wake_retry_logged=0;
@@ -377,6 +387,7 @@ static void disable_profile_with_policy(const char *reason,
   if(di_module) {FreeLibrary(di_module);di_module=NULL;}
   detected=0;
   detected_kind=SPIDER_RECONNECT_NONE;
+  sdl3_3d_trace_valid=0;
   xbox_previous_mask=0;
   memset(&xbox_post_quit_guard,0,sizeof(xbox_post_quit_guard));
   memset(&xbox_transition_ownership,0,sizeof(xbox_transition_ownership));
@@ -429,6 +440,12 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   ps1_preview_requested=GetPrivateProfileIntA("Input","ControllerPS1Preview",0,ini)==1;
   xbox360_preview_requested=GetPrivateProfileIntA("Input","ControllerXbox360Preview",0,ini)==1;
   xbox_trigger_probe_requested=GetPrivateProfileIntA("Debug","Xbox360TriggerProbe",0,ini)==1;
+  sdl3_3d_trace_requested=
+    GetPrivateProfileIntA("Debug","SDL3GameplayTrace",0,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1;
+  if(sdl3_3d_trace_requested)
+    report("SDL3-3D-TRACE: requested; only secondary read-only physical states, 64-line cap; native game input untouched");
   xbox_rt_swing_requested=GetPrivateProfileIntA("Input","ControllerXbox360RTSwing",0,ini)==1;
   ps1_options_skip_requested=GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1;
   /* ControllerPS1ReadOnlyJoystick is legacy. A supported detected
@@ -1155,6 +1172,53 @@ static void xbox_trace_trigger_axes(const DIJOYSTATE2 *now) {
   xbox_trigger_probe_tick=tick;
   xbox_trigger_probe_samples++;
 }
+/* Only observe the secondary gamepad state that the menu adapter has
+ * successfully read. Never poll/Acquire/flush the game's original native
+ * DirectInput device and never log a stale pad across a Start handoff.
+ * A per-instance baseline, button edges, and a 2-second heartbeat for
+ * analog motion give a bounded trace useful for in-game validation. */
+static void sdl3_trace_3d_readonly(const DIJOYSTATE2 *state) {
+  uint32_t buttons=0;
+  unsigned i;
+  DWORD now;
+  int changed,first,axes_changed;
+  char line[245];
+  if(!sdl3_3d_trace_requested || !state || !sdl3_ui_instance ||
+     sdl3_3d_trace_lines>=64u || !SpiderSDL3Probe_NativeOwnerEnabled())
+    return;
+  now=GetTickCount();
+  for(i=0;i<16u;i++)
+    if(state->rgbButtons[i]&0x80u)buttons|=(1u<<i);
+  first=!sdl3_3d_trace_valid || sdl3_3d_trace_id!=sdl3_ui_instance;
+  changed=!first && buttons!=sdl3_3d_trace_buttons;
+  /* Raw DirectInput axes vary by driver and do not imply game movement.
+   * Record actual values; do not normalize or map them to actions here. */
+  axes_changed=!first &&
+    ((int64_t)state->lX-(int64_t)sdl3_3d_trace_x>1024 ||
+     (int64_t)sdl3_3d_trace_x-(int64_t)state->lX>1024 ||
+     (int64_t)state->lY-(int64_t)sdl3_3d_trace_y>1024 ||
+     (int64_t)sdl3_3d_trace_y-(int64_t)state->lY>1024);
+  if(!first && !changed &&
+     (!(uint32_t)(now-sdl3_3d_trace_tick) ||
+      (uint32_t)(now-sdl3_3d_trace_tick)<2000u || !axes_changed))
+    return;
+  /* A burst of changing button edges is meaningful and must not be
+   * dropped; unchanged stick motion is sampled at most every 2 seconds. */
+  snprintf(line,sizeof(line),
+    "SDL3-3D-TRACE: #%u selected-id=%lu kind=%s edge=%s buttons=0x%04lX lX=%ld lY=%ld lZ=%ld POV=%ld [secondary DirectInput READ-ONLY; native game actions NOT inferred]",
+    ++sdl3_3d_trace_lines,(unsigned long)sdl3_ui_instance,
+    detected_kind==SPIDER_RECONNECT_DS4?"DS4":"Xbox360",
+    first?"OWNER":changed?"BUTTON":"AXIS",
+    (unsigned long)buttons,(long)state->lX,(long)state->lY,
+    (long)state->lZ,(long)state->rgdwPOV[0]);
+  report(line);
+  sdl3_3d_trace_tick=now;
+  sdl3_3d_trace_id=sdl3_ui_instance;
+  sdl3_3d_trace_buttons=buttons;
+  sdl3_3d_trace_x=state->lX;
+  sdl3_3d_trace_y=state->lY;
+  sdl3_3d_trace_valid=1;
+}
 void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active) {
   DIJOYSTATE2 state;
@@ -1177,6 +1241,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   /* Critical: release injected key before focus pause can block this thread. */
   release_active_key();
   if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {
+    sdl3_3d_trace_valid=0;
     xbox_rt_swing_release("focus lost");
     /* Native game mouse state was already restored by mouse OnFlip. */
     ps1_history_record(SPIDER_PS1_HISTORY_FOCUS_LOST,0u,menu_2d,
@@ -1297,6 +1362,12 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     return;
   }
   bad_reads=0;
+  if(sdl3_3d_trace_requested && SpiderSDL3Probe_NativeOwnerEnabled()) {
+    if(gameplay_3d && !menu_2d && !bink_active && !native_pause_active)
+      sdl3_trace_3d_readonly(&state);
+    else
+      sdl3_3d_trace_valid=0;
+  }
   if(xbox_trigger_probe_requested && detected_kind==SPIDER_RECONNECT_XBOX360 &&
      gameplay_3d && !bink_active && !native_pause_active)
     xbox_trace_trigger_axes(&state);
