@@ -20,7 +20,10 @@ def test_opt_in_owner_preserves_legacy_eight_flip_guard():
     assert 'TRANSITION-OWNERSHIP consumed inherited Cross/Options' in PAD
     assert "ControllerPS1PostQuitGuard" in PAD
     assert "ps1_post_quit_guard_flip(" in PAD
-    assert PAD.index("ownership_block) {") < PAD.index("post_quit_block) {")
+    assert PAD.index("(confirm_edges & ownership_block)) {") < PAD.index("post_quit_block) {")
+    assert "confirm_edges=(pressed & (unsigned)confirm) & ~(unsigned)previous_buttons;" in PAD
+    assert "(confirm_edges & ~ownership_block)" in PAD
+    assert "!(previous_buttons & (unsigned)confirm)" not in PAD
     assert "previous_buttons=(int)pressed;" in PAD
     assert 'begin_scancode(0x1Cu,"Return");' in PAD
     for forbidden in ("SendInput(", "Sleep(", "VirtualProtect(", "WriteProcessMemory(",
@@ -64,6 +67,24 @@ def test_native_quit_owner_consumes_only_inherited_press_until_release(tmp_path)
         assert(!APPLY(1,0,1,0,0,0));
         assert(APPLY(1,1,0,0,7,2));
         assert(!APPLY(1,1,0,0,7,1));
+        assert(!APPLY(1,1,0,0,7,2));
+        /* A held Cross is NOT allowed to mask a newly pressed OPTIONS.
+         * The return value is the mask of old-owned bits, not a boolean. */
+        assert(!APPLY(1,0,1,0,0,0));
+        assert(APPLY(1,1,0,0,7,1)==1u);
+        assert(APPLY(1,1,0,0,7,3)==1u);  /* new OPTIONS is unowned */
+        assert(!APPLY(1,1,0,0,7,2));     /* Cross released, OPTIONS held */
+        assert(!APPLY(1,1,0,0,7,3));     /* Cross is now a fresh press */
+        /* Symmetrical test: inherited OPTIONS, new Cross. */
+        assert(!APPLY(1,0,1,0,0,0));
+        assert(APPLY(1,1,0,0,7,2)==2u);
+        assert(APPLY(1,1,0,0,7,3)==2u);  /* new Cross is unowned */
+        assert(!APPLY(1,1,0,0,7,1));     /* OPTIONS released */
+        assert(!APPLY(1,1,0,0,7,3));     /* new OPTIONS */
+        /* Both initially held: independently release one then the other. */
+        assert(!APPLY(1,0,1,0,0,0));
+        assert(APPLY(1,1,0,0,7,3)==3u);
+        assert(APPLY(1,1,0,0,7,1)==1u);
         assert(!APPLY(1,1,0,0,7,2));
         /* Reset option does not leave stale protection armed. */
         assert(!APPLY(1,0,1,0,0,0));
