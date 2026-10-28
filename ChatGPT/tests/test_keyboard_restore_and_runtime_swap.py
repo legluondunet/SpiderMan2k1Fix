@@ -17,7 +17,9 @@ def test_modern_keyboard_restore_changes_only_original_default_source():
     assert "int SpiderCfg_InstallModernKeyboardDefaults(void);" in CFG_H
     assert "SpiderCfg_InstallModernKeyboardDefaults();" in MAIN
     assert "0x0053C87Cu" in CFG
-    assert "0x00568398u" not in CFG  # NEVER touch currently customized mapping
+    defaults=CFG.split("int SpiderCfg_InstallModernKeyboardDefaults(void) {",1)[1].split("static void load_keyboard(",1)[0]
+    assert "0x00568398u" not in defaults  # defaults writer NEVER touches customized mapping
+    assert "0x00568398u" in CFG  # separate *read-only* hotplug Swing scan
     for source in ("0xC8u,0xD0u,0xCBu,0xCDu,0x50u,0x4Du,0x4Bu",
                    "0x48u,0x47u,0x51u,0x49u"):
         assert source in CFG
