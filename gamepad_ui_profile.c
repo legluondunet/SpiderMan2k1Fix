@@ -67,7 +67,6 @@ static uint32_t xbox_previous_mask=0;
 static unsigned xbox_button_trace_count=0;
 static int back=SPIDER_BACK_CIRCLE,pause_button=SPIDER_PAUSE_OPTIONS;
 static int ps1_preview_requested=0,ps1_preview_active=0,previous_share=0;
-static int xbox_preview_requested=0,xbox_preview_active=0;
 static int ps1_options_skip_requested=0;
 static int ps1_readonly_menu_requested=0;
 /* MouseEnabled is global; no DS4-dependent mouse state lives here. */
@@ -274,7 +273,6 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   /* Experimental only: no automatic fixed-profile activation until native
    * menu lock and Start handling are validated in the real game. */
   ps1_preview_requested=GetPrivateProfileIntA("Input","ControllerPS1Preview",0,ini)==1;
-  xbox_preview_requested=GetPrivateProfileIntA("Input","ControllerXbox360Preview",0,ini)==1;
   ps1_options_skip_requested=GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1;
   ps1_readonly_menu_requested=GetPrivateProfileIntA("Input","ControllerPS1ReadOnlyJoystick",0,ini)==1;
   /* Global game-only mouse policy replaces the retired DS4-only option.
@@ -474,27 +472,6 @@ int SpiderGamepadUI_PreparePS1(HWND hwnd) {
   }
   report("GAMEPAD-UI: PS1-PREVIEW Sony DS4 acquired before native config bootstrap");
   return 1;
-}
-/* Xbox and PS1 gameplay previews are independent. Acquire the *verified*
- * Xbox secondary device before the original CRT reload; do not re-load
- * native gameplay settings on reconnect or at a later menu. */
-int SpiderGamepadUI_PrepareXbox360(HWND hwnd) {
-  if(!configured || !xbox_preview_requested || profile==SPIDER_PROFILE_OFF ||
-     profile==SPIDER_PROFILE_DUALSHOCK4 || !hwnd || !IsWindow(hwnd) ||
-     GetForegroundWindow()!=hwnd)return 0;
-  if(!probing)detect_device(hwnd);
-  if(!detected || detected_kind!=SPIDER_RECONNECT_XBOX360) {
-    report("GAMEPAD-XBOX360: gameplay preview deferred: no unique Xbox controller before original config bootstrap");
-    return 0;
-  }
-  report("GAMEPAD-XBOX360: verified Xbox acquired before game-native joystick config reload");
-  return 1;
-}
-void SpiderGamepadUI_ActivateXbox360(void) {
-  if(!detected || detected_kind!=SPIDER_RECONNECT_XBOX360 ||
-     !xbox_preview_requested || ps1_preview_active)return;
-  xbox_preview_active=1;
-  report("GAMEPAD-XBOX360: GAMEPLAY-PREVIEW ACTIVE; verified 7-button RAM overlay A/B/X/Y/LB/RB/L3; BACK(6)/START(7) free for Escape; original INI preserved; LT/RT not mapped");
 }
 /* The retired native BUTTON11 Start remap never reached its table scan:
  * its arbitrary 32 MiB PE SizeOfImage cap rejected the user's retail EXE.
@@ -1000,8 +977,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     uint32_t held=spider_xbox360_held_buttons(state.rgbButtons);
     unsigned action=spider_xbox360_menu_edges(held,xbox_previous_mask);
     int ui_allowed=(menu_2d && !gameplay_3d) || bink_active ||
-                   (native_pause_active && !bink_active);
-    unsigned pause_edges=held & ~xbox_previous_mask & ((1u<<6)|(1u<<7));
+                   (native_pause_active && !gameplay_3d);
     if(held!=xbox_previous_mask && xbox_button_trace_count<32u) {
       char xbox_line[192];
       snprintf(xbox_line,sizeof(xbox_line),
@@ -1011,10 +987,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
       report(xbox_line);
     }
     xbox_previous_mask=held;
-    if(xbox_preview_active && (gameplay_3d || native_pause_active) &&
-       !bink_active && pause_edges)
-      begin_scancode(0x01u,"Escape");
-    else if(ui_allowed && action==SPIDER_XBOX360_BACK)
+    if(ui_allowed && action==SPIDER_XBOX360_BACK)
       begin_scancode(0x01u,"Escape");
     else if(ui_allowed && action==SPIDER_XBOX360_ENTER)
       begin_scancode(0x1Cu,"Return");
