@@ -19,7 +19,8 @@ typedef struct {
   uint8_t original[6];
 } SpiderPS1JoystickReadOnlySite;
 
-enum { SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT=6 };
+enum { SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT=7 };
+enum { SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT=6 };
 static const SpiderPS1JoystickReadOnlySite spider_ps1_readonly_sites[
     SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT]={
   /* initActionMaps: joystick branch formats gKeyNames[i] using sprintf;
@@ -43,7 +44,13 @@ static const SpiderPS1JoystickReadOnlySite spider_ps1_readonly_sites[
    * (0xAC129C) and only skips that entire action on Joystick screens.
    * Keyboard Configuration must still execute the original two PUSHes
    * and continue at 0x50D400, keeping keyboard remapping editable. */
-  {0x0050D3FAu,6u,{0x55u,0x68u,0x00u,0x20u,0x00u,0x00u}}
+  {0x0050D3FAu,6u,{0x55u,0x68u,0x00u,0x20u,0x00u,0x00u}},
+  /* initActionMaps' final CMenu::AddEntry("restore default settings").
+   * Address and exact five original bytes are discovered at installation:
+   * one rel32 CALL to known CMenu::AddEntry, uniquely paired with the
+   * original string push inside the SHA-pinned 0x50D0F0-0x50D2F0
+   * function. Fail closed if uniqueness or readable memory check fails. */
+  {0u,5u,{0u,0u,0u,0u,0u,0u}}
 };
 /* Xbox-specific labels are intentionally limited to two physically
  * observed Holtek 045E:028E DirectInput indices. Unknown indices use
