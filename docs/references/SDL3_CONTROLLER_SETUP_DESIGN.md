@@ -279,6 +279,52 @@ the dialog still closes without a crash.
   a mapped gamepad. Raw device mapping is a later explicit phase.
 - No promise of per-unit configuration for duplicate VID/PID devices.
 
+## SDL3 3D action adapter — first preflight (read-only, no injection)
+
+To avoid corrupting the original input engine, the first stage of the
+real gameplay adapter is a **diagnostic preflight** that evaluates the
+**saved SDL3 profiles** only when all of these conditions hold:
+
+- `[Debug] SDL3GameplayPlan=1` is explicitly set, **and**
+  `[Input] ExperimentalSDL3Probe=1` and
+  `ExperimentalSDL3NativeOwner=1` have been enabled;
+- the original game's foreground window is active in actual **3D**
+  (not a menu, Bink cinematic or native pause screen);
+- the current selected SDL3 VID/PID and **live original native
+  DirectInput device** have been verified to match after native
+  handoff; otherwise the adapter resets and refuses;
+- the pad has produced a **fresh neutral state** after starting 3D,
+  reconnecting, hot-swapping, or Alt+Tab;
+- all eight semantic bindings pass strict validation and normalized
+  LT and RT axes are valid. Hysteresis protects long holds.
+
+On qualifying controller edges, up to 64 log lines prefixed
+`SDL3-3D-PLAN:` show the selected model and semantic bitmasks,
+`pressed=...`, `released=...`, `held=...`, and LT/RT values.
+Action bit 0=Jump, 1=Kick, 2=Punch, 3=Web, 4=Aim, 5=Zipline,
+6=Swing, 7=Pause. A default RT Swing press should log
+`pressed=0x40` **even if the game's original Swing action still
+fails**. Remap Swing to LT in the persistent setup, return to 3D,
+and it should change to LT-only.
+
+**This is NOT a live gameplay patch yet**: no game-owned buffers,
+native 14-slot table, COM objects, keyboard events, or file mappings
+are touched by the probe. SDL3 physical buttons and analog triggers
+cannot simply be copied to the original `0x568408` DirectInput button
+indices. A live solution needs an exact-signature-checked original
+buffered input-reader interception, preserving its analog stick path
+and disabling duplicate native button dispatch. Do not enable a
+second simultaneous keyboard-synthesis path for the same Swing action.
+An observed semantic bitmask is evidence of physical normalization,
+**not** evidence of a Spider-Man 3D action.
+
+Next hardware observation: with both pads, enter real 3D; press each
+face button and separate LT/RT, return to menu, Start-handoff to
+second pad, restart 3D, check the second profile, Alt+Tab and resume.
+Confirm `SDL3-3D-PLAN: ARMED`, correct action edges and no crash,
+and that original gameplay continues unchanged. The preflight must
+remain OFF by default.
+
 ## Next implementation gates
 
 1. **Source/identity validation:** real Windows 11 and Wine logs for
