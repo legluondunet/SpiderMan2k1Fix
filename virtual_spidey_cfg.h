@@ -17,4 +17,9 @@ int SpiderCfg_EnablePS1Preview(void);
 /* True only after an authenticated game-owned loader consumed the overlay. */
 int SpiderCfg_PS1BootstrapLoaded(void);
 void SpiderCfg_CancelPS1Preview(void);
+/* Xbox 360 gameplay candidate: verified single pad + read-only native menu;
+ * overlay only RAM until authenticated game CRT bootstrap succeeds. */
+int SpiderCfg_EnableXbox360Preview(void);
+int SpiderCfg_Xbox360BootstrapLoaded(void);
+void SpiderCfg_CancelXbox360Preview(void);
 #endif
