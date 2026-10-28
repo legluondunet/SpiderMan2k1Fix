@@ -26,6 +26,10 @@ unsigned SpiderGamepadUI_PauseWake_Poll(HWND game_window);
 void SpiderGamepadUI_PauseWake_End(void);
 /* Strictly opt-in, only after one Sony DS4 and native profile bootstrap. */
 int SpiderPS1_InstallReadOnlyJoystick(void (*logger)(const char *));
+int SpiderXbox360_InstallReadOnlyJoystick(void (*logger)(const char *));
+/* After original game config bootstrap, arm Xbox-only locked Joystick UI.
+ * Detection remains foreground/game-thread and SHA fail-closed. */
+void SpiderGamepadUI_ArmXbox360ReadOnly(void);
 void SpiderGamepadUI_OnFlip(HWND game_window,int menu_2d,int gameplay_3d,
                              int native_bink_active,int native_pause_active);
 #endif
