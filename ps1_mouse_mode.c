@@ -10,7 +10,10 @@
  * No Win32 ShowCursor, SetCursorPos, ClipCursor, SetWindowLong or DirectInput
  * hooks; the OS desktop cursor and existing Alt-Tab recovery are untouched.
  * The only live change is game-owned gRenderTest bit 0x10. Restore only the
- * bit we installed, on focus loss; gameplay keyboard and pad stay intact.
+ * bit we installed on an explicit MouseEnabled=1 policy switch; keep the
+ * game-owned bit active across background focus/pause so the game's cursor
+ * never enters the frozen PAUSED frame. The desktop pointer is unrelated.
+ * Gameplay keyboard and pad stay intact.
  * MouseEnabled=0 (default) applies to all game input profiles, including
  * keyboard-only; MouseEnabled=1 restores original menu mouse behavior.
  */
@@ -152,7 +155,7 @@ void SpiderPS1Mouse_SetPadActive(int active){
       desired=(LONG)((unsigned long)before&~SPIDER_GAME_MOUSE_DISABLED);
       if(InterlockedCompareExchange(render_flags,desired,before)==before){
         owns_bit=0;disabled=0;
-        log_mouse("GAMEPAD-MOUSE: GAME MOUSE RESTORED (game focus lost); Win32 desktop pointer not modified");
+        log_mouse("GAMEPAD-MOUSE: GAME MOUSE RESTORED (MouseEnabled=1); Win32 desktop pointer not modified");
         return;
       }
     }
@@ -184,7 +187,13 @@ void SpiderPS1Mouse_OnFlip(HWND game_hwnd){
   in_game=game_hwnd && IsWindow(game_hwnd) &&
           IsWindowVisible(game_hwnd) && GetForegroundWindow()==game_hwnd;
   if(!in_game){
-    SpiderPS1Mouse_SetPadActive(0);
+    /* Never restore gRenderTest on focus loss. It is the game's own
+     * sprite/poll/hit-test switch, NOT the OS desktop mouse pointer.
+     * Restoring it in background lets PCShell draw the original cursor
+     * into the frame that our PAUSED compositor freezes at Flip.
+     * A verified, already-armed gate stays enforced until explicit
+     * MouseEnabled=1 (or the game process exits). */
+    if(armed)SpiderPS1Mouse_SetPadActive(1);
     return;
   }
   if(!armed && !mouse_arm_attempted){
