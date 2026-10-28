@@ -28,6 +28,15 @@ enum {
   SPIDER_SDL3_ACTION_SWING,
   SPIDER_SDL3_ACTION_PAUSE,
   SPIDER_SDL3_ACTION_COUNT=8,
+  /* Independent input contexts: duplicate physical buttons are allowed
+   * across 3D, menu, movie, still and scripted cutscene contexts. */
+  SPIDER_SDL3_CONTEXT_CONFIRM=0,
+  SPIDER_SDL3_CONTEXT_BACK,
+  SPIDER_SDL3_CONTEXT_SKIP_VIDEO,
+  SPIDER_SDL3_CONTEXT_NEXT_STILL,
+  SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE,
+  SPIDER_SDL3_CONTEXT_COUNT=5,
+  SPIDER_SDL3_SETUP_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT+SPIDER_SDL3_CONTEXT_COUNT,
   SPIDER_SDL3_PROFILE_BANK_CAPACITY=16,
   SPIDER_SDL3_BUTTON_COUNT=21,
   SPIDER_SDL3_AXIS_COUNT=6,
@@ -49,6 +58,7 @@ typedef struct {
   uint16_t vendor;
   uint16_t product;
   SpiderSDL3Binding actions[SPIDER_SDL3_ACTION_COUNT];
+  SpiderSDL3Binding context[SPIDER_SDL3_CONTEXT_COUNT];
 } SpiderSDL3ControllerProfile;
 typedef struct {
   uint32_t buttons; /* SDL3 physical normalized button mask, not DInput */
@@ -60,6 +70,11 @@ typedef struct {
 } SpiderSDL3ProfileBank;
 static const char *const spider_sdl3_action_names[SPIDER_SDL3_ACTION_COUNT]={
   "Jump","Kick","Punch","Web","Aim","Zipline","Swing","Pause"
+};
+/* INI keys are ASCII, stable across translations and format versions.
+ * Each applies only to its own original-game input context. */
+static const char *const spider_sdl3_context_names[SPIDER_SDL3_CONTEXT_COUNT]={
+  "MenuConfirm","MenuBack","SkipVideo","NextStill","SkipCutscene"
 };
 static inline SpiderSDL3Binding spider_sdl3_bind(unsigned kind,unsigned index) {
   SpiderSDL3Binding result;
@@ -96,6 +111,13 @@ static inline int spider_sdl3_profile_valid(
       for(j=0;j<i;j++)
         if(spider_sdl3_binding_equal(a,p->actions[j]))return 0;
   }
+  for(i=0;i<SPIDER_SDL3_CONTEXT_COUNT;i++)
+    if(!spider_sdl3_binding_valid(p->context[i]))return 0;
+  /* Confirm and Back share the same 2D menu context: separate keys.
+   * Other bindings are context-specific and MAY reuse any gameplay key. */
+  if(p->context[SPIDER_SDL3_CONTEXT_CONFIRM].kind!=SPIDER_SDL3_BIND_NONE &&
+     spider_sdl3_binding_equal(p->context[SPIDER_SDL3_CONTEXT_CONFIRM],
+                              p->context[SPIDER_SDL3_CONTEXT_BACK]))return 0;
   return 1;
 }
 static inline int spider_sdl3_profile_default(
@@ -113,6 +135,14 @@ static inline int spider_sdl3_profile_default(
   p->actions[SPIDER_SDL3_ACTION_SWING]=
     spider_sdl3_bind(SPIDER_SDL3_BIND_TRIGGER,SPIDER_SDL3_AXIS_RT);
   p->actions[SPIDER_SDL3_ACTION_PAUSE]=spider_sdl3_bind(1,4); /* back */
+  /* Movie and second still both currently accept keyboard Enter. Use
+   * South as the accessible default, as with menu confirmation.
+   * Do not alter the original native skip/timing gates. */
+  p->context[SPIDER_SDL3_CONTEXT_CONFIRM]=spider_sdl3_bind(1,0);
+  p->context[SPIDER_SDL3_CONTEXT_BACK]=spider_sdl3_bind(1,1);
+  p->context[SPIDER_SDL3_CONTEXT_SKIP_VIDEO]=spider_sdl3_bind(1,0);
+  p->context[SPIDER_SDL3_CONTEXT_NEXT_STILL]=spider_sdl3_bind(1,0);
+  p->context[SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE]=spider_sdl3_bind(1,3);
   return spider_sdl3_profile_valid(p);
 }
 /* Atomic change for a future in-game wizard. If the new input is already
@@ -139,6 +169,45 @@ static inline int spider_sdl3_profile_assign(
   if(!spider_sdl3_profile_valid(&trial))return 0;
   *p=trial;
   return 1;
+}
+/* Change exactly one context binding; do not modify 3D bindings.
+ * Confirm and Back may swap, because they are active in the same context.
+ * Video/still/3D-cutscene are mutually exclusive and may share buttons. */
+static inline int spider_sdl3_profile_assign_context(
+    SpiderSDL3ControllerProfile *p,unsigned action,SpiderSDL3Binding binding) {
+  SpiderSDL3ControllerProfile trial;
+  if(!p || action>=SPIDER_SDL3_CONTEXT_COUNT ||
+     !spider_sdl3_profile_valid(p) || !spider_sdl3_binding_valid(binding))
+    return 0;
+  trial=*p;
+  if(action==SPIDER_SDL3_CONTEXT_CONFIRM ||
+     action==SPIDER_SDL3_CONTEXT_BACK) {
+    unsigned other=action==SPIDER_SDL3_CONTEXT_CONFIRM?
+      SPIDER_SDL3_CONTEXT_BACK:SPIDER_SDL3_CONTEXT_CONFIRM;
+    if(binding.kind!=SPIDER_SDL3_BIND_NONE &&
+       spider_sdl3_binding_equal(binding,trial.context[other]))
+      trial.context[other]=trial.context[action];
+  }
+  trial.context[action]=binding;
+  if(!spider_sdl3_profile_valid(&trial))return 0;
+  *p=trial;
+  return 1;
+}
+static inline int spider_sdl3_profile_assign_setup(
+    SpiderSDL3ControllerProfile *p,unsigned action,SpiderSDL3Binding binding) {
+  if(action<SPIDER_SDL3_ACTION_COUNT)
+    return spider_sdl3_profile_assign(p,action,binding);
+  if(action>=SPIDER_SDL3_SETUP_ACTION_COUNT)return 0;
+  return spider_sdl3_profile_assign_context(p,
+    action-SPIDER_SDL3_ACTION_COUNT,binding);
+}
+static inline SpiderSDL3Binding spider_sdl3_profile_setup_binding(
+    const SpiderSDL3ControllerProfile *p,unsigned action) {
+  if(!p)return spider_sdl3_bind(SPIDER_SDL3_BIND_NONE,0);
+  if(action<SPIDER_SDL3_ACTION_COUNT)return p->actions[action];
+  if(action<SPIDER_SDL3_SETUP_ACTION_COUNT)
+    return p->context[action-SPIDER_SDL3_ACTION_COUNT];
+  return spider_sdl3_bind(SPIDER_SDL3_BIND_NONE,0);
 }
 static inline void spider_sdl3_bank_reset(SpiderSDL3ProfileBank *bank) {
   if(bank)memset(bank,0,sizeof(*bank));
