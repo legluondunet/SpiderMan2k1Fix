@@ -99,7 +99,7 @@ def test_host_compiled_label_mapping_and_factory_signature(tmp_path):
         #include "ps1_joystick_readonly_menu.h"
         int main(void) {
           static const char* expected[]={
-            "SQUARE","CROSS","CIRCLE","TRIANGLE","L1","R1",0,"R2"
+            "SQUARE","CROSS","CIRCLE","TRIANGLE","L1","R1","L2","R2"
           };
           unsigned i;
           for(i=0;i<8;i++){
