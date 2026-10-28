@@ -33,6 +33,7 @@
 #include "native_joystick_reconnect.h"
 #include "native_joystick_reconnect_policy.h"
 #include "native_joystick_swap_probe.h"
+#include "sdl3_gamepad_probe.h"
 
 #define SPIDER_NATIVE_BASE 0x00400000u
 #define SPIDER_NATIVE_FACTORY 0x006B7A30u
@@ -52,6 +53,8 @@ static LONG last_events=0;
 static unsigned scans=0,rebound=0,failed=0;
 static int swap_probe_enabled=0,swap_initial_seen=0,swap_mapping_enabled=0;
 static unsigned swap_last_kind=0,swap_probe_reports=0;
+static unsigned sdl3_owner_attempts=0;
+static DWORD sdl3_owner_log_tick=0;
 static void (*write_log)(const char *)=NULL;
 
 typedef struct SpiderPadList {
@@ -93,6 +96,27 @@ static int valid_binary_layout(void) {
          memcmp((const void *)(uintptr_t)SPIDER_NATIVE_FORMAT,original_format,sizeof(original_format))==0;
 }
 
+/* An SDL3 instance ID and a DirectInput instance GUID are different
+ * namespaces. Never confuse them; only bridge a UNIQUE, supported
+ * vendor/product identity. Two identical VID/PIDs must fail closed. */
+typedef struct {
+  unsigned short vid,pid;
+  unsigned matches;
+  GUID instance;
+  unsigned kind;
+} SpiderSDL3Target;
+static BOOL CALLBACK enumerate_sdl3_target(const DIDEVICEINSTANCEA *inst,
+                                           VOID *ctx) {
+  SpiderSDL3Target *t=(SpiderSDL3Target *)ctx;
+  if(!inst || !t || inst->dwSize<sizeof(DIDEVICEINSTANCEA))
+    return DIENUM_CONTINUE;
+  if(LOWORD(inst->guidProduct.Data1)==t->vid &&
+     HIWORD(inst->guidProduct.Data1)==t->pid) {
+    t->matches++;
+    if(t->matches==1u)t->instance=inst->guidInstance;
+  }
+  return DIENUM_CONTINUE;
+}
 static BOOL CALLBACK enumerate_supported_pad(const DIDEVICEINSTANCEA *inst,VOID *ctx) {
   SpiderPadList *list=(SpiderPadList *)ctx;
   unsigned vid,pid,kind;
@@ -224,10 +248,22 @@ static void swap_native_gameplay_mapping(unsigned to_kind) {
     return;
   }
   preset=spider_native_swap_preset(current);
+  /* When two pads were present at process startup, neither early Sony
+   * nor Xbox preview was permitted to rewrite the game config. For this
+   * explicit SDL3 owner mode ONLY, recognize the exact original seven
+   * factory button indices as a third safe canonical source. Customized
+   * layouts still fail closed. */
   if(preset!=SPIDER_RECONNECT_DS4 &&
      preset!=SPIDER_RECONNECT_XBOX360) {
-    report("NATIVE-SWAP: REFUSED CUSTOM joystick mapping; preserve personal action bindings");
-    return;
+    static const uint32_t factory[SPIDER_PS1_BUTTON_COUNT]=
+      {3u,4u,0u,1u,6u,9u,7u};
+    if(SpiderSDL3Probe_NativeOwnerEnabled() &&
+       memcmp(current,factory,sizeof(factory))==0)
+      preset=3u;
+    else {
+      report("NATIVE-SWAP: REFUSED CUSTOM joystick mapping; preserve personal action bindings");
+      return;
+    }
   }
   if(preset==to_kind) {
     report("NATIVE-SWAP: profile already matches newly acquired pad; no RAM write");
@@ -268,7 +304,7 @@ static void swap_native_gameplay_mapping(unsigned to_kind) {
   }
   snprintf(line,sizeof(line),
     "NATIVE-SWAP: APPLIED game-owned seven-button 3D action profile %s->%s (0x568408 validated; RAM only, INI/keyboard preserved; menu refresh on reopen)",
-    swap_kind_name(preset),swap_kind_name(to_kind));
+    preset==3u?"Factory":swap_kind_name(preset),swap_kind_name(to_kind));
   report(line);
 }
 static void close_candidate(IDirectInputDevice8A *device) {
@@ -442,6 +478,132 @@ fail:
   }
   close_candidate(candidate);
 }
+
+/* Called on the original game Flip thread only, after SDL event pumping.
+ * The original native DirectInput reader sees only the published device.
+ * Reuse original factory/configuration and the validated null-pointer path.
+ * Never install a COM vtable hook or redirect the keyboard. */
+static void sdl3_owner_reconcile(HWND hwnd) {
+  IDirectInput8A *di=game_factory();
+  IDirectInputDevice8A *old,*candidate=NULL;
+  SpiderSDL3Target target;
+  DIDEVICEINSTANCEA info;
+  DIDEVCAPS caps;
+  HRESULT hr;
+  uint16_t vid=0,pid=0;
+  uint32_t id=0;
+  DWORD now=GetTickCount();
+  PVOID replaced;
+  char line[245];
+  if(!di || !swap_mapping_enabled)return;
+  if(!SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
+     spider_reconnect_kind(vid,pid)==SPIDER_RECONNECT_NONE) {
+    /* Unclaimed two-controller session: keyboard stays usable, but the
+     * original game must not keep an arbitrary first enumerated gamepad. */
+    if(SpiderSDL3Probe_MappedCount()>1u &&
+       InterlockedCompareExchangePointer((PVOID volatile *)game_device_slot(),
+                                         NULL,NULL))
+      detach_stale_native();
+    return;
+  }
+  memset(&target,0,sizeof(target));
+  target.vid=vid;target.pid=pid;
+  target.kind=(unsigned)spider_reconnect_kind(vid,pid);
+  hr=IDirectInput8_EnumDevices(di,DI8DEVCLASS_GAMECTRL,
+         enumerate_sdl3_target,&target,DIEDFL_ATTACHEDONLY);
+  if(FAILED(hr) || target.matches!=1u) {
+    if((uint32_t)(now-sdl3_owner_log_tick)>=2000u) {
+      snprintf(line,sizeof(line),
+        "SDL3-OWNER: REFUSED selected-id=%lu VID:PID=%04X:%04X DirectInput-matches=%u hr=0x%08lX (must be exactly one)",
+        (unsigned long)id,vid,pid,target.matches,(unsigned long)hr);
+      report(line);sdl3_owner_log_tick=now;
+    }
+    /* Multiple matching DI instances are not distinguishable by SDL VID/PID. */
+    if(InterlockedCompareExchangePointer((PVOID volatile *)game_device_slot(),
+                                         NULL,NULL))
+      detach_stale_native();
+    return;
+  }
+  old=(IDirectInputDevice8A *)(uintptr_t)
+    InterlockedCompareExchangePointer((PVOID volatile *)game_device_slot(),
+                                      NULL,NULL);
+  if(old) {
+    memset(&info,0,sizeof(info));info.dwSize=sizeof(info);
+    hr=IDirectInputDevice8_GetDeviceInfo(old,&info);
+    if(SUCCEEDED(hr) && IsEqualGUID(&info.guidInstance,&target.instance)) {
+      device_missing=0;
+      return; /* Already correct: no extra Acquire/COM teardown. */
+    }
+    /* Exact native game thread; preserve original NULL-safe reader
+     * and release/clear buffered state BEFORE publishing a new owner. */
+    detach_stale_native();
+  }
+  ++sdl3_owner_attempts;
+  hr=IDirectInput8_CreateDevice(di,&target.instance,&candidate,NULL);
+  if(FAILED(hr) || !candidate)goto fail;
+  hr=configure_candidate(candidate,hwnd,&caps);
+  if(FAILED(hr))goto fail;
+  if(!neutral_and_flush(candidate)) {
+    if(sdl3_owner_attempts==1u || sdl3_owner_attempts%90u==0)
+      report("SDL3-OWNER: waiting for selected pad buttons released and buffered events drained");
+    close_candidate(candidate);
+    return;
+  }
+  /* A live game-owned force-feedback effect can reference the old device.
+   * Never replace its controller while such a native effect exists. */
+  if(InterlockedCompareExchangePointer(
+       (PVOID volatile *)(uintptr_t)SPIDER_NATIVE_FORCE_FEEDBACK,
+       NULL,NULL)) {
+    report("SDL3-OWNER: REFUSED native force-feedback effect active; no publish");
+    close_candidate(candidate);
+    return;
+  }
+  replaced=InterlockedCompareExchangePointer(
+             (PVOID volatile *)game_device_slot(),candidate,NULL);
+  if(replaced) {
+    report("SDL3-OWNER: ABORT game-owned pointer no longer NULL");
+    close_candidate(candidate);
+    return;
+  }
+  zero_native_buttons();
+  *(volatile DWORD *)(uintptr_t)SPIDER_NATIVE_BUTTON_COUNT=caps.dwButtons;
+  *(volatile BYTE *)(uintptr_t)SPIDER_NATIVE_POLLED_FLAG=
+    (BYTE)((caps.dwFlags>>8)&1u);
+  device_missing=0;
+  rebound++;
+  observe_native_swap_table("sdl3-claim",swap_last_kind,target.kind);
+  swap_native_gameplay_mapping(target.kind);
+  swap_last_kind=target.kind;
+  snprintf(line,sizeof(line),
+    "SDL3-OWNER: REBOUND selected-id=%lu VID:PID=%04X:%04X native=%p buttons=%lu (one game-owned DirectInput device; selection bridged)",
+    (unsigned long)id,vid,pid,(void *)candidate,(unsigned long)caps.dwButtons);
+  report(line);
+  return;
+fail:
+  if(sdl3_owner_attempts==1u || sdl3_owner_attempts%90u==0) {
+    snprintf(line,sizeof(line),
+      "SDL3-OWNER: candidate Create/configure failed hr=0x%08lX (retry; native NULL; keyboard preserved)",
+      (unsigned long)hr);
+    report(line);
+  }
+  close_candidate(candidate);
+}
+int SpiderNativeReconnect_SDL3SelectionReady(uint16_t vid,uint16_t pid) {
+  IDirectInputDevice8A *current;
+  DIDEVICEINSTANCEA info;
+  if(!requested || !initialized || !SpiderNativeUnplug_Installed() ||
+     !native_thread || native_thread!=GetCurrentThreadId() ||
+     !SpiderSDL3Probe_NativeOwnerEnabled())return 0;
+  current=(IDirectInputDevice8A *)(uintptr_t)
+    InterlockedCompareExchangePointer((PVOID volatile *)game_device_slot(),
+                                      NULL,NULL);
+  if(!current)return 0;
+  memset(&info,0,sizeof(info));info.dwSize=sizeof(info);
+  if(FAILED(IDirectInputDevice8_GetDeviceInfo(current,&info)))return 0;
+  return LOWORD(info.guidProduct.Data1)==vid &&
+         HIWORD(info.guidProduct.Data1)==pid;
+}
+
 /* Observe menu synthetic key transitions after a successful native
  * rebind. No COM method calls and no changes to the original game input.
  * Logging before SendInput is particularly useful if the subsequent
@@ -562,6 +724,17 @@ void SpiderNativeReconnect_OnFlip(long flip_index, HWND game_hwnd) {
     if(SUCCEEDED(probe_hr) && initial.count==1u)
       swap_last_kind=initial.kind;
     observe_native_swap_table("startup",swap_last_kind,swap_last_kind);
+  }
+  if(SpiderSDL3Probe_NativeOwnerEnabled()) {
+    /* Prevent the old one-pad recovery path choosing a random device
+     * when SDL3 has multiple mapped controllers. */
+    events=SpiderNativeUnplug_Events();
+    if(events!=last_events) {
+      last_events=events;
+      detach_stale_native();
+    }
+    sdl3_owner_reconcile(native_hwnd);
+    return;
   }
   events=SpiderNativeUnplug_Events();
   if(events!=last_events) {
