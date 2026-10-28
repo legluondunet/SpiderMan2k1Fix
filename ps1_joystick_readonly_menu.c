@@ -174,6 +174,7 @@ static int spider_install_readonly_joystick(unsigned mode,
     return 0;
   }
   static const BYTE nop5[5]={0x90u,0x90u,0x90u,0x90u,0x90u};
+  SpiderPS1JoystickReadOnlySite live_sites[SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT];
   BYTE replacements[SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT][6]={{0}};
   BYTE backups[SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT][6]={{0}};
   BYTE *base=(BYTE *)GetModuleHandleA(NULL);
@@ -192,12 +193,18 @@ static int spider_install_readonly_joystick(unsigned mode,
      nt->OptionalHeader.ImageBase!=0x00400000u ||
      nt->OptionalHeader.SizeOfImage<0x00110000u ||
      nt->OptionalHeader.SizeOfImage>0x10000000u)return 0;
+  memcpy(live_sites,spider_ps1_readonly_sites,sizeof(live_sites));
+  if(!spider_find_native_restore_row(base,nt->OptionalHeader.SizeOfImage,
+           &live_sites[SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT])) {
+    report("GAMEPAD-READONLY: REFUSED missing/ambiguous original Restore Default AddEntry call; no patches installed");
+    return 0;
+  }
 
   /* Verify every exact original machine instruction and writable text
    * window, including the original input branch/callsite signatures.
    * This strict preflight prevents patches on unknown binaries. */
   for(i=0;i<SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT;i++){
-    const SpiderPS1JoystickReadOnlySite *p=&spider_ps1_readonly_sites[i];
+    const SpiderPS1JoystickReadOnlySite *p=&live_sites[i];
     const BYTE *location=(const BYTE *)(uintptr_t)p->virtual_address;
     MEMORY_BASIC_INFORMATION mbi;
     uintptr_t addr=(uintptr_t)location,region;
@@ -283,7 +290,7 @@ static int spider_install_readonly_joystick(unsigned mode,
     memcpy(&replacements[0][1],&rel,sizeof(rel));
   }
   for(i=2;i<=3u;i++){
-    const SpiderPS1JoystickReadOnlySite *p=&spider_ps1_readonly_sites[i];
+    const SpiderPS1JoystickReadOnlySite *p=&live_sites[i];
     uint32_t rel=0x0050D852u-(p->virtual_address+5u);
     replacements[i][0]=0xE9u; /* JMP game's own cleaned return */
     memcpy(&replacements[i][1],&rel,sizeof(rel));
@@ -292,17 +299,27 @@ static int spider_install_readonly_joystick(unsigned mode,
   {
     /* The last site replaces the entire six-byte capture-mode entry
      * with a jump to our checked mode-specific thunk. */
-    const SpiderPS1JoystickReadOnlySite *p=
-      &spider_ps1_readonly_sites[SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT-1u];
+    const SpiderPS1JoystickReadOnlySite *p=&live_sites[5u];
     uint32_t rel=(uint32_t)(uintptr_t)capture_thunk-
       (p->virtual_address+5u);
-    BYTE *replacement=replacements[SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT-1u];
+    BYTE *replacement=replacements[5u];
     replacement[0]=0xE9u;
     memcpy(replacement+1,&rel,sizeof(rel));
     replacement[5]=0x90u;
   }
+  /* Redirect only the 14-action list's final Restore Default row AddEntry.
+   * Original Keyboard menu still calls the original CMenu::AddEntry. */
+  {
+    const SpiderPS1JoystickReadOnlySite *p=
+      &live_sites[SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT];
+    uint32_t rel=(uint32_t)(uintptr_t)&spider_joystick_restore_row_addentry-
+      (p->virtual_address+5u);
+    replacements[SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT][0]=0xE8u;
+    memcpy(&replacements[SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT][1],
+           &rel,sizeof(rel));
+  }
   for(i=0;i<SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT;i++){
-    const SpiderPS1JoystickReadOnlySite *p=&spider_ps1_readonly_sites[i];
+    const SpiderPS1JoystickReadOnlySite *p=&live_sites[i];
     BYTE *location=(BYTE *)(uintptr_t)p->virtual_address;
     if(!ps1_patch_readonly_site(location,replacements[i],p->size,
                                backups[i]))break;
@@ -310,8 +327,7 @@ static int spider_install_readonly_joystick(unsigned mode,
   }
   if(installed!=SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT){
     while(installed>0u){
-      const SpiderPS1JoystickReadOnlySite *p=
-        &spider_ps1_readonly_sites[--installed];
+      const SpiderPS1JoystickReadOnlySite *p=&live_sites[--installed];
       BYTE *location=(BYTE *)(uintptr_t)p->virtual_address;
       DWORD old,ignored;
       if(VirtualProtect(location,p->size,PAGE_EXECUTE_READWRITE,&old)){
@@ -325,6 +341,10 @@ static int spider_install_readonly_joystick(unsigned mode,
   }
   readonly_label_mode=mode;
   readonly_installed_mode=mode;
+  snprintf(line,sizeof(line),
+    "GAMEPAD-READONLY: Restore Default row disabled in Joystick only, native AddEntry redirected at VA=0x%08lX; Keyboard restore preserved",
+    (unsigned long)live_sites[SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT].virtual_address);
+  report(line);
   if(mode==2u)
     report("GAMEPAD-XBOX360: JOYSTICK-READONLY ACTIVE native joystick rebind/restore and press-a-button capture disabled; Keyboard editable; A/B labels, remaining buttons numeric; bindings untouched");
   else
