@@ -2598,8 +2598,11 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   }
   SpiderDI8Retry_OnFlip(count);
   SpiderNativeUnplug_OnFlip(count);
-  SpiderNativeReconnect_OnFlip(count,game_hwnd);
+  /* SDL3 must pump selection BEFORE native DI arbitration on the same
+   * render thread. The UI adapter will consume verified ownership next
+   * Flip; no gamepad injection happens before the native handoff. */
   SpiderSDL3Probe_OnFlip(count,game_hwnd);
+  SpiderNativeReconnect_OnFlip(count,game_hwnd);
   /* Passive, bounded post-hotplug heartbeat: menu -> 3D -> menu. */
   SpiderNativeReconnect_ObserveMode(count,
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
