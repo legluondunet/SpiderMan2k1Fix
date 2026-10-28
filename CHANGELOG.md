@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — DS4 native confirmation ownership experiment (PR #74)
+
+- Read-only `ControllerPS1InputFlightRecorder=1` trace `SpiderMan2k1Fix(20261028-084402).log` isolates the apparent duplicate Cross action: last successful 3D poll `seq=586` reports `Cross=0 previous-mask=0`; first returned 2D poll `seq=587` reports `Cross=1 previous-mask=0 request=7`. The game has already processed the native Quit/Yes. No focus loss, missing device or DirectInput failure occurs between these two polls. This is a **new observed raw input edge on the first 2D frame**, not a proven spontaneous hardware signal or reset. The exact physical press moment is unobserved.
+- Added **OFF-by-default**, alternative `[Input] ControllerPS1TransitionEdgeOwnership=1`: on the first 2D frame after a verified 3D session ended through native request 7, treat any currently depressed Cross/Options confirmation as already owned by the previous native menu. Do not forward a second synthetic Return to the new main menu. Suppression persists **only while the inherited button remains held** and immediately re-arms after the physical release. There is **no fixed number of frames** and no per-frame timer.
+- Preserve the existing *runtime-validated* `ControllerPS1PostQuitGuard=1` option unchanged, as a fall-back. To independently A/B the new ownership model, test `ControllerPS1PostQuitGuard=0`, `ControllerPS1TransitionEdgeOwnership=1`, `ControllerPS1QuitTrace=0`, `ControllerPS1InputFlightRecorder=1` with the same original Sony DS4; then confirm normal menu navigation, including fast Cross release/re-press after Quit. Neither alternative is enabled by default.
+- The ownership model is **NOT runtime-validated** yet. The original game's correct native Quit request is left untouched; this fix affects only the separate PS1 keyboard-synthesis adapter. PR #74 stays DRAFT, unmerged and unreleased until maintainer test and explicit approval.
+
 ## Unreleased — opt-in native Quit → main-menu transition guard (PR #74)
 
 - Real-game A/B on 2026-10-28: with `ControllerPS1QuitTrace=0` the Sony DS4 can inject synthetic Return on **the first returned 2D Flip** following native engine request 7, immediately opening New Game. In `SpiderMan2k1Fix(20261028-081250).log`, this occurs on flips 734 and 853; original native teardown itself is correct. The read-only `QuitTrace=1` had masked this timing-sensitive problem in an earlier test.
