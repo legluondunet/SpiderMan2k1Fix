@@ -4,7 +4,7 @@
 
 - Real-game A/B on 2026-10-28: with `ControllerPS1QuitTrace=0` the Sony DS4 can inject synthetic Return on **the first returned 2D Flip** following native engine request 7, immediately opening New Game. In `SpiderMan2k1Fix(20261028-081250).log`, this occurs on flips 734 and 853; original native teardown itself is correct. The read-only `QuitTrace=1` had masked this timing-sensitive problem in an earlier test.
 - New **OFF-by-default** `[Input] ControllerPS1PostQuitGuard=1` experimental PS1-preview-only protection: suppress synthetic Cross/Options-to-Return for the first **eight 2D Flips** after the confirmed original 3D → menu `request=7` transition. Existing physical button state is still consumed; the original menu, native controller input, quit operation and keyboard inputs remain untouched.
-- This experimental fix is **not runtime-validated yet**. Test with `ControllerPS1QuitTrace=0`, change no other setting. Do not merge PR #74 or publish a release until maintainer approves the in-game A/B.
+- **Runtime validated by the maintainer (2026-10-28):** with `ControllerPS1QuitTrace=0` and `ControllerPS1PostQuitGuard=1`, the original Sony DS4 follows **SHARE → Quit → Yes → main menu** correctly. In `SpiderMan2k1Fix(20261028-082416).log` (`v1.1.0-89f2ef7`), native `request=7` and teardown succeed twice; the guard suppresses exactly one premature synthetic Return on each first returned 2D Flip (`296`, `1046`), and the original `Shell_MainMenu` is reached both times. Later synthetic Return/Back actions still work after settling. Verified for this DS4/game setup only; keep OFF by default and keep PR #74 draft pending broader validation and explicit merge approval.
 
 
 ## Unreleased — Quit/Yes native-selection investigation (PR #74, diagnostic only)
