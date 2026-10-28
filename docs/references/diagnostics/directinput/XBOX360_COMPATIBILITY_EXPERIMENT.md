@@ -173,60 +173,72 @@ physical Y/A/Back/Start **DirectInput indices are not yet proven
 by a new raw button-edge log**. Do not assume that the Holtek
 controller exposes the standard official Xbox order.
 
-### Design correction after discovering the menu is editable
+### Correct interpretation: editable Joystick Configuration is a bug
 
-A proposed static Xbox gameplay overlay was **withdrawn** before
-hardware testing because it would force the seven game actions and
-hide the user's modifications in the editable Joystick menu.
-**Do not reintroduce a RAM-only Xbox overlay that discards
-Joysticks' in-game changes.** The native game remains the owner of
-digital gameplay actions, analog axes and the persisted
-`[Joystick]` key assignments; the player can edit and save
-them normally.
+The maintainer explicitly clarified that **the editable native
+Joystick Configuration menu is a regression to fix**, not a request
+to preserve in-game binding editing. The prior recommendation to
+remap Jump/Start/Back in that menu was mistaken and is superseded.
 
-The experimental independent Xbox UI bridge handles only
-press-edge keyboard equivalents in context:
+The initial Xbox profile handled A/B menu keys but did **not**
+install the same native Joystick-only read-only patch used by the
+Sony PS1 profile. The actual 2026-10-28 Xbox log confirms profile
+Auto+Xbox360 and original in-game joystick settings saved after
+input interactions: the settings menu remained editable.
 
-- **2D menu / Bink:** candidate A (DirectInput BUTTON0) or
-  Start (BUTTON7) = Enter, B (BUTTON1) or Back (BUTTON6)
-  = Escape; D-pad/stick still handled by original game.
-- **3D gameplay or native pause:** candidate Start (BUTTON7)
-  or Back (BUTTON6) = Escape **ONLY if the corresponding
-  button index is not assigned to ANY native gameplay
-  action** in the current saved `[Joystick]` INI. Unknown
-  or malformed mappings fail closed; conflicts log
-  `GAMEPAD-XBOX360: PAUSE BLOCKED physical BUTTONn`
-  together with the conflicting action. This prevents
-  an accidental Swing/Aim + Pause on one press.
-- **Physical trace:** first 32 observed 10-button masks
-  `GAMEPAD-XBOX360: BUTTON-EDGE ... held=0x... changed=0x...`.
-  Use these for *actual* Holtek index measurement rather
-  than relying on conventional XInput button order.
+**Fix implemented in PR #77:**
+- Share the **exact same six original x86 signature-checked**
+  patches from `ps1_joystick_readonly_menu.c`. They bypass
+  native capture/restore/rebinding only inside the **Joystick**
+  Configuration menu; **Keyboard** is still editable.
+- The patch becomes automatic after the original config bootstrap
+  when a single Xbox360-compatible DirectInput controller has
+  been verified, and is also attempted once if the Xbox is
+  newly detected later in a foreground frame.
+- Do **not** install twice or reinterpret Sony PS1 labels as
+  Xbox labels: the name formatter uses confirmed A/B physical
+  DirectInput indices (BUTTON0/BUTTON1) and a numeric fallback
+  for all unverified Holtek physical indices.
+- This feature does **not** itself modify the user's stored
+  `[Joystick]` bindings, change a game action, or repair the
+  bad Xbox button layout. Joystick read-only and gameplay
+  mapping are two separate acceptance criteria. The previously
+  validated Sony DS4 readonly path remains opt-in.
+- A strict original EXE SHA and six original code signatures
+  are still required; a signature mismatch refuses installation,
+  leaving the original menu untouched and writing an explicit
+  `GAMEPAD-XBOX360: JOYSTICK-READONLY REFUSED` log message.
 
-To free Start for pause, locate the **native Joystick menu**
-and reassign the native action currently on physical Start
-(likely `Swing=BUTTON7`) onto a different free control
-such as a stick press, **after checking the real button
-index**. To free Back for pause, similarly reassign the
-native action currently occupying physical Back (factory
-`Aim=BUTTON6`). The original game should save these
-assignments into `SpiderMan2k1Fix.ini`. Then restart
-once to make sure the saved mappings are reloaded and
-test Start/Back in 3D. Confirm no native gameplay action
-fires alongside the pause menu. Do not guess LT/RT:
-XInput-compatible triggers may be exposed as a combined
-DirectInput axis and may not be bindable as digital buttons.
+**Still pending:** fix the Xbox gameplay action layout
+(A should Jump, not Y; Back/Start should not trigger unrelated
+actions), with an explicit and hardware-validated mapping. The
+new read-only mechanism alone does not solve these assignments.
+Genuine Xbox trigger axes and vibration also remain unverified.
 
-For Jump, use the **editable native Joystick menu** to
-assign `Jump` by physically pressing the desired Xbox
-face button **A**, rather than assuming a particular
-`BUTTONn` from a marketing label. This preserves user
-preferences and avoids any new native-memory patch.
+### Hardware validation after the Xbox read-only fix
 
-**Status:** code compiled/automated checks only for the
-new 3D pause collision guard and menu Back/Start;
-physical confirmation on Holtek is still needed. A/B
-and Start/Back button indices need a fresh actual
-`SpiderMan2k1Fix(...).log`. No changes to Sony PS1
-mapping, DS4 physical hotplug guard, or original
-`SpideyPC.exe`. The PR remains draft and unmerged.
+On the next instrumented Windows-x86 build of PR #77:
+
+1. Launch with only the wired Holtek Xbox controller
+   (045E:028E); `ControllerProfile=Auto`, Debug Log=1.
+2. Confirm
+   `GAMEPAD-XBOX360: JOYSTICK-READONLY ACTIVE` appears.
+3. Open **Joystick Configuration**. The menu must still navigate
+   and display the current bindings, but selecting a binding
+   must **not** enter capture mode, assign a new button, or
+   restore defaults. **Keyboard Configuration must still
+   accept and persist edits**. No crash on Back/Escape.
+4. Reopen Joystick Configuration, confirm the seven original
+   action assignments did not change, and share the timestamped
+   fix log. Check that the already working analog axes,
+   D-pad, main-menu A/B and game-native hotplug still work.
+
+If the native signature patch refuses, do **not** interpret
+an editable menu as success: the log must be reviewed before
+changing any native patch sites.
+
+The user has **not yet validated the Xbox-only read-only
+menu fix physically**. PR #77 remains DRAFT and UNMERGED.
+No merge without explicit approval.
+
+legluondunet assisted by ChatGPT (OpenAI)
