@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — DS4 can dismiss the custom Alt+Tab PAUSED screen (PR #74)
+
+- Fix controller wake for the **custom focus-loss PAUSED DirectDraw screen**, not the game's original Escape/3D pause. The gamepad UI bridge normally only polls during Flip, which is deliberately blocked while this pause waits for keyboard input.
+- Poll the **already discovered Sony DS4 secondary nonexclusive DirectInput device** inside the 20 ms message loop, only after Spider-Man regains foreground. Accept a fresh press of any of DS4's first 12 digital buttons followed by complete release; ignore axes/analog drift and buttons held on focus return. Reset incomplete events on foreground loss or read failure, and retry independent device acquisition without modifying the game's native DirectInput state.
+- Resume on controller button release with **no injected Return/Escape**, preventing unintended original menu confirmation or gameplay actions on resume. Preserve the existing any-key press/release keyboard hook and native quit/WM_QUIT/audio cleanup paths; update the paused UI hint to `PRESS KEY OR GAMEPAD BUTTON TO RESUME`.
+- Add pure portable C99 wake-policy regression tests and source-level integration checks. **Hardware validation under Wine/Windows required**; this is not USB hotplugging and does not activate unknown controllers. No merge or release authorized.
+
 ## Unreleased — game-only mouse disabled by default (PR #74)
 
 - Original PC 2001 manual, game README and period developer interview confirm the mouse is **only used for menus**. Gameplay and all menu commands work with keyboard/joystick; do not conflate with the 2002 Movie game.
