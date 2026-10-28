@@ -896,3 +896,23 @@ which may still match the controller connected at startup. Never
 claim the new pad's physical gameplay mapping has switched merely
 because its COM device reconnects. Release and PR remain gated on
 live Windows/Wine validation. Draft PR #77 remains unmerged.
+
+
+### Late hotplug viewer activation (follow-up)
+
+The native read-only viewer is now armed after CRT bootstrap for an
+already detected Sony DS4, **regardless of optional PS1 gameplay
+preview**; the previously automatic verified Xbox lock is preserved.
+When a supported controller is first discovered later in the normal
+foreground `gamepad_ui_profile.c` Flip path, the same eight-site lock
+is armed before the next native UI action. When a Sony↔Xbox change is
+observed, the existing code hook is *not* rewritten: only its
+physical button label formatter switches between Sony and Xbox
+indices. This does NOT remap original 3D gameplay actions, so the
+currently loaded native seven-action mapping may still be inherited
+from the first controller until a separate runtime mapping swap is
+implemented. In `ControllerProfile=Off`, the native Joystick screen
+remains untouched.
+
+`ControllerPS1ReadOnlyJoystick` is retained as an accepted legacy
+INI key but is no longer a necessary opt-in for detected DS4 viewers.
