@@ -279,6 +279,12 @@ static volatile LONG enabled=0;
 static volatile LONG pending=0;
 static volatile LONG delivered=0;
 static volatile LONG menu_frame_count=0;
+/* Exact original Shell_MainMenu native hook, independent from F10.
+ * Opt-in read-only observer: cannot dispatch Quit or synthesize input. */
+static volatile LONG native_menu_probe_enabled=0;
+static volatile LONG native_menu_probe_only=0;
+static volatile LONG native_menu_probe_reports=0;
+static volatile LONG native_menu_probe_select_reports=0;
 /* Read-only per-menu-tick timing: existing game-owned 0x493DD6 hook only. */
 static volatile LONG debug_menu_tick_entry_ms=0;
 static volatile LONG debug_menu_last_exit_ms=0;
@@ -2292,8 +2298,41 @@ void __cdecl SpiderQuickExitF12_MarkMenuTickEntry(void) {
 
 int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void) {
   LONG n=InterlockedIncrement(&menu_frame_count);
-  InterlockedExchange(&last_menu_frame_ms,(LONG)GetTickCount());
+  DWORD now=GetTickCount();
+  DWORD since_last=(DWORD)InterlockedExchange(&last_menu_frame_ms,(LONG)now);
   InterlockedExchange(&real_main_menu_seen,1);
+  if(InterlockedCompareExchange(&native_menu_probe_enabled,0,0)==1) {
+    /* Runs AFTER the real 0x505720 menu input tick, before game-owned
+     * Shell_MainMenu dispatch. Never calls DirectInput or modifies input
+     * state. Large inter-tick gaps identify possible new sessions, not
+     * proof of a completed 3D->menu transition. */
+    static DWORD last_transition=0xffffffffu,last_mode=0xffffffffu;
+    static DWORD last_enter=0xffffffffu,last_dispatch=0xffffffffu;
+    DWORD transition=*SPIDER_TRACE_TRANSITION_RAW;
+    DWORD request=*SPIDER_ENGINE_MODE;
+    DWORD dispatcher=*SPIDER_TRACE_DISPATCH_RAW;
+    DWORD input_active=*(const volatile DWORD *)(uintptr_t)0x006B78F0u;
+    DWORD gap=since_last?(DWORD)(now-since_last):0u;
+    BYTE enter_raw=*(const volatile BYTE *)(uintptr_t)0x006B7948u;
+    int changed=n==1 || gap>=750u || transition!=last_transition ||
+      request!=last_mode || dispatcher!=last_dispatch ||
+      (DWORD)enter_raw!=last_enter;
+    LONG observed=InterlockedCompareExchange(&native_menu_probe_reports,0,0);
+    if((changed || (n<=16) || (n%120)==0) && observed<128) {
+      char line[370];
+      InterlockedIncrement(&native_menu_probe_reports);
+      snprintf(line,sizeof(line),
+        "NATIVE-MENU-RETURN-PROBE tick=%ld ms=%lu gap_ms=%lu mode_request=%lu transition=0x%08lX menu_dispatch_raw=0x%08lX menu_context=%lu active_input=%lu DIK_RETURN_raw=0x%02X [POST-NATIVE-TICK; PASSIVE; selected action UNKNOWN]",
+        (long)n,(unsigned long)now,(unsigned long)gap,
+        (unsigned long)request,(unsigned long)transition,
+        (unsigned long)dispatcher,
+        (unsigned long)(*SPIDER_TRACE_MENU_CONTEXT!=0u),
+        (unsigned long)input_active,(unsigned)enter_raw);
+      say(line);
+    }
+    last_transition=transition;last_mode=request;last_dispatch=dispatcher;
+    last_enter=(DWORD)enter_raw;
+  }
   /* This original game-thread frame, not a guessed pause/menu bit,
    * proves the previous gameplay session returned to the real menu.
    * Re-arm F10 before the NEXT native New Game comic can be drawn. */
@@ -2359,6 +2398,9 @@ int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void) {
    * also runs around the two pre-menu static images. The intro exit
    * goes through the top-level native Quit check (0x455E50), after
    * game-owned movie and transition cleanup, not via an early menu. */
+  /* The standalone menu probe has NO F10/F12 authority, not even if a
+   * stale pending value somehow exists. Continue native menu unmodified. */
+  if(InterlockedCompareExchange(&native_menu_probe_only,0,0)==1)return 0;
   if(InterlockedCompareExchange(&pending,0,1)==1) {
     InterlockedExchange(&delivered,1);
     if(InterlockedCompareExchange(&intro_still_exit_state,3,2)==2)
@@ -2635,13 +2677,19 @@ static void __cdecl spider_f12_debug_menu_wait(DWORD ticks,int which) {
   DWORD before_clock=*SPIDER_TRACE_NATIVE_CLOCK_RAW;
   SPIDER_NATIVE_CLOCK_WAIT(ticks);
   if(which==3 &&
-     InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {
+     (InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 ||
+      InterlockedCompareExchange(&native_menu_probe_enabled,0,0)==1)) {
     static volatile LONG exit_wait_calls=0;
     LONG calls=InterlockedIncrement(&exit_wait_calls);
     DWORD end_ms=GetTickCount();
     DWORD end_clock=*SPIDER_TRACE_NATIVE_CLOCK_RAW;
     DWORD elapsed_ms=(DWORD)(end_ms-before_ms);
-    if(calls<=8 || elapsed_ms>=100u) {
+    /* A native selection checkpoint is not a known selected action.
+     * Log up to 64 checkpoints across repeated 3D/menu cycles, even
+     * after the first eight startup menu selections. */
+    if((InterlockedCompareExchange(&native_menu_probe_enabled,0,0)==1 &&
+        InterlockedIncrement(&native_menu_probe_select_reports)<=64) ||
+       calls<=8 || elapsed_ms>=100u) {
       char line[300];
       snprintf(line,sizeof(line),
         "QUICK-EXIT-F12: DEBUG-MENU-EXIT-CLOCK-WAIT site=0x00494209 call=%ld elapsed_ms=%lu wait_arg=%lu native_clock_before=%lu native_clock_after=%lu [ORIGINAL WAIT CALLED; READ-ONLY; SELECTED ACTION UNKNOWN]",
@@ -3113,6 +3161,11 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   /* Hidden development option: omitted from default generated INI,
    * disabled when absent; Log=1 is not required for the unified F10. */
   f10_shortcut=GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1;
+  if(GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
+     GetPrivateProfileIntA("Debug","NativeMenuReturnProbe",0,ini)==1) {
+    InterlockedExchange(&native_menu_probe_enabled,1);
+    say("NATIVE-MENU-RETURN-PROBE requested: observe original Shell_MainMenu tick and native selection checkpoint; NO input modification, independent of F10");
+  }
   /* Ordinary Log=1 keeps all native state/cleanup outcomes, while
    * heavy read-only reverse-engineering snapshots need extra opt-in. */
   if(GetPrivateProfileIntA("Debug","F10VerboseTrace",0,ini)==1) {
@@ -3233,6 +3286,22 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
       say("QUICK-EXIT-F12: BINK-4-SAFETY unavailable: native 3D input signature mismatch [ALL SAFETY HOOKS RESTORED; F10 OFF]");
     } else
       say("QUICK-EXIT-F12: BINK-4-SAFETY enabled independently of F10Shortcut; original movie #4 owner and Enter/Space release only [F10 OFF]");
+    if(InterlockedCompareExchange(&native_menu_probe_enabled,0,0)==1) {
+      /* Independent native menu instrumentation must NOT enable F10 or
+       * install a Quit-capable callback. The existing hook always invokes
+       * the game's 0x505720 exactly once. We only record scalars after. */
+      InterlockedExchange(&native_menu_probe_only,1);
+      if(memcmp(SPIDER_SHELL_MENU_TICK,shell_menu_tick_original,5)!=0 ||
+         memcmp(SPIDER_MENU_WAIT_EXIT_SITE,menu_wait_exit_original,5)!=0 ||
+         !install_real_menu_hook()) {
+        InterlockedExchange(&native_menu_probe_enabled,0);
+        InterlockedExchange(&native_menu_probe_only,0);
+        say("NATIVE-MENU-RETURN-PROBE refused: strict original menu tick/wait signature mismatch; no native menu modifications");
+      } else {
+        install_debug_menu_wait_exit_probe();
+        say("NATIVE-MENU-RETURN-PROBE active: strict original 0x493DD6 callback after native tick; 0x494209 selection checkpoint passive; F10 disabled");
+      }
+    }
     return;
   }
   /* Shell_MainMenu has 8 entries. Slot 3 must be "quit" action=0x12,
