@@ -3062,9 +3062,11 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
    * A failed preflight leaves the previous working UI bridge untouched. */
   {
     HWND early=spider_find_game_window_before_ddraw();
-    int mapped=0;
+    int mapped=0,xbox_mapped=0;
     if(early && SpiderGamepadUI_PreparePS1(early))
       mapped=SpiderCfg_EnablePS1Preview();
+    if(early && SpiderGamepadUI_PrepareXbox360(early))
+      xbox_mapped=SpiderCfg_EnableXbox360Preview();
     SpiderCfg_BootstrapGameRead();
     SpiderGamepadUI_ArmXbox360ReadOnly();
     if(mapped) {
@@ -3072,6 +3074,12 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
         SpiderGamepadUI_ActivatePS1();
       else
         SpiderCfg_CancelPS1Preview();
+    }
+    if(xbox_mapped) {
+      if(SpiderCfg_Xbox360BootstrapLoaded())
+        SpiderGamepadUI_ActivateXbox360();
+      else
+        SpiderCfg_CancelXbox360Preview();
     }
   }
   HRESULT hr=original_create(guid,out,iid,outer);
