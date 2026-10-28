@@ -17,6 +17,7 @@
 #include "sdl3_controller_setup.h"
 #include "sdl3_gamepad_probe.h"
 #include "sdl3_controller_capture.h"
+#include "sdl3_controller_setup_nav.h"
 
 enum {
   SPIDER_UI_PAD=1001, SPIDER_UI_ACTION=1002,
@@ -27,6 +28,7 @@ enum {
 typedef struct {
   HWND hwnd,owner,pads,actions,status;
   SpiderSDL3Capture capture;
+  SpiderSDL3SetupNav nav;
   uint32_t instance;
   uint16_t vid,pid;
   unsigned slot;
@@ -93,6 +95,7 @@ static void select_slot(SpiderSDL3SetupUI *ui,unsigned slot) {
   uint16_t vid=0,pid=0;
   if(!ui)return;
   spider_sdl3_capture_reset(&ui->capture);
+  spider_sdl3_setup_nav_reset(&ui->nav);
   ui->slot=slot;ui->instance=0;ui->vid=0;ui->pid=0;
   if(!SpiderSDL3Probe_SetupRead(slot,&id,&vid,&pid,name,sizeof(name),&s)) {
     refresh_actions(ui);
@@ -102,7 +105,7 @@ static void select_slot(SpiderSDL3SetupUI *ui,unsigned slot) {
   ui->instance=id;ui->vid=vid;ui->pid=pid;
   refresh_actions(ui);
   snprintf(line,sizeof(line),
-    "%s (%04X:%04X) — model-only preview. Select an action then Capture.",
+    "%s (%04X:%04X) - model-only preview. Select an action then Capture.",
     name,(unsigned)vid,(unsigned)pid);
   status(ui,line);
 }
@@ -152,6 +155,7 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
   if(!ui || !IsWindow(ui->hwnd))return;
   if(GetForegroundWindow()!=ui->hwnd) {
     spider_sdl3_capture_reset(&ui->capture);
+    spider_sdl3_setup_nav_reset(&ui->nav);
     return;
   }
   if(!SpiderSDL3Probe_SetupPump()) {
@@ -167,9 +171,46 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
     refresh_pads(ui);
     return;
   }
-  if(!ui->capture.active)return;
+  if(!ui->capture.active) {
+    uint32_t edge=spider_sdl3_setup_nav_step(&ui->nav,&s);
+    if(edge==(1u<<SPIDER_SETUP_NAV_UP)) {
+      if(ui->action)ui->action--;
+      else ui->action=SPIDER_SDL3_ACTION_COUNT-1u;
+      refresh_actions(ui);
+      status(ui,"D-pad: action selected. Press A to capture; release all controls.");
+    } else if(edge==(1u<<SPIDER_SETUP_NAV_DOWN)) {
+      ui->action=(ui->action+1u)%SPIDER_SDL3_ACTION_COUNT;
+      refresh_actions(ui);
+      status(ui,"D-pad: action selected. Press A to capture; release all controls.");
+    } else if(edge==(1u<<SPIDER_SETUP_NAV_LB) ||
+              edge==(1u<<SPIDER_SETUP_NAV_RB)) {
+      if(ui->count>1u) {
+        unsigned next=(ui->slot+ui->count+
+          (edge==(1u<<SPIDER_SETUP_NAV_LB)?ui->count-1u:1u))%ui->count;
+        SendMessageA(ui->pads,CB_SETCURSEL,next,0);
+        select_slot(ui,next);
+      }
+    } else if(edge==(1u<<SPIDER_SETUP_NAV_SOUTH)) {
+      if(current_profile(ui)) {
+        spider_sdl3_capture_start(&ui->capture);
+        spider_sdl3_setup_nav_reset(&ui->nav);
+        status(ui,"CAPTURE: release all controls, then press ONE button or LT/RT. Esc cancels.");
+      }
+    } else if(edge==(1u<<SPIDER_SETUP_NAV_EAST)) {
+      SendMessageA(ui->hwnd,WM_CLOSE,0,0);
+    } else if(edge==(1u<<SPIDER_SETUP_NAV_NORTH)) {
+      SpiderSDL3ControllerProfile *selected=current_profile(ui);
+      if(selected && spider_sdl3_profile_default(selected,ui->vid,ui->pid)) {
+        refresh_actions(ui);
+        status(ui,"Y: default bindings restored for this model IN MEMORY only.");
+        if(setup_report)setup_report("SDL3-SETUP: controller Y restored model defaults (NOT saved)");
+      }
+    }
+    return;
+  }
   rc=spider_sdl3_capture_feed(&ui->capture,&s,&candidate);
   if(rc!=1)return;
+  spider_sdl3_setup_nav_reset(&ui->nav);
   p=current_profile(ui);
   if(!p || !spider_sdl3_profile_assign(p,ui->action,candidate)) {
     status(ui,"Binding rejected (reserved input or conflicting profile).");
@@ -182,6 +223,71 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
   refresh_actions(ui);
   status(ui,line);
   if(setup_report)setup_report("SDL3-SETUP: semantic binding changed in memory (NOT game input, NOT saved)");
+}
+/* One keyboard path independent of Win32 dialog button focus.
+ * Tab/Space remain available via IsDialogMessage and ordinary button
+ * handling, but a mouse is NEVER required to reach any operation. */
+static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
+  unsigned next;
+  HWND focused;
+  SpiderSDL3ControllerProfile *p;
+  if(!ui || !ui->hwnd)return 0;
+  if(vk==VK_ESCAPE) {
+    if(ui->capture.active) {
+      spider_sdl3_capture_reset(&ui->capture);
+      spider_sdl3_setup_nav_reset(&ui->nav);
+      status(ui,"Capture cancelled. Original gameplay mapping unchanged.");
+    } else SendMessageA(ui->hwnd,WM_CLOSE,0,0);
+    return 1;
+  }
+  if(ui->capture.active)return 0; /* Keyboard cannot be bound via SDL3. */
+  focused=GetFocus();
+  if(vk==VK_UP || vk==VK_DOWN) {
+    /* Native drop-down keyboard navigation must keep working. */
+    if(focused==ui->pads)return 0;
+    if(!current_profile(ui))return 1;
+    next=(ui->action+SPIDER_SDL3_ACTION_COUNT+
+      (vk==VK_UP?SPIDER_SDL3_ACTION_COUNT-1u:1u))%
+      SPIDER_SDL3_ACTION_COUNT;
+    ui->action=next;
+    refresh_actions(ui);
+    status(ui,"Action selected. Press Enter to capture; release all buttons first.");
+    return 1;
+  }
+  if(vk==VK_PRIOR || vk==VK_NEXT) {
+    if(ui->count>1u) {
+      next=(ui->slot+ui->count+
+        (vk==VK_PRIOR?ui->count-1u:1u))%ui->count;
+      SendMessageA(ui->pads,CB_SETCURSEL,next,0);
+      select_slot(ui,next);
+    }
+    return 1;
+  }
+  if(vk==VK_RETURN) {
+    if(focused==ui->pads &&
+       SendMessageA(ui->pads,CB_GETDROPPEDSTATE,0,0))return 0;
+    if(current_profile(ui)) {
+      spider_sdl3_capture_start(&ui->capture);
+      spider_sdl3_setup_nav_reset(&ui->nav);
+      status(ui,"CAPTURE: release ALL controls; press ONE button or LT/RT. Esc cancels.");
+    }
+    return 1;
+  }
+  if(vk==VK_F5) {
+    p=current_profile(ui);
+    if(p && spider_sdl3_profile_default(p,ui->vid,ui->pid)) {
+      refresh_actions(ui);
+      spider_sdl3_setup_nav_reset(&ui->nav);
+      status(ui,"Defaults restored for this model IN MEMORY only.");
+      if(setup_report)setup_report("SDL3-SETUP: F5 restored in-memory model defaults (NOT saved)");
+    }
+    return 1;
+  }
+  if(vk==VK_F1) {
+    status(ui,"KEYBOARD: Up/Down action, Enter capture, PgUp/PgDn pad, F5 defaults, Esc cancel/close. GAMEPAD: D-pad, A, B, LB/RB, Y.");
+    return 1;
+  }
+  return 0; /* Tab and Space keep their native Win32 button behavior. */
 }
 static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
                                       WPARAM wp,LPARAM lp) {
@@ -197,7 +303,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       ui->hwnd=hwnd;
       SetWindowLongPtrA(hwnd,GWLP_USERDATA,(LONG_PTR)(uintptr_t)ui);
       label=CreateWindowExA(0,"STATIC",
-        "SDL3 CONTROLLER SETUP — PREVIEW ONLY (gameplay controls unchanged)",
+        "SDL3 CONTROLLER SETUP - PREVIEW ONLY (gameplay controls unchanged)",
         WS_CHILD|WS_VISIBLE,18,16,690,28,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->pads=CreateWindowExA(0,"COMBOBOX","",
@@ -205,7 +311,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         18,55,680,250,hwnd,(HMENU)(uintptr_t)SPIDER_UI_PAD,NULL,NULL);
       ui->actions=CreateWindowExA(WS_EX_CLIENTEDGE,"LISTBOX","",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|LBS_NOTIFY|WS_VSCROLL,
-        18,99,430,275,hwnd,(HMENU)(uintptr_t)SPIDER_UI_ACTION,NULL,NULL);
+        18,99,430,255,hwnd,(HMENU)(uintptr_t)SPIDER_UI_ACTION,NULL,NULL);
       CreateWindowExA(0,"BUTTON","Capture selected action",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP,
         465,113,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_CAPTURE,NULL,NULL);
@@ -215,8 +321,13 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       CreateWindowExA(0,"BUTTON","Close (no gameplay changes)",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP,
         465,207,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_CLOSE,NULL,NULL);
+      label=CreateWindowExA(0,"STATIC",
+        "Keyboard: Up/Down action  Enter capture  PgUp/PgDn device  F5 reset  Esc cancel/close\r\n"
+        "Gamepad: D-pad action  A capture  B close  LB/RB device  Y reset",
+        WS_CHILD|WS_VISIBLE,18,367,684,40,hwnd,NULL,NULL,NULL);
+      SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->status=CreateWindowExA(0,"STATIC","",
-        WS_CHILD|WS_VISIBLE,18,391,684,45,hwnd,
+        WS_CHILD|WS_VISIBLE,18,414,684,43,hwnd,
         (HMENU)(uintptr_t)SPIDER_UI_STATUS,NULL,NULL);
       SendMessageA(ui->pads,WM_SETFONT,(WPARAM)font,TRUE);
       SendMessageA(ui->actions,WM_SETFONT,(WPARAM)font,TRUE);
@@ -244,11 +355,13 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       } else if(LOWORD(wp)==SPIDER_UI_CAPTURE && HIWORD(wp)==BN_CLICKED) {
         if(current_profile(ui)) {
           spider_sdl3_capture_start(&ui->capture);
+          spider_sdl3_setup_nav_reset(&ui->nav);
           status(ui,"Release ALL buttons/triggers; then press ONE new control. Esc cancels.");
         }
       } else if(LOWORD(wp)==SPIDER_UI_RESET && HIWORD(wp)==BN_CLICKED) {
         SpiderSDL3ControllerProfile *p=current_profile(ui);
         spider_sdl3_capture_reset(&ui->capture);
+        spider_sdl3_setup_nav_reset(&ui->nav);
         if(p && spider_sdl3_profile_default(p,ui->vid,ui->pid)) {
           refresh_actions(ui);
           status(ui,"This model restored in memory only. No game controls changed.");
@@ -305,7 +418,7 @@ void SpiderSDL3ControllerSetup_Open(void) {
   ui.owner=owner;
   setup_open=1;
   window=CreateWindowExA(WS_EX_DLGMODALFRAME,cls,
-    "SpiderMan2k1Fix — SDL3 Controller Test (preview)",
+    "SpiderMan2k1Fix - SDL3 Controller Test (preview)",
     WS_CAPTION|WS_SYSMENU|WS_POPUP,
     CW_USEDEFAULT,CW_USEDEFAULT,730,493,
     owner,NULL,GetModuleHandleA(NULL),&ui);
@@ -318,6 +431,7 @@ void SpiderSDL3ControllerSetup_Open(void) {
   UpdateWindow(window);
   SpiderSDL3Probe_SetupPump();
   refresh_pads(&ui);
+  if(ui.actions)SetFocus(ui.actions); /* Keyboard-first, no mouse dependency. */
   if(setup_report)setup_report("SDL3-SETUP: preview dialog opened from original Joystick menu; gameplay input paused on stack");
   while(IsWindow(window)) {
     BOOL ok=GetMessageA(&msg,NULL,0,0);
@@ -325,14 +439,11 @@ void SpiderSDL3ControllerSetup_Open(void) {
       if(ok==0){has_quit=1;quit_code=(int)msg.wParam;}
       break;
     }
-    if(msg.message==WM_KEYDOWN && msg.wParam==VK_ESCAPE &&
-       (msg.hwnd==window || IsChild(window,msg.hwnd))) {
-      if(ui.capture.active) {
-        spider_sdl3_capture_reset(&ui.capture);
-        status(&ui,"Capture cancelled. Original game controls unchanged.");
-      } else SendMessageA(window,WM_CLOSE,0,0);
+    if(msg.message==WM_KEYDOWN &&
+       (msg.hwnd==window || IsChild(window,msg.hwnd)) &&
+       !(msg.lParam&(1L<<30)) &&
+       handle_setup_keyboard(&ui,(UINT)msg.wParam))
       continue;
-    }
     if(IsDialogMessageA(window,&msg))continue;
     TranslateMessage(&msg);DispatchMessageA(&msg);
   }
