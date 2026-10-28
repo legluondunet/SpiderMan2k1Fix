@@ -122,3 +122,59 @@ def test_hotplug_uses_live_authenticated_keyboard_scan_and_canonical_native_xbox
     assert "WritePrivateProfileString" not in block
     assert "SendInput(" not in block
     assert "if(!xbox360_preview_active)" not in block
+
+
+def test_sdl3_normalized_rt_restores_xbox_swing_after_di_rebind(tmp_path):
+    cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc: return
+    src = tmp_path / "rt_compat.c"
+    exe = tmp_path / "rt_compat"
+    src.write_text(textwrap.dedent(r"""
+        #include <assert.h>
+        #include "xbox360_trigger_swing_policy.h"
+        int main(void) {
+          /* Previous Holtek DirectInput: neutral 32768, RT 128, LT 65408. */
+          assert(!spider_xbox360_rt_swing_held_any(0,32768,0,0));
+          assert(spider_xbox360_rt_swing_held_any(0,128,0,0));
+          assert(!spider_xbox360_rt_swing_held_any(0,65408,0,0));
+          /* New native SDL3 owner: DI axis may remain centered or
+           * use a different driver, while SDL exposes a separate RT. */
+          assert(!spider_xbox360_rt_swing_held_any(0,32768,1,0));
+          assert(spider_xbox360_rt_swing_held_any(0,32768,1,32767));
+          assert(spider_xbox360_rt_swing_held_any(1,32768,1,6000));
+          assert(!spider_xbox360_rt_swing_held_any(1,32768,1,2000));
+          assert(!spider_xbox360_rt_swing_held_any(0,65408,1,0));
+          /* Preserve legacy lZ when SDL3 axis is unavailable or zero. */
+          assert(spider_xbox360_rt_swing_held_any(0,128,1,0));
+          assert(spider_xbox360_rt_swing_held_any(0,128,0,32767));
+          assert(!spider_xbox360_rt_swing_held_any(0,32768,0,32767));
+          /* SDL3 invalid values must not manufacture a press. */
+          assert(!spider_xbox360_rt_swing_held_any(0,32768,1,-1));
+          assert(!spider_xbox360_rt_swing_held_any(0,32768,1,32768));
+          return 0;
+        }
+    """), encoding="utf-8")
+    subprocess.run([cc, "-std=c99", "-Wall", "-Wextra", "-Werror",
+                    "-I", str(ROOT), str(src), "-o", str(exe)], check=True)
+    subprocess.run([str(exe)], check=True)
+
+
+def test_sdl3_rt_only_selected_native_verified_xbox_and_zero_extra_poll():
+    header=(ROOT/"sdl3_gamepad_probe.h").read_text(encoding="utf-8")
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    assert "int SpiderSDL3Probe_SelectedRT(int *normalized_rt);" in header
+    assert "int SpiderSDL3Probe_SelectedRT(int *normalized_rt) {" in probe
+    rt=probe.split("int SpiderSDL3Probe_SelectedRT(",1)[1].split(
+        "void SpiderSDL3Probe_OnFlip(",1)[0]
+    assert "!SpiderSDL3Probe_NativeOwnerEnabled()" in rt
+    assert "pads[i].id!=selected || !pads[i].handle" in rt
+    assert "SPIDER_SDL_AXIS_RIGHT_TRIGGER" in rt
+    assert "axis<0 || axis>32767" in rt
+    for unsafe in ("SDL_UpdateGamepads", "sdl_update(", "sdl_pump(",
+                   "IDirectInput", "SendInput(", "VirtualProtect("):
+        assert unsafe not in rt
+    assert "SpiderSDL3Probe_SelectedRT(&sdl3_rt)" in UI
+    assert "native_canonical && sdl3_ui_instance!=0u" in UI
+    assert "spider_xbox360_rt_swing_held_any(" in UI
+    assert "RT-SWING SOURCE" in UI
+    assert "RT-SWING BLOCKED physical RT held" in UI
