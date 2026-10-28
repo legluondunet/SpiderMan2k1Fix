@@ -25,5 +25,7 @@ int SpiderCfg_EnableXbox360Preview(void);
 int SpiderCfg_Xbox360BootstrapLoaded(void);
 /* Returns verified unambiguous game-owned Swing DIK scan (0 if unsafe). */
 unsigned SpiderCfg_Xbox360SwingScan(void);
+/* After verified native Xbox hot-swap: read current game keyboard Swing scan. */
+unsigned SpiderCfg_Xbox360SwingScanLive(void);
 void SpiderCfg_CancelXbox360Preview(void);
 #endif
