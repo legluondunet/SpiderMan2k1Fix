@@ -206,6 +206,22 @@ def test_native_start_unbind_is_explicit_unsafe_preview_only():
     assert "if(button!=0u)return 0;" in START_MAP
 
 
+def test_ps1_runtime_logs_native_start_unbound_state_and_button11_press():
+    # The user's 02:05 log proved the Start CAS happened, but the old
+    # fixed SHARE text incorrectly claimed "Start still unchanged".
+    assert "native Start button still unchanged" not in PAD
+    assert "ps1_native_start_unbound=1;" in PAD
+    assert "state.rgbButtons[11]&0x80u" in PAD
+    assert "native_start_pressed && !previous_native_start" in PAD
+    assert "ps1_native_start_reports++<12u" in PAD
+    assert "Start-RAM-unbound=%d native-pause-current=%d" in PAD
+    assert "ORIGINAL-BUTTON11 PHYSICAL PRESS" in PAD
+    assert "original Start RAM unbound (runtime behavior still to verify)" in PAD
+    assert "original Start mapping retained" in PAD
+    assert "previous_native_start=0;" in PAD
+    assert "previous_native_start=native_start_pressed;" in PAD
+
+
 def test_host_compiled_native_start_verifier_rejects_drift(tmp_path):
     cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
     if not cc:
