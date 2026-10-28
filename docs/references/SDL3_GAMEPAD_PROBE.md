@@ -17,14 +17,18 @@ factory audio levels. **No merge or release is authorized.**
   the Spider-Man window has focus; only GAMEPAD/JOYSTICK/EVENTS subsystems are
   requested. No SDL video/audio subsystem or new threads are created.
 * SDL3 enumerates all joysticks and mapped gamepads independently. We log
-  counts, gamepad instance IDs, attach/detach, active ID, and the independent
-  normalized LT/RT axes. A joystick without a supported mapping is counted
+  counts, gamepad instance IDs, attach/detach, selected SDL3 USB VID/PID
+  (when available), active ID, and the independent normalized LT/RT axes. A joystick without a supported mapping is counted
   but not opened as a Gamepad.
 * Selection is by **SDL joystick instance ID**, never by a VID/PID shortlist
   or device index. One mapped pad is selected automatically. If multiple
   pads are present, the existing selection is retained; when selection is
-  empty, a neutral -> fresh Start press claims one. Other pads remain silent.
-  Unplugging the active gamepad clears ownership and allows re-selection.
+  empty, a neutral -> fresh Start press claims one. A **different** pad can
+  now explicitly take over from the currently selected pad using its own
+  fresh Start press, without unplugging anything; held Start never retriggers.
+  Other pads remain silent to the SDL3 *selection policy*, but this is
+  **not yet enforced by native gameplay**. Unplugging the active pad clears
+  ownership and allows re-selection.
 * **The SDL3 input is NEVER sent to the game.** The validated DirectInput
   menu bridges, 3D gameplay, native unplug guard, native rebind, and keyboard
   paths remain untouched. This means two real controllers may still affect
@@ -112,3 +116,39 @@ a verified original game input boundary while preserving keyboard, focus,
 hotplug neutralization and custom key bindings. Until then, starting with
 only one controller and attaching a second later is a **temporary
 workaround**, not universal multi-pad support.
+
+## 28 October: explicit two-controller Start handoff + identity telemetry
+
+The multi-controller Start selection now supports a fresh Start press on
+a **different** connected gamepad even when a previous gamepad is already
+selected. This permits the logical sequence Xbox 360 -> DualShock 4 -> Xbox
+360 without unplugging hardware. The gamepad must have been sampled with
+Start released before its press edge can claim selection. No repeated
+handoff occurs if Start remains held. Host-compiled C99 policy tests cover
+both directions and held-button suppression.
+
+The SDL3 diagnostic additionally resolves the official SDL 3.2+ functions
+`SDL_GetGamepadVendorForID` and `SDL_GetGamepadProductForID` and logs
+the discovered/selected SDL3 VID/PID. The existing read-only
+`NATIVE-OWNER` line now includes that selected VID/PID alongside the
+**original game's raw DirectInput device pointer**. The pointer is
+**not a controller identity**: a non-NULL address does not establish
+whether the game's live DirectInput device is the same pad selected by SDL3.
+
+Manual hardware acceptance on Windows 11 and Wine:
+1. Start with DS4 and Xbox connected and `ExperimentalSDL3Probe=1`.
+2. Release both Start buttons, press Xbox Start, then release.
+3. Release DS4 Start, press DS4 Start, then release.
+4. Verify `START selected logical id=...` toggles between SDL3 instance
+   IDs and the corresponding VID/PID values. Check `NATIVE-OWNER` at each
+   handoff, and record the game's *actual* input behavior separately.
+5. Repeat with only one pad, unplug/reconnect, and focus loss/return.
+
+**Not fixed yet:** SDL3 ownership does **not** override the old
+`GAMEPAD-UI` unique-DirectInput-device guard or change the game-owned
+COM device at `0x006B7A2C`. A future opt-in bridge must identify the
+actual DirectInput device and enforce one authoritative owner through
+the native gameplay read boundary. SDL VID/PID equality alone is
+insufficient to disambiguate two identical controller products or to
+prove which COM device the engine owns. Do not remove the legacy guard
+without a complete input-ownership solution.
