@@ -96,6 +96,11 @@ static SpiderPS1TransitionEdgeOwnership ps1_transition_ownership={0};
 static int ps1_input_flight_recorder_requested=0;
 static SpiderPS1InputHistory ps1_input_history={0};
 static SpiderPS1PostQuitGuard ps1_post_quit_guard={0};
+/* Xbox also needs native request-7 -> new-menu input ownership.
+ * Keep separate state so Sony legacy options remain unchanged. */
+static SpiderPS1PostQuitGuard xbox_post_quit_guard={0};
+static SpiderPS1TransitionEdgeOwnership xbox_transition_ownership={0};
+static unsigned xbox_return_to_menu_reports=0;
 static unsigned ps1_quit_trace_count=0;
 static int ps1_native_start_unbound=0,previous_native_start=0;
 static unsigned ps1_native_start_reports=0;
@@ -351,6 +356,8 @@ static void disable_profile_with_policy(const char *reason,
   detected=0;
   detected_kind=SPIDER_RECONNECT_NONE;
   xbox_previous_mask=0;
+  memset(&xbox_post_quit_guard,0,sizeof(xbox_post_quit_guard));
+  memset(&xbox_transition_ownership,0,sizeof(xbox_transition_ownership));
   xbox_trigger_probe_has_previous=0;
   xbox_trigger_probe_samples=0;
   if(reason)report(reason);
@@ -412,6 +419,9 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   ps1_input_flight_recorder_requested=GetPrivateProfileIntA("Input","ControllerPS1InputFlightRecorder",0,ini)==1;
   memset(&ps1_input_history,0,sizeof(ps1_input_history));
   memset(&ps1_post_quit_guard,0,sizeof(ps1_post_quit_guard));
+  memset(&xbox_post_quit_guard,0,sizeof(xbox_post_quit_guard));
+  memset(&xbox_transition_ownership,0,sizeof(xbox_transition_ownership));
+  xbox_return_to_menu_reports=0;
   GetPrivateProfileStringA("Input","ControllerProfile","Auto",choice,sizeof(choice),ini);
   if(!_stricmp(choice,"Off"))profile=SPIDER_PROFILE_OFF;
   else if(!_stricmp(choice,"Auto"))profile=SPIDER_PROFILE_AUTO;
@@ -823,7 +833,7 @@ void SpiderGamepadUI_ActivateXbox360(void) {
   if(!configured || !xbox360_preview_requested || !xbox_readonly_active ||
      !detected || !device || detected_kind!=SPIDER_RECONNECT_XBOX360)return;
   xbox360_preview_active=1;
-  report("GAMEPAD-XBOX360: PREVIEW ACTIVE game CRT consumed RAM-only seven-action profile; A Jump; BUTTON6/7 reserved for Back/Start 3D Pause; INI preserved; physical non-A/B unverified");
+  report("GAMEPAD-XBOX360: PREVIEW ACTIVE game CRT consumed RAM-only seven-action profile; A Jump; Back BUTTON6 provides Pause; Start BUTTON7 NOT mapped by bridge; INI preserved; physical non-A/B unverified");
 }
 void SpiderGamepadUI_ActivatePS1(void){
   if(!detected || detected_kind!=SPIDER_RECONNECT_DS4 || !ps1_preview_requested)return;
@@ -1089,12 +1099,13 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     spider_ds4_hotplug_focus_lost(&hotplug);
     return;
   }
-  /* The original request 7 (3D -> main menu) is already complete on the
-   * FIRST 2D Flip. Cross can otherwise inject Return into New Game before
-   * the returned menu has settled. Never block native gamepad input here:
-   * only the PS1 profile's synthetic UI Return is eligible. */
-  if(ps1_preview_active &&
-     (ps1_post_quit_guard_requested || ps1_transition_edge_ownership_requested)) {
+  /* Native request 7 is a 3D -> menu return. PS1 and Xbox adapters must
+   * not duplicate the last confirmation press into a New Game Enter.
+   * This only affects our synthetic UI key; original engine input is
+   * observed but left completely untouched. */
+  if((ps1_preview_active &&
+      (ps1_post_quit_guard_requested || ps1_transition_edge_ownership_requested)) ||
+     (xbox360_preview_active && detected_kind==SPIDER_RECONNECT_XBOX360)) {
     native_request=(unsigned)*(const volatile DWORD *)(uintptr_t)0x0060CFA4u;
     if(ps1_post_quit_guard_requested)
       post_quit_block=spider_ps1_post_quit_guard_flip(&ps1_post_quit_guard,
@@ -1196,10 +1207,17 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     uint32_t held=spider_xbox360_held_buttons(state.rgbButtons);
     uint32_t fresh=held & ~xbox_previous_mask;
     unsigned action=spider_xbox360_menu_edges(held,xbox_previous_mask);
-    unsigned pause_button_index=(fresh & (1u<<7))?7u:6u;
-    int pause_requested=(fresh & ((1u<<6)|(1u<<7)))!=0;
+    /* Start is deliberately ignored by all Xbox UI synthesis, including
+     * menus and 3D; Back is the equivalent of PS1 Share. */
+    unsigned pause_button_index=SPIDER_XBOX360_BACK_DI_BUTTON;
+    int pause_requested=(fresh & (1u<<SPIDER_XBOX360_BACK_DI_BUTTON))!=0;
     int ui_allowed=(menu_2d && !gameplay_3d) || bink_active ||
                    native_pause_active;
+    unsigned inherited_a;
+    int post_quit_block;
+    int return_boundary=(xbox360_preview_active && menu_2d && !gameplay_3d &&
+                         !bink_active && xbox_transition_ownership.seen_3d &&
+                         native_request==7u);
     if(held!=xbox_previous_mask && xbox_button_trace_count<32u) {
       char xbox_line[192];
       snprintf(xbox_line,sizeof(xbox_line),
@@ -1209,23 +1227,41 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
       report(xbox_line);
     }
     xbox_previous_mask=held;
+    inherited_a=spider_ps1_transition_edge_ownership_flip(
+      &xbox_transition_ownership,xbox360_preview_active,
+      menu_2d,gameplay_3d,bink_active,native_request,
+      held & (1u<<SPIDER_XBOX360_A_DI_BUTTON));
+    post_quit_block=spider_ps1_post_quit_guard_flip(
+      &xbox_post_quit_guard,xbox360_preview_active,
+      menu_2d,gameplay_3d,bink_active,native_request);
+    if(return_boundary && xbox_return_to_menu_reports++<12u) {
+      char line[200];
+      snprintf(line,sizeof(line),
+        "GAMEPAD-XBOX360: POST-QUIT RETURN native_request=7 A-held=%d inherited-A=%d settle=%d; Start disabled; native controller unmodified",
+        !!(held&1u),!!inherited_a,post_quit_block);
+      report(line);
+    }
     /* RT is a physical analog axis; the controller native button array
      * never sees it as BUTTON9. Sustain keyboard Swing only in unpaused
-     * live 3D and release before any Back/Start pause action. */
+     * live 3D and release before Back pause. */
     xbox_rt_swing_update((long)state.lZ,
       gameplay_3d && !menu_2d && !bink_active && !native_pause_active &&
       !pause_requested);
-    /* Gameplay: Back/Start synthesize Escape only when UNBOUND from all
-     * original native actions. The game will still see the controller,
+    /* Gameplay: Back synthesizes Escape only when UNBOUND from all
+     * original native actions. Start does not synthesize any key.
+     * The game will still see the controller,
      * so never fire both Swing/Aim and Pause on one physical press.
      * No synthetic key is injected for the other 3D buttons. */
     if((gameplay_3d || native_pause_active) && !bink_active &&
        pause_requested && xbox_pause_button_free_of_native_actions(pause_button_index)) {
       begin_scancode(0x01u,"Escape");
-      report("GAMEPAD-XBOX360: 3D MENU Back/Start -> Escape (no saved native action conflict)");
+      report("GAMEPAD-XBOX360: 3D MENU Back -> Escape (no saved native action conflict); Start inert");
     } else if(ui_allowed && action==SPIDER_XBOX360_BACK)
       begin_scancode(0x01u,"Escape");
-    else if(ui_allowed && action==SPIDER_XBOX360_ENTER)
+    else if(ui_allowed && action==SPIDER_XBOX360_ENTER &&
+            (inherited_a || post_quit_block)) {
+      report("GAMEPAD-XBOX360: POST-QUIT-GUARD suppressed inherited/too-early synthetic A->Return; original controller untouched");
+    } else if(ui_allowed && action==SPIDER_XBOX360_ENTER)
       begin_scancode(0x1Cu,"Return");
     return;
   }
