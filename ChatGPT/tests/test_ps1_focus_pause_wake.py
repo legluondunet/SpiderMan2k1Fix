@@ -30,6 +30,15 @@ def test_focus_only_pad_wake_and_no_native_menu_shortcut():
     assert "FOCUS-PAUSE: gamepad digital press/release" in p
     assert "SpiderGamepadUI_PauseWake_Poll" in HDR
     assert "PRESS KEY OR GAMEPAD BUTTON TO RESUME" in UI
+    assert "PRESS ANY KEY TO RESUME" in UI
+    assert "int SpiderGamepadUI_PauseWake_Begin(void)" in PAD
+    assert "int available=configured && detected && device!=NULL;" in PAD
+    assert "pause_wake_active=available;" in PAD
+    assert "return available;" in PAD
+    assert "pause_gamepad_available=SpiderGamepadUI_PauseWake_Begin();" in p
+    assert "(SpiderPauseBltFn)original_blt,\n                             pause_gamepad_available);" in p
+    assert "if(pause_gamepad_available)" in p
+    assert "no verified gamepad wake device; PAUSED hint remains keyboard-only" in p
     assert "begin_scancode(" not in p
     assert "SendInput(" not in p
 
