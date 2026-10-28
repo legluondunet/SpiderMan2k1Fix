@@ -187,23 +187,26 @@ After returning from the modal dialog, the game must still receive
 keyboard/gamepad actions and native Start switching without duplicate
 inputs or stuck focus. Keep this OFF if Windows/Wine behavior differs.
 
-## Five separately configurable menu and media controls — INI v2
+## One Confirm / Skip button plus Back / Cancel — INI v2
 
-Status: draft PR #80, editor and persistence implemented, runtime ownership not yet connected.
+**Draft PR #80: editor and persistence implemented; engine runtime routing
+is NOT yet connected.** This change replaces five visible menu/media
+rows with just **two** in the no-mouse SDL3 setup wizard:
 
-The keyboard/gamepad controller editor lists the original eight 3D controls plus five contextual bindings:
+- **Confirm / Skip** maps one physical gamepad button to menu
+  confirmation, Bink video skip, the second fixed screen awaiting Enter,
+  and native 3D scripted cutscene skip (subject to the original game's
+  permission checks). The same physical button may also remain assigned
+  to Jump in the independent 3D gameplay section.
+- **Back / Cancel** controls menu back/cancel separately.
 
-| [MenuBindings] key | Context | Default normalized SDL3 button |
-| --- | --- | --- |
-| MenuConfirm | Menu confirmation | South / A / Cross (0) |
-| MenuBack | Menu cancellation | East / B / Circle (1) |
-| SkipVideo | Bink video skipping, subject to native permission | South (0) |
-| NextStill | The second static screen that awaits Enter | South (0) |
-| SkipCutscene | Original scripted 3D cutscene, subject to CutSceneSkipAllow | North / Y / Triangle (3) |
-
-Controls may share a physical button across different contexts: e.g. South can be both Jump in 3D and MenuConfirm and SkipVideo and NextStill. MenuConfirm/MenuBack are the only pair active in the same context; assigning a shared button swaps their two assignments. Both Start (ownership selection) and Guide (OS) remain unavailable for binding. Any contextual action can be set to none in the INI; the UI capture workflow binds buttons/triggers.
-
-The v2 file preserves [Bindings] with all eight original actions, and adds this complete section:
+The wizard now has **10 visible rows**: eight 3D actions and these two
+menu/media actions. It works with keyboard and gamepad navigation as
+before. Start and Guide remain reserved, and native SDL3 LT/RT capture
+is supported. When editing Confirm / Skip, all four corresponding v2
+keys are changed together **in memory as one transaction**, atomically
+saved, and then committed to the live profile. The five actual on-disk
+keys are retained for backward compatibility:
 
 ```ini
 [MenuBindings]
@@ -211,12 +214,40 @@ MenuConfirm=button:0
 MenuBack=button:1
 SkipVideo=button:0
 NextStill=button:0
-SkipCutscene=button:3
+SkipCutscene=button:0
 ```
 
-Migration: strict v1 files load with the original custom 3D commands intact and these five new defaults. On the first EXPLICIT user commit or reset, the file is rewritten as v2 atomically after a one-time exact v1 copy is saved as VID-PID.ini.v1.bak. Merely opening the game does not rewrite files. V2 requires exactly five context entries, a matching VID/PID and no unknown or duplicate fields. The previous LOCALAPPDATA fallback still works.
+The original eight `[Bindings]` actions are unchanged. We do NOT
+introduce a Version=3 file. The v1->v2 migration still works and
+preserves existing 3D settings and original .v1.bak before first
+explicit user save. Defaults for new or v1-upgraded controllers use
+South (Cross/A) consistently across all four Confirm / Skip roles.
+Back uses East (Circle/B). The same physical button cannot be both
+Confirm and Back in the same menu: assigning one to the other's button
+**swaps** the two; for an already unified Confirm/Skip assignment the
+whole four-key group stays unified after the swap.
 
-Runtime limitation: the five new mappings are configurable and saved, but are NOT yet consumed by the game's original Bink/static/menu/cutscene input readers. The old legacy controller-to-Enter/Escape route remains active and original CutSceneSkipAllow and still timers remain authoritative. The next step is exclusive context-owner routing with neutral/focus safeguards, preserving legacy behavior whenever it cannot be proven safe. Do not infer active skip control from profile save success.
+**Crucial existing v2 migration policy:** profiles saved by the older
+five-row wizard may have different buttons for MenuConfirm, SkipVideo,
+NextStill and SkipCutscene. The new editor displays
+`MIXED (Capture to unify)`, reads them without rewriting or deleting
+anything, and only makes them equal when the user explicitly captures
+a new Confirm / Skip binding. Changing Back on a mixed profile also
+preserves unrelated saved video/still/cutscene assignments.
+
+The five context keys are still validated independently on disk,
+including user-hand-edited values. This simplified editor is not a
+change to the INI parser, fallback directory, or original game-owned
+input tables.
+
+**Runtime boundary:** no Bink, native menu, fixed-screen or scripted
+cinematic input route has been replaced by the new settings. The
+existing legacy DirectInput/Sony/Xbox confirm/back behavior remains
+active for now. Later context-specific routing must select the one
+correct original-game owner, gate native cutscene skipping on
+`CutSceneSkipAllow`, wait for release across transitions, and avoid
+double-confirmation. A successful save is NOT evidence that this
+button already skips every video/cutscene.
 
 ## Per-model profile persistence (experimental, draft PR #80)
 
