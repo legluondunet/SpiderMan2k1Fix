@@ -165,12 +165,14 @@ static void release_active_key(void) {
   in.type=INPUT_KEYBOARD;
   in.ki.wScan=(WORD)active_scan;
   in.ki.dwFlags=KEYEVENTF_SCANCODE|KEYEVENTF_KEYUP;
+  SpiderNativeReconnect_LogSyntheticMenuKey(active_scan,"before KEYUP");
   if(SendInput(1,&in,sizeof(in))!=1) {
     snprintf(line,sizeof(line),
       "GAMEPAD-UI: WARNING synthetic KEYUP failed scan=0x%02X Win32=%lu",
       active_scan,(unsigned long)GetLastError());
     report(line);
   }
+  SpiderNativeReconnect_LogSyntheticMenuKey(active_scan,"after KEYUP");
   active_scan=0;
 }
 static void begin_scancode(unsigned scan,const char *action) {
@@ -181,6 +183,7 @@ static void begin_scancode(unsigned scan,const char *action) {
   in.type=INPUT_KEYBOARD;
   in.ki.wScan=(WORD)scan;
   in.ki.dwFlags=KEYEVENTF_SCANCODE;
+  SpiderNativeReconnect_LogSyntheticMenuKey(scan,"before KEYDOWN");
   if(SendInput(1,&in,sizeof(in))!=1) {
     snprintf(line,sizeof(line),
       "GAMEPAD-UI: WARNING %s KEYDOWN SendInput failed Win32=%lu",
@@ -189,6 +192,7 @@ static void begin_scancode(unsigned scan,const char *action) {
     return;
   }
   active_scan=scan;
+  SpiderNativeReconnect_LogSyntheticMenuKey(scan,"after KEYDOWN");
   number=scan==0x01u?++sent_escape:++sent_enter;
   if(number<=20) {
     snprintf(line,sizeof(line),
