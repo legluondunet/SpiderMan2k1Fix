@@ -31,9 +31,10 @@ def test_hotplug_integrates_on_foreground_flip_only():
     # the Xbox profile was the only one installed during CRT bootstrap.
     # This MUST NOT activate native Sony 3D shortcuts or reload cfg.
     assert "late_ds4_menu_only=detected_kind==SPIDER_RECONNECT_DS4 &&" in PAD
-    assert "ps1_preview_requested && !ps1_preview_active;" in PAD
+    assert "ps1_preview_requested && !ps1_preview_active &&" in PAD
+    assert "!sdl3_live_sony;" in PAD
     assert "Cross=BUTTON1 and Circle=BUTTON2 MENU/BINK bridge ENABLED" in PAD
-    assert "late_ds4_menu_only,(unsigned)confirm);" in PAD
+    assert "ps1_preview_active || late_ds4_menu_only || sdl3_live_sony," in PAD
     assert "!late_ds4_menu_only; /* never synthesize late Sony 3D Pause */" in PAD
     assert "late DS4 fresh Cross -> synthetic Return" in PAD
     assert "synthetic actions disabled until restart with controller present" not in PAD
