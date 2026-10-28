@@ -13,6 +13,8 @@
 #include <stdint.h>
 #define SPIDER_XBOX360_A_DI_BUTTON 0u
 #define SPIDER_XBOX360_B_DI_BUTTON 1u
+#define SPIDER_XBOX360_BACK_DI_BUTTON 6u
+#define SPIDER_XBOX360_START_DI_BUTTON 7u
 #define SPIDER_XBOX360_BUTTONS_TO_TRACE 10u
 #define SPIDER_XBOX360_ENTER 1u
 #define SPIDER_XBOX360_BACK 2u
@@ -27,9 +29,15 @@ static inline uint32_t spider_xbox360_held_buttons(const unsigned char *buttons)
 }
 static inline unsigned spider_xbox360_menu_edges(uint32_t held,uint32_t previous) {
   const uint32_t fresh=held&~previous;
-  if(fresh&((uint32_t)1u<<SPIDER_XBOX360_B_DI_BUTTON))
-    return SPIDER_XBOX360_BACK;  /* Esc has priority if A+B pressed together */
-  if(fresh&((uint32_t)1u<<SPIDER_XBOX360_A_DI_BUTTON))
+  /* In 2D menus, Xbox Back (candidate physical BUTTON6) behaves like
+   * PS1 Share/Circle -> Escape; Start (BUTTON7) also confirms. This
+   * does not synthesize any gameplay action. Back wins on simultaneous
+   * key presses, and every transition is edge-triggered. */
+  if(fresh&(((uint32_t)1u<<SPIDER_XBOX360_B_DI_BUTTON)|
+           ((uint32_t)1u<<SPIDER_XBOX360_BACK_DI_BUTTON)))
+    return SPIDER_XBOX360_BACK;
+  if(fresh&(((uint32_t)1u<<SPIDER_XBOX360_A_DI_BUTTON)|
+           ((uint32_t)1u<<SPIDER_XBOX360_START_DI_BUTTON)))
     return SPIDER_XBOX360_ENTER;
   return 0;
 }
