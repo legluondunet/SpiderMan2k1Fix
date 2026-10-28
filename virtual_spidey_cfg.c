@@ -31,6 +31,7 @@ static CRITICAL_SECTION guard;
 static int ready=0,dirty=0;
 static int ps1_preview_active=0;
 static volatile LONG ps1_bootstrap_loaded=0;
+static unsigned ps1_rejected_user_changes=0;
 static uint32_t original_joystick[SPIDER_PS1_BUTTON_COUNT]={0};
 /* Only block saving if automatic INI repair fails. */
 static int ini_writes_permitted=1;
@@ -837,6 +838,19 @@ int SpiderCfg_EnablePS1Preview(void) {
   LeaveCriticalSection(&guard);
   return 1;
 }
+/* If the authenticated original game reload did not happen, undo the
+ * speculative overlay immediately. Never leave half of a PS1 profile
+ * enabled after the native bootstrap failed. */
+void SpiderCfg_CancelPS1Preview(void) {
+  if(!ready)return;
+  EnterCriticalSection(&guard);
+  if(ps1_preview_active && !SpiderCfg_PS1BootstrapLoaded()) {
+    spider_ps1_restore(cfg,CFG_SIZE,original_joystick);
+    ps1_preview_active=0;
+    report("SPIDEY-CFG: PS1-PREVIEW ROLLBACK native game bootstrap unverified; original seven bindings restored");
+  }
+  LeaveCriticalSection(&guard);
+}
 /* Called from the existing pre-fullscreen HWND/monitor probe. For Auto this
  * corrects the initial primary-monitor fallback on multi-display systems.
  * If the game read its cfg before installation, no late hook can undo it. */
@@ -959,6 +973,16 @@ static BOOL WINAPI hooked_WriteFile(HANDLE h,LPCVOID buffer,DWORD len,LPDWORD do
   if(len){
     DWORD old_w=get_word(0),old_h=get_word(4),old_depth=get_word(8);
     memcpy(cfg+v->pos,buffer,len);v->pos+=(LONG)len;dirty=1;writes++;
+    if(ps1_preview_active) {
+      /* A writable Joystick Configuration screen may still edit the game's
+       * own live action array, but it must NOT change the fixed virtual
+       * Spidey.cfg bytes. The native menu is NOT claimed locked yet. */
+      BYTE attempted[CFG_SIZE];
+      memcpy(attempted,cfg,CFG_SIZE);
+      spider_ps1_apply(cfg,CFG_SIZE);
+      if(memcmp(attempted,cfg,CFG_SIZE) && ps1_rejected_user_changes++<8u)
+        report("SPIDEY-CFG: PS1-PREVIEW protected seven virtual joystick bindings from original-game config write; UI menu lock remains pending");
+    }
     if(old_w!=get_word(0) || old_h!=get_word(4) || old_depth!=get_word(8))
       report("SPIDEY-CFG: in-game screen/depth write intercepted; authoritative display settings restored");
     apply_locked_display();
@@ -1107,6 +1131,8 @@ static int __cdecl hooked_fclose(FILE *f) {
     fflush(f);rewind(f);n=fread(candidate,1,CFG_SIZE,f);
     if(n==CFG_SIZE) {
       if(memcmp(cfg,candidate,CFG_SIZE)) {memcpy(cfg,candidate,CFG_SIZE);dirty=1;}
+      /* Same fixed-RAM protection for the rare imported stdio route. */
+      if(ps1_preview_active) spider_ps1_apply(cfg,CFG_SIZE);
       apply_locked_display();
       report("SPIDEY-CFG: virtual fclose captured stdio settings");
       save_settings();
