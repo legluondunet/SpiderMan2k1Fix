@@ -31,7 +31,7 @@
 #include <stdlib.h>
 #include "gamepad_ui_profile.h"
 #include "ps1_native_start_mapping.h"
-#include "ps1_joystick_readonly_menu.h"
+/* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
 typedef HRESULT (WINAPI *SpiderDICreateFn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
 enum {SPIDER_PROFILE_OFF=0,SPIDER_PROFILE_AUTO=1,SPIDER_PROFILE_DUALSHOCK4=2};
