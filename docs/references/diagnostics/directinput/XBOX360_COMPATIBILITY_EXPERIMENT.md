@@ -144,3 +144,89 @@ Keep its pull request in DRAFT and stacked on draft PR #76.
 No merge without explicit maintainer approval.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+
+## Second physical Xbox 360 test: sticks/D-pad OK, native gameplay mapping misaligned
+
+The maintainer reports the follow-up A/B-bridge experiment with the
+Holtek 045E:028E pad:
+
+- **Digital D-pad works** in menus.
+- **Analog stick works** in menus.
+- **Share/Back button does not perform the expected action**.
+- **Options/Start triggers the native action associated with
+  R2 on the PS1-themed layout**, instead of opening the in-game menu.
+- Physical **Y** performs the game's native **Jump** action,
+  while the desired face button is physical **A**.
+- Physical **Y** confirms menus rather than physical **A**.
+- No Xbox button opens the **in-game pause/menu**.
+- **Important new evidence:** the game's native
+  **Joystick Configuration menu is editable** on this device.
+
+The underlying game stores **seven user-editable action bindings**
+in the virtual 252-byte Spidey.cfg (the named `[Joystick]` keys
+are authoritative). The factory game mappings are Jump=BUTTON3,
+Kick=BUTTON4, Punch=BUTTON0, Web=BUTTON1, Aim=BUTTON6,
+Zipline=BUTTON9, Swing=BUTTON7. A physical button triggering Jump
+or Swing is consistent with these original mappings, but the
+physical Y/A/Back/Start **DirectInput indices are not yet proven
+by a new raw button-edge log**. Do not assume that the Holtek
+controller exposes the standard official Xbox order.
+
+### Design correction after discovering the menu is editable
+
+A proposed static Xbox gameplay overlay was **withdrawn** before
+hardware testing because it would force the seven game actions and
+hide the user's modifications in the editable Joystick menu.
+**Do not reintroduce a RAM-only Xbox overlay that discards
+Joysticks' in-game changes.** The native game remains the owner of
+digital gameplay actions, analog axes and the persisted
+`[Joystick]` key assignments; the player can edit and save
+them normally.
+
+The experimental independent Xbox UI bridge handles only
+press-edge keyboard equivalents in context:
+
+- **2D menu / Bink:** candidate A (DirectInput BUTTON0) or
+  Start (BUTTON7) = Enter, B (BUTTON1) or Back (BUTTON6)
+  = Escape; D-pad/stick still handled by original game.
+- **3D gameplay or native pause:** candidate Start (BUTTON7)
+  or Back (BUTTON6) = Escape **ONLY if the corresponding
+  button index is not assigned to ANY native gameplay
+  action** in the current saved `[Joystick]` INI. Unknown
+  or malformed mappings fail closed; conflicts log
+  `GAMEPAD-XBOX360: PAUSE BLOCKED physical BUTTONn`
+  together with the conflicting action. This prevents
+  an accidental Swing/Aim + Pause on one press.
+- **Physical trace:** first 32 observed 10-button masks
+  `GAMEPAD-XBOX360: BUTTON-EDGE ... held=0x... changed=0x...`.
+  Use these for *actual* Holtek index measurement rather
+  than relying on conventional XInput button order.
+
+To free Start for pause, locate the **native Joystick menu**
+and reassign the native action currently on physical Start
+(likely `Swing=BUTTON7`) onto a different free control
+such as a stick press, **after checking the real button
+index**. To free Back for pause, similarly reassign the
+native action currently occupying physical Back (factory
+`Aim=BUTTON6`). The original game should save these
+assignments into `SpiderMan2k1Fix.ini`. Then restart
+once to make sure the saved mappings are reloaded and
+test Start/Back in 3D. Confirm no native gameplay action
+fires alongside the pause menu. Do not guess LT/RT:
+XInput-compatible triggers may be exposed as a combined
+DirectInput axis and may not be bindable as digital buttons.
+
+For Jump, use the **editable native Joystick menu** to
+assign `Jump` by physically pressing the desired Xbox
+face button **A**, rather than assuming a particular
+`BUTTONn` from a marketing label. This preserves user
+preferences and avoids any new native-memory patch.
+
+**Status:** code compiled/automated checks only for the
+new 3D pause collision guard and menu Back/Start;
+physical confirmation on Holtek is still needed. A/B
+and Start/Back button indices need a fresh actual
+`SpiderMan2k1Fix(...).log`. No changes to Sony PS1
+mapping, DS4 physical hotplug guard, or original
+`SpideyPC.exe`. The PR remains draft and unmerged.
