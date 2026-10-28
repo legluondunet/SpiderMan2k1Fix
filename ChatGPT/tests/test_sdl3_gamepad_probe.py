@@ -24,8 +24,15 @@ int main(void) {
     assert(s.count==1 && s.active==11);
     spider_sdl3_selection_sync(&s,two,2);
     assert(s.count==2 && s.active==11); /* don't steal focus */
+    /* A fresh Start on another pad explicitly takes ownership. */
     spider_sdl3_selection_start(&s,22,0);
-    assert(!spider_sdl3_selection_start(&s,22,1)); /* spectator */
+    assert(spider_sdl3_selection_start(&s,22,1)); /* 11 -> 22 */
+    assert(s.active==22);
+    assert(!spider_sdl3_selection_start(&s,22,1)); /* no held-button repeat */
+    assert(!spider_sdl3_selection_start(&s,11,1)); /* held while unarmed */
+    assert(!spider_sdl3_selection_start(&s,11,0)); /* neutral arms */
+    assert(spider_sdl3_selection_start(&s,11,1));  /* 22 -> 11 */
+    assert(s.active==11);
     spider_sdl3_selection_sync(&s,three,3);
     assert(s.active==11);
     spider_sdl3_selection_sync(&s,other,2); /* active 11 unplugged */
