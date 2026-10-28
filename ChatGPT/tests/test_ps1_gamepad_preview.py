@@ -138,7 +138,8 @@ def test_pause_uses_verified_3d_menu_ribbon_when_native_pointer_is_transient():
     assert "native_pause43_visible_near_flip(count)" in CORE
     assert "0x00682950u" in CORE
     assert "menu_upscale_active" in CORE
-    assert "(ps1_preview_active && native_pause_active && !movie_allowed)" in PAD
+    assert "((ps1_preview_active || sdl3_live_sony) &&" in PAD
+    assert "native_pause_active && !movie_allowed)" in PAD
 
 
 def test_scripted_3d_options_skip_is_opt_in_and_natively_permission_guarded():
