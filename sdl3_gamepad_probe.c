@@ -29,6 +29,8 @@ typedef void (__cdecl *SDL_UpdateGamepadsFn)(void);
 typedef uint32_t *(__cdecl *SDL_GetGamepadsFn)(int *);
 typedef uint32_t *(__cdecl *SDL_GetJoysticksFn)(int *);
 typedef const char *(__cdecl *SDL_GetGamepadNameForIDFn)(uint32_t);
+typedef uint16_t (__cdecl *SDL_GetGamepadVendorForIDFn)(uint32_t);
+typedef uint16_t (__cdecl *SDL_GetGamepadProductForIDFn)(uint32_t);
 typedef void *(__cdecl *SDL_OpenGamepadFn)(uint32_t);
 typedef void (__cdecl *SDL_CloseGamepadFn)(void *);
 typedef bool (__cdecl *SDL_GetGamepadButtonFn)(void *,int);
@@ -53,6 +55,8 @@ static SDL_UpdateGamepadsFn sdl_update=NULL;
 static SDL_GetGamepadsFn sdl_gamepads=NULL;
 static SDL_GetJoysticksFn sdl_joysticks=NULL;
 static SDL_GetGamepadNameForIDFn sdl_name=NULL;
+static SDL_GetGamepadVendorForIDFn sdl_vendor=NULL;
+static SDL_GetGamepadProductForIDFn sdl_product=NULL;
 static SDL_OpenGamepadFn sdl_open=NULL;
 static SDL_CloseGamepadFn sdl_close=NULL;
 static SDL_GetGamepadButtonFn sdl_button=NULL;
@@ -91,6 +95,8 @@ static int sdl_load(void) {
   LOAD_SDL(sdl_gamepads,SDL_GetGamepadsFn,"SDL_GetGamepads");
   LOAD_SDL(sdl_joysticks,SDL_GetJoysticksFn,"SDL_GetJoysticks");
   LOAD_SDL(sdl_name,SDL_GetGamepadNameForIDFn,"SDL_GetGamepadNameForID");
+  LOAD_SDL(sdl_vendor,SDL_GetGamepadVendorForIDFn,"SDL_GetGamepadVendorForID");
+  LOAD_SDL(sdl_product,SDL_GetGamepadProductForIDFn,"SDL_GetGamepadProductForID");
   LOAD_SDL(sdl_open,SDL_OpenGamepadFn,"SDL_OpenGamepad");
   LOAD_SDL(sdl_close,SDL_CloseGamepadFn,"SDL_CloseGamepad");
   LOAD_SDL(sdl_button,SDL_GetGamepadButtonFn,"SDL_GetGamepadButton");
@@ -148,8 +154,10 @@ static void sdl3_trace_native_owner(DWORD now) {
   if(owner==last_pointer && selection.active==last_selected &&
      selection.count==last_count)return;
   snprintf(line,sizeof(line),
-    "SDL3-PROBE: NATIVE-OWNER physical-opened=%u selected-SDL-id=%lu game-owned-DirectInput=%p (read-only; NOT bridged to SDL3)",
-    selection.count,(unsigned long)selection.active,(void *)owner);
+    "SDL3-PROBE: NATIVE-OWNER physical-opened=%u selected-SDL-id=%lu selected-VID:PID=%04X:%04X game-owned-DirectInput=%p (read-only; NOT bridged to SDL3)",
+    selection.count,(unsigned long)selection.active,
+    selection.active?(unsigned)sdl_vendor(selection.active):0u,
+    selection.active?(unsigned)sdl_product(selection.active):0u,(void *)owner);
   say(line);
   last_pointer=owner;
   last_selected=selection.active;
@@ -197,8 +205,9 @@ static void rescan(void) {
     handle=sdl_open(ids[i]);
     if(!handle)continue;
     name=sdl_name(ids[i]);
-    snprintf(line,sizeof(line),"SDL3-PROBE: attached id=%lu name=%.150s",
-             (unsigned long)ids[i],name?name:"unknown");
+    snprintf(line,sizeof(line),"SDL3-PROBE: attached id=%lu VID:PID=%04X:%04X name=%.130s",
+             (unsigned long)ids[i],(unsigned)sdl_vendor(ids[i]),
+             (unsigned)sdl_product(ids[i]),name?name:"unknown");
     say(line);
     /* Reuse a slot vacated by a removed controller. */
     for(j=0;j<SPIDER_SDL3_MAX_GAMEPADS;j++)
@@ -216,8 +225,11 @@ static void rescan(void) {
     uint32_t was=selection.active;
     spider_sdl3_selection_sync(&selection,opened_ids,opened_n);
     if(was!=selection.active) {
-      snprintf(line,sizeof(line),"SDL3-PROBE: selected logical gamepad id=%lu (previous=%lu), READ-ONLY",
-               (unsigned long)selection.active,(unsigned long)was);
+      snprintf(line,sizeof(line),"SDL3-PROBE: selected logical gamepad id=%lu VID:PID=%04X:%04X (previous=%lu), READ-ONLY",
+               (unsigned long)selection.active,
+               selection.active?(unsigned)sdl_vendor(selection.active):0u,
+               selection.active?(unsigned)sdl_product(selection.active):0u,
+               (unsigned long)was);
       say(line);
     }
   }
@@ -253,8 +265,10 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
   for(i=0;i<num_pads;i++)if(pads[i].handle) {
     int pressed=sdl_button(pads[i].handle,SPIDER_SDL_BUTTON_START)?1:0;
     if(spider_sdl3_selection_start(&selection,pads[i].id,pressed)) {
-      snprintf(line,sizeof(line),"SDL3-PROBE: START selected logical id=%lu (other gamepads ignored; READ-ONLY)",
-               (unsigned long)selection.active);
+      snprintf(line,sizeof(line),"SDL3-PROBE: START selected logical id=%lu VID:PID=%04X:%04X (other gamepads ignored; READ-ONLY)",
+               (unsigned long)selection.active,
+               (unsigned)sdl_vendor(selection.active),
+               (unsigned)sdl_product(selection.active));
       say(line);
     }
     if(selection.active==pads[i].id &&
