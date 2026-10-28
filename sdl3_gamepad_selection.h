@@ -51,8 +51,9 @@ static void spider_sdl3_selection_sync(SpiderSDL3Selection *s,
   if(!s->active && n==1u)s->active=s->slots[0].id;
 }
 
-/* Returns 1 only when an unclaimed multi-pad session is claimed by Start.
- * Ignore held Start on attach/focus return, including first neutral sample. */
+/* Returns 1 when a neutral->fresh Start press changes the selected gamepad.
+ * This also permits deliberate handoff from one already-active pad to another.
+ * A held Start on first detection is not a fresh press. */
 static int spider_sdl3_selection_start(SpiderSDL3Selection *s,uint32_t id,
                                        int pressed) {
   unsigned i;
@@ -65,7 +66,7 @@ static int spider_sdl3_selection_start(SpiderSDL3Selection *s,uint32_t id,
       p->previous_start=(unsigned)pressed;
       return 0;
     }
-    if(!s->active && pressed && !p->previous_start) {
+    if(pressed && !p->previous_start && s->active!=id) {
       s->active=id;
       p->previous_start=1u;
       return 1;
