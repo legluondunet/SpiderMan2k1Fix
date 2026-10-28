@@ -68,8 +68,8 @@ instance 3 and reattached Xbox was instance 5. The previously validated
 native DirectInput unplug guard and native rebind also recovered.
 
 **Regression fixed:** first prototype retained empty slots after detaching
-a pad, repeatedly emitting `SDL3-PROBE: detached id=...` (164 duplicates
-in one test log) and invoking `SDL_CloseGamepad(NULL)` on later scans.
+a pad, repeatedly emitting `SDL3-PROBE: detached id=...` (164 logged detach messages
+for three disconnected instances, i.e. 161 repeats) and invoking `SDL_CloseGamepad(NULL)` on later scans.
 The slot lifecycle now closes each non-NULL device once and compacts the
 live array before each discovery. A portable C99 test performs 100 repeat
 scans and confirms no repeated close or detachment event.
