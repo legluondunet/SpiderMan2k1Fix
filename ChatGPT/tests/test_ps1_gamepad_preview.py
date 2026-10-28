@@ -54,10 +54,12 @@ def test_user_joystick_bindings_preserved_on_any_virtual_save():
 def test_ps1_preview_uses_cross_only_for_menu_confirm_even_with_legacy_both():
     # Original [Input] ControllerEnterButtons=Both remains honored outside
     # PS1 preview, but OPTIONS/Start is intentionally redundant in PS1.
-    assert "effective_confirm=ps1_preview_active?SPIDER_CONFIRM_CROSS:(unsigned)confirm;" in PAD
-    assert "confirm_edges=(pressed & effective_confirm) & ~(unsigned)previous_buttons;" in PAD
+    assert "effective_confirm=spider_ps1_menu_confirm_mask(ps1_preview_active,(unsigned)confirm);" in PAD
+    assert "confirm_edges=spider_ps1_menu_confirm_edges(pressed,(unsigned)previous_buttons,effective_confirm);" in PAD
     assert "native_request,pressed & effective_confirm);" in PAD
     assert "CROSS-only 2D/Bink/pause confirmation" in PAD
+    assert "legacy 2D/Bink confirmation=ControllerEnterButtons" in PAD
+    assert "OPTIONS=BUTTON9 is NOT synthetic Enter in PS1" in PAD
     # Preserve the explicit 3D cutscene-only experiment as separately opt-in.
     assert 'GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1' in PAD
     assert "ps1_preview_active && ps1_options_skip_requested" in PAD
@@ -161,6 +163,7 @@ def test_ps1_gameplay_bindings_are_fail_closed_on_bootstrap_and_virtual_writes()
     assert "if(ps1_preview_active)" in CFG
     assert "spider_ps1_apply(cfg,CFG_SIZE)" in CFG
     assert "PS1-PREVIEW protected seven virtual joystick bindings" in CFG
+    assert "UI menu lock remains pending" not in CFG
     assert "the game's\n       * own live action array" in CFG
 
 
