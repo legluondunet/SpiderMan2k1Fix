@@ -33,6 +33,7 @@
 #include "ps1_native_start_mapping.h"
 #include "ps1_mouse_mode.h"
 #include "ps1_post_quit_guard.h"
+#include "ps1_input_flight_recorder.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
 typedef HRESULT (WINAPI *SpiderDICreateFn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
@@ -61,6 +62,8 @@ static int ps1_readonly_menu_requested=0;
 static int ps1_mouse_auto_requested=0,ps1_mouse_auto_armed=0;
 static int ps1_quit_trace_requested=0;
 static int ps1_post_quit_guard_requested=0;
+static int ps1_input_flight_recorder_requested=0;
+static SpiderPS1InputHistory ps1_input_history={0};
 static SpiderPS1PostQuitGuard ps1_post_quit_guard={0};
 static unsigned ps1_quit_trace_count=0;
 static int ps1_native_start_unbound=0,previous_native_start=0;
@@ -214,6 +217,8 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   ps1_mouse_auto_requested=GetPrivateProfileIntA("Input","ControllerAutoDisableMouse",0,ini)==1;
   ps1_quit_trace_requested=GetPrivateProfileIntA("Input","ControllerPS1QuitTrace",0,ini)==1;
   ps1_post_quit_guard_requested=GetPrivateProfileIntA("Input","ControllerPS1PostQuitGuard",0,ini)==1;
+  ps1_input_flight_recorder_requested=GetPrivateProfileIntA("Input","ControllerPS1InputFlightRecorder",0,ini)==1;
+  memset(&ps1_input_history,0,sizeof(ps1_input_history));
   memset(&ps1_post_quit_guard,0,sizeof(ps1_post_quit_guard));
   GetPrivateProfileStringA("Input","ControllerProfile","Auto",choice,sizeof(choice),ini);
   if(!_stricmp(choice,"Off"))profile=SPIDER_PROFILE_OFF;
@@ -619,6 +624,67 @@ static void ps1_trace_native_quit(int menu2d,int gameplay3d,
     old_request=(int)request;old_pause=pause_active;old_context=context;
   }
 }
+
+/* Buffered opt-in diagnostics: no logging within normal input polls. */
+static int ps1_history_enabled(void) {
+  return ps1_preview_active && ps1_post_quit_guard_requested &&
+         ps1_input_flight_recorder_requested;
+}
+static void ps1_history_record(unsigned event,unsigned request,int mode2d,
+    int mode3d,int movie,int pause,unsigned prev,const DIJOYSTATE2 *state) {
+  SpiderPS1HistoryEntry e;
+  if(!ps1_history_enabled())return;
+  memset(&e,0,sizeof(e));
+  e.sequence=ps1_input_history.total+1u;
+  e.tick_ms=(uint32_t)GetTickCount();
+  e.native_request=request;
+  e.previous_confirm=prev;
+  e.event=(uint8_t)event;
+  e.menu2d=(uint8_t)(mode2d!=0);
+  e.gameplay3d=(uint8_t)(mode3d!=0);
+  e.movie=(uint8_t)(movie!=0);
+  e.native_pause=(uint8_t)(pause!=0);
+  if(state && event==SPIDER_PS1_HISTORY_READ_OK) {
+    e.cross=(uint8_t)((state->rgbButtons[1]&0x80u)!=0);
+    e.options=(uint8_t)((state->rgbButtons[9]&0x80u)!=0);
+    e.circle=(uint8_t)((state->rgbButtons[2]&0x80u)!=0);
+    e.share=(uint8_t)((state->rgbButtons[8]&0x80u)!=0);
+  }
+  spider_ps1_history_push(&ps1_input_history,&e);
+}
+static void ps1_history_dump(void) {
+  unsigned i,n=spider_ps1_history_count(&ps1_input_history);
+  const SpiderPS1HistoryEntry *e,*prev;
+  char line[288];
+  if(!ps1_history_enabled())return;
+  snprintf(line,sizeof(line),"GAMEPAD-PS1: FLIGHT-RECORDER START buffered=%u events: 0=OK 1=FOCUS-LOSS 2=DI8-FAIL 3=DEVICE-MISSING",n);
+  report(line);
+  for(i=0;i<n;i++) {
+    int changed;
+    e=spider_ps1_history_at(&ps1_input_history,i);
+    prev=i?spider_ps1_history_at(&ps1_input_history,i-1u):NULL;
+    if(!e)continue;
+    changed=!prev || e->event!=prev->event ||
+      e->cross!=prev->cross || e->options!=prev->options ||
+      e->circle!=prev->circle || e->share!=prev->share ||
+      e->menu2d!=prev->menu2d || e->gameplay3d!=prev->gameplay3d ||
+      e->movie!=prev->movie || e->native_pause!=prev->native_pause ||
+      e->native_request!=prev->native_request ||
+      e->previous_confirm!=prev->previous_confirm;
+    if(!changed && i+8u<n)continue;
+    snprintf(line,sizeof(line),
+      "GAMEPAD-PS1: FLIGHT-RECORDER seq=%lu ms=%lu event=%u 2d=%u 3d=%u bink=%u pause=%u request=%lu CROSS=%u OPTIONS=%u CIRCLE=%u SHARE=%u previous-mask=%lu [DI8, NOT HUMAN PRESS]",
+      (unsigned long)e->sequence,(unsigned long)e->tick_ms,
+      (unsigned)e->event,(unsigned)e->menu2d,
+      (unsigned)e->gameplay3d,(unsigned)e->movie,
+      (unsigned)e->native_pause,(unsigned long)e->native_request,
+      (unsigned)e->cross,(unsigned)e->options,(unsigned)e->circle,
+      (unsigned)e->share,(unsigned long)e->previous_confirm);
+    report(line);
+  }
+  report("GAMEPAD-PS1: FLIGHT-RECORDER END");
+}
+
 void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active) {
   DIJOYSTATE2 state;
