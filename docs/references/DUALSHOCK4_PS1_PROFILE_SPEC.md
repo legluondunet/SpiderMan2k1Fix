@@ -542,7 +542,7 @@ ControllerPS1Preview=1
 ControllerPS1ReadOnlyJoystick=1
 ```
 
-On successful signature checks, it applies **five reversible-by-restart,
+On successful signature checks, it applies **six guarded, restart-reversible,
 RAM-only native code edits**, without modifying game assets or DLL
 DirectInput COM objects:
 
@@ -553,14 +553,22 @@ DirectInput COM objects:
    game's original second menu column is built. Unknown button
    indices keep `button N`, and the existing menu draw/scroll
    routines remain untouched.
-2. At `0x50D51C` and `0x50D6A6`, redirect the original
+2. At `0x50D3FA`, redirect *the original rebind-capture
+   entry itself* through a tiny guarded original-x86 trampoline.
+   It checks the original `gActionMapRelated` at `0xAC129C`.
+   In **Joystick Configuration** it jumps to the game's own
+   `0x50D872` cleanup before any capture prompt can be armed.
+   In **Keyboard Configuration**, it replays the two original
+   instructions `push ebp; push 0x2000` and jumps straight
+   back to `0x50D400`, retaining normal keyboard editing.
+3. At `0x50D51C` and `0x50D6A6`, redirect the original
    key/controller reassignment-acceptance branches to their
-   existing `0x50D852` cleanup/return, rather than allowing a
-   new button-capture path to modify the active mappings.
-3. At `0x50D4A9` and `0x50D7AD`, neutralize only the
+   existing `0x50D852` cleanup/return as additional safeguards
+   against any preexisting capture state.
+4. At `0x50D4A9` and `0x50D7AD`, neutralize only the
    original controller-restore-default and controller-action
    setter call sites as extra protection.
-4. Verify the PE32 base, section memory, executable page
+5. Verify the PE32 base, section memory, executable page
    protections and **every original instruction byte** before
    any write. On a failed edit, attempt to restore all previously
    modified sites. No changes are attempted if any original
@@ -582,7 +590,8 @@ Circle/Escape, the original Restore Default Settings row, whether
 every menu transition remains accessible, and any original key-capture
 prompt reached before the verified assignment branch. It is
 also not yet proven under Wine or native Windows for the new
-code patch. The host regression suite and CI compilation do
+code patch. A guarded conditional trampoline is used specifically
+to preserve the original **editable Keyboard Configuration** menu. The host regression suite and CI compilation do
 not substitute for a physical in-game trial. If any control can
 still be changed or a stale prompt appears, leave the option Off
 and use the previously validated PS1 controller build.
