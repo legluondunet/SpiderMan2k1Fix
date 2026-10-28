@@ -65,6 +65,10 @@ static int configured=0,profile=SPIDER_PROFILE_AUTO,confirm=SPIDER_CONFIRM_BOTH;
 static unsigned detected_kind=SPIDER_RECONNECT_NONE;
 static uint32_t xbox_previous_mask=0;
 static unsigned xbox_button_trace_count=0;
+/* Xbox Joystick UI must be read-only like PS1. The native patch is
+ * permanent for a process: attempt only once after original bootstrap,
+ * and only for an unambiguously verified Xbox device. */
+static int xbox_readonly_armed=0,xbox_readonly_attempted=0;
 static int back=SPIDER_BACK_CIRCLE,pause_button=SPIDER_PAUSE_OPTIONS;
 static int ps1_preview_requested=0,ps1_preview_active=0,previous_share=0;
 static int ps1_options_skip_requested=0;
@@ -677,6 +681,20 @@ static void ps1_probe_native_start_tables(void) {
     }
   }
 }
+static void xbox_try_readonly_menu(void) {
+  if(!xbox_readonly_armed || xbox_readonly_attempted || !detected ||
+     detected_kind!=SPIDER_RECONNECT_XBOX360 || profile==SPIDER_PROFILE_OFF)
+    return;
+  xbox_readonly_attempted=1;
+  if(!SpiderXbox360_InstallReadOnlyJoystick(log_message))
+    report("GAMEPAD-XBOX360: JOYSTICK-READONLY REFUSED: original machine-code signatures not matched or patch installation failed; menu may still be editable");
+}
+void SpiderGamepadUI_ArmXbox360ReadOnly(void) {
+  if(!configured || profile==SPIDER_PROFILE_OFF ||
+     profile==SPIDER_PROFILE_DUALSHOCK4)return;
+  xbox_readonly_armed=1;
+  xbox_try_readonly_menu();
+}
 void SpiderGamepadUI_ActivatePS1(void){
   if(!detected || detected_kind!=SPIDER_RECONNECT_DS4 || !ps1_preview_requested)return;
   ps1_preview_active=1;
@@ -924,6 +942,10 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   if(!probing || spider_ds4_hotplug_scan_due(&hotplug,
                                              (uint32_t)GetTickCount(),detected))
     detect_device(hwnd);
+  /* If this Xbox was attached only AFTER the initial game bootstrap,
+   * still lock its native Joystick Configuration before any UI action.
+   * Never run on an unknown pad, Sony profile or in the background. */
+  xbox_try_readonly_menu();
   if(!detected||!device) {
     ps1_history_record(SPIDER_PS1_HISTORY_DEVICE_MISSING,native_request,
       menu_2d,gameplay_3d,bink_active,native_pause_active,
