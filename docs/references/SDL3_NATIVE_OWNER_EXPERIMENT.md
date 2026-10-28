@@ -169,6 +169,37 @@ until the separate driver-specific trigger test is validated.
 The maintainer must verify visible game response and stability, and
 test both Windows and Wine before considering acceptance.
 
+### Xbox RT → Swing compatibility check
+
+The maintainer has now reported **successful 3D gamepad switching and physical
+disconnect/reconnect** with both pads, but **Xbox swing on RT has regressed**.
+The earlier verified Holtek DirectInput profile reported `lZ=32768`
+neutral, `lZ=128` on RT, `lZ=65408` on LT, and triggered a held
+keyboard Swing action (`DIK 0x22`). Native owner hot-swap may expose a
+different DirectInput axis reading.
+
+The experimental RT bridge remains opt-in via
+`[Input] ControllerXbox360RTSwing=1`. When both SDL3 native owner and
+the live original Xbox 3D mapping are strictly verified, Swing now accepts
+either the earlier negative DirectInput `lZ` signal or the SDL3
+**separate normalized RT** (`0..32767`, press at `11000`, release
+below `5000`). A positive LT-only legacy axis, SDL3's LT axis, an
+unselected pad, or an invalid SDL RT value never triggers Swing.
+The keyboard scan code is still derived from the original live
+keyboard mapping and checked against unsafe/duplicate bindings before
+any injection. The button-9 / R3 native Swing fallback is not modified.
+
+New bounded log lines `GAMEPAD-XBOX360: RT-SWING SOURCE`,
+`RT-SWING BLOCKED`, `RT-SWING REFUSED`, and
+`RT-SWING DOWN/UP` will distinguish physical trigger recognition from
+live mapping refusal. With the Xbox selected in actual 3D, try RT while
+watching Spider-Man. Then, if Swing fails, supply the log to diagnose
+native mapping ownership versus the keyboard scan rather than
+inventing a replacement key.
+
+This fixes a plausible driver-dependent input path, not a proven root
+cause; physical verification is still required.
+
 ## Known limitations
 
 This is an experimental **native DirectInput ownership** bridge, NOT a
