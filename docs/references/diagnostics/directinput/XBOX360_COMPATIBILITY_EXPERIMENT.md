@@ -277,3 +277,65 @@ needs a separately evidenced physical mapping, preserving saved user values.
 The read-only joystick menu is **user-validated on this Wine setup**;
 the follow-up parser correction is **not yet user-validated**. Keep this
 entire draft PR unmerged until explicit approval.
+
+
+## New independent Xbox gameplay prototype (opt-in, not user validated)
+
+Set `[Input] ControllerXbox360Preview=1` only for a controlled first
+trial on the single Holtek 045E:028E controller. Default remains **0**.
+This is separate from the already user-validated native read-only Joystick UI.
+
+The game-owned, original 252-byte configuration is temporarily overlaid
+*before its authenticated original CRT reload*, following an early unique
+controller discovery and a successful strict original-x86 Joystick lock.
+It refuses startup when the HWND, early DirectInput acquisition, native
+read-only patch, or game CRT read verification fail. Late hotplug never
+installs this gameplay mapping. With the setting Off, gameplay is unchanged.
+
+**Experimental seven-action digital map:** Jump=A/BUTTON0 (observed),
+Kick=B/BUTTON1 (observed index, untested action), Punch=BUTTON2,
+Web=BUTTON3, Aim=BUTTON4, Zipline=BUTTON5, Swing=BUTTON9.
+**Do not claim BUTTON2/3/4/5/9 physical labels or XInput trigger parity**:
+those assignments are only candidates pending a real full-controller test.
+The profile releases both BACK/BUTTON6 and START/BUTTON7 from all seven
+native gameplay actions, making synthetic ESC available for in-game
+Pause; A/B also navigate the paused native menu. Digital BUTTON9 is a
+provisional Swing fallback, not a right-trigger emulation.
+
+The original player's seven [Joystick] assignments are snapshotted
+before the overlay and restored byte-for-byte both in the persisted
+[Internal] RawHex and each named [Joystick] entry on native settings
+writes. The overlay is reasserted on virtual configuration writes.
+Disable the option and restart to return to the player's prior layout.
+No on-disk EXE changes, no XInput driver or native DirectInput vtable
+hooks. As with the Sony profile, no live profile swap is attempted
+when the pad is unplugged; restart after switching controller types.
+
+For the **first Xbox-only test**, preserve the existing options and use:
+
+```ini
+[Input]
+ControllerProfile=Auto
+ControllerXbox360Preview=1
+[Debug]
+Log=1
+```
+
+Expect `GAMEPAD-XBOX360: JOYSTICK-READONLY ACTIVE`,
+`GAMEPAD-XBOX360: PREVIEW EARLY PREFLIGHT OK`,
+`SPIDEY-CFG: XBOX360-PREVIEW action=Jump ... temporary=BUTTON0`,
+`SPIDEY-CFG: BOOTSTRAP ... [READ CONFIRMED]`, and
+`GAMEPAD-XBOX360: PREVIEW ACTIVE`. Test A Jump, independent B Kick,
+the six other digital actions, START/Back in gameplay and the
+paused menu, entering/exiting native Joystick Configuration without
+editing it, keyboard remapping, and at least one game settings save.
+Finally disable preview and compare the seven original [Joystick]
+values + [Internal] RawHex against a pre-test backup. Report the
+full timestamped log. Abort the test and use the last validated
+build if unintended actions/crashes occur.
+
+**Caution:** No physical gameplay test has validated this new optional
+profile. It is deliberately NOT the automatic Xbox default; no PR merge
+or release without explicit maintainer approval.
+
+legluondunet assisted by ChatGPT (OpenAI)
