@@ -390,14 +390,14 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "; ControllerProfile: Auto detects an original Sony DualShock4 by VID/PID.\r\n"
     "; Other gamepads keep original controls. Off disables this UI bridge.\r\n"
     "ControllerProfile=Auto\r\n"
-    "; In 2D menus or native Bink videos (also after menu): Cross/Options = Enter.\r\n"
+    "; Legacy UI bridge only: Cross/Options = Enter. PS1 preview uses Cross only.\r\n"
     "ControllerEnterButtons=Both\r\n"
     "; In 2D menus Circle = Escape/Back; Share or Off are alternatives.\r\n"
     "; Triangle stays native for scripted 3D cinematic skipping.\r\n"
     "ControllerBackButton=Circle\r\n"
-    "; In 3D OPTIONS = Escape/Pause only if no native gameplay action uses\r\n"
-    "; BUTTON9 (factory Zipline does). Reassign Zipline e.g. R1/BUTTON5 in\r\n"
-    "; the game's Joystick menu first. Nothing is automatically overwritten.\r\n"
+    "; Legacy UI bridge only: OPTIONS can Pause if no native action uses\r\n"
+    "; BUTTON9 (factory Zipline does). PS1 preview uses SHARE instead.\r\n"
+    "; Existing saved gameplay bindings are never overwritten.\r\n"
     "ControllerPauseButton=Options\r\n"
     "\r\n"
     "[Audio]\r\n"
@@ -974,14 +974,14 @@ static BOOL WINAPI hooked_WriteFile(HANDLE h,LPCVOID buffer,DWORD len,LPDWORD do
     DWORD old_w=get_word(0),old_h=get_word(4),old_depth=get_word(8);
     memcpy(cfg+v->pos,buffer,len);v->pos+=(LONG)len;dirty=1;writes++;
     if(ps1_preview_active) {
-      /* A writable Joystick Configuration screen may still edit the game's
-       * own live action array, but it must NOT change the fixed virtual
-       * Spidey.cfg bytes. The native menu is NOT claimed locked yet. */
+      /* Regardless of whether the independent, opt-in native Joystick
+       * read-only patch installed, keep the seven PS1 virtual bindings
+       * and the previous user preferences protected on game-owned writes. */
       BYTE attempted[CFG_SIZE];
       memcpy(attempted,cfg,CFG_SIZE);
       spider_ps1_apply(cfg,CFG_SIZE);
       if(memcmp(attempted,cfg,CFG_SIZE) && ps1_rejected_user_changes++<8u)
-        report("SPIDEY-CFG: PS1-PREVIEW protected seven virtual joystick bindings from original-game config write; UI menu lock remains pending");
+        report("SPIDEY-CFG: PS1-PREVIEW protected seven virtual joystick bindings from original-game config write; native Joystick read-only is separately gated");
     }
     if(old_w!=get_word(0) || old_h!=get_word(4) || old_depth!=get_word(8))
       report("SPIDEY-CFG: in-game screen/depth write intercepted; authoritative display settings restored");
