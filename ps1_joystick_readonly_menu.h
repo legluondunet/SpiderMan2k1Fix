@@ -19,7 +19,7 @@ typedef struct {
   uint8_t original[6];
 } SpiderPS1JoystickReadOnlySite;
 
-enum { SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT=5 };
+enum { SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT=6 };
 static const SpiderPS1JoystickReadOnlySite spider_ps1_readonly_sites[
     SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT]={
   /* initActionMaps: joystick branch formats gKeyNames[i] using sprintf;
@@ -36,7 +36,14 @@ static const SpiderPS1JoystickReadOnlySite spider_ps1_readonly_sites[
   {0x0050D6A6u,6u,{0x8Bu,0xD3u,0x56u,0xC1u,0xE2u,0x05u}},
   /* Extra defense: the native game action setter cannot be called by
    * a stale capture state. Its call is controller-menu-local. */
-  {0x0050D7ADu,5u,{0xE8u,0x2Eu,0xCDu,0xFFu,0xFFu,0}}
+  {0x0050D7ADu,5u,{0xE8u,0x2Eu,0xCDu,0xFFu,0xFFu,0}},
+  /* Once the original native menu detects Enter on a binding row,
+   * this branch would FIRST arm button capture and redraw a capture
+   * prompt. A guarded 32-bit trampoline tests gActionMapRelated
+   * (0xAC129C) and only skips that entire action on Joystick screens.
+   * Keyboard Configuration must still execute the original two PUSHes
+   * and continue at 0x50D400, keeping keyboard remapping editable. */
+  {0x0050D3FAu,6u,{0x55u,0x68u,0x00u,0x20u,0x00u,0x00u}}
 };
 static const char *spider_ps1_native_button_label(uint32_t button) {
   switch(button) {
