@@ -107,7 +107,7 @@ def test_unplug_inputlost_never_acquires_disconnected_device_same_frame():
     assert "secondary device release COMPLETE; rescan deferred 2s" in PAD
     assert "no Acquire for INPUTLOST/UNPLUGGED" in PAD
     assert "hr==DIERR_NOTACQUIRED && pause_wake_notacquired_attempts==0u" in PAD
-    assert "pause_wake_active=0; /* stop polling a lost secondary device until Flip */" in PAD
+    assert "pause_wake_active=0; /* stop polling potentially stale input until Flip */" in PAD
     assert "disable_profile_with_policy(NULL,hr==DIERR_INPUTLOST);" in PAD
     assert "secondary stale device Release BEGIN (skip Unacquire after INPUTLOST)" in PAD
     assert "secondary stale device Release COMPLETE" in PAD
@@ -117,7 +117,10 @@ def test_unplug_inputlost_never_acquires_disconnected_device_same_frame():
     assert "IDirectInputDevice8_Acquire(device);" not in failed
     paused=PAD[PAD.index("unsigned SpiderGamepadUI_PauseWake_Poll("):
                PAD.index("void SpiderGamepadUI_PauseWake_End(")]
-    assert "IDirectInputDevice8_Acquire(device);" not in paused
+    assert paused.count("IDirectInputDevice8_Acquire(device);")==1
+    assert "hr==DIERR_NOTACQUIRED && pause_wake_notacquired_attempts==0u" in paused
+    assert "pause_wake_notacquired_attempts=1u;" in paused
+    assert "if(SUCCEEDED(acquire_hr))return 0;" in paused
     # Reacquisition must open a fresh instance during scheduled rediscovery,
     # not silently reload the game's native PS1 profile in mid-game.
     assert "IDirectInput8_CreateDevice(di,choose_ds4?&d.ds4_instance:&d.xbox_instance,&device,NULL)" in PAD
