@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — Quit/Yes native-selection investigation (PR #74, diagnostic only)
+
+- The maintainer **confirmed** that `ControllerAutoDisableMouse=1` eliminates the original mouse cursor's stale hover overriding D-pad/DS4 Cross menu selection. This is accepted for their tested Sony DS4 setup only.
+- New independent bug report: in the original 3D pause menu, **SHARE → Quit → Yes** unexpectedly launches a new game. The user suspects it might occur even with mouse enabled. **No cause or fix has been validated.**
+- Add **OFF-by-default** `[Input] ControllerPS1QuitTrace=1`: bounded, passive, VirtualQuery-guarded monitoring of original game pause/confirmation pointers, selected item indices, engine transition request, native mouse-disable status and separate Cross/Circle/SHARE press edges. No game-control or native menu modifications. Use to distinguish an incorrect Yes result from a successful menu return followed by unintended New Game selection; compare the same Quit/Yes action using gamepad Cross and keyboard Enter with mouse on/off.
+
 ## Unreleased — game-native mouse suppression with DualShock 4 (PR #74, experimental)
 
 - Add **opt-in** `[Input] ControllerAutoDisableMouse=1`, active only when the supported Sony DualShock 4 PS1 profile has been authenticated and its independent gamepad read succeeds. Default is Off; other input devices and `ControllerProfile=Off` are unchanged.
