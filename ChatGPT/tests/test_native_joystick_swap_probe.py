@@ -75,7 +75,7 @@ def test_no_live_original_binding_writes_in_hot_swap_probe():
     assert "swap_last_kind=list.kind;" in NATIVE
     assert "device has changed but game still uses prior native action mapping; no unsafe runtime patch attempted" in NATIVE
     observer=NATIVE.split("static void observe_native_swap_table(",1)[1].split(
-      "static void close_candidate(",1)[0]
+      "static void swap_native_gameplay_mapping(",1)[0]
     assert "spider_native_swap_read(table," in observer
     assert "spider_native_swap_preset(buttons)" in observer
     assert "VirtualQuery(table,&mbi,sizeof(mbi))" in observer
@@ -85,4 +85,4 @@ def test_no_live_original_binding_writes_in_hot_swap_probe():
                       "InterlockedExchange(", "spider_ps1_write_word(",
                       "IDirectInputDevice8_", "memcpy(table", "memset(table"):
       assert forbidden not in observer
-    assert "no runtime mapping writes" in NATIVE
+    assert "optional explicitly gated runtime swaps" in NATIVE
