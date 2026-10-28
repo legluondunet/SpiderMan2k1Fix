@@ -37,7 +37,13 @@ def test_only_original_verified_joystick_paths_are_changed():
     assert "0x0050D852u-(p->virtual_address+5u)" in SOURCE
     assert "replacements[0][0]=0xE8u" in SOURCE
     assert "replacements[i][0]=0xE9u" in SOURCE
-    assert "memcpy(replacements[1],nop5,5u)" in SOURCE
+    assert "replacements[1][0]=0xE8u;" in SOURCE
+    assert "spider_joystick_restore_denied" in SOURCE
+    assert "GAMEPAD-READONLY: RESTORE-DEFAULT intercepted" in SOURCE
+    assert "spider_ps1_readonly_sites[1].virtual_address+5u" in SOURCE
+    assert "memcpy(&replacements[1][1],&rel,sizeof(rel));" in SOURCE
+    assert "memcpy(replacements[1],nop5,5u)" not in SOURCE
+    assert "void __cdecl spider_joystick_restore_denied(void)" in SOURCE
     assert "memcpy(replacements[4],nop5,5u)" in SOURCE
     assert "memcmp(location,p->original,p->size)!=0" in SOURCE
     assert "VirtualQuery(location,&mbi,sizeof(mbi))" in SOURCE
