@@ -45,7 +45,7 @@ behavior. Input gating and renderer/media detection require real-game tests.
 | --- | --- | --- | --- | --- | --- |
 | Opening Bink videos | — | Skip when original permits | — | Skip when original permits | — |
 | Interactive static image before main menu | — | Advance/Enter | — | Advance/Enter | — |
-| Main menu and nested Options/Joystick-disabled menu | D-pad + left analog native | Confirm/Enter | Back/Escape | Optional Enter only where safe for startup | No assigned menu command |
+| Main menu and nested Options/Joystick read-only screen | D-pad + left analog native | Confirm/Enter | Back/Escape | Optional Enter only where safe for startup | No assigned menu command |
 | Post-menu Bink movies | — | Skip when original permits | — | Skip when original permits | — |
 | Scripted 3D cinematics | Native scene state | Skip | No injected Back | Skip | No pause during scripted scene |
 | Active playable 3D | Native movement | **Jump** | **Kick** | No gameplay action by default | **Open pause/menu** |
@@ -88,23 +88,56 @@ supported executable, and is not one of these 7 editable entries.
 in menus.** Context must be checked at the input-action owner, not by
 reusing a generic renderer 2D/3D flag.
 
-## Fixed profile and game's original joystick menu
+## Fixed profile and game's original joystick menu — maintainer decision (Oct 28)
 
-The maintainer explicitly requests **no user customization while the
-automatic profile is On**. The original game's *Joystick Configuration*
-screen must therefore be unavailable or genuinely read-only, with a
-clear explanatory message directing the player to `ControllerProfile=Off`
-to restore customization.
+**Keep the original *Joystick Configuration* screen accessible and
+make it a genuine read-only reference for the ACTIVE DualShock 4
+PS1-style profile. Do not hide or remove the menu.** This replaces
+earlier fallback language allowing the menu to be unavailable.
 
-Do not merely overwrite the INI on next boot while temporarily letting
-the user change buttons in memory: this can create inconsistent mappings,
-incorrect UI labels and accidental loss of custom settings. If a safe
-native menu lock cannot be proven against the supported EXE, **do not
-claim full fixed-profile support**. Delay activation of that feature.
+When the verified Sony DS4 profile is enabled, show the real runtime
+fixed bindings in the existing seven gameplay rows (not the original
+saved/factory values):
 
-Always restore previous personal controls when returning to Off; never
-overwrite original `[Joystick]` values or `RawHex` for that purpose.
-Saved keyboard and audio settings must remain independent and writable.
+| Original joystick menu action | Physical DS4 control | Active native button |
+| --- | --- | --- |
+| Jump | Cross (✕) | BUTTON1 |
+| Kick | Circle (◯) | BUTTON2 |
+| Punch | Square (□) | BUTTON0 |
+| Web | Triangle (△) | BUTTON3 |
+| Aim / Camera | L1 | BUTTON4 |
+| Zipline | R1 | BUTTON5 |
+| Swing | R2 | BUTTON7 |
+
+If the game's native text path can safely represent readable names,
+prefer e.g. `CROSS (BUTTON1)`, `CIRCLE (BUTTON2)` etc. Otherwise
+retain exact native `BUTTONn` values with a clear controller legend
+using the existing safe UI presentation. Do not invent an eighth
+gameplay setting inside the seven-row native screen: `SHARE
+(BUTTON8) = pause/menu` may be described as a separate, non-editable
+hint only if the actual native layout supports it. In menus, keep
+Cross=Confirm and Circle=Back, irrespective of their gameplay actions.
+
+**Read-only is behavioral, not just a save policy.** The menu must
+remain navigable and closable with Cross/Circle, but selecting a
+binding must not arm any native key/button-capture or reassignment
+state, mutate any of the seven native live action slots, or accept
+a replacement button. Displayed values must always agree with the
+actual active PS1 mapping. A non-intrusive message such as
+`DualShock 4 profile active — controls are fixed` may be used.
+
+When `ControllerProfile=Off` or no unambiguous verified DS4 is
+present, restore the original editable Joystick Configuration menu
+and the user's actual original custom mappings. Never overwrite
+original `[Joystick]` values or `RawHex` for the fixed profile.
+Saved keyboard and audio settings must remain independent and
+writable.
+
+Do not merely overwrite the INI on the next boot while allowing
+temporary native reassignment in RAM. If safe signature-gated native
+UI input/capture prevention cannot be established against the
+supported EXE, **do not claim full read-only support**. Keep this
+as an outstanding requirement until verified in-game.
 
 ## Input pipeline / guardrail requirements
 
@@ -145,8 +178,7 @@ Saved keyboard and audio settings must remain independent and writable.
   zipline, swing, D-pad/analog and no camera-induced pause.
 - Press SHARE to pause, navigate with analog/D-pad, Cross to confirm,
   Circle to back out, SHARE to resume. OPTIONS must not fire Zipline.
-- Check the original joystick-configuration menu is actually disabled
-  or read-only while the fixed profile is active.
+- Check the original joystick-configuration menu stays accessible, is truly read-only while the fixed profile is active, shows the seven actual DS4 bindings, and cannot arm a reassignment even temporarily.
 - Turn profile Off and confirm saved original mappings, normal Joystick
   menu, keyboard and audio settings are unchanged.
 - Alt+Tab during video, menus, paused gameplay; USB unplug/replug;
