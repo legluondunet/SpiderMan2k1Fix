@@ -455,3 +455,53 @@ Keep a last user-validated DLL backup.
 
 *This bridge is not yet user-validated and this PR remains DRAFT /
 unmerged; no release without explicit approval.*
+
+
+## Xbox Start and Exit → New Game regression (2026-10-28)
+
+User reports that Xbox Start still works as Pause/Enter despite the Sony PS1
+profile intentionally excluding native Start/Options from the synthetic UI
+bridge. The 16:33 test log confirms this discrepancy: Xbox gameplay preview
+is active, the bridge sends multiple `3D MENU Back/Start -> Escape` and
+the native pause ribbon renders. Unlike DS4, our Xbox 2D policy additionally
+mapped Start BUTTON7 to synthetic Enter. This was an adapter mistake.
+
+Correction: Xbox **Start BUTTON7 is inert in the synthetic bridge for both
+2D confirmation and 3D Pause**. Xbox **Back BUTTON6** is the only 3D
+synthetic Escape/Pause button (PS1 Share equivalent); A confirms menus,
+B backs out. The original game DirectInput device and physical native
+button table remain untouched, so this does not falsely claim hardware-
+level Start masking in all original native game code paths.
+
+The same log shows `NATIVE REQUEST 7`, successful `NATIVE-3D-CLEANUP`
+and `CONTROLLER-7 ... RETURN-TO-CONTROLLER`, then
+`Shell_MainMenu` reset with `mode_request=7`. The log ENDS there:
+**it does not capture the eventual second automatic New Game**.
+We cannot claim a root cause based on this trace alone.
+
+Our PS1 profile already uses two optional protective mechanisms for the
+native Quit -> Main Menu boundary: an 8-Flip settle window and
+ownership of the button pressed on the first 2D Flip until its release.
+The Xbox preview now applies both automatically to **synthetic A -> Enter**,
+only following the verified native mode request 7 after 3D (never normal
+gameplay, fresh menu use, other request modes, B/Back, or the original
+game's own input). New trace entries:
+`GAMEPAD-XBOX360: POST-QUIT RETURN native_request=7`,
+`GAMEPAD-XBOX360: POST-QUIT-GUARD suppressed inherited/too-early
+synthetic A->Return`.
+A physical A release re-arms the button. This is a defensive fix for
+one plausible **synthetic double-confirm** route, not proof that all
+possible native-game exit loops are fixed. If new-game restart recurs
+without a `SYNTHETIC Return`, inspect native gamepad state/request
+lifecycle separately rather than making broader memory patches.
+
+Manual test: leave Xbox gameplay+RT bridge settings as user-tested,
+start a level, open Pause using Back (NOT Start), select Exit and
+confirm with A. Observe the main menu remain without automatically
+starting a game; confirm A can start a new game only after release and
+a NEW deliberate press. Repeat using keyboard Escape to open Pause
+and keyboard Enter to confirm Exit to separate native from synthetic
+input. Include a few seconds of menu time in the log. Retest Sony
+PS1 independently, unchanged by this fix.
+
+PR remains DRAFT/UNMERGED pending hardware validation.
