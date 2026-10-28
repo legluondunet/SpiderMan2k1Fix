@@ -2445,6 +2445,12 @@ static void pause_at_flip_if_background(void) {
     return;
   }
   log_line("FOCUS-PAUSE: Any keyboard resume ARMED; consumes press and release");
+  /* The main gamepad UI poll runs only between Flips, so it cannot serve
+   * the synchronous focus PAUSED screen. Sample the already-verified
+   * secondary DS4 here instead; require NEW digital press AND full release,
+   * never wake while game is background, and never synthesize a native key. */
+  SpiderGamepadUI_PauseWake_Begin();
+  log_line("FOCUS-PAUSE: DS4 digital-button resume ARMED; foreground-only, release-gated, no injected key (keyboard always available)");
   /* The Flip pause alone does not suspend Bink or secondary DirectSound. */
   SpiderFocusMedia_Pause();
   SpiderFocusDSound_Pause();
@@ -2486,6 +2492,7 @@ static void pause_at_flip_if_background(void) {
       if(msg.message==WM_QUIT) {
         PostQuitMessage((int)msg.wParam);
         SpiderPauseAny_End();
+        SpiderGamepadUI_PauseWake_End();
         SpiderPauseSurface_End();
         SpiderFocusDSound_Resume();
         SpiderFocusMedia_Resume();
@@ -2500,6 +2507,17 @@ static void pause_at_flip_if_background(void) {
     if(!IsWindow(hwnd)) break;
     if(SpiderPauseAny_Completed())
       InterlockedExchange(&pause_latched,0);
+    else {
+      unsigned resumed_buttons=SpiderGamepadUI_PauseWake_Poll(hwnd);
+      if(resumed_buttons) {
+        char line[155];
+        snprintf(line,sizeof(line),
+          "FOCUS-PAUSE: gamepad digital press/release consumed buttons=0x%03X (verified DS4, no native key injection)",
+          resumed_buttons);
+        log_line(line);
+        InterlockedExchange(&pause_latched,0);
+      }
+    }
     if(InterlockedCompareExchange(&pause_latched,0,0)!=1) break;
     /* No show/hide transitions: a frozen DirectDraw frame naturally
      * stays behind unrelated Xfce/Windows applications during Alt+Tab. */
@@ -2513,6 +2531,7 @@ static void pause_at_flip_if_background(void) {
     log_line(line);
   }
   SpiderPauseAny_End();
+  SpiderGamepadUI_PauseWake_End();
   SpiderPauseSurface_End();
   SpiderFocusDSound_Resume();
   SpiderFocusMedia_Resume();
