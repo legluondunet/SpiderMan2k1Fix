@@ -1,29 +1,45 @@
-"""The optional DualShock 4 mode must block original mouse hover, not
-merely conceal the OS pointer, and must be safe across Alt-Tab/hot-unplug.
-These exact locations are cross-checked against the game's original
-PCShell/PCInput disassembly, not an arbitrary Windows cursor API.
+"""Global game-only mouse policy must not depend on a DualShock 4.
+
+Retail Spider-Man PC 2001 uses mouse for menu navigation only. With
+MouseEnabled=0 by default, its own render/poll/hit-test gates are disabled;
+the actual desktop cursor and all keyboard input remain untouched.
 """
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
 MODE=(ROOT/"ps1_mouse_mode.c").read_text()
+HEADER=(ROOT/"ps1_mouse_mode.h").read_text()
 BRIDGE=(ROOT/"gamepad_ui_profile.c").read_text()
 VALID=(ROOT/"ini_validation.h").read_text()
 BUILD=(ROOT/"build.sh").read_text()
 CFG=(ROOT/"virtual_spidey_cfg.c").read_text()
 
 
-def test_option_explicit_and_only_activated_for_verified_ps1_controller():
+def test_mouse_disabled_by_default_independent_of_controller_with_user_override():
+    assert '"MouseEnabled"' in VALID
+    assert 'GetPrivateProfileIntA("Input","MouseEnabled",0,ini)==1' in BRIDGE
+    assert 'SpiderPS1Mouse_Configure(GetPrivateProfileIntA(' in BRIDGE
+    assert '"MouseEnabled=0\\r\\n"' in CFG
+    assert '"MouseEnabled=1\\r\\n"' not in CFG
+    assert 'SpiderPS1Mouse_OnFlip(hwnd);' in BRIDGE
+    assert BRIDGE.index("SpiderPS1Mouse_OnFlip(hwnd);") < BRIDGE.index("if(!configured || !hwnd || !IsWindow(hwnd))")
+    assert 'SpiderPS1Mouse_Configure(int mouse_enabled' in MODE
+    assert 'mouse_policy_enabled=mouse_enabled!=0' in MODE
+    assert "MouseEnabled=1; original game menu mouse enabled" in MODE
+    assert "MouseEnabled=0 (default)" in MODE
+    # Without a pad / with ControllerProfile=Off, the shared policy still runs.
+    assert "if(!detected||!device)" in BRIDGE
+    assert "if(!mouse_policy_configured)return;" in MODE
+    assert "SpiderPS1Mouse_SetPadActive(1);" in MODE
+    assert "if(armed)SpiderPS1Mouse_SetPadActive(1);" in MODE
+    assert "ps1_mouse_auto_requested" not in BRIDGE
+    assert "ps1_mouse_auto_armed" not in BRIDGE
+
+
+def test_legacy_ds4_mouse_option_remains_accepted_but_is_retired():
     assert '"ControllerAutoDisableMouse"' in VALID
-    assert 'GetPrivateProfileIntA("Input","ControllerAutoDisableMouse",0,ini)==1' in BRIDGE
-    assert "ControllerAutoDisableMouse=1" not in CFG  # default OFF
-    assert "ps1_mouse_auto_requested" in BRIDGE
-    assert "ps1_mouse_auto_armed=SpiderPS1Mouse_Arm(log_message)" in BRIDGE
-    assert "SpiderPS1Mouse_SetPadActive(1);" in BRIDGE
-    assert "if(!detected || !ps1_preview_requested)return;" in BRIDGE
-    assert "if(!probing)detect_device(hwnd);" in BRIDGE
-    assert "if(d.found!=1u || d.ds4_count!=1u)" in BRIDGE
-    assert "spider_ps1_mouse" not in BRIDGE.lower() # No unknown backend.
+    assert 'ControllerAutoDisableMouse is retired' in BRIDGE
+    assert '"ControllerAutoDisableMouse=1' not in CFG
 
 
 def test_original_game_gRenderTest_mouse_disable_gates_are_exact():
@@ -43,22 +59,24 @@ def test_original_game_gRenderTest_mouse_disable_gates_are_exact():
     assert "InterlockedCompareExchange(render_flags,desired,before)" in MODE
 
 
-def test_never_change_windows_cursor_or_original_input_api():
-    # Do not repeat historical Alt-Tab focus/cursor corruption.
-    for banned in ("ShowCursor(", "SetCursorPos(", "ClipCursor(", 
+def test_mouse_restoration_on_focus_loss_and_no_win32_cursor_hook():
+    for banned in ("ShowCursor(", "SetCursorPos(", "ClipCursor(",
                    "SetWindowLongPtr(", "SetWindowLongPtrA(",
                    "SetWindowsHookEx(", "IDirectInputDevice8_", "VirtualProtect("):
         assert banned not in MODE
     assert "original native sprite/poll/hit testing disabled" in MODE
     assert "desktop untouched" in MODE
     assert "if(!owns_bit)" in MODE
-    assert "if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);" in BRIDGE
-    assert "if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(1);" in BRIDGE
-    assert "if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd))" in BRIDGE
-    assert "if(FAILED(hr))" in BRIDGE
-    assert "GAMEPAD-MOUSE: GAME MOUSE RESTORED" in MODE
+    assert "GetForegroundWindow()==game_hwnd" in MODE
+    assert "IsWindowVisible(game_hwnd)" in MODE
+    assert "if(!in_game){" in MODE
+    assert "SpiderPS1Mouse_SetPadActive(0);" in MODE
+    assert "if(!armed && !mouse_arm_attempted)" in MODE
+    assert "if(!SpiderPS1Mouse_Arm(mouse_logger))" in MODE
+    assert "GAME MOUSE RESTORED (game focus lost)" in MODE
 
 
 def test_mouse_module_compiled_into_windows_x86_artifact():
     assert "gamepad_ui_profile.c ps1_joystick_readonly_menu.c ps1_mouse_mode.c" in BUILD
     assert '#include "ps1_mouse_mode.h"' in BRIDGE
+    assert 'void SpiderPS1Mouse_OnFlip(HWND game_hwnd);' in HEADER
