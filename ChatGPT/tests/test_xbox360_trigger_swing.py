@@ -43,11 +43,14 @@ def test_axis_hysteresis_only_negative_direction_engages(tmp_path):
     subprocess.run([str(exe)],check=True)
 
 
-def test_rtswing_disabled_by_default_and_requires_verified_xbox_preview():
+def test_rtswing_disabled_by_default_and_requires_verified_startup_or_native_hotplug_xbox_mapping():
     assert 'ControllerXbox360RTSwing=0' in CFG
     assert '"ControllerXbox360RTSwing"' in VAL
     assert 'GetPrivateProfileIntA("Input","ControllerXbox360RTSwing",0,ini)==1' in UI
-    assert 'if(!xbox_rt_swing_requested || !xbox360_preview_active ||' in UI
+    assert 'int native_canonical=SpiderNativeReconnect_CanonicalXboxMapping();' in UI
+    assert '(!xbox360_preview_active && !native_canonical)' in UI
+    assert 'scan=native_canonical?SpiderCfg_Xbox360SwingScanLive():' in UI
+    assert 'SpiderXbox360_SetRTAlias(xbox_rt_swing_requested &&' in UI
     assert 'detected_kind!=SPIDER_RECONNECT_XBOX360 || !gameplay_ok)' in UI
     assert 'SpiderCfg_Xbox360SwingScan()' in UI
     assert 'unsigned SpiderCfg_Xbox360SwingScan(void)' in CFG
@@ -95,3 +98,26 @@ def test_only_unique_safe_game_owned_keyboard_swing_can_be_injected():
     assert 'LeaveCriticalSection(&guard)' in scanner
     assert 'set_word(' not in scanner
     assert 'WritePrivateProfileString' not in scanner
+
+
+def test_hotplug_uses_live_authenticated_keyboard_scan_and_canonical_native_xbox():
+    native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
+    head=(ROOT/"native_joystick_reconnect.h").read_text(encoding="utf-8")
+    assert "int SpiderNativeReconnect_CanonicalXboxMapping(void)" in native
+    assert "int SpiderNativeReconnect_CanonicalXboxMapping(void);" in head
+    assert "if(!requested || !initialized || !swap_mapping_enabled" in native
+    assert "spider_native_swap_read((const uint8_t *)table," in native
+    assert "spider_native_swap_preset(buttons)==SPIDER_RECONNECT_XBOX360;" in native
+    assert "game_device_slot(),NULL,NULL" in native
+    assert "unsigned SpiderCfg_Xbox360SwingScanLive(void)" in CFG
+    assert "unsigned SpiderCfg_Xbox360SwingScanLive(void);" in API
+    block=CFG.split('unsigned SpiderCfg_Xbox360SwingScanLive(void) {',1)[1].split(
+        'void SpiderCfg_CancelXbox360Preview(',1)[0]
+    assert "const uintptr_t table=0x00568398u;" in block
+    assert "VirtualQuery((const void *)table,&mbi,sizeof(mbi))" in block
+    assert "mask!=masks[i]" in block
+    assert "scans[i]==scan" in block
+    assert "set_word(" not in block
+    assert "WritePrivateProfileString" not in block
+    assert "SendInput(" not in block
+    assert "if(!xbox360_preview_active)" not in block
