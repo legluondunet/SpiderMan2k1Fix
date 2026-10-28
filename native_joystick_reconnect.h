@@ -10,4 +10,7 @@ void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *));
 void SpiderNativeReconnect_OnFlip(long flip_index, HWND game_hwnd);
 /* Passive post-rebind input breadcrumbs; never alters gameplay state. */
 void SpiderNativeReconnect_LogSyntheticMenuKey(unsigned scan, const char *phase);
+/* Read-only original joystick pointer + render-mode health after rebind. */
+void SpiderNativeReconnect_ObserveMode(long flip_index, int menu_2d,
+                                       int gameplay_3d, int bink_active);
 #endif
