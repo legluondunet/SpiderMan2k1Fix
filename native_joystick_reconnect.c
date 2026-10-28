@@ -273,11 +273,19 @@ fail:
  * Logging before SendInput is particularly useful if the subsequent
  * native menu handler fails before the next Flip and its regular log. */
 void SpiderNativeReconnect_LogSyntheticMenuKey(unsigned scan,const char *phase) {
-  static unsigned reported=0;
+  /* Reset the bounded forensic window at EVERY native rebind so that
+   * rare failures after a second or third physical reconnection are
+   * not invisible simply because the first rebind used the quota. */
+  static unsigned reported=0,reported_generation=0;
   char line[240];
   PVOID joystick,ffb;
-  if(!requested || !initialized || rebound==0 || reported>=40u)return;
+  if(!requested || !initialized || rebound==0)return;
   if(native_thread!=GetCurrentThreadId())return;
+  if(reported_generation!=rebound) {
+    reported_generation=rebound;
+    reported=0;
+  }
+  if(reported>=40u)return;
   joystick=InterlockedCompareExchangePointer(
     (PVOID volatile *)game_device_slot(),NULL,NULL);
   ffb=InterlockedCompareExchangePointer(
@@ -289,6 +297,37 @@ void SpiderNativeReconnect_LogSyntheticMenuKey(unsigned scan,const char *phase) 
     (long)SpiderNativeUnplug_Events());
   report(line);
 }
+/* Passive, bounded mode transitions/heartbeat after a successful
+ * rebind. Samples POINTER VALUES ONLY (never dereferences or invokes
+ * any COM method) to help correlate future mid-3D input faults with
+ * the native device generation, on the original Flip thread. */
+void SpiderNativeReconnect_ObserveMode(long flip_index,int menu_2d,
+                                       int gameplay_3d,int bink_active) {
+  static int last_mode=-1;
+  static long last_flip=0;
+  static unsigned reports=0;
+  char line[240];
+  int mode;
+  PVOID joystick,ffb;
+  if(!requested || !initialized || !SpiderNativeUnplug_Installed() ||
+     rebound==0 || native_thread!=GetCurrentThreadId() || reports>=80u)
+    return;
+  mode=gameplay_3d?2:(bink_active?3:(menu_2d?1:0));
+  if(mode==last_mode && (flip_index-last_flip)<300)return;
+  last_mode=mode;
+  last_flip=flip_index;
+  reports++;
+  joystick=InterlockedCompareExchangePointer(
+    (PVOID volatile *)game_device_slot(),NULL,NULL);
+  ffb=InterlockedCompareExchangePointer(
+    (PVOID volatile *)(uintptr_t)SPIDER_NATIVE_FORCE_FEEDBACK,NULL,NULL);
+  snprintf(line,sizeof(line),
+    "NATIVE-RECONNECT: HEALTH #%u flip=%ld mode=%s joystick=%p native-ffb=%p rebound=%u unplug-events=%ld [PASSIVE]",
+    reports,flip_index,mode==2?"3D":(mode==3?"BINK":(mode==1?"MENU":"TRANSITION")),
+    joystick,ffb,rebound,(long)SpiderNativeUnplug_Events());
+  report(line);
+}
+
 void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *)) {
   write_log=logger;
   requested=(ini && GetPrivateProfileIntA("Input",
