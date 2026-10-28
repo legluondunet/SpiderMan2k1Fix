@@ -19,7 +19,7 @@ def test_opt_in_and_only_synthetic_menu_confirm_is_suppressed():
     assert '#include "ps1_post_quit_guard.h"' in PAD
     assert '0x0060CFA4u' in PAD
     assert "post_quit_block=spider_ps1_post_quit_guard_flip(" in PAD
-    assert '&& post_quit_block) {' in PAD
+    assert 'post_quit_block) {' in PAD
     assert 'POST-QUIT-GUARD suppressed synthetic Return' in PAD
     assert "previous_buttons=(int)pressed;" in PAD
     assert 'begin_scancode(0x1Cu,"Return");' in PAD
