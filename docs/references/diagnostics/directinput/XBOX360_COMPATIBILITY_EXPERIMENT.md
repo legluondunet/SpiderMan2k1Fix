@@ -339,3 +339,50 @@ profile. It is deliberately NOT the automatic Xbox default; no PR merge
 or release without explicit maintainer approval.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+
+## Maintainer requested Xbox action parity with the existing Sony PS1 mapping
+
+The desired Xbox digital action layout explicitly follows the existing
+Sony DS4-to-PS1 profile:
+
+| Game action | Sony PS1-style physical control | Xbox requested physical control | Current Xbox preview |
+| --- | --- | --- | --- |
+| Jump | Cross | A | BUTTON0 (A observed) |
+| Kick | Circle | B | BUTTON1 (B observed) |
+| Punch | Square | X | BUTTON2 (physical Xbox X not yet user-verified) |
+| Web quick shot | Triangle | Y | BUTTON3 (physical Xbox Y not yet user-verified) |
+| Aim | L1 | LB | BUTTON4 (LB not yet user-verified) |
+| Zipline | R1 | RB | BUTTON5 (RB not yet user-verified) |
+| Swing in flight | R2 | RT | BUTTON9 digital fallback ONLY, **NOT RT** |
+| Pause | Share | Start | BUTTON7 synthetic Escape, provided no native action conflict |
+
+The current Xbox preview already implements the first six action indices
+in this order, but only A and B have been physically observed in the
+user-supplied Holtek logs. No code should label the current BUTTON9
+fallback as RT, nor advertise an actually working RT bridge.
+
+**Why RT needs a separate physical measurement:** Under XUSB DirectInput
+Microsoft's normal mapping combines LT/RT into one Z axis, whereas Wine
+joystick overrides, different firmware or adapters can expose separate
+axes. An old DirectInput game accepting only BUTTON-number action
+assignments cannot bind a continuous RT axis by simply renaming BUTTON9.
+
+A NEW passive opt-in diagnostic, `[Debug] Xbox360TriggerProbe=1`,
+records up to 48 significant DIJOYSTATE2 raw axis changes in foreground 3D
+with no game-input changes. It logs `GAMEPAD-XBOX360: TRIGGER-PROBE`
+and raw `lZ`, `lRx/lRy/lRz`, `slider0/slider1`. Its default is zero.
+
+To establish correct physical mapping, start a new game with only the
+Xbox controller, `ControllerXbox360Preview=1`, `Log=1` and
+`Xbox360TriggerProbe=1`. Stand still; release all buttons, press RT
+alone slowly to full travel and release, then repeat with LT alone,
+then press X/Y/LB/RB individually. Review the time-ordered log for axis
+baseline and changes before implementing a safe held-action conversion
+for RT. When finished, disable the diagnostic. The existing Xbox
+digital Swing fallback remains provisional and should be replaced only
+after the genuine trigger is measured and tested.
+
+This stage implements **diagnosis, NOT working physical RT Swing**.
+The branch is experimental, draft/unmerged, and Sony PS1 behavior is
+unchanged.
