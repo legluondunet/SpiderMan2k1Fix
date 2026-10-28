@@ -149,5 +149,5 @@ def test_win32_controller_storage_is_atomic_isolated_and_fallback_safe():
     assert "SDL3-SETUP: SAVE FAILED;" in ui
     assert "Profile" in ui and "SAVED:" in ui
     assert "spider_sdl3_profile_default(&trial,ui->vid,ui->pid)" in ui
-    assert "spider_sdl3_profile_assign(&trial,ui->action,candidate)" in ui
+    assert "spider_sdl3_profile_assign_visible(&trial,ui->action,candidate)" in ui
     assert "no native gameplay change" in probe or "game-owned DirectInput" in probe
