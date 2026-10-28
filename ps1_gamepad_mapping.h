@@ -19,17 +19,17 @@ static const size_t spider_ps1_offsets[SPIDER_PS1_BUTTON_COUNT]={
 static const uint32_t spider_ps1_buttons[SPIDER_PS1_BUTTON_COUNT]={
   1u,2u,0u,3u,4u,5u,7u
 };
-static uint32_t spider_ps1_read_word(const uint8_t *data,size_t pos){
+static inline uint32_t spider_ps1_read_word(const uint8_t *data,size_t pos){
   return (uint32_t)data[pos]|((uint32_t)data[pos+1]<<8)|
          ((uint32_t)data[pos+2]<<16)|((uint32_t)data[pos+3]<<24);
 }
-static void spider_ps1_write_word(uint8_t *data,size_t pos,uint32_t n){
+static inline void spider_ps1_write_word(uint8_t *data,size_t pos,uint32_t n){
   data[pos]=(uint8_t)n;
   data[pos+1]=(uint8_t)(n>>8);
   data[pos+2]=(uint8_t)(n>>16);
   data[pos+3]=(uint8_t)(n>>24);
 }
-static int spider_ps1_snapshot(const uint8_t *data,size_t length,
+static inline int spider_ps1_snapshot(const uint8_t *data,size_t length,
                                uint32_t stored[SPIDER_PS1_BUTTON_COUNT]){
   size_t i;
   if(!data||!stored||length!=SPIDER_PS1_CFG_SIZE)return 0;
@@ -37,14 +37,14 @@ static int spider_ps1_snapshot(const uint8_t *data,size_t length,
     stored[i]=spider_ps1_read_word(data,spider_ps1_offsets[i]);
   return 1;
 }
-static int spider_ps1_apply(uint8_t *data,size_t length){
+static inline int spider_ps1_apply(uint8_t *data,size_t length){
   size_t i;
   if(!data||length!=SPIDER_PS1_CFG_SIZE)return 0;
   for(i=0;i<SPIDER_PS1_BUTTON_COUNT;i++)
     spider_ps1_write_word(data,spider_ps1_offsets[i],spider_ps1_buttons[i]);
   return 1;
 }
-static int spider_ps1_restore(uint8_t *data,size_t length,
+static inline int spider_ps1_restore(uint8_t *data,size_t length,
                               const uint32_t stored[SPIDER_PS1_BUTTON_COUNT]){
   size_t i;
   if(!data||!stored||length!=SPIDER_PS1_CFG_SIZE)return 0;
