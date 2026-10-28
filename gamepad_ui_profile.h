@@ -21,7 +21,7 @@ void SpiderGamepadUI_ActivatePS1(void);
 /* Custom Alt+Tab PAUSED screen only: foreground, already-acquired DS4;
  * a fresh digital button press+release wakes without keyboard synthesis.
  * No effect on native 3D Escape pause or original joystick bindings. */
-void SpiderGamepadUI_PauseWake_Begin(void);
+int SpiderGamepadUI_PauseWake_Begin(void); /* 1=already detected DS4 */
 unsigned SpiderGamepadUI_PauseWake_Poll(HWND game_window);
 void SpiderGamepadUI_PauseWake_End(void);
 /* Strictly opt-in, only after one Sony DS4 and native profile bootstrap. */
