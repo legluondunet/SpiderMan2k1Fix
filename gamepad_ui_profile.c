@@ -471,8 +471,8 @@ static void ps1_probe_native_start_tables(void) {
     }
   }
   snprintf(line,sizeof(line),
-    "GAMEPAD-PS1: START-TABLE probe data-sections=%u candidates=%u truncated-regions=%u PE-image=0x%08lX deep=%d queried-regions=%u cap-MiB=%u; READ-ONLY, native Start retained",
-    sections,matches,truncated,(unsigned long)pe->OptionalHeader.SizeOfImage,
+    "GAMEPAD-PS1: START-TABLE probe data-sections=%u candidates=%u strict=%u truncated-regions=%u PE-image=0x%08lX deep=%d queried-regions=%u cap-MiB=%u; diagnostic scan only",
+    sections,matches,strict_matches,truncated,(unsigned long)pe->OptionalHeader.SizeOfImage,
     deep,regions,(unsigned)(max_bytes/(1024u*1024u)));
   report(line);
   if(disable_native_start) {
