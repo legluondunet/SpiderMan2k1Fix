@@ -166,3 +166,58 @@ The native executable remains unchanged on disk. No global
 is used.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+
+## Hardware acceptance — stage 1 under Wine: PASS (28 October 2026)
+
+The maintainer **physically unplugged the Sony DualShock 4** from
+the main menu and confirmed that **Spider-Man did not terminate** and
+the main menus remained navigable using the keyboard afterward.
+
+Supporting first-hand runtime evidence:
+`SpiderMan2k1Fix(20261028-133230).log` (432 lines), using
+`SpiderMan2k1Fix v1.1.0-9b5229d` on the exact SHA-256-supported
+retail `SpideyPC.exe`.
+
+- Startup: `GAMEPAD-UI: config profile=Off` and
+  `NATIVE-UNPLUG: experimental guard requested`. Thus this result
+  isolates the game-native input handling, without the experimental
+  secondary DS4 UI bridge.
+- At Flip #120: `NATIVE-UNPLUG: ACTIVE at Flip #120; strict
+  original x86 signatures; only DIERR_UNPLUGGED returns
+  nonfatally; native rebind NOT implemented`.
+- After physical detach, at Flip #480:
+  `NATIVE-UNPLUG: suppressed fatal native DIERR_UNPLUGGED=37;
+  cleared 32 button states; native device still stale`.
+- At Flip #600:
+  `NATIVE-UNPLUG: suppressed fatal native DIERR_UNPLUGGED=157;
+  cleared 32 button states; native device still stale`.
+- Subsequent `QUICK-EXIT-F12: ENGINE-STATE flip=655` confirms
+  the process and game loop were still executing after these
+  recoverable failures. The maintainer independently verified
+  that menu keyboard control remained functional.
+
+**Result: PASS for the limited first-stage acceptance criterion —
+main-menu physical controller detach does not terminate the game,
+keyboard navigation survives.** This is the first physical validation
+of the native error-path guard, not a confirmation that joystick
+hot-replug or native `CreateDevice` rebind works. No 3D mid-game
+detach, repeated hot-unplug cycles, Windows-native test, or reconnection
+has been confirmed by this run.
+
+**Engineering observation:** the recovered `DIERR_UNPLUGGED` branch
+continues to be taken once per input update on the now-stale original
+device (counter rose from 37 at Flip #480 to 157 at Flip #600).
+A future recovery state machine should avoid endless futile
+native `Acquire` attempts and should re-enumerate/rebind the
+*original game-owned* device safely at a bounded interval.
+Do not infer native-controller recovery from the game's continued
+rendering; do not blindly replace the game-owned COM object without
+understanding its ownership, cooperative level and data format.
+
+Keep `ExperimentalNativeJoystickUnplugGuard` **OFF by default**
+until more game states and a genuine replug are verified. Preserve
+the PR #76 draft status and require explicit maintainer approval
+before merging.
+
+legluondunet assisted by ChatGPT (OpenAI)
