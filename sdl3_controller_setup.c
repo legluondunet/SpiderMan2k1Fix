@@ -266,6 +266,14 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
   if(vk==VK_RETURN) {
     if(focused==ui->pads &&
        SendMessageA(ui->pads,CB_GETDROPPEDSTATE,0,0))return 0;
+    /* Enter also activates a focused Reset/Close button, as users expect
+     * from standard Win32 dialogs. Space and Tab continue working. */
+    if(focused==GetDlgItem(ui->hwnd,SPIDER_UI_RESET) ||
+       focused==GetDlgItem(ui->hwnd,SPIDER_UI_CLOSE)) {
+      int id=GetDlgCtrlID(focused);
+      SendMessageA(ui->hwnd,WM_COMMAND,MAKEWPARAM(id,BN_CLICKED),(LPARAM)focused);
+      return 1;
+    }
     if(current_profile(ui)) {
       spider_sdl3_capture_start(&ui->capture);
       spider_sdl3_setup_nav_reset(&ui->nav);
