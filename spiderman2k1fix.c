@@ -3062,25 +3062,15 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
    * A failed preflight leaves the previous working UI bridge untouched. */
   {
     HWND early=spider_find_game_window_before_ddraw();
-    int mapped_ps1=0,mapped_xbox=0;
+    int mapped=0;
     if(early && SpiderGamepadUI_PreparePS1(early))
-      mapped_ps1=SpiderCfg_EnablePS1Preview();
-    /* Independent Xbox preview: only after verified Xbox acquisition,
-     * exclusive of Sony PS1 mapping; never save temporary game bindings. */
-    if(early && !mapped_ps1 && SpiderGamepadUI_PrepareXbox360(early))
-      mapped_xbox=SpiderCfg_EnableXbox360Preview();
+      mapped=SpiderCfg_EnablePS1Preview();
     SpiderCfg_BootstrapGameRead();
-    if(mapped_ps1) {
+    if(mapped) {
       if(SpiderCfg_PS1BootstrapLoaded())
         SpiderGamepadUI_ActivatePS1();
       else
         SpiderCfg_CancelPS1Preview();
-    }
-    if(mapped_xbox) {
-      if(SpiderCfg_PS1BootstrapLoaded())
-        SpiderGamepadUI_ActivateXbox360();
-      else
-        SpiderCfg_CancelXbox360Preview();
     }
   }
   HRESULT hr=original_create(guid,out,iid,outer);
