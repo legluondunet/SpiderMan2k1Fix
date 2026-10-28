@@ -158,6 +158,23 @@ before the native menu owner is identified and the player's exact
 choice verified. Keep existing joystick read-only mapping and
 SHARE/Start safeguards unchanged. PR #74 remains draft.
 
+## Maintainer decision: Cross-only confirmation in the PS1 profile (2026-10-28)
+
+The maintainer decided that PS4 OPTIONS/START is redundant with Cross for menu
+confirmation. The PS1 preview therefore **always uses Cross/BUTTON1 as the
+single synthetic Enter source** in native 2D, Bink, and paused 3D menus.
+The legacy `ControllerEnterButtons=Both` setting remains available and
+unchanged outside this opt-in PS1 profile, but does not re-enable OPTIONS
+for menu confirmation while PS1 preview is active. Circle still backs out
+and SHARE still opens/closes native pause.
+
+This is separate from the original game's **Start/BUTTON11**, which the
+already existing opt-in `ControllerPS1DisableNativeStart=1` can unbind
+in validated original-game RAM (log `NATIVE-START-UNBIND EXPERIMENT ACTIVE`).
+For an entirely inactive PS4 OPTIONS button, leave the independent
+experimental `ControllerPS1OptionsSkip=0` (current/default setting).
+Do not change gameplay controls or the legacy non-PS1 scheme.
+
 ## Objective
 
 With a recognized, unique Sony DualShock 4, play **all** of the original
