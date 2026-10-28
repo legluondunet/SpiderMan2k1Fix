@@ -25,6 +25,8 @@ def test_hotplug_integrates_on_foreground_flip_only():
     assert 'hotplug rescan every 2s while foreground' in PAD
     assert "disable_profile(NULL);" in PAD
     assert "ps1_preview_active=1;" in PAD
+    assert "if(ps1_preview_requested && !ps1_preview_active)" in PAD
+    assert "synthetic actions disabled until restart with controller present" in PAD
     # Existing startup-only verified native CFG reload must NOT happen in
     # OnFlip or from the physical reconnect path. No guessed memory writes.
     flip=PAD.split("void SpiderGamepadUI_OnFlip(",1)[1]
