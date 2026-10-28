@@ -43,6 +43,7 @@
 #include "xbox360_trigger_swing_policy.h"
 #include "virtual_spidey_cfg.h"
 #include "native_joystick_reconnect.h"
+#include "sdl3_gamepad_probe.h"
 #include "ps1_input_flight_recorder.h"
 #include "ps1_joystick_readonly_menu.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
@@ -116,6 +117,7 @@ static unsigned bad_reads=0;
 static SpiderDS4Hotplug hotplug={0};
 static int hotplug_missing_logged=0;
 static int hotplug_late_preview_reported=0;
+static uint32_t sdl3_ui_instance=0;
 static SpiderPausePadWake pause_wake={0};
 static int pause_wake_active=0;
 static int pause_wake_retry_logged=0;
@@ -489,6 +491,9 @@ static void detect_device(HWND hwnd) {
   SpiderDICreateFn create;
   HRESULT hr;
   int choose_ds4,choose_xbox;
+  uint16_t selected_vid=0,selected_pid=0;
+  uint32_t selected_id=0;
+  int sdl_owner=SpiderSDL3Probe_NativeOwnerEnabled();
   char line[300];
   HINSTANCE game=GetModuleHandleA(NULL);
   probing=1;
@@ -522,13 +527,32 @@ static void detect_device(HWND hwnd) {
   /* The original game picks its controller independently. Never select
    * any UI bridge when there are two attached controllers, a mismatched
    * forced profile, or an unknown product GUID. Xbox is never PS1. */
-  choose_ds4=d.found==1u && d.ds4_count==1u &&
-             (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_DUALSHOCK4);
-  choose_xbox=d.found==1u && d.xbox_count==1u &&
-              (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_XBOX360);
+  if(sdl_owner) {
+    /* The selected SDL instance maps to exactly one matching DI product.
+     * Never guess an instance GUID from enumeration order. For two identical
+     * VID/PID products we fail closed; otherwise the original native reader
+     * and this UI bridge must agree on the controller identity. */
+    int claimed=SpiderSDL3Probe_SelectedIdentity(&selected_vid,&selected_pid,
+                                                  &selected_id);
+    int native_ready=claimed && SpiderNativeReconnect_SDL3SelectionReady(
+                                        selected_vid,selected_pid);
+    choose_ds4=native_ready && selected_vid==SPIDER_DS4_VID &&
+      d.ds4_count==1u && d.product_id==selected_pid &&
+      (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_DUALSHOCK4);
+    choose_xbox=native_ready && selected_vid==SPIDER_XBOX360_VID &&
+      d.xbox_count==1u && d.xbox_pid==selected_pid &&
+      (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_XBOX360);
+  } else {
+    choose_ds4=d.found==1u && d.ds4_count==1u &&
+      (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_DUALSHOCK4);
+    choose_xbox=d.found==1u && d.xbox_count==1u &&
+      (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_XBOX360);
+  }
   if(!choose_ds4 && !choose_xbox) {
     if(!hotplug_missing_logged)
-      disable_profile("GAMEPAD-UI: no unique allowed DS4/Xbox360; auto bridge inactive; game mappings unchanged; hotplug rescan every 2s while foreground");
+      disable_profile(sdl_owner?
+        "SDL3-OWNER-UI: REFUSED selected controller not uniquely identified/verified with native gameplay; no synthetic key":
+        "GAMEPAD-UI: no unique allowed DS4/Xbox360; auto bridge inactive; game mappings unchanged; hotplug rescan every 2s while foreground");
     else disable_profile(NULL);
     hotplug_missing_logged=1;
     return;
@@ -551,6 +575,7 @@ static void detect_device(HWND hwnd) {
     disable_profile(line);return;
   }
   detected=1;
+  sdl3_ui_instance=sdl_owner?selected_id:0u;
   detected_kind=choose_ds4?SPIDER_RECONNECT_DS4:SPIDER_RECONNECT_XBOX360;
   xbox_previous_mask=0;
   xbox_button_trace_count=0;
@@ -570,6 +595,12 @@ static void detect_device(HWND hwnd) {
       (unsigned long)d.xbox_pid,d.xbox_name);
   }
   report(line);
+  if(sdl_owner) {
+    snprintf(line,sizeof(line),
+      "SDL3-OWNER-UI: ACTIVE selected-id=%lu VID:PID=%04X:%04X (exclusive UI bridge; native owner verified)",
+      (unsigned long)selected_id,selected_vid,selected_pid);
+    report(line);
+  }
 }
 /* This is the ORIGINAL, game-owned CutSceneSkipAllow state machine.
  * The same addresses and per-scene conditions were mapped in the existing
@@ -1164,14 +1195,32 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
       post_quit_block=spider_ps1_post_quit_guard_flip(&ps1_post_quit_guard,
         1,menu_2d,gameplay_3d,bink_active,native_request);
   }
-  /* Discovery is foreground-only, bounded and non-invasive. A DS4 may be
-   * connected after startup, or the previously attached DS4 reconnected.
-   * Native PS1 gameplay mapping is only activated during the verified
-   * startup bootstrap; a late-first device does NOT silently rewrite the
-   * original game's controller tables or force a runtime config reload. */
-  if(!probing || spider_ds4_hotplug_scan_due(&hotplug,
-                                             (uint32_t)GetTickCount(),detected))
-    detect_device(hwnd);
+  /* When SDL3 ownership is explicitly enabled, disable the old UI source
+   * immediately on any selection loss/switch. Only a matching verified
+   * GAME-OWNED DI device may enable synthetic 2D/Bink keys. No two-pad
+   * input merging and no nonselected controller key events. */
+  if(SpiderSDL3Probe_NativeOwnerEnabled()) {
+    uint16_t vid=0,pid=0;
+    uint32_t id=0;
+    if(!SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
+       !SpiderNativeReconnect_SDL3SelectionReady(vid,pid)) {
+      if(device)disable_profile("SDL3-OWNER-UI: SUSPENDED; selected pad not yet owned by original game");
+      sdl3_ui_instance=0;
+      return;
+    }
+    if(id!=sdl3_ui_instance) {
+      if(device)disable_profile("SDL3-OWNER-UI: HANDOFF; release prior synthetic keys and secondary DI device");
+      sdl3_ui_instance=0;
+      detect_device(hwnd);
+    } else if(!probing || spider_ds4_hotplug_scan_due(&hotplug,
+                                     (uint32_t)GetTickCount(),detected))
+      detect_device(hwnd);
+  } else {
+    /* Original single-controller behaviour, untouched when opt-in is OFF. */
+    if(!probing || spider_ds4_hotplug_scan_due(&hotplug,
+                                      (uint32_t)GetTickCount(),detected))
+      detect_device(hwnd);
+  }
   /* If this Xbox was attached only AFTER the initial game bootstrap,
    * still lock its native Joystick Configuration before any UI action.
    * Never run on an unknown pad, Sony profile or in the background. */
