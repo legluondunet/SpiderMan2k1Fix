@@ -1,9 +1,12 @@
 # DualShock 4 automatic UI profile — draft PR #73
 
-**Status:** the user has confirmed that the automatic DualShock 4
-Enter mapping works for menus/videos under their Wine setup. The newly
-added Escape/Back mapping remains to be tested; native Windows support is
-not yet verified. The already-released v1.1.0 remains unchanged.
+**Status:** DualShock 4 detection and 2D menu Enter are user-confirmed
+under Wine. The user subsequently observed a non-skippable cinematic
+AFTER the main menu, while Triangle natively skips 3D cinematics and
+a camera-related controller button opens the in-game ESC menu.
+Circle/Back, post-menu Bink skipping and new Options/3D Pause still
+require separate user tests; Windows support is not yet verified.
+The published v1.1.0 is unchanged.
 
 ## User-reported behavior and evidence
 
@@ -52,10 +55,10 @@ that failure rather than forcing any changes.
 | Controller button | Standard DS4 DirectInput index | 2D UI action | 3D gameplay |
 |---|---|---|---|
 | ✕ Cross | BUTTON1 | Enter / validate | Unchanged (game native) |
-| ◯ Circle | BUTTON2 | **Escape / Back / Cancel** (new) | Unchanged (game native) |
-| OPTIONS | BUTTON9 | Enter / validate / movie skip | Unchanged (game native) |
+| ◯ Circle | BUTTON2 | Escape / Back / Cancel (experimental) | Unchanged |
+| OPTIONS | BUTTON9 | Enter / validate / attempt native Bink movie skip | **Pause/Escape ONLY when BUTTON9 is free of native gameplay mappings** |
 | SHARE | BUTTON8 | Optional Escape if configured | Unchanged |
-| △ Triangle | BUTTON3 | **Original game already confirms some submenus**; NOT remapped | Unchanged (game native) |
+| △ Triangle | BUTTON3 | Native submenu confirm, unchanged | **Native 3D cinematic skip remains intact** |
 | Other | Original device mapping | Unchanged | Unchanged |
 
 The **two** Enter candidates are deliberate: user may refine which
@@ -69,6 +72,7 @@ not a validated description of this user's controller.
 ControllerProfile=Auto
 ControllerEnterButtons=Both
 ControllerBackButton=Circle
+ControllerPauseButton=Options
 ```
 
 Existing INIs missing these keys also use these defaults.
@@ -91,6 +95,24 @@ button for Back/Escape. If Triangle should instead become Back, first
 identify and guard the original submenu controller handler so its native
 confirm can be suppressed *only* in the required 2D contexts.
 
+**New safety gate for 3D Pause:** the game's original `[Joystick]
+Zipline=BUTTON9` occupies DS4 OPTIONS. The implementation will NOT
+send Escape from OPTIONS in 3D until the saved INI confirms that none
+of the seven native gameplay actions uses BUTTON9. To activate
+OPTIONS = Pause, first reassign Zipline via the *original game's*
+Joystick menu to a currently unassigned button — **R1 / BUTTON5** is
+a suggested trial — then leave the game options so the new value
+saves. Verify other game commands remain intact. The bridge rechecks
+the INI on each Options press rather than rewriting any mapping itself.
+A guard `GAMEPAD-UI: PAUSE BLOCKED` identifies conflicts.
+
+The original game binds native Start to BUTTON11 (often the right
+thumbstick click/R3 on this DS4 layout); the user's description
+"camera button" **has not been physically verified**. We do not disable
+that original native Start/pause button. As such, the profile can expose
+both OPTIONS and the original pause button until a separate,
+signature-verified, non-conflicting remap is tested.
+
 **Delete the old `ExperimentalGamepadStart=BUTTON8` entry**:
 this setting is now retired/ignored (still accepted by the INI
 validator to preserve other saved settings).
@@ -99,7 +121,16 @@ validator to preserve other saved settings).
 
 The original PC menu/movie/still accept a keyboard Enter
 (`DIK_RETURN=0x1C`). The user confirms the profile makes that work
-under Wine. Escape/Back is newly added as `DIK_ESCAPE=0x01`, triggered
+in main menus under Wine. After the main menu, some Bink movies run
+with `menu_upscale_active=0`; the first prototype therefore did NOT
+inject Enter while those were playing. The newer version also permits
+Enter **only when original game-owned `GameFMV_Active` is nonzero**
+(at fixed VA `0x006151F8` in the verified original executable).
+This explicitly does not claim to skip static comic sequences or
+scripted 3D scenes: Triangle remains the original 3D skip command,
+and Bink controls remain subject to their native frame-gate.
+
+Escape/Back is newly added as `DIK_ESCAPE=0x01`, triggered
 by Circle (or SHARE if explicitly configured). Both synthetic keys use
 paired scan-code down/up via `SendInput`, on distinct controller press
 edges, with key-up on the *next* DirectDraw Flip.
@@ -138,6 +169,9 @@ With `[Debug] Log=1`, inspect:
 - `GAMEPAD-UI: PROFILE DualShock4 ACTIVE ...`
 - `GAMEPAD-UI: SYNTHETIC Return ...` on Cross/Options press
 - `GAMEPAD-UI: SYNTHETIC Escape ...` on Circle/Share press
+- `GAMEPAD-UI: PAUSE BLOCKED ...` if OPTIONs is still assigned to any gameplay action
+- `GAMEPAD-UI: 3D PAUSE REQUEST OPTIONS -> Escape` after conflict-free mapping
+- `GAMEPAD-UI: unclassified engine stage` if a controller Enter press cannot safely be routed to 2D menu or native Bink
 - `GAMEPAD-UI: independent DirectInput read hr=...` if polling fails
 - `GAMEPAD-UI: ... inactive ...` if the device cannot be identified
 
@@ -162,5 +196,29 @@ A `SYNTHETIC Return` line means the Win32 request was submitted,
 
 This record intentionally preserves the two failed Start-table tests
 and the unverified state of our new approach.
+
+## Proposed next gamepad acceptance matrix (October 28)
+
+1. In the startup still and main menu: Cross confirms, Circle returns,
+   OPTIONS confirms only per existing `ControllerEnterButtons=Both`.
+2. After *New Game* begins, press Cross then OPTIONS in the video.
+   Compare log `GAMEPAD-UI: SYNTHETIC Return` and native Bink status.
+   A static comic panel may intentionally require the original timer
+   and is NOT included in this video bridge.
+3. In original 3D scripted cutscenes: Triangle must still skip; X must
+   not emit Enter unless `GameFMV_Active` identifies a native Bink.
+4. In playable 3D with original Zipline=BUTTON9: OPTIONS must NOT
+   inject Escape or activate both pause and Zipline; log must say
+   `PAUSE BLOCKED`. The existing camera-button native pause stays.
+5. If the player elects to move Zipline to an unused native button,
+   e.g. R1/BUTTON5, confirm OPTIONS alone opens and closes native ESC
+   menu and the newly mapped Zipline works.
+6. Restart with another attached controller, lose foreground via
+   Alt+Tab, change 16:9/4:3 mode, and inspect input regressions.
+
+The exact meaning of "camera button" and whether the after-menu
+sequence is Bink, a static comic, or scripted 3D are **not yet proven
+by a new runtime log**. Keep the two safeguards above even if a
+particular scene cannot be skipped with Enter.
 
 legluondunet assisted by ChatGPT (OpenAI)
