@@ -221,3 +221,117 @@ the PR #76 draft status and require explicit maintainer approval
 before merging.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+
+## Experimental stage 2 — original-game native DS4 rediscovery and rebind (NOT hardware tested)
+
+Implementation: `native_joystick_reconnect.c` and its bounded policy
+`native_joystick_reconnect_policy.h`, in draft PR #76. This is distinct
+from the independent `ControllerProfile` / `gamepad_ui_profile.c` UI
+bridge: after successful recovery **Spider-Man's own controller** at
+`0x006B7A2C` is replaced with a newly acquired game-owned device.
+
+### Verified original executable behavior
+
+Offline SHA-pinned original 2001 PE32 x86 disassembly establishes:
+
+- `[0x006B7A30]` is the original game-owned DirectInput8A factory.
+  Original `0x00501890` uses `EnumDevices(DI8DEVCLASS_GAMECTRL,
+  callback=0x00501AE0, DIEDFL_ATTACHEDONLY)`.
+- `0x00501AE0` creates a device, then reads its native
+  `DIDEVCAPS`, recording the original button-count at
+  `[0x006B7A58]` and the polled-device capability bit at
+  `[0x006B7928]`.
+- Original `0x005018BF..` binds the device to its original HWND
+  `[0x006B7A60]`, using `DISCL_FOREGROUND|DISCL_NONEXCLUSIVE`,
+  and `SetDataFormat` with the **game's own** data-format structure
+  at `0x0053D0F4` (24-byte `DIDATAFORMAT`: 80-byte data,
+  44 objects, object table `0x005177B0`).
+- Native `SetProperty` sets `DIPROP_BUFFERSIZE=16`, absolute
+  axis mode, and `DIPROP_RANGE=-1000..1000` for axis offsets
+  `16` and `4`, before the original `Acquire` and buffered
+  input reads. All of these match the byte-for-byte original code.
+- Original cleanup `0x00501440` Unacquires and Releases the
+  original joystick pointer. Its reader `0x00501E6D` explicitly
+  tolerates a null pointer and returns without calling Poll/Acquire.
+
+### New opt-in state machine
+
+Add to the installed INI:
+
+```ini
+[Input]
+ControllerProfile=Off
+ExperimentalNativeJoystickUnplugGuard=1
+ExperimentalNativeJoystickReconnect=1
+
+[Debug]
+Log=1
+```
+
+Both experimental settings default to `0`. Reconnect **refuses to
+initialize unless the stage-1 guard is also configured and successfully
+installed**. All work occurs on the original game's Flip/render thread
+from Flip #120 onward, **only while the game is foreground**.
+No background worker or COM-vtable hook is installed.
+
+1. On the stage-1 guard's first real `DIERR_UNPLUGGED` event,
+   atomically clear the original joystick pointer and release its
+   already-lost COM object **without re-Unacquiring it**. Clear the
+   32 native buffered button bytes; original keyboard remains intact.
+   This also avoids endless `Acquire` calls against the old device.
+2. Every 2 seconds (wrap-safe `GetTickCount`), scan only **currently
+   attached** game controllers with the **game-owned factory**.
+   Accept exactly one Sony DS4 product
+   `VID=054C, PID=05C4/09CC/0BA0`; ambiguous matches fail closed.
+3. Create a fresh candidate through that original factory; reproduce
+   the exact original HWND, data format, buffer size, axis mode and
+   range settings, and `Acquire` it. On any failure, Release the
+   candidate and retain keyboard-only mode.
+4. Require all 32 button states to be released and flush the finite
+   buffered DirectInput event queue (up to 8 batches of 16).
+   If nonneutral/unready, Release and retry after 2 seconds.
+5. **Only after fully successful initialization**, compare-and-swap
+   the fresh device into the **original game-owned**
+   `[0x006B7A2C]` pointer, update original capabilities,
+   and log `NATIVE-RECONNECT: REBOUND original game-owned DirectInput
+   joystick`. Original native gameplay bindings are preserved;
+   no separate synthetic action or default binding reset is used.
+6. Every subsequent `DIERR_UNPLUGGED` event initiates the same
+   bounded removal/recovery cycle.
+
+The module verifies original x86 image base, original native
+`EnumDevices`, `CreateDevice` and null-safe Poll signatures,
+and the **original static DIDATAFORMAT bytes**. The overall fix
+also requires the game's exact SHA-256. Invalid signatures disable
+the module without patching COM memory.
+
+### Remaining validation / limitations
+
+**The first-stage unplug guard is physically validated; the
+second-stage native rebind IS NOT.** CI tests cover compiled
+configuration and policy only; they cannot prove a detached joystick
+is rediscovered, safely released, or usable in a running retail game.
+
+Recommended first test is **main menu only**, with the correct
+Windows-x86 Actions build, the three INI settings above, and
+the DS4 connected at startup. Verify `NATIVE-UNPLUG: ACTIVE at Flip
+#120`, then unplug it once, confirm keyboard continues to work and
+observe `NATIVE-RECONNECT: game-owned stale joystick released`.
+Replug the same DS4 once and *do not hold buttons while it is
+reacquiring*. Look for `NATIVE-RECONNECT: REBOUND...`, and test
+menu navigation using the original controller input. Preserve and
+submit the new timestamped fix log. If it fails, disable only
+`ExperimentalNativeJoystickReconnect`; stage-1 guard still protects
+the game. Do not stress-test repeated detach or 3D until this succeeds.
+
+Important risks: the native game owns this device pointer, and its
+readers outside the inspected render/input path may have additional
+assumptions; physical validation is required on both Wine and native
+Windows. We do not promise recovery of another brand of controller.
+The independent DS4 UI bridge `ControllerProfile=Auto` has **not**
+yet been tested together with native device rebinding. Keep
+`ControllerProfile=Off` for the isolated first acceptance run.
+**Do not merge the draft PR without maintainer approval.**
+
+legluondunet assisted by ChatGPT (OpenAI)
