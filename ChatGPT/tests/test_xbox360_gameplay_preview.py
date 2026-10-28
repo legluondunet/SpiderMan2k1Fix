@@ -108,3 +108,38 @@ def test_start_back_pause_uses_actual_live_map_and_controller_paused_ui():
     assert 'GAMEPAD-XBOX360: 3D MENU Back/Start -> Escape' in UI
     assert 'SPIDER_PROFILE_XBOX360' in UI
     assert 'spider_ps1_native_button_label' not in guard
+
+
+def test_ps1_equivalent_xbox_face_and_shoulder_layout_is_explicit():
+    # The physical labels for buttons 2..5 are standardized XUSB *candidates*
+    # pending the user's actual 045E:028E Holtek Wine verification.
+    assert "0u,1u,2u,3u,4u,5u,9u" in MAP
+    for intended in (
+        "Xbox A  -> Jump", "Xbox B  -> Kick", "Xbox X  -> Punch",
+        "Xbox Y  -> Web", "Xbox LB -> Aim", "Xbox RB -> Zipline",
+        "Xbox RT -> Swing",
+    ):
+        assert intended in MAP
+    assert "TARGET ONLY, NOT IMPLEMENTED HERE" in MAP
+    assert "TEMPORARY DIGITAL SWING FALLBACK" in MAP
+    assert "BUTTON9=Swing" not in MAP  # not a claim that BUTTON9 is RT
+
+
+def test_xbox_trigger_diagnostic_is_optin_passive_bounded_and_foreground_only():
+    assert '"Xbox360TriggerProbe"' in VALIDATE
+    assert 'Xbox360TriggerProbe=0' in CFG
+    assert 'GetPrivateProfileIntA("Debug","Xbox360TriggerProbe",0,ini)==1' in UI
+    assert "static void xbox_trace_trigger_axes(const DIJOYSTATE2 *now)" in UI
+    assert "if(!now || xbox_trigger_probe_samples>=48u)return;" in UI
+    assert "(DWORD)(tick-xbox_trigger_probe_tick)<100u" in UI
+    assert "if(xbox_trigger_probe_requested && detected_kind==SPIDER_RECONNECT_XBOX360 &&" in UI
+    assert "gameplay_3d && !bink_active && !native_pause_active)" in UI
+    assert 'xbox_trace_trigger_axes(&state);' in UI
+    block=UI.split("static void xbox_trace_trigger_axes(",1)[1].split(
+        "void SpiderGamepadUI_OnFlip(",1)[0]
+    for field in ("lZ","lRx","lRy","lRz","rglSlider[0]","rglSlider[1]"):
+        assert field in block
+    assert "GAMEPAD-XBOX360: TRIGGER-PROBE" in block
+    for forbidden in ("SendInput", "VirtualProtect", "WritePrivateProfileStringA",
+                      "spider_xbox360_apply", "begin_scancode", "GetDeviceState"):
+        assert forbidden not in block
