@@ -27,6 +27,9 @@ int SpiderSDL3Probe_SelectedRT(int *normalized_rt);
  * selection, native joystick or UI synthetic events. No auto init. */
 /* Shared IN-MEMORY profile bank with optional SDL3BindingTrace. */
 SpiderSDL3ControllerProfile *SpiderSDL3Probe_SetupProfile(uint16_t vid,uint16_t pid);
+/* Transactional per-model profile commit. On write failure the current
+ * in-memory profile stays unchanged; game-owned DirectInput untouched. */
+int SpiderSDL3Probe_SetupCommit(const SpiderSDL3ControllerProfile *candidate);
 int SpiderSDL3Probe_SetupPump(void);
 unsigned SpiderSDL3Probe_SetupCount(void);
 int SpiderSDL3Probe_SetupRead(unsigned slot,uint32_t *instance_id,
