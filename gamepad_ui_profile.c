@@ -380,6 +380,10 @@ static void disable_profile_with_policy(const char *reason,
   xbox_previous_mask=0;
   memset(&xbox_post_quit_guard,0,sizeof(xbox_post_quit_guard));
   memset(&xbox_transition_ownership,0,sizeof(xbox_transition_ownership));
+  if(SpiderSDL3Probe_NativeOwnerEnabled()) {
+    memset(&ps1_transition_ownership,0,sizeof(ps1_transition_ownership));
+    memset(&ps1_post_quit_guard,0,sizeof(ps1_post_quit_guard));
+  }
   xbox_trigger_probe_has_previous=0;
   xbox_trigger_probe_samples=0;
   if(reason)report(reason);
@@ -1160,6 +1164,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   int share_pressed,share_edge,native_start_pressed;
   int late_ds4_menu_only=0;
   int sdl3_live_sony=0;
+  int sdl3_live_xbox=0;
   int post_quit_block=0;
   unsigned ownership_block=0,native_request=0;
   /* Always apply game-only mouse policy, even with ControllerProfile=Off
@@ -1184,15 +1189,26 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     spider_ds4_hotplug_focus_lost(&hotplug);
     return;
   }
+  /* An SDL3 selected canonical native map is equivalent to the original
+   * authenticated startup overlay for transition ownership, but only for
+   * its currently matched physical controller. */
+  sdl3_live_sony=detected_kind==SPIDER_RECONNECT_DS4 &&
+    SpiderSDL3Probe_NativeOwnerEnabled() &&
+    SpiderNativeReconnect_CanonicalDS4Mapping();
+  sdl3_live_xbox=detected_kind==SPIDER_RECONNECT_XBOX360 &&
+    SpiderSDL3Probe_NativeOwnerEnabled() &&
+    SpiderNativeReconnect_CanonicalXboxMapping();
   /* Native request 7 is a 3D -> menu return. PS1 and Xbox adapters must
    * not duplicate the last confirmation press into a New Game Enter.
    * This only affects our synthetic UI key; original engine input is
    * observed but left completely untouched. */
-  if((ps1_preview_active &&
+  if(((ps1_preview_active || sdl3_live_sony) &&
       (ps1_post_quit_guard_requested || ps1_transition_edge_ownership_requested)) ||
-     (xbox360_preview_active && detected_kind==SPIDER_RECONNECT_XBOX360)) {
+     (xbox360_preview_active && detected_kind==SPIDER_RECONNECT_XBOX360) ||
+     sdl3_live_xbox) {
     native_request=(unsigned)*(const volatile DWORD *)(uintptr_t)0x0060CFA4u;
-    if(ps1_post_quit_guard_requested)
+    if(ps1_post_quit_guard_requested &&
+       (ps1_preview_active || sdl3_live_sony))
       post_quit_block=spider_ps1_post_quit_guard_flip(&ps1_post_quit_guard,
         1,menu_2d,gameplay_3d,bink_active,native_request);
   }
@@ -1298,6 +1314,9 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   sdl3_live_sony=detected_kind==SPIDER_RECONNECT_DS4 &&
     SpiderSDL3Probe_NativeOwnerEnabled() &&
     SpiderNativeReconnect_CanonicalDS4Mapping();
+  sdl3_live_xbox=detected_kind==SPIDER_RECONNECT_XBOX360 &&
+    SpiderSDL3Probe_NativeOwnerEnabled() &&
+    SpiderNativeReconnect_CanonicalXboxMapping();
   late_ds4_menu_only=detected_kind==SPIDER_RECONNECT_DS4 &&
                       ps1_preview_requested && !ps1_preview_active &&
                       !sdl3_live_sony;
@@ -1335,7 +1354,8 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                    native_pause_active;
     unsigned inherited_a;
     int post_quit_block;
-    int return_boundary=(xbox360_preview_active && menu_2d && !gameplay_3d &&
+    int return_boundary=((xbox360_preview_active || sdl3_live_xbox) &&
+                         menu_2d && !gameplay_3d &&
                          !bink_active && xbox_transition_ownership.seen_3d &&
                          native_request==7u);
     if(held!=xbox_previous_mask && xbox_button_trace_count<32u) {
@@ -1348,11 +1368,12 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     }
     xbox_previous_mask=held;
     inherited_a=spider_native_menu_return_gate_flip(
-      &xbox_transition_ownership,xbox360_preview_active,
+      &xbox_transition_ownership,
+      xbox360_preview_active || sdl3_live_xbox,
       menu_2d,gameplay_3d,bink_active,native_request,
       held & (1u<<SPIDER_XBOX360_A_DI_BUTTON));
     post_quit_block=spider_ps1_post_quit_guard_flip(
-      &xbox_post_quit_guard,xbox360_preview_active,
+      &xbox_post_quit_guard,xbox360_preview_active || sdl3_live_xbox,
       menu_2d,gameplay_3d,bink_active,native_request);
     if(return_boundary && xbox_return_to_menu_reports++<12u) {
       char line[200];
@@ -1399,7 +1420,8 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   confirm_edges=spider_ps1_menu_confirm_edges(pressed,(unsigned)previous_buttons,effective_confirm);
   ps1_history_record(SPIDER_PS1_HISTORY_READ_OK,native_request,menu_2d,
     gameplay_3d,bink_active,native_pause_active,(unsigned)previous_buttons,&state);
-  if(ps1_preview_active && ps1_transition_edge_ownership_requested) {
+  if((ps1_preview_active || sdl3_live_sony) &&
+     ps1_transition_edge_ownership_requested) {
     ownership_block=spider_ps1_transition_edge_ownership_flip(
       &ps1_transition_ownership,1,menu_2d,gameplay_3d,bink_active,
       native_request,pressed & effective_confirm);
