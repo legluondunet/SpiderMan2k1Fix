@@ -73,6 +73,7 @@ int SpiderPS1_InstallReadOnlyJoystick(void (*logger)(const char *)) {
   IMAGE_DOS_HEADER *dos;
   IMAGE_NT_HEADERS32 *nt;
   unsigned i,installed=0;
+  BYTE *capture_thunk=NULL;
   char line[220];
   if(!base || (uintptr_t)base!=0x00400000u)return 0;
   dos=(IMAGE_DOS_HEADER *)(void *)base;
@@ -116,6 +117,51 @@ int SpiderPS1_InstallReadOnlyJoystick(void (*logger)(const char *)) {
     }
   }
 
+  /* The original controller screen has a pre-capture transition
+   * at 0x50D3FA (before its PRESS-A-BUTTON prompt). Merely neutralizing
+   * the mapping setter still allows that prompt to appear.
+   *
+   * This tiny original-x86 thunk checks native gActionMapRelated at
+   * 0xAC129C. A nonzero value means Joystick Configuration: jump to
+   * 0x50D872 (the ORIGINAL function cleanup/return). When zero
+   * (Keyboard Configuration), replay the two overwritten original
+   * PUSH instructions and jump back to 0x50D400. We never change
+   * keyboard remapping, existing CMenu navigation or exit ownership.
+   *
+   * Assembly: push eax; mov eax,[0xAC129C]; test eax,eax; pop eax;
+   *           jnz game_end; push ebp; push 0x2000; jmp game_resume.
+   * The binary is static except the two verified rel32 displacements.
+   */
+  {
+    static const BYTE code[]={
+      0x50u,0xA1u,0x9Cu,0x12u,0xACu,0x00u,
+      0x85u,0xC0u,0x58u,
+      0x0Fu,0x85u,0u,0u,0u,0u,
+      0x55u,0x68u,0x00u,0x20u,0x00u,0x00u,
+      0xE9u,0u,0u,0u,0u};
+    DWORD old,unused;
+    uint32_t joystick_end,keyboard_continue;
+    capture_thunk=(BYTE *)VirtualAlloc(NULL,sizeof(code),
+                        MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);
+    if(!capture_thunk){
+      report("GAMEPAD-PS1: JOYSTICK-READONLY REFUSED could not allocate native capture gate");
+      return 0;
+    }
+    memcpy(capture_thunk,code,sizeof(code));
+    joystick_end=0x0050D872u-
+       ((uint32_t)(uintptr_t)capture_thunk+15u);
+    keyboard_continue=0x0050D400u-
+       ((uint32_t)(uintptr_t)capture_thunk+sizeof(code));
+    memcpy(capture_thunk+11,&joystick_end,sizeof(joystick_end));
+    memcpy(capture_thunk+22,&keyboard_continue,sizeof(keyboard_continue));
+    if(!VirtualProtect(capture_thunk,sizeof(code),PAGE_EXECUTE_READ,&old)){
+      VirtualFree(capture_thunk,0,MEM_RELEASE);
+      report("GAMEPAD-PS1: JOYSTICK-READONLY REFUSED cannot protect capture gate executable memory");
+      return 0;
+    }
+    FlushInstructionCache(GetCurrentProcess(),capture_thunk,sizeof(code));
+    (void)unused;
+  }
   memcpy(replacements[1],nop5,5u); /* native restore-defaults */
   memcpy(replacements[4],nop5,5u); /* native controller action setter */
   replacements[0][0]=0xE8u; /* CALL joystick-only name formatter */
@@ -130,6 +176,18 @@ int SpiderPS1_InstallReadOnlyJoystick(void (*logger)(const char *)) {
     replacements[i][0]=0xE9u; /* JMP game's own cleaned return */
     memcpy(&replacements[i][1],&rel,sizeof(rel));
     if(p->size==6u)replacements[i][5]=0x90u;
+  }
+  {
+    /* The last site replaces the entire six-byte capture-mode entry
+     * with a jump to our checked mode-specific thunk. */
+    const SpiderPS1JoystickReadOnlySite *p=
+      &spider_ps1_readonly_sites[SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT-1u];
+    uint32_t rel=(uint32_t)(uintptr_t)capture_thunk-
+      (p->virtual_address+5u);
+    BYTE *replacement=replacements[SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT-1u];
+    replacement[0]=0xE9u;
+    memcpy(replacement+1,&rel,sizeof(rel));
+    replacement[5]=0x90u;
   }
   for(i=0;i<SPIDER_PS1_JOYSTICK_READONLY_SITE_COUNT;i++){
     const SpiderPS1JoystickReadOnlySite *p=&spider_ps1_readonly_sites[i];
@@ -153,6 +211,6 @@ int SpiderPS1_InstallReadOnlyJoystick(void (*logger)(const char *)) {
     report("GAMEPAD-PS1: JOYSTICK-READONLY REFUSED install failed; rollback attempted, original menu remains editable");
     return 0;
   }
-  report("GAMEPAD-PS1: JOYSTICK-READONLY EXPERIMENT ACTIVE verified PCShell joystick-only branches; native menu kept, game rebind/restore calls blocked, CROSS/CIRCLE labels shown; RAM-only, real game validation required");
+  report("GAMEPAD-PS1: JOYSTICK-READONLY EXPERIMENT ACTIVE native capture entry blocked for Joystick only, Keyboard editable; native CMenu intact; seven PS1 button names displayed, game rebind/restore calls blocked; RAM-only, requires in-game validation");
   return 1;
 }
