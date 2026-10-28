@@ -169,7 +169,17 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
     return;
   }
   if(SpiderSDL3Probe_SetupCount()!=ui->count)refresh_pads(ui);
-  if(!ui->instance)return;
+  if(!ui->instance) {
+    /* The selected pad may detach after B requested close. Never strand
+     * the modal window waiting for a release on a vanished device. */
+    if(ui->close_pending) {
+      ui->close_pending=0;
+      if(setup_report)
+        setup_report("SDL3-SETUP: selected pad disconnected while CLOSE pending; posting WM_CLOSE");
+      PostMessageA(ui->hwnd,WM_CLOSE,0,0);
+    }
+    return;
+  }
   if(!SpiderSDL3Probe_SetupRead(ui->slot,&id,&vid,&pid,
                                name,sizeof(name),&s) ||
       id!=ui->instance || vid!=ui->vid || pid!=ui->pid) {
