@@ -33,6 +33,7 @@
 #include "ps1_native_start_mapping.h"
 #include "ps1_mouse_mode.h"
 #include "ps1_post_quit_guard.h"
+#include "ps1_transition_edge_ownership.h"
 #include "ps1_input_flight_recorder.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
@@ -62,6 +63,8 @@ static int ps1_readonly_menu_requested=0;
 static int ps1_mouse_auto_requested=0,ps1_mouse_auto_armed=0;
 static int ps1_quit_trace_requested=0;
 static int ps1_post_quit_guard_requested=0;
+static int ps1_transition_edge_ownership_requested=0;
+static SpiderPS1TransitionEdgeOwnership ps1_transition_ownership={0};
 static int ps1_input_flight_recorder_requested=0;
 static SpiderPS1InputHistory ps1_input_history={0};
 static SpiderPS1PostQuitGuard ps1_post_quit_guard={0};
@@ -217,6 +220,8 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   ps1_mouse_auto_requested=GetPrivateProfileIntA("Input","ControllerAutoDisableMouse",0,ini)==1;
   ps1_quit_trace_requested=GetPrivateProfileIntA("Input","ControllerPS1QuitTrace",0,ini)==1;
   ps1_post_quit_guard_requested=GetPrivateProfileIntA("Input","ControllerPS1PostQuitGuard",0,ini)==1;
+  ps1_transition_edge_ownership_requested=GetPrivateProfileIntA("Input","ControllerPS1TransitionEdgeOwnership",0,ini)==1;
+  memset(&ps1_transition_ownership,0,sizeof(ps1_transition_ownership));
   ps1_input_flight_recorder_requested=GetPrivateProfileIntA("Input","ControllerPS1InputFlightRecorder",0,ini)==1;
   memset(&ps1_input_history,0,sizeof(ps1_input_history));
   memset(&ps1_post_quit_guard,0,sizeof(ps1_post_quit_guard));
@@ -627,8 +632,8 @@ static void ps1_trace_native_quit(int menu2d,int gameplay3d,
 
 /* Buffered opt-in diagnostics: no logging within normal input polls. */
 static int ps1_history_enabled(void) {
-  return ps1_preview_active && ps1_post_quit_guard_requested &&
-         ps1_input_flight_recorder_requested;
+  return ps1_preview_active && ps1_input_flight_recorder_requested &&
+         (ps1_post_quit_guard_requested || ps1_transition_edge_ownership_requested);
 }
 static void ps1_history_record(unsigned event,unsigned request,int mode2d,
     int mode3d,int movie,int pause,unsigned prev,const DIJOYSTATE2 *state) {
@@ -692,7 +697,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   unsigned pressed,back_pressed;
   int menu_allowed,movie_allowed,confirm_allowed,gameplay_allowed,pause_pressed;
   int share_pressed,share_edge,native_start_pressed;
-  int post_quit_block=0;
+  int post_quit_block=0,ownership_block=0;
   unsigned native_request=0;
   if(!configured || !hwnd || !IsWindow(hwnd)){
     if(ps1_mouse_auto_armed)SpiderPS1Mouse_SetPadActive(0);
@@ -717,10 +722,12 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
    * FIRST 2D Flip. Cross can otherwise inject Return into New Game before
    * the returned menu has settled. Never block native gamepad input here:
    * only the PS1 profile's synthetic UI Return is eligible. */
-  if(ps1_preview_active && ps1_post_quit_guard_requested) {
+  if(ps1_preview_active &&
+     (ps1_post_quit_guard_requested || ps1_transition_edge_ownership_requested)) {
     native_request=(unsigned)*(const volatile DWORD *)(uintptr_t)0x0060CFA4u;
-    post_quit_block=spider_ps1_post_quit_guard_flip(&ps1_post_quit_guard,
-      1,menu_2d,gameplay_3d,bink_active,native_request);
+    if(ps1_post_quit_guard_requested)
+      post_quit_block=spider_ps1_post_quit_guard_flip(&ps1_post_quit_guard,
+        1,menu_2d,gameplay_3d,bink_active,native_request);
   }
   if(!probing)detect_device(hwnd);
   if(!detected||!device) {
@@ -763,6 +770,11 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
           (state.rgbButtons[9]&0x80u?SPIDER_CONFIRM_OPTIONS:0);
   ps1_history_record(SPIDER_PS1_HISTORY_READ_OK,native_request,menu_2d,
     gameplay_3d,bink_active,native_pause_active,(unsigned)previous_buttons,&state);
+  if(ps1_preview_active && ps1_transition_edge_ownership_requested) {
+    ownership_block=spider_ps1_transition_edge_ownership_flip(
+      &ps1_transition_ownership,1,menu_2d,gameplay_3d,bink_active,
+      native_request,pressed & (unsigned)confirm);
+  }
   back_pressed=(state.rgbButtons[2]&0x80u?SPIDER_BACK_CIRCLE:0) |
                (state.rgbButtons[8]&0x80u?SPIDER_BACK_SHARE:0);
   /* Original GameFMV_Active remains authoritative even outside the
@@ -811,6 +823,14 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   } else if(menu_allowed && (back_pressed & (unsigned)back) &&
      !(previous_back & (unsigned)back)) {
     begin_scancode(0x01u,"Escape");
+  } else if(confirm_allowed &&
+            (pressed & (unsigned)confirm) &&
+            !(previous_buttons & (unsigned)confirm) &&
+            ownership_block) {
+    /* This very press belongs to the native Quit confirmation already
+     * consumed by the old menu; never send it into the returned menu. */
+    report("GAMEPAD-PS1: TRANSITION-OWNERSHIP consumed inherited Cross/Options confirmation on first 2D menu frame after native request 7; rearm on physical release");
+    ps1_history_dump();
   } else if(confirm_allowed &&
             (pressed & (unsigned)confirm) &&
             !(previous_buttons & (unsigned)confirm) &&
