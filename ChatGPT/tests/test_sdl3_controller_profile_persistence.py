@@ -28,7 +28,6 @@ def test_profile_ini_codec_roundtrip_and_fail_closed(tmp_path):
         size_t len=0;
         SpiderSDL3Binding binding;
         const char *start,*end;
-        unsigned i;
         assert(spider_sdl3_profile_default(&original,0x054c,0x09cc));
         assert(spider_sdl3_ini_encode(&original,buffer,sizeof(buffer),&len));
         assert(len>90 && len<400);
@@ -121,7 +120,7 @@ def test_win32_controller_storage_is_atomic_isolated_and_fallback_safe():
     build=(ROOT/"build.sh").read_text(encoding="utf-8")
     assert "sdl3_controller_profile_store.c" in build
     assert '"SpiderMan2k1Fix"' in store
-    assert '"controllers\\\\%04X-%04X.ini"' in store
+    assert r'controllers\\%04X-%04X.ini' in store
     assert '"LOCALAPPDATA"' in store
     assert "GetModuleFileNameA(NULL,exe,sizeof(exe))" in store
     assert "MOVEFILE_REPLACE_EXISTING" in store
