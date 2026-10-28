@@ -1,5 +1,5 @@
 /*
- * Optional game-owned mouse/cursor disable during Sony DS4 PS1 play.
+ * Game-owned mouse/cursor control, independent of any controller.
  *
  * Original PCShell.cpp/PCInput.cpp use gRenderTest & 0x10 to:
  *   (1) skip drawing the IN-GAME cursor sprite (0x50C470);
@@ -10,7 +10,9 @@
  * No Win32 ShowCursor, SetCursorPos, ClipCursor, SetWindowLong or DirectInput
  * hooks; the OS desktop cursor and existing Alt-Tab recovery are untouched.
  * The only live change is game-owned gRenderTest bit 0x10. Restore only the
- * bit we installed, on focus loss or an independent pad read failure.
+ * bit we installed, on focus loss; gameplay keyboard and pad stay intact.
+ * MouseEnabled=0 (default) applies to all game input profiles, including
+ * keyboard-only; MouseEnabled=1 restores original menu mouse behavior.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -24,6 +26,7 @@
 static volatile LONG *render_flags=NULL;
 static void (*mouse_logger)(const char *)=NULL;
 static int armed=0,owns_bit=0,disabled=0;
+static int mouse_policy_configured=0,mouse_policy_enabled=1,mouse_arm_attempted=0;
 static void log_mouse(const char *message){
   if(mouse_logger)mouse_logger(message);
 }
@@ -131,7 +134,7 @@ void SpiderPS1Mouse_SetPadActive(int active){
       if(InterlockedCompareExchange(render_flags,desired,before)==before){
         owns_bit=1;
         disabled=1;
-        log_mouse("GAMEPAD-MOUSE: GAME MOUSE OFF (DS4 active); original native sprite/poll/hit testing disabled, desktop untouched");
+        log_mouse("GAMEPAD-MOUSE: GAME MOUSE OFF (game foreground, MouseEnabled=0); original native sprite/poll/hit testing disabled, desktop untouched");
         return;
       }
     }
@@ -149,9 +152,47 @@ void SpiderPS1Mouse_SetPadActive(int active){
       desired=(LONG)((unsigned long)before&~SPIDER_GAME_MOUSE_DISABLED);
       if(InterlockedCompareExchange(render_flags,desired,before)==before){
         owns_bit=0;disabled=0;
-        log_mouse("GAMEPAD-MOUSE: GAME MOUSE RESTORED (focus lost/pad unavailable); Win32 desktop pointer not modified");
+        log_mouse("GAMEPAD-MOUSE: GAME MOUSE RESTORED (game focus lost); Win32 desktop pointer not modified");
         return;
       }
     }
   }
+}
+
+/* The mouse policy is independent of DirectInput device discovery: if no
+ * controller is present, the original keyboard still navigates every menu.
+ * We never block the native desktop cursor and never alter keyboard input. */
+void SpiderPS1Mouse_Configure(int mouse_enabled,void (*logger)(const char *)){
+  mouse_logger=logger;
+  mouse_policy_configured=1;
+  mouse_policy_enabled=mouse_enabled!=0;
+  mouse_arm_attempted=0;
+  if(mouse_policy_enabled){
+    SpiderPS1Mouse_SetPadActive(0);
+    log_mouse("GAMEPAD-MOUSE: MouseEnabled=1; original game menu mouse enabled");
+  }else{
+    log_mouse("GAMEPAD-MOUSE: MouseEnabled=0 (default); native game mouse suppression requested for keyboard and controllers");
+  }
+}
+void SpiderPS1Mouse_OnFlip(HWND game_hwnd){
+  int in_game;
+  if(!mouse_policy_configured)return;
+  if(mouse_policy_enabled){
+    SpiderPS1Mouse_SetPadActive(0);
+    return;
+  }
+  in_game=game_hwnd && IsWindow(game_hwnd) &&
+          IsWindowVisible(game_hwnd) && GetForegroundWindow()==game_hwnd;
+  if(!in_game){
+    SpiderPS1Mouse_SetPadActive(0);
+    return;
+  }
+  if(!armed && !mouse_arm_attempted){
+    /* Once per startup: exact SHA-gated native code signatures and writable
+     * flag must all validate. No retries on an unsupported executable. */
+    mouse_arm_attempted=1;
+    if(!SpiderPS1Mouse_Arm(mouse_logger))
+      log_mouse("GAMEPAD-MOUSE: MouseEnabled=0 REFUSED; original game mouse unchanged (signature/memory verification failed)");
+  }
+  if(armed)SpiderPS1Mouse_SetPadActive(1);
 }
