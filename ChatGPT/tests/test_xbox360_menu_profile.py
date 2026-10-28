@@ -59,7 +59,7 @@ def test_xbox360_policy_compiled_and_edge_safe(tmp_path):
        physical[0]=0;physical[1]=0;physical[7]=0x80;
        held=spider_xbox360_held_buttons(physical);
        assert(held==(1u<<7));
-       assert(spider_xbox360_menu_edges(held,0)==SPIDER_XBOX360_ENTER); /* Start confirms menu */
+       assert(spider_xbox360_menu_edges(held,0)==0); /* Start inert in menu */
        physical[7]=0;physical[6]=0x80;
        held=spider_xbox360_held_buttons(physical);
        assert(spider_xbox360_menu_edges(held,0)==SPIDER_XBOX360_BACK); /* Back exits menu */
@@ -125,8 +125,8 @@ def test_native_joystick_menu_is_readonly_and_xbox_pause_fail_closed():
     assert "GAMEPAD-XBOX360: PAUSE BLOCKED physical BUTTON%u" in source_block
     assert "xbox_pause_button_free_of_native_actions(pause_button_index)" in ui
     assert "(gameplay_3d || native_pause_active) && !bink_active" in ui
-    assert "pause_requested=(fresh & ((1u<<6)|(1u<<7)))!=0" in ui
-    assert 'GAMEPAD-XBOX360: 3D MENU Back/Start -> Escape' in ui
+    assert "pause_requested=(fresh & (1u<<SPIDER_XBOX360_BACK_DI_BUTTON))!=0" in ui
+    assert 'GAMEPAD-XBOX360: 3D MENU Back -> Escape' in ui
     assert '"[Joystick]"' not in source_block  # no writes from guard
     # The optional new Xbox RAM overlay must be explicitly requested;
     # the default old Xbox menu bridge must not alter gameplay mapping.
