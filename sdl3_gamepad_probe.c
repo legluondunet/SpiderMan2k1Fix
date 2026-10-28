@@ -400,6 +400,11 @@ int SpiderSDL3Probe_SetupPump(void) {
   }
   return 1;
 }
+SpiderSDL3ControllerProfile *SpiderSDL3Probe_SetupProfile(uint16_t vid,uint16_t pid) {
+  if(!ready || !scanned || !sdl3_game_thread ||
+     sdl3_game_thread!=GetCurrentThreadId())return NULL;
+  return spider_sdl3_bank_get(&bindings_bank,vid,pid);
+}
 unsigned SpiderSDL3Probe_SetupCount(void) {
   return ready && scanned && sdl3_game_thread==GetCurrentThreadId()?
          num_pads:0;
