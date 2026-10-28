@@ -199,3 +199,39 @@ or Alt+Tab becomes unreliable, revert `PauseKey=F9` in the INI and keep PR #7
 unmerged. Do not test system-reserved combinations as wake keys.
 
 This trial is not a release-ready guarantee of native DirectInput suppression.
+
+
+## Regression investigation: PAUSED pad wake after Alt+Tab (2026-10-28)
+
+The maintainer reports that the digital controller buttons do **not**
+resume our custom focus-loss PAUSED banner. The runtime log
+`SpiderMan2k1Fix(20261028-173412).log` is from the older
+`v1.1.0-14e56bb` DLL, starting with one Sony DualShock 4.
+The game entered PAUSED on focus loss and armed digital pad wake.
+On return to the exact game HWND, the **first secondary DirectInput
+GetDeviceState failed**, causing the earlier implementation to
+permanently disable the pad wake path for that PAUSED session.
+The keyboard SPACE press/release resumed normally, followed by
+secondary DirectInput failures `0x8007000C` (DIERR_NOTACQUIRED)
+in the resumed Flip loop. The **PAUSED read's HRESULT is not
+present** in that older log, so its exact value remains unproven.
+
+Candidate fix: the next experimental build allows exactly one
+`IDirectInputDevice8_Acquire` attempt **inside PAUSED**, but only
+when the already-verified secondary device's GetDeviceState returned
+`DIERR_NOTACQUIRED` **and the exact game HWND is foreground**.
+A successful Acquire does not wake immediately: neutral input then
+a *new digital button press + full release* remains required.
+`DIERR_INPUTLOST`, `DIERR_UNPLUGGED` and all other errors
+still fail closed to keyboard wake, with a precise HRESULT now logged.
+No native joystick COM pointer, input mapping or SendInput is touched.
+
+Test: Alt+Tab away from the main menu, return, release any buttons,
+press and fully release Cross/Circle, verify the banner disappears
+and the same physical press is **not** delivered to the game menu.
+Confirm a deliberate fresh press still navigates the native menu.
+Repeat from playable 3D. Verify the log contains
+`FOCUS-PAUSE-GAMEPAD: foreground secondary DIERR_NOTACQUIRED...`
+or the exact error which prevented wake. If a physical unplug occurs
+while PAUSED, use keyboard to resume; leave native rebind to the
+normal subsequent foreground Flip.
