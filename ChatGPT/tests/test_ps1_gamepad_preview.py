@@ -157,7 +157,7 @@ def test_start_probe_is_read_only_and_removes_old_arbitrary_pe_size_limit():
     assert "pe->FileHeader.NumberOfSections>32u" in PAD
     assert "memcmp(sec[j].Name,\".data\",5)" in PAD
     assert "!(sec[j].Characteristics&IMAGE_SCN_MEM_WRITE)" in PAD
-    assert "VirtualQuery(data,&mbi,sizeof(mbi))" in PAD
+    assert "VirtualQuery((LPCVOID)here,&mbi,sizeof(mbi))" in PAD
     assert "mbi.State!=MEM_COMMIT" in PAD
     assert 'GetPrivateProfileIntA("Input","ControllerPS1DeepStartProbe",0,profile_ini)==1' in PAD
     assert '"ControllerPS1DeepStartProbe"' in VALIDATOR
