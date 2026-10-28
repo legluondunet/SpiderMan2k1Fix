@@ -1,7 +1,5 @@
 # SpiderMan2k1Fix v1.1.0
 
-This release introduces a new built-in **native WAV audio-loader correction** for the original *Spider-Man (2001)* PC game. The game's original DirectSound engine is preserved.
-
 ## What's new
 
 - Fixed crackling and distorted sound effects caused by a bug in the original game.
