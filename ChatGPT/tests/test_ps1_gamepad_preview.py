@@ -159,7 +159,17 @@ def test_start_probe_is_read_only_and_removes_old_arbitrary_pe_size_limit():
     assert "!(sec[j].Characteristics&IMAGE_SCN_MEM_WRITE)" in PAD
     assert "VirtualQuery(data,&mbi,sizeof(mbi))" in PAD
     assert "mbi.State!=MEM_COMMIT" in PAD
-    assert "if(span>1024u*1024u)" in PAD
+    assert 'GetPrivateProfileIntA("Input","ControllerPS1DeepStartProbe",0,profile_ini)==1' in PAD
+    assert '"ControllerPS1DeepStartProbe"' in VALIDATOR
+    assert "64u*1024u*1024u" in PAD
+    assert "const size_t max_bytes=deep?" in PAD
+    assert "if(budget>max_bytes)" in PAD
+    assert "while(cursor+14u*8u<=budget)" in PAD
+    assert "VirtualQuery((LPCVOID)here,&mbi,sizeof(mbi))" in PAD
+    assert "region_end<=here" in PAD
+    assert "offset+14u*8u<=safe" in PAD
+    assert "if(!mbi.RegionSize)" not in PAD  # probe gates empty regions
+    assert "queried-regions=%u cap-MiB=%u" in PAD
     assert "START-TABLE candidate=" in PAD
     assert "START-TABLE probe data-sections=" in PAD
     assert "READ-ONLY; NO table edits" in PAD
