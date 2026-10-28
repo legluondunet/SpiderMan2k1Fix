@@ -1010,6 +1010,20 @@ static volatile LONG native_pause43_border_hits=0;
 static volatile LONG native_pause43_banner_top=0;
 static volatile LONG native_pause43_banner_bottom=0;
 static volatile LONG native_pause43_glyph_hits=0;
+/* Our original game's ESC/pause object at 0x682950 is often transient:
+ * runtime logs show pause_ctx=0 while native D3D7 PAUSED menu text is
+ * visibly drawn. The SHA-gated exact ribbon detector is a stronger
+ * in-frame observation for the two already-validated widescreen modes.
+ * Fail closed (no inferred pause) if this exact graphic was not drawn
+ * in the current or immediately previous native Flip. */
+static int native_pause43_visible_near_flip(LONG now_flip) {
+  LONG ribbon_flip=InterlockedCompareExchange(&native_pause43_banner_flip,0,0);
+  return native_esc43_supported_monitor() &&
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==0 &&
+    InterlockedCompareExchange(&native_pause43_enabled,0,0)==1 &&
+    ribbon_flip>=0 && now_flip>=ribbon_flip &&
+    now_flip-ribbon_flip<=1;
+}
 static void native_pause43_init(void) {
   int enabled=native_esc43_hud_setting_enabled(
        "NativeESC4x3","SPIDERMAN2K1FIX_NATIVE_ESC_43");
@@ -2406,6 +2420,8 @@ static void pause_at_flip_if_background(void) {
   HWND hwnd=game_hwnd;
   MSG msg;
   RECT pause_present_rect,pause_content_rect;
+  int pause_gamepad_available=0;
+  int pause_previous_foreground=0;
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
   if(GetForegroundWindow()==hwnd) {
     pause_background_since=0;
@@ -2431,6 +2447,15 @@ static void pause_at_flip_if_background(void) {
     return;
   }
   log_line("FOCUS-PAUSE: Any keyboard resume ARMED; consumes press and release");
+  /* The main gamepad UI poll runs only between Flips, so it cannot serve
+   * the synchronous focus PAUSED screen. Sample the already-verified
+   * secondary DS4 here instead; require NEW digital press AND full release,
+   * never wake while game is background, and never synthesize a native key. */
+  pause_gamepad_available=SpiderGamepadUI_PauseWake_Begin();
+  if(pause_gamepad_available)
+    log_line("FOCUS-PAUSE: DS4 digital-button resume ARMED; foreground-only, release-gated, no injected key (keyboard always available)");
+  else
+    log_line("FOCUS-PAUSE: no verified gamepad wake device; PAUSED hint remains keyboard-only");
   /* The Flip pause alone does not suspend Bink or secondary DirectSound. */
   SpiderFocusMedia_Pause();
   SpiderFocusDSound_Pause();
@@ -2466,12 +2491,15 @@ static void pause_at_flip_if_background(void) {
   if(borderless_back && borderless_primary && original_blt)
     SpiderPauseSurface_Begin(borderless_back,borderless_primary,
                              &pause_present_rect,&pause_content_rect,
-                             (SpiderPauseBltFn)original_blt);
+                             (SpiderPauseBltFn)original_blt,
+                             pause_gamepad_available);
+  pause_previous_foreground=(GetForegroundWindow()==hwnd);
   while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1) {
     while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
       if(msg.message==WM_QUIT) {
         PostQuitMessage((int)msg.wParam);
         SpiderPauseAny_End();
+        SpiderGamepadUI_PauseWake_End();
         SpiderPauseSurface_End();
         SpiderFocusDSound_Resume();
         SpiderFocusMedia_Resume();
@@ -2484,8 +2512,32 @@ static void pause_at_flip_if_background(void) {
       DispatchMessageA(&msg);
     }
     if(!IsWindow(hwnd)) break;
+    /* The normal Flip-based focus monitor cannot run until this custom
+     * PAUSED wait ends. On return to game foreground, balance its temporary
+     * background ShowCursor(TRUE) NOW, before any wake input. Otherwise the
+     * desktop cursor lingers over PAUSED until the game resumes.
+     * Call the already-existing focus transition monitor exactly once
+     * per foreground change. Do not touch the game's own mouse gate. */
+    {
+      int pause_now_foreground=GetForegroundWindow()==hwnd;
+      if(pause_now_foreground!=pause_previous_foreground) {
+        SpiderInputFocus_OnFlip(InterlockedCompareExchange(&flip_count,0,0));
+        pause_previous_foreground=pause_now_foreground;
+      }
+    }
     if(SpiderPauseAny_Completed())
       InterlockedExchange(&pause_latched,0);
+    else {
+      unsigned resumed_buttons=SpiderGamepadUI_PauseWake_Poll(hwnd);
+      if(resumed_buttons) {
+        char line[155];
+        snprintf(line,sizeof(line),
+          "FOCUS-PAUSE: gamepad digital press/release consumed buttons=0x%03X (verified DS4, no native key injection)",
+          resumed_buttons);
+        log_line(line);
+        InterlockedExchange(&pause_latched,0);
+      }
+    }
     if(InterlockedCompareExchange(&pause_latched,0,0)!=1) break;
     /* No show/hide transitions: a frozen DirectDraw frame naturally
      * stays behind unrelated Xfce/Windows applications during Alt+Tab. */
@@ -2499,6 +2551,7 @@ static void pause_at_flip_if_background(void) {
     log_line(line);
   }
   SpiderPauseAny_End();
+  SpiderGamepadUI_PauseWake_End();
   SpiderPauseSurface_End();
   SpiderFocusDSound_Resume();
   SpiderFocusMedia_Resume();
@@ -2519,7 +2572,9 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
     InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
       InterlockedCompareExchange(&fov_game_height,0,0)>0,
-    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u);
+    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
+    ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
+      native_pause43_visible_near_flip(count)));
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
@@ -2992,7 +3047,22 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
       log_line("DISPLAY-NATIVE: WARNING game HWND unavailable before virtual config bootstrap; fallback to current primary monitor until SetCooperativeLevel");
     }
   }
-  SpiderCfg_BootstrapGameRead();
+  /* Preview opt-in only: acquire an unambiguous Sony DS4 with the
+   * real game HWND before the original config loader consumes Spidey.cfg.
+   * A failed preflight leaves the previous working UI bridge untouched. */
+  {
+    HWND early=spider_find_game_window_before_ddraw();
+    int mapped=0;
+    if(early && SpiderGamepadUI_PreparePS1(early))
+      mapped=SpiderCfg_EnablePS1Preview();
+    SpiderCfg_BootstrapGameRead();
+    if(mapped) {
+      if(SpiderCfg_PS1BootstrapLoaded())
+        SpiderGamepadUI_ActivatePS1();
+      else
+        SpiderCfg_CancelPS1Preview();
+    }
+  }
   HRESULT hr=original_create(guid,out,iid,outer);
   if(SUCCEEDED(hr) && out && *out && iid && IsEqualGUID(iid,&IID_IDirectDraw7)) {
     void ***object=(void ***)*out;

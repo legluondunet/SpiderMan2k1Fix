@@ -128,7 +128,7 @@ selected monitor's active Windows/Wine resolution.
 
 The supported executable receives **automatic desktop resolution**, borderless fullscreen, centered 4:3 intro/menu media, native comic correction, automatic FOV/aspect adjustment, adaptive widescreen HUD and the verified in-game Display menu lock. These are no longer enabled or disabled through experimental flags; the original 4:3 mode retains its original geometry where a widescreen transform is unnecessary.
 
-**Alt+Tab and pause are permanent features:** once another application's focus loss is confirmed, the game latches pause at the original DirectDraw Flip boundary; a **press and release of any keyboard key after returning** resumes it. The frozen game frame receives the native violet/red PAUSED banner and **60% black shading by default**, with no grid. This behavior also coordinates the game's native Bink video/music streams and its game-owned secondary DirectSound voices. The native `DIERR_NOTACQUIRED` keyboard/mouse retry is requested automatically and installed only after its verified signature check at Flip #120; desktop cursor restoration is automatic. The old unsafe DirectInput COM-vtable hook stays disabled.
+**Alt+Tab and pause are permanent features:** once another application's focus loss is confirmed, the game latches pause at the original DirectDraw Flip boundary; a **press and release of any keyboard key after returning** resumes it; with an **already detected Sony DualShock 4**, a fresh **digital button press followed by full release** also wakes our custom PAUSED screen (not the original 3D Escape pause). The DS4 button is polled from our independent nonexclusive DirectInput device while Flip is blocked; no synthetic keyboard event reaches the game. The hint is selected when the custom pause is first drawn: **no verified/acquired DS4** shows `PRESS ANY KEY TO RESUME`; an **already detected DS4** shows `PRESS KEY OR GAMEPAD BUTTON TO RESUME`. This is a startup-device snapshot, not hotplug detection; disconnecting a controller mid-pause is not yet reflected in the displayed hint. No controller button can resume while another application is foreground, no held-before-resume button is inherited, and a keyboard key always remains a fallback. This does **not** add hotplugging or Xbox/DS2 support. The frozen game frame receives the native violet/red PAUSED banner and **60% black shading by default**, with no grid. This behavior also coordinates the game's native Bink video/music streams and its game-owned secondary DirectSound voices. The native `DIERR_NOTACQUIRED` keyboard/mouse retry is requested automatically and installed only after its verified signature check at Flip #120; desktop cursor restoration is automatic. The old unsafe DirectInput COM-vtable hook stays disabled.
 
 **Windows-specific behavior:** the patch requests `DisableProcessWindowsGhosting` automatically on systems providing the API, avoiding Windows' false Ghost-window foreground transitions. This also disables Windows' normal ghost-window handling for a genuinely hung game **until the process exits**; it does not solve a real hang. Wine implementation details may differ.
 
@@ -203,8 +203,23 @@ from the generated file does not disable these features.
 
 At the original DirectDraw Flip boundary, confirmed external focus loss
 latches pause; its native PAUSED ribbon uses the optional 60%-by-default
-shading described above. A complete press/release of any key after
-returning to the game resumes it. The original game's input Acquire/retry
+shading described above. A complete keyboard press/release, or a new
+press/release of an already acquired Sony DS4 digital button after returning
+to the game, resumes our custom PAUSED screen. The gamepad wake waits for a
+neutral reading and full physical release; it never synthesizes a key in
+the original game and is independent from the original 3D pause menu.
+The maintainer confirmed physical DS4 wake of our custom PAUSED screen
+under Wine on 28 October 2026. The same session revealed the desktop
+mouse pointer remained visible until wake. The follow-up fix now balances
+any temporary desktop-pointer visibility restoration **during** the
+PAUSED loop as soon as the game becomes foreground again, rather than
+waiting for a keyboard/controller press. Independently, `MouseEnabled=0`
+keeps the original game mouse sprite/poll/hover flag disabled even while
+the game is background, preventing the game's own cursor from entering the
+frozen PAUSED frame. Neither mechanism captures or warps the desktop
+cursor. The visual result of this follow-up fix still needs a Wine
+regression test; native Windows remains unverified.
+The original game's input Acquire/retry
 branch receives a signature-guarded native correction on or after
 **Flip #120**. The previous invasive DirectInput COM/vtable interception
 remains disabled.

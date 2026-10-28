@@ -46,7 +46,7 @@ def test_input_profile_preserves_original_gamepad_and_never_hooks_com():
 
 
 def test_ui_enter_is_not_injected_into_ordinary_3d_or_background():
-    assert "menu_allowed=menu_2d && !gameplay_3d" in PROFILE
+    assert "menu_allowed=(menu_2d && !gameplay_3d)" in PROFILE
     assert "movie_allowed=bink_active!=0" in PROFILE
     assert "confirm_allowed=menu_allowed || movie_allowed" in PROFILE
     assert "gameplay_allowed=gameplay_3d && !menu_2d && !movie_allowed" in PROFILE

@@ -14,6 +14,7 @@
 #include "display_policy.h"
 #include "ini_validation.h"
 #include "ini_recovery.h"
+#include "ps1_gamepad_mapping.h"
 
 /* Always-on virtual configuration hooks ONLY imports of verified SpideyPC.exe (never patch
  * kernel32/msvcrt globally). Unknown bytes remain byte-for-byte preserved.
@@ -28,6 +29,10 @@
 static BYTE cfg[CFG_SIZE];
 static CRITICAL_SECTION guard;
 static int ready=0,dirty=0;
+static int ps1_preview_active=0;
+static volatile LONG ps1_bootstrap_loaded=0;
+static unsigned ps1_rejected_user_changes=0;
+static uint32_t original_joystick[SPIDER_PS1_BUTTON_COUNT]={0};
 /* Only block saving if automatic INI repair fails. */
 static int ini_writes_permitted=1;
 static char ini_file[MAX_PATH];
@@ -280,7 +285,7 @@ static void load_joystick(void) {
 static int save_joystick(void) {
   unsigned i; char name[32];
   for(i=0;i<7;i++) {
-    DWORD code=get_word(joystick_offsets[i]);
+    DWORD code=ps1_preview_active?(DWORD)original_joystick[i]:get_word(joystick_offsets[i]);
     if(code<=127) snprintf(name,sizeof(name),"BUTTON%lu",(unsigned long)code);
     else snprintf(name,sizeof(name),"0x%08lX",(unsigned long)code);
     if(!WritePrivateProfileStringA("Joystick",joystick_actions[i],name,ini_file)) return 0;
@@ -382,17 +387,21 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "[Input]\r\n"
     "; Auto = OS keyboard layout; Off = original physical QWERTY positions.\r\n"
     "KeyboardLayout=Auto\r\n"
+    "; MouseEnabled=0 disables ONLY the game's menu mouse sprite/click/hover.\r\n"
+    "; Keyboard menus and all gameplay work unchanged; desktop mouse untouched.\r\n"
+    "; Set MouseEnabled=1 to restore original mouse navigation in menus.\r\n"
+    "MouseEnabled=0\r\n"
     "; ControllerProfile: Auto detects an original Sony DualShock4 by VID/PID.\r\n"
     "; Other gamepads keep original controls. Off disables this UI bridge.\r\n"
     "ControllerProfile=Auto\r\n"
-    "; In 2D menus or native Bink videos (also after menu): Cross/Options = Enter.\r\n"
+    "; Legacy UI bridge only: Cross/Options = Enter. PS1 preview uses Cross only.\r\n"
     "ControllerEnterButtons=Both\r\n"
     "; In 2D menus Circle = Escape/Back; Share or Off are alternatives.\r\n"
     "; Triangle stays native for scripted 3D cinematic skipping.\r\n"
     "ControllerBackButton=Circle\r\n"
-    "; In 3D OPTIONS = Escape/Pause only if no native gameplay action uses\r\n"
-    "; BUTTON9 (factory Zipline does). Reassign Zipline e.g. R1/BUTTON5 in\r\n"
-    "; the game's Joystick menu first. Nothing is automatically overwritten.\r\n"
+    "; Legacy UI bridge only: OPTIONS can Pause if no native action uses\r\n"
+    "; BUTTON9 (factory Zipline does). PS1 preview uses SHARE instead.\r\n"
+    "; Existing saved gameplay bindings are never overwritten.\r\n"
     "ControllerPauseButton=Options\r\n"
     "\r\n"
     "[Audio]\r\n"
@@ -788,6 +797,8 @@ static void load_settings(void) {
   load_keyboard_layout();
   load_keyboard();
   load_joystick();
+  /* This snapshot precedes any temporary PS1 profile overlay. */
+  spider_ps1_snapshot(cfg,CFG_SIZE,original_joystick);
   load_audio();
   /* Never let GetPrivateProfileIntA turn an invalid string into brightness=0. */
   {
@@ -805,6 +816,44 @@ static void load_settings(void) {
     CFG_SIZE,configured_resolution,configured_aspect,policy_width,policy_height,
     (unsigned long)get_word(12));
   report(msg);
+}
+/* Called exactly once on the verified game thread just BEFORE the
+ * signature-checked native CRT bootstrap; the independent DS4 device must
+ * already be acquired. Disabled by default, even in Auto mode.
+ * The original 7 joystick bindings are never changed in the user's INI. */
+int SpiderCfg_EnablePS1Preview(void) {
+  char line[220];
+  unsigned i;
+  if(!ready)return 0;
+  EnterCriticalSection(&guard);
+  if(ps1_preview_active) {LeaveCriticalSection(&guard);return 1;}
+  if(!spider_ps1_apply(cfg,CFG_SIZE)){
+    LeaveCriticalSection(&guard);
+    return 0;
+  }
+  ps1_preview_active=1;
+  for(i=0;i<SPIDER_PS1_BUTTON_COUNT;i++){
+    snprintf(line,sizeof(line),
+      "SPIDEY-CFG: PS1-PREVIEW runtime action=%s previous=BUTTON%lu temporary=BUTTON%lu; original INI preserved",
+      joystick_actions[i],(unsigned long)original_joystick[i],
+      (unsigned long)spider_ps1_buttons[i]);
+    report(line);
+  }
+  LeaveCriticalSection(&guard);
+  return 1;
+}
+/* If the authenticated original game reload did not happen, undo the
+ * speculative overlay immediately. Never leave half of a PS1 profile
+ * enabled after the native bootstrap failed. */
+void SpiderCfg_CancelPS1Preview(void) {
+  if(!ready)return;
+  EnterCriticalSection(&guard);
+  if(ps1_preview_active && !SpiderCfg_PS1BootstrapLoaded()) {
+    spider_ps1_restore(cfg,CFG_SIZE,original_joystick);
+    ps1_preview_active=0;
+    report("SPIDEY-CFG: PS1-PREVIEW ROLLBACK native game bootstrap unverified; original seven bindings restored");
+  }
+  LeaveCriticalSection(&guard);
 }
 /* Called from the existing pre-fullscreen HWND/monitor probe. For Auto this
  * corrects the initial primary-monitor fallback on multi-display systems.
@@ -832,6 +881,7 @@ void SpiderCfg_ObserveNativeMonitor(unsigned width,unsigned height) {
 }
 static int save_settings(void) {
   char hex[CFG_SIZE*2+1],value[80],msg[150];
+  BYTE saved_cfg[CFG_SIZE];
   unsigned i;
   if(!dirty) return 1;
   if(!ini_writes_permitted) {
@@ -840,7 +890,12 @@ static int save_settings(void) {
   }
   /* Never let in-game changes to screen size or color depth persist. */
   apply_locked_display();
-  for(i=0;i<CFG_SIZE;i++) sprintf(hex+i*2,"%02X",(unsigned)cfg[i]);
+  memcpy(saved_cfg,cfg,CFG_SIZE);
+  if(ps1_preview_active)
+    spider_ps1_restore(saved_cfg,CFG_SIZE,original_joystick);
+  /* The PS1 gameplay preview must NEVER overwrite a player's persistent
+   * joystick preferences in either RawHex or the named [Joystick] keys. */
+  for(i=0;i<CFG_SIZE;i++) sprintf(hex+i*2,"%02X",(unsigned)saved_cfg[i]);
   if(!WritePrivateProfileStringA("Internal","RawHex",hex,ini_file)) goto fail;
   snprintf(value,sizeof(value),"%lu",(unsigned long)get_word(12));
   if(!WritePrivateProfileStringA("Display","Brightness",value,ini_file)) goto fail;
@@ -848,7 +903,9 @@ static int save_settings(void) {
   if(!save_joystick()) goto fail;
   if(!save_audio()) goto fail;
   dirty=0;
-  report("SPIDEY-CFG: game keyboard/joystick/audio/brightness saved; resolution and color depth locked by [Display] policy");
+  report(ps1_preview_active?
+    "SPIDEY-CFG: user settings saved; original joystick bindings preserved (PS1 preview RAM only)":
+    "SPIDEY-CFG: game keyboard/joystick/audio/brightness saved; resolution and color depth locked by [Display] policy");
   return 1;
 fail:
   snprintf(msg,sizeof(msg),"SPIDEY-CFG: ERROR saving INI Win32=%lu (data still in memory)",(unsigned long)GetLastError());
@@ -920,6 +977,17 @@ static BOOL WINAPI hooked_WriteFile(HANDLE h,LPCVOID buffer,DWORD len,LPDWORD do
   if(len){
     DWORD old_w=get_word(0),old_h=get_word(4),old_depth=get_word(8);
     memcpy(cfg+v->pos,buffer,len);v->pos+=(LONG)len;dirty=1;writes++;
+    if(ps1_preview_active) {
+      /* Without the separately opt-in, original joystick-menu read-only
+       * patch, the game's
+       * own live action array may still change. Always preserve the seven
+       * PS1 virtual bindings and the saved user's original preferences. */
+      BYTE attempted[CFG_SIZE];
+      memcpy(attempted,cfg,CFG_SIZE);
+      spider_ps1_apply(cfg,CFG_SIZE);
+      if(memcmp(attempted,cfg,CFG_SIZE) && ps1_rejected_user_changes++<8u)
+        report("SPIDEY-CFG: PS1-PREVIEW protected seven virtual joystick bindings from original-game config write; native Joystick read-only is separately gated");
+    }
     if(old_w!=get_word(0) || old_h!=get_word(4) || old_depth!=get_word(8))
       report("SPIDEY-CFG: in-game screen/depth write intercepted; authoritative display settings restored");
     apply_locked_display();
@@ -1068,6 +1136,8 @@ static int __cdecl hooked_fclose(FILE *f) {
     fflush(f);rewind(f);n=fread(candidate,1,CFG_SIZE,f);
     if(n==CFG_SIZE) {
       if(memcmp(cfg,candidate,CFG_SIZE)) {memcpy(cfg,candidate,CFG_SIZE);dirty=1;}
+      /* Same fixed-RAM protection for the rare imported stdio route. */
+      if(ps1_preview_active) spider_ps1_apply(cfg,CFG_SIZE);
       apply_locked_display();
       report("SPIDEY-CFG: virtual fclose captured stdio settings");
       save_settings();
@@ -1191,6 +1261,9 @@ unsigned SpiderCfg_Install(const char *path,void (*logger)(const char *)) {
  * All pointers and instruction bytes are hard-coded for the SHA-verified
  * SpideyPC.exe. No EXE patch or undocumented cross-CRT FILE* exchange.
  */
+int SpiderCfg_PS1BootstrapLoaded(void){
+  return InterlockedCompareExchange(&ps1_bootstrap_loaded,0,0)==1;
+}
 void SpiderCfg_BootstrapGameRead(void) {
   typedef void *(__cdecl *GameFopen)(const char *,const char *);
   typedef size_t (__cdecl *GameFread)(void *,size_t,size_t,void *);
@@ -1248,6 +1321,8 @@ void SpiderCfg_BootstrapGameRead(void) {
    * applies the locked resolution/depth without modifying game executable. */
   game_load();
   EnterCriticalSection(&guard);
+  if(ps1_preview_active && opens>opened && reads>served)
+    InterlockedExchange(&ps1_bootstrap_loaded,1);
   snprintf(msg,sizeof(msg),
     "SPIDEY-CFG: BOOTSTRAP game loader returned: virtual opens +%lu reads +%lu; configured=%ux%u depth=32 [%s]",
     (unsigned long)(opens-opened),(unsigned long)(reads-served),

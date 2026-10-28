@@ -2,13 +2,14 @@
  * SpiderMan2k1Fix / experimental DirectInput UI profile:
  * - Auto-detect ORIGINAL Sony DualShock 4 VID=054C product IDs 05C4,09CC,
  *   and the 0BA0 original adapter, strictly via DirectInput8 product GUID.
- * - Never modify the game's original DirectInput COM vtables or the native
- *   controller-action tables. All seven original gameplay mappings survive.
- * - In the original 2D UI or Bink sequence, turn a debounced DualShock
- *   CROSS/OPTIONS edge into Enter, and CIRCLE (or optional SHARE) into
- *   Escape, using the same paired scan-code injection.
- * - TRIANGLE triggers native menu confirmation and 3D cinematic skip on
- *   the user's game: do not override it or add a contradictory Escape.
+ * - Never modify the game's original DirectInput COM vtables. All seven
+ *   original gameplay mappings survive. An OFF-by-default experiment may
+ *   unbind only the original Start DWORD after exact signature checks.
+ * - In legacy UI bridge mode, map configurable CROSS/OPTIONS edges to
+ *   Enter. In opt-in PS1 preview, ONLY CROSS generates synthetic Enter in
+ *   2D/Bink/native pause. Circle backs out, SHARE owns native 3D pause.
+ * - Legacy TRIANGLE cinematic skipping stays game-owned. In PS1 preview,
+ *   Jump moves to Cross; do not inject conflicting keys during 3D scripts.
  * - Bink movies can run after leaving the renderer's 2D menu mode.
  * - In 3D, OPTIONS requests Escape/Pause ONLY when the saved seven
  *   native gameplay bindings no longer assign BUTTON9 to an action.
@@ -29,6 +30,14 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include "gamepad_ui_profile.h"
+#include "ps1_native_start_mapping.h"
+#include "ps1_mouse_mode.h"
+#include "ps1_post_quit_guard.h"
+#include "ps1_transition_edge_ownership.h"
+#include "ps1_menu_confirm.h"
+#include "ps1_focus_pause_wake.h"
+#include "ps1_input_flight_recorder.h"
+/* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
 typedef HRESULT (WINAPI *SpiderDICreateFn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
 enum {SPIDER_PROFILE_OFF=0,SPIDER_PROFILE_AUTO=1,SPIDER_PROFILE_DUALSHOCK4=2};
@@ -50,6 +59,21 @@ typedef struct {
 
 static int configured=0,profile=SPIDER_PROFILE_AUTO,confirm=SPIDER_CONFIRM_BOTH;
 static int back=SPIDER_BACK_CIRCLE,pause_button=SPIDER_PAUSE_OPTIONS;
+static int ps1_preview_requested=0,ps1_preview_active=0,previous_share=0;
+static int ps1_options_skip_requested=0;
+static int ps1_readonly_menu_requested=0;
+/* MouseEnabled is global; no DS4-dependent mouse state lives here. */
+static int ps1_quit_trace_requested=0;
+static int ps1_post_quit_guard_requested=0;
+static int ps1_transition_edge_ownership_requested=0;
+static SpiderPS1TransitionEdgeOwnership ps1_transition_ownership={0};
+static int ps1_input_flight_recorder_requested=0;
+static SpiderPS1InputHistory ps1_input_history={0};
+static SpiderPS1PostQuitGuard ps1_post_quit_guard={0};
+static unsigned ps1_quit_trace_count=0;
+static int ps1_native_start_unbound=0,previous_native_start=0;
+static unsigned ps1_native_start_reports=0;
+static unsigned ps1_cutscene_reports=0;
 static int probing=0,detected=0,previous_buttons=0,previous_back=0,previous_pause=0;
 static unsigned active_scan=0;
 static LONG sent_enter=0,sent_escape=0;
@@ -57,6 +81,9 @@ static char profile_ini[MAX_PATH]={0};
 static unsigned pause_conflict_reports=0,outside_mode_reports=0;
 static unsigned postmenu_bink_reports=0;
 static unsigned bad_reads=0;
+static SpiderPausePadWake pause_wake={0};
+static int pause_wake_active=0;
+static int pause_wake_retry_logged=0;
 static IDirectInput8A *di=NULL;
 static IDirectInputDevice8A *device=NULL;
 static HMODULE di_module=NULL;
@@ -189,6 +216,24 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
     return;
   }
   strcpy(profile_ini,ini);
+  /* Experimental only: no automatic fixed-profile activation until native
+   * menu lock and Start handling are validated in the real game. */
+  ps1_preview_requested=GetPrivateProfileIntA("Input","ControllerPS1Preview",0,ini)==1;
+  ps1_options_skip_requested=GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1;
+  ps1_readonly_menu_requested=GetPrivateProfileIntA("Input","ControllerPS1ReadOnlyJoystick",0,ini)==1;
+  /* Global game-only mouse policy replaces the retired DS4-only option.
+   * Absent MouseEnabled is intentionally OFF for existing/fresh INIs.
+   * MouseEnabled=1 explicitly restores normal mouse menu interaction. */
+  SpiderPS1Mouse_Configure(GetPrivateProfileIntA("Input","MouseEnabled",0,ini)==1,logger);
+  if(GetPrivateProfileStringA("Input","ControllerAutoDisableMouse","",choice,sizeof(choice),ini))
+    report("GAMEPAD-MOUSE: ControllerAutoDisableMouse is retired; MouseEnabled=0/1 now controls the game mouse for all players");
+  ps1_quit_trace_requested=GetPrivateProfileIntA("Input","ControllerPS1QuitTrace",0,ini)==1;
+  ps1_post_quit_guard_requested=GetPrivateProfileIntA("Input","ControllerPS1PostQuitGuard",0,ini)==1;
+  ps1_transition_edge_ownership_requested=GetPrivateProfileIntA("Input","ControllerPS1TransitionEdgeOwnership",0,ini)==1;
+  memset(&ps1_transition_ownership,0,sizeof(ps1_transition_ownership));
+  ps1_input_flight_recorder_requested=GetPrivateProfileIntA("Input","ControllerPS1InputFlightRecorder",0,ini)==1;
+  memset(&ps1_input_history,0,sizeof(ps1_input_history));
+  memset(&ps1_post_quit_guard,0,sizeof(ps1_post_quit_guard));
   GetPrivateProfileStringA("Input","ControllerProfile","Auto",choice,sizeof(choice),ini);
   if(!_stricmp(choice,"Off"))profile=SPIDER_PROFILE_OFF;
   else if(!_stricmp(choice,"Auto"))profile=SPIDER_PROFILE_AUTO;
@@ -214,11 +259,12 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
      GetPrivateProfileStringA("Input","ExperimentalGamepadStart","",choice,sizeof(choice),ini)!=0)
     report("GAMEPAD-UI: old ExperimentalGamepadStart is RETIRED/ignored; remove BUTTON8 setting");
   snprintf(line,sizeof(line),
-    "GAMEPAD-UI: config profile=%s confirm=%s back=%s pause=%s Return=DIK_0x1C Escape=DIK_0x01 (menu/Bink/pause separate)",
+    "GAMEPAD-UI: config profile=%s legacy-confirm=%s legacy-back=%s legacy-pause=%s ps1preview-requested=%d options3dskip=%d Return=DIK_0x1C Escape=DIK_0x01",
     profile==SPIDER_PROFILE_OFF?"Off":profile==SPIDER_PROFILE_AUTO?"Auto":"DualShock4",
     confirm==SPIDER_CONFIRM_CROSS?"Cross":confirm==SPIDER_CONFIRM_OPTIONS?"Options":"Both",
     back==SPIDER_BACK_OFF?"Off":back==SPIDER_BACK_CIRCLE?"Circle":"Share",
-    pause_button==SPIDER_PAUSE_OFF?"Off":"Options (conflict guarded)");
+    pause_button==SPIDER_PAUSE_OFF?"Off":"Options (conflict guarded)",
+    ps1_preview_requested,ps1_options_skip_requested);
   report(line);
 }
 static void detect_device(HWND hwnd) {
@@ -276,26 +322,488 @@ static void detect_device(HWND hwnd) {
   }
   detected=1;
   snprintf(line,sizeof(line),
-    "GAMEPAD-UI: PROFILE DualShock4 ACTIVE Sony VID=054C PID=%04lX name=%.110s; Cross=BUTTON1 Options=BUTTON9 -> Return in 2D/Bink; Circle=BUTTON2 -> Back in 2D; OPTIONS pause guarded in 3D",
+    "GAMEPAD-UI: PROFILE DualShock4 ACTIVE (verified device) Sony VID=054C PID=%04lX name=%.110s; legacy 2D/Bink confirmation=ControllerEnterButtons; PS1 preview after CRT bootstrap: Cross=BUTTON1 only, Circle=BUTTON2 back, SHARE=BUTTON8 3D pause; OPTIONS=BUTTON9 is NOT synthetic Enter in PS1",
     (unsigned long)d.product_id,d.name);
   report(line);
 }
-void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,int bink_active) {
+/* This is the ORIGINAL, game-owned CutSceneSkipAllow state machine.
+ * The same addresses and per-scene conditions were mapped in the existing
+ * F10 diagnostics (quick_exit_f12.c). Never guess 3D from rendering.
+ * Memory reads require a readable COMMITTED owner span, and the write
+ * uses ONLY the original game skip-request byte after its own permission.
+ * Manually opted in (ControllerPS1OptionsSkip=1), not the Auto default.
+ * The user's Cross is already mapped to native Jump, which the game
+ * uses for 3D cinematic skip; it does NOT need a synthetic key here. */
+static int ps1_request_native_options_cutscene_skip(void) {
+  const DWORD owner=*(const volatile DWORD *)(uintptr_t)0x006A9038u;
+  const volatile BYTE *obj;
+  volatile BYTE *native_request=(volatile BYTE *)(uintptr_t)0x0060CFC4u;
+  MEMORY_BASIC_INFORMATION mbi;
+  uintptr_t base,where;
+  BYTE scene_context,skip_allowed,script_active;
+  DWORD script_ip;
+  if(owner<0x00010000u ||
+     VirtualQuery((LPCVOID)(uintptr_t)owner,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT ||
+     (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)) ||
+     !((mbi.Protect&0xffu)==PAGE_READONLY ||
+       (mbi.Protect&0xffu)==PAGE_READWRITE ||
+       (mbi.Protect&0xffu)==PAGE_WRITECOPY ||
+       (mbi.Protect&0xffu)==PAGE_EXECUTE_READ ||
+       (mbi.Protect&0xffu)==PAGE_EXECUTE_READWRITE ||
+       (mbi.Protect&0xffu)==PAGE_EXECUTE_WRITECOPY))return 0;
+  base=(uintptr_t)mbi.BaseAddress;
+  where=(uintptr_t)owner;
+  if(where<base || where-base>mbi.RegionSize ||
+     mbi.RegionSize-(where-base)<0x1bcu)return 0;
+  obj=(const volatile BYTE *)where;
+  scene_context=obj[0x1acu];
+  skip_allowed=obj[0x1a4u];
+  script_active=obj[0x1b4u];
+  script_ip=*(const volatile DWORD *)(where+0x1b8u);
+  if(scene_context!=1u || skip_allowed!=1u || script_active!=1u ||
+     script_ip==0u || *native_request!=0u)return 0;
+  /* The exact game-native 0x4C66A6 writer uses this one-byte request;
+   * original 0x4BC3E0 consumes it and cleans up scene resources. */
+  *native_request=1u;
+  report("GAMEPAD-UI: PS1-3D-OPTIONS native CutSceneSkipAllow=1 request=1 (original 0x4BC3E0 cleanup; NOT forced)");
+  return 1;
+}
+/* Early game HWND acquisition precedes the verified native CRT reload.
+ * On failure retry the old unchanged UI discovery on the first Flip. */
+int SpiderGamepadUI_PreparePS1(HWND hwnd) {
+  if(!configured || !ps1_preview_requested || profile==SPIDER_PROFILE_OFF ||
+     !hwnd || !IsWindow(hwnd) || GetForegroundWindow()!=hwnd)return 0;
+  if(!probing)detect_device(hwnd);
+  if(!detected){
+    probing=0;
+    report("GAMEPAD-UI: PS1-PREVIEW deferred: early DS4 device acquisition failed; original game mappings untouched");
+    return 0;
+  }
+  report("GAMEPAD-UI: PS1-PREVIEW Sony DS4 acquired before native config bootstrap");
+  return 1;
+}
+/* The retired native BUTTON11 Start remap never reached its table scan:
+ * its arbitrary 32 MiB PE SizeOfImage cap rejected the user's retail EXE.
+ * Read-only, one-shot replacement: examine verified writable .data pages
+ * and record exact 14-entry candidate counts. No mapping writes, no hooks.
+ * A positive count is still NOT proof that modifying this mapping is safe. */
+/* The normal probe reads at most 1 MiB; the read-only extended
+ * scan is manually opted in because this 2001 retail PE maps a 42 MiB
+ * writable data section. Query each committed region independently; never
+ * cross a region boundary or touch game-owned input mapping bytes.
+ *
+ * A complete scan could still miss maps stored in another section or
+ * synthesized at runtime. Do NOT use the result as permission to patch.
+ */
+static void ps1_probe_native_start_tables(void) {
+  static const DWORD actions[14]={
+    0x1u,0x2u,0x4u,0x8u,0x10u,0x20u,0x40u,0x80u,
+    0x100u,0x200u,0x400u,0x1000u,0x2000u,0x8000u};
+  BYTE *base=(BYTE *)GetModuleHandleA(NULL);
+  IMAGE_DOS_HEADER *dos;
+  IMAGE_NT_HEADERS32 *pe;
+  IMAGE_SECTION_HEADER *sec;
+  unsigned j,sections=0,matches=0,truncated=0,regions=0,strict_matches=0;
+  BYTE *strict_candidate=NULL;
+  int deep=profile_ini[0] &&
+    GetPrivateProfileIntA("Input","ControllerPS1DeepStartProbe",0,profile_ini)==1;
+  int disable_native_start=profile_ini[0] &&
+    GetPrivateProfileIntA("Input","ControllerPS1DisableNativeStart",0,profile_ini)==1;
+  const size_t max_bytes=deep?(size_t)(64u*1024u*1024u):(size_t)(1024u*1024u);
+  char line[270];
+  if(!base || (uintptr_t)base!=0x00400000u)return;
+  dos=(IMAGE_DOS_HEADER *)base;
+  if(dos->e_magic!=IMAGE_DOS_SIGNATURE ||
+     dos->e_lfanew<=0 || dos->e_lfanew>0x1000) {
+    report("GAMEPAD-PS1: START-TABLE read-only probe refused invalid DOS header");
+    return;
+  }
+  pe=(IMAGE_NT_HEADERS32 *)(base+dos->e_lfanew);
+  if(pe->Signature!=IMAGE_NT_SIGNATURE ||
+     pe->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR32_MAGIC ||
+     pe->OptionalHeader.ImageBase!=0x00400000u ||
+     pe->OptionalHeader.SizeOfImage<0x00140000u ||
+     pe->OptionalHeader.SizeOfImage>0x10000000u ||
+     pe->FileHeader.NumberOfSections<1u ||
+     pe->FileHeader.NumberOfSections>32u) {
+    snprintf(line,sizeof(line),
+      "GAMEPAD-PS1: START-TABLE read-only probe unsupported PE image=0x%08lX sections=%u base=0x%08lX (NO writes)",
+      (unsigned long)pe->OptionalHeader.SizeOfImage,
+      (unsigned)pe->FileHeader.NumberOfSections,
+      (unsigned long)pe->OptionalHeader.ImageBase);
+    report(line);
+    return;
+  }
+  sec=IMAGE_FIRST_SECTION(pe);
+  for(j=0;j<(unsigned)pe->FileHeader.NumberOfSections;j++) {
+    DWORD span=sec[j].Misc.VirtualSize;
+    size_t cursor=0,budget;
+    BYTE *data;
+    if(memcmp(sec[j].Name,".data",5)!=0 ||
+       !(sec[j].Characteristics&IMAGE_SCN_MEM_WRITE) ||
+       span<14u*8u ||
+       sec[j].VirtualAddress>=pe->OptionalHeader.SizeOfImage ||
+       span>pe->OptionalHeader.SizeOfImage-sec[j].VirtualAddress)
+      continue;
+    sections++;
+    data=base+sec[j].VirtualAddress;
+    budget=span;
+    if(budget>max_bytes){budget=max_bytes;truncated++;}
+    while(cursor+14u*8u<=budget) {
+      MEMORY_BASIC_INFORMATION mbi;
+      uintptr_t here=(uintptr_t)(data+cursor),region_start,region_end;
+      size_t safe,offset;
+      DWORD protect;
+      unsigned k;
+      if(VirtualQuery((LPCVOID)here,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+         !mbi.RegionSize) {
+        truncated++;
+        break;
+      }
+      region_start=(uintptr_t)mbi.BaseAddress;
+      if(here<region_start || mbi.RegionSize>(size_t)(~(uintptr_t)0)-region_start) {
+        truncated++;
+        break;
+      }
+      region_end=region_start+mbi.RegionSize;
+      if(region_end<=here){truncated++;break;}
+      safe=region_end-here;
+      if(safe>budget-cursor)safe=budget-cursor;
+      protect=mbi.Protect&0xffu;
+      regions++;
+      if(mbi.State==MEM_COMMIT &&
+         !(mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)) &&
+         (protect==PAGE_READWRITE || protect==PAGE_EXECUTE_READWRITE ||
+          protect==PAGE_WRITECOPY || protect==PAGE_EXECUTE_WRITECOPY)) {
+        /* All sampled DWORDs must fit within this single readable
+         * allocation region. Native tables spanning a page split are
+         * intentionally omitted, never accessed speculatively. */
+        for(offset=0;offset+14u*8u<=safe;offset+=4u) {
+          const DWORD *v=(const DWORD *)(const void *)(data+cursor+offset);
+          if(v[0]!=actions[0])continue;
+          for(k=1u;k<14u;k++)if(v[2u*k]!=actions[k])break;
+          if(k==14u && v[2u*11u+1u]==11u) {
+            matches++;
+            if(spider_ps1_start_strict_factory((const uint8_t *)(const void *)v,
+                                               safe-offset)) {
+              strict_matches++;
+              if(strict_matches==1u)strict_candidate=(BYTE *)(void *)v;
+            }
+            if(matches<=10u) {
+              snprintf(line,sizeof(line),
+                "GAMEPAD-PS1: START-TABLE candidate=%u RVA=0x%08lX Start=BUTTON11 [READ-ONLY; NO table edits]",
+                matches,(unsigned long)(sec[j].VirtualAddress+cursor+offset));
+              report(line);
+            }
+          }
+        }
+      } else {
+        truncated++;
+      }
+      cursor+=safe;
+    }
+    if(budget>cursor && cursor+14u*8u>budget) {
+      /* This last sub-112-byte tail is intentionally skipped. */
+    }
+  }
+  snprintf(line,sizeof(line),
+    "GAMEPAD-PS1: START-TABLE probe data-sections=%u candidates=%u strict=%u truncated-regions=%u PE-image=0x%08lX deep=%d queried-regions=%u cap-MiB=%u; diagnostic scan only",
+    sections,matches,strict_matches,truncated,(unsigned long)pe->OptionalHeader.SizeOfImage,
+    deep,regions,(unsigned)(max_bytes/(1024u*1024u)));
+  report(line);
+  if(disable_native_start) {
+    /* A deliberate separate experiment. Fail closed if default 1 MiB
+     * scan was used, any memory was skipped, multiple native patterns
+     * were found, or the mapping doesn't match the entire original
+     * factory structure. No COM/vtable hooks or PE code patching. */
+    if(!deep || truncated || sections!=1u || matches!=1u ||
+       strict_matches!=1u || !strict_candidate ||
+       strict_candidate!=base+0x00168408u) {
+      snprintf(line,sizeof(line),
+        "GAMEPAD-PS1: NATIVE-START-UNBIND REFUSED deep=%d sections=%u matches=%u strict=%u truncated=%u (original BUTTON11 retained)",
+        deep,sections,matches,strict_matches,truncated);
+      report(line);
+    } else {
+      BYTE *slot=strict_candidate+SPIDER_PS1_START_BUTTON_OFFSET;
+      MEMORY_BASIC_INFORMATION mbi;
+      uintptr_t here=(uintptr_t)slot,region;
+      DWORD prot;
+      if((here&3u) ||
+         VirtualQuery(slot,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+         mbi.State!=MEM_COMMIT ||
+         (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS))) {
+        report("GAMEPAD-PS1: NATIVE-START-UNBIND REFUSED unsafe memory protection/alignment");
+      } else {
+        region=(uintptr_t)mbi.BaseAddress;
+        prot=mbi.Protect&0xffu;
+        if(here<region || here-region>=mbi.RegionSize ||
+           mbi.RegionSize-(here-region)<sizeof(LONG) ||
+           !(prot==PAGE_READWRITE || prot==PAGE_EXECUTE_READWRITE ||
+             prot==PAGE_WRITECOPY || prot==PAGE_EXECUTE_WRITECOPY) ||
+           !spider_ps1_start_strict_factory((const uint8_t *)strict_candidate,
+                                          SPIDER_PS1_START_MAP_BYTES)) {
+          report("GAMEPAD-PS1: NATIVE-START-UNBIND REFUSED mapping changed or slot not safely writable");
+        } else if(InterlockedCompareExchange(
+                    (volatile LONG *)(void *)slot,
+                    (LONG)SPIDER_PS1_START_BUTTON_UNBOUND,
+                    (LONG)SPIDER_PS1_START_BUTTON_FACTORY)==
+                  (LONG)SPIDER_PS1_START_BUTTON_FACTORY) {
+          snprintf(line,sizeof(line),
+            "GAMEPAD-PS1: NATIVE-START-UNBIND EXPERIMENT ACTIVE RVA=0x%08lX Start BUTTON11 -> native unused 0x4000; one validated RAM dword; game restart restores; SHARE remains menu control",
+            (unsigned long)((uintptr_t)slot-(uintptr_t)base));
+          ps1_native_start_unbound=1;
+          report(line);
+        } else {
+          report("GAMEPAD-PS1: NATIVE-START-UNBIND REFUSED Start slot modified concurrently");
+        }
+      }
+    }
+  }
+}
+void SpiderGamepadUI_ActivatePS1(void){
+  if(!detected || !ps1_preview_requested)return;
+  ps1_preview_active=1;
+  back=SPIDER_BACK_CIRCLE;
+  report("GAMEPAD-UI: PS1-PREVIEW ACTIVE, fixed gameplay RAM only; CROSS-only 2D/Bink/pause confirmation (OPTIONS/Start not mapped to Enter); original Joystick read-only remains optional/strictly gated");
+  ps1_probe_native_start_tables(); /* read-only scan; optional checked single-DWORD RAM experiment */
+  if(ps1_readonly_menu_requested && !SpiderPS1_InstallReadOnlyJoystick(log_message))
+    report("GAMEPAD-PS1: JOYSTICK-READONLY inactive; exact native signatures missing or failed to install");
+  /* Game mouse suppression is configured globally and verified on Flip,
+   * independently of whether this optional PS1 preview is active. */
+}
+/* The original retail PShell_EndTrainingUpdate at 0x47BC40 uses
+ * object 0x682968 + 0x14 to dispatch index 0 -> engine request 8,
+ * 1 -> request 10, 2 -> request 7. In other 3D stages a different
+ * game-owned owner (0x440EF0) can also request 7. These samples
+ * deliberately do not assume which owner produced a transition.
+ *
+ * This diagnostic is PASSIVE: no mouse, menu, joystick, keyboard,
+ * object, engine-state or code writes. A per-Flip snapshot may miss
+ * transient objects; absence of a sample is not proof of absence.
+ */
+static int ps1_read_native_selection(DWORD owner,int *selection) {
+  MEMORY_BASIC_INFORMATION mbi;
+  uintptr_t va=(uintptr_t)owner,base;
+  DWORD protect;
+  if(!owner || owner<0x00010000u || !selection ||
+     VirtualQuery((LPCVOID)va,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)))
+    return 0;
+  base=(uintptr_t)mbi.BaseAddress;
+  protect=mbi.Protect&0xffu;
+  if(va<base || va-base>mbi.RegionSize ||
+     mbi.RegionSize-(va-base)<0x15u ||
+     !(protect==PAGE_READONLY || protect==PAGE_READWRITE ||
+       protect==PAGE_WRITECOPY || protect==PAGE_EXECUTE_READ ||
+       protect==PAGE_EXECUTE_READWRITE || protect==PAGE_EXECUTE_WRITECOPY))
+    return 0;
+  *selection=(int)*(const volatile BYTE *)(va+0x14u);
+  return 1;
+}
+static void ps1_trace_native_quit(int menu2d,int gameplay3d,
+                                   int pause_active,int cross_edge,
+                                   int circle_edge,int share_edge) {
+  static int old_selection=-2,old_restart=-2,old_request=-1,old_pause=-1;
+  static int old_context=-1;
+  DWORD confirmation_owner,restart_owner,request,mouse_flags;
+  int selection=-1,restart_selection=-1;
+  int confirmed,restarted,context;
+  char line[360];
+  if(!ps1_preview_active || !ps1_quit_trace_requested ||
+     ps1_quit_trace_count>=130u)return;
+  confirmation_owner=*(const volatile DWORD *)(uintptr_t)0x00682968u;
+  restart_owner=*(const volatile DWORD *)(uintptr_t)0x00682960u;
+  request=*(const volatile DWORD *)(uintptr_t)0x0060CFA4u;
+  context=*(const volatile DWORD *)(uintptr_t)0x00682950u ? 1:0;
+  mouse_flags=*(const volatile DWORD *)(uintptr_t)0x02E0988Cu;
+  confirmed=ps1_read_native_selection(confirmation_owner,&selection);
+  restarted=ps1_read_native_selection(restart_owner,&restart_selection);
+  if(selection!=old_selection || restart_selection!=old_restart ||
+     (int)request!=old_request || pause_active!=old_pause ||
+     context!=old_context || cross_edge || circle_edge || share_edge) {
+    snprintf(line,sizeof(line),
+      "GAMEPAD-PS1: QUIT-TRACE sample=%u 2d=%d 3d=%d pause-visible=%d native-ctx=%d confirmation-owner=%d choice=%d readable=%d restart-owner=%d restart-choice=%d readable=%d request=%lu mouse-off=%d CROSS-edge=%d CIRCLE-edge=%d SHARE-edge=%d [PASSIVE PER-FLIP]",
+      ++ps1_quit_trace_count,menu2d,gameplay3d,pause_active,context,
+      confirmation_owner!=0u,selection,confirmed,restart_owner!=0u,
+      restart_selection,restarted,(unsigned long)request,
+      (mouse_flags&0x10u)!=0u,cross_edge,circle_edge,share_edge);
+    report(line);
+    old_selection=selection;old_restart=restart_selection;
+    old_request=(int)request;old_pause=pause_active;old_context=context;
+  }
+}
+
+/* Buffered opt-in diagnostics: no logging within normal input polls. */
+static int ps1_history_enabled(void) {
+  return ps1_preview_active && ps1_input_flight_recorder_requested &&
+         (ps1_post_quit_guard_requested || ps1_transition_edge_ownership_requested);
+}
+static void ps1_history_record(unsigned event,unsigned request,int mode2d,
+    int mode3d,int movie,int pause,unsigned prev,const DIJOYSTATE2 *state) {
+  SpiderPS1HistoryEntry e;
+  if(!ps1_history_enabled())return;
+  memset(&e,0,sizeof(e));
+  e.sequence=ps1_input_history.total+1u;
+  e.tick_ms=(uint32_t)GetTickCount();
+  e.native_request=request;
+  e.previous_confirm=prev;
+  e.event=(uint8_t)event;
+  e.menu2d=(uint8_t)(mode2d!=0);
+  e.gameplay3d=(uint8_t)(mode3d!=0);
+  e.movie=(uint8_t)(movie!=0);
+  e.native_pause=(uint8_t)(pause!=0);
+  if(state && event==SPIDER_PS1_HISTORY_READ_OK) {
+    e.cross=(uint8_t)((state->rgbButtons[1]&0x80u)!=0);
+    e.options=(uint8_t)((state->rgbButtons[9]&0x80u)!=0);
+    e.circle=(uint8_t)((state->rgbButtons[2]&0x80u)!=0);
+    e.share=(uint8_t)((state->rgbButtons[8]&0x80u)!=0);
+  }
+  spider_ps1_history_push(&ps1_input_history,&e);
+}
+static void ps1_history_dump(void) {
+  unsigned i,n=spider_ps1_history_count(&ps1_input_history);
+  const SpiderPS1HistoryEntry *e,*prev;
+  char line[288];
+  if(!ps1_history_enabled())return;
+  snprintf(line,sizeof(line),"GAMEPAD-PS1: FLIGHT-RECORDER START buffered=%u events: 0=OK 1=FOCUS-LOSS 2=DI8-FAIL 3=DEVICE-MISSING",n);
+  report(line);
+  for(i=0;i<n;i++) {
+    int changed;
+    e=spider_ps1_history_at(&ps1_input_history,i);
+    prev=i?spider_ps1_history_at(&ps1_input_history,i-1u):NULL;
+    if(!e)continue;
+    changed=!prev || e->event!=prev->event ||
+      e->cross!=prev->cross || e->options!=prev->options ||
+      e->circle!=prev->circle || e->share!=prev->share ||
+      e->menu2d!=prev->menu2d || e->gameplay3d!=prev->gameplay3d ||
+      e->movie!=prev->movie || e->native_pause!=prev->native_pause ||
+      e->native_request!=prev->native_request ||
+      e->previous_confirm!=prev->previous_confirm;
+    if(!changed && i+8u<n)continue;
+    snprintf(line,sizeof(line),
+      "GAMEPAD-PS1: FLIGHT-RECORDER seq=%lu ms=%lu event=%u 2d=%u 3d=%u bink=%u pause=%u request=%lu CROSS=%u OPTIONS=%u CIRCLE=%u SHARE=%u previous-mask=%lu [DI8, NOT HUMAN PRESS]",
+      (unsigned long)e->sequence,(unsigned long)e->tick_ms,
+      (unsigned)e->event,(unsigned)e->menu2d,
+      (unsigned)e->gameplay3d,(unsigned)e->movie,
+      (unsigned)e->native_pause,(unsigned long)e->native_request,
+      (unsigned)e->cross,(unsigned)e->options,(unsigned)e->circle,
+      (unsigned)e->share,(unsigned long)e->previous_confirm);
+    report(line);
+  }
+  report("GAMEPAD-PS1: FLIGHT-RECORDER END");
+}
+
+/*
+ * Poll the already-verified secondary Sony DS4 while the custom focus PAUSED
+ * surface blocks the original game's Flip. This routine deliberately never
+ * calls begin_scancode, SendInput, or modifies the native joystick mapping.
+ * A complete fresh digital press/release is required to wake; sticks/POV
+ * cannot wake the game through noise, nor can a held button upon Alt+Tab.
+ * The controller cannot take foreground on its own: user must first switch
+ * back to the game window normally. No hotplug enumeration in this path.
+ */
+int SpiderGamepadUI_PauseWake_Begin(void) {
+  /* This is a snapshot of the verified device acquired during startup,
+   * not a new enumeration or hotplug mechanism. No controller -> keyboard
+   * instruction only; mouse and original native controls are unaffected. */
+  int available=configured && detected && device!=NULL;
+  memset(&pause_wake,0,sizeof(pause_wake));
+  pause_wake_active=available;
+  pause_wake_retry_logged=0;
+  return available;
+}
+unsigned SpiderGamepadUI_PauseWake_Poll(HWND hwnd) {
   DIJOYSTATE2 state;
   HRESULT hr;
-  unsigned pressed,back_pressed;
+  unsigned i,buttons=0;
+  if(!pause_wake_active)return 0;
+  if(!configured || !detected || !device)return 0;
+  if(!hwnd || !IsWindow(hwnd) || !IsWindowVisible(hwnd) ||
+     GetForegroundWindow()!=hwnd) {
+    /* A pending partial press must never survive another focus loss. */
+    memset(&pause_wake,0,sizeof(pause_wake));
+    return 0;
+  }
+  hr=IDirectInputDevice8_Poll(device);
+  /* Many DirectInput devices return DI_NOEFFECT from Poll. The actual
+   * GetDeviceState result, not optional Poll, determines readiness. */
+  (void)hr;
+  memset(&state,0,sizeof(state));
+  hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);
+  if(FAILED(hr)) {
+    memset(&pause_wake,0,sizeof(pause_wake));
+    /* The original game's own DirectInput interface is never changed. */
+    IDirectInputDevice8_Acquire(device);
+    if(!pause_wake_retry_logged) {
+      report("FOCUS-PAUSE-GAMEPAD: secondary DS4 read failed; retrying independent Acquire while foreground; keyboard wake remains available");
+      pause_wake_retry_logged=1;
+    }
+    return 0;
+  }
+  pause_wake_retry_logged=0;
+  for(i=0;i<12u;i++)
+    if(state.rgbButtons[i]&0x80u)buttons|=(1u<<i);
+  return spider_pause_pad_wake_step(&pause_wake,buttons);
+}
+void SpiderGamepadUI_PauseWake_End(void) {
+  pause_wake_active=0;
+  memset(&pause_wake,0,sizeof(pause_wake));
+  pause_wake_retry_logged=0;
+  /* The normal UI bridge resumes on the next Flip. Our wake used NO
+   * synthetic key; reset its edges so the pause input cannot be inherited. */
+  previous_buttons=0;
+  previous_back=0;
+  previous_pause=0;
+  previous_share=0;
+  previous_native_start=0;
+}
+void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
+                            int bink_active,int native_pause_active) {
+  DIJOYSTATE2 state;
+  HRESULT hr;
+  unsigned pressed,back_pressed,confirm_edges,effective_confirm;
   int menu_allowed,movie_allowed,confirm_allowed,gameplay_allowed,pause_pressed;
-  if(!configured || !hwnd || !IsWindow(hwnd))return;
+  int share_pressed,share_edge,native_start_pressed;
+  int post_quit_block=0;
+  unsigned ownership_block=0,native_request=0;
+  /* Always apply game-only mouse policy, even with ControllerProfile=Off
+   * or no controller; no desktop mouse or keyboard hooks are installed. */
+  SpiderPS1Mouse_OnFlip(hwnd);
+  if(!configured || !hwnd || !IsWindow(hwnd)){
+    return;
+  }
   /* Critical: release injected key before focus pause can block this thread. */
   release_active_key();
   if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {
+    /* Native game mouse state was already restored by mouse OnFlip. */
+    ps1_history_record(SPIDER_PS1_HISTORY_FOCUS_LOST,0u,menu_2d,
+      gameplay_3d,bink_active,native_pause_active,(unsigned)previous_buttons,NULL);
     previous_buttons=0;
     previous_back=0;
     previous_pause=0;
+    previous_share=0;
+    previous_native_start=0;
     return;
   }
+  /* The original request 7 (3D -> main menu) is already complete on the
+   * FIRST 2D Flip. Cross can otherwise inject Return into New Game before
+   * the returned menu has settled. Never block native gamepad input here:
+   * only the PS1 profile's synthetic UI Return is eligible. */
+  if(ps1_preview_active &&
+     (ps1_post_quit_guard_requested || ps1_transition_edge_ownership_requested)) {
+    native_request=(unsigned)*(const volatile DWORD *)(uintptr_t)0x0060CFA4u;
+    if(ps1_post_quit_guard_requested)
+      post_quit_block=spider_ps1_post_quit_guard_flip(&ps1_post_quit_guard,
+        1,menu_2d,gameplay_3d,bink_active,native_request);
+  }
   if(!probing)detect_device(hwnd);
-  if(!detected||!device)return;
+  if(!detected||!device) {
+    ps1_history_record(SPIDER_PS1_HISTORY_DEVICE_MISSING,native_request,
+      menu_2d,gameplay_3d,bink_active,native_pause_active,
+      (unsigned)previous_buttons,NULL);
+    return;
+  }
   hr=IDirectInputDevice8_Poll(device);
   if(FAILED(hr) && hr!=DI_NOEFFECT) {
     /* Some DirectInput joysticks use implicit polling; read even when the
@@ -304,6 +812,9 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,int bink_activ
   memset(&state,0,sizeof(state));
   hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);
   if(FAILED(hr)) {
+    ps1_history_record(SPIDER_PS1_HISTORY_READ_FAILED,native_request,
+      menu_2d,gameplay_3d,bink_active,native_pause_active,
+      (unsigned)previous_buttons,NULL);
     if(bad_reads++<4u) {
       char line[155];
       snprintf(line,sizeof(line),
@@ -315,41 +826,104 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,int bink_activ
     previous_buttons=0;
     previous_back=0;
     previous_pause=0;
+    previous_share=0;
+    previous_native_start=0;
     return;
   }
   bad_reads=0;
   pressed=(state.rgbButtons[1]&0x80u?SPIDER_CONFIRM_CROSS:0) |
           (state.rgbButtons[9]&0x80u?SPIDER_CONFIRM_OPTIONS:0);
+  /* PS1 preview: Cross is the ONLY synthetic menu confirmation. The
+   * legacy ControllerEnterButtons choice is honored outside PS1 preview.
+   * OPTIONS/Start remains free of synthetic Enter even if the old INI
+   * still says Both; native Start/BUTTON11 is handled separately. */
+  effective_confirm=spider_ps1_menu_confirm_mask(ps1_preview_active,(unsigned)confirm);
+  /* Per-button edges are still tracked independently for legacy mode. */
+  confirm_edges=spider_ps1_menu_confirm_edges(pressed,(unsigned)previous_buttons,effective_confirm);
+  ps1_history_record(SPIDER_PS1_HISTORY_READ_OK,native_request,menu_2d,
+    gameplay_3d,bink_active,native_pause_active,(unsigned)previous_buttons,&state);
+  if(ps1_preview_active && ps1_transition_edge_ownership_requested) {
+    ownership_block=spider_ps1_transition_edge_ownership_flip(
+      &ps1_transition_ownership,1,menu_2d,gameplay_3d,bink_active,
+      native_request,pressed & effective_confirm);
+  }
   back_pressed=(state.rgbButtons[2]&0x80u?SPIDER_BACK_CIRCLE:0) |
                (state.rgbButtons[8]&0x80u?SPIDER_BACK_SHARE:0);
   /* Original GameFMV_Active remains authoritative even outside the
    * widescreen menu presentation. 3D triangle/script input is untouched. */
-  menu_allowed=menu_2d && !gameplay_3d;
   movie_allowed=bink_active!=0;
+  menu_allowed=(menu_2d && !gameplay_3d) ||
+    (ps1_preview_active && native_pause_active && !movie_allowed);
   confirm_allowed=menu_allowed || movie_allowed;
-  gameplay_allowed=gameplay_3d && !menu_2d && !movie_allowed;
+  gameplay_allowed=gameplay_3d && !menu_2d && !movie_allowed &&
+                   !(ps1_preview_active && native_pause_active);
   pause_pressed=state.rgbButtons[9]&0x80u;
-  if(menu_allowed && (back_pressed & (unsigned)back) &&
+  share_pressed=state.rgbButtons[8]&0x80u;
+  share_edge=share_pressed && !previous_share;
+  if(ps1_quit_trace_requested)
+    ps1_trace_native_quit(menu_2d,gameplay_3d,native_pause_active,
+      (pressed&SPIDER_CONFIRM_CROSS) && !(previous_buttons&SPIDER_CONFIRM_CROSS),
+      (back_pressed&SPIDER_BACK_CIRCLE) && !(previous_back&SPIDER_BACK_CIRCLE),
+      share_edge);
+  native_start_pressed=(state.rgbButtons[11]&0x80u)!=0;
+  /* Passive test of the original BUTTON11/camera press. The native
+   * table modification being accepted does not by itself prove which
+   * controller table the runtime actually reads. Do NOT synthesize
+   * or suppress an input here; record only the physical press edge. */
+  if(ps1_preview_active && native_start_pressed && !previous_native_start &&
+     ps1_native_start_reports++<12u) {
+    char line[210];
+    snprintf(line,sizeof(line),
+      "GAMEPAD-PS1: ORIGINAL-BUTTON11 PHYSICAL PRESS; Start-RAM-unbound=%d native-pause-current=%d [READ-ONLY; test old button separately from SHARE]",
+      ps1_native_start_unbound,native_pause_active!=0);
+    report(line);
+  }
+  if(ps1_preview_active && ps1_options_skip_requested &&
+     gameplay_3d && !menu_2d && !movie_allowed && !native_pause_active &&
+     pause_pressed && !previous_pause) {
+    if(!ps1_request_native_options_cutscene_skip() &&
+       ps1_cutscene_reports++<8u)
+      report("GAMEPAD-UI: PS1-3D-OPTIONS refused: original CutSceneSkipAllow absent, inactive, unreadable or already requested");
+  }
+  if(ps1_preview_active && (gameplay_allowed || native_pause_active) &&
+     !movie_allowed && share_edge) {
+    begin_scancode(0x01u,"Escape");
+    if(ps1_native_start_unbound)
+      report("GAMEPAD-UI: PS1-PREVIEW SHARE -> Escape during 3D/pause; original Start RAM unbound (runtime behavior still to verify)");
+    else
+      report("GAMEPAD-UI: PS1-PREVIEW SHARE -> Escape during 3D/pause; original Start mapping retained");
+  } else if(menu_allowed && (back_pressed & (unsigned)back) &&
      !(previous_back & (unsigned)back)) {
     begin_scancode(0x01u,"Escape");
+  } else if(confirm_allowed && confirm_edges &&
+            !spider_ps1_menu_confirm_unowned(confirm_edges,ownership_block) &&
+            (confirm_edges & ownership_block)) {
+    /* Only old-session confirmation bits are consumed. A fresh OTHER
+     * confirm button may still send Return even while one bit is held. */
+    report("GAMEPAD-PS1: TRANSITION-OWNERSHIP consumed inherited menu confirmation (PS1: Cross only; legacy: Cross/Options) on first 2D frame after native request 7; rearm on physical release");
+    ps1_history_dump();
+  } else if(confirm_allowed && confirm_edges && post_quit_block) {
+    /* Legacy 8-Flip guard stays optional and suppresses any fresh Enter.
+     * Per-button edges are still consumed by previous_buttons below. */
+    report("GAMEPAD-PS1: POST-QUIT-GUARD suppressed synthetic Return on first 2D menu frames after native request 7");
+    ps1_history_dump();
   } else if(confirm_allowed &&
-            (pressed & (unsigned)confirm) &&
-            !(previous_buttons & (unsigned)confirm)) {
+            spider_ps1_menu_confirm_unowned(confirm_edges,ownership_block)) {
     begin_scancode(0x1Cu,"Return");
     if(movie_allowed && !menu_allowed && postmenu_bink_reports++<8u)
       report("GAMEPAD-UI: POST-MENU BINK Return attempted with original GameFMV_Active=1; native video skip gate remains authoritative");
-  } else if(gameplay_allowed && pause_button==SPIDER_PAUSE_OPTIONS &&
+  } else if(!ps1_preview_active && gameplay_allowed && pause_button==SPIDER_PAUSE_OPTIONS &&
             pause_pressed && !previous_pause &&
             options_free_of_native_actions()) {
     begin_scancode(0x01u,"Escape");
     report("GAMEPAD-UI: 3D PAUSE REQUEST OPTIONS -> Escape; no saved native BUTTON9 gameplay assignment");
   } else if(!menu_allowed && !movie_allowed && !gameplay_allowed &&
-            (pressed & (unsigned)confirm) &&
-            !(previous_buttons & (unsigned)confirm) &&
-            outside_mode_reports++<4u) {
+            confirm_edges && outside_mode_reports++<4u) {
     report("GAMEPAD-UI: unclassified engine stage; no keyboard injection");
   }
   previous_buttons=(int)pressed;
   previous_back=(int)back_pressed;
   previous_pause=pause_pressed;
+  previous_share=share_pressed;
+  previous_native_start=native_start_pressed;
 }
