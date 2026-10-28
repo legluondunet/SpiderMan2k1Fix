@@ -16,7 +16,7 @@ def run_mock(tmp_path, old_value=None):
     state=tmp_path/"wine-registry-value"
     if old_value is not None:
         state.write_text(old_value,encoding="utf-8")
-    fake.write_text(textwrap.dedent("""\\
+    fake.write_text(textwrap.dedent("""\
         #!/usr/bin/env bash
         set -u
         if [[ "$1" == reg ]]; then
