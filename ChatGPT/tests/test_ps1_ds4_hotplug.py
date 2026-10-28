@@ -119,3 +119,16 @@ def test_unplug_inputlost_never_acquires_disconnected_device_same_frame():
     # not silently reload the game's native PS1 profile in mid-game.
     assert "IDirectInput8_CreateDevice(di,&d.ds4_instance,&device,NULL)" in PAD
     assert "hotplug.last_scan=GetTickCount();" in PAD
+
+
+def test_profile_off_never_creates_secondary_directinput_device():
+    # Real-game isolation test: ControllerProfile=Off must bypass the
+    # SpiderMan2k1Fix secondary DirectInput8 factory and native PS1
+    # bootstrap, leaving the retail game's own joystick alone.
+    discovery=PAD.split("static void detect_device(HWND hwnd) {",1)[1]
+    assert discovery.index("if(profile==SPIDER_PROFILE_OFF)") < discovery.index('LoadLibraryA("dinput8.dll")')
+    assert "GAMEPAD-UI: OFF; original gamepad controls untouched" in discovery
+    bootstrap=PAD.split("int SpiderGamepadUI_PreparePS1(HWND hwnd) {",1)[1]
+    bootstrap=bootstrap.split("/* The retired native BUTTON11",1)[0]
+    assert "profile==SPIDER_PROFILE_OFF" in bootstrap
+    assert "if(!probing)detect_device(hwnd);" in bootstrap
