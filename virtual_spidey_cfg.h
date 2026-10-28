@@ -11,4 +11,7 @@ unsigned SpiderCfg_Install(const char *ini_path,void (*logger)(const char *));
 void SpiderCfg_ObserveNativeMonitor(unsigned width,unsigned height);
 /* One-time game-thread reload after verifying a real virtual CRT read. */
 void SpiderCfg_BootstrapGameRead(void);
+/* Opt-in RAM-only PS1 gameplay mapping after verified DS4 acquisition.
+ * Never writes the overlay into the original user INI. */
+int SpiderCfg_EnablePS1Preview(void);
 #endif
