@@ -12,7 +12,7 @@
  *
  * The replacement uses the GAME'S factory, original static data format
  * at 0x0053D0F4, original cooperative HWND at 0x006B7A60, buffer size
- * 16 events, absolute axis mode, original +/-1000 ranges at offsets 16
+ * 16 events, absolute axis mode, original +/-1000 ranges at offsets 0
  * and 4, and original capability-derived button count/polled flag.
  * A fresh, acquired, neutral DS4 is published to the original game global
  * ONLY after every initialization step succeeds.
@@ -149,7 +149,10 @@ static HRESULT configure_candidate(IDirectInputDevice8A *device,HWND hwnd,
   p.dwData=DIPROPAXISMODE_ABS;
   hr=IDirectInputDevice8_SetProperty(device,DIPROP_AXISMODE,&p.diph);
   if(FAILED(hr))return hr;
-  hr=set_native_range(device,16u);
+  /* Original retail EXE: x86 at 0x005019E0 loads dwObj=0 for lX.
+   * At 0x00501A42 dwObj=4 for lY. Offset 16 is lRy and breaks
+   * the native left-stick X calibration after hot-rebind. */
+  hr=set_native_range(device,0u);
   if(FAILED(hr))return hr;
   hr=set_native_range(device,4u);
   if(FAILED(hr))return hr;
