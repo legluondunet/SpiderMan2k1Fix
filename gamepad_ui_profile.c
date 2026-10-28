@@ -1159,6 +1159,15 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
    * still lock its native Joystick Configuration before any UI action.
    * Never run on an unknown pad, Sony profile or in the background. */
   xbox_try_readonly_menu();
+  /* Keep the native Joystick viewer locked for the CURRENT physically
+   * detected supported pad, including late-first attachment and swaps.
+   * Reusing an existing eight-site lock changes only the label formatter,
+   * not native action bindings (runtime profile switching is separate). */
+  if(detected && device && detected_kind==SPIDER_RECONNECT_DS4)
+    SpiderGamepadUI_ArmPS1ReadOnly();
+  else if(detected && device &&
+          detected_kind==SPIDER_RECONNECT_XBOX360 && xbox_readonly_active)
+    SpiderXbox360_InstallReadOnlyJoystick(log_message);
   if(!detected||!device) {
     ps1_history_record(SPIDER_PS1_HISTORY_DEVICE_MISSING,native_request,
       menu_2d,gameplay_3d,bink_active,native_pause_active,
