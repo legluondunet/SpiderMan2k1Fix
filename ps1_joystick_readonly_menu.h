@@ -13,6 +13,9 @@
 #include <stdint.h>
 
 enum { SPIDER_PS1_JOYSTICK_LABEL_CAPACITY=32 };
+/* Joystick Swing=BUTTON9 is R3; when a verified RT->keyboard Swing
+ * bridge is active, label the additional analog shortcut honestly. */
+void SpiderXbox360_SetRTAlias(int enabled);
 typedef struct {
   uint32_t virtual_address;
   uint8_t size;
