@@ -59,7 +59,7 @@ def test_original_game_gRenderTest_mouse_disable_gates_are_exact():
     assert "InterlockedCompareExchange(render_flags,desired,before)" in MODE
 
 
-def test_mouse_restoration_on_focus_loss_and_no_win32_cursor_hook():
+def test_game_mouse_stays_disabled_during_focus_pause_and_no_win32_cursor_hook():
     for banned in ("ShowCursor(", "SetCursorPos(", "ClipCursor(",
                    "SetWindowLongPtr(", "SetWindowLongPtrA(",
                    "SetWindowsHookEx(", "IDirectInputDevice8_", "VirtualProtect("):
