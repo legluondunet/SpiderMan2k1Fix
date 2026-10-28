@@ -46,6 +46,7 @@
 #include "sdl3_gamepad_probe.h"
 #include "ps1_input_flight_recorder.h"
 #include "ps1_joystick_readonly_menu.h"
+#include "sdl3_controller_setup.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
 typedef HRESULT (WINAPI *SpiderDICreateFn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
@@ -469,6 +470,7 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
     return;
   }
   strcpy(profile_ini,ini);
+  SpiderSDL3ControllerSetup_Init(ini,logger);
   /* Experimental only: no automatic fixed-profile activation until native
    * menu lock and Start handling are validated in the real game. */
   ps1_preview_requested=GetPrivateProfileIntA("Input","ControllerPS1Preview",0,ini)==1;
