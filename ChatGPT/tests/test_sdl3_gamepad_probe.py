@@ -84,6 +84,7 @@ def test_sdl3_detach_closes_exactly_once_and_compacts_slots(tmp_path):
     src.write_text(r'''
 #include <assert.h>
 #include <stdint.h>
+#include <stddef.h>
 #include "sdl3_gamepad_slots.h"
 static unsigned closes=0,notices=0;
 static uint32_t last_detached=0;
