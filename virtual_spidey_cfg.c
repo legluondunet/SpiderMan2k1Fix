@@ -15,6 +15,7 @@
 #include "ini_validation.h"
 #include "ini_recovery.h"
 #include "ps1_gamepad_mapping.h"
+#include "xbox360_gameplay_mapping.h"
 
 /* Always-on virtual configuration hooks ONLY imports of verified SpideyPC.exe (never patch
  * kernel32/msvcrt globally). Unknown bytes remain byte-for-byte preserved.
@@ -29,7 +30,7 @@
 static BYTE cfg[CFG_SIZE];
 static CRITICAL_SECTION guard;
 static int ready=0,dirty=0;
-static int ps1_preview_active=0;
+static int ps1_preview_active=0,xbox360_preview_active=0;
 static volatile LONG ps1_bootstrap_loaded=0;
 static unsigned ps1_rejected_user_changes=0;
 static uint32_t original_joystick[SPIDER_PS1_BUTTON_COUNT]={0};
@@ -285,7 +286,8 @@ static void load_joystick(void) {
 static int save_joystick(void) {
   unsigned i; char name[32];
   for(i=0;i<7;i++) {
-    DWORD code=ps1_preview_active?(DWORD)original_joystick[i]:get_word(joystick_offsets[i]);
+    DWORD code=(ps1_preview_active || xbox360_preview_active)?
+      (DWORD)original_joystick[i]:get_word(joystick_offsets[i]);
     if(code<=127) snprintf(name,sizeof(name),"BUTTON%lu",(unsigned long)code);
     else snprintf(name,sizeof(name),"0x%08lX",(unsigned long)code);
     if(!WritePrivateProfileStringA("Joystick",joystick_actions[i],name,ini_file)) return 0;
@@ -837,6 +839,7 @@ int SpiderCfg_EnablePS1Preview(void) {
   if(!ready)return 0;
   EnterCriticalSection(&guard);
   if(ps1_preview_active) {LeaveCriticalSection(&guard);return 1;}
+  if(xbox360_preview_active) {LeaveCriticalSection(&guard);return 0;}
   if(!spider_ps1_apply(cfg,CFG_SIZE)){
     LeaveCriticalSection(&guard);
     return 0;
@@ -851,6 +854,42 @@ int SpiderCfg_EnablePS1Preview(void) {
   }
   LeaveCriticalSection(&guard);
   return 1;
+}
+/* Independent Xbox 360-compatible RAM-only mapping: same exact seven
+ * verified bytes and user snapshot as PS1. Only an authenticated early
+ * hardware+read-only-menu preflight may call this method. */
+int SpiderCfg_EnableXbox360Preview(void) {
+  unsigned i;
+  char line[235];
+  if(!ready)return 0;
+  EnterCriticalSection(&guard);
+  if(xbox360_preview_active) {LeaveCriticalSection(&guard);return 1;}
+  if(ps1_preview_active || !spider_xbox360_apply(cfg,CFG_SIZE)) {
+    LeaveCriticalSection(&guard);return 0;
+  }
+  xbox360_preview_active=1;
+  for(i=0;i<SPIDER_PS1_BUTTON_COUNT;i++) {
+    snprintf(line,sizeof(line),
+      "SPIDEY-CFG: XBOX360-PREVIEW action=%s previous=0x%08lX temporary=BUTTON%lu; saved INI/RawHex preserved",
+      joystick_actions[i],(unsigned long)original_joystick[i],
+      (unsigned long)spider_xbox360_buttons[i]);
+    report(line);
+  }
+  LeaveCriticalSection(&guard);
+  return 1;
+}
+int SpiderCfg_Xbox360BootstrapLoaded(void) {
+  return SpiderCfg_PS1BootstrapLoaded();
+}
+void SpiderCfg_CancelXbox360Preview(void) {
+  if(!ready)return;
+  EnterCriticalSection(&guard);
+  if(xbox360_preview_active && !SpiderCfg_Xbox360BootstrapLoaded()) {
+    spider_ps1_restore(cfg,CFG_SIZE,original_joystick);
+    xbox360_preview_active=0;
+    report("SPIDEY-CFG: XBOX360-PREVIEW ROLLBACK native game bootstrap unverified; original seven bindings restored");
+  }
+  LeaveCriticalSection(&guard);
 }
 /* If the authenticated original game reload did not happen, undo the
  * speculative overlay immediately. Never leave half of a PS1 profile
@@ -901,7 +940,7 @@ static int save_settings(void) {
   /* Never let in-game changes to screen size or color depth persist. */
   apply_locked_display();
   memcpy(saved_cfg,cfg,CFG_SIZE);
-  if(ps1_preview_active)
+  if(ps1_preview_active || xbox360_preview_active)
     spider_ps1_restore(saved_cfg,CFG_SIZE,original_joystick);
   /* The PS1 gameplay preview must NEVER overwrite a player's persistent
    * joystick preferences in either RawHex or the named [Joystick] keys. */
@@ -915,6 +954,8 @@ static int save_settings(void) {
   dirty=0;
   report(ps1_preview_active?
     "SPIDEY-CFG: user settings saved; original joystick bindings preserved (PS1 preview RAM only)":
+    xbox360_preview_active?
+    "SPIDEY-CFG: user settings saved; original joystick bindings preserved (XBOX360 preview RAM only)":
     "SPIDEY-CFG: game keyboard/joystick/audio/brightness saved; resolution and color depth locked by [Display] policy");
   return 1;
 fail:
@@ -987,16 +1028,19 @@ static BOOL WINAPI hooked_WriteFile(HANDLE h,LPCVOID buffer,DWORD len,LPDWORD do
   if(len){
     DWORD old_w=get_word(0),old_h=get_word(4),old_depth=get_word(8);
     memcpy(cfg+v->pos,buffer,len);v->pos+=(LONG)len;dirty=1;writes++;
-    if(ps1_preview_active) {
+    if(ps1_preview_active || xbox360_preview_active) {
       /* Without the separately opt-in, original joystick-menu read-only
        * patch, the game's
        * own live action array may still change. Always preserve the seven
        * PS1 virtual bindings and the saved user's original preferences. */
       BYTE attempted[CFG_SIZE];
       memcpy(attempted,cfg,CFG_SIZE);
-      spider_ps1_apply(cfg,CFG_SIZE);
+      if(ps1_preview_active)spider_ps1_apply(cfg,CFG_SIZE);
+      else spider_xbox360_apply(cfg,CFG_SIZE);
       if(memcmp(attempted,cfg,CFG_SIZE) && ps1_rejected_user_changes++<8u)
-        report("SPIDEY-CFG: PS1-PREVIEW protected seven virtual joystick bindings from original-game config write; native Joystick read-only is separately gated");
+        report(ps1_preview_active?
+          "SPIDEY-CFG: PS1-PREVIEW protected seven virtual joystick bindings from original-game config write; native Joystick read-only is separately gated":
+          "SPIDEY-CFG: XBOX360-PREVIEW protected seven temporary virtual joystick bindings on save; user INI untouched");
     }
     if(old_w!=get_word(0) || old_h!=get_word(4) || old_depth!=get_word(8))
       report("SPIDEY-CFG: in-game screen/depth write intercepted; authoritative display settings restored");
@@ -1331,7 +1375,7 @@ void SpiderCfg_BootstrapGameRead(void) {
    * applies the locked resolution/depth without modifying game executable. */
   game_load();
   EnterCriticalSection(&guard);
-  if(ps1_preview_active && opens>opened && reads>served)
+  if((ps1_preview_active || xbox360_preview_active) && opens>opened && reads>served)
     InterlockedExchange(&ps1_bootstrap_loaded,1);
   snprintf(msg,sizeof(msg),
     "SPIDEY-CFG: BOOTSTRAP game loader returned: virtual opens +%lu reads +%lu; configured=%ux%u depth=32 [%s]",
