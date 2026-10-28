@@ -137,7 +137,10 @@ def test_post_rebind_menu_input_breadcrumbs_are_passive_and_bounded():
     header=(ROOT/"native_joystick_reconnect.h").read_text()
     assert "void SpiderNativeReconnect_LogSyntheticMenuKey(unsigned scan, const char *phase);" in header
     assert "void SpiderNativeReconnect_LogSyntheticMenuKey(unsigned scan,const char *phase)" in SOURCE
-    assert "if(!requested || !initialized || rebound==0 || reported>=40u)return;" in SOURCE
+    assert "if(!requested || !initialized || rebound==0)return;" in SOURCE
+    assert "if(reported_generation!=rebound)" in SOURCE
+    assert "reported=0;" in SOURCE
+    assert "if(reported>=40u)return;" in SOURCE
     assert "native_thread!=GetCurrentThreadId()" in SOURCE
     assert "SPIDER_NATIVE_FORCE_FEEDBACK 0x006B7A68u" in SOURCE
     assert "NATIVE-RECONNECT: POST-REBIND INPUT" in SOURCE
@@ -148,3 +151,22 @@ def test_post_rebind_menu_input_breadcrumbs_are_passive_and_bounded():
     assert ui.index('SpiderNativeReconnect_LogSyntheticMenuKey(scan,"before KEYDOWN");') < ui.index('if(SendInput(1,&in,sizeof(in))!=1) {', ui.index('static void begin_scancode'))
     assert "IDirectInputDevice8_GetDeviceData" not in SOURCE.split("void SpiderNativeReconnect_LogSyntheticMenuKey(",1)[1].split("void SpiderNativeReconnect_Init(",1)[0]
     assert "IDirectInputDevice8_Release" not in SOURCE.split("void SpiderNativeReconnect_LogSyntheticMenuKey(",1)[1].split("void SpiderNativeReconnect_Init(",1)[0]
+
+
+def test_post_rebind_health_heartbeat_is_passive_generation_aware_and_bounded():
+    header=(ROOT/"native_joystick_reconnect.h").read_text()
+    assert "void SpiderNativeReconnect_ObserveMode(long flip_index, int menu_2d," in header
+    assert "void SpiderNativeReconnect_ObserveMode(long flip_index,int menu_2d," in SOURCE
+    assert "SpiderNativeReconnect_ObserveMode(count," in MAIN
+    assert "observed_rebound==rebound" in SOURCE
+    assert "(flip_index-last_flip)<300" in SOURCE
+    assert "reports>=80u" in SOURCE
+    assert "NATIVE-RECONNECT: HEALTH" in SOURCE
+    assert 'mode==2?"3D"' in SOURCE
+    assert "joystick=InterlockedCompareExchangePointer(" in SOURCE
+    assert "ffb=InterlockedCompareExchangePointer(" in SOURCE
+    block=SOURCE.split("void SpiderNativeReconnect_ObserveMode(",1)[1].split("void SpiderNativeReconnect_Init(",1)[0]
+    for forbidden in ("IDirectInputDevice8_", "IDirectInput8_", "VirtualProtect(",
+                      "Release(", "SetProperty(", "WriteProcessMemory("):
+        assert forbidden not in block
+    assert "if(!requested || !initialized || !SpiderNativeUnplug_Installed()" in block
