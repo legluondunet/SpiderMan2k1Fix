@@ -562,7 +562,7 @@ void SpiderSDL3ControllerSetup_Open(void) {
                      prior_foreground==owner || prior_foreground==window);
   if(parent_enabled && IsWindow(owner))EnableWindow(owner,TRUE);
   if(restore_allowed && IsWindow(owner) && IsWindowVisible(owner)) {
-    SetActiveWindow(owner); /* same original game thread, no AttachThreadInput */
+    SetActiveWindow(owner); /* same original game thread; do not attach foreign input queues */
     focus_attempted=1;
     focus_result=SetForegroundWindow(owner)!=0;
     if(GetForegroundWindow()==owner)SetFocus(owner);
