@@ -113,3 +113,18 @@ def test_individual_unavailable_values_do_not_cancel_other_sections():
               "SYS-CONTROLLER: DirectInput8 enumeration unavailable",
               "resolution=Unavailable"):
         assert s in src
+
+
+def test_display_device_identifiers_correlate_with_game_window_target():
+    src = read("system_diagnostics.c")
+    core = read("spiderman2k1fix.c")
+    assert "device=%s primary=%s" in src
+    assert "strrchr(d.DeviceName" in src
+    probe = core.split("static void probe_desktop_mode(HWND hwnd)", 1)[1]
+    assert "MonitorFromWindow(hwnd,MONITOR_DEFAULTTONEAREST)" in probe
+    assert "GetMonitorInfoA(monitor,(MONITORINFO*)&info)" in probe
+    assert "SYS-DISPLAY-SELECTED: game_window_monitor=%s" in probe
+    assert "MONITORINFOF_PRIMARY" in probe
+    assert probe.index("EnumDisplaySettingsA(info.szDevice") < probe.index(
+        "SYS-DISPLAY-SELECTED: game_window_monitor=%s"
+    )
