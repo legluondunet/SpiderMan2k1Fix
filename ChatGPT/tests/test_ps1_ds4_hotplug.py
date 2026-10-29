@@ -122,7 +122,7 @@ def test_unplug_inputlost_never_acquires_disconnected_device_same_frame():
     assert "secondary stale device Release COMPLETE" in PAD
     failed=PAD[PAD.index("hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);",
                          PAD.index("void SpiderGamepadUI_OnFlip(")):]
-    failed=failed[:failed.index("bad_reads=0;")]
+    failed=failed[:failed.index("  if(sdl3_3d_trace_requested &&")]
     # The new one-shot modal-return exception permits Acquire ONLY on a
     # verified *secondary* HWND/COM pointer with DIERR_NOTACQUIRED. The
     # ordinary INPUTLOST/unplug error branch must still never Acquire.
