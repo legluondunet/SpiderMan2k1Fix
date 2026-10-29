@@ -10,6 +10,11 @@
 
 # Changelog
 
+## Unreleased — startup system diagnostics (draft, independent of PR #80)
+
+- When `[Debug] Log=1`, write a bounded `SYS-INFO` snapshot once after original executable verification and INI validation. Include actual/emulated Windows version, Wine version plus host OS/kernel, Proton environment/version only when exposed, CPU and physical/logical core counts, RAM, active monitor count and resolutions, GPU(s), D3D9-reported driver names/versions, desktop/session hints and read-only XInput/DirectInput gamepad enumeration.
+- Do not acquire gamepads, create D3D9 devices, read serial numbers, invoke external programs, or log identity/private environment paths. Report unknown host Mesa drivers/Proton versions as `Unavailable` rather than guessing. This diagnostic change does not modify input, rendering, timing, SDL3 ownership or INI defaults. Runtime validation on Wine and Windows is still required.
+
 ## Unreleased — organized installation paths (DRAFT PR #81)
 
 - **Upcoming Windows/Wine release packaging:** include unmodified official SDL3 v3.4.18 Windows x86 in `SpiderMan2k1Fix/` with its zlib license. CI downloads the exact tagged official ZIP, verifies its published SHA-256 plus PE32/i386 format, and publishes a release-ready ZIP with a SHA256 file as a separate CI artifact. No automatic publication and no modification to historical v1.1.0 releases. SDL3 stays optional; native audio and gamepad defaults are unchanged.
