@@ -250,7 +250,7 @@ static void log_desktop(void) {
 }
 static void log_screens(void) {
   unsigned i,active=0;
-  char line[320],name[160];
+  char line[320],name[160],device[48];
   DISPLAY_DEVICEA d;
   DEVMODEA mode;
   snprintf(line,sizeof(line),"SYS-DISPLAYS: active_monitors=%d primary_desktop=%dx%d virtual_desktop=%dx%d",
@@ -267,17 +267,21 @@ static void log_screens(void) {
     active++;
     memset(&mode,0,sizeof(mode));mode.dmSize=sizeof(mode);
     clean(name,sizeof(name),d.DeviceString);
+    {
+      const char *suffix=strrchr(d.DeviceName,'\\');
+      clean(device,sizeof(device),suffix?suffix+1:d.DeviceName);
+    }
     if(EnumDisplaySettingsA(d.DeviceName,ENUM_CURRENT_SETTINGS,&mode)) {
       snprintf(line,sizeof(line),
-        "SYS-DISPLAY: screen=%u primary=%s resolution=%lux%lu refresh=%luHz adapter=%s",
-        active,(d.StateFlags&DISPLAY_DEVICE_PRIMARY_DEVICE)?"yes":"no",
+        "SYS-DISPLAY: screen=%u device=%s primary=%s resolution=%lux%lu refresh=%luHz adapter=%s",
+        active,device,(d.StateFlags&DISPLAY_DEVICE_PRIMARY_DEVICE)?"yes":"no",
         (unsigned long)mode.dmPelsWidth,(unsigned long)mode.dmPelsHeight,
         (unsigned long)mode.dmDisplayFrequency,name);
       emit(line);
     } else {
       snprintf(line,sizeof(line),
-        "SYS-DISPLAY: screen=%u primary=%s resolution=Unavailable adapter=%s",
-        active,(d.StateFlags&DISPLAY_DEVICE_PRIMARY_DEVICE)?"yes":"no",name);
+        "SYS-DISPLAY: screen=%u device=%s primary=%s resolution=Unavailable adapter=%s",
+        active,device,(d.StateFlags&DISPLAY_DEVICE_PRIMARY_DEVICE)?"yes":"no",name);
       emit(line);
     }
   }
