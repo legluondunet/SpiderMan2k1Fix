@@ -12,6 +12,9 @@
 
 ## Unreleased — organized installation paths (DRAFT PR #81)
 
+- **Upcoming Windows/Wine release packaging:** include unmodified official SDL3 v3.4.18 Windows x86 in `SpiderMan2k1Fix/` with its zlib license. CI downloads the exact tagged official ZIP, verifies its published SHA-256 plus PE32/i386 format, and publishes a release-ready ZIP with a SHA256 file as a separate CI artifact. No automatic publication and no modification to historical v1.1.0 releases. SDL3 stays optional; native audio and gamepad defaults are unchanged.
+
+
 - Keep only the Windows loader `winmm.dll` beside the original `SpideyPC.exe`; load the main `SpiderMan2k1Fix.dll` from `SpiderMan2k1Fix/`, with root DLL fallback only for old installs.
 - Store the main INI and both startup/core diagnostics in the nested folder (or `%LOCALAPPDATA%` if the game installation is not writable); one-time copy of a legacy root INI without removing it or changing saved settings. Keep original strict INI recovery and rolling `.old` backup.
 - Write F9 lossless PNG screenshots and temporary encoder images under `SpiderMan2k1Fix/screenshots/`; keep the native notifications, non-overwrite numbering and PNG verification.
