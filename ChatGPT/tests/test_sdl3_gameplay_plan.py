@@ -87,6 +87,11 @@ def test_portable_semantic_3d_gate_and_transitions(tmp_path):
         /* Saved remap (Swing->LT) is evaluated purely as SDL3 semantics. */
         assert(spider_sdl3_profile_assign(&xbox,SPIDER_SDL3_ACTION_SWING,
           spider_sdl3_bind(SPIDER_SDL3_BIND_TRIGGER,SPIDER_SDL3_AXIS_LT)));
+        /* Changing bindings, even on a neutral same-owner pad, rearms
+         * the policy; the next distinct sample is the first READY one. */
+        assert(spider_sdl3_gameplay_plan_step(&state,&xbox,&sample,
+          3,0x045e,0x028e,1,1,&press,&release)==SPIDER_PLAN_WAIT_NEUTRAL);
+        assert(state.armed && !press && !release);
         assert(spider_sdl3_gameplay_plan_step(&state,&xbox,&sample,
           3,0x045e,0x028e,1,1,&press,&release)==SPIDER_PLAN_READY);
         sample.axis[SPIDER_SDL3_AXIS_RT]=32767;
