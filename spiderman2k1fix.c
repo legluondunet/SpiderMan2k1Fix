@@ -612,6 +612,19 @@ static void probe_desktop_mode(HWND hwnd) {
     (unsigned long)mode.dmPelsWidth,(unsigned long)mode.dmPelsHeight,
     (unsigned long)mode.dmBitsPerPel,(unsigned long)mode.dmDisplayFrequency,info.szDevice);
   log_line(line);
+  /* The startup inventory lists every active display, but only the real
+   * game HWND determines the output monitor. Report that mapping after the
+   * early DirectDraw monitor probe, never from the foreground application. */
+  {
+    const char *device=strrchr(info.szDevice,'\\');
+    snprintf(line,sizeof(line),
+      "SYS-DISPLAY-SELECTED: game_window_monitor=%s resolution=%lux%lu refresh=%luHz primary=%s",
+      device?device+1:info.szDevice,
+      (unsigned long)mode.dmPelsWidth,(unsigned long)mode.dmPelsHeight,
+      (unsigned long)mode.dmDisplayFrequency,
+      (info.dwFlags&MONITORINFOF_PRIMARY)?"yes":"no");
+    log_line(line);
+  }
   if (!SpiderDisplay_Fit(640,480,(int)mode.dmPelsWidth,(int)mode.dmPelsHeight,&r)) return;
   snprintf(line,sizeof(line),
     "DISPLAY-PLAN: 4:3 content fitted without distortion to desktop %lux%lu => viewport=(%d,%d)-(%d,%d) [PROBE ONLY]",
