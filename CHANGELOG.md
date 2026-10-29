@@ -1,4 +1,30 @@
+## Unreleased — optional SDL3 read-only gamepad detection (draft stacked PR)
+
+- Hardware-confirmed limitation: SDL3 selection by Start does not yet provide game input with two pads connected at startup. The existing DirectInput UI bridge intentionally refuses ambiguous devices; do not claim single-logical-pad gameplay before a real input adapter exists.
+- Add passive, validated native joystick pointer telemetry for multi-pad sessions; no game memory or COM device mutations.
+
+- Fix SDL3 hot-unplug lifecycle: compact disconnected slots, close their SDL handles exactly once, and prevent repetitive detach messages/NULL handle close calls (tested with a portable 100-rescan C99 regression).
+- Add an **OFF-by-default** `ExperimentalSDL3Probe=1` diagnostic. Dynamically loads an optional executable-relative Windows x86 SDL3.dll; gameplay remains exclusively on the validated native DirectInput backend. No SDL input is injected and no SDL/audio/video replacement occurs.
+- Enumerate mapped gamepads separately from all joysticks, track SDL3 instance IDs, and log attach/detach, normalized LT/RT and a neutral-Start one-player selection experiment; preserve the existing owner when more pads arrive.
+- Portable C99 multi-gamepad selection tests and CI build; no claims of production-ready SDL3 gameplay, input deduplication, or hardware validation yet. This experimental PR is stacked on #77 and must remain draft/unmerged.
+
 # Changelog
+
+## Unreleased — startup system diagnostics (draft, independent of PR #80)
+
+- When `[Debug] Log=1`, write a bounded `SYS-INFO` snapshot once after original executable verification and INI validation. Include actual/emulated Windows version, Wine version plus host OS/kernel, Proton environment/version only when exposed, CPU and physical/logical core counts, RAM, active monitor count and resolutions, GPU(s), D3D9-reported driver names/versions, desktop/session hints and read-only XInput/DirectInput gamepad enumeration.
+- Do not acquire gamepads, create D3D9 devices, read serial numbers, invoke external programs, or log identity/private environment paths. Report unknown host Mesa drivers/Proton versions as `Unavailable` rather than guessing. This diagnostic change does not modify input, rendering, timing, SDL3 ownership or INI defaults. Runtime validation on Wine and Windows is still required.
+
+## Unreleased — organized installation paths (DRAFT PR #81)
+
+- **Upcoming Windows/Wine release packaging:** include unmodified official SDL3 v3.4.18 Windows x86 in `SpiderMan2k1Fix/` with its zlib license. CI downloads the exact tagged official ZIP, verifies its published SHA-256 plus PE32/i386 format, and publishes a release-ready ZIP with a SHA256 file as a separate CI artifact. No automatic publication and no modification to historical v1.1.0 releases. SDL3 stays optional; native audio and gamepad defaults are unchanged.
+
+
+- Keep only the Windows loader `winmm.dll` beside the original `SpideyPC.exe`; load the main `SpiderMan2k1Fix.dll` from `SpiderMan2k1Fix/`, with root DLL fallback only for old installs.
+- Store the main INI and both startup/core diagnostics in the nested folder (or `%LOCALAPPDATA%` if the game installation is not writable); one-time copy of a legacy root INI without removing it or changing saved settings. Keep original strict INI recovery and rolling `.old` backup.
+- Write F9 lossless PNG screenshots and temporary encoder images under `SpiderMan2k1Fix/screenshots/`; keep the native notifications, non-overwrite numbering and PNG verification.
+- Update Windows x86 artifact layout and setup instructions to retain one easy-to-extract archive without mixing the patch runtime with game assets. No change to native gameplay input, original EXE resources, SDL3 controller semantics or media timing.
+
 
 ## Unreleased — PAUSED cursor visibility (PR #74)
 

@@ -29,6 +29,7 @@
 #include "input_notacquired_retry.h"
 #include "native_joystick_unplug.h"
 #include "native_joystick_reconnect.h"
+#include "sdl3_gamepad_probe.h"
 #include "pause_any_key.h"
 #include "pause_surface.h"
 #include "focus_media_pause.h"
@@ -36,6 +37,8 @@
 #include "menu_version.h"
 #include "version_info.h"
 #include "f9_png.h"
+#include "spider_fix_paths.h"
+#include "system_diagnostics.h"
 #include "f9_toast.h"
 #include "quick_exit_f12.h"
 #include "pkr_audio_index.h"
@@ -51,23 +54,20 @@ static const BYTE expected_sha256[32] = {
 static int debug_log_enabled=0;
 /* Load once at startup, not on every drawing/logging call. */
 static void debug_log_load_setting(void) {
-  char path[MAX_PATH],*slash;
-  DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
+  char path[MAX_PATH];
   debug_log_enabled=0;
-  if (!n || n>=sizeof(path)) return;
-  slash=strrchr(path,'\\');
-  if (!slash || (size_t)(slash-path)+strlen("SpiderMan2k1Fix.ini")+1>=sizeof(path)) return;
-  strcpy(slash+1,"SpiderMan2k1Fix.ini");
+  if(!spider_path_ini_a(path,sizeof(path)))return;
   debug_log_enabled=(GetPrivateProfileIntA("Debug","Log",0,path)==1);
 }
 static void log_line(const char *s) {
-  char path[MAX_PATH], *slash; FILE *f;
-  if (!debug_log_enabled) return;
-  DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
-  if (!n || n>=sizeof(path)) return;
-  slash=strrchr(path,'\\');
-  if (!slash || (size_t)(slash-path)+strlen("SpiderMan2k1Fix.log")+1>=sizeof(path)) return;
-  strcpy(slash+1,"SpiderMan2k1Fix.log");
+  static char path[MAX_PATH];
+  static int resolved=0;
+  FILE *f;
+  if(!debug_log_enabled)return;
+  if(!resolved) {
+    if(!spider_path_log_a(path,sizeof(path)))return;
+    resolved=1;
+  }
   f=fopen(path,"a"); if(f) { fprintf(f,"%s\n",s); fclose(f); }
 }
 /* Windows creates a class="Ghost" surrogate after several seconds without
@@ -612,6 +612,25 @@ static void probe_desktop_mode(HWND hwnd) {
     (unsigned long)mode.dmPelsWidth,(unsigned long)mode.dmPelsHeight,
     (unsigned long)mode.dmBitsPerPel,(unsigned long)mode.dmDisplayFrequency,info.szDevice);
   log_line(line);
+  /* The startup inventory lists every active display, but only the real
+   * game HWND determines the output monitor. Report that mapping after the
+   * early DirectDraw monitor probe, never from the foreground application. */
+  {
+    static char last_selected[260]="";
+    const char *device=strrchr(info.szDevice,'\\');
+    snprintf(line,sizeof(line),
+      "SYS-DISPLAY-SELECTED: game_window_monitor=%s resolution=%lux%lu refresh=%luHz primary=%s",
+      device?device+1:info.szDevice,
+      (unsigned long)mode.dmPelsWidth,(unsigned long)mode.dmPelsHeight,
+      (unsigned long)mode.dmDisplayFrequency,
+      (info.dwFlags&MONITORINFOF_PRIMARY)?"yes":"no");
+    /* Probe runs both before and during SetCooperativeLevel. Log the first
+     * game monitor, then only meaningful selection/resolution changes. */
+    if(debug_log_enabled && strcmp(line,last_selected)!=0) {
+      log_line(line);
+      strcpy(last_selected,line);
+    }
+  }
   if (!SpiderDisplay_Fit(640,480,(int)mode.dmPelsWidth,(int)mode.dmPelsHeight,&r)) return;
   snprintf(line,sizeof(line),
     "DISPLAY-PLAN: 4:3 content fitted without distortion to desktop %lux%lu => viewport=(%d,%d)-(%d,%d) [PROBE ONLY]",
@@ -2598,6 +2617,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   SpiderDI8Retry_OnFlip(count);
   SpiderNativeUnplug_OnFlip(count);
   SpiderNativeReconnect_OnFlip(count,game_hwnd);
+  SpiderSDL3Probe_OnFlip(count,game_hwnd);
   /* Passive, bounded post-hotplug heartbeat: menu -> 3D -> menu. */
   SpiderNativeReconnect_ObserveMode(count,
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
@@ -3186,15 +3206,15 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  /* The supported executable is already SHA-verified and the logger is
+   * enabled only with [Debug] Log=1. Read-only inventory, never DllMain. */
+  if(debug_log_enabled)SpiderSystemDiagnostics_Log(log_line);
   /* Passive profile setup only: independent DI8 discovery begins later,
    * on the game's real window and Flip thread, never under loader lock.
    * All original gameplay controls are preserved. */
   {
-    char input_ini[MAX_PATH],*slash;
-    DWORD length=GetModuleFileNameA(NULL,input_ini,sizeof(input_ini));
-    if(length>0 && length<sizeof(input_ini) &&
-       (slash=strrchr(input_ini,'\\'))!=NULL) {
-      strcpy(slash+1,"SpiderMan2k1Fix.ini");
+    char input_ini[MAX_PATH];
+    if(spider_path_ini_a(input_ini,sizeof(input_ini))) {
       SpiderGamepadUI_Init(input_ini,log_line);
     } else {
       log_line("GAMEPAD-UI: OFF missing executable-relative INI path");
@@ -3208,27 +3228,25 @@ static DWORD initialize_body(LPVOID unused) {
   /* Experimental: the original game exits on joystick DIERR_UNPLUGGED.
    * Opt-in, SHA-pinned, game-thread-only mitigation; no native rebind yet. */
   {
-    char ini[MAX_PATH],*slash;
-    DWORD n=GetModuleFileNameA(NULL,ini,sizeof(ini));
-    if(n>0 && n<sizeof(ini) && (slash=strrchr(ini,'\\'))!=NULL) {
-      strcpy(slash+1,"SpiderMan2k1Fix.ini");
+    char ini[MAX_PATH];
+    if(spider_path_ini_a(ini,sizeof(ini))) {
       SpiderNativeUnplug_Init(ini,log_line);
       SpiderNativeReconnect_Init(ini,log_line);
+      SpiderSDL3Probe_Init(ini,log_line);
     } else {
       SpiderNativeUnplug_Init(NULL,log_line);
       SpiderNativeReconnect_Init(NULL,log_line);
+      SpiderSDL3Probe_Init(NULL,log_line);
     }
   }
   SpiderFocusMedia_Init(log_line); /* Opt-in native Bink pause. */
   SpiderFocusDSound_Init(log_line); /* Separately opt-in game-owned secondary buffers only. */
   SpiderPauseSurface_Init(log_line); /* Pause drawn into the game backbuffer; no HWND overlays. */
   {
-    char ini[MAX_PATH],*slash;
-    DWORD n=GetModuleFileNameA(NULL,ini,MAX_PATH);
+    char ini[MAX_PATH];
     /* Native WAV final-sector fix is built in; no INI key is needed. */
     int pkr_index=0,pkr_play_trace=0,pkr_heli_declick=0,pkr_loader_tail=1;
-    if(n && n<MAX_PATH && (slash=strrchr(ini,'\\'))!=NULL){
-      strcpy(slash+1,"SpiderMan2k1Fix.ini");
+    if(spider_path_ini_a(ini,sizeof(ini))) {
       pkr_index=GetPrivateProfileIntA("Debug","ExperimentalPKRAudioIndex",0,ini)==1;
       pkr_play_trace=GetPrivateProfileIntA("Debug","ExperimentalPKRAudioPlayTrace",0,ini)==1;
       pkr_heli_declick=GetPrivateProfileIntA("Debug","ExperimentalAudioHeli1Declick",0,ini)==1;
@@ -3255,13 +3273,9 @@ static DWORD initialize_body(LPVOID unused) {
   }
   log_line("DISPLAY: 4:3 menu and intro presentation enabled");
   {
-    char path[MAX_PATH],ini[MAX_PATH],*slash;
-    DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
+    char ini[MAX_PATH];
     int fps=30;
-    if (n && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL &&
-        (size_t)(slash-path)+strlen("SpiderMan2k1Fix.ini")+1<sizeof(path)) {
-      memcpy(ini,path,n+1);
-      strcpy(ini+(slash-path)+1,"SpiderMan2k1Fix.ini");
+    if(spider_path_ini_a(ini,sizeof(ini))) {
       {
         char fps_value[48],*end=NULL;
         long number;
@@ -3364,11 +3378,8 @@ static DWORD initialize_body(LPVOID unused) {
   /* Always-on virtual CFG: signature-gated EXE IAT hook.
    * The hook never executes for an unverified EXE. */
   {
-    char game_path[MAX_PATH],ini_path[MAX_PATH],*slash;
-    DWORD n=GetModuleFileNameA(NULL,game_path,sizeof(game_path));
-    if(n>0 && n<sizeof(game_path) && (slash=strrchr(game_path,'\\'))!=NULL) {
-      memcpy(ini_path,game_path,n+1);
-      strcpy(ini_path+(slash-game_path)+1,"SpiderMan2k1Fix.ini");
+    char ini_path[MAX_PATH];
+    if(spider_path_ini_a(ini_path,sizeof(ini_path))) {
       /* Virtual Spidey.cfg is a permanent feature for the verified EXE.
        * Keep all signature checks and safe fallback inside SpiderCfg_Install. */
       SpiderCfg_Install(ini_path,log_line);
@@ -3377,11 +3388,8 @@ static DWORD initialize_body(LPVOID unused) {
   /* The EXE checksum and the exact four menu instructions were checked.
    * Only the displayed values and two menu input paths are changed. */
   {
-    char game_path[MAX_PATH],ini_path[MAX_PATH],*slash;
-    DWORD n=GetModuleFileNameA(NULL,game_path,sizeof(game_path));
-    if(n>0 && n<sizeof(game_path) && (slash=strrchr(game_path,'\\'))!=NULL) {
-      memcpy(ini_path,game_path,n+1);
-      strcpy(ini_path+(slash-game_path)+1,"SpiderMan2k1Fix.ini");
+    char ini_path[MAX_PATH];
+    if(spider_path_ini_a(ini_path,sizeof(ini_path))) {
       SpiderDisplayMenu_Install(display_resolution_setting,display_aspect_setting,log_line);
     }
   }

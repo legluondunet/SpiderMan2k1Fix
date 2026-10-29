@@ -14,6 +14,7 @@
 #include "display_policy.h"
 #include "ini_validation.h"
 #include "ini_recovery.h"
+#include "spider_fix_paths.h"
 #include "ps1_gamepad_mapping.h"
 #include "xbox360_gameplay_mapping.h"
 
@@ -594,13 +595,7 @@ write_fail:
 
 
 static int SpiderCfg_IniPath(char *ini,size_t cap) {
-  char exe[MAX_PATH],*slash; DWORD n=GetModuleFileNameA(NULL,exe,sizeof(exe));
-  size_t prefix;
-  if(!n||n>=sizeof(exe)||!(slash=strrchr(exe,'\\')))return 0;
-  prefix=(size_t)(slash-exe)+1;
-  if(prefix+strlen("SpiderMan2k1Fix.ini")+1>cap)return 0;
-  memcpy(ini,exe,prefix);
-  strcpy(ini+prefix,"SpiderMan2k1Fix.ini");return 1;
+  return spider_path_ini_a(ini,cap);
 }
 int SpiderCfg_EnsureDefaultIni(void (*logger)(const char *)) {
   char ini[MAX_PATH];
@@ -800,17 +795,59 @@ static int SpiderCfg_RepairIni(const char *ini,const SpiderIniResult *check,
 done:
   free(values);return ok;
 }
+/* Report only a known section and a strictly safe, short ASCII key.
+ * The validator's issue text also contains user-controlled INI material:
+ * never copy arbitrary issue text, section names or values to a public log. */
+typedef struct { void (*logger)(const char *); unsigned reported; } SpiderCfgUnknownIssues;
+static int SpiderCfg_SafeIniLabel(const char *s,size_t len) {
+  size_t i;
+  if(!len)return 0;
+  for(i=0;i<len;i++) {
+    unsigned char c=(unsigned char)s[i];
+    if(!((c>='a'&&c<='z') || (c>='A'&&c<='Z') ||
+         (c>='0'&&c<='9') || c=='_'))return 0;
+  }
+  return 1;
+}
+static void SpiderCfg_LogUnknownIniIssue(void *context,unsigned line,
+                                         int error,const char *detail) {
+  SpiderCfgUnknownIssues *state=(SpiderCfgUnknownIssues *)context;
+  const char *start,*close,*end;
+  char section[32],key[64],message[200];
+  size_t slen,klen;
+  if(!state || !state->logger || state->reported>=12 ||
+     error || !detail || strncmp(detail,"Unknown key [",13)!=0)return;
+  start=detail+13;
+  close=strstr(start,"] ");
+  if(!close)return;
+  end=strstr(close+2," ignored (kept on disk)");
+  if(!end || strcmp(end," ignored (kept on disk)")!=0)return;
+  slen=(size_t)(close-start);
+  klen=(size_t)(end-(close+2));
+  if(slen>=sizeof(section) || klen>=sizeof(key) ||
+     !SpiderCfg_SafeIniLabel(start,slen) ||
+     !SpiderCfg_SafeIniLabel(close+2,klen))return;
+  memcpy(section,start,slen);section[slen]=0;
+  memcpy(key,close+2,klen);key[klen]=0;
+  if(!SPIDER_INI_IN(section,spider_ini_sections))return;
+  snprintf(message,sizeof(message),
+    "INI-CHECK: unknown key [%s] %s at line %u (value omitted)",
+    section,key,line);
+  state->logger(message);
+  state->reported++;
+}
 static void SpiderCfg_ClearOldValidationReport(const char *ini);
 void SpiderCfg_ValidateCurrentIni(void (*logger)(const char *)) {
   char ini[MAX_PATH],backup[MAX_PATH]="",summary[540];
   unsigned recovered=0;
   SpiderIniResult check,rebuilt;
+  SpiderCfgUnknownIssues issues={logger,0};
   if(!SpiderCfg_IniPath(ini,sizeof(ini))) {
     ini_writes_permitted=0;
     if(logger)logger("INI-REPAIR: cannot resolve path; saving disabled");
     return;
   }
-  check=SpiderIni_Validate(ini,NULL,NULL);
+  check=SpiderIni_Validate(ini,logger?SpiderCfg_LogUnknownIniIssue:NULL,&issues);
   if(!check.errors && !check.warnings) {
     unsigned obsolete=deprecated_ini_count(ini);
     if(!obsolete) {

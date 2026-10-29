@@ -51,23 +51,81 @@ jobs:
 
       - name: Prepare game installation files
         run: |
-          mkdir -p dist/package
-          cp SpiderMan2k1Fix.dll winmm.dll README.md CHANGELOG.md dist/package/
+          mkdir -p dist/package/SpiderMan2k1Fix
+          cp winmm.dll dist/package/
+          cp SpiderMan2k1Fix.dll README.md CHANGELOG.md dist/package/SpiderMan2k1Fix/
+
+      - name: Bundle pinned upstream SDL3 Windows x86 runtime and license
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 4 --retry-all-errors \
+            --output "$RUNNER_TEMP/SDL3-3.4.18-win32-x86.zip" \
+            https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18-win32-x86.zip
+          python3 scripts/package_sdl3_x86.py dist/package/SpiderMan2k1Fix \
+            --archive "$RUNNER_TEMP/SDL3-3.4.18-win32-x86.zip"
+          test -s dist/package/SpiderMan2k1Fix/SDL3.dll
+          test -s dist/package/SpiderMan2k1Fix/SDL3-LICENSE.txt
 
       - name: Verify packaged README and CHANGELOG
         run: |
-          test -s dist/package/README.md
-          test -s dist/package/CHANGELOG.md
-          cmp README.md dist/package/README.md
-          cmp CHANGELOG.md dist/package/CHANGELOG.md
-          python3 -c 'import pathlib,re; s=pathlib.Path("dist/package/README.md").read_text(encoding="utf-8"); assert not re.search(r"(?m)^- \*\*\s", s), "Malformed bold Markdown bullet in README.md"'
+          test -s dist/package/winmm.dll
+          test -s dist/package/SpiderMan2k1Fix/SpiderMan2k1Fix.dll
+          test -s dist/package/SpiderMan2k1Fix/README.md
+          test -s dist/package/SpiderMan2k1Fix/CHANGELOG.md
+          test -s dist/package/SpiderMan2k1Fix/SDL3.dll
+          cmp third_party/SDL3-LICENSE.txt dist/package/SpiderMan2k1Fix/SDL3-LICENSE.txt
+          cmp README.md dist/package/SpiderMan2k1Fix/README.md
+          cmp CHANGELOG.md dist/package/SpiderMan2k1Fix/CHANGELOG.md
+          python3 -c 'import pathlib,re; s=pathlib.Path("dist/package/SpiderMan2k1Fix/README.md").read_text(encoding="utf-8"); assert not re.search(r"(?m)^- \*\*\s", s), "Malformed bold Markdown bullet in README.md"'
           echo "README.md and CHANGELOG.md match the checked-out sources."
-          sha256sum README.md dist/package/README.md CHANGELOG.md dist/package/CHANGELOG.md
+          sha256sum README.md dist/package/SpiderMan2k1Fix/README.md CHANGELOG.md dist/package/SpiderMan2k1Fix/CHANGELOG.md
+
+      - name: Build release-ready ZIP and SHA256 (do not publish)
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^#define SPIDERMAN2K1FIX_VERSION "\([^"]*\)"/\1/p' version_info.h)
+          test -n "$version"
+          commit="${GITHUB_SHA:0:7}"
+          stem="SpiderMan2k1Fix-v${version}-${commit}-Windows-x86"
+          mkdir -p dist/release
+          (
+            cd dist/package
+            zip -q -9 "../release/${stem}.zip" \
+              winmm.dll \
+              SpiderMan2k1Fix/SpiderMan2k1Fix.dll \
+              SpiderMan2k1Fix/SDL3.dll \
+              SpiderMan2k1Fix/SDL3-LICENSE.txt \
+              SpiderMan2k1Fix/README.md \
+              SpiderMan2k1Fix/CHANGELOG.md
+          )
+          (
+            cd dist/release
+            sha256sum "${stem}.zip" > "${stem}.zip.sha256"
+            unzip -Z -1 "${stem}.zip" | sort > actual.txt
+            printf '%s\n' \
+              winmm.dll \
+              SpiderMan2k1Fix/SpiderMan2k1Fix.dll \
+              SpiderMan2k1Fix/SDL3.dll \
+              SpiderMan2k1Fix/SDL3-LICENSE.txt \
+              SpiderMan2k1Fix/README.md \
+              SpiderMan2k1Fix/CHANGELOG.md | sort > expected.txt
+            diff -u expected.txt actual.txt
+          )
 
       - name: Upload Windows DLL artifact
         uses: actions/upload-artifact@v4
         with:
           name: SpiderMan2k1Fix-Windows-x86
           path: dist/package/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload release-ready ZIP without creating a GitHub Release
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpiderMan2k1Fix-Release-ZIP
+          path: |
+            dist/release/*.zip
+            dist/release/*.zip.sha256
           if-no-files-found: error
           retention-days: 30
