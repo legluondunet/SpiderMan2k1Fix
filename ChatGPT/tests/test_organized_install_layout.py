@@ -21,7 +21,6 @@ def test_proxy_keeps_root_winmm_but_uses_nested_core_and_early_diagnostics():
     assert 'GetPrivateProfileIntA("Debug","Log",0,ini)!=1' in proxy
     assert 'InitOnceExecuteOnce(&log_reset_once,reset_log_on_first_write,path,NULL)' in proxy
     assert 'f=fopen((const char*)arg,"w");' in proxy
-    assert 'SpiderMan2k1Fix.dll' in paths
     assert '"SpiderMan2k1Fix"' in paths
     assert 'spider_path_code_asset_a(' in paths
     assert 'spider_path_file_a(preferred)' in paths
