@@ -128,3 +128,31 @@ def test_display_device_identifiers_correlate_with_game_window_target():
     assert probe.index("EnumDisplaySettingsA(info.szDevice") < probe.index(
         "SYS-DISPLAY-SELECTED: game_window_monitor=%s"
     )
+
+
+
+def test_cpu_abbreviation_uses_safe_normalization():
+    src = read("system_diagnostics.c")
+    assert 'strstr(brand," w/ ")' in src
+    assert '"%.*s with %s"' in src
+    assert "clean(cpu,sizeof(cpu),normalized);" in src
+    assert "clean(cpu,sizeof(cpu),brand);" in src
+
+
+def test_selected_game_screen_is_logged_once_until_changed():
+    core = read("spiderman2k1fix.c")
+    probe = core.split("static void probe_desktop_mode(HWND hwnd)", 1)[1]
+    assert 'static char last_selected[260]=""' in probe
+    assert "strcmp(line,last_selected)!=0" in probe
+    assert "strcpy(last_selected,line);" in probe
+
+
+def test_unknown_ini_key_is_logged_without_value_or_untrusted_issue_text():
+    cfg = read("virtual_spidey_cfg.c")
+    assert "SpiderCfg_LogUnknownIniIssue" in cfg
+    assert "SpiderCfg_SafeIniLabel" in cfg
+    assert "SPIDER_INI_IN(section,spider_ini_sections)" in cfg
+    assert '"INI-CHECK: unknown key [%s] %s at line %u (value omitted)"' in cfg
+    assert "state->logger(detail)" not in cfg
+    assert "state->reported>=12" in cfg
+    assert "SpiderIni_Validate(ini,logger?SpiderCfg_LogUnknownIniIssue:NULL,&issues)" in cfg
