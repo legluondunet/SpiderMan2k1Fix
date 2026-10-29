@@ -244,8 +244,7 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
 }
 
 void SpiderPauseSurface_Init(void (*log_fn)(const char *)) {
-  char path[MAX_PATH],*slash,info[150];
-  DWORD n;
+  char path[MAX_PATH],info[150];
   pause_log=log_fn;
   /* Permanent PAUSED panel; only the background shade opacity is
    * configurable. The INI intentionally omits PauseDimOpacity by default.
