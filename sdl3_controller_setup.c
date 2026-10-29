@@ -18,6 +18,7 @@
 #include "sdl3_gamepad_probe.h"
 #include "sdl3_controller_capture.h"
 #include "sdl3_controller_setup_nav.h"
+#include "gamepad_ui_profile.h"
 
 enum {
   SPIDER_UI_PAD=1001, SPIDER_UI_ACTION=1002,
@@ -491,6 +492,8 @@ void SpiderSDL3ControllerSetup_Open(void) {
   DWORD pid=0;
   MSG msg;
   int parent_enabled,quit_code=0,has_quit=0;
+  HWND prior_foreground=NULL,final_foreground=NULL;
+  int restore_allowed=0,focus_attempted=0,focus_result=0;
   if(!setup_enabled || setup_open)return;
   owner=GetForegroundWindow();
   if(!owner || !IsWindow(owner) || !IsWindowVisible(owner) ||
@@ -549,9 +552,33 @@ void SpiderSDL3ControllerSetup_Open(void) {
   }
   if(setup_report)setup_report("SDL3-SETUP: modal message loop EXIT; restoring original game owner");
   if(IsWindow(window))DestroyWindow(window);
+  prior_foreground=GetForegroundWindow();
+  /* The game HWND was disabled during our owned Win32 modal. Wine may
+   * return a NULL foreground after destroying that modal, and simply
+   * calling SetForegroundWindow without an active HWND can fail. Restore
+   * activation FIRST, and check the result before accepting new input.
+   * Do NOT steal focus if the user switched to another application. */
+  restore_allowed=!has_quit && (prior_foreground==NULL ||
+                     prior_foreground==owner || prior_foreground==window);
   if(parent_enabled && IsWindow(owner))EnableWindow(owner,TRUE);
-  if(IsWindow(owner))SetForegroundWindow(owner);
+  if(restore_allowed && IsWindow(owner) && IsWindowVisible(owner)) {
+    SetActiveWindow(owner); /* same original game thread, no AttachThreadInput */
+    focus_attempted=1;
+    focus_result=SetForegroundWindow(owner)!=0;
+    if(GetForegroundWindow()==owner)SetFocus(owner);
+  }
+  final_foreground=GetForegroundWindow();
+  if(setup_report) {
+    char line[250];
+    snprintf(line,sizeof(line),
+      "SDL3-SETUP: owner focus restore allowed=%d attempted=%d result=%d previous=%p final=%p game=%p [no foreign-window focus stealing]",
+      restore_allowed,focus_attempted,focus_result,
+      (void *)prior_foreground,(void *)final_foreground,(void *)owner);
+    setup_report(line);
+  }
   setup_open=0;
   if(has_quit)PostQuitMessage(quit_code);
+  else if(IsWindow(owner))
+    SpiderGamepadUI_AfterControllerSetup(owner); /* arm only, no DI8 method */
   if(setup_report)setup_report("SDL3-SETUP: preview closed; original game menu/gameplay mappings untouched");
 }
