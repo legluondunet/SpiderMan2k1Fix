@@ -32,7 +32,8 @@ def test_system_inventory_compiled_and_only_after_supported_game():
     assert "SpiderSystemDiagnostics_Log(" not in core.split(
         "BOOL WINAPI DllMain(", 1)[1] if "BOOL WINAPI DllMain(" in core else True
     assert 'emit("SYS-INFO: BEGIN' in src
-    assert 'emit("SYS-INFO: END' in src
+    assert '"SYS-INFO: END elapsed_ms=%lu' in src
+    assert "emit(line);" in src
 
 
 def test_user_requested_os_wine_proton_host_and_desktop_fields_have_sources():
@@ -156,3 +157,20 @@ def test_unknown_ini_key_is_logged_without_value_or_untrusted_issue_text():
     assert "state->logger(detail)" not in cfg
     assert "state->reported>=12" in cfg
     assert "SpiderIni_Validate(ini,logger?SpiderCfg_LogUnknownIniIssue:NULL,&issues)" in cfg
+
+
+def test_inventory_runtime_is_measured_once_with_safe_fallback():
+    src = read("system_diagnostics.c")
+    entry = src.split("void SpiderSystemDiagnostics_Log(", 1)[1]
+    assert "tick_start=GetTickCount();" in entry
+    assert "QueryPerformanceFrequency(&frequency)" in entry
+    assert "QueryPerformanceCounter(&start)" in entry
+    assert "QueryPerformanceCounter(&stop)" in entry
+    assert "elapsed_ms=GetTickCount()-tick_start;" in entry
+    assert "millis>0xFFFFFFFFULL?0xFFFFFFFFULL:millis" in entry
+    assert '"SYS-INFO: END elapsed_ms=%lu' in entry
+    assert entry.index("QueryPerformanceCounter(&start)") < entry.index("log_os();")
+    assert entry.index("log_controllers();") < entry.index("QueryPerformanceCounter(&stop)")
+    assert entry.index("QueryPerformanceCounter(&stop)") < entry.index("emit(line);")
+    core = read("spiderman2k1fix.c")
+    assert core.count("SpiderSystemDiagnostics_Log(log_line);") == 1
