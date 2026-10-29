@@ -616,6 +616,7 @@ static void probe_desktop_mode(HWND hwnd) {
    * game HWND determines the output monitor. Report that mapping after the
    * early DirectDraw monitor probe, never from the foreground application. */
   {
+    static char last_selected[160]="";
     const char *device=strrchr(info.szDevice,'\\');
     snprintf(line,sizeof(line),
       "SYS-DISPLAY-SELECTED: game_window_monitor=%s resolution=%lux%lu refresh=%luHz primary=%s",
@@ -623,7 +624,12 @@ static void probe_desktop_mode(HWND hwnd) {
       (unsigned long)mode.dmPelsWidth,(unsigned long)mode.dmPelsHeight,
       (unsigned long)mode.dmDisplayFrequency,
       (info.dwFlags&MONITORINFOF_PRIMARY)?"yes":"no");
-    log_line(line);
+    /* Probe runs both before and during SetCooperativeLevel. Log the first
+     * game monitor, then only meaningful selection/resolution changes. */
+    if(debug_log_enabled && strcmp(line,last_selected)!=0) {
+      log_line(line);
+      strcpy(last_selected,line);
+    }
   }
   if (!SpiderDisplay_Fit(640,480,(int)mode.dmPelsWidth,(int)mode.dmPelsHeight,&r)) return;
   snprintf(line,sizeof(line),
