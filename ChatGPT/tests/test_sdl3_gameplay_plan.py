@@ -110,6 +110,27 @@ def test_portable_semantic_3d_gate_and_transitions(tmp_path):
         assert(spider_sdl3_gameplay_plan_step(&state,&xbox,&sample,
           3,0x045e,0x028e,1,1,&press,&release)==SPIDER_PLAN_WAIT_NEUTRAL);
         assert(state.armed);
+        /* A profile remap on this same pad must not inherit a held key. */
+        sample.buttons=1u; /* south: Jump before remapping */
+        assert(spider_sdl3_gameplay_plan_step(&state,&xbox,&sample,
+          3,0x045e,0x028e,1,1,&press,&release)==SPIDER_PLAN_READY);
+        assert(press==(1u<<SPIDER_SDL3_ACTION_JUMP));
+        /* Existing Kick on east swaps to south. */
+        assert(spider_sdl3_profile_assign(&xbox,SPIDER_SDL3_ACTION_JUMP,
+          spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,1)));
+        assert(spider_sdl3_gameplay_plan_step(&state,&xbox,&sample,
+          3,0x045e,0x028e,1,1,&press,&release)==SPIDER_PLAN_WAIT_NEUTRAL);
+        assert(!press && !release && !state.armed);
+        assert(spider_sdl3_gameplay_plan_step(&state,&xbox,&sample,
+          3,0x045e,0x028e,1,1,&press,&release)==SPIDER_PLAN_WAIT_NEUTRAL);
+        sample.buttons=0;
+        assert(spider_sdl3_gameplay_plan_step(&state,&xbox,&sample,
+          3,0x045e,0x028e,1,1,&press,&release)==SPIDER_PLAN_WAIT_NEUTRAL);
+        assert(state.armed && !press);
+        sample.buttons=1u; /* south: now Kick */
+        assert(spider_sdl3_gameplay_plan_step(&state,&xbox,&sample,
+          3,0x045e,0x028e,1,1,&press,&release)==SPIDER_PLAN_READY);
+        assert(press==(1u<<SPIDER_SDL3_ACTION_KICK) && !release);
         return 0;
       }
     """),encoding="utf-8")
