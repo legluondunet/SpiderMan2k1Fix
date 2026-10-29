@@ -401,7 +401,17 @@ static void log_controllers(void) {
   emit(line);
 }
 void SpiderSystemDiagnostics_Log(void (*logger)(const char *)) {
+  DWORD tick_start,elapsed_ms;
+  LARGE_INTEGER frequency,start,stop;
+  int high_resolution;
+  char line[128];
   if(!logger)return;
+  /* Take timestamps only for this one-shot inventory, not per-frame.
+   * QueryPerformanceCounter is precise on Windows and Wine; GetTickCount
+   * remains a safe fallback when the high-resolution clock is unavailable. */
+  tick_start=GetTickCount();
+  high_resolution=QueryPerformanceFrequency(&frequency) &&
+                  frequency.QuadPart>0 && QueryPerformanceCounter(&start);
   diag_log=logger;
   emit("SYS-INFO: BEGIN (passive startup inventory; diagnostics only; no personal identifiers)");
   log_os();
@@ -410,6 +420,17 @@ void SpiderSystemDiagnostics_Log(void (*logger)(const char *)) {
   log_graphics();
   log_desktop();
   log_controllers();
-  emit("SYS-INFO: END (unknown means unreported, not absent)");
+  elapsed_ms=GetTickCount()-tick_start; /* DWORD subtraction handles wraparound. */
+  if(high_resolution && QueryPerformanceCounter(&stop) &&
+     stop.QuadPart>=start.QuadPart) {
+    ULONGLONG delta=(ULONGLONG)(stop.QuadPart-start.QuadPart);
+    ULONGLONG hz=(ULONGLONG)frequency.QuadPart;
+    ULONGLONG millis=(delta/hz)*1000ULL+((delta%hz)*1000ULL)/hz;
+    elapsed_ms=(DWORD)(millis>0xFFFFFFFFULL?0xFFFFFFFFULL:millis);
+  }
+  snprintf(line,sizeof(line),
+    "SYS-INFO: END elapsed_ms=%lu (unknown means unreported, not absent)",
+    (unsigned long)elapsed_ms);
+  emit(line);
   diag_log=NULL;
 }
