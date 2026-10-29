@@ -39,7 +39,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **DPI awareness:** Handles Windows display scaling to ensure correct window dimensions and rendering on high-DPI displays.
 - **Settings preservation:** Keyboard, gamepad, audio, and brightness settings are managed through `SpiderMan2k1Fix.ini`, with automatic recovery of invalid settings and a single rolling `.ini.old` backup. The original `Spidey.cfg` file is no longer needed.
 - **PNG screenshots:** Press **F9** to save lossless screenshots (`scrnNNNN.png`) under `SpiderMan2k1Fix/screenshots/` (per-user fallback when the game folder is read-only).
-- **Debug logging:** Can generate a `SpiderMan2k1Fix.log` diagnostic file to help troubleshoot compatibility issues. Enable it by setting `Log=1` in the INI file.
+- **Debug logging:** With `[Debug] Log=1`, `SpiderMan2k1Fix.log` automatically includes a one-shot `SYS-INFO` configuration report: OS/Win32 version, detected Wine and Proton hints, Linux kernel as reported by Wine, CPU and core counts, RAM, GPU and D3D9 driver metadata, display resolution/count/refresh, available Linux desktop session hints, plus XInput/DirectInput gamepads. No extra log option is needed.
 - **Build identification:** Displays the patch version and source commit in the game's main menu and diagnostic logs.
 - **Original taskbar icon:** Restores the game's original icon in the Windows taskbar.
 
@@ -197,6 +197,10 @@ Make sure `winmm.dll` is alongside `SpideyPC.exe` and `SpiderMan2k1Fix.dll` is i
 Enable diagnostic logging by setting `Log=1` under `[Debug]` in `SpiderMan2k1Fix.ini`, then try to reproduce the issue.
 
 If the problem persists, report it through [GitHub Issues](https://github.com/legluondunet/SpiderMan2k1Fix/issues) and attach the generated `SpiderMan2k1Fix.log` file.
+
+The `SYS-INFO: BEGIN` / `SYS-INFO: END` section reports supported hardware and OS details once at startup. Each screen has a Windows device identifier (such as `DISPLAY1`); a later `SYS-DISPLAY-SELECTED` line identifies the monitor actually used by the game window, which may not be the primary display (it is repeated only when the selection or mode changes). Safe names of unknown keys in recognized INI sections are reported as `INI-CHECK` warnings without logging their values. Under Wine, the `Win32 version` is the **emulated Windows target**, not the host Linux distribution. The host OS/kernel version is queried separately from Wine. A Steam compatibility environment is only a **hint** of Proton: its exact version might not be exposed. Likewise, D3D9 driver names and versions may describe Wine/DXVK rather than your Linux Mesa/AMDGPU/NVIDIA driver. If these fields read `Unavailable`, please add the host driver and Proton versions manually to your issue report.
+
+This system report never intentionally collects usernames, computer names, email, IP addresses, personal directory paths, monitor serial numbers, controller serial numbers or Steam IDs. As with any diagnostic log, review the full file before sharing it publicly: unrelated older entries may contain file paths.
 
 ## Ideas for Future Versions
 

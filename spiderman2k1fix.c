@@ -38,6 +38,7 @@
 #include "version_info.h"
 #include "f9_png.h"
 #include "spider_fix_paths.h"
+#include "system_diagnostics.h"
 #include "f9_toast.h"
 #include "quick_exit_f12.h"
 #include "pkr_audio_index.h"
@@ -611,6 +612,25 @@ static void probe_desktop_mode(HWND hwnd) {
     (unsigned long)mode.dmPelsWidth,(unsigned long)mode.dmPelsHeight,
     (unsigned long)mode.dmBitsPerPel,(unsigned long)mode.dmDisplayFrequency,info.szDevice);
   log_line(line);
+  /* The startup inventory lists every active display, but only the real
+   * game HWND determines the output monitor. Report that mapping after the
+   * early DirectDraw monitor probe, never from the foreground application. */
+  {
+    static char last_selected[260]="";
+    const char *device=strrchr(info.szDevice,'\\');
+    snprintf(line,sizeof(line),
+      "SYS-DISPLAY-SELECTED: game_window_monitor=%s resolution=%lux%lu refresh=%luHz primary=%s",
+      device?device+1:info.szDevice,
+      (unsigned long)mode.dmPelsWidth,(unsigned long)mode.dmPelsHeight,
+      (unsigned long)mode.dmDisplayFrequency,
+      (info.dwFlags&MONITORINFOF_PRIMARY)?"yes":"no");
+    /* Probe runs both before and during SetCooperativeLevel. Log the first
+     * game monitor, then only meaningful selection/resolution changes. */
+    if(debug_log_enabled && strcmp(line,last_selected)!=0) {
+      log_line(line);
+      strcpy(last_selected,line);
+    }
+  }
   if (!SpiderDisplay_Fit(640,480,(int)mode.dmPelsWidth,(int)mode.dmPelsHeight,&r)) return;
   snprintf(line,sizeof(line),
     "DISPLAY-PLAN: 4:3 content fitted without distortion to desktop %lux%lu => viewport=(%d,%d)-(%d,%d) [PROBE ONLY]",
@@ -3186,6 +3206,9 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  /* The supported executable is already SHA-verified and the logger is
+   * enabled only with [Debug] Log=1. Read-only inventory, never DllMain. */
+  if(debug_log_enabled)SpiderSystemDiagnostics_Log(log_line);
   /* Passive profile setup only: independent DI8 discovery begins later,
    * on the game's real window and Flip thread, never under loader lock.
    * All original gameplay controls are preserved. */
