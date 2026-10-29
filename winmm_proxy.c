@@ -370,7 +370,7 @@ static void enable_native_window_pixels(void) {
     log_proxy(line);
 }
 static DWORD WINAPI init_fix(LPVOID ignored) {
-    char path[MAX_PATH]; DWORD n; HMODULE mod;
+    char path[MAX_PATH]; HMODULE mod;
     (void)ignored;
     enable_native_window_pixels();
     {
