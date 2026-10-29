@@ -35,6 +35,7 @@ def test_proxy_keeps_root_winmm_but_uses_nested_core_and_early_diagnostics():
 
 def test_core_uses_same_resolver_for_every_main_ini_subsystem():
     core=read("spiderman2k1fix.c")
+    paths=read("spider_fix_paths.h")
     for module in ("virtual_spidey_cfg.c", "pause_surface.c",
                    "quick_exit_f12.c", "sdl3_gamepad_probe.c"):
         assert '#include "spider_fix_paths.h"' in read(module), module
