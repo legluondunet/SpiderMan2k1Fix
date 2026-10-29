@@ -36,6 +36,10 @@ int SpiderXbox360_InstallReadOnlyJoystick(void (*logger)(const char *));
  * Detection remains foreground/game-thread and SHA fail-closed. */
 void SpiderGamepadUI_ArmPS1ReadOnly(void);
 void SpiderGamepadUI_ArmXbox360ReadOnly(void);
+/* After our owned SDL3 setup modal closes, only ARM a one-shot,
+ * foreground-only reacquire of the already verified secondary DI8 handle.
+ * Never acquire on the modal stack or the native game-owned joystick. */
+void SpiderGamepadUI_AfterControllerSetup(HWND game_window);
 void SpiderGamepadUI_OnFlip(HWND game_window,int menu_2d,int gameplay_3d,
                              int native_bink_active,int native_pause_active);
 #endif
