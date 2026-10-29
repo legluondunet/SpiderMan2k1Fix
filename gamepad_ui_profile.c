@@ -47,6 +47,7 @@
 #include "ps1_input_flight_recorder.h"
 #include "ps1_joystick_readonly_menu.h"
 #include "sdl3_controller_setup.h"
+#include "sdl3_context_menu_bridge.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
 typedef HRESULT (WINAPI *SpiderDICreateFn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
@@ -121,6 +122,9 @@ static SpiderDS4Hotplug hotplug={0};
 static int hotplug_missing_logged=0;
 static int hotplug_late_preview_reported=0;
 static uint32_t sdl3_ui_instance=0;
+static int sdl3_context_bridge_requested=0;
+static unsigned sdl3_context_bridge_reports=0;
+static SpiderSDL3ContextMenuBridge sdl3_context_bridge={0};
 /* Explicitly opted, bounded read-only 3D physical input trace. The source
  * is our ALREADY-polled secondary DirectInput joystick, never the game's
  * buffered GetDeviceData (which would consume gameplay input). */
@@ -406,6 +410,7 @@ static void xbox_rt_swing_update(long axis,int gameplay_ok) {
 static void disable_profile_with_policy(const char *reason,
                                         int already_inputlost) {
   release_active_key();
+  spider_sdl3_context_menu_reset(&sdl3_context_bridge);
   xbox_rt_swing_release("secondary controller disabled");
   xbox_rt_swing_prev_physical=0;
   if(device) {
@@ -471,6 +476,14 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   }
   strcpy(profile_ini,ini);
   SpiderSDL3ControllerSetup_Init(ini,logger);
+  sdl3_context_bridge_requested=
+    GetPrivateProfileIntA("Input","ExperimentalSDL3ContextBridge",0,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1;
+  sdl3_context_bridge_reports=0;
+  spider_sdl3_context_menu_reset(&sdl3_context_bridge);
+  if(sdl3_context_bridge_requested)
+    report("SDL3-CONTEXT: saved 2D menu/Bink bindings requested (native owner + neutral required; gameplay/stills/cutscenes unchanged)");
   /* Experimental only: no automatic fixed-profile activation until native
    * menu lock and Start handling are validated in the real game. */
   ps1_preview_requested=GetPrivateProfileIntA("Input","ControllerPS1Preview",0,ini)==1;
@@ -1277,6 +1290,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   /* Critical: release injected key before focus pause can block this thread. */
   release_active_key();
   if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {
+    spider_sdl3_context_menu_reset(&sdl3_context_bridge);
     sdl3_3d_trace_valid=0;
     xbox_rt_swing_release("focus lost");
     /* Native game mouse state was already restored by mouse OnFlip. */
@@ -1359,6 +1373,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
           detected_kind==SPIDER_RECONNECT_XBOX360 && xbox_readonly_active)
     SpiderXbox360_InstallReadOnlyJoystick(log_message);
   if(!detected||!device) {
+    spider_sdl3_context_menu_reset(&sdl3_context_bridge);
     ps1_history_record(SPIDER_PS1_HISTORY_DEVICE_MISSING,native_request,
       menu_2d,gameplay_3d,bink_active,native_pause_active,
       (unsigned)previous_buttons,NULL);
@@ -1392,6 +1407,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     previous_pause=0;
     previous_share=0;
     previous_native_start=0;
+    spider_sdl3_context_menu_reset(&sdl3_context_bridge);
     {
       int repeatedly_failed=spider_ds4_hotplug_read_failed(&hotplug);
       if(hr==DIERR_INPUTLOST || repeatedly_failed)
@@ -1450,6 +1466,59 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
       return;
     }
   }
+
+  /* First live consumer of SDL3 per-model v2 MENU/VIDEO keys. The native
+   * 3D action reader stays unchanged; one explicitly selected, verified
+   * game-owned DirectInput pad is required before synthetic menu keys.
+   * Never let the legacy Xbox/DS4 UI bridge inject in this same frame. */
+  if(sdl3_context_bridge_requested && SpiderSDL3Probe_NativeOwnerEnabled() &&
+     !native_pause_active &&
+     (bink_active || (menu_2d && !gameplay_3d))) {
+    uint32_t id=0;
+    uint16_t vid=0,pid=0;
+    SpiderSDL3ControllerSample sample;
+    SpiderSDL3ControllerProfile *saved=NULL;
+    unsigned context=bink_active?SPIDER_SDL3_CTX_VIDEO:SPIDER_SDL3_CTX_MENU;
+    int result=SPIDER_SDL3_CTX_REFUSED,verified=0;
+    xbox_rt_swing_release("SDL3 MENU/BINK context");
+    if(SpiderSDL3Probe_SelectedSample(&id,&vid,&pid,&sample) &&
+       id==sdl3_ui_instance) {
+      verified=SpiderNativeReconnect_SDL3SelectionReady(vid,pid);
+      if(verified)saved=SpiderSDL3Probe_SetupProfile(vid,pid);
+    }
+    if(saved)
+      result=spider_sdl3_context_menu_step(&sdl3_context_bridge,
+                                           saved,&sample,id,vid,pid,
+                                           context,verified);
+    else spider_sdl3_context_menu_reset(&sdl3_context_bridge);
+    /* Advance legacy physical edge history, so no inherited held input
+     * can trigger a different key after returning to native gameplay. */
+    xbox_previous_mask=spider_xbox360_held_buttons(state.rgbButtons);
+    previous_buttons=(int)(
+      (state.rgbButtons[1]&0x80u?SPIDER_CONFIRM_CROSS:0) |
+      (state.rgbButtons[9]&0x80u?SPIDER_CONFIRM_OPTIONS:0));
+    previous_back=(int)(
+      (state.rgbButtons[2]&0x80u?SPIDER_BACK_CIRCLE:0) |
+      (state.rgbButtons[8]&0x80u?SPIDER_BACK_SHARE:0));
+    previous_pause=(state.rgbButtons[9]&0x80u)!=0;
+    previous_share=(state.rgbButtons[8]&0x80u)!=0;
+    previous_native_start=(state.rgbButtons[11]&0x80u)!=0;
+    if(result==SPIDER_SDL3_CTX_CONFIRM_EDGE) {
+      begin_scancode(0x1Cu,"SDL3 profile Confirm/Skip");
+      if(sdl3_context_bridge_reports++<24u)
+        report(context==SPIDER_SDL3_CTX_VIDEO?
+          "SDL3-CONTEXT: saved SkipVideo -> native Bink Return (original gate retained)":
+          "SDL3-CONTEXT: saved MenuConfirm -> native menu Return");
+    } else if(result==SPIDER_SDL3_CTX_BACK_EDGE) {
+      begin_scancode(0x01u,"SDL3 profile Back/Cancel");
+      if(sdl3_context_bridge_reports++<24u)
+        report("SDL3-CONTEXT: saved MenuBack -> native Escape");
+    } else if(result==SPIDER_SDL3_CTX_REFUSED &&
+              sdl3_context_bridge_reports++<4u)
+      report("SDL3-CONTEXT: REFUSED selected owner/profile; old UI synthesis suppressed");
+    return;
+  }
+  spider_sdl3_context_menu_reset(&sdl3_context_bridge);
   /* Xbox 360-compatible DirectInput: no DS4 PS1 mapping, no guess about
    * native 3D controls. The Holtek VID=045E PID=028E joystick is already
    * read by the original game for analog/POV navigation. Only bridge
