@@ -4,7 +4,7 @@ This is the detailed companion to the [project README](../../README.md). For the
 
 ## Upgrading from older builds
 
-- **Updating the current fix:** back up the current `winmm.dll` and `SpiderMan2k1Fix.dll` and keep your existing `SpiderMan2k1Fix.ini`. Extract the new artifact **without flattening**: `winmm.dll` remains alongside `SpideyPC.exe`, while `SpiderMan2k1Fix.dll` and optional `SDL3.dll` are placed in `SpiderMan2k1Fix/`. On first launch, a legacy root INI is copied into `SpiderMan2k1Fix/` if no nested config already exists. The original remains untouched. The CI artifact does **not** include an INI.
+- **Updating the current fix:** back up the current `winmm.dll` and `SpiderMan2k1Fix.dll` and keep your existing `SpiderMan2k1Fix.ini`. Extract the new artifact **without flattening**: `winmm.dll` remains alongside `SpideyPC.exe`, while `SpiderMan2k1Fix.dll` and optional `SDL3.dll` are placed in `SpiderMan2k1Fix/`. On first launch, a legacy root INI is copied into `SpiderMan2k1Fix/` if no nested config already exists; **keep your existing INI** and let the fix migrate it safely. The original remains untouched. The CI artifact does **not** include an INI.
 - **Migrating from an older SpiderManFix beta:** remove the obsolete `SpiderManFix.dll`. To preserve settings, back up your old `SpiderManFix.ini` and rename it to `SpiderMan2k1Fix.ini` **before** launching the new fix (only if no new-named INI already exists). Otherwise the patch generates fresh defaults.
 - **Other proxy mods:** `winmm.dll` is a filename shared by many mods. Back up an existing file and check for conflicts; two different proxies cannot normally occupy the same directory under that name.
 
