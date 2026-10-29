@@ -12,6 +12,9 @@ typedef struct {
   uint32_t instance,held;
   uint16_t vid,pid;
   unsigned armed;
+  /* Snapshot the active semantic profile. Identity alone is insufficient:
+   * a live rebind on the same pad must require fresh neutral input. */
+  SpiderSDL3Binding actions[SPIDER_SDL3_ACTION_COUNT];
 } SpiderSDL3GameplayPlan;
 static inline void spider_sdl3_gameplay_plan_reset(
     SpiderSDL3GameplayPlan *s) {
@@ -28,6 +31,8 @@ static inline int spider_sdl3_gameplay_plan_step(
     int active,int verified_native_owner,uint32_t *pressed,
     uint32_t *released) {
   uint32_t held=0;
+  unsigned i;
+  int changed;
   if(pressed)*pressed=0;
   if(released)*released=0;
   if(!s || !pressed || !released || !active ||
@@ -37,9 +42,18 @@ static inline int spider_sdl3_gameplay_plan_step(
     spider_sdl3_gameplay_plan_reset(s);
     return SPIDER_PLAN_REJECTED;
   }
-  if(s->instance!=instance || s->vid!=vid || s->pid!=pid) {
+  changed=s->instance!=instance || s->vid!=vid || s->pid!=pid;
+  if(!changed)
+    for(i=0;i<SPIDER_SDL3_ACTION_COUNT;i++)
+      if(!spider_sdl3_binding_equal(s->actions[i],profile->actions[i])) {
+        changed=1;
+        break;
+      }
+  if(changed) {
     spider_sdl3_gameplay_plan_reset(s);
     s->instance=instance;s->vid=vid;s->pid=pid;
+    for(i=0;i<SPIDER_SDL3_ACTION_COUNT;i++)
+      s->actions[i]=profile->actions[i];
   }
   if(!s->armed) {
     if(spider_sdl3_profile_neutral(sample))s->armed=1;
