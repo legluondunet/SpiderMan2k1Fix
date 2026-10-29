@@ -1,4 +1,4 @@
-"""Development artifact regression tests.
+"""Single release-ready ZIP artifact regression tests.
 
 CI compiles two Windows x86 DLLs. The 1.0.0 release was published
 manually, not by CI.
@@ -12,15 +12,15 @@ ROOT = Path(__file__).resolve().parents[2]
 CI_PATH = ROOT / ".github/workflows/spiderman2k1fix-windows-x86.yml"
 
 
-def test_ci_artifact_contains_only_two_dlls_and_public_docs():
+def test_ci_release_package_contains_required_dlls_and_public_docs():
     workflow = CI_PATH.read_text(encoding="utf-8")
     artifact_section = workflow.split(
         "      - name: Prepare game installation files", 1
-    )[1].split("      - name: Upload Windows DLL artifact", 1)[0]
+    )[1].split("      - name: Build release-ready ZIP and SHA256", 1)[0]
 
     assert "cp winmm.dll dist/package/" in artifact_section
     assert "cp SpiderMan2k1Fix.dll README.md CHANGELOG.md dist/package/SpiderMan2k1Fix/" in artifact_section
-    assert "path: dist/package/" in workflow
+    assert "path: |\n            dist/release/*.zip\n            dist/release/*.zip.sha256" in workflow
     assert "SpiderMan2k1Fix.ini" not in artifact_section
     assert "ChatGPT/" not in artifact_section
     assert "docs/" not in artifact_section
