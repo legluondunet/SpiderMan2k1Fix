@@ -51,7 +51,6 @@ static inline int spider_path_dir_a(const char *path,int create) {
 }
 static inline int spider_path_writable_a(const char *dir) {
   char tmp[MAX_PATH];
-  DWORD trial;
   unsigned i;
   if(!spider_path_dir_a(dir,0))return 0;
   for(i=0;i<4;i++) {
