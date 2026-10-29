@@ -38,13 +38,16 @@ def test_system_inventory_compiled_and_only_after_supported_game():
 def test_user_requested_os_wine_proton_host_and_desktop_fields_have_sources():
     src = read("system_diagnostics.c")
     for s in ("RtlGetVersion", "wine_get_version", "wine_get_host_version",
-              "STEAM_COMPAT_DATA_PATH", "PROTON_VERSION",
+              "STEAM_COMPAT_DATA_PATH", "STEAM_COMPAT_TOOL_PATHS", "PROTON_VERSION",
               "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE",
               "SYS-OS:", "SYS-WINE:", "SYS-HOST:", "SYS-PROTON:",
               "SYS-DESKTOP:"):
         assert s in src
     assert "emulated by Wine, NOT host OS" in src
     assert "environment hint, unverified" in src
+    assert "directory name hint, NOT verified runtime version" in src
+    assert "static int proton_tool_label(" in src
+    assert 'strpbrk(raw,"/\\\\@\\r\\n\\t")' in src
     assert "version=Unavailable (not exposed by Wine/Steam)" in src
     assert "cannot exclude Proton" in src
 
