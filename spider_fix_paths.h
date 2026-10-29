@@ -86,6 +86,25 @@ static inline int spider_path_asset_a(const char *filename,
   return spider_path_roots_a(dir,sizeof(dir),local,sizeof(local)) &&
          spider_path_join_a(out,cap,dir,filename);
 }
+/* Transactional, non-overwriting legacy migration. Multiple proxy/core
+ * calls can overlap at startup: copy to a private file, then publish the
+ * complete bytes atomically without replacing an existing destination.
+ * Never delete, truncate or rewrite the user's original root INI. */
+static inline int spider_path_migrate_ini_a(const char *legacy,
+                                            const char *dest) {
+  char temp[MAX_PATH];
+  int n;
+  if(spider_path_file_a(dest))return 1;
+  if(!spider_path_file_a(legacy))return 0;
+  n=snprintf(temp,sizeof(temp),"%s.migrate-%lu-%lu.tmp",
+             dest,(unsigned long)GetCurrentProcessId(),
+             (unsigned long)GetCurrentThreadId());
+  if(n<=0 || (size_t)n>=sizeof(temp))return 0;
+  if(!CopyFileA(legacy,temp,TRUE))return spider_path_file_a(dest);
+  if(MoveFileExA(temp,dest,MOVEFILE_WRITE_THROUGH))return 1;
+  DeleteFileA(temp);
+  return spider_path_file_a(dest);
+}
 /* New location takes priority. A pre-existing fallback overrides uncreated
  * game paths. Copy legacy root INI EXACTLY ONCE, only when target is absent.
  * Never remove the original. If both target folders are read-only, keep the
@@ -114,13 +133,13 @@ static inline int spider_path_ini_a(char *out,size_t cap) {
   if(spider_path_file_a(legacy)) {
     if(spider_path_dir_a(game,1) &&
        spider_path_join_a(target,sizeof(target),game,"SpiderMan2k1Fix.ini") &&
-       (CopyFileA(legacy,target,TRUE) || spider_path_file_a(target))) {
+       spider_path_migrate_ini_a(legacy,target)) {
       if(strlen(target)+1u>cap)return 0;
       strcpy(out,target);return 1;
     }
     if(spider_path_dir_a(local,1) &&
        spider_path_join_a(target,sizeof(target),local,"SpiderMan2k1Fix.ini") &&
-       (CopyFileA(legacy,target,TRUE) || spider_path_file_a(target))) {
+       spider_path_migrate_ini_a(legacy,target)) {
       if(strlen(target)+1u>cap)return 0;
       strcpy(out,target);return 1;
     }
