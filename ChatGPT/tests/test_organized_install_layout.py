@@ -93,5 +93,5 @@ def test_artifact_contains_one_root_proxy_and_one_nested_core():
     assert "cp SpiderMan2k1Fix.dll README.md CHANGELOG.md dist/package/SpiderMan2k1Fix/" in ci
     assert "cp SDL3.dll" not in ci
     assert "SpiderMan2k1Fix.ini" not in ci
-    assert "path: dist/package/" in ci
+    assert "path: |\n            dist/release/*.zip\n            dist/release/*.zip.sha256" in ci
     assert "cmp README.md dist/package/SpiderMan2k1Fix/README.md" in ci
