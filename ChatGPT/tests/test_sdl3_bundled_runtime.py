@@ -84,7 +84,7 @@ def test_fail_closed_for_zip_slip_duplicate_dll_wrong_name_and_bad_pe():
     with pytest.raises(ValueError, match="exactly one SDL3.dll"):
         module.extract_verified_runtime(blob, hashlib.sha256(blob).hexdigest())
     blob = archive_with("SDL3.dll", b"not a DLL")
-    with pytest.raises(ValueError, match="PE image"):
+    with pytest.raises(ValueError, match="decompressed size"):
         module.extract_verified_runtime(blob, hashlib.sha256(blob).hexdigest())
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
