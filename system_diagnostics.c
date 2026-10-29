@@ -199,7 +199,19 @@ static void log_cpu_memory(void) {
     else brand[sizeof(brand)-1]=0;
     RegCloseKey(key);
   }
-  clean(cpu,sizeof(cpu),brand);
+  /* Windows commonly reports "w/ Radeon" in processor descriptions.
+   * Render that abbreviation without making the generic log sanitizer
+   * accept slashes (which could otherwise expose private file paths). */
+  {
+    char normalized[192];
+    const char *abbrev=strstr(brand," w/ ");
+    if(abbrev) {
+      size_t prefix=(size_t)(abbrev-brand);
+      snprintf(normalized,sizeof(normalized),"%.*s with %s",
+               (int)prefix,brand,abbrev+4);
+      clean(cpu,sizeof(cpu),normalized);
+    } else clean(cpu,sizeof(cpu),brand);
+  }
   snprintf(line,sizeof(line),"SYS-CPU: model=%s",cpu);
   emit(line);
   GetSystemInfo(&sys);
