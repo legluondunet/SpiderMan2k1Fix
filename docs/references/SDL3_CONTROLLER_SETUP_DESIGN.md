@@ -29,6 +29,40 @@ configuration files or a log.
    on **this model only**, leaves other controllers and the original
    `[Joystick]` preferences untouched, and offers a keyboard path.
 
+## Experimental live menu/Bink context bridge — PR #80
+
+The first optional runtime consumer of saved model-specific `[MenuBindings]` is
+now available. It is **OFF by default**. In the main `SpiderMan2k1Fix.ini`:
+
+```ini
+[Input]
+ExperimentalSDL3Probe=1
+ExperimentalSDL3NativeOwner=1
+ExperimentalNativeJoystickUnplugGuard=1
+ExperimentalNativeJoystickReconnect=1
+ExperimentalNativeJoystickMappingSwap=1
+ExperimentalSDL3ControllerSetup=1
+ExperimentalSDL3ContextBridge=1
+```
+
+Only the selected SDL3 pad, after the actual original game-owned DirectInput
+device is verified, may request synthetic **Return** (`MenuConfirm` in the
+2D menu or `SkipVideo` in Bink) and **Escape** (`MenuBack`). The
+legacy 2D controller bridge is suppressed for those same frames so inputs
+cannot be doubled. An initial neutral SDL3 sample is mandatory after focus
+loss, controller handoff, profile edit, menu/movie transition or a failing
+native owner. START remains reserved for pad selection. These synthetic
+keys go through the existing guarded per-Flip SendInput scancode lifecycle;
+the original Bink/movie cleanup and skip eligibility gates are not bypassed.
+
+**Not implemented:** `NextStill`, `SkipCutscene` and the eight semantic
+3D bindings. The exact original still-page/cutscene owner and safe native 3D
+buffer adapter have not been validated. The original 3D DirectInput actions,
+analog axes and custom game joystick table remain unchanged. Disabling
+`ExperimentalSDL3ContextBridge` restores the previous native/legacy menu
+behavior. This opt-in mode needs a physical Windows and Wine test before
+publication.
+
 ## Existing game engine constraints
 
 - Spider-Man 2001 has a seven-action native DirectInput table. The
