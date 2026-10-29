@@ -98,8 +98,8 @@ the new default-on configuration is still pending.
 
 1. Install the original *Spider-Man (2001)* PC game.
 2. Download the latest version of SpiderMan2k1Fix from the [GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases) page.
-3. Extract the archive **without flattening its folders** into the game's installation directory. Place only `winmm.dll` alongside `SpideyPC.exe`; the archive places `SpiderMan2k1Fix.dll` and its documentation inside `SpiderMan2k1Fix/`.
-   - Optional experimental `SDL3.dll` belongs in `SpiderMan2k1Fix/` next to the main DLL.
+3. Extract the archive **without flattening its folders** into the game's installation directory. Place only `winmm.dll` alongside `SpideyPC.exe`; the archive places `SpiderMan2k1Fix.dll`, **official Windows x86 `SDL3.dll`**, its license and the project documentation inside `SpiderMan2k1Fix/`.
+   - No separate SDL3 download is needed. SDL3 is dynamically loaded only when its experimental gamepad features are enabled; original native input remains the default.
    - Do not move the original game's executable, data or resources.
 4. Launch the game normally under Windows.
 
@@ -118,6 +118,8 @@ the new default-on configuration is still pending.
 Other versions or modified copies of the executable are not supported.
 
 **No original game files are included in this project.** You must provide your own legally obtained copy of the game.
+
+**Bundled open-source runtime:** Upcoming release archives include the unmodified **SDL3 3.4.18 Windows x86** `SDL3.dll` and its original zlib license as `SpiderMan2k1Fix/SDL3-LICENSE.txt`. Packaging checks the upstream archive SHA-256 and PE32/i386 architecture. SDL3 is a separate third-party project, not part of the original game.
 
 ## Configuration
 
