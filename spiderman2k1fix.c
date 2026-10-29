@@ -616,7 +616,7 @@ static void probe_desktop_mode(HWND hwnd) {
    * game HWND determines the output monitor. Report that mapping after the
    * early DirectDraw monitor probe, never from the foreground application. */
   {
-    static char last_selected[160]="";
+    static char last_selected[260]="";
     const char *device=strrchr(info.szDevice,'\\');
     snprintf(line,sizeof(line),
       "SYS-DISPLAY-SELECTED: game_window_monitor=%s resolution=%lux%lu refresh=%luHz primary=%s",
