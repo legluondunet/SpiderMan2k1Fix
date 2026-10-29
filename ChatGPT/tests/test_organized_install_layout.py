@@ -93,5 +93,9 @@ def test_artifact_contains_one_root_proxy_and_one_nested_core():
     assert "cp SpiderMan2k1Fix.dll README.md CHANGELOG.md dist/package/SpiderMan2k1Fix/" in ci
     assert "cp SDL3.dll" not in ci
     assert "SpiderMan2k1Fix.ini" not in ci
-    assert "path: |\n            dist/release/*.zip\n            dist/release/*.zip.sha256" in ci
+    assert "path: dist/package/" in ci
+    assert ci.count("uses: actions/upload-artifact@v4") == 1
+    upload=ci.split("      - name: Upload installation files as one ZIP (no nested ZIP)",1)[1]
+    assert "dist/release/" not in upload
+    assert "name: SpiderMan2k1Fix-Windows-x86" in upload
     assert "cmp README.md dist/package/SpiderMan2k1Fix/README.md" in ci
