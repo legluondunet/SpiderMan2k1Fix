@@ -12,7 +12,7 @@ def test_proxy_starts_new_log_once_before_first_append():
     reset_call = "InitOnceExecuteOnce(&log_reset_once,reset_log_on_first_write,path,NULL);"
     assert reset_call in PROXY
     proxy_log = PROXY[PROXY.index("static void log_proxy("):PROXY.index("static BOOL CALLBACK load_real(")]
-    assert proxy_log.index('GetPrivateProfileIntA("Debug","Log",0,path)') < proxy_log.index(reset_call)
+    assert proxy_log.index('GetPrivateProfileIntA("Debug","Log",0,ini)') < proxy_log.index(reset_call)
     assert proxy_log.index(reset_call) < proxy_log.index('f=fopen(path,"a")')
     assert proxy_log.count(reset_call) == 1
 

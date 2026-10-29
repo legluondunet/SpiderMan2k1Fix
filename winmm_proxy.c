@@ -4,6 +4,7 @@
 #include <mmsystem.h>
 #include <stdio.h>
 #include <string.h>
+#include "spider_fix_paths.h"
 #include "version_info.h"
 
 /* Exports required by SpideyPC.exe plus timer functions used by external wrappers.
@@ -59,15 +60,10 @@ static volatile LONG early_ddraw_gate_status=0;
 
 static HMODULE proxy_load_fix_module(void) {
     HMODULE module=GetModuleHandleA("SpiderMan2k1Fix.dll");
-    char path[MAX_PATH],*slash;
-    DWORD n;
+    char path[MAX_PATH];
     if(module)return module;
-    n=GetModuleFileNameA(NULL,path,sizeof(path));
-    if(!n || n>=sizeof(path))return NULL;
-    slash=strrchr(path,'\\');
-    if(!slash || (size_t)(slash-path)+strlen("SpiderMan2k1Fix.dll")+1>=sizeof(path))
+    if(!spider_path_code_asset_a("SpiderMan2k1Fix.dll",path,sizeof(path)))
         return NULL;
-    strcpy(slash+1,"SpiderMan2k1Fix.dll");
     return LoadLibraryA(path);
 }
 static HRESULT WINAPI proxy_first_directdraw(GUID *guid,void **out,
@@ -158,15 +154,12 @@ static BOOL CALLBACK reset_log_on_first_write(PINIT_ONCE init, PVOID arg, PVOID 
     return TRUE;
 }
 static void log_proxy(const char *message) {
-    char path[MAX_PATH]; char *slash; FILE *f;
-    DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
-    if (!n || n>=sizeof(path)) return;
-    slash=strrchr(path,'\\');
-    if (!slash || (size_t)(slash-path)+strlen("SpiderMan2k1Fix.ini")+1>=sizeof(path)) return;
-    strcpy(slash+1,"SpiderMan2k1Fix.ini");
-    if (GetPrivateProfileIntA("Debug","Log",0,path)!=1) return;
-    if ((size_t)(slash-path)+strlen("SpiderMan2k1Fix.log")+1>=sizeof(path)) return;
-    strcpy(slash+1,"SpiderMan2k1Fix.log");
+    char path[MAX_PATH],ini[MAX_PATH]; FILE *f;
+    /* The proxy runs before the core; resolve and migrate the INI first
+     * so early boot records go into the same final log as core records. */
+    if(!spider_path_ini_a(ini,sizeof(ini)) ||
+       GetPrivateProfileIntA("Debug","Log",0,ini)!=1 ||
+       !spider_path_log_a(path,sizeof(path)))return;
     /* Do this before the first line (DPI-BOOT / START), not in the main DLL,
      * which loads later and would erase the proxy's earliest diagnostics. */
     InitOnceExecuteOnce(&log_reset_once,reset_log_on_first_write,path,NULL);
@@ -377,7 +370,7 @@ static void enable_native_window_pixels(void) {
     log_proxy(line);
 }
 static DWORD WINAPI init_fix(LPVOID ignored) {
-    char path[MAX_PATH]; DWORD n; HMODULE mod;
+    char path[MAX_PATH]; HMODULE mod;
     (void)ignored;
     enable_native_window_pixels();
     {
@@ -393,11 +386,8 @@ static DWORD WINAPI init_fix(LPVOID ignored) {
         log_proxy(gate_status);
     }
     log_proxy("START: winmm proxy loaded; loading SpiderMan2k1Fix.dll");
-    n=GetModuleFileNameA(NULL,path,sizeof(path));
-    if (!n || n>=sizeof(path)) return 0;
-    char *slash=strrchr(path,'\\');
-    if (!slash || (size_t)(slash-path)+strlen("SpiderMan2k1Fix.dll")+1>=sizeof(path)) return 0;
-    strcpy(slash+1,"SpiderMan2k1Fix.dll");
+    if(!spider_path_code_asset_a("SpiderMan2k1Fix.dll",path,sizeof(path)))
+        return 0;
     {
         char report[512];
         DWORD attributes=GetFileAttributesA(path);

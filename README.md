@@ -38,7 +38,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **Keyboard layouts:** Automatically detects the active keyboard layout and adapts the game's controls, keyboard labels, and cheat-code entry. The original game only supported QWERTY layouts.
 - **DPI awareness:** Handles Windows display scaling to ensure correct window dimensions and rendering on high-DPI displays.
 - **Settings preservation:** Keyboard, gamepad, audio, and brightness settings are managed through `SpiderMan2k1Fix.ini`, with automatic recovery of invalid settings and a single rolling `.ini.old` backup. The original `Spidey.cfg` file is no longer needed.
-- **PNG screenshots:** Press **F9** to save lossless screenshots (`scrnNNNN.png`) in the game directory.
+- **PNG screenshots:** Press **F9** to save lossless screenshots (`scrnNNNN.png`) under `SpiderMan2k1Fix/screenshots/` (per-user fallback when the game folder is read-only).
 - **Debug logging:** Can generate a `SpiderMan2k1Fix.log` diagnostic file to help troubleshoot compatibility issues. Enable it by setting `Log=1` in the INI file.
 - **Build identification:** Displays the patch version and source commit in the game's main menu and diagnostic logs.
 - **Original taskbar icon:** Restores the game's original icon in the Windows taskbar.
@@ -98,7 +98,9 @@ the new default-on configuration is still pending.
 
 1. Install the original *Spider-Man (2001)* PC game.
 2. Download the latest version of SpiderMan2k1Fix from the [GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases) page.
-3. Extract `winmm.dll` and `SpiderMan2k1Fix.dll` into the game's installation directory, alongside `SpideyPC.exe`.
+3. Extract the archive **without flattening its folders** into the game's installation directory. Place only `winmm.dll` alongside `SpideyPC.exe`; the archive places `SpiderMan2k1Fix.dll`, **official Windows x86 `SDL3.dll`**, its license and the project documentation inside `SpiderMan2k1Fix/`.
+   - No separate SDL3 download is needed. SDL3 is dynamically loaded only when its experimental gamepad features are enabled; original native input remains the default.
+   - Do not move the original game's executable, data or resources.
 4. Launch the game normally under Windows.
 
    For Linux/Wine users, open a terminal in the game's installation directory and run:
@@ -117,11 +119,13 @@ Other versions or modified copies of the executable are not supported.
 
 **No original game files are included in this project.** You must provide your own legally obtained copy of the game.
 
+**Bundled open-source runtime:** Upcoming release archives include the unmodified **SDL3 3.4.18 Windows x86** `SDL3.dll` and its original zlib license as `SpiderMan2k1Fix/SDL3-LICENSE.txt`. Packaging checks the upstream archive SHA-256 and PE32/i386 architecture. SDL3 is a separate third-party project, not part of the original game.
+
 ## Configuration
 
 The original game's menus allow players to configure keyboard controls, gamepad bindings, audio levels, and other game settings.
 
-SpiderMan2k1Fix preserves these settings in a single configuration file, `SpiderMan2k1Fix.ini`, which is automatically created in the game's installation directory. This file replaces the original `Spidey.cfg`, which is no longer used.
+SpiderMan2k1Fix preserves these settings in `SpiderMan2k1Fix/SpiderMan2k1Fix.ini`, created automatically on first launch. On an upgrade, an existing root-level `SpiderMan2k1Fix.ini` is **copied without deletion** to this folder when there is no newer nested configuration. If the game folder is not writable, configuration, logs and screenshots use `%LOCALAPPDATA%/SpiderMan2k1Fix/`. This replaces the original `Spidey.cfg`, which is no longer used.
 
 The INI file also provides additional settings specific to SpiderMan2k1Fix:
 
@@ -186,7 +190,7 @@ Bug reports and contributions are welcome through [GitHub Issues](https://github
 
 **The patch does not load**
 
-Make sure both DLL files are located alongside the supported `SpideyPC.exe`. Under Linux/Wine, verify that the `winmm=n,b` DLL override is active.
+Make sure `winmm.dll` is alongside `SpideyPC.exe` and `SpiderMan2k1Fix.dll` is in `SpiderMan2k1Fix/`. Under Linux/Wine, verify that the `winmm=n,b` DLL override is active.
 
 **The game behaves unexpectedly**
 
