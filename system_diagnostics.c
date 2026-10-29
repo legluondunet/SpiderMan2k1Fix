@@ -53,12 +53,62 @@ static int env_clean(const char *key,char *out,size_t cap) {
   n=GetEnvironmentVariableA(key,raw,sizeof(raw));
   /* Never read truncated values, which might be private absolute paths. */
   if(!n || n>=sizeof(raw))return 0;
+  /* Version and XDG labels must NEVER be a filesystem path or email.
+   * Cleaning delimiters alone would leave recognizable home/user names. */
+  if(strpbrk(raw,"/\\@\r\n\t"))return 0;
   clean(out,cap,raw);
   return strcmp(out,"Unavailable")!=0;
 }
 static int env_present(const char *key) {
   DWORD n=GetEnvironmentVariableA(key,NULL,0);
   return n!=0;
+}
+/* Steam may pass a PATH LIST of compatibility tools, not an official
+ * Proton version API. Never print it. Extract only a recognizable *single*
+ * Proton tool directory component, and keep it explicitly unverified.
+ * Example: /.../steamapps/common/GE-Proton9-21/files -> GE-Proton9-21.
+ * Never print user-selected directory names or raw full paths. */
+static int proton_tool_label(char *out,size_t cap) {
+  char paths[4096],candidate[90];
+  DWORD n=GetEnvironmentVariableA("STEAM_COMPAT_TOOL_PATHS",
+                                  paths,sizeof(paths));
+  const char *start,*p;
+  if(!out || !cap || !n || n>=sizeof(paths))return 0;
+  for(start=p=paths;;p++) {
+    char ch=*p;
+    if(ch=='/' || ch=='\\' || ch==':' || ch==';' || ch==0) {
+      size_t len=(size_t)(p-start);
+      int recognized=0,valid=1;
+      size_t i;
+      if(len && len<sizeof(candidate)) {
+        memcpy(candidate,start,len);
+        candidate[len]=0;
+        if(!_strnicmp(candidate,"GE-Proton",9) &&
+           candidate[9]>='0' && candidate[9]<='9')recognized=1;
+        else if(!_strnicmp(candidate,"Proton ",7) &&
+                ((candidate[7]>='0' && candidate[7]<='9') ||
+                 !_stricmp(candidate+7,"Experimental") ||
+                 !_stricmp(candidate+7,"Hotfix")))recognized=1;
+        else if(!_strnicmp(candidate,"Proton-",7) &&
+                candidate[7]>='0' && candidate[7]<='9')recognized=1;
+        if(recognized) {
+          for(i=0;i<len;i++) {
+            unsigned char v=(unsigned char)candidate[i];
+            if(!((v>='A'&&v<='Z') || (v>='a'&&v<='z') ||
+                 (v>='0'&&v<='9') || v==' ' || v=='.' ||
+                 v=='-' || v=='_' || v=='+')){valid=0;break;}
+          }
+          if(valid) {
+            clean(out,cap,candidate);
+            return 1;
+          }
+        }
+      }
+      if(!ch)break;
+      start=p+1;
+    }
+  }
+  return 0;
 }
 static void log_os(void) {
   HMODULE ntdll=GetModuleHandleA("ntdll.dll");
@@ -74,6 +124,7 @@ static void log_os(void) {
   int under_wine=wine!=NULL;
   int steam_hint=env_present("STEAM_COMPAT_DATA_PATH") ||
                  env_present("STEAM_COMPAT_CLIENT_INSTALL_PATH") ||
+                 env_present("STEAM_COMPAT_TOOL_PATHS") ||
                  env_present("PROTON_VERSION");
   emit(under_wine?"SYS-OS: runtime=Wine (Win32 compatibility layer)":
                   "SYS-OS: runtime=Windows native");
@@ -111,6 +162,11 @@ static void log_os(void) {
       if(env_clean("PROTON_VERSION",proton,sizeof(proton))) {
         snprintf(line,sizeof(line),
           "SYS-PROTON: Steam compatibility environment=yes version=%s (environment hint, unverified)",
+          proton);
+        emit(line);
+      } else if(proton_tool_label(proton,sizeof(proton))) {
+        snprintf(line,sizeof(line),
+          "SYS-PROTON: Steam compatibility environment=yes tool=%s (directory name hint, NOT verified runtime version)",
           proton);
         emit(line);
       } else
