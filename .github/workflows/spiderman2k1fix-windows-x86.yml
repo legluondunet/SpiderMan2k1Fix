@@ -112,14 +112,6 @@ jobs:
             diff -u expected.txt actual.txt
           )
 
-      - name: Upload Windows DLL artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: SpiderMan2k1Fix-Windows-x86
-          path: dist/package/
-          if-no-files-found: error
-          retention-days: 30
-
       - name: Upload release-ready ZIP without creating a GitHub Release
         uses: actions/upload-artifact@v4
         with:
