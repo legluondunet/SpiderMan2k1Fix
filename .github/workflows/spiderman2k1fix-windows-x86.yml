@@ -73,6 +73,8 @@ jobs:
           test -s dist/package/SpiderMan2k1Fix/README.md
           test -s dist/package/SpiderMan2k1Fix/CHANGELOG.md
           test -s dist/package/SpiderMan2k1Fix/SDL3.dll
+          # No inner archives: GitHub Actions compresses dist/package/ once.
+          test -z "$(find dist/package -type f -iname '*.zip' -print -quit)"
           cmp third_party/SDL3-LICENSE.txt dist/package/SpiderMan2k1Fix/SDL3-LICENSE.txt
           cmp README.md dist/package/SpiderMan2k1Fix/README.md
           cmp CHANGELOG.md dist/package/SpiderMan2k1Fix/CHANGELOG.md
@@ -112,12 +114,14 @@ jobs:
             diff -u expected.txt actual.txt
           )
 
-      - name: Upload release-ready ZIP without creating a GitHub Release
+      # upload-artifact ALWAYS creates the ONE ZIP downloaded from Actions.
+      # Upload the install tree, not our own release .zip, to avoid ZIP-in-ZIP.
+      # The versioned release ZIP + SHA256 above remain available to a future
+      # official release/publish job, but are not uploaded as an Actions artifact.
+      - name: Upload installation files as one ZIP (no nested ZIP)
         uses: actions/upload-artifact@v4
         with:
-          name: SpiderMan2k1Fix-Release-ZIP
-          path: |
-            dist/release/*.zip
-            dist/release/*.zip.sha256
+          name: SpiderMan2k1Fix-Windows-x86
+          path: dist/package/
           if-no-files-found: error
           retention-days: 30
