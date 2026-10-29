@@ -108,7 +108,11 @@ def test_build_artifact_includes_game_folder_dll_license_and_release_zip():
     assert "sha256sum" in ci
     assert "unzip -Z -1" in ci
     assert "Upload release-ready ZIP without creating a GitHub Release" in ci
-    assert "dist/release/*.zip" in ci\n    assert "dist/release/*.zip.sha256" in ci\n    assert ci.count("uses: actions/upload-artifact@v4") == 1\n    assert ci.count("name: SpiderMan2k1Fix-Release-ZIP") == 1\n    assert "name: SpiderMan2k1Fix-Windows-x86" not in ci
+    assert "dist/release/*.zip" in ci
+    assert "dist/release/*.zip.sha256" in ci
+    assert ci.count("uses: actions/upload-artifact@v4") == 1
+    assert ci.count("name: SpiderMan2k1Fix-Release-ZIP") == 1
+    assert "name: SpiderMan2k1Fix-Windows-x86" not in ci
     assert "gh release create" not in ci
     # INI/log/user profiles are still created at runtime, never bundled.
     assert "SpiderMan2k1Fix.ini" not in ci
