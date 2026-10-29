@@ -86,7 +86,7 @@ def test_sdl3_probe_is_optional_read_only_and_exe_relative():
     assert 'InterlockedExchangePointer(' not in code
     assert 'spider_sdl3_drop_absent(pads,&num_pads,ids,n,' in code
     assert 'sdl_close,sdl3_detached)' in code
-    assert 'strcpy(slash+1,"SDL3.dll");' in code
+    assert 'spider_path_code_asset_a("SDL3.dll",path,sizeof(path))' in code
     assert 'LoadLibraryA(path)' in code
     assert 'SpiderGamepadUI_OnFlip' in main
     for forbidden in ('SendInput(', 'WriteProcessMemory(', 'SPIDER_NATIVE_ACTION_TABLE',

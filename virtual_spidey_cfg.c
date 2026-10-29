@@ -14,6 +14,7 @@
 #include "display_policy.h"
 #include "ini_validation.h"
 #include "ini_recovery.h"
+#include "spider_fix_paths.h"
 #include "ps1_gamepad_mapping.h"
 #include "xbox360_gameplay_mapping.h"
 
@@ -594,13 +595,7 @@ write_fail:
 
 
 static int SpiderCfg_IniPath(char *ini,size_t cap) {
-  char exe[MAX_PATH],*slash; DWORD n=GetModuleFileNameA(NULL,exe,sizeof(exe));
-  size_t prefix;
-  if(!n||n>=sizeof(exe)||!(slash=strrchr(exe,'\\')))return 0;
-  prefix=(size_t)(slash-exe)+1;
-  if(prefix+strlen("SpiderMan2k1Fix.ini")+1>cap)return 0;
-  memcpy(ini,exe,prefix);
-  strcpy(ini+prefix,"SpiderMan2k1Fix.ini");return 1;
+  return spider_path_ini_a(ini,cap);
 }
 int SpiderCfg_EnsureDefaultIni(void (*logger)(const char *)) {
   char ini[MAX_PATH];

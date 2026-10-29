@@ -13,7 +13,7 @@ and replaces those calls with a PNG encoder callback. The original BMP
 writer is bypassed whenever the signature-checked hooks are installed.
 
 **To capture a screenshot:** press **F9** during a video, menu, comic,
-cinematic or gameplay. Files are written beside `SpideyPC.exe`.
+cinematic or gameplay. Files are written into `SpiderMan2k1Fix/screenshots/` relative to `SpideyPC.exe`. The folder is created on first capture; if the game directory is read-only, captures use `%LOCALAPPDATA%/SpiderMan2k1Fix/screenshots/`.
 After a successful save, the game displays a brief English confirmation
 and the full PNG path, without baking that confirmation into the image.
 The implementation captures decoded movie frames or DirectDraw

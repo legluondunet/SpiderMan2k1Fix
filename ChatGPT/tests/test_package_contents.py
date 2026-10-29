@@ -18,7 +18,8 @@ def test_ci_artifact_contains_only_two_dlls_and_public_docs():
         "      - name: Prepare game installation files", 1
     )[1].split("      - name: Upload Windows DLL artifact", 1)[0]
 
-    assert "cp SpiderMan2k1Fix.dll winmm.dll README.md CHANGELOG.md dist/package/" in artifact_section
+    assert "cp winmm.dll dist/package/" in artifact_section
+    assert "cp SpiderMan2k1Fix.dll README.md CHANGELOG.md dist/package/SpiderMan2k1Fix/" in artifact_section
     assert "path: dist/package/" in workflow
     assert "SpiderMan2k1Fix.ini" not in artifact_section
     assert "ChatGPT/" not in artifact_section

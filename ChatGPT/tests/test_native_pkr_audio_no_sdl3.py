@@ -10,7 +10,7 @@ INI = (ROOT/"ini_validation.h").read_text()
 BUILD = (ROOT/"build.sh").read_text()
 CI = (ROOT/".github/workflows/spiderman2k1fix-windows-x86.yml").read_text()
 
-def test_native_only_src_and_no_sdl3_runtime_packaging():
+def test_native_only_audio_source_even_when_sdl3_gamepad_runtime_is_bundled():
     for path in ("sdl3_audio_probe.c", "sdl3_audio_probe.h",
                  "sdl3_swing5_redirect.c", "sdl3_swing5_redirect.h",
                  "ChatGPT/tests/test_sdl3_audio_probe.py",
@@ -18,14 +18,18 @@ def test_native_only_src_and_no_sdl3_runtime_packaging():
                  "docs/references/diagnostics/audio/SDL3_AUDIO_PROBE.md"):
         assert not (ROOT/path).exists()
     assert (ROOT/"docs/references/diagnostics/audio/PKR_NATIVE_AUDIO_REPAIR.md").exists()
-    for content in (BUILD,CI,MAIN,HOOK,INDEX,HEAD,INI):
+    for content in (BUILD,MAIN,HOOK,INDEX,HEAD,INI):
         assert 'SDL3.dll' not in content
         assert 'sdl3_audio_probe' not in content
         assert 'sdl3_swing5_redirect' not in content
     assert 'pkr_audio_play_hook.c pkr_audio_index.c' in BUILD
     assert 'pkr_audio_play_hook.c' not in CI  # compilation remains in build.sh
-    assert 'Bundle pinned SDL3 x86 DLL' not in CI
-    assert 'cp SpiderMan2k1Fix.dll winmm.dll README.md CHANGELOG.md dist/package/' in CI
+    assert 'Bundle pinned upstream SDL3 Windows x86 runtime and license' in CI
+    assert 'scripts/package_sdl3_x86.py' in CI
+    assert 'SpiderMan2k1Fix/SDL3.dll' in CI
+    assert 'SpiderMan2k1Fix/SDL3-LICENSE.txt' in CI
+    assert 'cp winmm.dll dist/package/' in CI
+    assert 'cp SpiderMan2k1Fix.dll README.md CHANGELOG.md dist/package/SpiderMan2k1Fix/' in CI
 
 def test_verified_original_callsite_and_preserved_playback_semantics():
     assert '0x00472870u' in HOOK

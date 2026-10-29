@@ -15,10 +15,10 @@ def test_new_dll_names_are_consistent():
     assert (ROOT / 'spiderman2k1fix.c').exists()
 
 def test_ini_and_logs_are_consistent():
-    for name in ('spiderman2k1fix.c', 'winmm_proxy.c', 'input_focus_trace.c', 'virtual_spidey_cfg.c'):
+    for name in ('spider_fix_paths.h', 'input_focus_trace.c', 'virtual_spidey_cfg.c'):
         data=(ROOT / name).read_text()
         assert 'SpiderMan2k1Fix.ini' in data
-    for name in ('spiderman2k1fix.c','winmm_proxy.c'):
+    for name in ('spider_fix_paths.h',):
         assert 'SpiderMan2k1Fix.log' in (ROOT / name).read_text()
     assert (ROOT / 'ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini').exists()
     assert (ROOT / 'ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini').exists()

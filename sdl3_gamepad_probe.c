@@ -7,6 +7,7 @@
  * SDL3's instance ID is the only controller identity used here. */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "spider_fix_paths.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -73,18 +74,15 @@ void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
 }
 
 static int sdl_load(void) {
-  char path[MAX_PATH],line[310],*slash;
-  DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
+  char path[MAX_PATH],line[310];
   attempted=1;
-  if(!n || n>=sizeof(path) || !(slash=strrchr(path,'\\')) ||
-     (size_t)(slash-path)+strlen("SDL3.dll")+1>=sizeof(path)) {
-    say("SDL3-PROBE: disabled: cannot resolve executable-relative SDL3.dll");
+  if(!spider_path_code_asset_a("SDL3.dll",path,sizeof(path))) {
+    say("SDL3-PROBE: disabled: cannot resolve game-relative SDL3.dll");
     return 0;
   }
-  strcpy(slash+1,"SDL3.dll");
   module=LoadLibraryA(path);
   if(!module) {
-    say("SDL3-PROBE: SDL3.dll absent/unloadable beside SpideyPC.exe; legacy controller input untouched");
+    say("SDL3-PROBE: SDL3.dll absent/unloadable from fix folder or legacy root; native controller input untouched");
     return 0;
   }
 #define LOAD_SDL(field,type,symbol) do { field=(type)GetProcAddress(module,symbol); if(!field)goto missing; }while(0)
