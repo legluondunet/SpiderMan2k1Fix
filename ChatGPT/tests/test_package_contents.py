@@ -30,7 +30,7 @@ def test_ci_release_package_contains_required_dlls_and_public_docs():
     # Pre-packaged release archives are retained for future publishing,
     # but are not uploaded into the outer GitHub Actions artifact ZIP.
     assert "Build release-ready ZIP and SHA256 (do not publish)" in workflow
-    assert "dist/release/" in workflow
+    assert "cd dist/release" in workflow
     assert "SpiderMan2k1Fix.ini" not in artifact_section
     assert "ChatGPT/" not in artifact_section
     assert "docs/" not in artifact_section
