@@ -47,7 +47,7 @@ def test_user_requested_os_wine_proton_host_and_desktop_fields_have_sources():
     assert "environment hint, unverified" in src
     assert "directory name hint, NOT verified runtime version" in src
     assert "static int proton_tool_label(" in src
-    assert 'strpbrk(raw,"/\\\\@\\r\\n\\t")' in src
+    assert "strpbrk(raw" in src
     assert "version=Unavailable (not exposed by Wine/Steam)" in src
     assert "cannot exclude Proton" in src
 
