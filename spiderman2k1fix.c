@@ -38,6 +38,7 @@
 #include "version_info.h"
 #include "f9_png.h"
 #include "spider_fix_paths.h"
+#include "system_diagnostics.h"
 #include "f9_toast.h"
 #include "quick_exit_f12.h"
 #include "pkr_audio_index.h"
@@ -3186,6 +3187,9 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  /* The supported executable is already SHA-verified and the logger is
+   * enabled only with [Debug] Log=1. Read-only inventory, never DllMain. */
+  if(debug_log_enabled)SpiderSystemDiagnostics_Log(log_line);
   /* Passive profile setup only: independent DI8 discovery begins later,
    * on the game's real window and Flip thread, never under loader lock.
    * All original gameplay controls are preserved. */
