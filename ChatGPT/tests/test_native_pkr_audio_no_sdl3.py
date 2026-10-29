@@ -25,7 +25,8 @@ def test_native_only_src_and_no_sdl3_runtime_packaging():
     assert 'pkr_audio_play_hook.c pkr_audio_index.c' in BUILD
     assert 'pkr_audio_play_hook.c' not in CI  # compilation remains in build.sh
     assert 'Bundle pinned SDL3 x86 DLL' not in CI
-    assert 'cp SpiderMan2k1Fix.dll winmm.dll README.md CHANGELOG.md dist/package/' in CI
+    assert 'cp winmm.dll dist/package/' in CI
+    assert 'cp SpiderMan2k1Fix.dll README.md CHANGELOG.md dist/package/SpiderMan2k1Fix/' in CI
 
 def test_verified_original_callsite_and_preserved_playback_semantics():
     assert '0x00472870u' in HOOK
