@@ -48,7 +48,7 @@
 
 ## Unreleased — organized installation paths (DRAFT PR #81)
 
-- **Upcoming Windows/Wine release packaging:** include unmodified official SDL3 v3.4.18 Windows x86 in `SpiderMan2k1Fix/` with its zlib license. CI downloads the exact tagged official ZIP, verifies its published SHA-256 plus PE32/i386 format, and publishes a release-ready ZIP with a SHA256 file as a separate CI artifact. No automatic publication and no modification to historical v1.1.0 releases. SDL3 stays optional; native audio and gamepad defaults are unchanged.
+- **Upcoming Windows/Wine release packaging:** include unmodified official SDL3 v3.4.18 Windows x86 in `SpiderMan2k1Fix/` with its zlib license. CI downloads the exact tagged official ZIP, verifies its published SHA-256 plus PE32/i386 format, and prepares a versioned release ZIP with SHA256 internally for future publication. GitHub Actions instead uploads the installation folder directly as its single automatically zipped artifact, avoiding a ZIP inside another ZIP. No automatic publication and no modification to historical v1.1.0 releases. SDL3 stays optional; native audio and gamepad defaults are unchanged.
 
 
 - Keep only the Windows loader `winmm.dll` beside the original `SpideyPC.exe`; load the main `SpiderMan2k1Fix.dll` from `SpiderMan2k1Fix/`, with root DLL fallback only for old installs.
