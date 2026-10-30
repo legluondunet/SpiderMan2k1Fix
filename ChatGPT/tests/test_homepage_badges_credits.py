@@ -14,7 +14,7 @@ def test_windows_badge_links_to_real_build_workflow():
 
 
 def test_linux_wine_proton_badge_is_informational_and_has_instructions():
-    assert "[![Linux / Wine / Proton compatible](https://img.shields.io/badge/" in README
+    assert "[![Linux Wine / Proton compatible](https://img.shields.io/badge/" in README
     assert "](#installation-on-windows-and-linux-wine)" in README
     assert 'WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe' in README
     tested = "Successfully tested on Windows 11 and Linux/Wine."
