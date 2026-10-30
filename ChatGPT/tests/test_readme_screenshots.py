@@ -17,7 +17,7 @@ SHOTS = (
 def test_readme_gallery_appears_below_intro_and_above_features():
     start = README.index("## Screenshots")
     assert README.index("[![Windows x86 build](") < start
-    assert README.index("[![Linux / Wine / Proton compatible](") < start
+    assert README.index("[![Linux Wine / Proton compatible](") < start
     assert README.index("SpiderMan2k1Fix is an **unofficial") < start
     assert start < README.index("## Main Features")
     gallery = README[start:README.index("## Main Features")]
