@@ -37,7 +37,7 @@ enum {
   SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE,
   SPIDER_SDL3_CONTEXT_COUNT=5,
   SPIDER_SDL3_SETUP_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT+SPIDER_SDL3_CONTEXT_COUNT,
-  SPIDER_SDL3_VISIBLE_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT+1,
+  SPIDER_SDL3_VISIBLE_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT,
   SPIDER_SDL3_PROFILE_BANK_CAPACITY=16,
   SPIDER_SDL3_BUTTON_COUNT=21,
   SPIDER_SDL3_AXIS_COUNT=6,
@@ -211,10 +211,10 @@ static inline SpiderSDL3Binding spider_sdl3_profile_setup_binding(
   return spider_sdl3_bind(SPIDER_SDL3_BIND_NONE,0);
 }
 /* Legacy v2 context fields are retained for lossless profile parsing.
- * Menu/movie Confirm/Skip is now fixed to the original South (Cross/A),
- * and 3D scripted scenes remain game-native. Existing custom context
- * entries are not silently rewritten, but their Confirm/Skip values have
- * no runtime effect. */
+ * Menu/movie Confirm/Skip is fixed to South (Cross/A) and Back/Cancel
+ * to East (Circle/B). Scripted 3D scenes remain game-native. All five
+ * stored context bindings are ignored at runtime, without rewriting
+ * any existing per-model file. */
 static inline int spider_sdl3_profile_shared_confirm_binding(
     const SpiderSDL3ControllerProfile *p,SpiderSDL3Binding *binding) {
   static const unsigned keys[4]={
@@ -285,12 +285,8 @@ static inline int spider_sdl3_profile_assign_visible(
     SpiderSDL3Binding binding) {
   if(action<SPIDER_SDL3_ACTION_COUNT)
     return spider_sdl3_profile_assign(p,action,binding);
-  if(action==SPIDER_SDL3_ACTION_COUNT) {
-    /* South/Cross/A must remain available for native Confirm/Skip;
-     * a legacy Back=South profile is handled by the runtime East fallback. */
-    if(binding.kind==SPIDER_SDL3_BIND_BUTTON && binding.index==0u)return 0;
-    return spider_sdl3_profile_assign_back(p,binding);
-  }
+  /* Confirm/Skip and Back/Cancel are fixed UI conventions, not
+   * editable actions. 3D semantic bindings remain independent. */
   return 0;
 }
 static inline void spider_sdl3_bank_reset(SpiderSDL3ProfileBank *bank) {
