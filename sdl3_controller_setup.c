@@ -52,8 +52,9 @@ typedef struct {
    * our owner window synchronously inside WM_TIMER or a child callback. */
   unsigned close_pending;
   unsigned closing;
-  /* Only an explicit fresh Start inside the modal requests a gameplay
-   * owner transfer on close. Browsing profiles by L1/R1 never does. */
+  /* A fresh Start in the modal OR a physical Circle/B (or Cross on
+   * focused Close) from its displayed controller requests a gameplay
+   * owner transfer AFTER modal exit. Merely browsing L1/R1 does not. */
   uint32_t start_owner_id;
   uint16_t start_owner_vid,start_owner_pid;
   unsigned start_owner_requested;
@@ -131,6 +132,26 @@ static void setup_apply_focus(SpiderSDL3SetupUI *ui) {
  * Never destroy the owner HWND synchronously in WM_TIMER. */
 static void setup_close_from_pad(SpiderSDL3SetupUI *ui,const char *source) {
   if(!ui || ui->close_pending)return;
+  /* The physical controller operating this panel should also control
+   * the original Joystick menu after closing it. Without this, browsing
+   * DS4 via R1 then pressing Circle closes the modal successfully, but
+   * DS4 Circle stops working in the underlying game menu because the
+   * old Xbox is still its owner. Never rebind original DirectInput on
+   * the modal stack; queue a verified handoff for next foreground Flip.
+   * Escape, mouse X and keyboard/Win32 Close are NOT pad-close events. */
+  if(ui->instance && ui->vid && ui->pid && !ui->capture.active) {
+    char line[190];
+    ui->start_owner_id=ui->instance;
+    ui->start_owner_vid=ui->vid;
+    ui->start_owner_pid=ui->pid;
+    ui->start_owner_requested=1u;
+    if(setup_report) {
+      snprintf(line,sizeof(line),
+        "SDL3-SETUP: PAD-CLOSE GAME-OWNER requested selected-id=%lu VID:PID=%04X:%04X; deferred until safe foreground Flip",
+        (unsigned long)ui->instance,(unsigned)ui->vid,(unsigned)ui->pid);
+      setup_report(line);
+    }
+  }
   ui->close_pending=1;
   ui->close_requested_ms=GetTickCount();
   spider_sdl3_setup_nav_reset(&ui->nav);
@@ -573,7 +594,7 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
     return 1;
   }
   if(vk==VK_F1) {
-    status(ui,"Stick X/Y: navigate; L1/R1: browse pad; Start: select game owner on Close; Cross: activate; Circle: close.");
+    status(ui,"Stick X/Y: navigate; L1/R1: browse pad; Start: choose owner; Circle/B: close and take control.");
     return 1;
   }
   return 0; /* Tab and Space keep their native Win32 button behavior. */
@@ -612,7 +633,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         465,207,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_CLOSE,NULL,NULL);
       label=CreateWindowExA(0,"STATIC",
         "Stick Left/Right: actions or buttons   Stick Up/Down: select row or button\r\n"
-        "L1/R1: browse pad   Start: control game after closing   Circle/B: close\r\n"
+        "L1/R1: browse pad   Start: choose pad   Circle/B: close + use this pad\r\n"
         "Triangle/Y: defaults    Keyboard: Tab, Enter, Esc, PgUp/PgDn",
         WS_CHILD|WS_VISIBLE,18,351,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
