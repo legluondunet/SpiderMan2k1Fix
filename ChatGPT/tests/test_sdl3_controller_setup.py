@@ -291,7 +291,8 @@ def test_mouse_free_keyboard_and_selected_gamepad_setup_navigation():
     assert "sample->axis[SPIDER_SDL3_AXIS_LEFTY]=sdl_axis(handle,SPIDER_SDL3_AXIS_LEFTY);" in setup_read
     assert not any(ord(ch)>127 for ch in ui), "ANSI game dialog must use ASCII-only labels"
     assert 'Stick Left/Right: actions or buttons' in ui
-    assert 'L1/R1: choose pad' in ui
+    assert 'L1/R1: browse pad' in ui
+    assert 'Start: control game after closing' in ui
     for forbidden in ("SendInput(", "WritePrivateProfileString",
                       "VirtualProtect(", "CreateThread("):
         assert forbidden not in ui
