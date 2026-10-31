@@ -31,9 +31,10 @@ def test_hotplug_integrates_on_foreground_flip_only():
     # the Xbox profile was the only one installed during CRT bootstrap.
     # This MUST NOT activate native Sony 3D shortcuts or reload cfg.
     assert "late_ds4_menu_only=detected_kind==SPIDER_RECONNECT_DS4 &&" in PAD
-    assert "ps1_preview_requested && !ps1_preview_active;" in PAD
+    assert "ps1_preview_requested && !ps1_preview_active &&" in PAD
+    assert "!sdl3_live_sony;" in PAD
     assert "Cross=BUTTON1 and Circle=BUTTON2 MENU/BINK bridge ENABLED" in PAD
-    assert "late_ds4_menu_only,(unsigned)confirm);" in PAD
+    assert "ps1_preview_active || late_ds4_menu_only || sdl3_live_sony," in PAD
     assert "!late_ds4_menu_only; /* never synthesize late Sony 3D Pause */" in PAD
     assert "late DS4 fresh Cross -> synthetic Return" in PAD
     assert "synthetic actions disabled until restart with controller present" not in PAD
@@ -121,8 +122,16 @@ def test_unplug_inputlost_never_acquires_disconnected_device_same_frame():
     assert "secondary stale device Release COMPLETE" in PAD
     failed=PAD[PAD.index("hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);",
                          PAD.index("void SpiderGamepadUI_OnFlip(")):]
-    failed=failed[:failed.index("bad_reads=0;")]
+    failed=failed[:failed.index("  if(sdl3_3d_trace_requested &&")]
+    # Focus/modal teardown now releases the independent foreground-only
+    # UI COM instance proactively; after ANY failed GetDeviceState it never
+    # Acquires stale input (including NOTACQUIRED and INPUTLOST).
     assert "IDirectInputDevice8_Acquire(device);" not in failed
+    assert "modal_reacquire_pending" not in PAD
+    assert "retired separate foreground-only UI DirectInput" in PAD
+    assert "hotplug.scan_started=0u;" in PAD
+    assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in PAD
+
     paused=PAD[PAD.index("unsigned SpiderGamepadUI_PauseWake_Poll("):
                PAD.index("void SpiderGamepadUI_PauseWake_End(")]
     assert paused.count("IDirectInputDevice8_Acquire(device);")==1

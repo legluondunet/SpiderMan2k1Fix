@@ -54,6 +54,16 @@ int main(void) {
     assert(!spider_sdl3_selection_start(&s,11,0));
     assert(spider_sdl3_selection_start(&s,11,1));
     assert(s.active==11);
+    /* An already-armed spectator Start held during Alt+Tab MUST NOT steal
+     * ownership upon returning to foreground until released. */
+    spider_sdl3_selection_start(&s,22,0);
+    spider_sdl3_selection_focus_lost(&s);
+    assert(s.active==11);
+    assert(!spider_sdl3_selection_start(&s,22,1));
+    assert(s.active==11);
+    assert(!spider_sdl3_selection_start(&s,22,0));
+    assert(spider_sdl3_selection_start(&s,22,1));
+    assert(s.active==22);
     return 0;
 }
 ''')

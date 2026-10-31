@@ -33,6 +33,27 @@ def test_proxy_keeps_root_winmm_but_uses_nested_core_and_early_diagnostics():
         assert unsafe not in dllmain
 
 
+def test_log_defaults_to_executable_directory_and_keeps_readonly_fallback():
+    paths=read("spider_fix_paths.h")
+    resolver=paths.split("static inline int spider_path_log_a(",1)[1].split(
+        "static inline int spider_path_code_asset_a(",1)[0]
+    assert 'spider_path_exe_dir_a(exe,sizeof(exe))' in resolver
+    assert 'spider_path_join_a(target,sizeof(target),exe,"SpiderMan2k1Fix.log")' in resolver
+    assert 'spider_path_roots_a(game,sizeof(game),local,sizeof(local))' in resolver
+    assert 'spider_path_join_a(target,sizeof(target),local,"SpiderMan2k1Fix.log")' in resolver
+    assert 'spider_path_writable_a(exe)' in resolver
+    assert 'spider_path_writable_a(local)' in resolver
+    assert "FILE_ATTRIBUTE_REPARSE_POINT" in resolver
+    assert "FILE_ATTRIBUTE_READONLY" in resolver
+    assert "spider_path_ini_a(" not in resolver
+    # Both startup proxy and main core write to the one shared resolver.
+    proxy=read("winmm_proxy.c")
+    core=read("spiderman2k1fix.c")
+    assert 'spider_path_log_a(path,sizeof(path))' in proxy
+    assert 'spider_path_log_a(path,sizeof(path))' in core
+    assert "reset_log_on_first_write" in proxy
+
+
 def test_core_uses_same_resolver_for_every_main_ini_subsystem():
     core=read("spiderman2k1fix.c")
     paths=read("spider_fix_paths.h")
@@ -94,4 +115,8 @@ def test_artifact_contains_one_root_proxy_and_one_nested_core():
     assert "cp SDL3.dll" not in ci
     assert "SpiderMan2k1Fix.ini" not in ci
     assert "path: dist/package/" in ci
+    assert ci.count("uses: actions/upload-artifact@v4") == 1
+    upload=ci.split("      - name: Upload installation files as one ZIP (no nested ZIP)",1)[1]
+    assert "dist/release/" not in upload
+    assert "name: SpiderMan2k1Fix-Windows-x86" in upload
     assert "cmp README.md dist/package/SpiderMan2k1Fix/README.md" in ci

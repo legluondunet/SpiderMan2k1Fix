@@ -30,6 +30,7 @@
 #include "native_joystick_unplug.h"
 #include "native_joystick_reconnect.h"
 #include "sdl3_gamepad_probe.h"
+#include "sdl3_gameplay_plan_probe.h"
 #include "pause_any_key.h"
 #include "pause_surface.h"
 #include "focus_media_pause.h"
@@ -2442,6 +2443,7 @@ static void pause_at_flip_if_background(void) {
   MSG msg;
   RECT pause_present_rect,pause_content_rect;
   int pause_gamepad_available=0;
+  int pause_sdl3_available=0;
   int pause_previous_foreground=0;
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
   if(GetForegroundWindow()==hwnd) {
@@ -2468,13 +2470,17 @@ static void pause_at_flip_if_background(void) {
     return;
   }
   log_line("FOCUS-PAUSE: Any keyboard resume ARMED; consumes press and release");
-  /* The main gamepad UI poll runs only between Flips, so it cannot serve
-   * the synchronous focus PAUSED screen. Sample the already-verified
-   * secondary DS4 here instead; require NEW digital press AND full release,
-   * never wake while game is background, and never synthesize a native key. */
-  pause_gamepad_available=SpiderGamepadUI_PauseWake_Begin();
-  if(pause_gamepad_available)
-    log_line("FOCUS-PAUSE: DS4 digital-button resume ARMED; foreground-only, release-gated, no injected key (keyboard always available)");
+  /* While Flip is blocked, the regular SDL3 OnFlip and UI poll cannot run.
+   * Prefer the selected SDL3 handle (same game thread, validated native
+   * owner), not the secondary DirectInput handle that can become INPUTLOST
+   * on Alt+Tab. Retain the old DI8 wake for disabled/unavailable SDL3.
+   * Both require neutral->fresh digital press->release in foreground. */
+  pause_sdl3_available=SpiderSDL3Probe_PauseWake_Begin();
+  pause_gamepad_available=pause_sdl3_available?1:SpiderGamepadUI_PauseWake_Begin();
+  if(pause_sdl3_available)
+    log_line("FOCUS-PAUSE: SDL3 selected-gamepad wake ARMED; foreground-only, release-gated, no injected key (keyboard always available)");
+  else if(pause_gamepad_available)
+    log_line("FOCUS-PAUSE: DS4 DirectInput digital-button fallback ARMED; foreground-only, release-gated, no injected key (keyboard always available)");
   else
     log_line("FOCUS-PAUSE: no verified gamepad wake device; PAUSED hint remains keyboard-only");
   /* The Flip pause alone does not suspend Bink or secondary DirectSound. */
@@ -2521,6 +2527,7 @@ static void pause_at_flip_if_background(void) {
         PostQuitMessage((int)msg.wParam);
         SpiderPauseAny_End();
         SpiderGamepadUI_PauseWake_End();
+        SpiderSDL3Probe_PauseWake_End();
         SpiderPauseSurface_End();
         SpiderFocusDSound_Resume();
         SpiderFocusMedia_Resume();
@@ -2549,11 +2556,13 @@ static void pause_at_flip_if_background(void) {
     if(SpiderPauseAny_Completed())
       InterlockedExchange(&pause_latched,0);
     else {
-      unsigned resumed_buttons=SpiderGamepadUI_PauseWake_Poll(hwnd);
+      unsigned resumed_buttons=pause_sdl3_available?
+        SpiderSDL3Probe_PauseWake_Poll(hwnd):
+        SpiderGamepadUI_PauseWake_Poll(hwnd);
       if(resumed_buttons) {
         char line[155];
         snprintf(line,sizeof(line),
-          "FOCUS-PAUSE: gamepad digital press/release consumed buttons=0x%03X (verified DS4, no native key injection)",
+          "FOCUS-PAUSE: gamepad digital press/release consumed buttons=0x%03X (selected SDL3 or verified DI8; no native key injection)",
           resumed_buttons);
         log_line(line);
         InterlockedExchange(&pause_latched,0);
@@ -2573,6 +2582,7 @@ static void pause_at_flip_if_background(void) {
   }
   SpiderPauseAny_End();
   SpiderGamepadUI_PauseWake_End();
+  SpiderSDL3Probe_PauseWake_End();
   SpiderPauseSurface_End();
   SpiderFocusDSound_Resume();
   SpiderFocusMedia_Resume();
@@ -2589,6 +2599,10 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
    * The 3D stage must use the original menu-mode switch, NOT the optional
    * gameplay_4x3_active flag (which is false in widescreen Auto).
    * Gamepad pulse release runs before any focus-loss pause blocks Flip. */
+  /* Poll SDL3 before the UI bridge to avoid one stale frame of a previous
+   * controller's synthetic keys after a Start ownership switch. Actual
+   * native DI handoff remains AFTER unplug guard installation below. */
+  SpiderSDL3Probe_OnFlip(count,game_hwnd);
   SpiderGamepadUI_OnFlip(game_hwnd,
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
     InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
@@ -2616,8 +2630,20 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   }
   SpiderDI8Retry_OnFlip(count);
   SpiderNativeUnplug_OnFlip(count);
+  /* SDL3 selection was pumped before UI. Native device replacement now
+   * runs after its SHA-guarded disconnect patch, on the same Flip thread. */
   SpiderNativeReconnect_OnFlip(count,game_hwnd);
-  SpiderSDL3Probe_OnFlip(count,game_hwnd);
+  /* Experimental SDL3 semantic action probe is strictly read-only and
+   * runs only AFTER the game-owned DirectInput handoff is verified. */
+  SpiderSDL3GameplayPlan_OnFlip(game_hwnd,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
+      InterlockedCompareExchange(&fov_game_height,0,0)>0,
+    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
+    ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
+      native_pause43_visible_near_flip(count) ||
+      InterlockedCompareExchange(&pause_latched,0,0)==1 ||
+      InterlockedCompareExchange(&pause_in_progress,0,0)==1));
   /* Passive, bounded post-hotplug heartbeat: menu -> 3D -> menu. */
   SpiderNativeReconnect_ObserveMode(count,
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
@@ -3233,10 +3259,12 @@ static DWORD initialize_body(LPVOID unused) {
       SpiderNativeUnplug_Init(ini,log_line);
       SpiderNativeReconnect_Init(ini,log_line);
       SpiderSDL3Probe_Init(ini,log_line);
+      SpiderSDL3GameplayPlan_Init(ini,log_line);
     } else {
       SpiderNativeUnplug_Init(NULL,log_line);
       SpiderNativeReconnect_Init(NULL,log_line);
       SpiderSDL3Probe_Init(NULL,log_line);
+      SpiderSDL3GameplayPlan_Init(NULL,log_line);
     }
   }
   SpiderFocusMedia_Init(log_line); /* Opt-in native Bink pause. */

@@ -11,7 +11,7 @@ CFG=(ROOT/"virtual_spidey_cfg.c").read_text()
 
 def test_runtime_uses_pure_policy_and_leaves_3d_native_inputs_unchanged():
     assert '#include "ps1_menu_confirm.h"' in PAD
-    assert "ps1_preview_active || late_ds4_menu_only,(unsigned)confirm)" in PAD
+    assert "ps1_preview_active || late_ds4_menu_only || sdl3_live_sony," in PAD
     assert "spider_ps1_menu_confirm_edges(pressed,(unsigned)previous_buttons,effective_confirm)" in PAD
     assert "spider_ps1_menu_confirm_unowned(confirm_edges,ownership_block)" in PAD
     assert 'begin_scancode(0x1Cu,"Return");' in PAD

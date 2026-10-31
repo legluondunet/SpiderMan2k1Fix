@@ -1424,7 +1424,8 @@ def test_debug_3d_original_action_callsite_attribution_cannot_skip_or_exit():
     assert "SPIDER_NATIVE_3D_INPUT_SITES_COUNT 5" in SRC
     owner=SRC[SRC.index("static BYTE __cdecl spider_probe_3d_native_input("):
               SRC.index("/* PASSIVE owner cleanup checkpoint")]
-    assert "BYTE original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);" in owner
+    assert "original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);" in owner
+    assert owner.count("SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2)") == 1
     assert "return original;" in owner
     assert "DEBUG-3D-NATIVE-INPUT" in owner
     assert "phase_state=%ld phase_object=%lu script_slots_active=%lu" in owner

@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "ps1_joystick_readonly_menu.h"
+#include "sdl3_controller_setup.h"
 
 static void (*ps1_menu_logger)(const char *)=NULL;
 /* The native machine-code patch is immutable during this process.
@@ -39,6 +40,15 @@ static void report(const char *msg) {
  * original menu is stuck awaiting a selection release. */
 static void __cdecl spider_joystick_restore_denied(void) {
   static LONG blocked=0;
+  /* This exact callsite is inside original Joystick Configuration.
+   * In the experimental user-wizard mode it becomes a safe menu command,
+   * NEVER the original restore-defaults action. Native seven-action
+   * assignments stay locked until SDL3 gameplay bridge is validated. */
+  if(SpiderSDL3ControllerSetup_Enabled() &&
+     *(const volatile DWORD *)(uintptr_t)0x00AC129Cu!=0u) {
+    SpiderSDL3ControllerSetup_Open();
+    return;
+  }
   LONG n=InterlockedIncrement(&blocked);
   if(n<=8 || n%64==0) {
     char line[195];
@@ -63,8 +73,19 @@ static void __fastcall spider_joystick_restore_row_addentry(
   (void)unused_edx;
   if(*(const volatile DWORD *)(uintptr_t)0x00AC129Cu!=0u) {
     static LONG suppressed=0;
-    if(InterlockedIncrement(&suppressed)==1)
-      report("GAMEPAD-READONLY: Restore Default ROW OMITTED in Joystick (and matching placeholder); 14 action entries kept, Keyboard restore preserved");
+    if(SpiderSDL3ControllerSetup_Enabled()) {
+      /* Keep left/right CMenu rows aligned; no altered action indexes.
+       * The original RestoreDefaults call is already replaced above. */
+      const void *left=*(void *const volatile *)(uintptr_t)0x00AC11B4u;
+      const char *text=native_menu==left?
+                         "SDL3 TEST (PREVIEW)":" ";
+      ((SpiderCMenuAddEntry)(uintptr_t)0x0043FFF0u)(native_menu,text);
+      if(InterlockedIncrement(&suppressed)==1)
+        report("SDL3-SETUP: native Joystick preview row replaces Restore Default (paired columns; keyboard menu unchanged)");
+    } else {
+      if(InterlockedIncrement(&suppressed)==1)
+        report("GAMEPAD-READONLY: Restore Default ROW OMITTED in Joystick (and matching placeholder); 14 action entries kept, Keyboard restore preserved");
+    }
     return;
   }
   ((SpiderCMenuAddEntry)(uintptr_t)0x0043FFF0u)(native_menu,label);
@@ -88,7 +109,7 @@ static int __cdecl spider_ps1_joystick_name(char *destination,
                                             unsigned button) {
   const char *name=readonly_label_mode==2u?
     spider_xbox360_native_button_label(button):
-    spider_ps1_native_button_label(button);
+    readonly_label_mode==1u?spider_ps1_native_button_label(button):NULL;
   (void)original_format;
   if(!destination)return 0;
   /* The original game binds Swing to physical BUTTON9 (R3), not Xbox
@@ -138,7 +159,7 @@ static int ps1_patch_readonly_site(BYTE *address,const BYTE *replacement,
 static int spider_install_readonly_joystick(unsigned mode,
                                            void (*logger)(const char *)) {
   ps1_menu_logger=logger;
-  if(mode!=1u && mode!=2u)return 0;
+  if(mode!=1u && mode!=2u && mode!=3u)return 0;
   if(readonly_installed_mode) {
     /* Sony and Xbox share the SAME validated eight native patch sites;
      * only the on-screen physical button names differ. A pad swap may
@@ -148,7 +169,8 @@ static int spider_install_readonly_joystick(unsigned mode,
       readonly_label_mode=mode;
       report(mode==1u?
         "GAMEPAD-READONLY: live controller labels changed to DS4 (native action mapping unchanged)":
-        "GAMEPAD-READONLY: live controller labels changed to Xbox360 (native action mapping unchanged)");
+        mode==2u?"GAMEPAD-READONLY: live controller labels changed to Xbox360 (native action mapping unchanged)":
+        "SDL3-SETUP: generic button numbers for unknown/absent native joystick (read-only)");
     }
     return 1;
   }
@@ -324,7 +346,9 @@ static int spider_install_readonly_joystick(unsigned mode,
   readonly_label_mode=mode;
   readonly_installed_mode=mode;
   snprintf(line,sizeof(line),
-    "GAMEPAD-READONLY: Restore Default and matching placeholder rows disabled in Joystick only; native left AddEntry VA=0x%08lX; Keyboard restore preserved",
+    SpiderSDL3ControllerSetup_Enabled()?
+      "SDL3-SETUP: Joystick Restore Default replaced by preview row; native left AddEntry VA=0x%08lX; Keyboard untouched":
+      "GAMEPAD-READONLY: Restore Default and matching placeholder rows disabled in Joystick only; native left AddEntry VA=0x%08lX; Keyboard restore preserved",
     (unsigned long)live_sites[SPIDER_PS1_JOYSTICK_RESTORE_ROW_SLOT].virtual_address);
   report(line);
   if(mode==2u)
@@ -338,4 +362,12 @@ int SpiderPS1_InstallReadOnlyJoystick(void (*logger)(const char *)) {
 }
 int SpiderXbox360_InstallReadOnlyJoystick(void (*logger)(const char *)) {
   return spider_install_readonly_joystick(2u,logger);
+}
+
+/* Generic entry when no known Sony/Xbox device is selected. The guarded
+ * runtime patch still blocks game-owned native remapping, but lets any
+ * keyboard user open the opt-in SDL3 gamepad preview. */
+int SpiderSDL3_InstallGenericReadOnlyJoystick(void (*logger)(const char *)) {
+  if(!SpiderSDL3ControllerSetup_Enabled())return 0;
+  return spider_install_readonly_joystick(3u,logger);
 }

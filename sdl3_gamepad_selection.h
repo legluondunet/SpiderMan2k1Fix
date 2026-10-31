@@ -51,6 +51,19 @@ static void spider_sdl3_selection_sync(SpiderSDL3Selection *s,
   if(!s->active && n==1u)s->active=s->slots[0].id;
 }
 
+/* Focus loss preserves the selected controller but invalidates any Start
+ * edge that might be held/re-pressed while the game is in the background.
+ * On return, every controller must be sampled released before a new Start
+ * press can claim ownership. No gameplay keys are synthesized here. */
+static void spider_sdl3_selection_focus_lost(SpiderSDL3Selection *s) {
+  unsigned i;
+  if(!s)return;
+  for(i=0;i<s->count;i++) {
+    s->slots[i].start_armed=0u;
+    s->slots[i].previous_start=1u;
+  }
+}
+
 /* Returns 1 when a neutral->fresh Start press changes the selected gamepad.
  * This also permits deliberate handoff from one already-active pad to another.
  * A held Start on first detection is not a fresh press. */

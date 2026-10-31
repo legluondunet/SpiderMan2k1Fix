@@ -14,7 +14,8 @@ HEADER=(ROOT/"ps1_post_quit_guard.h").read_text()
 def test_opt_in_and_only_synthetic_menu_confirm_is_suppressed():
     assert '"ControllerPS1PostQuitGuard"' in INI
     assert 'GetPrivateProfileIntA("Input","ControllerPS1PostQuitGuard",0,ini)==1' in PAD
-    assert 'if(ps1_post_quit_guard_requested)' in PAD
+    assert 'if(ps1_post_quit_guard_requested &&' in PAD
+    assert '(ps1_preview_active || sdl3_live_sony))' in PAD
     assert "ControllerPS1PostQuitGuard=1" not in CFG
     assert '#include "ps1_post_quit_guard.h"' in PAD
     assert '0x0060CFA4u' in PAD

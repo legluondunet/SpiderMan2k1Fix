@@ -57,7 +57,7 @@ def test_user_joystick_bindings_preserved_on_any_virtual_save():
 def test_ps1_preview_uses_cross_only_for_menu_confirm_even_with_legacy_both():
     # Original [Input] ControllerEnterButtons=Both remains honored outside
     # PS1 preview, but OPTIONS/Start is intentionally redundant in PS1.
-    assert "ps1_preview_active || late_ds4_menu_only,(unsigned)confirm);" in PAD
+    assert "ps1_preview_active || late_ds4_menu_only || sdl3_live_sony," in PAD
     assert "confirm_edges=spider_ps1_menu_confirm_edges(pressed,(unsigned)previous_buttons,effective_confirm);" in PAD
     assert "native_request,pressed & effective_confirm);" in PAD
     assert "CROSS-only 2D/Bink/pause confirmation" in PAD
@@ -74,7 +74,9 @@ def test_share_menu_uses_separate_context_and_legacy_options_does_not_fire():
     assert 'native_pause_active' in PAD
     assert 'state.rgbButtons[8]' in PAD
     assert 'share_pressed && !previous_share' in PAD
-    assert 'ps1_preview_active && (gameplay_allowed || native_pause_active)' in PAD
+    assert '(ps1_preview_active || sdl3_live_sony) &&' in PAD
+    assert '(gameplay_allowed || native_pause_active) &&' in PAD
+    assert 'SpiderNativeReconnect_CanonicalDS4Mapping()' in PAD
     assert '!ps1_preview_active && gameplay_allowed' in PAD
     assert 'begin_scancode(0x01u,"Escape");' in PAD
     assert 'previous_share=share_pressed;' in PAD
@@ -136,7 +138,8 @@ def test_pause_uses_verified_3d_menu_ribbon_when_native_pointer_is_transient():
     assert "native_pause43_visible_near_flip(count)" in CORE
     assert "0x00682950u" in CORE
     assert "menu_upscale_active" in CORE
-    assert "(ps1_preview_active && native_pause_active && !movie_allowed)" in PAD
+    assert "((ps1_preview_active || sdl3_live_sony) &&" in PAD
+    assert "native_pause_active && !movie_allowed)" in PAD
 
 
 def test_scripted_3d_options_skip_is_opt_in_and_natively_permission_guarded():

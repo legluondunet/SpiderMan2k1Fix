@@ -34,11 +34,12 @@ def test_exit_guard_is_automatically_enabled_for_active_xbox_preview():
     assert "(xbox360_preview_active && detected_kind==SPIDER_RECONNECT_XBOX360)" in UI
     assert "native_request=(unsigned)*(const volatile DWORD *)(uintptr_t)0x0060CFA4u;" in UI
     assert "spider_ps1_transition_edge_ownership_flip(" in UI
-    assert "&xbox_transition_ownership,xbox360_preview_active," in UI
-    assert "&xbox_transition_ownership,xbox360_preview_active," in UI
+    assert "&xbox_transition_ownership," in UI
+    assert "xbox360_preview_active || sdl3_live_xbox," in UI
+    assert "SpiderNativeReconnect_CanonicalXboxMapping()" in UI
     assert "held & (1u<<SPIDER_XBOX360_A_DI_BUTTON)" in UI
     assert "spider_ps1_post_quit_guard_flip(" in UI
-    assert "&xbox_post_quit_guard,xbox360_preview_active," in UI
+    assert "&xbox_post_quit_guard,xbox360_preview_active || sdl3_live_xbox," in UI
     assert "POST-QUIT-GUARD suppressed inherited/too-early synthetic A->Return" in UI
     assert "ui_allowed && action==SPIDER_XBOX360_ENTER &&" in UI
     assert "(inherited_a || post_quit_block)" in UI

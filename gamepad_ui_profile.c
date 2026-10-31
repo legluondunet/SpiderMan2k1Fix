@@ -43,8 +43,11 @@
 #include "xbox360_trigger_swing_policy.h"
 #include "virtual_spidey_cfg.h"
 #include "native_joystick_reconnect.h"
+#include "sdl3_gamepad_probe.h"
 #include "ps1_input_flight_recorder.h"
 #include "ps1_joystick_readonly_menu.h"
+#include "sdl3_controller_setup.h"
+#include "sdl3_context_menu_bridge.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
 typedef HRESULT (WINAPI *SpiderDICreateFn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
@@ -75,6 +78,8 @@ static int xbox_trigger_probe_requested=0;
 static int xbox_rt_swing_requested=0;
 static unsigned xbox_rt_swing_down_scan=0;
 static unsigned xbox_rt_swing_denied_count=0;
+static unsigned xbox_rt_swing_source_reports=0;
+static int xbox_rt_swing_prev_physical=0;
 static unsigned xbox_trigger_probe_samples=0;
 static DWORD xbox_trigger_probe_tick=0;
 static DIJOYSTATE2 xbox_trigger_previous={0};
@@ -116,6 +121,20 @@ static unsigned bad_reads=0;
 static SpiderDS4Hotplug hotplug={0};
 static int hotplug_missing_logged=0;
 static int hotplug_late_preview_reported=0;
+static uint32_t sdl3_ui_instance=0;
+static int sdl3_context_bridge_requested=0;
+static unsigned sdl3_context_bridge_reports=0;
+static SpiderSDL3ContextMenuBridge sdl3_context_bridge={0};
+/* Explicitly opted, bounded read-only 3D physical input trace. The source
+ * is our ALREADY-polled secondary DirectInput joystick, never the game's
+ * buffered GetDeviceData (which would consume gameplay input). */
+static int sdl3_3d_trace_requested=0;
+static unsigned sdl3_3d_trace_lines=0;
+static DWORD sdl3_3d_trace_tick=0;
+static uint32_t sdl3_3d_trace_id=0;
+static uint32_t sdl3_3d_trace_buttons=0;
+static LONG sdl3_3d_trace_x=0,sdl3_3d_trace_y=0;
+static int sdl3_3d_trace_valid=0;
 static SpiderPausePadWake pause_wake={0};
 static int pause_wake_active=0;
 static int pause_wake_retry_logged=0;
@@ -183,7 +202,7 @@ static int xbox_pause_button_free_of_native_actions(unsigned requested_button) {
   /* Original persisted Start/Back assignments can differ from live RAM.
    * When our authenticated Xbox overlay is active, compare against its
    * actual seven buttons, not the player's persisted [Joystick] values. */
-  if(xbox360_preview_active)
+  if(xbox360_preview_active || SpiderNativeReconnect_CanonicalXboxMapping())
     return spider_xbox360_button_free_for_pause(requested_button);
   if(!profile_ini[0])return 0;
   for(i=0;i<7u;i++) {
@@ -305,9 +324,34 @@ static void xbox_rt_swing_release(const char *why) {
 static void xbox_rt_swing_update(long axis,int gameplay_ok) {
   unsigned scan;
   INPUT in;
-  char line[210];
-  int should_hold;
+  char line[270];
+  int should_hold,di_held,sdl3_held=0,sdl3_rt=0,sdl3_rt_available=0;
+  int was_held=xbox_rt_swing_down_scan!=0;
   int native_canonical=SpiderNativeReconnect_CanonicalXboxMapping();
+  /* The selected Xbox's original DirectInput lZ can be driver-dependent
+   * after a hot rebind. SDL3 has a separate normalized RT axis. Use BOTH
+   * only while the game-owned native Xbox mapping has been verified.
+   * Legacy single-pad behaviour continues to use only the old lZ path. */
+  int sdl3_verified=SpiderSDL3Probe_NativeOwnerEnabled() &&
+     native_canonical && sdl3_ui_instance!=0u &&
+     detected_kind==SPIDER_RECONNECT_XBOX360;
+  if(sdl3_verified)
+    sdl3_rt_available=SpiderSDL3Probe_SelectedRT(&sdl3_rt);
+  di_held=spider_xbox360_rt_swing_held(was_held,axis);
+  if(sdl3_rt_available)
+    sdl3_held=spider_xbox360_sdl3_rt_swing_held(was_held,sdl3_rt);
+  should_hold=spider_xbox360_rt_swing_held_any(
+    was_held,axis,sdl3_rt_available,sdl3_rt);
+  if(xbox_rt_swing_requested && gameplay_ok && should_hold &&
+     !xbox_rt_swing_prev_physical && xbox_rt_swing_source_reports<12u) {
+    snprintf(line,sizeof(line),
+      "GAMEPAD-XBOX360: RT-SWING SOURCE #%u lZ=%ld SDL3-RT=%s%d DI=%d SDL=%d canonical=%d selected-id=%lu (read-only before injection)",
+      ++xbox_rt_swing_source_reports,axis,
+      sdl3_rt_available?"":"NA:",sdl3_rt,di_held,sdl3_held,
+      native_canonical,(unsigned long)sdl3_ui_instance);
+    report(line);
+  }
+  xbox_rt_swing_prev_physical=should_hold;
   SpiderXbox360_SetRTAlias(xbox_rt_swing_requested &&
     detected_kind==SPIDER_RECONNECT_XBOX360 &&
     (xbox360_preview_active || native_canonical));
@@ -319,11 +363,17 @@ static void xbox_rt_swing_update(long axis,int gameplay_ok) {
   if(!xbox_rt_swing_requested ||
      (!xbox360_preview_active && !native_canonical) ||
      detected_kind!=SPIDER_RECONNECT_XBOX360 || !gameplay_ok) {
+    if(xbox_rt_swing_requested && gameplay_ok && should_hold &&
+       xbox_rt_swing_source_reports<12u) {
+      snprintf(line,sizeof(line),
+        "GAMEPAD-XBOX360: RT-SWING BLOCKED physical RT held; native-canonical=%d startup-preview=%d profile-kind=%u; no key injection",
+        native_canonical,xbox360_preview_active,detected_kind);
+      report(line);
+      xbox_rt_swing_source_reports++;
+    }
     xbox_rt_swing_release("inactive game/focus/pause/controller or unverified native Xbox map");
     return;
   }
-  should_hold=spider_xbox360_rt_swing_held(
-    xbox_rt_swing_down_scan!=0,axis);
   if(!should_hold) {
     xbox_rt_swing_release("RT released or axis neutral/positive");
     return;
@@ -353,14 +403,16 @@ static void xbox_rt_swing_update(long axis,int gameplay_ok) {
   }
   xbox_rt_swing_down_scan=scan;
   snprintf(line,sizeof(line),
-    "GAMEPAD-XBOX360: RT-SWING DOWN lZ=%ld DIK=0x%02X (held until release/focus/context change; LT high axis ignored)",
-    axis,scan);
+    "GAMEPAD-XBOX360: RT-SWING DOWN lZ=%ld DIK=0x%02X SDL3-RT=%s%d (held until release/focus/context change; LT ignored)",
+    axis,scan,sdl3_rt_available?"":"NA:",sdl3_rt);
   report(line);
 }
 static void disable_profile_with_policy(const char *reason,
                                         int already_inputlost) {
   release_active_key();
+  spider_sdl3_context_menu_reset(&sdl3_context_bridge);
   xbox_rt_swing_release("secondary controller disabled");
+  xbox_rt_swing_prev_physical=0;
   if(device) {
     IDirectInputDevice8A *old=device;
     device=NULL;
@@ -375,9 +427,14 @@ static void disable_profile_with_policy(const char *reason,
   if(di_module) {FreeLibrary(di_module);di_module=NULL;}
   detected=0;
   detected_kind=SPIDER_RECONNECT_NONE;
+  sdl3_3d_trace_valid=0;
   xbox_previous_mask=0;
   memset(&xbox_post_quit_guard,0,sizeof(xbox_post_quit_guard));
   memset(&xbox_transition_ownership,0,sizeof(xbox_transition_ownership));
+  if(SpiderSDL3Probe_NativeOwnerEnabled()) {
+    memset(&ps1_transition_ownership,0,sizeof(ps1_transition_ownership));
+    memset(&ps1_post_quit_guard,0,sizeof(ps1_post_quit_guard));
+  }
   xbox_trigger_probe_has_previous=0;
   xbox_trigger_probe_samples=0;
   if(reason)report(reason);
@@ -418,11 +475,26 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
     return;
   }
   strcpy(profile_ini,ini);
+  SpiderSDL3ControllerSetup_Init(ini,logger);
+  sdl3_context_bridge_requested=
+    GetPrivateProfileIntA("Input","ExperimentalSDL3ContextBridge",0,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1;
+  sdl3_context_bridge_reports=0;
+  spider_sdl3_context_menu_reset(&sdl3_context_bridge);
+  if(sdl3_context_bridge_requested)
+    report("SDL3-CONTEXT: fixed physical Cross/A -> Return, Circle/B -> Escape in menus/Bink; native 3D skip unchanged; original still pages not bridged");
   /* Experimental only: no automatic fixed-profile activation until native
    * menu lock and Start handling are validated in the real game. */
   ps1_preview_requested=GetPrivateProfileIntA("Input","ControllerPS1Preview",0,ini)==1;
   xbox360_preview_requested=GetPrivateProfileIntA("Input","ControllerXbox360Preview",0,ini)==1;
   xbox_trigger_probe_requested=GetPrivateProfileIntA("Debug","Xbox360TriggerProbe",0,ini)==1;
+  sdl3_3d_trace_requested=
+    GetPrivateProfileIntA("Debug","SDL3GameplayTrace",0,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1;
+  if(sdl3_3d_trace_requested)
+    report("SDL3-3D-TRACE: requested; only secondary read-only physical states, 64-line cap; native game input untouched");
   xbox_rt_swing_requested=GetPrivateProfileIntA("Input","ControllerXbox360RTSwing",0,ini)==1;
   ps1_options_skip_requested=GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1;
   /* ControllerPS1ReadOnlyJoystick is legacy. A supported detected
@@ -484,11 +556,41 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
     "GAMEPAD-XBOX360: RT-SWING REQUESTED negative lZ -> held native keyboard Swing; requires original Xbox preview OR canonical live Xbox hot-swap mapping":
     "GAMEPAD-XBOX360: RT-SWING OFF (default)");
 }
+/* Called on the ORIGINAL game/menu thread after the owned setup HWND
+ * has been destroyed, never while the modal dialog is pumping messages.
+ * Do not Acquire/Release the original game's game-owned DI8 handle. */
+/* The setup dialog has already been destroyed and its message loop has
+ * exited. Our separate DISCL_FOREGROUND device will lose Acquire when
+ * ownership returns to the desktop. Release it here BEFORE the next
+ * foreground GetDeviceState; never Acquire a device that returned
+ * INPUTLOST, and never touch the original game's DirectInput COM object. */
+void SpiderGamepadUI_AfterControllerSetup(HWND game_window) {
+  release_active_key();
+  xbox_rt_swing_release("SDL3 setup dialog closed");
+  spider_sdl3_context_menu_reset(&sdl3_context_bridge);
+  previous_buttons=0;previous_back=0;previous_pause=0;
+  previous_share=0;previous_native_start=0;
+  xbox_previous_mask=0;
+  spider_ds4_hotplug_focus_lost(&hotplug);
+  if(!configured || !game_window || !IsWindow(game_window) ||
+     !SpiderSDL3Probe_NativeOwnerEnabled())return;
+  if(device) {
+    disable_profile_with_policy(
+      "SDL3-SETUP: retired separate foreground-only UI DirectInput device after modal; rediscover on next foreground Flip (no stale Acquire)",
+      0);
+    sdl3_ui_instance=0;
+    probing=0;
+    hotplug.scan_started=0u;
+  }
+}
 static void detect_device(HWND hwnd) {
   SpiderDIDiscovery d;
   SpiderDICreateFn create;
   HRESULT hr;
   int choose_ds4,choose_xbox;
+  uint16_t selected_vid=0,selected_pid=0;
+  uint32_t selected_id=0;
+  int sdl_owner=SpiderSDL3Probe_NativeOwnerEnabled();
   char line[300];
   HINSTANCE game=GetModuleHandleA(NULL);
   probing=1;
@@ -522,13 +624,32 @@ static void detect_device(HWND hwnd) {
   /* The original game picks its controller independently. Never select
    * any UI bridge when there are two attached controllers, a mismatched
    * forced profile, or an unknown product GUID. Xbox is never PS1. */
-  choose_ds4=d.found==1u && d.ds4_count==1u &&
-             (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_DUALSHOCK4);
-  choose_xbox=d.found==1u && d.xbox_count==1u &&
-              (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_XBOX360);
+  if(sdl_owner) {
+    /* The selected SDL instance maps to exactly one matching DI product.
+     * Never guess an instance GUID from enumeration order. For two identical
+     * VID/PID products we fail closed; otherwise the original native reader
+     * and this UI bridge must agree on the controller identity. */
+    int claimed=SpiderSDL3Probe_SelectedIdentity(&selected_vid,&selected_pid,
+                                                  &selected_id);
+    int native_ready=claimed && SpiderNativeReconnect_SDL3SelectionReady(
+                                        selected_vid,selected_pid);
+    choose_ds4=native_ready && selected_vid==SPIDER_DS4_VID &&
+      d.ds4_count==1u && d.product_id==selected_pid &&
+      (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_DUALSHOCK4);
+    choose_xbox=native_ready && selected_vid==SPIDER_XBOX360_VID &&
+      d.xbox_count==1u && d.xbox_pid==selected_pid &&
+      (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_XBOX360);
+  } else {
+    choose_ds4=d.found==1u && d.ds4_count==1u &&
+      (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_DUALSHOCK4);
+    choose_xbox=d.found==1u && d.xbox_count==1u &&
+      (profile==SPIDER_PROFILE_AUTO || profile==SPIDER_PROFILE_XBOX360);
+  }
   if(!choose_ds4 && !choose_xbox) {
     if(!hotplug_missing_logged)
-      disable_profile("GAMEPAD-UI: no unique allowed DS4/Xbox360; auto bridge inactive; game mappings unchanged; hotplug rescan every 2s while foreground");
+      disable_profile(sdl_owner?
+        "SDL3-OWNER-UI: REFUSED selected controller not uniquely identified/verified with native gameplay; no synthetic key":
+        "GAMEPAD-UI: no unique allowed DS4/Xbox360; auto bridge inactive; game mappings unchanged; hotplug rescan every 2s while foreground");
     else disable_profile(NULL);
     hotplug_missing_logged=1;
     return;
@@ -551,6 +672,7 @@ static void detect_device(HWND hwnd) {
     disable_profile(line);return;
   }
   detected=1;
+  sdl3_ui_instance=sdl_owner?selected_id:0u;
   detected_kind=choose_ds4?SPIDER_RECONNECT_DS4:SPIDER_RECONNECT_XBOX360;
   xbox_previous_mask=0;
   xbox_button_trace_count=0;
@@ -570,6 +692,12 @@ static void detect_device(HWND hwnd) {
       (unsigned long)d.xbox_pid,d.xbox_name);
   }
   report(line);
+  if(sdl_owner) {
+    snprintf(line,sizeof(line),
+      "SDL3-OWNER-UI: ACTIVE selected-id=%lu VID:PID=%04X:%04X (exclusive UI bridge; native owner verified)",
+      (unsigned long)selected_id,selected_vid,selected_pid);
+    report(line);
+  }
 }
 /* This is the ORIGINAL, game-owned CutSceneSkipAllow state machine.
  * The same addresses and per-scene conditions were mapped in the existing
@@ -579,7 +707,7 @@ static void detect_device(HWND hwnd) {
  * Manually opted in (ControllerPS1OptionsSkip=1), not the Auto default.
  * The user's Cross is already mapped to native Jump, which the game
  * uses for 3D cinematic skip; it does NOT need a synthetic key here. */
-static int ps1_request_native_options_cutscene_skip(void) {
+static int gamepad_native_cutscene_skip(int request,const char *source) {
   const DWORD owner=*(const volatile DWORD *)(uintptr_t)0x006A9038u;
   const volatile BYTE *obj;
   volatile BYTE *native_request=(volatile BYTE *)(uintptr_t)0x0060CFC4u;
@@ -610,10 +738,25 @@ static int ps1_request_native_options_cutscene_skip(void) {
      script_ip==0u || *native_request!=0u)return 0;
   /* The exact game-native 0x4C66A6 writer uses this one-byte request;
    * original 0x4BC3E0 consumes it and cleans up scene resources. */
+  if(!request)return 1; /* read-only native permission check */
   *native_request=1u;
-  report("GAMEPAD-UI: PS1-3D-OPTIONS native CutSceneSkipAllow=1 request=1 (original 0x4BC3E0 cleanup; NOT forced)");
+  {
+    char line[230];
+    snprintf(line,sizeof(line),
+      "GAMEPAD-CUTSCENE: source=%s native CutSceneSkipAllow=1 request=1 (original 0x4BC3E0 cleanup; NOT forced)",
+      source?source:"unknown");
+    report(line);
+  }
   return 1;
 }
+static int ps1_request_native_options_cutscene_skip(void) {
+  return gamepad_native_cutscene_skip(1,"PS1-3D-OPTIONS");
+}
+/* Native scripted 3D cinematics own their original Cross/Jump skip input.
+ * Do not issue any SDL3 synthetic skip request: this prevents two
+ * independently routed physical buttons from skipping one scene.
+ * The old opt-in PS1 OPTIONS diagnostic is kept only for non-SDL3
+ * fallback sessions; it is explicitly suppressed under SDL3 ownership. */
 /* Early game HWND acquisition precedes the verified native CRT reload.
  * On failure retry the old unchanged UI discovery on the first Flip. */
 int SpiderGamepadUI_PreparePS1(HWND hwnd) {
@@ -1120,6 +1263,53 @@ static void xbox_trace_trigger_axes(const DIJOYSTATE2 *now) {
   xbox_trigger_probe_tick=tick;
   xbox_trigger_probe_samples++;
 }
+/* Only observe the secondary gamepad state that the menu adapter has
+ * successfully read. Never poll/Acquire/flush the game's original native
+ * DirectInput device and never log a stale pad across a Start handoff.
+ * A per-instance baseline, button edges, and a 2-second heartbeat for
+ * analog motion give a bounded trace useful for in-game validation. */
+static void sdl3_trace_3d_readonly(const DIJOYSTATE2 *state) {
+  uint32_t buttons=0;
+  unsigned i;
+  DWORD now;
+  int changed,first,axes_changed;
+  char line[245];
+  if(!sdl3_3d_trace_requested || !state || !sdl3_ui_instance ||
+     sdl3_3d_trace_lines>=64u || !SpiderSDL3Probe_NativeOwnerEnabled())
+    return;
+  now=GetTickCount();
+  for(i=0;i<16u;i++)
+    if(state->rgbButtons[i]&0x80u)buttons|=(1u<<i);
+  first=!sdl3_3d_trace_valid || sdl3_3d_trace_id!=sdl3_ui_instance;
+  changed=!first && buttons!=sdl3_3d_trace_buttons;
+  /* Raw DirectInput axes vary by driver and do not imply game movement.
+   * Record actual values; do not normalize or map them to actions here. */
+  axes_changed=!first &&
+    ((int64_t)state->lX-(int64_t)sdl3_3d_trace_x>1024 ||
+     (int64_t)sdl3_3d_trace_x-(int64_t)state->lX>1024 ||
+     (int64_t)state->lY-(int64_t)sdl3_3d_trace_y>1024 ||
+     (int64_t)sdl3_3d_trace_y-(int64_t)state->lY>1024);
+  if(!first && !changed &&
+     (!(uint32_t)(now-sdl3_3d_trace_tick) ||
+      (uint32_t)(now-sdl3_3d_trace_tick)<2000u || !axes_changed))
+    return;
+  /* A burst of changing button edges is meaningful and must not be
+   * dropped; unchanged stick motion is sampled at most every 2 seconds. */
+  snprintf(line,sizeof(line),
+    "SDL3-3D-TRACE: #%u selected-id=%lu kind=%s edge=%s buttons=0x%04lX lX=%ld lY=%ld lZ=%ld POV=%ld [secondary DirectInput READ-ONLY; native game actions NOT inferred]",
+    ++sdl3_3d_trace_lines,(unsigned long)sdl3_ui_instance,
+    detected_kind==SPIDER_RECONNECT_DS4?"DS4":"Xbox360",
+    first?"OWNER":changed?"BUTTON":"AXIS",
+    (unsigned long)buttons,(long)state->lX,(long)state->lY,
+    (long)state->lZ,(long)state->rgdwPOV[0]);
+  report(line);
+  sdl3_3d_trace_tick=now;
+  sdl3_3d_trace_id=sdl3_ui_instance;
+  sdl3_3d_trace_buttons=buttons;
+  sdl3_3d_trace_x=state->lX;
+  sdl3_3d_trace_y=state->lY;
+  sdl3_3d_trace_valid=1;
+}
 void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active) {
   DIJOYSTATE2 state;
@@ -1128,6 +1318,8 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   int menu_allowed,movie_allowed,confirm_allowed,gameplay_allowed,pause_pressed;
   int share_pressed,share_edge,native_start_pressed;
   int late_ds4_menu_only=0;
+  int sdl3_live_sony=0;
+  int sdl3_live_xbox=0;
   int post_quit_block=0;
   unsigned ownership_block=0,native_request=0;
   /* Always apply game-only mouse policy, even with ControllerProfile=Off
@@ -1140,6 +1332,8 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   /* Critical: release injected key before focus pause can block this thread. */
   release_active_key();
   if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {
+    spider_sdl3_context_menu_reset(&sdl3_context_bridge);
+    sdl3_3d_trace_valid=0;
     xbox_rt_swing_release("focus lost");
     /* Native game mouse state was already restored by mouse OnFlip. */
     ps1_history_record(SPIDER_PS1_HISTORY_FOCUS_LOST,0u,menu_2d,
@@ -1150,28 +1344,78 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     previous_share=0;
     previous_native_start=0;
     spider_ds4_hotplug_focus_lost(&hotplug);
+    /* This is our own nonexclusive DISCL_FOREGROUND UI handle, NOT the
+     * retail game's joystick. While SDL3 owns the native input identity,
+     * retire it ONCE at actual focus loss, rather than letting Windows
+     * invalidate it and reading DIERR_INPUTLOST upon return. Do not try
+     * to Acquire a stale device in this frame. Fresh discovery happens
+     * only on a foreground Flip, after SDL3/native owner verification. */
+    if(SpiderSDL3Probe_NativeOwnerEnabled() && device &&
+       sdl3_ui_instance!=0u) {
+      disable_profile_with_policy(
+        "GAMEPAD-FOCUS: retired separate foreground-only UI DirectInput on focus loss; fresh foreground discovery required",
+        0);
+      sdl3_ui_instance=0;
+      probing=0;
+      hotplug.scan_started=0u;
+    }
     return;
   }
+  /* An SDL3 selected canonical native map is equivalent to the original
+   * authenticated startup overlay for transition ownership, but only for
+   * its currently matched physical controller. */
+  sdl3_live_sony=detected_kind==SPIDER_RECONNECT_DS4 &&
+    SpiderSDL3Probe_NativeOwnerEnabled() &&
+    SpiderNativeReconnect_CanonicalDS4Mapping();
+  sdl3_live_xbox=detected_kind==SPIDER_RECONNECT_XBOX360 &&
+    SpiderSDL3Probe_NativeOwnerEnabled() &&
+    SpiderNativeReconnect_CanonicalXboxMapping();
   /* Native request 7 is a 3D -> menu return. PS1 and Xbox adapters must
    * not duplicate the last confirmation press into a New Game Enter.
    * This only affects our synthetic UI key; original engine input is
    * observed but left completely untouched. */
-  if((ps1_preview_active &&
+  if(((ps1_preview_active || sdl3_live_sony) &&
       (ps1_post_quit_guard_requested || ps1_transition_edge_ownership_requested)) ||
-     (xbox360_preview_active && detected_kind==SPIDER_RECONNECT_XBOX360)) {
+     (xbox360_preview_active && detected_kind==SPIDER_RECONNECT_XBOX360) ||
+     sdl3_live_xbox) {
     native_request=(unsigned)*(const volatile DWORD *)(uintptr_t)0x0060CFA4u;
-    if(ps1_post_quit_guard_requested)
+    if(ps1_post_quit_guard_requested &&
+       (ps1_preview_active || sdl3_live_sony))
       post_quit_block=spider_ps1_post_quit_guard_flip(&ps1_post_quit_guard,
         1,menu_2d,gameplay_3d,bink_active,native_request);
   }
-  /* Discovery is foreground-only, bounded and non-invasive. A DS4 may be
-   * connected after startup, or the previously attached DS4 reconnected.
-   * Native PS1 gameplay mapping is only activated during the verified
-   * startup bootstrap; a late-first device does NOT silently rewrite the
-   * original game's controller tables or force a runtime config reload. */
-  if(!probing || spider_ds4_hotplug_scan_due(&hotplug,
-                                             (uint32_t)GetTickCount(),detected))
-    detect_device(hwnd);
+  /* The first-run user recovery path must remain reachable with no
+   * recognized Sony/Xbox DirectInput device: keyboard navigation opens
+   * a generic read-only Joystick menu with SDL3 TEST (PREVIEW) row.
+   * Off by default and never touches native joystick bindings. */
+  if(SpiderSDL3ControllerSetup_Enabled() && (!detected || !device))
+    SpiderSDL3_InstallGenericReadOnlyJoystick(log_message);
+  /* When SDL3 ownership is explicitly enabled, disable the old UI source
+   * immediately on any selection loss/switch. Only a matching verified
+   * GAME-OWNED DI device may enable synthetic 2D/Bink keys. No two-pad
+   * input merging and no nonselected controller key events. */
+  if(SpiderSDL3Probe_NativeOwnerEnabled()) {
+    uint16_t vid=0,pid=0;
+    uint32_t id=0;
+    if(!SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
+       !SpiderNativeReconnect_SDL3SelectionReady(vid,pid)) {
+      if(device)disable_profile("SDL3-OWNER-UI: SUSPENDED; selected pad not yet owned by original game");
+      sdl3_ui_instance=0;
+      return;
+    }
+    if(id!=sdl3_ui_instance) {
+      if(device)disable_profile("SDL3-OWNER-UI: HANDOFF; release prior synthetic keys and secondary DI device");
+      sdl3_ui_instance=0;
+      detect_device(hwnd);
+    } else if(!probing || spider_ds4_hotplug_scan_due(&hotplug,
+                                     (uint32_t)GetTickCount(),detected))
+      detect_device(hwnd);
+  } else {
+    /* Original single-controller behaviour, untouched when opt-in is OFF. */
+    if(!probing || spider_ds4_hotplug_scan_due(&hotplug,
+                                      (uint32_t)GetTickCount(),detected))
+      detect_device(hwnd);
+  }
   /* If this Xbox was attached only AFTER the initial game bootstrap,
    * still lock its native Joystick Configuration before any UI action.
    * Never run on an unknown pad, Sony profile or in the background. */
@@ -1186,6 +1430,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
           detected_kind==SPIDER_RECONNECT_XBOX360 && xbox_readonly_active)
     SpiderXbox360_InstallReadOnlyJoystick(log_message);
   if(!detected||!device) {
+    spider_sdl3_context_menu_reset(&sdl3_context_bridge);
     ps1_history_record(SPIDER_PS1_HISTORY_DEVICE_MISSING,native_request,
       menu_2d,gameplay_3d,bink_active,native_pause_active,
       (unsigned)previous_buttons,NULL);
@@ -1199,6 +1444,10 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   memset(&state,0,sizeof(state));
   hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);
   if(FAILED(hr)) {
+    /* No modal special-case Acquire. Even DIERR_NOTACQUIRED or
+     * DIERR_INPUTLOST here means the independent handle became invalid
+     * unexpectedly: drop it safely and rediscover, never Acquire stale
+     * COM after failed GetDeviceState. */
     ps1_history_record(SPIDER_PS1_HISTORY_READ_FAILED,native_request,
       menu_2d,gameplay_3d,bink_active,native_pause_active,
       (unsigned)previous_buttons,NULL);
@@ -1219,6 +1468,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     previous_pause=0;
     previous_share=0;
     previous_native_start=0;
+    spider_sdl3_context_menu_reset(&sdl3_context_bridge);
     {
       int repeatedly_failed=spider_ds4_hotplug_read_failed(&hotplug);
       if(hr==DIERR_INPUTLOST || repeatedly_failed)
@@ -1231,6 +1481,12 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     return;
   }
   bad_reads=0;
+  if(sdl3_3d_trace_requested && SpiderSDL3Probe_NativeOwnerEnabled()) {
+    if(gameplay_3d && !menu_2d && !bink_active && !native_pause_active)
+      sdl3_trace_3d_readonly(&state);
+    else
+      sdl3_3d_trace_valid=0;
+  }
   if(xbox_trigger_probe_requested && detected_kind==SPIDER_RECONNECT_XBOX360 &&
      gameplay_3d && !bink_active && !native_pause_active)
     xbox_trace_trigger_axes(&state);
@@ -1245,8 +1501,15 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
    * shortcuts or change any original game-owned input table here.
    * The existing hotplug neutral->fresh-edge gate protects against
    * accidental Return when connecting with CROSS held. */
+  sdl3_live_sony=detected_kind==SPIDER_RECONNECT_DS4 &&
+    SpiderSDL3Probe_NativeOwnerEnabled() &&
+    SpiderNativeReconnect_CanonicalDS4Mapping();
+  sdl3_live_xbox=detected_kind==SPIDER_RECONNECT_XBOX360 &&
+    SpiderSDL3Probe_NativeOwnerEnabled() &&
+    SpiderNativeReconnect_CanonicalXboxMapping();
   late_ds4_menu_only=detected_kind==SPIDER_RECONNECT_DS4 &&
-                      ps1_preview_requested && !ps1_preview_active;
+                      ps1_preview_requested && !ps1_preview_active &&
+                      !sdl3_live_sony;
   if(late_ds4_menu_only && !hotplug_late_preview_reported) {
     report("GAMEPAD-HOTPLUG: late DS4 with no Sony CRT preview; Cross=BUTTON1 and Circle=BUTTON2 MENU/BINK bridge ENABLED after neutral+fresh edge; Sony 3D synthetic actions DISABLED (native mapping unchanged)");
     hotplug_late_preview_reported=1;
@@ -1261,9 +1524,62 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
        * Return/Escape. The original native controller reads are untouched. */
       previous_buttons=0;previous_back=0;previous_pause=0;
       previous_share=0;previous_native_start=0;
-      return;
+        return;
     }
   }
+
+  /* First live consumer of SDL3 per-model v2 MENU/VIDEO keys. The native
+   * 3D action reader stays unchanged; one explicitly selected, verified
+   * game-owned DirectInput pad is required before synthetic menu keys.
+   * Never let the legacy Xbox/DS4 UI bridge inject in this same frame. */
+  if(sdl3_context_bridge_requested && SpiderSDL3Probe_NativeOwnerEnabled() &&
+     !native_pause_active &&
+     (bink_active || (menu_2d && !gameplay_3d))) {
+    uint32_t id=0;
+    uint16_t vid=0,pid=0;
+    SpiderSDL3ControllerSample sample;
+    SpiderSDL3ControllerProfile *saved=NULL;
+    unsigned context=bink_active?SPIDER_SDL3_CTX_VIDEO:SPIDER_SDL3_CTX_MENU;
+    int result=SPIDER_SDL3_CTX_REFUSED,verified=0;
+    xbox_rt_swing_release("SDL3 MENU/BINK context");
+    if(SpiderSDL3Probe_SelectedSample(&id,&vid,&pid,&sample) &&
+       id==sdl3_ui_instance) {
+      verified=SpiderNativeReconnect_SDL3SelectionReady(vid,pid);
+      if(verified)saved=SpiderSDL3Probe_SetupProfile(vid,pid);
+    }
+    if(saved)
+      result=spider_sdl3_context_menu_step(&sdl3_context_bridge,
+                                           saved,&sample,id,vid,pid,
+                                           context,verified);
+    else spider_sdl3_context_menu_reset(&sdl3_context_bridge);
+    /* Advance legacy physical edge history, so no inherited held input
+     * can trigger a different key after returning to native gameplay. */
+    xbox_previous_mask=spider_xbox360_held_buttons(state.rgbButtons);
+    previous_buttons=(int)(
+      (state.rgbButtons[1]&0x80u?SPIDER_CONFIRM_CROSS:0) |
+      (state.rgbButtons[9]&0x80u?SPIDER_CONFIRM_OPTIONS:0));
+    previous_back=(int)(
+      (state.rgbButtons[2]&0x80u?SPIDER_BACK_CIRCLE:0) |
+      (state.rgbButtons[8]&0x80u?SPIDER_BACK_SHARE:0));
+    previous_pause=(state.rgbButtons[9]&0x80u)!=0;
+    previous_share=(state.rgbButtons[8]&0x80u)!=0;
+    previous_native_start=(state.rgbButtons[11]&0x80u)!=0;
+    if(result==SPIDER_SDL3_CTX_CONFIRM_EDGE) {
+      begin_scancode(0x1Cu,"SDL3 physical Cross/A Confirm/Skip");
+      if(sdl3_context_bridge_reports++<24u)
+        report(context==SPIDER_SDL3_CTX_VIDEO?
+          "SDL3-CONTEXT: physical Cross/A -> native Bink Return (original gate retained)":
+          "SDL3-CONTEXT: physical Cross/A -> native menu Return");
+    } else if(result==SPIDER_SDL3_CTX_BACK_EDGE) {
+      begin_scancode(0x01u,"SDL3 physical Circle/B Back/Cancel");
+      if(sdl3_context_bridge_reports++<24u)
+        report("SDL3-CONTEXT: physical Circle/B -> native menu Escape");
+    } else if(result==SPIDER_SDL3_CTX_REFUSED &&
+              sdl3_context_bridge_reports++<4u)
+      report("SDL3-CONTEXT: REFUSED selected owner/profile; old UI synthesis suppressed");
+    return;
+  }
+  spider_sdl3_context_menu_reset(&sdl3_context_bridge);
   /* Xbox 360-compatible DirectInput: no DS4 PS1 mapping, no guess about
    * native 3D controls. The Holtek VID=045E PID=028E joystick is already
    * read by the original game for analog/POV navigation. Only bridge
@@ -1281,7 +1597,8 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                    native_pause_active;
     unsigned inherited_a;
     int post_quit_block;
-    int return_boundary=(xbox360_preview_active && menu_2d && !gameplay_3d &&
+    int return_boundary=((xbox360_preview_active || sdl3_live_xbox) &&
+                         menu_2d && !gameplay_3d &&
                          !bink_active && xbox_transition_ownership.seen_3d &&
                          native_request==7u);
     if(held!=xbox_previous_mask && xbox_button_trace_count<32u) {
@@ -1294,11 +1611,12 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     }
     xbox_previous_mask=held;
     inherited_a=spider_native_menu_return_gate_flip(
-      &xbox_transition_ownership,xbox360_preview_active,
+      &xbox_transition_ownership,
+      xbox360_preview_active || sdl3_live_xbox,
       menu_2d,gameplay_3d,bink_active,native_request,
       held & (1u<<SPIDER_XBOX360_A_DI_BUTTON));
     post_quit_block=spider_ps1_post_quit_guard_flip(
-      &xbox_post_quit_guard,xbox360_preview_active,
+      &xbox_post_quit_guard,xbox360_preview_active || sdl3_live_xbox,
       menu_2d,gameplay_3d,bink_active,native_request);
     if(return_boundary && xbox_return_to_menu_reports++<12u) {
       char line[200];
@@ -1339,12 +1657,14 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
    * OPTIONS/Start remains free of synthetic Enter even if the old INI
    * still says Both; native Start/BUTTON11 is handled separately. */
   effective_confirm=spider_ps1_menu_confirm_mask(
-    ps1_preview_active || late_ds4_menu_only,(unsigned)confirm);
+    ps1_preview_active || late_ds4_menu_only || sdl3_live_sony,
+    (unsigned)confirm);
   /* Per-button edges are still tracked independently for legacy mode. */
   confirm_edges=spider_ps1_menu_confirm_edges(pressed,(unsigned)previous_buttons,effective_confirm);
   ps1_history_record(SPIDER_PS1_HISTORY_READ_OK,native_request,menu_2d,
     gameplay_3d,bink_active,native_pause_active,(unsigned)previous_buttons,&state);
-  if(ps1_preview_active && ps1_transition_edge_ownership_requested) {
+  if((ps1_preview_active || sdl3_live_sony) &&
+     ps1_transition_edge_ownership_requested) {
     ownership_block=spider_ps1_transition_edge_ownership_flip(
       &ps1_transition_ownership,1,menu_2d,gameplay_3d,bink_active,
       native_request,pressed & effective_confirm);
@@ -1355,10 +1675,12 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
    * widescreen menu presentation. 3D triangle/script input is untouched. */
   movie_allowed=bink_active!=0;
   menu_allowed=(menu_2d && !gameplay_3d) ||
-    (ps1_preview_active && native_pause_active && !movie_allowed);
+    ((ps1_preview_active || sdl3_live_sony) &&
+     native_pause_active && !movie_allowed);
   confirm_allowed=menu_allowed || movie_allowed;
   gameplay_allowed=gameplay_3d && !menu_2d && !movie_allowed &&
-                   !(ps1_preview_active && native_pause_active) &&
+                   !((ps1_preview_active || sdl3_live_sony) &&
+                     native_pause_active) &&
                    !late_ds4_menu_only; /* never synthesize late Sony 3D Pause */
   pause_pressed=state.rgbButtons[9]&0x80u;
   share_pressed=state.rgbButtons[8]&0x80u;
@@ -1382,16 +1704,20 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     report(line);
   }
   if(ps1_preview_active && ps1_options_skip_requested &&
+     !SpiderSDL3Probe_NativeOwnerEnabled() &&
      gameplay_3d && !menu_2d && !movie_allowed && !native_pause_active &&
      pause_pressed && !previous_pause) {
     if(!ps1_request_native_options_cutscene_skip() &&
        ps1_cutscene_reports++<8u)
       report("GAMEPAD-UI: PS1-3D-OPTIONS refused: original CutSceneSkipAllow absent, inactive, unreadable or already requested");
   }
-  if(ps1_preview_active && (gameplay_allowed || native_pause_active) &&
+  if((ps1_preview_active || sdl3_live_sony) &&
+     (gameplay_allowed || native_pause_active) &&
      !movie_allowed && share_edge) {
     begin_scancode(0x01u,"Escape");
-    if(ps1_native_start_unbound)
+    if(sdl3_live_sony && !ps1_preview_active)
+      report("SDL3-OWNER-UI: canonical native Sony DS4 SHARE -> Escape in 3D/pause; game-owned mapping verified");
+    else if(ps1_native_start_unbound)
       report("GAMEPAD-UI: PS1-PREVIEW SHARE -> Escape during 3D/pause; original Start RAM unbound (runtime behavior still to verify)");
     else
       report("GAMEPAD-UI: PS1-PREVIEW SHARE -> Escape during 3D/pause; original Start mapping retained");

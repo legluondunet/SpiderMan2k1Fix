@@ -16,6 +16,9 @@ enum { SPIDER_PS1_JOYSTICK_LABEL_CAPACITY=32 };
 /* Joystick Swing=BUTTON9 is R3; when a verified RT->keyboard Swing
  * bridge is active, label the additional analog shortcut honestly. */
 void SpiderXbox360_SetRTAlias(int enabled);
+/* Generic, READ-ONLY native menu for the optional SDL3 setup wizard even
+ * when no recognized DS4/Xbox DirectInput device was found. */
+int SpiderSDL3_InstallGenericReadOnlyJoystick(void (*logger)(const char *));
 typedef struct {
   uint32_t virtual_address;
   uint8_t size;

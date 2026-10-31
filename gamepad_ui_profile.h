@@ -36,6 +36,11 @@ int SpiderXbox360_InstallReadOnlyJoystick(void (*logger)(const char *));
  * Detection remains foreground/game-thread and SHA fail-closed. */
 void SpiderGamepadUI_ArmPS1ReadOnly(void);
 void SpiderGamepadUI_ArmXbox360ReadOnly(void);
+/* After the owned SDL3 setup modal closes, retire only our separate
+ * foreground-only DirectInput UI handle. A fresh verified controller is
+ * discovered during the next foreground Flip, never on the modal stack.
+ * Never Acquire a failed/stale UI device or touch game-owned DirectInput. */
+void SpiderGamepadUI_AfterControllerSetup(HWND game_window);
 void SpiderGamepadUI_OnFlip(HWND game_window,int menu_2d,int gameplay_3d,
                              int native_bink_active,int native_pause_active);
 #endif
