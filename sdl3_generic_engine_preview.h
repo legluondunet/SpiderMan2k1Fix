@@ -81,4 +81,39 @@ static inline int spider_sdl3_generic_engine_preview(
   *engine_mask=dir|((actions&0x7fu)<<SPIDER_SDL3_ENGINE_FIRST_ACTION);
   return 1;
 }
+/* Original aggregator 0x0050A190 has TWO output DWORDs, not one:
+ *    first: held/current action+direction flags
+ *    second: fresh keyboard/joystick BUTTON press flags (0xFF edge)
+ * Source proof: 0x0050A24B/0x0050A27C for keyboard and
+ * 0x0050A3B8/0x0050A3DF for joystick; axes/POV at 0x0050A375
+ * only update the held result, not the fresh-button result.
+ *
+ * This standalone preview models a selected, continuously sampled SDL3
+ * controller: fresh action mask is a transition since last semantic
+ * sample. This is NOT guaranteed byte-for-byte event parity with the
+ * native buffered DirectInput stream (events can occur between frames).
+ * In particular D-pad/analog directions intentionally stay HELD-only.
+ * A future integration MUST validate edge ownership and release at
+ * context changes before any game write.
+ */
+static inline int spider_sdl3_generic_engine_preview_edges(
+    const SpiderSDL3ControllerProfile *profile,
+    const SpiderSDL3ControllerSample *sample,
+    uint32_t previous_actions,
+    uint32_t *held_mask,
+    uint32_t *fresh_mask,
+    uint32_t *new_actions) {
+  uint32_t held=0,actions=0;
+  if(held_mask)*held_mask=0;
+  if(fresh_mask)*fresh_mask=0;
+  if(new_actions)*new_actions=0;
+  if(!held_mask || !fresh_mask || !new_actions ||
+     !spider_sdl3_generic_engine_preview(
+         profile,sample,previous_actions,&held,&actions))return 0;
+  *held_mask=held;
+  *fresh_mask=((actions&~previous_actions)&0x7fu)
+              <<SPIDER_SDL3_ENGINE_FIRST_ACTION;
+  *new_actions=actions;
+  return 1;
+}
 #endif
