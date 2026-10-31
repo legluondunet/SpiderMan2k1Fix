@@ -269,7 +269,7 @@ def test_mouse_free_keyboard_and_selected_gamepad_setup_navigation():
     assert 'if(rc!=1)return;' in ui
     assert 'GetForegroundWindow()!=ui->hwnd' in ui
     assert 'if(focused==ui->pads)' in ui
-    assert 'if(focused==GetDlgItem(ui->hwnd,SPIDER_UI_RESET)' in ui
+    assert 'focused==GetDlgItem(ui->hwnd,SPIDER_UI_RESET)' in ui
     assert 'SPIDER_SETUP_NAV_SOUTH=0' in nav
     assert 'SPIDER_SETUP_NAV_EAST=1' in nav
     assert 'SPIDER_SETUP_NAV_UP=11' in nav
@@ -290,8 +290,8 @@ def test_mouse_free_keyboard_and_selected_gamepad_setup_navigation():
     assert "sample->axis[SPIDER_SDL3_AXIS_LEFTX]=sdl_axis(handle,SPIDER_SDL3_AXIS_LEFTX);" in setup_read
     assert "sample->axis[SPIDER_SDL3_AXIS_LEFTY]=sdl_axis(handle,SPIDER_SDL3_AXIS_LEFTY);" in setup_read
     assert not any(ord(ch)>127 for ch in ui), "ANSI game dialog must use ASCII-only labels"
-    assert 'Keyboard: Up/Down rows' in ui
-    assert 'Gamepad: Stick Y/D-pad rows' in ui
+    assert 'Stick Left/Right: actions or buttons' in ui
+    assert 'L1/R1: choose pad' in ui
     for forbidden in ("SendInput(", "WritePrivateProfileString",
                       "VirtualProtect(", "CreateThread("):
         assert forbidden not in ui
@@ -302,8 +302,11 @@ def test_modal_close_cannot_destroy_dialog_inside_sdl3_timer_callback():
     ui=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
     timer=ui.split("static void sample_device(",1)[1].split(
         "static int handle_setup_keyboard(",1)[0]
-    assert "ui->close_pending=1;" in timer
-    assert "ui->close_requested_ms=GetTickCount();" in timer
+    close=ui.split("static void setup_close_from_pad(",1)[1].split(
+        "static SpiderSDL3ControllerProfile *current_profile(",1)[0]
+    assert "ui->close_pending=1;" in close
+    assert "ui->close_requested_ms=GetTickCount();" in close
+    assert "setup_close_from_pad(ui," in timer
     assert "spider_sdl3_profile_neutral(&s)" in timer
     assert "GetTickCount()-ui->close_requested_ms" in timer
     assert "PostMessageA(ui->hwnd,WM_CLOSE,0,0);" in timer
