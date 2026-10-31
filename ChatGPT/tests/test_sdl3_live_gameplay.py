@@ -123,3 +123,38 @@ def test_live_remains_strictly_opt_in():
     assert 'ExperimentalSDL3GameplayBindings",0,ini)==1' in s
     assert "if(!enabled)return;" in s
     assert 'SDL3-3D-LIVE: REFUSED unsupported SDL3 binding/driver' in s
+
+
+def test_native_pause_keeps_eighth_edge_exclusive_with_no_duplicate_legacy_escape():
+    live=(ROOT/"sdl3_gameplay_live.c").read_text(encoding="utf-8")
+    ui=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
+    assert "static int restore_native_table(void)" in live
+    restore=live.split("static int restore_native_table(void)",1)[1].split(
+        "static void restore(",1)[0]
+    assert "native_write(mapped,saved)" in restore
+    assert "applied=0;" in restore
+    assert "disarm_pause();" not in restore
+    assert "void SpiderSDL3GameplayLive_OnFlip(" in live
+    assert "if(native_pause) {" in live
+    paused=live.split("if(native_pause) {",1)[1].split("if(applied) {",1)[0]
+    assert "restore_native_table()" in paused
+    assert "!paused_edge_armed" in paused
+    assert "!same7(current,saved)" in paused
+    assert "goto sample_pause;" in paused
+    assert "sample_pause:" in live
+    assert "pause_held=pressed!=0;" in live
+    assert "spider_sdl3_binding_equal(" in live
+    assert "int SpiderSDL3GameplayLive_OwnsPause(void)" in live
+    owns=live.split("int SpiderSDL3GameplayLive_OwnsPause(void)",1)[1].split(
+        "void SpiderSDL3GameplayLive_Init(",1)[0]
+    assert "SpiderSDL3Probe_MappedCount()==1u" in owns
+    assert "SpiderSDL3Probe_SelectedIdentity(" in owns
+    assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in owns
+    assert "return enabled && applied" not in owns
+    share=ui.split("!movie_allowed && share_edge &&",1)[1].split(
+        "begin_scancode(0x01u",1)[0]
+    assert "!SpiderSDL3GameplayLive_OwnsPause()" in share
+    options=ui.split("pause_button==SPIDER_PAUSE_OPTIONS &&",1)[1].split(
+        "options_free_of_native_actions()",1)[0]
+    assert "!SpiderSDL3GameplayLive_OwnsPause()" in options
+    assert 'begin_scancode(0x01u,"SDL3 saved Pause -> native Escape")' in ui
