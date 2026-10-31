@@ -4,7 +4,7 @@
  * the already-tested canonical Sony/Xbox native swap uses.
  *
  * This cannot represent SDL3 D-pad/extra-paddle inputs as DirectInput
- * rgbButtons or Xbox merged triggers. Reject the whole unsupported
+ * rgbButtons, unverified DS4 L2, or Xbox merged triggers. Reject the whole unsupported
  * profile; NEVER guess physical indices or synthesize duplicate game
  * action keys. Pause is one bounded Escape edge via the existing
  * gamepad UI key owner; other seven actions use native hardware ONLY.
@@ -160,7 +160,7 @@ void SpiderSDL3GameplayLive_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
   if(!spider_sdl3_native_ds4_seven(profile,desired)) {
     if(applied)restore("unsupported mapping");
     else disarm_pause();
-    if(reports<8u)msg("SDL3-3D-LIVE: REFUSED unsupported SDL3 binding/driver; only verified Sony DS4 physical buttons and L2/R2 can map to native 3D");
+    if(reports<8u)msg("SDL3-3D-LIVE: REFUSED unsupported SDL3 binding/driver; only verified Sony DS4 face/shoulder buttons and R2 can map to native 3D; L2/POV unsupported");
     return;
   }
   device=*(void *volatile *)(uintptr_t)SPIDER_GAMEPLAY_NATIVE_DEVICE;
