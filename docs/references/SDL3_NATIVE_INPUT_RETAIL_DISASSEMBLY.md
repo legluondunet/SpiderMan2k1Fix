@@ -134,6 +134,39 @@ and read-only and produces a structured JSON report, with its
 heuristic, undisassembled candidates clearly distinguished from
 real known instructions.
 
+## Portable semantic-mask prototype (phase-1 research, NOT gameplay)
+
+A new strictly non-runtime C99 module,
+`sdl3_generic_engine_preview.h`, independently previews what an SDL3
+normalized controller would request from the **identified** native
+input mask consumer:
+
+- Uses existing per-model SDL3 `Jump, Kick, Punch, Web, Aim, Zipline,
+  Swing` semantic profile assignments rather than physical
+  DirectInput button indexes.
+- Maps seven semantic action bits to the verified native masks
+  `0x10,0x20,0x40,0x80,0x100,0x200,0x400`, independent of
+  DS3/DS4/Xbox hardware identity.
+- Estimates the original ±250 threshold on a ±1000 signed axis
+  using an **uncalibrated** ±8192 normalized SDL3 stick threshold.
+  D-pad inputs use SDL3 buttons 11–14; an explicit D-pad direction
+  overrides the corresponding analog axis, and contradictory
+  directional buttons cancel.
+- Applies the existing 11000/5000 trigger press/release hysteresis.
+  Never forwards Pause as a fictional eighth game-native action;
+  menu/focus/Pause ownership remains separate.
+- Is not included by any runtime C source and **cannot alter
+  DirectInput state, patch code, inject events or make any controller
+  work in the actual game**. The older profile validity requirement
+  still needs a safe migration for zero VID/PID devices.
+
+`ChatGPT/tests/test_sdl3_generic_engine_preview.py` tests these
+purely computational rules with DS3 semantic defaults and the user's
+Xbox custom B/X and Y/A swaps. The new masks are only a **candidate
+for future verified integration**. No live hardware mapping, output
+transaction, or original action-mask consumer contract has been
+accepted for mutation yet.
+
 ## Architectural conclusion and next step
 
 **We have evidence for a possible higher-level input boundary**, not
