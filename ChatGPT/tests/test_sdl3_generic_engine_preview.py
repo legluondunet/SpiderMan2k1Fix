@@ -50,10 +50,10 @@ def test_semantic_actions_and_dpad_stick_preview(tmp_path):
          s.axis[5]=0;
          s.axis[0]=18000; s.axis[1]=-18000;
          assert(get(&ds3,&s,0,&held)==0x9); /* right + up */
-         s.buttons=(1u<<11)|(1u<<13); /* D-pad up + left overrides stick */
-         assert(get(&ds3,&s,0,&held)==0x5);
-         s.buttons=(1u<<11)|(1u<<12); /* opposite D-pad cancels vertical */
-         assert(get(&ds3,&s,0,&held)==0x8); /* stick right remains */
+         s.buttons=(1u<<11)|(1u<<13); /* native OR: stick right + up + left */
+         assert(get(&ds3,&s,0,&held)==0xD);
+         s.buttons=(1u<<11)|(1u<<12); /* original native OR can include both directions */
+         assert(get(&ds3,&s,0,&held)==0xB); /* up+down+right */
          s.buttons=0u;s.axis[0]=0;s.axis[1]=0;
          /* User's Xbox swaps B/X and Y/A without hardware-specific
           * raw DirectInput indices: all semantic actions are remapped. */

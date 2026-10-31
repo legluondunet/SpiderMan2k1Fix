@@ -270,9 +270,10 @@ input mask consumer:
   DS3/DS4/Xbox hardware identity.
 - Estimates the original ±250 threshold on a ±1000 signed axis
   using an **uncalibrated** ±8192 normalized SDL3 stick threshold.
-  D-pad inputs use SDL3 buttons 11–14; an explicit D-pad direction
-  overrides the corresponding analog axis, and contradictory
-  directional buttons cancel.
+  D-pad inputs use SDL3 buttons 11–14. Both sources are **OR-combined**
+  per the actual x86 aggregator, even when directions oppose; this
+  reproduces the bitmask mechanism but still lacks the native
+  analog-suppression flag and calibrated axis normalization.
 - Applies the existing 11000/5000 trigger press/release hysteresis.
   Never forwards Pause as a fictional eighth game-native action;
   menu/focus/Pause ownership remains separate.
@@ -313,3 +314,18 @@ hardware-validated DS4/Xbox baseline, PR #88 remains research-only;
 **no merge** without explicit user authorization.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+## Correction du modèle — stick et POV sont additionnés, non prioritaires
+
+L'audit de `0x0050A2F9..0x0050A375` établit que le jeu utilise des
+`or ecx, 1/2/4/8` successifs pour les axes **et** la croix POV. Le
+premier prototype SDL3 donnait, par hypothèse de confort, priorité
+à la croix directionnelle. Cette approximation a été supprimée de
+`sdl3_generic_engine_preview.h` : maintenant les deux sources
+s'additionnent par un OR, même si elles produisent deux directions
+opposées. Les tests couvrent expressément ces cas contradictoires.
+
+Cette fidélité binaire locale ne signifie pas encore parité complète :
+la transformation analogique du moteur utilise aussi le drapeau
+`0x00AC0A18`, et le facteur de normalisation de SDL3 n'est pas
+étalonné sur la DS3 ou Steam Deck. Aucune liaison runtime n'existe.

@@ -52,8 +52,11 @@ static inline int spider_sdl3_generic_engine_preview(
   if(!engine_mask || !new_actions || !sample || !profile ||
      !spider_sdl3_profile_actions(profile,sample,previous_actions,&actions))
     return 0;
-  /* D-pad intentionally takes directional priority over left stick when
-   * the user presses both; opposite D-pad directions cancel for safety. */
+  /* The original 0x0050A2F9..0x0050A375 accumulates stick AND POV
+   * directional bits with OR, even if they oppose each other.
+   * Reproduce that *observed bit-combination*, not a made-up D-pad
+   * override. Stick scale is STILL approximate and the game's
+   * 0x00AC0A18 axis suppression flag is NOT modeled. */
   button=sample->buttons;
   x=sample->axis[SPIDER_SDL3_AXIS_LEFTX];
   y=sample->axis[SPIDER_SDL3_AXIS_LEFTY];
@@ -61,18 +64,14 @@ static inline int spider_sdl3_generic_engine_preview(
   down=(button>>SPIDER_SDL3_ENGINE_DPAD_DOWN)&1u;
   left=(button>>SPIDER_SDL3_ENGINE_DPAD_LEFT)&1u;
   right=(button>>SPIDER_SDL3_ENGINE_DPAD_RIGHT)&1u;
-  if(!up && !down) {
-    up=y< -SPIDER_SDL3_ENGINE_AXIS_THRESHOLD;
-    down=y>SPIDER_SDL3_ENGINE_AXIS_THRESHOLD;
-  }
-  if(!left && !right) {
-    left=x< -SPIDER_SDL3_ENGINE_AXIS_THRESHOLD;
-    right=x>SPIDER_SDL3_ENGINE_AXIS_THRESHOLD;
-  }
-  if(up && !down)dir|=SPIDER_SDL3_ENGINE_DIR_UP;
-  if(down && !up)dir|=SPIDER_SDL3_ENGINE_DIR_DOWN;
-  if(left && !right)dir|=SPIDER_SDL3_ENGINE_DIR_LEFT;
-  if(right && !left)dir|=SPIDER_SDL3_ENGINE_DIR_RIGHT;
+  up|=y< -SPIDER_SDL3_ENGINE_AXIS_THRESHOLD;
+  down|=y>SPIDER_SDL3_ENGINE_AXIS_THRESHOLD;
+  left|=x< -SPIDER_SDL3_ENGINE_AXIS_THRESHOLD;
+  right|=x>SPIDER_SDL3_ENGINE_AXIS_THRESHOLD;
+  if(up)dir|=SPIDER_SDL3_ENGINE_DIR_UP;
+  if(down)dir|=SPIDER_SDL3_ENGINE_DIR_DOWN;
+  if(left)dir|=SPIDER_SDL3_ENGINE_DIR_LEFT;
+  if(right)dir|=SPIDER_SDL3_ENGINE_DIR_RIGHT;
   /* The verified first seven semantic actions correspond to the
    * seven native 14-slot masks 0x10..0x400 (Jump..Swing).
    * Pause is handled by the existing context owner, never forwarded
