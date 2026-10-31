@@ -159,11 +159,12 @@ void SpiderSDL3GameplayLive_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
   if(!enabled)return;
   if(!native_thread)native_thread=GetCurrentThreadId();
   if(native_thread!=GetCurrentThreadId())return;
-  /* Pause/menu/Bink/focus are game-native; do not leave custom 3D
-   * bindings active in menus or on the PAUSED Alt+Tab overlay. */
+  /* Menu/Bink/focus loss disarms everything. A native in-game pause
+   * restores the seven native actions without dropping the eighth
+   * saved Pause edge latch, allowing that button to resume 3D. */
   if(!hwnd || !IsWindowVisible(hwnd) ||
      GetForegroundWindow()!=hwnd || menu2d || !gameplay3d || bink ||
-     native_pause || !SpiderSDL3Probe_NativeOwnerEnabled() ||
+     !SpiderSDL3Probe_NativeOwnerEnabled() ||
      SpiderSDL3Probe_MappedCount()!=1u) {
     if(applied)restore("context or foreground changed");
     else disarm_pause();
@@ -188,9 +189,24 @@ void SpiderSDL3GameplayLive_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
     else disarm_pause();
     return;
   }
-  if(applied && (device!=owner || id!=owner_id ||
+  if(paused_edge_armed && (device!=owner || id!=owner_id ||
      vid!=owner_vid || pid!=owner_pid ||
-     !same7(desired,mapped)))restore("owner or profile changed");
+     !same7(desired,mapped) ||
+     !spider_sdl3_binding_equal(
+        profile->actions[SPIDER_SDL3_ACTION_PAUSE],pause_binding)))
+    restore("owner or profile changed");
+  if(native_pause) {
+    if(applied && !restore_native_table()) {
+      restore("native pause table restoration failed");
+      return;
+    }
+    if(!paused_edge_armed || !native_read(current) ||
+       !same7(current,saved)) {
+      restore("native pause mapping no longer trustworthy");
+      return;
+    }
+    goto sample_pause;
+  }
   if(applied) {
     if(!native_read(current) || !same7(current,mapped)) {
       restore("mapping modified externally");
@@ -219,6 +235,7 @@ void SpiderSDL3GameplayLive_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
     pause_held=0;
     msg("SDL3-3D-LIVE: APPLIED verified Sony DS4 seven-action native mapping in RAM; selected owner, 3D foreground, neutral-first; original axes and table masks retained");
   }
+sample_pause:
   /* Pause is the eighth semantic action. It is NOT one of the native
    * seven button mappings. Use the existing gamepad UI's one-frame
    * Escape key owner rather than writing any eighth native slot.
