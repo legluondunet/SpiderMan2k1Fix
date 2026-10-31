@@ -196,23 +196,32 @@ In-game workflow:
    `PageUp/PageDown` cycle between SDL3 gamepads; `F5` restores
    defaults for the current model; `Escape` cancels capture (or closes
    the window if not capturing); `F1` repeats the help text.
-   `Tab` and `Space` continue to operate the native Win32 controls,
-   and `Enter` activates focused Restore/Close buttons.
-   A mapped gamepad can navigate too: **D-pad Up/Down or left stick
-   Up/Down** changes the selected action; **left stick Left/Right or
-   LB/RB (L1/R1)** switches between connected SDL3 mapped gamepads
-   and updates the combo box selection (with only one connected pad,
-   selection remains unchanged). **South (A/Cross)** starts capture;
-   **East (B/Circle)** closes the preview; **North (Y/Triangle)**
-   restores the current model defaults. The left stick never
-   selects Capture/Restore/Close and is not bound as a 3D action.
-   Analog movement has a 19000 press / 9000 release threshold to
-   reject drift. Physical navigation requires a first neutral and
-   centered stick sample, fires only once per tilt or button edge
-   (recenter before moving again), rejects simultaneous/diagonal
-   movements and Start/Guide, and suspends during capture. A
-   keyboard is always a fallback. Native 3D stick movement is
-   untouched; only the setup window reads the analog axes.
+   `Tab` and `Space` continue to operate native Win32 controls;
+   `Enter` activates a focused **Capture**, **Restore**, or **Close** button.
+   A mapped gamepad now navigates the **two focus columns**: **left
+   stick Left/Right** switches between the eight-row action list and the
+   three native Win32 buttons on the right; **left stick Up/Down** or
+   **D-pad Up/Down** selects a row or a button in the active column.
+   The selected button receives real Win32 keyboard focus, including
+   a visible focus cue and `FOCUS:` status text. **South (Cross/A)**
+   activates the focused item: start capture for an action or Capture,
+   restore that model's defaults via Restore, or close via Close.
+   **LB/RB (L1/R1)** cycles between connected SDL3 gamepads in the top
+   combo box (one connected controller -> no change), independent of
+   stick X. **East (Circle/B)** closes the preview outside capture,
+   while **North (Triangle/Y)** remains a defaults shortcut.
+   Closing with either Circle or a focused Cross/Close waits for the
+   physical release before posting `WM_CLOSE` outside `WM_TIMER`.
+   During a binding capture, the face buttons (including Circle/B)
+   remain valid candidates for 3D action profiles: **keyboard Esc**
+   cancels capture. This exception preserves complete 3D remapping;
+   no physical UI command can re-enter the dialog or steal game focus.
+   Analog movement retains the 19000 press / 9000 release threshold;
+   a first neutral and centered-stick sample is required; recenter
+   between movements; simultaneous/diagonal input resets the guard,
+   and Start/Guide or focus loss resets it too. **Stick input is not
+   capturable as a gameplay button**, nor does it affect the game's
+   original DirectInput analog movement or the SDL3 3D read-only plan.
 6. The window pumps only the **already initialized** SDL3 subsystem
    on the **same game thread**, while the normal Flip loop is stopped.
    It never consumes game-owned DirectInput events, claims SDL native
