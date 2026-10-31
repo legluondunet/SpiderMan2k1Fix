@@ -48,6 +48,7 @@
 #include "ps1_joystick_readonly_menu.h"
 #include "sdl3_controller_setup.h"
 #include "sdl3_context_menu_bridge.h"
+#include "sdl3_context_cutscene_bridge.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
 typedef HRESULT (WINAPI *SpiderDICreateFn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
@@ -125,6 +126,8 @@ static uint32_t sdl3_ui_instance=0;
 static int sdl3_context_bridge_requested=0;
 static unsigned sdl3_context_bridge_reports=0;
 static SpiderSDL3ContextMenuBridge sdl3_context_bridge={0};
+static SpiderSDL3ContextCutsceneBridge sdl3_cutscene_bridge={0};
+static unsigned sdl3_cutscene_context_reports=0;
 /* Explicitly opted, bounded read-only 3D physical input trace. The source
  * is our ALREADY-polled secondary DirectInput joystick, never the game's
  * buffered GetDeviceData (which would consume gameplay input). */
@@ -724,7 +727,7 @@ static void detect_device(HWND hwnd) {
  * Manually opted in (ControllerPS1OptionsSkip=1), not the Auto default.
  * The user's Cross is already mapped to native Jump, which the game
  * uses for 3D cinematic skip; it does NOT need a synthetic key here. */
-static int ps1_request_native_options_cutscene_skip(void) {
+static int gamepad_native_cutscene_skip(int request,const char *source) {
   const DWORD owner=*(const volatile DWORD *)(uintptr_t)0x006A9038u;
   const volatile BYTE *obj;
   volatile BYTE *native_request=(volatile BYTE *)(uintptr_t)0x0060CFC4u;
@@ -755,9 +758,19 @@ static int ps1_request_native_options_cutscene_skip(void) {
      script_ip==0u || *native_request!=0u)return 0;
   /* The exact game-native 0x4C66A6 writer uses this one-byte request;
    * original 0x4BC3E0 consumes it and cleans up scene resources. */
+  if(!request)return 1; /* read-only native permission check */
   *native_request=1u;
-  report("GAMEPAD-UI: PS1-3D-OPTIONS native CutSceneSkipAllow=1 request=1 (original 0x4BC3E0 cleanup; NOT forced)");
+  {
+    char line[230];
+    snprintf(line,sizeof(line),
+      "GAMEPAD-CUTSCENE: source=%s native CutSceneSkipAllow=1 request=1 (original 0x4BC3E0 cleanup; NOT forced)",
+      source?source:"unknown");
+    report(line);
+  }
   return 1;
+}
+static int ps1_request_native_options_cutscene_skip(void) {
+  return gamepad_native_cutscene_skip(1,"PS1-3D-OPTIONS");
 }
 /* Early game HWND acquisition precedes the verified native CRT reload.
  * On failure retry the old unchanged UI discovery on the first Flip. */
