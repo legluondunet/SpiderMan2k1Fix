@@ -19,6 +19,7 @@
 #include "sdl3_controller_capture.h"
 #include "sdl3_controller_setup_nav.h"
 #include "gamepad_ui_profile.h"
+#include "sdl3_setup_focus_policy.h"
 
 enum {
   SPIDER_UI_PAD=1001, SPIDER_UI_ACTION=1002,
@@ -40,6 +41,9 @@ typedef struct {
   unsigned close_pending;
   unsigned closing;
   DWORD close_requested_ms;
+  /* Foreground snapshot at WM_CLOSE, before destroying this HWND. */
+  HWND closing_foreground;
+  unsigned closing_foreground_captured;
 } SpiderSDL3SetupUI;
 static int setup_enabled=0,setup_open=0;
 static void (*setup_report)(const char *)=NULL;
@@ -451,6 +455,10 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       return 0;
     case WM_CLOSE:
       if(ui && !ui->closing) {
+        /* Before DestroyWindow: otherwise Explorer can be activated by
+         * Windows and misidentified as a deliberate Alt+Tab. */
+        ui->closing_foreground=GetForegroundWindow();
+        ui->closing_foreground_captured=1u;
         ui->closing=1;
         if(setup_report)setup_report("SDL3-SETUP: WM_CLOSE entered; disarming timer and capture");
         spider_sdl3_capture_reset(&ui->capture);
@@ -535,15 +543,19 @@ void SpiderSDL3ControllerSetup_Open(void) {
     TranslateMessage(&msg);DispatchMessageA(&msg);
   }
   if(setup_report)setup_report("SDL3-SETUP: modal message loop EXIT; restoring original game owner");
+  /* If the modal was removed without WM_CLOSE (WM_QUIT), never assume a
+   * foreign active window belongs to us. */
   if(IsWindow(window))DestroyWindow(window);
   prior_foreground=GetForegroundWindow();
-  /* The game HWND was disabled during our owned Win32 modal. Wine may
-   * return a NULL foreground after destroying that modal, and simply
-   * calling SetForegroundWindow without an active HWND can fail. Restore
-   * activation FIRST, and check the result before accepting new input.
-   * Do NOT steal focus if the user switched to another application. */
-  restore_allowed=!has_quit && (prior_foreground==NULL ||
-                     prior_foreground==owner || prior_foreground==window);
+  /* An owned dialog can transfer the foreground to Explorer as a side
+   * effect of DestroyWindow. Use its pre-destruction snapshot, rather than
+   * requiring the destroyed HWND still to be foreground. An actual Alt+Tab
+   * BEFORE WM_CLOSE will still fail closed. */
+  restore_allowed=spider_sdl3_setup_restore_focus(
+    has_quit,ui.closing_foreground_captured,
+    ui.closing_foreground==owner || ui.closing_foreground==window,
+    prior_foreground==owner || prior_foreground==window,
+    ui.closing_foreground==NULL,prior_foreground==NULL);
   if(parent_enabled && IsWindow(owner))EnableWindow(owner,TRUE);
   if(restore_allowed && IsWindow(owner) && IsWindowVisible(owner)) {
     SetActiveWindow(owner); /* same original game thread; do not attach foreign input queues */
@@ -555,9 +567,10 @@ void SpiderSDL3ControllerSetup_Open(void) {
   if(setup_report) {
     char line[250];
     snprintf(line,sizeof(line),
-      "SDL3-SETUP: owner focus restore allowed=%d attempted=%d result=%d previous=%p final=%p game=%p [no foreign-window focus stealing]",
+      "SDL3-SETUP: owner focus restore allowed=%d attempted=%d result=%d preclose=%p previous=%p final=%p game=%p [pre-close owned-snapshot; external focus respected]",
       restore_allowed,focus_attempted,focus_result,
-      (void *)prior_foreground,(void *)final_foreground,(void *)owner);
+      (void *)ui.closing_foreground,(void *)prior_foreground,
+      (void *)final_foreground,(void *)owner);
     setup_report(line);
   }
   setup_open=0;
