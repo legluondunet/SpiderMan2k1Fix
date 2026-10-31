@@ -54,6 +54,58 @@ def test_modal_selection_neutral_start_and_manual_handoff_c99(tmp_path):
     subprocess.run([str(binary)],check=True)
 
 
+@pytest.mark.skipif(not (shutil.which("gcc") or shutil.which("cc")),
+                    reason="C99 compiler unavailable")
+def test_modal_start_same_displayed_and_simultaneous_press_policy_c99(tmp_path):
+    """L1/R1 browse then Start on current pad must request it for the game.
+
+    Simultaneous fresh Start presses must be consumed yet not change the
+    selected modal profile or schedule an unverified game handoff.
+    """
+    src=tmp_path/"modal_edges.c"
+    src.write_text(textwrap.dedent(r"""
+        #include <assert.h>
+        #include "sdl3_gamepad_selection.h"
+        int main(void) {
+          SpiderSDL3Selection s={0};
+          uint32_t ids[]={1u,2u};
+          unsigned claims=0;
+          uint32_t previous;
+          spider_sdl3_selection_sync(&s,ids,2);
+          s.active=2u; /* L1/R1 browsed Xbox; game still owns DS4 */
+          assert(!spider_sdl3_selection_start_edge(&s,2u,1)); /* held */
+          assert(!spider_sdl3_selection_start_edge(&s,2u,0)); /* arm */
+          assert(spider_sdl3_selection_start_edge(&s,2u,1));  /* same row */
+          assert(s.active==2u);
+          assert(!spider_sdl3_selection_start_edge(&s,2u,1));
+          /* Gameplay selection API still returns 0 when owner unchanged. */
+          assert(!spider_sdl3_selection_start(&s,2u,0));
+          assert(!spider_sdl3_selection_start(&s,2u,1));
+          assert(s.active==2u);
+          spider_sdl3_selection_focus_lost(&s);
+          assert(!spider_sdl3_selection_start_edge(&s,1u,0));
+          assert(!spider_sdl3_selection_start_edge(&s,2u,0));
+          previous=s.active;
+          claims+=(unsigned)spider_sdl3_selection_start_edge(&s,1u,1);
+          claims+=(unsigned)spider_sdl3_selection_start_edge(&s,2u,1);
+          assert(claims==2u);
+          if(claims!=1u)s.active=previous;
+          assert(s.active==2u); /* simultaneous requests refused */
+          assert(!spider_sdl3_selection_start_edge(&s,1u,1));
+          assert(!spider_sdl3_selection_start_edge(&s,2u,1));
+          assert(!spider_sdl3_selection_start_edge(&s,1u,0));
+          assert(spider_sdl3_selection_start_edge(&s,1u,1));
+          assert(s.active==1u);
+          return 0;
+        }
+    """),encoding="utf-8")
+    binary=tmp_path/"modal_edges"
+    subprocess.run([shutil.which("gcc") or shutil.which("cc"),
+        "-std=c99","-Wall","-Wextra","-Werror","-I",str(ROOT),
+        str(src),"-o",str(binary)],check=True,capture_output=True,text=True)
+    subprocess.run([str(binary)],check=True)
+
+
 def test_modal_start_defers_original_owner_until_next_verified_game_flip():
     modal=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
@@ -66,7 +118,11 @@ def test_modal_start_defers_original_owner_until_next_verified_game_flip():
     assert "SpiderSDL3Selection modal_start;" in modal
     assert "spider_sdl3_selection_sync(&ui->modal_start,opened_ids,n);" in modal
     assert "ui->modal_start.active=id;" in modal
-    assert "spider_sdl3_selection_start(&ui->modal_start,id," in read
+    assert "spider_sdl3_selection_start_edge(&ui->modal_start,id," in read
+    assert "uint32_t before;" in read
+    assert "ui->modal_start.active=before;" in read
+    assert "if(next!=ui->slot)" in read
+    assert "if(next==ui->slot)return 0;" not in read
     assert "SpiderSDL3Probe_SetupRead(i,&id,&vid,&pid," in read
     assert "claims!=1u || ui->capture.active || ui->close_pending" in read
     assert "SendMessageA(ui->pads,CB_SETCURSEL,next,0);" in read
