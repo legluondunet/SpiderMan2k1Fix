@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""Offline *read-only* inspection of the exact Spider-Man 2001 PC input reader.
+
+This is a source-guided byte scanner, NOT an x86 disassembler or a runtime
+hook. It rejects any EXE whose SHA-256/size differs from the verified retail
+SpideyPC.exe. Vtable-offset candidates must be disassembled independently.
+No game executable is distributed with this tool.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import struct
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+EXPECTED_SHA256 = "0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea"
+EXPECTED_SIZE = 1507328
+EXPECTED_IMAGE_BASE = 0x400000
+NATIVE_READER = 0x501E6D
+ORIGINAL_GUARD = bytes.fromhex("A1 2C 7A 6B 00 85 C0")
+ACTION_TABLE = 0x568408
+ACTION_MASKS = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 4096, 8192, 32768)
+VTABLE_OFFSETS = {
+    0x1C: "Acquire", 0x20: "Unacquire",
+    0x24: "GetDeviceState", 0x28: "GetDeviceData", 0x64: "Poll",
+}
+MAX_SIZE = 32 * 1024 * 1024
+
+
+class InvalidExecutable(ValueError):
+    """Binary identity, layout or native-reader signature rejected."""
+
+
+@dataclass(frozen=True)
+class Section:
+    name: str
+    rva: int
+    raw_offset: int
+    raw_size: int
+
+
+@dataclass(frozen=True)
+class PE:
+    data: bytes
+    base: int
+    headers: int
+    sections: tuple[Section, ...]
+
+    def va_offset(self, va: int, size: int = 1) -> int:
+        if va < self.base or size < 0:
+            raise InvalidExecutable("invalid VA/size")
+        rva = va - self.base
+        if rva < self.headers:
+            if rva + size <= min(self.headers, len(self.data)):
+                return rva
+            raise InvalidExecutable("header range not backed by file")
+        matches = []
+        for sec in self.sections:
+            relative = rva - sec.rva
+            if 0 <= relative and relative + size <= sec.raw_size:
+                off = sec.raw_offset + relative
+                if off + size <= len(self.data):
+                    matches.append(off)
+        if len(matches) != 1:
+            raise InvalidExecutable("VA 0x%08X not uniquely file-backed" % va)
+        return matches[0]
+
+    def read(self, va: int, size: int) -> bytes:
+        offset = self.va_offset(va, size)
+        return self.data[offset:offset + size]
+
+
+def parse_pe(data: bytes) -> PE:
+    if len(data) < 256 or data[:2] != b"MZ":
+        raise InvalidExecutable("missing MZ")
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    if pe < 0x40 or pe + 24 > len(data) or data[pe:pe+4] != b"PE\0\0":
+        raise InvalidExecutable("invalid PE signature/offset")
+    coff = pe + 4
+    machine, count = struct.unpack_from("<HH", data, coff)
+    opt_size = struct.unpack_from("<H", data, coff + 16)[0]
+    opt = coff + 20
+    if machine != 0x14C or not 1 <= count <= 64 or opt_size < 0x60:
+        raise InvalidExecutable("expected x86 PE32")
+    if opt + opt_size + count * 40 > len(data):
+        raise InvalidExecutable("truncated section table")
+    if struct.unpack_from("<H", data, opt)[0] != 0x10B:
+        raise InvalidExecutable("not PE32")
+    base = struct.unpack_from("<I", data, opt + 28)[0]
+    headers = struct.unpack_from("<I", data, opt + 60)[0]
+    if not 0 < headers <= len(data):
+        raise InvalidExecutable("invalid header size")
+    sections = []
+    for i in range(count):
+        pos = opt + opt_size + i * 40
+        name, _, rva, length, file_pos = struct.unpack_from("<8sIIII", data, pos)
+        if length and (file_pos >= len(data) or length > len(data) - file_pos):
+            raise InvalidExecutable("section outside file")
+        sections.append(Section(name.split(b"\0", 1)[0].decode("ascii", "replace"),
+                                rva, file_pos, length))
+    return PE(data, base, headers, tuple(sections))
+
+
+def indirect_call_patterns(raw: bytes, va: int) -> list[dict]:
+    """Raw FF /2 with mod=01 or 10 and no SIB; NOT verified instructions."""
+    found = []
+    for i in range(max(0, len(raw) - 2)):
+        if raw[i] != 0xFF:
+            continue
+        op = raw[i + 1]
+        mode, kind, rm = op >> 6, (op >> 3) & 7, op & 7
+        if kind != 2 or rm == 4 or mode not in (1, 2):
+            continue
+        n = 3 if mode == 1 else 6
+        if i + n > len(raw):
+            continue
+        disp = raw[i + 2] if mode == 1 else struct.unpack_from("<i", raw, i + 2)[0]
+        if disp in VTABLE_OFFSETS:
+            found.append({
+                "va": "0x%08X" % (va + i),
+                "hex": raw[i:i+n].hex(" "),
+                "possible_method": VTABLE_OFFSETS[disp],
+                "status": "unverified_byte_pattern_not_disassembly",
+            })
+    return found
+
+
+def inspect(data: bytes, *, before: int = 96, after: int = 1024,
+            expected_sha: str = EXPECTED_SHA256,
+            expected_size: int = EXPECTED_SIZE) -> dict:
+    digest = hashlib.sha256(data).hexdigest()
+    if len(data) != expected_size or digest != expected_sha:
+        raise InvalidExecutable("unsupported EXE: exact SHA-256 and size required")
+    if not (0 <= before <= 4096 and 0 <= after <= 4096):
+        raise InvalidExecutable("inspection window must be bounded to 4096 bytes")
+    pe = parse_pe(data)
+    if pe.base != EXPECTED_IMAGE_BASE or pe.read(NATIVE_READER, len(ORIGINAL_GUARD)) != ORIGINAL_GUARD:
+        raise InvalidExecutable("unsupported base or original joystick reader guard")
+    native = pe.read(ACTION_TABLE, 14 * 8)
+    pairs = [struct.unpack_from("<II", native, i * 8) for i in range(14)]
+    if tuple(mask for mask, _ in pairs) != ACTION_MASKS:
+        raise InvalidExecutable("native action-table masks differ")
+    if any(button > 127 and button != 0x4000 for _, button in pairs):
+        raise InvalidExecutable("invalid native action-table index")
+    start = NATIVE_READER - before
+    raw = pe.read(start, before + after)
+    return {
+        "provenance": "exact retail SHA256, preexisting source-known addresses, raw bytes only",
+        "sha256": digest, "bytes": len(data),
+        "image_base": "0x%08X" % pe.base,
+        "sections": [s.__dict__ for s in pe.sections],
+        "existing_native_pointers": {
+            "joystick": "0x006B7A2C", "factory": "0x006B7A30",
+            "data_format": "0x0053D0F4",
+        },
+        "reader_null_guard": {
+            "va": "0x%08X" % NATIVE_READER,
+            "bytes": ORIGINAL_GUARD.hex(" "),
+        },
+        "axis_setup_samples": {
+            "lX_setup_at_0x005019E0": pe.read(0x5019E0, 16).hex(" "),
+            "lY_setup_at_0x00501A42": pe.read(0x501A42, 16).hex(" "),
+        },
+        "native_action_table": {
+            "va": "0x%08X" % ACTION_TABLE,
+            "all_button_indices": [button for _, button in pairs],
+            "gameplay_indices_4_to_10": [button for _, button in pairs[4:11]],
+        },
+        "reader_window": {
+            "start": "0x%08X" % start, "end_exclusive": "0x%08X" % (start + len(raw)),
+            "indirect_call_byte_candidates": indirect_call_patterns(raw, start),
+        },
+        "limit": "Candidates are byte matches, not decoded x86/COM call sites; no live-game or DS3 compatibility claim.",
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("exe", type=Path, help="Original SHA-verified 2001 SpideyPC.exe")
+    ap.add_argument("--before", type=int, default=96)
+    ap.add_argument("--after", type=int, default=1024)
+    args = ap.parse_args(argv)
+    try:
+        if args.exe.stat().st_size > MAX_SIZE:
+            raise InvalidExecutable("file size exceeds inspection limit")
+        result = inspect(args.exe.read_bytes(), before=args.before, after=args.after)
+    except (OSError, InvalidExecutable) as exc:
+        print("ERROR: %s" % exc, file=sys.stderr)
+        return 2
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
