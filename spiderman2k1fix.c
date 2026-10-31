@@ -31,6 +31,7 @@
 #include "native_joystick_reconnect.h"
 #include "sdl3_gamepad_probe.h"
 #include "sdl3_gameplay_plan_probe.h"
+#include "sdl3_gameplay_live.h"
 #include "pause_any_key.h"
 #include "pause_surface.h"
 #include "focus_media_pause.h"
@@ -2630,6 +2631,9 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   }
   SpiderDI8Retry_OnFlip(count);
   SpiderNativeUnplug_OnFlip(count);
+  /* Restore temporary SDL3 3D remap BEFORE the original device changes;
+   * otherwise the canonical native hot-swap would see a custom map. */
+  SpiderSDL3GameplayLive_PreNativeOnFlip(game_hwnd);
   /* SDL3 selection was pumped before UI. Native device replacement now
    * runs after its SHA-guarded disconnect patch, on the same Flip thread. */
   SpiderNativeReconnect_OnFlip(count,game_hwnd);
