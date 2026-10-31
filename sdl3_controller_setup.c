@@ -295,6 +295,7 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
   if(GetForegroundWindow()!=ui->hwnd) {
     spider_sdl3_capture_reset(&ui->capture);
     spider_sdl3_setup_nav_reset(&ui->nav);
+    spider_sdl3_selection_focus_lost(&ui->modal_start);
     return;
   }
   if(!SpiderSDL3Probe_SetupPump()) {
