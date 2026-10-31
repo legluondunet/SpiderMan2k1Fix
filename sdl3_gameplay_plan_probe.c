@@ -21,6 +21,7 @@
 #include "sdl3_gameplay_plan.h"
 #include "sdl3_gamepad_probe.h"
 #include "native_joystick_reconnect.h"
+#include "quick_exit_f12.h"
 
 static int requested=0;
 static unsigned reports=0;
@@ -48,15 +49,18 @@ void SpiderSDL3GameplayPlan_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
   if(!requested)return;
   if(!hwnd || GetForegroundWindow()!=hwnd || menu2d ||
      !gameplay3d || bink || pause) {
+    SpiderQuickExitF12_CutscenePhysicalSample(0,0,0,0,0);
     spider_sdl3_gameplay_plan_reset(&state);
     return;
   }
   if(!SpiderSDL3Probe_SelectedSample(&id,&vid,&pid,&sample)) {
+    SpiderQuickExitF12_CutscenePhysicalSample(0,0,0,0,0);
     spider_sdl3_gameplay_plan_reset(&state);
     return;
   }
   ready=SpiderNativeReconnect_SDL3SelectionReady(vid,pid);
   if(!ready) {
+    SpiderQuickExitF12_CutscenePhysicalSample(0,0,0,0,0);
     spider_sdl3_gameplay_plan_reset(&state);
     if(!reported_unready && reports<64u) {
       reported_unready=1;reports++;
@@ -66,7 +70,13 @@ void SpiderSDL3GameplayPlan_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
   }
   reported_unready=0;
   profile=SpiderSDL3Probe_SetupProfile(vid,pid);
-  if(!profile)return;
+  if(!profile) {
+    SpiderQuickExitF12_CutscenePhysicalSample(0,0,0,0,0);
+    return;
+  }
+  /* Read-only physical South/West correlation, independently of the
+   * saved semantic action map. Same selected, verified original owner. */
+  SpiderQuickExitF12_CutscenePhysicalSample(id,vid,pid,sample.buttons,ready);
   /* Both SDL3 and the original game must be ready. Physical input is
    * consumed ONCE from the selected SDL3 handle after normal Flip pump. */
   rc=spider_sdl3_gameplay_plan_step(&state,profile,&sample,id,vid,pid,
