@@ -48,7 +48,6 @@
 #include "ps1_joystick_readonly_menu.h"
 #include "sdl3_controller_setup.h"
 #include "sdl3_context_menu_bridge.h"
-#include "sdl3_context_cutscene_bridge.h"
 /* Native UI code lives in ps1_joystick_readonly_menu.c. */
 
 typedef HRESULT (WINAPI *SpiderDICreateFn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
@@ -126,8 +125,6 @@ static uint32_t sdl3_ui_instance=0;
 static int sdl3_context_bridge_requested=0;
 static unsigned sdl3_context_bridge_reports=0;
 static SpiderSDL3ContextMenuBridge sdl3_context_bridge={0};
-static SpiderSDL3ContextCutsceneBridge sdl3_cutscene_bridge={0};
-static unsigned sdl3_cutscene_context_reports=0;
 /* Explicitly opted, bounded read-only 3D physical input trace. The source
  * is our ALREADY-polled secondary DirectInput joystick, never the game's
  * buffered GetDeviceData (which would consume gameplay input). */
@@ -500,7 +497,7 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   sdl3_context_bridge_reports=0;
   spider_sdl3_context_menu_reset(&sdl3_context_bridge);
   if(sdl3_context_bridge_requested)
-    report("SDL3-CONTEXT: saved 2D menu/Bink bindings requested (native owner + neutral required; gameplay/stills/cutscenes unchanged)");
+    report("SDL3-CONTEXT: fixed physical Cross/A -> Return for menus/Bink; native 3D skip unchanged; original still pages not bridged");
   /* Experimental only: no automatic fixed-profile activation until native
    * menu lock and Start handling are validated in the real game. */
   ps1_preview_requested=GetPrivateProfileIntA("Input","ControllerPS1Preview",0,ini)==1;
@@ -772,46 +769,11 @@ static int gamepad_native_cutscene_skip(int request,const char *source) {
 static int ps1_request_native_options_cutscene_skip(void) {
   return gamepad_native_cutscene_skip(1,"PS1-3D-OPTIONS");
 }
-/* Bridge the saved "Confirm / Skip" SDL3 semantic button to the
- * ORIGINAL game-owned 3D cutscene request, not a synthetic Jump/Enter key.
- * Only the active SDL3-selected, verified native controller may request it.
- * The native CutSceneSkipAllow/script gate remains authoritative. This
- * does NOT neutralize the legacy Cross/Jump shortcut: that needs separate
- * native reader analysis so that Jump stays functional in gameplay. */
-static void sdl3_cutscene_context_on_flip(int menu_2d,int gameplay_3d,
-                                          int bink,int native_pause) {
-  uint32_t id=0;
-  uint16_t vid=0,pid=0;
-  SpiderSDL3ControllerSample sample;
-  SpiderSDL3ControllerProfile *saved=NULL;
-  int status;
-  if(!sdl3_context_bridge_requested ||
-     !SpiderSDL3Probe_NativeOwnerEnabled() ||
-     !gameplay_3d || menu_2d || bink || native_pause ||
-     !gamepad_native_cutscene_skip(0,NULL)) {
-    spider_sdl3_context_cutscene_reset(&sdl3_cutscene_bridge);
-    return;
-  }
-  if(!SpiderSDL3Probe_SelectedSample(&id,&vid,&pid,&sample) ||
-     id!=sdl3_ui_instance ||
-     !SpiderNativeReconnect_SDL3SelectionReady(vid,pid)) {
-    spider_sdl3_context_cutscene_reset(&sdl3_cutscene_bridge);
-    return;
-  }
-  saved=SpiderSDL3Probe_SetupProfile(vid,pid);
-  if(!saved) {
-    spider_sdl3_context_cutscene_reset(&sdl3_cutscene_bridge);
-    return;
-  }
-  status=spider_sdl3_context_cutscene_step(&sdl3_cutscene_bridge,
-            saved,&sample,id,vid,pid,1,1);
-  if(status!=SPIDER_SDL3_CUTSCENE_PRESS)return;
-  if(gamepad_native_cutscene_skip(1,"SDL3-CONFIRM-SKIP")) {
-    if(sdl3_cutscene_context_reports++<20u)
-      report("SDL3-CUTSCENE: saved SkipCutscene -> original game-native request (CutSceneSkipAllow=1; no key synthesis)");
-  } else if(sdl3_cutscene_context_reports++<8u)
-    report("SDL3-CUTSCENE: native permission changed before request; skipped safely");
-}
+/* Native scripted 3D cinematics own their original Cross/Jump skip input.
+ * Do not issue any SDL3 synthetic skip request: this prevents two
+ * independently routed physical buttons from skipping one scene.
+ * The old opt-in PS1 OPTIONS diagnostic is kept only for non-SDL3
+ * fallback sessions; it is explicitly suppressed under SDL3 ownership. */
 /* Early game HWND acquisition precedes the verified native CRT reload.
  * On failure retry the old unchanged UI discovery on the first Flip. */
 int SpiderGamepadUI_PreparePS1(HWND hwnd) {
@@ -1388,7 +1350,6 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   release_active_key();
   if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {
     spider_sdl3_context_menu_reset(&sdl3_context_bridge);
-    spider_sdl3_context_cutscene_reset(&sdl3_cutscene_bridge);
     sdl3_3d_trace_valid=0;
     xbox_rt_swing_release("focus lost");
     /* Native game mouse state was already restored by mouse OnFlip. */
@@ -1471,7 +1432,6 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
           detected_kind==SPIDER_RECONNECT_XBOX360 && xbox_readonly_active)
     SpiderXbox360_InstallReadOnlyJoystick(log_message);
   if(!detected||!device) {
-    spider_sdl3_context_cutscene_reset(&sdl3_cutscene_bridge);
     spider_sdl3_context_menu_reset(&sdl3_context_bridge);
     ps1_history_record(SPIDER_PS1_HISTORY_DEVICE_MISSING,native_request,
       menu_2d,gameplay_3d,bink_active,native_pause_active,
@@ -1544,7 +1504,6 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     previous_share=0;
     previous_native_start=0;
     spider_sdl3_context_menu_reset(&sdl3_context_bridge);
-    spider_sdl3_context_cutscene_reset(&sdl3_cutscene_bridge);
     {
       int repeatedly_failed=spider_ds4_hotplug_read_failed(&hotplug);
       if(hr==DIERR_INPUTLOST || repeatedly_failed)
@@ -1606,12 +1565,9 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
        * Return/Escape. The original native controller reads are untouched. */
       previous_buttons=0;previous_back=0;previous_pause=0;
       previous_share=0;previous_native_start=0;
-      spider_sdl3_context_cutscene_reset(&sdl3_cutscene_bridge);
-      return;
+        return;
     }
   }
-
-  sdl3_cutscene_context_on_flip(menu_2d,gameplay_3d,bink_active,native_pause_active);
 
   /* First live consumer of SDL3 per-model v2 MENU/VIDEO keys. The native
    * 3D action reader stays unchanged; one explicitly selected, verified
@@ -1650,11 +1606,11 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     previous_share=(state.rgbButtons[8]&0x80u)!=0;
     previous_native_start=(state.rgbButtons[11]&0x80u)!=0;
     if(result==SPIDER_SDL3_CTX_CONFIRM_EDGE) {
-      begin_scancode(0x1Cu,"SDL3 profile Confirm/Skip");
+      begin_scancode(0x1Cu,"SDL3 physical Cross/A Confirm/Skip");
       if(sdl3_context_bridge_reports++<24u)
         report(context==SPIDER_SDL3_CTX_VIDEO?
-          "SDL3-CONTEXT: saved SkipVideo -> native Bink Return (original gate retained)":
-          "SDL3-CONTEXT: saved MenuConfirm -> native menu Return");
+          "SDL3-CONTEXT: physical Cross/A -> native Bink Return (original gate retained)":
+          "SDL3-CONTEXT: physical Cross/A -> native menu Return");
     } else if(result==SPIDER_SDL3_CTX_BACK_EDGE) {
       begin_scancode(0x01u,"SDL3 profile Back/Cancel");
       if(sdl3_context_bridge_reports++<24u)
