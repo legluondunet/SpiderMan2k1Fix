@@ -448,3 +448,54 @@ remain OFF by default.
 
 This design is for the ongoing draft. It does not authorize merging
 PR #79/#80 or publishing a release.
+
+
+## Diagnose the original Cross/Jump cinematic shortcut (read-only)
+
+**Status: unresolved; not a gameplay fix.** The maintainer confirmed that
+Square/West, assigned through the unified SDL3 `Confirm / Skip` setting,
+successfully skips native scripted 3D cinematics on Windows 11. Cross/South
+still appears capable of skipping the same scenes despite being mapped to
+`Jump`. No evidence yet identifies the exact original input-reader branch
+that converts that physical Cross into the native `0x60CFC4` skip request.
+Suppressing a guessed Jump mask or zeroing the DirectInput buffer could
+break normal 3D jumping and is therefore forbidden.
+
+For an **explicitly requested diagnostic run only**, preserve the existing
+SDL3 Probe/NativeOwner/ContextBridge flags and add these keys to the *existing*
+`SpiderMan2k1Fix.ini`:
+
+```ini
+[Debug]
+Log=1
+F10Shortcut=1
+SDL3CutsceneReaderTrace=1
+```
+
+This enables at most 64 `SDL3-CUTSCENE-READER` lines in the regular log
+next to `SpideyPC.exe`. The trace uses the existing five SHA-checked
+original 3D `0x50C180` callsite wrappers. It logs the original action
+mask/arguments/return value, original native scene permission, skip
+request byte *before and after the reader*, script instruction pointer
+and timestamp. The original reader runs exactly once, and its result is
+returned unchanged. If any callsite differs, the tracing refuses to install.
+It is off by default, and does **not** instrument or modify `0x4C66A6`
+(the actual original skip-request writer), modify `Jump`, or read new
+DirectInput events.
+
+**Acceptance protocol:** during the same scripted 3D introduction,
+first leave Cross completely untouched and let a script reach
+`CutSceneSkipAllow=1`. Then press **Cross only** once (not Square)
+and observe whether the scene skips; on a fresh run use **Square only**
+as control. Continue into gameplay and confirm Cross still jumps.
+Attach the logs for both runs. Compare `SDL3-CUTSCENE-READER` results
+with `SDL3-3D-PLAN` physical action edges and
+`DEBUG-3D-CUTSCENE-LIFECYCLE` changes before attributing any call.
+`F10VerboseTrace=1` is *not* required; the new diagnostic emits only
+its own bounded records, not all historic F10 reverse-engineering logs.
+Remove `SDL3CutsceneReaderTrace=1` after this study.
+
+Even if a reader mask correlates with Cross, correlation by itself is
+not authorization to suppress it. The actual game-owned writer /
+reader connection and separate gameplay behavior still need positive
+evidence before implementing the single-owner native input adapter.
