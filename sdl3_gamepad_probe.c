@@ -394,7 +394,7 @@ void SpiderSDL3Probe_SetupModalReturn(uint32_t requested_id,
     setup_owner_pending=requested_id;
     setup_owner_vendor=vendor;
     setup_owner_product=product;
-    say("SDL3-PROBE: SETUP RETURN explicit modal Start owner handoff PENDING (foreground Flip only; native DirectInput untouched)");
+    say("SDL3-PROBE: SETUP RETURN controller-initiated owner handoff PENDING (Start or pad Close; foreground Flip only; native DirectInput untouched)");
   } else
     say("SDL3-PROBE: SETUP RETURN Start takeover disarmed until neutral; gameplay selected-id preserved");
 }
@@ -688,11 +688,11 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
       /* Any stale gameplay Start edges are still disarmed by modal exit.
        * The real native owner will be rebound later in this Flip. */
       snprintf(line,sizeof(line),
-        "SDL3-PROBE: SETUP RETURN COMMITTED fresh modal Start selected-id=%lu VID:PID=%04X:%04X; native ownership to reconcile",
+        "SDL3-PROBE: SETUP RETURN COMMITTED verified modal owner selected-id=%lu VID:PID=%04X:%04X; native ownership to reconcile",
         (unsigned long)requested_id,(unsigned)vendor,(unsigned)product);
     } else {
       snprintf(line,sizeof(line),
-        "SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous modal Start id=%lu VID:PID=%04X:%04X; previous game owner preserved",
+        "SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous modal owner id=%lu VID:PID=%04X:%04X; previous game owner preserved",
         (unsigned long)requested_id,(unsigned)vendor,(unsigned)product);
     }
     say(line);
