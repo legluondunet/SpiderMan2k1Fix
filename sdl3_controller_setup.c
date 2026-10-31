@@ -87,16 +87,10 @@ static void refresh_actions(SpiderSDL3SetupUI *ui) {
   for(i=0;i<SPIDER_SDL3_VISIBLE_ACTION_COUNT;i++) {
     char label[154],binding[85];
     const char *key;
-    if(i<SPIDER_SDL3_ACTION_COUNT) {
-      key=spider_sdl3_action_names[i];
-      binding_name(p->actions[i],binding,sizeof(binding));
-    } else {
-      key="Back / Cancel";
-      binding_name(p->context[SPIDER_SDL3_CONTEXT_BACK],
-                   binding,sizeof(binding));
-    }
+    key=spider_sdl3_action_names[i];
+    binding_name(p->actions[i],binding,sizeof(binding));
     snprintf(label,sizeof(label),"%02u. %-4s %-16s : %s",
-      i+1,i<SPIDER_SDL3_ACTION_COUNT?"3D":"MENU",key,binding);
+      i+1,"3D",key,binding);
     SendMessageA(ui->actions,LB_ADDSTRING,0,(LPARAM)label);
   }
   if(ui->action>=SPIDER_SDL3_VISIBLE_ACTION_COUNT)ui->action=0;
@@ -137,7 +131,7 @@ static void select_slot(SpiderSDL3SetupUI *ui,unsigned slot) {
   ui->instance=id;ui->vid=vid;ui->pid=pid;
   refresh_actions(ui);
   snprintf(line,sizeof(line),
-    "%s (%04X:%04X) - profile v2; Cross/A fixed for Confirm/Skip; other actions autosaved.",
+    "%s (%04X:%04X) - profile v2; Cross/A Confirm, Circle/B Back fixed; 3D actions autosaved.",
     name,(unsigned)vid,(unsigned)pid);
   status(ui,line);
 }
@@ -285,9 +279,7 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
     }
     binding_name(candidate,bind,sizeof(bind));
     snprintf(line,sizeof(line),"%s = %s",
-             ui->action<SPIDER_SDL3_ACTION_COUNT?
-               spider_sdl3_action_names[ui->action]:"Back / Cancel",
-             bind);
+             spider_sdl3_action_names[ui->action],bind);
     commit_profile(ui,&trial,line);
   }
 }
@@ -381,7 +373,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       ui->hwnd=hwnd;
       SetWindowLongPtrA(hwnd,GWLP_USERDATA,(LONG_PTR)(uintptr_t)ui);
       label=CreateWindowExA(0,"STATIC",
-        "SDL3 CONTROLLER SETUP - 3D + Back; Cross/A confirms/skips (fixed)",
+        "SDL3 CONTROLLER SETUP - 3D only; Cross/A Confirm, Circle/B Back fixed",
         WS_CHILD|WS_VISIBLE,18,16,690,28,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->pads=CreateWindowExA(0,"COMBOBOX","",
@@ -513,7 +505,7 @@ void SpiderSDL3ControllerSetup_Open(void) {
   ui.owner=owner;
   setup_open=1;
   window=CreateWindowExA(WS_EX_DLGMODALFRAME,cls,
-    "SpiderMan2k1Fix - Controller Setup (3D + Back)",
+    "SpiderMan2k1Fix - Controller Setup (3D actions only)",
     WS_CAPTION|WS_SYSMENU|WS_POPUP,
     CW_USEDEFAULT,CW_USEDEFAULT,730,493,
     owner,NULL,GetModuleHandleA(NULL),&ui);
