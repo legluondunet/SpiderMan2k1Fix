@@ -81,11 +81,12 @@ void SpiderSDL3GameplayPlan_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
   if(rc!=SPIDER_PLAN_READY || (!pressed && !released) || reports>=64u)
     return;
   snprintf(line,sizeof(line),
-    "SDL3-3D-PLAN: selected=%lu VID:PID=%04X:%04X pressed=0x%02lX released=0x%02lX held=0x%02lX LT=%d RT=%d [NO NATIVE INJECTION]",
+    "SDL3-3D-PLAN: selected=%lu VID:PID=%04X:%04X pressed=0x%02lX released=0x%02lX held=0x%02lX LT=%d RT=%d ms=%lu [NO NATIVE INJECTION]",
     (unsigned long)id,(unsigned)vid,(unsigned)pid,
     (unsigned long)pressed,(unsigned long)released,
     (unsigned long)state.held,
     (int)sample.axis[SPIDER_SDL3_AXIS_LT],
-    (int)sample.axis[SPIDER_SDL3_AXIS_RT]);
+    (int)sample.axis[SPIDER_SDL3_AXIS_RT],
+    (unsigned long)GetTickCount());
   report(line);reports++;
 }
