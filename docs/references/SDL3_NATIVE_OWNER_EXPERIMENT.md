@@ -343,6 +343,53 @@ path, which is still game-native. Revert
 from expectations. **Do not merge PR #80 until Windows and Wine
 gameplay testing** confirms owner, pause, triggers and safe rollback.
 
+## Windows 11 hardware matrix: Alt+Tab / hotplug good, same-row Start pending (31 Oct 2026)
+
+**User evidence**: `SpiderMan2k1Fix(20261031-184751).log`, DLL
+`v1.1.0-002dea5`. Confirmed by hardware feedback:
+- SDL3 panel **Alt+Tab works**; no stuck controls on return;
+- unplug/replug within panel, then change control **works**;
+- Xbox RT → Swing **works**;
+- **NOT OK:** Xbox game owner → L1/R1 browse DS4 profile → Start
+  on displayed DS4 → close panel → DS4 Circle does not exit original
+  Joystick menu; Xbox B still required. An Alt+Tab occurred in the session.
+
+**Evidence and uncertainty:** the log records SDL3 instance 1 (Sony DS4)
+detaching, then a replacement Sony instance **3** attaching. It records
+two modal opens and normal closes but **no**
+`SDL3-SETUP: MODAL-START`, `SETUP RETURN PENDING`, `COMMITTED`,
+or `SDL3-OWNER REBOUND` towards DS4; Xbox instance 2 stayed the game
+owner. The log did not previously record either manual L1/R1 browsing
+or rejected raw Start presses, so it cannot prove whether the exact
+Start edge was missed because of the neutral-arming gate, occurred
+outside foreground, or wasn't registered for another reason.
+
+**Targeted candidate (CI and hardware test required):**
+- During `refresh_pads`, `SetupRead` already samples every SDL3
+  controller. If a *newly discovered* or reconnected instance was
+  actually observed with Start **released**, use that fresh neutral
+  evidence to arm its modal Start edge **before the next 35 ms timer
+  tick**. Never arm a controller with Start already held; focus-loss
+  still requires released observation before a new Start takes effect.
+- Add bounded diagnostic logging (**max 32 records per modal**) for
+  `SDL3-SETUP: PROFILE-BROWSE L1/R1`,
+  `SDL3-SETUP: START-SAMPLE` (armed / previous / capture / close),
+  and `SDL3-SETUP: START-REFUSED simultaneous claims`. No global
+  keyboard input, DirectInput rebind, or game action is added.
+- Regression C99 tests cover newly attached DS4 `id=3`, first
+  release→Start edge, rejected held Start, and Alt+Tab invalidation.
+
+**Required hardware test**: Xbox selected by Start in game → open setup
+(Xbox shown) → press R1 once (DS4 shown); fully release Start on both
+pads → press DS4 Start once (same displayed DS4) → close by DS4 Circle
+→ press DS4 Circle *again* in the original Joystick menu. Expected
+`PROFILE-BROWSE`, `START-SAMPLE id=3 armed=1 previous=0`,
+`MODAL-START ... selected-id=3`, `SETUP RETURN PENDING`,
+`COMMITTED id=3`, `SDL3-OWNER REBOUND id=3`. If rejected,
+the new logs will tell exactly which gate failed. Also test opposite
+direction, focus loss while setup stays open, and one hotplug cycle.
+This is **not yet a verified hardware fix**; do not merge the draft PR.
+
 ## SDL3 setup modal: Start handoff, then verified gameplay ownership (31 Oct 2026)
 
 **Windows hardware validation**: Start now selects between DS4 and Xbox360
