@@ -84,17 +84,25 @@ static void disarm_pause(void) {
   paused_edge_armed=0;
   pause_held=0;
 }
-static void restore(const char *why) {
+/* The seven-action map must be normal during native Pause, while the
+ * chosen eighth Pause binding and its press/release history survive. */
+static int restore_native_table(void) {
   uint32_t current[SPIDER_PS1_BUTTON_COUNT];
-  if(applied) {
-    if(native_read(current) && same7(current,mapped) &&
-       native_write(mapped,saved))
-      msg("SDL3-3D-LIVE: original seven DS4 action bindings RESTORED (RAM only)");
-    else
-      msg("SDL3-3D-LIVE: restore REFUSED, original table changed unexpectedly; no blind overwrite");
+  if(!applied)return 1;
+  if(native_read(current) && same7(current,mapped) &&
+     native_write(mapped,saved)) {
+    applied=0;
+    msg("SDL3-3D-LIVE: original seven DS4 action bindings RESTORED (RAM only)");
+    return 1;
   }
+  applied=0;
+  msg("SDL3-3D-LIVE: restore REFUSED, original table changed unexpectedly; no blind overwrite");
+  return 0;
+}
+static void restore(const char *why) {
+  (void)restore_native_table();
   (void)why;
-  applied=0;owner=NULL;owner_id=0;owner_vid=owner_pid=0;
+  owner=NULL;owner_id=0;owner_vid=owner_pid=0;
   disarm_pause();
 }
 /* Must run immediately BEFORE native reconnect: the original rebind
