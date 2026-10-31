@@ -48,3 +48,34 @@ def test_original_native_reader_return_is_never_changed_and_has_bounded_logs():
     assert "spider_native_3d_input_original[i]" in hook
     assert "restore_intro_tick_call" in hook
     assert "InterlockedExchange(&debug_newgame_native_input_probes_installed,1);" in hook
+
+
+def test_second_passive_owner_boundary_probe_is_noninvasive():
+    native=(ROOT/"quick_exit_f12.c").read_text(encoding="utf-8")
+    section=native.split(
+        "static void spider_trace_sdl3_native_cutscene_boundary(",1)[1].split(
+        "/* Native game-input owner wrapper at 0x45553B:",1)[0]
+    assert "reports>=80u" in section
+    assert "VirtualQuery((LPCVOID)address,&mbi,sizeof(mbi))" in section
+    assert "mbi.Protect&(PAGE_NOACCESS|PAGE_GUARD)" in section
+    assert "obj[0x1acu]" in section and "obj[0x1a4u]" in section
+    assert "obj[0x1b4u]" in section and "address+0x1b8u" in section
+    assert "request=*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST;" in section
+    assert "last_snapshot[after]==packed" in section
+    assert "SDL3-CUTSCENE-OWNER: boundary=%s" in section
+    assert "ORIGINAL NATIVE UPDATE UNCHANGED; CORRELATION ONLY" in section
+    for mutation in ("VirtualProtect(", "WriteProcessMemory(", "SendInput(",
+                     "IDirectInputDevice8_Acquire(",
+                     "*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST="):
+        assert mutation not in section
+    owner=native.split(
+        "static void __cdecl spider_observe_native_game_input(void) {",1)[1].split(
+        "/* PASSIVE, exact-site 3D input diagnostics",1)[0]
+    a=owner.find("spider_trace_sdl3_native_cutscene_boundary(0u);")
+    b=owner.find("SPIDER_NATIVE_GAME_INPUT_UPDATE();",a)
+    c=owner.find("spider_trace_sdl3_native_cutscene_boundary(1u);",b)
+    assert 0<=a<b<c
+    assert owner.count("SPIDER_NATIVE_GAME_INPUT_UPDATE();")==1
+    plan=(ROOT/"sdl3_gameplay_plan_probe.c").read_text(encoding="utf-8")
+    assert "LT=%d RT=%d ms=%lu [NO NATIVE INJECTION]" in plan
+    assert "(unsigned long)GetTickCount());" in plan
