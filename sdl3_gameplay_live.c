@@ -1,15 +1,18 @@
-/* Opt-in, DS4-only 3D action-map bridge. No COM vtable interception.
+/* Opt-in, DS4 + verified wired Xbox 360 3D action-map bridge. No COM vtable interception.
  * The ORIGINAL game-owned DirectInput reader keeps movement/POV, and
  * consumes the same SHA-verified seven (mask, button) DWORD slots that
  * the already-tested canonical Sony/Xbox native swap uses.
  *
  * This cannot represent SDL3 D-pad/extra-paddle inputs as DirectInput
- * rgbButtons, unverified DS4 L2, or Xbox merged triggers. Reject the whole unsupported
+ * rgbButtons, unverified DS4 L2, or Xbox analog triggers as buttons.
+ * The Xbox RT Swing action stays UNBOUND in native RAM and continues
+ * through the separately proven guarded RT-keyboard bridge.
+ * Reject the whole unsupported
  * profile; NEVER guess physical indices or synthesize duplicate game
  * action keys. Pause is one bounded Escape edge via the existing
  * gamepad UI key owner; other seven actions use native hardware ONLY.
  *
- * Invariant: only replace exact canonical DS4 table; restore its exact
+ * Invariant: only replace exact canonical selected DS4/Xbox table; restore its exact
  * snapshot on exiting playable 3D, focus loss, identity/profile changes.
  * Strictly OFF unless the user selects the opt-in key in the main INI.
  */
@@ -60,6 +63,24 @@ static int native_read(uint32_t out[SPIDER_PS1_BUTTON_COUNT]) {
   return spider_native_swap_read((const uint8_t *)p,
                     SPIDER_NATIVE_SWAP_SLOTS*8u,out);
 }
+/* The legacy RT→Swing guard checks the native Xbox preset. A
+ * *verified* customized six-button Xbox map is also safe for RT Swing
+ * if its saved seventh (Swing) action still equals RT and the in-memory
+ * native seven-action table exactly matches what THIS bridge installed.
+ * Never treat arbitrary custom memory as a verified Xbox preset. */
+int SpiderSDL3GameplayLive_VerifiedXboxSwingMap(void) {
+  uint32_t current[SPIDER_PS1_BUTTON_COUNT],id=0;
+  uint16_t vid=0,pid=0;
+  if(!enabled || !applied || owner_vid!=0x045eu ||
+     owner_pid!=0x028eu || !owner_id || !owner ||
+     mapped[SPIDER_SDL3_ACTION_SWING]!=0x4000u ||
+     *(void *volatile *)(uintptr_t)SPIDER_GAMEPLAY_NATIVE_DEVICE!=owner ||
+     !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
+     id!=owner_id || vid!=owner_vid || pid!=owner_pid ||
+     !SpiderNativeReconnect_SDL3SelectionReady(vid,pid) ||
+     !native_read(current) || !same7(current,mapped))return 0;
+  return 1;
+}
 /* On the original rendering thread, with exact previous bytes verified.
  * Transactional post-write check and best-effort rollback. No INI write. */
 static int native_write(const uint32_t expected[SPIDER_PS1_BUTTON_COUNT],
@@ -92,7 +113,7 @@ static int restore_native_table(void) {
   if(native_read(current) && same7(current,mapped) &&
      native_write(mapped,saved)) {
     applied=0;
-    msg("SDL3-3D-LIVE: original seven DS4 action bindings RESTORED (RAM only)");
+    msg("SDL3-3D-LIVE: original seven selected-pad action bindings RESTORED (RAM only)");
     return 1;
   }
   applied=0;
@@ -146,16 +167,17 @@ void SpiderSDL3GameplayLive_Init(const char *ini,void (*logger)(const char *)) {
     GetPrivateProfileIntA("Input","ExperimentalNativeJoystickUnplugGuard",0,ini)==1 &&
     GetPrivateProfileIntA("Input","ExperimentalNativeJoystickReconnect",0,ini)==1 &&
     GetPrivateProfileIntA("Input","ExperimentalNativeJoystickMappingSwap",0,ini)==1;
-  if(enabled)msg("SDL3-3D-LIVE: EXPERIMENT enabled: DS4 seven native buttons + SDL3 Pause edge, fail-closed on unsupported binding, foreground/3D only; RAM restored on exit");
+  if(enabled)msg("SDL3-3D-LIVE: EXPERIMENT enabled: DS4 native seven buttons + Pause, verified Xbox360 six face/shoulder buttons with RT Swing unbound; reject other SDL3 inputs, 3D only");
 }
 void SpiderSDL3GameplayLive_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
                                    int bink,int native_pause) {
   uint32_t id=0,desired[SPIDER_PS1_BUTTON_COUNT],current[SPIDER_PS1_BUTTON_COUNT];
+  const uint32_t *canonical;
   uint16_t vid=0,pid=0;
   SpiderSDL3ControllerSample sample;
   SpiderSDL3ControllerProfile *profile;
   void *device;
-  int neutral,pressed;
+  int neutral,pressed,xbox360;
   if(!enabled)return;
   if(!native_thread)native_thread=GetCurrentThreadId();
   if(native_thread!=GetCurrentThreadId())return;
@@ -177,11 +199,23 @@ void SpiderSDL3GameplayLive_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
     return;
   }
   profile=SpiderSDL3Probe_SetupProfile(vid,pid);
-  if(!spider_sdl3_native_ds4_seven(profile,desired)) {
-    if(applied)restore("unsupported mapping");
-    else disarm_pause();
-    if(reports<8u)msg("SDL3-3D-LIVE: REFUSED unsupported SDL3 binding/driver; only verified Sony DS4 face/shoulder buttons and R2 can map to native 3D; L2/POV unsupported");
-    return;
+  xbox360=vid==0x045eu && pid==0x028eu;
+  if(xbox360) {
+    if(!spider_sdl3_native_xbox360_seven(profile,desired)) {
+      if(applied)restore("unsupported Xbox360 mapping");
+      else disarm_pause();
+      if(reports<10u)msg("SDL3-3D-LIVE: REFUSED Xbox360 profile: only A/B/X/Y/LB/RB supported for six native actions and Swing must remain RT; LT/POV/unverified buttons refused");
+      return;
+    }
+    canonical=spider_xbox360_buttons_sdl3_rt;
+  } else {
+    if(!spider_sdl3_native_ds4_seven(profile,desired)) {
+      if(applied)restore("unsupported Sony mapping");
+      else disarm_pause();
+      if(reports<10u)msg("SDL3-3D-LIVE: REFUSED unsupported Sony binding/driver; only verified DS4 buttons and R2; L2/POV refused");
+      return;
+    }
+    canonical=spider_ps1_buttons;
   }
   device=*(void *volatile *)(uintptr_t)SPIDER_GAMEPLAY_NATIVE_DEVICE;
   if(!device || *(void *volatile *)(uintptr_t)SPIDER_GAMEPLAY_NATIVE_FFB) {
@@ -219,8 +253,8 @@ void SpiderSDL3GameplayLive_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
     neutral=spider_sdl3_profile_neutral(&sample);
     if(!neutral)return;
     if(!native_read(current) ||
-       !same7(current,spider_ps1_buttons)) {
-      if(reports<8u)msg("SDL3-3D-LIVE: REFUSED native seven-button table not canonical DS4; preserve user/custom game controls");
+       !same7(current,canonical)) {
+      if(reports<10u)msg("SDL3-3D-LIVE: REFUSED native seven-action table not exact selected-model canonical preset; preserve external/custom game controls");
       return;
     }
     memcpy(saved,current,sizeof(saved));
@@ -233,8 +267,13 @@ void SpiderSDL3GameplayLive_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
     pause_binding=profile->actions[SPIDER_SDL3_ACTION_PAUSE];
     paused_edge_armed=1;
     pause_held=0;
-    msg("SDL3-3D-LIVE: APPLIED verified Sony DS4 seven-action native mapping in RAM; selected owner, 3D foreground, neutral-first; original axes and table masks retained");
+    msg(xbox360?
+      "SDL3-3D-LIVE: APPLIED verified Xbox360 six-button SDL3 custom mapping in RAM; Swing=RT via guarded keyboard bridge, native Swing unbound; 3D foreground, neutral-first":
+      "SDL3-3D-LIVE: APPLIED verified Sony DS4 seven-action native mapping in RAM; selected owner, 3D foreground, neutral-first; original axes and table masks retained");
   }
+  /* Xbox Back/Start and PAUSE follow their existing gamepad UI policy.
+   * Do not introduce a second independent Escape pulse from this bridge. */
+  if(xbox360)return;
 sample_pause:
   /* Pause is the eighth semantic action. It is NOT one of the native
    * seven button mappings. Use the existing gamepad UI's one-frame
