@@ -29,6 +29,19 @@ def test_reject_unknown_content_and_malformed_binary():
         mod.inspect(b"not a game binary")
 
 
+def test_file_backed_virtual_address_mapping_without_executable_fixture():
+    mod = load_tool()
+    data = bytes(range(256)) * 4
+    pe = mod.PE(data=data, base=0x400000, headers=0x80,
+                sections=(mod.Section(".text", 0x1000, 0x100, 0x180),))
+    assert pe.va_offset(0x401000) == 0x100
+    assert pe.read(0x401012, 4) == data[0x112:0x116]
+    with pytest.raises(mod.InvalidExecutable):
+        pe.read(0x400FFF, 4)
+    with pytest.raises(mod.InvalidExecutable):
+        pe.read(0x401180, 1)
+
+
 def test_pattern_match_is_explicitly_unverified():
     mod = load_tool()
     samples = bytes([255, 80, 36, 255, 81, 40])
