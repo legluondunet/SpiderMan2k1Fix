@@ -63,6 +63,34 @@ BINARY_VERIFIED_INPUT_SITES = (
 )
 
 
+# Independently disassembled on the user's exact retail EXE on
+# 2026-11-01, with llvm-objdump --x86-asm-syntax=intel.
+# There is one direct call of 0x0050A190 at 0x00505738. The caller
+# passes two output DWORD pointers, but reads ONLY the first (held)
+# in its subsequent 20 per-action dispatches to 0x00479540.
+# This is specifically a property of the 0x00505720 caller.
+# It is not proof that every other context ignores all fresh presses.
+BINARY_VERIFIED_MASK_CONSUMER_SITES = (
+    (0x00505720, "a1 9c 12 66 00", "frame input consumer entry"),
+    (0x00505725, "83 ec 08", "reserve two DWORD output locals"),
+    (0x00505729, "8d 4c 24 00", "pointer to held output local"),
+    (0x00505732, "8d 44 24 04", "pointer to fresh output local"),
+    (0x00505738, "e8 53 4a 00 00", "direct call of 0x0050A190 aggregator"),
+    (0x00505759, "8b 54 24 08", "load held output after push ESI/EDI"),
+    (0x00505785, "e8 b6 3d f7 ff", "first action-state latch update"),
+    (0x005058F5, "e8 a6 3d f7 ff", "post-latch state update"),
+    (0x00479540, "8b 44 24 04", "stateful 16-byte action latch updater"),
+    (0x00479548, "8b 48 0c", "read frame/release counter at latch +12"),
+    (0x0047954B, "8a 18", "read previous held state byte at latch +0"),
+    (0x0047955D, "83 f9 0a", "new-press counter comparison against 10"),
+    (0x00479560, "c6 40 01 01", "write new-press indicator to latch +1"),
+    (0x0047956F, "88 50 02", "clear transient indicator latch +2"),
+    (0x0047957C, "c6 00 01", "record held state +1"),
+    (0x00479581, "88 10", "record released state +0"),
+    (0x00479596, "8b 48 08", "read released-state counter latch +8"),
+)
+
+
 class InvalidExecutable(ValueError):
     """Binary identity, layout or native-reader signature rejected."""
 
@@ -188,6 +216,15 @@ def inspect(data: bytes, *, before: int = 96, after: int = 1024,
         binary_verified.append({"va": "0x%08X" % va,
                                 "bytes": hex_bytes,
                                 "binary_disassembly_meaning": meaning})
+    consumer_signatures = []
+    for va, hex_bytes, meaning in BINARY_VERIFIED_MASK_CONSUMER_SITES:
+        signature = bytes.fromhex(hex_bytes)
+        if pe.read(va, len(signature)) != signature:
+            raise InvalidExecutable(
+                "disassembled mask consumer mismatch at 0x%08X" % va)
+        consumer_signatures.append({"va": "0x%08X" % va,
+                                    "bytes": hex_bytes,
+                                    "binary_disassembly_meaning": meaning})
     native = pe.read(ACTION_TABLE, 14 * 8)
     pairs = [struct.unpack_from("<II", native, i * 8) for i in range(14)]
     if tuple(mask for mask, _ in pairs) != ACTION_MASKS:
@@ -211,6 +248,19 @@ def inspect(data: bytes, *, before: int = 96, after: int = 1024,
         },
         "verified_previous_source_signatures": known_signatures,
         "verified_binary_input_sites": binary_verified,
+        "verified_binary_mask_consumer_sites": consumer_signatures,
+        "original_engine_mask_consumer": {
+            "aggregator": "0x0050A190",
+            "only_direct_xref_in_static_disassembly": "0x00505738",
+            "consumer": "0x00505720",
+            "held_output_local": "ESP+0 at aggregator call",
+            "fresh_output_local": "ESP+4 at aggregator call",
+            "first_consumed_output": "held only in this consumer",
+            "action_latch_updater": "0x00479540",
+            "number_of_direct_latch_calls": 20,
+            "latch_layout": "16 bytes: held byte +0, transient bytes +1/+2, counters +4/+8/+12",
+            "safety_note": "Static function-specific evidence, not an authorized input hook or proof of analog equivalence",
+        },
         "joystick_buffered_dataflow": {
             "reader": "0x00501E50",
             "event_call": "0x00501F0E",
