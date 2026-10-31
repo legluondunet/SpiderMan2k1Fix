@@ -10,6 +10,13 @@
  * SDL3.dll is optional and is only loaded from the executable directory. */
 void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *));
 void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd);
+/* The Flip-blocking Alt+Tab PAUSED screen uses the same selected SDL3
+ * handle on the same game thread, with no key injection or DirectInput
+ * Acquire. Begin requires a verified game-owned selected device; Poll
+ * requires foreground and a new neutral->press->release digital sequence. */
+int SpiderSDL3Probe_PauseWake_Begin(void);
+unsigned SpiderSDL3Probe_PauseWake_Poll(HWND game_hwnd);
+void SpiderSDL3Probe_PauseWake_End(void);
 /* Opt-in native ownership experiment. Read only from the same Flip thread.
  * 'Available' means SDL initialized and selected an instance; it does NOT
  * mean DirectInput has been rebound. Duplicate VID/PID must fail closed. */
