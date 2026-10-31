@@ -94,6 +94,7 @@ def test_win32_focus_and_deferred_activation_guards():
     assert "case WM_TIMER:" in ui
     assert 'HIWORD(wp)==BN_SETFOCUS' in ui
     assert 'HIWORD(wp)==LBN_SETFOCUS' in ui
+    assert ui.count("WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_NOTIFY") == 3
     # A physical East/Circle is still assignable to a 3D action during
     # explicit capture; ESC remains the non-ambiguous cancel operation.
     capture=(ROOT/"sdl3_controller_capture.h").read_text(encoding="utf-8")
