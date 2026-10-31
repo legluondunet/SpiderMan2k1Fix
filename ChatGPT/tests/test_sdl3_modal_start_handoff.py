@@ -159,6 +159,47 @@ def test_modal_rescan_arming_and_traces_are_neutral_gated_and_capped():
     assert "ui->start_owner_requested=1u;" in modal
 
 
+def test_pad_close_transfers_displayed_profile_only_after_destroy():
+    """Closing with DS4 Circle after R1 browse must not strand DS4 in menus.
+
+    Keyboard Esc/mouse Close must keep previous native owner; the safety
+    gate rejects a disconnected/ambiguous DS4 before native ownership.
+    """
+    modal=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    close=modal.split("static void setup_close_from_pad(",1)[1].split(
+        "static SpiderSDL3ControllerProfile *current_profile(",1)[0]
+    loop=modal.split("void SpiderSDL3ControllerSetup_Open(",1)[1]
+    assert "if(!ui || ui->close_pending)return;" in close
+    assert "if(ui->instance && ui->vid && ui->pid && !ui->capture.active)" in close
+    assert "ui->start_owner_id=ui->instance;" in close
+    assert "ui->start_owner_vid=ui->vid;" in close
+    assert "ui->start_owner_pid=ui->pid;" in close
+    assert "ui->start_owner_requested=1u;" in close
+    assert "SDL3-SETUP: PAD-CLOSE GAME-OWNER requested" in close
+    assert "setup_close_from_pad(ui," in modal
+    assert "spider_sdl3_profile_neutral(&s)" in modal
+    assert "PostMessageA(ui->hwnd,WM_CLOSE,0,0);" in modal
+    assert "ui.start_owner_requested && !has_quit && restore_allowed &&" in loop
+    assert "final_foreground==owner ? ui.start_owner_id:0u," in loop
+    flip=probe.split("void SpiderSDL3Probe_OnFlip(",1)[1]
+    assert "spider_sdl3_selected_model_unique(opened,num_pads,requested_id," in flip
+    assert "SDL3-PROBE: SETUP RETURN COMMITTED fresh modal Start" in flip
+    assert "SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous" in flip
+    assert "SpiderNativeReconnect_" not in close
+    assert "SendInput(" not in close
+    assert "VirtualProtect(" not in close
+    # Browsing never requests a handoff. A gamepad-initiated close does.
+    select=modal.split("static void select_slot(",1)[1].split(
+        "static void refresh_pads(",1)[0]
+    assert "ui->start_owner_requested" not in select
+    keyboard=modal.split("static int handle_setup_keyboard(",1)[1].split(
+        "static LRESULT CALLBACK setup_wndproc(",1)[0]
+    assert "setup_close_from_pad(" not in keyboard
+    assert "L1/R1: browse pad" in modal
+    assert "Circle/B: close + use this pad" in modal
+
+
 def test_modal_start_defers_original_owner_until_next_verified_game_flip():
     modal=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
