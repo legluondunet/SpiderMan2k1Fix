@@ -1,4 +1,4 @@
-/* SDL3-selected, per-model context profile -> menu/Bink key-edge policy.
+/* SDL3-selected original South/Cross/A -> menu/Bink key-edge policy.
  * Pure C99: NO Windows, SDL, SendInput, game pointers, threads or I/O.
  *
  * The caller must enforce: exact game foreground, sole selected SDL3 owner,
@@ -6,8 +6,10 @@
  * (main menu or Bink only), safe native keyboard injection and released
  * synthetic scan at the next Flip.
  *
- * We do not classify the original game's separate intro still pages or
- * scripted 3D cutscenes here. Their v2 keys remain stored, never guessed.
+ * Physical South (Cross/A) is fixed for Confirm/Skip in menus and Bink,
+ * irrespective of the legacy saved v2 custom context fields. Native 3D
+ * cutscenes remain entirely game-owned. Distinct intro still pages do not
+ * run through this menu/video classifier: they require a verified owner.
  */
 #ifndef SPIDERMAN2K1FIX_SDL3_CONTEXT_MENU_BRIDGE_H
 #define SPIDERMAN2K1FIX_SDL3_CONTEXT_MENU_BRIDGE_H
@@ -69,9 +71,14 @@ static inline int spider_sdl3_context_menu_step(
     spider_sdl3_context_menu_reset(state);
     return SPIDER_SDL3_CTX_REFUSED;
   }
-  confirm=profile->context[context==SPIDER_SDL3_CTX_MENU?
-                 SPIDER_SDL3_CONTEXT_CONFIRM:SPIDER_SDL3_CONTEXT_SKIP_VIDEO];
+  /* Use the SAME physical South button as the original Jump. Never
+   * replay a legacy Square/West Confirm/Skip stored in profile v2. */
+  confirm=spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,0u);
   back=profile->context[SPIDER_SDL3_CONTEXT_BACK];
+  /* Existing v2 profiles may have Back=South with a former Square
+   * Confirm: transparently revert Back to native Circle/B (East). */
+  if(spider_sdl3_binding_equal(back,confirm))
+    back=spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,1u);
   if(instance!=state->instance || vid!=state->vid || pid!=state->pid ||
      context!=state->context ||
      !spider_sdl3_binding_equal(confirm,state->confirm_binding) ||
