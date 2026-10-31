@@ -398,6 +398,10 @@ int SpiderSDL3Probe_SetupRead(unsigned slot,uint32_t *instance_id,
   if(!sdl_vendor(id) || !sdl_product(id))return 0;
   for(i=0;i<SPIDER_SDL3_BUTTON_COUNT;i++)
     if(sdl_button(handle,(int)i))sample->buttons|=1u<<i;
+  /* The setup modal alone uses the left stick for safe UI navigation.
+   * The native game and read-only on-Flip sample stay unchanged. */
+  sample->axis[SPIDER_SDL3_AXIS_LEFTX]=sdl_axis(handle,SPIDER_SDL3_AXIS_LEFTX);
+  sample->axis[SPIDER_SDL3_AXIS_LEFTY]=sdl_axis(handle,SPIDER_SDL3_AXIS_LEFTY);
   sample->axis[SPIDER_SDL3_AXIS_LT]=sdl_axis(handle,SPIDER_SDL3_AXIS_LT);
   sample->axis[SPIDER_SDL3_AXIS_RT]=sdl_axis(handle,SPIDER_SDL3_AXIS_RT);
   if(instance_id)*instance_id=id;
