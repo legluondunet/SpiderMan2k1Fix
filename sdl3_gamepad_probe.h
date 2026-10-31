@@ -44,6 +44,9 @@ SpiderSDL3ControllerProfile *SpiderSDL3Probe_SetupProfile(uint16_t vid,uint16_t 
  * in-memory profile stays unchanged; game-owned DirectInput untouched. */
 int SpiderSDL3Probe_SetupCommit(const SpiderSDL3ControllerProfile *candidate);
 int SpiderSDL3Probe_SetupPump(void);
+/* After the modal window closes, invalidate Start edges sampled while
+ * gameplay Flip was suspended. Preserve the actual gamepad owner. */
+void SpiderSDL3Probe_SetupModalReturn(void);
 unsigned SpiderSDL3Probe_SetupCount(void);
 int SpiderSDL3Probe_SetupRead(unsigned slot,uint32_t *instance_id,
     uint16_t *vid,uint16_t *pid,char *name,size_t capacity,
