@@ -379,6 +379,15 @@ static volatile LONG debug_f10_cutscene_skip_owner=0;
 static volatile LONG f10_verbose_trace=0;
 /* Narrow, independent 3D-cutscene DirectInput reader diagnostics. OFF by default. */
 static volatile LONG sdl3_cutscene_reader_trace=0;
+/* SDL3 physical South/Cross=0, West/Square=2. Read-only timestamps. */
+static volatile LONG sdl3_cutscene_sample_ms=0;
+static volatile LONG sdl3_cutscene_button_bits=0;
+static volatile LONG sdl3_cutscene_edge_bits=0;
+static volatile LONG sdl3_cutscene_edge_ms=0;
+static volatile LONG sdl3_cutscene_sample_instance=0;
+static volatile LONG sdl3_cutscene_sample_vidpid=0;
+static volatile LONG sdl3_cutscene_sample_armed=0;
+static volatile LONG sdl3_cutscene_edge_reports=0;
 static volatile LONG debug_intro_generation=0;
 static volatile LONG debug_lifecycle_generation=-1;
 static volatile LONG debug_newgame_3d_first_ms=0;
@@ -445,6 +454,55 @@ static void say(const char *msg) {
 
 int SpiderQuickExitF12_Enabled(void) {
   return InterlockedCompareExchange(&enabled,0,0)==1;
+}
+/* Called from selected SDL3 OnFlip AFTER native-DirectInput owner proof.
+ * Same game thread as original 3D owner. Neutral->fresh-press only.
+ * No DirectInput/SDL calls or game state writes. */
+void SpiderQuickExitF12_CutscenePhysicalSample(
+    unsigned instance,unsigned vendor,unsigned product,
+    unsigned physical_buttons,int selected_owner_valid) {
+  const LONG wanted=(LONG)(physical_buttons&0x05u);
+  const LONG identity=(LONG)(((vendor&0xffffu)<<16)|(product&0xffffu));
+  const DWORD now=GetTickCount();
+  LONG previous,prior_instance,prior_identity,fresh;
+  char line[240];
+  if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)!=1)return;
+  if(!selected_owner_valid || !instance || !vendor || !product) {
+    InterlockedExchange(&sdl3_cutscene_sample_ms,0);
+    InterlockedExchange(&sdl3_cutscene_edge_ms,0);
+    InterlockedExchange(&sdl3_cutscene_edge_bits,0);
+    InterlockedExchange(&sdl3_cutscene_sample_armed,0);
+    InterlockedExchange(&sdl3_cutscene_button_bits,0);
+    InterlockedExchange(&sdl3_cutscene_sample_instance,0);
+    InterlockedExchange(&sdl3_cutscene_sample_vidpid,0);
+    return;
+  }
+  prior_instance=InterlockedCompareExchange(&sdl3_cutscene_sample_instance,0,0);
+  prior_identity=InterlockedCompareExchange(&sdl3_cutscene_sample_vidpid,0,0);
+  if(prior_instance!=(LONG)instance || prior_identity!=identity) {
+    InterlockedExchange(&sdl3_cutscene_sample_armed,0);
+    InterlockedExchange(&sdl3_cutscene_edge_ms,0);
+    InterlockedExchange(&sdl3_cutscene_edge_bits,0);
+    InterlockedExchange(&sdl3_cutscene_button_bits,0);
+  }
+  InterlockedExchange(&sdl3_cutscene_sample_instance,(LONG)instance);
+  InterlockedExchange(&sdl3_cutscene_sample_vidpid,identity);
+  previous=InterlockedExchange(&sdl3_cutscene_button_bits,wanted);
+  InterlockedExchange(&sdl3_cutscene_sample_ms,(LONG)now);
+  if(!InterlockedCompareExchange(&sdl3_cutscene_sample_armed,0,0)) {
+    if(!wanted)InterlockedExchange(&sdl3_cutscene_sample_armed,1);
+    return;
+  }
+  fresh=wanted&~previous;
+  if(!fresh)return;
+  InterlockedExchange(&sdl3_cutscene_edge_bits,fresh);
+  InterlockedExchange(&sdl3_cutscene_edge_ms,(LONG)now);
+  if(InterlockedIncrement(&sdl3_cutscene_edge_reports)>24)return;
+  snprintf(line,sizeof(line),
+    "SDL3-CUTSCENE-EDGE: instance=%lu VID:PID=%04lX:%04lX physical-fresh=0x%02lX physical-held=0x%02lX ms=%lu [SOUTH=CROSS 0x01, WEST=SQUARE 0x04; ORIGINAL INPUT UNTOUCHED]",
+    (unsigned long)instance,(unsigned long)vendor,(unsigned long)product,
+    (unsigned long)fresh,(unsigned long)wanted,(unsigned long)now);
+  say(line);
 }
 
 void SpiderQuickExitF12_AttachWindow(HWND hwnd) {
@@ -743,6 +801,39 @@ static void __cdecl spider_movie4_safety_only_game_input(void) {
  * instruction made the native skip request: a short-lived request can
  * already have been consumed elsewhere in the original engine tick.
  * No game-owned memory is changed. */
+/* Bounded ORIGINAL-owner pre/post snapshots around selected controller
+ * Cross/Square edges, even when native state remains unchanged.
+ * Correlation only: not evidence identifying the original skip writer. */
+static void spider_trace_sdl3_cutscene_edge_window(
+    unsigned after,DWORD owner,unsigned context,unsigned allowed,
+    unsigned active,unsigned request,DWORD ip) {
+  static DWORD last_emit[2]={0u,0u};
+  static unsigned reports=0u;
+  DWORD now=GetTickCount();
+  DWORD edge=(DWORD)InterlockedCompareExchange(&sdl3_cutscene_edge_ms,0,0);
+  DWORD sample=(DWORD)InterlockedCompareExchange(&sdl3_cutscene_sample_ms,0,0);
+  DWORD edge_bits=(DWORD)InterlockedCompareExchange(&sdl3_cutscene_edge_bits,0,0);
+  DWORD physical=(DWORD)InterlockedCompareExchange(&sdl3_cutscene_button_bits,0,0);
+  DWORD instance=(DWORD)InterlockedCompareExchange(&sdl3_cutscene_sample_instance,0,0);
+  DWORD vidpid=(DWORD)InterlockedCompareExchange(&sdl3_cutscene_sample_vidpid,0,0);
+  char line[360];
+  if(reports>=64u || !edge || !sample || !edge_bits || !instance ||
+     (DWORD)(now-edge)>350u || (DWORD)(now-sample)>125u ||
+     (last_emit[after] && (DWORD)(now-last_emit[after])<30u) ||
+     context!=1u || active!=1u || !ip)return;
+  last_emit[after]=now;
+  ++reports;
+  snprintf(line,sizeof(line),
+    "SDL3-CUTSCENE-EDGE-OWNER: boundary=%s owner=0x%08lX instance=%lu VID:PID=%04lX:%04lX edge=0x%02lX held=0x%02lX age_ms=%lu allow=%u active=%u request=%u script_ip=0x%08lX ms=%lu [ORIGINAL 0x440EF0 UNCHANGED; CORRELATION ONLY]",
+    after?"after-0x440EF0":"before-0x440EF0",
+    (unsigned long)owner,(unsigned long)instance,
+    (unsigned long)((vidpid>>16)&0xffffu),
+    (unsigned long)(vidpid&0xffffu),
+    (unsigned long)edge_bits,(unsigned long)physical,
+    (unsigned long)(DWORD)(now-edge),allowed,active,request,
+    (unsigned long)ip,(unsigned long)now);
+  say(line);
+}
 static void spider_trace_sdl3_native_cutscene_boundary(unsigned after) {
   static DWORD last_snapshot[2]={0xffffffffu,0xffffffffu};
   static DWORD last_owner[2]={0xffffffffu,0xffffffffu};
@@ -771,6 +862,8 @@ static void spider_trace_sdl3_native_cutscene_boundary(unsigned after) {
   context=obj[0x1acu];allowed=obj[0x1a4u];active=obj[0x1b4u];
   ip=*(const volatile DWORD *)(address+0x1b8u);
   request=*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST;
+  spider_trace_sdl3_cutscene_edge_window(after,owner,context,allowed,
+                                          active,request,ip);
   packed=(context&0xffu)|((allowed&0xffu)<<8)|
          ((active&0xffu)<<16)|((request&0xffu)<<24);
   if(last_owner[after]==owner && last_snapshot[after]==packed)return;
