@@ -144,19 +144,6 @@ static int pause_wake_retry_logged=0;
 static unsigned pause_wake_notacquired_attempts=0;
 static IDirectInput8A *di=NULL;
 static IDirectInputDevice8A *device=NULL;
-/* No COM operations while the owned SDL3 setup dialog is on the stack.
- * A modal return can leave a foreground-only, nonexclusive secondary DI8
- * handle DIERR_NOTACQUIRED even though the USB pad is still connected.
- * The exact HWND+COM identity and selected native owner must STILL match
- * on the next foreground Flip before a one-time Acquire is permitted. */
-static HWND modal_reacquire_hwnd=NULL;
-static IDirectInputDevice8A *modal_reacquire_device=NULL;
-static int modal_reacquire_pending=0;
-static void modal_reacquire_disarm(void) {
-  modal_reacquire_pending=0;
-  modal_reacquire_hwnd=NULL;
-  modal_reacquire_device=NULL;
-}
 static HMODULE di_module=NULL;
 static void (*log_message)(const char *)=NULL;
 
@@ -424,7 +411,6 @@ static void disable_profile_with_policy(const char *reason,
                                         int already_inputlost) {
   release_active_key();
   spider_sdl3_context_menu_reset(&sdl3_context_bridge);
-  modal_reacquire_disarm();
   xbox_rt_swing_release("secondary controller disabled");
   xbox_rt_swing_prev_physical=0;
   if(device) {
@@ -573,32 +559,29 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
 /* Called on the ORIGINAL game/menu thread after the owned setup HWND
  * has been destroyed, never while the modal dialog is pumping messages.
  * Do not Acquire/Release the original game's game-owned DI8 handle. */
+/* The setup dialog has already been destroyed and its message loop has
+ * exited. Our separate DISCL_FOREGROUND device will lose Acquire when
+ * ownership returns to the desktop. Release it here BEFORE the next
+ * foreground GetDeviceState; never Acquire a device that returned
+ * INPUTLOST, and never touch the original game's DirectInput COM object. */
 void SpiderGamepadUI_AfterControllerSetup(HWND game_window) {
-  uint16_t vid=0,pid=0;
-  uint32_t instance=0;
-  modal_reacquire_disarm();
   release_active_key();
   xbox_rt_swing_release("SDL3 setup dialog closed");
   spider_sdl3_context_menu_reset(&sdl3_context_bridge);
-  /* Invalidate input edge history before returning to the native game.
-   * An active face button from capture must never become menu Return. */
   previous_buttons=0;previous_back=0;previous_pause=0;
   previous_share=0;previous_native_start=0;
   xbox_previous_mask=0;
   spider_ds4_hotplug_focus_lost(&hotplug);
-  if(!configured || !detected || !device ||
-     !game_window || !IsWindow(game_window) ||
-     !SpiderSDL3Probe_NativeOwnerEnabled() ||
-     !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&instance) ||
-     instance!=sdl3_ui_instance ||
-     !SpiderNativeReconnect_SDL3SelectionReady(vid,pid)) {
-    report("SDL3-SETUP: post-modal secondary UI DI reacquire NOT ARMED (no verified matching native owner; keyboard preserved)");
-    return;
+  if(!configured || !game_window || !IsWindow(game_window) ||
+     !SpiderSDL3Probe_NativeOwnerEnabled())return;
+  if(device) {
+    disable_profile_with_policy(
+      "SDL3-SETUP: retired separate foreground-only UI DirectInput device after modal; rediscover on next foreground Flip (no stale Acquire)",
+      0);
+    sdl3_ui_instance=0;
+    probing=0;
+    hotplug.scan_started=0u;
   }
-  modal_reacquire_device=device;
-  modal_reacquire_hwnd=game_window;
-  modal_reacquire_pending=1;
-  report("SDL3-SETUP: post-modal secondary UI DI reacquire ARMED, next foreground Flip only (DIERR_NOTACQUIRED only; no native COM mutation)");
 }
 static void detect_device(HWND hwnd) {
   SpiderDIDiscovery d;
@@ -1361,6 +1344,21 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     previous_share=0;
     previous_native_start=0;
     spider_ds4_hotplug_focus_lost(&hotplug);
+    /* This is our own nonexclusive DISCL_FOREGROUND UI handle, NOT the
+     * retail game's joystick. While SDL3 owns the native input identity,
+     * retire it ONCE at actual focus loss, rather than letting Windows
+     * invalidate it and reading DIERR_INPUTLOST upon return. Do not try
+     * to Acquire a stale device in this frame. Fresh discovery happens
+     * only on a foreground Flip, after SDL3/native owner verification. */
+    if(SpiderSDL3Probe_NativeOwnerEnabled() && device &&
+       sdl3_ui_instance!=0u) {
+      disable_profile_with_policy(
+        "GAMEPAD-FOCUS: retired separate foreground-only UI DirectInput on focus loss; fresh foreground discovery required",
+        0);
+      sdl3_ui_instance=0;
+      probing=0;
+      hotplug.scan_started=0u;
+    }
     return;
   }
   /* An SDL3 selected canonical native map is equivalent to the original
@@ -1446,43 +1444,10 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   memset(&state,0,sizeof(state));
   hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);
   if(FAILED(hr)) {
-    /* A modal dialog can unacquire our SEPARATE nonexclusive UI handle.
-     * Only DIERR_NOTACQUIRED permits a single foreground Acquire, solely
-     * for that same pointer and HWND still owned by the selected SDL pad.
-     * Never Acquire on INPUTLOST, UNPLUGGED, unexpected errors, or an
-     * unknown/hot-swapped device, and never read again in this frame. */
-    if(modal_reacquire_pending) {
-      uint16_t selected_vid=0,selected_pid=0;
-      uint32_t selected_id=0;
-      int permitted=hr==DIERR_NOTACQUIRED &&
-        modal_reacquire_device==device && modal_reacquire_hwnd==hwnd &&
-        SpiderSDL3Probe_NativeOwnerEnabled() &&
-        SpiderSDL3Probe_SelectedIdentity(&selected_vid,&selected_pid,
-                                         &selected_id) &&
-        selected_id==sdl3_ui_instance &&
-        SpiderNativeReconnect_SDL3SelectionReady(selected_vid,selected_pid);
-      modal_reacquire_disarm(); /* one attempt MAX, even on failure */
-      if(permitted) {
-        HRESULT acquire_hr=IDirectInputDevice8_Acquire(device);
-        char line[205];
-        snprintf(line,sizeof(line),
-          "SDL3-SETUP: post-modal secondary DIERR_NOTACQUIRED -> single foreground Acquire=0x%08lX; next Flip neutral-first; native joystick unchanged",
-          (unsigned long)acquire_hr);
-        report(line);
-        previous_buttons=0;previous_back=0;previous_pause=0;
-        previous_share=0;previous_native_start=0;
-        xbox_previous_mask=0;
-        spider_sdl3_context_menu_reset(&sdl3_context_bridge);
-        spider_ds4_hotplug_focus_lost(&hotplug);
-        if(SUCCEEDED(acquire_hr)) {
-          bad_reads=0; /* valid foreground device, not a hot-unplug */
-          return;
-        }
-        /* A failed Acquire is NOT retried, then use the existing strict
-         * stale-device failure policy below without hiding errors. */
-      } else
-        report("SDL3-SETUP: post-modal UI reacquire REFUSED (not NOTACQUIRED, changed device, focus or native owner); original fail-safe");
-    }
+    /* No modal special-case Acquire. Even DIERR_NOTACQUIRED or
+     * DIERR_INPUTLOST here means the independent handle became invalid
+     * unexpectedly: drop it safely and rediscover, never Acquire stale
+     * COM after failed GetDeviceState. */
     ps1_history_record(SPIDER_PS1_HISTORY_READ_FAILED,native_request,
       menu_2d,gameplay_3d,bink_active,native_pause_active,
       (unsigned)previous_buttons,NULL);
@@ -1516,12 +1481,6 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     return;
   }
   bad_reads=0;
-  if(modal_reacquire_pending) {
-    /* The existing acquired handle still works after the dialog; no
-     * speculative Acquire and no stale pending modal state. */
-    modal_reacquire_disarm();
-    report("SDL3-SETUP: secondary UI DirectInput survived modal; no Acquire needed");
-  }
   if(sdl3_3d_trace_requested && SpiderSDL3Probe_NativeOwnerEnabled()) {
     if(gameplay_3d && !menu_2d && !bink_active && !native_pause_active)
       sdl3_trace_3d_readonly(&state);
