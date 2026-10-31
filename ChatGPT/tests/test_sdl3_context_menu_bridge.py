@@ -91,7 +91,9 @@ def test_sdl3_context_menu_bridge_native_gating_and_edges(tmp_path):
           SPIDER_SDL3_CONTEXT_CONFIRM,
           spider_sdl3_bind(SPIDER_SDL3_BIND_TRIGGER,SPIDER_SDL3_AXIS_LT)));
         s.axis[SPIDER_SDL3_AXIS_LT]=20000;
-        assert(STEP(&xbox,&s,3,0x045e,0x028e,MENU,1)==WAIT);
+        /* Stored v2 Confirm changes no longer alter live binding or
+           rearm the already neutral-selected South button. */
+        assert(STEP(&xbox,&s,3,0x045e,0x028e,MENU,1)==NO);
         s.axis[SPIDER_SDL3_AXIS_LT]=0;
         assert(STEP(&xbox,&s,3,0x045e,0x028e,MENU,1)==NO);
         s.axis[SPIDER_SDL3_AXIS_LT]=15000;
