@@ -61,8 +61,8 @@ def test_sdl3_context_menu_bridge_native_gating_and_edges(tmp_path):
         assert(STEP(&sony,&s,1,0x054c,0x09cc,MENU,1)==NO);
         s.buttons=3u;
         assert(STEP(&sony,&s,1,0x054c,0x09cc,MENU,1)==NO);
-        /* 2D menu -> Bink requires a fresh neutral; a held button is not
-           inherited. Legacy v2 video mapping can differ from menu. */
+        /* 2D menu -> Bink requires fresh neutral. Legacy v2 SkipVideo
+           must NOT change the natural South/Cross/A confirmation. */
         assert(spider_sdl3_profile_assign_context(&sony,
           SPIDER_SDL3_CONTEXT_SKIP_VIDEO,
           spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,3)));
@@ -70,6 +70,8 @@ def test_sdl3_context_menu_bridge_native_gating_and_edges(tmp_path):
         s.buttons=0;
         assert(STEP(&sony,&s,1,0x054c,0x09cc,VIDEO,1)==WAIT);
         s.buttons=(1u<<3);
+        assert(STEP(&sony,&s,1,0x054c,0x09cc,VIDEO,1)==NO);
+        s.buttons=1u;
         assert(STEP(&sony,&s,1,0x054c,0x09cc,VIDEO,1)==C);
         assert(STEP(&sony,&s,1,0x054c,0x09cc,VIDEO,1)==NO);
         s.buttons=0;
@@ -83,24 +85,22 @@ def test_sdl3_context_menu_bridge_native_gating_and_edges(tmp_path):
         assert(STEP(&sony,&s,2,0x054c,0x09cc,MENU,0)==REF);
         s.buttons=0;
         assert(STEP(&xbox,&s,3,0x045e,0x028e,MENU,1)==WAIT);
-        /* A profile edit while in the UI must force a neutral rearm. */
+        /* Even migrated profiles with LT Confirm must not produce
+           Return from LT: South/A stays the only confirmation. */
         assert(spider_sdl3_profile_assign_context(&xbox,
           SPIDER_SDL3_CONTEXT_CONFIRM,
           spider_sdl3_bind(SPIDER_SDL3_BIND_TRIGGER,SPIDER_SDL3_AXIS_LT)));
         s.axis[SPIDER_SDL3_AXIS_LT]=20000;
         assert(STEP(&xbox,&s,3,0x045e,0x028e,MENU,1)==WAIT);
         s.axis[SPIDER_SDL3_AXIS_LT]=0;
-        assert(STEP(&xbox,&s,3,0x045e,0x028e,MENU,1)==WAIT);
-        s.axis[SPIDER_SDL3_AXIS_LT]=15000;
-        assert(STEP(&xbox,&s,3,0x045e,0x028e,MENU,1)==C);
-        s.axis[SPIDER_SDL3_AXIS_LT]=6000;
-        assert(STEP(&xbox,&s,3,0x045e,0x028e,MENU,1)==NO);
-        s.axis[SPIDER_SDL3_AXIS_LT]=4999;
         assert(STEP(&xbox,&s,3,0x045e,0x028e,MENU,1)==NO);
         s.axis[SPIDER_SDL3_AXIS_LT]=15000;
+        assert(STEP(&xbox,&s,3,0x045e,0x028e,MENU,1)==NO);
+        s.axis[SPIDER_SDL3_AXIS_LT]=0;
+        s.buttons=1u;
         assert(STEP(&xbox,&s,3,0x045e,0x028e,MENU,1)==C);
-        s.axis[SPIDER_SDL3_AXIS_LT]=-1;
-        assert(STEP(&xbox,&s,3,0x045e,0x028e,MENU,1)==REF);
+        s.buttons=0;
+        assert(STEP(&xbox,&s,3,0x045e,0x028e,MENU,1)==NO);
         /* Mutating the profile's identity or invalid reserved button can
            never result in live synthetic input. */
         invalid=xbox;
@@ -130,11 +130,12 @@ def test_live_context_bridge_is_explicitly_opted_in_and_single_owner():
     assert "id==sdl3_ui_instance" in source
     assert "spider_sdl3_context_menu_step(&sdl3_context_bridge" in source
     assert "spider_sdl3_profile_neutral(sample)" in header
-    assert "SPIDER_SDL3_CONTEXT_SKIP_VIDEO" in header
-    assert "SPIDER_SDL3_CONTEXT_CONFIRM" in header
+    assert "confirm=spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,0u);" in header
+    assert "SPIDER_SDL3_CONTEXT_SKIP_VIDEO" not in header
+    assert "SPIDER_SDL3_CONTEXT_CONFIRM" not in header
     assert "SPIDER_SDL3_CONTEXT_NEXT_STILL" not in header
     assert "SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE" not in header
-    assert 'begin_scancode(0x1Cu,"SDL3 profile Confirm/Skip")' in source
+    assert 'begin_scancode(0x1Cu,"SDL3 physical Cross/A Confirm/Skip")' in source
     assert 'begin_scancode(0x01u,"SDL3 profile Back/Cancel")' in source
     assert "sdl3_context_bridge_requested && SpiderSDL3Probe_NativeOwnerEnabled()" in source
     assert "bink_active || (menu_2d && !gameplay_3d)" in source
