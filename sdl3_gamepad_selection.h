@@ -93,7 +93,7 @@ static int spider_sdl3_selection_start_edge(SpiderSDL3Selection *s,uint32_t id,
 
 /* The original game's one-player takeover policy is unchanged: callers
  * only see a claim if the selected instance actually changed. */
-static int spider_sdl3_selection_start(SpiderSDL3Selection *s,uint32_t id,
+static inline int spider_sdl3_selection_start(SpiderSDL3Selection *s,uint32_t id,
                                        int pressed) {
   uint32_t old=s?s->active:0u;
   return spider_sdl3_selection_start_edge(s,id,pressed) &&
