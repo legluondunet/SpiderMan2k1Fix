@@ -3,8 +3,8 @@
  * An independent, additionally opt-in DS4-only runtime module may apply
  * seven verified SDL3 physical bindings via the game's existing canonical
  * 14-slot native DirectInput map (not the SDL3 axis index). Known DS4
- * LT/RT translate to native physical buttons 6/7; unknown SDL buttons
- * or Xbox triggers cause an atomic refusal, not a guessed injection.
+ * R2 translates to native physical BUTTON7; L2, POV and any unknown SDL
+ * buttons or Xbox triggers cause atomic refusal, not a guessed injection.
  * The eighth action Pause uses the existing one-frame Escape key owner.
  * This module preserves the old read-only trace regardless of live mode.
  */
