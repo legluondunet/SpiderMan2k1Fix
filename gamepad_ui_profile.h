@@ -43,4 +43,7 @@ void SpiderGamepadUI_ArmXbox360ReadOnly(void);
 void SpiderGamepadUI_AfterControllerSetup(HWND game_window);
 void SpiderGamepadUI_OnFlip(HWND game_window,int menu_2d,int gameplay_3d,
                              int native_bink_active,int native_pause_active);
+/* Eighth opt-in SDL3 semantic action: bounded 3D native Escape pulse.
+ * The seven gameplay actions still use the original DI8 joystick. */
+void SpiderGamepadUI_SDL3GameplayPause(HWND game_window);
 #endif
