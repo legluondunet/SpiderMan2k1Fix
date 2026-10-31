@@ -237,7 +237,9 @@ static void swap_native_gameplay_mapping(unsigned to_kind) {
   uint32_t current[SPIDER_PS1_BUTTON_COUNT]={0};
   MEMORY_BASIC_INFORMATION mbi;
   DWORD prot,old,unused;
-  unsigned preset,i;
+  unsigned preset,i,xbox_sdl3_rt=0;
+  uint16_t selected_vid=0,selected_pid=0;
+  uint32_t selected_id=0;
   char line[215];
   if(!swap_mapping_enabled || (to_kind!=SPIDER_RECONNECT_DS4 &&
      to_kind!=SPIDER_RECONNECT_XBOX360))return;
@@ -277,12 +279,24 @@ static void swap_native_gameplay_mapping(unsigned to_kind) {
       return;
     }
   }
-  if(preset==to_kind) {
+  /* In verified SDL3-native-owner mode, this exact wired Xbox model has
+   * ten DI buttons and separately measured SDL3 RT.  Keep its native
+   * Swing action UNBOUND (original table's 0x4000 sentinel): a left/right
+   * stick click must never act as the RT trigger.  Every other driver /
+   * legacy profile retains the original BUTTON9 fallback. */
+  xbox_sdl3_rt=to_kind==SPIDER_RECONNECT_XBOX360 &&
+    SpiderSDL3Probe_NativeOwnerEnabled() &&
+    SpiderSDL3Probe_SelectedIdentity(&selected_vid,&selected_pid,
+                                      &selected_id) &&
+    selected_id!=0u && selected_vid==0x045eu && selected_pid==0x028eu &&
+    *(const volatile DWORD *)(uintptr_t)SPIDER_NATIVE_BUTTON_COUNT==10u;
+  target=to_kind==SPIDER_RECONNECT_DS4?spider_ps1_buttons:
+         xbox_sdl3_rt?spider_xbox360_buttons_sdl3_rt:
+                      spider_xbox360_buttons;
+  if(preset==to_kind && memcmp(current,target,sizeof(current))==0) {
     report("NATIVE-SWAP: profile already matches newly acquired pad; no RAM write");
     return;
   }
-  target=to_kind==SPIDER_RECONNECT_DS4?
-      spider_ps1_buttons:spider_xbox360_buttons;
   for(i=0;i<SPIDER_PS1_BUTTON_COUNT;i++)original[i]=current[i];
   if(!VirtualProtect((void *)address,0x70u,PAGE_READWRITE,&old)) {
     report("NATIVE-SWAP: REFUSED cannot protect native mapping table for write");
