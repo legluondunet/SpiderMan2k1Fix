@@ -198,14 +198,21 @@ In-game workflow:
    the window if not capturing); `F1` repeats the help text.
    `Tab` and `Space` continue to operate the native Win32 controls,
    and `Enter` activates focused Restore/Close buttons.
-   A mapped gamepad can navigate too: **D-pad Up/Down** changes the
-   action, **South (A/Cross)** starts capture, **East (B/Circle)**
-   closes the preview, **LB/RB (L1/R1)** switches between connected
-   mapped gamepads, and **North (Y/Triangle)** restores the current
-   model defaults. Physical navigation requires a first neutral
-   sample, is edge-triggered (no repeated action on held buttons),
-   discards simultaneous/Start/Guide presses, and suspends while a
-   button is being captured. A keyboard is always a fallback.
+   A mapped gamepad can navigate too: **D-pad Up/Down or left stick
+   Up/Down** changes the selected action; **left stick Left/Right or
+   LB/RB (L1/R1)** switches between connected SDL3 mapped gamepads
+   and updates the combo box selection (with only one connected pad,
+   selection remains unchanged). **South (A/Cross)** starts capture;
+   **East (B/Circle)** closes the preview; **North (Y/Triangle)**
+   restores the current model defaults. The left stick never
+   selects Capture/Restore/Close and is not bound as a 3D action.
+   Analog movement has a 19000 press / 9000 release threshold to
+   reject drift. Physical navigation requires a first neutral and
+   centered stick sample, fires only once per tilt or button edge
+   (recenter before moving again), rejects simultaneous/diagonal
+   movements and Start/Guide, and suspends during capture. A
+   keyboard is always a fallback. Native 3D stick movement is
+   untouched; only the setup window reads the analog axes.
 6. The window pumps only the **already initialized** SDL3 subsystem
    on the **same game thread**, while the normal Flip loop is stopped.
    It never consumes game-owned DirectInput events, claims SDL native
