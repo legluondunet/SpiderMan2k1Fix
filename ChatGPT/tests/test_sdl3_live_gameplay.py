@@ -95,7 +95,7 @@ def test_live_native_owner_never_double_injects_seven_gameplay_actions():
     assert 'SPIDER_GAMEPLAY_NATIVE_TABLE ((uintptr_t)0x00568408u)' in live
     assert "SPIDER_GAMEPLAY_NATIVE_DEVICE ((uintptr_t)0x006B7A2Cu)" in live
     assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in live
-    assert "SpiderSDL3Probe_MappedCount()!=1u" in live
+    assert "SpiderSDL3Probe_MappedCount()==0u" in live
     assert "native_read(current) && same7(current,mapped)" in live
     assert "!same7(current,spider_ps1_buttons)" in live
     assert "spider_sdl3_native_ds4_seven(profile,desired)" in live
@@ -147,7 +147,7 @@ def test_native_pause_keeps_eighth_edge_exclusive_with_no_duplicate_legacy_escap
     assert "int SpiderSDL3GameplayLive_OwnsPause(void)" in live
     owns=live.split("int SpiderSDL3GameplayLive_OwnsPause(void)",1)[1].split(
         "void SpiderSDL3GameplayLive_Init(",1)[0]
-    assert "SpiderSDL3Probe_MappedCount()==1u" in owns
+    assert "SpiderSDL3Probe_MappedCount()>0u" in owns
     assert "SpiderSDL3Probe_SelectedIdentity(" in owns
     assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in owns
     assert "return enabled && applied" not in owns
