@@ -37,7 +37,7 @@ enum {
   SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE,
   SPIDER_SDL3_CONTEXT_COUNT=5,
   SPIDER_SDL3_SETUP_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT+SPIDER_SDL3_CONTEXT_COUNT,
-  SPIDER_SDL3_VISIBLE_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT+2,
+  SPIDER_SDL3_VISIBLE_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT+1,
   SPIDER_SDL3_PROFILE_BANK_CAPACITY=16,
   SPIDER_SDL3_BUTTON_COUNT=21,
   SPIDER_SDL3_AXIS_COUNT=6,
@@ -210,10 +210,11 @@ static inline SpiderSDL3Binding spider_sdl3_profile_setup_binding(
     return p->context[action-SPIDER_SDL3_ACTION_COUNT];
   return spider_sdl3_bind(SPIDER_SDL3_BIND_NONE,0);
 }
-/* Two visible menu/media commands backed by the existing five v2 INI
- * keys. Loading an older v2 with different skip keys MUST NOT rewrite it
- * or quietly unify settings. Only an explicit Confirm / Skip capture
- * synchronizes all four context actions. */
+/* Legacy v2 context fields are retained for lossless profile parsing.
+ * Menu/movie Confirm/Skip is now fixed to the original South (Cross/A),
+ * and 3D scripted scenes remain game-native. Existing custom context
+ * entries are not silently rewritten, but their Confirm/Skip values have
+ * no runtime effect. */
 static inline int spider_sdl3_profile_shared_confirm_binding(
     const SpiderSDL3ControllerProfile *p,SpiderSDL3Binding *binding) {
   static const unsigned keys[4]={
@@ -284,10 +285,12 @@ static inline int spider_sdl3_profile_assign_visible(
     SpiderSDL3Binding binding) {
   if(action<SPIDER_SDL3_ACTION_COUNT)
     return spider_sdl3_profile_assign(p,action,binding);
-  if(action==SPIDER_SDL3_ACTION_COUNT)
-    return spider_sdl3_profile_assign_confirm_skip(p,binding);
-  if(action==SPIDER_SDL3_ACTION_COUNT+1u)
+  if(action==SPIDER_SDL3_ACTION_COUNT) {
+    /* South/Cross/A must remain available for native Confirm/Skip;
+     * a legacy Back=South profile is handled by the runtime East fallback. */
+    if(binding.kind==SPIDER_SDL3_BIND_BUTTON && binding.index==0u)return 0;
     return spider_sdl3_profile_assign_back(p,binding);
+  }
   return 0;
 }
 static inline void spider_sdl3_bank_reset(SpiderSDL3ProfileBank *bank) {
