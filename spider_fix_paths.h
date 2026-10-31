@@ -158,14 +158,37 @@ static inline int spider_path_ini_a(char *out,size_t cap) {
   }
   return 0;
 }
+/* Keep the diagnostic log beside SpideyPC.exe, independently of the INI
+ * location (the INI and DLL remain in SpiderMan2k1Fix/).
+ * A read-only game installation cannot write the root log: fall back to
+ * LOCALAPPDATA\\SpiderMan2k1Fix, without moving/deleting an older log.
+ * Both winmm proxy and core call this same resolver, so their lines cannot
+ * diverge into separate files in a given process. Reject reparse points. */
 static inline int spider_path_log_a(char *out,size_t cap) {
-  char ini[MAX_PATH],*slash;
-  if(!spider_path_ini_a(ini,sizeof(ini)))return 0;
-  slash=strrchr(ini,'\\');
-  if(!slash)return 0;
-  strcpy(slash+1,"SpiderMan2k1Fix.log");
-  if(strlen(ini)+1u>cap)return 0;
-  strcpy(out,ini);
+  char exe[MAX_PATH],game[MAX_PATH],local[MAX_PATH],target[MAX_PATH];
+  DWORD attr;
+  if(!out || !cap || !spider_path_exe_dir_a(exe,sizeof(exe)) ||
+     !spider_path_join_a(target,sizeof(target),exe,"SpiderMan2k1Fix.log"))
+    return 0;
+  attr=GetFileAttributesA(target);
+  if(spider_path_dir_a(exe,0) &&
+     ((attr!=INVALID_FILE_ATTRIBUTES &&
+       !(attr&(FILE_ATTRIBUTE_DIRECTORY|FILE_ATTRIBUTE_REPARSE_POINT|
+                FILE_ATTRIBUTE_READONLY))) ||
+      (attr==INVALID_FILE_ATTRIBUTES && spider_path_writable_a(exe)))) {
+    if(strlen(target)+1u>cap)return 0;
+    strcpy(out,target);return 1;
+  }
+  if(!spider_path_roots_a(game,sizeof(game),local,sizeof(local)) ||
+     !spider_path_dir_a(local,1) || !spider_path_writable_a(local) ||
+     !spider_path_join_a(target,sizeof(target),local,"SpiderMan2k1Fix.log"))
+    return 0;
+  attr=GetFileAttributesA(target);
+  if(attr!=INVALID_FILE_ATTRIBUTES &&
+     (attr&(FILE_ATTRIBUTE_DIRECTORY|FILE_ATTRIBUTE_REPARSE_POINT|
+            FILE_ATTRIBUTE_READONLY)))return 0;
+  if(strlen(target)+1u>cap)return 0;
+  strcpy(out,target);
   return 1;
 }
 /* Prefer new subfolder, accept root-only legacy installs until replaced.
