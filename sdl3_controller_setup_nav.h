@@ -2,7 +2,8 @@
  * Navigation uses reserved UI buttons and the LEFT stick only. Requiring
  * a centered stick before arming, a 19000 threshold to move, and a 9000
  * release threshold avoids drift and held-input repeated activations.
- * Stick Y = action rows, X = device selector; NEVER synthesize A/B/Y,
+ * Stick Y = action/button rows, X = focus column; LB/RB = devices.
+ * NEVER synthesize A/B/Y,
  * capture a 3D binding, reset profiles or inject keyboard input.
  * Reset on dialog focus loss, selection changes or capture transition. */
 #ifndef SPIDERMAN2K1FIX_SDL3_CONTROLLER_SETUP_NAV_H
@@ -12,7 +13,10 @@ enum {
   SPIDER_SETUP_NAV_SOUTH=0, SPIDER_SETUP_NAV_EAST=1,
   SPIDER_SETUP_NAV_NORTH=3, SPIDER_SETUP_NAV_LB=9,
   SPIDER_SETUP_NAV_RB=10, SPIDER_SETUP_NAV_UP=11,
-  SPIDER_SETUP_NAV_DOWN=12
+  SPIDER_SETUP_NAV_DOWN=12,
+  /* Virtual direction edges, not real SDL3 button IDs: 21/22 are unused
+   * above the supported 0..20 controller button range. */
+  SPIDER_SETUP_NAV_LEFT=21, SPIDER_SETUP_NAV_RIGHT=22
 };
 typedef struct {
   unsigned armed;
@@ -60,10 +64,10 @@ static inline uint32_t spider_sdl3_setup_nav_step(
     analog|=1u<<SPIDER_SETUP_NAV_UP;
   if(y>=19000 || ((old&(1u<<SPIDER_SETUP_NAV_DOWN)) && y>=9000))
     analog|=1u<<SPIDER_SETUP_NAV_DOWN;
-  if(x<=-19000 || ((old&(1u<<SPIDER_SETUP_NAV_LB)) && x<=-9000))
-    analog|=1u<<SPIDER_SETUP_NAV_LB;
-  if(x>=19000 || ((old&(1u<<SPIDER_SETUP_NAV_RB)) && x>=9000))
-    analog|=1u<<SPIDER_SETUP_NAV_RB;
+  if(x<=-19000 || ((old&(1u<<SPIDER_SETUP_NAV_LEFT)) && x<=-9000))
+    analog|=1u<<SPIDER_SETUP_NAV_LEFT;
+  if(x>=19000 || ((old&(1u<<SPIDER_SETUP_NAV_RIGHT)) && x>=9000))
+    analog|=1u<<SPIDER_SETUP_NAV_RIGHT;
   physical=(sample->buttons&accepted)|analog;
   edges=physical&~old;
   n->previous=sample->buttons|analog;
