@@ -178,11 +178,13 @@ static void select_slot(SpiderSDL3SetupUI *ui,unsigned slot) {
   spider_sdl3_setup_nav_reset(&ui->nav);
   ui->slot=slot;ui->instance=0;ui->vid=0;ui->pid=0;
   if(!SpiderSDL3Probe_SetupRead(slot,&id,&vid,&pid,name,sizeof(name),&s)) {
+    ui->modal_start.active=0;
     refresh_actions(ui);
     status(ui,"No mapped controller selected. Connect a pad or use keyboard to Close.");
     return;
   }
   ui->instance=id;ui->vid=vid;ui->pid=pid;
+  ui->modal_start.active=id; /* local chooser follows manual LB/RB too */
   refresh_actions(ui);
   snprintf(line,sizeof(line),
     "%s (%04X:%04X) - profile v2; Cross/A Confirm, Circle/B Back fixed; 3D actions autosaved.",
