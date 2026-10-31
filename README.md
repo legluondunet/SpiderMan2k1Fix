@@ -46,58 +46,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 
 Successfully tested on Windows 11 and Linux/Wine.
 
-## Experimental SDL3 live gameplay binding trial (Sony DS4 only)
-
-The SDL3 controller setup is separately validated under Windows 11, but the
-**new 3D mapping bridge has not yet been tested in live gameplay**. It
-is **OFF by default** and requires all previously enabled SDL3-selected
-native-owner guards plus one additional key in `SpiderMan2k1Fix.ini`:
-
-```ini
-[Input]
-ExperimentalSDL3Probe=1
-ExperimentalSDL3NativeOwner=1
-ExperimentalNativeJoystickUnplugGuard=1
-ExperimentalNativeJoystickReconnect=1
-ExperimentalNativeJoystickMappingSwap=1
-ExperimentalSDL3GameplayBindings=1
-
-[Debug]
-Log=1
-```
-
-Only a single, uniquely verified Sony DualShock 4
-(054C:05C4, 054C:09CC, 054C:0BA0) with the **canonical original
-seven-action native game mapping** may enter live remapping. The selected
-model's saved SDL3 profile is used. **Jump/Kick/Punch/Web/Aim/Zipline/Swing**
-are applied to the game's verified existing seven-action in-memory table
-while gameplay 3D is foreground; the native stick movement, keyboard,
-menu/Bink commands and files on disk remain unchanged. **Pause** is handled
-separately as a single fresh-press Escape via the existing gamepad UI.
-Existing keyboard Escape remains available.
-
-Only confirmed Sony physical bindings can be translated: Cross, Circle,
-Square, Triangle, Share, L1, R1 and **R2**, or their non-conflicting
-swaps. L2, D-pad/POV, stick clicks, extra buttons and Xbox models are
-**deliberately unsupported** pending hardware-index evidence; they cause
-the **entire seven-action remap to be refused**, not an invented input.
-The eight saved settings remain intact. Entering live mode requires a
-neutral physical sample. Leaving 3D, backgrounding the game, changing
-selection, encountering an unsupported mapping or losing the original
-verified owner restores the previous seven native action values when the
-table still matches the last values written by this module. Game-native
-3D cinematics retain the original skip logic; remapping Jump may affect
-which physical key triggers that original skip, so test cautiously.
-
-Suggested acceptance: first try the default profile and verify ordinary
-3D movement, R2 Swing, Share Pause and menu/Alt+Tab transitions. Then swap
-Cross and Square for Jump/Punch **in the SDL3 assistant**, return to 3D
-with all controls released, and verify that the two native 3D actions
-actually exchange. Return to the menu and verify the original button
-table is restored. Check the log for `SDL3-3D-LIVE: APPLIED`,
-`SDL3-3D-LIVE: original seven DS4 action bindings RESTORED`, or an
-explicit `REFUSED` reason. Turn the feature off again if gameplay is
-unexpected, and keep the PR unmerged pending physical validation.
+For the optional **DS4-only live 3D profile experiment** (disabled by default), activation, supported buttons, rollback and hardware-test steps, see [SDL3 native-owner research](docs/references/SDL3_NATIVE_OWNER_EXPERIMENT.md#experimental-ds4-only-live-3d-gameplay-profile).
 
 ## Bugs Resolved
 
