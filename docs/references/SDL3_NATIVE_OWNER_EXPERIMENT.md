@@ -169,6 +169,56 @@ until the separate driver-specific trigger test is validated.
 The maintainer must verify visible game response and stability, and
 test both Windows and Wine before considering acceptance.
 
+### Xbox 360 RT / stick-click correction (Windows 11 evidence, 31 Oct 2026)
+
+The maintainer's actual Windows 11 log `SpiderMan2k1Fix(20261031-171330).log`
+confirms selected Holtek `045E:028E` DirectInput device with **10 buttons**,
+active SDL3 owner and `SDL3-3D-TRACE` entries that distinguish:
+- **RT**: SDL3 RT `0..32767`, DirectInput `lZ` decreases
+  from `32767` (neutral) to `128` (full). No DirectInput digital bit
+  becomes pressed for the trigger.
+- **LT**: SDL3 LT `0..32767`, DirectInput `lZ` increases to `65408`.
+- **Stick click**: DirectInput physical `BUTTON9` (`held=0x200`)
+  appears in 3D. The former Xbox seven-action mapping had Swing=BUTTON9.
+- At test startup `GAMEPAD-XBOX360: RT-SWING OFF (default)`; that bridge
+  could not drive Swing despite correct RT input detection.
+
+**New guarded experimental behavior:**
+- With the already-required `ExperimentalSDL3Probe=1`,
+  `ExperimentalSDL3NativeOwner=1`,
+  `ExperimentalSDL3GameplayBindings=1`, and the three native
+  owner/hotplug options all `=1`, the RT-to-live-native-keyboard
+  Swing bridge defaults **ON** for verified Xbox ownership. This
+  does not turn on the legacy one-pad `ControllerXbox360RTSwing=0`.
+  Optional `[Input] ExperimentalSDL3XboxRTSwing=0` turns off the
+  new SDL3 automatic RT behavior (legacy opt-in remains separate).
+- For **exactly** native Xbox VID:PID `045E:028E` with the game-owned
+  driver reporting **exactly 10 DirectInput buttons**, native
+  Swing=BUTTON9 is replaced by the original game's known UNUSED
+  action-marker `0x4000` in the seven-action table. This avoids
+  stick-click Swing; it **does not guess** an RT DirectInput button.
+  All other Xbox models and drivers keep their previous fallback.
+- The RT bridge takes the selected SDL3 normalized axis or the
+  observed negative DirectInput lZ, checks canonical ownership,
+  reads the verified native Swing keyboard scan, and sends a
+  held press/release only in active foreground gameplay.
+  Existing focus/selection/hotplug/pause key-up guards remain.
+- The old Xbox BUTTON9 fallback is still recognized for legacy
+  profile identity and is not rewritten when SDL3 is off.
+
+**Test before merge** with Windows DS4+Xbox: enter 3D with Xbox selected,
+press left-stick click **alone** (must not swing), then RT **alone**
+(must swing while held), then LT (must not swing). Release RT and
+press Left/Right/Start without stuck Swing. Switch Xbox→DS4→Xbox,
+unplug/replug each and Alt+Tab. Confirm no accidental keyboard Swing
+after selection, focus or pause changes. Repeat Wine/Proton tests.
+Inspect `GAMEPAD-XBOX360: SDL3 RT-SWING ENABLED`,
+`NATIVE-SWAP: APPLIED`, and `RT-SWING DOWN/UP` logs. If keyboard
+injection is refused, capture `RT-SWING REFUSED` and verify the
+original live keyboard Swing binding.
+
+**This is a new candidate, not a hardware-verified correction.**
+
 ### Xbox RT → Swing compatibility check
 
 The maintainer has now reported **successful 3D gamepad switching and physical
