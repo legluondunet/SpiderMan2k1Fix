@@ -469,6 +469,7 @@ SDL3 Probe/NativeOwner/ContextBridge flags and add these keys to the *existing*
 [Debug]
 Log=1
 F10Shortcut=1
+SDL3GameplayPlan=1
 SDL3CutsceneReaderTrace=1
 ```
 
@@ -514,6 +515,25 @@ capture a request already consumed in the earlier game tick. For
 time correlation, read-only `SDL3-3D-PLAN` semantic edge records now
 include `ms=GetTickCount()`. Request writer/reader instruction-level
 attribution is still pending.
+
+**Physical-edge owner snapshot refinement:** with `SDL3GameplayPlan=1`
+the same opt-in also publishes only the selected, verified SDL3 controller's
+physical South (Cross, mask `0x01`) and West (Square, mask `0x04`) states.
+The first neutral sample is mandatory before arming a fresh press, and the
+state is cleared on focus loss, entering menus/Bink/pause, lost ownership,
+or change of controller. Fresh presses produce up to 24
+`SDL3-CUTSCENE-EDGE` lines. For 350 ms after such an edge, the same
+already-installed `0x45553B` native owner hook emits bounded
+`SDL3-CUTSCENE-EDGE-OWNER` snapshots of script context, original
+`CutSceneSkipAllow` permission and existing skip-request byte immediately
+before/after the **unchanged** `0x440EF0` update. These snapshots no longer
+require the native state or `0x50C180` return value to change, and are capped
+at 64 lines, with at most one per boundary every 30 ms and a recent (125 ms)
+foreground SDL3 sample. Only the two physical button bits and timestamps
+are passed to the diagnostic; the SDL3 profile's configured gameplay
+actions are neither overridden nor altered. All new logs are
+**correlation-only** and must not be interpreted as proof of the original
+writer.
 
 **Acceptance protocol:** during the same scripted 3D introduction,
 first leave Cross completely untouched and let a script reach
