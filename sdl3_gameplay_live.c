@@ -115,7 +115,7 @@ void SpiderSDL3GameplayLive_PreNativeOnFlip(HWND hwnd) {
   if(!enabled || !applied)return;
   if(native_thread && native_thread!=GetCurrentThreadId())return;
   if(!hwnd || GetForegroundWindow()!=hwnd ||
-     SpiderSDL3Probe_MappedCount()!=1u ||
+     SpiderSDL3Probe_MappedCount()==0u ||
      !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
      id!=owner_id || vid!=owner_vid || pid!=owner_pid ||
      *(void *volatile *)(uintptr_t)SPIDER_GAMEPLAY_NATIVE_DEVICE!=owner)
@@ -129,7 +129,7 @@ int SpiderSDL3GameplayLive_OwnsPause(void) {
    * 'applied' must NOT allow duplicate Sony SHARE/OPTIONS Escape pulses.
    * Reserve Pause for the selected, verified DS4 throughout 3D/pause. */
   return enabled && SpiderSDL3Probe_NativeOwnerEnabled() &&
-    SpiderSDL3Probe_MappedCount()==1u &&
+    SpiderSDL3Probe_MappedCount()>0u &&
     SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) &&
     id!=0u && vid==0x054cu &&
     (pid==0x05c4u || pid==0x09ccu || pid==0x0ba0u) &&
@@ -165,7 +165,7 @@ void SpiderSDL3GameplayLive_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
   if(!hwnd || !IsWindowVisible(hwnd) ||
      GetForegroundWindow()!=hwnd || menu2d || !gameplay3d || bink ||
      !SpiderSDL3Probe_NativeOwnerEnabled() ||
-     SpiderSDL3Probe_MappedCount()!=1u) {
+     SpiderSDL3Probe_MappedCount()==0u) {
     if(applied)restore("context or foreground changed");
     else disarm_pause();
     return;
