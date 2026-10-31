@@ -64,6 +64,11 @@ static int last_joystick_count=-1,last_mapped_count=-1;
 static short old_lt=-1,old_rt=-1;
 static HMODULE module=NULL;
 static DWORD sdl3_game_thread=0;
+/* Pending selection from an explicitly pressed Start while the setup modal
+ * owns the game thread. Commit only at the next foreground Flip, after
+ * verifying the same opened unique SDL3 device. Never rebind from modal. */
+static uint32_t setup_owner_pending=0;
+static uint16_t setup_owner_vendor=0,setup_owner_product=0;
 static void (*report)(const char *)=NULL;
 static SDL_InitSubSystemFn sdl_init=NULL;
 static SDL_SetMainReadyFn sdl_main_ready=NULL;
@@ -373,11 +378,25 @@ int SpiderSDL3Probe_SetupPump(void) {
   }
   return 1;
 }
-void SpiderSDL3Probe_SetupModalReturn(void) {
+void SpiderSDL3Probe_SetupModalReturn(uint32_t requested_id,
+                                      uint16_t vendor,uint16_t product) {
+  setup_owner_pending=0;
+  setup_owner_vendor=0;
+  setup_owner_product=0;
   if(!ready || !scanned || !sdl3_game_thread ||
      sdl3_game_thread!=GetCurrentThreadId())return;
+  /* Start sampled inside the dialog must never be replayed as a second
+   * normal game selection press. Its specific owner request is verified
+   * separately at the next game-owned foreground Flip. */
   spider_sdl3_selection_focus_lost(&selection);
-  say("SDL3-PROBE: SETUP RETURN Start takeover disarmed until neutral; gameplay selected-id preserved");
+  if(requested_id && vendor && product &&
+     SpiderSDL3Probe_NativeOwnerEnabled()) {
+    setup_owner_pending=requested_id;
+    setup_owner_vendor=vendor;
+    setup_owner_product=product;
+    say("SDL3-PROBE: SETUP RETURN explicit modal Start owner handoff PENDING (foreground Flip only; native DirectInput untouched)");
+  } else
+    say("SDL3-PROBE: SETUP RETURN Start takeover disarmed until neutral; gameplay selected-id preserved");
 }
 SpiderSDL3ControllerProfile *SpiderSDL3Probe_SetupProfile(uint16_t vid,uint16_t pid) {
   if(!ready || !scanned || !sdl3_game_thread ||
@@ -638,6 +657,45 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
   if(!scanned || (uint32_t)(now-last_scan)>=SPIDER_SDL_SCAN_MS) {
     last_scan=now;
     rescan();
+  }
+  /* The setup modal never rebinds the game-owned DirectInput device.
+   * On the NEXT safe foreground game Flip, validate the requested modal
+   * Start's instance and its unique VID:PID before changing SDL identity.
+   * Native reconnect subsequently verifies/rebinds the original device
+   * using its existing strict single-owner policy (no new COM hooks). */
+  if(setup_owner_pending) {
+    SpiderSDL3Identity opened[SPIDER_SDL3_MAX_GAMEPADS]={{0}};
+    uint32_t requested_id=setup_owner_pending;
+    uint16_t vendor=setup_owner_vendor,product=setup_owner_product;
+    unsigned j;
+    int accepted=0;
+    setup_owner_pending=0;
+    setup_owner_vendor=0;
+    setup_owner_product=0;
+    for(j=0;j<num_pads && j<SPIDER_SDL3_MAX_GAMEPADS;j++) {
+      if(pads[j].id && pads[j].handle &&
+         (!sdl_connected || sdl_connected(pads[j].handle))) {
+        opened[j].instance_id=pads[j].id;
+        opened[j].vendor=sdl_vendor(pads[j].id);
+        opened[j].product=sdl_product(pads[j].id);
+      }
+    }
+    accepted=SpiderSDL3Probe_NativeOwnerEnabled() &&
+      spider_sdl3_selected_model_unique(opened,num_pads,requested_id,
+                                         vendor,product);
+    if(accepted) {
+      selection.active=requested_id;
+      /* Any stale gameplay Start edges are still disarmed by modal exit.
+       * The real native owner will be rebound later in this Flip. */
+      snprintf(line,sizeof(line),
+        "SDL3-PROBE: SETUP RETURN COMMITTED fresh modal Start selected-id=%lu VID:PID=%04X:%04X; native ownership to reconcile",
+        (unsigned long)requested_id,(unsigned)vendor,(unsigned)product);
+    } else {
+      snprintf(line,sizeof(line),
+        "SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous modal Start id=%lu VID:PID=%04X:%04X; previous game owner preserved",
+        (unsigned long)requested_id,(unsigned)vendor,(unsigned)product);
+    }
+    say(line);
   }
   sdl3_trace_native_owner(now);
   for(i=0;i<num_pads;i++)if(pads[i].handle) {
