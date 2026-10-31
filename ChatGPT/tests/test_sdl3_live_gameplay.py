@@ -1,4 +1,4 @@
-"""Experimental DS4 live SDL3 3D mapping: portable translation and source safety.
+"""Experimental DS4 and verified Xbox live SDL3 3D mapping: portable policy.
 
 Real Windows hardware is required to show the game actually consumes the
 seven mapped DirectInput button indices in 3D. This test does not claim it.
@@ -97,7 +97,9 @@ def test_live_native_owner_never_double_injects_seven_gameplay_actions():
     assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in live
     assert "SpiderSDL3Probe_MappedCount()==0u" in live
     assert "native_read(current) && same7(current,mapped)" in live
-    assert "!same7(current,spider_ps1_buttons)" in live
+    assert "!same7(current,canonical)" in live
+    assert "canonical=spider_ps1_buttons;" in live
+    assert "canonical=spider_xbox360_buttons_sdl3_rt;" in live
     assert "spider_sdl3_native_ds4_seven(profile,desired)" in live
     assert "GetForegroundWindow()!=hwnd" in live
     assert "PAGE_READWRITE" in live
@@ -122,7 +124,8 @@ def test_live_remains_strictly_opt_in():
     assert 'GetPrivateProfileIntA("Input",' in s
     assert 'ExperimentalSDL3GameplayBindings",0,ini)==1' in s
     assert "if(!enabled)return;" in s
-    assert 'SDL3-3D-LIVE: REFUSED unsupported SDL3 binding/driver' in s
+    assert 'SDL3-3D-LIVE: REFUSED unsupported Sony binding/driver' in s
+    assert 'SDL3-3D-LIVE: REFUSED Xbox360 profile' in s
 
 
 def test_native_pause_keeps_eighth_edge_exclusive_with_no_duplicate_legacy_escape():
