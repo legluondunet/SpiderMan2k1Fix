@@ -239,6 +239,8 @@ void SpiderSDL3GameplayLive_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
       restore("native pause mapping no longer trustworthy");
       return;
     }
+    /* Xbox native Pause is handled by the existing gamepad UI. */
+    if(xbox360)return;
     goto sample_pause;
   }
   if(applied) {
