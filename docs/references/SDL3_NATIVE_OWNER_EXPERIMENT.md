@@ -343,6 +343,65 @@ path, which is still game-native. Revert
 from expectations. **Do not merge PR #80 until Windows and Wine
 gameplay testing** confirms owner, pause, triggers and safe rollback.
 
+## Xbox 360 custom 3D mappings — B/X and Y/A swap (31 Oct 2026, candidate)
+
+**User Windows 11 hardware result**: `SpiderMan2k1Fix(20261031-205202).log`
+(version `v1.1.0-55f3b3f`). The user swapped **Xbox B↔X,
+Y↔A**, and **DS4 Triangle↔Cross, Circle↔Square**. In playable 3D the
+custom DS4 mappings worked, but after pressing Xbox Start the Xbox
+returned to its factory face-button layout. This is a **confirmed
+functional gap**, not evidence of a failed INI read/write.
+
+The log showed `SDL3-PROFILE: GAME model=045E-028E LOADED`,
+`SDL3-PROBE: START selected logical id=2`, `NATIVE-SWAP:
+APPLIED ... DS4->Xbox360`, then `SDL3-3D-LIVE: REFUSED unsupported
+SDL3 binding/driver; only verified Sony DS4 ...`. The Xbox native
+seven-button table was canonical but **hardcoded**, and the SDL3 semantic
+profile's customized face mappings were **never applied to gameplay**.
+
+**Candidate fix, Windows re-test REQUIRED**:
+- Extend the guarded `sdl3_gameplay_live.c` native 3D mapping from
+  Sony DS4 only to the exact previously verified **wired Xbox
+  `045E:028E`**. Translate SDL A/B/X/Y to the observed DirectInput
+  physical BUTTON0/1/2/3 and LB/RB to BUTTON4/5. For the user's swaps,
+  the native seven-action table should be exactly
+  `3,2,1,0,4,5,0x4000` (Jump/Kick/Punch/Web/Aim/Zipline/Swing).
+- **Swing remains RT only**: its native BUTTON index stays **UNBOUND
+  `0x4000`**, and the existing keyboard RT-Swing path is permitted when
+  the exact installed custom Xbox map is verified on the current,
+  unique selected game-owned DirectInput device. Without this
+  additional check, the previous `CanonicalXboxMapping` guard
+  would disable Swing as soon as a face mapping is customized.
+- An Xbox profile with Swing reassigned away from RT, or any unverified
+  LT/D-pad/POV/noncanonical physical button is **atomically refused**
+  by this *native* mapping bridge. These bindings remain visible in
+  the UI but are not yet supported by the 3D renderer. Do not silently
+  map RT to stick click or claim arbitrary trigger support.
+- Keep exactly the earlier DS4 behavior, private PAUSE scope and
+  verified owner/foreground/neutral-first prerequisites. Never
+  change the original Spidey.cfg or saved INI, hook COM vtables,
+  inject gameplay face-button keys, or patch executable code for this.
+- Snapshot the exact canonical Xbox seven-word source table before
+  temporary changes. Roll back before gamepad owner swap, focus loss
+  or leaving 3D, preserving the native reconnect's canonical-entry
+  preconditions; reject unexpected external table mutation.
+- Portable C99 test verifies the precise Xbox B/X, Y/A permutations,
+  default Xbox table, strict product match, negative LT/POV
+  cases, and unchanged Sony canonical mapping. Do not infer hardware
+  validation solely from these tests.
+
+**Acceptance test**: Xbox/DS4 both connected; set both customized
+profiles as above → start playable 3D with DS4 (verify its buttons) →
+Xbox Start, wait until neutral, press Xbox A/B/X/Y (all custom actions),
+then Xbox RT (Swing still works), then DS4 Start (old DS4 mapping
+restored correctly) → repeat with Alt+Tab once. Check logs
+`SDL3-3D-LIVE: APPLIED verified Xbox360 six-button SDL3 custom mapping`,
+`RT-SWING DOWN/UP` on Xbox and clean
+`SDL3-3D-LIVE: original seven selected-pad action bindings RESTORED`
+before `NATIVE-SWAP`. Reopen profile UI and restart the game to
+confirm each model's custom mappings still persist. No merge into
+`main` until explicit hardware validation.
+
 ## Windows 11 hardware matrix: Alt+Tab / hotplug good, same-row Start pending (31 Oct 2026)
 
 **User evidence**: `SpiderMan2k1Fix(20261031-184751).log`, DLL
