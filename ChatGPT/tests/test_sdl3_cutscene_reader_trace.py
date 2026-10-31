@@ -79,3 +79,67 @@ def test_second_passive_owner_boundary_probe_is_noninvasive():
     plan=(ROOT/"sdl3_gameplay_plan_probe.c").read_text(encoding="utf-8")
     assert "LT=%d RT=%d ms=%lu [NO NATIVE INJECTION]" in plan
     assert "(unsigned long)GetTickCount());" in plan
+
+
+def test_selected_physical_cross_square_edge_requires_neutral_owner():
+    native=(ROOT/"quick_exit_f12.c").read_text(encoding="utf-8")
+    header=(ROOT/"quick_exit_f12.h").read_text(encoding="utf-8")
+    plan=(ROOT/"sdl3_gameplay_plan_probe.c").read_text(encoding="utf-8")
+    section=native.split(
+        "void SpiderQuickExitF12_CutscenePhysicalSample(",1)[1].split(
+        "void SpiderQuickExitF12_AttachWindow(",1)[0]
+    assert "SpiderQuickExitF12_CutscenePhysicalSample(" in header
+    assert "physical_buttons&0x05u" in section
+    assert "selected_owner_valid" in section
+    assert "sdl3_cutscene_sample_armed" in section
+    assert "if(!wanted)InterlockedExchange(&sdl3_cutscene_sample_armed,1);" in section
+    assert "fresh=wanted&~previous;" in section
+    assert "sdl3_cutscene_edge_bits,fresh" in section
+    assert "sdl3_cutscene_edge_ms,(LONG)now" in section
+    assert "SDL3-CUTSCENE-EDGE:" in section
+    assert "SOUTH=CROSS 0x01, WEST=SQUARE 0x04" in section
+    assert "sdl3_cutscene_sample_ms,0" in section
+    assert "sdl3_cutscene_sample_instance,0" in section
+    assert "GetAsyncKeyState(" not in section
+    assert "SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST" not in section
+    assert "IDirectInputDevice8_" not in section
+    assert "SendInput(" not in section
+    assert 'SpiderQuickExitF12_CutscenePhysicalSample(id,vid,pid,sample.buttons,ready);' in plan
+    assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in plan
+    assert plan.count("SpiderQuickExitF12_CutscenePhysicalSample(0,0,0,0,0);") >= 4
+    assert plan.index("GetForegroundWindow()!=hwnd") < plan.index(
+        "SpiderQuickExitF12_CutscenePhysicalSample(id,vid,pid,sample.buttons,ready)")
+    for forbidden in ("SendInput(", "VirtualProtect(", "WriteProcessMemory("):
+        assert forbidden not in plan
+
+
+def test_original_owner_edge_snapshots_do_not_deduplicate_unchanged_native_state():
+    native=(ROOT/"quick_exit_f12.c").read_text(encoding="utf-8")
+    part=native.split(
+        "static void spider_trace_sdl3_cutscene_edge_window(",1)[1].split(
+        "static void spider_trace_sdl3_native_cutscene_boundary(",1)[0]
+    boundary=native.split(
+        "static void spider_trace_sdl3_native_cutscene_boundary(",1)[1].split(
+        "/* Native game-input owner wrapper at",1)[0]
+    assert "reports>=64u" in part
+    assert "(DWORD)(now-edge)>350u" in part
+    assert "(DWORD)(now-sample)>125u" in part
+    assert "(DWORD)(now-last_emit[after])<30u" in part
+    assert "context!=1u || active!=1u || !ip" in part
+    assert "SDL3-CUTSCENE-EDGE-OWNER:" in part
+    assert "allow=%u active=%u request=%u script_ip=" in part
+    assert "boundary=%s" in part
+    assert "ORIGINAL 0x440EF0 UNCHANGED; CORRELATION ONLY" in part
+    assert boundary.index("spider_trace_sdl3_cutscene_edge_window(") < boundary.index(
+        "if(last_owner[after]==owner && last_snapshot[after]==packed)return;")
+    owner=native.split(
+        "static void __cdecl spider_observe_native_game_input(void) {",1)[1].split(
+        "/* PASSIVE, exact-site 3D input diagnostics",1)[0]
+    a=owner.index("spider_trace_sdl3_native_cutscene_boundary(0u);")
+    b=owner.index("SPIDER_NATIVE_GAME_INPUT_UPDATE();")
+    c=owner.index("spider_trace_sdl3_native_cutscene_boundary(1u);")
+    assert a<b<c
+    assert owner.count("SPIDER_NATIVE_GAME_INPUT_UPDATE();")==1
+    for forbidden in ("VirtualProtect(", "WriteProcessMemory(",
+                      "SendInput(", "*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST="):
+        assert forbidden not in part+boundary
