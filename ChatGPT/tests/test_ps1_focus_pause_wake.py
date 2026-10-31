@@ -35,7 +35,15 @@ def test_focus_only_pad_wake_and_no_native_menu_shortcut():
     assert "int available=configured && detected && device!=NULL;" in PAD
     assert "pause_wake_active=available;" in PAD
     assert "return available;" in PAD
-    assert "pause_gamepad_available=SpiderGamepadUI_PauseWake_Begin();" in p
+    assert "pause_sdl3_available=SpiderSDL3Probe_PauseWake_Begin();" in p
+    assert "pause_gamepad_available=pause_sdl3_available?1:SpiderGamepadUI_PauseWake_Begin();" in p
+    assert "SpiderSDL3Probe_PauseWake_Poll(hwnd)" in p
+    assert p.count("SpiderSDL3Probe_PauseWake_End();") == 2
+    assert p.index("SpiderSDL3Probe_PauseWake_Begin();") < p.index(
+        "SpiderGamepadUI_PauseWake_Begin();")
+    assert p.index("SpiderSDL3Probe_PauseWake_Poll(hwnd)") < p.index(
+        "MsgWaitForMultipleObjectsEx(")
+    assert "no verified gamepad wake device; PAUSED hint remains keyboard-only" in p
     assert "(SpiderPauseBltFn)original_blt,\n                             pause_gamepad_available);" in p
     assert "if(pause_gamepad_available)" in p
     assert "no verified gamepad wake device; PAUSED hint remains keyboard-only" in p
