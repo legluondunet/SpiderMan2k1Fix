@@ -2,7 +2,7 @@
  * DirectInput rgbButtons indices. This header NEVER changes game memory.
  * Only the exact physical mapping observed in the supported Sony DS4
  * profile is allowed; D-pad is POV, not native rgbButtons, and Xbox
- * triggers may be merged axes. An unsupported input rejects the WHOLE
+ * triggers may be merged axes. L2 is not verified and is unsupported. An unsupported input rejects the WHOLE
  * seven-action map, not an individual action or an invented button. */
 #ifndef SPIDERMAN2K1FIX_SDL3_GAMEPLAY_NATIVE_MAP_H
 #define SPIDERMAN2K1FIX_SDL3_GAMEPLAY_NATIVE_MAP_H
@@ -20,8 +20,9 @@ static inline int spider_sdl3_ds4_native_button(
     *out=(uint32_t)map[b.index];return 1;
   }
   if(b.kind==SPIDER_SDL3_BIND_TRIGGER) {
-    /* Sony native DirectInput R2=BUTTON7, L2=BUTTON6. */
-    if(b.index==SPIDER_SDL3_AXIS_LT){*out=6u;return 1;}
+    /* Sony R2=BUTTON7 is backed by the verified canonical native
+     * Swing binding. Sony L2's 3D native rgbButton index has NOT been
+     * independently observed: refuse it rather than assuming BUTTON6. */
     if(b.index==SPIDER_SDL3_AXIS_RT){*out=7u;return 1;}
   }
   return 0;
