@@ -45,9 +45,10 @@ SpiderSDL3ControllerProfile *SpiderSDL3Probe_SetupProfile(uint16_t vid,uint16_t 
 int SpiderSDL3Probe_SetupCommit(const SpiderSDL3ControllerProfile *candidate);
 int SpiderSDL3Probe_SetupPump(void);
 /* After the modal window closes, invalidate Start edges sampled while
- * gameplay Flip was suspended. Only an explicitly requested, verified
- * modal Start handoff may be deferred to the next foreground Flip.
- * The dialog's L1/R1 model browsing never changes gameplay ownership. */
+ * gameplay Flip was suspended. An explicit Start OR physical Circle/B
+ * (or Cross on the Close button) from the displayed pad can request a
+ * verified owner handoff on the NEXT foreground Flip. L1/R1 browsing
+ * alone, Escape and mouse/Win32 Close do not change game ownership. */
 void SpiderSDL3Probe_SetupModalReturn(uint32_t requested_id,
                                       uint16_t vendor,uint16_t product);
 unsigned SpiderSDL3Probe_SetupCount(void);
