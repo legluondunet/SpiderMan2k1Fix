@@ -507,7 +507,7 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
     return 1;
   }
   if(vk==VK_F1) {
-    status(ui,"Stick X: focus list/buttons; stick Y: select row/button. L1/R1: pad. Cross: activate; Circle: close; Triangle: reset.");
+    status(ui,"Stick X/Y: navigate; L1/R1: browse pad; Start: select game owner on Close; Cross: activate; Circle: close.");
     return 1;
   }
   return 0; /* Tab and Space keep their native Win32 button behavior. */
@@ -541,12 +541,12 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       CreateWindowExA(0,"BUTTON","Restore defaults (this model)",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_NOTIFY,
         465,160,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_RESET,NULL,NULL);
-      CreateWindowExA(0,"BUTTON","Close (no gameplay changes)",
+      CreateWindowExA(0,"BUTTON","Close / return to game",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_NOTIFY,
         465,207,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_CLOSE,NULL,NULL);
       label=CreateWindowExA(0,"STATIC",
         "Stick Left/Right: actions or buttons   Stick Up/Down: select row or button\r\n"
-        "L1/R1: choose pad   Cross/A: activate selection   Circle/B: close\r\n"
+        "L1/R1: browse pad   Start: control game after closing   Circle/B: close\r\n"
         "Triangle/Y: defaults    Keyboard: Tab, Enter, Esc, PgUp/PgDn",
         WS_CHILD|WS_VISIBLE,18,351,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
