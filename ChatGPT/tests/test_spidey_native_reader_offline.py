@@ -42,6 +42,27 @@ def test_file_backed_virtual_address_mapping_without_executable_fixture():
         pe.read(0x401180, 1)
 
 
+def test_direct_relative_call_search_is_bounded_to_text_only():
+    mod=load_tool()
+    raw=bytearray(0x400)
+    # .text base=0x401000 and file offset 0x100.
+    target=0x402000
+    call_site=0x401020
+    relative=target-(call_site+5)
+    import struct
+    raw[0x120]=0xE8
+    struct.pack_into("<i",raw,0x121,relative)
+    # Identical raw bytes in a non-.text section MUST be ignored.
+    raw[0x220:0x225]=raw[0x120:0x125]
+    pe=mod.PE(
+        data=bytes(raw),base=0x400000,headers=0x100,
+        sections=(mod.Section(".text",0x1000,0x100,0x100),
+                  mod.Section(".data",0x2000,0x100,0x200)))
+    assert mod.direct_relative_call_candidates(pe,target)==["0x00401020"]
+    assert mod.direct_relative_call_candidates(pe,target+1)==[]
+    assert mod.direct_relative_call_candidates(pe,0x505720)==[]
+
+
 def test_pattern_match_is_explicitly_unverified():
     mod = load_tool()
     samples = bytes([255, 80, 36, 255, 81, 40])
@@ -101,5 +122,9 @@ def test_no_runtime_mutation_or_external_modules():
     assert '"first_consumed_output": "held only in this consumer"' in script
     assert '"number_of_direct_latch_calls": 20' in script
     assert "disassembled mask consumer mismatch" in script
+    assert "direct_relative_call_candidates(pe,0x0050A190)" in script
+    assert "direct_relative_call_candidates(pe,0x00505720)" in script
+    assert "direct_relative_call_candidates(pe,0x00479540)" in script
+    assert "direct_relative_call_candidates(pe,0x004796A0)" in script
     for forbidden in ("ctypes", "subprocess", "urllib", "WriteProcessMemory"):
         assert forbidden not in script
