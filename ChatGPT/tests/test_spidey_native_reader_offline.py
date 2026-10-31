@@ -76,5 +76,18 @@ def test_no_runtime_mutation_or_external_modules():
         0x00501E9F, "8b 10 ff 52 1c",
         "Acquire indirect COM call sequence")
     assert "source-confirmed native reader signature differs" in script
+    assert len(mod.BINARY_VERIFIED_INPUT_SITES) == 10
+    assert mod.BINARY_VERIFIED_INPUT_SITES[0][:2] == (
+        0x00501F0E, "ff 52 28")
+    assert mod.BINARY_VERIFIED_INPUT_SITES[7][:2] == (
+        0x0050A2AD, "e8 9e 7b ff ff")
+    assert mod.BINARY_VERIFIED_INPUT_SITES[8][:2] == (
+        0x00505738, "e8 53 4a 00 00")
+    assert "disassembled joystick dataflow site mismatch" in script
+    assert '"pov_event_offset": 32' in script
+    assert '"axis_lx_event_offset": 0' in script
+    assert '"axis_ly_event_offset": 4' in script
+    assert '"event_record_size": 20' in script
+    assert '"event_queue_limit": 16' in script
     for forbidden in ("ctypes", "subprocess", "urllib", "WriteProcessMemory"):
         assert forbidden not in script
