@@ -89,5 +89,17 @@ def test_no_runtime_mutation_or_external_modules():
     assert '"axis_ly_event_offset": 4' in script
     assert '"event_record_size": 20' in script
     assert '"event_queue_limit": 16' in script
+    assert len(mod.BINARY_VERIFIED_MASK_CONSUMER_SITES) == 17
+    assert mod.BINARY_VERIFIED_MASK_CONSUMER_SITES[4][:2] == (
+        0x00505738, "e8 53 4a 00 00")
+    assert mod.BINARY_VERIFIED_MASK_CONSUMER_SITES[5][:2] == (
+        0x00505759, "8b 54 24 08")
+    assert mod.BINARY_VERIFIED_MASK_CONSUMER_SITES[8][:2] == (
+        0x00479540, "8b 44 24 04")
+    assert mod.BINARY_VERIFIED_MASK_CONSUMER_SITES[12][:2] == (
+        0x00479560, "c6 40 01 01")
+    assert '"first_consumed_output": "held only in this consumer"' in script
+    assert '"number_of_direct_latch_calls": 20' in script
+    assert "disassembled mask consumer mismatch" in script
     for forbidden in ("ctypes", "subprocess", "urllib", "WriteProcessMemory"):
         assert forbidden not in script
