@@ -123,19 +123,14 @@ def test_unplug_inputlost_never_acquires_disconnected_device_same_frame():
     failed=PAD[PAD.index("hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);",
                          PAD.index("void SpiderGamepadUI_OnFlip(")):]
     failed=failed[:failed.index("  if(sdl3_3d_trace_requested &&")]
-    # The new one-shot modal-return exception permits Acquire ONLY on a
-    # verified *secondary* HWND/COM pointer with DIERR_NOTACQUIRED. The
-    # ordinary INPUTLOST/unplug error branch must still never Acquire.
-    assert failed.count("IDirectInputDevice8_Acquire(device);") == 1
-    modal=failed[:failed.index("ps1_history_record(SPIDER_PS1_HISTORY_READ_FAILED")]
-    assert "permitted=hr==DIERR_NOTACQUIRED" in modal
-    assert "modal_reacquire_device==device" in modal
-    assert "modal_reacquire_hwnd==hwnd" in modal
-    assert "SpiderNativeReconnect_SDL3SelectionReady(selected_vid,selected_pid)" in modal
-    assert modal.index("modal_reacquire_disarm(); /* one attempt MAX") < modal.index(
-        "IDirectInputDevice8_Acquire(device);")
-    assert "IDirectInputDevice8_Acquire(device);" not in failed[
-        failed.index("ps1_history_record(SPIDER_PS1_HISTORY_READ_FAILED"):]
+    # Focus/modal teardown now releases the independent foreground-only
+    # UI COM instance proactively; after ANY failed GetDeviceState it never
+    # Acquires stale input (including NOTACQUIRED and INPUTLOST).
+    assert "IDirectInputDevice8_Acquire(device);" not in failed
+    assert "modal_reacquire_pending" not in PAD
+    assert "retired separate foreground-only UI DirectInput" in PAD
+    assert "hotplug.scan_started=0u;" in PAD
+    assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in PAD
 
     paused=PAD[PAD.index("unsigned SpiderGamepadUI_PauseWake_Poll("):
                PAD.index("void SpiderGamepadUI_PauseWake_End(")]
