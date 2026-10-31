@@ -497,7 +497,7 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   sdl3_context_bridge_reports=0;
   spider_sdl3_context_menu_reset(&sdl3_context_bridge);
   if(sdl3_context_bridge_requested)
-    report("SDL3-CONTEXT: fixed physical Cross/A -> Return for menus/Bink; native 3D skip unchanged; original still pages not bridged");
+    report("SDL3-CONTEXT: fixed physical Cross/A -> Return, Circle/B -> Escape in menus/Bink; native 3D skip unchanged; original still pages not bridged");
   /* Experimental only: no automatic fixed-profile activation until native
    * menu lock and Start handling are validated in the real game. */
   ps1_preview_requested=GetPrivateProfileIntA("Input","ControllerPS1Preview",0,ini)==1;
@@ -1612,9 +1612,9 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
           "SDL3-CONTEXT: physical Cross/A -> native Bink Return (original gate retained)":
           "SDL3-CONTEXT: physical Cross/A -> native menu Return");
     } else if(result==SPIDER_SDL3_CTX_BACK_EDGE) {
-      begin_scancode(0x01u,"SDL3 profile Back/Cancel");
+      begin_scancode(0x01u,"SDL3 physical Circle/B Back/Cancel");
       if(sdl3_context_bridge_reports++<24u)
-        report("SDL3-CONTEXT: saved MenuBack -> native Escape");
+        report("SDL3-CONTEXT: physical Circle/B -> native menu Escape");
     } else if(result==SPIDER_SDL3_CTX_REFUSED &&
               sdl3_context_bridge_reports++<4u)
       report("SDL3-CONTEXT: REFUSED selected owner/profile; old UI synthesis suppressed");
