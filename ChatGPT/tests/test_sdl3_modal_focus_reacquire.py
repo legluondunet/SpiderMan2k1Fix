@@ -85,7 +85,9 @@ def test_next_foreground_flip_must_verify_original_native_owner_and_recreate():
     assert "spider_ds4_hotplug_attached(&hotplug)" in detect
     assert "sdl3_ui_instance=sdl_owner?selected_id:0u;" in detect
     assert "SpiderNativeReconnect_SDL3SelectionReady(" in detect
-    failed=scoped(ui,"  hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);",
+    flip_remainder=ui.split("void SpiderGamepadUI_OnFlip(",1)[1]
+    failed=scoped(flip_remainder,
+                  "  hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);",
                   "  if(sdl3_3d_trace_requested &&")
     assert "IDirectInputDevice8_Acquire(" not in failed
     assert "modal_reacquire" not in ui
