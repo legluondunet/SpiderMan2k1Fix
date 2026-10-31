@@ -97,6 +97,22 @@ static void restore(const char *why) {
   applied=0;owner=NULL;owner_id=0;owner_vid=owner_pid=0;
   disarm_pause();
 }
+/* Must run immediately BEFORE native reconnect: the original rebind
+ * code only accepts known canonical source tables. Never leave our
+ * temporarily customized DS4 table active when the selected SDL3 pad
+ * changes or a second/duplicate device appears. */
+void SpiderSDL3GameplayLive_PreNativeOnFlip(HWND hwnd) {
+  uint16_t vid=0,pid=0;
+  uint32_t id=0;
+  if(!enabled || !applied)return;
+  if(native_thread && native_thread!=GetCurrentThreadId())return;
+  if(!hwnd || GetForegroundWindow()!=hwnd ||
+     SpiderSDL3Probe_MappedCount()!=1u ||
+     !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
+     id!=owner_id || vid!=owner_vid || pid!=owner_pid ||
+     *(void *volatile *)(uintptr_t)SPIDER_GAMEPLAY_NATIVE_DEVICE!=owner)
+    restore("pre-native SDL3 selection/foreground change");
+}
 int SpiderSDL3GameplayLive_OwnsPause(void) {
   return enabled && applied && paused_edge_armed;
 }
