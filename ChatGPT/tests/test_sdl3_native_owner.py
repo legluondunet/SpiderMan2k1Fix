@@ -94,7 +94,7 @@ def test_3d_trace_is_opt_in_read_only_bounded_and_gameplay_only():
     assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1' in ui
     assert "sdl3_3d_trace_lines>=64u" in ui
     assert "selected-id=%lu kind=%s" in ui
-    assert "secondary DirectInput READ-ONLY; native game actions NOT inferred" in ui
+    assert "two independently sampled views; READ-ONLY; native game mapping NOT inferred" in ui
     block = ui.split("static void sdl3_trace_3d_readonly(", 1)[1].split(
         "void SpiderGamepadUI_OnFlip(", 1
     )[0]
@@ -107,4 +107,4 @@ def test_3d_trace_is_opt_in_read_only_bounded_and_gameplay_only():
     assert "sdl3_trace_3d_readonly(&state);" in ui
     assert "sdl3_3d_trace_valid=0;" in ui
     assert "sdl3_3d_trace_id!=sdl3_ui_instance" in block
-    assert 'first?"OWNER":changed?"BUTTON":"AXIS"' in block
+    assert 'first?"OWNER":changed?"PHYSICAL":"AXIS"' in block
