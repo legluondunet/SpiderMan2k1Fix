@@ -143,6 +143,12 @@ static int pause_wake_retry_logged=0;
  * Permit exactly ONE guarded Acquire when foreground GetDeviceState reports
  * DIERR_NOTACQUIRED. Never Acquire on INPUTLOST/UNPLUGGED (hardware stale). */
 static unsigned pause_wake_notacquired_attempts=0;
+/* The blocking PAUSED loop can discover that our separate foreground-only
+ * DI8 device is stale before the normal game Flip is allowed to run.
+ * Retire that exact secondary handle on PauseWake_End, not twice from
+ * PauseWake_Poll and the next UI Flip; game-owned DirectInput untouched. */
+static int pause_wake_retire_pending=0;
+static int pause_wake_retire_inputlost=0;
 static IDirectInput8A *di=NULL;
 static IDirectInputDevice8A *device=NULL;
 static HMODULE di_module=NULL;
@@ -1173,6 +1179,8 @@ int SpiderGamepadUI_PauseWake_Begin(void) {
   pause_wake_active=available;
   pause_wake_retry_logged=0;
   pause_wake_notacquired_attempts=0;
+  pause_wake_retire_pending=0;
+  pause_wake_retire_inputlost=0;
   return available;
 }
 unsigned SpiderGamepadUI_PauseWake_Poll(HWND hwnd) {
@@ -1213,7 +1221,9 @@ unsigned SpiderGamepadUI_PauseWake_Poll(HWND hwnd) {
       report(line);
       if(SUCCEEDED(acquire_hr))return 0;
     }
-    pause_wake_active=0; /* stop polling potentially stale input until Flip */
+    pause_wake_active=0; /* never poll stale secondary COM again */
+    pause_wake_retire_pending=1;
+    pause_wake_retire_inputlost=hr==DIERR_INPUTLOST;
     if(!pause_wake_retry_logged) {
       snprintf(line,sizeof(line),
         "FOCUS-PAUSE-GAMEPAD: secondary controller read unavailable hr=0x%08lX; no Acquire for INPUTLOST/UNPLUGGED; keyboard wake remains available",
@@ -1229,6 +1239,23 @@ unsigned SpiderGamepadUI_PauseWake_Poll(HWND hwnd) {
   return spider_pause_pad_wake_step(&pause_wake,buttons);
 }
 void SpiderGamepadUI_PauseWake_End(void) {
+  /* This runs after the custom blocking PAUSED loop, never in its Poll.
+   * An INPUTLOST reported while foreground was being restored used to
+   * trigger a SECOND identical failed secondary GetDeviceState at the
+   * next game Flip. Release only our independent device now; the next
+   * foreground Flip checks the selected SDL3/native owner before fresh
+   * rediscovery. The original game-owned joystick is never acquired,
+   * released or changed by this operation. */
+  if(pause_wake_retire_pending && device) {
+    disable_profile_with_policy(
+      "GAMEPAD-PAUSE-END: retired stale secondary UI DirectInput after PAUSED read failure; fresh foreground discovery required",
+      pause_wake_retire_inputlost);
+    sdl3_ui_instance=0;
+    probing=0;
+    hotplug.scan_started=0u;
+  }
+  pause_wake_retire_pending=0;
+  pause_wake_retire_inputlost=0;
   pause_wake_active=0;
   memset(&pause_wake,0,sizeof(pause_wake));
   pause_wake_retry_logged=0;
