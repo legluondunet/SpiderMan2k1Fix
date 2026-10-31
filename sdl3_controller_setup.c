@@ -18,6 +18,7 @@
 #include "sdl3_gamepad_probe.h"
 #include "sdl3_controller_capture.h"
 #include "sdl3_controller_setup_nav.h"
+#include "sdl3_gamepad_selection.h"
 #include "sdl3_controller_setup_focus.h"
 #include "gamepad_ui_profile.h"
 #include "sdl3_setup_focus_policy.h"
@@ -33,6 +34,11 @@ typedef struct {
   SpiderSDL3Capture capture;
   SpiderSDL3SetupNav nav;
   SpiderSDL3SetupFocus focus;
+  /* The native gameplay Start-selection loop is suspended by this modal.
+   * Track separate, neutral-armed Start edges for ALL mapped gamepads.
+   * This state changes only the dialog-selected profile, never the
+   * original game-owned DirectInput controller while the modal is open. */
+  SpiderSDL3Selection modal_start;
   uint32_t instance;
   uint16_t vid,pid;
   unsigned slot;
@@ -186,6 +192,7 @@ static void select_slot(SpiderSDL3SetupUI *ui,unsigned slot) {
 static void refresh_pads(SpiderSDL3SetupUI *ui) {
   unsigned n,i,desired=0;
   uint32_t old_id,gameplay_id=0;
+  uint32_t opened_ids[SPIDER_SDL3_MAX_GAMEPADS]={0};
   uint16_t gameplay_vid=0,gameplay_pid=0;
   int matched_owner=0;
   char selection_line[220];
@@ -211,6 +218,7 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
     else {
       snprintf(line,sizeof(line),"%s [%04X:%04X] (id=%lu)",
         name,(unsigned)vid,(unsigned)pid,(unsigned long)id);
+      if(i<SPIDER_SDL3_MAX_GAMEPADS)opened_ids[i]=id;
       if(old_id && id==old_id)desired=i;
       else if(!old_id && gameplay_id && id==gameplay_id &&
               vid==gameplay_vid && pid==gameplay_pid) {
@@ -221,6 +229,7 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
     SendMessageA(ui->pads,CB_ADDSTRING,0,(LPARAM)line);
   }
   ui->count=n;
+  spider_sdl3_selection_sync(&ui->modal_start,opened_ids,n);
   if(!n) {
     spider_sdl3_capture_reset(&ui->capture);
     ui->instance=0;ui->vid=0;ui->pid=0;
@@ -239,6 +248,40 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
   if(old_id && desired!=ui->slot)
     spider_sdl3_capture_reset(&ui->capture);
   select_slot(ui,desired);
+}
+/* Explicit modal-only Start handoff: all devices are sampled on the same
+ * existing WM_TIMER / SDL3 game thread, after one SDL3 pump. A new Start
+ * press must be preceded by a released/neutral sample. No game native
+ * DirectInput selection or gamepad RAM is changed here. */
+static int modal_start_handoff(SpiderSDL3SetupUI *ui) {
+  unsigned i,next=0,claims=0;
+  if(!ui || !ui->count)return 0;
+  for(i=0;i<ui->count;i++) {
+    SpiderSDL3ControllerSample sample;
+    uint32_t id=0;
+    uint16_t vid=0,pid=0;
+    if(!SpiderSDL3Probe_SetupRead(i,&id,&vid,&pid,
+                                  NULL,0,&sample))continue;
+    if(spider_sdl3_selection_start(&ui->modal_start,id,
+        (sample.buttons&(1u<<SPIDER_SDL3_BUTTON_START))!=0)) {
+      next=i;
+      ++claims;
+    }
+  }
+  /* Simultaneous Start presses are ambiguous; refuse both. A capture or
+   * pending close cannot change profiles halfway through its lifecycle. */
+  if(claims!=1u || ui->capture.active || ui->close_pending)return 0;
+  if(next==ui->slot)return 0;
+  SendMessageA(ui->pads,CB_SETCURSEL,next,0);
+  select_slot(ui,next);
+  if(setup_report) {
+    char line[195];
+    snprintf(line,sizeof(line),
+      "SDL3-SETUP: MODAL-START switched setup-only selected-id=%lu VID:PID=%04X:%04X (game native owner unchanged)",
+      (unsigned long)ui->instance,(unsigned)ui->vid,(unsigned)ui->pid);
+    setup_report(line);
+  }
+  return 1;
 }
 static void sample_device(SpiderSDL3SetupUI *ui) {
   SpiderSDL3ControllerSample s;
@@ -260,6 +303,7 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
     return;
   }
   if(SpiderSDL3Probe_SetupCount()!=ui->count)refresh_pads(ui);
+  if(modal_start_handoff(ui))return;
   if(!ui->instance) {
     /* The selected pad may detach after B requested close. Never strand
      * the modal window waiting for a release on a vanished device. */
@@ -675,6 +719,9 @@ void SpiderSDL3ControllerSetup_Open(void) {
     setup_report(line);
   }
   setup_open=0;
+  /* Reject any Start held while the modal owned the game thread, rather
+   * than treating it as a fresh game-ownership command on next Flip. */
+  SpiderSDL3Probe_SetupModalReturn();
   if(has_quit)PostQuitMessage(quit_code);
   else if(IsWindow(owner))
     SpiderGamepadUI_AfterControllerSetup(owner); /* arm only, no DI8 method */
