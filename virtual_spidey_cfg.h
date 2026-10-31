@@ -18,6 +18,10 @@ void SpiderCfg_BootstrapGameRead(void);
 int SpiderCfg_EnablePS1Preview(void);
 /* True only after an authenticated game-owned loader consumed the overlay. */
 int SpiderCfg_PS1BootstrapLoaded(void);
+/* True after any authenticated original-game CRT config load, without
+ * requiring the legacy PS1 or Xbox preview. Used for read-only SDL3
+ * runtime keyboard binding verification. */
+int SpiderCfg_NativeConfigLoaded(void);
 void SpiderCfg_CancelPS1Preview(void);
 /* Xbox 360 gameplay candidate: verified single pad + read-only native menu;
  * overlay only RAM until authenticated game CRT bootstrap succeeds. */
