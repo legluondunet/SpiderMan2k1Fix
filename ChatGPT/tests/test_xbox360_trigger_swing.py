@@ -165,7 +165,7 @@ def test_sdl3_rt_only_selected_native_verified_xbox_and_zero_extra_poll():
     assert "int SpiderSDL3Probe_SelectedRT(int *normalized_rt);" in header
     assert "int SpiderSDL3Probe_SelectedRT(int *normalized_rt) {" in probe
     rt=probe.split("int SpiderSDL3Probe_SelectedRT(",1)[1].split(
-        "void SpiderSDL3Probe_OnFlip(",1)[0]
+        "int SpiderSDL3Probe_SelectedSample(",1)[0]
     assert "!SpiderSDL3Probe_NativeOwnerEnabled()" in rt
     assert "pads[i].id!=selected || !pads[i].handle" in rt
     assert "SPIDER_SDL_AXIS_RIGHT_TRIGGER" in rt
