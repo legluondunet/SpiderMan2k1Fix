@@ -261,10 +261,18 @@ controller mapping in place. Xbox mappings also remain unchanged until
 their driver-specific trigger behavior is established.
 
 The previous seven-action table is snapshotted before a successful
-application. When leaving gameplay 3D (including menu/Bink/pause),
+application. When leaving gameplay 3D (including menu/Bink/native pause),
 losing foreground, changing pad identity, attaching a second pad,
 or editing the profile, the module restores the original values if
-the live table still exactly matches what it last wrote. The extra
+the live table still exactly matches what it last wrote.
+**The selected saved Pause binding remains the sole active 3D/native
+pause key owner:** on native Pause, all seven game action DWORDs revert
+to normal, but the physical Pause press/release history is preserved so
+only a new press may resume gameplay. The old DS4 SHARE and OPTIONS
+synthetic Escape paths are suppressed while this verified SDL3 owner
+is active, including while the game is natively paused. Menus, Bink,
+Alt+Tab, identity/focus changes and unsupported profiles still disarm
+the live Pause state. Keyboard Escape is always retained. The extra
 `PreNativeOnFlip` gate restores the mapping *before* any native pad
 rebind. If someone else changes the table unexpectedly, the module
 refuses an unsafe overwrite and logs that event.
