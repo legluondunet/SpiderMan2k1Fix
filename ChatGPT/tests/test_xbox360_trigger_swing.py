@@ -47,7 +47,10 @@ def test_rtswing_disabled_by_default_and_requires_verified_startup_or_native_hot
     assert 'ControllerXbox360RTSwing=0' in CFG
     assert '"ControllerXbox360RTSwing"' in VAL
     assert 'GetPrivateProfileIntA("Input","ControllerXbox360RTSwing",0,ini)==1' in UI
-    assert 'int native_canonical=SpiderNativeReconnect_CanonicalXboxMapping();' in UI
+    assert 'int native_canonical=SpiderNativeReconnect_CanonicalXboxMapping() ||' in UI
+    assert 'SpiderSDL3GameplayLive_VerifiedXboxSwingMap();' in UI
+    assert 'int SpiderSDL3GameplayLive_VerifiedXboxSwingMap(void);' in (
+        ROOT/"sdl3_gameplay_live.h").read_text(encoding="utf-8")
     assert '(!xbox360_preview_active && !native_canonical)' in UI
     assert 'scan=native_canonical?SpiderCfg_Xbox360SwingScanLive():' in UI
     assert 'SpiderXbox360_SetRTAlias(xbox_rt_swing_requested &&' in UI
