@@ -212,3 +212,75 @@ physical hardware trial. CI compilation and test pass do not establish
 live compatibility.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+## Experimental DS4-only live 3D gameplay profile
+
+**DRAFT / NOT YET HARDWARE-VALIDATED (31 October 2026).** The SDL3
+setup UI and two-column focus are validated with the maintainer's DS4
+on Windows 11; that does **not** validate this new runtime engine-input
+mapping. The existing game-native reader, analog stick axes, 2D menus,
+Bink and original config file remain separate.
+
+The live bridge is **OFF by default**. To test it, keep the existing
+selected-native-owner options enabled and add only the final new key:
+
+```ini
+[Input]
+ExperimentalSDL3Probe=1
+ExperimentalSDL3NativeOwner=1
+ExperimentalNativeJoystickUnplugGuard=1
+ExperimentalNativeJoystickReconnect=1
+ExperimentalNativeJoystickMappingSwap=1
+ExperimentalSDL3GameplayBindings=1
+
+[Debug]
+Log=1
+```
+
+The implementation activates for **exactly one** Sony DS4
+(054C:05C4, 054C:09CC or 054C:0BA0) that the retail game has already
+selected as its *verified* DirectInput device, with the original known
+canonical Sony seven-action table and a completely neutral SDL3
+physical sample at the 3D Flip boundary. Only the seven known native
+gameplay action DWORDs in the authenticated 14-slot RAM table at
+`0x568408` are changed; each change is read back and is only allowed
+on a verified `PAGE_READWRITE` data page. The eighth saved semantic
+action, **Pause**, uses a fresh SDL3 press to request one guarded native
+Escape keypulse via the existing gamepad UI key owner. No original
+joystick COM vtables, analog axes, keyboard mapping, executable on disk,
+or `SpiderMan2k1Fix.ini` contents are rewritten by this action bridge.
+
+Verified physical DS4 conversion: Cross → native BUTTON1, Circle →
+BUTTON2, Square → BUTTON0, Triangle → BUTTON3, Share → BUTTON8,
+L1 → BUTTON4, R1 → BUTTON5, and R2 → BUTTON7. **L2 has no independently
+verified native button index**, and D-pad POV, stick clicks, touchpad
+and extra buttons also cannot be assumed to be `rgbButtons`.
+Any unsupported binding assigned to any of the seven core actions
+refuses the **entire profile** atomically, leaving the original game
+controller mapping in place. Xbox mappings also remain unchanged until
+their driver-specific trigger behavior is established.
+
+The previous seven-action table is snapshotted before a successful
+application. When leaving gameplay 3D (including menu/Bink/pause),
+losing foreground, changing pad identity, attaching a second pad,
+or editing the profile, the module restores the original values if
+the live table still exactly matches what it last wrote. The extra
+`PreNativeOnFlip` gate restores the mapping *before* any native pad
+rebind. If someone else changes the table unexpectedly, the module
+refuses an unsafe overwrite and logs that event.
+
+For first acceptance, back up the DLLs, use the default saved DS4
+profile, enter gameplay and check normal 3D movement, R2 Swing and
+Share Pause. Return to the menu, then use the SDL3 assistant to **swap
+Jump (Cross) with Punch (Square)**, release all buttons, re-enter 3D,
+and verify both physical actions swap in gameplay. Return to menus
+and check Cross/A and Circle/B still Confirm/Back normally. Alt+Tab,
+the custom PAUSED screen, and focus-recovery should remain unchanged.
+Check `SDL3-3D-LIVE: APPLIED`,
+`SDL3-3D-LIVE: original seven DS4 action bindings RESTORED`, and
+explicit `REFUSED` warnings in the log. Remapping Jump may also
+change the physical key used by the original 3D cinematic skip
+path, which is still game-native. Revert
+`ExperimentalSDL3GameplayBindings=0` if the runtime behavior differs
+from expectations. **Do not merge PR #80 until Windows and Wine
+gameplay testing** confirms owner, pause, triggers and safe rollback.
