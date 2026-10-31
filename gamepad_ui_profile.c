@@ -349,7 +349,11 @@ static void xbox_rt_swing_update(long axis,int gameplay_ok) {
   char line[270];
   int should_hold,di_held,sdl3_held=0,sdl3_rt=0,sdl3_rt_available=0;
   int was_held=xbox_rt_swing_down_scan!=0;
-  int native_canonical=SpiderNativeReconnect_CanonicalXboxMapping();
+  /* A user-modified Xbox face layout remains safe for RT Swing ONLY
+   * while our native 3D bridge owns the exact verified custom table and
+   * Swing remains the original 0x4000 UNBOUND sentinel. */
+  int native_canonical=SpiderNativeReconnect_CanonicalXboxMapping() ||
+                       SpiderSDL3GameplayLive_VerifiedXboxSwingMap();
   /* The selected Xbox's original DirectInput lZ can be driver-dependent
    * after a hot rebind. SDL3 has a separate normalized RT axis. Use BOTH
    * only while the game-owned native Xbox mapping has been verified.
