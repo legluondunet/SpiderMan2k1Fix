@@ -1,4 +1,4 @@
-"""Modal-only SDL3 Start handoff must never alter original DirectInput.
+"""Modal-only Start handoff defers the original DI owner until game Flip.
 
 Regression: DS4 and Xbox connected; Xbox selected by Start in gameplay,
 panel initially Xbox; Start on DS4 should select DS4 within modal even
@@ -54,7 +54,7 @@ def test_modal_selection_neutral_start_and_manual_handoff_c99(tmp_path):
     subprocess.run([str(binary)],check=True)
 
 
-def test_modal_start_routes_only_to_setup_and_preserves_original_owner():
+def test_modal_start_defers_original_owner_until_next_verified_game_flip():
     modal=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     hdr=(ROOT/"sdl3_gamepad_probe.h").read_text(encoding="utf-8")
@@ -73,12 +73,34 @@ def test_modal_start_routes_only_to_setup_and_preserves_original_owner():
     assert "select_slot(ui,next);" in read
     assert "if(modal_start_handoff(ui))return;" in sample
     assert "spider_sdl3_selection_focus_lost(&ui->modal_start);" in sample
-    assert "SpiderSDL3Probe_SetupModalReturn();" in modal
-    assert "void SpiderSDL3Probe_SetupModalReturn(void)" in probe
-    assert "void SpiderSDL3Probe_SetupModalReturn(void);" in hdr
-    assert "spider_sdl3_selection_focus_lost(&selection);" in probe.split(
-        "void SpiderSDL3Probe_SetupModalReturn(void)",1)[1].split(
+    assert "ui->start_owner_requested=1u;" in read
+    assert "ui->start_owner_id=ui->instance;" in read
+    assert "ui->start_owner_vid=ui->vid;" in read
+    assert "ui->start_owner_pid=ui->pid;" in read
+    assert "SpiderSDL3Probe_SetupModalReturn(" in modal
+    assert "ui.start_owner_requested && !has_quit && restore_allowed &&" in modal
+    assert "final_foreground==owner ? ui.start_owner_id:0u," in modal
+    assert "void SpiderSDL3Probe_SetupModalReturn(uint32_t requested_id," in probe
+    assert "void SpiderSDL3Probe_SetupModalReturn(uint32_t requested_id," in hdr
+    handler=probe.split("void SpiderSDL3Probe_SetupModalReturn(",1)[1].split(
         "SpiderSDL3ControllerProfile *SpiderSDL3Probe_SetupProfile(",1)[0]
+    assert "spider_sdl3_selection_focus_lost(&selection);" in handler
+    assert "setup_owner_pending=requested_id;" in handler
+    assert "setup_owner_vendor=vendor;" in handler
+    assert "setup_owner_product=product;" in handler
+    assert "selection.active=requested_id;" not in handler
+    flip=probe.split("void SpiderSDL3Probe_OnFlip(",1)[1]
+    assert "if(setup_owner_pending)" in flip
+    assert "spider_sdl3_selected_model_unique(opened,num_pads,requested_id," in flip
+    assert "selection.active=requested_id;" in flip
+    assert 'SDL3-PROBE: SETUP RETURN COMMITTED fresh modal Start' in flip
+    assert 'SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous' in flip
+    assert flip.index("if(setup_owner_pending)")<flip.index(
+        "for(i=0;i<num_pads;i++)if(pads[i].handle) {")
+    # Manual L1/R1 browsing selects a profile but never requests transfer.
+    select=modal.split("static void select_slot(",1)[1].split(
+        "static void refresh_pads(",1)[0]
+    assert "start_owner_requested" not in select
     for forbidden in ("SpiderNativeReconnect_", "VirtualProtect(",
                       "SendInput(", "WritePrivateProfileString", "CreateThread("):
         assert forbidden not in read
