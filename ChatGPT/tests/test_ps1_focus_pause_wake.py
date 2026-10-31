@@ -134,7 +134,9 @@ def test_focus_gamepad_reacquire_exactly_once_only_after_foreground_notacquired(
     assert "if(FAILED(hr)) {" in p
     # Any physically lost peripheral (INPUTLOST/UNPLUGGED) is never
     # reacquired during PAUSED; no simultaneous device release/enumeration.
-    assert "hr==DIERR_INPUTLOST" not in p
+    assert "pause_wake_retire_inputlost=hr==DIERR_INPUTLOST;" in p
+    assert "pause_wake_retire_pending=1;" in p
+    assert "IDirectInputDevice8_Acquire(device);" in p  # NOTACQUIRED only, once
     assert "hr==DIERR_UNPLUGGED" not in p
     for bad in ("detect_device(", "disable_profile(", "SendInput(", 
                 "SpiderCfg_Enable", "GetAsyncKeyState("):
