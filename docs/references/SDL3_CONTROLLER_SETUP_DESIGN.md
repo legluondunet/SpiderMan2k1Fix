@@ -1,5 +1,24 @@
 # SDL3 controller setup — staged design (draft PR #80)
 
+## Current controller convention — 31 October 2026
+
+**This section supersedes the earlier (historical) editable Confirm/Skip
+and Back/Cancel proposals below.** When the experimental selected SDL3
+native owner and context bridge are active, **physical South (DualShock
+Cross / Xbox A)** is fixed for Return/Confirm in 2D menus and allowed Bink
+skip, and **physical East (DualShock Circle / Xbox B)** is fixed for
+Escape/Back in those contexts. The game's native DirectInput Cross/A-Jump
+path alone controls scripted 3D cinematics. Neither UI command can be
+changed in the setup dialog; **only eight 3D semantic action rows** remain.
+Those eight remain storage/read-only preflight and are not a live native
+3D rebind. The existing five `[MenuBindings]` v2 keys are still parsed
+and preserved byte-for-byte on a model-specific save, but their values
+are ignored by this runtime menu/Bink input bridge. The old
+`SDL3-CONFIRM-SKIP` scripted-scene writer is disconnected. The distinct
+original intro still/input-wait pages are not yet gamepad-bridged.
+The focus-paused surface already accepts a selected pad's digital
+press/release regardless of these two UI actions.
+
 ## User goal and recovery flow
 
 A person installs the fix, plugs a controller in, starts the game and
@@ -31,8 +50,10 @@ configuration files or a log.
 
 ## Experimental live menu/Bink context bridge — PR #80
 
-The first optional runtime consumer of saved model-specific `[MenuBindings]` is
-now available. It is **OFF by default**. In the main `SpiderMan2k1Fix.ini`:
+The optional selected native-owner SDL3 menu/Bink bridge is
+available, **OFF by default**. Historical per-model `[MenuBindings]`
+remain persisted but do not override physical Cross/A and Circle/B.
+In the main `SpiderMan2k1Fix.ini`:
 
 ```ini
 [Input]
@@ -46,8 +67,9 @@ ExperimentalSDL3ContextBridge=1
 ```
 
 Only the selected SDL3 pad, after the actual original game-owned DirectInput
-device is verified, may request synthetic **Return** (`MenuConfirm` in the
-2D menu or `SkipVideo` in Bink) and **Escape** (`MenuBack`). The
+device is verified, may request synthetic **Return** (physical South/Cross/A
+in 2D/Bink) and **Escape** (physical East/Circle/B), never remapped by
+existing v2 `MenuConfirm`, `SkipVideo`, or `MenuBack` values. The
 legacy 2D controller bridge is suppressed for those same frames so inputs
 cannot be doubled. An initial neutral SDL3 sample is mandatory after focus
 loss, controller handoff, profile edit, menu/movie transition or a failing
@@ -221,7 +243,7 @@ After returning from the modal dialog, the game must still receive
 keyboard/gamepad actions and native Start switching without duplicate
 inputs or stuck focus. Keep this OFF if Windows/Wine behavior differs.
 
-## One Confirm / Skip button plus Back / Cancel — INI v2
+## Historical editable Confirm / Skip and Back / Cancel proposal — superseded
 
 **Draft PR #80: editor and persistence implemented; engine runtime routing
 is NOT yet connected.** This change replaces five visible menu/media
