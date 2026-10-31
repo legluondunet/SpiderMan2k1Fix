@@ -116,7 +116,7 @@ def test_unplug_inputlost_never_acquires_disconnected_device_same_frame():
     assert "secondary device release COMPLETE; rescan deferred 2s" in PAD
     assert "no Acquire for INPUTLOST/UNPLUGGED" in PAD
     assert "hr==DIERR_NOTACQUIRED && pause_wake_notacquired_attempts==0u" in PAD
-    assert "pause_wake_active=0; /* stop polling potentially stale input until Flip */" in PAD
+    assert "pause_wake_active=0; /* never poll stale secondary COM again */" in PAD
     assert "disable_profile_with_policy(NULL,hr==DIERR_INPUTLOST);" in PAD
     assert "secondary stale device Release BEGIN (skip Unacquire after INPUTLOST)" in PAD
     assert "secondary stale device Release COMPLETE" in PAD
