@@ -134,6 +134,9 @@ static unsigned sdl3_3d_trace_lines=0;
 static DWORD sdl3_3d_trace_tick=0;
 static uint32_t sdl3_3d_trace_id=0;
 static uint32_t sdl3_3d_trace_buttons=0;
+static uint32_t sdl3_3d_trace_sdl_buttons=0;
+static unsigned sdl3_3d_trace_trigger_edges=0;
+static DWORD sdl3_3d_trace_pov=0xffffffffu;
 static LONG sdl3_3d_trace_x=0,sdl3_3d_trace_y=0;
 static int sdl3_3d_trace_valid=0;
 static SpiderPausePadWake pause_wake={0};
@@ -1307,22 +1310,45 @@ static void xbox_trace_trigger_axes(const DIJOYSTATE2 *now) {
  * DirectInput device and never log a stale pad across a Start handoff.
  * A per-instance baseline, button edges, and a 2-second heartbeat for
  * analog motion give a bounded trace useful for in-game validation. */
+/* This comparison is diagnostic only. The already-read, independent
+ * DirectInput state and the existing SDL3 selected sample are observed on
+ * the same original Flip thread; neither is polled or acquired here.
+ * Correlate L2/RT and D-pad with RAW rgbButtons/POV/axes so the next
+ * gameplay mapping stage can rely on real controller evidence instead
+ * of guessed native DirectInput indices. It does NOT prove these values
+ * match the original game-owned DirectInput device. */
 static void sdl3_trace_3d_readonly(const DIJOYSTATE2 *state) {
-  uint32_t buttons=0;
-  unsigned i;
+  uint32_t buttons=0,selected_id=0;
+  uint16_t vid=0,pid=0;
+  SpiderSDL3ControllerSample selected={0};
+  unsigned i,trigger_edges=0;
   DWORD now;
-  int changed,first,axes_changed;
-  char line[245];
+  int changed,first,axes_changed,selected_ok;
+  char line[410];
   if(!sdl3_3d_trace_requested || !state || !sdl3_ui_instance ||
      sdl3_3d_trace_lines>=64u || !SpiderSDL3Probe_NativeOwnerEnabled())
     return;
+  selected_ok=SpiderSDL3Probe_SelectedSample(
+    &selected_id,&vid,&pid,&selected) &&
+    selected_id==sdl3_ui_instance &&
+    SpiderNativeReconnect_SDL3SelectionReady(vid,pid);
+  if(!selected_ok)return; /* never compare different physical gamepads */
   now=GetTickCount();
   for(i=0;i<16u;i++)
     if(state->rgbButtons[i]&0x80u)buttons|=(1u<<i);
+  /* Use fixed, separate digital thresholds to log physical trigger
+   * crossings without mistaking noisy analog values for many edges. */
+  if(selected.axis[SPIDER_SDL3_AXIS_LT]>=11000)
+    trigger_edges|=1u;
+  if(selected.axis[SPIDER_SDL3_AXIS_RT]>=11000)
+    trigger_edges|=2u;
   first=!sdl3_3d_trace_valid || sdl3_3d_trace_id!=sdl3_ui_instance;
-  changed=!first && buttons!=sdl3_3d_trace_buttons;
-  /* Raw DirectInput axes vary by driver and do not imply game movement.
-   * Record actual values; do not normalize or map them to actions here. */
+  changed=!first &&
+    (buttons!=sdl3_3d_trace_buttons ||
+     selected.buttons!=sdl3_3d_trace_sdl_buttons ||
+     trigger_edges!=sdl3_3d_trace_trigger_edges ||
+     state->rgdwPOV[0]!=sdl3_3d_trace_pov);
+  /* Preserve previous read-only 2-second analog heartbeat. */
   axes_changed=!first &&
     ((int64_t)state->lX-(int64_t)sdl3_3d_trace_x>1024 ||
      (int64_t)sdl3_3d_trace_x-(int64_t)state->lX>1024 ||
@@ -1332,19 +1358,24 @@ static void sdl3_trace_3d_readonly(const DIJOYSTATE2 *state) {
      (!(uint32_t)(now-sdl3_3d_trace_tick) ||
       (uint32_t)(now-sdl3_3d_trace_tick)<2000u || !axes_changed))
     return;
-  /* A burst of changing button edges is meaningful and must not be
-   * dropped; unchanged stick motion is sampled at most every 2 seconds. */
   snprintf(line,sizeof(line),
-    "SDL3-3D-TRACE: #%u selected-id=%lu kind=%s edge=%s buttons=0x%04lX lX=%ld lY=%ld lZ=%ld POV=%ld [secondary DirectInput READ-ONLY; native game actions NOT inferred]",
+    "SDL3-3D-TRACE: #%u selected-id=%lu kind=%s edge=%s DI-buttons=0x%04lX lX=%ld lY=%ld lZ=%ld slider0=%ld slider1=%ld POV=%lu SDL-buttons=0x%08lX LT=%d RT=%d [two independently sampled views; READ-ONLY; native game mapping NOT inferred]",
     ++sdl3_3d_trace_lines,(unsigned long)sdl3_ui_instance,
     detected_kind==SPIDER_RECONNECT_DS4?"DS4":"Xbox360",
-    first?"OWNER":changed?"BUTTON":"AXIS",
+    first?"OWNER":changed?"PHYSICAL":"AXIS",
     (unsigned long)buttons,(long)state->lX,(long)state->lY,
-    (long)state->lZ,(long)state->rgdwPOV[0]);
+    (long)state->lZ,(long)state->rglSlider[0],(long)state->rglSlider[1],
+    (unsigned long)state->rgdwPOV[0],
+    (unsigned long)selected.buttons,
+    (int)selected.axis[SPIDER_SDL3_AXIS_LT],
+    (int)selected.axis[SPIDER_SDL3_AXIS_RT]);
   report(line);
   sdl3_3d_trace_tick=now;
   sdl3_3d_trace_id=sdl3_ui_instance;
   sdl3_3d_trace_buttons=buttons;
+  sdl3_3d_trace_sdl_buttons=selected.buttons;
+  sdl3_3d_trace_trigger_edges=trigger_edges;
+  sdl3_3d_trace_pov=state->rgdwPOV[0];
   sdl3_3d_trace_x=state->lX;
   sdl3_3d_trace_y=state->lY;
   sdl3_3d_trace_valid=1;
