@@ -172,6 +172,89 @@ with native buffered DirectInput press events**: multiple transitions
 between samples, rebind generation changes, focus and context
 ownership require separate research and tests before wiring it up.
 
+## Direct input mask consumer: shared **held** state and native event latches
+
+A deeper offline disassembly of the exact original EXE pinpoints
+how the output of `0x0050A190` is used.
+
+`0x00505720` allocates **two DWORD locals** (`sub esp,8`).
+At `0x00505729` it takes the address of the **first** local
+(`lea ecx,[esp]`), and at `0x00505732` it takes the address
+of the **second** (`lea eax,[esp+4]`), then passes them to
+`0x0050A190` at `0x00505738`. Thus the earlier HELD/FRESH
+distinction inside the aggregator remains correct.
+
+**Important refinement**: in this particular caller, after preserving
+`esi` and `edi`, the game reads the **first local** at
+`0x00505759: mov edx,[esp+8]`, then feeds individual HELD bits
+to `0x00479540`. Subsequent stack-offset loads track the same
+local while argument pushes change `esp`. This consumer does **not
+read the second/FRESH local** before returning. The second mask
+still exists in the aggregator, but its presence **does not
+automatically mean an external SDL3 bridge must write both masks**
+at this consumer boundary.
+
+The executable has **one direct `call 0x0050A190`**
+(`0x00505738`), and the `0x00505720` routine is directly called
+at **56** sites across the executable. This is a **shared engine
+input service**, not a 3D-only function by mere location.
+Do not patch its inputs indiscriminately in a menu, movie, pause or
+scripted cutscene.
+
+### The original engine already updates button transitions
+
+The caller sends individual HELD-mask bits to
+`0x00479540` at **20** direct call sites
+(`0x00505785..0x005058E3`), then invokes `0x004796A0`
+at `0x005058F5`.
+
+The `0x00479540` helper operates on a **16-byte per-action
+state record**, not on the DirectInput device: it reads the
+previous active state byte at offset `+0`, increments/clears
+frame counters `+4`, `+8`, `+12` and updates event bytes
+`+1`/`+2`. Among verified instructions:
+
+| VA | x86 | Observation |
+| --- | --- | --- |
+| `0x00479548` | `8B 48 0C` | Read internal frame/release counter |
+| `0x0047954B` | `8A 18` | Read previous HELD state byte |
+| `0x0047955D` | `83 F9 0A` | Threshold against 10 frames |
+| `0x00479560` | `C6 40 01 01` | Set event indicator `+1` |
+| `0x0047956F` | `88 50 02` | Clear event indicator `+2` |
+| `0x0047957C` | `C6 00 01` | Mark action held |
+| `0x00479581` | `88 10` | Mark action released |
+
+This is better evidence for a potential future high-level integration
+point: supply a **neutral-gated HELD semantic mask** to the
+existing game action-state updater, rather than invent raw DirectInput
+button indexes or synthesize new fresh edges at every Flip. The
+existing engine already derives some transitions from a held value.
+
+**Still unproven and blocking activation**: exact safe hook boundary
+and calling convention, the helper's full per-action state semantics,
+how the native joystick's physical state is excluded to prevent
+duplicate commands, continuous analog expectations, and which of
+the 56 callers execute during each gameplay/menu/movie mode.
+
+An exact-hash offline reader inspector now validates **17 additional
+instruction signatures** for this chain and includes the consumer
+layout in its JSON output. Their signatures have been checked on
+the genuine original EXE supplied in this session.
+
+### Neutral-gated independent frame model
+
+`sdl3_generic_frame_preview.h` is an additional **pure portable C99
+test-only** step. It uses the previously established per-instance
+sample/profile snapshots, requires a neutral sample after focus,
+profile/instance change or context loss, and computes a HELD and
+diagnostic FRESH mask without touching game memory. Tests cover a DS3
+default semantic profile, two identical VID/PID devices with
+distinct SDL3 instance IDs, profile remapping while held, loss of
+foreground, D-pad held-only directions and a bad trigger sample.
+
+It is not wired to any runtime C file. The FRESH mask in this test
+model is **diagnostic only**, not a proposed second native write.
+
 ## Portable semantic-mask prototype (phase-1 research, NOT gameplay)
 
 A new strictly non-runtime C99 module,
