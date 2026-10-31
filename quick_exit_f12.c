@@ -3371,6 +3371,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
      GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1 &&
      GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1 &&
      GetPrivateProfileIntA("Input","ExperimentalSDL3ContextBridge",0,ini)==1 &&
+     GetPrivateProfileIntA("Debug","SDL3GameplayPlan",0,ini)==1 &&
      (f10_shortcut || GetPrivateProfileIntA("Debug","F10TestMode",0,ini)==1 ||
       GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1)) {
     InterlockedExchange(&sdl3_cutscene_reader_trace,1);
