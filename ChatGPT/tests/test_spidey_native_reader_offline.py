@@ -55,5 +55,13 @@ def test_no_runtime_mutation_or_external_modules():
     script = TOOL.read_text(encoding="utf-8")
     assert "EXPECTED_SHA256" in script
     assert "unsupported EXE: exact SHA-256" in script
+    mod = load_tool()
+    assert len(mod.KNOWN_NATIVE_SIGNATURES) == 10
+    assert mod.KNOWN_NATIVE_SIGNATURES[0] == (
+        0x00501E79, "ff 51 64", "Poll indirect COM call")
+    assert mod.KNOWN_NATIVE_SIGNATURES[3] == (
+        0x00501E9F, "8b 10 ff 52 1c",
+        "Acquire indirect COM call sequence")
+    assert "source-confirmed native reader signature differs" in script
     for forbidden in ("ctypes", "subprocess", "urllib", "WriteProcessMemory"):
         assert forbidden not in script
