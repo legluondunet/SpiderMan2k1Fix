@@ -189,6 +189,28 @@ def indirect_call_patterns(raw: bytes, va: int) -> list[dict]:
     return found
 
 
+def direct_relative_call_candidates(pe: PE, target: int) -> list[str]:
+    """Search .text for possible x86 E8 rel32 calls to an exact target.
+
+    These are candidate instruction bytes, not a disassembler. On the
+    original EXE, their counts/addresses have also been cross-checked
+    with offline llvm-objdump. Never infer a game entry hook from them.
+    """
+    matches = []
+    for section in pe.sections:
+        if section.name != ".text":
+            continue
+        raw = pe.data[section.raw_offset:section.raw_offset+section.raw_size]
+        start = pe.base + section.rva
+        for index in range(len(raw)-4):
+            if raw[index] != 0xE8:
+                continue
+            relative = struct.unpack_from("<i", raw, index+1)[0]
+            if start+index+5+relative == target:
+                matches.append("0x%08X" % (start+index))
+    return matches
+
+
 def inspect(data: bytes, *, before: int = 96, after: int = 1024,
             expected_sha: str = EXPECTED_SHA256,
             expected_size: int = EXPECTED_SIZE) -> dict:
@@ -249,6 +271,15 @@ def inspect(data: bytes, *, before: int = 96, after: int = 1024,
         "verified_previous_source_signatures": known_signatures,
         "verified_binary_input_sites": binary_verified,
         "verified_binary_mask_consumer_sites": consumer_signatures,
+        "original_direct_call_xrefs": {
+            # Binary-disassembly comparison on the exact retail executable
+            # showed these same addresses as the raw E8 candidates.
+            "aggregator_0x0050A190": direct_relative_call_candidates(pe,0x0050A190),
+            "consumer_0x00505720": direct_relative_call_candidates(pe,0x00505720),
+            "state_updater_0x00479540": direct_relative_call_candidates(pe,0x00479540),
+            "post_update_0x004796A0": direct_relative_call_candidates(pe,0x004796A0),
+            "note": "Raw E8 candidates, cross-checked with offline disassembly on this SHA only; not an authorized hook",
+        },
         "original_engine_mask_consumer": {
             "aggregator": "0x0050A190",
             "only_direct_xref_in_static_disassembly": "0x00505738",
