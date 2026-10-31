@@ -190,6 +190,57 @@ def test_setup_navigation_requires_neutral_press_edges_and_selection_reset(tmp_p
         pad.buttons=1u<<SPIDER_SETUP_NAV_EAST;
         assert(spider_sdl3_setup_nav_step(&nav,&pad)==
                (1u<<SPIDER_SETUP_NAV_EAST));
+        /* Left stick navigation is neutral-first, with drift protection
+           and one edge per tilt, independent of game-owned DirectInput. */
+        spider_sdl3_setup_nav_reset(&nav);
+        pad.buttons=0;
+        pad.axis[SPIDER_SDL3_AXIS_LEFTY]=-25000;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        assert(!nav.armed); /* held when wizard enters is ignored */
+        pad.axis[SPIDER_SDL3_AXIS_LEFTY]=2000;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        assert(nav.armed);
+        pad.axis[SPIDER_SDL3_AXIS_LEFTY]=-18000; /* under press gate */
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        pad.axis[SPIDER_SDL3_AXIS_LEFTY]=-23000;
+        assert(spider_sdl3_setup_nav_step(&nav,&pad)==
+               (1u<<SPIDER_SETUP_NAV_UP));
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        pad.axis[SPIDER_SDL3_AXIS_LEFTY]=-11000; /* hysteresis */
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        pad.axis[SPIDER_SDL3_AXIS_LEFTY]=0;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        pad.axis[SPIDER_SDL3_AXIS_LEFTY]=24000;
+        assert(spider_sdl3_setup_nav_step(&nav,&pad)==
+               (1u<<SPIDER_SETUP_NAV_DOWN));
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        pad.axis[SPIDER_SDL3_AXIS_LEFTY]=0;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        /* Left-stick X switches controller exactly as LB/RB, with
+           no possibility of synthesizing capture/close/reset. */
+        pad.axis[SPIDER_SDL3_AXIS_LEFTX]=25000;
+        assert(spider_sdl3_setup_nav_step(&nav,&pad)==
+               (1u<<SPIDER_SETUP_NAV_RB));
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        pad.axis[SPIDER_SDL3_AXIS_LEFTX]=0;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        pad.axis[SPIDER_SDL3_AXIS_LEFTX]=-25000;
+        assert(spider_sdl3_setup_nav_step(&nav,&pad)==
+               (1u<<SPIDER_SETUP_NAV_LB));
+        pad.axis[SPIDER_SDL3_AXIS_LEFTX]=0;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        /* Ambiguous diagonal analogue or mixed digital commands reset
+           the neutral gate, never cause two UI operations. */
+        pad.axis[SPIDER_SDL3_AXIS_LEFTX]=25000;
+        pad.axis[SPIDER_SDL3_AXIS_LEFTY]=-25000;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        assert(!nav.armed);
+        pad.axis[SPIDER_SDL3_AXIS_LEFTX]=0;
+        pad.axis[SPIDER_SDL3_AXIS_LEFTY]=0;
+        assert(!spider_sdl3_setup_nav_step(&nav,&pad));
+        pad.axis[SPIDER_SDL3_AXIS_LEFTY]=25000;
+        assert(spider_sdl3_setup_nav_step(&nav,&pad)==
+               (1u<<SPIDER_SETUP_NAV_DOWN));
         return 0;
       }
     """),encoding="utf-8")
@@ -225,6 +276,17 @@ def test_mouse_free_keyboard_and_selected_gamepad_setup_navigation():
     assert 'SPIDER_SETUP_NAV_DOWN=12' in nav
     assert 'spider_sdl3_profile_neutral(sample)' in nav
     assert 'spider_sdl3_setup_nav_reset(n);' in nav
+    assert 'SPIDER_SDL3_AXIS_LEFTX' in nav and 'SPIDER_SDL3_AXIS_LEFTY' in nav
+    assert 'x>-9000 && x<9000 && y>-9000 && y<9000' in nav
+    assert 'y<=-19000' in nav and 'x>=19000' in nav
+    assert 'physical=(sample->buttons&accepted)|analog;' in nav
+    assert 'edges=physical&~old;' in nav
+    assert 'Stick Y/D-pad rows' in ui and 'Stick X/L1/R1 pad' in ui
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    setup_read=probe.split("int SpiderSDL3Probe_SetupRead(",1)[1].split(
+        "/* SDL3 exposes each trigger",1)[0]
+    assert "sample->axis[SPIDER_SDL3_AXIS_LEFTX]=sdl_axis(handle,SPIDER_SDL3_AXIS_LEFTX);" in setup_read
+    assert "sample->axis[SPIDER_SDL3_AXIS_LEFTY]=sdl_axis(handle,SPIDER_SDL3_AXIS_LEFTY);" in setup_read
     assert not any(ord(ch)>127 for ch in ui), "ANSI game dialog must use ASCII-only labels"
     assert 'Keyboard: Up/Down action' in ui
     assert 'Gamepad: D-pad action' in ui
