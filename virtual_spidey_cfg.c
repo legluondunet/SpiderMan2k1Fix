@@ -1582,9 +1582,11 @@ void SpiderCfg_BootstrapGameRead(void) {
   if(opens>opened && reads>served) {
     InterlockedExchange(&native_cfg_bootstrap_loaded,1);
     report("SPIDEY-CFG: NATIVE CONFIG LOADED authenticated original game CRT read; SDL3 may inspect live keyboard bindings (legacy previews independent)");
-    if(ps1_preview_active || xbox360_preview_active)
-      InterlockedExchange(&ps1_bootstrap_loaded,1);
   }
+  /* Preserve the original narrower PS1/Xbox preview handshake exactly:
+   * only those opt-in overlays claim that their RAM bytes were consumed. */
+  if((ps1_preview_active || xbox360_preview_active) && opens>opened && reads>served)
+    InterlockedExchange(&ps1_bootstrap_loaded,1);
   snprintf(msg,sizeof(msg),
     "SPIDEY-CFG: BOOTSTRAP game loader returned: virtual opens +%lu reads +%lu; configured=%ux%u depth=32 [%s]",
     (unsigned long)(opens-opened),(unsigned long)(reads-served),
