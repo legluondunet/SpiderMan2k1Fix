@@ -390,6 +390,52 @@ the new logs will tell exactly which gate failed. Also test opposite
 direction, focus loss while setup stays open, and one hotplug cycle.
 This is **not yet a verified hardware fix**; do not merge the draft PR.
 
+## SDL3 setup modal: close with controller transfers ownership (31 Oct 2026)
+
+**User UX finding after successful handoffs**: with Xbox owning the original
+game, L1/R1 displays the DS4 profile in the SDL3 setup dialog. Pressing
+DS4 Circle closes that dialog, but the *underlying original Joystick menu*
+still listens to Xbox, so DS4 Circle stops working. A second DS4 Start
+in the original game restores controls, but this is an undiscoverable
+extra step. The `SpiderMan2k1Fix(20261031-200734).log` confirms
+`PROFILE-BROWSE L1/R1 display-id=1` and a normal B modal Close
+**without** any pending owner request; then a later normal gameplay
+`START selected logical id=1` activates the DS4 and physical Circle
+is delivered to the original menu.
+
+**New intentionally simple interaction rule**:
+- L1/R1 only browses the displayed controller's profile while the modal
+  is open; no native game state changes while it is active.
+- **Physical Circle/B on the displayed controller** closes the modal and
+  simultaneously marks that same displayed SDL instance (VID:PID) as
+  the next game owner. **Cross/A on the panel's focused Close button**
+  behaves identically. No extra Start press is required.
+- The existing Start inside the modal also remains available and
+  continues to request the displayed controller when the modal closes.
+- Keyboard Escape, title-bar X and mouse/Win32 Close simply close the
+  modal and **preserve the previous game owner**.
+- Every handoff (both pad Close and modal Start) happens **only after**
+  modal destruction and safe focus restore, followed by **the next
+  foreground Flip**; it must revalidate SDL instance presence and
+  unique VID:PID before native game-owned DirectInput reconciliation.
+  Stale/disconnected or ambiguous controller identities fail closed.
+- Existing modal Circle/B release-before-close remains mandatory so
+  the game never inherits the closing keypress as a menu action.
+  A **new Circle/B press** after return exits the game's original
+  Joystick menu. Focus loss, hotplug and RT→Swing unchanged.
+- New log `SDL3-SETUP: PAD-CLOSE GAME-OWNER requested selected-id=...`
+  followed by `SDL3-PROBE: SETUP RETURN controller-initiated owner
+  handoff PENDING`, `COMMITTED verified modal owner selected-id=...`
+  and `SDL3-OWNER: REBOUND` (or explicit `REFUSED`).
+
+**Windows acceptance needed**: Xbox active → open setup → R1 to DS4
+→ Circle DS4 closes setup → Circle DS4 *again* exits the ORIGINAL
+menu; no Start anywhere in this sequence. Repeat DS4→Xbox, verify
+L1/R1 browsing followed by Escape/mouse Close does NOT transfer owner,
+and exercise Alt+Tab/hotplug during a modal session. The old reported
+crash must not reappear. This is a candidate, **not yet validated on
+physical hardware**.
+
 ## SDL3 setup modal: Start handoff, then verified gameplay ownership (31 Oct 2026)
 
 **Windows hardware validation**: Start now selects between DS4 and Xbox360
