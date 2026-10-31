@@ -64,11 +64,12 @@ static void spider_sdl3_selection_focus_lost(SpiderSDL3Selection *s) {
   }
 }
 
-/* Returns 1 when a neutral->fresh Start press changes the selected gamepad.
- * This also permits deliberate handoff from one already-active pad to another.
- * A held Start on first detection is not a fresh press. */
-static int spider_sdl3_selection_start(SpiderSDL3Selection *s,uint32_t id,
-                                       int pressed) {
+/* Returns 1 for ANY neutral-armed fresh Start edge, even on the
+ * already selected device. Setup modals need this to turn an explicitly
+ * pressed Start on their displayed profile into a deferred owner request
+ * after the user browses with L1/R1. No held Start can claim ownership. */
+static int spider_sdl3_selection_start_edge(SpiderSDL3Selection *s,uint32_t id,
+                                            int pressed) {
   unsigned i;
   if(!s || !id)return 0;
   pressed=pressed!=0;
@@ -79,7 +80,7 @@ static int spider_sdl3_selection_start(SpiderSDL3Selection *s,uint32_t id,
       p->previous_start=(unsigned)pressed;
       return 0;
     }
-    if(pressed && !p->previous_start && s->active!=id) {
+    if(pressed && !p->previous_start) {
       s->active=id;
       p->previous_start=1u;
       return 1;
@@ -88,5 +89,14 @@ static int spider_sdl3_selection_start(SpiderSDL3Selection *s,uint32_t id,
     return 0;
   }
   return 0;
+}
+
+/* The original game's one-player takeover policy is unchanged: callers
+ * only see a claim if the selected instance actually changed. */
+static int spider_sdl3_selection_start(SpiderSDL3Selection *s,uint32_t id,
+                                       int pressed) {
+  uint32_t old=s?s->active:0u;
+  return spider_sdl3_selection_start_edge(s,id,pressed) &&
+         s->active!=old;
 }
 #endif
