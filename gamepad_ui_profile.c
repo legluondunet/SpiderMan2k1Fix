@@ -44,6 +44,7 @@
 #include "virtual_spidey_cfg.h"
 #include "native_joystick_reconnect.h"
 #include "sdl3_gamepad_probe.h"
+#include "sdl3_gameplay_live.h"
 #include "ps1_input_flight_recorder.h"
 #include "ps1_joystick_readonly_menu.h"
 #include "sdl3_controller_setup.h"
@@ -295,6 +296,17 @@ static void begin_scancode(unsigned scan,const char *action) {
       action,scan,(long)number);
     report(line);
   }
+}
+/* Live SDL3 Pause is the eighth profile action. The seven game actions
+ * remain native DirectInput; only Pause requests the same guarded
+ * one-frame Escape the 2D bridge already uses. The live side verifies
+ * the selected owner, fresh press and exact foreground 3D before calling.
+ * Never stack key downs or use the game's own DirectInput COM device. */
+void SpiderGamepadUI_SDL3GameplayPause(HWND hwnd) {
+  if(!hwnd || GetForegroundWindow()!=hwnd ||
+     !IsWindowVisible(hwnd) || !SpiderSDL3GameplayLive_OwnsPause() ||
+     active_scan!=0u)return;
+  begin_scancode(0x01u,"SDL3 saved Pause -> native Escape");
 }
 /* Keep held RT-to-Swing key independent from momentary menu keys.
  * The injected DIK scan is dynamically read from the authenticated game
@@ -1713,7 +1725,8 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   }
   if((ps1_preview_active || sdl3_live_sony) &&
      (gameplay_allowed || native_pause_active) &&
-     !movie_allowed && share_edge) {
+     !movie_allowed && share_edge &&
+     !SpiderSDL3GameplayLive_OwnsPause()) {
     begin_scancode(0x01u,"Escape");
     if(sdl3_live_sony && !ps1_preview_active)
       report("SDL3-OWNER-UI: canonical native Sony DS4 SHARE -> Escape in 3D/pause; game-owned mapping verified");
