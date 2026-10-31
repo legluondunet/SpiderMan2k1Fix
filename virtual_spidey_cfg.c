@@ -420,7 +420,14 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
   }
   snprintf(line,sizeof(line),"; 1 = Stereo, 0 = Mono (the game's internal flag is inverted).\r\nStereo=%d\r\n",
            spidey_cfg_factory[0xF8]==0?1:0);
-  if(!write_ini_text(file,line) || !write_ini_text(file,keyboard_header))goto write_fail;
+  if(!write_ini_text(file,line))goto write_fail;
+  /* Process-local DirectSound8 output policy; 0 avoids the DS4 audio
+   * endpoint where a verified, alternative native Windows device exists. */
+  if(!write_ini_text(file,
+       "; 0 = avoid DualShock 4 audio output for this game (default).\\r\\n"
+       "; 1 = original output routing, including a headset on the controller.\\r\\n"
+       "DualShock4AudioOutput=0\\r\\n") ||
+     !write_ini_text(file,keyboard_header))goto write_fail;
   for(i=0;i<11;i++) {
     DWORD off=action_offsets[i];
     DWORD raw=(DWORD)spidey_cfg_factory[off] |
