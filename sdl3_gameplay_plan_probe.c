@@ -19,6 +19,7 @@
 #include <string.h>
 #include "sdl3_gameplay_plan_probe.h"
 #include "sdl3_gameplay_plan.h"
+#include "sdl3_gameplay_live.h"
 #include "sdl3_gamepad_probe.h"
 #include "native_joystick_reconnect.h"
 #include "quick_exit_f12.h"
@@ -30,6 +31,7 @@ static SpiderSDL3GameplayPlan state;
 static void (*report)(const char *)=NULL;
 void SpiderSDL3GameplayPlan_Init(const char *ini,void (*logger)(const char *)) {
   report=logger;
+  SpiderSDL3GameplayLive_Init(ini,logger); /* separate opt-in runtime */
   reports=0;reported_unready=0;
   spider_sdl3_gameplay_plan_reset(&state);
   requested=ini && GetPrivateProfileIntA("Debug","SDL3GameplayPlan",0,ini)==1 &&
@@ -46,6 +48,9 @@ void SpiderSDL3GameplayPlan_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
   SpiderSDL3ControllerProfile *profile;
   int rc,ready;
   char line[245];
+  /* Live bridge is a SEPARATE opt-in and must run even if the
+   * passive [Debug] SDL3GameplayPlan trace is disabled. */
+  SpiderSDL3GameplayLive_OnFlip(hwnd,menu2d,gameplay3d,bink,pause);
   if(!requested)return;
   if(!hwnd || GetForegroundWindow()!=hwnd || menu2d ||
      !gameplay3d || bink || pause) {
