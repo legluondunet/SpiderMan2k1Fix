@@ -44,6 +44,10 @@ typedef struct {
   unsigned slot;
   unsigned count;
   unsigned action;
+  /* Capped controller focus/Start telemetry for real Windows regression
+   * reports; no per-frame spam and no change to input routing. */
+  unsigned start_trace_count;
+  unsigned start_unarmed_reported[SPIDER_SDL3_MAX_GAMEPADS];
   /* Close from a physical SDL3 B must wait for its release. Never destroy
    * our owner window synchronously inside WM_TIMER or a child callback. */
   unsigned close_pending;
@@ -200,6 +204,7 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
   unsigned n,i,desired=0;
   uint32_t old_id,gameplay_id=0;
   uint32_t opened_ids[SPIDER_SDL3_MAX_GAMEPADS]={0};
+  unsigned start_released_at_scan[SPIDER_SDL3_MAX_GAMEPADS]={0};
   uint16_t gameplay_vid=0,gameplay_pid=0;
   int matched_owner=0;
   char selection_line[220];
@@ -225,7 +230,11 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
     else {
       snprintf(line,sizeof(line),"%s [%04X:%04X] (id=%lu)",
         name,(unsigned)vid,(unsigned)pid,(unsigned long)id);
-      if(i<SPIDER_SDL3_MAX_GAMEPADS)opened_ids[i]=id;
+      if(i<SPIDER_SDL3_MAX_GAMEPADS) {
+        opened_ids[i]=id;
+        start_released_at_scan[i]=
+          (sample.buttons&(1u<<SPIDER_SDL3_BUTTON_START))==0u;
+      }
       if(old_id && id==old_id)desired=i;
       else if(!old_id && gameplay_id && id==gameplay_id &&
               vid==gameplay_vid && pid==gameplay_pid) {
@@ -237,6 +246,16 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
   }
   ui->count=n;
   spider_sdl3_selection_sync(&ui->modal_start,opened_ids,n);
+  /* SetupRead already sampled all physical pads while the modal owns
+   * foreground. Prime new/reconnected instances immediately if Start
+   * was actually seen RELEASED; do not accept a held Start, and do not
+   * bypass the focus-loss neutral gate. This avoids missing the first
+   * short deliberate press before the next WM_TIMER (35 ms). */
+  for(i=0;i<n && i<SPIDER_SDL3_MAX_GAMEPADS;i++) {
+    if(opened_ids[i] && start_released_at_scan[i])
+      spider_sdl3_selection_start_edge(&ui->modal_start,opened_ids[i],0);
+    ui->start_unarmed_reported[i]=0;
+  }
   if(!n) {
     spider_sdl3_capture_reset(&ui->capture);
     ui->instance=0;ui->vid=0;ui->pid=0;
@@ -269,10 +288,33 @@ static int modal_start_handoff(SpiderSDL3SetupUI *ui) {
     SpiderSDL3ControllerSample sample;
     uint32_t id=0;
     uint16_t vid=0,pid=0;
+    unsigned pressed,armed=0,previous=0,j;
+    int edge;
     if(!SpiderSDL3Probe_SetupRead(i,&id,&vid,&pid,
                                   NULL,0,&sample))continue;
-    if(spider_sdl3_selection_start_edge(&ui->modal_start,id,
-        (sample.buttons&(1u<<SPIDER_SDL3_BUTTON_START))!=0)) {
+    pressed=(sample.buttons&(1u<<SPIDER_SDL3_BUTTON_START))!=0;
+    for(j=0;j<ui->modal_start.count;j++)
+      if(ui->modal_start.slots[j].id==id) {
+        armed=ui->modal_start.slots[j].start_armed;
+        previous=ui->modal_start.slots[j].previous_start;
+        break;
+      }
+    if(!pressed && i<SPIDER_SDL3_MAX_GAMEPADS)
+      ui->start_unarmed_reported[i]=0;
+    if(pressed && i<SPIDER_SDL3_MAX_GAMEPADS &&
+       (!previous || (!armed && !ui->start_unarmed_reported[i])) &&
+       ui->start_trace_count<32u && setup_report) {
+      char line[208];
+      snprintf(line,sizeof(line),
+        "SDL3-SETUP: START-SAMPLE id=%lu slot=%u armed=%u previous=%u capture=%u closing=%u foreground=1",
+        (unsigned long)id,i,armed,previous,
+        ui->capture.active,ui->close_pending);
+      setup_report(line);
+      ui->start_trace_count++;
+      if(!armed)ui->start_unarmed_reported[i]=1;
+    }
+    edge=spider_sdl3_selection_start_edge(&ui->modal_start,id,pressed);
+    if(edge) {
       next=i;
       ++claims;
     }
@@ -280,6 +322,10 @@ static int modal_start_handoff(SpiderSDL3SetupUI *ui) {
   /* Simultaneous Start presses are ambiguous; refuse both. A capture or
    * pending close cannot change profiles halfway through its lifecycle. */
   if(claims!=1u || ui->capture.active || ui->close_pending) {
+    if(claims>1u && ui->start_trace_count<32u && setup_report) {
+      setup_report("SDL3-SETUP: START-REFUSED simultaneous claims; previous displayed controller retained");
+      ui->start_trace_count++;
+    }
     /* All Start edges have been sampled/consumed. Do NOT leave the
      * modal's active identity on the last sampled device when two pads
      * press Start together, or when capturing/closing. */
@@ -388,6 +434,14 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
           (edge==(1u<<SPIDER_SETUP_NAV_LB)?ui->count-1u:1u))%ui->count;
         SendMessageA(ui->pads,CB_SETCURSEL,next,0);
         select_slot(ui,next);
+        if(setup_report && ui->start_trace_count<32u) {
+          char line[180];
+          snprintf(line,sizeof(line),
+            "SDL3-SETUP: PROFILE-BROWSE L1/R1 display-id=%lu VID:PID=%04X:%04X (game owner unchanged)",
+            (unsigned long)ui->instance,(unsigned)ui->vid,(unsigned)ui->pid);
+          setup_report(line);
+          ui->start_trace_count++;
+        }
       }
     } else if(edge==(1u<<SPIDER_SETUP_NAV_SOUTH)) {
       if(ui->focus.column==SPIDER_SETUP_FOCUS_BUTTONS) {
