@@ -373,6 +373,12 @@ int SpiderSDL3Probe_SetupPump(void) {
   }
   return 1;
 }
+void SpiderSDL3Probe_SetupModalReturn(void) {
+  if(!ready || !scanned || !sdl3_game_thread ||
+     sdl3_game_thread!=GetCurrentThreadId())return;
+  spider_sdl3_selection_focus_lost(&selection);
+  say("SDL3-PROBE: SETUP RETURN Start takeover disarmed until neutral; gameplay selected-id preserved");
+}
 SpiderSDL3ControllerProfile *SpiderSDL3Probe_SetupProfile(uint16_t vid,uint16_t pid) {
   if(!ready || !scanned || !sdl3_game_thread ||
      sdl3_game_thread!=GetCurrentThreadId())return NULL;
