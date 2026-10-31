@@ -120,7 +120,7 @@ def test_hotplug_uses_live_authenticated_keyboard_scan_and_canonical_native_xbox
     assert "int SpiderCfg_NativeConfigLoaded(void)" in CFG
     assert "int SpiderCfg_NativeConfigLoaded(void);" in API
     assert 'InterlockedExchange(&native_cfg_bootstrap_loaded,1);' in CFG
-    assert "if(ps1_preview_active || xbox360_preview_active)" in CFG
+    assert "if((ps1_preview_active || xbox360_preview_active) && opens>opened && reads>served)" in CFG
     assert 'InterlockedExchange(&ps1_bootstrap_loaded,1);' in CFG
     assert "VirtualQuery((const void *)table,&mbi,sizeof(mbi))" in block
     assert "mask!=masks[i]" in block
