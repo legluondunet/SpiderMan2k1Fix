@@ -57,7 +57,12 @@ def test_hotplug_native_table_swapping_is_off_by_default_and_never_touches_keybo
     assert "VirtualProtect((void *)address,0x70u,PAGE_READWRITE,&old)" in NATIVE
     assert "spider_native_swap_preset(current)!=to_kind" in NATIVE
     assert "original[i]" in NATIVE
-    assert "spider_ps1_buttons:spider_xbox360_buttons" in NATIVE
+    assert "spider_ps1_buttons:" in NATIVE
+    assert "spider_xbox360_buttons_sdl3_rt:" in NATIVE
+    assert "spider_xbox360_buttons;" in NATIVE
+    assert "SpiderSDL3Probe_NativeOwnerEnabled()" in NATIVE
+    assert "SPIDER_NATIVE_BUTTON_COUNT==10u" in NATIVE
+    assert "memcmp(current,target,sizeof(current))==0" in NATIVE
     assert "SPIDER_NATIVE_SWAP_SLOTS=14" in PROBE
     target=NATIVE.split("static void swap_native_gameplay_mapping(",1)[1].split("static void close_candidate(",1)[0]
     for forbidden in ("WritePrivateProfileStringA(", "SendInput(", "SPIDER_NATIVE_FACTORY",
