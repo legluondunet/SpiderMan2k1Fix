@@ -3509,10 +3509,15 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
    * leave those calls completely untouched. */
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
      GetPrivateProfileIntA("Debug","Log",0,ini)==1) {
-    if(install_debug_3d_native_input_probes())
+    if(install_debug_3d_native_input_probes()) {
       say("QUICK-EXIT-F12: DEBUG-3D-NATIVE-INPUT five original 0x50C180 3D input callsites traced (original result untouched; SPACE owner and playable boundary UNKNOWN)");
-    else
+      if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)==1)
+        say("SDL3-CUTSCENE-READER: five original 0x50C180 callsites installed; bounded scripted-scene result correlation ACTIVE, no native input suppression");
+    } else {
       say("QUICK-EXIT-F12: DEBUG-3D-NATIVE-INPUT callsite signatures mismatch; passive 3D input probes disabled, F12 exit guard preserved");
+      if(InterlockedExchange(&sdl3_cutscene_reader_trace,0)==1)
+        say("SDL3-CUTSCENE-READER: REFUSED, original 3D input callsite signature mismatch or install failed; gameplay and skip unchanged");
+    }
     if(install_debug_3d_space_gate_probes())
       say("QUICK-EXIT-F12: DEBUG-3D-SPACE-GATE original 0x455427/0x455444 DIK_SPACE=0x39 and flag 0x100 gate traced (original polls unchanged; gate INACTIVE in previous Wine runs)");
     else
