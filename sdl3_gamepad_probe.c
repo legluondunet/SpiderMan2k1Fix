@@ -15,6 +15,7 @@
 #include "sdl3_gamepad_probe.h"
 #include "sdl3_gamepad_selection.h"
 #include "sdl3_gamepad_slots.h"
+#include "sdl3_gamepad_identity.h"
 #include "sdl3_controller_profile.h"
 #include "sdl3_controller_profile_store.h"
 #include "native_joystick_reconnect.h"
@@ -145,6 +146,8 @@ unsigned SpiderSDL3Probe_MappedCount(void) {
 }
 int SpiderSDL3Probe_SelectedIdentity(uint16_t *vid,uint16_t *pid,
                                      uint32_t *instance_id) {
+  SpiderSDL3Identity open[SPIDER_SDL3_MAX_GAMEPADS]={{0}};
+  unsigned i;
   uint16_t v,p;
   if(vid)*vid=0;
   if(pid)*pid=0;
@@ -153,6 +156,20 @@ int SpiderSDL3Probe_SelectedIdentity(uint16_t *vid,uint16_t *pid,
      !sdl_vendor || !sdl_product)return 0;
   v=sdl_vendor(selection.active);p=sdl_product(selection.active);
   if(!v || !p)return 0; /* A synthetic/unknown product has no safe DI match. */
+  /* A single-player session can contain several DISTINCT controllers.
+   * It is safe to bind their selected native DI device by exact VID:PID.
+   * Two open pads with the same model are ambiguous under the original
+   * game's DirectInput8 product-only identity: fail closed for both. */
+  for(i=0;i<num_pads && i<SPIDER_SDL3_MAX_GAMEPADS;i++) {
+    if(pads[i].id && pads[i].handle &&
+       (!sdl_connected || sdl_connected(pads[i].handle))) {
+      open[i].instance_id=pads[i].id;
+      open[i].vendor=sdl_vendor(pads[i].id);
+      open[i].product=sdl_product(pads[i].id);
+    }
+  }
+  if(!spider_sdl3_selected_model_unique(
+       open,num_pads,selection.active,v,p))return 0;
   if(vid)*vid=v;
   if(pid)*pid=p;
   if(instance_id)*instance_id=selection.active;
