@@ -688,6 +688,7 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
       }
     }
     accepted=SpiderSDL3Probe_NativeOwnerEnabled() &&
+      spider_reconnect_kind(vendor,product)!=SPIDER_RECONNECT_NONE &&
       spider_sdl3_selected_model_unique(opened,num_pads,requested_id,
                                          vendor,product);
     if(accepted) {
