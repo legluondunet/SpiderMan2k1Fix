@@ -46,6 +46,7 @@ MusicSFXLevel=69
 VoiceLevel=79
 MovieLevel=69
 Stereo=1
+DualShock4AudioOutput=0
 
 [Keyboard]
 Up=UP
@@ -83,7 +84,7 @@ The example `RawHex` line is **illustrative only**: the generated file contains 
 | `[Display] Brightness` | Game brightness from 0 through 9. |
 | `[Display] FPSLimit` | **Player-controlled frame limit.** Default `30`; `0` disables the limiter, `1..240` sets a target. Higher FPS can expose timing issues in the original game. |
 | `[Input] KeyboardLayout` | `Auto` detects the Windows/Wine input layout, `Off` leaves original QWERTY positions. |
-| `[Audio]` | Music/effects, voice and movie volumes (0..100%); `Stereo=1` selects stereo. |
+| `[Audio]` | Music/effects, voice and movie volumes (0..100%); `Stereo=1` selects stereo. `DualShock4AudioOutput=0` attempts game-only avoidance of the controller playback endpoint on native Windows; `1` keeps original routing. |
 | `[Keyboard]` / `[Joystick]` | The eleven original keyboard actions and seven joystick button bindings, also saved from the game's menus. |
 | `[Internal] RawHex` | Lossless copy of the game's original 252-byte configuration record. Not a player-facing control. |
 
