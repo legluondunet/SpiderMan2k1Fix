@@ -115,6 +115,13 @@ def test_hotplug_uses_live_authenticated_keyboard_scan_and_canonical_native_xbox
     block=CFG.split('unsigned SpiderCfg_Xbox360SwingScanLive(void) {',1)[1].split(
         'void SpiderCfg_CancelXbox360Preview(',1)[0]
     assert "const uintptr_t table=0x00568398u;" in block
+    assert "SpiderCfg_NativeConfigLoaded()" in block
+    assert "SpiderCfg_PS1BootstrapLoaded()" not in block
+    assert "int SpiderCfg_NativeConfigLoaded(void)" in CFG
+    assert "int SpiderCfg_NativeConfigLoaded(void);" in API
+    assert 'InterlockedExchange(&native_cfg_bootstrap_loaded,1);' in CFG
+    assert "if(ps1_preview_active || xbox360_preview_active)" in CFG
+    assert 'InterlockedExchange(&ps1_bootstrap_loaded,1);' in CFG
     assert "VirtualQuery((const void *)table,&mbi,sizeof(mbi))" in block
     assert "mask!=masks[i]" in block
     assert "scans[i]==scan" in block
