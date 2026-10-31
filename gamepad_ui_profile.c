@@ -77,6 +77,7 @@ static unsigned xbox_button_trace_count=0;
 static int xbox_trigger_probe_requested=0;
 /* Separate manual RT-to-Swing keyboard experiment (default OFF). */
 static int xbox_rt_swing_requested=0;
+static int xbox_rt_swing_sdl3_mode=0;
 static unsigned xbox_rt_swing_down_scan=0;
 static unsigned xbox_rt_swing_denied_count=0;
 static unsigned xbox_rt_swing_source_reports=0;
@@ -516,7 +517,21 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
     GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1;
   if(sdl3_3d_trace_requested)
     report("SDL3-3D-TRACE: requested; only secondary read-only physical states, 64-line cap; native game input untouched");
-  xbox_rt_swing_requested=GetPrivateProfileIntA("Input","ControllerXbox360RTSwing",0,ini)==1;
+  /* The old bridge stays disabled by default outside SDL3.
+   * In fully opted-in SDL3 native gameplay, the separate RT-to-key
+   * bridge defaults ON; the user may explicitly opt out with
+   * ExperimentalSDL3XboxRTSwing=0. Existing legacy =0 does not disable
+   * SDL3 gameplay semantics or silently retain stick-click Swing. */
+  xbox_rt_swing_sdl3_mode=
+    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3GameplayBindings",0,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickUnplugGuard",0,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickReconnect",0,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickMappingSwap",0,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3XboxRTSwing",1,ini)==1;
+  xbox_rt_swing_requested=xbox_rt_swing_sdl3_mode ||
+    GetPrivateProfileIntA("Input","ControllerXbox360RTSwing",0,ini)==1;
   ps1_options_skip_requested=GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1;
   /* ControllerPS1ReadOnlyJoystick is legacy. A supported detected
    * controller now always gets a read-only Joystick menu. */
@@ -573,9 +588,11 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   report(xbox360_preview_requested?
     "GAMEPAD-XBOX360: PREVIEW REQUESTED (opt-in, unique Xbox + native readonly + CRT bootstrap required)":
     "GAMEPAD-XBOX360: PREVIEW OFF (default, original 3D bindings retained)");
-  report(xbox_rt_swing_requested?
-    "GAMEPAD-XBOX360: RT-SWING REQUESTED negative lZ -> held native keyboard Swing; requires original Xbox preview OR canonical live Xbox hot-swap mapping":
-    "GAMEPAD-XBOX360: RT-SWING OFF (default)");
+  report(xbox_rt_swing_sdl3_mode?
+    "GAMEPAD-XBOX360: SDL3 RT-SWING ENABLED (opted-in native gameplay; SDL3 RT + DirectInput lZ, native Xbox owner required)":
+    xbox_rt_swing_requested?
+    "GAMEPAD-XBOX360: RT-SWING REQUESTED legacy opt-in; requires verified Xbox native mapping":
+    "GAMEPAD-XBOX360: RT-SWING OFF (legacy default)");
 }
 /* Called on the ORIGINAL game/menu thread after the owned setup HWND
  * has been destroyed, never while the modal dialog is pumping messages.
