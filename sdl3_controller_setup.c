@@ -185,9 +185,19 @@ static void select_slot(SpiderSDL3SetupUI *ui,unsigned slot) {
 }
 static void refresh_pads(SpiderSDL3SetupUI *ui) {
   unsigned n,i,desired=0;
-  uint32_t old_id;
+  uint32_t old_id,gameplay_id=0;
+  uint16_t gameplay_vid=0,gameplay_pid=0;
+  int matched_owner=0;
+  char selection_line[220];
   if(!ui || !ui->pads)return;
   old_id=ui->instance;
+  /* Initial modal open must follow the *game-owned selected SDL3 pad*,
+   * not the first enumerated pad (typically a connected DS4). A user
+   * choosing another model inside this dialog retains that choice on
+   * subsequent refreshes. The identity API already rejects duplicate
+   * VID:PID and stale/non-native selections. */
+  if(!old_id)
+    SpiderSDL3Probe_SelectedIdentity(&gameplay_vid,&gameplay_pid,&gameplay_id);
   n=SpiderSDL3Probe_SetupCount();
   SendMessageA(ui->pads,CB_RESETCONTENT,0,0);
   for(i=0;i<n;i++) {
@@ -202,6 +212,11 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
       snprintf(line,sizeof(line),"%s [%04X:%04X] (id=%lu)",
         name,(unsigned)vid,(unsigned)pid,(unsigned long)id);
       if(old_id && id==old_id)desired=i;
+      else if(!old_id && gameplay_id && id==gameplay_id &&
+              vid==gameplay_vid && pid==gameplay_pid) {
+        desired=i;
+        matched_owner=1;
+      }
     }
     SendMessageA(ui->pads,CB_ADDSTRING,0,(LPARAM)line);
   }
@@ -214,6 +229,13 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
     return;
   }
   SendMessageA(ui->pads,CB_SETCURSEL,desired,0);
+  if(!old_id && setup_report) {
+    snprintf(selection_line,sizeof(selection_line),
+      "SDL3-SETUP: AUTO-SELECT slot=%u source=%s gameplay-id=%lu VID:PID=%04X:%04X",
+      desired,matched_owner?"verified-gameplay-owner":"fallback-first-mapped",
+      (unsigned long)gameplay_id,(unsigned)gameplay_vid,(unsigned)gameplay_pid);
+    setup_report(selection_line);
+  }
   if(old_id && desired!=ui->slot)
     spider_sdl3_capture_reset(&ui->capture);
   select_slot(ui,desired);
