@@ -343,6 +343,49 @@ path, which is still game-native. Revert
 from expectations. **Do not merge PR #80 until Windows and Wine
 gameplay testing** confirms owner, pause, triggers and safe rollback.
 
+## DualShock 3 (054C:0268) — detected, native support NOT enabled (31 Oct 2026)
+
+**User Windows 11 log**: `SpiderMan2k1Fix(20261031-210857).log`,
+application `v1.1.0-4c5c7d9`; user confirms customized Xbox360
+profile **works** in 3D. PS3 controller **does not work** during the
+same session. This is **not** a supported DS3 gameplay build.
+
+PS3 VID:PID **`054C:0268`** is enumerated by Windows
+DirectInput (`PLAYSTATION(R)3 Controller`) and SDL3 (`PS3 Controller`).
+SDL3 attaches PS3 at startup (id=1), detaches it at flip ~720, later
+attaches id=4 at flip ~3658, detaches at ~4200, and re-attaches id=5
+at ~4280. User had Xbox active, so `selected-id=2` stayed Xbox
+through those events. There is **no `START selected logical ... 054C:0268`**
+event and no `SDL3-PS3-PROBE` physical-button trace in the old build,
+so **we cannot claim whether SDL3 ever observed the PS3 Start press**.
+Native code explicitly recognizes only DS4/Xbox360:
+`spider_reconnect_kind(0x054c,0x0268)==SPIDER_RECONNECT_NONE`.
+Do not infer DS3 physical DirectInput indices from DS4 or Xbox layouts.
+
+A **read-only diagnostic candidate** is added to this draft branch:
+- For **only** SDL3 `054C:0268`, log up to **48** changes of its SDL3
+  normalized 21-button mask and the Start bit. No native Acquire,
+  DirectInput hook, configuration write, input forwarding or driver
+  substitution. Log prefix `SDL3-PS3-PROBE`.
+- A fresh Start on an **unsupported** SDL3 model now explicitly logs
+  `SDL3-OWNER: START REFUSED unsupported native controller` and
+  preserves the last selected controller, instead of detaching the
+  previously verified Xbox/DS4 owner. The controller-setup-modal
+  deferred Start route applies the same native model gate.
+- Sony DS4 and Xbox360 runtime mappings, including customized
+  Xbox six-button mappings and RT Swing, remain unchanged.
+
+**Next Windows test**: Xbox and DS3 connected, gameplay foreground,
+press/release DS3 Start and Cross, Square, Circle, Triangle, L1/R1,
+and L2/R2 once each; retain the complete log. Determine if SDL3
+produces normalized Start and face-button edges, and whether the DS3
+disconnects unexpectedly. For actual native DS3 gameplay support,
+separately verify exact original-game DirectInput button indices,
+axis ranges, trigger representation and Pause semantics on this
+specific Windows driver before authorizing any new native mapping.
+**No DS3 native gameplay is enabled by this probe**, and no merge
+until physical validation.
+
 ## Xbox 360 custom 3D mappings — B/X and Y/A swap (31 Oct 2026, candidate)
 
 **User Windows 11 hardware result**: `SpiderMan2k1Fix(20261031-205202).log`
