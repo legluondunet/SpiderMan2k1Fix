@@ -1,119 +1,103 @@
-"""Single configurable SDL3 Confirm/Skip UI action, v2 files unchanged."""
+"""Natural South/Cross/A confirmation policy, backwards-compatible v2 storage."""
 from pathlib import Path
 import shutil
 import subprocess
 import textwrap
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT=Path(__file__).resolve().parents[2]
 
 
-def test_confirm_skip_uses_one_visible_binding_and_preserves_legacy_mixed(tmp_path):
-    cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
-    if not cc:
-        return
-    src = tmp_path / "unified.c"
-    exe = tmp_path / "unified"
+def test_fixed_south_and_back_visible_without_rewriting_saved_v2(tmp_path):
+    cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc:return
+    src=tmp_path/"fixed.c"
+    exe=tmp_path/"fixed"
     src.write_text(textwrap.dedent(r"""
-        #include <assert.h>
-        #include <string.h>
-        #include "sdl3_controller_profile_ini.h"
-        #define C SPIDER_SDL3_CONTEXT_CONFIRM
-        #define B SPIDER_SDL3_CONTEXT_BACK
-        #define V SPIDER_SDL3_CONTEXT_SKIP_VIDEO
-        #define S SPIDER_SDL3_CONTEXT_NEXT_STILL
-        #define K SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE
-        int main(void) {
-          SpiderSDL3ControllerProfile p,old,decoded;
-          SpiderSDL3Binding shared,a,b,x;
-          size_t len=0;
-          char txt[SPIDER_SDL3_PROFILE_INI_MAX+1];
-          assert(SPIDER_SDL3_ACTION_COUNT==8);
-          assert(SPIDER_SDL3_CONTEXT_COUNT==5);
-          assert(SPIDER_SDL3_SETUP_ACTION_COUNT==13); /* unchanged v2 */
-          assert(SPIDER_SDL3_VISIBLE_ACTION_COUNT==10);
-          a=spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,0);
-          b=spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,1);
-          x=spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,2);
-          assert(spider_sdl3_profile_default(&p,0x054c,0x09cc));
-          assert(spider_sdl3_profile_shared_confirm_binding(&p,&shared));
-          assert(spider_sdl3_binding_equal(shared,a));
-          assert(spider_sdl3_binding_equal(p.context[K],a));
-          /* An older v2 with North for scripted skip remains MIXED.
-             Reading/encoding has no implicit migration or edits. */
-          assert(spider_sdl3_profile_assign_context(&p,K,
-                      spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,3)));
-          old=p;
-          assert(!spider_sdl3_profile_shared_confirm_binding(&p,&shared));
-          assert(spider_sdl3_ini_encode(&p,txt,sizeof(txt),&len));
-          assert(strstr(txt,"SkipCutscene=button:3\r\n"));
-          assert(spider_sdl3_ini_decode(txt,len,0x054c,0x09cc,&decoded));
-          assert(!memcmp(&decoded,&old,sizeof(old)));
-          /* Moving Back on mixed profile must not silently homogenize
-             the three non-menu keys. */
-          assert(spider_sdl3_profile_assign_back(&p,a));
-          assert(spider_sdl3_binding_equal(p.context[C],b));
-          assert(p.context[K].index==3);
-          assert(!spider_sdl3_profile_shared_confirm_binding(&p,&shared));
-          /* Single Confirm/Skip capture replaces FOUR keys at once,
-             while keeping 3D Jump and other 3D actions untouched. */
-          old=p;
-          assert(spider_sdl3_profile_assign_visible(&p,8,x));
-          assert(spider_sdl3_profile_shared_confirm_binding(&p,&shared));
-          assert(spider_sdl3_binding_equal(shared,x));
-          assert(spider_sdl3_binding_equal(p.context[C],x));
-          assert(spider_sdl3_binding_equal(p.context[V],x));
-          assert(spider_sdl3_binding_equal(p.context[S],x));
-          assert(spider_sdl3_binding_equal(p.context[K],x));
-          assert(!memcmp(old.actions,p.actions,sizeof(p.actions)));
-          assert(spider_sdl3_binding_equal(p.context[B],a));
-          /* Bind Confirm/Skip to Back key: previous menu confirm becomes
-             Back, and all four linked keys remain synchronized. */
-          assert(spider_sdl3_profile_assign_visible(&p,8,a));
-          assert(spider_sdl3_profile_shared_confirm_binding(&p,&shared));
-          assert(spider_sdl3_binding_equal(shared,a));
-          assert(spider_sdl3_binding_equal(p.context[B],x));
-          /* Bind Back to Confirm/Skip key: swap both as one group. */
-          assert(spider_sdl3_profile_assign_visible(&p,9,a));
-          assert(spider_sdl3_profile_shared_confirm_binding(&p,&shared));
-          assert(spider_sdl3_binding_equal(shared,x));
-          assert(spider_sdl3_binding_equal(p.context[B],a));
-          assert(!memcmp(old.actions,p.actions,sizeof(p.actions)));
-          assert(!spider_sdl3_profile_assign_visible(&p,10,a));
-          assert(!spider_sdl3_profile_assign_visible(&p,8,
-              spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,6)));
-          assert(!spider_sdl3_profile_assign_visible(&p,9,
-              spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,5)));
-          assert(spider_sdl3_profile_valid(&p));
-          /* Changing a 3D binding never changes UI/menu defaults. */
-          old=p;
-          assert(spider_sdl3_profile_assign_visible(&p,0,
-                      spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,4)));
-          assert(!memcmp(old.context,p.context,sizeof(p.context)));
-          assert(spider_sdl3_ini_encode(&p,txt,sizeof(txt),&len));
-          assert(spider_sdl3_ini_decode(txt,len,0x054c,0x09cc,&decoded));
-          assert(!memcmp(&decoded,&p,sizeof(p)));
-          return 0;
-        }
-    """), encoding="utf-8")
-    subprocess.run([cc, "-std=c99", "-Wall", "-Wextra", "-Werror",
-                    "-I", str(ROOT), str(src), "-o", str(exe)], check=True)
-    subprocess.run([str(exe)], check=True)
+      #include <assert.h>
+      #include <string.h>
+      #include "sdl3_controller_profile_ini.h"
+      #include "sdl3_context_menu_bridge.h"
+      #define STEP(mode) spider_sdl3_context_menu_step(\
+        &state,&profile,&sample,1,0x054c,0x09cc,mode,1)
+      int main(void) {
+        SpiderSDL3ControllerProfile profile,loaded,old;
+        SpiderSDL3ContextMenuBridge state={0};
+        SpiderSDL3ControllerSample sample={0};
+        SpiderSDL3Binding south=spider_sdl3_bind(1,0);
+        SpiderSDL3Binding east=spider_sdl3_bind(1,1);
+        SpiderSDL3Binding square=spider_sdl3_bind(1,2);
+        char out[SPIDER_SDL3_PROFILE_INI_MAX+1];
+        size_t n=0;
+        assert(SPIDER_SDL3_ACTION_COUNT==8);
+        assert(SPIDER_SDL3_CONTEXT_COUNT==5); /* v2 storage retained */
+        assert(SPIDER_SDL3_SETUP_ACTION_COUNT==13);
+        assert(SPIDER_SDL3_VISIBLE_ACTION_COUNT==9); /* eight 3D + Back */
+        assert(spider_sdl3_profile_default(&profile,0x054c,0x09cc));
+        /* An old Square Confirm/Skip remains on disk but cannot take over
+           the game's physical South/Cross/A Return/skip action. */
+        assert(spider_sdl3_profile_assign_confirm_skip(&profile,square));
+        old=profile;
+        assert(spider_sdl3_ini_encode(&profile,out,sizeof(out),&n));
+        assert(spider_sdl3_ini_decode(out,n,0x054c,0x09cc,&loaded));
+        assert(!memcmp(&loaded,&old,sizeof(old)));
+        assert(STEP(SPIDER_SDL3_CTX_MENU)==SPIDER_SDL3_CTX_WAIT_NEUTRAL);
+        sample.buttons=(1u<<2); /* formerly configured Square */
+        assert(STEP(SPIDER_SDL3_CTX_MENU)==SPIDER_SDL3_CTX_NO_EDGE);
+        sample.buttons=1u; /* physical Cross */
+        assert(STEP(SPIDER_SDL3_CTX_MENU)==SPIDER_SDL3_CTX_CONFIRM_EDGE);
+        assert(STEP(SPIDER_SDL3_CTX_MENU)==SPIDER_SDL3_CTX_NO_EDGE);
+        sample.buttons=0;
+        assert(STEP(SPIDER_SDL3_CTX_VIDEO)==SPIDER_SDL3_CTX_WAIT_NEUTRAL);
+        sample.buttons=(1u<<2);
+        assert(STEP(SPIDER_SDL3_CTX_VIDEO)==SPIDER_SDL3_CTX_NO_EDGE);
+        sample.buttons=1u;
+        assert(STEP(SPIDER_SDL3_CTX_VIDEO)==SPIDER_SDL3_CTX_CONFIRM_EDGE);
+        /* The only visible context edit is Back. South is reserved. */
+        assert(!spider_sdl3_profile_assign_visible(&profile,8,south));
+        assert(spider_sdl3_profile_assign_visible(&profile,8,east));
+        assert(!spider_sdl3_profile_assign_visible(&profile,9,east));
+        assert(!spider_sdl3_profile_assign_visible(&profile,8,
+          spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,6)));
+        assert(spider_sdl3_profile_valid(&profile));
+        /* A legacy v2 with Back=South must not make one South press
+           trigger both Return and Escape: runtime falls back to East. */
+        assert(spider_sdl3_profile_assign_context(&profile,
+          SPIDER_SDL3_CONTEXT_BACK,south));
+        spider_sdl3_context_menu_reset(&state);
+        sample.buttons=0;
+        assert(STEP(SPIDER_SDL3_CTX_MENU)==SPIDER_SDL3_CTX_WAIT_NEUTRAL);
+        sample.buttons=1u;
+        assert(STEP(SPIDER_SDL3_CTX_MENU)==SPIDER_SDL3_CTX_CONFIRM_EDGE);
+        sample.buttons=0;
+        assert(STEP(SPIDER_SDL3_CTX_MENU)==SPIDER_SDL3_CTX_NO_EDGE);
+        sample.buttons=(1u<<1);
+        assert(STEP(SPIDER_SDL3_CTX_MENU)==SPIDER_SDL3_CTX_BACK_EDGE);
+        assert(spider_sdl3_binding_equal(profile.actions[0],south));
+        return 0;
+      }
+    """),encoding="utf-8")
+    subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
+                    "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
 
 
-def test_wizard_is_ten_rows_and_does_not_touch_game_native_input():
-    ui = (ROOT / "sdl3_controller_setup.c").read_text(encoding="utf-8")
-    model = (ROOT / "sdl3_controller_profile.h").read_text(encoding="utf-8")
-    ini = (ROOT / "sdl3_controller_profile_ini.h").read_text(encoding="utf-8")
+def test_wizard_nine_rows_and_no_live_native_input_mutation():
+    ui=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    model=(ROOT/"sdl3_controller_profile.h").read_text(encoding="utf-8")
+    ini=(ROOT/"sdl3_controller_profile_ini.h").read_text(encoding="utf-8")
+    core=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
     assert "for(i=0;i<SPIDER_SDL3_VISIBLE_ACTION_COUNT;i++)" in ui
-    assert "SPIDER_SDL3_VISIBLE_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT+2" in model
-    assert "spider_sdl3_profile_shared_confirm_binding(p,&shared)" in ui
-    assert "MIXED (Capture to unify)" in ui
+    assert "SPIDER_SDL3_VISIBLE_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT+1" in model
+    assert "spider_sdl3_profile_shared_confirm_binding(p,&shared)" not in ui
     assert "spider_sdl3_profile_assign_visible(&trial,ui->action,candidate)" in ui
-    assert "Confirm / Skip" in ui and "Back / Cancel" in ui
+    assert "Cross/A fixed for Confirm/Skip" in ui
+    assert "Back / Cancel" in ui
+    assert "MIXED (Capture to unify)" not in ui
     assert '"[MenuBindings]' in ini and 'Version=2' in ini
-    assert "SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE" in model
-    assert "spider_sdl3_profile_assign_context(" in model
-    assert "SPIDER_SDL3_SETUP_ACTION_COUNT" not in ui
+    assert "SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE" in model  # old v2 codec
+    assert "spider_sdl3_context_cutscene_step(" not in core
+    assert "sdl3_cutscene_context_on_flip(" not in core
+    assert 'begin_scancode(0x1Cu,"SDL3 physical Cross/A Confirm/Skip")' in core
     for denied in ("SendInput(", "VirtualProtect(", "WriteProcessMemory(",
                    "IDirectInputDevice8_", "CreateThread("):
         assert denied not in ui
