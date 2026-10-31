@@ -66,10 +66,17 @@ def test_sdl3_context_menu_bridge_native_gating_and_edges(tmp_path):
         assert(spider_sdl3_profile_assign_context(&sony,
           SPIDER_SDL3_CONTEXT_SKIP_VIDEO,
           spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,3)));
+        assert(spider_sdl3_profile_assign_context(&sony,
+          SPIDER_SDL3_CONTEXT_BACK,
+          spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,3)));
         assert(STEP(&sony,&s,1,0x054c,0x09cc,VIDEO,1)==WAIT);
         s.buttons=0;
         assert(STEP(&sony,&s,1,0x054c,0x09cc,VIDEO,1)==WAIT);
-        s.buttons=(1u<<3);
+        s.buttons=(1u<<3); /* old saved Back/Skip: ignored */
+        assert(STEP(&sony,&s,1,0x054c,0x09cc,VIDEO,1)==NO);
+        s.buttons=(1u<<1); /* fixed East/Circle/B */
+        assert(STEP(&sony,&s,1,0x054c,0x09cc,VIDEO,1)==B);
+        s.buttons=0;
         assert(STEP(&sony,&s,1,0x054c,0x09cc,VIDEO,1)==NO);
         s.buttons=1u;
         assert(STEP(&sony,&s,1,0x054c,0x09cc,VIDEO,1)==C);
@@ -138,7 +145,9 @@ def test_live_context_bridge_is_explicitly_opted_in_and_single_owner():
     assert "SPIDER_SDL3_CONTEXT_NEXT_STILL" not in header
     assert "SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE" not in header
     assert 'begin_scancode(0x1Cu,"SDL3 physical Cross/A Confirm/Skip")' in source
-    assert 'begin_scancode(0x01u,"SDL3 profile Back/Cancel")' in source
+    assert 'back=spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,1u);' in header
+    assert "SPIDER_SDL3_CONTEXT_BACK" not in header
+    assert 'begin_scancode(0x01u,"SDL3 physical Circle/B Back/Cancel")' in source
     assert "sdl3_context_bridge_requested && SpiderSDL3Probe_NativeOwnerEnabled()" in source
     assert "bink_active || (menu_2d && !gameplay_3d)" in source
     assert "spider_sdl3_context_menu_reset(&sdl3_context_bridge);" in source
