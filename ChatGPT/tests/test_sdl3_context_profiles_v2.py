@@ -143,10 +143,10 @@ def test_ui_context_remapping_and_v1_backup_contract():
     assert "SPIDER_SDL3_SETUP_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT+SPIDER_SDL3_CONTEXT_COUNT" in header
     assert "spider_sdl3_profile_shared_confirm_binding(p,&shared)" not in ui
     assert "spider_sdl3_profile_assign_visible(&trial,ui->action,candidate)" in ui
-    assert "Cross/A fixed for Confirm/Skip" in ui
-    assert "Back / Cancel" in ui
+    assert "Cross/A Confirm, Circle/B Back fixed" in ui
+    assert "Back / Cancel" not in ui
     assert "MIXED (Capture to unify)" not in ui
-    assert "SPIDER_SDL3_VISIBLE_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT+1" in header
+    assert "SPIDER_SDL3_VISIBLE_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT," in header
     assert "spider_sdl3_context_names[i]" not in ui
     assert "SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE" in header
     assert "spider_sdl3_profile_assign_setup(" in header
