@@ -216,17 +216,17 @@ def test_setup_navigation_requires_neutral_press_edges_and_selection_reset(tmp_p
         assert(!spider_sdl3_setup_nav_step(&nav,&pad));
         pad.axis[SPIDER_SDL3_AXIS_LEFTY]=0;
         assert(!spider_sdl3_setup_nav_step(&nav,&pad));
-        /* Left-stick X switches controller exactly as LB/RB, with
-           no possibility of synthesizing capture/close/reset. */
+        /* Left-stick X now switches focus columns; physical LB/RB
+           continue switching controller, without stick interference. */
         pad.axis[SPIDER_SDL3_AXIS_LEFTX]=25000;
         assert(spider_sdl3_setup_nav_step(&nav,&pad)==
-               (1u<<SPIDER_SETUP_NAV_RB));
+               (1u<<SPIDER_SETUP_NAV_RIGHT));
         assert(!spider_sdl3_setup_nav_step(&nav,&pad));
         pad.axis[SPIDER_SDL3_AXIS_LEFTX]=0;
         assert(!spider_sdl3_setup_nav_step(&nav,&pad));
         pad.axis[SPIDER_SDL3_AXIS_LEFTX]=-25000;
         assert(spider_sdl3_setup_nav_step(&nav,&pad)==
-               (1u<<SPIDER_SETUP_NAV_LB));
+               (1u<<SPIDER_SETUP_NAV_LEFT));
         pad.axis[SPIDER_SDL3_AXIS_LEFTX]=0;
         assert(!spider_sdl3_setup_nav_step(&nav,&pad));
         /* Ambiguous diagonal analogue or mixed digital commands reset
@@ -280,8 +280,10 @@ def test_mouse_free_keyboard_and_selected_gamepad_setup_navigation():
     assert 'x>-9000 && x<9000 && y>-9000 && y<9000' in nav
     assert 'y<=-19000' in nav and 'x>=19000' in nav
     assert 'physical=(sample->buttons&accepted)|analog;' in nav
+    assert 'SPIDER_SETUP_NAV_LEFT=21, SPIDER_SETUP_NAV_RIGHT=22' in nav
     assert 'edges=physical&~old;' in nav
-    assert 'Stick Y/D-pad rows' in ui and 'Stick X/L1/R1 pad' in ui
+    assert 'Stick Left/Right: actions or buttons' in ui
+    assert 'Stick Up/Down: select row or button' in ui
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     setup_read=probe.split("int SpiderSDL3Probe_SetupRead(",1)[1].split(
         "/* SDL3 exposes each trigger",1)[0]
