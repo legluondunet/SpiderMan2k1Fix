@@ -456,13 +456,13 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|LBS_NOTIFY|WS_VSCROLL,
         18,99,430,255,hwnd,(HMENU)(uintptr_t)SPIDER_UI_ACTION,NULL,NULL);
       CreateWindowExA(0,"BUTTON","Capture selected action",
-        WS_CHILD|WS_VISIBLE|WS_TABSTOP,
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_NOTIFY,
         465,113,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_CAPTURE,NULL,NULL);
       CreateWindowExA(0,"BUTTON","Restore defaults (this model)",
-        WS_CHILD|WS_VISIBLE|WS_TABSTOP,
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_NOTIFY,
         465,160,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_RESET,NULL,NULL);
       CreateWindowExA(0,"BUTTON","Close (no gameplay changes)",
-        WS_CHILD|WS_VISIBLE|WS_TABSTOP,
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_NOTIFY,
         465,207,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_CLOSE,NULL,NULL);
       label=CreateWindowExA(0,"STATIC",
         "Stick Left/Right: actions or buttons   Stick Up/Down: select row or button\r\n"
