@@ -483,6 +483,38 @@ It is off by default, and does **not** instrument or modify `0x4C66A6`
 (the actual original skip-request writer), modify `Jump`, or read new
 DirectInput events.
 
+**Observed physical comparison (31 Oct 2026):** in the first Windows 11
+DualShock 4 run (`SpiderMan2k1Fix(20261031-114018).log`), the SDL3
+translator records Cross/Jump `pressed=0x01` twice. The first script ends
+after 2125 ms, prior to the first logged Cross edge. In the second script
+Cross is pressed before `SECOND_SKIP_ALLOWED`, and that script ends just
+47 ms after permission became 1. There are **no**
+`GAMEPAD-CUTSCENE: source=SDL3-CONFIRM-SKIP` messages: this strongly
+suggests, but does not prove, that the original native path skips on
+Cross. In the second run (`SpiderMan2k1Fix(20261031-114115).log`), the
+translator records Square as `pressed=0x04`, and **both** native scripts
+receive a new `source=SDL3-CONFIRM-SKIP` request, confirming the custom
+Square mapping. Both runs enable and install the five native `0x50C180`
+probes, but those probes show **only one unchanging result at
+`0x00440F34` (`mask=0x00040040`, return 0, allowed 0)**. No change
+at a five-site reader is captured at the time of either cinematic
+transition. Thus these five sites alone are **not enough to identify
+the legacy Cross skip writer**. Do not suppress Jump based on them.
+
+**Refined diagnostic:** retaining the same `SDL3CutsceneReaderTrace=1`
+switch, the follow-up adds bounded `SDL3-CUTSCENE-OWNER` records from
+the already-installed original native `0x45553B` game input owner:
+once *before* and once *after* its unchanged `0x440EF0` update,
+only on changes in scene context, native skip permission, script activity
+or the existing request byte. A single guarded `VirtualQuery` protects
+the existing script-owner read. It introduces **no new native hooks**
+and never modifies original input; it can observe whether a request
+was present at either boundary, but cannot prove who wrote it or
+capture a request already consumed in the earlier game tick. For
+time correlation, read-only `SDL3-3D-PLAN` semantic edge records now
+include `ms=GetTickCount()`. Request writer/reader instruction-level
+attribution is still pending.
+
 **Acceptance protocol:** during the same scripted 3D introduction,
 first leave Cross completely untouched and let a script reach
 `CutSceneSkipAllow=1`. Then press **Cross only** once (not Square)
