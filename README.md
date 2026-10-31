@@ -94,6 +94,26 @@ correction and duplicate-source repairs have been validated without
 audible crackling under Linux/Wine; native Windows gameplay testing of
 the new default-on configuration is still pending.
 
+## DualShock 4 sound output (Windows; draft)
+  
+When a DualShock 4 exposes a Windows playback endpoint, some users may lose
+**all Spider-Man audio** despite functioning system sound. A native Windows,
+game-local DirectSound8 selection is being tested in this draft: it avoids the
+controller's audio endpoint **only when** DirectSound enumerates a recognizable
+DualShock 4 endpoint and an alternative device.
+
+The generated `[Audio] DualShock4AudioOutput=0` is the intended default.
+Set `DualShock4AudioOutput=1` to restore the game's original playback-device
+selection, e.g. when intentionally using a headset connected to the controller.
+Close and restart the game after changing this setting.
+
+This does **not** disable the device in Windows or modify other applications.
+It remains a candidate fix pending native Windows and Wine hardware testing.
+If enumeration, matching or alternate-device creation fails, the original
+DirectSound initialization is retained. Existing INIs without the key use
+the new default without rewriting saved controls. See
+[DualShock 4 audio routing FAQ](docs/references/DS4_AUDIO_ROUTING.md).
+
 ## Installation on Windows and Linux (Wine)
 
 1. Install the original *Spider-Man (2001)* PC game.
