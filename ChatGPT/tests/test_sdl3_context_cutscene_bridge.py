@@ -10,35 +10,23 @@ import textwrap
 
 ROOT=Path(__file__).resolve().parents[2]
 
-def test_native_permission_and_selected_owner_are_required():
+def test_legacy_cutscene_policy_is_preserved_but_no_longer_connected():
+    # Keep the old pure model/header for compatibility with existing v2
+    # profiles. Natural original game-owned Cross now skips 3D scenes;
+    # never write a second SDL3 request for the same physical button.
     pure=(ROOT/"sdl3_context_cutscene_bridge.h").read_text(encoding="utf-8")
     main=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
     assert "SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE" in pure
     assert "!verified_native_owner || !native_script_skip_allowed" in pure
     assert "spider_sdl3_profile_neutral(sample)" in pure
-    assert "spider_sdl3_context_binding_down(bind,sample" in pure
-    assert "SPIDER_SDL3_CUTSCENE_PRESS" in pure
-    assert "spider_sdl3_context_cutscene_reset(s)" in pure
-    assert "sdl3_cutscene_context_on_flip(menu_2d,gameplay_3d,bink_active,native_pause_active);" in main
-    fn=main.split("static void sdl3_cutscene_context_on_flip(",1)[1].split(
-        "/* Early game HWND acquisition",1)[0]
-    for text in ("gameplay_3d || menu_2d || bink || native_pause",
-                 "gamepad_native_cutscene_skip(0,NULL)",
-                 "SpiderSDL3Probe_SelectedSample(&id,&vid,&pid,&sample)",
-                 "id!=sdl3_ui_instance",
-                 "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)",
-                 "SpiderSDL3Probe_SetupProfile(vid,pid)",
-                 "gamepad_native_cutscene_skip(1,\"SDL3-CONFIRM-SKIP\")"):
-        assert text in fn
-    assert "spider_sdl3_context_cutscene_reset(&sdl3_cutscene_bridge)" in main
-    assert "VirtualQuery((LPCVOID)(uintptr_t)owner,&mbi,sizeof(mbi))" in main
-    assert "scene_context!=1u || skip_allowed!=1u || script_active!=1u" in main
-    assert "script_ip==0u || *native_request!=0u" in main
+    assert "sdl3_cutscene_context_on_flip(" not in main
+    assert "spider_sdl3_context_cutscene_step(" not in main
+    assert "SDL3-CONFIRM-SKIP" not in main
+    assert "PS1-3D-OPTIONS" in main  # legacy explicit opt-in remains
+    assert "!SpiderSDL3Probe_NativeOwnerEnabled()" in main
     assert "*native_request=1u;" in main
-    assert "if(!request)return 1;" in main
-    for prohibited in ("SendInput(", "VirtualProtect(", "WriteProcessMemory(",
-                       "IDirectInputDevice8_", "SDL_GetGamepads"):
-        assert prohibited not in pure
+    assert "gamepad_native_cutscene_skip(1,\"PS1-3D-OPTIONS\")" in main
+
 
 def test_cutscene_policy_compiles_and_gates_profile_edges(tmp_path):
     cc=shutil.which("gcc") or shutil.which("cc") or shutil.which("clang")
