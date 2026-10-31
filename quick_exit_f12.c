@@ -377,6 +377,8 @@ static volatile LONG debug_f10_cutscene_skip_ms=0;
 static volatile LONG debug_f10_cutscene_skip_owner=0;
 /* Verbose read-only reverse-engineering logs are opt-in. */
 static volatile LONG f10_verbose_trace=0;
+/* Narrow, independent 3D-cutscene DirectInput reader diagnostics. OFF by default. */
+static volatile LONG sdl3_cutscene_reader_trace=0;
 static volatile LONG debug_intro_generation=0;
 static volatile LONG debug_lifecycle_generation=-1;
 static volatile LONG debug_newgame_3d_first_ms=0;
@@ -1552,9 +1554,67 @@ static void __cdecl spider_observe_native_game_input(void) {
  * from this routine. We need positive proof of the two separate
  * scripted 3D scenes AND actual playable state before any F12 SPACE
  * skip injection or gameplay EXIT can be enabled. */
+/* Narrow opt-in evidence for the ORIGINAL reader, in the same thread as
+ * its already installed SHA-checked 0x50C180 callsite wrapper. This is
+ * *not* evidence that any one mask is the source of the cutscene skip:
+ * the original 0x4C66A6 writer must be independently attributed before
+ * suppressing Cross. Never change the native result or any input state. */
+static void spider_trace_sdl3_cutscene_reader(
+    DWORD return_va,DWORD mask,DWORD arg1,DWORD arg2,
+    BYTE original,BYTE request_before) {
+  const DWORD owner=*SPIDER_NATIVE_CUTSCENE_OWNER_PTR;
+  const uintptr_t address=(uintptr_t)owner;
+  MEMORY_BASIC_INFORMATION mbi;
+  const volatile BYTE *obj;
+  DWORD now=GetTickCount(),ip;
+  unsigned i;
+  BYTE context,allowed,active,request_after;
+  static int last_result[SPIDER_NATIVE_3D_INPUT_SITES_COUNT]={-1,-1,-1,-1,-1};
+  static int last_request[SPIDER_NATIVE_3D_INPUT_SITES_COUNT]={-1,-1,-1,-1,-1};
+  static unsigned reports=0u;
+  char line[335];
+  if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)!=1 ||
+     reports>=64u || !owner || *SPIDER_GAME_BINK_ACTIVE!=0u ||
+     *SPIDER_PAUSE_CONTEXT!=0u || GetModuleHandleA(NULL)!=(HMODULE)(uintptr_t)0x00400000u)
+    return;
+  for(i=0;i<SPIDER_NATIVE_3D_INPUT_SITES_COUNT;i++)
+    if(return_va==(DWORD)(uintptr_t)spider_native_3d_input_sites[i]+5u)break;
+  if(i>=SPIDER_NATIVE_3D_INPUT_SITES_COUNT)return;
+  if(VirtualQuery((LPCVOID)address,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_NOACCESS|PAGE_GUARD)) ||
+     address<(uintptr_t)mbi.BaseAddress ||
+     address-(uintptr_t)mbi.BaseAddress>=mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(address-(uintptr_t)mbi.BaseAddress)<0x1bcu)
+    return;
+  obj=(const volatile BYTE *)address;
+  context=obj[0x1acu];allowed=obj[0x1a4u];active=obj[0x1b4u];
+  ip=*(const volatile DWORD *)(address+0x1b8u);
+  if(context!=1u || active!=1u || ip==0u)return;
+  request_after=*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST;
+  if(last_result[i]==(int)original &&
+     last_request[i]==(int)request_after)return;
+  last_result[i]=original;last_request[i]=request_after;
+  ++reports;
+  snprintf(line,sizeof(line),
+    "SDL3-CUTSCENE-READER: site=0x%08lX mask=0x%08lX args=%lu,%lu result=%u allowed=%u request-before=%u request-after=%u script_ip=0x%08lX ms=%lu [ORIGINAL RESULT UNCHANGED; CORRELATION ONLY]",
+    (unsigned long)(return_va-5u),(unsigned long)mask,
+    (unsigned long)arg1,(unsigned long)arg2,(unsigned)original,
+    (unsigned)allowed,(unsigned)request_before,(unsigned)request_after,
+    (unsigned long)ip,(unsigned long)now);
+  say(line);
+}
 static BYTE __cdecl spider_probe_3d_native_input(
     DWORD mask,DWORD arg1,DWORD arg2) {
-  BYTE original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);
+  BYTE request_before=0;
+  BYTE original;
+  if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)==1)
+    request_before=*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST;
+  original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);
+  if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)==1) {
+    const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+    spider_trace_sdl3_cutscene_reader((DWORD)frame[1],mask,arg1,arg2,
+                                     original,request_before);
+  }
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
      InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
      InterlockedCompareExchange(&debug_newgame_native_input_probes_installed,0,0)==1) {
@@ -3154,6 +3214,20 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   /* Hidden development option: omitted from default generated INI,
    * disabled when absent; Log=1 is not required for the unified F10. */
   f10_shortcut=GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1;
+  /* A deliberate read-only diagnostic, never enabled by SDL3 mappings
+   * alone. It shares the existing five signature-checked pass-through
+   * callsites, requires the native-owner/context experiment, and cannot
+   * change joystick masks, Jump, scripts or the 0x50C180 return value. */
+  if(GetPrivateProfileIntA("Debug","SDL3CutsceneReaderTrace",0,ini)==1 &&
+     GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
+     GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1 &&
+     GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1 &&
+     GetPrivateProfileIntA("Input","ExperimentalSDL3ContextBridge",0,ini)==1 &&
+     (f10_shortcut || GetPrivateProfileIntA("Debug","F10TestMode",0,ini)==1 ||
+      GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1)) {
+    InterlockedExchange(&sdl3_cutscene_reader_trace,1);
+    say("SDL3-CUTSCENE-READER: opted in; trace original five 3D reader callsites ONLY during verified original script context, read-only; Cross is NOT suppressed");
+  }
   if(GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
      GetPrivateProfileIntA("Debug","NativeMenuReturnProbe",0,ini)==1) {
     InterlockedExchange(&native_menu_probe_enabled,1);
