@@ -374,6 +374,11 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
   if(vk==VK_UP || vk==VK_DOWN) {
     /* Native drop-down keyboard navigation must keep working. */
     if(focused==ui->pads)return 0;
+    /* Retain keyboard focus on a native focused button; arrows are
+     * handled normally there. Analog input navigates button selection. */
+    if(focused==GetDlgItem(ui->hwnd,SPIDER_UI_CAPTURE) ||
+       focused==GetDlgItem(ui->hwnd,SPIDER_UI_RESET) ||
+       focused==GetDlgItem(ui->hwnd,SPIDER_UI_CLOSE))return 0;
     if(!current_profile(ui))return 1;
     next=(ui->action+SPIDER_SDL3_VISIBLE_ACTION_COUNT+
       (vk==VK_UP?SPIDER_SDL3_VISIBLE_ACTION_COUNT-1u:1u))%
@@ -397,7 +402,8 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
        SendMessageA(ui->pads,CB_GETDROPPEDSTATE,0,0))return 0;
     /* Enter also activates a focused Reset/Close button, as users expect
      * from standard Win32 dialogs. Space and Tab continue working. */
-    if(focused==GetDlgItem(ui->hwnd,SPIDER_UI_RESET) ||
+    if(focused==GetDlgItem(ui->hwnd,SPIDER_UI_CAPTURE) ||
+       focused==GetDlgItem(ui->hwnd,SPIDER_UI_RESET) ||
        focused==GetDlgItem(ui->hwnd,SPIDER_UI_CLOSE)) {
       int id=GetDlgCtrlID(focused);
       SendMessageA(ui->hwnd,WM_COMMAND,MAKEWPARAM(id,BN_CLICKED),(LPARAM)focused);
@@ -421,7 +427,7 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
     return 1;
   }
   if(vk==VK_F1) {
-    status(ui,"Stick Y/D-pad: actions; stick X/L1/R1: controllers; Cross/A capture, Circle/B close, Triangle/Y defaults.");
+    status(ui,"Stick X: focus list/buttons; stick Y: select row/button. L1/R1: pad. Cross: activate; Circle: close; Triangle: reset.");
     return 1;
   }
   return 0; /* Tab and Space keep their native Win32 button behavior. */
@@ -459,12 +465,13 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         WS_CHILD|WS_VISIBLE|WS_TABSTOP,
         465,207,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_CLOSE,NULL,NULL);
       label=CreateWindowExA(0,"STATIC",
-        "Keyboard: Up/Down rows  Enter capture  PgUp/PgDn pad  F5 reset  Esc close\r\n"
-        "Gamepad: Stick Y/D-pad rows  Stick X/L1/R1 pad  Cross capture  Circle close  Triangle reset",
-        WS_CHILD|WS_VISIBLE,18,367,684,40,hwnd,NULL,NULL,NULL);
+        "Stick Left/Right: actions or buttons   Stick Up/Down: select row or button\r\n"
+        "L1/R1: choose pad   Cross/A: activate selection   Circle/B: close\r\n"
+        "Triangle/Y: defaults    Keyboard: Tab, Enter, Esc, PgUp/PgDn",
+        WS_CHILD|WS_VISIBLE,18,351,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->status=CreateWindowExA(0,"STATIC","",
-        WS_CHILD|WS_VISIBLE,18,414,684,43,hwnd,
+        WS_CHILD|WS_VISIBLE,18,423,684,45,hwnd,
         (HMENU)(uintptr_t)SPIDER_UI_STATUS,NULL,NULL);
       SendMessageA(ui->pads,WM_SETFONT,(WPARAM)font,TRUE);
       SendMessageA(ui->actions,WM_SETFONT,(WPARAM)font,TRUE);
@@ -482,10 +489,19 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         LRESULT idx=SendMessageA(ui->pads,CB_GETCURSEL,0,0);
         if(idx!=CB_ERR)select_slot(ui,(unsigned)idx);
       } else if(LOWORD(wp)==SPIDER_UI_ACTION &&
+                HIWORD(wp)==LBN_SETFOCUS) {
+        ui->focus.column=SPIDER_SETUP_FOCUS_ACTIONS;
+      } else if(LOWORD(wp)>=SPIDER_UI_CAPTURE &&
+                LOWORD(wp)<=SPIDER_UI_CLOSE &&
+                HIWORD(wp)==BN_SETFOCUS) {
+        ui->focus.column=SPIDER_SETUP_FOCUS_BUTTONS;
+        ui->focus.button=(unsigned)(LOWORD(wp)-SPIDER_UI_CAPTURE);
+      } else if(LOWORD(wp)==SPIDER_UI_ACTION &&
                 HIWORD(wp)==LBN_SELCHANGE) {
         LRESULT idx=SendMessageA(ui->actions,LB_GETCURSEL,0,0);
         if(idx!=LB_ERR && idx<SPIDER_SDL3_VISIBLE_ACTION_COUNT) {
           ui->action=(unsigned)idx;
+          ui->focus.column=SPIDER_SETUP_FOCUS_ACTIONS;
           spider_sdl3_capture_reset(&ui->capture);
           status(ui,"Action selected. Choose Capture then release all controls.");
         }
