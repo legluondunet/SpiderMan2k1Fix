@@ -91,7 +91,7 @@ def audit(data: bytes) -> dict:
     external = found[0x00505720]
     groups: dict[str, list[str]] = {}
     for va in external:
-        key = "0x%06Xxx" % (va >> 12)
+        key = "0x%08X..0x%08X" % (va & ~0xFFF, (va & ~0xFFF) + 0xFFF)
         groups.setdefault(key, []).append("0x%08X" % va)
     # Privacy/copyright-conscious 16-byte context fingerprints rather than
     # large excerpts of the original executable.
