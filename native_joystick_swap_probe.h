@@ -41,7 +41,8 @@ static inline unsigned spider_native_swap_preset(
   if(!buttons)return 0;
   for(i=0;i<SPIDER_PS1_BUTTON_COUNT;i++) {
     if(buttons[i]!=spider_ps1_buttons[i])ds4=0;
-    if(buttons[i]!=spider_xbox360_buttons[i])xbox=0;
+    if(buttons[i]!=spider_xbox360_buttons[i] &&
+       buttons[i]!=spider_xbox360_buttons_sdl3_rt[i])xbox=0;
   }
   return ds4?1u:(xbox?2u:0u);
 }
