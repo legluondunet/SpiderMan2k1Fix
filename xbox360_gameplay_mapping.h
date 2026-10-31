@@ -25,6 +25,17 @@ enum { SPIDER_XBOX360_NATIVE_UNBOUND=0x4000u };
 static const uint32_t spider_xbox360_buttons[SPIDER_PS1_BUTTON_COUNT]={
   0u,1u,2u,3u,4u,5u,9u
 };
+/* SDL3-native-owner experiment only, after a unique wired Holtek/XUSB
+ * 045E:028E with exactly TEN physical DirectInput buttons is verified.
+ * The original 2001 action table uses 0x4000 to mark unused entries;
+ * this is a proven in-format UNBOUND sentinel, not an invented button.
+ * RT is separately exposed by SDL3 as a normalized analog axis and
+ * converted to the verified native keyboard Swing scan by the existing
+ * guarded RT bridge. Thus L3/R3/physical BUTTON9 must not Swing.
+ * Legacy Xbox profiles keep the old BUTTON9 fallback unchanged. */
+static const uint32_t spider_xbox360_buttons_sdl3_rt[SPIDER_PS1_BUTTON_COUNT]={
+  0u,1u,2u,3u,4u,5u,SPIDER_XBOX360_NATIVE_UNBOUND
+};
 static inline int spider_xbox360_apply(uint8_t *data,size_t length){
   size_t i,j;
   if(!data || length!=SPIDER_PS1_CFG_SIZE)return 0;
