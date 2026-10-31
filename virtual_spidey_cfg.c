@@ -33,6 +33,11 @@ static CRITICAL_SECTION guard;
 static int ready=0,dirty=0;
 static int ps1_preview_active=0,xbox360_preview_active=0;
 static volatile LONG ps1_bootstrap_loaded=0;
+/* Independent of the legacy Sony/Xbox preview overlay: the SDL3 native
+ * owner must be allowed to read the CURRENT game's real keyboard table
+ * after any authenticated game CRT load, including a two-controller boot
+ * with both old preview flags disabled. */
+static volatile LONG native_cfg_bootstrap_loaded=0;
 static unsigned ps1_rejected_user_changes=0;
 static uint32_t original_joystick[SPIDER_PS1_BUTTON_COUNT]={0};
 /* Only block saving if automatic INI repair fails. */
@@ -1055,7 +1060,7 @@ unsigned SpiderCfg_Xbox360SwingScanLive(void) {
   MEMORY_BASIC_INFORMATION mbi;
   unsigned scans[11],i,scan;
   uintptr_t base;
-  if(!ready || !SpiderCfg_PS1BootstrapLoaded() ||
+  if(!ready || !SpiderCfg_NativeConfigLoaded() ||
      (uintptr_t)GetModuleHandleA(NULL)!=0x00400000u)return 0;
   if(VirtualQuery((const void *)table,&mbi,sizeof(mbi))!=sizeof(mbi) ||
      mbi.State!=MEM_COMMIT ||
@@ -1514,6 +1519,9 @@ unsigned SpiderCfg_Install(const char *path,void (*logger)(const char *)) {
 int SpiderCfg_PS1BootstrapLoaded(void){
   return InterlockedCompareExchange(&ps1_bootstrap_loaded,0,0)==1;
 }
+int SpiderCfg_NativeConfigLoaded(void) {
+  return InterlockedCompareExchange(&native_cfg_bootstrap_loaded,0,0)==1;
+}
 void SpiderCfg_BootstrapGameRead(void) {
   typedef void *(__cdecl *GameFopen)(const char *,const char *);
   typedef size_t (__cdecl *GameFread)(void *,size_t,size_t,void *);
@@ -1571,8 +1579,12 @@ void SpiderCfg_BootstrapGameRead(void) {
    * applies the locked resolution/depth without modifying game executable. */
   game_load();
   EnterCriticalSection(&guard);
-  if((ps1_preview_active || xbox360_preview_active) && opens>opened && reads>served)
-    InterlockedExchange(&ps1_bootstrap_loaded,1);
+  if(opens>opened && reads>served) {
+    InterlockedExchange(&native_cfg_bootstrap_loaded,1);
+    report("SPIDEY-CFG: NATIVE CONFIG LOADED authenticated original game CRT read; SDL3 may inspect live keyboard bindings (legacy previews independent)");
+    if(ps1_preview_active || xbox360_preview_active)
+      InterlockedExchange(&ps1_bootstrap_loaded,1);
+  }
   snprintf(msg,sizeof(msg),
     "SPIDEY-CFG: BOOTSTRAP game loader returned: virtual opens +%lu reads +%lu; configured=%ux%u depth=32 [%s]",
     (unsigned long)(opens-opened),(unsigned long)(reads-served),
