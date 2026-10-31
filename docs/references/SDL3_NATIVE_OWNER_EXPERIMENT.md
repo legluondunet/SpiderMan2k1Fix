@@ -343,6 +343,63 @@ path, which is still game-native. Revert
 from expectations. **Do not merge PR #80 until Windows and Wine
 gameplay testing** confirms owner, pause, triggers and safe rollback.
 
+## SDL3 setup modal: fresh Start handoff without native-game takeover (31 Oct 2026)
+
+**Windows hardware regression** with two connected pads and Xbox selected
+via Start: the setup window now opens on Xbox (verified in
+`SpiderMan2k1Fix(20261031-175547).log` by
+`SDL3-SETUP: AUTO-SELECT slot=1 source=verified-gameplay-owner gameplay-id=2`).
+However Start on the *other* DS4 while the setup modal was open did
+nothing; R1 on that DS4 also could not navigate the setup panel.
+The player subsequently closed the modal and reported a game crash.
+The log records normal `WM_CLOSE`, `WM_DESTROY`, original game focus
+restore, and another foreground `Flip`, but **no exception code or
+fault address**: the crash cause remains unconfirmed.
+
+**Root UI limitation**: `SpiderSDL3Probe_OnFlip` selects a gamepad from
+fresh Start presses on *all* mapped gamepads, but the modal suspends
+the original game's Flip on its stack. The modal previously polled
+only its currently displayed controller and had no spectator Start path.
+
+**New candidate**:
+- Inside the foreground setup panel, on its original game/SDL3 thread,
+  sample **all** mapped controller instances after the one SDL3 event
+  pump. Only a fresh Start after a released sample may select another
+  setup device. Held Start, multiple simultaneous claims, unfocused
+  modal, capture in progress or pending close all fail closed.
+- Such a Start changes **only the setup dialog's selected controller and
+  profile**. Do not rebind, release, or acquire the game's original
+  DirectInput joystick while the native modal owns the game stack.
+  The actual gameplay controller remains whichever pad Start had
+  selected before the dialog opened. Once the dialog is closed, a fresh
+  Start in gameplay can claim the other gamepad as before.
+- L1/R1 in the setup modal continues to cycle displayed models. The
+  modal-only Start selector follows that explicit manual selection and
+  remains protected by neutral-edge arming.
+- On closing the modal, preserve the game-selected SDL3 instance but
+  disarm gameplay Start until a release has been observed. This prevents
+  any Start pressed while Flip was suspended from becoming an accidental
+  post-modal native gameplay takeover. Keep original modal Close and
+  focus restoration, DirectInput UI teardown, and RT→Swing logic.
+- New logs: `SDL3-SETUP: MODAL-START switched setup-only ...` and
+  `SDL3-PROBE: SETUP RETURN Start takeover disarmed ...`.
+
+**Test matrix (physical acceptance pending)**: connect Xbox+DS4,
+select Xbox via Start in the actual game, open setup (Xbox shown),
+release both Starts, press Start on DS4 (DS4 shown, DS4 stick navigates);
+press DS4 R1 (Xbox shown), press Xbox Start after release (Xbox remains);
+press DS4 Start again (DS4 shown); press Circle/B to close; confirm no
+crash and that game ownership is still Xbox until fresh DS4 Start *after*
+closing. Repeat with DS4 as initial game owner, while opening and closing
+setup several times, with Alt+Tab, and after unplug/replug. Confirm RT
+Swing on Xbox after each game-level handoff.
+
+**Risk**: this prevents the known stuck setup selection and unintended
+inherited Start, but it does **not** prove the reported crash is fixed.
+If the crash reproduces, capture Windows Event Viewer application
+fault `SpideyPC.exe` and a minidump (exception code, faulting module,
+offset) to identify its actual faulting instruction before merging.
+
 ## Multiple different gamepads — one verified native 3D owner (draft)
 
 The original experimental live 3D mapping incorrectly required **exactly
