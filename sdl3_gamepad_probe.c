@@ -19,6 +19,7 @@
 #include "sdl3_controller_profile.h"
 #include "sdl3_controller_profile_store.h"
 #include "native_joystick_reconnect.h"
+#include "native_joystick_reconnect_policy.h"
 #include "ps1_focus_pause_wake.h"
 
 /* SDL3 3.2+ ABI subset; keep signatures aligned with SDL's public headers. */
@@ -62,6 +63,12 @@ static unsigned bindings_trace_lines=0;
 static DWORD last_scan=0,last_axis_log=0;
 static int last_joystick_count=-1,last_mapped_count=-1;
 static short old_lt=-1,old_rt=-1;
+/* Read-only DualShock 3 054C:0268 hardware probe. Its SDL3 gamepad is
+ * visible but the original game's DirectInput action indices have not
+ * been verified. Keep the trace finite and NEVER grant native ownership
+ * from mere SDL3 detection. */
+static uint32_t ps3_trace_id=0,ps3_trace_buttons=0;
+static unsigned ps3_trace_lines=0;
 static HMODULE module=NULL;
 static DWORD sdl3_game_thread=0;
 /* Pending selection from an explicitly pressed Start while the setup modal
@@ -699,13 +706,51 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
   }
   sdl3_trace_native_owner(now);
   for(i=0;i<num_pads;i++)if(pads[i].handle) {
+    unsigned vid=(unsigned)sdl_vendor(pads[i].id);
+    unsigned pid=(unsigned)sdl_product(pads[i].id);
     int pressed=sdl_button(pads[i].handle,SPIDER_SDL_BUTTON_START)?1:0;
-    if(spider_sdl3_selection_start(&selection,pads[i].id,pressed)) {
-      snprintf(line,sizeof(line),"SDL3-PROBE: START selected logical id=%lu VID:PID=%04X:%04X (other gamepads ignored; READ-ONLY)",
-               (unsigned long)selection.active,
-               (unsigned)sdl_vendor(selection.active),
-               (unsigned)sdl_product(selection.active));
-      say(line);
+    /* This user-confirmed PS3 appears in BOTH SDL3 and DirectInput.
+     * Its per-button DirectInput assignment remains unverified, so log
+     * SDL3 logical buttons only, including Start bit 6. This is passive
+     * and never polls/acquires the original native device. */
+    if(vid==0x054cu && pid==0x0268u && ps3_trace_lines<48u) {
+      uint32_t buttons=0;
+      unsigned j;
+      for(j=0;j<SPIDER_SDL3_BUTTON_COUNT;j++)
+        if(sdl_button(pads[i].handle,(int)j))buttons|=1u<<j;
+      if(ps3_trace_id!=pads[i].id || buttons!=ps3_trace_buttons) {
+        snprintf(line,sizeof(line),
+          "SDL3-PS3-PROBE: id=%lu VID:PID=054C:0268 buttons=0x%06lX changed=0x%06lX START=%u [SDL3 ONLY; DirectInput indexes unknown, never forwarded]",
+          (unsigned long)pads[i].id,(unsigned long)buttons,
+          (unsigned long)(buttons^(ps3_trace_id==pads[i].id?
+                                        ps3_trace_buttons:0u)),
+          (unsigned)((buttons>>SPIDER_SDL_BUTTON_START)&1u));
+        say(line);ps3_trace_lines++;
+        ps3_trace_id=pads[i].id;
+        ps3_trace_buttons=buttons;
+      }
+    }
+    {
+      uint32_t previous=selection.active;
+      if(spider_sdl3_selection_start(&selection,pads[i].id,pressed)) {
+        if(spider_reconnect_kind(vid,pid)==SPIDER_RECONNECT_NONE) {
+          /* A mapped SDL3 pad is NOT sufficient evidence that the
+           * 2001 game can consume its native DirectInput buttons.
+           * Preserve the last verified owner on an unsupported Start,
+           * rather than silently detaching the Xbox/DS4. */
+          selection.active=previous;
+          snprintf(line,sizeof(line),
+            "SDL3-OWNER: START REFUSED unsupported native controller id=%lu VID:PID=%04X:%04X; previous selected-id=%lu preserved (SDL3 probe only)",
+            (unsigned long)pads[i].id,vid,pid,
+            (unsigned long)previous);
+          say(line);
+        } else {
+          snprintf(line,sizeof(line),
+            "SDL3-PROBE: START selected logical id=%lu VID:PID=%04X:%04X (other gamepads ignored; READ-ONLY)",
+            (unsigned long)selection.active,vid,pid);
+          say(line);
+        }
+      }
     }
     if(selection.active==pads[i].id &&
        (!last_axis_log || (uint32_t)(now-last_axis_log)>=1500u)) {
