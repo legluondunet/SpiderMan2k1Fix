@@ -7,7 +7,7 @@ import textwrap
 ROOT=Path(__file__).resolve().parents[2]
 
 
-def test_fixed_south_and_back_visible_without_rewriting_saved_v2(tmp_path):
+def test_fixed_south_and_east_without_rewriting_saved_v2(tmp_path):
     cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
     if not cc:return
     src=tmp_path/"fixed.c"
@@ -31,7 +31,7 @@ def test_fixed_south_and_back_visible_without_rewriting_saved_v2(tmp_path):
         assert(SPIDER_SDL3_ACTION_COUNT==8);
         assert(SPIDER_SDL3_CONTEXT_COUNT==5); /* v2 storage retained */
         assert(SPIDER_SDL3_SETUP_ACTION_COUNT==13);
-        assert(SPIDER_SDL3_VISIBLE_ACTION_COUNT==9); /* eight 3D + Back */
+        assert(SPIDER_SDL3_VISIBLE_ACTION_COUNT==8); /* 3D semantics only */
         assert(spider_sdl3_profile_default(&profile,0x054c,0x09cc));
         /* An old Square Confirm/Skip remains on disk but cannot take over
            the game's physical South/Cross/A Return/skip action. */
@@ -52,15 +52,16 @@ def test_fixed_south_and_back_visible_without_rewriting_saved_v2(tmp_path):
         assert(STEP(SPIDER_SDL3_CTX_VIDEO)==SPIDER_SDL3_CTX_NO_EDGE);
         sample.buttons=1u;
         assert(STEP(SPIDER_SDL3_CTX_VIDEO)==SPIDER_SDL3_CTX_CONFIRM_EDGE);
-        /* The only visible context edit is Back. South is reserved. */
+        /* Neither Confirm nor Back may be customized through the
+           visible eight-action setup, regardless of candidate button. */
         assert(!spider_sdl3_profile_assign_visible(&profile,8,south));
-        assert(spider_sdl3_profile_assign_visible(&profile,8,east));
+        assert(!spider_sdl3_profile_assign_visible(&profile,8,east));
         assert(!spider_sdl3_profile_assign_visible(&profile,9,east));
         assert(!spider_sdl3_profile_assign_visible(&profile,8,
           spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,6)));
         assert(spider_sdl3_profile_valid(&profile));
-        /* A legacy v2 with Back=South must not make one South press
-           trigger both Return and Escape: runtime falls back to East. */
+        /* Even an old v2 with Back=South must never make one South
+           press trigger both Return and Escape: Back is always East. */
         assert(spider_sdl3_profile_assign_context(&profile,
           SPIDER_SDL3_CONTEXT_BACK,south));
         spider_sdl3_context_menu_reset(&state);
@@ -69,6 +70,15 @@ def test_fixed_south_and_back_visible_without_rewriting_saved_v2(tmp_path):
         sample.buttons=1u;
         assert(STEP(SPIDER_SDL3_CTX_MENU)==SPIDER_SDL3_CTX_CONFIRM_EDGE);
         sample.buttons=0;
+        assert(STEP(SPIDER_SDL3_CTX_MENU)==SPIDER_SDL3_CTX_NO_EDGE);
+        sample.buttons=(1u<<1);
+        assert(STEP(SPIDER_SDL3_CTX_MENU)==SPIDER_SDL3_CTX_BACK_EDGE);
+        sample.buttons=0;
+        assert(STEP(SPIDER_SDL3_CTX_MENU)==SPIDER_SDL3_CTX_NO_EDGE);
+        /* A different legacy custom Back=West is ignored too. */
+        assert(spider_sdl3_profile_assign_context(&profile,
+          SPIDER_SDL3_CONTEXT_BACK,square));
+        sample.buttons=(1u<<2);
         assert(STEP(SPIDER_SDL3_CTX_MENU)==SPIDER_SDL3_CTX_NO_EDGE);
         sample.buttons=(1u<<1);
         assert(STEP(SPIDER_SDL3_CTX_MENU)==SPIDER_SDL3_CTX_BACK_EDGE);
@@ -81,17 +91,17 @@ def test_fixed_south_and_back_visible_without_rewriting_saved_v2(tmp_path):
     subprocess.run([str(exe)],check=True)
 
 
-def test_wizard_nine_rows_and_no_live_native_input_mutation():
+def test_wizard_eight_3d_rows_and_no_live_native_input_mutation():
     ui=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
     model=(ROOT/"sdl3_controller_profile.h").read_text(encoding="utf-8")
     ini=(ROOT/"sdl3_controller_profile_ini.h").read_text(encoding="utf-8")
     core=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
     assert "for(i=0;i<SPIDER_SDL3_VISIBLE_ACTION_COUNT;i++)" in ui
-    assert "SPIDER_SDL3_VISIBLE_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT+1" in model
+    assert "SPIDER_SDL3_VISIBLE_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT," in model
     assert "spider_sdl3_profile_shared_confirm_binding(p,&shared)" not in ui
     assert "spider_sdl3_profile_assign_visible(&trial,ui->action,candidate)" in ui
-    assert "Cross/A fixed for Confirm/Skip" in ui
-    assert "Back / Cancel" in ui
+    assert "Cross/A Confirm, Circle/B Back fixed" in ui
+    assert "Back / Cancel" not in ui
     assert "MIXED (Capture to unify)" not in ui
     assert '"[MenuBindings]' in ini and 'Version=2' in ini
     assert "SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE" in model  # old v2 codec
