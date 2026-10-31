@@ -134,6 +134,44 @@ and read-only and produces a structured JSON report, with its
 heuristic, undisassembled candidates clearly distinguished from
 real known instructions.
 
+## Another important finding — **two distinct masks** (held vs fresh press)
+
+Disassembly of `0x0050A190` shows **two DWORD outputs**, zeroed at
+`0x0050A19F` and `0x0050A1A5`, passed by the caller
+`0x00505720` at `0x00505736..0x00505738`.
+
+The first output accumulates **currently held** input:
+- Keyboard: `0x0050A24B` ORs an action mask if a key has
+  `state & 0x7F` set;
+- Joystick: `0x0050A3B8` ORs an action mask when the
+  `0x00501FB0` latch has `state & 0x7F` set;
+- Stick and POV: `0x0050A375` ORs direction masks into this
+  **held-only** output.
+
+The second output accumulates **fresh digital press events**:
+- Keyboard: `0x0050A27C..0x0050A283` ORs a mask when key
+  latch is exactly `0xFF`;
+- Joystick: `0x0050A3CF..0x0050A3E1` ORs a mask when the
+  `0x00501FB0` button latch is exactly `0xFF`;
+- The X/Y and POV direction conversion in the identified branch
+  does **not** populate the fresh-mask output.
+
+This matters for a future universal SDL3 bridge: writing only an
+all-buttons-held mask would omit genuine press-edge semantics for
+menus/actions. Conversely, synthesizing fresh events every frame
+would double-trigger actions. A safe producer needs **held** and
+**fresh** masks, a release/focus/owner-change policy, and a definition
+of how it samples multiple button transitions within one frame.
+
+The standalone C99 preview therefore also offers
+`spider_sdl3_generic_engine_preview_edges()`. It computes
+`held_mask` and `fresh_mask` from the existing saved semantic
+profile and previous SDL3 action state; analog and D-pad directional
+bits remain held-only in this preview. **It cannot prove strict parity
+with native buffered DirectInput press events**: multiple transitions
+between samples, rebind generation changes, focus and context
+ownership require separate research and tests before wiring it up.
+
 ## Portable semantic-mask prototype (phase-1 research, NOT gameplay)
 
 A new strictly non-runtime C99 module,
