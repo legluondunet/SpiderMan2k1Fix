@@ -28,6 +28,21 @@ VTABLE_OFFSETS = {
     0x24: "GetDeviceState", 0x28: "GetDeviceData", 0x64: "Poll",
 }
 MAX_SIZE = 32 * 1024 * 1024
+# Exact native instruction signatures already verified in
+# native_joystick_unplug.c for the same supported retail binary.
+# These are independently useful anchors; do not infer unlisted methods.
+KNOWN_NATIVE_SIGNATURES = (
+    (0x00501E79, "ff 51 64", "Poll indirect COM call"),
+    (0x00501E7C, "3d 1e 00 07 80", "Poll HRESULT comparison"),
+    (0x00501E83, "3d 0c 00 07 80", "Poll HRESULT comparison"),
+    (0x00501E9F, "8b 10 ff 52 1c", "Acquire indirect COM call sequence"),
+    (0x00501EA6, "81 fe 05 00 07 80", "Acquire HRESULT comparison"),
+    (0x00501EAC, "75 18", "Original conditional branch"),
+    (0x00501EBB, "33 c0 5f", "Existing nonfatal return"),
+    (0x00501ECA, "68 ea 02 00 00", "Reader branch anchor"),
+    (0x00501EDD, "85 f6 7d 0b", "Reader branch anchor"),
+    (0x00501EE7, "e8 15 82 02 00", "Reader call anchor"),
+)
 
 
 class InvalidExecutable(ValueError):
@@ -139,6 +154,13 @@ def inspect(data: bytes, *, before: int = 96, after: int = 1024,
     pe = parse_pe(data)
     if pe.base != EXPECTED_IMAGE_BASE or pe.read(NATIVE_READER, len(ORIGINAL_GUARD)) != ORIGINAL_GUARD:
         raise InvalidExecutable("unsupported base or original joystick reader guard")
+    known_signatures = []
+    for va, hex_bytes, meaning in KNOWN_NATIVE_SIGNATURES:
+        signature = bytes.fromhex(hex_bytes)
+        if pe.read(va, len(signature)) != signature:
+            raise InvalidExecutable("source-confirmed native reader signature differs at 0x%08X" % va)
+        known_signatures.append({"va": "0x%08X" % va,
+                                 "bytes": hex_bytes, "existing_source_meaning": meaning})
     native = pe.read(ACTION_TABLE, 14 * 8)
     pairs = [struct.unpack_from("<II", native, i * 8) for i in range(14)]
     if tuple(mask for mask, _ in pairs) != ACTION_MASKS:
@@ -160,6 +182,13 @@ def inspect(data: bytes, *, before: int = 96, after: int = 1024,
             "va": "0x%08X" % NATIVE_READER,
             "bytes": ORIGINAL_GUARD.hex(" "),
         },
+        "verified_previous_source_signatures": known_signatures,
+        "source_known_com_calls": [
+            {"va": "0x00501E79", "method": "Poll",
+             "proof": "existing native_joystick_unplug.c exact three-byte signature"},
+            {"va": "0x00501EA1", "method": "Acquire",
+             "proof": "existing native_joystick_unplug.c five-byte sequence at 0x00501E9F"},
+        ],
         "axis_setup_samples": {
             "lX_setup_at_0x005019E0": pe.read(0x5019E0, 16).hex(" "),
             "lY_setup_at_0x00501A42": pe.read(0x501A42, 16).hex(" "),
