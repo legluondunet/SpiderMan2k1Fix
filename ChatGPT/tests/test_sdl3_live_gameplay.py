@@ -37,11 +37,17 @@ def test_ds4_sdl_bindings_to_native_seven_c99(tmp_path):
           assert(spider_sdl3_native_ds4_seven(&ds4,native));
           assert(native[SPIDER_SDL3_ACTION_JUMP]==0);
           assert(native[SPIDER_SDL3_ACTION_PUNCH]==1);
-          /* L2/RT known Sony native indices are 6/7, not SDL axis 4/5. */
+          /* Sony L2 is deliberately refused: no independently
+             verified DirectInput rgbButton index for that axis. */
+          memcpy(snapshot,native,sizeof(snapshot));
           assert(spider_sdl3_profile_assign(&ds4,SPIDER_SDL3_ACTION_SWING,
             spider_sdl3_bind(SPIDER_SDL3_BIND_TRIGGER,SPIDER_SDL3_AXIS_LT)));
+          assert(!spider_sdl3_native_ds4_seven(&ds4,native));
+          assert(!memcmp(snapshot,native,sizeof(snapshot)));
+          assert(spider_sdl3_profile_assign(&ds4,SPIDER_SDL3_ACTION_SWING,
+            spider_sdl3_bind(SPIDER_SDL3_BIND_TRIGGER,SPIDER_SDL3_AXIS_RT)));
           assert(spider_sdl3_native_ds4_seven(&ds4,native));
-          assert(native[SPIDER_SDL3_ACTION_SWING]==6);
+          assert(native[SPIDER_SDL3_ACTION_SWING]==7);
           /* D-pad is POV, not a native rgbButton; refuse atomic map,
              preserve caller's output array unchanged on failure. */
           memcpy(snapshot,native,sizeof(snapshot));
