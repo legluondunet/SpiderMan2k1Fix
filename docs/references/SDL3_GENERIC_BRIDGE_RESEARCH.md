@@ -134,6 +134,47 @@ independent input backend; it still reads a physical DirectInput device.
 The existing `0x00501E6D` signature is an entry checkpoint, **not an
 authenticated generic-input insertion point**.
 
+**Further source-verified detail (31 Oct, offline preparation):**
+`native_joystick_unplug.c` contains ten exact x86 site signatures
+from the original joystick reader. In particular:
+- `0x00501E79: FF 51 64` — the native game's **Poll** indirect COM
+  call through a vtable `+0x64` slot, followed by HRESULT comparisons
+  at `0x00501E7C` and `0x00501E83`.
+- `0x00501E9F: 8B 10 FF 52 1C` — an explicit vtable dereference and
+  **Acquire** indirect COM call at `0x00501EA1`.
+- `0x00501EA6` — comparison with `0x80070005`, and
+  `0x00501EBB` — existing nonfatal return. The prior unplug
+  guard special-cases disconnect HRESULTs here; these signatures are
+  *not* permission to replace the native COM interface.
+
+These verified source anchors narrow the reader's **Poll/Acquire**
+control-flow region; they still do **not identify** the entire state/
+event read or analog consumer. The undocumented regions and their
+potential branch conditions must be disassembled from the original EXE.
+
+An independent **offline tool** now exists:
+`ChatGPT/tools/inspect_spidey_native_reader.py`. It reads the exact
+supported retail EXE **without modifying it**; first requires the
+supported SHA-256, 1,507,328 bytes, PE32 x86 image base, reader null
+guard, ten known native signatures and the fourteen table masks.
+It then reports file-backed VA ranges, seven original action-button
+indices, 16-byte X/Y setup samples, and **candidate raw bytes** that
+could encode indirect COM calls (`GetDeviceState`,
+`GetDeviceData`, `Poll`, etc.) near the reader. These additional
+byte matches are explicitly **NOT disassembly** and may be false
+positives inside other instructions or inline data.
+
+Example, to use on a *locally owned* exact original EXE:
+
+```sh
+python ChatGPT/tools/inspect_spidey_native_reader.py /path/to/SpideyPC.exe > reader-inspection.json
+```
+
+The JSON report is **not generated in CI** because the original game
+binary is intentionally not stored in the repo. Offline CI tests use
+invalid samples and small synthetic data and prove SHA rejection and
+VA mapping, not actual game-reader behavior.
+
 **Next read-only experiment, to implement separately**:
 
 1. Disassemble the exact SHA-matched original binary around
