@@ -8,4 +8,8 @@ void SpiderSDL3GameplayLive_PreNativeOnFlip(HWND hwnd);
 void SpiderSDL3GameplayLive_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
                                    int bink,int native_pause);
 int SpiderSDL3GameplayLive_OwnsPause(void);
+/* True only while this bridge owns and has verified the exact custom
+ * Xbox six-button table with native Swing still unbound (SDL RT only).
+ * Allows the preexisting RT-Swing bridge to remain safe after remaps. */
+int SpiderSDL3GameplayLive_VerifiedXboxSwingMap(void);
 #endif
