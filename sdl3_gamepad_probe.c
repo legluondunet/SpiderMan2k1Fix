@@ -17,6 +17,8 @@
 #include "sdl3_gamepad_slots.h"
 #include "sdl3_controller_profile.h"
 #include "sdl3_controller_profile_store.h"
+#include "native_joystick_reconnect.h"
+#include "ps1_focus_pause_wake.h"
 
 /* SDL3 3.2+ ABI subset; keep signatures aligned with SDL's public headers. */
 #define SPIDER_SDL_INIT_GAMEPAD 0x00002000u
@@ -37,6 +39,7 @@ typedef uint16_t (__cdecl *SDL_GetGamepadProductForIDFn)(uint32_t);
 typedef void *(__cdecl *SDL_OpenGamepadFn)(uint32_t);
 typedef void (__cdecl *SDL_CloseGamepadFn)(void *);
 typedef bool (__cdecl *SDL_GetGamepadButtonFn)(void *,int);
+typedef bool (__cdecl *SDL_GamepadConnectedFn)(void *);
 typedef short (__cdecl *SDL_GetGamepadAxisFn)(void *,int);
 typedef const char *(__cdecl *SDL_GetErrorFn)(void);
 typedef void (__cdecl *SDL_freeFn)(void *);
@@ -73,6 +76,11 @@ static SDL_GetGamepadProductForIDFn sdl_product=NULL;
 static SDL_OpenGamepadFn sdl_open=NULL;
 static SDL_CloseGamepadFn sdl_close=NULL;
 static SDL_GetGamepadButtonFn sdl_button=NULL;
+static SDL_GamepadConnectedFn sdl_connected=NULL;
+static SpiderPausePadWake sdl_pause_wake={0};
+static uint32_t sdl_pause_id=0;
+static uint16_t sdl_pause_vid=0,sdl_pause_pid=0;
+static int sdl_pause_active=0,sdl_pause_lost_reported=0;
 static SDL_GetGamepadAxisFn sdl_axis=NULL;
 static SDL_GetErrorFn sdl_error=NULL;
 static SDL_freeFn sdl_free=NULL;
@@ -176,6 +184,8 @@ static int sdl_load(void) {
   LOAD_SDL(sdl_open,SDL_OpenGamepadFn,"SDL_OpenGamepad");
   LOAD_SDL(sdl_close,SDL_CloseGamepadFn,"SDL_CloseGamepad");
   LOAD_SDL(sdl_button,SDL_GetGamepadButtonFn,"SDL_GetGamepadButton");
+  /* Optional SDL symbol: absence disables only the experimental wake. */
+  sdl_connected=(SDL_GamepadConnectedFn)GetProcAddress(module,"SDL_GamepadConnected");
   LOAD_SDL(sdl_axis,SDL_GetGamepadAxisFn,"SDL_GetGamepadAxis");
   LOAD_SDL(sdl_error,SDL_GetErrorFn,"SDL_GetError");
   LOAD_SDL(sdl_free,SDL_freeFn,"SDL_free");
@@ -446,6 +456,73 @@ int SpiderSDL3Probe_SelectedSample(uint32_t *instance,uint16_t *vid,
      sample->axis[SPIDER_SDL3_AXIS_RT]<0)return 0;
   *instance=id;*vid=v;*pid=p;
   return 1;
+}
+/* The original Flip thread is paused synchronously. Pump the selected
+ * SDL3 handle on that same thread; never acquire or alter native DirectInput.
+ * Foreground plus neutral->press->release are mandatory to resume. */
+int SpiderSDL3Probe_PauseWake_Begin(void) {
+  uint32_t id=0;
+  uint16_t vid=0,pid=0;
+  unsigned i;
+  sdl_pause_active=0;sdl_pause_id=0;
+  sdl_pause_vid=0;sdl_pause_pid=0;sdl_pause_lost_reported=0;
+  memset(&sdl_pause_wake,0,sizeof(sdl_pause_wake));
+  if(!requested || !ready || !scanned || !sdl_connected ||
+     !sdl_button || !sdl_pump || !sdl_update ||
+     !sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId() ||
+     !SpiderSDL3Probe_NativeOwnerEnabled() ||
+     !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
+     !SpiderNativeReconnect_SDL3SelectionReady(vid,pid))return 0;
+  for(i=0;i<num_pads;i++)
+    if(pads[i].id==id && pads[i].handle &&
+       sdl_connected(pads[i].handle))break;
+  if(i==num_pads)return 0;
+  sdl_pause_id=id;sdl_pause_vid=vid;sdl_pause_pid=pid;
+  sdl_pause_active=1;
+  say("FOCUS-PAUSE-SDL3: selected game-owned controller armed (foreground-only; fresh digital press+release; no DirectInput Acquire)");
+  return 1;
+}
+unsigned SpiderSDL3Probe_PauseWake_Poll(HWND hwnd) {
+  unsigned i,j,buttons=0;
+  uint32_t id=0;
+  uint16_t vid=0,pid=0;
+  void *handle=NULL;
+  if(!sdl_pause_active)return 0;
+  if(!hwnd || !IsWindow(hwnd) || !IsWindowVisible(hwnd) ||
+     GetForegroundWindow()!=hwnd) {
+    memset(&sdl_pause_wake,0,sizeof(sdl_pause_wake));
+    return 0;
+  }
+  if(!sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId() ||
+     !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
+     id!=sdl_pause_id || vid!=sdl_pause_vid || pid!=sdl_pause_pid)goto lost;
+  for(i=0;i<num_pads;i++)
+    if(pads[i].id==id && pads[i].handle) {handle=pads[i].handle;break;}
+  if(!handle || !sdl_connected(handle))goto lost;
+  sdl_pump();sdl_update();
+  if(!sdl_connected(handle))goto lost;
+  for(j=0;j<12u;j++) {
+    /* Start changes ownership; Guide is reserved. Neither wakes the game. */
+    if(j==SPIDER_SDL3_BUTTON_GUIDE ||
+       j==SPIDER_SDL3_BUTTON_START)continue;
+    if(sdl_button(handle,(int)j))buttons|=1u<<j;
+  }
+  return spider_pause_pad_wake_step(&sdl_pause_wake,buttons);
+lost:
+  sdl_pause_active=0;
+  memset(&sdl_pause_wake,0,sizeof(sdl_pause_wake));
+  if(!sdl_pause_lost_reported) {
+    say("FOCUS-PAUSE-SDL3: selected device detached/changed while paused; wake disabled, keyboard remains available");
+    sdl_pause_lost_reported=1;
+  }
+  return 0;
+}
+void SpiderSDL3Probe_PauseWake_End(void) {
+  sdl_pause_active=0;sdl_pause_id=0;
+  sdl_pause_vid=0;sdl_pause_pid=0;sdl_pause_lost_reported=0;
+  memset(&sdl_pause_wake,0,sizeof(sdl_pause_wake));
+  spider_sdl3_selection_focus_lost(&selection);
+  bindings_trace_armed=0;bindings_previous=0;
 }
 /* Optional semantic preview for a future on-screen mapping wizard.
  * Read selected SDL3 normalized state from the already-open handle
