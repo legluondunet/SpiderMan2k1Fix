@@ -18,6 +18,7 @@
 #include "sdl3_gamepad_probe.h"
 #include "sdl3_controller_capture.h"
 #include "sdl3_controller_setup_nav.h"
+#include "sdl3_controller_setup_focus.h"
 #include "gamepad_ui_profile.h"
 #include "sdl3_setup_focus_policy.h"
 
@@ -31,6 +32,7 @@ typedef struct {
   HWND hwnd,owner,pads,actions,status;
   SpiderSDL3Capture capture;
   SpiderSDL3SetupNav nav;
+  SpiderSDL3SetupFocus focus;
   uint32_t instance;
   uint16_t vid,pid;
   unsigned slot;
@@ -77,6 +79,48 @@ static void binding_name(SpiderSDL3Binding b,char *out,size_t n) {
           b.index<SPIDER_SDL3_BUTTON_COUNT)
     snprintf(out,n,"%s",button_names[b.index]);
   else snprintf(out,n,"(unsupported)");
+}
+/* Real native Win32 focus gives the selected control a visible focus
+ * rectangle, not a fake in-game cursor or synthetic keyboard event.
+ * The game-owned window is never touched while this modal owns focus. */
+static int setup_focus_button_id(unsigned selected) {
+  if(selected==SPIDER_SETUP_BUTTON_CAPTURE)return SPIDER_UI_CAPTURE;
+  if(selected==SPIDER_SETUP_BUTTON_RESET)return SPIDER_UI_RESET;
+  return SPIDER_UI_CLOSE;
+}
+static void setup_apply_focus(SpiderSDL3SetupUI *ui) {
+  HWND target;
+  static const char *const names[SPIDER_SETUP_BUTTON_COUNT]={
+    "Capture selected action","Restore defaults","Close"
+  };
+  char line[180];
+  if(!ui || !IsWindow(ui->hwnd))return;
+  target=ui->focus.column==SPIDER_SETUP_FOCUS_BUTTONS?
+    GetDlgItem(ui->hwnd,setup_focus_button_id(ui->focus.button)):
+    ui->actions;
+  if(!target || !IsWindow(target))return;
+  /* The native Win32 focus cue is normally keyboard-only. Force only the
+   * focus indicator visible; do NOT alter selection or inject game keys. */
+  SendMessageA(ui->hwnd,WM_CHANGEUISTATE,
+    MAKEWPARAM(UIS_CLEAR,UISF_HIDEFOCUS),0);
+  SetFocus(target);
+  if(ui->focus.column==SPIDER_SETUP_FOCUS_BUTTONS) {
+    snprintf(line,sizeof(line),
+      "FOCUS: %s. Cross/A activates; stick left returns to action list.",
+      names[ui->focus.button]);
+    status(ui,line);
+  } else
+    status(ui,"FOCUS: action list. Stick up/down selects; right reaches buttons.");
+}
+/* Deferred gamepad close waits for release of the activating button.
+ * Never destroy the owner HWND synchronously in WM_TIMER. */
+static void setup_close_from_pad(SpiderSDL3SetupUI *ui,const char *source) {
+  if(!ui || ui->close_pending)return;
+  ui->close_pending=1;
+  ui->close_requested_ms=GetTickCount();
+  spider_sdl3_setup_nav_reset(&ui->nav);
+  status(ui,"Release controller buttons to return to Spider-Man.");
+  if(setup_report)setup_report(source);
 }
 static SpiderSDL3ControllerProfile *current_profile(SpiderSDL3SetupUI *ui) {
   return ui && ui->instance?
@@ -227,15 +271,24 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
   }
   if(!ui->capture.active) {
     uint32_t edge=spider_sdl3_setup_nav_step(&ui->nav,&s);
-    if(edge==(1u<<SPIDER_SETUP_NAV_UP)) {
-      if(ui->action)ui->action--;
-      else ui->action=SPIDER_SDL3_VISIBLE_ACTION_COUNT-1u;
-      refresh_actions(ui);
-      status(ui,"D-pad / left stick: select action; Cross/A capture after release.");
-    } else if(edge==(1u<<SPIDER_SETUP_NAV_DOWN)) {
-      ui->action=(ui->action+1u)%SPIDER_SDL3_VISIBLE_ACTION_COUNT;
-      refresh_actions(ui);
-      status(ui,"D-pad / left stick: select action; Cross/A capture after release.");
+    if(edge==(1u<<SPIDER_SETUP_NAV_LEFT) ||
+       edge==(1u<<SPIDER_SETUP_NAV_RIGHT)) {
+      if(spider_sdl3_setup_focus_step(&ui->focus,edge))
+        setup_apply_focus(ui);
+    } else if(edge==(1u<<SPIDER_SETUP_NAV_UP) ||
+              edge==(1u<<SPIDER_SETUP_NAV_DOWN)) {
+      if(ui->focus.column==SPIDER_SETUP_FOCUS_BUTTONS) {
+        if(spider_sdl3_setup_focus_step(&ui->focus,edge))
+          setup_apply_focus(ui);
+      } else {
+        if(edge==(1u<<SPIDER_SETUP_NAV_UP)) {
+          if(ui->action)ui->action--;
+          else ui->action=SPIDER_SDL3_VISIBLE_ACTION_COUNT-1u;
+        } else
+          ui->action=(ui->action+1u)%SPIDER_SDL3_VISIBLE_ACTION_COUNT;
+        refresh_actions(ui);
+        setup_apply_focus(ui);
+      }
     } else if(edge==(1u<<SPIDER_SETUP_NAV_LB) ||
               edge==(1u<<SPIDER_SETUP_NAV_RB)) {
       if(ui->count>1u) {
@@ -245,20 +298,30 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
         select_slot(ui,next);
       }
     } else if(edge==(1u<<SPIDER_SETUP_NAV_SOUTH)) {
-      if(current_profile(ui)) {
+      if(ui->focus.column==SPIDER_SETUP_FOCUS_BUTTONS) {
+        const int id=setup_focus_button_id(ui->focus.button);
+        if(id==SPIDER_UI_CLOSE) {
+          setup_close_from_pad(ui,
+            "SDL3-SETUP: Cross/A activated focused CLOSE; waiting for release");
+        } else {
+          /* Send a real button command on the same thread, AFTER WM_TIMER.
+           * Never SendMessage into a potentially destructive modal handler. */
+          HWND button=GetDlgItem(ui->hwnd,id);
+          if(button)PostMessageA(ui->hwnd,WM_COMMAND,
+            MAKEWPARAM(id,BN_CLICKED),(LPARAM)button);
+          if(setup_report)
+            setup_report(id==SPIDER_UI_RESET?
+              "SDL3-SETUP: Cross/A activated focused RESET":
+              "SDL3-SETUP: Cross/A activated focused CAPTURE");
+        }
+      } else if(current_profile(ui)) {
         spider_sdl3_capture_start(&ui->capture);
         spider_sdl3_setup_nav_reset(&ui->nav);
         status(ui,"CAPTURE: release all controls, then press ONE button or LT/RT. Esc cancels.");
       }
     } else if(edge==(1u<<SPIDER_SETUP_NAV_EAST)) {
-      /* Closing here with SendMessage(WM_CLOSE) destroys UI children
-       * reentrantly while the timer is still sampling SDL3. Queue instead. */
-      ui->close_pending=1;
-      ui->close_requested_ms=GetTickCount();
-      spider_sdl3_setup_nav_reset(&ui->nav);
-      status(ui,"Release Circle/B to return to Spider-Man's Joystick menu.");
-      if(setup_report)
-        setup_report("SDL3-SETUP: pad B requested CLOSE; waiting for physical release");
+      setup_close_from_pad(ui,
+        "SDL3-SETUP: pad B requested CLOSE; waiting for physical release");
     } else if(edge==(1u<<SPIDER_SETUP_NAV_NORTH)) {
       SpiderSDL3ControllerProfile trial,*selected=current_profile(ui);
       if(selected && spider_sdl3_profile_default(&trial,ui->vid,ui->pid) &&
