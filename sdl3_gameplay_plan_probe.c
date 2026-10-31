@@ -1,16 +1,12 @@
-/* Strict opt-in SDL3 3D semantic bridge PRE-FLIGHT. The semantic actions
- * come from the exact loaded per-model profile and the selected SDL3 pad.
- * The native engine's DirectInput device is verified to be the same
- * selected VID/PID. This ONLY observes and logs presses/releases.
- *
- * Why NO 3D injection yet? 0x568408 maps engine action masks to physical
- * DirectInput button indices; SDL3 LT/RT are separate analog axes and
- * cannot be written there as a "button index". In particular, blindly
- * copying Swing=trigger:5 would leave an invalid native button and could
- * duplicate the legacy RT keyboard bridge. The next stage must intercept
- * the original buffered joystick reader with exact SHA/pattern validation
- * to replace native button events while retaining its original axes.
- * Never synthesize keys alongside the still-active native button reader.
+/* Strict SDL3 semantic 3D telemetry wrapper (Debug SDL3GameplayPlan).
+ * The existing profile edge trace remains observational and never writes.
+ * An independent, additionally opt-in DS4-only runtime module may apply
+ * seven verified SDL3 physical bindings via the game's existing canonical
+ * 14-slot native DirectInput map (not the SDL3 axis index). Known DS4
+ * LT/RT translate to native physical buttons 6/7; unknown SDL buttons
+ * or Xbox triggers cause an atomic refusal, not a guessed injection.
+ * The eighth action Pause uses the existing one-frame Escape key owner.
+ * This module preserves the old read-only trace regardless of live mode.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
