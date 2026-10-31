@@ -355,7 +355,29 @@ SDL3 modal but *not* the original game's Joystick page; Xbox B alone
 could leave that page. This mismatch is an ownership synchronization bug,
 not a bad DS4 Circle mapping.
 
-**Revised behavior — next Windows test required**:
+**Hardware test PASSED for the two-way modal handoff**:
+`SpiderMan2k1Fix(20261031-183300).log` shows
+`SETUP RETURN PENDING` → `COMMITTED` →
+`SDL3-OWNER REBOUND` → `SDL3-OWNER-UI ACTIVE` for both
+DS4→Xbox (`selected-id=2`) and Xbox→DS4 (`selected-id=1`).
+The original menu receives physical B/Circle as `DIK 0x01` after each
+transfer. The user explicitly confirmed **no crash in that test**.
+This validates that exact scenario, not all Alt+Tab/hotplug combinations.
+
+**Remaining safeguards — new candidate, physical retest pending**:
+A follow-up code audit found that the modal chooser was using the
+gameplay `selection_start` API, which returns `0` when Start is pressed
+on the **already displayed** pad. After browsing a different profile
+with L1/R1, Start on that displayed model therefore could not explicitly
+request game ownership upon close. The modal now uses the separate
+`selection_start_edge` policy to recognize a genuine release→press
+even when its displayed instance does not change. Ordinary gameplay
+`selection_start` retains its previous behavior (only report actual
+owner changes). The modal consumes *all* sampled edge states and restores
+its selected identity on multiple simultaneous Start requests, capture,
+or pending close. No game-owned DirectInput changes occur inside the modal.
+
+**Existing behavior validated by Windows**:
 - While the modal exists, fresh Start on either controller only changes
   the **displayed SDL3 setup profile**. Never mutate the game's original
   DirectInput device from an open modal; the game Flip is blocked.
@@ -385,12 +407,19 @@ not a bad DS4 Circle mapping.
 **Hardware regression matrix**: Xbox selected in original game via Start →
 open modal (Xbox visible) → fresh DS4 Start (DS4 visible) → Circle closes
 modal → **new** DS4 Circle closes original game's Joystick menu without
-touching Xbox. Repeat reverse direction, and try L1/R1 browsing without
-Start (must not change owner). Check active game, RT→Swing Xbox, focus
-Alt+Tab, both hotplugs, and reopening/closing the modal.
+touching Xbox. **The preceding two-way Start handoffs now passed on
+Windows.** Remaining matrix: browse by L1/R1 without Start (must NOT
+change game owner), then press Start on the **currently displayed**
+profile (must explicitly request it); test both pads pressing Start at
+the same time (must not pick an arbitrary winner), hold Start while
+closing, disconnect while the modal is open, repeat open/close,
+Alt+Tab out and back, custom per-model bindings surviving restart,
+RT→Swing on Xbox in 3D, and the game after an unplug/replug.
+Pass is required before merging this draft.
 
-**Crash investigation remains open**: the previous reported crash after
-closing the modal had no recorded exception address in
+**Crash follow-up**: the previous reported crash after
+closing the modal did not reproduce in the successful 18:33 Windows
+handoff test. The earlier crash had no recorded exception address in
 `SpiderMan2k1Fix(20261031-175547).log`. Do not claim it fixed unless
 physical retest confirms it; collect Windows Application Error Event 1000
 and an exception dump on reproduction. Never merge this draft solely
