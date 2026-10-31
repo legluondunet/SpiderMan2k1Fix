@@ -293,6 +293,44 @@ path, which is still game-native. Revert
 from expectations. **Do not merge PR #80 until Windows and Wine
 gameplay testing** confirms owner, pause, triggers and safe rollback.
 
+## Multiple different gamepads — one verified native 3D owner (draft)
+
+The original experimental live 3D mapping incorrectly required **exactly
+one** SDL-mapped controller connected, even when SDL3 had deliberately
+selected one Sony DS4 and the native DirectInput8 owner verified that device
+while a different-model Xbox gamepad was merely a spectator.
+
+The revised policy accepts **several distinct VID:PID models** connected
+at the same time, but only one selected, verified game-owned native
+controller. A Sony DS4 live 3D profile is permitted when:
+
+- `ExperimentalSDL3GameplayBindings=1` and all existing SDL3/native
+  owner opt-ins are enabled;
+- the selected SDL3 gamepad is the Sony DS4 instance, and **exactly one
+  opened SDL-mapped gamepad has that VID:PID**;
+- `SpiderNativeReconnect_SDL3SelectionReady` confirms the currently
+  game-owned DirectInput device has that selected model's VID:PID;
+- the seven-action source native table is canonical; the saved profile
+  contains only physically verified Sony buttons and R2;
+- the game has foreground 3D ownership, original FFB effect is absent,
+  and all physical controls have returned to neutral.
+
+On another controller's **fresh Start** selection, the live DS4 RAM
+mapping is restored **before** native DirectInput handoff. Live 3D
+remapping is still DS4-only; an Xbox controller with its own native
+profile uses the original native mapping and does **not** inherit DS4
+bindings. When two controllers share the same VID:PID, the selected
+identity is **ambiguous**: fail closed, do not map or claim the game-owned
+device on product ID alone. The keyboard remains available.
+
+**This is a source- and CI-tested candidate, not hardware acceptance.**
+On Windows 11, physically connect one Sony DS4 plus one differently
+identified Xbox360-compatible gamepad, select DS4 with fresh Start,
+enter 3D, verify Jump/Punch remaps and Pause; select Xbox with Start,
+verify no Sony action leaks; switch back to DS4, repeat, then unplug
+either pad. Verify immediate restore on handoff, no stuck input, and
+return to 2D. Repeat under Wine. Do not merge before these tests.
+
 ## SDL3 3D L2 / D-pad raw-input correlation test (experimental, read-only)
 
 The next native gameplay migration step requires evidence of Sony DS4 L2
