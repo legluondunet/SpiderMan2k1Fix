@@ -106,6 +106,59 @@ def test_modal_start_same_displayed_and_simultaneous_press_policy_c99(tmp_path):
     subprocess.run([str(binary)],check=True)
 
 
+@pytest.mark.skipif(not (shutil.which("gcc") or shutil.which("cc")),
+                    reason="C99 compiler unavailable")
+def test_rescan_arms_new_reconnected_pad_from_verified_neutral_sample(tmp_path):
+    """After hotplug/Alt+Tab, don't lose Start to an unarmed first timer."""
+    source=tmp_path/"reconnect_neutral.c"
+    source.write_text(textwrap.dedent(r"""
+        #include <assert.h>
+        #include "sdl3_gamepad_selection.h"
+        int main(void) {
+          SpiderSDL3Selection modal={0};
+          uint32_t two[]={2u,3u}; /* Xbox=2, freshly reconnected DS4=3 */
+          spider_sdl3_selection_sync(&modal,two,2);
+          modal.active=3u; /* user browsed L1/R1 to DS4 */
+          /* Scan saw Start released: safely arm BEFORE the first timer. */
+          assert(!spider_sdl3_selection_start_edge(&modal,3u,0));
+          assert(modal.slots[1].start_armed==1u);
+          assert(spider_sdl3_selection_start_edge(&modal,3u,1));
+          assert(modal.active==3u); /* fresh Start on displayed pad */
+          /* Focus loss disarms held Start, not the current selection. */
+          spider_sdl3_selection_focus_lost(&modal);
+          assert(!spider_sdl3_selection_start_edge(&modal,3u,1));
+          assert(!spider_sdl3_selection_start_edge(&modal,3u,0));
+          assert(spider_sdl3_selection_start_edge(&modal,3u,1));
+          /* A newly discovered pad with Start already HELD must fail
+           * closed until a real released sample has been observed. */
+          uint32_t ids[]={2u,4u};
+          spider_sdl3_selection_sync(&modal,ids,2);
+          assert(!spider_sdl3_selection_start_edge(&modal,4u,1));
+          assert(!spider_sdl3_selection_start_edge(&modal,4u,0));
+          assert(spider_sdl3_selection_start_edge(&modal,4u,1));
+          return 0;
+        }
+    """),encoding="utf-8")
+    binary=tmp_path/"reconnect_neutral"
+    subprocess.run([shutil.which("gcc") or shutil.which("cc"),
+        "-std=c99","-Wall","-Wextra","-Werror","-I",str(ROOT),
+        str(source),"-o",str(binary)],check=True,capture_output=True,text=True)
+    subprocess.run([str(binary)],check=True)
+
+
+def test_modal_rescan_arming_and_traces_are_neutral_gated_and_capped():
+    modal=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    assert "start_released_at_scan[i]=" in modal
+    assert "sample.buttons&(1u<<SPIDER_SDL3_BUTTON_START)" in modal
+    assert "if(opened_ids[i] && start_released_at_scan[i])" in modal
+    assert "spider_sdl3_selection_start_edge(&ui->modal_start,opened_ids[i],0);" in modal
+    assert "SDL3-SETUP: START-SAMPLE" in modal
+    assert "SDL3-SETUP: PROFILE-BROWSE L1/R1" in modal
+    assert "SDL3-SETUP: START-REFUSED simultaneous claims" in modal
+    assert "ui->start_trace_count<32u" in modal
+    assert "ui->start_owner_requested=1u;" in modal
+
+
 def test_modal_start_defers_original_owner_until_next_verified_game_flip():
     modal=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
