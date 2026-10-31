@@ -122,7 +122,18 @@ void SpiderSDL3GameplayLive_PreNativeOnFlip(HWND hwnd) {
     restore("pre-native SDL3 selection/foreground change");
 }
 int SpiderSDL3GameplayLive_OwnsPause(void) {
-  return enabled && applied && paused_edge_armed;
+  uint16_t vid=0,pid=0;
+  uint32_t id=0;
+  /* The legacy handler runs before the live bridge's frame callback.
+   * During a native pause the seven mapping DWORDs have been restored:
+   * 'applied' must NOT allow duplicate Sony SHARE/OPTIONS Escape pulses.
+   * Reserve Pause for the selected, verified DS4 throughout 3D/pause. */
+  return enabled && SpiderSDL3Probe_NativeOwnerEnabled() &&
+    SpiderSDL3Probe_MappedCount()==1u &&
+    SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) &&
+    id!=0u && vid==0x054cu &&
+    (pid==0x05c4u || pid==0x09ccu || pid==0x0ba0u) &&
+    SpiderNativeReconnect_SDL3SelectionReady(vid,pid);
 }
 void SpiderSDL3GameplayLive_Init(const char *ini,void (*logger)(const char *)) {
   logline=logger;
