@@ -30,10 +30,21 @@ def test_modal_close_preserves_focus_owner_and_retires_secondary_on_return():
     assert restoration.index("SetActiveWindow(owner)") < restoration.index(
         "SetForegroundWindow(owner)")
     assert "prior_foreground=GetForegroundWindow()" in restoration
-    assert "prior_foreground==NULL" in restoration
-    assert "prior_foreground==owner" in restoration
-    assert "prior_foreground==window" in restoration
-    assert "restore_allowed=!has_quit" in restoration
+    # Take foreground at WM_CLOSE while owned modal is still a valid
+    # foreground HWND, not only AFTER DestroyWindow (which can activate
+    # Explorer without any user Alt+Tab).
+    close=scoped(setup,"case WM_CLOSE:", "case WM_DESTROY:")
+    assert "ui->closing_foreground=GetForegroundWindow();" in close
+    assert "ui->closing_foreground_captured=1u;" in close
+    assert close.index("ui->closing_foreground=GetForegroundWindow();") < close.index(
+        "DestroyWindow(hwnd);")
+    assert "restore_allowed=spider_sdl3_setup_restore_focus(" in restoration
+    assert "ui.closing_foreground_captured" in restoration
+    assert "ui.closing_foreground==owner || ui.closing_foreground==window" in restoration
+    assert "prior_foreground==owner || prior_foreground==window" in restoration
+    assert "ui.closing_foreground==NULL,prior_foreground==NULL" in restoration
+    assert "preclose=%p" in restoration
+    assert "has_quit" in restoration
     assert "if(GetForegroundWindow()==owner)SetFocus(owner);" in restoration
     assert "SpiderGamepadUI_AfterControllerSetup(owner)" in restoration
     assert restoration.index("SetForegroundWindow(owner)") < restoration.index(
