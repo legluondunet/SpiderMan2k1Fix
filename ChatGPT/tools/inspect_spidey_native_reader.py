@@ -44,6 +44,24 @@ KNOWN_NATIVE_SIGNATURES = (
     (0x00501EE7, "e8 15 82 02 00", "Reader call anchor"),
 )
 
+# User-supplied exact same EXE independently disassembled offline with
+# llvm-objdump on 2026-11-01. Each site below was checked directly against
+# the authenticated file and is an instruction boundary; unlike the
+# heuristic byte-scan results, these are actual static call/data-flow sites.
+# No original executable bytes are redistributed.
+BINARY_VERIFIED_INPUT_SITES = (
+    (0x00501F0E, "ff 52 28", "original joystick GetDeviceData vtable +0x28"),
+    (0x00501F13, "b1 7f", "clear button high bit before queued edges"),
+    (0x00501F4F, "83 f8 30", "DIJOYSTATE button event starts at offset 0x30"),
+    (0x00501F54, "8b 1d 58 7a 6b 00", "bound button count from native global"),
+    (0x00501F7D, "8b 41 04", "axis/event data read for lX offset 0"),
+    (0x00501F89, "8b 41 04", "axis/event data read for lY offset 4"),
+    (0x00501F95, "8b 41 04", "axis/event data read for POV offset 0x20"),
+    (0x0050A2AD, "e8 9e 7b ff ff", "action aggregator invokes native joystick reader"),
+    (0x00505738, "e8 53 4a 00 00", "game input loop invokes action aggregator"),
+    (0x0050A3A1, "e8 0a 7c ff ff", "action aggregator reads native button latch"),
+)
+
 
 class InvalidExecutable(ValueError):
     """Binary identity, layout or native-reader signature rejected."""
@@ -161,6 +179,15 @@ def inspect(data: bytes, *, before: int = 96, after: int = 1024,
             raise InvalidExecutable("source-confirmed native reader signature differs at 0x%08X" % va)
         known_signatures.append({"va": "0x%08X" % va,
                                  "bytes": hex_bytes, "existing_source_meaning": meaning})
+    binary_verified = []
+    for va, hex_bytes, meaning in BINARY_VERIFIED_INPUT_SITES:
+        signature = bytes.fromhex(hex_bytes)
+        if pe.read(va, len(signature)) != signature:
+            raise InvalidExecutable(
+                "disassembled joystick dataflow site mismatch at 0x%08X" % va)
+        binary_verified.append({"va": "0x%08X" % va,
+                                "bytes": hex_bytes,
+                                "binary_disassembly_meaning": meaning})
     native = pe.read(ACTION_TABLE, 14 * 8)
     pairs = [struct.unpack_from("<II", native, i * 8) for i in range(14)]
     if tuple(mask for mask, _ in pairs) != ACTION_MASKS:
@@ -183,6 +210,24 @@ def inspect(data: bytes, *, before: int = 96, after: int = 1024,
             "bytes": ORIGINAL_GUARD.hex(" "),
         },
         "verified_previous_source_signatures": known_signatures,
+        "verified_binary_input_sites": binary_verified,
+        "joystick_buffered_dataflow": {
+            "reader": "0x00501E50",
+            "event_call": "0x00501F0E",
+            "event_record_size": 20,
+            "event_queue_limit": 16,
+            "button_event_offsets": "0x30 <= dwOfs < 0x30+native-button-count",
+            "button_latch": "0x006B7A34..0x006B7A53",
+            "axis_lx_event_offset": 0,
+            "axis_ly_event_offset": 4,
+            "pov_event_offset": 32,
+            "axis_lx_destination": "0x00AC0A10",
+            "axis_ly_destination": "0x00AC0A14",
+            "pov_destination": "0x00568394",
+            "aggregator": "0x0050A190",
+            "frame_input_caller": "0x00505720",
+            "warn": "Static binary evidence only: not a validated live SDL3 injection point.",
+        },
         "source_known_com_calls": [
             {"va": "0x00501E79", "method": "Poll",
              "proof": "existing native_joystick_unplug.c exact three-byte signature"},
