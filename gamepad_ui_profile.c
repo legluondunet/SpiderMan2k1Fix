@@ -1745,6 +1745,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     report(line);
   }
   if(ps1_preview_active && ps1_options_skip_requested &&
+     !SpiderSDL3Probe_NativeOwnerEnabled() &&
      gameplay_3d && !menu_2d && !movie_allowed && !native_pause_active &&
      pause_pressed && !previous_pause) {
     if(!ps1_request_native_options_cutscene_skip() &&
