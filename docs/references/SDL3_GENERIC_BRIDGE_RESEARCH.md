@@ -108,6 +108,58 @@ not supply a safe way to drive the 2001 native engine.
 - Protect menu/cutscene timing and pause: never let a held Start or
   Circle/B press leak through a dialog or focus boundary.
 
+## Phase 1 — first static audit of the genuine native joystick path
+
+**Source provenance:** these are cross-checked *existing repository*
+findings and source-level assertions, not a new binary disassembly or
+a Windows/Proton runtime observation. All addresses below refer only
+to the previously SHA-256-verified 32-bit `SpideyPC.exe`. They must be
+checked again before authorizing any new native instrumentation.
+
+| Existing component | Address / evidence | What this does **not** prove |
+| --- | --- | --- |
+| Native DirectInput8 factory | Global `0x006B7A30`, confirmed in `native_joystick_reconnect.c` | SDL3 can replace this COM object |
+| Game-owned native joystick | Global pointer `0x006B7A2C` | Its layout is interchangeable with an SDL3 gamepad |
+| Original joystick state data format | `0x0053D0F4`, 80-byte `DIJOYSTATE`, signature-gated by `valid_binary_layout()` | The game consumes all fields of DIJOYSTATE or supports SDL3 axes |
+| Original joystick reader entry guard | `0x00501E6D`, x86 `mov eax,[0x006B7A2C]; test eax,eax` validated by existing reconnect signature | Where every 3D action or axis read happens downstream |
+| Joystick X/Y normalization | Native axis offset `0` for `lX` at `0x005019E0`, offset `4` for `lY` at `0x00501A42`; configured absolute ±1000 by existing reconnect | How other axes, D-pad POV and triggers map into the engine |
+| Buffered native input | 16-entry `DIDEVICEOBJECTDATA` queue; original 32-button data format; pre-publish neutral/drain used by reconnect | A synthetic device can safely share the original native queue |
+| In-memory action assignment | `0x00568408`, **14 entries × 8 bytes** (mask + native button); actions slots **4–10**, parsed in `native_joystick_swap_probe.h` | The action table is the engine's full input representation |
+| Known live DS4/Xbox use | `sdl3_gameplay_live.c` changes **seven button numbers only** and restores exactly; native axes pass through unchanged | A generic arbitrary SDL3 controller can supply native axes as-is |
+
+The crucial unknown is **where the original game reads or consumes the
+`DIJOYSTATE` analog axes and 14 buffered button/action results**. Merely
+writing new seven-action button indices does not create a platform-
+independent input backend; it still reads a physical DirectInput device.
+The existing `0x00501E6D` signature is an entry checkpoint, **not an
+authenticated generic-input insertion point**.
+
+**Next read-only experiment, to implement separately**:
+
+1. Disassemble the exact SHA-matched original binary around
+   `0x00501E6D`, identify native `Poll`, `GetDeviceState`,
+   `GetDeviceData` calls, their stack buffers, and all consumers.
+   Inventory whether the 3D axes are sampled before or after action
+   transitions, and distinguish menu from playable 3D and Bink.
+2. Identify a bounded, SHA/signature-gated **observation-only**
+   instrumentation point on the game/Flip thread. Log entry/exit
+   geometry, read statuses, axis ranges and provenance **without**
+   replacing COM vtables, modifying DirectInput returns or forwarding
+   SDL3 states. Avoid live debugger pauses that perturb frame/input
+   timing.
+3. On Windows, compare native joystick samples and the corresponding
+   SDL3 normalized samples for **the same known validated DS4/Xbox**
+   first; only then repeat with a DS3 and Steam Input virtual controller
+   if available. Distinguish the user's deliberate replug from instability.
+4. Define a transaction for any future write: owner identity, frame
+   order, null/FFB guard, neutral-first, atomic validation, rollback,
+   and no duplicate native+SDL3 input. This is **architecture only**
+   until physical and binary evidence exists.
+
+No new runtime patch, controller mapping, gamepad compatibility
+claim or user test is justified yet. Phase 0 CI (707 tests, Windows
+x86 build) validated a **candidate policy only**, not an input bridge.
+
 ## Phase-0 deliverables
 
 - Portable C99 **read-only** SDL3 candidate policy in
