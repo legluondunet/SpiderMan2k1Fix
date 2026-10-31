@@ -35,7 +35,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **Widescreen HUD:** Corrects the proportions and positioning of HUD elements, including health and web gauges, compass, mission objectives, boss health bars, and in-game pause menus. Tested at 1920×1080 (16:9) and 1920×1200 (16:10).
 - **FPS limiter:** Configurable frame-rate cap, set to **30 FPS by default**. Lower limits, such as 20 FPS, can be selected for timing-sensitive gameplay.
 - **Alt+Tab stability:** Automatically pauses the game when it loses focus, synchronizes video and audio playback, and restores keyboard and mouse input when gameplay resumes. After returning to the game, press and release any keyboard key, or a digital button on the selected SDL3 gamepad (when the experimental SDL3 native owner is verified), to resume the custom PAUSED screen. SDL3 wake uses the already-open selected gamepad on the frozen Flip thread, excluding Start/Guide, and requires a fresh neutral-to-press-to-release cycle; it does not call DirectInput Acquire. When SDL3 is not available, the previous guarded DirectInput DualShock 4 wake is retained. Keyboard wake always remains supported. Also restores the Windows desktop cursor when necessary.
-- **Natural controller confirmation (experimental SDL3):** **Cross on PlayStation / A on Xbox (physical South)** is now fixed for confirming 2D menus and passing Bink videos when the original game allows Return; **Circle/B (East)** is now also fixed for Back/Cancel (including Bink/menu Escape), not remappable. Scripted 3D cinematics use the game's original **Jump/Cross/A** skip path, with **no extra SDL3 skip request**. The editable `Confirm / Skip` and `Back / Cancel` rows have both been removed: only the eight 3D semantic actions remain visible. Legacy v2 per-model context fields are preserved on disk but ignored at runtime for these two fixed menu/media commands. The 3D action bindings remain original DirectInput, not yet live SDL3 remapping. **Separate fixed intro still pages** are not yet recognized by this menu/Bink bridge; original keyboard input remains available there until the exact native owner can be safely routed. Windows/Wine hardware validation is pending.
+- **Natural controller confirmation (experimental SDL3):** **Cross on PlayStation / A on Xbox (physical South)** is now fixed for confirming 2D menus and passing Bink videos when the original game allows Return; **Circle/B (East)** is now also fixed for Back/Cancel (including Bink/menu Escape), not remappable. Scripted 3D cinematics use the game's original **Jump/Cross/A** skip path, with **no extra SDL3 skip request**. The editable `Confirm / Skip` and `Back / Cancel` rows have both been removed: only the eight 3D semantic actions remain visible. Legacy v2 per-model context fields are preserved on disk but ignored at runtime for these two fixed menu/media commands. 3D action bindings remain game-native by default; an explicit, off-by-default **Sony DS4-only experimental bridge** can now apply the seven SDL3 saved action bindings to the original DirectInput button table during 3D gameplay and translate the eighth Pause action to a guarded Escape pulse. It is **not yet hardware-validated**; see the trial instructions below. **Separate fixed intro still pages** are not yet recognized by this menu/Bink bridge; original keyboard input remains available there until the exact native owner can be safely routed. Windows/Wine hardware validation is pending.
 - **Keyboard layouts:** Automatically detects the active keyboard layout and adapts the game's controls, keyboard labels, and cheat-code entry. The original game only supported QWERTY layouts.
 - **DPI awareness:** Handles Windows display scaling to ensure correct window dimensions and rendering on high-DPI displays.
 - **Settings preservation:** Keyboard, gamepad, audio, and brightness settings are managed through `SpiderMan2k1Fix.ini`, with automatic recovery of invalid settings and a single rolling `.ini.old` backup. The original `Spidey.cfg` file is no longer needed.
@@ -45,6 +45,59 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **Original taskbar icon:** Restores the game's original icon in the Windows taskbar.
 
 Successfully tested on Windows 11 and Linux/Wine.
+
+## Experimental SDL3 live gameplay binding trial (Sony DS4 only)
+
+The SDL3 controller setup is separately validated under Windows 11, but the
+**new 3D mapping bridge has not yet been tested in live gameplay**. It
+is **OFF by default** and requires all previously enabled SDL3-selected
+native-owner guards plus one additional key in `SpiderMan2k1Fix.ini`:
+
+```ini
+[Input]
+ExperimentalSDL3Probe=1
+ExperimentalSDL3NativeOwner=1
+ExperimentalNativeJoystickUnplugGuard=1
+ExperimentalNativeJoystickReconnect=1
+ExperimentalNativeJoystickMappingSwap=1
+ExperimentalSDL3GameplayBindings=1
+
+[Debug]
+Log=1
+```
+
+Only a single, uniquely verified Sony DualShock 4
+(054C:05C4, 054C:09CC, 054C:0BA0) with the **canonical original
+seven-action native game mapping** may enter live remapping. The selected
+model's saved SDL3 profile is used. **Jump/Kick/Punch/Web/Aim/Zipline/Swing**
+are applied to the game's verified existing seven-action in-memory table
+while gameplay 3D is foreground; the native stick movement, keyboard,
+menu/Bink commands and files on disk remain unchanged. **Pause** is handled
+separately as a single fresh-press Escape via the existing gamepad UI.
+Existing keyboard Escape remains available.
+
+Only confirmed Sony physical bindings can be translated: Cross, Circle,
+Square, Triangle, Share, L1, R1 and **R2**, or their non-conflicting
+swaps. L2, D-pad/POV, stick clicks, extra buttons and Xbox models are
+**deliberately unsupported** pending hardware-index evidence; they cause
+the **entire seven-action remap to be refused**, not an invented input.
+The eight saved settings remain intact. Entering live mode requires a
+neutral physical sample. Leaving 3D, backgrounding the game, changing
+selection, encountering an unsupported mapping or losing the original
+verified owner restores the previous seven native action values when the
+table still matches the last values written by this module. Game-native
+3D cinematics retain the original skip logic; remapping Jump may affect
+which physical key triggers that original skip, so test cautiously.
+
+Suggested acceptance: first try the default profile and verify ordinary
+3D movement, R2 Swing, Share Pause and menu/Alt+Tab transitions. Then swap
+Cross and Square for Jump/Punch **in the SDL3 assistant**, return to 3D
+with all controls released, and verify that the two native 3D actions
+actually exchange. Return to the menu and verify the original button
+table is restored. Check the log for `SDL3-3D-LIVE: APPLIED`,
+`SDL3-3D-LIVE: original seven DS4 action bindings RESTORED`, or an
+explicit `REFUSED` reason. Turn the feature off again if gameplay is
+unexpected, and keep the PR unmerged pending physical validation.
 
 ## Bugs Resolved
 
