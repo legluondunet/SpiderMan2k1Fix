@@ -79,9 +79,11 @@ static const char *const spider_ini_input[]={
   "KeyboardLayout","DirectInputReacquire","DisableWindowsGhosting","PauseOnFocusLoss","PauseBinkOnFocusLoss","PauseDirectSoundOnFocusLoss","PauseOverlay","PauseDim","PauseDimOpacity","PauseKey",
   "RestoreCursorOnFocusLoss","ExperimentalFocusTrace","ExperimentalDI8EntryTrace",
   "ExperimentalAltTabReacquire","ExperimentalDI8CreateDeviceTrace",
-  "ExperimentalGamepadStart","ControllerProfile","ControllerEnterButtons","ControllerBackButton","ControllerPauseButton","ControllerPS1Preview","ControllerXbox360Preview","ControllerXbox360RTSwing","ControllerPS1OptionsSkip","ControllerPS1DeepStartProbe","ControllerPS1DisableNativeStart","ControllerPS1ReadOnlyJoystick","ControllerAutoDisableMouse","MouseEnabled","ControllerPS1QuitTrace","ControllerPS1PostQuitGuard","ControllerPS1InputFlightRecorder","ControllerPS1TransitionEdgeOwnership","ExperimentalNativeJoystickUnplugGuard","ExperimentalNativeJoystickReconnect","ExperimentalNativeJoystickMappingSwap","ExperimentalSDL3Probe","ExperimentalSDL3NativeOwner","ExperimentalSDL3ControllerSetup","ExperimentalSDL3ContextBridge","ExperimentalSDL3GameplayBindings"
+  "ExperimentalGamepadStart","ControllerProfile","ControllerEnterButtons","ControllerBackButton","ControllerPauseButton","ControllerPS1Preview","ControllerXbox360Preview","ControllerXbox360RTSwing","ControllerPS1OptionsSkip","ControllerPS1DeepStartProbe","ControllerPS1DisableNativeStart","ControllerPS1ReadOnlyJoystick","ControllerAutoDisableMouse","MouseEnabled","ControllerPS1QuitTrace","ControllerPS1PostQuitGuard","ControllerPS1InputFlightRecorder","ControllerPS1TransitionEdgeOwnership","ExperimentalNativeJoystickUnplugGuard","ExperimentalNativeJoystickReconnect","ExperimentalNativeJoystickMappingSwap","ExperimentalSDL3Probe","ExperimentalSDL3NativeOwner","ExperimentalSDL3ControllerSetup","ExperimentalSDL3ContextBridge","ExperimentalSDL3GameplayBindings","ExperimentalSDL3XboxRTSwing"
 };
-static const char *const spider_ini_audio[]={"MusicSFXLevel","VoiceLevel","MovieLevel","Stereo"};
+/* Preserve the audio-routing prototype key in old INIs without enabling
+  * its suspended Windows endpoint hook on this SDL3 development branch. */
+static const char *const spider_ini_audio[]={"MusicSFXLevel","VoiceLevel","MovieLevel","Stereo","DualShock4AudioOutput"};
 static const char *const spider_ini_keys[]={"Up","Down","Left","Right","Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
 static const char *const spider_ini_joy[]={"Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
 static const char *const spider_ini_internal[]={"RawHex"};
