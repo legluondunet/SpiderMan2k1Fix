@@ -48,6 +48,11 @@ typedef struct {
    * our owner window synchronously inside WM_TIMER or a child callback. */
   unsigned close_pending;
   unsigned closing;
+  /* Only an explicit fresh Start inside the modal requests a gameplay
+   * owner transfer on close. Browsing profiles by L1/R1 never does. */
+  uint32_t start_owner_id;
+  uint16_t start_owner_vid,start_owner_pid;
+  unsigned start_owner_requested;
   DWORD close_requested_ms;
   /* Foreground snapshot at WM_CLOSE, before destroying this HWND. */
   HWND closing_foreground;
@@ -276,10 +281,16 @@ static int modal_start_handoff(SpiderSDL3SetupUI *ui) {
   if(next==ui->slot)return 0;
   SendMessageA(ui->pads,CB_SETCURSEL,next,0);
   select_slot(ui,next);
+  /* Defer the actual game DirectInput handoff until AFTER this modal
+   * is destroyed, when the game's native Flip loop resumes. */
+  ui->start_owner_id=ui->instance;
+  ui->start_owner_vid=ui->vid;
+  ui->start_owner_pid=ui->pid;
+  ui->start_owner_requested=1u;
   if(setup_report) {
     char line[195];
     snprintf(line,sizeof(line),
-      "SDL3-SETUP: MODAL-START switched setup-only selected-id=%lu VID:PID=%04X:%04X (game native owner unchanged)",
+      "SDL3-SETUP: MODAL-START switched setup-only selected-id=%lu VID:PID=%04X:%04X (game owner handoff deferred until modal closes)",
       (unsigned long)ui->instance,(unsigned)ui->vid,(unsigned)ui->pid);
     setup_report(line);
   }
@@ -690,7 +701,7 @@ void SpiderSDL3ControllerSetup_Open(void) {
     if(IsDialogMessageA(window,&msg))continue;
     TranslateMessage(&msg);DispatchMessageA(&msg);
   }
-  if(setup_report)setup_report("SDL3-SETUP: modal message loop EXIT; restoring original game owner");
+  if(setup_report)setup_report("SDL3-SETUP: modal message loop EXIT; restoring original game window");
   /* If the modal was removed without WM_CLOSE (WM_QUIT), never assume a
    * foreign active window belongs to us. */
   if(IsWindow(window))DestroyWindow(window);
@@ -724,9 +735,12 @@ void SpiderSDL3ControllerSetup_Open(void) {
   setup_open=0;
   /* Reject any Start held while the modal owned the game thread, rather
    * than treating it as a fresh game-ownership command on next Flip. */
-  SpiderSDL3Probe_SetupModalReturn();
+  SpiderSDL3Probe_SetupModalReturn(
+    ui.start_owner_requested && !has_quit && restore_allowed &&
+      final_foreground==owner ? ui.start_owner_id:0u,
+    ui.start_owner_vid,ui.start_owner_pid);
   if(has_quit)PostQuitMessage(quit_code);
   else if(IsWindow(owner))
     SpiderGamepadUI_AfterControllerSetup(owner); /* arm only, no DI8 method */
-  if(setup_report)setup_report("SDL3-SETUP: preview closed; original game menu/gameplay mappings untouched");
+  if(setup_report)setup_report("SDL3-SETUP: preview closed; optional explicit Start handoff queued for next safe foreground Flip");
 }
