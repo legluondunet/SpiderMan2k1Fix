@@ -262,14 +262,16 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
  * DirectInput selection or gamepad RAM is changed here. */
 static int modal_start_handoff(SpiderSDL3SetupUI *ui) {
   unsigned i,next=0,claims=0;
+  uint32_t before;
   if(!ui || !ui->count)return 0;
+  before=ui->modal_start.active;
   for(i=0;i<ui->count;i++) {
     SpiderSDL3ControllerSample sample;
     uint32_t id=0;
     uint16_t vid=0,pid=0;
     if(!SpiderSDL3Probe_SetupRead(i,&id,&vid,&pid,
                                   NULL,0,&sample))continue;
-    if(spider_sdl3_selection_start(&ui->modal_start,id,
+    if(spider_sdl3_selection_start_edge(&ui->modal_start,id,
         (sample.buttons&(1u<<SPIDER_SDL3_BUTTON_START))!=0)) {
       next=i;
       ++claims;
@@ -277,10 +279,20 @@ static int modal_start_handoff(SpiderSDL3SetupUI *ui) {
   }
   /* Simultaneous Start presses are ambiguous; refuse both. A capture or
    * pending close cannot change profiles halfway through its lifecycle. */
-  if(claims!=1u || ui->capture.active || ui->close_pending)return 0;
-  if(next==ui->slot)return 0;
-  SendMessageA(ui->pads,CB_SETCURSEL,next,0);
-  select_slot(ui,next);
+  if(claims!=1u || ui->capture.active || ui->close_pending) {
+    /* All Start edges have been sampled/consumed. Do NOT leave the
+     * modal's active identity on the last sampled device when two pads
+     * press Start together, or when capturing/closing. */
+    ui->modal_start.active=before;
+    return 0;
+  }
+  if(next!=ui->slot) {
+    SendMessageA(ui->pads,CB_SETCURSEL,next,0);
+    select_slot(ui,next);
+  }
+  /* Start on the currently displayed profile (e.g. after L1/R1
+   * browsing) is still an explicit request to own the original game
+   * AFTER close. It need not change the combo-box row first. */
   /* Defer the actual game DirectInput handoff until AFTER this modal
    * is destroyed, when the game's native Flip loop resumes. */
   ui->start_owner_id=ui->instance;
