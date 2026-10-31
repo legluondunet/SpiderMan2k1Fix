@@ -231,11 +231,11 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
       if(ui->action)ui->action--;
       else ui->action=SPIDER_SDL3_VISIBLE_ACTION_COUNT-1u;
       refresh_actions(ui);
-      status(ui,"D-pad: action selected. Press A to capture; release all controls.");
+      status(ui,"D-pad / left stick: select action; Cross/A capture after release.");
     } else if(edge==(1u<<SPIDER_SETUP_NAV_DOWN)) {
       ui->action=(ui->action+1u)%SPIDER_SDL3_VISIBLE_ACTION_COUNT;
       refresh_actions(ui);
-      status(ui,"D-pad: action selected. Press A to capture; release all controls.");
+      status(ui,"D-pad / left stick: select action; Cross/A capture after release.");
     } else if(edge==(1u<<SPIDER_SETUP_NAV_LB) ||
               edge==(1u<<SPIDER_SETUP_NAV_RB)) {
       if(ui->count>1u) {
@@ -256,7 +256,7 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
       ui->close_pending=1;
       ui->close_requested_ms=GetTickCount();
       spider_sdl3_setup_nav_reset(&ui->nav);
-      status(ui,"Release B/Circle to return to the game's Joystick menu.");
+      status(ui,"Release Circle/B to return to Spider-Man's Joystick menu.");
       if(setup_report)
         setup_report("SDL3-SETUP: pad B requested CLOSE; waiting for physical release");
     } else if(edge==(1u<<SPIDER_SETUP_NAV_NORTH)) {
@@ -358,7 +358,7 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
     return 1;
   }
   if(vk==VK_F1) {
-    status(ui,"KEYBOARD: Up/Down action, Enter capture, PgUp/PgDn pad, F5 defaults, Esc cancel/close. GAMEPAD: D-pad, A, B, LB/RB, Y.");
+    status(ui,"Stick Y/D-pad: actions; stick X/L1/R1: controllers; Cross/A capture, Circle/B close, Triangle/Y defaults.");
     return 1;
   }
   return 0; /* Tab and Space keep their native Win32 button behavior. */
@@ -396,8 +396,8 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         WS_CHILD|WS_VISIBLE|WS_TABSTOP,
         465,207,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_CLOSE,NULL,NULL);
       label=CreateWindowExA(0,"STATIC",
-        "Keyboard: Up/Down action  Enter capture  PgUp/PgDn device  F5 reset  Esc cancel/close\r\n"
-        "Gamepad: D-pad action  A capture  B close  LB/RB device  Y reset",
+        "Keyboard: Up/Down rows  Enter capture  PgUp/PgDn pad  F5 reset  Esc close\r\n"
+        "Gamepad: Stick Y/D-pad rows  Stick X/L1/R1 pad  Cross capture  Circle close  Triangle reset",
         WS_CHILD|WS_VISIBLE,18,367,684,40,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->status=CreateWindowExA(0,"STATIC","",
