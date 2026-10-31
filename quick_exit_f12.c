@@ -734,6 +734,59 @@ static void __cdecl spider_movie4_safety_only_game_input(void) {
   SPIDER_NATIVE_GAME_INPUT_UPDATE();
 }
 
+/* Follow-up to the two 31-Oct physical Cross/Square comparisons:
+ * the five 0x50C180 readers only produced the initial script event.
+ * Sample the already-hooked native frame OWNER before/after its ORIGINAL
+ * 0x440EF0 update (no new native patch, no SDL polling). This captures
+ * script permission and request BYTE boundaries when readers are not
+ * called after the initial script frame. It still cannot prove which
+ * instruction made the native skip request: a short-lived request can
+ * already have been consumed elsewhere in the original engine tick.
+ * No game-owned memory is changed. */
+static void spider_trace_sdl3_native_cutscene_boundary(unsigned after) {
+  static DWORD last_snapshot[2]={0xffffffffu,0xffffffffu};
+  static DWORD last_owner[2]={0xffffffffu,0xffffffffu};
+  static unsigned reports=0u;
+  DWORD owner,ip,packed,now;
+  uintptr_t address,base;
+  MEMORY_BASIC_INFORMATION mbi;
+  const volatile BYTE *obj;
+  unsigned context,allowed,active,request;
+  char line[278];
+  if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)!=1 ||
+     reports>=80u || *SPIDER_GAME_BINK_ACTIVE!=0u ||
+     GetModuleHandleA(NULL)!=(HMODULE)(uintptr_t)0x00400000u)
+    return;
+  owner=*SPIDER_NATIVE_CUTSCENE_OWNER_PTR;
+  if(!owner)return;
+  address=(uintptr_t)owner;
+  if(VirtualQuery((LPCVOID)address,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_NOACCESS|PAGE_GUARD)))
+    return;
+  base=(uintptr_t)mbi.BaseAddress;
+  if(address<base || address-base>=mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(address-base)<0x1bcu)
+    return;
+  obj=(const volatile BYTE *)address;
+  context=obj[0x1acu];allowed=obj[0x1a4u];active=obj[0x1b4u];
+  ip=*(const volatile DWORD *)(address+0x1b8u);
+  request=*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST;
+  packed=(context&0xffu)|((allowed&0xffu)<<8)|
+         ((active&0xffu)<<16)|((request&0xffu)<<24);
+  if(last_owner[after]==owner && last_snapshot[after]==packed)return;
+  last_owner[after]=owner;
+  last_snapshot[after]=packed;
+  /* Avoid logging an unrelated idle/uninitialized script instance. */
+  if(context!=1u && active!=1u && reports==0u)return;
+  ++reports;
+  now=GetTickCount();
+  snprintf(line,sizeof(line),
+    "SDL3-CUTSCENE-OWNER: boundary=%s context=%u allowed=%u active=%u request=%u script_ip=0x%08lX ms=%lu [ORIGINAL NATIVE UPDATE UNCHANGED; CORRELATION ONLY]",
+    after?"after-0x440EF0":"before-0x440EF0",
+    context,allowed,active,request,(unsigned long)ip,(unsigned long)now);
+  say(line);
+}
+
 /* Native game-input owner wrapper at 0x45553B:
  * The original 0x440EF0 executes exactly once with its original ABI,
  * before the game tests pause context at 0x455540. EAX is overwritten
@@ -768,7 +821,9 @@ static void __cdecl spider_observe_native_game_input(void) {
    * F10-armed auto-skips bypass this barrier. */
   if(n==1)spider_newgame_enter_release_barrier(0);
   InterlockedExchange(&last_native_game_input_ms,(LONG)GetTickCount());
+  spider_trace_sdl3_native_cutscene_boundary(0u);
   SPIDER_NATIVE_GAME_INPUT_UPDATE();
+  spider_trace_sdl3_native_cutscene_boundary(1u);
   after_request=*SPIDER_ENGINE_MODE;
   native_after_request=after_request; /* immutable pre-F12 snapshot */
   /* This stage is shared with an older, separately opted-in *exit*
