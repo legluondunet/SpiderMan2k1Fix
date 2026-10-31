@@ -292,3 +292,37 @@ path, which is still game-native. Revert
 `ExperimentalSDL3GameplayBindings=0` if the runtime behavior differs
 from expectations. **Do not merge PR #80 until Windows and Wine
 gameplay testing** confirms owner, pause, triggers and safe rollback.
+
+## SDL3 3D L2 / D-pad raw-input correlation test (experimental, read-only)
+
+The next native gameplay migration step requires evidence of Sony DS4 L2
+and D-pad physical DirectInput representation. Guessing `rgbButtons[6]`
+or treating the D-pad's POV angle as a regular game button would corrupt
+an otherwise valid seven-action mapping. These controls remain **unsupported
+for live 3D remapping**, and the program still refuses any profile that
+assigns them to a core action.
+
+To collect non-mutating evidence, enable `[Debug] SDL3GameplayTrace=1`
+with the existing `ExperimentalSDL3Probe=1` and
+`ExperimentalSDL3NativeOwner=1`. In normal foreground 3D gameplay,
+press and release **L2**, then **D-pad Up, Down, Left and Right**, each
+separately; afterwards press **R2** as a control sample. The additional
+`SDL3-3D-TRACE` lines correlate the selected SDL3 button mask and
+normalized LT/RT values with the **separate, nonexclusive** DirectInput
+UI handle's raw 16-button mask, `lZ`, sliders and POV (up to 64 lines,
+neutral-first/foreground only). Do not press several buttons together.
+
+This diagnostic **does not** call `Acquire`, poll the game's original
+DirectInput COM device, write mappings, synthesize keyboard events,
+or claim the secondary DirectInput view is identical to the native
+game-owned reader. It is only a prerequisite for deciding whether a
+particular physical DS4 L2 button index can safely be supported. D-pad
+POV controls will require a separate original input-reader design, not
+a fabricated `rgbButtons` index.
+
+During a custom Alt+Tab PAUSED screen *before* SDL3's first gamepad
+selection, a secondary foreground-only DirectInput device can become
+`DIERR_INPUTLOST`. If PAUSED detects this, the next `PauseWake_End`
+now retires that stale **fix-owned** device once; the next regular
+foreground Flip performs fresh detection without another failed
+`GetDeviceState` call. The original game's device is untouched.
