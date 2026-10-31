@@ -772,6 +772,46 @@ static int gamepad_native_cutscene_skip(int request,const char *source) {
 static int ps1_request_native_options_cutscene_skip(void) {
   return gamepad_native_cutscene_skip(1,"PS1-3D-OPTIONS");
 }
+/* Bridge the saved "Confirm / Skip" SDL3 semantic button to the
+ * ORIGINAL game-owned 3D cutscene request, not a synthetic Jump/Enter key.
+ * Only the active SDL3-selected, verified native controller may request it.
+ * The native CutSceneSkipAllow/script gate remains authoritative. This
+ * does NOT neutralize the legacy Cross/Jump shortcut: that needs separate
+ * native reader analysis so that Jump stays functional in gameplay. */
+static void sdl3_cutscene_context_on_flip(int menu_2d,int gameplay_3d,
+                                          int bink,int native_pause) {
+  uint32_t id=0;
+  uint16_t vid=0,pid=0;
+  SpiderSDL3ControllerSample sample;
+  SpiderSDL3ControllerProfile *saved=NULL;
+  int status;
+  if(!sdl3_context_bridge_requested ||
+     !SpiderSDL3Probe_NativeOwnerEnabled() ||
+     !gameplay_3d || menu_2d || bink || native_pause ||
+     !gamepad_native_cutscene_skip(0,NULL)) {
+    spider_sdl3_context_cutscene_reset(&sdl3_cutscene_bridge);
+    return;
+  }
+  if(!SpiderSDL3Probe_SelectedSample(&id,&vid,&pid,&sample) ||
+     id!=sdl3_ui_instance ||
+     !SpiderNativeReconnect_SDL3SelectionReady(vid,pid)) {
+    spider_sdl3_context_cutscene_reset(&sdl3_cutscene_bridge);
+    return;
+  }
+  saved=SpiderSDL3Probe_SetupProfile(vid,pid);
+  if(!saved) {
+    spider_sdl3_context_cutscene_reset(&sdl3_cutscene_bridge);
+    return;
+  }
+  status=spider_sdl3_context_cutscene_step(&sdl3_cutscene_bridge,
+            saved,&sample,id,vid,pid,1,1);
+  if(status!=SPIDER_SDL3_CUTSCENE_PRESS)return;
+  if(gamepad_native_cutscene_skip(1,"SDL3-CONFIRM-SKIP")) {
+    if(sdl3_cutscene_context_reports++<20u)
+      report("SDL3-CUTSCENE: saved SkipCutscene -> original game-native request (CutSceneSkipAllow=1; no key synthesis)");
+  } else if(sdl3_cutscene_context_reports++<8u)
+    report("SDL3-CUTSCENE: native permission changed before request; skipped safely");
+}
 /* Early game HWND acquisition precedes the verified native CRT reload.
  * On failure retry the old unchanged UI discovery on the first Flip. */
 int SpiderGamepadUI_PreparePS1(HWND hwnd) {
@@ -1348,6 +1388,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   release_active_key();
   if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {
     spider_sdl3_context_menu_reset(&sdl3_context_bridge);
+    spider_sdl3_context_cutscene_reset(&sdl3_cutscene_bridge);
     sdl3_3d_trace_valid=0;
     xbox_rt_swing_release("focus lost");
     /* Native game mouse state was already restored by mouse OnFlip. */
@@ -1430,6 +1471,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
           detected_kind==SPIDER_RECONNECT_XBOX360 && xbox_readonly_active)
     SpiderXbox360_InstallReadOnlyJoystick(log_message);
   if(!detected||!device) {
+    spider_sdl3_context_cutscene_reset(&sdl3_cutscene_bridge);
     spider_sdl3_context_menu_reset(&sdl3_context_bridge);
     ps1_history_record(SPIDER_PS1_HISTORY_DEVICE_MISSING,native_request,
       menu_2d,gameplay_3d,bink_active,native_pause_active,
@@ -1502,6 +1544,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
     previous_share=0;
     previous_native_start=0;
     spider_sdl3_context_menu_reset(&sdl3_context_bridge);
+    spider_sdl3_context_cutscene_reset(&sdl3_cutscene_bridge);
     {
       int repeatedly_failed=spider_ds4_hotplug_read_failed(&hotplug);
       if(hr==DIERR_INPUTLOST || repeatedly_failed)
@@ -1563,9 +1606,12 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
        * Return/Escape. The original native controller reads are untouched. */
       previous_buttons=0;previous_back=0;previous_pause=0;
       previous_share=0;previous_native_start=0;
+      spider_sdl3_context_cutscene_reset(&sdl3_cutscene_bridge);
       return;
     }
   }
+
+  sdl3_cutscene_context_on_flip(menu_2d,gameplay_3d,bink_active,native_pause_active);
 
   /* First live consumer of SDL3 per-model v2 MENU/VIDEO keys. The native
    * 3D action reader stays unchanged; one explicitly selected, verified
