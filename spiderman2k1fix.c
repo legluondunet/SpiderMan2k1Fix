@@ -37,6 +37,7 @@
 #include "pkr_audio_index.h"
 #include "pkr_audio_play_hook.h"
 #include "pkr_audio_loader.h"
+#include "audio_ds4_route.h"
 
 static const BYTE expected_sha256[32] = {
   0x0a,0x11,0xa4,0x9f,0x3f,0x63,0xd4,0xbb,
@@ -3083,6 +3084,16 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  /* Install before original game's initDirectSound8, which follows
+   * DirectDraw init.  The game's exact retail EXE was verified above. */
+  {
+    char ini[MAX_PATH],*slash;
+    DWORD n=GetModuleFileNameA(NULL,ini,sizeof(ini));
+    if(n && n<sizeof(ini) && (slash=strrchr(ini,'\\'))!=NULL) {
+      strcpy(slash+1,"SpiderMan2k1Fix.ini");
+      SpiderAudioDS4Route_Install(ini,log_line);
+    }
+  }
   SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
