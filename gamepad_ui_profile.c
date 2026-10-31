@@ -1758,6 +1758,7 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
       report("GAMEPAD-UI: POST-MENU BINK Return attempted with original GameFMV_Active=1; native video skip gate remains authoritative");
   } else if(!ps1_preview_active && gameplay_allowed && pause_button==SPIDER_PAUSE_OPTIONS &&
             pause_pressed && !previous_pause &&
+            !SpiderSDL3GameplayLive_OwnsPause() &&
             options_free_of_native_actions()) {
     begin_scancode(0x01u,"Escape");
     report("GAMEPAD-UI: 3D PAUSE REQUEST OPTIONS -> Escape; no saved native BUTTON9 gameplay assignment");
