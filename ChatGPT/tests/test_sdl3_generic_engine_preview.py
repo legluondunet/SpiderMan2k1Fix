@@ -75,6 +75,30 @@ def test_semantic_actions_and_dpad_stick_preview(tmp_path):
          assert(!spider_sdl3_generic_engine_preview(
              &xbox,&s,0,&mask,&held));
          assert(mask==0 && held==0);
+         s.axis[5]=0;
+         s.buttons=1u<<1; /* custom Xbox B -> Punch */
+         {
+           uint32_t current=0,fresh=0,semantic=0;
+           assert(spider_sdl3_generic_engine_preview_edges(
+               &xbox,&s,0,&current,&fresh,&semantic));
+           assert(current==0x40 && fresh==0x40);
+           assert(spider_sdl3_generic_engine_preview_edges(
+               &xbox,&s,semantic,&current,&fresh,&semantic));
+           assert(current==0x40 && fresh==0);
+           s.buttons=(1u<<1)|(1u<<11); /* D-pad is held-only */
+           assert(spider_sdl3_generic_engine_preview_edges(
+               &xbox,&s,semantic,&current,&fresh,&semantic));
+           assert(current==(0x40|0x1) && fresh==0);
+           s.buttons=(1u<<3); /* newly pressed Xbox Y -> Jump */
+           assert(spider_sdl3_generic_engine_preview_edges(
+               &xbox,&s,semantic,&current,&fresh,&semantic));
+           assert(current==0x10 && fresh==0x10);
+           /* No fresh action can be inherited after reset/neutral. */
+           s.buttons=0;
+           assert(spider_sdl3_generic_engine_preview_edges(
+               &xbox,&s,semantic,&current,&fresh,&semantic));
+           assert(current==0 && fresh==0);
+         }
          return 0;
        }
     """),encoding="utf-8")
@@ -93,6 +117,10 @@ def test_engine_preview_is_read_only_unwired_and_no_native_owner():
     assert "SPIDER_SDL3_ENGINE_FIRST_ACTION=4u" in source
     assert "(actions&0x7fu)" in source
     assert "spider_sdl3_profile_actions" in source
+    assert "spider_sdl3_generic_engine_preview_edges(" in source
+    assert "0x0050A24B/0x0050A27C" in source
+    assert "0x0050A3B8/0x0050A3DF" in source
+    assert "0x0050A375" in source
     for forbidden in ("windows.h","dinput.h","SDL_OpenGamepad",
                       "VirtualProtect","SendInput","GetDeviceState"):
         assert forbidden not in source
