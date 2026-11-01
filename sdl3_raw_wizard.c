@@ -79,7 +79,7 @@ static void wizard_prompt(SpiderRawWizard *w) {
   snprintf(line,sizeof(line),
     "Step %u / %u: %s\r\n"
     "Release every control, then activate ONLY this one.\r\n"
-    "Keyboard: Ctrl+Shift+S skip | Ctrl+Shift+R restart | Ctrl+Shift+Esc cancel",
+    "Keyboard: Ctrl+Shift+S skip | Ctrl+Shift+R restart | Ctrl+Shift+Q cancel",
     w->step+1,SPIDER_RAW_MAP_COUNT,prompts[w->step]);
   wizard_text(w,line);
 }
@@ -303,7 +303,7 @@ static LRESULT CALLBACK wizard_wndproc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
         SendMessageA(button,WM_SETFONT,(WPARAM)font,TRUE);
       }
       label=CreateWindowExA(0,"STATIC",
-        "Keyboard: Ctrl+Shift+S skip, Ctrl+Shift+R restart, Ctrl+Shift+Esc cancel.\r\n"
+        "Keyboard: Ctrl+Shift+S skip, Ctrl+Shift+R restart, Ctrl+Shift+Q cancel.\r\n"
         "Controller keys are consumed only by SDL3 during calibration; gameplay unchanged.",
         WS_CHILD|WS_VISIBLE,20,270,610,50,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
@@ -395,8 +395,8 @@ void SpiderSDL3RawWizard_Open(HWND owner,void (*logger)(const char *)) {
         if((GetKeyState(VK_CONTROL)&0x8000) &&
            (GetKeyState(VK_SHIFT)&0x8000) &&
            !(msg.lParam&(1L<<30))) {
-          if(msg.wParam==VK_ESCAPE) {
-            if(w.log)w.log("SDL3-RAW-WIZARD: keyboard Ctrl+Shift+Escape cancel");
+          if(msg.wParam=='Q') {
+            if(w.log)w.log("SDL3-RAW-WIZARD: keyboard Ctrl+Shift+Q cancel");
             PostMessageA(hwnd,WM_CLOSE,0,0);
             continue;
           }
