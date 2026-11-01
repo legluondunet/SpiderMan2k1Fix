@@ -108,3 +108,69 @@ held modifier is cleared unexpectedly, disable the experiment and
 report the full log. No merges without maintainer review.
 
 Signature: legluondunet assisted by ChatGPT (OpenAI)
+
+## Windows 11 hardware validation: Sony DS4, 1 November 2026 07:59
+
+User-provided **complete 1,557-line native Windows 11 log**
+`SpiderMan2k1Fix(20261101-075920).log`; original retail
+`SpideyPC.exe` SHA-256 confirmed, Sony DS4
+`VID:PID=054C:09CC` selected. The exact build commit is **not**
+proven by the static startup version string
+`v1.1.0-cd6de56`, but the new runtime emits
+`ALT-LATCH: ARMED`, `return confirmed`, and `REPAIRED`, proving
+the optional recovery implementation is actually loaded and running.
+
+### Observed first real focus-loss recovery
+
+- Log **60**: opt-in `ALT-LATCH: ARMED`; original SHA and preflight
+  pass. This is **not** a default-on feature.
+- **721**: in the 3D game, original keyboard and Win32 both observe
+  Left Alt held: `alt-tab=1 os-alt-tab=1`.
+- **724**: `INPUT-FOCUS: flip-background`;
+  **731–732**: the existing cross-process foreground-loss detector
+  confirms an external foreground after 172 ms (`explorer.exe`),
+  and latches the PAUSED wait.
+- **739**: `flip-foreground`, **743–748**: manual Return keyboard
+  press/release wake, eight DirectSound secondary voices resumed
+  (`failed=0`), and verified foreground state. **749**:
+  `ALT-LATCH: return confirmed`.
+- **753**: actual original DI/Win32 divergence remains after waking:
+  `kb-held=1 alt-tab=1 os-alt-tab=0 merged-actions=0000`.
+- **765**: `ALT-LATCH: REPAIRED original Left Alt 0x7F->0x80;
+  6 stable foreground frames; OS modifiers up`.
+- **766**: the independent observer immediately sees
+  `kb-held=0 kb-released=1 alt-tab=0 os-alt-tab=0`;
+  **767**: the release edge is cleared naturally by subsequent
+  original game state progression (`kb-released=0`).
+  This validates the **actual one-byte native write and the
+  original game latch's resulting transition** on Windows 11.
+
+### Bounded outcomes and things NOT yet validated
+
+- Across **100** source snapshots (81 in 3D, 19 in MENU):
+  **98** with `alt-tab=0 os-alt-tab=0`,
+  **1** with `1/1` (before switching focus) and
+  **1** with `1/0` (stale original latch immediately after return).
+  **96** regular + **4** reserved snapshots; the reserved samples
+  at **1540–1545** follow in-game pause/menu eligibility transitions,
+  not a second proven desktop Alt+Tab.
+- Precisely **one** confirmed cross-process foreground loss/return
+  and **one** `ALT-LATCH: REPAIRED`. No unexpected second repair,
+  automatic whole-keyboard clearing or crash/error indicator is
+  visible. Subsequent physical DS4 Cross/RT button edges, axis
+  movements, and nonzero game action masks appear in the log.
+- The game's original controller-7 transition at **1520–1525**
+  completes a return to the main/controller menu, with normal
+  2D presentation afterward. This is telemetry, not an assertion
+  that every controller gameplay action was successful.
+- **Unverified:** the user's own observation of *all keyboard
+  controls* after recovery, a **new physical Left Alt press/release**
+  following a repair, keyboard-only and Xbox tests, repeated 3D
+  Alt+Tabs in a single run, a negative test with the option disabled,
+  and Wine/Proton. The original broad Alt+Tab control-lockout may
+  involve additional input state not captured here. Do not enable
+  by default or merge on this single successful test.
+
+**Conclusion:** first **runtime hardware validation succeeded
+for the precise stale Left Alt byte repair**, not a blanket proof
+of complete Alt+Tab input recovery.
