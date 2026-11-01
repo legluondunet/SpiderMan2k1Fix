@@ -47,9 +47,9 @@ typedef struct {
   unsigned slot;
   unsigned count;
   unsigned action;
-  unsigned test_mode,test_reports;
+  unsigned test_mode,test_reports,test_blocked_commands,test_suppressed_keys;
   uint32_t test_buttons_previous;
-  int test_lt_previous,test_rt_previous;
+  int test_axes_previous[6];
   /* Capped controller focus/Start telemetry for real Windows regression
    * reports; no per-frame spam and no change to input routing. */
   unsigned start_trace_count;
@@ -381,6 +381,29 @@ static int modal_start_handoff(SpiderSDL3SetupUI *ui) {
   }
   return 1;
 }
+static void setup_toggle_sdl3_test(SpiderSDL3SetupUI *ui);
+static void setup_sdl3_test_lock(SpiderSDL3SetupUI *ui,int lock) {
+  unsigned i;
+  if(!ui || !ui->hwnd)return;
+  /* No Win32 control may respond to controller-emulated keyboard events
+   * during the SDL3 hardware test. Merely changing focus is insufficient
+   * with Wine/Proton and the physical button that started the test. */
+  SendMessageA(ui->pads,CB_SHOWDROPDOWN,FALSE,0);
+  EnableWindow(ui->pads,lock?FALSE:TRUE);
+  EnableWindow(ui->actions,lock?FALSE:TRUE);
+  for(i=SPIDER_UI_CAPTURE;i<=SPIDER_UI_CLOSE;i++) {
+    HWND button=GetDlgItem(ui->hwnd,(int)i);
+    if(button)EnableWindow(button,lock?FALSE:TRUE);
+  }
+  for(i=SPIDER_UI_RAW;i<=SPIDER_UI_TEST;i++) {
+    HWND button=GetDlgItem(ui->hwnd,(int)i);
+    if(button)EnableWindow(button,lock?FALSE:TRUE);
+  }
+  /* The parent has no default pushbutton semantics. It cannot turn
+   * stray Space/Return into BN_CLICKED. An explicit Ctrl+Shift+T exits. */
+  if(lock)SetFocus(ui->hwnd);
+  else if(IsWindow(ui->actions))SetFocus(ui->actions);
+}
 static void sample_device(SpiderSDL3SetupUI *ui) {
   SpiderSDL3ControllerSample s;
   SpiderSDL3Binding candidate;
@@ -402,7 +425,9 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
     return;
   }
   if(SpiderSDL3Probe_SetupCount()!=ui->count)refresh_pads(ui);
-  if(modal_start_handoff(ui))return;
+  /* Hardware diagnostic must not change the selected pad as a side effect
+   * of its Start button; preserve the selected instance for telemetry. */
+  if(!ui->test_mode && modal_start_handoff(ui))return;
   if(!ui->instance) {
     /* The selected pad may detach after B requested close. Never strand
      * the modal window waiting for a release on a vanished device. */
@@ -435,24 +460,28 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
     return;
   }
   if(ui->test_mode) {
-    /* Keyboard F9: verify SDL3's normalized hardware signal directly.
-     * Suppress all controller-driven dialog navigation while testing.
-     * No game input, no native DirectInput reads or writes. */
-    if(s.buttons!=ui->test_buttons_previous ||
-       (int)s.axis[SPIDER_SDL3_AXIS_LT]!=ui->test_lt_previous ||
-       (int)s.axis[SPIDER_SDL3_AXIS_RT]!=ui->test_rt_previous) {
+    /* Every selected, mapped SDL3 gamepad can be tested; all other
+     * Win32 actions are disabled and guarded against synthetic clicks.
+     * Log BOTH sticks and triggers, not just face buttons/trigger edges. */
+    unsigned axis,changed=s.buttons!=ui->test_buttons_previous;
+    for(axis=0;axis<6u;axis++)
+      if((int)s.axis[axis]!=ui->test_axes_previous[axis])
+        changed=1u;
+    if(changed) {
       ui->test_buttons_previous=s.buttons;
-      ui->test_lt_previous=s.axis[SPIDER_SDL3_AXIS_LT];
-      ui->test_rt_previous=s.axis[SPIDER_SDL3_AXIS_RT];
+      for(axis=0;axis<6u;axis++)
+        ui->test_axes_previous[axis]=s.axis[axis];
       snprintf(line,sizeof(line),
-        "SDL3 TEST: buttons=0x%06lX LX=%d LY=%d LT=%d RT=%d. Select Stop SDL3 input test to exit.",
-        (unsigned long)s.buttons,
+        "SDL3 TEST: id=%lu buttons=0x%06lX LX=%d LY=%d RX=%d RY=%d LT=%d RT=%d [Ctrl+Shift+T stop]",
+        (unsigned long)id,(unsigned long)s.buttons,
         (int)s.axis[SPIDER_SDL3_AXIS_LEFTX],
         (int)s.axis[SPIDER_SDL3_AXIS_LEFTY],
+        (int)s.axis[SPIDER_SDL3_AXIS_RIGHTX],
+        (int)s.axis[SPIDER_SDL3_AXIS_RIGHTY],
         (int)s.axis[SPIDER_SDL3_AXIS_LT],
         (int)s.axis[SPIDER_SDL3_AXIS_RT]);
       status(ui,line);
-      if(setup_report && ui->test_reports++<36u)setup_report(line);
+      if(setup_report && ui->test_reports++<64u)setup_report(line);
     }
     return;
   }
@@ -553,6 +582,7 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
   HWND focused;
   SpiderSDL3ControllerProfile *p;
   if(!ui || !ui->hwnd)return 0;
+  if(ui->test_mode)return 1; /* active test owns ALL ordinary keyboard input */
   if(vk==VK_ESCAPE) {
     if(ui->capture.active) {
       spider_sdl3_capture_reset(&ui->capture);
@@ -631,27 +661,37 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
   }
   return 0; /* Tab and Space keep their native Win32 button behavior. */
 }
-/* Explicit dialog button: keyboard Tab+Enter or mouse click. Deliberately
- * NO F9/F10 handling: those keys already belong to Spider-Man. */
+/* Enter through the ordinary Tab+Enter button, but EXIT only through an
+ * explicit keyboard chord. During testing all controls including this
+ * button are disabled so physical controller keys cannot click again.
+ * F9 screenshots and F10 location shortcuts remain completely untouched. */
 static void setup_toggle_sdl3_test(SpiderSDL3SetupUI *ui) {
-  HWND button;
-  if(!ui)return;
+  unsigned axis;
+  char line[240];
+  if(!ui || !ui->hwnd)return;
   ui->test_mode=!ui->test_mode;
   ui->test_buttons_previous=~0u;
-  ui->test_lt_previous=-100000;
-  ui->test_rt_previous=-100000;
+  for(axis=0;axis<6u;axis++)ui->test_axes_previous[axis]=-100000;
+  ui->test_reports=0u;
   spider_sdl3_capture_reset(&ui->capture);
   spider_sdl3_setup_nav_reset(&ui->nav);
-  if(ui->test_mode)
-    status(ui,"SDL3 TEST ON: press buttons/sticks/triggers. Activate Test again to stop.");
-  else
-    status(ui,"SDL3 TEST OFF. Normal dialog navigation restored.");
-  button=GetDlgItem(ui->hwnd,SPIDER_UI_TEST);
-  if(button)SetWindowTextA(button,ui->test_mode?
-    "Stop SDL3 input test":"Test SDL3 inputs");
-  if(setup_report)setup_report(ui->test_mode?
-    "SDL3-SETUP: normalized input test ON via dialog button (read-only; F9/F10 untouched)":
-    "SDL3-SETUP: normalized input test OFF via dialog button (F9/F10 untouched)");
+  spider_sdl3_selection_focus_lost(&ui->modal_start);
+  setup_sdl3_test_lock(ui,ui->test_mode);
+  if(ui->test_mode) {
+    snprintf(line,sizeof(line),
+      "SDL3 TEST ON id=%lu VID:PID=%04X:%04X. Use this pad; Ctrl+Shift+T stops.",
+      (unsigned long)ui->instance,(unsigned)ui->vid,(unsigned)ui->pid);
+    status(ui,line);
+  } else
+    status(ui,"SDL3 TEST OFF: normal controls restored. Keyboard Esc closes.");
+  if(setup_report) {
+    snprintf(line,sizeof(line),
+      "SDL3-SETUP: normalized input test %s id=%lu VID:PID=%04X:%04X (all Win32 controls %s; Ctrl+Shift+T exit; F9/F10 unchanged)",
+      ui->test_mode?"ON":"OFF",
+      (unsigned long)ui->instance,(unsigned)ui->vid,(unsigned)ui->pid,
+      ui->test_mode?"DISABLED":"ENABLED");
+    setup_report(line);
+  }
 }
 static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
                                       WPARAM wp,LPARAM lp) {
@@ -717,6 +757,18 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
     }
     case WM_COMMAND:
       if(!ui)return 0;
+      /* If Wine queues native BN_CLICKED or list notifications after SDL3
+       * test starts, refuse them regardless of the disabled HWND state. */
+      if(ui->test_mode) {
+        if(setup_report && ui->test_blocked_commands++<10u) {
+          char line[175];
+          snprintf(line,sizeof(line),
+            "SDL3-SETUP: TEST blocked Win32 control id=%u notification=%u",
+            (unsigned)LOWORD(wp),(unsigned)HIWORD(wp));
+          setup_report(line);
+        }
+        return 0;
+      }
       if(LOWORD(wp)==SPIDER_UI_PAD && HIWORD(wp)==CBN_SELCHANGE) {
         LRESULT idx=SendMessageA(ui->pads,CB_GETCURSEL,0,0);
         if(idx!=CB_ERR)select_slot(ui,(unsigned)idx);
@@ -773,6 +825,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       return 0;
     case WM_CLOSE:
       if(ui && !ui->closing) {
+        if(ui->test_mode)setup_toggle_sdl3_test(ui);
         /* Before DestroyWindow: otherwise Explorer can be activated by
          * Windows and misidentified as a deliberate Alt+Tab. */
         ui->closing_foreground=GetForegroundWindow();
@@ -851,6 +904,41 @@ void SpiderSDL3ControllerSetup_Open(void) {
     if(ok<=0) {
       if(ok==0){has_quit=1;quit_code=(int)msg.wParam;}
       break;
+    }
+    /* Gamepad buttons in Wine/Proton can synthesize Win32 keyboard
+     * messages. While TEST is active, consume all ordinary key messages
+     * before IsDialogMessage/DispatchMessage so disabled child controls
+     * never receive a synthetic key/command. Keyboard-only Ctrl+Shift+T
+     * stops testing; Ctrl+Shift+Q leaves the dialog in one action. */
+    if(ui.test_mode &&
+       (msg.hwnd==window || IsChild(window,msg.hwnd))) {
+      if((msg.message==WM_KEYDOWN || msg.message==WM_SYSKEYDOWN) &&
+         (GetKeyState(VK_CONTROL)&0x8000) &&
+         (GetKeyState(VK_SHIFT)&0x8000) &&
+         !(msg.lParam&(1L<<30))) {
+        if(msg.wParam=='T') {
+          setup_toggle_sdl3_test(&ui);
+          continue;
+        }
+        if(msg.wParam=='Q') {
+          setup_toggle_sdl3_test(&ui);
+          PostMessageA(window,WM_CLOSE,0,0);
+          continue;
+        }
+      }
+      if(msg.message==WM_KEYDOWN || msg.message==WM_KEYUP ||
+         msg.message==WM_SYSKEYDOWN || msg.message==WM_SYSKEYUP ||
+         msg.message==WM_CHAR || msg.message==WM_SYSCHAR ||
+         msg.message==WM_DEADCHAR || msg.message==WM_SYSDEADCHAR) {
+        if(setup_report && ui.test_suppressed_keys++<12u) {
+          char line[150];
+          snprintf(line,sizeof(line),
+            "SDL3-SETUP: TEST suppressed Win32 keyboard msg=0x%04X vk=%lu",
+            (unsigned)msg.message,(unsigned long)msg.wParam);
+          setup_report(line);
+        }
+        continue;
+      }
     }
     if(msg.message==WM_KEYDOWN &&
        (msg.hwnd==window || IsChild(window,msg.hwnd)) &&
