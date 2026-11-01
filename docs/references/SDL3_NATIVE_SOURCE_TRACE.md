@@ -211,3 +211,19 @@ an unambiguous game-thread native buffered input resumption.
 A later physical Alt press must work normally. Do not assert these
 criteria are currently proven or enable a native mutation from this
 read-only trace alone.
+
+## 1 November 2026 — physical Left Alt release **clears** stale original DI latch
+
+Complete subsequent Windows 11 DS4 log: `SpiderMan2k1Fix(20261101-021319).log`, 1,710 lines, authenticated retail SHA, selected DS4 `054C:09CC`, native Windows. **104 source records**: 96 ordinary (20 MENU, 76 3D among ordinary records) + eight reserved, total 20 MENU and 84 3D; all have the OS comparator. The state-pair breakdown is **97** `alt-tab=0 os-alt-tab=0`, **5** `1/0` (stale original Left Alt), **2** `1/1` (both held). No `0/1` samples.
+
+The test is decisive for *event/latch recovery*, though not by itself for all gameplay keyboard symptoms:
+
+1. Line **1024**, in 3D immediately before a real `INPUT-FOCUS: flip-background` at **1030**: `alt-tab=1 os-alt-tab=1` (physical Alt down, original DI agrees).
+2. Actual `flip-foreground` at **1046**, native DS4 wake and game resume at **1050–55**, and first eligible source observation **1059**: `alt-tab=1 os-alt-tab=0` and `kb-held=1, merged-actions=0`. The original game **missed or did not account for the background release**.
+3. While still in foreground, line **1087** shows `alt-tab=1 os-alt-tab=1` after another actual Alt key-down; at **1092**, **both become zero**, `kb-held=0`, after release. This strongly supports that the original buffered keyboard reader is alive and can process *fresh foreground key-release events*; a new physical press+release clears the previous stale held latch. The diagnostic counts do **not** prove whether a fresh `0xFF` down event was received while the latch was already held.
+4. **Second genuine 3D focus loss/return** at **1575/1589**, with four consecutive `postfocus=1` source records at **1601 and 1609–11**, all `alt-tab=1 os-alt-tab=0 kb-held=1 merged-actions=0`. Thus the phenomenon **recurs** after another Alt+Tab, not just once.
+5. Four further reserved postfocus samples at **1668, 1706, 1709–10** follow a **native in-game pause/menu context transition**, not a third observed desktop Alt+Tab; they all show `alt-tab=0 os-alt-tab=0`. There is no directly observed physical Alt key release during the second postfocus interval; do not claim it cleared spontaneously. The ordinary cap was reached at line **1483** before the second focus episode; source logs are bounded and can omit later transitions.
+
+No `DI8-RETRY: redirected` counter line occurs in this new log; the patch was installed at Flip #120, but no `DIERR_NOTACQUIRED` branch intervention is reported here. The native DS4 profile is restored on focus loss and reapplied on return; media/audio pause/resume logs indicate no failure. No crash is indicated.
+
+**Conclusion:** a reproducible *stale original DirectInput Left Alt latch after genuine 3D Alt+Tab*, and recovery after a *new physical foreground Alt release*, are **observed**. Missing buffered background release is still an inference rather than a captured `GetDeviceData` return/event. The log does not prove the entire input-lockout bug is caused solely by Left Alt. Any future trial repair must remain default OFF, SHA/opcode and focus-gated, only ever alter the original Left Alt state (and only if an independently sampled OS release is stable), not all 256 keyboard bytes, controller state, or external Windows key state; hardware tests must verify no lost real Alt keypress or new gameplay regression.
