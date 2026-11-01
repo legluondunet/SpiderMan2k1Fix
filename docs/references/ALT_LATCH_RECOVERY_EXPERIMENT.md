@@ -1,7 +1,8 @@
 # Experimental Left Alt latch reconciliation (PR #88)
 
-**Status: research-only and strictly opt-in, NOT yet Windows/Wine
-hardware-validated.** Requires the exact supported
+**Status: research-only, strictly opt-in. First Windows 11 + DS4
+hardware validation confirms the targeted one-byte repair; full
+keyboard/control regression and Wine/Proton remain UNTESTED.** Requires the exact supported
 `SpideyPC.exe` SHA-256
 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
 
