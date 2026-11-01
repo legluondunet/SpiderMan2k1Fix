@@ -265,16 +265,18 @@ static BOOL CALLBACK enumerate_gamepad(const DIDEVICEINSTANCEA *id,VOID *ctx) {
 }
 /* Balance precisely the scan code injected at the previous Flip,
  * including across any focus-loss pause. Never leave Escape held. */
-static void release_active_key(void) {
+static int release_active_key(void) {
   INPUT in;
   char line[160];
-  if(!active_scan)return;
+  int success;
+  if(!active_scan)return 0;
   memset(&in,0,sizeof(in));
   in.type=INPUT_KEYBOARD;
   in.ki.wScan=(WORD)active_scan;
   in.ki.dwFlags=KEYEVENTF_SCANCODE|KEYEVENTF_KEYUP;
   SpiderNativeReconnect_LogSyntheticMenuKey(active_scan,"before KEYUP");
-  if(SendInput(1,&in,sizeof(in))!=1) {
+  success=SendInput(1,&in,sizeof(in))==1;
+  if(!success) {
     snprintf(line,sizeof(line),
       "GAMEPAD-UI: WARNING synthetic KEYUP failed scan=0x%02X Win32=%lu",
       active_scan,(unsigned long)GetLastError());
@@ -283,6 +285,7 @@ static void release_active_key(void) {
   SpiderNativeReconnect_LogSyntheticMenuKey(active_scan,"after KEYUP");
   active_scan=0;
   active_scan_thread=0;
+  return success;
 }
 static void begin_scancode(unsigned scan,const char *action) {
   INPUT in;
@@ -322,7 +325,10 @@ int SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(HWND hwnd) {
      !IsWindowVisible(hwnd) || active_scan!=0x1cu ||
      !active_scan_thread || active_scan_thread!=GetCurrentThreadId())
     return 0;
-  release_active_key();
+  if(!release_active_key()) {
+    report("GAMEPAD-UI: BINK-4-HANDOFF synthetic Return KEYUP failed; physical Enter/Space safety wait retained");
+    return 0;
+  }
   report("GAMEPAD-UI: BINK-4-HANDOFF pending synthetic Return released before physical Enter/Space wait; native keys unchanged");
   return 1;
 }
