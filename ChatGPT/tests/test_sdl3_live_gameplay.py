@@ -122,7 +122,7 @@ def test_live_native_owner_never_double_injects_seven_gameplay_actions():
 def test_live_enabled_by_default_still_honors_explicit_ini_opt_out():
     s=(ROOT/"sdl3_gameplay_live.c").read_text(encoding="utf-8")
     assert 'GetPrivateProfileIntA("Input",' in s
-    assert 'ExperimentalSDL3GameplayBindings",0,ini)==1' in s
+    assert 'ExperimentalSDL3GameplayBindings",1,ini)==1' in s
     assert "if(!enabled)return;" in s
     assert 'SDL3-3D-LIVE: REFUSED unsupported Sony binding/driver' in s
     assert 'SDL3-3D-LIVE: REFUSED Xbox360 profile' in s
