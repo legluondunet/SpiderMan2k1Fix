@@ -213,11 +213,14 @@ under Wine on 28 October 2026. The same session revealed the desktop
 mouse pointer remained visible until wake. The follow-up fix now balances
 any temporary desktop-pointer visibility restoration **during** the
 PAUSED loop as soon as the game becomes foreground again, rather than
-waiting for a keyboard/controller press. Independently, `MouseEnabled=0`
-keeps the original game mouse sprite/poll/hover flag disabled even while
-the game is background, preventing the game's own cursor from entering the
-frozen PAUSED frame. Neither mechanism captures or warps the desktop
-cursor. The visual result of this follow-up fix still needs a Wine
+waiting for a keyboard/controller press. Independently, the game
+mouse is **permanently disabled**: the original mouse sprite, polling
+and menu hover/click testing stay off, including while the game is
+background, preventing the game's own cursor from entering the frozen
+PAUSED frame. Old `MouseEnabled=0/1` settings are accepted for
+backward compatibility but **ignored**, so neither value restores
+in-game mouse controls. Keyboard and gamepad navigation remain available.
+Neither mechanism captures or warps the operating-system desktop cursor. The visual result of this follow-up fix still needs a Wine
 regression test; native Windows remains unverified.
 The original game's input Acquire/retry
 branch receives a signature-guarded native correction on or after
