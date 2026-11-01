@@ -19,6 +19,9 @@ void SpiderXbox360_SetRTAlias(int enabled);
 /* Generic, READ-ONLY native menu for the optional SDL3 setup wizard even
  * when no recognized DS4/Xbox DirectInput device was found. */
 int SpiderSDL3_InstallGenericReadOnlyJoystick(void (*logger)(const char *));
+/* Optional native main-menu Joystick entry -> SDL3 dialog, Keyboard unchanged.
+ * Strictly checked x86 CALL redirect, fallback to original native list. */
+int SpiderSDL3_InstallDirectJoystickEntry(void (*logger)(const char *));
 typedef struct {
   uint32_t virtual_address;
   uint8_t size;
