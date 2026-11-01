@@ -93,7 +93,7 @@ static int line_guid_valid(const char *line) {
 static int save_mapping(const char *mapping) {
   FILE *src=NULL,*dst=NULL;
   char tmp[MAX_PATH+64],line[1024];
-  int rc=0,seen=0,n;
+  int rc=0,n;
   if(!active_store[0] || !line_guid_valid(mapping))return 0;
   n=snprintf(tmp,sizeof(tmp),"%s-%lu.tmp",active_store,
              (unsigned long)GetCurrentProcessId());
@@ -105,8 +105,9 @@ static int save_mapping(const char *mapping) {
     while(fgets(line,sizeof(line),src)) {
       size_t len=strlen(line);
       if(len && line[len-1]!='\n' && !feof(src))goto cleanup;
-      if(!line_guid_valid(line))continue;
-      if(!_strnicmp(line,mapping,32u)){seen=1;continue;}
+      /* Preserve comments, unknown lines and hand-written mappings
+       * verbatim. Only replace an existing mapping for this exact GUID. */
+      if(line_guid_valid(line) && !_strnicmp(line,mapping,32u))continue;
       if(fputs(line,dst)==EOF)goto cleanup;
       if(len && line[len-1]!='\n' && fputc('\n',dst)==EOF)goto cleanup;
     }
@@ -121,7 +122,6 @@ cleanup:
   if(rc)rc=MoveFileExA(tmp,active_store,
                       MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=0;
   if(!rc)DeleteFileA(tmp);
-  (void)seen;
   return rc;
 }
 void SpiderSDL3Raw_Init(HMODULE sdl,void (*report)(const char *)) {
@@ -494,11 +494,19 @@ void SpiderSDL3Raw_Recognize(HWND owner) {
   EnableWindow(owner,FALSE);
   ShowWindow(hwnd,SW_SHOW);
   SetForegroundWindow(hwnd);
-  while(IsWindow(hwnd) && GetMessageA(&msg,NULL,0,0)>0) {
-    if(!IsDialogMessageA(hwnd,&msg)) {
-      TranslateMessage(&msg);
-      DispatchMessageA(&msg);
+  {
+    int get_result=1,quit_code=0;
+    while(IsWindow(hwnd) && (get_result=GetMessageA(&msg,NULL,0,0))>0) {
+      if(!IsDialogMessageA(hwnd,&msg)) {
+        TranslateMessage(&msg);
+        DispatchMessageA(&msg);
+      }
     }
+    /* Never swallow the original game's WM_QUIT inside the nested
+     * keyboard-operated recognition modal. */
+    if(get_result==0)quit_code=(int)msg.wParam;
+    if(IsWindow(hwnd))DestroyWindow(hwnd);
+    if(get_result==0)PostQuitMessage(quit_code);
   }
   close_device(&w);
   EnableWindow(owner,TRUE);
