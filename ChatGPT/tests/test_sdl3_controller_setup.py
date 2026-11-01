@@ -357,3 +357,39 @@ def test_modal_close_cannot_destroy_dialog_inside_sdl3_timer_callback():
     assert "PostMessageA(hwnd,WM_CLOSE,0,0);" in handler
     assert "DestroyWindow(hwnd);" in handler.split("case WM_CLOSE:",1)[1]
     assert "DestroyWindow(hwnd);" not in handler.split("case WM_COMMAND:",1)[1].split("case WM_TIMER:",1)[0]
+
+
+
+def test_native_joystick_main_entry_opens_sdl3_directly_but_keyboard_remains_original():
+    native=(ROOT/"ps1_joystick_readonly_menu.c").read_text(encoding="utf-8")
+    header=(ROOT/"ps1_joystick_readonly_menu.h").read_text(encoding="utf-8")
+    bridge=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
+    setup=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    # 0x50CE70 is the original PCSHELL_DoControllerConfig(bool)
+    # function identified by krystalgamer/spidey-decomp tools/names.json.
+    assert "#define SPIDER_NATIVE_CONTROLLER_CONFIG_VA 0x0050CE70u" in native
+    assert "int SpiderSDL3_InstallDirectJoystickEntry(" in header
+    assert "int SpiderSDL3_InstallDirectJoystickEntry(" in native
+    assert "SpiderSDL3_InstallDirectJoystickEntry(log_message)" in bridge
+    assert "if(SpiderSDL3ControllerSetup_Enabled())" in bridge
+    assert "static void __cdecl spider_sdl3_direct_controller_menu(int is_joystick)" in native
+    assert "if(is_joystick && SpiderSDL3ControllerSetup_Enabled())" in native
+    assert "SpiderSDL3Probe_SetupPump()" in native
+    assert "SpiderSDL3ControllerSetup_Open();" in native
+    assert "SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(is_joystick);" in native
+    assert "0x00AC129Cu!=0u" in native  # restore-row legacy fallback
+    assert "native Joystick selection redirect" in (ROOT/"sdl3_controller_setup.h").read_text(encoding="utf-8")
+    assert "for(i=0;i<nt->FileHeader.NumberOfSections;i++)" in native
+    assert "IMAGE_SCN_MEM_EXECUTE" in native
+    assert "target!=SPIDER_NATIVE_CONTROLLER_CONFIG_VA" in native
+    assert "count>=SPIDER_DIRECT_ENTRY_MAX_CALLS" in native
+    assert "found[i][0]!=0xE8u" in native
+    assert "spider_sdl3_patch_native_call(" in native
+    assert "rollback attempted" in native
+    assert "direct_entry_attempted=1" in native
+    assert "VirtualProtect(site,5u" in native
+    assert "GAMEPAD-READONLY: RESTORE-DEFAULT intercepted" in native
+    assert "SendInput(" not in native
+    assert "WritePrivateProfileString" not in native
+    assert "native Joystick selection redirect" in (ROOT/"sdl3_controller_setup.h").read_text(encoding="utf-8")
+    assert "SetForegroundWindow(owner)" in setup
