@@ -38,6 +38,12 @@ previous native-state observer is on. Log marker: `SDL3-NATIVE-SOURCE`.
   represent **native** button indices, not SDL3 semantic button numbers.
 * `merged-actions`: an already-merged original game HELD action mask
   read from the twenty existing records; **not source attribution**.
+  Changes to this mask now also trigger a row, even if no physical button
+  latch changes (for example a stick/POV direction). This alone does not
+  prove a continuous analog source or device ownership.
+* `postfocus=1`: the first sampled active Flip after an observed
+  suspended-to-active transition; up to **8** such snapshots remain
+  available after the ordinary 96-event cap.
 * `ctx=MENU/3D`, `sampling=ACTIVE/SUSPENDED`: context and eligibility
   transitions that actually occur while the original game Flip runs.
 
@@ -50,8 +56,10 @@ the new diagnostic. The trace runs only on the existing game Flip
 thread, after the existing Xbox/DS4 gameplay logic. It reads no native
 input state during Bink, pause, or when not foreground.
 
-The independent budget is **96 source changes** plus **12 status/focus
-transitions**. The status budget remains usable after 96 changes. Any
+The independent budget is **96 source/game-mask changes**, plus **8
+reserved postfocus snapshots** after that cap and **12 status/focus
+transitions**. The status budget and reserved recovery snapshots remain
+usable after 96 changes. Any
 observed eligible-to-ineligible Flip transition resets the comparison
 baseline, but does **not** reset either cap. If Flip does not run in
 the background, the trace **cannot** see that background interval;
