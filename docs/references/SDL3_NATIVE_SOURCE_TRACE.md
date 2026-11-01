@@ -45,6 +45,14 @@ previous native-state observer is on. Log marker: `SDL3-NATIVE-SOURCE`.
   (bit 1), Right Alt (bit 2), Tab (bit 4); **no ordinary keycodes or
   typed characters**. Because the game stores key latches, a set bit
   is not necessarily proof that the physical key is still depressed.
+* `os-alt-tab`: an independent, foreground-only Win32 `GetAsyncKeyState`
+  high-bit snapshot using **only** `VK_LMENU`, `VK_RMENU`, and `VK_TAB`,
+  with exactly the same bit layout as `alt-tab`. It is a separate API
+  observation, **not** proof by itself that the user is physically pressing
+  a key (focus/layout, injection, keyboard hooks and system semantics can
+  differ). When native `alt-tab=1` remains 1 but Win32 `os-alt-tab=0`,
+  it is strong evidence of a stale original DirectInput keyboard latch.
+  OS changes to these three bits also count as an observed change.
 * `postfocus=1`: one of up to **four consecutive eligible Flip snapshots**
   after an observed suspended-to-active transition **once the normal
   96-change cap is exhausted**. Up to **eight** such snapshots total
@@ -90,6 +98,34 @@ persistence of that one keyboard latch are **unknown**. The Alt/Tab-only
 flags and short consecutive postfocus window are a follow-on read-only
 experiment to distinguish a transient residual modifier from persistent
 latch state, not a declared game fix.
+
+## DS4 follow-up: independent modifier comparison
+
+The second maintainer Windows 11 DS4 log `SpiderMan2k1Fix(20261101-015535).log`
+shows 96 ordinary changes plus all eight reserved samples. Original
+`alt-tab=1` (left Alt) first appears at log line 894 **immediately
+before** confirmed focus loss at line 898, persists through foreground
+resumption at 913–926, and is repeatedly observed during 3D gameplay
+until the ordinary sample cap (including in combination with new native
+joystick button changes). A second independently confirmed focus loss
+occurs at line 1721; the first four postfocus snapshots at 1747 and
+1753–55 all have `alt-tab=1, kb-held=1, joy-held=0, merged-actions=0`.
+The remaining four reserved snapshots at 1782–88 instead follow an
+**ineligible Bink/movie interval**, not a proven second Alt+Tab: all
+have `alt-tab=1, kb-held=2, joy-held=0, merged-actions=0`. A third
+`sampling=SUSPENDED` at 1824 corresponds to game pause; the trace
+exhausted its 8-frame reserve by that point. Audio pause/resume at
+line 918 restored 8 secondary DirectSound voices without error.
+
+**Finding:** the original game's DirectInput keyboard latch retains
+left Alt through multiple foreground Flips and sessions. This is **not
+proof** of whether Windows still regards the physical left Alt as
+held, nor of a gameplay failure. An additional **read-only**
+`os-alt-tab` field uses foreground Win32 async key-down state to compare
+an independent representation. This experiment is off by default and
+no native or Win32 input state is ever changed by it. Do not apply
+any automated keyboard-latch clearing until cross-source evidence and
+real hardware tests justify it.
 
 ## Test protocol and boundaries
 
