@@ -397,7 +397,7 @@ static void rescan(void) {
   if(mapped<0)mapped=0;
   if(total<0)total=0;
   /* Ignore a transient failed query rather than disconnecting everything. */
-  if(!ids || !joysticks) {
+  if((!ids && mapped!=0) || (!joysticks && total!=0)) {
     say("SDL3-PROBE: enumeration unavailable; existing selection unchanged");
     if(ids)sdl_free(ids);
     if(joysticks)sdl_free(joysticks);
@@ -503,7 +503,8 @@ static void rescan(void) {
                                 sdl_product(pads[k].id));
   }
   last_mapped_count=mapped;last_joystick_count=total;
-  sdl_free(ids);sdl_free(joysticks);
+  if(ids)sdl_free(ids);
+  if(joysticks)sdl_free(joysticks);
 }
 /* A setup modal pauses the game's original Flip thread on its stack.
  * Pump the already-loaded SDL3 gamepads through this explicit same-thread
@@ -569,7 +570,7 @@ unsigned SpiderSDL3Probe_RawList(uint32_t *out,unsigned capacity) {
   if(!spider_raw_ui_thread() || !sdl_joysticks || !sdl_gamepads)return 0;
   raw=sdl_joysticks(&count);
   mapped=sdl_gamepads(&mapped_count);
-  if(!raw || !mapped) {
+  if((!raw && count!=0) || (!mapped && mapped_count!=0)) {
     if(raw)sdl_free(raw);
     if(mapped)sdl_free(mapped);
     return 0;
@@ -585,7 +586,8 @@ unsigned SpiderSDL3Probe_RawList(uint32_t *out,unsigned capacity) {
     if(out && n<capacity)out[n]=id;
     ++n;
   }
-  sdl_free(raw);sdl_free(mapped);
+  if(raw)sdl_free(raw);
+  if(mapped)sdl_free(mapped);
   return n;
 }
 void SpiderSDL3Probe_RawEnd(void) {
