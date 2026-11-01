@@ -41,9 +41,15 @@ previous native-state observer is on. Log marker: `SDL3-NATIVE-SOURCE`.
   Changes to this mask now also trigger a row, even if no physical button
   latch changes (for example a stick/POV direction). This alone does not
   prove a continuous analog source or device ownership.
-* `postfocus=1`: the first sampled active Flip after an observed
-  suspended-to-active transition; up to **8** such snapshots remain
-  available after the ordinary 96-event cap.
+* `alt-tab`: only the original DirectInput held states for Left Alt
+  (bit 1), Right Alt (bit 2), Tab (bit 4); **no ordinary keycodes or
+  typed characters**. Because the game stores key latches, a set bit
+  is not necessarily proof that the physical key is still depressed.
+* `postfocus=1`: one of up to **four consecutive eligible Flip snapshots**
+  after an observed suspended-to-active transition **once the normal
+  96-change cap is exhausted**. Up to **eight** such snapshots total
+  may be recorded (e.g. four after each of two returns), including
+  unchanged states, to inspect whether an Alt/Tab latch clears.
 * `ctx=MENU/3D`, `sampling=ACTIVE/SUSPENDED`: context and eligibility
   transitions that actually occur while the original game Flip runs.
 
@@ -59,13 +65,31 @@ input state during Bink, pause, or when not foreground.
 The independent budget is **96 source/game-mask changes**, plus **8
 reserved postfocus snapshots** after that cap and **12 status/focus
 transitions**. The status budget and reserved recovery snapshots remain
-usable after 96 changes. Any
+usable after 96 changes. The retained postfocus samples are consecutive
+per-Flip snapshots, not only the first changed state. Any
 observed eligible-to-ineligible Flip transition resets the comparison
 baseline, but does **not** reset either cap. If Flip does not run in
 the background, the trace **cannot** see that background interval;
 therefore the absence of a `SUSPENDED` record is not proof that
 Alt+Tab did not occur. The old native-state trace keeps its own 64
 samples and is not modified.
+
+## New Windows 11 evidence (1 November)
+
+The maintainer's follow-up DS4 log `SpiderMan2k1Fix(20261101-014645).log`
+verifies the refined previous build: 96 ordinary source samples, with
+78 MENU and 18 3D, followed by **one additional reserved** postfocus
+sample at original log line 1579. Native `INPUT-FOCUS` confirms the
+foreground went away and returned; the prior game's focus pause stopped
+and resumed 11 DirectSound voices without errors, and the known DS4
+seven-button mapping was restored then applied. Later physical SDL3
+Cross and RT inputs are observed; the log does not by itself prove every
+original game action responded. During the first reserved postfocus
+sample `kb-held=1`, `joy-held=0`, `merged-actions=0`. The identity and
+persistence of that one keyboard latch are **unknown**. The Alt/Tab-only
+flags and short consecutive postfocus window are a follow-on read-only
+experiment to distinguish a transient residual modifier from persistent
+latch state, not a declared game fix.
 
 ## Test protocol and boundaries
 
