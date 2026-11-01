@@ -24,10 +24,14 @@ DirectInput and the existing DS4/Xbox integration are intentionally unchanged.
    observed physical SHARE as SDL bit `0x000010` and L3 as
    `0x000100`. Use these as comparison only, **not** as a universal
    required mapping: other drivers might differ and that is the point.
-5. **Do not use the controller or click the disabled buttons to leave
-   test mode.** Press keyboard **Ctrl+Shift+T** to stop diagnostic capture
-   and re-enable the dialog controls, or **Ctrl+Shift+Q** to close the
-   setup immediately. Once stopped, the usual keyboard Escape works.
+5. **Do not use the controller or click disabled buttons to leave
+   test mode.** Press the **physical keyboard Escape** to stop diagnostic
+   capture and re-enable the dialog controls. Because Proton sometimes
+   emulates Escape when Circle/B is pressed, this new shortcut is accepted
+   only from Windows **keyboard Raw Input** (`WM_INPUT`), not an ordinary
+   synthetic `VK_ESCAPE`. If the raw keyboard API is unavailable or already
+   owned by another component, use the retained fallback **Ctrl+Shift+T**
+   to stop, or **Ctrl+Shift+Q** to close the setup.
 6. Confirm the game still responds to the original keyboard and controller
    controls, including a subsequent Alt+Tab and return.
 
@@ -46,13 +50,14 @@ DirectInput and the existing DS4/Xbox integration are intentionally unchanged.
    advance the wizard WITHOUT opening the device list or activating
    any of the three bottom buttons. Also test left-stick directions when
    the wizard reaches steps 15/16: they must not change keyboard focus.
-4. During capture, ordinary gamepad-emulated Win32 Enter/Escape/Space and
-   arrow messages are discarded before dialog navigation. If needed, use
-   deliberate **keyboard-only chords**: **Ctrl+Shift+S** skips an optional
-   mapping, **Ctrl+Shift+R** restarts from step 1 and
-   **Ctrl+Shift+Q** closes the wizard. All three are only active in the
-   wizard. A and B and both left-stick axes remain mandatory; the physical
-   Start button must not reset the wizard.
+4. During capture, gamepad-emulated Win32 Enter/Escape/Space and
+   arrow messages are discarded before dialog navigation. A **physical
+   keyboard Escape** now cancels calibration (and does not save any
+   unfinished mapping) **only if Raw Input keyboard verification succeeds**.
+   The hardware-input fallback is **Ctrl+Shift+Q** to close; also use
+   **Ctrl+Shift+S** to skip an optional mapping and **Ctrl+Shift+R**
+   to restart. A and B and both left-stick axes remain mandatory;
+   physical Start must not reset the wizard.
 
 5. A successful capture displays `SDL3 CALIBRATION SAVED`. The log must
    contain `SDL3-RAW: MAPPING SAVED GUID=... location=GAME` or
@@ -103,3 +108,17 @@ still screen that prompts for Enter; and play a 3D level with movement,
 actions and Pause. Verify focus loss/hotplug, release boundaries and
 that one press does not skip several successive screens. These scenarios
 are **not implemented universally** in the current test build.
+
+## Keyboard Escape safety (2026-11-01)
+
+Under GE-Proton, physical Circle/B on a controller can create a synthetic
+Win32 `VK_ESCAPE` that previously destroyed the calibration dialog or
+toggled read-only tests. Do **not** handle ordinary `WM_KEYDOWN/Escape`
+during capture/test. The optional shared `sdl3_physical_escape.h` registers
+a foreground HID keyboard raw-input target for that modal only, refuses to
+overwrite any pre-existing keyboard Raw Input registration, accepts only
+the genuine `WM_INPUT` keyboard Escape key-down, then unregisters
+on dialog exit. Real-hardware validation under Wine is still required.
+Look for `physical keyboard Escape via WM_INPUT ARMED` or the fallback
+`physical keyboard Escape unavailable` in the log. The reliable safety
+chords **Ctrl+Shift+Q** and **Ctrl+Shift+T** remain in place.
