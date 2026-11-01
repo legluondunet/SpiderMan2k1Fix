@@ -416,8 +416,15 @@ static int setup_select_explicit_pad(SpiderSDL3SetupUI *ui) {
     return 0;
   }
   if(ui->capture.active) {
-    status(ui,"Cancel action capture with keyboard Esc before selecting a controller.");
-    if(setup_report)setup_report("SDL3-SETUP: EXPLICIT-SELECT refused during action capture; Esc cancels capture");
+    /* Proton may synthesize Return from the gamepad and start an action
+     * rebind accidentally. First Use click CANCELS that capture only.
+     * A second deliberate click/chord must approve controller ownership.
+     * Never accept a single synthetic BN_CLICKED as a controller claim. */
+    spider_sdl3_capture_reset(&ui->capture);
+    spider_sdl3_setup_nav_reset(&ui->nav);
+    SetFocus(ui->hwnd); /* inert HWND, not a focused default button */
+    status(ui,"CAPTURE CANCELLED. Click Use selected SDL3 controller again to select the chosen pad.");
+    if(setup_report)setup_report("SDL3-SETUP: EXPLICIT-SELECT CAPTURE CANCELLED; no owner queued; click Use again");
     return 0;
   }
   if(!ui->instance || !ui->vid || !ui->pid ||
@@ -654,6 +661,13 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
     }
     return 1;
   }
+  /* Ctrl+Shift+U safely cancels a stuck capture; a second press claims.
+   * It follows the same fail-closed two-step rule as the Use button. */
+  if(vk=='U' && (GetKeyState(VK_CONTROL)&0x8000) &&
+     (GetKeyState(VK_SHIFT)&0x8000)) {
+    setup_select_explicit_pad(ui);
+    return 1;
+  }
   if(ui->capture.active)return 0; /* Keyboard cannot be bound via SDL3. */
   focused=GetFocus();
   if(vk==VK_UP || vk==VK_DOWN) {
@@ -701,16 +715,14 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
       SendMessageA(ui->hwnd,WM_COMMAND,MAKEWPARAM(id,BN_CLICKED),(LPARAM)focused);
       return 1;
     }
-    if(current_profile(ui)) {
+    /* Synthetic Return sent by a PS3 face button to the empty dialog
+     * background must NOT start an action rebind. Only the action list
+     * explicitly focused by the user can arm an Enter capture. */
+    if(focused==ui->actions && current_profile(ui)) {
       spider_sdl3_capture_start(&ui->capture);
       spider_sdl3_setup_nav_reset(&ui->nav);
       status(ui,"CAPTURE: release ALL controls; press ONE button or LT/RT. Esc cancels.");
     }
-    return 1;
-  }
-  if(vk=='U' && (GetKeyState(VK_CONTROL)&0x8000) &&
-     (GetKeyState(VK_SHIFT)&0x8000)) {
-    setup_select_explicit_pad(ui);
     return 1;
   }
   if(vk==VK_F5) {
