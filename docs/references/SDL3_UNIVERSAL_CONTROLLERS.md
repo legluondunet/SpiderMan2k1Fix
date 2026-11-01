@@ -244,3 +244,21 @@ passes real-hardware acceptance. Keep this draft outside protected main
 until the maintainer authorizes integration.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+
+### 2026-11-01 follow-up: two-step safe selection when capture is active
+
+User log `SpiderMan2k1Fix(20261101-195948).log` shows the correct PS3
+`054C:0268` chosen in the dropdown (slot=1, id=3), but
+`EXPLICIT-SELECT refused during action capture`, then pressing Escape
+closed the dialog; no `EXPLICIT-SELECT QUEUED` or generic frame followed.
+To prevent a synthesized Proton Return/click from accidentally claiming a
+controller, the **first** Use selected click during an active action
+rebind now **cancels just that capture** and moves focus to the inert
+modal window; a **second explicit click** or `Ctrl+Shift+U` is needed
+to queue the verified PS3 identity. Synthetic Return on the inert window
+cannot reopen remapping: Enter requires the action-list focus.
+Controller selection still needs explicit manual choice if multiple
+pads are attached, and queued identity is revalidated on the next Flip.
+This is still a read-only generic-semantic experiment, not native
+DirectInput gameplay support.
