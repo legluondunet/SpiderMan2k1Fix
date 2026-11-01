@@ -147,3 +147,67 @@ explicit maintainer acceptance and Windows/Wine hardware regression
 tests.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+## Windows 11 evidence: independent OS-vs-original-DI Alt state (2:07 AM log)
+
+Full maintainer log `SpiderMan2k1Fix(20261101-020705).log`:
+1,467 lines, original executable SHA authenticated, Sony DS4 `054C:09CC`,
+`SDL3-NATIVE-SOURCE` armed, and **the `os-alt-tab` field is present**.
+The preexisting startup version string is not used to establish build
+provenance. The actual optional comparator is present in the loaded DLL.
+
+**All 85 eligible native source snapshots** (38 MENU, 47 3D):
+
+| Original DI Left Alt / Win32 Left Alt | Count |
+| --- | ---: |
+| 1 / 0 — original keyboard says held, Win32 says up | **77** |
+| 1 / 1 — both held | 4 |
+| 0 / 0 — both released | 3 |
+| 0 / 1 — OS first observed pressed | 1 |
+
+The key transition starts with both released (lines 458–461);
+Win32 detects Left Alt pressed before the native latch (line 464:
+`alt-tab=0 os-alt-tab=1`); both then report pressed (465–466).
+The first independently logged foreground loss is at **469** and the
+return at **483**. At **496**, the original keyboard reports
+`alt-tab=1, kb-held=1` while Win32 reports `os-alt-tab=0`.
+That difference persists in menu and 3D, including when `joy-held=0`
+and `merged-actions=0`, as well as during later native joystick
+and engine action changes.
+
+The second focus loss and return are independently recorded at
+**509 / 523** (still MENU). The existing guarded
+`DI8-RETRY` patch reports keyboard `DIERR_NOTACQUIRED` → original
+Acquire path at lines **503** and **558**. These messages report a
+reacquire *attempt*, **not** proof of a successful buffered keyboard
+read, nor of actual release events. A quick-check at the end shows
+the native Left Alt latch still set in MENU (line 1465) while
+Win32 reports the key up. The later 3D run contains no further
+independently confirmed focus transition.
+
+The 85 snapshot total is **below** the 96-change ordinary cap,
+so there is no `postfocus=1` reserved sample in this session;
+**that is expected**, not a regression.
+
+**Interpretation and safety boundary:** the game's original keyboard
+`0x006B792C + 0x38` latch and Win32 key-down observation
+**repeatedly disagree** after actual loss/return of foreground.
+Because the engine uses *buffered* DirectInput GetDeviceData events
+to maintain a 0x7F held-state, a key-up event lost while the game is
+background is a plausible explanation. This is an inference, **not**
+a captured GetDeviceData release result. Native action masks can
+remain zero while the stale Alt latch is held; the log does not prove
+that every gameplay keyboard command or the DS4 is broken.
+
+A future opt-in repair should remain separate from passive source
+logging and must **not** globally zero the 256-byte keyboard state,
+synthetically inject an Alt key-up or seize the DirectInput device.
+Candidate criteria for a small independent experiment: focus
+loss/return actually witnessed, matching original EXE/opcodes,
+foreground eligible gameplay/menu, stable Win32 `VK_LMENU` *and*
+`VK_MENU` both released for multiple engine frames, original Alt
+latch specifically in its old held value (not a fresh press), and
+an unambiguous game-thread native buffered input resumption.
+A later physical Alt press must work normally. Do not assert these
+criteria are currently proven or enable a native mutation from this
+read-only trace alone.
