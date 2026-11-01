@@ -17,6 +17,7 @@
 #include <string.h>
 #include "ps1_joystick_readonly_menu.h"
 #include "sdl3_controller_setup.h"
+#include "sdl3_gamepad_probe.h"
 
 static void (*ps1_menu_logger)(const char *)=NULL;
 /* The native machine-code patch is immutable during this process.
