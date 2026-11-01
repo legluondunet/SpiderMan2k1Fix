@@ -282,18 +282,18 @@ def test_mouse_free_keyboard_and_selected_gamepad_setup_navigation():
     assert 'physical=(sample->buttons&accepted)|analog;' in nav
     assert 'SPIDER_SETUP_NAV_LEFT=21, SPIDER_SETUP_NAV_RIGHT=22' in nav
     assert 'edges=physical&~old;' in nav
-    assert 'Stick Left/Right: actions or buttons' in ui
-    assert 'Stick Up/Down: select row or button' in ui
+    assert 'Stick Left/Right: navigate' in ui
+    assert 'L1/R1: browse controllers' in ui
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     setup_read=probe.split("int SpiderSDL3Probe_SetupRead(",1)[1].split(
         "/* SDL3 exposes each trigger",1)[0]
     assert "sample->axis[SPIDER_SDL3_AXIS_LEFTX]=sdl_axis(handle,SPIDER_SDL3_AXIS_LEFTX);" in setup_read
     assert "sample->axis[SPIDER_SDL3_AXIS_LEFTY]=sdl_axis(handle,SPIDER_SDL3_AXIS_LEFTY);" in setup_read
     assert not any(ord(ch)>127 for ch in ui), "ANSI game dialog must use ASCII-only labels"
-    assert 'Stick Left/Right: actions or buttons' in ui
-    assert 'L1/R1: browse pad' in ui
-    assert 'Circle/B: close + use this pad' in ui
-    assert 'Start: choose pad' in ui
+    assert 'Stick Left/Right: navigate' in ui
+    assert 'L1/R1: browse controllers' in ui
+    assert 'Use selected SDL3 controller' in ui
+    assert 'Start: choose pad only outside action capture' in ui
     for forbidden in ("SendInput(", "WritePrivateProfileString",
                       "VirtualProtect(", "CreateThread("):
         assert forbidden not in ui
