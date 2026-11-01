@@ -58,8 +58,14 @@ static void spider_latch_trace_flip(HWND hwnd,int menu2d,int gameplay3d,
   unsigned i,ctx;
   char message[256];
   if(!spider_latch_trace_enabled || !spider_latch_trace_preflight_ok ||
-     !spider_latch_trace_log || !hwnd || GetForegroundWindow()!=hwnd ||
-     bink || paused)return;
+     !spider_latch_trace_log ||
+     spider_latch_trace_observer.emitted>=64u)return;
+  if(!hwnd || GetForegroundWindow()!=hwnd || bink || paused) {
+    /* Discard the comparison baseline, but never reset the session cap.
+     * A held native state after Alt+Tab should be logged once on return. */
+    spider_latch_trace_observer.have_previous=0u;
+    return;
+  }
   ctx=(menu2d?1u:0u)|(gameplay3d?2u:0u);
   for(i=0;i<SPIDER_ORIGINAL_INPUT_STATE_COUNT;i++) {
     const volatile uint8_t *record=

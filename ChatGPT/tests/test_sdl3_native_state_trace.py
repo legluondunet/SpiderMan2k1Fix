@@ -23,6 +23,9 @@ def test_trace_wired_only_to_existing_game_flip_and_opt_in():
     assert 'GetForegroundWindow()!=hwnd' in h
     assert 'bink || paused' in h
     assert 'spider_native_latch_observer_changed(' in h
+    assert 'spider_latch_trace_observer.emitted>=64u' in h
+    assert 'spider_latch_trace_observer.have_previous=0u;' in h
+    assert 'spider_latch_trace_observer.emitted=0u;' not in h
     assert '[READ ONLY, SOURCE UNKNOWN]' in h
 
 def test_trace_never_issues_original_input_polls_or_native_writes():
