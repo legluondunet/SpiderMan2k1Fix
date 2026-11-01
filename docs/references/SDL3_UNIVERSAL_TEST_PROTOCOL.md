@@ -29,12 +29,20 @@ DirectInput and the existing DS4/Xbox integration are intentionally unchanged.
    the keyboard, use **Tab** to select **Calibrate SDL3 joystick**, then **Enter**. The wizard lists **all** SDL joysticks with their names and either `Mapped - recalibrate` or `Unmapped - recognize`.
    If no devices appear, SDL3 is not exposing a joystick at all; the log will show the device inventory.
 2. Select the intended physical joystick by **name** using the keyboard; press **Enter**. Already-mapped devices can be recalibrated; the existing mapping is not replaced until the wizard completes successfully.
-3. The assistant walks through **20** SDL-standard controls. Release every
-   control between steps. Press only the requested button, D-pad direction
-   or move the requested stick/trigger. Press **S** to skip optional
-   controls. The A and B buttons and the left stick X and Y axes are
-   mandatory. Escape cancels; Enter restarts from scratch.
-4. During capture, pressing **Start** on the physical joystick must **not reset the wizard**. The Win32 `Enter` key is ignored while capturing; to restart explicitly, focus **Start / Restart** using Tab and activate it with **Space**. The last user log reached step 5/20 then repeatedly restarted, without a completed mapping.\n5. A successful capture displays `SDL3 CALIBRATION SAVED`. The log must
+3. The assistant walks through **20** SDL-standard controls. As soon
+   as capture starts, the device dropdown is **disabled and collapsed**,
+   and keyboard focus leaves that dropdown. Release each button before
+   pressing the next. Test the important **B/Circle** and **X/Square**
+   controls first: neither should reopen the device dropdown.
+4. During capture, ordinary gamepad-emulated Win32 Enter/Escape/Space and
+   arrow messages are discarded before dialog navigation. If needed, use
+   deliberate **keyboard-only chords**: **Ctrl+Shift+S** skips an optional
+   mapping, **Ctrl+Shift+R** restarts from step 1 and
+   **Ctrl+Shift+Q** closes the wizard. All three are only active in the
+   wizard. A and B and both left-stick axes remain mandatory; the physical
+   Start button must not reset the wizard.
+
+5. A successful capture displays `SDL3 CALIBRATION SAVED`. The log must
    contain `SDL3-RAW: MAPPING SAVED GUID=... location=GAME` or
    `location=LOCALAPPDATA`. If save fails, send the log; do not interpret
    an in-memory mapping as permanently saved.
@@ -51,8 +59,11 @@ DirectInput and the existing DS4/Xbox integration are intentionally unchanged.
 - Which test (A/B), device VID:PID (if known), Wine/Windows runtime.
 - For Test A: whether the SDL button mask changes on SHARE/BACK and L3,
   and whether the keyboard regains control after closing the setup.
-- For Test B: wizard opens, steps captured, whether a mapping was saved
-  and whether the game re-detects the controller after restart.
+- For Test B: specifically note whether pressing **B/Circle** and
+  **X/Square** unexpectedly opens the dropdown. Attach the
+  `SDL3-RAW-WIZARD: capture UI ISOLATED` and
+  `suppressed Win32 keyboard` log lines, the furthest captured step,
+  whether the mapping saved and whether the game re-detected it after restart.
 
 ## Known limitations
 
