@@ -30,9 +30,10 @@ static const char *const spider_raw_display_names[SPIDER_RAW_BIND_COUNT]={
 };
 static inline int spider_raw_required(unsigned step) {
   /* All seven native gameplay actions, movement and Pause/selection. */
-  return step==0u || step==1u || step==2u || step==3u ||
-         step==6u || step==7u || step==8u || step==9u ||
-         step==13u;
+  /* All seven gameplay commands need their default SDL buttons:
+   * four faces, both shoulders and RT. Back supplies Pause; Start
+   * selects the pad and the left stick supplies movement. */
+  return step<=9u || step==13u;
 }
 static inline int spider_raw_binding_valid(SpiderRawBinding b) {
   return b.kind==SPIDER_RAW_NONE ||
