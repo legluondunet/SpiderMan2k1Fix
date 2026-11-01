@@ -80,3 +80,33 @@ int main(void) {
             "-std=c11","-Wall","-Wextra","-Werror",
             "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
         subprocess.run([str(exe)],check=True)
+
+
+def test_ps3_cross_on_focused_capture_never_posts_remap_command():
+    """Real GE-Proton 20261101-211844 regression: Cross repeatedly
+    reported CAPTURE after Use. Do not arm binding capture from the
+    controller's navigation/confirmation key."""
+    nav=UI.split("static void sample_device(",1)[1].split(
+        "static int handle_setup_keyboard(",1)[0]
+    south=nav.split("edge==(1u<<SPIDER_SETUP_NAV_SOUTH)",1)[1].split(
+        "} else if(edge==(1u<<SPIDER_SETUP_NAV_EAST))",1)[0]
+    assert "id==SPIDER_UI_CAPTURE || id==SPIDER_UI_RESET" in south
+    assert "SDL3-SETUP: CROSS-CAPTURE BLOCKED" in south
+    assert "SDL3-SETUP: CROSS-RESET BLOCKED" in south
+    assert "Cross/A activated focused CAPTURE" not in south
+    assert "Cross/A activated focused RESET" not in south
+    assert south.index("id==SPIDER_UI_CAPTURE || id==SPIDER_UI_RESET") < south.index(
+        "PostMessageA(ui->hwnd,WM_COMMAND,")
+    assert "id==SPIDER_UI_USE" in south
+    assert "id==SPIDER_UI_TEST" in south
+    assert "id==SPIDER_UI_RAW" in south
+    assert "Cross/A activated focused button id=%d (%s)" in south
+    assert "spider_sdl3_capture_start(" not in south
+    # An actual intentional Win32 Capture click and keyboard shortcut
+    # still permit editing a 3D action profile.
+    commands=UI.split("case WM_COMMAND:",1)[1].split("case WM_TIMER:",1)[0]
+    assert "LOWORD(wp)==SPIDER_UI_CAPTURE && HIWORD(wp)==BN_CLICKED" in commands
+    assert "spider_sdl3_capture_start(&ui->capture);" in commands
+    keyboard=UI.split("static int handle_setup_keyboard(",1)[1].split(
+        "static void setup_toggle_sdl3_test(",1)[0]
+    assert "if(vk=='C'" in keyboard
