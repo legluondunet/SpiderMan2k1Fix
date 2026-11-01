@@ -144,7 +144,7 @@ legluondunet assisted by ChatGPT (OpenAI)
 
 ## 1 November 2026 — combined PR #91 Windows 11 native acceptance PASS
 
-**Maintainer first-hand result: 21/21 user-observed checks PASS across all
+**Maintainer first-hand result: 20/20 user-observed checks PASS across all
 six prescribed test scenarios**: main menu, four intro videos, 3D gameplay
 focus loss, Xbox 360 alone, Sony DualShock 4 alone, and both controllers
 connected with selection handoff. Normal pause menu, return input,
@@ -214,7 +214,7 @@ the instrumentation below.
   `Back -> Escape` game-pause markers also present;
   physical button/joystick correctness and no
   competing inputs are confirmed separately by the
-  maintainer's 21/21 checklist.
+  maintainer's 20/20 checklist.
 - Note: device enumeration in this **single** log
   shows both physically connected for the recorded
   runtime. Standalone controller test results are
