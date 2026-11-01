@@ -17,6 +17,7 @@
 #include "sdl3_gamepad_slots.h"
 #include "sdl3_gamepad_identity.h"
 #include "sdl3_controller_profile.h"
+#include "sdl3_universal_actions.h"
 #include "sdl3_controller_profile_store.h"
 #include "native_joystick_reconnect.h"
 #include "native_joystick_reconnect_policy.h"
@@ -92,6 +93,18 @@ static DWORD sdl3_game_thread=0;
  * verifying the same opened unique SDL3 device. Never rebind from modal. */
 static uint32_t setup_owner_pending=0;
 static uint16_t setup_owner_vendor=0,setup_owner_product=0;
+/* Separate GENERIC SDL3 controller selection: never pretend that a pad
+ * with unknown DirectInput layout owns the original 2001 input backend.
+ * Explicit Start in the SDL3 setup modal is required. A successful
+ * selection grants read-only action sampling, not native gameplay. */
+static uint32_t generic_selected_id=0;
+static uint16_t generic_selected_vendor=0,generic_selected_product=0;
+static SpiderSDL3UniversalActions generic_actions={0};
+static SpiderSDL3ControllerProfile generic_profile_snapshot={0};
+static int generic_profile_snapshot_valid=0;
+static unsigned generic_trace_lines=0;
+static uint32_t generic_last_buttons=0;
+static int generic_last_axes[4]={0};
 static void (*report)(const char *)=NULL;
 static SDL_InitSubSystemFn sdl_init=NULL;
 static SDL_SetMainReadyFn sdl_main_ready=NULL;
@@ -159,6 +172,12 @@ void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
   memset(bindings_loaded,0,sizeof(bindings_loaded));
   bindings_trace_id=0;bindings_previous=0;
   bindings_trace_armed=0;bindings_trace_lines=0;
+  generic_selected_id=0;
+  generic_selected_vendor=0;generic_selected_product=0;
+  generic_profile_snapshot_valid=0;
+  generic_trace_lines=0;generic_last_buttons=0;
+  memset(generic_last_axes,0,sizeof(generic_last_axes));
+  spider_sdl3_universal_reset(&generic_actions);
   bindings_trace_requested=ini &&
     GetPrivateProfileIntA("Debug","SDL3BindingTrace",0,ini)==1;
   requested=ini && GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1;
@@ -587,6 +606,8 @@ int SpiderSDL3Probe_SetupCommit(const SpiderSDL3ControllerProfile *candidate) {
   if(!profile || !SpiderSDL3ProfileStore_Save(candidate))return 0;
   *profile=*candidate;
   bindings_trace_armed=0;bindings_previous=0;
+  generic_profile_snapshot_valid=0;
+  spider_sdl3_universal_reset(&generic_actions);
   return 1;
 }
 
