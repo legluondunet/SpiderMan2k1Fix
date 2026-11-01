@@ -175,3 +175,14 @@ the optional recovery implementation is actually loaded and running.
 **Conclusion:** first **runtime hardware validation succeeded
 for the precise stale Left Alt byte repair**, not a blanket proof
 of complete Alt+Tab input recovery.
+
+### Maintainer's gameplay confirmation after the 07:59 test
+
+The maintainer explicitly confirmed: **only the DualShock 4 was used**, and
+**the controller worked normally after the Alt+Tab recovery**. This is
+first-hand hardware feedback, distinct from the log-only correlation above.
+The physical keyboard's in-game movements/actions **were not tested** in
+this run. Do not mark keyboard input recovery, normal fresh physical Alt
+press/release after automatic repair, or a complete fix of the historical
+Alt+Tab keyboard+mouse lockout as validated. The manual wake's logged
+virtual-key Return is not evidence of a user gameplay keyboard test.
