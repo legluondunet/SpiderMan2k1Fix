@@ -368,7 +368,7 @@ def test_ps3_explicit_setup_selection_when_start_was_consumed_by_capture():
     assert "ui->start_owner_pid=pid;" in setup
     assert "ui->start_owner_requested=1u;" in setup
     assert "SDL3-SETUP: EXPLICIT-SELECT QUEUED" in setup
-    assert "SDL3-SETUP: EXPLICIT-SELECT refused during action capture" in setup
+    assert "SDL3-SETUP: EXPLICIT-SELECT CAPTURE CANCELLED; no owner queued; click Use again" in setup
     assert "SDL3-SETUP: START-IGNORED action capture active" in setup
     assert "ui->capture.active || ui->close_pending" in setup
     assert "SpiderSDL3Probe_SetupRead(ui->slot,&id,&vid,&pid," in setup
@@ -416,3 +416,32 @@ def test_multiple_sdl3_pads_never_select_default_ds4_when_ps3_was_intended():
     assert ui.count("ui->user_chose_controller=1u;") >= 4
     assert "SDL3-SETUP: EXPLICIT-SELECT QUEUED" in selector
     assert "generic_selected_id=requested_id;" in (ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+
+
+def test_capture_cancelled_before_sdl3_owner_claim_requires_second_explicit_action():
+    ui=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    button=ui.split("static int setup_select_explicit_pad(",1)[1].split(
+        "static void setup_toggle_sdl3_test(",1)[0]
+    assert "if(ui->count>1u && !ui->user_chose_controller)" in button
+    assert "if(ui->capture.active) {" in button
+    cancel=button.split("if(ui->capture.active) {",1)[1].split(
+        "if(!ui->instance",1)[0]
+    assert "spider_sdl3_capture_reset(&ui->capture);" in cancel
+    assert "spider_sdl3_setup_nav_reset(&ui->nav);" in cancel
+    assert "SetFocus(ui->hwnd)" in cancel
+    assert "CAPTURE CANCELLED" in cancel
+    assert "no owner queued; click Use again" in cancel
+    assert "return 0;" in cancel
+    # Controller ownership request must happen AFTER the cancellation
+    # branch and AFTER exact SDL3 slot+VID/PID verification.
+    assert button.index("if(ui->capture.active) {") < button.index(
+        "SpiderSDL3Probe_SetupRead(") < button.index("ui->start_owner_id=id;")
+    assert "ui->start_owner_requested=1u;" in button
+    assert "SDL3-SETUP: EXPLICIT-SELECT QUEUED" in button
+    key=ui.split("static int handle_setup_keyboard(",1)[1].split(
+        "static void setup_toggle_sdl3_test(",1)[0]
+    assert key.index("if(vk=='U'") < key.index("if(ui->capture.active)return 0;")
+    # Avoid re-entering action capture if Wine synthesizes VK_RETURN
+    # while keyboard focus is on inert dialog background.
+    assert "if(focused==ui->actions && current_profile(ui))" in key
+    assert "if(current_profile(ui)) {\n      spider_sdl3_capture_start" not in key
