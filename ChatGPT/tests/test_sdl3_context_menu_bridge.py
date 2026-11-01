@@ -132,8 +132,8 @@ def test_live_context_bridge_is_explicitly_opted_in_and_single_owner():
     header=(ROOT/"sdl3_context_menu_bridge.h").read_text()
     main=(ROOT/"spiderman2k1fix.c").read_text()
     assert '"ExperimentalSDL3ContextBridge"' in ini
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3ContextBridge",0,ini)==1' in source
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1' in source
+    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3ContextBridge",1,ini)==1' in source
+    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1' in source
     assert 'SpiderSDL3Probe_NativeOwnerEnabled()' in source
     assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in source
     assert "id==sdl3_ui_instance" in source
