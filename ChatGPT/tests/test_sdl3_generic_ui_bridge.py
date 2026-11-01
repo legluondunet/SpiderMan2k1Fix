@@ -20,7 +20,7 @@ def test_generic_ui_engine_is_bounded_and_not_directinput_owner():
     assert "SpiderSDL3Probe_GenericSelectedSample(&id,&vid,&pid,&sample)" in UI
     assert "sdl3_generic_ui_on_flip(hwnd,menu_2d,gameplay_3d," in UI
     assert "if(sdl3_generic_ui_on_flip(hwnd,menu_2d,gameplay_3d," in UI
-    assert "spider_sdl3_generic_ui_step(&generic_ui,id,ctx,&sample)" in UI
+    assert "spider_sdl3_generic_ui_step_timed(&generic_ui,id,ctx,&sample," in UI
     assert "spider_sdl3_generic_ui_reset(&generic_ui)" in UI
     assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3GenericMenu",1,ini)' in UI
     assert "SPIDER_GENERIC_UI_BINK" in UI
@@ -163,3 +163,71 @@ int main(void) {
                         "-Werror", "-I", str(ROOT), str(source),
                         "-o", str(executable)], check=True)
         subprocess.run([str(executable)], check=True)
+
+
+@pytest.mark.skipif(not (shutil.which("cc") or shutil.which("gcc")),
+                    reason="No host C compiler")
+def test_stick_autorepeat_bounded_and_never_repeats_pad_buttons():
+    code = r"""
+#include <assert.h>
+#include <stdint.h>
+#include "sdl3_generic_ui_policy.h"
+#define BTN(x) (1u<<(x))
+int main(void) {
+  SpiderSDL3GenericUIState s={0};
+  SpiderSDL3ControllerSample p={0};
+  unsigned r;
+  /* Neutral arms. Cardinal stick gets one immediate press. */
+  assert(!spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,100u));
+  p.axis[SPIDER_SDL3_AXIS_LEFTY]=24000;
+  assert(spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,110u)==SPIDER_GENERIC_DIK_DOWN);
+  assert(!spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,350u));
+  assert(spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,400u)==SPIDER_GENERIC_DIK_DOWN);
+  assert(!spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,480u));
+  assert(spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,555u)==SPIDER_GENERIC_DIK_DOWN);
+  /* Diagonal immediately cancels repeat until centered neutral. */
+  p.axis[SPIDER_SDL3_AXIS_LEFTX]=26000;
+  assert(!spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,800u));
+  p.axis[SPIDER_SDL3_AXIS_LEFTX]=0;
+  assert(!spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,1100u));
+  p.axis[SPIDER_SDL3_AXIS_LEFTY]=0;
+  assert(!spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,1150u));
+  /* D-pad is edge-only, NEVER repeated despite 1 second holding. */
+  p.buttons=BTN(11);
+  assert(spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,1200u)==SPIDER_GENERIC_DIK_UP);
+  assert(!spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,2300u));
+  p.buttons=0;
+  assert(!spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,2400u));
+  /* Face button still single-shot even after sustained press. */
+  p.buttons=BTN(0);
+  assert(spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,2450u)==SPIDER_GENERIC_DIK_ENTER);
+  assert(!spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,3000u));
+  p.buttons=0;
+  assert(!spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,3100u));
+  /* Bink must not repeat or consume a held menu stick. */
+  p.axis[SPIDER_SDL3_AXIS_LEFTX]=25000;
+  assert(spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_MENU,&p,3150u)==SPIDER_GENERIC_DIK_RIGHT);
+  assert(!spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_BINK,&p,4100u));
+  assert(!spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_BINK,&p,5100u));
+  p.axis[SPIDER_SDL3_AXIS_LEFTX]=0;
+  assert(!spider_sdl3_generic_ui_step_timed(&s,3,SPIDER_GENERIC_UI_BINK,&p,5150u));
+  /* Switching ID invalidates pending repeat: no foreign controller input. */
+  p.axis[SPIDER_SDL3_AXIS_LEFTY]=-30000;
+  assert(!spider_sdl3_generic_ui_step_timed(&s,4,SPIDER_GENERIC_UI_MENU,&p,5200u));
+  assert(!spider_sdl3_generic_ui_step_timed(&s,4,SPIDER_GENERIC_UI_MENU,&p,6500u));
+  p.axis[SPIDER_SDL3_AXIS_LEFTY]=0;
+  assert(!spider_sdl3_generic_ui_step_timed(&s,4,SPIDER_GENERIC_UI_MENU,&p,6600u));
+  p.axis[SPIDER_SDL3_AXIS_LEFTY]=-30000;
+  r=spider_sdl3_generic_ui_step_timed(&s,4,SPIDER_GENERIC_UI_MENU,&p,6700u);
+  assert(r==SPIDER_GENERIC_DIK_UP);
+  return 0;
+}
+"""
+    compiler=shutil.which("cc") or shutil.which("gcc")
+    with tempfile.TemporaryDirectory() as tmp:
+        source=Path(tmp)/"stick_repeat.c"
+        binary=Path(tmp)/"stick_repeat"
+        source.write_text(code,encoding="utf-8")
+        subprocess.run([compiler,"-std=c11","-Wall","-Wextra","-Werror",
+                        "-I",str(ROOT),str(source),"-o",str(binary)],check=True)
+        subprocess.run([str(binary)],check=True)
