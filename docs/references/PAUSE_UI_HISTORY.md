@@ -17,7 +17,7 @@
 
 ## F9 screenshot confirmation — pause-panel typography (2026-11-01)
 
-User approved a camera icon on the **left** and the focus-pause style
+User approved an icon on the **left** and the focus-pause style
 for the F9 screenshot notification, **retaining the complete Windows
 file path** instead of shortening it to just the filename.
 
@@ -27,8 +27,13 @@ italic with a dark outline**, echoing the native game and the custom
 focus-loss `PAUSED` title. A smaller, nonitalic **Arial Bold**
 secondary line displays the entire original absolute path, broken
 across lines only when required; no ellipsis or path truncation.
-A lightweight vector-like camera icon is drawn with GDI primitives
-before the text, requiring no new fonts, image files or resources.
+After reviewing the initial mock camera icon, the user specifically requested
+**the smallest icon actually embedded in the retail `SpideyPC.exe`**.
+The old vector camera was removed. The code obtains the native SMALL
+**16×16 HICON** via `ExtractIconExW(exe,0,NULL,&small,1)`, draws it
+**at 16×16 with no scaling** left of the text, and caches it using
+`InitOnceExecuteOnce` so the normal Flip and comic-popup paths cannot
+race. If extraction fails, the text and full path remain visible.
 The familiar translucent blue/violet background and lavender border
 are maintained.
 
