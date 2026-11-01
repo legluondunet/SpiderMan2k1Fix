@@ -34,7 +34,10 @@ def test_keyboard_counts_joystick_bitsets_and_reserved_focus_events(tmp_path):
         assert(spider_native_source_changed(&o,&s,2u));
         assert(!spider_native_source_changed(&o,&s,2u));
         assert(spider_native_source_changed(&o,&s,1u));
-        assert(o.emitted==2u);
+        /* Original game mask can change even when no button latch changes. */
+        s.merged_actions=0x0004u;
+        assert(spider_native_source_changed(&o,&s,1u));
+        assert(o.emitted==3u);
         assert(spider_native_source_focus_step(&o,1));
         assert(!spider_native_source_focus_step(&o,1));
         assert(spider_native_source_focus_step(&o,0));
@@ -46,7 +49,10 @@ def test_keyboard_counts_joystick_bitsets_and_reserved_focus_events(tmp_path):
         /* Focus status is still logged at the ordinary sample cap. */
         assert(spider_native_source_focus_step(&o,0));
         assert(spider_native_source_focus_step(&o,1));
+        assert(spider_native_source_changed(&o,&s,2u));
+        assert(o.resume_samples==1u&&o.last_resume==1u);
         assert(o.emitted==SPIDER_SOURCE_MAX_CHANGES);
+        assert(!spider_native_source_changed(&o,&s,2u));
         while(o.focus_events<SPIDER_SOURCE_MAX_FOCUS_EVENTS)
           spider_native_source_focus_step(&o,!o.was_active);
         assert(!spider_native_source_focus_step(&o,!o.was_active));
@@ -57,6 +63,7 @@ def test_keyboard_counts_joystick_bitsets_and_reserved_focus_events(tmp_path):
         assert(s.keyboard_held==0&&s.joystick_held==0);
         spider_native_source_reset(&o);
         assert(!o.emitted&&!o.focus_events&&!o.have_focus);
+        assert(!o.resume_samples&&!o.pending_resume);
         return 0;
       }
     """),encoding="utf-8")
@@ -83,6 +90,10 @@ def test_runtime_is_read_only_fail_closed_and_distinctly_opted_in():
     assert 'const volatile uint8_t *)(uintptr_t)0x006B792Cu' in trace
     assert 'const volatile uint8_t *)(uintptr_t)0x006B7A34u' in trace
     assert 'CORRELATION NOT PROVENANCE' in trace
+    assert 'sample.merged_actions=game_held;' in trace
+    assert 'postfocus=%u' in trace
+    assert 'resume_samples>=8u' in trace
+    assert 'merged_actions' in model and 'pending_resume' in model
     assert 'keyboard_held++' in model and 'keyboard_fresh++' in model
     assert 'kb-code=' not in trace  # do not log individual scan codes
     for forbidden in ("WriteProcessMemory","VirtualProtect","SendInput",
