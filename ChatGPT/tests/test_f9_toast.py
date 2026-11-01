@@ -14,13 +14,19 @@ HEADER = (ROOT/"f9_toast.h").read_text(encoding="utf-8")
 BUILD = (ROOT/"build.sh").read_text(encoding="utf-8")
 
 
-def test_screenshot_confirmation_is_english_and_includes_full_path():
+def test_screenshot_confirmation_is_english_and_preserves_full_path_offscreen():
     assert 'L"SCREENSHOT SAVED"' in TOAST
     assert 'SpiderF9Toast_PublishSavedPath(const WCHAR *full_path)' in TOAST
     assert 'memcpy(toast_path,full_path,(len+1u)*sizeof(WCHAR));' in TOAST
-    assert 'L"\\\\' not in TOAST or "toast_wrap_path" in TOAST
-    assert "toast_wrap_path(" in TOAST
-    assert "DrawTextW(" not in TOAST  # No truncating label/path drawing
+    # The full path still travels through PNG publication and is kept
+    # for validation/logs, but may never be printed in the overlay.
+    painter=TOAST.split("static BOOL toast_draw_dc(",1)[1].split(
+        "/* Compose BEFORE presentation",1)[0]
+    assert "path+starts[i]" not in painter
+    assert "toast_wrap_path(" not in TOAST
+    assert "TextOutW(dc,text_x,heading_y,heading,heading_len)" in painter
+    assert "TextOutW(dc,text_x,heading_y,heading,heading_len)" in TOAST
+    assert "DrawTextW(" not in TOAST
     assert "SPIDER_F9_TOAST_MS 2000u" in TOAST
 
 
@@ -111,7 +117,7 @@ def test_failed_png_is_reported_and_final_file_is_verified():
 
 
 def test_heading_uses_real_wide_string_length_and_pause_palette():
-    assert 'TextOutW(dc,text_x,y+pad,heading,heading_len)' in TOAST
+    assert 'TextOutW(dc,text_x,heading_y,heading,heading_len)' in TOAST
     assert 'heading_len=(int)wcslen(heading);' in TOAST
     assert 'sizeof(heading)/sizeof(heading[0])' not in TOAST
     assert 'RGB(50,50,160)' in TOAST
@@ -215,34 +221,34 @@ def test_toast_inactive_path_is_true_wide_nul_not_multichar_constant():
     assert "if(path[0]==" in TOAST
 
 
-def test_screenshot_toast_matches_focus_pause_typography_and_native_small_icon():
+def test_screenshot_toast_uses_pause_typography_and_large_native_icon():
     pause=(ROOT/"pause_surface.c").read_text(encoding="utf-8")
     assert 'L"Arial Black"' in pause
     assert "FW_HEAVY,TRUE" in TOAST
     assert 'L"Arial Black"' in TOAST
     assert "ANTIALIASED_QUALITY" in TOAST
-    # Smaller sans-serif secondary line keeps the entire original path.
-    assert "FW_BOLD,FALSE" in TOAST
-    assert 'L"Arial"' in TOAST
-    assert "toast_wrap_path(dc,path,max_path_w,starts,lengths)" in TOAST
-    assert "DrawTextW(" not in TOAST  # No ellipsis/truncation API
-    assert "path+starts[i],lengths[i]" in TOAST
-    # Use the exact small Windows HICON embedded by the *running* game;
-    # no bundled camera symbol, no custom resource ID, no stretched image.
+    # Genuine unscaled LARGE 32px icon from the original EXE; no camera
+    # drawn by our mod and no 16x16 image enlarged to 32x32.
     assert "#include <shellapi.h>" in TOAST
     assert "static INIT_ONCE toast_icon_once=INIT_ONCE_STATIC_INIT" in TOAST
     assert "InitOnceExecuteOnce(&toast_icon_once," in TOAST
     assert "GetModuleFileNameW(NULL,exe,MAX_PATH)" in TOAST
-    assert "ExtractIconExW(exe,0,NULL,&small,1)" in TOAST
-    assert "SPIDER_F9_EXE_ICON_SIZE 16" in TOAST
+    assert "ExtractIconExW(exe,0,&big,NULL,1)" in TOAST
+    assert "SPIDER_F9_EXE_ICON_SIZE 32" in TOAST
     assert "DrawIconEx(dc,x+pad,icon_y,game_icon," in TOAST
     assert "icon_px,icon_px,0,NULL,DI_NORMAL)" in TOAST
     assert "toast_draw_camera_icon" not in TOAST
-    assert "toast_original_small_icon()" in TOAST
-    assert "no bundled" not in TOAST or "DrawIconEx" in TOAST
+    assert "toast_original_big_icon()" in TOAST
+    # The complete original Windows filename remains in toast_path and
+    # PNG logs, not in the single-line toast painter.
+    assert "memcpy(toast_path,full_path,(len+1u)*sizeof(WCHAR));" in TOAST
+    assert "toast_wrap_path(" not in TOAST
+    assert "path+starts[i]" not in TOAST
+    assert "path_px" not in TOAST
+    assert "box_h=2*pad+toast_max(icon_px,heading_size.cy)+4" in TOAST
+    assert "heading_y=y+(box_h-heading_size.cy)/2" in TOAST
     assert "RGB(240,47,69)" in TOAST
     assert "RGB(7,4,15)" in TOAST
-    # Both gameplay compositor and no-Flip comic popup use this drawer.
     assert "drawn=toast_draw_dc(dc,width,height,path,success);" in TOAST
     assert "toast_draw_dc(mem,(DWORD)size.cx,(DWORD)size.cy,path,success)" in TOAST
     assert "CreateThread(NULL,0,toast_popup_thread" in TOAST
@@ -250,9 +256,16 @@ def test_screenshot_toast_matches_focus_pause_typography_and_native_small_icon()
     assert "RestoreDC(dc,saved_dc)" in TOAST
 
 
-def test_f9_text_scaled_down_relative_to_original_embedded_16px_icon():
-    assert "heading_px=toast_min(24,toast_max(15,(int)h/50))" in TOAST
-    assert "path_px=toast_min(16,toast_max(11,(int)h/82))" in TOAST
-    assert "SPIDER_F9_EXE_ICON_SIZE 16" in TOAST
-    assert "int icon_y=y+pad+toast_max(0,(heading_px-icon_px)/2)" in TOAST
-    assert "path+starts[i],lengths[i]" in TOAST
+def test_large_icon_title_only_preserves_capture_and_does_not_draw_filename():
+    painter=TOAST.split("static BOOL toast_draw_dc(",1)[1].split(
+        "/* Compose BEFORE presentation",1)[0]
+    assert "heading_px=toast_min(29,toast_max(16,(int)h/43))" in painter
+    assert "SPIDER_F9_EXE_ICON_SIZE 32" in TOAST
+    assert "box_w=2*pad+icon_px+icon_gap+heading_size.cx+4" in painter
+    assert "if(box_w>(int)w-24)goto done;" in painter
+    assert "path[0]" in painter  # still reject empty/invalid published path
+    assert "GetTextExtentPoint32W(dc,heading,heading_len,&heading_size)" in painter
+    assert "TextOutW(dc,text_x,heading_y,heading,heading_len)" in painter
+    assert "path+starts[i]" not in painter
+    assert "GetTextExtentPoint32W(dc,path" not in painter
+    assert "toast_wrap_path" not in TOAST
