@@ -107,9 +107,9 @@ def test_stage_1_observed_before_rebinding_and_keyboard_untouched():
 
 
 def test_startup_ini_gating_and_build_wiring():
-    assert '"ExperimentalNativeJoystickReconnect",0,ini)==1' in SOURCE
-    assert '"ExperimentalNativeJoystickUnplugGuard",0,ini)!=1' in SOURCE
-    assert "ExperimentalNativeJoystickReconnect=0" in TEMPLATE
+    assert '"ExperimentalNativeJoystickReconnect",1,ini)==1' in SOURCE
+    assert '"ExperimentalNativeJoystickUnplugGuard",1,ini)!=1' in SOURCE
+    assert "ExperimentalNativeJoystickReconnect=1" in TEMPLATE
     assert '"ExperimentalNativeJoystickReconnect"' in VALIDATE
     assert 'native_joystick_reconnect.c' in BUILD
     assert '#include "native_joystick_reconnect.h"' in MAIN
