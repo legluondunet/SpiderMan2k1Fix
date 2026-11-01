@@ -168,7 +168,7 @@ void SpiderNativeUnplug_Init(const char *ini,void (*logger)(const char *)) {
   write_log=logger;
   InterlockedExchange(&requested,
     (ini && GetPrivateProfileIntA("Input",
-      "ExperimentalNativeJoystickUnplugGuard",0,ini)==1)?1:0);
+      "ExperimentalNativeJoystickUnplugGuard",1,ini)==1)?1:0);
   if(write_log)write_log(snapshot(&requested)?
     "NATIVE-UNPLUG: experimental guard requested, will verify/install at Flip #120":
     "NATIVE-UNPLUG: guard OFF by default, original native joystick error handling preserved");
