@@ -214,7 +214,7 @@ read-only trace alone.
 
 ## 1 November 2026 — physical Left Alt release **clears** stale original DI latch
 
-Complete subsequent Windows 11 DS4 log: `SpiderMan2k1Fix(20261101-021319).log`, 1,710 lines, authenticated retail SHA, selected DS4 `054C:09CC`, native Windows. **104 source records**: 96 ordinary (20 MENU, 76 3D among ordinary records) + eight reserved, total 20 MENU and 84 3D; all have the OS comparator. The state-pair breakdown is **97** `alt-tab=0 os-alt-tab=0`, **5** `1/0` (stale original Left Alt), **2** `1/1` (both held). No `0/1` samples.
+Complete subsequent Windows 11 DS4 log: `SpiderMan2k1Fix(20261101-021319).log`, 1,710 lines, authenticated retail SHA, selected DS4 `054C:09CC`, native Windows. **104 source records**: 96 ordinary (17 MENU, 79 3D) + eight reserved (3 MENU, 5 3D), total 20 MENU and 84 3D; all have the OS comparator. The state-pair breakdown is **97** `alt-tab=0 os-alt-tab=0`, **5** `1/0` (stale original Left Alt), **2** `1/1` (both held). No `0/1` samples.
 
 The test is decisive for *event/latch recovery*, though not by itself for all gameplay keyboard symptoms:
 
