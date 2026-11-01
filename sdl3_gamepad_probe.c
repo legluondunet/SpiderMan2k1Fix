@@ -222,6 +222,30 @@ int SpiderSDL3Probe_SelectedIdentity(uint16_t *vid,uint16_t *pid,
   return 1;
 }
 
+/* Per-user fallback when game files are installed under Program Files.
+ * Separate from community gamecontrollerdb and per-action profile storage. */
+static int spider_raw_local_path(const char *file,char *out,
+                                 size_t cap,int create) {
+  char root[MAX_PATH],folder[MAX_PATH];
+  DWORD n,attrs;
+  int wrote;
+  if(!file || !out || !cap)return 0;
+  n=GetEnvironmentVariableA("LOCALAPPDATA",root,sizeof(root));
+  if(!n || n>=sizeof(root))return 0;
+  wrote=snprintf(folder,sizeof(folder),"%s\\SpiderMan2k1Fix",root);
+  if(wrote<=0 || (size_t)wrote>=sizeof(folder))return 0;
+  attrs=GetFileAttributesA(folder);
+  if(attrs==INVALID_FILE_ATTRIBUTES && create) {
+    if(!CreateDirectoryA(folder,NULL) &&
+       GetLastError()!=ERROR_ALREADY_EXISTS)return 0;
+    attrs=GetFileAttributesA(folder);
+  }
+  if(attrs==INVALID_FILE_ATTRIBUTES ||
+     !(attrs&FILE_ATTRIBUTE_DIRECTORY) ||
+     (attrs&FILE_ATTRIBUTE_REPARSE_POINT))return 0;
+  wrote=snprintf(out,cap,"%s\\%s",folder,file);
+  return wrote>0 && (size_t)wrote<cap;
+}
 static int sdl_load(void) {
   char path[MAX_PATH],line[310];
   attempted=1;
@@ -302,35 +326,42 @@ static int sdl_load(void) {
       }
     }
   }
-  /* Per-device mappings saved by the keyboard wizard, isolated from the
-   * optional community database. Each file contains ONE SDL mapping. */
+  /* Per-device mappings saved by the keyboard wizard. Load installation
+   * files first, then LOCALAPPDATA overrides (the user-writable fallback).
+   * A single GUID-specific file never rewrites the community DB. */
   if(sdl_add_mappings_file) {
     char wildcard[MAX_PATH],mapfile[MAX_PATH],dbmsg[330];
     WIN32_FIND_DATAA found;
     HANDLE find;
-    unsigned loaded=0;
-    if(spider_path_code_asset_a("SDL3-mapping-*.txt",wildcard,sizeof(wildcard))) {
+    unsigned loaded=0,source;
+    for(source=0;source<2u;source++) {
+      int pathok=source==0u?
+        spider_path_code_asset_a("SDL3-mapping-*.txt",wildcard,sizeof(wildcard)):
+        spider_raw_local_path("SDL3-mapping-*.txt",wildcard,sizeof(wildcard),0);
+      if(!pathok)continue;
       find=FindFirstFileA(wildcard,&found);
-      if(find!=INVALID_HANDLE_VALUE) {
-        do {
-          const char *n=found.cFileName;
-          size_t len=strlen(n);
-          unsigned k;
-          int ok=(len==49u && memcmp(n,"SDL3-mapping-",13)==0 &&
-                  strcmp(n+45,".txt")==0);
-          if(found.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)continue;
-          for(k=13u;ok && k<45u;k++)
-            if(!isxdigit((unsigned char)n[k]))ok=0;
-          if(!ok || loaded>=64u)continue;
-          if(spider_path_code_asset_a(n,mapfile,sizeof(mapfile)) &&
-             sdl_add_mappings_file(mapfile)>=0)loaded++;
-        } while(FindNextFileA(find,&found));
-        FindClose(find);
-      }
-      snprintf(dbmsg,sizeof(dbmsg),
-        "SDL3-MAPPINGS: persisted per-GUID user mappings loaded=%u (SDL Gamepad API only; original DI unaffected)",loaded);
-      say(dbmsg);
+      if(find==INVALID_HANDLE_VALUE)continue;
+      do {
+        const char *n=found.cFileName;
+        size_t len=strlen(n);
+        unsigned k;
+        int ok=(len==49u && memcmp(n,"SDL3-mapping-",13)==0 &&
+                strcmp(n+45,".txt")==0);
+        if(found.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)continue;
+        for(k=13u;ok && k<45u;k++)
+          if(!isxdigit((unsigned char)n[k]))ok=0;
+        if(!ok || loaded>=128u)continue;
+        pathok=source==0u?
+          spider_path_code_asset_a(n,mapfile,sizeof(mapfile)):
+          spider_raw_local_path(n,mapfile,sizeof(mapfile),0);
+        if(pathok && sdl_add_mappings_file(mapfile)>=0)loaded++;
+      } while(FindNextFileA(find,&found));
+      FindClose(find);
     }
+    snprintf(dbmsg,sizeof(dbmsg),
+      "SDL3-MAPPINGS: persisted per-GUID user mappings loaded=%u (game directory + LOCALAPPDATA fallback; SDL Gamepad API only)",
+      loaded);
+    say(dbmsg);
   }
   say("SDL3-PROBE: SDL3 gamepad subsystem ready (read-only); no DirectInput takeover");
   return 1;
@@ -676,34 +707,33 @@ int SpiderSDL3Probe_RawRegisterAndSave(const char *mapping,const char *guid) {
     return 0;
   }
   snprintf(filename,sizeof(filename),"SDL3-mapping-%s.txt",guid);
-  if(!spider_path_code_asset_a(filename,file,sizeof(file)) ||
-     strlen(file)+5u>=sizeof(temp)) {
-    say("SDL3-RAW: mapping applied for this session; persistence path unavailable");
-    return 0;
+  for(unsigned location=0u;location<2u;location++) {
+    int available=location==0u?
+      spider_path_code_asset_a(filename,file,sizeof(file)):
+      spider_raw_local_path(filename,file,sizeof(file),1);
+    if(!available || strlen(file)+5u>=sizeof(temp))continue;
+    snprintf(temp,sizeof(temp),"%s.tmp",file);
+    handle=CreateFileA(temp,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,
+                        FILE_ATTRIBUTE_NORMAL,NULL);
+    if(handle==INVALID_HANDLE_VALUE)continue;
+    bytes=(DWORD)strlen(mapping);
+    if(!WriteFile(handle,mapping,bytes,&written,NULL) || written!=bytes ||
+       !WriteFile(handle,"\\r\\n",2u,&written,NULL) || written!=2u ||
+       !FlushFileBuffers(handle)) {
+      CloseHandle(handle);DeleteFileA(temp);continue;
+    }
+    CloseHandle(handle);
+    if(!MoveFileExA(temp,file,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)) {
+      DeleteFileA(temp);continue;
+    }
+    snprintf(line,sizeof(line),
+      "SDL3-RAW: MAPPING SAVED GUID=%s location=%s (SDL3 runtime activated; original game unchanged)",
+      guid,location==0u?"GAME":"LOCALAPPDATA");
+    say(line);
+    return 1;
   }
-  snprintf(temp,sizeof(temp),"%s.tmp",file);
-  handle=CreateFileA(temp,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,
-                      FILE_ATTRIBUTE_NORMAL,NULL);
-  if(handle==INVALID_HANDLE_VALUE) {
-    say("SDL3-RAW: mapping applied for this session; cannot create user mapping file");
-    return 0;
-  }
-  bytes=(DWORD)strlen(mapping);
-  if(!WriteFile(handle,mapping,bytes,&written,NULL) || written!=bytes ||
-     !WriteFile(handle,"\r\n",2u,&written,NULL) || written!=2u ||
-     !FlushFileBuffers(handle)) {
-    CloseHandle(handle);DeleteFileA(temp);return 0;
-  }
-  CloseHandle(handle);
-  if(!MoveFileExA(temp,file,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)) {
-    DeleteFileA(temp);
-    say("SDL3-RAW: mapping applied for this session; atomic rename failed");
-    return 0;
-  }
-  snprintf(line,sizeof(line),
-    "SDL3-RAW: MAPPING SAVED GUID=%s (user mapping file, SDL3 runtime activated, no original game control writes)",guid);
-  say(line);
-  return 1;
+  say("SDL3-RAW: mapping applied for this session, but atomic save failed in game directory and LOCALAPPDATA");
+  return 0;
 }
 
 unsigned SpiderSDL3Probe_SetupCount(void) {
