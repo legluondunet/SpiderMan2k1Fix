@@ -18,6 +18,7 @@
 #include "sdl3_gamepad_identity.h"
 #include "sdl3_controller_profile.h"
 #include "sdl3_controller_profile_store.h"
+#include "sdl3_raw_mapping.h"
 #include "native_joystick_reconnect.h"
 #include "native_joystick_reconnect_policy.h"
 #include "ps1_focus_pause_wake.h"
@@ -229,6 +230,7 @@ static int sdl_load(void) {
     FreeLibrary(module);module=NULL;
     return 0;
   }
+  SpiderSDL3Raw_Init(module,report);
   ready=1;
   say("SDL3-PROBE: SDL3 gamepad subsystem ready (read-only); no DirectInput takeover");
   return 1;
