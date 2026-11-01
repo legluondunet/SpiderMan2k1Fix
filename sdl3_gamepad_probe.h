@@ -75,6 +75,12 @@ typedef struct {
   unsigned button_count,axis_count,hat_count;
 } SpiderSDL3RawSample;
 unsigned SpiderSDL3Probe_RawList(uint32_t *ids,unsigned capacity);
+/* List ALL SDL joysticks (mapped as gamepads or not). The wizard can
+ * recalibrate a device even when SDL has a pre-existing, broken mapping.
+ * mapped_flags receives 1 for SDL-mapped gamepads and 0 for raw-only pads.
+ * Never changes native game ownership or DirectInput state. */
+unsigned SpiderSDL3Probe_RawListAll(uint32_t *ids,unsigned *mapped_flags,
+                                    unsigned capacity);
 int SpiderSDL3Probe_RawBegin(uint32_t id,char guid[33],
                             char *name,size_t capacity);
 int SpiderSDL3Probe_RawRead(SpiderSDL3RawSample *out);
