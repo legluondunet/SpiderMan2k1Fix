@@ -275,3 +275,33 @@ def test_sdl3_normalized_input_diagnostic_has_no_active_win32_controls():
     assert "if(!ui->test_mode && modal_start_handoff(ui))return;" in setup
     assert "if(vk==VK_F9)" not in setup
     assert "if(vk==VK_F10)" not in setup
+
+
+def test_keyboard_escape_uses_raw_hid_input_and_not_controller_fake_escape():
+    physical=(ROOT/"sdl3_physical_escape.h").read_text(encoding="utf-8")
+    wizard=(ROOT/"sdl3_raw_wizard.c").read_text(encoding="utf-8")
+    setup=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    assert "GetRegisteredRawInputDevices(NULL,&count" in physical
+    assert "usUsagePage==0x01u && devices[i].usUsage==0x06u" in physical
+    assert "RegisterRawInputDevices(&keyboard,1u,sizeof(keyboard))" in physical
+    assert "RIDEV_REMOVE" in physical
+    assert "GetRawInputData(input,RID_INPUT" in physical
+    assert "packet.header.dwType!=RIM_TYPEKEYBOARD" in physical
+    assert "packet.data.keyboard.VKey==VK_ESCAPE" in physical
+    assert "packet.data.keyboard.Flags&RI_KEY_BREAK" in physical
+    for dialog in [wizard,setup]:
+        assert '#include "sdl3_physical_escape.h"' in dialog
+        assert "spider_sdl3_escape_begin(" in dialog
+        assert "spider_sdl3_escape_key((HRAWINPUT)msg.lParam)" in dialog
+        assert "spider_sdl3_escape_end(" in dialog
+        assert "msg.message==WM_INPUT" in dialog
+        # Still keep the controller-synthesized Win32 Escape suppressed
+        # while physically calibrating or recording normalized SDL3 input.
+        assert "msg.message==WM_KEYDOWN || msg.message==WM_KEYUP" in dialog
+        assert "if(IsDialogMessageA(" in dialog
+        assert dialog.index("spider_sdl3_escape_key((HRAWINPUT)msg.lParam)") < dialog.index("if(IsDialogMessageA(")
+        assert "Ctrl+Shift+Q" in dialog
+    assert "PHYSICAL-ESC keyboard cancel" in wizard
+    assert "PHYSICAL-ESC keyboard stopped normalized input test" in setup
+    assert "if(vk==VK_F9)" not in setup
+    assert "if(vk==VK_F10)" not in setup
