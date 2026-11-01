@@ -206,3 +206,38 @@ do NOT enable synthetic keyboard injection, blindly patch DirectInput
 or assume menus/3D gameplay work. Send the full log and keep the previous
 validated build. Native Keyboard, verified Sony DS4/Xbox controls and
 F9/F10 game shortcuts must still work.
+
+
+## Test E — First live generic PS3 2D/menu + Bink control (not 3D)
+
+**Prerequisite:** earlier PS3 hardware test D confirmed `SDL3-GENERIC:
+SELECTED id=3 VID:PID=054C:0268`, semantic neutral gate and both sticks.
+Keep the last validated DLL as a backup.
+
+1. Install the current PR #96 Windows x86 ZIP. The generic menu/Bink
+   adapter is armed by default **only after explicitly selecting a
+   non-native SDL3 controller**; can opt out via `[Input]
+   ExperimentalSDL3GenericMenu=0` in `SpiderMan2k1Fix.ini`.
+2. In original Options -> Joystick, choose **PS3 `054C:0268`**
+   explicitly. Click **Use selected SDL3 controller**; if the status
+   reports `CAPTURE CANCELLED`, click Use again. Wait for
+   `EXPLICIT-SELECT QUEUED ... 054C:0268`, then keyboard Escape.
+3. Release every PS3 control. In the main menu, press **D-pad UP/DOWN**
+   (one selection per distinct press) and move **left stick** in cardinal
+   directions. Press **Cross** to open a submenu, then **Circle** to
+   return. The right stick and triggers must NOT navigate the menus.
+4. Start a game and, at a skippable Bink video, press **Cross once**.
+   Test holding Cross: a single press must **never** bypass multiple
+   consecutive videos or cause inherited action at first 3D frame.
+5. In 3D, moving the PS3 sticks must **not** be claimed as supported
+   gameplay by this branch; 3D remains protected until a separate
+   native-engine bridge is established. Use keyboard for recovery.
+6. Test focus loss/return (Alt+Tab) and native Keyboard configuration.
+   F9 and F10 are reserved and must not be intercepted. Send full log:
+   `SDL3-GENERIC-UI: ARMED id=... context=MENU/BINK` and
+   `SDL3-GENERIC-UI: PRESS id=... context=MENU/BINK DIK=...`.
+
+If a menu pulse causes double activation or unintended video skip,
+revert to the previous working DLL or add
+`ExperimentalSDL3GenericMenu=0` under `[Input]` and send the log.
+This is an experimental hardware validation, **not** universal support.
