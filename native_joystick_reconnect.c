@@ -333,6 +333,56 @@ static void swap_native_gameplay_mapping(unsigned to_kind) {
     preset==3u?"Factory":swap_kind_name(preset),swap_kind_name(to_kind));
   report(line);
 }
+/* The supported DS4's physical L3 is SDL3 LEFT_STICK (button 8) but
+ * DirectInput BUTTON11.  The retail game treats BUTTON11 as its native
+ * Start/menu action (slot 11, mask 0x1000).  When SDL3 owns this exact
+ * 14-button Sony device, Start belongs to the explicit SDL3 Pause
+ * binding (normally physical SHARE). Leave the native Start slot
+ * unbound so L3 cannot independently open the menu.
+ *
+ * Gate the ONE DWORD change on the verified game-owned DI identity,
+ * canonical Sony seven-action table, original 14-slot masks, expected
+ * BUTTON11 value, writable original DATA memory and foreground game
+ * thread.  All seven gameplay actions and Xbox semantics are untouched.
+ * Recheck at Flip because the retail game can reload its action table
+ * when entering a level; no disk config or code writes. */
+static void spider_sdl3_disable_ds4_l3_native_pause(void) {
+  const uintptr_t table=(uintptr_t)SPIDER_NATIVE_ACTION_TABLE;
+  const uintptr_t slot=table+11u*8u+4u;
+  MEMORY_BASIC_INFORMATION mbi;
+  uint32_t buttons[SPIDER_PS1_BUTTON_COUNT];
+  uintptr_t base;
+  uint16_t vid=0,pid=0;
+  uint32_t id=0;
+  DWORD prot;
+  static unsigned fixed=0;
+  if(!swap_mapping_enabled || !native_thread ||
+     native_thread!=GetCurrentThreadId() ||
+     (uintptr_t)GetModuleHandleA(NULL)!=SPIDER_NATIVE_BASE ||
+     !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) || !id ||
+     vid!=0x054cu || (pid!=0x05c4u && pid!=0x09ccu && pid!=0x0ba0u) ||
+     !SpiderNativeReconnect_SDL3SelectionReady(vid,pid) ||
+     *(const volatile DWORD *)(uintptr_t)SPIDER_NATIVE_BUTTON_COUNT!=14u)
+    return;
+  /* Fast no-op on already unbound, custom or overwritten Start slots. */
+  if(*(const volatile DWORD *)slot!=11u)return;
+  if(VirtualQuery((const void *)table,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)))
+    return;
+  base=(uintptr_t)mbi.BaseAddress;
+  prot=mbi.Protect&0xffu;
+  if((prot!=PAGE_READWRITE && prot!=PAGE_WRITECOPY) ||
+     table<base || table-base>=mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(table-base)<SPIDER_NATIVE_SWAP_SLOTS*8u ||
+     !spider_native_swap_read((const uint8_t *)table,
+          SPIDER_NATIVE_SWAP_SLOTS*8u,buttons) ||
+     spider_native_swap_preset(buttons)!=SPIDER_RECONNECT_DS4)
+    return;
+  if(InterlockedCompareExchange((volatile LONG *)slot,0x4000L,11L)==11L) {
+    if(fixed++<4u)
+      report("SDL3-DS4: native Start BUTTON11 (physical L3) UNBOUND in verified 14-slot RAM table; saved SDL3 SHARE Pause owns menu; original seven gameplay actions/Xbox unchanged");
+  }
+}
 static void close_candidate(IDirectInputDevice8A *device) {
   if(!device)return;
   /* A newly created candidate may have disappeared between EnumDevices,
@@ -811,6 +861,7 @@ void SpiderNativeReconnect_OnFlip(long flip_index, HWND game_hwnd) {
       detach_stale_native();
     }
     sdl3_owner_reconcile(native_hwnd);
+    spider_sdl3_disable_ds4_l3_native_pause();
     return;
   }
   events=SpiderNativeUnplug_Events();
