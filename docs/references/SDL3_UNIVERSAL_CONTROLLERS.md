@@ -1,64 +1,95 @@
 # SDL3 universal controller support — implementation roadmap
 
-## User contract
+## Acceptance contract
 
-With **keyboard only**, a user opens the SDL3 Controller Setup screen,
-chooses a recognized pad or a raw joystick, maps the hardware once, saves,
-and can play without the source code knowing its manufacturer or VID/PID.
-The keyboard remains the recovery route throughout.
+A user opens **Joystick Configuration** with the keyboard, selects any
+SDL3-visible device (including one already mapped but incorrectly), calibrates
+its physical controls if needed, assigns actions, and saves its profile. A
+fully supported controller must control **the entire game**, not just its
+3D avatar, without any vendor-specific code or switch back to the keyboard.
 
-This is the **target**, not a description of the current release.
+**Target behavior to implement and physically validate:**
 
-## Baseline and safety rules
+| Original-game context | Controller acceptance criteria | Current state |
+| --- | --- | --- |
+| Main and pause menus, selection screens | D-pad/left stick moves selection; configurable Confirm/Back; reliable navigation and return | Partial Sony/Xbox-specific 2D/UI paths; NOT universal |
+| Bink/videos (including startup) | Deliberate Confirm/Skip action skips a skippable video; never automatically skips multiple videos after held input | Partial existing physical Cross/A bridge; NOT universal |
+| Scripted/in-engine 3D cutscenes | Skip supported cutscenes with the saved SDL3 action while respecting native skip rules | Existing game-native skip only; NOT universal |
+| Fixed entry/continue image or still | Confirm/Next Still action advances the frozen screen that asks for Enter | Unbridged legacy still pages |
+| Gameplay 3D | Movement, camera, seven gameplay actions, pause/resume, reconnect | Sony DS4/Xbox 360-specific native DirectInput path only |
+| Focus loss, Alt+Tab, controller hotplug | Input disarmed on focus loss; no unintended skip, pause, movement or stale held action on return | Must be verified for all contexts |
 
-1. **Detection:** `SDL_GetJoysticks` sees raw physical joysticks;
-   `SDL_GetGamepads` lists those with SDL-standard mappings. An unknown
-   raw joystick must be visibly labelled **unmapped**, not silently omitted
-   or described as gameplay-compatible.
-2. **Hardware calibration:** on the game's existing foreground UI thread,
-   open a specifically user-selected raw joystick; capture buttons, hats,
-   positive/negative axes and triggers; verify neutral and release edges;
-   let the user correct mistakes with the keyboard. Obtain a stable SDL
-   joystick GUID, build and validate an SDL gamepad mapping string, apply it
-   via `SDL_AddGamepadMapping` and persist it transactionally. Reload on
-   startup, then re-enumerate as a standard SDL gamepad.
-3. **Action configuration:** once SDL3 maps a device, use its normalized
-   buttons, triggers and axes to assign gameplay actions. Profiles are
-   model-specific data, not model-specific code.
-4. **Universal game bridge:** convert selected SDL3 *action state*, not
-   vendor-specific DirectInput `rgbButtons` indexes, into the original
-   game command reader. Investigate the retail x86 consumer and establish
-   that every action, movement, pause and release can be delivered and
-   restored safely. Never generate duplicate native and SDL3 actions.
-5. **Fail closed:** no blanket memory writes or unverified DI COM hooks;
-   disarm on focus loss, unplug, profile change or pause. Retain the
-   original keyboard and a configurable legacy-input fallback.
-6. **Compatibility:** use Sony DS4, Xbox 360, DualShock 3 and a third,
-   previously unknown raw joystick as test devices; model-specific
-   workarounds should be narrowly documented exceptions.
+The configuration must respect the **context**: the same hardware button
+may correspond to different menu, video, still, cutscene and 3D actions.
+For menu navigation, Confirm and Back must remain distinct; for videos and
+stills, only a fresh intentional press should advance. Keep F9 screenshots,
+F10 game location shortcuts, original keyboard controls, and a safe legacy
+fallback unchanged. Avoid double-input from original DirectInput and SDL3.
 
-## Current implementation on this branch
+These are **release-blocking acceptance criteria**, not a description of
+the currently functioning implementation.
 
-- `sdl3_gamepad_probe.c` now logs previously unseen SDL raw joysticks
-  lacking a standardized SDL gamepad mapping. It does **not** yet open or
-  configure them.
-- `sdl3_universal_actions.h` implements a portable normalized
-  button/trigger action frame: held, pressed, released; identity switch,
-  neutral rearming, focus and gameplay gates, trigger hysteresis. It does
-  **not** yet connect to the original game input consumer.
-- `sdl3_raw_mapping.h` validates a user-calibrated standard SDL mapping\n  string (GUID, safe name, button/hat/axis identifiers, required inputs)\n  without applying it to SDL yet. The keyboard capture UI remains missing.\n- A local `SDL3-gamecontrollerdb.txt` can be loaded via SDL's existing\n  `SDL_AddGamepadMappingsFromFile` ABI at startup; this is an optional\n  source of externally supplied mapping entries, not auto-calibration.\n- Diagnostic/calibration functions are exposed via actual SDL3 setup buttons\n  reachable with keyboard Tab+Enter. F9 (screenshots) and F10\n  (game location shortcut) remain reserved to the original game.\n- Portable regression coverage exercises unknown VID/PID semantics,
-  remapping, no inherited held keys and hysteresis.
+## Implementation plan
 
-## Not yet implemented
+1. **Detection:** SDL's physical joystick list and mapped gamepad list are
+   both necessary. A device may already be SDL-mapped yet have the wrong
+   assignments; it must remain recalibratable.
+2. **Hardware wizard:** on the foreground game/SDL3 thread, open the explicitly
+   chosen joystick; capture buttons, hats, axes and triggers; reject ambiguous
+   simultaneous input; require neutral/release edges; allow keyboard correction.
+   Obtain SDL GUID, validate mapping, apply with SDL_AddGamepadMapping,
+   persist per GUID transactionally, reload at startup.
+3. **Semantic action profile:** let the player bind 3D actions and all
+   context-specific commands (MenuConfirm, MenuBack, SkipVideo, NextStill,
+   SkipCutscene) without hardcoded physical button numbers or VID/PID.
+   User saves must survive restart and device reconnect.
+4. **Context-aware adapter:** hook only verified original retail-engine input
+   consumers. Translate SDL3 normalized actions and axes to appropriate
+   game-native operations for each actual state: menus, Bink video,
+   scripted cutscene, still/Enter screen and 3D gameplay. Use disjoint
+   context routing and consume/arm press-release boundaries so one action
+   cannot cross states.
+5. **Safety:** never inject unrelated Win32 events globally, modify
+   unsupported game memory or double-activate original DirectInput actions.
+   On keyboard/focus/controller changes fall back safely; F9/F10 untouched.
+6. **Acceptance tests:** on native Windows and Wine/Proton, verify
+   DS4, Xbox 360, PS3 (`054C:0268`) and a previously unmapped controller,
+   starting from startup videos through a complete level and return to menus.
 
-- The raw joystick identification/capture wizard.
-- SDL mapping creation, validation and persistence.
-- A verified hardware-neutral injection path into the original retail
-  Spider-Man 3D engine.
-- End-to-end user acceptance testing and compatibility across devices.
+## Current experimental state (2026-11-01)
 
-Do not describe any unsupported raw joystick as playable yet. Do not
-replace the current verified DS4/Xbox behavior until the universal path
-has passed full native Windows and Wine tests.
+- SDL3 discovers both mapped and raw joysticks. A mapped device can be
+  recalibrated using **Calibrate SDL3 joystick**, reachable by Tab+Enter
+  inside the game's SDL3 setup modal.
+- An optional `SDL3-gamecontrollerdb.txt` extends SDL's mapping database.
+  The wizard generates SDL mappings and saves them under the game installation
+  or the user-writable LOCALAPPDATA fallback.
+- `sdl3_universal_actions.h` provides a portable semantic action state
+  (held/pressed/released, focus and neutral rearm, trigger hysteresis)
+  **not yet connected** to all game consumers.
+- The existing user-specific per-model semantic profile file can be saved,
+  but this does not imply any in-game 3D/video/menu compatibility.
+- Current native controller ownership still restricts live gameplay to the
+  previously verified Sony DS4 / Xbox 360 adapters. Original game input
+  cannot yet consume generic SDL3 input.
+- Uploaded `SpiderMan2k1Fix(20261101-155038).log`: PS3
+  `054C:0268` was detected by SDL3 (`XInput Controller #1`). Wizard
+  recorded steps 1–5 but then repeated `opened id=2` rather than saving.
+  Start may have generated a synthetic VK_RETURN on Wine; the wizard no
+  longer treats Enter as a restart while a capture is active. This needs
+  a real-hardware retest before calling it fixed.
+- The F9 screenshot and F10 in-game location shortcuts remain reserved.
+
+## Outstanding
+
+- Demonstrate full raw-wizard calibration through step 20 on actual hardware.
+- Improve analog-axis polarity, physical trigger neutrality and UI recovery.
+- Implement and verify the **universal 3D + menu + video + cutscene +
+  still/Enter** context-aware bridge.
+- Cross-device physical Windows and Wine testing and explicit user sign-off.
+
+No declaration of "universal controller support" before every context above
+passes real-hardware acceptance. Keep this draft outside protected main
+until the maintainer authorizes integration.
 
 legluondunet assisted by ChatGPT (OpenAI)
