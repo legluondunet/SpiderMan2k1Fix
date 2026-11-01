@@ -1501,6 +1501,11 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
       post_quit_block=spider_ps1_post_quit_guard_flip(&ps1_post_quit_guard,
         1,menu_2d,gameplay_3d,bink_active,native_request);
   }
+  /* The native options Joystick selection should open our SDL3 setup
+   * directly, bypassing the old read-only seven-action viewer. Original
+   * keyboard config still calls the original 2001 PCShell function. */
+  if(SpiderSDL3ControllerSetup_Enabled())
+    SpiderSDL3_InstallDirectJoystickEntry(log_message);
   /* The first-run user recovery path must remain reachable with no
    * recognized Sony/Xbox DirectInput device: keyboard navigation opens
    * a generic read-only Joystick menu with SDL3 TEST (PREVIEW) row.
