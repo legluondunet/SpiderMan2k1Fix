@@ -816,8 +816,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         "Stick Left/Right: navigate    L1/R1: browse controllers\r\n"
         "Choose the intended gamepad ABOVE first if multiple are connected\r\n"
         "Use selected controller / Ctrl+Shift+U: queue chosen pad\r\n"
-        "L1/R1 browse pads; Start only outside capture; Esc: close/apply\r\n"
-        "Test mode: keyboard Esc / Ctrl+Shift+T stop; F9/F10 unchanged",
+        "Start only outside capture; Esc: close/stop test; F9/F10 unchanged",
         WS_CHILD|WS_VISIBLE,18,393,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->status=CreateWindowExA(0,"STATIC","",
