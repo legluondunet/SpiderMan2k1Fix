@@ -14,6 +14,9 @@ ROOT=Path(__file__).resolve().parents[2]
 def test_unmapped_joysticks_are_reported_without_unsafe_native_claim():
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     assert '"SDL_GetJoysticks"' in probe
+    assert '"SDL_AddGamepadMappingsFromFile"' in probe
+    assert 'SDL3-gamecontrollerdb.txt' in probe
+    assert "SDL3-MAPPINGS: external model database" in probe
     assert '"SDL_IsGamepad"' in probe
     assert '"SDL_GetJoystickNameForID"' in probe
     assert "SDL3-RAW: unmapped joystick" in probe
