@@ -135,7 +135,12 @@ static int update_keys(unsigned wanted,const unsigned *scans) {
 }
 static void restore_original(const char *reason) {
   PVOID old;
-  if(!release_all())return; /* retry; never lose an outstanding KEYUP */
+  /* Native pointer restoration has priority on focus loss even if a
+   * synthetic KEYUP failed. Keep the pending scan bits for retry on the
+   * next safe Flip, but never leave the original game joystick suspended
+   * solely because an OS keyboard event could not be delivered. */
+  if(!release_all())
+    log_universal("SDL3-UNIVERSAL: pending KEYUP retry after owner restoration");
   if(suspended && borrowed_native) {
     old=InterlockedCompareExchangePointer(SPIDER_UNIVERSAL_DI_SLOT,
                                            borrowed_native,NULL);
@@ -145,7 +150,9 @@ static void restore_original(const char *reason) {
       log_universal("SDL3-UNIVERSAL: original game-owned DirectInput pointer RESTORED on exit/focus change");
   }
   suspended=0;active=0;selected_id=0;borrowed_native=NULL;
-  sent_mask=0;menu_previous=0;menu_arm=0;
+  /* Preserve sent_mask and pulse_scan if KEYUP failed. They are retried
+   * in BeforeUI and before any new joystick gameplay injection. */
+  menu_previous=0;menu_arm=0;
   spider_sdl3_universal_reset(&state);
   (void)reason;
 }
