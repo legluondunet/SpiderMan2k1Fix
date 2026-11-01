@@ -383,11 +383,24 @@ def test_native_joystick_main_entry_opens_sdl3_directly_but_keyboard_remains_ori
     assert "SDL3-DIRECT-ENTRY: REFUSED section=" in native
     assert "SDL3-DIRECT-ENTRY: REFUSED no direct CALL rel32" in native
     assert "if(SpiderSDL3ControllerSetup_Enabled())" in bridge
-    assert "static void __cdecl spider_sdl3_direct_controller_menu(int is_joystick)" in native
+    assert "static void __cdecl spider_sdl3_direct_controller_menu(int native_mode)" in native
     assert "if(is_joystick && SpiderSDL3ControllerSetup_Enabled())" in native
+    # Verified by real game log: mode 0 opened native JOYSTICK despite
+    # our earlier (incorrect) inference that 0 was Keyboard. Mode 1
+    # is reserved for the untouched original Keyboard config.
+    assert "const int is_joystick=(native_mode==0);" in native
+    assert "native_mode==0?\"Joystick\"" in native
+    assert "native_mode==1?\"Keyboard\"" in native
+    assert "Joystick selected (mode=0)" in native
+    assert "Keyboard selected (mode=1)" in native
+    assert "SDL3-DIRECT-ENTRY: INVOKED native-mode=%d interpreted=%s" in native
+    assert "if(is_joystick && SpiderSDL3ControllerSetup_Enabled())" in native
+    assert "SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(native_mode);" in native
+    assert "const int is_joystick=(native_mode!=0);" not in native
+    assert "SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(is_joystick);" not in native
     assert "SpiderSDL3Probe_SetupPump()" in native
     assert "SpiderSDL3ControllerSetup_Open();" in native
-    assert "SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(is_joystick);" in native
+    assert "SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(native_mode);" in native
     assert "0x00AC129Cu!=0u" in native  # restore-row legacy fallback
     assert "native Joystick selection redirect" in (ROOT/"sdl3_controller_setup.h").read_text(encoding="utf-8")
     assert "for(i=0;i<nt->FileHeader.NumberOfSections;i++)" in native
