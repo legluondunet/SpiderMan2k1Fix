@@ -262,3 +262,56 @@ Controller selection still needs explicit manual choice if multiple
 pads are attached, and queued identity is revalidated on the next Flip.
 This is still a read-only generic-semantic experiment, not native
 DirectInput gameplay support.
+
+
+## 2026-11-01 first active generic PS3 menus + Bink bridge (hardware test PENDING)
+
+The uploaded `SpiderMan2k1Fix(20261101-201727).log` proves the
+PS3 `054C:0268` (SDL instance id=3) is explicitly queued and selected
+as the **generic** normalized source; `SEMANTIC ARMED`, distinct
+`pressed/released`, both stick axes and a full RT trigger stroke are
+logged. This is ACCEPTED for **read-only** SDL3 calibration/selection/
+semantic telemetry, not actual gameplay. F9's left-flush white notification
+is independently user-validated; its renderer is frozen.
+
+New `sdl3_generic_ui_policy.h` and a narrowly scoped adapter in
+`gamepad_ui_profile.c` provide a first LIVE test using the existing
+one-frame keyboard owner. This only runs when a generic non-DS4/Xbox
+controller has been **explicitly selected in SDL3 Setup**, uniquely
+verified against SDL ID, VID/PID and current foreground game HWND.
+A guarded `[Input] ExperimentalSDL3GenericMenu=0` opt-out exists;
+by default it is armed only for an explicitly selected generic pad.
+
+- **2D/menu only:** South/Cross -> Return, East/Circle -> Escape; SDL3
+  D-pad and left analog stick emit one up/down/left/right DIK scan at
+  a fresh neutral-to-press transition. Win32 extended scancodes are
+  encoded with `KEYEVENTF_EXTENDEDKEY`, and released on next game Flip.
+  The right stick, triggers and every unrelated button are inert here.
+- **Bink only:** a fresh physical South/Cross -> Return to the game's
+  **existing** skip gate. No repeated skip from a held button, no Bink
+  Back/Start/navigation injection. Bink detection takes priority over
+  menu 2D flags when the original engine reports both.
+- **Safety:** an entirely neutral button/trigger/left-stick sample is
+  needed after selecting a pad, focus loss, device change or context
+  transition. Multi-button, diagonal, START/GUIDE and trigger combinations
+  do not produce any synthetic action. Pulse UP runs before subsequent
+  focus-pause blocking. The independent native DS4/Xbox 2D input bridge
+  is suspended while a generic device is selected; **game-owned native
+  DirectInput state, RAM and controller mappings are untouched**.
+  The verified DS4/Xbox path is unchanged when no generic pad is selected.
+- **Not implemented:** original still/Enter pages, scripted cutscenes,
+  controller-owned pause and movement/camera/seven gameplay actions in 3D.
+  Only an actual PS3 hardware run can validate these newly emitted UI
+  pulses: automated tests and Windows x86 compilation cannot prove
+  the original engine responds correctly.
+
+**Next physical acceptance:** In the main menu, select PS3 in Options ->
+Joystick, use `Use selected SDL3 controller` (if a capture gets cancelled,
+click again), then keyboard Escape back to the game. Release all PS3
+controls. Test D-pad/stick UP and DOWN, Cross on a harmless submenu, Circle
+to go back. Start a new game to test **single** Cross skip of an allowed
+Bink; hold Cross through the transition and verify it does not skip a
+second scene or enter gameplay with a held input. Test Alt+Tab, return,
+hotplug if practical, Keyboard menu and DS4 unchanged. Look for
+`SDL3-GENERIC-UI: ARMED` and `SDL3-GENERIC-UI: PRESS context=MENU/BINK`
+in the log. **Do not merge** until runtime behavior is validated.
