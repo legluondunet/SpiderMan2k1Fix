@@ -43,3 +43,14 @@ PNG verification, the 2-second timer, background focus rules, game
 controls and screenshot bytes are unchanged. The code and build
 pass automated checks; actual screen appearance under GE-Proton is
 **still awaiting hardware confirmation**.
+
+
+### F9 text-to-icon proportion adjustment (2026-11-01)
+
+After reviewing the native small SpideyPC icon next to the F9 toast,
+the user opted for **smaller text, not an enlarged/blurry icon**.
+At 1920×1080 the header is now approximately **21 px** and the full
+absolute path **13 px**, compared with approximately 25 px / 15 px.
+The game's authentic 16×16 HICON stays unscaled and is aligned with
+the heading rather than centered between heading and file path.
+No screenshot output, F9/F10 controls or timeout behavior changed.
