@@ -152,7 +152,7 @@ def test_readonly_selected_sdl3_profile_trace_is_opt_in_and_neutral_gated():
     validator=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
     assert '"SDL3BindingTrace"' in validator
     assert 'GetPrivateProfileIntA("Debug","SDL3BindingTrace",0,ini)==1' in probe
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1' in probe
+    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1' in probe
     assert 'bindings_trace_lines>=48u' in probe
     assert 'spider_sdl3_bank_reset(&bindings_bank)' in probe
     assert 'spider_sdl3_bank_get(&bindings_bank,vid,pid)' in probe
