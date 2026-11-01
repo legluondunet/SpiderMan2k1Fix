@@ -35,6 +35,8 @@ typedef void (__cdecl *SDL_PumpEventsFn)(void);
 typedef void (__cdecl *SDL_UpdateGamepadsFn)(void);
 typedef uint32_t *(__cdecl *SDL_GetGamepadsFn)(int *);
 typedef uint32_t *(__cdecl *SDL_GetJoysticksFn)(int *);
+typedef bool (__cdecl *SDL_IsGamepadFn)(uint32_t);
+typedef const char *(__cdecl *SDL_GetJoystickNameForIDFn)(uint32_t);
 typedef const char *(__cdecl *SDL_GetGamepadNameForIDFn)(uint32_t);
 typedef uint16_t (__cdecl *SDL_GetGamepadVendorForIDFn)(uint32_t);
 typedef uint16_t (__cdecl *SDL_GetGamepadProductForIDFn)(uint32_t);
@@ -83,6 +85,10 @@ static SDL_PumpEventsFn sdl_pump=NULL;
 static SDL_UpdateGamepadsFn sdl_update=NULL;
 static SDL_GetGamepadsFn sdl_gamepads=NULL;
 static SDL_GetJoysticksFn sdl_joysticks=NULL;
+static SDL_IsGamepadFn sdl_is_gamepad=NULL;
+static SDL_GetJoystickNameForIDFn sdl_joystick_name=NULL;
+static uint32_t raw_last_ids[SPIDER_SDL3_MAX_GAMEPADS]={0};
+static unsigned raw_last_n=0;
 static SDL_GetGamepadNameForIDFn sdl_name=NULL;
 static SDL_GetGamepadVendorForIDFn sdl_vendor=NULL;
 static SDL_GetGamepadProductForIDFn sdl_product=NULL;
@@ -207,6 +213,10 @@ static int sdl_load(void) {
   LOAD_SDL(sdl_update,SDL_UpdateGamepadsFn,"SDL_UpdateGamepads");
   LOAD_SDL(sdl_gamepads,SDL_GetGamepadsFn,"SDL_GetGamepads");
   LOAD_SDL(sdl_joysticks,SDL_GetJoysticksFn,"SDL_GetJoysticks");
+  /* Optional diagnostics for raw devices without SDL Gamepad mapping.
+   * This does NOT grant game ownership or invent a physical mapping. */
+  sdl_is_gamepad=(SDL_IsGamepadFn)GetProcAddress(module,"SDL_IsGamepad");
+  sdl_joystick_name=(SDL_GetJoystickNameForIDFn)GetProcAddress(module,"SDL_GetJoystickNameForID");
   LOAD_SDL(sdl_name,SDL_GetGamepadNameForIDFn,"SDL_GetGamepadNameForID");
   LOAD_SDL(sdl_vendor,SDL_GetGamepadVendorForIDFn,"SDL_GetGamepadVendorForID");
   LOAD_SDL(sdl_product,SDL_GetGamepadProductForIDFn,"SDL_GetGamepadProductForID");
@@ -300,6 +310,40 @@ static void rescan(void) {
     if(ids)sdl_free(ids);
     if(joysticks)sdl_free(joysticks);
     return;
+  }
+  /* Gamepad enumeration excludes raw joysticks without a standard SDL
+   * mapping. Expose these to diagnostics instead of silently implying
+   * universal support. Never open them on the game-owned DI path. */
+  {
+    uint32_t current_raw[SPIDER_SDL3_MAX_GAMEPADS]={0};
+    unsigned raw_n=0,k;
+    for(k=0;k<(unsigned)total && raw_n<SPIDER_SDL3_MAX_GAMEPADS;k++) {
+      uint32_t id=joysticks[k];
+      unsigned seen=0,jj;
+      if(!id)continue;
+      if(sdl_is_gamepad) {
+        if(sdl_is_gamepad(id))continue;
+      } else {
+        for(jj=0;j<(unsigned)mapped;jj++)
+          if(ids[jj]==id) {seen=1;break;}
+        if(seen)continue;
+      }
+      current_raw[raw_n++]=id;
+      for(jj=0;j<raw_last_n;jj++)
+        if(raw_last_ids[jj]==id)break;
+      if(jj==raw_last_n) {
+        const char *name=sdl_joystick_name?sdl_joystick_name(id):NULL;
+        snprintf(line,sizeof(line),
+          "SDL3-RAW: unmapped joystick id=%lu name=%.130s; detected but NOT configurable/usable in 3D yet; raw mapping wizard required",
+          (unsigned long)id,name?name:"unknown");
+        say(line);
+      }
+    }
+    if(raw_n!=raw_last_n || memcmp(current_raw,raw_last_ids,
+                                   sizeof(raw_last_ids))!=0) {
+      memcpy(raw_last_ids,current_raw,sizeof(raw_last_ids));
+      raw_last_n=raw_n;
+    }
   }
   n=(unsigned)mapped;
   if(n>SPIDER_SDL3_MAX_GAMEPADS)n=SPIDER_SDL3_MAX_GAMEPADS;
