@@ -121,7 +121,7 @@ def test_c99_policy_focus_and_one_shot_guards(tmp_path):
 def test_original_write_is_one_byte_only_and_fail_closed():
     impl=(ROOT/"alt_latch_recovery.h").read_text(encoding="utf-8")
     model=(ROOT/"alt_latch_recovery_policy.h").read_text(encoding="utf-8")
-    assert 'GetPrivateProfileIntA("Input","ExperimentalAltLatchRecovery",0,ini)==1' in impl
+    assert 'GetPrivateProfileIntA("Input","ExperimentalAltLatchRecovery",1,ini)==1' in impl
     assert 'spider_alt_latch_preflight()' in impl
     assert '0x00501C56u' in impl and '0x00501BC3u' in impl
     assert '0x006B7964u' in impl
