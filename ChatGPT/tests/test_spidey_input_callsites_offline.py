@@ -31,6 +31,8 @@ def test_full_retail_direct_call_inventory_is_exact_and_increasing():
     assert len(mod.EXPECTED_STATE_UPDATE_CALLS)==20
     assert all(0x00505720<=x<0x00505902
                for x in mod.EXPECTED_STATE_UPDATE_CALLS)
+    assert len(mod.VERIFIED_SCRIPT_INPUT_CHAIN)==5
+    assert len(mod.SCRIPT_DISPATCH_SHARED_SERVICE_CALLS)==10
     assert mod.EXPECTED_COUNTS=={
         0x0050A190:1, 0x00505720:56,
         0x00479540:20, 0x004796A0:1
@@ -41,6 +43,10 @@ def test_source_known_xref_aggregation_without_binary_redistribution(monkeypatch
     mod=load_tool()
     class FakePE:
         def read(self,va,n):
+            for address, signature, _ in mod.VERIFIED_SCRIPT_INPUT_CHAIN:
+                if va==address:
+                    assert n==len(bytes.fromhex(signature))
+                    return bytes.fromhex(signature)
             assert n==21
             return b"\\x00"*n
     data=b"unit fixture, never original retail executable"
@@ -60,6 +66,12 @@ def test_source_known_xref_aggregation_without_binary_redistribution(monkeypatch
     assert result["direct_calls"]["0x00505720"]["count"]==56
     assert result["direct_calls"]["0x00479540"]["count"]==20
     assert result["direct_calls"]["0x0050A190"]["count"]==1
+    evidence=result["script_dispatch_structural_evidence"]
+    assert evidence["number_of_verified_calls"]==10
+    assert evidence["other_calls_not_yet_classified"]==46
+    assert evidence["game_mode"].startswith("UNKNOWN")
+    assert evidence["callsites"][0]=="0x00427989"
+    assert evidence["callsites"][-1]=="0x00427E9F"
     assert result["static_invariants"]["hook_authorized"] is False
     assert result["static_invariants"]["bridge_enabled"] is False
     assert result["static_invariants"]["service_called_from_many_code_regions"]

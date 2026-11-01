@@ -96,3 +96,41 @@ bridge be proposed for DS3/Steam Deck.
 
 PR #88 remains draft/stacked on PR #80, no merge into `main`.
 Signature: legluondunet assisted by ChatGPT (OpenAI).
+
+## Evidence-based script-dispatch classification (new)
+
+The SHA-verified original EXE independently confirms that
+`0x004E0461: E8 AA 74 F4 FF` calls `0x00427910`, passing an
+unsigned 16-bit value read from the script stream. That handler
+bounds-checks a selector and dispatches through the table at
+`0x00427966: FF 24 8D 98 7D 42 00`.
+
+Within this handler, **exactly ten** of the 56 direct
+`0x00505720` calls reside at `0x00427989, 0x004279C8,
+0x00427A38, 0x00427A75, 0x00427B25, 0x00427B64,
+0x00427BE8, 0x00427C27, 0x00427E60, 0x00427E9F`.
+These are statically **script-dispatch reachable**, not
+automatically classified as 3D, menu or video execution.
+The remaining **46** calls are still unclassified by
+actual game context.
+
+Some paths in that handler repeatedly call `0x0050C180`,
+which tests logical directional input. When a directional
+condition succeeds and its consume flag is set, `0x0050C180`
+calls `0x0050A9B0` (for example at `0x0050C2AE`).
+The latter sets the analog suppression byte `0x00AC0A18`
+to 1 **and resets POV to -1**. The aggregator `0x0050A190`
+reads this byte at `0x0050A2BD` and clears it only
+when both axes are strictly centered.
+
+The new audit tool includes exact-byte validation of these
+five sites. It differentiates the ten **structurally script-linked**
+callers from the 46 unclassified ones, while explicitly
+refusing to infer running game modes.
+
+The independent portable C99 reference
+`sdl3_native_direction_research.h` and its tests cover
+native-coordinate threshold/POV behavior. The two readers
+(`0x0050A190` and `0x0050A9D0`) differ: only the aggregator
+can automatically clear the suppression byte. The measured
+C99 native-coordinates do **not** calibrate SDL3 hardware axes.

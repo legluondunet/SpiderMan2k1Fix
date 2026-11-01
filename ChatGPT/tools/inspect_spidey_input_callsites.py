@@ -61,6 +61,17 @@ EXPECTED_SHARED_SERVICE_CALLS = (
 )
 RETAIL_SHA = "0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea"
 RETAIL_SIZE = 1507328
+# These executable bytes establish a script-VM -> dispatch-table call
+# chain and a native direction-reset-on-consumption path; they DO NOT
+# establish which rendering context is active.
+VERIFIED_SCRIPT_INPUT_CHAIN = (
+    (0x004E0461, "e8 aa 74 f4 ff", "script VM calls handler 0x00427910"),
+    (0x00427966, "ff 24 8d 98 7d 42 00", "handler jumps via case table"),
+    (0x0050C2AE, "e8 fd e6 ff ff", "input condition consumes direction and resets gate"),
+    (0x0050A9B0, "c6 05 18 0a ac 00 01", "native gate reset writes 0x00AC0A18"),
+    (0x0050A2BD, "a0 18 0a ac 00", "native aggregator reads the gate"),
+)
+SCRIPT_DISPATCH_SHARED_SERVICE_CALLS = EXPECTED_SHARED_SERVICE_CALLS[:10]
 
 
 def _parse_address(va: str) -> int:
@@ -85,6 +96,19 @@ def audit(data: bytes) -> dict:
         raise InvalidExecutable("56 verified shared service call addresses differ")
     if found[0x00479540] != EXPECTED_STATE_UPDATE_CALLS:
         raise InvalidExecutable("20 verified action state update calls differ")
+    script_proofs = []
+    for address, hex_bytes, meaning in VERIFIED_SCRIPT_INPUT_CHAIN:
+        if pe.read(address, len(bytes.fromhex(hex_bytes))) != bytes.fromhex(hex_bytes):
+            raise InvalidExecutable(
+                "script-event input gate signature mismatch at 0x%08X" % address)
+        script_proofs.append({
+            "va": "0x%08X" % address, "bytes": hex_bytes,
+            "static_role": meaning
+        })
+    script_calls=tuple(address for address in found[0x00505720]
+                       if 0x0042796D <= address < 0x00427D92)
+    if script_calls != SCRIPT_DISPATCH_SHARED_SERVICE_CALLS:
+        raise InvalidExecutable("script-dispatch callsite set differs")
     # Entire xref inventory is from the file's .text bytes only.
     # Addresses do not reveal which call executes in a movie/menu/3D:
     # only dynamic context tracing can establish that.
@@ -117,6 +141,16 @@ def audit(data: bytes) -> dict:
                 "count": len(addresses),
                 "callsites": ["0x%08X" % va for va in addresses],
             } for target, addresses in found.items()
+        },
+        "script_dispatch_structural_evidence": {
+            "verified_instruction_sites": script_proofs,
+            "caller": "0x004E0461",
+            "script_handler": "0x00427910",
+            "number_of_verified_calls": len(script_calls),
+            "callsites": ["0x%08X" % va for va in script_calls],
+            "other_calls_not_yet_classified": len(external)-len(script_calls),
+            "game_mode": "UNKNOWN: script commands may execute in different modes",
+            "input_gate_reset": "0x0050C180 may call 0x0050A9B0 after accepting directional events",
         },
         "shared_service_calls_by_4kb_address_bucket": groups,
         "shared_service_callsite_context_sha256_16": fingerprints,
