@@ -172,6 +172,45 @@ to confirm original editing works, and select Joystick to confirm direct
 SDL3 opening. A wrong selection or a rejected hook is a reason to revert
 to the previous tested DLL; never merge before these observations.
 
+## 2026-11-01 direct-menu hardware acceptance and generic gameplay groundwork
+
+User explicitly validated direct **Options -> Joystick -> SDL3 Setup**, and the
+`SpiderMan2k1Fix(20261101-185042).log` supports it: the original
+`PCSHELL_DoControllerConfig` hook is `ACTIVE` with two callsites,
+`native-mode=1` opens the original Keyboard configuration unchanged,
+and `native-mode=0` opens SDL3 directly, including three repeated
+modal-open/close/focus-return cycles. This UX milestone is **accepted**.
+
+**Next stage (implementation in this draft; no live game injection):**
+The native game refuses PS3 `054C:0268` ownership because DirectInput
+button mappings cannot be inferred from SDL's normalized mappings.
+Instead of loosening the native owner check, a separate explicit
+**generic SDL3 selection** has been added. A PS3 player can choose their
+device in SDL3 Setup, **press the physical controller Start** to claim
+the setup-only selected pad, then close the modal. On the next foreground
+game Flip, the request is checked against the still-connected,
+uniquely identified SDL3 instance; for an otherwise unsupported native
+model it becomes `SDL3-GENERIC: SELECTED ...`, with **no native
+DirectInput owner handoff**. For Sony DS4/Xbox360, the prior verified
+native route remains unchanged.
+
+The newly exposed `SpiderSDL3Probe_GenericSelectedSample()` returns
+only the selected connected instance, with **all four stick axes** and
+both triggers, on the game thread. The neutral-gated
+`sdl3_universal_actions.h` evaluator now emits a bounded read-only
+`SDL3-GENERIC: SEMANTIC ... pressed=... released=...` trace from the
+stored eight-action model profile. Foreground loss, model/profile
+changes and invalid snapshots reset the gate. No keyboard synthesis,
+native DirectInput read/write or other gameplay action is performed.
+
+**Hardware test needed before gameplay bridging:** with PS3 selected,
+observe `SDL3-GENERIC: SELECTED explicit modal Start`, then
+`SDL3-GENERIC: SEMANTIC ARMED` after releasing every button,
+then action `pressed/released` changes and LX/LY/RX/RY motion. Existing
+SDL3 diagnostic, Keyboard menu and DS4/Xbox360 native paths must still
+operate normally. Passing these traces does **NOT** mean the PS3 can
+already move Spider-Man, navigate in-game menus or skip videos.
+
 ## Outstanding
 
 - Hardware retest the isolated SDL3 normalized input diagnostic
