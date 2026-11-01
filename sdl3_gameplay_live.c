@@ -1,4 +1,4 @@
-/* Opt-in, DS4 + verified wired Xbox 360 3D action-map bridge. No COM vtable interception.
+/* Default-on, guarded DS4 + verified wired Xbox 360 3D action-map bridge. No COM vtable interception.
  * The ORIGINAL game-owned DirectInput reader keeps movement/POV, and
  * consumes the same SHA-verified seven (mask, button) DWORD slots that
  * the already-tested canonical Sony/Xbox native swap uses.
