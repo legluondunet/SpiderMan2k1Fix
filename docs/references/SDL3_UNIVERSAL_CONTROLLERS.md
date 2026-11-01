@@ -102,6 +102,33 @@ the currently functioning implementation.
   The existing native DS4/Xbox-only bridge remains unchanged.
 - The F9 screenshot and F10 in-game location shortcuts remain reserved.
 
+## Experimental direct Joystick menu entry (awaiting hardware test)
+
+Selecting **Joystick** in the retail game's options should open the SDL3
+configuration window **directly**, without the now-redundant native list
+of seven controller actions or a second `SDL3 TEST (PREVIEW)` selection.
+The `Keyboard` entry must still invoke the original PCShell configuration
+without any UI or binding modification.
+
+The verified decompilation symbol index
+`krystalgamer/spidey-decomp/tools/names.json` identifies
+`PCSHELL_DoControllerConfig(bool)` at the original game VA `0x0050CE70`.
+Instead of patching this shared function entry, the experimental redirect
+finds executable-section x86 direct CALL instructions targeting it and
+replaces only their relative CALL destinations. A cdecl dispatcher
+passes through keyboard configuration to the original unmodified function,
+but opens SDL3 immediately for joystick configuration. It checks PE
+layout and the original CALL targets; if discovery or patching fails, it
+preserves the older native Joystick submenu with its manual preview row.
+There is no gameplay or DirectInput data mutation and no changes to F9/F10.
+
+**Important:** runtime original-call enumeration and the original boolean
+value identifying Joystick have **not** yet been confirmed on real hardware
+for this bypass. Check `SDL3-DIRECT-ENTRY: ACTIVE`, then select Keyboard
+to confirm original editing works, and select Joystick to confirm direct
+SDL3 opening. A wrong selection or a rejected hook is a reason to revert
+to the previous tested DLL; never merge before these observations.
+
 ## Outstanding
 
 - Hardware retest the isolated SDL3 normalized input diagnostic
