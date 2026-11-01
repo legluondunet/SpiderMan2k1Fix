@@ -196,8 +196,8 @@ def test_pad_close_transfers_displayed_profile_only_after_destroy():
     keyboard=modal.split("static int handle_setup_keyboard(",1)[1].split(
         "static LRESULT CALLBACK setup_wndproc(",1)[0]
     assert "setup_close_from_pad(" not in keyboard
-    assert "L1/R1: browse pad" in modal
-    assert "Circle/B: close + use this pad" in modal
+    assert "L1/R1: browse controllers" in modal
+    assert "Use selected SDL3 controller" in modal
 
 
 def test_modal_start_defers_original_owner_until_next_verified_game_flip():
