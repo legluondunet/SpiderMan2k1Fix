@@ -84,8 +84,8 @@ def test_wizard_entry_and_native_gameplay_remain_strictly_separated():
     bridge=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
     ini=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
     assert '"ExperimentalSDL3ControllerSetup"' in ini
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3ControllerSetup",0,ini)==1' in ui
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1' in ui
+    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3ControllerSetup",1,ini)==1' in ui
+    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1' in ui
     assert 'SpiderSDL3ControllerSetup_Init(ini,logger);' in bridge
     assert 'sdl3_controller_setup.c' in build
     assert 'SpiderSDL3ControllerSetup_Open();' in native
