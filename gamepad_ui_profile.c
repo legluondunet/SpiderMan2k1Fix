@@ -1450,58 +1450,11 @@ static void sdl3_trace_3d_readonly(const DIJOYSTATE2 *state) {
   sdl3_3d_trace_y=state->lY;
   sdl3_3d_trace_valid=1;
 }
-/* Generic PS3 and other explicitly selected nonnative models:
- * reuse the existing, proven one-Flip synthetic keyboard owner, never
- * the original game's DirectInput device or vendor-specific button map.
- * This is the first LIVE milestone only: 2D menus and native Bink.
- * All 3D gameplay, cutscenes, still pages and background are inert.
- * We suppress our separate DS4/Xbox UI device while generic is selected,
- * so this module cannot synthesize TWO controllers at once.
- * Key-up always runs before this helper on EVERY normal Flip. */
+/* Live helper lives BELOW OnFlip, so legacy native passive trace sections
+ * cannot accidentally include synthetic input implementation. */
 static int sdl3_generic_ui_on_flip(HWND hwnd,int menu_2d,
                                   int gameplay_3d,int bink_active,
-                                  int native_pause_active) {
-  uint32_t id=0;
-  uint16_t vid=0,pid=0;
-  SpiderSDL3ControllerSample sample;
-  unsigned ctx,scan,was_armed;
-  char line[190];
-  if(!generic_ui_requested ||
-     !SpiderSDL3Probe_GenericSelectedSample(&id,&vid,&pid,&sample)) {
-    spider_sdl3_generic_ui_reset(&generic_ui);
-    return 0;
-  }
-  if(device)disable_profile("SDL3-GENERIC-UI: stopped secondary Sony/Xbox UI DirectInput source; exclusive generic adapter selected");
-  sdl3_ui_instance=0;
-  xbox_rt_swing_release("generic SDL3 owner");
-  if(!hwnd || GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {
-    spider_sdl3_generic_ui_reset(&generic_ui);
-    return 1;
-  }
-  ctx=bink_active?SPIDER_GENERIC_UI_BINK:
-    (menu_2d && !gameplay_3d && !native_pause_active?
-       SPIDER_GENERIC_UI_MENU:SPIDER_GENERIC_UI_NONE);
-  was_armed=generic_ui.armed;
-  scan=spider_sdl3_generic_ui_step(&generic_ui,id,ctx,&sample);
-  if(!was_armed && generic_ui.armed && generic_ui_reports++<40u) {
-    snprintf(line,sizeof(line),
-      "SDL3-GENERIC-UI: ARMED id=%lu VID:PID=%04X:%04X context=%s (neutral; 3D untouched)",
-      (unsigned long)id,(unsigned)vid,(unsigned)pid,
-      ctx==SPIDER_GENERIC_UI_BINK?"BINK":"MENU");
-    report(line);
-  }
-  if(scan && !active_scan) {
-    if(generic_ui_reports++<40u) {
-      snprintf(line,sizeof(line),
-        "SDL3-GENERIC-UI: PRESS id=%lu context=%s DIK=0x%02X (one Flip; full neutral required before next; native DI unchanged)",
-        (unsigned long)id,
-        ctx==SPIDER_GENERIC_UI_BINK?"BINK":"MENU",scan);
-      report(line);
-    }
-    begin_scancode(scan,"SDL3 generic selected pad menu/Bink");
-  }
-  return 1; /* Never mix independent Sony/Xbox UI injection this frame. */
-}
+                                  int native_pause_active);
 void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active) {
   DIJOYSTATE2 state;
@@ -1960,4 +1913,56 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   previous_pause=pause_pressed;
   previous_share=share_pressed;
   previous_native_start=native_start_pressed;
+}
+/* Generic PS3 and other explicitly selected nonnative models:
+ * reuse the existing, proven one-Flip synthetic keyboard owner, never
+ * the original game's DirectInput device or vendor-specific button map.
+ * This is the first LIVE milestone only: 2D menus and native Bink.
+ * All 3D gameplay, cutscenes, still pages and background are inert.
+ * We suppress our separate DS4/Xbox UI device while generic is selected,
+ * so this module cannot synthesize TWO controllers at once.
+ * Key-up always runs before this helper on EVERY normal Flip. */
+static int sdl3_generic_ui_on_flip(HWND hwnd,int menu_2d,
+                                  int gameplay_3d,int bink_active,
+                                  int native_pause_active) {
+  uint32_t id=0;
+  uint16_t vid=0,pid=0;
+  SpiderSDL3ControllerSample sample;
+  unsigned ctx,scan,was_armed;
+  char line[190];
+  if(!generic_ui_requested ||
+     !SpiderSDL3Probe_GenericSelectedSample(&id,&vid,&pid,&sample)) {
+    spider_sdl3_generic_ui_reset(&generic_ui);
+    return 0;
+  }
+  if(device)disable_profile("SDL3-GENERIC-UI: stopped secondary Sony/Xbox UI DirectInput source; exclusive generic adapter selected");
+  sdl3_ui_instance=0;
+  xbox_rt_swing_release("generic SDL3 owner");
+  if(!hwnd || GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {
+    spider_sdl3_generic_ui_reset(&generic_ui);
+    return 1;
+  }
+  ctx=bink_active?SPIDER_GENERIC_UI_BINK:
+    (menu_2d && !gameplay_3d && !native_pause_active?
+       SPIDER_GENERIC_UI_MENU:SPIDER_GENERIC_UI_NONE);
+  was_armed=generic_ui.armed;
+  scan=spider_sdl3_generic_ui_step(&generic_ui,id,ctx,&sample);
+  if(!was_armed && generic_ui.armed && generic_ui_reports++<40u) {
+    snprintf(line,sizeof(line),
+      "SDL3-GENERIC-UI: ARMED id=%lu VID:PID=%04X:%04X context=%s (neutral; 3D untouched)",
+      (unsigned long)id,(unsigned)vid,(unsigned)pid,
+      ctx==SPIDER_GENERIC_UI_BINK?"BINK":"MENU");
+    report(line);
+  }
+  if(scan && !active_scan) {
+    if(generic_ui_reports++<40u) {
+      snprintf(line,sizeof(line),
+        "SDL3-GENERIC-UI: PRESS id=%lu context=%s DIK=0x%02X (one Flip; full neutral required before next; native DI unchanged)",
+        (unsigned long)id,
+        ctx==SPIDER_GENERIC_UI_BINK?"BINK":"MENU",scan);
+      report(line);
+    }
+    begin_scancode(scan,"SDL3 generic selected pad menu/Bink");
+  }
+  return 1; /* Never mix independent Sony/Xbox UI injection this frame. */
 }
