@@ -71,6 +71,17 @@ static int wizard_neutral(const SpiderSDL3RawSample *s) {
 static void wizard_finish(SpiderRawWizard *w);
 static void wizard_next(SpiderRawWizard *w,SpiderSDL3RawInput input) {
   if(!w || w->step>=SPIDER_RAW_MAP_COUNT)return;
+  if(w->log) {
+    char line[192];
+    const char *kind=input.kind==SPIDER_RAW_BUTTON?"BUTTON":
+                     input.kind==SPIDER_RAW_AXIS?"AXIS":
+                     input.kind==SPIDER_RAW_HAT?"HAT":"SKIPPED";
+    snprintf(line,sizeof(line),
+      "SDL3-RAW-WIZARD: step=%u/%u semantic=%s source=%s index=%u hat=%u",
+      w->step+1u,SPIDER_RAW_MAP_COUNT,prompts[w->step],kind,
+      input.index,input.hat_value);
+    w->log(line);
+  }
   w->mapping.input[w->step]=input;
   w->axis_release_required=input.kind==SPIDER_RAW_AXIS;
   w->step++;
@@ -155,6 +166,7 @@ static void wizard_finish(SpiderRawWizard *w) {
   if(!spider_sdl3_raw_build(w->guid,w->name,&w->mapping,
                mapping,sizeof(mapping))) {
     wizard_text(w,"Mapping incomplete or unsupported. Press Enter to restart.");
+    if(w->log)w->log("SDL3-RAW-WIZARD: REFUSED incomplete/unsupported button-axis mapping");
     w->active_id=0;
     SpiderSDL3Probe_RawEnd();
     return;
@@ -192,7 +204,8 @@ static void wizard_start(SpiderRawWizard *w) {
   }
   index=(unsigned)selected;
   if(!SpiderSDL3Probe_RawBegin(w->ids[index],w->guid,w->name,sizeof(w->name))) {
-    wizard_text(w,"SDL3 could not open this raw joystick. Check connection and try again.");
+    wizard_text(w,"SDL3 could not open this joystick. Check connection and try again.");
+    if(w->log)w->log("SDL3-RAW-WIZARD: begin REFUSED; SDL3 raw open/GUID unavailable");
     return;
   }
   w->active_id=w->ids[index];
@@ -219,6 +232,15 @@ static void wizard_refresh(SpiderRawWizard *w) {
   }
   if(w->raw_count)SendMessageA(w->pads,CB_SETCURSEL,0,0);
   else wizard_text(w,"SDL3 detects no joystick. Connect a controller, then reopen this window.");
+  if(w->log) {
+    char trace[170];
+    unsigned mapped=0;
+    for(i=0;i<w->raw_count;i++)if(w->already_mapped[i])mapped++;
+    snprintf(trace,sizeof(trace),
+      "SDL3-RAW-WIZARD: found SDL joysticks=%u mapped=%u raw-only=%u (mapped devices CAN be recalibrated)",
+      w->raw_count,mapped,w->raw_count-mapped);
+    w->log(trace);
+  }
 }
 static LRESULT CALLBACK wizard_wndproc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
   SpiderRawWizard *w=(SpiderRawWizard *)(uintptr_t)
