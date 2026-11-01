@@ -145,9 +145,15 @@ def test_keyboard_calibration_wizard_is_built_and_keeps_gameplay_unchanged():
     wizard=(ROOT/"sdl3_raw_wizard.c").read_text(encoding="utf-8")
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     assert "sdl3_raw_wizard.c" in build
-    assert "if(vk==VK_F8)" in setup
+    assert "SPIDER_UI_RAW=1008, SPIDER_UI_TEST=1009" in setup
     assert "SpiderSDL3RawWizard_Open(ui->hwnd,setup_report)" in setup
-    assert "if(vk==VK_F9)" in setup
+    assert "setup_toggle_sdl3_test(ui)" in setup
+    assert "Test SDL3 inputs" in setup
+    assert "Recognize unknown joystick" in setup
+    assert "F9/F10 untouched" in setup
+    assert "if(vk==VK_F9)" not in setup
+    assert "if(vk==VK_F10)" not in setup
+    assert "if(vk==VK_F8)" not in setup
     assert "SDL3 TEST: buttons=" in setup
     assert "raw joystick recognition" in wizard.lower()
     assert "wizard_neutral" in wizard
