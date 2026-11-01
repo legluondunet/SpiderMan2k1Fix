@@ -594,6 +594,28 @@ static int spider_raw_ui_thread(void) {
   return requested && ready && scanned && sdl3_game_thread &&
          sdl3_game_thread==GetCurrentThreadId();
 }
+unsigned SpiderSDL3Probe_RawListAll(uint32_t *out,
+                                      unsigned *mapped_flags,
+                                      unsigned capacity) {
+  uint32_t *raw;
+  int count=0;
+  unsigned i,n=0;
+  if(!spider_raw_ui_thread() || !sdl_joysticks || !sdl_is_gamepad)return 0;
+  raw=sdl_joysticks(&count);
+  if(!raw)return 0;
+  if(count<0) {sdl_free(raw);return 0;}
+  for(i=0;i<(unsigned)count;i++) {
+    uint32_t id=raw[i];
+    if(!id)continue;
+    if(n<capacity) {
+      if(out)out[n]=id;
+      if(mapped_flags)mapped_flags[n]=sdl_is_gamepad(id)?1u:0u;
+    }
+    ++n;
+  }
+  sdl_free(raw);
+  return n;
+}
 unsigned SpiderSDL3Probe_RawList(uint32_t *out,unsigned capacity) {
   uint32_t *raw,*mapped;
   int count=0,mapped_count=0;
@@ -640,7 +662,9 @@ int SpiderSDL3Probe_RawBegin(uint32_t id,char guid[33],
      !sdl_raw_axes_count || !sdl_raw_hats_count || !sdl_raw_button ||
      !sdl_raw_axis || !sdl_raw_hat || !sdl_add_mapping)
     return 0;
-  n=SpiderSDL3Probe_RawList(ids,SPIDER_SDL3_MAX_GAMEPADS);
+  /* A device with an existing SDL mapping must still be eligible for
+   * recalibration. A standard mapping does not guarantee correctness. */
+  n=SpiderSDL3Probe_RawListAll(ids,NULL,SPIDER_SDL3_MAX_GAMEPADS);
   if(n>SPIDER_SDL3_MAX_GAMEPADS)n=SPIDER_SDL3_MAX_GAMEPADS;
   for(i=0;i<n;i++)if(ids[i]==id)break;
   if(i==n)return 0;
