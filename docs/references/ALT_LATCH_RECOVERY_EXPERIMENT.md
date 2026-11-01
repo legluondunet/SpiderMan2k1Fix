@@ -57,9 +57,12 @@ Disable by removing the key or setting it to `0`.
   at least 180 ms after return; the original Right Alt and Tab latches
   must also be released. New physical Alt/Tab presses reset the
   stable counter.
-- Final foreground, OS modifier and native byte conditions are
-  rechecked immediately before writing. If all pass, the **only
-  native write possible** is `0x006B7964` (original keyboard
+- Final foreground, **all four Win32 modifier keys** (Left Alt,
+  generic Alt, Right Alt, Tab), **both other original DirectInput
+  latches** (Right Alt and Tab), and the native Left Alt byte are
+  **re-read immediately before writing**. This rejects an intervening
+  Tab/AltGr press after the six-frame policy decision. If all pass,
+  the **only native write possible** is `0x006B7964` (original keyboard
   `0x006B792C + DIK_LMENU 0x38`), changing `0x7F -> 0x80`.
   `0x80` is the original game keyboard reader's normal *released
   edge* representation. The operation is **one-shot per confirmed
