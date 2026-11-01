@@ -13,3 +13,28 @@
 **Simplified comic PAUSE panel (PR #16):** To avoid black glyph fragments and cross-window artifacts in Wine, replace the former shaped child plus two alpha popups with a **single game-owned, nonactivating, per-pixel alpha banner** for the red frame and full-white text, plus the original independently configurable 55% grid shade behind it. The entire rounded banner is removed from the grid overlay region. The banner uses an atomic `UpdateLayeredWindow` bitmap (transparent outside rounded corners; muted dark-plum background; fully opaque glyphs/border), **not** an extra 35% panel, a color key or a layered child. Only display while Spider-Man is the Windows foreground **and active** window; otherwise keep game/audio paused but hide the visual layers. Wine and Windows 11 runtime acceptance is required; no merge/release yet.
 
 **Wine/Linux focus-only pause visuals (PR #15):** The game and enabled Bink/DirectSound streams pause as soon as actual loss of focus is confirmed, but the PAUSE panel and its game-owned translucent black/grid popups are **not shown while another application owns the foreground**. They appear only when Spider-Man is foreground again and disappear if it loses focus a second time while paused; this avoids drawing a floating red border on top of Linux desktop applications. Inside the banner, all 16 px grid strokes are clipped out and the additional darkened center remains translucent; the 25 px bold upright `PRESS ANY KEY TO RESUME` hint is protected by expanded shaped-glyph masks. Retains consumed ordinary-key resume (no dedicated F9/Space modes), while passing **Alt+Tab and Windows desktop-switch shortcuts** through so users can leave the game again during a pause. **Note:** requires real Windows 11 and Wine regression testing before release, since GDI layering and popup stacking are compositor-dependent.\n\n**Dimmed pause background (PR #12):** When `[Input] PauseOnFocusLoss=1`, a non-topmost, nonactivating layered **popup owned by the game window** darkens the paused scene with a **55% black tint** and a fine **16-pixel square grid**. The original red-framed comic-style `PAUSE` message stays centered and bright: the popup is cut out around the exact border and white glyphs of the existing shaped banner. The effect appears only during a latched focus pause, and both windows are destroyed before video/audio resumes. `[Input] PauseDim=1` enables the shade (default on, although the underlying focus pause remains disabled by default). `PauseDimOpacity=55` adjusts darkness from `0` to `90` percent. `PauseGrid=1` enables the fine square pattern, and `PauseGrid=0` keeps a smooth dark tint. Set `PauseDim=0` to restore the previous validated plain paused image. The grid is painted inside the original nonactivating alpha popup. PR #14 can add a second small **game-owned, nonactivating popup** for the darker center only; neither changes DirectDraw, Bink, DirectSound or DirectInput. The popup avoids the original 2001 EXE's layered-child compatibility restriction and is not desktop-topmost. Verify the final look and Z-order on native Windows 11; automated CI cannot validate the compositor.
+
+
+## F9 screenshot confirmation — pause-panel typography (2026-11-01)
+
+User approved a camera icon on the **left** and the focus-pause style
+for the F9 screenshot notification, **retaining the complete Windows
+file path** instead of shortening it to just the filename.
+
+The existing common `toast_draw_dc` in `f9_toast.c` now draws
+`SCREENSHOT SAVED` (or `SCREENSHOT FAILED`) in **Arial Black bold
+italic with a dark outline**, echoing the native game and the custom
+focus-loss `PAUSED` title. A smaller, nonitalic **Arial Bold**
+secondary line displays the entire original absolute path, broken
+across lines only when required; no ellipsis or path truncation.
+A lightweight vector-like camera icon is drawn with GDI primitives
+before the text, requiring no new fonts, image files or resources.
+The familiar translucent blue/violet background and lavender border
+are maintained.
+
+Both the live-game offscreen DirectDraw compositor and the static
+comic no-Flip layered popup reuse the same painter. F9 capture,
+PNG verification, the 2-second timer, background focus rules, game
+controls and screenshot bytes are unchanged. The code and build
+pass automated checks; actual screen appearance under GE-Proton is
+**still awaiting hardware confirmation**.
