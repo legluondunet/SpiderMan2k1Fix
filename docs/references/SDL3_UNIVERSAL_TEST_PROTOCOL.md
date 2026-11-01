@@ -30,10 +30,14 @@ DirectInput and the existing DS4/Xbox integration are intentionally unchanged.
    If no devices appear, SDL3 is not exposing a joystick at all; the log will show the device inventory.
 2. Select the intended physical joystick by **name** using the keyboard; press **Enter**. Already-mapped devices can be recalibrated; the existing mapping is not replaced until the wizard completes successfully.
 3. The assistant walks through **20** SDL-standard controls. As soon
-   as capture starts, the device dropdown is **disabled and collapsed**,
-   and keyboard focus leaves that dropdown. Release each button before
-   pressing the next. Test the important **B/Circle** and **X/Square**
-   controls first: neither should reopen the device dropdown.
+   as capture starts, the device dropdown **and all three bottom buttons**
+   (Start/Restart, Skip, Cancel/Close) should become **disabled/grayed out**.
+   Their Win32 click notifications are also rejected while SDL3 captures.
+   Keyboard focus moves to the inert wizard window. Release each button
+   before pressing the next. Verify that **B/Circle** and **X/Square**
+   advance the wizard WITHOUT opening the device list or activating
+   any of the three bottom buttons. Also test left-stick directions when
+   the wizard reaches steps 15/16: they must not change keyboard focus.
 4. During capture, ordinary gamepad-emulated Win32 Enter/Escape/Space and
    arrow messages are discarded before dialog navigation. If needed, use
    deliberate **keyboard-only chords**: **Ctrl+Shift+S** skips an optional
@@ -59,8 +63,8 @@ DirectInput and the existing DS4/Xbox integration are intentionally unchanged.
 - Which test (A/B), device VID:PID (if known), Wine/Windows runtime.
 - For Test A: whether the SDL button mask changes on SHARE/BACK and L3,
   and whether the keyboard regains control after closing the setup.
-- For Test B: specifically note whether pressing **B/Circle** and
-  **X/Square** unexpectedly opens the dropdown. Attach the
+- For Test B: specifically note whether **B/Circle**, **X/Square** or moving the
+  **left stick** reactivates any disabled bottom button or opens the dropdown. Attach the
   `SDL3-RAW-WIZARD: capture UI ISOLATED` and
   `suppressed Win32 keyboard` log lines, the furthest captured step,
   whether the mapping saved and whether the game re-detected it after restart.
