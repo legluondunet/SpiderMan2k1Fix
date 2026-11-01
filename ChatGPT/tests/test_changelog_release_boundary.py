@@ -10,11 +10,11 @@ README=(ROOT/"README.md").read_text(encoding="utf-8")
 def test_unreleased_integration_is_explicitly_draft():
     assert CHANGELOG.startswith("# Changelog\n\n## Unreleased")
     head=CHANGELOG.split("## 1.1.0 — October 27, 2026",1)[0]
-    assert "draft PR #91" in head
+    assert "staging; not released" in head
     assert "**Not released or merged.**" in head
-    assert "experimental INI opt-ins" in head
+    assert "enabled by default" in head
     assert "ExperimentalAltLatchRecovery=1" in head
-    assert "default-OFF" in head
+    assert "Default-on" in head
     assert "20/20 physical" in head
     assert "37/37" in head
     assert "DS3, Steam Deck and arbitrary controllers are not validated" in head
