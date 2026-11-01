@@ -15,7 +15,7 @@ BUILD = (ROOT/"build.sh").read_text(encoding="utf-8")
 
 
 def test_screenshot_confirmation_is_english_and_includes_full_path():
-    assert 'L"Screenshot saved to:"' in TOAST
+    assert 'L"SCREENSHOT SAVED"' in TOAST
     assert 'SpiderF9Toast_PublishSavedPath(const WCHAR *full_path)' in TOAST
     assert 'memcpy(toast_path,full_path,(len+1u)*sizeof(WCHAR));' in TOAST
     assert 'L"\\\\' not in TOAST or "toast_wrap_path" in TOAST
@@ -99,7 +99,7 @@ def test_existing_game_hooks_and_png_image_bytes_unchanged():
 
 def test_failed_png_is_reported_and_final_file_is_verified():
     assert "SpiderF9Toast_PublishError" in HEADER
-    assert 'L"Screenshot failed:"' in TOAST
+    assert 'L"SCREENSHOT FAILED"' in TOAST
     assert "spider_png_verify(dest)" in ENC
     assert "GetFileSizeEx(f,&length)" in ENC
     assert "ReadFile(f,prefix,sizeof(prefix),&got,NULL)" in ENC
@@ -111,8 +111,8 @@ def test_failed_png_is_reported_and_final_file_is_verified():
 
 
 def test_heading_uses_real_wide_string_length_and_pause_palette():
-    assert 'TextOutW(dc,x+pad,y+pad,heading,' in TOAST
-    assert '(int)wcslen(heading));' in TOAST
+    assert 'TextOutW(dc,text_x,y+pad,heading,heading_len)' in TOAST
+    assert 'heading_len=(int)wcslen(heading);' in TOAST
     assert 'sizeof(heading)/sizeof(heading[0])' not in TOAST
     assert 'RGB(50,50,160)' in TOAST
     assert 'RGB(169,148,251)' in TOAST
@@ -213,3 +213,31 @@ def test_toast_inactive_path_is_true_wide_nul_not_multichar_constant():
     assert r"L'\\0'" not in TOAST
     assert "else path[0]=" in TOAST
     assert "if(path[0]==" in TOAST
+
+
+def test_screenshot_toast_matches_focus_pause_typography_and_camera_icon():
+    pause=(ROOT/"pause_surface.c").read_text(encoding="utf-8")
+    assert 'L"Arial Black"' in pause
+    assert "FW_HEAVY,TRUE" in TOAST
+    assert 'L"Arial Black"' in TOAST
+    assert "ANTIALIASED_QUALITY" in TOAST
+    # Smaller sans-serif secondary line keeps the entire original path.
+    assert "FW_BOLD,FALSE" in TOAST
+    assert 'L"Arial"' in TOAST
+    assert "toast_wrap_path(dc,path,max_path_w,starts,lengths)" in TOAST
+    assert "DT_END_ELLIPSIS" not in TOAST
+    assert "path+starts[i],lengths[i]" in TOAST
+    # Camera is drawn with shared GDI primitives; no on-disk icon/fonts.
+    assert "static BOOL toast_draw_camera_icon(" in TOAST
+    assert "toast_draw_camera_icon(dc,x+pad,y+pad,icon_px)" in TOAST
+    assert "RoundRect(dc,left,camera_top" in TOAST
+    assert "Ellipse(dc,x+size/3" in TOAST
+    assert "SelectObject(dc,lens)" in TOAST
+    assert "RGB(240,47,69)" in TOAST
+    assert "RGB(7,4,15)" in TOAST
+    # Both gameplay compositor and no-Flip comic popup use this drawer.
+    assert "drawn=toast_draw_dc(dc,width,height,path,success);" in TOAST
+    assert "toast_draw_dc(mem,(DWORD)size.cx,(DWORD)size.cy,path,success)" in TOAST
+    assert "CreateThread(NULL,0,toast_popup_thread" in TOAST
+    assert "SaveDC(dc)" in TOAST
+    assert "RestoreDC(dc,saved_dc)" in TOAST
