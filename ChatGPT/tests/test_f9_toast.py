@@ -215,7 +215,7 @@ def test_toast_inactive_path_is_true_wide_nul_not_multichar_constant():
     assert "if(path[0]==" in TOAST
 
 
-def test_screenshot_toast_matches_focus_pause_typography_and_camera_icon():
+def test_screenshot_toast_matches_focus_pause_typography_and_native_small_icon():
     pause=(ROOT/"pause_surface.c").read_text(encoding="utf-8")
     assert 'L"Arial Black"' in pause
     assert "FW_HEAVY,TRUE" in TOAST
@@ -227,12 +227,19 @@ def test_screenshot_toast_matches_focus_pause_typography_and_camera_icon():
     assert "toast_wrap_path(dc,path,max_path_w,starts,lengths)" in TOAST
     assert "DrawTextW(" not in TOAST  # No ellipsis/truncation API
     assert "path+starts[i],lengths[i]" in TOAST
-    # Camera is drawn with shared GDI primitives; no on-disk icon/fonts.
-    assert "static BOOL toast_draw_camera_icon(" in TOAST
-    assert "toast_draw_camera_icon(dc,x+pad,y+pad,icon_px)" in TOAST
-    assert "RoundRect(dc,left,camera_top" in TOAST
-    assert "Ellipse(dc,x+size/3" in TOAST
-    assert "SelectObject(dc,lens)" in TOAST
+    # Use the exact small Windows HICON embedded by the *running* game;
+    # no bundled camera symbol, no custom resource ID, no stretched image.
+    assert "#include <shellapi.h>" in TOAST
+    assert "static INIT_ONCE toast_icon_once=INIT_ONCE_STATIC_INIT" in TOAST
+    assert "InitOnceExecuteOnce(&toast_icon_once," in TOAST
+    assert "GetModuleFileNameW(NULL,exe,MAX_PATH)" in TOAST
+    assert "ExtractIconExW(exe,0,NULL,&small,1)" in TOAST
+    assert "SPIDER_F9_EXE_ICON_SIZE 16" in TOAST
+    assert "DrawIconEx(dc,x+pad,icon_y,game_icon," in TOAST
+    assert "icon_px,icon_px,0,NULL,DI_NORMAL)" in TOAST
+    assert "toast_draw_camera_icon" not in TOAST
+    assert "toast_original_small_icon()" in TOAST
+    assert "no bundled" not in TOAST or "DrawIconEx" in TOAST
     assert "RGB(240,47,69)" in TOAST
     assert "RGB(7,4,15)" in TOAST
     # Both gameplay compositor and no-Flip comic popup use this drawer.
