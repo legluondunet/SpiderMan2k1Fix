@@ -283,7 +283,7 @@ def test_mouse_free_keyboard_and_selected_gamepad_setup_navigation():
     assert 'SPIDER_SETUP_NAV_LEFT=21, SPIDER_SETUP_NAV_RIGHT=22' in nav
     assert 'edges=physical&~old;' in nav
     assert 'Stick Left/Right: navigate' in ui
-    assert 'L1/R1 browse pads' in ui
+    assert 'L1/R1: browse controllers' in ui
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     setup_read=probe.split("int SpiderSDL3Probe_SetupRead(",1)[1].split(
         "/* SDL3 exposes each trigger",1)[0]
