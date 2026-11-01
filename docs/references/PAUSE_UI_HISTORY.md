@@ -67,3 +67,18 @@ icon within a compact violet one-line banner. The full screenshot path
 is still stored and validated for the actual PNG output and remains
 available through the usual diagnostic log. The two-second duration,
 no-focus popup behavior, and PNG contents are unchanged.
+
+### F9 left-edge three-sided notification (2026-11-01)
+
+After explicit confirmation, the user chose a **bottom-left** overlay
+**flush against the left screen edge** while retaining its existing small
+bottom margin. The screenshot message now uses **white** text (with the
+existing dark outline), the game's original **32×32 icon**, and a compact
+**rectangular** blue-violet translucent panel. A single lavender **1 px**
+border exists only on the **top, right and bottom** sides; the left edge
+has no rim. Rounded-corner clipping and inset decorative lines are
+removed. The caption remains **SCREENSHOT SAVED** or **SCREENSHOT FAILED**
+without a filename/path onscreen. The absolute screenshot path remains
+in logs and the PNG destination; capture timing, image bytes, game input
+and no-Flip comic fallback are unchanged. Actual Wine/GE-Proton visual
+confirmation remains pending.
