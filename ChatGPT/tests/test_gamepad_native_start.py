@@ -64,7 +64,9 @@ def test_ui_enter_is_not_injected_into_ordinary_3d_or_background():
     assert "previous_buttons" in PROFILE
     assert "previous_back" in PROFILE
     assert "active_scan=scan" in PROFILE
-    assert "in.ki.wScan=(WORD)active_scan" in PROFILE
+    assert "in.ki.wScan=(WORD)(active_scan&0x7Fu);" in PROFILE
+    assert "KEYEVENTF_EXTENDEDKEY" in PROFILE
+    assert "in.ki.wScan=(WORD)(scan&0x7Fu);" in PROFILE
     assert "if(!active_scan)return 0;" in PROFILE
     # Read hardware with our own (nonexclusive) DI object, not the game's.
     assert "DISCL_FOREGROUND|DISCL_NONEXCLUSIVE" in PROFILE
