@@ -46,7 +46,7 @@ This is the **target**, not a description of the current release.
   button/trigger action frame: held, pressed, released; identity switch,
   neutral rearming, focus and gameplay gates, trigger hysteresis. It does
   **not** yet connect to the original game input consumer.
-- `sdl3_raw_mapping.h` validates a user-calibrated standard SDL mapping\n  string (GUID, safe name, button/hat/axis identifiers, required inputs)\n  without applying it to SDL yet. The keyboard capture UI remains missing.\n- A local `SDL3-gamecontrollerdb.txt` can be loaded via SDL's existing\n  `SDL_AddGamepadMappingsFromFile` ABI at startup; this is an optional\n  source of externally supplied mapping entries, not auto-calibration.\n- Portable regression coverage exercises unknown VID/PID semantics,
+- `sdl3_raw_mapping.h` validates a user-calibrated standard SDL mapping\n  string (GUID, safe name, button/hat/axis identifiers, required inputs)\n  without applying it to SDL yet. The keyboard capture UI remains missing.\n- A local `SDL3-gamecontrollerdb.txt` can be loaded via SDL's existing\n  `SDL_AddGamepadMappingsFromFile` ABI at startup; this is an optional\n  source of externally supplied mapping entries, not auto-calibration.\n- Diagnostic/calibration functions are exposed via actual SDL3 setup buttons\n  reachable with keyboard Tab+Enter. F9 (screenshots) and F10\n  (game location shortcut) remain reserved to the original game.\n- Portable regression coverage exercises unknown VID/PID semantics,
   remapping, no inherited held keys and hysteresis.
 
 ## Not yet implemented
