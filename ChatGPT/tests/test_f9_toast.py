@@ -248,3 +248,11 @@ def test_screenshot_toast_matches_focus_pause_typography_and_native_small_icon()
     assert "CreateThread(NULL,0,toast_popup_thread" in TOAST
     assert "SaveDC(dc)" in TOAST
     assert "RestoreDC(dc,saved_dc)" in TOAST
+
+
+def test_f9_text_scaled_down_relative_to_original_embedded_16px_icon():
+    assert "heading_px=toast_min(24,toast_max(15,(int)h/50))" in TOAST
+    assert "path_px=toast_min(16,toast_max(11,(int)h/82))" in TOAST
+    assert "SPIDER_F9_EXE_ICON_SIZE 16" in TOAST
+    assert "int icon_y=y+pad+toast_max(0,(heading_px-icon_px)/2)" in TOAST
+    assert "path+starts[i],lengths[i]" in TOAST
