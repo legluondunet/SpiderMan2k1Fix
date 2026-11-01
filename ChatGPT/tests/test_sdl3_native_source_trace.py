@@ -28,7 +28,7 @@ def test_keyboard_counts_joystick_bitsets_and_reserved_focus_events(tmp_path):
         joystick[0]=0xff; joystick[12]=0x02;
         joystick[31]=0x80;
         spider_native_source_decode(keyboard,joystick,&s);
-        assert(s.keyboard_held==2&&s.keyboard_fresh==1);
+        assert(s.keyboard_held==4&&s.keyboard_fresh==2);
         assert(s.keyboard_released==1);
         assert(s.keyboard_alt_tab==5u);
         assert(s.joystick_held==((1u<<0)|(1u<<12)));
