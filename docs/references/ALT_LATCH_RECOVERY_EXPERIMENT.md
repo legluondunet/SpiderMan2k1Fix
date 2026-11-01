@@ -288,3 +288,86 @@ changes are **CI-only until another Windows trial with the new
 artifact**. The earlier 07:59 and 08:08 tests validated the
 previous guard revision; do not retroactively claim they
 hardware-tested these additional checks.
+
+
+## Hardened guard Windows 11 verification: 08:20 and 08:22 logs
+
+**Two user-provided complete native Windows 11 logs**:
+`SpiderMan2k1Fix(20261101-082040).log` (1,552 lines) and
+`SpiderMan2k1Fix(20261101-082259).log` (1,532 lines).
+Both are the authenticated original retail game
+(`SpideyPC.exe` SHA-256 matches) with Sony DualShock 4
+`054C:09CC`, `ALT-LATCH: ARMED`, and read-only
+`SDL3-NATIVE-SOURCE` independent original/Win32 key comparisons.
+
+**Exact build provenance verified**, not inferred from a generic
+banner: both print `v1.1.0-14009ea`. The GitHub commit
+`14009ea91611044d9d82e6174c1c636fa67e07e3` is the
+temporary PR test merge
+**`fd8805a52096666beb4d078330aad33af7434c96` into
+`0b675f1603c33a80860684d4e50e6bdbb631087f`**.
+The second parent is exactly the hardened PR head whose Windows
+x86 workflow #41288005297 completed successfully. Therefore
+the new final modifier rechecks and 180-ms continuous-clean
+window *were present in the tested binaries*.
+
+### Three genuine externally confirmed 3D focus returns
+
+| Log / cycle | Background | Confirmed loss | Foreground return | Return armed | Native stale 1/0 | One-byte repair | Original/Win32 neutral |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 08:20 #1 | 918 | 925 | 933 | 943 | 947 | **956** | **957–958** |
+| 08:22 #1 | 720 | 727 | 735 | 745 | 749 | **759** | **760–761** |
+| 08:22 #2 | 1093 | 1099 | 1107 | 1117 | 1121 | **1134** | **1135–1136** |
+
+All three events are actual logged external focus-pause epochs,
+not Bink/pause menu eligibility transitions; there are exactly
+three repairs after three independent confirmed focus losses,
+one repair per return. In each case the original DirectInput
+Left Alt latch `0x7F` is still HELD while Win32 LeftAlt is UP
+(`alt-tab=1 os-alt-tab=0`), followed by the explicit
+`ALT-LATCH: REPAIRED ... 0x7F->0x80` and an independent
+next-sample native `kb-released=1 alt-tab=0 os-alt-tab=0`.
+The next sample clears the released edge naturally.
+
+- Focus DirectSound paused/resumed **9/9** playing secondary
+  voices (08:20), **8/8** then **9/9** (08:22), all `failed=0`.
+- Original native 3D action masks change after corrections;
+  joystick/source and gameplay state telemetry continue. No
+  `ALT-LATCH: REFUSED`, `EXPIRED`, duplicate REPAIRED
+  per focus return, or visible crash/error marker occurs in
+  either bounded log. This does **not** constitute new explicit
+  maintainer confirmation of subjective gameplay behavior.
+- Read-only source snapshots: 08:20 **96 regular samples**
+  (77 3D, 19 MENU), all `postfocus=0`, 87 `0/0`,
+  3 `1/1`, 2 `0/1`, 2 `1/0`, 1 `0/4`, 1 `4/4`
+  in `alt-tab/os-alt-tab` bitfield notation.
+  08:22 **101 samples** (96 regular + 5 reserved;
+  78 3D, 23 MENU), 88 `0/0`, 4 `1/1`,
+  3 `1/0`, 3 `0/1`, 2 `4/4`, 1 `4/0`.
+  `4` denotes **Tab**, not Alt Left. A transient `4/0`
+  or `1/0` while the foreground player physically presses
+  and releases keys can reflect asynchronous buffered/native
+  update timing; these isolated events are NOT an extra
+  confirmed focus-induced stuck-key and trigger no repair.
+- After recovery, additional original/Win32 Left Alt and
+  Tab physical transitions are observed in 3D (08:20
+  lines 1141–1158; 08:22 lines 866–879 and 1254–1265).
+  No extra repair occurred without a new confirmed
+  cross-process loss.
+
+**Result:** **PASS, narrowly scoped hardware validation of the
+hardened 180-ms clean-period / final modifier-recheck version**
+on native Windows 11 and Sony DS4 across 3 genuine 3D Alt+Tabs.
+The log does not report the exact number of clean milliseconds
+at the write itself; policy code and unit tests establish the
+gating rule, and real runtime repairs demonstrate that at
+least the rule allowed these three cases. Do not claim
+independent timing measurement from these logs alone.
+
+**Still outstanding before default activation or merging:**
+mouse control is set **`MouseEnabled=0`** in these runs,
+so mouse recovery is untested; Xbox 360, keyboard-only,
+Wine/Proton, feature-OFF negative controls and varied
+background durations remain unvalidated.
+Keep **`ExperimentalAltLatchRecovery=0` by default**,
+PR **DRAFT and unmerged**.
