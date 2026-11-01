@@ -127,9 +127,9 @@ void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
   bindings_trace_armed=0;bindings_trace_lines=0;
   bindings_trace_requested=ini &&
     GetPrivateProfileIntA("Debug","SDL3BindingTrace",0,ini)==1;
-  requested=ini && GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1;
+  requested=ini && GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1;
   SpiderSDL3ProfileStore_Init(requested && ini &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3ControllerSetup",0,ini)==1,logger);
+    GetPrivateProfileIntA("Input","ExperimentalSDL3ControllerSetup",1,ini)==1,logger);
   if(bindings_trace_requested && !requested) {
     bindings_trace_requested=0;
     say("SDL3-BINDINGS: disabled because ExperimentalSDL3Probe=0");
@@ -137,15 +137,15 @@ void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
   if(bindings_trace_requested)
     say("SDL3-BINDINGS: optional semantic action probe ENABLED (read-only; no gameplay remap, no UI changes; max 48 events)");
   native_owner_requested=requested &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1;
+    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1;
   if(native_owner_requested &&
-     (GetPrivateProfileIntA("Input","ExperimentalNativeJoystickUnplugGuard",0,ini)!=1 ||
-      GetPrivateProfileIntA("Input","ExperimentalNativeJoystickReconnect",0,ini)!=1 ||
-      GetPrivateProfileIntA("Input","ExperimentalNativeJoystickMappingSwap",0,ini)!=1)) {
+     (GetPrivateProfileIntA("Input","ExperimentalNativeJoystickUnplugGuard",1,ini)!=1 ||
+      GetPrivateProfileIntA("Input","ExperimentalNativeJoystickReconnect",1,ini)!=1 ||
+      GetPrivateProfileIntA("Input","ExperimentalNativeJoystickMappingSwap",1,ini)!=1)) {
     native_owner_requested=0;
     say("SDL3-OWNER: REFUSED missing native UnplugGuard+Reconnect+MappingSwap opt-ins; SDL3 stays passive");
   }
-  if(requested)say("SDL3-PROBE: requested (OFF by default); discovery and selection enabled");
+  if(requested)say("SDL3-PROBE: enabled by default; discovery and selection available (explicit INI opt-out supported)");
   if(native_owner_requested)
     say("SDL3-OWNER: EXPERIMENT requested; selected SDL3 identity may authorize opt-in DirectInput native + UI bridge (STRICT, FAIL-CLOSED)");
 }
