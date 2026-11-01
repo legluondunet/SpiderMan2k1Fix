@@ -26,7 +26,7 @@ def test_only_one_selection_cursor_and_use_is_not_action_capture():
     assert "ui->focus.column=SPIDER_SETUP_FOCUS_ACTIONS;" in selector
     assert "spider_sdl3_setup_nav_reset(&ui->nav);" in selector
     assert "SetFocus(ui->actions)" in selector
-    assert "EXPLICIT-SELECT already queued; duplicate activation ignored" in selector
+    assert "EXPLICIT-SELECT already queued; focus returned to actions" in selector
     assert "ui->start_owner_requested=1u;" in selector
     assert "spider_sdl3_capture_start(" not in selector
     nav=UI.split("static void sample_device(",1)[1].split(
@@ -110,3 +110,16 @@ def test_ps3_cross_on_focused_capture_never_posts_remap_command():
     keyboard=UI.split("static int handle_setup_keyboard(",1)[1].split(
         "static void setup_toggle_sdl3_test(",1)[0]
     assert "if(vk=='C'" in keyboard
+
+
+def test_redundant_use_button_restores_single_cursor_again():
+    selector=UI.split("static int setup_select_explicit_pad(",1)[1].split(
+        "static void setup_toggle_sdl3_test(",1)[0]
+    queued=selector.split("if(ui->start_owner_requested &&",1)[1].split(
+        "ui->start_owner_id=id;",1)[0]
+    assert "ui->focus.column=SPIDER_SETUP_FOCUS_ACTIONS;" in queued
+    assert "spider_sdl3_setup_nav_reset(&ui->nav);" in queued
+    assert "SetFocus(ui->actions)" in queued
+    assert "setup_sync_visual_selection(ui);" in queued
+    assert "EXPLICIT-SELECT already queued; focus returned to actions" in queued
+    assert "return 1;" in queued
