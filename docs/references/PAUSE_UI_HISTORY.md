@@ -54,3 +54,16 @@ absolute path **13 px**, compared with approximately 25 px / 15 px.
 The game's authentic 16×16 HICON stays unscaled and is aligned with
 the heading rather than centered between heading and file path.
 No screenshot output, F9/F10 controls or timeout behavior changed.
+
+
+### F9 final compact big-icon experiment (2026-11-01)
+
+The user requested another visual test: use the **largest icon** embedded
+in `SpideyPC.exe` (the native **32×32** `ExtractIconExW` LARGE result),
+and remove the full filesystem path **from the onscreen notification**.
+The 16px version is not scaled or blurred. The painter now shows only
+`SCREENSHOT SAVED` or `SCREENSHOT FAILED` beside the original 32px game
+icon within a compact violet one-line banner. The full screenshot path
+is still stored and validated for the actual PNG output and remains
+available through the usual diagnostic log. The two-second duration,
+no-focus popup behavior, and PNG contents are unchanged.
