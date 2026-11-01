@@ -452,7 +452,15 @@ static int setup_select_explicit_pad(SpiderSDL3SetupUI *ui) {
   }
   if(ui->start_owner_requested && ui->start_owner_id==id &&
      ui->start_owner_vid==vid && ui->start_owner_pid==pid) {
-    if(setup_report)setup_report("SDL3-SETUP: EXPLICIT-SELECT already queued; duplicate activation ignored");
+    /* A repeated click is idempotent but MUST restore visual focus too.
+     * Otherwise the Use button stays focused, and a subsequent PS3
+     * South edge reactivates it indefinitely (hardware log 21:18). */
+    ui->focus.column=SPIDER_SETUP_FOCUS_ACTIONS;
+    spider_sdl3_setup_nav_reset(&ui->nav);
+    if(IsWindow(ui->actions))SetFocus(ui->actions);
+    setup_sync_visual_selection(ui);
+    status(ui,"Controller already queued. Press keyboard Esc to return to game.");
+    if(setup_report)setup_report("SDL3-SETUP: EXPLICIT-SELECT already queued; focus returned to actions");
     return 1;
   }
   ui->start_owner_id=id;
