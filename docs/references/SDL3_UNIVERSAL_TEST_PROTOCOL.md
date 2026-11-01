@@ -147,3 +147,52 @@ This is an experimental native entry redirect; CI verifies its build and
 source contracts, but has not yet verified the runtime callsite signatures
 or boolean semantics under actual game execution. The original F9/F10
 shortcuts and native keyboard mappings must remain untouched.
+
+
+## Test D — Explicit PS3 generic SDL3 source (after joystick calibration)
+
+This protocol deliberately distinguishes an **action-rebind capture** from
+**controller ownership**. A Start press while re-binding a visible action
+is a valid captured input; it must NOT silently select a new game controller.
+The 2026-11-01 log shows exactly that case:
+`SDL3-SETUP: START-SAMPLE id=2 ... capture=1`, followed by no owner
+request. `SDL3-OWNER: START REFUSED` still protects the original native
+DirectInput owner and is **not** a failure of generic SDL3 sampling.
+
+1. Download the CI artifact built after the **Use selected SDL3 controller**
+   button was added. Backup the previously validated DLL.
+2. In original game's **Options > Joystick**, enter the SDL3 window
+   directly. Choose `XInput Controller #1 [054C:0268]` in the top
+   dropdown (especially if a DS4 is connected as slot 0).
+3. Ensure you are **not in CAPTURE mode**. If the status displays
+   `CAPTURE: ...`, press keyboard **Escape once** to cancel this binding
+   capture *without closing the setup dialog*.
+4. Press the new **Use selected SDL3 controller** button using your
+   mouse or keyboard Tab+Enter. Alternatively use keyboard
+   **Ctrl+Shift+U**. You should see
+   `SDL3-SETUP: EXPLICIT-SELECT QUEUED id=... VID:PID=054C:0268`.
+   No 3D gameplay action is sent to the original game yet.
+5. Press keyboard **Escape** to close SDL3 Setup. Confirm focus returns
+   to Spider-Man. The next foreground Flip should report
+   `SDL3-PROBE: SETUP RETURN controller-initiated owner handoff PENDING`
+   and then
+   `SDL3-GENERIC: SELECTED explicit modal Start id=... VID:PID=054C:0268`.
+   The historical log label mentions Start; it also covers the **new
+   explicit button**, not just the physical Start key.
+6. Release both analog triggers and all buttons, center both sticks,
+   then press and release Cross/Circle/Square/Triangle, move both
+   sticks in all directions and test L2/R2. Expect
+   `SDL3-GENERIC: SEMANTIC ARMED` and
+   `SDL3-GENERIC: SEMANTIC ... pressed=... released=... LX=... RX=...`.
+7. Exit normally, send the log and a screenshot of the **F9
+   SCREENSHOT SAVED** notification (its new icon must be the **original
+   game's smallest 16x16 icon**, not the fake camera). Check that the
+   absolute screenshot path remains fully displayed, all icon text
+   stays inside the panel, F9 screenshot pixels are unaffected and the
+   popup disappears after about two seconds.
+
+**Fail closed:** If the SDL3 selection is refused or fails to arm,
+do NOT enable synthetic keyboard injection, blindly patch DirectInput
+or assume menus/3D gameplay work. Send the full log and keep the previous
+validated build. Native Keyboard, verified Sony DS4/Xbox controls and
+F9/F10 game shortcuts must still work.
