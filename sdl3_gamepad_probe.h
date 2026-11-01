@@ -65,4 +65,22 @@ int SpiderSDL3Probe_SetupRead(unsigned slot,uint32_t *instance_id,
     SpiderSDL3ControllerSample *sample);
 
 
+/* Keyboard-operated raw joystick calibration. Device access is strictly
+ * separate from the original game's DirectInput joystick and is allowed
+ * only on the existing SDL3 game/UI thread. No gameplay injection. */
+typedef struct {
+  uint32_t buttons;             /* first 32 raw physical buttons */
+  int16_t axes[16];             /* first 16 raw joystick axes */
+  uint8_t hats[4];              /* first four POV hats */
+  unsigned button_count,axis_count,hat_count;
+} SpiderSDL3RawSample;
+unsigned SpiderSDL3Probe_RawList(uint32_t *ids,unsigned capacity);
+int SpiderSDL3Probe_RawBegin(uint32_t id,char guid[33],
+                            char *name,size_t capacity);
+int SpiderSDL3Probe_RawRead(SpiderSDL3RawSample *out);
+void SpiderSDL3Probe_RawEnd(void);
+/* Applies a validated mapping and saves a GUID-specific file atomically.
+ * Returns 1 only if both SDL mapping and persistence succeeded. */
+int SpiderSDL3Probe_RawRegisterAndSave(const char *mapping,const char *guid);
+
 #endif
