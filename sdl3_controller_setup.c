@@ -728,7 +728,7 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
       SPIDER_SDL3_VISIBLE_ACTION_COUNT;
     ui->action=next;
     refresh_actions(ui);
-    status(ui,"Action selected. Press Enter to capture; release all buttons first.");
+    status(ui,"Action selected. Choose Capture selected action or Ctrl+Shift+C to remap.");
     return 1;
   }
   if(vk==VK_PRIOR || vk==VK_NEXT) {
