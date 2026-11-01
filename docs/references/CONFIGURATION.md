@@ -466,3 +466,68 @@ validated under Wine/Proton**. Native Windows gameplay was
 not tested on this particular branch; do not claim universal
 platform validation. PR #90 stays **DRAFT**, independent of
 PR #88 Alt-latch recovery and **unmerged**.
+
+
+## Reading SYS-INFO and focus diagnostics
+
+The `SYS-INFO: BEGIN` / `SYS-INFO: END` block is a **one-shot startup
+diagnostic inventory**, not a periodic benchmark. Its `elapsed_ms` value
+measures only collection and reporting time using a high-resolution
+timer with a safe fallback. Each monitor receives a Win32 device
+identifier such as `DISPLAY1`; the later `SYS-DISPLAY-SELECTED`
+entry identifies the monitor actually used by the game window,
+which need not be primary and changes only if its selection or
+mode changes. Unknown keys in a recognized INI section are
+reported by **name**, without their values, as `INI-CHECK` warnings.
+
+On Wine/Proton, the reported **Win32 version is the emulated Windows
+target**, not the Linux distribution. The host OS/kernel is probed
+separately through Wine. A Steam compatibility environment is only
+a **Proton hint**; the exact Proton version may not be available.
+Likewise D3D9 modules or driver versions may identify Wine/DXVK
+wrappers rather than the host Mesa/AMDGPU/NVIDIA driver. For
+`Unavailable` fields, include the actual host driver and Proton
+version separately when submitting an issue.
+
+The startup report does not intentionally collect usernames,
+machine names, email addresses, network/IP addresses, monitor
+or controller serials, or Steam IDs. Nevertheless, **review the
+complete log before posting publicly**, because other runtime
+messages may include filesystem paths.
+
+### Distinguishing the original in-game mouse from the OS cursor
+
+The original Spider-Man **in-game mouse sprite, polling and menu
+clicks are permanently disabled** in the combined experimental
+fix. The `MouseEnabled` and `ControllerAutoDisableMouse`
+legacy keys are accepted to avoid breaking older configuration
+files but cannot turn the game mouse on.
+
+This does **not** disable the Windows/Linux **desktop pointer**.
+If it is missing after Alt+Tab, enable `[Debug] Log=1`,
+capture `INPUT-FOCUS`, `INPUT-WINDOW` and
+`FOCUS-PAUSE` records, and report OS/Wine/Proton version and
+a reproducible focus-switch sequence. Under Wine the custom
+PAUSED banner can be delayed or absent even when game input,
+audio and graphics correctly resume; an absent banner alone
+is not evidence of a crash.
+
+### Troubleshooting no sound
+
+Classify the failure as **total silence**, **music-only**,
+**Bink/cinematic audio-only**, or **3D effects-only**, and
+record whether it began on startup or after a focus pause.
+Verify system output device, app mixer, game audio levels,
+supported exact retail executable hash and matching
+`winmm.dll`/`SpiderMan2k1Fix.dll` build, and confirm
+`INI-CHECK: valid` or inspect the backed-up `.ini.old`
+when automatic repair took place.
+
+The game's original **DirectSound** renderer is retained.
+The built-in verified native WAV/PKR tail fix targets
+**truncation/crackling**, not every audio routing or
+complete-silence cause. Do not enable hidden audio switches
+as an unverified universal remedy. Attach a full
+`[Debug] Log=1` run with the affected audio type,
+platform and exact reproduction steps.
+
