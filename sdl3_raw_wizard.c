@@ -19,6 +19,7 @@ enum { RAW_PAD=2001,RAW_BEGIN=2002,RAW_SKIP=2003,
 typedef struct {
   HWND window,owner,pads,status;
   uint32_t ids[16],active_id;
+  unsigned already_mapped[16],active_was_mapped;
   unsigned raw_count,step,armed,done,axis_release_required;
   char guid[33],name[128];
   SpiderSDL3RawMapping mapping;
@@ -162,7 +163,7 @@ static void wizard_finish(SpiderRawWizard *w) {
   if(SpiderSDL3Probe_RawRegisterAndSave(mapping,w->guid)) {
     snprintf(line,sizeof(line),
     "SDL3 CALIBRATION SAVED for %s.\r\n"
-    "Close this window, then reopen SDL3 Setup: the device should appear as a mapped gamepad.\r\n"
+    "Restart Spider-Man to reload the updated SDL3 mapping and retest the pad.\r\n"
     "IMPORTANT: this does NOT yet guarantee Spider-Man 3D gameplay.",
     w->name);
     wizard_text(w,line);
@@ -183,9 +184,10 @@ static void wizard_start(SpiderRawWizard *w) {
   memset(&w->mapping,0,sizeof(w->mapping));
   w->step=0;w->done=0;w->armed=0;w->still=0;
   w->axis_release_required=0;w->active_id=0;
+  w->active_was_mapped=0;
   selected=SendMessageA(w->pads,CB_GETCURSEL,0,0);
   if(selected==CB_ERR || (unsigned)selected>=w->raw_count) {
-    wizard_text(w,"No unmapped raw joystick. SDL3 may already recognize your controller.");
+    wizard_text(w,"No SDL joystick selected. Connect a controller and reopen this window.");
     return;
   }
   index=(unsigned)selected;
@@ -194,9 +196,11 @@ static void wizard_start(SpiderRawWizard *w) {
     return;
   }
   w->active_id=w->ids[index];
+  w->active_was_mapped=w->already_mapped[index];
   snprintf(text,sizeof(text),
-    "SDL3-RAW-WIZARD: opened id=%lu GUID=%s name=%.100s (keyboard-only)",
-    (unsigned long)w->active_id,w->guid,w->name);
+    "SDL3-RAW-WIZARD: opened id=%lu GUID=%s name=%.100s current-sdl-mapping=%s (keyboard-only)",
+    (unsigned long)w->active_id,w->guid,w->name,
+    w->active_was_mapped?"ALREADY MAPPED, recalibrating":"UNMAPPED");
   if(w->log)w->log(text);
   wizard_prompt(w);
 }
@@ -204,16 +208,17 @@ static void wizard_refresh(SpiderRawWizard *w) {
   unsigned i;
   char line[140];
   if(!w || !w->pads)return;
-  w->raw_count=SpiderSDL3Probe_RawList(w->ids,16u);
+  w->raw_count=SpiderSDL3Probe_RawListAll(w->ids,w->already_mapped,16u);
   if(w->raw_count>16u)w->raw_count=16u;
   SendMessageA(w->pads,CB_RESETCONTENT,0,0);
   for(i=0;i<w->raw_count;i++) {
-    snprintf(line,sizeof(line),"Unmapped joystick %u (SDL id=%lu)",
+    snprintf(line,sizeof(line),"%s joystick %u (SDL id=%lu)",
+             w->already_mapped[i]?"Mapped - recalibrate":"Unmapped - recognize",
              i+1,(unsigned long)w->ids[i]);
     SendMessageA(w->pads,CB_ADDSTRING,0,(LPARAM)line);
   }
   if(w->raw_count)SendMessageA(w->pads,CB_SETCURSEL,0,0);
-  else wizard_text(w,"No unmapped raw joystick found. SDL3 may already recognize your controller.");
+  else wizard_text(w,"SDL3 detects no joystick. Connect a controller, then reopen this window.");
 }
 static LRESULT CALLBACK wizard_wndproc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
   SpiderRawWizard *w=(SpiderRawWizard *)(uintptr_t)
@@ -228,14 +233,14 @@ static LRESULT CALLBACK wizard_wndproc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
       w->window=hwnd;
       SetWindowLongPtrA(hwnd,GWLP_USERDATA,(LONG_PTR)(uintptr_t)w);
       label=CreateWindowExA(0,"STATIC",
-        "Raw joystick recognition - SDL3 only (gameplay unchanged)",
+        "SDL3 hardware recognition / recalibration (gameplay unchanged)",
         WS_CHILD|WS_VISIBLE,20,16,620,22,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       w->pads=CreateWindowExA(0,"COMBOBOX","",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL,
         20,49,610,220,hwnd,(HMENU)(uintptr_t)RAW_PAD,NULL,NULL);
       w->status=CreateWindowExA(0,"STATIC",
-        "Select an unmapped joystick, then press Enter or Start.",
+        "Select ANY joystick, mapped or unmapped, then press Enter or Start.",
         WS_CHILD|WS_VISIBLE,20,105,610,100,hwnd,
         (HMENU)(uintptr_t)RAW_STATUS,NULL,NULL);
       for(unsigned i=RAW_BEGIN;i<=RAW_CLOSE;i++) {
