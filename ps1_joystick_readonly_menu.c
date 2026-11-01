@@ -100,10 +100,17 @@ int SpiderSDL3_InstallDirectJoystickEntry(void (*logger)(const char *)) {
   if(direct_entry_attempted)return 0;
   direct_entry_attempted=1;
   if(logger)ps1_menu_logger=logger;
-  if(!base || (uintptr_t)base!=0x00400000u)return 0;
+  report("SDL3-DIRECT-ENTRY: INSTALL attempt on original game flip thread");
+  if(!base || (uintptr_t)base!=0x00400000u) {
+    report("SDL3-DIRECT-ENTRY: REFUSED unexpected EXE image base");
+    return 0;
+  }
   dos=(IMAGE_DOS_HEADER *)(void *)base;
   if(dos->e_magic!=IMAGE_DOS_SIGNATURE ||
-     dos->e_lfanew<0x40 || dos->e_lfanew>0x1000)return 0;
+     dos->e_lfanew<0x40 || dos->e_lfanew>0x1000) {
+    report("SDL3-DIRECT-ENTRY: REFUSED invalid DOS header");
+    return 0;
+  }
   nt=(IMAGE_NT_HEADERS32 *)(void *)(base+dos->e_lfanew);
   if(nt->Signature!=IMAGE_NT_SIGNATURE ||
      nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR32_MAGIC ||
@@ -111,7 +118,20 @@ int SpiderSDL3_InstallDirectJoystickEntry(void (*logger)(const char *)) {
      nt->OptionalHeader.SizeOfImage<0x00110000u ||
      nt->OptionalHeader.SizeOfImage>0x02000000u ||
      nt->FileHeader.NumberOfSections==0 ||
-     nt->FileHeader.NumberOfSections>32)return 0;
+     nt->FileHeader.NumberOfSections>32) {
+    snprintf(line,sizeof(line),
+      "SDL3-DIRECT-ENTRY: REFUSED PE header magic=%04X base=%08lX size=%08lX sections=%u",
+      (unsigned)nt->OptionalHeader.Magic,
+      (unsigned long)nt->OptionalHeader.ImageBase,
+      (unsigned long)nt->OptionalHeader.SizeOfImage,
+      (unsigned)nt->FileHeader.NumberOfSections);
+    report(line);
+    return 0;
+  }
+  snprintf(line,sizeof(line),"SDL3-DIRECT-ENTRY: valid PE size=%08lX sections=%u",
+    (unsigned long)nt->OptionalHeader.SizeOfImage,
+    (unsigned)nt->FileHeader.NumberOfSections);
+  report(line);
   /* Scan original code, never data and never a DLL. Match direct
    * CALL+rel32 exactly targeting 0x50CE70 in executable PE section(s).
    * Calls outside PCShell/options code are rejected. */
@@ -123,7 +143,14 @@ int SpiderSDL3_InstallDirectJoystickEntry(void (*logger)(const char *)) {
     va=section[i].VirtualAddress;
     length=section[i].Misc.VirtualSize;
     if(va>=nt->OptionalHeader.SizeOfImage ||
-       length>nt->OptionalHeader.SizeOfImage-va)return 0;
+       length>nt->OptionalHeader.SizeOfImage-va) {
+      snprintf(line,sizeof(line),
+        "SDL3-DIRECT-ENTRY: REFUSED section=%u bounds RVA=%08lX len=%08lX image=%08lX",
+        i,(unsigned long)va,(unsigned long)length,
+        (unsigned long)nt->OptionalHeader.SizeOfImage);
+      report(line);
+      return 0;
+    }
     if(length<5u)continue;
     start=base+va;
     for(j=0;j+5u<=length;j++) {
@@ -142,7 +169,7 @@ int SpiderSDL3_InstallDirectJoystickEntry(void (*logger)(const char *)) {
     }
   }
   if(count==0u) {
-    report("SDL3-DIRECT-ENTRY: REFUSED original config CALL not found; old menu preserved");
+    report("SDL3-DIRECT-ENTRY: REFUSED no direct CALL rel32 to 0x0050CE70; possible indirect call; old menu preserved");
     return 0;
   }
   for(i=0;i<count;i++) {
