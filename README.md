@@ -113,8 +113,11 @@ The former late DirectSound-buffer repair
 (`ExperimentalAudioPKRTailRestore`) has been removed. This built-in native
 loader correction is introduced in **SpiderMan2k1Fix v1.1.0**. The
 correction and duplicate-source repairs have been validated without
-audible crackling under Linux/Wine; native Windows gameplay testing of
-the new default-on configuration is now supplemented by actual Windows 11 runtime testing: 37/37 actively playing DirectSound voices were restored on focus return in four verified cycles. This does not claim every audio device, game build or sound configuration is covered.
+audible crackling under Linux/Wine. On Windows 11, the combined integration
+test also confirmed **37/37 actively playing DirectSound voices** restored
+after focus return across four pauses. This verifies focus audio recovery on
+the tested setup; it does not establish compatibility with every audio device,
+game build or sound configuration.
 
 ## Installation on Windows and Linux (Wine)
 
