@@ -186,3 +186,71 @@ this run. Do not mark keyboard input recovery, normal fresh physical Alt
 press/release after automatic repair, or a complete fix of the historical
 Alt+Tab keyboard+mouse lockout as validated. The manual wake's logged
 virtual-key Return is not evidence of a user gameplay keyboard test.
+
+## Follow-up Windows 11 keyboard + DS4 verification: 08:08 log
+
+Complete maintainer log `SpiderMan2k1Fix(20261101-080817).log`
+(**1,636 lines**), Windows 11 native, supported original SHA,
+Sony DualShock 4 VID:PID `054C:09CC`, opt-in
+`ExperimentalAltLatchRecovery=1` explicitly ARMED at line **60**.
+
+**User's first-hand gameplay report:** *"rien à signaler avec les
+touches du clavier, même après un alt tab"* — no keyboard-control
+anomaly experienced, including after Alt+Tab. The previous hardware
+trial had independently confirmed DS4 gameplay worked after Alt+Tab.
+The present test adds **keyboard gameplay validation by the
+maintainer**, not merely a log-only assertion.
+
+### Two independent actual 3D Alt+Tabs and one-shot repairs
+
+| Event | First Alt+Tab | Second Alt+Tab |
+| --- | ---: | ---: |
+| Original/OS see Left Alt key down | 1157 | 1225 |
+| Genuine `INPUT-FOCUS: flip-background` | 1161 | 1227 |
+| Confirmed external loss and focus pause | 1169 | 1233 |
+| `INPUT-FOCUS: flip-foreground` | 1177 | 1241 |
+| Manual keyboard wake: virtual key | 1181: `0x26` (Up) | 1245: `0x20` (Space) |
+| `ALT-LATCH: return confirmed` | 1187 | 1251 |
+| Old DI Left Alt held, OS released `1/0` | 1191 | 1255 |
+| `ALT-LATCH: REPAIRED ... 0x7F->0x80` | **1200** | **1266** |
+| Native/OS states synchronized `0/0` | **1201–1202** | **1267–1268** |
+
+Both repair events occur after **distinct, confirmed** background
+losses. Exactly two repair events appear; not a duplicate intervention
+within one return window. Each repair was immediately followed by
+original native keyboard `kb-released=1`, then neutral `0`.
+The existing DirectSound focus handling also resumed **8/8** and
+**7/7** playing secondary voices respectively, `failed=0`.
+
+### Subsequent physical Left Alt works normally
+
+In uninterrupted foreground 3D (no intervening
+`INPUT-FOCUS: flip-background`), source records
+**1440–1442** show `alt-tab/os-alt-tab`:
+`1/1 -> 1/0 -> 0/0`; **1461–1468** again show
+`0/1 -> 1/1 -> 1/0 -> 0/0`. These independently demonstrate
+fresh physical Left Alt press/release can still reach the original
+game keyboard reader **after two auto repairs**. Neither sequence
+causes an extra `ALT-LATCH: REPAIRED`.
+
+**101** passive source snapshots: 96 ordinary + 5 reserved;
+86 3D and 15 MENU; pairs: **90 × `0/0`**,
+**4 × `1/1`**, **4 × `1/0`**, **3 × `0/1`**.
+The five `postfocus=1` reserved snapshots later in the log
+belong to a native game pause/menu-context sampling transition
+(lines 1591 and 1630–1635), **not** a third desktop Alt+Tab.
+
+A native controller-7 3D-to-menu path completes at
+**1605–1629**, and the log ends normally after the game has
+returned to MENU (**1636**). No crash or failed audio resume
+is reported.
+
+**Scope:** Windows 11 + supported original EXE + Sony DS4,
+with the experimental option expressly on, **two actual Alt+Tab
+cycles**, normal physical keyboard behavior according to the
+maintainer and subsequent verified native physical Left Alt
+down/up. The experimental one-byte latch repair has now passed
+a valuable repeatability and keyboard-regression check. It
+remains **default OFF**, with the PR **DRAFT** and unmerged.
+Mouse-specific behavior, Xbox 360, keyboard-only configuration,
+feature-OFF comparison and Wine/Proton remain unvalidated.
