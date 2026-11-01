@@ -30,6 +30,152 @@ void SpiderXbox360_SetRTAlias(int enabled) {
 static void report(const char *msg) {
   if(ps1_menu_logger)ps1_menu_logger(msg);
 }
+/* Optional bypass of the OLD action-list submenu: the original
+ * PCSHELL_DoControllerConfig(bool) begins at exact EXE VA 0x0050CE70.
+ * The original 2001 title loads it for both Keyboard and Joystick, so
+ * do NOT patch the native function entry itself: Keyboard must still
+ * execute its full untouched original implementation.
+ *
+ * Instead, locate the original x86 direct CALLs to that exact native
+ * function in executable .text, verify uniqueness and their targets,
+ * and patch only their 5-byte relative CALL destinations. Our wrapper
+ * forwards Keyboard directly to the ORIGINAL 0x50CE70 and opens the
+ * SDL3 dialog directly for Joystick. It never changes menu state, action
+ * assignments or original joystick/keyboard data tables. On any
+ * ambiguous signature or write failure, FAIL CLOSED to the existing
+ * old-menu -> SDL3 TEST PREVIEW row path.
+ *
+ * In-game hardware must verify which boolean is Joystick before this
+ * optional experimental redirect is considered final. */
+#define SPIDER_NATIVE_CONTROLLER_CONFIG_VA 0x0050CE70u
+enum { SPIDER_DIRECT_ENTRY_MAX_CALLS=4u };
+static int direct_entry_attempted=0,direct_entry_installed=0;
+typedef void (__cdecl *SpiderNativeControllerConfigFn)(int);
+
+static void __cdecl spider_sdl3_direct_controller_menu(int is_joystick) {
+  static unsigned logs=0u;
+  if(is_joystick && SpiderSDL3ControllerSetup_Enabled()) {
+    if(SpiderSDL3Probe_SetupPump()) {
+      if(logs++<12u)report(
+        "SDL3-DIRECT-ENTRY: Joystick selected; bypass original seven-action submenu and open SDL3 window");
+      SpiderSDL3ControllerSetup_Open();
+      return;
+    }
+    if(logs++<12u)report(
+      "SDL3-DIRECT-ENTRY: SDL3 not ready; fallback to original Joystick menu");
+  } else if(logs++<12u)
+    report("SDL3-DIRECT-ENTRY: Keyboard configuration forwarded to original game");
+  ((SpiderNativeControllerConfigFn)(uintptr_t)
+    SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(is_joystick);
+}
+static int spider_sdl3_patch_native_call(BYTE *site,const BYTE *replacement,
+                                        BYTE old_bytes[5]) {
+  DWORD old=0,ignored=0;
+  if(!site || !replacement || !old_bytes)return 0;
+  if(!VirtualProtect(site,5u,PAGE_EXECUTE_READWRITE,&old))return 0;
+  memcpy(old_bytes,site,5u);
+  memcpy(site,replacement,5u);
+  FlushInstructionCache(GetCurrentProcess(),site,5u);
+  if(!VirtualProtect(site,5u,old,&ignored)) {
+    /* Restore the original machine call when page protection fails. */
+    memcpy(site,old_bytes,5u);
+    FlushInstructionCache(GetCurrentProcess(),site,5u);
+    VirtualProtect(site,5u,old,&ignored);
+    return 0;
+  }
+  return 1;
+}
+int SpiderSDL3_InstallDirectJoystickEntry(void (*logger)(const char *)) {
+  BYTE *base=(BYTE *)GetModuleHandleA(NULL);
+  IMAGE_DOS_HEADER *dos;
+  IMAGE_NT_HEADERS32 *nt;
+  IMAGE_SECTION_HEADER *section;
+  BYTE *found[SPIDER_DIRECT_ENTRY_MAX_CALLS]={NULL};
+  BYTE old_bytes[SPIDER_DIRECT_ENTRY_MAX_CALLS][5]={{0}};
+  unsigned i,j,count=0u,written=0u;
+  char line[192];
+  if(!SpiderSDL3ControllerSetup_Enabled())return 0;
+  if(direct_entry_installed)return 1;
+  if(direct_entry_attempted)return 0;
+  direct_entry_attempted=1;
+  if(logger)ps1_menu_logger=logger;
+  if(!base || (uintptr_t)base!=0x00400000u)return 0;
+  dos=(IMAGE_DOS_HEADER *)(void *)base;
+  if(dos->e_magic!=IMAGE_DOS_SIGNATURE ||
+     dos->e_lfanew<0x40 || dos->e_lfanew>0x1000)return 0;
+  nt=(IMAGE_NT_HEADERS32 *)(void *)(base+dos->e_lfanew);
+  if(nt->Signature!=IMAGE_NT_SIGNATURE ||
+     nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR32_MAGIC ||
+     nt->OptionalHeader.ImageBase!=0x00400000u ||
+     nt->OptionalHeader.SizeOfImage<0x00110000u ||
+     nt->OptionalHeader.SizeOfImage>0x02000000u ||
+     nt->FileHeader.NumberOfSections==0 ||
+     nt->FileHeader.NumberOfSections>32)return 0;
+  /* Scan original code, never data and never a DLL. Match direct
+   * CALL+rel32 exactly targeting 0x50CE70 in executable PE section(s).
+   * Calls outside PCShell/options code are rejected. */
+  section=IMAGE_FIRST_SECTION(nt);
+  for(i=0;i<nt->FileHeader.NumberOfSections;i++) {
+    BYTE *start;
+    uint32_t length,va;
+    if(!(section[i].Characteristics&IMAGE_SCN_MEM_EXECUTE))continue;
+    va=section[i].VirtualAddress;
+    length=section[i].Misc.VirtualSize;
+    if(va>=nt->OptionalHeader.SizeOfImage ||
+       length>nt->OptionalHeader.SizeOfImage-va)return 0;
+    if(length<5u)continue;
+    start=base+va;
+    for(j=0;j+5u<=length;j++) {
+      uint32_t relative,target;
+      uintptr_t call_va=(uintptr_t)(start+j);
+      if(start[j]!=0xE8u)continue;
+      memcpy(&relative,start+j+1u,4u);
+      target=(uint32_t)(call_va+5u)+(uint32_t)relative;
+      if(target!=SPIDER_NATIVE_CONTROLLER_CONFIG_VA)continue;
+      if(call_va<0x00480000u || call_va>=0x00530000u ||
+         count>=SPIDER_DIRECT_ENTRY_MAX_CALLS) {
+        report("SDL3-DIRECT-ENTRY: REFUSED unexpected/excess caller of native config function");
+        return 0;
+      }
+      found[count++]=start+j;
+    }
+  }
+  if(count==0u) {
+    report("SDL3-DIRECT-ENTRY: REFUSED original config CALL not found; old menu preserved");
+    return 0;
+  }
+  for(i=0;i<count;i++) {
+    BYTE patch[5];
+    uint32_t rel=(uint32_t)(uintptr_t)&spider_sdl3_direct_controller_menu-
+      ((uint32_t)(uintptr_t)found[i]+5u);
+    patch[0]=0xE8u;
+    memcpy(patch+1,&rel,sizeof(rel));
+    /* No patch until every original native CALL has been verified. */
+    if(found[i][0]!=0xE8u)return 0;
+    if(!spider_sdl3_patch_native_call(found[i],patch,old_bytes[i]))break;
+    written++;
+  }
+  if(written!=count) {
+    while(written) {
+      DWORD old,unused;
+      BYTE *site=found[--written];
+      if(VirtualProtect(site,5u,PAGE_EXECUTE_READWRITE,&old)) {
+        memcpy(site,old_bytes[written],5u);
+        FlushInstructionCache(GetCurrentProcess(),site,5u);
+        VirtualProtect(site,5u,old,&unused);
+      }
+    }
+    report("SDL3-DIRECT-ENTRY: REFUSED partial install; rollback attempted; native menu preserved");
+    return 0;
+  }
+  direct_entry_installed=1;
+  snprintf(line,sizeof(line),
+    "SDL3-DIRECT-ENTRY: ACTIVE intercepted original PCSHELL_DoControllerConfig CALL(s)=%u, function=0x%08X; Keyboard passthrough, Joystick -> SDL3",
+    count,SPIDER_NATIVE_CONTROLLER_CONFIG_VA);
+  report(line);
+  return 1;
+}
+
 /* Original callsite 0x50D4A9 invokes the zero-argument void native
  * PCINPUT_RestoreDefaultControllerSettings(). Replacing CALL with five
  * NOPs made it impossible to determine whether the menu actually took
