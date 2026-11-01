@@ -583,8 +583,7 @@ void SpiderSDL3Probe_SetupModalReturn(uint32_t requested_id,
    * normal game selection press. Its specific owner request is verified
    * separately at the next game-owned foreground Flip. */
   spider_sdl3_selection_focus_lost(&selection);
-  if(requested_id && vendor && product &&
-     SpiderSDL3Probe_NativeOwnerEnabled()) {
+  if(requested_id && vendor && product) {
     setup_owner_pending=requested_id;
     setup_owner_vendor=vendor;
     setup_owner_product=product;
@@ -1147,6 +1146,8 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
      * Selection identity stays stable, but takeover needs neutral->press. */
     if(ready)spider_sdl3_selection_focus_lost(&selection);
     bindings_trace_armed=0;bindings_previous=0;
+    generic_profile_snapshot_valid=0;
+    spider_sdl3_universal_reset(&generic_actions);
     return;
   }
   if(!attempted && !sdl_load())return;
@@ -1181,11 +1182,28 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
         opened[j].product=sdl_product(pads[j].id);
       }
     }
-    accepted=SpiderSDL3Probe_NativeOwnerEnabled() &&
-      spider_reconnect_kind(vendor,product)!=SPIDER_RECONNECT_NONE &&
-      spider_sdl3_selected_model_unique(opened,num_pads,requested_id,
-                                         vendor,product);
-    if(accepted) {
+    accepted=spider_sdl3_selected_model_unique(opened,num_pads,
+                                                requested_id,vendor,product);
+    if(accepted &&
+       spider_reconnect_kind(vendor,product)==SPIDER_RECONNECT_NONE) {
+      /* A supported SDL3 device with unproven DirectInput layout is
+       * selected ONLY for the generic semantic adapter. Original game
+       * owned DirectInput selection.active and native mappings survive. */
+      generic_selected_id=requested_id;
+      generic_selected_vendor=vendor;
+      generic_selected_product=product;
+      generic_profile_snapshot_valid=0;
+      spider_sdl3_universal_reset(&generic_actions);
+      snprintf(line,sizeof(line),
+        "SDL3-GENERIC: SELECTED explicit modal Start id=%lu VID:PID=%04X:%04X; read-only semantic frames, native DirectInput owner unchanged",
+        (unsigned long)requested_id,(unsigned)vendor,(unsigned)product);
+      say(line);
+    } else if(accepted && SpiderSDL3Probe_NativeOwnerEnabled()) {
+      /* Selecting a supported native device revokes any previous
+       * generic-only selection so no independent source can survive. */
+      generic_selected_id=0;generic_selected_vendor=0;
+      generic_selected_product=0;generic_profile_snapshot_valid=0;
+      spider_sdl3_universal_reset(&generic_actions);
       selection.active=requested_id;
       /* Any stale gameplay Start edges are still disarmed by modal exit.
        * The real native owner will be rebound later in this Flip. */
@@ -1194,10 +1212,10 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
         (unsigned long)requested_id,(unsigned)vendor,(unsigned)product);
     } else {
       snprintf(line,sizeof(line),
-        "SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous modal owner id=%lu VID:PID=%04X:%04X; previous game owner preserved",
+        "SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous modal owner id=%lu VID:PID=%04X:%04X; previous game and generic owners preserved",
         (unsigned long)requested_id,(unsigned)vendor,(unsigned)product);
+      say(line);
     }
-    say(line);
   }
   sdl3_trace_native_owner(now);
   for(i=0;i<num_pads;i++)if(pads[i].handle) {
@@ -1240,6 +1258,9 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
             (unsigned long)previous);
           say(line);
         } else {
+          generic_selected_id=0;generic_selected_vendor=0;
+          generic_selected_product=0;generic_profile_snapshot_valid=0;
+          spider_sdl3_universal_reset(&generic_actions);
           snprintf(line,sizeof(line),
             "SDL3-PROBE: START selected logical id=%lu VID:PID=%04X:%04X (other gamepads ignored; READ-ONLY)",
             (unsigned long)selection.active,vid,pid);
