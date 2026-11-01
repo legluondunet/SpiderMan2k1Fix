@@ -31,8 +31,14 @@ def test_keyboard_counts_joystick_bitsets_and_reserved_focus_events(tmp_path):
         assert(s.keyboard_held==4&&s.keyboard_fresh==2);
         assert(s.keyboard_released==1);
         assert(s.keyboard_alt_tab==5u);
+        assert(s.os_alt_tab==0u);
+        /* OS comparison must be a separate sample, not alter DI latch. */
+        s.os_alt_tab=1u;
+        assert(spider_native_source_changed(&o,&s,2u));
         assert(s.joystick_held==((1u<<0)|(1u<<12)));
         assert(s.joystick_fresh==1u&&s.joystick_released==(1u<<31));
+        assert(!spider_native_source_changed(&o,&s,2u));
+        s.os_alt_tab=0u;
         assert(spider_native_source_changed(&o,&s,2u));
         assert(!spider_native_source_changed(&o,&s,2u));
         assert(spider_native_source_changed(&o,&s,1u));
@@ -110,6 +116,14 @@ def test_runtime_is_read_only_fail_closed_and_distinctly_opted_in():
     assert 'sample.merged_actions=game_held;' in trace
     assert 'postfocus=%u' in trace
     assert 'alt-tab=%u' in trace
+    assert 'os-alt-tab=%u' in trace
+    assert 'sample.os_alt_tab|=1u' in trace
+    assert 'sample.os_alt_tab|=2u' in trace
+    assert 'sample.os_alt_tab|=4u' in trace
+    assert 'GetAsyncKeyState(VK_LMENU)' in trace
+    assert 'GetAsyncKeyState(VK_RMENU)' in trace
+    assert 'GetAsyncKeyState(VK_TAB)' in trace
+    assert 'os_alt_tab' in model
     assert 'keyboard_alt_tab' in model
     assert 'keyboard[0x38]' in model
     assert 'keyboard[0xb8]' in model
