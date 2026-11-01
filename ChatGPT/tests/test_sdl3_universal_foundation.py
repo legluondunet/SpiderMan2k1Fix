@@ -137,3 +137,32 @@ def test_raw_sdl_gamepad_mapping_builder(tmp_path):
     subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
                     "-I",str(ROOT),str(source),"-o",str(binary)],check=True)
     subprocess.run([str(binary)],check=True)
+
+
+def test_keyboard_calibration_wizard_is_built_and_keeps_gameplay_unchanged():
+    build=(ROOT/"build.sh").read_text(encoding="utf-8")
+    setup=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    wizard=(ROOT/"sdl3_raw_wizard.c").read_text(encoding="utf-8")
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    assert "sdl3_raw_wizard.c" in build
+    assert "if(vk==VK_F8)" in setup
+    assert "SpiderSDL3RawWizard_Open(ui->hwnd,setup_report)" in setup
+    assert "if(vk==VK_F9)" in setup
+    assert "SDL3 TEST: buttons=" in setup
+    assert "raw joystick recognition" in wizard.lower()
+    assert "wizard_neutral" in wizard
+    assert "wizard_finish(w)" in wizard
+    assert "SDL3 CALIBRATION SAVED" in wizard
+    assert "if(msg.wParam==VK_ESCAPE)" in wizard
+    assert "if(msg.wParam=='S'" in wizard
+    assert "SDL3-RAW-WIZARD: completed and persisted" in wizard
+    assert "SpiderSDL3Probe_RawList" in probe
+    assert "SpiderSDL3Probe_RawRead" in probe
+    assert "SpiderSDL3Probe_RawRegisterAndSave" in probe
+    assert "SDL3-mapping-%s.txt" in probe
+    assert "spider_raw_local_path" in probe
+    assert "LOCALAPPDATA" in probe
+    assert "MoveFileExA(temp,file,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)" in probe
+    assert "SDL_AddGamepadMapping refused mapping; nothing saved" in probe
+    assert "SDL3-MAPPINGS: persisted per-GUID user mappings loaded=" in probe
+    assert "sdl3-gamepad" not in wizard
