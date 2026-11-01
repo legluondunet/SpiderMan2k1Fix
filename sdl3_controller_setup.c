@@ -22,6 +22,7 @@
 #include "sdl3_controller_setup_focus.h"
 #include "gamepad_ui_profile.h"
 #include "sdl3_setup_focus_policy.h"
+#include "sdl3_raw_wizard.h"
 
 enum {
   SPIDER_UI_PAD=1001, SPIDER_UI_ACTION=1002,
@@ -583,6 +584,14 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
     }
     return 1;
   }
+  if(vk==VK_F8) {
+    /* Keyboard-only hardware recognition for previously unmapped SDL
+     * joysticks; nested modal, never edits game-owned DirectInput. */
+    SpiderSDL3RawWizard_Open(ui->hwnd,setup_report);
+    spider_sdl3_setup_nav_reset(&ui->nav);
+    spider_sdl3_capture_reset(&ui->capture);
+    return 1;
+  }
   if(vk==VK_F5) {
     SpiderSDL3ControllerProfile trial;
     p=current_profile(ui);
@@ -634,7 +643,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       label=CreateWindowExA(0,"STATIC",
         "Stick Left/Right: actions or buttons   Stick Up/Down: select row or button\r\n"
         "L1/R1: browse pad   Start: choose pad   Circle/B: close + use this pad\r\n"
-        "Triangle/Y: defaults    Keyboard: Tab, Enter, Esc, PgUp/PgDn",
+        "Triangle/Y: defaults    Keyboard: Tab, Enter, Esc, PgUp/PgDn, F8: recognize unknown joystick",
         WS_CHILD|WS_VISIBLE,18,351,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->status=CreateWindowExA(0,"STATIC","",
