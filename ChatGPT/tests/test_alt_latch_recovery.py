@@ -44,10 +44,14 @@ def test_c99_policy_focus_and_one_shot_guards(tmp_path):
         assert(p.stable_up_frames==0);
         for(k=0;k<12;k++)assert(step(&p,1,0x7f,1,0,130)==0);
         assert(p.stable_up_frames==0);
-        /* Six stable foreground frames, >=180 ms; exactly one release. */
+        /* Six stable foreground frames AND >=180ms of actual clean
+         * observations, not just >=180ms elapsed after the return. */
         for(k=0;k<5;k++)assert(step(&p,1,0x7f,1,1,160)==0);
         assert(step(&p,1,0x7f,1,1,170)==0);
-        assert(step(&p,1,0x7f,1,1,190)==1);
+        assert(step(&p,1,0x7f,1,1,190)==0); /* 30ms clean only */
+        assert(p.pending);
+        assert(step(&p,1,0x7f,1,1,339)==0);
+        assert(step(&p,1,0x7f,1,1,340)==1);
         assert(!p.pending);
         for(k=0;k<20;k++)assert(step(&p,1,0x7f,1,1,1000)==0);
         /* A fresh native down (0xff) cannot be rewritten as an up. */
@@ -69,6 +73,28 @@ def test_c99_policy_focus_and_one_shot_guards(tmp_path):
         spider_alt_latch_policy_return(&p,1);
         assert(step(&p,0,0x7f,1,1,4900)==0);
         assert(step(&p,1,0x7f,1,1,5001)==3);
+        assert(!p.pending);
+        /* A real physical Tab/Alt event interrupts the clean
+         * observation interval; the 180ms clock must restart. */
+        spider_alt_latch_policy_loss(&p);
+        spider_alt_latch_policy_return(&p,1);
+        for(k=0;k<6;k++)
+          assert(step(&p,1,0x7f,1,1,100+30*k)==0);
+        assert(step(&p,1,0x7f,0,1,280)==0);
+        assert(!p.stable_up_started&&p.stable_up_frames==0);
+        for(k=0;k<6;k++)
+          assert(step(&p,1,0x7f,1,1,300+30*k)==0);
+        assert(step(&p,1,0x7f,1,1,479)==0);
+        assert(step(&p,1,0x7f,1,1,480)==1);
+        assert(!p.pending);
+        /* A late first clean sample cannot borrow time from the
+         * foreground wake or the previous ineligible window. */
+        spider_alt_latch_policy_loss(&p);
+        spider_alt_latch_policy_return(&p,1);
+        assert(step(&p,0,0x7f,1,1,3600)==0);
+        for(k=0;k<6;k++)
+          assert(step(&p,1,0x7f,1,1,4000+30*k)==0);
+        assert(step(&p,1,0x7f,1,1,4180)==1);
         assert(!p.pending);
         /* Another loss cancels any previous return window. */
         spider_alt_latch_policy_loss(&p);
@@ -114,6 +140,8 @@ def test_original_write_is_one_byte_only_and_fail_closed():
     assert 'SPIDER_ALT_LATCH_MIN_UP_FRAMES = 6' in model
     assert 'SPIDER_ALT_LATCH_MIN_UP_MS = 180' in model
     assert 'SPIDER_ALT_LATCH_MAX_AFTER_RETURN_MS = 5000' in model
+    assert 'stable_up_since_ms' in model and 'stable_up_started' in model
+    assert 'ms_since_return-p->stable_up_since_ms' in model
     assert 'p->pending=0u;' in model
     # A passing policy check does not permit a stale/cached modifier
     # reading to authorize a write if Tab, AltGr or original keyboard
