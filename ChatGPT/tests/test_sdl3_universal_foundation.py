@@ -254,7 +254,7 @@ def test_sdl3_normalized_input_diagnostic_has_no_active_win32_controls():
     assert "EnableWindow(ui->pads,lock?FALSE:TRUE)" in setup
     assert "EnableWindow(ui->actions,lock?FALSE:TRUE)" in setup
     assert "for(i=SPIDER_UI_CAPTURE;i<=SPIDER_UI_CLOSE;i++)" in setup
-    assert "for(i=SPIDER_UI_RAW;i<=SPIDER_UI_TEST;i++)" in setup
+    assert "for(i=SPIDER_UI_RAW;i<=SPIDER_UI_USE;i++)" in setup
     assert "EnableWindow(button,lock?FALSE:TRUE)" in setup
     assert "if(lock)SetFocus(ui->hwnd)" in setup
     assert "if(ui->test_mode) {" in setup
