@@ -3,7 +3,7 @@
 /* One-byte, experimental native Left Alt latch reconciliation.
  * Only the original SHA-verified retail EXE is supported. Never hooks COM,
  * sends Win32 input, calls DirectInput, modifies keyboard bindings, or
- * touches joystick/mouse/global key state. OFF by default.
+ * touches joystick/mouse/global key state. ON by default, explicit INI=0 disables.
  *
  * This is deliberately separate from SDL3 diagnostics and gameplay.
  * Its only possible write is the game's own DIK_LMENU latch at 0x006B7964:
