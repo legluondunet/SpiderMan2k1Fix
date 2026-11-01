@@ -203,6 +203,24 @@ stored eight-action model profile. Foreground loss, model/profile
 changes and invalid snapshots reset the gate. No keyboard synthesis,
 native DirectInput read/write or other gameplay action is performed.
 
+**2026-11-01 new PS3 hardware log** `SpiderMan2k1Fix(20261101-192102).log`,
+build `v1.1.0-679e04b`: `SDL3-SETUP: START-SAMPLE id=2 slot=1
+armed=1 previous=0 capture=1` proves Start was pressed **while the
+seven-action binding capture was active**. The original Start-claim
+code correctly refuses changing controller ownership during a rebind.
+After keyboard Escape, it logs
+`SDL3-PROBE: SETUP RETURN Start takeover disarmed until neutral`
+and later `SDL3-OWNER: START REFUSED unsupported native controller`,
+which concerns **native DirectInput ownership**, not a hardware SDL3
+failure. To avoid requiring Start to double as both binding and source
+selection, SDL3 Setup now exposes a dedicated **Use selected SDL3
+controller** button (keyboard `Ctrl+Shift+U`), which queues the exact
+currently selected GUID/instance model only if no action capture is
+underway. On next safe foreground Flip, the existing unique-ID +
+VID/PID check accepts unsupported DI models into the **read-only generic
+semantic adapter**, and leaves verified DS4/Xbox native code untouched.
+Hardware needs to verify the new explicit button/return path.
+
 **Hardware test needed before gameplay bridging:** with PS3 selected,
 observe `SDL3-GENERIC: SELECTED explicit modal Start`, then
 `SDL3-GENERIC: SEMANTIC ARMED` after releasing every button,
