@@ -2095,7 +2095,10 @@ def test_bink_handoff_synthetic_return_release_guards_physical_input():
     assert "GetForegroundWindow()!=hwnd" in owner
     assert "!IsWindowVisible(hwnd)" in owner
     assert "active_scan_thread!=GetCurrentThreadId()" in owner
-    assert "release_active_key();" in owner
+    assert "if(!release_active_key()) {" in owner
+    assert "KEYUP failed; physical Enter/Space safety wait retained" in owner
+    assert "return 0;" in owner
+    assert "return 1;" in owner
     for prohibited in ("GetAsyncKeyState(", "SPIDER_NATIVE_GAME_INPUT_UPDATE(",
                        "SPIDER_NATIVE_GAME_BUTTON", "VirtualProtect(",
                        "memcpy(", "Sleep(", "SendInput("):
