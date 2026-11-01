@@ -34,6 +34,14 @@ int SpiderSDL3Probe_SelectedRT(int *normalized_rt);
 int SpiderSDL3Probe_SelectedSample(uint32_t *instance,uint16_t *vid,
                                   uint16_t *pid,
                                   SpiderSDL3ControllerSample *sample);
+/* Verified New Game Bink #4 -> first native 3D input handoff only.
+ * A held physical DS4 Cross/Xbox A is also the game's native Jump/scene
+ * action. Refresh the ALREADY-open SDL3 selected gamepad on the same game
+ * thread and wait (max 5s) for SOUTH to release before first 3D input.
+ * Return 1 on observed held->released, 0 when no pad/SOUTH held,
+ * -1 on lost identity/focus, -2 on bounded timeout. Diagnostics log
+ * any actual held state. No game-owned DirectInput access or writes. */
+int SpiderSDL3Probe_NewGameBinkWaitSouthRelease(HWND game_window);
 /* Explicit controller-setup dialog only. Called synchronously on the
  * original game thread while its Flip/tick is stopped in the native
  * Joystick menu. Poll mapped SDL3 devices without altering game-owned
