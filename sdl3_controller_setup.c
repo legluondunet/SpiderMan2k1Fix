@@ -854,13 +854,13 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_NOTIFY,
         465,207,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_CLOSE,NULL,NULL);
       CreateWindowExA(0,"BUTTON","Calibrate SDL3 joystick",
-        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON|BS_NOTIFY,
         465,254,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_RAW,NULL,NULL);
       CreateWindowExA(0,"BUTTON","Test SDL3 inputs",
-        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON|BS_NOTIFY,
         465,301,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_TEST,NULL,NULL);
       CreateWindowExA(0,"BUTTON","Use selected SDL3 controller",
-        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON|BS_NOTIFY,
         465,349,230,34,hwnd,(HMENU)(uintptr_t)SPIDER_UI_USE,NULL,NULL);
       label=CreateWindowExA(0,"STATIC",
         "Stick Left/Right: navigate    L1/R1: browse controllers\r\n"
