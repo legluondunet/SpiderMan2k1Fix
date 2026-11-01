@@ -1,7 +1,7 @@
 /* SDL3 experimental read-only reconnaissance for Spider-Man (PC 2001).
  * This does NOT replace the validated DirectInput backend. We use the DLL
  * ABI dynamically: SDL3.dll is optional and never copied from the system PATH.
- * Opt in via [Input] ExperimentalSDL3Probe=1 and [Debug] Log=1.
+ * Default ON; [Input] ExperimentalSDL3Probe=0 disables SDL3 selection.\n * [Debug] Log=1 is optional diagnostics only.
  *
  * No SDL window, audio, renderer, game mapping writes or synthetic keys.
  * SDL3's instance ID is the only controller identity used here. */
