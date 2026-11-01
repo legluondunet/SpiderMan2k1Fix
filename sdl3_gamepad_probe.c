@@ -616,6 +616,16 @@ unsigned SpiderSDL3Probe_RawListAll(uint32_t *out,
   sdl_free(raw);
   return n;
 }
+int SpiderSDL3Probe_RawName(uint32_t id,char *name,size_t capacity) {
+  const char *readable;
+  if(name && capacity)name[0]=0;
+  if(!name || !capacity || !id || !spider_raw_ui_thread() ||
+     !sdl_joystick_name)return 0;
+  readable=sdl_joystick_name(id);
+  if(!readable || !*readable)return 0;
+  snprintf(name,capacity,"%s",readable);
+  return 1;
+}
 unsigned SpiderSDL3Probe_RawList(uint32_t *out,unsigned capacity) {
   uint32_t *raw,*mapped;
   int count=0,mapped_count=0;
