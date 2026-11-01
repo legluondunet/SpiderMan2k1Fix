@@ -374,6 +374,12 @@ def test_native_joystick_main_entry_opens_sdl3_directly_but_keyboard_remains_ori
     assert "SpiderSDL3_InstallDirectJoystickEntry(logger);" in bridge
     assert "SDL3-DIRECT-ENTRY: INSTALL attempt" in native
     assert "SDL3-DIRECT-ENTRY: REFUSED PE header" in native
+    # Actual SHA-verified 2001 game PE header observed by GE-Proton:
+    # 0x02A0D000. Old arbitrary upper bound 0x02000000 rejected it.
+    assert "nt->OptionalHeader.SizeOfImage!=0x02A0D000u" in native
+    assert "nt->OptionalHeader.SizeOfImage>0x02000000u" not in native
+    assert "nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR32_MAGIC" in native
+    assert "nt->OptionalHeader.ImageBase!=0x00400000u" in native
     assert "SDL3-DIRECT-ENTRY: REFUSED section=" in native
     assert "SDL3-DIRECT-ENTRY: REFUSED no direct CALL rel32" in native
     assert "if(SpiderSDL3ControllerSetup_Enabled())" in bridge
