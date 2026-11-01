@@ -784,3 +784,122 @@ The next test should be recorded in the Xbox/SDL3 PR #80,
 **not** in the mouse-only PR #90, whose Wine acceptance is
 already complete. All relevant PRs remain **DRAFT and
 unmerged**.
+
+
+## 1 November 2026 — Xbox 360 Wine physical gameplay PASS; missed external-focus pause tolerated
+
+**First-hand maintainer report:** "la manette xbox fonctionne très bien".
+During this specific Wine session, after a real external
+window focus change, the **custom automatic background PAUSED
+screen did not activate**. The user found **no instability,
+no broken commands, and no other abnormal behavior after
+returning to the game**. Per explicit maintainer decision,
+this is a **tolerated Wine-specific focus limitation**,
+not a current release blocker and not a request for a
+new workaround.
+
+**Full log:** `SpiderMan2k1Fix(20261101-092508).log`
+(**1,122 lines**). Version `v1.1.0-5cd333b`, the
+already-verified GitHub temporary PR #90 test merge of
+`c3755114` into its PR #80 base (same code revision as the
+previous 08:49, 09:04 and 09:13 Linux trials).
+Environment Linux Manjaro, **Wine 11.0**,
+GE-Proton11-11 environment-directory hint; matched exact
+supported retail `SpideyPC.exe` SHA-256. This
+build **does not include** independent Alt-latch PR #88.
+
+### Controller-specific evidence in this run
+
+- Hardware `045E:028E` observed via XInput,
+  DirectInput8 and SDL3; **original game-owned DirectInput
+  controller verified** (`SDL3-OWNER: ALREADY-NATIVE`,
+  log line **463**) with native RAM-only canonical Xbox
+  seven-action mapping applied (**462**).
+- Debug `SDL3GameplayTrace=1` enabled (line **35**).
+  All **64** bounded passive `SDL3-3D-TRACE` samples
+  were produced (**561–883**), including physical button
+  press/release edges, left-stick axis changes, D-pad POV
+  positions 0/9000/18000/27000 and neutral 4294967295,
+  and independently observed SDL3 button bits.
+  Physical A/B/X/Y, Back/Start and other controls were
+  exercised; the **user confirms proper gameplay**,
+  while traces alone cannot establish arbitrary
+  action-to-physical-button labels or every customizable
+  semantic layout. The read-only 64-sample cap expires
+  before later inputs and is not a failure.
+- `Xbox360TriggerProbe=1` produced **15** raw samples:
+  neutral `lZ=32768`; RT pressed `lZ=128`,
+  normalized SDL3 RT `32767`; LT pressed
+  `lZ=65408`, SDL3 LT `32767`.
+  There are **four** `RT-SWING DOWN` and four
+  `RT-SWING UP` messages (**868/872**,
+  **908/911**, **967/972**, **978/980**) for the
+  verified native keyboard Swing scancode `DIK=0x22`.
+  LT samples (**960–964**, **992–995**)
+  do **not** trigger RT Swing; all release transitions
+  are recorded. Together with the maintainer's successful
+  gameplay report, this supports a successful practical
+  Xbox RT Swing scenario under Wine without stuck
+  injection. The log's synthetic scancodes are not
+  independent visual proof of a swing animation.
+- **Normal in-game PAUSE** must be kept distinct from
+  the automatic **background focus PAUSED screen**.
+  Physical Back `BUTTON6` produces
+  `GAMEPAD-XBOX360: 3D MENU Back -> Escape`
+  (lines **735, 779, 794, 1043, 1057**) and the
+  original game's pause UI graphics are rendered
+  (`PAUSE-NATIVE-43`, e.g. **757–767**).
+  Native 3D cleanup / controller-7 return to menu
+  completes without failure (**1085–1117**).
+- Permanent in-game mouse off remains active,
+  source-signature guarded (**362–363**).
+
+### External focus: observable limit and acceptance criterion
+
+- Startup explicitly enables
+  `FOCUS-PAUSE: permanent Flip-boundary pause ON`
+  (line **111**) and enables the audio/media
+  pause handling (lines **59–62**).
+- Unlike previous Wine 09:04/09:13 runs, this
+  complete log has **only the initial foreground
+  sample** (`INPUT-FOCUS` line **365**,
+  `INPUT-WINDOW` **366**) and **zero subsequent
+  focus-transition, background PAUSED,
+  DirectSound focus-pause/resume or manual wake events**.
+  Therefore the trace cannot independently establish
+  whether Wine delivered the focus-loss notification,
+  why the pause was not triggered, or the precise
+  lost-focus interval. The *actual external
+  application switch and successful continued gameplay*
+  are confirmed by the maintainer, not inferred
+  from these missing markers.
+- **Approved Wine tolerance policy:** if a genuine
+  focus change fails to raise the custom PAUSED
+  overlay, **accept it as nonblocking** provided the
+  game resumes/responds normally (keyboard/gamepad),
+  renders correctly, has functioning audio,
+  and shows **no crash, stuck inputs, or instability**.
+  Do **not** add speculative Win32 focus hooks,
+  global input capture, forced simulation of focus
+  loss, or unconditional pause logic merely to
+  achieve the banner. Reopen only on a **user-observed
+  functional regression**. This tolerance is
+  **specific to Wine/Proton**; it does **not**
+  relax the Windows native focus/Alt-latch
+  validation requirements or claim pause detection
+  works in this log.
+- Maintainer validated Xbox **functionality on
+  the tested Wine system**. Do not overclaim full
+  multi-controller simultaneous handoff, all
+  programmable layouts, or native Windows gameplay
+  from this single Xbox-only run.
+
+**Disposition:** **Xbox 360 practical physical Wine
+gameplay PASS**; **custom external-focus PAUSED
+intermittence tolerated**; **no gameplay code
+changes required for this finding**. Experimental
+PR #80 remains **DRAFT, unmerged**, pending its
+separate hardware/platform matrix. The mouse-only
+PR #90 remains separately unmerged; do not
+retroactively attribute independent PR #88 Alt
+latch behavior to the tested artifact.
