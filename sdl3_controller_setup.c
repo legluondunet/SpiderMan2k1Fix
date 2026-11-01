@@ -45,6 +45,9 @@ typedef struct {
   unsigned slot;
   unsigned count;
   unsigned action;
+  unsigned test_mode,test_reports;
+  uint32_t test_buttons_previous;
+  int test_lt_previous,test_rt_previous;
   /* Capped controller focus/Start telemetry for real Windows regression
    * reports; no per-frame spam and no change to input routing. */
   unsigned start_trace_count;
@@ -429,6 +432,28 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
     }
     return;
   }
+  if(ui->test_mode) {
+    /* Keyboard F9: verify SDL3's normalized hardware signal directly.
+     * Suppress all controller-driven dialog navigation while testing.
+     * No game input, no native DirectInput reads or writes. */
+    if(s.buttons!=ui->test_buttons_previous ||
+       (int)s.axis[SPIDER_SDL3_AXIS_LT]!=ui->test_lt_previous ||
+       (int)s.axis[SPIDER_SDL3_AXIS_RT]!=ui->test_rt_previous) {
+      ui->test_buttons_previous=s.buttons;
+      ui->test_lt_previous=s.axis[SPIDER_SDL3_AXIS_LT];
+      ui->test_rt_previous=s.axis[SPIDER_SDL3_AXIS_RT];
+      snprintf(line,sizeof(line),
+        "SDL3 TEST: buttons=0x%06lX LX=%d LY=%d LT=%d RT=%d. Press F9 to exit.",
+        (unsigned long)s.buttons,
+        (int)s.axis[SPIDER_SDL3_AXIS_LEFTX],
+        (int)s.axis[SPIDER_SDL3_AXIS_LEFTY],
+        (int)s.axis[SPIDER_SDL3_AXIS_LT],
+        (int)s.axis[SPIDER_SDL3_AXIS_RT]);
+      status(ui,line);
+      if(setup_report && ui->test_reports++<36u)setup_report(line);
+    }
+    return;
+  }
   if(!ui->capture.active) {
     uint32_t edge=spider_sdl3_setup_nav_step(&ui->nav,&s);
     if(edge==(1u<<SPIDER_SETUP_NAV_LEFT) ||
@@ -584,6 +609,21 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
     }
     return 1;
   }
+  if(vk==VK_F9) {
+    ui->test_mode=!ui->test_mode;
+    ui->test_buttons_previous=~0u;
+    ui->test_lt_previous=-100000;ui->test_rt_previous=-100000;
+    spider_sdl3_capture_reset(&ui->capture);
+    spider_sdl3_setup_nav_reset(&ui->nav);
+    if(!ui->test_mode)
+      status(ui,"SDL3 TEST OFF. Keyboard and pad setup navigation restored.");
+    else
+      status(ui,"SDL3 TEST ON: press buttons, move sticks and triggers. F9 exits.");
+    if(setup_report)setup_report(ui->test_mode?
+      "SDL3-SETUP: F9 universal SDL3 normalized input test ON (read-only)":
+      "SDL3-SETUP: F9 universal SDL3 normalized input test OFF");
+    return 1;
+  }
   if(vk==VK_F8) {
     /* Keyboard-only hardware recognition for previously unmapped SDL
      * joysticks; nested modal, never edits game-owned DirectInput. */
@@ -643,7 +683,8 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       label=CreateWindowExA(0,"STATIC",
         "Stick Left/Right: actions or buttons   Stick Up/Down: select row or button\r\n"
         "L1/R1: browse pad   Start: choose pad   Circle/B: close + use this pad\r\n"
-        "Triangle/Y: defaults    Keyboard: Tab, Enter, Esc, PgUp/PgDn, F8: recognize unknown joystick",
+        "Triangle/Y: defaults    Keyboard: Tab, Enter, Esc, PgUp/PgDn\r\n"
+        "F8: recognize unknown joystick    F9: live SDL3 button test",
         WS_CHILD|WS_VISIBLE,18,351,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->status=CreateWindowExA(0,"STATIC","",
