@@ -1,7 +1,7 @@
 # SpiderMan2k1Fix
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
-[![Linux / Wine / Proton compatible](https://img.shields.io/badge/Linux%20%2F%20Wine%20%2F%20Proton-compatible-428b40?logo=linux&logoColor=white)](#installation-on-windows-and-linux-wine)
+[![Linux Wine / Proton compatible](https://img.shields.io/badge/Linux%20Wine%20%2F%20Proton-compatible-428b40?logo=linux&logoColor=white)](#installation-on-windows-and-linux-wine)
 
 SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spider-Man*, released by Activision in 2001. It improves compatibility with modern Windows systems and Linux/Wine while adding new features.
 
@@ -35,7 +35,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **Widescreen HUD:** Corrects the proportions and positioning of HUD elements, including health and web gauges, compass, mission objectives, boss health bars, and in-game pause menus. Tested at 1920×1080 (16:9) and 1920×1200 (16:10).
 - **FPS limiter:** Configurable frame-rate cap, set to **30 FPS by default**. Lower limits, such as 20 FPS, can be selected for timing-sensitive gameplay.
 - **Alt+Tab stability:** Background game pause, synchronized Bink/DirectSound, and keyboard/gamepad resume. Press and release any key or an eligible selected controller button after returning. The OS desktop cursor is restored. See [focus details](docs/references/CONFIGURATION.md).
-- **Experimental SDL3 gamepad support:** Sony DS4 and Xbox 360-compatible native DirectInput ownership, selected controller handoff, Cross/A confirm, Circle/B cancel, and Xbox RT Swing. The combined build passed Windows 11 and Wine/Proton hardware tests on the documented devices; **experimental INI opt-ins are still required**. Other controllers and all custom bindings are not certified. See [SDL3 experiments](docs/references/SDL3_NATIVE_OWNER_EXPERIMENT.md) and [Windows/Wine results](docs/references/INTEGRATION_XBOX_MOUSE_ALT_FOCUS_ACCEPTANCE.md).
+- **Experimental SDL3 gamepad support:** Sony DS4 and Xbox 360-compatible native DirectInput ownership, selected controller handoff, Cross/A confirm, Circle/B cancel, and Xbox RT Swing. The combined build passed Windows 11 and Wine/Proton hardware tests on the documented devices; **enabled by default on this staging branch; `=0` explicitly disables a module**. Other controllers and all custom bindings are not certified. See [SDL3 experiments](docs/references/SDL3_NATIVE_OWNER_EXPERIMENT.md) and [Windows/Wine results](docs/references/INTEGRATION_XBOX_MOUSE_ALT_FOCUS_ACCEPTANCE.md).
 - **Keyboard layouts:** Automatically detects the active keyboard layout and adapts the game's controls, keyboard labels, and cheat-code entry. The original game only supported QWERTY layouts.
 - **No game mouse:** Keyboard/gamepad only. Game cursor, clicks and polling are permanently off. Desktop pointer unaffected; legacy `MouseEnabled` ignored.
 - **DPI awareness:** Handles Windows display scaling to ensure correct window dimensions and rendering on high-DPI displays.
@@ -47,11 +47,11 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 
 Successfully tested on Windows 11 and Linux/Wine.
 
-The optional DS4 custom-binding bridge is **off by default**; see the [activation guide](docs/references/SDL3_NATIVE_OWNER_EXPERIMENT.md#experimental-ds4-only-live-3d-gameplay-profile).
+The guarded DS4 custom-binding bridge is **on by default**, but only applies to verified supported mappings; see the [activation guide](docs/references/SDL3_NATIVE_OWNER_EXPERIMENT.md#experimental-ds4-only-live-3d-gameplay-profile).
 
 ## Bugs Resolved
 
-- **Alt+Tab crashes and input loss:** Combined Windows 11 hardware tests passed 20/20 checks, including six actual gated repairs of the original stuck Left Alt with the optional, default-off `ExperimentalAltLatchRecovery=1`. Under Wine, absent or delayed background PAUSED is tolerated only if return works normally.
+- **Alt+Tab crashes and input loss:** Combined Windows 11 hardware tests passed 20/20 checks, including six actual gated repairs of the original stuck Left Alt with the now default-on `ExperimentalAltLatchRecovery=1`. Under Wine, absent or delayed background PAUSED is tolerated only if return works normally.
 - **Focus-loss instability:** Added automatic game pausing with synchronized video and audio playback, preventing gameplay and media synchronization issues while the game is in the background.
 - **Crash on exit:** Fixed a crash that could occur when quitting the game.
 - **Broken F9 screenshots on Windows:** Fixed screenshots that appeared entirely purple or contained no visible game graphics.
@@ -120,7 +120,7 @@ game build or sound configuration.
 1. Install the original *Spider-Man (2001)* PC game.
 2. Download the latest version of SpiderMan2k1Fix from the [GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases) page.
 3. Extract the archive **without flattening its folders** into the game's installation directory. Place only `winmm.dll` alongside `SpideyPC.exe`; the archive places `SpiderMan2k1Fix.dll`, **official Windows x86 `SDL3.dll`**, its license and the project documentation inside `SpiderMan2k1Fix/`.
-   - No separate SDL3 download is needed. SDL3 is dynamically loaded only when its experimental gamepad features are enabled; original native input remains the default.
+   - No separate SDL3 download is needed. SDL3 is loaded on demand by the default-on controller bridge; unsupported or ambiguous devices retain the fail-closed native input path.
    - Do not move the original game's executable, data or resources.
 4. Launch the game normally under Windows.
 
