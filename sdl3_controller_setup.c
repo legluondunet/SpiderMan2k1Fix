@@ -223,7 +223,7 @@ static void select_slot(SpiderSDL3SetupUI *ui,unsigned slot) {
   ui->modal_start.active=id; /* local chooser follows manual LB/RB too */
   refresh_actions(ui);
   snprintf(line,sizeof(line),
-    "%s (%04X:%04X) - profile v2; Cross/A Confirm, Circle/B Back fixed; 3D actions autosaved.",
+    "%s (%04X:%04X) - SDL3 profile editable/saved; universal 3D game bridge NOT active.",
     name,(unsigned)vid,(unsigned)pid);
   status(ui,line);
 }
@@ -445,7 +445,7 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
       ui->test_lt_previous=s.axis[SPIDER_SDL3_AXIS_LT];
       ui->test_rt_previous=s.axis[SPIDER_SDL3_AXIS_RT];
       snprintf(line,sizeof(line),
-        "SDL3 TEST: buttons=0x%06lX LX=%d LY=%d LT=%d RT=%d. Press F9 to exit.",
+        "SDL3 TEST: buttons=0x%06lX LX=%d LY=%d LT=%d RT=%d. Select Stop SDL3 input test to exit.",
         (unsigned long)s.buttons,
         (int)s.axis[SPIDER_SDL3_AXIS_LEFTX],
         (int)s.axis[SPIDER_SDL3_AXIS_LEFTY],
@@ -685,7 +685,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       CreateWindowExA(0,"BUTTON","Close / return to game",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_NOTIFY,
         465,207,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_CLOSE,NULL,NULL);
-      CreateWindowExA(0,"BUTTON","Recognize unknown joystick",
+      CreateWindowExA(0,"BUTTON","Calibrate SDL3 joystick",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
         465,254,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_RAW,NULL,NULL);
       CreateWindowExA(0,"BUTTON","Test SDL3 inputs",
