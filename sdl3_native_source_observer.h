@@ -12,6 +12,7 @@ enum { SPIDER_SOURCE_KEY_BYTES=256, SPIDER_SOURCE_JOY_BYTES=32,
        SPIDER_SOURCE_MAX_CHANGES=96, SPIDER_SOURCE_MAX_FOCUS_EVENTS=12 };
 typedef struct {
   uint16_t keyboard_held, keyboard_fresh, keyboard_released;
+  uint8_t keyboard_alt_tab; /* bits: left Alt=1, right Alt=2, Tab=4; never typed keys */
   uint32_t joystick_held, joystick_fresh, joystick_released;
   uint32_t merged_actions; /* game output, already keyboard+joystick merged */
 } SpiderNativeSourceSnapshot;
@@ -37,6 +38,10 @@ static inline void spider_native_source_decode(
     if(keyboard[i]==0xffu)out->keyboard_fresh++;
     if(keyboard[i]==0x80u)out->keyboard_released++;
   }
+  /* These are only navigation modifiers, not character scan codes. */
+  if(keyboard[0x38]&0x7fu)out->keyboard_alt_tab|=1u;
+  if(keyboard[0xb8]&0x7fu)out->keyboard_alt_tab|=2u;
+  if(keyboard[0x0f]&0x7fu)out->keyboard_alt_tab|=4u;
   for(i=0;i<SPIDER_SOURCE_JOY_BYTES;i++) {
     if(joystick[i]&0x7fu)out->joystick_held|=(uint32_t)1u<<i;
     if(joystick[i]==0xffu)out->joystick_fresh|=(uint32_t)1u<<i;
@@ -55,8 +60,9 @@ static inline int spider_native_source_focus_step(
   if(o->have_focus&&o->was_active==active)return 0;
   if(o->have_focus&&o->was_active!=active) {
     o->have_previous=0;
-    /* Reserve a fresh source snapshot for the first foreground Flip. */
-    o->pending_resume=active?1u:0u;
+    /* At most four consecutive active Flips after a resume. The ordinary
+     * event cap is NOT reset, and only eight reserved samples are possible. */
+    o->pending_resume=active?4u:0u;
   }
   o->have_focus=1u;
   o->was_active=active;
@@ -73,13 +79,16 @@ static inline int spider_native_source_changed(
   /* Even after 96 ordinary changes, retain up to 8 post-focus snapshots.
    * There is NO rolling reset: both budgets stay bounded per process. */
   if(reserved&&(!o->pending_resume||o->resume_samples>=8u))return 0;
-  if(o->have_previous&&o->context==context&&
+  /* Countdown advances on EVERY eligible Flip, even with no change. */
+  if(o->pending_resume)o->pending_resume--;
+  /* Reserved snapshots are deliberately consecutive: this can reveal
+   * whether a held Alt/Tab latch clears during the first few Flips. */
+  if(!reserved&&o->have_previous&&o->context==context&&
      memcmp(&o->previous,s,sizeof(*s))==0)return 0;
   o->previous=*s;
   o->context=context;
   o->have_previous=1u;
-  o->last_resume=o->pending_resume;
-  o->pending_resume=0u;
+  o->last_resume=reserved?1u:0u;
   if(reserved)o->resume_samples++;
   else o->emitted++;
   return 1;
