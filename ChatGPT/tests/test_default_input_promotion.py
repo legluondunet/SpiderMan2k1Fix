@@ -76,3 +76,53 @@ def test_debug_and_untested_ps1_experiments_not_promoted():
     assert 'GetPrivateProfileIntA("Debug","Xbox360TriggerProbe",0,ini)==1' in UI
     assert 'GetPrivateProfileIntA("Debug","SDL3GameplayTrace",0,ini)==1' in UI
     assert '"Log=0\\r\\n"' in CFG
+
+
+def test_legacy_ini_saved_zero_is_not_silently_changed():
+    """An old generated value of 0 is indistinguishable from a user opt-out.
+
+    Missing key -> new runtime fallback ON; present =0 -> OFF.
+    A valid old configuration should not undergo the auto-repair path.
+    """
+    old=configparser.ConfigParser(interpolation=None)
+    old.read_string("""[Input]
+KeyboardLayout=Auto
+ExperimentalNativeJoystickUnplugGuard=0
+ExperimentalNativeJoystickReconnect=0
+ExperimentalNativeJoystickMappingSwap=0
+ExperimentalAltLatchRecovery=0
+""")
+    for key in ("ExperimentalNativeJoystickUnplugGuard",
+                "ExperimentalNativeJoystickReconnect",
+                "ExperimentalNativeJoystickMappingSwap",
+                "ExperimentalAltLatchRecovery"):
+        assert old.getint("Input",key,fallback=1)==0
+    for key in ("ExperimentalSDL3Probe","ExperimentalSDL3NativeOwner",
+                "ExperimentalSDL3GameplayBindings"):
+        assert old.getint("Input",key,fallback=1)==1
+
+    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1' in PROBE
+    assert 'GetPrivateProfileIntA("Input","ExperimentalNativeJoystickUnplugGuard",1,ini)!=1' in PROBE
+    assert 'GetPrivateProfileIntA("Input","ExperimentalAltLatchRecovery",1,ini)==1' in ALT
+    validator=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
+    for key in ("ExperimentalNativeJoystickUnplugGuard",
+                "ExperimentalNativeJoystickReconnect",
+                "ExperimentalNativeJoystickMappingSwap",
+                "ExperimentalAltLatchRecovery"):
+        assert f'"{key}"' in validator
+    assert "Duplicate key [%s] %s" in validator
+    assert "spider_ini_uint(value,0,1)" in validator
+    boot=CFG[CFG.index("void SpiderCfg_ValidateCurrentIni("):]
+    assert "if(!check.errors && !check.warnings)" in boot
+    assert 'INI-CHECK: valid SpiderMan2k1Fix.ini' in boot
+    # Do not add a second occurrence to "turn on" an older setting.
+    # An explicit edit of each existing line or moving the INI aside
+    # is the safe, user-directed upgrade path.
+
+
+def test_factory_input_promotion_never_duplicates_known_switches():
+    generated=configparser.ConfigParser(interpolation=None,strict=True)
+    generated.read_string(EXAMPLE)
+    for key in (*KEYS,"ExperimentalSDL3XboxRTSwing"):
+        assert list(generated["Input"]).count(key.lower())==1
+        assert generated["Input"][key]=="1"
