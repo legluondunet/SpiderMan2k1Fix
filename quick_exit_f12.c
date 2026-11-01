@@ -29,6 +29,7 @@
 #include <string.h>
 #include "quick_exit_f12.h"
 #include "gamepad_ui_profile.h"
+#include "sdl3_gamepad_probe.h"
 
 #define SPIDER_NATIVE_F12_POST ((BYTE *)(uintptr_t)0x00515373u)
 #define SPIDER_SHELL_MENU_TICK ((BYTE *)(uintptr_t)0x00493DD6u)
@@ -758,6 +759,10 @@ static void spider_newgame_enter_release_barrier(int confirmed_movie4) {
   if(confirmed_movie4) {
     HWND hwnd=(HWND)InterlockedCompareExchangePointer(&game_hwnd,NULL,NULL);
     SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(hwnd);
+    /* Synthetic Return is not the physical gamepad SOUTH button.
+     * On the original game thread, wait for a still-held verified
+     * Cross/A to become neutral before native 3D cinematic input. */
+    SpiderSDL3Probe_NewGameBinkWaitSouthRelease(hwnd);
   }
   enter_before=(GetAsyncKeyState(VK_RETURN)&0x8000)!=0;
   space_before=(GetAsyncKeyState(VK_SPACE)&0x8000)!=0;
