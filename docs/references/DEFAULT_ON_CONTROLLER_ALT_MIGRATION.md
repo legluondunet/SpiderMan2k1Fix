@@ -176,6 +176,52 @@ wait to reach `timeout=1`. **This code adjustment has
 passed static/source and Windows x86 build checks, but
 must be tested in the game on the exact new artifact.**
 
+## 1 Nov: release blocker — long-held Cross/A skips the Stan Lee intro
+
+**Status: on-device regression reproduced; follow-up build NOT yet
+physically retested.** The maintainer observed that holding **physical
+DS4 Cross** somewhat longer than a quick tap while skipping the
+**separate New Game Bink video** causes the **first scripted 3D
+cinematic with Stan Lee to be skipped**. A new Wine 11.0 log,
+`SpiderMan2k1Fix(20261101-132515).log` (test-merge
+`a70b4b8`), shows the 1,500ms synthetic Return issue was fixed,
+but this *separate* physical hold issue remains. The actual 3D script
+skip is verified by the player's observation, **not directly by the
+old log**, which only records native scene-mode frames.
+
+The native game reads **SOUTH/Cross/A as a real 3D Jump/scene action**.
+Our synthetic Return `KEYUP` does **not** release a physical
+controller button. Even when `DEBUG-BINK-ENTER-HANDOFF timeout=0`,
+an inherited held Cross may cause a real native cutscene skip.
+`raw_enter_before=0x7F` is seen in both observed successful
+and skipped runs; it does not establish independent causation.
+
+**Staged candidate fix** in
+`SpiderSDL3Probe_NewGameBinkWaitSouthRelease`: only at the
+original positively verified New Game Bink-4 → first 3D input owner,
+refresh SDL3 on its existing game thread, require the exact selected
+DS4/Xbox VID:PID and verified game-owned DirectInput identity.
+If SOUTH is held, wait for **its physical release** before the first
+original 3D input update, then allow 40ms to settle. Neither the
+original joystick's state nor script request byte or keyboard buffer
+is rewritten. A **5s watchdog** prevents indefinite blocking, but
+**a continuously held button at timeout can still cause a skip**:
+do not describe this as guaranteed immunity to arbitrarily long
+holds. Unsupported/unverified devices fail closed with no new
+ownership or input patch.
+
+**Mandatory regression test:** using the build generated *after*
+this change, under Wine and Windows separately, select **New Game**,
+hold **DS4 Cross** or **Xbox A** long enough to pass the movie and
+continue holding into the scene boundary, then release. The log should
+show `SDL3-BINK-4-SOUTH: HELD` followed by
+`SDL3-BINK-4-SOUTH: RELEASED after <N> ms` and no timeout,
+while the **first Stan Lee 3D cinematic plays normally**. Also
+perform a normal short tap and verify the transition is not delayed.
+If `TIMEOUT 5000ms` appears, re-evaluate the policy rather than
+approving a release. The previous successful 0ms Bink retest does not
+satisfy this newly discovered physical input scenario.
+
 ## Mandatory new physical smoke test before release
 
 **This is new behavior**. Previous 20/20 Windows 11 checks were
