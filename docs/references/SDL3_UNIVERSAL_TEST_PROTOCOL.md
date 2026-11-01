@@ -12,14 +12,22 @@ DirectInput and the existing DS4/Xbox integration are intentionally unchanged.
    Actions run for PR #96. Unzip the game installation files as usual.
 2. Start Spider-Man with one controller connected. Use the **keyboard** to
    open the original Joystick Configuration entry; it opens the SDL3 setup.
-3. Use **Tab** to focus **Test SDL3 inputs**, then press **Enter**. The status becomes `SDL3 TEST ON`. Press and release each
-   face button, SHARE/BACK, START, L3, R3 and both triggers. Note the
-   `SDL3 TEST: buttons=... LX=... LY=... LT=... RT=...` lines.
+3. Use **Tab** to focus **Test SDL3 inputs**, then press **Enter**.
+   The status becomes `SDL3 TEST ON`. **All dialog controls, including
+   the Test button, dropdown, action list and Close, become disabled**;
+   focus moves to the inert parent window, so Wine's gamepad-to-keyboard
+   events cannot click them. Press each face button, SHARE/BACK, START,
+   L3, R3, and both sticks and triggers. Note the
+   `SDL3 TEST: id=... buttons=... LX=... LY=... RX=... RY=... LT=... RT=...` lines.
+   Check that the `id` matches the **selected PS3 or other controller**.
 4. On the tested Sony `054C:09CC` under Wine, earlier independent logs
    observed physical SHARE as SDL bit `0x000010` and L3 as
    `0x000100`. Use these as comparison only, **not** as a universal
    required mapping: other drivers might differ and that is the point.
-5. With the **Test SDL3 inputs** button focused, press **Enter** to exit test mode. Use Escape to close the SDL3 setup.
+5. **Do not use the controller or click the disabled buttons to leave
+   test mode.** Press keyboard **Ctrl+Shift+T** to stop diagnostic capture
+   and re-enable the dialog controls, or **Ctrl+Shift+Q** to close the
+   setup immediately. Once stopped, the usual keyboard Escape works.
 6. Confirm the game still responds to the original keyboard and controller
    controls, including a subsequent Alt+Tab and return.
 
@@ -61,8 +69,11 @@ DirectInput and the existing DS4/Xbox integration are intentionally unchanged.
 
 - Full `SpiderMan2k1Fix(...).log`.
 - Which test (A/B), device VID:PID (if known), Wine/Windows runtime.
-- For Test A: whether the SDL button mask changes on SHARE/BACK and L3,
-  and whether the keyboard regains control after closing the setup.
+- For Test A: whether the Test button and all controls become gray,
+  whether the diagnostic stays **ON** during Cross/Circle and the sticks,
+  whether the SDL button mask changes on SHARE/BACK/L3, whether the
+  right/left stick readings change, whether Ctrl+Shift+T stops testing,
+  and whether the keyboard regains control afterward.
 - For Test B: specifically note whether **B/Circle**, **X/Square** or moving the
   **left stick** reactivates any disabled bottom button or opens the dropdown. Attach the
   `SDL3-RAW-WIZARD: capture UI ISOLATED` and
