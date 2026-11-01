@@ -353,3 +353,34 @@ plus source checks for single-cursor focus, neutral gates, no accidental
 capture and preservation of the existing native DS4/Xbox path.
 Actual Windows/Wine modal UX and left-stick feel must be validated
 before concluding the SDL3 work.
+
+
+### 2026-11-01 live PS3 modal retest, v1.1.0-d1718fe
+
+Hardware log `SpiderMan2k1Fix(20261101-211844).log` on
+GE-Proton11-11 and original verified `SpideyPC.exe` confirms PS3
+`054C:0268` id=2 selected through the modal, neutral gates, and
+**39 generic menu key pulses**: Enter=2, Escape=1, Up=12, Down=15,
+Left=5, Right=4. This corroborates the user's earlier visible
+D-pad menu navigation success. Repeated stick-derived direction
+pulses are emitted, but subjective responsiveness needs another
+visual hardware report. Bink and 3D are **not** exercised here.
+
+At first glance the log repeatedly claims
+`SDL3-SETUP: Cross/A activated focused CAPTURE` (alongside
+`EXPLICIT-SELECT already queued`). Source investigation shows the
+former label is **misleading**: the prior ternary printed CAPTURE for
+**every focused button except RESET**, including USE/TEST/CALIBRATE.
+Thus the log is **not evidence that a binding was actually changed**;
+the adjacent queued duplicate strongly suggests repeated USE presses.
+
+In the follow-up patch, controller South on focused **CAPTURE/RESET**
+never posts Win32 `BN_CLICKED`: such destructive edits require an
+explicit mouse/keyboard click or `Ctrl+Shift+C` / F5. All other
+focused-button activations log the **actual button ID and command**
+(especially USE). No change to keyboard/mouse remapping, persistent
+profiles, DirectInput, the verified generic menu key bridge, or F9.
+Check the next real hardware log for
+`SDL3-SETUP: Cross/A activated focused button id=1010 (USE)`
+versus `SDL3-SETUP: CROSS-CAPTURE BLOCKED`.
+The PR stays DRAFT until menu/Bink and 3D are physically validated.
