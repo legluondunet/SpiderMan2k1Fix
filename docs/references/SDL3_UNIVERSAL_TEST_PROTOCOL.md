@@ -4,27 +4,29 @@ This protocol verifies **SDL3 normalization, raw recognition and persistent
 hardware mapping**, NOT universal 3D gameplay input. The game's original
 DirectInput and the existing DS4/Xbox integration are intentionally unchanged.
 
+**Reserved shortcuts:** F9 remains the game's screenshot shortcut; F10 remains a game teleport/location shortcut. Neither is assigned to SDL3 diagnostics. The SDL3 tools are buttons reachable with Tab + Enter.
+
 ## Test A — existing mapped pad (Sony DS4 or Xbox 360)
 
 1. Download the **Windows x86** artifact from the newest successful GitHub
    Actions run for PR #96. Unzip the game installation files as usual.
 2. Start Spider-Man with one controller connected. Use the **keyboard** to
    open the original Joystick Configuration entry; it opens the SDL3 setup.
-3. Press **F9**. The status becomes `SDL3 TEST ON`. Press and release each
+3. Use **Tab** to focus **Test SDL3 inputs**, then press **Enter**. The status becomes `SDL3 TEST ON`. Press and release each
    face button, SHARE/BACK, START, L3, R3 and both triggers. Note the
    `SDL3 TEST: buttons=... LX=... LY=... LT=... RT=...` lines.
 4. On the tested Sony `054C:09CC` under Wine, earlier independent logs
    observed physical SHARE as SDL bit `0x000010` and L3 as
    `0x000100`. Use these as comparison only, **not** as a universal
    required mapping: other drivers might differ and that is the point.
-5. Press **F9** to leave test mode. Use Escape to close the SDL3 setup.
+5. With the **Test SDL3 inputs** button focused, press **Enter** to exit test mode. Use Escape to close the SDL3 setup.
 6. Confirm the game still responds to the original keyboard and controller
    controls, including a subsequent Alt+Tab and return.
 
 ## Test B — physically present joystick without an SDL gamepad mapping
 
 1. Connect an additional unknown joystick. Open SDL3 Controller Setup with
-   the keyboard, press **F8**. The raw wizard shows unmapped joystick IDs.
+   the keyboard, use **Tab** to select **Recognize unknown joystick**, then **Enter**. The raw wizard shows unmapped joystick IDs.
    If it says no unmapped joystick exists, SDL3 already recognizes all
    detected devices; this is **not** a failure.
 2. Select the intended raw joystick using the keyboard; press **Enter**.
