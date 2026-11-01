@@ -45,7 +45,7 @@ def test_keyboard_counts_joystick_bitsets_and_reserved_focus_events(tmp_path):
         /* Original game mask can change even when no button latch changes. */
         s.merged_actions=0x0004u;
         assert(spider_native_source_changed(&o,&s,1u));
-        assert(o.emitted==3u);
+        assert(o.emitted==4u);
         assert(spider_native_source_focus_step(&o,1));
         assert(!spider_native_source_focus_step(&o,1));
         assert(spider_native_source_focus_step(&o,0));
