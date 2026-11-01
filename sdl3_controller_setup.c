@@ -31,7 +31,8 @@ enum {
   SPIDER_UI_CLOSE=1005, SPIDER_UI_STATUS=1006,
   SPIDER_UI_TIMER=1007,
   /* These controls belong only to the SDL3 dialog. No global F keys. */
-  SPIDER_UI_RAW=1008, SPIDER_UI_TEST=1009
+  SPIDER_UI_RAW=1008, SPIDER_UI_TEST=1009,
+  SPIDER_UI_USE=1010
 };
 typedef struct {
   HWND hwnd,owner,pads,actions,status;
@@ -351,6 +352,10 @@ static int modal_start_handoff(SpiderSDL3SetupUI *ui) {
   /* Simultaneous Start presses are ambiguous; refuse both. A capture or
    * pending close cannot change profiles halfway through its lifecycle. */
   if(claims!=1u || ui->capture.active || ui->close_pending) {
+    if(claims==1u && ui->capture.active && ui->start_trace_count<32u && setup_report) {
+      setup_report("SDL3-SETUP: START-IGNORED action capture active; Esc cancels capture, then use Select controller");
+      ui->start_trace_count++;
+    }
     if(claims>1u && ui->start_trace_count<32u && setup_report) {
       setup_report("SDL3-SETUP: START-REFUSED simultaneous claims; previous displayed controller retained");
       ui->start_trace_count++;
@@ -383,6 +388,39 @@ static int modal_start_handoff(SpiderSDL3SetupUI *ui) {
   }
   return 1;
 }
+/* Choose a normalized controller explicitly without interpreting an action
+ * being rebound as a native Start owner event. Next Flip checks identity
+ * again; original 2001 DirectInput state is never modified here. */
+static int setup_select_explicit_pad(SpiderSDL3SetupUI *ui) {
+  SpiderSDL3ControllerSample sample;
+  uint32_t id=0;
+  uint16_t vid=0,pid=0;
+  char line[220];
+  if(!ui || ui->closing || ui->close_pending || ui->test_mode)return 0;
+  if(ui->capture.active) {
+    status(ui,"Cancel action capture with keyboard Esc before selecting a controller.");
+    if(setup_report)setup_report("SDL3-SETUP: EXPLICIT-SELECT refused during action capture; Esc cancels capture");
+    return 0;
+  }
+  if(!ui->instance || !ui->vid || !ui->pid ||
+     !SpiderSDL3Probe_SetupRead(ui->slot,&id,&vid,&pid,
+                                NULL,0,&sample) ||
+     id!=ui->instance || vid!=ui->vid || pid!=ui->pid) {
+    status(ui,"Selection refused: SDL3 device disconnected/changed.");
+    if(setup_report)setup_report("SDL3-SETUP: EXPLICIT-SELECT refused stale controller");
+    return 0;
+  }
+  ui->start_owner_id=id;
+  ui->start_owner_vid=vid;
+  ui->start_owner_pid=pid;
+  ui->start_owner_requested=1u;
+  snprintf(line,sizeof(line),
+    "SDL3-SETUP: EXPLICIT-SELECT QUEUED id=%lu VID:PID=%04X:%04X (revalidate next foreground Flip; native DI unchanged)",
+    (unsigned long)id,(unsigned)vid,(unsigned)pid);
+  if(setup_report)setup_report(line);
+  status(ui,"Selected controller queued. Press keyboard Esc to return to game.");
+  return 1;
+}
 static void setup_toggle_sdl3_test(SpiderSDL3SetupUI *ui);
 static void setup_sdl3_test_lock(SpiderSDL3SetupUI *ui,int lock) {
   unsigned i;
@@ -397,7 +435,7 @@ static void setup_sdl3_test_lock(SpiderSDL3SetupUI *ui,int lock) {
     HWND button=GetDlgItem(ui->hwnd,(int)i);
     if(button)EnableWindow(button,lock?FALSE:TRUE);
   }
-  for(i=SPIDER_UI_RAW;i<=SPIDER_UI_TEST;i++) {
+  for(i=SPIDER_UI_RAW;i<=SPIDER_UI_USE;i++) {
     HWND button=GetDlgItem(ui->hwnd,(int)i);
     if(button)EnableWindow(button,lock?FALSE:TRUE);
   }
@@ -608,7 +646,8 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
        focused==GetDlgItem(ui->hwnd,SPIDER_UI_RESET) ||
        focused==GetDlgItem(ui->hwnd,SPIDER_UI_CLOSE) ||
        focused==GetDlgItem(ui->hwnd,SPIDER_UI_RAW) ||
-       focused==GetDlgItem(ui->hwnd,SPIDER_UI_TEST))return 0;
+       focused==GetDlgItem(ui->hwnd,SPIDER_UI_TEST) ||
+       focused==GetDlgItem(ui->hwnd,SPIDER_UI_USE))return 0;
     if(!current_profile(ui))return 1;
     next=(ui->action+SPIDER_SDL3_VISIBLE_ACTION_COUNT+
       (vk==VK_UP?SPIDER_SDL3_VISIBLE_ACTION_COUNT-1u:1u))%
@@ -636,7 +675,8 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
        focused==GetDlgItem(ui->hwnd,SPIDER_UI_RESET) ||
        focused==GetDlgItem(ui->hwnd,SPIDER_UI_CLOSE) ||
        focused==GetDlgItem(ui->hwnd,SPIDER_UI_RAW) ||
-       focused==GetDlgItem(ui->hwnd,SPIDER_UI_TEST)) {
+       focused==GetDlgItem(ui->hwnd,SPIDER_UI_TEST) ||
+       focused==GetDlgItem(ui->hwnd,SPIDER_UI_USE)) {
       int id=GetDlgCtrlID(focused);
       SendMessageA(ui->hwnd,WM_COMMAND,MAKEWPARAM(id,BN_CLICKED),(LPARAM)focused);
       return 1;
@@ -646,6 +686,11 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
       spider_sdl3_setup_nav_reset(&ui->nav);
       status(ui,"CAPTURE: release ALL controls; press ONE button or LT/RT. Esc cancels.");
     }
+    return 1;
+  }
+  if(vk=='U' && (GetKeyState(VK_CONTROL)&0x8000) &&
+     (GetKeyState(VK_SHIFT)&0x8000)) {
+    setup_select_explicit_pad(ui);
     return 1;
   }
   if(vk==VK_F5) {
@@ -659,7 +704,7 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
     return 1;
   }
   if(vk==VK_F1) {
-    status(ui,"Stick X/Y: navigate; L1/R1: browse pad; Start: choose owner; Circle/B: close and take control.");
+    status(ui,"L1/R1 browse pads. Select controller / Ctrl+Shift+U, then keyboard Esc. Start works outside capture.");
     return 1;
   }
   return 0; /* Tab and Space keep their native Win32 button behavior. */
@@ -761,7 +806,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         HWND button=GetDlgItem(hwnd,(int)i);
         if(button)SendMessageA(button,WM_SETFONT,(WPARAM)font,TRUE);
       }
-      for(unsigned i=SPIDER_UI_RAW;i<=SPIDER_UI_TEST;i++) {
+      for(unsigned i=SPIDER_UI_RAW;i<=SPIDER_UI_USE;i++) {
         HWND button=GetDlgItem(hwnd,(int)i);
         if(button)SendMessageA(button,WM_SETFONT,(WPARAM)font,TRUE);
       }
@@ -828,6 +873,8 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         if(SpiderSDL3Probe_SetupPump())refresh_pads(ui);
       } else if(LOWORD(wp)==SPIDER_UI_TEST && HIWORD(wp)==BN_CLICKED) {
         setup_toggle_sdl3_test(ui);
+      } else if(LOWORD(wp)==SPIDER_UI_USE && HIWORD(wp)==BN_CLICKED) {
+        setup_select_explicit_pad(ui);
       } else if(LOWORD(wp)==SPIDER_UI_CLOSE && HIWORD(wp)==BN_CLICKED) {
         if(setup_report)setup_report("SDL3-SETUP: Close button requested (deferred message)");
         PostMessageA(hwnd,WM_CLOSE,0,0);
@@ -899,7 +946,7 @@ void SpiderSDL3ControllerSetup_Open(void) {
   window=CreateWindowExA(WS_EX_DLGMODALFRAME,cls,
     "SpiderMan2k1Fix - Controller Setup (3D actions only)",
     WS_CAPTION|WS_SYSMENU|WS_POPUP,
-    CW_USEDEFAULT,CW_USEDEFAULT,730,493,
+    CW_USEDEFAULT,CW_USEDEFAULT,730,558,
     owner,NULL,GetModuleHandleA(NULL),&ui);
   if(!window) {
     setup_open=0;return;
