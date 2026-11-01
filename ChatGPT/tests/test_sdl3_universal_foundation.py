@@ -443,5 +443,7 @@ def test_capture_cancelled_before_sdl3_owner_claim_requires_second_explicit_acti
     assert key.index("if(vk=='U'") < key.index("if(ui->capture.active)return 0;")
     # Avoid re-entering action capture if Wine synthesizes VK_RETURN
     # while keyboard focus is on inert dialog background.
-    assert "if(focused==ui->actions && current_profile(ui))" in key
+    assert "if(focused==ui->actions)" in key
+    assert "if(focused==ui->actions && current_profile(ui))" not in key
+    assert "if(vk=='C'" in key  # explicit remap only
     assert "if(current_profile(ui)) {\n      spider_sdl3_capture_start" not in key
