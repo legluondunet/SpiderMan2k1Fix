@@ -35,6 +35,7 @@ typedef void (__cdecl *SDL_PumpEventsFn)(void);
 typedef void (__cdecl *SDL_UpdateGamepadsFn)(void);
 typedef uint32_t *(__cdecl *SDL_GetGamepadsFn)(int *);
 typedef uint32_t *(__cdecl *SDL_GetJoysticksFn)(int *);
+typedef int (__cdecl *SDL_AddGamepadMappingsFromFileFn)(const char *);
 typedef bool (__cdecl *SDL_IsGamepadFn)(uint32_t);
 typedef const char *(__cdecl *SDL_GetJoystickNameForIDFn)(uint32_t);
 typedef const char *(__cdecl *SDL_GetGamepadNameForIDFn)(uint32_t);
@@ -85,6 +86,7 @@ static SDL_PumpEventsFn sdl_pump=NULL;
 static SDL_UpdateGamepadsFn sdl_update=NULL;
 static SDL_GetGamepadsFn sdl_gamepads=NULL;
 static SDL_GetJoysticksFn sdl_joysticks=NULL;
+static SDL_AddGamepadMappingsFromFileFn sdl_add_mappings_file=NULL;
 static SDL_IsGamepadFn sdl_is_gamepad=NULL;
 static SDL_GetJoystickNameForIDFn sdl_joystick_name=NULL;
 static uint32_t raw_last_ids[SPIDER_SDL3_MAX_GAMEPADS]={0};
@@ -216,6 +218,8 @@ static int sdl_load(void) {
   /* Optional diagnostics for raw devices without SDL Gamepad mapping.
    * This does NOT grant game ownership or invent a physical mapping. */
   sdl_is_gamepad=(SDL_IsGamepadFn)GetProcAddress(module,"SDL_IsGamepad");
+  sdl_add_mappings_file=(SDL_AddGamepadMappingsFromFileFn)
+    GetProcAddress(module,"SDL_AddGamepadMappingsFromFile");
   sdl_joystick_name=(SDL_GetJoystickNameForIDFn)GetProcAddress(module,"SDL_GetJoystickNameForID");
   LOAD_SDL(sdl_name,SDL_GetGamepadNameForIDFn,"SDL_GetGamepadNameForID");
   LOAD_SDL(sdl_vendor,SDL_GetGamepadVendorForIDFn,"SDL_GetGamepadVendorForID");
@@ -240,6 +244,25 @@ static int sdl_load(void) {
     return 0;
   }
   ready=1;
+  /* Optional upstream SDL gamecontrollerdb-style mappings are loaded from
+   * the fix installation only, never a working-directory relative path.
+   * SDL applies its own platform filter and upgrades raw joysticks to
+   * mapped gamepads. An absent file leaves SDL's built-in DB unchanged. */
+  if(sdl_add_mappings_file) {
+    char dbpath[MAX_PATH],dbmsg[350];
+    DWORD attrs;
+    if(spider_path_code_asset_a("SDL3-gamecontrollerdb.txt",dbpath,
+                                sizeof(dbpath))) {
+      attrs=GetFileAttributesA(dbpath);
+      if(attrs!=INVALID_FILE_ATTRIBUTES && !(attrs&FILE_ATTRIBUTE_DIRECTORY)) {
+        int added=sdl_add_mappings_file(dbpath);
+        snprintf(dbmsg,sizeof(dbmsg),
+          "SDL3-MAPPINGS: external model database entries=%d status=%s (SDL platform filtering; no native owner claim)",
+          added,added<0?"FAILED":"LOADED");
+        say(dbmsg);
+      }
+    }
+  }
   say("SDL3-PROBE: SDL3 gamepad subsystem ready (read-only); no DirectInput takeover");
   return 1;
 missing:
