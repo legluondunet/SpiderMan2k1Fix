@@ -27,7 +27,7 @@ typedef struct {
   SpiderSDL3RawMapping mapping;
   SpiderSDL3RawSample neutral;
   unsigned still;
-  unsigned swallowed_keyboard;
+  unsigned swallowed_keyboard,blocked_commands;
   void (*log)(const char *);
 } SpiderRawWizard;
 static const char *const prompts[SPIDER_RAW_MAP_COUNT]={
@@ -62,12 +62,22 @@ static int wizard_is_capturing(const SpiderRawWizard *w) {
          w->step<SPIDER_RAW_MAP_COUNT;
 }
 static void wizard_capture_focus(SpiderRawWizard *w,int capturing) {
+  unsigned id;
   if(!w || !w->window || !w->pads)return;
+  /* Wine can translate a physical stick/face button into keyboard or
+   * mouse activation of whichever BUTTON retains focus. Merely disabling
+   * the device combo did NOT protect Start/Restart, Skip and Close.
+   * Disable EVERY actionable control before SDL3 starts sampling. */
   SendMessageA(w->pads,CB_SHOWDROPDOWN,FALSE,0);
   EnableWindow(w->pads,capturing?FALSE:TRUE);
+  for(id=RAW_BEGIN;id<=RAW_CLOSE;id++) {
+    HWND button=GetDlgItem(w->window,(int)id);
+    if(button)EnableWindow(button,capturing?FALSE:TRUE);
+  }
   if(capturing) {
-    /* Top-level window is intentionally NOT a pushbutton: synthesized
-     * Space/Return cannot invoke BN_CLICKED as with a focused button. */
+    /* The window has no BS_DEFPUSHBUTTON/BS_PUSHBUTTON semantics.
+     * No child is keyboard-focusable; physical SDL controls cannot
+     * trigger BN_CLICKED. Recovery uses Ctrl+Shift+S/R/Q in pump. */
     SetFocus(w->window);
   } else SetFocus(w->pads);
 }
@@ -314,6 +324,20 @@ static LRESULT CALLBACK wizard_wndproc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
     }
     case WM_COMMAND:
       if(!w)return 0;
+      /* Defense in depth: even if Wine posts a button BN_CLICKED despite
+       * EnableWindow(FALSE), no Start/Restart, Skip or Close may run while
+       * SDL3 owns physical calibration. Only the deliberate keyboard
+       * recovery chords (handled in the outer message pump) can act. */
+      if(wizard_is_capturing(w)) {
+        if(w->log && w->blocked_commands++<8u) {
+          char trace[180];
+          snprintf(trace,sizeof(trace),
+            "SDL3-RAW-WIZARD: blocked Win32 control id=%u notification=%u during capture",
+            (unsigned)LOWORD(wp),(unsigned)HIWORD(wp));
+          w->log(trace);
+        }
+        return 0;
+      }
       if(HIWORD(wp)==BN_CLICKED) {
         if(LOWORD(wp)==RAW_BEGIN)wizard_start(w);
         else if(LOWORD(wp)==RAW_SKIP && w->active_id &&
@@ -325,10 +349,8 @@ static LRESULT CALLBACK wizard_wndproc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
             wizard_next(w,skipped);
           }
         } else if(LOWORD(wp)==RAW_CLOSE)PostMessageA(hwnd,WM_CLOSE,0,0);
-        /* A mouse click on Skip moves focus onto that pushbutton. Return
-         * focus to the neutral top-level window or the NEXT gamepad face
-         * button could activate Skip again through a synthetic Space key. */
-        if(wizard_is_capturing(w))wizard_capture_focus(w,1);
+        /* Any transition into capture disables all four widgets. A
+         * physical button can no longer press a focused Win32 button. */
       }
       return 0;
     case WM_TIMER:
