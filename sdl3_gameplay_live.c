@@ -161,12 +161,12 @@ void SpiderSDL3GameplayLive_Init(const char *ini,void (*logger)(const char *)) {
   if(applied)restore("initialization");
   enabled=0;reports=0;native_thread=0;
   enabled=ini && GetPrivateProfileIntA("Input",
-       "ExperimentalSDL3GameplayBindings",0,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickUnplugGuard",0,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickReconnect",0,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickMappingSwap",0,ini)==1;
+       "ExperimentalSDL3GameplayBindings",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickUnplugGuard",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickReconnect",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickMappingSwap",1,ini)==1;
   if(enabled)msg("SDL3-3D-LIVE: EXPERIMENT enabled: DS4 native seven buttons + Pause, verified Xbox360 six face/shoulder buttons with RT Swing unbound; reject other SDL3 inputs, 3D only");
 }
 void SpiderSDL3GameplayLive_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
