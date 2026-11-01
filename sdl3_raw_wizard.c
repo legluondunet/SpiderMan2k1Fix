@@ -67,12 +67,14 @@ static int wizard_neutral(const SpiderSDL3RawSample *s) {
   for(i=0;i<s->hat_count;i++)if(s->hats[i])return 0;
   return 1;
 }
+static void wizard_finish(SpiderRawWizard *w);
 static void wizard_next(SpiderRawWizard *w,SpiderSDL3RawInput input) {
   if(!w || w->step>=SPIDER_RAW_MAP_COUNT)return;
   w->mapping.input[w->step]=input;
   w->step++;
   w->armed=0;w->still=0;
   wizard_prompt(w);
+  if(w->step==SPIDER_RAW_MAP_COUNT)wizard_finish(w);
 }
 /* Captures a single deliberate input. At most one qualifying candidate is
  * accepted; ambiguous simultaneous inputs force a fresh neutral cycle.
@@ -83,7 +85,6 @@ static void wizard_tick(SpiderRawWizard *w) {
   SpiderSDL3RawInput found={0,0,0};
   unsigned i,n=0;
   int axes_only;
-  char mapping[1024],line[410];
   if(!w || w->done || !w->active_id)return;
   if(GetForegroundWindow()!=w->window) {w->armed=0;w->still=0;return;}
   if(!SpiderSDL3Probe_SetupPump() || !SpiderSDL3Probe_RawRead(&s)) {
@@ -134,29 +135,33 @@ static void wizard_tick(SpiderRawWizard *w) {
   if(n>1u) {w->armed=0;w->still=0;return;}
   if(n==1u) {
     wizard_next(w,found);
-    if(w->step<SPIDER_RAW_MAP_COUNT)return;
-    if(!spider_sdl3_raw_build(w->guid,w->name,&w->mapping,
-                             mapping,sizeof(mapping))) {
-      wizard_text(w,"Mapping incomplete or unsupported. Press Enter to restart.");
-      w->active_id=0;
-      SpiderSDL3Probe_RawEnd();
-      return;
-    }
-    w->done=1;
-    if(SpiderSDL3Probe_RawRegisterAndSave(mapping,w->guid)) {
-      snprintf(line,sizeof(line),
-        "SDL3 CALIBRATION SAVED for %s.\r\n"
-        "Close this window, then reopen SDL3 Setup: the device should appear as a mapped gamepad.\r\n"
-        "IMPORTANT: this does NOT yet guarantee Spider-Man 3D gameplay.",
-        w->name);
-      wizard_text(w,line);
-      if(w->log)w->log("SDL3-RAW-WIZARD: completed and persisted SDL3 normalized mapping; game 3D bridge unchanged");
-    } else {
-      wizard_text(w,
-        "SDL3 mapping application or save FAILED. No persistent calibration confirmed.\r\n"
-        "Check the log for the precise error. Enter restarts; Esc closes.");
-      w->done=0;w->active_id=0;
-    }
+
+  }
+}
+static void wizard_finish(SpiderRawWizard *w) {
+  char mapping[1024],line[410];
+  if(!w || w->step!=SPIDER_RAW_MAP_COUNT)return;
+  if(!spider_sdl3_raw_build(w->guid,w->name,&w->mapping,
+               mapping,sizeof(mapping))) {
+    wizard_text(w,"Mapping incomplete or unsupported. Press Enter to restart.");
+    w->active_id=0;
+    SpiderSDL3Probe_RawEnd();
+    return;
+  }
+  w->done=1;
+  if(SpiderSDL3Probe_RawRegisterAndSave(mapping,w->guid)) {
+    snprintf(line,sizeof(line),
+    "SDL3 CALIBRATION SAVED for %s.\r\n"
+    "Close this window, then reopen SDL3 Setup: the device should appear as a mapped gamepad.\r\n"
+    "IMPORTANT: this does NOT yet guarantee Spider-Man 3D gameplay.",
+    w->name);
+    wizard_text(w,line);
+    if(w->log)w->log("SDL3-RAW-WIZARD: completed and persisted SDL3 normalized mapping; game 3D bridge unchanged");
+  } else {
+    wizard_text(w,
+    "SDL3 mapping application or save FAILED. No persistent calibration confirmed.\r\n"
+    "Check the log for the precise error. Enter restarts; Esc closes.");
+    w->done=0;w->active_id=0;
   }
 }
 static void wizard_start(SpiderRawWizard *w) {
