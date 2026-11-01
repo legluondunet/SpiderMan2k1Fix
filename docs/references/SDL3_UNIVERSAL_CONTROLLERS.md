@@ -315,3 +315,41 @@ second scene or enter gameplay with a held input. Test Alt+Tab, return,
 hotplug if practical, Keyboard menu and DS4 unchanged. Look for
 `SDL3-GENERIC-UI: ARMED` and `SDL3-GENERIC-UI: PRESS context=MENU/BINK`
 in the log. **Do not merge** until runtime behavior is validated.
+
+
+### 2026-11-01 PS3 hardware feedback: menu directions work, setup focus needs correction
+
+The maintainer reports that the **physical PS3 D-pad navigates menu
+choices at normal speed**, verifying that the new live generic SDL3
+2D menu bridge actually works in-game. The left stick is less
+responsive; the previous implementation allowed only ONE arrow key
+pulse per entire tilt/recenter. `sdl3_generic_ui_policy.h` now keeps
+the existing neutral-first, ambiguity and scene gates, but repeats
+**LEFT STICK cardinal directions only** after 290 ms and at 155 ms
+intervals while the axis is held. Recenter or diagonal cancels repeat.
+D-pad, Cross/Circle and Bink commands remain single presses, with no
+held-button repeats; no native 3D gameplay controls have been enabled.
+This still requires a fresh hardware test before being marked resolved.
+
+The maintainer also observed that after clicking **Use selected SDL3
+controller**, a second cursor appeared and pressing Cross seemed to
+start editing the Cross binding, while the list appeared frozen with
+button focus. Source review confirmed two independent focus states:
+the mouse/Win32 focus on all six buttons and an old gamepad-only
+focus column tracking only three buttons. Cross on the actions list
+also **automatically armed a binding capture**. The modal now tracks
+all **six** buttons (Capture, Defaults, Close, Calibrate, Test, Use)
+with `BN_SETFOCUS`; displays the saved action list highlight only
+while its list has keyboard focus; and always restores that focus
+after explicit controller selection. Arrow keys can resume browsing
+actions even when a button was focused. Pressing South/Cross on the
+actions list or VK_RETURN in that list no longer begins remapping.
+Only **Capture selected action** or **Ctrl+Shift+C** intentionally starts
+a remap. Duplicate Use events for an already queued exact ID/VID/PID
+are ignored; any model change clears an earlier queued handoff.
+
+The test suite includes portable C focus-wrap and stick-timing checks,
+plus source checks for single-cursor focus, neutral gates, no accidental
+capture and preservation of the existing native DS4/Xbox path.
+Actual Windows/Wine modal UX and left-stick feel must be validated
+before concluding the SDL3 work.
