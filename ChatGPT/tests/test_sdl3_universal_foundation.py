@@ -391,3 +391,28 @@ def test_ps3_explicit_setup_selection_when_start_was_consumed_by_capture():
         "static void setup_toggle_sdl3_test(",1)[0]
     for forbidden in ("SendInput(", "VirtualProtect(", "IDirectInput", "WriteProcessMemory("):
         assert forbidden not in helper
+
+
+def test_multiple_sdl3_pads_never_select_default_ds4_when_ps3_was_intended():
+    ui=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    # Real PS3+DS4 hardware log: auto-selected id=1 VID:PID=054C:09CC
+    # while physical PS3 was id=3 VID:PID=054C:0268. Explicit Use
+    # must not silently grant the preselected first device.
+    assert "unsigned user_chose_controller;" in ui
+    refresh=ui.split("static void refresh_pads(",1)[1].split(
+        "static int modal_start_handoff(",1)[0]
+    assert "ui->user_chose_controller=0;" in refresh
+    assert "if(n>1u && !ui->user_chose_controller)" in refresh
+    assert "SDL3-SETUP: SELECT-UNCONFIRMED multiple pads" in refresh
+    assert "if(old_id && id==old_id)desired=i;" in refresh
+    selector=ui.split("static int setup_select_explicit_pad(",1)[1].split(
+        "static void setup_toggle_sdl3_test(",1)[0]
+    assert "if(ui->count>1u && !ui->user_chose_controller)" in selector
+    assert "EXPLICIT-SELECT REFUSED auto-preview" in selector
+    assert selector.index("if(ui->count>1u && !ui->user_chose_controller)") < selector.index("ui->start_owner_id=id;")
+    # Explicit dropdown, L1/R1, keyboard page browsing, or controller
+    # Start are the only paths confirming a chosen model.
+    assert "SDL3-SETUP: USER-CHOSEN slot=" in ui
+    assert ui.count("ui->user_chose_controller=1u;") >= 4
+    assert "SDL3-SETUP: EXPLICIT-SELECT QUEUED" in selector
+    assert "generic_selected_id=requested_id;" in (ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
