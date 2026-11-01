@@ -137,8 +137,120 @@ Previously confirmed **separately**:
   A missing custom focus PAUSED overlay was accepted
   by the maintainer because the game continued normally.
 
-**Combined PR #91 hardware tests remain outstanding**.
-CI PASS and identical component blobs are necessary
-but not a substitute for actual Windows/Wine gameplay.
+**Combined PR #91 has now passed maintainer-observed Windows 11 native tests as well as prior Wine/Proton runtime tests; see the new dated acceptance report below.** CI and identical source blobs alone were not considered sufficient.
+
+legluondunet assisted by ChatGPT (OpenAI)
+
+
+## 1 November 2026 — combined PR #91 Windows 11 native acceptance PASS
+
+**Maintainer first-hand result: 21/21 user-observed checks PASS across all
+six prescribed test scenarios**: main menu, four intro videos, 3D gameplay
+focus loss, Xbox 360 alone, Sony DualShock 4 alone, and both controllers
+connected with selection handoff. Normal pause menu, return input,
+the visible/useable **Windows desktop mouse**, absent in-game mouse
+control, rendering and audio after return were all personally confirmed.
+These real-world observations supplement, rather than derive from,
+the instrumentation below.
+
+### Exact test artifact, host and engine
+
+- Full runtime: `SpiderMan2k1Fix(20261101-103438).log`, **2,646
+  lines**; runtime version **`v1.1.0-72e2f2a`**, the previously
+  confirmed GitHub test-merge artifact from PR #91 head `f14006f6`.
+- **Windows native**, Win32 version **10.0 build 26200**, explicitly
+  **not Wine or Proton**; Ryzen 7 PRO 8840U / Radeon 780M,
+  one 1920×1200 60 Hz screen (**16:10**, meaningful aspect coverage).
+- Exact supported original `SpideyPC.exe` SHA-256 verified,
+  **0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea**.
+- Permanent in-game mouse gate armed and `GAME MOUSE OFF (permanent)`
+  (**362–363**); obsolete `MouseEnabled` parsed but ignored
+  (**44–45**). Desktop cursor visible on all nine external
+  background snapshots; maintainer confirmed its physical usability.
+
+### Focus, native Left Alt and audio
+
+- **Nine real, confirmed external focus-loss cycles,
+  nine explicit controller press/release-driven resumes**:
+  confirmed loss lines **542,722,826,1057,1680,1714,1747,1834,1945**;
+  resumption lines **560,739,844,1073,1698,1732,1765,1852,1961**.
+  Duration as measured by `paused-after-ms`, respectively:
+  **9,578 / 2,828 / 2,110 / 27,281 / 3,531 / 12,562 /
+  28,828 / 1,656 / 1,547 ms**. Every cycle logged
+  custom `FOCUS-SURFACE` presentation and wake.
+- **Six `ALT-LATCH: REPAIRED original Left Alt 0x7F->0x80`**
+  at lines **573,802,857,1087,1862,1974**,
+  after an eligible confirmed focus return, with
+  six stable foreground frames and OS modifiers released.
+  All repairs are **actual one-byte native latch changes**,
+  not `SKIPPED` observations. The maintainer confirms no
+  trapped keyboard Alt or other key afterward.
+- **Nine DirectSound pause/resume calls with failed=0**.
+  Four had actual playing voices stopped and restored:
+  **7/7**, **9/9**, **7/7**, **14/14**; **37/37
+  total**. Five other cycles had no actively playing voice
+  to restore (0/0, not failures).
+- **Seven Bink `pause-result=1` / `resume-result=0`
+  pairs**. The maintainer verified appropriate video
+  freeze/resume including the four introductory clips.
+- Normal native **3D owner entered and exited three
+  times**, with original `request=7` teardown
+  completed and main menu restored at the end.
+  No fatal/error marker in the supplied log.
+
+### Both hardware controllers and original mapping
+
+- Both **Sony DualShock 4 `054C:09CC`** and
+  **Xbox 360 `045E:028E`** present in one
+  native-Windows runtime. Successful selected native
+  DirectInput rebound **Sony id=1** (**458**)
+  and subsequent **Xbox id=2** (**2345**).
+  Exact RAM-only canonical 7-action profile swap
+  **Xbox360→DS4** (**457**) and back **DS4→Xbox360**
+  (**2344**) verified.
+- Xbox **two RT-SWING DOWN/UP pairs**
+  (**2463/2469** and **2526/2529**) with
+  SDL3 RT=32767 and DirectInput `lZ=128`.
+  `Back -> Escape` game-pause markers also present;
+  physical button/joystick correctness and no
+  competing inputs are confirmed separately by the
+  maintainer's 21/21 checklist.
+- Note: device enumeration in this **single** log
+  shows both physically connected for the recorded
+  runtime. Standalone controller test results are
+  separately **reported by the maintainer**, not
+  independently established by an unambiguous
+  single-connected-device log.
+
+### Nonblocking configuration warning
+
+At startup (**12–20**) the loader reported
+`INI-REPAIR: fixed 1 error(s)` and regenerated a
+clean `SpiderMan2k1Fix.ini`, **recovering 54
+recognized settings** and preserving the prior file
+as `SpiderMan2k1Fix.ini.old`. No unknown setting
+was reported; the log **does not identify which
+input line or validation rule caused the error**.
+This did not prevent a successful runtime test,
+but a future optional inspection of `.ini.old`
+could clarify the one faulty line / unwanted
+regeneration before release. **Do not claim the
+old user configuration was byte-identically retained.**
+
+### Status
+
+**Windows 11 native combination acceptance PASS** for
+the hardware and 16:10 setup tested, together with
+prior Wine/Proton practical acceptance. No functional
+failure or reason to change runtime/gameplay code
+emerged from these tests. Windows focus-paused behavior
+is strictly verified here; the independently approved
+harmless missing-PAUSED-ribbon tolerance under Wine
+remains unchanged. No claim of exhaustive GPU, multiple
+controller vendors, aspect ratios or configurations.
+
+**PR #91 remains DRAFT and unmerged; #80, #88, #90
+remain separate. A merge still requires explicit
+maintainer approval.**
 
 legluondunet assisted by ChatGPT (OpenAI)
