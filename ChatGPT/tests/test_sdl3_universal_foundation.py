@@ -149,7 +149,7 @@ def test_keyboard_calibration_wizard_is_built_and_keeps_gameplay_unchanged():
     assert "SpiderSDL3RawWizard_Open(ui->hwnd,setup_report)" in setup
     assert "setup_toggle_sdl3_test(ui)" in setup
     assert "Test SDL3 inputs" in setup
-    assert "Recognize unknown joystick" in setup
+    assert "Calibrate SDL3 joystick" in setup
     assert "F9/F10 untouched" in setup
     assert "if(vk==VK_F9)" not in setup
     assert "if(vk==VK_F10)" not in setup
@@ -182,3 +182,17 @@ def test_keyboard_calibration_wizard_is_built_and_keeps_gameplay_unchanged():
     assert "SDL_AddGamepadMapping refused mapping; nothing saved" in probe
     assert "SDL3-MAPPINGS: persisted per-GUID user mappings loaded=" in probe
     assert "sdl3-gamepad" not in wizard
+
+def test_mapped_gamepad_can_enter_recalibration_without_changing_game_owner():
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    wizard=(ROOT/"sdl3_raw_wizard.c").read_text(encoding="utf-8")
+    setup=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    assert "SpiderSDL3Probe_RawListAll(ids,NULL" in probe
+    assert "SpiderSDL3Probe_RawListAll(w->ids,w->already_mapped,16u)" in wizard
+    assert "current-sdl-mapping=%s" in wizard
+    assert "Mapped - recalibrate" in wizard
+    assert "Unmapped - recognize" in wizard
+    assert "SPIDER_UI_RAW" in setup
+    assert "universal 3D game bridge NOT active" in setup
+    assert "Press F9 to exit" not in setup
+    assert "SDL3-3D-LIVE" not in wizard
