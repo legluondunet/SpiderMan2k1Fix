@@ -44,14 +44,15 @@ def test_release_is_owned_return_only_on_the_same_foreground_game_thread():
                UI.index("int SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(")]
     assert "active_scan_thread=GetCurrentThreadId();" in press
     assert "active_scan_thread=0;" in UI[
-        UI.index("static void release_active_key(void)"):
+        UI.index("static int release_active_key(void)"):
         UI.index("static void begin_scancode(")
     ]
     for check in ("!configured", "!hwnd", "GetForegroundWindow()!=hwnd",
                   "!IsWindowVisible(hwnd)", "active_scan!=0x1cu",
                   "!active_scan_thread", "active_scan_thread!=GetCurrentThreadId()"):
         assert check in RELEASE
-    assert "release_active_key();" in RELEASE
+    assert "if(!release_active_key()) {" in RELEASE
+    assert "KEYUP failed; physical Enter/Space safety wait retained" in RELEASE
     assert "BINK-4-HANDOFF pending synthetic Return released" in RELEASE
     assert "SendInput(" not in RELEASE
     assert "active_scan=0;" not in RELEASE
