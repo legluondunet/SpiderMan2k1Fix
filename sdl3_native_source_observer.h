@@ -13,6 +13,7 @@ enum { SPIDER_SOURCE_KEY_BYTES=256, SPIDER_SOURCE_JOY_BYTES=32,
 typedef struct {
   uint16_t keyboard_held, keyboard_fresh, keyboard_released;
   uint8_t keyboard_alt_tab; /* bits: left Alt=1, right Alt=2, Tab=4; never typed keys */
+  uint8_t os_alt_tab; /* foreground Win32 GetAsyncKeyState high-bit, independently sampled */
   uint32_t joystick_held, joystick_fresh, joystick_released;
   uint32_t merged_actions; /* game output, already keyboard+joystick merged */
 } SpiderNativeSourceSnapshot;
