@@ -41,7 +41,7 @@ static inline SpiderSDL3UniversalFrame spider_sdl3_universal_step(
   if(!state)return f;
   if(!selected_instance || !foreground || !gameplay ||
      !profile || !sample || !spider_sdl3_profile_valid(profile) ||
-     !spider_sdl3_profile_actions(profile,sample,0,&held)) {
+     !spider_sdl3_profile_actions(profile,sample,state->held,&held)) {
     spider_sdl3_universal_reset(state);
     return f;
   }
