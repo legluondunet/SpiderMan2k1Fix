@@ -325,6 +325,10 @@ static LRESULT CALLBACK wizard_wndproc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
             wizard_next(w,skipped);
           }
         } else if(LOWORD(wp)==RAW_CLOSE)PostMessageA(hwnd,WM_CLOSE,0,0);
+        /* A mouse click on Skip moves focus onto that pushbutton. Return
+         * focus to the neutral top-level window or the NEXT gamepad face
+         * button could activate Skip again through a synthetic Space key. */
+        if(wizard_is_capturing(w))wizard_capture_focus(w,1);
       }
       return 0;
     case WM_TIMER:
