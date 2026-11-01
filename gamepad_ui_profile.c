@@ -44,6 +44,7 @@
 #include "virtual_spidey_cfg.h"
 #include "native_joystick_reconnect.h"
 #include "sdl3_gamepad_probe.h"
+#include "sdl3_generic_ui_policy.h"
 #include "sdl3_gameplay_live.h"
 #include "ps1_input_flight_recorder.h"
 #include "ps1_joystick_readonly_menu.h"
@@ -126,6 +127,12 @@ static SpiderDS4Hotplug hotplug={0};
 static int hotplug_missing_logged=0;
 static int hotplug_late_preview_reported=0;
 static uint32_t sdl3_ui_instance=0;
+/* Explicitly selected generic SDL3 pads have no verified native DI
+ * layout. Only route safe 2D/menu and Bink key edges here; never 3D.
+ * A dedicated profile-neutral gate stops held actions at state changes. */
+static int generic_ui_requested=0;
+static unsigned generic_ui_reports=0;
+static SpiderSDL3GenericUIState generic_ui={0};
 static int sdl3_context_bridge_requested=0;
 static unsigned sdl3_context_bridge_reports=0;
 static SpiderSDL3ContextMenuBridge sdl3_context_bridge={0};
@@ -272,8 +279,11 @@ static int release_active_key(void) {
   if(!active_scan)return 0;
   memset(&in,0,sizeof(in));
   in.type=INPUT_KEYBOARD;
-  in.ki.wScan=(WORD)active_scan;
-  in.ki.dwFlags=KEYEVENTF_SCANCODE|KEYEVENTF_KEYUP;
+  /* DIK cursor scan codes carry 0x80 to denote E0 extended keys.
+   * Win32 SendInput expects the low 7-bit scan + EXTENDEDKEY flag. */
+  in.ki.wScan=(WORD)(active_scan&0x7Fu);
+  in.ki.dwFlags=KEYEVENTF_SCANCODE|KEYEVENTF_KEYUP|
+    (active_scan>=0xC7u && active_scan<=0xD3u?KEYEVENTF_EXTENDEDKEY:0u);
   SpiderNativeReconnect_LogSyntheticMenuKey(active_scan,"before KEYUP");
   success=SendInput(1,&in,sizeof(in))==1;
   if(!success) {
@@ -293,8 +303,9 @@ static void begin_scancode(unsigned scan,const char *action) {
   LONG number;
   memset(&in,0,sizeof(in));
   in.type=INPUT_KEYBOARD;
-  in.ki.wScan=(WORD)scan;
-  in.ki.dwFlags=KEYEVENTF_SCANCODE;
+  in.ki.wScan=(WORD)(scan&0x7Fu);
+  in.ki.dwFlags=KEYEVENTF_SCANCODE|
+    (scan>=0xC7u && scan<=0xD3u?KEYEVENTF_EXTENDEDKEY:0u);
   SpiderNativeReconnect_LogSyntheticMenuKey(scan,"before KEYDOWN");
   if(SendInput(1,&in,sizeof(in))!=1) {
     snprintf(line,sizeof(line),
@@ -526,6 +537,13 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
     return;
   }
   strcpy(profile_ini,ini);
+  spider_sdl3_generic_ui_reset(&generic_ui);
+  generic_ui_reports=0;
+  generic_ui_requested=
+    GetPrivateProfileIntA("Input","ExperimentalSDL3GenericMenu",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1;
+  if(generic_ui_requested)
+    report("SDL3-GENERIC-UI: ARMED for explicitly selected unknown controller only; 2D menu/Bink pulse, neutral gate, NO 3D/native DI changes (INI ExperimentalSDL3GenericMenu=0 disables)");
   SpiderSDL3ControllerSetup_Init(ini,logger);
   /* Installing the guarded native Options->Joystick menu entry once
    * during boot ensures the installer runs even if early Flip callbacks
@@ -1432,6 +1450,58 @@ static void sdl3_trace_3d_readonly(const DIJOYSTATE2 *state) {
   sdl3_3d_trace_y=state->lY;
   sdl3_3d_trace_valid=1;
 }
+/* Generic PS3 and other explicitly selected nonnative models:
+ * reuse the existing, proven one-Flip synthetic keyboard owner, never
+ * the original game's DirectInput device or vendor-specific button map.
+ * This is the first LIVE milestone only: 2D menus and native Bink.
+ * All 3D gameplay, cutscenes, still pages and background are inert.
+ * We suppress our separate DS4/Xbox UI device while generic is selected,
+ * so this module cannot synthesize TWO controllers at once.
+ * Key-up always runs before this helper on EVERY normal Flip. */
+static int sdl3_generic_ui_on_flip(HWND hwnd,int menu_2d,
+                                  int gameplay_3d,int bink_active,
+                                  int native_pause_active) {
+  uint32_t id=0;
+  uint16_t vid=0,pid=0;
+  SpiderSDL3ControllerSample sample;
+  unsigned ctx,scan,was_armed;
+  char line[190];
+  if(!generic_ui_requested ||
+     !SpiderSDL3Probe_GenericSelectedSample(&id,&vid,&pid,&sample)) {
+    spider_sdl3_generic_ui_reset(&generic_ui);
+    return 0;
+  }
+  if(device)disable_profile("SDL3-GENERIC-UI: stopped secondary Sony/Xbox UI DirectInput source; exclusive generic adapter selected");
+  sdl3_ui_instance=0;
+  xbox_rt_swing_release("generic SDL3 owner");
+  if(!hwnd || GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {
+    spider_sdl3_generic_ui_reset(&generic_ui);
+    return 1;
+  }
+  ctx=bink_active?SPIDER_GENERIC_UI_BINK:
+    (menu_2d && !gameplay_3d && !native_pause_active?
+       SPIDER_GENERIC_UI_MENU:SPIDER_GENERIC_UI_NONE);
+  was_armed=generic_ui.armed;
+  scan=spider_sdl3_generic_ui_step(&generic_ui,id,ctx,&sample);
+  if(!was_armed && generic_ui.armed && generic_ui_reports++<40u) {
+    snprintf(line,sizeof(line),
+      "SDL3-GENERIC-UI: ARMED id=%lu VID:PID=%04X:%04X context=%s (neutral; 3D untouched)",
+      (unsigned long)id,(unsigned)vid,(unsigned)pid,
+      ctx==SPIDER_GENERIC_UI_BINK?"BINK":"MENU");
+    report(line);
+  }
+  if(scan && !active_scan) {
+    if(generic_ui_reports++<40u) {
+      snprintf(line,sizeof(line),
+        "SDL3-GENERIC-UI: PRESS id=%lu context=%s DIK=0x%02X (one Flip; full neutral required before next; native DI unchanged)",
+        (unsigned long)id,
+        ctx==SPIDER_GENERIC_UI_BINK?"BINK":"MENU",scan);
+      report(line);
+    }
+    begin_scancode(scan,"SDL3 generic selected pad menu/Bink");
+  }
+  return 1; /* Never mix independent Sony/Xbox UI injection this frame. */
+}
 void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active) {
   DIJOYSTATE2 state;
@@ -1453,6 +1523,10 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   }
   /* Critical: release injected key before focus pause can block this thread. */
   release_active_key();
+  /* Explicitly selected PS3: only one guarded keyboard pulse source.
+   * Keeps the game-owned native DirectInput untouched, even in 3D. */
+  if(sdl3_generic_ui_on_flip(hwnd,menu_2d,gameplay_3d,
+                             bink_active,native_pause_active))return;
   if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {
     spider_sdl3_context_menu_reset(&sdl3_context_bridge);
     sdl3_3d_trace_valid=0;
