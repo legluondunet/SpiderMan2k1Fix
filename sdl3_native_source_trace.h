@@ -38,7 +38,7 @@ static void spider_source_trace_init(const char *ini,
       logger("SDL3-NATIVE-SOURCE: REFUSED native keyboard/joystick/latch signatures mismatch");
       spider_source_trace_enabled=0;
     } else {
-      logger("SDL3-NATIVE-SOURCE: ARMED read-only keyboard/joystick latches; 96 samples + 12 focus-status transitions maximum");
+      logger("SDL3-NATIVE-SOURCE: ARMED read-only keyboard/joystick latches; 96 changes + 8 reserved postfocus samples + 12 focus-status events maximum");
     }
   }
 }
@@ -61,8 +61,9 @@ static void spider_source_trace_flip(HWND hwnd,int menu2d,int gameplay3d,
       gameplay3d?"3D":(menu2d?"MENU":"OTHER"));
     spider_source_trace_log(line);
   }
-  if(!active||spider_source_trace_observer.emitted>=SPIDER_SOURCE_MAX_CHANGES)
-    return;
+  if(!active||(spider_source_trace_observer.emitted>=SPIDER_SOURCE_MAX_CHANGES&&
+       (!spider_source_trace_observer.pending_resume||
+        spider_source_trace_observer.resume_samples>=8u)))return;
   /* These original PE32 addresses are verified by the supported EXE SHA and
    * the x86 preflight above. Never read on background, movie or pause. */
   for(i=0;i<SPIDER_SOURCE_KEY_BYTES;i++)
@@ -70,23 +71,27 @@ static void spider_source_trace_flip(HWND hwnd,int menu2d,int gameplay3d,
   for(i=0;i<SPIDER_SOURCE_JOY_BYTES;i++)
     joystick[i]=((const volatile uint8_t *)(uintptr_t)0x006B7A34u)[i];
   spider_native_source_decode(keyboard,joystick,&sample);
-  if(!spider_native_source_changed(&spider_source_trace_observer,
-                                    &sample,ctx))return;
   for(i=0;i<SPIDER_ORIGINAL_INPUT_STATE_COUNT;i++) {
     const volatile uint8_t *slot=(const volatile uint8_t *)(uintptr_t)
       spider_original_action_latch_address(i);
     if(slot[0])game_held|=spider_original_action_latch_mask(i);
   }
+  /* Include the merged game mask in change detection. Joystick axes/POV
+   * can move while the 32 native BUTTON states remain unchanged. */
+  sample.merged_actions=game_held;
+  if(!spider_native_source_changed(&spider_source_trace_observer,
+                                    &sample,ctx))return;
   snprintf(line,sizeof(line),
     "SDL3-NATIVE-SOURCE: ctx=%s kb-held=%u kb-fresh=%u kb-released=%u "
     "joy-held=%08lX joy-fresh=%08lX joy-released=%08lX "
-    "merged-actions=%04lX [READ ONLY, CORRELATION NOT PROVENANCE]",
+    "merged-actions=%04lX postfocus=%u [READ ONLY, CORRELATION NOT PROVENANCE]",
     gameplay3d?"3D":"MENU",(unsigned)sample.keyboard_held,
     (unsigned)sample.keyboard_fresh,(unsigned)sample.keyboard_released,
     (unsigned long)sample.joystick_held,
     (unsigned long)sample.joystick_fresh,
     (unsigned long)sample.joystick_released,
-    (unsigned long)game_held);
+    (unsigned long)game_held,
+    spider_source_trace_observer.last_resume);
   spider_source_trace_log(line);
 }
 #endif
