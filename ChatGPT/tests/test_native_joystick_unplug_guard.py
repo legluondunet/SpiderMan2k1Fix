@@ -88,10 +88,10 @@ def test_stub_preserves_all_other_hresult_error_paths():
     assert "GetPrivateProfileIntA(\"Input\"," in SOURCE
 
 
-def test_ini_and_build_integration_opt_in_only():
-    assert 'ExperimentalNativeJoystickUnplugGuard=0' in TEMPLATE
+def test_ini_and_build_integration_enabled_by_default_with_explicit_opt_out():
+    assert 'ExperimentalNativeJoystickUnplugGuard=1' in TEMPLATE
     assert '"ExperimentalNativeJoystickUnplugGuard"' in INI
-    assert '"ExperimentalNativeJoystickUnplugGuard",0,ini)==1' in SOURCE
+    assert '"ExperimentalNativeJoystickUnplugGuard",1,ini)==1' in SOURCE
     assert "#include \"native_joystick_unplug.h\"" in MAIN
     assert MAIN.index("if (!supported_exe())") < MAIN.index("SpiderNativeUnplug_Init(ini,log_line);")
     assert "SpiderNativeUnplug_OnFlip(count);" in MAIN
