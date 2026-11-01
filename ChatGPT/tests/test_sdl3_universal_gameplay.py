@@ -105,7 +105,7 @@ def test_universal_runtime_is_opt_in_and_mutually_exclusive():
         "SpiderSDL3Universal_BeforeUI(game_hwnd);") < game.index(
         "SpiderGamepadUI_OnFlip(game_hwnd")
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in game
-    assert "SpiderSDL3Universal_SuppressesNative()" in native
+    assert "SpiderSDL3Universal_Enabled()" in native
     assert "SpiderSDL3Universal_Enabled()" in ui
     assert "SpiderSDL3Raw_ProfileKey" in probe
     assert "SpiderSDL3Probe_SelectedMappedSample" in probe
