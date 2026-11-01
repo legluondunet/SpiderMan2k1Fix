@@ -234,12 +234,14 @@ static void wizard_start(SpiderRawWizard *w) {
   selected=SendMessageA(w->pads,CB_GETCURSEL,0,0);
   if(selected==CB_ERR || (unsigned)selected>=w->raw_count) {
     wizard_text(w,"No SDL joystick selected. Connect a controller and reopen this window.");
+    wizard_capture_focus(w,0);
     return;
   }
   index=(unsigned)selected;
   if(!SpiderSDL3Probe_RawBegin(w->ids[index],w->guid,w->name,sizeof(w->name))) {
     wizard_text(w,"SDL3 could not open this joystick. Check connection and try again.");
     if(w->log)w->log("SDL3-RAW-WIZARD: begin REFUSED; SDL3 raw open/GUID unavailable");
+    wizard_capture_focus(w,0);
     return;
   }
   w->active_id=w->ids[index];
