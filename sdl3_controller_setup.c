@@ -49,6 +49,7 @@ typedef struct {
   unsigned slot;
   unsigned count;
   unsigned action;
+  unsigned user_chose_controller; /* never equate first preview row with explicit pad choice */
   unsigned test_mode,test_reports,test_blocked_commands,test_suppressed_keys;
   int test_escape_raw; /* physical keyboard Escape; never synthetic pad Esc */
   uint32_t test_buttons_previous;
@@ -218,6 +219,7 @@ static void select_slot(SpiderSDL3SetupUI *ui,unsigned slot) {
   ui->slot=slot;ui->instance=0;ui->vid=0;ui->pid=0;
   if(!SpiderSDL3Probe_SetupRead(slot,&id,&vid,&pid,name,sizeof(name),&s)) {
     ui->modal_start.active=0;
+    ui->user_chose_controller=0;
     refresh_actions(ui);
     status(ui,"No mapped controller selected. Connect a pad or use keyboard to Close.");
     return;
@@ -287,6 +289,7 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
     ui->start_unarmed_reported[i]=0;
   }
   if(!n) {
+    ui->user_chose_controller=0;
     spider_sdl3_capture_reset(&ui->capture);
     ui->instance=0;ui->vid=0;ui->pid=0;
     refresh_actions(ui);
@@ -301,9 +304,15 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
       (unsigned long)gameplay_id,(unsigned)gameplay_vid,(unsigned)gameplay_pid);
     setup_report(selection_line);
   }
+  if(!old_id || (old_id && opened_ids[desired]!=old_id))
+    ui->user_chose_controller=0; /* automatic/default row is NOT an explicit choice */
   if(old_id && desired!=ui->slot)
     spider_sdl3_capture_reset(&ui->capture);
   select_slot(ui,desired);
+  if(n>1u && !ui->user_chose_controller) {
+    status(ui,"Multiple SDL3 controllers: select intended pad in dropdown or L1/R1 BEFORE Use selected controller.");
+    if(setup_report)setup_report("SDL3-SETUP: SELECT-UNCONFIRMED multiple pads; auto-preview cannot claim ownership");
+  }
 }
 /* Explicit modal-only Start handoff: all devices are sampled on the same
  * existing WM_TIMER / SDL3 game thread, after one SDL3 pump. A new Start
@@ -370,6 +379,7 @@ static int modal_start_handoff(SpiderSDL3SetupUI *ui) {
     SendMessageA(ui->pads,CB_SETCURSEL,next,0);
     select_slot(ui,next);
   }
+  ui->user_chose_controller=1u; /* verified physical Start selection */
   /* Start on the currently displayed profile (e.g. after L1/R1
    * browsing) is still an explicit request to own the original game
    * AFTER close. It need not change the combo-box row first. */
@@ -397,6 +407,14 @@ static int setup_select_explicit_pad(SpiderSDL3SetupUI *ui) {
   uint16_t vid=0,pid=0;
   char line[220];
   if(!ui || ui->closing || ui->close_pending || ui->test_mode)return 0;
+  /* Explicit Use on the auto-preview DS4 incorrectly selected the PS4
+   * in a two-pad PS3+DS4 session. Require intentional dropdown/L1-R1
+   * selection; only that actual user intent can claim the controller. */
+  if(ui->count>1u && !ui->user_chose_controller) {
+    status(ui,"Select your controller in the dropdown (or L1/R1) before pressing Use selected controller.");
+    if(setup_report)setup_report("SDL3-SETUP: EXPLICIT-SELECT REFUSED auto-preview; multiple pads require deliberate choice");
+    return 0;
+  }
   if(ui->capture.active) {
     status(ui,"Cancel action capture with keyboard Esc before selecting a controller.");
     if(setup_report)setup_report("SDL3-SETUP: EXPLICIT-SELECT refused during action capture; Esc cancels capture");
@@ -553,6 +571,7 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
           (edge==(1u<<SPIDER_SETUP_NAV_LB)?ui->count-1u:1u))%ui->count;
         SendMessageA(ui->pads,CB_SETCURSEL,next,0);
         select_slot(ui,next);
+        ui->user_chose_controller=1u;
         if(setup_report && ui->start_trace_count<32u) {
           char line[180];
           snprintf(line,sizeof(line),
@@ -663,6 +682,7 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
         (vk==VK_PRIOR?ui->count-1u:1u))%ui->count;
       SendMessageA(ui->pads,CB_SETCURSEL,next,0);
       select_slot(ui,next);
+      ui->user_chose_controller=1u;
     }
     return 1;
   }
@@ -794,8 +814,9 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         465,349,230,34,hwnd,(HMENU)(uintptr_t)SPIDER_UI_USE,NULL,NULL);
       label=CreateWindowExA(0,"STATIC",
         "Stick Left/Right: navigate    L1/R1: browse controllers\r\n"
-        "Use selected SDL3 controller / Ctrl+Shift+U: choose this pad\r\n"
-        "Start: choose pad only outside action capture; Esc: close/apply\r\n"
+        "Choose the intended gamepad ABOVE first if multiple are connected\r\n"
+        "Use selected controller / Ctrl+Shift+U: queue chosen pad\r\n"
+        "L1/R1 browse pads; Start only outside capture; Esc: close/apply\r\n"
         "Test mode: keyboard Esc / Ctrl+Shift+T stop; F9/F10 unchanged",
         WS_CHILD|WS_VISIBLE,18,393,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
@@ -832,7 +853,16 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       }
       if(LOWORD(wp)==SPIDER_UI_PAD && HIWORD(wp)==CBN_SELCHANGE) {
         LRESULT idx=SendMessageA(ui->pads,CB_GETCURSEL,0,0);
-        if(idx!=CB_ERR)select_slot(ui,(unsigned)idx);
+        if(idx!=CB_ERR) {
+          select_slot(ui,(unsigned)idx);
+          ui->user_chose_controller=1u;
+          if(setup_report) {
+            char line[175];
+            snprintf(line,sizeof(line),"SDL3-SETUP: USER-CHOSEN slot=%u id=%lu VID:PID=%04X:%04X",
+              (unsigned)idx,(unsigned long)ui->instance,(unsigned)ui->vid,(unsigned)ui->pid);
+            setup_report(line);
+          }
+        }
       } else if(LOWORD(wp)==SPIDER_UI_ACTION &&
                 HIWORD(wp)==LBN_SETFOCUS) {
         ui->focus.column=SPIDER_SETUP_FOCUS_ACTIONS;
