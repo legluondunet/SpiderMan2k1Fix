@@ -633,9 +633,12 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
               "SDL3-SETUP: Cross/A activated focused CAPTURE");
         }
       } else if(current_profile(ui)) {
-        spider_sdl3_capture_start(&ui->capture);
-        spider_sdl3_setup_nav_reset(&ui->nav);
-        status(ui,"CAPTURE: release all controls, then press ONE button or LT/RT. Esc cancels.");
+        /* South on a list row is navigation/confirmation, not permission
+         * to edit a saved gameplay binding. Only the clearly labeled
+         * Capture selected action button or Ctrl+Shift+C can arm a remap. */
+        status(ui,"To edit this action: choose Capture selected action (or Ctrl+Shift+C).");
+        if(setup_report && ui->start_trace_count++<32u)
+          setup_report("SDL3-SETUP: South on actions list ignored (explicit Capture button required)");
       }
     } else if(edge==(1u<<SPIDER_SETUP_NAV_EAST)) {
       setup_close_from_pad(ui,
@@ -688,6 +691,17 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
     }
     return 1;
   }
+  /* Explicit keyboard shortcuts never overlap native button focus.
+   * Control remapping is armed only by Ctrl+Shift+C or the Capture button. */
+  if(vk=='C' && (GetKeyState(VK_CONTROL)&0x8000) &&
+     (GetKeyState(VK_SHIFT)&0x8000)) {
+    if(!ui->capture.active && current_profile(ui)) {
+      spider_sdl3_capture_start(&ui->capture);
+      spider_sdl3_setup_nav_reset(&ui->nav);
+      status(ui,"CAPTURE: release all controls, then press one button or LT/RT. Esc cancels.");
+    }
+    return 1;
+  }
   /* Ctrl+Shift+U safely cancels a stuck capture; a second press claims.
    * It follows the same fail-closed two-step rule as the Use button. */
   if(vk=='U' && (GetKeyState(VK_CONTROL)&0x8000) &&
@@ -702,12 +716,12 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
     if(focused==ui->pads)return 0;
     /* Retain keyboard focus on a native focused button; arrows are
      * handled normally there. Analog input navigates button selection. */
-    if(focused==GetDlgItem(ui->hwnd,SPIDER_UI_CAPTURE) ||
-       focused==GetDlgItem(ui->hwnd,SPIDER_UI_RESET) ||
-       focused==GetDlgItem(ui->hwnd,SPIDER_UI_CLOSE) ||
-       focused==GetDlgItem(ui->hwnd,SPIDER_UI_RAW) ||
-       focused==GetDlgItem(ui->hwnd,SPIDER_UI_TEST) ||
-       focused==GetDlgItem(ui->hwnd,SPIDER_UI_USE))return 0;
+    /* Arrow keys always browse the action list, even if a button has
+     * keyboard focus. This fixes the apparent frozen list after Use. */
+    if(ui->focus.column!=SPIDER_SETUP_FOCUS_ACTIONS) {
+      ui->focus.column=SPIDER_SETUP_FOCUS_ACTIONS;
+      if(IsWindow(ui->actions))SetFocus(ui->actions);
+    }
     if(!current_profile(ui))return 1;
     next=(ui->action+SPIDER_SDL3_VISIBLE_ACTION_COUNT+
       (vk==VK_UP?SPIDER_SDL3_VISIBLE_ACTION_COUNT-1u:1u))%
@@ -742,14 +756,11 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
       SendMessageA(ui->hwnd,WM_COMMAND,MAKEWPARAM(id,BN_CLICKED),(LPARAM)focused);
       return 1;
     }
-    /* Synthetic Return sent by a PS3 face button to the empty dialog
-     * background must NOT start an action rebind. Only the action list
-     * explicitly focused by the user can arm an Enter capture. */
-    if(focused==ui->actions && current_profile(ui)) {
-      spider_sdl3_capture_start(&ui->capture);
-      spider_sdl3_setup_nav_reset(&ui->nav);
-      status(ui,"CAPTURE: release ALL controls; press ONE button or LT/RT. Esc cancels.");
-    }
+    /* A Proton-emulated South->Return may be delivered while the
+     * action list has focus. Never interpret Return alone as remapping
+     * approval; use Capture button or Ctrl+Shift+C exclusively. */
+    if(focused==ui->actions)
+      status(ui,"Select Capture selected action (or Ctrl+Shift+C) to edit this row.");
     return 1;
   }
   if(vk==VK_F5) {
@@ -854,7 +865,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       label=CreateWindowExA(0,"STATIC",
         "Stick Left/Right: navigate    L1/R1: browse controllers\r\n"
         "Choose the intended gamepad ABOVE first if multiple are connected\r\n"
-        "Use selected controller / Ctrl+Shift+U: queue chosen pad\r\n"
+        "Use selected / Ctrl+Shift+U: choose pad; Ctrl+Shift+C: remap\r\n"
         "Start only outside capture; Esc: close/stop test; F9/F10 unchanged",
         WS_CHILD|WS_VISIBLE,18,393,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
@@ -904,17 +915,24 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       } else if(LOWORD(wp)==SPIDER_UI_ACTION &&
                 HIWORD(wp)==LBN_SETFOCUS) {
         ui->focus.column=SPIDER_SETUP_FOCUS_ACTIONS;
-      } else if(LOWORD(wp)>=SPIDER_UI_CAPTURE &&
-                LOWORD(wp)<=SPIDER_UI_CLOSE &&
+        setup_sync_visual_selection(ui);
+      } else if(((LOWORD(wp)>=SPIDER_UI_CAPTURE &&
+                  LOWORD(wp)<=SPIDER_UI_CLOSE) ||
+                 (LOWORD(wp)>=SPIDER_UI_RAW &&
+                  LOWORD(wp)<=SPIDER_UI_USE)) &&
                 HIWORD(wp)==BN_SETFOCUS) {
         ui->focus.column=SPIDER_SETUP_FOCUS_BUTTONS;
-        ui->focus.button=(unsigned)(LOWORD(wp)-SPIDER_UI_CAPTURE);
+        ui->focus.button=LOWORD(wp)<=SPIDER_UI_CLOSE?
+          (unsigned)(LOWORD(wp)-SPIDER_UI_CAPTURE):
+          (unsigned)(SPIDER_SETUP_BUTTON_RAW+LOWORD(wp)-SPIDER_UI_RAW);
+        setup_sync_visual_selection(ui);
       } else if(LOWORD(wp)==SPIDER_UI_ACTION &&
                 HIWORD(wp)==LBN_SELCHANGE) {
         LRESULT idx=SendMessageA(ui->actions,LB_GETCURSEL,0,0);
         if(idx!=LB_ERR && idx<SPIDER_SDL3_VISIBLE_ACTION_COUNT) {
           ui->action=(unsigned)idx;
           ui->focus.column=SPIDER_SETUP_FOCUS_ACTIONS;
+          setup_sync_visual_selection(ui);
           spider_sdl3_capture_reset(&ui->capture);
           status(ui,"Action selected. Choose Capture then release all controls.");
         }
