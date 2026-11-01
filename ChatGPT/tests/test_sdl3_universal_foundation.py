@@ -196,3 +196,18 @@ def test_mapped_gamepad_can_enter_recalibration_without_changing_game_owner():
     assert "universal 3D game bridge NOT active" in setup
     assert "Press F9 to exit" not in setup
     assert "SDL3-3D-LIVE" not in wizard
+
+
+def test_wizard_start_does_not_restart_capture_and_context_scope_documented():
+    wizard=(ROOT/"sdl3_raw_wizard.c").read_text(encoding="utf-8")
+    roadmap=(ROOT/"docs/references/SDL3_UNIVERSAL_CONTROLLERS.md").read_text(encoding="utf-8")
+    assert "if(!w.active_id)wizard_start(&w);" in wizard
+    assert "Enter ignored during capture" in wizard
+    assert "Start / Restart (Tab + Space)" in wizard
+    assert "VK_RETURN" in wizard
+    for action in ["MenuConfirm", "MenuBack", "SkipVideo", "NextStill", "SkipCutscene"]:
+        assert action in roadmap
+    for context in ["Main and pause menus", "Bink/videos", "Scripted/in-engine 3D cutscenes", "Fixed entry/continue image or still", "Gameplay 3D"]:
+        assert context in roadmap
+    assert "F9 screenshot and F10" in roadmap
+    assert "release-blocking acceptance criteria" in roadmap
