@@ -71,10 +71,10 @@ static const char *const spider_ini_display[]={
 static const char *const spider_ini_hud[]={
   "HUDWidescreenFix","NativeESC4x3","NativeMotif4x3","NativeCursor4x3"
 };
-/* Retain two obsolete COM keys for backward compatibility: old user INIs
- * must NOT be treated as invalid and regenerated, losing saved controls.
- * The runtime refuses both unsafe features regardless of their values.
- * Neither obsolete key is generated or documented as an active option. */
+/* Retain legacy keys (including MouseEnabled and
+ * ControllerAutoDisableMouse) so old user INIs are not regenerated,
+ * losing saved controls. MouseEnabled=1 is always IGNORED at runtime,
+ * and no mouse-override key is generated in new INIs. */
 static const char *const spider_ini_input[]={
   "KeyboardLayout","DirectInputReacquire","DisableWindowsGhosting","PauseOnFocusLoss","PauseBinkOnFocusLoss","PauseDirectSoundOnFocusLoss","PauseOverlay","PauseDim","PauseDimOpacity","PauseKey",
   "RestoreCursorOnFocusLoss","ExperimentalFocusTrace","ExperimentalDI8EntryTrace",
