@@ -486,6 +486,8 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "ExperimentalSDL3ControllerSetup=1\r\n"
     "ExperimentalSDL3ContextBridge=1\r\n"
     "ExperimentalSDL3GameplayBindings=1\r\n"
+    "; Experimental universal SDL3 gamepad backend (OFF until hardware tested).\r\n"
+    "ExperimentalSDL3UniversalGameplay=0\r\n"
     "ExperimentalSDL3XboxRTSwing=1\r\n"
     "; Exact game-owned Left Alt recovery after confirmed Alt+Tab only.\r\n"
     "; Default ON; native opcode/OS modifier safety gates remain enforced.\r\n"
