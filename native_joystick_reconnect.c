@@ -746,7 +746,7 @@ void SpiderNativeReconnect_ObserveMode(long flip_index,int menu_2d,
 void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *)) {
   write_log=logger;
   requested=(ini && GetPrivateProfileIntA("Input",
-      "ExperimentalNativeJoystickReconnect",0,ini)==1);
+      "ExperimentalNativeJoystickReconnect",1,ini)==1);
   initialized=0;
   swap_probe_enabled=0;
   swap_mapping_enabled=0;
@@ -755,7 +755,7 @@ void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *)) {
   swap_probe_reports=0;
   if(!requested) {report("NATIVE-RECONNECT: OFF by default");return;}
   if(!ini || GetPrivateProfileIntA("Input",
-      "ExperimentalNativeJoystickUnplugGuard",0,ini)!=1) {
+      "ExperimentalNativeJoystickUnplugGuard",1,ini)!=1) {
     requested=0;
     report("NATIVE-RECONNECT: DISABLED, stage-1 native unplug guard must be enabled");
     return;
@@ -763,7 +763,7 @@ void SpiderNativeReconnect_Init(const char *ini,void (*logger)(const char *)) {
   swap_probe_enabled=GetPrivateProfileIntA("Debug",
       "NativeJoystickSwapProbe",0,ini)==1;
   swap_mapping_enabled=GetPrivateProfileIntA("Input",
-      "ExperimentalNativeJoystickMappingSwap",0,ini)==1;
+      "ExperimentalNativeJoystickMappingSwap",1,ini)==1;
   initialized=valid_binary_layout();
   if(!initialized) {
     requested=0;
