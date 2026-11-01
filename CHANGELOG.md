@@ -1,29 +1,33 @@
 # Changelog
 
-## Unreleased — experimental controller and focus integration (draft PR #91)
+## Unreleased — SDL3 controllers and guarded Alt recovery (staging; not released)
 
-**Not released or merged.** The following summarizes the **combined
-test branch** only; the released v1.1.0 binary and its defaults remain
-unchanged. Scope and final release version require maintainer approval.
+**Not released or merged.** This staging branch combines the tested PR #91
+runtime with new **default-enabled SDL3 and Left Alt recovery**. The default
+changes are **not yet hardware-revalidated**, even though the prior opt-in
+build passed the stated Windows 11 and Wine/Proton manual test matrix.
+The released v1.1.0 executable and its defaults remain unchanged.
 
 ### Tested changes in the combined branch
 
-- **Sony DualShock 4 and Xbox 360-compatible gamepads:** Optional SDL3
+- **Sony DualShock 4 and Xbox 360-compatible gamepads:** Default-on SDL3
   selection and handoff to the original DirectInput game controller,
   controller-specific profiles, menu/video Cross/A confirmation and
   Circle/B cancellation, native 3D controls and guarded Xbox RT Swing.
   The supported DS4 `054C:09CC` and Xbox `045E:028E` controllers were
   tested individually and together on Windows 11. Wine/Proton trials
   also exercised Xbox 3D gameplay and controller-backed focus wake.
-  **These controller features still require experimental INI opt-ins.**
+  **These controller features are enabled by default in new INIs**;
+  explicit `=0` overrides remain respected. Runtime identity and native
+  input/mapping guards remain fail-closed.
   Generic DS3, Steam Deck and arbitrary controllers are not validated.
 - **Permanent game-only mouse disable:** Original mouse cursor, menu
   hit-testing and mouse polling are OFF even if an old INI contains
   `MouseEnabled=1`; keyboard/controller navigation remains available.
   The operating-system desktop pointer is not disabled and is
   restored when switching away from the game.
-- **Opt-in Left Alt recovery after Alt+Tab:** Strictly guarded,
-  default-OFF `[Input] ExperimentalAltLatchRecovery=1` repairs a
+- **Default-on Left Alt recovery after Alt+Tab:** Strictly guarded,
+  `[Input] ExperimentalAltLatchRecovery=1` repairs a
   stale *original game* Left Alt latch after a confirmed external
   focus-return; it does not rewrite real keyboard state or synthesize
   global Alt/Tab keys. The combined native Windows 11 test logged
@@ -50,12 +54,12 @@ unchanged. Scope and final release version require maintainer approval.
 
 ### Release and research boundaries
 
-The combined experimental build has passed **741 regression tests and
+The previous combined opt-in build passed **744 regression tests and
 Windows x86 CI packaging**, plus Windows 11 and Wine/Proton game tests
 on the reported hardware. **No release is authorized by these results
-alone:** direct integration onto the newer `main`, final default
-settings, final-build smoke tests and an approved version/tag are
-separate steps. The separate DS4 audio-routing PR #86, Xbox profile
+alone:** the final merged tree now derives from the newer `main`, but
+**the newly default-on settings still require their own hardware smoke
+checks**, exact-head CI, and an approved release version/tag. The separate DS4 audio-routing PR #86, Xbox profile
 prototype #78, and generic controller research remain outside the
 tested-release claims.
 
