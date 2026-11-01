@@ -793,9 +793,9 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
         465,349,230,34,hwnd,(HMENU)(uintptr_t)SPIDER_UI_USE,NULL,NULL);
       label=CreateWindowExA(0,"STATIC",
-        "Stick Left/Right: navigate    L1/R1: browse controllers\\r\\n"
-        "Use selected SDL3 controller / Ctrl+Shift+U: choose this pad\\r\\n"
-        "Start: choose pad only outside action capture; Esc: close/apply\\r\\n"
+        "Stick Left/Right: navigate    L1/R1: browse controllers\r\n"
+        "Use selected SDL3 controller / Ctrl+Shift+U: choose this pad\r\n"
+        "Start: choose pad only outside action capture; Esc: close/apply\r\n"
         "Test mode: keyboard Esc / Ctrl+Shift+T stop; F9/F10 unchanged",
         WS_CHILD|WS_VISIBLE,18,393,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
