@@ -505,3 +505,27 @@ void SpiderSDL3Raw_Recognize(HWND owner) {
   SetForegroundWindow(owner);
   busy=0;
 }
+
+int SpiderSDL3Raw_ProfileKey(uint32_t instance_id,uint16_t vendor,
+                            uint16_t product,uint16_t *key_vendor,
+                            uint16_t *key_product) {
+  SpiderSDLGuid guid;
+  uint32_t hash=2166136261u;
+  unsigned i;
+  int nonzero=0;
+  if(!key_vendor || !key_product || !instance_id)return 0;
+  if(vendor && product) {
+    *key_vendor=vendor;*key_product=product;return 1;
+  }
+  if(!ready || !get_guid)return 0;
+  guid=get_guid(instance_id);
+  for(i=0;i<16u;i++) {
+    if(guid.data[i])nonzero=1;
+    hash^=guid.data[i];hash*=16777619u;
+  }
+  if(!nonzero)return 0;
+  *key_vendor=0xFFFEu;
+  *key_product=(uint16_t)((hash>>16)^hash);
+  if(!*key_product)*key_product=1u;
+  return 1;
+}
