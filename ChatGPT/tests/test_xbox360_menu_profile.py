@@ -93,7 +93,9 @@ def test_auto_detects_verified_xbox_without_sony_ps1_preview():
        'begin_scancode(0x1Cu,"Return");',
     ):
         assert expected in UI,expected
-    assert "MouseEnabled=0" in TEMPLATE
+    assert "Mouse input is permanently disabled IN-GAME" in TEMPLATE
+    assert "MouseEnabled=0" not in TEMPLATE
+    assert "MouseEnabled=1" not in TEMPLATE
     assert '"Xbox360"' in VALIDATE
     assert '"; Xbox360 (045E:028E etc.) A/B menu bridge is experimental.' in TEMPLATE
     assert "d.found==1u" in UI

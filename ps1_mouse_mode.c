@@ -9,13 +9,12 @@
  *
  * No Win32 ShowCursor, SetCursorPos, ClipCursor, SetWindowLong or DirectInput
  * hooks; the OS desktop cursor and existing Alt-Tab recovery are untouched.
- * The only live change is game-owned gRenderTest bit 0x10. Restore only the
- * bit we installed on an explicit MouseEnabled=1 policy switch; keep the
- * game-owned bit active across background focus/pause so the game's cursor
- * never enters the frozen PAUSED frame. The desktop pointer is unrelated.
- * Gameplay keyboard and pad stay intact.
- * MouseEnabled=0 (default) applies to all game input profiles, including
- * keyboard-only; MouseEnabled=1 restores original menu mouse behavior.
+ * The only live change is to SET game-owned gRenderTest bit 0x10.
+ * Never clear that bit or provide an opt-in to restore game mouse input.
+ * Keep it active across background focus/pause so the original cursor
+ * never enters the frozen PAUSED frame. The OS desktop pointer is unrelated.
+ * Gameplay keyboard and all gamepad inputs stay intact. Legacy
+ * MouseEnabled=1 in old INIs is ignored by the caller.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -28,8 +27,8 @@
 
 static volatile LONG *render_flags=NULL;
 static void (*mouse_logger)(const char *)=NULL;
-static int armed=0,owns_bit=0,disabled=0;
-static int mouse_policy_configured=0,mouse_policy_enabled=1,mouse_arm_attempted=0;
+static int armed=0,disabled=0;
+static int mouse_policy_configured=0,mouse_arm_attempted=0;
 static void log_mouse(const char *message){
   if(mouse_logger)mouse_logger(message);
 }
@@ -117,73 +116,43 @@ int SpiderPS1Mouse_Arm(void (*logger)(const char *)){
   log_mouse("GAMEPAD-MOUSE: ARMED verified native mouse cursor/draw, input poll and menu hit-test gates; desktop mouse untouched");
   return 1;
 }
-void SpiderPS1Mouse_SetPadActive(int active){
+/* Permanent original-game mouse disable. Only ORs bit 0x10; no
+ * code path ever clears it. Compare/exchange preserves unrelated engine
+ * flags even if game logic modifies them concurrently. */
+static void SpiderPS1Mouse_EnsureDisabled(void){
   LONG before,desired;
   unsigned attempts;
   if(!armed || !render_flags)return;
-  if(active) {
-    for(attempts=0;attempts<8u;attempts++){
-      before=InterlockedCompareExchange(render_flags,0,0);
-      if(((unsigned long)before&SPIDER_GAME_MOUSE_DISABLED)!=0u){
-        if(!disabled) {
-          /* If another owner disabled it first, do not claim its bit. */
-          disabled=1;
-          if(!owns_bit)
-            log_mouse("GAMEPAD-MOUSE: native mouse already disabled by game; leaving original flag ownership untouched");
-        }
-        return;
-      }
-      desired=(LONG)((unsigned long)before|SPIDER_GAME_MOUSE_DISABLED);
-      if(InterlockedCompareExchange(render_flags,desired,before)==before){
-        owns_bit=1;
+  for(attempts=0;attempts<8u;attempts++){
+    before=InterlockedCompareExchange(render_flags,0,0);
+    if(((unsigned long)before&SPIDER_GAME_MOUSE_DISABLED)!=0u){
+      if(!disabled){
         disabled=1;
-        log_mouse("GAMEPAD-MOUSE: GAME MOUSE OFF (game foreground, MouseEnabled=0); original native sprite/poll/hit testing disabled, desktop untouched");
-        return;
+        log_mouse("GAMEPAD-MOUSE: native game mouse already disabled; original flag preserved");
       }
-    }
-  }else{
-    if(!owns_bit){
-      disabled=0;
       return;
     }
-    for(attempts=0;attempts<8u;attempts++){
-      before=InterlockedCompareExchange(render_flags,0,0);
-      if(!((unsigned long)before&SPIDER_GAME_MOUSE_DISABLED)){
-        owns_bit=0;disabled=0;
-        return;
-      }
-      desired=(LONG)((unsigned long)before&~SPIDER_GAME_MOUSE_DISABLED);
-      if(InterlockedCompareExchange(render_flags,desired,before)==before){
-        owns_bit=0;disabled=0;
-        log_mouse("GAMEPAD-MOUSE: GAME MOUSE RESTORED (MouseEnabled=1); Win32 desktop pointer not modified");
-        return;
-      }
+    desired=(LONG)((unsigned long)before|SPIDER_GAME_MOUSE_DISABLED);
+    if(InterlockedCompareExchange(render_flags,desired,before)==before){
+      disabled=1;
+      log_mouse("GAMEPAD-MOUSE: GAME MOUSE OFF (permanent); original native sprite/poll/hit testing disabled, desktop untouched");
+      return;
     }
   }
 }
 
-/* The mouse policy is independent of DirectInput device discovery: if no
- * controller is present, the original keyboard still navigates every menu.
- * We never block the native desktop cursor and never alter keyboard input. */
-void SpiderPS1Mouse_Configure(int mouse_enabled,void (*logger)(const char *)){
+/* Mouse policy is independent of DirectInput device discovery: the
+ * original keyboard still navigates all menus without a controller.
+ * This does not change the OS desktop pointer or keyboard input. */
+void SpiderPS1Mouse_Configure(void (*logger)(const char *)){
   mouse_logger=logger;
   mouse_policy_configured=1;
-  mouse_policy_enabled=mouse_enabled!=0;
   mouse_arm_attempted=0;
-  if(mouse_policy_enabled){
-    SpiderPS1Mouse_SetPadActive(0);
-    log_mouse("GAMEPAD-MOUSE: MouseEnabled=1; original game menu mouse enabled");
-  }else{
-    log_mouse("GAMEPAD-MOUSE: MouseEnabled=0 (default); native game mouse suppression requested for keyboard and controllers");
-  }
+  log_mouse("GAMEPAD-MOUSE: game mouse permanently disabled (keyboard and controllers only); desktop pointer unchanged");
 }
 void SpiderPS1Mouse_OnFlip(HWND game_hwnd){
   int in_game;
   if(!mouse_policy_configured)return;
-  if(mouse_policy_enabled){
-    SpiderPS1Mouse_SetPadActive(0);
-    return;
-  }
   in_game=game_hwnd && IsWindow(game_hwnd) &&
           IsWindowVisible(game_hwnd) && GetForegroundWindow()==game_hwnd;
   if(!in_game){
@@ -191,9 +160,9 @@ void SpiderPS1Mouse_OnFlip(HWND game_hwnd){
      * sprite/poll/hit-test switch, NOT the OS desktop mouse pointer.
      * Restoring it in background lets PCShell draw the original cursor
      * into the frame that our PAUSED compositor freezes at Flip.
-     * A verified, already-armed gate stays enforced until explicit
-     * MouseEnabled=1 (or the game process exits). */
-    if(armed)SpiderPS1Mouse_SetPadActive(1);
+     * A verified, already-armed gate stays enforced until the
+     * original game process exits. */
+    if(armed)SpiderPS1Mouse_EnsureDisabled();
     return;
   }
   if(!armed && !mouse_arm_attempted){
@@ -201,7 +170,7 @@ void SpiderPS1Mouse_OnFlip(HWND game_hwnd){
      * flag must all validate. No retries on an unsupported executable. */
     mouse_arm_attempted=1;
     if(!SpiderPS1Mouse_Arm(mouse_logger))
-      log_mouse("GAMEPAD-MOUSE: MouseEnabled=0 REFUSED; original game mouse unchanged (signature/memory verification failed)");
+      log_mouse("GAMEPAD-MOUSE: permanent disable REFUSED; original game mouse unchanged (signature/memory verification failed)");
   }
-  if(armed)SpiderPS1Mouse_SetPadActive(1);
+  if(armed)SpiderPS1Mouse_EnsureDisabled();
 }

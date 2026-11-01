@@ -27,6 +27,7 @@
 #include "input_focus_trace.h"
 #include "gamepad_ui_profile.h"
 #include "input_notacquired_retry.h"
+#include "alt_latch_recovery.h"
 #include "native_joystick_unplug.h"
 #include "native_joystick_reconnect.h"
 #include "sdl3_gamepad_probe.h"
@@ -2453,6 +2454,7 @@ static void pause_at_flip_if_background(void) {
   } else if(InterlockedCompareExchange(&pause_ever_foreground,0,0)==1 &&
             pause_confirmed_focus_loss(hwnd) &&
             InterlockedCompareExchange(&pause_latched,1,0)==0) {
+    SpiderAltLatch_OnConfirmedExternalLoss();
     log_line("FOCUS-PAUSE: confirmed external focus loss; pause latched until manual resume");
     pause_log_foreground_owner(hwnd,GetForegroundWindow(),"external-foreground-latched");
   }
@@ -2590,6 +2592,7 @@ static void pause_at_flip_if_background(void) {
   log_line("FOCUS-PAUSE: explicit resume or window destroyed");
   pause_log_foreground_owner(hwnd,GetForegroundWindow(),"resume-foreground-state");
   pause_log_resume_focus(hwnd);
+  SpiderAltLatch_OnPauseReturn(hwnd);
   InterlockedExchange(&pause_in_progress,0);
 }
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
@@ -2637,6 +2640,18 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   /* SDL3 selection was pumped before UI. Native device replacement now
    * runs after its SHA-guarded disconnect patch, on the same Flip thread. */
   SpiderNativeReconnect_OnFlip(count,game_hwnd);
+  /* Separate default-OFF Left Alt-only native focus-latch experiment.
+   * Actual confirmed external loss/return is recorded by FOCUS-PAUSE,
+   * never inferred from mere SDL3 sample-eligibility transitions. */
+  SpiderAltLatch_OnFlip(game_hwnd,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
+      InterlockedCompareExchange(&fov_game_height,0,0)>0,
+    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
+    ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
+      native_pause43_visible_near_flip(count) ||
+      InterlockedCompareExchange(&pause_latched,0,0)==1 ||
+      InterlockedCompareExchange(&pause_in_progress,0,0)==1));
   /* Experimental SDL3 semantic action probe is strictly read-only and
    * runs only AFTER the game-owned DirectInput handoff is verified. */
   SpiderSDL3GameplayPlan_OnFlip(game_hwnd,
@@ -3264,11 +3279,13 @@ static DWORD initialize_body(LPVOID unused) {
       SpiderNativeReconnect_Init(ini,log_line);
       SpiderSDL3Probe_Init(ini,log_line);
       SpiderSDL3GameplayPlan_Init(ini,log_line);
+      SpiderAltLatch_Init(ini,log_line);
     } else {
       SpiderNativeUnplug_Init(NULL,log_line);
       SpiderNativeReconnect_Init(NULL,log_line);
       SpiderSDL3Probe_Init(NULL,log_line);
       SpiderSDL3GameplayPlan_Init(NULL,log_line);
+      SpiderAltLatch_Init(NULL,log_line);
     }
   }
   SpiderFocusMedia_Init(log_line); /* Opt-in native Bink pause. */

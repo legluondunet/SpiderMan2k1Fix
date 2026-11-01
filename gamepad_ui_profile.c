@@ -539,12 +539,13 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   ps1_options_skip_requested=GetPrivateProfileIntA("Input","ControllerPS1OptionsSkip",0,ini)==1;
   /* ControllerPS1ReadOnlyJoystick is legacy. A supported detected
    * controller now always gets a read-only Joystick menu. */
-  /* Global game-only mouse policy replaces the retired DS4-only option.
-   * Absent MouseEnabled is intentionally OFF for existing/fresh INIs.
-   * MouseEnabled=1 explicitly restores normal mouse menu interaction. */
-  SpiderPS1Mouse_Configure(GetPrivateProfileIntA("Input","MouseEnabled",0,ini)==1,logger);
+  /* Game mouse is permanently disabled, regardless of controller or
+   * legacy MouseEnabled INI values; desktop cursor remains independent. */
+  SpiderPS1Mouse_Configure(logger);
+  if(GetPrivateProfileStringA("Input","MouseEnabled","",choice,sizeof(choice),ini))
+    report("GAMEPAD-MOUSE: obsolete MouseEnabled option ignored; game mouse is permanently OFF");
   if(GetPrivateProfileStringA("Input","ControllerAutoDisableMouse","",choice,sizeof(choice),ini))
-    report("GAMEPAD-MOUSE: ControllerAutoDisableMouse is retired; MouseEnabled=0/1 now controls the game mouse for all players");
+    report("GAMEPAD-MOUSE: ControllerAutoDisableMouse is retired; game mouse is permanently OFF");
   ps1_quit_trace_requested=GetPrivateProfileIntA("Input","ControllerPS1QuitTrace",0,ini)==1;
   ps1_post_quit_guard_requested=GetPrivateProfileIntA("Input","ControllerPS1PostQuitGuard",0,ini)==1;
   ps1_transition_edge_ownership_requested=GetPrivateProfileIntA("Input","ControllerPS1TransitionEdgeOwnership",0,ini)==1;
