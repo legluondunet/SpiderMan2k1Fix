@@ -5,7 +5,7 @@
  * DIERR_OTHERAPPHASPRIO). Wine returns DIERR_UNPLUGGED (0x80040209)
  * after a physical DS4 detach, so the entire game terminates.
  *
- * Opt-in and fail-closed: [Input] ExperimentalNativeJoystickUnplugGuard=1.
+ * Enabled by default and fail-closed; explicit INI =0 disables native guard.
  * Only the exact SHA-verified 2001 x86 EXE and ALL known native callsite
  * signatures can be patched. The source EXE on disk stays untouched.
  *
