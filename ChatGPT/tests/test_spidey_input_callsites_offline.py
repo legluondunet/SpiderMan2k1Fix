@@ -31,8 +31,10 @@ def test_full_retail_direct_call_inventory_is_exact_and_increasing():
     assert len(mod.EXPECTED_STATE_UPDATE_CALLS)==20
     assert all(0x00505720<=x<0x00505902
                for x in mod.EXPECTED_STATE_UPDATE_CALLS)
-    assert len(mod.VERIFIED_SCRIPT_INPUT_CHAIN)==5
-    assert len(mod.SCRIPT_DISPATCH_SHARED_SERVICE_CALLS)==10
+    assert len(mod.VERIFIED_SCRIPT_INPUT_CHAIN)==8
+    assert len(mod.SCRIPT_DISPATCH_INLINE_CALLS)==8
+    assert len(mod.SCRIPT_DISPATCH_HELPER_CALLS)==2
+    assert mod.SCRIPT_DISPATCH_HELPER_XREFS==(0x00427CD6,0x00427D22)
     assert mod.EXPECTED_COUNTS=={
         0x0050A190:1, 0x00505720:56,
         0x00479540:20, 0x004796A0:1
@@ -58,6 +60,7 @@ def test_source_known_xref_aggregation_without_binary_redistribution(monkeypatch
         0x00505720:mod.EXPECTED_SHARED_SERVICE_CALLS,
         0x00479540:mod.EXPECTED_STATE_UPDATE_CALLS,
         0x004796A0:(0x005058F5,),
+        0x00427E40:mod.SCRIPT_DISPATCH_HELPER_XREFS,
     }
     monkeypatch.setattr(mod,"direct_relative_call_candidates",
         lambda _pe,target:["0x%08X"%a for a in calls[target]])
@@ -72,12 +75,22 @@ def test_source_known_xref_aggregation_without_binary_redistribution(monkeypatch
     assert evidence["game_mode"].startswith("UNKNOWN")
     assert evidence["callsites"][0]=="0x00427989"
     assert evidence["callsites"][-1]=="0x00427E9F"
+    assert len(evidence["inline_calls"])==8
+    assert len(evidence["helper_calls"])==2
+    assert evidence["helper_entry"]=="0x00427E40"
+    assert evidence["helper_xrefs_from_dispatch"]==[
+        "0x00427CD6","0x00427D22"]
     assert result["static_invariants"]["hook_authorized"] is False
     assert result["static_invariants"]["bridge_enabled"] is False
     assert result["static_invariants"]["service_called_from_many_code_regions"]
     assert len(result["shared_service_callsite_context_sha256_16"])==56
     assert all(len(k)==16 for k in
         result["shared_service_callsite_context_sha256_16"].values())
+    calls[0x00427E40]=(0x00427CD6,)
+    with pytest.raises(mod.InvalidExecutable,
+                       match="script input helper chain differs"):
+        mod.audit(data)
+    calls[0x00427E40]=mod.SCRIPT_DISPATCH_HELPER_XREFS
     calls[0x00505720]=mod.EXPECTED_SHARED_SERVICE_CALLS[:-1]
     with pytest.raises(mod.InvalidExecutable,
                        match="input xref count mismatch"):

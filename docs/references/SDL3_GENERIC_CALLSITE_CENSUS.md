@@ -105,12 +105,19 @@ unsigned 16-bit value read from the script stream. That handler
 bounds-checks a selector and dispatches through the table at
 `0x00427966: FF 24 8D 98 7D 42 00`.
 
-Within this handler, **exactly ten** of the 56 direct
-`0x00505720` calls reside at `0x00427989, 0x004279C8,
-0x00427A38, 0x00427A75, 0x00427B25, 0x00427B64,
-0x00427BE8, 0x00427C27, 0x00427E60, 0x00427E9F`.
-These are statically **script-dispatch reachable**, not
-automatically classified as 3D, menu or video execution.
+This script handler has **eight direct** calls of
+`0x00505720` at `0x00427989, 0x004279C8, 0x00427A38,
+0x00427A75, 0x00427B25, 0x00427B64, 0x00427BE8,
+0x00427C27`. Two more calls, `0x00427E60` and
+`0x00427E9F`, are inside a **separate** waiting helper
+starting at `0x00427E40`. The script handler invokes that
+helper at `0x00427CD6` and `0x00427D22`; these are its
+only two direct callers in the authenticated EXE.
+
+Thus **ten** of the 56 input-service callsites are
+**script-dispatch reachable** (eight directly, two transitively
+via the helper). They are **not automatically** classified
+as 3D, menu or video execution.
 The remaining **46** calls are still unclassified by
 actual game context.
 

@@ -70,8 +70,13 @@ VERIFIED_SCRIPT_INPUT_CHAIN = (
     (0x0050C2AE, "e8 fd e6 ff ff", "input condition consumes direction and resets gate"),
     (0x0050A9B0, "c6 05 18 0a ac 00 01", "native gate reset writes 0x00AC0A18"),
     (0x0050A2BD, "a0 18 0a ac 00", "native aggregator reads the gate"),
+    (0x00427CD6, "e8 65 01 00 00", "script handler invokes separate input wait helper"),
+    (0x00427D22, "e8 19 01 00 00", "script handler invokes separate input wait helper"),
+    (0x00427E40, "8b 44 24 04", "entry of separate input wait helper"),
 )
-SCRIPT_DISPATCH_SHARED_SERVICE_CALLS = EXPECTED_SHARED_SERVICE_CALLS[:10]
+SCRIPT_DISPATCH_INLINE_CALLS = EXPECTED_SHARED_SERVICE_CALLS[:8]
+SCRIPT_DISPATCH_HELPER_CALLS = EXPECTED_SHARED_SERVICE_CALLS[8:10]
+SCRIPT_DISPATCH_HELPER_XREFS = (0x00427CD6, 0x00427D22)
 
 
 def _parse_address(va: str) -> int:
@@ -105,10 +110,17 @@ def audit(data: bytes) -> dict:
             "va": "0x%08X" % address, "bytes": hex_bytes,
             "static_role": meaning
         })
-    script_calls=tuple(address for address in found[0x00505720]
-                       if 0x0042796D <= address < 0x00427D92)
-    if script_calls != SCRIPT_DISPATCH_SHARED_SERVICE_CALLS:
-        raise InvalidExecutable("script-dispatch callsite set differs")
+    script_inline=tuple(address for address in found[0x00505720]
+                        if 0x0042796D <= address < 0x00427D92)
+    script_helper=tuple(address for address in found[0x00505720]
+                        if 0x00427E40 <= address < 0x00427ECF)
+    helper_xrefs=tuple(_parse_address(x) for x in
+                       direct_relative_call_candidates(pe,0x00427E40))
+    if script_inline != SCRIPT_DISPATCH_INLINE_CALLS:
+        raise InvalidExecutable("script-dispatch inline callsite set differs")
+    if script_helper != SCRIPT_DISPATCH_HELPER_CALLS or \
+       helper_xrefs != SCRIPT_DISPATCH_HELPER_XREFS:
+        raise InvalidExecutable("script input helper chain differs")
     # Entire xref inventory is from the file's .text bytes only.
     # Addresses do not reveal which call executes in a movie/menu/3D:
     # only dynamic context tracing can establish that.
@@ -146,9 +158,13 @@ def audit(data: bytes) -> dict:
             "verified_instruction_sites": script_proofs,
             "caller": "0x004E0461",
             "script_handler": "0x00427910",
-            "number_of_verified_calls": len(script_calls),
-            "callsites": ["0x%08X" % va for va in script_calls],
-            "other_calls_not_yet_classified": len(external)-len(script_calls),
+            "number_of_verified_calls": len(script_inline)+len(script_helper),
+            "inline_calls": ["0x%08X" % va for va in script_inline],
+            "helper_entry": "0x00427E40",
+            "helper_xrefs_from_dispatch": ["0x%08X" % x for x in helper_xrefs],
+            "helper_calls": ["0x%08X" % va for va in script_helper],
+            "callsites": ["0x%08X" % va for va in script_inline+script_helper],
+            "other_calls_not_yet_classified": len(external)-len(script_inline)-len(script_helper),
             "game_mode": "UNKNOWN: script commands may execute in different modes",
             "input_gate_reset": "0x0050C180 may call 0x0050A9B0 after accepting directional events",
         },
