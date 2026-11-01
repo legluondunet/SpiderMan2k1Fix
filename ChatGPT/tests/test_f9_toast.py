@@ -123,7 +123,9 @@ def test_heading_uses_real_wide_string_length_and_pause_palette():
     assert 'RGB(50,50,160)' in TOAST
     assert 'RGB(169,148,251)' in TOAST
     assert 'RGB(231,220,255)' in TOAST
-    assert 'RGB(245,240,255)' in TOAST
+    # No secondary white filename line in the compact toast.
+    assert "path+starts[i]" not in TOAST
+    assert "RGB(240,47,69)" in TOAST
 
 def test_pause_style_transparency_uses_rounded_alpha_blend_offscreen():
     assert "SPIDER_F9_PANEL_ALPHA 165u" in TOAST
