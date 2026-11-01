@@ -2063,6 +2063,48 @@ def test_movie_enter_release_is_gated_before_first_original_3d_input():
     assert "GetAsyncKeyState(VK_RETURN)" not in owner
 
 
+def test_movie4_handoff_releases_only_our_pending_sdl3_return_before_wait():
+    """Prevent cyclic 1.5s wait: first 3D owner executes before next Flip.
+
+    Movie #4 synthetic Return must be balanced before GetAsyncKeyState
+    begins waiting. The real physical Enter/Space safety wait is retained.
+    """
+    barrier=SRC[SRC.index("static void spider_newgame_enter_release_barrier(int confirmed_movie4)"):
+                SRC.index("/* Minimal safety-only owner for F10Shortcut=0.")]
+    assert '#include "gamepad_ui_profile.h"' in SRC
+    assert "if(confirmed_movie4) {" in barrier
+    call="SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(hwnd);"
+    assert barrier.count(call)==1
+    assert barrier.index(call)<barrier.index("enter_before=(GetAsyncKeyState(VK_RETURN)")
+    assert "GetAsyncKeyState(VK_SPACE)" in barrier
+    assert "(DWORD)(GetTickCount()-began)<1500u" in barrier
+    assert "SPIDER_NATIVE_GAME_INPUT_UPDATE();" not in barrier
+    assert "SendInput(" not in barrier
+    assert "keybd_event(" not in barrier
+
+
+def test_bink_handoff_synthetic_return_release_guards_physical_input():
+    """No changes to real held keys, game-owned DirectInput or other pulses."""
+    ui=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
+    hdr=(ROOT/"gamepad_ui_profile.h").read_text(encoding="utf-8")
+    name="SpiderGamepadUI_ReleaseSyntheticReturnBefore3D"
+    assert f"int {name}(HWND game_window);" in hdr
+    owner=ui[ui.index(f"int {name}(HWND hwnd)"):
+             ui.index("/* Live SDL3 Pause is the eighth profile action.")]
+    assert "active_scan!=0x1cu" in owner
+    assert "GetForegroundWindow()!=hwnd" in owner
+    assert "!IsWindowVisible(hwnd)" in owner
+    assert "active_scan_thread!=GetCurrentThreadId()" in owner
+    assert "release_active_key();" in owner
+    for prohibited in ("GetAsyncKeyState(", "SPIDER_NATIVE_GAME_INPUT_UPDATE(",
+                       "SPIDER_NATIVE_GAME_BUTTON", "VirtualProtect(",
+                       "memcpy(", "Sleep(", "SendInput("):
+        assert prohibited not in owner
+    assert "active_scan_thread=GetCurrentThreadId();" in ui
+    assert "active_scan_thread=0;" in ui
+    assert "release_active_key();" in ui[ui.index("void SpiderGamepadUI_OnFlip("):]
+
+
 def test_enter_only_cannot_arm_intro_auto_skip_during_release_barrier():
     """The new barrier is not an alternate F10 origin or movie-skip request."""
     segment=SRC[SRC.index("static void spider_newgame_enter_release_barrier(int confirmed_movie4)"):
