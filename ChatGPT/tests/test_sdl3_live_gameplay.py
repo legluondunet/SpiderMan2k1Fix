@@ -82,9 +82,9 @@ def test_live_native_owner_never_double_injects_seven_gameplay_actions():
     val=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
     build=(ROOT/"build.sh").read_text(encoding="utf-8")
     assert '"ExperimentalSDL3GameplayBindings"' in val
-    assert '"ExperimentalSDL3GameplayBindings",0,ini)==1' in live
-    assert '"ExperimentalSDL3NativeOwner",0,ini)==1' in live
-    assert '"ExperimentalNativeJoystickMappingSwap",0,ini)==1' in live
+    assert '"ExperimentalSDL3GameplayBindings",1,ini)==1' in live
+    assert '"ExperimentalSDL3NativeOwner",1,ini)==1' in live
+    assert '"ExperimentalNativeJoystickMappingSwap",1,ini)==1' in live
     assert "sdl3_gameplay_live.c" in build
     assert "SpiderSDL3GameplayLive_Init(ini,logger)" in plan
     assert "SpiderSDL3GameplayLive_OnFlip(hwnd,menu2d,gameplay3d,bink,pause);" in plan
@@ -119,7 +119,7 @@ def test_live_native_owner_never_double_injects_seven_gameplay_actions():
     assert "if(applied)restore(" in live
 
 
-def test_live_remains_strictly_opt_in():
+def test_live_enabled_by_default_still_honors_explicit_ini_opt_out():
     s=(ROOT/"sdl3_gameplay_live.c").read_text(encoding="utf-8")
     assert 'GetPrivateProfileIntA("Input",' in s
     assert 'ExperimentalSDL3GameplayBindings",0,ini)==1' in s
