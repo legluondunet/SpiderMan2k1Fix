@@ -789,15 +789,18 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       CreateWindowExA(0,"BUTTON","Test SDL3 inputs",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
         465,301,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_TEST,NULL,NULL);
+      CreateWindowExA(0,"BUTTON","Use selected SDL3 controller",
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
+        465,349,230,34,hwnd,(HMENU)(uintptr_t)SPIDER_UI_USE,NULL,NULL);
       label=CreateWindowExA(0,"STATIC",
-        "Stick Left/Right: actions or buttons   Stick Up/Down: select row or button\r\n"
-        "L1/R1: browse pad   Start: choose pad   Circle/B: close + use this pad\r\n"
-        "Triangle/Y: defaults    Keyboard: Tab, Enter, Esc, PgUp/PgDn\r\n"
-        "Test mode: keyboard Esc / Ctrl+Shift+T stop, Ctrl+Shift+Q close; F9/F10 unchanged",
-        WS_CHILD|WS_VISIBLE,18,351,684,65,hwnd,NULL,NULL,NULL);
+        "Stick Left/Right: navigate    L1/R1: browse controllers\\r\\n"
+        "Use selected SDL3 controller / Ctrl+Shift+U: choose this pad\\r\\n"
+        "Start: choose pad only outside action capture; Esc: close/apply\\r\\n"
+        "Test mode: keyboard Esc / Ctrl+Shift+T stop; F9/F10 unchanged",
+        WS_CHILD|WS_VISIBLE,18,393,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->status=CreateWindowExA(0,"STATIC","",
-        WS_CHILD|WS_VISIBLE,18,423,684,45,hwnd,
+        WS_CHILD|WS_VISIBLE,18,467,684,45,hwnd,
         (HMENU)(uintptr_t)SPIDER_UI_STATUS,NULL,NULL);
       SendMessageA(ui->pads,WM_SETFONT,(WPARAM)font,TRUE);
       SendMessageA(ui->actions,WM_SETFONT,(WPARAM)font,TRUE);
