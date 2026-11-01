@@ -115,6 +115,8 @@ static unsigned ps1_native_start_reports=0;
 static unsigned ps1_cutscene_reports=0;
 static int probing=0,detected=0,previous_buttons=0,previous_back=0,previous_pause=0;
 static unsigned active_scan=0;
+/* Synthetic key-up can only be expedited by the same game/input thread. */
+static DWORD active_scan_thread=0;
 static LONG sent_enter=0,sent_escape=0;
 static char profile_ini[MAX_PATH]={0};
 static unsigned pause_conflict_reports=0,outside_mode_reports=0;
@@ -280,6 +282,7 @@ static void release_active_key(void) {
   }
   SpiderNativeReconnect_LogSyntheticMenuKey(active_scan,"after KEYUP");
   active_scan=0;
+  active_scan_thread=0;
 }
 static void begin_scancode(unsigned scan,const char *action) {
   INPUT in;
@@ -298,6 +301,7 @@ static void begin_scancode(unsigned scan,const char *action) {
     return;
   }
   active_scan=scan;
+  active_scan_thread=GetCurrentThreadId();
   SpiderNativeReconnect_LogSyntheticMenuKey(scan,"after KEYDOWN");
   number=scan==0x01u?++sent_escape:++sent_enter;
   if(number<=20) {
@@ -306,6 +310,21 @@ static void begin_scancode(unsigned scan,const char *action) {
       action,scan,(long)number);
     report(line);
   }
+}
+/* The original Bink #4 -> first 3D owner may run BEFORE the next
+ * DirectDraw Flip. If our SDL3 Cross/A generated Return on the last
+ * movie Flip, waiting for a key-up in that owner otherwise deadlocks
+ * until the barrier's 1500-ms timeout. Release ONLY the pending
+ * synthetic Return from this module, on its injecting game thread.
+ * Physical Return/Space remain governed by the original safety wait. */
+int SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(HWND hwnd) {
+  if(!configured || !hwnd || GetForegroundWindow()!=hwnd ||
+     !IsWindowVisible(hwnd) || active_scan!=0x1cu ||
+     !active_scan_thread || active_scan_thread!=GetCurrentThreadId())
+    return 0;
+  release_active_key();
+  report("GAMEPAD-UI: BINK-4-HANDOFF pending synthetic Return released before physical Enter/Space wait; native keys unchanged");
+  return 1;
 }
 /* Live SDL3 Pause is the eighth profile action. The seven game actions
  * remain native DirectInput; only Pause requests the same guarded
