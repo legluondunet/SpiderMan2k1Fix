@@ -1,7 +1,9 @@
 /* Keyboard-first SDL3 raw joystick calibration; NO game-owned DirectInput
  * calls and NO native game input injection. Runs nested on the same original
  * game/SDL3 thread while Joystick Configuration's modal is open.
- * Esc cancels; Enter starts/restarts; S skips an optional control.
+ * Enter starts when idle. During capture, keyboard shortcuts use deliberate
+ * Ctrl+Shift chords so the controller's Wine-emulated key presses CANNOT
+ * accidentally open the combo, skip bindings or restart the wizard.
  * SDL mapping file is saved only after all required inputs were captured.
  */
 #define WIN32_LEAN_AND_MEAN
@@ -25,6 +27,7 @@ typedef struct {
   SpiderSDL3RawMapping mapping;
   SpiderSDL3RawSample neutral;
   unsigned still;
+  unsigned swallowed_keyboard;
   void (*log)(const char *);
 } SpiderRawWizard;
 static const char *const prompts[SPIDER_RAW_MAP_COUNT]={
@@ -50,6 +53,24 @@ static int required_step(unsigned step) {
 static void wizard_text(SpiderRawWizard *w,const char *text) {
   if(w && w->status)SetWindowTextA(w->status,text);
 }
+/* While a physical pad is being sampled, do not leave keyboard focus on the
+ * joystick combobox or any Win32 pushbutton. Wine's XInput/SDL bridge may
+ * synthesize Enter, Escape, Space and arrow keys for controller buttons.
+ * Those must never be interpreted as UI navigation or button activation. */
+static int wizard_is_capturing(const SpiderRawWizard *w) {
+  return w && w->active_id && !w->done &&
+         w->step<SPIDER_RAW_MAP_COUNT;
+}
+static void wizard_capture_focus(SpiderRawWizard *w,int capturing) {
+  if(!w || !w->window || !w->pads)return;
+  SendMessageA(w->pads,CB_SHOWDROPDOWN,FALSE,0);
+  EnableWindow(w->pads,capturing?FALSE:TRUE);
+  if(capturing) {
+    /* Top-level window is intentionally NOT a pushbutton: synthesized
+     * Space/Return cannot invoke BN_CLICKED as with a focused button. */
+    SetFocus(w->window);
+  } else SetFocus(w->pads);
+}
 static void wizard_prompt(SpiderRawWizard *w) {
   char line[380];
   if(!w)return;
@@ -58,7 +79,7 @@ static void wizard_prompt(SpiderRawWizard *w) {
   snprintf(line,sizeof(line),
     "Step %u / %u: %s\r\n"
     "Release every control, then activate ONLY this one.\r\n"
-    "S: skip optional   Esc: cancel   To restart: Tab to Restart, then Space",
+    "Keyboard: Ctrl+Shift+S skip | Ctrl+Shift+R restart | Ctrl+Shift+Esc cancel",
     w->step+1,SPIDER_RAW_MAP_COUNT,prompts[w->step]);
   wizard_text(w,line);
 }
@@ -101,8 +122,9 @@ static void wizard_tick(SpiderRawWizard *w) {
   if(!w || w->done || !w->active_id)return;
   if(GetForegroundWindow()!=w->window) {w->armed=0;w->still=0;return;}
   if(!SpiderSDL3Probe_SetupPump() || !SpiderSDL3Probe_RawRead(&s)) {
-    wizard_text(w,"Controller disconnected or unavailable. Press Enter to retry.");
+    wizard_text(w,"Controller disconnected. Choose a joystick and press Enter to retry.");
     SpiderSDL3Probe_RawEnd();w->active_id=0;w->armed=0;
+    wizard_capture_focus(w,0);
     return;
   }
   if(w->step>=SPIDER_RAW_MAP_COUNT)return;
@@ -165,10 +187,11 @@ static void wizard_finish(SpiderRawWizard *w) {
   if(!w || w->step!=SPIDER_RAW_MAP_COUNT)return;
   if(!spider_sdl3_raw_build(w->guid,w->name,&w->mapping,
                mapping,sizeof(mapping))) {
-    wizard_text(w,"Mapping incomplete or unsupported. Press Enter to restart.");
+    wizard_text(w,"Mapping incomplete or unsupported. Restart using Ctrl+Shift+R.");
     if(w->log)w->log("SDL3-RAW-WIZARD: REFUSED incomplete/unsupported button-axis mapping");
     w->active_id=0;
     SpiderSDL3Probe_RawEnd();
+    wizard_capture_focus(w,0);
     return;
   }
   w->done=1;
@@ -186,6 +209,7 @@ static void wizard_finish(SpiderRawWizard *w) {
     "Check the log for the precise error. Enter restarts; Esc closes.");
     w->done=0;w->active_id=0;
   }
+  wizard_capture_focus(w,0);
 }
 static void wizard_start(SpiderRawWizard *w) {
   LRESULT selected;
@@ -215,6 +239,8 @@ static void wizard_start(SpiderRawWizard *w) {
     (unsigned long)w->active_id,w->guid,w->name,
     w->active_was_mapped?"ALREADY MAPPED, recalibrating":"UNMAPPED");
   if(w->log)w->log(text);
+  wizard_capture_focus(w,1);
+  if(w->log)w->log("SDL3-RAW-WIZARD: capture UI ISOLATED combo disabled, window focused; synthesized controller keys ignored");
   wizard_prompt(w);
 }
 static void wizard_refresh(SpiderRawWizard *w) {
@@ -268,8 +294,8 @@ static LRESULT CALLBACK wizard_wndproc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
         WS_CHILD|WS_VISIBLE,20,105,610,100,hwnd,
         (HMENU)(uintptr_t)RAW_STATUS,NULL,NULL);
       for(unsigned i=RAW_BEGIN;i<=RAW_CLOSE;i++) {
-        const char *caption=i==RAW_BEGIN?"Start / Restart (Tab + Space)":
-          i==RAW_SKIP?"Skip optional input (S)":"Cancel / close (Esc)";
+        const char *caption=i==RAW_BEGIN?"Start / Restart":
+          i==RAW_SKIP?"Skip optional input":"Cancel / close";
         button=CreateWindowExA(0,"BUTTON",caption,
           WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
           20+(int)(i-RAW_BEGIN)*210,220,200,36,hwnd,
@@ -277,8 +303,8 @@ static LRESULT CALLBACK wizard_wndproc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
         SendMessageA(button,WM_SETFONT,(WPARAM)font,TRUE);
       }
       label=CreateWindowExA(0,"STATIC",
-        "The game keyboard stays available. This is an SDL hardware mapping test,\r\n"
-        "NOT a claim of universal Spider-Man 3D compatibility.",
+        "Keyboard: Ctrl+Shift+S skip, Ctrl+Shift+R restart, Ctrl+Shift+Esc cancel.\r\n"
+        "Controller keys are consumed only by SDL3 during calibration; gameplay unchanged.",
         WS_CHILD|WS_VISIBLE,20,270,610,50,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       SendMessageA(w->pads,WM_SETFONT,(WPARAM)font,TRUE);
@@ -340,7 +366,7 @@ void SpiderSDL3RawWizard_Open(HWND owner,void (*logger)(const char *)) {
   }
   memset(&w,0,sizeof(w));w.owner=owner;w.log=logger;
   hwnd=CreateWindowExA(WS_EX_DLGMODALFRAME,cls,
-    "SpiderMan2k1Fix - Recognize Raw SDL3 Joystick",
+    "SpiderMan2k1Fix - Calibrate SDL3 Joystick",
     WS_CAPTION|WS_SYSMENU|WS_POPUP,
     CW_USEDEFAULT,CW_USEDEFAULT,665,370,
     owner,NULL,GetModuleHandleA(NULL),&w);
@@ -359,31 +385,61 @@ void SpiderSDL3RawWizard_Open(HWND owner,void (*logger)(const char *)) {
       if(ok==0)PostQuitMessage((int)msg.wParam);
       break;
     }
+    /* The combo is deliberately DISABLED during calibration. Gamepad
+     * buttons can generate ordinary Win32 keyboard messages on Wine:
+     * they must NOT reach IsDialogMessage/DispatchMessage at all.
+     * Explicit three-key chords remain available on a real keyboard. */
+    if(wizard_is_capturing(&w) &&
+       (msg.hwnd==hwnd || IsChild(hwnd,msg.hwnd))) {
+      if(msg.message==WM_KEYDOWN || msg.message==WM_SYSKEYDOWN) {
+        if((GetKeyState(VK_CONTROL)&0x8000) &&
+           (GetKeyState(VK_SHIFT)&0x8000) &&
+           !(msg.lParam&(1L<<30))) {
+          if(msg.wParam==VK_ESCAPE) {
+            if(w.log)w.log("SDL3-RAW-WIZARD: keyboard Ctrl+Shift+Escape cancel");
+            PostMessageA(hwnd,WM_CLOSE,0,0);
+            continue;
+          }
+          if(msg.wParam=='R') {
+            if(w.log)w.log("SDL3-RAW-WIZARD: keyboard Ctrl+Shift+R restart");
+            /* Enable the combo before asking it for the selected item. */
+            EnableWindow(w.pads,TRUE);
+            wizard_start(&w);
+            continue;
+          }
+          if(msg.wParam=='S') {
+            if(required_step(w.step))
+              wizard_text(&w,"Required control: cannot skip. Release joystick and try again.");
+            else {
+              SpiderSDL3RawInput none={0,0,0};
+              wizard_next(&w,none);
+            }
+            continue;
+          }
+        }
+      }
+      if(msg.message==WM_KEYDOWN || msg.message==WM_KEYUP ||
+         msg.message==WM_SYSKEYDOWN || msg.message==WM_SYSKEYUP ||
+         msg.message==WM_CHAR || msg.message==WM_SYSCHAR ||
+         msg.message==WM_DEADCHAR || msg.message==WM_SYSDEADCHAR) {
+        if(w.log && w.swallowed_keyboard++<12u) {
+          char trace[140];
+          snprintf(trace,sizeof(trace),
+            "SDL3-RAW-WIZARD: suppressed Win32 keyboard message=0x%04X vk=%lu during active SDL3 capture",
+            (unsigned)msg.message,(unsigned long)msg.wParam);
+          w.log(trace);
+        }
+        continue;
+      }
+    }
     if(msg.message==WM_KEYDOWN &&
        (msg.hwnd==hwnd || IsChild(hwnd,msg.hwnd)) &&
        !(msg.lParam&(1L<<30))) {
       if(msg.wParam==VK_ESCAPE) {
         PostMessageA(hwnd,WM_CLOSE,0,0);continue;
       }
-      if(msg.wParam==VK_RETURN) {
-        /* A mapped joystick's physical Start may also synthesize
-         * VK_RETURN under Wine/XInput. Reinitializing the wizard here
-         * discards all bindings exactly when the Start action is captured.
-         * Enter is allowed only before capture begins; explicit restart
-         * remains reachable using the Start/Restart button via Tab+Space. */
-        if(!w.active_id)wizard_start(&w);
-        else if(w.log)w.log("SDL3-RAW-WIZARD: Enter ignored during capture (physical Start safe; use Tab+Space on Restart)");
-        continue;
-      }
-      if(msg.wParam=='S' && w.active_id &&
-         w.step<SPIDER_RAW_MAP_COUNT) {
-        if(required_step(w.step))
-          wizard_text(&w,"Required input: cannot skip this step.");
-        else {
-          SpiderSDL3RawInput none={0,0,0};
-          wizard_next(&w,none);
-        }
-        continue;
+      if(msg.wParam==VK_RETURN && !wizard_is_capturing(&w)) {
+        wizard_start(&w);continue;
       }
     }
     if(IsDialogMessageA(hwnd,&msg))continue;
