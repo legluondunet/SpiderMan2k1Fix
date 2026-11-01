@@ -621,16 +621,38 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
         if(id==SPIDER_UI_CLOSE) {
           setup_close_from_pad(ui,
             "SDL3-SETUP: Cross/A activated focused CLOSE; waiting for release");
+        } else if(id==SPIDER_UI_CAPTURE || id==SPIDER_UI_RESET) {
+          /* PS3+Proton real-hardware log 20261101-211844 proved that
+           * focusing the Capture button then tapping Cross queued
+           * remapping attempts after Use selected. Never let a PS3
+           * navigation edge arm a destructive/rewritable operation:
+           * explicit mouse/keyboard Capture or Ctrl+Shift+C is required.
+           * Reset likewise requires a deliberate mouse/keyboard click.
+           * This keeps actions list navigable and avoids a frozen
+           * capture state caused by unintended Cross presses. */
+          status(ui,id==SPIDER_UI_CAPTURE?
+            "Capture requires mouse/keyboard Capture or Ctrl+Shift+C; Cross on focused button is navigation only.":
+            "Restore defaults requires mouse/keyboard click or F5; Cross will not reset bindings.");
+          if(setup_report && ui->start_trace_count++<32u)
+            setup_report(id==SPIDER_UI_CAPTURE?
+              "SDL3-SETUP: CROSS-CAPTURE BLOCKED; mouse/keyboard Capture or Ctrl+Shift+C required":
+              "SDL3-SETUP: CROSS-RESET BLOCKED; mouse/keyboard Reset or F5 required");
         } else {
-          /* Send a real button command on the same thread, AFTER WM_TIMER.
-           * Never SendMessage into a potentially destructive modal handler. */
+          /* Explicit Cross activation for only non-rebinding actions.
+           * POST outside WM_TIMER, never reenter the modal synchronously.
+           * Report the ACTUAL button ID, not the old misleading CAPTURE
+           * fallback for Use/Test/Calibrate. */
           HWND button=GetDlgItem(ui->hwnd,id);
           if(button)PostMessageA(ui->hwnd,WM_COMMAND,
             MAKEWPARAM(id,BN_CLICKED),(LPARAM)button);
-          if(setup_report)
-            setup_report(id==SPIDER_UI_RESET?
-              "SDL3-SETUP: Cross/A activated focused RESET":
-              "SDL3-SETUP: Cross/A activated focused CAPTURE");
+          if(setup_report && ui->start_trace_count++<32u) {
+            char line[160];
+            snprintf(line,sizeof(line),
+              "SDL3-SETUP: Cross/A activated focused button id=%d (%s)",
+              id,id==SPIDER_UI_USE?"USE":id==SPIDER_UI_RAW?
+                "CALIBRATE":id==SPIDER_UI_TEST?"TEST":"OTHER");
+            setup_report(line);
+          }
         }
       } else if(current_profile(ui)) {
         /* South on a list row is navigation/confirmation, not permission
