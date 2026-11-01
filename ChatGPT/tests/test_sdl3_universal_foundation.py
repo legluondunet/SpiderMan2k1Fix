@@ -150,7 +150,7 @@ def test_keyboard_calibration_wizard_is_built_and_keeps_gameplay_unchanged():
     assert "setup_toggle_sdl3_test(ui)" in setup
     assert "Test SDL3 inputs" in setup
     assert "Calibrate SDL3 joystick" in setup
-    assert "F9/F10 untouched" in setup
+    assert "F9/F10 unchanged" in setup
     assert "if(vk==VK_F9)" not in setup
     assert "if(vk==VK_F10)" not in setup
     assert "if(vk==VK_F8)" not in setup
