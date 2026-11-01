@@ -133,6 +133,49 @@ this does **not by itself establish** a factory-new
 `SpiderMan2k1Fix.ini` for the first-launch migration
 checks below.
 
+## 1 November Wine/Windows evidence and Bink handoff fix
+
+The maintainer's separate, freshly generated **log files** establish a
+positive hardware result on both native Windows 11 and
+Manjaro/Wine 11.0 with a GE-Proton11-11 environment hint:
+the PR #92 test-merge binary `v1.1.0-6a13eb7` ran with SDL3
+and Left Alt recovery armed by default, and supported Sony DS4
+and Xbox 360 controllers functioned in playable 3D, including
+after physical ownership swaps. The maintainer explicitly confirms
+**no failed controller actions under Wine**. The Wine test had
+4/4 focus resumes, 3/3 Bink resumes, 12/12 playing DirectSound
+voices restored, and one balanced Xbox RT Swing press/release.
+Left Alt required actual safe memory repairs on native Windows 11,
+while it cleared naturally under Wine.
+
+**A fresh log is not the same as a fresh INI.** These checks
+do not prove that the config file was absent at launch. The
+**first run with a newly generated INI** and an **existing INI
+with explicit `=0`** are still distinct pending checks.
+
+Wine's 12:49 log also revealed the precise timing hazard
+near movie #4: our selected SDL3 gamepad's **synthetic
+Return KEYDOWN** was emitted on a Flip; the native first-3D
+Enter/Space release barrier then blocked the game thread
+for ~1,500 ms, **before the next Flip could send KEYUP**.
+The new staging change makes the verified movie #4 handoff
+release **only our own pending synthetic Return**, on its
+recorded injection thread, before the original `GetAsyncKeyState`
+checks. The real physical Enter and Space release wait
+remains in place, with the same bounded timeout, and the
+actual original game input reader is still called once.
+No game-owned keyboard byte or native skip request is written.
+
+Look for the new `GAMEPAD-UI: BINK-4-HANDOFF pending
+synthetic Return released before physical Enter/Space wait`
+diagnostic and a `DEBUG-BINK-ENTER-HANDOFF` report
+with `timeout=0` when no physical Enter/Space is held.
+A real held key, missing foreground verification, or
+failed Windows `SendInput` may still cause the protective
+wait to reach `timeout=1`. **This code adjustment has
+passed static/source and Windows x86 build checks, but
+must be tested in the game on the exact new artifact.**
+
 ## Mandatory new physical smoke test before release
 
 **This is new behavior**. Previous 20/20 Windows 11 checks were
