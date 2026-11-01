@@ -353,3 +353,49 @@ Try the original `AspectRatio=4:3` mode to help isolate widescreen-specific prob
 - [Native ESC 4:3 corrections and debug switches](NATIVE_PAUSE_MENU_43.md).
 - [F9 PNG screenshot capture](F9_PNG_CAPTURE.md).
 - [HUD scaling and original game implementation](../DEVELOPMENT.md#7-display-and-rendering-research).
+
+
+### Permanent in-game mouse disable: first Wine/Proton hardware test (1 November 2026)
+
+The maintainer tested the draft [PR #90](https://github.com/legluondunet/SpiderMan2k1Fix/pull/90) DLL with
+`SpiderMan2k1Fix(20261101-084934).log` (919 lines) and explicitly
+reported: **no in-game cursor visible; moving the mouse or clicking its
+buttons caused no response in the game**.
+
+- Platform **Linux Manjaro / Wine 11.0**, Proton environment hint
+  **GE-Proton11-11-x86_64** (the latter is a tool-directory hint,
+  not an independently verified Proton version). This was **not**
+  a native Windows hardware test.
+- Startup banner `v1.1.0-5cd333b` corresponds to verified GitHub
+  temporary PR test merge commit
+  `5cd333b578ba13b2dc097fd072df127bbc738608`, whose second
+  parent is exactly PR #90 head `c375511427ca19694c4580cb80e067c236365ba9`.
+  The supported original `SpideyPC.exe` SHA-256 also matched.
+- Log **33–35**: permanent game mouse policy configured;
+  old `MouseEnabled` and `ControllerAutoDisableMouse` keys
+  were recognized and **ignored**. The log does **not** record
+  the value of the obsolete `MouseEnabled` key; it is therefore
+  **not proof of an explicit `MouseEnabled=1` negative test**.
+- Log **349–350**: original-game instruction/signature preflight
+  **ARMED**, followed by
+  `GAME MOUSE OFF (permanent)`: cursor sprite, original mouse
+  polling and menu hit-testing suppressed; desktop OS pointer untouched
+  by this game-input module.
+- Log **469–480**: transition from 2D menu to 3D gameplay.
+  Log **889–915**: original 3D cleanup / controller-7 transition
+  back into the 2D menu succeeded. No mouse-module REFUSED or error.
+- Log **29, 118–121, 423–424**: no controller was detected
+  (`XInput=0`, `DirectInput8=0`, `SDL3 mapped-gamepads=0`).
+  This run cannot validate gameplay with Sony DS4 or Xbox gamepads.
+- Log **354–355** captures the **game in foreground** with
+  `cursor-showing=0`, which is expected. There is **no documented
+  external Alt+Tab focus loss/return in this run**, so **desktop cursor
+  restoration after Alt+Tab is not hardware-tested here**. Its
+  existing Win32 focus handling remains distinct and unchanged.
+
+**Status:** first **Wine/Proton in-game-mouse suppression PASS**,
+supported by both on-device user observation and native-game
+gate telemetry. Still need an explicit `MouseEnabled=1` old-INI
+negative test and native Windows test if desired; leave PR **DRAFT
+and unmerged** until explicit maintainer approval. The separate
+experimental Left Alt recovery PR #88 is not included in this build.
