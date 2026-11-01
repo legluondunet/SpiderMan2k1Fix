@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "quick_exit_f12.h"
+#include "gamepad_ui_profile.h"
 
 #define SPIDER_NATIVE_F12_POST ((BYTE *)(uintptr_t)0x00515373u)
 #define SPIDER_SHELL_MENU_TICK ((BYTE *)(uintptr_t)0x00493DD6u)
@@ -749,6 +750,14 @@ static void spider_newgame_enter_release_barrier(int confirmed_movie4) {
     if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)!=1)return;
     phase=InterlockedCompareExchange(&debug_newgame_progress,0,0);
     if(phase!=1 && phase!=2)return;
+  }
+  /* Release only our own pending SDL3 Return before this native owner
+   * waits for physical Enter/Space. The normal Flip key-up has not run
+   * yet, because this barrier blocks the same game thread. A genuine
+   * held physical key remains down and must still pass the original wait. */
+  if(confirmed_movie4) {
+    HWND hwnd=(HWND)InterlockedCompareExchangePointer(&game_hwnd,NULL,NULL);
+    SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(hwnd);
   }
   enter_before=(GetAsyncKeyState(VK_RETURN)&0x8000)!=0;
   space_before=(GetAsyncKeyState(VK_SPACE)&0x8000)!=0;
