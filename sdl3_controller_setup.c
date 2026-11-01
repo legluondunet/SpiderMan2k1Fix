@@ -77,8 +77,8 @@ void SpiderSDL3ControllerSetup_Init(const char *ini,
                                     void (*logger)(const char *)) {
   setup_report=logger;
   setup_enabled=ini &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3ControllerSetup",0,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1;
+    GetPrivateProfileIntA("Input","ExperimentalSDL3ControllerSetup",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1;
   if(setup_enabled && setup_report)
     setup_report("SDL3-SETUP: experimental native Joystick menu ENABLED (persistent model profiles; original gameplay unchanged)");
 }
