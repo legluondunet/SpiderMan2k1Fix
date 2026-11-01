@@ -155,7 +155,17 @@ def test_keyboard_calibration_wizard_is_built_and_keeps_gameplay_unchanged():
     assert "if(vk==VK_F10)" not in setup
     assert "if(vk==VK_F8)" not in setup
     assert "SDL3 TEST: buttons=" in setup
-    assert "raw joystick recognition" in wizard.lower()
+    assert "hardware recognition / recalibration" in wizard.lower()
+    assert "SpiderSDL3Probe_RawListAll" in wizard
+    assert "SpiderSDL3Probe_RawListAll" in probe
+    assert "SpiderSDL3Probe_RawName" in wizard
+    assert "spider_raw_ui_thread()" in probe
+    assert "ALREADY MAPPED, recalibrating" in wizard
+    assert "Mapped - recalibrate" in wizard
+    assert "mapped devices CAN be recalibrated" in wizard
+    assert "current-sdl-mapping=" in wizard
+    assert "SDL3-RAW-WIZARD: step=" in wizard
+    assert "n=SpiderSDL3Probe_RawListAll(ids,NULL" in probe
     assert "wizard_neutral" in wizard
     assert "wizard_finish(w)" in wizard
     assert "SDL3 CALIBRATION SAVED" in wizard
