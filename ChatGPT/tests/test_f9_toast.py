@@ -116,24 +116,26 @@ def test_failed_png_is_reported_and_final_file_is_verified():
     assert 'L"Disk full while saving PNG"' in ENC
 
 
-def test_heading_uses_real_wide_string_length_and_pause_palette():
+def test_heading_uses_real_wide_string_length_and_white_pause_palette():
     assert 'TextOutW(dc,text_x,heading_y,heading,heading_len)' in TOAST
     assert 'heading_len=(int)wcslen(heading);' in TOAST
     assert 'sizeof(heading)/sizeof(heading[0])' not in TOAST
     assert 'RGB(50,50,160)' in TOAST
     assert 'RGB(169,148,251)' in TOAST
-    assert 'RGB(231,220,255)' in TOAST
-    # No secondary white filename line in the compact toast.
+    assert "RGB(245,240,255)" in TOAST
+    # Full path remains in PNG and logs, not onscreen.
     assert "path+starts[i]" not in TOAST
-    assert "RGB(240,47,69)" in TOAST
+    assert "SetTextColor(dc,RGB(245,240,255));" in TOAST
+    assert "SetTextColor(dc,success?RGB(240,47,69)" not in TOAST
 
-def test_pause_style_transparency_uses_rounded_alpha_blend_offscreen():
+def test_pause_style_transparency_uses_rectangle_alpha_blend_offscreen():
     assert "SPIDER_F9_PANEL_ALPHA 165u" in TOAST
     assert "CreateCompatibleBitmap(dc,1,1)" in TOAST
-    assert "CreateRoundRectRgn(" in TOAST
-    assert "ExtSelectClipRgn(dc,rounded,RGN_AND)" in TOAST
+    assert "CreateRoundRectRgn(" not in TOAST
+    assert "ExtSelectClipRgn(dc,rounded,RGN_AND)" not in TOAST
     assert "AlphaBlend(dc,panel->left,panel->top," in TOAST
-    assert "GetStockObject(HOLLOW_BRUSH)" in TOAST
+    assert "AlphaBlend(dc,panel->left,panel->top," in TOAST
+    assert "CreateSolidBrush(RGB(169,148,251))" in TOAST
     assert "CreateSolidBrush(RGB(50,50,160))" in TOAST
     assert "SpiderF9Toast_CompositeFrame(" in TOAST
     assert "IDirectDrawSurface7_Blt(toast_stage,NULL,back,NULL,DDBLT_WAIT,NULL)" in TOAST
@@ -249,7 +251,7 @@ def test_screenshot_toast_uses_pause_typography_and_large_native_icon():
     assert "path_px" not in TOAST
     assert "box_h=2*pad+toast_max(icon_px,heading_size.cy)+4" in TOAST
     assert "heading_y=y+(box_h-heading_size.cy)/2" in TOAST
-    assert "RGB(240,47,69)" in TOAST
+    assert "RGB(245,240,255)" in TOAST
     assert "RGB(7,4,15)" in TOAST
     assert "drawn=toast_draw_dc(dc,width,height,path,success);" in TOAST
     assert "toast_draw_dc(mem,(DWORD)size.cx,(DWORD)size.cy,path,success)" in TOAST
@@ -271,3 +273,30 @@ def test_large_icon_title_only_preserves_capture_and_does_not_draw_filename():
     assert "path+starts[i]" not in painter
     assert "GetTextExtentPoint32W(dc,path" not in painter
     assert "toast_wrap_path" not in TOAST
+
+
+def test_f9_toast_is_flush_left_with_only_top_right_bottom_border():
+    painter=TOAST.split("static BOOL toast_draw_dc(",1)[1].split(
+        "/* Compose BEFORE presentation",1)[0]
+    assert "x=0; /* Flush left edge" in painter
+    assert "panel.left=x;panel.top=y;panel.right=x+box_w;panel.bottom=y+box_h;" in painter
+    assert "y=(int)h-toast_max(16,(int)h/50)-box_h;" in painter
+    assert "RECT top={panel.left,panel.top,panel.right,panel.top+1};" in painter
+    assert "RECT right={panel.right-1,panel.top+1,panel.right,panel.bottom-1};" in painter
+    assert "RECT bottom={panel.left,panel.bottom-1,panel.right,panel.bottom};" in painter
+    assert "FillRect(dc,&top,border)" in painter
+    assert "FillRect(dc,&right,border)" in painter
+    assert "FillRect(dc,&bottom,border)" in painter
+    assert "RECT left=" not in painter
+    assert "RoundRect(dc,panel.left" not in painter
+    assert "CreatePen(PS_SOLID" not in painter
+    assert "RGB(169,148,251)" in painter
+    assert "RGB(245,240,255)" in painter
+    assert "RGB(7,4,15)" in painter
+    assert "DrawIconEx(dc,x+pad,icon_y,game_icon," in painter
+    assert "toast_original_big_icon()" in painter
+    assert 'L"SCREENSHOT SAVED"' in TOAST
+    assert "path+starts[i]" not in painter
+    assert "SPIDER_F9_PANEL_ALPHA 165u" in TOAST
+    assert "toast_draw_translucent_panel(dc,&panel)" in painter
+    assert "DrawIconEx(dc,x+pad,icon_y,game_icon," in painter
