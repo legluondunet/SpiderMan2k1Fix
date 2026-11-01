@@ -201,9 +201,9 @@ def test_mapped_gamepad_can_enter_recalibration_without_changing_game_owner():
 def test_wizard_start_does_not_restart_capture_and_context_scope_documented():
     wizard=(ROOT/"sdl3_raw_wizard.c").read_text(encoding="utf-8")
     roadmap=(ROOT/"docs/references/SDL3_UNIVERSAL_CONTROLLERS.md").read_text(encoding="utf-8")
-    assert "if(!w.active_id)wizard_start(&w);" in wizard
-    assert "Enter ignored during capture" in wizard
-    assert "Start / Restart (Tab + Space)" in wizard
+    assert "if(msg.wParam==VK_RETURN && !wizard_is_capturing(&w))" in wizard
+    assert "synthesized controller keys ignored" in wizard
+    assert "Start / Restart" in wizard
     assert "VK_RETURN" in wizard
     for action in ["MenuConfirm", "MenuBack", "SkipVideo", "NextStill", "SkipCutscene"]:
         assert action in roadmap
@@ -211,3 +211,25 @@ def test_wizard_start_does_not_restart_capture_and_context_scope_documented():
         assert context in roadmap
     assert "F9 screenshot and F10" in roadmap
     assert "release-blocking acceptance criteria" in roadmap
+
+
+def test_raw_wizard_win32_focus_isolation_prevents_gamepad_combo_activation():
+    wizard=(ROOT/"sdl3_raw_wizard.c").read_text(encoding="utf-8")
+    assert "EnableWindow(w->pads,capturing?FALSE:TRUE)" in wizard
+    assert "SendMessageA(w->pads,CB_SHOWDROPDOWN,FALSE,0)" in wizard
+    assert "SetFocus(w->window)" in wizard
+    assert "wizard_capture_focus(w,1)" in wizard
+    assert "wizard_capture_focus(w,0)" in wizard
+    assert "synthesized controller keys ignored" in wizard
+    assert "msg.message==WM_KEYDOWN || msg.message==WM_KEYUP" in wizard
+    assert "msg.message==WM_CHAR || msg.message==WM_SYSCHAR" in wizard
+    assert "if(IsDialogMessageA(hwnd,&msg))continue;" in wizard
+    assert wizard.index("if(wizard_is_capturing(&w) &&") < wizard.index("if(IsDialogMessageA(hwnd,&msg))")
+    assert "if(msg.wParam=='Q')" in wizard
+    assert "if(msg.wParam=='S')" in wizard
+    assert "if(msg.wParam=='R')" in wizard
+    assert "GetKeyState(VK_CONTROL)&0x8000" in wizard
+    assert "GetKeyState(VK_SHIFT)&0x8000" in wizard
+    assert "Ctrl+Shift+Esc" not in wizard
+    assert "SDL3-RAW-WIZARD: capture UI ISOLATED" in wizard
+    assert "SDL3-RAW-WIZARD: suppressed Win32 keyboard" in wizard
