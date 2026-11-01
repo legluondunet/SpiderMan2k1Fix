@@ -169,13 +169,17 @@ DirectInput owner and is **not** a failure of generic SDL3 sampling.
    (id=3), as confirmed by the 19:47 GE-Proton hardware log. The new
    build refuses a multi-pad owner request until an intentional
    model selection is observed.
-3. Ensure you are **not in CAPTURE mode**. If the status displays
-   `CAPTURE: ...`, press keyboard **Escape once** to cancel this binding
-   capture *without closing the setup dialog*.
-4. Press the new **Use selected SDL3 controller** button using your
-   mouse or keyboard Tab+Enter. Alternatively use keyboard
-   **Ctrl+Shift+U**. You should see
-   `SDL3-SETUP: EXPLICIT-SELECT QUEUED id=... VID:PID=054C:0268`.
+3. With the **PS3 explicitly selected** (log `USER-CHOSEN ...
+   054C:0268`), click **Use selected SDL3 controller** with the mouse
+   or keyboard Tab+Enter. Keyboard **Ctrl+Shift+U** also works.
+   If an action remap capture was accidentally armed, the **first click
+   cancels only that capture** and shows `CAPTURE CANCELLED`, never
+   queues a controller. **Click Use a second time** to confirm the PS3.
+   Alternatively, keyboard Escape once cancels an active capture; it
+   closes the setup only when no capture remains active.
+4. Expect `SDL3-SETUP: EXPLICIT-SELECT QUEUED id=...
+   VID:PID=054C:0268` *before leaving* the dialog.
+   Never accept a queued DS4 `054C:09CC` as PS3 success.
    No 3D gameplay action is sent to the original game yet.
 5. Press keyboard **Escape** to close SDL3 Setup. Confirm focus returns
    to Spider-Man. The next foreground Flip should report
@@ -189,13 +193,13 @@ DirectInput owner and is **not** a failure of generic SDL3 sampling.
    sticks in all directions and test L2/R2. Expect
    `SDL3-GENERIC: SEMANTIC ARMED` and
    `SDL3-GENERIC: SEMANTIC ... pressed=... released=... LX=... RX=...`.
-7. Exit normally, send the log and a screenshot of the **F9
-   SCREENSHOT SAVED** notification (its 16x16 original game icon is
-   unchanged, with a slightly **smaller 21px title and 13px path at
-   1080p** to balance the icon). Check that the
-   absolute screenshot path remains fully displayed, all icon text
-   stays inside the panel, F9 screenshot pixels are unaffected and the
-   popup disappears after about two seconds.
+7. Exit normally, send the log and a screenshot of the F9
+   notification: **native 32×32 large SpideyPC.exe icon** beside a
+   compact **SCREENSHOT SAVED** heading. The full Windows path must
+   **not appear onscreen**. It remains intact in the PNG destination
+   and diagnostic log. Verify the notification vanishes after about
+   two seconds, F9 screenshot pixels are unaffected and keyboard/controller
+   input continues to work.
 
 **Fail closed:** If the SDL3 selection is refused or fails to arm,
 do NOT enable synthetic keyboard injection, blindly patch DirectInput
