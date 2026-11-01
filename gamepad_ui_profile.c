@@ -1946,7 +1946,8 @@ static int sdl3_generic_ui_on_flip(HWND hwnd,int menu_2d,
     (menu_2d && !gameplay_3d && !native_pause_active?
        SPIDER_GENERIC_UI_MENU:SPIDER_GENERIC_UI_NONE);
   was_armed=generic_ui.armed;
-  scan=spider_sdl3_generic_ui_step(&generic_ui,id,ctx,&sample);
+  scan=spider_sdl3_generic_ui_step_timed(&generic_ui,id,ctx,&sample,
+                                         (uint32_t)GetTickCount());
   if(!was_armed && generic_ui.armed && generic_ui_reports++<40u) {
     snprintf(line,sizeof(line),
       "SDL3-GENERIC-UI: ARMED id=%lu VID:PID=%04X:%04X context=%s (neutral; 3D untouched)",
