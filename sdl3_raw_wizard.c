@@ -225,9 +225,11 @@ static void wizard_refresh(SpiderRawWizard *w) {
   if(w->raw_count>16u)w->raw_count=16u;
   SendMessageA(w->pads,CB_RESETCONTENT,0,0);
   for(i=0;i<w->raw_count;i++) {
-    snprintf(line,sizeof(line),"%s joystick %u (SDL id=%lu)",
-             w->already_mapped[i]?"Mapped - recalibrate":"Unmapped - recognize",
-             i+1,(unsigned long)w->ids[i]);
+    char model[100]="Unknown joystick";
+    (void)SpiderSDL3Probe_RawName(w->ids[i],model,sizeof(model));
+    snprintf(line,sizeof(line),"%.90s (id=%lu) [%s]",
+             model,(unsigned long)w->ids[i],
+             w->already_mapped[i]?"Mapped - recalibrate":"Unmapped - recognize");
     SendMessageA(w->pads,CB_ADDSTRING,0,(LPARAM)line);
   }
   if(w->raw_count)SendMessageA(w->pads,CB_SETCURSEL,0,0);
