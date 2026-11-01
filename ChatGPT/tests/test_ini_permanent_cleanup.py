@@ -23,7 +23,7 @@ def test_player_only_ini_keeps_fps_as_real_control():
     assert list(cfg["Display"])==["aspectratio","brightness","fpslimit"]
     assert cfg["Display"]["FPSLimit"]=="30"
     assert cfg["Input"]["KeyboardLayout"]=="Auto"
-    assert list(cfg["Input"])==["keyboardlayout","controllerprofile","controllerenterbuttons","controllerbackbutton","controllerpausebutton"]
+    assert list(cfg["Input"])==["keyboardlayout","experimentalsdl3probe","experimentalsdl3nativeowner","experimentalsdl3controllersetup","experimentalsdl3contextbridge","experimentalsdl3gameplaybindings","experimentalsdl3xboxrtswing","experimentalaltlatchrecovery","experimentalnativejoystickunplugguard","experimentalnativejoystickreconnect","experimentalnativejoystickmappingswap","controllerprofile","controllerenterbuttons","controllerbackbutton","controllerpausebutton"]
     assert cfg["Input"]["ControllerProfile"]=="Auto"
     assert cfg["Input"]["ControllerEnterButtons"]=="Both"
     assert cfg["Input"]["ControllerBackButton"]=="Circle"
