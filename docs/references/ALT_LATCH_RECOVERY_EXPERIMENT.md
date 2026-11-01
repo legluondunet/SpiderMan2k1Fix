@@ -53,10 +53,13 @@ Disable by removing the key or setting it to `0`.
 - The original Left Alt latch must be **exactly `0x7F`**
   (stable held, not `0xFF` fresh press or `0x80` fresh release).
   Win32 must report Left Alt, generic Alt, Right Alt and Tab **all
-  released** on **six consecutive** foreground Flip samples spanning
-  at least 180 ms after return; the original Right Alt and Tab latches
-  must also be released. New physical Alt/Tab presses reset the
-  stable counter.
+  released** on at least **six consecutive eligible foreground
+  Flip samples spanning at least 180 ms of genuinely clean key
+  observations**; the original Right Alt and Tab latches must
+  also be released. This timer starts on the FIRST clean
+  observation, not on focus wake; intervening Bink/pause,
+  physical Alt/Tab presses or original Right Alt/Tab activity
+  reset the clean period.
 - Final foreground, **all four Win32 modifier keys** (Left Alt,
   generic Alt, Right Alt, Tab), **both other original DirectInput
   latches** (Right Alt and Tab), and the native Left Alt byte are
@@ -257,3 +260,31 @@ a valuable repeatability and keyboard-regression check. It
 remains **default OFF**, with the PR **DRAFT** and unmerged.
 Mouse-specific behavior, Xbox 360, keyboard-only configuration,
 feature-OFF comparison and Wine/Proton remain unvalidated.
+
+
+### Post-validation safety hardening (requires fresh Windows trial)
+
+After the 08:08 hardware PASS, the PR tightened two fail-closed
+conditions, without changing the option's default OFF state,
+target address or native released-edge value:
+
+1. The immediate final one-byte write gate now **re-reads** every
+   independent OS modifier (Left Alt, generic Alt, Right Alt, Tab)
+   and both original game's Right Alt/Tab latches. A key press
+   arriving after the initial snapshot but before the actual
+   release is not allowed through cached boolean values.
+2. The minimum **180 ms** now means an uninterrupted interval
+   of clean foreground observations **since the first eligible
+   clean sample**. Previously, the timer counted from foreground
+   wake and could include a period spent watching Bink/pause
+   or waiting for a physical modifier to be released. At 30 FPS,
+   this can delay a recovery by roughly a frame or more, and can
+   prevent it if no continuous 180 ms clean window exists within
+   the five-second expiration.
+
+The policy unit tests cover an intervening Tab event resetting
+the clean period and a late clean first observation. These
+changes are **CI-only until another Windows trial with the new
+artifact**. The earlier 07:59 and 08:08 tests validated the
+previous guard revision; do not retroactively claim they
+hardware-tested these additional checks.
