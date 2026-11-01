@@ -1133,6 +1133,72 @@ static void sdl3_binding_trace_on_flip(void) {
   say(line);
   bindings_trace_lines++;
 }
+/* Generic 054C:0268 and other SDL-mapped controllers: first prove that
+ * deliberate setup selection drives per-model semantic actions correctly,
+ * with neutral-first edges and axes, WITHOUT touching original gameplay.
+ * A later engine bridge must be independently reviewed and hardware-tested.
+ */
+static void sdl3_generic_semantic_trace_on_flip(void) {
+  uint32_t id=0;
+  uint16_t vid=0,pid=0;
+  SpiderSDL3ControllerSample sample;
+  SpiderSDL3ControllerProfile *profile;
+  SpiderSDL3UniversalFrame frame;
+  int was_armed,axis_changed=0;
+  unsigned i;
+  char line[360];
+  if(!generic_selected_id || generic_trace_lines>=48u)return;
+  if(!SpiderSDL3Probe_GenericSelectedSample(&id,&vid,&pid,&sample)) {
+    spider_sdl3_universal_reset(&generic_actions);
+    generic_profile_snapshot_valid=0;
+    return;
+  }
+  profile=spider_sdl3_get_profile(vid,pid);
+  if(!profile || !spider_sdl3_profile_valid(profile)) {
+    spider_sdl3_universal_reset(&generic_actions);
+    generic_profile_snapshot_valid=0;
+    return;
+  }
+  if(!generic_profile_snapshot_valid ||
+     memcmp(&generic_profile_snapshot,profile,sizeof(*profile))) {
+    spider_sdl3_universal_reset(&generic_actions);
+    generic_profile_snapshot=*profile;
+    generic_profile_snapshot_valid=1;
+    generic_last_buttons=0;
+    memset(generic_last_axes,0,sizeof(generic_last_axes));
+  }
+  was_armed=generic_actions.armed!=0;
+  frame=spider_sdl3_universal_step(&generic_actions,profile,&sample,
+                                 id,1,1);
+  if(!frame.valid)return;
+  if(!was_armed && generic_actions.armed) {
+    snprintf(line,sizeof(line),
+      "SDL3-GENERIC: SEMANTIC ARMED id=%lu VID:PID=%04X:%04X (neutral confirmed, READ-ONLY; no DirectInput game ownership)",
+      (unsigned long)id,(unsigned)vid,(unsigned)pid);
+    say(line);generic_trace_lines++;
+    return;
+  }
+  if(!generic_actions.armed)return;
+  for(i=0;i<4u;i++) {
+    int delta=(int)sample.axis[i]-generic_last_axes[i];
+    if(delta>15000 || delta< -15000)axis_changed=1;
+  }
+  if(!frame.pressed && !frame.released && !axis_changed)return;
+  generic_last_buttons=sample.buttons;
+  for(i=0;i<4u;i++)generic_last_axes[i]=sample.axis[i];
+  snprintf(line,sizeof(line),
+    "SDL3-GENERIC: SEMANTIC id=%lu held=0x%02lX pressed=0x%02lX released=0x%02lX SDL-buttons=0x%06lX LX=%d LY=%d RX=%d RY=%d LT=%d RT=%d [READ-ONLY; original game input unchanged]",
+    (unsigned long)id,(unsigned long)frame.held,
+    (unsigned long)frame.pressed,(unsigned long)frame.released,
+    (unsigned long)generic_last_buttons,
+    (int)sample.axis[SPIDER_SDL3_AXIS_LEFTX],
+    (int)sample.axis[SPIDER_SDL3_AXIS_LEFTY],
+    (int)sample.axis[SPIDER_SDL3_AXIS_RIGHTX],
+    (int)sample.axis[SPIDER_SDL3_AXIS_RIGHTY],
+    (int)sample.axis[SPIDER_SDL3_AXIS_LT],
+    (int)sample.axis[SPIDER_SDL3_AXIS_RT]);
+  say(line);generic_trace_lines++;
+}
 void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
   DWORD now;
   unsigned i;
@@ -1283,4 +1349,5 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
   /* A Start claim may have changed logical ownership after the scan. */
   sdl3_trace_native_owner(now);
   sdl3_binding_trace_on_flip();
+  sdl3_generic_semantic_trace_on_flip();
 }
