@@ -122,3 +122,28 @@ on dialog exit. Real-hardware validation under Wine is still required.
 Look for `physical keyboard Escape via WM_INPUT ARMED` or the fallback
 `physical keyboard Escape unavailable` in the log. The reliable safety
 chords **Ctrl+Shift+Q** and **Ctrl+Shift+T** remain in place.
+
+## Test C — Direct original Joystick menu entry (experimental)
+
+1. Save a copy of the current working DLL/ZIP first. Launch the new build.
+2. **First select Keyboard in the original game's options menu.** It must
+   open the *original* native keyboard binding screen and still allow
+   normal actions without any SDL3 popup. Exit without editing.
+3. Select **Joystick** from the same original options screen. The new
+   **SpiderMan2k1Fix - Controller Setup** window should open **immediately**,
+   with no intervening native seven-action joystick list.
+4. Exit the SDL3 window using keyboard Esc; verify the original options
+   menu still responds. Re-open and close a second time.
+5. Check these log lines:
+   `SDL3-DIRECT-ENTRY: ACTIVE intercepted original PCSHELL_DoControllerConfig CALL(s)=...`
+   and `SDL3-DIRECT-ENTRY: Joystick selected; bypass original seven-action submenu and open SDL3 window`.
+   The Keyboard path should log `SDL3-DIRECT-ENTRY: Keyboard configuration forwarded to original game`.
+6. If the patch logs `REFUSED`, the old native action-list submenu is
+   preserved, with the SDL3 preview option as a fallback; send the log.
+   If **Keyboard** unexpectedly shows SDL3 or menus stop responding,
+   stop testing and restore your prior working DLL, then send the log.
+
+This is an experimental native entry redirect; CI verifies its build and
+source contracts, but has not yet verified the runtime callsite signatures
+or boolean semantics under actual game execution. The original F9/F10
+shortcuts and native keyboard mappings must remain untouched.
