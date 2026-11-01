@@ -4,9 +4,11 @@
 
 **Not released or merged.** This staging branch combines the tested PR #91
 runtime with new **default-enabled SDL3 and Left Alt recovery**. The default
-changes are **not yet hardware-revalidated**, even though the prior opt-in
-build passed the stated Windows 11 and Wine/Proton manual test matrix.
-The released v1.1.0 executable and its defaults remain unchanged.
+settings have now been exercised in a **PR #92 test-merge build**
+on Windows 11 and Wine/GE-Proton, with physical DS4/Xbox 3D controls
+confirmed. A freshly generated INI and the latest Bink handoff
+adjustment still require on-device verification. The released
+v1.1.0 executable and its defaults remain unchanged.
 
 ### Tested changes in the combined branch
 
@@ -40,6 +42,12 @@ The released v1.1.0 executable and its defaults remain unchanged.
   delayed until a video transition or late/absent in 3D. This is an
   **accepted limitation only when game controls, rendering and audio
   resume without functional regressions**.
+- **Bink #4 to first 3D frame:** When SDL3 has injected a short
+  synthetic Return key press to skip the movie, release that
+  *owned* Return before the original game input safety wait.
+  The physical Enter/Space key-up barrier stays intact and
+  continues to avoid unintended 3D cutscene skipping. This
+  **latest runtime change requires its own game test**.
 - **Configuration and diagnostics:** Obsolete mouse keys are recognized
   for migration but ignored at runtime. An INI auto-repair triggered
   by **two duplicate `MouseEnabled` entries** was correctly diagnosed
@@ -58,8 +66,10 @@ The previous combined opt-in build passed **744 regression tests and
 Windows x86 CI packaging**, plus Windows 11 and Wine/Proton game tests
 on the reported hardware. **No release is authorized by these results
 alone:** the final merged tree now derives from the newer `main`, but
-**the newly default-on settings still require their own hardware smoke
-checks**, exact-head CI, and an approved release version/tag. The separate DS4 audio-routing PR #86, Xbox profile
+**first-run factory INI and post-Bink-fix game checks remain required**,
+along with exact-head CI and an approved release version/tag.
+Previously generated log files are not evidence that the INI was newly
+generated. The separate DS4 audio-routing PR #86, Xbox profile
 prototype #78, and generic controller research remain outside the
 tested-release claims.
 
