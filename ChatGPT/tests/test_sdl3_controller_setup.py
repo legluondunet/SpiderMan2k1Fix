@@ -371,6 +371,11 @@ def test_native_joystick_main_entry_opens_sdl3_directly_but_keyboard_remains_ori
     assert "int SpiderSDL3_InstallDirectJoystickEntry(" in header
     assert "int SpiderSDL3_InstallDirectJoystickEntry(" in native
     assert "SpiderSDL3_InstallDirectJoystickEntry(log_message)" in bridge
+    assert "SpiderSDL3_InstallDirectJoystickEntry(logger);" in bridge
+    assert "SDL3-DIRECT-ENTRY: INSTALL attempt" in native
+    assert "SDL3-DIRECT-ENTRY: REFUSED PE header" in native
+    assert "SDL3-DIRECT-ENTRY: REFUSED section=" in native
+    assert "SDL3-DIRECT-ENTRY: REFUSED no direct CALL rel32" in native
     assert "if(SpiderSDL3ControllerSetup_Enabled())" in bridge
     assert "static void __cdecl spider_sdl3_direct_controller_menu(int is_joystick)" in native
     assert "if(is_joystick && SpiderSDL3ControllerSetup_Enabled())" in native
