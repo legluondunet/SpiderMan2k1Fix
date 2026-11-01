@@ -28,7 +28,9 @@ enum {
   SPIDER_UI_PAD=1001, SPIDER_UI_ACTION=1002,
   SPIDER_UI_CAPTURE=1003, SPIDER_UI_RESET=1004,
   SPIDER_UI_CLOSE=1005, SPIDER_UI_STATUS=1006,
-  SPIDER_UI_TIMER=1007
+  SPIDER_UI_TIMER=1007,
+  /* These controls belong only to the SDL3 dialog. No global F keys. */
+  SPIDER_UI_RAW=1008, SPIDER_UI_TEST=1009
 };
 typedef struct {
   HWND hwnd,owner,pads,actions,status;
@@ -571,7 +573,9 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
      * handled normally there. Analog input navigates button selection. */
     if(focused==GetDlgItem(ui->hwnd,SPIDER_UI_CAPTURE) ||
        focused==GetDlgItem(ui->hwnd,SPIDER_UI_RESET) ||
-       focused==GetDlgItem(ui->hwnd,SPIDER_UI_CLOSE))return 0;
+       focused==GetDlgItem(ui->hwnd,SPIDER_UI_CLOSE) ||
+       focused==GetDlgItem(ui->hwnd,SPIDER_UI_RAW) ||
+       focused==GetDlgItem(ui->hwnd,SPIDER_UI_TEST))return 0;
     if(!current_profile(ui))return 1;
     next=(ui->action+SPIDER_SDL3_VISIBLE_ACTION_COUNT+
       (vk==VK_UP?SPIDER_SDL3_VISIBLE_ACTION_COUNT-1u:1u))%
@@ -597,7 +601,9 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
      * from standard Win32 dialogs. Space and Tab continue working. */
     if(focused==GetDlgItem(ui->hwnd,SPIDER_UI_CAPTURE) ||
        focused==GetDlgItem(ui->hwnd,SPIDER_UI_RESET) ||
-       focused==GetDlgItem(ui->hwnd,SPIDER_UI_CLOSE)) {
+       focused==GetDlgItem(ui->hwnd,SPIDER_UI_CLOSE) ||
+       focused==GetDlgItem(ui->hwnd,SPIDER_UI_RAW) ||
+       focused==GetDlgItem(ui->hwnd,SPIDER_UI_TEST)) {
       int id=GetDlgCtrlID(focused);
       SendMessageA(ui->hwnd,WM_COMMAND,MAKEWPARAM(id,BN_CLICKED),(LPARAM)focused);
       return 1;
@@ -607,29 +613,6 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
       spider_sdl3_setup_nav_reset(&ui->nav);
       status(ui,"CAPTURE: release ALL controls; press ONE button or LT/RT. Esc cancels.");
     }
-    return 1;
-  }
-  if(vk==VK_F9) {
-    ui->test_mode=!ui->test_mode;
-    ui->test_buttons_previous=~0u;
-    ui->test_lt_previous=-100000;ui->test_rt_previous=-100000;
-    spider_sdl3_capture_reset(&ui->capture);
-    spider_sdl3_setup_nav_reset(&ui->nav);
-    if(!ui->test_mode)
-      status(ui,"SDL3 TEST OFF. Keyboard and pad setup navigation restored.");
-    else
-      status(ui,"SDL3 TEST ON: press buttons, move sticks and triggers. F9 exits.");
-    if(setup_report)setup_report(ui->test_mode?
-      "SDL3-SETUP: F9 universal SDL3 normalized input test ON (read-only)":
-      "SDL3-SETUP: F9 universal SDL3 normalized input test OFF");
-    return 1;
-  }
-  if(vk==VK_F8) {
-    /* Keyboard-only hardware recognition for previously unmapped SDL
-     * joysticks; nested modal, never edits game-owned DirectInput. */
-    SpiderSDL3RawWizard_Open(ui->hwnd,setup_report);
-    spider_sdl3_setup_nav_reset(&ui->nav);
-    spider_sdl3_capture_reset(&ui->capture);
     return 1;
   }
   if(vk==VK_F5) {
@@ -647,6 +630,28 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
     return 1;
   }
   return 0; /* Tab and Space keep their native Win32 button behavior. */
+}
+/* Explicit dialog button: keyboard Tab+Enter or mouse click. Deliberately
+ * NO F9/F10 handling: those keys already belong to Spider-Man. */
+static void setup_toggle_sdl3_test(SpiderSDL3SetupUI *ui) {
+  HWND button;
+  if(!ui)return;
+  ui->test_mode=!ui->test_mode;
+  ui->test_buttons_previous=~0u;
+  ui->test_lt_previous=-100000;
+  ui->test_rt_previous=-100000;
+  spider_sdl3_capture_reset(&ui->capture);
+  spider_sdl3_setup_nav_reset(&ui->nav);
+  if(ui->test_mode)
+    status(ui,"SDL3 TEST ON: press buttons/sticks/triggers. Activate Test again to stop.");
+  else
+    status(ui,"SDL3 TEST OFF. Normal dialog navigation restored.");
+  button=GetDlgItem(ui->hwnd,SPIDER_UI_TEST);
+  if(button)SetWindowTextA(button,ui->test_mode?
+    "Stop SDL3 input test":"Test SDL3 inputs");
+  if(setup_report)setup_report(ui->test_mode?
+    "SDL3-SETUP: normalized input test ON via dialog button (read-only; F9/F10 untouched)":
+    "SDL3-SETUP: normalized input test OFF via dialog button (F9/F10 untouched)");
 }
 static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
                                       WPARAM wp,LPARAM lp) {
@@ -680,11 +685,17 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       CreateWindowExA(0,"BUTTON","Close / return to game",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_NOTIFY,
         465,207,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_CLOSE,NULL,NULL);
+      CreateWindowExA(0,"BUTTON","Recognize unknown joystick",
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
+        465,254,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_RAW,NULL,NULL);
+      CreateWindowExA(0,"BUTTON","Test SDL3 inputs",
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
+        465,301,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_TEST,NULL,NULL);
       label=CreateWindowExA(0,"STATIC",
         "Stick Left/Right: actions or buttons   Stick Up/Down: select row or button\r\n"
         "L1/R1: browse pad   Start: choose pad   Circle/B: close + use this pad\r\n"
         "Triangle/Y: defaults    Keyboard: Tab, Enter, Esc, PgUp/PgDn\r\n"
-        "F8: recognize unknown joystick    F9: live SDL3 button test",
+        "Use Tab + Enter for Recognize / Test; F9 screenshots and F10 game shortcuts unchanged",
         WS_CHILD|WS_VISIBLE,18,351,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->status=CreateWindowExA(0,"STATIC","",
@@ -694,6 +705,10 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       SendMessageA(ui->actions,WM_SETFONT,(WPARAM)font,TRUE);
       SendMessageA(ui->status,WM_SETFONT,(WPARAM)font,TRUE);
       for(unsigned i=SPIDER_UI_CAPTURE;i<=SPIDER_UI_CLOSE;i++) {
+        HWND button=GetDlgItem(hwnd,(int)i);
+        if(button)SendMessageA(button,WM_SETFONT,(WPARAM)font,TRUE);
+      }
+      for(unsigned i=SPIDER_UI_RAW;i<=SPIDER_UI_TEST;i++) {
         HWND button=GetDlgItem(hwnd,(int)i);
         if(button)SendMessageA(button,WM_SETFONT,(WPARAM)font,TRUE);
       }
@@ -741,6 +756,13 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
           } else if(setup_report)
             setup_report("SDL3-SETUP: Reset REFUSED (no valid selected model or save failure)");
         }
+      } else if(LOWORD(wp)==SPIDER_UI_RAW && HIWORD(wp)==BN_CLICKED) {
+        SpiderSDL3RawWizard_Open(ui->hwnd,setup_report);
+        spider_sdl3_setup_nav_reset(&ui->nav);
+        spider_sdl3_capture_reset(&ui->capture);
+        if(SpiderSDL3Probe_SetupPump())refresh_pads(ui);
+      } else if(LOWORD(wp)==SPIDER_UI_TEST && HIWORD(wp)==BN_CLICKED) {
+        setup_toggle_sdl3_test(ui);
       } else if(LOWORD(wp)==SPIDER_UI_CLOSE && HIWORD(wp)==BN_CLICKED) {
         if(setup_report)setup_report("SDL3-SETUP: Close button requested (deferred message)");
         PostMessageA(hwnd,WM_CLOSE,0,0);
