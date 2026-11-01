@@ -110,6 +110,23 @@ BINARY_VERIFIED_SOURCE_STAGE_SITES = (
     (0x0050A3F4, "5f 5e 5d 5b 83 c4 0c c3", "Common epilogue preserving earlier keyboard results"),
 )
 
+# Independently checked against the same exact original retail EXE.
+# Keyboard device is DISTINCT from game-owned joystick device: disabling
+# all DirectInput would also disable the game keyboard, violating the
+# planned generic SDL3 source-isolation contract.
+BINARY_VERIFIED_KEYBOARD_READER_SITES = (
+    (0x00501B9D, "a1 5c 7a 6b 00", "Original keyboard owns a DISTINCT DirectInput device at 0x006B7A5C"),
+    (0x00501BC3, "ff 51 28", "Original keyboard GetDeviceData (first read)"),
+    (0x00501BD9, "ff 51 1c", "Original keyboard Acquire retry"),
+    (0x00501C3B, "ff 52 28", "Original keyboard GetDeviceData after Acquire"),
+    (0x00501C56, "8a 98 2c 79 6b 00", "Read one of 256 keyboard latch bytes"),
+    (0x00501C5E, "88 98 2c 79 6b 00", "Clear keyboard latch high/edge bit"),
+    (0x00501C65, "3d 00 01 00 00", "Bound keyboard latch maintenance to 256 bytes"),
+    (0x00501C87, "88 87 2c 79 6b 00", "Write pressed key event to original keyboard latch"),
+    (0x00501C8F, "88 9f 2c 79 6b 00", "Write released key event to original keyboard latch"),
+    (0x00501CB9, "8a 80 2c 79 6b 00", "Read latched keyboard state for semantic action"),
+)
+
 
 class InvalidExecutable(ValueError):
     """Binary identity, layout or native-reader signature rejected."""
@@ -277,6 +294,16 @@ def inspect(data: bytes, *, before: int = 96, after: int = 1024,
             "bytes": hex_bytes,
             "binary_disassembly_meaning": meaning,
         })
+    keyboard_signatures = []
+    for va, hex_bytes, meaning in BINARY_VERIFIED_KEYBOARD_READER_SITES:
+        if pe.read(va, len(bytes.fromhex(hex_bytes))) != bytes.fromhex(hex_bytes):
+            raise InvalidExecutable(
+                "keyboard native DirectInput reader signature mismatch at 0x%08X" % va)
+        keyboard_signatures.append({
+            "va": "0x%08X" % va,
+            "bytes": hex_bytes,
+            "binary_disassembly_meaning": meaning,
+        })
     native = pe.read(ACTION_TABLE, 14 * 8)
     pairs = [struct.unpack_from("<II", native, i * 8) for i in range(14)]
     if tuple(mask for mask, _ in pairs) != ACTION_MASKS:
@@ -302,6 +329,21 @@ def inspect(data: bytes, *, before: int = 96, after: int = 1024,
         "verified_binary_input_sites": binary_verified,
         "verified_binary_mask_consumer_sites": consumer_signatures,
         "verified_keyboard_native_source_stage_sites": source_stage_signatures,
+        "verified_original_keyboard_reader_sites": keyboard_signatures,
+        "original_keyboard_directinput": {
+            "keyboard_device_pointer": "0x006B7A5C",
+            "keyboard_state_bytes": "0x006B792C..0x006B7A2B",
+            "keyboard_latch_entries": 256,
+            "keyboard_buffered_event_capacity": 16,
+            "keyboard_buffered_event_record_bytes": 20,
+            "first_buffered_get_device_data_call": "0x00501BC3",
+            "reacquire_then_buffered_read": "0x00501BD9 / 0x00501C3B",
+            "keyboard_state_getter": "0x00501CB0",
+            "press_marker": "0xFF",
+            "release_marker": "0x80",
+            "separate_from_native_joystick_pointer": "0x006B7A2C",
+            "critical": "Do NOT disable DirectInput globally; the keyboard relies on a distinct original DI device",
+        },
         "source_separation": {
             "original_formula": "held = keyboard | native DirectInput joystick",
             "keyboard_region": "0x0050A1AC..0x0050A29D",

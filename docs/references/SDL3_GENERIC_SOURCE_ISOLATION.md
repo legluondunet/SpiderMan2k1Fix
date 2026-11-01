@@ -110,3 +110,37 @@ keyboard result survives a missing joystick; it is **not** proof
 that a future patch can safely bypass the native reader when the
 physical device exists, nor that skipping it preserves the game's
 buffered-event maintenance.
+
+## A genuinely independent DirectInput **keyboard** device (further disassembly)
+
+The original game does not merely read a generic keyboard array: it
+opens and reads a **separate DirectInput keyboard device**.
+
+- Original keyboard device pointer: `0x006B7A5C` (read at `0x00501B9D`).
+- Keyboard event reader: `0x00501B80`; `GetDeviceData` through
+  vtable slot `+0x28` at `0x00501BC3` (and at `0x00501C3B`
+  after an `Acquire` at `0x00501BD9`). It requests up to **16
+  buffered events of 20 bytes**.
+- Keyboard latch: **256 bytes** at `0x006B792C..0x006B7A2B`.
+  `0x00501C56..0x00501C6A` strips the prior edge high bit
+  across all 256 entries. `0x00501C87` writes a pressed state
+  `0xFF`; `0x00501C8F` records a release `0x80`.
+  `0x00501CB0` retrieves a latched key state.
+- The original joystick object pointer is **different**:
+  `0x006B7A2C`, and its button latch begins at `0x006B7A34`.
+
+The two original state arrays abut in memory but are independently
+owned and updated. Consequently, **unhooking DirectInput8 globally**
+or detaching the keyboard DI device to let SDL3 own the input would
+break native keyboard controls. The future isolation target must be
+**the joystick contribution alone**, while keeping the keyboard's
+own DirectInput event reader and 256-key latch intact.
+
+A further **10 exact original x86 signatures** were verified against
+the supplied retail EXE and added to the offline inspector. Combined
+with the previous 50, there are now **60 binary-signature sites**
+checked with the exact SHA-256 gate.
+
+The optional Windows runtime passive trace discussed in research is
+**not implemented** in this step; these findings come from original
+file disassembly and portable tests only, without game input changes.

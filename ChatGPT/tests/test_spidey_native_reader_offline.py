@@ -123,6 +123,19 @@ def test_no_runtime_mutation_or_external_modules():
     assert '"number_of_direct_latch_calls": 20' in script
     assert "disassembled mask consumer mismatch" in script
     assert len(mod.BINARY_VERIFIED_SOURCE_STAGE_SITES) == 13
+    assert len(mod.BINARY_VERIFIED_KEYBOARD_READER_SITES) == 10
+    assert mod.BINARY_VERIFIED_KEYBOARD_READER_SITES[0][:2] == (
+        0x00501B9D, "a1 5c 7a 6b 00")
+    assert mod.BINARY_VERIFIED_KEYBOARD_READER_SITES[1][:2] == (
+        0x00501BC3, "ff 51 28")
+    assert mod.BINARY_VERIFIED_KEYBOARD_READER_SITES[4][:2] == (
+        0x00501C56, "8a 98 2c 79 6b 00")
+    assert mod.BINARY_VERIFIED_KEYBOARD_READER_SITES[6][:2] == (
+        0x00501C65, "3d 00 01 00 00")
+    assert "keyboard native DirectInput reader signature mismatch" in script
+    assert '"keyboard_latch_entries": 256' in script
+    assert '"keyboard_device_pointer": "0x006B7A5C"' in script
+    assert '"separate_from_native_joystick_pointer": "0x006B7A2C"' in script
     assert mod.BINARY_VERIFIED_SOURCE_STAGE_SITES[0][:2] == (
         0x0050A19F, "c7 03 00 00 00 00")
     assert mod.BINARY_VERIFIED_SOURCE_STAGE_SITES[2][:2] == (
