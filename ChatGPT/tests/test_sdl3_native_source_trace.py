@@ -46,6 +46,9 @@ def test_keyboard_counts_joystick_bitsets_and_reserved_focus_events(tmp_path):
         assert(!o.have_previous);
         assert(spider_native_source_focus_step(&o,1));
         assert(spider_native_source_changed(&o,&s,2u));
+        /* Remaining 3 foreground Flips consume the previous short window. */
+        for(unsigned k=0;k<3;k++)
+          assert(!spider_native_source_changed(&o,&s,2u));
         o.emitted=SPIDER_SOURCE_MAX_CHANGES;
         assert(!spider_native_source_changed(&o,&s,3u));
         /* Focus status is still logged at the ordinary sample cap. */
