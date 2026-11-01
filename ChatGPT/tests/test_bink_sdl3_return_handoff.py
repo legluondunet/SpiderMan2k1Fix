@@ -9,6 +9,12 @@ ROOT = Path(__file__).resolve().parents[2]
 QUICK = (ROOT / "quick_exit_f12.c").read_text(encoding="utf-8")
 UI = (ROOT / "gamepad_ui_profile.c").read_text(encoding="utf-8")
 HEADER = (ROOT / "gamepad_ui_profile.h").read_text(encoding="utf-8")
+PROBE = (ROOT / "sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+PROBE_HEADER = (ROOT / "sdl3_gamepad_probe.h").read_text(encoding="utf-8")
+SOUTH_WAIT = PROBE[
+    PROBE.index("int SpiderSDL3Probe_NewGameBinkWaitSouthRelease("):
+    PROBE.index("/* The original Flip thread is paused synchronously.")
+]
 
 BARRIER = QUICK[
     QUICK.index("static void spider_newgame_enter_release_barrier("):
@@ -84,3 +90,61 @@ def test_actual_bink_interaction_is_not_repurposed_for_f10_or_non_bink():
         UI.index("void SpiderGamepadUI_OnFlip("):
         UI.index("/* An SDL3 selected canonical native map")
     ]
+
+
+def test_held_physical_south_is_sampled_before_original_scripted_3d_input():
+    """Movie confirmation KEYUP alone cannot release DS4 Cross/Xbox A."""
+    assert '#include "sdl3_gamepad_probe.h"' in QUICK
+    assert "int SpiderSDL3Probe_NewGameBinkWaitSouthRelease(HWND game_window);" in PROBE_HEADER
+    owner = "SpiderSDL3Probe_NewGameBinkWaitSouthRelease(hwnd);"
+    release = "SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(hwnd);"
+    physical_enter = "GetAsyncKeyState(VK_RETURN)"
+    assert owner in BARRIER
+    assert BARRIER.index(release) < BARRIER.index(owner)
+    assert BARRIER.index(owner) < BARRIER.index(physical_enter)
+    assert BARRIER.index("if(confirmed_movie4) {") < BARRIER.index(owner)
+    assert BARRIER.count(owner) == 1
+    assert "SPIDER_NATIVE_GAME_INPUT_UPDATE();" not in SOUTH_WAIT
+    for forbidden in ("PostMessageA(", "SendInput(", "keybd_event(",
+                      "VirtualProtect(", "*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST=",
+                      "SpiderNativeReconnect_OnFlip(", "IDirectInputDevice8_Acquire("):
+        assert forbidden not in SOUTH_WAIT
+
+
+def test_game_thread_sdl3_wait_is_identity_guarded_and_bounded():
+    """Only authenticated selected/connected physical SOUTH gets a wait."""
+    for gate in (
+        "GetForegroundWindow()!=hwnd",
+        "IsWindowVisible(hwnd)",
+        "sdl3_game_thread!=GetCurrentThreadId()",
+        "SpiderSDL3Probe_NativeOwnerEnabled()",
+        "SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id)",
+        "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)",
+        "sdl_connected(pads[i].handle)",
+        "sdl_pump();sdl_update();",
+        "if(!sdl_button(pad,0))return 0;",
+        "if(!sdl_button(pad,0)) {",
+        "Sleep(10);",
+        "Sleep(40);",
+        "elapsed>=5000u",
+        "TIMEOUT 5000ms SOUTH still held",
+        "SDL3-BINK-4-SOUTH: RELEASED after",
+        "SDL3-BINK-4-SOUTH: HELD at first 3D owner",
+    ):
+        assert gate in SOUTH_WAIT
+    # All other pads / non-3D contexts / independent keyboard inputs stay untouched.
+    assert "vid==0x054cu" in SOUTH_WAIT
+    assert "vid==0x045eu && pid==0x028eu" in SOUTH_WAIT
+    assert "live_id!=id || live_vid!=vid || live_pid!=pid" in SOUTH_WAIT
+    assert "return -1;" in SOUTH_WAIT  # disconnect or foreground change
+    assert "return -2;" in SOUTH_WAIT  # watchdog, not infinite freeze
+    assert SOUTH_WAIT.index("sdl_pump();sdl_update();") < SOUTH_WAIT.index("if(!sdl_button(pad,0))return 0;")
+
+
+def test_held_south_guard_does_not_break_old_keyboard_or_f10_safety():
+    assert "if(!confirmed_movie4) {" in BARRIER
+    assert "debug_auto3d_f10_origin,0,0)!=0" in BARRIER
+    assert "GetAsyncKeyState(VK_SPACE)" in BARRIER
+    assert "GetTickCount()-began)<1500u" in BARRIER
+    assert "if(!enter_after && !space_after)Sleep(40);" in BARRIER
+    assert BARRIER.count("SpiderSDL3Probe_NewGameBinkWaitSouthRelease(hwnd);")==1
