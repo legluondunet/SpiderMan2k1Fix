@@ -14,6 +14,7 @@
 #include <d3d.h>
 #include "hud_widescreen.h"
 #include "hud_adaptive.h"
+#include "native_pause_title_bounds.h"
 #include "frame_limiter.h"
 #include "display_plan.h"
 #include "menu_scale.h"
@@ -24,7 +25,14 @@
 #include "fov_aspect.h"
 #include "fov_aspect_win.h"
 #include "input_focus_trace.h"
+#include "gamepad_ui_profile.h"
 #include "input_notacquired_retry.h"
+#include "alt_latch_recovery.h"
+#include "native_joystick_unplug.h"
+#include "native_joystick_reconnect.h"
+#include "sdl3_gamepad_probe.h"
+#include "sdl3_gameplay_plan_probe.h"
+#include "sdl3_gameplay_live.h"
 #include "pause_any_key.h"
 #include "pause_surface.h"
 #include "focus_media_pause.h"
@@ -32,6 +40,8 @@
 #include "menu_version.h"
 #include "version_info.h"
 #include "f9_png.h"
+#include "spider_fix_paths.h"
+#include "system_diagnostics.h"
 #include "f9_toast.h"
 #include "quick_exit_f12.h"
 #include "pkr_audio_index.h"
@@ -47,23 +57,20 @@ static const BYTE expected_sha256[32] = {
 static int debug_log_enabled=0;
 /* Load once at startup, not on every drawing/logging call. */
 static void debug_log_load_setting(void) {
-  char path[MAX_PATH],*slash;
-  DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
+  char path[MAX_PATH];
   debug_log_enabled=0;
-  if (!n || n>=sizeof(path)) return;
-  slash=strrchr(path,'\\');
-  if (!slash || (size_t)(slash-path)+strlen("SpiderMan2k1Fix.ini")+1>=sizeof(path)) return;
-  strcpy(slash+1,"SpiderMan2k1Fix.ini");
+  if(!spider_path_ini_a(path,sizeof(path)))return;
   debug_log_enabled=(GetPrivateProfileIntA("Debug","Log",0,path)==1);
 }
 static void log_line(const char *s) {
-  char path[MAX_PATH], *slash; FILE *f;
-  if (!debug_log_enabled) return;
-  DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
-  if (!n || n>=sizeof(path)) return;
-  slash=strrchr(path,'\\');
-  if (!slash || (size_t)(slash-path)+strlen("SpiderMan2k1Fix.log")+1>=sizeof(path)) return;
-  strcpy(slash+1,"SpiderMan2k1Fix.log");
+  static char path[MAX_PATH];
+  static int resolved=0;
+  FILE *f;
+  if(!debug_log_enabled)return;
+  if(!resolved) {
+    if(!spider_path_log_a(path,sizeof(path)))return;
+    resolved=1;
+  }
   f=fopen(path,"a"); if(f) { fprintf(f,"%s\n",s); fclose(f); }
 }
 /* Windows creates a class="Ghost" surrogate after several seconds without
@@ -608,6 +615,25 @@ static void probe_desktop_mode(HWND hwnd) {
     (unsigned long)mode.dmPelsWidth,(unsigned long)mode.dmPelsHeight,
     (unsigned long)mode.dmBitsPerPel,(unsigned long)mode.dmDisplayFrequency,info.szDevice);
   log_line(line);
+  /* The startup inventory lists every active display, but only the real
+   * game HWND determines the output monitor. Report that mapping after the
+   * early DirectDraw monitor probe, never from the foreground application. */
+  {
+    static char last_selected[260]="";
+    const char *device=strrchr(info.szDevice,'\\');
+    snprintf(line,sizeof(line),
+      "SYS-DISPLAY-SELECTED: game_window_monitor=%s resolution=%lux%lu refresh=%luHz primary=%s",
+      device?device+1:info.szDevice,
+      (unsigned long)mode.dmPelsWidth,(unsigned long)mode.dmPelsHeight,
+      (unsigned long)mode.dmDisplayFrequency,
+      (info.dwFlags&MONITORINFOF_PRIMARY)?"yes":"no");
+    /* Probe runs both before and during SetCooperativeLevel. Log the first
+     * game monitor, then only meaningful selection/resolution changes. */
+    if(debug_log_enabled && strcmp(line,last_selected)!=0) {
+      log_line(line);
+      strcpy(last_selected,line);
+    }
+  }
   if (!SpiderDisplay_Fit(640,480,(int)mode.dmPelsWidth,(int)mode.dmPelsHeight,&r)) return;
   snprintf(line,sizeof(line),
     "DISPLAY-PLAN: 4:3 content fitted without distortion to desktop %lux%lu => viewport=(%d,%d)-(%d,%d) [PROBE ONLY]",
@@ -1008,6 +1034,20 @@ static volatile LONG native_pause43_border_hits=0;
 static volatile LONG native_pause43_banner_top=0;
 static volatile LONG native_pause43_banner_bottom=0;
 static volatile LONG native_pause43_glyph_hits=0;
+/* Our original game's ESC/pause object at 0x682950 is often transient:
+ * runtime logs show pause_ctx=0 while native D3D7 PAUSED menu text is
+ * visibly drawn. The SHA-gated exact ribbon detector is a stronger
+ * in-frame observation for the two already-validated widescreen modes.
+ * Fail closed (no inferred pause) if this exact graphic was not drawn
+ * in the current or immediately previous native Flip. */
+static int native_pause43_visible_near_flip(LONG now_flip) {
+  LONG ribbon_flip=InterlockedCompareExchange(&native_pause43_banner_flip,0,0);
+  return native_esc43_supported_monitor() &&
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==0 &&
+    InterlockedCompareExchange(&native_pause43_enabled,0,0)==1 &&
+    ribbon_flip>=0 && now_flip>=ribbon_flip &&
+    now_flip-ribbon_flip<=1;
+}
 static void native_pause43_init(void) {
   int enabled=native_esc43_hud_setting_enabled(
        "NativeESC4x3","SPIDERMAN2K1FIX_NATIVE_ESC_43");
@@ -1115,8 +1155,8 @@ static const void *maybe_correct_native_pause43(void *device,
        * Choices: main menu Y=436/508/580; confirmation Y=468/540.
        * Exclude instructions (Y=877), compass, gameplay HUD, and
        * the separately handled red spider selector. */
-      if(left<=(float)desktop_w*0.25f ||
-         right>=(float)desktop_w*0.75f ||
+      if(!SpiderNativePause43_TextInZone(
+             left,right,top,bottom,(float)desktop_w,(float)desktop_h) ||
          top<(float)desktop_h*0.13f ||
          bottom>(float)desktop_h*0.63f ||
          right-left<10.0f || right-left>84.0f ||
@@ -2404,6 +2444,9 @@ static void pause_at_flip_if_background(void) {
   HWND hwnd=game_hwnd;
   MSG msg;
   RECT pause_present_rect,pause_content_rect;
+  int pause_gamepad_available=0;
+  int pause_sdl3_available=0;
+  int pause_previous_foreground=0;
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
   if(GetForegroundWindow()==hwnd) {
     pause_background_since=0;
@@ -2411,6 +2454,7 @@ static void pause_at_flip_if_background(void) {
   } else if(InterlockedCompareExchange(&pause_ever_foreground,0,0)==1 &&
             pause_confirmed_focus_loss(hwnd) &&
             InterlockedCompareExchange(&pause_latched,1,0)==0) {
+    SpiderAltLatch_OnConfirmedExternalLoss();
     log_line("FOCUS-PAUSE: confirmed external focus loss; pause latched until manual resume");
     pause_log_foreground_owner(hwnd,GetForegroundWindow(),"external-foreground-latched");
   }
@@ -2429,6 +2473,19 @@ static void pause_at_flip_if_background(void) {
     return;
   }
   log_line("FOCUS-PAUSE: Any keyboard resume ARMED; consumes press and release");
+  /* While Flip is blocked, the regular SDL3 OnFlip and UI poll cannot run.
+   * Prefer the selected SDL3 handle (same game thread, validated native
+   * owner), not the secondary DirectInput handle that can become INPUTLOST
+   * on Alt+Tab. Retain the old DI8 wake for disabled/unavailable SDL3.
+   * Both require neutral->fresh digital press->release in foreground. */
+  pause_sdl3_available=SpiderSDL3Probe_PauseWake_Begin();
+  pause_gamepad_available=pause_sdl3_available?1:SpiderGamepadUI_PauseWake_Begin();
+  if(pause_sdl3_available)
+    log_line("FOCUS-PAUSE: SDL3 selected-gamepad wake ARMED; foreground-only, release-gated, no injected key (keyboard always available)");
+  else if(pause_gamepad_available)
+    log_line("FOCUS-PAUSE: DS4 DirectInput digital-button fallback ARMED; foreground-only, release-gated, no injected key (keyboard always available)");
+  else
+    log_line("FOCUS-PAUSE: no verified gamepad wake device; PAUSED hint remains keyboard-only");
   /* The Flip pause alone does not suspend Bink or secondary DirectSound. */
   SpiderFocusMedia_Pause();
   SpiderFocusDSound_Pause();
@@ -2464,12 +2521,16 @@ static void pause_at_flip_if_background(void) {
   if(borderless_back && borderless_primary && original_blt)
     SpiderPauseSurface_Begin(borderless_back,borderless_primary,
                              &pause_present_rect,&pause_content_rect,
-                             (SpiderPauseBltFn)original_blt);
+                             (SpiderPauseBltFn)original_blt,
+                             pause_gamepad_available);
+  pause_previous_foreground=(GetForegroundWindow()==hwnd);
   while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1) {
     while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
       if(msg.message==WM_QUIT) {
         PostQuitMessage((int)msg.wParam);
         SpiderPauseAny_End();
+        SpiderGamepadUI_PauseWake_End();
+        SpiderSDL3Probe_PauseWake_End();
         SpiderPauseSurface_End();
         SpiderFocusDSound_Resume();
         SpiderFocusMedia_Resume();
@@ -2482,8 +2543,34 @@ static void pause_at_flip_if_background(void) {
       DispatchMessageA(&msg);
     }
     if(!IsWindow(hwnd)) break;
+    /* The normal Flip-based focus monitor cannot run until this custom
+     * PAUSED wait ends. On return to game foreground, balance its temporary
+     * background ShowCursor(TRUE) NOW, before any wake input. Otherwise the
+     * desktop cursor lingers over PAUSED until the game resumes.
+     * Call the already-existing focus transition monitor exactly once
+     * per foreground change. Do not touch the game's own mouse gate. */
+    {
+      int pause_now_foreground=GetForegroundWindow()==hwnd;
+      if(pause_now_foreground!=pause_previous_foreground) {
+        SpiderInputFocus_OnFlip(InterlockedCompareExchange(&flip_count,0,0));
+        pause_previous_foreground=pause_now_foreground;
+      }
+    }
     if(SpiderPauseAny_Completed())
       InterlockedExchange(&pause_latched,0);
+    else {
+      unsigned resumed_buttons=pause_sdl3_available?
+        SpiderSDL3Probe_PauseWake_Poll(hwnd):
+        SpiderGamepadUI_PauseWake_Poll(hwnd);
+      if(resumed_buttons) {
+        char line[155];
+        snprintf(line,sizeof(line),
+          "FOCUS-PAUSE: gamepad digital press/release consumed buttons=0x%03X (selected SDL3 or verified DI8; no native key injection)",
+          resumed_buttons);
+        log_line(line);
+        InterlockedExchange(&pause_latched,0);
+      }
+    }
     if(InterlockedCompareExchange(&pause_latched,0,0)!=1) break;
     /* No show/hide transitions: a frozen DirectDraw frame naturally
      * stays behind unrelated Xfce/Windows applications during Alt+Tab. */
@@ -2497,17 +2584,36 @@ static void pause_at_flip_if_background(void) {
     log_line(line);
   }
   SpiderPauseAny_End();
+  SpiderGamepadUI_PauseWake_End();
+  SpiderSDL3Probe_PauseWake_End();
   SpiderPauseSurface_End();
   SpiderFocusDSound_Resume();
   SpiderFocusMedia_Resume();
   log_line("FOCUS-PAUSE: explicit resume or window destroyed");
   pause_log_foreground_owner(hwnd,GetForegroundWindow(),"resume-foreground-state");
   pause_log_resume_focus(hwnd);
+  SpiderAltLatch_OnPauseReturn(hwnd);
   InterlockedExchange(&pause_in_progress,0);
 }
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
   SpiderQuickExitF12_ObserveEngineState(count,InterlockedCompareExchange(&menu_upscale_active,0,0)==1); /* passive native mode+2D renderer tracing */
+  /* Game-native 0x006151F8 is GameFMV_Active in the SHA-verified
+   * original executable. A post-menu Bink can play with menu_upscale=0.
+   * The 3D stage must use the original menu-mode switch, NOT the optional
+   * gameplay_4x3_active flag (which is false in widescreen Auto).
+   * Gamepad pulse release runs before any focus-loss pause blocks Flip. */
+  /* Poll SDL3 before the UI bridge to avoid one stale frame of a previous
+   * controller's synthetic keys after a Start ownership switch. Actual
+   * native DI handoff remains AFTER unplug guard installation below. */
+  SpiderSDL3Probe_OnFlip(count,game_hwnd);
+  SpiderGamepadUI_OnFlip(game_hwnd,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
+      InterlockedCompareExchange(&fov_game_height,0,0)>0,
+    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
+    ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
+      native_pause43_visible_near_flip(count)));
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
@@ -2527,6 +2633,42 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       SpiderInputFocus_OnFlip(count);
   }
   SpiderDI8Retry_OnFlip(count);
+  SpiderNativeUnplug_OnFlip(count);
+  /* Restore temporary SDL3 3D remap BEFORE the original device changes;
+   * otherwise the canonical native hot-swap would see a custom map. */
+  SpiderSDL3GameplayLive_PreNativeOnFlip(game_hwnd);
+  /* SDL3 selection was pumped before UI. Native device replacement now
+   * runs after its SHA-guarded disconnect patch, on the same Flip thread. */
+  SpiderNativeReconnect_OnFlip(count,game_hwnd);
+  /* Separate default-OFF Left Alt-only native focus-latch experiment.
+   * Actual confirmed external loss/return is recorded by FOCUS-PAUSE,
+   * never inferred from mere SDL3 sample-eligibility transitions. */
+  SpiderAltLatch_OnFlip(game_hwnd,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
+      InterlockedCompareExchange(&fov_game_height,0,0)>0,
+    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
+    ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
+      native_pause43_visible_near_flip(count) ||
+      InterlockedCompareExchange(&pause_latched,0,0)==1 ||
+      InterlockedCompareExchange(&pause_in_progress,0,0)==1));
+  /* Experimental SDL3 semantic action probe is strictly read-only and
+   * runs only AFTER the game-owned DirectInput handoff is verified. */
+  SpiderSDL3GameplayPlan_OnFlip(game_hwnd,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
+      InterlockedCompareExchange(&fov_game_height,0,0)>0,
+    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
+    ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
+      native_pause43_visible_near_flip(count) ||
+      InterlockedCompareExchange(&pause_latched,0,0)==1 ||
+      InterlockedCompareExchange(&pause_in_progress,0,0)==1));
+  /* Passive, bounded post-hotplug heartbeat: menu -> 3D -> menu. */
+  SpiderNativeReconnect_ObserveMode(count,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
+      InterlockedCompareExchange(&fov_game_height,0,0)>0,
+    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u);
   /* Observe the physical F9 press early; the game's screenshot code can
    * run between two Flip calls, so surface hooks also sample F9. */
   if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
@@ -2980,7 +3122,33 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
       log_line("DISPLAY-NATIVE: WARNING game HWND unavailable before virtual config bootstrap; fallback to current primary monitor until SetCooperativeLevel");
     }
   }
-  SpiderCfg_BootstrapGameRead();
+  /* Preview opt-in only: acquire an unambiguous Sony DS4 with the
+   * real game HWND before the original config loader consumes Spidey.cfg.
+   * A failed preflight leaves the previous working UI bridge untouched. */
+  {
+    HWND early=spider_find_game_window_before_ddraw();
+    int mapped=0,xbox_mapped=0;
+    if(early && SpiderGamepadUI_PreparePS1(early))
+      mapped=SpiderCfg_EnablePS1Preview();
+    if(early && SpiderGamepadUI_PrepareXbox360(early))
+      xbox_mapped=SpiderCfg_EnableXbox360Preview();
+    SpiderCfg_BootstrapGameRead();
+    SpiderCfg_InstallModernKeyboardDefaults();
+    SpiderGamepadUI_ArmPS1ReadOnly();
+    SpiderGamepadUI_ArmXbox360ReadOnly();
+    if(mapped) {
+      if(SpiderCfg_PS1BootstrapLoaded())
+        SpiderGamepadUI_ActivatePS1();
+      else
+        SpiderCfg_CancelPS1Preview();
+    }
+    if(xbox_mapped) {
+      if(SpiderCfg_Xbox360BootstrapLoaded())
+        SpiderGamepadUI_ActivateXbox360();
+      else
+        SpiderCfg_CancelXbox360Preview();
+    }
+  }
   HRESULT hr=original_create(guid,out,iid,outer);
   if(SUCCEEDED(hr) && out && *out && iid && IsEqualGUID(iid,&IID_IDirectDraw7)) {
     void ***object=(void ***)*out;
@@ -3083,21 +3251,51 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  /* The supported executable is already SHA-verified and the logger is
+   * enabled only with [Debug] Log=1. Read-only inventory, never DllMain. */
+  if(debug_log_enabled)SpiderSystemDiagnostics_Log(log_line);
+  /* Passive profile setup only: independent DI8 discovery begins later,
+   * on the game's real window and Flip thread, never under loader lock.
+   * All original gameplay controls are preserved. */
+  {
+    char input_ini[MAX_PATH];
+    if(spider_path_ini_a(input_ini,sizeof(input_ini))) {
+      SpiderGamepadUI_Init(input_ini,log_line);
+    } else {
+      log_line("GAMEPAD-UI: OFF missing executable-relative INI path");
+    }
+  }
   SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
    * No COM-vtable interception. The actual patch is delayed to Flip #120. */
   SpiderDI8Retry_Init(log_line);
+  /* Experimental: the original game exits on joystick DIERR_UNPLUGGED.
+   * Opt-in, SHA-pinned, game-thread-only mitigation; no native rebind yet. */
+  {
+    char ini[MAX_PATH];
+    if(spider_path_ini_a(ini,sizeof(ini))) {
+      SpiderNativeUnplug_Init(ini,log_line);
+      SpiderNativeReconnect_Init(ini,log_line);
+      SpiderSDL3Probe_Init(ini,log_line);
+      SpiderSDL3GameplayPlan_Init(ini,log_line);
+      SpiderAltLatch_Init(ini,log_line);
+    } else {
+      SpiderNativeUnplug_Init(NULL,log_line);
+      SpiderNativeReconnect_Init(NULL,log_line);
+      SpiderSDL3Probe_Init(NULL,log_line);
+      SpiderSDL3GameplayPlan_Init(NULL,log_line);
+      SpiderAltLatch_Init(NULL,log_line);
+    }
+  }
   SpiderFocusMedia_Init(log_line); /* Opt-in native Bink pause. */
   SpiderFocusDSound_Init(log_line); /* Separately opt-in game-owned secondary buffers only. */
   SpiderPauseSurface_Init(log_line); /* Pause drawn into the game backbuffer; no HWND overlays. */
   {
-    char ini[MAX_PATH],*slash;
-    DWORD n=GetModuleFileNameA(NULL,ini,MAX_PATH);
+    char ini[MAX_PATH];
     /* Native WAV final-sector fix is built in; no INI key is needed. */
     int pkr_index=0,pkr_play_trace=0,pkr_heli_declick=0,pkr_loader_tail=1;
-    if(n && n<MAX_PATH && (slash=strrchr(ini,'\\'))!=NULL){
-      strcpy(slash+1,"SpiderMan2k1Fix.ini");
+    if(spider_path_ini_a(ini,sizeof(ini))) {
       pkr_index=GetPrivateProfileIntA("Debug","ExperimentalPKRAudioIndex",0,ini)==1;
       pkr_play_trace=GetPrivateProfileIntA("Debug","ExperimentalPKRAudioPlayTrace",0,ini)==1;
       pkr_heli_declick=GetPrivateProfileIntA("Debug","ExperimentalAudioHeli1Declick",0,ini)==1;
@@ -3124,13 +3322,9 @@ static DWORD initialize_body(LPVOID unused) {
   }
   log_line("DISPLAY: 4:3 menu and intro presentation enabled");
   {
-    char path[MAX_PATH],ini[MAX_PATH],*slash;
-    DWORD n=GetModuleFileNameA(NULL,path,sizeof(path));
+    char ini[MAX_PATH];
     int fps=30;
-    if (n && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL &&
-        (size_t)(slash-path)+strlen("SpiderMan2k1Fix.ini")+1<sizeof(path)) {
-      memcpy(ini,path,n+1);
-      strcpy(ini+(slash-path)+1,"SpiderMan2k1Fix.ini");
+    if(spider_path_ini_a(ini,sizeof(ini))) {
       {
         char fps_value[48],*end=NULL;
         long number;
@@ -3233,11 +3427,8 @@ static DWORD initialize_body(LPVOID unused) {
   /* Always-on virtual CFG: signature-gated EXE IAT hook.
    * The hook never executes for an unverified EXE. */
   {
-    char game_path[MAX_PATH],ini_path[MAX_PATH],*slash;
-    DWORD n=GetModuleFileNameA(NULL,game_path,sizeof(game_path));
-    if(n>0 && n<sizeof(game_path) && (slash=strrchr(game_path,'\\'))!=NULL) {
-      memcpy(ini_path,game_path,n+1);
-      strcpy(ini_path+(slash-game_path)+1,"SpiderMan2k1Fix.ini");
+    char ini_path[MAX_PATH];
+    if(spider_path_ini_a(ini_path,sizeof(ini_path))) {
       /* Virtual Spidey.cfg is a permanent feature for the verified EXE.
        * Keep all signature checks and safe fallback inside SpiderCfg_Install. */
       SpiderCfg_Install(ini_path,log_line);
@@ -3246,11 +3437,8 @@ static DWORD initialize_body(LPVOID unused) {
   /* The EXE checksum and the exact four menu instructions were checked.
    * Only the displayed values and two menu input paths are changed. */
   {
-    char game_path[MAX_PATH],ini_path[MAX_PATH],*slash;
-    DWORD n=GetModuleFileNameA(NULL,game_path,sizeof(game_path));
-    if(n>0 && n<sizeof(game_path) && (slash=strrchr(game_path,'\\'))!=NULL) {
-      memcpy(ini_path,game_path,n+1);
-      strcpy(ini_path+(slash-game_path)+1,"SpiderMan2k1Fix.ini");
+    char ini_path[MAX_PATH];
+    if(spider_path_ini_a(ini_path,sizeof(ini_path))) {
       SpiderDisplayMenu_Install(display_resolution_setting,display_aspect_setting,log_line);
     }
   }

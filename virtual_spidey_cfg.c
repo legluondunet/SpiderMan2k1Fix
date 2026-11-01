@@ -14,6 +14,9 @@
 #include "display_policy.h"
 #include "ini_validation.h"
 #include "ini_recovery.h"
+#include "spider_fix_paths.h"
+#include "ps1_gamepad_mapping.h"
+#include "xbox360_gameplay_mapping.h"
 
 /* Always-on virtual configuration hooks ONLY imports of verified SpideyPC.exe (never patch
  * kernel32/msvcrt globally). Unknown bytes remain byte-for-byte preserved.
@@ -28,6 +31,15 @@
 static BYTE cfg[CFG_SIZE];
 static CRITICAL_SECTION guard;
 static int ready=0,dirty=0;
+static int ps1_preview_active=0,xbox360_preview_active=0;
+static volatile LONG ps1_bootstrap_loaded=0;
+/* Independent of the legacy Sony/Xbox preview overlay: the SDL3 native
+ * owner must be allowed to read the CURRENT game's real keyboard table
+ * after any authenticated game CRT load, including a two-controller boot
+ * with both old preview flags disabled. */
+static volatile LONG native_cfg_bootstrap_loaded=0;
+static unsigned ps1_rejected_user_changes=0;
+static uint32_t original_joystick[SPIDER_PS1_BUTTON_COUNT]={0};
 /* Only block saving if automatic INI repair fails. */
 static int ini_writes_permitted=1;
 static char ini_file[MAX_PATH];
@@ -198,6 +210,86 @@ static const char *encode_key(DWORD scan) {
   }
   return NULL;
 }
+/* Original PCINPUT_RestoreDefaultKeyboardSettings at 0x50A520 copies
+ * 0x70 bytes from gDefaultKeyboardMappings=0x53C87C into the CURRENT
+ * gKeyboardMappings=0x568398. Never patch the currently customized
+ * mappings: change only the source defaults once, after CRT bootstrap.
+ * Revert to the modern factory template (arrows, Space, X/C/V/D/F/G)
+ * instead of the game's obsolete NUMPAD presets. The six letter keys
+ * use our existing Auto/Off keyboard layout mapping, so French AZERTY
+ * retains the same user-visible defaults.
+ *
+ * Strict exact original 11 action-mask + old-key preflight and readable
+ * committed memory checks. Unknown game binary or modified originals:
+ * refuse the patch, leaving all keyboard settings intact. */
+int SpiderCfg_InstallModernKeyboardDefaults(void) {
+  static const uint32_t masks[11]={
+    1u,2u,4u,8u,0x10u,0x20u,0x40u,0x80u,0x100u,0x200u,0x400u};
+  static const uint32_t legacy[11]={
+    0xC8u,0xD0u,0xCBu,0xCDu,0x50u,0x4Du,0x4Bu,
+    0x48u,0x47u,0x51u,0x49u};
+  uint32_t modern[11];
+  const uintptr_t table=0x0053C87Cu;
+  MEMORY_BASIC_INFORMATION mbi;
+  DWORD old,ignored;
+  unsigned i;
+  char msg[200];
+  if((uintptr_t)GetModuleHandleA(NULL)!=0x00400000u)return 0;
+  if(VirtualQuery((const void *)table,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)) ||
+     table<(uintptr_t)mbi.BaseAddress ||
+     table-(uintptr_t)mbi.BaseAddress>=mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(table-(uintptr_t)mbi.BaseAddress)<0x70u) {
+    report("SPIDEY-KEYBOARD-DEFAULT: REFUSED unreadable original default keyboard map");
+    return 0;
+  }
+  for(i=0;i<11u;i++) {
+    uint32_t mask,scan;
+    memcpy(&mask,(const void *)(table+i*8u),4u);
+    memcpy(&scan,(const void *)(table+i*8u+4u),4u);
+    if(mask!=masks[i] || scan!=legacy[i]) {
+      snprintf(msg,sizeof(msg),
+        "SPIDEY-KEYBOARD-DEFAULT: REFUSED original defaults mismatch slot=%u mask=0x%lX scan=0x%lX",
+        i,(unsigned long)mask,(unsigned long)scan);
+      report(msg);
+      return 0;
+    }
+    /* Also guard against template drift on the four arrow keys and
+     * Space. Six gameplay letters are layout-aware below. */
+    modern[i]=(uint32_t)spidey_cfg_factory[action_offsets[i]] |
+              ((uint32_t)spidey_cfg_factory[action_offsets[i]+1u]<<8) |
+              ((uint32_t)spidey_cfg_factory[action_offsets[i]+2u]<<16) |
+              ((uint32_t)spidey_cfg_factory[action_offsets[i]+3u]<<24);
+  }
+  if(modern[0]!=0xC8u || modern[1]!=0xD0u ||
+     modern[2]!=0xCBu || modern[3]!=0xCDu ||
+     modern[4]!=0x39u)return 0;
+  modern[5]=letter_scan('X',0x2Du);
+  modern[6]=letter_scan('C',0x2Eu);
+  modern[7]=letter_scan('V',0x2Fu);
+  modern[8]=letter_scan('D',0x20u);
+  modern[9]=letter_scan('F',0x21u);
+  modern[10]=letter_scan('G',0x22u);
+  if(!VirtualProtect((void *)table,0x70u,PAGE_READWRITE,&old)) {
+    report("SPIDEY-KEYBOARD-DEFAULT: REFUSED could not unlock source default table");
+    return 0;
+  }
+  for(i=0;i<11u;i++)
+    memcpy((void *)(table+i*8u+4u),&modern[i],4u);
+  if(!VirtualProtect((void *)table,0x70u,old,&ignored)) {
+    /* Restore original, if possible; do not leave unknown partial state. */
+    DWORD writable;
+    if(VirtualProtect((void *)table,0x70u,PAGE_READWRITE,&writable)) {
+      for(i=0;i<11u;i++)
+        memcpy((void *)(table+i*8u+4u),&legacy[i],4u);
+      VirtualProtect((void *)table,0x70u,old,&ignored);
+    }
+    report("SPIDEY-KEYBOARD-DEFAULT: FAILED page protection restore; rollback attempted");
+    return 0;
+  }
+  report("SPIDEY-KEYBOARD-DEFAULT: ACTIVE original 2001 NUMPAD restore replaced by modern factory arrows/Space/X,C,V,D,F,G; user mappings and Keyboard menu editable");
+  return 1;
+}
 static void load_keyboard(void) {
   unsigned i; char value[64],msg[140]; DWORD code;
   for(i=0;i<11;i++) {
@@ -280,7 +372,8 @@ static void load_joystick(void) {
 static int save_joystick(void) {
   unsigned i; char name[32];
   for(i=0;i<7;i++) {
-    DWORD code=get_word(joystick_offsets[i]);
+    DWORD code=(ps1_preview_active || xbox360_preview_active)?
+      (DWORD)original_joystick[i]:get_word(joystick_offsets[i]);
     if(code<=127) snprintf(name,sizeof(name),"BUTTON%lu",(unsigned long)code);
     else snprintf(name,sizeof(name),"0x%08lX",(unsigned long)code);
     if(!WritePrivateProfileStringA("Joystick",joystick_actions[i],name,ini_file)) return 0;
@@ -371,6 +464,9 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "[Debug]\r\n"
     "; 1 = write SpiderMan2k1Fix.log; 0 = no log (default).\r\n"
     "Log=0\r\n"
+    "; PASSIVE manual RT/LT test: log Xbox DirectInput raw axes in 3D.\r\n"
+    "; Only enable for a short controlled trigger test; modifies no inputs.\r\n"
+    "Xbox360TriggerProbe=0\r\n"
     "\r\n"
     "[Display]\r\n"
     "; Auto = monitor aspect ratio, 4:3 = original presentation.\r\n"
@@ -382,6 +478,46 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "[Input]\r\n"
     "; Auto = OS keyboard layout; Off = original physical QWERTY positions.\r\n"
     "KeyboardLayout=Auto\r\n"
+    "; Mouse input is permanently disabled IN-GAME (keyboard/gamepad only).\r\n"
+    "; Windows/Linux desktop pointer behavior remains unchanged.\r\n"
+    "; ControllerProfile: Auto detects a single Sony DualShock4 or Xbox360 pad.\r\n"
+    "; Xbox360 (045E:028E etc.) A/B menu bridge is experimental.\r\n"
+    "; The Sony PS1 preview never applies to Xbox controllers.\r\n"
+    "; With verified Xbox360 profile, in-game Joystick bindings are read-only.\r\n"
+    "; Keyboard menu remains editable; native Joystick button mapping is unchanged.\r\n"
+    "; Other gamepads keep native controls; Off disables this UI bridge.\r\n"
+    "ControllerProfile=Auto\r\n"
+    "; EXPERIMENTAL Xbox gameplay preview (default OFF): PS1-equivalent layout.\r\n"
+    "; A=Jump, B=Kick, X=Punch, Y=quick Web, LB=Aim, RB=Zipline.\r\n"
+    "; RT=Swing is TARGET ONLY: RT is an axis, NOT confirmed as BUTTON9.\r\n"
+    "; Until RT is measured, BUTTON9 remains a temporary digital Swing fallback.\r\n"
+    "; Start/Back (BUTTON7/6) reserved for Pause; only A/B measured on Holtek.\r\n"
+    "; Requires a single verified Xbox + native Joystick readonly + CRT read.\r\n"
+    "; Does not change personal [Joystick] bindings or [Internal] RawHex.\r\n"
+    "ControllerXbox360Preview=0\r\n"
+    "; Experimental RT (negative lZ) -> native Swing keyboard action held.\r\n"
+    "; Requires ControllerXbox360Preview=1, game-owned keyboard Swing scan,\r\n"
+    "; and exact tested Holtek trigger polarity; OFF by default.\r\n"
+    "ControllerXbox360RTSwing=0\r\n"
+    "; EXPERIMENTAL: 1 prevents a native game exit when a joystick is unplugged.\r\n"
+    "; Does not reconnect the original native joystick; defaults to 0.\r\n"
+    "ExperimentalNativeJoystickUnplugGuard=0\r\n"
+    "; EXPERIMENTAL: 1 tries game-owned Sony DS4 rebind after hotplug.\r\n"
+    "; Requires ExperimentalNativeJoystickUnplugGuard=1; defaults to 0.\r\n"
+    "ExperimentalNativeJoystickReconnect=0\r\n"
+    "; EXPERIMENTAL: after a DS4/Xbox native reconnect, switch the seven\r\n"
+    "; canonical game-owned button actions in RAM only (not user INI).\r\n"
+    "; Requires both native unplug guard and reconnect; defaults OFF.\r\n"
+    "ExperimentalNativeJoystickMappingSwap=0\r\n"
+    "; Legacy UI bridge only: Cross/Options = Enter. PS1 preview uses Cross only.\r\n"
+    "ControllerEnterButtons=Both\r\n"
+    "; In 2D menus Circle = Escape/Back; Share or Off are alternatives.\r\n"
+    "; Triangle stays native for scripted 3D cinematic skipping.\r\n"
+    "ControllerBackButton=Circle\r\n"
+    "; Legacy UI bridge only: OPTIONS can Pause if no native action uses\r\n"
+    "; BUTTON9 (factory Zipline does). PS1 preview uses SHARE instead.\r\n"
+    "; Existing saved gameplay bindings are never overwritten.\r\n"
+    "ControllerPauseButton=Options\r\n"
     "\r\n"
     "[Audio]\r\n"
     "; All levels are 0..100 percent, with lossless raw values kept below.\r\n";
@@ -462,13 +598,7 @@ write_fail:
 
 
 static int SpiderCfg_IniPath(char *ini,size_t cap) {
-  char exe[MAX_PATH],*slash; DWORD n=GetModuleFileNameA(NULL,exe,sizeof(exe));
-  size_t prefix;
-  if(!n||n>=sizeof(exe)||!(slash=strrchr(exe,'\\')))return 0;
-  prefix=(size_t)(slash-exe)+1;
-  if(prefix+strlen("SpiderMan2k1Fix.ini")+1>cap)return 0;
-  memcpy(ini,exe,prefix);
-  strcpy(ini+prefix,"SpiderMan2k1Fix.ini");return 1;
+  return spider_path_ini_a(ini,cap);
 }
 int SpiderCfg_EnsureDefaultIni(void (*logger)(const char *)) {
   char ini[MAX_PATH];
@@ -668,17 +798,59 @@ static int SpiderCfg_RepairIni(const char *ini,const SpiderIniResult *check,
 done:
   free(values);return ok;
 }
+/* Report only a known section and a strictly safe, short ASCII key.
+ * The validator's issue text also contains user-controlled INI material:
+ * never copy arbitrary issue text, section names or values to a public log. */
+typedef struct { void (*logger)(const char *); unsigned reported; } SpiderCfgUnknownIssues;
+static int SpiderCfg_SafeIniLabel(const char *s,size_t len) {
+  size_t i;
+  if(!len)return 0;
+  for(i=0;i<len;i++) {
+    unsigned char c=(unsigned char)s[i];
+    if(!((c>='a'&&c<='z') || (c>='A'&&c<='Z') ||
+         (c>='0'&&c<='9') || c=='_'))return 0;
+  }
+  return 1;
+}
+static void SpiderCfg_LogUnknownIniIssue(void *context,unsigned line,
+                                         int error,const char *detail) {
+  SpiderCfgUnknownIssues *state=(SpiderCfgUnknownIssues *)context;
+  const char *start,*close,*end;
+  char section[32],key[64],message[200];
+  size_t slen,klen;
+  if(!state || !state->logger || state->reported>=12 ||
+     error || !detail || strncmp(detail,"Unknown key [",13)!=0)return;
+  start=detail+13;
+  close=strstr(start,"] ");
+  if(!close)return;
+  end=strstr(close+2," ignored (kept on disk)");
+  if(!end || strcmp(end," ignored (kept on disk)")!=0)return;
+  slen=(size_t)(close-start);
+  klen=(size_t)(end-(close+2));
+  if(slen>=sizeof(section) || klen>=sizeof(key) ||
+     !SpiderCfg_SafeIniLabel(start,slen) ||
+     !SpiderCfg_SafeIniLabel(close+2,klen))return;
+  memcpy(section,start,slen);section[slen]=0;
+  memcpy(key,close+2,klen);key[klen]=0;
+  if(!SPIDER_INI_IN(section,spider_ini_sections))return;
+  snprintf(message,sizeof(message),
+    "INI-CHECK: unknown key [%s] %s at line %u (value omitted)",
+    section,key,line);
+  state->logger(message);
+  state->reported++;
+}
 static void SpiderCfg_ClearOldValidationReport(const char *ini);
 void SpiderCfg_ValidateCurrentIni(void (*logger)(const char *)) {
   char ini[MAX_PATH],backup[MAX_PATH]="",summary[540];
   unsigned recovered=0;
   SpiderIniResult check,rebuilt;
+  SpiderCfgUnknownIssues issues={logger,0};
   if(!SpiderCfg_IniPath(ini,sizeof(ini))) {
     ini_writes_permitted=0;
     if(logger)logger("INI-REPAIR: cannot resolve path; saving disabled");
     return;
   }
-  check=SpiderIni_Validate(ini,NULL,NULL);
+  check=SpiderIni_Validate(ini,logger?SpiderCfg_LogUnknownIniIssue:NULL,&issues);
   if(!check.errors && !check.warnings) {
     unsigned obsolete=deprecated_ini_count(ini);
     if(!obsolete) {
@@ -776,6 +948,8 @@ static void load_settings(void) {
   load_keyboard_layout();
   load_keyboard();
   load_joystick();
+  /* This snapshot precedes any temporary PS1 profile overlay. */
+  spider_ps1_snapshot(cfg,CFG_SIZE,original_joystick);
   load_audio();
   /* Never let GetPrivateProfileIntA turn an invalid string into brightness=0. */
   {
@@ -793,6 +967,141 @@ static void load_settings(void) {
     CFG_SIZE,configured_resolution,configured_aspect,policy_width,policy_height,
     (unsigned long)get_word(12));
   report(msg);
+}
+/* Called exactly once on the verified game thread just BEFORE the
+ * signature-checked native CRT bootstrap; the independent DS4 device must
+ * already be acquired. Disabled by default, even in Auto mode.
+ * The original 7 joystick bindings are never changed in the user's INI. */
+int SpiderCfg_EnablePS1Preview(void) {
+  char line[220];
+  unsigned i;
+  if(!ready)return 0;
+  EnterCriticalSection(&guard);
+  if(ps1_preview_active) {LeaveCriticalSection(&guard);return 1;}
+  if(xbox360_preview_active) {LeaveCriticalSection(&guard);return 0;}
+  if(!spider_ps1_apply(cfg,CFG_SIZE)){
+    LeaveCriticalSection(&guard);
+    return 0;
+  }
+  ps1_preview_active=1;
+  for(i=0;i<SPIDER_PS1_BUTTON_COUNT;i++){
+    snprintf(line,sizeof(line),
+      "SPIDEY-CFG: PS1-PREVIEW runtime action=%s previous=BUTTON%lu temporary=BUTTON%lu; original INI preserved",
+      joystick_actions[i],(unsigned long)original_joystick[i],
+      (unsigned long)spider_ps1_buttons[i]);
+    report(line);
+  }
+  LeaveCriticalSection(&guard);
+  return 1;
+}
+/* Independent Xbox 360-compatible RAM-only mapping: same exact seven
+ * verified bytes and user snapshot as PS1. Only an authenticated early
+ * hardware+read-only-menu preflight may call this method. */
+int SpiderCfg_EnableXbox360Preview(void) {
+  unsigned i;
+  char line[235];
+  if(!ready)return 0;
+  EnterCriticalSection(&guard);
+  if(xbox360_preview_active) {LeaveCriticalSection(&guard);return 1;}
+  if(ps1_preview_active || !spider_xbox360_apply(cfg,CFG_SIZE)) {
+    LeaveCriticalSection(&guard);return 0;
+  }
+  xbox360_preview_active=1;
+  for(i=0;i<SPIDER_PS1_BUTTON_COUNT;i++) {
+    snprintf(line,sizeof(line),
+      "SPIDEY-CFG: XBOX360-PREVIEW action=%s previous=0x%08lX temporary=BUTTON%lu; saved INI/RawHex preserved",
+      joystick_actions[i],(unsigned long)original_joystick[i],
+      (unsigned long)spider_xbox360_buttons[i]);
+    report(line);
+  }
+  LeaveCriticalSection(&guard);
+  return 1;
+}
+int SpiderCfg_Xbox360BootstrapLoaded(void) {
+  return SpiderCfg_PS1BootstrapLoaded();
+}
+/* The game's own active Swing keyboard DIK scan, not a guessed key.
+ * Guard against unsafe/ambiguous keyboard codes, including shared
+ * actions, Enter, Escape and extended/non-plain scan-code encodings.
+ * Caller must have proved a live Xbox startup profile; this routine
+ * does NOT modify keyboard bindings or the config image.
+ */
+unsigned SpiderCfg_Xbox360SwingScan(void) {
+  unsigned i,scan;
+  if(!ready || !SpiderCfg_PS1BootstrapLoaded())return 0;
+  EnterCriticalSection(&guard);
+  if(!xbox360_preview_active) {LeaveCriticalSection(&guard);return 0;}
+  scan=(unsigned)get_word(60);
+  if(scan<2u || scan>0x7fu || scan==0x1cu || scan==0x0fu ||
+     scan==0x0eu || scan==0x38u || scan==0x39u || scan==0x1du) {
+    LeaveCriticalSection(&guard);return 0;
+  }
+  for(i=0;i<10u;i++)if((unsigned)get_word(action_offsets[i])==scan) {
+    LeaveCriticalSection(&guard);return 0;
+  }
+  LeaveCriticalSection(&guard);
+  return scan;
+}
+
+/* The controller may change from Sony to Xbox AFTER the original CRT
+ * bootstrap. In that case the startup Xbox preview is (correctly) OFF,
+ * but an opt-in native 7-action swap can prove the CURRENT Xbox mapping.
+ * Read Swing from ORIGINAL live keyboard action table, never the cached
+ * virtual cfg overlay: users may have edited Keyboard since startup.
+ * Also reject duplicate/unsafe DIK values, same checks as the original
+ * startup helper. This function does NOT validate a controller; its
+ * caller MUST first prove canonical Xbox native action ownership. */
+unsigned SpiderCfg_Xbox360SwingScanLive(void) {
+  const uintptr_t table=0x00568398u;
+  static const uint32_t masks[11]={
+    1u,2u,4u,8u,16u,32u,64u,128u,256u,512u,1024u};
+  MEMORY_BASIC_INFORMATION mbi;
+  unsigned scans[11],i,scan;
+  uintptr_t base;
+  if(!ready || !SpiderCfg_NativeConfigLoaded() ||
+     (uintptr_t)GetModuleHandleA(NULL)!=0x00400000u)return 0;
+  if(VirtualQuery((const void *)table,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT ||
+     (mbi.Protect&(PAGE_NOACCESS|PAGE_GUARD)))return 0;
+  base=(uintptr_t)mbi.BaseAddress;
+  if(table<base || table-base>=mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(table-base)<0x70u)return 0;
+  for(i=0;i<11u;i++) {
+    uint32_t mask,value;
+    memcpy(&mask,(const void *)(table+i*8u),4u);
+    memcpy(&value,(const void *)(table+i*8u+4u),4u);
+    if(mask!=masks[i])return 0;
+    scans[i]=(unsigned)value;
+  }
+  scan=scans[10];
+  if(scan<2u || scan>0x7fu || scan==0x1cu || scan==0x0fu ||
+     scan==0x0eu || scan==0x38u || scan==0x39u || scan==0x1du)
+    return 0;
+  for(i=0;i<10u;i++)if(scans[i]==scan)return 0;
+  return scan;
+}
+void SpiderCfg_CancelXbox360Preview(void) {
+  if(!ready)return;
+  EnterCriticalSection(&guard);
+  if(xbox360_preview_active && !SpiderCfg_Xbox360BootstrapLoaded()) {
+    spider_ps1_restore(cfg,CFG_SIZE,original_joystick);
+    xbox360_preview_active=0;
+    report("SPIDEY-CFG: XBOX360-PREVIEW ROLLBACK native game bootstrap unverified; original seven bindings restored");
+  }
+  LeaveCriticalSection(&guard);
+}
+/* If the authenticated original game reload did not happen, undo the
+ * speculative overlay immediately. Never leave half of a PS1 profile
+ * enabled after the native bootstrap failed. */
+void SpiderCfg_CancelPS1Preview(void) {
+  if(!ready)return;
+  EnterCriticalSection(&guard);
+  if(ps1_preview_active && !SpiderCfg_PS1BootstrapLoaded()) {
+    spider_ps1_restore(cfg,CFG_SIZE,original_joystick);
+    ps1_preview_active=0;
+    report("SPIDEY-CFG: PS1-PREVIEW ROLLBACK native game bootstrap unverified; original seven bindings restored");
+  }
+  LeaveCriticalSection(&guard);
 }
 /* Called from the existing pre-fullscreen HWND/monitor probe. For Auto this
  * corrects the initial primary-monitor fallback on multi-display systems.
@@ -820,6 +1129,7 @@ void SpiderCfg_ObserveNativeMonitor(unsigned width,unsigned height) {
 }
 static int save_settings(void) {
   char hex[CFG_SIZE*2+1],value[80],msg[150];
+  BYTE saved_cfg[CFG_SIZE];
   unsigned i;
   if(!dirty) return 1;
   if(!ini_writes_permitted) {
@@ -828,7 +1138,12 @@ static int save_settings(void) {
   }
   /* Never let in-game changes to screen size or color depth persist. */
   apply_locked_display();
-  for(i=0;i<CFG_SIZE;i++) sprintf(hex+i*2,"%02X",(unsigned)cfg[i]);
+  memcpy(saved_cfg,cfg,CFG_SIZE);
+  if(ps1_preview_active || xbox360_preview_active)
+    spider_ps1_restore(saved_cfg,CFG_SIZE,original_joystick);
+  /* The PS1 gameplay preview must NEVER overwrite a player's persistent
+   * joystick preferences in either RawHex or the named [Joystick] keys. */
+  for(i=0;i<CFG_SIZE;i++) sprintf(hex+i*2,"%02X",(unsigned)saved_cfg[i]);
   if(!WritePrivateProfileStringA("Internal","RawHex",hex,ini_file)) goto fail;
   snprintf(value,sizeof(value),"%lu",(unsigned long)get_word(12));
   if(!WritePrivateProfileStringA("Display","Brightness",value,ini_file)) goto fail;
@@ -836,7 +1151,11 @@ static int save_settings(void) {
   if(!save_joystick()) goto fail;
   if(!save_audio()) goto fail;
   dirty=0;
-  report("SPIDEY-CFG: game keyboard/joystick/audio/brightness saved; resolution and color depth locked by [Display] policy");
+  report(ps1_preview_active?
+    "SPIDEY-CFG: user settings saved; original joystick bindings preserved (PS1 preview RAM only)":
+    xbox360_preview_active?
+    "SPIDEY-CFG: user settings saved; original joystick bindings preserved (XBOX360 preview RAM only)":
+    "SPIDEY-CFG: game keyboard/joystick/audio/brightness saved; resolution and color depth locked by [Display] policy");
   return 1;
 fail:
   snprintf(msg,sizeof(msg),"SPIDEY-CFG: ERROR saving INI Win32=%lu (data still in memory)",(unsigned long)GetLastError());
@@ -908,6 +1227,20 @@ static BOOL WINAPI hooked_WriteFile(HANDLE h,LPCVOID buffer,DWORD len,LPDWORD do
   if(len){
     DWORD old_w=get_word(0),old_h=get_word(4),old_depth=get_word(8);
     memcpy(cfg+v->pos,buffer,len);v->pos+=(LONG)len;dirty=1;writes++;
+    if(ps1_preview_active || xbox360_preview_active) {
+      /* Without the separately opt-in, original joystick-menu read-only
+       * patch, the game's
+       * own live action array may still change. Always preserve the seven
+       * PS1 virtual bindings and the saved user's original preferences. */
+      BYTE attempted[CFG_SIZE];
+      memcpy(attempted,cfg,CFG_SIZE);
+      if(ps1_preview_active)spider_ps1_apply(cfg,CFG_SIZE);
+      else spider_xbox360_apply(cfg,CFG_SIZE);
+      if(memcmp(attempted,cfg,CFG_SIZE) && ps1_rejected_user_changes++<8u)
+        report(ps1_preview_active?
+          "SPIDEY-CFG: PS1-PREVIEW protected seven virtual joystick bindings from original-game config write; native Joystick read-only is separately gated":
+          "SPIDEY-CFG: XBOX360-PREVIEW protected seven temporary virtual joystick bindings on save; user INI untouched");
+    }
     if(old_w!=get_word(0) || old_h!=get_word(4) || old_depth!=get_word(8))
       report("SPIDEY-CFG: in-game screen/depth write intercepted; authoritative display settings restored");
     apply_locked_display();
@@ -1056,6 +1389,8 @@ static int __cdecl hooked_fclose(FILE *f) {
     fflush(f);rewind(f);n=fread(candidate,1,CFG_SIZE,f);
     if(n==CFG_SIZE) {
       if(memcmp(cfg,candidate,CFG_SIZE)) {memcpy(cfg,candidate,CFG_SIZE);dirty=1;}
+      /* Same fixed-RAM protection for the rare imported stdio route. */
+      if(ps1_preview_active) spider_ps1_apply(cfg,CFG_SIZE);
       apply_locked_display();
       report("SPIDEY-CFG: virtual fclose captured stdio settings");
       save_settings();
@@ -1179,6 +1514,12 @@ unsigned SpiderCfg_Install(const char *path,void (*logger)(const char *)) {
  * All pointers and instruction bytes are hard-coded for the SHA-verified
  * SpideyPC.exe. No EXE patch or undocumented cross-CRT FILE* exchange.
  */
+int SpiderCfg_PS1BootstrapLoaded(void){
+  return InterlockedCompareExchange(&ps1_bootstrap_loaded,0,0)==1;
+}
+int SpiderCfg_NativeConfigLoaded(void) {
+  return InterlockedCompareExchange(&native_cfg_bootstrap_loaded,0,0)==1;
+}
 void SpiderCfg_BootstrapGameRead(void) {
   typedef void *(__cdecl *GameFopen)(const char *,const char *);
   typedef size_t (__cdecl *GameFread)(void *,size_t,size_t,void *);
@@ -1236,6 +1577,14 @@ void SpiderCfg_BootstrapGameRead(void) {
    * applies the locked resolution/depth without modifying game executable. */
   game_load();
   EnterCriticalSection(&guard);
+  if(opens>opened && reads>served) {
+    InterlockedExchange(&native_cfg_bootstrap_loaded,1);
+    report("SPIDEY-CFG: NATIVE CONFIG LOADED authenticated original game CRT read; SDL3 may inspect live keyboard bindings (legacy previews independent)");
+  }
+  /* Preserve the original narrower PS1/Xbox preview handshake exactly:
+   * only those opt-in overlays claim that their RAM bytes were consumed. */
+  if((ps1_preview_active || xbox360_preview_active) && opens>opened && reads>served)
+    InterlockedExchange(&ps1_bootstrap_loaded,1);
   snprintf(msg,sizeof(msg),
     "SPIDEY-CFG: BOOTSTRAP game loader returned: virtual opens +%lu reads +%lu; configured=%ux%u depth=32 [%s]",
     (unsigned long)(opens-opened),(unsigned long)(reads-served),

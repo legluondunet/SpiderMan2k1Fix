@@ -53,7 +53,7 @@ static const char *const spider_ini_sections[]={"Debug","System","Display","HUD"
 /* F10 is the hotkey. F12-named keys are legacy INI aliases ONLY. */
 /* ExperimentalAudioLoaderTail is a hidden manual override. WAV repair defaults
  * ON; recognize pre-existing values without adding it to generated INIs. */
-static const char *const spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts","ExperimentalPKRAudioIndex","ExperimentalPKRAudioPlayTrace","ExperimentalAudioHeli1Declick","ExperimentalAudioLoaderTail"};
+static const char *const spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts","ExperimentalPKRAudioIndex","ExperimentalPKRAudioPlayTrace","ExperimentalAudioHeli1Declick","ExperimentalAudioLoaderTail","Xbox360TriggerProbe","NativeMenuReturnProbe","NativeJoystickSwapProbe","SDL3GameplayTrace","SDL3BindingTrace","SDL3GameplayPlan","SDL3NativeStateTrace","SDL3NativeSourceTrace","SDL3CutsceneReaderTrace"};
 /* Keep all pre-existing INIs valid without regenerating saved controls. */
 static const char *const spider_ini_system[]={"QuickExitF10","ExperimentalQuickExitF10In3D","ExperimentalQuickExitF10InNewGameMovie","ExperimentalQuickExitF10InNewGameComic","ExperimentalQuickExitF10InIntroStills","QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic","ExperimentalQuickExitF12InIntroStills"};
 static const char *const spider_ini_display[]={
@@ -71,16 +71,19 @@ static const char *const spider_ini_display[]={
 static const char *const spider_ini_hud[]={
   "HUDWidescreenFix","NativeESC4x3","NativeMotif4x3","NativeCursor4x3"
 };
-/* Retain two obsolete COM keys for backward compatibility: old user INIs
- * must NOT be treated as invalid and regenerated, losing saved controls.
- * The runtime refuses both unsafe features regardless of their values.
- * Neither obsolete key is generated or documented as an active option. */
+/* Retain legacy keys (including MouseEnabled and
+ * ControllerAutoDisableMouse) so old user INIs are not regenerated,
+ * losing saved controls. MouseEnabled=1 is always IGNORED at runtime,
+ * and no mouse-override key is generated in new INIs. */
 static const char *const spider_ini_input[]={
   "KeyboardLayout","DirectInputReacquire","DisableWindowsGhosting","PauseOnFocusLoss","PauseBinkOnFocusLoss","PauseDirectSoundOnFocusLoss","PauseOverlay","PauseDim","PauseDimOpacity","PauseKey",
   "RestoreCursorOnFocusLoss","ExperimentalFocusTrace","ExperimentalDI8EntryTrace",
-  "ExperimentalAltTabReacquire","ExperimentalDI8CreateDeviceTrace"
+  "ExperimentalAltTabReacquire","ExperimentalAltLatchRecovery","ExperimentalDI8CreateDeviceTrace",
+  "ExperimentalGamepadStart","ControllerProfile","ControllerEnterButtons","ControllerBackButton","ControllerPauseButton","ControllerPS1Preview","ControllerXbox360Preview","ControllerXbox360RTSwing","ControllerPS1OptionsSkip","ControllerPS1DeepStartProbe","ControllerPS1DisableNativeStart","ControllerPS1ReadOnlyJoystick","ControllerAutoDisableMouse","MouseEnabled","ControllerPS1QuitTrace","ControllerPS1PostQuitGuard","ControllerPS1InputFlightRecorder","ControllerPS1TransitionEdgeOwnership","ExperimentalNativeJoystickUnplugGuard","ExperimentalNativeJoystickReconnect","ExperimentalNativeJoystickMappingSwap","ExperimentalSDL3Probe","ExperimentalSDL3NativeOwner","ExperimentalSDL3ControllerSetup","ExperimentalSDL3ContextBridge","ExperimentalSDL3GameplayBindings","ExperimentalSDL3XboxRTSwing"
 };
-static const char *const spider_ini_audio[]={"MusicSFXLevel","VoiceLevel","MovieLevel","Stereo"};
+/* Preserve the audio-routing prototype key in old INIs without enabling
+  * its suspended Windows endpoint hook on this SDL3 development branch. */
+static const char *const spider_ini_audio[]={"MusicSFXLevel","VoiceLevel","MovieLevel","Stereo","DualShock4AudioOutput"};
 static const char *const spider_ini_keys[]={"Up","Down","Left","Right","Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
 static const char *const spider_ini_joy[]={"Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
 static const char *const spider_ini_internal[]={"RawHex"};
@@ -156,6 +159,26 @@ static int spider_ini_value_valid(const char *section,const char *key,const char
            !spider_ini_icmp(value,"Physical") ||
            !spider_ini_icmp(value,"QWERTY") ||
            !spider_ini_icmp(value,"AZERTY");
+  if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"ControllerProfile"))
+    return !spider_ini_icmp(value,"Auto") ||
+           !spider_ini_icmp(value,"Off") ||
+           !spider_ini_icmp(value,"DualShock4") ||
+           !spider_ini_icmp(value,"Xbox360");
+  if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"ControllerEnterButtons"))
+    return !spider_ini_icmp(value,"Cross") ||
+           !spider_ini_icmp(value,"Options") ||
+           !spider_ini_icmp(value,"Both");
+  if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"ControllerBackButton"))
+    return !spider_ini_icmp(value,"Circle") ||
+           !spider_ini_icmp(value,"Share") ||
+           !spider_ini_icmp(value,"Off");
+  if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"ControllerPauseButton"))
+    return !spider_ini_icmp(value,"Options") ||
+           !spider_ini_icmp(value,"Off");
+  /* Deprecated experimental BUTTONn switch is accepted for old INIs
+   * but the runtime deliberately ignores it (without re-writing INI). */
+  if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"ExperimentalGamepadStart"))
+    return spider_ini_joystick(value);
   if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"PauseDimOpacity"))
     return spider_ini_uint(value,0,90);
   /* Deprecated key: continue accepting old INI values to avoid resetting

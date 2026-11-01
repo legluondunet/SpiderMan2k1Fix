@@ -15,6 +15,7 @@ void SpiderPauseSurface_Init(void (*log_fn)(const char *));
 int SpiderPauseSurface_Begin(IDirectDrawSurface7 *back,
                              IDirectDrawSurface7 *primary,
                              const RECT *primary_dest,const RECT *content_rect,
-                             SpiderPauseBltFn present);
+                             SpiderPauseBltFn present,
+                             int gamepad_available); /* snapshot at pause entry */
 void SpiderPauseSurface_End(void);
 #endif

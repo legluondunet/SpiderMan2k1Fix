@@ -10,6 +10,7 @@
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "spider_fix_paths.h"
 #include <shellapi.h> /* ExtractIconExW (native first executable icon group) */
 #include <ddraw.h>
 #include <stdio.h>
@@ -131,7 +132,7 @@ static int pause_draw_text(HDC dc,HFONT font,const wchar_t *label,
 }
 
 static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
-                                const RECT *content_rect) {
+                                const RECT *content_rect,int gamepad_available) {
   RECT canvas={0,0,0,0};
   RECT ui_rect={0,0,0,0};
   HFONT title=NULL,hint=NULL;
@@ -227,7 +228,10 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
                        canvas.top+esc_coordf(445.0f,ch,ESC_DESIGN_H),
                        RGB(240,47,69),4,0,0);
     if(ok)
-      ok=pause_draw_text(dc,hint,L"PRESS ANY KEY TO RESUME",
+      ok=pause_draw_text(dc,hint,
+                         gamepad_available?
+                           L"PRESS KEY OR GAMEPAD BUTTON TO RESUME":
+                           L"PRESS ANY KEY TO RESUME",
                          ui_rect.left,ui_width,
                          canvas.top+esc_coordf(545.0f,ch,ESC_DESIGN_H),
                          RGB(245,240,255),2,1,
@@ -240,8 +244,7 @@ static int pause_draw_composite(HDC dc,int width,int height,HDC tint_dc,
 }
 
 void SpiderPauseSurface_Init(void (*log_fn)(const char *)) {
-  char path[MAX_PATH],*slash,info[150];
-  DWORD n;
+  char path[MAX_PATH],info[150];
   pause_log=log_fn;
   /* Permanent PAUSED panel; only the background shade opacity is
    * configurable. The INI intentionally omits PauseDimOpacity by default.
@@ -250,12 +253,8 @@ void SpiderPauseSurface_Init(void (*log_fn)(const char *)) {
   enabled_dim=1;
   enabled_banner=1;
   opacity=60;
-  n=GetModuleFileNameA(NULL,path,sizeof(path));
-  if(n>0 && n<sizeof(path) && (slash=strrchr(path,'\\'))!=NULL &&
-     (size_t)(slash-path)+sizeof("SpiderMan2k1Fix.ini")<=sizeof(path)) {
-    strcpy(slash+1,"SpiderMan2k1Fix.ini");
+  if(spider_path_ini_a(path,sizeof(path)))
     opacity=GetPrivateProfileIntA("Input","PauseDimOpacity",60,path);
-  }
   /* The strict INI validator accepts 0..90. Fail closed on anomalous
    * values in a missing/unreadable file without affecting focus pause. */
   if(opacity<0 || opacity>90)opacity=60;
@@ -294,7 +293,8 @@ void SpiderPauseSurface_End(void) {
 int SpiderPauseSurface_Begin(IDirectDrawSurface7 *back,
                              IDirectDrawSurface7 *primary,
                              const RECT *primary_dest,const RECT *content_rect,
-                             SpiderPauseBltFn present) {
+                             SpiderPauseBltFn present,
+                             int gamepad_available) {
   DDSURFACEDESC2 desc;
   HDC dc=NULL,tint_dc=NULL;
   HBITMAP tint=NULL,tint_old=NULL;
@@ -333,7 +333,8 @@ int SpiderPauseSurface_Begin(IDirectDrawSurface7 *back,
   if(!tint_old || tint_old==(HBITMAP)HGDI_ERROR) {
     tint_old=NULL;goto fail;
   }
-  drawn=pause_draw_composite(dc,width,height,tint_dc,content_rect);
+  drawn=pause_draw_composite(dc,width,height,tint_dc,content_rect,
+                              gamepad_available);
   SelectObject(tint_dc,tint_old);tint_old=NULL;
   DeleteObject(tint);tint=NULL;
   DeleteDC(tint_dc);tint_dc=NULL;

@@ -1,7 +1,7 @@
 # SpiderMan2k1Fix
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
-[![Linux Wine / Proton compatible](https://img.shields.io/badge/Linux%20Wine%20%2F%20Proton-compatible-428b40?logo=linux&logoColor=white)](#installation-on-windows-and-linux-wine)
+[![Linux / Wine / Proton compatible](https://img.shields.io/badge/Linux%20%2F%20Wine%20%2F%20Proton-compatible-428b40?logo=linux&logoColor=white)](#installation-on-windows-and-linux-wine)
 
 SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spider-Man*, released by Activision in 2001. It improves compatibility with modern Windows systems and Linux/Wine while adding new features.
 
@@ -34,20 +34,24 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **Aspect ratio corrections:** Preserves the original proportions of menus, cinematics, introductory videos, comic-book artwork, and other 2D elements.
 - **Widescreen HUD:** Corrects the proportions and positioning of HUD elements, including health and web gauges, compass, mission objectives, boss health bars, and in-game pause menus. Tested at 1920×1080 (16:9) and 1920×1200 (16:10).
 - **FPS limiter:** Configurable frame-rate cap, set to **30 FPS by default**. Lower limits, such as 20 FPS, can be selected for timing-sensitive gameplay.
-- **Alt+Tab stability:** Automatically pauses the game when it loses focus, synchronizes video and audio playback, and restores keyboard and mouse input when gameplay resumes. Press any key after returning to the game to resume. Also restores the Windows desktop cursor when necessary.
+- **Alt+Tab stability:** Background game pause, synchronized Bink/DirectSound, and keyboard/gamepad resume. Press and release any key or an eligible selected controller button after returning. The OS desktop cursor is restored. See [focus details](docs/references/CONFIGURATION.md).
+- **Experimental SDL3 gamepad support:** Sony DS4 and Xbox 360-compatible native DirectInput ownership, selected controller handoff, Cross/A confirm, Circle/B cancel, and Xbox RT Swing. The combined build passed Windows 11 and Wine/Proton hardware tests on the documented devices; **experimental INI opt-ins are still required**. Other controllers and all custom bindings are not certified. See [SDL3 experiments](docs/references/SDL3_NATIVE_OWNER_EXPERIMENT.md) and [Windows/Wine results](docs/references/INTEGRATION_XBOX_MOUSE_ALT_FOCUS_ACCEPTANCE.md).
 - **Keyboard layouts:** Automatically detects the active keyboard layout and adapts the game's controls, keyboard labels, and cheat-code entry. The original game only supported QWERTY layouts.
+- **No game mouse:** Keyboard/gamepad only. Game cursor, clicks and polling are permanently off. Desktop pointer unaffected; legacy `MouseEnabled` ignored.
 - **DPI awareness:** Handles Windows display scaling to ensure correct window dimensions and rendering on high-DPI displays.
 - **Settings preservation:** Keyboard, gamepad, audio, and brightness settings are managed through `SpiderMan2k1Fix.ini`, with automatic recovery of invalid settings and a single rolling `.ini.old` backup. The original `Spidey.cfg` file is no longer needed.
-- **PNG screenshots:** Press **F9** to save lossless screenshots (`scrnNNNN.png`) in the game directory.
-- **Debug logging:** Can generate a `SpiderMan2k1Fix.log` diagnostic file to help troubleshoot compatibility issues. Enable it by setting `Log=1` in the INI file.
+- **PNG screenshots:** Press **F9** to save lossless screenshots (`scrnNNNN.png`) under `SpiderMan2k1Fix/screenshots/` (per-user fallback when the game folder is read-only).
+- **Debug logging:** With `[Debug] Log=1`, `SpiderMan2k1Fix.log` automatically includes a one-shot `SYS-INFO` configuration report: OS/Win32 version, detected Wine and Proton hints, Linux kernel as reported by Wine, CPU and core counts, RAM, GPU and D3D9 driver metadata, display resolution/count/refresh, available Linux desktop session hints, plus XInput/DirectInput gamepads. No extra log option is needed.
 - **Build identification:** Displays the patch version and source commit in the game's main menu and diagnostic logs.
 - **Original taskbar icon:** Restores the game's original icon in the Windows taskbar.
 
 Successfully tested on Windows 11 and Linux/Wine.
 
+The optional DS4 custom-binding bridge is **off by default**; see the [activation guide](docs/references/SDL3_NATIVE_OWNER_EXPERIMENT.md#experimental-ds4-only-live-3d-gameplay-profile).
+
 ## Bugs Resolved
 
-- **Alt+Tab crashes and input loss:** Fixed crashes and permanent loss of keyboard or mouse controls when switching between the game and other applications.
+- **Alt+Tab crashes and input loss:** Combined Windows 11 hardware tests passed 20/20 checks, including six actual gated repairs of the original stuck Left Alt with the optional, default-off `ExperimentalAltLatchRecovery=1`. Under Wine, absent or delayed background PAUSED is tolerated only if return works normally.
 - **Focus-loss instability:** Added automatic game pausing with synchronized video and audio playback, preventing gameplay and media synchronization issues while the game is in the background.
 - **Crash on exit:** Fixed a crash that could occur when quitting the game.
 - **Broken F9 screenshots on Windows:** Fixed screenshots that appeared entirely purple or contained no visible game graphics.
@@ -63,7 +67,21 @@ The following issues are inherited from the original game and remain unresolved:
 
 ## Known Issue in SpiderMan2k1Fix
 
-- **Delayed pause under Wine:** The automatic pause triggered by loss of focus may occasionally activate with a delay. This issue remains unresolved.
+- **Scene-dependent focus pause under Wine/Proton:** The custom background PAUSED screen can appear immediately in menus, be deferred until a cinematic transition, or appear late/not at all in 3D. This remains a tolerated limitation **only when** switching back retains working controls, graphics and sound without crashes. Windows 11 native focus pause passed the combined hardware tests.
+
+## Frequently Asked Questions
+
+### Why is there no mouse cursor inside the game?
+
+**Intentionally disabled.** Use the keyboard or a supported controller; the old `MouseEnabled=0/1` key cannot re-enable the original mouse. Do not duplicate this INI key.
+
+If the **Windows/Linux desktop cursor** disappears **after Alt+Tab**, that is a different fault. Enable `[Debug] Log=1`, note your OS/Wine version and attach the complete log.
+
+### Why is there no sound?
+
+First distinguish **total silence** from missing **music, movie audio, or effects**, and whether it occurs before or after Alt+Tab. Check the selected system output, system/app/game volume, supported executable, paired DLL versions and whether the INI passed validation.
+
+The game uses its original **DirectSound** engine. The built-in WAV/PKR correction fixes truncated/crackling effects, **not every cause of silence**. Do not enable unrelated experimental audio switches. If unresolved, reproduce with `[Debug] Log=1`, then report the full log and your Windows or Wine/Proton environment. See [troubleshooting details](docs/references/CONFIGURATION.md).
 
 ## Built-in native WAV audio correction
 
@@ -91,14 +109,19 @@ The former late DirectSound-buffer repair
 (`ExperimentalAudioPKRTailRestore`) has been removed. This built-in native
 loader correction is introduced in **SpiderMan2k1Fix v1.1.0**. The
 correction and duplicate-source repairs have been validated without
-audible crackling under Linux/Wine; native Windows gameplay testing of
-the new default-on configuration is still pending.
+audible crackling under Linux/Wine. On Windows 11, the combined integration
+test also confirmed **37/37 actively playing DirectSound voices** restored
+after focus return across four pauses. This verifies focus audio recovery on
+the tested setup; it does not establish compatibility with every audio device,
+game build or sound configuration.
 
 ## Installation on Windows and Linux (Wine)
 
 1. Install the original *Spider-Man (2001)* PC game.
 2. Download the latest version of SpiderMan2k1Fix from the [GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases) page.
-3. Extract `winmm.dll` and `SpiderMan2k1Fix.dll` into the game's installation directory, alongside `SpideyPC.exe`.
+3. Extract the archive **without flattening its folders** into the game's installation directory. Place only `winmm.dll` alongside `SpideyPC.exe`; the archive places `SpiderMan2k1Fix.dll`, **official Windows x86 `SDL3.dll`**, its license and the project documentation inside `SpiderMan2k1Fix/`.
+   - No separate SDL3 download is needed. SDL3 is dynamically loaded only when its experimental gamepad features are enabled; original native input remains the default.
+   - Do not move the original game's executable, data or resources.
 4. Launch the game normally under Windows.
 
    For Linux/Wine users, open a terminal in the game's installation directory and run:
@@ -117,11 +140,13 @@ Other versions or modified copies of the executable are not supported.
 
 **No original game files are included in this project.** You must provide your own legally obtained copy of the game.
 
+**Bundled open-source runtime:** Upcoming release archives include the unmodified **SDL3 3.4.18 Windows x86** `SDL3.dll` and its original zlib license as `SpiderMan2k1Fix/SDL3-LICENSE.txt`. Packaging checks the upstream archive SHA-256 and PE32/i386 architecture. SDL3 is a separate third-party project, not part of the original game.
+
 ## Configuration
 
 The original game's menus allow players to configure keyboard controls, gamepad bindings, audio levels, and other game settings.
 
-SpiderMan2k1Fix preserves these settings in a single configuration file, `SpiderMan2k1Fix.ini`, which is automatically created in the game's installation directory. This file replaces the original `Spidey.cfg`, which is no longer used.
+SpiderMan2k1Fix preserves these settings in `SpiderMan2k1Fix/SpiderMan2k1Fix.ini`, created automatically on first launch. On an upgrade, an existing root-level `SpiderMan2k1Fix.ini` is **copied without deletion** to this folder when there is no newer nested configuration. If the game folder is not writable, configuration, logs and screenshots use `%LOCALAPPDATA%/SpiderMan2k1Fix/`. This replaces the original `Spidey.cfg`, which is no longer used.
 
 The INI file also provides additional settings specific to SpiderMan2k1Fix:
 
@@ -186,13 +211,17 @@ Bug reports and contributions are welcome through [GitHub Issues](https://github
 
 **The patch does not load**
 
-Make sure both DLL files are located alongside the supported `SpideyPC.exe`. Under Linux/Wine, verify that the `winmm=n,b` DLL override is active.
+Make sure `winmm.dll` is alongside `SpideyPC.exe` and `SpiderMan2k1Fix.dll` is in `SpiderMan2k1Fix/`. Under Linux/Wine, verify that the `winmm=n,b` DLL override is active.
 
 **The game behaves unexpectedly**
 
 Enable diagnostic logging by setting `Log=1` under `[Debug]` in `SpiderMan2k1Fix.ini`, then try to reproduce the issue.
 
-If the problem persists, report it through [GitHub Issues](https://github.com/legluondunet/SpiderMan2k1Fix/issues) and attach the generated `SpiderMan2k1Fix.log` file.
+If the problem persists, report it through [GitHub Issues](https://github.com/legluondunet/SpiderMan2k1Fix/issues) and attach the generated `SpiderMan2k1Fix.log` file. **The log is written next to `SpideyPC.exe` in the game installation directory**, even when `SpiderMan2k1Fix.ini` and the main DLL are in `SpiderMan2k1Fix/`. If the game directory is read-only (such as an installation under `Program Files`), the log instead goes to `%LOCALAPPDATA%\\SpiderMan2k1Fix\\SpiderMan2k1Fix.log`. Existing logs are not moved or deleted.
+
+The startup `SYS-INFO` report distinguishes native Windows from Wine/Proton hints and includes the display used by the game. See [detailed system-log interpretation](docs/references/CONFIGURATION.md#reading-sys-info-and-focus-diagnostics); Wine/DXVK-reported driver versions are not necessarily your host GPU driver's version.
+
+This system report never intentionally collects usernames, computer names, email, IP addresses, personal directory paths, monitor serial numbers, controller serial numbers or Steam IDs. As with any diagnostic log, review the full file before sharing it publicly: unrelated older entries may contain file paths.
 
 ## Ideas for Future Versions
 

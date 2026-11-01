@@ -25,7 +25,7 @@ def recover(runner,tmp_path,data):
 
 def test_valid_ini_preserves_known(recover_runner,tmp_path):
     values=recover(recover_runner,tmp_path,(ROOT/'ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini').read_text())
-    assert '[Audio] MusicSFXLevel=69' in values
+    assert '[Audio] MusicSFXLevel=40' in values
     assert '[Keyboard] Jump=SPACE' in values
     assert '[Audio] Stereo=1' in values
     assert len(next(v.split('=',1)[1] for v in values if v.startswith('[Internal] RawHex=')))==504

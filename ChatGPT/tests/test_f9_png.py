@@ -50,7 +50,7 @@ def test_png_is_lossless_and_uses_os_encoder_without_new_static_dll_import():
     assert "0x000000ffu" in ENC
     assert "if(frame->lPitch<(LONG)row_bytes) {" in ENC
     assert 'SpiderF9Toast_PublishError(L"Invalid screenshot image layout")' in ENC
-    assert "GetModuleFileNameW(NULL,exe,MAX_PATH)" in ENC
+    assert "spider_path_screenshots_w(exe,MAX_PATH)" in ENC
     assert "f9_png.c" in BUILD
     assert "-lgdiplus" not in BUILD
 

@@ -27,10 +27,10 @@ def test_debug_example_and_exact_display_help():
 
 def test_logging_is_gated_in_both_dlls():
     assert 'GetPrivateProfileIntA("Debug","Log",0,path)==1' in core
-    assert 'if (!debug_log_enabled) return;' in core
-    assert 'GetPrivateProfileIntA("Debug","Log",0,path)!=1' in proxy
+    assert 'if(!debug_log_enabled)return;' in core
+    assert 'GetPrivateProfileIntA("Debug","Log",0,ini)!=1' in proxy
     assert 'SpiderMan2k1Fix-proxy.log' not in proxy
-    assert 'SpiderMan2k1Fix.log' in proxy
+    assert 'spider_path_log_a(path,sizeof(path))' in proxy
     assert 'debug_log_load_setting();' in core
 
 

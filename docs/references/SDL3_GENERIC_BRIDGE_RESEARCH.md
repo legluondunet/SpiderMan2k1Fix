@@ -1,0 +1,241 @@
+# Generic SDL3 gamepad bridge — design proposal (phase 0, read-only)
+
+Status: **research only**, no gameplay takeover and no native input patch.
+Issue: [#87](https://github.com/legluondunet/SpiderMan2k1Fix/issues/87).
+Experimental parent: [PR #80](https://github.com/legluondunet/SpiderMan2k1Fix/pull/80),
+`experiment/sdl3-native-input-owner`.
+This research branch is **stacked** on that branch; do not merge either branch
+into `main` without explicit user validation.
+
+## Problem, from real Windows 11 tests
+
+The live Windows DirectInput path is verified for the specific Sony DS4
+(`054C:09CC`) and wired Xbox 360 (`045E:028E`). Both can acquire menu
+ownership and run their own custom face-button mappings in 3D; Xbox RT Swing
+is separately guarded.
+
+A Sony DualShock 3 `054C:0268` appears to Windows DirectInput **and** SDL3
+(`PS3 Controller`), but the game does not yet accept it. The user's unplug /
+replug sequences during that session were intentional; no spontaneous
+disconnect failure is established. We must not label it unsupported by
+SDL3, or copy DS4 DirectInput button indices into its native game table.
+
+On Steam Deck, Steam Input / Proton may present a physical, virtual or
+keyboard-mapped device to a Windows game. Actual presented identity and
+analog behavior depend on configuration. We must test it rather than
+promise a specific VID:PID or claim universal compatibility today.
+
+## Three different things: device, candidate, game owner
+
+1. **SDL3-opened device**: a runtime *instance ID*, independent of vendor,
+   product, name or raw DirectInput indices. SDL3's normalized gamepad
+   buttons/axes are the input vocabulary. Unknown/zero VID/PID does not
+   by itself invalidate *passive* candidate selection.
+2. **SDL3-selected candidate**: at most one instance, chosen on a fresh
+   neutral-to-Start edge after foreground validation. A candidate is not
+   an authorization to modify the original 2001 DirectInput pointer.
+   Do not merge input from two devices. A previously connected or held
+   Start is never an eligible new edge.
+3. **Native game owner**: the **separately verified** device or future
+   authenticated generic input bridge. In the current code only known
+   DirectInput products with unique VID/PID and verified action indices
+   may be installed. The portable candidate policy must not change this.
+
+This separation prevents the exact bug where SDL3 would select an
+unsupported DS3 and the original native reconnect code would detach the
+working Xbox instead of delivering controller input. On an unsupported
+candidate, retain the last verified game owner until an actually safe
+generic-bridge handshake is implemented and tested.
+
+## Proposed runtime architecture (NOT IMPLEMENTED)
+
+```text
+  SDL3 handles, gamepad database, Steam Input virtual controller
+           |
+           v
+  normalized per-instance sample + stable semantic profile
+           |
+           v
+  one-candidate selection & input-context neutral/focus guard
+           |
+           +--> diagnostic / read-only action plan  [phase 0/1]
+           |
+           v
+  verified, single-owner transaction (not yet available)
+           |
+           v
+  game-native input reader or guarded virtual DI state  [phase 2]
+           |
+           v
+  original engine 3D analog + actions / menu / Bink / pause
+```
+
+SDL3 standardized button labels are spatial: south/east/west/north.
+They do **not** imply stable raw DirectInput button indices. SDL3's
+mapping database can be extended for unknown gamepads (see
+https://wiki.libsdl.org/SDL3/SDL_AddGamepadMapping), but that alone does
+not supply a safe way to drive the 2001 native engine.
+
+## Design constraints / exit criteria
+
+- Preserve **all** validated PR #80 behavior (DS4 native UI, Xbox custom
+  B/X and Y/A swaps, Xbox RT Swing, menu Circle/B close owner, hotplug,
+  Alt+Tab and pause). The generic bridge starts opt-in **OFF**.
+- The candidate can be any **opened** SDL3-mapped instance (including
+  DS3 or one with unknown VID/PID); for native game ownership, reject
+  until verified. Never use device name or guessed VID/PID as proof.
+- Replugging creates a new instance ID: a stale claim must be cleared,
+  and a fresh neutral→Start sequence must be required. A device Start
+  pressed during Alt+Tab cannot claim ownership on return.
+- Duplicate/virtual device exposures: do not concatenate their button
+  masks or analog axes. Verify which device actually generates SDL3
+  events and prefer explicit user selection; investigate physical ↔
+  Steam Input virtual duplication before introducing de-duplication.
+- The planned output bridge MUST have signed, SHA-guarded native
+  signatures, stable sample lifetime, a bounded game thread only,
+  supported axis ranges, noninvasive restoration, and explicit
+  emergency fallback to current game-owned DirectInput.
+- Never bridge a new controller to native input by synthesizing keyboard
+  only and call it feature-complete; that loses analog movement and
+  risks double injection. Keyboard can remain a clearly labeled
+  fallback through Steam Input if the user chooses it.
+- Separate profile *runtime identity* (SDL instance ID) from
+  *persistent identity* (validated stable SDL GUID/serial/path when
+  available, otherwise safe model fallback); preserve existing
+  `VID-PID.ini` custom profiles and atomic writes. The current
+  `sdl3_controller_profile.h` requires nonzero VID/PID; its migration
+  requires a versioned design, not a permissive one-line change.
+- Protect menu/cutscene timing and pause: never let a held Start or
+  Circle/B press leak through a dialog or focus boundary.
+
+## Phase 1 — first static audit of the genuine native joystick path
+
+**Source provenance:** these are cross-checked *existing repository*
+findings and source-level assertions, not a new binary disassembly or
+a Windows/Proton runtime observation. All addresses below refer only
+to the previously SHA-256-verified 32-bit `SpideyPC.exe`. They must be
+checked again before authorizing any new native instrumentation.
+
+| Existing component | Address / evidence | What this does **not** prove |
+| --- | --- | --- |
+| Native DirectInput8 factory | Global `0x006B7A30`, confirmed in `native_joystick_reconnect.c` | SDL3 can replace this COM object |
+| Game-owned native joystick | Global pointer `0x006B7A2C` | Its layout is interchangeable with an SDL3 gamepad |
+| Original joystick state data format | `0x0053D0F4`, 80-byte `DIJOYSTATE`, signature-gated by `valid_binary_layout()` | The game consumes all fields of DIJOYSTATE or supports SDL3 axes |
+| Original joystick reader entry guard | `0x00501E6D`, x86 `mov eax,[0x006B7A2C]; test eax,eax` validated by existing reconnect signature | Where every 3D action or axis read happens downstream |
+| Joystick X/Y normalization | Native axis offset `0` for `lX` at `0x005019E0`, offset `4` for `lY` at `0x00501A42`; configured absolute ±1000 by existing reconnect | How other axes, D-pad POV and triggers map into the engine |
+| Buffered native input | 16-entry `DIDEVICEOBJECTDATA` queue; original 32-button data format; pre-publish neutral/drain used by reconnect | A synthetic device can safely share the original native queue |
+| In-memory action assignment | `0x00568408`, **14 entries × 8 bytes** (mask + native button); actions slots **4–10**, parsed in `native_joystick_swap_probe.h` | The action table is the engine's full input representation |
+| Known live DS4/Xbox use | `sdl3_gameplay_live.c` changes **seven button numbers only** and restores exactly; native axes pass through unchanged | A generic arbitrary SDL3 controller can supply native axes as-is |
+
+The crucial unknown is **where the original game reads or consumes the
+`DIJOYSTATE` analog axes and 14 buffered button/action results**. Merely
+writing new seven-action button indices does not create a platform-
+independent input backend; it still reads a physical DirectInput device.
+The existing `0x00501E6D` signature is an entry checkpoint, **not an
+authenticated generic-input insertion point**.
+
+**Further source-verified detail (31 Oct, offline preparation):**
+`native_joystick_unplug.c` contains ten exact x86 site signatures
+from the original joystick reader. In particular:
+- `0x00501E79: FF 51 64` — the native game's **Poll** indirect COM
+  call through a vtable `+0x64` slot, followed by HRESULT comparisons
+  at `0x00501E7C` and `0x00501E83`.
+- `0x00501E9F: 8B 10 FF 52 1C` — an explicit vtable dereference and
+  **Acquire** indirect COM call at `0x00501EA1`.
+- `0x00501EA6` — comparison with `0x80070005`, and
+  `0x00501EBB` — existing nonfatal return. The prior unplug
+  guard special-cases disconnect HRESULTs here; these signatures are
+  *not* permission to replace the native COM interface.
+
+These verified source anchors narrow the reader's **Poll/Acquire**
+control-flow region; they still do **not identify** the entire state/
+event read or analog consumer. The undocumented regions and their
+potential branch conditions must be disassembled from the original EXE.
+
+An independent **offline tool** now exists:
+`ChatGPT/tools/inspect_spidey_native_reader.py`. It reads the exact
+supported retail EXE **without modifying it**; first requires the
+supported SHA-256, 1,507,328 bytes, PE32 x86 image base, reader null
+guard, ten known native signatures and the fourteen table masks.
+It then reports file-backed VA ranges, seven original action-button
+indices, 16-byte X/Y setup samples, and **candidate raw bytes** that
+could encode indirect COM calls (`GetDeviceState`,
+`GetDeviceData`, `Poll`, etc.) near the reader. These additional
+byte matches are explicitly **NOT disassembly** and may be false
+positives inside other instructions or inline data.
+
+Example, to use on a *locally owned* exact original EXE:
+
+```sh
+python ChatGPT/tools/inspect_spidey_native_reader.py /path/to/SpideyPC.exe > reader-inspection.json
+```
+
+The JSON report is **not generated in CI** because the original game
+binary is intentionally not stored in the repo. Offline CI tests use
+invalid samples and small synthetic data and prove SHA rejection and
+VA mapping, not actual game-reader behavior.
+
+**Next read-only experiment, to implement separately**:
+
+1. Disassemble the exact SHA-matched original binary around
+   `0x00501E6D`, identify native `Poll`, `GetDeviceState`,
+   `GetDeviceData` calls, their stack buffers, and all consumers.
+   Inventory whether the 3D axes are sampled before or after action
+   transitions, and distinguish menu from playable 3D and Bink.
+2. Identify a bounded, SHA/signature-gated **observation-only**
+   instrumentation point on the game/Flip thread. Log entry/exit
+   geometry, read statuses, axis ranges and provenance **without**
+   replacing COM vtables, modifying DirectInput returns or forwarding
+   SDL3 states. Avoid live debugger pauses that perturb frame/input
+   timing.
+3. On Windows, compare native joystick samples and the corresponding
+   SDL3 normalized samples for **the same known validated DS4/Xbox**
+   first; only then repeat with a DS3 and Steam Input virtual controller
+   if available. Distinguish the user's deliberate replug from instability.
+4. Define a transaction for any future write: owner identity, frame
+   order, null/FFB guard, neutral-first, atomic validation, rollback,
+   and no duplicate native+SDL3 input. This is **architecture only**
+   until physical and binary evidence exists.
+
+No new runtime patch, controller mapping, gamepad compatibility
+claim or user test is justified yet. Phase 0 CI (707 tests, Windows
+x86 build) validated a **candidate policy only**, not an input bridge.
+
+## Phase-0 deliverables
+
+- Portable C99 **read-only** SDL3 candidate policy in
+  `sdl3_generic_candidate.h`, test-only: no Windows API, DirectInput,
+  SDL device opens or game memory writes. It uses the already tested
+  neutral-armed Start selector but *does not replace* the existing
+  owner state.
+- C99 tests proving DS3, unknown VID/PID and multiple identical models
+  can be candidates by instance ID **without** declaring a native owner;
+  hotplug and Alt+Tab invalidation; refusal of stale or competing
+  candidates; existing Xbox/DS4 ownership paths unchanged.
+- Future phase 1: read-only instrumentation of the actual game-native
+  input reader (3D and UI), first on Windows using the SHA-verified EXE,
+  then Proton. Inspect axes separately from digital action table.
+- Future phase 2: compare an authenticated native-reader bridge against
+  a sandboxed virtual DirectInput compatibility layer. Any direct input
+  mutation requires new explicit approval + hardware evidence.
+
+## Hardware acceptance matrix (future phases)
+
+| Scenario | Requirement |
+|---|---|
+| DS3 Windows `054C:0268` | SDL face buttons, Start, analog sticks, D-pad, L2/R2 observed; no unsupported native takeover |
+| DS4 + Xbox | Model-specific custom actions unchanged after 4 handoffs; Xbox RT Swing preserved |
+| DS3 + Xbox | Unsupported DS3 Start does not strand/disable Xbox on current PR #80 |
+| Steam Deck / Proton | Native controls recognized, analog moves in 3D, menu works, focus suspension, Steam Input duplicate exposure investigated |
+| Controller removal | No use-after-free, no held keys, no stale instance takeover; keyboard still works |
+| Profiles | Accurate user model/instance identity, no overwrite of legacy custom profiles |
+
+## Status protocol
+
+`RECOGNIZED_BY_SDL3` ≠ `CANDIDATE_SELECTED` ≠ `NATIVE_VERIFIED` ≠
+`GAMEPLAY_WORKS`.
+
+Only the first two are within scope of this read-only phase. No public
+promise of generic controller compatibility yet.
+
+legluondunet assisted by ChatGPT (OpenAI)
