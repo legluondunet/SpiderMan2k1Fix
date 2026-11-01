@@ -81,6 +81,7 @@ unsigned SpiderSDL3Probe_RawList(uint32_t *ids,unsigned capacity);
  * Never changes native game ownership or DirectInput state. */
 unsigned SpiderSDL3Probe_RawListAll(uint32_t *ids,unsigned *mapped_flags,
                                     unsigned capacity);
+int SpiderSDL3Probe_RawName(uint32_t id,char *name,size_t capacity);
 int SpiderSDL3Probe_RawBegin(uint32_t id,char guid[33],
                             char *name,size_t capacity);
 int SpiderSDL3Probe_RawRead(SpiderSDL3RawSample *out);
