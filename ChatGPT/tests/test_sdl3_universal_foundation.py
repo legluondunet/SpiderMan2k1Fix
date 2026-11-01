@@ -233,3 +233,13 @@ def test_raw_wizard_win32_focus_isolation_prevents_gamepad_combo_activation():
     assert "Ctrl+Shift+Esc" not in wizard
     assert "SDL3-RAW-WIZARD: capture UI ISOLATED" in wizard
     assert "SDL3-RAW-WIZARD: suppressed Win32 keyboard" in wizard
+    # The bottom Start/Restart, Skip and Close pushbuttons must ALL be
+    # disabled during calibration; otherwise Wine routes X/Circle to their
+    # current keyboard focus and triggers BN_CLICKED.
+    assert "for(id=RAW_BEGIN;id<=RAW_CLOSE;id++)" in wizard
+    assert "EnableWindow(button,capturing?FALSE:TRUE)" in wizard
+    assert "wizard_is_capturing(w)) {" in wizard
+    assert "SDL3-RAW-WIZARD: blocked Win32 control" in wizard
+    assert wizard.index("if(wizard_is_capturing(w)) {", wizard.index("case WM_COMMAND:")) < wizard.index("if(HIWORD(wp)==BN_CLICKED)", wizard.index("case WM_COMMAND:"))
+    assert "SetFocus(w->window)" in wizard
+
