@@ -139,16 +139,21 @@ confused with these experimental opt-in toggles.
   requested by **issue #89 on the draft branch only**;
   keep the issue open until the FAQ lands on the
   intended release/default branch.
-- The top of the draft `CHANGELOG.md` contains a
-  long historical **Unreleased** research diary with
-  superseded statements (e.g. that `MouseEnabled=1`
-  can re-enable the game mouse or that successful
-  physical controller/Alt testing is still pending).
-  Treat it as internal history until a separate
-  changelog editorial pass moves obsolete prototypes
-  to references or replaces misleading statements
-  with the verified final policy. Avoid deleting
-  forensic context without review.
+- **Changelog cleanup completed on the draft branch:**
+  [public `CHANGELOG.md`](../../CHANGELOG.md) now
+  preserves the exact already-published `main`
+  entries for **v1.1.0 and v1.0.0**, with a concise
+  explicitly **Unreleased/not merged** PR #91 section.
+  The prior **52,342-character** experimental research
+  journal is preserved **verbatim** under
+  [CHANGELOG_EXPERIMENT_HISTORY_PRE_20261101.md](CHANGELOG_EXPERIMENT_HISTORY_PRE_20261101.md),
+  marked historical rather than current policy.
+  [A regression test](../../ChatGPT/tests/test_changelog_release_boundary.py)
+  guards both historical release headings, opt-in
+  research boundaries and the presence of that archive.
+  Do not treat the older claims about re-enabling the
+  game mouse or untested Windows controller hardware
+  as current release behavior.
 - `RELEASE_NOTES_1.1.0.md` describes the already
   existing 1.1.0 audio release. **Do not silently
   repurpose or overwrite those release notes** for
