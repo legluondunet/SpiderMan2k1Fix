@@ -58,7 +58,7 @@ static void wizard_prompt(SpiderRawWizard *w) {
   snprintf(line,sizeof(line),
     "Step %u / %u: %s\r\n"
     "Release every control, then activate ONLY this one.\r\n"
-    "S: skip optional step   Esc: cancel   Enter: restart",
+    "S: skip optional   Esc: cancel   To restart: Tab to Restart, then Space",
     w->step+1,SPIDER_RAW_MAP_COUNT,prompts[w->step]);
   wizard_text(w,line);
 }
@@ -264,11 +264,11 @@ static LRESULT CALLBACK wizard_wndproc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL,
         20,49,610,220,hwnd,(HMENU)(uintptr_t)RAW_PAD,NULL,NULL);
       w->status=CreateWindowExA(0,"STATIC",
-        "Select ANY joystick, mapped or unmapped, then press Enter or Start.",
+        "Select ANY joystick, mapped or unmapped, then Enter to begin.",
         WS_CHILD|WS_VISIBLE,20,105,610,100,hwnd,
         (HMENU)(uintptr_t)RAW_STATUS,NULL,NULL);
       for(unsigned i=RAW_BEGIN;i<=RAW_CLOSE;i++) {
-        const char *caption=i==RAW_BEGIN?"Start / restart (Enter)":
+        const char *caption=i==RAW_BEGIN?"Start / Restart (Tab + Space)":
           i==RAW_SKIP?"Skip optional input (S)":"Cancel / close (Esc)";
         button=CreateWindowExA(0,"BUTTON",caption,
           WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,
@@ -366,7 +366,14 @@ void SpiderSDL3RawWizard_Open(HWND owner,void (*logger)(const char *)) {
         PostMessageA(hwnd,WM_CLOSE,0,0);continue;
       }
       if(msg.wParam==VK_RETURN) {
-        wizard_start(&w);continue;
+        /* A mapped joystick's physical Start may also synthesize
+         * VK_RETURN under Wine/XInput. Reinitializing the wizard here
+         * discards all bindings exactly when the Start action is captured.
+         * Enter is allowed only before capture begins; explicit restart
+         * remains reachable using the Start/Restart button via Tab+Space. */
+        if(!w.active_id)wizard_start(&w);
+        else if(w.log)w.log("SDL3-RAW-WIZARD: Enter ignored during capture (physical Start safe; use Tab+Space on Restart)");
+        continue;
       }
       if(msg.wParam=='S' && w.active_id &&
          w.step<SPIDER_RAW_MAP_COUNT) {
