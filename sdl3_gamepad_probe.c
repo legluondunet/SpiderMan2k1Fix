@@ -316,7 +316,7 @@ static int sdl_load(void) {
           const char *n=found.cFileName;
           size_t len=strlen(n);
           unsigned k;
-          int ok=(len==48u && memcmp(n,"SDL3-mapping-",13)==0 &&
+          int ok=(len==49u && memcmp(n,"SDL3-mapping-",13)==0 &&
                   strcmp(n+45,".txt")==0);
           if(found.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)continue;
           for(k=13u;ok && k<45u;k++)
