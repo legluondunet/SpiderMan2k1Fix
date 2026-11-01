@@ -718,7 +718,7 @@ int SpiderSDL3Probe_RawRegisterAndSave(const char *mapping,const char *guid) {
     if(handle==INVALID_HANDLE_VALUE)continue;
     bytes=(DWORD)strlen(mapping);
     if(!WriteFile(handle,mapping,bytes,&written,NULL) || written!=bytes ||
-       !WriteFile(handle,"\\r\\n",2u,&written,NULL) || written!=2u ||
+       !WriteFile(handle,"\r\n",2u,&written,NULL) || written!=2u ||
        !FlushFileBuffers(handle)) {
       CloseHandle(handle);DeleteFileA(temp);continue;
     }
