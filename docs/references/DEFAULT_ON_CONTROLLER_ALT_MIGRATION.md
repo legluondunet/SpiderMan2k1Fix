@@ -77,6 +77,62 @@ repair alone. More granular `=0` flags remain accepted, but
 must be tested together with the safety dependency chain.
 The keyboard remains usable without gamepads.
 
+## Wine/Proton evidence and movie-to-first-3D handoff follow-up
+
+The maintainer's real **Manjaro 7.1.13-2, Wine 11.0 /
+GE-Proton11-11** run `SpiderMan2k1Fix(20261101-124923).log`
+using the GitHub PR #92 test merge `6a13eb7` verified
+**four focus-loss/resume cycles**, **3/3 Bink pause/resume
+pairs**, **12/12 active DirectSound voices** stopped and
+restored once, **four verified DS4/Xbox original DirectInput
+rebinds**, a **balanced Xbox RT Swing down/up** and 3D-to-menu
+return. The maintainer additionally confirmed **all native
+3D controls on both controllers worked correctly after each
+Xbox ↔ DS4 transition**. Nine diagnostic refusals of optional
+SDL3 custom seven-action remapping had **no user-observed
+control failure**; preserve their fail-closed behavior.
+
+Under Wine, `ALT-LATCH: ARMED` was reported but the two
+sampled focus returns found the original Left Alt naturally
+cleared (`SKIPPED`); native Windows 11 tests did require
+actual `0x7F→0x80` repairs. The fix remains default-on for
+both platforms, subject to the original safety conditions.
+
+**Bink timing follow-up, not yet physically retested:**
+the Wine log shows `GAMEPAD-UI: SYNTHETIC ... Return DOWN`,
+then **`DEBUG-BINK-ENTER-HANDOFF timeout=1 waited_ms=1509`**,
+and only afterwards the synthetic `KEYUP`. The safety
+barrier waits for Enter/Space release on the first game-owned
+3D update, while the UI layer previously scheduled the
+synthetic Return release on the **next DirectDraw Flip**.
+Blocking the same game thread prevents that Flip from
+arriving, producing a bounded 1.5-second wait.
+
+The staging correction now releases **only its own pending,
+game-thread-owned synthetic Return** at the movie #4
+handoff, with verified foreground, visible game window
+and exact Return scan, **before** the original physical
+Enter/Space release check. It never resets real-key
+state, clears the game's input table, skips a script,
+injects a new key-down, or disables the 1500-ms
+safety timeout for a genuinely held key. This is
+covered by `ChatGPT/tests/test_bink_sdl3_return_handoff.py`
+in addition to the original movie-4/F10 regression
+tests. A new release binary must be checked with
+the same Bink-skip-to-3D scenario under Wine and
+native Windows, and should show the dedicated
+`GAMEPAD-UI: BINK-4-HANDOFF pending synthetic Return released`
+line, with `timeout=0` **when no physical key
+remains held**. No shorter wait is guaranteed if the
+player is physically holding Enter or Space.
+
+**INI provenance remains a separate question.** The
+maintainer confirmed each platform test started with
+a **fresh log**, which makes evidence independent;
+this does **not by itself establish** a factory-new
+`SpiderMan2k1Fix.ini` for the first-launch migration
+checks below.
+
 ## Mandatory new physical smoke test before release
 
 **This is new behavior**. Previous 20/20 Windows 11 checks were
