@@ -222,20 +222,74 @@ the instrumentation below.
   independently established by an unambiguous
   single-connected-device log.
 
-### Nonblocking configuration warning
+### INI auto-repair cause identified — resolved; no code change
 
-At startup (**12–20**) the loader reported
-`INI-REPAIR: fixed 1 error(s)` and regenerated a
-clean `SpiderMan2k1Fix.ini`, **recovering 54
-recognized settings** and preserving the prior file
-as `SpiderMan2k1Fix.ini.old`. No unknown setting
-was reported; the log **does not identify which
-input line or validation rule caused the error**.
-This did not prevent a successful runtime test,
-but a future optional inspection of `.ini.old`
-could clarify the one faulty line / unwanted
-regeneration before release. **Do not claim the
-old user configuration was byte-identically retained.**
+The user provided the **exact backed-up** `SpiderMan2k1Fix.ini(3).old`
+(120 physical lines) and regenerated/current
+`SpiderMan2k1Fix(20261101-104154).ini` (118 lines).
+
+The previous INI includes **two conflicting instances of the
+obsolete, permanently ignored** `[Input] MouseEnabled`:
+**line 34 `MouseEnabled=0`** (left from an older generated
+template with obsolete mouse-restoration comments) and
+**line 79 `MouseEnabled=1`** (appended during intentional
+negative migration testing). The exact C validator
+`ini_validation.h` lines 282–287 rejects any duplicate
+section+key with **one hard error**. Both values are
+individually valid booleans; the duplicate alone explains
+`INI-REPAIR: fixed 1 error(s), 0 unknown` at the 10:34
+startup. The former file was backed up; 54 recognized
+settings recovered. The repair generated one
+`MouseEnabled=0`, preserving the **first** value and
+removing the conflicting later key; the runtime disables
+the game mouse regardless of either value.
+
+A **new native Windows session**
+`SpiderMan2k1Fix(20261101-103731).log` (747 lines)
+explicitly reports **`INI-CHECK: valid SpiderMan2k1Fix.ini`**
+at line 12. This verifies the duplicate error is no longer
+present; **no change to the strict duplicate-key validation
+is warranted**. The earlier suggestion to append an old
+`MouseEnabled=1` without removing the preexisting key
+caused this test-configuration conflict; future negative
+tests should **replace the existing line or append it
+only if not already present**.
+
+The current user INI also differs from the backup in
+**`MusicSFXLevel=68→49`, `Stereo=0→1`,
+and four joystick action values (Jump, Kick, Punch,
+Swing)**, plus corresponding **RawHex**. The files
+alone **do not date or attribute** those later writes
+to the auto-repair versus in-game configuration edits,
+so do not claim all previous user settings stayed
+byte-for-byte identical or silently revert current
+controller bindings.
+
+#### Supplemental 10:37 native Windows input smoke test
+
+This later log is an **intro/menu-only** test; **five
+confirmed focus-pauses, five resumes** in foreground,
+**four Bink pause/resume pairs**, one real safe
+`ALT-LATCH: REPAIRED ... 0x7F->0x80` at line 681,
+permanent game mouse OFF, and OS cursor visible on
+background. **DSOUND had zero active voices** in
+these pauses and thus cannot independently add to
+the previously validated 37/37 playing-voice restores.
+
+Hardware events: original **DS4 `054C:09CC`**
+initially alone; the **Xbox 360 `045E:028E`**
+appeared and was selected by SDL3 while still in
+intro/menus; native owner switched DS4→Xbox at
+**605–606**. Later one secondary DirectInput
+`INPUTLOST` (HRESULT `0x8007001E`, **698–702**)
+was handled without unsafe Acquire: the stale
+secondary device was released, SDL3 detached Xbox,
+**native owner rebound to DS4 at 709–710**, and
+Xbox was rediscovered as SDL3 ID 3 at **718–720**.
+This is useful **recovery telemetry**, not by itself
+proof of flawless gamepad physical behavior after
+all hotplugs; the log ends in the menu, without 3D
+owner evidence or a normal process exit.
 
 ### Status
 
