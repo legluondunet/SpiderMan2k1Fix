@@ -86,6 +86,16 @@ the currently functioning implementation.
   has passed this physical capture test. **Restart/reload of the newly
   saved mapping has not yet been tested**; initial `loaded=0` on that
   launch preceded mapping creation. This does **not** validate gameplay.
+- **2026-11-01 second launch: saved mapping RELOAD CONFIRMED.**
+  User log `SpiderMan2k1Fix(20261101-163128).log` shows
+  `SDL3-MAPPINGS: persisted per-GUID user mappings loaded=1`,
+  followed by PS3 `054C:0268` detection. However read-only
+  `Test SDL3 inputs` toggled ON/OFF while controller buttons interacted
+  with enabled native Win32 dialog widgets. The diagnostic was not
+  usable. New diagnostic implementation locks **all** Win32 controls,
+  ignores synthetic keyboard events and clicks, exposes keyboard-only
+  Ctrl+Shift+T (stop) and Ctrl+Shift+Q (close), and logs both stick axes;
+  this corrective implementation **needs physical retest**.
 - **Game ownership still refused for this PS3** even after calibration:
   `SDL3-OWNER: START REFUSED unsupported native controller` and
   `SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous modal owner`.
@@ -94,7 +104,9 @@ the currently functioning implementation.
 
 ## Outstanding
 
-- Re-launch the game and prove saved per-GUID mapping reloads (`SDL3-MAPPINGS: ... loaded=1`) and is usable for SDL3 normalized input after restart.
+- Hardware retest the isolated SDL3 normalized input diagnostic
+  (mapping reload itself has been confirmed as `loaded=1`).
+  Confirm physical button/axis telemetry without unintended UI actions.
 - Improve analog-axis polarity, physical trigger neutrality and UI recovery.
 - Implement and verify the **universal 3D + menu + video + cutscene +
   still/Enter** context-aware bridge.
