@@ -510,6 +510,78 @@ int SpiderSDL3Probe_SelectedSample(uint32_t *instance,uint16_t *vid,
   *instance=id;*vid=v;*pid=p;
   return 1;
 }
+/* The player may hold physical Cross/A after skipping the New Game Bink.
+ * This is ALSO the native 3D Jump/scene-skip button. The preceding
+ * synthetic Return KEYUP cannot release a real gamepad button.
+ * At the verified movie #4 -> first native 3D input owner, read ONLY the
+ * already-open selected SDL3 SOUTH button (SDL_GAMEPAD_BUTTON_SOUTH=0).
+ * SDL updates and the game's DirectInput read stay on the same thread;
+ * native cutscene/joystick state is not edited or artificially released.
+ * A 5s watchdog prevents an indefinitely blocked engine with a stuck
+ * button. An actual timeout remains a reported unprotected edge case. */
+int SpiderSDL3Probe_NewGameBinkWaitSouthRelease(HWND hwnd) {
+  uint32_t id=0,live_id=0;
+  uint16_t vid=0,pid=0,live_vid=0,live_pid=0;
+  unsigned i;
+  void *pad=NULL;
+  DWORD started,elapsed;
+  char line[240];
+  if(!hwnd || !IsWindow(hwnd) || !IsWindowVisible(hwnd) ||
+     GetForegroundWindow()!=hwnd || !ready || !scanned ||
+     !sdl_pump || !sdl_update || !sdl_button || !sdl_connected ||
+     !sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId() ||
+     !SpiderSDL3Probe_NativeOwnerEnabled() ||
+     !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
+     !id || !SpiderNativeReconnect_SDL3SelectionReady(vid,pid))return 0;
+  if(!((vid==0x054cu &&
+        (pid==0x05c4u || pid==0x09ccu || pid==0x0ba0u)) ||
+       (vid==0x045eu && pid==0x028eu)))return 0;
+  for(i=0;i<num_pads;i++)
+    if(pads[i].id==id && pads[i].handle &&
+       sdl_connected(pads[i].handle)) {pad=pads[i].handle;break;}
+  if(!pad)return 0;
+  /* Unlike SelectedSample (which reads the last on-Flip state), a
+   * synchronous native input handoff must refresh physical SDL state. */
+  sdl_pump();sdl_update();
+  if(!sdl_connected(pad))return -1;
+  if(!sdl_button(pad,0))return 0;
+  snprintf(line,sizeof(line),
+    "SDL3-BINK-4-SOUTH: HELD at first 3D owner id=%lu VID:PID=%04X:%04X; waiting for physical Cross/A release (max 5000ms; game input untouched)",
+    (unsigned long)id,(unsigned)vid,(unsigned)pid);
+  say(line);
+  started=GetTickCount();
+  for(;;) {
+    if(!IsWindow(hwnd) || !IsWindowVisible(hwnd) ||
+       GetForegroundWindow()!=hwnd ||
+       !SpiderSDL3Probe_SelectedIdentity(&live_vid,&live_pid,&live_id) ||
+       live_id!=id || live_vid!=vid || live_pid!=pid ||
+       !sdl_connected(pad)) {
+      say("SDL3-BINK-4-SOUTH: ABORT owner/device/focus changed; no input mutation");
+      return -1;
+    }
+    Sleep(10);
+    sdl_pump();sdl_update();
+    if(!sdl_connected(pad)) {
+      say("SDL3-BINK-4-SOUTH: ABORT device detached; no input mutation");
+      return -1;
+    }
+    elapsed=(DWORD)(GetTickCount()-started);
+    if(!sdl_button(pad,0)) {
+      /* Let the original DirectInput driver observe the physical
+       * release before the game's very first scripted 3D input poll. */
+      Sleep(40);
+      snprintf(line,sizeof(line),
+        "SDL3-BINK-4-SOUTH: RELEASED after %lu ms; first native 3D input may continue",
+        (unsigned long)elapsed);
+      say(line);
+      return 1;
+    }
+    if(elapsed>=5000u) {
+      say("SDL3-BINK-4-SOUTH: TIMEOUT 5000ms SOUTH still held; unprotected skip possible; game input resumes");
+      return -2;
+    }
+  }
+}
 /* The original Flip thread is paused synchronously. Pump the selected
  * SDL3 handle on that same thread; never acquire or alter native DirectInput.
  * Foreground plus neutral->press->release are mandatory to resume. */
