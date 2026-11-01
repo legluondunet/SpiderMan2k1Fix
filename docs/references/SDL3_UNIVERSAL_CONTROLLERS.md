@@ -139,6 +139,18 @@ layout and the original CALL targets; if discovery or patching fails, it
 preserves the older native Joystick submenu with its manual preview row.
 There is no gameplay or DirectInput data mutation and no changes to F9/F10.
 
+**2026-11-01 hardware regression and exact PE-size fix:** In
+`SpiderMan2k1Fix(20261101-182610).log` (version
+`v1.1.0-5ef7ce9`, GE-Proton11-11), the direct-entry installer
+traced `REFUSED PE header magic=010B base=00400000
+size=02A0D000 sections=4`. The loose `SizeOfImage <= 0x02000000`
+preflight was incorrect: **the exact SHA-verified retail executable
+uses `0x02A0D000`**. The installer now checks this known size exactly
+and keeps the remaining PE, executable-section, original-call and
+rollback checks. Runtime original-call matching and entry behavior still
+need a fresh hardware test; if no verified caller matches, preserve
+the old list + preview fallback, with a precise log message.
+
 **Important:** runtime original-call enumeration and the original boolean
 value identifying Joystick have **not** yet been confirmed on real hardware
 for this bypass. Check `SDL3-DIRECT-ENTRY: ACTIVE`, then select Keyboard
