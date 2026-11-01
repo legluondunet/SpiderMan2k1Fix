@@ -24,11 +24,13 @@ def test_keyboard_counts_joystick_bitsets_and_reserved_focus_events(tmp_path):
         SpiderNativeSourceObserver o={0};
         keyboard[30]=0xff; keyboard[31]=0x01;
         keyboard[42]=0x80;
+        keyboard[0x38]=0xff; keyboard[0x0f]=0x01;
         joystick[0]=0xff; joystick[12]=0x02;
         joystick[31]=0x80;
         spider_native_source_decode(keyboard,joystick,&s);
         assert(s.keyboard_held==2&&s.keyboard_fresh==1);
         assert(s.keyboard_released==1);
+        assert(s.keyboard_alt_tab==5u);
         assert(s.joystick_held==((1u<<0)|(1u<<12)));
         assert(s.joystick_fresh==1u&&s.joystick_released==(1u<<31));
         assert(spider_native_source_changed(&o,&s,2u));
@@ -52,6 +54,18 @@ def test_keyboard_counts_joystick_bitsets_and_reserved_focus_events(tmp_path):
         assert(spider_native_source_changed(&o,&s,2u));
         assert(o.resume_samples==1u&&o.last_resume==1u);
         assert(o.emitted==SPIDER_SOURCE_MAX_CHANGES);
+        /* Four successive snapshots (even unchanged) after late focus. */
+        assert(spider_native_source_changed(&o,&s,2u));
+        assert(spider_native_source_changed(&o,&s,2u));
+        assert(spider_native_source_changed(&o,&s,2u));
+        assert(o.resume_samples==4u);
+        assert(!spider_native_source_changed(&o,&s,2u));
+        /* One more focus cycle can use the rest, never exceeding eight. */
+        assert(spider_native_source_focus_step(&o,0));
+        assert(spider_native_source_focus_step(&o,1));
+        for(unsigned k=0;k<4;k++)
+          assert(spider_native_source_changed(&o,&s,2u));
+        assert(o.resume_samples==8u);
         assert(!spider_native_source_changed(&o,&s,2u));
         while(o.focus_events<SPIDER_SOURCE_MAX_FOCUS_EVENTS)
           spider_native_source_focus_step(&o,!o.was_active);
@@ -92,6 +106,12 @@ def test_runtime_is_read_only_fail_closed_and_distinctly_opted_in():
     assert 'CORRELATION NOT PROVENANCE' in trace
     assert 'sample.merged_actions=game_held;' in trace
     assert 'postfocus=%u' in trace
+    assert 'alt-tab=%u' in trace
+    assert 'keyboard_alt_tab' in model
+    assert 'keyboard[0x38]' in model
+    assert 'keyboard[0xb8]' in model
+    assert 'keyboard[0x0f]' in model
+    assert 'o->pending_resume=active?4u:0u;' in model
     assert 'resume_samples>=8u' in trace
     assert 'merged_actions' in model and 'pending_resume' in model
     assert 'keyboard_held++' in model and 'keyboard_fresh++' in model
