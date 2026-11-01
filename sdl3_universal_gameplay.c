@@ -257,8 +257,10 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
       if(sample.axis[SPIDER_SDL3_AXIS_LEFTX]>12000)menu_buttons|=1u<<3;
       if((menu_buttons&3u)==3u)menu_buttons&=~3u;
       if((menu_buttons&12u)==12u)menu_buttons&=~12u;
-      if(menu_buttons&(1u<<5))pulse(0x01u,"menu Back");
-      else if(menu_buttons&(1u<<4))pulse(0x1cu,"menu Confirm");
+      if((menu_buttons&(1u<<5)) && !(menu_previous&(1u<<5)))
+        pulse(0x01u,"menu Back");
+      else if((menu_buttons&(1u<<4)) && !(menu_previous&(1u<<4)))
+        pulse(0x1cu,"menu Confirm");
     }
     (void)update_keys(menu_buttons&0x0fu,scans);
     menu_previous=menu_buttons;
