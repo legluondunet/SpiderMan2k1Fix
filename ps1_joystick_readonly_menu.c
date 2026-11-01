@@ -115,8 +115,13 @@ int SpiderSDL3_InstallDirectJoystickEntry(void (*logger)(const char *)) {
   if(nt->Signature!=IMAGE_NT_SIGNATURE ||
      nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR32_MAGIC ||
      nt->OptionalHeader.ImageBase!=0x00400000u ||
-     nt->OptionalHeader.SizeOfImage<0x00110000u ||
-     nt->OptionalHeader.SizeOfImage>0x02000000u ||
+     /* Original retail SHA-256-verified SpideyPC.exe has SizeOfImage
+      * 0x02A0D000 (42.05 MiB), measured in GE-Proton's PE header.
+      * The previous arbitrary 32 MiB upper bound rejected this exact
+      * supported image and silently retained the legacy Joystick menu.
+      * Demand the exact expected size rather than widening a loose cap;
+      * mismatched binaries fail closed. */
+     nt->OptionalHeader.SizeOfImage!=0x02A0D000u ||
      nt->FileHeader.NumberOfSections==0 ||
      nt->FileHeader.NumberOfSections>32) {
     snprintf(line,sizeof(line),
