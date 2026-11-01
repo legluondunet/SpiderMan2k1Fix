@@ -225,7 +225,7 @@ def test_screenshot_toast_matches_focus_pause_typography_and_camera_icon():
     assert "FW_BOLD,FALSE" in TOAST
     assert 'L"Arial"' in TOAST
     assert "toast_wrap_path(dc,path,max_path_w,starts,lengths)" in TOAST
-    assert "DT_END_ELLIPSIS" not in TOAST
+    assert "DrawTextW(" not in TOAST  # No ellipsis/truncation API
     assert "path+starts[i],lengths[i]" in TOAST
     # Camera is drawn with shared GDI primitives; no on-disk icon/fonts.
     assert "static BOOL toast_draw_camera_icon(" in TOAST
