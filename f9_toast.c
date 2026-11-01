@@ -97,19 +97,18 @@ void SpiderF9Toast_PublishError(const WCHAR *reason) {
 static int toast_max(int a,int b) {return a>b?a:b;}
 static int toast_min(int a,int b) {return a<b?a:b;}
 
-/* Same native GDI AlphaBlend technique as the ESC pause ribbon: tint only a
- * rounded region on the distinct DirectDraw staging surface. The rendered
- * scene behind the notification remains visible and F9's original backbuffer
- * is never changed. */
+/* Same GDI AlphaBlend technique as the ESC pause ribbon, now with a
+ * rectangular blue-violet panel flush to the LEFT edge of the screen.
+ * AlphaBlend uses panel bounds directly: no rounded corners or left rim.
+ * Drawing only touches the temporary presentation surface; PNG pixels
+ * and the original DirectDraw backbuffer are never modified. */
 #define SPIDER_F9_PANEL_ALPHA 165u /* ~65% opaque; 35% scene visible. */
 static BOOL toast_draw_translucent_panel(HDC dc,const RECT *panel) {
   const BLENDFUNCTION blend={AC_SRC_OVER,0,SPIDER_F9_PANEL_ALPHA,0};
   HDC tint=NULL;
   HBITMAP pixel=NULL,old_pixel=NULL;
   HBRUSH color=NULL;
-  HRGN rounded=NULL;
   RECT dot={0,0,1,1};
-  int saved=0;
   BOOL ok=FALSE;
   if(!dc || !panel || panel->right<=panel->left ||
      panel->bottom<=panel->top)return FALSE;
@@ -117,25 +116,18 @@ static BOOL toast_draw_translucent_panel(HDC dc,const RECT *panel) {
   if(!tint)goto done;
   pixel=CreateCompatibleBitmap(dc,1,1);
   color=CreateSolidBrush(RGB(50,50,160));
-  rounded=CreateRoundRectRgn(panel->left,panel->top,panel->right,
-                             panel->bottom,8,8);
-  if(!pixel || !color || !rounded)goto done;
+  if(!pixel || !color)goto done;
   old_pixel=(HBITMAP)SelectObject(tint,pixel);
   if(!old_pixel || old_pixel==(HBITMAP)HGDI_ERROR) {
     old_pixel=NULL;
     goto done;
   }
   if(!FillRect(tint,&dot,color))goto done;
-  saved=SaveDC(dc);
-  if(!saved)goto done;
-  if(ExtSelectClipRgn(dc,rounded,RGN_AND)!=ERROR)
-    ok=AlphaBlend(dc,panel->left,panel->top,
-                  panel->right-panel->left,panel->bottom-panel->top,
-                  tint,0,0,1,1,blend)!=FALSE;
-  RestoreDC(dc,saved);
+  ok=AlphaBlend(dc,panel->left,panel->top,
+                panel->right-panel->left,panel->bottom-panel->top,
+                tint,0,0,1,1,blend)!=FALSE;
 done:
   if(old_pixel)SelectObject(tint,old_pixel);
-  if(rounded)DeleteObject(rounded);
   if(color)DeleteObject(color);
   if(pixel)DeleteObject(pixel);
   if(tint)DeleteDC(tint);
@@ -181,9 +173,7 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
   int heading_len,heading_y;
   HICON game_icon=NULL;
   HFONT heading_font=NULL,old_font=NULL;
-  HBRUSH brush;
-  HPEN border=NULL,old_pen=NULL;
-  HGDIOBJ old_brush=NULL;
+  HBRUSH border=NULL;
   SIZE heading_size={0,0};
   RECT panel;
   BOOL ok=FALSE;
@@ -209,29 +199,23 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
   box_w=2*pad+icon_px+icon_gap+heading_size.cx+4;
   if(box_w>(int)w-24)goto done; /* Never truncate the success heading. */
   box_h=2*pad+toast_max(icon_px,heading_size.cy)+4;
-  x=toast_max(12,(int)w/75);
+  x=0; /* Flush left edge: the banner is attached to the screen. */
   y=(int)h-toast_max(16,(int)h/50)-box_h;
   if(y<0 || x+box_w>(int)w-12)goto done;
   panel.left=x;panel.top=y;panel.right=x+box_w;panel.bottom=y+box_h;
   if(!toast_draw_translucent_panel(dc,&panel))goto done;
-  brush=(HBRUSH)GetStockObject(HOLLOW_BRUSH);
-  border=CreatePen(PS_SOLID,1,RGB(169,148,251));
-  if(!brush || !border)goto done;
-  old_brush=SelectObject(dc,brush);
-  old_pen=(HPEN)SelectObject(dc,border);
-  if(!old_brush || old_brush==HGDI_ERROR ||
-     !old_pen || old_pen==HGDI_ERROR)goto done;
+  /* One-pixel outline on THREE sides only: top, right, bottom.
+   * Never draw a left border against the screen edge, and do not add
+   * ornamental inset stripes or rounded corners. FillRect yields exact
+   * one-pixel coverage without GDI LineTo endpoint ambiguity. */
+  border=CreateSolidBrush(RGB(169,148,251));
+  if(!border)goto done;
   {
-    HBRUSH rim=CreateSolidBrush(RGB(231,220,255));
-    if(!RoundRect(dc,panel.left,panel.top,panel.right,panel.bottom,8,8))
-      goto done;
-    if(rim) {
-      RECT top={panel.left+3,panel.top+3,panel.right-3,panel.top+4};
-      RECT bottom={panel.left+3,panel.bottom-4,panel.right-3,panel.bottom-3};
-      FillRect(dc,&top,rim);
-      FillRect(dc,&bottom,rim);
-      DeleteObject(rim);
-    }
+    RECT top={panel.left,panel.top,panel.right,panel.top+1};
+    RECT right={panel.right-1,panel.top+1,panel.right,panel.bottom-1};
+    RECT bottom={panel.left,panel.bottom-1,panel.right,panel.bottom};
+    if(!FillRect(dc,&top,border) || !FillRect(dc,&right,border) ||
+       !FillRect(dc,&bottom,border))goto done;
   }
   text_x=x+pad+icon_px+icon_gap;
   heading_y=y+(box_h-heading_size.cy)/2;
@@ -249,7 +233,7 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
   SetTextColor(dc,RGB(7,4,15));
   TextOutW(dc,text_x+1,heading_y+1,heading,heading_len);
   TextOutW(dc,text_x-1,heading_y,heading,heading_len);
-  SetTextColor(dc,success?RGB(240,47,69):RGB(255,120,120));
+  SetTextColor(dc,RGB(245,240,255)); /* White for saved and failed. */
   if(!TextOutW(dc,text_x,heading_y,heading,heading_len))goto done;
   ok=TRUE;
 done:
