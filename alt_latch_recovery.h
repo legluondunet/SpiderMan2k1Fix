@@ -113,9 +113,16 @@ static void SpiderAltLatch_OnFlip(HWND hwnd,int menu,int gameplay,
     /* Policy has consumed its one opportunity; a last live check rejects
      * a key press arriving between the earlier sample and this write. */
     if(GetForegroundWindow()==hwnd &&
-       os_modifiers_up && original_other_up &&
+       /* Re-read ALL four independent OS modifiers; do not trust
+        * the earlier cached booleans if Tab/AltGr changes mid-frame. */
        !(GetAsyncKeyState(VK_LMENU)&0x8000) &&
        !(GetAsyncKeyState(VK_MENU)&0x8000) &&
+       !(GetAsyncKeyState(VK_RMENU)&0x8000) &&
+       !(GetAsyncKeyState(VK_TAB)&0x8000) &&
+       /* Re-read native Right Alt and Tab, too: both were previously
+        * sampled but could change after the policy decision. */
+       !(key_state[0xb8]&0x7fu) &&
+       !(key_state[0x0f]&0x7fu) &&
        *left==0x7fu) {
       *left=0x80u;  /* original game release EDGE, not global zeroing */
       if(spider_alt_latch_logger)
