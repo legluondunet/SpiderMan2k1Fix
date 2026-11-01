@@ -79,18 +79,25 @@ static void spider_source_trace_flip(HWND hwnd,int menu2d,int gameplay3d,
   /* Include the merged game mask in change detection. Joystick axes/POV
    * can move while the 32 native BUTTON states remain unchanged. */
   sample.merged_actions=game_held;
+  /* Compare native DI latches to an independent Win32 key-down sample.
+   * These three non-typing keys are sampled ONLY while foreground and
+   * only when the passive trace is explicitly enabled. No key injection. */
+  if(GetAsyncKeyState(VK_LMENU)&0x8000)sample.os_alt_tab|=1u;
+  if(GetAsyncKeyState(VK_RMENU)&0x8000)sample.os_alt_tab|=2u;
+  if(GetAsyncKeyState(VK_TAB)&0x8000)sample.os_alt_tab|=4u;
   if(!spider_native_source_changed(&spider_source_trace_observer,
                                     &sample,ctx))return;
   snprintf(line,sizeof(line),
     "SDL3-NATIVE-SOURCE: ctx=%s kb-held=%u kb-fresh=%u kb-released=%u "
     "joy-held=%08lX joy-fresh=%08lX joy-released=%08lX "
-    "merged-actions=%04lX alt-tab=%u postfocus=%u [READ ONLY, CORRELATION NOT PROVENANCE]",
+    "merged-actions=%04lX alt-tab=%u os-alt-tab=%u postfocus=%u [READ ONLY, CORRELATION NOT PROVENANCE]",
     gameplay3d?"3D":"MENU",(unsigned)sample.keyboard_held,
     (unsigned)sample.keyboard_fresh,(unsigned)sample.keyboard_released,
     (unsigned long)sample.joystick_held,
     (unsigned long)sample.joystick_fresh,
     (unsigned long)sample.joystick_released,
     (unsigned long)game_held,(unsigned)sample.keyboard_alt_tab,
+    (unsigned)sample.os_alt_tab,
     spider_source_trace_observer.last_resume);
   spider_source_trace_log(line);
 }
