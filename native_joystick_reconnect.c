@@ -783,7 +783,10 @@ void SpiderNativeReconnect_OnFlip(long flip_index, HWND game_hwnd) {
   HWND native_hwnd;
   IDirectInput8A *di;
   PVOID device;
-  if(SpiderSDL3Universal_SuppressesNative())return;
+  /* Universal SDL3 drives the original game's keyboard action path,
+   * never its physical joystick. Do not let the old DS4/Xbox native
+   * reconnect logic acquire or republish a competing input owner. */
+  if(SpiderSDL3Universal_Enabled())return;
   if(!requested || !initialized || flip_index<120)return;
   if(!SpiderNativeUnplug_Installed())return;
   if(!native_thread)native_thread=GetCurrentThreadId();
