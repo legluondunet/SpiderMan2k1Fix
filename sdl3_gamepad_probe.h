@@ -28,6 +28,11 @@ int SpiderSDL3Probe_SelectedIdentity(uint16_t *vid,uint16_t *pid,
  * No events consumed, no SDL/window state created; fails closed when
  * no active mapped controller is available or RT axis is invalid. */
 int SpiderSDL3Probe_SelectedRT(int *normalized_rt);
+/* Universal selected logical SDL3 gamepad, no DirectInput ownership requirement.
+ * Profile identity may be synthetic GUID key for missing VID/PID. */
+int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
+    uint16_t *profile_vid,uint16_t *profile_pid,
+    SpiderSDL3ControllerSample *sample);
 /* Passive selected SDL3 input snapshot, only on the original Flip thread
  * after its SDL3 event pump. Includes both triggers and semantic buttons.
  * No native DirectInput ownership writes, no event queue consumption. */
