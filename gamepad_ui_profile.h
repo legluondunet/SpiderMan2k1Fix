@@ -46,4 +46,10 @@ void SpiderGamepadUI_OnFlip(HWND game_window,int menu_2d,int gameplay_3d,
 /* Eighth opt-in SDL3 semantic action: bounded 3D native Escape pulse.
  * The seven gameplay actions still use the original DI8 joystick. */
 void SpiderGamepadUI_SDL3GameplayPause(HWND game_window);
+/* Movie #4 -> first native 3D frame: release ONLY the Return scan code
+ * currently synthesized by this module, before its physical-key wait.
+ * No direct input-table write; real keyboard keys remain untouched.
+ * Returns 1 only if our pending synthetic Return was released. */
+int SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(HWND game_window);
+
 #endif
