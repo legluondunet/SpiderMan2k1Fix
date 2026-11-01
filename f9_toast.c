@@ -171,64 +171,114 @@ done:
   return ok;
 }
 
+/* Camera glyph uses GDI primitives, not OS icon resources or a bundled
+ * typeface. Shared by the normal offscreen Flip compositor and the static
+ * comic's nonactivating, click-through layered popup. */
+static BOOL toast_draw_camera_icon(HDC dc,int x,int y,int size) {
+  HPEN outline=NULL,old_pen=NULL;
+  HBRUSH body=NULL,old_brush=NULL,lens=NULL,flash=NULL;
+  int left,top,side,camera_top;
+  BOOL ok=FALSE;
+  if(!dc || size<16)return FALSE;
+  left=x+1;top=y+2;side=size-2;camera_top=top+side/5;
+  outline=CreatePen(PS_SOLID,toast_max(1,size/16),RGB(245,240,255));
+  body=CreateSolidBrush(RGB(50,50,160));
+  lens=CreateSolidBrush(RGB(240,47,69));
+  flash=CreateSolidBrush(RGB(231,220,255));
+  if(!outline || !body || !lens || !flash)goto done;
+  old_pen=(HPEN)SelectObject(dc,outline);
+  old_brush=(HBRUSH)SelectObject(dc,body);
+  if(!old_pen || old_pen==(HPEN)HGDI_ERROR ||
+     !old_brush || old_brush==(HBRUSH)HGDI_ERROR)goto done;
+  ok=RoundRect(dc,left,camera_top,left+side,top+side,
+               toast_max(3,size/5),toast_max(3,size/5))!=FALSE;
+  if(!ok)goto done;
+  SelectObject(dc,lens);
+  if(!Ellipse(dc,x+size/3,y+size/3,x+(2*size)/3,
+              y+(2*size)/3))ok=FALSE;
+  SelectObject(dc,flash);
+  if(!Rectangle(dc,x+(3*size)/4,y+size/3,
+                x+(7*size)/8,y+size/2))ok=FALSE;
+done:
+  if(old_brush && old_brush!=(HBRUSH)HGDI_ERROR)SelectObject(dc,old_brush);
+  if(old_pen && old_pen!=(HPEN)HGDI_ERROR)SelectObject(dc,old_pen);
+  if(flash)DeleteObject(flash);
+  if(lens)DeleteObject(lens);
+  if(body)DeleteObject(body);
+  if(outline)DeleteObject(outline);
+  return ok;
+}
+
+/* The original Spider-Man UI and our focus-pause banner use bold italic
+ * outlined lettering. Keep that typographic identity for the F9 heading,
+ * but a smaller nonitalic secondary font preserves a FULL Windows path.
+ * Drawing is confined to the same temporary present surface as before. */
 static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success) {
-  static const WCHAR saved_heading[]=L"Screenshot saved to:";
-  static const WCHAR error_heading[]=L"Screenshot failed:";
+  static const WCHAR saved_heading[]=L"SCREENSHOT SAVED";
+  static const WCHAR error_heading[]=L"SCREENSHOT FAILED";
   const WCHAR *heading=success?saved_heading:error_heading;
-  int font_px,pad,step,max_w,max_path_w,box_w,box_h;
+  int heading_px,path_px,pad,icon_px,icon_gap,head_step,path_step;
+  int max_w,max_path_w,box_w,box_h,path_y,text_x;
   int starts[SPIDER_F9_TOAST_MAX_LINES],lengths[SPIDER_F9_TOAST_MAX_LINES];
-  int lines,path_len,x,y,i;
-  HFONT font,old_font;
+  int lines,path_len,x,y,i,saved_dc=0,heading_len;
+  HFONT heading_font=NULL,path_font=NULL,old_font=NULL;
   HBRUSH brush;
-  HPEN border,old_pen;
-  HGDIOBJ old_brush;
-  SIZE heading_size,path_size;
+  HPEN border=NULL,old_pen=NULL;
+  HGDIOBJ old_brush=NULL;
+  SIZE heading_size={0,0},path_size={0,0};
   RECT panel;
-  int old_mode;
-  COLORREF old_color;
   BOOL ok=FALSE;
   if(!dc || !path || w<320 || h<240 || w>8192 || h>8192)return FALSE;
-  font_px=toast_min(19,toast_max(12,(int)h/75));
-  pad=toast_max(9,font_px/2+3);
-  step=font_px+6;
-  font=CreateFontW(-font_px,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,
-                   DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
-                   CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
-  if(!font)return FALSE;
-  old_font=(HFONT)SelectObject(dc,font);
-  if(!old_font || old_font==HGDI_ERROR)goto font_done;
-  memset(&heading_size,0,sizeof(heading_size));
-  memset(&path_size,0,sizeof(path_size));
   path_len=(int)wcslen(path);
-  if(path_len==0 || !GetTextExtentPoint32W(dc,heading,
-       (int)wcslen(heading),&heading_size) ||
-     !GetTextExtentPoint32W(dc,path,path_len,&path_size))goto restore_font;
-  max_w=toast_min((int)w-24,(int)((w*55u)/100u));
-  if(max_w<=2*pad+30)goto restore_font;
-  box_w=toast_min(max_w,toast_max(heading_size.cx,path_size.cx)+2*pad);
-  max_path_w=box_w-2*pad;
+  heading_len=(int)wcslen(heading);
+  if(!path_len)return FALSE;
+  heading_px=toast_min(29,toast_max(16,(int)h/43));
+  path_px=toast_min(18,toast_max(12,(int)h/70));
+  pad=toast_max(11,heading_px/2+2);
+  icon_px=toast_max(24,heading_px+5);
+  icon_gap=toast_max(8,heading_px/3);
+  head_step=heading_px+9;
+  path_step=path_px+5;
+  heading_font=CreateFontW(-heading_px,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,
+    DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
+    ANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial Black");
+  path_font=CreateFontW(-path_px,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,
+    DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
+    ANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial");
+  if(!heading_font || !path_font)goto done;
+  saved_dc=SaveDC(dc);
+  if(!saved_dc)goto done;
+  SetBkMode(dc,TRANSPARENT);
+  old_font=(HFONT)SelectObject(dc,heading_font);
+  if(!old_font || old_font==HGDI_ERROR)goto done;
+  if(!GetTextExtentPoint32W(dc,heading,heading_len,&heading_size))
+    goto done;
+  SelectObject(dc,path_font);
+  if(!GetTextExtentPoint32W(dc,path,path_len,&path_size))goto done;
+  max_w=toast_min((int)w-24,(int)(w*65u/100u));
+  if(max_w<2*pad+icon_px+icon_gap+56)goto done;
+  box_w=toast_min(max_w,
+      toast_max(heading_size.cx,path_size.cx)+2*pad+icon_px+icon_gap);
+  max_path_w=box_w-2*pad-icon_px-icon_gap;
   lines=toast_wrap_path(dc,path,max_path_w,starts,lengths);
-  if(lines<1)goto restore_font;
-  box_h=(lines+1)*step+2*pad+3;
+  if(lines<1)goto done;
+  box_h=2*pad+head_step+lines*path_step+3;
   x=toast_max(12,(int)w/75);
   y=(int)h-toast_max(16,(int)h/50)-box_h;
-  if(y<0)goto restore_font;
+  if(y<0)goto done;
   panel.left=x;panel.top=y;panel.right=x+box_w;panel.bottom=y+box_h;
-  /* Native ESC palette, transparent blue-violet fill and subtle lavender
-   * outline. Paint only on the offscreen composed frame. */
-  if(!toast_draw_translucent_panel(dc,&panel))goto restore_font;
+  if(!toast_draw_translucent_panel(dc,&panel))goto done;
   brush=(HBRUSH)GetStockObject(HOLLOW_BRUSH);
   border=CreatePen(PS_SOLID,1,RGB(169,148,251));
-  if(!brush || !border) {
-    if(border)DeleteObject(border);
-    goto restore_font;
-  }
+  if(!brush || !border)goto done;
   old_brush=SelectObject(dc,brush);
   old_pen=(HPEN)SelectObject(dc,border);
-  if(old_brush && old_brush!=HGDI_ERROR && old_pen &&
-     old_pen!=HGDI_ERROR) {
+  if(!old_brush || old_brush==HGDI_ERROR ||
+     !old_pen || old_pen==HGDI_ERROR)goto done;
+  {
     HBRUSH rim=CreateSolidBrush(RGB(231,220,255));
-    RoundRect(dc,panel.left,panel.top,panel.right,panel.bottom,8,8);
+    if(!RoundRect(dc,panel.left,panel.top,panel.right,panel.bottom,8,8))
+      goto done;
     if(rim) {
       RECT top={panel.left+3,panel.top+3,panel.right-3,panel.top+4};
       RECT bottom={panel.left+3,panel.bottom-4,panel.right-3,panel.bottom-3};
@@ -236,26 +286,31 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
       FillRect(dc,&bottom,rim);
       DeleteObject(rim);
     }
-    old_mode=SetBkMode(dc,TRANSPARENT);
-    old_color=GetTextColor(dc);
-    SetTextColor(dc,success?RGB(240,47,69):RGB(255,120,120));
-    TextOutW(dc,x+pad,y+pad,heading,
-             (int)wcslen(heading));
-    SetTextColor(dc,RGB(245,240,255));
-    for(i=0;i<lines;i++)
-      TextOutW(dc,x+pad,y+pad+(i+1)*step,
-               path+starts[i],lengths[i]);
-    SetTextColor(dc,old_color);
-    SetBkMode(dc,old_mode);
-    ok=TRUE;
   }
-  if(old_pen && old_pen!=HGDI_ERROR)SelectObject(dc,old_pen);
-  if(old_brush && old_brush!=HGDI_ERROR)SelectObject(dc,old_brush);
-  DeleteObject(border);
-restore_font:
-  SelectObject(dc,old_font);
-font_done:
-  DeleteObject(font);
+  text_x=x+pad+icon_px+icon_gap;
+  path_y=y+pad+head_step;
+  if(!toast_draw_camera_icon(dc,x+pad,y+pad,icon_px))goto done;
+  SelectObject(dc,heading_font);
+  /* The black outline echoes the original game's menu and PAUSED panel. */
+  SetTextColor(dc,RGB(7,4,15));
+  TextOutW(dc,text_x+1,y+pad+1,heading,heading_len);
+  TextOutW(dc,text_x-1,y+pad,heading,heading_len);
+  SetTextColor(dc,success?RGB(240,47,69):RGB(255,120,120));
+  if(!TextOutW(dc,text_x,y+pad,heading,heading_len))goto done;
+  SelectObject(dc,path_font);
+  for(i=0;i<lines;i++) {
+    int ty=path_y+i*path_step;
+    SetTextColor(dc,RGB(7,4,15));
+    TextOutW(dc,text_x+1,ty+1,path+starts[i],lengths[i]);
+    SetTextColor(dc,RGB(245,240,255));
+    if(!TextOutW(dc,text_x,ty,path+starts[i],lengths[i]))goto done;
+  }
+  ok=TRUE;
+done:
+  if(saved_dc)RestoreDC(dc,saved_dc); /* Restores fonts, pen and text state. */
+  if(border)DeleteObject(border);
+  if(path_font)DeleteObject(path_font);
+  if(heading_font)DeleteObject(heading_font);
   return ok;
 }
 
