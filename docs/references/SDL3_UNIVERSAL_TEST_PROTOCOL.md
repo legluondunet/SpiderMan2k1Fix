@@ -34,15 +34,15 @@ DirectInput and the existing DS4/Xbox integration are intentionally unchanged.
    or move the requested stick/trigger. Press **S** to skip optional
    controls. The A and B buttons and the left stick X and Y axes are
    mandatory. Escape cancels; Enter restarts from scratch.
-4. A successful capture displays `SDL3 CALIBRATION SAVED`. The log must
+4. During capture, pressing **Start** on the physical joystick must **not reset the wizard**. The Win32 `Enter` key is ignored while capturing; to restart explicitly, focus **Start / Restart** using Tab and activate it with **Space**. The last user log reached step 5/20 then repeatedly restarted, without a completed mapping.\n5. A successful capture displays `SDL3 CALIBRATION SAVED`. The log must
    contain `SDL3-RAW: MAPPING SAVED GUID=... location=GAME` or
    `location=LOCALAPPDATA`. If save fails, send the log; do not interpret
    an in-memory mapping as permanently saved.
-5. Close the raw wizard and SDL3 setup, **restart the game**, reopen SDL3
+6. Close the raw wizard and SDL3 setup, **restart the game**, reopen SDL3
    setup and check that the joystick appears as a *mapped* SDL3 gamepad.
    Its per-model action profile should be assignable if SDL exposes a
    valid vendor and product ID.
-6. Re-enter Test A with this controller, if selectable, to verify normalized
+7. Re-enter Test A with this controller, if selectable, to verify normalized
    SDL3 button and trigger data. Do **not** assume it works in 3D yet.
 
 ## What to attach to the next report
@@ -66,3 +66,14 @@ DirectInput and the existing DS4/Xbox integration are intentionally unchanged.
 - The fully hardware-neutral SDL3-to-retail-engine gameplay bridge remains
   unimplemented and disabled; **a successful mapping test does not imply
   universal 3D gameplay support**.
+
+## Planned end-to-end acceptance once the universal engine bridge exists
+
+A successful joystick calibration is **not** the end of the SDL3 task.
+With only the newly configured controller (no keyboard after the initial
+setup), test navigation/Confirm/Back in the main and pause menus; skip
+startup Bink videos; skip authorized scripted 3D cutscenes; advance the
+still screen that prompts for Enter; and play a 3D level with movement,
+actions and Pause. Verify focus loss/hotplug, release boundaries and
+that one press does not skip several successive screens. These scenarios
+are **not implemented universally** in the current test build.
