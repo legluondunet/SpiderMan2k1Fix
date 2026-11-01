@@ -48,7 +48,11 @@ def test_ds3_probe_is_bounded_read_only_and_preserves_xbox_ds4_owner():
     assert "spider_reconnect_kind(vid,pid)==SPIDER_RECONNECT_NONE" in flip
     assert "selection.active=previous;" in flip
     assert "SDL3-OWNER: START REFUSED unsupported native controller" in flip
-    assert "spider_reconnect_kind(vendor,product)!=SPIDER_RECONNECT_NONE" in s
+    # Generic selection of unsupported pads is read-only, distinct from
+    # the pre-existing verified native controller ownership path.
+    assert "spider_reconnect_kind(vendor,product)==SPIDER_RECONNECT_NONE" in s
+    assert "SDL3-GENERIC: SELECTED explicit modal Start" in s
+    assert "SpiderSDL3Probe_GenericSelectedSample(" in s
     assert "SpiderNativeReconnect_OnFlip(count,game_hwnd);" in (
         ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
     assert "SDL3-3D-LIVE: APPLIED verified Xbox360" in (
