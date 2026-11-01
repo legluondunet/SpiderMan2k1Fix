@@ -192,7 +192,8 @@ def test_pad_close_transfers_displayed_profile_only_after_destroy():
     # Browsing never requests a handoff. A gamepad-initiated close does.
     select=modal.split("static void select_slot(",1)[1].split(
         "static void refresh_pads(",1)[0]
-    assert "ui->start_owner_requested" not in select
+    assert "ui->start_owner_requested=0u;" in select  # invalidate stale pending claim
+    assert "ui->start_owner_requested=1u;" not in select
     keyboard=modal.split("static int handle_setup_keyboard(",1)[1].split(
         "static LRESULT CALLBACK setup_wndproc(",1)[0]
     assert "setup_close_from_pad(" not in keyboard
@@ -250,7 +251,8 @@ def test_modal_start_defers_original_owner_until_next_verified_game_flip():
     # Manual L1/R1 browsing selects a profile but never requests transfer.
     select=modal.split("static void select_slot(",1)[1].split(
         "static void refresh_pads(",1)[0]
-    assert "start_owner_requested" not in select
+    assert "ui->start_owner_requested=0u;" in select
+    assert "ui->start_owner_requested=1u;" not in select
     for forbidden in ("SpiderNativeReconnect_", "VirtualProtect(",
                       "SendInput(", "WritePrivateProfileString", "CreateThread("):
         assert forbidden not in read
