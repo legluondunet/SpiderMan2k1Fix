@@ -12,18 +12,18 @@ def _read(path):
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_sdl3_owner_requires_explicit_complete_opt_in_and_is_off_by_default():
+def test_sdl3_owner_default_on_still_requires_complete_native_safety_chain():
     ini = _read("ini_validation.h")
     probe = _read("sdl3_gamepad_probe.c")
     native = _read("native_joystick_reconnect.c")
     assert '"ExperimentalSDL3NativeOwner"' in ini
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1' in probe
+    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1' in probe
     for key in (
         "ExperimentalNativeJoystickUnplugGuard",
         "ExperimentalNativeJoystickReconnect",
         "ExperimentalNativeJoystickMappingSwap",
     ):
-        assert f'GetPrivateProfileIntA("Input","{key}",0,ini)!=1' in probe
+        assert f'GetPrivateProfileIntA("Input","{key}",1,ini)!=1' in probe
     assert 'native_owner_requested=0;' in probe
     assert "SDL3-OWNER: REFUSED missing native" in probe
     assert "if(SpiderSDL3Probe_NativeOwnerEnabled())" in native
@@ -91,7 +91,7 @@ def test_3d_trace_is_opt_in_read_only_bounded_and_gameplay_only():
     ui = _read("gamepad_ui_profile.c")
     assert '"SDL3GameplayTrace"' in ini
     assert 'GetPrivateProfileIntA("Debug","SDL3GameplayTrace",0,ini)==1' in ui
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1' in ui
+    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1' in ui
     assert "sdl3_3d_trace_lines>=64u" in ui
     assert "selected-id=%lu kind=%s" in ui
     assert "two independently sampled views; READ-ONLY; native game mapping NOT inferred" in ui
