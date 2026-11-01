@@ -258,8 +258,10 @@ maintainer and subsequent verified native physical Left Alt
 down/up. The experimental one-byte latch repair has now passed
 a valuable repeatability and keyboard-regression check. It
 remains **default OFF**, with the PR **DRAFT** and unmerged.
-Mouse-specific behavior, Xbox 360, keyboard-only configuration,
-feature-OFF comparison and Wine/Proton remain unvalidated.
+Xbox 360, keyboard-only configuration, feature-OFF comparison
+and Wine/Proton remain unvalidated. **In-game mouse is permanently
+out of project scope by maintainer decision**; no mouse-specific
+Alt+Tab test is required.
 
 
 ### Post-validation safety hardening (requires fresh Windows trial)
@@ -365,9 +367,31 @@ least the rule allowed these three cases. Do not claim
 independent timing measurement from these logs alone.
 
 **Still outstanding before default activation or merging:**
-mouse control is set **`MouseEnabled=0`** in these runs,
-so mouse recovery is untested; Xbox 360, keyboard-only,
-Wine/Proton, feature-OFF negative controls and varied
-background durations remain unvalidated.
+Xbox 360, keyboard-only, Wine/Proton, feature-OFF negative controls
+and varied background durations remain unvalidated. In-game mouse
+support is **deliberately excluded by maintainer decision**,
+not an untested requirement; both runs have `MouseEnabled=0`.
 Keep **`ExperimentalAltLatchRecovery=0` by default**,
 PR **DRAFT and unmerged**.
+
+## Permanent product scope decision: in-game mouse unsupported
+
+The maintainer explicitly decided on 1 November 2026 that **mouse
+control is permanently unnecessary and unsupported for this project**.
+Future Alt+Tab input acceptance tests cover **keyboard and supported
+gamepads**, not mouse input. Do not classify absent mouse tests as a
+blocker for the experimental Left Alt recovery. The **Windows desktop
+pointer**, including its visibility/restore when the game loses focus,
+is a separate OS/window-management concern and must remain unaffected.
+
+**Current implementation versus decided policy:** `MouseEnabled=0`
+(default, observed in the 08:20 and 08:22 logs) already suppresses the
+original **in-game** cursor sprite, menu mouse polling and mouse hit
+testing using original game-owned `gRenderTest & 0x10` gates.
+However, the source presently still accepts the legacy user override
+`MouseEnabled=1`, which re-enables original menu mouse input. This
+compatibility override is **not yet removed** and should be retired
+in a separate focused cleanup, with test and documentation updates;
+do not silently claim the project enforces permanently disabled mouse
+for every configuration yet. No alteration of desktop mouse behavior,
+keyboard binding, or controller semantics is authorized by this note.
