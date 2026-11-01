@@ -115,6 +115,21 @@ def test_original_write_is_one_byte_only_and_fail_closed():
     assert 'SPIDER_ALT_LATCH_MIN_UP_MS = 180' in model
     assert 'SPIDER_ALT_LATCH_MAX_AFTER_RETURN_MS = 5000' in model
     assert 'p->pending=0u;' in model
+    # A passing policy check does not permit a stale/cached modifier
+    # reading to authorize a write if Tab, AltGr or original keyboard
+    # state changed in the same Flip. All checks must be LIVE, inside
+    # the final if(result==1) guard before the only native-byte write.
+    final_guard=impl[impl.index('if(result==1) {'):
+                     impl.index('*left=0x80u;')]
+    assert 'GetForegroundWindow()==hwnd' in final_guard
+    for key in ('VK_LMENU','VK_MENU','VK_RMENU','VK_TAB'):
+        assert f'GetAsyncKeyState({key})' in final_guard
+        assert impl.count(f'GetAsyncKeyState({key})')==2
+    for code in ('0xb8','0x0f'):
+        assert f'key_state[{code}]' in final_guard
+        assert impl.count(f'key_state[{code}]')==2
+    assert '*left==0x7fu' in final_guard
+    assert 'os_modifiers_up && original_other_up' not in final_guard
     for forbidden in ("SendInput(", "keybd_event(", "VirtualProtect(",
                       "CreateThread(", "GetDeviceData(", "Acquire(",
                       "Unacquire(", "SetWindowsHookEx(", "IDirectInputDevice8_",
