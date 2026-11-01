@@ -15,6 +15,7 @@
 #include "sdl3_gamepad_probe.h"
 #include "sdl3_raw_mapping.h"
 #include "sdl3_raw_wizard.h"
+#include "sdl3_physical_escape.h"
 
 enum { RAW_PAD=2001,RAW_BEGIN=2002,RAW_SKIP=2003,
        RAW_CLOSE=2004,RAW_STATUS=2005,RAW_TIMER=2006 };
@@ -315,7 +316,7 @@ static LRESULT CALLBACK wizard_wndproc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
         SendMessageA(button,WM_SETFONT,(WPARAM)font,TRUE);
       }
       label=CreateWindowExA(0,"STATIC",
-        "Keyboard: Ctrl+Shift+S skip, Ctrl+Shift+R restart, Ctrl+Shift+Q cancel.\r\n"
+        "Keyboard: Esc cancel (physical keyboard), Ctrl+Shift+S skip, Ctrl+Shift+R restart.\r\n"
         "Controller keys are consumed only by SDL3 during calibration; gameplay unchanged.",
         WS_CHILD|WS_VISIBLE,20,270,610,50,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
@@ -377,7 +378,7 @@ void SpiderSDL3RawWizard_Open(HWND owner,void (*logger)(const char *)) {
   SpiderRawWizard w;
   HWND hwnd;
   MSG msg;
-  int was_enabled;
+  int was_enabled,escape_raw=0;
   if(busy || !owner || !IsWindow(owner) ||
      GetForegroundWindow()!=owner || !SpiderSDL3Probe_SetupPump())
     return;
@@ -406,12 +407,28 @@ void SpiderSDL3RawWizard_Open(HWND owner,void (*logger)(const char *)) {
   SpiderSDL3Probe_SetupPump();
   wizard_refresh(&w);
   if(w.pads)SetFocus(w.pads);
-  if(logger)logger("SDL3-RAW-WIZARD: opened by keyboard; raw joystick mapping is isolated from original DirectInput game");
+  escape_raw=spider_sdl3_escape_begin(hwnd);
+  if(logger) {
+    logger("SDL3-RAW-WIZARD: opened by keyboard; raw joystick mapping is isolated from original DirectInput game");
+    logger(escape_raw?
+      "SDL3-RAW-WIZARD: physical keyboard Escape via WM_INPUT ARMED (Circle/B synthetic key ignored)":
+      "SDL3-RAW-WIZARD: physical keyboard Escape unavailable; Ctrl+Shift+Q remains safe cancel");
+  }
   while(IsWindow(hwnd)) {
     BOOL ok=GetMessageA(&msg,NULL,0,0);
     if(ok<=0) {
       if(ok==0)PostQuitMessage((int)msg.wParam);
       break;
+    }
+    /* Only a HID keyboard WM_INPUT Escape is trusted while capturing.
+     * Wine/XInput's ordinary synthetic VK_ESCAPE is still discarded. */
+    if(escape_raw && msg.message==WM_INPUT && msg.hwnd==hwnd) {
+      if(spider_sdl3_escape_key((HRAWINPUT)msg.lParam)) {
+        if(logger)logger("SDL3-RAW-WIZARD: PHYSICAL-ESC keyboard cancel (raw input verified)");
+        PostMessageA(hwnd,WM_CLOSE,0,0);
+      }
+      DefWindowProcA(hwnd,msg.message,msg.wParam,msg.lParam);
+      continue;
     }
     /* The combo is deliberately DISABLED during calibration. Gamepad
      * buttons can generate ordinary Win32 keyboard messages on Wine:
@@ -475,6 +492,7 @@ void SpiderSDL3RawWizard_Open(HWND owner,void (*logger)(const char *)) {
     DispatchMessageA(&msg);
   }
   SpiderSDL3Probe_RawEnd();
+  spider_sdl3_escape_end(escape_raw);
   if(IsWindow(hwnd))DestroyWindow(hwnd);
   if(was_enabled && IsWindow(owner))EnableWindow(owner,TRUE);
   if(IsWindow(owner)) {
