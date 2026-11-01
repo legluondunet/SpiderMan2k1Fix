@@ -5,6 +5,7 @@
 void SpiderSDL3ControllerSetup_Init(const char *ini,
                                     void (*logger)(const char *));
 int SpiderSDL3ControllerSetup_Enabled(void);
-/* Called ONLY from SHA-verified native Joystick "restore" callsite. */
+/* Called from guarded native Joystick selection redirect; legacy preview
+ * Restore-row remains a fail-closed fallback until hardware validates it. */
 void SpiderSDL3ControllerSetup_Open(void);
 #endif
