@@ -162,8 +162,13 @@ DirectInput owner and is **not** a failure of generic SDL3 sampling.
 1. Download the CI artifact built after the **Use selected SDL3 controller**
    button was added. Backup the previously validated DLL.
 2. In original game's **Options > Joystick**, enter the SDL3 window
-   directly. Choose `XInput Controller #1 [054C:0268]` in the top
-   dropdown (especially if a DS4 is connected as slot 0).
+   directly. **Explicitly choose** `XInput Controller #1 [054C:0268]`
+   in the top dropdown (or use L1/R1 to change the displayed model).
+   **Do not just leave the first auto-selected row:** with both DS4 and
+   PS3 attached the default row was the DS4 (id=1) instead of PS3
+   (id=3), as confirmed by the 19:47 GE-Proton hardware log. The new
+   build refuses a multi-pad owner request until an intentional
+   model selection is observed.
 3. Ensure you are **not in CAPTURE mode**. If the status displays
    `CAPTURE: ...`, press keyboard **Escape once** to cancel this binding
    capture *without closing the setup dialog*.
@@ -185,8 +190,9 @@ DirectInput owner and is **not** a failure of generic SDL3 sampling.
    `SDL3-GENERIC: SEMANTIC ARMED` and
    `SDL3-GENERIC: SEMANTIC ... pressed=... released=... LX=... RX=...`.
 7. Exit normally, send the log and a screenshot of the **F9
-   SCREENSHOT SAVED** notification (its new icon must be the **original
-   game's smallest 16x16 icon**, not the fake camera). Check that the
+   SCREENSHOT SAVED** notification (its 16x16 original game icon is
+   unchanged, with a slightly **smaller 21px title and 13px path at
+   1080p** to balance the icon). Check that the
    absolute screenshot path remains fully displayed, all icon text
    stays inside the panel, F9 screenshot pixels are unaffected and the
    popup disappears after about two seconds.
