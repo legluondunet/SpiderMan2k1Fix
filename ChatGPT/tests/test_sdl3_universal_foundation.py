@@ -353,3 +353,41 @@ def test_generic_ps3_logical_selection_is_explicit_unique_and_native_preserving(
     # START must not claim DI or replace selection.active.
     assert "SDL3-OWNER: START REFUSED unsupported native controller" in probe
 
+
+
+def test_ps3_explicit_setup_selection_when_start_was_consumed_by_capture():
+    setup=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    assert "SPIDER_UI_USE=1010" in setup
+    assert '"Use selected SDL3 controller"' in setup
+    assert "setup_select_explicit_pad(" in setup
+    assert "SPIDER_UI_USE && HIWORD(wp)==BN_CLICKED" in setup
+    assert "LOWORD(wp)==SPIDER_UI_USE" in setup
+    assert "ui->start_owner_id=id;" in setup
+    assert "ui->start_owner_vid=vid;" in setup
+    assert "ui->start_owner_pid=pid;" in setup
+    assert "ui->start_owner_requested=1u;" in setup
+    assert "SDL3-SETUP: EXPLICIT-SELECT QUEUED" in setup
+    assert "SDL3-SETUP: EXPLICIT-SELECT refused during action capture" in setup
+    assert "SDL3-SETUP: START-IGNORED action capture active" in setup
+    assert "ui->capture.active || ui->close_pending" in setup
+    assert "SpiderSDL3Probe_SetupRead(ui->slot,&id,&vid,&pid," in setup
+    assert "id!=ui->instance || vid!=ui->vid || pid!=ui->pid" in setup
+    assert "SpiderSDL3Probe_SetupModalReturn(" in setup
+    assert "setup_owner_pending=requested_id;" in probe
+    assert "SDL3-GENERIC: SELECTED explicit modal Start" in probe
+    assert "spider_reconnect_kind(vendor,product)==SPIDER_RECONNECT_NONE" in probe
+    assert "generic_selected_id=requested_id;" in probe
+    assert "selection.active=requested_id;" in probe
+    assert "sdl3_generic_semantic_trace_on_flip();" in probe
+    assert "for(i=SPIDER_UI_RAW;i<=SPIDER_UI_USE;i++)" in setup
+    assert "for(unsigned i=SPIDER_UI_RAW;i<=SPIDER_UI_USE;i++)" in setup
+    assert "CW_USEDEFAULT,CW_USEDEFAULT,730,558," in setup
+    assert "Ctrl+Shift+U" in setup
+    assert "GetKeyState(VK_CONTROL)&0x8000" in setup
+    assert "GetKeyState(VK_SHIFT)&0x8000" in setup
+    # No DI rebind or synthetic key injection from modal helper.
+    helper=setup.split("static int setup_select_explicit_pad(",1)[1].split(
+        "static void setup_toggle_sdl3_test(",1)[0]
+    for forbidden in ("SendInput(", "VirtualProtect(", "IDirectInput", "WriteProcessMemory("):
+        assert forbidden not in helper
