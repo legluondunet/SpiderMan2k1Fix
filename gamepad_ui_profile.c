@@ -503,9 +503,9 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   strcpy(profile_ini,ini);
   SpiderSDL3ControllerSetup_Init(ini,logger);
   sdl3_context_bridge_requested=
-    GetPrivateProfileIntA("Input","ExperimentalSDL3ContextBridge",0,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1;
+    GetPrivateProfileIntA("Input","ExperimentalSDL3ContextBridge",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1;
   sdl3_context_bridge_reports=0;
   spider_sdl3_context_menu_reset(&sdl3_context_bridge);
   if(sdl3_context_bridge_requested)
@@ -517,8 +517,8 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   xbox_trigger_probe_requested=GetPrivateProfileIntA("Debug","Xbox360TriggerProbe",0,ini)==1;
   sdl3_3d_trace_requested=
     GetPrivateProfileIntA("Debug","SDL3GameplayTrace",0,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1;
+    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1;
   if(sdl3_3d_trace_requested)
     report("SDL3-3D-TRACE: requested; only secondary read-only physical states, 64-line cap; native game input untouched");
   /* The old bridge stays disabled by default outside SDL3.
@@ -527,12 +527,12 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
    * ExperimentalSDL3XboxRTSwing=0. Existing legacy =0 does not disable
    * SDL3 gameplay semantics or silently retain stick-click Swing. */
   xbox_rt_swing_sdl3_mode=
-    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3GameplayBindings",0,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickUnplugGuard",0,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickReconnect",0,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickMappingSwap",0,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3GameplayBindings",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickUnplugGuard",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickReconnect",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickMappingSwap",1,ini)==1 &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3XboxRTSwing",1,ini)==1;
   xbox_rt_swing_requested=xbox_rt_swing_sdl3_mode ||
     GetPrivateProfileIntA("Input","ControllerXbox360RTSwing",0,ini)==1;
