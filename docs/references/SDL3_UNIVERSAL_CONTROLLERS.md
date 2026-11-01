@@ -151,9 +151,23 @@ rollback checks. Runtime original-call matching and entry behavior still
 need a fresh hardware test; if no verified caller matches, preserve
 the old list + preview fallback, with a precise log message.
 
-**Important:** runtime original-call enumeration and the original boolean
-value identifying Joystick have **not** yet been confirmed on real hardware
-for this bypass. Check `SDL3-DIRECT-ENTRY: ACTIVE`, then select Keyboard
+**2026-11-01 follow-up with runtime evidence:** The next user log,
+`SpiderMan2k1Fix(20261101-184301).log`, confirms the PE fix and
+native CALL redirection install **work**:
+`SDL3-DIRECT-ENTRY: ACTIVE ... CALL(s)=2`. Selecting Joystick then
+reaches the OLD Joystick screen and logs
+`SDL3-DIRECT-ENTRY: Keyboard configuration forwarded to original game`.
+This proves our assumed mode flag was **reversed**: on the actual retail
+game's caller, native `mode=0` selects Joystick, `mode=1` selects
+Keyboard. The dispatcher now branches on `native_mode==0` for SDL3
+and passes the original, unchanged `native_mode` to the PCShell
+implementation for Keyboard and on fail-closed fallback. It logs
+`SDL3-DIRECT-ENTRY: INVOKED native-mode=... interpreted=...` so
+future tests can confirm each selection. Opening SDL3 directly, returning
+to the parent Options menu, and preserving Keyboard all **still need
+explicit hardware validation**.
+
+**Important:** Check `SDL3-DIRECT-ENTRY: ACTIVE`, then select Keyboard
 to confirm original editing works, and select Joystick to confirm direct
 SDL3 opening. A wrong selection or a rejected hook is a reason to revert
 to the previous tested DLL; never merge before these observations.
