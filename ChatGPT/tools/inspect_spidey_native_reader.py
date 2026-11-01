@@ -90,6 +90,26 @@ BINARY_VERIFIED_MASK_CONSUMER_SITES = (
     (0x00479596, "8b 48 08", "read released-state counter latch +8"),
 )
 
+# These exact x86 bytes were freshly verified against the user-supplied
+# 1,507,328-byte SHA-verified retail EXE on 2026-11-01. They establish
+# keyboard and native joystick mask contribution as different stages,
+# NOT an authenticated or safe runtime hook boundary.
+BINARY_VERIFIED_SOURCE_STAGE_SITES = (
+    (0x0050A19F, "c7 03 00 00 00 00", "Initialize HELD output, keep keyboard state"),
+    (0x0050A1A5, "c7 45 00 00 00 00 00", "Initialize FRESH output"),
+    (0x0050A1AC, "e8 cf 79 ff ff", "Keyboard reader direct call"),
+    (0x0050A1B3, "0f 8c e5 00 00 00", "Keyboard error skips keyboard mapping, enters native stage"),
+    (0x0050A24B, "09 10", "OR keyboard HELD into output"),
+    (0x0050A283, "09 08", "OR keyboard FRESH into output"),
+    (0x0050A29E, "68 94 83 56 00", "Begin game-owned DirectInput reader argument setup"),
+    (0x0050A2AD, "e8 9e 7b ff ff", "Call native game joystick buffered reader"),
+    (0x0050A2B5, "85 c0 0f 84 37 01 00 00", "Skip native axis/button additions if joystick reader returns zero"),
+    (0x0050A371, "8b 13 0b d1 89 13", "OR native direction flags into HELD output"),
+    (0x0050A3B8, "89 03", "Store merged native joystick HELD action mask"),
+    (0x0050A3DF, "0b c2 89 45 00", "OR native joystick FRESH action mask"),
+    (0x0050A3F4, "5f 5e 5d 5b 83 c4 0c c3", "Common epilogue preserving earlier keyboard results"),
+)
+
 
 class InvalidExecutable(ValueError):
     """Binary identity, layout or native-reader signature rejected."""
@@ -247,6 +267,16 @@ def inspect(data: bytes, *, before: int = 96, after: int = 1024,
         consumer_signatures.append({"va": "0x%08X" % va,
                                     "bytes": hex_bytes,
                                     "binary_disassembly_meaning": meaning})
+    source_stage_signatures = []
+    for va, hex_bytes, meaning in BINARY_VERIFIED_SOURCE_STAGE_SITES:
+        if pe.read(va, len(bytes.fromhex(hex_bytes))) != bytes.fromhex(hex_bytes):
+            raise InvalidExecutable(
+                "keyboard/joystick stage signature mismatch at 0x%08X" % va)
+        source_stage_signatures.append({
+            "va": "0x%08X" % va,
+            "bytes": hex_bytes,
+            "binary_disassembly_meaning": meaning,
+        })
     native = pe.read(ACTION_TABLE, 14 * 8)
     pairs = [struct.unpack_from("<II", native, i * 8) for i in range(14)]
     if tuple(mask for mask, _ in pairs) != ACTION_MASKS:
@@ -271,6 +301,19 @@ def inspect(data: bytes, *, before: int = 96, after: int = 1024,
         "verified_previous_source_signatures": known_signatures,
         "verified_binary_input_sites": binary_verified,
         "verified_binary_mask_consumer_sites": consumer_signatures,
+        "verified_keyboard_native_source_stage_sites": source_stage_signatures,
+        "source_separation": {
+            "original_formula": "held = keyboard | native DirectInput joystick",
+            "keyboard_region": "0x0050A1AC..0x0050A29D",
+            "native_joystick_region": "0x0050A29E..0x0050A3F3",
+            "keyboard_held_or": "0x0050A24B",
+            "native_direction_or": "0x0050A371",
+            "native_button_held_or": "0x0050A3B8",
+            "skip_native_on_zero": "0x0050A2B5 -> 0x0050A3F4",
+            "generic_bridge_source_isolation": "NOT IMPLEMENTED",
+            "native_side_effects_when_skipped": "UNKNOWN",
+            "game_hook_authorized": False,
+        },
         "original_direct_call_xrefs": {
             # Binary-disassembly comparison on the exact retail executable
             # showed these same addresses as the raw E8 candidates.

@@ -91,3 +91,22 @@ PR #80 retains verified Xbox/DS4 ownership; PR #88 is a draft
 stacked on PR #80, no merge to main.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+## Binary signatures added to the offline inspector
+
+The exact original EXE has been independently checked against **13
+new instruction signatures** at the keyboard/joystick stage boundary
+(`0x0050A19F..0x0050A3F4`). The SHA-pinned inspector
+`ChatGPT/tools/inspect_spidey_native_reader.py` now refuses an EXE
+with any mismatch, and adds a `source_separation` section to its
+JSON report. These are in addition to the previous **37** source and
+consumer signatures, for **50 signature sites in total**.
+
+The original native code explicitly branches from
+`0x0050A2B5` to the shared epilogue when the physical reader
+returns zero. Earlier keyboard bits are already present and are
+not erased by that branch. This is **static proof** that the
+keyboard result survives a missing joystick; it is **not** proof
+that a future patch can safely bypass the native reader when the
+physical device exists, nor that skipping it preserves the game's
+buffered-event maintenance.

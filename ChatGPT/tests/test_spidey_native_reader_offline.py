@@ -122,6 +122,19 @@ def test_no_runtime_mutation_or_external_modules():
     assert '"first_consumed_output": "held only in this consumer"' in script
     assert '"number_of_direct_latch_calls": 20' in script
     assert "disassembled mask consumer mismatch" in script
+    assert len(mod.BINARY_VERIFIED_SOURCE_STAGE_SITES) == 13
+    assert mod.BINARY_VERIFIED_SOURCE_STAGE_SITES[0][:2] == (
+        0x0050A19F, "c7 03 00 00 00 00")
+    assert mod.BINARY_VERIFIED_SOURCE_STAGE_SITES[2][:2] == (
+        0x0050A1AC, "e8 cf 79 ff ff")
+    assert mod.BINARY_VERIFIED_SOURCE_STAGE_SITES[6][:2] == (
+        0x0050A29E, "68 94 83 56 00")
+    assert mod.BINARY_VERIFIED_SOURCE_STAGE_SITES[8][:2] == (
+        0x0050A2B5, "85 c0 0f 84 37 01 00 00")
+    assert mod.BINARY_VERIFIED_SOURCE_STAGE_SITES[-1][:2] == (
+        0x0050A3F4, "5f 5e 5d 5b 83 c4 0c c3")
+    assert "keyboard/joystick stage signature mismatch" in script
+    assert '"game_hook_authorized": False' in script
     assert "direct_relative_call_candidates(pe,0x0050A190)" in script
     assert "direct_relative_call_candidates(pe,0x00505720)" in script
     assert "direct_relative_call_candidates(pe,0x00479540)" in script
