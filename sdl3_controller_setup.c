@@ -16,6 +16,7 @@
 #include <string.h>
 #include "sdl3_controller_setup.h"
 #include "sdl3_gamepad_probe.h"
+#include "sdl3_raw_mapping.h"
 #include "sdl3_controller_capture.h"
 #include "sdl3_controller_setup_nav.h"
 #include "sdl3_gamepad_selection.h"
@@ -27,6 +28,7 @@ enum {
   SPIDER_UI_PAD=1001, SPIDER_UI_ACTION=1002,
   SPIDER_UI_CAPTURE=1003, SPIDER_UI_RESET=1004,
   SPIDER_UI_CLOSE=1005, SPIDER_UI_STATUS=1006,
+  SPIDER_UI_RAW=1008,
   SPIDER_UI_TIMER=1007
 };
 typedef struct {
@@ -637,6 +639,10 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         "Triangle/Y: defaults    Keyboard: Tab, Enter, Esc, PgUp/PgDn",
         WS_CHILD|WS_VISIBLE,18,351,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
+      label=CreateWindowExA(0,"BUTTON","Recognize unknown controller (keyboard)",
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_NOTIFY,
+        465,254,230,42,hwnd,(HMENU)(uintptr_t)SPIDER_UI_RAW,NULL,NULL);
+      SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->status=CreateWindowExA(0,"STATIC","",
         WS_CHILD|WS_VISIBLE,18,423,684,45,hwnd,
         (HMENU)(uintptr_t)SPIDER_UI_STATUS,NULL,NULL);
@@ -691,6 +697,13 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
           } else if(setup_report)
             setup_report("SDL3-SETUP: Reset REFUSED (no valid selected model or save failure)");
         }
+      } else if(LOWORD(wp)==SPIDER_UI_RAW && HIWORD(wp)==BN_CLICKED) {
+        if(setup_report)setup_report("SDL3-SETUP: user opened raw joystick GUID recognition wizard (keyboard)");
+        SpiderSDL3Raw_Recognize(hwnd);
+        /* SDL3 mapping events are handled by the existing timer/rescan;
+         * no DirectInput device is acquired or changed in the modal. */
+        SpiderSDL3Probe_SetupPump();
+        refresh_pads(ui);
       } else if(LOWORD(wp)==SPIDER_UI_CLOSE && HIWORD(wp)==BN_CLICKED) {
         if(setup_report)setup_report("SDL3-SETUP: Close button requested (deferred message)");
         PostMessageA(hwnd,WM_CLOSE,0,0);
