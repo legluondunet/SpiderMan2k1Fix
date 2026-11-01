@@ -19,7 +19,7 @@ enum { RAW_PAD=2001,RAW_BEGIN=2002,RAW_SKIP=2003,
 typedef struct {
   HWND window,owner,pads,status;
   uint32_t ids[16],active_id;
-  unsigned raw_count,step,armed,done;
+  unsigned raw_count,step,armed,done,axis_release_required;
   char guid[33],name[128];
   SpiderSDL3RawMapping mapping;
   SpiderSDL3RawSample neutral;
@@ -71,6 +71,7 @@ static void wizard_finish(SpiderRawWizard *w);
 static void wizard_next(SpiderRawWizard *w,SpiderSDL3RawInput input) {
   if(!w || w->step>=SPIDER_RAW_MAP_COUNT)return;
   w->mapping.input[w->step]=input;
+  w->axis_release_required=input.kind==SPIDER_RAW_AXIS;
   w->step++;
   w->armed=0;w->still=0;
   wizard_prompt(w);
@@ -94,6 +95,15 @@ static void wizard_tick(SpiderRawWizard *w) {
   }
   if(w->step>=SPIDER_RAW_MAP_COUNT)return;
   if(!w->armed) {
+    if(w->axis_release_required) {
+      /* The previous axis must return to its pre-capture baseline before
+       * we arm the next step; otherwise RIGHT may be captured as DOWN. */
+      for(i=0;i<s.axis_count && i<w->neutral.axis_count;i++) {
+        int d=(int)s.axes[i]-(int)w->neutral.axes[i];
+        if(d>11000 || d< -11000){w->still=0;return;}
+      }
+      w->axis_release_required=0;
+    }
     if(!wizard_neutral(&s)) {w->still=0;return;}
     if(++w->still>=2u) {
       w->neutral=s;
@@ -171,7 +181,8 @@ static void wizard_start(SpiderRawWizard *w) {
   if(!w)return;
   SpiderSDL3Probe_RawEnd();
   memset(&w->mapping,0,sizeof(w->mapping));
-  w->step=0;w->done=0;w->armed=0;w->still=0;w->active_id=0;
+  w->step=0;w->done=0;w->armed=0;w->still=0;
+  w->axis_release_required=0;w->active_id=0;
   selected=SendMessageA(w->pads,CB_GETCURSEL,0,0);
   if(selected==CB_ERR || (unsigned)selected>=w->raw_count) {
     wizard_text(w,"No unmapped raw joystick. SDL3 may already recognize your controller.");
