@@ -45,6 +45,7 @@
 #include "native_joystick_reconnect.h"
 #include "sdl3_gamepad_probe.h"
 #include "sdl3_gameplay_live.h"
+#include "sdl3_universal_gameplay.h"
 #include "ps1_input_flight_recorder.h"
 #include "ps1_joystick_readonly_menu.h"
 #include "sdl3_controller_setup.h"
@@ -1448,6 +1449,10 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   }
   /* Critical: release injected key before focus pause can block this thread. */
   release_active_key();
+  if(SpiderSDL3Universal_Enabled()) {
+    xbox_rt_swing_release("SDL3 universal takeover");
+    return; /* legacy DS4/Xbox keyboard bridge is mutually exclusive */
+  }
   if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {
     spider_sdl3_context_menu_reset(&sdl3_context_bridge);
     sdl3_3d_trace_valid=0;
