@@ -226,8 +226,11 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
   path_len=(int)wcslen(path);
   heading_len=(int)wcslen(heading);
   if(!path_len)return FALSE;
-  heading_px=toast_min(29,toast_max(16,(int)h/43));
-  path_px=toast_min(18,toast_max(12,(int)h/70));
+  /* Preserve the original 16x16 game icon sharpness: scale text DOWN
+   * rather than interpolating its tiny embedded pixel art. At 1080p
+   * the heading becomes ~21px and the full path ~13px. */
+  heading_px=toast_min(24,toast_max(15,(int)h/50));
+  path_px=toast_min(16,toast_max(11,(int)h/82));
   pad=toast_max(11,heading_px/2+2);
   game_icon=toast_original_small_icon();
   icon_px=game_icon?SPIDER_F9_EXE_ICON_SIZE:0;
@@ -285,9 +288,9 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
   text_x=x+pad+icon_px+icon_gap;
   path_y=y+pad+head_step;
   if(game_icon) {
-    /* 16x16 native small HICON without scaling, vertically centered in
-     * the entire heading+path text block; DrawIconEx preserves alpha. */
-    int icon_y=y+pad+(head_step+lines*path_step-icon_px)/2;
+    /* Native 16x16 game icon, sharp and centered alongside the title;
+     * centering it across both lines made it look vertically detached. */
+    int icon_y=y+pad+toast_max(0,(heading_px-icon_px)/2);
     if(!DrawIconEx(dc,x+pad,icon_y,game_icon,
                    icon_px,icon_px,0,NULL,DI_NORMAL)) {
       /* The notification and entire path must remain visible even if
