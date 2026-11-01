@@ -23,13 +23,12 @@ DirectInput and the existing DS4/Xbox integration are intentionally unchanged.
 6. Confirm the game still responds to the original keyboard and controller
    controls, including a subsequent Alt+Tab and return.
 
-## Test B — physically present joystick without an SDL gamepad mapping
+## Test B — calibrate an already-mapped or unmapped SDL joystick
 
-1. Connect an additional unknown joystick. Open SDL3 Controller Setup with
-   the keyboard, use **Tab** to select **Recognize unknown joystick**, then **Enter**. The raw wizard shows unmapped joystick IDs.
-   If it says no unmapped joystick exists, SDL3 already recognizes all
-   detected devices; this is **not** a failure.
-2. Select the intended raw joystick using the keyboard; press **Enter**.
+1. Connect the SDL joystick you want to calibrate (including an already SDL-mapped device such as the PS3 054C:0268). Open SDL3 Controller Setup with
+   the keyboard, use **Tab** to select **Calibrate SDL3 joystick**, then **Enter**. The wizard lists **all** SDL joysticks with their names and either `Mapped - recalibrate` or `Unmapped - recognize`.
+   If no devices appear, SDL3 is not exposing a joystick at all; the log will show the device inventory.
+2. Select the intended physical joystick by **name** using the keyboard; press **Enter**. Already-mapped devices can be recalibrated; the existing mapping is not replaced until the wizard completes successfully.
 3. The assistant walks through **20** SDL-standard controls. Release every
    control between steps. Press only the requested button, D-pad direction
    or move the requested stick/trigger. Press **S** to skip optional
