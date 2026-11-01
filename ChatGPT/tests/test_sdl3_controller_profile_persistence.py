@@ -144,7 +144,10 @@ def test_win32_controller_storage_is_atomic_isolated_and_fallback_safe():
     assert "SpiderSDL3ProfileStore_Load(vid,pid,&trial)" in probe
     assert "SpiderSDL3ProfileStore_Save(candidate)" in probe
     assert "if(!profile || !SpiderSDL3ProfileStore_Save(candidate))return 0;" in probe
-    assert "spider_sdl3_get_profile(sdl_vendor(pads[k].id)," in probe
+    # Known VID:PID keeps its model key, while zero-ID SDL3 devices use
+    # the stable joystick GUID-derived synthetic key (not guessed DI IDs).
+    assert "SpiderSDL3Raw_ProfileKey(pads[k].id," in probe
+    assert "spider_sdl3_get_profile(keyv,keyp)" in probe
     assert "commit_profile(ui,&trial," in ui
     assert "SDL3-SETUP: SAVE FAILED;" in ui
     assert "Profile" in ui and "SAVED:" in ui
