@@ -31,6 +31,12 @@ int SpiderSDL3Probe_SelectedRT(int *normalized_rt);
 /* Passive selected SDL3 input snapshot, only on the original Flip thread
  * after its SDL3 event pump. Includes both triggers and semantic buttons.
  * No native DirectInput ownership writes, no event queue consumption. */
+/* Explicit modal Start selects an unknown controller only for the
+ * normalized semantic action adapter (read-only). Native DirectInput
+ * owner and gameplay remain unchanged. Unique connected SDL ID+VID/PID
+ * and same-game-thread checks are mandatory. */
+int SpiderSDL3Probe_GenericSelectedSample(uint32_t *instance,
+    uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample);
 int SpiderSDL3Probe_SelectedSample(uint32_t *instance,uint16_t *vid,
                                   uint16_t *pid,
                                   SpiderSDL3ControllerSample *sample);
