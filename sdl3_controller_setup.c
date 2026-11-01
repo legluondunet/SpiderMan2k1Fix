@@ -640,7 +640,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         WS_CHILD|WS_VISIBLE,18,351,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       label=CreateWindowExA(0,"BUTTON","Recognize unknown controller (keyboard)",
-        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_NOTIFY,
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP,
         465,254,230,42,hwnd,(HMENU)(uintptr_t)SPIDER_UI_RAW,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->status=CreateWindowExA(0,"STATIC","",
