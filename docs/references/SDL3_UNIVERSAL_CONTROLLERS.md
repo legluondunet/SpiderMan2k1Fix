@@ -95,7 +95,24 @@ the currently functioning implementation.
   usable. New diagnostic implementation locks **all** Win32 controls,
   ignores synthetic keyboard events and clicks, exposes keyboard-only
   Ctrl+Shift+T (stop) and Ctrl+Shift+Q (close), and logs both stick axes;
-  this corrective implementation **needs physical retest**.
+  the subsequently uploaded 17:35 log confirms the isolation + keyboard
+  Escape work on the actual hardware (see next bullet).
+- **2026-11-01 hardware acceptance: physical keyboard Escape and isolated
+  SDL3 diagnostic CONFIRMED under GE-Proton 11-11.** In user log
+  `SpiderMan2k1Fix(20261101-173528).log`, build
+  `v1.1.0-77d9938`, both DS4 `054C:09CC` (SDL id=1)
+  and calibrated PS3 `054C:0268` (SDL id=2) activate the read-only test.
+  Both runs report `physical keyboard Escape via WM_INPUT ARMED`,
+  `PHYSICAL-ESC keyboard stopped normalized input test`, test OFF,
+  and successful restoration of the original game-window focus.
+  The PS3's live mask changes across face, shoulder and other inputs,
+  and both analog triggers reach `32767`; SDL mapping reloads with
+  `loaded=1`. The user reports both Escape and controller input test OK.
+  The PS3 log shows some left-stick axis changes but **RX/RY remain 0
+  in all recorded snapshots**; right stick range/assignment needs a
+  separate explicit physical check before full analog validation.
+  The bypass of the original Joystick list is a **later experimental
+  build** and is NOT validated by this hardware log.
 - **Game ownership still refused for this PS3** even after calibration:
   `SDL3-OWNER: START REFUSED unsupported native controller` and
   `SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous modal owner`.
