@@ -72,17 +72,29 @@ the currently functioning implementation.
 - Current native controller ownership still restricts live gameplay to the
   previously verified Sony DS4 / Xbox 360 adapters. Original game input
   cannot yet consume generic SDL3 input.
-- Uploaded `SpiderMan2k1Fix(20261101-155038).log`: PS3
-  `054C:0268` was detected by SDL3 (`XInput Controller #1`). Wizard
-  recorded steps 1–5 but then repeated `opened id=2` rather than saving.
-  Start may have generated a synthetic VK_RETURN on Wine; the wizard no
-  longer treats Enter as a restart while a capture is active. This needs
-  a real-hardware retest before calling it fixed.
+- **2026-11-01 hardware acceptance: raw calibration 20/20 CONFIRMED.**
+  User validated on Manjaro + GE-Proton 11-11 / Wine 11.0 with the PS3
+  `054C:0268`, exposed to SDL3 as `XInput Controller #1` (SDL ID=3).
+  In `SpiderMan2k1Fix(20261101-162451).log`, wizard records **every
+  step 1/20 through 20/20**, including face buttons, Back/Start,
+  shoulders, stick clicks, four D-pad hats, four stick axes and both
+  trigger axes. Exact GUID
+  `0300fa674c0500006802000011817801` persists successfully as a
+  per-GUID SDL mapping at `location=GAME`; log contains
+  `SDL3-RAW-WIZARD: completed and persisted SDL3 normalized mapping`.
+  The Win32 focus isolation (disabling both combo and bottom buttons)
+  has passed this physical capture test. **Restart/reload of the newly
+  saved mapping has not yet been tested**; initial `loaded=0` on that
+  launch preceded mapping creation. This does **not** validate gameplay.
+- **Game ownership still refused for this PS3** even after calibration:
+  `SDL3-OWNER: START REFUSED unsupported native controller` and
+  `SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous modal owner`.
+  The existing native DS4/Xbox-only bridge remains unchanged.
 - The F9 screenshot and F10 in-game location shortcuts remain reserved.
 
 ## Outstanding
 
-- Demonstrate full raw-wizard calibration through step 20 on actual hardware.
+- Re-launch the game and prove saved per-GUID mapping reloads (`SDL3-MAPPINGS: ... loaded=1`) and is usable for SDL3 normalized input after restart.
 - Improve analog-axis polarity, physical trigger neutrality and UI recovery.
 - Implement and verify the **universal 3D + menu + video + cutscene +
   still/Enter** context-aware bridge.
