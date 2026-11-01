@@ -112,12 +112,25 @@ static void binding_name(SpiderSDL3Binding b,char *out,size_t n) {
 static int setup_focus_button_id(unsigned selected) {
   if(selected==SPIDER_SETUP_BUTTON_CAPTURE)return SPIDER_UI_CAPTURE;
   if(selected==SPIDER_SETUP_BUTTON_RESET)return SPIDER_UI_RESET;
-  return SPIDER_UI_CLOSE;
+  if(selected==SPIDER_SETUP_BUTTON_CLOSE)return SPIDER_UI_CLOSE;
+  if(selected==SPIDER_SETUP_BUTTON_RAW)return SPIDER_UI_RAW;
+  if(selected==SPIDER_SETUP_BUTTON_TEST)return SPIDER_UI_TEST;
+  return SPIDER_UI_USE;
+}
+/* Only ONE visible selection cursor: hide the list highlight when a
+ * button has native focus, but retain ui->action for future editing. */
+static void setup_sync_visual_selection(SpiderSDL3SetupUI *ui) {
+  if(!ui || !IsWindow(ui->actions))return;
+  SendMessageA(ui->actions,LB_SETCURSEL,
+    ui->focus.column==SPIDER_SETUP_FOCUS_ACTIONS?
+       (WPARAM)ui->action:(WPARAM)-1,0);
 }
 static void setup_apply_focus(SpiderSDL3SetupUI *ui) {
   HWND target;
   static const char *const names[SPIDER_SETUP_BUTTON_COUNT]={
-    "Capture selected action","Restore defaults","Close"
+    "Capture selected action","Restore defaults","Close",
+    "Calibrate SDL3 joystick","Test SDL3 inputs",
+    "Use selected SDL3 controller"
   };
   char line[180];
   if(!ui || !IsWindow(ui->hwnd))return;
@@ -130,6 +143,7 @@ static void setup_apply_focus(SpiderSDL3SetupUI *ui) {
   SendMessageA(ui->hwnd,WM_CHANGEUISTATE,
     MAKEWPARAM(UIS_CLEAR,UISF_HIDEFOCUS),0);
   SetFocus(target);
+  setup_sync_visual_selection(ui);
   if(ui->focus.column==SPIDER_SETUP_FOCUS_BUTTONS) {
     snprintf(line,sizeof(line),
       "FOCUS: %s. Cross/A activates; stick left returns to action list.",
@@ -188,7 +202,7 @@ static void refresh_actions(SpiderSDL3SetupUI *ui) {
     SendMessageA(ui->actions,LB_ADDSTRING,0,(LPARAM)label);
   }
   if(ui->action>=SPIDER_SDL3_VISIBLE_ACTION_COUNT)ui->action=0;
-  SendMessageA(ui->actions,LB_SETCURSEL,ui->action,0);
+  setup_sync_visual_selection(ui);
 }
 /* The new profile is serialized/committed BEFORE updating the live bank.
  * A failed filesystem operation cannot silently discard a good mapping. */
@@ -216,6 +230,7 @@ static void select_slot(SpiderSDL3SetupUI *ui,unsigned slot) {
   if(!ui)return;
   spider_sdl3_capture_reset(&ui->capture);
   spider_sdl3_setup_nav_reset(&ui->nav);
+  ui->start_owner_requested=0u; /* new profile invalidates prior claim */
   ui->slot=slot;ui->instance=0;ui->vid=0;ui->pid=0;
   if(!SpiderSDL3Probe_SetupRead(slot,&id,&vid,&pid,name,sizeof(name),&s)) {
     ui->modal_start.active=0;
@@ -435,10 +450,22 @@ static int setup_select_explicit_pad(SpiderSDL3SetupUI *ui) {
     if(setup_report)setup_report("SDL3-SETUP: EXPLICIT-SELECT refused stale controller");
     return 0;
   }
+  if(ui->start_owner_requested && ui->start_owner_id==id &&
+     ui->start_owner_vid==vid && ui->start_owner_pid==pid) {
+    if(setup_report)setup_report("SDL3-SETUP: EXPLICIT-SELECT already queued; duplicate activation ignored");
+    return 1;
+  }
   ui->start_owner_id=id;
   ui->start_owner_vid=vid;
   ui->start_owner_pid=pid;
   ui->start_owner_requested=1u;
+  /* Selecting a controller is NOT a rebind. Remove the old focused
+   * button cursor; restore only the list selection and require a fresh
+   * neutral controller sample before it can activate another control. */
+  ui->focus.column=SPIDER_SETUP_FOCUS_ACTIONS;
+  spider_sdl3_setup_nav_reset(&ui->nav);
+  if(IsWindow(ui->actions))SetFocus(ui->actions);
+  setup_sync_visual_selection(ui);
   snprintf(line,sizeof(line),
     "SDL3-SETUP: EXPLICIT-SELECT QUEUED id=%lu VID:PID=%04X:%04X (revalidate next foreground Flip; native DI unchanged)",
     (unsigned long)id,(unsigned)vid,(unsigned)pid);
