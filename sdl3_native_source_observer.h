@@ -13,11 +13,13 @@ enum { SPIDER_SOURCE_KEY_BYTES=256, SPIDER_SOURCE_JOY_BYTES=32,
 typedef struct {
   uint16_t keyboard_held, keyboard_fresh, keyboard_released;
   uint32_t joystick_held, joystick_fresh, joystick_released;
+  uint32_t merged_actions; /* game output, already keyboard+joystick merged */
 } SpiderNativeSourceSnapshot;
 typedef struct {
   SpiderNativeSourceSnapshot previous;
   unsigned have_previous, context, emitted;
   unsigned have_focus, was_active, focus_events;
+  unsigned pending_resume, resume_samples, last_resume;
 } SpiderNativeSourceObserver;
 static inline void spider_native_source_reset(SpiderNativeSourceObserver *o) {
   if(o)memset(o,0,sizeof(*o));
@@ -51,7 +53,11 @@ static inline int spider_native_source_focus_step(
   if(!o)return 0;
   active=!!active;
   if(o->have_focus&&o->was_active==active)return 0;
-  if(o->have_focus&&o->was_active!=active)o->have_previous=0;
+  if(o->have_focus&&o->was_active!=active) {
+    o->have_previous=0;
+    /* Reserve a fresh source snapshot for the first foreground Flip. */
+    o->pending_resume=active?1u:0u;
+  }
   o->have_focus=1u;
   o->was_active=active;
   if(o->focus_events>=SPIDER_SOURCE_MAX_FOCUS_EVENTS)return 0;
@@ -61,13 +67,21 @@ static inline int spider_native_source_focus_step(
 static inline int spider_native_source_changed(
     SpiderNativeSourceObserver *o,const SpiderNativeSourceSnapshot *s,
     unsigned context) {
-  if(!o||!s||o->emitted>=SPIDER_SOURCE_MAX_CHANGES)return 0;
+  unsigned reserved;
+  if(!o||!s)return 0;
+  reserved=o->emitted>=SPIDER_SOURCE_MAX_CHANGES;
+  /* Even after 96 ordinary changes, retain up to 8 post-focus snapshots.
+   * There is NO rolling reset: both budgets stay bounded per process. */
+  if(reserved&&(!o->pending_resume||o->resume_samples>=8u))return 0;
   if(o->have_previous&&o->context==context&&
      memcmp(&o->previous,s,sizeof(*s))==0)return 0;
   o->previous=*s;
   o->context=context;
   o->have_previous=1u;
-  o->emitted++;
+  o->last_resume=o->pending_resume;
+  o->pending_resume=0u;
+  if(reserved)o->resume_samples++;
+  else o->emitted++;
   return 1;
 }
 #endif
