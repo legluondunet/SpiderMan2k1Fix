@@ -40,8 +40,8 @@ static void report(const char *msg) {
  * Instead, locate the original x86 direct CALLs to that exact native
  * function in executable .text, verify uniqueness and their targets,
  * and patch only their 5-byte relative CALL destinations. Our wrapper
- * forwards Keyboard directly to the ORIGINAL 0x50CE70 and opens the
- * SDL3 dialog directly for Joystick. It never changes menu state, action
+ * forwards native-mode=1 Keyboard directly to ORIGINAL 0x50CE70 and
+ * opens SDL3 directly for native-mode=0 Joystick. It never changes menu state, action
  * assignments or original joystick/keyboard data tables. On any
  * ambiguous signature or write failure, FAIL CLOSED to the existing
  * old-menu -> SDL3 TEST PREVIEW row path.
@@ -53,21 +53,37 @@ enum { SPIDER_DIRECT_ENTRY_MAX_CALLS=4u };
 static int direct_entry_attempted=0,direct_entry_installed=0;
 typedef void (__cdecl *SpiderNativeControllerConfigFn)(int);
 
-static void __cdecl spider_sdl3_direct_controller_menu(int is_joystick) {
+static void __cdecl spider_sdl3_direct_controller_menu(int native_mode) {
   static unsigned logs=0u;
+  char line[180];
+  /* Proven in hardware: the original PCShell config selector uses 0
+   * for Joystick, 1 for Keyboard. The former wrapper assumed the
+   * opposite: 2026-11-01 GE-Proton build 7862a25 logged "Keyboard
+   * configuration forwarded" when user selected the Joystick menu.
+   * Never forward an inverted argument to the original game. */
+  const int is_joystick=(native_mode==0);
+  if(logs++<16u) {
+    snprintf(line,sizeof(line),
+      "SDL3-DIRECT-ENTRY: INVOKED native-mode=%d interpreted=%s",
+      native_mode,native_mode==0?"Joystick":
+      native_mode==1?"Keyboard":"unknown/fallback");
+    report(line);
+  }
   if(is_joystick && SpiderSDL3ControllerSetup_Enabled()) {
     if(SpiderSDL3Probe_SetupPump()) {
-      if(logs++<12u)report(
-        "SDL3-DIRECT-ENTRY: Joystick selected; bypass original seven-action submenu and open SDL3 window");
+      report("SDL3-DIRECT-ENTRY: Joystick selected (mode=0); bypass original seven-action submenu and open SDL3 window");
       SpiderSDL3ControllerSetup_Open();
       return;
     }
-    if(logs++<12u)report(
-      "SDL3-DIRECT-ENTRY: SDL3 not ready; fallback to original Joystick menu");
-  } else if(logs++<12u)
-    report("SDL3-DIRECT-ENTRY: Keyboard configuration forwarded to original game");
+    report("SDL3-DIRECT-ENTRY: SDL3 not ready; fallback to original Joystick menu");
+  } else if(native_mode==1) {
+    if(logs<18u)
+      report("SDL3-DIRECT-ENTRY: Keyboard selected (mode=1); original game configuration preserved");
+  } else if(!is_joystick) {
+    report("SDL3-DIRECT-ENTRY: unexpected native mode; forwarding unchanged to original game");
+  }
   ((SpiderNativeControllerConfigFn)(uintptr_t)
-    SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(is_joystick);
+    SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(native_mode);
 }
 static int spider_sdl3_patch_native_call(BYTE *site,const BYTE *replacement,
                                         BYTE old_bytes[5]) {
