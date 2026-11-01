@@ -464,9 +464,10 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
      * Win32 actions are disabled and guarded against synthetic clicks.
      * Log BOTH sticks and triggers, not just face buttons/trigger edges. */
     unsigned axis,changed=s.buttons!=ui->test_buttons_previous;
-    for(axis=0;axis<6u;axis++)
-      if((int)s.axis[axis]!=ui->test_axes_previous[axis])
-        changed=1u;
+    for(axis=0;axis<6u;axis++) {
+      int delta=(int)s.axis[axis]-ui->test_axes_previous[axis];
+      if(delta>1800 || delta< -1800)changed=1u;
+    }
     if(changed) {
       ui->test_buttons_previous=s.buttons;
       for(axis=0;axis<6u;axis++)
@@ -735,7 +736,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         "Stick Left/Right: actions or buttons   Stick Up/Down: select row or button\r\n"
         "L1/R1: browse pad   Start: choose pad   Circle/B: close + use this pad\r\n"
         "Triangle/Y: defaults    Keyboard: Tab, Enter, Esc, PgUp/PgDn\r\n"
-        "Use Tab + Enter for Recognize / Test; F9 screenshots and F10 game shortcuts unchanged",
+        "Test mode: Ctrl+Shift+T stop, Ctrl+Shift+Q close; F9 screenshots/F10 locations unchanged",
         WS_CHILD|WS_VISIBLE,18,351,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->status=CreateWindowExA(0,"STATIC","",
