@@ -55,7 +55,9 @@ static int native_read(uint32_t out[SPIDER_PS1_BUTTON_COUNT]) {
   if(sizeof(void*)!=4 || (uintptr_t)GetModuleHandleA(NULL)!=0x00400000u)
     return 0;
   if(VirtualQuery((const void *)p,&m,sizeof(m))!=sizeof(m) ||
-     m.State!=MEM_COMMIT || (m.Protect&0xffu)!=PAGE_READWRITE ||
+     m.State!=MEM_COMMIT ||
+     ((m.Protect&0xffu)!=PAGE_READWRITE &&
+      (m.Protect&0xffu)!=PAGE_WRITECOPY) ||
      (m.Protect&(PAGE_GUARD|PAGE_NOACCESS)))return 0;
   b=(uintptr_t)m.BaseAddress;
   if(p<b || p-b>=m.RegionSize ||
@@ -149,7 +151,12 @@ int SpiderSDL3GameplayLive_OwnsPause(void) {
    * During a native pause the seven mapping DWORDs have been restored:
    * 'applied' must NOT allow duplicate Sony SHARE/OPTIONS Escape pulses.
    * Reserve Pause for the selected, verified DS4 throughout 3D/pause. */
-  return enabled && SpiderSDL3Probe_NativeOwnerEnabled() &&
+  /* Ownership begins ONLY after a verified seven-action map was applied.
+   * Keep it during native Pause (applied=0, edge armed) so our own
+   * Escape pulse remains the only Sony pause source.  A refused map
+   * must not suppress the existing safe SHARE fallback. */
+  return enabled && (applied || paused_edge_armed) &&
+    SpiderSDL3Probe_NativeOwnerEnabled() &&
     SpiderSDL3Probe_MappedCount()>0u &&
     SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) &&
     id!=0u && vid==0x054cu &&
@@ -254,8 +261,11 @@ void SpiderSDL3GameplayLive_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
      * player returns to neutral. */
     neutral=spider_sdl3_profile_neutral(&sample);
     if(!neutral)return;
-    if(!native_read(current) ||
-       !same7(current,canonical)) {
+    if(!native_read(current)) {
+      if(reports<10u)msg("SDL3-3D-LIVE: REFUSED native action table unreadable or unsupported protection/layout; no mapping writes");
+      return;
+    }
+    if(!same7(current,canonical)) {
       if(reports<10u)msg("SDL3-3D-LIVE: REFUSED native seven-action table not exact selected-model canonical preset; preserve external/custom game controls");
       return;
     }
