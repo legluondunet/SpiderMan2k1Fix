@@ -35,7 +35,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **Widescreen HUD:** Corrects the proportions and positioning of HUD elements, including health and web gauges, compass, mission objectives, boss health bars, and in-game pause menus. Tested at 1920×1080 (16:9) and 1920×1200 (16:10).
 - **FPS limiter:** Configurable frame-rate cap, set to **30 FPS by default**. Lower limits, such as 20 FPS, can be selected for timing-sensitive gameplay.
 - **Alt+Tab stability:** Automatically pauses the game when it loses focus, synchronizes video and audio playback, and restores native keyboard/controller input when gameplay resumes. After returning to the game, press and release any keyboard key, or a digital button on the selected SDL3 gamepad (when the experimental SDL3 native owner is verified), to resume the custom PAUSED screen. SDL3 wake uses the already-open selected gamepad on the frozen Flip thread, excluding Start/Guide, and requires a fresh neutral-to-press-to-release cycle; it does not call DirectInput Acquire. When SDL3 is not available, the previous guarded DirectInput DualShock 4 wake is retained. Keyboard wake always remains supported. Also restores the Windows desktop cursor when necessary.
-- **Natural controller confirmation (experimental SDL3):** **Cross on PlayStation / A on Xbox (physical South)** is now fixed for confirming 2D menus and passing Bink videos when the original game allows Return; **Circle/B (East)** is now also fixed for Back/Cancel (including Bink/menu Escape), not remappable. Scripted 3D cinematics use the game's original **Jump/Cross/A** skip path, with **no extra SDL3 skip request**. The editable `Confirm / Skip` and `Back / Cancel` rows have both been removed: only the eight 3D semantic actions remain visible. Legacy v2 per-model context fields are preserved on disk but ignored at runtime for these two fixed menu/media commands. 3D action bindings remain game-native by default; an explicit, off-by-default **Sony DS4-only experimental bridge** can now apply the seven SDL3 saved action bindings to the original DirectInput button table during 3D gameplay and translate the eighth Pause action to a guarded Escape pulse. It is **not yet hardware-validated**; see the trial instructions below. **Separate fixed intro still pages** are not yet recognized by this menu/Bink bridge; original keyboard input remains available there until the exact native owner can be safely routed. Windows/Wine hardware validation is pending.
+- **Experimental SDL3 gamepad support:** PlayStation **Cross** / Xbox **A** confirms in 2D menus and Bink video prompts; **Circle/B** cancels when the original game supports Escape. Supported Sony DualShock 4 (`054C:09CC`) and Xbox 360-compatible (`045E:028E`) controllers can be selected and handed off to the original DirectInput gameplay backend, with per-model saved profiles and guarded Xbox RT-to-Swing support. The **combined integration build** passed real Windows 11 gamepad/focus tests (both controllers present) and Wine/Proton trials on the tested hardware. **These SDL3 owner/bridge features remain experimental and require the documented INI opt-ins**; unsupported controllers, every custom binding, and DS3/Steam Deck research are **not** claimed validated. See the [SDL3 native-owner reference](docs/references/SDL3_NATIVE_OWNER_EXPERIMENT.md) and [integration test report](docs/references/INTEGRATION_XBOX_MOUSE_ALT_FOCUS_ACCEPTANCE.md).
 - **Keyboard layouts:** Automatically detects the active keyboard layout and adapts the game's controls, keyboard labels, and cheat-code entry. The original game only supported QWERTY layouts.
 - **No game mouse:** Keyboard/gamepad only. Game cursor, clicks and polling are permanently off. Desktop pointer unaffected; legacy `MouseEnabled` ignored.
 - **DPI awareness:** Handles Windows display scaling to ensure correct window dimensions and rendering on high-DPI displays.
@@ -47,11 +47,11 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 
 Successfully tested on Windows 11 and Linux/Wine.
 
-For the optional **DS4-only live 3D profile experiment** (disabled by default), activation, supported buttons, rollback and hardware-test steps, see [SDL3 native-owner research](docs/references/SDL3_NATIVE_OWNER_EXPERIMENT.md#experimental-ds4-only-live-3d-gameplay-profile).
+The optional **Sony DS4 live 3D custom-binding bridge** is **disabled by default** and separate from verified original native controller selection. Its activation and scope are explained in the [SDL3 native-owner research](docs/references/SDL3_NATIVE_OWNER_EXPERIMENT.md#experimental-ds4-only-live-3d-gameplay-profile). The full combination's Windows 11 and Wine/Proton evidence is documented in the [acceptance report](docs/references/INTEGRATION_XBOX_MOUSE_ALT_FOCUS_ACCEPTANCE.md).
 
 ## Bugs Resolved
 
-- **Alt+Tab crashes and input loss:** Mitigates crashes and input-loss issues when switching between the game and other applications; original keyboard and controller focus recovery remains under test in current draft branches.
+- **Alt+Tab crashes and input loss:** Improved switching, native controller/keyboard restoration and synchronized media pause. The combined test build passed 20/20 maintainer checks on Windows 11; the optional, default-off `[Input] ExperimentalAltLatchRecovery=1` repaired six actual stale original Left Alt states in that native Windows test. Wine/Proton sometimes delays or omits the custom PAUSED screen without impairing gameplay; this cosmetic limitation remains accepted when return is stable.
 - **Focus-loss instability:** Added automatic game pausing with synchronized video and audio playback, preventing gameplay and media synchronization issues while the game is in the background.
 - **Crash on exit:** Fixed a crash that could occur when quitting the game.
 - **Broken F9 screenshots on Windows:** Fixed screenshots that appeared entirely purple or contained no visible game graphics.
@@ -67,7 +67,25 @@ The following issues are inherited from the original game and remain unresolved:
 
 ## Known Issue in SpiderMan2k1Fix
 
-- **Delayed pause under Wine:** The automatic pause triggered by loss of focus may occasionally activate with a delay. This issue remains unresolved.
+- **Scene-dependent focus pause under Wine/Proton:** The custom background PAUSED screen can appear immediately in menus, be deferred until a cinematic transition, or appear late/not at all in 3D. This remains a tolerated limitation **only when** switching back retains working controls, graphics and sound without crashes. Windows 11 native focus pause passed the combined hardware tests.
+
+## Frequently Asked Questions
+
+### Why is there no mouse cursor inside the game?
+
+**This is intentional in the current SpiderMan2k1Fix test build.** The original game's mouse cursor, mouse movement and menu click detection are **permanently disabled**; use the keyboard or a supported controller. The old `[Input] MouseEnabled=0/1` setting is recognized only to keep older INI files readable: neither value can restore game-mouse input. Do not add a second `MouseEnabled` line to test this: duplicate INI keys correctly trigger a configuration repair.
+
+**A missing Windows/Linux desktop pointer after Alt+Tab is a different problem.** The fix should restore the desktop cursor after switching away from the game. If the desktop pointer actually disappears or becomes unusable, enable `[Debug] Log=1`, reproduce the issue and report the full log with the OS, Wine/Proton version if applicable, and the steps that triggered it.
+
+### Why is there no sound?
+
+First identify whether the problem is **complete silence**, or only **music, movie/cutscene audio, or game sound effects**. Note whether it began on launch, during play, or after Alt+Tab or a pause. Check the intended Windows/Wine/PipeWire output device, system volume, app volume mixer, and the game's own audio levels.
+
+Then confirm that you are using the supported original `SpideyPC.exe` (SHA-256 given below), the expected installed patch version and both supplied DLLs from the **same build**. Verify that the configuration was accepted (`INI-CHECK: valid SpiderMan2k1Fix.ini`), or inspect the `.ini.old` backup if the file was automatically repaired.
+
+Spider-Man still uses its **original DirectSound engine**. The built-in WAV/PKR loader fix addresses **crackling and truncated sound effects**, not every cause of silence or a wrong audio-output device. Do not switch on unrelated experimental audio features as a generic remedy.
+
+For unresolved cases set `[Debug] Log=1` in the existing `SpiderMan2k1Fix.ini`, relaunch, reproduce the silent section and attach the **complete** `SpiderMan2k1Fix.log`. Specify Windows native versus Wine/Proton and which audio categories are missing. See the [configuration and troubleshooting guide](docs/references/CONFIGURATION.md).
 
 ## Built-in native WAV audio correction
 
@@ -96,7 +114,7 @@ The former late DirectSound-buffer repair
 loader correction is introduced in **SpiderMan2k1Fix v1.1.0**. The
 correction and duplicate-source repairs have been validated without
 audible crackling under Linux/Wine; native Windows gameplay testing of
-the new default-on configuration is still pending.
+the new default-on configuration is now supplemented by actual Windows 11 runtime testing: 37/37 actively playing DirectSound voices were restored on focus return in four verified cycles. This does not claim every audio device, game build or sound configuration is covered.
 
 ## Installation on Windows and Linux (Wine)
 
