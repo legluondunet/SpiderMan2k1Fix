@@ -162,6 +162,7 @@ void SpiderSDL3GameplayLive_Init(const char *ini,void (*logger)(const char *)) {
   enabled=0;reports=0;native_thread=0;
   enabled=ini && GetPrivateProfileIntA("Input",
        "ExperimentalSDL3GameplayBindings",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3UniversalGameplay",0,ini)!=1 &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1 &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1 &&
     GetPrivateProfileIntA("Input","ExperimentalNativeJoystickUnplugGuard",1,ini)==1 &&
