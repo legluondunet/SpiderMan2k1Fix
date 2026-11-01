@@ -159,9 +159,9 @@ the optional recovery implementation is actually loaded and running.
   automatic whole-keyboard clearing or crash/error indicator is
   visible. Subsequent physical DS4 Cross/RT button edges, axis
   movements, and nonzero game action masks appear in the log.
-- The game's original controller-7 transition at **1520–1525**
-  completes a return to the main/controller menu, with normal
-  2D presentation afterward. This is telemetry, not an assertion
+- The game's original controller-7 transition at **1515–1519**
+  completes a return to the controller/menu path, with normal
+  2D presentation afterward at **1520–1525**. This is telemetry, not an assertion
   that every controller gameplay action was successful.
 - **Unverified:** the user's own observation of *all keyboard
   controls* after recovery, a **new physical Left Alt press/release**
