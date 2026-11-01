@@ -221,7 +221,7 @@ def test_modal_start_defers_original_owner_until_next_verified_game_flip():
     assert "claims!=1u || ui->capture.active || ui->close_pending" in read
     assert "SendMessageA(ui->pads,CB_SETCURSEL,next,0);" in read
     assert "select_slot(ui,next);" in read
-    assert "if(modal_start_handoff(ui))return;" in sample
+    assert "if(!ui->test_mode && modal_start_handoff(ui))return;" in sample
     assert "spider_sdl3_selection_focus_lost(&ui->modal_start);" in sample
     assert "ui->start_owner_requested=1u;" in read
     assert "ui->start_owner_id=ui->instance;" in read
