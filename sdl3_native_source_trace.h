@@ -38,7 +38,7 @@ static void spider_source_trace_init(const char *ini,
       logger("SDL3-NATIVE-SOURCE: REFUSED native keyboard/joystick/latch signatures mismatch");
       spider_source_trace_enabled=0;
     } else {
-      logger("SDL3-NATIVE-SOURCE: ARMED read-only keyboard/joystick latches; 96 changes + 8 reserved postfocus samples + 12 focus-status events maximum");
+      logger("SDL3-NATIVE-SOURCE: ARMED read-only keyboard/joystick latches; 96 changes + 8 reserved postfocus frame samples + 12 focus-status events maximum");
     }
   }
 }
@@ -84,13 +84,13 @@ static void spider_source_trace_flip(HWND hwnd,int menu2d,int gameplay3d,
   snprintf(line,sizeof(line),
     "SDL3-NATIVE-SOURCE: ctx=%s kb-held=%u kb-fresh=%u kb-released=%u "
     "joy-held=%08lX joy-fresh=%08lX joy-released=%08lX "
-    "merged-actions=%04lX postfocus=%u [READ ONLY, CORRELATION NOT PROVENANCE]",
+    "merged-actions=%04lX alt-tab=%u postfocus=%u [READ ONLY, CORRELATION NOT PROVENANCE]",
     gameplay3d?"3D":"MENU",(unsigned)sample.keyboard_held,
     (unsigned)sample.keyboard_fresh,(unsigned)sample.keyboard_released,
     (unsigned long)sample.joystick_held,
     (unsigned long)sample.joystick_fresh,
     (unsigned long)sample.joystick_released,
-    (unsigned long)game_held,
+    (unsigned long)game_held,(unsigned)sample.keyboard_alt_tab,
     spider_source_trace_observer.last_resume);
   spider_source_trace_log(line);
 }
