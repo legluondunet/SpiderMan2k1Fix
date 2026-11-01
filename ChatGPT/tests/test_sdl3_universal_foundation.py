@@ -22,7 +22,7 @@ def test_unmapped_joysticks_are_reported_without_unsafe_native_claim():
     assert "SDL3-RAW: unmapped joystick" in probe
     assert "raw mapping wizard required" in probe
     assert "raw_last_ids" in probe
-    assert "SDL_OpenJoystick" not in probe
+    assert '"SDL_OpenJoystick"' in probe\n    assert '"SDL_AddGamepadMapping"' in probe\n    assert "SDL3-mapping-%s.txt" in probe
 
 
 def test_hardware_neutral_action_policy(tmp_path):
