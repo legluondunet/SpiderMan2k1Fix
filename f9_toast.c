@@ -11,11 +11,10 @@
 #include <string.h>
 #include <wchar.h>
 #include <limits.h> /* UINT_MAX from failed ExtractIconExW */
-#include <shellapi.h> /* original game's 16x16 icon via ExtractIconExW */
+#include <shellapi.h> /* original game's 32x32 icon via ExtractIconExW */
 #include "f9_toast.h"
 
 #define SPIDER_F9_TOAST_MS 2000u
-#define SPIDER_F9_TOAST_MAX_LINES 32
 static SRWLOCK toast_mutex=SRWLOCK_INIT;
 static WCHAR toast_path[MAX_PATH];
 static BOOL toast_success=TRUE;
@@ -98,36 +97,6 @@ void SpiderF9Toast_PublishError(const WCHAR *reason) {
 static int toast_max(int a,int b) {return a>b?a:b;}
 static int toast_min(int a,int b) {return a<b?a:b;}
 
-/* Long path components are broken at a directory separator if possible;
- * otherwise use the last character that fits. Every UTF-16 code unit is
- * preserved; unlike DT_END_ELLIPSIS, no part of the path is hidden. */
-static int toast_wrap_path(HDC dc,const WCHAR *text,int width,
-                           int *starts,int *lengths) {
-  int offset=0,lines=0,total=(int)wcslen(text);
-  while(offset<total && lines<SPIDER_F9_TOAST_MAX_LINES) {
-    int lo=1,hi=total-offset,fit=1,cut,i;
-    SIZE measured;
-    while(lo<=hi) {
-      int mid=lo+(hi-lo)/2;
-      if(GetTextExtentPoint32W(dc,text+offset,mid,&measured) &&
-         measured.cx<=width) {fit=mid;lo=mid+1;}
-      else hi=mid-1;
-    }
-    cut=fit;
-    if(offset+cut<total && cut>=6) {
-      for(i=cut-1;i>cut/2;i--) {
-        if(text[offset+i]==L'\\') {cut=i+1;break;}
-      }
-    }
-    starts[lines]=offset;
-    lengths[lines]=cut;
-    offset+=cut;
-    ++lines;
-  }
-  return offset==total?lines:0;
-}
-
-
 /* Same native GDI AlphaBlend technique as the ESC pause ribbon: tint only a
  * rounded region on the distinct DirectDraw staging surface. The rendered
  * scene behind the notification remains visible and F9's original backbuffer
@@ -173,77 +142,63 @@ done:
   return ok;
 }
 
-/* This is the actual smallest embedded SpideyPC.exe icon, not the
- * previously drawn schematic camera. ExtractIconExW's SMALL result is
- * the native 16x16 icon. Use INIT_ONCE so our regular Flip renderer and
- * the separate no-Flip comic worker never race to extract/destroy it.
- * A failed extraction is nonfatal: draw the toast without any icon.
- * The icon belongs to this module for its entire loaded lifetime. */
-#define SPIDER_F9_EXE_ICON_SIZE 16
+/* Use the game's authentic 32x32 LARGE HICON, not the tiny 16x16
+ * version scaled up. ExtractIconExW reads the first embedded EXE icon.
+ * INIT_ONCE safely caches it across normal Flip and comic-popup worker.
+ * Missing/corrupt icon remains a harmless text-only notification. */
+#define SPIDER_F9_EXE_ICON_SIZE 32
 static INIT_ONCE toast_icon_once=INIT_ONCE_STATIC_INIT;
-static HICON toast_small_exe_icon=NULL;
+static HICON toast_big_exe_icon=NULL;
 static BOOL CALLBACK toast_init_original_icon(PINIT_ONCE once,
                                                PVOID param,PVOID *context) {
   WCHAR exe[MAX_PATH];
   DWORD len;
-  HICON small=NULL;
+  HICON big=NULL;
   UINT extracted;
   (void)once;(void)param;(void)context;
   len=GetModuleFileNameW(NULL,exe,MAX_PATH);
   if(!len || len>=MAX_PATH)return TRUE;
-  extracted=ExtractIconExW(exe,0,NULL,&small,1);
-  if(extracted>0 && extracted!=UINT_MAX && small)
-    toast_small_exe_icon=small;
-  else if(small)DestroyIcon(small);
+  extracted=ExtractIconExW(exe,0,&big,NULL,1);
+  if(extracted>0 && extracted!=UINT_MAX && big)
+    toast_big_exe_icon=big;
+  else if(big)DestroyIcon(big);
   return TRUE;
 }
-static HICON toast_original_small_icon(void) {
+static HICON toast_original_big_icon(void) {
   InitOnceExecuteOnce(&toast_icon_once,toast_init_original_icon,NULL,NULL);
-  return toast_small_exe_icon;
+  return toast_big_exe_icon;
 }
 
-/* The original Spider-Man UI and our focus-pause banner use bold italic
- * outlined lettering. Keep that typographic identity for the F9 heading,
- * but a smaller nonitalic secondary font preserves a FULL Windows path.
- * Drawing is confined to the same temporary present surface as before. */
+/* A compact single-line confirmation in the focus-pause visual language.
+ * The FULL absolute filename remains stored and validated in toast_path
+ * and in PNG logs; it is deliberately NOT rendered onscreen.
+ * Both normal Flip and comic no-Flip popup share this exact painter. */
 static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success) {
   static const WCHAR saved_heading[]=L"SCREENSHOT SAVED";
   static const WCHAR error_heading[]=L"SCREENSHOT FAILED";
   const WCHAR *heading=success?saved_heading:error_heading;
-  int heading_px,path_px,pad,icon_px,icon_gap,head_step,path_step;
-  int max_w,max_path_w,box_w,box_h,path_y,text_x;
-  int starts[SPIDER_F9_TOAST_MAX_LINES],lengths[SPIDER_F9_TOAST_MAX_LINES];
-  int lines,path_len,x,y,i,saved_dc=0,heading_len;
+  int heading_px,pad,icon_px,icon_gap,box_w,box_h,text_x,x,y,saved_dc=0;
+  int heading_len,heading_y;
   HICON game_icon=NULL;
-  HFONT heading_font=NULL,path_font=NULL,old_font=NULL;
+  HFONT heading_font=NULL,old_font=NULL;
   HBRUSH brush;
   HPEN border=NULL,old_pen=NULL;
   HGDIOBJ old_brush=NULL;
-  SIZE heading_size={0,0},path_size={0,0};
+  SIZE heading_size={0,0};
   RECT panel;
   BOOL ok=FALSE;
-  if(!dc || !path || w<320 || h<240 || w>8192 || h>8192)return FALSE;
-  path_len=(int)wcslen(path);
+  if(!dc || !path || !path[0] ||
+     w<320 || h<240 || w>8192 || h>8192)return FALSE;
   heading_len=(int)wcslen(heading);
-  if(!path_len)return FALSE;
-  /* Preserve the original 16x16 game icon sharpness: scale text DOWN
-   * rather than interpolating its tiny embedded pixel art. At 1080p
-   * the heading becomes ~21px and the full path ~13px. */
-  heading_px=toast_min(24,toast_max(15,(int)h/50));
-  path_px=toast_min(16,toast_max(11,(int)h/82));
-  pad=toast_max(11,heading_px/2+2);
-  game_icon=toast_original_small_icon();
+  heading_px=toast_min(29,toast_max(16,(int)h/43));
+  pad=toast_max(12,heading_px/2+2);
+  game_icon=toast_original_big_icon();
   icon_px=game_icon?SPIDER_F9_EXE_ICON_SIZE:0;
-  icon_gap=game_icon?toast_max(8,heading_px/3):0;
-  head_step=heading_px+9;
-  path_step=path_px+5;
+  icon_gap=game_icon?toast_max(9,heading_px/3):0;
   heading_font=CreateFontW(-heading_px,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,
     DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
     ANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial Black");
-  path_font=CreateFontW(-path_px,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,
-    DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
-    ANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial");
-  if(!heading_font || !path_font)goto done;
+  if(!heading_font)goto done;
   saved_dc=SaveDC(dc);
   if(!saved_dc)goto done;
   SetBkMode(dc,TRANSPARENT);
@@ -251,19 +206,12 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
   if(!old_font || old_font==HGDI_ERROR)goto done;
   if(!GetTextExtentPoint32W(dc,heading,heading_len,&heading_size))
     goto done;
-  SelectObject(dc,path_font);
-  if(!GetTextExtentPoint32W(dc,path,path_len,&path_size))goto done;
-  max_w=toast_min((int)w-24,(int)(w*65u/100u));
-  if(max_w<2*pad+icon_px+icon_gap+56)goto done;
-  box_w=toast_min(max_w,
-      toast_max(heading_size.cx,path_size.cx)+2*pad+icon_px+icon_gap);
-  max_path_w=box_w-2*pad-icon_px-icon_gap;
-  lines=toast_wrap_path(dc,path,max_path_w,starts,lengths);
-  if(lines<1)goto done;
-  box_h=2*pad+head_step+lines*path_step+3;
+  box_w=2*pad+icon_px+icon_gap+heading_size.cx+4;
+  if(box_w>(int)w-24)goto done; /* Never truncate the success heading. */
+  box_h=2*pad+toast_max(icon_px,heading_size.cy)+4;
   x=toast_max(12,(int)w/75);
   y=(int)h-toast_max(16,(int)h/50)-box_h;
-  if(y<0)goto done;
+  if(y<0 || x+box_w>(int)w-12)goto done;
   panel.left=x;panel.top=y;panel.right=x+box_w;panel.bottom=y+box_h;
   if(!toast_draw_translucent_panel(dc,&panel))goto done;
   brush=(HBRUSH)GetStockObject(HOLLOW_BRUSH);
@@ -286,38 +234,27 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
     }
   }
   text_x=x+pad+icon_px+icon_gap;
-  path_y=y+pad+head_step;
+  heading_y=y+(box_h-heading_size.cy)/2;
   if(game_icon) {
-    /* Native 16x16 game icon, sharp and centered alongside the title;
-     * centering it across both lines made it look vertically detached. */
-    int icon_y=y+pad+toast_max(0,(heading_px-icon_px)/2);
+    /* Native 32x32 big icon; do not enlarge the 16x16 icon bitmap. */
+    int icon_y=y+(box_h-icon_px)/2;
     if(!DrawIconEx(dc,x+pad,icon_y,game_icon,
                    icon_px,icon_px,0,NULL,DI_NORMAL)) {
-      /* The notification and entire path must remain visible even if
-       * an icon resource is corrupt under a particular Wine version. */
-      if(toast_logger)toast_logger("F9-TOAST: DrawIconEx native small icon unavailable; text kept");
+      if(toast_logger)
+        toast_logger("F9-TOAST: DrawIconEx native large icon unavailable; text kept");
     }
   }
   SelectObject(dc,heading_font);
-  /* The black outline echoes the original game's menu and PAUSED panel. */
+  /* Outline/shadow matches the game's PAUSED and menu lettering. */
   SetTextColor(dc,RGB(7,4,15));
-  TextOutW(dc,text_x+1,y+pad+1,heading,heading_len);
-  TextOutW(dc,text_x-1,y+pad,heading,heading_len);
+  TextOutW(dc,text_x+1,heading_y+1,heading,heading_len);
+  TextOutW(dc,text_x-1,heading_y,heading,heading_len);
   SetTextColor(dc,success?RGB(240,47,69):RGB(255,120,120));
-  if(!TextOutW(dc,text_x,y+pad,heading,heading_len))goto done;
-  SelectObject(dc,path_font);
-  for(i=0;i<lines;i++) {
-    int ty=path_y+i*path_step;
-    SetTextColor(dc,RGB(7,4,15));
-    TextOutW(dc,text_x+1,ty+1,path+starts[i],lengths[i]);
-    SetTextColor(dc,RGB(245,240,255));
-    if(!TextOutW(dc,text_x,ty,path+starts[i],lengths[i]))goto done;
-  }
+  if(!TextOutW(dc,text_x,heading_y,heading,heading_len))goto done;
   ok=TRUE;
 done:
-  if(saved_dc)RestoreDC(dc,saved_dc); /* Restores fonts, pen and text state. */
+  if(saved_dc)RestoreDC(dc,saved_dc);
   if(border)DeleteObject(border);
-  if(path_font)DeleteObject(path_font);
   if(heading_font)DeleteObject(heading_font);
   return ok;
 }
