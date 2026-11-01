@@ -831,6 +831,58 @@ int SpiderSDL3Probe_SetupRead(unsigned slot,uint32_t *instance_id,
     snprintf(name,capacity,"%s",text_name?text_name:"Mapped SDL3 gamepad");
   return 1;
 }
+/* Explicit logical SDL3 selection for devices without a verified native
+ * DirectInput profile, e.g. PS3 VID:PID=054C:0268. This is NOT an
+ * alias of SelectedIdentity(): that function authorizes game-owned
+ * DirectInput and continues rejecting unknown controller models.
+ *
+ * Caller must be on the game/Flip thread, with SDL3 already pumped and
+ * the exact selected instance still connected and unique by VID:PID.
+ * Returning a sample never produces a keyboard event or changes DI. */
+int SpiderSDL3Probe_GenericSelectedSample(uint32_t *instance,
+    uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample) {
+  SpiderSDL3Identity opened[SPIDER_SDL3_MAX_GAMEPADS]={{0}};
+  unsigned i,j;
+  uint32_t id=generic_selected_id;
+  if(instance)*instance=0;
+  if(vid)*vid=0;
+  if(pid)*pid=0;
+  if(sample)memset(sample,0,sizeof(*sample));
+  if(!instance || !vid || !pid || !sample ||
+     !ready || !scanned || !sdl3_game_thread ||
+     sdl3_game_thread!=GetCurrentThreadId() ||
+     !sdl_vendor || !sdl_product || !sdl_axis || !sdl_button ||
+     !sdl_connected || !id || !generic_selected_vendor ||
+     !generic_selected_product)return 0;
+  /* Reject any device which is actually supported by the original
+   * native owner bridge. Never create two competing SDL3 sources. */
+  if(spider_reconnect_kind(generic_selected_vendor,
+                           generic_selected_product)!=SPIDER_RECONNECT_NONE)
+    return 0;
+  for(i=0;i<num_pads && i<SPIDER_SDL3_MAX_GAMEPADS;i++) {
+    if(!pads[i].handle || !pads[i].id ||
+       !sdl_connected(pads[i].handle))continue;
+    opened[i].instance_id=pads[i].id;
+    opened[i].vendor=sdl_vendor(pads[i].id);
+    opened[i].product=sdl_product(pads[i].id);
+  }
+  if(!spider_sdl3_selected_model_unique(opened,num_pads,id,
+       generic_selected_vendor,generic_selected_product))return 0;
+  for(i=0;i<num_pads;i++)
+    if(pads[i].id==id && pads[i].handle &&
+       sdl_connected(pads[i].handle))break;
+  if(i>=num_pads)return 0;
+  for(j=0;j<SPIDER_SDL3_BUTTON_COUNT;j++)
+    if(sdl_button(pads[i].handle,(int)j))sample->buttons|=1u<<j;
+  for(j=0;j<SPIDER_SDL3_AXIS_COUNT;j++)
+    sample->axis[j]=sdl_axis(pads[i].handle,(int)j);
+  if(sample->axis[SPIDER_SDL3_AXIS_LT]<0 ||
+     sample->axis[SPIDER_SDL3_AXIS_RT]<0)return 0;
+  *instance=id;
+  *vid=generic_selected_vendor;
+  *pid=generic_selected_product;
+  return 1;
+}
 /* SDL3 exposes each trigger as a separate 0..32767 axis. The
  * legacy XUSB DirectInput driver may instead combine LT and RT on lZ,
  * which varies with a device rebind and driver. Read the ALREADY-open,
