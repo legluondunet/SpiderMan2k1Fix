@@ -34,8 +34,8 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **Aspect ratio corrections:** Preserves the original proportions of menus, cinematics, introductory videos, comic-book artwork, and other 2D elements.
 - **Widescreen HUD:** Corrects the proportions and positioning of HUD elements, including health and web gauges, compass, mission objectives, boss health bars, and in-game pause menus. Tested at 1920×1080 (16:9) and 1920×1200 (16:10).
 - **FPS limiter:** Configurable frame-rate cap, set to **30 FPS by default**. Lower limits, such as 20 FPS, can be selected for timing-sensitive gameplay.
-- **Alt+Tab stability:** Automatically pauses the game when it loses focus, synchronizes video and audio playback, and restores native keyboard/controller input when gameplay resumes. After returning to the game, press and release any keyboard key, or a digital button on the selected SDL3 gamepad (when the experimental SDL3 native owner is verified), to resume the custom PAUSED screen. SDL3 wake uses the already-open selected gamepad on the frozen Flip thread, excluding Start/Guide, and requires a fresh neutral-to-press-to-release cycle; it does not call DirectInput Acquire. When SDL3 is not available, the previous guarded DirectInput DualShock 4 wake is retained. Keyboard wake always remains supported. Also restores the Windows desktop cursor when necessary.
-- **Experimental SDL3 gamepad support:** PlayStation **Cross** / Xbox **A** confirms in 2D menus and Bink video prompts; **Circle/B** cancels when the original game supports Escape. Supported Sony DualShock 4 (`054C:09CC`) and Xbox 360-compatible (`045E:028E`) controllers can be selected and handed off to the original DirectInput gameplay backend, with per-model saved profiles and guarded Xbox RT-to-Swing support. The **combined integration build** passed real Windows 11 gamepad/focus tests (both controllers present) and Wine/Proton trials on the tested hardware. **These SDL3 owner/bridge features remain experimental and require the documented INI opt-ins**; unsupported controllers, every custom binding, and DS3/Steam Deck research are **not** claimed validated. See the [SDL3 native-owner reference](docs/references/SDL3_NATIVE_OWNER_EXPERIMENT.md) and [integration test report](docs/references/INTEGRATION_XBOX_MOUSE_ALT_FOCUS_ACCEPTANCE.md).
+- **Alt+Tab stability:** Background game pause, synchronized Bink/DirectSound, and keyboard/gamepad resume. Press and release any key or an eligible selected controller button after returning. The OS desktop cursor is restored. See [focus details](docs/references/CONFIGURATION.md).
+- **Experimental SDL3 gamepad support:** Sony DS4 and Xbox 360-compatible native DirectInput ownership, selected controller handoff, Cross/A confirm, Circle/B cancel, and Xbox RT Swing. The combined build passed Windows 11 and Wine/Proton hardware tests on the documented devices; **experimental INI opt-ins are still required**. Other controllers and all custom bindings are not certified. See [SDL3 experiments](docs/references/SDL3_NATIVE_OWNER_EXPERIMENT.md) and [Windows/Wine results](docs/references/INTEGRATION_XBOX_MOUSE_ALT_FOCUS_ACCEPTANCE.md).
 - **Keyboard layouts:** Automatically detects the active keyboard layout and adapts the game's controls, keyboard labels, and cheat-code entry. The original game only supported QWERTY layouts.
 - **No game mouse:** Keyboard/gamepad only. Game cursor, clicks and polling are permanently off. Desktop pointer unaffected; legacy `MouseEnabled` ignored.
 - **DPI awareness:** Handles Windows display scaling to ensure correct window dimensions and rendering on high-DPI displays.
@@ -47,11 +47,11 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 
 Successfully tested on Windows 11 and Linux/Wine.
 
-The optional **Sony DS4 live 3D custom-binding bridge** is **disabled by default** and separate from verified original native controller selection. Its activation and scope are explained in the [SDL3 native-owner research](docs/references/SDL3_NATIVE_OWNER_EXPERIMENT.md#experimental-ds4-only-live-3d-gameplay-profile). The full combination's Windows 11 and Wine/Proton evidence is documented in the [acceptance report](docs/references/INTEGRATION_XBOX_MOUSE_ALT_FOCUS_ACCEPTANCE.md).
+The optional DS4 custom-binding bridge is **off by default**; see the [activation guide](docs/references/SDL3_NATIVE_OWNER_EXPERIMENT.md#experimental-ds4-only-live-3d-gameplay-profile).
 
 ## Bugs Resolved
 
-- **Alt+Tab crashes and input loss:** Improved switching, native controller/keyboard restoration and synchronized media pause. The combined test build passed 20/20 maintainer checks on Windows 11; the optional, default-off `[Input] ExperimentalAltLatchRecovery=1` repaired six actual stale original Left Alt states in that native Windows test. Wine/Proton sometimes delays or omits the custom PAUSED screen without impairing gameplay; this cosmetic limitation remains accepted when return is stable.
+- **Alt+Tab crashes and input loss:** Combined Windows 11 hardware tests passed 20/20 checks, including six actual gated repairs of the original stuck Left Alt with the optional, default-off `ExperimentalAltLatchRecovery=1`. Under Wine, absent or delayed background PAUSED is tolerated only if return works normally.
 - **Focus-loss instability:** Added automatic game pausing with synchronized video and audio playback, preventing gameplay and media synchronization issues while the game is in the background.
 - **Crash on exit:** Fixed a crash that could occur when quitting the game.
 - **Broken F9 screenshots on Windows:** Fixed screenshots that appeared entirely purple or contained no visible game graphics.
@@ -73,19 +73,15 @@ The following issues are inherited from the original game and remain unresolved:
 
 ### Why is there no mouse cursor inside the game?
 
-**This is intentional in the current SpiderMan2k1Fix test build.** The original game's mouse cursor, mouse movement and menu click detection are **permanently disabled**; use the keyboard or a supported controller. The old `[Input] MouseEnabled=0/1` setting is recognized only to keep older INI files readable: neither value can restore game-mouse input. Do not add a second `MouseEnabled` line to test this: duplicate INI keys correctly trigger a configuration repair.
+**Intentionally disabled.** Use the keyboard or a supported controller; the old `MouseEnabled=0/1` key cannot re-enable the original mouse. Do not duplicate this INI key.
 
-**A missing Windows/Linux desktop pointer after Alt+Tab is a different problem.** The fix should restore the desktop cursor after switching away from the game. If the desktop pointer actually disappears or becomes unusable, enable `[Debug] Log=1`, reproduce the issue and report the full log with the OS, Wine/Proton version if applicable, and the steps that triggered it.
+If the **Windows/Linux desktop cursor** disappears **after Alt+Tab**, that is a different fault. Enable `[Debug] Log=1`, note your OS/Wine version and attach the complete log.
 
 ### Why is there no sound?
 
-First identify whether the problem is **complete silence**, or only **music, movie/cutscene audio, or game sound effects**. Note whether it began on launch, during play, or after Alt+Tab or a pause. Check the intended Windows/Wine/PipeWire output device, system volume, app volume mixer, and the game's own audio levels.
+First distinguish **total silence** from missing **music, movie audio, or effects**, and whether it occurs before or after Alt+Tab. Check the selected system output, system/app/game volume, supported executable, paired DLL versions and whether the INI passed validation.
 
-Then confirm that you are using the supported original `SpideyPC.exe` (SHA-256 given below), the expected installed patch version and both supplied DLLs from the **same build**. Verify that the configuration was accepted (`INI-CHECK: valid SpiderMan2k1Fix.ini`), or inspect the `.ini.old` backup if the file was automatically repaired.
-
-Spider-Man still uses its **original DirectSound engine**. The built-in WAV/PKR loader fix addresses **crackling and truncated sound effects**, not every cause of silence or a wrong audio-output device. Do not switch on unrelated experimental audio features as a generic remedy.
-
-For unresolved cases set `[Debug] Log=1` in the existing `SpiderMan2k1Fix.ini`, relaunch, reproduce the silent section and attach the **complete** `SpiderMan2k1Fix.log`. Specify Windows native versus Wine/Proton and which audio categories are missing. See the [configuration and troubleshooting guide](docs/references/CONFIGURATION.md).
+The game uses its original **DirectSound** engine. The built-in WAV/PKR correction fixes truncated/crackling effects, **not every cause of silence**. Do not enable unrelated experimental audio switches. If unresolved, reproduce with `[Debug] Log=1`, then report the full log and your Windows or Wine/Proton environment. See [troubleshooting details](docs/references/CONFIGURATION.md).
 
 ## Built-in native WAV audio correction
 
@@ -223,7 +219,7 @@ Enable diagnostic logging by setting `Log=1` under `[Debug]` in `SpiderMan2k1Fix
 
 If the problem persists, report it through [GitHub Issues](https://github.com/legluondunet/SpiderMan2k1Fix/issues) and attach the generated `SpiderMan2k1Fix.log` file. **The log is written next to `SpideyPC.exe` in the game installation directory**, even when `SpiderMan2k1Fix.ini` and the main DLL are in `SpiderMan2k1Fix/`. If the game directory is read-only (such as an installation under `Program Files`), the log instead goes to `%LOCALAPPDATA%\\SpiderMan2k1Fix\\SpiderMan2k1Fix.log`. Existing logs are not moved or deleted.
 
-The `SYS-INFO: BEGIN` / `SYS-INFO: END` section reports supported hardware and OS details once at startup. The ending line includes `elapsed_ms=<number>`, the time spent collecting and logging this one-shot inventory (high-resolution timer with a safe fallback; not a per-frame benchmark). Each screen has a Windows device identifier (such as `DISPLAY1`); a later `SYS-DISPLAY-SELECTED` line identifies the monitor actually used by the game window, which may not be the primary display (it is repeated only when the selection or mode changes). Safe names of unknown keys in recognized INI sections are reported as `INI-CHECK` warnings without logging their values. Under Wine, the `Win32 version` is the **emulated Windows target**, not the host Linux distribution. The host OS/kernel version is queried separately from Wine. A Steam compatibility environment is only a **hint** of Proton: its exact version might not be exposed. Likewise, D3D9 driver names and versions may describe Wine/DXVK rather than your Linux Mesa/AMDGPU/NVIDIA driver. If these fields read `Unavailable`, please add the host driver and Proton versions manually to your issue report.
+The startup `SYS-INFO` report distinguishes native Windows from Wine/Proton hints and includes the display used by the game. See [detailed system-log interpretation](docs/references/CONFIGURATION.md#reading-sys-info-and-focus-diagnostics); Wine/DXVK-reported driver versions are not necessarily your host GPU driver's version.
 
 This system report never intentionally collects usernames, computer names, email, IP addresses, personal directory paths, monitor serial numbers, controller serial numbers or Steam IDs. As with any diagnostic log, review the full file before sharing it publicly: unrelated older entries may contain file paths.
 
