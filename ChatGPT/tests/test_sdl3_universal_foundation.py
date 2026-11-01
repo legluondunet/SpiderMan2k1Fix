@@ -154,7 +154,7 @@ def test_keyboard_calibration_wizard_is_built_and_keeps_gameplay_unchanged():
     assert "if(vk==VK_F9)" not in setup
     assert "if(vk==VK_F10)" not in setup
     assert "if(vk==VK_F8)" not in setup
-    assert "SDL3 TEST: buttons=" in setup
+    assert "SDL3 TEST: id=%lu buttons=" in setup
     assert "hardware recognition / recalibration" in wizard.lower()
     assert "SpiderSDL3Probe_RawListAll" in wizard
     assert "SpiderSDL3Probe_RawListAll" in probe
@@ -243,3 +243,35 @@ def test_raw_wizard_win32_focus_isolation_prevents_gamepad_combo_activation():
     assert wizard.index("if(wizard_is_capturing(w)) {", wizard.index("case WM_COMMAND:")) < wizard.index("if(HIWORD(wp)==BN_CLICKED)", wizard.index("case WM_COMMAND:"))
     assert "SetFocus(w->window)" in wizard
 
+
+
+def test_sdl3_normalized_input_diagnostic_has_no_active_win32_controls():
+    setup=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    # The tester is a temporary read-only SDL3 viewport, not an interactive
+    # Win32 pushbutton while controller hardware is being sampled.
+    assert "static void setup_sdl3_test_lock(" in setup
+    assert "SendMessageA(ui->pads,CB_SHOWDROPDOWN,FALSE,0)" in setup
+    assert "EnableWindow(ui->pads,lock?FALSE:TRUE)" in setup
+    assert "EnableWindow(ui->actions,lock?FALSE:TRUE)" in setup
+    assert "for(i=SPIDER_UI_CAPTURE;i<=SPIDER_UI_CLOSE;i++)" in setup
+    assert "for(i=SPIDER_UI_RAW;i<=SPIDER_UI_TEST;i++)" in setup
+    assert "EnableWindow(button,lock?FALSE:TRUE)" in setup
+    assert "if(lock)SetFocus(ui->hwnd)" in setup
+    assert "if(ui->test_mode) {" in setup
+    assert "SDL3-SETUP: TEST blocked Win32 control" in setup
+    assert setup.index("if(ui->test_mode) {",setup.index("case WM_COMMAND:")) < setup.index("if(LOWORD(wp)==SPIDER_UI_PAD",setup.index("case WM_COMMAND:"))
+    assert "if(ui.test_mode &&" in setup
+    assert setup.index("if(ui.test_mode &&") < setup.index("if(IsDialogMessageA(window,&msg))continue;")
+    assert "SDL3-SETUP: TEST suppressed Win32 keyboard" in setup
+    assert "msg.wParam=='T'" in setup
+    assert "msg.wParam=='Q'" in setup
+    assert "GetKeyState(VK_CONTROL)&0x8000" in setup
+    assert "GetKeyState(VK_SHIFT)&0x8000" in setup
+    assert "Ctrl+Shift+T" in setup
+    assert "Ctrl+Shift+Q" in setup
+    assert "SDL3 TEST: id=%lu buttons=" in setup
+    assert "SPIDER_SDL3_AXIS_RIGHTX" in setup
+    assert "SPIDER_SDL3_AXIS_RIGHTY" in setup
+    assert "if(!ui->test_mode && modal_start_handoff(ui))return;" in setup
+    assert "if(vk==VK_F9)" not in setup
+    assert "if(vk==VK_F10)" not in setup
