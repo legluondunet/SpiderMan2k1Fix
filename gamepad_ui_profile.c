@@ -527,6 +527,11 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   }
   strcpy(profile_ini,ini);
   SpiderSDL3ControllerSetup_Init(ini,logger);
+  /* Installing the guarded native Options->Joystick menu entry once
+   * during boot ensures the installer runs even if early Flip callbacks
+   * are skipped, and emits a precise fail-closed reason in the log. */
+  if(SpiderSDL3ControllerSetup_Enabled())
+    SpiderSDL3_InstallDirectJoystickEntry(logger);
   sdl3_context_bridge_requested=
     GetPrivateProfileIntA("Input","ExperimentalSDL3ContextBridge",1,ini)==1 &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1 &&
