@@ -37,10 +37,10 @@ def test_modern_keyboard_restore_changes_only_original_default_source():
     assert "memcpy(replacements[2],live_sites[2].original,live_sites[2].size);" in MENU
 
 
-def test_hotplug_native_table_swapping_is_off_by_default_and_never_touches_keyboard():
-    assert '"ExperimentalNativeJoystickMappingSwap",0,ini)==1' in NATIVE
+def test_hotplug_native_table_swapping_defaults_on_but_never_touches_keyboard():
+    assert '"ExperimentalNativeJoystickMappingSwap",1,ini)==1' in NATIVE
     assert "ExperimentalNativeJoystickMappingSwap" in INI
-    assert "ExperimentalNativeJoystickMappingSwap=0" in CFG
+    assert "ExperimentalNativeJoystickMappingSwap=1" in CFG
     assert "static void swap_native_gameplay_mapping(unsigned to_kind)" in NATIVE
     assert "if(!swap_mapping_enabled" in NATIVE
     assert "spider_native_swap_read((const uint8_t *)address,0x70u,current)" in NATIVE
