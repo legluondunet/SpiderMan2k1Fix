@@ -15,6 +15,8 @@ typedef struct {
   unsigned confirmed_loss;
   unsigned pending;
   unsigned stable_up_frames;
+  unsigned stable_up_since_ms;
+  unsigned stable_up_started;
 } SpiderAltLatchRecoveryPolicy;
 
 /* A new loss invalidates any pending recovery for the previous focus epoch. */
@@ -24,6 +26,8 @@ static inline void spider_alt_latch_policy_loss(
   p->confirmed_loss=1u;
   p->pending=0u;
   p->stable_up_frames=0u;
+  p->stable_up_since_ms=0u;
+  p->stable_up_started=0u;
 }
 /* Only a foreground, explicit return from the game's focus-pause may arm. */
 static inline void spider_alt_latch_policy_return(
@@ -32,6 +36,8 @@ static inline void spider_alt_latch_policy_return(
   p->pending=p->confirmed_loss&&!!is_foreground;
   p->confirmed_loss=0u;
   p->stable_up_frames=0u;
+  p->stable_up_since_ms=0u;
+  p->stable_up_started=0u;
 }
 /* Result: 0 wait/no-op, 1 one-byte release authorized, 2 naturally
  * cleared/changed (do nothing), 3 expired (do nothing).
@@ -50,6 +56,7 @@ static inline int spider_alt_latch_policy_step(
   }
   if(!eligible) {
     p->stable_up_frames=0u;
+    p->stable_up_started=0u;
     return 0;
   }
   if(di_left_alt!=0x7fu) {
@@ -58,12 +65,21 @@ static inline int spider_alt_latch_policy_step(
   }
   if(!all_os_modifiers_up||!other_original_modifiers_up) {
     p->stable_up_frames=0u;
+    p->stable_up_started=0u;
     return 0;
+  }
+  /* Require 180ms of genuinely consecutive clean samples, not merely
+   * 180ms since the wake. The first clean observation may occur much
+   * later than resume after a menu/movie/paused interval. */
+  if(!p->stable_up_started) {
+    p->stable_up_since_ms=ms_since_return;
+    p->stable_up_started=1u;
   }
   if(p->stable_up_frames<SPIDER_ALT_LATCH_MIN_UP_FRAMES)
     p->stable_up_frames++;
   if(p->stable_up_frames>=SPIDER_ALT_LATCH_MIN_UP_FRAMES &&
-     ms_since_return>=SPIDER_ALT_LATCH_MIN_UP_MS) {
+     ms_since_return-p->stable_up_since_ms>=
+       SPIDER_ALT_LATCH_MIN_UP_MS) {
     p->pending=0u;
     return 1;
   }
