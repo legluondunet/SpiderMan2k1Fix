@@ -17,7 +17,7 @@
  * A fresh, acquired, neutral DS4 is published to the original game global
  * ONLY after every initialization step succeeds.
  *
- * Defaults OFF. Requires ExperimentalNativeJoystickUnplugGuard=1 too.
+ * Defaults ON, but stays fail-closed and requires the native unplug guard.
  * No background polling; no separate DirectInput8 instance; no synthetic
  * keyboard input; no disk EXE edits; only x86 SHA/signature-checked game.
  */
