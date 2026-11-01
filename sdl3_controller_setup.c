@@ -23,6 +23,7 @@
 #include "gamepad_ui_profile.h"
 #include "sdl3_setup_focus_policy.h"
 #include "sdl3_raw_wizard.h"
+#include "sdl3_physical_escape.h"
 
 enum {
   SPIDER_UI_PAD=1001, SPIDER_UI_ACTION=1002,
@@ -48,6 +49,7 @@ typedef struct {
   unsigned count;
   unsigned action;
   unsigned test_mode,test_reports,test_blocked_commands,test_suppressed_keys;
+  int test_escape_raw; /* physical keyboard Escape; never synthetic pad Esc */
   uint32_t test_buttons_previous;
   int test_axes_previous[6];
   /* Capped controller focus/Start telemetry for real Windows regression
@@ -671,6 +673,12 @@ static void setup_toggle_sdl3_test(SpiderSDL3SetupUI *ui) {
   char line[240];
   if(!ui || !ui->hwnd)return;
   ui->test_mode=!ui->test_mode;
+  if(ui->test_mode)
+    ui->test_escape_raw=spider_sdl3_escape_begin(ui->hwnd);
+  else {
+    spider_sdl3_escape_end(ui->test_escape_raw);
+    ui->test_escape_raw=0;
+  }
   ui->test_buttons_previous=~0u;
   for(axis=0;axis<6u;axis++)ui->test_axes_previous[axis]=-100000;
   ui->test_reports=0u;
@@ -680,8 +688,9 @@ static void setup_toggle_sdl3_test(SpiderSDL3SetupUI *ui) {
   setup_sdl3_test_lock(ui,ui->test_mode);
   if(ui->test_mode) {
     snprintf(line,sizeof(line),
-      "SDL3 TEST ON id=%lu VID:PID=%04X:%04X. Use this pad; Ctrl+Shift+T stops.",
-      (unsigned long)ui->instance,(unsigned)ui->vid,(unsigned)ui->pid);
+      "SDL3 TEST ON id=%lu VID:PID=%04X:%04X. Esc (keyboard: %s), Ctrl+Shift+T stop.",
+      (unsigned long)ui->instance,(unsigned)ui->vid,(unsigned)ui->pid,
+      ui->test_escape_raw?"armed":"unavailable");
     status(ui,line);
   } else
     status(ui,"SDL3 TEST OFF: normal controls restored. Keyboard Esc closes.");
@@ -692,6 +701,9 @@ static void setup_toggle_sdl3_test(SpiderSDL3SetupUI *ui) {
       (unsigned long)ui->instance,(unsigned)ui->vid,(unsigned)ui->pid,
       ui->test_mode?"DISABLED":"ENABLED");
     setup_report(line);
+    if(ui->test_mode)setup_report(ui->test_escape_raw?
+      "SDL3-SETUP: physical keyboard Escape via WM_INPUT ARMED; synthetic pad Circle/B blocked":
+      "SDL3-SETUP: physical keyboard Escape unavailable; Ctrl+Shift+T remains safe stop");
   }
 }
 static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
@@ -736,7 +748,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         "Stick Left/Right: actions or buttons   Stick Up/Down: select row or button\r\n"
         "L1/R1: browse pad   Start: choose pad   Circle/B: close + use this pad\r\n"
         "Triangle/Y: defaults    Keyboard: Tab, Enter, Esc, PgUp/PgDn\r\n"
-        "Test mode: Ctrl+Shift+T stop, Ctrl+Shift+Q close; F9 screenshots/F10 locations unchanged",
+        "Test mode: keyboard Esc / Ctrl+Shift+T stop, Ctrl+Shift+Q close; F9/F10 unchanged",
         WS_CHILD|WS_VISIBLE,18,351,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->status=CreateWindowExA(0,"STATIC","",
@@ -906,6 +918,17 @@ void SpiderSDL3ControllerSetup_Open(void) {
       if(ok==0){has_quit=1;quit_code=(int)msg.wParam;}
       break;
     }
+    /* Use only hardware keyboard WM_INPUT Escape. Controller-mapped
+     * VK_ESCAPE remains suppressed to avoid Circle/B stopping the test. */
+    if(ui.test_mode && ui.test_escape_raw &&
+       msg.message==WM_INPUT && msg.hwnd==window) {
+      if(spider_sdl3_escape_key((HRAWINPUT)msg.lParam)) {
+        if(setup_report)setup_report("SDL3-SETUP: PHYSICAL-ESC keyboard stopped normalized input test");
+        setup_toggle_sdl3_test(&ui);
+      }
+      DefWindowProcA(window,msg.message,msg.wParam,msg.lParam);
+      continue;
+    }
     /* Gamepad buttons in Wine/Proton can synthesize Win32 keyboard
      * messages. While TEST is active, consume all ordinary key messages
      * before IsDialogMessage/DispatchMessage so disabled child controls
@@ -950,6 +973,8 @@ void SpiderSDL3ControllerSetup_Open(void) {
     TranslateMessage(&msg);DispatchMessageA(&msg);
   }
   if(setup_report)setup_report("SDL3-SETUP: modal message loop EXIT; restoring original game window");
+  spider_sdl3_escape_end(ui.test_escape_raw);
+  ui.test_escape_raw=0;
   /* If the modal was removed without WM_CLOSE (WM_QUIT), never assume a
    * foreign active window belongs to us. */
   if(IsWindow(window))DestroyWindow(window);
