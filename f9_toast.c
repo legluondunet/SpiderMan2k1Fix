@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <wchar.h>
+#include <shellapi.h> /* original game's 16x16 icon via ExtractIconExW */
 #include "f9_toast.h"
 
 #define SPIDER_F9_TOAST_MS 2000u
@@ -171,42 +172,33 @@ done:
   return ok;
 }
 
-/* Camera glyph uses GDI primitives, not OS icon resources or a bundled
- * typeface. Shared by the normal offscreen Flip compositor and the static
- * comic's nonactivating, click-through layered popup. */
-static BOOL toast_draw_camera_icon(HDC dc,int x,int y,int size) {
-  HPEN outline=NULL,old_pen=NULL;
-  HBRUSH body=NULL,old_brush=NULL,lens=NULL,flash=NULL;
-  int left,top,side,camera_top;
-  BOOL ok=FALSE;
-  if(!dc || size<16)return FALSE;
-  left=x+1;top=y+2;side=size-2;camera_top=top+side/5;
-  outline=CreatePen(PS_SOLID,toast_max(1,size/16),RGB(245,240,255));
-  body=CreateSolidBrush(RGB(50,50,160));
-  lens=CreateSolidBrush(RGB(240,47,69));
-  flash=CreateSolidBrush(RGB(231,220,255));
-  if(!outline || !body || !lens || !flash)goto done;
-  old_pen=(HPEN)SelectObject(dc,outline);
-  old_brush=(HBRUSH)SelectObject(dc,body);
-  if(!old_pen || old_pen==(HPEN)HGDI_ERROR ||
-     !old_brush || old_brush==(HBRUSH)HGDI_ERROR)goto done;
-  ok=RoundRect(dc,left,camera_top,left+side,top+side,
-               toast_max(3,size/5),toast_max(3,size/5))!=FALSE;
-  if(!ok)goto done;
-  SelectObject(dc,lens);
-  if(!Ellipse(dc,x+size/3,y+size/3,x+(2*size)/3,
-              y+(2*size)/3))ok=FALSE;
-  SelectObject(dc,flash);
-  if(!Rectangle(dc,x+(3*size)/4,y+size/3,
-                x+(7*size)/8,y+size/2))ok=FALSE;
-done:
-  if(old_brush && old_brush!=(HBRUSH)HGDI_ERROR)SelectObject(dc,old_brush);
-  if(old_pen && old_pen!=(HPEN)HGDI_ERROR)SelectObject(dc,old_pen);
-  if(flash)DeleteObject(flash);
-  if(lens)DeleteObject(lens);
-  if(body)DeleteObject(body);
-  if(outline)DeleteObject(outline);
-  return ok;
+/* This is the actual smallest embedded SpideyPC.exe icon, not the
+ * previously drawn schematic camera. ExtractIconExW's SMALL result is
+ * the native 16x16 icon. Use INIT_ONCE so our regular Flip renderer and
+ * the separate no-Flip comic worker never race to extract/destroy it.
+ * A failed extraction is nonfatal: draw the toast without any icon.
+ * The icon belongs to this module for its entire loaded lifetime. */
+#define SPIDER_F9_EXE_ICON_SIZE 16
+static INIT_ONCE toast_icon_once=INIT_ONCE_STATIC_INIT;
+static HICON toast_small_exe_icon=NULL;
+static BOOL CALLBACK toast_init_original_icon(PINIT_ONCE once,
+                                               PVOID param,PVOID *context) {
+  WCHAR exe[MAX_PATH];
+  DWORD len;
+  HICON small=NULL;
+  UINT extracted;
+  (void)once;(void)param;(void)context;
+  len=GetModuleFileNameW(NULL,exe,MAX_PATH);
+  if(!len || len>=MAX_PATH)return TRUE;
+  extracted=ExtractIconExW(exe,0,NULL,&small,1);
+  if(extracted>0 && extracted!=UINT_MAX && small)
+    toast_small_exe_icon=small;
+  else if(small)DestroyIcon(small);
+  return TRUE;
+}
+static HICON toast_original_small_icon(void) {
+  InitOnceExecuteOnce(&toast_icon_once,toast_init_original_icon,NULL,NULL);
+  return toast_small_exe_icon;
 }
 
 /* The original Spider-Man UI and our focus-pause banner use bold italic
@@ -221,6 +213,7 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
   int max_w,max_path_w,box_w,box_h,path_y,text_x;
   int starts[SPIDER_F9_TOAST_MAX_LINES],lengths[SPIDER_F9_TOAST_MAX_LINES];
   int lines,path_len,x,y,i,saved_dc=0,heading_len;
+  HICON game_icon=NULL;
   HFONT heading_font=NULL,path_font=NULL,old_font=NULL;
   HBRUSH brush;
   HPEN border=NULL,old_pen=NULL;
@@ -235,8 +228,9 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
   heading_px=toast_min(29,toast_max(16,(int)h/43));
   path_px=toast_min(18,toast_max(12,(int)h/70));
   pad=toast_max(11,heading_px/2+2);
-  icon_px=toast_max(24,heading_px+5);
-  icon_gap=toast_max(8,heading_px/3);
+  game_icon=toast_original_small_icon();
+  icon_px=game_icon?SPIDER_F9_EXE_ICON_SIZE:0;
+  icon_gap=game_icon?toast_max(8,heading_px/3):0;
   head_step=heading_px+9;
   path_step=path_px+5;
   heading_font=CreateFontW(-heading_px,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,
@@ -289,7 +283,17 @@ static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success)
   }
   text_x=x+pad+icon_px+icon_gap;
   path_y=y+pad+head_step;
-  if(!toast_draw_camera_icon(dc,x+pad,y+pad,icon_px))goto done;
+  if(game_icon) {
+    /* 16x16 native small HICON without scaling, vertically centered in
+     * the entire heading+path text block; DrawIconEx preserves alpha. */
+    int icon_y=y+pad+(head_step+lines*path_step-icon_px)/2;
+    if(!DrawIconEx(dc,x+pad,icon_y,game_icon,
+                   icon_px,icon_px,0,NULL,DI_NORMAL)) {
+      /* The notification and entire path must remain visible even if
+       * an icon resource is corrupt under a particular Wine version. */
+      if(toast_logger)toast_logger("F9-TOAST: DrawIconEx native small icon unavailable; text kept");
+    }
+  }
   SelectObject(dc,heading_font);
   /* The black outline echoes the original game's menu and PAUSED panel. */
   SetTextColor(dc,RGB(7,4,15));
