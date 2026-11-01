@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <wchar.h>
+#include <limits.h> /* UINT_MAX from failed ExtractIconExW */
 #include <shellapi.h> /* original game's 16x16 icon via ExtractIconExW */
 #include "f9_toast.h"
 
