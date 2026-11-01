@@ -51,14 +51,14 @@ static void SpiderAltLatch_Init(const char *ini,
   memset(&spider_alt_latch_policy,0,sizeof(spider_alt_latch_policy));
   spider_alt_latch_logger=logger;
   spider_alt_latch_enabled=ini&&
-    GetPrivateProfileIntA("Input","ExperimentalAltLatchRecovery",0,ini)==1;
+    GetPrivateProfileIntA("Input","ExperimentalAltLatchRecovery",1,ini)==1;
   if(!spider_alt_latch_enabled)return;
   if(!spider_alt_latch_preflight()) {
     spider_alt_latch_enabled=0;
     if(logger)logger("ALT-LATCH: REFUSED original executable/input opcode or writable latch preflight");
     return;
   }
-  if(logger)logger("ALT-LATCH: ARMED experimental Left Alt-only repair after confirmed focus pause; OFF by default");
+  if(logger)logger("ALT-LATCH: ARMED safe Left Alt-only recovery after confirmed focus pause (enabled by default; INI opt-out=0)");
 }
 /* Called ONLY when the existing pause gate positively confirms another
  * application kept foreground for >=150 ms. Bink and modal eligibility
