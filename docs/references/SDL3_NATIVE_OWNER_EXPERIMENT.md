@@ -691,3 +691,96 @@ selection, a secondary foreground-only DirectInput device can become
 now retires that stale **fix-owned** device once; the next regular
 foreground Flip performs fresh detection without another failed
 `GetDeviceState` call. The original game's device is untouched.
+
+
+## 1 November 2026 — next Xbox 360 physical gameplay test: no code changes
+
+The subsequent mouse-removal draft PR #90 is based directly on this
+native-owner PR #80 and includes all its experimental Xbox logic, but
+**not** separate PR #88's Left Alt latch repair. A new successful
+Wine 11.0 runtime log `SpiderMan2k1Fix(20261101-091342).log`
+(`v1.1.0-5cd333b`, exact PR #90 GitHub temporary test merge)
+provides this baseline:
+
+- Xbox 360-compatible `VID:PID=045E:028E` is enumerated by
+  XInput, DirectInput8 and SDL3 at lines **29–31**, **120–141**
+  and **434–445**; the native game-owned DirectInput identity is
+  verified and the Xbox seven-action profile was applied in RAM.
+- The single selected Xbox remains recoverable by the UI/native
+  owner after **three actual external focus pauses**, with
+  rediscovery at lines **671–675**, **719–723**, **766–770**.
+- Audio recovery succeeded **9/9**, **9/9**, **10/10** after
+  focus pauses of about **4.9 s, 267 s and 5.4 s**; game 3D
+  returned normally to menu. This proves **focus stability**
+  with Xbox present, not physical A/B/X/Y, sticks, D-pad,
+  LT/RT or customized profile correctness.
+- A single `GAMEPAD-XBOX360: TRIGGER-PROBE #1` baseline
+  appears (lines **543, 676, 724, 771**) without a trigger
+  transition. No `SDL3-3D-TRACE` records appear, because
+  the **opt-in `[Debug] SDL3GameplayTrace=1` was absent/off**.
+  Xbox physical face-button translation and RT Swing thus
+  remain unverified *in this run*. Do not infer a button
+  press from enumeration or a neutral-axis sample.
+
+### Next read-only diagnostic run — same DLL is sufficient
+
+Keep the existing experimental options and *verified* Xbox-only
+controller selected. Do **not** remove or change gamepad profiles.
+Add or change **within the existing INI sections**:
+
+```ini
+[Debug]
+Log=1
+SDL3GameplayTrace=1
+Xbox360TriggerProbe=1
+```
+
+The source permits the read-only 3D trace only when
+`[Input] ExperimentalSDL3Probe=1` **and**
+`ExperimentalSDL3NativeOwner=1`; both were requested
+in the 09:13 startup log, so **no new runtime patch/build is
+needed for this diagnostic on the same DLL**. Verify
+`SDL3-3D-TRACE: requested` at startup. The trace produces
+at most **64** selected-pad edge/heartbeat samples per
+process, while the existing independent Xbox trigger probe
+allows at most **48** significant raw axis samples; both
+observe the already-read secondary DirectInput and SDL3
+device states, **never the game's original buffered input**.
+
+Enter **playable** 3D, keep the Xbox the sole selected
+gamepad, and observe actual in-game effects during distinct
+physical presses separated by complete releases:
+1. A, B, X, Y: independently log Jump, Kick, Punch, Web or
+   the user's saved **customized action** (do not assume
+   factory bindings).
+2. LB and RB, then Back and Start, each separately. Verify
+   Pause vs Xbox controller selection/owner handoff and
+   absence of unintended gameplay actions.
+3. D-pad Up/Down/Left/Right, then left and right sticks
+   independently, followed by L3 and R3, avoiding accidental
+   stick clicks during analog movement.
+4. RT fully press/release, then LT fully press/release:
+   correlate `SDL3-3D-TRACE` normalized `RT/LT` and
+   `DI-buttons/lZ`, and `TRIGGER-PROBE` shared-axis
+   changes. Specifically inspect whether **RT actually
+   initiates/holds Swing** and whether LT leaves Swing
+   inactive. The existing `RT-SWING DOWN/UP` markers, if
+   present, indicate the key bridge, **not by themselves
+   proof of a visible swing**.
+5. While in 3D, Alt+Tab once and retest A, RT and Pause
+   after manually resuming. Return to the main menu;
+   record any wrong action or automatically restarted game.
+
+Avoid excessive rapid presses because the diagnostic has
+a fixed sampling cap. Include both the complete
+`SpiderMan2k1Fix(...).log` and the actual physical-to-game
+action observations. If the supported input or focus is
+lost, stop the test, restore the previous DLL and INI.
+Afterwards set `SDL3GameplayTrace=0` and
+`Xbox360TriggerProbe=0` to avoid continued diagnostics.
+
+**Status:** diagnostic preparation only, no game-code changes.
+The next test should be recorded in the Xbox/SDL3 PR #80,
+**not** in the mouse-only PR #90, whose Wine acceptance is
+already complete. All relevant PRs remain **DRAFT and
+unmerged**.
