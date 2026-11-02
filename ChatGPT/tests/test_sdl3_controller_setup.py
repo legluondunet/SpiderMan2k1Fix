@@ -313,7 +313,12 @@ def test_modal_initial_pad_follows_verified_gameplay_owner_not_first_detected():
     assert "else if(!old_id && gameplay_id && id==gameplay_id &&" in body
     assert "vid==gameplay_vid && pid==gameplay_pid)" in body
     assert "desired=i;" in body
-    assert 'matched_owner?"verified-gameplay-owner":"fallback-first-mapped"' in body
+    assert 'matched_owner?owner_source:"fallback-first-mapped"' in body
+    assert 'owner_source="verified-gameplay-owner";' in body
+    # A previously Start-confirmed unsupported SDL3 pad can be previewed
+    # on the next visit, but is not silently adopted as a native DI owner.
+    assert 'SpiderSDL3Probe_GenericSelectedSample(' in body
+    assert 'owner_source="previous-explicit-generic-selection";' in body
     assert "select_slot(ui,desired);" in body
     # The owner identity is independently checked for unique models and
     # live SDL3 handles; never infer ownership from first enumerated pad.
