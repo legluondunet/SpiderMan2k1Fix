@@ -286,6 +286,28 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     return;
   }
   if(active && selected_id!=id)restore_original("SDL3 Start owner changed");
+  /* A failed KEYUP after focus loss/disconnect must never be treated as
+   * a new playable frame. Retry ALL previously injected keys BEFORE the
+   * native DI pointer can be borrowed again. Previous mask and pulse are
+   * kept intact until Win32 accepts their releases. */
+  if(!active && (sent_mask || pulse_scan)) {
+    if(!release_all()) {
+      if(refusal_reports++<12u)
+        log_universal("SDL3-UNIVERSAL: REENTRY BLOCKED pending synthetic KEYUP from prior focus/device owner");
+      return;
+    }
+    if(owner_reports++<12u)
+      log_universal("SDL3-UNIVERSAL: prior synthetic keys released before safe neutral reentry");
+  }
+  if(active && pulse_scan) {
+    /* BeforeUI attempts the pulse KEYUP on every Flip; if Proton/Win32
+     * refused it, do not process a new action while Escape/Enter is held. */
+    if(!send_scan(pulse_scan,1)) {
+      restore_original("pulse KEYUP failed before next gameplay action");
+      return;
+    }
+    pulse_scan=0;
+  }
   /* No native pointer manipulation or key injection until the physical
    * gamepad has returned to neutral after Start/selection/menu changes.
    * The policy also enforces neutral before producing 3D action bits. */
