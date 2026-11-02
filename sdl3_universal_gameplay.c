@@ -405,7 +405,13 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   result=spider_sdl3_universal_step(&state,profile,&sample,id,
                                       native_pause,&desired,&pause_edge);
   if(result!=1) {
-    (void)update_keys(0u,scans);
+    /* An identity/context rearm can request no 3D actions while an old
+     * synthetic direction/action is still held. A failed KEYUP must
+     * restore native ownership, not silently continue with a stuck key. */
+    if(!update_keys(0u,scans)) {
+      log_universal("SDL3-UNIVERSAL: neutral rearm KEYUP failed; restoring native owner");
+      restore_original("neutral rearm KEYUP failed");
+    }
     return;
   }
   if(!update_keys(desired,scans)) {
