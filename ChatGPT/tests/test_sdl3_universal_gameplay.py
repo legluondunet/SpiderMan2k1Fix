@@ -210,3 +210,44 @@ def test_universal_hardware_logs_explain_why_gameplay_adapter_abstains():
     assert "SpiderSDL3Probe_SetupCommit(" not in backend
     assert "spider_sdl3_profile_assign(" not in backend
     assert "return;" in backend
+
+
+def test_gameplay_scan_filter_rejects_system_keys_and_f9_screenshot(tmp_path):
+    cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc:return
+    src=tmp_path/"scan_gate.c"
+    exe=tmp_path/"scan_gate"
+    src.write_text(textwrap.dedent(r"""
+      #include <assert.h>
+      #include "sdl3_universal_policy.h"
+      int main(void) {
+        static const unsigned rejected[]={
+          0,1,0x0e,0x0f,0x1c,0x1d,0x2a,0x36,0x38,
+          0x3a,0x43,0x44,0x45,0x46,0x57,0x58,
+          0x80,0x9c,0x9d,0xb7,0xb8,0xc5,0xd4
+        };
+        static const unsigned accepted[]={
+          0x11, /* physical Z */
+          0x2d, /* physical X */
+          0x2e, /* physical C */
+          0x2f, /* physical V */
+          0x20, /* physical D */
+          0x21, /* physical F */
+          0x22, /* physical G */
+          0x39, /* Space */
+          0xc8,0xd0,0xcb,0xcd /* extended arrows */
+        };
+        unsigned i;
+        for(i=0;i<sizeof(rejected)/sizeof(rejected[0]);i++)
+          assert(!spider_sdl3_universal_scan_safe(rejected[i]));
+        for(i=0;i<sizeof(accepted)/sizeof(accepted[0]);i++)
+          assert(spider_sdl3_universal_scan_safe(accepted[i]));
+        return 0;
+      }
+    """),encoding="utf-8")
+    subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
+                    "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    assert "spider_sdl3_universal_scan_safe(scan)" in backend
+    assert "read_scans(" in backend
