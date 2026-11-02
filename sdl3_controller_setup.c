@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "sdl3_controller_setup.h"
+#include "sdl3_universal_gameplay.h"
 #include "sdl3_gamepad_probe.h"
 #include "sdl3_controller_capture.h"
 #include "sdl3_controller_setup_nav.h"
@@ -1368,6 +1369,9 @@ void SpiderSDL3ControllerSetup_Open(void) {
   if(!owner || !IsWindow(owner) || !IsWindowVisible(owner) ||
      GetWindowThreadProcessId(owner,&pid)==0 ||
      pid!=GetCurrentProcessId())return;
+  /* Modal blocks original Flip. The universal adapter must return
+   * game-owned DirectInput and release held synthetic keyboard keys. */
+  SpiderSDL3Universal_BeforeModal(owner);
   if(!SpiderSDL3Probe_SetupPump()) {
     if(setup_report)setup_report("SDL3-SETUP: preview refused, SDL3 not ready on original game thread");
     MessageBoxA(owner,
