@@ -107,7 +107,8 @@ def test_ps3_cross_on_explicit_capture_button_arms_only_neutral_gated_rebind():
     assert "CROSS-CAPTURE ARMED" in south
     assert "neutral required; no immediate binding" in south
     assert "id==SPIDER_UI_RESET" in south
-    assert "CROSS-RESET BLOCKED" in south
+    assert "CROSS-RESET defaults SAVED" in south
+    assert "GetFocus()==GetDlgItem(ui->hwnd,SPIDER_UI_RESET)" in south
     assert "ACTION-ROW CROSS CAPTURE ARMED" in south
     # The focused button used to cause duplicate synthetic clicks in Proton.
     assert "MAKEWPARAM(id,BN_CLICKED)" not in south.split(
@@ -311,3 +312,41 @@ def test_circle_can_be_captured_without_triggering_proton_escape_or_close():
     assert loop.index("setup_suppress_synthetic_east_escape(&ui,&msg)") < loop.index(
         "IsDialogMessageA(window,&msg)")
     assert "VK_ESCAPE" in UI
+
+
+def test_ps3_cross_restores_default_profile_from_actual_focused_reset_button():
+    """GE-Proton hardware log 20261102-013108:
+    Cross on Restore defaults was blocked, F5 alone worked."""
+    nav=UI.split("static void sample_device(",1)[1].split(
+        "static int setup_suppress_duplicate_arrow(",1)[0]
+    south=nav.split("edge==(1u<<SPIDER_SETUP_NAV_SOUTH)",1)[1].split(
+        "} else if(edge==(1u<<SPIDER_SETUP_NAV_EAST))",1)[0]
+    reset=south.split("} else if(id==SPIDER_UI_RESET)",1)[1].split(
+        "} else {",1)[0]
+    assert "GetFocus()==GetDlgItem(ui->hwnd,SPIDER_UI_RESET)" in reset
+    assert "current_profile(ui)" in reset
+    assert "spider_sdl3_profile_default(&trial,ui->vid,ui->pid)" in reset
+    assert 'commit_profile(ui,&trial,"Defaults")' in reset
+    assert "spider_sdl3_setup_nav_reset(&ui->nav);" in reset
+    assert "CROSS-RESET defaults SAVED" in reset
+    assert "CROSS-RESET FAILED" in reset
+    assert "CROSS-RESET REFUSED" in reset
+    assert "PostMessageA(ui->hwnd,WM_COMMAND" not in reset
+    assert "SendMessageA(ui->hwnd,WM_COMMAND" not in reset
+    commands=UI.split("case WM_COMMAND:",1)[1].split(
+        "case WM_TIMER:",1)[0]
+    win32=commands.split(
+        "LOWORD(wp)==SPIDER_UI_RESET && HIWORD(wp)==BN_CLICKED",1)[1].split(
+        "LOWORD(wp)==SPIDER_UI_RAW && HIWORD(wp)==BN_CLICKED",1)[0]
+    assert "if(setup_physical_south_held(ui))" in win32
+    assert "SYNTHETIC CROSS RESET CLICK SUPPRESSED" in win32
+    assert "spider_sdl3_profile_default(&trial,ui->vid,ui->pid)" in win32
+    assert 'commit_profile(ui,&trial,"Defaults")' in win32
+    keyboard=UI.split("static int handle_setup_keyboard(",1)[1].split(
+        "static void setup_toggle_sdl3_test(",1)[0]
+    assert "VK_F5" in keyboard
+    assert 'commit_profile(ui,&trial,"Defaults")' in keyboard
+    enter=keyboard.split("if(vk==VK_RETURN)",1)[1].split(
+        "if(vk==VK_F5)",1)[0]
+    assert "SPIDER_UI_RESET" in enter and "setup_physical_south_held(ui)" in enter
+    assert "MAKEWPARAM(id,BN_CLICKED)" in enter
