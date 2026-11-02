@@ -172,3 +172,53 @@ def test_proton_synthesized_arrow_cannot_be_processed_twice_by_win32_and_sdl3():
     assert UI.count("ui->suppressed_analog_vk=0u;") >= 4
     assert "Some Proton implementations do not deliver paired synthetic KEYUP" in UI
     assert "new profile invalidates prior claim" in UI
+
+
+def test_previously_explicit_ps3_is_previewed_without_native_ownership():
+    """PS3 054C:0268 stays the displayed profile on reopening SDL3 setup."""
+    refresh=UI.split("static void refresh_pads(",1)[1].split(
+        "static int modal_start_handoff(",1)[0]
+    assert "SpiderSDL3Probe_SelectedIdentity(" in refresh
+    assert "SpiderSDL3Probe_GenericSelectedSample(" in refresh
+    assert refresh.index("SpiderSDL3Probe_SelectedIdentity(") < refresh.index(
+        "SpiderSDL3Probe_GenericSelectedSample(")
+    assert "previous-explicit-generic-selection" in refresh
+    assert "id==gameplay_id" in refresh
+    assert "vid==gameplay_vid && pid==gameplay_pid" in refresh
+    assert "SELECT-UNCONFIRMED multiple pads" in refresh
+    # A preview cannot claim game-owned DirectInput.
+    assert "SpiderSDL3Probe_SetupModalReturn(" not in refresh
+    assert "NATIVE-OWNER" not in refresh
+
+
+def test_start_selection_is_visible_in_native_modal_instructions():
+    modal=UI.split("case WM_CREATE:",1)[1].split("case WM_COMMAND:",1)[0]
+    assert "Press START on the gamepad you want to SELECT" in modal
+    start=UI.split("static int modal_start_handoff(",1)[1].split(
+        "static int setup_select_explicit_pad(",1)[0]
+    assert "START SELECTED controller" in start
+    assert "status(ui,line);" in start
+    assert "ui->start_owner_requested=1u;" in start
+
+
+def test_only_actual_win32_button_has_a_visible_default_border():
+    """Do not leave a heavy default border on Use while Close has focus."""
+    helper=UI.split("static void setup_normalize_default_buttons(",1)[1].split(
+        "static void setup_apply_focus(",1)[0]
+    assert "GWL_STYLE" in helper
+    assert "(style&BS_TYPEMASK)==BS_DEFPUSHBUTTON" in helper
+    assert "BM_SETSTYLE,BS_PUSHBUTTON|BS_NOTIFY,TRUE" in helper
+    assert "SPIDER_UI_CLOSE" in helper and "SPIDER_UI_USE" in helper
+    assert "STALE DEFAULT BUTTON BORDER removed" in helper
+    focus=UI.split("static void setup_apply_focus(",1)[1].split(
+        "static void setup_close_from_pad(",1)[0]
+    assert "SetFocus(target);" in focus
+    assert "setup_normalize_default_buttons(ui);" in focus
+    assert "setup_normalize_default_buttons(ui);" in UI.split(
+        "case WM_COMMAND:",1)[1].split("case WM_TIMER:",1)[0]
+    loop=UI.split("while(IsWindow(window)) {",1)[1].split(
+        "SDL3-SETUP: modal message loop EXIT",1)[0]
+    assert "if(IsDialogMessageA(window,&msg))" in loop
+    assert "setup_normalize_default_buttons(&ui);" in loop
+    # Win32 keyboard/Tab/Space semantics still go through the native path.
+    assert "TranslateMessage(&msg);DispatchMessageA(&msg);" in loop
