@@ -836,10 +836,9 @@ int SpiderSDL3Probe_SetupRead(unsigned slot,uint32_t *instance_id,
     snprintf(name,capacity,"%s",text_name?text_name:"Mapped SDL3 gamepad");
   return 1;
 }
-/* Explicit logical SDL3 selection for devices without a verified native
- * DirectInput profile, e.g. PS3 VID:PID=054C:0268. This is NOT an
- * alias of SelectedIdentity(): that function authorizes game-owned
- * DirectInput and continues rejecting unknown controller models.
+/* Explicit logical SDL3 selection for unknown native DirectInput layouts
+ * and, in universal opt-in mode, ALL uniquely identified mapped devices.
+ * This is NOT an alias of SelectedIdentity(): no native DI ownership.
  *
  * Caller must be on the game/Flip thread, with SDL3 already pumped and
  * the exact selected instance still connected and unique by VID:PID.
@@ -859,9 +858,11 @@ int SpiderSDL3Probe_GenericSelectedSample(uint32_t *instance,
      !sdl_vendor || !sdl_product || !sdl_axis || !sdl_button ||
      !sdl_connected || !id || !generic_selected_vendor ||
      !generic_selected_product)return 0;
-  /* Reject any device which is actually supported by the original
-   * native owner bridge. Never create two competing SDL3 sources. */
-  if(spider_reconnect_kind(generic_selected_vendor,
+  /* Outside universal mode, retain the legacy native Sony/Xbox owner
+   * isolation. Opt-in universal mode instead routes all mapped pads
+   * through ONE keyboard source, with native rebind disabled. */
+  if(!universal_requested &&
+     spider_reconnect_kind(generic_selected_vendor,
                            generic_selected_product)!=SPIDER_RECONNECT_NONE)
     return 0;
   for(i=0;i<num_pads && i<SPIDER_SDL3_MAX_GAMEPADS;i++) {
@@ -938,8 +939,8 @@ int SpiderSDL3Probe_SelectedSample(uint32_t *instance,uint16_t *vid,
   *instance=id;*vid=v;*pid=p;
   return 1;
 }
-/* Generic PS3 selection is separate from the native DirectInput owner.
- * Never fall back to another controller after loss of chosen identity. */
+/* Universal SDL3 selection is separate from game-owned DirectInput.
+ * Never fall back after a lost instance without a NEW explicit Start. */
 int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
     uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample) {
   if(instance)*instance=0;
@@ -1305,10 +1306,11 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
     accepted=spider_sdl3_selected_model_unique(opened,num_pads,
                                                 requested_id,vendor,product);
     if(accepted &&
-       spider_reconnect_kind(vendor,product)==SPIDER_RECONNECT_NONE) {
-      /* A supported SDL3 device with unproven DirectInput layout is
-       * selected ONLY for the generic semantic adapter. Original game
-       * owned DirectInput selection.active and native mappings survive. */
+       (universal_requested ||
+        spider_reconnect_kind(vendor,product)==SPIDER_RECONNECT_NONE)) {
+      /* In opt-in universal mode, even a supported native Sony/Xbox
+       * model uses the same SDL3 keyboard bridge. Original game-owned
+       * DirectInput selection.active and native mappings survive. */
       generic_selected_id=requested_id;
       generic_selected_vendor=vendor;
       generic_selected_product=product;
@@ -1365,10 +1367,16 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
     }
     {
       uint32_t previous=selection.active;
-      if(spider_sdl3_selection_start(&selection,pads[i].id,pressed)) {
-        if(spider_reconnect_kind(vid,pid)==SPIDER_RECONNECT_NONE) {
-          /* Opt-in SDL3 keyboard control of unknown native layouts. Never
-           * claim original DI ownership. Reject zero IDs and duplicates. */
+      if(universal_requested?
+          spider_sdl3_selection_start_edge(&selection,pads[i].id,pressed):
+          spider_sdl3_selection_start(&selection,pads[i].id,pressed)) {
+        /* After unplug, selection_sync may auto-select the only DS4.
+         * A FRESH Start on that same DS4 must still claim opt-in
+         * universal ownership, not be discarded as 'unchanged'. */
+        if(universal_requested ||
+           spider_reconnect_kind(vid,pid)==SPIDER_RECONNECT_NONE) {
+          /* One strict SDL3 normalized keyboard source across all mapped
+           * models; never claim native game DI. Reject duplicates. */
           unsigned matches=0,k;
           selection.active=previous;
           for(k=0;k<num_pads;k++)
