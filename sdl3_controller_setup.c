@@ -817,10 +817,26 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
               setup_report("SDL3-SETUP: CROSS-CAPTURE REFUSED focus/identity mismatch");
           }
         } else if(id==SPIDER_UI_RESET) {
-          /* Keep destructive Reset behind keyboard/mouse or Y, not Cross. */
-          status(ui,"Restore defaults requires mouse/keyboard click or F5; Cross will not reset bindings.");
-          if(setup_report && ui->start_trace_count++<32u)
-            setup_report("SDL3-SETUP: CROSS-RESET BLOCKED; mouse/keyboard Reset or F5 required");
+          /* A physical Cross on the ACTUALLY focused Restore button is
+           * intentional. Reset the displayed model using the same atomic
+           * default+commit path as F5 / the Win32 click. A focus mismatch
+           * never resets bindings; do not synthesize BN_CLICKED from this
+           * SDL3 edge, because Proton may also inject Return/BN_CLICKED. */
+          if(GetFocus()==GetDlgItem(ui->hwnd,SPIDER_UI_RESET) &&
+             current_profile(ui)) {
+            SpiderSDL3ControllerProfile trial;
+            if(spider_sdl3_profile_default(&trial,ui->vid,ui->pid) &&
+               commit_profile(ui,&trial,"Defaults")) {
+              spider_sdl3_setup_nav_reset(&ui->nav);
+              if(setup_report)
+                setup_report("SDL3-SETUP: CROSS-RESET defaults SAVED (focused Reset; atomic model commit)");
+            } else if(setup_report)
+              setup_report("SDL3-SETUP: CROSS-RESET FAILED; unchanged mapping");
+          } else {
+            status(ui,"Restore defaults refused: focus on Restore defaults and connected controller required.");
+            if(setup_report && ui->start_trace_count++<32u)
+              setup_report("SDL3-SETUP: CROSS-RESET REFUSED focus/identity mismatch");
+          }
         } else {
           /* Explicit Cross activation for only non-rebinding actions.
            * POST outside WM_TIMER, never reenter the modal synchronously.
@@ -1064,7 +1080,8 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
        SendMessageA(ui->pads,CB_GETDROPPEDSTATE,0,0))return 0;
     /* Enter also activates a focused Reset/Close button, as users expect
      * from standard Win32 dialogs. Space and Tab continue working. */
-    if(focused==GetDlgItem(ui->hwnd,SPIDER_UI_CAPTURE) &&
+    if((focused==GetDlgItem(ui->hwnd,SPIDER_UI_CAPTURE) ||
+        focused==GetDlgItem(ui->hwnd,SPIDER_UI_RESET)) &&
        setup_physical_south_held(ui))return 1;
     if(focused==GetDlgItem(ui->hwnd,SPIDER_UI_CAPTURE) ||
        focused==GetDlgItem(ui->hwnd,SPIDER_UI_RESET) ||
@@ -1274,17 +1291,25 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
           status(ui,"Release ALL buttons/triggers; then press ONE new control. Esc cancels.");
         }
       } else if(LOWORD(wp)==SPIDER_UI_RESET && HIWORD(wp)==BN_CLICKED) {
-        SpiderSDL3ControllerProfile *p=current_profile(ui);
-        if(setup_report)setup_report("SDL3-SETUP: Reset BEGIN (modal window and selected model valid)");
-        spider_sdl3_capture_reset(&ui->capture);
-        spider_sdl3_setup_nav_reset(&ui->nav);
-        {
-          SpiderSDL3ControllerProfile trial;
-          if(p && spider_sdl3_profile_default(&trial,ui->vid,ui->pid) &&
-             commit_profile(ui,&trial,"Defaults")) {
-            if(setup_report)setup_report("SDL3-SETUP: model defaults restored AND SAVED");
-          } else if(setup_report)
-            setup_report("SDL3-SETUP: Reset REFUSED (no valid selected model or save failure)");
+        /* Controller South is handled once by the physical SDL3 path.
+         * Ignore Proton's duplicate synthetic Win32 click. Keyboard and
+         * mouse still use this original atomic restore/save path. */
+        if(setup_physical_south_held(ui)) {
+          if(setup_report && ui->start_trace_count++<32u)
+            setup_report("SDL3-SETUP: SYNTHETIC CROSS RESET CLICK SUPPRESSED; SDL3 focused-button edge owns reset");
+        } else {
+          SpiderSDL3ControllerProfile *p=current_profile(ui);
+          if(setup_report)setup_report("SDL3-SETUP: Reset BEGIN (modal window and selected model valid)");
+          spider_sdl3_capture_reset(&ui->capture);
+          spider_sdl3_setup_nav_reset(&ui->nav);
+          {
+            SpiderSDL3ControllerProfile trial;
+            if(p && spider_sdl3_profile_default(&trial,ui->vid,ui->pid) &&
+               commit_profile(ui,&trial,"Defaults")) {
+              if(setup_report)setup_report("SDL3-SETUP: model defaults restored AND SAVED");
+            } else if(setup_report)
+              setup_report("SDL3-SETUP: Reset REFUSED (no valid selected model or save failure)");
+          }
         }
       } else if(LOWORD(wp)==SPIDER_UI_RAW && HIWORD(wp)==BN_CLICKED) {
         SpiderSDL3RawWizard_Open(ui->hwnd,setup_report);
