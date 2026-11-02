@@ -237,6 +237,7 @@ static void select_slot(SpiderSDL3SetupUI *ui,unsigned slot) {
   if(!ui)return;
   spider_sdl3_capture_reset(&ui->capture);
   spider_sdl3_setup_nav_reset(&ui->nav);
+  ui->suppressed_analog_vk=0u;
   ui->start_owner_requested=0u; /* new profile invalidates prior claim */
   ui->slot=slot;ui->instance=0;ui->vid=0;ui->pid=0;
   if(!SpiderSDL3Probe_SetupRead(slot,&id,&vid,&pid,name,sizeof(name),&s)) {
@@ -523,6 +524,7 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
   if(GetForegroundWindow()!=ui->hwnd) {
     spider_sdl3_capture_reset(&ui->capture);
     spider_sdl3_setup_nav_reset(&ui->nav);
+    ui->suppressed_analog_vk=0u;
     spider_sdl3_selection_focus_lost(&ui->modal_start);
     return;
   }
@@ -552,6 +554,17 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
     refresh_pads(ui);
     return;
   }
+  /* Never retain filtered VK arrow key state after physical neutral.
+   * Some Proton implementations do not deliver paired synthetic KEYUP. */
+  if(s.axis[SPIDER_SDL3_AXIS_LEFTX]>-9000 &&
+     s.axis[SPIDER_SDL3_AXIS_LEFTX]<9000 &&
+     s.axis[SPIDER_SDL3_AXIS_LEFTY]>-9000 &&
+     s.axis[SPIDER_SDL3_AXIS_LEFTY]<9000 &&
+     !(s.buttons&((1u<<SPIDER_SDL3_BUTTON_DPAD_UP)|
+                  (1u<<SPIDER_SDL3_BUTTON_DPAD_DOWN)|
+                  (1u<<SPIDER_SDL3_BUTTON_DPAD_LEFT)|
+                  (1u<<SPIDER_SDL3_BUTTON_DPAD_RIGHT))))
+    ui->suppressed_analog_vk=0u;
   if(ui->close_pending) {
     /* The game's native menu must not inherit the closing B press.
      * Complete close asynchronously after all face buttons and triggers
@@ -888,6 +901,7 @@ static void setup_toggle_sdl3_test(SpiderSDL3SetupUI *ui) {
   ui->test_buttons_previous=~0u;
   for(axis=0;axis<6u;axis++)ui->test_axes_previous[axis]=-100000;
   ui->test_reports=0u;
+  ui->suppressed_analog_vk=0u;
   spider_sdl3_capture_reset(&ui->capture);
   spider_sdl3_setup_nav_reset(&ui->nav);
   spider_sdl3_selection_focus_lost(&ui->modal_start);
