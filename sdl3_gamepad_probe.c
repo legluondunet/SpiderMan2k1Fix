@@ -476,7 +476,7 @@ static void rescan(void) {
         if(seen)continue;
       }
       current_raw[raw_n++]=id;
-      for(jj=0;j<raw_last_n;jj++)
+      for(jj=0;jj<raw_last_n;jj++)
         if(raw_last_ids[jj]==id)break;
       if(jj==raw_last_n) {
         const char *name=sdl_joystick_name?sdl_joystick_name(id):NULL;
