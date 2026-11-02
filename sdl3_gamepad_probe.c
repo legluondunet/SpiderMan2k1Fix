@@ -471,7 +471,7 @@ static void rescan(void) {
       if(sdl_is_gamepad) {
         if(sdl_is_gamepad(id))continue;
       } else {
-        for(jj=0;j<(unsigned)mapped;jj++)
+        for(jj=0;jj<(unsigned)mapped;jj++)
           if(ids[jj]==id) {seen=1;break;}
         if(seen)continue;
       }
