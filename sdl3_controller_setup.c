@@ -58,6 +58,8 @@ typedef struct {
    * reports; no per-frame spam and no change to input routing. */
   unsigned start_trace_count;
   unsigned start_unarmed_reported[SPIDER_SDL3_MAX_GAMEPADS];
+  unsigned suppressed_analog_vk; /* 4 arrow bits: suppress duplicate Wine nav */
+  unsigned suppressed_analog_reports;
   /* Close from a physical SDL3 B must wait for its release. Never destroy
    * our owner window synchronously inside WM_TIMER or a child callback. */
   unsigned close_pending;
@@ -117,10 +119,15 @@ static int setup_focus_button_id(unsigned selected) {
   if(selected==SPIDER_SETUP_BUTTON_TEST)return SPIDER_UI_TEST;
   return SPIDER_UI_USE;
 }
-/* Only ONE visible selection cursor: hide the list highlight when a
- * button has native focus, but retain ui->action for future editing. */
+/* A Win32 single-select LISTBOX has TWO independent indices: selection
+ * and keyboard CARET (focus rectangle). LB_SETCURSEL alone changes the
+ * first; the old SDL3 list left the other behind and displayed two
+ * moving selections under Wine/Proton. Synchronize both every time.
+ * Off-list focus removes the blue selection, but retains the matching
+ * caret index for when focus returns to the action list. */
 static void setup_sync_visual_selection(SpiderSDL3SetupUI *ui) {
   if(!ui || !IsWindow(ui->actions))return;
+  SendMessageA(ui->actions,LB_SETCARETINDEX,(WPARAM)ui->action,FALSE);
   SendMessageA(ui->actions,LB_SETCURSEL,
     ui->focus.column==SPIDER_SETUP_FOCUS_ACTIONS?
        (WPARAM)ui->action:(WPARAM)-1,0);
@@ -701,6 +708,60 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
     commit_profile(ui,&trial,line);
   }
 }
+/* Wine/Proton can deliver a controller axis BOTH as an SDL3 sample
+ * on WM_TIMER AND as native arrow VK messages via its gamepad->keyboard
+ * compatibility mapping. Without deduplication, the listbox processes
+ * another movement through IsDialogMessage and its own caret advances
+ * independently from our SDL3-selected action row.
+ *
+ * Filter only a physically corroborated arrow while the SELECTED SDL3
+ * pad's stick/D-pad is held. Keyboard arrows remain fully usable if the
+ * controller is neutral, including no-device and calibration cases.
+ * Capture/test modes keep their existing isolated input handling.
+ * Suppress matching VK_KEYUP too so a dropped DOWN cannot leak an UP. */
+static unsigned setup_arrow_mask(UINT vk) {
+  if(vk<VK_LEFT || vk>VK_DOWN)return 0u;
+  return 1u<<(vk-VK_LEFT);
+}
+static int setup_suppress_duplicate_arrow(SpiderSDL3SetupUI *ui,
+                                           const MSG *msg) {
+  SpiderSDL3ControllerSample sample;
+  uint32_t id=0;
+  uint16_t vid=0,pid=0;
+  unsigned mask;
+  int x,y;
+  if(!ui || !msg || ui->capture.active || ui->test_mode)return 0;
+  if(msg->message!=WM_KEYDOWN && msg->message!=WM_KEYUP &&
+     msg->message!=WM_SYSKEYDOWN && msg->message!=WM_SYSKEYUP)return 0;
+  mask=setup_arrow_mask((UINT)msg->wParam);
+  if(!mask)return 0;
+  if(msg->message==WM_KEYUP || msg->message==WM_SYSKEYUP) {
+    if(!(ui->suppressed_analog_vk&mask))return 0;
+    ui->suppressed_analog_vk&=~mask;
+    return 1;
+  }
+  if(ui->suppressed_analog_vk&mask)return 1;
+  if(!ui->instance || !ui->vid || !ui->pid ||
+     !SpiderSDL3Probe_SetupPump() ||
+     !SpiderSDL3Probe_SetupRead(ui->slot,&id,&vid,&pid,NULL,0,&sample) ||
+     id!=ui->instance || vid!=ui->vid || pid!=ui->pid)return 0;
+  x=sample.axis[SPIDER_SDL3_AXIS_LEFTX];
+  y=sample.axis[SPIDER_SDL3_AXIS_LEFTY];
+  if(x>-9000 && x<9000 && y>-9000 && y<9000 &&
+     !(sample.buttons&((1u<<SPIDER_SDL3_BUTTON_DPAD_UP)|
+                       (1u<<SPIDER_SDL3_BUTTON_DPAD_DOWN)|
+                       (1u<<SPIDER_SDL3_BUTTON_DPAD_LEFT)|
+                       (1u<<SPIDER_SDL3_BUTTON_DPAD_RIGHT))))return 0;
+  ui->suppressed_analog_vk|=mask;
+  if(setup_report && ui->suppressed_analog_reports++<24u) {
+    char line[175];
+    snprintf(line,sizeof(line),
+      "SDL3-SETUP: DUPLICATE-WIN32-ARROW SUPPRESSED vk=0x%02X LX=%d LY=%d selected-row=%u (SDL3 owns navigation)",
+      (unsigned)msg->wParam,x,y,ui->action);
+    setup_report(line);
+  }
+  return 1;
+}
 /* One keyboard path independent of Win32 dialog button focus.
  * Tab/Space remain available via IsDialogMessage and ordinary button
  * handling, but a mouse is NEVER required to reach any operation. */
@@ -1130,6 +1191,11 @@ void SpiderSDL3ControllerSetup_Open(void) {
         continue;
       }
     }
+    /* A controller may be delivered twice by Proton: once through
+     * SDL3 and once as Win32 arrow input. Never allow IsDialogMessage
+     * to move the native list caret independently of our SDL3 index. */
+    if((msg.hwnd==window || IsChild(window,msg.hwnd)) &&
+       setup_suppress_duplicate_arrow(&ui,&msg))continue;
     if(msg.message==WM_KEYDOWN &&
        (msg.hwnd==window || IsChild(window,msg.hwnd)) &&
        !(msg.lParam&(1L<<30)) &&
