@@ -929,6 +929,20 @@ static int setup_suppress_duplicate_arrow(SpiderSDL3SetupUI *ui,
 /* One keyboard path independent of Win32 dialog button focus.
  * Tab/Space remain available via IsDialogMessage and ordinary button
  * handling, but a mouse is NEVER required to reach any operation. */
+/* Prevent Proton's synthetic Return/BN_CLICKED from rearming capture when
+ * a controller physically presses South. The SDL3 WM_TIMER path owns Cross
+ * capture with an explicit focused-button check and neutral-gated remap.
+ * A real keyboard Enter or mouse click works while the pad is neutral. */
+static int setup_physical_south_held(SpiderSDL3SetupUI *ui) {
+  SpiderSDL3ControllerSample sample;
+  uint32_t id=0;
+  uint16_t vid=0,pid=0;
+  if(!ui || !ui->instance || !ui->vid || !ui->pid ||
+     !SpiderSDL3Probe_SetupRead(ui->slot,&id,&vid,&pid,
+                                NULL,0,&sample) ||
+     id!=ui->instance || vid!=ui->vid || pid!=ui->pid)return 0;
+  return (sample.buttons&1u)!=0u; /* SDL3 button zero = South/Cross. */
+}
 static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
   unsigned next;
   HWND focused;
@@ -1001,6 +1015,8 @@ static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
        SendMessageA(ui->pads,CB_GETDROPPEDSTATE,0,0))return 0;
     /* Enter also activates a focused Reset/Close button, as users expect
      * from standard Win32 dialogs. Space and Tab continue working. */
+    if(focused==GetDlgItem(ui->hwnd,SPIDER_UI_CAPTURE) &&
+       setup_physical_south_held(ui))return 1;
     if(focused==GetDlgItem(ui->hwnd,SPIDER_UI_CAPTURE) ||
        focused==GetDlgItem(ui->hwnd,SPIDER_UI_RESET) ||
        focused==GetDlgItem(ui->hwnd,SPIDER_UI_CLOSE) ||
@@ -1200,7 +1216,10 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
           status(ui,"Action selected. Choose Capture then release all controls.");
         }
       } else if(LOWORD(wp)==SPIDER_UI_CAPTURE && HIWORD(wp)==BN_CLICKED) {
-        if(current_profile(ui) && !ui->capture.active) {
+        if(setup_physical_south_held(ui)) {
+          if(setup_report && ui->start_trace_count++<32u)
+            setup_report("SDL3-SETUP: SYNTHETIC CROSS CAPTURE CLICK SUPPRESSED; SDL3 focused-button edge owns remap");
+        } else if(current_profile(ui) && !ui->capture.active) {
           spider_sdl3_capture_start(&ui->capture);
           spider_sdl3_setup_nav_reset(&ui->nav);
           status(ui,"Release ALL buttons/triggers; then press ONE new control. Esc cancels.");
