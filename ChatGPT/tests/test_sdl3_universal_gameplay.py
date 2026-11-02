@@ -492,3 +492,78 @@ def test_neutral_rearm_release_failure_falls_back_to_original_di():
     assert "neutral rearm KEYUP failed; restoring native owner" in unarmed
     assert 'restore_original("neutral rearm KEYUP failed");' in unarmed
     assert "(void)update_keys(0u,scans);" not in onflip
+
+
+def test_universal_ps3_unplug_ps4_explicit_start_takes_over(tmp_path):
+    """Observed GE-Proton case: PS3 id=2 unplugged, singleton DS4 id=1
+    auto-selected by read-only enumeration, but a NEW Start on DS4 must
+    still explicitly authorize keyboard bridge (never auto take over)."""
+    cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc:return
+    src=tmp_path/"ps4_handoff.c"
+    exe=tmp_path/"ps4_handoff"
+    src.write_text(textwrap.dedent(r"""
+      #include <assert.h>
+      #include "sdl3_gamepad_selection.h"
+      #include "sdl3_controller_profile.h"
+      int main(void) {
+        SpiderSDL3Selection selection={0};
+        SpiderSDL3ControllerProfile ps3,ps4;
+        const uint32_t both[2]={1u,2u},ps4_only[1]={1u};
+        assert(spider_sdl3_profile_default(&ps3,0x054c,0x0268));
+        assert(spider_sdl3_profile_default(&ps4,0x054c,0x09cc));
+        /* Both can share standard normalized PS1 button semantics:
+         * no per-PS3 action table is required. */
+        for(unsigned i=0;i<SPIDER_SDL3_ACTION_COUNT;i++) {
+          assert(ps3.actions[i].kind==ps4.actions[i].kind);
+          assert(ps3.actions[i].index==ps4.actions[i].index);
+        }
+        spider_sdl3_selection_sync(&selection,both,2u);
+        assert(selection.active==0u);
+        assert(!spider_sdl3_selection_start_edge(&selection,2u,0));
+        assert(spider_sdl3_selection_start_edge(&selection,2u,1));
+        assert(selection.active==2u);
+        spider_sdl3_selection_sync(&selection,ps4_only,1u);
+        /* SDL auto-select is passive; universal gameplay must stay
+         * unowned until a fresh Start edge on that same DS4. */
+        assert(selection.active==1u);
+        assert(!spider_sdl3_selection_start_edge(&selection,1u,0));
+        assert(!spider_sdl3_selection_start(&selection,1u,1));
+        /* Different fresh edge after release now explicitly claims DS4,
+         * even though selection.active was already id=1. */
+        assert(!spider_sdl3_selection_start_edge(&selection,1u,0));
+        assert(spider_sdl3_selection_start_edge(&selection,1u,1));
+        assert(selection.active==1u);
+        return 0;
+      }
+    """),encoding="utf-8")
+    subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
+                    "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
+
+
+def test_universal_mapped_ps4_uses_generic_identity_without_native_rebind():
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    start=probe.split("      uint32_t previous=selection.active;",1)[1].split(
+        "      if(selection.active==pads[i].id",1)[0]
+    assert "universal_requested?" in start
+    assert "spider_sdl3_selection_start_edge(&selection,pads[i].id,pressed)" in start
+    assert "spider_sdl3_selection_start(&selection,pads[i].id,pressed)" in start
+    assert "if(universal_requested ||" in start
+    assert "selection.active=previous;" in start
+    assert "generic_selected_id=pads[i].id;" in start
+    generic=probe.split("int SpiderSDL3Probe_GenericSelectedSample(",1)[1].split(
+        "int SpiderSDL3Probe_SelectedRT(",1)[0]
+    assert "if(!universal_requested &&" in generic
+    assert "spider_sdl3_selected_model_unique(" in generic
+    select=probe.split("int SpiderSDL3Probe_SelectedMappedSample(",1)[1].split(
+        "/* The player may hold physical Cross",1)[0]
+    assert "if(generic_selected_id)" in select
+    assert "return SpiderSDL3Probe_GenericSelectedSample(" in select
+    modal=probe.split("if(setup_owner_pending)",1)[1].split(
+        "sdl3_trace_native_owner(now);",1)[0]
+    assert "(universal_requested ||" in modal
+    assert "generic_selected_id=requested_id;" in modal
+    assert "selection.active=requested_id;" in modal
+    native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
+    assert "if(SpiderSDL3Universal_Enabled())return;" in native
