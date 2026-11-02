@@ -132,6 +132,34 @@ static void setup_sync_visual_selection(SpiderSDL3SetupUI *ui) {
     ui->focus.column==SPIDER_SETUP_FOCUS_ACTIONS?
        (WPARAM)ui->action:(WPARAM)-1,0);
 }
+/* IsDialogMessage can leave a former default pushbutton's heavy border
+ * displayed even after native keyboard focus has moved elsewhere. The
+ * photographed PS3/Proton case had the native dotted caret on Close while
+ * Use still retained a default-button border. Preserve BS_NOTIFY, keyboard
+ * focus, Tab and Space; only normalize a stale DEFPUSHBUTTON type. */
+static void setup_normalize_default_buttons(SpiderSDL3SetupUI *ui) {
+  static const int ids[]={
+    SPIDER_UI_CAPTURE,SPIDER_UI_RESET,SPIDER_UI_CLOSE,
+    SPIDER_UI_RAW,SPIDER_UI_TEST,SPIDER_UI_USE
+  };
+  unsigned i;
+  if(!ui || !IsWindow(ui->hwnd))return;
+  for(i=0;i<sizeof(ids)/sizeof(ids[0]);i++) {
+    HWND button=GetDlgItem(ui->hwnd,ids[i]);
+    LONG_PTR style;
+    if(!button)continue;
+    style=GetWindowLongPtrA(button,GWL_STYLE);
+    if((style&BS_TYPEMASK)==BS_DEFPUSHBUTTON) {
+      SendMessageA(button,BM_SETSTYLE,BS_PUSHBUTTON|BS_NOTIFY,TRUE);
+      if(setup_report) {
+        char line[128];
+        snprintf(line,sizeof(line),
+          "SDL3-SETUP: STALE DEFAULT BUTTON BORDER removed id=%d",ids[i]);
+        setup_report(line);
+      }
+    }
+  }
+}
 static void setup_apply_focus(SpiderSDL3SetupUI *ui) {
   HWND target;
   static const char *const names[SPIDER_SETUP_BUTTON_COUNT]={
@@ -150,6 +178,7 @@ static void setup_apply_focus(SpiderSDL3SetupUI *ui) {
   SendMessageA(ui->hwnd,WM_CHANGEUISTATE,
     MAKEWPARAM(UIS_CLEAR,UISF_HIDEFOCUS),0);
   SetFocus(target);
+  setup_normalize_default_buttons(ui);
   setup_sync_visual_selection(ui);
   if(ui->focus.column==SPIDER_SETUP_FOCUS_BUTTONS) {
     snprintf(line,sizeof(line),
@@ -258,6 +287,8 @@ static void select_slot(SpiderSDL3SetupUI *ui,unsigned slot) {
 static void refresh_pads(SpiderSDL3SetupUI *ui) {
   unsigned n,i,desired=0;
   uint32_t old_id,gameplay_id=0;
+  SpiderSDL3ControllerSample remembered_sample;
+  const char *owner_source="fallback-first-mapped";
   uint32_t opened_ids[SPIDER_SDL3_MAX_GAMEPADS]={0};
   unsigned start_released_at_scan[SPIDER_SDL3_MAX_GAMEPADS]={0};
   uint16_t gameplay_vid=0,gameplay_pid=0;
@@ -265,13 +296,18 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
   char selection_line[220];
   if(!ui || !ui->pads)return;
   old_id=ui->instance;
-  /* Initial modal open must follow the *game-owned selected SDL3 pad*,
-   * not the first enumerated pad (typically a connected DS4). A user
-   * choosing another model inside this dialog retains that choice on
-   * subsequent refreshes. The identity API already rejects duplicate
-   * VID:PID and stale/non-native selections. */
-  if(!old_id)
-    SpiderSDL3Probe_SelectedIdentity(&gameplay_vid,&gameplay_pid,&gameplay_id);
+  /* Prefer a verified native owner. Unknown PS3-style controllers are
+   * deliberately excluded from native ownership, but their explicitly
+   * selected SDL3 semantic identity remains safe to show as a *preview*
+   * on the next modal visit. No native DI or gameplay owner is changed. */
+  if(!old_id) {
+    if(SpiderSDL3Probe_SelectedIdentity(&gameplay_vid,&gameplay_pid,
+                                        &gameplay_id))
+      owner_source="verified-gameplay-owner";
+    else if(SpiderSDL3Probe_GenericSelectedSample(&gameplay_id,
+                &gameplay_vid,&gameplay_pid,&remembered_sample))
+      owner_source="previous-explicit-generic-selection";
+  }
   n=SpiderSDL3Probe_SetupCount();
   SendMessageA(ui->pads,CB_RESETCONTENT,0,0);
   for(i=0;i<n;i++) {
@@ -323,7 +359,7 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
   if(!old_id && setup_report) {
     snprintf(selection_line,sizeof(selection_line),
       "SDL3-SETUP: AUTO-SELECT slot=%u source=%s gameplay-id=%lu VID:PID=%04X:%04X",
-      desired,matched_owner?"verified-gameplay-owner":"fallback-first-mapped",
+      desired,matched_owner?owner_source:"fallback-first-mapped",
       (unsigned long)gameplay_id,(unsigned)gameplay_vid,(unsigned)gameplay_pid);
     setup_report(selection_line);
   }
@@ -333,7 +369,7 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
     spider_sdl3_capture_reset(&ui->capture);
   select_slot(ui,desired);
   if(n>1u && !ui->user_chose_controller) {
-    status(ui,"Multiple SDL3 controllers: select intended pad in dropdown or L1/R1 BEFORE Use selected controller.");
+    status(ui,"Multiple gamepads: press START on the one you want, or choose it above / L1/R1. Preview is not confirmed.");
     if(setup_report)setup_report("SDL3-SETUP: SELECT-UNCONFIRMED multiple pads; auto-preview cannot claim ownership");
   }
 }
@@ -412,6 +448,13 @@ static int modal_start_handoff(SpiderSDL3SetupUI *ui) {
   ui->start_owner_vid=ui->vid;
   ui->start_owner_pid=ui->pid;
   ui->start_owner_requested=1u;
+  {
+    char line[195];
+    snprintf(line,sizeof(line),
+      "START SELECTED controller %04X:%04X (id=%lu). Esc/Close returns to game; 3D support is still experimental.",
+      (unsigned)ui->vid,(unsigned)ui->pid,(unsigned long)ui->instance);
+    status(ui,line);
+  }
   if(setup_report) {
     char line[195];
     snprintf(line,sizeof(line),
@@ -968,9 +1011,9 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON|BS_NOTIFY,
         465,349,230,34,hwnd,(HMENU)(uintptr_t)SPIDER_UI_USE,NULL,NULL);
       label=CreateWindowExA(0,"STATIC",
-        "Stick Left/Right: navigate    L1/R1: browse controllers\r\n"
-        "Choose the intended gamepad ABOVE first if multiple are connected\r\n"
-        "Use selected / Ctrl+Shift+U: choose pad; Ctrl+Shift+C: remap\r\n"
+        "Press START on the gamepad you want to SELECT (PS3 included)\r\n"
+        "Stick Left/Right: navigate; L1/R1: browse controllers\r\n"
+        "Use selected / Ctrl+Shift+U: confirm; Ctrl+Shift+C: remap\r\n"
         "Start only outside capture; Esc: close/stop test; F9/F10 unchanged",
         WS_CHILD|WS_VISIBLE,18,393,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
@@ -1030,6 +1073,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         ui->focus.button=LOWORD(wp)<=SPIDER_UI_CLOSE?
           (unsigned)(LOWORD(wp)-SPIDER_UI_CAPTURE):
           (unsigned)(SPIDER_SETUP_BUTTON_RAW+LOWORD(wp)-SPIDER_UI_RAW);
+        setup_normalize_default_buttons(ui);
         setup_sync_visual_selection(ui);
       } else if(LOWORD(wp)==SPIDER_UI_ACTION &&
                 HIWORD(wp)==LBN_SELCHANGE) {
@@ -1215,7 +1259,10 @@ void SpiderSDL3ControllerSetup_Open(void) {
        !(msg.lParam&(1L<<30)) &&
        handle_setup_keyboard(&ui,(UINT)msg.wParam))
       continue;
-    if(IsDialogMessageA(window,&msg))continue;
+    if(IsDialogMessageA(window,&msg)) {
+      if(!ui.test_mode)setup_normalize_default_buttons(&ui);
+      continue;
+    }
     TranslateMessage(&msg);DispatchMessageA(&msg);
   }
   if(setup_report)setup_report("SDL3-SETUP: modal message loop EXIT; restoring original game window");
