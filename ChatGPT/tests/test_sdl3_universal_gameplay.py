@@ -480,3 +480,15 @@ def test_universal_fail_closed_reentry_after_failed_keyup():
     assert "if(generic_selected_id)" in selected
     assert "return SpiderSDL3Probe_GenericSelectedSample(" in selected
     assert "return SpiderSDL3Probe_SelectedSample(" in selected
+
+
+def test_neutral_rearm_release_failure_falls_back_to_original_di():
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    onflip=backend.split("void SpiderSDL3Universal_OnFlip(",1)[1]
+    assert "if(result!=1) {" in onflip
+    unarmed=onflip.split("if(result!=1) {",1)[1].split(
+        "if(!update_keys(desired,scans))",1)[0]
+    assert "if(!update_keys(0u,scans))" in unarmed
+    assert "neutral rearm KEYUP failed; restoring native owner" in unarmed
+    assert 'restore_original("neutral rearm KEYUP failed");' in unarmed
+    assert "(void)update_keys(0u,scans);" not in onflip
