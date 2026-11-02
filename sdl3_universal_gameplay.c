@@ -34,6 +34,8 @@ static unsigned sent_mask=0;
 static unsigned pulse_scan=0,trace=0;
 static unsigned key_transition_reports=0,owner_reports=0,refusal_reports=0;
 static unsigned menu_previous=0,menu_arm=0;
+static unsigned previous_context=SPIDER_UNIVERSAL_CTX_3D;
+static unsigned pause_context_reports=0,pause_command_reports=0;
 static SpiderSDL3UniversalState state;
 static void (*report)(const char *)=NULL;
 static void log_universal(const char *msg) {
@@ -169,6 +171,7 @@ static void restore_original(const char *reason) {
   /* Preserve sent_mask and pulse_scan if KEYUP failed. They are retried
    * in BeforeUI and before any new joystick gameplay injection. */
   menu_previous=0;menu_arm=0;
+  previous_context=SPIDER_UNIVERSAL_CTX_3D;
   spider_sdl3_universal_reset(&state);
 }
 static int suspend_original(void) {
@@ -191,6 +194,8 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   active=0;selected_id=0;suspended=0;borrowed_native=NULL;
   memset(held_scans,0,sizeof(held_scans));
   sent_mask=0;pulse_scan=0;menu_previous=menu_arm=0;
+  previous_context=SPIDER_UNIVERSAL_CTX_3D;
+  pause_context_reports=0;pause_command_reports=0;
   spider_sdl3_universal_reset(&state);
   requested=ini &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1 &&
@@ -248,7 +253,7 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   unsigned scans[SPIDER_UNIVERSAL_KEY_COUNT]={0},pause_edge=0;
   SpiderSDL3ControllerSample sample;
   SpiderSDL3ControllerProfile *profile;
-  unsigned menu_buttons=0;
+  unsigned menu_buttons=0,context;
   int result;
   if(!requested || game_thread!=GetCurrentThreadId())return;
   if(!hwnd || !IsWindowVisible(hwnd) || GetForegroundWindow()!=hwnd) {
@@ -301,7 +306,27 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     log_universal(line);
   }
   active=1;selected_id=id;
-  if(menu || bink || !gameplay) {
+  context=spider_sdl3_universal_route_context(
+    menu,gameplay,bink,native_pause);
+  if(context!=previous_context) {
+    /* Entering the native 3D Pause screen is NOT a gameplay frame.
+     * Reset action edges; a fully released controller must arm menu
+     * navigation so the physical Pause button cannot instantly
+     * close the menu again on the same held press. */
+    spider_sdl3_universal_reset(&state);
+    menu_arm=0;menu_previous=0;
+    if((context==SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE ||
+        previous_context==SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE) &&
+       pause_context_reports++<14u) {
+      char msg[180];
+      snprintf(msg,sizeof(msg),
+        "SDL3-UNIVERSAL: PAUSE-MENU context transition %u -> %u (menu arm reset; held keys released on routing)",
+        previous_context,context);
+      log_universal(msg);
+    }
+    previous_context=context;
+  }
+  if(context!=SPIDER_UNIVERSAL_CTX_3D) {
     unsigned i;
     /* Context controls are independent from the seven 3D game actions.
      * Keyboard remains available throughout menus and cinematics. */
@@ -314,8 +339,13 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
         profile->context[SPIDER_SDL3_CONTEXT_CONFIRM],&sample);
       int back=binding_held(
         profile->context[SPIDER_SDL3_CONTEXT_BACK],&sample);
+      /* The configured Pause control must ALSO resume the original
+       * native Pause menu. This does not affect Pause in gameplay,
+       * generic 2D menus or Bink. Circle/Back still closes Pause. */
+      int resume=context==SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE &&
+        binding_held(profile->actions[SPIDER_SDL3_ACTION_PAUSE],&sample);
       if(confirm)menu_buttons|=1u<<4;
-      if(back)menu_buttons|=1u<<5;
+      if(back || resume)menu_buttons|=1u<<5;
       for(i=0;i<4u;i++) {
         if(sample.buttons&(1u<<(SPIDER_UNIVERSAL_DPAD_UP+i)))
           menu_buttons|=1u<<i;
@@ -326,8 +356,16 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
       if(sample.axis[SPIDER_SDL3_AXIS_LEFTX]>12000)menu_buttons|=1u<<3;
       if((menu_buttons&3u)==3u)menu_buttons&=~3u;
       if((menu_buttons&12u)==12u)menu_buttons&=~12u;
+      if(context==SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE &&
+         menu_buttons!=menu_previous && pause_command_reports++<24u) {
+        char msg[185];
+        snprintf(msg,sizeof(msg),
+          "SDL3-UNIVERSAL: PAUSE-MENU INPUT held=0x%02X previous=0x%02X (Up/Down/Left/Right/Confirm/Back)",
+          menu_buttons,menu_previous);
+        log_universal(msg);
+      }
       if((menu_buttons&(1u<<5)) && !(menu_previous&(1u<<5)))
-        pulse(0x01u,"menu Back");
+        pulse(0x01u,"menu Back/Pause resume");
       else if((menu_buttons&(1u<<4)) && !(menu_previous&(1u<<4)))
         pulse(0x1cu,"menu Confirm");
     }
