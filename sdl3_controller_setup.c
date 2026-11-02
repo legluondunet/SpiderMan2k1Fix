@@ -131,6 +131,45 @@ static void setup_sync_visual_selection(SpiderSDL3SetupUI *ui) {
   SendMessageA(ui->actions,LB_SETCURSEL,
     ui->focus.column==SPIDER_SETUP_FOCUS_ACTIONS?
        (WPARAM)ui->action:(WPARAM)-1,0);
+  /* Wine may paint the LISTBOX caret even when the native keyboard focus
+   * is elsewhere. The owner-drawn view must repaint on EVERY logical focus
+   * transition, not only after the next mouse/keyboard event. */
+  InvalidateRect(ui->actions,NULL,TRUE);
+}
+/* The ordinary Win32 LISTBOX has a separate keyboard caret and selection.
+ * Under GE-Proton, its built-in focus rectangle can remain visible on Jump
+ * even while the actual focus rectangle is on a right-hand button. Drawing
+ * every row here, and deliberately ignoring ODS_FOCUS, gives exactly ONE
+ * visible selection: the action row when the action list owns focus, or the
+ * native button focus outline when a button owns focus. We do not change
+ * gameplay input, native DirectInput or keyboard/mouse accessibility. */
+static void setup_draw_action_item(SpiderSDL3SetupUI *ui,
+                                   const DRAWITEMSTRUCT *item) {
+  RECT text_rect;
+  char line[192];
+  int n,old_background;
+  COLORREF old_text;
+  int active;
+  if(!ui || !item || item->CtlID!=SPIDER_UI_ACTION ||
+     item->itemID==(UINT)-1)return;
+  active=(!ui->test_mode && !ui->closing &&
+          ui->focus.column==SPIDER_SETUP_FOCUS_ACTIONS &&
+          GetFocus()==ui->actions && item->itemID==ui->action);
+  FillRect(item->hDC,&item->rcItem,GetSysColorBrush(
+    active?COLOR_HIGHLIGHT:COLOR_WINDOW));
+  n=(int)SendMessageA(ui->actions,LB_GETTEXT,
+                      (WPARAM)item->itemID,(LPARAM)line);
+  if(n==LB_ERR)return;
+  line[sizeof(line)-1]=0;
+  text_rect=item->rcItem;
+  text_rect.left+=4;
+  old_background=SetBkMode(item->hDC,TRANSPARENT);
+  old_text=SetTextColor(item->hDC,GetSysColor(
+    active?COLOR_HIGHLIGHTTEXT:COLOR_WINDOWTEXT));
+  DrawTextA(item->hDC,line,-1,&text_rect,
+            DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX|DT_END_ELLIPSIS);
+  SetTextColor(item->hDC,old_text);
+  SetBkMode(item->hDC,old_background);
 }
 /* IsDialogMessage can leave a former default pushbutton's heavy border
  * displayed even after native keyboard focus has moved elsewhere. The
@@ -974,6 +1013,18 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
   SpiderSDL3SetupUI *ui=(SpiderSDL3SetupUI *)(uintptr_t)
     GetWindowLongPtrA(hwnd,GWLP_USERDATA);
   switch(msg) {
+    case WM_MEASUREITEM:
+      if(wp==SPIDER_UI_ACTION && lp) {
+        ((MEASUREITEMSTRUCT *)lp)->itemHeight=20u;
+        return TRUE;
+      }
+      break;
+    case WM_DRAWITEM:
+      if(wp==SPIDER_UI_ACTION && ui && lp) {
+        setup_draw_action_item(ui,(const DRAWITEMSTRUCT *)lp);
+        return TRUE; /* Never delegate ODS_FOCUS to the native LISTBOX. */
+      }
+      break;
     case WM_CREATE: {
       CREATESTRUCTA *cs=(CREATESTRUCTA *)lp;
       HFONT font=(HFONT)GetStockObject(DEFAULT_GUI_FONT);
@@ -990,7 +1041,8 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL,
         18,55,680,250,hwnd,(HMENU)(uintptr_t)SPIDER_UI_PAD,NULL,NULL);
       ui->actions=CreateWindowExA(WS_EX_CLIENTEDGE,"LISTBOX","",
-        WS_CHILD|WS_VISIBLE|WS_TABSTOP|LBS_NOTIFY|WS_VSCROLL,
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP|LBS_NOTIFY|WS_VSCROLL|
+        LBS_OWNERDRAWFIXED|LBS_HASSTRINGS,
         18,99,430,255,hwnd,(HMENU)(uintptr_t)SPIDER_UI_ACTION,NULL,NULL);
       CreateWindowExA(0,"BUTTON","Capture selected action",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_NOTIFY,
@@ -1064,6 +1116,10 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
                 HIWORD(wp)==LBN_SETFOCUS) {
         ui->focus.column=SPIDER_SETUP_FOCUS_ACTIONS;
         setup_sync_visual_selection(ui);
+      } else if(LOWORD(wp)==SPIDER_UI_ACTION &&
+                HIWORD(wp)==LBN_KILLFOCUS) {
+        /* Repaint immediately so no action caret lingers under buttons. */
+        InvalidateRect(ui->actions,NULL,TRUE);
       } else if(((LOWORD(wp)>=SPIDER_UI_CAPTURE &&
                   LOWORD(wp)<=SPIDER_UI_CLOSE) ||
                  (LOWORD(wp)>=SPIDER_UI_RAW &&
