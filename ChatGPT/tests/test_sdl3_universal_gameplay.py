@@ -534,6 +534,9 @@ def test_universal_ps3_unplug_ps4_explicit_start_takes_over(tmp_path):
         assert(!spider_sdl3_selection_start_edge(&selection,1u,0));
         assert(spider_sdl3_selection_start_edge(&selection,1u,1));
         assert(selection.active==1u);
+        /* Alt+Tab disarms the next ownership edge but keeps identity. */
+        spider_sdl3_selection_focus_lost(&selection);
+        assert(selection.active==1u);
         return 0;
       }
     """),encoding="utf-8")
