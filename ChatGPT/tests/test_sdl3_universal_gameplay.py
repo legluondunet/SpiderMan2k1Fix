@@ -107,7 +107,12 @@ def test_universal_runtime_is_opt_in_and_mutually_exclusive():
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in game
     assert "SpiderSDL3Universal_Enabled()" in native
     assert "SpiderSDL3Universal_Enabled()" in ui
-    assert "SpiderSDL3Raw_ProfileKey" in probe
+    # PR #96 retains its validated SDL3 mapped-device panel. The raw
+    # unmapped GUID wizard from #94 is deliberately NOT merged here.
+    assert "SpiderSDL3Probe_GenericSelectedSample" in probe
+    assert "if(generic_selected_id)" in probe
+    assert "universal_requested" in probe
+    assert "SDL3-UNIVERSAL: START selected generic" in probe
     assert "SpiderSDL3Probe_SelectedMappedSample" in probe
     assert "InterlockedCompareExchangePointer(SPIDER_UNIVERSAL_DI_SLOT" in backend
     assert "restored" in backend.lower()
@@ -251,3 +256,27 @@ def test_gameplay_scan_filter_rejects_system_keys_and_f9_screenshot(tmp_path):
     backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
     assert "spider_sdl3_universal_scan_safe(scan)" in backend
     assert "read_scans(" in backend
+
+
+def test_integrated_panel_preserved_and_generic_owner_is_explicit_only():
+    ui=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    game=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
+    assert '"SpiderMan2k1FixSDL3ActionView"' in ui
+    assert '"LISTBOX"' not in ui
+    assert "CROSS-RESET defaults SAVED" in ui
+    assert "ACTION-ROW CROSS CAPTURE ARMED" in ui
+    assert "SpiderSDL3Universal_BeforeModal(owner);" in ui
+    assert "generic_selected_id" in probe
+    assert "selection.active=previous;" in probe
+    assert "universal_requested && vid && pid && matches==1u" in probe
+    assert "spider_reconnect_kind(vid,pid)==SPIDER_RECONNECT_NONE" in probe
+    assert "if(generic_selected_id)" in probe
+    assert "return SpiderSDL3Probe_GenericSelectedSample(" in probe
+    assert "return SpiderSDL3Probe_SelectedSample(" in probe
+    assert "SpiderSDL3Universal_BeforeUI(game_hwnd);" in game
+    assert "SpiderSDL3Universal_OnFlip(game_hwnd," in game
+    assert "SpiderSDL3Universal_Enabled()" in (
+        ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
+    assert "spider_sdl3_generic_ui_reset(&generic_ui);" in (
+        ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
