@@ -32,6 +32,7 @@ static PVOID borrowed_native=NULL;
 static unsigned held_scans[SPIDER_UNIVERSAL_KEY_COUNT];
 static unsigned sent_mask=0;
 static unsigned pulse_scan=0,trace=0;
+static unsigned key_transition_reports=0,owner_reports=0;
 static unsigned menu_previous=0,menu_arm=0;
 static SpiderSDL3UniversalState state;
 static void (*report)(const char *)=NULL;
@@ -118,16 +119,29 @@ static int release_all(void) {
 }
 static int update_keys(unsigned wanted,const unsigned *scans) {
   unsigned i;
+  char line[155];
   /* Release all no-longer-wanted keys before pressing others. */
   for(i=0;i<SPIDER_UNIVERSAL_KEY_COUNT;i++) {
     if(!(sent_mask&(1u<<i)))continue;
     if((wanted&(1u<<i)) && held_scans[i]==scans[i])continue;
     if(!send_scan(held_scans[i],1))return 0;
+    if(key_transition_reports++<48u) {
+      snprintf(line,sizeof(line),
+        "SDL3-UNIVERSAL: SendInput KEYUP action=%u DIK=0x%02X (OS accepted, game reception unverified)",
+        i,held_scans[i]);
+      log_universal(line);
+    }
     sent_mask&=~(1u<<i);held_scans[i]=0;
   }
   for(i=0;i<SPIDER_UNIVERSAL_KEY_COUNT;i++) {
     if(!(wanted&(1u<<i)) || (sent_mask&(1u<<i)))continue;
     if(!send_scan(scans[i],0))return 0;
+    if(key_transition_reports++<48u) {
+      snprintf(line,sizeof(line),
+        "SDL3-UNIVERSAL: SendInput KEYDOWN action=%u DIK=0x%02X (OS accepted, game reception unverified)",
+        i,scans[i]);
+      log_universal(line);
+    }
     held_scans[i]=scans[i];
     sent_mask|=1u<<i;
   }
@@ -165,11 +179,14 @@ static int suspend_original(void) {
       SPIDER_UNIVERSAL_DI_SLOT,NULL,old)!=old)return 0;
   borrowed_native=old;
   suspended=1;
-  log_universal("SDL3-UNIVERSAL: game-owned native DI pointer safely SUSPENDED; SDL3 keyboard bridge is sole gameplay input source");
+  log_universal(old?
+    "SDL3-UNIVERSAL: game-owned native DI pointer SUSPENDED (experimental; lifetime unproven)":
+    "SDL3-UNIVERSAL: original game-owned DI slot already NULL; no pointer overwritten");
   return 1;
 }
 void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   requested=0;report=logger;trace=0;game_thread=0;
+  key_transition_reports=0;owner_reports=0;
   active=0;selected_id=0;suspended=0;borrowed_native=NULL;
   memset(held_scans,0,sizeof(held_scans));
   sent_mask=0;pulse_scan=0;menu_previous=menu_arm=0;
@@ -185,6 +202,17 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
 }
 int SpiderSDL3Universal_Enabled(void) {return requested;}
 int SpiderSDL3Universal_SuppressesNative(void) {return requested && suspended;}
+void SpiderSDL3Universal_BeforeModal(HWND game_hwnd) {
+  if(!requested || !game_thread ||
+     game_thread!=GetCurrentThreadId())return;
+  /* This is called BEFORE creating/activating the owned setup dialog.
+   * Its modal GetMessage loop can block the next original-game Flip
+   * indefinitely, so we MUST restore the engine's DI owner first. */
+  restore_original("opening controller configuration modal");
+  log_universal(game_hwnd?
+    "SDL3-UNIVERSAL: setup modal entered; synthetic keys released and native owner restored":
+    "SDL3-UNIVERSAL: setup modal entered without owner HWND; restoration attempted");
+}
 void SpiderSDL3Universal_BeforeUI(HWND hwnd) {
   if(!requested)return;
   if(!game_thread)game_thread=GetCurrentThreadId();
@@ -234,9 +262,24 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     return;
   }
   if(active && selected_id!=id)restore_original("SDL3 Start owner changed");
+  /* No native pointer manipulation or key injection until the physical
+   * gamepad has returned to neutral after Start/selection/menu changes.
+   * The policy also enforces neutral before producing 3D action bits. */
+  if(!suspended && !spider_sdl3_universal_neutral(&sample)) {
+    if(owner_reports++<10u)
+      log_universal("SDL3-UNIVERSAL: selected pad awaits complete neutral before any DI suspension/injection");
+    return;
+  }
   if(!suspend_original()) {
     restore_original("unsafe native DI pointer");
     return;
+  }
+  if(!active && owner_reports++<10u) {
+    char line[165];
+    snprintf(line,sizeof(line),
+      "SDL3-UNIVERSAL: ACTIVE selected-id=%lu model=%04X:%04X (opt-in test; no proof of keyboard reception)",
+      (unsigned long)id,(unsigned)vid,(unsigned)pid);
+    log_universal(line);
   }
   active=1;selected_id=id;
   if(menu || bink || !gameplay) {
@@ -269,7 +312,11 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
       else if((menu_buttons&(1u<<4)) && !(menu_previous&(1u<<4)))
         pulse(0x1cu,"menu Confirm");
     }
-    (void)update_keys(menu_buttons&0x0fu,scans);
+    if(!update_keys(menu_buttons&0x0fu,scans)) {
+      log_universal("SDL3-UNIVERSAL: menu SendInput failure; restoring native owner");
+      restore_original("menu SendInput failed");
+      return;
+    }
     menu_previous=menu_buttons;
     return;
   }
@@ -281,7 +328,8 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     return;
   }
   if(!update_keys(desired,scans)) {
-    log_universal("SDL3-UNIVERSAL: KEYDOWN/KEYUP failed; gameplay input suspended, retry pending");
+    log_universal("SDL3-UNIVERSAL: SendInput failure; releasing and restoring native owner");
+    restore_original("SendInput failed");
     return;
   }
   if(pause_edge)pulse(0x01u,"3D Pause");
