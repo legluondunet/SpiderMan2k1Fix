@@ -222,3 +222,37 @@ def test_only_actual_win32_button_has_a_visible_default_border():
     assert "setup_normalize_default_buttons(&ui);" in loop
     # Win32 keyboard/Tab/Space semantics still go through the native path.
     assert "TranslateMessage(&msg);DispatchMessageA(&msg);" in loop
+
+
+def test_owner_draw_actions_never_paints_a_second_focus_caret():
+    """GE-Proton screenshot 20261102-005148: Jump outlined while
+    native button focus is visibly on Test SDL3 inputs."""
+    draw=UI.split("static void setup_draw_action_item(",1)[1].split(
+        "static void setup_normalize_default_buttons(",1)[0]
+    create=UI.split("case WM_CREATE:",1)[1].split("case WM_COMMAND:",1)[0]
+    wndproc=UI.split("static LRESULT CALLBACK setup_wndproc(",1)[1].split(
+        "void SpiderSDL3ControllerSetup_Open(",1)[0]
+    sync=UI.split("static void setup_sync_visual_selection(",1)[1].split(
+        "static void setup_draw_action_item(",1)[0]
+    assert "LBS_OWNERDRAWFIXED|LBS_HASSTRINGS" in create
+    assert "LBS_NOTIFY" in create and "WS_TABSTOP" in create
+    assert "case WM_MEASUREITEM:" in wndproc
+    assert "((MEASUREITEMSTRUCT *)lp)->itemHeight" in wndproc
+    assert "case WM_DRAWITEM:" in wndproc
+    assert "setup_draw_action_item(ui,(const DRAWITEMSTRUCT *)lp)" in wndproc
+    assert "item->CtlID!=SPIDER_UI_ACTION" in draw
+    assert "GetFocus()==ui->actions && item->itemID==ui->action" in draw
+    assert "ui->focus.column==SPIDER_SETUP_FOCUS_ACTIONS" in draw
+    assert "active?COLOR_HIGHLIGHT:COLOR_WINDOW" in draw
+    assert "active?COLOR_HIGHLIGHTTEXT:COLOR_WINDOWTEXT" in draw
+    assert "LB_GETTEXT" in draw and "DrawTextA(" in draw
+    assert "DrawFocusRect" not in draw
+    assert "ODS_FOCUS" not in draw
+    assert "InvalidateRect(ui->actions,NULL,TRUE);" in sync
+    assert "HIWORD(wp)==LBN_KILLFOCUS" in wndproc
+    assert "HIWORD(wp)==BN_SETFOCUS" in wndproc
+    assert "LBN_SELCHANGE" in wndproc
+    # Buttons keep Win32 focus and remain keyboard/Tab/Space operable.
+    assert "SetFocus(target);" in UI
+    assert "if(IsDialogMessageA(window,&msg))continue;" in UI
+    assert "SendInput(" not in UI
