@@ -121,3 +121,74 @@ def test_universal_runtime_is_opt_in_and_mutually_exclusive():
                       "IDirectInputDevice8_Release(", "IDirectInputDevice8_Acquire(",
                       "SetWindowsHookEx(", "CreateThread("):
         assert forbidden not in backend
+
+
+def test_universal_native_di_is_neutral_gated_and_modal_safe():
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    header=(ROOT/"sdl3_universal_gameplay.h").read_text(encoding="utf-8")
+    modal=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    assert "void SpiderSDL3Universal_BeforeModal(HWND game_hwnd)" in header
+    assert "void SpiderSDL3Universal_BeforeModal(HWND game_hwnd) {" in backend
+    assert 'restore_original("opening controller configuration modal");' in backend
+    assert "SpiderSDL3Universal_BeforeModal(owner);" in modal
+    assert modal.index("SpiderSDL3Universal_BeforeModal(owner);") < modal.index(
+        "if(!SpiderSDL3Probe_SetupPump()) {",modal.index(
+            "void SpiderSDL3ControllerSetup_Open(void)"))
+    assert "if(!suspended && !spider_sdl3_universal_neutral(&sample))" in backend
+    assert backend.index("if(!suspended && !spider_sdl3_universal_neutral(&sample))") < (
+        backend.index("if(!suspend_original())"))
+    assert "SendInput failure; releasing and restoring native owner" in backend
+    assert 'restore_original("SendInput failed");' in backend
+    assert 'restore_original("menu SendInput failed");' in backend
+    assert "native DI slot already NULL; no pointer overwritten" in backend or (
+        "original game-owned DI slot already NULL; no pointer overwritten" in backend)
+    assert "game-owned native DI pointer SUSPENDED (experimental; lifetime unproven)" in backend
+    # Event telemetry is evidence of OS acceptance, never falsely claims
+    # the original game actually received these synthetic keystrokes.
+    assert "SendInput KEYDOWN action=" in backend
+    assert "SendInput KEYUP action=" in backend
+    assert "OS accepted, game reception unverified" in backend
+    assert "if(key_transition_reports++<48u)" in backend
+    assert "if(report && trace++<100u)report(msg);" in backend
+
+
+def test_no_gameplay_actions_or_pause_on_non_neutral_start(tmp_path):
+    cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc:return
+    src=tmp_path/"universal_neutral.c"
+    exe=tmp_path/"universal_neutral"
+    src.write_text(textwrap.dedent(r"""
+      #include <assert.h>
+      #include "sdl3_universal_policy.h"
+      int main(void) {
+        SpiderSDL3UniversalState state={0};
+        SpiderSDL3ControllerProfile p;
+        SpiderSDL3ControllerSample sample={0};
+        uint32_t desired=0xffu;
+        unsigned pause=1;
+        assert(spider_sdl3_profile_default(&p,0x054c,0x0268));
+        /* Holding Circle (menu Back) or an action cannot arm 3D. */
+        sample.buttons=1u<<1;
+        assert(spider_sdl3_universal_step(&state,&p,&sample,2,0,
+                                         &desired,&pause)==0);
+        assert(!desired && !pause && !state.armed);
+        sample.buttons=0;
+        assert(spider_sdl3_universal_step(&state,&p,&sample,2,0,
+                                         &desired,&pause)==0);
+        assert(state.armed && !desired);
+        sample.buttons=1u<<1;
+        assert(spider_sdl3_universal_step(&state,&p,&sample,2,0,
+                                         &desired,&pause)==1);
+        assert((desired&(1u<<SPIDER_UNIVERSAL_KICK))!=0u);
+        spider_sdl3_universal_reset(&state);
+        sample.buttons=0;
+        sample.axis[SPIDER_SDL3_AXIS_LEFTX]=32000;
+        assert(spider_sdl3_universal_step(&state,&p,&sample,2,0,
+                                         &desired,&pause)==0);
+        assert(!state.armed && !desired);
+        return 0;
+      }
+    """),encoding="utf-8")
+    subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
+                    "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
