@@ -46,6 +46,7 @@
 #include "sdl3_gamepad_probe.h"
 #include "sdl3_generic_ui_policy.h"
 #include "sdl3_gameplay_live.h"
+#include "sdl3_universal_gameplay.h"
 #include "ps1_input_flight_recorder.h"
 #include "ps1_joystick_readonly_menu.h"
 #include "sdl3_controller_setup.h"
@@ -1476,6 +1477,11 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   }
   /* Critical: release injected key before focus pause can block this thread. */
   release_active_key();
+  if(SpiderSDL3Universal_Enabled()) {
+    xbox_rt_swing_release("universal SDL3 3D keyboard adapter");
+    spider_sdl3_generic_ui_reset(&generic_ui);
+    return; /* No competing generic UI or DS4/Xbox keyboard bridge. */
+  }
   /* Explicitly selected PS3: only one guarded keyboard pulse source.
    * Keeps the game-owned native DirectInput untouched, even in 3D. */
   if(sdl3_generic_ui_on_flip(hwnd,menu_2d,gameplay_3d,
