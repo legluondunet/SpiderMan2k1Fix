@@ -10,6 +10,9 @@ int SpiderSDL3Universal_Enabled(void);
 int SpiderSDL3Universal_SuppressesNative(void);
 /* Before UI/focus pause, releases held synthetic keys on any lost focus. */
 void SpiderSDL3Universal_BeforeUI(HWND hwnd);
+/* Before the joystick-setup modal blocks the original Flip thread, restore
+ * game-owned DirectInput and release every synthetic held key. */
+void SpiderSDL3Universal_BeforeModal(HWND game_hwnd);
 /* At normal Flip boundary, after native reconnect and SDL3 polling. */
 void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
                                 int bink,int native_pause);
