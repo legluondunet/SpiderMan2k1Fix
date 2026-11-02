@@ -78,12 +78,9 @@ static int read_scans(unsigned out[SPIDER_UNIVERSAL_KEY_COUNT]) {
     uint32_t mask,scan;
     memcpy(&mask,(const void *)(p+8u*i),sizeof(mask));
     memcpy(&scan,(const void *)(p+8u*i+4u),sizeof(scan));
-    /* Disallow Escape, Tab, Alt, Ctrl, F10-F12 and ambiguous/unbound
-     * values so gameplay keys cannot invoke global menu/system actions. */
-    if(mask!=masks[i] || scan<2u || scan>0xD3u ||
-       scan==0x0Fu || scan==0x1Cu || scan==0x38u ||
-       scan==0x9Du || scan==0xB8u ||
-       scan==0x44u || scan==0x57u || scan==0x58u)
+    /* Never forward a modifier, toggle or global F9 screenshot
+     * shortcut. Only a well-formed keyboard action code is safe. */
+    if(mask!=masks[i] || !spider_sdl3_universal_scan_safe(scan))
       return 0;
     for(j=0;j<i;j++)if(out[j]==scan)return 0;
     out[i]=(unsigned)scan;
