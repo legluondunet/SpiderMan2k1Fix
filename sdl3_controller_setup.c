@@ -78,6 +78,11 @@ typedef struct {
   /* Foreground snapshot at WM_CLOSE, before destroying this HWND. */
   HWND closing_foreground;
   unsigned closing_foreground_captured;
+  /* Some Proton controller wrappers generate VK_ESCAPE for physical
+   * Circle. Ignore the delayed synthetic Escape immediately after a
+   * successful Circle assignment, but never suppress regular keyboard
+   * Escape outside this tiny transient window. */
+  DWORD last_captured_east_ms;
 } SpiderSDL3SetupUI;
 static int setup_enabled=0,setup_open=0;
 static void (*setup_report)(const char *)=NULL;
@@ -834,12 +839,22 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
           }
         }
       } else if(current_profile(ui)) {
-        /* South on a list row is navigation/confirmation, not permission
-         * to edit a saved gameplay binding. Only the clearly labeled
-         * Capture selected action button or Ctrl+Shift+C can arm a remap. */
-        status(ui,"To remap: stick RIGHT to Capture selected action, then press Cross/A. Ctrl+Shift+C also works.");
-        if(setup_report && ui->start_trace_count++<32u)
-          setup_report("SDL3-SETUP: South on actions list ignored (explicit Capture button required)");
+        /* An action-row Cross explicitly starts EDITING that action.
+         * Previously this edge was ignored and the very next Circle
+         * closed the modal. The SDL3 capture engine requires FULL NEUTRAL
+         * after Cross is released; neither the activation edge nor
+         * a second held button may accidentally become a binding. */
+        spider_sdl3_capture_start(&ui->capture);
+        spider_sdl3_setup_nav_reset(&ui->nav);
+        setup_sync_visual_selection(ui);
+        status(ui,"CAPTURE: release Cross/A, then press ONE replacement button (Circle allowed). Esc cancels.");
+        if(setup_report) {
+          char trace[176];
+          snprintf(trace,sizeof(trace),
+            "SDL3-SETUP: ACTION-ROW CROSS CAPTURE ARMED action=%u id=%lu (neutral required)",
+            ui->action,(unsigned long)ui->instance);
+          setup_report(trace);
+        }
       }
     } else if(edge==(1u<<SPIDER_SETUP_NAV_EAST)) {
       setup_close_from_pad(ui,
@@ -854,6 +869,10 @@ static void sample_device(SpiderSDL3SetupUI *ui) {
   }
   rc=spider_sdl3_capture_feed(&ui->capture,&s,&candidate);
   if(rc!=1)return;
+  /* A late synthetic VK_ESCAPE must not close the dialog after
+   * Circle is accepted as a legitimate 3D action button. */
+  if(candidate.kind==SPIDER_SDL3_BIND_BUTTON &&
+     candidate.index==1u)ui->last_captured_east_ms=GetTickCount();
   spider_sdl3_setup_nav_reset(&ui->nav);
   p=current_profile(ui);
   if(!p) {
@@ -942,6 +961,36 @@ static int setup_physical_south_held(SpiderSDL3SetupUI *ui) {
                                 NULL,0,&sample) ||
      id!=ui->instance || vid!=ui->vid || pid!=ui->pid)return 0;
   return (sample.buttons&1u)!=0u; /* SDL3 button zero = South/Cross. */
+}
+/* Circle/B is a valid editable 3D action. Proton can also mirror that
+ * SAME physical input as a Win32 Escape key. Only ignore the synthetic
+ * Escape while the selected physical SDL3 East is genuinely held, or
+ * immediately after capturing East to absorb delayed queued messages.
+ * The real keyboard Escape remains available at other times. */
+static int setup_suppress_synthetic_east_escape(
+    SpiderSDL3SetupUI *ui,const MSG *msg) {
+  SpiderSDL3ControllerSample sample;
+  uint32_t id=0;
+  uint16_t vid=0,pid=0;
+  DWORD elapsed;
+  if(!ui || !msg || msg->wParam!=VK_ESCAPE ||
+     (msg->message!=WM_KEYDOWN && msg->message!=WM_KEYUP &&
+      msg->message!=WM_SYSKEYDOWN && msg->message!=WM_SYSKEYUP))
+    return 0;
+  if(ui->last_captured_east_ms) {
+    elapsed=GetTickCount()-ui->last_captured_east_ms;
+    if(elapsed<350u)return 1;
+    ui->last_captured_east_ms=0;
+  }
+  if(!ui->capture.active || !ui->instance ||
+     !SpiderSDL3Probe_SetupRead(ui->slot,&id,&vid,&pid,
+                                NULL,0,&sample) ||
+     id!=ui->instance || vid!=ui->vid || pid!=ui->pid)
+    return 0;
+  if(!(sample.buttons&(1u<<1)))return 0;
+  if(setup_report && ui->start_trace_count++<32u)
+    setup_report("SDL3-SETUP: PROTON SYNTHETIC ESC SUPPRESSED during Circle capture; native SDL3 binding retained");
+  return 1;
 }
 static int handle_setup_keyboard(SpiderSDL3SetupUI *ui,UINT vk) {
   unsigned next;
@@ -1139,7 +1188,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       label=CreateWindowExA(0,"STATIC",
         "Press START on the gamepad you want to SELECT (PS3 included)\r\n"
         "Stick Left/Right: navigate; L1/R1: browse controllers\r\n"
-        "Cross/A on Capture: remap selected action; Ctrl+Shift+C also works\r\n"
+        "Cross/A on action row OR Capture: remap; Circle allowed\r\n"
         "Use / Ctrl+Shift+U: confirm; Start only outside capture; Esc: close",
         WS_CHILD|WS_VISIBLE,18,393,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
@@ -1390,6 +1439,8 @@ void SpiderSDL3ControllerSetup_Open(void) {
     /* A controller may be delivered twice by Proton: once through
      * SDL3 and once as Win32 arrow input. Never allow IsDialogMessage
      * to move the native list caret independently of our SDL3 index. */
+    if((msg.hwnd==window || IsChild(window,msg.hwnd)) &&
+       setup_suppress_synthetic_east_escape(&ui,&msg))continue;
     if((msg.hwnd==window || IsChild(window,msg.hwnd)) &&
        setup_suppress_duplicate_arrow(&ui,&msg))continue;
     if(msg.message==WM_KEYDOWN &&
