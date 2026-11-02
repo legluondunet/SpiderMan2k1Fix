@@ -330,7 +330,7 @@ def test_ps3_cross_restores_default_profile_from_actual_focused_reset_button():
     assert "spider_sdl3_setup_nav_reset(&ui->nav);" in reset
     assert "CROSS-RESET defaults SAVED" in reset
     assert "CROSS-RESET FAILED" in reset
-    assert "CROSS-RESET REFUSED" in reset
+    assert "CROSS-RESET REFUSED" in south  # separate focus-refusal branch
     assert "PostMessageA(ui->hwnd,WM_COMMAND" not in reset
     assert "SendMessageA(ui->hwnd,WM_COMMAND" not in reset
     commands=UI.split("case WM_COMMAND:",1)[1].split(
