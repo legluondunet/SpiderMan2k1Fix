@@ -369,3 +369,114 @@ def test_first_universal_active_report_survives_prolonged_start_hold():
     assert "if(!active) {" in backend
     assert "if(!active && owner_reports++<10u)" not in backend
     assert "SDL3-UNIVERSAL: ACTIVE selected-id=" in backend
+
+
+def test_saved_ps3_custom_swap_drives_exactly_one_3d_action(tmp_path):
+    """Portable policy validation of the user's Square->Circle remapping.
+    Menu Circle/Back must remain independent of swapped 3D Punch/Kick."""
+    cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc:return
+    src=tmp_path/"ps3_custom_3d.c"
+    exe=tmp_path/"ps3_custom_3d"
+    src.write_text(textwrap.dedent(r"""
+      #include <assert.h>
+      #include "sdl3_universal_policy.h"
+      int main(void) {
+        SpiderSDL3UniversalState state={0};
+        SpiderSDL3ControllerProfile profile;
+        SpiderSDL3ControllerSample sample={0};
+        uint32_t desired=0;
+        unsigned pause_edge=0;
+        const uint32_t id=23;
+        assert(spider_sdl3_profile_default(&profile,0x054c,0x0268));
+        assert(spider_sdl3_profile_assign_visible(
+          &profile,SPIDER_SDL3_ACTION_PUNCH,
+          spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,1)));
+        /* Circle (east) becomes Punch; Square (west) becomes Kick. */
+        assert(profile.actions[SPIDER_SDL3_ACTION_PUNCH].index==1);
+        assert(profile.actions[SPIDER_SDL3_ACTION_KICK].index==2);
+        assert(profile.context[SPIDER_SDL3_CONTEXT_BACK].index==1);
+        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
+                                         &desired,&pause_edge)==0);
+        assert(state.armed && !desired);
+        sample.buttons=(1u<<1);
+        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
+                                         &desired,&pause_edge)==1);
+        assert(desired==(1u<<SPIDER_UNIVERSAL_PUNCH) && !pause_edge);
+        sample.buttons=(1u<<2);
+        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
+                                         &desired,&pause_edge)==1);
+        assert(desired==(1u<<SPIDER_UNIVERSAL_KICK) && !pause_edge);
+        /* Remapping while the game is running is a live model profile
+         * read: restoring defaults changes the next semantic action. */
+        assert(spider_sdl3_profile_default(&profile,0x054c,0x0268));
+        sample.buttons=(1u<<1);
+        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
+                                         &desired,&pause_edge)==1);
+        assert(desired==(1u<<SPIDER_UNIVERSAL_KICK) && !pause_edge);
+        sample.buttons=0;
+        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
+                                         &desired,&pause_edge)==1);
+        assert(!desired);
+        /* A remapped analog trigger uses hysteresis. Swapping Swing and
+         * Aim still produces exactly one original 3D action per input. */
+        assert(spider_sdl3_profile_assign_visible(
+          &profile,SPIDER_SDL3_ACTION_AIM,
+          spider_sdl3_bind(SPIDER_SDL3_BIND_TRIGGER,SPIDER_SDL3_AXIS_RT)));
+        assert(profile.actions[SPIDER_SDL3_ACTION_AIM].kind==
+               SPIDER_SDL3_BIND_TRIGGER);
+        assert(profile.actions[SPIDER_SDL3_ACTION_SWING].index==9);
+        sample.axis[SPIDER_SDL3_AXIS_RT]=20000;
+        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
+                                         &desired,&pause_edge)==1);
+        assert(desired==(1u<<SPIDER_UNIVERSAL_AIM));
+        sample.axis[SPIDER_SDL3_AXIS_RT]=7000;
+        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
+                                         &desired,&pause_edge)==1);
+        assert(desired==(1u<<SPIDER_UNIVERSAL_AIM));
+        sample.axis[SPIDER_SDL3_AXIS_RT]=4000;
+        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
+                                         &desired,&pause_edge)==1);
+        assert(!desired);
+        sample.buttons=(1u<<9);
+        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
+                                         &desired,&pause_edge)==1);
+        assert(desired==(1u<<SPIDER_UNIVERSAL_SWING));
+        return 0;
+      }
+    """),encoding="utf-8")
+    subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
+                    "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
+
+
+def test_universal_fail_closed_reentry_after_failed_keyup():
+    """A pending virtual key must be released before DI re-borrowed or
+    a new SDL controller/foreground frame is accepted after Alt+Tab."""
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    onflip=backend.split("void SpiderSDL3Universal_OnFlip(",1)[1]
+    preowner=onflip.split("if(!suspend_original())",1)[0]
+    assert 'restore_original("game HWND not foreground");' in preowner
+    assert 'restore_original("no selected mapped controller");' in preowner
+    assert 'restore_original("SDL3 Start owner changed");' in preowner
+    assert "if(!active && (sent_mask || pulse_scan))" in preowner
+    assert "if(!release_all())" in preowner
+    assert "REENTRY BLOCKED pending synthetic KEYUP" in preowner
+    assert preowner.index("if(!active && (sent_mask || pulse_scan))") < (
+        preowner.index("if(!suspended && !spider_sdl3_universal_neutral"))
+    assert "if(active && pulse_scan)" in preowner
+    assert 'restore_original("pulse KEYUP failed before next gameplay action");' in preowner
+    assert "if(!suspended && !spider_sdl3_universal_neutral(&sample))" in preowner
+    assert "if(!release_all())" in backend.split("static void restore_original(",1)[1].split(
+        "static int suspend_original(",1)[0]
+    beforeui=backend.split("void SpiderSDL3Universal_BeforeUI(",1)[1].split(
+        "static int binding_held(",1)[0]
+    assert 'restore_original("focus or window lost");' in beforeui
+    # Identity cannot silently fall back to another SDL3 pad if the user
+    # explicitly selected a generic PS3 that has just been unplugged.
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    selected=probe.split("int SpiderSDL3Probe_SelectedMappedSample(",1)[1].split(
+        "/* The player may hold physical Cross",1)[0]
+    assert "if(generic_selected_id)" in selected
+    assert "return SpiderSDL3Probe_GenericSelectedSample(" in selected
+    assert "return SpiderSDL3Probe_SelectedSample(" in selected
