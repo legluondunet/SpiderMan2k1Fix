@@ -301,8 +301,8 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
    * selected SDL3 semantic identity remains safe to show as a *preview*
    * on the next modal visit. No native DI or gameplay owner is changed. */
   if(!old_id) {
-    if(SpiderSDL3Probe_SelectedIdentity(&gameplay_vid,&gameplay_pid,
-                                        &gameplay_id))
+    SpiderSDL3Probe_SelectedIdentity(&gameplay_vid,&gameplay_pid,&gameplay_id);
+    if(gameplay_id)
       owner_source="verified-gameplay-owner";
     else if(SpiderSDL3Probe_GenericSelectedSample(&gameplay_id,
                 &gameplay_vid,&gameplay_pid,&remembered_sample))
@@ -1259,10 +1259,8 @@ void SpiderSDL3ControllerSetup_Open(void) {
        !(msg.lParam&(1L<<30)) &&
        handle_setup_keyboard(&ui,(UINT)msg.wParam))
       continue;
-    if(IsDialogMessageA(window,&msg)) {
-      if(!ui.test_mode)setup_normalize_default_buttons(&ui);
-      continue;
-    }
+    if(!ui.test_mode)setup_normalize_default_buttons(&ui);
+    if(IsDialogMessageA(window,&msg))continue;
     TranslateMessage(&msg);DispatchMessageA(&msg);
   }
   if(setup_report)setup_report("SDL3-SETUP: modal message loop EXIT; restoring original game window");
