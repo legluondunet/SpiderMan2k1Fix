@@ -1,6 +1,12 @@
 # SDL3 validated panel + opt-in 3D integration (draft PR #98)
 
-Status: **EXPERIMENTAL / OFF BY DEFAULT / NOT VALIDATED IN 3D ON HARDWARE.**
+Status: **EXPERIMENTAL / OFF BY DEFAULT / PARTIALLY VERIFIED ON PS3 HARDWARE.**
+
+Physical test, November 2, 2026: PS3 `054C:0268` under GE-Proton11-11
+successfully controls Spider-Man in 3D, skips videos/cutscenes, and navigates
+the native in-game Pause menu (tester log `SpiderMan2k1Fix(20261102-022140).log`).
+This does **not** validate custom 3D bindings, focus loss / Alt+Tab,
+disconnect / reconnect, a second gamepad or native Windows 11.
 
 This branch is based on the PS3-tested controller setup UI in PR #96.
 It imports the keyboard adapter concept and fail-closed input safeguards
@@ -58,6 +64,40 @@ separate tracks and PR #98 is the opt-in integrated test branch.
    broken focus or incomplete owner restore. Set
    `ExperimentalSDL3UniversalGameplay=0` and restart. The old stable
    setup behavior must remain available.
+
+## Next hardware acceptance checks — custom mappings and focus safety
+
+Use the PR #98 artifact and back up `054C-0268.ini` before editing it:
+
+1. Open the SDL3 panel with the PS3, assign **Punch to Circle**.
+   Because Circle was previously Kick, the panel should atomically swap
+   Kick to **Square**. Save and close the panel.
+2. In live 3D gameplay, press Circle: verify **Punch**, not Kick.
+   Press Square: verify **Kick**, not Punch. The 2D menu and native
+   in-game Pause must **still** use Circle as Back/Cancel.
+3. Restore defaults with Cross in the SDL3 panel. Confirm Circle returns
+   to **Kick** and Square to **Punch** in 3D. Confirm the change persists
+   after quitting/restarting with the same saved model profile.
+4. On a test level, while holding a non-destructive direction, switch
+   away using Alt+Tab and stay in another window. The controller should
+   not keep moving Spider-Man when focus returns. Confirm `EXIT
+   reason=focus or window lost` and native DI pointer `RESTORED` in log,
+   followed by an intentional neutral frame before reactivation.
+5. Unplug the PS3 *after releasing every input*. Confirm the adapter
+   logs `EXIT reason=no selected mapped controller` and restores
+   native ownership. Reconnect and press **Start** on that same physical
+   controller to explicitly select its new SDL3 instance: the adapter
+   must not silently select the DS4 or inherit the previous key state.
+6. Exercise Bink skip, cutscenes, menu Pause/Resume and return to gameplay
+   again after Alt+Tab and replug. Abort on stuck keys or repeated
+   navigation; copy the log before changing any further options.
+
+**Regression protection now in source:** an unacknowledged synthetic
+KEYUP blocks new gameplay ownership until release succeeds. The bridge also
+restores native ownership when a KEYUP fails while waiting for a neutral
+frame. Portable policy tests cover Square/Circle action swaps, controller
+model defaults and trigger reassignment, but real gameplay confirmation
+is still required.
 
 Never promote the flag to default or merge this draft into `main`
 until physical PS3 + DS4 and Windows 11/Proton checks are accepted.
