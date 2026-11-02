@@ -192,3 +192,21 @@ def test_no_gameplay_actions_or_pause_on_non_neutral_start(tmp_path):
     subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
                     "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
+
+
+def test_universal_hardware_logs_explain_why_gameplay_adapter_abstains():
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    assert "SDL3-UNIVERSAL: waiting for selected SDL3 mapped pad" in backend
+    assert "SDL3-UNIVERSAL: REFUSED no valid normalized profile" in backend
+    assert "SDL3-UNIVERSAL: REFUSED unverified writable native joystick slot" in backend
+    assert "SDL3-UNIVERSAL: REFUSED original keyboard table invalid" in backend
+    assert "SDL3-UNIVERSAL: EXIT reason=%s" in backend
+    assert "refusal_reports++<6u" in backend
+    assert "no selected mapped controller" in backend
+    assert 'restore_original("native DI slot not proven");' in backend
+    assert 'restore_original("game keyboard table not proven");' in backend
+    # Existing button-assignment model files stay owned by SDL3 setup;
+    # the bridge must not mutate them or bypass a failed validation.
+    assert "SpiderSDL3Probe_SetupCommit(" not in backend
+    assert "spider_sdl3_profile_assign(" not in backend
+    assert "return;" in backend
