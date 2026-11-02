@@ -298,7 +298,9 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     restore_original("unsafe native DI pointer");
     return;
   }
-  if(!active && owner_reports++<10u) {
+  /* Do not share the neutral-wait suppression budget with the first
+   * successful ACTIVE report: a held Start can consume all ten entries. */
+  if(!active) {
     char line[165];
     snprintf(line,sizeof(line),
       "SDL3-UNIVERSAL: ACTIVE selected-id=%lu model=%04X:%04X (opt-in test; no proof of keyboard reception)",
