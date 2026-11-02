@@ -166,7 +166,8 @@ void SpiderSDL3GameplayLive_Init(const char *ini,void (*logger)(const char *)) {
     GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1 &&
     GetPrivateProfileIntA("Input","ExperimentalNativeJoystickUnplugGuard",1,ini)==1 &&
     GetPrivateProfileIntA("Input","ExperimentalNativeJoystickReconnect",1,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickMappingSwap",1,ini)==1;
+    GetPrivateProfileIntA("Input","ExperimentalNativeJoystickMappingSwap",1,ini)==1 &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3UniversalGameplay",0,ini)!=1;
   if(enabled)msg("SDL3-3D-LIVE: EXPERIMENT enabled: DS4 native seven buttons + Pause, verified Xbox360 six face/shoulder buttons with RT Swing unbound; reject other SDL3 inputs, 3D only");
 }
 void SpiderSDL3GameplayLive_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
