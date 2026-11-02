@@ -361,3 +361,11 @@ def test_native_pause_menu_must_rearm_after_release_and_not_autoresume():
     assert "if(spider_sdl3_universal_neutral(&sample))menu_arm=1;" in menu
     assert "menu_previous=0;" in menu
     assert "if(back || resume)" in menu
+
+
+def test_first_universal_active_report_survives_prolonged_start_hold():
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    assert "if(owner_reports++<10u)" in backend
+    assert "if(!active) {" in backend
+    assert "if(!active && owner_reports++<10u)" not in backend
+    assert "SDL3-UNIVERSAL: ACTIVE selected-id=" in backend
