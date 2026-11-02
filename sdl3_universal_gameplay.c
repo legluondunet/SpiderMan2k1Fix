@@ -32,7 +32,7 @@ static PVOID borrowed_native=NULL;
 static unsigned held_scans[SPIDER_UNIVERSAL_KEY_COUNT];
 static unsigned sent_mask=0;
 static unsigned pulse_scan=0,trace=0;
-static unsigned key_transition_reports=0,owner_reports=0;
+static unsigned key_transition_reports=0,owner_reports=0,refusal_reports=0;
 static unsigned menu_previous=0,menu_arm=0;
 static SpiderSDL3UniversalState state;
 static void (*report)(const char *)=NULL;
@@ -149,6 +149,11 @@ static int update_keys(unsigned wanted,const unsigned *scans) {
 }
 static void restore_original(const char *reason) {
   PVOID old;
+  if(reason && (suspended || active || sent_mask || pulse_scan)) {
+    char line[200];
+    snprintf(line,sizeof(line),"SDL3-UNIVERSAL: EXIT reason=%s",reason);
+    log_universal(line);
+  }
   /* Native pointer restoration has priority on focus loss even if a
    * synthetic KEYUP failed. Keep the pending scan bits for retry on the
    * next safe Flip, but never leave the original game joystick suspended
@@ -168,7 +173,6 @@ static void restore_original(const char *reason) {
    * in BeforeUI and before any new joystick gameplay injection. */
   menu_previous=0;menu_arm=0;
   spider_sdl3_universal_reset(&state);
-  (void)reason;
 }
 static int suspend_original(void) {
   PVOID old;
@@ -186,7 +190,7 @@ static int suspend_original(void) {
 }
 void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   requested=0;report=logger;trace=0;game_thread=0;
-  key_transition_reports=0;owner_reports=0;
+  key_transition_reports=0;owner_reports=0;refusal_reports=0;
   active=0;selected_id=0;suspended=0;borrowed_native=NULL;
   memset(held_scans,0,sizeof(held_scans));
   sent_mask=0;pulse_scan=0;menu_previous=menu_arm=0;
@@ -250,15 +254,33 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   unsigned menu_buttons=0;
   int result;
   if(!requested || game_thread!=GetCurrentThreadId())return;
-  if(!hwnd || !IsWindowVisible(hwnd) || GetForegroundWindow()!=hwnd ||
-     !SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample)) {
+  if(!hwnd || !IsWindowVisible(hwnd) || GetForegroundWindow()!=hwnd) {
+    restore_original("game HWND not foreground");
+    return;
+  }
+  if(!SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample)) {
+    if(refusal_reports++<6u)
+      log_universal("SDL3-UNIVERSAL: waiting for selected SDL3 mapped pad (press Start on desired pad)");
     restore_original("no selected mapped controller");
     return;
   }
   profile=SpiderSDL3Probe_SetupProfile(vid,pid);
-  if(!profile || !spider_sdl3_profile_valid(profile) ||
-     !writable_slot() || !read_scans(scans)) {
-    restore_original("game config or identity not proven");
+  if(!profile || !spider_sdl3_profile_valid(profile)) {
+    if(refusal_reports++<6u)
+      log_universal("SDL3-UNIVERSAL: REFUSED no valid normalized profile for selected pad");
+    restore_original("invalid gamepad profile");
+    return;
+  }
+  if(!writable_slot()) {
+    if(refusal_reports++<6u)
+      log_universal("SDL3-UNIVERSAL: REFUSED unverified writable native joystick slot");
+    restore_original("native DI slot not proven");
+    return;
+  }
+  if(!read_scans(scans)) {
+    if(refusal_reports++<6u)
+      log_universal("SDL3-UNIVERSAL: REFUSED original keyboard table invalid or not yet loaded");
+    restore_original("game keyboard table not proven");
     return;
   }
   if(active && selected_id!=id)restore_original("SDL3 Start owner changed");
