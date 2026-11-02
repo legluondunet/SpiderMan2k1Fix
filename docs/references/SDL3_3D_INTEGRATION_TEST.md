@@ -65,6 +65,49 @@ separate tracks and PR #98 is the opt-in integrated test branch.
    `ExperimentalSDL3UniversalGameplay=0` and restart. The old stable
    setup behavior must remain available.
 
+## PS3 unplug -> PS4 takeover (reported on GE-Proton11-11)
+
+On 2026-11-02 the user physically validated `v1.1.0-2bf48ff`:
+- custom 3D game action remapping works;
+- PS3 `054C:0268` unplugged (`SDL3-PROBE: detached id=2`);
+- DS4 `054C:09CC` stayed connected and SDL3 successfully observed its
+  button inputs (`selected logical gamepad id=1`), but Start could not
+  activate the universal 3D bridge;
+- the original DirectInput joystick remained stale, generating repeated
+  `DIERR_UNPLUGGED` fallback logs; no crash was reported;
+- PS3 replugged as new SDL instance `id=3`; Start correctly reactivated
+  universal keyboard control and original DI remained suspended.
+
+Source root cause: `selection_sync` passively auto-selects the only
+remaining DS4; the legacy change-only `selection_start` then ignores
+an explicit Start on that already active ID. Independently, the generic
+SDL3 route used by PS3 rejected Sony/Xbox models classified by native
+reconnect, while native rebind is intentionally disabled in universal
+mode. The experimental universal controller mode cannot consequently
+switch to DS4 until the user explicitly starts it.
+
+PR #98 implements **a fresh Start edge even on a logically auto-selected
+same ID** in universal mode, and permits all uniquely identified mapped
+Sony/Xbox/PS3 devices to use the same single-controller SDL3 keyboard
+adapter. Outside universal mode, legacy native Start change-only and
+verified native DS4 rebind paths remain unchanged.
+
+Hardware acceptance: install a **new PR #98 Windows x86 CI build** into
+a disposable copy, activate universal gameplay, use PS3 then unplug it,
+press Start on DS4 only after releasing all DS4 controls, and confirm the
+new `SDL3-UNIVERSAL: START selected generic id=...` followed by
+`SDL3-UNIVERSAL: ACTIVE ... model=054C:09CC`. Try 3D, menu Pause,
+video skip, then press Start on the reattached PS3 to regain it.
+Never auto-switch in response to unplug; hold the requested owner
+inactive until user confirmation. With two identical VID:PID pads present,
+the unique-model guard should refuse takeover.
+
+No console-specific button arrays are used by universal 3D:
+`spider_sdl3_profile_default` assigns identical normalized SDL3
+south/east/west/north/shoulder/trigger meanings for all nonzero VID:PID
+models. A PS3 with different SDL3 mapping, clone firmware, driver or a
+duplicate identical VID:PID may require separate mapping/validation.
+
 ## Next hardware acceptance checks — custom mappings and focus safety
 
 Use the PR #98 artifact and back up `054C-0268.ini` before editing it:
