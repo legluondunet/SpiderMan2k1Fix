@@ -123,3 +123,48 @@ def test_redundant_use_button_restores_single_cursor_again():
     assert "setup_sync_visual_selection(ui);" in queued
     assert "EXPLICIT-SELECT already queued; focus returned to actions" in queued
     assert "return 1;" in queued
+
+
+def test_listbox_caret_and_selection_are_always_one_row():
+    """Real PS3 repro: stick left moved TWO native listbox highlights."""
+    sync=UI.split("static void setup_sync_visual_selection(",1)[1].split(
+        "static void setup_apply_focus(",1)[0]
+    assert "LB_SETCARETINDEX" in sync
+    assert "LB_SETCURSEL" in sync
+    assert "ui->action" in sync
+    assert sync.index("LB_SETCARETINDEX") < sync.index("LB_SETCURSEL")
+    assert "(WPARAM)-1" in sync  # no blue row while button has focus
+    assert "setup_sync_visual_selection(ui);" in UI.split(
+        "static void refresh_actions(",1)[1].split(
+        "static int commit_profile(",1)[0]
+    assert "setup_sync_visual_selection(ui);" in UI.split(
+        "static void setup_apply_focus(",1)[1].split(
+        "static void setup_close_from_pad(",1)[0]
+
+
+def test_proton_synthesized_arrow_cannot_be_processed_twice_by_win32_and_sdl3():
+    """When the physical PS3 stick/D-pad moves, only SDL3 owns navigation;
+    keyboard arrows remain usable when the hardware is neutral."""
+    helper=UI.split("static int setup_suppress_duplicate_arrow(",1)[1].split(
+        "/* One keyboard path independent",1)[0]
+    assert "SpiderSDL3Probe_SetupPump()" in helper
+    assert "SpiderSDL3Probe_SetupRead(" in helper
+    assert "id!=ui->instance || vid!=ui->vid || pid!=ui->pid" in helper
+    assert "SPIDER_SDL3_AXIS_LEFTX" in helper
+    assert "SPIDER_SDL3_AXIS_LEFTY" in helper
+    for button in ("UP","DOWN","LEFT","RIGHT"):
+        assert "SPIDER_SDL3_BUTTON_DPAD_"+button in helper
+    assert "ui->suppressed_analog_vk|=mask" in helper
+    assert "ui->suppressed_analog_vk&=~mask" in helper
+    assert "SDL3-SETUP: DUPLICATE-WIN32-ARROW SUPPRESSED" in helper
+    assert "return 0;" in helper
+    loop=UI.split("while(IsWindow(window)) {",1)[1].split(
+        'SDL3-SETUP: modal message loop EXIT',1)[0]
+    assert "setup_suppress_duplicate_arrow(&ui,&msg)" in loop
+    assert loop.index("setup_suppress_duplicate_arrow(&ui,&msg)") < loop.index(
+        "handle_setup_keyboard(&ui,(UINT)msg.wParam)")
+    assert loop.index("setup_suppress_duplicate_arrow(&ui,&msg)") < loop.index(
+        "IsDialogMessageA(window,&msg)")
+    # Never intercept F9/F10 or the raw physical Escape handling.
+    assert "vk<VK_LEFT || vk>VK_DOWN" in UI
+    assert "ui->capture.active || ui->test_mode" in helper
