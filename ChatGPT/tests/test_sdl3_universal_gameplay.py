@@ -290,3 +290,74 @@ def test_raw_unmapped_enumeration_boundaries_do_not_use_other_loop_index():
     assert "for(jj=0;j<(unsigned)mapped;jj++)" not in probe
     assert "for(jj=0;j<raw_last_n;jj++)" not in probe
     assert "if(jj==raw_last_n)" in probe
+
+
+def test_in_game_native_pause_routes_to_menu_not_3d_keyboard(tmp_path):
+    """Physical PS3 passed 3D and Bink; Pause stayed inert at in-game Flip.
+    Original Pause is drawn on the 3D renderer and still reports gameplay=1.
+    Native Pause must take precedence so Cross/Arrow/Circle reach the UI."""
+    cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if cc:
+        src=tmp_path/"pause_context.c"
+        exe=tmp_path/"pause_context"
+        src.write_text(textwrap.dedent(r"""
+            #include <assert.h>
+            #include "sdl3_universal_policy.h"
+            int main(void) {
+              assert(spider_sdl3_universal_route_context(0,1,0,0)
+                     ==SPIDER_UNIVERSAL_CTX_3D);
+              assert(spider_sdl3_universal_route_context(0,1,0,1)
+                     ==SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE);
+              assert(spider_sdl3_universal_route_context(1,1,0,1)
+                     ==SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE);
+              assert(spider_sdl3_universal_route_context(0,0,0,1)
+                     ==SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE);
+              assert(spider_sdl3_universal_route_context(0,1,1,1)
+                     ==SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE);
+              assert(spider_sdl3_universal_route_context(0,0,1,0)
+                     ==SPIDER_UNIVERSAL_CTX_BINK);
+              assert(spider_sdl3_universal_route_context(1,0,0,0)
+                     ==SPIDER_UNIVERSAL_CTX_MENU);
+              return 0;
+            }
+        """),encoding="utf-8")
+        subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
+                        "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
+        subprocess.run([str(exe)],check=True)
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    game=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
+    assert "context=spider_sdl3_universal_route_context(" in backend
+    assert "menu,gameplay,bink,native_pause" in backend
+    assert "if(context!=SPIDER_UNIVERSAL_CTX_3D)" in backend
+    assert "spider_sdl3_universal_reset(&state);" in backend
+    assert "menu_arm=0;menu_previous=0;" in backend
+    assert "SDL3-UNIVERSAL: PAUSE-MENU context transition" in backend
+    assert "SDL3-UNIVERSAL: PAUSE-MENU INPUT held=" in backend
+    assert "context==SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE &&" in backend
+    assert "binding_held(profile->actions[SPIDER_SDL3_ACTION_PAUSE],&sample)" in backend
+    assert "if(back || resume)menu_buttons|=1u<<5;" in backend
+    assert "if(confirm)menu_buttons|=1u<<4;" in backend
+    assert "update_keys(menu_buttons&0x0fu,scans)" in backend
+    assert 'pulse(0x01u,"menu Back/Pause resume")' in backend
+    assert 'pulse(0x1cu,"menu Confirm")' in backend
+    # The original 3D-native Pause ribbon detector is sampled on the
+    # actual guarded Flip path. It works even when the renderer says 3D.
+    caller=game.split("SpiderSDL3Universal_OnFlip(game_hwnd,",1)[1].split(
+        "/* Passive, bounded post-hotplug heartbeat",1)[0]
+    assert "native_pause43_visible_near_flip(count)" in caller
+    assert "0x00682950u" in caller
+
+
+def test_native_pause_menu_must_rearm_after_release_and_not_autoresume():
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    body=backend.split("context=spider_sdl3_universal_route_context(",1)[1]
+    transition=body.split("if(context!=SPIDER_UNIVERSAL_CTX_3D)",1)[0]
+    assert "if(context!=previous_context)" in transition
+    assert "menu_arm=0;menu_previous=0;" in transition
+    assert "spider_sdl3_universal_reset(&state);" in transition
+    assert "previous_context=context;" in transition
+    menu=body.split("if(context!=SPIDER_UNIVERSAL_CTX_3D)",1)[1].split(
+        "menu_arm=0;menu_previous=0;",1)[0]
+    assert "if(spider_sdl3_universal_neutral(&sample))menu_arm=1;" in menu
+    assert "menu_previous=0;" in menu
+    assert "if(back || resume)" in menu
