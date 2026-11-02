@@ -49,6 +49,10 @@ typedef struct {
   unsigned slot;
   unsigned count;
   unsigned action;
+  /* A custom paint-only view avoids the native Win32 listbox caret. */
+  unsigned action_count;
+  char action_labels[SPIDER_SDL3_VISIBLE_ACTION_COUNT][160];
+  HFONT action_font;
   unsigned user_chose_controller; /* never equate first preview row with explicit pad choice */
   unsigned test_mode,test_reports,test_blocked_commands,test_suppressed_keys;
   int test_escape_raw; /* physical keyboard Escape; never synthetic pad Esc */
@@ -119,57 +123,102 @@ static int setup_focus_button_id(unsigned selected) {
   if(selected==SPIDER_SETUP_BUTTON_TEST)return SPIDER_UI_TEST;
   return SPIDER_UI_USE;
 }
-/* A Win32 single-select LISTBOX has TWO independent indices: selection
- * and keyboard CARET (focus rectangle). LB_SETCURSEL alone changes the
- * first; the old SDL3 list left the other behind and displayed two
- * moving selections under Wine/Proton. Synchronize both every time.
- * Off-list focus removes the blue selection, but retains the matching
- * caret index for when focus returns to the action list. */
+/* A standard LISTBOX creates an independent native caret even with owner
+ * drawing. On GE-Proton it stays visible when the actual focus moves to
+ * the right-hand buttons. Use only ui->action, and draw the action rows in
+ * our own child window (no LB_SETCARETINDEX, Win32 list cursor or DI hooks). */
+#define SPIDER_ACTION_ROW_HEIGHT 21
 static void setup_sync_visual_selection(SpiderSDL3SetupUI *ui) {
-  if(!ui || !IsWindow(ui->actions))return;
-  SendMessageA(ui->actions,LB_SETCARETINDEX,(WPARAM)ui->action,FALSE);
-  SendMessageA(ui->actions,LB_SETCURSEL,
-    ui->focus.column==SPIDER_SETUP_FOCUS_ACTIONS?
-       (WPARAM)ui->action:(WPARAM)-1,0);
-  /* Wine may paint the LISTBOX caret even when the native keyboard focus
-   * is elsewhere. The owner-drawn view must repaint on EVERY logical focus
-   * transition, not only after the next mouse/keyboard event. */
-  InvalidateRect(ui->actions,NULL,TRUE);
+  if(ui && IsWindow(ui->actions))
+    InvalidateRect(ui->actions,NULL,TRUE);
 }
-/* The ordinary Win32 LISTBOX has a separate keyboard caret and selection.
- * Under GE-Proton, its built-in focus rectangle can remain visible on Jump
- * even while the actual focus rectangle is on a right-hand button. Drawing
- * every row here, and deliberately ignoring ODS_FOCUS, gives exactly ONE
- * visible selection: the action row when the action list owns focus, or the
- * native button focus outline when a button owns focus. We do not change
- * gameplay input, native DirectInput or keyboard/mouse accessibility. */
-static void setup_draw_action_item(SpiderSDL3SetupUI *ui,
-                                   const DRAWITEMSTRUCT *item) {
-  RECT text_rect;
-  char line[192];
-  int n,old_background;
-  COLORREF old_text;
-  int active;
-  if(!ui || !item || item->CtlID!=SPIDER_UI_ACTION ||
-     item->itemID==(UINT)-1)return;
-  active=(!ui->test_mode && !ui->closing &&
+static LRESULT CALLBACK setup_action_view_proc(HWND hwnd,UINT msg,
+                                                WPARAM wp,LPARAM lp) {
+  SpiderSDL3SetupUI *ui=(SpiderSDL3SetupUI *)(uintptr_t)
+    GetWindowLongPtrA(hwnd,GWLP_USERDATA);
+  switch(msg) {
+    case WM_NCCREATE: {
+      CREATESTRUCTA *cs=(CREATESTRUCTA *)lp;
+      SetWindowLongPtrA(hwnd,GWLP_USERDATA,
+                        (LONG_PTR)(uintptr_t)cs->lpCreateParams);
+      return TRUE;
+    }
+    case WM_ERASEBKGND:
+      return TRUE;
+    case WM_SETFONT:
+      if(ui)ui->action_font=(HFONT)wp;
+      if(lp)InvalidateRect(hwnd,NULL,TRUE);
+      return 0;
+    case WM_GETFONT:
+      return (LRESULT)(uintptr_t)(ui?ui->action_font:NULL);
+    case WM_GETDLGCODE:
+      /* Tab/Space use Win32; arrows use handle_setup_keyboard. */
+      return 0;
+    case WM_SETFOCUS:
+      SendMessageA(GetParent(hwnd),WM_COMMAND,
+        MAKEWPARAM(SPIDER_UI_ACTION,LBN_SETFOCUS),(LPARAM)hwnd);
+      InvalidateRect(hwnd,NULL,TRUE);
+      return 0;
+    case WM_KILLFOCUS:
+      SendMessageA(GetParent(hwnd),WM_COMMAND,
+        MAKEWPARAM(SPIDER_UI_ACTION,LBN_KILLFOCUS),(LPARAM)hwnd);
+      InvalidateRect(hwnd,NULL,TRUE);
+      return 0;
+    case WM_LBUTTONDOWN: {
+      int y=(int)(short)HIWORD(lp);
+      unsigned idx;
+      if(!ui || y<4)return 0;
+      idx=(unsigned)((y-4)/SPIDER_ACTION_ROW_HEIGHT);
+      if(idx>=ui->action_count)return 0;
+      SetFocus(hwnd);
+      ui->action=idx;
+      SendMessageA(GetParent(hwnd),WM_COMMAND,
+        MAKEWPARAM(SPIDER_UI_ACTION,LBN_SELCHANGE),(LPARAM)hwnd);
+      InvalidateRect(hwnd,NULL,TRUE);
+      return 0;
+    }
+    case WM_PAINT: {
+      PAINTSTRUCT ps;
+      RECT client,cell,rect;
+      HDC dc=BeginPaint(hwnd,&ps);
+      HFONT old_font=NULL;
+      int old_background;
+      COLORREF old_color;
+      unsigned i;
+      if(!dc)return 0;
+      GetClientRect(hwnd,&client);
+      FillRect(dc,&client,GetSysColorBrush(COLOR_WINDOW));
+      if(ui && ui->action_font)
+        old_font=(HFONT)SelectObject(dc,ui->action_font);
+      old_background=SetBkMode(dc,TRANSPARENT);
+      old_color=SetTextColor(dc,GetSysColor(COLOR_WINDOWTEXT));
+      if(ui)for(i=0;i<ui->action_count;i++) {
+        int selected=!ui->test_mode && !ui->closing &&
           ui->focus.column==SPIDER_SETUP_FOCUS_ACTIONS &&
-          GetFocus()==ui->actions && item->itemID==ui->action);
-  FillRect(item->hDC,&item->rcItem,GetSysColorBrush(
-    active?COLOR_HIGHLIGHT:COLOR_WINDOW));
-  n=(int)SendMessageA(ui->actions,LB_GETTEXT,
-                      (WPARAM)item->itemID,(LPARAM)line);
-  if(n==LB_ERR)return;
-  line[sizeof(line)-1]=0;
-  text_rect=item->rcItem;
-  text_rect.left+=4;
-  old_background=SetBkMode(item->hDC,TRANSPARENT);
-  old_text=SetTextColor(item->hDC,GetSysColor(
-    active?COLOR_HIGHLIGHTTEXT:COLOR_WINDOWTEXT));
-  DrawTextA(item->hDC,line,-1,&text_rect,
-            DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX|DT_END_ELLIPSIS);
-  SetTextColor(item->hDC,old_text);
-  SetBkMode(item->hDC,old_background);
+          GetFocus()==hwnd && ui->action==i;
+        cell.left=2;
+        cell.top=4+(int)i*SPIDER_ACTION_ROW_HEIGHT;
+        cell.right=client.right-2;
+        cell.bottom=cell.top+SPIDER_ACTION_ROW_HEIGHT;
+        if(selected)FillRect(dc,&cell,GetSysColorBrush(COLOR_HIGHLIGHT));
+        SetTextColor(dc,GetSysColor(
+          selected?COLOR_HIGHLIGHTTEXT:COLOR_WINDOWTEXT));
+        rect=cell;
+        rect.left+=4;
+        DrawTextA(dc,ui->action_labels[i],-1,&rect,
+                  DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX|DT_END_ELLIPSIS);
+      }
+      SetTextColor(dc,old_color);
+      SetBkMode(dc,old_background);
+      if(old_font)SelectObject(dc,old_font);
+      EndPaint(hwnd,&ps);
+      return 0;
+    }
+    case WM_NCDESTROY:
+      SetWindowLongPtrA(hwnd,GWLP_USERDATA,0);
+      break;
+  }
+  return DefWindowProcA(hwnd,msg,wp,lp);
 }
 /* IsDialogMessage can leave a former default pushbutton's heavy border
  * displayed even after native keyboard focus has moved elsewhere. The
@@ -265,8 +314,11 @@ static void refresh_actions(SpiderSDL3SetupUI *ui) {
   SpiderSDL3ControllerProfile *p=current_profile(ui);
   unsigned i;
   if(!ui || !ui->actions)return;
-  SendMessageA(ui->actions,LB_RESETCONTENT,0,0);
-  if(!p)return;
+  ui->action_count=0;
+  if(!p) {
+    setup_sync_visual_selection(ui);
+    return;
+  }
   for(i=0;i<SPIDER_SDL3_VISIBLE_ACTION_COUNT;i++) {
     char label[154],binding[85];
     const char *key;
@@ -274,7 +326,8 @@ static void refresh_actions(SpiderSDL3SetupUI *ui) {
     binding_name(p->actions[i],binding,sizeof(binding));
     snprintf(label,sizeof(label),"%02u. %-4s %-16s : %s",
       i+1,"3D",key,binding);
-    SendMessageA(ui->actions,LB_ADDSTRING,0,(LPARAM)label);
+    snprintf(ui->action_labels[i],sizeof(ui->action_labels[i]),"%s",label);
+    ui->action_count++;
   }
   if(ui->action>=SPIDER_SDL3_VISIBLE_ACTION_COUNT)ui->action=0;
   setup_sync_visual_selection(ui);
@@ -1013,18 +1066,6 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
   SpiderSDL3SetupUI *ui=(SpiderSDL3SetupUI *)(uintptr_t)
     GetWindowLongPtrA(hwnd,GWLP_USERDATA);
   switch(msg) {
-    case WM_MEASUREITEM:
-      if(wp==SPIDER_UI_ACTION && lp) {
-        ((MEASUREITEMSTRUCT *)lp)->itemHeight=20u;
-        return TRUE;
-      }
-      break;
-    case WM_DRAWITEM:
-      if(wp==SPIDER_UI_ACTION && ui && lp) {
-        setup_draw_action_item(ui,(const DRAWITEMSTRUCT *)lp);
-        return TRUE; /* Never delegate ODS_FOCUS to the native LISTBOX. */
-      }
-      break;
     case WM_CREATE: {
       CREATESTRUCTA *cs=(CREATESTRUCTA *)lp;
       HFONT font=(HFONT)GetStockObject(DEFAULT_GUI_FONT);
@@ -1040,10 +1081,11 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
       ui->pads=CreateWindowExA(0,"COMBOBOX","",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL,
         18,55,680,250,hwnd,(HMENU)(uintptr_t)SPIDER_UI_PAD,NULL,NULL);
-      ui->actions=CreateWindowExA(WS_EX_CLIENTEDGE,"LISTBOX","",
-        WS_CHILD|WS_VISIBLE|WS_TABSTOP|LBS_NOTIFY|WS_VSCROLL|
-        LBS_OWNERDRAWFIXED|LBS_HASSTRINGS,
-        18,99,430,255,hwnd,(HMENU)(uintptr_t)SPIDER_UI_ACTION,NULL,NULL);
+      ui->actions=CreateWindowExA(WS_EX_CLIENTEDGE,
+        "SpiderMan2k1FixSDL3ActionView","",
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP,
+        18,99,430,255,hwnd,(HMENU)(uintptr_t)SPIDER_UI_ACTION,
+        GetModuleHandleA(NULL),ui);
       CreateWindowExA(0,"BUTTON","Capture selected action",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_NOTIFY,
         465,113,230,36,hwnd,(HMENU)(uintptr_t)SPIDER_UI_CAPTURE,NULL,NULL);
@@ -1133,9 +1175,9 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         setup_sync_visual_selection(ui);
       } else if(LOWORD(wp)==SPIDER_UI_ACTION &&
                 HIWORD(wp)==LBN_SELCHANGE) {
-        LRESULT idx=SendMessageA(ui->actions,LB_GETCURSEL,0,0);
-        if(idx!=LB_ERR && idx<SPIDER_SDL3_VISIBLE_ACTION_COUNT) {
-          ui->action=(unsigned)idx;
+        unsigned idx=ui->action;
+        if(idx<ui->action_count) {
+          ui->action=idx;
           ui->focus.column=SPIDER_SETUP_FOCUS_ACTIONS;
           setup_sync_visual_selection(ui);
           spider_sdl3_capture_reset(&ui->capture);
@@ -1202,6 +1244,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
 }
 void SpiderSDL3ControllerSetup_Open(void) {
   static const char *const cls="SpiderMan2k1FixSDL3ControllerSetup";
+  static const char *const actions_cls="SpiderMan2k1FixSDL3ActionView";
   static int registered=0;
   WNDCLASSA wc;
   SpiderSDL3SetupUI ui;
@@ -1231,6 +1274,10 @@ void SpiderSDL3ControllerSetup_Open(void) {
     wc.hCursor=LoadCursor(NULL,IDC_ARROW);
     wc.hbrBackground=(HBRUSH)(COLOR_BTNFACE+1);
     wc.lpszClassName=cls;
+    if(!RegisterClassA(&wc))return;
+    wc.lpfnWndProc=setup_action_view_proc;
+    wc.lpszClassName=actions_cls;
+    wc.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);
     if(!RegisterClassA(&wc))return;
     registered=1;
   }
