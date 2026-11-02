@@ -1140,7 +1140,7 @@ static LRESULT CALLBACK setup_wndproc(HWND hwnd,UINT msg,
         "Press START on the gamepad you want to SELECT (PS3 included)\r\n"
         "Stick Left/Right: navigate; L1/R1: browse controllers\r\n"
         "Cross/A on Capture: remap selected action; Ctrl+Shift+C also works\r\n"
-        "Use selected / Ctrl+Shift+U: confirm; Esc: close/stop test",
+        "Use / Ctrl+Shift+U: confirm; Start only outside capture; Esc: close",
         WS_CHILD|WS_VISIBLE,18,393,684,65,hwnd,NULL,NULL,NULL);
       SendMessageA(label,WM_SETFONT,(WPARAM)font,TRUE);
       ui->status=CreateWindowExA(0,"STATIC","",
