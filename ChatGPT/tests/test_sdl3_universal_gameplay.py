@@ -280,3 +280,13 @@ def test_integrated_panel_preserved_and_generic_owner_is_explicit_only():
         ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
     assert "spider_sdl3_generic_ui_reset(&generic_ui);" in (
         ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
+
+
+def test_raw_unmapped_enumeration_boundaries_do_not_use_other_loop_index():
+    """Catch Clang's uninitialized j warning: raw fallback used j in jj loops."""
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    assert "for(jj=0;jj<(unsigned)mapped;jj++)" in probe
+    assert "for(jj=0;jj<raw_last_n;jj++)" in probe
+    assert "for(jj=0;j<(unsigned)mapped;jj++)" not in probe
+    assert "for(jj=0;j<raw_last_n;jj++)" not in probe
+    assert "if(jj==raw_last_n)" in probe
