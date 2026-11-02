@@ -13,8 +13,8 @@ FOCUS=(ROOT/"sdl3_controller_setup_focus.h").read_text(encoding="utf-8")
 
 def test_only_one_selection_cursor_and_use_is_not_action_capture():
     assert "static void setup_sync_visual_selection(" in UI
-    assert "LB_SETCURSEL," in UI
-    assert "(WPARAM)ui->action:(WPARAM)-1" in UI
+    assert "SpiderMan2k1FixSDL3ActionView" in UI
+    assert "LBS_OWNERDRAWFIXED" not in UI
     assert "SPIDER_SETUP_BUTTON_USE" in FOCUS
     assert "SPIDER_SETUP_BUTTON_COUNT=6" in FOCUS
     assert "SPIDER_UI_USE;" in UI
@@ -125,15 +125,20 @@ def test_redundant_use_button_restores_single_cursor_again():
     assert "return 1;" in queued
 
 
-def test_listbox_caret_and_selection_are_always_one_row():
-    """Real PS3 repro: stick left moved TWO native listbox highlights."""
+def test_single_action_selection_uses_no_native_listbox_caret():
+    """Regression: screenshot 20261102-005854 showed Jump and Restore focus."""
     sync=UI.split("static void setup_sync_visual_selection(",1)[1].split(
-        "static void setup_apply_focus(",1)[0]
-    assert "LB_SETCARETINDEX" in sync
-    assert "LB_SETCURSEL" in sync
-    assert "ui->action" in sync
-    assert sync.index("LB_SETCARETINDEX") < sync.index("LB_SETCURSEL")
-    assert "(WPARAM)-1" in sync  # no blue row while button has focus
+        "static LRESULT CALLBACK setup_action_view_proc(",1)[0]
+    view=UI.split("static LRESULT CALLBACK setup_action_view_proc(",1)[1].split(
+        "static void setup_normalize_default_buttons(",1)[0]
+    assert "InvalidateRect(ui->actions,NULL,TRUE)" in sync
+    assert "LB_SETCARETINDEX" not in sync
+    assert "LB_SETCURSEL" not in sync
+    assert "WM_PAINT" in view and "BeginPaint(hwnd,&ps)" in view
+    assert "GetFocus()==hwnd && ui->action==i" in view
+    assert "ui->focus.column==SPIDER_SETUP_FOCUS_ACTIONS" in view
+    assert "FillRect(dc,&cell,GetSysColorBrush(COLOR_HIGHLIGHT))" in view
+    assert "DrawFocusRect" not in view
     assert "setup_sync_visual_selection(ui);" in UI.split(
         "static void refresh_actions(",1)[1].split(
         "static int commit_profile(",1)[0]
@@ -224,35 +229,39 @@ def test_only_actual_win32_button_has_a_visible_default_border():
     assert "TranslateMessage(&msg);DispatchMessageA(&msg);" in loop
 
 
-def test_owner_draw_actions_never_paints_a_second_focus_caret():
-    """GE-Proton screenshot 20261102-005148: Jump outlined while
-    native button focus is visibly on Test SDL3 inputs."""
-    draw=UI.split("static void setup_draw_action_item(",1)[1].split(
+def test_custom_view_is_mouse_keyboard_and_gamepad_accessible():
+    """The 3D-action view must not reintroduce a Win32 selection/caret."""
+    view=UI.split("static LRESULT CALLBACK setup_action_view_proc(",1)[1].split(
         "static void setup_normalize_default_buttons(",1)[0]
     create=UI.split("case WM_CREATE:",1)[1].split("case WM_COMMAND:",1)[0]
     wndproc=UI.split("static LRESULT CALLBACK setup_wndproc(",1)[1].split(
         "void SpiderSDL3ControllerSetup_Open(",1)[0]
-    sync=UI.split("static void setup_sync_visual_selection(",1)[1].split(
-        "static void setup_draw_action_item(",1)[0]
-    assert "LBS_OWNERDRAWFIXED|LBS_HASSTRINGS" in create
-    assert "LBS_NOTIFY" in create and "WS_TABSTOP" in create
-    assert "case WM_MEASUREITEM:" in wndproc
-    assert "((MEASUREITEMSTRUCT *)lp)->itemHeight" in wndproc
-    assert "case WM_DRAWITEM:" in wndproc
-    assert "setup_draw_action_item(ui,(const DRAWITEMSTRUCT *)lp)" in wndproc
-    assert "item->CtlID!=SPIDER_UI_ACTION" in draw
-    assert "GetFocus()==ui->actions && item->itemID==ui->action" in draw
-    assert "ui->focus.column==SPIDER_SETUP_FOCUS_ACTIONS" in draw
-    assert "active?COLOR_HIGHLIGHT:COLOR_WINDOW" in draw
-    assert "active?COLOR_HIGHLIGHTTEXT:COLOR_WINDOWTEXT" in draw
-    assert "LB_GETTEXT" in draw and "DrawTextA(" in draw
-    assert "DrawFocusRect" not in draw
-    assert "item->itemState & ODS_FOCUS" not in draw
-    assert "InvalidateRect(ui->actions,NULL,TRUE);" in sync
+    refresh=UI.split("static void refresh_actions(",1)[1].split(
+        "static int commit_profile(",1)[0]
+    assert 'CreateWindowExA(WS_EX_CLIENTEDGE,' in create
+    assert '"SpiderMan2k1FixSDL3ActionView",""' in create
+    assert "WS_CHILD|WS_VISIBLE|WS_TABSTOP" in create
+    assert '"LISTBOX"' not in create
+    assert "LBS_" not in create
+    assert "LB_" not in create
+    assert "case WM_LBUTTONDOWN:" in view
+    assert "SetFocus(hwnd);" in view
+    assert "ui->action=idx;" in view
+    assert "idx>=ui->action_count" in view
+    assert "MAKEWPARAM(SPIDER_UI_ACTION,LBN_SELCHANGE)" in view
+    assert "case WM_SETFOCUS:" in view
+    assert "case WM_KILLFOCUS:" in view
+    assert "WM_GETDLGCODE:" in view
+    assert "case WM_PAINT:" in view
+    assert "case WM_SETFONT:" in view
+    assert "DrawTextA(" in view
+    assert "ui->action_labels[i]" in view
+    assert "ui->action_count++;" in refresh
+    assert "snprintf(ui->action_labels[i]" in refresh
+    assert "HIWORD(wp)==LBN_SETFOCUS" in wndproc
     assert "HIWORD(wp)==LBN_KILLFOCUS" in wndproc
-    assert "HIWORD(wp)==BN_SETFOCUS" in wndproc
     assert "LBN_SELCHANGE" in wndproc
-    # Buttons keep Win32 focus and remain keyboard/Tab/Space operable.
+    assert "HIWORD(wp)==BN_SETFOCUS" in wndproc
     assert "SetFocus(target);" in UI
     assert "if(IsDialogMessageA(window,&msg))continue;" in UI
     assert "SendInput(" not in UI
