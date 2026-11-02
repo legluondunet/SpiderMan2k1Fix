@@ -33,6 +33,7 @@
 #include "sdl3_gamepad_probe.h"
 #include "sdl3_gameplay_plan_probe.h"
 #include "sdl3_gameplay_live.h"
+#include "sdl3_universal_gameplay.h"
 #include "pause_any_key.h"
 #include "pause_surface.h"
 #include "focus_media_pause.h"
@@ -2607,6 +2608,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
    * controller's synthetic keys after a Start ownership switch. Actual
    * native DI handoff remains AFTER unplug guard installation below. */
   SpiderSDL3Probe_OnFlip(count,game_hwnd);
+  SpiderSDL3Universal_BeforeUI(game_hwnd); /* release keys before focus pause */
   SpiderGamepadUI_OnFlip(game_hwnd,
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
     InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
@@ -2655,6 +2657,17 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   /* Experimental SDL3 semantic action probe is strictly read-only and
    * runs only AFTER the game-owned DirectInput handoff is verified. */
   SpiderSDL3GameplayPlan_OnFlip(game_hwnd,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
+      InterlockedCompareExchange(&fov_game_height,0,0)>0,
+    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
+    ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
+      native_pause43_visible_near_flip(count) ||
+      InterlockedCompareExchange(&pause_latched,0,0)==1 ||
+      InterlockedCompareExchange(&pause_in_progress,0,0)==1));
+  /* Experimental OFF-by-default normalized SDL3 profile -> game
+   * keyboard adapter, after polling and native-reconnect safety gates. */
+  SpiderSDL3Universal_OnFlip(game_hwnd,
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
     InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
       InterlockedCompareExchange(&fov_game_height,0,0)>0,
@@ -3278,12 +3291,14 @@ static DWORD initialize_body(LPVOID unused) {
       SpiderNativeUnplug_Init(ini,log_line);
       SpiderNativeReconnect_Init(ini,log_line);
       SpiderSDL3Probe_Init(ini,log_line);
+      SpiderSDL3Universal_Init(ini,log_line);
       SpiderSDL3GameplayPlan_Init(ini,log_line);
       SpiderAltLatch_Init(ini,log_line);
     } else {
       SpiderNativeUnplug_Init(NULL,log_line);
       SpiderNativeReconnect_Init(NULL,log_line);
       SpiderSDL3Probe_Init(NULL,log_line);
+      SpiderSDL3Universal_Init(NULL,log_line);
       SpiderSDL3GameplayPlan_Init(NULL,log_line);
       SpiderAltLatch_Init(NULL,log_line);
     }
