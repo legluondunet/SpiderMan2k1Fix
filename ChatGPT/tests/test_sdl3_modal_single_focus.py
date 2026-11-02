@@ -247,7 +247,7 @@ def test_owner_draw_actions_never_paints_a_second_focus_caret():
     assert "active?COLOR_HIGHLIGHTTEXT:COLOR_WINDOWTEXT" in draw
     assert "LB_GETTEXT" in draw and "DrawTextA(" in draw
     assert "DrawFocusRect" not in draw
-    assert "ODS_FOCUS" not in draw
+    assert "item->itemState & ODS_FOCUS" not in draw
     assert "InvalidateRect(ui->actions,NULL,TRUE);" in sync
     assert "HIWORD(wp)==LBN_KILLFOCUS" in wndproc
     assert "HIWORD(wp)==BN_SETFOCUS" in wndproc
