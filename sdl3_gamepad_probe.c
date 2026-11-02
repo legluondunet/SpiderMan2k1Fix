@@ -126,6 +126,7 @@ static SDL_CloseGamepadFn sdl_close=NULL;
 static SDL_GetGamepadButtonFn sdl_button=NULL;
 static SDL_GamepadConnectedFn sdl_connected=NULL;
 static SpiderPausePadWake sdl_pause_wake={0};
+static int sdl_pause_universal=0;
 static uint32_t sdl_pause_id=0;
 static uint16_t sdl_pause_vid=0,sdl_pause_pid=0;
 static int sdl_pause_active=0,sdl_pause_lost_reported=0;
@@ -1031,28 +1032,42 @@ int SpiderSDL3Probe_PauseWake_Begin(void) {
   uint32_t id=0;
   uint16_t vid=0,pid=0;
   unsigned i;
+  SpiderSDL3ControllerSample sample;
+  sdl_pause_universal=0;
   sdl_pause_active=0;sdl_pause_id=0;
   sdl_pause_vid=0;sdl_pause_pid=0;sdl_pause_lost_reported=0;
   memset(&sdl_pause_wake,0,sizeof(sdl_pause_wake));
   if(!requested || !ready || !scanned || !sdl_connected ||
      !sdl_button || !sdl_pump || !sdl_update ||
-     !sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId() ||
-     !SpiderSDL3Probe_NativeOwnerEnabled() ||
-     !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
-     !SpiderNativeReconnect_SDL3SelectionReady(vid,pid))return 0;
+     !sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId())
+    return 0;
+  if(universal_requested) {
+    /* Opt-in adapter selected the precise SDL3-mapped controller. PS3
+     * is not a verified native DI owner, but a digital SDL3 wake
+     * requires neither native acquisition nor any injected key. */
+    if(!SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample))
+      return 0;
+    sdl_pause_universal=1;
+  } else if(!SpiderSDL3Probe_NativeOwnerEnabled() ||
+            !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
+            !SpiderNativeReconnect_SDL3SelectionReady(vid,pid))
+    return 0;
   for(i=0;i<num_pads;i++)
     if(pads[i].id==id && pads[i].handle &&
        sdl_connected(pads[i].handle))break;
   if(i==num_pads)return 0;
   sdl_pause_id=id;sdl_pause_vid=vid;sdl_pause_pid=pid;
   sdl_pause_active=1;
-  say("FOCUS-PAUSE-SDL3: selected game-owned controller armed (foreground-only; fresh digital press+release; no DirectInput Acquire)");
+  say(sdl_pause_universal?
+    "FOCUS-PAUSE-SDL3: selected universal mapped pad armed (foreground-only; neutral + fresh digital press/release; NO native DirectInput ownership)":
+    "FOCUS-PAUSE-SDL3: selected game-owned controller armed (foreground-only; fresh digital press+release; no DirectInput Acquire)");
   return 1;
 }
 unsigned SpiderSDL3Probe_PauseWake_Poll(HWND hwnd) {
   unsigned i,j,buttons=0;
   uint32_t id=0;
   uint16_t vid=0,pid=0;
+  SpiderSDL3ControllerSample sample;
   void *handle=NULL;
   if(!sdl_pause_active)return 0;
   if(!hwnd || !IsWindow(hwnd) || !IsWindowVisible(hwnd) ||
@@ -1060,22 +1075,39 @@ unsigned SpiderSDL3Probe_PauseWake_Poll(HWND hwnd) {
     memset(&sdl_pause_wake,0,sizeof(sdl_pause_wake));
     return 0;
   }
-  if(!sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId() ||
-     !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
-     id!=sdl_pause_id || vid!=sdl_pause_vid || pid!=sdl_pause_pid)goto lost;
-  for(i=0;i<num_pads;i++)
-    if(pads[i].id==id && pads[i].handle) {handle=pads[i].handle;break;}
-  if(!handle || !sdl_connected(handle))goto lost;
-  sdl_pump();sdl_update();
-  if(!sdl_connected(handle))goto lost;
-  for(j=0;j<12u;j++) {
-    /* Start changes ownership; Guide is reserved. Neither wakes the game. */
-    if(j==SPIDER_SDL3_BUTTON_GUIDE ||
-       j==SPIDER_SDL3_BUTTON_START)continue;
-    if(sdl_button(handle,(int)j))buttons|=1u<<j;
+  if(!sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId())
+    goto lost;
+  if(sdl_pause_universal) {
+    /* Regular OnFlip is blocked inside this pause loop. After checking
+     * foreground, update SDL3 on the same thread and revalidate the
+     * chosen instance and VID:PID: no silent fallback to the DS4. */
+    sdl_pump();sdl_update();
+    if(!SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample) ||
+       id!=sdl_pause_id || vid!=sdl_pause_vid || pid!=sdl_pause_pid)
+      goto lost;
+    for(j=0;j<12u;j++) {
+      if(j==SPIDER_SDL3_BUTTON_GUIDE ||
+         j==SPIDER_SDL3_BUTTON_START)continue;
+      if(sample.buttons&(1u<<j))buttons|=1u<<j;
+    }
+  } else {
+    if(!SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
+       id!=sdl_pause_id || vid!=sdl_pause_vid || pid!=sdl_pause_pid)
+      goto lost;
+    for(i=0;i<num_pads;i++)
+      if(pads[i].id==id && pads[i].handle) {handle=pads[i].handle;break;}
+    if(!handle || !sdl_connected(handle))goto lost;
+    sdl_pump();sdl_update();
+    if(!sdl_connected(handle))goto lost;
+    for(j=0;j<12u;j++) {
+      if(j==SPIDER_SDL3_BUTTON_GUIDE ||
+         j==SPIDER_SDL3_BUTTON_START)continue;
+      if(sdl_button(handle,(int)j))buttons|=1u<<j;
+    }
   }
   return spider_pause_pad_wake_step(&sdl_pause_wake,buttons);
 lost:
+  sdl_pause_universal=0;
   sdl_pause_active=0;
   memset(&sdl_pause_wake,0,sizeof(sdl_pause_wake));
   if(!sdl_pause_lost_reported) {
@@ -1085,6 +1117,7 @@ lost:
   return 0;
 }
 void SpiderSDL3Probe_PauseWake_End(void) {
+  sdl_pause_universal=0;
   sdl_pause_active=0;sdl_pause_id=0;
   sdl_pause_vid=0;sdl_pause_pid=0;sdl_pause_lost_reported=0;
   memset(&sdl_pause_wake,0,sizeof(sdl_pause_wake));
