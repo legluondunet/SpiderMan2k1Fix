@@ -15,6 +15,37 @@ enum {
 };
 enum { SPIDER_UNIVERSAL_DPAD_UP=11, SPIDER_UNIVERSAL_DPAD_DOWN=12,
        SPIDER_UNIVERSAL_DPAD_LEFT=13, SPIDER_UNIVERSAL_DPAD_RIGHT=14 };
+/* Only game-action scan codes can be forwarded through SendInput.
+ * Exclude Windows modifiers, lock toggles, Pause, Enter/Escape and the
+ * game's always-active F9 screenshot / F10-F12 global shortcuts.
+ * Extended 0x80 is a zero low scan and cannot be sent safely. This is
+ * NOT a general-purpose keyboard remapper. */
+static inline int spider_sdl3_universal_scan_safe(unsigned scan) {
+  if(scan<2u || scan>0xD3u || !(scan&0x7fu))return 0;
+  switch(scan) {
+    case 0x0Eu: /* Backspace */
+    case 0x0Fu: /* Tab */
+    case 0x1Cu: /* Enter */
+    case 0x1Du: /* LCtrl */
+    case 0x2Au: /* LShift */
+    case 0x36u: /* RShift */
+    case 0x38u: /* LAlt */
+    case 0x3Au: /* CapsLock */
+    case 0x43u: /* F9 global PNG shortcut */
+    case 0x44u: /* F10 */
+    case 0x45u: /* NumLock */
+    case 0x46u: /* ScrollLock */
+    case 0x57u: /* F11 */
+    case 0x58u: /* F12 */
+    case 0x9Cu: /* Numpad Enter */
+    case 0x9Du: /* RCtrl */
+    case 0xB7u: /* PrintScreen */
+    case 0xB8u: /* RAlt */
+    case 0xC5u: /* Pause/Break, nonstandard E1 prefix */
+      return 0;
+  }
+  return 1;
+}
 typedef struct {
   uint32_t selected_id;
   uint32_t held_actions;
