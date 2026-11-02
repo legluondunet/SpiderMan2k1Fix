@@ -384,3 +384,37 @@ Check the next real hardware log for
 `SDL3-SETUP: Cross/A activated focused button id=1010 (USE)`
 versus `SDL3-SETUP: CROSS-CAPTURE BLOCKED`.
 The PR stays DRAFT until menu/Bink and 3D are physically validated.
+
+
+### 2026-11-02 — two independently moving highlights in SDL3 setup
+
+The user reports a visual regression with the physical PS3 left stick:
+**TWO selections move at the same time inside the SDL3 setup panel**.
+The submitted `SpiderMan2k1Fix(20261102-000754).log`, build
+`v1.1.0-bb36e24` on GE-Proton11-11, confirms correct pad identity
+`054C:0268` instance 2, successful `TEST` and `Use selected`
+handoff, and subsequent generic menu key pulses. The log **does not
+capture the individual listbox highlight/caret positions**, so the
+precise visual cause remains a source-derived hypothesis until a new
+hardware run.
+
+Two legitimate routes can move a Win32 listbox independently:
+* `LB_SETCURSEL` selects a row, while the native listbox also retains a
+  distinct `LB_SETCARETINDEX` keyboard-focus rectangle. The previous
+  code changed only the selected row, which may leave two visible marks.
+  Both indices are now synchronized to **exactly the same action**.
+* GE-Proton can synthesize `VK_UP/DOWN/LEFT/RIGHT` messages from the
+  same stick/D-pad that our SDL3 `WM_TIMER` navigation already handles.
+  A narrowly scoped modal message filter now consumes those **duplicate
+  native arrow messages only when actual movement of the selected
+  SDL3 gamepad is corroborated**, before the Win32 `IsDialogMessage`
+  and our keyboard handler can navigate a second time. It logs a
+  capped `SDL3-SETUP: DUPLICATE-WIN32-ARROW SUPPRESSED ...` diagnostic
+  for future verification. Physical keyboard arrows remain available
+  when the pad is neutral; suppression latches are cleared on neutral,
+  focus loss, controller selection change and input-test toggling.
+
+No changes were made to controller profiles/remapping, SDL3's native
+3D/DirectInput restrictions, F9, or the already user-validated PS3 D-pad
+menu bridge. This still requires real Wine hardware acceptance, not
+merely CI success.
