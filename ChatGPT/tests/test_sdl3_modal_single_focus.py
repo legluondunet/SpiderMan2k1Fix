@@ -31,12 +31,15 @@ def test_only_one_selection_cursor_and_use_is_not_action_capture():
     assert "spider_sdl3_capture_start(" not in selector
     nav=UI.split("static void sample_device(",1)[1].split(
         "static int handle_setup_keyboard(",1)[0]
-    assert "South on actions list ignored (explicit Capture button required)" in nav
-    # Cross on an action row is still inert; only the actually focused
-    # Capture button can start a neutral-gated remap.
+    # Deliberate Cross on the selected action enters remapping, after
+    # which a fresh neutral is mandatory before taking Circle or Square.
     action_only=nav.split("} else if(current_profile(ui)) {",1)[1].split(
         "} else if(edge==(1u<<SPIDER_SETUP_NAV_EAST))",1)[0]
-    assert "spider_sdl3_capture_start(&ui->capture);" not in action_only
+    assert "spider_sdl3_capture_start(&ui->capture);" in action_only
+    assert "spider_sdl3_setup_nav_reset(&ui->nav);" in action_only
+    assert "ACTION-ROW CROSS CAPTURE ARMED" in action_only
+    assert "neutral required" in action_only
+    assert "Circle allowed" in action_only
     keyboard=UI.split("static int handle_setup_keyboard(",1)[1].split(
         "static void setup_toggle_sdl3_test(",1)[0]
     assert "Ctrl+Shift+C" in UI
@@ -88,8 +91,8 @@ int main(void) {
 
 def test_ps3_cross_on_explicit_capture_button_arms_only_neutral_gated_rebind():
     """After single-focus fix, allow true controller-only remapping.
-    Safety: action-row Cross is not an implicit rebind; only a genuinely
-    focused Capture button permits it. Never synthesize a Win32 click."""
+    Safety: both a deliberate action-row Cross and a genuinely focused
+    Capture button can enter remapping; never synthesize a Win32 click."""
     nav=UI.split("static void sample_device(",1)[1].split(
         "static int handle_setup_keyboard(",1)[0]
     south=nav.split("edge==(1u<<SPIDER_SETUP_NAV_SOUTH)",1)[1].split(
@@ -105,7 +108,7 @@ def test_ps3_cross_on_explicit_capture_button_arms_only_neutral_gated_rebind():
     assert "neutral required; no immediate binding" in south
     assert "id==SPIDER_UI_RESET" in south
     assert "CROSS-RESET BLOCKED" in south
-    assert "South on actions list ignored (explicit Capture button required)" in south
+    assert "ACTION-ROW CROSS CAPTURE ARMED" in south
     # The focused button used to cause duplicate synthetic clicks in Proton.
     assert "MAKEWPARAM(id,BN_CLICKED)" not in south.split(
         "if(id==SPIDER_UI_CAPTURE)",1)[1].split(
@@ -121,7 +124,7 @@ def test_ps3_cross_on_explicit_capture_button_arms_only_neutral_gated_rebind():
     assert "if(vk=='C'" in keyboard
     assert "setup_physical_south_held(ui)" in keyboard
     assert "Ctrl+Shift+C" in UI
-    assert "Cross/A on Capture: remap selected action" in UI
+    assert "Cross/A on action row OR Capture: remap; Circle allowed" in UI
     assert "F9/F10 unchanged" not in UI.split(
         "case WM_CREATE:",1)[1].split("case WM_COMMAND:",1)[0]
 
@@ -279,3 +282,32 @@ def test_custom_view_is_mouse_keyboard_and_gamepad_accessible():
     assert "SetFocus(target);" in UI
     assert "if(IsDialogMessageA(window,&msg))continue;" in UI
     assert "SendInput(" not in UI
+
+
+def test_circle_can_be_captured_without_triggering_proton_escape_or_close():
+    """PS3 054C:0268 repro 2026-11-02: action mapped to Square
+    must be reassignable to Circle, swapping the old 3D binding."""
+    nav=UI.split("static void sample_device(",1)[1].split(
+        "static int setup_suppress_duplicate_arrow(",1)[0]
+    assert "if(!ui->capture.active) {" in nav
+    assert "edge==(1u<<SPIDER_SETUP_NAV_EAST)" in nav
+    capture=nav.split("rc=spider_sdl3_capture_feed(",1)[1]
+    assert "candidate.index==1u" in capture
+    assert "ui->last_captured_east_ms=GetTickCount()" in capture
+    assert "spider_sdl3_profile_assign_visible(&trial,ui->action,candidate)" in capture
+    helper=UI.split("static int setup_suppress_synthetic_east_escape(",1)[1].split(
+        "static int handle_setup_keyboard(",1)[0]
+    assert "msg->wParam!=VK_ESCAPE" in helper
+    assert "ui->capture.active" in helper
+    assert "sample.buttons&(1u<<1)" in helper
+    assert "ui->last_captured_east_ms" in helper
+    assert "elapsed<350u" in helper
+    assert "PROTON SYNTHETIC ESC SUPPRESSED" in helper
+    loop=UI.split("while(IsWindow(window)) {",1)[1].split(
+        "SDL3-SETUP: modal message loop EXIT",1)[0]
+    assert "setup_suppress_synthetic_east_escape(&ui,&msg)" in loop
+    assert loop.index("setup_suppress_synthetic_east_escape(&ui,&msg)") < loop.index(
+        "handle_setup_keyboard(&ui,(UINT)msg.wParam)")
+    assert loop.index("setup_suppress_synthetic_east_escape(&ui,&msg)") < loop.index(
+        "IsDialogMessageA(window,&msg)")
+    assert "VK_ESCAPE" in UI
