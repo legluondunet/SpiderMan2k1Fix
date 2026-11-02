@@ -32,7 +32,11 @@ def test_only_one_selection_cursor_and_use_is_not_action_capture():
     nav=UI.split("static void sample_device(",1)[1].split(
         "static int handle_setup_keyboard(",1)[0]
     assert "South on actions list ignored (explicit Capture button required)" in nav
-    assert "spider_sdl3_capture_start(&ui->capture);" not in nav
+    # Cross on an action row is still inert; only the actually focused
+    # Capture button can start a neutral-gated remap.
+    action_only=nav.split("} else if(current_profile(ui)) {",1)[1].split(
+        "} else if(edge==(1u<<SPIDER_SETUP_NAV_EAST))",1)[0]
+    assert "spider_sdl3_capture_start(&ui->capture);" not in action_only
     keyboard=UI.split("static int handle_setup_keyboard(",1)[1].split(
         "static void setup_toggle_sdl3_test(",1)[0]
     assert "Ctrl+Shift+C" in UI
