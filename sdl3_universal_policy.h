@@ -46,6 +46,24 @@ static inline int spider_sdl3_universal_scan_safe(unsigned scan) {
   }
   return 1;
 }
+/* Original Spider-Man does not switch to its 640x480 menu renderer
+ * when ESC opens the native 3D Pause menu. The renderer still reports
+ * gameplay=1, while the original Pause ribbon/context confirms Pause.
+ * Always choose menu navigation ahead of gameplay-action evaluation,
+ * regardless of the gameplay renderer flag. Bink remains independent. */
+enum {
+  SPIDER_UNIVERSAL_CTX_3D=0,
+  SPIDER_UNIVERSAL_CTX_MENU=1,
+  SPIDER_UNIVERSAL_CTX_BINK=2,
+  SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE=3
+};
+static inline unsigned spider_sdl3_universal_route_context(
+    int menu,int gameplay,int bink,int native_pause) {
+  if(native_pause)return SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE;
+  if(bink)return SPIDER_UNIVERSAL_CTX_BINK;
+  if(menu || !gameplay)return SPIDER_UNIVERSAL_CTX_MENU;
+  return SPIDER_UNIVERSAL_CTX_3D;
+}
 typedef struct {
   uint32_t selected_id;
   uint32_t held_actions;
