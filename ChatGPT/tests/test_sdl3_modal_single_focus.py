@@ -168,3 +168,7 @@ def test_proton_synthesized_arrow_cannot_be_processed_twice_by_win32_and_sdl3():
     # Never intercept F9/F10 or the raw physical Escape handling.
     assert "vk<VK_LEFT || vk>VK_DOWN" in UI
     assert "ui->capture.active || ui->test_mode" in helper
+    # No stuck blocked keyboard key if Proton omits synthesized KEYUP.
+    assert UI.count("ui->suppressed_analog_vk=0u;") >= 4
+    assert "Some Proton implementations do not deliver paired synthetic KEYUP" in UI
+    assert "new profile invalidates prior claim" in UI
