@@ -34,6 +34,7 @@
 #include "native_joystick_reconnect_policy.h"
 #include "native_joystick_swap_probe.h"
 #include "sdl3_gamepad_probe.h"
+#include "sdl3_universal_gameplay.h"
 
 #define SPIDER_NATIVE_BASE 0x00400000u
 #define SPIDER_NATIVE_FACTORY 0x006B7A30u
@@ -782,6 +783,9 @@ void SpiderNativeReconnect_OnFlip(long flip_index, HWND game_hwnd) {
   HWND native_hwnd;
   IDirectInput8A *di;
   PVOID device;
+  /* Opt-in universal adapter owns temporary DI suspension: never race
+   * the native Sony/Xbox rebind while that alternative is requested. */
+  if(SpiderSDL3Universal_Enabled())return;
   if(!requested || !initialized || flip_index<120)return;
   if(!SpiderNativeUnplug_Installed())return;
   if(!native_thread)native_thread=GetCurrentThreadId();
