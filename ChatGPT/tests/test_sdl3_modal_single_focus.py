@@ -82,34 +82,44 @@ int main(void) {
         subprocess.run([str(exe)],check=True)
 
 
-def test_ps3_cross_on_focused_capture_never_posts_remap_command():
-    """Real GE-Proton 20261101-211844 regression: Cross repeatedly
-    reported CAPTURE after Use. Do not arm binding capture from the
-    controller's navigation/confirmation key."""
+def test_ps3_cross_on_explicit_capture_button_arms_only_neutral_gated_rebind():
+    """After single-focus fix, allow true controller-only remapping.
+    Safety: action-row Cross is not an implicit rebind; only a genuinely
+    focused Capture button permits it. Never synthesize a Win32 click."""
     nav=UI.split("static void sample_device(",1)[1].split(
         "static int handle_setup_keyboard(",1)[0]
     south=nav.split("edge==(1u<<SPIDER_SETUP_NAV_SOUTH)",1)[1].split(
         "} else if(edge==(1u<<SPIDER_SETUP_NAV_EAST))",1)[0]
-    assert "id==SPIDER_UI_CAPTURE || id==SPIDER_UI_RESET" in south
-    assert "SDL3-SETUP: CROSS-CAPTURE BLOCKED" in south
-    assert "SDL3-SETUP: CROSS-RESET BLOCKED" in south
-    assert "Cross/A activated focused CAPTURE" not in south
-    assert "Cross/A activated focused RESET" not in south
-    assert south.index("id==SPIDER_UI_CAPTURE || id==SPIDER_UI_RESET") < south.index(
-        "PostMessageA(ui->hwnd,WM_COMMAND,")
-    assert "id==SPIDER_UI_USE" in south
-    assert "id==SPIDER_UI_TEST" in south
-    assert "id==SPIDER_UI_RAW" in south
-    assert "Cross/A activated focused button id=%d (%s)" in south
-    assert "spider_sdl3_capture_start(" not in south
-    # An actual intentional Win32 Capture click and keyboard shortcut
-    # still permit editing a 3D action profile.
-    commands=UI.split("case WM_COMMAND:",1)[1].split("case WM_TIMER:",1)[0]
-    assert "LOWORD(wp)==SPIDER_UI_CAPTURE && HIWORD(wp)==BN_CLICKED" in commands
-    assert "spider_sdl3_capture_start(&ui->capture);" in commands
+    assert "id==SPIDER_UI_CAPTURE" in south
+    assert "GetFocus()==GetDlgItem(ui->hwnd,SPIDER_UI_CAPTURE)" in south
+    assert "current_profile(ui)" in south
+    assert "spider_sdl3_capture_start(&ui->capture);" in south
+    assert "spider_sdl3_setup_nav_reset(&ui->nav);" in south
+    assert "ui->focus.column=SPIDER_SETUP_FOCUS_ACTIONS;" in south
+    assert "SetFocus(ui->actions)" in south
+    assert "CROSS-CAPTURE ARMED" in south
+    assert "neutral required; no immediate binding" in south
+    assert "id==SPIDER_UI_RESET" in south
+    assert "CROSS-RESET BLOCKED" in south
+    assert "South on actions list ignored (explicit Capture button required)" in south
+    # The focused button used to cause duplicate synthetic clicks in Proton.
+    assert "MAKEWPARAM(id,BN_CLICKED)" not in south.split(
+        "if(id==SPIDER_UI_CAPTURE)",1)[1].split(
+        "} else if(id==SPIDER_UI_RESET)",1)[0]
+    cmds=UI.split("case WM_COMMAND:",1)[1].split("case WM_TIMER:",1)[0]
+    assert "LOWORD(wp)==SPIDER_UI_CAPTURE && HIWORD(wp)==BN_CLICKED" in cmds
+    assert "setup_physical_south_held(ui)" in cmds
+    assert "SYNTHETIC CROSS CAPTURE CLICK SUPPRESSED" in cmds
+    assert "current_profile(ui) && !ui->capture.active" in cmds
+    assert "spider_sdl3_capture_start(&ui->capture);" in cmds
     keyboard=UI.split("static int handle_setup_keyboard(",1)[1].split(
         "static void setup_toggle_sdl3_test(",1)[0]
     assert "if(vk=='C'" in keyboard
+    assert "setup_physical_south_held(ui)" in keyboard
+    assert "Ctrl+Shift+C" in UI
+    assert "Cross/A on Capture: remap selected action" in UI
+    assert "F9/F10 unchanged" not in UI.split(
+        "case WM_CREATE:",1)[1].split("case WM_COMMAND:",1)[0]
 
 
 def test_redundant_use_button_restores_single_cursor_again():
