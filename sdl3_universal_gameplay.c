@@ -37,9 +37,16 @@ static unsigned menu_previous=0,menu_arm=0;
 static unsigned previous_context=SPIDER_UNIVERSAL_CTX_3D;
 static unsigned pause_context_reports=0,pause_command_reports=0;
 static SpiderSDL3UniversalState state;
+static SpiderSDL3UniversalFocusRelease focus_release;
+static unsigned focus_release_reports=0;
 static void (*report)(const char *)=NULL;
 static void log_universal(const char *msg) {
   if(report && trace++<100u)report(msg);
+}
+static void log_focus_release(const char *msg) {
+  /* Focus transitions are safety-critical; preserve diagnostics even
+   * after the normal 100-line game-action trace budget is exhausted. */
+  if(report && focus_release_reports++<24u)report(msg);
 }
 static int writable_slot(void) {
   MEMORY_BASIC_INFORMATION mbi;
@@ -148,6 +155,23 @@ static int update_keys(unsigned wanted,const unsigned *scans) {
 }
 static void restore_original(const char *reason) {
   PVOID old;
+  if(reason &&
+     (!strcmp(reason,"focus or window lost") ||
+      !strcmp(reason,"game HWND not foreground"))) {
+    unsigned previous=focus_release.frames_remaining;
+    /* Capture BEFORE release_all clears OS-acknowledged keys. Wine may
+     * fail to transfer those background KEYUP events into the original
+     * game's reacquired DirectInput keyboard state. */
+    spider_sdl3_universal_focus_release_capture(
+      &focus_release,held_scans,sent_mask,pulse_scan);
+    if(!previous && focus_release.frames_remaining) {
+      char msg[170];
+      snprintf(msg,sizeof(msg),
+        "SDL3-UNIVERSAL: FOCUS-KEYUP deferred foreground replay armed scans=%u frames=%u",
+        focus_release.count,focus_release.frames_remaining);
+      log_focus_release(msg);
+    }
+  }
   if(reason && (suspended || active || sent_mask || pulse_scan)) {
     char line[200];
     snprintf(line,sizeof(line),"SDL3-UNIVERSAL: EXIT reason=%s",reason);
@@ -191,6 +215,8 @@ static int suspend_original(void) {
 void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   requested=0;report=logger;trace=0;game_thread=0;
   key_transition_reports=0;owner_reports=0;refusal_reports=0;
+  focus_release_reports=0;
+  memset(&focus_release,0,sizeof(focus_release));
   active=0;selected_id=0;suspended=0;borrowed_native=NULL;
   memset(held_scans,0,sizeof(held_scans));
   sent_mask=0;pulse_scan=0;menu_previous=menu_arm=0;
@@ -258,6 +284,30 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   if(!requested || game_thread!=GetCurrentThreadId())return;
   if(!hwnd || !IsWindowVisible(hwnd) || GetForegroundWindow()!=hwnd) {
     restore_original("game HWND not foreground");
+    return;
+  }
+  if(focus_release.frames_remaining) {
+    unsigned i,was=focus_release.frames_remaining;
+    int delivered=1;
+    /* Only AFTER the focus-pause loop returned. The original DirectInput
+     * keyboard is often unacquired on the first resumed Flip in Wine;
+     * reassert owned KEYUPs across multiple Flip boundaries so it can
+     * observe them AFTER reacquisition. Do not suspend the game-owned
+     * joystick or inject any new movement while cleanup is pending. */
+    for(i=0;i<focus_release.count;i++)
+      if(!send_scan(focus_release.scans[i],1))delivered=0;
+    spider_sdl3_universal_focus_release_complete_frame(
+      &focus_release,delivered);
+    if(was==SPIDER_UNIVERSAL_FOCUS_RELEASE_FRAMES ||
+       !focus_release.frames_remaining ||
+       (!delivered && was==1u)) {
+      char msg[180];
+      snprintf(msg,sizeof(msg),
+        "SDL3-UNIVERSAL: FOCUS-KEYUP foreground cleanup %s scans=%u passes-left=%u (DI reception unverified)",
+        delivered?"accepted":"retry",focus_release.count,
+        focus_release.frames_remaining);
+      log_focus_release(msg);
+    }
     return;
   }
   if(!SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample)) {
