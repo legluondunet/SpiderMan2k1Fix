@@ -41,6 +41,8 @@ static SpiderSDL3UniversalState state;
 static SpiderSDL3UniversalFocusRelease focus_release;
 static SpiderSDL3FocusDirectionResync focus_dir;
 static uint32_t focus_dir_controller_id=0;
+static unsigned focus_latch_follow_scan=0;
+static unsigned focus_latch_follow_frames=0;
 static unsigned focus_release_reports=0;
 static void (*report)(const char *)=NULL;
 static void log_universal(const char *msg) {
@@ -50,6 +52,52 @@ static void log_focus_release(const char *msg) {
   /* Focus transitions are safety-critical; preserve diagnostics even
    * after the normal 100-line game-action trace budget is exhausted. */
   if(report && focus_release_reports++<24u)report(msg);
+}
+/* Exact retail PE32: keyboard GetDeviceData writes its own 256-byte
+ * buffered key latch at 0x006B792C. This is DISTINCT from the original
+ * joystick slot. Read-only diagnostic: never modify game-owned input. */
+#define SPIDER_NATIVE_KEY_LATCH 0x006B792Cu
+static int read_native_keyboard_latch(unsigned scan,unsigned *value) {
+  static const BYTE reader_signature[6]={0x8A,0x98,0x2C,0x79,0x6B,0x00};
+  static const BYTE keyup_signature[6]={0x88,0x9F,0x2C,0x79,0x6B,0x00};
+  MEMORY_BASIC_INFORMATION mbi;
+  uintptr_t p,b;
+  DWORD prot;
+  if(!value || scan>255u || sizeof(void*)!=4 ||
+     (uintptr_t)GetModuleHandleA(NULL)!=0x00400000u ||
+     memcmp((const void *)(uintptr_t)0x00501C56u,
+            reader_signature,sizeof(reader_signature))!=0 ||
+     memcmp((const void *)(uintptr_t)0x00501C8Fu,
+            keyup_signature,sizeof(keyup_signature))!=0)
+    return 0;
+  p=(uintptr_t)SPIDER_NATIVE_KEY_LATCH+scan;
+  if(VirtualQuery((const void *)p,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)))
+    return 0;
+  b=(uintptr_t)mbi.BaseAddress;
+  prot=mbi.Protect&0xffu;
+  if(p<b || p-b>=mbi.RegionSize || 
+     (prot!=PAGE_READONLY && prot!=PAGE_READWRITE &&
+      prot!=PAGE_WRITECOPY && prot!=PAGE_EXECUTE_READ &&
+      prot!=PAGE_EXECUTE_READWRITE && prot!=PAGE_EXECUTE_WRITECOPY))
+    return 0;
+  *value=*(const volatile BYTE *)p;
+  return 1;
+}
+static void trace_native_keyboard_latch(const char *stage,unsigned scan) {
+  char msg[210];
+  unsigned value;
+  if(!stage || !scan || !report)return;
+  if(read_native_keyboard_latch(scan,&value)) {
+    snprintf(msg,sizeof(msg),
+      "SDL3-UNIVERSAL: DI-LATCH stage=%s DIK=0x%02X raw=0x%02X held=%u (original game read-only; action-latch unverified)",
+      stage,scan,value,(value&0x7Fu)!=0u);
+  } else {
+    snprintf(msg,sizeof(msg),
+      "SDL3-UNIVERSAL: DI-LATCH stage=%s DIK=0x%02X unavailable (original game unchanged)",
+      stage,scan);
+  }
+  log_focus_release(msg);
 }
 static int writable_slot(void) {
   MEMORY_BASIC_INFORMATION mbi;
@@ -179,6 +227,8 @@ static void restore_original(const char *reason) {
             "SDL3-UNIVERSAL: FOCUS-DIR captured owned 3D keys=%u selected-id=%lu for fresh buffered release",
             focus_dir.count,(unsigned long)selected_id);
           log_focus_release(msg);
+          trace_native_keyboard_latch("focus-loss",focus_dir.scans[0]);
+          focus_latch_follow_scan=0;focus_latch_follow_frames=0;
         }
       }
     }
@@ -258,6 +308,7 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   memset(&focus_release,0,sizeof(focus_release));
   spider_sdl3_focus_dir_complete(&focus_dir);
   focus_dir_controller_id=0;
+  focus_latch_follow_scan=0;focus_latch_follow_frames=0;
   active=selected_id=0;suspended=0;borrowed_native=NULL;
   memset(held_scans,0,sizeof(held_scans));
   sent_mask=0;pulse_scan=0;menu_previous=menu_arm=0;
@@ -326,6 +377,13 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   if(!hwnd || !IsWindowVisible(hwnd) || GetForegroundWindow()!=hwnd) {
     restore_original("game HWND not foreground");
     return;
+  }
+  if(focus_latch_follow_frames && focus_latch_follow_scan) {
+    char stage[52];
+    snprintf(stage,sizeof(stage),"post-fresh-up-flip-%u",
+      5u-focus_latch_follow_frames);
+    trace_native_keyboard_latch(stage,focus_latch_follow_scan);
+    if(!--focus_latch_follow_frames)focus_latch_follow_scan=0;
   }
   if(!SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample)) {
     if(refusal_reports++<6u)
@@ -426,6 +484,8 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
       if(!send_scan(focus_release.scans[i],1))delivered=0;
     spider_sdl3_universal_focus_release_complete_frame(
       &focus_release,delivered);
+    if(!focus_release.frames_remaining && focus_dir.phase)
+      trace_native_keyboard_latch("post-12-keyup",focus_dir.scans[0]);
     if(was==SPIDER_UNIVERSAL_FOCUS_RELEASE_FRAMES ||
        !focus_release.frames_remaining ||
        (!delivered && was==1u)) {
@@ -453,6 +513,8 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   if(focus_dir.phase) {
     unsigned attempt=SpiderDI8Retry_KeyboardRecoveryAttempts();
     if(focus_dir.phase==SPIDER_FOCUS_DIR_UP) {
+      trace_native_keyboard_latch("after-fresh-down-before-up",
+        focus_dir.scans[focus_dir.index]);
       /* DOWN happened on the preceding original Flip. The game has
        * now had a frame to sample the buffered press, so the following
        * real UP event can clear its stale internal held-action latch. */
@@ -460,6 +522,8 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
         log_focus_release("SDL3-UNIVERSAL: FOCUS-DIR fresh KEYUP failed; retry before gameplay");
         return;
       }
+      focus_latch_follow_scan=focus_dir.scans[focus_dir.index];
+      focus_latch_follow_frames=4u; /* next original input frames */
       focus_dir.index++;
       if(focus_dir.index>=focus_dir.count) {
         log_focus_release("SDL3-UNIVERSAL: FOCUS-DIR fresh DOWN/UP completed after foreground keyboard recovery (game reception unverified)");
@@ -471,6 +535,8 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     if(!spider_sdl3_focus_dir_ready(&focus_dir,attempt))
       return;
     if(focus_dir.phase==SPIDER_FOCUS_DIR_DOWN) {
+      trace_native_keyboard_latch("before-fresh-down",
+        focus_dir.scans[focus_dir.index]);
       if(!send_scan(focus_dir.scans[focus_dir.index],0)) {
         log_focus_release("SDL3-UNIVERSAL: FOCUS-DIR fresh KEYDOWN failed; retry before gameplay");
         return;
