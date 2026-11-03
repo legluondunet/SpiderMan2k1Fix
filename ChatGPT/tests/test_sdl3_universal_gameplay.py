@@ -649,19 +649,24 @@ def test_foreground_focus_cleanup_blocks_native_di_and_new_gameplay():
         release.index("if(!release_all())"))
     assert "FOCUS-KEYUP deferred foreground replay armed" in release
     onflip=backend.split("void SpiderSDL3Universal_OnFlip(",1)[1]
-    head=onflip.split("if(!SpiderSDL3Probe_SelectedMappedSample(",1)[0]
-    assert "if(focus_release.frames_remaining) {" in head
-    assert "send_scan(focus_release.scans[i],1)" in head
-    assert "spider_sdl3_universal_focus_release_complete_frame(" in head
-    assert "return;" in head.split("if(focus_release.frames_remaining) {",1)[1]
-    assert "FOCUS-KEYUP foreground cleanup" in head
-    # Foreground must be verified first: never replay on the desktop app.
-    assert head.index("GetForegroundWindow()!=hwnd") < head.index(
-        "if(focus_release.frames_remaining) {")
-    # When the keyboard has not reacquired yet, each next Flip retries;
-    # no new controller action or DI joystick suspension in that window.
-    assert head.index("if(focus_release.frames_remaining) {") < (
-        onflip.index("if(!suspend_original())"))
+    assert "if(focus_release.frames_remaining) {" in onflip
+    assert "send_scan(focus_release.scans[i],1)" in onflip
+    assert "spider_sdl3_universal_focus_release_complete_frame(" in onflip
+    assert "FOCUS-KEYUP foreground cleanup" in onflip
+    cleanup=onflip.split("if(focus_release.frames_remaining) {",1)[1].split(
+        "context=spider_sdl3_universal_route_context(",1)[0]
+    assert "return;" in cleanup
+    # The original game-owned joystick must already be SUSPENDED before
+    # repeated foreground KEYUPs, while its DI keyboard reacquires.
+    assert onflip.index("GetForegroundWindow()!=hwnd") < (
+        onflip.index("if(focus_release.frames_remaining) {"))
+    assert onflip.index("if(!suspend_original())") < (
+        onflip.index("if(focus_release.frames_remaining) {"))
+    assert onflip.index("if(!suspended && !spider_sdl3_universal_neutral") < (
+        onflip.index("if(focus_release.frames_remaining) {"))
+    assert onflip.index("if(focus_release.frames_remaining) {") < (
+        onflip.index("context=spider_sdl3_universal_route_context("))
+    assert "if(!SpiderSDL3Probe_SelectedMappedSample(" in onflip
     assert "static void log_focus_release(" in backend
     assert "if(report && focus_release_reports++<24u)report(msg);" in backend
     policy=(ROOT/"sdl3_universal_policy.h").read_text(encoding="utf-8")
