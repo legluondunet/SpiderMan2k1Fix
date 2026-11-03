@@ -801,3 +801,38 @@ def test_focus_direction_pulse_is_released_on_any_owner_loss_or_context_switch()
     assert "if(focus_dir.phase && id!=focus_dir_controller_id)" in onflip
     assert onflip.index("if(focus_dir.phase && id!=focus_dir_controller_id)") < (
         onflip.index("if(focus_dir.phase) {"))
+
+
+def test_readonly_original_di_keyboard_latch_probe_during_focus_resync():
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    audit=(ROOT/"ChatGPT/tools/inspect_spidey_native_reader.py").read_text(encoding="utf-8")
+    assert "0x006B792Cu" in backend
+    assert "0x006B792C..0x006B7A2B" in audit
+    assert "0x00501C56u" in backend and "0x00501C8Fu" in backend
+    assert "0x8A,0x98,0x2C,0x79,0x6B,0x00" in backend
+    assert "0x88,0x9F,0x2C,0x79,0x6B,0x00" in backend
+    getter=backend.split("static int read_native_keyboard_latch(",1)[1].split(
+        "static void trace_native_keyboard_latch(",1)[0]
+    assert "(uintptr_t)GetModuleHandleA(NULL)!=0x00400000u" in getter
+    assert "sizeof(void*)!=4" in getter
+    assert "VirtualQuery((const void *)p,&mbi,sizeof(mbi))" in getter
+    assert "mbi.State!=MEM_COMMIT" in getter
+    assert "PAGE_GUARD|PAGE_NOACCESS" in getter
+    assert "scan>255u" in getter
+    assert "*value=*(const volatile BYTE *)p;" in getter
+    assert not any(token in getter for token in (
+        "VirtualProtect(", "WriteProcessMemory(", "InterlockedExchange(",
+        "SendInput(", "Acquire(", "memset((void *)"))
+    for phase in ("focus-loss", "post-12-keyup", "before-fresh-down",
+                  "after-fresh-down-before-up"):
+        assert f'trace_native_keyboard_latch("{phase}",' in backend
+    assert '"post-fresh-up-flip-%u"' in backend
+    assert "focus_latch_follow_frames=4u;" in backend
+    onflip=backend.split("void SpiderSDL3Universal_OnFlip(",1)[1]
+    assert onflip.index("GetForegroundWindow()!=hwnd") < onflip.index(
+        "if(focus_latch_follow_frames && focus_latch_follow_scan)")
+    tracer=backend.split("static void trace_native_keyboard_latch(",1)[1].split(
+        "static int writable_slot(",1)[0]
+    assert "log_focus_release(msg);" in tracer
+    assert "raw=0x%02X held=%u" in tracer
+    assert "original game read-only; action-latch unverified" in tracer
