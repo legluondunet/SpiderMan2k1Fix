@@ -108,6 +108,56 @@ south/east/west/north/shoulder/trigger meanings for all nonzero VID:PID
 models. A PS3 with different SDL3 mapping, clone firmware, driver or a
 duplicate identical VID:PID may require separate mapping/validation.
 
+## Follow-up 2026-11-03: 12 accepted KEYUP replays did NOT fix running
+
+Second physical PS3 test, log `SpiderMan2k1Fix(20261103-180555).log`,
+runtime `v1.1.0-fbb705b`, GE-Proton11-12: Spider-Man **still runs**
+after Alt+Tab while a direction was held. Exact sequence:
+
+- Before losing focus, normalized SDL3 emitted `KEYDOWN action=2
+  DIK=0xCB` (Left) and `KEYDOWN action=1 DIK=0xD0` (Down),
+  subsequently releasing Down but leaving **Left held**.
+- Focus loss captured exactly one held synthetic key.
+- Focus pause and PS3-only Cross wake worked.
+- `FOCUS-KEYUP foreground cleanup accepted ... passes-left=11`
+  and `... passes-left=0` prove Win32 accepted all 12 release calls;
+  **they do not establish original DirectInput buffered reception**.
+- `DI8-RETRY ... keyboard=1` was later logged. This counter is sampled
+  only at Flip multiples of 120 and increments before the original
+  game's Acquire call; it is NOT evidence of the precise Acquire
+  moment or successful keyboard reacquisition.
+- After the replay, no new SDL3 directional KEYDOWN occurred before
+  the player attempted an unrelated action. Therefore the persisting
+  movement is consistent with **a stale original-game held-action
+  latch**, not a still-held SDL3 stick.
+
+A different experimental correction now queues only the ORIGINAL four
+movement scan codes that were actually held at focus loss. It preserves
+the harmless foreground KEYUP replay, then waits for the game keyboard
+reacquire *attempt count* to advance, or falls back after 24 additional
+Flip frames; it allows 3 settling frames, sends a **fresh KEYDOWN on one
+Flip and KEYUP on a later Flip**, and never processes another 3D input
+until that one buffered press/release has been delivered. This can
+create a brief movement impulse. It is limited to this exact selected
+controller, original 3D context, and physical neutral. If the
+controller, focus, or game context changes, the extra synthesized
+direction must be released/cancelled. Each step has bounded
+`FOCUS-DIR` logs.
+
+This is still a **hypothesis-based experimental fix**. The original
+engine's keyboard buffer and action latch are not directly verified.
+It is not a general DirectInput reset API and must not be merged or
+made default until successfully exercised on PS3 and DS4 hardware.
+
+Acceptance: run exactly the held-stick Alt+Tab scenario again, then
+inspect `FOCUS-DIR captured owned 3D keys=1`,
+`FOCUS-DIR fresh keyboard DOWN after ...` and
+`FOCUS-DIR fresh DOWN/UP completed ...`. Check if the character stops
+WITHOUT a physical keyboard keypress, that directional movement is
+normal afterwards, and ordinary menu Pause / gamepad wake still work.
+If not, stop patching by speculative SendInput repeats and gather
+native buffered-keyboard action-state diagnostics.
+
 ## Alt+Tab while holding a stick — PS3 regression (2026-11-03)
 
 Hardware evidence on `v1.1.0-c2579b7` under Manjaro /
