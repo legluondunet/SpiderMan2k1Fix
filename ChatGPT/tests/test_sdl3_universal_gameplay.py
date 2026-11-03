@@ -570,3 +570,100 @@ def test_universal_mapped_ps4_uses_generic_identity_without_native_rebind():
     assert "selection.active=requested_id;" in modal
     native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
     assert "if(SpiderSDL3Universal_Enabled())return;" in native
+
+
+def test_focus_loss_reasserts_held_arrow_keyups_after_foreground_reacquire(tmp_path):
+    """Real PS3/GE-Proton11-12 regression: DIK_RIGHT 0xCD was down
+    immediately before ALT+TAB and Spider-Man kept running on resume.
+    OS SendInput acceptance on background must NOT end the cleanup."""
+    cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc:return
+    src=tmp_path/"focus_release.c"
+    exe=tmp_path/"focus_release"
+    src.write_text(textwrap.dedent(r"""
+      #include <assert.h>
+      #include <string.h>
+      #include "sdl3_universal_policy.h"
+      int main(void) {
+        SpiderSDL3UniversalFocusRelease recovery={0};
+        unsigned held[SPIDER_UNIVERSAL_KEY_COUNT]={0};
+        unsigned i;
+        /* The physical PS3 held Right: DIK 0xCD was injected at
+         * log line 796, immediately before lost foreground. */
+        held[SPIDER_UNIVERSAL_RIGHT]=0xCD;
+        spider_sdl3_universal_focus_release_capture(
+          &recovery,held,1u<<SPIDER_UNIVERSAL_RIGHT,0u);
+        assert(recovery.count==1);
+        assert(recovery.scans[0]==0xCD);
+        assert(recovery.frames_remaining==SPIDER_UNIVERSAL_FOCUS_RELEASE_FRAMES);
+        /* A background KEYUP can be accepted by Win32 and missed by
+         * the unacquired game keyboard: never drop captured recovery. */
+        memset(held,0,sizeof(held));
+        spider_sdl3_universal_focus_release_capture(
+          &recovery,held,0u,0u);
+        assert(recovery.count==1 && recovery.scans[0]==0xCD);
+        spider_sdl3_universal_focus_release_complete_frame(&recovery,0);
+        assert(recovery.frames_remaining==SPIDER_UNIVERSAL_FOCUS_RELEASE_FRAMES);
+        for(i=0;i<SPIDER_UNIVERSAL_FOCUS_RELEASE_FRAMES-1u;i++) {
+          assert(recovery.count==1 && recovery.scans[0]==0xCD);
+          spider_sdl3_universal_focus_release_complete_frame(&recovery,1);
+        }
+        assert(recovery.frames_remaining==1);
+        spider_sdl3_universal_focus_release_complete_frame(&recovery,1);
+        assert(recovery.frames_remaining==0);
+        assert(recovery.count==0 && recovery.scans[0]==0);
+        /* No movement held at focus loss: no phantom key to replay. */
+        spider_sdl3_universal_focus_release_capture(
+          &recovery,held,0u,0u);
+        assert(!recovery.frames_remaining && !recovery.count);
+        /* Multiple own keys and a Pause pulse: deduplicate the scan
+         * and recover exactly the prior input, never other keys. */
+        held[SPIDER_UNIVERSAL_LEFT]=0xCB;
+        held[SPIDER_UNIVERSAL_UP]=0xC8;
+        spider_sdl3_universal_focus_release_capture(
+          &recovery,held,(1u<<SPIDER_UNIVERSAL_LEFT)|
+                         (1u<<SPIDER_UNIVERSAL_UP),0xCB);
+        assert(recovery.count==2);
+        assert(recovery.scans[0]==0xC8 && recovery.scans[1]==0xCB);
+        for(i=0;i<SPIDER_UNIVERSAL_FOCUS_RELEASE_FRAMES;i++)
+          spider_sdl3_universal_focus_release_complete_frame(&recovery,1);
+        assert(!recovery.frames_remaining);
+        /* A native Pause menu Enter/Escape pulse is also an owned key. */
+        spider_sdl3_universal_focus_release_capture(
+          &recovery,held,0u,0x1Cu);
+        assert(recovery.count==1 && recovery.scans[0]==0x1Cu);
+        return 0;
+      }
+    """),encoding="utf-8")
+    subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
+                    "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
+
+
+def test_foreground_focus_cleanup_blocks_native_di_and_new_gameplay():
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    release=backend.split("static void restore_original(const char *reason)",1)[1].split(
+        "static int suspend_original(",1)[0]
+    assert "spider_sdl3_universal_focus_release_capture(" in release
+    assert release.index("spider_sdl3_universal_focus_release_capture(") < (
+        release.index("if(!release_all())"))
+    assert "FOCUS-KEYUP deferred foreground replay armed" in release
+    onflip=backend.split("void SpiderSDL3Universal_OnFlip(",1)[1]
+    head=onflip.split("if(!SpiderSDL3Probe_SelectedMappedSample(",1)[0]
+    assert "if(focus_release.frames_remaining) {" in head
+    assert "send_scan(focus_release.scans[i],1)" in head
+    assert "spider_sdl3_universal_focus_release_complete_frame(" in head
+    assert "return;" in head.split("if(focus_release.frames_remaining) {",1)[1]
+    assert "FOCUS-KEYUP foreground cleanup" in head
+    # Foreground must be verified first: never replay on the desktop app.
+    assert head.index("GetForegroundWindow()!=hwnd") < head.index(
+        "if(focus_release.frames_remaining) {")
+    # When the keyboard has not reacquired yet, each next Flip retries;
+    # no new controller action or DI joystick suspension in that window.
+    assert head.index("if(focus_release.frames_remaining) {") < (
+        onflip.index("if(!suspend_original())"))
+    assert "static void log_focus_release(" in backend
+    assert "if(report && focus_release_reports++<24u)report(msg);" in backend
+    policy=(ROOT/"sdl3_universal_policy.h").read_text(encoding="utf-8")
+    assert "SPIDER_UNIVERSAL_FOCUS_RELEASE_FRAMES 12u" in policy
+    assert "if(!recovery || recovery->frames_remaining)return;" in policy
