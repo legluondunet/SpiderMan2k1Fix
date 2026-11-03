@@ -2360,6 +2360,23 @@ static LONG pause_ever_foreground=0;
 static LONG pause_in_progress=0;
 static LONG pause_latched=0;
 static DWORD pause_background_since=0;
+/* Bounded READ-ONLY diagnostics for Alt+Tab losses which do not
+ * produce the native PAUSED ribbon. No extra WndProc/DI hooks. */
+static unsigned pause_focus_probe_reports=0;
+static unsigned pause_flip_gap_reports=0;
+static DWORD pause_previous_flip_tick=0;
+static void pause_probe_report(const char *event, HWND game, HWND fg,
+                               DWORD other_pid, DWORD elapsed) {
+  char line[230];
+  if(!debug_log_enabled || pause_focus_probe_reports>=24u)return;
+  ++pause_focus_probe_reports;
+  snprintf(line,sizeof(line),
+    "FOCUS-PROBE: %s game=%p foreground=%p other-pid=%lu elapsed-ms=%lu "
+    "(Flip-sampled only; no focus mutation)",
+    event,(void*)game,(void*)fg,(unsigned long)other_pid,
+    (unsigned long)elapsed);
+  log_line(line);
+}
 
 /* Diagnostic only: report WHICH other executable owns the foreground when
  * Windows reports sustained focus loss. No activation/focus operations.
@@ -2405,21 +2422,36 @@ static void pause_log_foreground_owner(HWND game,HWND foreground,const char *why
 static BOOL pause_confirmed_focus_loss(HWND hwnd) {
   HWND fg=GetForegroundWindow();
   DWORD game_pid=0,fg_pid=0,now;
-  if(fg==hwnd) { pause_background_since=0; return FALSE; }
+  if(fg==hwnd) {
+    if(pause_background_since)
+      pause_probe_report("candidate-cancelled-return-before-150ms",
+        hwnd,fg,0,GetTickCount()-pause_background_since);
+    pause_background_since=0;
+    return FALSE;
+  }
   GetWindowThreadProcessId(hwnd,&game_pid);
   if(fg) GetWindowThreadProcessId(fg,&fg_pid);
   /* A transient NULL foreground or another window owned by the game
    * is not proof that Spider-Man was switched to the background. */
   if(!fg || !game_pid || fg_pid==game_pid) {
+    if(pause_background_since)
+      pause_probe_report("candidate-cancelled-null-or-own-process",
+        hwnd,fg,fg_pid,GetTickCount()-pause_background_since);
     pause_background_since=0;
     return FALSE;
   }
   now=GetTickCount();
   if(!pause_background_since) {
     pause_background_since=now?now:1;
+    pause_probe_report("external-candidate-first-flip",hwnd,fg,fg_pid,0);
     return FALSE;
   }
-  return (DWORD)(now-pause_background_since)>=150;
+  if((DWORD)(now-pause_background_since)>=150) {
+    pause_probe_report("external-candidate-confirmed-after-150ms",
+      hwnd,fg,fg_pid,(DWORD)(now-pause_background_since));
+    return TRUE;
+  }
+  return FALSE;
 }
 
 
@@ -2450,6 +2482,11 @@ static void pause_at_flip_if_background(void) {
   int pause_previous_foreground=0;
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
   if(GetForegroundWindow()==hwnd) {
+    /* This path bypasses pause_confirmed_focus_loss(), so report
+     * a short external focus candidate cancelled on the next Flip. */
+    if(pause_background_since)
+      pause_probe_report("candidate-cancelled-return-to-game",hwnd,
+        GetForegroundWindow(),0,GetTickCount()-pause_background_since);
     pause_background_since=0;
     InterlockedExchange(&pause_ever_foreground,1);
   } else if(InterlockedCompareExchange(&pause_ever_foreground,0,0)==1 &&
@@ -2598,6 +2635,24 @@ static void pause_at_flip_if_background(void) {
 }
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
+  if(debug_log_enabled &&
+     InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1) {
+    DWORD now=GetTickCount();
+    if(pause_previous_flip_tick &&
+       (DWORD)(now-pause_previous_flip_tick)>=750u &&
+       pause_flip_gap_reports<12u) {
+      char line[224];
+      ++pause_flip_gap_reports;
+      snprintf(line,sizeof(line),
+        "FOCUS-PROBE: Flip-gap-ms=%lu flip=%ld foreground-now=%d "
+        "latched=%ld (gap is not proof of focus loss)",
+        (unsigned long)(DWORD)(now-pause_previous_flip_tick),
+        (long)count,(int)(game_hwnd && GetForegroundWindow()==game_hwnd),
+        (long)InterlockedCompareExchange(&pause_latched,0,0));
+      log_line(line);
+    }
+    pause_previous_flip_tick=now;
+  }
   SpiderQuickExitF12_ObserveEngineState(count,InterlockedCompareExchange(&menu_upscale_active,0,0)==1); /* passive native mode+2D renderer tracing */
   /* Game-native 0x006151F8 is GameFMV_Active in the SHA-verified
    * original executable. A post-menu Bink can play with menu_upscale=0.
