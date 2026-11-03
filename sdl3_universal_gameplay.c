@@ -21,6 +21,7 @@
 #include "sdl3_universal_policy.h"
 #include "sdl3_gamepad_probe.h"
 #include "virtual_spidey_cfg.h"
+#include "input_notacquired_retry.h"
 
 #define SPIDER_UNIVERSAL_DI_SLOT ((PVOID volatile *)(uintptr_t)0x006B7A2Cu)
 #define SPIDER_UNIVERSAL_KEY_TABLE 0x00568398u
@@ -38,6 +39,8 @@ static unsigned previous_context=SPIDER_UNIVERSAL_CTX_3D;
 static unsigned pause_context_reports=0,pause_command_reports=0;
 static SpiderSDL3UniversalState state;
 static SpiderSDL3UniversalFocusRelease focus_release;
+static SpiderSDL3FocusDirectionResync focus_dir;
+static uint32_t focus_dir_controller_id=0;
 static unsigned focus_release_reports=0;
 static void (*report)(const char *)=NULL;
 static void log_universal(const char *msg) {
@@ -164,6 +167,31 @@ static void restore_original(const char *reason) {
      * game's reacquired DirectInput keyboard state. */
     spider_sdl3_universal_focus_release_capture(
       &focus_release,held_scans,sent_mask,pulse_scan);
+    if(previous_context==SPIDER_UNIVERSAL_CTX_3D) {
+      if(focus_dir.phase==SPIDER_FOCUS_DIR_UP) {
+        /* An interrupted resync DOWN must never be left held in the
+         * desktop application. Keep its action pending on failure. */
+        if(send_scan(focus_dir.scans[focus_dir.index],1)) {
+          focus_dir.phase=SPIDER_FOCUS_DIR_WAIT;
+          focus_dir.wait_frames=0;
+          focus_dir.baseline_attempts=
+            SpiderDI8Retry_KeyboardRecoveryAttempts();
+        }
+      }
+      if(!focus_dir.phase) {
+        spider_sdl3_focus_dir_capture(
+          &focus_dir,held_scans,sent_mask,
+          SpiderDI8Retry_KeyboardRecoveryAttempts());
+        if(focus_dir.phase) {
+          char msg[180];
+          focus_dir_controller_id=selected_id;
+          snprintf(msg,sizeof(msg),
+            "SDL3-UNIVERSAL: FOCUS-DIR captured owned 3D keys=%u selected-id=%lu for fresh buffered release",
+            focus_dir.count,(unsigned long)selected_id);
+          log_focus_release(msg);
+        }
+      }
+    }
     if(!previous && focus_release.frames_remaining) {
       char msg[170];
       snprintf(msg,sizeof(msg),
@@ -217,7 +245,9 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   key_transition_reports=0;owner_reports=0;refusal_reports=0;
   focus_release_reports=0;
   memset(&focus_release,0,sizeof(focus_release));
-  active=0;selected_id=0;suspended=0;borrowed_native=NULL;
+  spider_sdl3_focus_dir_complete(&focus_dir);
+  focus_dir_controller_id=0;
+  active=selected_id=0;suspended=0;borrowed_native=NULL;
   memset(held_scans,0,sizeof(held_scans));
   sent_mask=0;pulse_scan=0;menu_previous=menu_arm=0;
   previous_context=SPIDER_UNIVERSAL_CTX_3D;
@@ -356,6 +386,18 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     log_universal(line);
   }
   active=1;selected_id=id;
+  if(focus_dir.phase && id!=focus_dir_controller_id) {
+    /* A different explicitly selected pad must never inherit a
+     * synthesized movement press intended for the old owner. */
+    if(focus_dir.phase==SPIDER_FOCUS_DIR_UP &&
+       !send_scan(focus_dir.scans[focus_dir.index],1)) {
+      log_focus_release("SDL3-UNIVERSAL: FOCUS-DIR old-owner KEYUP retry");
+      return;
+    }
+    log_focus_release("SDL3-UNIVERSAL: FOCUS-DIR owner changed; fresh key pulse cancelled");
+    spider_sdl3_focus_dir_complete(&focus_dir);
+    focus_dir_controller_id=0;
+  }
   /* Keep original native DI joystick suspended during foreground
    * KEYUP replay: otherwise the original game can sample a competing
    * PS3/DS4 joystick while awaiting its keyboard reacquisition. */
@@ -382,6 +424,43 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
         delivered?"accepted":"retry",prior_count,
         focus_release.frames_remaining);
       log_focus_release(msg);
+    }
+    return;
+  }
+  if(focus_dir.phase) {
+    unsigned attempt=SpiderDI8Retry_KeyboardRecoveryAttempts();
+    if(focus_dir.phase==SPIDER_FOCUS_DIR_UP) {
+      /* DOWN happened on the preceding original Flip. The game has
+       * now had a frame to sample the buffered press, so the following
+       * real UP event can clear its stale internal held-action latch. */
+      if(!send_scan(focus_dir.scans[focus_dir.index],1)) {
+        log_focus_release("SDL3-UNIVERSAL: FOCUS-DIR fresh KEYUP failed; retry before gameplay");
+        return;
+      }
+      focus_dir.index++;
+      if(focus_dir.index>=focus_dir.count) {
+        log_focus_release("SDL3-UNIVERSAL: FOCUS-DIR fresh DOWN/UP completed after foreground keyboard recovery (game reception unverified)");
+        spider_sdl3_focus_dir_complete(&focus_dir);
+        focus_dir_controller_id=0;
+      } else focus_dir.phase=SPIDER_FOCUS_DIR_DOWN;
+      return;
+    }
+    if(!spider_sdl3_focus_dir_ready(&focus_dir,attempt))
+      return;
+    if(focus_dir.phase==SPIDER_FOCUS_DIR_DOWN) {
+      if(!send_scan(focus_dir.scans[focus_dir.index],0)) {
+        log_focus_release("SDL3-UNIVERSAL: FOCUS-DIR fresh KEYDOWN failed; retry before gameplay");
+        return;
+      }
+      if(focus_dir.index==0) {
+        char msg[200];
+        snprintf(msg,sizeof(msg),
+          "SDL3-UNIVERSAL: FOCUS-DIR fresh keyboard DOWN after %u wait frames (retry attempts %u->%u; not an Acquire ACK)",
+          focus_dir.wait_frames,focus_dir.baseline_attempts,attempt);
+        log_focus_release(msg);
+      }
+      focus_dir.phase=SPIDER_FOCUS_DIR_UP;
+      return;
     }
     return;
   }
