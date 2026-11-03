@@ -782,3 +782,22 @@ def test_buffered_direction_fix_is_bounded_to_foreground_owned_3d_scans():
     # input before a fresh neutral sample and suspend_original().
     assert "focus_dir_controller_id=selected_id;" in backend
     assert "if(!suspended && !spider_sdl3_universal_neutral(&sample))" in onflip
+
+
+def test_focus_direction_pulse_is_released_on_any_owner_loss_or_context_switch():
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    restore=backend.split("static void restore_original(const char *reason)",1)[1].split(
+        "static int suspend_original(",1)[0]
+    assert "if(focus_dir.phase==SPIDER_FOCUS_DIR_UP &&" in restore
+    assert 'send_scan(focus_dir.scans[focus_dir.index],1)' in restore
+    assert "FOCUS-DIR interrupted KEYUP retry pending" in restore
+    assert "spider_sdl3_focus_dir_complete(&focus_dir)" in restore
+    onflip=backend.split("void SpiderSDL3Universal_OnFlip(",1)[1]
+    assert "spider_sdl3_universal_route_context(menu,gameplay,bink,native_pause)" in onflip
+    assert "FOCUS-DIR context changed; fresh movement pulse cancelled" in onflip
+    assert "FOCUS-DIR context changed, pending KEYUP retry" in onflip
+    # The gamepad owner check precedes either the foreground recovery
+    # or any ability to synthesize a new action.
+    assert "if(focus_dir.phase && id!=focus_dir_controller_id)" in onflip
+    assert onflip.index("if(focus_dir.phase && id!=focus_dir_controller_id)") < (
+        onflip.index("if(focus_dir.phase) {"))
