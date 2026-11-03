@@ -22,6 +22,59 @@ It imports the keyboard adapter concept and fail-closed input safeguards
 from draft PR #95. Neither parent draft is merged to main. These are
 separate tracks and PR #98 is the opt-in integrated test branch.
 
+## New GE-Proton smoke test — owner handoffs pass, second Alt+Tab unconfirmed (2026-11-03)
+
+Tester reports no instability when returning to the game and an orderly
+visual shutdown, but their **last attempted Alt+Tab did not trigger a
+focus pause despite a perceived focus loss**. Log
+`SpiderMan2k1Fix(20261103-194902).log`,
+runtime `v1.1.0-14c5685`, Manjaro / GE-Proton11-12.
+
+Confirmed by this log:
+- Both PS4 `054C:09CC` (SDL3 instance `1`) and PS3
+  `054C:0268` (instance `3`) are attached at startup; no
+  `SDL3-PROBE: detached` or new attach events later.
+- The universal 3D adapter refuses any gameplay before an explicit
+  Start: several `waiting for selected SDL3 mapped pad` reports
+  precede `START selected generic id=1`. This is positive evidence
+  against passive startup takeover **with both pads connected**.
+- Manual ownership transitions **PS4→PS3→PS4→PS3** via fresh
+  Start work. Each prior owner exits and the saved original game-owned
+  DirectInput pointer is restored before the new SDL3 owner becomes
+  ACTIVE.
+- One external focus loss is **definitively detected** while PS3 owns
+  gameplay. The focus pause is latched, foreground is restored and
+  the pause is resumed with a gamepad digital press/release
+  (`buttons=0x001`). Native DI joystick is restored for background
+  then suspended on foreground re-entry.
+- The log contains **no second** `INPUT-FOCUS: flip-background`,
+  `FOCUS-PAUSE: confirmed external focus loss` or corresponding
+  subsequent `SDL3-UNIVERSAL: EXIT reason=focus or window lost`.
+  Therefore the final attempted Alt+Tab cannot be validated from the
+  log, and a second focus change cannot be proven by this trace.
+- The tail shows a 3D native Pause-menu transition followed by
+  return to the 2D menu; **there is no explicit exit-completion
+  marker**. Successful shutdown is tester-observed, not proven by
+  the file.
+
+The original focus-pause detector in `spiderman2k1fix.c` requires
+foreground ownership by a **different process** for at least **150 ms**,
+sampled across Flip callbacks. An unobserved/brief focus transition,
+one in the same process, or lack of further Flip callbacks could
+explain an unlatched pause; none is established in this log.
+
+**Next focused reproducibility test** (no code changes on this report):
+during steady 3D gameplay, Alt+Tab to a clearly separate application
+and leave that window foreground for **2 seconds**, then return.
+Repeat separately in native Pause and main menu, noting exactly which
+state fails. Attach logs. If 3D loss remains undetected, add bounded
+read-only diagnostics to report foreground candidates and Flip cadence
+before changing any pause logic.
+
+Do **not** mark physical disconnect/reconnect accepted: the prior
+smoke test with both gamepads attached validates only manual
+Start-to-Start selection. Windows 11 native remains deferred.
+
 ## Universal explicit Start safety (post-hardware audit)
 
 The native SDL3 selection policy automatically chooses the only open
