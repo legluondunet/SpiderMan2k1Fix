@@ -183,3 +183,43 @@ def test_custom_pause_balances_desktop_cursor_on_focus_return_not_only_wake():
     assert "if(foreground && cursor_display_increments>0)" in focus
     assert "ShowCursor(FALSE)" in focus
     assert "if(!foreground && InterlockedCompareExchange(&cursor_visibility_test,0,0)==1)" in focus
+
+
+def test_unlatched_alt_tab_diagnostics_are_readonly_and_bounded():
+    core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
+    predicate=core[core.index("static BOOL pause_confirmed_focus_loss(HWND hwnd)") :
+                   core.index("/* Wake only with the foreground Any-key hook. */")]
+    probe=core[core.index("static void pause_probe_report(") :
+               core.index("/* Diagnostic only: report WHICH other executable")]
+    assert 'pause_focus_probe_reports>=24u' in probe
+    assert 'FOCUS-PROBE: %s' in probe
+    assert 'external-candidate-first-flip' in predicate
+    assert 'external-candidate-confirmed-after-150ms' in predicate
+    assert 'candidate-cancelled-null-or-own-process' in predicate
+    assert '(DWORD)(now-pause_background_since)>=150' in predicate
+    assert 'GetWindowThreadProcessId(fg,&fg_pid)' in predicate
+    for forbidden in ('SetForegroundWindow(', 'SetFocus(', 'SetWindowPos(',
+                      'SwitchToThisWindow(', 'SendInput(', 'Acquire(',
+                      'SetWindowLongPtr(', 'InstallHook(', 'Sleep('):
+        assert forbidden not in probe
+        assert forbidden not in predicate
+    pause=core[core.index("static void pause_at_flip_if_background(void)"):
+               core.index("static HRESULT WINAPI hooked_flip(")]
+    assert 'candidate-cancelled-return-to-game' in pause
+    assert 'pause_confirmed_focus_loss(hwnd)' in pause
+    # Original confirmation still goes through the same manual-resume latch.
+    assert 'InterlockedCompareExchange(&pause_latched,1,0)==0' in pause
+
+
+def test_alt_tab_flip_gap_diagnostic_preserves_game_input_and_pause():
+    core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
+    flip=core[core.index("static HRESULT WINAPI hooked_flip("):
+              core.index("SpiderQuickExitF12_ObserveEngineState(")]
+    assert '(DWORD)(now-pause_previous_flip_tick)>=750u' in flip
+    assert 'pause_flip_gap_reports<12u' in flip
+    assert 'FOCUS-PROBE: Flip-gap-ms=' in flip
+    assert 'gap is not proof of focus loss' in flip
+    assert 'pause_previous_flip_tick=now;' in flip
+    for forbidden in ('SetForegroundWindow(', 'SetFocus(', 'SendInput(',
+                      'SetWindowLongPtr(', 'Acquire(', 'SuspendThread('):
+        assert forbidden not in flip
