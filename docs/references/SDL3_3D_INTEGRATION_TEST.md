@@ -108,6 +108,47 @@ south/east/west/north/shoulder/trigger meanings for all nonzero VID:PID
 models. A PS3 with different SDL3 mapping, clone firmware, driver or a
 duplicate identical VID:PID may require separate mapping/validation.
 
+## Further DS4 focus-resync log — diagnostic, not gameplay proof
+
+Tester uploaded `SpiderMan2k1Fix(20261103-182654).log`,
+build `v1.1.0-6768caa` under GE-Proton11-12:
+
+- **DS4**, not PS3, was explicitly selected: SDL3 instance `id=1`,
+  `054C:09CC`. The PS3 `id=2` was present but not the input owner.
+- `SendInput KEYDOWN action=3 DIK=0xCD` (Right) before focus loss.
+- Loss of focus captured exactly one held direction, then temporarily
+  restored the original game-owned DirectInput joystick pointer.
+- The focus-pause overlay resumed with a physical gamepad button.
+  The native joystick pointer was re-suspended.
+- All 12 repeated KEYUP calls returned Win32 success.
+- The separate keyboard retry-attempt count advanced **2 → 3**.
+  The resync emitted a fresh RIGHT KEYDOWN and KEYUP on separate
+  Flip frames, then reported completion. This still does not prove
+  the game's buffered `GetDeviceData` delivered either event.
+- Subsequent in-game Pause menu commands are logged, demonstrating that
+  the game stayed responsive. **This trace alone cannot establish
+  whether Spider-Man physically stopped running; user feedback on
+  the visible result remains necessary.**
+
+New **read-only diagnostic** for the next test build, with no behavioral
+keyboard or joystick changes: inspect `SpideyPC.exe`'s original
+256-byte keyboard-event latch `0x006B792C..0x006B7A2B` only after
+checking the exact retail image base and known x86 reader/write
+signatures. Each held scan is logged at focus loss, after the 12
+foreground KEYUPs, immediately before fresh DOWN, at the next Flip
+before fresh UP, and for four subsequent Flips after fresh UP.
+
+Example:
+`SDL3-UNIVERSAL: DI-LATCH stage=post-fresh-up-flip-1 DIK=0xCD raw=0x00 held=0 (original game read-only; action-latch unverified)`.
+
+The `held` field is interpreted using the retail keyboard getter's
+low 7 bits. If the state remains nonzero following the release,
+investigate DI buffering / reacquisition; if the keyboard latch clears
+but Spider-Man continues running, investigate the *separate original
+engine action-state latch* instead. These logs do not directly probe
+that action-state latch. No memory writes, native COM hooks, or
+additional synthetic events are added by this diagnostic.
+
 ## Follow-up 2026-11-03: 12 accepted KEYUP replays did NOT fix running
 
 Second physical PS3 test, log `SpiderMan2k1Fix(20261103-180555).log`,
