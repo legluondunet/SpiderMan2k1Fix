@@ -108,6 +108,45 @@ south/east/west/north/shoulder/trigger meanings for all nonzero VID:PID
 models. A PS3 with different SDL3 mapping, clone firmware, driver or a
 duplicate identical VID:PID may require separate mapping/validation.
 
+## Hardware acceptance — held-direction Alt+Tab PS3 and DS4 (2026-11-03)
+
+**PASS with known small residual impulse** on both gamepads under
+Manjaro / GE-Proton11-12. This is physical tester feedback, not a
+conclusion inferred solely from successful Win32 `SendInput` calls.
+
+- **DS4 `054C:09CC` PASS**: with direction held before Alt+Tab,
+  Spider-Man takes one or two steps immediately after resuming, then
+  stops without another keypress. Runtime `v1.1.0-6768caa`, log
+  `SpiderMan2k1Fix(20261103-182654).log`.
+- **PS3 `054C:0268` PASS**: same observed behavior with held stick
+  across Alt+Tab, runtime `v1.1.0-b9c6ee6`, log
+  `SpiderMan2k1Fix(20261103-185946).log`. PS3 selected as SDL3
+  instance `id=3`, and the gamepad-only focus resume succeeded.
+- For PS3 RIGHT (`DIK=0xCD`), the **original game-owned buffered
+  keyboard latch** read-only probe provides decisive state evidence:
+  at focus loss `raw=0x7F held=1`; after all twelve foreground KEYUP
+  replays `raw=0x7F held=1`; after the fresh buffered DOWN -> UP,
+  `raw=0x00 held=0` for four subsequent Flip samples.
+  `FOCUS-DIR fresh keyboard DOWN after 0 wait frames (retry attempts
+  0->1; not an Acquire ACK)` and `fresh DOWN/UP completed` also occur.
+- The read-only data confirms that *plain repeated KEYUPs were
+  insufficient to clear that original keyboard latch* in this run,
+  whereas after the deliberate fresh DOWN/UP the latch returned to
+  zero. Correlation with the tester's movement stopping supports the
+  buffered-keyboard resync approach; exact lower-level input timing
+  and the separate engine semantic action latch remain unmeasured.
+- **Known side effect**: a brief 1–2-step movement impulse on
+  resumption, most plausibly produced by the synthetic fresh DOWN.
+  This is accepted as a documented experimental trade-off, **not**
+  perfectly motionless Alt+Tab recovery. Do not add unverified native
+  latch writes or more keyboard injection merely to eliminate it.
+
+Both modes still require manual controller selection (Start), the
+neutral/focus gates and the `ExperimentalSDL3UniversalGameplay=1`
+opt-in. The PR is **draft and unmerged**. Windows 11 native, all
+directional combinations and broader third-party controller support
+remain separate acceptance items.
+
 ## Further DS4 focus-resync log — diagnostic, not gameplay proof
 
 Tester uploaded `SpiderMan2k1Fix(20261103-182654).log`,
