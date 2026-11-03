@@ -286,30 +286,6 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     restore_original("game HWND not foreground");
     return;
   }
-  if(focus_release.frames_remaining) {
-    unsigned i,was=focus_release.frames_remaining;
-    int delivered=1;
-    /* Only AFTER the focus-pause loop returned. The original DirectInput
-     * keyboard is often unacquired on the first resumed Flip in Wine;
-     * reassert owned KEYUPs across multiple Flip boundaries so it can
-     * observe them AFTER reacquisition. Do not suspend the game-owned
-     * joystick or inject any new movement while cleanup is pending. */
-    for(i=0;i<focus_release.count;i++)
-      if(!send_scan(focus_release.scans[i],1))delivered=0;
-    spider_sdl3_universal_focus_release_complete_frame(
-      &focus_release,delivered);
-    if(was==SPIDER_UNIVERSAL_FOCUS_RELEASE_FRAMES ||
-       !focus_release.frames_remaining ||
-       (!delivered && was==1u)) {
-      char msg[180];
-      snprintf(msg,sizeof(msg),
-        "SDL3-UNIVERSAL: FOCUS-KEYUP foreground cleanup %s scans=%u passes-left=%u (DI reception unverified)",
-        delivered?"accepted":"retry",focus_release.count,
-        focus_release.frames_remaining);
-      log_focus_release(msg);
-    }
-    return;
-  }
   if(!SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample)) {
     if(refusal_reports++<6u)
       log_universal("SDL3-UNIVERSAL: waiting for selected SDL3 mapped pad (press Start on desired pad)");
@@ -380,6 +356,35 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     log_universal(line);
   }
   active=1;selected_id=id;
+  /* Keep original native DI joystick suspended during foreground
+   * KEYUP replay: otherwise the original game can sample a competing
+   * PS3/DS4 joystick while awaiting its keyboard reacquisition. */
+  if(focus_release.frames_remaining) {
+    unsigned i,was=focus_release.frames_remaining;
+    unsigned prior_count=focus_release.count;
+    int delivered=1;
+    /* Only AFTER the focus-pause loop returned. First, the verified
+     * selected SDL3 pad has returned to neutral and the original
+     * game-owned JOYSTICK pointer has been suspended again. The separate
+     * DI keyboard may still be unacquired on the first resumed Flip in
+     * Wine: repeat KEYUPs across subsequent Flip boundaries so it can
+     * observe them after reacquisition. No new actions are injected. */
+    for(i=0;i<focus_release.count;i++)
+      if(!send_scan(focus_release.scans[i],1))delivered=0;
+    spider_sdl3_universal_focus_release_complete_frame(
+      &focus_release,delivered);
+    if(was==SPIDER_UNIVERSAL_FOCUS_RELEASE_FRAMES ||
+       !focus_release.frames_remaining ||
+       (!delivered && was==1u)) {
+      char msg[180];
+      snprintf(msg,sizeof(msg),
+        "SDL3-UNIVERSAL: FOCUS-KEYUP foreground cleanup %s scans=%u passes-left=%u (DI reception unverified)",
+        delivered?"accepted":"retry",prior_count,
+        focus_release.frames_remaining);
+      log_focus_release(msg);
+    }
+    return;
+  }
   context=spider_sdl3_universal_route_context(
     menu,gameplay,bink,native_pause);
   if(context!=previous_context) {
