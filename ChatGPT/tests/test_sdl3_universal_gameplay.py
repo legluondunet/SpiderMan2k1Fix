@@ -564,7 +564,8 @@ def test_universal_mapped_ps4_uses_generic_identity_without_native_rebind():
     assert "spider_sdl3_selected_model_unique(" in generic
     select=probe.split("int SpiderSDL3Probe_SelectedMappedSample(",1)[1].split(
         "/* The player may hold physical Cross",1)[0]
-    assert "if(generic_selected_id)" in select
+    assert "!generic_selected_id" in select
+    assert "return SpiderSDL3Probe_SelectedSample(" not in select
     assert "return SpiderSDL3Probe_GenericSelectedSample(" in select
     modal=probe.split("if(setup_owner_pending)",1)[1].split(
         "sdl3_trace_native_owner(now);",1)[0]
