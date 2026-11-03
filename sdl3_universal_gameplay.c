@@ -168,16 +168,6 @@ static void restore_original(const char *reason) {
     spider_sdl3_universal_focus_release_capture(
       &focus_release,held_scans,sent_mask,pulse_scan);
     if(previous_context==SPIDER_UNIVERSAL_CTX_3D) {
-      if(focus_dir.phase==SPIDER_FOCUS_DIR_UP) {
-        /* An interrupted resync DOWN must never be left held in the
-         * desktop application. Keep its action pending on failure. */
-        if(send_scan(focus_dir.scans[focus_dir.index],1)) {
-          focus_dir.phase=SPIDER_FOCUS_DIR_WAIT;
-          focus_dir.wait_frames=0;
-          focus_dir.baseline_attempts=
-            SpiderDI8Retry_KeyboardRecoveryAttempts();
-        }
-      }
       if(!focus_dir.phase) {
         spider_sdl3_focus_dir_capture(
           &focus_dir,held_scans,sent_mask,
@@ -199,6 +189,27 @@ static void restore_original(const char *reason) {
         focus_release.count,focus_release.frames_remaining);
       log_focus_release(msg);
     }
+  }
+  if(focus_dir.phase==SPIDER_FOCUS_DIR_UP &&
+     focus_dir.index<focus_dir.count) {
+    /* The fresh buffered recovery DOWN is an injected keyboard key,
+     * even though it is not part of ordinary gameplay sent_mask.
+     * Every owner-loss/modal/device-disconnect path must release it. */
+    if(send_scan(focus_dir.scans[focus_dir.index],1)) {
+      if(reason &&
+         (!strcmp(reason,"focus or window lost") ||
+          !strcmp(reason,"game HWND not foreground"))) {
+        focus_dir.phase=SPIDER_FOCUS_DIR_WAIT;
+        focus_dir.wait_frames=0;
+        focus_dir.baseline_attempts=
+          SpiderDI8Retry_KeyboardRecoveryAttempts();
+      } else {
+        log_focus_release("SDL3-UNIVERSAL: FOCUS-DIR interrupted recovery press safely released and cancelled");
+        spider_sdl3_focus_dir_complete(&focus_dir);
+        focus_dir_controller_id=0;
+      }
+    } else
+      log_focus_release("SDL3-UNIVERSAL: FOCUS-DIR interrupted KEYUP retry pending; new gameplay blocked");
   }
   if(reason && (suspended || active || sent_mask || pulse_scan)) {
     char line[200];
@@ -426,6 +437,18 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
       log_focus_release(msg);
     }
     return;
+  }
+  if(focus_dir.phase &&
+     spider_sdl3_universal_route_context(menu,gameplay,bink,native_pause)
+       !=SPIDER_UNIVERSAL_CTX_3D) {
+    if(focus_dir.phase==SPIDER_FOCUS_DIR_UP &&
+       !send_scan(focus_dir.scans[focus_dir.index],1)) {
+      log_focus_release("SDL3-UNIVERSAL: FOCUS-DIR context changed, pending KEYUP retry");
+      return;
+    }
+    log_focus_release("SDL3-UNIVERSAL: FOCUS-DIR context changed; fresh movement pulse cancelled");
+    spider_sdl3_focus_dir_complete(&focus_dir);
+    focus_dir_controller_id=0;
   }
   if(focus_dir.phase) {
     unsigned attempt=SpiderDI8Retry_KeyboardRecoveryAttempts();
