@@ -86,6 +86,72 @@ static inline int spider_sdl3_universal_scan_safe(unsigned scan) {
   }
   return 1;
 }
+/* One bounded buffered-keyboard resynchronization. Repeating KEYUP
+ * alone did not clear the game-owned held action on GE-Proton11-12:
+ * the original engine uses DirectInput GetDeviceData, not a pure
+ * real-time keyboard state poll. A fresh DOWN, followed by UP on a
+ * later original Flip, can yield an actual buffered release edge.
+ *
+ * Limit this to our four 3D movement directions held at focus loss,
+ * never to Jump, combat actions, or menu confirmation. Attempt-count
+ * hints from the game's own keyboard Acquire branch are not an ACK:
+ * use a bounded fallback and a small settle period. */
+enum {
+  SPIDER_FOCUS_DIR_IDLE=0,
+  SPIDER_FOCUS_DIR_WAIT=1,
+  SPIDER_FOCUS_DIR_SETTLE=2,
+  SPIDER_FOCUS_DIR_DOWN=3,
+  SPIDER_FOCUS_DIR_UP=4
+};
+#define SPIDER_FOCUS_DIR_WAIT_LIMIT 24u
+#define SPIDER_FOCUS_DIR_SETTLE_FRAMES 3u
+typedef struct {
+  unsigned scans[4];
+  unsigned count;
+  unsigned phase;
+  unsigned index;
+  unsigned baseline_attempts;
+  unsigned wait_frames;
+  unsigned settle_frames;
+} SpiderSDL3FocusDirectionResync;
+static inline void spider_sdl3_focus_dir_capture(
+    SpiderSDL3FocusDirectionResync *s,
+    const unsigned held_scans[SPIDER_UNIVERSAL_KEY_COUNT],
+    unsigned held_mask,unsigned keyboard_attempts) {
+  unsigned i;
+  if(!s || s->phase || !held_scans)return;
+  memset(s,0,sizeof(*s));
+  for(i=SPIDER_UNIVERSAL_UP;i<=SPIDER_UNIVERSAL_RIGHT;i++)
+    if((held_mask&(1u<<i)) && held_scans[i] &&
+       spider_sdl3_universal_scan_safe(held_scans[i]))
+      s->scans[s->count++]=held_scans[i];
+  if(s->count) {
+    s->baseline_attempts=keyboard_attempts;
+    s->phase=SPIDER_FOCUS_DIR_WAIT;
+  }
+}
+static inline int spider_sdl3_focus_dir_ready(
+    SpiderSDL3FocusDirectionResync *s,unsigned keyboard_attempts) {
+  if(!s || !s->phase)return 0;
+  if(s->phase==SPIDER_FOCUS_DIR_WAIT) {
+    if(keyboard_attempts>s->baseline_attempts ||
+       ++s->wait_frames>=SPIDER_FOCUS_DIR_WAIT_LIMIT) {
+      s->phase=SPIDER_FOCUS_DIR_SETTLE;
+      s->settle_frames=SPIDER_FOCUS_DIR_SETTLE_FRAMES;
+    }
+    return 0;
+  }
+  if(s->phase==SPIDER_FOCUS_DIR_SETTLE) {
+    if(s->settle_frames)--s->settle_frames;
+    if(!s->settle_frames)s->phase=SPIDER_FOCUS_DIR_DOWN;
+    return 0;
+  }
+  return s->phase==SPIDER_FOCUS_DIR_DOWN;
+}
+static inline void spider_sdl3_focus_dir_complete(
+    SpiderSDL3FocusDirectionResync *s) {
+  if(s)memset(s,0,sizeof(*s));
+}
 /* Original Spider-Man does not switch to its 640x480 menu renderer
  * when ESC opens the native 3D Pause menu. The renderer still reports
  * gameplay=1, while the original Pause ribbon/context confirms Pause.
