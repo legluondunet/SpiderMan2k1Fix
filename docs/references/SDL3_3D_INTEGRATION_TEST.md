@@ -1,17 +1,48 @@
 # SDL3 validated panel + opt-in 3D integration (draft PR #98)
 
-Status: **EXPERIMENTAL / OFF BY DEFAULT / PARTIALLY VERIFIED ON PS3 HARDWARE.**
+Status: **EXPERIMENTAL / OFF BY DEFAULT / GE-PROTON HARDWARE TESTED / WINDOWS 11 NATIVE DEFERRED.**
 
-Physical test, November 2, 2026: PS3 `054C:0268` under GE-Proton11-11
-successfully controls Spider-Man in 3D, skips videos/cutscenes, and navigates
-the native in-game Pause menu (tester log `SpiderMan2k1Fix(20261102-022140).log`).
-This does **not** validate custom 3D bindings, focus loss / Alt+Tab,
-disconnect / reconnect, a second gamepad or native Windows 11.
+Physical tests November 2–3, 2026 under Manjaro / GE-Proton11-11 and
+GE-Proton11-12 validated PS3 `054C:0268` and DS4 `054C:09CC` in
+3D, saved remaps, cutscene skip, original Pause-menu navigation, manual
+Start handoffs with both pads attached, gamepad-only Alt+Tab resume,
+and a held-direction Alt+Tab recovery which **stops** movement after
+a documented short 1–2-step impulse. The original buffered keyboard
+latch's held state was measured returning to neutral on PS3.
+See detailed sections and logs below.
+
+**Not yet validated**: physical hot-unplug-to-other-pad Start handoff
+on the latest fix in one full trace, arbitrary third-party gamepads,
+all diagonal/stick directions under focus changes, or native Windows 11.
+The maintainer has deferred native Windows 11 hardware testing until a
+Windows 11 computer is available; **no Windows result is implied**.
 
 This branch is based on the PS3-tested controller setup UI in PR #96.
 It imports the keyboard adapter concept and fail-closed input safeguards
 from draft PR #95. Neither parent draft is merged to main. These are
 separate tracks and PR #98 is the opt-in integrated test branch.
+
+## Universal explicit Start safety (post-hardware audit)
+
+The native SDL3 selection policy automatically chooses the only open
+mapped controller for **legacy read-only/native** purposes. The
+experimental universal 3D keyboard bridge must **never** treat this
+passive auto-selection as a player claim. It only samples the
+`generic_selected_id` assigned after a fresh Start or a validated
+controller-setup modal handoff.
+
+Fix (PR #98): `SpiderSDL3Probe_SelectedMappedSample()` rejects
+`generic_selected_id==0` and does not fall back to
+`SpiderSDL3Probe_SelectedSample()`. A stale, disconnected generic
+instance also fails unique active SDL3 instance validation. A second
+controller cannot silently take over after the first is unplugged:
+it must receive a fresh neutral-armed Start before keyboard injection
+or native DI pointer suspension resumes.
+
+This is a fail-closed source-contract fix with portable regression
+tests; it needs a dedicated GE-Proton one-pad startup and physical
+unplug handoff hardware smoke test after the fix. The change does not
+modify the already hardware-confirmed buffered-keyboard focus recovery.
 
 ## Scope
 - SDL3-mapped gamepad, unique nonzero VID:PID, explicit Start selection.
