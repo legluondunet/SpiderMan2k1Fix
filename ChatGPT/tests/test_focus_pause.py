@@ -223,3 +223,43 @@ def test_alt_tab_flip_gap_diagnostic_preserves_game_input_and_pause():
     for forbidden in ('SetForegroundWindow(', 'SetFocus(', 'SendInput(',
                       'SetWindowLongPtr(', 'Acquire(', 'SuspendThread('):
         assert forbidden not in flip
+
+
+def test_focus_loss_candidate_is_consumed_after_confirmed_pause():
+    core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
+    block=core[core.index("static void pause_at_flip_if_background(void)") :
+               core.index("static HRESULT WINAPI hooked_flip(")]
+    assert 'pause_log_foreground_owner(hwnd,GetForegroundWindow(),"external-foreground-latched");' in block
+    end=block.split('pause_log_foreground_owner(hwnd,GetForegroundWindow(),"external-foreground-latched");',1)[1]
+    assert end.lstrip().startswith("/* The candidate is now *consumed*.")
+    assert "pause_background_since=0;" in end.split("if(InterlockedCompareExchange(&pause_latched,0,0)!=1)",1)[0]
+    # The elapsed-ms value shown to the user must be logged BEFORE reset.
+    assert block.index('pause_log_foreground_owner(hwnd,GetForegroundWindow(),"external-foreground-latched")') < block.index(
+        "/* The candidate is now *consumed*.") < block.index("pause_background_since=0;",block.index("/* The candidate is now *consumed*."))
+    assert "InterlockedCompareExchange(&pause_latched,1,0)==0" in block
+
+
+def test_native_pause_foreground_snapshot_is_readonly_bounded_and_independent_of_debounce():
+    core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
+    snap=core[core.index("static void pause_probe_native_menu_focus("):
+              core.index("/* Ignore brief foreground changes",core.index("static void pause_probe_native_menu_focus("))]
+    assert "pause_native_ui_focus_reports>=120u" in snap
+    assert "pause_native_ui_focus_sample_tick" in snap
+    assert "(DWORD)(now-pause_native_ui_focus_sample_tick)<800u" in snap
+    assert "native_pause43_visible_near_flip(flip)" in snap
+    assert "GetGUIThreadInfo(0,&fg_info)" in snap
+    assert "GetGUIThreadInfo(game_tid,&game_info)" in snap
+    assert "GetWindowThreadProcessId(fg,&fg_pid)" in snap
+    assert "FOCUS-PROBE: native-pause-snapshot" in snap
+    assert "fg-is-game=%d" in snap and "game-ui-focus=%p" in snap
+    for forbidden in ("SetForegroundWindow(", "SetFocus(", "SetWindowPos(",
+                      "SendInput(", "Acquire(", "SetWindowLongPtr(",
+                      "PostMessage(", "InstallHook(", "Sleep("):
+        assert forbidden not in snap
+    flip=core[core.index("static HRESULT WINAPI hooked_flip("):
+              core.index("SpiderDI8Retry_OnFlip(count);")]
+    assert "pause_probe_native_menu_focus(count);" in flip
+    assert flip.index("SpiderInputFocus_OnFlip(count);") < (
+        flip.index("pause_probe_native_menu_focus(count);")) < (
+        flip.index("pause_at_flip_if_background();"))
+    assert "pause_confirmed_focus_loss(hwnd)" in core
