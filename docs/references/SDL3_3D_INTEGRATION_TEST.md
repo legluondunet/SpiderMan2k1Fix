@@ -22,6 +22,46 @@ It imports the keyboard adapter concept and fail-closed input safeguards
 from draft PR #95. Neither parent draft is merged to main. These are
 separate tracks and PR #98 is the opt-in integrated test branch.
 
+## Focus pause regression follow-up: repeated Alt+Tab does not pause (2026-11-03)
+
+The tester reports **none** of the recommended subsequent focus-loss
+checks successfully activated Spider-Man's frozen `PAUSED` overlay.
+The only new attached log is **`CrimsonSkiesFix.log`**, which clearly
+starts with `CrimsonSkiesFix 0.1.88-5b39d344` and belongs to the
+**separate Crimson Skies project**, so it provides **no evidence** for
+the new Spider-Man focus checks. Do not misattribute it to this PR.
+Earlier Spider-Man log `SpiderMan2k1Fix(20261103-194902).log`
+already showed a single valid focus pause and wake, followed by the
+tester-observed missed final Alt+Tab.
+
+The original focus-pause logic is still **unchanged**: the game Flip
+thread accepts only different-process foreground sustained >=150 ms,
+then requires explicit keyboard/gamepad wake. Added bounded
+`FOCUS-PROBE` **READ-ONLY** instrumentation (24 candidate reports,
+12 inter-Flip gap reports) to clarify if a foreground transition was
+brief/filtered or whether game Flip callbacks had a long gap.
+
+Diagnostic messages to look for:
+- `external-candidate-first-flip` / `...confirmed-after-150ms`:
+  a different process foreground was observed on one or more Flips
+- `candidate-cancelled-return-to-game`: game returned before
+  the 150 ms debounce completed
+- `candidate-cancelled-null-or-own-process`: focus candidate lost
+  continuity because Win32 foreground was NULL or same-process
+- `Flip-gap-ms=`: a >=750 ms interval with no intercepted Flip;
+  this alone does **not** prove focus loss, and may occur during loading
+
+If there is no candidate log or Flip-gap during a user-visible focus
+loss, this instrumentation is insufficient by design; investigate
+game event/message focus reporting separately before changing the
+pause behavior. No new native Win32 hooks, timer threads,
+`SendInput`, DirectInput interception, pause-policy changes or
+foreground activation are introduced.
+
+**Await** an actual `SpiderMan2k1Fix(YYYYMMDD-...).log`
+from the latest focus-probe build before declaring a root cause
+or considering a correction. Windows 11 testing remains deferred.
+
 ## New GE-Proton smoke test — owner handoffs pass, second Alt+Tab unconfirmed (2026-11-03)
 
 Tester reports no instability when returning to the game and an orderly
