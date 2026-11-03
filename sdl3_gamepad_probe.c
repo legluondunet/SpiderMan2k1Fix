@@ -940,7 +940,13 @@ int SpiderSDL3Probe_SelectedSample(uint32_t *instance,uint16_t *vid,
   return 1;
 }
 /* Universal SDL3 selection is separate from game-owned DirectInput.
- * Never fall back after a lost instance without a NEW explicit Start. */
+ * Require an EXPLICIT Start (or validated modal handoff) for universal
+ * keyboard injection, even if native selection has auto-selected the
+ * only connected controller. When detached, a stale instance still
+ * fails GenericSelectedSample until the next explicit Start.
+ *
+ * Never fall back to SelectedSample(): native auto-selection is passive
+ * and must NEVER authorize keyboard events or native DI suspension. */
 int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
     uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample) {
   if(instance)*instance=0;
@@ -948,11 +954,10 @@ int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
   if(pid)*pid=0;
   if(sample)memset(sample,0,sizeof(*sample));
   if(!universal_requested || !instance || !vid || !pid || !sample ||
-     !sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId())
+      !sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId() ||
+      !generic_selected_id)
     return 0;
-  if(generic_selected_id)
-    return SpiderSDL3Probe_GenericSelectedSample(instance,vid,pid,sample);
-  return SpiderSDL3Probe_SelectedSample(instance,vid,pid,sample);
+  return SpiderSDL3Probe_GenericSelectedSample(instance,vid,pid,sample);
 }
 /* The player may hold physical Cross/A after skipping the New Game Bink.
  * This is ALSO the native 3D Jump/scene-skip button. The preceding
