@@ -22,6 +22,54 @@ It imports the keyboard adapter concept and fail-closed input safeguards
 from draft PR #95. Neither parent draft is merged to main. These are
 separate tracks and PR #98 is the opt-in integrated test branch.
 
+## GE-Proton focus probe: 1 of 2 Alt+Tab attempts paused (2026-11-03)
+
+Tester used `v1.1.0-5869a47` on GE-Proton11-12 and reports
+**one successful automatic focus pause out of two requested trials**
+(normal 3D then original native Pause). Relevant log:
+`SpiderMan2k1Fix(20261103-201523).log`.
+
+**Confirmed first focus loss and successful wake**:
+- `SDL3-UNIVERSAL: EXIT reason=focus or window lost` restores original
+  DirectInput joystick, and `INPUT-FOCUS: flip-background` observes
+  foreign HWND `00010020`, owned by `explorer.exe` PID 252.
+- `FOCUS-PROBE: external-candidate-first-flip` followed by
+  `external-candidate-confirmed-after-150ms ... elapsed-ms=166`
+  confirms that the 150 ms filter passed.
+- Game displays PAUSED scene, stops its media, and waits for physical
+  PS3 SDL3 press/release `buttons=0x001`. Game resumes successfully.
+- `Flip-gap-ms=5137` after returning is expected: the custom focus
+  pause intentionally blocks the next Flip until wake.
+- `candidate-cancelled-return-to-game ... elapsed-ms=5303` is a
+  misleading diagnostic, not a second failure: the already-confirmed
+  foreground candidate timestamp survived the blocking wake loop.
+  New code resets it **after** logging the confirmed owner and elapsed
+  duration. Pause decisions are unchanged.
+
+**The second Alt+Tab is not observed**: no second
+`INPUT-FOCUS: flip-background`, external foreground candidate,
+native-joystick EXIT due to focus, or auto PAUSED. The extensive native
+Pause-menu rendering and advancing Flip counts show that original
+native Pause UI was active, but do not identify exactly when or how
+Wine handled the second Alt+Tab.
+
+New bounded **read-only native-Pause telemetry** samples
+`GetForegroundWindow`, foreground PID, global
+`GetGUIThreadInfo(0)` active/focus, and game-thread
+`GetGUIThreadInfo(game_tid)` active/focus every >=800 ms while
+the original Pause screen is present, up to 120 samples.
+It runs on the original Flip thread and does not install hooks,
+activate windows, inject input or change any pause/selection logic.
+
+Next hardware validation: run Alt+Tab to an external application for
+at least 2 seconds in steady 3D, then repeat with the original Pause
+menu displayed. Record outcomes separately and attach the new
+SpiderMan2k1Fix log. Compare the `FOCUS-PROBE:
+native-pause-snapshot` fields and `Flip-gap-ms` to find
+whether Wine leaves the game HWND foreground, reports another GUI
+active/focus owner, or suppresses Flip calls. Windows 11 remains
+deferred; the PR remains draft/unmerged.
+
 ## Focus pause regression follow-up: repeated Alt+Tab does not pause (2026-11-03)
 
 The tester reports **none** of the recommended subsequent focus-loss
