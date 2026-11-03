@@ -110,7 +110,7 @@ def test_universal_runtime_is_opt_in_and_mutually_exclusive():
     # PR #96 retains its validated SDL3 mapped-device panel. The raw
     # unmapped GUID wizard from #94 is deliberately NOT merged here.
     assert "SpiderSDL3Probe_GenericSelectedSample" in probe
-    assert "if(generic_selected_id)" in probe
+    assert "!generic_selected_id" in probe
     assert "universal_requested" in probe
     assert "SDL3-UNIVERSAL: START selected generic" in probe
     assert "SpiderSDL3Probe_SelectedMappedSample" in probe
@@ -271,9 +271,12 @@ def test_integrated_panel_preserved_and_generic_owner_is_explicit_only():
     assert "selection.active=previous;" in probe
     assert "universal_requested && vid && pid && matches==1u" in probe
     assert "spider_reconnect_kind(vid,pid)==SPIDER_RECONNECT_NONE" in probe
-    assert "if(generic_selected_id)" in probe
+    assert "!generic_selected_id" in probe
     assert "return SpiderSDL3Probe_GenericSelectedSample(" in probe
-    assert "return SpiderSDL3Probe_SelectedSample(" in probe
+    selected=probe.split("int SpiderSDL3Probe_SelectedMappedSample(",1)[1].split(
+        "/* The player may hold physical Cross",1)[0]
+    assert "!generic_selected_id" in selected
+    assert "return SpiderSDL3Probe_SelectedSample(" not in selected
     assert "SpiderSDL3Universal_BeforeUI(game_hwnd);" in game
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in game
     assert "SpiderSDL3Universal_Enabled()" in (
@@ -477,9 +480,9 @@ def test_universal_fail_closed_reentry_after_failed_keyup():
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     selected=probe.split("int SpiderSDL3Probe_SelectedMappedSample(",1)[1].split(
         "/* The player may hold physical Cross",1)[0]
-    assert "if(generic_selected_id)" in selected
+    assert "!generic_selected_id" in selected
     assert "return SpiderSDL3Probe_GenericSelectedSample(" in selected
-    assert "return SpiderSDL3Probe_SelectedSample(" in selected
+    assert "return SpiderSDL3Probe_SelectedSample(" not in selected
 
 
 def test_neutral_rearm_release_failure_falls_back_to_original_di():
@@ -836,3 +839,64 @@ def test_readonly_original_di_keyboard_latch_probe_during_focus_resync():
     assert "log_focus_release(msg);" in tracer
     assert "raw=0x%02X held=%u" in tracer
     assert "original game read-only; action-latch unverified" in tracer
+
+
+def test_universal_mapped_sample_requires_explicit_start_only():
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    selected=probe.split("int SpiderSDL3Probe_SelectedMappedSample(",1)[1].split(
+        "/* The player may hold physical Cross",1)[0]
+    assert "!universal_requested" in selected
+    assert "!generic_selected_id" in selected
+    assert "return SpiderSDL3Probe_GenericSelectedSample(" in selected
+    assert "return SpiderSDL3Probe_SelectedSample(" not in selected
+    assert "selection.active" not in selected
+    assert "Never fall back to SelectedSample()" in probe
+    assert "if(!SpiderSDL3Probe_SelectedMappedSample(" in backend
+    assert 'restore_original("no selected mapped controller")' in backend
+    generic=probe.split("int SpiderSDL3Probe_GenericSelectedSample(",1)[1].split(
+        "int SpiderSDL3Probe_SelectedRT(",1)[0]
+    assert "spider_sdl3_selected_model_unique(" in generic
+    assert "sdl_connected(pads[i].handle)" in generic
+    assert "generic_selected_id=pads[i].id;" in probe
+    assert "spider_sdl3_selection_start_edge(&selection,pads[i].id,pressed)" in probe
+
+
+def test_singleton_native_autoselection_is_not_explicit_universal_start(tmp_path):
+    """Selection state auto-picks sole device, but the generic explicit
+    universal claim remains 0 until a fresh physical Start."""
+    cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc:return
+    src=tmp_path/"selected_explicit.c"
+    exe=tmp_path/"selected_explicit"
+    src.write_text(textwrap.dedent(r"""
+      #include <assert.h>
+      #include "sdl3_gamepad_selection.h"
+      int main(void) {
+        SpiderSDL3Selection selection={0};
+        uint32_t generic_claim=0;
+        const uint32_t a[]={1u},both[]={1u,2u},b[]={2u};
+        spider_sdl3_selection_sync(&selection,a,1u);
+        assert(selection.active==1u && generic_claim==0u);
+        assert(!spider_sdl3_selection_start_edge(&selection,1u,0));
+        assert(spider_sdl3_selection_start_edge(&selection,1u,1));
+        generic_claim=1u;
+        spider_sdl3_selection_sync(&selection,both,2u);
+        assert(selection.active==1u);
+        spider_sdl3_selection_sync(&selection,b,1u);
+        assert(selection.active==2u);
+        assert(generic_claim!=selection.active); /* no auto-takeover */
+        assert(!spider_sdl3_selection_start_edge(&selection,2u,0));
+        assert(spider_sdl3_selection_start_edge(&selection,2u,1));
+        generic_claim=2u;
+        assert(generic_claim==selection.active);
+        spider_sdl3_selection_focus_lost(&selection);
+        assert(!spider_sdl3_selection_start_edge(&selection,2u,1));
+        assert(!spider_sdl3_selection_start_edge(&selection,2u,0));
+        assert(spider_sdl3_selection_start_edge(&selection,2u,1));
+        return 0;
+      }
+    """),encoding="utf-8")
+    subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
+                    "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
