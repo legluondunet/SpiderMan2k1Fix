@@ -672,3 +672,113 @@ def test_foreground_focus_cleanup_blocks_native_di_and_new_gameplay():
     policy=(ROOT/"sdl3_universal_policy.h").read_text(encoding="utf-8")
     assert "SPIDER_UNIVERSAL_FOCUS_RELEASE_FRAMES 12u" in policy
     assert "if(!recovery || recovery->frames_remaining)return;" in policy
+
+
+def test_focus_reacquired_buffered_keyboard_needs_real_direction_press_release(tmp_path):
+    """GE-Proton11-12 2026-11-03: replaying 12 accepted UP events still
+    leaves the 2001 engine's buffered keyboard action latch held.
+    Verify the new neutral-gated directional recovery policy and
+    conditional original-game DI keyboard reacquire hint. """
+    cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc:return
+    src=tmp_path/"focus_buffered_direction.c"
+    exe=tmp_path/"focus_buffered_direction"
+    src.write_text(textwrap.dedent(r"""
+      #include <assert.h>
+      #include "sdl3_universal_policy.h"
+      int main(void) {
+        SpiderSDL3FocusDirectionResync r={0};
+        unsigned held[SPIDER_UNIVERSAL_KEY_COUNT]={0};
+        unsigned i;
+        held[SPIDER_UNIVERSAL_LEFT]=0xCB;
+        held[SPIDER_UNIVERSAL_DOWN]=0xD0;
+        held[SPIDER_UNIVERSAL_JUMP]=0x39;
+        spider_sdl3_focus_dir_capture(
+          &r,held,(1u<<SPIDER_UNIVERSAL_LEFT)|
+                  (1u<<SPIDER_UNIVERSAL_DOWN)|
+                  (1u<<SPIDER_UNIVERSAL_JUMP),4u);
+        assert(r.phase==SPIDER_FOCUS_DIR_WAIT);
+        assert(r.count==2 && r.scans[0]==0xD0 &&
+               r.scans[1]==0xCB);
+        assert(r.baseline_attempts==4u);
+        /* The held-action snapshot cannot be replaced on another
+         * focus-lost repeat, nor can Jump ever be re-pressed. */
+        held[SPIDER_UNIVERSAL_LEFT]=0xCD;
+        spider_sdl3_focus_dir_capture(
+          &r,held,1u<<SPIDER_UNIVERSAL_LEFT,5u);
+        assert(r.count==2 && r.scans[1]==0xCB);
+        for(i=0;i<5u;i++)
+          assert(!spider_sdl3_focus_dir_ready(&r,4u));
+        assert(r.phase==SPIDER_FOCUS_DIR_WAIT && r.wait_frames==5u);
+        assert(!spider_sdl3_focus_dir_ready(&r,5u));
+        assert(r.phase==SPIDER_FOCUS_DIR_SETTLE);
+        assert(!spider_sdl3_focus_dir_ready(&r,5u));
+        assert(!spider_sdl3_focus_dir_ready(&r,5u));
+        assert(!spider_sdl3_focus_dir_ready(&r,5u));
+        assert(r.phase==SPIDER_FOCUS_DIR_DOWN);
+        assert(spider_sdl3_focus_dir_ready(&r,5u));
+        spider_sdl3_focus_dir_complete(&r);
+        assert(!r.phase && !r.count && !r.scans[0]);
+        /* When the keyboard never reported DIERR_NOTACQUIRED,
+         * bounded fallback must not freeze movement forever. */
+        held[SPIDER_UNIVERSAL_LEFT]=0xCB;
+        spider_sdl3_focus_dir_capture(
+          &r,held,1u<<SPIDER_UNIVERSAL_LEFT,11u);
+        for(i=0;i<SPIDER_FOCUS_DIR_WAIT_LIMIT;i++)
+          assert(!spider_sdl3_focus_dir_ready(&r,11u));
+        assert(r.phase==SPIDER_FOCUS_DIR_SETTLE);
+        /* Invalid/null/no-movement capture must never fabricate an
+         * input press, and explicit user remaps remain untouched. */
+        spider_sdl3_focus_dir_complete(&r);
+        spider_sdl3_focus_dir_capture(&r,held,
+          1u<<SPIDER_UNIVERSAL_JUMP,11u);
+        assert(!r.phase && !r.count);
+        spider_sdl3_focus_dir_capture(&r,held,0u,11u);
+        assert(!r.phase);
+        return 0;
+      }
+    """),encoding="utf-8")
+    subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
+                    "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
+
+
+def test_buffered_direction_fix_is_bounded_to_foreground_owned_3d_scans():
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    policy=(ROOT/"sdl3_universal_policy.h").read_text(encoding="utf-8")
+    di=(ROOT/"input_notacquired_retry.c").read_text(encoding="utf-8")
+    dih=(ROOT/"input_notacquired_retry.h").read_text(encoding="utf-8")
+    assert "unsigned SpiderDI8Retry_KeyboardRecoveryAttempts(void)" in di
+    assert "unsigned SpiderDI8Retry_KeyboardRecoveryAttempts(void);" in dih
+    assert "LONG attempts=snapshot(&retries_keyboard)" in di
+    assert "BEFORE Acquire" in di
+    restore=backend.split("static void restore_original(const char *reason)",1)[1].split(
+        "static int suspend_original(",1)[0]
+    assert "previous_context==SPIDER_UNIVERSAL_CTX_3D" in restore
+    assert "spider_sdl3_focus_dir_capture(" in restore
+    assert restore.index("spider_sdl3_focus_dir_capture(") < (
+        restore.index("if(!release_all())"))
+    assert "FOCUS-DIR captured owned 3D keys=" in restore
+    onflip=backend.split("void SpiderSDL3Universal_OnFlip(",1)[1]
+    assert "if(focus_dir.phase && id!=focus_dir_controller_id)" in onflip
+    assert onflip.index("GetForegroundWindow()!=hwnd") < (
+        onflip.index("if(focus_dir.phase) {"))
+    assert onflip.index("if(!suspend_original())") < (
+        onflip.index("if(focus_dir.phase) {"))
+    assert onflip.index("if(focus_release.frames_remaining)") < (
+        onflip.index("if(focus_dir.phase) {"))
+    resync=onflip.split("if(focus_dir.phase) {",1)[1].split(
+        "context=spider_sdl3_universal_route_context(",1)[0]
+    assert "spider_sdl3_focus_dir_ready(" in resync
+    assert "send_scan(focus_dir.scans[focus_dir.index],0)" in resync
+    assert "send_scan(focus_dir.scans[focus_dir.index],1)" in resync
+    assert "FOCUS-DIR fresh DOWN/UP completed" in resync
+    assert "return;" in resync
+    assert "SPIDER_FOCUS_DIR_WAIT_LIMIT 24u" in policy
+    assert "SPIDER_FOCUS_DIR_SETTLE_FRAMES 3u" in policy
+    assert "i<=SPIDER_UNIVERSAL_RIGHT" in policy
+    assert "i<=SPIDER_UNIVERSAL_SWING" not in policy
+    # Stable selected SDL3 device only, does NOT ever claim native
+    # input before a fresh neutral sample and suspend_original().
+    assert "focus_dir_controller_id=selected_id;" in backend
+    assert "if(!suspended && !spider_sdl3_universal_neutral(&sample))" in onflip
