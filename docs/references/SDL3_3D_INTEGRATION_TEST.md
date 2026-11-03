@@ -108,6 +108,63 @@ south/east/west/north/shoulder/trigger meanings for all nonzero VID:PID
 models. A PS3 with different SDL3 mapping, clone firmware, driver or a
 duplicate identical VID:PID may require separate mapping/validation.
 
+## Alt+Tab while holding a stick — PS3 regression (2026-11-03)
+
+Hardware evidence on `v1.1.0-c2579b7` under Manjaro /
+GE-Proton11-12, log `SpiderMan2k1Fix(20261103-175210).log`:
+
+- **PASS**: PS3 gamepad-only resume from the automatic focus-pause screen
+  (digital press/release without a physical keyboard key).
+- **PASS**: Repeat Alt+Tab after manually changing controller with Start
+  to the DS4 `054C:09CC`.
+- **FAIL**: Alt+Tab while **left stick is physically held** causes
+  Spider-Man to continue running after the stick is released and the
+  game is resumed.
+- Exact trace sequence at 3D: `SDL3-UNIVERSAL: SendInput KEYDOWN
+  action=3 DIK=0xCD` (Right), immediately followed by
+  `EXIT reason=focus or window lost`. Original native game-owned DI
+  pointer is restored. The gamepad wake and reactivation occur
+  successfully, but running persists. Win32 accepted the background
+  keyboard release, yet **actual original-game DirectInput reception
+  was not verified**.
+- The preceding working Alt+Tab sequences did not have a fresh
+  directional KEYDOWN immediately adjacent to focus loss.
+
+Candidate fix (draft PR #98): snapshot exactly the synthetic key scans
+currently held when focus is lost, before `release_all` clears its
+mask. Following gamepad/keyboard wake and return to the foreground,
+wait until the selected pad is neutral, suspend the original native
+joystick source, and send **KEYUP for each previously held scan** across
+12 successive Flip frames while suppressing all new actions. This
+allows a subsequently reacquired original keyboard device to see a
+release even if it missed the original background event. Do not send
+KEYDOWN during recovery, never replay outside foreground, and keep
+the remaining frame budget if SendInput fails. The replay is one-shot
+per focus loss and does not affect ordinary button releases or manual
+controller handoff.
+
+Retest in the next PR #98 Windows x86 build:
+
+1. In a safe 3D level, **hold the PS3 left stick right**, Alt+Tab out,
+   release it while another application is foreground, return to the
+   game, and resume with a new Cross press/release.
+2. Observe that Spider-Man **stops** when control resumes and responds
+   normally to a fresh intentional direction input.
+3. Confirm new log entries `FOCUS-KEYUP deferred foreground replay
+   armed scans=1 frames=12` and
+   `FOCUS-KEYUP foreground cleanup accepted ... passes-left=0`,
+   alongside native DI owner restoration/suspension and ordinary
+   focus-pause transitions.
+4. Repeat on **PS4**, in another direction, and with a 3D action
+   button. Confirm normal Alt+Tab without held input remains unaffected.
+5. Stop and attach the new log if Spider-Man still moves without
+   input, the release replay reports `retry`, the game crashes,
+   or a keyboard key becomes unresponsive after re-entry.
+
+**Not yet hardware-confirmed:** this foreground replay is an
+evidence-driven fix, not proof of Wine's exact DirectInput internal
+behavior. Keep the universal 3D opt-in default OFF.
+
 ## Next hardware acceptance checks — custom mappings and focus safety
 
 Use the PR #98 artifact and back up `054C-0268.ini` before editing it:
