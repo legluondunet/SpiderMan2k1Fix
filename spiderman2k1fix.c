@@ -2365,6 +2365,8 @@ static DWORD pause_background_since=0;
 static unsigned pause_focus_probe_reports=0;
 static unsigned pause_flip_gap_reports=0;
 static DWORD pause_previous_flip_tick=0;
+static unsigned pause_native_ui_focus_reports=0;
+static DWORD pause_native_ui_focus_sample_tick=0;
 static void pause_probe_report(const char *event, HWND game, HWND fg,
                                DWORD other_pid, DWORD elapsed) {
   char line[230];
@@ -2415,6 +2417,43 @@ static void pause_log_foreground_owner(HWND game,HWND foreground,const char *why
     (int)(foreground?IsIconic(foreground):0),
     (unsigned long)(pause_background_since?
      (DWORD)(GetTickCount()-pause_background_since):0));
+  log_line(line);
+}
+/* While the original game's native Pause UI is open, sample the
+ * foreground independently of the 150-ms debounce decision. Under Wine,
+ * visible focus change is not always accompanied by a foreground HWND
+ * transition at a Flip. This probe is read-only and does not subclass
+ * the game WndProc, perform activation or intercept DirectInput. */
+static void pause_probe_native_menu_focus(LONG flip) {
+  HWND game=game_hwnd,fg;
+  DWORD now,fg_pid=0,game_tid;
+  GUITHREADINFO fg_info,game_info;
+  BOOL fg_ok,game_ok;
+  char line[330];
+  if(!debug_log_enabled || !game || !IsWindow(game) ||
+     pause_native_ui_focus_reports>=120u ||
+     ((*(const volatile DWORD *)(uintptr_t)0x00682950u)==0u &&
+      !native_pause43_visible_near_flip(flip)))return;
+  now=GetTickCount();
+  if(pause_native_ui_focus_sample_tick &&
+     (DWORD)(now-pause_native_ui_focus_sample_tick)<800u)return;
+  pause_native_ui_focus_sample_tick=now;
+  ++pause_native_ui_focus_reports;
+  fg=GetForegroundWindow();
+  if(fg)GetWindowThreadProcessId(fg,&fg_pid);
+  game_tid=GetWindowThreadProcessId(game,NULL);
+  memset(&fg_info,0,sizeof(fg_info));fg_info.cbSize=sizeof(fg_info);
+  memset(&game_info,0,sizeof(game_info));game_info.cbSize=sizeof(game_info);
+  fg_ok=GetGUIThreadInfo(0,&fg_info);
+  game_ok=game_tid?GetGUIThreadInfo(game_tid,&game_info):FALSE;
+  snprintf(line,sizeof(line),
+    "FOCUS-PROBE: native-pause-snapshot flip=%ld fg-is-game=%d "
+    "fg=%p pid=%lu fg-ui-ok=%d fg-ui-active=%p fg-ui-focus=%p "
+    "game-ui-ok=%d game-ui-active=%p game-ui-focus=%p",
+    (long)flip,(int)(fg==game),(void*)fg,(unsigned long)fg_pid,
+    (int)fg_ok,(void*)fg_info.hwndActive,(void*)fg_info.hwndFocus,
+    (int)game_ok,(void*)game_info.hwndActive,
+    (void*)game_info.hwndFocus);
   log_line(line);
 }
 /* Ignore brief foreground changes (e.g. mouse activation quirks).
@@ -2495,6 +2534,11 @@ static void pause_at_flip_if_background(void) {
     SpiderAltLatch_OnConfirmedExternalLoss();
     log_line("FOCUS-PAUSE: confirmed external focus loss; pause latched until manual resume");
     pause_log_foreground_owner(hwnd,GetForegroundWindow(),"external-foreground-latched");
+    /* The candidate is now *consumed*. Keeping its old start timestamp
+     * across the blocking custom PAUSED loop produced a false
+     * 'candidate-cancelled-return-to-game elapsed-ms=5303' trace after
+     * a successful wake. Clear it only after recording elapsed time. */
+    pause_background_since=0;
   }
   if(InterlockedCompareExchange(&pause_latched,0,0)!=1) return;
   if(InterlockedCompareExchange(&pause_in_progress,1,0)!=0) return;
@@ -2684,6 +2728,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   {
     BOOL was_background=(game_hwnd && GetForegroundWindow()!=game_hwnd);
     SpiderInputFocus_OnFlip(count);
+    pause_probe_native_menu_focus(count); /* read-only native ESC Pause heartbeat */
     pause_at_flip_if_background();
     if(was_background &&
        InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1)
