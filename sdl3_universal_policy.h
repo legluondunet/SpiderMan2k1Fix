@@ -15,6 +15,46 @@ enum {
 };
 enum { SPIDER_UNIVERSAL_DPAD_UP=11, SPIDER_UNIVERSAL_DPAD_DOWN=12,
        SPIDER_UNIVERSAL_DPAD_LEFT=13, SPIDER_UNIVERSAL_DPAD_RIGHT=14 };
+/* Wine/DirectInput may not observe a SendInput KEYUP delivered while the
+ * original game's keyboard device is unacquired after Alt+Tab. Record
+ * only OUR injected scans at focus loss and reassert KEYUP after the
+ * foreground focus-pause loop exits, for several consecutive Flip frames.
+ * Gameplay remains blocked during every replay frame. */
+#define SPIDER_UNIVERSAL_FOCUS_RELEASE_FRAMES 12u
+typedef struct {
+  unsigned scans[SPIDER_UNIVERSAL_KEY_COUNT+1];
+  unsigned count;
+  unsigned frames_remaining;
+} SpiderSDL3UniversalFocusRelease;
+static inline void spider_sdl3_universal_focus_release_capture(
+    SpiderSDL3UniversalFocusRelease *recovery,
+    const unsigned held_scans[SPIDER_UNIVERSAL_KEY_COUNT],
+    unsigned sent_mask,unsigned pulse_scan) {
+  unsigned i,j,scan;
+  if(!recovery || recovery->frames_remaining)return;
+  recovery->count=0;
+  for(i=0;i<SPIDER_UNIVERSAL_KEY_COUNT+1u;i++) {
+    if(i==SPIDER_UNIVERSAL_KEY_COUNT)scan=pulse_scan;
+    else if(sent_mask&(1u<<i))scan=held_scans[i];
+    else continue;
+    if(!scan)continue;
+    for(j=0;j<recovery->count;j++)
+      if(recovery->scans[j]==scan)break;
+    if(j==recovery->count)
+      recovery->scans[recovery->count++]=scan;
+  }
+  if(recovery->count)
+    recovery->frames_remaining=SPIDER_UNIVERSAL_FOCUS_RELEASE_FRAMES;
+}
+static inline void spider_sdl3_universal_focus_release_complete_frame(
+    SpiderSDL3UniversalFocusRelease *recovery,int delivered) {
+  if(!recovery || !recovery->frames_remaining || !delivered)return;
+  if(--recovery->frames_remaining==0) {
+    recovery->count=0;
+    memset(recovery->scans,0,sizeof(recovery->scans));
+  }
+}
+
 /* Only game-action scan codes can be forwarded through SendInput.
  * Exclude Windows modifiers, lock toggles, Pause, Enter/Escape and the
  * game's always-active F9 screenshot / F10-F12 global shortcuts.
