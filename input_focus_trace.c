@@ -67,6 +67,7 @@ static LONG foreground_events=0,background_events=0;
 static LONG focus_key_messages=0,focus_mouse_messages=0;
 static volatile LONG last_focus_foreground=-1;
 static DWORD last_winmsg_sample=0;
+static void focus_log(const char *msg);
 /* Opt-in Wine/X11 delayed pause: record only app-level deactivation, not
  * ordinary changes to a child HWND. Never touch DirectDraw in WndProc. */
 static volatile LONG deferred_pause_enabled=0;
