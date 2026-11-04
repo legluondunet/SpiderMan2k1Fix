@@ -1,0 +1,101 @@
+#ifndef SPIDERMAN2K1FIX_HUD_AIM_RETICLE_H
+#define SPIDERMAN2K1FIX_HUD_AIM_RETICLE_H
+
+/* Strict, source-verified red/green 3D aiming ring classifier.
+ * Captured from GE-Proton11-12's level-2 F9 screenshots:
+ *
+ *   scrn0028 red: caller=00102C72, triangle fan FVF 0x144,
+ *       texture 64x64, diffuse B0FF4040, Z=.00146, RHW=9.9878,
+ *       original x=566.2..723.8 y=679.5..796.5.
+ *   scrn0029 green: same caller/type/texture/Z/RHW,
+ *       diffuse B040FF40, x=930.0..1027.5 y=346.5..418.5.
+ *
+ * Each circle was horizontally stretched by 4:3->16:9. Transform
+ * X around the *object's own center* only; never move the target,
+ * modify Y/texture/color/Z/RHW, or touch generic world/2D draws.
+ * The host D3D7 wrapper additionally gates native gameplay state,
+ * installed SHA-pinned HUD fix and the actual bound texture.
+ */
+#include "hud_aim_geometry.h"
+#include "menu_scale.h"
+#include <stdint.h>
+
+enum SpiderHudAimReticleKind {
+    SPIDER_HUD_AIM_NONE=0,
+    SPIDER_HUD_AIM_RED=1,
+    SPIDER_HUD_AIM_GREEN=2
+};
+
+static inline int SpiderHudAim_Near(float v,float reference,float tolerance)
+{
+    return v>=reference-tolerance && v<=reference+tolerance;
+}
+
+/* Cheap fail-closed prefilter before a D3D7 texture COM query. */
+static inline int SpiderHudAimReticle_MightMatch(
+    const SpiderMenuVertex *src)
+{
+    return src &&
+      (src[0].diffuse==0xB0FF4040u ||
+       src[0].diffuse==0xB040FF40u) &&
+      SpiderHudAim_Near(src[0].z,0.00146f,0.000035f) &&
+      SpiderHudAim_Near(src[0].rhw,9.9878f,0.060f) &&
+      SpiderHudAim_Near(src[0].u,0.0f,0.050f) &&
+      SpiderHudAim_Near(src[0].v,0.0f,0.050f);
+}
+
+static inline int SpiderHudAimReticle_Transform(
+    const SpiderMenuVertex *src,SpiderMenuVertex *dst,
+    unsigned count,unsigned primitive_type,uint32_t fvf,
+    uint32_t caller_rva,unsigned texture_w,unsigned texture_h,
+    unsigned screen_w,unsigned screen_h)
+{
+    float l,r,t,b,centerx,centery,width,height,expected_ratio,ratio;
+    unsigned i;
+    if(!src || !dst || src==dst ||
+       count!=4u || primitive_type!=6u || fvf!=0x144u ||
+       caller_rva!=0x00102C72u || texture_w!=64u || texture_h!=64u ||
+       SpiderHudAim_AspectFactor(screen_w,screen_h)>=1.0f ||
+       !SpiderHudAimReticle_MightMatch(src))
+        return SPIDER_HUD_AIM_NONE;
+
+    l=r=src[0].x;t=b=src[0].y;
+    for(i=0;i<4u;i++) {
+        /* This translucent HUD sprite is uniformly tinted; reject
+         * multicolored quads or 3D vertex gradients. */
+        if(src[i].diffuse!=src[0].diffuse ||
+           !SpiderHudAim_Near(src[i].z,src[0].z,0.000005f) ||
+           !SpiderHudAim_Near(src[i].rhw,src[0].rhw,0.005f))
+            return SPIDER_HUD_AIM_NONE;
+        if(src[i].x<l)l=src[i].x;
+        if(src[i].x>r)r=src[i].x;
+        if(src[i].y<t)t=src[i].y;
+        if(src[i].y>b)b=src[i].y;
+    }
+    width=r-l;height=b-t;
+    centerx=(l+r)*0.5f;centery=(t+b)*0.5f;
+    expected_ratio=1.0f/SpiderHudAim_AspectFactor(screen_w,screen_h);
+    ratio=width/height;
+    if(!(l>=0.0f && r<=(float)screen_w &&
+         t>=0.0f && b<=(float)screen_h &&
+         height>=(float)screen_h*0.045f &&
+         height<=(float)screen_h*0.30f &&
+         width>=(float)screen_h*0.055f &&
+         width<=(float)screen_h*0.42f &&
+         centerx>=(float)screen_w*0.10f &&
+         centerx<=(float)screen_w*0.90f &&
+         centery>=(float)screen_h*0.10f &&
+         centery<=(float)screen_h*0.90f &&
+         ratio>=expected_ratio-0.085f &&
+         ratio<=expected_ratio+0.085f))
+        return SPIDER_HUD_AIM_NONE;
+
+    for(i=0;i<4u;i++) {
+        dst[i]=src[i];
+        dst[i].x=SpiderHudAim_MapX(src[i].x,centerx,
+                                   screen_w,screen_h);
+    }
+    return src[0].diffuse==0xB0FF4040u?
+           SPIDER_HUD_AIM_RED:SPIDER_HUD_AIM_GREEN;
+}
+#endif
