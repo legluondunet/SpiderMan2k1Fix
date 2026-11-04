@@ -127,7 +127,7 @@ def test_native_pause_still_uses_exact_render_signature_not_only_bounds():
     assert "count!=4" in block
     assert "if(SUCCEEDED(IDirect3DDevice7_GetTexture(" in block
     assert "native_pause43_banner_flip,flip" in block
-    assert "copy[i].x=mapped" in block
+    assert "copy[i].x=center+(v[i].x-center)*aspect_scale" in block
     assert "gameplay_4x3_active" in block
     assert "menu_upscale_active" in block
     assert "native_esc43_supported_monitor()" in CORE
