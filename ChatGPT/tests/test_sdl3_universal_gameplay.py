@@ -901,3 +901,46 @@ def test_singleton_native_autoselection_is_not_explicit_universal_start(tmp_path
     subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
                     "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
+
+
+def test_x11_host_confirmed_pause_flushes_universal_held_keys_before_blocking_flip():
+    """Regression: Wine reports the game HWND during native Firefox focus.
+
+    The normal BeforeUI GetForegroundWindow guard cannot notice this case.
+    The authoritative host-focus detector must explicitly release the
+    selected SDL3 owner's keys before entering its blocking PAUSED loop.
+    """
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    header=(ROOT/"sdl3_universal_gameplay.h").read_text(encoding="utf-8")
+    core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
+    tag="void SpiderSDL3Universal_OnConfirmedFocusPause(void)"
+    assert tag in header and tag+" {" in backend
+    handler=backend.split(tag+" {",1)[1].split(
+        "void SpiderSDL3Universal_BeforeUI(",1)[0]
+    assert "game_thread!=GetCurrentThreadId()" in handler
+    assert "restore_original(\"focus or window lost\");" in handler
+    assert "GetForegroundWindow()" not in handler
+    assert "HOST-FOCUS-LOSS confirmed" in handler
+
+    latch=core.split("static void pause_at_flip_if_background(void) {",1)[1].split(
+        "static HRESULT WINAPI hooked_flip(",1)[0]
+    assert "pause_x11_bridge_confirmed_loss()" in latch
+    assert "SpiderSDL3Universal_OnConfirmedFocusPause();" in latch
+    assert latch.index("InterlockedCompareExchange(&pause_latched,1,0)==0)") < (
+        latch.index("SpiderSDL3Universal_OnConfirmedFocusPause();"))
+    assert latch.index("SpiderSDL3Universal_OnConfirmedFocusPause();") < (
+        latch.index("SpiderPauseAny_Begin(hwnd)"))
+    assert latch.index("SpiderSDL3Universal_OnConfirmedFocusPause();") < (
+        latch.index("SpiderFocusMedia_Pause();"))
+    assert latch.count("SpiderSDL3Universal_OnConfirmedFocusPause();")==1
+
+    # Original keyboard release snapshots must happen before synthetic
+    # KEYUP flags are cleared; they are replayed after focus returns.
+    restore=backend.split("static void restore_original(const char *reason) {",1)[1].split(
+        "static int suspend_original(",1)[0]
+    assert restore.index("spider_sdl3_focus_dir_capture(") < (
+        restore.index("if(!release_all())"))
+    assert restore.index("spider_sdl3_universal_focus_release_capture(") < (
+        restore.index("if(!release_all())"))
+    assert "original game-owned DirectInput pointer RESTORED" in restore
+    assert "SPIDER_UNIVERSAL_CTX_3D" in restore
