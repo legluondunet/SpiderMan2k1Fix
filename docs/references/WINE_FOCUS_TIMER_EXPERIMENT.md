@@ -7,7 +7,7 @@ because that is the verified game render-thread boundary.
 ## Why this experiment exists
 
 In `SpiderMan2k1Fix(4).log` (2026-11-04), five observed focus losses
-between 04:54:51 and 04:56:39 entered pause 169–205 ms after the Wine
+between 04:54:51 and 04:56:39 entered pause 167–206 ms after the Wine
 `WM_KILLFOCUS` event. At 04:57:45.009, the game received another
 `WM_KILLFOCUS` with a NULL foreground HWND, but the log ended without
 another Flip or PAUSED presentation. This final case is inconclusive: it
