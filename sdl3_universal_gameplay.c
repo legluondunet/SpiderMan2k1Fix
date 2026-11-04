@@ -416,6 +416,20 @@ void SpiderSDL3Universal_BeforeUI(HWND hwnd) {
     log_universal("SDL3-UNIVERSAL: warning Pause/Return KEYUP failed, retry before next action");
   } else pulse_scan=0;
 }
+int SpiderSDL3Universal_ReleaseSyntheticReturnBefore3D(HWND hwnd) {
+  if(!requested || !game_thread ||
+     game_thread!=GetCurrentThreadId() ||
+     native_host_focus_blocked || pulse_scan!=0x1cu ||
+     !hwnd || !IsWindowVisible(hwnd) ||
+     GetForegroundWindow()!=hwnd)return 0;
+  if(!send_scan(pulse_scan,1)) {
+    log_universal("SDL3-UNIVERSAL: BINK-4 Return KEYUP refused; original physical key wait retained");
+    return 0;
+  }
+  pulse_scan=0;
+  log_universal("SDL3-UNIVERSAL: BINK-4 pending synthetic Return balanced before original game input");
+  return 1;
+}
 static int binding_held(SpiderSDL3Binding b,
                         const SpiderSDL3ControllerSample *sample) {
   if(b.kind==SPIDER_SDL3_BIND_BUTTON &&
