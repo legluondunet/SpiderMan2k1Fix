@@ -337,6 +337,20 @@ void SpiderSDL3Universal_BeforeModal(HWND game_hwnd) {
     "SDL3-UNIVERSAL: setup modal entered; synthetic keys released and native owner restored":
     "SDL3-UNIVERSAL: setup modal entered without owner HWND; restoration attempted");
 }
+/* The focus-pause detector may use native X11 even when Wine's Win32
+ * foreground HWND is still the game. By the time the detector enters its
+ * blocking PAUSED loop, no further ordinary SDL3 Flip cleanup can run.
+ * Capture owned held scans and restore native DI right at that boundary.
+ * Do not use Win32 foreground as a gate: native X11 has already verified
+ * the loss, and restore_original is idempotent on repeated focus events. */
+void SpiderSDL3Universal_OnConfirmedFocusPause(void) {
+  if(!requested || !game_thread ||
+     game_thread!=GetCurrentThreadId())return;
+  if(active || suspended || sent_mask || pulse_scan)
+    log_focus_release(
+      "SDL3-UNIVERSAL: HOST-FOCUS-LOSS confirmed; releasing owned keys before blocking PAUSED (Win32 HWND may be stale)");
+  restore_original("focus or window lost");
+}
 void SpiderSDL3Universal_BeforeUI(HWND hwnd) {
   if(!requested)return;
   if(!game_thread)game_thread=GetCurrentThreadId();
