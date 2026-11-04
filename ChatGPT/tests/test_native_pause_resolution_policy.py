@@ -64,6 +64,17 @@ def test_original_pause_has_resolution_independent_four_by_three_geometry(tmp_pa
             assert(SpiderNativePause43_MapX(190,1440,1080)==190.0f);
             assert(!SpiderNativePause43_RibbonBounds(
                    0,1440,341,585,1440,1080));
+            /* Two observed source signatures: older accepted menu
+             * and level-2 GE-Proton native ESC (2026-11-04 log). */
+            assert(SpiderNativePause43_RibbonLayer(0.00122f,11.176f));
+            assert(SpiderNativePause43_RibbonLayer(0.00122f,8.9615f));
+            assert(!SpiderNativePause43_RibbonLayer(0.00122f,10.10f));
+            assert(!SpiderNativePause43_RibbonLayer(0.00122f,8.70f));
+            assert(!SpiderNativePause43_RibbonLayer(0.98f,8.9615f));
+            assert(SpiderNativePause43_MotifLayer(0.00146f,9.988f));
+            assert(SpiderNativePause43_MotifLayer(0.00146f,7.8952f));
+            assert(!SpiderNativePause43_MotifLayer(0.00146f,8.90f));
+            assert(!SpiderNativePause43_MotifLayer(0.45f,7.8952f));
             assert(!SpiderNativePause43_Widescreen(0,0));
             assert(!SpiderNativePause43_Widescreen(20000,1080));
             return 0;
@@ -82,6 +93,7 @@ def test_native_pause_still_uses_exact_render_signature_not_only_bounds():
     assert '#include "native_pause_43_policy.h"' in CORE
     assert "SpiderNativePause43_RibbonBounds(" in block
     assert "SpiderNativePause43_RibbonLayer(z,rhw)" in block
+    assert "SpiderNativePause43_MotifLayer(v[0].z,v[0].rhw)" in CORE
     assert "rva!=0x00102C72UL" in block
     assert "type!=D3DPT_TRIANGLEFAN" in block
     assert "count!=4" in block
