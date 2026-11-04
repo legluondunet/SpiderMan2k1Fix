@@ -37,6 +37,30 @@ def test_no_shell_execution_and_existing_override_is_preserved():
         assert forbidden not in BOOT
 
 
+def test_bridge_waits_for_verified_recent_state_before_opt_in():
+    assert 'SpiderWineFocusAutostart_PollReady(focus_log);' in FOCUS
+    assert 'static int helper_waiting_for_state=0;' in BOOT
+    assert 'helper_waiting_for_state=1;' in BOOT
+    assert 'GetFileAttributesExW(helper_state_path' in BOOT
+    assert 'modified.QuadPart<started.QuadPart' in BOOT
+    assert 'now.QuadPart-modified.QuadPart>1200ull*10000ull' in BOOT
+    assert 'if(!valid)return 0;' in BOOT
+    assert 'SPIDEY_X11_FOCUS_V1 GAME\\n' in BOOT
+    assert 'SPIDEY_X11_FOCUS_V1 OTHER\\n' in BOOT
+    assert BOOT.index('if(!valid)return 0;') < BOOT.index('SetEnvironmentVariableA("SPIDERMAN2K1FIX_X11_BRIDGE","1")')
+    assert 'no verified X11 state in 4s; Win32 fallback' in BOOT
+
+
+def test_wayland_does_not_autostart_or_publish_fictional_x11_focus():
+    assert 'GetEnvironmentVariableA("XDG_SESSION_TYPE"' in BOOT
+    assert 'lstrcmpiA(session,"wayland")==0' in BOOT
+    assert 'GetEnvironmentVariableA("WAYLAND_DISPLAY",NULL,0)' in BOOT
+    assert BOOT.index('Wayland session; X11 backend disabled') < BOOT.index('spawn(argv,0)')
+    assert 'strcasecmp(session, "wayland") == 0' in NATIVE
+    assert 'wayland_socket = getenv("WAYLAND_DISPLAY")' in NATIVE
+    assert 'if ((!session || !*session) && wayland_socket && *wayland_socket)' in NATIVE
+
+
 def test_native_helper_reads_x11_without_typing_or_raising_windows():
     assert 'XOpenDisplay(NULL)' in NATIVE
     assert 'XGetInputFocus(display, &focused, &revert_to)' in NATIVE
