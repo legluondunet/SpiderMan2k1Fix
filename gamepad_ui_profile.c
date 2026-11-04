@@ -11,6 +11,7 @@
 #include "ps1_mouse_mode.h"
 #include "sdl3_controller_setup.h"
 #include "ps1_joystick_readonly_menu.h"
+#include "sdl3_universal_gameplay.h"
 
 static void (*ui_log)(const char *)=NULL;
 void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
@@ -36,6 +37,6 @@ int SpiderGamepadUI_PauseWake_Begin(void) {return 0;}
 unsigned SpiderGamepadUI_PauseWake_Poll(HWND hwnd) {(void)hwnd;return 0;}
 void SpiderGamepadUI_PauseWake_End(void) {}
 int SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(HWND hwnd) {
-  (void)hwnd;return 0;
+  return SpiderSDL3Universal_ReleaseSyntheticReturnBefore3D(hwnd);
 }
 void SpiderGamepadUI_SDL3GameplayPause(HWND hwnd) {(void)hwnd;}
