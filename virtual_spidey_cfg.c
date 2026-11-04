@@ -14,6 +14,7 @@
 #include "display_policy.h"
 #include "ini_validation.h"
 #include "ini_recovery.h"
+#include "spider_fix_paths.h"
 
 /* Always-on virtual configuration hooks ONLY imports of verified SpideyPC.exe (never patch
  * kernel32/msvcrt globally). Unknown bytes remain byte-for-byte preserved.
@@ -28,6 +29,9 @@
 static BYTE cfg[CFG_SIZE];
 static CRITICAL_SECTION guard;
 static int ready=0,dirty=0;
+/* SDL3 semantic profiles never modify original game joystick config
+ * bytes. The verified native CRT read remains the only gating signal. */
+static volatile LONG native_cfg_bootstrap_loaded=0;
 /* Only block saving if automatic INI repair fails. */
 static int ini_writes_permitted=1;
 static char ini_file[MAX_PATH];
@@ -197,6 +201,86 @@ static const char *encode_key(DWORD scan) {
     if(scan==dik_names[i].scan)return key;
   }
   return NULL;
+}
+/* Original PCINPUT_RestoreDefaultKeyboardSettings at 0x50A520 copies
+ * 0x70 bytes from gDefaultKeyboardMappings=0x53C87C into the CURRENT
+ * gKeyboardMappings=0x568398. Never patch the currently customized
+ * mappings: change only the source defaults once, after CRT bootstrap.
+ * Revert to the modern factory template (arrows, Space, X/C/V/D/F/G)
+ * instead of the game's obsolete NUMPAD presets. The six letter keys
+ * use our existing Auto/Off keyboard layout mapping, so French AZERTY
+ * retains the same user-visible defaults.
+ *
+ * Strict exact original 11 action-mask + old-key preflight and readable
+ * committed memory checks. Unknown game binary or modified originals:
+ * refuse the patch, leaving all keyboard settings intact. */
+int SpiderCfg_InstallModernKeyboardDefaults(void) {
+  static const uint32_t masks[11]={
+    1u,2u,4u,8u,0x10u,0x20u,0x40u,0x80u,0x100u,0x200u,0x400u};
+  static const uint32_t legacy[11]={
+    0xC8u,0xD0u,0xCBu,0xCDu,0x50u,0x4Du,0x4Bu,
+    0x48u,0x47u,0x51u,0x49u};
+  uint32_t modern[11];
+  const uintptr_t table=0x0053C87Cu;
+  MEMORY_BASIC_INFORMATION mbi;
+  DWORD old,ignored;
+  unsigned i;
+  char msg[200];
+  if((uintptr_t)GetModuleHandleA(NULL)!=0x00400000u)return 0;
+  if(VirtualQuery((const void *)table,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)) ||
+     table<(uintptr_t)mbi.BaseAddress ||
+     table-(uintptr_t)mbi.BaseAddress>=mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(table-(uintptr_t)mbi.BaseAddress)<0x70u) {
+    report("SPIDEY-KEYBOARD-DEFAULT: REFUSED unreadable original default keyboard map");
+    return 0;
+  }
+  for(i=0;i<11u;i++) {
+    uint32_t mask,scan;
+    memcpy(&mask,(const void *)(table+i*8u),4u);
+    memcpy(&scan,(const void *)(table+i*8u+4u),4u);
+    if(mask!=masks[i] || scan!=legacy[i]) {
+      snprintf(msg,sizeof(msg),
+        "SPIDEY-KEYBOARD-DEFAULT: REFUSED original defaults mismatch slot=%u mask=0x%lX scan=0x%lX",
+        i,(unsigned long)mask,(unsigned long)scan);
+      report(msg);
+      return 0;
+    }
+    /* Also guard against template drift on the four arrow keys and
+     * Space. Six gameplay letters are layout-aware below. */
+    modern[i]=(uint32_t)spidey_cfg_factory[action_offsets[i]] |
+              ((uint32_t)spidey_cfg_factory[action_offsets[i]+1u]<<8) |
+              ((uint32_t)spidey_cfg_factory[action_offsets[i]+2u]<<16) |
+              ((uint32_t)spidey_cfg_factory[action_offsets[i]+3u]<<24);
+  }
+  if(modern[0]!=0xC8u || modern[1]!=0xD0u ||
+     modern[2]!=0xCBu || modern[3]!=0xCDu ||
+     modern[4]!=0x39u)return 0;
+  modern[5]=letter_scan('X',0x2Du);
+  modern[6]=letter_scan('C',0x2Eu);
+  modern[7]=letter_scan('V',0x2Fu);
+  modern[8]=letter_scan('D',0x20u);
+  modern[9]=letter_scan('F',0x21u);
+  modern[10]=letter_scan('G',0x22u);
+  if(!VirtualProtect((void *)table,0x70u,PAGE_READWRITE,&old)) {
+    report("SPIDEY-KEYBOARD-DEFAULT: REFUSED could not unlock source default table");
+    return 0;
+  }
+  for(i=0;i<11u;i++)
+    memcpy((void *)(table+i*8u+4u),&modern[i],4u);
+  if(!VirtualProtect((void *)table,0x70u,old,&ignored)) {
+    /* Restore original, if possible; do not leave unknown partial state. */
+    DWORD writable;
+    if(VirtualProtect((void *)table,0x70u,PAGE_READWRITE,&writable)) {
+      for(i=0;i<11u;i++)
+        memcpy((void *)(table+i*8u+4u),&legacy[i],4u);
+      VirtualProtect((void *)table,0x70u,old,&ignored);
+    }
+    report("SPIDEY-KEYBOARD-DEFAULT: FAILED page protection restore; rollback attempted");
+    return 0;
+  }
+  report("SPIDEY-KEYBOARD-DEFAULT: ACTIVE original 2001 NUMPAD restore replaced by modern factory arrows/Space/X,C,V,D,F,G; user mappings and Keyboard menu editable");
+  return 1;
 }
 static void load_keyboard(void) {
   unsigned i; char value[64],msg[140]; DWORD code;
@@ -382,6 +466,32 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "[Input]\r\n"
     "; Auto = OS keyboard layout; Off = original physical QWERTY positions.\r\n"
     "KeyboardLayout=Auto\r\n"
+    "; SDL3 detection/setup is ON; legacy native-owner rebinding is OFF.\r\n"
+    "; Universal SDL3 3D gameplay remains opt-in until tested.\r\n"
+    "; Unknown, ambiguous or invalid input devices remain fail-closed.\r\n"
+    "ExperimentalSDL3Probe=1\r\n"
+    "ExperimentalSDL3NativeOwner=0\r\n"
+    "ExperimentalSDL3ControllerSetup=1\r\n"
+
+    "; EXPERIMENTAL universal SDL3 profile to 3D gameplay keyboard adapter.\r\n"
+    "; OFF by default; test only after backing up INI and profiles.\r\n"
+    "ExperimentalSDL3UniversalGameplay=0\r\n"
+    "; Exact game-owned Left Alt recovery after confirmed Alt+Tab only.\r\n"
+    "; Default ON; native opcode/OS modifier safety gates remain enforced.\r\n"
+    "ExperimentalAltLatchRecovery=1\r\n"
+    "; Mouse input is permanently disabled IN-GAME (keyboard/gamepad only).\r\n"
+    "; Windows/Linux desktop pointer behavior remains unchanged.\r\n"
+    "; SDL3 discovers known Xbox, Sony and other mapped controllers using\r\n"
+    "; its own gamepad database. First-use mappings use generic semantic\r\n"
+    "; defaults until the user customizes their model profile.\r\n"
+    "; Old hard-coded PS1/Xbox preview and DirectInput button presets are\r\n"
+    "; retired; no fixed per-vendor gameplay action mapping is applied.\r\n"
+    "; Native gamepad safety: prevent original unplug crash (default ON).\r\n"
+    "; The reconnect owner is controlled and verified independently.\r\n"
+    "ExperimentalNativeJoystickUnplugGuard=1\r\n"
+    "; Native gamepad reconnect on supported, verified controller (default ON).\r\n"
+    "; Requires ExperimentalNativeJoystickUnplugGuard=1.\r\n"
+    "ExperimentalNativeJoystickReconnect=1\r\n"
     "\r\n"
     "[Audio]\r\n"
     "; All levels are 0..100 percent, with lossless raw values kept below.\r\n";
@@ -462,13 +572,7 @@ write_fail:
 
 
 static int SpiderCfg_IniPath(char *ini,size_t cap) {
-  char exe[MAX_PATH],*slash; DWORD n=GetModuleFileNameA(NULL,exe,sizeof(exe));
-  size_t prefix;
-  if(!n||n>=sizeof(exe)||!(slash=strrchr(exe,'\\')))return 0;
-  prefix=(size_t)(slash-exe)+1;
-  if(prefix+strlen("SpiderMan2k1Fix.ini")+1>cap)return 0;
-  memcpy(ini,exe,prefix);
-  strcpy(ini+prefix,"SpiderMan2k1Fix.ini");return 1;
+  return spider_path_ini_a(ini,cap);
 }
 int SpiderCfg_EnsureDefaultIni(void (*logger)(const char *)) {
   char ini[MAX_PATH];
@@ -496,6 +600,15 @@ static const struct {const char *section,*key;} deprecated_ini_keys[]={
   {"Input","PauseOnFocusLoss"},{"Input","PauseBinkOnFocusLoss"},
   {"Input","PauseDirectSoundOnFocusLoss"},{"Input","PauseOverlay"},
   {"Input","PauseDim"},
+  {"Input","ControllerProfile"},
+  {"Input","ControllerXbox360Preview"},
+  {"Input","ControllerPS1Preview"},
+  {"Input","ControllerXbox360RTSwing"},
+  {"Input","ControllerEnterButtons"},
+  {"Input","ControllerBackButton"},
+  {"Input","ControllerPauseButton"},
+  {"Input","ExperimentalSDL3GameplayBindings"},
+  {"Input","ExperimentalSDL3XboxRTSwing"},
   {"Input","PauseKey"},{"Input","RestoreCursorOnFocusLoss"},
   {"Input","ExperimentalFocusTrace"},{"Input","ExperimentalDI8EntryTrace"},
   {"Input","ExperimentalAltTabReacquire"},{"Input","ExperimentalDI8CreateDeviceTrace"}
@@ -668,17 +781,59 @@ static int SpiderCfg_RepairIni(const char *ini,const SpiderIniResult *check,
 done:
   free(values);return ok;
 }
+/* Report only a known section and a strictly safe, short ASCII key.
+ * The validator's issue text also contains user-controlled INI material:
+ * never copy arbitrary issue text, section names or values to a public log. */
+typedef struct { void (*logger)(const char *); unsigned reported; } SpiderCfgUnknownIssues;
+static int SpiderCfg_SafeIniLabel(const char *s,size_t len) {
+  size_t i;
+  if(!len)return 0;
+  for(i=0;i<len;i++) {
+    unsigned char c=(unsigned char)s[i];
+    if(!((c>='a'&&c<='z') || (c>='A'&&c<='Z') ||
+         (c>='0'&&c<='9') || c=='_'))return 0;
+  }
+  return 1;
+}
+static void SpiderCfg_LogUnknownIniIssue(void *context,unsigned line,
+                                         int error,const char *detail) {
+  SpiderCfgUnknownIssues *state=(SpiderCfgUnknownIssues *)context;
+  const char *start,*close,*end;
+  char section[32],key[64],message[200];
+  size_t slen,klen;
+  if(!state || !state->logger || state->reported>=12 ||
+     error || !detail || strncmp(detail,"Unknown key [",13)!=0)return;
+  start=detail+13;
+  close=strstr(start,"] ");
+  if(!close)return;
+  end=strstr(close+2," ignored (kept on disk)");
+  if(!end || strcmp(end," ignored (kept on disk)")!=0)return;
+  slen=(size_t)(close-start);
+  klen=(size_t)(end-(close+2));
+  if(slen>=sizeof(section) || klen>=sizeof(key) ||
+     !SpiderCfg_SafeIniLabel(start,slen) ||
+     !SpiderCfg_SafeIniLabel(close+2,klen))return;
+  memcpy(section,start,slen);section[slen]=0;
+  memcpy(key,close+2,klen);key[klen]=0;
+  if(!SPIDER_INI_IN(section,spider_ini_sections))return;
+  snprintf(message,sizeof(message),
+    "INI-CHECK: unknown key [%s] %s at line %u (value omitted)",
+    section,key,line);
+  state->logger(message);
+  state->reported++;
+}
 static void SpiderCfg_ClearOldValidationReport(const char *ini);
 void SpiderCfg_ValidateCurrentIni(void (*logger)(const char *)) {
   char ini[MAX_PATH],backup[MAX_PATH]="",summary[540];
   unsigned recovered=0;
   SpiderIniResult check,rebuilt;
+  SpiderCfgUnknownIssues issues={logger,0};
   if(!SpiderCfg_IniPath(ini,sizeof(ini))) {
     ini_writes_permitted=0;
     if(logger)logger("INI-REPAIR: cannot resolve path; saving disabled");
     return;
   }
-  check=SpiderIni_Validate(ini,NULL,NULL);
+  check=SpiderIni_Validate(ini,logger?SpiderCfg_LogUnknownIniIssue:NULL,&issues);
   if(!check.errors && !check.warnings) {
     unsigned obsolete=deprecated_ini_count(ini);
     if(!obsolete) {
@@ -794,6 +949,16 @@ static void load_settings(void) {
     (unsigned long)get_word(12));
   report(msg);
 }
+/* Deprecated ABI entry points. No physical Xbox/DS4 button index
+ * is EVER written to Spidey.cfg. Only SDL3 generic semantic profiles
+ * are allowed to drive the patch's gameplay adapter. */
+int SpiderCfg_EnablePS1Preview(void) {return 0;}
+int SpiderCfg_EnableXbox360Preview(void) {return 0;}
+int SpiderCfg_Xbox360BootstrapLoaded(void) {return 0;}
+unsigned SpiderCfg_Xbox360SwingScan(void) {return 0;}
+unsigned SpiderCfg_Xbox360SwingScanLive(void) {return 0;}
+void SpiderCfg_CancelPS1Preview(void) {}
+void SpiderCfg_CancelXbox360Preview(void) {}
 /* Called from the existing pre-fullscreen HWND/monitor probe. For Auto this
  * corrects the initial primary-monitor fallback on multi-display systems.
  * If the game read its cfg before installation, no late hook can undo it. */
@@ -820,6 +985,7 @@ void SpiderCfg_ObserveNativeMonitor(unsigned width,unsigned height) {
 }
 static int save_settings(void) {
   char hex[CFG_SIZE*2+1],value[80],msg[150];
+  BYTE saved_cfg[CFG_SIZE];
   unsigned i;
   if(!dirty) return 1;
   if(!ini_writes_permitted) {
@@ -828,7 +994,9 @@ static int save_settings(void) {
   }
   /* Never let in-game changes to screen size or color depth persist. */
   apply_locked_display();
-  for(i=0;i<CFG_SIZE;i++) sprintf(hex+i*2,"%02X",(unsigned)cfg[i]);
+  memcpy(saved_cfg,cfg,CFG_SIZE);
+  /* Save only the player's own untouched original-game joystick map. */
+  for(i=0;i<CFG_SIZE;i++) sprintf(hex+i*2,"%02X",(unsigned)saved_cfg[i]);
   if(!WritePrivateProfileStringA("Internal","RawHex",hex,ini_file)) goto fail;
   snprintf(value,sizeof(value),"%lu",(unsigned long)get_word(12));
   if(!WritePrivateProfileStringA("Display","Brightness",value,ini_file)) goto fail;
@@ -908,6 +1076,7 @@ static BOOL WINAPI hooked_WriteFile(HANDLE h,LPCVOID buffer,DWORD len,LPDWORD do
   if(len){
     DWORD old_w=get_word(0),old_h=get_word(4),old_depth=get_word(8);
     memcpy(cfg+v->pos,buffer,len);v->pos+=(LONG)len;dirty=1;writes++;
+    /* No legacy physical button overlay to reapply on user config writes. */
     if(old_w!=get_word(0) || old_h!=get_word(4) || old_depth!=get_word(8))
       report("SPIDEY-CFG: in-game screen/depth write intercepted; authoritative display settings restored");
     apply_locked_display();
@@ -1056,6 +1225,7 @@ static int __cdecl hooked_fclose(FILE *f) {
     fflush(f);rewind(f);n=fread(candidate,1,CFG_SIZE,f);
     if(n==CFG_SIZE) {
       if(memcmp(cfg,candidate,CFG_SIZE)) {memcpy(cfg,candidate,CFG_SIZE);dirty=1;}
+      /* Same fixed-RAM protection for the rare imported stdio route. */
       apply_locked_display();
       report("SPIDEY-CFG: virtual fclose captured stdio settings");
       save_settings();
@@ -1179,6 +1349,10 @@ unsigned SpiderCfg_Install(const char *path,void (*logger)(const char *)) {
  * All pointers and instruction bytes are hard-coded for the SHA-verified
  * SpideyPC.exe. No EXE patch or undocumented cross-CRT FILE* exchange.
  */
+int SpiderCfg_PS1BootstrapLoaded(void){return 0;}
+int SpiderCfg_NativeConfigLoaded(void) {
+  return InterlockedCompareExchange(&native_cfg_bootstrap_loaded,0,0)==1;
+}
 void SpiderCfg_BootstrapGameRead(void) {
   typedef void *(__cdecl *GameFopen)(const char *,const char *);
   typedef size_t (__cdecl *GameFread)(void *,size_t,size_t,void *);
@@ -1236,6 +1410,12 @@ void SpiderCfg_BootstrapGameRead(void) {
    * applies the locked resolution/depth without modifying game executable. */
   game_load();
   EnterCriticalSection(&guard);
+  if(opens>opened && reads>served) {
+    InterlockedExchange(&native_cfg_bootstrap_loaded,1);
+    report("SPIDEY-CFG: NATIVE CONFIG LOADED authenticated original game CRT read; SDL3 may inspect live keyboard bindings (legacy previews independent)");
+  }
+  /* Preserve the original narrower PS1/Xbox preview handshake exactly:
+   * only those opt-in overlays claim that their RAM bytes were consumed. */
   snprintf(msg,sizeof(msg),
     "SPIDEY-CFG: BOOTSTRAP game loader returned: virtual opens +%lu reads +%lu; configured=%ux%u depth=32 [%s]",
     (unsigned long)(opens-opened),(unsigned long)(reads-served),

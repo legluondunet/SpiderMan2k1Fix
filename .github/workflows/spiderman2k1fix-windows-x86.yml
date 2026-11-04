@@ -49,22 +49,122 @@ jobs:
       - name: Build Windows x86 DLLs (portable LLVM-MinGW MSVCRT)
         run: bash ./build-native-msvcrt.sh
 
+      - name: Build portable native Linux X11 helper (Ubuntu 22.04 ABI)
+        run: |
+          set -euo pipefail
+          mkdir -p dist/package/SpiderMan2k1Fix/linux
+          # Build against glibc 2.35, NOT the Ubuntu 24.04 host's newer ABI.
+          # The helper is ELF x86_64 even though the Wine game is Win32 x86.
+          docker run --rm --platform linux/amd64 \
+            --mount "type=bind,source=$PWD,target=/src" \
+            --workdir /src ubuntu:22.04 sh -ec '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends build-essential libx11-dev
+              cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 -fstack-protector-strong \
+                -o dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper \
+                linux/spiderman-focus-helper.c -lX11
+            '
+          helper=dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper
+          file "$helper" | grep 'ELF 64-bit'
+          ldd "$helper"
+          test -x "$helper"
+          # Fail CI if any dependency on the host's newer glibc sneaks in.
+          python3 - <<'PY'
+          import re
+          import subprocess
+          helper = "dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper"
+          info = subprocess.check_output(["readelf", "--version-info", helper], text=True)
+          versions = {tuple(map(int, m.groups())) for m in re.finditer(r"GLIBC_(\d+)\.(\d+)", info)}
+          assert versions, "No glibc version information found in the ELF"
+          assert max(versions) <= (2, 35), f"Linux helper needs newer glibc: {max(versions)}"
+          print(f"Linux helper glibc floor verified: <= 2.35 (highest symbol: {max(versions)})")
+          PY
+
+      - name: Exercise real X11 focus changes and helper shutdown in Xvfb
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -qq xvfb xauth libx11-dev
+          cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 \
+            -o "$RUNNER_TEMP/test_focus_helper_runtime" \
+            linux/tests/focus_helper_runtime.c -lX11
+          xvfb-run -a -s "-screen 0 1024x768x24" \
+            "$RUNNER_TEMP/test_focus_helper_runtime" \
+            "$PWD/dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper"
+
       - name: Prepare game installation files
         run: |
-          mkdir -p dist/package
-          cp SpiderMan2k1Fix.dll winmm.dll README.md CHANGELOG.md dist/package/
+          mkdir -p dist/package/SpiderMan2k1Fix
+          cp winmm.dll dist/package/
+          cp SpiderMan2k1Fix.dll README.md CHANGELOG.md dist/package/SpiderMan2k1Fix/
+
+      - name: Bundle pinned upstream SDL3 Windows x86 runtime and license
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 4 --retry-all-errors \
+            --output "$RUNNER_TEMP/SDL3-3.4.18-win32-x86.zip" \
+            https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18-win32-x86.zip
+          python3 scripts/package_sdl3_x86.py dist/package/SpiderMan2k1Fix \
+            --archive "$RUNNER_TEMP/SDL3-3.4.18-win32-x86.zip"
+          test -s dist/package/SpiderMan2k1Fix/SDL3.dll
+          test -s dist/package/SpiderMan2k1Fix/SDL3-LICENSE.txt
 
       - name: Verify packaged README and CHANGELOG
         run: |
-          test -s dist/package/README.md
-          test -s dist/package/CHANGELOG.md
-          cmp README.md dist/package/README.md
-          cmp CHANGELOG.md dist/package/CHANGELOG.md
-          python3 -c 'import pathlib,re; s=pathlib.Path("dist/package/README.md").read_text(encoding="utf-8"); assert not re.search(r"(?m)^- \*\*\s", s), "Malformed bold Markdown bullet in README.md"'
+          test -s dist/package/winmm.dll
+          test -s dist/package/SpiderMan2k1Fix/SpiderMan2k1Fix.dll
+          test -s dist/package/SpiderMan2k1Fix/README.md
+          test -s dist/package/SpiderMan2k1Fix/CHANGELOG.md
+          test -s dist/package/SpiderMan2k1Fix/SDL3.dll
+          test -s dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper
+          # No inner archives: GitHub Actions compresses dist/package/ once.
+          test -z "$(find dist/package -type f -iname '*.zip' -print -quit)"
+          cmp third_party/SDL3-LICENSE.txt dist/package/SpiderMan2k1Fix/SDL3-LICENSE.txt
+          cmp README.md dist/package/SpiderMan2k1Fix/README.md
+          cmp CHANGELOG.md dist/package/SpiderMan2k1Fix/CHANGELOG.md
+          python3 -c 'import pathlib,re; s=pathlib.Path("dist/package/SpiderMan2k1Fix/README.md").read_text(encoding="utf-8"); assert not re.search(r"(?m)^- \*\*\s", s), "Malformed bold Markdown bullet in README.md"'
           echo "README.md and CHANGELOG.md match the checked-out sources."
-          sha256sum README.md dist/package/README.md CHANGELOG.md dist/package/CHANGELOG.md
+          sha256sum README.md dist/package/SpiderMan2k1Fix/README.md CHANGELOG.md dist/package/SpiderMan2k1Fix/CHANGELOG.md
 
-      - name: Upload Windows DLL artifact
+      - name: Build release-ready ZIP and SHA256 (do not publish)
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^#define SPIDERMAN2K1FIX_VERSION "\([^"]*\)"/\1/p' version_info.h)
+          test -n "$version"
+          commit="${GITHUB_SHA:0:7}"
+          stem="SpiderMan2k1Fix-v${version}-${commit}-Windows-x86"
+          mkdir -p dist/release
+          (
+            cd dist/package
+            zip -q -9 "../release/${stem}.zip" \
+              winmm.dll \
+              SpiderMan2k1Fix/SpiderMan2k1Fix.dll \
+              SpiderMan2k1Fix/SDL3.dll \
+              SpiderMan2k1Fix/SDL3-LICENSE.txt \
+              SpiderMan2k1Fix/linux/spiderman-focus-helper \
+              SpiderMan2k1Fix/README.md \
+              SpiderMan2k1Fix/CHANGELOG.md
+          )
+          (
+            cd dist/release
+            sha256sum "${stem}.zip" > "${stem}.zip.sha256"
+            unzip -Z -1 "${stem}.zip" | sort > actual.txt
+            printf '%s\n' \
+              winmm.dll \
+              SpiderMan2k1Fix/SpiderMan2k1Fix.dll \
+              SpiderMan2k1Fix/SDL3.dll \
+              SpiderMan2k1Fix/SDL3-LICENSE.txt \
+              SpiderMan2k1Fix/linux/spiderman-focus-helper \
+              SpiderMan2k1Fix/README.md \
+              SpiderMan2k1Fix/CHANGELOG.md | sort > expected.txt
+            diff -u expected.txt actual.txt
+          )
+
+      # upload-artifact ALWAYS creates the ONE ZIP downloaded from Actions.
+      # Upload the install tree, not our own release .zip, to avoid ZIP-in-ZIP.
+      # The versioned release ZIP + SHA256 above remain available to a future
+      # official release/publish job, but are not uploaded as an Actions artifact.
+      - name: Upload installation files as one ZIP (no nested ZIP)
         uses: actions/upload-artifact@v4
         with:
           name: SpiderMan2k1Fix-Windows-x86

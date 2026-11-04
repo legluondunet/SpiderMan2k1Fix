@@ -26,11 +26,14 @@ def read_ini(filename):
     assert len(raw)==252
     for i,(key,code) in enumerate(zip(ACTIONS,SCANS)):
         assert struct.unpack_from('<I',raw,0x14+i*4)[0] == code, key
-    assert struct.unpack_from('<I',raw,0xEC)[0] == 0x2BFF
-    assert struct.unpack_from('<I',raw,0xF0)[0] == 177
-    assert struct.unpack_from('<I',raw,0xF4)[0] == 201
+    # User-clean is an existing personalized INI; changing factory defaults
+    # must NOT silently rewrite that user's saved audio preferences.
+    old_preferences = 'user-clean' in filename
+    assert struct.unpack_from('<I',raw,0xEC)[0] == (0x2BFF if old_preferences else 0x1999)
+    assert struct.unpack_from('<I',raw,0xF0)[0] == (177 if old_preferences else 102)
+    assert struct.unpack_from('<I',raw,0xF4)[0] == (201 if old_preferences else 153)
     assert struct.unpack_from('<I',raw,0xF8)[0] == 0
-    assert [p['Audio'][k] for k in ('MusicSFXLevel','VoiceLevel','MovieLevel','Stereo')] == ['69','79','69','1']
+    assert [p['Audio'][k] for k in ('MusicSFXLevel','VoiceLevel','MovieLevel','Stereo')] == (['69','79','69','1'] if old_preferences else ['40','60','40','1'])
     assert [p['Keyboard'][k] for k in ACTIONS] == ['UP','DOWN','LEFT','RIGHT','SPACE','X','C','V','D','F','G']
     for i,key in enumerate(('Jump','Kick','Punch','Web','Aim','Zipline','Swing')):
         assert p['Joystick'][key] == f'BUTTON{struct.unpack_from("<I",raw,0x50+i*4)[0]}'

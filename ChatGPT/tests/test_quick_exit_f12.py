@@ -447,7 +447,10 @@ def test_f12_debug_fast_test_mode_default_off_and_valid_ini_key():
     for option in ("F10Shortcut", "F10TestMode", "F10Auto3DScripts", "F10GameplayExit"):
         assert f"{option}=" not in INI
         assert f'"{option}=0\\r\\n"' not in GEN
-    assert 'spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts","ExperimentalPKRAudioIndex","ExperimentalPKRAudioPlayTrace","ExperimentalAudioHeli1Declick","ExperimentalAudioLoaderTail"}' in VAL
+    # Keep all pre-existing F10/F12 debug keys recognized even as new
+    # independent diagnostics are appended to the known-key list.
+    assert 'spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts","ExperimentalPKRAudioIndex","ExperimentalPKRAudioPlayTrace","ExperimentalAudioHeli1Declick","ExperimentalAudioLoaderTail"' in VAL
+    assert '"Xbox360TriggerProbe"' in VAL
     assert 'GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1' in SRC
     assert 'GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1' in SRC
     assert "static volatile LONG debug_f12_test_mode=0;" in SRC
@@ -1421,7 +1424,8 @@ def test_debug_3d_original_action_callsite_attribution_cannot_skip_or_exit():
     assert "SPIDER_NATIVE_3D_INPUT_SITES_COUNT 5" in SRC
     owner=SRC[SRC.index("static BYTE __cdecl spider_probe_3d_native_input("):
               SRC.index("/* PASSIVE owner cleanup checkpoint")]
-    assert "BYTE original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);" in owner
+    assert "original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);" in owner
+    assert owner.count("SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2)") == 1
     assert "return original;" in owner
     assert "DEBUG-3D-NATIVE-INPUT" in owner
     assert "phase_state=%ld phase_object=%lu script_slots_active=%lu" in owner
@@ -2058,6 +2062,53 @@ def test_movie_enter_release_is_gated_before_first_original_3d_input():
     assert owner.count("SPIDER_NATIVE_GAME_INPUT_UPDATE();")==1
     assert "GetAsyncKeyState(VK_RETURN)" not in owner
 
+
+def test_movie4_handoff_releases_only_our_pending_sdl3_return_before_wait():
+    """Prevent cyclic 1.5s wait: first 3D owner executes before next Flip.
+
+    Movie #4 synthetic Return must be balanced before GetAsyncKeyState
+    begins waiting. The real physical Enter/Space safety wait is retained.
+    """
+    barrier=SRC[SRC.index("static void spider_newgame_enter_release_barrier(int confirmed_movie4)"):
+                SRC.index("/* Minimal safety-only owner for F10Shortcut=0.")]
+    assert '#include "gamepad_ui_profile.h"' in SRC
+    assert "if(confirmed_movie4) {" in barrier
+    call="SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(hwnd);"
+    assert barrier.count(call)==1
+    assert barrier.index(call)<barrier.index("enter_before=(GetAsyncKeyState(VK_RETURN)")
+    assert "GetAsyncKeyState(VK_SPACE)" in barrier
+    assert "(DWORD)(GetTickCount()-began)<1500u" in barrier
+    assert "SPIDER_NATIVE_GAME_INPUT_UPDATE();" not in barrier
+    assert "SendInput(" not in barrier
+    assert "keybd_event(" not in barrier
+
+
+def test_bink_handoff_releases_only_own_universal_sdl3_return():
+    """Only a pending, injected Return may be balanced before Bink #4.
+    The physical Enter/Space and original game input remain untouched."""
+    ui=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
+    hdr=(ROOT/"gamepad_ui_profile.h").read_text(encoding="utf-8")
+    adapter=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    api=(ROOT/"sdl3_universal_gameplay.h").read_text(encoding="utf-8")
+    name="SpiderSDL3Universal_ReleaseSyntheticReturnBefore3D"
+    assert f"int {name}(HWND hwnd);" in api
+    assert "int SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(HWND hwnd);" in hdr
+    assert f"return {name}(hwnd);" in ui
+    release=adapter.split(f"int {name}(HWND hwnd) {{",1)[1].split(
+        "static int binding_held(",1)[0]
+    assert "game_thread!=GetCurrentThreadId()" in release
+    assert "native_host_focus_blocked" in release
+    assert "pulse_scan!=0x1cu" in release
+    assert "GetForegroundWindow()!=hwnd" in release
+    assert "!IsWindowVisible(hwnd)" in release
+    assert "if(!send_scan(pulse_scan,1))" in release
+    assert "KEYUP refused; original physical key wait retained" in release
+    assert "pulse_scan=0;" in release
+    assert "return 1;" in release
+    for forbidden in ("GetAsyncKeyState(", "SPIDER_NATIVE_GAME_INPUT_UPDATE(",
+                      "VirtualProtect(", "memcpy(", "Sleep(", "SendInput("):
+        assert forbidden not in release
+    assert "begin_scancode(" not in ui
 
 def test_enter_only_cannot_arm_intro_auto_skip_during_release_barrier():
     """The new barrier is not an alternate F10 origin or movie-skip request."""

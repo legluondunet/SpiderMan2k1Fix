@@ -30,7 +30,7 @@ def test_two_independent_sections():
             "Jump":"SPACE", "Kick":"X", "Punch":"C", "Web":"V",
             "Aim":"D", "Zipline":"F", "Swing":"G"
         }
-        assert [int(parsed["Audio"][k]) for k in ("MusicSFXLevel","VoiceLevel","MovieLevel")] == [69,79,69]
+        assert [int(parsed["Audio"][k]) for k in ("MusicSFXLevel","VoiceLevel","MovieLevel")] == [40,60,40]
         raw=bytes.fromhex(parsed["Internal"]["RawHex"])
         for i,key in enumerate(BUTTON_ACTIONS):
             code=struct.unpack_from('<I',raw,0x50+i*4)[0]

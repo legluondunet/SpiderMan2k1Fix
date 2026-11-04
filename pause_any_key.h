@@ -12,4 +12,9 @@ BOOL SpiderPauseAny_Completed(void);
 BOOL SpiderPauseAny_DiscardGameKeyMessage(const MSG *msg, HWND game_hwnd);
 DWORD SpiderPauseAny_FirstKey(void);
 void SpiderPauseAny_End(void);
+/* When the opt-in X11 observer reports another native Linux window as
+ * focused, NEVER swallow that application's keystrokes, even when Wine's
+ * GetForegroundWindow() incorrectly still reports the game HWND.
+ * Also block on an unknown/stale X11 sample while bridge mode is enabled. */
+void SpiderPauseAny_SetHostFocusBlocked(BOOL blocked);
 #endif

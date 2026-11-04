@@ -23,10 +23,13 @@
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "spider_fix_paths.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 #include "quick_exit_f12.h"
+#include "gamepad_ui_profile.h"
+#include "sdl3_gamepad_probe.h"
 
 #define SPIDER_NATIVE_F12_POST ((BYTE *)(uintptr_t)0x00515373u)
 #define SPIDER_SHELL_MENU_TICK ((BYTE *)(uintptr_t)0x00493DD6u)
@@ -279,6 +282,12 @@ static volatile LONG enabled=0;
 static volatile LONG pending=0;
 static volatile LONG delivered=0;
 static volatile LONG menu_frame_count=0;
+/* Exact original Shell_MainMenu native hook, independent from F10.
+ * Opt-in read-only observer: cannot dispatch Quit or synthesize input. */
+static volatile LONG native_menu_probe_enabled=0;
+static volatile LONG native_menu_probe_only=0;
+static volatile LONG native_menu_probe_reports=0;
+static volatile LONG native_menu_probe_select_reports=0;
 /* Read-only per-menu-tick timing: existing game-owned 0x493DD6 hook only. */
 static volatile LONG debug_menu_tick_entry_ms=0;
 static volatile LONG debug_menu_last_exit_ms=0;
@@ -370,6 +379,17 @@ static volatile LONG debug_f10_cutscene_skip_ms=0;
 static volatile LONG debug_f10_cutscene_skip_owner=0;
 /* Verbose read-only reverse-engineering logs are opt-in. */
 static volatile LONG f10_verbose_trace=0;
+/* Narrow, independent 3D-cutscene DirectInput reader diagnostics. OFF by default. */
+static volatile LONG sdl3_cutscene_reader_trace=0;
+/* SDL3 physical South/Cross=0, West/Square=2. Read-only timestamps. */
+static volatile LONG sdl3_cutscene_sample_ms=0;
+static volatile LONG sdl3_cutscene_button_bits=0;
+static volatile LONG sdl3_cutscene_edge_bits=0;
+static volatile LONG sdl3_cutscene_edge_ms=0;
+static volatile LONG sdl3_cutscene_sample_instance=0;
+static volatile LONG sdl3_cutscene_sample_vidpid=0;
+static volatile LONG sdl3_cutscene_sample_armed=0;
+static volatile LONG sdl3_cutscene_edge_reports=0;
 static volatile LONG debug_intro_generation=0;
 static volatile LONG debug_lifecycle_generation=-1;
 static volatile LONG debug_newgame_3d_first_ms=0;
@@ -436,6 +456,55 @@ static void say(const char *msg) {
 
 int SpiderQuickExitF12_Enabled(void) {
   return InterlockedCompareExchange(&enabled,0,0)==1;
+}
+/* Called from selected SDL3 OnFlip AFTER native-DirectInput owner proof.
+ * Same game thread as original 3D owner. Neutral->fresh-press only.
+ * No DirectInput/SDL calls or game state writes. */
+void SpiderQuickExitF12_CutscenePhysicalSample(
+    unsigned instance,unsigned vendor,unsigned product,
+    unsigned physical_buttons,int selected_owner_valid) {
+  const LONG wanted=(LONG)(physical_buttons&0x05u);
+  const LONG identity=(LONG)(((vendor&0xffffu)<<16)|(product&0xffffu));
+  const DWORD now=GetTickCount();
+  LONG previous,prior_instance,prior_identity,fresh;
+  char line[240];
+  if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)!=1)return;
+  if(!selected_owner_valid || !instance || !vendor || !product) {
+    InterlockedExchange(&sdl3_cutscene_sample_ms,0);
+    InterlockedExchange(&sdl3_cutscene_edge_ms,0);
+    InterlockedExchange(&sdl3_cutscene_edge_bits,0);
+    InterlockedExchange(&sdl3_cutscene_sample_armed,0);
+    InterlockedExchange(&sdl3_cutscene_button_bits,0);
+    InterlockedExchange(&sdl3_cutscene_sample_instance,0);
+    InterlockedExchange(&sdl3_cutscene_sample_vidpid,0);
+    return;
+  }
+  prior_instance=InterlockedCompareExchange(&sdl3_cutscene_sample_instance,0,0);
+  prior_identity=InterlockedCompareExchange(&sdl3_cutscene_sample_vidpid,0,0);
+  if(prior_instance!=(LONG)instance || prior_identity!=identity) {
+    InterlockedExchange(&sdl3_cutscene_sample_armed,0);
+    InterlockedExchange(&sdl3_cutscene_edge_ms,0);
+    InterlockedExchange(&sdl3_cutscene_edge_bits,0);
+    InterlockedExchange(&sdl3_cutscene_button_bits,0);
+  }
+  InterlockedExchange(&sdl3_cutscene_sample_instance,(LONG)instance);
+  InterlockedExchange(&sdl3_cutscene_sample_vidpid,identity);
+  previous=InterlockedExchange(&sdl3_cutscene_button_bits,wanted);
+  InterlockedExchange(&sdl3_cutscene_sample_ms,(LONG)now);
+  if(!InterlockedCompareExchange(&sdl3_cutscene_sample_armed,0,0)) {
+    if(!wanted)InterlockedExchange(&sdl3_cutscene_sample_armed,1);
+    return;
+  }
+  fresh=wanted&~previous;
+  if(!fresh)return;
+  InterlockedExchange(&sdl3_cutscene_edge_bits,fresh);
+  InterlockedExchange(&sdl3_cutscene_edge_ms,(LONG)now);
+  if(InterlockedIncrement(&sdl3_cutscene_edge_reports)>24)return;
+  snprintf(line,sizeof(line),
+    "SDL3-CUTSCENE-EDGE: instance=%lu VID:PID=%04lX:%04lX physical-fresh=0x%02lX physical-held=0x%02lX ms=%lu [SOUTH=CROSS 0x01, WEST=SQUARE 0x04; ORIGINAL INPUT UNTOUCHED]",
+    (unsigned long)instance,(unsigned long)vendor,(unsigned long)product,
+    (unsigned long)fresh,(unsigned long)wanted,(unsigned long)now);
+  say(line);
 }
 
 void SpiderQuickExitF12_AttachWindow(HWND hwnd) {
@@ -683,6 +752,18 @@ static void spider_newgame_enter_release_barrier(int confirmed_movie4) {
     phase=InterlockedCompareExchange(&debug_newgame_progress,0,0);
     if(phase!=1 && phase!=2)return;
   }
+  /* Release only our own pending SDL3 Return before this native owner
+   * waits for physical Enter/Space. The normal Flip key-up has not run
+   * yet, because this barrier blocks the same game thread. A genuine
+   * held physical key remains down and must still pass the original wait. */
+  if(confirmed_movie4) {
+    HWND hwnd=(HWND)InterlockedCompareExchangePointer(&game_hwnd,NULL,NULL);
+    SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(hwnd);
+    /* Synthetic Return is not the physical gamepad SOUTH button.
+     * On the original game thread, wait for a still-held verified
+     * Cross/A to become neutral before native 3D cinematic input. */
+    SpiderSDL3Probe_NewGameBinkWaitSouthRelease(hwnd);
+  }
   enter_before=(GetAsyncKeyState(VK_RETURN)&0x8000)!=0;
   space_before=(GetAsyncKeyState(VK_SPACE)&0x8000)!=0;
   enter_after=enter_before;
@@ -725,6 +806,94 @@ static void __cdecl spider_movie4_safety_only_game_input(void) {
   SPIDER_NATIVE_GAME_INPUT_UPDATE();
 }
 
+/* Follow-up to the two 31-Oct physical Cross/Square comparisons:
+ * the five 0x50C180 readers only produced the initial script event.
+ * Sample the already-hooked native frame OWNER before/after its ORIGINAL
+ * 0x440EF0 update (no new native patch, no SDL polling). This captures
+ * script permission and request BYTE boundaries when readers are not
+ * called after the initial script frame. It still cannot prove which
+ * instruction made the native skip request: a short-lived request can
+ * already have been consumed elsewhere in the original engine tick.
+ * No game-owned memory is changed. */
+/* Bounded ORIGINAL-owner pre/post snapshots around selected controller
+ * Cross/Square edges, even when native state remains unchanged.
+ * Correlation only: not evidence identifying the original skip writer. */
+static void spider_trace_sdl3_cutscene_edge_window(
+    unsigned after,DWORD owner,unsigned context,unsigned allowed,
+    unsigned active,unsigned request,DWORD ip) {
+  static DWORD last_emit[2]={0u,0u};
+  static unsigned reports=0u;
+  DWORD now=GetTickCount();
+  DWORD edge=(DWORD)InterlockedCompareExchange(&sdl3_cutscene_edge_ms,0,0);
+  DWORD sample=(DWORD)InterlockedCompareExchange(&sdl3_cutscene_sample_ms,0,0);
+  DWORD edge_bits=(DWORD)InterlockedCompareExchange(&sdl3_cutscene_edge_bits,0,0);
+  DWORD physical=(DWORD)InterlockedCompareExchange(&sdl3_cutscene_button_bits,0,0);
+  DWORD instance=(DWORD)InterlockedCompareExchange(&sdl3_cutscene_sample_instance,0,0);
+  DWORD vidpid=(DWORD)InterlockedCompareExchange(&sdl3_cutscene_sample_vidpid,0,0);
+  char line[360];
+  if(reports>=64u || !edge || !sample || !edge_bits || !instance ||
+     (DWORD)(now-edge)>350u || (DWORD)(now-sample)>125u ||
+     (last_emit[after] && (DWORD)(now-last_emit[after])<30u) ||
+     context!=1u || active!=1u || !ip)return;
+  last_emit[after]=now;
+  ++reports;
+  snprintf(line,sizeof(line),
+    "SDL3-CUTSCENE-EDGE-OWNER: boundary=%s owner=0x%08lX instance=%lu VID:PID=%04lX:%04lX edge=0x%02lX held=0x%02lX age_ms=%lu allow=%u active=%u request=%u script_ip=0x%08lX ms=%lu [ORIGINAL 0x440EF0 UNCHANGED; CORRELATION ONLY]",
+    after?"after-0x440EF0":"before-0x440EF0",
+    (unsigned long)owner,(unsigned long)instance,
+    (unsigned long)((vidpid>>16)&0xffffu),
+    (unsigned long)(vidpid&0xffffu),
+    (unsigned long)edge_bits,(unsigned long)physical,
+    (unsigned long)(DWORD)(now-edge),allowed,active,request,
+    (unsigned long)ip,(unsigned long)now);
+  say(line);
+}
+static void spider_trace_sdl3_native_cutscene_boundary(unsigned after) {
+  static DWORD last_snapshot[2]={0xffffffffu,0xffffffffu};
+  static DWORD last_owner[2]={0xffffffffu,0xffffffffu};
+  static unsigned reports=0u;
+  DWORD owner,ip,packed,now;
+  uintptr_t address,base;
+  MEMORY_BASIC_INFORMATION mbi;
+  const volatile BYTE *obj;
+  unsigned context,allowed,active,request;
+  char line[278];
+  if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)!=1 ||
+     reports>=80u || *SPIDER_GAME_BINK_ACTIVE!=0u ||
+     GetModuleHandleA(NULL)!=(HMODULE)(uintptr_t)0x00400000u)
+    return;
+  owner=*SPIDER_NATIVE_CUTSCENE_OWNER_PTR;
+  if(!owner)return;
+  address=(uintptr_t)owner;
+  if(VirtualQuery((LPCVOID)address,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_NOACCESS|PAGE_GUARD)))
+    return;
+  base=(uintptr_t)mbi.BaseAddress;
+  if(address<base || address-base>=mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(address-base)<0x1bcu)
+    return;
+  obj=(const volatile BYTE *)address;
+  context=obj[0x1acu];allowed=obj[0x1a4u];active=obj[0x1b4u];
+  ip=*(const volatile DWORD *)(address+0x1b8u);
+  request=*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST;
+  spider_trace_sdl3_cutscene_edge_window(after,owner,context,allowed,
+                                          active,request,ip);
+  packed=(context&0xffu)|((allowed&0xffu)<<8)|
+         ((active&0xffu)<<16)|((request&0xffu)<<24);
+  if(last_owner[after]==owner && last_snapshot[after]==packed)return;
+  last_owner[after]=owner;
+  last_snapshot[after]=packed;
+  /* Avoid logging an unrelated idle/uninitialized script instance. */
+  if(context!=1u && active!=1u && reports==0u)return;
+  ++reports;
+  now=GetTickCount();
+  snprintf(line,sizeof(line),
+    "SDL3-CUTSCENE-OWNER: boundary=%s context=%u allowed=%u active=%u request=%u script_ip=0x%08lX ms=%lu [ORIGINAL NATIVE UPDATE UNCHANGED; CORRELATION ONLY]",
+    after?"after-0x440EF0":"before-0x440EF0",
+    context,allowed,active,request,(unsigned long)ip,(unsigned long)now);
+  say(line);
+}
+
 /* Native game-input owner wrapper at 0x45553B:
  * The original 0x440EF0 executes exactly once with its original ABI,
  * before the game tests pause context at 0x455540. EAX is overwritten
@@ -759,7 +928,9 @@ static void __cdecl spider_observe_native_game_input(void) {
    * F10-armed auto-skips bypass this barrier. */
   if(n==1)spider_newgame_enter_release_barrier(0);
   InterlockedExchange(&last_native_game_input_ms,(LONG)GetTickCount());
+  spider_trace_sdl3_native_cutscene_boundary(0u);
   SPIDER_NATIVE_GAME_INPUT_UPDATE();
+  spider_trace_sdl3_native_cutscene_boundary(1u);
   after_request=*SPIDER_ENGINE_MODE;
   native_after_request=after_request; /* immutable pre-F12 snapshot */
   /* This stage is shared with an older, separately opted-in *exit*
@@ -1545,9 +1716,67 @@ static void __cdecl spider_observe_native_game_input(void) {
  * from this routine. We need positive proof of the two separate
  * scripted 3D scenes AND actual playable state before any F12 SPACE
  * skip injection or gameplay EXIT can be enabled. */
+/* Narrow opt-in evidence for the ORIGINAL reader, in the same thread as
+ * its already installed SHA-checked 0x50C180 callsite wrapper. This is
+ * *not* evidence that any one mask is the source of the cutscene skip:
+ * the original 0x4C66A6 writer must be independently attributed before
+ * suppressing Cross. Never change the native result or any input state. */
+static void spider_trace_sdl3_cutscene_reader(
+    DWORD return_va,DWORD mask,DWORD arg1,DWORD arg2,
+    BYTE original,BYTE request_before) {
+  const DWORD owner=*SPIDER_NATIVE_CUTSCENE_OWNER_PTR;
+  const uintptr_t address=(uintptr_t)owner;
+  MEMORY_BASIC_INFORMATION mbi;
+  const volatile BYTE *obj;
+  DWORD now=GetTickCount(),ip;
+  unsigned i;
+  BYTE context,allowed,active,request_after;
+  static int last_result[SPIDER_NATIVE_3D_INPUT_SITES_COUNT]={-1,-1,-1,-1,-1};
+  static int last_request[SPIDER_NATIVE_3D_INPUT_SITES_COUNT]={-1,-1,-1,-1,-1};
+  static unsigned reports=0u;
+  char line[335];
+  if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)!=1 ||
+     reports>=64u || !owner || *SPIDER_GAME_BINK_ACTIVE!=0u ||
+     *SPIDER_PAUSE_CONTEXT!=0u || GetModuleHandleA(NULL)!=(HMODULE)(uintptr_t)0x00400000u)
+    return;
+  for(i=0;i<SPIDER_NATIVE_3D_INPUT_SITES_COUNT;i++)
+    if(return_va==(DWORD)(uintptr_t)spider_native_3d_input_sites[i]+5u)break;
+  if(i>=SPIDER_NATIVE_3D_INPUT_SITES_COUNT)return;
+  if(VirtualQuery((LPCVOID)address,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_NOACCESS|PAGE_GUARD)) ||
+     address<(uintptr_t)mbi.BaseAddress ||
+     address-(uintptr_t)mbi.BaseAddress>=mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(address-(uintptr_t)mbi.BaseAddress)<0x1bcu)
+    return;
+  obj=(const volatile BYTE *)address;
+  context=obj[0x1acu];allowed=obj[0x1a4u];active=obj[0x1b4u];
+  ip=*(const volatile DWORD *)(address+0x1b8u);
+  if(context!=1u || active!=1u || ip==0u)return;
+  request_after=*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST;
+  if(last_result[i]==(int)original &&
+     last_request[i]==(int)request_after)return;
+  last_result[i]=original;last_request[i]=request_after;
+  ++reports;
+  snprintf(line,sizeof(line),
+    "SDL3-CUTSCENE-READER: site=0x%08lX mask=0x%08lX args=%lu,%lu result=%u allowed=%u request-before=%u request-after=%u script_ip=0x%08lX ms=%lu [ORIGINAL RESULT UNCHANGED; CORRELATION ONLY]",
+    (unsigned long)(return_va-5u),(unsigned long)mask,
+    (unsigned long)arg1,(unsigned long)arg2,(unsigned)original,
+    (unsigned)allowed,(unsigned)request_before,(unsigned)request_after,
+    (unsigned long)ip,(unsigned long)now);
+  say(line);
+}
 static BYTE __cdecl spider_probe_3d_native_input(
     DWORD mask,DWORD arg1,DWORD arg2) {
-  BYTE original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);
+  BYTE request_before=0;
+  BYTE original;
+  if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)==1)
+    request_before=*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST;
+  original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);
+  if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)==1) {
+    const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+    spider_trace_sdl3_cutscene_reader((DWORD)frame[1],mask,arg1,arg2,
+                                     original,request_before);
+  }
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
      InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
      InterlockedCompareExchange(&debug_newgame_native_input_probes_installed,0,0)==1) {
@@ -2292,8 +2521,41 @@ void __cdecl SpiderQuickExitF12_MarkMenuTickEntry(void) {
 
 int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void) {
   LONG n=InterlockedIncrement(&menu_frame_count);
-  InterlockedExchange(&last_menu_frame_ms,(LONG)GetTickCount());
+  DWORD now=GetTickCount();
+  DWORD since_last=(DWORD)InterlockedExchange(&last_menu_frame_ms,(LONG)now);
   InterlockedExchange(&real_main_menu_seen,1);
+  if(InterlockedCompareExchange(&native_menu_probe_enabled,0,0)==1) {
+    /* Runs AFTER the real 0x505720 menu input tick, before game-owned
+     * Shell_MainMenu dispatch. Never calls DirectInput or modifies input
+     * state. Large inter-tick gaps identify possible new sessions, not
+     * proof of a completed 3D->menu transition. */
+    static DWORD last_transition=0xffffffffu,last_mode=0xffffffffu;
+    static DWORD last_enter=0xffffffffu,last_dispatch=0xffffffffu;
+    DWORD transition=*SPIDER_TRACE_TRANSITION_RAW;
+    DWORD request=*SPIDER_ENGINE_MODE;
+    DWORD dispatcher=*SPIDER_TRACE_DISPATCH_RAW;
+    DWORD input_active=*(const volatile DWORD *)(uintptr_t)0x006B78F0u;
+    DWORD gap=since_last?(DWORD)(now-since_last):0u;
+    BYTE enter_raw=*(const volatile BYTE *)(uintptr_t)0x006B7948u;
+    int changed=n==1 || gap>=750u || transition!=last_transition ||
+      request!=last_mode || dispatcher!=last_dispatch ||
+      (DWORD)enter_raw!=last_enter;
+    LONG observed=InterlockedCompareExchange(&native_menu_probe_reports,0,0);
+    if((changed || (n<=16) || (n%120)==0) && observed<128) {
+      char line[370];
+      InterlockedIncrement(&native_menu_probe_reports);
+      snprintf(line,sizeof(line),
+        "NATIVE-MENU-RETURN-PROBE tick=%ld ms=%lu gap_ms=%lu mode_request=%lu transition=0x%08lX menu_dispatch_raw=0x%08lX menu_context=%lu active_input=%lu DIK_RETURN_raw=0x%02X [POST-NATIVE-TICK; PASSIVE; selected action UNKNOWN]",
+        (long)n,(unsigned long)now,(unsigned long)gap,
+        (unsigned long)request,(unsigned long)transition,
+        (unsigned long)dispatcher,
+        (unsigned long)(*SPIDER_TRACE_MENU_CONTEXT!=0u),
+        (unsigned long)input_active,(unsigned)enter_raw);
+      say(line);
+    }
+    last_transition=transition;last_mode=request;last_dispatch=dispatcher;
+    last_enter=(DWORD)enter_raw;
+  }
   /* This original game-thread frame, not a guessed pause/menu bit,
    * proves the previous gameplay session returned to the real menu.
    * Re-arm F10 before the NEXT native New Game comic can be drawn. */
@@ -2359,6 +2621,9 @@ int __cdecl SpiderQuickExitF12_ConsumeRealMenuRequest(void) {
    * also runs around the two pre-menu static images. The intro exit
    * goes through the top-level native Quit check (0x455E50), after
    * game-owned movie and transition cleanup, not via an early menu. */
+  /* The standalone menu probe has NO F10/F12 authority, not even if a
+   * stale pending value somehow exists. Continue native menu unmodified. */
+  if(InterlockedCompareExchange(&native_menu_probe_only,0,0)==1)return 0;
   if(InterlockedCompareExchange(&pending,0,1)==1) {
     InterlockedExchange(&delivered,1);
     if(InterlockedCompareExchange(&intro_still_exit_state,3,2)==2)
@@ -2635,13 +2900,19 @@ static void __cdecl spider_f12_debug_menu_wait(DWORD ticks,int which) {
   DWORD before_clock=*SPIDER_TRACE_NATIVE_CLOCK_RAW;
   SPIDER_NATIVE_CLOCK_WAIT(ticks);
   if(which==3 &&
-     InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1) {
+     (InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 ||
+      InterlockedCompareExchange(&native_menu_probe_enabled,0,0)==1)) {
     static volatile LONG exit_wait_calls=0;
     LONG calls=InterlockedIncrement(&exit_wait_calls);
     DWORD end_ms=GetTickCount();
     DWORD end_clock=*SPIDER_TRACE_NATIVE_CLOCK_RAW;
     DWORD elapsed_ms=(DWORD)(end_ms-before_ms);
-    if(calls<=8 || elapsed_ms>=100u) {
+    /* A native selection checkpoint is not a known selected action.
+     * Log up to 64 checkpoints across repeated 3D/menu cycles, even
+     * after the first eight startup menu selections. */
+    if((InterlockedCompareExchange(&native_menu_probe_enabled,0,0)==1 &&
+        InterlockedIncrement(&native_menu_probe_select_reports)<=64) ||
+       calls<=8 || elapsed_ms>=100u) {
       char line[300];
       snprintf(line,sizeof(line),
         "QUICK-EXIT-F12: DEBUG-MENU-EXIT-CLOCK-WAIT site=0x00494209 call=%ld elapsed_ms=%lu wait_arg=%lu native_clock_before=%lu native_clock_after=%lu [ORIGINAL WAIT CALLED; READ-ONLY; SELECTED ACTION UNKNOWN]",
@@ -3094,25 +3365,37 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
 }
 
 void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
-  char exe[MAX_PATH],ini[MAX_PATH],val[24],trace[8],static_trace[8],movie_trial[8],comic_trial[8],*slash;
-  DWORD n;
+  char ini[MAX_PATH],val[24],trace[8],static_trace[8],movie_trial[8],comic_trial[8];
   HANDLE thread;
   int f10_shortcut;
   logger=log_fn;
-  n=GetModuleFileNameA(NULL,exe,sizeof(exe));
-  if(!n || n>=sizeof(exe) || !(slash=strrchr(exe,'\\'))) {
+  if(!spider_path_ini_a(ini,sizeof(ini))) {
     say("QUICK-EXIT-F12: disabled (INI path unavailable)");
     return;
   }
-  if((size_t)(slash-exe)+sizeof("SpiderMan2k1Fix.ini")>sizeof(ini)) {
-    say("QUICK-EXIT-F12: disabled (INI path too long)");
-    return;
-  }
-  memcpy(ini,exe,(size_t)(slash-exe)+1);
-  strcpy(ini+(slash-exe)+1,"SpiderMan2k1Fix.ini");
   /* Hidden development option: omitted from default generated INI,
    * disabled when absent; Log=1 is not required for the unified F10. */
   f10_shortcut=GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1;
+  /* A deliberate read-only diagnostic, never enabled by SDL3 mappings
+   * alone. It shares the existing five signature-checked pass-through
+   * callsites, requires the native-owner/context experiment, and cannot
+   * change joystick masks, Jump, scripts or the 0x50C180 return value. */
+  if(GetPrivateProfileIntA("Debug","SDL3CutsceneReaderTrace",0,ini)==1 &&
+     GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
+     GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1 &&
+     GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",0,ini)==1 &&
+     GetPrivateProfileIntA("Input","ExperimentalSDL3ContextBridge",0,ini)==1 &&
+     GetPrivateProfileIntA("Debug","SDL3GameplayPlan",0,ini)==1 &&
+     (f10_shortcut || GetPrivateProfileIntA("Debug","F10TestMode",0,ini)==1 ||
+      GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1)) {
+    InterlockedExchange(&sdl3_cutscene_reader_trace,1);
+    say("SDL3-CUTSCENE-READER: opted in; trace original five 3D reader callsites ONLY during verified original script context, read-only; Cross is NOT suppressed");
+  }
+  if(GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
+     GetPrivateProfileIntA("Debug","NativeMenuReturnProbe",0,ini)==1) {
+    InterlockedExchange(&native_menu_probe_enabled,1);
+    say("NATIVE-MENU-RETURN-PROBE requested: observe original Shell_MainMenu tick and native selection checkpoint; NO input modification, independent of F10");
+  }
   /* Ordinary Log=1 keeps all native state/cleanup outcomes, while
    * heavy read-only reverse-engineering snapshots need extra opt-in. */
   if(GetPrivateProfileIntA("Debug","F10VerboseTrace",0,ini)==1) {
@@ -3233,6 +3516,22 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
       say("QUICK-EXIT-F12: BINK-4-SAFETY unavailable: native 3D input signature mismatch [ALL SAFETY HOOKS RESTORED; F10 OFF]");
     } else
       say("QUICK-EXIT-F12: BINK-4-SAFETY enabled independently of F10Shortcut; original movie #4 owner and Enter/Space release only [F10 OFF]");
+    if(InterlockedCompareExchange(&native_menu_probe_enabled,0,0)==1) {
+      /* Independent native menu instrumentation must NOT enable F10 or
+       * install a Quit-capable callback. The existing hook always invokes
+       * the game's 0x505720 exactly once. We only record scalars after. */
+      InterlockedExchange(&native_menu_probe_only,1);
+      if(memcmp(SPIDER_SHELL_MENU_TICK,shell_menu_tick_original,5)!=0 ||
+         memcmp(SPIDER_MENU_WAIT_EXIT_SITE,menu_wait_exit_original,5)!=0 ||
+         !install_real_menu_hook()) {
+        InterlockedExchange(&native_menu_probe_enabled,0);
+        InterlockedExchange(&native_menu_probe_only,0);
+        say("NATIVE-MENU-RETURN-PROBE refused: strict original menu tick/wait signature mismatch; no native menu modifications");
+      } else {
+        install_debug_menu_wait_exit_probe();
+        say("NATIVE-MENU-RETURN-PROBE active: strict original 0x493DD6 callback after native tick; 0x494209 selection checkpoint passive; F10 disabled");
+      }
+    }
     return;
   }
   /* Shell_MainMenu has 8 entries. Slot 3 must be "quit" action=0x12,
@@ -3373,10 +3672,15 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
    * leave those calls completely untouched. */
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
      GetPrivateProfileIntA("Debug","Log",0,ini)==1) {
-    if(install_debug_3d_native_input_probes())
+    if(install_debug_3d_native_input_probes()) {
       say("QUICK-EXIT-F12: DEBUG-3D-NATIVE-INPUT five original 0x50C180 3D input callsites traced (original result untouched; SPACE owner and playable boundary UNKNOWN)");
-    else
+      if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)==1)
+        say("SDL3-CUTSCENE-READER: five original 0x50C180 callsites installed; bounded scripted-scene result correlation ACTIVE, no native input suppression");
+    } else {
       say("QUICK-EXIT-F12: DEBUG-3D-NATIVE-INPUT callsite signatures mismatch; passive 3D input probes disabled, F12 exit guard preserved");
+      if(InterlockedExchange(&sdl3_cutscene_reader_trace,0)==1)
+        say("SDL3-CUTSCENE-READER: REFUSED, original 3D input callsite signature mismatch or install failed; gameplay and skip unchanged");
+    }
     if(install_debug_3d_space_gate_probes())
       say("QUICK-EXIT-F12: DEBUG-3D-SPACE-GATE original 0x455427/0x455444 DIK_SPACE=0x39 and flag 0x100 gate traced (original polls unchanged; gate INACTIVE in previous Wine runs)");
     else

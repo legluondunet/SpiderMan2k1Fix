@@ -6,9 +6,28 @@
  */
 /* Return nonzero if the INI exists or was created. Never overwrite an existing one. */
 int SpiderCfg_EnsureDefaultIni(void (*logger)(const char *));
+/* Install user's modern layout-aware default preset in the original keyboard Restore Default source table. */
+int SpiderCfg_InstallModernKeyboardDefaults(void);
 void SpiderCfg_ValidateCurrentIni(void (*logger)(const char *));
 unsigned SpiderCfg_Install(const char *ini_path,void (*logger)(const char *));
 void SpiderCfg_ObserveNativeMonitor(unsigned width,unsigned height);
 /* One-time game-thread reload after verifying a real virtual CRT read. */
 void SpiderCfg_BootstrapGameRead(void);
+/* Retired legacy fixed PS1 gameplay mapping ABI. Always returns 0. */
+int SpiderCfg_EnablePS1Preview(void);
+/* Retired legacy overlay bootstrap status (always 0). */
+int SpiderCfg_PS1BootstrapLoaded(void);
+/* True after any authenticated original-game CRT config load, without
+ * requiring the legacy PS1 or Xbox preview. Used for read-only SDL3
+ * runtime keyboard binding verification. */
+int SpiderCfg_NativeConfigLoaded(void);
+void SpiderCfg_CancelPS1Preview(void);
+/* Retired legacy fixed Xbox360 gameplay mapping ABI. Always returns 0. */
+int SpiderCfg_EnableXbox360Preview(void);
+int SpiderCfg_Xbox360BootstrapLoaded(void);
+/* Retired vendor-specific RT Swing bridge (always 0). */
+unsigned SpiderCfg_Xbox360SwingScan(void);
+/* Retired pre-SDL3 Xbox hot-swap helper (always 0). */
+unsigned SpiderCfg_Xbox360SwingScanLive(void);
+void SpiderCfg_CancelXbox360Preview(void);
 #endif

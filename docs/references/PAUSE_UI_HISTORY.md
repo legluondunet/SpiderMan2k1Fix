@@ -13,3 +13,96 @@
 **Simplified comic PAUSE panel (PR #16):** To avoid black glyph fragments and cross-window artifacts in Wine, replace the former shaped child plus two alpha popups with a **single game-owned, nonactivating, per-pixel alpha banner** for the red frame and full-white text, plus the original independently configurable 55% grid shade behind it. The entire rounded banner is removed from the grid overlay region. The banner uses an atomic `UpdateLayeredWindow` bitmap (transparent outside rounded corners; muted dark-plum background; fully opaque glyphs/border), **not** an extra 35% panel, a color key or a layered child. Only display while Spider-Man is the Windows foreground **and active** window; otherwise keep game/audio paused but hide the visual layers. Wine and Windows 11 runtime acceptance is required; no merge/release yet.
 
 **Wine/Linux focus-only pause visuals (PR #15):** The game and enabled Bink/DirectSound streams pause as soon as actual loss of focus is confirmed, but the PAUSE panel and its game-owned translucent black/grid popups are **not shown while another application owns the foreground**. They appear only when Spider-Man is foreground again and disappear if it loses focus a second time while paused; this avoids drawing a floating red border on top of Linux desktop applications. Inside the banner, all 16 px grid strokes are clipped out and the additional darkened center remains translucent; the 25 px bold upright `PRESS ANY KEY TO RESUME` hint is protected by expanded shaped-glyph masks. Retains consumed ordinary-key resume (no dedicated F9/Space modes), while passing **Alt+Tab and Windows desktop-switch shortcuts** through so users can leave the game again during a pause. **Note:** requires real Windows 11 and Wine regression testing before release, since GDI layering and popup stacking are compositor-dependent.\n\n**Dimmed pause background (PR #12):** When `[Input] PauseOnFocusLoss=1`, a non-topmost, nonactivating layered **popup owned by the game window** darkens the paused scene with a **55% black tint** and a fine **16-pixel square grid**. The original red-framed comic-style `PAUSE` message stays centered and bright: the popup is cut out around the exact border and white glyphs of the existing shaped banner. The effect appears only during a latched focus pause, and both windows are destroyed before video/audio resumes. `[Input] PauseDim=1` enables the shade (default on, although the underlying focus pause remains disabled by default). `PauseDimOpacity=55` adjusts darkness from `0` to `90` percent. `PauseGrid=1` enables the fine square pattern, and `PauseGrid=0` keeps a smooth dark tint. Set `PauseDim=0` to restore the previous validated plain paused image. The grid is painted inside the original nonactivating alpha popup. PR #14 can add a second small **game-owned, nonactivating popup** for the darker center only; neither changes DirectDraw, Bink, DirectSound or DirectInput. The popup avoids the original 2001 EXE's layered-child compatibility restriction and is not desktop-topmost. Verify the final look and Z-order on native Windows 11; automated CI cannot validate the compositor.
+
+
+## F9 screenshot confirmation — pause-panel typography (2026-11-01)
+
+User approved an icon on the **left** and the focus-pause style
+for the F9 screenshot notification, **retaining the complete Windows
+file path** instead of shortening it to just the filename.
+
+The existing common `toast_draw_dc` in `f9_toast.c` now draws
+`SCREENSHOT SAVED` (or `SCREENSHOT FAILED`) in **Arial Black bold
+italic with a dark outline**, echoing the native game and the custom
+focus-loss `PAUSED` title. A smaller, nonitalic **Arial Bold**
+secondary line displays the entire original absolute path, broken
+across lines only when required; no ellipsis or path truncation.
+After reviewing the initial mock camera icon, the user specifically requested
+**the smallest icon actually embedded in the retail `SpideyPC.exe`**.
+The old vector camera was removed. The code obtains the native SMALL
+**16×16 HICON** via `ExtractIconExW(exe,0,NULL,&small,1)`, draws it
+**at 16×16 with no scaling** left of the text, and caches it using
+`InitOnceExecuteOnce` so the normal Flip and comic-popup paths cannot
+race. If extraction fails, the text and full path remain visible.
+The familiar translucent blue/violet background and lavender border
+are maintained.
+
+Both the live-game offscreen DirectDraw compositor and the static
+comic no-Flip layered popup reuse the same painter. F9 capture,
+PNG verification, the 2-second timer, background focus rules, game
+controls and screenshot bytes are unchanged. The code and build
+pass automated checks; actual screen appearance under GE-Proton is
+**still awaiting hardware confirmation**.
+
+
+### F9 text-to-icon proportion adjustment (2026-11-01)
+
+After reviewing the native small SpideyPC icon next to the F9 toast,
+the user opted for **smaller text, not an enlarged/blurry icon**.
+At 1920×1080 the header is now approximately **21 px** and the full
+absolute path **13 px**, compared with approximately 25 px / 15 px.
+The game's authentic 16×16 HICON stays unscaled and is aligned with
+the heading rather than centered between heading and file path.
+No screenshot output, F9/F10 controls or timeout behavior changed.
+
+
+### F9 final compact big-icon experiment (2026-11-01)
+
+The user requested another visual test: use the **largest icon** embedded
+in `SpideyPC.exe` (the native **32×32** `ExtractIconExW` LARGE result),
+and remove the full filesystem path **from the onscreen notification**.
+The 16px version is not scaled or blurred. The painter now shows only
+`SCREENSHOT SAVED` or `SCREENSHOT FAILED` beside the original 32px game
+icon within a compact violet one-line banner. The full screenshot path
+is still stored and validated for the actual PNG output and remains
+available through the usual diagnostic log. The two-second duration,
+no-focus popup behavior, and PNG contents are unchanged.
+
+### F9 left-edge three-sided notification (2026-11-01)
+
+After explicit confirmation, the user chose a **bottom-left** overlay
+**flush against the left screen edge** while retaining its existing small
+bottom margin. The screenshot message now uses **white** text (with the
+existing dark outline), the game's original **32×32 icon**, and a compact
+**rectangular** blue-violet translucent panel. A single lavender **1 px**
+border exists only on the **top, right and bottom** sides; the left edge
+has no rim. Rounded-corner clipping and inset decorative lines are
+removed. The caption remains **SCREENSHOT SAVED** or **SCREENSHOT FAILED**
+without a filename/path onscreen. The absolute screenshot path remains
+in logs and the PNG destination; capture timing, image bytes, game input
+and no-Flip comic fallback are unchanged. Actual Wine/GE-Proton visual
+confirmation remains pending.
+
+
+### 2026-11-04: PAUSED label now shares the final F9 screenshot panel (PR #98 draft)
+
+Following a maintainer request, the **custom focus-loss PAUSED display** no
+longer draws the centered native-ESC-inspired wide banner, red PAUSED heading
+or keyboard/gamepad resume instructions. The active `pause_surface.c`
+renders **only PAUSED** through the same `toast_draw_dc` GDI painter in
+`f9_toast.c` used by screenshot confirmation. Thus **layout, alpha, font,
+native game icon, colors and one-pixel lavender top/right/bottom border are
+literally identical** to the F9 saved/failed panel: flush-left and near the
+bottom of the full game frame.
+
+The scene remains frozen with the existing optional `PauseDimOpacity`
+shade (60% by default); the original frame is saved/restored; the
+`FOCUS-PAUSE` Any-key or selected-gamepad wake, Bink and DirectSound
+ownership, and native DirectInput recovery are unchanged. The tiny visual
+panel itself does **not** need a new popup HWND and is painted on the
+validated DirectDraw backbuffer. Screenshots' filenames, exact F9 text,
+2-second duration and static-comic handling are unchanged.
+
+This is **implemented and CI-testable**, but appearance and reliability
+still need a physical GE-Proton check. Automatic PAUSED-on-background
+remains best-effort under Wine; native Windows 11 visual testing is deferred.

@@ -7,6 +7,12 @@ This directory contains the maintained technical documentation and an index of s
 - [Development and original EXE reverse engineering](DEVELOPMENT.md) — synthesized architecture, implementation decisions, and known limitations
 - [Version 1.0.0 candidate — source/code audit and release-readiness gates](references/RELEASE_1_0_AUDIT.md) — evidence, cleanup, regression risks and publication checklist
 
+## Current integration and preserved experimental history
+
+- [Combined Windows 11 / Wine / Proton test evidence](references/INTEGRATION_XBOX_MOUSE_ALT_FOCUS_ACCEPTANCE.md) — validated original Xbox/DS4 input, native Alt recovery and the bounded focus/audio scope on PR #91
+- [Release-readiness and safe PR dependency audit](references/INTEGRATION_RELEASE_READINESS_20261101.md) — pending authorization, stacked merge strategy, final CI and platform retest requirements
+- [Historical experimental changelog (archive)](references/CHANGELOG_EXPERIMENT_HISTORY_PRE_20261101.md) — complete superseded development diary, **not** current release policy
+
 ## Configuration and gameplay reference
 
 - [Advanced configuration, INI recovery and troubleshooting](references/CONFIGURATION.md)

@@ -137,6 +137,36 @@ Automated source and clipping tests live in
 `tests/test_native_pause_menu_probe.py`. The final F9 Wine visual checks
 were performed by the project maintainer.
 
+## Long save-confirmation title — regression under investigation
+
+A new Wine screenshot dated 27 October 2026 shows the original
+`SAVE GAME PROGRESS ?` heading rendered with very large gaps,
+particularly between `SA` and `VE`, and immediately before `?`,
+while the purple confirmation panel itself remains well proportioned.
+
+**Likely cause from source inspection:** the earlier native ESC text-quad
+classifier was limited to glyphs with `left > 25% W` and
+`right < 75% W` (central 50%). Unlike the short previously tested
+`PAUSED` and `REALLY QUIT?` titles, `SAVE GAME PROGRESS ?` reaches
+beyond those X limits; outer font quads can remain at original 16:9
+coordinates while middle ones are transformed to 4:3, creating exactly
+such letter-spacing discontinuities. This is a strong static explanation,
+**not yet a verified runtime diagnosis**.
+
+Proposed correction on `fix/native-save-dialog-title-spacing`:
+keep the existing central 50% for choices; for the title strip only
+(`top >= 16% H`, `bottom <= 34% H`) extend glyph eligibility
+to `left > 18% W`, `right < 82% W`. All native SHA-gated
+stage/4:3 exclusions, exact original D3D7 caller, FVF, triangle
+fan, four vertices, texture dimensions, Z/RHW, same-flip purple
+ribbon, glyph size and the X-only vertex copy are unchanged.
+
+A host-compiled geometry test covers the actual C helper at
+1920x1080 and 1920x1200. Passing these tests **does not prove
+in-game correction**; visual tests must revisit `SAVE GAME PROGRESS ?`,
+`PAUSED`, `REALLY QUIT?`, all NO/YES choices, the red selector,
+4:3 mode and the gameplay HUD on Windows/Wine before merging.
+
 ## Credits
 
 legluondunet assisted by ChatGPT (OpenAI)

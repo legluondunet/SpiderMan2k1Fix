@@ -17,6 +17,7 @@
 #include <string.h>
 #include <wchar.h>
 #include "f9_png.h"
+#include "spider_fix_paths.h"
 #include "f9_toast.h"
 
 #define SPIDER_PNG_PIXEL_FORMAT_32BPP_RGB 0x00022009
@@ -92,8 +93,7 @@ static DWORD WINAPI spider_png_thread(void *ctx) {
   ULONG_PTR token=0;
   void *bitmap=NULL;
   WCHAR exe[MAX_PATH],temp[MAX_PATH],dest[MAX_PATH];
-  WCHAR *slash;
-  DWORD len,error=0;
+  DWORD error=0;
   LONG serial=InterlockedIncrement(&spider_png_serial);
   UINT n;
   int saved=0;
@@ -132,17 +132,11 @@ static DWORD WINAPI spider_png_thread(void *ctx) {
     spider_png_fail(job,"F9-PNG: bitmap conversion failed",L"Cannot convert screenshot pixels");
     goto done;
   }
-  len=GetModuleFileNameW(NULL,exe,MAX_PATH);
-  if(!len || len>=MAX_PATH) {
-    spider_png_fail(job,"F9-PNG: cannot resolve game directory",L"Cannot locate game directory");
+  if(!spider_path_screenshots_w(exe,MAX_PATH)) {
+    spider_png_fail(job,"F9-PNG: cannot create writable screenshots folder",
+                    L"Cannot create screenshots folder (game or LOCALAPPDATA)");
     goto done;
   }
-  slash=wcsrchr(exe,L'\\');
-  if(!slash) {
-    spider_png_fail(job,"F9-PNG: cannot locate game directory separator",L"Cannot locate game directory");
-    goto done;
-  }
-  *slash=L'\0';
   if(swprintf(temp,MAX_PATH,L"%ls\\SpiderF9PNG-%lu-%ld.tmp",
               exe,(unsigned long)GetCurrentProcessId(),(long)serial)>=MAX_PATH) {
     spider_png_fail(job,"F9-PNG: temporary filename too long",L"Screenshot file path is too long");
@@ -166,7 +160,7 @@ static DWORD WINAPI spider_png_thread(void *ctx) {
         saved=2; /* failure already reported; no second popup */
         break;
       }
-      snprintf(msg,sizeof(msg),"F9-PNG: saved scrn%04u.png %lux%lu (native lossless)",
+      snprintf(msg,sizeof(msg),"F9-PNG: saved screenshots/scrn%04u.png %lux%lu (native lossless)",
                (unsigned)n,(unsigned long)job->width,(unsigned long)job->height);
       spider_png_log(job,msg);
       /* Inform the game thread only after the final PNG exists. */

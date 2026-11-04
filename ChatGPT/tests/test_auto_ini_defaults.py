@@ -45,7 +45,11 @@ def test_generated_example_factory_consistency():
     assert "KeyboardLayout=" not in (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text()
     assert not config.has_option('Input','DirectInputReacquire')
     assert not config.has_option('Input','PauseOnFocusLoss')
-    assert list(config['Input']) == ['keyboardlayout']
+    assert list(config['Input']) == ['keyboardlayout','experimentalsdl3probe','experimentalsdl3nativeowner','experimentalsdl3controllersetup','experimentalsdl3universalgameplay','experimentalaltlatchrecovery','experimentalnativejoystickunplugguard','experimentalnativejoystickreconnect']
+    assert config['Input']['ExperimentalSDL3NativeOwner']=='0'
+    assert config['Input']['ExperimentalSDL3UniversalGameplay']=='0'
+    assert 'ControllerProfile' not in config['Input']
+    assert 'ControllerXbox360Preview' not in config['Input']
     assert 'PauseKey' not in config['Input']  # Any-key resume is fixed, not selectable
     assert not config.has_option('Input','ExperimentalAltTabReacquire')
     assert not config.has_option('Input','ExperimentalDI8CreateDeviceTrace')
@@ -59,7 +63,7 @@ def test_generated_example_factory_consistency():
     assert config['Keyboard']['Up']=='UP'
     assert config['Keyboard']['Swing']=='G'
     assert [config['Keyboard'][key] for key in ('Kick','Punch','Web','Aim','Zipline','Swing')] == ['X','C','V','D','F','G']
-    assert [config.getint('Audio',k) for k in ('MusicSFXLevel','VoiceLevel','MovieLevel')] == [69,79,69]
+    assert [config.getint('Audio',k) for k in ('MusicSFXLevel','VoiceLevel','MovieLevel')] == [40,60,40]
     assert not config.has_section('Gamepad')
     assert config['Joystick']['Jump'] == 'BUTTON3'
     assert config['Joystick']['Punch'] == 'BUTTON0'

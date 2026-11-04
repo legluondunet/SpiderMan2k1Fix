@@ -4,7 +4,7 @@ This is the detailed companion to the [project README](../../README.md). For the
 
 ## Upgrading from older builds
 
-- **Updating the current fix:** back up the existing `winmm.dll`, `SpiderMan2k1Fix.dll` and `SpiderMan2k1Fix.ini` in the game folder. Replace **both DLLs from the same GitHub Actions build**, but keep your existing INI settings. The CI artifact does **not** include an INI.
+- **Updating the current fix:** back up the current `winmm.dll` and `SpiderMan2k1Fix.dll` and keep your existing `SpiderMan2k1Fix.ini`. Extract the new artifact **without flattening**: `winmm.dll` remains alongside `SpideyPC.exe`, while `SpiderMan2k1Fix.dll` and the bundled official 32-bit `SDL3.dll` are placed in `SpiderMan2k1Fix/` (with `SDL3-LICENSE.txt`). SDL3 remains optional at runtime; no separate download is needed. On first launch, a legacy root INI is copied into `SpiderMan2k1Fix/` if no nested config already exists; **keep your existing INI** and let the fix migrate it safely. The original remains untouched. The CI artifact does **not** include an INI.
 - **Migrating from an older SpiderManFix beta:** remove the obsolete `SpiderManFix.dll`. To preserve settings, back up your old `SpiderManFix.ini` and rename it to `SpiderMan2k1Fix.ini` **before** launching the new fix (only if no new-named INI already exists). Otherwise the patch generates fresh defaults.
 - **Other proxy mods:** `winmm.dll` is a filename shared by many mods. Back up an existing file and check for conflicts; two different proxies cannot normally occupy the same directory under that name.
 
@@ -27,7 +27,7 @@ The normal INI `.old` recovery mechanism applies to **settings only**.
 
 ## Player INI: compact configuration
 
-SpiderMan2k1Fix automatically generates `SpiderMan2k1Fix.ini` beside the supported game executable. Edit it **only while the game is closed**. The generated file exposes only the options that a player should need:
+SpiderMan2k1Fix automatically generates `SpiderMan2k1Fix/SpiderMan2k1Fix.ini` under the supported game executable's directory (or `%LOCALAPPDATA%/SpiderMan2k1Fix/SpiderMan2k1Fix.ini` if the installation directory cannot be written). Edit it **only while the game is closed**. The generated file exposes only the options that a player should need:
 
 ```ini
 [Debug]
@@ -42,9 +42,9 @@ FPSLimit=30
 KeyboardLayout=Auto
 
 [Audio]
-MusicSFXLevel=69
-VoiceLevel=79
-MovieLevel=69
+MusicSFXLevel=40
+VoiceLevel=60
+MovieLevel=40
 Stereo=1
 
 [Keyboard]
@@ -128,7 +128,7 @@ selected monitor's active Windows/Wine resolution.
 
 The supported executable receives **automatic desktop resolution**, borderless fullscreen, centered 4:3 intro/menu media, native comic correction, automatic FOV/aspect adjustment, adaptive widescreen HUD and the verified in-game Display menu lock. These are no longer enabled or disabled through experimental flags; the original 4:3 mode retains its original geometry where a widescreen transform is unnecessary.
 
-**Alt+Tab and pause are permanent features:** once another application's focus loss is confirmed, the game latches pause at the original DirectDraw Flip boundary; a **press and release of any keyboard key after returning** resumes it. The frozen game frame receives the native violet/red PAUSED banner and **60% black shading by default**, with no grid. This behavior also coordinates the game's native Bink video/music streams and its game-owned secondary DirectSound voices. The native `DIERR_NOTACQUIRED` keyboard/mouse retry is requested automatically and installed only after its verified signature check at Flip #120; desktop cursor restoration is automatic. The old unsafe DirectInput COM-vtable hook stays disabled.
+**Alt+Tab and pause are permanent features:** once another application's focus loss is confirmed, the game latches pause at the original DirectDraw Flip boundary; a **press and release of any keyboard key after returning** resumes it; with an **already detected Sony DualShock 4**, a fresh **digital button press followed by full release** also wakes our custom PAUSED screen (not the original 3D Escape pause). The DS4 button is polled from our independent nonexclusive DirectInput device while Flip is blocked; no synthetic keyboard event reaches the game. The focus-loss pause now shows **only `PAUSED`** in the **identical bottom-left, flush-left violet notification panel used by F9 screenshots**, with the original 32×32 game icon, lavender three-sided border and white bold-italic text. There is no on-screen wake instruction; keyboard and eligible selected-gamepad wake-up remain unchanged. The label contains no device-specific status, so hotplugging does not need to update visual instructions. No controller button can resume while another application is foreground, no held-before-resume button is inherited, and a keyboard key always remains a fallback. This does **not** add hotplugging or Xbox/DS2 support. The frozen game frame receives the compact F9-style **PAUSED** notification and **60% black shading by default**, with no grid. This behavior also coordinates the game's native Bink video/music streams and its game-owned secondary DirectSound voices. The native `DIERR_NOTACQUIRED` keyboard/mouse retry is requested automatically and installed only after its verified signature check at Flip #120; desktop cursor restoration is automatic. The old unsafe DirectInput COM-vtable hook stays disabled.
 
 **Windows-specific behavior:** the patch requests `DisableProcessWindowsGhosting` automatically on systems providing the API, avoiding Windows' false Ghost-window foreground transitions. This also disables Windows' normal ghost-window handling for a genuinely hung game **until the process exits**; it does not solve a real hang. Wine implementation details may differ.
 
@@ -136,7 +136,7 @@ In all cases, the original executable's SHA-256 check and per-feature native sig
 
 ### Optional PAUSED background opacity
 
-The focus-loss pause and its PAUSED banner are permanent, but **background
+The focus-loss pause and its compact PAUSED panel are permanent, but **background
 darkening may be adjusted independently**. The generated INI intentionally
 does **not** contain `PauseDimOpacity`. When omitted, it uses **60%**.
 
@@ -202,9 +202,27 @@ INI keys `PauseOnFocusLoss`, `DirectInputReacquire`,
 from the generated file does not disable these features.
 
 At the original DirectDraw Flip boundary, confirmed external focus loss
-latches pause; its native PAUSED ribbon uses the optional 60%-by-default
-shading described above. A complete press/release of any key after
-returning to the game resumes it. The original game's input Acquire/retry
+latches pause; its screenshot-style PAUSED label uses the optional 60%-by-default
+shading described above. A complete keyboard press/release, or a new
+press/release of an already acquired Sony DS4 digital button after returning
+to the game, resumes our custom PAUSED screen. The gamepad wake waits for a
+neutral reading and full physical release; it never synthesizes a key in
+the original game and is independent from the original 3D pause menu.
+The maintainer confirmed physical DS4 wake of our custom PAUSED screen
+under Wine on 28 October 2026. The same session revealed the desktop
+mouse pointer remained visible until wake. The follow-up fix now balances
+any temporary desktop-pointer visibility restoration **during** the
+PAUSED loop as soon as the game becomes foreground again, rather than
+waiting for a keyboard/controller press. Independently, the game
+mouse is **permanently disabled**: the original mouse sprite, polling
+and menu hover/click testing stay off, including while the game is
+background, preventing the game's own cursor from entering the frozen
+PAUSED frame. Old `MouseEnabled=0/1` settings are accepted for
+backward compatibility but **ignored**, so neither value restores
+in-game mouse controls. Keyboard and gamepad navigation remain available.
+Neither mechanism captures or warps the operating-system desktop cursor. The visual result of this follow-up fix still needs a Wine
+regression test; native Windows remains unverified.
+The original game's input Acquire/retry
 branch receives a signature-guarded native correction on or after
 **Flip #120**. The previous invasive DirectInput COM/vtable interception
 remains disabled.
@@ -239,7 +257,7 @@ Debug logging is **off by default**:
 Log=0
 ```
 
-If you need to investigate a problem, set `Log=1`, save the file, and **restart the game**. SpiderMan2k1Fix will write `SpiderMan2k1Fix.log` in the game directory. **Each game launch starts a fresh log:** the previous session is overwritten (the proxy startup lines and main DLL diagnostics are retained together). Copy or rename the log before your next launch if you need to keep it. After collecting the information you need, return to `Log=0`.
+If you need to investigate a problem, set `Log=1`, save the file, and **restart the game**. SpiderMan2k1Fix will write `SpiderMan2k1Fix.log` alongside the active INI in `SpiderMan2k1Fix/` (or `%LOCALAPPDATA%/SpiderMan2k1Fix/` if needed). **Each game launch starts a fresh log:** the previous session is overwritten (the proxy startup lines and main DLL diagnostics are retained together). Copy or rename the log before your next launch if you need to keep it. After collecting the information you need, return to `Log=0`.
 
 ## Startup safety: no modal INI dialogs before native DirectDraw
 
@@ -304,7 +322,7 @@ Unrecognized data stays in the previous version stored in `.ini.old`, but is not
 
 **The game launches, but SpiderMan2k1Fix does not seem active**
 
-- Verify that both DLLs are in the same directory as `SpideyPC.exe`.
+- Verify that **only `winmm.dll`** is alongside `SpideyPC.exe` and the main `SpiderMan2k1Fix.dll` is in `SpiderMan2k1Fix/`.
 - On Linux, check the Wine DLL override: `WINEDLLOVERRIDES="winmm=n,b"`.
 - Check that the executable is the supported version. On Linux, run `sha256sum SpideyPC.exe`; on Windows PowerShell, run `Get-FileHash .\SpideyPC.exe -Algorithm SHA256`.
 - Temporarily enable `Log=1` and check `SpiderMan2k1Fix.log`, if an INI was generated.
@@ -335,3 +353,181 @@ Try the original `AspectRatio=4:3` mode to help isolate widescreen-specific prob
 - [Native ESC 4:3 corrections and debug switches](NATIVE_PAUSE_MENU_43.md).
 - [F9 PNG screenshot capture](F9_PNG_CAPTURE.md).
 - [HUD scaling and original game implementation](../DEVELOPMENT.md#7-display-and-rendering-research).
+
+
+### Permanent in-game mouse disable: first Wine/Proton hardware test (1 November 2026)
+
+The maintainer tested the draft [PR #90](https://github.com/legluondunet/SpiderMan2k1Fix/pull/90) DLL with
+`SpiderMan2k1Fix(20261101-084934).log` (919 lines) and explicitly
+reported: **no in-game cursor visible; moving the mouse or clicking its
+buttons caused no response in the game**.
+
+- Platform **Linux Manjaro / Wine 11.0**, Proton environment hint
+  **GE-Proton11-11-x86_64** (the latter is a tool-directory hint,
+  not an independently verified Proton version). This was **not**
+  a native Windows hardware test.
+- Startup banner `v1.1.0-5cd333b` corresponds to verified GitHub
+  temporary PR test merge commit
+  `5cd333b578ba13b2dc097fd072df127bbc738608`, whose second
+  parent is exactly PR #90 head `c375511427ca19694c4580cb80e067c236365ba9`.
+  The supported original `SpideyPC.exe` SHA-256 also matched.
+- Log **33–35**: permanent game mouse policy configured;
+  old `MouseEnabled` and `ControllerAutoDisableMouse` keys
+  were recognized and **ignored**. The log does **not** record
+  the value of the obsolete `MouseEnabled` key; it is therefore
+  **not proof of an explicit `MouseEnabled=1` negative test**.
+- Log **349–350**: original-game instruction/signature preflight
+  **ARMED**, followed by
+  `GAME MOUSE OFF (permanent)`: cursor sprite, original mouse
+  polling and menu hit-testing suppressed; desktop OS pointer untouched
+  by this game-input module.
+- Log **469–480**: transition from 2D menu to 3D gameplay.
+  Log **889–915**: original 3D cleanup / controller-7 transition
+  back into the 2D menu succeeded. No mouse-module REFUSED or error.
+- Log **29, 118–121, 423–424**: no controller was detected
+  (`XInput=0`, `DirectInput8=0`, `SDL3 mapped-gamepads=0`).
+  This run cannot validate gameplay with Sony DS4 or Xbox gamepads.
+- Log **354–355** captures the **game in foreground** with
+  `cursor-showing=0`, which is expected. There is **no documented
+  external Alt+Tab focus loss/return in this run**, so **desktop cursor
+  restoration after Alt+Tab is not hardware-tested here**. Its
+  existing Win32 focus handling remains distinct and unchanged.
+
+**Status:** first **Wine/Proton in-game-mouse suppression PASS**,
+supported by both on-device user observation and native-game
+gate telemetry. Still need an explicit `MouseEnabled=1` old-INI
+negative test and native Windows test if desired; leave PR **DRAFT
+and unmerged** until explicit maintainer approval. The separate
+experimental Left Alt recovery PR #88 is not included in this build.
+
+## Wine 11.0 follow-up validation: obsolete `MouseEnabled=1` and desktop cursor after Alt+Tab (1 Nov 2026)
+
+**Maintainer's explicit report:** After deliberately setting
+`[Input] MouseEnabled=1` in the existing INI, **the game mouse
+remained disabled**, with no in-game cursor or mouse motion/click
+response. After **actual Alt+Tab focus switches**, the **Linux
+desktop pointer reappeared and worked normally**; no anomaly
+observed. This is a user-observed result, **not** a claim that
+the INI value is printed by the log.
+
+**Corroborating runtime log:**
+`SpiderMan2k1Fix(20261101-090428).log` (862 lines), under
+Linux Manjaro kernel 7.1.13-2 / **Wine 11.0**, with
+GE-Proton11-11 tool-name environment hint. The loaded DLL
+identifies as **`v1.1.0-5cd333b`** (same verified GitHub PR
+test merge of PR #90 code `c3755114` as the first mouse
+hardware trial). Supported original retail executable SHA-256
+matched.
+
+- **35–37:** permanently-off game mouse policy; obsolete
+  `MouseEnabled` and `ControllerAutoDisableMouse`
+  keys detected and ignored. The tested `=1` value is
+  **provided by the maintainer**, not independently
+  echo-logged.
+- **361–362:** game-owned native instruction-gate verification
+  **ARMED** and `GAME MOUSE OFF (permanent)`. No
+  `GAMEPAD-MOUSE ... REFUSED` or re-enable events.
+- **459–480:** first confirmed external background/focus
+  return and manual resume.
+- **508–527:** second confirmed external background/return
+  and manual resume.
+- **556–583:** third confirmed external background/return
+  and manual resume. There is a brief extra
+  background/foreground toggle **571–576**, but it does
+  **not** yield a fourth confirmed focus-pause epoch.
+- **460–461, 509–510, 557–558, 572–573:** OS pointer
+  **`cursor-showing=1`** when game backgrounded,
+  **`cursor-ok=1`**, full-desktop clip
+  `(0,0)-(1920,1080)`; after returning to game,
+  **472–473, 520–521, 569–570, 575–576**
+  show `cursor-showing=0`, consistent with intentionally
+  hidden cursor in game and normal desktop restoration.
+- **596–607:** enters 3D gameplay; **833–861:** native 3D
+  cleanup, controller-7 teardown and menu return.
+  No mouse-specific or focus-resume failure marker observed.
+- **29–31, 120–141, 433–452:** Xbox 360 XInput,
+  DirectInput and SDL3 discovery identify VID:PID
+  `045E:028E` with native game ownership, but this
+  particular log does **not** establish full controller
+  button/gameplay validation; do not extrapolate from
+  detection alone.
+
+**Decision:** **PASS** for the two previously outstanding
+PR #90 Wine/Proton mouse acceptance criteria:
+1. `MouseEnabled=1` cannot reactivate game cursor, motion
+   or buttons, as independently confirmed by maintainer;
+2. OS desktop cursor remains visible/usable after real
+   Alt+Tab, also independently observed and corroborated
+   by Win32/Wine cursor diagnostics.
+
+Together with the earlier 08:49 hardware run and 704 CI
+regressions, the **in-game mouse permanent-off behavior is
+validated under Wine/Proton**. Native Windows gameplay was
+not tested on this particular branch; do not claim universal
+platform validation. PR #90 stays **DRAFT**, independent of
+PR #88 Alt-latch recovery and **unmerged**.
+
+
+## Reading SYS-INFO and focus diagnostics
+
+The `SYS-INFO: BEGIN` / `SYS-INFO: END` block is a **one-shot startup
+diagnostic inventory**, not a periodic benchmark. Its `elapsed_ms` value
+measures only collection and reporting time using a high-resolution
+timer with a safe fallback. Each monitor receives a Win32 device
+identifier such as `DISPLAY1`; the later `SYS-DISPLAY-SELECTED`
+entry identifies the monitor actually used by the game window,
+which need not be primary and changes only if its selection or
+mode changes. Unknown keys in a recognized INI section are
+reported by **name**, without their values, as `INI-CHECK` warnings.
+
+On Wine/Proton, the reported **Win32 version is the emulated Windows
+target**, not the Linux distribution. The host OS/kernel is probed
+separately through Wine. A Steam compatibility environment is only
+a **Proton hint**; the exact Proton version may not be available.
+Likewise D3D9 modules or driver versions may identify Wine/DXVK
+wrappers rather than the host Mesa/AMDGPU/NVIDIA driver. For
+`Unavailable` fields, include the actual host driver and Proton
+version separately when submitting an issue.
+
+The startup report does not intentionally collect usernames,
+machine names, email addresses, network/IP addresses, monitor
+or controller serials, or Steam IDs. Nevertheless, **review the
+complete log before posting publicly**, because other runtime
+messages may include filesystem paths.
+
+### Distinguishing the original in-game mouse from the OS cursor
+
+The original Spider-Man **in-game mouse sprite, polling and menu
+clicks are permanently disabled** in the combined experimental
+fix. The `MouseEnabled` and `ControllerAutoDisableMouse`
+legacy keys are accepted to avoid breaking older configuration
+files but cannot turn the game mouse on.
+
+This does **not** disable the Windows/Linux **desktop pointer**.
+If it is missing after Alt+Tab, enable `[Debug] Log=1`,
+capture `INPUT-FOCUS`, `INPUT-WINDOW` and
+`FOCUS-PAUSE` records, and report OS/Wine/Proton version and
+a reproducible focus-switch sequence. Under Wine the custom
+PAUSED banner can be delayed or absent even when game input,
+audio and graphics correctly resume; an absent banner alone
+is not evidence of a crash.
+
+### Troubleshooting no sound
+
+Classify the failure as **total silence**, **music-only**,
+**Bink/cinematic audio-only**, or **3D effects-only**, and
+record whether it began on startup or after a focus pause.
+Verify system output device, app mixer, game audio levels,
+supported exact retail executable hash and matching
+`winmm.dll`/`SpiderMan2k1Fix.dll` build, and confirm
+`INI-CHECK: valid` or inspect the backed-up `.ini.old`
+when automatic repair took place.
+
+The game's original **DirectSound** renderer is retained.
+The built-in verified native WAV/PKR tail fix targets
+**truncation/crackling**, not every audio routing or
+complete-silence cause. Do not enable hidden audio switches
+as an unverified universal remedy. Attach a full
+`[Debug] Log=1` run with the affected audio type,
+platform and exact reproduction steps.
+
