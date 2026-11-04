@@ -49,9 +49,15 @@ def test_never_swallow_native_linux_keys_under_stale_win32_focus():
     assert "static volatile LONG host_focus_blocked=0;" in KEYS
     assert "InterlockedCompareExchange(&host_focus_blocked,0,0)==0" in KEYS
     assert "InterlockedCompareExchange(&host_focus_blocked,0,0)!=0" in KEYS
-    assert PAUSE.count("SpiderPauseAny_SetHostFocusBlocked(")==2
-    assert "pause_x11_bridge_enabled() && x11_state!=1" in PAUSE
-    assert "(pause_x11_bridge_enabled() && x11_state!=1)?0:" in PAUSE
+    # Initial host gate plus normal X11 and terminal-failure Win32-return
+    # paths. The extra call specifically closes the gate until a real
+    # external->game Win32 transition has been observed after helper loss.
+    assert PAUSE.count("SpiderPauseAny_SetHostFocusBlocked(")==3
+    assert "pause_x11_bridge_enabled() &&" in PAUSE
+    assert "x11_state!=1);" in PAUSE
+    assert "SpiderPauseAny_SetHostFocusBlocked(!fallback_wake_armed);" in PAUSE
+    assert "(pause_x11_bridge_enabled() && x11_state!=1 &&" in PAUSE
+    assert "!fallback_wake_armed)?0:" in PAUSE
 
 
 def test_unix_helper_does_not_inject_keys_or_activate_windows():
