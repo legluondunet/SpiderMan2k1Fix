@@ -120,6 +120,7 @@ def test_source_verified_reticles_preserve_other_vertex_attributes(tmp_path):
             src[0].u=0.25f;
             assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)==0);
             src[0].u=0.0f;
+            src[1].x=src[0].x;
             src[2].x=src[0].x; /* degenerate/invalid quad */
             assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)==0);
             return 0;
