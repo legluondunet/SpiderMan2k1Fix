@@ -1,5 +1,12 @@
 # SDL3 validated panel + opt-in 3D integration (draft PR #98)
 
+**CURRENT HANDS-ON TEST INSTRUCTIONS:** use the [compact combined PS3/DS4
+acceptance run](SDL3_COMPACT_HARDWARE_ACCEPTANCE_20261104.md), one game
+session and one log, plus a second run only if a third-party pad is
+available. The many historical tests below document previous research;
+**do not repeat them individually** unless the combined run exposes a
+specific regression. This does not waive separate native Windows checks.
+
 Status: **EXPERIMENTAL / OFF BY DEFAULT / GE-PROTON HARDWARE TESTED / WINDOWS 11 NATIVE DEFERRED.**
 
 Physical tests November 2–3, 2026 under Manjaro / GE-Proton11-11 and
