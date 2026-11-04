@@ -99,14 +99,42 @@ def test_ci_ships_elf_directly_inside_flat_install_artifact_and_release_zip():
     assert 'SpiderMan2k1Fix-Windows-x86' in WORKFLOW
 
 
-def test_pause_can_recover_when_helper_disappears():
-    assert 'host_bridge_unavailable_for_long()' in PAUSE
-    assert 'if(InterlockedCompareExchange(&host_focus_blocked,0,0)!=0 &&' in PAUSE
-    assert 'now.QuadPart-modified.QuadPart<=1200ull*10000ull' in PAUSE
-    assert 'return (DWORD)(tick-host_bad_since)>=2200u;' in PAUSE
-    assert 'host_bad_since=0;' in PAUSE
-    assert 'SPIDEY_X11_FOCUS_V1 OTHER\\n' in PAUSE
-    assert 'SpiderPauseAny_HostRecoveryTriggered(void)' in PAUSE
-    assert 'InterlockedExchange(&host_recovery_triggered,1)' in PAUSE
-    assert 'SpiderPauseAny_HostRecoveryTriggered()' in CORE
-    assert 'safe fallback resume (NOT a user key)' in CORE
+def test_helper_outage_cannot_autowake_the_game_in_another_app():
+    # Regression from the 2026-11-04 SIGTERM experiment: missing X11 data
+    # previously caused 22 automatic resumes and 22 immediate re-pauses.
+    assert 'host_bridge_unavailable_for_long' not in PAUSE
+    assert 'host_recovery_triggered' not in PAUSE
+    assert 'SpiderPauseAny_HostRecoveryTriggered' not in CORE
+    assert 'safe fallback resume (NOT a user key)' not in CORE
+    assert 'if(GetForegroundWindow()!=target ||' in PAUSE
+    assert 'InterlockedCompareExchange(&host_focus_blocked,0,0)!=0' in PAUSE
+    assert 'return InterlockedCompareExchange(&completed,0,0)==1;' in PAUSE
+    assert 'SpiderWineFocusAutostart_TryRecover(log_line);' in CORE
+    assert 'SpiderWineFocusAutostart_PollReady(log_line);' in CORE
+    assert 'SpiderWineFocusAutostart_TryRecover(focus_log);' in FOCUS
+
+
+def test_restart_requires_owned_helper_and_missing_or_stale_heartbeat():
+    assert 'static int helper_managed=0;' in BOOT
+    assert 'helper_managed=1;' in BOOT
+    assert 'static int helper_recovery_attempts=0;' in BOOT
+    assert 'if(!helper_managed || helper_waiting_for_state ||' in BOOT
+    assert 'helper_recovery_attempts>=2)return 0;' in BOOT
+    assert 'GetFileAttributesExW(helper_state_path' in BOOT
+    assert 'now.QuadPart-modified.QuadPart<=1200ull*10000ull)return 0;' in BOOT
+    assert 'helper_waiting_for_state=1;' in BOOT
+    assert 'native restart %d/2 started, awaiting verified state' in BOOT
+    assert 'wcscpy(helper_exec_path,helper_path);' in BOOT
+    assert 'wcscpy(helper_game_path,game_path);' in BOOT
+    # A manual helper (explicit =1) cannot be automatically restarted.
+    assert 'if(requested || GetLastError()!=ERROR_ENVVAR_NOT_FOUND)return 0;' in BOOT
+
+
+def test_pause_resume_gate_remains_native_game_plus_real_user_input():
+    assert 'SpiderPauseAny_SetHostFocusBlocked(pause_x11_bridge_enabled() &&' in CORE
+    assert 'x11_state!=1);' in CORE
+    assert 'if(SpiderPauseAny_Completed())' in CORE
+    assert 'if(resumed_buttons)' in CORE
+    assert 'SpiderFocusMedia_Resume();' in CORE
+    assert 'SpiderFocusDSound_Resume();' in CORE
+    assert 'if(InterlockedCompareExchange(&host_focus_blocked,0,0)!=0' in PAUSE
