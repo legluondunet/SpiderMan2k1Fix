@@ -68,6 +68,17 @@ int SpiderWineFocusAutostart_TryStart(void (*logger)(const char *)) {
     if(logger)logger("FOCUS-X11-AUTO: Unix path conversion failed; Win32 fallback");
     goto cleanup;
   }
+  /* GitHub Actions artifacts strip executable file permissions.
+   * Restore u+x on the shipped ELF using argv (NO shell injection);
+   * a read-only/game directory on which chmod fails is a safe fallback. */
+  {
+    char *chmod_argv[5]={"/usr/bin/chmod","u+x","--",helper_unix,NULL};
+    status=spawn(chmod_argv,1);
+    if(status!=0) {
+      if(logger)logger("FOCUS-X11-AUTO: helper chmod failed; Win32 focus fallback");
+      goto cleanup;
+    }
+  }
   argv[0]=helper_unix;
   argv[1]=game_unix;
   argv[2]=NULL;
