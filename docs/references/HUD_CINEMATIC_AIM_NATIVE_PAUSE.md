@@ -98,6 +98,53 @@ text/selector Z/RHW signatures are not yet known.
 The user's previous screenshot `scrn0021.png` belongs to the older,
 now diagnosed build and is therefore still a genuine failed test.
 
+## Second validation: scrn0023.png and 22:31:52–22:33:20 log
+
+The maintainer's next 1920×1080 screenshot `scrn0023.png` is an
+**intermediate result**, not acceptance: the violet **fill** now occupies
+the middle 4:3 region, but the brighter horizontal and vertical **border
+strokes** still span the full 16:9 width. The native lettering also
+remains wide. The red/blue motif is now caught by the new level-2 matcher.
+
+The accompanying `SpiderMan2k1Fix(20261104-213332).log` establishes:
+
+- `PAUSE-NATIVE-43: ribbon hit=1` on Flip **776**, then repeated hits
+  through at least Flip **2046**, `scale=0.75000`, Z=`0.00122`,
+  RHW=`8.9615`. **The banner correction is working.**
+- Numerous `NATIVE-MOTIF-43: QUAD-MATCH` records use the verified
+  **RHW `7.8952`** signature. The motif correction is also active.
+- **Zero** `PAUSE-NATIVE-43: glyph` or `border` hits, and no
+  `NATIVE-CURSOR-43: QUAD-MATCH` while these screenshots were taken.
+  Do not infer selector failure from a screenshot that lacks a
+  red moving selector.
+- All 80 `PAUSE-NATIVE-DETAIL` samples reported `corrected=0`.
+  The real foreground/shadow text quads have distinct exact pairs:
+  **Z=`0.00122`, RHW=`8.9615`**, and
+  **Z=`0.00098`, RHW=`10.3609`**, with a 16/32x32 font atlas.
+  Previous code exclusively allowed the legacy
+  **11.176 / 12.686** pairs and therefore never reached its 4:3
+  text scaling.
+- The detail probe's original 15–85% central X filter excluded
+  the left/right 8x8 borders. Their actual RHW is still unknown.
+  It would be incorrect to claim that the text samples also prove
+  the border's exact depth.
+
+**Follow-up in the same PR:** add a separate pure, host-tested native
+`SpiderNativePause43_TextLayer` accepting only the original and
+observed pairs, without mixing Z/RHW combinations, and update the strict
+font pass. The 8x8 border pass additionally permits the independently
+verified new ribbon Z/RHW pair, while keeping its existing caller,
+texture, geometry, stage and same-Flip checks. A new **bounded 40-sample**
+`PAUSE-NATIVE-BORDER-PROBE` records edge-only 8x8 primitives after the
+known-good ribbon if the border remains unmatched. It does not alter
+vertices or state. Original 3D, movie, comic and gameplay HUD paths
+remain unchanged.
+
+**Acceptance remains pending**: collect one new F9 of native Pause and
+its matching `[Debug] Log=1` journal. Confirm no full-width border
+and native text proportions against the Dreamcast reference. The
+red/green reticle and cinematic-compass tests are still pending.
+
 ## Bounded read-only diagnostic
 
 When `[Debug] Log=1`, only **uncorrected** original 4-vertex D3D7
