@@ -67,3 +67,23 @@ def test_wndproc_never_performs_off_thread_render_or_native_pause():
         assert forbidden not in observer
     assert "BOOL SpiderInputFocus_ConsumeDeferredPause" in observer
     assert "void SpiderInputFocus_DiscardDeferredPause" in observer
+
+
+def test_opt_in_wndproc_brackets_native_handler_and_tracks_completion():
+    assert "static volatile LONG deferred_wndproc_report_count=0;" in FOCUS
+    window=FOCUS[FOCUS.index("static LRESULT CALLBACK focus_window_proc("):
+                 FOCUS.index("void SpiderInputFocus_AttachWindow(")]
+    assert "InterlockedCompareExchange(&deferred_pause_enabled,0,0)==1" in window
+    assert "InterlockedIncrement(&deferred_wndproc_report_count)<=32" in window
+    assert '"FOCUS-RETURN: ORIGINAL-WNDPROC enter msg=%s' in window
+    assert '"FOCUS-RETURN: ORIGINAL-WNDPROC returned msg=%s' in window
+    assert "forwarded_result=previous_proc ? CallWindowProcA(previous_proc,hwnd,msg,wp,lp)" in window
+    assert window.index("ORIGINAL-WNDPROC enter") < window.index("CallWindowProcA(previous_proc,hwnd,msg,wp,lp)") < window.index("ORIGINAL-WNDPROC returned")
+    assert "return forwarded_result;" in window
+
+
+def test_opt_in_focus_event_traces_do_not_require_debug_mode():
+    assert "if(input_debug_logging && deferred_reports++<16)" not in EVENTS
+    assert EVENTS.count("if(deferred_reports++<16)") == 3
+    assert "FOCUS-RETURN: WM_ACTIVATEAPP(FALSE) recorded" in EVENTS
+    assert "FOCUS-RETURN: sustained app deactivation" in EVENTS
