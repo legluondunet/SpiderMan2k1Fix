@@ -80,16 +80,16 @@ static inline int SpiderHudVisual_Classify(
         v[0].rhw > 27.5f && v[0].rhw < 27.7f)
         return SPIDER_HUD_VISUAL_NONE;
 
-    /* Visually documented aiming rings span ~148x106 or 172x135 at
-     * 1920x1080. The previous broad 45px gate emitted ONLY false AIM
-     * samples for the player health/web icon's 32x32 sprite
-     * (x=292.5..345.9, y=94.5..162, z=.00024, rhw=19.4920)
-     * in the maintainer's level-2 Pause session. Restrict this
-     * read-only *candidate* region away from the upper-left HUD without
-     * guessing reticle colors, textures or D3D7 depth signatures. */
-    if (width >= (float)screen_h * 0.065f &&
+    /* The uploaded full-resolution F9 images show PC red ~153x113
+     * and green ~94x70 on 1920x1080. Both are 4:3-stretched circles.
+     * The previous minimum height .065*1080=70.2 excludes the
+     * green ring's ~70px height; the .05 bound includes both variants.
+     * Keep the central-X gate rejecting the top-left health/web HUD
+     * sprite seen in earlier Log=1 false positives; this is still a
+     * candidate sampler, never an automatic geometry transformation. */
+    if (width >= (float)screen_h * 0.050f &&
         width <= (float)screen_h * 0.35f &&
-        height >= (float)screen_h * 0.065f &&
+        height >= (float)screen_h * 0.050f &&
         height <= (float)screen_h * 0.35f &&
         width >= height * 0.70f &&
         width <= height * 2.50f &&
