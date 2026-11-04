@@ -473,6 +473,7 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
      * to the game. Keyboard input remains independent. This isolation
      * applies only when ExperimentalSDL3UniversalGameplay=1. */
     if(active || sent_mask || pulse_scan ||
+       (focus_dir.phase==SPIDER_FOCUS_DIR_UP) ||
        (suspended && !native_unclaimed_guard))
       restore_original("no selected mapped controller");
     if(native_unclaimed_guard && suspended &&
@@ -534,6 +535,13 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   /* No native pointer manipulation or key injection until the physical
    * gamepad has returned to neutral after Start/selection/menu changes.
    * The policy also enforces neutral before producing 3D action bits. */
+  /* A native joystick held in the unclaimed guard is suspended already,
+   * but this must NOT bypass the fresh neutral gate after physical Start. */
+  if(native_unclaimed_guard && !spider_sdl3_universal_neutral(&sample)) {
+    if(owner_reports++<10u)
+      log_universal("SDL3-UNIVERSAL: explicit Start selected pad awaits neutral before unclaimed DI guard can transfer");
+    return;
+  }
   if(!suspended && !spider_sdl3_universal_neutral(&sample)) {
     if(owner_reports++<10u)
       log_universal("SDL3-UNIVERSAL: selected pad awaits complete neutral before any DI suspension/injection");
