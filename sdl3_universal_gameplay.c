@@ -367,11 +367,33 @@ void SpiderSDL3Universal_BeforeModal(HWND game_hwnd) {
  * Do not use Win32 foreground as a gate: native X11 has already verified
  * the loss, and restore_original is idempotent on repeated focus events. */
 void SpiderSDL3Universal_OnConfirmedFocusPause(void) {
-  if(!requested || !game_thread ||
-     game_thread!=GetCurrentThreadId())return;
-  if(active || suspended || sent_mask || pulse_scan)
-    log_focus_release(
-      "SDL3-UNIVERSAL: HOST-FOCUS-LOSS confirmed; releasing owned keys before blocking PAUSED (Win32 HWND may be stale)");
+  char msg[220];
+  unsigned i,dir_mask=0;
+  /* Always report the actual boundary state, even if a previous X11
+   * OTHER sample already released the keys. These bounded diagnostics
+   * distinguish "no SDL3 owner" from "late release" without mutating
+   * the original game's keyboard latch or accepting a stale HWND. */
+  if(!requested)return;
+  if(!game_thread || game_thread!=GetCurrentThreadId()) {
+    if(report && focus_release_reports++<24u)
+      report("SDL3-UNIVERSAL: HOST-FOCUS-LOSS skipped: not on initialized game thread");
+    return;
+  }
+  for(i=0;i<4u;i++)
+    if(sent_mask&(1u<<i))dir_mask|=(1u<<i);
+  snprintf(msg,sizeof(msg),
+    "SDL3-UNIVERSAL: HOST-FOCUS-LOSS boundary active=%d suspended=%d selected=%lu sent=0x%03X dir=0x%X recovery-phase=%u pending-frames=%u X11-blocked=%d",
+    active,suspended,(unsigned long)selected_id,sent_mask,dir_mask,
+    (unsigned)focus_dir.phase,focus_release.frames_remaining,
+    native_host_focus_blocked);
+  log_focus_release(msg);
+  if(dir_mask)
+    for(i=0;i<4u;i++)
+      if((dir_mask&(1u<<i)) && held_scans[i])
+        trace_native_keyboard_latch("pre-focus-release",held_scans[i]);
+  /* Confirmed X11 loss is authoritative. Block re-injection even if
+   * GetForegroundWindow still incorrectly points at the game. */
+  native_host_focus_blocked=1;
   restore_original("focus or window lost");
 }
 void SpiderSDL3Universal_BeforeUI(HWND hwnd) {
