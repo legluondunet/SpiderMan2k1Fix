@@ -46,8 +46,10 @@ core to make the next field test decisive:
   Default log format is **unchanged** when this opt-in is absent.
 - Under the same flag, emit sampled `FOCUS-TIMELINE: callback=Blt`
   and `callback=Flip` heartbeats, independently per callback
-  (at most ~4 samples/s per callback while active, plus changes in
-  foreground HWND or a call gap >=750ms). Each reports actual
+  (at most ~4 samples/s per callback while active, with an early
+  sample after a call gap >=750ms). A foreground change is detected
+  at the next sampled callback (normally within 250ms), while the
+  separate WndProc messages can provide earlier evidence. Each reports actual
   callback interval, current foreground HWND/PID, game HWND,
   surface-is-primary, 2D/menu state, original FMV-active bit and
   current thread. All read-only; no new WndProc, SDL3, DirectInput,
