@@ -2597,6 +2597,108 @@ static void pause_log_resume_focus(HWND hwnd) {
   }
   log_line(line);
 }
+/* Wine/X11 opt-in host focus bridge. The Linux observer writes a tiny,
+ * frequently updated state file next to SpideyPC.exe. Win32 cannot be
+ * trusted to notice a native Firefox focus switch on some Wine versions:
+ * GetForegroundWindow() can remain the game HWND for many seconds even
+ * though XGetInputFocus/_NET_ACTIVE_WINDOW name another Linux process.
+ *
+ * This bridge never activates or resizes a window. It fails closed if the
+ * host observer stops, the file is stale (>1200ms), or the state is UNKNOWN.
+ * File reading occurs only on the original game Flip/pause thread. */
+static int pause_x11_bridge_config=-1; /* -1 uninitialized; 0 off; 1 on */
+static char pause_x11_bridge_path[MAX_PATH];
+static DWORD pause_x11_bridge_poll_tick=0;
+static int pause_x11_bridge_last_state=0; /* 0 unknown, 1 game, 2 other */
+static unsigned pause_x11_bridge_reports=0;
+static DWORD pause_x11_bridge_loss_since=0;
+static int pause_x11_bridge_enabled(void) {
+  if(pause_x11_bridge_config<0) {
+    char value[4]={0};
+    DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_X11_BRIDGE",
+                                     value,sizeof(value));
+    pause_x11_bridge_config=n==1 && value[0]=='1';
+    if(pause_x11_bridge_config) {
+      char *sep;
+      n=GetModuleFileNameA(NULL,pause_x11_bridge_path,
+                             sizeof(pause_x11_bridge_path));
+      sep=n && n<sizeof(pause_x11_bridge_path)?
+        strrchr(pause_x11_bridge_path,'\\'):NULL;
+      if(!sep || (size_t)(sep-pause_x11_bridge_path)+
+         sizeof("SpiderMan2k1Fix.x11-focus")>=sizeof(pause_x11_bridge_path)) {
+        pause_x11_bridge_config=0;
+        log_line("FOCUS-X11: opt-in disabled: cannot resolve game folder");
+      } else {
+        strcpy(sep+1,"SpiderMan2k1Fix.x11-focus");
+        log_line("FOCUS-X11: opt-in Linux X11 bridge enabled; requires fresh host observer state and 150ms debounce");
+      }
+    }
+  }
+  return pause_x11_bridge_config;
+}
+static int pause_x11_bridge_state(void) {
+  DWORD tick=GetTickCount();
+  int state=0;
+  WIN32_FILE_ATTRIBUTE_DATA attr;
+  FILETIME ft;
+  ULARGE_INTEGER modified,current;
+  HANDLE h;
+  char line[64]={0};
+  DWORD read=0;
+  if(!pause_x11_bridge_enabled())return 0;
+  if(pause_x11_bridge_poll_tick &&
+     (DWORD)(tick-pause_x11_bridge_poll_tick)<80u)
+    return pause_x11_bridge_last_state;
+  pause_x11_bridge_poll_tick=tick;
+  if(GetFileAttributesExA(pause_x11_bridge_path,
+                          GetFileExInfoStandard,&attr)) {
+    GetSystemTimeAsFileTime(&ft);
+    modified.LowPart=attr.ftLastWriteTime.dwLowDateTime;
+    modified.HighPart=attr.ftLastWriteTime.dwHighDateTime;
+    current.LowPart=ft.dwLowDateTime;
+    current.HighPart=ft.dwHighDateTime;
+    if(current.QuadPart>=modified.QuadPart &&
+       current.QuadPart-modified.QuadPart<=1200ull*10000ull) {
+      h=CreateFileA(pause_x11_bridge_path,GENERIC_READ,
+                    FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+                    NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+      if(h!=INVALID_HANDLE_VALUE) {
+        if(ReadFile(h,line,sizeof(line)-1,&read,NULL) && read) {
+          line[read]=0;
+          if(!strcmp(line,"SPIDEY_X11_FOCUS_V1 GAME\\n"))state=1;
+          else if(!strcmp(line,"SPIDEY_X11_FOCUS_V1 OTHER\\n"))state=2;
+        }
+        CloseHandle(h);
+      }
+    }
+  }
+  if(state!=pause_x11_bridge_last_state &&
+     pause_x11_bridge_reports<32u) {
+    char report[150];
+    ++pause_x11_bridge_reports;
+    snprintf(report,sizeof(report),
+      "FOCUS-X11: host-focus-state=%s win32-game-foreground=%d",
+      state==1?"GAME":state==2?"OTHER":"UNKNOWN",
+      game_hwnd && GetForegroundWindow()==game_hwnd);
+    log_line(report);
+  }
+  pause_x11_bridge_last_state=state;
+  return state;
+}
+static BOOL pause_x11_bridge_confirmed_loss(void) {
+  DWORD tick=GetTickCount();
+  if(!pause_x11_bridge_loss_since) {
+    pause_x11_bridge_loss_since=tick?tick:1u;
+    log_line("FOCUS-X11: external native-X11 focus candidate; waiting 150ms");
+    return FALSE;
+  }
+  if((DWORD)(tick-pause_x11_bridge_loss_since)>=150u) {
+    log_line("FOCUS-X11: confirmed native-X11 focus loss after 150ms (Win32 foreground stale)");
+    pause_x11_bridge_loss_since=0;
+    return TRUE;
+  }
+  return FALSE;
+}
 static void pause_at_flip_if_background(void) {
   HWND hwnd=game_hwnd;
   MSG msg;
@@ -2604,8 +2706,13 @@ static void pause_at_flip_if_background(void) {
   int pause_gamepad_available=0;
   int pause_sdl3_available=0;
   int pause_previous_foreground=0;
+  int x11_state,x11_external,win32_game_foreground;
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
-  if(GetForegroundWindow()==hwnd) {
+  x11_state=pause_x11_bridge_state();
+  x11_external=pause_x11_bridge_enabled() && x11_state==2;
+  win32_game_foreground=GetForegroundWindow()==hwnd;
+  if(!x11_external)pause_x11_bridge_loss_since=0;
+  if(win32_game_foreground && !x11_external) {
     DWORD deferred_elapsed=0;
     /* The Wine window loop may stop calling Flip immediately after
      * WM_ACTIVATEAPP(FALSE). On an actual later app reactivation,
@@ -2630,7 +2737,9 @@ static void pause_at_flip_if_background(void) {
     pause_background_since=0;
     InterlockedExchange(&pause_ever_foreground,1);
   } else if(InterlockedCompareExchange(&pause_ever_foreground,0,0)==1 &&
-            pause_confirmed_focus_loss(hwnd) &&
+            ((win32_game_foreground && x11_external &&
+              pause_x11_bridge_confirmed_loss()) ||
+             (!win32_game_foreground && pause_confirmed_focus_loss(hwnd))) &&
             InterlockedCompareExchange(&pause_latched,1,0)==0) {
     SpiderAltLatch_OnConfirmedExternalLoss();
     log_line("FOCUS-PAUSE: confirmed external focus loss; pause latched until manual resume");
@@ -2646,6 +2755,10 @@ static void pause_at_flip_if_background(void) {
   }
   if(InterlockedCompareExchange(&pause_latched,0,0)!=1) return;
   if(InterlockedCompareExchange(&pause_in_progress,1,0)!=0) return;
+  /* Wine may still claim this HWND is foreground while native Firefox
+   * actually has X11 focus. Never swallow Firefox keystrokes. */
+  SpiderPauseAny_SetHostFocusBlocked(pause_x11_bridge_enabled() &&
+                                    x11_state!=1);
   /* Arm Any-key wake BEFORE stopping the game. Never fall back to F9 or
    * Space: if the low-level hook fails, skip this pause rather than hang. */
   if(!SpiderPauseAny_Begin(hwnd)) {
@@ -2729,6 +2842,12 @@ static void pause_at_flip_if_background(void) {
       DispatchMessageA(&msg);
     }
     if(!IsWindow(hwnd)) break;
+    /* This also runs while regular Flip is blocked by the PAUSED loop.
+     * Fail closed: UNKNOWN / stale bridge must never swallow a key from
+     * an unrelated native Linux application. */
+    x11_state=pause_x11_bridge_state();
+    SpiderPauseAny_SetHostFocusBlocked(pause_x11_bridge_enabled() &&
+                                      x11_state!=1);
     /* The normal Flip-based focus monitor cannot run until this custom
      * PAUSED wait ends. On return to game foreground, balance its temporary
      * background ShowCursor(TRUE) NOW, before any wake input. Otherwise the
@@ -2745,9 +2864,11 @@ static void pause_at_flip_if_background(void) {
     if(SpiderPauseAny_Completed())
       InterlockedExchange(&pause_latched,0);
     else {
-      unsigned resumed_buttons=pause_sdl3_available?
-        SpiderSDL3Probe_PauseWake_Poll(hwnd):
-        SpiderGamepadUI_PauseWake_Poll(hwnd);
+      unsigned resumed_buttons=
+        (pause_x11_bridge_enabled() && x11_state!=1)?0:
+        (pause_sdl3_available?
+          SpiderSDL3Probe_PauseWake_Poll(hwnd):
+          SpiderGamepadUI_PauseWake_Poll(hwnd));
       if(resumed_buttons) {
         char line[155];
         snprintf(line,sizeof(line),
