@@ -68,66 +68,6 @@ static LONG foreground_events=0,background_events=0;
 static LONG focus_key_messages=0,focus_mouse_messages=0;
 static volatile LONG last_focus_foreground=-1;
 static DWORD last_winmsg_sample=0;
-static void focus_log(const char *msg);
-/* Opt-in Wine/X11 delayed pause: record only app-level deactivation, not
- * ordinary changes to a child HWND. Never touch DirectDraw in WndProc. */
-static volatile LONG deferred_pause_enabled=0;
-static volatile LONG deferred_away_since=0;
-static volatile LONG deferred_away_active=0;
-static volatile LONG deferred_return_pending=0;
-static volatile LONG deferred_return_duration=0;
-static LONG deferred_reports=0;
-static volatile LONG deferred_wndproc_report_count=0;
-static void deferred_focus_event(UINT msg,WPARAM wp) {
-  DWORD now,elapsed;
-  LONG since;
-  char line[190];
-  if(InterlockedCompareExchange(&deferred_pause_enabled,0,0)!=1 ||
-     msg!=WM_ACTIVATEAPP)return;
-  now=GetTickCount();
-  if(wp==FALSE) {
-    InterlockedExchange(&deferred_return_pending,0);
-    InterlockedExchange(&deferred_away_since,(LONG)(now?now:1u));
-    InterlockedExchange(&deferred_away_active,1);
-    if(deferred_reports++<16)
-      focus_log("FOCUS-RETURN: WM_ACTIVATEAPP(FALSE) recorded; waiting for reactivation");
-    return;
-  }
-  if(InterlockedExchange(&deferred_away_active,0)!=1)return;
-  since=InterlockedExchange(&deferred_away_since,0);
-  if(since==0)return;
-  elapsed=(DWORD)(now-(DWORD)since);
-  if(elapsed<150u) {
-    if(deferred_reports++<16) {
-      snprintf(line,sizeof(line),
-        "FOCUS-RETURN: short app deactivation ignored elapsed-ms=%lu",
-        (unsigned long)elapsed);
-      focus_log(line);
-    }
-    return;
-  }
-  InterlockedExchange(&deferred_return_duration,(LONG)elapsed);
-  InterlockedExchange(&deferred_return_pending,1);
-  if(deferred_reports++<16) {
-    snprintf(line,sizeof(line),
-      "FOCUS-RETURN: sustained app deactivation elapsed-ms=%lu; deferred pause queued (no rendering in WndProc)",
-      (unsigned long)elapsed);
-    focus_log(line);
-  }
-}
-BOOL SpiderInputFocus_ConsumeDeferredPause(DWORD *elapsed_ms) {
-  if(elapsed_ms)*elapsed_ms=0;
-  if(InterlockedCompareExchange(&deferred_pause_enabled,0,0)!=1 ||
-     InterlockedExchange(&deferred_return_pending,0)!=1)return FALSE;
-  if(elapsed_ms)*elapsed_ms=(DWORD)InterlockedCompareExchange(
-    &deferred_return_duration,0,0);
-  return TRUE;
-}
-void SpiderInputFocus_DiscardDeferredPause(void) {
-  InterlockedExchange(&deferred_return_pending,0);
-  InterlockedExchange(&deferred_away_since,0);
-  InterlockedExchange(&deferred_away_active,0);
-}
 /* Desktop cursor recovery defaults ON (configurable in [Input]).
  * Taskbar Z-order experiment remains strictly opt-in.
  * Normal cursor-only tracking does not subclass WndProc or hook DirectInput. */
@@ -177,18 +117,10 @@ static void focus_report_window(const char *tag) {
   focus_log(line);
 }
 static LRESULT CALLBACK focus_window_proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
-  /* The game may stop making Flip calls as soon as focus messages
-   * are delivered. Keep the normal WndProc forwarding unchanged, but
-   * bracket the original handler to distinguish a blocked handler
-   * from an idle game loop following successful message dispatch. */
-  BOOL trace_forward=FALSE;
-  DWORD trace_start=0;
-  LRESULT forwarded_result;
   if(msg==WM_ACTIVATEAPP || msg==WM_ACTIVATE || msg==WM_SETFOCUS ||
      msg==WM_KILLFOCUS || msg==WM_NCACTIVATE) {
     char line[240];
     InterlockedIncrement(&focus_epoch);
-    deferred_focus_event(msg,wp);
     if(msg==WM_KILLFOCUS || (msg==WM_ACTIVATEAPP && wp==FALSE)) {
       InterlockedExchange(&focus_lost_once,1);
       InterlockedExchange(&focus_has_returned,0);
@@ -231,28 +163,8 @@ static LRESULT CALLBACK focus_window_proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp
       focus_log(line);
     }
   }
-  if(InterlockedCompareExchange(&deferred_pause_enabled,0,0)==1 &&
-     (msg==WM_ACTIVATEAPP || msg==WM_KILLFOCUS ||
-      msg==WM_SETFOCUS || msg==WM_ACTIVATE) &&
-     InterlockedIncrement(&deferred_wndproc_report_count)<=32) {
-    char line[190];
-    trace_forward=TRUE;
-    trace_start=GetTickCount();
-    snprintf(line,sizeof(line),
-      "FOCUS-RETURN: ORIGINAL-WNDPROC enter msg=%s wp=0x%08lX thread=%lu",
-      focus_message(msg),(unsigned long)wp,(unsigned long)GetCurrentThreadId());
-    focus_log(line);
-  }
-  forwarded_result=previous_proc ? CallWindowProcA(previous_proc,hwnd,msg,wp,lp)
-                                 : DefWindowProcA(hwnd,msg,wp,lp);
-  if(trace_forward) {
-    char line[190];
-    snprintf(line,sizeof(line),
-      "FOCUS-RETURN: ORIGINAL-WNDPROC returned msg=%s elapsed-ms=%lu",
-      focus_message(msg),(unsigned long)(DWORD)(GetTickCount()-trace_start));
-    focus_log(line);
-  }
-  return forwarded_result;
+  return previous_proc ? CallWindowProcA(previous_proc,hwnd,msg,wp,lp)
+                       : DefWindowProcA(hwnd,msg,wp,lp);
 }
 void SpiderInputFocus_AttachWindow(HWND hwnd) {
   WNDPROC old;char line[180];DWORD error;
@@ -270,7 +182,6 @@ void SpiderInputFocus_AttachWindow(HWND hwnd) {
     SetWindowLongPtrA(tracked_window,GWLP_WNDPROC,(LONG_PTR)previous_proc);
   }
   tracked_window=hwnd;
-  SpiderInputFocus_DiscardDeferredPause();
   previous_proc=NULL;
   SetLastError(0);
   old=(WNDPROC)SetWindowLongPtrA(hwnd,GWLP_WNDPROC,(LONG_PTR)focus_window_proc);
@@ -513,7 +424,7 @@ static HRESULT WINAPI focus_directinput8_create(HINSTANCE h,DWORD version,REFIID
   return hr;
 }
 void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
-  char exe[MAX_PATH],ini[MAX_PATH],*sep,line[200],return_latch[4]={0};DWORD n;
+  char exe[MAX_PATH],ini[MAX_PATH],*sep,line[200];DWORD n;
   BYTE *base=(BYTE*)GetModuleHandleA(NULL);
   IMAGE_DOS_HEADER *dos;IMAGE_NT_HEADERS32 *nt;
   void **slot;HMODULE dll;FARPROC target;DWORD old,ignored;LONG want_trace,want_fix,want_cursor,want_probe,want_interface_probe;
@@ -522,11 +433,6 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
   if(!n || n>=sizeof(exe) || !(sep=strrchr(exe,'\\'))) return;
   strcpy(ini,exe);strcpy(ini+(sep-exe)+1,"SpiderMan2k1Fix.ini");
   input_debug_logging=GetPrivateProfileIntA("Debug","Log",0,ini)==1;
-  n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_FOCUS_RETURN_LATCH",
-                             return_latch,sizeof(return_latch));
-  InterlockedExchange(&deferred_pause_enabled,n==1 && return_latch[0]=='1');
-  if(InterlockedCompareExchange(&deferred_pause_enabled,0,0)==1)
-    focus_log("FOCUS-RETURN: EXPERIMENT enabled; app deactivation observed via existing game WndProc; manual wake on first return Flip");
   want_trace=GetPrivateProfileIntA("Input","ExperimentalFocusTrace",0,ini)==1;
   want_fix=GetPrivateProfileIntA("Input","ExperimentalAltTabReacquire",0,ini)==1;
   want_probe=GetPrivateProfileIntA("Input","ExperimentalDI8EntryTrace",0,ini)==1;
@@ -574,15 +480,6 @@ void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
       focus_log(line);
       return;
     }
-  }
-  /* In opt-in mode, keep the existing passive focus-window subclass even
-   * without SPIDERMAN2K1FIX_FOCUS_PASSIVE. No DirectInput hook is added. */
-  if(InterlockedCompareExchange(&deferred_pause_enabled,0,0)==1 &&
-     !want_trace && !want_fix) {
-    InterlockedExchange(&reacquire_enabled,0);
-    InterlockedExchange(&diagnostic_active,1);
-    focus_log("FOCUS-RETURN: opt-in WndProc focus-event tracking active; no DI8 interception");
-    return;
   }
   /* Safe normal path: use the game's existing DirectDraw Flip boundary
    * to detect background/foreground. No WndProc subclass, DirectInput
