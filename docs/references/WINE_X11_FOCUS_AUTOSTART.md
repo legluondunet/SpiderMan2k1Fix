@@ -1,7 +1,8 @@
 # Experimental integrated focus backend (Windows and Wine/X11)
 
-**Draft only.** This change builds on the manually tested Wine/X11 bridge
-from PR #102, without modifying it.
+**Consolidation draft PR #104.** This documents the integrated Wine/X11
+backend following the validated #102/#103 experiments. Native Windows,
+Wayland and this cleaned consolidation build still need runtime checks.
 
 ## User experience
 
@@ -42,9 +43,17 @@ SpiderMan2k1Fix/
 The native `spiderman-focus-helper` is **ELF 64-bit** linked against
 `libX11.so.6`. The 32-bit PE game can launch this host-native 64-bit
 program via Wine, so no Linux 32-bit X11 dependencies are necessary.
-Manjaro's current x86_64 libX11 is a representative target. Builds
-on Ubuntu 24.04 may not run on older distributions with an older
-glibc; this is an experiment, not a released compatibility guarantee.
+The native ELF is built in an Ubuntu 22.04 x86_64 container
+rather than on the Ubuntu 24.04 Windows-DLL CI runner, and the
+workflow inspects the actual ELF symbol versions to reject any
+glibc requirement newer than 2.35. This improves compatibility
+with older Linux distributions compared with a 24.04-built binary.
+The host still needs a working libX11.so.6, its transitive
+dependencies, a compatible libc and a usable X11 session. Systems
+older than the ABI floor are **not** guaranteed to work.
+A missing library or unsupported runtime causes a 4-second
+initial handshake timeout and a safe Win32 fallback, with no
+repeated initial launch attempts.
 
 The Windows x86 artifact strips POSIX execute bits when downloaded
 from GitHub Actions. Before first launch, the DLL invokes
