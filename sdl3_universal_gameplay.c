@@ -347,9 +347,9 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   requested=ini &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1 &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3ControllerSetup",1,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3UniversalGameplay",0,ini)==1;
+    GetPrivateProfileIntA("Input","ExperimentalSDL3UniversalGameplay",1,ini)==1;
   if(requested)log_universal(
-    "SDL3-UNIVERSAL: OPT-IN preview enabled for ANY mapped SDL3 gamepad; "
+    "SDL3-UNIVERSAL: default-on gameplay enabled for ANY mapped SDL3 gamepad; "
     "11 game keyboard actions + native Pause; original DirectInput "
     "suspended only while selected, strict neutral-first and focus release");
 }
