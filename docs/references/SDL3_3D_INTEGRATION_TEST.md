@@ -22,6 +22,49 @@ It imports the keyboard adapter concept and fail-closed input safeguards
 from draft PR #95. Neither parent draft is merged to main. These are
 separate tracks and PR #98 is the opt-in integrated test branch.
 
+## 2026-11-04 — two reliable Alt+Tab pauses from main menu (state-dependent behavior)
+
+Physical log `SpiderMan2k1Fix(20261104-015901).log`, build
+`v1.1.0-6aad55f`, Manjaro / GE-Proton11-12, provides a useful
+**positive counterexample** to earlier missed focus loss under Wine:
+
+- PS4 DS4 `054C:09CC` is explicitly selected by Start, and the SDL3
+  universal bridge becomes ACTIVE in 3D. The native in-game Pause menu
+  is then entered and the original menu/2D display mode is restored.
+- **Only after the return to the main 2D menu**, TWO distinct
+  `SDL3-UNIVERSAL: EXIT reason=focus or window lost` events occur.
+  Both release the borrowed game-owned DirectInput joystick pointer.
+- In each case `INPUT-FOCUS: flip-background` observes another Win32
+  foreground HWND `00010020`, owned by Wine `explorer.exe` PID 252.
+  `FOCUS-PROBE: external-candidate-confirmed-after-150ms` measures
+  **165 ms**, then **170 ms**, confirming the existing debounce worked.
+- Each loss displays the frozen shaded PAUSED ribbon and suspends Bink
+  / secondary audio. Both returns are successful: first after the
+  user's Space key `VK 0x20`, second after Enter `VK 0x0D`.
+  The DS4 SDL3 bridge then becomes ACTIVE again as selected instance 1.
+- Subsequent `DI8-RETRY: redirected DIERR_NOTACQUIRED ... keyboard=2`
+  indicates the original game's guarded keyboard reacquisition was
+  exercised after the second resume; this is **not** evidence of a
+  fatal error. The log contains no fatal exception, although it ends
+  while the menu is still active, so a complete clean shutdown is not
+  independently established.
+- The tester describes menu Alt+Tab as immediate. The **code still uses
+  150 ms confirmation**; the measured 165/170 ms should not be
+  interpreted as zero software debounce or proof of identical behavior
+  in native 3D and original native Pause screens.
+
+**Interpretation:** under the same Wine/GE-Proton configuration and
+same game build, focus pause is reliable in this sampled **main-menu
+context** but was missed during earlier 3D/native-Pause tests.
+This supports a **game-state-dependent focus observation** hypothesis.
+It does NOT prove that the different mode is the root cause, because
+Alt+Tab destination/host-window timing was not independently logged.
+
+**Maintainer priority remains unchanged:** automatic pause is
+best-effort/non-blocking under Wine as long as external Alt+Tab stays
+crash-free and controls remain usable. Preserve the existing guard;
+no focus rewrite or new Windows-test requirement based on this log.
+
 ## 2026-11-04 maintainer decision — focus PAUSED banner is non-blocking on Wine
 
 The maintainer clarifies the **original requirement**: the automatic
