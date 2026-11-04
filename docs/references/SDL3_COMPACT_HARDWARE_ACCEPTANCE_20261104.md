@@ -7,6 +7,52 @@ manual Start-to-Start switches, controller-only wake, and held-direction
 focus recovery (with a known 1–2-step residual impulse). Do not re-run
 these as separate standalone tests.
 
+## 4 November 2026 — combined-run result and one remaining retest
+
+Maintainer reported **Checkpoint 1 PASS, Checkpoint 2 FAIL (Spider-Man
+keeps running after Alt+Tab with BOTH PS3 and DS4), Checkpoint 3 PASS**.
+These are player-observed outcomes; no fresh game log accompanied the
+report, so the exact stale latch is not yet demonstrated in the new
+run. Do **not** repeat Checkpoints 1 or 3.
+
+Source analysis identified a concrete missing synchronization path:
+the native X11 focus observer can report `OTHER` while Wine's
+`GetForegroundWindow()` still reports the game. The PAUSED code uses
+that authoritative X11 state, but the universal SDL3 adapter previously
+released synthetic movement only on Win32 foreground loss. The fix now
+propagates X11 OTHER/UNKNOWN directly to the SDL3 universal adapter
+on the same Flip thread, **before** the blocking PAUSED loop; releases
+owned keys and the native DirectInput pointer; prevents new injection
+until verified `GAME` focus; and retains the existing bounded
+foreground KEYUP and FOCUS-DIR fresh DOWN/UP recovery.
+
+**Only retest Checkpoint 2** with the new PR #98 artifact:
+
+1. PS3 explicit Start, hold the **left-stick Up+Right diagonal** in 3D.
+   Alt+Tab to Firefox, release and center the stick while Firefox
+   is foreground; return to Spider-Man, wake with a fresh Cross
+   press/release. Verify Spider-Man comes to a stop, and a new
+   intentional direction works.
+2. Switch intentionally to the **DS4** via neutral + Start. Repeat
+   in another diagonal (Down+Left), with the same Firefox focus
+   transition and manual wake. Verify no permanently held motion.
+3. Send **one game log from the two-pad session** and simply report
+   PS3 PASS/FAIL and DS4 PASS/FAIL, plus the approximate number of
+   residual steps (if any). Look for
+   `SDL3-UNIVERSAL: FOCUS-X11 host focus blocked`,
+   `FOCUS-DIR captured owned 3D keys=2`,
+   `FOCUS-KEYUP foreground cleanup`,
+   `FOCUS-DIR fresh DOWN/UP completed`, and
+   `DI-LATCH stage=post-fresh-up-...`.
+   These log patterns are expected only if movement was actively
+   injected at focus loss. The game must never resume automatically,
+   send gameplay keys to Firefox, or keep running indefinitely.
+
+If the character still runs despite the host-focus logs, we must
+inspect the actual log and potentially the game's buffered-action
+latch. **Do not bypass the game-owned memory safety checks or
+claim resolved on the basis of CI alone.**
+
 ## Minimum remaining hardware work: one combined PS3 + DS4 run
 
 **One game launch, one full log, four consecutive checkpoints.** Use the
