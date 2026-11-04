@@ -1,8 +1,9 @@
 # HUD 3D cinematic / aiming / level-2 native ESC — combined visual fix
 
-Status: **staged diagnostic + first narrowly scoped compass correction**.
+Status: **staged compass correction, native ESC geometry fix and reticle diagnostics**.
 Do not claim all three issue classes are fixed until the runtime capture
-and regression test below have been reviewed.
+and regression test below have been reviewed. The native Pause correction
+is only source/CI tested so far.
 
 ## Player reports (2026-11-04)
 
@@ -15,7 +16,9 @@ Reference images supplied by the project maintainer, all 1920×1080:
   outline (screenshots `scrn0008.png`, `scrn0009.png`).
 - **HUD-03 (native pause):** the level-2 `PAUSED` ribbon, red/blue motif,
   title and selector do not all show the same restored 4:3 presentation
-  previously validated in other gameplay; see `scrn0010.png`.
+  previously validated in other gameplay; see `scrn0020.png`. The
+  maintainer provided the Dreamcast 4:3 reference
+  `Capture d’écran_2026-11-01_10-46-44.png`.
 
 ## Code investigation
 
@@ -33,8 +36,18 @@ Reference images supplied by the project maintainer, all 1920×1080:
   `spiderman2k1fix.c`. Its same-Flip wide untextured ribbon signature
   unlocks the border/title matcher; motif and cursor have separate strict
   conditions. Level 2 is **not excluded explicitly** in the source.
-  The image does not reveal whether the mismatch is caused by an altered
-  D3D7 caller, ribbon geometry, depth/RHW, bound texture or stage state.
+  **New image evidence:** at 1920×1080 the level-2 purple panel is
+  roughly y=342..585 (~54.2% at bottom) and stretches across x=0..1919.
+  The Dreamcast reference frame shows x≈222..1701, centered without
+  stretching. The previous code required the native ribbon bottom to be
+  >=55% of screen H and can reject this higher menu. The branch permits
+  >=50%, retaining exact Z/RHW, caller, no-texture and same-Flip checks.
+  The new `native_pause_43_policy.h` derives a centered 4:3 X mapping
+  from actual W/H for all safe widescreen outputs, and the associated
+  border/glyph/cursor bounds scale with display size. The 3D scene and
+  cinematic bars are not changed. **Native game verification is pending**.
+  An altered caller, Z/RHW, texture or stage could still reject the fix;
+  if so the same log's `HUD-VISUAL: PAUSE-RIBBON` samples will tell us why.
 - Red/green reticle signatures have **not been measured**. They must not
   be corrected just because a quad is colored or elliptical: the shared
   D3D7 caller draws unrelated 3D primitives as well.
@@ -71,9 +84,9 @@ The correct compass patch continues using
    F9 captures. A known-good gameplay HUD and 4:3 mode must not regress.
    On 1920×1200 Auto, check the same types where practical.
 
-**Next patch within this PR:** use the matched runtime caller/texture/Z/RHW
-and stage evidence to add exact reticle and level-2 ESC transformations with
-focused portable regression tests. Until then, those two families are
-**diagnosed only, not fixed**. Do not merge the PR based solely on CI.
+**Next patch within this PR:** validate the new native ESC rule against the
+runtime log and screenshot, and use the matched reticle caller/texture/Z/RHW
+and stage evidence for an exact aim correction. Reticles are **diagnosed only,
+not fixed**. Do not merge the PR based solely on CI.
 
 legluondunet assisted by ChatGPT (OpenAI)
