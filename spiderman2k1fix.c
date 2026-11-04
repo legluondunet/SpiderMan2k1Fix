@@ -2665,8 +2665,8 @@ static int pause_x11_bridge_state(void) {
       if(h!=INVALID_HANDLE_VALUE) {
         if(ReadFile(h,line,sizeof(line)-1,&read,NULL) && read) {
           line[read]=0;
-          if(!strcmp(line,"SPIDEY_X11_FOCUS_V1 GAME\\n"))state=1;
-          else if(!strcmp(line,"SPIDEY_X11_FOCUS_V1 OTHER\\n"))state=2;
+          if(!strcmp(line,"SPIDEY_X11_FOCUS_V1 GAME\n"))state=1;
+          else if(!strcmp(line,"SPIDEY_X11_FOCUS_V1 OTHER\n"))state=2;
         }
         CloseHandle(h);
       }
