@@ -1207,23 +1207,17 @@ static const void *maybe_correct_native_pause43(void *device,
   center=(float)desktop_w*0.5f;
   aspect_scale=native_esc43_scale();
   memcpy(copy,v,4*sizeof(*copy));
-  for(i=0;i<4;i++) {
-    float mapped=center+(v[i].x-center)*aspect_scale;
-    /* Reference F9: original 4:3 outline x=241..1679 (1439px).
-     * The current 1920x1080 Auto outline is x=224..1702 (1479px),
-     * but the untextured fill is already much closer to 4:3. Do NOT
-     * indiscriminately shrink text or the entire HUD by 2.7%.
-     * Empirical calibration is intentionally exclusive to the one
-     * measured resolution until another mode is validated in-game.
-     */
-    if(desktop_w==1920 && desktop_h==1080) {
-      if(border)
-        mapped=960.0f+(mapped-963.0f)*(1439.0f/1479.0f);
-      else if(ribbon)
-        mapped=960.0f+(mapped-958.6f)*(1439.0f/1448.5f);
-    }
-    copy[i].x=mapped;
-  }
+  /* Dreamcast 1920x1080 reference (2026-11-04): native Pause outline
+   * x≈223..1702 (1480px). Previous empirical 1439px calibration
+   * artificially narrowed only the ribbon and its 8x8 border strokes:
+   * Wine screenshot scrn0024.png showed x=241..1679 (1439px).
+   * The original 8x8 edge stroke source quads (-22.5..15,
+   * 1912.5..1950) mapped with the canonical centered 4:3 factor
+   * produce x≈223..1703, matching Dreamcast without special offsets.
+   * Text has already been verified with this exact same transform.
+   * Do not alter the 3D scene, HUD, movie bars or native 4:3 output. */
+  for(i=0;i<4;i++)
+    copy[i].x=center+(v[i].x-center)*aspect_scale;
   if(ribbon) hit=InterlockedIncrement(&native_pause43_banner_hits);
   else if(border) hit=InterlockedIncrement(&native_pause43_border_hits);
   else hit=InterlockedIncrement(&native_pause43_glyph_hits);
