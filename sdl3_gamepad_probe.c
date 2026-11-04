@@ -184,7 +184,7 @@ void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
     GetPrivateProfileIntA("Debug","SDL3BindingTrace",0,ini)==1;
   requested=ini && GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1;
   universal_requested=requested && ini &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3UniversalGameplay",0,ini)==1;
+    GetPrivateProfileIntA("Input","ExperimentalSDL3UniversalGameplay",1,ini)==1;
   SpiderSDL3ProfileStore_Init(requested && ini &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3ControllerSetup",1,ini)==1,logger);
   if(bindings_trace_requested && !requested) {
@@ -206,7 +206,7 @@ void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
   }
   if(requested)say("SDL3-PROBE: enabled by default; discovery and selection available (explicit INI opt-out supported)");
   if(universal_requested)
-    say("SDL3-UNIVERSAL: opt-in logical Start selection for mapped SDL3 pads; no unverified native DI rebind");
+    say("SDL3-UNIVERSAL: default-on logical Start selection for mapped SDL3 pads; no unverified native DI rebind");
   if(native_owner_requested)
     say("SDL3-OWNER: EXPERIMENT requested; selected SDL3 identity may authorize opt-in DirectInput native + UI bridge (STRICT, FAIL-CLOSED)");
 }
