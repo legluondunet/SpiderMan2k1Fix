@@ -446,16 +446,16 @@ static void sdl3_owner_reconcile(HWND hwnd) {
     memset(&info,0,sizeof(info));info.dwSize=sizeof(info);
     hr=IDirectInputDevice8_GetDeviceInfo(old,&info);
     if(SUCCEEDED(hr) && IsEqualGUID(&info.guidInstance,&target.instance)) {
-      /* The original game may have selected the right device at startup
-       * before SDL3 existed. Still reconcile its exact factory 7-action
-       * table once: a two-pad startup skipped both early preview profiles. */
+      /* The original game may already own the correct native device.
+       * Record its action table once for diagnostics, but never infer
+       * or write an Xbox/DS4 physical-button preset. */
       if(sdl3_last_claimed_id!=id) {
         observe_native_swap_table("sdl3-initial",swap_last_kind,target.kind);
         /* Legacy native physical-action mapping swap deliberately retired. */
         swap_last_kind=target.kind;
         sdl3_last_claimed_id=id;
         snprintf(line,sizeof(line),
-          "SDL3-OWNER: ALREADY-NATIVE selected-id=%lu VID:PID=%04X:%04X native=%p; checked 3D action mapping",
+          "SDL3-OWNER: ALREADY-NATIVE selected-id=%lu VID:PID=%04X:%04X native=%p; original action bytes observed only, no mapping applied",
           (unsigned long)id,vid,pid,(void *)old);
         report(line);
       }
