@@ -1,5 +1,6 @@
 /* SDL3 generic controller -> original Spider-Man keyboard-action bridge.
- * EXPERIMENTAL and OFF by default. No VID/PID-dependent button arrays.
+ * Enabled by default for SDL3-mapped controllers; explicit INI opt-out.
+ * No VID/PID-dependent button arrays.
  *
  * All physical gamepad buttons are read from one SDL3 selected sample, with
  * profile-defined gameplay actions and normalized stick/D-pad directions.
@@ -10,7 +11,8 @@
  *
  * Both hardware and software are strictly game-thread and foreground-only.
  * SendInput keyboard events may not reach every Wine/Windows game keyboard
- * reader: the experiment MUST be hardware validated before default-on.
+ * reader: GE-Proton Xbox 360, PS3 and DS4 have passed hardware tests;
+ * native Windows hardware coverage remains deferred.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -27,7 +29,7 @@
 #define SPIDER_UNIVERSAL_KEY_TABLE 0x00568398u
 
 static int requested=0,suspended=0,active=0;
-/* Universal opt-in must not expose the game's legacy joystick merely
+/* Universal gameplay must not expose the game's legacy joystick merely
  * because the explicitly selected SDL3 controller disconnected. */
 static int native_unclaimed_guard=0;
 static unsigned native_guard_reports=0;
