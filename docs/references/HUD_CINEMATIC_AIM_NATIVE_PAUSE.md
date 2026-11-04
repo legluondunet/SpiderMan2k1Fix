@@ -222,21 +222,65 @@ inverse of the 4:3→16:9 stretch: a 0.75 width factor around the ring's
 - Green: 94×70 → 70.5×70, ratio 1.007
 - Red: 153×113 → 114.75×113, ratio 1.015
 
-This geometry rule is host-tested for 4:3, 16:9, and 16:10, but **it is
-NOT yet wired into a live DrawPrimitive correction**. The screenshot
-alone does not establish the source caller RVA, FVF/primitive type,
-texture, UV, Z/RHW or game stage. Other world quads must never be
-rescaled by appearance alone.
+This geometry rule was initially host-tested without altering any D3D7
+draw. **It was subsequently connected to the strict live reticle hook**
+only after the matching gameplay log recorded the original caller, FVF,
+texture, UV, Z/RHW and tint for both screenshot moments. Other world
+quads must never be rescaled by appearance alone.
 
-The read-only `HUD-VISUAL: AIM` candidate sampler now includes the
-smaller 94×70 green reticle, while still excluding the top-left
-health/web icon and previously measured native Pause motif false
-positives. The next requirement is one **matching Log=1 journal from
-the same green/red test run** (ideally the run that produced scrn0028
-and scrn0029). Use those actual D3D7 samples to identify both ring
-variants and stage a strictly gated live correction inside PR #109.
-If the log has no representative AIM samples, improve the targeted
-probe before adding an unsafe graphics hook.
+The read-only `HUD-VISUAL: AIM` candidate sampler includes the
+smaller 94×70 green reticle and excludes prior known player-HUD and
+native Pause false positives. **The matching Log=1 journal has now been
+received and identified both rings**, and the conditional live D3D7
+correction is staged in the PR. Its next gate is visual acceptance.
+
+## Fifth validation: precise red/green aim signatures and active correction
+
+Received original `SpiderMan2k1Fix(20261104-224539).log` from the **same**
+GE-Proton11-12 session that produced both supplied 1920x1080 F9 captures.
+
+**Direct3D7 ring matches, verified against screenshot timestamps:**
+
+| Input capture | Original log rectangle | ARGB diffuse | Z | RHW | Bound texture |
+| --- | --- | --- | --- | --- | --- |
+| `scrn0028.png` red (23:27:19) | x=566.2..723.8; y=679.5..796.5 | `B0FF4040` | `0.00146` | `9.9878` | 64x64 |
+| `scrn0029.png` green (23:27:27) | x=930.0..1027.5; y=346.5..418.5 | `B040FF40` | `0.00146` | `9.9878` | 64x64 |
+
+Both also share the original D3D7 DrawPrimitive caller `00102C72`,
+triangle-fan FVF `0x144`, and initial UV `(0,0)`. The log explicitly
+records each corresponding **lossless F9 PNG saved**. The red sprite
+moved to other coordinates while retaining the same renderer signature,
+so it cannot be corrected using a fixed screen position.
+
+The earlier `hud_aim_geometry.h` factor is now enabled **only** after
+matching the exact source-backed textured/tinted Z/RHW/game-stage
+signature in `hud_aim_reticle.h`. The game's original source vertices
+remain untouched; their X is copied to a scratch quad and compressed
+about the **object's own center**. The 64x64 bound texture, tint, layer,
+caller, primitive type and measured sprite aspect must all agree.
+Compass/motif/pause/instructions and other game geometry cannot pass
+these collective strict predicates.
+
+Three precautions are intentional:
+
+1. We preserve the ring's center and Y coordinates; correcting around
+   the screen center would move the actual target.
+2. Native 4:3 is a strict no-op, and 16:10 uses its derived 5/6 scale.
+3. The code preserves the validated native Pause / compass path order,
+   requires the SHA-pinned HUD patch, and never changes texture or
+   D3D7 render state.
+
+New host-compiled exact-signature regression tests verify both
+colors, both screenshot bounding boxes, movable red aiming position,
+uniform-depth/color checks and false-positive exclusions.
+All non-X attributes (Y, Z, RHW, tint and UV) remain byte-identical.
+
+**Status:** code correction integrated in PR #109; **not yet visually
+validated**. The next needed maintainer test can be extremely short:
+download the latest CI Windows x86 ZIP, capture one green and one red
+aiming circle at 1920x1080, and confirm both are round. If not,
+`HUD-AIM: red/green ring hit=...` in a matching `Log=1` journal
+will pinpoint which exact gate still fails.
 
 ## Bounded read-only diagnostic
 
