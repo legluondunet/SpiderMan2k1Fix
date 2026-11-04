@@ -1124,9 +1124,7 @@ static const void *maybe_correct_native_pause43(void *device,
    * Original 4:3 gameplay remains excluded at function entry. */
   ribbon=SpiderNativePause43_RibbonBounds(
        left,right,top,bottom,(unsigned)desktop_w,(unsigned)desktop_h) &&
-       fabsf(z-0.00122f)<0.00010f &&
-       (fabsf(rhw-11.176f)<0.25f ||
-        fabsf(rhw-8.9615f)<0.060f);
+       SpiderNativePause43_RibbonLayer(z,rhw);
   if(ribbon) {
     /* The banner has no texture. Recheck the live bound texture here
      * rather than relying solely on depth and broad geometry.
@@ -1278,12 +1276,9 @@ static const void *maybe_correct_native_motif43(void *device,
      InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
      type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4 ||
      !geom_rva(ret,&rva) || rva!=0x00102C72UL ||
-     fabsf(v[0].z-0.00146f)>0.00004f ||
-     /* Level-2 native ESC translucent motif (GE-Proton trace):
-      * caller and untextured alpha-0x80 geometry are identical,
-      * with RHW=7.8952 instead of the earlier 9.988. */
-     (fabsf(v[0].rhw-9.988f)>0.060f &&
-      fabsf(v[0].rhw-7.8952f)>0.060f)) return source;
+     /* Known original native motif layer: two RHW variants, same Z.
+      * The classifier is pure and tested across both variants. */
+     !SpiderNativePause43_MotifLayer(v[0].z,v[0].rhw)) return source;
   memcpy(&color,(const BYTE*)source+16,sizeof(color));
   if((color&0xFF000000UL)!=0x80000000UL)return source;
   l=r=v[0].x;t=b=v[0].y;
