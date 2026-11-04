@@ -195,12 +195,14 @@ void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
     say("SDL3-BINDINGS: optional semantic action probe ENABLED (read-only; no gameplay remap, no UI changes; max 48 events)");
   native_owner_requested=requested &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1;
+  /* Native ownership is a legacy opt-in distinct from the universal
+   * SDL3 keyboard bridge. The removed fixed-button MappingSwap switch is
+   * no longer a dependency: recovery must never rewrite any action map. */
   if(native_owner_requested &&
      (GetPrivateProfileIntA("Input","ExperimentalNativeJoystickUnplugGuard",1,ini)!=1 ||
-      GetPrivateProfileIntA("Input","ExperimentalNativeJoystickReconnect",1,ini)!=1 ||
-      GetPrivateProfileIntA("Input","ExperimentalNativeJoystickMappingSwap",1,ini)!=1)) {
+      GetPrivateProfileIntA("Input","ExperimentalNativeJoystickReconnect",1,ini)!=1)) {
     native_owner_requested=0;
-    say("SDL3-OWNER: REFUSED missing native UnplugGuard+Reconnect+MappingSwap opt-ins; SDL3 stays passive");
+    say("SDL3-OWNER: REFUSED missing native UnplugGuard+Reconnect opt-ins; SDL3 stays passive");
   }
   if(requested)say("SDL3-PROBE: enabled by default; discovery and selection available (explicit INI opt-out supported)");
   if(universal_requested)

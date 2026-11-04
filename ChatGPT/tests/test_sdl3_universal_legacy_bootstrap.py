@@ -1,80 +1,50 @@
-"""Legacy-input isolation when the experimental universal SDL3 adapter is enabled.
+"""Regression: the previous fixed Sony/Xbox input presets are gone.
 
-The Xbox/DS4 native overlays remain available only in explicitly
-non-universal compatibility mode. A first-time universal controller must
-never silently inherit the legacy hard-coded native action layout.
-Tests are structural; CI compilation and real pad validation remain
-separate gates.
+Native retail input remains intact until the user explicitly selects
+universal SDL3, and there is no legacy pre-bootstrap table override.
 """
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT=Path(__file__).resolve().parents[2]
 
 
-def _bootstrap():
-    core = (ROOT / "spiderman2k1fix.c").read_text(encoding="utf-8")
-    return core.split("static HRESULT WINAPI hooked_create(", 1)[1].split(
-        "HRESULT hr=original_create(", 1
-    )[0]
+def test_original_bootstrap_never_injects_old_vendor_preset():
+    core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
+    stage=core.split("static HRESULT WINAPI hooked_create(",1)[1].split(
+        "HRESULT hr=original_create(",1)[0]
+    assert "SpiderCfg_BootstrapGameRead();" in stage
+    assert "SpiderCfg_InstallModernKeyboardDefaults();" in stage
+    for retired in ("SpiderCfg_EnableXbox360Preview(",
+                    "SpiderCfg_EnablePS1Preview(",
+                    "SpiderGamepadUI_PrepareXbox360(",
+                    "SpiderGamepadUI_PreparePS1(",
+                    "SpiderGamepadUI_ActivateXbox360(",
+                    "SpiderGamepadUI_ActivatePS1("):
+        assert retired not in stage
 
 
-def test_universal_bootstrap_does_not_install_legacy_fixed_profiles():
-    bootstrap = _bootstrap()
-    assert "int universal=SpiderSDL3Universal_Enabled();" in bootstrap
-    native = bootstrap.split("if(!universal) {", 1)[1].split(
-        "SpiderCfg_BootstrapGameRead();", 1
-    )[0]
-    assert "SpiderGamepadUI_PreparePS1(early)" in native
-    assert "SpiderGamepadUI_PrepareXbox360(early)" in native
-    assert "SpiderCfg_EnablePS1Preview()" in native
-    assert "SpiderCfg_EnableXbox360Preview()" in native
-    # No early legacy native RAM mapping before universal ownership.
-    assert "SpiderCfg_EnableXbox360Preview()" not in bootstrap.split(
-        "if(!universal) {", 1
-    )[0]
-    assert "SpiderCfg_EnablePS1Preview()" not in bootstrap.split(
-        "if(!universal) {", 1
-    )[0]
-    assert "SpiderCfg_BootstrapGameRead();" in bootstrap
-    assert "SpiderCfg_InstallModernKeyboardDefaults();" in bootstrap
-    legacy = bootstrap.split("if(universal)", 1)[1].split(
-        "HRESULT hr=original_create", 1
-    )[0]
-    assert "else {" in legacy
-    for call in (
-        "SpiderGamepadUI_ArmPS1ReadOnly();",
-        "SpiderGamepadUI_ArmXbox360ReadOnly();",
-        "SpiderGamepadUI_ActivatePS1();",
-        "SpiderGamepadUI_ActivateXbox360();",
-    ):
-        assert call in legacy
+def test_universal_gameplay_is_single_input_owner():
+    core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
+    adapter=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    ui=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
+    native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
+    live=(ROOT/"sdl3_gameplay_live.c").read_text(encoding="utf-8")
+    assert "SpiderSDL3Universal_OnFlip(game_hwnd," in core
+    assert "SpiderSDL3Probe_SelectedMappedSample(" in adapter
+    assert "sdl3_generic_ui_on_flip(" not in ui
+    assert "begin_scancode(" not in ui
+    assert "spider_ps1_apply(" not in ui
+    assert "swap_native_gameplay_mapping(" not in native
+    assert "void SpiderSDL3GameplayLive_OnFlip(" in live
+    assert "native action-map backend retired" in live
 
 
-def test_universal_runtime_has_one_controller_input_authority():
-    ui = (ROOT / "gamepad_ui_profile.c").read_text(encoding="utf-8")
-    native = (ROOT / "native_joystick_reconnect.c").read_text(encoding="utf-8")
-    live = (ROOT / "sdl3_gameplay_live.c").read_text(encoding="utf-8")
-    universal = (ROOT / "sdl3_universal_gameplay.c").read_text(encoding="utf-8")
-    ui_flip = ui.split("void SpiderGamepadUI_OnFlip(", 1)[1]
-    assert ui_flip.index("if(SpiderSDL3Universal_Enabled()) {") < (
-        ui_flip.index("sdl3_generic_ui_on_flip(")
-    )
-    assert 'xbox_rt_swing_release("universal SDL3 3D keyboard adapter");' in ui_flip
-    native_flip = native.split("void SpiderNativeReconnect_OnFlip(", 1)[1]
-    assert native_flip.index("if(SpiderSDL3Universal_Enabled())return;") < (
-        native_flip.index("if(!requested || !initialized")
-    )
-    assert '"ExperimentalSDL3UniversalGameplay",0,ini)!=1' in live
-    assert "SpiderSDL3Probe_SelectedMappedSample(" in universal
-
-
-def test_legacy_paths_retained_outside_universal_opt_in():
-    bootstrap = _bootstrap()
-    assert "if(!universal) {" in bootstrap
-    assert "else {" in bootstrap.split("if(universal)", 1)[1]
-    assert "SpiderCfg_EnableXbox360Preview()" in bootstrap
-    assert "SpiderCfg_EnablePS1Preview()" in bootstrap
-    assert "SpiderCfg_CancelXbox360Preview()" in bootstrap
-    assert "SpiderCfg_CancelPS1Preview()" in bootstrap
-    init = (ROOT / "sdl3_universal_gameplay.c").read_text(encoding="utf-8")
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3UniversalGameplay",0,ini)==1' in init
+def test_opt_in_and_native_device_safety_still_separate():
+    adapter=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
+    native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
+    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3UniversalGameplay",0,ini)==1' in adapter
+    assert "SpiderNativeUnplug_OnFlip(count);" in core
+    assert "SpiderNativeReconnect_OnFlip(count,game_hwnd);" in core
+    assert "if(SpiderSDL3Universal_Enabled())return;" in native
+    assert "SpiderNativeReconnect_SDL3SelectionReady(" in native

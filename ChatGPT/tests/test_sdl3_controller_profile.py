@@ -142,7 +142,9 @@ def test_profile_model_cannot_change_native_game_while_in_design_phase():
     ):
         assert forbidden not in h
     native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
-    assert "NATIVE-SWAP: REFUSED CUSTOM joystick mapping" in native
+    assert "swap_native_gameplay_mapping(" not in native
+    assert "spider_native_swap_preset(" not in native
+    assert "spider_native_swap_read(" in native
     lock=(ROOT/"ps1_joystick_readonly_menu.c").read_text(encoding="utf-8")
     assert "joystick-only mapping branch" in lock
 

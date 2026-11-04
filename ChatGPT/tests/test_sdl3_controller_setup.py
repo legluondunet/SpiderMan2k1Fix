@@ -375,7 +375,7 @@ def test_native_joystick_main_entry_opens_sdl3_directly_but_keyboard_remains_ori
     assert "#define SPIDER_NATIVE_CONTROLLER_CONFIG_VA 0x0050CE70u" in native
     assert "int SpiderSDL3_InstallDirectJoystickEntry(" in header
     assert "int SpiderSDL3_InstallDirectJoystickEntry(" in native
-    assert "SpiderSDL3_InstallDirectJoystickEntry(log_message)" in bridge
+    assert "SpiderSDL3_InstallDirectJoystickEntry(ui_log)" in bridge
     assert "SpiderSDL3_InstallDirectJoystickEntry(logger);" in bridge
     assert "SDL3-DIRECT-ENTRY: INSTALL attempt" in native
     assert "SDL3-DIRECT-ENTRY: REFUSED PE header" in native

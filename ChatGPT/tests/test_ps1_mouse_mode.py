@@ -17,30 +17,24 @@ README=(ROOT/"README.md").read_text(encoding="utf-8")
 
 
 def test_permanent_mouse_disable_independent_of_controller_and_legacy_ini():
-    assert '"MouseEnabled"' in VALID  # parse old INIs without discarding settings
+    assert '"MouseEnabled"' in VALID
     assert '"ControllerAutoDisableMouse"' in VALID
     assert 'SpiderPS1Mouse_Configure(logger);' in BRIDGE
+    assert 'SpiderPS1Mouse_OnFlip(hwnd);' in BRIDGE
     assert 'GetPrivateProfileIntA("Input","MouseEnabled"' not in BRIDGE
-    assert 'GetPrivateProfileStringA("Input","MouseEnabled","",choice,sizeof(choice),ini)' in BRIDGE
-    assert 'obsolete MouseEnabled option ignored; game mouse is permanently OFF' in BRIDGE
-    assert 'ControllerAutoDisableMouse is retired; game mouse is permanently OFF' in BRIDGE
+    assert 'GetPrivateProfileStringA("Input","MouseEnabled"' not in BRIDGE
     assert '"MouseEnabled=0\\r\\n"' not in CFG
     assert '"MouseEnabled=1\\r\\n"' not in CFG
-    assert 'Set MouseEnabled=1' not in CFG
     assert 'SpiderPS1Mouse_Configure(void (*logger)(const char *))' in MODE
     assert 'mouse_policy_enabled' not in MODE
     assert 'mouse_enabled' not in MODE
-    assert 'SpiderPS1Mouse_Configure(int mouse_enabled' not in HEADER
     assert 'SpiderPS1Mouse_SetPadActive' not in MODE+HEADER
     assert 'GAME MOUSE RESTORED' not in MODE
     assert 'GAME MOUSE OFF (permanent)' in MODE
-    assert "if(!detected||!device)" in BRIDGE  # no controller needed
-    assert 'SpiderPS1Mouse_OnFlip(hwnd);' in BRIDGE
-    assert BRIDGE.index('SpiderPS1Mouse_OnFlip(hwnd);') < BRIDGE.index(
-        'if(!configured || !hwnd || !IsWindow(hwnd))')
+    assert 'if(!detected||!device)' not in BRIDGE
     assert 'ps1_mouse_auto_requested' not in BRIDGE
     assert 'ps1_mouse_auto_armed' not in BRIDGE
-
+    assert 'void SpiderPS1Mouse_OnFlip(HWND game_hwnd);' in HEADER
 
 def test_original_game_native_disable_gates_and_fail_closed_preflight():
     assert "SPIDER_GAME_RENDERTEST_VA 0x02E0988Cu" in MODE
