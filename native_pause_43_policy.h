@@ -56,6 +56,21 @@ static inline int SpiderNativePause43_MotifLayer(float z,float rhw)
             SpiderNativePause43_Abs(rhw-7.8952f)<0.060f);
 }
 
+/* Shadow and face of native Pause letters have two verified depth
+ * families. The old level-1/menu traces use 11.176 and 12.686;
+ * 2026-11-04 level-2 text samples use 8.9615 and 10.3609.
+ * Both must still pass exact original game caller, same-Flip ribbon,
+ * 16/32/64x32 texture and source-quad bounds before mapping. */
+static inline int SpiderNativePause43_TextLayer(float z,float rhw)
+{
+    return (SpiderNativePause43_Abs(z-0.00122f)<0.00010f &&
+            (SpiderNativePause43_Abs(rhw-11.176f)<0.30f ||
+             SpiderNativePause43_Abs(rhw-8.9615f)<0.060f)) ||
+           (SpiderNativePause43_Abs(z-0.00098f)<0.00010f &&
+            (SpiderNativePause43_Abs(rhw-12.686f)<0.30f ||
+             SpiderNativePause43_Abs(rhw-10.3609f)<0.060f));
+}
+
 /* Geometry-only *candidate* for the native game ESC purple ribbon.
  * Original and latest level-2 1920x1080 F9 screenshots both show
  * visible borders at approximately y=398..681 (not 342..585: the
