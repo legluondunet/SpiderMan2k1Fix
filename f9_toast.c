@@ -165,10 +165,17 @@ static HICON toast_original_big_icon(void) {
  * The FULL absolute filename remains stored and validated in toast_path
  * and in PNG logs; it is deliberately NOT rendered onscreen.
  * Both normal Flip and comic no-Flip popup share this exact painter. */
-static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success) {
+/* Reuse the *exact* F9 notification painter for a frozen focus pause:
+ * the only difference is the label. A third status is never published
+ * by PNG workers, which continue passing BOOL success (0 or 1). */
+enum { SPIDER_F9_LABEL_FAILED=0, SPIDER_F9_LABEL_SAVED=1,
+       SPIDER_F9_LABEL_PAUSED=2 };
+static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,int kind) {
   static const WCHAR saved_heading[]=L"SCREENSHOT SAVED";
   static const WCHAR error_heading[]=L"SCREENSHOT FAILED";
-  const WCHAR *heading=success?saved_heading:error_heading;
+  static const WCHAR paused_heading[]=L"PAUSED";
+  const WCHAR *heading=kind==SPIDER_F9_LABEL_PAUSED?paused_heading:
+    (kind==SPIDER_F9_LABEL_SAVED?saved_heading:error_heading);
   int heading_px,pad,icon_px,icon_gap,box_w,box_h,text_x,x,y,saved_dc=0;
   int heading_len,heading_y;
   HICON game_icon=NULL;
@@ -241,6 +248,13 @@ done:
   if(border)DeleteObject(border);
   if(heading_font)DeleteObject(heading_font);
   return ok;
+}
+
+/* The focus pause holds the original frozen frame and uses the very same
+ * bottom-left lavender panel, real EXE icon and Arial Black text as F9.
+ * No window, focus change, SDL input or screenshot publication occurs. */
+BOOL SpiderF9Toast_DrawPausedPanel(HDC dc,DWORD width,DWORD height) {
+  return toast_draw_dc(dc,width,height,L"PAUSED",SPIDER_F9_LABEL_PAUSED);
 }
 
 /* Compose BEFORE presentation onto a temporary DirectDraw offscreen
