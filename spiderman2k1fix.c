@@ -2777,18 +2777,46 @@ static volatile LONG pause_focus_timer_state=0; /* 0 unknown, -1 off, 1 armed */
 static volatile LONG pause_focus_timer_last_flip_tick=0;
 static UINT_PTR pause_focus_timer_id=0;
 static unsigned pause_focus_timer_reports=0;
+static unsigned pause_focus_timer_heartbeat_reports=0;
+static DWORD pause_focus_timer_last_heartbeat=0;
+static int pause_focus_timer_last_foreground=-1;
 static VOID CALLBACK pause_focus_timer_proc(HWND hwnd, UINT message,
                                             UINT_PTR timer_id, DWORD tick) {
   DWORD since_flip;
+  HWND fg;
+  int game_foreground;
   (void)tick;
   if(message!=WM_TIMER || !hwnd || hwnd!=game_hwnd ||
      timer_id!=pause_focus_timer_id ||
-     InterlockedCompareExchange(&pause_focus_timer_state,0,0)!=1 ||
-     InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 ||
+     InterlockedCompareExchange(&pause_focus_timer_state,0,0)!=1)return;
+  /* A SetTimer() success only proves timer registration, NOT TimerProc
+   * dispatch. Trace a few real callbacks (even while foreground) so a
+   * stalled game message pump is distinguishable from our focus gates.
+   * Bounded, opt-in DEBUG-only; never alters gameplay or focus. */
+  fg=GetForegroundWindow();
+  game_foreground=(fg==hwnd);
+  if(debug_log_enabled && pause_focus_timer_heartbeat_reports<30u &&
+     (pause_focus_timer_heartbeat_reports<3u ||
+      pause_focus_timer_last_foreground!=game_foreground ||
+      (DWORD)(GetTickCount()-pause_focus_timer_last_heartbeat)>=30000u)) {
+    char heartbeat[210];
+    DWORD now=GetTickCount();
+    ++pause_focus_timer_heartbeat_reports;
+    pause_focus_timer_last_heartbeat=now;
+    snprintf(heartbeat,sizeof(heartbeat),
+      "FOCUS-TIMER: CALLBACK heartbeat=%u game-foreground=%d fg=%p no-Flip-ms=%lu latched=%ld",
+      pause_focus_timer_heartbeat_reports,game_foreground,(void*)fg,
+      (unsigned long)(DWORD)(now-(DWORD)InterlockedCompareExchange(
+        &pause_focus_timer_last_flip_tick,0,0)),
+      (long)InterlockedCompareExchange(&pause_latched,0,0));
+    log_line(heartbeat);
+  }
+  pause_focus_timer_last_foreground=game_foreground;
+  if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 ||
      InterlockedCompareExchange(&pause_ever_foreground,0,0)!=1 ||
      InterlockedCompareExchange(&pause_in_progress,0,0)!=0 ||
      InterlockedCompareExchange(&pause_latched,0,0)!=0 ||
-     !IsWindow(hwnd) || GetForegroundWindow()==hwnd)return;
+     !IsWindow(hwnd) || game_foreground)return;
   since_flip=(DWORD)(GetTickCount()-(DWORD)InterlockedCompareExchange(
     &pause_focus_timer_last_flip_tick,0,0));
   /* Normal frame-boundary pausing always wins. Trigger only when there
