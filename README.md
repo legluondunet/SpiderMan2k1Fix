@@ -47,7 +47,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 
 Successfully tested on Windows 11 and Linux/Wine.
 
-**First-time controller test:** after backing up and moving any existing profile `SpiderMan2k1Fix/controllers/<VID>-<PID>.ini` and `%LOCALAPPDATA%/SpiderMan2k1Fix/controllers/<VID>-<PID>.ini` (when present), start a fresh game process, enable the experimental universal adapter and press Start on that controller. **Do not remove SDL3's built-in Xbox mapping or use a fake 'unknown controller' mode.** The original 2001 game's own `[Joystick]` defaults are intentionally retained; they are not patch-provided Xbox presets.
+**First-time Xbox test:** back up any existing `045E-028E.ini` profile, enable universal SDL3, restart the game, then press Start. Keep SDL3's built-in Xbox recognition intact; original `[Joystick]` defaults remain untouched.
 
 ## Bugs Resolved
 

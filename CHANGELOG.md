@@ -1,6 +1,6 @@
 # Changelog
 
-## Draft PR #107 — first-use SDL3 without pre-SDL3 controller presets (unmerged)
+## Unreleased — first-use SDL3 refactor PR #107 (staging; not released)
 
 This experimental refactor physically removes the previous Sony DS4 / Xbox 360
 hard-coded DirectInput action mapping tables, boot-time configuration overlays,
@@ -17,7 +17,7 @@ legacy handoff removal, native disconnect safety, and the owned Bink Return
 release. **This work has not yet passed CI or new hardware acceptance.**
 Historical tests/claims below describe earlier staging builds, not PR #107.
 
-## Unreleased — SDL3 controllers and guarded Alt recovery (staging; not released)
+### Earlier SDL3 staging integration (historical tests)
 
 **Not released or merged.** This staging branch combines the tested PR #91
 runtime with new **default-enabled SDL3 and Left Alt recovery**. The default

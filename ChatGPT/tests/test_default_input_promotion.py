@@ -47,11 +47,12 @@ def test_old_controller_preset_options_are_ignored_not_synthesized():
     for key in ("ControllerProfile","ControllerXbox360Preview",
                 "ControllerPS1Preview","ControllerXbox360RTSwing",
                 "ControllerEnterButtons","ControllerBackButton",
-                "ControllerPauseButton","ExperimentalNativeJoystickMappingSwap",
+                "ControllerPauseButton",
                 "ExperimentalSDL3GameplayBindings","ExperimentalSDL3XboxRTSwing"):
         assert f'{{"Input","{key}"}}' in SRC
     assert "swap_mapping_enabled=0;" in RECONNECT
     assert "swap_native_gameplay_mapping(" not in RECONNECT
+    assert '"ExperimentalNativeJoystickMappingSwap=1' not in SRC
     assert "sdl3_generic_ui_on_flip(" not in (
         ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
 

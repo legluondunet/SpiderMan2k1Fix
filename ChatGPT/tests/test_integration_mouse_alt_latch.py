@@ -17,7 +17,10 @@ def test_combined_opt_in_alt_and_permanent_mouse_coexist():
     assert 'SpiderAltLatch_OnConfirmedExternalLoss();' in SRC
     assert 'SpiderPS1Mouse_Configure(logger);' in UI
     assert 'GetPrivateProfileIntA("Input","MouseEnabled"' not in UI
-    assert 'obsolete MouseEnabled option ignored; game mouse is permanently OFF' in UI
+    # Legacy controller settings cannot re-enable the permanently disabled game mouse.
+    assert 'SpiderPS1Mouse_OnFlip(hwnd);' in UI
+    assert 'SpiderPS1Mouse_EnsureDisabled();' in MOUSE
+    assert "GAME MOUSE OFF (permanent)" in MOUSE
     assert 'SpiderPS1Mouse_EnsureDisabled();' in MOUSE
     assert 'GAME MOUSE RESTORED' not in MOUSE
     assert 'ExperimentalAltLatchRecovery' in ALT
