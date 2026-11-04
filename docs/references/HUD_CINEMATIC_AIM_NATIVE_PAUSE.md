@@ -36,16 +36,23 @@ Reference images supplied by the project maintainer, all 1920×1080:
   `spiderman2k1fix.c`. Its same-Flip wide untextured ribbon signature
   unlocks the border/title matcher; motif and cursor have separate strict
   conditions. Level 2 is **not excluded explicitly** in the source.
-  **New image evidence:** at 1920×1080 the level-2 purple panel is
-  roughly y=342..585 (~54.2% at bottom) and stretches across x=0..1919.
-  The Dreamcast reference frame shows x≈222..1701, centered without
-  stretching. The previous code required the native ribbon bottom to be
-  >=55% of screen H and can reject this higher menu. The branch permits
-  >=50%, retaining exact Z/RHW, caller, no-texture and same-Flip checks.
+  **Verified full-resolution image evidence (scrn0020 and scrn0021):**
+  the level-2 purple panel's left-edge border is y=398..681 at 1920×1080,
+  and x=0..1919 across the full screen. The earlier y=342..585 estimate
+  resulted from measuring a *scaled image preview*, NOT actual pixels.
+  The ribbon bottom is ~63.1% of screen height; it ALREADY satisfied
+  the original >=55% threshold. The replacement >=50% threshold did not
+  fix this defect and has been reverted for safety. The Dreamcast reference
+  instead shows a narrower, centered panel (~1480px wide).
+  The persistent failure is likely one of the independently verified
+  D3D7 draw conditions: object owner/caller, Z/RHW, bound texture,
+  stage/HUD hook initialization or same-frame ribbon classification.
+  **Do not loosen these guards without runtime evidence.**
   The new `native_pause_43_policy.h` derives a centered 4:3 X mapping
   from actual W/H for all safe widescreen outputs, and the associated
   border/glyph/cursor bounds scale with display size. The 3D scene and
-  cinematic bars are not changed. **Native game verification is pending**.
+  cinematic bars are not changed. **scrn0021 visually fails this acceptance
+  check** despite a green CI; the new model is not yet reaching the banner.
   An altered caller, Z/RHW, texture or stage could still reject the fix;
   if so the same log's `HUD-VISUAL: PAUSE-RIBBON` samples will tell us why.
 - Red/green reticle signatures have **not been measured**. They must not
@@ -77,9 +84,11 @@ The correct compass patch continues using
 3. Show both green and red crosshairs (screenshots F9), holding each
    briefly; collect `HUD-VISUAL: AIM` candidate records from the same run.
 4. Open the native level-2 ESC menu (F9) and confirm whether the ribbon,
-   `PAUSED`, red/blue motif and selector are deformed. Collect
-   `HUD-VISUAL: PAUSE-RIBBON` and existing `PAUSE-NATIVE-43`,
-   `NATIVE-MOTIF-43`, `NATIVE-CURSOR-43` lines.
+   `PAUSED`, red/blue motif and selector are deformed. The provided
+   `scrn0021.png` shows the ribbon is still full-width. **The next needed
+   evidence is its corresponding SpiderMan2k1Fix.log with Log=1**, including
+   `HUD-VISUAL: PAUSE-RIBBON` and `PAUSE-NATIVE-43`, `NATIVE-MOTIF-43`,
+   `NATIVE-CURSOR-43` lines (plus startup HUD initialization entries).
 5. Return to 3D and quit normally; provide the single log and representative
    F9 captures. A known-good gameplay HUD and 4:3 mode must not regress.
    On 1920×1200 Auto, check the same types where practical.
