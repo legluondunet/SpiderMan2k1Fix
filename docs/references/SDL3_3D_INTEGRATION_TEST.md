@@ -22,6 +22,50 @@ It imports the keyboard adapter concept and fail-closed input safeguards
 from draft PR #95. Neither parent draft is merged to main. These are
 separate tracks and PR #98 is the opt-in integrated test branch.
 
+## 2026-11-04 maintainer decision — focus PAUSED banner is non-blocking on Wine
+
+The maintainer clarifies the **original requirement**: the automatic
+focus PAUSED mechanism was introduced as a possible mitigation for
+**Alt+Tab crashes** in the original game. In recent GE-Proton11-12
+hardware tests, Alt+Tab no longer crashes or destabilizes the game
+according to the tester, **even when the automatic PAUSED banner never
+appears**. Therefore the maintainer considers the PAUSED banner's
+unreliable triggering under Wine **low priority**, rather than a
+reason to continue invasive focus instrumentation or postpone all
+other SDL3 work.
+
+The follow-up log `SpiderMan2k1Fix(20261104-005502).log` from
+`v1.1.0-6aad55f` confirms:
+- The SDL3 PS3 owner is explicitly selected, the 3D keyboard bridge
+  runs, and the original Pause UI is entered and navigated.
+- There are **zero** observed Win32 `flip-background`,
+  `FOCUS-PAUSE: confirmed external focus loss` or universal
+  focus-loss EXIT events. Native Pause snapshots repeatedly report
+  `fg-is-game=1` and game Win32 GUI focus.
+- No recorded fatal error or DirectInput acquisition failure.
+  The full log ends during normal 2D menu activity without a
+  shutdown-completion marker: **crash-free Alt+Tab and clean exit are
+  tester-observed, not established by a log terminal marker**.
+- This run also shows `INI-AUTO`, `INI-REPAIR` and
+  `INI-MIGRATE` (four obsolete/unknown keys), and the default
+  `INPUT-CURSOR: tracking ... (no WndProc subclass ...)`.
+  The separately proposed `ExperimentalFocusTrace=1`
+  passive WndProc experiment was **NOT enabled** in this session;
+  do not claim that WM_ACTIVATEAPP/WM_KILLFOCUS have been excluded
+  as possible signals.
+
+**Scope policy:** keep the already-implemented automatic focus-pause
+feature and its fallback protection intact; do **not** rip it out,
+force focus changes or add cross-platform host-window hooks solely
+to make the PAUSED banner appear under Wine. Treat it as
+**best-effort under Wine/Proton**. Prefer continued stability,
+input restoration after Alt+Tab, manual native Pause, and controller
+ownership correctness. Re-open the focus-pause issue only if
+crashes, frozen/stuck controls, or a concrete product requirement
+justify it. No native Windows 11 result exists; preserve that
+hardware-validation gate. PR #98 remains DRAFT and universal
+gameplay OFF by default, no merge without maintainer approval.
+
 ## 2026-11-04: multiple external Alt+Tab attempts, zero focus pauses
 
 Latest physical test: `SpiderMan2k1Fix(20261104-003837).log`, build
