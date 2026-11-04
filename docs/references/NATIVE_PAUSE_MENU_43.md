@@ -1,5 +1,19 @@
 # Native gameplay ESC menu: 4:3 presentation in widescreen
 
+> **2026-11-04, PR #109 (not yet hardware-validated):** An original
+> Dreamcast reference and a level-2 1920×1080 capture show the purple
+> panel at y≈342..585. Its bottom lies at 54.2% of the frame, below
+> the historic native ribbon requirement of >=55%. The PR relaxes
+> that one geometric bound to >=50%, **without weakening the original
+> caller, triangle fan, FVF, untextured, Z/RHW and same-Flip gates**.
+> A pure helper now maps the whole native ESC artwork to a centered
+> 4:3 region for any valid widescreen output resolution; border/font
+> tolerances and selector candidates also scale with the output size.
+> Existing 1920×1080 and 1920×1200 signatures retain their validated
+> guards. These *new* resolutions and the level-2 variant still need
+> visual confirmation under Wine and/or Windows. No arbitrary D3D7
+> geometry or the underlying 3D scene is transformed.
+
 The original **Spider-Man PC (2001)** 3D gameplay ESC screen has a
 full-screen translucent orange/blue geometric motif, a purple options ribbon,
 text, and a red spider-shaped selector. These are 2D Direct3D7 primitives
