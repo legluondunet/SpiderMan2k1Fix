@@ -41,6 +41,17 @@ def test_original_pause_has_resolution_independent_four_by_three_geometry(tmp_pa
             assert(delta(SpiderNativePause43_MapX((float)w*0.5f,w,h),
                          (float)w*0.5f)<0.10f);
             assert(delta(((float)w*scale)/f,4.0f/3.0f)<0.0001f);
+            /* Native panel corners use the same aspect mapping as text;
+             * never force a 1439px width on the violet border. */
+            if(w==1920u && h==1080u) {
+                float left=SpiderNativePause43_MapX(-22.5f,w,h);
+                float right=SpiderNativePause43_MapX(1950.0f,w,h);
+                assert(delta(left,223.125f)<0.001f);
+                assert(delta(right,1702.5f)<0.001f);
+                assert(delta(right-left,1479.375f)<0.001f);
+                assert(delta(SpiderNativePause43_MapX(-7.5f,w,h),
+                             234.375f)<0.001f);
+            }
             /* No silent support for near-top 3D particles, small panels
              * or an arbitrary full-width geometry. */
             /* The old mistaken scaled-preview coordinates must not
@@ -106,6 +117,9 @@ def test_native_pause_still_uses_exact_render_signature_not_only_bounds():
     assert '#include "native_pause_43_policy.h"' in CORE
     assert "SpiderNativePause43_RibbonBounds(" in block
     assert "SpiderNativePause43_RibbonLayer(z,rhw)" in block
+    assert "copy[i].x=center+(v[i].x-center)*aspect_scale" in block
+    assert "1439.0f/1479.0f" not in block
+    assert "1439.0f/1448.5f" not in block
     assert "SpiderNativePause43_TextLayer(z,rhw)" in block
     assert "SpiderNativePause43_MotifLayer(v[0].z,v[0].rhw)" in CORE
     assert "rva!=0x00102C72UL" in block
