@@ -106,3 +106,7 @@ def test_pause_can_recover_when_helper_disappears():
     assert 'return (DWORD)(tick-host_bad_since)>=2200u;' in PAUSE
     assert 'host_bad_since=0;' in PAUSE
     assert 'SPIDEY_X11_FOCUS_V1 OTHER\\n' in PAUSE
+    assert 'SpiderPauseAny_HostRecoveryTriggered(void)' in PAUSE
+    assert 'InterlockedExchange(&host_recovery_triggered,1)' in PAUSE
+    assert 'SpiderPauseAny_HostRecoveryTriggered()' in CORE
+    assert 'safe fallback resume (NOT a user key)' in CORE
