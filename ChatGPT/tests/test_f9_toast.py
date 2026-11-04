@@ -227,7 +227,9 @@ def test_toast_inactive_path_is_true_wide_nul_not_multichar_constant():
 
 def test_screenshot_toast_uses_pause_typography_and_large_native_icon():
     pause=(ROOT/"pause_surface.c").read_text(encoding="utf-8")
-    assert 'L"Arial Black"' in pause
+    # PAUSED reuses this exact F9 typography rather than maintaining a
+    # second independent copy of fonts, borders and layout.
+    assert "SpiderF9Toast_DrawPausedPanel(dc,(DWORD)width,(DWORD)height)" in pause
     assert "FW_HEAVY,TRUE" in TOAST
     assert 'L"Arial Black"' in TOAST
     assert "ANTIALIASED_QUALITY" in TOAST
