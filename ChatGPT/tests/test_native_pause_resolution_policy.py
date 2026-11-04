@@ -81,8 +81,7 @@ def test_native_pause_still_uses_exact_render_signature_not_only_bounds():
         "/* Native ESC translucent geometric motif",1)[0]
     assert '#include "native_pause_43_policy.h"' in CORE
     assert "SpiderNativePause43_RibbonBounds(" in block
-    assert "fabsf(z-0.00122f)<0.00010f" in block
-    assert "fabsf(rhw-11.176f)<0.25f" in block
+    assert "SpiderNativePause43_RibbonLayer(z,rhw)" in block
     assert "rva!=0x00102C72UL" in block
     assert "type!=D3DPT_TRIANGLEFAN" in block
     assert "count!=4" in block
