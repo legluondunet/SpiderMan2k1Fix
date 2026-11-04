@@ -45,11 +45,11 @@ def test_generated_example_factory_consistency():
     assert "KeyboardLayout=" not in (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text()
     assert not config.has_option('Input','DirectInputReacquire')
     assert not config.has_option('Input','PauseOnFocusLoss')
-    assert list(config['Input']) == ['keyboardlayout','experimentalsdl3probe','experimentalsdl3nativeowner','experimentalsdl3controllersetup','experimentalsdl3contextbridge','experimentalsdl3gameplaybindings','experimentalsdl3xboxrtswing','experimentalaltlatchrecovery','experimentalnativejoystickunplugguard','experimentalnativejoystickreconnect','experimentalnativejoystickmappingswap','controllerprofile','controllerenterbuttons','controllerbackbutton','controllerpausebutton']
-    assert config['Input']['ControllerProfile']=='Auto'
-    assert config['Input']['ControllerEnterButtons']=='Both'
-    assert config['Input']['ControllerBackButton']=='Circle'
-    assert config['Input']['ControllerPauseButton']=='Options'
+    assert list(config['Input']) == ['keyboardlayout','experimentalsdl3probe','experimentalsdl3nativeowner','experimentalsdl3controllersetup','experimentalsdl3universalgameplay','experimentalaltlatchrecovery','experimentalnativejoystickunplugguard','experimentalnativejoystickreconnect']
+    assert config['Input']['ExperimentalSDL3NativeOwner']=='0'
+    assert config['Input']['ExperimentalSDL3UniversalGameplay']=='0'
+    assert 'ControllerProfile' not in config['Input']
+    assert 'ControllerXbox360Preview' not in config['Input']
     assert 'PauseKey' not in config['Input']  # Any-key resume is fixed, not selectable
     assert not config.has_option('Input','ExperimentalAltTabReacquire')
     assert not config.has_option('Input','ExperimentalDI8CreateDeviceTrace')

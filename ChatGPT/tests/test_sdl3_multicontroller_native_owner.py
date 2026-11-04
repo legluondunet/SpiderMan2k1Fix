@@ -53,33 +53,33 @@ def test_unique_selected_vid_pid_c99(tmp_path):
                    capture_output=True,text=True)
     subprocess.run([str(exe)],check=True)
 
-def test_sdl3_multicontroller_live_route_requires_verified_unique_native_owner():
-    probe=(ROOT/"sdl3_gamepad_probe.c").read_text()
-    live=(ROOT/"sdl3_gameplay_live.c").read_text()
-    native=(ROOT/"native_joystick_reconnect.c").read_text()
-    ui=(ROOT/"gamepad_ui_profile.c").read_text()
+def test_sdl3_multicontroller_owner_is_explicit_generic_not_native_preset():
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
+    ui=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
     assert '#include "sdl3_gamepad_identity.h"' in probe
     assert "spider_sdl3_selected_model_unique(" in probe
     assert "open[i].vendor=sdl_vendor(pads[i].id);" in probe
     assert "open[i].product=sdl_product(pads[i].id);" in probe
-    assert "SpiderSDL3Probe_MappedCount()==0u" in live
-    assert "SpiderSDL3Probe_MappedCount()>0u" in live
-    assert "SpiderSDL3Probe_MappedCount()!=1u" not in live
-    assert "SpiderSDL3Probe_MappedCount()==1u" not in live
-    assert "SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id)" in live
-    assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in live
-    assert "SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id)" in native
-    assert "target.matches!=1u" in native # refuse duplicate DirectInput products
-    assert "spider_sdl3_profile_neutral(&sample)" in live
-    assert "if(applied)restore(" in live
-    assert "spider_sdl3_context_menu_reset(&sdl3_context_bridge)" in ui
-    assert "SpiderSDL3GameplayLive_OwnsPause()" in ui
-    assert "SpiderSDL3GameplayLive_PreNativeOnFlip(game_hwnd);" in (
-        ROOT/"spiderman2k1fix.c").read_text()
+    assert "SpiderSDL3Probe_SelectedMappedSample(" in backend
+    assert "spider_sdl3_universal_neutral(&sample)" in backend
+    assert "SDL3-UNIVERSAL: START selected generic" in probe
+    assert "target.matches!=1u" in native
+    assert "swap_native_gameplay_mapping(" not in native
+    assert "spider_sdl3_context_menu_reset(&sdl3_context_bridge)" not in ui
+    assert "begin_scancode(" not in ui
+    assert "SpiderSDL3Universal_OnFlip(game_hwnd," in (
+        ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
 
-def test_l2_pov_still_fail_closed_without_physical_evidence():
-    mapping=(ROOT/"sdl3_gameplay_native_map.h").read_text()
-    assert "Sony L2's 3D native rgbButton index has NOT been" in mapping
-    assert "if(b.index==SPIDER_SDL3_AXIS_RT){*out=7u;return 1;}" in mapping
-    assert "SPIDER_SDL3_AXIS_LT){*out=6u" not in mapping
-    assert "D-pad is POV" in mapping
+
+def test_unknown_physical_button_layout_never_reaches_native_action_table():
+    policy=(ROOT/"sdl3_universal_policy.h").read_text(encoding="utf-8")
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    assert not (ROOT/"sdl3_gameplay_native_map.h").exists()
+    assert "spider_sdl3_universal_step(" in backend
+    assert "spider_sdl3_universal_scan_safe(" in policy
+    assert "SPIDER_UNIVERSAL_DPAD_UP" in policy
+    assert "SPIDER_UNIVERSAL_DPAD_LEFT" in policy
+    assert "SDL3-UNIVERSAL: REFUSED no valid normalized profile" in backend
+    assert "SpiderSDL3Probe_SelectedMappedSample(" in backend

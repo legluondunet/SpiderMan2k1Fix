@@ -35,6 +35,11 @@ int SpiderSDL3Probe_SelectedRT(int *normalized_rt);
  * normalized semantic action adapter (read-only). Native DirectInput
  * owner and gameplay remain unchanged. Unique connected SDL ID+VID/PID
  * and same-game-thread checks are mandatory. */
+/* Opt-in keyboard adapter: one selected, uniquely identified mapped SDL3
+ * controller, including explicit PS3 selection (never native DI ownership).
+ * Reject disconnected or ambiguous generic devices without fallback. */
+int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
+    uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample);
 int SpiderSDL3Probe_GenericSelectedSample(uint32_t *instance,
     uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample);
 int SpiderSDL3Probe_SelectedSample(uint32_t *instance,uint16_t *vid,

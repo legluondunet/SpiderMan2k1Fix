@@ -49,6 +49,49 @@ jobs:
       - name: Build Windows x86 DLLs (portable LLVM-MinGW MSVCRT)
         run: bash ./build-native-msvcrt.sh
 
+      - name: Build portable native Linux X11 helper (Ubuntu 22.04 ABI)
+        run: |
+          set -euo pipefail
+          mkdir -p dist/package/SpiderMan2k1Fix/linux
+          # Build against glibc 2.35, NOT the Ubuntu 24.04 host's newer ABI.
+          # The helper is ELF x86_64 even though the Wine game is Win32 x86.
+          docker run --rm --platform linux/amd64 \
+            --mount "type=bind,source=$PWD,target=/src" \
+            --workdir /src ubuntu:22.04 sh -ec '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends build-essential libx11-dev
+              cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 -fstack-protector-strong \
+                -o dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper \
+                linux/spiderman-focus-helper.c -lX11
+            '
+          helper=dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper
+          file "$helper" | grep 'ELF 64-bit'
+          ldd "$helper"
+          test -x "$helper"
+          # Fail CI if any dependency on the host's newer glibc sneaks in.
+          python3 - <<'PY'
+          import re
+          import subprocess
+          helper = "dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper"
+          info = subprocess.check_output(["readelf", "--version-info", helper], text=True)
+          versions = {tuple(map(int, m.groups())) for m in re.finditer(r"GLIBC_(\d+)\.(\d+)", info)}
+          assert versions, "No glibc version information found in the ELF"
+          assert max(versions) <= (2, 35), f"Linux helper needs newer glibc: {max(versions)}"
+          print(f"Linux helper glibc floor verified: <= 2.35 (highest symbol: {max(versions)})")
+          PY
+
+      - name: Exercise real X11 focus changes and helper shutdown in Xvfb
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -qq xvfb xauth libx11-dev
+          cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 \
+            -o "$RUNNER_TEMP/test_focus_helper_runtime" \
+            linux/tests/focus_helper_runtime.c -lX11
+          xvfb-run -a -s "-screen 0 1024x768x24" \
+            "$RUNNER_TEMP/test_focus_helper_runtime" \
+            "$PWD/dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper"
+
       - name: Prepare game installation files
         run: |
           mkdir -p dist/package/SpiderMan2k1Fix
@@ -73,6 +116,7 @@ jobs:
           test -s dist/package/SpiderMan2k1Fix/README.md
           test -s dist/package/SpiderMan2k1Fix/CHANGELOG.md
           test -s dist/package/SpiderMan2k1Fix/SDL3.dll
+          test -s dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper
           # No inner archives: GitHub Actions compresses dist/package/ once.
           test -z "$(find dist/package -type f -iname '*.zip' -print -quit)"
           cmp third_party/SDL3-LICENSE.txt dist/package/SpiderMan2k1Fix/SDL3-LICENSE.txt
@@ -97,6 +141,7 @@ jobs:
               SpiderMan2k1Fix/SpiderMan2k1Fix.dll \
               SpiderMan2k1Fix/SDL3.dll \
               SpiderMan2k1Fix/SDL3-LICENSE.txt \
+              SpiderMan2k1Fix/linux/spiderman-focus-helper \
               SpiderMan2k1Fix/README.md \
               SpiderMan2k1Fix/CHANGELOG.md
           )
@@ -109,6 +154,7 @@ jobs:
               SpiderMan2k1Fix/SpiderMan2k1Fix.dll \
               SpiderMan2k1Fix/SDL3.dll \
               SpiderMan2k1Fix/SDL3-LICENSE.txt \
+              SpiderMan2k1Fix/linux/spiderman-focus-helper \
               SpiderMan2k1Fix/README.md \
               SpiderMan2k1Fix/CHANGELOG.md | sort > expected.txt
             diff -u expected.txt actual.txt

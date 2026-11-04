@@ -82,3 +82,27 @@ without a filename/path onscreen. The absolute screenshot path remains
 in logs and the PNG destination; capture timing, image bytes, game input
 and no-Flip comic fallback are unchanged. Actual Wine/GE-Proton visual
 confirmation remains pending.
+
+
+### 2026-11-04: PAUSED label now shares the final F9 screenshot panel (PR #98 draft)
+
+Following a maintainer request, the **custom focus-loss PAUSED display** no
+longer draws the centered native-ESC-inspired wide banner, red PAUSED heading
+or keyboard/gamepad resume instructions. The active `pause_surface.c`
+renders **only PAUSED** through the same `toast_draw_dc` GDI painter in
+`f9_toast.c` used by screenshot confirmation. Thus **layout, alpha, font,
+native game icon, colors and one-pixel lavender top/right/bottom border are
+literally identical** to the F9 saved/failed panel: flush-left and near the
+bottom of the full game frame.
+
+The scene remains frozen with the existing optional `PauseDimOpacity`
+shade (60% by default); the original frame is saved/restored; the
+`FOCUS-PAUSE` Any-key or selected-gamepad wake, Bink and DirectSound
+ownership, and native DirectInput recovery are unchanged. The tiny visual
+panel itself does **not** need a new popup HWND and is painted on the
+validated DirectDraw backbuffer. Screenshots' filenames, exact F9 text,
+2-second duration and static-comic handling are unchanged.
+
+This is **implemented and CI-testable**, but appearance and reliability
+still need a physical GE-Proton check. Automatic PAUSED-on-background
+remains best-effort under Wine; native Windows 11 visual testing is deferred.

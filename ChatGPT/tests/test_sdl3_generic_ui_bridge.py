@@ -16,26 +16,16 @@ UI = (ROOT / "gamepad_ui_profile.c").read_text(encoding="utf-8")
 PROBE = (ROOT / "sdl3_gamepad_probe.c").read_text(encoding="utf-8")
 
 
-def test_generic_ui_engine_is_bounded_and_not_directinput_owner():
-    assert "SpiderSDL3Probe_GenericSelectedSample(&id,&vid,&pid,&sample)" in UI
-    assert "sdl3_generic_ui_on_flip(hwnd,menu_2d,gameplay_3d," in UI
-    assert "if(sdl3_generic_ui_on_flip(hwnd,menu_2d,gameplay_3d," in UI
-    assert "spider_sdl3_generic_ui_step_timed(&generic_ui,id,ctx,&sample," in UI
-    assert "spider_sdl3_generic_ui_reset(&generic_ui)" in UI
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3GenericMenu",1,ini)' in UI
-    assert "SPIDER_GENERIC_UI_BINK" in UI
-    assert "SPIDER_GENERIC_UI_MENU" in UI
-    assert "SPIDER_GENERIC_UI_NONE" in UI
-    assert "begin_scancode(scan," in UI
-    assert "release_active_key();" in UI
-    assert "if(device)disable_profile(" in UI
-    assert "sdl3_ui_instance=0;" in UI
-    assert "SDL3-GENERIC-UI: PRESS" in UI
-    assert "SDL3-GENERIC-UI: ARMED" in UI
-    assert "KEYEVENTF_EXTENDEDKEY" in UI
-    assert "in.ki.wScan=(WORD)(scan&0x7Fu);" in UI
-    assert "in.ki.wScan=(WORD)(active_scan&0x7Fu);" in UI
-    assert "KEYEVENTF_KEYUP" in UI
+def test_generic_ui_policy_has_no_competing_legacy_live_producer():
+    """The portable generic UI policy survives for reference, but only the
+    universal backend synthesizes gamepad-derived keyboard actions."""
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    assert "spider_sdl3_generic_ui_step_timed(" not in UI
+    assert "sdl3_generic_ui_on_flip(" not in UI
+    assert "begin_scancode(" not in UI
+    assert "SpiderSDL3Probe_GenericSelectedSample(" not in UI
+    assert "spider_sdl3_generic_ui_step_timed(" in POLICY
+    assert "SpiderSDL3Probe_SelectedMappedSample(" in backend
     assert "generic_selected_id=requested_id;" in PROBE
     assert "No 3D gameplay" in POLICY
 

@@ -236,6 +236,13 @@ void SpiderDI8Retry_Init(void (*log_fn)(const char *)) {
     write_log("DI8-RETRY: native input recovery requested permanently; guarded installation at Flip #120");
 }
 
+unsigned SpiderDI8Retry_KeyboardRecoveryAttempts(void) {
+  /* Read-only count of original DIERR_NOTACQUIRED keyboard paths that
+   * entered the game's existing Acquire/retry. This counter increments
+   * BEFORE Acquire, so it is a hint, NOT proof of successful Acquire. */
+  LONG attempts=snapshot(&retries_keyboard);
+  return attempts<0?0u:(unsigned)attempts;
+}
 void SpiderDI8Retry_OnFlip(long flip_index) {
   if(snapshot(&requested)!=1) return;
   /* The original game calls Flip on its render thread. Delayed install
