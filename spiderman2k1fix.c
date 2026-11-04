@@ -1672,6 +1672,61 @@ static void maybe_log_native_pause43_detail(void *device,
     (unsigned long)pf);
   log_line(line);
 }
+/* Separate limited border probe: the first native Pause detail sampler
+ * captured font quads but its center-X filter excluded edge strokes.
+ * 8x8 border sprites at the extreme left/right are collected only when
+ * the verified original game ribbon is present in this Flip. */
+static volatile LONG native_pause43_border_samples=0;
+static void maybe_log_native_pause43_border(void *device,
+              D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
+              DWORD count,void *caller,int corrected) {
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  IDirectDrawSurface7 *tex=NULL;
+  DDSURFACEDESC2 desc;
+  DWORD rva=0,tw=0,th=0;
+  float l,r,t,b;
+  LONG flip,n;
+  unsigned i;
+  char line[310];
+  if(!debug_log_enabled || !device || !v ||
+     count!=4 || type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
+     !native_esc43_supported_monitor() ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     InterlockedCompareExchange(&native_pause43_border_samples,0,0)>=40)
+    return;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  if(!native_pause43_visible_near_flip(flip) ||
+     !geom_rva(caller,&rva) || rva!=0x00102C72UL)return;
+  l=r=v[0].x;t=b=v[0].y;
+  for(i=1;i<4;i++) {
+    if(v[i].x<l)l=v[i].x;
+    if(v[i].x>r)r=v[i].x;
+    if(v[i].y<t)t=v[i].y;
+    if(v[i].y>b)b=v[i].y;
+  }
+  if(!((l<(float)desktop_w*0.05f) ||
+       (r>(float)desktop_w*0.95f) ||
+       (r-l>(float)desktop_w*0.85f)) ||
+     t<(float)desktop_h*0.28f || t>(float)desktop_h*0.75f ||
+     b-t<4.0f || b-t>(float)desktop_h*0.36f)return;
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(FAILED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex))
+     || !tex)return;
+  if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(tex,&desc))) {
+    tw=desc.dwWidth;th=desc.dwHeight;
+  }
+  IDirectDrawSurface7_Release(tex);
+  if(tw!=8u || th!=8u)return;
+  n=InterlockedIncrement(&native_pause43_border_samples);
+  if(n>40)return;
+  snprintf(line,sizeof(line),
+    "PAUSE-NATIVE-BORDER-PROBE: n=%ld flip=%ld corrected=%d box=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f tex=8x8 [READ-ONLY]",
+    (long)n,(long)flip,corrected,
+    (double)l,(double)r,(double)t,(double)b,
+    (double)v[0].z,(double)v[0].rhw);
+  log_line(line);
+}
 static void free_menu_vertices(SpiderMenuVertex *allocated) {
   if (allocated) HeapFree(GetProcessHeap(),0,allocated);
 }
@@ -1713,9 +1768,12 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     /* The original native Pause glyphs can have different per-level RHW:
      * capture original data regardless of whether the strict HUD path
      * corrected this draw, once a verified ribbon is present. */
-    if(count==4)
+    if(count==4) {
       maybe_log_native_pause43_detail(self,type,fvf,verts,count,
                        __builtin_return_address(0),v!=verts);
+      maybe_log_native_pause43_border(self,type,fvf,verts,count,
+                       __builtin_return_address(0),v!=verts);
+    }
     /* Uncorrected suspected aim/ribbon draws only. No rendering changes. */
     if(v==verts && count==4)
       maybe_log_hud_visual_candidate(self,type,fvf,verts,count,
