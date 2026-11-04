@@ -7,11 +7,12 @@ ARCHIVE=(ROOT/"docs/references/CHANGELOG_EXPERIMENT_HISTORY_PRE_20261101.md").re
 README=(ROOT/"README.md").read_text(encoding="utf-8")
 
 
-def test_unreleased_integration_is_explicitly_draft():
+def test_unreleased_integration_documents_default_on_without_release_claim():
     assert CHANGELOG.startswith("# Changelog\n\n## Unreleased")
     head=CHANGELOG.split("## 1.1.0 — October 27, 2026",1)[0]
-    assert "staging; not released" in head
-    assert "**Not released or merged.**" in head
+    assert "## Unreleased — Universal SDL3 gameplay enabled by default" in head
+    assert "merged through #92" in head
+    assert "Existing valid INIs are not overwritten" in head
     assert "enabled by default" in head
     assert "ExperimentalAltLatchRecovery=1" in head
     assert "Default-on" in head
