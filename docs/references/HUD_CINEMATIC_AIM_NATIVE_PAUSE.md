@@ -145,6 +145,57 @@ its matching `[Debug] Log=1` journal. Confirm no full-width border
 and native text proportions against the Dreamcast reference. The
 red/green reticle and cinematic-compass tests are still pending.
 
+## Third validation: exact Dreamcast menu-panel extent (2026-11-04)
+
+The next captured `scrn0024.png` and
+`SpiderMan2k1Fix(20261104-214925).log` confirm all strict native
+Pause rendering paths now match the *actual* level-2 game drawing:
+
+- `PAUSE-NATIVE-43: ribbon`: recognized from Flip **1353** with
+  scale **0.75000** and exact level-2 Z/RHW.
+- `PAUSE-NATIVE-43: border`: recognized repeatedly, including both
+  horizontal `8x8` strokes and left/right caps. The edge
+  `PAUSE-NATIVE-BORDER-PROBE` records `corrected=1`.
+- `PAUSE-NATIVE-43: glyph`: 16/32/64x32 original menu characters
+  recognized and transformed in both text layers; central probe
+  records `corrected=1`.
+- `NATIVE-MOTIF-43: QUAD-MATCH`: original translucent motif matched.
+  The native red selector was **not shown** during this level's
+  screenshots; absence of a selector hit is not evidence of a defect.
+
+Both original PNGs have an actual **1920x1080** image size. Bright
+violet outer horizontal border pixels were measured at approximately:
+
+| Original screenshot | Left border | Right border | Visible width |
+| --- | ---: | ---: | ---: |
+| Dreamcast reference `Capture d’écran_2026-11-01_10-46-44(1).png` | x=223 | x=1702 | 1480 |
+| Fix before this calibration `scrn0024.png` | x=241 | x=1679 | 1439 |
+
+Thus the **previous empirical 1439px calibration actually made the
+native Pause border 41px too narrow** compared with the Dreamcast
+reference; the initial assumption that a 1439px border was correct was
+reversed after comparing the original two full-size captures.
+
+The source 8x8 border's real extreme X coords (`-22.5` and `1950.0`)
+mapped with the **standard centered 4:3 factor** give
+`x=223.125` and `x=1702.5`: the Dreamcast target without any special
+pixel correction. Therefore remove both **border-specific** factor
+`1439/1479` and **ribbon-specific** `1439/1448.5` from the
+1920x1080 native renderer. Keep the already verified menu **glyph
+mapping unchanged**, keep all original strict caller/texture/depth
+guards, leave the translucent motif and the rest of the game untouched.
+Portable C-level geometry regression checks cover the 1920x1080 native
+border reference in addition to earlier 4:3, 16:10 and 16:9 cases.
+
+The Dreamcast capture is from a *different level*; its bottom-right
+compass is not necessarily shown during another level's Pause. The
+Dreamcast `A SELECT` prompt is intentionally postponed to a later
+version. **Neither is a PR #109 acceptance criterion.**
+
+**Acceptance of this final 41px geometry adjustment awaits an
+in-game screenshot**. Automated tests can assert the calculated
+coordinate mapping, but not the resulting pixel appearance.
+
 ## Bounded read-only diagnostic
 
 When `[Debug] Log=1`, only **uncorrected** original 4-vertex D3D7
