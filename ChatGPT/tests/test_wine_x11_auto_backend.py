@@ -130,6 +130,30 @@ def test_restart_requires_owned_helper_and_missing_or_stale_heartbeat():
     assert 'if(requested || GetLastError()!=ERROR_ENVVAR_NOT_FOUND)return 0;' in BOOT
 
 
+def test_expired_restarts_allow_manual_win32_refocus_without_auto_unpause():
+    assert 'SpiderWineFocusAutostart_RecoveryExhausted(void)' in BOOT
+    assert 'if(!helper_managed || helper_waiting_for_state ||' in BOOT
+    assert 'helper_recovery_attempts<2)return 0;' in BOOT
+    assert 'now.QuadPart-modified.QuadPart>1200ull*10000ull' in BOOT
+    assert 'int fallback_saw_external=0;' in CORE
+    assert 'int fallback_wake_armed=0;' in CORE
+    assert 'GetForegroundWindow()==hwnd && GetActiveWindow()==hwnd &&' in CORE
+    assert 'GetFocus()==hwnd;' in CORE
+    assert 'if(!win32_confirmed_game)' in CORE
+    assert 'fallback_saw_external=1;' in CORE
+    assert 'else if(fallback_saw_external && !fallback_wake_armed)' in CORE
+    assert '(DWORD)(tick-fallback_return_since)>=150u' in CORE
+    assert 'SpiderPauseAny_SetHostFocusBlocked(!fallback_wake_armed);' in CORE
+    assert 'manual key/gamepad wake allowed' in CORE
+    # Never call InterlockedExchange(&pause_latched,0) in the
+    # fallback branch; only the existing completed/verified button
+    # checks can finish a custom PAUSED session.
+    fallback=CORE.split('if(pause_x11_bridge_enabled() && x11_state==0 &&')[1].split('} else {',1)[0]
+    assert 'InterlockedExchange(&pause_latched,0)' not in fallback
+    assert 'SpiderPauseAny_HostRecoveryTriggered()' not in CORE
+    assert '!fallback_wake_armed)?0:' in CORE
+
+
 def test_pause_resume_gate_remains_native_game_plus_real_user_input():
     assert 'SpiderPauseAny_SetHostFocusBlocked(pause_x11_bridge_enabled() &&' in CORE
     assert 'x11_state!=1);' in CORE
