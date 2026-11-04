@@ -1609,6 +1609,67 @@ static void maybe_log_hud_visual_candidate(void *device,
     (double)v[0].u,(double)v[0].v);
   log_line(line);
 }
+/* Snapshot the unmodified game-owned ESC text/border/selector quads after
+ * a verified native ribbon was seen, including quads rejected by our
+ * existing exact layer and format gates. This is a read-only investigation:
+ * no pointer scanning, texture modification, DrawPrimitive recursion,
+ * render-state changes or unbounded per-frame logging. */
+static volatile LONG native_pause43_detail_samples=0;
+static void maybe_log_native_pause43_detail(void *device,
+                  D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
+                  DWORD count,void *caller,int corrected) {
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  IDirectDrawSurface7 *tex=NULL;
+  DDSURFACEDESC2 desc;
+  DWORD rva=0,tw=0,th=0,pf=0;
+  float l,r,t,b;
+  LONG flip,sample;
+  unsigned i;
+  char line[345];
+  if(!debug_log_enabled || !device || !v || count!=4 ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
+     !native_esc43_supported_monitor() ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0)return;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  if(!native_pause43_visible_near_flip(flip) ||
+     !geom_rva(caller,&rva) || rva!=0x00102C72UL ||
+     InterlockedCompareExchange(&native_pause43_detail_samples,0,0)>=80)
+    return;
+  l=r=v[0].x;t=b=v[0].y;
+  for(i=1;i<4;i++) {
+    if(v[i].x<l)l=v[i].x;
+    if(v[i].x>r)r=v[i].x;
+    if(v[i].y<t)t=v[i].y;
+    if(v[i].y>b)b=v[i].y;
+  }
+  /* Focus on native letter glyphs, the narrow 8x8 outlines, and the
+   * red 32x32 selector. Exclude large motif/world quads and player HUD. */
+  if(!(l>(float)desktop_w*0.15f && r<(float)desktop_w*0.85f &&
+       t>(float)desktop_h*0.10f && b<(float)desktop_h*0.70f &&
+       r-l>4.0f && r-l<(float)desktop_w*0.10f &&
+       b-t>8.0f && b-t<(float)desktop_h*0.11f))
+    return;
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(FAILED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex))
+     || !tex)return;
+  if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(tex,&desc))) {
+    tw=desc.dwWidth;th=desc.dwHeight;pf=desc.ddpfPixelFormat.dwFlags;
+  }
+  IDirectDrawSurface7_Release(tex);
+  if(!((th==32u && (tw==16u || tw==32u || tw==64u)) ||
+       (tw==8u && th==8u)))return;
+  sample=InterlockedIncrement(&native_pause43_detail_samples);
+  if(sample>80)return;
+  snprintf(line,sizeof(line),
+    "PAUSE-NATIVE-DETAIL: sample=%ld flip=%ld corrected=%d quad=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f color=%08lX tex=%lux%lu fmt=%08lX [READ-ONLY]",
+    (long)sample,(long)flip,corrected,
+    (double)l,(double)r,(double)t,(double)b,
+    (double)v[0].z,(double)v[0].rhw,
+    (unsigned long)v[0].diffuse,(unsigned long)tw,(unsigned long)th,
+    (unsigned long)pf);
+  log_line(line);
+}
 static void free_menu_vertices(SpiderMenuVertex *allocated) {
   if (allocated) HeapFree(GetProcessHeap(),0,allocated);
 }
@@ -1647,6 +1708,12 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       v=maybe_correct_native_pause43(self,type,fvf,verts,count,
                                      __builtin_return_address(0),small);
+    /* The original native Pause glyphs can have different per-level RHW:
+     * capture original data regardless of whether the strict HUD path
+     * corrected this draw, once a verified ribbon is present. */
+    if(count==4)
+      maybe_log_native_pause43_detail(self,type,fvf,verts,count,
+                       __builtin_return_address(0),v!=verts);
     /* Uncorrected suspected aim/ribbon draws only. No rendering changes. */
     if(v==verts && count==4)
       maybe_log_hud_visual_candidate(self,type,fvf,verts,count,
