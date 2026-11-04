@@ -69,3 +69,37 @@ instantaneous pause during Bink cinematics without extra evidence.
 This PR is experimental; **do not merge without user validation**.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+## Retest 8: focus dispatch completion probe
+
+The user's `SpiderMan2k1Fix(8).log` (`v1.1.0-f3ff0f1`, CI
+merge-test binary) again shows one successful 3D loss followed by a
+second failed loss.
+
+- 09:14:50.795: `WM_ACTIVATEAPP(FALSE)`/`WM_KILLFOCUS`;
+  09:14:50.965 confirmed PAUSED; 09:14:50.985 panel presented;
+  09:16:01.530 activation; 09:16:03.233 manual resume.
+- Before the last focus change, `menu-active=1`: last observed
+  `Flip` at 09:17:56.037, roughly **1.20 seconds before** the
+  09:17:57.238 `WM_ACTIVATEAPP(FALSE)`/`WM_KILLFOCUS`.
+  A `Blt` was still observed at 09:17:57.118.
+- The file ends immediately after logging `WM_KILLFOCUS`.
+  There is no later recorded reactivation, so the previous
+  return-only fallback had no opportunity to present PAUSED.
+  Neither a native WndProc blockage nor a stopped message pump
+  can be proved by this log.
+
+A bounded, strictly opt-in `FOCUS-RETURN: ORIGINAL-WNDPROC enter/returned`
+pair now brackets forwarding of `WM_ACTIVATEAPP`, `WM_ACTIVATE`,
+`WM_KILLFOCUS` and `WM_SETFOCUS` to the game's original handler.
+
+- `enter WM_KILLFOCUS` without `returned WM_KILLFOCUS` suggests
+  the original handler may be stuck; compare with a host-side process
+  snapshot before concluding.
+- A matching `returned WM_KILLFOCUS` proves the original handler
+  completed and the later silence is elsewhere (render loop, message
+  pump, or game termination).
+- Event-level `FOCUS-RETURN` traces are now bounded and logged
+  whenever the experiment is enabled, independent of `[Debug] Log`.
+
+This adds **diagnostics only**, no change to the pause algorithm.
