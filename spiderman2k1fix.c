@@ -16,6 +16,7 @@
 #include "hud_adaptive.h"
 #include "hud_visual_candidates.h"
 #include "native_pause_title_bounds.h"
+#include "native_pause_43_policy.h"
 #include "frame_limiter.h"
 #include "display_plan.h"
 #include "menu_scale.h"
@@ -1035,13 +1036,16 @@ static int native_esc43_hud_setting_enabled(const char *key,
   return SpiderHudWidescreen_Installed()!=0;
 }
 
-/* Guard the original native ESC draw signatures to the two measured
- * 1920-wide outputs. Other monitor sizes remain untouched. */
+/* Accept native widescreen outputs of any resolution, but only when
+ * exact game-owned D3D7 caller/texture/layer signatures ALSO match.
+ * The menu's 4:3 proportion is independent of pixel dimensions. */
 static int native_esc43_supported_monitor(void) {
-  return desktop_w==1920 && (desktop_h==1080 || desktop_h==1200);
+  return SpiderNativePause43_Widescreen((unsigned)desktop_w,
+                                        (unsigned)desktop_h);
 }
 static float native_esc43_scale(void) {
-  return ((float)desktop_h*(4.0f/3.0f))/(float)desktop_w;
+  return SpiderNativePause43_Scale((unsigned)desktop_w,
+                                   (unsigned)desktop_h);
 }
 static float native_esc43_left_gutter(void) {
   return ((float)desktop_w-(float)desktop_h*(4.0f/3.0f))*0.5f;
@@ -1114,16 +1118,10 @@ static const void *maybe_correct_native_pause43(void *device,
    * for native ESC and y~432..634 for QUIT confirmation.
    * The tolerance supports animation, NOT arbitrary full-width draws.
    */
-  ribbon=(left>=-30.0f && left<=20.0f &&
-       right>=(float)desktop_w-25.0f &&
-       right<=(float)desktop_w+35.0f &&
-       top>=(float)desktop_h*0.30f &&
-       top<=(float)desktop_h*0.52f &&
-       bottom>=(float)desktop_h*0.55f &&
-       bottom<(float)desktop_h*0.72f &&
-       (bottom-top)>(float)desktop_h*0.11f &&
+  ribbon=SpiderNativePause43_RibbonBounds(
+       left,right,top,bottom,(unsigned)desktop_w,(unsigned)desktop_h) &&
        fabsf(z-0.00122f)<0.00010f &&
-       fabsf(rhw-11.176f)<0.25f);
+       fabsf(rhw-11.176f)<0.25f;
   if(ribbon) {
     /* The banner has no texture. Recheck the live bound texture here
      * rather than relying solely on depth and broad geometry.
