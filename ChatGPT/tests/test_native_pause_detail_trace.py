@@ -28,3 +28,26 @@ def test_native_pause_trace_receives_original_vertices_after_guarded_corrections
     assert "maybe_log_native_pause43_detail(self,type,fvf,verts,count," in draw
     assert "__builtin_return_address(0),v!=verts" in draw
     assert "original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags)" in draw
+
+
+def test_edge_border_probe_is_independent_bounded_and_read_only():
+    probe=CORE.split("static void maybe_log_native_pause43_border(",1)[1].split(
+        "static void free_menu_vertices(",1)[0]
+    for token in (
+        "native_pause43_visible_near_flip(flip)",
+        "rva!=0x00102C72UL", "native_pause43_border_samples",
+        ">=40", "tw!=8u || th!=8u", "[READ-ONLY]",
+        "IDirectDrawSurface7_GetSurfaceDesc(",
+        "IDirectDrawSurface7_Release(tex)",
+        "PAUSE-NATIVE-BORDER-PROBE:", "log_line(line)",
+    ):
+        assert token in probe
+    for forbidden in ("SetTexture(", "SetRenderState(", "SendInput(",
+                      "copy[i].x=", "original_draw_primitive("):
+        assert forbidden not in probe
+    draw=CORE.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
+        "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
+    assert draw.index("maybe_correct_native_pause43(") < draw.index(
+        "maybe_log_native_pause43_border(") < draw.index(
+        "maybe_correct_horplus(")
+    assert "maybe_log_native_pause43_border(self,type,fvf,verts,count," in draw
