@@ -44,6 +44,10 @@ static uint32_t focus_dir_controller_id=0;
 static unsigned focus_latch_follow_scan=0;
 static unsigned focus_latch_follow_frames=0;
 static unsigned focus_release_reports=0;
+/* Native Linux host focus is authoritative when the X11 observer has
+ * already been verified. Wine can keep GetForegroundWindow()==game even
+ * while Firefox owns real X11 focus. */
+static int native_host_focus_blocked=0;
 static void (*report)(const char *)=NULL;
 static void log_universal(const char *msg) {
   if(report && trace++<100u)report(msg);
@@ -287,6 +291,24 @@ static void restore_original(const char *reason) {
   previous_context=SPIDER_UNIVERSAL_CTX_3D;
   spider_sdl3_universal_reset(&state);
 }
+void SpiderSDL3Universal_SetHostFocusBlocked(int blocked) {
+  if(!requested || !game_thread ||
+     game_thread!=GetCurrentThreadId())return;
+  blocked=blocked!=0;
+  if(blocked==native_host_focus_blocked)return;
+  native_host_focus_blocked=blocked;
+  if(blocked) {
+    log_focus_release(
+      "SDL3-UNIVERSAL: FOCUS-X11 host focus blocked; releasing injected 3D keys despite stale Win32 foreground");
+    /* Exact existing focus-loss pathway: snapshot held directions,
+     * release injected keys, restore original game-owned DI pointer,
+     * then defer bounded keyboard-latch recovery until fresh foreground. */
+    restore_original("focus or window lost");
+  } else
+    log_focus_release(
+      "SDL3-UNIVERSAL: FOCUS-X11 GAME focus confirmed; neutral-only manual reentry");
+}
+
 static int suspend_original(void) {
   PVOID old;
   if(suspended)return *SPIDER_UNIVERSAL_DI_SLOT==NULL;
@@ -305,6 +327,7 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   requested=0;report=logger;trace=0;game_thread=0;
   key_transition_reports=0;owner_reports=0;refusal_reports=0;
   focus_release_reports=0;
+  native_host_focus_blocked=0;
   memset(&focus_release,0,sizeof(focus_release));
   spider_sdl3_focus_dir_complete(&focus_dir);
   focus_dir_controller_id=0;
@@ -357,8 +380,10 @@ void SpiderSDL3Universal_BeforeUI(HWND hwnd) {
   if(game_thread!=GetCurrentThreadId())return;
   /* MUST run before focus pause blocks the original game render thread.
    * Critical: no externally held synthetic keys may survive Alt+Tab. */
-  if(!hwnd || !IsWindowVisible(hwnd) || GetForegroundWindow()!=hwnd) {
-    restore_original("focus or window lost");
+  if(native_host_focus_blocked || !hwnd || !IsWindowVisible(hwnd) ||
+     GetForegroundWindow()!=hwnd) {
+    if(active || suspended || sent_mask || pulse_scan)
+      restore_original("focus or window lost");
   } else if(pulse_scan && !send_scan(pulse_scan,1)) {
     log_universal("SDL3-UNIVERSAL: warning Pause/Return KEYUP failed, retry before next action");
   } else pulse_scan=0;
@@ -388,6 +413,13 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   unsigned menu_buttons=0,context;
   int result;
   if(!requested || game_thread!=GetCurrentThreadId())return;
+  /* X11 can report OTHER/UNKNOWN even when Wine's HWND stays foreground.
+   * Never synthesize a direction or reclaim native DI during this state. */
+  if(native_host_focus_blocked) {
+    if(active || suspended || sent_mask || pulse_scan)
+      restore_original("focus or window lost");
+    return;
+  }
   if(!hwnd || !IsWindowVisible(hwnd) || GetForegroundWindow()!=hwnd) {
     restore_original("game HWND not foreground");
     return;
