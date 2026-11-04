@@ -80,19 +80,22 @@ static inline int SpiderHudVisual_Classify(
         v[0].rhw > 27.5f && v[0].rhw < 27.7f)
         return SPIDER_HUD_VISUAL_NONE;
 
-    /* On-screen red/green aiming rings in provided 1920x1080 F9 frames.
-     * Broad enough to catch different sprite/depth variants, yet rejects
-     * full-screen surfaces, corner player HUD and most tiny particles.
-     * Colors/textures are *reported*, not assumed. */
-    if (width >= (float)screen_h * 0.045f &&
+    /* Visually documented aiming rings span ~148x106 or 172x135 at
+     * 1920x1080. The previous broad 45px gate emitted ONLY false AIM
+     * samples for the player health/web icon's 32x32 sprite
+     * (x=292.5..345.9, y=94.5..162, z=.00024, rhw=19.4920)
+     * in the maintainer's level-2 Pause session. Restrict this
+     * read-only *candidate* region away from the upper-left HUD without
+     * guessing reticle colors, textures or D3D7 depth signatures. */
+    if (width >= (float)screen_h * 0.065f &&
         width <= (float)screen_h * 0.35f &&
-        height >= (float)screen_h * 0.045f &&
+        height >= (float)screen_h * 0.065f &&
         height <= (float)screen_h * 0.35f &&
         width >= height * 0.70f &&
         width <= height * 2.50f &&
-        centerx >= (float)screen_w * 0.12f &&
+        centerx >= (float)screen_w * 0.25f &&
         centerx <= (float)screen_w * 0.90f &&
-        centery >= (float)screen_h * 0.07f &&
+        centery >= (float)screen_h * 0.14f &&
         centery <= (float)screen_h * 0.94f)
         return SPIDER_HUD_VISUAL_AIM;
 
