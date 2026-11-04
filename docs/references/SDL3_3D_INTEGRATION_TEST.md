@@ -22,6 +22,85 @@ It imports the keyboard adapter concept and fail-closed input safeguards
 from draft PR #95. Neither parent draft is merged to main. These are
 separate tracks and PR #98 is the opt-in integrated test branch.
 
+## 2026-11-04: multiple external Alt+Tab attempts, zero focus pauses
+
+Latest physical test: `SpiderMan2k1Fix(20261104-003837).log`, build
+`v1.1.0-6aad55f`, GE-Proton11-12 / Manjaro, with both mapped PS3/DS4
+attached, explicit PS3 Start and working SDL3 3D gameplay.
+
+**Observed by the tester:** several Alt+Tab switches away from the game,
+none activated the custom PAUSED overlay.
+
+**Confirmed from the actual log:**
+- Only one `INPUT-FOCUS` record, the original
+  `flip-foreground` on game HWND `00020088`.
+  There are **zero** `flip-background` records, focus candidates,
+  confirmed external focus losses, SDL3 universal focus EXITS or
+  focus-pause displays.
+- The only `Flip-gap-ms` records are 4996 ms and 1557 ms at
+  the intro-to-3D / Bink-to-input transition (`flip=551`,
+  `flip=564`), both `foreground-now=1 latched=0`.
+  They **do not establish** any Alt+Tab transition.
+- The original native Pause panel was rendered starting
+  `flip=12189`. All **eight** `FOCUS-PROBE:
+  native-pause-snapshot` records (flips 12190..12360)
+  report `fg-is-game=1`, foreground HWND `00020088`,
+  PID 336, and Win32 global and game-thread active/focus HWNDs
+  `00020088`, throughout the sampled period.
+  In other words, every sampled Win32 foreground API continued
+  to identify Spider-Man even though the tester observed external
+  Alt+Tab activity. The log does not include host Linux/X11 focus
+  information or mark the instants of individual keypresses.
+- Flip counter advances throughout; original game and native Pause
+  continue rendering. Thus a total absence of Flip callbacks is
+  **not** the demonstrated reason for the failure.
+
+**Working hypothesis, not proven:** Wine/GE-Proton and the host
+Linux compositor may disagree about focus across Linux-native
+applications. An earlier successful Alt+Tab in
+`SpiderMan2k1Fix(20261103-201523).log` identified the **Wine-side
+`explorer.exe`** as the foreign Win32 foreground process.
+Under Wine, querying foreground Win32 HWND may be insufficient
+when the real host active window is Linux-native.
+
+**Next isolation step using already existing passive code (NO new
+production behavior patch):** In a separate test INI set
+
+```ini
+[Debug]
+Log=1
+[Input]
+ExperimentalFocusTrace=1
+ExperimentalDI8EntryTrace=0
+ExperimentalDI8CreateDeviceTrace=0
+ExperimentalAltTabReacquire=0
+```
+
+This explicitly opts into the **existing diagnostic-only
+WndProc chain** for `WM_ACTIVATEAPP`, `WM_KILLFOCUS`,
+`WM_SETFOCUS` and `WM_ACTIVATE`; with the above three
+DirectInput experiment settings OFF, it returns before legacy
+DirectInput IAT/COM interception. Log should show
+`INPUT-FOCUS: SAFE PASSIVE TRACE enabled` and
+`INPUT-FOCUS: window subclass installed`.
+If those messages are absent, the experiment did not activate.
+
+Compare one 2-second switch to a native Linux application
+(e.g. Firefox) with one switch to another application actually
+running inside the **same Wine/Proton prefix** (e.g. Wine explorer),
+then return. Determine whether WndProc deactivation events are
+delivered **despite** `GetForegroundWindow` remaining unchanged.
+If yes, consider a strictly validated event-based fallback with
+debounce and game-thread cleanup; if no, diagnose host
+compositor/X11/Wayland focus outside Win32 before changing pause
+policy. Do not infer Linux host focus purely from synthetic gamepad,
+WM_SYSKEY or absence of input.
+
+Restore `ExperimentalFocusTrace=0` after collecting the trace.
+This is an opt-in diagnostic with a window subclass and should be
+tested in an isolated game copy. It is **not** a release default,
+and native Windows 11 remains deferred.
+
 ## GE-Proton focus probe: 1 of 2 Alt+Tab attempts paused (2026-11-03)
 
 Tester used `v1.1.0-5869a47` on GE-Proton11-12 and reports
