@@ -40,6 +40,10 @@ FPSLimit=30
 
 [Input]
 KeyboardLayout=Auto
+ExperimentalSDL3Probe=1
+ExperimentalSDL3NativeOwner=0
+ExperimentalSDL3ControllerSetup=1
+ExperimentalSDL3UniversalGameplay=1
 
 [Audio]
 MusicSFXLevel=40
@@ -83,9 +87,17 @@ The example `RawHex` line is **illustrative only**: the generated file contains 
 | `[Display] Brightness` | Game brightness from 0 through 9. |
 | `[Display] FPSLimit` | **Player-controlled frame limit.** Default `30`; `0` disables the limiter, `1..240` sets a target. Higher FPS can expose timing issues in the original game. |
 | `[Input] KeyboardLayout` | `Auto` detects the Windows/Wine input layout, `Off` leaves original QWERTY positions. |
+| `[Input] ExperimentalSDL3UniversalGameplay` | **Default `1`**: use SDL3's mapped controller profile for game menus, videos and 3D after explicit Start and neutral input. Set `0` to disable the universal bridge and preserve native behavior. |
+| `[Input] ExperimentalSDL3NativeOwner` | Default `0`; unrelated legacy experimental native-owner path, not required for universal gameplay. |
 | `[Audio]` | Music/effects, voice and movie volumes (0..100%); `Stereo=1` selects stereo. |
 | `[Keyboard]` / `[Joystick]` | The eleven original keyboard actions and seven joystick button bindings, also saved from the game's menus. |
 | `[Internal] RawHex` | Lossless copy of the game's original 252-byte configuration record. Not a player-facing control. |
+
+### Universal SDL3 controllers: enabled by default
+
+New installations generate `[Input] ExperimentalSDL3UniversalGameplay=1`. When the key is absent, the SDL3 runtime also defaults to `1`, provided `ExperimentalSDL3Probe=1` and `ExperimentalSDL3ControllerSetup=1`. The controller must be mapped by SDL3, explicitly selected with **Start**, and returned to neutral before it can drive gameplay. The original keyboard remains available. Disconnects, Alt+Tab and controller handoffs use the existing fail-closed guards; no automatic selection or hardware identity guess is introduced.
+
+To turn this functionality OFF, set `ExperimentalSDL3UniversalGameplay=0` in `[Input]` and restart. **Existing valid INIs are preserved**: users with a previous `=0` keep that setting until they manually change it to `=1`; the patch does not silently reinterpret a saved preference. The independent legacy experimental native-owner mode remains OFF by default.
 
 ### Display resolution: native monitor first
 
