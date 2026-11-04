@@ -32,7 +32,7 @@ def test_original_pause_has_resolution_independent_four_by_three_geometry(tmp_pa
             float scale=SpiderNativePause43_Scale(w,h);
             assert(SpiderNativePause43_Widescreen(w,h));
             assert(SpiderNativePause43_RibbonBounds(
-                0.0f,(float)w,0.316f*f,0.542f*f,w,h));
+                0.0f,(float)w,0.369f*f,0.631f*f,w,h));
             assert(SpiderNativePause43_RibbonBounds(
                 0.0f,(float)w,0.37f*f,0.625f*f,w,h));
             assert(delta(SpiderNativePause43_MapX(0.0f,w,h),g)<0.10f);
@@ -43,10 +43,14 @@ def test_original_pause_has_resolution_independent_four_by_three_geometry(tmp_pa
             assert(delta(((float)w*scale)/f,4.0f/3.0f)<0.0001f);
             /* No silent support for near-top 3D particles, small panels
              * or an arbitrary full-width geometry. */
+            /* The old mistaken scaled-preview coordinates must not
+             * be accepted as evidence for new geometry coverage. */
+            assert(!SpiderNativePause43_RibbonBounds(
+                0.0f,(float)w,0.316f*f,0.542f*f,w,h));
             assert(!SpiderNativePause43_RibbonBounds(
                 0.0f,(float)w,0.02f*f,0.25f*f,w,h));
             assert(!SpiderNativePause43_RibbonBounds(
-                0.20f*(float)w,0.80f*(float)w,0.316f*f,0.542f*f,w,h));
+                0.20f*(float)w,0.80f*(float)w,0.369f*f,0.631f*f,w,h));
         }
         int main(void) {
             unsigned i;
