@@ -2613,10 +2613,16 @@ static int pause_x11_bridge_last_state=0; /* 0 unknown, 1 game, 2 other */
 static unsigned pause_x11_bridge_reports=0;
 static DWORD pause_x11_bridge_loss_since=0;
 static int pause_x11_bridge_enabled(void) {
-  if(pause_x11_bridge_config<0) {
+  /* The auto-started ELF publishes a fresh X11 handshake asynchronously:
+   * on the first Flip this may be disabled, and on the next it can turn
+   * on. Recheck ONLY while disabled to allow this safe 0 -> 1 transition.
+   * Existing manual =1 / explicit =0 behavior is preserved. */
+  if(pause_x11_bridge_config<=0) {
     char value[4]={0};
     DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_X11_BRIDGE",
                                      value,sizeof(value));
+    if(pause_x11_bridge_config==0 && !(n==1 && value[0]=='1'))
+      return 0;
     pause_x11_bridge_config=n==1 && value[0]=='1';
     if(pause_x11_bridge_config) {
       char *sep;
