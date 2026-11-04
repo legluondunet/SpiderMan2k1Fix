@@ -150,7 +150,9 @@ safe fallback.
    No automatic wake or background audio is permitted.
 8. On real Windows, confirm no helper spawn, no new dependency and
    normal Alt+Tab behavior.
-9. Only after those gates, cleanup obsolete branches #100/#101
-   and discuss consolidation/merge with the maintainer.
+9. The obsolete #100 timer experiment and #101 deferred-return
+   experiment must not be incorporated into the consolidated build.
+   The native X11 observer + Win32 fallback are the maintained paths;
+   native Windows and Wayland behavior still require runtime validation.
 
 legluondunet assisted by ChatGPT (OpenAI)
