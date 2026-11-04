@@ -1,4 +1,4 @@
-"""New-user INI: generic SDL3 discovery, opt-in universal gameplay, no old preset."""
+"""New-user INI: generic SDL3 discovery and universal gameplay ON, no old preset."""
 from pathlib import Path
 import configparser
 
@@ -24,7 +24,7 @@ def test_new_generated_config_matches_only_live_controller_settings():
       "ExperimentalSDL3Probe":"1",
       "ExperimentalSDL3NativeOwner":"0",
       "ExperimentalSDL3ControllerSetup":"1",
-      "ExperimentalSDL3UniversalGameplay":"0",
+      "ExperimentalSDL3UniversalGameplay":"1",
       "ExperimentalNativeJoystickUnplugGuard":"1",
       "ExperimentalNativeJoystickReconnect":"1",
       "ExperimentalAltLatchRecovery":"1",
@@ -57,10 +57,10 @@ def test_old_controller_preset_options_are_ignored_not_synthesized():
         ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
 
 
-def test_native_safety_and_universal_optin_remain_guarded():
+def test_native_safety_and_universal_default_remain_guarded():
     assert '"ExperimentalSDL3Probe",1,ini)==1' in PROBE
     assert '"ExperimentalSDL3NativeOwner",1,ini)==1' in PROBE
-    assert '"ExperimentalSDL3UniversalGameplay",0,ini)==1' in ADAPTER
+    assert '"ExperimentalSDL3UniversalGameplay",1,ini)==1' in ADAPTER
     assert '"ExperimentalNativeJoystickUnplugGuard",1,ini)==1' in UNPLUG
     assert '"ExperimentalNativeJoystickReconnect",1,ini)==1' in RECONNECT
     assert "native_owner_requested=0;" in PROBE

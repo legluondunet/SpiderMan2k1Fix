@@ -18,7 +18,7 @@ def test_native_owner_remains_separate_opt_in_without_mapping_swap():
     probe=_read("sdl3_gamepad_probe.c")
     native=_read("native_joystick_reconnect.c")
     assert '"ExperimentalSDL3NativeOwner=0\\r\\n"' in ini
-    assert '"ExperimentalSDL3UniversalGameplay=0\\r\\n"' in ini
+    assert '"ExperimentalSDL3UniversalGameplay=1\\r\\n"' in ini
     assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1' in probe
     for key in ("ExperimentalNativeJoystickUnplugGuard",
                 "ExperimentalNativeJoystickReconnect"):

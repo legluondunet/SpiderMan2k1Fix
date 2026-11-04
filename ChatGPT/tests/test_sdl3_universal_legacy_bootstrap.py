@@ -1,7 +1,7 @@
 """Regression: the previous fixed Sony/Xbox input presets are gone.
 
 Native retail input remains intact until the user explicitly selects
-universal SDL3, and there is no legacy pre-bootstrap table override.
+a controller via universal SDL3, and there is no legacy table override.
 """
 from pathlib import Path
 
@@ -39,11 +39,11 @@ def test_universal_gameplay_is_single_input_owner():
     assert "native action-map backend retired" in live
 
 
-def test_opt_in_and_native_device_safety_still_separate():
+def test_default_on_universal_and_native_device_safety_still_separate():
     adapter=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
     core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
     native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3UniversalGameplay",0,ini)==1' in adapter
+    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3UniversalGameplay",1,ini)==1' in adapter
     assert "SpiderNativeUnplug_OnFlip(count);" in core
     assert "SpiderNativeReconnect_OnFlip(count,game_hwnd);" in core
     assert "if(SpiderSDL3Universal_Enabled())return;" in native

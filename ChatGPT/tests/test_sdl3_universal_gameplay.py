@@ -1,4 +1,4 @@
-"""Optional universal SDL3 gameplay bridge: C99 semantics and fail-closed ownership.
+"""Default-enabled universal SDL3 gameplay bridge: C99 semantics and fail-closed ownership.
 
 These are portable policy/source tests; they DO NOT replace hardware
 validation of original game-owned DirectInput pointer suspension or of
@@ -94,9 +94,9 @@ def test_universal_runtime_is_opt_in_and_mutually_exclusive():
     cfg=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
     ini=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
     build=(ROOT/"build.sh").read_text(encoding="utf-8")
-    assert 'ExperimentalSDL3UniversalGameplay=0' in cfg
+    assert 'ExperimentalSDL3UniversalGameplay=1' in cfg
     assert '"ExperimentalSDL3UniversalGameplay"' in ini
-    assert '"ExperimentalSDL3UniversalGameplay",0,ini)==1' in backend
+    assert '"ExperimentalSDL3UniversalGameplay",1,ini)==1' in backend
     assert "old fixed native action-map backend retired" in live
     assert 'sdl3_universal_gameplay.c' in build
     assert '#include "sdl3_universal_gameplay.h"' in game

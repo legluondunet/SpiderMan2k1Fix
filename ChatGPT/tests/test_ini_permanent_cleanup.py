@@ -25,7 +25,7 @@ def test_player_only_ini_keeps_fps_as_real_control():
     assert cfg["Input"]["KeyboardLayout"]=="Auto"
     assert list(cfg["Input"])== ['keyboardlayout','experimentalsdl3probe','experimentalsdl3nativeowner','experimentalsdl3controllersetup','experimentalsdl3universalgameplay','experimentalaltlatchrecovery','experimentalnativejoystickunplugguard','experimentalnativejoystickreconnect']
     assert cfg["Input"]["ExperimentalSDL3NativeOwner"]=="0"
-    assert cfg["Input"]["ExperimentalSDL3UniversalGameplay"]=="0"
+    assert cfg["Input"]["ExperimentalSDL3UniversalGameplay"]=="1"
     assert "ControllerProfile" not in cfg["Input"]
     assert "ControllerXbox360Preview" not in cfg["Input"]
     assert cfg["Debug"]["Log"]=="0"

@@ -59,7 +59,7 @@ def test_no_pre_sdl3_custom_preset_in_original_game_config():
 
 def test_clean_user_ini_does_not_generate_old_xbox_preview():
     src=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
-    assert '"ExperimentalSDL3UniversalGameplay=0' in src
+    assert '"ExperimentalSDL3UniversalGameplay=1' in src
     assert '"ControllerXbox360Preview=0' not in src
     assert '"ControllerPS1Preview=0' not in src
     assert '"ControllerXbox360RTSwing=0' not in src
