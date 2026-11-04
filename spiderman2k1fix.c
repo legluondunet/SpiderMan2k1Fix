@@ -15,6 +15,7 @@
 #include "hud_widescreen.h"
 #include "hud_adaptive.h"
 #include "hud_visual_candidates.h"
+#include "hud_aim_reticle.h"
 #include "native_pause_title_bounds.h"
 #include "native_pause_43_policy.h"
 #include "frame_limiter.h"
@@ -1535,6 +1536,68 @@ static const void *maybe_correct_native_cursor43(void *device,
   }
   return copy;
 }
+/* The original game draws red and green aiming rings through the same
+ * general-purpose D3D7 caller used by many other sprites. The maintainer's
+ * F9-matched Log=1 trace supplies an unambiguous COM texture, tint, Z,
+ * RHW and aspect signature for each ring. No generic HUD compression.
+ * This is not an INI feature: it follows the existing installed
+ * SHA-verified HUDWidescreenFix master switch.
+ */
+static volatile LONG hud_aim_red_hits=0;
+static volatile LONG hud_aim_green_hits=0;
+static const void *maybe_correct_aim_reticle(
+       void *device,D3DPRIMITIVETYPE type,DWORD fvf,
+       const void *source,DWORD count,void *caller,
+       SpiderMenuVertex *copy)
+{
+  DWORD rva=0,tw=0,th=0;
+  IDirectDrawSurface7 *texture=NULL;
+  DDSURFACEDESC2 desc;
+  int kind;
+  LONG hit;
+  char message[270];
+  if(!device || !source || !copy || count!=4 ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
+     !SpiderHudWidescreen_Installed() ||
+     !SpiderHudAimReticle_MightMatch((const SpiderMenuVertex*)source) ||
+     !geom_rva(caller,&rva) || rva!=0x00102C72UL)
+    return source;
+
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture))
+     && texture) {
+    if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc))) {
+      tw=desc.dwWidth;th=desc.dwHeight;
+    }
+    IDirectDrawSurface7_Release(texture);
+  }
+  if(tw!=64u || th!=64u) return source;
+  kind=SpiderHudAimReticle_Transform(
+        (const SpiderMenuVertex*)source,copy,(unsigned)count,
+        (unsigned)type,(uint32_t)fvf,(uint32_t)rva,
+        (unsigned)tw,(unsigned)th,
+        (unsigned)desktop_w,(unsigned)desktop_h);
+  if(kind==SPIDER_HUD_AIM_NONE)return source;
+  hit=InterlockedIncrement(kind==SPIDER_HUD_AIM_RED?
+                           &hud_aim_red_hits:&hud_aim_green_hits);
+  if(debug_log_enabled && (hit<=4 || hit%240==0)) {
+    const SpiderMenuVertex *original=(const SpiderMenuVertex*)source;
+    snprintf(message,sizeof(message),
+       "HUD-AIM: %s ring hit=%ld x=(%.1f..%.1f) -> (%.1f..%.1f) scale=%.5f z=%.5f rhw=%.4f tex=64x64 [SOURCE-VERIFIED]",
+       kind==SPIDER_HUD_AIM_RED?"red":"green",(long)hit,
+       (double)original[0].x,(double)original[1].x,
+       (double)copy[0].x,(double)copy[1].x,
+       (double)SpiderHudAim_AspectFactor((unsigned)desktop_w,
+                                         (unsigned)desktop_h),
+       (double)original[0].z,(double)original[0].rhw);
+    log_line(message);
+  }
+  return copy;
+}
+
 /* Read-only HUD-visual diagnostics while [Debug] Log=1.
  * Trace only representative UNCORRECTED source quads, never change draw
  * state, game input, texture contents or original vertex memory.
@@ -1772,6 +1835,11 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       maybe_log_hud_visual_candidate(self,type,fvf,verts,count,
                                      __builtin_return_address(0));
+    /* Strict user-verified 64x64 red/green aim sprites only, after
+     * compass/native ESC precedence and before depth-tested Hor+. */
+    if(v==verts && count==4)
+      v=maybe_correct_aim_reticle(self,type,fvf,verts,count,
+                                  __builtin_return_address(0),small);
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
     HRESULT hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
     free_menu_vertices(allocated);
