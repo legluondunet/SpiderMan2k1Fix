@@ -2606,6 +2606,22 @@ static void pause_at_flip_if_background(void) {
   int pause_previous_foreground=0;
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
   if(GetForegroundWindow()==hwnd) {
+    DWORD deferred_elapsed=0;
+    /* The Wine window loop may stop calling Flip immediately after
+     * WM_ACTIVATEAPP(FALSE). On an actual later app reactivation,
+     * the existing game WndProc observer records a debounced loss.
+     * Consume it only HERE, on the normal game render/Flip thread.
+     * Do not issue any DirectDraw or Bink calls in WndProc itself. */
+    if(InterlockedCompareExchange(&pause_ever_foreground,0,0)==1 &&
+       InterlockedCompareExchange(&pause_latched,0,0)==0 &&
+       SpiderInputFocus_ConsumeDeferredPause(&deferred_elapsed) &&
+       InterlockedCompareExchange(&pause_latched,1,0)==0) {
+      char line[200];
+      snprintf(line,sizeof(line),
+        "FOCUS-RETURN: deferred PAUSED latch at first returned Flip; background-ms=%lu (no off-thread rendering)",
+        (unsigned long)deferred_elapsed);
+      log_line(line);
+    }
     /* This path bypasses pause_confirmed_focus_loss(), so report
      * a short external focus candidate cancelled on the next Flip. */
     if(pause_background_since)
@@ -2618,6 +2634,9 @@ static void pause_at_flip_if_background(void) {
             InterlockedCompareExchange(&pause_latched,1,0)==0) {
     SpiderAltLatch_OnConfirmedExternalLoss();
     log_line("FOCUS-PAUSE: confirmed external focus loss; pause latched until manual resume");
+    /* A normal background pause wins. The later WM_ACTIVATEAPP(TRUE)
+     * must NOT generate a second, redundant PAUSED panel on return. */
+    SpiderInputFocus_DiscardDeferredPause();
     pause_log_foreground_owner(hwnd,GetForegroundWindow(),"external-foreground-latched");
     /* The candidate is now *consumed*. Keeping its old start timestamp
      * across the blocking custom PAUSED loop produced a false
