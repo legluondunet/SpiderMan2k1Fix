@@ -22,6 +22,72 @@ It imports the keyboard adapter concept and fail-closed input safeguards
 from draft PR #95. Neither parent draft is merged to main. These are
 separate tracks and PR #98 is the opt-in integrated test branch.
 
+## 2026-11-04 — physical Wine validation: PAUSED F9 panel ACCEPTED; apparent deferred 3D focus pause
+
+**Maintainer visual acceptance: PASS.** On Manjaro kernel 7.1.13-2,
+Wine 11.0 / GE-Proton11-12, resolution 1920x1080, the maintainer
+supplied a real game screenshot
+`image(20261104-022135).png` and explicitly confirmed
+**"la modification du panneau paused est validée!"**.
+The screenshot shows the short **PAUSED** notice at the bottom-left edge
+using the same rectangular lavender three-sided frame and native
+Spider-Man EXE icon as the F9 screenshot toast, with no old central
+violet ESC ribbon or visible resume instructions. The 60% dimmed
+gameplay background is visible. This validates the **appearance** of
+the shared GDI painter under GE-Proton, not Windows native rendering.
+
+**Run log:** `SpiderMan2k1Fix(20261104-022728).log`,
+`v1.1.0-d8ee442`, from the same reported session. Source-backed:
+- **Six** distinct `FOCUS-PAUSE: confirmed external focus loss` and
+  **six** `FOCUS-SURFACE: frozen scene+60% shade + F9-style lavender PAUSED
+  panel presented`, followed by six
+  `FOCUS-PAUSE: explicit resume or window destroyed` entries.
+- Six foreign foreground debounce confirmations at **164, 156, 198,
+  160, 160 and 166 ms**. Their Win32 foreground owner is Wine
+  `explorer.exe` (PID 252), not the original game (PID 336).
+- Five Bink pause/resume pairs; other pause lacked a tracked
+  Bink handle. The two sessions with active secondary sound voices
+  stopped/restored **12** and **9** voices respectively, with
+  `failed=0`. Keyboard key completions (Enter, Space and one F9)
+  were swallowed on wake; there are no fatal exceptions in the trace.
+- First two pauses occurred before the logged menu-to-gameplay
+  `FOV stage=GAMEPLAY` transition; the later four were observed in
+  the gameplay phase. The third pause follows
+  `FOCUS-PROBE: Flip-gap-ms=4997 flip=401 foreground-now=0` at the
+  intro/3D ownership transition. This gap is **not by itself**
+  proof of the focus change or pause-delay mechanism.
+- The existing log line
+  `no verified gamepad wake device; PAUSED hint remains keyboard-only`
+  is **legacy diagnostic wording**: the newly validated visual has
+  **no onscreen hint at all**, and the wake mechanism was retained.
+  This particular run doesn't validate SDL3 selected-pad wake because
+  no such device was armed for the pause sessions.
+
+**New maintainer runtime observation (not independently timestamped):**
+In Wine 3D cinematic sequences, a requested focus-loss pause may
+wait until the **current 3D cinematic has finished**, then appear
+before the next one starts. The tester describes similar behavior
+during the **first four startup videos**.
+
+**Technical interpretation:** The existing focus-loss test and
+confirmation run at the intercepted original DirectDraw
+`Flip` boundary. A cinematic rendering/presentation route not
+passing through the same callbacks, or a Win32 foreground state
+that only becomes externally visible at a transition, are two
+possible explanations. The log does **not** mark Alt+Tab keypress
+timestamps or each 3D cinematic boundary, so neither is proven.
+Do **not** reinterpret the measured ~160–198 ms debounce as the
+total user-perceived delay. No new hooks or forced pause changes
+are justified by this observation while the maintainer reports
+stable gameplay and input on return.
+
+**Decision:** Record the F9-style PAUSED visual as **GE-Proton
+hardware-accepted**. Keep the automatic focus-pause trigger
+**best-effort** in Wine, retain all DirectInput/SDL3/Bink/DirectSound
+safety paths, and prioritize controller integration. PR #98
+remains **DRAFT / UNMERGED** and native Windows 11 hardware
+testing deferred.
+
 ## 2026-11-04 — focus PAUSED visual: identical F9 notification border
 
 Per maintainer request, when the opt-in focus-pause path actually
