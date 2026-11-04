@@ -14,6 +14,7 @@
 #include <d3d.h>
 #include "hud_widescreen.h"
 #include "hud_adaptive.h"
+#include "hud_visual_candidates.h"
 #include "native_pause_title_bounds.h"
 #include "frame_limiter.h"
 #include "display_plan.h"
@@ -1526,6 +1527,76 @@ static const void *maybe_correct_native_cursor43(void *device,
   }
   return copy;
 }
+/* Read-only HUD-visual diagnostics while [Debug] Log=1.
+ * Trace only representative UNCORRECTED source quads, never change draw
+ * state, game input, texture contents or original vertex memory.
+ * The pure heuristic is a CANDIDATE sampler, not an object matcher:
+ * collected caller/Z/RHW/color/texture evidence gates future fixes. */
+static volatile LONG hud_visual_aim_last_flip=-500;
+static volatile LONG hud_visual_pause_last_flip=-500;
+static volatile LONG hud_visual_aim_samples=0;
+static volatile LONG hud_visual_pause_samples=0;
+static void maybe_log_hud_visual_candidate(void *device,
+                 D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
+                 DWORD count,void *caller) {
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  IDirectDrawSurface7 *tex=NULL;
+  DDSURFACEDESC2 desc;
+  DWORD rva=0,texw=0,texh=0;
+  float left,right,top,bottom;
+  volatile LONG *last_flip,*sample_count;
+  LONG flip,last,hit;
+  int candidate;
+  unsigned i;
+  char line[360];
+  if(!debug_log_enabled || !device || !v ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     !SpiderHudWidescreen_Installed())return;
+  candidate=SpiderHudVisual_Classify(v,(unsigned)count,
+               (unsigned)type,(uint32_t)fvf,
+               (unsigned)desktop_w,(unsigned)desktop_h);
+  if(candidate==SPIDER_HUD_VISUAL_NONE)return;
+  last_flip=candidate==SPIDER_HUD_VISUAL_AIM?
+            &hud_visual_aim_last_flip:&hud_visual_pause_last_flip;
+  sample_count=candidate==SPIDER_HUD_VISUAL_AIM?
+               &hud_visual_aim_samples:&hud_visual_pause_samples;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  last=InterlockedCompareExchange(last_flip,0,0);
+  /* Sampling is intentionally bounded to avoid flooding the player's log.
+   * Aim: one sample / 45 Flips, maximum 200. Native pause: one / 90,
+   * maximum 80. Keep the two budgets independent across level transitions. */
+  if(flip-last < (candidate==SPIDER_HUD_VISUAL_AIM?45:90))return;
+  hit=InterlockedIncrement(sample_count);
+  if(hit>(candidate==SPIDER_HUD_VISUAL_AIM?200:80))return;
+  InterlockedExchange(last_flip,flip);
+  left=right=v[0].x;top=bottom=v[0].y;
+  for(i=1;i<4;i++) {
+    if(v[i].x<left)left=v[i].x;
+    if(v[i].x>right)right=v[i].x;
+    if(v[i].y<top)top=v[i].y;
+    if(v[i].y>bottom)bottom=v[i].y;
+  }
+  /* Diagnostic-only COM reference obtained from current texture stage.
+   * Never call SetTexture or any game-owned state mutator. */
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)) && tex) {
+    if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(tex,&desc))) {
+      texw=desc.dwWidth;texh=desc.dwHeight;
+    }
+    IDirectDrawSurface7_Release(tex);
+  }
+  geom_rva(caller,&rva);
+  snprintf(line,sizeof(line),
+    "HUD-VISUAL: %s sample=%ld flip=%ld caller=%08lX quad=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f color=%08lX tex=%lux%lu uv0=(%.3f,%.3f) [READ-ONLY; CANDIDATE]",
+    candidate==SPIDER_HUD_VISUAL_AIM?"AIM":"PAUSE-RIBBON",
+    (long)hit,(long)flip,(unsigned long)rva,
+    (double)left,(double)right,(double)top,(double)bottom,
+    (double)v[0].z,(double)v[0].rhw,
+    (unsigned long)v[0].diffuse,(unsigned long)texw,(unsigned long)texh,
+    (double)v[0].u,(double)v[0].v);
+  log_line(line);
+}
 static void free_menu_vertices(SpiderMenuVertex *allocated) {
   if (allocated) HeapFree(GetProcessHeap(),0,allocated);
 }
@@ -1564,6 +1635,10 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       v=maybe_correct_native_pause43(self,type,fvf,verts,count,
                                      __builtin_return_address(0),small);
+    /* Uncorrected suspected aim/ribbon draws only. No rendering changes. */
+    if(v==verts && count==4)
+      maybe_log_hud_visual_candidate(self,type,fvf,verts,count,
+                                     __builtin_return_address(0));
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
     HRESULT hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
     free_menu_vertices(allocated);
