@@ -20,9 +20,15 @@ static BYTE held[256];
 static volatile LONG received_press=0;
 static volatile LONG completed=0;
 static DWORD first_key=0;
+static volatile LONG host_focus_blocked=0;
+void SpiderPauseAny_SetHostFocusBlocked(BOOL blocked) {
+  InterlockedExchange(&host_focus_blocked,blocked?1:0);
+}
 
 static LRESULT CALLBACK keyboard_proc(int code,WPARAM wp,LPARAM lp) {
-  if(code==HC_ACTION && hook && target && GetForegroundWindow()==target) {
+  if(code==HC_ACTION && hook && target &&
+     InterlockedCompareExchange(&host_focus_blocked,0,0)==0 &&
+     GetForegroundWindow()==target) {
     const KBDLLHOOKSTRUCT *info=(const KBDLLHOOKSTRUCT*)lp;
     DWORD vk=info ? info->vkCode : 256u;
     const int down=(wp==WM_KEYDOWN || wp==WM_SYSKEYDOWN);
@@ -68,7 +74,8 @@ BOOL SpiderPauseAny_Completed(void) {
   if(!hook) return FALSE;
   /* If focus changes again while awaiting the key release, re-arm.
    * Do not allow a stale partial press to trigger resumption later. */
-  if(GetForegroundWindow()!=target) {
+  if(GetForegroundWindow()!=target ||
+     InterlockedCompareExchange(&host_focus_blocked,0,0)!=0) {
     memset(held,0,sizeof(held));
     first_key=0;
     InterlockedExchange(&received_press,0);
@@ -95,4 +102,5 @@ void SpiderPauseAny_End(void) {
   first_key=0;
   InterlockedExchange(&received_press,0);
   InterlockedExchange(&completed,0);
+  InterlockedExchange(&host_focus_blocked,0);
 }
