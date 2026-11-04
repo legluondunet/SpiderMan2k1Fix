@@ -33,12 +33,12 @@ static inline float SpiderNativePause43_MapX(
 }
 
 /* Geometry-only *candidate* for the native game ESC purple ribbon.
- * Historic level-1 trace: y~400..675 at 1080 height.
- * New level-2 screenshot: actual visible border y~342..585.
- * The former bottom >= 55% screen-height requirement excluded this
- * valid, higher ribbon; 50% accommodates both. Exact original caller,
- * untextured state, FVF, 4-vertex fan and Z/RHW are STILL mandatory
- * in the render hook before any mapping is applied. */
+ * Original and latest level-2 1920x1080 F9 screenshots both show
+ * visible borders at approximately y=398..681 (not 342..585: the
+ * earlier estimate came from a scaled image preview). Thus the prior
+ * >=55% lower bound was NOT the cause of the missed match. Preserve
+ * that conservative bound while investigating exact caller/Z/RHW,
+ * untextured state and game stage through read-only diagnostics. */
 static inline int SpiderNativePause43_RibbonBounds(
     float left,float right,float top,float bottom,unsigned w,unsigned h)
 {
@@ -50,7 +50,7 @@ static inline int SpiderNativePause43_RibbonBounds(
            right<=(float)w*1.02f &&
            top>=(float)h*0.30f &&
            top<=(float)h*0.52f &&
-           bottom>=(float)h*0.50f &&
+           bottom>=(float)h*0.55f &&
            bottom<(float)h*0.72f &&
            bottom-top>(float)h*0.11f;
 }
