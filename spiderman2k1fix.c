@@ -2852,6 +2852,13 @@ static void pause_at_flip_if_background(void) {
      * Fail closed: UNKNOWN / stale bridge must never swallow a key from
      * an unrelated native Linux application. */
     x11_state=pause_x11_bridge_state();
+    /* A killed auto-started observer must not wake Spider-Man (or its
+     * Bink/DirectSound voices) behind Firefox. Restart the owned native
+     * observer, verify a fresh X11 sample, then require an actual user
+     * key/gamepad wake after native GAME focus returns. Never synthesize
+     * a key or trust Wine's possibly stale foreground HWND. */
+    SpiderWineFocusAutostart_PollReady(log_line);
+    SpiderWineFocusAutostart_TryRecover(log_line);
     SpiderPauseAny_SetHostFocusBlocked(pause_x11_bridge_enabled() &&
                                       x11_state!=1);
     /* The normal Flip-based focus monitor cannot run until this custom
@@ -2867,11 +2874,8 @@ static void pause_at_flip_if_background(void) {
         pause_previous_foreground=pause_now_foreground;
       }
     }
-    if(SpiderPauseAny_Completed()) {
-      if(SpiderPauseAny_HostRecoveryTriggered())
-        log_line("FOCUS-X11: stale/UNKNOWN host focus for >2.2s during PAUSED; safe fallback resume (NOT a user key)");
+    if(SpiderPauseAny_Completed())
       InterlockedExchange(&pause_latched,0);
-    }
     else {
       unsigned resumed_buttons=
         (pause_x11_bridge_enabled() && x11_state!=1)?0:
