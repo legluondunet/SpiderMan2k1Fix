@@ -43,6 +43,14 @@ def test_candidate_classifier_matches_reference_screen_geometry(tmp_path):
             q(v,563,550,735,685); /* red 3D aim ring */
             assert(SpiderHudVisual_Classify(v,4,6,0x144,1920,1080)
                    ==SPIDER_HUD_VISUAL_AIM);
+            /* Exact F9 red/green visual extents: the original 0.065*H
+             * candidate cutoff excluded the ~70px-high green ring. */
+            q(v,932,348,1026,418); /* 94x70, green scrn0029 */
+            assert(SpiderHudVisual_Classify(v,4,6,0x144,1920,1080)
+                   ==SPIDER_HUD_VISUAL_AIM);
+            q(v,569,682,722,795); /* 153x113, red scrn0028 */
+            assert(SpiderHudVisual_Classify(v,4,6,0x144,1920,1080)
+                   ==SPIDER_HUD_VISUAL_AIM);
             q(v,0,400,1920,675); /* native level-2 pause ribbon */
             assert(SpiderHudVisual_Classify(v,4,6,0x144,1920,1080)
                    ==SPIDER_HUD_VISUAL_PAUSE_RIBBON);
