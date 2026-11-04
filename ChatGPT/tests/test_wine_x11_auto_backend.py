@@ -99,6 +99,16 @@ def test_ci_ships_elf_directly_inside_flat_install_artifact_and_release_zip():
     assert 'SpiderMan2k1Fix-Windows-x86' in WORKFLOW
 
 
+def test_linux_helper_is_built_with_legacy_glibc_compatibility_floor():
+    # ABI gate must be based on the shipped ELF, not the builder's libc.
+    assert 'ubuntu:22.04' in WORKFLOW
+    assert 'build-essential libx11-dev' in WORKFLOW
+    assert '--platform linux/amd64' in WORKFLOW
+    assert 'readelf", "--version-info", helper' in WORKFLOW
+    assert 'max(versions) <= (2, 35)' in WORKFLOW
+    assert 'sudo apt-get install -y -qq xvfb xauth libx11-dev' in WORKFLOW
+
+
 def test_helper_outage_cannot_autowake_the_game_in_another_app():
     # Regression from the 2026-11-04 SIGTERM experiment: missing X11 data
     # previously caused 22 automatic resumes and 22 immediate re-pauses.
