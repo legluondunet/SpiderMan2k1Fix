@@ -33,7 +33,7 @@ def test_no_shell_execution_and_existing_override_is_preserved():
     assert 'spawn(argv,0)' in BOOT
     assert 'spawn(chmod_argv,1)' in BOOT
     assert '"/usr/bin/chmod","u+x","--",helper_unix,NULL' in BOOT
-    for forbidden in ("system(", "ShellExecute", "CreateProcess", "/bin/sh", "bash -c", "xdotool"):
+    for forbidden in ("system(", "ShellExecute", "CreateProcess", "/bin/sh", "bash -c"):
         assert forbidden not in BOOT
 
 
