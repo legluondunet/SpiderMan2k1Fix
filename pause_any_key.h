@@ -17,7 +17,4 @@ void SpiderPauseAny_End(void);
  * GetForegroundWindow() incorrectly still reports the game HWND.
  * Also block on an unknown/stale X11 sample while bridge mode is enabled. */
 void SpiderPauseAny_SetHostFocusBlocked(BOOL blocked);
-/* True only if PAUSED is finishing due to >2.2s of stale/UNKNOWN
- * native host-focus state (not an actual keyboard wake). */
-BOOL SpiderPauseAny_HostRecoveryTriggered(void);
 #endif
