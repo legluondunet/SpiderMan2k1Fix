@@ -76,6 +76,7 @@ static volatile LONG deferred_away_active=0;
 static volatile LONG deferred_return_pending=0;
 static volatile LONG deferred_return_duration=0;
 static LONG deferred_reports=0;
+static volatile LONG deferred_wndproc_report_count=0;
 static void deferred_focus_event(UINT msg,WPARAM wp) {
   DWORD now,elapsed;
   LONG since;
@@ -87,7 +88,7 @@ static void deferred_focus_event(UINT msg,WPARAM wp) {
     InterlockedExchange(&deferred_return_pending,0);
     InterlockedExchange(&deferred_away_since,(LONG)(now?now:1u));
     InterlockedExchange(&deferred_away_active,1);
-    if(input_debug_logging && deferred_reports++<16)
+    if(deferred_reports++<16)
       focus_log("FOCUS-RETURN: WM_ACTIVATEAPP(FALSE) recorded; waiting for reactivation");
     return;
   }
@@ -96,7 +97,7 @@ static void deferred_focus_event(UINT msg,WPARAM wp) {
   if(since==0)return;
   elapsed=(DWORD)(now-(DWORD)since);
   if(elapsed<150u) {
-    if(input_debug_logging && deferred_reports++<16) {
+    if(deferred_reports++<16) {
       snprintf(line,sizeof(line),
         "FOCUS-RETURN: short app deactivation ignored elapsed-ms=%lu",
         (unsigned long)elapsed);
@@ -106,7 +107,7 @@ static void deferred_focus_event(UINT msg,WPARAM wp) {
   }
   InterlockedExchange(&deferred_return_duration,(LONG)elapsed);
   InterlockedExchange(&deferred_return_pending,1);
-  if(input_debug_logging && deferred_reports++<16) {
+  if(deferred_reports++<16) {
     snprintf(line,sizeof(line),
       "FOCUS-RETURN: sustained app deactivation elapsed-ms=%lu; deferred pause queued (no rendering in WndProc)",
       (unsigned long)elapsed);
@@ -175,6 +176,13 @@ static void focus_report_window(const char *tag) {
   focus_log(line);
 }
 static LRESULT CALLBACK focus_window_proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
+  /* The game may stop making Flip calls as soon as focus messages
+   * are delivered. Keep the normal WndProc forwarding unchanged, but
+   * bracket the original handler to distinguish a blocked handler
+   * from an idle game loop following successful message dispatch. */
+  BOOL trace_forward=FALSE;
+  DWORD trace_start=0;
+  LRESULT forwarded_result;
   if(msg==WM_ACTIVATEAPP || msg==WM_ACTIVATE || msg==WM_SETFOCUS ||
      msg==WM_KILLFOCUS || msg==WM_NCACTIVATE) {
     char line[240];
@@ -222,8 +230,28 @@ static LRESULT CALLBACK focus_window_proc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp
       focus_log(line);
     }
   }
-  return previous_proc ? CallWindowProcA(previous_proc,hwnd,msg,wp,lp)
-                       : DefWindowProcA(hwnd,msg,wp,lp);
+  if(InterlockedCompareExchange(&deferred_pause_enabled,0,0)==1 &&
+     (msg==WM_ACTIVATEAPP || msg==WM_KILLFOCUS ||
+      msg==WM_SETFOCUS || msg==WM_ACTIVATE) &&
+     InterlockedIncrement(&deferred_wndproc_report_count)<=32) {
+    char line[190];
+    trace_forward=TRUE;
+    trace_start=GetTickCount();
+    snprintf(line,sizeof(line),
+      "FOCUS-RETURN: ORIGINAL-WNDPROC enter msg=%s wp=0x%08lX thread=%lu",
+      focus_message(msg),(unsigned long)wp,(unsigned long)GetCurrentThreadId());
+    focus_log(line);
+  }
+  forwarded_result=previous_proc ? CallWindowProcA(previous_proc,hwnd,msg,wp,lp)
+                                 : DefWindowProcA(hwnd,msg,wp,lp);
+  if(trace_forward) {
+    char line[190];
+    snprintf(line,sizeof(line),
+      "FOCUS-RETURN: ORIGINAL-WNDPROC returned msg=%s elapsed-ms=%lu",
+      focus_message(msg),(unsigned long)(DWORD)(GetTickCount()-trace_start));
+    focus_log(line);
+  }
+  return forwarded_result;
 }
 void SpiderInputFocus_AttachWindow(HWND hwnd) {
   WNDPROC old;char line[180];DWORD error;
