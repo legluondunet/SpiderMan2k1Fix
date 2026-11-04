@@ -12,6 +12,19 @@ PAUSE=(ROOT/"pause_any_key.c").read_text()
 BUILD=(ROOT/"build.sh").read_text()
 WORKFLOW=(ROOT/".github/workflows/spiderman2k1fix-windows-x86.yml").read_text()
 NATIVE=(ROOT/"linux/spiderman-focus-helper.c").read_text()
+CORE=(ROOT/"spiderman2k1fix.c").read_text()
+
+
+def test_deferred_helper_handshake_reactivates_core_detector_after_first_flip():
+    # First Flip can cache disabled while the ELF starts. Later a verified
+    # GAME/OTHER sample must be able to turn bridge config 0 -> 1.
+    assert 'if(pause_x11_bridge_config<=0)' in CORE
+    assert "if(pause_x11_bridge_config==0 && !(n==1 && value[0]=='1'))" in CORE
+    assert 'SpiderWineFocusAutostart_PollReady(focus_log);' in FOCUS
+    assert 'pause_x11_bridge_config=n==1 && value[0]==' in CORE
+    # Manual opt-in works immediately; successful automatic activation
+    # happens only after PollReady saw a fresh, valid state.
+    assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_X11_BRIDGE"' in CORE
 
 
 def test_autostart_is_wine_only_on_first_native_flip_and_not_in_dllmain():
