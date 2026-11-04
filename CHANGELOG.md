@@ -1,5 +1,22 @@
 # Changelog
 
+## Draft PR #107 — first-use SDL3 without pre-SDL3 controller presets (unmerged)
+
+This experimental refactor physically removes the previous Sony DS4 / Xbox 360
+hard-coded DirectInput action mapping tables, boot-time configuration overlays,
+old secondary menu/3D button bridge, vendor-specific native RAM button-table
+swaps, and associated obsolete tests. SDL3's normal built-in controller
+recognition remains unchanged: a controller with no saved per-model profile
+receives generic SDL3 semantic defaults. The retail game retains its original
+Joystick settings; universal SDL3 gameplay requires an explicit opt-in and
+fresh Start ownership.
+
+The old preview/RT-Swing/native-mapping options are retired for new INIs.
+Relevant source contracts now test clean first-use Xbox, PS3 neutral gating,
+legacy handoff removal, native disconnect safety, and the owned Bink Return
+release. **This work has not yet passed CI or new hardware acceptance.**
+Historical tests/claims below describe earlier staging builds, not PR #107.
+
 ## Unreleased — SDL3 controllers and guarded Alt recovery (staging; not released)
 
 **Not released or merged.** This staging branch combines the tested PR #91
