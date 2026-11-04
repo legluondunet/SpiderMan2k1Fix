@@ -2867,8 +2867,11 @@ static void pause_at_flip_if_background(void) {
         pause_previous_foreground=pause_now_foreground;
       }
     }
-    if(SpiderPauseAny_Completed())
+    if(SpiderPauseAny_Completed()) {
+      if(SpiderPauseAny_HostRecoveryTriggered())
+        log_line("FOCUS-X11: stale/UNKNOWN host focus for >2.2s during PAUSED; safe fallback resume (NOT a user key)");
       InterlockedExchange(&pause_latched,0);
+    }
     else {
       unsigned resumed_buttons=
         (pause_x11_bridge_enabled() && x11_state!=1)?0:
