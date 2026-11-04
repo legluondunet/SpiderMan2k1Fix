@@ -2522,8 +2522,23 @@ static void pause_probe_native_menu_focus(LONG flip) {
     (void*)game_info.hwndFocus);
   log_line(line);
 }
+/* Under Wine/X11, the foreground HWND can stay NULL after a real
+ * Alt+Tab to a native Linux window. Do NOT treat NULL alone as focus loss:
+ * require the game GUI thread to have neither an active nor a focused HWND,
+ * then use the same 150-ms debounce as the normal foreign-process path.
+ * An unavailable GUI-thread snapshot fails closed (no automatic pause). */
+static BOOL pause_confirmed_null_foreground_loss(HWND hwnd) {
+  GUITHREADINFO gi;
+  DWORD tid=GetWindowThreadProcessId(hwnd,NULL);
+  if(!tid)return FALSE;
+  memset(&gi,0,sizeof(gi));
+  gi.cbSize=sizeof(gi);
+  if(!GetGUIThreadInfo(tid,&gi))return FALSE;
+  return gi.hwndActive==NULL && gi.hwndFocus==NULL;
+}
 /* Ignore brief foreground changes (e.g. mouse activation quirks).
- * Real Alt+Tab is recognized only if another process stays foreground. */
+ * A foreign-process foreground or a *verified sustained* NULL foreground
+ * must survive the same 150-ms debounce before pausing the game. */
 static BOOL pause_confirmed_focus_loss(HWND hwnd) {
   HWND fg=GetForegroundWindow();
   DWORD game_pid=0,fg_pid=0,now;
@@ -2536,9 +2551,11 @@ static BOOL pause_confirmed_focus_loss(HWND hwnd) {
   }
   GetWindowThreadProcessId(hwnd,&game_pid);
   if(fg) GetWindowThreadProcessId(fg,&fg_pid);
-  /* A transient NULL foreground or another window owned by the game
-   * is not proof that Spider-Man was switched to the background. */
-  if(!fg || !game_pid || fg_pid==game_pid) {
+  /* Reject same-process windows and vanished/unreadable foreign HWNDs.
+   * A NULL foreground is acceptable only with an independently verified
+   * inactive game GUI thread, and only after the ordinary debounce. */
+  if(!game_pid || (fg && (!fg_pid || fg_pid==game_pid)) ||
+     (!fg && !pause_confirmed_null_foreground_loss(hwnd))) {
     if(pause_background_since)
       pause_probe_report("candidate-cancelled-null-or-own-process",
         hwnd,fg,fg_pid,GetTickCount()-pause_background_since);
@@ -2548,11 +2565,13 @@ static BOOL pause_confirmed_focus_loss(HWND hwnd) {
   now=GetTickCount();
   if(!pause_background_since) {
     pause_background_since=now?now:1;
-    pause_probe_report("external-candidate-first-flip",hwnd,fg,fg_pid,0);
+    pause_probe_report(fg?"external-candidate-first-flip":
+      "null-foreground-candidate-first-flip",hwnd,fg,fg_pid,0);
     return FALSE;
   }
   if((DWORD)(now-pause_background_since)>=150) {
-    pause_probe_report("external-candidate-confirmed-after-150ms",
+    pause_probe_report(fg?"external-candidate-confirmed-after-150ms":
+      "null-foreground-confirmed-after-150ms",
       hwnd,fg,fg_pid,(DWORD)(now-pause_background_since));
     return TRUE;
   }
