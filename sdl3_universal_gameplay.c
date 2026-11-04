@@ -382,7 +382,7 @@ void SpiderSDL3Universal_OnConfirmedFocusPause(void) {
   for(i=0;i<4u;i++)
     if(sent_mask&(1u<<i))dir_mask|=(1u<<i);
   snprintf(msg,sizeof(msg),
-    "SDL3-UNIVERSAL: HOST-FOCUS-LOSS boundary active=%d suspended=%d selected=%lu sent=0x%03X dir=0x%X recovery-phase=%u pending-frames=%u X11-blocked=%d",
+    "SDL3-UNIVERSAL: HOST-FOCUS-LOSS confirmed boundary active=%d suspended=%d selected=%lu sent=0x%03X dir=0x%X recovery-phase=%u pending-frames=%u X11-blocked=%d",
     active,suspended,(unsigned long)selected_id,sent_mask,dir_mask,
     (unsigned)focus_dir.phase,focus_release.frames_remaining,
     native_host_focus_blocked);
