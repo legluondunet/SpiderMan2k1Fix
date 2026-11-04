@@ -59,7 +59,7 @@ def test_motif_requires_untextured_original_alpha_quads_at_exact_depth():
                   "native_pause43_enabled", "!native_esc43_supported_monitor()",
                   "gameplay_4x3_active",
                   "menu_upscale_active", "rva!=0x00102C72UL",
-                  "fabsf(v[0].z-0.00146f)", "fabsf(v[0].rhw-9.988f)",
+                  "SpiderNativePause43_MotifLayer(v[0].z,v[0].rhw)",
                   "(color&0xFF000000UL)!=0x80000000UL",
                   "vertex_color&0xFF000000UL",
                   "IDirect3DDevice7_GetTexture(", "IDirectDrawSurface7_Release(tex)",
