@@ -136,8 +136,9 @@ def test_legacy_context_bridge_is_not_a_second_input_owner():
     assert "spider_sdl3_context_menu_step(" not in ui
     assert "begin_scancode(" not in ui
     assert "SpiderSDL3Probe_SelectedMappedSample(" in universal
-    assert "SPIDER_UNIVERSAL_CTX_MENU" in universal
-    assert "SPIDER_UNIVERSAL_CTX_BINK" in universal or "SPIDER_UNIVERSAL_CTX_MOVIE" in universal
+    policy=(ROOT/"sdl3_universal_policy.h").read_text(encoding="utf-8")
+    assert "SPIDER_UNIVERSAL_CTX_MENU" in policy
+    assert "SPIDER_UNIVERSAL_CTX_BINK" in policy
     assert "spider_sdl3_universal_neutral(&sample)" in universal
     assert "SpiderSDL3Probe_OnFlip(count,game_hwnd);" in core
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in core
