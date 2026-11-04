@@ -45,10 +45,10 @@ def test_native_pause_classifies_original_banner_border_and_text_without_touchin
                   "rva!=0x00102C72UL", "D3DPT_TRIANGLEFAN",
                   "fvf!=0x144UL", "count!=4", "tw==8 && th==8",
                   "tw==16 || tw==32 || tw==64",
-                  "copy[i].x=mapped", "1439.0f/1479.0f",
-                  "1439.0f/1448.5f"):
+                  "copy[i].x=center+(v[i].x-center)*aspect_scale"):
         assert token in PAUSE
-    for forbidden in ("PostMessage(", "SendInput(", "SetTexture(",
+    for forbidden in ("1439.0f/1479.0f", "1439.0f/1448.5f",
+                      "PostMessage(", "SendInput(", "SetTexture(",
                       "keybd_event(", "src[i].x=", "copy[i].y="):
         assert forbidden not in PAUSE
     assert "8x8" in DOC and "ribbon" in DOC
