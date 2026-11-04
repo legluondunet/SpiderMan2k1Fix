@@ -2774,7 +2774,7 @@ static void pause_at_flip_if_background(void) {
  * If the original game does not dispatch WM_TIMER in background, this
  * conservative fallback cannot fire; that is an explicit limitation. */
 static volatile LONG pause_focus_timer_state=0; /* 0 unknown, -1 off, 1 armed */
-static volatile DWORD pause_focus_timer_last_flip_tick=0;
+static volatile LONG pause_focus_timer_last_flip_tick=0;
 static UINT_PTR pause_focus_timer_id=0;
 static unsigned pause_focus_timer_reports=0;
 static VOID CALLBACK pause_focus_timer_proc(HWND hwnd, UINT message,
@@ -2789,7 +2789,8 @@ static VOID CALLBACK pause_focus_timer_proc(HWND hwnd, UINT message,
      InterlockedCompareExchange(&pause_in_progress,0,0)!=0 ||
      InterlockedCompareExchange(&pause_latched,0,0)!=0 ||
      !IsWindow(hwnd) || GetForegroundWindow()==hwnd)return;
-  since_flip=(DWORD)(GetTickCount()-pause_focus_timer_last_flip_tick);
+  since_flip=(DWORD)(GetTickCount()-(DWORD)InterlockedCompareExchange(
+    &pause_focus_timer_last_flip_tick,0,0));
   /* Normal frame-boundary pausing always wins. Trigger only when there
    * has been NO Flip for at least 250ms, then retain the separate 150ms
    * foreign-process/verified-NULL focus debounce in the pause routine. */
@@ -2830,8 +2831,7 @@ static void pause_focus_timer_try_arm(HWND hwnd) {
 }
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
-  InterlockedExchange((volatile LONG*)&pause_focus_timer_last_flip_tick,
-                      (LONG)GetTickCount());
+  InterlockedExchange(&pause_focus_timer_last_flip_tick,(LONG)GetTickCount());
   pause_focus_timer_try_arm(game_hwnd);
   focus_timeline_pulse(1,count,self);
   if(debug_log_enabled &&
