@@ -150,11 +150,13 @@ def test_post_rebind_menu_input_breadcrumbs_are_passive_and_bounded():
     assert "native_thread!=GetCurrentThreadId()" in SOURCE
     assert "SPIDER_NATIVE_FORCE_FEEDBACK 0x006B7A68u" in SOURCE
     assert "NATIVE-RECONNECT: POST-REBIND INPUT" in SOURCE
-    assert 'SpiderNativeReconnect_LogSyntheticMenuKey(scan,"before KEYDOWN");' in ui
-    assert 'SpiderNativeReconnect_LogSyntheticMenuKey(scan,"after KEYDOWN");' in ui
-    assert 'SpiderNativeReconnect_LogSyntheticMenuKey(active_scan,"before KEYUP");' in ui
-    assert 'SpiderNativeReconnect_LogSyntheticMenuKey(active_scan,"after KEYUP");' in ui
-    assert ui.index('SpiderNativeReconnect_LogSyntheticMenuKey(scan,"before KEYDOWN");') < ui.index('if(SendInput(1,&in,sizeof(in))!=1) {', ui.index('static void begin_scancode'))
+    # The pre-SDL3 sender is gone; only universal SDL3 synthesizes keys.
+    assert "SpiderNativeReconnect_LogSyntheticMenuKey(" not in ui
+    assert "begin_scancode(" not in ui
+    assert "SendInput(" not in ui
+    adapter=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    assert "static int send_scan(" in adapter
+    assert "SDL3-UNIVERSAL: WARNING synthetic key release failed" in adapter
     assert "IDirectInputDevice8_GetDeviceData" not in SOURCE.split("void SpiderNativeReconnect_LogSyntheticMenuKey(",1)[1].split("void SpiderNativeReconnect_Init(",1)[0]
     assert "IDirectInputDevice8_Release" not in SOURCE.split("void SpiderNativeReconnect_LogSyntheticMenuKey(",1)[1].split("void SpiderNativeReconnect_Init(",1)[0]
 
@@ -178,18 +180,17 @@ def test_post_rebind_health_heartbeat_is_passive_generation_aware_and_bounded():
     assert "if(!requested || !initialized || !SpiderNativeUnplug_Installed()" in block
 
 
-def test_xbox360_native_recovery_and_separately_opted_in_ds4_ps1_remap():
-    ui=(ROOT/"gamepad_ui_profile.c").read_text()
+def test_xbox360_native_recovery_never_applies_a_hardcoded_button_preset():
     assert "spider_reconnect_kind(vid,pid)" in SOURCE
     assert "enumerate_supported_pad" in SOURCE
     assert 'list.kind==SPIDER_RECONNECT_DS4?"Sony DS4":"Xbox360-compatible"' in SOURCE
     assert "LOWORD(list.product),HIWORD(list.product)" in SOURCE
-    assert "list.count!=1u" in SOURCE  # refuse ambiguous DS4+Xbox
+    assert "list.count!=1u" in SOURCE
     assert "spider_reconnect_xbox360" in POLICY
     assert "pid==0x028eu" in POLICY
     assert "SPIDER_DS4_VID" in POLICY
-    assert "static int ds4_pid(" in ui
-    assert "SPIDER_PROFILE_DUALSHOCK4" in ui
-    assert "SPIDER_PROFILE_XBOX360" in ui
-    assert "detected_kind!=SPIDER_RECONNECT_DS4 || !ps1_preview_requested" in ui
-    assert "if(detected && detected_kind==SPIDER_RECONNECT_XBOX360)" in ui
+    assert "swap_mapping_enabled=0;" in SOURCE
+    assert "swap_native_gameplay_mapping(" not in SOURCE
+    assert "spider_xbox360_buttons" not in SOURCE
+    assert "spider_ps1_buttons" not in SOURCE
+    assert 'SpiderNativeReconnect_CanonicalXboxMapping(void) {return 0;}' in SOURCE

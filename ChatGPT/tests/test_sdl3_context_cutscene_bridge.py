@@ -22,11 +22,12 @@ def test_legacy_cutscene_policy_is_preserved_but_no_longer_connected():
     assert "sdl3_cutscene_context_on_flip(" not in main
     assert "spider_sdl3_context_cutscene_step(" not in main
     assert "SDL3-CONFIRM-SKIP" not in main
-    assert "PS1-3D-OPTIONS" in main  # legacy explicit opt-in remains
-    assert "!SpiderSDL3Probe_NativeOwnerEnabled()" in main
-    assert "*native_request=1u;" in main
-    assert "gamepad_native_cutscene_skip(1,\"PS1-3D-OPTIONS\")" in main
-
+    # No old physical Xbox/DS4 cutscene request may run alongside SDL3.
+    assert "PS1-3D-OPTIONS" not in main
+    assert "gamepad_native_cutscene_skip(" not in main
+    assert "*native_request=1u;" not in main
+    adapter=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    assert "SpiderSDL3Probe_SelectedMappedSample(" in adapter
 
 def test_cutscene_policy_compiles_and_gates_profile_edges(tmp_path):
     cc=shutil.which("gcc") or shutil.which("cc") or shutil.which("clang")

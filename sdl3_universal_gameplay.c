@@ -27,6 +27,10 @@
 #define SPIDER_UNIVERSAL_KEY_TABLE 0x00568398u
 
 static int requested=0,suspended=0,active=0;
+/* Universal opt-in must not expose the game's legacy joystick merely
+ * because the explicitly selected SDL3 controller disconnected. */
+static int native_unclaimed_guard=0;
+static unsigned native_guard_reports=0;
 static DWORD game_thread=0;
 static uint32_t selected_id=0;
 static PVOID borrowed_native=NULL;
@@ -285,6 +289,7 @@ static void restore_original(const char *reason) {
       log_universal("SDL3-UNIVERSAL: original game-owned DirectInput pointer RESTORED on exit/focus change");
   }
   suspended=0;active=0;selected_id=0;borrowed_native=NULL;
+  native_unclaimed_guard=0;
   /* Preserve sent_mask and pulse_scan if KEYUP failed. They are retried
    * in BeforeUI and before any new joystick gameplay injection. */
   menu_previous=0;menu_arm=0;
@@ -333,6 +338,7 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   focus_dir_controller_id=0;
   focus_latch_follow_scan=0;focus_latch_follow_frames=0;
   active=selected_id=0;suspended=0;borrowed_native=NULL;
+  native_unclaimed_guard=0;native_guard_reports=0;
   memset(held_scans,0,sizeof(held_scans));
   sent_mask=0;pulse_scan=0;menu_previous=menu_arm=0;
   previous_context=SPIDER_UNIVERSAL_CTX_3D;
@@ -367,11 +373,33 @@ void SpiderSDL3Universal_BeforeModal(HWND game_hwnd) {
  * Do not use Win32 foreground as a gate: native X11 has already verified
  * the loss, and restore_original is idempotent on repeated focus events. */
 void SpiderSDL3Universal_OnConfirmedFocusPause(void) {
-  if(!requested || !game_thread ||
-     game_thread!=GetCurrentThreadId())return;
-  if(active || suspended || sent_mask || pulse_scan)
-    log_focus_release(
-      "SDL3-UNIVERSAL: HOST-FOCUS-LOSS confirmed; releasing owned keys before blocking PAUSED (Win32 HWND may be stale)");
+  char msg[220];
+  unsigned i,dir_mask=0;
+  /* Always report the actual boundary state, even if a previous X11
+   * OTHER sample already released the keys. These bounded diagnostics
+   * distinguish "no SDL3 owner" from "late release" without mutating
+   * the original game's keyboard latch or accepting a stale HWND. */
+  if(!requested)return;
+  if(!game_thread || game_thread!=GetCurrentThreadId()) {
+    if(report && focus_release_reports++<24u)
+      report("SDL3-UNIVERSAL: HOST-FOCUS-LOSS skipped: not on initialized game thread");
+    return;
+  }
+  for(i=0;i<4u;i++)
+    if(sent_mask&(1u<<i))dir_mask|=(1u<<i);
+  snprintf(msg,sizeof(msg),
+    "SDL3-UNIVERSAL: HOST-FOCUS-LOSS confirmed boundary active=%d suspended=%d selected=%lu sent=0x%03X dir=0x%X recovery-phase=%u pending-frames=%u X11-blocked=%d",
+    active,suspended,(unsigned long)selected_id,sent_mask,dir_mask,
+    (unsigned)focus_dir.phase,focus_release.frames_remaining,
+    native_host_focus_blocked);
+  log_focus_release(msg);
+  if(dir_mask)
+    for(i=0;i<4u;i++)
+      if((dir_mask&(1u<<i)) && held_scans[i])
+        trace_native_keyboard_latch("pre-focus-release",held_scans[i]);
+  /* Confirmed X11 loss is authoritative. Block re-injection even if
+   * GetForegroundWindow still incorrectly points at the game. */
+  native_host_focus_blocked=1;
   restore_original("focus or window lost");
 }
 void SpiderSDL3Universal_BeforeUI(HWND hwnd) {
@@ -387,6 +415,20 @@ void SpiderSDL3Universal_BeforeUI(HWND hwnd) {
   } else if(pulse_scan && !send_scan(pulse_scan,1)) {
     log_universal("SDL3-UNIVERSAL: warning Pause/Return KEYUP failed, retry before next action");
   } else pulse_scan=0;
+}
+int SpiderSDL3Universal_ReleaseSyntheticReturnBefore3D(HWND hwnd) {
+  if(!requested || !game_thread ||
+     game_thread!=GetCurrentThreadId() ||
+     native_host_focus_blocked || pulse_scan!=0x1cu ||
+     !hwnd || !IsWindowVisible(hwnd) ||
+     GetForegroundWindow()!=hwnd)return 0;
+  if(!send_scan(pulse_scan,1)) {
+    log_universal("SDL3-UNIVERSAL: BINK-4 Return KEYUP refused; original physical key wait retained");
+    return 0;
+  }
+  pulse_scan=0;
+  log_universal("SDL3-UNIVERSAL: BINK-4 pending synthetic Return balanced before original game input");
+  return 1;
 }
 static int binding_held(SpiderSDL3Binding b,
                         const SpiderSDL3ControllerSample *sample) {
@@ -434,7 +476,43 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   if(!SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample)) {
     if(refusal_reports++<6u)
       log_universal("SDL3-UNIVERSAL: waiting for selected SDL3 mapped pad (press Start on desired pad)");
-    restore_original("no selected mapped controller");
+    /* A passive SDL3 singleton selection is NOT an explicit Start owner.
+     * Previously restore_original() exposed the old DirectInput joystick
+     * here, allowing the remaining PS3 to control Spider-Man with its
+     * unconfigured native layout after DS4 unplug.
+     *
+     * First release all keyboard events and the prior selected owner.
+     * Then borrow the same verified game-owned pointer slot in an
+     * intentionally unclaimed state, before the original Flip returns
+     * to the game. Keyboard input remains independent. This isolation
+     * applies only when ExperimentalSDL3UniversalGameplay=1. */
+    if(active || (!native_unclaimed_guard &&
+       (sent_mask || pulse_scan || suspended ||
+        focus_dir.phase==SPIDER_FOCUS_DIR_UP)))
+      restore_original("no selected mapped controller");
+    /* A failed OS KEYUP must not reopen the legacy joystick while the
+     * remaining PS3 is unclaimed. Keep its native owner isolated and
+     * retry pending releases directly, without a restore/suspend loop. */
+    if(native_unclaimed_guard && (sent_mask || pulse_scan))
+      release_all();
+    if(native_unclaimed_guard &&
+       focus_dir.phase==SPIDER_FOCUS_DIR_UP &&
+       focus_dir.index<focus_dir.count &&
+       send_scan(focus_dir.scans[focus_dir.index],1)) {
+      spider_sdl3_focus_dir_complete(&focus_dir);
+      focus_dir_controller_id=0;
+    }
+    if(native_unclaimed_guard && suspended &&
+       (!writable_slot() || *SPIDER_UNIVERSAL_DI_SLOT!=NULL)) {
+      if(report && native_guard_reports++<16u)
+        report("SDL3-UNIVERSAL: UNCLAIMED guard displaced; refusing stale native owner");
+      restore_original("unclaimed native DI slot changed");
+    }
+    if(!suspended && writable_slot() && suspend_original()) {
+      native_unclaimed_guard=1;
+      if(report && native_guard_reports++<16u)
+        report("SDL3-UNIVERSAL: UNCLAIMED native DirectInput joystick held inactive until explicit SDL3 Start (keyboard unaffected)");
+    }
     return;
   }
   profile=SpiderSDL3Probe_SetupProfile(vid,pid);
@@ -482,6 +560,13 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   /* No native pointer manipulation or key injection until the physical
    * gamepad has returned to neutral after Start/selection/menu changes.
    * The policy also enforces neutral before producing 3D action bits. */
+  /* A native joystick held in the unclaimed guard is suspended already,
+   * but this must NOT bypass the fresh neutral gate after physical Start. */
+  if(native_unclaimed_guard && !spider_sdl3_universal_neutral(&sample)) {
+    if(owner_reports++<10u)
+      log_universal("SDL3-UNIVERSAL: explicit Start selected pad awaits neutral before unclaimed DI guard can transfer");
+    return;
+  }
   if(!suspended && !spider_sdl3_universal_neutral(&sample)) {
     if(owner_reports++<10u)
       log_universal("SDL3-UNIVERSAL: selected pad awaits complete neutral before any DI suspension/injection");
@@ -490,6 +575,11 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   if(!suspend_original()) {
     restore_original("unsafe native DI pointer");
     return;
+  }
+  if(native_unclaimed_guard) {
+    native_unclaimed_guard=0;
+    if(report && native_guard_reports++<16u)
+      report("SDL3-UNIVERSAL: UNCLAIMED native DI guard transferred to explicitly Started SDL3 controller");
   }
   /* Do not share the neutral-wait suppression budget with the first
    * successful ACTIVE report: a held Start can consume all ten entries. */
