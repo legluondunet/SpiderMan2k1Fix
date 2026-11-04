@@ -43,7 +43,7 @@ def test_original_foreground_detection_remains_flip_primary():
 
 
 def test_only_game_foreground_flip_consumes_one_deferred_request():
-    active=PAUSE[PAUSE.index("if(GetForegroundWindow()==hwnd)"):
+    active=PAUSE[PAUSE.index("if(win32_game_foreground && !x11_external)"):
                  PAUSE.index("} else if(InterlockedCompareExchange(&pause_ever_foreground")]
     assert "InterlockedCompareExchange(&pause_ever_foreground,0,0)==1" in active
     assert "InterlockedCompareExchange(&pause_latched,0,0)==0" in active
