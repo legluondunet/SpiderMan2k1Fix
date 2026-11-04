@@ -1,6 +1,6 @@
 # HUD 3D cinematic / aiming / level-2 native ESC — combined visual fix
 
-Status: **staged compass correction, native ESC geometry fix and reticle diagnostics**.
+Status: **staged compass correction, level-2 native ESC depth signature fix, and reticle diagnostics**.
 Do not claim all three issue classes are fixed until the runtime capture
 and regression test below have been reviewed. The native Pause correction
 is only source/CI tested so far.
@@ -58,6 +58,45 @@ Reference images supplied by the project maintainer, all 1920×1080:
 - Red/green reticle signatures have **not been measured**. They must not
   be corrected just because a quad is colored or elliptical: the shared
   D3D7 caller draws unrelated 3D primitives as well.
+
+## Level-2 trace resolution (SpiderMan2k1Fix 2026-11-04 22:09–22:10)
+
+The full `SpiderMan2k1Fix(20261104-211836).log` from GE-Proton11-12
+contains five `HUD-VISUAL: PAUSE-RIBBON` samples. The strongest are:
+
+- Flip **826**: native original caller `0x00102C72`,
+  quad **x=-7.5..1923.8, y=400.5..675.0**,
+  `Z=0.00122`, **`RHW=8.9615`**, diffuse `7F3232A0`,
+  **no bound texture**. Repeats at Flip **1024**.
+- Flip **934**: same owner and original depth, alternate animated band
+  y=463.5..607.5, **same RHW=8.9615**.
+- The active native ribbon matcher expected `RHW≈11.176` (tolerance
+  ±0.25), so the **depth signature rejected** this complete level-2
+  variant; the viewport, color and geometry did not explain the failure.
+- The original motif also differs: repeated untextured alpha-0x80
+  samples at **`Z=0.00146`, `RHW=7.8952`**, e.g. quad
+  x=1245.0..1511.2, y=904.5..1053.0, as opposed to legacy
+  `RHW≈9.988`. The broad AIM sampler mislabels these motif candidates;
+  they do not prove any actual red/green crosshair identity.
+
+The PR now accepts **both exact observed RHW families** via the pure
+`SpiderNativePause43_RibbonLayer` and
+`SpiderNativePause43_MotifLayer` helpers, only after the original
+caller, primitive/FVF, bounding box, texture, Z, alpha and stage guards.
+No intermediate RHW values are accepted. All other game rendering is
+unchanged.
+
+A new read-only `PAUSE-NATIVE-DETAIL` log is emitted **only after a
+verified ribbon** for up to **80** original font/border/selector
+candidates. It reports their original quad coordinates, depth,
+texture, format and whether the existing hook corrected them. This is
+needed because the log contains *no* previous
+`PAUSE-NATIVE-43: ribbon hit` and the new session's
+text/selector Z/RHW signatures are not yet known.
+
+**Runtime status:** pending visual verification with a new CI build.
+The user's previous screenshot `scrn0021.png` belongs to the older,
+now diagnosed build and is therefore still a genuine failed test.
 
 ## Bounded read-only diagnostic
 
