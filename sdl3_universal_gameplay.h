@@ -23,6 +23,10 @@ void SpiderSDL3Universal_OnConfirmedFocusPause(void);
 /* Before the joystick-setup modal blocks the original Flip thread, restore
  * game-owned DirectInput and release every synthetic held key. */
 void SpiderSDL3Universal_BeforeModal(HWND game_hwnd);
+/* Only balance our own pending synthetic DIK_RETURN at the original
+ * Bink #4 -> 3D input-release barrier. Never release physical keyboard
+ * or joystick input; requires same game thread and verified foreground. */
+int SpiderSDL3Universal_ReleaseSyntheticReturnBefore3D(HWND hwnd);
 /* At normal Flip boundary, after native reconnect and SDL3 polling. */
 void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
                                 int bink,int native_pause);

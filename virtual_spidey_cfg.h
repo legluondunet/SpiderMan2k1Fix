@@ -13,23 +13,21 @@ unsigned SpiderCfg_Install(const char *ini_path,void (*logger)(const char *));
 void SpiderCfg_ObserveNativeMonitor(unsigned width,unsigned height);
 /* One-time game-thread reload after verifying a real virtual CRT read. */
 void SpiderCfg_BootstrapGameRead(void);
-/* Opt-in RAM-only PS1 gameplay mapping after verified DS4 acquisition.
- * Never writes the overlay into the original user INI. */
+/* Retired legacy fixed PS1 gameplay mapping ABI. Always returns 0. */
 int SpiderCfg_EnablePS1Preview(void);
-/* True only after an authenticated game-owned loader consumed the overlay. */
+/* Retired legacy overlay bootstrap status (always 0). */
 int SpiderCfg_PS1BootstrapLoaded(void);
 /* True after any authenticated original-game CRT config load, without
  * requiring the legacy PS1 or Xbox preview. Used for read-only SDL3
  * runtime keyboard binding verification. */
 int SpiderCfg_NativeConfigLoaded(void);
 void SpiderCfg_CancelPS1Preview(void);
-/* Xbox 360 gameplay candidate: verified single pad + read-only native menu;
- * overlay only RAM until authenticated game CRT bootstrap succeeds. */
+/* Retired legacy fixed Xbox360 gameplay mapping ABI. Always returns 0. */
 int SpiderCfg_EnableXbox360Preview(void);
 int SpiderCfg_Xbox360BootstrapLoaded(void);
-/* Returns verified unambiguous game-owned Swing DIK scan (0 if unsafe). */
+/* Retired vendor-specific RT Swing bridge (always 0). */
 unsigned SpiderCfg_Xbox360SwingScan(void);
-/* After verified native Xbox hot-swap: read current game keyboard Swing scan. */
+/* Retired pre-SDL3 Xbox hot-swap helper (always 0). */
 unsigned SpiderCfg_Xbox360SwingScanLive(void);
 void SpiderCfg_CancelXbox360Preview(void);
 #endif

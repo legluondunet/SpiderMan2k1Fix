@@ -3508,33 +3508,12 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
       log_line("DISPLAY-NATIVE: WARNING game HWND unavailable before virtual config bootstrap; fallback to current primary monitor until SetCooperativeLevel");
     }
   }
-  /* Preview opt-in only: acquire an unambiguous Sony DS4 with the
-   * real game HWND before the original config loader consumes Spidey.cfg.
-   * A failed preflight leaves the previous working UI bridge untouched. */
-  {
-    HWND early=spider_find_game_window_before_ddraw();
-    int mapped=0,xbox_mapped=0;
-    if(early && SpiderGamepadUI_PreparePS1(early))
-      mapped=SpiderCfg_EnablePS1Preview();
-    if(early && SpiderGamepadUI_PrepareXbox360(early))
-      xbox_mapped=SpiderCfg_EnableXbox360Preview();
-    SpiderCfg_BootstrapGameRead();
-    SpiderCfg_InstallModernKeyboardDefaults();
-    SpiderGamepadUI_ArmPS1ReadOnly();
-    SpiderGamepadUI_ArmXbox360ReadOnly();
-    if(mapped) {
-      if(SpiderCfg_PS1BootstrapLoaded())
-        SpiderGamepadUI_ActivatePS1();
-      else
-        SpiderCfg_CancelPS1Preview();
-    }
-    if(xbox_mapped) {
-      if(SpiderCfg_Xbox360BootstrapLoaded())
-        SpiderGamepadUI_ActivateXbox360();
-      else
-        SpiderCfg_CancelXbox360Preview();
-    }
-  }
+  /* SDL3 semantic profiles are the only patch-provided controller
+   * mappings. No Sony/Xbox physical button presets are installed in
+   * the original game's virtual config. Keep the native game defaults. */
+  SpiderCfg_BootstrapGameRead();
+  SpiderCfg_InstallModernKeyboardDefaults();
+  log_line("SDL3-PROFILE: pre-SDL3 fixed Sony/Xbox mapping bootstrap REMOVED; native joystick mapping unchanged");
   HRESULT hr=original_create(guid,out,iid,outer);
   if(SUCCEEDED(hr) && out && *out && iid && IsEqualGUID(iid,&IID_IDirectDraw7)) {
     void ***object=(void ***)*out;
