@@ -59,16 +59,7 @@ The guarded DS4 custom-binding bridge is **on by default**, but only applies to 
 - **Unsupported display modes:** Prevented the game from switching to obsolete fullscreen resolutions and 16-bit display modes that could produce a black screen on modern monitors.
 - **Hidden desktop cursor:** Fixed cases where the Windows mouse pointer remained invisible after switching away from the game.
 
-## Integrated Wine/X11 Alt+Tab prototype (experimental)
-
-The automatic Wine/X11 focus backend is being developed on a **draft
-pull request**. When its native Linux helper is packaged, the Windows
-DLL can start it automatically using Wine-specific APIs; **no manual
-helper command, Lutris environment variable or `xdotool` is intended
-for users**. On native Windows, the existing Win32 focus handling
-remains unchanged. The prototype still requires Wine/GE-Proton runtime
-verification, and it must not yet be treated as a released feature.
-See [the integration plan](docs/references/WINE_X11_FOCUS_AUTOSTART.md).
+The native Wine/X11 Alt+Tab helper is being integrated as an automatic, optional backend in a **draft prototype**. See [technical plan](docs/references/WINE_X11_FOCUS_AUTOSTART.md).
 
 ## Known Issues in the Original Game
 
