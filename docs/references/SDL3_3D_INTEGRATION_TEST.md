@@ -22,6 +22,80 @@ It imports the keyboard adapter concept and fail-closed input safeguards
 from draft PR #95. Neither parent draft is merged to main. These are
 separate tracks and PR #98 is the opt-in integrated test branch.
 
+## 2026-11-04 — optional timestamped X11 ↔ Wine ↔ DirectDraw diagnostic
+
+**Research/implementation only; default game behavior remains unchanged.**
+The maintainer confirmed GE-Proton11-12 loads
+`i386-unix/winex11.so` and `i386-windows/winex11.drv` under
+`XDG_SESSION_TYPE=x11`. Xfce's
+`_NET_ACTIVE_WINDOW` transitions show `0x8000001`
+(`steam_app_default`, likely game) ↔ `0x1600017` (Firefox).
+The accompanying `SpiderMan2k1Fix(20261104-030642).log`
+shows **five** background/PAUSED/resume episodes, but its ordinary
+lines have no timestamps. The previously reported long `Flip-gap-ms`
+intervals may include *intentional time blocked inside the custom
+PAUSED loop*, so cannot measure detection latency on their own.
+
+A new **read-only, disabled-by-default** diagnostic was added to the
+core to make the next field test decisive:
+
+- Environment `SPIDERMAN2K1FIX_FOCUS_TIMELINE=1`, only effective when
+  `[Debug] Log=1`, prefixes every log line with local wall-clock
+  `[FOCUS-CLOCK YYYY-MM-DD HH:MM:SS.mmm local tick-ms=N]` for direct
+  time comparison with the Linux `date +%H:%M:%S.%3N` timestamps.
+  Default log format is **unchanged** when this opt-in is absent.
+- Under the same flag, emit sampled `FOCUS-TIMELINE: callback=Blt`
+  and `callback=Flip` heartbeats, independently per callback
+  (at most ~4 samples/s per callback while active, plus changes in
+  foreground HWND or a call gap >=750ms). Each reports actual
+  callback interval, current foreground HWND/PID, game HWND,
+  surface-is-primary, 2D/menu state, original FMV-active bit and
+  current thread. All read-only; no new WndProc, SDL3, DirectInput,
+  Bink, DSound or DirectDraw API calls inside the probe.
+- For the same test, use existing environment
+  `SPIDERMAN2K1FIX_FOCUS_PASSIVE=1`, which separately enables
+  **passive WndProc subclass** reporting `WM_ACTIVATEAPP`,
+  `WM_ACTIVATE`, `WM_KILLFOCUS`, `WM_SETFOCUS` with the same
+  timestamp prefix via the shared logger; **it does not enable any
+  DirectInput IAT/COM hook**. This WndProc observation is not entirely
+  zero-impact: test under Wine and remove after diagnosis.
+- Keep `[Input] ExperimentalFocusTrace` alone **off**; it is
+  deprecated/migrated, unlike the supported environment diagnostic.
+
+**Run under Lutris:** set both variables to `1` in the per-game
+environment, leave `[Debug] Log=1`. In a separate X11 terminal:
+
+```bash
+stdbuf -oL xprop -root -spy _NET_ACTIVE_WINDOW |
+while IFS= read -r line; do
+  printf '%s %s\n' "$(date +%H:%M:%S.%3N)" "$line"
+done | tee /tmp/spiderman-focus-x11.log
+```
+
+Reproduce a deliberate focus loss (a) main menu, (b) an opening Bink
+video, (c) continuous 3D action, (d) 3D cinematic until transition.
+Keep each background interval several seconds, return and resume.
+Compare **host X11 change** ↔ **first `INPUT-FOCUS: event=...`**
+↔ **first `FOCUS-TIMELINE: callback=Blt/Flip` with
+`fg-is-game=0`** ↔ **confirmed PAUSED**. The X11 property
+notifies a change in *window manager active ID*, not necessarily the
+instant the player physically presses Alt+Tab; the two wall clocks
+refer to the same desktop but can still have scheduling latency.
+
+**Decision gate:** If WndProc sees the deactivation early but
+`Flip` pauses only at a scene boundary, a game-thread-only,
+latched focus candidate may remove debounce lag but *cannot*
+guarantee mid-cinematic suspension. If both Blt and Flip stop,
+an engine-side cinematic safe point must be studied before
+changing PAUSED placement. If native X11 changes early but
+Wine events lag, investigate Wine X11 focus propagation. No
+production pause behavior changes or risky cross-thread Bink
+calls are authorized by this diagnostic.
+
+**Acceptance pending:** Windows x86 CI and live GE-Proton trace.
+PR #98 remains **DRAFT / UNMERGED**; this diagnostic is
+OFF by default and should be disabled after capture.
+
 ## 2026-11-04 — physical Wine validation: PAUSED F9 panel ACCEPTED; apparent deferred 3D focus pause
 
 **Maintainer visual acceptance: PASS.** On Manjaro kernel 7.1.13-2,
