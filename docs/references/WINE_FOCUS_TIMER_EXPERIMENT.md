@@ -53,3 +53,30 @@ DirectDraw composition outside the Flip boundary may render a stale
 backbuffer, particularly in cinematics. The branch remains experimental.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+## Timer delivery diagnosis (2026-11-04)
+
+After the `v1.1.0-10c870b` test, the timer was **armed** at
+05:22:41.752 but there was no `FOCUS-TIMER: no-Flip candidate` in the
+entire session. Three ordinary pauses succeeded; the final loss at
+05:27:32.883 ended the Wine log immediately, without evidence of further
+`Flip` or callback. This does **not** establish that the callback ran,
+nor that the message pump continued during the user's long Alt+Tab.
+
+A bounded heartbeat has therefore been added to the **same opt-in
+experiment**. With `SPIDERMAN2K1FIX_FOCUS_TIMER=1` and `[Debug] Log=1`:
+
+- `FOCUS-TIMER: EXPERIMENT ARMED` proves only timer registration.
+- `FOCUS-TIMER: CALLBACK heartbeat=` proves actual `WM_TIMER`
+  dispatch. The first three callbacks are logged even in the foreground,
+  then transitions and a sample every 30 seconds (30-line cap).
+- `FOCUS-TIMER: no-Flip candidate` requires both callback dispatch
+  *and* a blocked Flip for at least 250 ms while unfocused.
+- If the log shows initial heartbeats but none after the last
+  `WM_KILLFOCUS`, the game's background message pump may have stopped;
+  the existing same-thread TimerProc cannot safely freeze the game then.
+  Do not treat that inference as proof without a concurrent host-side
+  X11/window trace.
+
+This change is diagnostic only; no new worker thread or cross-thread
+DirectDraw calls were introduced.
