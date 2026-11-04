@@ -138,7 +138,7 @@ def test_native_esc_43_geometry_at_16_9_16_10_and_classic_4_3():
     assert "InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0" in PAUSE
     assert "InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0" in MOTIF
     assert "InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0" in CURSOR
-    assert "return desktop_w==1920 && (desktop_h==1080 || desktop_h==1200)" in CORE
+    assert "return SpiderNativePause43_Widescreen((unsigned)desktop_w," in CORE
     assert "native_esc43_left_gutter(void)" in CORE
     assert "native_esc43_scale(void)" in CORE
 
