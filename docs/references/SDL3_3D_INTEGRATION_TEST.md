@@ -22,6 +22,27 @@ It imports the keyboard adapter concept and fail-closed input safeguards
 from draft PR #95. Neither parent draft is merged to main. These are
 separate tracks and PR #98 is the opt-in integrated test branch.
 
+## 2026-11-04 — focus PAUSED visual: identical F9 notification border
+
+Per maintainer request, when the opt-in focus-pause path actually
+**latches**, `pause_surface.c` now paints **only `PAUSED`** using
+`SpiderF9Toast_DrawPausedPanel()`, which directly invokes the exact
+F9 `toast_draw_dc` painter (bottom-left flush, compact rectangular
+blue-violet 65%-opaque panel, lavender one-pixel top/right/bottom edge,
+original EXE 32px icon and white Arial Black text). No wake instruction
+or large central ESC ribbon is rendered. The F9 toast's screenshot
+success/failure messages, placement, lifetime and PNG pixels remain
+unchanged. The existing pause's frozen backbuffer, optional full-frame
+60%-default shading, media/audio suspension, keyboard/selected-gamepad
+wake and safe input recovery remain intact. **No focus-detection
+algorithm changed**, so missing Wine auto-pauses are still a tolerated
+separate issue.
+
+The UI change is covered by source-contract tests and the Windows-x86
+CI build. Actual rendering is **pending the next genuine focus-pause
+hardware test**, ideally in the menu where focus detection previously
+succeeded. Keep PR #98 draft/unmerged; Windows 11 native deferred.
+
 ## 2026-11-04 — two reliable Alt+Tab pauses from main menu (state-dependent behavior)
 
 Physical log `SpiderMan2k1Fix(20261104-015901).log`, build
