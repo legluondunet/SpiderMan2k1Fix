@@ -31,7 +31,7 @@ def test_reuses_existing_pause_only_after_stalled_flip_and_foreground_loss():
         "InterlockedCompareExchange(&pause_ever_foreground,0,0)!=1",
         "InterlockedCompareExchange(&pause_in_progress,0,0)!=0",
         "InterlockedCompareExchange(&pause_latched,0,0)!=0",
-        "GetForegroundWindow()==hwnd",
+        "game_foreground",
         "if(since_flip<250u)return;",
         "pause_at_flip_if_background();",
     ):
@@ -58,3 +58,15 @@ def test_timer_does_not_replace_paused_surface_or_movie_pause():
     assert "SpiderFocusDSound_Pause();" in SRC
     assert "SpiderPauseAny_Begin(hwnd)" in SRC
     assert 'FOCUS-TIMER: no-Flip candidate' in TIMER
+
+def test_timer_callback_heartbeat_distinguishes_registration_from_delivery():
+    assert "FOCUS-TIMER: CALLBACK heartbeat=" in TIMER
+    assert "pause_focus_timer_heartbeat_reports<30u" in TIMER
+    assert "pause_focus_timer_last_foreground!=game_foreground" in TIMER
+    assert "(DWORD)(GetTickCount()-pause_focus_timer_last_heartbeat)>=30000u" in TIMER
+    assert "fg=GetForegroundWindow();" in TIMER
+    assert "game_foreground=(fg==hwnd);" in TIMER
+    assert "if(debug_log_enabled" in TIMER
+    # Count callbacks before the focus gates; a registered-but-never-delivered
+    # WM_TIMER is otherwise impossible to distinguish from a foreground check.
+    assert TIMER.index("FOCUS-TIMER: CALLBACK heartbeat=") < TIMER.index("if(since_flip<250u)return;")
