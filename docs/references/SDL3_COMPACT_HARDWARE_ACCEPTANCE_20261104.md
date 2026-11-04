@@ -136,3 +136,53 @@ remain historical diagnostic references, not additional mandatory
 test sequences.
 
 legluondunet assisted by ChatGPT (OpenAI)
+
+## Feedback from the combined run — 4 November 2026
+
+The maintainer reported:
+- **Checkpoint/test 1: PASS.**
+- **Checkpoint/test 2: FAIL on BOTH PS3 and DS4:** after Alt+Tab
+  and manual wake, Spider-Man continues to run without the held direction.
+- **Checkpoint/test 3: PASS.**
+- **Checkpoint/test 4: PASS.**
+
+Thus configuration, context flow and hotplug ownership do **not**
+require another full end-to-end retest. The critical open issue is
+**movement stuck after focus return on both mapped pads**. No new
+per-run log accompanied this feedback; treat the code-level diagnosis
+as a hypothesis, not a measured live execution trace.
+
+### Targeted regression patch and ONE short retest
+
+The native X11 focus observer can confirm `OTHER` while Wine
+`GetForegroundWindow()==game` remains stale. Previously
+`SpiderSDL3Universal_BeforeUI(hwnd)` used only the Win32 foreground
+test; when it returned the game HWND, it could leave synthetic
+direction keys pressed until the PAUSED Flip loop blocked. The
+authoritative confirmed focus-pause latch now calls
+`SpiderSDL3Universal_OnConfirmedFocusPause()` on the game thread,
+which captures held direction scans for existing buffered keyboard
+recovery, sends KEYUP, and restores the borrowed native DirectInput
+joystick slot **before PAUSED blocks Flip**.
+
+**Only retest the failing scenario with PS3 then DS4, in one
+continuous game launch and one log:** select PS3 with Start,
+hold one diagonal, Alt+Tab to Firefox, release the stick there,
+return and manually wake, verify Spider-Man **stops** (note any
+remaining 1–2 steps). Then select DS4 with Start and repeat.
+Do **not** repeat setup, remapping, Bink, menus, hot-unplug and
+reconnect unless they regress incidentally.
+
+Log should include
+`SDL3-UNIVERSAL: HOST-FOCUS-LOSS confirmed` **before**
+`FOCUS-PAUSE: Any keyboard resume ARMED`, followed by
+`FOCUS-DIR captured owned 3D keys=` and
+`FOCUS-KEYUP deferred foreground replay armed`.
+After wake, check `DI-LATCH`, `FOCUS-DIR fresh DOWN/UP completed`,
+and visually confirm stopped motion. If movement persists, send the
+**single full log**, including exact observed movement and which
+pad; do not assume sending OS KEYUP means the game consumed it.
+
+Windows 11 native and third-party/unmapped-pad acceptance remain
+separate deferred items. Do not merge/enable the experimental
+universal 3D bridge by default on the basis of this source fix.
