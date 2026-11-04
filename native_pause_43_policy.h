@@ -32,6 +32,30 @@ static inline float SpiderNativePause43_MapX(
     return center+(x-center)*SpiderNativePause43_Scale(w,h);
 }
 
+/* Two independently observed, tightly isolated native ESC depth layers.
+ * The original game varies RHW with game context; the same original
+ * caller, geometry, texture state and depth still must match in the hook.
+ *  - earlier 1920x1080 validated ESC: ribbon 11.176, motif 9.988
+ *  - 2026-11-04 GE-Proton level-2 trace: ribbon 8.9615, motif 7.8952
+ * Never interpolate between these readings or apply to generic HUD.
+ * Comparisons fail closed for NaN without depending on libm. */
+static inline float SpiderNativePause43_Abs(float x)
+{
+    return x < 0.0f ? -x : x;
+}
+static inline int SpiderNativePause43_RibbonLayer(float z,float rhw)
+{
+    return SpiderNativePause43_Abs(z-0.00122f)<0.00010f &&
+           (SpiderNativePause43_Abs(rhw-11.176f)<0.25f ||
+            SpiderNativePause43_Abs(rhw-8.9615f)<0.060f);
+}
+static inline int SpiderNativePause43_MotifLayer(float z,float rhw)
+{
+    return SpiderNativePause43_Abs(z-0.00146f)<0.00004f &&
+           (SpiderNativePause43_Abs(rhw-9.988f)<0.060f ||
+            SpiderNativePause43_Abs(rhw-7.8952f)<0.060f);
+}
+
 /* Geometry-only *candidate* for the native game ESC purple ribbon.
  * Original and latest level-2 1920x1080 F9 screenshots both show
  * visible borders at approximately y=398..681 (not 342..585: the
