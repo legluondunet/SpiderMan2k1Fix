@@ -25,6 +25,10 @@ static volatile LONG host_focus_blocked=0;
 static DWORD host_bad_since=0;
 static DWORD host_probe_tick=0;
 static int host_probe_bad=0;
+static volatile LONG host_recovery_triggered=0;
+BOOL SpiderPauseAny_HostRecoveryTriggered(void) {
+  return InterlockedCompareExchange(&host_recovery_triggered,0,0)!=0;
+}
 
 /* PAUSED normally ignores keyboard input while X11 says OTHER.
  * If the native helper dies, or endlessly says UNKNOWN, release PAUSED
@@ -130,6 +134,7 @@ BOOL SpiderPauseAny_Begin(HWND game_hwnd) {
   host_bad_since=0;
   host_probe_tick=0;
   host_probe_bad=0;
+  InterlockedExchange(&host_recovery_triggered,0);
   hook=SetWindowsHookExA(WH_KEYBOARD_LL,keyboard_proc,module,0);
   if(!hook) target=NULL;
   return hook!=NULL;
@@ -140,7 +145,10 @@ BOOL SpiderPauseAny_Completed(void) {
    * the keyboard hook permanently blocked. Release the hook via the
    * regular pause-exit path after a verified absence >2.2 seconds. */
   if(InterlockedCompareExchange(&host_focus_blocked,0,0)!=0 &&
-     host_bridge_unavailable_for_long())return TRUE;
+     host_bridge_unavailable_for_long()) {
+    InterlockedExchange(&host_recovery_triggered,1);
+    return TRUE;
+  }
   /* If focus changes again while awaiting the key release, re-arm.
    * Do not allow a stale partial press to trigger resumption later. */
   if(GetForegroundWindow()!=target ||
@@ -175,4 +183,5 @@ void SpiderPauseAny_End(void) {
   host_bad_since=0;
   host_probe_tick=0;
   host_probe_bad=0;
+  InterlockedExchange(&host_recovery_triggered,0);
 }
