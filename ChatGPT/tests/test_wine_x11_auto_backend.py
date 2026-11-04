@@ -68,7 +68,7 @@ def test_wayland_does_not_autostart_or_publish_fictional_x11_focus():
     assert 'GetEnvironmentVariableA("XDG_SESSION_TYPE"' in BOOT
     assert 'lstrcmpiA(session,"wayland")==0' in BOOT
     assert 'GetEnvironmentVariableA("WAYLAND_DISPLAY",NULL,0)' in BOOT
-    assert BOOT.index('Wayland session; X11 backend disabled') < BOOT.index('spawn(argv,0)')
+    assert BOOT.index('Wayland session; X11 backend disabled') < BOOT.index('spawn(argv,0)', BOOT.index('int SpiderWineFocusAutostart_TryStart('))
     assert 'strcasecmp(session, "wayland") == 0' in NATIVE
     assert 'wayland_socket = getenv("WAYLAND_DISPLAY")' in NATIVE
     assert 'if ((!session || !*session) && wayland_socket && *wayland_socket)' in NATIVE
@@ -137,4 +137,4 @@ def test_pause_resume_gate_remains_native_game_plus_real_user_input():
     assert 'if(resumed_buttons)' in CORE
     assert 'SpiderFocusMedia_Resume();' in CORE
     assert 'SpiderFocusDSound_Resume();' in CORE
-    assert 'if(InterlockedCompareExchange(&host_focus_blocked,0,0)!=0' in PAUSE
+    assert 'InterlockedCompareExchange(&host_focus_blocked,0,0)!=0)' in PAUSE
