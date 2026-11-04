@@ -56,12 +56,23 @@ static const BYTE expected_sha256[32] = {
   0x2a,0x05,0x8f,0xf0,0x74,0x68,0x9d,0xea
 };
 static int debug_log_enabled=0;
+/* Strictly opt-in: timestamp ALL log lines with a local wall-clock aligned
+ * to xprop/date on the host. Add sparse Blt/Flip heartbeats for comparison.
+ * This flag never changes game state, focus, or pause timing. */
+static int focus_timeline_enabled=0;
 /* Load once at startup, not on every drawing/logging call. */
 static void debug_log_load_setting(void) {
   char path[MAX_PATH];
   debug_log_enabled=0;
   if(!spider_path_ini_a(path,sizeof(path)))return;
   debug_log_enabled=(GetPrivateProfileIntA("Debug","Log",0,path)==1);
+  focus_timeline_enabled=0;
+  if(debug_log_enabled) {
+    char opt[3]={0};
+    DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_FOCUS_TIMELINE",
+                                     opt,sizeof(opt));
+    focus_timeline_enabled=(n==1 && opt[0]=='1');
+  }
 }
 static void log_line(const char *s) {
   static char path[MAX_PATH];
@@ -72,7 +83,20 @@ static void log_line(const char *s) {
     if(!spider_path_log_a(path,sizeof(path)))return;
     resolved=1;
   }
-  f=fopen(path,"a"); if(f) { fprintf(f,"%s\n",s); fclose(f); }
+  f=fopen(path,"a");
+  if(f) {
+    if(focus_timeline_enabled) {
+      SYSTEMTIME st;
+      GetLocalTime(&st);
+      fprintf(f,"[FOCUS-CLOCK %04u-%02u-%02u %02u:%02u:%02u.%03u local tick-ms=%lu] %s\n",
+        (unsigned)st.wYear,(unsigned)st.wMonth,(unsigned)st.wDay,
+        (unsigned)st.wHour,(unsigned)st.wMinute,(unsigned)st.wSecond,
+        (unsigned)st.wMilliseconds,(unsigned long)GetTickCount(),s);
+    } else {
+      fprintf(f,"%s\n",s);
+    }
+    fclose(f);
+  }
 }
 /* Windows creates a class="Ghost" surrogate after several seconds without
  * normal window-message retrieval. Our focus guard can then mistake that
@@ -1716,6 +1740,49 @@ static void borderless_intro_fill_black_bars(void *surface,const RECT *image) {
     }
   }
 }
+/* Log bounded, read-only presentation heartbeats independently on Blt and
+ * Flip, with local wall-clock timestamps supplied by log_line(). During
+ * 3D cinematic stalls, these samples show whether only Flip stops or
+ * whether both original DirectDraw callbacks stop. The source/destination
+ * surfaces are NEVER queried, locked or modified here.
+ *
+ * Last-sample fields are atomic: Wine may invoke Blt on a different
+ * thread from Flip. This observational probe is OFF by default. */
+static void focus_timeline_pulse(int is_flip,LONG seq,void *surface) {
+  static volatile LONG last_blt_call=0,last_flip_call=0;
+  static volatile LONG last_blt_sample=0,last_flip_sample=0;
+  static volatile LONG last_blt_fg=0,last_flip_fg=0;
+  volatile LONG *last_call=is_flip?&last_flip_call:&last_blt_call;
+  volatile LONG *last_sample=is_flip?&last_flip_sample:&last_blt_sample;
+  volatile LONG *last_fg=is_flip?&last_flip_fg:&last_blt_fg;
+  DWORD now,prior,sampled,gap;
+  HWND fg;
+  DWORD pid=0;
+  LONG former;
+  char line[260];
+  if(!focus_timeline_enabled)return;
+  now=GetTickCount();
+  prior=(DWORD)InterlockedExchange(last_call,(LONG)now);
+  gap=prior?(DWORD)(now-prior):0;
+  fg=GetForegroundWindow();
+  former=InterlockedExchange(last_fg,(LONG)(uintptr_t)fg);
+  sampled=(DWORD)InterlockedCompareExchange(last_sample,0,0);
+  if(former==(LONG)(uintptr_t)fg && prior && gap<750u &&
+     sampled && (DWORD)(now-sampled)<250u)return;
+  InterlockedExchange(last_sample,(LONG)now);
+  if(fg)GetWindowThreadProcessId(fg,&pid);
+  snprintf(line,sizeof(line),
+    "FOCUS-TIMELINE: callback=%s seq=%ld gap-ms=%lu foreground=%p "
+    "foreign-pid=%lu game=%p fg-is-game=%d surface-is-primary=%d "
+    "menu-active=%d movie-active=%d thread=%lu",
+    is_flip?"Flip":"Blt",(long)seq,(unsigned long)gap,(void*)fg,
+    (unsigned long)pid,(void*)game_hwnd,(int)(fg==game_hwnd),
+    (int)(surface==(void*)borderless_primary),
+    (int)(InterlockedCompareExchange(&menu_upscale_active,0,0)==1),
+    (int)((*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u),
+    (unsigned long)GetCurrentThreadId());
+  log_line(line);
+}
 static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *source,
                                   LPRECT source_rect, DWORD flags, LPDDBLTFX fx) {
   HRESULT hr; LONG count=InterlockedIncrement(&blt_count);
@@ -1723,6 +1790,7 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
   LPRECT presented_dest=dest;
   BOOL f9_movie_present=FALSE;
 
+  focus_timeline_pulse(0,count,self);
   if(debug_log_enabled && count<=24) {
     char line[240];
     snprintf(line,sizeof(line),"DDRAW: Surface7::Blt #%ld dst=%p src=%p dstRect=%s srcRect=%s flags=0x%08lX",
@@ -2679,6 +2747,7 @@ static void pause_at_flip_if_background(void) {
 }
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
+  focus_timeline_pulse(1,count,self);
   if(debug_log_enabled &&
      InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1) {
     DWORD now=GetTickCount();
@@ -3359,6 +3428,8 @@ static DWORD initialize_body(LPVOID unused) {
     return 0;
   }
   log_line("OK: supported SpideyPC.exe SHA-256 verified");
+  if(focus_timeline_enabled)
+    log_line("FOCUS-TIMELINE: ENABLED read-only Blt/Flip samples + local wall-clock timestamps; requires separate FOCUS_PASSIVE=1 for WndProc events");
   install_null_fclose_guard(); /* Default ON only for SHA-verified EXE and exact native opcode signature. */
   /* Generate complete defaults once, before any GetPrivateProfile... reads. */
   SpiderCfg_EnsureDefaultIni(log_line);
