@@ -2726,6 +2726,14 @@ static void pause_at_flip_if_background(void) {
   x11_state=pause_x11_bridge_state();
   x11_external=pause_x11_bridge_enabled() && x11_state==2;
   win32_game_foreground=GetForegroundWindow()==hwnd;
+  /* Native host focus is also authoritative for the selected SDL3
+   * universal keyboard adapter. Previously PAUSED correctly spotted
+   * Firefox via X11, but SDL3 still trusted the stale Wine HWND and
+   * left synthetic directions held. Release them before the blocking
+   * PAUSED loop, and block any new input while the host says OTHER
+   * or UNKNOWN. The initial no-helper Win32 fallback is unchanged. */
+  SpiderSDL3Universal_SetHostFocusBlocked(
+    pause_x11_bridge_enabled() && x11_state!=1);
   if(!x11_external)pause_x11_bridge_loss_since=0;
   if(win32_game_foreground && !x11_external) {
     /* No deferred/return-only pause: native GAME focus returns to its
