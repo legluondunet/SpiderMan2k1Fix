@@ -83,7 +83,9 @@ PAUSED is on screen. SDL3/DI gamepad resume is gated similarly.
 Limitations: requires a separately running X11 host helper; cannot
 discover a focus change without both a valid fresh bridge sample and
 a continued DirectDraw Flip. If the game genuinely stops calling
-Flip, the existing return-latch experiment addresses a different
-case. Avoid guessing which failure occurred without paired logs.
+Flip, no off-thread polling can be assumed to display PAUSED instantly.
+The former return-latch experiment was not validated and has been removed
+from the consolidated implementation. Use paired X11 and Wine logs to
+distinguish a stopped render loop from a missed focus event.
 
 legluondunet assisted by ChatGPT (OpenAI)
