@@ -86,6 +86,28 @@ int SpiderWineFocusAutostart_PollReady(void (*logger)(const char *)) {
  *
  * A fresh UNKNOWN packet means the helper is alive but cannot determine
  * focus: do NOT fork a competing observer or trust Win32 foreground. */
+/* The old fail-closed recovery made PAUSED permanent after two
+ * successful-but-short-lived observer restarts. It is only safe to let
+ * Win32 perform an explicit local-focus recovery if the helper has
+ * REALLY gone silent. Fresh UNKNOWN still means a live observer and
+ * must not authorize the weaker Win32 fallback. */
+int SpiderWineFocusAutostart_RecoveryExhausted(void) {
+  WIN32_FILE_ATTRIBUTE_DATA attr;
+  FILETIME time_now;
+  ULARGE_INTEGER now,modified;
+  if(!helper_managed || helper_waiting_for_state ||
+     helper_recovery_attempts<2)return 0;
+  if(!GetFileAttributesExW(helper_state_path,GetFileExInfoStandard,&attr))
+    return 1;
+  GetSystemTimeAsFileTime(&time_now);
+  now.LowPart=time_now.dwLowDateTime;
+  now.HighPart=time_now.dwHighDateTime;
+  modified.LowPart=attr.ftLastWriteTime.dwLowDateTime;
+  modified.HighPart=attr.ftLastWriteTime.dwHighDateTime;
+  return now.QuadPart>=modified.QuadPart &&
+         now.QuadPart-modified.QuadPart>1200ull*10000ull;
+}
+
 int SpiderWineFocusAutostart_TryRecover(void (*logger)(const char *)) {
   DWORD tick=GetTickCount();
   WIN32_FILE_ATTRIBUTE_DATA attr;
