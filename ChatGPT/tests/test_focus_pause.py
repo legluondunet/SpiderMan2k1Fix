@@ -15,7 +15,7 @@ def test_focus_pause_is_permanent_and_not_user_configurable():
 
 def test_pause_only_at_ddraw_flip_boundary():
     assert "static void pause_at_flip_if_background(void)" in CORE
-    assert CORE.count("pause_at_flip_if_background();")==1
+    assert CORE.count("pause_at_flip_if_background();")==2  # Flip + opt-in no-Flip timer
     start=CORE.index("static HRESULT WINAPI hooked_flip(")
     end=CORE.index("SpiderDI8Retry_OnFlip(count);",start)
     flip=CORE[start:end]
