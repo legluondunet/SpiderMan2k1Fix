@@ -27,7 +27,17 @@ def test_original_gamebarrier_retains_physical_enter_and_space_guard():
 
 def test_removed_old_ui_synthetic_return_cannot_steal_sdl3_owner():
     assert "int SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(HWND hwnd)" in UI
-    assert "  (void)hwnd;return 0;" in UI
+    assert "return SpiderSDL3Universal_ReleaseSyntheticReturnBefore3D(hwnd);" in UI
+    adapter=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    handler=adapter.split(
+        "int SpiderSDL3Universal_ReleaseSyntheticReturnBefore3D(HWND hwnd)",1
+    )[1].split("static int binding_held(",1)[0]
+    assert "pulse_scan!=0x1cu" in handler
+    assert "game_thread!=GetCurrentThreadId()" in handler
+    assert "native_host_focus_blocked" in handler
+    assert "GetForegroundWindow()!=hwnd" in handler
+    assert "if(!send_scan(pulse_scan,1))" in handler
+    assert "pulse_scan=0;" in handler
     assert "begin_scancode(" not in UI
     assert "active_scan_thread" not in UI
     assert "SpiderSDL3ControllerSetup_Init(ini,logger);" in UI
