@@ -2713,6 +2713,14 @@ static void pause_at_flip_if_background(void) {
   int pause_gamepad_available=0;
   int pause_sdl3_available=0;
   int pause_previous_foreground=0;
+  /* Terminal observer failure: allow a manual keyboard/gamepad wake only
+   * after we actually observed Win32 switch AWAY from the game and
+   * switch BACK after the two native restart attempts are exhausted.
+   * A permanently stale Wine GetForegroundWindow()==game without an
+   * observed external phase is NOT sufficient evidence. */
+  int fallback_saw_external=0;
+  int fallback_wake_armed=0;
+  DWORD fallback_return_since=0;
   int x11_state,x11_external,win32_game_foreground;
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
   x11_state=pause_x11_bridge_state();
@@ -2860,8 +2868,35 @@ static void pause_at_flip_if_background(void) {
      * a key or trust Wine's possibly stale foreground HWND. */
     SpiderWineFocusAutostart_PollReady(log_line);
     SpiderWineFocusAutostart_TryRecover(log_line);
-    SpiderPauseAny_SetHostFocusBlocked(pause_x11_bridge_enabled() &&
-                                      x11_state!=1);
+    if(pause_x11_bridge_enabled() && x11_state==0 &&
+       SpiderWineFocusAutostart_RecoveryExhausted()) {
+      const int win32_confirmed_game=
+        GetForegroundWindow()==hwnd && GetActiveWindow()==hwnd &&
+        GetFocus()==hwnd;
+      if(!win32_confirmed_game) {
+        fallback_saw_external=1;
+        fallback_return_since=0;
+        fallback_wake_armed=0;
+      } else if(fallback_saw_external && !fallback_wake_armed) {
+        DWORD tick=GetTickCount();
+        if(!fallback_return_since)fallback_return_since=tick?tick:1;
+        else if((DWORD)(tick-fallback_return_since)>=150u) {
+          fallback_wake_armed=1;
+          log_line("FOCUS-X11: observer recovery exhausted; fresh Win32 external->game focus cycle confirmed; manual key/gamepad wake allowed");
+        }
+      }
+      /* A valid explicit user key is still required. No automatic wake
+       * and no stealing from Firefox while Win32 reports background. */
+      SpiderPauseAny_SetHostFocusBlocked(!fallback_wake_armed);
+    } else {
+      /* Native X11 returns authoritative information when available.
+       * A fresh UNKNOWN from a live helper must not weaken the gate. */
+      fallback_saw_external=0;
+      fallback_return_since=0;
+      fallback_wake_armed=0;
+      SpiderPauseAny_SetHostFocusBlocked(pause_x11_bridge_enabled() &&
+                                        x11_state!=1);
+    }
     /* The normal Flip-based focus monitor cannot run until this custom
      * PAUSED wait ends. On return to game foreground, balance its temporary
      * background ShowCursor(TRUE) NOW, before any wake input. Otherwise the
@@ -2879,7 +2914,8 @@ static void pause_at_flip_if_background(void) {
       InterlockedExchange(&pause_latched,0);
     else {
       unsigned resumed_buttons=
-        (pause_x11_bridge_enabled() && x11_state!=1)?0:
+        (pause_x11_bridge_enabled() && x11_state!=1 &&
+         !fallback_wake_armed)?0:
         (pause_sdl3_available?
           SpiderSDL3Probe_PauseWake_Poll(hwnd):
           SpiderGamepadUI_PauseWake_Poll(hwnd));
