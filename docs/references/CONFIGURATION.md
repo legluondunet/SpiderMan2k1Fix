@@ -128,7 +128,7 @@ selected monitor's active Windows/Wine resolution.
 
 The supported executable receives **automatic desktop resolution**, borderless fullscreen, centered 4:3 intro/menu media, native comic correction, automatic FOV/aspect adjustment, adaptive widescreen HUD and the verified in-game Display menu lock. These are no longer enabled or disabled through experimental flags; the original 4:3 mode retains its original geometry where a widescreen transform is unnecessary.
 
-**Alt+Tab and pause are permanent features:** once another application's focus loss is confirmed, the game latches pause at the original DirectDraw Flip boundary; a **press and release of any keyboard key after returning** resumes it; with an **already detected Sony DualShock 4**, a fresh **digital button press followed by full release** also wakes our custom PAUSED screen (not the original 3D Escape pause). The DS4 button is polled from our independent nonexclusive DirectInput device while Flip is blocked; no synthetic keyboard event reaches the game. The hint is selected when the custom pause is first drawn: **no verified/acquired DS4** shows `PRESS ANY KEY TO RESUME`; an **already detected DS4** shows `PRESS KEY OR GAMEPAD BUTTON TO RESUME`. This is a startup-device snapshot, not hotplug detection; disconnecting a controller mid-pause is not yet reflected in the displayed hint. No controller button can resume while another application is foreground, no held-before-resume button is inherited, and a keyboard key always remains a fallback. This does **not** add hotplugging or Xbox/DS2 support. The frozen game frame receives the native violet/red PAUSED banner and **60% black shading by default**, with no grid. This behavior also coordinates the game's native Bink video/music streams and its game-owned secondary DirectSound voices. The native `DIERR_NOTACQUIRED` keyboard/mouse retry is requested automatically and installed only after its verified signature check at Flip #120; desktop cursor restoration is automatic. The old unsafe DirectInput COM-vtable hook stays disabled.
+**Alt+Tab and pause are permanent features:** once another application's focus loss is confirmed, the game latches pause at the original DirectDraw Flip boundary; a **press and release of any keyboard key after returning** resumes it; with an **already detected Sony DualShock 4**, a fresh **digital button press followed by full release** also wakes our custom PAUSED screen (not the original 3D Escape pause). The DS4 button is polled from our independent nonexclusive DirectInput device while Flip is blocked; no synthetic keyboard event reaches the game. The focus-loss pause now shows **only `PAUSED`** in the **identical bottom-left, flush-left violet notification panel used by F9 screenshots**, with the original 32×32 game icon, lavender three-sided border and white bold-italic text. There is no on-screen wake instruction; keyboard and eligible selected-gamepad wake-up remain unchanged. The label contains no device-specific status, so hotplugging does not need to update visual instructions. No controller button can resume while another application is foreground, no held-before-resume button is inherited, and a keyboard key always remains a fallback. This does **not** add hotplugging or Xbox/DS2 support. The frozen game frame receives the compact F9-style **PAUSED** notification and **60% black shading by default**, with no grid. This behavior also coordinates the game's native Bink video/music streams and its game-owned secondary DirectSound voices. The native `DIERR_NOTACQUIRED` keyboard/mouse retry is requested automatically and installed only after its verified signature check at Flip #120; desktop cursor restoration is automatic. The old unsafe DirectInput COM-vtable hook stays disabled.
 
 **Windows-specific behavior:** the patch requests `DisableProcessWindowsGhosting` automatically on systems providing the API, avoiding Windows' false Ghost-window foreground transitions. This also disables Windows' normal ghost-window handling for a genuinely hung game **until the process exits**; it does not solve a real hang. Wine implementation details may differ.
 
@@ -136,7 +136,7 @@ In all cases, the original executable's SHA-256 check and per-feature native sig
 
 ### Optional PAUSED background opacity
 
-The focus-loss pause and its PAUSED banner are permanent, but **background
+The focus-loss pause and its compact PAUSED panel are permanent, but **background
 darkening may be adjusted independently**. The generated INI intentionally
 does **not** contain `PauseDimOpacity`. When omitted, it uses **60%**.
 
@@ -202,7 +202,7 @@ INI keys `PauseOnFocusLoss`, `DirectInputReacquire`,
 from the generated file does not disable these features.
 
 At the original DirectDraw Flip boundary, confirmed external focus loss
-latches pause; its native PAUSED ribbon uses the optional 60%-by-default
+latches pause; its screenshot-style PAUSED label uses the optional 60%-by-default
 shading described above. A complete keyboard press/release, or a new
 press/release of an already acquired Sony DS4 digital button after returning
 to the game, resumes our custom PAUSED screen. The gamepad wake waits for a
