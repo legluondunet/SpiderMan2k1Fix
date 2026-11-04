@@ -49,6 +49,30 @@ jobs:
       - name: Build Windows x86 DLLs (portable LLVM-MinGW MSVCRT)
         run: bash ./build-native-msvcrt.sh
 
+      - name: Build native Linux X11 helper
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libx11-dev
+          mkdir -p dist/package/SpiderMan2k1Fix/linux
+          cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 -fstack-protector-strong \
+            -o dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper \
+            linux/spiderman-focus-helper.c -lX11
+          file dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper | grep 'ELF 64-bit'
+          ldd dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper
+          test -x dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper
+
+      - name: Exercise real X11 focus changes and helper shutdown in Xvfb
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -qq xvfb xauth
+          cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 \
+            -o "$RUNNER_TEMP/test_focus_helper_runtime" \
+            linux/tests/focus_helper_runtime.c -lX11
+          xvfb-run -a -s "-screen 0 1024x768x24" \
+            "$RUNNER_TEMP/test_focus_helper_runtime" \
+            "$PWD/dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper"
+
       - name: Prepare game installation files
         run: |
           mkdir -p dist/package/SpiderMan2k1Fix
@@ -73,6 +97,7 @@ jobs:
           test -s dist/package/SpiderMan2k1Fix/README.md
           test -s dist/package/SpiderMan2k1Fix/CHANGELOG.md
           test -s dist/package/SpiderMan2k1Fix/SDL3.dll
+          test -s dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper
           # No inner archives: GitHub Actions compresses dist/package/ once.
           test -z "$(find dist/package -type f -iname '*.zip' -print -quit)"
           cmp third_party/SDL3-LICENSE.txt dist/package/SpiderMan2k1Fix/SDL3-LICENSE.txt
@@ -97,6 +122,7 @@ jobs:
               SpiderMan2k1Fix/SpiderMan2k1Fix.dll \
               SpiderMan2k1Fix/SDL3.dll \
               SpiderMan2k1Fix/SDL3-LICENSE.txt \
+              SpiderMan2k1Fix/linux/spiderman-focus-helper \
               SpiderMan2k1Fix/README.md \
               SpiderMan2k1Fix/CHANGELOG.md
           )
@@ -109,6 +135,7 @@ jobs:
               SpiderMan2k1Fix/SpiderMan2k1Fix.dll \
               SpiderMan2k1Fix/SDL3.dll \
               SpiderMan2k1Fix/SDL3-LICENSE.txt \
+              SpiderMan2k1Fix/linux/spiderman-focus-helper \
               SpiderMan2k1Fix/README.md \
               SpiderMan2k1Fix/CHANGELOG.md | sort > expected.txt
             diff -u expected.txt actual.txt

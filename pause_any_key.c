@@ -72,6 +72,9 @@ BOOL SpiderPauseAny_Begin(HWND game_hwnd) {
 }
 BOOL SpiderPauseAny_Completed(void) {
   if(!hook) return FALSE;
+  /* Never convert missing/UNKNOWN native focus into automatic wake.
+   * The game remains PAUSED; wine_focus_autostart.c may replace a dead
+   * observer while we keep the keyboard hook gated. */
   /* If focus changes again while awaiting the key release, re-arm.
    * Do not allow a stale partial press to trigger resumption later. */
   if(GetForegroundWindow()!=target ||

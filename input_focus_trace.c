@@ -12,6 +12,7 @@
 #include <string.h>
 #include <stdint.h>
 #include "input_focus_trace.h"
+#include "wine_focus_autostart.h"
 
 typedef HRESULT (WINAPI *DICreate8Fn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
 typedef HRESULT (WINAPI *DIInterfaceCreateDeviceFn)(void *,REFGUID,void **,LPUNKNOWN);
@@ -721,6 +722,16 @@ static void focus_window_transition(int foreground) {
 }
 void SpiderInputFocus_OnFlip(LONG flip_number) {
   HWND fg;LONG foreground,previous;char line[320];LONG i;
+  static LONG native_bridge_autostarted=0;
+  /* The first normal Flip is after game HWND setup and before the
+   * PAUSED focus check. No DllMain, background thread, or launcher
+   * change. On native Windows the Wine-only exports are absent. */
+  if(InterlockedCompareExchange(&native_bridge_autostarted,1,0)==0)
+    SpiderWineFocusAutostart_TryStart(focus_log);
+  SpiderWineFocusAutostart_PollReady(focus_log);
+  /* Restore the native observer after a crash/kill even outside PAUSED.
+   * Its ownership and freshness are checked by the Wine backend. */
+  SpiderWineFocusAutostart_TryRecover(focus_log);
   if(!diagnostic_active || !tracked_window) return;
   fg=GetForegroundWindow();foreground=(fg==tracked_window)?1:0;
   previous=InterlockedExchange(&last_focus_foreground,foreground);
