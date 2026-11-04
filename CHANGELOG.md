@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased — first-use SDL3 refactor PR #107 (staging; not released)
+## Unreleased — Universal SDL3 gameplay enabled by default
+
+- Promote the hardware-validated SDL3 universal keyboard bridge to the **factory default** (`ExperimentalSDL3UniversalGameplay=1`) and to the runtime fallback when the setting is absent. Both SDL3 discovery and controller setup remain enabled; old fixed per-vendor mappings remain retired.
+- Preserve an explicit `ExperimentalSDL3UniversalGameplay=0` for players who want to disable the universal bridge. Existing valid INIs are not overwritten, including earlier configurations containing `=0`.
+- Keep explicit Start selection, neutral-first input ownership, safe native DirectInput isolation, disconnected-device protection, focus-loss key release and keyboard fallback. No controller is claimed automatically.
+- The preceding PR #92 was validated on GE-Proton with Xbox 360, PS3 and DS4 hardware, including handoff and Alt+Tab. Native Windows hardware validation remains deferred.
+
+## Historical — first-use SDL3 refactor PR #107 (merged through #92, not separately released)
 
 This experimental refactor physically removes the previous Sony DS4 / Xbox 360
 hard-coded DirectInput action mapping tables, boot-time configuration overlays,
@@ -8,13 +15,13 @@ old secondary menu/3D button bridge, vendor-specific native RAM button-table
 swaps, and associated obsolete tests. SDL3's normal built-in controller
 recognition remains unchanged: a controller with no saved per-model profile
 receives generic SDL3 semantic defaults. The retail game retains its original
-Joystick settings; universal SDL3 gameplay requires an explicit opt-in and
-fresh Start ownership.
+Joystick settings; universal SDL3 gameplay now defaults ON (with explicit
+`=0` opt-out) and still requires fresh Start ownership.
 
 The old preview/RT-Swing/native-mapping options are retired for new INIs.
 Relevant source contracts now test clean first-use Xbox, PS3 neutral gating,
 legacy handoff removal, native disconnect safety, and the owned Bink Return
-release. **This work has not yet passed CI or new hardware acceptance.**
+release. **This was the pre-validation status; CI and GE-Proton hardware acceptance subsequently passed in PR #92.**
 Historical tests/claims below describe earlier staging builds, not PR #107.
 
 ### Earlier SDL3 staging integration (historical tests)
