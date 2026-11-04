@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
@@ -134,6 +135,16 @@ int main(int argc, char **argv) {
         return 2;
     if (access(game_exe, R_OK) != 0) return 2;
     if (!getenv("DISPLAY") || !*getenv("DISPLAY")) return 2;
+    /* XWayland cannot reliably observe the focus of native Wayland apps.
+     * Refuse to publish misleading GAME/OTHER evidence on a Wayland
+     * session even when DISPLAY points to a working XWayland server. */
+    {
+        const char *session = getenv("XDG_SESSION_TYPE");
+        const char *wayland_socket = getenv("WAYLAND_DISPLAY");
+        if (session && strcasecmp(session, "wayland") == 0) return 2;
+        if ((!session || !*session) && wayland_socket && *wayland_socket)
+            return 2;
+    }
 
     signal(SIGTERM, stop_now);
     signal(SIGINT, stop_now);
