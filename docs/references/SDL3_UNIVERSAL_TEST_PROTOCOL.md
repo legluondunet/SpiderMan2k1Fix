@@ -1,5 +1,12 @@
 # SDL3 universal controller — hands-on hardware test (draft PR #96)
 
+**Historical foundation/wizard protocol.** For current opt-in universal
+3D gameplay acceptance on PR #98, use the
+[one-session PS3 + DS4 combined test](SDL3_COMPACT_HARDWARE_ACCEPTANCE_20261104.md).
+Do **not** execute the separate Tests A–E below just to revalidate the
+already-tested controls; use them only to investigate a specific failure
+or to calibrate a previously unmapped controller.
+
 This protocol verifies **SDL3 normalization, raw recognition and persistent
 hardware mapping**, NOT universal 3D gameplay input. The game's original
 DirectInput and the existing DS4/Xbox integration are intentionally unchanged.
