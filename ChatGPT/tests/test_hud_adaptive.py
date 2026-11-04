@@ -92,6 +92,43 @@ def test_compass_pointer_follows_same_anchor(api):
     assert dst[0].x == pytest.approx(1635.9, abs=0.02)
 
 
+def test_compass_follows_cutscene_and_aim_positions(api):
+    # The compass moves up/left of the usual lower-right game HUD
+    # in the second 3D cinematic and while aiming. Preserve its original
+    # mirrored textures/depth signatures, not an arbitrary screen sprite.
+    left = quad(1110, 570, 1301.2, 750)
+    right = quad(1297.4, 570, 1488.7, 750, u0=0.05, u2=0.95)
+    for src in (left, right):
+        kind, dest = mapped(api, src)
+        assert kind == 2
+        for original, corrected in zip(src, dest):
+            assert corrected.x == pytest.approx(
+                1920 + (original.x - 1920) * 0.75, abs=0.02
+            )
+        check_other_coordinates_unchanged(src, dest)
+
+    pointer = quad(1205, 604, 1302, 660, z=0,
+                   rhw=26.0678, diffuse=0xFFFFFF00, u0=0, u2=0)
+    kind, dest = mapped(api, pointer, tex=(0, 0))
+    assert kind == 2
+    check_other_coordinates_unchanged(pointer, dest)
+
+
+def test_movable_compass_gate_rejects_other_screen_elements(api):
+    # Still reject HUD-like textures away from the expected right area,
+    # all 4:3 modes, wrong textures, and unrelated aiming reticle quads.
+    upper_left = quad(90, 180, 281.2, 360)
+    assert mapped(api, upper_left)[0] == 0
+    reticle = quad(610, 230, 760, 345, z=0, rhw=27.6)
+    assert mapped(api, reticle, tex=(32, 32))[0] == 0
+    wrong_uv = quad(1110, 570, 1301.2, 750, u0=0.40, u2=0.60)
+    assert mapped(api, wrong_uv)[0] == 0
+    cutscene = quad(1110, 570, 1301.2, 750)
+    assert mapped(api, cutscene, output=(1440, 1080))[0] == 0
+    cutscene[0].z = 0.25
+    assert mapped(api, cutscene)[0] == 0
+
+
 def test_instruction_panel_both_variants(api):
     variants = [
         quad(123.8, 864.0, 1173.8, 931.5,
