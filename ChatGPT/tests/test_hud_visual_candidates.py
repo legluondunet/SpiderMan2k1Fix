@@ -67,6 +67,14 @@ def test_candidate_classifier_matches_reference_screen_geometry(tmp_path):
             v[0].diffuse=0u;
             assert(SpiderHudVisual_Classify(v,4,6,0x144,1920,1080)
                    ==SPIDER_HUD_VISUAL_NONE);
+            /* Exact false-positive sprite from the level-2 pause log:
+             * this health/web HUD quad is NOT a red/green aim ring. */
+            q(v,292.5f,94.5f,345.9f,162.0f);
+            v[0].z=0.00024f;
+            v[0].rhw=19.4920f;
+            v[0].diffuse=0xFFFFFFFFu;
+            assert(SpiderHudVisual_Classify(v,4,6,0x144,1920,1080)
+                   ==SPIDER_HUD_VISUAL_NONE);
             q(v,20,125,270,310); /* player health, top-left */
             assert(SpiderHudVisual_Classify(v,4,6,0x144,1920,1080)
                    ==SPIDER_HUD_VISUAL_NONE);
