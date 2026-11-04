@@ -63,7 +63,7 @@ def test_clean_user_ini_does_not_generate_old_xbox_preview():
     assert '"ControllerXbox360Preview=0' not in src
     assert '"ControllerPS1Preview=0' not in src
     assert '"ControllerXbox360RTSwing=0' not in src
-    assert '"ExperimentalNativeJoystickMappingSwap=0' in src
+    assert '"ExperimentalNativeJoystickMappingSwap=' not in src
     assert '"ControllerProfile=Auto' not in src
 
 

@@ -126,31 +126,19 @@ def test_sdl3_context_menu_bridge_native_gating_and_edges(tmp_path):
     subprocess.run([str(exe)],check=True)
 
 
-def test_live_context_bridge_is_explicitly_opted_in_and_single_owner():
-    source=(ROOT/"gamepad_ui_profile.c").read_text()
-    ini=(ROOT/"ini_validation.h").read_text()
-    header=(ROOT/"sdl3_context_menu_bridge.h").read_text()
-    main=(ROOT/"spiderman2k1fix.c").read_text()
-    assert '"ExperimentalSDL3ContextBridge"' in ini
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3ContextBridge",1,ini)==1' in source
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1' in source
-    assert 'SpiderSDL3Probe_NativeOwnerEnabled()' in source
-    assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in source
-    assert "id==sdl3_ui_instance" in source
-    assert "spider_sdl3_context_menu_step(&sdl3_context_bridge" in source
-    assert "spider_sdl3_profile_neutral(sample)" in header
-    assert "confirm=spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,0u);" in header
-    assert "SPIDER_SDL3_CONTEXT_SKIP_VIDEO" not in header
-    assert "SPIDER_SDL3_CONTEXT_CONFIRM" not in header
-    assert "SPIDER_SDL3_CONTEXT_NEXT_STILL" not in header
-    assert "SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE" not in header
-    assert 'begin_scancode(0x1Cu,"SDL3 physical Cross/A Confirm/Skip")' in source
-    assert 'back=spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,1u);' in header
-    assert "SPIDER_SDL3_CONTEXT_BACK" not in header
-    assert 'begin_scancode(0x01u,"SDL3 physical Circle/B Back/Cancel")' in source
-    assert "sdl3_context_bridge_requested && SpiderSDL3Probe_NativeOwnerEnabled()" in source
-    assert "bink_active || (menu_2d && !gameplay_3d)" in source
-    assert "spider_sdl3_context_menu_reset(&sdl3_context_bridge);" in source
-    assert "SpiderSDL3Probe_OnFlip(count,game_hwnd);" in main
-    assert "SpiderGamepadUI_OnFlip(game_hwnd," in main
-    assert main.index("SpiderSDL3Probe_OnFlip(count,game_hwnd);") < main.index("SpiderGamepadUI_OnFlip(game_hwnd,")
+def test_legacy_context_bridge_is_not_a_second_input_owner():
+    """The original SDL3 context policy is portable; live control comes
+    exclusively from the universal SDL3 profile/menu adapter."""
+    ui=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
+    universal=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
+    assert "spider_sdl3_context_menu_step(" not in ui
+    assert "begin_scancode(" not in ui
+    assert "SpiderSDL3Probe_SelectedMappedSample(" in universal
+    assert "SPIDER_UNIVERSAL_CTX_MENU" in universal
+    assert "SPIDER_UNIVERSAL_CTX_BINK" in universal or "SPIDER_UNIVERSAL_CTX_MOVIE" in universal
+    assert "spider_sdl3_universal_neutral(&sample)" in universal
+    assert "SpiderSDL3Probe_OnFlip(count,game_hwnd);" in core
+    assert "SpiderSDL3Universal_OnFlip(game_hwnd," in core
+    assert "SDL3-UNIVERSAL: START selected generic" in probe

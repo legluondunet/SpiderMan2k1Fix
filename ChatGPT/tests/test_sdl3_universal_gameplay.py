@@ -97,7 +97,7 @@ def test_universal_runtime_is_opt_in_and_mutually_exclusive():
     assert 'ExperimentalSDL3UniversalGameplay=0' in cfg
     assert '"ExperimentalSDL3UniversalGameplay"' in ini
     assert '"ExperimentalSDL3UniversalGameplay",0,ini)==1' in backend
-    assert '"ExperimentalSDL3UniversalGameplay",0,ini)!=1' in live
+    assert "old fixed native action-map backend retired" in live
     assert 'sdl3_universal_gameplay.c' in build
     assert '#include "sdl3_universal_gameplay.h"' in game
     assert 'SpiderSDL3Universal_BeforeUI(game_hwnd);' in game
@@ -106,7 +106,8 @@ def test_universal_runtime_is_opt_in_and_mutually_exclusive():
         "SpiderGamepadUI_OnFlip(game_hwnd")
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in game
     assert "SpiderSDL3Universal_Enabled()" in native
-    assert "SpiderSDL3Universal_Enabled()" in ui
+    assert "begin_scancode(" not in ui
+    assert "sdl3_generic_ui_on_flip(" not in ui
     # PR #96 retains its validated SDL3 mapped-device panel. The raw
     # unmapped GUID wizard from #94 is deliberately NOT merged here.
     assert "SpiderSDL3Probe_GenericSelectedSample" in probe
@@ -281,7 +282,7 @@ def test_integrated_panel_preserved_and_generic_owner_is_explicit_only():
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in game
     assert "SpiderSDL3Universal_Enabled()" in (
         ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
-    assert "spider_sdl3_generic_ui_reset(&generic_ui);" in (
+    assert "sdl3_generic_ui_on_flip(" not in (
         ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
 
 
