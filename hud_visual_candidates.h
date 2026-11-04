@@ -64,6 +64,22 @@ static inline int SpiderHudVisual_Classify(
         height <= (float)screen_h * 0.42f)
         return SPIDER_HUD_VISUAL_PAUSE_RIBBON;
 
+    /* The first GE-Proton 2026-11-04 read-only samples were polluted
+     * by a confirmed untextured ESC motif layer: alpha-0x80 dark
+     * red/teal quads at Z=0.00146 RHW=7.8952; these are NOT the
+     * green/red aiming rings. Similarly an invisible untextured quad
+     * with diffuse=0 and RHW=27.6 is not a visible reticle.
+     * Exclude just the measured signatures, not unknown gamepads/UI. */
+    if ((v[0].diffuse == 0x80208686u ||
+         v[0].diffuse == 0x80041010u) &&
+        v[0].z > 0.00142f && v[0].z < 0.00150f &&
+        v[0].rhw > 7.84f && v[0].rhw < 7.96f)
+        return SPIDER_HUD_VISUAL_NONE;
+    if (v[0].diffuse == 0u &&
+        v[0].z > -0.00005f && v[0].z < 0.00005f &&
+        v[0].rhw > 27.5f && v[0].rhw < 27.7f)
+        return SPIDER_HUD_VISUAL_NONE;
+
     /* On-screen red/green aiming rings in provided 1920x1080 F9 frames.
      * Broad enough to catch different sprite/depth variants, yet rejects
      * full-screen surfaces, corner player HUD and most tiny particles.
