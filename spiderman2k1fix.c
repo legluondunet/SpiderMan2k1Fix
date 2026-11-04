@@ -3508,31 +3508,45 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
       log_line("DISPLAY-NATIVE: WARNING game HWND unavailable before virtual config bootstrap; fallback to current primary monitor until SetCooperativeLevel");
     }
   }
-  /* Preview opt-in only: acquire an unambiguous Sony DS4 with the
-   * real game HWND before the original config loader consumes Spidey.cfg.
-   * A failed preflight leaves the previous working UI bridge untouched. */
+  /* Exactly ONE gameplay mapping authority:
+   * Universal SDL3 uses the saved per-VID:PID semantic profile and
+   * guarded keyboard adapter. Legacy fixed Sony/Xbox RAM overlays and
+   * DirectInput readonly viewers must NEVER be prepared at bootstrap in
+   * this mode: even a manually enabled ControllerXbox360Preview=1 must
+   * not preempt the universal profile before the first game Flip.
+   * Keep the original config bootstrap and keyboard defaults for both
+   * modes. The legacy startup path below remains available ONLY when
+   * universal gameplay is OFF, preserving existing stable installs. */
   {
-    HWND early=spider_find_game_window_before_ddraw();
+    int universal=SpiderSDL3Universal_Enabled();
     int mapped=0,xbox_mapped=0;
-    if(early && SpiderGamepadUI_PreparePS1(early))
-      mapped=SpiderCfg_EnablePS1Preview();
-    if(early && SpiderGamepadUI_PrepareXbox360(early))
-      xbox_mapped=SpiderCfg_EnableXbox360Preview();
+    HWND early=NULL;
+    if(!universal) {
+      early=spider_find_game_window_before_ddraw();
+      if(early && SpiderGamepadUI_PreparePS1(early))
+        mapped=SpiderCfg_EnablePS1Preview();
+      if(early && SpiderGamepadUI_PrepareXbox360(early))
+        xbox_mapped=SpiderCfg_EnableXbox360Preview();
+    }
     SpiderCfg_BootstrapGameRead();
     SpiderCfg_InstallModernKeyboardDefaults();
-    SpiderGamepadUI_ArmPS1ReadOnly();
-    SpiderGamepadUI_ArmXbox360ReadOnly();
-    if(mapped) {
-      if(SpiderCfg_PS1BootstrapLoaded())
-        SpiderGamepadUI_ActivatePS1();
-      else
-        SpiderCfg_CancelPS1Preview();
-    }
-    if(xbox_mapped) {
-      if(SpiderCfg_Xbox360BootstrapLoaded())
-        SpiderGamepadUI_ActivateXbox360();
-      else
-        SpiderCfg_CancelXbox360Preview();
+    if(universal)
+      log_line("SDL3-UNIVERSAL: legacy Sony/Xbox fixed bootstrap mappings and readonly viewer SKIPPED; native game config and keyboard defaults preserved");
+    else {
+      SpiderGamepadUI_ArmPS1ReadOnly();
+      SpiderGamepadUI_ArmXbox360ReadOnly();
+      if(mapped) {
+        if(SpiderCfg_PS1BootstrapLoaded())
+          SpiderGamepadUI_ActivatePS1();
+        else
+          SpiderCfg_CancelPS1Preview();
+      }
+      if(xbox_mapped) {
+        if(SpiderCfg_Xbox360BootstrapLoaded())
+          SpiderGamepadUI_ActivateXbox360();
+        else
+          SpiderCfg_CancelXbox360Preview();
+      }
     }
   }
   HRESULT hr=original_create(guid,out,iid,outer);
