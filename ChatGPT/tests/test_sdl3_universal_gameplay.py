@@ -576,6 +576,47 @@ def test_universal_mapped_ps4_uses_generic_identity_without_native_rebind():
     assert "if(SpiderSDL3Universal_Enabled())return;" in native
 
 
+def test_native_x11_focus_disarms_universal_input_before_paused_even_when_wine_hwnd_stale():
+    core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
+    backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    header=(ROOT/"sdl3_universal_gameplay.h").read_text(encoding="utf-8")
+
+    pause=core.split("static void pause_at_flip_if_background(void) {",1)[1].split(
+        "static HRESULT WINAPI hooked_flip(",1)[0]
+    assert "SpiderSDL3Universal_SetHostFocusBlocked(" in header
+    assert 'pause_x11_bridge_enabled() && x11_state!=1);' in pause
+    # The host focus decision must happen before the blocking PAUSED
+    # loop, not in SDL3_OnFlip (which cannot run while PAUSED).
+    assert pause.index("SpiderSDL3Universal_SetHostFocusBlocked(") < (
+        pause.index("if(InterlockedCompareExchange(&pause_latched,0,0)!=1)"))
+    assert pause.index("x11_state=pause_x11_bridge_state();") < (
+        pause.index("SpiderSDL3Universal_SetHostFocusBlocked("))
+
+    setter=backend.split("void SpiderSDL3Universal_SetHostFocusBlocked(",1)[1].split(
+        "static int suspend_original(",1)[0]
+    assert "game_thread!=GetCurrentThreadId()" in setter
+    assert "if(blocked==native_host_focus_blocked)return;" in setter
+    assert 'restore_original("focus or window lost");' in setter
+    assert 'FOCUS-X11 host focus blocked; releasing injected 3D keys' in setter
+    assert "native_host_focus_blocked=blocked;" in setter
+
+    before_ui=backend.split("void SpiderSDL3Universal_BeforeUI(",1)[1].split(
+        "static int binding_held(",1)[0]
+    assert "if(native_host_focus_blocked ||" in before_ui
+    onflip=backend.split("void SpiderSDL3Universal_OnFlip(",1)[1]
+    assert "if(native_host_focus_blocked) {" in onflip
+    assert onflip.index("if(native_host_focus_blocked) {") < (
+        onflip.index("SpiderSDL3Probe_SelectedMappedSample("))
+    assert onflip.index("if(native_host_focus_blocked) {") < (
+        onflip.index("if(!suspend_original())"))
+    # The existing movement replay is still wired after a real manual
+    # resume and has not been replaced with an automatic unpause.
+    assert "if(focus_release.frames_remaining) {" in onflip
+    assert "if(focus_dir.phase) {" in onflip
+    assert "SpiderPauseAny_Completed()" in pause
+    assert "SpiderFocusDSound_Resume();" in pause
+
+
 def test_focus_loss_reasserts_held_arrow_keyups_after_foreground_reacquire(tmp_path):
     """Real PS3/GE-Proton11-12 regression: DIK_RIGHT 0xCD was down
     immediately before ALT+TAB and Spider-Man kept running on resume.
