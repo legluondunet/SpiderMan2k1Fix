@@ -73,6 +73,8 @@ static inline int SpiderHudAimReticle_Transform(
         if(src[i].y>b)b=src[i].y;
     }
     width=r-l;height=b-t;
+    if(!(width>0.0f && height>0.0f))
+        return SPIDER_HUD_AIM_NONE;
     centerx=(l+r)*0.5f;centery=(t+b)*0.5f;
     expected_ratio=1.0f/SpiderHudAim_AspectFactor(screen_w,screen_h);
     ratio=width/height;
