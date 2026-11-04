@@ -196,6 +196,48 @@ version. **Neither is a PR #109 acceptance criterion.**
 in-game screenshot**. Automated tests can assert the calculated
 coordinate mapping, but not the resulting pixel appearance.
 
+## Fourth validation: aiming compass PASS, red/green reticles FAIL
+
+The maintainer has **visually accepted the compass in active aiming** as
+well as in 3D cinematic #2 (2026-11-04), and **confirmed both red and green
+aiming circles remain stretched**. Three original lossless 1920x1080 PNGs
+were supplied:
+
+| Image | Ring color | Approx. colored outline | Width / height |
+| --- | --- | --- | --- |
+| Dreamcast `Capture d’écran_2026-11-01_10-48-50(1).png` | green | x=877..1039, y=556..717 → 163×162 | 1.006 |
+| Wine `scrn0029.png` | green | x=932..1025, y=348..417 → 94×70 | 1.343 |
+| Wine `scrn0028.png` | red | x=569..721, y=682..794 → 153×113 | 1.354 |
+
+The Dreamcast image and the Wine images are **different game views**.
+The sizes and scene positions are not meant to match each other. The
+**circle aspect ratio**, however, should remain 1:1 regardless of each
+reticle's size or on-screen location.
+
+A local source-agnostic geometry function
+`SpiderHudAim_MapX(x, object_center_x, width, height)` predicts the
+inverse of the 4:3→16:9 stretch: a 0.75 width factor around the ring's
+**own center**, not the screen center. It predicts:
+
+- Green: 94×70 → 70.5×70, ratio 1.007
+- Red: 153×113 → 114.75×113, ratio 1.015
+
+This geometry rule is host-tested for 4:3, 16:9, and 16:10, but **it is
+NOT yet wired into a live DrawPrimitive correction**. The screenshot
+alone does not establish the source caller RVA, FVF/primitive type,
+texture, UV, Z/RHW or game stage. Other world quads must never be
+rescaled by appearance alone.
+
+The read-only `HUD-VISUAL: AIM` candidate sampler now includes the
+smaller 94×70 green reticle, while still excluding the top-left
+health/web icon and previously measured native Pause motif false
+positives. The next requirement is one **matching Log=1 journal from
+the same green/red test run** (ideally the run that produced scrn0028
+and scrn0029). Use those actual D3D7 samples to identify both ring
+variants and stage a strictly gated live correction inside PR #109.
+If the log has no representative AIM samples, improve the targeted
+probe before adding an unsafe graphics hook.
+
 ## Bounded read-only diagnostic
 
 When `[Debug] Log=1`, only **uncorrected** original 4-vertex D3D7
