@@ -150,11 +150,13 @@ def test_post_rebind_menu_input_breadcrumbs_are_passive_and_bounded():
     assert "native_thread!=GetCurrentThreadId()" in SOURCE
     assert "SPIDER_NATIVE_FORCE_FEEDBACK 0x006B7A68u" in SOURCE
     assert "NATIVE-RECONNECT: POST-REBIND INPUT" in SOURCE
-    assert 'SpiderNativeReconnect_LogSyntheticMenuKey(scan,"before KEYDOWN");' in ui
-    assert 'SpiderNativeReconnect_LogSyntheticMenuKey(scan,"after KEYDOWN");' in ui
-    assert 'SpiderNativeReconnect_LogSyntheticMenuKey(active_scan,"before KEYUP");' in ui
-    assert 'SpiderNativeReconnect_LogSyntheticMenuKey(active_scan,"after KEYUP");' in ui
-    assert ui.index('SpiderNativeReconnect_LogSyntheticMenuKey(scan,"before KEYDOWN");') < ui.index('if(SendInput(1,&in,sizeof(in))!=1) {', ui.index('static void begin_scancode'))
+    # The pre-SDL3 sender is gone; only universal SDL3 synthesizes keys.
+    assert "SpiderNativeReconnect_LogSyntheticMenuKey(" not in ui
+    assert "begin_scancode(" not in ui
+    assert "SendInput(" not in ui
+    adapter=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    assert "static int send_scan(" in adapter
+    assert "SDL3-UNIVERSAL: WARNING synthetic key release failed" in adapter
     assert "IDirectInputDevice8_GetDeviceData" not in SOURCE.split("void SpiderNativeReconnect_LogSyntheticMenuKey(",1)[1].split("void SpiderNativeReconnect_Init(",1)[0]
     assert "IDirectInputDevice8_Release" not in SOURCE.split("void SpiderNativeReconnect_LogSyntheticMenuKey(",1)[1].split("void SpiderNativeReconnect_Init(",1)[0]
 
