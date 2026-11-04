@@ -26,4 +26,9 @@ void SpiderF9Toast_SetGameWindow(HWND hwnd,void (*logger)(const char*));
  * logs can diagnose static scenes with no Flip without altering game input. */
 void SpiderF9Toast_GetDisplayStatus(DWORD *published,DWORD *displayed);
 
+/* Draw ONLY the word PAUSED using the exact screenshot-toast panel:
+ * flush-left, bottom aligned, lavender 3-edge frame and original EXE
+ * icon. The caller owns the GDI DC and frozen DirectDraw frame. */
+BOOL SpiderF9Toast_DrawPausedPanel(HDC dc,DWORD width,DWORD height);
+
 #endif

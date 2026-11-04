@@ -10,10 +10,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <wchar.h>
+#include <limits.h> /* UINT_MAX from failed ExtractIconExW */
+#include <shellapi.h> /* original game's 32x32 icon via ExtractIconExW */
 #include "f9_toast.h"
 
 #define SPIDER_F9_TOAST_MS 2000u
-#define SPIDER_F9_TOAST_MAX_LINES 32
 static SRWLOCK toast_mutex=SRWLOCK_INIT;
 static WCHAR toast_path[MAX_PATH];
 static BOOL toast_success=TRUE;
@@ -96,49 +97,18 @@ void SpiderF9Toast_PublishError(const WCHAR *reason) {
 static int toast_max(int a,int b) {return a>b?a:b;}
 static int toast_min(int a,int b) {return a<b?a:b;}
 
-/* Long path components are broken at a directory separator if possible;
- * otherwise use the last character that fits. Every UTF-16 code unit is
- * preserved; unlike DT_END_ELLIPSIS, no part of the path is hidden. */
-static int toast_wrap_path(HDC dc,const WCHAR *text,int width,
-                           int *starts,int *lengths) {
-  int offset=0,lines=0,total=(int)wcslen(text);
-  while(offset<total && lines<SPIDER_F9_TOAST_MAX_LINES) {
-    int lo=1,hi=total-offset,fit=1,cut,i;
-    SIZE measured;
-    while(lo<=hi) {
-      int mid=lo+(hi-lo)/2;
-      if(GetTextExtentPoint32W(dc,text+offset,mid,&measured) &&
-         measured.cx<=width) {fit=mid;lo=mid+1;}
-      else hi=mid-1;
-    }
-    cut=fit;
-    if(offset+cut<total && cut>=6) {
-      for(i=cut-1;i>cut/2;i--) {
-        if(text[offset+i]==L'\\') {cut=i+1;break;}
-      }
-    }
-    starts[lines]=offset;
-    lengths[lines]=cut;
-    offset+=cut;
-    ++lines;
-  }
-  return offset==total?lines:0;
-}
-
-
-/* Same native GDI AlphaBlend technique as the ESC pause ribbon: tint only a
- * rounded region on the distinct DirectDraw staging surface. The rendered
- * scene behind the notification remains visible and F9's original backbuffer
- * is never changed. */
+/* Same GDI AlphaBlend technique as the ESC pause ribbon, now with a
+ * rectangular blue-violet panel flush to the LEFT edge of the screen.
+ * AlphaBlend uses panel bounds directly: no rounded corners or left rim.
+ * Drawing only touches the temporary presentation surface; PNG pixels
+ * and the original DirectDraw backbuffer are never modified. */
 #define SPIDER_F9_PANEL_ALPHA 165u /* ~65% opaque; 35% scene visible. */
 static BOOL toast_draw_translucent_panel(HDC dc,const RECT *panel) {
   const BLENDFUNCTION blend={AC_SRC_OVER,0,SPIDER_F9_PANEL_ALPHA,0};
   HDC tint=NULL;
   HBITMAP pixel=NULL,old_pixel=NULL;
   HBRUSH color=NULL;
-  HRGN rounded=NULL;
   RECT dot={0,0,1,1};
-  int saved=0;
   BOOL ok=FALSE;
   if(!dc || !panel || panel->right<=panel->left ||
      panel->bottom<=panel->top)return FALSE;
@@ -146,117 +116,145 @@ static BOOL toast_draw_translucent_panel(HDC dc,const RECT *panel) {
   if(!tint)goto done;
   pixel=CreateCompatibleBitmap(dc,1,1);
   color=CreateSolidBrush(RGB(50,50,160));
-  rounded=CreateRoundRectRgn(panel->left,panel->top,panel->right,
-                             panel->bottom,8,8);
-  if(!pixel || !color || !rounded)goto done;
+  if(!pixel || !color)goto done;
   old_pixel=(HBITMAP)SelectObject(tint,pixel);
   if(!old_pixel || old_pixel==(HBITMAP)HGDI_ERROR) {
     old_pixel=NULL;
     goto done;
   }
   if(!FillRect(tint,&dot,color))goto done;
-  saved=SaveDC(dc);
-  if(!saved)goto done;
-  if(ExtSelectClipRgn(dc,rounded,RGN_AND)!=ERROR)
-    ok=AlphaBlend(dc,panel->left,panel->top,
-                  panel->right-panel->left,panel->bottom-panel->top,
-                  tint,0,0,1,1,blend)!=FALSE;
-  RestoreDC(dc,saved);
+  ok=AlphaBlend(dc,panel->left,panel->top,
+                panel->right-panel->left,panel->bottom-panel->top,
+                tint,0,0,1,1,blend)!=FALSE;
 done:
   if(old_pixel)SelectObject(tint,old_pixel);
-  if(rounded)DeleteObject(rounded);
   if(color)DeleteObject(color);
   if(pixel)DeleteObject(pixel);
   if(tint)DeleteDC(tint);
   return ok;
 }
 
-static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,BOOL success) {
-  static const WCHAR saved_heading[]=L"Screenshot saved to:";
-  static const WCHAR error_heading[]=L"Screenshot failed:";
-  const WCHAR *heading=success?saved_heading:error_heading;
-  int font_px,pad,step,max_w,max_path_w,box_w,box_h;
-  int starts[SPIDER_F9_TOAST_MAX_LINES],lengths[SPIDER_F9_TOAST_MAX_LINES];
-  int lines,path_len,x,y,i;
-  HFONT font,old_font;
-  HBRUSH brush;
-  HPEN border,old_pen;
-  HGDIOBJ old_brush;
-  SIZE heading_size,path_size;
+/* Use the game's authentic 32x32 LARGE HICON, not the tiny 16x16
+ * version scaled up. ExtractIconExW reads the first embedded EXE icon.
+ * INIT_ONCE safely caches it across normal Flip and comic-popup worker.
+ * Missing/corrupt icon remains a harmless text-only notification. */
+#define SPIDER_F9_EXE_ICON_SIZE 32
+static INIT_ONCE toast_icon_once=INIT_ONCE_STATIC_INIT;
+static HICON toast_big_exe_icon=NULL;
+static BOOL CALLBACK toast_init_original_icon(PINIT_ONCE once,
+                                               PVOID param,PVOID *context) {
+  WCHAR exe[MAX_PATH];
+  DWORD len;
+  HICON big=NULL;
+  UINT extracted;
+  (void)once;(void)param;(void)context;
+  len=GetModuleFileNameW(NULL,exe,MAX_PATH);
+  if(!len || len>=MAX_PATH)return TRUE;
+  extracted=ExtractIconExW(exe,0,&big,NULL,1);
+  if(extracted>0 && extracted!=UINT_MAX && big)
+    toast_big_exe_icon=big;
+  else if(big)DestroyIcon(big);
+  return TRUE;
+}
+static HICON toast_original_big_icon(void) {
+  InitOnceExecuteOnce(&toast_icon_once,toast_init_original_icon,NULL,NULL);
+  return toast_big_exe_icon;
+}
+
+/* A compact single-line confirmation in the focus-pause visual language.
+ * The FULL absolute filename remains stored and validated in toast_path
+ * and in PNG logs; it is deliberately NOT rendered onscreen.
+ * Both normal Flip and comic no-Flip popup share this exact painter. */
+/* Reuse the *exact* F9 notification painter for a frozen focus pause:
+ * the only difference is the label. A third status is never published
+ * by PNG workers, which continue passing BOOL success (0 or 1). */
+enum { SPIDER_F9_LABEL_FAILED=0, SPIDER_F9_LABEL_SAVED=1,
+       SPIDER_F9_LABEL_PAUSED=2 };
+static BOOL toast_draw_dc(HDC dc,DWORD w,DWORD h,const WCHAR *path,int kind) {
+  static const WCHAR saved_heading[]=L"SCREENSHOT SAVED";
+  static const WCHAR error_heading[]=L"SCREENSHOT FAILED";
+  static const WCHAR paused_heading[]=L"PAUSED";
+  const WCHAR *heading=kind==SPIDER_F9_LABEL_PAUSED?paused_heading:
+    (kind==SPIDER_F9_LABEL_SAVED?saved_heading:error_heading);
+  int heading_px,pad,icon_px,icon_gap,box_w,box_h,text_x,x,y,saved_dc=0;
+  int heading_len,heading_y;
+  HICON game_icon=NULL;
+  HFONT heading_font=NULL,old_font=NULL;
+  HBRUSH border=NULL;
+  SIZE heading_size={0,0};
   RECT panel;
-  int old_mode;
-  COLORREF old_color;
   BOOL ok=FALSE;
-  if(!dc || !path || w<320 || h<240 || w>8192 || h>8192)return FALSE;
-  font_px=toast_min(19,toast_max(12,(int)h/75));
-  pad=toast_max(9,font_px/2+3);
-  step=font_px+6;
-  font=CreateFontW(-font_px,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,
-                   DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
-                   CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Segoe UI");
-  if(!font)return FALSE;
-  old_font=(HFONT)SelectObject(dc,font);
-  if(!old_font || old_font==HGDI_ERROR)goto font_done;
-  memset(&heading_size,0,sizeof(heading_size));
-  memset(&path_size,0,sizeof(path_size));
-  path_len=(int)wcslen(path);
-  if(path_len==0 || !GetTextExtentPoint32W(dc,heading,
-       (int)wcslen(heading),&heading_size) ||
-     !GetTextExtentPoint32W(dc,path,path_len,&path_size))goto restore_font;
-  max_w=toast_min((int)w-24,(int)((w*55u)/100u));
-  if(max_w<=2*pad+30)goto restore_font;
-  box_w=toast_min(max_w,toast_max(heading_size.cx,path_size.cx)+2*pad);
-  max_path_w=box_w-2*pad;
-  lines=toast_wrap_path(dc,path,max_path_w,starts,lengths);
-  if(lines<1)goto restore_font;
-  box_h=(lines+1)*step+2*pad+3;
-  x=toast_max(12,(int)w/75);
+  if(!dc || !path || !path[0] ||
+     w<320 || h<240 || w>8192 || h>8192)return FALSE;
+  heading_len=(int)wcslen(heading);
+  heading_px=toast_min(29,toast_max(16,(int)h/43));
+  pad=toast_max(12,heading_px/2+2);
+  game_icon=toast_original_big_icon();
+  icon_px=game_icon?SPIDER_F9_EXE_ICON_SIZE:0;
+  icon_gap=game_icon?toast_max(9,heading_px/3):0;
+  heading_font=CreateFontW(-heading_px,0,0,0,FW_HEAVY,TRUE,FALSE,FALSE,
+    DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,
+    ANTIALIASED_QUALITY,DEFAULT_PITCH|FF_SWISS,L"Arial Black");
+  if(!heading_font)goto done;
+  saved_dc=SaveDC(dc);
+  if(!saved_dc)goto done;
+  SetBkMode(dc,TRANSPARENT);
+  old_font=(HFONT)SelectObject(dc,heading_font);
+  if(!old_font || old_font==HGDI_ERROR)goto done;
+  if(!GetTextExtentPoint32W(dc,heading,heading_len,&heading_size))
+    goto done;
+  box_w=2*pad+icon_px+icon_gap+heading_size.cx+4;
+  if(box_w>(int)w-24)goto done; /* Never truncate the success heading. */
+  box_h=2*pad+toast_max(icon_px,heading_size.cy)+4;
+  x=0; /* Flush left edge: the banner is attached to the screen. */
   y=(int)h-toast_max(16,(int)h/50)-box_h;
-  if(y<0)goto restore_font;
+  if(y<0 || x+box_w>(int)w-12)goto done;
   panel.left=x;panel.top=y;panel.right=x+box_w;panel.bottom=y+box_h;
-  /* Native ESC palette, transparent blue-violet fill and subtle lavender
-   * outline. Paint only on the offscreen composed frame. */
-  if(!toast_draw_translucent_panel(dc,&panel))goto restore_font;
-  brush=(HBRUSH)GetStockObject(HOLLOW_BRUSH);
-  border=CreatePen(PS_SOLID,1,RGB(169,148,251));
-  if(!brush || !border) {
-    if(border)DeleteObject(border);
-    goto restore_font;
+  if(!toast_draw_translucent_panel(dc,&panel))goto done;
+  /* One-pixel outline on THREE sides only: top, right, bottom.
+   * Never draw a left border against the screen edge, and do not add
+   * ornamental inset stripes or rounded corners. FillRect yields exact
+   * one-pixel coverage without GDI LineTo endpoint ambiguity. */
+  border=CreateSolidBrush(RGB(169,148,251));
+  if(!border)goto done;
+  {
+    RECT top={panel.left,panel.top,panel.right,panel.top+1};
+    RECT right={panel.right-1,panel.top+1,panel.right,panel.bottom-1};
+    RECT bottom={panel.left,panel.bottom-1,panel.right,panel.bottom};
+    if(!FillRect(dc,&top,border) || !FillRect(dc,&right,border) ||
+       !FillRect(dc,&bottom,border))goto done;
   }
-  old_brush=SelectObject(dc,brush);
-  old_pen=(HPEN)SelectObject(dc,border);
-  if(old_brush && old_brush!=HGDI_ERROR && old_pen &&
-     old_pen!=HGDI_ERROR) {
-    HBRUSH rim=CreateSolidBrush(RGB(231,220,255));
-    RoundRect(dc,panel.left,panel.top,panel.right,panel.bottom,8,8);
-    if(rim) {
-      RECT top={panel.left+3,panel.top+3,panel.right-3,panel.top+4};
-      RECT bottom={panel.left+3,panel.bottom-4,panel.right-3,panel.bottom-3};
-      FillRect(dc,&top,rim);
-      FillRect(dc,&bottom,rim);
-      DeleteObject(rim);
+  text_x=x+pad+icon_px+icon_gap;
+  heading_y=y+(box_h-heading_size.cy)/2;
+  if(game_icon) {
+    /* Native 32x32 big icon; do not enlarge the 16x16 icon bitmap. */
+    int icon_y=y+(box_h-icon_px)/2;
+    if(!DrawIconEx(dc,x+pad,icon_y,game_icon,
+                   icon_px,icon_px,0,NULL,DI_NORMAL)) {
+      if(toast_logger)
+        toast_logger("F9-TOAST: DrawIconEx native large icon unavailable; text kept");
     }
-    old_mode=SetBkMode(dc,TRANSPARENT);
-    old_color=GetTextColor(dc);
-    SetTextColor(dc,success?RGB(240,47,69):RGB(255,120,120));
-    TextOutW(dc,x+pad,y+pad,heading,
-             (int)wcslen(heading));
-    SetTextColor(dc,RGB(245,240,255));
-    for(i=0;i<lines;i++)
-      TextOutW(dc,x+pad,y+pad+(i+1)*step,
-               path+starts[i],lengths[i]);
-    SetTextColor(dc,old_color);
-    SetBkMode(dc,old_mode);
-    ok=TRUE;
   }
-  if(old_pen && old_pen!=HGDI_ERROR)SelectObject(dc,old_pen);
-  if(old_brush && old_brush!=HGDI_ERROR)SelectObject(dc,old_brush);
-  DeleteObject(border);
-restore_font:
-  SelectObject(dc,old_font);
-font_done:
-  DeleteObject(font);
+  SelectObject(dc,heading_font);
+  /* Outline/shadow matches the game's PAUSED and menu lettering. */
+  SetTextColor(dc,RGB(7,4,15));
+  TextOutW(dc,text_x+1,heading_y+1,heading,heading_len);
+  TextOutW(dc,text_x-1,heading_y,heading,heading_len);
+  SetTextColor(dc,RGB(245,240,255)); /* White for saved and failed. */
+  if(!TextOutW(dc,text_x,heading_y,heading,heading_len))goto done;
+  ok=TRUE;
+done:
+  if(saved_dc)RestoreDC(dc,saved_dc);
+  if(border)DeleteObject(border);
+  if(heading_font)DeleteObject(heading_font);
   return ok;
+}
+
+/* The focus pause holds the original frozen frame and uses the very same
+ * bottom-left lavender panel, real EXE icon and Arial Black text as F9.
+ * No window, focus change, SDL input or screenshot publication occurs. */
+BOOL SpiderF9Toast_DrawPausedPanel(HDC dc,DWORD width,DWORD height) {
+  return toast_draw_dc(dc,width,height,L"PAUSED",SPIDER_F9_LABEL_PAUSED);
 }
 
 /* Compose BEFORE presentation onto a temporary DirectDraw offscreen

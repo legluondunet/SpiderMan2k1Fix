@@ -25,6 +25,7 @@
 #include "fov_aspect.h"
 #include "fov_aspect_win.h"
 #include "input_focus_trace.h"
+#include "wine_focus_autostart.h"
 #include "gamepad_ui_profile.h"
 #include "input_notacquired_retry.h"
 #include "alt_latch_recovery.h"
@@ -33,6 +34,7 @@
 #include "sdl3_gamepad_probe.h"
 #include "sdl3_gameplay_plan_probe.h"
 #include "sdl3_gameplay_live.h"
+#include "sdl3_universal_gameplay.h"
 #include "pause_any_key.h"
 #include "pause_surface.h"
 #include "focus_media_pause.h"
@@ -55,12 +57,23 @@ static const BYTE expected_sha256[32] = {
   0x2a,0x05,0x8f,0xf0,0x74,0x68,0x9d,0xea
 };
 static int debug_log_enabled=0;
+/* Strictly opt-in: timestamp ALL log lines with a local wall-clock aligned
+ * to xprop/date on the host. Add sparse Blt/Flip heartbeats for comparison.
+ * This flag never changes game state, focus, or pause timing. */
+static int focus_timeline_enabled=0;
 /* Load once at startup, not on every drawing/logging call. */
 static void debug_log_load_setting(void) {
   char path[MAX_PATH];
   debug_log_enabled=0;
   if(!spider_path_ini_a(path,sizeof(path)))return;
   debug_log_enabled=(GetPrivateProfileIntA("Debug","Log",0,path)==1);
+  focus_timeline_enabled=0;
+  if(debug_log_enabled) {
+    char opt[3]={0};
+    DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_FOCUS_TIMELINE",
+                                     opt,sizeof(opt));
+    focus_timeline_enabled=(n==1 && opt[0]=='1');
+  }
 }
 static void log_line(const char *s) {
   static char path[MAX_PATH];
@@ -71,7 +84,20 @@ static void log_line(const char *s) {
     if(!spider_path_log_a(path,sizeof(path)))return;
     resolved=1;
   }
-  f=fopen(path,"a"); if(f) { fprintf(f,"%s\n",s); fclose(f); }
+  f=fopen(path,"a");
+  if(f) {
+    if(focus_timeline_enabled) {
+      SYSTEMTIME st;
+      GetLocalTime(&st);
+      fprintf(f,"[FOCUS-CLOCK %04u-%02u-%02u %02u:%02u:%02u.%03u local tick-ms=%lu] %s\n",
+        (unsigned)st.wYear,(unsigned)st.wMonth,(unsigned)st.wDay,
+        (unsigned)st.wHour,(unsigned)st.wMinute,(unsigned)st.wSecond,
+        (unsigned)st.wMilliseconds,(unsigned long)GetTickCount(),s);
+    } else {
+      fprintf(f,"%s\n",s);
+    }
+    fclose(f);
+  }
 }
 /* Windows creates a class="Ghost" surrogate after several seconds without
  * normal window-message retrieval. Our focus guard can then mistake that
@@ -1715,6 +1741,47 @@ static void borderless_intro_fill_black_bars(void *surface,const RECT *image) {
     }
   }
 }
+/* Log bounded, read-only presentation heartbeats independently on Blt and
+ * Flip, with local wall-clock timestamps supplied by log_line(). During
+ * 3D cinematic stalls, these samples show whether only Flip stops or
+ * whether both original DirectDraw callbacks stop. The source/destination
+ * surfaces are NEVER queried, locked or modified here.
+ *
+ * Last-sample fields are atomic: Wine may invoke Blt on a different
+ * thread from Flip. This observational probe is OFF by default. */
+static void focus_timeline_pulse(int is_flip,LONG seq,void *surface) {
+  static volatile LONG last_blt_call=0,last_flip_call=0;
+  static volatile LONG last_blt_sample=0,last_flip_sample=0;
+  volatile LONG *last_call=is_flip?&last_flip_call:&last_blt_call;
+  volatile LONG *last_sample=is_flip?&last_flip_sample:&last_blt_sample;
+  DWORD now,prior,sampled,gap;
+  HWND fg;
+  DWORD pid=0;
+  char line[260];
+  if(!focus_timeline_enabled)return;
+  now=GetTickCount();
+  prior=(DWORD)InterlockedExchange(last_call,(LONG)now);
+  gap=prior?(DWORD)(now-prior):0;
+  sampled=(DWORD)InterlockedCompareExchange(last_sample,0,0);
+  /* Avoid calling Win32 foreground APIs on every hot-path movie Blt.
+   * A new foreground can be observed at the next <=250 ms sample;
+   * the separate WndProc probe records precise event times. */
+  if(prior && gap<750u && sampled && (DWORD)(now-sampled)<250u)return;
+  InterlockedExchange(last_sample,(LONG)now);
+  fg=GetForegroundWindow();
+  if(fg)GetWindowThreadProcessId(fg,&pid);
+  snprintf(line,sizeof(line),
+    "FOCUS-TIMELINE: callback=%s seq=%ld gap-ms=%lu foreground=%p "
+    "foreign-pid=%lu game=%p fg-is-game=%d surface-is-primary=%d "
+    "menu-active=%d movie-active=%d thread=%lu",
+    is_flip?"Flip":"Blt",(long)seq,(unsigned long)gap,(void*)fg,
+    (unsigned long)pid,(void*)game_hwnd,(int)(fg==game_hwnd),
+    (int)(surface==(void*)borderless_primary),
+    (int)(InterlockedCompareExchange(&menu_upscale_active,0,0)==1),
+    (int)((*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u),
+    (unsigned long)GetCurrentThreadId());
+  log_line(line);
+}
 static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *source,
                                   LPRECT source_rect, DWORD flags, LPDDBLTFX fx) {
   HRESULT hr; LONG count=InterlockedIncrement(&blt_count);
@@ -1722,6 +1789,7 @@ static HRESULT WINAPI hooked_blt(void *self, LPRECT dest, IDirectDrawSurface7 *s
   LPRECT presented_dest=dest;
   BOOL f9_movie_present=FALSE;
 
+  focus_timeline_pulse(0,count,self);
   if(debug_log_enabled && count<=24) {
     char line[240];
     snprintf(line,sizeof(line),"DDRAW: Surface7::Blt #%ld dst=%p src=%p dstRect=%s srcRect=%s flags=0x%08lX",
@@ -2359,6 +2427,25 @@ static LONG pause_ever_foreground=0;
 static LONG pause_in_progress=0;
 static LONG pause_latched=0;
 static DWORD pause_background_since=0;
+/* Bounded READ-ONLY diagnostics for Alt+Tab losses which do not
+ * produce the native PAUSED ribbon. No extra WndProc/DI hooks. */
+static unsigned pause_focus_probe_reports=0;
+static unsigned pause_flip_gap_reports=0;
+static DWORD pause_previous_flip_tick=0;
+static unsigned pause_native_ui_focus_reports=0;
+static DWORD pause_native_ui_focus_sample_tick=0;
+static void pause_probe_report(const char *event, HWND game, HWND fg,
+                               DWORD other_pid, DWORD elapsed) {
+  char line[230];
+  if(!debug_log_enabled || pause_focus_probe_reports>=24u)return;
+  ++pause_focus_probe_reports;
+  snprintf(line,sizeof(line),
+    "FOCUS-PROBE: %s game=%p foreground=%p other-pid=%lu elapsed-ms=%lu "
+    "(Flip-sampled only; no focus mutation)",
+    event,(void*)game,(void*)fg,(unsigned long)other_pid,
+    (unsigned long)elapsed);
+  log_line(line);
+}
 
 /* Diagnostic only: report WHICH other executable owns the foreground when
  * Windows reports sustained focus loss. No activation/focus operations.
@@ -2399,26 +2486,97 @@ static void pause_log_foreground_owner(HWND game,HWND foreground,const char *why
      (DWORD)(GetTickCount()-pause_background_since):0));
   log_line(line);
 }
+/* While the original game's native Pause UI is open, sample the
+ * foreground independently of the 150-ms debounce decision. Under Wine,
+ * visible focus change is not always accompanied by a foreground HWND
+ * transition at a Flip. This probe is read-only and does not subclass
+ * the game WndProc, perform activation or intercept DirectInput. */
+static void pause_probe_native_menu_focus(LONG flip) {
+  HWND game=game_hwnd,fg;
+  DWORD now,fg_pid=0,game_tid;
+  GUITHREADINFO fg_info,game_info;
+  BOOL fg_ok,game_ok;
+  char line[330];
+  if(!debug_log_enabled || !game || !IsWindow(game) ||
+     pause_native_ui_focus_reports>=120u ||
+     ((*(const volatile DWORD *)(uintptr_t)0x00682950u)==0u &&
+      !native_pause43_visible_near_flip(flip)))return;
+  now=GetTickCount();
+  if(pause_native_ui_focus_sample_tick &&
+     (DWORD)(now-pause_native_ui_focus_sample_tick)<800u)return;
+  pause_native_ui_focus_sample_tick=now;
+  ++pause_native_ui_focus_reports;
+  fg=GetForegroundWindow();
+  if(fg)GetWindowThreadProcessId(fg,&fg_pid);
+  game_tid=GetWindowThreadProcessId(game,NULL);
+  memset(&fg_info,0,sizeof(fg_info));fg_info.cbSize=sizeof(fg_info);
+  memset(&game_info,0,sizeof(game_info));game_info.cbSize=sizeof(game_info);
+  fg_ok=GetGUIThreadInfo(0,&fg_info);
+  game_ok=game_tid?GetGUIThreadInfo(game_tid,&game_info):FALSE;
+  snprintf(line,sizeof(line),
+    "FOCUS-PROBE: native-pause-snapshot flip=%ld fg-is-game=%d "
+    "fg=%p pid=%lu fg-ui-ok=%d fg-ui-active=%p fg-ui-focus=%p "
+    "game-ui-ok=%d game-ui-active=%p game-ui-focus=%p",
+    (long)flip,(int)(fg==game),(void*)fg,(unsigned long)fg_pid,
+    (int)fg_ok,(void*)fg_info.hwndActive,(void*)fg_info.hwndFocus,
+    (int)game_ok,(void*)game_info.hwndActive,
+    (void*)game_info.hwndFocus);
+  log_line(line);
+}
+/* Under Wine/X11, the foreground HWND can stay NULL after a real
+ * Alt+Tab to a native Linux window. Do NOT treat NULL alone as focus loss:
+ * require the game GUI thread to have neither an active nor a focused HWND,
+ * then use the same 150-ms debounce as the normal foreign-process path.
+ * An unavailable GUI-thread snapshot fails closed (no automatic pause). */
+static BOOL pause_confirmed_null_foreground_loss(HWND hwnd) {
+  GUITHREADINFO gi;
+  DWORD tid=GetWindowThreadProcessId(hwnd,NULL);
+  if(!tid)return FALSE;
+  memset(&gi,0,sizeof(gi));
+  gi.cbSize=sizeof(gi);
+  if(!GetGUIThreadInfo(tid,&gi))return FALSE;
+  return gi.hwndActive==NULL && gi.hwndFocus==NULL;
+}
 /* Ignore brief foreground changes (e.g. mouse activation quirks).
- * Real Alt+Tab is recognized only if another process stays foreground. */
+ * A foreign-process foreground or a *verified sustained* NULL foreground
+ * must survive the same 150-ms debounce before pausing the game. */
 static BOOL pause_confirmed_focus_loss(HWND hwnd) {
   HWND fg=GetForegroundWindow();
   DWORD game_pid=0,fg_pid=0,now;
-  if(fg==hwnd) { pause_background_since=0; return FALSE; }
+  if(fg==hwnd) {
+    if(pause_background_since)
+      pause_probe_report("candidate-cancelled-return-before-150ms",
+        hwnd,fg,0,GetTickCount()-pause_background_since);
+    pause_background_since=0;
+    return FALSE;
+  }
   GetWindowThreadProcessId(hwnd,&game_pid);
   if(fg) GetWindowThreadProcessId(fg,&fg_pid);
-  /* A transient NULL foreground or another window owned by the game
-   * is not proof that Spider-Man was switched to the background. */
-  if(!fg || !game_pid || fg_pid==game_pid) {
+  /* Reject same-process windows and vanished/unreadable foreign HWNDs.
+   * A NULL foreground is acceptable only with an independently verified
+   * inactive game GUI thread, and only after the ordinary debounce. */
+  if(!game_pid || (fg && (!fg_pid || fg_pid==game_pid)) ||
+     (!fg && !pause_confirmed_null_foreground_loss(hwnd))) {
+    if(pause_background_since)
+      pause_probe_report("candidate-cancelled-null-or-own-process",
+        hwnd,fg,fg_pid,GetTickCount()-pause_background_since);
     pause_background_since=0;
     return FALSE;
   }
   now=GetTickCount();
   if(!pause_background_since) {
     pause_background_since=now?now:1;
+    pause_probe_report(fg?"external-candidate-first-flip":
+      "null-foreground-candidate-first-flip",hwnd,fg,fg_pid,0);
     return FALSE;
   }
-  return (DWORD)(now-pause_background_since)>=150;
+  if((DWORD)(now-pause_background_since)>=150) {
+    pause_probe_report(fg?"external-candidate-confirmed-after-150ms":
+      "null-foreground-confirmed-after-150ms",
+      hwnd,fg,fg_pid,(DWORD)(now-pause_background_since));
+    return TRUE;
+  }
+  return FALSE;
 }
 
 
@@ -2440,6 +2598,114 @@ static void pause_log_resume_focus(HWND hwnd) {
   }
   log_line(line);
 }
+/* Wine/X11 opt-in host focus bridge. The Linux observer writes a tiny,
+ * frequently updated state file next to SpideyPC.exe. Win32 cannot be
+ * trusted to notice a native Firefox focus switch on some Wine versions:
+ * GetForegroundWindow() can remain the game HWND for many seconds even
+ * though XGetInputFocus/_NET_ACTIVE_WINDOW name another Linux process.
+ *
+ * This bridge never activates or resizes a window. It fails closed if the
+ * host observer stops, the file is stale (>1200ms), or the state is UNKNOWN.
+ * File reading occurs only on the original game Flip/pause thread. */
+static int pause_x11_bridge_config=-1; /* -1 uninitialized; 0 off; 1 on */
+static char pause_x11_bridge_path[MAX_PATH];
+static DWORD pause_x11_bridge_poll_tick=0;
+static int pause_x11_bridge_last_state=0; /* 0 unknown, 1 game, 2 other */
+static unsigned pause_x11_bridge_reports=0;
+static DWORD pause_x11_bridge_loss_since=0;
+static int pause_x11_bridge_enabled(void) {
+  /* The auto-started ELF publishes a fresh X11 handshake asynchronously:
+   * on the first Flip this may be disabled, and on the next it can turn
+   * on. Recheck ONLY while disabled to allow this safe 0 -> 1 transition.
+   * Existing manual =1 / explicit =0 behavior is preserved. */
+  if(pause_x11_bridge_config<=0) {
+    char value[4]={0};
+    DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_X11_BRIDGE",
+                                     value,sizeof(value));
+    if(pause_x11_bridge_config==0 && !(n==1 && value[0]=='1'))
+      return 0;
+    pause_x11_bridge_config=n==1 && value[0]=='1';
+    if(pause_x11_bridge_config) {
+      char *sep;
+      n=GetModuleFileNameA(NULL,pause_x11_bridge_path,
+                             sizeof(pause_x11_bridge_path));
+      sep=n && n<sizeof(pause_x11_bridge_path)?
+        strrchr(pause_x11_bridge_path,'\\'):NULL;
+      if(!sep || (size_t)(sep-pause_x11_bridge_path)+
+         sizeof("SpiderMan2k1Fix.x11-focus")>=sizeof(pause_x11_bridge_path)) {
+        pause_x11_bridge_config=0;
+        log_line("FOCUS-X11: opt-in disabled: cannot resolve game folder");
+      } else {
+        strcpy(sep+1,"SpiderMan2k1Fix.x11-focus");
+        log_line("FOCUS-X11: opt-in Linux X11 bridge enabled; requires fresh host observer state and 150ms debounce");
+      }
+    }
+  }
+  return pause_x11_bridge_config;
+}
+static int pause_x11_bridge_state(void) {
+  DWORD tick=GetTickCount();
+  int state=0;
+  WIN32_FILE_ATTRIBUTE_DATA attr;
+  FILETIME ft;
+  ULARGE_INTEGER modified,current;
+  HANDLE h;
+  char line[64]={0};
+  DWORD read=0;
+  if(!pause_x11_bridge_enabled())return 0;
+  if(pause_x11_bridge_poll_tick &&
+     (DWORD)(tick-pause_x11_bridge_poll_tick)<80u)
+    return pause_x11_bridge_last_state;
+  pause_x11_bridge_poll_tick=tick;
+  if(GetFileAttributesExA(pause_x11_bridge_path,
+                          GetFileExInfoStandard,&attr)) {
+    GetSystemTimeAsFileTime(&ft);
+    modified.LowPart=attr.ftLastWriteTime.dwLowDateTime;
+    modified.HighPart=attr.ftLastWriteTime.dwHighDateTime;
+    current.LowPart=ft.dwLowDateTime;
+    current.HighPart=ft.dwHighDateTime;
+    if(current.QuadPart>=modified.QuadPart &&
+       current.QuadPart-modified.QuadPart<=1200ull*10000ull) {
+      h=CreateFileA(pause_x11_bridge_path,GENERIC_READ,
+                    FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+                    NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+      if(h!=INVALID_HANDLE_VALUE) {
+        if(ReadFile(h,line,sizeof(line)-1,&read,NULL) && read) {
+          line[read]=0;
+          if(!strcmp(line,"SPIDEY_X11_FOCUS_V1 GAME\n"))state=1;
+          else if(!strcmp(line,"SPIDEY_X11_FOCUS_V1 OTHER\n"))state=2;
+        }
+        CloseHandle(h);
+      }
+    }
+  }
+  if(state!=pause_x11_bridge_last_state &&
+     pause_x11_bridge_reports<32u) {
+    char report[150];
+    ++pause_x11_bridge_reports;
+    snprintf(report,sizeof(report),
+      "FOCUS-X11: host-focus-state=%s win32-game-foreground=%d",
+      state==1?"GAME":state==2?"OTHER":"UNKNOWN",
+      game_hwnd && GetForegroundWindow()==game_hwnd);
+    log_line(report);
+  }
+  pause_x11_bridge_last_state=state;
+  return state;
+}
+static BOOL pause_x11_bridge_confirmed_loss(void) {
+  DWORD tick=GetTickCount();
+  if(!pause_x11_bridge_loss_since) {
+    pause_x11_bridge_loss_since=tick?tick:1u;
+    log_line("FOCUS-X11: external native-X11 focus candidate; waiting 150ms");
+    return FALSE;
+  }
+  if((DWORD)(tick-pause_x11_bridge_loss_since)>=150u) {
+    log_line("FOCUS-X11: confirmed native-X11 focus loss after 150ms (Win32 foreground stale)");
+    pause_x11_bridge_loss_since=0;
+    return TRUE;
+  }
+  return FALSE;
+}
 static void pause_at_flip_if_background(void) {
   HWND hwnd=game_hwnd;
   MSG msg;
@@ -2447,19 +2713,64 @@ static void pause_at_flip_if_background(void) {
   int pause_gamepad_available=0;
   int pause_sdl3_available=0;
   int pause_previous_foreground=0;
+  /* Terminal observer failure: allow a manual keyboard/gamepad wake only
+   * after we actually observed Win32 switch AWAY from the game and
+   * switch BACK after the two native restart attempts are exhausted.
+   * A permanently stale Wine GetForegroundWindow()==game without an
+   * observed external phase is NOT sufficient evidence. */
+  int fallback_saw_external=0;
+  int fallback_wake_armed=0;
+  DWORD fallback_return_since=0;
+  int x11_state,x11_external,win32_game_foreground;
   if(InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 || !hwnd || !IsWindow(hwnd)) return;
-  if(GetForegroundWindow()==hwnd) {
+  x11_state=pause_x11_bridge_state();
+  x11_external=pause_x11_bridge_enabled() && x11_state==2;
+  win32_game_foreground=GetForegroundWindow()==hwnd;
+  /* Native host focus is also authoritative for the selected SDL3
+   * universal keyboard adapter. Previously PAUSED correctly spotted
+   * Firefox via X11, but SDL3 still trusted the stale Wine HWND and
+   * left synthetic directions held. Release them before the blocking
+   * PAUSED loop, and block any new input while the host says OTHER
+   * or UNKNOWN. The initial no-helper Win32 fallback is unchanged. */
+  SpiderSDL3Universal_SetHostFocusBlocked(
+    pause_x11_bridge_enabled() && x11_state!=1);
+  if(!x11_external)pause_x11_bridge_loss_since=0;
+  if(win32_game_foreground && !x11_external) {
+    /* No deferred/return-only pause: native GAME focus returns to its
+     * normal Flip thread without surprising extra PAUSED panels. */
+    /* This path bypasses pause_confirmed_focus_loss(), so report
+     * a short external focus candidate cancelled on the next Flip. */
+    if(pause_background_since)
+      pause_probe_report("candidate-cancelled-return-to-game",hwnd,
+        GetForegroundWindow(),0,GetTickCount()-pause_background_since);
     pause_background_since=0;
     InterlockedExchange(&pause_ever_foreground,1);
   } else if(InterlockedCompareExchange(&pause_ever_foreground,0,0)==1 &&
-            pause_confirmed_focus_loss(hwnd) &&
+            ((win32_game_foreground && x11_external &&
+              pause_x11_bridge_confirmed_loss()) ||
+             (!win32_game_foreground && pause_confirmed_focus_loss(hwnd))) &&
             InterlockedCompareExchange(&pause_latched,1,0)==0) {
+    /* Native X11 can prove Firefox has focus while Wine still reports
+     * Spider-Man as foreground. Before entering blocking PAUSED, force
+     * SDL3 universal's held direction release and native DI restoration.
+     * The normal BeforeUI(HWND) Win32 check would otherwise miss this
+     * loss and preserve a stale original-game buffered movement latch. */
+    SpiderSDL3Universal_OnConfirmedFocusPause();
     SpiderAltLatch_OnConfirmedExternalLoss();
     log_line("FOCUS-PAUSE: confirmed external focus loss; pause latched until manual resume");
     pause_log_foreground_owner(hwnd,GetForegroundWindow(),"external-foreground-latched");
+    /* The candidate is now *consumed*. Keeping its old start timestamp
+     * across the blocking custom PAUSED loop produced a false
+     * 'candidate-cancelled-return-to-game elapsed-ms=5303' trace after
+     * a successful wake. Clear it only after recording elapsed time. */
+    pause_background_since=0;
   }
   if(InterlockedCompareExchange(&pause_latched,0,0)!=1) return;
   if(InterlockedCompareExchange(&pause_in_progress,1,0)!=0) return;
+  /* Wine may still claim this HWND is foreground while native Firefox
+   * actually has X11 focus. Never swallow Firefox keystrokes. */
+  SpiderPauseAny_SetHostFocusBlocked(pause_x11_bridge_enabled() &&
+                                    x11_state!=1);
   /* Arm Any-key wake BEFORE stopping the game. Never fall back to F9 or
    * Space: if the low-level hook fails, skip this pause rather than hang. */
   if(!SpiderPauseAny_Begin(hwnd)) {
@@ -2543,6 +2854,46 @@ static void pause_at_flip_if_background(void) {
       DispatchMessageA(&msg);
     }
     if(!IsWindow(hwnd)) break;
+    /* This also runs while regular Flip is blocked by the PAUSED loop.
+     * Fail closed: UNKNOWN / stale bridge must never swallow a key from
+     * an unrelated native Linux application. */
+    x11_state=pause_x11_bridge_state();
+    /* A killed auto-started observer must not wake Spider-Man (or its
+     * Bink/DirectSound voices) behind Firefox. Restart the owned native
+     * observer, verify a fresh X11 sample, then require an actual user
+     * key/gamepad wake after native GAME focus returns. Never synthesize
+     * a key or trust Wine's possibly stale foreground HWND. */
+    SpiderWineFocusAutostart_PollReady(log_line);
+    SpiderWineFocusAutostart_TryRecover(log_line);
+    if(pause_x11_bridge_enabled() && x11_state==0 &&
+       SpiderWineFocusAutostart_RecoveryExhausted()) {
+      const int win32_confirmed_game=
+        GetForegroundWindow()==hwnd && GetActiveWindow()==hwnd &&
+        GetFocus()==hwnd;
+      if(!win32_confirmed_game) {
+        fallback_saw_external=1;
+        fallback_return_since=0;
+        fallback_wake_armed=0;
+      } else if(fallback_saw_external && !fallback_wake_armed) {
+        DWORD tick=GetTickCount();
+        if(!fallback_return_since)fallback_return_since=tick?tick:1;
+        else if((DWORD)(tick-fallback_return_since)>=150u) {
+          fallback_wake_armed=1;
+          log_line("FOCUS-X11: observer recovery exhausted; fresh Win32 external->game focus cycle confirmed; manual key/gamepad wake allowed");
+        }
+      }
+      /* A valid explicit user key is still required. No automatic wake
+       * and no stealing from Firefox while Win32 reports background. */
+      SpiderPauseAny_SetHostFocusBlocked(!fallback_wake_armed);
+    } else {
+      /* Native X11 returns authoritative information when available.
+       * A fresh UNKNOWN from a live helper must not weaken the gate. */
+      fallback_saw_external=0;
+      fallback_return_since=0;
+      fallback_wake_armed=0;
+      SpiderPauseAny_SetHostFocusBlocked(pause_x11_bridge_enabled() &&
+                                        x11_state!=1);
+    }
     /* The normal Flip-based focus monitor cannot run until this custom
      * PAUSED wait ends. On return to game foreground, balance its temporary
      * background ShowCursor(TRUE) NOW, before any wake input. Otherwise the
@@ -2559,9 +2910,12 @@ static void pause_at_flip_if_background(void) {
     if(SpiderPauseAny_Completed())
       InterlockedExchange(&pause_latched,0);
     else {
-      unsigned resumed_buttons=pause_sdl3_available?
-        SpiderSDL3Probe_PauseWake_Poll(hwnd):
-        SpiderGamepadUI_PauseWake_Poll(hwnd);
+      unsigned resumed_buttons=
+        (pause_x11_bridge_enabled() && x11_state!=1 &&
+         !fallback_wake_armed)?0:
+        (pause_sdl3_available?
+          SpiderSDL3Probe_PauseWake_Poll(hwnd):
+          SpiderGamepadUI_PauseWake_Poll(hwnd));
       if(resumed_buttons) {
         char line[155];
         snprintf(line,sizeof(line),
@@ -2597,6 +2951,25 @@ static void pause_at_flip_if_background(void) {
 }
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
+  focus_timeline_pulse(1,count,self);
+  if(debug_log_enabled &&
+     InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1) {
+    DWORD now=GetTickCount();
+    if(pause_previous_flip_tick &&
+       (DWORD)(now-pause_previous_flip_tick)>=750u &&
+       pause_flip_gap_reports<12u) {
+      char line[224];
+      ++pause_flip_gap_reports;
+      snprintf(line,sizeof(line),
+        "FOCUS-PROBE: Flip-gap-ms=%lu flip=%ld foreground-now=%d "
+        "latched=%ld (gap is not proof of focus loss)",
+        (unsigned long)(DWORD)(now-pause_previous_flip_tick),
+        (long)count,(int)(game_hwnd && GetForegroundWindow()==game_hwnd),
+        (long)InterlockedCompareExchange(&pause_latched,0,0));
+      log_line(line);
+    }
+    pause_previous_flip_tick=now;
+  }
   SpiderQuickExitF12_ObserveEngineState(count,InterlockedCompareExchange(&menu_upscale_active,0,0)==1); /* passive native mode+2D renderer tracing */
   /* Game-native 0x006151F8 is GameFMV_Active in the SHA-verified
    * original executable. A post-menu Bink can play with menu_upscale=0.
@@ -2607,6 +2980,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
    * controller's synthetic keys after a Start ownership switch. Actual
    * native DI handoff remains AFTER unplug guard installation below. */
   SpiderSDL3Probe_OnFlip(count,game_hwnd);
+  SpiderSDL3Universal_BeforeUI(game_hwnd); /* release keys before focus pause */
   SpiderGamepadUI_OnFlip(game_hwnd,
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
     InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
@@ -2627,6 +3001,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   {
     BOOL was_background=(game_hwnd && GetForegroundWindow()!=game_hwnd);
     SpiderInputFocus_OnFlip(count);
+    pause_probe_native_menu_focus(count); /* read-only native ESC Pause heartbeat */
     pause_at_flip_if_background();
     if(was_background &&
        InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1)
@@ -2655,6 +3030,17 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   /* Experimental SDL3 semantic action probe is strictly read-only and
    * runs only AFTER the game-owned DirectInput handoff is verified. */
   SpiderSDL3GameplayPlan_OnFlip(game_hwnd,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
+    InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
+      InterlockedCompareExchange(&fov_game_height,0,0)>0,
+    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
+    ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
+      native_pause43_visible_near_flip(count) ||
+      InterlockedCompareExchange(&pause_latched,0,0)==1 ||
+      InterlockedCompareExchange(&pause_in_progress,0,0)==1));
+  /* Experimental OFF-by-default normalized SDL3 profile -> game
+   * keyboard adapter, after polling and native-reconnect safety gates. */
+  SpiderSDL3Universal_OnFlip(game_hwnd,
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
     InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
       InterlockedCompareExchange(&fov_game_height,0,0)>0,
@@ -3122,33 +3508,12 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
       log_line("DISPLAY-NATIVE: WARNING game HWND unavailable before virtual config bootstrap; fallback to current primary monitor until SetCooperativeLevel");
     }
   }
-  /* Preview opt-in only: acquire an unambiguous Sony DS4 with the
-   * real game HWND before the original config loader consumes Spidey.cfg.
-   * A failed preflight leaves the previous working UI bridge untouched. */
-  {
-    HWND early=spider_find_game_window_before_ddraw();
-    int mapped=0,xbox_mapped=0;
-    if(early && SpiderGamepadUI_PreparePS1(early))
-      mapped=SpiderCfg_EnablePS1Preview();
-    if(early && SpiderGamepadUI_PrepareXbox360(early))
-      xbox_mapped=SpiderCfg_EnableXbox360Preview();
-    SpiderCfg_BootstrapGameRead();
-    SpiderCfg_InstallModernKeyboardDefaults();
-    SpiderGamepadUI_ArmPS1ReadOnly();
-    SpiderGamepadUI_ArmXbox360ReadOnly();
-    if(mapped) {
-      if(SpiderCfg_PS1BootstrapLoaded())
-        SpiderGamepadUI_ActivatePS1();
-      else
-        SpiderCfg_CancelPS1Preview();
-    }
-    if(xbox_mapped) {
-      if(SpiderCfg_Xbox360BootstrapLoaded())
-        SpiderGamepadUI_ActivateXbox360();
-      else
-        SpiderCfg_CancelXbox360Preview();
-    }
-  }
+  /* SDL3 semantic profiles are the only patch-provided controller
+   * mappings. No Sony/Xbox physical button presets are installed in
+   * the original game's virtual config. Keep the native game defaults. */
+  SpiderCfg_BootstrapGameRead();
+  SpiderCfg_InstallModernKeyboardDefaults();
+  log_line("SDL3-PROFILE: pre-SDL3 fixed Sony/Xbox mapping bootstrap REMOVED; native joystick mapping unchanged");
   HRESULT hr=original_create(guid,out,iid,outer);
   if(SUCCEEDED(hr) && out && *out && iid && IsEqualGUID(iid,&IID_IDirectDraw7)) {
     void ***object=(void ***)*out;
@@ -3246,6 +3611,8 @@ static DWORD initialize_body(LPVOID unused) {
     return 0;
   }
   log_line("OK: supported SpideyPC.exe SHA-256 verified");
+  if(focus_timeline_enabled)
+    log_line("FOCUS-TIMELINE: ENABLED read-only Blt/Flip samples + local wall-clock timestamps; requires separate FOCUS_PASSIVE=1 for WndProc events");
   install_null_fclose_guard(); /* Default ON only for SHA-verified EXE and exact native opcode signature. */
   /* Generate complete defaults once, before any GetPrivateProfile... reads. */
   SpiderCfg_EnsureDefaultIni(log_line);
@@ -3278,12 +3645,14 @@ static DWORD initialize_body(LPVOID unused) {
       SpiderNativeUnplug_Init(ini,log_line);
       SpiderNativeReconnect_Init(ini,log_line);
       SpiderSDL3Probe_Init(ini,log_line);
+      SpiderSDL3Universal_Init(ini,log_line);
       SpiderSDL3GameplayPlan_Init(ini,log_line);
       SpiderAltLatch_Init(ini,log_line);
     } else {
       SpiderNativeUnplug_Init(NULL,log_line);
       SpiderNativeReconnect_Init(NULL,log_line);
       SpiderSDL3Probe_Init(NULL,log_line);
+      SpiderSDL3Universal_Init(NULL,log_line);
       SpiderSDL3GameplayPlan_Init(NULL,log_line);
       SpiderAltLatch_Init(NULL,log_line);
     }

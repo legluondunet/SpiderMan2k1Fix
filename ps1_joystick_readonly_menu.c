@@ -17,6 +17,7 @@
 #include <string.h>
 #include "ps1_joystick_readonly_menu.h"
 #include "sdl3_controller_setup.h"
+#include "sdl3_gamepad_probe.h"
 
 static void (*ps1_menu_logger)(const char *)=NULL;
 /* The native machine-code patch is immutable during this process.
@@ -30,6 +31,200 @@ void SpiderXbox360_SetRTAlias(int enabled) {
 static void report(const char *msg) {
   if(ps1_menu_logger)ps1_menu_logger(msg);
 }
+/* Optional bypass of the OLD action-list submenu: the original
+ * PCSHELL_DoControllerConfig(bool) begins at exact EXE VA 0x0050CE70.
+ * The original 2001 title loads it for both Keyboard and Joystick, so
+ * do NOT patch the native function entry itself: Keyboard must still
+ * execute its full untouched original implementation.
+ *
+ * Instead, locate the original x86 direct CALLs to that exact native
+ * function in executable .text, verify uniqueness and their targets,
+ * and patch only their 5-byte relative CALL destinations. Our wrapper
+ * forwards native-mode=1 Keyboard directly to ORIGINAL 0x50CE70 and
+ * opens SDL3 directly for native-mode=0 Joystick. It never changes menu state, action
+ * assignments or original joystick/keyboard data tables. On any
+ * ambiguous signature or write failure, FAIL CLOSED to the existing
+ * old-menu -> SDL3 TEST PREVIEW row path.
+ *
+ * In-game hardware must verify which boolean is Joystick before this
+ * optional experimental redirect is considered final. */
+#define SPIDER_NATIVE_CONTROLLER_CONFIG_VA 0x0050CE70u
+enum { SPIDER_DIRECT_ENTRY_MAX_CALLS=4u };
+static int direct_entry_attempted=0,direct_entry_installed=0;
+typedef void (__cdecl *SpiderNativeControllerConfigFn)(int);
+
+static void __cdecl spider_sdl3_direct_controller_menu(int native_mode) {
+  static unsigned logs=0u;
+  char line[180];
+  /* Proven in hardware: the original PCShell config selector uses 0
+   * for Joystick, 1 for Keyboard. The former wrapper assumed the
+   * opposite: 2026-11-01 GE-Proton build 7862a25 logged "Keyboard
+   * configuration forwarded" when user selected the Joystick menu.
+   * Never forward an inverted argument to the original game. */
+  const int is_joystick=(native_mode==0);
+  if(logs++<16u) {
+    snprintf(line,sizeof(line),
+      "SDL3-DIRECT-ENTRY: INVOKED native-mode=%d interpreted=%s",
+      native_mode,native_mode==0?"Joystick":
+      native_mode==1?"Keyboard":"unknown/fallback");
+    report(line);
+  }
+  if(is_joystick && SpiderSDL3ControllerSetup_Enabled()) {
+    if(SpiderSDL3Probe_SetupPump()) {
+      report("SDL3-DIRECT-ENTRY: Joystick selected (mode=0); bypass original seven-action submenu and open SDL3 window");
+      SpiderSDL3ControllerSetup_Open();
+      return;
+    }
+    report("SDL3-DIRECT-ENTRY: SDL3 not ready; fallback to original Joystick menu");
+  } else if(native_mode==1) {
+    if(logs<18u)
+      report("SDL3-DIRECT-ENTRY: Keyboard selected (mode=1); original game configuration preserved");
+  } else if(!is_joystick) {
+    report("SDL3-DIRECT-ENTRY: unexpected native mode; forwarding unchanged to original game");
+  }
+  ((SpiderNativeControllerConfigFn)(uintptr_t)
+    SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(native_mode);
+}
+static int spider_sdl3_patch_native_call(BYTE *site,const BYTE *replacement,
+                                        BYTE old_bytes[5]) {
+  DWORD old=0,ignored=0;
+  if(!site || !replacement || !old_bytes)return 0;
+  if(!VirtualProtect(site,5u,PAGE_EXECUTE_READWRITE,&old))return 0;
+  memcpy(old_bytes,site,5u);
+  memcpy(site,replacement,5u);
+  FlushInstructionCache(GetCurrentProcess(),site,5u);
+  if(!VirtualProtect(site,5u,old,&ignored)) {
+    /* Restore the original machine call when page protection fails. */
+    memcpy(site,old_bytes,5u);
+    FlushInstructionCache(GetCurrentProcess(),site,5u);
+    VirtualProtect(site,5u,old,&ignored);
+    return 0;
+  }
+  return 1;
+}
+int SpiderSDL3_InstallDirectJoystickEntry(void (*logger)(const char *)) {
+  BYTE *base=(BYTE *)GetModuleHandleA(NULL);
+  IMAGE_DOS_HEADER *dos;
+  IMAGE_NT_HEADERS32 *nt;
+  IMAGE_SECTION_HEADER *section;
+  BYTE *found[SPIDER_DIRECT_ENTRY_MAX_CALLS]={NULL};
+  BYTE old_bytes[SPIDER_DIRECT_ENTRY_MAX_CALLS][5]={{0}};
+  unsigned i,j,count=0u,written=0u;
+  char line[192];
+  if(!SpiderSDL3ControllerSetup_Enabled())return 0;
+  if(direct_entry_installed)return 1;
+  if(direct_entry_attempted)return 0;
+  direct_entry_attempted=1;
+  if(logger)ps1_menu_logger=logger;
+  report("SDL3-DIRECT-ENTRY: INSTALL attempt on original game flip thread");
+  if(!base || (uintptr_t)base!=0x00400000u) {
+    report("SDL3-DIRECT-ENTRY: REFUSED unexpected EXE image base");
+    return 0;
+  }
+  dos=(IMAGE_DOS_HEADER *)(void *)base;
+  if(dos->e_magic!=IMAGE_DOS_SIGNATURE ||
+     dos->e_lfanew<0x40 || dos->e_lfanew>0x1000) {
+    report("SDL3-DIRECT-ENTRY: REFUSED invalid DOS header");
+    return 0;
+  }
+  nt=(IMAGE_NT_HEADERS32 *)(void *)(base+dos->e_lfanew);
+  if(nt->Signature!=IMAGE_NT_SIGNATURE ||
+     nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR32_MAGIC ||
+     nt->OptionalHeader.ImageBase!=0x00400000u ||
+     /* Original retail SHA-256-verified SpideyPC.exe has SizeOfImage
+      * 0x02A0D000 (42.05 MiB), measured in GE-Proton's PE header.
+      * The previous arbitrary 32 MiB upper bound rejected this exact
+      * supported image and silently retained the legacy Joystick menu.
+      * Demand the exact expected size rather than widening a loose cap;
+      * mismatched binaries fail closed. */
+     nt->OptionalHeader.SizeOfImage!=0x02A0D000u ||
+     nt->FileHeader.NumberOfSections==0 ||
+     nt->FileHeader.NumberOfSections>32) {
+    snprintf(line,sizeof(line),
+      "SDL3-DIRECT-ENTRY: REFUSED PE header magic=%04X base=%08lX size=%08lX sections=%u",
+      (unsigned)nt->OptionalHeader.Magic,
+      (unsigned long)nt->OptionalHeader.ImageBase,
+      (unsigned long)nt->OptionalHeader.SizeOfImage,
+      (unsigned)nt->FileHeader.NumberOfSections);
+    report(line);
+    return 0;
+  }
+  snprintf(line,sizeof(line),"SDL3-DIRECT-ENTRY: valid PE size=%08lX sections=%u",
+    (unsigned long)nt->OptionalHeader.SizeOfImage,
+    (unsigned)nt->FileHeader.NumberOfSections);
+  report(line);
+  /* Scan original code, never data and never a DLL. Match direct
+   * CALL+rel32 exactly targeting 0x50CE70 in executable PE section(s).
+   * Calls outside PCShell/options code are rejected. */
+  section=IMAGE_FIRST_SECTION(nt);
+  for(i=0;i<nt->FileHeader.NumberOfSections;i++) {
+    BYTE *start;
+    uint32_t length,va;
+    if(!(section[i].Characteristics&IMAGE_SCN_MEM_EXECUTE))continue;
+    va=section[i].VirtualAddress;
+    length=section[i].Misc.VirtualSize;
+    if(va>=nt->OptionalHeader.SizeOfImage ||
+       length>nt->OptionalHeader.SizeOfImage-va) {
+      snprintf(line,sizeof(line),
+        "SDL3-DIRECT-ENTRY: REFUSED section=%u bounds RVA=%08lX len=%08lX image=%08lX",
+        i,(unsigned long)va,(unsigned long)length,
+        (unsigned long)nt->OptionalHeader.SizeOfImage);
+      report(line);
+      return 0;
+    }
+    if(length<5u)continue;
+    start=base+va;
+    for(j=0;j+5u<=length;j++) {
+      uint32_t relative,target;
+      uintptr_t call_va=(uintptr_t)(start+j);
+      if(start[j]!=0xE8u)continue;
+      memcpy(&relative,start+j+1u,4u);
+      target=(uint32_t)(call_va+5u)+(uint32_t)relative;
+      if(target!=SPIDER_NATIVE_CONTROLLER_CONFIG_VA)continue;
+      if(call_va<0x00480000u || call_va>=0x00530000u ||
+         count>=SPIDER_DIRECT_ENTRY_MAX_CALLS) {
+        report("SDL3-DIRECT-ENTRY: REFUSED unexpected/excess caller of native config function");
+        return 0;
+      }
+      found[count++]=start+j;
+    }
+  }
+  if(count==0u) {
+    report("SDL3-DIRECT-ENTRY: REFUSED no direct CALL rel32 to 0x0050CE70; possible indirect call; old menu preserved");
+    return 0;
+  }
+  for(i=0;i<count;i++) {
+    BYTE patch[5];
+    uint32_t rel=(uint32_t)(uintptr_t)&spider_sdl3_direct_controller_menu-
+      ((uint32_t)(uintptr_t)found[i]+5u);
+    patch[0]=0xE8u;
+    memcpy(patch+1,&rel,sizeof(rel));
+    /* No patch until every original native CALL has been verified. */
+    if(found[i][0]!=0xE8u)return 0;
+    if(!spider_sdl3_patch_native_call(found[i],patch,old_bytes[i]))break;
+    written++;
+  }
+  if(written!=count) {
+    while(written) {
+      DWORD old,unused;
+      BYTE *site=found[--written];
+      if(VirtualProtect(site,5u,PAGE_EXECUTE_READWRITE,&old)) {
+        memcpy(site,old_bytes[written],5u);
+        FlushInstructionCache(GetCurrentProcess(),site,5u);
+        VirtualProtect(site,5u,old,&unused);
+      }
+    }
+    report("SDL3-DIRECT-ENTRY: REFUSED partial install; rollback attempted; native menu preserved");
+    return 0;
+  }
+  direct_entry_installed=1;
+  snprintf(line,sizeof(line),
+    "SDL3-DIRECT-ENTRY: ACTIVE intercepted original PCSHELL_DoControllerConfig CALL(s)=%u, function=0x%08X; Keyboard passthrough, Joystick -> SDL3",
+    count,SPIDER_NATIVE_CONTROLLER_CONFIG_VA);
+  report(line);
+  return 1;
+}
+
 /* Original callsite 0x50D4A9 invokes the zero-argument void native
  * PCINPUT_RestoreDefaultControllerSettings(). Replacing CALL with five
  * NOPs made it impossible to determine whether the menu actually took
@@ -107,20 +302,9 @@ static void __fastcall spider_joystick_restore_row_addentry(
 static int __cdecl spider_ps1_joystick_name(char *destination,
                                             const char *original_format,
                                             unsigned button) {
-  const char *name=readonly_label_mode==2u?
-    spider_xbox360_native_button_label(button):
-    readonly_label_mode==1u?spider_ps1_native_button_label(button):NULL;
   (void)original_format;
   if(!destination)return 0;
-  /* The original game binds Swing to physical BUTTON9 (R3), not Xbox
-   * RT. When our independent RT-axis -> keyboard Swing experiment is
-   * verified and active, list the shortcut alongside the real binding.
-   * Never silently claim that the game's native BUTTON9 became RT. */
-  if(readonly_label_mode==2u && button==9u && readonly_xbox_rt_alias)
-    return snprintf(destination,SPIDER_PS1_JOYSTICK_LABEL_CAPACITY,
-                    "R3 + RT");
-  if(name)return snprintf(destination,SPIDER_PS1_JOYSTICK_LABEL_CAPACITY,
-                          "%s",name);
+  /* No manufacturer or model is assumed from DirectInput button index. */
   if(button==0x4000u)return snprintf(destination,
     SPIDER_PS1_JOYSTICK_LABEL_CAPACITY,"NONE");
   return snprintf(destination,SPIDER_PS1_JOYSTICK_LABEL_CAPACITY,

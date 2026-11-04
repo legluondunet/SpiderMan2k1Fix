@@ -31,6 +31,17 @@ int SpiderSDL3Probe_SelectedRT(int *normalized_rt);
 /* Passive selected SDL3 input snapshot, only on the original Flip thread
  * after its SDL3 event pump. Includes both triggers and semantic buttons.
  * No native DirectInput ownership writes, no event queue consumption. */
+/* Explicit modal Start selects an unknown controller only for the
+ * normalized semantic action adapter (read-only). Native DirectInput
+ * owner and gameplay remain unchanged. Unique connected SDL ID+VID/PID
+ * and same-game-thread checks are mandatory. */
+/* Opt-in keyboard adapter: one selected, uniquely identified mapped SDL3
+ * controller, including explicit PS3 selection (never native DI ownership).
+ * Reject disconnected or ambiguous generic devices without fallback. */
+int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
+    uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample);
+int SpiderSDL3Probe_GenericSelectedSample(uint32_t *instance,
+    uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample);
 int SpiderSDL3Probe_SelectedSample(uint32_t *instance,uint16_t *vid,
                                   uint16_t *pid,
                                   SpiderSDL3ControllerSample *sample);
@@ -64,5 +75,30 @@ int SpiderSDL3Probe_SetupRead(unsigned slot,uint32_t *instance_id,
     uint16_t *vid,uint16_t *pid,char *name,size_t capacity,
     SpiderSDL3ControllerSample *sample);
 
+
+/* Keyboard-operated raw joystick calibration. Device access is strictly
+ * separate from the original game's DirectInput joystick and is allowed
+ * only on the existing SDL3 game/UI thread. No gameplay injection. */
+typedef struct {
+  uint32_t buttons;             /* first 32 raw physical buttons */
+  int16_t axes[16];             /* first 16 raw joystick axes */
+  uint8_t hats[4];              /* first four POV hats */
+  unsigned button_count,axis_count,hat_count;
+} SpiderSDL3RawSample;
+unsigned SpiderSDL3Probe_RawList(uint32_t *ids,unsigned capacity);
+/* List ALL SDL joysticks (mapped as gamepads or not). The wizard can
+ * recalibrate a device even when SDL has a pre-existing, broken mapping.
+ * mapped_flags receives 1 for SDL-mapped gamepads and 0 for raw-only pads.
+ * Never changes native game ownership or DirectInput state. */
+unsigned SpiderSDL3Probe_RawListAll(uint32_t *ids,unsigned *mapped_flags,
+                                    unsigned capacity);
+int SpiderSDL3Probe_RawName(uint32_t id,char *name,size_t capacity);
+int SpiderSDL3Probe_RawBegin(uint32_t id,char guid[33],
+                            char *name,size_t capacity);
+int SpiderSDL3Probe_RawRead(SpiderSDL3RawSample *out);
+void SpiderSDL3Probe_RawEnd(void);
+/* Applies a validated mapping and saves a GUID-specific file atomically.
+ * Returns 1 only if both SDL mapping and persistence succeeded. */
+int SpiderSDL3Probe_RawRegisterAndSave(const char *mapping,const char *guid);
 
 #endif

@@ -183,7 +183,7 @@ def test_pad_close_transfers_displayed_profile_only_after_destroy():
     assert "ui.start_owner_requested && !has_quit && restore_allowed &&" in loop
     assert "final_foreground==owner ? ui.start_owner_id:0u," in loop
     flip=probe.split("void SpiderSDL3Probe_OnFlip(",1)[1]
-    assert "spider_sdl3_selected_model_unique(opened,num_pads,requested_id," in flip
+    assert "spider_sdl3_selected_model_unique(opened,num_pads," in flip
     assert "SDL3-PROBE: SETUP RETURN COMMITTED verified modal owner" in flip
     assert "SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous" in flip
     assert "SpiderNativeReconnect_" not in close
@@ -192,12 +192,13 @@ def test_pad_close_transfers_displayed_profile_only_after_destroy():
     # Browsing never requests a handoff. A gamepad-initiated close does.
     select=modal.split("static void select_slot(",1)[1].split(
         "static void refresh_pads(",1)[0]
-    assert "ui->start_owner_requested" not in select
+    assert "ui->start_owner_requested=0u;" in select  # invalidate stale pending claim
+    assert "ui->start_owner_requested=1u;" not in select
     keyboard=modal.split("static int handle_setup_keyboard(",1)[1].split(
         "static LRESULT CALLBACK setup_wndproc(",1)[0]
     assert "setup_close_from_pad(" not in keyboard
-    assert "L1/R1: browse pad" in modal
-    assert "Circle/B: close + use this pad" in modal
+    assert "L1/R1: browse controllers" in modal
+    assert "Use selected SDL3 controller" in modal
 
 
 def test_modal_start_defers_original_owner_until_next_verified_game_flip():
@@ -221,7 +222,7 @@ def test_modal_start_defers_original_owner_until_next_verified_game_flip():
     assert "claims!=1u || ui->capture.active || ui->close_pending" in read
     assert "SendMessageA(ui->pads,CB_SETCURSEL,next,0);" in read
     assert "select_slot(ui,next);" in read
-    assert "if(modal_start_handoff(ui))return;" in sample
+    assert "if(!ui->test_mode && modal_start_handoff(ui))return;" in sample
     assert "spider_sdl3_selection_focus_lost(&ui->modal_start);" in sample
     assert "ui->start_owner_requested=1u;" in read
     assert "ui->start_owner_id=ui->instance;" in read
@@ -241,7 +242,7 @@ def test_modal_start_defers_original_owner_until_next_verified_game_flip():
     assert "selection.active=requested_id;" not in handler
     flip=probe.split("void SpiderSDL3Probe_OnFlip(",1)[1]
     assert "if(setup_owner_pending)" in flip
-    assert "spider_sdl3_selected_model_unique(opened,num_pads,requested_id," in flip
+    assert "spider_sdl3_selected_model_unique(opened,num_pads," in flip
     assert "selection.active=requested_id;" in flip
     assert 'SDL3-PROBE: SETUP RETURN COMMITTED verified modal owner' in flip
     assert 'SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous' in flip
@@ -250,7 +251,8 @@ def test_modal_start_defers_original_owner_until_next_verified_game_flip():
     # Manual L1/R1 browsing selects a profile but never requests transfer.
     select=modal.split("static void select_slot(",1)[1].split(
         "static void refresh_pads(",1)[0]
-    assert "start_owner_requested" not in select
+    assert "ui->start_owner_requested=0u;" in select
+    assert "ui->start_owner_requested=1u;" not in select
     for forbidden in ("SpiderNativeReconnect_", "VirtualProtect(",
                       "SendInput(", "WritePrivateProfileString", "CreateThread("):
         assert forbidden not in read

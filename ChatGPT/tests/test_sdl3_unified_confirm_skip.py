@@ -107,7 +107,10 @@ def test_wizard_eight_3d_rows_and_no_live_native_input_mutation():
     assert "SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE" in model  # old v2 codec
     assert "spider_sdl3_context_cutscene_step(" not in core
     assert "sdl3_cutscene_context_on_flip(" not in core
-    assert 'begin_scancode(0x1Cu,"SDL3 physical Cross/A Confirm/Skip")' in core
+    assert "begin_scancode(" not in core
+    universal=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    assert "SpiderSDL3Probe_SelectedMappedSample(" in universal
+    assert "static int send_scan(" in universal
     for denied in ("SendInput(", "VirtualProtect(", "WriteProcessMemory(",
                    "IDirectInputDevice8_", "CreateThread("):
         assert denied not in ui

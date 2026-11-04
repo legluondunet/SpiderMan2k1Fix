@@ -51,58 +51,38 @@ def test_modal_close_preserves_focus_owner_and_retires_secondary_on_return():
         "SpiderGamepadUI_AfterControllerSetup(owner)")
     assert "AttachThreadInput" not in restoration
     assert "SDL3-SETUP: owner focus restore" in restoration
-    after=scoped(ui,"void SpiderGamepadUI_AfterControllerSetup(HWND game_window) {",
-        "static void detect_device(HWND hwnd)")
-    assert "SpiderSDL3Probe_NativeOwnerEnabled()" in after
-    assert "disable_profile_with_policy(" in after
-    assert "retired separate foreground-only UI DirectInput device after modal" in after
-    assert "sdl3_ui_instance=0;" in after
-    assert "probing=0;" in after
-    assert "hotplug.scan_started=0u;" in after
-    assert after.index("spider_ds4_hotplug_focus_lost(&hotplug)") < after.index(
-        "disable_profile_with_policy(")
-    for forbidden in ("IDirectInputDevice8_Acquire(", "IDirectInput8_CreateDevice(",
-                      "SetForegroundWindow(", "SpiderNativeReconnect_OnFlip(",
-                      "GetDeviceData(", "DirectInput8Create("):
-        assert forbidden not in after
+    # There is no second controller-owned DirectInput COM handle now.
+    # The SDL3 modal restores original native focus; the former cleanup
+    # adapter cannot reopen/release a parallel Sony/Xbox device.
+    assert "void SpiderGamepadUI_AfterControllerSetup(HWND hwnd) {(void)hwnd;}" in ui
+    assert "IDirectInput8_CreateDevice(" not in ui
+    assert "IDirectInputDevice8_Acquire(" not in ui
+    assert "IDirectInputDevice8_Release(" not in ui
+    assert "SpiderSDL3Universal_BeforeModal(owner);" in setup
 
-def test_external_focus_loss_retires_only_verified_sdl3_secondary_com():
+def test_external_focus_loss_releases_universal_keys_without_secondary_com():
     ui=text("gamepad_ui_profile.c")
-    main=scoped(ui,"void SpiderGamepadUI_OnFlip(", "  /* An SDL3 selected canonical native map")
-    focus=main.split("if(GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd)) {",1)[1]
-    assert "SpiderSDL3Probe_NativeOwnerEnabled() && device &&" in focus
-    assert "sdl3_ui_instance!=0u" in focus
-    assert "disable_profile_with_policy(" in focus
-    assert "retired separate foreground-only UI DirectInput on focus loss" in focus
-    assert "sdl3_ui_instance=0;" in focus
-    assert "probing=0;" in focus
-    assert "hotplug.scan_started=0u;" in focus
-    assert focus.index("disable_profile_with_policy(") < focus.index("return;")
-    for forbidden in ("IDirectInputDevice8_Acquire(", "IDirectInput8_CreateDevice(",
-                      "SpiderNativeReconnect_OnFlip(", "SetForegroundWindow("):
-        assert forbidden not in focus
+    adapter=text("sdl3_universal_gameplay.c")
+    core=text("spiderman2k1fix.c")
+    assert "disable_profile_with_policy(" not in ui
+    assert "sdl3_ui_instance" not in ui
+    assert "begin_scancode(" not in ui
+    assert "SpiderSDL3Universal_OnConfirmedFocusPause();" in core
+    assert 'restore_original("focus or window lost");' in adapter
+    assert "native_host_focus_blocked" in adapter
+    assert "release_all()" in adapter
+    assert "SpiderSDL3Universal_SetHostFocusBlocked(" in adapter
 
-def test_next_foreground_flip_must_verify_original_native_owner_and_recreate():
+def test_next_foreground_flip_claims_only_explicit_selected_sdl3_pad():
     ui=text("gamepad_ui_profile.c")
-    flip=scoped(ui,"void SpiderGamepadUI_OnFlip(", "  /* If this Xbox was attached")
-    assert "SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id)" in flip
-    assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in flip
-    assert "if(id!=sdl3_ui_instance)" in flip
-    assert "detect_device(hwnd);" in flip
-    detect=scoped(ui,"static void detect_device(HWND hwnd) {",
-                  "/* This is the ORIGINAL, game-owned CutSceneSkipAllow")
-    assert "DISCL_FOREGROUND|DISCL_NONEXCLUSIVE" in detect
-    assert "IDirectInput8_CreateDevice(di,choose_ds4?" in detect
-    assert "spider_ds4_hotplug_attached(&hotplug)" in detect
-    assert "sdl3_ui_instance=sdl_owner?selected_id:0u;" in detect
-    assert "SpiderNativeReconnect_SDL3SelectionReady(" in detect
-    flip_remainder=ui.split("void SpiderGamepadUI_OnFlip(",1)[1]
-    failed=scoped(flip_remainder,
-                  "  hr=IDirectInputDevice8_GetDeviceState(device,sizeof(state),&state);",
-                  "  if(sdl3_3d_trace_requested &&")
-    assert "IDirectInputDevice8_Acquire(" not in failed
-    assert "modal_reacquire" not in ui
-    assert "spider_hotplug_drop_device(hr," in failed
-    assert "hr==DIERR_INPUTLOST || repeatedly_failed" in failed
-    assert "IDirectInputDevice8_Release(old);" in ui
-    assert "if(already_inputlost)" in ui
+    probe=text("sdl3_gamepad_probe.c")
+    adapter=text("sdl3_universal_gameplay.c")
+    native=text("native_joystick_reconnect.c")
+    assert "IDirectInput8_CreateDevice(" not in ui
+    assert "SpiderNativeReconnect_OnFlip(" not in ui
+    assert "SpiderSDL3Probe_SelectedMappedSample(" in adapter
+    assert "if(!suspended && !spider_sdl3_universal_neutral(&sample))" in adapter
+    assert "SpiderSDL3Probe_GenericSelectedSample(" in probe
+    assert "spider_sdl3_selection_focus_lost(&selection)" in probe
+    assert "target.matches!=1u" in native
+    assert "swap_native_gameplay_mapping(" not in native

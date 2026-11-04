@@ -2083,30 +2083,32 @@ def test_movie4_handoff_releases_only_our_pending_sdl3_return_before_wait():
     assert "keybd_event(" not in barrier
 
 
-def test_bink_handoff_synthetic_return_release_guards_physical_input():
-    """No changes to real held keys, game-owned DirectInput or other pulses."""
+def test_bink_handoff_releases_only_own_universal_sdl3_return():
+    """Only a pending, injected Return may be balanced before Bink #4.
+    The physical Enter/Space and original game input remain untouched."""
     ui=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
     hdr=(ROOT/"gamepad_ui_profile.h").read_text(encoding="utf-8")
-    name="SpiderGamepadUI_ReleaseSyntheticReturnBefore3D"
-    assert f"int {name}(HWND game_window);" in hdr
-    owner=ui[ui.index(f"int {name}(HWND hwnd)"):
-             ui.index("/* Live SDL3 Pause is the eighth profile action.")]
-    assert "active_scan!=0x1cu" in owner
-    assert "GetForegroundWindow()!=hwnd" in owner
-    assert "!IsWindowVisible(hwnd)" in owner
-    assert "active_scan_thread!=GetCurrentThreadId()" in owner
-    assert "if(!release_active_key()) {" in owner
-    assert "KEYUP failed; physical Enter/Space safety wait retained" in owner
-    assert "return 0;" in owner
-    assert "return 1;" in owner
-    for prohibited in ("GetAsyncKeyState(", "SPIDER_NATIVE_GAME_INPUT_UPDATE(",
-                       "SPIDER_NATIVE_GAME_BUTTON", "VirtualProtect(",
-                       "memcpy(", "Sleep(", "SendInput("):
-        assert prohibited not in owner
-    assert "active_scan_thread=GetCurrentThreadId();" in ui
-    assert "active_scan_thread=0;" in ui
-    assert "release_active_key();" in ui[ui.index("void SpiderGamepadUI_OnFlip("):]
-
+    adapter=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    api=(ROOT/"sdl3_universal_gameplay.h").read_text(encoding="utf-8")
+    name="SpiderSDL3Universal_ReleaseSyntheticReturnBefore3D"
+    assert f"int {name}(HWND hwnd);" in api
+    assert "int SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(HWND hwnd);" in hdr
+    assert f"return {name}(hwnd);" in ui
+    release=adapter.split(f"int {name}(HWND hwnd) {{",1)[1].split(
+        "static int binding_held(",1)[0]
+    assert "game_thread!=GetCurrentThreadId()" in release
+    assert "native_host_focus_blocked" in release
+    assert "pulse_scan!=0x1cu" in release
+    assert "GetForegroundWindow()!=hwnd" in release
+    assert "!IsWindowVisible(hwnd)" in release
+    assert "if(!send_scan(pulse_scan,1))" in release
+    assert "KEYUP refused; original physical key wait retained" in release
+    assert "pulse_scan=0;" in release
+    assert "return 1;" in release
+    for forbidden in ("GetAsyncKeyState(", "SPIDER_NATIVE_GAME_INPUT_UPDATE(",
+                      "VirtualProtect(", "memcpy(", "Sleep(", "SendInput("):
+        assert forbidden not in release
+    assert "begin_scancode(" not in ui
 
 def test_enter_only_cannot_arm_intro_auto_skip_during_release_barrier():
     """The new barrier is not an alternate F10 origin or movie-skip request."""

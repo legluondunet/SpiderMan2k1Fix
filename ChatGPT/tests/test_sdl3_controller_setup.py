@@ -282,18 +282,18 @@ def test_mouse_free_keyboard_and_selected_gamepad_setup_navigation():
     assert 'physical=(sample->buttons&accepted)|analog;' in nav
     assert 'SPIDER_SETUP_NAV_LEFT=21, SPIDER_SETUP_NAV_RIGHT=22' in nav
     assert 'edges=physical&~old;' in nav
-    assert 'Stick Left/Right: actions or buttons' in ui
-    assert 'Stick Up/Down: select row or button' in ui
+    assert 'Stick Left/Right: navigate' in ui
+    assert 'L1/R1: browse controllers' in ui
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     setup_read=probe.split("int SpiderSDL3Probe_SetupRead(",1)[1].split(
         "/* SDL3 exposes each trigger",1)[0]
     assert "sample->axis[SPIDER_SDL3_AXIS_LEFTX]=sdl_axis(handle,SPIDER_SDL3_AXIS_LEFTX);" in setup_read
     assert "sample->axis[SPIDER_SDL3_AXIS_LEFTY]=sdl_axis(handle,SPIDER_SDL3_AXIS_LEFTY);" in setup_read
     assert not any(ord(ch)>127 for ch in ui), "ANSI game dialog must use ASCII-only labels"
-    assert 'Stick Left/Right: actions or buttons' in ui
-    assert 'L1/R1: browse pad' in ui
-    assert 'Circle/B: close + use this pad' in ui
-    assert 'Start: choose pad' in ui
+    assert 'Stick Left/Right: navigate' in ui
+    assert 'L1/R1 browse pads' in ui
+    assert 'Use selected SDL3 controller' in ui
+    assert 'Start only outside capture' in ui
     for forbidden in ("SendInput(", "WritePrivateProfileString",
                       "VirtualProtect(", "CreateThread("):
         assert forbidden not in ui
@@ -313,7 +313,12 @@ def test_modal_initial_pad_follows_verified_gameplay_owner_not_first_detected():
     assert "else if(!old_id && gameplay_id && id==gameplay_id &&" in body
     assert "vid==gameplay_vid && pid==gameplay_pid)" in body
     assert "desired=i;" in body
-    assert 'matched_owner?"verified-gameplay-owner":"fallback-first-mapped"' in body
+    assert 'matched_owner?owner_source:"fallback-first-mapped"' in body
+    assert 'owner_source="verified-gameplay-owner";' in body
+    # A previously Start-confirmed unsupported SDL3 pad can be previewed
+    # on the next visit, but is not silently adopted as a native DI owner.
+    assert 'SpiderSDL3Probe_GenericSelectedSample(' in body
+    assert 'owner_source="previous-explicit-generic-selection";' in body
     assert "select_slot(ui,desired);" in body
     # The owner identity is independently checked for unique models and
     # live SDL3 handles; never infer ownership from first enumerated pad.
@@ -357,3 +362,63 @@ def test_modal_close_cannot_destroy_dialog_inside_sdl3_timer_callback():
     assert "PostMessageA(hwnd,WM_CLOSE,0,0);" in handler
     assert "DestroyWindow(hwnd);" in handler.split("case WM_CLOSE:",1)[1]
     assert "DestroyWindow(hwnd);" not in handler.split("case WM_COMMAND:",1)[1].split("case WM_TIMER:",1)[0]
+
+
+
+def test_native_joystick_main_entry_opens_sdl3_directly_but_keyboard_remains_original():
+    native=(ROOT/"ps1_joystick_readonly_menu.c").read_text(encoding="utf-8")
+    header=(ROOT/"ps1_joystick_readonly_menu.h").read_text(encoding="utf-8")
+    bridge=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
+    setup=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
+    # 0x50CE70 is the original PCSHELL_DoControllerConfig(bool)
+    # function identified by krystalgamer/spidey-decomp tools/names.json.
+    assert "#define SPIDER_NATIVE_CONTROLLER_CONFIG_VA 0x0050CE70u" in native
+    assert "int SpiderSDL3_InstallDirectJoystickEntry(" in header
+    assert "int SpiderSDL3_InstallDirectJoystickEntry(" in native
+    assert "SpiderSDL3_InstallDirectJoystickEntry(ui_log)" in bridge
+    assert "SpiderSDL3_InstallDirectJoystickEntry(logger);" in bridge
+    assert "SDL3-DIRECT-ENTRY: INSTALL attempt" in native
+    assert "SDL3-DIRECT-ENTRY: REFUSED PE header" in native
+    # Actual SHA-verified 2001 game PE header observed by GE-Proton:
+    # 0x02A0D000. Old arbitrary upper bound 0x02000000 rejected it.
+    assert "nt->OptionalHeader.SizeOfImage!=0x02A0D000u" in native
+    assert "nt->OptionalHeader.SizeOfImage>0x02000000u" not in native
+    assert "nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR32_MAGIC" in native
+    assert "nt->OptionalHeader.ImageBase!=0x00400000u" in native
+    assert "SDL3-DIRECT-ENTRY: REFUSED section=" in native
+    assert "SDL3-DIRECT-ENTRY: REFUSED no direct CALL rel32" in native
+    assert "if(SpiderSDL3ControllerSetup_Enabled())" in bridge
+    assert "static void __cdecl spider_sdl3_direct_controller_menu(int native_mode)" in native
+    assert "if(is_joystick && SpiderSDL3ControllerSetup_Enabled())" in native
+    # Verified by real game log: mode 0 opened native JOYSTICK despite
+    # our earlier (incorrect) inference that 0 was Keyboard. Mode 1
+    # is reserved for the untouched original Keyboard config.
+    assert "const int is_joystick=(native_mode==0);" in native
+    assert "native_mode==0?\"Joystick\"" in native
+    assert "native_mode==1?\"Keyboard\"" in native
+    assert "Joystick selected (mode=0)" in native
+    assert "Keyboard selected (mode=1)" in native
+    assert "SDL3-DIRECT-ENTRY: INVOKED native-mode=%d interpreted=%s" in native
+    assert "if(is_joystick && SpiderSDL3ControllerSetup_Enabled())" in native
+    assert "SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(native_mode);" in native
+    assert "const int is_joystick=(native_mode!=0);" not in native
+    assert "SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(is_joystick);" not in native
+    assert "SpiderSDL3Probe_SetupPump()" in native
+    assert "SpiderSDL3ControllerSetup_Open();" in native
+    assert "SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(native_mode);" in native
+    assert "0x00AC129Cu!=0u" in native  # restore-row legacy fallback
+    assert "native Joystick selection redirect" in (ROOT/"sdl3_controller_setup.h").read_text(encoding="utf-8")
+    assert "for(i=0;i<nt->FileHeader.NumberOfSections;i++)" in native
+    assert "IMAGE_SCN_MEM_EXECUTE" in native
+    assert "target!=SPIDER_NATIVE_CONTROLLER_CONFIG_VA" in native
+    assert "count>=SPIDER_DIRECT_ENTRY_MAX_CALLS" in native
+    assert "found[i][0]!=0xE8u" in native
+    assert "spider_sdl3_patch_native_call(" in native
+    assert "rollback attempted" in native
+    assert "direct_entry_attempted=1" in native
+    assert "VirtualProtect(site,5u" in native
+    assert "GAMEPAD-READONLY: RESTORE-DEFAULT intercepted" in native
+    assert "SendInput(" not in native
+    assert "WritePrivateProfileString" not in native
+    assert "native Joystick selection redirect" in (ROOT/"sdl3_controller_setup.h").read_text(encoding="utf-8")
+    assert "SetForegroundWindow(owner)" in setup

@@ -10,7 +10,7 @@ import textwrap
 ROOT=Path(__file__).resolve().parents[2]
 
 
-def test_column_navigation_and_three_right_buttons_are_pure_c99(tmp_path):
+def test_column_navigation_across_all_six_right_buttons_is_pure_c99(tmp_path):
     cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
     if not cc:
         return
@@ -34,16 +34,22 @@ def test_column_navigation_and_three_right_buttons_are_pure_c99(tmp_path):
           assert(STEP(SPIDER_SETUP_NAV_DOWN));
           assert(f.button==SPIDER_SETUP_BUTTON_CLOSE);
           assert(STEP(SPIDER_SETUP_NAV_DOWN));
+          assert(f.button==SPIDER_SETUP_BUTTON_RAW);
+          assert(STEP(SPIDER_SETUP_NAV_DOWN));
+          assert(f.button==SPIDER_SETUP_BUTTON_TEST);
+          assert(STEP(SPIDER_SETUP_NAV_DOWN));
+          assert(f.button==SPIDER_SETUP_BUTTON_USE);
+          assert(STEP(SPIDER_SETUP_NAV_DOWN));
           assert(f.button==SPIDER_SETUP_BUTTON_CAPTURE);
           assert(STEP(SPIDER_SETUP_NAV_UP));
-          assert(f.button==SPIDER_SETUP_BUTTON_CLOSE);
+          assert(f.button==SPIDER_SETUP_BUTTON_USE);
           assert(STEP(SPIDER_SETUP_NAV_LEFT));
           assert(f.column==SPIDER_SETUP_FOCUS_ACTIONS);
-          assert(f.button==SPIDER_SETUP_BUTTON_CLOSE);
+          assert(f.button==SPIDER_SETUP_BUTTON_USE);
           assert(!STEP(SPIDER_SETUP_NAV_UP));
           assert(STEP(SPIDER_SETUP_NAV_RIGHT));
           assert(f.column==SPIDER_SETUP_FOCUS_BUTTONS);
-          assert(f.button==SPIDER_SETUP_BUTTON_CLOSE);
+          assert(f.button==SPIDER_SETUP_BUTTON_USE);
           assert(!STEP(SPIDER_SETUP_NAV_SOUTH));
           assert(!STEP(SPIDER_SETUP_NAV_EAST));
           assert(!STEP(SPIDER_SETUP_NAV_NORTH));
@@ -72,7 +78,7 @@ def test_win32_focus_and_deferred_activation_guards():
     assert 'analog|=1u<<SPIDER_SETUP_NAV_RIGHT' in nav
     assert 'analog|=1u<<SPIDER_SETUP_NAV_LB' not in nav
     assert 'analog|=1u<<SPIDER_SETUP_NAV_RB' not in nav
-    assert 'SPIDER_SETUP_BUTTON_COUNT=3' in focus
+    assert 'SPIDER_SETUP_BUTTON_COUNT=6' in focus
     assert 'static void setup_apply_focus(SpiderSDL3SetupUI *ui)' in ui
     assert 'WM_CHANGEUISTATE' in ui
     assert 'UISF_HIDEFOCUS' in ui
@@ -95,6 +101,7 @@ def test_win32_focus_and_deferred_activation_guards():
     assert 'HIWORD(wp)==BN_SETFOCUS' in ui
     assert 'HIWORD(wp)==LBN_SETFOCUS' in ui
     assert ui.count("WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_NOTIFY") == 3
+    assert ui.count("WS_TABSTOP|BS_PUSHBUTTON|BS_NOTIFY") == 3
     # A physical East/Circle is still assignable to a 3D action during
     # explicit capture; ESC remains the non-ambiguous cancel operation.
     capture=(ROOT/"sdl3_controller_capture.h").read_text(encoding="utf-8")

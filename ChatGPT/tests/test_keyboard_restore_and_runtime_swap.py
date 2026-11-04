@@ -19,7 +19,7 @@ def test_modern_keyboard_restore_changes_only_original_default_source():
     assert "0x0053C87Cu" in CFG
     defaults=CFG.split("int SpiderCfg_InstallModernKeyboardDefaults(void) {",1)[1].split("static void load_keyboard(",1)[0]
     assert "0x00568398u" not in defaults  # defaults writer NEVER touches customized mapping
-    assert "0x00568398u" in CFG  # separate *read-only* hotplug Swing scan
+    assert "0x00568398u" not in CFG  # retired hard-coded Xbox Swing scan
     for source in ("0xC8u,0xD0u,0xCBu,0xCDu,0x50u,0x4Du,0x4Bu",
                    "0x48u,0x47u,0x51u,0x49u"):
         assert source in CFG
@@ -37,38 +37,23 @@ def test_modern_keyboard_restore_changes_only_original_default_source():
     assert "memcpy(replacements[2],live_sites[2].original,live_sites[2].size);" in MENU
 
 
-def test_hotplug_native_table_swapping_defaults_on_but_never_touches_keyboard():
-    assert '"ExperimentalNativeJoystickMappingSwap",1,ini)==1' in NATIVE
-    assert "ExperimentalNativeJoystickMappingSwap" in INI
-    assert "ExperimentalNativeJoystickMappingSwap=1" in CFG
-    assert "static void swap_native_gameplay_mapping(unsigned to_kind)" in NATIVE
-    assert "if(!swap_mapping_enabled" in NATIVE
-    assert "spider_native_swap_read((const uint8_t *)address,0x70u,current)" in NATIVE
-    assert "spider_native_swap_preset(current)" in NATIVE
-    assert "NATIVE-SWAP: REFUSED CUSTOM joystick mapping" in NATIVE
-    assert "spider_native_swap_first" not in NATIVE
-    assert "SPIDER_NATIVE_SWAP_FIRST_ACTION+i" in NATIVE
+def test_native_reconnect_never_applies_fixed_joystick_mapping_or_overrides_keyboard():
+    assert "ExperimentalNativeJoystickMappingSwap=1" not in CFG
+    assert "swap_mapping_enabled=0;" in NATIVE
+    assert "swap_native_gameplay_mapping(" not in NATIVE
+    assert "spider_ps1_buttons" not in NATIVE
+    assert "spider_xbox360_buttons" not in NATIVE
+    assert "spider_native_swap_preset(" not in NATIVE
     assert "SPIDER_NATIVE_ACTION_TABLE 0x00568408u" in NATIVE
-    assert "swap_native_gameplay_mapping(list.kind);" in NATIVE
     assert "if(!neutral_and_flush(candidate))" in NATIVE
     assert "InterlockedCompareExchangePointer((PVOID volatile *)game_device_slot()" in NATIVE
-    assert NATIVE.index("if(!neutral_and_flush(candidate))") < NATIVE.index("swap_native_gameplay_mapping(list.kind);")
-    assert "VirtualQuery((const void *)address,&mbi,sizeof(mbi))" in NATIVE
-    assert "VirtualProtect((void *)address,0x70u,PAGE_READWRITE,&old)" in NATIVE
-    assert "spider_native_swap_preset(current)!=to_kind" in NATIVE
-    assert "original[i]" in NATIVE
-    assert "spider_ps1_buttons:" in NATIVE
-    assert "spider_xbox360_buttons_sdl3_rt:" in NATIVE
-    assert "spider_xbox360_buttons;" in NATIVE
-    assert "SpiderSDL3Probe_NativeOwnerEnabled()" in NATIVE
-    assert "SPIDER_NATIVE_BUTTON_COUNT==10u" in NATIVE
-    assert "memcmp(current,target,sizeof(current))==0" in NATIVE
+    assert "spider_native_swap_read(" in NATIVE
     assert "SPIDER_NATIVE_SWAP_SLOTS=14" in PROBE
-    target=NATIVE.split("static void swap_native_gameplay_mapping(",1)[1].split("static void close_candidate(",1)[0]
-    for forbidden in ("WritePrivateProfileStringA(", "SendInput(", "SPIDER_NATIVE_FACTORY",
-                      "spidey_cfg_factory", "spider_keyboard", "gKeyboardMappings"):
-        assert forbidden not in target
-
+    assert "SpiderSDL3Probe_NativeOwnerEnabled()" in NATIVE
+    assert "VirtualProtect((void *)address,0x70u,PAGE_READWRITE,&old)" not in NATIVE
+    assert "spider_ps1_apply(" not in CFG
+    assert "spider_xbox360_apply(" not in CFG
+    assert "SPIDEY-KEYBOARD-DEFAULT: ACTIVE" in CFG
 
 def test_keyboard_and_joystick_are_independently_locked():
     assert "0x00AC129Cu!=0u" in MENU
