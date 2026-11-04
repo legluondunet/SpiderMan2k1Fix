@@ -2742,6 +2742,12 @@ static void pause_at_flip_if_background(void) {
               pause_x11_bridge_confirmed_loss()) ||
              (!win32_game_foreground && pause_confirmed_focus_loss(hwnd))) &&
             InterlockedCompareExchange(&pause_latched,1,0)==0) {
+    /* Native X11 can prove Firefox has focus while Wine still reports
+     * Spider-Man as foreground. Before entering blocking PAUSED, force
+     * SDL3 universal's held direction release and native DI restoration.
+     * The normal BeforeUI(HWND) Win32 check would otherwise miss this
+     * loss and preserve a stale original-game buffered movement latch. */
+    SpiderSDL3Universal_OnConfirmedFocusPause();
     SpiderAltLatch_OnConfirmedExternalLoss();
     log_line("FOCUS-PAUSE: confirmed external focus loss; pause latched until manual resume");
     pause_log_foreground_owner(hwnd,GetForegroundWindow(),"external-foreground-latched");
