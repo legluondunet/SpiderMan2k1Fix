@@ -53,7 +53,11 @@ def test_alpha_blend_on_existing_directdraw_surface():
     assert "AlphaBlend(dest,x,y,width,height,source,0,0,1,1,blend)" in P
     assert "BLENDFUNCTION blend={AC_SRC_OVER,0,alpha,0}" in P
     assert "(opacity*255+50)/100" in P
-    assert "canvas=*content_rect;" in P
+    # Full-frame dim is unchanged; F9-style pause badge ignores 4:3
+    # content bounds, using the screenshot notification's screen edge.
+    assert "pause_blend_color(dc,tint_dc,0,0,width,height,RGB(0,0,0)" in P
+    assert "(void)content_rect;" in P
+    assert "SpiderF9Toast_DrawPausedPanel(dc,(DWORD)width,(DWORD)height)" in P
     assert "BG_DITHER_PERIOD" not in P
     assert "WS_EX_TRANSPARENT" not in P
     assert "-lmsimg32" in BUILD
