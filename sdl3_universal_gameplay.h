@@ -10,6 +10,10 @@ int SpiderSDL3Universal_Enabled(void);
 int SpiderSDL3Universal_SuppressesNative(void);
 /* Before UI/focus pause, releases held synthetic keys on any lost focus. */
 void SpiderSDL3Universal_BeforeUI(HWND hwnd);
+/* Called after the host X11 or Win32 focus-loss detector has LATCHED pause,
+ * before blocking the game Flip thread. GetForegroundWindow() can stay
+ * incorrectly on the game under Wine/X11; do not trust it here. */
+void SpiderSDL3Universal_OnConfirmedFocusPause(void);
 /* Before the joystick-setup modal blocks the original Flip thread, restore
  * game-owned DirectInput and release every synthetic held key. */
 void SpiderSDL3Universal_BeforeModal(HWND game_hwnd);
