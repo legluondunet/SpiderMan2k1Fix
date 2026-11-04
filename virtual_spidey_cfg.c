@@ -455,9 +455,6 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "[Debug]\r\n"
     "; 1 = write SpiderMan2k1Fix.log; 0 = no log (default).\r\n"
     "Log=0\r\n"
-    "; PASSIVE manual RT/LT test: log Xbox DirectInput raw axes in 3D.\r\n"
-    "; Only enable for a short controlled trigger test; modifies no inputs.\r\n"
-    "Xbox360TriggerProbe=0\r\n"
     "\r\n"
     "[Display]\r\n"
     "; Auto = monitor aspect ratio, 4:3 = original presentation.\r\n"
@@ -476,8 +473,6 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "ExperimentalSDL3NativeOwner=1\r\n"
     "ExperimentalSDL3ControllerSetup=1\r\n"
     "ExperimentalSDL3ContextBridge=1\r\n"
-    "ExperimentalSDL3GameplayBindings=1\r\n"
-    "ExperimentalSDL3XboxRTSwing=1\r\n"
     "; EXPERIMENTAL universal SDL3 profile to 3D gameplay keyboard adapter.\r\n"
     "; OFF by default; test only after backing up INI and profiles.\r\n"
     "ExperimentalSDL3UniversalGameplay=0\r\n"
@@ -486,44 +481,20 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "ExperimentalAltLatchRecovery=1\r\n"
     "; Mouse input is permanently disabled IN-GAME (keyboard/gamepad only).\r\n"
     "; Windows/Linux desktop pointer behavior remains unchanged.\r\n"
-    "; ControllerProfile: Auto detects a single Sony DualShock4 or Xbox360 pad.\r\n"
-    "; Xbox360 (045E:028E etc.) A/B menu bridge is experimental.\r\n"
-    "; The Sony PS1 preview never applies to Xbox controllers.\r\n"
-    "; With verified Xbox360 profile, in-game Joystick bindings are read-only.\r\n"
-    "; Keyboard menu remains editable; native Joystick button mapping is unchanged.\r\n"
-    "; Other gamepads keep native controls; Off disables this UI bridge.\r\n"
-    "ControllerProfile=Auto\r\n"
-    "; EXPERIMENTAL Xbox gameplay preview (default OFF): PS1-equivalent layout.\r\n"
-    "; A=Jump, B=Kick, X=Punch, Y=quick Web, LB=Aim, RB=Zipline.\r\n"
-    "; RT=Swing is TARGET ONLY: RT is an axis, NOT confirmed as BUTTON9.\r\n"
-    "; Until RT is measured, BUTTON9 remains a temporary digital Swing fallback.\r\n"
-    "; Start/Back (BUTTON7/6) reserved for Pause; only A/B measured on Holtek.\r\n"
-    "; Requires a single verified Xbox + native Joystick readonly + CRT read.\r\n"
-    "; Does not change personal [Joystick] bindings or [Internal] RawHex.\r\n"
-    "ControllerXbox360Preview=0\r\n"
-    "; Experimental RT (negative lZ) -> native Swing keyboard action held.\r\n"
-    "; Requires ControllerXbox360Preview=1, game-owned keyboard Swing scan,\r\n"
-    "; and exact tested Holtek trigger polarity; OFF by default.\r\n"
-    "ControllerXbox360RTSwing=0\r\n"
+    "; SDL3 discovers known Xbox, Sony and other mapped controllers using\r\n"
+    "; its own gamepad database. First-use mappings use generic semantic\r\n"
+    "; defaults until the user customizes their model profile.\r\n"
+    "; Old hard-coded PS1/Xbox preview and DirectInput button presets are\r\n"
+    "; retired; no fixed per-vendor gameplay action mapping is applied.\r\n"
     "; Native gamepad safety: prevent original unplug crash (default ON).\r\n"
     "; The reconnect owner is controlled and verified independently.\r\n"
     "ExperimentalNativeJoystickUnplugGuard=1\r\n"
     "; Native gamepad reconnect on supported, verified controller (default ON).\r\n"
     "; Requires ExperimentalNativeJoystickUnplugGuard=1.\r\n"
     "ExperimentalNativeJoystickReconnect=1\r\n"
-    "; EXPERIMENTAL: after a DS4/Xbox native reconnect, switch the seven\r\n"
-    "; canonical game-owned button actions in RAM only (not user INI).\r\n"
-    "; Requires both native unplug guard and reconnect; default ON.\r\n"
-    "ExperimentalNativeJoystickMappingSwap=1\r\n"
-    "; Legacy UI bridge only: Cross/Options = Enter. PS1 preview uses Cross only.\r\n"
-    "ControllerEnterButtons=Both\r\n"
-    "; In 2D menus Circle = Escape/Back; Share or Off are alternatives.\r\n"
-    "; Triangle stays native for scripted 3D cinematic skipping.\r\n"
-    "ControllerBackButton=Circle\r\n"
-    "; Legacy UI bridge only: OPTIONS can Pause if no native action uses\r\n"
-    "; BUTTON9 (factory Zipline does). PS1 preview uses SHARE instead.\r\n"
-    "; Existing saved gameplay bindings are never overwritten.\r\n"
-    "ControllerPauseButton=Options\r\n"
+    "; Legacy native action table remapping removed. Device recovery\r\n"
+    "; never changes the original game's joystick action assignments.\r\n"
+    "ExperimentalNativeJoystickMappingSwap=0\r\n"
     "\r\n"
     "[Audio]\r\n"
     "; All levels are 0..100 percent, with lossless raw values kept below.\r\n";
@@ -632,6 +603,15 @@ static const struct {const char *section,*key;} deprecated_ini_keys[]={
   {"Input","PauseOnFocusLoss"},{"Input","PauseBinkOnFocusLoss"},
   {"Input","PauseDirectSoundOnFocusLoss"},{"Input","PauseOverlay"},
   {"Input","PauseDim"},
+  {"Input","ControllerProfile"},
+  {"Input","ControllerXbox360Preview"},
+  {"Input","ControllerPS1Preview"},
+  {"Input","ControllerXbox360RTSwing"},
+  {"Input","ControllerEnterButtons"},
+  {"Input","ControllerBackButton"},
+  {"Input","ControllerPauseButton"},
+  {"Input","ExperimentalSDL3GameplayBindings"},
+  {"Input","ExperimentalSDL3XboxRTSwing"},
   {"Input","PauseKey"},{"Input","RestoreCursorOnFocusLoss"},
   {"Input","ExperimentalFocusTrace"},{"Input","ExperimentalDI8EntryTrace"},
   {"Input","ExperimentalAltTabReacquire"},{"Input","ExperimentalDI8CreateDeviceTrace"}
