@@ -50,6 +50,23 @@ def test_candidate_classifier_matches_reference_screen_geometry(tmp_path):
                    ==SPIDER_HUD_VISUAL_NONE);
             assert(SpiderHudVisual_Classify(v,4,6,0x142,1920,1080)
                    ==SPIDER_HUD_VISUAL_NONE);
+            /* These log-observed samples are the native ESC
+             * translucent motif, not aiming rings. */
+            q(v,1245,904,1511.2f,1053);
+            v[0].z=0.00146f;
+            v[0].rhw=7.8952f;
+            v[0].diffuse=0x80208686u;
+            assert(SpiderHudVisual_Classify(v,4,6,0x144,1920,1080)
+                   ==SPIDER_HUD_VISUAL_NONE);
+            v[0].diffuse=0x80041010u;
+            assert(SpiderHudVisual_Classify(v,4,6,0x144,1920,1080)
+                   ==SPIDER_HUD_VISUAL_NONE);
+            q(v,960,846,1038.8f,945);
+            v[0].z=0.0f;
+            v[0].rhw=27.6f;
+            v[0].diffuse=0u;
+            assert(SpiderHudVisual_Classify(v,4,6,0x144,1920,1080)
+                   ==SPIDER_HUD_VISUAL_NONE);
             q(v,20,125,270,310); /* player health, top-left */
             assert(SpiderHudVisual_Classify(v,4,6,0x144,1920,1080)
                    ==SPIDER_HUD_VISUAL_NONE);
