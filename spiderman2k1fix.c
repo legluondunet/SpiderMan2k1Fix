@@ -2762,8 +2762,77 @@ static void pause_at_flip_if_background(void) {
   SpiderAltLatch_OnPauseReturn(hwnd);
   InterlockedExchange(&pause_in_progress,0);
 }
+/* Experimental Wine/X11 no-Flip recovery.
+ * A normal Flip is the only entry to the permanent custom PAUSED loop.
+ * Some focus losses stop the engine's Flip traffic entirely, even though
+ * the game's own Win32 thread may still dispatch messages. A same-thread
+ * WM_TIMER callback can reuse the existing pause path in that case.
+ *
+ * STRICTLY OPT-IN: SPIDERMAN2K1FIX_FOCUS_TIMER=1. Keep release behavior
+ * untouched until Wine AND Windows runtime validation. No worker thread,
+ * no synthetic keys, no window activation, no WndProc replacement.
+ * If the original game does not dispatch WM_TIMER in background, this
+ * conservative fallback cannot fire; that is an explicit limitation. */
+static volatile LONG pause_focus_timer_state=0; /* 0 unknown, -1 off, 1 armed */
+static volatile DWORD pause_focus_timer_last_flip_tick=0;
+static UINT_PTR pause_focus_timer_id=0;
+static unsigned pause_focus_timer_reports=0;
+static VOID CALLBACK pause_focus_timer_proc(HWND hwnd, UINT message,
+                                            UINT_PTR timer_id, DWORD tick) {
+  DWORD since_flip;
+  (void)tick;
+  if(message!=WM_TIMER || !hwnd || hwnd!=game_hwnd ||
+     timer_id!=pause_focus_timer_id ||
+     InterlockedCompareExchange(&pause_focus_timer_state,0,0)!=1 ||
+     InterlockedCompareExchange(&pause_on_focus_loss,0,0)!=1 ||
+     InterlockedCompareExchange(&pause_ever_foreground,0,0)!=1 ||
+     InterlockedCompareExchange(&pause_in_progress,0,0)!=0 ||
+     InterlockedCompareExchange(&pause_latched,0,0)!=0 ||
+     !IsWindow(hwnd) || GetForegroundWindow()==hwnd)return;
+  since_flip=(DWORD)(GetTickCount()-pause_focus_timer_last_flip_tick);
+  /* Normal frame-boundary pausing always wins. Trigger only when there
+   * has been NO Flip for at least 250ms, then retain the separate 150ms
+   * foreign-process/verified-NULL focus debounce in the pause routine. */
+  if(since_flip<250u)return;
+  if(debug_log_enabled && pause_focus_timer_reports<24u) {
+    char message_text[150];
+    ++pause_focus_timer_reports;
+    snprintf(message_text,sizeof(message_text),
+      "FOCUS-TIMER: no-Flip candidate elapsed-ms=%lu (same game thread; opt-in)",
+      (unsigned long)since_flip);
+    log_line(message_text);
+  }
+  pause_at_flip_if_background();
+}
+static void pause_focus_timer_try_arm(HWND hwnd) {
+  char enabled[4]={0};
+  DWORD n;
+  UINT_PTR id;
+  if(!hwnd || !IsWindow(hwnd) ||
+     InterlockedCompareExchange(&pause_focus_timer_state,-1,0)!=0)return;
+  n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_FOCUS_TIMER",
+                            enabled,sizeof(enabled));
+  if(n!=1 || enabled[0]!='1')return;
+  /* SetTimer with non-NULL hwnd and TimerProc dispatches on the owner
+   * thread. The game render/Flip thread owns this HWND on validated builds. */
+  if(GetWindowThreadProcessId(hwnd,NULL)!=GetCurrentThreadId()) {
+    log_line("FOCUS-TIMER: disabled; Flip is not game window owner thread");
+    return;
+  }
+  id=SetTimer(hwnd,0,50u,pause_focus_timer_proc);
+  if(!id) {
+    log_line("FOCUS-TIMER: SetTimer failed; original Flip pause unchanged");
+    return;
+  }
+  pause_focus_timer_id=id;
+  InterlockedExchange(&pause_focus_timer_state,1);
+  log_line("FOCUS-TIMER: EXPERIMENT ARMED 50ms same-thread WM_TIMER, fires only after 250ms without Flip; 150ms focus debounce retained");
+}
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
+  InterlockedExchange((volatile LONG*)&pause_focus_timer_last_flip_tick,
+                      (LONG)GetTickCount());
+  pause_focus_timer_try_arm(game_hwnd);
   focus_timeline_pulse(1,count,self);
   if(debug_log_enabled &&
      InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1) {
