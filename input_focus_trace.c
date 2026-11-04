@@ -728,6 +728,7 @@ void SpiderInputFocus_OnFlip(LONG flip_number) {
    * change. On native Windows the Wine-only exports are absent. */
   if(InterlockedCompareExchange(&native_bridge_autostarted,1,0)==0)
     SpiderWineFocusAutostart_TryStart(focus_log);
+  SpiderWineFocusAutostart_PollReady(focus_log);
   if(!diagnostic_active || !tracked_window) return;
   fg=GetForegroundWindow();foreground=(fg==tracked_window)?1:0;
   previous=InterlockedExchange(&last_focus_foreground,foreground);
