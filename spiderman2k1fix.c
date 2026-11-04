@@ -1145,8 +1145,9 @@ static const void *maybe_correct_native_pause43(void *device,
      */
     bt=InterlockedCompareExchange(&native_pause43_banner_top,0,0);
     bb=InterlockedCompareExchange(&native_pause43_banner_bottom,0,0);
-    if(!((fabsf(z-0.00098f)<0.00010f && fabsf(rhw-12.686f)<0.30f) ||
-         (fabsf(z-0.00122f)<0.00010f && fabsf(rhw-11.176f)<0.30f)))
+    /* Source-backed strict depth variants: old menu and level-2
+     * shadow/foreground glyphs measured in the maintainer's log. */
+    if(!SpiderNativePause43_TextLayer(z,rhw))
       return source;
     if(FAILED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)) ||
        !tex)return source;
@@ -1160,8 +1161,9 @@ static const void *maybe_correct_native_pause43(void *device,
      * geometries unchanged, including their 16:10 variation. */
     if(tw==8 && th==8 &&
        bb>bt+55.0f*(desktop_w==1920?1.0f:(float)desktop_h/1080.0f) &&
-       fabsf(z-0.00122f)<0.00010f &&
-       fabsf(rhw-11.176f)<0.25f) {
+       /* Borders share the verified ribbon depth, not arbitrary text
+        * shadow layers; accept only the two exact ribbon signatures. */
+       SpiderNativePause43_RibbonLayer(z,rhw)) {
       float sx=(float)desktop_w/1920.0f;
       float sy=desktop_w==1920?1.0f:(float)desktop_h/1080.0f;
       int near_left=(left>=-42.0f*sx && left<=-12.0f*sx &&
