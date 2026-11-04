@@ -472,18 +472,29 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
      * intentionally unclaimed state, before the original Flip returns
      * to the game. Keyboard input remains independent. This isolation
      * applies only when ExperimentalSDL3UniversalGameplay=1. */
-    if(active || sent_mask || pulse_scan ||
-       (focus_dir.phase==SPIDER_FOCUS_DIR_UP) ||
-       (suspended && !native_unclaimed_guard))
+    if(active || (!native_unclaimed_guard &&
+       (sent_mask || pulse_scan || suspended ||
+        focus_dir.phase==SPIDER_FOCUS_DIR_UP)))
       restore_original("no selected mapped controller");
+    /* A failed OS KEYUP must not reopen the legacy joystick while the
+     * remaining PS3 is unclaimed. Keep its native owner isolated and
+     * retry pending releases directly, without a restore/suspend loop. */
+    if(native_unclaimed_guard && (sent_mask || pulse_scan))
+      release_all();
+    if(native_unclaimed_guard &&
+       focus_dir.phase==SPIDER_FOCUS_DIR_UP &&
+       focus_dir.index<focus_dir.count &&
+       send_scan(focus_dir.scans[focus_dir.index],1)) {
+      spider_sdl3_focus_dir_complete(&focus_dir);
+      focus_dir_controller_id=0;
+    }
     if(native_unclaimed_guard && suspended &&
        (!writable_slot() || *SPIDER_UNIVERSAL_DI_SLOT!=NULL)) {
       if(report && native_guard_reports++<16u)
         report("SDL3-UNIVERSAL: UNCLAIMED guard displaced; refusing stale native owner");
       restore_original("unclaimed native DI slot changed");
     }
-    if(!suspended && !sent_mask && !pulse_scan &&
-       writable_slot() && suspend_original()) {
+    if(!suspended && writable_slot() && suspend_original()) {
       native_unclaimed_guard=1;
       if(report && native_guard_reports++<16u)
         report("SDL3-UNIVERSAL: UNCLAIMED native DirectInput joystick held inactive until explicit SDL3 Start (keyboard unaffected)");
