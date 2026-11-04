@@ -25,6 +25,7 @@
 #include "fov_aspect.h"
 #include "fov_aspect_win.h"
 #include "input_focus_trace.h"
+#include "wine_focus_autostart.h"
 #include "gamepad_ui_profile.h"
 #include "input_notacquired_retry.h"
 #include "alt_latch_recovery.h"
