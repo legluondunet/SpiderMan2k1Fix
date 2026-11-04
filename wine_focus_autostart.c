@@ -24,6 +24,13 @@ static DWORD helper_spawn_tick=0;
 static DWORD helper_probe_tick=0;
 static FILETIME helper_spawn_filetime;
 static WCHAR helper_state_path[MAX_PATH];
+static WCHAR helper_exec_path[MAX_PATH];
+static WCHAR helper_game_path[MAX_PATH];
+/* A manual SPIDERMAN2K1FIX_X11_BRIDGE=1 must never be restarted by
+ * our Windows DLL. Only a helper we launched and verified may be retried. */
+static int helper_managed=0;
+static int helper_recovery_attempts=0;
+static DWORD helper_recovery_probe_tick=0;
 
 int SpiderWineFocusAutostart_PollReady(void (*logger)(const char *)) {
   DWORD tick=GetTickCount(),read=0;
@@ -67,8 +74,84 @@ int SpiderWineFocusAutostart_PollReady(void (*logger)(const char *)) {
     if(logger)logger("FOCUS-X11-AUTO: could not activate verified X11 bridge; Win32 fallback");
     return 0;
   }
+  helper_managed=1;
   if(logger)logger("FOCUS-X11-AUTO: fresh native X11 state verified; automatic bridge active");
   return 1;
+}
+
+/* Recovery must be nonblocking and must never resume a game in the
+ * background. Start at most two replacement helpers for this game run;
+ * the existing PAUSED keyboard hook remains gated until a fresh GAME
+ * is confirmed and the user presses and releases a wake key.
+ *
+ * A fresh UNKNOWN packet means the helper is alive but cannot determine
+ * focus: do NOT fork a competing observer or trust Win32 foreground. */
+int SpiderWineFocusAutostart_TryRecover(void (*logger)(const char *)) {
+  DWORD tick=GetTickCount();
+  WIN32_FILE_ATTRIBUTE_DATA attr;
+  FILETIME now_filetime;
+  ULARGE_INTEGER modified,now;
+  HMODULE ntdll,kernel;
+  wine_to_unix_fn to_unix;
+  wine_spawn_fn spawn;
+  char *helper_unix=NULL,*game_unix=NULL;
+  char *argv[3];
+  LONG status;
+  int attempt;
+  if(!helper_managed || helper_waiting_for_state ||
+     helper_recovery_attempts>=2)return 0;
+  if(helper_recovery_probe_tick &&
+     (DWORD)(tick-helper_recovery_probe_tick)<250u)return 0;
+  helper_recovery_probe_tick=tick;
+  if(GetFileAttributesExW(helper_state_path,GetFileExInfoStandard,&attr)) {
+    GetSystemTimeAsFileTime(&now_filetime);
+    modified.LowPart=attr.ftLastWriteTime.dwLowDateTime;
+    modified.HighPart=attr.ftLastWriteTime.dwHighDateTime;
+    now.LowPart=now_filetime.dwLowDateTime;
+    now.HighPart=now_filetime.dwHighDateTime;
+    /* Fresh GAME/OTHER and fresh UNKNOWN both mean a live observer. */
+    if(now.QuadPart>=modified.QuadPart &&
+       now.QuadPart-modified.QuadPart<=1200ull*10000ull)return 0;
+  }
+  ntdll=GetModuleHandleA("ntdll.dll");
+  kernel=GetModuleHandleA("kernel32.dll");
+  if(!ntdll || !kernel)return 0;
+  spawn=(wine_spawn_fn)GetProcAddress(ntdll,"__wine_unix_spawnvp");
+  to_unix=(wine_to_unix_fn)GetProcAddress(kernel,"wine_get_unix_file_name");
+  if(!spawn || !to_unix)return 0;
+  ++helper_recovery_attempts;
+  attempt=helper_recovery_attempts;
+  helper_unix=to_unix(helper_exec_path);
+  game_unix=to_unix(helper_game_path);
+  if(!helper_unix || !game_unix) {
+    if(logger)logger("FOCUS-X11-AUTO: observer restart path conversion failed; PAUSED stays active");
+    goto cleanup;
+  }
+  argv[0]=helper_unix;
+  argv[1]=game_unix;
+  argv[2]=NULL;
+  GetSystemTimeAsFileTime(&helper_spawn_filetime);
+  status=spawn(argv,0);
+  if(status==0) {
+    char message[160];
+    helper_waiting_for_state=1;
+    helper_spawn_tick=GetTickCount();
+    helper_probe_tick=0;
+    snprintf(message,sizeof(message),
+      "FOCUS-X11-AUTO: observer heartbeat lost; native restart %d/2 started, awaiting verified state",
+      attempt);
+    if(logger)logger(message);
+  } else if(logger) {
+    char message[160];
+    snprintf(message,sizeof(message),
+      "FOCUS-X11-AUTO: observer restart %d/2 failed NTSTATUS=0x%08lX; PAUSED stays active",
+      attempt,(unsigned long)(DWORD)status);
+    logger(message);
+  }
+cleanup:
+  if(helper_unix)HeapFree(GetProcessHeap(),0,helper_unix);
+  if(game_unix)HeapFree(GetProcessHeap(),0,game_unix);
+  return helper_waiting_for_state;
 }
 
 int SpiderWineFocusAutostart_TryStart(void (*logger)(const char *)) {
@@ -149,6 +232,10 @@ int SpiderWineFocusAutostart_TryStart(void (*logger)(const char *)) {
       goto cleanup;
     }
   }
+  /* Cache only the paths that were validated and converted at startup.
+   * Recovery is allowed only after the first verified handshake. */
+  wcscpy(helper_exec_path,helper_path);
+  wcscpy(helper_game_path,game_path);
   argv[0]=helper_unix;
   argv[1]=game_unix;
   argv[2]=NULL;
