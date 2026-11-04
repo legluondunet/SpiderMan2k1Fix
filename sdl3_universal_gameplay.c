@@ -27,6 +27,10 @@
 #define SPIDER_UNIVERSAL_KEY_TABLE 0x00568398u
 
 static int requested=0,suspended=0,active=0;
+/* Universal opt-in must not expose the game's legacy joystick merely
+ * because the explicitly selected SDL3 controller disconnected. */
+static int native_unclaimed_guard=0;
+static unsigned native_guard_reports=0;
 static DWORD game_thread=0;
 static uint32_t selected_id=0;
 static PVOID borrowed_native=NULL;
@@ -285,6 +289,7 @@ static void restore_original(const char *reason) {
       log_universal("SDL3-UNIVERSAL: original game-owned DirectInput pointer RESTORED on exit/focus change");
   }
   suspended=0;active=0;selected_id=0;borrowed_native=NULL;
+  native_unclaimed_guard=0;
   /* Preserve sent_mask and pulse_scan if KEYUP failed. They are retried
    * in BeforeUI and before any new joystick gameplay injection. */
   menu_previous=0;menu_arm=0;
@@ -333,6 +338,7 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   focus_dir_controller_id=0;
   focus_latch_follow_scan=0;focus_latch_follow_frames=0;
   active=selected_id=0;suspended=0;borrowed_native=NULL;
+  native_unclaimed_guard=0;native_guard_reports=0;
   memset(held_scans,0,sizeof(held_scans));
   sent_mask=0;pulse_scan=0;menu_previous=menu_arm=0;
   previous_context=SPIDER_UNIVERSAL_CTX_3D;
@@ -456,7 +462,31 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   if(!SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample)) {
     if(refusal_reports++<6u)
       log_universal("SDL3-UNIVERSAL: waiting for selected SDL3 mapped pad (press Start on desired pad)");
-    restore_original("no selected mapped controller");
+    /* A passive SDL3 singleton selection is NOT an explicit Start owner.
+     * Previously restore_original() exposed the old DirectInput joystick
+     * here, allowing the remaining PS3 to control Spider-Man with its
+     * unconfigured native layout after DS4 unplug.
+     *
+     * First release all keyboard events and the prior selected owner.
+     * Then borrow the same verified game-owned pointer slot in an
+     * intentionally unclaimed state, before the original Flip returns
+     * to the game. Keyboard input remains independent. This isolation
+     * applies only when ExperimentalSDL3UniversalGameplay=1. */
+    if(active || sent_mask || pulse_scan ||
+       (suspended && !native_unclaimed_guard))
+      restore_original("no selected mapped controller");
+    if(native_unclaimed_guard && suspended &&
+       (!writable_slot() || *SPIDER_UNIVERSAL_DI_SLOT!=NULL)) {
+      if(report && native_guard_reports++<16u)
+        report("SDL3-UNIVERSAL: UNCLAIMED guard displaced; refusing stale native owner");
+      restore_original("unclaimed native DI slot changed");
+    }
+    if(!suspended && !sent_mask && !pulse_scan &&
+       writable_slot() && suspend_original()) {
+      native_unclaimed_guard=1;
+      if(report && native_guard_reports++<16u)
+        report("SDL3-UNIVERSAL: UNCLAIMED native DirectInput joystick held inactive until explicit SDL3 Start (keyboard unaffected)");
+    }
     return;
   }
   profile=SpiderSDL3Probe_SetupProfile(vid,pid);
@@ -512,6 +542,11 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   if(!suspend_original()) {
     restore_original("unsafe native DI pointer");
     return;
+  }
+  if(native_unclaimed_guard) {
+    native_unclaimed_guard=0;
+    if(report && native_guard_reports++<16u)
+      report("SDL3-UNIVERSAL: UNCLAIMED native DI guard transferred to explicitly Started SDL3 controller");
   }
   /* Do not share the neutral-wait suppression budget with the first
    * successful ACTIVE report: a held Start can consume all ten entries. */
