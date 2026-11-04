@@ -13,5 +13,8 @@ int SpiderWineFocusAutostart_PollReady(void (*log_line)(const char *));
  * heartbeat is missing/stale. Never runs on native Windows or for manual
  * bridge mode. May run while the game Flip thread is inside PAUSED. */
 int SpiderWineFocusAutostart_TryRecover(void (*log_line)(const char *));
+/* True only when the managed observer has exhausted automatic restarts
+ * and no fresh X11 heartbeat exists. Fresh UNKNOWN is NOT an outage. */
+int SpiderWineFocusAutostart_RecoveryExhausted(void);
 
 #endif
