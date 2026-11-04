@@ -77,7 +77,7 @@ def test_sampled_directdraw_blt_and_flip_timeline_is_read_only_bounded():
                       "IDirectDrawSurface7_Lock(", "CreateWindow", "SetWindowLongPtr"):
         assert dangerous not in trace
     blt=SRC[SRC.index("static HRESULT WINAPI hooked_blt("):
-            SRC.index("static HRESULT WINAPI hooked_flip(")]
+            SRC.index("/* The surface-creation hook remains responsible for installing the shared vtable. */")]
     flip=SRC[SRC.index("static HRESULT WINAPI hooked_flip("):]
     assert "focus_timeline_pulse(0,count,self);" in blt
     assert "focus_timeline_pulse(1,count,self);" in flip
