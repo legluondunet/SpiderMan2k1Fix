@@ -37,7 +37,10 @@ def test_unclaimed_sdl3_controller_cannot_reenable_native_joystick():
     assert no_owner.index('restore_original("no selected mapped controller");') < (
         no_owner.index("writable_slot() && suspend_original()"))
     assert "native_unclaimed_guard=1;" in no_owner
-    assert "if(!suspended && !sent_mask && !pulse_scan" in no_owner
+    assert "if(!suspended && writable_slot() && suspend_original())" in no_owner
+    assert "if(native_unclaimed_guard && (sent_mask || pulse_scan))" in no_owner
+    assert "release_all();" in no_owner
+    assert "focus_dir.phase==SPIDER_FOCUS_DIR_UP" in no_owner
     assert "UNCLAIMED native DirectInput joystick held inactive" in no_owner
     assert "if(native_unclaimed_guard && suspended" in no_owner
 
