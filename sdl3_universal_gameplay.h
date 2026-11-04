@@ -10,6 +10,12 @@ int SpiderSDL3Universal_Enabled(void);
 int SpiderSDL3Universal_SuppressesNative(void);
 /* Before UI/focus pause, releases held synthetic keys on any lost focus. */
 void SpiderSDL3Universal_BeforeUI(HWND hwnd);
+/* The X11 host observer can see Firefox/other Linux windows while Wine
+ * GetForegroundWindow() still claims the game HWND. Called on the game's
+ * Flip thread with verified native focus (blocked=1 for OTHER/UNKNOWN);
+ * flush the selected universal owner's synthetic keys before PAUSED and
+ * forbid a new 3D owner until native GAME focus returns. */
+void SpiderSDL3Universal_SetHostFocusBlocked(int blocked);
 /* Called after the host X11 or Win32 focus-loss detector has LATCHED pause,
  * before blocking the game Flip thread. GetForegroundWindow() can stay
  * incorrectly on the game under Wine/X11; do not trust it here. */
