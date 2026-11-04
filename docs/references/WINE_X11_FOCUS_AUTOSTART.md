@@ -71,11 +71,22 @@ exact on-Flip X11 detection validated with the older shell helper.
 - `SPIDERMAN2K1FIX_X11_BRIDGE=1` retains the manually tested
   PR #102 host-helper mode (the integrated helper is **not**
   launched as well).
-- If the helper disappears or returns `UNKNOWN` for more than
-  ~2.2 seconds **during a custom PAUSED wait**, the temporary
-  keyboard hook is released via the existing pause-exit path to
-  avoid trapping the user. Valid `OTHER` focus from Firefox never
-  triggers this fallback and should not swallow Firefox keystrokes.
+- If the native helper dies (SIGTERM/SIGKILL) or its heartbeat becomes
+  stale, **never automatically resume** the game: Wine's foreground
+  state may still be wrong, so that would resume videos, gameplay and
+  sound *behind* Firefox. Instead, the DLL attempts up to two bounded
+  native helper restarts (via Wine's argv-only spawn), polling even while
+  the game is inside its blocking PAUSED loop. Each replacement must
+  publish a fresh, valid X11 sample. PAUSED then exits only through the
+  existing explicit key/gamepad press-release after `GAME` focus.
+  Fresh `UNKNOWN` is not an observer outage and does not spawn a
+  duplicate helper.
+- If both restart attempts fail while the game is PAUSED, it remains
+  safely paused rather than sending keyboard events to a native Linux
+  app or playing audio in the background. The user can exit the game
+  using desktop process controls. This fail-closed outcome, and a
+  possible less restrictive recovery, need runtime assessment before
+  merging.
 - If Wine does not expose one of the three dynamically loaded
   functions, or path conversion/launch fails, no native process is
   started and Windows behavior is unchanged.
@@ -120,8 +131,14 @@ safe fallback.
    keyboard/gamepad wake.
 6. Repeat all four opening Bink videos and verify pause timing,
    sound restoration and safe return.
-7. Simulate observer termination while PAUSED and confirm keyboard
-   becomes available again. Repeat with `_NET_WM_PID` unavailable.
+7. Terminate the observer with SIGTERM while PAUSED and verify
+   `FOCUS-X11-AUTO: observer heartbeat lost; native restart 1/2`,
+   `fresh native X11 state verified`, then **no unpause until the user
+   returns to GAME and explicitly wakes**. Ensure no repeating
+   pause/resume loop and no Firefox keystroke interception. Repeat
+   while in 3D and Bink, then with SIGKILL (stale file).
+   With no X11 service or permanent `UNKNOWN`, no automatic wake
+   or background audio is permitted.
 8. On real Windows, confirm no helper spawn, no new dependency and
    normal Alt+Tab behavior.
 9. Only after those gates, cleanup obsolete branches #100/#101
