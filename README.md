@@ -59,6 +59,8 @@ The guarded DS4 custom-binding bridge is **on by default**, but only applies to 
 - **Unsupported display modes:** Prevented the game from switching to obsolete fullscreen resolutions and 16-bit display modes that could produce a black screen on modern monitors.
 - **Hidden desktop cursor:** Fixed cases where the Windows mouse pointer remained invisible after switching away from the game.
 
+The native Wine/X11 Alt+Tab helper is being integrated as an automatic, optional backend in a **draft prototype**. See [technical plan](docs/references/WINE_X11_FOCUS_AUTOSTART.md).
+
 ## Known Issues in the Original Game
 
 The following issues are inherited from the original game and remain unresolved:
