@@ -29,8 +29,11 @@ def test_focus_only_pad_wake_and_no_native_menu_shortcut():
     assert "SpiderPauseAny_Completed()" in p
     assert "FOCUS-PAUSE: gamepad digital press/release" in p
     assert "SpiderGamepadUI_PauseWake_Poll" in HDR
-    assert "PRESS KEY OR GAMEPAD BUTTON TO RESUME" in UI
-    assert "PRESS ANY KEY TO RESUME" in UI
+    # Only the PAUSED word is painted; the supported keyboard and
+    # selected gamepad wake behavior remains active without an onscreen hint.
+    assert 'L"PRESS KEY OR GAMEPAD BUTTON TO RESUME"' not in UI
+    assert 'L"PRESS ANY KEY TO RESUME"' not in UI
+    assert "SpiderF9Toast_DrawPausedPanel(" in UI
     assert "int SpiderGamepadUI_PauseWake_Begin(void)" in PAD
     assert "int available=configured && detected && device!=NULL;" in PAD
     assert "pause_wake_active=available;" in PAD
