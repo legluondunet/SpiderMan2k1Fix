@@ -13,9 +13,14 @@ from PR #102, without modifying it.
   `ntdll!wine_get_version`. If the native helper is installed,
   `kernel32!wine_get_unix_file_name` converts absolute PE paths
   to absolute Linux paths. `ntdll!__wine_unix_spawnvp` starts the
-  native observer as a detached Linux process.
-- **Without Linux helper or X11:** Existing Win32 logic remains active,
-  with its known Wine limitations. No hard failure.
+  native observer as a detached Linux process. The bridge remains
+  Win32-only until the observer writes a **fresh, well-formed GAME or
+  OTHER** sample newer than its spawn time, verified nonblockingly
+  on later game Flip calls. If no valid sample arrives within 4
+  seconds, automatic bridge activation is abandoned for that run.
+- **Without Linux helper, working X11 or supported Wine Unix APIs:**
+  Existing Win32 logic remains active, with its known Wine limitations.
+  Merely creating the Linux subprocess never activates the bridge.
 - There is **no manual terminal command, no xdotool dependency, no
   manual environment variable, no Lutris-specific code**.
 - The helper is the only platform-specific component. PAUSED, its
@@ -74,9 +79,14 @@ exact on-Flip X11 detection validated with the older shell helper.
 - If Wine does not expose one of the three dynamically loaded
   functions, or path conversion/launch fails, no native process is
   started and Windows behavior is unchanged.
-- Wayland-only/XWayland behavior is **not certified**. With a valid
-  `DISPLAY` but unavailable X11 window PID, the helper yields
-  `UNKNOWN`, not a false focus loss.
+- **Wayland and XWayland sessions are conservatively disabled.**
+  The Win32 launcher checks `XDG_SESSION_TYPE=wayland` and, when the
+  session type is unavailable, `WAYLAND_DISPLAY`. The native ELF
+  independently rejects the same environment before publishing any
+  focus state. This avoids treating XWayland's local input focus as
+  authoritative for unrelated native Wayland applications. On failure
+  to detect Wayland from inside Wine, the fresh X11 handshake still
+  prevents activating a bridge that never delivered data.
 
 ### ABI review
 
@@ -96,7 +106,11 @@ safe fallback.
 
 1. CI build Windows x86 DLL, ELF64 Linux helper, complete flat
    installation artifact and release ZIP inventory.
-2. Windows x86 static guards and Python regression tests.
+2. Windows x86 static guards and Python regression tests. The CI
+   additionally launches an **actual Xvfb server** with a mock
+   `SpideyPC.exe` Linux process and checks `GAME`, `OTHER`,
+   `UNKNOWN`, rejection under Wayland even with `DISPLAY`, helper
+   termination cleanup, and automatic cleanup on game exit.
 3. On Wine/GE-Proton, install unmodified ZIP **without environment
    variables** and without running `tools/spiderman-x11-focus-bridge.sh`.
 4. Confirm logs show `FOCUS-X11-AUTO: native X11 helper spawned
