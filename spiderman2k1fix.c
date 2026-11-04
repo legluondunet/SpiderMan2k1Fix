@@ -1751,25 +1751,23 @@ static void borderless_intro_fill_black_bars(void *surface,const RECT *image) {
 static void focus_timeline_pulse(int is_flip,LONG seq,void *surface) {
   static volatile LONG last_blt_call=0,last_flip_call=0;
   static volatile LONG last_blt_sample=0,last_flip_sample=0;
-  static volatile LONG last_blt_fg=0,last_flip_fg=0;
   volatile LONG *last_call=is_flip?&last_flip_call:&last_blt_call;
   volatile LONG *last_sample=is_flip?&last_flip_sample:&last_blt_sample;
-  volatile LONG *last_fg=is_flip?&last_flip_fg:&last_blt_fg;
   DWORD now,prior,sampled,gap;
   HWND fg;
   DWORD pid=0;
-  LONG former;
   char line[260];
   if(!focus_timeline_enabled)return;
   now=GetTickCount();
   prior=(DWORD)InterlockedExchange(last_call,(LONG)now);
   gap=prior?(DWORD)(now-prior):0;
-  fg=GetForegroundWindow();
-  former=InterlockedExchange(last_fg,(LONG)(uintptr_t)fg);
   sampled=(DWORD)InterlockedCompareExchange(last_sample,0,0);
-  if(former==(LONG)(uintptr_t)fg && prior && gap<750u &&
-     sampled && (DWORD)(now-sampled)<250u)return;
+  /* Avoid calling Win32 foreground APIs on every hot-path movie Blt.
+   * A new foreground can be observed at the next <=250 ms sample;
+   * the separate WndProc probe records precise event times. */
+  if(prior && gap<750u && sampled && (DWORD)(now-sampled)<250u)return;
   InterlockedExchange(last_sample,(LONG)now);
+  fg=GetForegroundWindow();
   if(fg)GetWindowThreadProcessId(fg,&pid);
   snprintf(line,sizeof(line),
     "FOCUS-TIMELINE: callback=%s seq=%ld gap-ms=%lu foreground=%p "
