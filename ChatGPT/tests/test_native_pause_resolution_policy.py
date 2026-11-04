@@ -73,6 +73,19 @@ def test_original_pause_has_resolution_independent_four_by_three_geometry(tmp_pa
             assert(!SpiderNativePause43_RibbonLayer(0.98f,8.9615f));
             assert(SpiderNativePause43_MotifLayer(0.00146f,9.988f));
             assert(SpiderNativePause43_MotifLayer(0.00146f,7.8952f));
+            /* Face and shadow glyph layers from the supplied runtime
+             * journal: FF000000 at .00122 / 8.9615 and FF8A78D6 or
+             * FFFE3242 at .00098 / 10.3609. Preserve older pairs. */
+            assert(SpiderNativePause43_TextLayer(0.00122f,11.176f));
+            assert(SpiderNativePause43_TextLayer(0.00098f,12.686f));
+            assert(SpiderNativePause43_TextLayer(0.00122f,8.9615f));
+            assert(SpiderNativePause43_TextLayer(0.00098f,10.3609f));
+            assert(!SpiderNativePause43_TextLayer(0.00122f,10.3609f));
+            assert(!SpiderNativePause43_TextLayer(0.00098f,8.9615f));
+            assert(!SpiderNativePause43_TextLayer(0.00122f,10.0f));
+            assert(!SpiderNativePause43_TextLayer(0.00098f,11.5f));
+            assert(!SpiderNativePause43_TextLayer(0.5f,10.3609f));
+
             assert(!SpiderNativePause43_MotifLayer(0.00146f,8.90f));
             assert(!SpiderNativePause43_MotifLayer(0.45f,7.8952f));
             assert(!SpiderNativePause43_Widescreen(0,0));
@@ -93,6 +106,7 @@ def test_native_pause_still_uses_exact_render_signature_not_only_bounds():
     assert '#include "native_pause_43_policy.h"' in CORE
     assert "SpiderNativePause43_RibbonBounds(" in block
     assert "SpiderNativePause43_RibbonLayer(z,rhw)" in block
+    assert "SpiderNativePause43_TextLayer(z,rhw)" in block
     assert "SpiderNativePause43_MotifLayer(v[0].z,v[0].rhw)" in CORE
     assert "rva!=0x00102C72UL" in block
     assert "type!=D3DPT_TRIANGLEFAN" in block
