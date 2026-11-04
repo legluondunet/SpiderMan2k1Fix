@@ -3508,47 +3508,12 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
       log_line("DISPLAY-NATIVE: WARNING game HWND unavailable before virtual config bootstrap; fallback to current primary monitor until SetCooperativeLevel");
     }
   }
-  /* Exactly ONE gameplay mapping authority:
-   * Universal SDL3 uses the saved per-VID:PID semantic profile and
-   * guarded keyboard adapter. Legacy fixed Sony/Xbox RAM overlays and
-   * DirectInput readonly viewers must NEVER be prepared at bootstrap in
-   * this mode: even a manually enabled ControllerXbox360Preview=1 must
-   * not preempt the universal profile before the first game Flip.
-   * Keep the original config bootstrap and keyboard defaults for both
-   * modes. The legacy startup path below remains available ONLY when
-   * universal gameplay is OFF, preserving existing stable installs. */
-  {
-    int universal=SpiderSDL3Universal_Enabled();
-    int mapped=0,xbox_mapped=0;
-    HWND early=NULL;
-    if(!universal) {
-      early=spider_find_game_window_before_ddraw();
-      if(early && SpiderGamepadUI_PreparePS1(early))
-        mapped=SpiderCfg_EnablePS1Preview();
-      if(early && SpiderGamepadUI_PrepareXbox360(early))
-        xbox_mapped=SpiderCfg_EnableXbox360Preview();
-    }
-    SpiderCfg_BootstrapGameRead();
-    SpiderCfg_InstallModernKeyboardDefaults();
-    if(universal)
-      log_line("SDL3-UNIVERSAL: legacy Sony/Xbox fixed bootstrap mappings and readonly viewer SKIPPED; native game config and keyboard defaults preserved");
-    else {
-      SpiderGamepadUI_ArmPS1ReadOnly();
-      SpiderGamepadUI_ArmXbox360ReadOnly();
-      if(mapped) {
-        if(SpiderCfg_PS1BootstrapLoaded())
-          SpiderGamepadUI_ActivatePS1();
-        else
-          SpiderCfg_CancelPS1Preview();
-      }
-      if(xbox_mapped) {
-        if(SpiderCfg_Xbox360BootstrapLoaded())
-          SpiderGamepadUI_ActivateXbox360();
-        else
-          SpiderCfg_CancelXbox360Preview();
-      }
-    }
-  }
+  /* SDL3 semantic profiles are the only patch-provided controller
+   * mappings. No Sony/Xbox physical button presets are installed in
+   * the original game's virtual config. Keep the native game defaults. */
+  SpiderCfg_BootstrapGameRead();
+  SpiderCfg_InstallModernKeyboardDefaults();
+  log_line("SDL3-PROFILE: pre-SDL3 fixed Sony/Xbox mapping bootstrap REMOVED; native joystick mapping unchanged");
   HRESULT hr=original_create(guid,out,iid,outer);
   if(SUCCEEDED(hr) && out && *out && iid && IsEqualGUID(iid,&IID_IDirectDraw7)) {
     void ***object=(void ***)*out;
