@@ -729,6 +729,9 @@ void SpiderInputFocus_OnFlip(LONG flip_number) {
   if(InterlockedCompareExchange(&native_bridge_autostarted,1,0)==0)
     SpiderWineFocusAutostart_TryStart(focus_log);
   SpiderWineFocusAutostart_PollReady(focus_log);
+  /* Restore the native observer after a crash/kill even outside PAUSED.
+   * Its ownership and freshness are checked by the Wine backend. */
+  SpiderWineFocusAutostart_TryRecover(focus_log);
   if(!diagnostic_active || !tracked_window) return;
   fg=GetForegroundWindow();foreground=(fg==tracked_window)?1:0;
   previous=InterlockedExchange(&last_focus_foreground,foreground);
