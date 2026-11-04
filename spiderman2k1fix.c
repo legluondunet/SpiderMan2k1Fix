@@ -1118,10 +1118,15 @@ static const void *maybe_correct_native_pause43(void *device,
    * for native ESC and y~432..634 for QUIT confirmation.
    * The tolerance supports animation, NOT arbitrary full-width draws.
    */
+  /* GE-Proton 11-12 / level-2 native ESC: same verified caller, Z,
+   * untextured wide ribbon and geometry, but distinct RHW=8.9615.
+   * Retain legacy RHW=11.176 exactly; never accept RHW in between.
+   * Original 4:3 gameplay remains excluded at function entry. */
   ribbon=SpiderNativePause43_RibbonBounds(
        left,right,top,bottom,(unsigned)desktop_w,(unsigned)desktop_h) &&
        fabsf(z-0.00122f)<0.00010f &&
-       fabsf(rhw-11.176f)<0.25f;
+       (fabsf(rhw-11.176f)<0.25f ||
+        fabsf(rhw-8.9615f)<0.060f);
   if(ribbon) {
     /* The banner has no texture. Recheck the live bound texture here
      * rather than relying solely on depth and broad geometry.
@@ -1225,10 +1230,11 @@ static const void *maybe_correct_native_pause43(void *device,
   if(hit<=4 || (hit%600)==0) {
     char line[230];
     snprintf(line,sizeof(line),
-      "PAUSE-NATIVE-43: %s hit=%ld flip=%ld x=(%.1f..%.1f) scale=%.5f tex=%lux%lu [NATIVE-ESC-43]",
+      "PAUSE-NATIVE-43: %s hit=%ld flip=%ld x=(%.1f..%.1f) scale=%.5f tex=%lux%lu z=%.5f rhw=%.4f [NATIVE-ESC-43]",
       ribbon?"ribbon":border?"border":"glyph",(long)hit,(long)flip,
       (double)left,(double)right,(double)aspect_scale,
-      (unsigned long)tw,(unsigned long)th);
+      (unsigned long)tw,(unsigned long)th,
+      (double)z,(double)rhw);
     log_line(line);
   }
   return copy;
@@ -1273,7 +1279,11 @@ static const void *maybe_correct_native_motif43(void *device,
      type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4 ||
      !geom_rva(ret,&rva) || rva!=0x00102C72UL ||
      fabsf(v[0].z-0.00146f)>0.00004f ||
-     fabsf(v[0].rhw-9.988f)>0.060f) return source;
+     /* Level-2 native ESC translucent motif (GE-Proton trace):
+      * caller and untextured alpha-0x80 geometry are identical,
+      * with RHW=7.8952 instead of the earlier 9.988. */
+     (fabsf(v[0].rhw-9.988f)>0.060f &&
+      fabsf(v[0].rhw-7.8952f)>0.060f)) return source;
   memcpy(&color,(const BYTE*)source+16,sizeof(color));
   if((color&0xFF000000UL)!=0x80000000UL)return source;
   l=r=v[0].x;t=b=v[0].y;
