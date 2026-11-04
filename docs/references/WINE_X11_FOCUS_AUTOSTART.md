@@ -81,12 +81,18 @@ exact on-Flip X11 detection validated with the older shell helper.
   existing explicit key/gamepad press-release after `GAME` focus.
   Fresh `UNKNOWN` is not an observer outage and does not spawn a
   duplicate helper.
-- If both restart attempts fail while the game is PAUSED, it remains
-  safely paused rather than sending keyboard events to a native Linux
-  app or playing audio in the background. The user can exit the game
-  using desktop process controls. This fail-closed outcome, and a
-  possible less restrictive recovery, need runtime assessment before
-  merging.
+- If both restart attempts fail while PAUSED, do **not** resume the
+  game automatically and never trust a permanently stale Wine foreground
+  value by itself. The game can instead recover after an **observed
+  Win32 external → game focus cycle after the terminal host failure**:
+  the Win32 foreground, active window and focused window must all be
+  the game, continuously for 150ms, before the usual explicit
+  key/gamepad press-release is accepted. This is a conservative
+  emergency fallback with weaker guarantees than working native X11.
+  It must be tested against Firefox keyboard interception and repeated
+  Alt+Tab; if no new Win32 external→game cycle occurs, the game
+  remains paused and can be terminated using desktop process controls.
+  No automatic media/gameplay resume is permitted.
 - If Wine does not expose one of the three dynamically loaded
   functions, or path conversion/launch fails, no native process is
   started and Windows behavior is unchanged.
@@ -137,8 +143,11 @@ safe fallback.
    returns to GAME and explicitly wakes**. Ensure no repeating
    pause/resume loop and no Firefox keystroke interception. Repeat
    while in 3D and Bink, then with SIGKILL (stale file).
-   With no X11 service or permanent `UNKNOWN`, no automatic wake
-   or background audio is permitted.
+   If the helper disappears again after attempt 2/2, Win32 must
+   report an external state and then a fresh return to GAME for at
+   least 150ms, followed by a **manual key**. Neither a stale Wine
+   foreground nor switching to Firefox alone should unblock PAUSED.
+   No automatic wake or background audio is permitted.
 8. On real Windows, confirm no helper spawn, no new dependency and
    normal Alt+Tab behavior.
 9. Only after those gates, cleanup obsolete branches #100/#101
