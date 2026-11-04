@@ -1152,26 +1152,32 @@ static const void *maybe_correct_native_pause43(void *device,
       tw=desc.dwWidth;th=desc.dwHeight;
     }
     IDirectDrawSurface7_Release(tex);
-    if(tw==8 && th==8 && bb>bt+55 &&
+    /* Normalize old pixel-sized border tolerances for other output
+     * resolutions. Preserve the two empirically verified 1920-wide
+     * geometries unchanged, including their 16:10 variation. */
+    if(tw==8 && th==8 &&
+       bb>bt+55.0f*(desktop_w==1920?1.0f:(float)desktop_h/1080.0f) &&
        fabsf(z-0.00122f)<0.00010f &&
        fabsf(rhw-11.176f)<0.25f) {
-      int near_left=(left>=-42.0f && left<=-12.0f &&
-                     right>=7.0f && right<=38.0f);
-      int near_right=(left>=(float)desktop_w-17.0f &&
-                      left<=(float)desktop_w+13.0f &&
-                      right>=(float)desktop_w+16.0f &&
-                      right<=(float)desktop_w+70.0f);
-      int at_top=fabsf(top-((float)bt-4.5f))<5.0f;
-      int at_bottom=fabsf(top-((float)bb-9.0f))<5.0f;
-      int horizontal=(fabsf(left)<12.0f &&
-          fabsf(right-(float)desktop_w)<20.0f &&
-          bottom-top>=14.0f && bottom-top<=24.0f &&
-          (at_top || fabsf(top-(float)bb)<5.0f));
+      float sx=(float)desktop_w/1920.0f;
+      float sy=desktop_w==1920?1.0f:(float)desktop_h/1080.0f;
+      int near_left=(left>=-42.0f*sx && left<=-12.0f*sx &&
+                     right>=7.0f*sx && right<=38.0f*sx);
+      int near_right=(left>=(float)desktop_w-17.0f*sx &&
+                      left<=(float)desktop_w+13.0f*sx &&
+                      right>=(float)desktop_w+16.0f*sx &&
+                      right<=(float)desktop_w+70.0f*sx);
+      int at_top=fabsf(top-((float)bt-4.5f*sy))<5.0f*sy;
+      int at_bottom=fabsf(top-((float)bb-9.0f*sy))<5.0f*sy;
+      int horizontal=(fabsf(left)<12.0f*sx &&
+          fabsf(right-(float)desktop_w)<20.0f*sx &&
+          bottom-top>=14.0f*sy && bottom-top<=24.0f*sy &&
+          (at_top || fabsf(top-(float)bb)<5.0f*sy));
       int side=(near_left || near_right) &&
-          fabsf((bottom-top)-((float)bb-(float)bt-9.0f))<18.0f &&
-          fabsf(top-((float)bt+4.5f))<8.0f;
+          fabsf((bottom-top)-((float)bb-(float)bt-9.0f*sy))<18.0f*sy &&
+          fabsf(top-((float)bt+4.5f*sy))<8.0f*sy;
       int corner=(near_left || near_right) &&
-          bottom-top>=18.0f && bottom-top<=30.0f &&
+          bottom-top>=18.0f*sy && bottom-top<=30.0f*sy &&
           (at_top || at_bottom);
       border=horizontal || side || corner;
     }
@@ -1184,8 +1190,10 @@ static const void *maybe_correct_native_pause43(void *device,
              left,right,top,bottom,(float)desktop_w,(float)desktop_h) ||
          top<(float)desktop_h*0.13f ||
          bottom>(float)desktop_h*0.63f ||
-         right-left<10.0f || right-left>84.0f ||
-         bottom-top<24.0f || bottom-top>83.0f)
+         right-left<10.0f*((float)desktop_w/1920.0f) ||
+         right-left>84.0f*((float)desktop_w/1920.0f) ||
+         bottom-top<24.0f*(desktop_w==1920?1.0f:(float)desktop_h/1080.0f) ||
+         bottom-top>83.0f*(desktop_w==1920?1.0f:(float)desktop_h/1080.0f))
         return source;
       glyph=(th==32 && (tw==16 || tw==32 || tw==64));
       if(!glyph)return source;
@@ -1443,7 +1451,7 @@ static void native_cursor43_init(void) {
       "NativeCursor4x3","SPIDERMAN2K1FIX_NATIVE_CURSOR_43");
   InterlockedExchange(&native_cursor43_enabled,enabled?1:0);
   log_line(enabled?
-    "NATIVE-CURSOR-43: native red selector 4:3 ON (1920x1080/1920x1200 Auto)" :
+    "NATIVE-CURSOR-43: 4:3 selector ON (any widescreen; signature-gated)" :
     "NATIVE-CURSOR-43: OFF (HUD master, NativeESC4x3 or NativeCursor4x3=0)");
 }
 static const void *maybe_correct_native_cursor43(void *device,
@@ -1485,14 +1493,15 @@ static const void *maybe_correct_native_cursor43(void *device,
    * original 32x32 texture format, white diffuse, exact native
    * draw call and active ESC ribbon in this same frame instead.
    * Native font glyphs are different sizes/Z/RHW. */
-  /* Allow the native 96x80 height-scaled form on 1920x1200 as well as
-   * the original 96x72 form. Exact owner, Z/RHW, diffuse, texture and
-   * same-Flip ribbon guards below remain mandatory. */
+  /* Allow two possible original height policies at any output size:
+   * scaled by screen H, or legacy height scaled by screen W. The same
+   * exact owner, Z/RHW, diffuse, texture and same-Flip ribbon guards
+   * remain mandatory. Center of the selector never moves. */
   expected_width=96.0f*((float)desktop_w/1920.0f);
   expected_height=72.0f*((float)desktop_h/1080.0f);
   if(fabsf((right-left)-expected_width)>0.8f ||
      (fabsf((bottom-top)-expected_height)>1.1f &&
-      !(desktop_h==1200 && fabsf((bottom-top)-72.0f)<0.8f)) ||
+      fabsf((bottom-top)-72.0f*((float)desktop_w/1920.0f))>0.8f) ||
      fabsf(z)>0.00005f ||
      fabsf(rhw-27.519f)>0.035f)return source;
   memcpy(&diffuse,(const BYTE*)source+16,sizeof(diffuse));
