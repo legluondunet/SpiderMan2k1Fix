@@ -41,7 +41,9 @@ def test_native_x11_only_overrides_stale_win32_foreground_after_debounce():
     assert "(DWORD)(tick-pause_x11_bridge_loss_since)>=150u" in BRIDGE
     assert "InterlockedCompareExchange(&pause_ever_foreground,0,0)==1" in PAUSE
     assert "InterlockedCompareExchange(&pause_latched,1,0)==0" in PAUSE
-    assert "SpiderInputFocus_DiscardDeferredPause();" in PAUSE
+    # The opt-in return-only fallback was unvalidated and is intentionally absent.
+    assert "SpiderInputFocus_DiscardDeferredPause();" not in PAUSE
+    assert "SpiderInputFocus_ConsumeDeferredPause(" not in PAUSE
 
 
 def test_never_swallow_native_linux_keys_under_stale_win32_focus():
