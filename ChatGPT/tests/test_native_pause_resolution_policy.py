@@ -178,6 +178,11 @@ def test_native_pause_still_uses_exact_render_signature_not_only_bounds():
     assert "native_pause43_banner_probe_family" in CORE
     assert "native_pause43_detail_new_family_samples" in CORE
     assert "sample_budget=family==1?&native_pause43_detail_new_family_samples:" in CORE
+    # Latest Mysterio F9/Log exhausted the first 80 samples on
+    # 35 black shadows, 18 red title faces, boss UI and outlines,
+    # before purple menu option faces appeared: extend only
+    # the second source family with a bounded 160-sample cap.
+    assert "(family==1?160:80)" in CORE
     assert "PAUSE-NATIVE-DETAIL: sample=%ld family=%ld" in CORE
 
 
