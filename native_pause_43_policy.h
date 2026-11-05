@@ -45,7 +45,9 @@ static inline float SpiderNativePause43_MapX(
  *  - 2026-11-05 Spider-Man vs Venom (2), Windows 11 native 16:10:
  *    ribbon .00122/10.6651 and untextured alpha-80 motif candidate
  *    .00146/9.4993, same original D3D7 caller and source geometry.
- *    Separate foreground/shadow glyph depths are NOT observed yet.
+ *    Follow-up source log + F9 scrn0004 (2026-11-05 14:17):
+ *    8x8 ESC border and black glyph shadow at .00122/10.6651,
+ *    red/white/purple letter face at .00098/12.1569 (all corrected=0).
  * Never interpolate between these readings or apply to generic HUD.
  * Comparisons fail closed for NaN without depending on libm. */
 static inline float SpiderNativePause43_Abs(float x)
@@ -71,13 +73,17 @@ static inline int SpiderNativePause43_MotifLayer(float z,float rhw)
             SpiderNativePause43_Abs(rhw-9.4993f)<0.060f);
 }
 
-/* Shadow and face of native Pause letters have four independently
+/* Shadow and face of native Pause letters have five independently
  * measured source-depth pairs:
  *  - original: shadow z=.00122/rhw=11.176, face z=.00098/rhw=12.686
  *  - second scene: shadow 8.9615, face 10.3609
  *  - Rhino boss: shadow 6.8041, face 8.0113.
  *  - Later Mysterio encounter: shadow z=.00122/rhw=11.7760,
  *    face z=.00098/rhw=13.3012 (2026-11-05 scrn0049.png).
+ *  - Venom (2) Windows 11 F9 scrn0004.png: shadow .00122/10.6651,
+ *    face .00098/12.1569 and identical-depth 8x8 edge border.
+ *    All were observed by PAUSE-NATIVE-DETAIL family=2 and
+ *    PAUSE-NATIVE-BORDER-PROBE with corrected=0.
  * The Mysterio depth pair is now directly confirmed by the second
  * source-RHW-family read-only probe: 35 shadow quads (FF000000,
  * Z=.00122/RHW=11.7760) and 18 red-title face quads (FFFE3242,
@@ -87,8 +93,8 @@ static inline int SpiderNativePause43_MotifLayer(float z,float rhw)
  * Rhino scrn0045.png / Log=1 (2026-11-05 01:59:35) confirms 48
  * corrected black-shadow samples and 32 missed colored-face samples
  * (FFFE3242 title, FF8A78D6 options) at z=.00098/rhw=8.0113.
- * Venom (2) text/border depths are still unknown: recognizing its
- * untextured ribbon MUST NOT automatically authorize glyph layers.
+ * Venom (2) depths are now source-verified; before this follow-up,
+ * recognizing its untextured ribbon did NOT authorize glyph layers.
  * Never infer arbitrary RHW from other objects or use an interval
  * between discrete source variants: the original game caller,
  * same-Flip verified ribbon, 16/32/64x32 texture and tight glyph
@@ -99,12 +105,14 @@ static inline int SpiderNativePause43_TextLayer(float z,float rhw)
             (SpiderNativePause43_Abs(rhw-11.176f)<0.30f ||
              SpiderNativePause43_Abs(rhw-8.9615f)<0.060f ||
              SpiderNativePause43_Abs(rhw-6.8041f)<0.060f ||
-             SpiderNativePause43_Abs(rhw-11.7760f)<0.060f)) ||
+             SpiderNativePause43_Abs(rhw-11.7760f)<0.060f ||
+             SpiderNativePause43_Abs(rhw-10.6651f)<0.060f)) ||
            (SpiderNativePause43_Abs(z-0.00098f)<0.00010f &&
             (SpiderNativePause43_Abs(rhw-12.686f)<0.30f ||
              SpiderNativePause43_Abs(rhw-10.3609f)<0.060f ||
              SpiderNativePause43_Abs(rhw-8.0113f)<0.060f ||
-             SpiderNativePause43_Abs(rhw-13.3012f)<0.060f));
+             SpiderNativePause43_Abs(rhw-13.3012f)<0.060f ||
+             SpiderNativePause43_Abs(rhw-12.1569f)<0.060f));
 }
 
 /* Geometry-only *candidate* for the native game ESC purple ribbon.
