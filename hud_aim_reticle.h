@@ -2,13 +2,16 @@
 #define SPIDERMAN2K1FIX_HUD_AIM_RETICLE_H
 
 /* Strict, source-verified red/green 3D aiming ring classifier.
- * Captured from GE-Proton11-12's level-2 F9 screenshots:
+ * GE-Proton11-12 F9 + matching Log=1 confirm TWO discrete render
+ * layers, not one range spanning the levels:
  *
- *   scrn0028 red: caller=00102C72, triangle fan FVF 0x144,
- *       texture 64x64, diffuse B0FF4040, Z=.00146, RHW=9.9878,
- *       original x=566.2..723.8 y=679.5..796.5.
- *   scrn0029 green: same caller/type/texture/Z/RHW,
- *       diffuse B040FF40, x=930.0..1027.5 y=346.5..418.5.
+ *  level 1: scrn0028 red and scrn0029 green, RHW=9.9878;
+ *  level 2: scrn0034 red, RHW=7.8952; green uses same layer.
+ *
+ * Both use original caller=00102C72, triangle-fan FVF 0x144,
+ * 64x64 texture, Z=.00146, and identical color codes:
+ * red=B0FF4040; green=B040FF40. Level-2 red F9 at 00:56:55
+ * correlates with log sample=39 flip=4687 and unchanged color/Z/RHW.
  *
  * Each circle was horizontally stretched by 4:3->16:9. Transform
  * X around the *object's own center* only; never move the target,
@@ -32,14 +35,23 @@ static inline int SpiderHudAim_Near(float v,float reference,float tolerance)
 }
 
 /* Cheap fail-closed prefilter before a D3D7 texture COM query. */
+/* Level-specific RHW must match one of the two captured depths.
+ * Never interpolate (e.g. 8.9), because the engine draws unrelated
+ * game and UI geometry at other layers through the same caller. */
+static inline int SpiderHudAimReticle_ObservedDepth(float z,float rhw)
+{
+    return SpiderHudAim_Near(z,0.00146f,0.000035f) &&
+           (SpiderHudAim_Near(rhw,9.9878f,0.060f) ||
+            SpiderHudAim_Near(rhw,7.8952f,0.060f));
+}
+
 static inline int SpiderHudAimReticle_MightMatch(
     const SpiderMenuVertex *src)
 {
     return src &&
       (src[0].diffuse==0xB0FF4040u ||
        src[0].diffuse==0xB040FF40u) &&
-      SpiderHudAim_Near(src[0].z,0.00146f,0.000035f) &&
-      SpiderHudAim_Near(src[0].rhw,9.9878f,0.060f) &&
+      SpiderHudAimReticle_ObservedDepth(src[0].z,src[0].rhw) &&
       SpiderHudAim_Near(src[0].u,0.0f,0.050f) &&
       SpiderHudAim_Near(src[0].v,0.0f,0.050f);
 }
