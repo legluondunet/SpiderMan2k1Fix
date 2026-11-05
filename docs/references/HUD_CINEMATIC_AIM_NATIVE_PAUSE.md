@@ -331,6 +331,95 @@ Pause tint, and untouched original 4:3 output.
 acceptance check**. Level-1, compass and Pause menus remain validated
 and need no repetitive regression playthrough.
 
+## Seventh validation: Rhino boss reticle, native Pause AND boss life UI
+
+The next maintainer test uses **Spidey vs Rhino** in the same 1920×1080
+GE-Proton11-12 run. All screenshots and logs are original files:
+
+- `image(20261105-000716).png`: Dreamcast reference, corrected
+  aspect ratio for the **Rhino life bar, round Rhino portrait, red ring**.
+- `scrn0035.png`: Wine **native Pause** still full-width.
+- `scrn0036.png`: Wine **red aiming reticle** and **Rhino life bar and
+  portrait** stretched sideways.
+- `SpiderMan2k1Fix(20261105-000954).log`: same run, beginning at
+  2026-11-05 01:00:02, captures scrn0035 at **01:01:09** and
+  scrn0036 at **01:01:23**.
+
+The native draw signatures changed AGAIN while retaining the original
+source caller `00102C72`, texture, color and geometries:
+
+| Native HUD object | Z | Rhino RHW | Known earlier RHW |
+| --- | ---: | ---: | ---: |
+| Pause purple ribbon `7F3232A0`, no texture | `0.00122` | **`6.8041`** | `11.176` / `8.9615` |
+| Pause motif (alpha `80`), no texture | `0.00146` | **`5.9130`** | `9.988` / `7.8952` |
+| Red aim ring `B0FF4040`, texture 64×64 | `0.00146` | **`5.9130`** | `9.9878` / `7.8952` |
+| Rhino boss **32×32 frame** `FFFFFFFF` | `0.00024` | **`17.1292`** | other bosses `21..22` |
+
+Exact Rhino red ring samples in the log:
+- Flip 2051: x=877.5..1035, y=679.5..796.5;
+- Flip 2096 (shortly before scrn0036): x=637.5..832.5,
+  y=652.5..796.5. Both have Z/RHW `0.00146/5.9130`,
+  red diffuse `B0FF4040`, bound 64×64 texture, original UV0=(0,0).
+The existing strict `hud_aim_reticle.h` rule rejected this third RHW
+family. The PR now adds the exact **5.9130** case alongside the
+previous two, with identical unchanged color/UV/texture/shape/owner
+checks and X-only compression around the **individual reticle center**.
+
+The fullscreen Pause ribbon is observed at Flips 1399, 1489 and 1579:
+x=-7.5..1923.8, typical y=400.5..675.0, Z/RHW
+`0.00122/6.8041`, no texture. The PR likewise adds this third
+exact untextured ribbon signature, and the matching motif `5.9130`.
+Since original 8×8 border segments have the same ribbon depth in
+earlier levels, the exact 6.8041 depth is also allowed for borders
+and dark text. **The brighter foreground text depth in Rhino
+is NOT captured yet** and must be confirmed from the existing
+`PAUSE-NATIVE-DETAIL` probe once the new ribbon matches. In-game
+Pause is NOT yet considered repaired.
+
+### Rhino life bar and portrait — a separate composite HUD bug
+
+The Dreamcast and Wine original pictures also reveal that Rhino's
+**health bar and portrait are stretched horizontally**:
+
+| Element | Dreamcast approx. X | Wine original approx. X |
+| --- | --- | --- |
+| Boss bar | 1037..1508 (~471px) | 1062..1694 (~632px) |
+| Boss portrait | 1505..1626 (~121px) | 1684..1848 (~164px) |
+
+Their heights are close; the portrait is round only in the Dreamcast
+reference. The desired *entire group* mapping, including position,
+is the standard screen-centered 4:3 transform:
+`x_corrected = 960 + (x_original - 960) × 0.75`.
+This maps the Wine boss bar to ~1037..1511 and the portrait to
+~1503..1626, almost exactly the reference. **This is not the
+reticle's object-centered mapping.**
+
+The already installed `hud_adaptive.c` boss branch uses an older
+right-edge-anchored transform for earlier boss scenes, with strict
+portrait/frame `RHW=19..26`. In Rhino, the original **32×32
+frame piece** was logged at x=1590..1687.5, y=117..189,
+Z=`0.00024`, **RHW=`17.1292`**, tex=32×32,
+diffuse `FFFFFFFF`, and therefore is rejected by its old
+prefilter. The *original fill and large portrait primitives* were
+not covered by the earlier broad HUD-VISUAL sampler, so their
+exact original Z/RHW/texture signatures cannot yet be asserted.
+
+A separate read-only `HUD-BOSS-PROBE` now records up to 18 draws
+per kind: **fill / 32×32 frame / 64×64 portrait**, reporting
+original caller, coordinates, texture, color, Z/RHW, UV and whether
+the prior adaptive hook transformed it. This diagnostic changes
+**no vertices or D3D7 states** and is deliberately bounded.
+The boss health bar and portrait correction will NOT be enabled
+until these three layers are observed and safely classified,
+to avoid breaking the previously supported Venom/Scorpion HUD.
+
+**Next useful check:** run **just Rhino** with the next CI ZIP,
+take one F9 screenshot with the red ring and life bar, then one
+with ESC Pause, and send **one Log=1** journal. The new reticle
+and menu banner signatures can be assessed visually while the
+separate boss probe captures the missing composite parts. Earlier
+validated levels and the boussole do not require repetitive tests.
+
 ## Bounded read-only diagnostic
 
 When `[Debug] Log=1`, only **uncorrected** original 4-vertex D3D7
