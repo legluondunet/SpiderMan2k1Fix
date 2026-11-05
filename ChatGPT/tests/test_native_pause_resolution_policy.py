@@ -114,11 +114,20 @@ def test_original_pause_has_resolution_independent_four_by_three_geometry(tmp_pa
              * detail samples prove it must be included separately
              * from the already-correct black shadow 6.8041. */
             assert(SpiderNativePause43_TextLayer(0.00098f,8.0113f));
-            /* The new ribbon alone is not proof of either glyph face
-             * or shadow RHW: fail closed until the per-family probe
-             * records these distinct source depths. */
-            assert(!SpiderNativePause43_TextLayer(0.00122f,11.7760f));
+            /* 2026-11-05 F9 scrn0049: second-family Mysterio ESC
+             * supplies the independently logged missing glyph pair:
+             * 35 shadow quads at z=.00122/rhw=11.7760 and
+             * 18 PAUSED red faces z=.00098/rhw=13.3012.
+             * Its 40 frame/border quads share the shadow depth but
+             * require the original same-Flip 8x8 border geometry. */
+            assert(SpiderNativePause43_TextLayer(0.00122f,11.7760f));
+            assert(SpiderNativePause43_TextLayer(0.00098f,13.3012f));
+            /* Do not interpolate between known text depths. */
+            assert(!SpiderNativePause43_TextLayer(0.00122f,11.4500f));
             assert(!SpiderNativePause43_TextLayer(0.00098f,13.4600f));
+            assert(!SpiderNativePause43_TextLayer(0.00098f,13.10f));
+            assert(!SpiderNativePause43_TextLayer(0.00122f,13.3012f));
+            assert(!SpiderNativePause43_TextLayer(0.00098f,11.7760f));
             assert(!SpiderNativePause43_TextLayer(0.00098f,6.8041f));
             assert(!SpiderNativePause43_TextLayer(0.00098f,8.40f));
             assert(!SpiderNativePause43_TextLayer(0.00122f,8.0113f));
