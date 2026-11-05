@@ -1,9 +1,9 @@
 """Source-verified D3D7 red/green 3D aiming rings keep native circular shape.
 
-The 2026-11-04 Log=1 records below were directly aligned with the
-maintainer's F9 shots scrn0028/scrn0029 (level 1) and scrn0034
-(level 2), plus additional green level-2 samples. The distinct
-RHW pairs 9.9878/7.8952 are measured, never interpolated. The
+The GE-Proton Log=1 records below are aligned with original
+F9 shots scrn0028/scrn0029 (first scene), scrn0034 (second),
+and scrn0036 (Rhino). Three exact RHW contexts (9.9878, 7.8952,
+5.9130) are observed, never interpolated. The
 ring shader/color/depth combination must never match native pause motifs,
 other HUD widgets or general-purpose 3D world sprites.
 """
@@ -106,6 +106,27 @@ def test_source_verified_reticles_preserve_other_vertex_attributes(tmp_path):
             assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)
                    ==SPIDER_HUD_AIM_GREEN);
             check(src,dst,1920,1080);
+
+            /* Spidey vs Rhino: matching 01:01:23 F9 scrn0036 log,
+             * red source quad at RHW=5.9130, diffuse B0FF4040.
+             * Identity must be sprite-specific, not level-name-specific. */
+            quad(src,637.5f,652.5f,832.5f,796.5f,0xB0FF4040u);
+            set_rhw(src,5.9130f);
+            assert(SpiderHudAimReticle_MightMatch(src));
+            assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)
+                   ==SPIDER_HUD_AIM_RED);
+            check(src,dst,1920,1080);
+
+            /* Rhino-shared depth is never sufficient by itself:
+             * the Pause motif at 5.9130 has alpha 0x80 and different
+             * color/texture, and must remain untouched. */
+            for(unsigned i=0;i<4u;i++)src[i].diffuse=0x80208686u;
+            assert(!SpiderHudAimReticle_MightMatch(src));
+            assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)==0);
+            for(unsigned i=0;i<4u;i++)src[i].diffuse=0xB0FF4040u;
+            set_rhw(src,6.90f);
+            assert(!SpiderHudAimReticle_MightMatch(src));
+            assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)==0);
 
             /* Strict depth selection: an intermediate RHW (8.9)
              * must never match just because both endpoints exist. */
