@@ -85,6 +85,49 @@ static inline int SpiderUICanvas_43IsFullScreenEffect(
             b - t >= h * 0.005f);
 }
 
+/* Multi-quad scene transition masks must cover the physical screen
+ * gutters as well as the 4:3 content region. The observed 2026-11-05
+ * opening-scene spider iris has opaque BLACK edge fills at Z=0 and
+ * RHW=27.6000. Each component is smaller than a fullscreen quad, so a
+ * "fullscreen rectangle" exception alone cannot restore those gutters.
+ *
+ * Preserve only its edge-attached coordinates; keep the internal edges in
+ * the centered 4:3 canvas so the iris itself keeps the proper proportions.
+ * This is a rendering-family match, not a specific level, texture asset,
+ * animation phase or scene identifier. Unverified layers stay untouched.
+ */
+static inline int SpiderUICanvas_43IsWipeEdgeMask(
+    const SpiderMenuVertex *src, unsigned count,
+    unsigned primitive_type, uint32_t fvf, uint32_t caller_rva,
+    unsigned screen_w, unsigned screen_h)
+{
+    float l, r, miny, maxy, w, h;
+    unsigned i;
+    if (!src || count != 4u || primitive_type != 6u ||
+        fvf != 0x144u || caller_rva != SPIDER_UI_CANVAS_43_CALLER_RVA ||
+        screen_w < 640u || screen_h < 480u ||
+        (uint64_t)screen_w * 3u <= (uint64_t)screen_h * 4u)
+        return 0;
+    w=(float)screen_w; h=(float)screen_h;
+    l=r=src[0].x;miny=maxy=src[0].y;
+    for(i=0u;i<4u;i++){
+        if(src[i].diffuse!=0xFF000000u ||
+           SpiderUICanvas_Abs(src[i].z)>0.00004f ||
+           SpiderUICanvas_Abs(src[i].rhw-27.6000f)>0.07f ||
+           !(src[i].x>=-w*0.05f && src[i].x<=w*1.05f &&
+             src[i].y>=-h*0.05f && src[i].y<=h*1.05f))
+            return 0;
+        if(src[i].x<l)l=src[i].x;
+        if(src[i].x>r)r=src[i].x;
+        if(src[i].y<miny)miny=src[i].y;
+        if(src[i].y>maxy)maxy=src[i].y;
+    }
+    /* Both left and right edge masks are eligible. HUD health bars
+     * cannot reach a physical screen edge with this geometry/depth. */
+    return (r-l > w*0.05f && maxy-miny>h*0.01f &&
+            (l<=w*0.03f || r>=w*0.97f));
+}
+
 static inline int SpiderUICanvas_43Transform(const SpiderMenuVertex *src,
                   SpiderMenuVertex *dst, unsigned count,
                   unsigned primitive_type, uint32_t fvf,
@@ -155,6 +198,20 @@ static inline int SpiderUICanvas_43Transform(const SpiderMenuVertex *src,
     for (i = 0u; i < 4u; ++i)
         dst[i].x = 0.5f * (float)screen_w +
                    (src[i].x - 0.5f * (float)screen_w) * scale;
+    /* The common map must never leave 240px-wide unmasked exterior
+     * strips during a multi-piece black scene iris. Do not change
+     * interior edges or the independently drawn spider silhouette. */
+    if (SpiderUICanvas_43IsWipeEdgeMask(
+            src,count,primitive_type,fvf,caller_rva,screen_w,screen_h)) {
+        for (i = 0u; i < 4u; ++i) {
+            if (minx <= (float)screen_w * 0.03f &&
+                src[i].x <= (float)screen_w * 0.03f)
+                dst[i].x = src[i].x;
+            if (maxx >= (float)screen_w * 0.97f &&
+                src[i].x >= (float)screen_w * 0.97f)
+                dst[i].x = src[i].x;
+        }
+    }
     return 1;
 }
 
