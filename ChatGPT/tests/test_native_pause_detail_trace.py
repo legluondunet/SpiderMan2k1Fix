@@ -10,11 +10,17 @@ def test_native_pause_detail_trace_only_after_verified_banner():
     for token in (
         "if(!debug_log_enabled", "native_pause43_visible_near_flip(flip)",
         "rva!=0x00102C72UL", "native_pause43_detail_samples",
-        ">=80", "tw==8u && th==8u", "tw==32u",
+        "sample_budget,0,0)>=", "(family==1?160:80)",
+        "tw==8u && th==8u", "tw==32u",
         "IDirect3DDevice7_GetTexture(", "IDirectDrawSurface7_Release(tex)",
         "PAUSE-NATIVE-DETAIL:", "[READ-ONLY]", "log_line(line)"
     ):
         assert token in block
+    # Both source families remain independently bounded: the earlier
+    # verified render stays at 80; the later Mysterio source gets 160
+    # to include the purple menu-option foreground quads.
+    assert "native_pause43_detail_new_family_samples" in block
+    assert "sample>(family==1?160:80)" in block
     for forbidden in ("SetTexture(", "SetRenderState(", "SendInput(",
                       "copy[i].x=", "original_draw_primitive("):
         assert forbidden not in block
