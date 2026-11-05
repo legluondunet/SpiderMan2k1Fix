@@ -97,7 +97,15 @@ def test_original_pause_has_resolution_independent_four_by_three_geometry(tmp_pa
             assert(SpiderNativePause43_TextLayer(0.00098f,12.686f));
             assert(SpiderNativePause43_TextLayer(0.00122f,8.9615f));
             assert(SpiderNativePause43_TextLayer(0.00122f,6.8041f));
+            /* F9 scrn0045 / Log=1: the third Rhino native ESC
+             * foreground layer is .00098/8.0113, texture 16/32x32,
+             * color FFFE3242 or FF8A78D6. Its 32/80 uncorrected
+             * detail samples prove it must be included separately
+             * from the already-correct black shadow 6.8041. */
+            assert(SpiderNativePause43_TextLayer(0.00098f,8.0113f));
             assert(!SpiderNativePause43_TextLayer(0.00098f,6.8041f));
+            assert(!SpiderNativePause43_TextLayer(0.00098f,8.40f));
+            assert(!SpiderNativePause43_TextLayer(0.00122f,8.0113f));
             assert(SpiderNativePause43_TextLayer(0.00098f,10.3609f));
             assert(!SpiderNativePause43_TextLayer(0.00122f,10.3609f));
             assert(!SpiderNativePause43_TextLayer(0.00098f,8.9615f));
