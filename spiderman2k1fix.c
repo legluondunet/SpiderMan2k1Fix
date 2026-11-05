@@ -1624,6 +1624,7 @@ static const void *maybe_correct_native_boss_hud(void *device,
   IDirectDrawSurface7 *texture=NULL;
   DDSURFACEDESC2 desc;
   DWORD rva=0,tw=0,th=0;
+  HRESULT hr;
   int kind;
   LONG hit;
   char line[300];
@@ -1637,12 +1638,13 @@ static const void *maybe_correct_native_boss_hud(void *device,
     return source;
 
   memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
-  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,
-                                         0,&texture)) && texture){
-    if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc))){
-      tw=desc.dwWidth;th=desc.dwHeight;
-    }
+  hr=IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture);
+  if(FAILED(hr)) return source; /* unknown texture is not no texture */
+  if(texture){
+    hr=IDirectDrawSurface7_GetSurfaceDesc(texture,&desc);
+    if(SUCCEEDED(hr)){tw=desc.dwWidth;th=desc.dwHeight;}
     IDirectDrawSurface7_Release(texture);
+    if(FAILED(hr))return source;
   }
   kind=SpiderHudBossNative_Transform(v,copy,(unsigned)count,
        (unsigned)type,(uint32_t)fvf,(uint32_t)rva,
