@@ -190,7 +190,7 @@ def test_hook_order_preserves_other_3d_2d_and_hud_transforms():
     order = ["maybe_correct_native_comic(", "maybe_correct_adaptive_hud(",
              "maybe_correct_native_motif43(", "native_motif43_restore_gutters(",
              "maybe_correct_native_cursor43(", "maybe_correct_native_pause43(",
-             "maybe_correct_horplus(", "original_draw_primitive("]
+             "maybe_correct_horplus(", "draw_native_esc_in_front("]
     positions = [DRAW.index(x) for x in order]
     assert positions == sorted(positions)
     # In the opt-in unified trial, the native ESC motif retains its
@@ -199,6 +199,18 @@ def test_hook_order_preserves_other_3d_2d_and_hud_transforms():
     assert "if(v!=verts && InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1)" in DRAW
     assert "if(v==verts && count==4)" in DRAW
     assert "native_motif43_restore_gutters(self,(const SpiderMenuVertex*)verts,flags)" in DRAW
+    assert "native_esc_primitive=1" in DRAW
+    assert "draw_native_esc_in_front(self,type,fvf,(LPVOID)v," in DRAW
+    # The wrapper must not re-order world / UI draws or leak D3D7 state.
+    scoped=CORE.split("static HRESULT draw_native_esc_in_front(",1)[1].split(
+        "static HRESULT WINAPI hooked_draw_primitive(",1)[0]
+    assert "if(!device || !native_esc ||" in scoped
+    assert "original_draw_primitive(device,type,fvf,vertices,count,flags)" in scoped
+    assert "D3DRENDERSTATE_ZFUNC,D3DCMP_ALWAYS" in scoped
+    assert "D3DRENDERSTATE_ZWRITEENABLE,FALSE" in scoped
+    assert "D3DRENDERSTATE_ZWRITEENABLE,zw" in scoped
+    assert "D3DRENDERSTATE_ZFUNC,zfunc" in scoped
+
 
 
 def test_native_esc_children_are_permanent_but_depend_on_validated_hud():
