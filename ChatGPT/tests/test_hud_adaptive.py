@@ -311,8 +311,13 @@ def test_venom_matches_1920x1080_reference_bar_and_portrait(api):
     # bar approx. 1037..1508, portrait 1505..1626.
     # Source original boss bar x=1080..1691.2, portrait=1680..1848.8.
     for original, tex in [
-        (quad(1080, 130.5, 1691.2, 166.5, z=.0010, rhw=12.6862,
+        # The original gradient is TWO native draw quads, not one
+        # 611px-wide sprite; retaining them separately preserves
+        # the classifier's tested maximum-size fail-closed gate.
+        (quad(1080, 130.5, 1383.8, 166.5, z=.0010, rhw=12.6862,
               diffuse=0xFF00FF00), (0, 0)),
+        (quad(1383.8, 130.5, 1691.2, 166.5, z=.0010, rhw=12.6862,
+              diffuse=0xFFFFFF00), (0, 0)),
         (quad(1680, 72, 1848.8, 211.5, z=.0002, rhw=21.3309,
               diffuse=0xFFFFFFFF), (64, 64)),
     ]:
