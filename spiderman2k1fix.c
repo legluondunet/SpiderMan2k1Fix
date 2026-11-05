@@ -1063,6 +1063,10 @@ static float native_esc43_left_gutter(void) {
  */
 static volatile LONG native_pause43_enabled=0;
 static volatile LONG native_pause43_banner_flip=-1;
+/* Read-only probe family derived from verified source ribbon RHW, not
+ * any game level or scene name. Separate sample budgets allow a later
+ * depth family to be observed after 80 earlier glyph samples. */
+static volatile LONG native_pause43_banner_probe_family=0;
 static volatile LONG native_pause43_banner_hits=0;
 static volatile LONG native_pause43_border_hits=0;
 static volatile LONG native_pause43_banner_top=0;
@@ -1134,6 +1138,8 @@ static const void *maybe_correct_native_pause43(void *device,
      */
     if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)) &&
        tex) { IDirectDrawSurface7_Release(tex);return source; }
+    InterlockedExchange(&native_pause43_banner_probe_family,
+       SpiderNativePause43_Abs(rhw-11.7760f)<0.060f?1:0);
     InterlockedExchange(&native_pause43_banner_top,(LONG)top);
     InterlockedExchange(&native_pause43_banner_bottom,(LONG)bottom);
     InterlockedExchange(&native_pause43_banner_flip,flip);
@@ -1825,6 +1831,7 @@ static void maybe_log_hud_visual_candidate(void *device,
  * no pointer scanning, texture modification, DrawPrimitive recursion,
  * render-state changes or unbounded per-frame logging. */
 static volatile LONG native_pause43_detail_samples=0;
+static volatile LONG native_pause43_detail_new_family_samples=0;
 static void maybe_log_native_pause43_detail(void *device,
                   D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
                   DWORD count,void *caller,int corrected) {
@@ -1833,7 +1840,8 @@ static void maybe_log_native_pause43_detail(void *device,
   DDSURFACEDESC2 desc;
   DWORD rva=0,tw=0,th=0,pf=0;
   float l,r,t,b;
-  LONG flip,sample;
+  LONG flip,sample,family;
+  volatile LONG *sample_budget;
   unsigned i;
   char line[345];
   if(!debug_log_enabled || !device || !v || count!=4 ||
@@ -1843,9 +1851,12 @@ static void maybe_log_native_pause43_detail(void *device,
      InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0)return;
   flip=InterlockedCompareExchange(&flip_count,0,0);
   if(!native_pause43_visible_near_flip(flip) ||
-     !geom_rva(caller,&rva) || rva!=0x00102C72UL ||
-     InterlockedCompareExchange(&native_pause43_detail_samples,0,0)>=80)
+     !geom_rva(caller,&rva) || rva!=0x00102C72UL)
     return;
+  family=InterlockedCompareExchange(&native_pause43_banner_probe_family,0,0);
+  sample_budget=family==1?&native_pause43_detail_new_family_samples:
+                         &native_pause43_detail_samples;
+  if(InterlockedCompareExchange(sample_budget,0,0)>=80)return;
   l=r=v[0].x;t=b=v[0].y;
   for(i=1;i<4;i++) {
     if(v[i].x<l)l=v[i].x;
@@ -1869,11 +1880,11 @@ static void maybe_log_native_pause43_detail(void *device,
   IDirectDrawSurface7_Release(tex);
   if(!((th==32u && (tw==16u || tw==32u || tw==64u)) ||
        (tw==8u && th==8u)))return;
-  sample=InterlockedIncrement(&native_pause43_detail_samples);
+  sample=InterlockedIncrement(sample_budget);
   if(sample>80)return;
   snprintf(line,sizeof(line),
-    "PAUSE-NATIVE-DETAIL: sample=%ld flip=%ld corrected=%d quad=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f color=%08lX tex=%lux%lu fmt=%08lX [READ-ONLY]",
-    (long)sample,(long)flip,corrected,
+    "PAUSE-NATIVE-DETAIL: sample=%ld family=%ld flip=%ld corrected=%d quad=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f color=%08lX tex=%lux%lu fmt=%08lX [READ-ONLY]",
+    (long)sample,(long)family,(long)flip,corrected,
     (double)l,(double)r,(double)t,(double)b,
     (double)v[0].z,(double)v[0].rhw,
     (unsigned long)v[0].diffuse,(unsigned long)tw,(unsigned long)th,
