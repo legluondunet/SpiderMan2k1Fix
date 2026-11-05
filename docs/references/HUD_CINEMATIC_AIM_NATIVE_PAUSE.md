@@ -743,6 +743,58 @@ Classify exact border and text depths **only after**
 observing this new source log. Do not merge before
 hardware validation.
 
+## Thirteenth observation: Venom (2) Windows 11 F9 and Xbox One S confirmation (2026-11-05 14:17)
+
+The first patched test, `SpiderMan2k1Fix(20261105-141706).log`,
+`scrn0004(6).png` (saved `screenshots/scrn0004.png` in native F9),
+used **1920×1200 native Windows 11** and Xbox One S controller
+`045E:02E0` (build `v1.1.0-e93a7b8`, a PR test build).
+The maintainer **successfully used the controller to validate Quit**
+from the 3D ESC menu. The logger confirms native pause context
+`0 -> 3`, multiple Down press/release pairs `0x02 -> 0x00`,
+then Confirm `0x10` and a native screen transition `3 -> 1`
+via the game's 2D menu; thus the earlier input-context regression
+is functionally resolved for this particular Xbox controller.
+This does **not** test the separate GAME OVER Retry/Quit bug in PR #110.
+
+The same test confirms **`PAUSE-NATIVE-43: ribbon`**
+at original source z=.00122/rhw=10.6651 with a 16:10
+x scale 0.83333, and **`NATIVE-MOTIF-43: QUAD-MATCH`**
+at z=.00146/rhw=9.4993. The screenshot nevertheless shows
+an ESC panel still extending horizontally to the display edges.
+This is now explained by **40 source-observed 8×8 border
+primitives** with `corrected=0`: native 1920-wide top/bottom
+lines and side pieces share `z=.00122/rhw=10.6651` with
+this scene's verified ribbon, but the older text-layer gate
+had not whitelisted that exact depth.
+
+The new bounded `PAUSE-NATIVE-DETAIL: family=2` probe captured
+**160 original glyph samples, all `corrected=0`**. This gives
+an exact **paired** source match:
+
+- black title/option shadow: `z=.00122/rhw=10.6651`,
+  `FF000000`, 16/32×32 original texture tiles;
+- actual face of `PAUSED`: `z=.00098/rhw=12.1569`,
+  `FFFE3242` (red), 32×32 tiles;
+- `CONTINUE`: same face depth `z=.00098/rhw=12.1569`,
+  `FFFFFFFF` (white), 16/32×32 tiles;
+- `RESTART LEVEL` and `QUIT`: same face depth,
+  `FF8A78D6` (violet), 16/32×32 tiles.
+
+**Follow-up code change:** whitelist *only* the above exact
+shadow/border RHW 10.6651 and foreground RHW 12.1569 within
+`SpiderNativePause43_TextLayer`. Every geometry/caller/FVF,
+8×8 border or 16/32/64×32 glyph texture-size test,
+same-Flip verified ribbon, exact Z and 4:3 screen guards
+remain in place. No 3D/boss/reticle/gamepad logic changes.
+Automated tests check both positive depth pairs and negative
+swapped/intermediate depths; visual acceptance of the updated
+frame and letters requires one further F9 screenshot.
+
+The top-right Black Cat HUD was again corrected by the
+existing adaptive pass; **no actual `HUD-AIM: red/green` hit**
+was recorded, so the aiming-crosshair task remains open.
+
 ## Bounded read-only diagnostic
 
 When `[Debug] Log=1`, only **uncorrected** original 4-vertex D3D7
