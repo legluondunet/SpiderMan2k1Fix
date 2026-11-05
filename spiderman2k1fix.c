@@ -2245,8 +2245,12 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       v=candidate;
     }
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
-    HRESULT hr=draw_native_esc_in_front(self,type,fvf,(LPVOID)v,
-                                        count,flags,native_esc_primitive);
+    /* Keep the proven direct draw path for all non-ESC primitives.
+     * Only exact native pause UI draws enter the temporary Z override. */
+    HRESULT hr=native_esc_primitive ?
+        draw_native_esc_in_front(self,type,fvf,(LPVOID)v,
+                                 count,flags,native_esc_primitive) :
+        original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
     free_menu_vertices(allocated);
     return hr;
   }
