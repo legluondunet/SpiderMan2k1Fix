@@ -168,3 +168,52 @@ def test_host_wiring_and_original_main_menu_isolated():
     assert 'g_ui_canvas_prototype' in native
     assert "pause_at_flip_if_background();" in source
     assert "maybe_correct_aim_reticle(" in source
+
+
+@pytest.mark.parametrize("resolution", [(1920, 1080), (1920, 1200), (3440, 1440)])
+def test_full_frame_presentation_filters_preserve_physical_width(transform, resolution):
+    w, h = resolution
+    for colour in (0xFF000000, 0x80000000, 0x60FFFFFF, 0xFFAA3377):
+        effect = quad(0, 0, w, h, colour=colour)
+        assert apply(transform, effect, screen=resolution)[0] == 0
+
+
+@pytest.mark.parametrize("resolution", [(1920, 1080), (1920, 1200), (3440, 1440)])
+def test_top_and_bottom_cinematic_letterbox_bands_stay_full_width(
+        transform, resolution):
+    w, h = resolution
+    top = quad(-.01 * w, -3, 1.01 * w, h * .13,
+               colour=0xFF000000)
+    bottom = quad(0, h * .85, w, h + 2,
+                  colour=0xFF000000)
+    assert apply(transform, top, screen=resolution)[0] == 0
+    assert apply(transform, bottom, screen=resolution)[0] == 0
+
+
+def test_native_middle_menu_panel_remains_in_four_by_three_canvas(transform):
+    # A wide native pause ribbon is interface, not an edge cinematic band.
+    panel = quad(-7.5, 430, 1923.8, 640, colour=0x880011CC)
+    ok, mapped = apply(transform, panel)
+    assert ok == 1
+    assert mapped[0].x == pytest.approx(234.375, abs=.03)
+    assert mapped[1].x == pytest.approx(1682.85, abs=.04)
+
+
+def test_black_hud_fills_and_middle_world_art_not_lost(transform):
+    # Being black alone never means "full-screen cinematic overlay".
+    gauge = quad(1751.2, 445.5, 1796.2, 697.5,
+                 colour=0xFF000000)
+    assert apply(transform, gauge)[0] == 1
+    # A large overlay that does not touch BOTH screen edges remains a
+    # canvas candidate, even if coloured black.
+    panel = quad(320, 0, 1600, 1080, colour=0xFF000000)
+    assert apply(transform, panel)[0] == 1
+
+
+def test_fullscreen_policy_has_a_trace_and_stays_opt_in():
+    host = (ROOT / "spiderman2k1fix.c").read_text()
+    code = (ROOT / "ui_canvas_43.h").read_text()
+    assert "UI-CANVAS-FULLSCREEN: keep=" in host
+    assert "SpiderUICanvas_43IsFullScreenEffect(" in host
+    assert "SpiderUICanvas_43IsFullScreenEffect(" in code
+    assert "SPIDERMAN2K1FIX_UI_CANVAS_TEST" in host
