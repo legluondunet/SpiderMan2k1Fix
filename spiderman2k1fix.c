@@ -2188,6 +2188,9 @@ typedef HRESULT (WINAPI *D3DSceneFn)(void *);
 static D3DSceneFn ui_original_begin_scene=NULL,ui_original_end_scene=NULL;
 typedef struct {
   SpiderMenuVertex v[4];
+  /* Raw native screen-space geometry before the 4:3 canvas mapping.
+   * Captured for a single read-only scene-motif diagnostic, never drawn. */
+  SpiderMenuVertex source_v[4];
   DWORD fvf,flags,state_token;
   D3DPRIMITIVETYPE type;
   IDirectDrawSurface7 *texture;
@@ -2203,6 +2206,7 @@ static volatile LONG ui_comp_capture_failures=0,ui_comp_no_scene=0,ui_comp_repla
 /* Frame counters are independent of quad count; modulo on cumulative
  * DrawPrimitive hits can otherwise miss every EndScene log indefinitely. */
 static volatile LONG ui_comp_flushed_frames=0,ui_comp_fullscreen_candidates=0;
+static volatile LONG ui_comp_source_dump_once=0;
 
 static void ui_comp_release(IDirect3DDevice7 *device) {
   unsigned i;
@@ -2312,6 +2316,58 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
       } else InterlockedIncrement(&ui_comp_replayed);
     }
   }
+  /* One-shot read-only 4:3 source/mapped comparison after a stable
+   * native pause frame. Do not make a new render pass or infer a tint.
+   * This tells us whether 160 native motif pieces contain background
+   * coverage, colour gradients, or only decorative geometry. */
+  if(debug_log_enabled && ui_comp_ribbon && ui_comp_motif &&
+     InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)>=59 &&
+     InterlockedCompareExchange(&ui_comp_source_dump_once,1,0)==0) {
+    unsigned q,k,found=0,source_left=0,source_right=0,source_full=0;
+    float width=(float)desktop_w,height=(float)desktop_h;
+    float raw_min=width,raw_max=0.0f,raw_top=height,raw_bottom=0.0f;
+    char msg[340];
+    for(q=0;q<ui_comp_count;q++) {
+      const SpiderUICompDraw *c=&ui_comp_draws[q];
+      float l,r,t,b;
+      if(c->layer!=SPIDER_UI_COMP_PAUSE_DECOR)continue;
+      found++;
+      l=r=c->source_v[0].x;t=b=c->source_v[0].y;
+      for(k=1;k<4;k++) {
+        if(c->source_v[k].x<l)l=c->source_v[k].x;
+        if(c->source_v[k].x>r)r=c->source_v[k].x;
+        if(c->source_v[k].y<t)t=c->source_v[k].y;
+        if(c->source_v[k].y>b)b=c->source_v[k].y;
+      }
+      if(l<raw_min)raw_min=l;
+      if(r>raw_max)raw_max=r;
+      if(t<raw_top)raw_top=t;
+      if(b>raw_bottom)raw_bottom=b;
+      if(l<=width*.03f)source_left++;
+      if(r>=width*.97f)source_right++;
+      if(l<=width*.03f && r>=width*.97f)source_full++;
+      /* Capture ALL vertex diffuse colours: important for native
+       * translucent gradients which cannot be reconstructed from
+       * the first vertex of the first motif quad. */
+      snprintf(msg,sizeof(msg),
+        "UI-COMPOSITOR-MOTIF-SOURCE: q=%u raw=(%.1f..%.1f,%.1f..%.1f) mapped-x=(%.1f..%.1f) ARGB=%08lX/%08lX/%08lX/%08lX z=%.5f rhw=%.3f [READ-ONLY]",
+        q,(double)l,(double)r,(double)t,(double)b,
+        (double)c->v[0].x,(double)c->v[1].x,
+        (unsigned long)c->source_v[0].diffuse,
+        (unsigned long)c->source_v[1].diffuse,
+        (unsigned long)c->source_v[2].diffuse,
+        (unsigned long)c->source_v[3].diffuse,
+        (double)c->source_v[0].z,(double)c->source_v[0].rhw);
+      log_line(msg);
+    }
+    snprintf(msg,sizeof(msg),
+      "UI-COMPOSITOR-MOTIF-SUMMARY: quads=%u raw-extents=(%.1f..%.1f,%.1f..%.1f) edge-left=%u edge-right=%u fullwidth-quads=%u physical=%ux%u [SOURCE BEFORE 4:3 TRANSFORM]",
+      found,(double)raw_min,(double)raw_max,
+      (double)raw_top,(double)raw_bottom,
+      source_left,source_right,source_full,
+      (unsigned)desktop_w,(unsigned)desktop_h);
+    log_line(msg);
+  }
   if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,saved))) {
     all_ok=0;log_line("UI-COMPOSITOR: WARNING end-scene state restore failed");
   }
@@ -2373,7 +2429,8 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
  * without changing global device state; no silent missing menu on
  * unsupported stateblocks. */
 static int ui_comp_capture(IDirect3DDevice7 *device,D3DPRIMITIVETYPE type,
-             DWORD fvf,const void *vertices,DWORD count,DWORD flags,int layer)
+             DWORD fvf,const void *vertices,const void *source_vertices,
+             DWORD count,DWORD flags,int layer)
 {
   SpiderUICompDraw *c;
   DWORD block=0;
@@ -2398,6 +2455,9 @@ static int ui_comp_capture(IDirect3DDevice7 *device,D3DPRIMITIVETYPE type,
   c=&ui_comp_draws[ui_comp_count++];
   memset(c,0,sizeof(*c));
   memcpy(c->v,vertices,4u*sizeof(SpiderMenuVertex));
+  /* This is a passive snapshot; only the corrected c->v is replayed. */
+  if(source_vertices)
+    memcpy(c->source_v,source_vertices,4u*sizeof(SpiderMenuVertex));
   c->fvf=fvf;c->flags=flags;c->type=type;c->layer=layer;
   c->state_token=block;c->texture=texture;
   if(layer==SPIDER_UI_COMP_PAUSE_DECOR) {
@@ -2578,7 +2638,7 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
      * The old depth-only experiment stays disabled in compositor mode. */
     HRESULT hr;
     if(native_esc_primitive && v!=verts &&
-       ui_comp_capture((IDirect3DDevice7*)self,type,fvf,v,count,flags,
+       ui_comp_capture((IDirect3DDevice7*)self,type,fvf,v,verts,count,flags,
                        native_esc_primitive)) {
       hr=D3D_OK;
     } else if(native_esc_primitive &&
