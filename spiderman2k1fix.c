@@ -2427,7 +2427,7 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4) {
       v=maybe_correct_native_motif43(self,type,fvf,verts,count,
                                     __builtin_return_address(0),small);
-      if(v!=verts) native_esc_primitive=1;
+      if(v!=verts) native_esc_primitive=SPIDER_UI_COMP_PAUSE_DECOR;
       if(v!=verts && InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1)
         native_motif43_restore_gutters(self,(const SpiderMenuVertex*)verts,flags);
     }
@@ -2436,13 +2436,13 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4) {
       v=maybe_correct_native_cursor43(self,type,fvf,verts,count,
                                       __builtin_return_address(0),small);
-      if(v!=verts) native_esc_primitive=1;
+      if(v!=verts) native_esc_primitive=SPIDER_UI_COMP_PAUSE_MENU;
     }
     /* Native ESC after known comic/HUD precedence. */
     if(v==verts && count==4) {
       v=maybe_correct_native_pause43(self,type,fvf,verts,count,
                                      __builtin_return_address(0),small);
-      if(v!=verts) native_esc_primitive=1;
+      if(v!=verts) native_esc_primitive=SPIDER_UI_COMP_PAUSE_MENU;
     }
     /* The original native Pause glyphs can have different per-level RHW:
      * capture original data regardless of whether the strict HUD path
@@ -2476,12 +2476,21 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       v=candidate;
     }
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
-    /* Keep the proven direct draw path for all non-ESC primitives.
-     * Only exact native pause UI draws enter the temporary Z override. */
-    HRESULT hr=native_esc_primitive ?
-        draw_native_esc_in_front(self,type,fvf,(LPVOID)v,
-                                 count,flags,native_esc_primitive) :
-        original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
+    /* Deferred ESC composition is active ONLY under both opt-in flags,
+     * inside a confirmed game-owned BeginScene/EndScene pair. Otherwise
+     * keep the original draw path (even if state blocks are unsupported).
+     * The old depth-only experiment stays disabled in compositor mode. */
+    HRESULT hr;
+    if(native_esc_primitive && v!=verts &&
+       ui_comp_capture((IDirect3DDevice7*)self,type,fvf,v,count,flags,
+                       native_esc_primitive)) {
+      hr=D3D_OK;
+    } else if(native_esc_primitive &&
+       InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)!=1)
+      hr=draw_native_esc_in_front(self,type,fvf,(LPVOID)v,
+                                 count,flags,native_esc_primitive);
+    else
+      hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
     free_menu_vertices(allocated);
     return hr;
   }
@@ -2518,6 +2527,10 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
   if(InterlockedCompareExchange(&device_ready,1,0)==0) {
     memcpy(patched_device_vtable,vt,sizeof(patched_device_vtable));
     original_set_viewport=(D3DViewportFn)vt[13];
+    /* DirectX 7 SDK IDirect3DDevice7 vtable: BeginScene slot 5,
+     * EndScene slot 6. Hook only under explicit compositor trial. */
+    ui_original_begin_scene=(D3DSceneFn)vt[5];
+    ui_original_end_scene=(D3DSceneFn)vt[6];
     original_set_render_state=(D3DSetRenderStateFn)vt[20];
     {
       DWORD zmode=0;
@@ -2545,7 +2558,9 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
   if(device_ready==2 && vt[13]==(void*)original_set_viewport &&
      vt[20]==(void*)original_set_render_state &&
      vt[25]==(void*)original_draw_primitive &&
-     vt[26]==(void*)original_draw_indexed_primitive) {
+     vt[26]==(void*)original_draw_indexed_primitive &&
+     vt[5]==(void*)ui_original_begin_scene &&
+     vt[6]==(void*)ui_original_end_scene) {
     DWORD protection=0,unused=0;
     if(VirtualProtect(vt,sizeof(patched_device_vtable),
                       PAGE_READWRITE,&protection)) {
@@ -2553,9 +2568,15 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
       vt[20]=(void*)hooked_set_render_state;
       vt[25]=(void*)hooked_draw_primitive;
       vt[26]=(void*)hooked_draw_indexed_primitive;
+      if(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1) {
+        vt[5]=(void*)ui_compositor_hooked_begin_scene;
+        vt[6]=(void*)ui_compositor_hooked_end_scene;
+      }
       if(!VirtualProtect(vt,sizeof(patched_device_vtable),protection,&unused))
         log_line("D3D7: WARNING native vtable protection restore failed");
-      log_line("D3D7: native device vtable patched in place (default; all four hooks ON)");
+      log_line(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 ?
+          "D3D7: native device vtable patched in place (four original hooks + scoped BeginScene/EndScene compositor)" :
+          "D3D7: native device vtable patched in place (default; all four hooks ON)");
     } else {
       char line[160];
       snprintf(line,sizeof(line),
@@ -2567,7 +2588,10 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
             vt[13]==(void*)hooked_set_viewport &&
             vt[20]==(void*)hooked_set_render_state &&
             vt[25]==(void*)hooked_draw_primitive &&
-            vt[26]==(void*)hooked_draw_indexed_primitive) {
+            vt[26]==(void*)hooked_draw_indexed_primitive &&
+            (InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)!=1 ||
+              (vt[5]==(void*)ui_compositor_hooked_begin_scene &&
+               vt[6]==(void*)ui_compositor_hooked_end_scene))) {
     /* COM object shares a vtable that was already patched by this fix. */
   } else {
     log_line("D3D7: WARNING device vtable differs from captured hooks; leaving pointer untouched");
