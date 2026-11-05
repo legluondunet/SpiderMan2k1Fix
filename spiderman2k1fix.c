@@ -14,6 +14,7 @@
 #include <d3d.h>
 #include "hud_widescreen.h"
 #include "hud_adaptive.h"
+#include "ui_canvas_43.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
 #include "hud_boss_probe.h"
@@ -968,6 +969,44 @@ static const void *maybe_correct_horplus(D3DPRIMITIVETYPE type,DWORD fvf,
   }
   if(InterlockedIncrement(&fov_horplus_calls)==1)
     log_line("FOV-HOR+: first depth-tested 3D primitive Y compensated [TEST ONLY]");
+  return copy;
+}
+
+/* Opt-in common 4:3 gameplay UI canvas, applied only to source
+ * screen-space D3D7 quads. No per-level/texture/color HUD rule. */
+static volatile LONG ui_canvas_trial_enabled=0;
+static volatile LONG ui_canvas_trial_hits=0;
+static const void *maybe_correct_unified_ui_canvas(
+                   D3DPRIMITIVETYPE type,DWORD fvf,
+                   const void *source,DWORD count,void *caller,
+                   SpiderMenuVertex *copy)
+{
+  DWORD rva=0;
+  LONG hit;
+  char message[250];
+  if(InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1 ||
+     !SpiderHudWidescreen_Installed() ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
+     !source || !copy || count!=4 ||
+     !geom_rva(caller,&rva) ||
+     !SpiderUICanvas_43Transform(
+        (const SpiderMenuVertex*)source,copy,
+        (unsigned)count,(unsigned)type,(uint32_t)fvf,
+        (uint32_t)rva,(unsigned)desktop_w,(unsigned)desktop_h))
+    return source;
+  hit=InterlockedIncrement(&ui_canvas_trial_hits);
+  if(debug_log_enabled && (hit<=12 || hit%480==0)) {
+    const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+    snprintf(message,sizeof(message),
+      "UI-CANVAS-43: draw=%ld caller=%08lX source-x=%.1f mapped-x=%.1f z=%.5f rhw=%.4f native-scope=%d [EXPERIMENT; SCREEN-SPACE-CANDIDATE]",
+      (long)hit,(unsigned long)rva,
+      (double)v[0].x,(double)copy[0].x,
+      (double)v[0].z,(double)v[0].rhw,
+      (int)SpiderHudWidescreen_InScope());
+    log_line(message);
+  }
   return copy;
 }
 
@@ -1971,6 +2010,8 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       v=maybe_correct_native_comic(self,type,fvf,verts,count,
                                    __builtin_return_address(0),small);
     }
+    /* In the unified trial, bypass older fragment-level HUD scaling. */
+    if(InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1) {
     /* BD has precedence and a separate signature; never rescale it. */
     if(v==verts && count==4)
       v=maybe_correct_adaptive_hud(self,type,fvf,verts,count,
@@ -1981,6 +2022,7 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       v=maybe_correct_native_boss_hud(self,type,fvf,verts,count,
                                       __builtin_return_address(0),small);
+    }
     /* Correct the native translucent motif. Where these same alpha
      * primitives previously tinted the entire 16:9 frame, replay the
      * original triangles ONLY into the two outer 240px gutters first.
@@ -2023,6 +2065,10 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       v=maybe_correct_aim_reticle(self,type,fvf,verts,count,
                                   __builtin_return_address(0),small);
+    /* Aiming glyphs retain their original 3D-target center. */
+    if(v==verts && count==4)
+      v=maybe_correct_unified_ui_canvas(type,fvf,verts,count,
+                                        __builtin_return_address(0),small);
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
     HRESULT hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
     free_menu_vertices(allocated);
@@ -4246,6 +4292,23 @@ static DWORD initialize_body(LPVOID unused) {
     }
   }
   install_player_hud(TRUE);
+  /* Launch-only opt-in: no INI repair or changes to the default setup.
+   * Disable early native HUD X changes so D3D7 receives source vertices
+   * and transforms each accepted screen-space primitive exactly once. */
+  {
+    char setting[4]={0};
+    DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_CANVAS_TEST",
+                                     setting,sizeof(setting));
+    if(n==1 && setting[0]=='1' &&
+       SpiderHudWidescreen_Installed() &&
+       lstrcmpiA(display_aspect_setting,"4:3")!=0) {
+      SpiderHudWidescreen_SetUICanvasPrototype(TRUE);
+      InterlockedExchange(&ui_canvas_trial_enabled,1);
+      log_line("UI-CANVAS-43: EXPERIMENT ON; common centered 4:3 gameplay UI mapping, native HUD X edits skipped; HARDWARE UNVERIFIED");
+    } else {
+      log_line("UI-CANVAS-43: OFF; legacy verified HUD and native menus unchanged");
+    }
+  }
   /* HUDWidescreenFix is the parent of the three native ESC children.
    * Read hidden [HUD] child opt-outs only AFTER the verified HUD
    * installation, so master=0 or failed HUD install disables all. */
