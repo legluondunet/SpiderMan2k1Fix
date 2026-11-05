@@ -58,6 +58,18 @@ static unsigned pause_menu_trace_reports=0;
  * already been verified. Wine can keep GetForegroundWindow()==game even
  * while Firefox owns real X11 focus. */
 static int native_host_focus_blocked=0;
+/* Read-only diagnostic for the original 3D GAME OVER / RETRY / QUIT UI.
+ * Its black screen may retain the 3D renderer, so classifying it by the
+ * renderer alone would incorrectly interpret South/A/Cross as Jump.
+ * NO input routing changes until a native, distinctive state is proven.
+ * This probe logs raw retail-engine scalars on South/Confirm rising edges
+ * and a foreground F9 press; raw values are not assumed menu identity. */
+static unsigned gameover_probe_confirm_prev=0;
+static unsigned gameover_probe_f9_prev=0;
+static unsigned gameover_probe_confirm_edges=0;
+static unsigned gameover_probe_confirm_reports=0;
+static unsigned gameover_probe_f9_reports=0;
+static uint32_t gameover_probe_owner=0;
 static void (*report)(const char *)=NULL;
 static void log_universal(const char *msg) {
   if(report && trace++<100u)report(msg);
@@ -65,6 +77,8 @@ static void log_universal(const char *msg) {
 static void log_native_pause_menu(const char *msg) {
   if(report && pause_menu_trace_reports++<48u)report(msg);
 }
+/* Exact supported PE32 only. Observes BSS/task bytes already cataloged
+ * in quick_exit_f12.c; never dereference opaque engine/menu objects. */
 static void log_focus_release(const char *msg) {
   /* Focus transitions are safety-critical; preserve diagnostics even
    * after the normal 100-line game-action trace budget is exhausted. */
@@ -352,6 +366,9 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   sent_mask=0;pulse_scan=0;menu_previous=menu_arm=0;
   previous_context=SPIDER_UNIVERSAL_CTX_3D;
   pause_context_reports=0;pause_command_reports=0;
+  gameover_probe_confirm_prev=gameover_probe_f9_prev=0;
+  gameover_probe_confirm_edges=gameover_probe_confirm_reports=0;
+  gameover_probe_f9_reports=0;gameover_probe_owner=0;
   spider_sdl3_universal_reset(&state);
   requested=ini &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1 &&
@@ -448,6 +465,75 @@ static int binding_held(SpiderSDL3Binding b,
      b.index<SPIDER_SDL3_AXIS_COUNT)
     return sample->axis[b.index]>=11000;
   return 0;
+}
+static int gameover_probe_read_u32(uintptr_t address,uint32_t *out) {
+  MEMORY_BASIC_INFORMATION mbi;
+  uintptr_t base;
+  if(!out || sizeof(void*)!=4 ||
+     (uintptr_t)GetModuleHandleA(NULL)!=0x00400000u ||
+     VirtualQuery((const void *)address,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)))
+    return 0;
+  base=(uintptr_t)mbi.BaseAddress;
+  if(address<base || address-base>=mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(address-base)<sizeof(uint32_t))
+    return 0;
+  memcpy(out,(const void *)address,sizeof(*out));
+  return 1;
+}
+static void gameover_probe_snapshot(uint32_t owner,unsigned context,
+    int menu,int gameplay,int bink,int native_pause,
+    const SpiderSDL3ControllerProfile *profile,
+    const SpiderSDL3ControllerSample *sample) {
+  uint32_t engine_mode=0,task=0,input_active=0;
+  uint32_t pause_context=0,menu_context=0,dispatcher=0,transition=0;
+  unsigned confirm=0,f9=0,confirm_edge,f9_edge;
+  int good;
+  char line[450];
+  if(!report || !profile || !sample)return;
+  /* Passive edge tracking is owner-specific; no inherited held South
+   * on controller handoff or a false first frame. */
+  if(gameover_probe_owner!=owner) {
+    gameover_probe_owner=owner;
+    gameover_probe_confirm_prev=0;
+    gameover_probe_f9_prev=0;
+  }
+  confirm=(unsigned)binding_held(
+      profile->context[SPIDER_SDL3_CONTEXT_CONFIRM],sample);
+  f9=(GetAsyncKeyState(VK_F9)&0x8000)!=0;
+  confirm_edge=confirm && !gameover_probe_confirm_prev;
+  f9_edge=f9 && !gameover_probe_f9_prev;
+  gameover_probe_confirm_prev=confirm;
+  gameover_probe_f9_prev=f9;
+  if(confirm_edge)++gameover_probe_confirm_edges;
+  /* Bound active-combat noise: first 3, then every 16th confirm edge;
+   * F9 always has an independent 8-snapshot allowance to capture the
+   * actual screenshot frame even after many combat button presses. */
+  if(!((f9_edge && gameover_probe_f9_reports<8u) ||
+       (confirm_edge && gameover_probe_confirm_reports<12u &&
+        (gameover_probe_confirm_edges<=3u ||
+         gameover_probe_confirm_edges%16u==0u))))return;
+  good=
+    gameover_probe_read_u32(0x0060CFA4u,&engine_mode) &&
+    gameover_probe_read_u32(0x0054A510u,&task) &&
+    gameover_probe_read_u32(0x006B78F0u,&input_active) &&
+    gameover_probe_read_u32(0x00682950u,&pause_context) &&
+    gameover_probe_read_u32(0x00682948u,&menu_context) &&
+    gameover_probe_read_u32(0x0068293Cu,&dispatcher) &&
+    gameover_probe_read_u32(0x0054D38Cu,&transition);
+  if(f9_edge && gameover_probe_f9_reports<8u)
+    ++gameover_probe_f9_reports;
+  else if(confirm_edge && gameover_probe_confirm_reports<12u)
+    ++gameover_probe_confirm_reports;
+  snprintf(line,sizeof(line),
+    "SDL3-GAMEOVER-PROBE: %s selected=%lu ctx=%u renderer(menu=%d 3d=%d bink=%d native-pause=%d) south-edges=%u engine-mode=%08lX task=%08lX input-active=%08lX pause-ctx=%u menu-ctx=%u dispatcher=%08lX transition=%08lX raw=%s [READ-ONLY; NOT A GAME-OVER DETECTOR]",
+    f9_edge?"F9":"CONFIRM",(unsigned long)owner,context,
+    menu,gameplay,bink,native_pause,gameover_probe_confirm_edges,
+    (unsigned long)engine_mode,(unsigned long)task,
+    (unsigned long)input_active,(unsigned)(pause_context!=0u),
+    (unsigned)(menu_context!=0u),(unsigned long)dispatcher,
+    (unsigned long)transition,good?"OK":"UNAVAILABLE");
+  report(line);
 }
 static void pulse(unsigned scan,const char *context) {
   if(pulse_scan || !send_scan(scan,0))return;
@@ -700,6 +786,11 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   }
   context=spider_sdl3_universal_route_context(
     menu,gameplay,bink,native_pause);
+  /* F9/physical South read-only evidence for a possible original
+   * GAME OVER overlay still running under the 3D renderer.  Do NOT
+   * inject Enter until a unique game-owned state is established. */
+  gameover_probe_snapshot(id,context,menu,gameplay,bink,native_pause,
+                          profile,&sample);
   if(context!=previous_context) {
     /* Entering the native 3D Pause screen is NOT a gameplay frame.
      * Reset action edges; a fully released controller must arm menu
