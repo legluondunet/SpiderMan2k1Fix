@@ -540,6 +540,64 @@ Neither screenshots nor log contain evidence of a graphics crash:
 no `FATAL`, `ERROR:` or `CRASH` markers, but the session ends
 after a focus change, not an explicit clean-exit signal.
 
+## Tenth validation: later Mysterio native Pause source family (2026-11-05)
+
+The maintainer visually **validated Rhino Pause** using original F9
+`scrn0047.png`, and supplied `scrn0048.png` from the subsequent
+Mysterio-level native ESC: the **entire purple banner remains
+screen-wide** and the heading/options too broad at 1920×1080.
+Both source screenshots are saved in one
+`SpiderMan2k1Fix(20261105-012536).log` run:
+
+- `scrn0047.png`: 02:23:00 F9 native PNG, Rhino Pause **PASS**.
+  The matching `PAUSE-NATIVE-DETAIL` shows black shadow **and**
+  newly integrated red/violet colored glyph faces
+  (`Z=.00098, RHW=8.0113`) both **corrected=1**, confirming the
+  Rhino title/label two-layer alignment.
+- `scrn0048.png`: 02:23:39 F9 native PNG, Mysterio Pause **FAIL**.
+  `HUD-VISUAL: PAUSE-RIBBON` in the immediately surrounding frames
+  records the original caller `00102C72`, untextured quad
+  x=-7.5..1923.8, y=400.5..675, color `7F3232A0`,
+  **Z=0.00122, RHW=11.7760**; source differs from the previously
+  verified ribbon RHW 11.176/8.9615/6.8041.
+  No `PAUSE-NATIVE-43: ribbon` hit occurs after the Mysterio
+  scene enters gameplay.
+- `HUD-VISUAL: AIM` in the same frames is a **generic candidate
+  name**, not proof that a cursor or aiming element is drawn:
+  its original call, alpha-80 colour `80041010` / `80208686`,
+  untextured fan at **Z=0.00146, RHW=10.5646** closely matches the
+  native translucent ESC motif family, distinct from earlier motif
+  RHW=9.988/7.8952/5.9130.
+
+**Strict source-backed changes:** add *only* discrete 11.7760
+ribbon and 10.5646 motif families to the existing exact caller,
+source geometry, texture-state and alpha/depth gates. Reuse the
+canonical center-anchored 4:3 X mapping at any widescreen resolution,
+not a Mysterio-specific display adjustment.
+
+**Unresolved letter depths:** no original Mysterio glyph (shadow
+or face) Z/RHW evidence is present in this run because the ribbon
+did not match and `PAUSE-NATIVE-DETAIL` requires a verified
+same-Flip ribbon. Do **not** invent these values or widen the glyph
+depth intervals. Once the new ribbon is recognized, the bounded
+read-only detail probe will sample letter layers and report
+`corrected=0` until the additional exact source pair is observed.
+
+**Important diagnostic sampling fix:** the original one-per-process
+80-glyph limit was exhausted in Rhino before the user advanced to
+Mysterio. To preserve a **single multi-level test session**,
+the separate read-only second-family sampler has its own 80-draw
+budget, keyed by the original *verified ribbon RHW* rather than
+the level name. The log marks `family=1` versus earlier `family=0`.
+No render behavior is changed by this sampling logic.
+
+**Remaining validation:** build, run one Mysterio F9 screenshot
+with the new artifact and `Log=1` journal, confirm centered
+banner and motif, extract uncorrected letter signatures from
+`PAUSE-NATIVE-DETAIL: family=1`, then make the exact text-depth
+pair correction and revalidate. Rhino and earlier scenes do
+not need to be repeated. Keep PR #109 DRAFT pending.
+
 ## Bounded read-only diagnostic
 
 When `[Debug] Log=1`, only **uncorrected** original 4-vertex D3D7
