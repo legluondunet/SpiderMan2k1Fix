@@ -72,8 +72,8 @@ def test_host_defers_native_esc_to_end_scene_with_original_state_restored():
     for marker in (
         "ui_comp_capture(",
         "ui_comp_flush(",
-        "ui_compositor_hooked_begin_scene(",
-        "ui_compositor_hooked_end_scene(",
+        "ui_compositor_scene_start(",
+        "ui_compositor_scene_finish(",
         "IDirect3DDevice7_CreateStateBlock(device,D3DSBT_ALL,",
         "IDirect3DDevice7_ApplyStateBlock(device,c->state_token)",
         "IDirect3DDevice7_GetTexture(device,0,&texture)",
@@ -97,8 +97,8 @@ def test_host_defers_native_esc_to_end_scene_with_original_state_restored():
 
     assert 'SPIDERMAN2K1FIX_UI_COMPOSITOR_TEST' in src
     assert 'SPIDERMAN2K1FIX_UI_COMPOSITOR_TINT' in src
-    assert 'vt[5]=(void*)ui_compositor_hooked_begin_scene;' in src
-    assert 'vt[6]=(void*)ui_compositor_hooked_end_scene;' in src
+    assert 'vt[5]=(void*)ui_compositor_scene_start;' in src
+    assert 'vt[6]=(void*)ui_compositor_scene_finish;' in src
     assert 'ui_comp_capture((IDirect3DDevice7*)self' in src
     assert "v=maybe_correct_native_pause43(" in src
 
