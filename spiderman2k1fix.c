@@ -2386,7 +2386,7 @@ capture_failed:
   return 0;
 }
 
-static HRESULT WINAPI ui_compositor_hooked_begin_scene(void *self) {
+static HRESULT WINAPI ui_compositor_scene_start(void *self) {
   HRESULT hr=ui_original_begin_scene(self);
   if(SUCCEEDED(hr) &&
      InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1) {
@@ -2398,7 +2398,7 @@ static HRESULT WINAPI ui_compositor_hooked_begin_scene(void *self) {
   }
   return hr;
 }
-static HRESULT WINAPI ui_compositor_hooked_end_scene(void *self) {
+static HRESULT WINAPI ui_compositor_scene_finish(void *self) {
   if(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
      ui_comp_scene_open && ui_comp_device==self)
     ui_comp_flush((IDirect3DDevice7*)self);
@@ -2580,8 +2580,8 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
       vt[25]=(void*)hooked_draw_primitive;
       vt[26]=(void*)hooked_draw_indexed_primitive;
       if(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1) {
-        vt[5]=(void*)ui_compositor_hooked_begin_scene;
-        vt[6]=(void*)ui_compositor_hooked_end_scene;
+        vt[5]=(void*)ui_compositor_scene_start;
+        vt[6]=(void*)ui_compositor_scene_finish;
       }
       if(!VirtualProtect(vt,sizeof(patched_device_vtable),protection,&unused))
         log_line("D3D7: WARNING native vtable protection restore failed");
@@ -2601,8 +2601,8 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
             vt[25]==(void*)hooked_draw_primitive &&
             vt[26]==(void*)hooked_draw_indexed_primitive &&
             (InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)!=1 ||
-              (vt[5]==(void*)ui_compositor_hooked_begin_scene &&
-               vt[6]==(void*)ui_compositor_hooked_end_scene))) {
+              (vt[5]==(void*)ui_compositor_scene_start &&
+               vt[6]==(void*)ui_compositor_scene_finish))) {
     /* COM object shares a vtable that was already patched by this fix. */
   } else {
     log_line("D3D7: WARNING device vtable differs from captured hooks; leaving pointer untouched");
