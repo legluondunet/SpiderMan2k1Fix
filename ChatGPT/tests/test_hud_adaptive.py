@@ -201,7 +201,7 @@ def test_foreground_signature_mismatch_and_upper_left_player_are_safe(api):
 
 
 
-def test_venom_boss_bar_and_frame_right_anchored(api):
+def test_venom_boss_bar_and_frame_screen_centered(api):
     # Actual Windows 11 1920x1200 Venom F12 signatures. The whole
     # two-color fill and each border tile must shift with its portrait.
     groups = [
@@ -220,7 +220,7 @@ def test_venom_boss_bar_and_frame_right_anchored(api):
         kind, dst = mapped(api, src, tex=tex, output=(1920, 1200))
         assert kind == 3
         for v0, v1 in zip(src, dst):
-            assert v1.x == pytest.approx(1920 + (v0.x - 1920) * (5/6), abs=0.02)
+            assert v1.x == pytest.approx(960 + (v0.x - 960) * (5/6), abs=0.02)
         check_other_coordinates_unchanged(src, dst)
 
 
@@ -237,7 +237,7 @@ def test_scorpion_and_jameson_two_rows_share_same_mapping(api):
         src = quad(x0, y0, x1, y1, z=0.0010, rhw=13.6283, diffuse=color)
         kind, dst = mapped(api, src, tex=(0, 0), output=(1920, 1200))
         assert kind == 3
-        assert dst[0].x == pytest.approx(1920 + (x0 - 1920) * 5/6, abs=0.02)
+        assert dst[0].x == pytest.approx(960 + (x0 - 960) * 5/6, abs=0.02)
         check_other_coordinates_unchanged(src, dst)
 
     # At Jameson's lower row the black 15x40 health marker moves too.
@@ -245,7 +245,7 @@ def test_scorpion_and_jameson_two_rows_share_same_mapping(api):
                 rhw=15.6029, diffuse=0xFF000000)
     kind, dst = mapped(api, mark, tex=(0, 0), output=(1920, 1200))
     assert kind == 3
-    assert dst[0].x == pytest.approx(1610.6667, abs=0.02)
+    assert dst[0].x == pytest.approx(1450.6667, abs=0.02)
 
     # Second row frame and second portrait, matching first row scaling.
     segments = [
@@ -258,7 +258,7 @@ def test_scorpion_and_jameson_two_rows_share_same_mapping(api):
         kind, dst = mapped(api, src, tex=tex, output=(1920, 1200))
         assert kind == 3
         assert dst[0].x == pytest.approx(
-            1920 + (src[0].x - 1920)*5/6, abs=0.02)
+            960 + (src[0].x - 960)*5/6, abs=0.02)
         check_other_coordinates_unchanged(src, dst)
 
 
@@ -278,7 +278,7 @@ def test_variable_width_black_boss_damage_tracks_border(api, bounds):
     assert kind == 3
     for before, after in zip(source, result):
         assert after.x == pytest.approx(
-            1920 + (before.x - 1920) * (5 / 6), abs=0.03)
+            960 + (before.x - 960) * (5 / 6), abs=0.03)
     check_other_coordinates_unchanged(source, result)
 
 
@@ -303,6 +303,63 @@ def test_black_boss_mask_rejects_wrong_layer_and_wrong_row(api):
     assert mapped(api, too_wide, tex=(0, 0),
                   output=(1920, 1200))[0] == 0
     assert mapped(api, mask, tex=(0, 0), output=(1600, 1200))[0] == 0
+
+
+
+def test_venom_matches_1920x1080_reference_bar_and_portrait(api):
+    # 2026-11-05 1920x1080 user screenshot reference:
+    # bar approx. 1037..1508, portrait 1505..1626.
+    # Source original boss bar x=1080..1691.2, portrait=1680..1848.8.
+    for original, tex in [
+        (quad(1080, 130.5, 1691.2, 166.5, z=.0010, rhw=12.6862,
+              diffuse=0xFF00FF00), (0, 0)),
+        (quad(1680, 72, 1848.8, 211.5, z=.0002, rhw=21.3309,
+              diffuse=0xFFFFFFFF), (64, 64)),
+    ]:
+        kind, result = mapped(api, original, tex=tex, output=(1920, 1080))
+        assert kind == 3
+        for a, b in zip(original, result):
+            assert b.x == pytest.approx(960 + (a.x - 960)*.75, abs=.03)
+        check_other_coordinates_unchanged(original, result)
+
+
+@pytest.mark.parametrize("texture,z,rhw,color,bounds", [
+    # Hypothetical original right-side 1920x1200 Mary-Jane portrait.
+    # These are *geometry trial* quads, not proven source signatures.
+    ((64, 64), .0002, 21.3309, 0xFFFFFFFF, (1680, 350, 1848.8, 505)),
+    ((32, 32), .0002, 21.3309, 0xFFFFFFFF, (1687.5, 490, 1785, 565)),
+    ((0, 0), .0010, 12.6862, 0xFF8888FF, (1720, 565, 1770, 790)),
+    ((0, 0), .0007, 15.6029, 0xFF000000, (1720, 565, 1770, 620)),
+])
+def test_vertical_objective_right_side_43_reprojection(
+        api, texture, z, rhw, color, bounds):
+    source = quad(*bounds, z=z, rhw=rhw, diffuse=color)
+    kind, result = mapped(api, source, tex=texture, output=(1920, 1200))
+    assert kind == 4
+    for original, transformed in zip(source, result):
+        assert transformed.x == pytest.approx(
+            960 + (original.x - 960) * (5 / 6), abs=.03)
+    check_other_coordinates_unchanged(source, result)
+    assert mapped(api, source, tex=texture, output=(1600, 1200))[0] == 0
+
+
+def test_objective_classifier_fails_closed_outside_rhs_and_hud_layers(api):
+    valid = quad(1680, 350, 1848.8, 505, z=.0002,
+                 rhw=21.3309, diffuse=0xFFFFFFFF)
+    for texture in [(0, 0), (32, 32), (64, 32)]:
+        assert mapped(api, valid, tex=texture, output=(1920, 1200))[0] == 0
+    world = quad(1680, 350, 1848.8, 505, z=.9983,
+                 rhw=.0229, diffuse=0xFFFFFFFF)
+    assert mapped(api, world, tex=(64, 64), output=(1920, 1200))[0] == 0
+    center_scene = quad(880, 350, 1048.8, 505, z=.0002,
+                        rhw=21.3309, diffuse=0xFFFFFFFF)
+    assert mapped(api, center_scene, tex=(64, 64), output=(1920, 1200))[0] == 0
+    too_low = quad(1680, 910, 1848.8, 1065, z=.0002,
+                   rhw=21.3309, diffuse=0xFFFFFFFF)
+    assert mapped(api, too_low, tex=(64, 64), output=(1920, 1200))[0] == 0
+    too_large = quad(1520, 350, 1848.8, 505, z=.0002,
+                     rhw=21.3309, diffuse=0xFFFFFFFF)
+    assert mapped(api, too_large, tex=(64, 64), output=(1920, 1200))[0] == 0
 
 
 def test_boss_mismatch_or_world_primitives_are_never_transformed(api):
