@@ -10,7 +10,7 @@ def test_native_pause_detail_trace_only_after_verified_banner():
     for token in (
         "if(!debug_log_enabled", "native_pause43_visible_near_flip(flip)",
         "rva!=0x00102C72UL", "native_pause43_detail_samples",
-        "sample_budget,0,0)>=", "(family==1?160:80)",
+        "sample_budget,0,0)>=", "(family!=0?160:80)",
         "tw==8u && th==8u", "tw==32u",
         "IDirect3DDevice7_GetTexture(", "IDirectDrawSurface7_Release(tex)",
         "PAUSE-NATIVE-DETAIL:", "[READ-ONLY]", "log_line(line)"
@@ -20,7 +20,11 @@ def test_native_pause_detail_trace_only_after_verified_banner():
     # verified render stays at 80; the later Mysterio source gets 160
     # to include the purple menu-option foreground quads.
     assert "native_pause43_detail_new_family_samples" in block
-    assert "sample>(family==1?160:80)" in block
+    assert "sample>(family!=0?160:80)" in block
+    # Independently bounded source-family 2 captures 160 draws for
+    # Venom (2) after the original 80-draw budget is exhausted.
+    assert "native_pause43_detail_venom2_samples" in block
+    assert "family==2?&native_pause43_detail_venom2_samples:" in block
     for forbidden in ("SetTexture(", "SetRenderState(", "SendInput(",
                       "copy[i].x=", "original_draw_primitive("):
         assert forbidden not in block

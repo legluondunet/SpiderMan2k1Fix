@@ -50,6 +50,10 @@ static uint32_t focus_dir_controller_id=0;
 static unsigned focus_latch_follow_scan=0;
 static unsigned focus_latch_follow_frames=0;
 static unsigned focus_release_reports=0;
+/* Independent native Pause input trace budget: normal SDL3 game-action
+ * logging reaches 100 entries before late levels. This does not change
+ * any controller routing, key injection or ownership. */
+static unsigned pause_menu_trace_reports=0;
 /* Native Linux host focus is authoritative when the X11 observer has
  * already been verified. Wine can keep GetForegroundWindow()==game even
  * while Firefox owns real X11 focus. */
@@ -57,6 +61,9 @@ static int native_host_focus_blocked=0;
 static void (*report)(const char *)=NULL;
 static void log_universal(const char *msg) {
   if(report && trace++<100u)report(msg);
+}
+static void log_native_pause_menu(const char *msg) {
+  if(report && pause_menu_trace_reports++<48u)report(msg);
 }
 static void log_focus_release(const char *msg) {
   /* Focus transitions are safety-critical; preserve diagnostics even
@@ -707,7 +714,7 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
       snprintf(msg,sizeof(msg),
         "SDL3-UNIVERSAL: PAUSE-MENU context transition %u -> %u (menu arm reset; held keys released on routing)",
         previous_context,context);
-      log_universal(msg);
+      log_native_pause_menu(msg);
     }
     previous_context=context;
   }
@@ -747,7 +754,7 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
         snprintf(msg,sizeof(msg),
           "SDL3-UNIVERSAL: PAUSE-MENU INPUT held=0x%02X previous=0x%02X (Up/Down/Left/Right/Confirm/Back)",
           menu_buttons,menu_previous);
-        log_universal(msg);
+        log_native_pause_menu(msg);
       }
       if((menu_buttons&(1u<<5)) && !(menu_previous&(1u<<5)))
         pulse(0x01u,"menu Back/Pause resume");
