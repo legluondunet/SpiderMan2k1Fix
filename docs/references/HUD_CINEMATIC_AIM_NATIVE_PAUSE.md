@@ -646,11 +646,14 @@ to the border strokes that share the shadow depth.
 No Mysterio level-specific logic and no change to previous
 ribbon, motif, Rhino, aim or boss HUD code. The violet
 `CONTINUE/RESTART LEVEL/QUIT` foreground has not yet been
-independently measured by this probe (80-event budget filled
-during early PAUSED draws); it is **expected** to share the
-new font-face depth but cannot yet be claimed visually accepted.
-The new signature is source-verified for the red heading;
-hardware screenshot will confirm the remaining choices.
+independently measured by this probe (the *old* 80-event limit
+filled during early PAUSED draws); it is **expected** to share
+the new font-face depth but cannot yet be claimed accepted.
+The read-only Mysterio source-family probe is now **increased
+from 80 to 160 samples**, while the other family stays at 80,
+to catch the violet option faces during the next *single*
+hardware run. The new signature is source-verified for the red
+heading; screenshot and logging will confirm the choices.
 
 **Next acceptance:** only one Mysterio Pause F9 and one Log=1
 journal with latest CI artifact; confirm top/bottom border
