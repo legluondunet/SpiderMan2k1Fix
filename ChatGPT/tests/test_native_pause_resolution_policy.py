@@ -82,6 +82,12 @@ def test_original_pause_has_resolution_independent_four_by_three_geometry(tmp_pa
             /* Rhino boss: same exact untextured banner/geometry
              * but new logged RHW 6.8041, no broad interpolation. */
             assert(SpiderNativePause43_RibbonLayer(0.00122f,6.8041f));
+            /* Actual source ribbon during the later Mysterio scene:
+             * scrn0048.png and same-run Log=1, original caller 102C72,
+             * full-width textureless quad at z=.00122/rhw=11.776. */
+            assert(SpiderNativePause43_RibbonLayer(0.00122f,11.7760f));
+            assert(!SpiderNativePause43_RibbonLayer(0.00122f,11.500f));
+            assert(!SpiderNativePause43_RibbonLayer(0.00122f,11.950f));
             assert(!SpiderNativePause43_RibbonLayer(0.00122f,7.7f));
             assert(!SpiderNativePause43_RibbonLayer(0.00122f,10.10f));
             assert(!SpiderNativePause43_RibbonLayer(0.00122f,8.70f));
@@ -89,6 +95,11 @@ def test_original_pause_has_resolution_independent_four_by_three_geometry(tmp_pa
             assert(SpiderNativePause43_MotifLayer(0.00146f,9.988f));
             assert(SpiderNativePause43_MotifLayer(0.00146f,7.8952f));
             assert(SpiderNativePause43_MotifLayer(0.00146f,5.9130f));
+            /* Untextured alpha=80 geometric motif candidate,
+             * original caller 102C72, z=.00146/rhw=10.5646. */
+            assert(SpiderNativePause43_MotifLayer(0.00146f,10.5646f));
+            assert(!SpiderNativePause43_MotifLayer(0.00146f,10.300f));
+            assert(!SpiderNativePause43_MotifLayer(0.00146f,10.900f));
             assert(!SpiderNativePause43_MotifLayer(0.00146f,6.9f));
             /* Face and shadow glyph layers from the supplied runtime
              * journal: FF000000 at .00122 / 8.9615 and FF8A78D6 or
@@ -103,6 +114,11 @@ def test_original_pause_has_resolution_independent_four_by_three_geometry(tmp_pa
              * detail samples prove it must be included separately
              * from the already-correct black shadow 6.8041. */
             assert(SpiderNativePause43_TextLayer(0.00098f,8.0113f));
+            /* The new ribbon alone is not proof of either glyph face
+             * or shadow RHW: fail closed until the per-family probe
+             * records these distinct source depths. */
+            assert(!SpiderNativePause43_TextLayer(0.00122f,11.7760f));
+            assert(!SpiderNativePause43_TextLayer(0.00098f,13.4600f));
             assert(!SpiderNativePause43_TextLayer(0.00098f,6.8041f));
             assert(!SpiderNativePause43_TextLayer(0.00098f,8.40f));
             assert(!SpiderNativePause43_TextLayer(0.00122f,8.0113f));
@@ -147,6 +163,13 @@ def test_native_pause_still_uses_exact_render_signature_not_only_bounds():
     assert "gameplay_4x3_active" in block
     assert "menu_upscale_active" in block
     assert "native_esc43_supported_monitor()" in CORE
+    # The log's first 80 glyphs were all from Rhino. The later
+    # Mysterio 11.776 source must have its OWN bounded read-only
+    # budget, or a single combined run would never reveal its depths.
+    assert "native_pause43_banner_probe_family" in CORE
+    assert "native_pause43_detail_new_family_samples" in CORE
+    assert "sample_budget=family==1?&native_pause43_detail_new_family_samples:" in CORE
+    assert "PAUSE-NATIVE-DETAIL: sample=%ld family=%ld" in CORE
 
 
 def test_3d_scene_letterboxes_and_native_bink_paths_remain_untouched():
