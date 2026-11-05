@@ -1665,8 +1665,10 @@ static const void *maybe_correct_native_boss_hud(void *device,
   }
   return copy;
 }
-static volatile LONG boss_hud_probe_last_flip[3]={-100,-100,-100};
-static volatile LONG boss_hud_probe_hits[3]={0,0,0};
+/* Track the three source bar appearances separately; sampling only the
+ * first fill each frame hides the green half and the black damage mask. */
+static volatile LONG boss_hud_probe_last_flip[5]={-100,-100,-100,-100,-100};
+static volatile LONG boss_hud_probe_hits[5]={0,0,0,0,0};
 static void maybe_log_boss_hud_candidate(void *device,
        D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
        DWORD count,void *caller,int already_corrected)
@@ -1715,7 +1717,14 @@ static void maybe_log_boss_hud_candidate(void *device,
                 (uint32_t)fvf,(uint32_t)rva,(unsigned)tw,(unsigned)th,
                 (unsigned)desktop_w,(unsigned)desktop_h);
   if(kind==SPIDER_HUD_BOSS_PROBE_NONE)return;
-  k=kind-1;
+  if(kind==SPIDER_HUD_BOSS_PROBE_FILL){
+    /* Keep black missing HP, green full HP, and red/yellow color
+     * gradient independently visible; the appearance can vary as
+     * the boss takes damage. This changes diagnostics only. */
+    k=(v[0].diffuse==0xFF000000u)?0:
+      (((v[0].diffuse&0x00FF0000u)<0x00800000u &&
+        (v[0].diffuse&0x0000FF00u)>=0x00008000u)?1:2);
+  }else k=(kind==SPIDER_HUD_BOSS_PROBE_FRAME)?3:4;
   flip=InterlockedCompareExchange(&flip_count,0,0);
   last=InterlockedCompareExchange(&boss_hud_probe_last_flip[k],0,0);
   if(flip-last<45 ||
@@ -1726,7 +1735,8 @@ static void maybe_log_boss_hud_candidate(void *device,
   if(hit>18)return;
   snprintf(message,sizeof(message),
       "HUD-BOSS-PROBE: %s sample=%ld flip=%ld corrected=%d caller=%08lX quad=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f color=%08lX tex=%lux%lu uv0=(%.3f,%.3f) [READ-ONLY]",
-      kind==SPIDER_HUD_BOSS_PROBE_FILL?"fill":
+      kind==SPIDER_HUD_BOSS_PROBE_FILL?
+          (k==0?"fill-black":k==1?"fill-green":"fill-other"):
       kind==SPIDER_HUD_BOSS_PROBE_FRAME?"frame":"portrait",
       (long)hit,(long)flip,already_corrected,
       (unsigned long)rva,
