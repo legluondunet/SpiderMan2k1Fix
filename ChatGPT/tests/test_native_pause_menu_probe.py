@@ -193,7 +193,10 @@ def test_hook_order_preserves_other_3d_2d_and_hud_transforms():
              "maybe_correct_horplus(", "original_draw_primitive("]
     positions = [DRAW.index(x) for x in order]
     assert positions == sorted(positions)
-    assert "if(v!=verts)" in DRAW
+    # In the opt-in unified trial, the native ESC motif retains its
+    # original full-screen X placement and must NOT be replayed twice.
+    # The validated baseline still restores source gutters as before.
+    assert "if(v!=verts && InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1)" in DRAW
     assert "if(v==verts && count==4)" in DRAW
     assert "native_motif43_restore_gutters(self,(const SpiderMenuVertex*)verts,flags)" in DRAW
 
