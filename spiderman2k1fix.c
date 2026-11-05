@@ -978,7 +978,7 @@ static const void *maybe_correct_horplus(D3DPRIMITIVETYPE type,DWORD fvf,
 static volatile LONG ui_canvas_trial_enabled=0;
 /* Additional opt-in trial: record native ESC commands, composite at EndScene. */
 static volatile LONG ui_compositor_trial_enabled=0;
-static volatile LONG ui_compositor_tint_enabled=1;
+static volatile LONG ui_compositor_tint_enabled=0; /* Never synthesize an unverified pause tint by default. */
 static volatile LONG ui_canvas_trial_hits=0;
 static volatile LONG ui_canvas_wipe_edge_hits=0;
 static volatile LONG ui_canvas_fullscreen_kept=0;
@@ -2218,8 +2218,9 @@ static void ui_comp_release(IDirect3DDevice7 *device) {
 /* A single fullscreen quad (no stretching): its alpha/RGB are sampled
  * from the native game's pause decoration for the test. Decorative
  * spider geometry itself stays separately mapped into centered 4:3.
- * Trial tint alpha is capped in ui_compositor_policy.h, since the
- * original compositor's exact independent tint pass is not yet known.
+ * Trial tint alpha is capped in ui_compositor_policy.h. Tint is
+ * intentionally OFF by default: the original game's separate fullscreen
+ * dimming source is not verified and a motif vertex is not that source.
  */
 static int ui_comp_draw_screen_tint(IDirect3DDevice7 *device,DWORD argb) {
   SpiderMenuVertex v[4];
@@ -2279,6 +2280,9 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
     log_line("UI-COMPOSITOR: cannot save bound end-scene texture; fallback");
     return;
   }
+  /* Preserve native 4:3 motif proportions, avoid adding an invented
+   * veil on top of its already translucent pixels. The optional A/B
+   * switch remains available for comparison with the prior build. */
   needs_tint=ui_comp_ribbon && ui_comp_motif &&
       InterlockedCompareExchange(&ui_compositor_tint_enabled,0,0)==1;
   if(needs_tint) {
@@ -4764,10 +4768,17 @@ static DWORD initialize_body(LPVOID unused) {
     if(n==1 && opt[0]=='1' &&
        InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)==1) {
       InterlockedExchange(&ui_compositor_trial_enabled,1);
+      /* The source RGB is an original spider decoration vertex, NOT a
+       * verified independent full-screen dimming layer. Keep the late
+       * ESC replay enabled, but default to *no invented overlay*.
+       * Opt-in A/B only: TINT=1 restores the previous synthetic veil. */
       if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_COMPOSITOR_TINT",
-                                  tint,sizeof(tint))==1 && tint[0]=='0')
-        InterlockedExchange(&ui_compositor_tint_enabled,0);
-      log_line("UI-COMPOSITOR: TRIAL ON (native ESC deferred to EndScene, original 4:3 motif; fullscreen tint sample experimental)");
+                                  tint,sizeof(tint))==1 && tint[0]=='1')
+        InterlockedExchange(&ui_compositor_tint_enabled,1);
+      log_line("UI-COMPOSITOR: TRIAL ON (native ESC deferred to EndScene; original centered 4:3 decoration; synthetic tint DEFAULT OFF)");
+      log_line(InterlockedCompareExchange(&ui_compositor_tint_enabled,0,0)==1 ?
+         "UI-COMPOSITOR-TINT: ON - A/B synthetic fullscreen veil from motif vertex (NOT native fidelity)" :
+         "UI-COMPOSITOR-TINT: OFF - no synthetic fullscreen veil, observe native pause decor coverage");
     } else {
       log_line("UI-COMPOSITOR: OFF; existing UI canvas draw path unchanged");
     }
