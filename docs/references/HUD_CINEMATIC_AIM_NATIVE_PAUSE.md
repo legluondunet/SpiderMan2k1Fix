@@ -275,12 +275,61 @@ colors, both screenshot bounding boxes, movable red aiming position,
 uniform-depth/color checks and false-positive exclusions.
 All non-X attributes (Y, Z, RHW, tint and UV) remain byte-identical.
 
-**Status:** code correction integrated in PR #109; **not yet visually
-validated**. The next needed maintainer test can be extremely short:
-download the latest CI Windows x86 ZIP, capture one green and one red
-aiming circle at 1920x1080, and confirm both are round. If not,
-`HUD-AIM: red/green ring hit=...` in a matching `Log=1` journal
-will pinpoint which exact gate still fails.
+**Initial visual test:** level 1 accepted; level 2 still failed.
+The 2026-11-05 follow-up below identifies the new RHW=7.8952 variant
+and stages a targeted revision. Only level-2 visual acceptance remains.
+
+## Sixth validation: level-dependent red/green ring depth (2026-11-05)
+
+The maintainer tested the first source-verified live fix and supplied
+`scrn0030.png` (green, level 1) and `scrn0034.png` (red, level 2)
+with the **same session's** `SpiderMan2k1Fix(20261104-235727).log`.
+
+**Result:** level-1 aiming rings visually **PASS** (green is round);
+level-2 rings **FAIL** (red remains horizontally stretched).
+This is a distinct rendering-depth variant, not a regression in the
+0.75 X-scale factor.
+
+From the matching Log=1 and screenshot moments:
+
+| | Level 1: F9 scrn0030 at 00:55:19 | Level 2: F9 scrn0034 at 00:56:55 |
+| --- | --- | --- |
+| Red/green caller | `00102C72` | `00102C72` |
+| Primitive / FVF | triangle fan / `0x144` | same |
+| Bound texture | `64x64` | `64x64` |
+| Z | `0.00146` | `0.00146` |
+| RHW | **`9.9878`** | **`7.8952`** |
+| Colors | red `B0FF4040`, green `B040FF40` | same |
+
+The log records 13 `HUD-AIM:` correction events for **RHW
+9.9878** but none for **7.8952**, while read-only
+`HUD-VISUAL: AIM` records show both **red** and **green** ring
+candidates on the 7.8952 layer (samples 25–39, Flips 3875–4687).
+Specifically:
+
+- Green at Flip 3875: x=832.5..1080.0, y=310.5..495.0,
+  Z 0.00146, RHW 7.8952, diffuse B040FF40, texture 64x64.
+- Red at Flip 4687, immediately preceding F9 `scrn0034`:
+  x=1110.0..1357.5, y=265.5..450.0,
+  Z 0.00146, RHW 7.8952, diffuse B0FF4040, texture 64x64.
+
+The existing exact prefilter accepted only RHW ~9.9878, and therefore
+rejected **all** second-level rings. We now recognize the **two
+discrete, independently verified signatures** with narrow tolerances,
+not a broad 7.9..10.0 interval. The validated tint, UV, texture,
+primitive, Z, original caller, gameplay gate, per-vertex agreement,
+relative bounds and shape guard remain unchanged; native Pause motifs
+also sometimes have RHW 7.8952 but are excluded by their entirely
+different color/texture signature.
+
+Portable host tests now check the level-2 red and green original
+quads, a preserved circle center, rejection of intermediate RHW=8.9,
+the original 9.9878 source layer, incorrect per-corner depth, native
+Pause tint, and untouched original 4:3 output.
+
+**Status:** updated fix in PR #109, **pending one visual level-2
+acceptance check**. Level-1, compass and Pause menus remain validated
+and need no repetitive regression playthrough.
 
 ## Bounded read-only diagnostic
 
