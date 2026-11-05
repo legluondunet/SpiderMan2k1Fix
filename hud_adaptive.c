@@ -164,6 +164,65 @@ int SpiderHudAdaptive_Transform(const SpiderMenuVertex *src,
             region = SPIDER_HUD_ADAPTIVE_INSTRUCTIONS;
     }
 
+    /* Right-side vertical escort/objective HUD, e.g. Mary-Jane.
+     * The user-provided 1920x1080 4:3-reference capture places the
+     * round portrait at about x=1500..1625 and the vertical meter below.
+     * Original 1920x1200 widescreen imagery has the group farther
+     * right, near x=1670..1870. Reuse the native centered 4:3 X map
+     * rather than the right-edge anchored compass map.
+     *
+     * Unlike the upper-right horizontal boss row, this vertical group
+     * extends into the right-middle of gameplay. Match a composite:
+     * far-right region + sprite geometry + game HUD Z/RHW/texture/color.
+     * No broad screen-rectangle-only sprite edits. The exact Mary-Jane
+     * primitive depths remain to be confirmed with a live capture;
+     * nonmatches are intentionally passed through unchanged. */
+    if (region == SPIDER_HUD_ADAPTIVE_NONE &&
+        minx >= (float)screen_w * 0.77f &&
+        centerx > (float)screen_w * 0.83f &&
+        miny >= (float)screen_h * 0.26f &&
+        maxy <= (float)screen_h * 0.83f &&
+        (color >> 24) == 0xFFu) {
+        /* Portrait plus 32px frame sections share the textured
+         * boss/escort overlay layer in previously captured scenes. */
+        if (color == 0xFFFFFFFFu &&
+            hud_near(src[0].z, 0.0002f, 0.00012f) &&
+            src[0].rhw >= 19.0f && src[0].rhw <= 26.0f &&
+            ((tex_w == 64u && tex_h == 64u &&
+              width >= (float)screen_h * 0.105f &&
+              width <= (float)screen_h * 0.21f &&
+              height >= (float)screen_h * 0.105f &&
+              height <= (float)screen_h * 0.18f) ||
+             (tex_w == 32u && tex_h == 32u &&
+              width >= (float)screen_h * 0.04f &&
+              width <= (float)screen_h * 0.115f &&
+              height >= (float)screen_h * 0.045f &&
+              height <= (float)screen_h * 0.12f)))
+            region = SPIDER_HUD_ADAPTIVE_OBJECTIVE;
+        /* Tall untextured vertical fill can change height when health
+         * decreases; do not require a single fixed damage value. */
+        else if (tex_w == 0u && tex_h == 0u &&
+                 width >= (float)screen_h * 0.018f &&
+                 width <= (float)screen_h * 0.082f &&
+                 height >= (float)screen_h * 0.022f &&
+                 height <= (float)screen_h * 0.47f &&
+                 hud_near(src[0].z, 0.0010f, 0.00012f) &&
+                 src[0].rhw >= 10.0f && src[0].rhw <= 17.0f &&
+                 (color & 0x00FFFFFFu) != 0u &&
+                 ((color & 0x0000FF00u) != 0u ||
+                  (color & 0x00FF0000u) != 0u))
+            region = SPIDER_HUD_ADAPTIVE_OBJECTIVE;
+        else if (tex_w == 0u && tex_h == 0u &&
+                 color == 0xFF000000u &&
+                 width >= (float)screen_h * 0.018f &&
+                 width <= (float)screen_h * 0.082f &&
+                 height >= (float)screen_h * 0.022f &&
+                 height <= (float)screen_h * 0.47f &&
+                 hud_near(src[0].z, 0.0007f, 0.00012f) &&
+                 src[0].rhw >= 13.0f && src[0].rhw <= 19.0f)
+            region = SPIDER_HUD_ADAPTIVE_OBJECTIVE;
+    }
+
     /* Upper-right boss UI. Venom is a single bar/portrait; Scorpion
      * also draws a shorter Jameson health bar underneath. Preserve the
      * exact same right-edge anchor for every fill, border tile, marker
@@ -238,9 +297,12 @@ int SpiderHudAdaptive_Transform(const SpiderMenuVertex *src,
     scale = (4.0f * (float)screen_h) / (3.0f * (float)screen_w);
     memcpy(dst, src, 4u * sizeof(*dst));
     for (i = 0; i != 4u; ++i) {
-        if (region == SPIDER_HUD_ADAPTIVE_COMPASS ||
-            region == SPIDER_HUD_ADAPTIVE_BOSS)
+        if (region == SPIDER_HUD_ADAPTIVE_COMPASS)
             dst[i].x = (float)screen_w + (src[i].x - (float)screen_w) * scale;
+        else if (region == SPIDER_HUD_ADAPTIVE_BOSS ||
+                 region == SPIDER_HUD_ADAPTIVE_OBJECTIVE)
+            dst[i].x = 0.5f * (float)screen_w +
+                       (src[i].x - 0.5f * (float)screen_w) * scale;
         else
             dst[i].x = src[i].x * scale;
     }
