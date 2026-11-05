@@ -18,6 +18,13 @@ def test_gameover_probe_is_bounded_and_has_its_own_budget():
     assert "gameover_probe_confirm_reports<12u" in SOURCE
     assert "gameover_probe_f9_reports<8u" in SOURCE
     assert "gameover_probe_confirm_edges%16u==0u" in SOURCE
+    # The first Confirm immediately following each F9 must be sampled,
+    # even after arbitrary normal 3D combat button presses.
+    assert "gameover_probe_post_f9_confirm=1u;" in SOURCE
+    assert "gameover_probe_post_f9_confirm=0;" in SOURCE
+    assert "confirm_after_f9 ||" in SOURCE
+    assert "!f9_edge && confirm_edge && gameover_probe_post_f9_confirm" in SOURCE
+    assert "after-f9=%u" in SOURCE
     assert "SDL3-GAMEOVER-PROBE:" in SOURCE
     assert "[READ-ONLY; NOT A GAME-OVER DETECTOR]" in SOURCE
     assert "gameover_probe_snapshot(id,context,menu,gameplay,bink,native_pause," in SOURCE
