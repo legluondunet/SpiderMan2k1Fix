@@ -977,6 +977,7 @@ static const void *maybe_correct_horplus(D3DPRIMITIVETYPE type,DWORD fvf,
 static volatile LONG hud_adaptive_compass_count=0;
 static volatile LONG hud_adaptive_instruction_count=0;
 static volatile LONG hud_adaptive_boss_count=0;
+static volatile LONG hud_adaptive_objective_count=0;
 static const void *maybe_correct_adaptive_hud(void *device,
                     D3DPRIMITIVETYPE type,DWORD fvf,
                     const void *source,DWORD count,void *ret,
@@ -1011,12 +1012,15 @@ static const void *maybe_correct_adaptive_hud(void *device,
   hit=InterlockedIncrement(region==SPIDER_HUD_ADAPTIVE_COMPASS?
        &hud_adaptive_compass_count:
        region==SPIDER_HUD_ADAPTIVE_BOSS?
-       &hud_adaptive_boss_count:&hud_adaptive_instruction_count);
+       &hud_adaptive_boss_count:
+       region==SPIDER_HUD_ADAPTIVE_OBJECTIVE?
+       &hud_adaptive_objective_count:&hud_adaptive_instruction_count);
   if(debug_log_enabled && (hit<=4 || hit%240==0)) {
     snprintf(message,sizeof(message),
        "HUD-ADAPTIVE: region=%s hit=%ld scale=%.5f tex=%lux%lu x-original=%.1f x-mapped=%.1f [EXPERIMENT]",
        region==SPIDER_HUD_ADAPTIVE_COMPASS?"compass":
-       region==SPIDER_HUD_ADAPTIVE_BOSS?"boss":"instructions",
+       region==SPIDER_HUD_ADAPTIVE_BOSS?"boss":
+       region==SPIDER_HUD_ADAPTIVE_OBJECTIVE?"objective":"instructions",
        (long)hit,(double)(4.0f*(float)desktop_h/(3.0f*(float)desktop_w)),
        (unsigned long)texw,(unsigned long)texh,
        (double)((const SpiderMenuVertex*)source)[0].x,(double)copy[0].x);
@@ -1975,9 +1979,9 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       v=maybe_correct_adaptive_hud(self,type,fvf,verts,count,
                                    __builtin_return_address(0),small);
-    /* A second, independently observed boss-HUD variant: right-side
-     * 4:3 UI corrected about screen center. The previous adaptive
-     * variant retains precedence and its old right-edge policy. */
+    /* A second independently observed boss-HUD variant (Rhino).
+     * Both boss families now use centered 4:3 X coordinates;
+     * depth/texture gates remain disjoint and conservative. */
     if(v==verts && count==4)
       v=maybe_correct_native_boss_hud(self,type,fvf,verts,count,
                                       __builtin_return_address(0),small);
