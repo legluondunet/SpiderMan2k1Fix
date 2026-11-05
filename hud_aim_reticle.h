@@ -2,11 +2,13 @@
 #define SPIDERMAN2K1FIX_HUD_AIM_RETICLE_H
 
 /* Strict, source-verified red/green 3D aiming ring classifier.
- * GE-Proton11-12 F9 + matching Log=1 confirm TWO discrete render
- * layers, not one range spanning the levels:
+ * GE-Proton11-12 F9 + matching Log=1 confirm three discrete render
+ * depths in multiple gameplay contexts (not hardcoded level IDs):
  *
- *  level 1: scrn0028 red and scrn0029 green, RHW=9.9878;
- *  level 2: scrn0034 red, RHW=7.8952; green uses same layer.
+ *  earlier scenes: scrn0028 red / scrn0029 green, RHW=9.9878;
+ *  second scene: scrn0034 red and matching green, RHW=7.8952;
+ *  Rhino boss: scrn0036 red, matching F9 2026-11-05 01:01:23,
+ *       RHW=5.9130 (two independent HUD-VISUAL red samples).
  *
  * Both use original caller=00102C72, triangle-fan FVF 0x144,
  * 64x64 texture, Z=.00146, and identical color codes:
@@ -35,14 +37,15 @@ static inline int SpiderHudAim_Near(float v,float reference,float tolerance)
 }
 
 /* Cheap fail-closed prefilter before a D3D7 texture COM query. */
-/* Level-specific RHW must match one of the two captured depths.
- * Never interpolate (e.g. 8.9), because the engine draws unrelated
- * game and UI geometry at other layers through the same caller. */
+/* Context-dependent RHW must match one of the three observed depths.
+ * Never interpolate: native Pause motifs can share some depth layers,
+ * but cannot pass the exact tint/texture/geometry gates. */
 static inline int SpiderHudAimReticle_ObservedDepth(float z,float rhw)
 {
     return SpiderHudAim_Near(z,0.00146f,0.000035f) &&
            (SpiderHudAim_Near(rhw,9.9878f,0.060f) ||
-            SpiderHudAim_Near(rhw,7.8952f,0.060f));
+            SpiderHudAim_Near(rhw,7.8952f,0.060f) ||
+            SpiderHudAim_Near(rhw,5.9130f,0.060f));
 }
 
 static inline int SpiderHudAimReticle_MightMatch(
