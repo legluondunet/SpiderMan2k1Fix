@@ -159,3 +159,21 @@ def test_background_coverage_probe_is_passive_and_scene_scoped():
     assert "IDirect3DDevice7_SetRenderState(" not in probe
     assert "original_draw_primitive(" not in probe
     assert "ui_comp_probe_fullscreen_source(self,type,fvf,verts,count,native_esc_primitive)" in src
+
+
+
+def test_native_spider_source_geometry_probe_is_one_shot_and_passive():
+    core=(ROOT/"spiderman2k1fix.c").read_text()
+    assert "SpiderMenuVertex source_v[4];" in core
+    assert "UI-COMPOSITOR-MOTIF-SOURCE:" in core
+    assert "UI-COMPOSITOR-MOTIF-SUMMARY:" in core
+    assert "InterlockedCompareExchange(&ui_comp_source_dump_once,1,0)==0" in core
+    assert "InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)>=59" in core
+    assert "memcpy(c->source_v,source_vertices,4u*sizeof(SpiderMenuVertex))" in core
+    assert "ui_comp_capture((IDirect3DDevice7*)self,type,fvf,v,verts,count,flags" in core
+    # The original geometry is never submitted as a new rendering layer.
+    flush=core.split("static void ui_comp_flush(",1)[1].split(
+        "static int ui_comp_capture(",1)[0]
+    assert "original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags)" in flush
+    assert "original_draw_primitive(device,c->type,c->fvf,c->source_v" not in flush
+    assert "ui_compositor_trial_enabled,0,0)==1" in core
