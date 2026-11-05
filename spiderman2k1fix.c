@@ -1684,8 +1684,8 @@ static volatile LONG boss_hud_probe_last_flip[5]={-100,-100,-100,-100,-100};
 static volatile LONG boss_hud_probe_hits[5]={0,0,0,0,0};
 /* Read-only lower-right escort HUD probes retain original source depth
  * even if a conservative transform declined to touch the primitive. */
-static volatile LONG objective_probe_last_flip[3]={-100,-100,-100};
-static volatile LONG objective_probe_hits[3]={0,0,0};
+static volatile LONG objective_probe_last_flip[4]={-100,-100,-100,-100};
+static volatile LONG objective_probe_hits[4]={0,0,0,0};
 static void maybe_log_boss_hud_candidate(void *device,
        D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
        DWORD count,void *caller,int already_corrected)
@@ -1762,7 +1762,7 @@ static void maybe_log_boss_hud_candidate(void *device,
             width<=(float)desktop_h*.11f &&
             height>=(float)desktop_h*.02f &&
             height<=(float)desktop_h*.48f)
-      objective_kind=2; /* possible fill/missing health */
+      objective_kind=(v[0].diffuse==0xFF000000u)?2:3; /* black vs coloured fill */
     if(objective_kind>=0) {
       flip=InterlockedCompareExchange(&flip_count,0,0);
       last=InterlockedCompareExchange(
@@ -1776,7 +1776,8 @@ static void maybe_log_boss_hud_candidate(void *device,
           snprintf(message,sizeof(message),
              "HUD-OBJECTIVE-PROBE: %s sample=%ld flip=%ld corrected=%d caller=%08lX quad=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f color=%08lX tex=%lux%lu uv0=(%.3f,%.3f) [READ-ONLY; CANDIDATE]",
              objective_kind==0?"portrait":
-             objective_kind==1?"frame":"vertical-fill",
+             objective_kind==1?"frame":
+             objective_kind==2?"vertical-fill-black":"vertical-fill-color",
              (long)hit,(long)flip,already_corrected,
              (unsigned long)rva,
              (double)l,(double)r,(double)t,(double)b,
