@@ -72,6 +72,13 @@ static inline int SpiderUICanvas_43Transform(const SpiderMenuVertex *src,
               SpiderUICanvas_Abs(src[i].z-z0) <= 0.00015f &&
               SpiderUICanvas_Abs(src[i].rhw-rhw0) <= 0.15f))
             return 0;
+        /* Explicit comparisons reject NaN/Inf XY coordinates, which
+         * otherwise evade min/max reductions and may poison a draw. */
+        if (!(src[i].x >= -(float)screen_w * 0.05f &&
+              src[i].x <= (float)screen_w * 1.05f &&
+              src[i].y >= -(float)screen_h * 0.05f &&
+              src[i].y <= (float)screen_h * 1.05f))
+            return 0;
         if (src[i].x < minx) minx = src[i].x;
         if (src[i].x > maxx) maxx = src[i].x;
         if (src[i].y < miny) miny = src[i].y;
