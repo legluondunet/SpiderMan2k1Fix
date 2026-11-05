@@ -88,6 +88,7 @@ The example `RawHex` line is **illustrative only**: the generated file contains 
 | `[Display] FPSLimit` | **Player-controlled frame limit.** Default `30`; `0` disables the limiter, `1..240` sets a target. Higher FPS can expose timing issues in the original game. |
 | `[Input] KeyboardLayout` | `Auto` detects the Windows/Wine input layout, `Off` leaves original QWERTY positions. |
 | `[Input] ExperimentalSDL3UniversalGameplay` | **Default `1`**: use SDL3's mapped controller profile for game menus, videos and 3D after explicit Start and neutral input. Set `0` to disable the universal bridge and preserve native behavior. |
+| `[Input] ExperimentalSDL3GameOverConfirm` | **Default `0` (not generated)**: *unsafe-to-generalize research trial*, not a verified GAME OVER detector. Under one narrowly observed pending native request `2`, send **one Enter** for a fresh, neutral-gated South/A/Cross press; requires separately enabled universal SDL3 gameplay. For maintainer-only hardware testing; keep OFF for normal play. |
 | `[Input] ExperimentalSDL3NativeOwner` | Default `0`; unrelated legacy experimental native-owner path, not required for universal gameplay. |
 | `[Audio]` | Music/effects, voice and movie volumes (0..100%); `Stereo=1` selects stereo. |
 | `[Keyboard]` / `[Joystick]` | The eleven original keyboard actions and seven joystick button bindings, also saved from the game's menus. |
@@ -98,6 +99,45 @@ The example `RawHex` line is **illustrative only**: the generated file contains 
 New installations generate `[Input] ExperimentalSDL3UniversalGameplay=1`. When the key is absent, the SDL3 runtime also defaults to `1`, provided `ExperimentalSDL3Probe=1` and `ExperimentalSDL3ControllerSetup=1`. The controller must be mapped by SDL3, explicitly selected with **Start**, and returned to neutral before it can drive gameplay. The original keyboard remains available. Disconnects, Alt+Tab and controller handoffs use the existing fail-closed guards; no automatic selection or hardware identity guess is introduced.
 
 To turn this functionality OFF, set `ExperimentalSDL3UniversalGameplay=0` in `[Input]` and restart. **Existing valid INIs are preserved**: users with a previous `=0` keep that setting until they manually change it to `=1`; the patch does not silently reinterpret a saved preference. The independent legacy experimental native-owner mode remains OFF by default.
+
+### GAME OVER controller confirmation: experimental research only (PR #110)
+
+The original GAME OVER `RETRY / QUIT` screen can retain the 3D renderer
+and does not automatically use the normal SDL3 2D-menu routing. The
+2026-11-05 Windows 11 hardware probe observed pending request
+`[0x0060CFA4]=2` during a first-level GAME OVER capture and `0`
+during ordinary 3D. **That word is a native transition request, not a
+proven GAME OVER scene identifier**, so no default-on remapping is safe.
+
+For a **single maintainer test only**, edit the existing
+`SpiderMan2k1Fix/SpiderMan2k1Fix.ini` while the game is closed:
+
+```ini
+[Input]
+ExperimentalSDL3UniversalGameplay=1
+ExperimentalSDL3GameOverConfirm=1
+```
+
+The second key is absent from automatically generated INIs, and its
+runtime default is `0`. The trial requires an explicitly Start-selected
+mapped pad, foreground game 3D, six consecutive original Flip frames
+with the *entire* observed candidate state matching (pending request
+`2`, task `0x14`, active input `1`, no native Pause, no Bink,
+no menu/dispatcher/transition context), then a **fully neutral frame**
+and a **new isolated Confirm/South** press. It sends one Enter pulse
+instead of overlapping Jump/Space, consumes the held press until
+release, and restores normal routing immediately when the candidate
+or owner disappears. There is no timer, polling thread, direct game
+memory modification, or off-window injection.
+
+Watch for `SDL3-GAMEOVER-TRIAL: CANDIDATE` and `ENTER PULSE` with
+`[Debug] Log=1`. OS acceptance of Enter does **not** prove the original
+game received it. Try **RETRY and QUIT**, and independently test
+physical keyboard **Enter** on the same screen to distinguish a missing
+SDL3 menu route from a native keyboard acceptance issue. Also test
+ordinary gameplay and ESC with this opt-in; **do not merge or promote
+the option to default ON before hardware validation**. Revert the
+experimental key to `0` afterward.
 
 ### Display resolution: native monitor first
 
