@@ -420,6 +420,72 @@ and menu banner signatures can be assessed visually while the
 separate boss probe captures the missing composite parts. Earlier
 validated levels and the boussole do not require repetitive tests.
 
+## Eighth validation: full Rhino boss HUD sources identified (2026-11-05)
+
+Original maintainer `scrn0042.png` (1920×1080) and same-run
+`SpiderMan2k1Fix(20261105-003640).log` now show the **red crosshair
+circular** at the Rhino fight. The active `HUD-AIM: red` draw hits
+compress x from (877.5..1038.8) to (897.7..1018.6), scale=0.75000,
+Z/RHW `0.00146/5.9130`, while leaving the target center unchanged.
+The red crosshair is **visually PASS** at this scene.
+
+**The life bar and portrait remain uncorrected in this test.**
+`HUD-BOSS-PROBE` captured **18 independent samples for each of
+fill/frame/portrait** (54 observations total), all `corrected=0`.
+Original source D3D7 caller is `00102C72`, fan/FVF `0x144`.
+
+| Layer | Original 1920×1080 quad | Z / RHW | Texture / first color |
+| --- | --- | --- | --- |
+| Colored fill (yellow half) | x=1383.8..1691.2, y=130.5..166.5 | 0.00098 / **8.0113** | none / FFFFFF00 |
+| Border tile | x=1590..1687.5, y=108..180 | 0.00024 / **17.1292** | 32×32 / FFFFFFFF |
+| Rhino portrait | x=1680..1848.8, y=72..211.5 | 0.00024 / **17.1292** | 64×64 / FFFFFFFF |
+
+No older boss `HUD-ADAPTIVE: region=boss` draw matched, because
+those original Venom/Scorpion source layers differ. The new separate
+`hud_boss_native.h` strict classifier/renderer is now installed
+*after* the old adaptive HUD so the previous boss behaviors retain
+priority. Each logged source family requires the exact original
+D3D7 caller, 4-vertex fan/FVF, screen region, Z/RHW, texture size,
+alpha/white portrait tint and per-corner layer agreement.
+
+For this specific render variant, apply the **same screen-centered
+mapping to every bar/portrait component**:
+
+`Xout = screenWidth/2 + (Xin - screenWidth/2) × 4×screenHeight/(3×screenWidth)`.
+
+For 1920×1080, that predicts:
+- actual observed yellow fill right: **1277.85..1508.40**;
+- frame tile: **1432.50..1505.625**;
+- portrait: **1500..1626.6**.
+
+This aligns with the earlier native Dreamcast reference (full
+bar ~1037..1508, portrait ~1505..1626), unlike the old right-edge
+boss mapping. Pixel Y, Z, RHW, texture, UV and color remain intact;
+native 4:3 remains a no-op.
+
+**Important partial-damage caveat:** the most recent sampled fill
+was the opaque yellow half; the left green gradient and separate
+black missing-HP mask were not individually captured by the old
+single-fill-per-45-Flips diagnostic. The strict renderer recognizes
+opaque green fill *only when its layer matches* the observed yellow
+fill, but does **not** guess the unknown black damage mask's Z/RHW.
+The read-only probe now keeps independent bounded buckets for
+`fill-black`, `fill-green`, `fill-other`, frame and portrait.
+If the missing-health segment detaches under gameplay, its new
+precise draw signature will be available for a follow-up correction
+without guessing or increasing world-draw exposure.
+
+Tests compile the real portable C helper and verify all 3 original
+quads, exact Dreamcast-projected X values, preservation of all
+non-X bytes, green gradient, 16:10 mapping, 4:3 no-op and exclusion
+of earlier boss/UI/world sprite signatures.
+
+**Status:** active code patch staged in PR #109, waiting for one short
+Rhino screenshot/Log=1 hardware check of both HP group and Pause.
+The same recent run saved `scrn0041.png` for Pause but that PNG
+was not among the user's new attachments; the Rhino Pause outcome
+is **not** visually established in this round.
+
 ## Bounded read-only diagnostic
 
 When `[Debug] Log=1`, only **uncorrected** original 4-vertex D3D7
