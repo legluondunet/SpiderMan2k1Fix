@@ -32,12 +32,16 @@ static inline float SpiderNativePause43_MapX(
     return center+(x-center)*SpiderNativePause43_Scale(w,h);
 }
 
-/* Three independently observed, tightly isolated native ESC depth layers.
+/* Four independently observed, tightly isolated native ESC depth layers.
  * The original game varies RHW with game context; the same original
  * caller, geometry, texture state and depth still must match in the hook.
  *  - earlier 1920x1080 validated ESC: ribbon 11.176, motif 9.988
  *  - 2026-11-04 GE-Proton second scene: ribbon 8.9615, motif 7.8952
  *  - 2026-11-05 Rhino boss: ribbon 6.8041, motif 5.9130
+ *  - 2026-11-05 later Mysterio stage (scrn0048 + Log=1):
+ *    ribbon 11.7760, motif candidate 10.5646. The latter has the
+ *    original caller, alpha-80 diffuse and untextured motif geometry;
+ *    its HUD-VISUAL label "AIM" is only a generic candidate label.
  * Never interpolate between these readings or apply to generic HUD.
  * Comparisons fail closed for NaN without depending on libm. */
 static inline float SpiderNativePause43_Abs(float x)
@@ -49,14 +53,16 @@ static inline int SpiderNativePause43_RibbonLayer(float z,float rhw)
     return SpiderNativePause43_Abs(z-0.00122f)<0.00010f &&
            (SpiderNativePause43_Abs(rhw-11.176f)<0.25f ||
             SpiderNativePause43_Abs(rhw-8.9615f)<0.060f ||
-            SpiderNativePause43_Abs(rhw-6.8041f)<0.060f);
+            SpiderNativePause43_Abs(rhw-6.8041f)<0.060f ||
+            SpiderNativePause43_Abs(rhw-11.7760f)<0.060f);
 }
 static inline int SpiderNativePause43_MotifLayer(float z,float rhw)
 {
     return SpiderNativePause43_Abs(z-0.00146f)<0.00004f &&
            (SpiderNativePause43_Abs(rhw-9.988f)<0.060f ||
             SpiderNativePause43_Abs(rhw-7.8952f)<0.060f ||
-            SpiderNativePause43_Abs(rhw-5.9130f)<0.060f);
+            SpiderNativePause43_Abs(rhw-5.9130f)<0.060f ||
+            SpiderNativePause43_Abs(rhw-10.5646f)<0.060f);
 }
 
 /* Shadow and face of native Pause letters have three independently
@@ -64,6 +70,10 @@ static inline int SpiderNativePause43_MotifLayer(float z,float rhw)
  *  - original: shadow z=.00122/rhw=11.176, face z=.00098/rhw=12.686
  *  - second scene: shadow 8.9615, face 10.3609
  *  - Rhino boss: shadow 6.8041, face 8.0113.
+ * Later Mysterio scene shows a DIFFERENT ribbon RHW 11.7760,
+ * but its shadow/face glyph source depths were not captured in the
+ * supplied log because the ribbon was previously rejected. Leave
+ * these unknown letter layers UNMODIFIED until independently logged.
  * Rhino scrn0045.png / Log=1 (2026-11-05 01:59:35) confirms 48
  * corrected black-shadow samples and 32 missed colored-face samples
  * (FFFE3242 title, FF8A78D6 options) at z=.00098/rhw=8.0113.
