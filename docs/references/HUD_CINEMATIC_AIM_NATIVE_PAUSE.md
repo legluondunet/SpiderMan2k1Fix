@@ -486,6 +486,60 @@ The same recent run saved `scrn0041.png` for Pause but that PNG
 was not among the user's new attachments; the Rhino Pause outcome
 is **not** visually established in this round.
 
+## Ninth validation: Rhino boss bar/portrait PASS; Pause face glyphs still FAIL (2026-11-05)
+
+Two **original native 1920x1080 F9 PNGs**, saved in the same run as
+`SpiderMan2k1Fix(20261105-010307).log`, verify the new composite:
+
+- `scrn0045.png` — Rhino native ESC Pause, written **01:59:35**.
+  The violet top border is **x=224..1702** at y=398..402,
+  virtually exact Dreamcast x≈223..1702 (as previously measured).
+  Ribbon, 8×8 border tiles and 4:3 orange/blue motif are matched.
+  Text shows displaced black shadows because **only the shadow layer**
+  was being transformed.
+- `scrn0046.png` — Rhino gameplay, written **01:59:49**.
+  The top-right boss life bar and Rhino portrait are now positioned
+  at Dreamcast scale with a rounded portrait. Source-backed
+  `HUD-BOSS-NATIVE:` records show **factor=0.75000** for fill,
+  individual frame tiles and portrait; all **64** bounded
+  `HUD-BOSS-PROBE` captures report **`corrected=1`**.
+  The portrait's original x=1680..1848.8 is mapped to
+  **x=1500.0..1626.6**; the fill's right edge x=1691.2 is mapped
+  to **1508.4**. The original game vertex attributes beyond X
+  remain unchanged. This validates the *shown full-health bar*,
+  not the unknown black missing-HP overlay under partial damage.
+
+**Crucial Pause text evidence from 80 original D3D7 detail samples:**
+
+| Source face/colour | Z | RHW | Corrected |
+| --- | --- | --- | --- |
+| Black text shadow `FF000000` | .00122 | 6.8041 | **48 / 48 yes** |
+| Title red face `FFFE3242` | .00098 | **8.0113** | **18 / 18 no** |
+| Menu violet face `FF8A78D6` | .00098 | **8.0113** | **14 / 14 no** |
+
+This is **not** a new level-specific letter shape or font: the
+existing 16/32×32 original game glyphs at x≈791..1117,
+y=171..639 already satisfy the native Pause glyph bounds, original
+D3D7 caller `00102C72`, exact texture and *same-Flip verified
+ribbon* gate. The old policy simply lacked the third **foreground**
+depth `Z=.00098, RHW=8.0113`, while black shadows at 6.8041
+were already mapped.
+
+`SpiderNativePause43_TextLayer` now recognizes this discrete
+third measured original foreground pair, alongside the already
+validated 12.686 and 10.3609 families, without widening the intervals
+or touching non-glyph geometry. Host-compiled regression asserts
+the exact pair, rejects intermediate RHW 8.40 and incorrect Z.
+**The post-fix PAUSED/title/choice visual acceptance is still
+pending.**
+
+There are **zero recorded `HUD-BOSS-PROBE: fill-black`**
+samples in this run, so the damaged Rhino life-bar mask must not be
+declared verified merely from the intact bar screenshot.
+Neither screenshots nor log contain evidence of a graphics crash:
+no `FATAL`, `ERROR:` or `CRASH` markers, but the session ends
+after a focus change, not an explicit clean-exit signal.
+
 ## Bounded read-only diagnostic
 
 When `[Debug] Log=1`, only **uncorrected** original 4-vertex D3D7
