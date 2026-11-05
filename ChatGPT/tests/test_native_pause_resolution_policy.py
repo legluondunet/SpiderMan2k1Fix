@@ -79,17 +79,25 @@ def test_original_pause_has_resolution_independent_four_by_three_geometry(tmp_pa
              * and level-2 GE-Proton native ESC (2026-11-04 log). */
             assert(SpiderNativePause43_RibbonLayer(0.00122f,11.176f));
             assert(SpiderNativePause43_RibbonLayer(0.00122f,8.9615f));
+            /* Rhino boss: same exact untextured banner/geometry
+             * but new logged RHW 6.8041, no broad interpolation. */
+            assert(SpiderNativePause43_RibbonLayer(0.00122f,6.8041f));
+            assert(!SpiderNativePause43_RibbonLayer(0.00122f,7.7f));
             assert(!SpiderNativePause43_RibbonLayer(0.00122f,10.10f));
             assert(!SpiderNativePause43_RibbonLayer(0.00122f,8.70f));
             assert(!SpiderNativePause43_RibbonLayer(0.98f,8.9615f));
             assert(SpiderNativePause43_MotifLayer(0.00146f,9.988f));
             assert(SpiderNativePause43_MotifLayer(0.00146f,7.8952f));
+            assert(SpiderNativePause43_MotifLayer(0.00146f,5.9130f));
+            assert(!SpiderNativePause43_MotifLayer(0.00146f,6.9f));
             /* Face and shadow glyph layers from the supplied runtime
              * journal: FF000000 at .00122 / 8.9615 and FF8A78D6 or
              * FFFE3242 at .00098 / 10.3609. Preserve older pairs. */
             assert(SpiderNativePause43_TextLayer(0.00122f,11.176f));
             assert(SpiderNativePause43_TextLayer(0.00098f,12.686f));
             assert(SpiderNativePause43_TextLayer(0.00122f,8.9615f));
+            assert(SpiderNativePause43_TextLayer(0.00122f,6.8041f));
+            assert(!SpiderNativePause43_TextLayer(0.00098f,6.8041f));
             assert(SpiderNativePause43_TextLayer(0.00098f,10.3609f));
             assert(!SpiderNativePause43_TextLayer(0.00122f,10.3609f));
             assert(!SpiderNativePause43_TextLayer(0.00098f,8.9615f));
