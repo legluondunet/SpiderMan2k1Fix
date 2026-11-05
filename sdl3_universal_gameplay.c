@@ -73,6 +73,11 @@ static unsigned gameover_probe_f9_reports=0;
  * even if routine gameplay presses have exhausted periodic sampling. */
 static unsigned gameover_probe_post_f9_confirm=0;
 static uint32_t gameover_probe_owner=0;
+/* Not an auto-detected GAME OVER scene. Explicit INI-only single-press
+ * test of Return on an observed, narrowly gated pending request 2. */
+static int gameover_trial_enabled=0;
+static unsigned gameover_trial_reports=0;
+static SpiderSDL3GameOverTrial gameover_trial;
 static void (*report)(const char *)=NULL;
 static void log_universal(const char *msg) {
   if(report && trace++<100u)report(msg);
@@ -320,6 +325,7 @@ static void restore_original(const char *reason) {
    * in BeforeUI and before any new joystick gameplay injection. */
   menu_previous=0;menu_arm=0;
   previous_context=SPIDER_UNIVERSAL_CTX_3D;
+  spider_sdl3_gameover_trial_reset(&gameover_trial);
   spider_sdl3_universal_reset(&state);
 }
 void SpiderSDL3Universal_SetHostFocusBlocked(int blocked) {
@@ -373,6 +379,10 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   gameover_probe_confirm_edges=gameover_probe_confirm_reports=0;
   gameover_probe_f9_reports=0;gameover_probe_owner=0;
   gameover_probe_post_f9_confirm=0;
+  gameover_trial_reports=0;
+  spider_sdl3_gameover_trial_reset(&gameover_trial);
+  gameover_trial_enabled=ini &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverConfirm",0,ini)==1;
   spider_sdl3_universal_reset(&state);
   requested=ini &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1 &&
@@ -382,6 +392,8 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
     "SDL3-UNIVERSAL: default-on gameplay enabled for ANY mapped SDL3 gamepad; "
     "11 game keyboard actions + native Pause; original DirectInput "
     "suspended only while selected, strict neutral-first and focus release");
+  if(requested && gameover_trial_enabled && report)
+    report("SDL3-GAMEOVER-TRIAL: explicit INI opt-in enabled; request 2 is NOT a confirmed GAME OVER identity; native ESC/menu behavior unchanged");
 }
 int SpiderSDL3Universal_Enabled(void) {return requested;}
 int SpiderSDL3Universal_SuppressesNative(void) {return requested && suspended;}
@@ -483,6 +495,42 @@ static int gameover_probe_read_u32(uintptr_t address,uint32_t *out) {
      mbi.RegionSize-(size_t)(address-base)<sizeof(uint32_t))
     return 0;
   memcpy(out,(const void *)address,sizeof(*out));
+  return 1;
+}
+/* Guarded *experimental* confirmation trial. [0x60CFA4] is a pending
+ * transition request, not an authoritative GAME OVER owner. Never enable
+ * this path by default or route ordinary 3D South through Enter.
+ * All game-owned words are read only, and all conditions must match. */
+static int gameover_trial_candidate(unsigned context,int menu,int gameplay,
+    int bink,int native_pause) {
+  uint32_t request=0,task=0,input_active=0,pause_ctx=0,menu_ctx=0;
+  uint32_t dispatcher=0,transition=0;
+  if(!gameover_trial_enabled || context!=SPIDER_UNIVERSAL_CTX_3D ||
+     menu || !gameplay || bink || native_pause)return 0;
+  if(!gameover_probe_read_u32(0x0060CFA4u,&request) ||
+     !gameover_probe_read_u32(0x0054A510u,&task) ||
+     !gameover_probe_read_u32(0x006B78F0u,&input_active) ||
+     !gameover_probe_read_u32(0x00682950u,&pause_ctx) ||
+     !gameover_probe_read_u32(0x00682948u,&menu_ctx) ||
+     !gameover_probe_read_u32(0x0068293Cu,&dispatcher) ||
+     !gameover_probe_read_u32(0x0054D38Cu,&transition))
+    return 0;
+  return request==2u && task==0x14u && input_active==1u &&
+         !pause_ctx && !menu_ctx && !dispatcher && !transition;
+}
+static int gameover_trial_confirm_only(
+    const SpiderSDL3ControllerProfile *profile,
+    const SpiderSDL3ControllerSample *sample) {
+  unsigned i,buttons;
+  if(!profile || !sample ||
+     !binding_held(profile->context[SPIDER_SDL3_CONTEXT_CONFIRM],sample))
+    return 0;
+  buttons=sample->buttons;
+  /* Only one digital button and no stick/trigger/D-pad accompaniment.
+   * An ambiguous chord never invokes Return; keyboard stays available. */
+  if(!buttons || (buttons&(buttons-1u)))return 0;
+  for(i=0;i<SPIDER_SDL3_AXIS_COUNT;i++)
+    if(sample->axis[i] <= -9000 || sample->axis[i] >= 9000)return 0;
   return 1;
 }
 static void gameover_probe_snapshot(uint32_t owner,unsigned context,
@@ -825,6 +873,7 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   }
   if(context!=SPIDER_UNIVERSAL_CTX_3D) {
     unsigned i;
+    spider_sdl3_gameover_trial_reset(&gameover_trial);
     /* Context controls are independent from the seven 3D game actions.
      * Keyboard remains available throughout menus and cinematics. */
     spider_sdl3_universal_reset(&state);
@@ -886,6 +935,36 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
       restore_original("neutral rearm KEYUP failed");
     }
     return;
+  }
+  if(gameover_trial_enabled) {
+    int candidate=gameover_trial_candidate(context,menu,gameplay,bink,native_pause);
+    unsigned stable_before=gameover_trial.stable_frames;
+    unsigned trial=spider_sdl3_gameover_trial_step(&gameover_trial,candidate,
+      spider_sdl3_universal_neutral(&sample),
+      gameover_trial_confirm_only(profile,&sample));
+    if(candidate &&
+       stable_before<SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES &&
+       gameover_trial.stable_frames==SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES &&
+       report && gameover_trial_reports++<12u)
+      report("SDL3-GAMEOVER-TRIAL: CANDIDATE stable request=2 for six game Flips; awaiting neutral then one fresh South (NOT proven unique)");
+    if(trial) {
+      /* Never combine 3D Jump/Space with the experiment's Enter,
+       * nor repeat Enter while the physical button is held. */
+      if(!update_keys(0u,scans)) {
+        restore_original("GAME OVER trial action release failed");
+        return;
+      }
+      if(trial==1u) {
+        pulse(0x1cu,"opt-in GAME OVER Return trial");
+        if(pulse_scan!=0x1cu) {
+          restore_original("GAME OVER trial Enter pulse failed");
+          return;
+        }
+        if(report && gameover_trial_reports++<12u)
+          report("SDL3-GAMEOVER-TRIAL: ENTER PULSE accepted by OS after fresh South (game reception unverified)");
+      }
+      return;
+    }
   }
   if(!update_keys(desired,scans)) {
     log_universal("SDL3-UNIVERSAL: SendInput failure; releasing and restoring native owner");
