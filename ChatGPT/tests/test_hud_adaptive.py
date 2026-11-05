@@ -450,4 +450,6 @@ def test_unchanged_fov_pause_and_default_ini():
     assert "maybe_correct_adaptive_hud(" in src
     assert "hud_adaptive.c" in build
     assert "SPIDER_HUD_ADAPTIVE_BOSS" in (ROOT / "hud_adaptive.h").read_text()
+    assert '"vertical-fill-black"' in src
+    assert '"vertical-fill-color"' in src
     assert 'region==SPIDER_HUD_ADAPTIVE_BOSS?"boss"' in src
