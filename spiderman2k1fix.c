@@ -976,6 +976,7 @@ static const void *maybe_correct_horplus(D3DPRIMITIVETYPE type,DWORD fvf,
  * screen-space D3D7 quads. No per-level/texture/color HUD rule. */
 static volatile LONG ui_canvas_trial_enabled=0;
 static volatile LONG ui_canvas_trial_hits=0;
+static volatile LONG ui_canvas_wipe_edge_hits=0;
 static volatile LONG ui_canvas_fullscreen_kept=0;
 static const void *maybe_correct_unified_ui_canvas(
                    D3DPRIMITIVETYPE type,DWORD fvf,
@@ -1017,6 +1018,20 @@ static const void *maybe_correct_unified_ui_canvas(
         (unsigned)count,(unsigned)type,(uint32_t)fvf,
         (uint32_t)rva,(unsigned)desktop_w,(unsigned)desktop_h))
     return source;
+  if(SpiderUICanvas_43IsWipeEdgeMask(
+        (const SpiderMenuVertex*)source,(unsigned)count,
+        (unsigned)type,(uint32_t)fvf,(uint32_t)rva,
+        (unsigned)desktop_w,(unsigned)desktop_h)) {
+    LONG edge=InterlockedIncrement(&ui_canvas_wipe_edge_hits);
+    if(debug_log_enabled && (edge<=20 || edge%360==0)) {
+      const SpiderMenuVertex *a=(const SpiderMenuVertex*)source;
+      snprintf(message,sizeof(message),
+        "UI-CANVAS-WIPE-EDGE: hit=%ld source-x=%.1f mapped-x=%.1f black=z%.5f rhw=%.4f [CINEMATIC-EDGE]",
+        (long)edge,(double)a[0].x,(double)copy[0].x,
+        (double)a[0].z,(double)a[0].rhw);
+      log_line(message);
+    }
+  }
   hit=InterlockedIncrement(&ui_canvas_trial_hits);
   if(debug_log_enabled && (hit<=12 || hit%480==0)) {
     const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
@@ -1374,6 +1389,25 @@ static const void *maybe_correct_native_motif43(void *device,
      && tex) {
     IDirectDrawSurface7_Release(tex);
     return source;
+  }
+  /* The translucent ESC motif is a screen-covering presentation layer,
+   * NOT a HUD sprite. In the unified canvas trial keep the source
+   * physical X positions so tint / graphics reach the monitor edges.
+   * Return a distinct copy to consume the draw in this stage and stop
+   * the general canvas from compressing it a second time. No gutter
+   * replay in this path: the original full-width quads draw once. */
+  if(InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)==1) {
+    memcpy(copy,v,4*sizeof(*copy));
+    hit=InterlockedIncrement(&native_motif43_hits);
+    if(debug_log_enabled && (hit<=8 || hit%8000==0)) {
+      char line[230];
+      snprintf(line,sizeof(line),
+        "NATIVE-MOTIF-FULLWIDTH: original X preserved hit=%ld rect=(%.1f..%.1f,%.1f..%.1f) color=%08lX [PRESENTATION, NOT HUD]",
+        (long)hit,(double)l,(double)r,(double)t,(double)b,
+        (unsigned long)color);
+      log_line(line);
+    }
+    return copy;
   }
   center=(float)desktop_w*0.5f;
   memcpy(copy,v,4*sizeof(*copy));
@@ -2016,6 +2050,63 @@ static void maybe_log_native_pause43_border(void *device,
     (double)v[0].z,(double)v[0].rhw);
   log_line(line);
 }
+/* Does the original game draw world HUD after its ESC ribbon?
+ * These read-only samples identify drawing order and Z/blend state before
+ * attempting an unsafe menu-depth rewrite or any texture replay. The
+ * Dreamcast reference requires the ESC interface to own the foreground.
+ * The renderer may use overlapping depth and/or later player HUD draws,
+ * so do not guess an occlusion policy from screenshot ordering alone. */
+static volatile LONG ui_pause_layer_overlap_samples=0;
+static void maybe_probe_pause_hud_layer(void *device,
+                                        const SpiderMenuVertex *v)
+{
+  float l,r,t,b,canvas_left,canvas_right;
+  LONG n,flip,bt,bb;
+  DWORD ze=0,zw=0,zf=0,ab=0;
+  char msg[340];
+  unsigned i;
+  if(!debug_log_enabled || !device || !v ||
+     InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1 ||
+     InterlockedCompareExchange(&ui_pause_layer_overlap_samples,0,0)>=64)
+    return;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  if(!native_pause43_visible_near_flip(flip)) return;
+  bt=InterlockedCompareExchange(&native_pause43_banner_top,0,0);
+  bb=InterlockedCompareExchange(&native_pause43_banner_bottom,0,0);
+  if(bb<=bt) return;
+  l=r=v[0].x;t=b=v[0].y;
+  for(i=1;i<4;i++) {
+    if(v[i].x<l)l=v[i].x;
+    if(v[i].x>r)r=v[i].x;
+    if(v[i].y<t)t=v[i].y;
+    if(v[i].y>b)b=v[i].y;
+  }
+  canvas_left=native_esc43_left_gutter()-50.0f;
+  canvas_right=(float)desktop_w-canvas_left;
+  if(l>=canvas_right || r<=canvas_left || t>=(float)bb || b<=(float)bt)
+    return;
+  n=InterlockedIncrement(&ui_pause_layer_overlap_samples);
+  if(n>64)return;
+  IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
+                                   D3DRENDERSTATE_ZENABLE,&ze);
+  IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
+                                   D3DRENDERSTATE_ZWRITEENABLE,&zw);
+  IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
+                                   D3DRENDERSTATE_ZFUNC,&zf);
+  IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
+                                   D3DRENDERSTATE_ALPHABLENDENABLE,&ab);
+  snprintf(msg,sizeof(msg),
+    "PAUSE-HUD-LAYER-PROBE: n=%ld flip=%ld ribbon-flip=%ld OVERLAP-AFTER-RIBBON box=(%.1f..%.1f,%.1f..%.1f) menu-y=(%ld..%ld) z=%.5f rhw=%.4f color=%08lX zen=%lu zw=%lu zfunc=%lu alpha=%lu [READ-ONLY]",
+    (long)n,(long)flip,
+    (long)InterlockedCompareExchange(&native_pause43_banner_flip,0,0),
+    (double)l,(double)r,(double)t,(double)b,(long)bt,(long)bb,
+    (double)v[0].z,(double)v[0].rhw,
+    (unsigned long)v[0].diffuse,
+    (unsigned long)ze,(unsigned long)zw,(unsigned long)zf,
+    (unsigned long)ab);
+  log_line(msg);
+}
+
 static void free_menu_vertices(SpiderMenuVertex *allocated) {
   if (allocated) HeapFree(GetProcessHeap(),0,allocated);
 }
@@ -2051,7 +2142,7 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4) {
       v=maybe_correct_native_motif43(self,type,fvf,verts,count,
                                     __builtin_return_address(0),small);
-      if(v!=verts)
+      if(v!=verts && InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1)
         native_motif43_restore_gutters(self,(const SpiderMenuVertex*)verts,flags);
     }
     /* Native red selector uses exact texture and quad signature.
@@ -2087,9 +2178,13 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       v=maybe_correct_aim_reticle(self,type,fvf,verts,count,
                                   __builtin_return_address(0),small);
     /* Aiming glyphs retain their original 3D-target center. */
-    if(v==verts && count==4)
-      v=maybe_correct_unified_ui_canvas(type,fvf,verts,count,
-                                        __builtin_return_address(0),small);
+    if(v==verts && count==4) {
+      const void *candidate=maybe_correct_unified_ui_canvas(
+        type,fvf,verts,count,__builtin_return_address(0),small);
+      if(candidate!=verts)
+        maybe_probe_pause_hud_layer(self,(const SpiderMenuVertex*)candidate);
+      v=candidate;
+    }
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
     HRESULT hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
     free_menu_vertices(allocated);
