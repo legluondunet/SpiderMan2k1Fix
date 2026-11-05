@@ -32,7 +32,7 @@ static inline float SpiderNativePause43_MapX(
     return center+(x-center)*SpiderNativePause43_Scale(w,h);
 }
 
-/* Four independently observed, tightly isolated native ESC depth layers.
+/* Five independently observed, tightly isolated native ESC depth layers.
  * The original game varies RHW with game context; the same original
  * caller, geometry, texture state and depth still must match in the hook.
  *  - earlier 1920x1080 validated ESC: ribbon 11.176, motif 9.988
@@ -42,6 +42,10 @@ static inline float SpiderNativePause43_MapX(
  *    ribbon 11.7760, motif candidate 10.5646. The latter has the
  *    original caller, alpha-80 diffuse and untextured motif geometry;
  *    its HUD-VISUAL label "AIM" is only a generic candidate label.
+ *  - 2026-11-05 Spider-Man vs Venom (2), Windows 11 native 16:10:
+ *    ribbon .00122/10.6651 and untextured alpha-80 motif candidate
+ *    .00146/9.4993, same original D3D7 caller and source geometry.
+ *    Separate foreground/shadow glyph depths are NOT observed yet.
  * Never interpolate between these readings or apply to generic HUD.
  * Comparisons fail closed for NaN without depending on libm. */
 static inline float SpiderNativePause43_Abs(float x)
@@ -54,7 +58,8 @@ static inline int SpiderNativePause43_RibbonLayer(float z,float rhw)
            (SpiderNativePause43_Abs(rhw-11.176f)<0.25f ||
             SpiderNativePause43_Abs(rhw-8.9615f)<0.060f ||
             SpiderNativePause43_Abs(rhw-6.8041f)<0.060f ||
-            SpiderNativePause43_Abs(rhw-11.7760f)<0.060f);
+            SpiderNativePause43_Abs(rhw-11.7760f)<0.060f ||
+            SpiderNativePause43_Abs(rhw-10.6651f)<0.060f);
 }
 static inline int SpiderNativePause43_MotifLayer(float z,float rhw)
 {
@@ -62,7 +67,8 @@ static inline int SpiderNativePause43_MotifLayer(float z,float rhw)
            (SpiderNativePause43_Abs(rhw-9.988f)<0.060f ||
             SpiderNativePause43_Abs(rhw-7.8952f)<0.060f ||
             SpiderNativePause43_Abs(rhw-5.9130f)<0.060f ||
-            SpiderNativePause43_Abs(rhw-10.5646f)<0.060f);
+            SpiderNativePause43_Abs(rhw-10.5646f)<0.060f ||
+            SpiderNativePause43_Abs(rhw-9.4993f)<0.060f);
 }
 
 /* Shadow and face of native Pause letters have four independently
@@ -81,6 +87,8 @@ static inline int SpiderNativePause43_MotifLayer(float z,float rhw)
  * Rhino scrn0045.png / Log=1 (2026-11-05 01:59:35) confirms 48
  * corrected black-shadow samples and 32 missed colored-face samples
  * (FFFE3242 title, FF8A78D6 options) at z=.00098/rhw=8.0113.
+ * Venom (2) text/border depths are still unknown: recognizing its
+ * untextured ribbon MUST NOT automatically authorize glyph layers.
  * Never infer arbitrary RHW from other objects or use an interval
  * between discrete source variants: the original game caller,
  * same-Flip verified ribbon, 16/32/64x32 texture and tight glyph
