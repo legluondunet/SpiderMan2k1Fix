@@ -17,6 +17,7 @@
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
 #include "hud_boss_probe.h"
+#include "hud_boss_native.h"
 #include "native_pause_title_bounds.h"
 #include "native_pause_43_policy.h"
 #include "frame_limiter.h"
@@ -1608,6 +1609,62 @@ static const void *maybe_correct_aim_reticle(
  *
  * This probe never changes vertices, input or render state. It samples
  * at most 18 events of each boss kind, one every 45 native Flips. */
+/* Rhino-style boss bar/portrait: ALL three confirmed original D3D7
+ * layers map around the SCREEN center, not their individual centers.
+ * The observed caller, texture, color, z and RHW distinguish these
+ * objects from earlier Venom/Scorpion UI and game-world geometry.
+ * Fail closed for unknown black HP mask depths; source vertices intact.
+ */
+static volatile LONG boss_hud_native_hits[3]={0,0,0};
+static const void *maybe_correct_native_boss_hud(void *device,
+       D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
+       DWORD count,void *caller,SpiderMenuVertex *copy)
+{
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  IDirectDrawSurface7 *texture=NULL;
+  DDSURFACEDESC2 desc;
+  DWORD rva=0,tw=0,th=0;
+  int kind;
+  LONG hit;
+  char line[300];
+  if(!device || !v || !copy || count!=4u ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
+     !SpiderHudWidescreen_Installed() ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     !SpiderHudBossNative_MightMatch(v) ||
+     !geom_rva(caller,&rva) || rva!=0x00102C72UL)
+    return source;
+
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,
+                                         0,&texture)) && texture){
+    if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc))){
+      tw=desc.dwWidth;th=desc.dwHeight;
+    }
+    IDirectDrawSurface7_Release(texture);
+  }
+  kind=SpiderHudBossNative_Transform(v,copy,(unsigned)count,
+       (unsigned)type,(uint32_t)fvf,(uint32_t)rva,
+       (unsigned)tw,(unsigned)th,
+       (unsigned)desktop_w,(unsigned)desktop_h);
+  if(kind==SPIDER_HUD_BOSS_PROBE_NONE)return source;
+  hit=InterlockedIncrement(&boss_hud_native_hits[kind-1]);
+  if(debug_log_enabled && (hit<=4 || hit%240==0)){
+    float scale=(4.0f*(float)desktop_h)/(3.0f*(float)desktop_w);
+    snprintf(line,sizeof(line),
+      "HUD-BOSS-NATIVE: %s hit=%ld flip=%ld x=(%.1f..%.1f) -> (%.1f..%.1f) factor=%.5f z=%.5f rhw=%.4f texture=%lux%lu [ORIGINAL-GEOMETRY]",
+      kind==SPIDER_HUD_BOSS_PROBE_FILL?"fill":
+      kind==SPIDER_HUD_BOSS_PROBE_FRAME?"frame":"portrait",
+      (long)hit,(long)InterlockedCompareExchange(&flip_count,0,0),
+      (double)v[0].x,(double)v[1].x,
+      (double)copy[0].x,(double)copy[1].x,
+      (double)scale,(double)v[0].z,(double)v[0].rhw,
+      (unsigned long)tw,(unsigned long)th);
+    log_line(line);
+  }
+  return copy;
+}
 static volatile LONG boss_hud_probe_last_flip[3]={-100,-100,-100};
 static volatile LONG boss_hud_probe_hits[3]={0,0,0};
 static void maybe_log_boss_hud_candidate(void *device,
@@ -1885,6 +1942,12 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       v=maybe_correct_adaptive_hud(self,type,fvf,verts,count,
                                    __builtin_return_address(0),small);
+    /* A second, independently observed boss-HUD variant: right-side
+     * 4:3 UI corrected about screen center. The previous adaptive
+     * variant retains precedence and its old right-edge policy. */
+    if(v==verts && count==4)
+      v=maybe_correct_native_boss_hud(self,type,fvf,verts,count,
+                                      __builtin_return_address(0),small);
     /* Correct the native translucent motif. Where these same alpha
      * primitives previously tinted the entire 16:9 frame, replay the
      * original triangles ONLY into the two outer 240px gutters first.
