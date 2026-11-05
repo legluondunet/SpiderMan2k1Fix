@@ -2111,12 +2111,66 @@ static void free_menu_vertices(SpiderMenuVertex *allocated) {
   if (allocated) HeapFree(GetProcessHeap(),0,allocated);
 }
 
+/* Opt-in native ESC foreground: use the game's original menu draw
+ * and original alpha blend, but force the identified menu primitive to
+ * pass depth testing above gameplay HUD (Dreamcast layering reference).
+ * No persistent render-state changes, no 3D/UI ownership heuristics.
+ * Native ESC draw order still matters; probe any HUD submitted later. */
+static volatile LONG ui_esc_front_draw_hits=0,ui_esc_front_draw_fallbacks=0;
+static HRESULT draw_native_esc_in_front(void *device,
+                  D3DPRIMITIVETYPE type,DWORD fvf,
+                  LPVOID vertices,DWORD count,DWORD flags,int native_esc)
+{
+  IDirect3DDevice7 *dev=(IDirect3DDevice7*)device;
+  DWORD zen=0,zfunc=0,zw=0;
+  HRESULT hr;
+  if(!device || !native_esc ||
+     InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1)
+    return original_draw_primitive(device,type,fvf,vertices,count,flags);
+  if(FAILED(IDirect3DDevice7_GetRenderState(dev,D3DRENDERSTATE_ZENABLE,&zen)) ||
+     zen==D3DZB_FALSE ||
+     FAILED(IDirect3DDevice7_GetRenderState(dev,D3DRENDERSTATE_ZFUNC,&zfunc)) ||
+     FAILED(IDirect3DDevice7_GetRenderState(dev,D3DRENDERSTATE_ZWRITEENABLE,&zw)) ||
+     FAILED(IDirect3DDevice7_SetRenderState(dev,D3DRENDERSTATE_ZFUNC,D3DCMP_ALWAYS))) {
+    LONG n=InterlockedIncrement(&ui_esc_front_draw_fallbacks);
+    if(debug_log_enabled && n<=3)
+      log_line("ESC-FOREGROUND: native Z disabled/unavailable, original draw retained");
+    return original_draw_primitive(device,type,fvf,vertices,count,flags);
+  }
+  if(FAILED(IDirect3DDevice7_SetRenderState(dev,D3DRENDERSTATE_ZWRITEENABLE,FALSE))) {
+    IDirect3DDevice7_SetRenderState(dev,D3DRENDERSTATE_ZFUNC,zfunc);
+    if(debug_log_enabled && InterlockedIncrement(&ui_esc_front_draw_fallbacks)<=3)
+      log_line("ESC-FOREGROUND: ZWRITE setup failed, original draw retained");
+    return original_draw_primitive(device,type,fvf,vertices,count,flags);
+  }
+  hr=original_draw_primitive(device,type,fvf,vertices,count,flags);
+  {
+    HRESULT rw=IDirect3DDevice7_SetRenderState(dev,D3DRENDERSTATE_ZWRITEENABLE,zw);
+    HRESULT rz=IDirect3DDevice7_SetRenderState(dev,D3DRENDERSTATE_ZFUNC,zfunc);
+    if((FAILED(rw)||FAILED(rz)) && debug_log_enabled &&
+       InterlockedIncrement(&ui_esc_front_draw_fallbacks)<=3)
+      log_line("ESC-FOREGROUND: WARNING native Z state restoration failed");
+  }
+  {
+    LONG n=InterlockedIncrement(&ui_esc_front_draw_hits);
+    if(debug_log_enabled && (n<=8 || n%1200==0)) {
+      char message[200];
+      snprintf(message,sizeof(message),
+        "ESC-FOREGROUND: draw=%ld source-ZEN=%lu ZFUNC=%lu ZWRITE=%lu temporary=ALWAYS/NO-ZWRITE [EXPERIMENT]",
+        (long)n,(unsigned long)zen,(unsigned long)zfunc,(unsigned long)zw);
+      log_line(message);
+    }
+  }
+  return hr;
+}
+
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
      fvf==0x144UL && verts && count>=3 && count<=128)
     InterlockedIncrement(&menu_version_draws);
   {
     SpiderMenuVertex small[64],*allocated=NULL;
+    int native_esc_primitive=0;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
     if(v==verts && count==4) {
       v=maybe_correct_native_comic(self,type,fvf,verts,count,
@@ -2142,18 +2196,23 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4) {
       v=maybe_correct_native_motif43(self,type,fvf,verts,count,
                                     __builtin_return_address(0),small);
+      if(v!=verts) native_esc_primitive=1;
       if(v!=verts && InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1)
         native_motif43_restore_gutters(self,(const SpiderMenuVertex*)verts,flags);
     }
     /* Native red selector uses exact texture and quad signature.
      * The older Wine stack-owner hypothesis has been retired. */
-    if(v==verts && count==4)
+    if(v==verts && count==4) {
       v=maybe_correct_native_cursor43(self,type,fvf,verts,count,
                                       __builtin_return_address(0),small);
+      if(v!=verts) native_esc_primitive=1;
+    }
     /* Native ESC after known comic/HUD precedence. */
-    if(v==verts && count==4)
+    if(v==verts && count==4) {
       v=maybe_correct_native_pause43(self,type,fvf,verts,count,
                                      __builtin_return_address(0),small);
+      if(v!=verts) native_esc_primitive=1;
+    }
     /* The original native Pause glyphs can have different per-level RHW:
      * capture original data regardless of whether the strict HUD path
      * corrected this draw, once a verified ribbon is present. */
@@ -2186,7 +2245,8 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       v=candidate;
     }
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
-    HRESULT hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
+    HRESULT hr=draw_native_esc_in_front(self,type,fvf,(LPVOID)v,
+                                        count,flags,native_esc_primitive);
     free_menu_vertices(allocated);
     return hr;
   }
