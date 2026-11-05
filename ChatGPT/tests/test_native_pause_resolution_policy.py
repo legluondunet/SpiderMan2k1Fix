@@ -123,7 +123,7 @@ def test_original_pause_has_resolution_independent_four_by_three_geometry(tmp_pa
             assert(SpiderNativePause43_TextLayer(0.00122f,11.7760f));
             assert(SpiderNativePause43_TextLayer(0.00098f,13.3012f));
             /* Do not interpolate between known text depths. */
-            assert(!SpiderNativePause43_TextLayer(0.00122f,11.4500f));
+            assert(!SpiderNativePause43_TextLayer(0.00122f,11.5500f));
             assert(!SpiderNativePause43_TextLayer(0.00098f,13.4600f));
             assert(!SpiderNativePause43_TextLayer(0.00098f,13.10f));
             assert(!SpiderNativePause43_TextLayer(0.00122f,13.3012f));
