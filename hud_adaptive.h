@@ -13,7 +13,8 @@ enum SpiderHudAdaptiveRegion {
     SPIDER_HUD_ADAPTIVE_NONE = 0,
     SPIDER_HUD_ADAPTIVE_INSTRUCTIONS = 1,
     SPIDER_HUD_ADAPTIVE_COMPASS = 2,
-    SPIDER_HUD_ADAPTIVE_BOSS = 3
+    SPIDER_HUD_ADAPTIVE_BOSS = 3,
+    SPIDER_HUD_ADAPTIVE_OBJECTIVE = 4 /* lower right vertical portrait + health */
 };
 
 /* Cheap prefilter before querying a D3D7 texture. */
