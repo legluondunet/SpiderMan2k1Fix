@@ -662,6 +662,87 @@ distorted or offset from black drop shadows, with
 `PAUSE-NATIVE-43: ribbon/border/glyph` log hits. PR #109
 remains DRAFT until visually accepted.
 
+## Twelfth observation: Venom (2) native ESC in Windows 11 (2026-11-05)
+
+`scrn0003(4).png` is the native F9 `screenshots/scrn0003.png`
+from the attached `SpiderMan2k1Fix(20261105-135546).log`.
+This is a **1920×1200 16:10 Windows 11 native** run, build
+`v1.1.0-0062135`, Xbox 360 pad `045E:028E`. The screenshot
+shows the native ESC violet ribbon **stretched across the entire
+screen** in the Venom (2) sequence, unlike the Dreamcast-calibrated
+4:3 centered banner. F9 saved `scrn0003.png` at Flip≈4270.
+
+The original game (same verified D3D7 caller `00102C72`,
+quad/FVF `0x144`) logged **11 ribbon samples** during this ESC,
+including `flip=3980`, source x=-7.5..1923.8,
+y=515..675 (animation later y=445..750),
+untextured `7F3232A0`,
+**Z=.00122 / RHW=10.6651**. That RHW was **not** among
+the four previously accepted native ESC families, so no
+`PAUSE-NATIVE-43: ribbon` or later same-Flip border/glyph
+matches occurred. The existing pure 4:3 geometry policy can
+restore the ribbon's correct center and width without any new
+per-level coordinates.
+
+In the same pause frames, **22 `HUD-VISUAL: AIM` samples**
+record the *untextured alpha-80 native orange/blue motif*
+(x=1245..1511.2, y=1005..1170, original caller `00102C72`,
+diffuse `80041010`/`80208686`) at
+**Z=.00146 / RHW=9.4993**. The label "AIM" is merely a broad
+candidate classification; **this is not evidence of a
+red/green aiming reticle**.
+
+**Patch from source evidence:** add *only* exact
+`RHW=10.6651` native ribbon and `RHW=9.4993` motif
+signatures at their recorded Z depths. Retain same original
+caller, FVF, texture state, alpha, geometry and widescreen
+guards; do not touch 3D vertices, previous ESC levels or
+4:3 displays. No new text glyph or border depth is guessed.
+Instead an independent **`PAUSE-NATIVE-DETAIL: family=2`**
+read-only budget (160 bounded samples) records the exact
+8×8 border and 16/32/64×32 glyph source layers after the new
+ribbon is recognized. The earlier 80-sample base and
+Mysterio 160-sample families remain independent.
+
+**Important controller consequence:** `SpiderSDL3Universal_OnFlip`
+uses the same `native_pause43_visible_near_flip` flag
+to distinguish native 3D ESC from ordinary gameplay.
+With an unrecognized ribbon and usually-null legacy
+native pause pointers, it may stay in the gameplay context,
+mapping South/Cross/A to Jump rather than menu Enter.
+The old log proves Xbox 360 `Start` selection and ordinary
+SDL3 gameplay, but **does not prove navigation or confirm
+on this ESC screen**: the generic SDL3 log has a 100-line cap
+exhausted before reaching the level. The patch gives
+`PAUSE-MENU context transition` and
+`PAUSE-MENU INPUT` an **independent bounded 48-event**
+read-only reporter, preserving current behavior and
+routing; new hardware evidence remains required.
+
+**Black Cat top-right portrait + vertical meter:** actual
+`HUD-BOSS-PROBE` recorded nine corrected samples each
+for two colored fill segments, frame and portrait (36/36
+`corrected=1`); `HUD-ADAPTIVE` reports 16:10 scale
+`0.83333`. This verifies that the adaptation ran but
+does not alone certify exact Dreamcast visual proportions.
+The logger has **no `HUD-AIM: red` or
+`HUD-AIM: green`** correction samples in this run,
+so red/green targeting crosshair proportions are **unverified**
+for Venom (2).
+
+**One combined acceptance test:** use the new CI artifact,
+open Venom (2) normal gameplay, take F9 while an actual
+red/green reticle is shown if possible, then enter ESC,
+navigate Down/Up, confirm/re-enter and capture F9 of ESC
+with `[Debug] Log=1`. Return the single log and screenshots.
+Expected: `PAUSE-NATIVE-43: ribbon`,
+`NATIVE-MOTIF-43: QUAD-MATCH`,
+`PAUSE-NATIVE-DETAIL: family=2`, and the independent
+`SDL3-UNIVERSAL: PAUSE-MENU` context/input messages.
+Classify exact border and text depths **only after**
+observing this new source log. Do not merge before
+hardware validation.
+
 ## Bounded read-only diagnostic
 
 When `[Debug] Log=1`, only **uncorrected** original 4-vertex D3D7
