@@ -2308,6 +2308,17 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
   if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,saved))) {
     all_ok=0;log_line("UI-COMPOSITOR: WARNING end-scene state restore failed");
   }
+  /* ApplyStateBlock bypasses hooked_set_render_state. Resample the
+   * actual restored Z state so the existing Hor+ 3D FOV guard does
+   * not accidentally retain our temporary 2D ZENABLE=FALSE. */
+  {
+    DWORD restored_z=0;
+    if(SUCCEEDED(IDirect3DDevice7_GetRenderState(device,
+                                                 D3DRENDERSTATE_ZENABLE,&restored_z))) {
+      InterlockedExchange(&fov_z_state_enabled,restored_z!=D3DZB_FALSE);
+      InterlockedExchange(&fov_z_state_known,1);
+    }
+  }
   if(FAILED(IDirect3DDevice7_SetTexture(device,0,saved_texture))) {
     all_ok=0;log_line("UI-COMPOSITOR: WARNING end-scene texture restore failed");
   }
