@@ -1,8 +1,10 @@
 """Source-verified D3D7 red/green 3D aiming rings keep native circular shape.
 
 The 2026-11-04 Log=1 records below were directly aligned with the
-maintainer's F9 shots scrn0028 (red) and scrn0029 (green). The ring
-shader/color/depth combination must never match native pause motifs,
+maintainer's F9 shots scrn0028/scrn0029 (level 1) and scrn0034
+(level 2), plus additional green level-2 samples. The distinct
+RHW pairs 9.9878/7.8952 are measured, never interpolated. The
+ring shader/color/depth combination must never match native pause motifs,
 other HUD widgets or general-purpose 3D world sprites.
 """
 from pathlib import Path
@@ -46,6 +48,11 @@ def test_source_verified_reticles_preserve_other_vertex_attributes(tmp_path):
             }
         }
 
+        static void set_rhw(SpiderMenuVertex *v,float rhw) {
+            unsigned i;
+            for(i=0;i<4u;i++)v[i].rhw=rhw;
+        }
+
         static int run(const SpiderMenuVertex *v,SpiderMenuVertex *dst,
                        unsigned w,unsigned h,unsigned tw,unsigned th,
                        unsigned primitive,unsigned fvf,uint32_t caller) {
@@ -83,6 +90,32 @@ def test_source_verified_reticles_preserve_other_vertex_attributes(tmp_path):
                    ==SPIDER_HUD_AIM_GREEN);
             check(src,dst,1920,1080);
 
+            /* Level 2: separate, log-proven RHW=7.8952 layer. Both
+             * ring colors use the SAME texture/Z/caller/FVF/UV as
+             * level 1. Screenshot scrn0034 captures the red ring,
+             * near Log=1 sample=39 at Flip 4687. */
+            quad(src,1110.0f,265.5f,1357.5f,450.0f,0xB0FF4040u);
+            set_rhw(src,7.8952f);
+            assert(SpiderHudAimReticle_MightMatch(src));
+            assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)
+                   ==SPIDER_HUD_AIM_RED);
+            check(src,dst,1920,1080);
+
+            quad(src,832.5f,310.5f,1080.0f,495.0f,0xB040FF40u);
+            set_rhw(src,7.8952f);
+            assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)
+                   ==SPIDER_HUD_AIM_GREEN);
+            check(src,dst,1920,1080);
+
+            /* Strict depth selection: an intermediate RHW (8.9)
+             * must never match just because both endpoints exist. */
+            set_rhw(src,8.90f);
+            assert(!SpiderHudAimReticle_MightMatch(src));
+            assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)==0);
+            set_rhw(src,7.8952f);
+            src[0].rhw=9.9878f; /* inconsistent corner depth */
+            assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)==0);
+
             /* Position independent: a moving ring stays centered on
              * whichever object it targets, never on the screen. */
             quad(src,701.2f,675.0f,855.0f,792.0f,0xB0FF4040u);
@@ -108,12 +141,17 @@ def test_source_verified_reticles_preserve_other_vertex_attributes(tmp_path):
             src[0].z=0.25f;
             assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)==0);
             src[0].z=0.00146f;
-            src[0].rhw=7.8952f; /* native Pause motif */
+            /* The same RHW=7.8952 is ALSO used by the native Pause
+             * motif: reject its tint even when all vertices match. */
+            set_rhw(src,7.8952f);
+            for(unsigned i=0;i<4;i++)src[i].diffuse=0x80208686u;
+            assert(!SpiderHudAimReticle_MightMatch(src));
+            assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)==0);
+            for(unsigned i=0;i<4;i++)src[i].diffuse=0xB040FF40u;
+            set_rhw(src,9.9878f);
+            src[0].rhw=11.176f; /* different HUD depth */
             assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)==0);
             src[0].rhw=9.9878f;
-            src[0].diffuse=0x80208686u; /* Pause motif tint */
-            assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)==0);
-            src[0].diffuse=0xB040FF40u;
             src[2].diffuse=0xB0FF4040u; /* gradient world sprite */
             assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)==0);
             src[2].diffuse=src[0].diffuse;
