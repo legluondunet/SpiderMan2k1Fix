@@ -2169,6 +2169,232 @@ static HRESULT draw_native_esc_in_front(void *device,
   return hr;
 }
 
+/* Reversible Direct3D7 pause compositor.
+ * Snapshot each game-owned ESC draw (vertices + ALL stateblock + texture).
+ * Do NOT draw it at its original point. At EndScene, after the HUD and
+ * scene have been submitted, draw an optional physical-viewport tint,
+ * then replay the original ESC motif in centered 4:3 and the native menu.
+ * No boss/level-specific ordering, no GPU render-target readback, no
+ * synthetic transparent object identification. Calls are bounded and
+ * fail back to the original native draw path if capture is unsupported.
+ *
+ * D3D7 state blocks capture device states, but the bound texture is held
+ * explicitly by one GetTexture COM reference per command. The final
+ * stateblock plus texture restores the game's original states on exit.
+ * A temporary ZENABLE=FALSE is safe for 2D replay even on a device with
+ * an already disabled native depth test.
+ */
+typedef HRESULT (WINAPI *D3DSceneFn)(void *);
+static D3DSceneFn ui_original_begin_scene=NULL,ui_original_end_scene=NULL;
+typedef struct {
+  SpiderMenuVertex v[4];
+  DWORD fvf,flags,state_token;
+  D3DPRIMITIVETYPE type;
+  IDirectDrawSurface7 *texture;
+  int layer;
+} SpiderUICompDraw;
+static SpiderUICompDraw ui_comp_draws[SPIDER_UI_COMP_MAX_COMMANDS];
+static unsigned ui_comp_count=0;
+static int ui_comp_scene_open=0,ui_comp_bailout=0,ui_comp_ribbon=0,ui_comp_motif=0;
+static DWORD ui_comp_tint_source=0;
+static void *ui_comp_device=NULL;
+static volatile LONG ui_comp_deferred=0,ui_comp_replayed=0,ui_comp_tints=0;
+static volatile LONG ui_comp_capture_failures=0,ui_comp_no_scene=0,ui_comp_replay_failures=0;
+
+static void ui_comp_release(IDirect3DDevice7 *device) {
+  unsigned i;
+  for(i=0;i<ui_comp_count;i++){
+    if(ui_comp_draws[i].state_token && device)
+      IDirect3DDevice7_DeleteStateBlock(device,ui_comp_draws[i].state_token);
+    if(ui_comp_draws[i].texture)
+      IDirectDrawSurface7_Release(ui_comp_draws[i].texture);
+    memset(&ui_comp_draws[i],0,sizeof(ui_comp_draws[i]));
+  }
+  ui_comp_count=0;
+  ui_comp_ribbon=ui_comp_motif=0;
+  ui_comp_tint_source=0;
+}
+
+/* A single fullscreen quad (no stretching): its alpha/RGB are sampled
+ * from the native game's pause decoration for the test. Decorative
+ * spider geometry itself stays separately mapped into centered 4:3.
+ * Trial tint alpha is capped in ui_compositor_policy.h, since the
+ * original compositor's exact independent tint pass is not yet known.
+ */
+static int ui_comp_draw_screen_tint(IDirect3DDevice7 *device,DWORD argb) {
+  SpiderMenuVertex v[4];
+  unsigned i;
+  static const float uv[4][2]={{0,0},{1,0},{1,1},{0,1}};
+  float w=(float)desktop_w,h=(float)desktop_h;
+  if(!device || w<640.0f || h<480.0f || !(argb>>24))return 0;
+  memset(v,0,sizeof(v));
+  v[0].x=0.0f;v[0].y=0.0f;
+  v[1].x=w;v[1].y=0.0f;
+  v[2].x=w;v[2].y=h;
+  v[3].x=0.0f;v[3].y=h;
+  for(i=0;i<4;i++){
+    v[i].z=0.0f;v[i].rhw=1.0f;v[i].diffuse=argb;
+    v[i].u=uv[i][0];v[i].v=uv[i][1];
+  }
+  if(FAILED(IDirect3DDevice7_SetTexture(device,0,NULL)) ||
+     FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)) ||
+     FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE)) ||
+     FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ALPHABLENDENABLE,TRUE)) ||
+     FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ALPHATESTENABLE,FALSE)) ||
+     FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_SRCBLEND,D3DBLEND_SRCALPHA)) ||
+     FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_DESTBLEND,D3DBLEND_INVSRCALPHA)) ||
+     FAILED(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_COLOROP,D3DTOP_SELECTARG1)) ||
+     FAILED(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_COLORARG1,D3DTA_DIFFUSE)) ||
+     FAILED(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAOP,D3DTOP_SELECTARG1)) ||
+     FAILED(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAARG1,D3DTA_DIFFUSE)))
+    return 0;
+  return SUCCEEDED(original_draw_primitive(device,D3DPT_TRIANGLEFAN,0x144UL,
+                                              v,4,0));
+}
+
+/* Flush before native EndScene, not at DirectDraw Flip, so the entire
+ * replay remains inside the original legal BeginScene/EndScene pair. */
+static void ui_comp_flush(IDirect3DDevice7 *device) {
+  DWORD saved=0;
+  IDirectDrawSurface7 *saved_texture=NULL;
+  unsigned i,layer;
+  LONG n;
+  int needs_tint,all_ok=1;
+  if(ui_comp_count==0)return;
+  if(!device || ui_comp_device!=device){
+    log_line("UI-COMPOSITOR: scene owner mismatch; discarding deferred commands");
+    ui_comp_release(device);ui_comp_bailout=1;return;
+  }
+  if(FAILED(IDirect3DDevice7_CreateStateBlock(device,D3DSBT_ALL,&saved)) ||
+     !saved) {
+    log_line("UI-COMPOSITOR: cannot save end-scene state; disabling deferred path");
+    ui_comp_release(device);ui_comp_bailout=1;
+    InterlockedIncrement(&ui_comp_capture_failures);
+    return;
+  }
+  /* GetTexture() supplies one owned COM reference when non-NULL. */
+  if(FAILED(IDirect3DDevice7_GetTexture(device,0,&saved_texture))) {
+    IDirect3DDevice7_DeleteStateBlock(device,saved);
+    ui_comp_release(device);ui_comp_bailout=1;
+    log_line("UI-COMPOSITOR: cannot save bound end-scene texture; fallback");
+    return;
+  }
+  needs_tint=ui_comp_ribbon && ui_comp_motif &&
+      InterlockedCompareExchange(&ui_compositor_tint_enabled,0,0)==1;
+  if(needs_tint) {
+    DWORD tint=SpiderUIComp_Tint(ui_comp_tint_source);
+    if(ui_comp_draw_screen_tint(device,tint))
+      InterlockedIncrement(&ui_comp_tints);
+    else if(debug_log_enabled && InterlockedIncrement(&ui_comp_replay_failures)<=3)
+      log_line("UI-COMPOSITOR: fullscreen overlay unsupported this frame");
+  }
+  /* Stable semantic layer order. Within each layer, retain exact game
+   * order; scene and HUD are already in the physical framebuffer. */
+  for(layer=SPIDER_UI_COMP_PAUSE_DECOR;
+      layer<=SPIDER_UI_COMP_PAUSE_MENU;layer++){
+    for(i=0;i<ui_comp_count;i++) {
+      SpiderUICompDraw *c=&ui_comp_draws[i];
+      if((unsigned)c->layer!=layer)continue;
+      if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,c->state_token)) ||
+         FAILED(IDirect3DDevice7_SetTexture(device,0,c->texture)) ||
+         FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)) ||
+         FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE)) ||
+         FAILED(original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags))) {
+        all_ok=0;
+        InterlockedIncrement(&ui_comp_replay_failures);
+      } else InterlockedIncrement(&ui_comp_replayed);
+    }
+  }
+  if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,saved))) {
+    all_ok=0;log_line("UI-COMPOSITOR: WARNING end-scene state restore failed");
+  }
+  if(FAILED(IDirect3DDevice7_SetTexture(device,0,saved_texture))) {
+    all_ok=0;log_line("UI-COMPOSITOR: WARNING end-scene texture restore failed");
+  }
+  if(saved_texture)IDirectDrawSurface7_Release(saved_texture);
+  IDirect3DDevice7_DeleteStateBlock(device,saved);
+  n=InterlockedCompareExchange(&ui_comp_replayed,0,0);
+  if(debug_log_enabled && (n<=16 || n%1200==0 || !all_ok)) {
+    char msg[200];
+    snprintf(msg,sizeof(msg),
+      "UI-COMPOSITOR: EndScene frame commands=%u queued-total=%ld replay-total=%ld overlay-total=%ld order=SCENE/HUD>FULLSCREEN>4:3-DECOR>ESC all-ok=%d",
+      ui_comp_count,(long)InterlockedCompareExchange(&ui_comp_deferred,0,0),
+      (long)n,(long)InterlockedCompareExchange(&ui_comp_tints,0,0),all_ok);
+    log_line(msg);
+  }
+  ui_comp_release(device);
+}
+
+/* Called from DrawPrimitive only for verified native ESC-owned quads.
+ * Any unsupported capture falls through to the original immediate draw
+ * without changing global device state; no silent missing menu on
+ * unsupported stateblocks. */
+static int ui_comp_capture(IDirect3DDevice7 *device,D3DPRIMITIVETYPE type,
+             DWORD fvf,const void *vertices,DWORD count,DWORD flags,int layer)
+{
+  SpiderUICompDraw *c;
+  DWORD block=0;
+  IDirectDrawSurface7 *texture=NULL;
+  if(!SpiderUIComp_ShouldDefer(
+       InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1,
+       ui_comp_scene_open && ui_comp_device==device,ui_comp_bailout,
+       layer,(unsigned)count,(unsigned)fvf)) {
+    if(debug_log_enabled && ui_comp_scene_open==0 &&
+       InterlockedIncrement(&ui_comp_no_scene)<=4)
+      log_line("UI-COMPOSITOR: menu draw outside BeginScene, original draw retained");
+    return 0;
+  }
+  if(ui_comp_count>=SPIDER_UI_COMP_MAX_COMMANDS) {
+    log_line("UI-COMPOSITOR: frame budget exceeded, flushing safely and bypassing");
+    ui_comp_flush(device);ui_comp_bailout=1;return 0;
+  }
+  if(FAILED(IDirect3DDevice7_CreateStateBlock(device,D3DSBT_ALL,&block)) || !block)
+    goto capture_failed;
+  if(FAILED(IDirect3DDevice7_GetTexture(device,0,&texture)))
+    goto capture_failed;
+  c=&ui_comp_draws[ui_comp_count++];
+  memset(c,0,sizeof(*c));
+  memcpy(c->v,vertices,4u*sizeof(SpiderMenuVertex));
+  c->fvf=fvf;c->flags=flags;c->type=type;c->layer=layer;
+  c->state_token=block;c->texture=texture;
+  if(layer==SPIDER_UI_COMP_PAUSE_DECOR) {
+    if(!ui_comp_motif) ui_comp_tint_source=c->v[0].diffuse;
+    ui_comp_motif=1;
+  } else ui_comp_ribbon=1;
+  if(InterlockedIncrement(&ui_comp_deferred)<=8 && debug_log_enabled)
+    log_line("UI-COMPOSITOR: native ESC primitive captured, deferred until EndScene");
+  return 1;
+capture_failed:
+  if(block)IDirect3DDevice7_DeleteStateBlock(device,block);
+  if(texture)IDirectDrawSurface7_Release(texture);
+  if(debug_log_enabled && InterlockedIncrement(&ui_comp_capture_failures)<=5)
+    log_line("UI-COMPOSITOR: D3D7 stateblock/texture capture failed, native draw fallback");
+  /* Draw already deferred commands in their same original scene, then
+   * disable captures until next BeginScene. */
+  ui_comp_flush(device);ui_comp_bailout=1;
+  return 0;
+}
+
+static HRESULT WINAPI ui_compositor_hooked_begin_scene(void *self) {
+  HRESULT hr=ui_original_begin_scene(self);
+  if(SUCCEEDED(hr) &&
+     InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1) {
+    if(ui_comp_count) {
+      log_line("UI-COMPOSITOR: stale scene discarded on next BeginScene");
+      ui_comp_release((IDirect3DDevice7*)ui_comp_device);
+    }
+    ui_comp_scene_open=1;ui_comp_device=self;ui_comp_bailout=0;
+  }
+  return hr;
+}
+static HRESULT WINAPI ui_compositor_hooked_end_scene(void *self) {
+  if(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
+     ui_comp_scene_open && ui_comp_device==self)
+    ui_comp_flush((IDirect3DDevice7*)self);
+  ui_comp_scene_open=0;ui_comp_device=NULL;
+  return ui_original_end_scene(self);
+}
+
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
      fvf==0x144UL && verts && count>=3 && count<=128)
