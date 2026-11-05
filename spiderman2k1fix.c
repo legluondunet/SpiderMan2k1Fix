@@ -16,6 +16,7 @@
 #include "hud_adaptive.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
+#include "hud_boss_probe.h"
 #include "native_pause_title_bounds.h"
 #include "native_pause_43_policy.h"
 #include "frame_limiter.h"
@@ -1598,6 +1599,87 @@ static const void *maybe_correct_aim_reticle(
   return copy;
 }
 
+/* Boss bars require their own original D3D7 source evidence.
+ * We have a Rhino 32x32 border sample at RHW=17.1292 and a Dreamcast
+ * screenshot proving the full bar and portrait need a 4:3 correction.
+ * The existing Venom/Scorpion boss fix expects *different* RHW ranges;
+ * do not force any bar/portrait geometry without separately verifying
+ * the original tint, texture, size and depth of each source layer.
+ *
+ * This probe never changes vertices, input or render state. It samples
+ * at most 18 events of each boss kind, one every 45 native Flips. */
+static volatile LONG boss_hud_probe_last_flip[3]={-100,-100,-100};
+static volatile LONG boss_hud_probe_hits[3]={0,0,0};
+static void maybe_log_boss_hud_candidate(void *device,
+       D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
+       DWORD count,void *caller,int already_corrected)
+{
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  IDirectDrawSurface7 *texture=NULL;
+  DDSURFACEDESC2 desc;
+  DWORD rva=0,tw=0,th=0;
+  float l,r,t,b;
+  unsigned i;
+  int kind,k;
+  LONG flip,last,hit;
+  char message[340];
+  if(!debug_log_enabled || !device || !source || count!=4u ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
+     !SpiderHudWidescreen_Installed() ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     !geom_rva(caller,&rva) || rva!=0x00102C72UL)
+    return;
+
+  l=r=v[0].x;t=b=v[0].y;
+  for(i=1;i<4u;i++){
+    if(v[i].x<l)l=v[i].x;
+    if(v[i].x>r)r=v[i].x;
+    if(v[i].y<t)t=v[i].y;
+    if(v[i].y>b)b=v[i].y;
+  }
+  if(!(l>=(float)desktop_w*0.46f &&
+       r<=(float)desktop_w+64.0f &&
+       t>=(float)desktop_h*0.045f &&
+       b<=(float)desktop_h*0.36f &&
+       r-l>16.0f &&
+       b-t>=(float)desktop_h*0.020f))
+    return;
+
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,
+                                            0,&texture)) && texture){
+    if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc))){
+      tw=desc.dwWidth;th=desc.dwHeight;
+    }
+    IDirectDrawSurface7_Release(texture);
+  }
+  kind=SpiderHudBossProbe_Classify(v,(unsigned)count,(unsigned)type,
+                (uint32_t)fvf,(uint32_t)rva,(unsigned)tw,(unsigned)th,
+                (unsigned)desktop_w,(unsigned)desktop_h);
+  if(kind==SPIDER_HUD_BOSS_PROBE_NONE)return;
+  k=kind-1;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  last=InterlockedCompareExchange(&boss_hud_probe_last_flip[k],0,0);
+  if(flip-last<45 ||
+     InterlockedCompareExchange(&boss_hud_probe_hits[k],0,0)>=18)
+    return;
+  InterlockedExchange(&boss_hud_probe_last_flip[k],flip);
+  hit=InterlockedIncrement(&boss_hud_probe_hits[k]);
+  if(hit>18)return;
+  snprintf(message,sizeof(message),
+      "HUD-BOSS-PROBE: %s sample=%ld flip=%ld corrected=%d caller=%08lX quad=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f color=%08lX tex=%lux%lu uv0=(%.3f,%.3f) [READ-ONLY]",
+      kind==SPIDER_HUD_BOSS_PROBE_FILL?"fill":
+      kind==SPIDER_HUD_BOSS_PROBE_FRAME?"frame":"portrait",
+      (long)hit,(long)flip,already_corrected,
+      (unsigned long)rva,
+      (double)l,(double)r,(double)t,(double)b,
+      (double)v[0].z,(double)v[0].rhw,
+      (unsigned long)v[0].diffuse,
+      (unsigned long)tw,(unsigned long)th,
+      (double)v[0].u,(double)v[0].v);
+  log_line(message);
+}
 /* Read-only HUD-visual diagnostics while [Debug] Log=1.
  * Trace only representative UNCORRECTED source quads, never change draw
  * state, game input, texture contents or original vertex memory.
@@ -1831,6 +1913,11 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       maybe_log_native_pause43_border(self,type,fvf,verts,count,
                        __builtin_return_address(0),v!=verts);
     }
+    /* Source-only boss UI probe remains active whether or not the
+     * previous adaptive HUD handler already corrected a known boss. */
+    if(count==4)
+      maybe_log_boss_hud_candidate(self,type,fvf,verts,count,
+                                  __builtin_return_address(0),v!=verts);
     /* Uncorrected suspected aim/ribbon draws only. No rendering changes. */
     if(v==verts && count==4)
       maybe_log_hud_visual_candidate(self,type,fvf,verts,count,
