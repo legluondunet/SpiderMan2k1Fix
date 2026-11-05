@@ -33,6 +33,58 @@ static inline float SpiderUICanvas_Abs(float x)
     return x < 0.0f ? -x : x;
 }
 
+/* Screen-covering presentation graphics are NOT part of the 4:3 UI
+ * layout. Preserve the original physical/full-width X coordinates for
+ * source quads spanning the viewport and either (a) covering the entire
+ * frame or (b) forming a top/bottom cinematic band. No texture, colour,
+ * scene or level identifiers: this is a geometry-only screen-role gate.
+ *
+ * This cannot yet identify tiled or multi-quad postprocessing effects.
+ * It intentionally does NOT claim all screen overlays are covered.
+ */
+static inline int SpiderUICanvas_43IsFullScreenEffect(
+    const SpiderMenuVertex *src, unsigned count,
+    unsigned primitive_type, uint32_t fvf, uint32_t caller_rva,
+    unsigned screen_w, unsigned screen_h)
+{
+    float l, r, t, b, w, h;
+    unsigned i;
+    if (!src || count != 4u || primitive_type != 6u ||
+        fvf != 0x144u ||
+        caller_rva != SPIDER_UI_CANVAS_43_CALLER_RVA ||
+        screen_w < 640u || screen_h < 480u ||
+        screen_w > 16384u || screen_h > 16384u ||
+        (uint64_t)screen_w * 3u <= (uint64_t)screen_h * 4u)
+        return 0;
+    w = (float)screen_w;
+    h = (float)screen_h;
+    l = r = src[0].x;
+    t = b = src[0].y;
+    for (i = 0u; i < 4u; ++i) {
+        if (!(src[i].x >= -w * 0.05f &&
+              src[i].x <= w * 1.05f &&
+              src[i].y >= -h * 0.05f &&
+              src[i].y <= h * 1.05f &&
+              src[i].z >= 0.0f && src[i].z <= 0.010f &&
+              src[i].rhw >= 2.0f && src[i].rhw <= 64.0f))
+            return 0;
+        if (src[i].x < l) l = src[i].x;
+        if (src[i].x > r) r = src[i].x;
+        if (src[i].y < t) t = src[i].y;
+        if (src[i].y > b) b = src[i].y;
+    }
+    if (!(l <= w * 0.03f && r >= w * 0.97f &&
+          r - l >= w * 0.95f))
+        return 0;
+    /* Full-frame fade/filter; or a full-width edge bar, not a centered
+     * gameplay HUD gauge or an ordinary dialog/ribbon in the middle. */
+    return (t <= h * 0.07f && b >= h * 0.93f) ||
+           (t <= h * 0.07f && b <= h * 0.42f &&
+            b - t >= h * 0.005f) ||
+           (t >= h * 0.58f && b >= h * 0.93f &&
+            b - t >= h * 0.005f);
+}
+
 static inline int SpiderUICanvas_43Transform(const SpiderMenuVertex *src,
                   SpiderMenuVertex *dst, unsigned count,
                   unsigned primitive_type, uint32_t fvf,
@@ -89,6 +141,13 @@ static inline int SpiderUICanvas_43Transform(const SpiderMenuVertex *src,
           miny >= -(float)screen_h * 0.05f &&
           maxy <= (float)screen_h * 1.05f &&
           maxx > minx && maxy > miny))
+        return 0;
+
+    /* Preserve full-screen effects in the physical viewport. Never
+     * reinterpret cinema bars and screen-covering filters as HUD. */
+    if (SpiderUICanvas_43IsFullScreenEffect(
+            src,count,primitive_type,fvf,caller_rva,
+            screen_w,screen_h))
         return 0;
 
     scale = (4.0f * (float)screen_h) / (3.0f * (float)screen_w);
