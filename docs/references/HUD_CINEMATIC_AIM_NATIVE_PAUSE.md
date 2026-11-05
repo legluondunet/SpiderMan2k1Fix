@@ -598,6 +598,67 @@ banner and motif, extract uncorrected letter signatures from
 pair correction and revalidate. Rhino and earlier scenes do
 not need to be repeated. Keep PR #109 DRAFT pending.
 
+## Eleventh validation: Mysterio matched ribbon/motif but unmatched 8×8 borders and glyphs
+
+Original 1920×1080 **`scrn0049.png`** was saved at
+**2026-11-05 02:46:50** (F9 in the matching
+`SpiderMan2k1Fix(20261105-014708).log`; runtime
+`v1.1.0-7f3fe87`). Unlike the previous Mysterio capture,
+the new inner blue translucent banner has now been mapped to
+the centered 4:3 width, **but the upper/lower purple outline
+strokes still run screen-wide**. Foreground and shadow letters
+also retain horizontal stretch; orange/blue motif now matches.
+
+The source log confirms **exact same original renderer caller**,
+the newly allowed ribbon Z/RHW `0.00122/11.7760` and
+`PAUSE-NATIVE-43: ribbon` corrections at `scale=0.75000`
+(starting Flip 1977, then hit 600 at Flip 2613).
+`NATIVE-MOTIF-43: QUAD-MATCH` also records many
+`Z=.00146/RHW=10.565` matches.
+
+The newly independent `PAUSE-NATIVE-DETAIL: family=1` bucket
+now supplies **80 samples from the newly identified Pause family**.
+Missing native Pause layers are:
+
+| Original source | Z / RHW | Color / texture | Count, original status |
+| --- | --- | --- | --- |
+| Letter shadow | `.00122 / 11.7760` | `FF000000`, 32×32 (plus one 16×32) | **35**, all `corrected=0` |
+| Title foreground `PAUSED` | `.00098 / 13.3012` | `FFFE3242`, 32×32 | **18**, all `corrected=0` |
+| Border/outline strokes | `.00122 / 11.7760` | 8×8 | **40** separate `PAUSE-NATIVE-BORDER-PROBE` samples, all `corrected=0` |
+
+Other nearby `PAUSE-NATIVE-DETAIL` samples at
+`Z=.00024/RHW=21.7537` belong to the active boss-life UI
+(18 already corrected, three deliberately not corrected);
+six unrelated overlays `Z=.00173/9.4907` and
+`Z=.00149/10.4570` remain excluded. **Do not widen
+the glyph classifier to include these.** The old adaptive
+Mysterio boss-life path already records `HUD-ADAPTIVE: region=boss`
+and `HUD-BOSS-PROBE corrected=1` at this stage; no separate
+boss-life correction is needed for this test.
+
+**Code:** add exactly the missing Mysterio shadow depth
+`Z=.00122/RHW=11.7760` and title face depth
+`Z=.00098/RHW=13.3012` to
+`SpiderNativePause43_TextLayer()`. Existing code then applies
+the 4:3 X mapping to glyphs **and**, via the *same-FLIP
+banner + bound 8×8 texture + tight top/side/corner bounds*,
+to the border strokes that share the shadow depth.
+No Mysterio level-specific logic and no change to previous
+ribbon, motif, Rhino, aim or boss HUD code. The violet
+`CONTINUE/RESTART LEVEL/QUIT` foreground has not yet been
+independently measured by this probe (80-event budget filled
+during early PAUSED draws); it is **expected** to share the
+new font-face depth but cannot yet be claimed visually accepted.
+The new signature is source-verified for the red heading;
+hardware screenshot will confirm the remaining choices.
+
+**Next acceptance:** only one Mysterio Pause F9 and one Log=1
+journal with latest CI artifact; confirm top/bottom border
+x≈223..1702 at 1920×1080, title and choices no longer
+distorted or offset from black drop shadows, with
+`PAUSE-NATIVE-43: ribbon/border/glyph` log hits. PR #109
+remains DRAFT until visually accepted.
+
 ## Bounded read-only diagnostic
 
 When `[Debug] Log=1`, only **uncorrected** original 4-vertex D3D7
