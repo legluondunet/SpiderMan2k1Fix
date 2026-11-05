@@ -86,6 +86,11 @@ def test_original_pause_has_resolution_independent_four_by_three_geometry(tmp_pa
              * scrn0048.png and same-run Log=1, original caller 102C72,
              * full-width textureless quad at z=.00122/rhw=11.776. */
             assert(SpiderNativePause43_RibbonLayer(0.00122f,11.7760f));
+            /* Native Windows, Venom (2) F9 scrn0003 / log 135546:
+             * exact untextured ESC ribbon z=.00122/rhw=10.6651. */
+            assert(SpiderNativePause43_RibbonLayer(0.00122f,10.6651f));
+            assert(!SpiderNativePause43_RibbonLayer(0.00122f,10.4000f));
+            assert(!SpiderNativePause43_RibbonLayer(0.00122f,10.8700f));
             assert(!SpiderNativePause43_RibbonLayer(0.00122f,11.500f));
             assert(!SpiderNativePause43_RibbonLayer(0.00122f,11.950f));
             assert(!SpiderNativePause43_RibbonLayer(0.00122f,7.7f));
@@ -98,6 +103,11 @@ def test_original_pause_has_resolution_independent_four_by_three_geometry(tmp_pa
             /* Untextured alpha=80 geometric motif candidate,
              * original caller 102C72, z=.00146/rhw=10.5646. */
             assert(SpiderNativePause43_MotifLayer(0.00146f,10.5646f));
+            /* Same original draw caller, alpha-80 untextured motif
+             * candidate z=.00146/rhw=9.4993 in Venom (2). */
+            assert(SpiderNativePause43_MotifLayer(0.00146f,9.4993f));
+            assert(!SpiderNativePause43_MotifLayer(0.00146f,9.2500f));
+            assert(!SpiderNativePause43_MotifLayer(0.00146f,9.7500f));
             assert(!SpiderNativePause43_MotifLayer(0.00146f,10.300f));
             assert(!SpiderNativePause43_MotifLayer(0.00146f,10.900f));
             assert(!SpiderNativePause43_MotifLayer(0.00146f,6.9f));
@@ -122,6 +132,11 @@ def test_original_pause_has_resolution_independent_four_by_three_geometry(tmp_pa
              * require the original same-Flip 8x8 border geometry. */
             assert(SpiderNativePause43_TextLayer(0.00122f,11.7760f));
             assert(SpiderNativePause43_TextLayer(0.00098f,13.3012f));
+            /* The Venom (2) source log has NO sampled border or glyph
+             * depth: do not infer foreground/shadow from the ribbon,
+             * or turn the boss fill RHW into a glyph signature. */
+            assert(!SpiderNativePause43_TextLayer(0.00122f,10.6651f));
+            assert(!SpiderNativePause43_TextLayer(0.00098f,12.1569f));
             /* Do not interpolate between known text depths. */
             assert(!SpiderNativePause43_TextLayer(0.00122f,11.5500f));
             assert(!SpiderNativePause43_TextLayer(0.00098f,13.4600f));
@@ -177,12 +192,14 @@ def test_native_pause_still_uses_exact_render_signature_not_only_bounds():
     # budget, or a single combined run would never reveal its depths.
     assert "native_pause43_banner_probe_family" in CORE
     assert "native_pause43_detail_new_family_samples" in CORE
-    assert "sample_budget=family==1?&native_pause43_detail_new_family_samples:" in CORE
+    assert "sample_budget=family==2?&native_pause43_detail_venom2_samples:" in CORE
+    assert "family==1?&native_pause43_detail_new_family_samples:" in CORE
+    assert "SpiderNativePause43_Abs(rhw-10.6651f)<0.060f?2:" in CORE
     # Latest Mysterio F9/Log exhausted the first 80 samples on
     # 35 black shadows, 18 red title faces, boss UI and outlines,
     # before purple menu option faces appeared: extend only
     # the second source family with a bounded 160-sample cap.
-    assert "(family==1?160:80)" in CORE
+    assert "(family!=0?160:80)" in CORE
     assert "PAUSE-NATIVE-DETAIL: sample=%ld family=%ld" in CORE
 
 
