@@ -69,6 +69,9 @@ static unsigned gameover_probe_f9_prev=0;
 static unsigned gameover_probe_confirm_edges=0;
 static unsigned gameover_probe_confirm_reports=0;
 static unsigned gameover_probe_f9_reports=0;
+/* One mandatory read-only South snapshot after each captured F9,
+ * even if routine gameplay presses have exhausted periodic sampling. */
+static unsigned gameover_probe_post_f9_confirm=0;
 static uint32_t gameover_probe_owner=0;
 static void (*report)(const char *)=NULL;
 static void log_universal(const char *msg) {
@@ -369,6 +372,7 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   gameover_probe_confirm_prev=gameover_probe_f9_prev=0;
   gameover_probe_confirm_edges=gameover_probe_confirm_reports=0;
   gameover_probe_f9_reports=0;gameover_probe_owner=0;
+  gameover_probe_post_f9_confirm=0;
   spider_sdl3_universal_reset(&state);
   requested=ini &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1 &&
@@ -487,7 +491,7 @@ static void gameover_probe_snapshot(uint32_t owner,unsigned context,
     const SpiderSDL3ControllerSample *sample) {
   uint32_t engine_mode=0,task=0,input_active=0;
   uint32_t pause_context=0,menu_context=0,dispatcher=0,transition=0;
-  unsigned confirm=0,f9=0,confirm_edge,f9_edge;
+  unsigned confirm=0,f9=0,confirm_edge,f9_edge,confirm_after_f9=0;
   int good;
   char line[450];
   if(!report || !profile || !sample)return;
@@ -497,6 +501,7 @@ static void gameover_probe_snapshot(uint32_t owner,unsigned context,
     gameover_probe_owner=owner;
     gameover_probe_confirm_prev=0;
     gameover_probe_f9_prev=0;
+    gameover_probe_post_f9_confirm=0;
   }
   confirm=(unsigned)binding_held(
       profile->context[SPIDER_SDL3_CONTEXT_CONFIRM],sample);
@@ -506,13 +511,22 @@ static void gameover_probe_snapshot(uint32_t owner,unsigned context,
   gameover_probe_confirm_prev=confirm;
   gameover_probe_f9_prev=f9;
   if(confirm_edge)++gameover_probe_confirm_edges;
-  /* Bound active-combat noise: first 3, then every 16th confirm edge;
-   * F9 always has an independent 8-snapshot allowance to capture the
-   * actual screenshot frame even after many combat button presses. */
+  /* Each recorded F9 arms exactly one following South/Confirm snapshot.
+   * This is bounded by the independent 8-F9 budget, and ensures the
+   * actual GAME OVER Confirm is not lost to earlier combat presses. */
+  if(f9_edge && gameover_probe_f9_reports<8u)
+    gameover_probe_post_f9_confirm=1u;
+  if(!f9_edge && confirm_edge && gameover_probe_post_f9_confirm) {
+    confirm_after_f9=1u;
+    gameover_probe_post_f9_confirm=0;
+  }
+  /* Otherwise bound ordinary combat noise: first 3, then every 16th
+   * confirm edge, with a separate 12-event allowance. */
   if(!((f9_edge && gameover_probe_f9_reports<8u) ||
-       (confirm_edge && gameover_probe_confirm_reports<12u &&
-        (gameover_probe_confirm_edges<=3u ||
-         gameover_probe_confirm_edges%16u==0u))))return;
+       (confirm_edge && (confirm_after_f9 ||
+        (gameover_probe_confirm_reports<12u &&
+         (gameover_probe_confirm_edges<=3u ||
+          gameover_probe_confirm_edges%16u==0u))))))return;
   good=
     gameover_probe_read_u32(0x0060CFA4u,&engine_mode) &&
     gameover_probe_read_u32(0x0054A510u,&task) &&
@@ -526,10 +540,10 @@ static void gameover_probe_snapshot(uint32_t owner,unsigned context,
   else if(confirm_edge && gameover_probe_confirm_reports<12u)
     ++gameover_probe_confirm_reports;
   snprintf(line,sizeof(line),
-    "SDL3-GAMEOVER-PROBE: %s selected=%lu ctx=%u renderer(menu=%d 3d=%d bink=%d native-pause=%d) south-edges=%u engine-mode=%08lX task=%08lX input-active=%08lX pause-ctx=%u menu-ctx=%u dispatcher=%08lX transition=%08lX raw=%s [READ-ONLY; NOT A GAME-OVER DETECTOR]",
+    "SDL3-GAMEOVER-PROBE: %s selected=%lu ctx=%u renderer(menu=%d 3d=%d bink=%d native-pause=%d) south-edges=%u after-f9=%u engine-mode=%08lX task=%08lX input-active=%08lX pause-ctx=%u menu-ctx=%u dispatcher=%08lX transition=%08lX raw=%s [READ-ONLY; NOT A GAME-OVER DETECTOR]",
     f9_edge?"F9":"CONFIRM",(unsigned long)owner,context,
     menu,gameplay,bink,native_pause,gameover_probe_confirm_edges,
-    (unsigned long)engine_mode,(unsigned long)task,
+    confirm_after_f9,(unsigned long)engine_mode,(unsigned long)task,
     (unsigned long)input_active,(unsigned)(pause_context!=0u),
     (unsigned)(menu_context!=0u),(unsigned long)dispatcher,
     (unsigned long)transition,good?"OK":"UNAVAILABLE");
