@@ -112,3 +112,23 @@ def test_compositor_does_not_change_normal_main_menu_or_native_3d_path():
     assert 'UI-COMPOSITOR: OFF; existing UI canvas draw path unchanged' in src
     assert 'UI-COMPOSITOR: menu draw outside BeginScene, original draw retained' in src
     assert 'UI-COMPOSITOR: D3D7 stateblock/texture capture failed, native draw fallback' in src
+
+
+
+def test_synthetic_tint_is_off_unless_explicitly_opted_in():
+    core=(ROOT/"spiderman2k1fix.c").read_text()
+    assert "static volatile LONG ui_compositor_tint_enabled=0;" in core
+    assert "UI-COMPOSITOR-TINT: OFF - no synthetic fullscreen veil" in core
+    assert "UI-COMPOSITOR-TINT: ON - A/B synthetic fullscreen veil" in core
+    assert "tint[0]=='1'" in core
+    assert "tint[0]=='0'" not in core[core.index("/* Separate compositor opt-in:"):]
+
+
+def test_native_pause_motif_keeps_original_four_by_three_geometry():
+    core=(ROOT/"spiderman2k1fix.c").read_text()
+    marker="static const void *maybe_correct_native_motif43("
+    src=core.split(marker,1)[1].split("static volatile LONG native_motif43_gutter_hits",1)[0]
+    assert "center+(v[i].x-center)*native_esc43_scale()" in src
+    # A full-screen synthetic overlay is a DISTINCT optional layer,
+    # not a stretched version of the original motif geometry.
+    assert "ui_compositor_trial_enabled,0,0)!=1" in src
