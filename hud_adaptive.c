@@ -164,62 +164,50 @@ int SpiderHudAdaptive_Transform(const SpiderMenuVertex *src,
             region = SPIDER_HUD_ADAPTIVE_INSTRUCTIONS;
     }
 
-    /* Right-side vertical escort/objective HUD, e.g. Mary-Jane.
-     * The user-provided 1920x1080 4:3-reference capture places the
-     * round portrait at about x=1500..1625 and the vertical meter below.
-     * Original 1920x1200 widescreen imagery has the group farther
-     * right, near x=1670..1870. Reuse the native centered 4:3 X map
-     * rather than the right-edge anchored compass map.
+    /* Mary-Jane vertical objective HUD: the 2026-11-05 Wine 1920x1080
+     * F9/DrawPrimitive capture establishes three ORIGINAL source quads:
+     * portrait 64x64, x=1668.8..1856.2, y=319.5..454.5,
+     *   z=.00073 RHW=14.1343 ARGB=FFFFFFFF;
+     * border 32x32, x=1725..1815, y=652.5..715.5,
+     *   z=.00073 RHW=14.1340 ARGB=FFFFFFFF;
+     * vertical black fill, x=1751.2..1796.2, y=445.5..697.5,
+     *   z=.00098 RHW=12.1569 ARGB=FF000000.
      *
-     * Unlike the upper-right horizontal boss row, this vertical group
-     * extends into the right-middle of gameplay. Match a composite:
-     * far-right region + sprite geometry + game HUD Z/RHW/texture/color.
-     * No broad screen-rectangle-only sprite edits. The exact Mary-Jane
-     * primitive depths remain to be confirmed with a live capture;
-     * nonmatches are intentionally passed through unchanged. */
+     * These are NOT the upper boss HUD depths (.00024/20.9475).
+     * Check caller/FVF, viewport, screen-relative size, right-middle
+     * location, texture, color, z and RHW together. The black fill is
+     * the only confirmed textureless vertical component; other fills
+     * stay untouched until their own signatures are observed.
+     * All matched components use the same centered 4:3 X mapping.
+     * Original Y, Z, UV, color, RHW are bit-for-bit preserved. */
     if (region == SPIDER_HUD_ADAPTIVE_NONE &&
         minx >= (float)screen_w * 0.77f &&
         centerx > (float)screen_w * 0.83f &&
         miny >= (float)screen_h * 0.26f &&
         maxy <= (float)screen_h * 0.83f &&
         (color >> 24) == 0xFFu) {
-        /* Portrait plus 32px frame sections share the textured
-         * boss/escort overlay layer in previously captured scenes. */
         if (color == 0xFFFFFFFFu &&
-            hud_near(src[0].z, 0.0002f, 0.00012f) &&
-            src[0].rhw >= 19.0f && src[0].rhw <= 26.0f &&
+            hud_near(src[0].z, 0.00073f, 0.00004f) &&
+            hud_near(src[0].rhw, 14.1342f, 0.06f) &&
             ((tex_w == 64u && tex_h == 64u &&
-              width >= (float)screen_h * 0.105f &&
-              width <= (float)screen_h * 0.21f &&
-              height >= (float)screen_h * 0.105f &&
-              height <= (float)screen_h * 0.18f) ||
+              width >= (float)screen_h * 0.15f &&
+              width <= (float)screen_h * 0.20f &&
+              height >= (float)screen_h * 0.11f &&
+              height <= (float)screen_h * 0.15f) ||
              (tex_w == 32u && tex_h == 32u &&
-              width >= (float)screen_h * 0.04f &&
-              width <= (float)screen_h * 0.115f &&
+              width >= (float)screen_h * 0.06f &&
+              width <= (float)screen_h * 0.105f &&
               height >= (float)screen_h * 0.045f &&
-              height <= (float)screen_h * 0.12f)))
-            region = SPIDER_HUD_ADAPTIVE_OBJECTIVE;
-        /* Tall untextured vertical fill can change height when health
-         * decreases; do not require a single fixed damage value. */
-        else if (tex_w == 0u && tex_h == 0u &&
-                 width >= (float)screen_h * 0.018f &&
-                 width <= (float)screen_h * 0.082f &&
-                 height >= (float)screen_h * 0.022f &&
-                 height <= (float)screen_h * 0.47f &&
-                 hud_near(src[0].z, 0.0010f, 0.00012f) &&
-                 src[0].rhw >= 10.0f && src[0].rhw <= 17.0f &&
-                 (color & 0x00FFFFFFu) != 0u &&
-                 ((color & 0x0000FF00u) != 0u ||
-                  (color & 0x00FF0000u) != 0u))
+              height <= (float)screen_h * 0.085f)))
             region = SPIDER_HUD_ADAPTIVE_OBJECTIVE;
         else if (tex_w == 0u && tex_h == 0u &&
                  color == 0xFF000000u &&
-                 width >= (float)screen_h * 0.018f &&
-                 width <= (float)screen_h * 0.082f &&
-                 height >= (float)screen_h * 0.022f &&
-                 height <= (float)screen_h * 0.47f &&
-                 hud_near(src[0].z, 0.0007f, 0.00012f) &&
-                 src[0].rhw >= 13.0f && src[0].rhw <= 19.0f)
+                 hud_near(src[0].z, 0.00098f, 0.00004f) &&
+                 hud_near(src[0].rhw, 12.1569f, 0.06f) &&
+                 width >= (float)screen_h * 0.025f &&
+                 width <= (float)screen_h * 0.065f &&
+                 height >= (float)screen_h * 0.02f &&
+                 height <= (float)screen_h * 0.47f)
             region = SPIDER_HUD_ADAPTIVE_OBJECTIVE;
     }
 
