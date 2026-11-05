@@ -976,6 +976,7 @@ static const void *maybe_correct_horplus(D3DPRIMITIVETYPE type,DWORD fvf,
  * screen-space D3D7 quads. No per-level/texture/color HUD rule. */
 static volatile LONG ui_canvas_trial_enabled=0;
 static volatile LONG ui_canvas_trial_hits=0;
+static volatile LONG ui_canvas_fullscreen_kept=0;
 static const void *maybe_correct_unified_ui_canvas(
                    D3DPRIMITIVETYPE type,DWORD fvf,
                    const void *source,DWORD count,void *caller,
@@ -990,8 +991,28 @@ static const void *maybe_correct_unified_ui_canvas(
      InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
      InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
      !source || !copy || count!=4 ||
-     !geom_rva(caller,&rva) ||
-     !SpiderUICanvas_43Transform(
+     !geom_rva(caller,&rva))
+    return source;
+  /* Generic presentation-surface guard. An original quad that spans
+   * the display horizontally and covers the frame or an edge letterbox
+   * band stays full width, outside the virtual 4:3 HUD canvas. */
+  if(SpiderUICanvas_43IsFullScreenEffect(
+        (const SpiderMenuVertex*)source,(unsigned)count,
+        (unsigned)type,(uint32_t)fvf,(uint32_t)rva,
+        (unsigned)desktop_w,(unsigned)desktop_h)) {
+    hit=InterlockedIncrement(&ui_canvas_fullscreen_kept);
+    if(debug_log_enabled && (hit<=8 || hit%360==0)) {
+      const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+      snprintf(message,sizeof(message),
+        "UI-CANVAS-FULLSCREEN: keep=%ld x0=%.1f y0=%.1f color=%08lX z=%.5f rhw=%.4f [PRESENTATION; ORIGINAL X]",
+        (long)hit,(double)v[0].x,(double)v[0].y,
+        (unsigned long)v[0].diffuse,
+        (double)v[0].z,(double)v[0].rhw);
+      log_line(message);
+    }
+    return source;
+  }
+  if(!SpiderUICanvas_43Transform(
         (const SpiderMenuVertex*)source,copy,
         (unsigned)count,(unsigned)type,(uint32_t)fvf,
         (uint32_t)rva,(unsigned)desktop_w,(unsigned)desktop_h))
