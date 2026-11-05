@@ -1831,6 +1831,10 @@ static void maybe_log_hud_visual_candidate(void *device,
  * no pointer scanning, texture modification, DrawPrimitive recursion,
  * render-state changes or unbounded per-frame logging. */
 static volatile LONG native_pause43_detail_samples=0;
+/* The original 80 samples in the later Mysterio scene ended before
+ * the violet foreground choices were drawn; keep family=0 at 80,
+ * but allow 160 bounded read-only family=1 samples to capture both
+ * red heading and all choice colors in a single user test. */
 static volatile LONG native_pause43_detail_new_family_samples=0;
 static void maybe_log_native_pause43_detail(void *device,
                   D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
@@ -1856,7 +1860,8 @@ static void maybe_log_native_pause43_detail(void *device,
   family=InterlockedCompareExchange(&native_pause43_banner_probe_family,0,0);
   sample_budget=family==1?&native_pause43_detail_new_family_samples:
                          &native_pause43_detail_samples;
-  if(InterlockedCompareExchange(sample_budget,0,0)>=80)return;
+  if(InterlockedCompareExchange(sample_budget,0,0)>=
+       (family==1?160:80))return;
   l=r=v[0].x;t=b=v[0].y;
   for(i=1;i<4;i++) {
     if(v[i].x<l)l=v[i].x;
@@ -1881,7 +1886,7 @@ static void maybe_log_native_pause43_detail(void *device,
   if(!((th==32u && (tw==16u || tw==32u || tw==64u)) ||
        (tw==8u && th==8u)))return;
   sample=InterlockedIncrement(sample_budget);
-  if(sample>80)return;
+  if(sample>(family==1?160:80))return;
   snprintf(line,sizeof(line),
     "PAUSE-NATIVE-DETAIL: sample=%ld family=%ld flip=%ld corrected=%d quad=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f color=%08lX tex=%lux%lu fmt=%08lX [READ-ONLY]",
     (long)sample,(long)family,(long)flip,corrected,
