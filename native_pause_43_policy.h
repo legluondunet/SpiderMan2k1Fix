@@ -65,15 +65,19 @@ static inline int SpiderNativePause43_MotifLayer(float z,float rhw)
             SpiderNativePause43_Abs(rhw-10.5646f)<0.060f);
 }
 
-/* Shadow and face of native Pause letters have three independently
+/* Shadow and face of native Pause letters have four independently
  * measured source-depth pairs:
  *  - original: shadow z=.00122/rhw=11.176, face z=.00098/rhw=12.686
  *  - second scene: shadow 8.9615, face 10.3609
  *  - Rhino boss: shadow 6.8041, face 8.0113.
- * Later Mysterio scene shows a DIFFERENT ribbon RHW 11.7760,
- * but its shadow/face glyph source depths were not captured in the
- * supplied log because the ribbon was previously rejected. Leave
- * these unknown letter layers UNMODIFIED until independently logged.
+ *  - Later Mysterio encounter: shadow z=.00122/rhw=11.7760,
+ *    face z=.00098/rhw=13.3012 (2026-11-05 scrn0049.png).
+ * The Mysterio depth pair is now directly confirmed by the second
+ * source-RHW-family read-only probe: 35 shadow quads (FF000000,
+ * Z=.00122/RHW=11.7760) and 18 red-title face quads (FFFE3242,
+ * Z=.00098/RHW=13.3012) were uncorrected in the latest screenshot.
+ * Identical 8x8 original ESC frame tiles share the shadow depth,
+ * but still require exact same-Flip native ribbon and border bounds.
  * Rhino scrn0045.png / Log=1 (2026-11-05 01:59:35) confirms 48
  * corrected black-shadow samples and 32 missed colored-face samples
  * (FFFE3242 title, FF8A78D6 options) at z=.00098/rhw=8.0113.
@@ -86,11 +90,13 @@ static inline int SpiderNativePause43_TextLayer(float z,float rhw)
     return (SpiderNativePause43_Abs(z-0.00122f)<0.00010f &&
             (SpiderNativePause43_Abs(rhw-11.176f)<0.30f ||
              SpiderNativePause43_Abs(rhw-8.9615f)<0.060f ||
-             SpiderNativePause43_Abs(rhw-6.8041f)<0.060f)) ||
+             SpiderNativePause43_Abs(rhw-6.8041f)<0.060f ||
+             SpiderNativePause43_Abs(rhw-11.7760f)<0.060f)) ||
            (SpiderNativePause43_Abs(z-0.00098f)<0.00010f &&
             (SpiderNativePause43_Abs(rhw-12.686f)<0.30f ||
              SpiderNativePause43_Abs(rhw-10.3609f)<0.060f ||
-             SpiderNativePause43_Abs(rhw-8.0113f)<0.060f));
+             SpiderNativePause43_Abs(rhw-8.0113f)<0.060f ||
+             SpiderNativePause43_Abs(rhw-13.3012f)<0.060f));
 }
 
 /* Geometry-only *candidate* for the native game ESC purple ribbon.
