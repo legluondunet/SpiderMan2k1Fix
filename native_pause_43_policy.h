@@ -60,15 +60,19 @@ static inline int SpiderNativePause43_MotifLayer(float z,float rhw)
 }
 
 /* Shadow and face of native Pause letters have two verified depth
- * families. The old level-1/menu traces use 11.176 and 12.686;
- * 2026-11-04 level-2 text samples use 8.9615 and 10.3609.
+ * families. Original menu traces use 11.176 and 12.686;
+ * 2026-11-04 second-scene text uses 8.9615 and 10.3609.
+ * The Rhino banner depth 6.8041 also covers border and dark-face
+ * glyph candidates, but its independent bright glyph depth is NOT
+ * yet measured. Do not infer a new foreground depth from the banner.
  * Both must still pass exact original game caller, same-Flip ribbon,
  * 16/32/64x32 texture and source-quad bounds before mapping. */
 static inline int SpiderNativePause43_TextLayer(float z,float rhw)
 {
     return (SpiderNativePause43_Abs(z-0.00122f)<0.00010f &&
             (SpiderNativePause43_Abs(rhw-11.176f)<0.30f ||
-             SpiderNativePause43_Abs(rhw-8.9615f)<0.060f)) ||
+             SpiderNativePause43_Abs(rhw-8.9615f)<0.060f ||
+             SpiderNativePause43_Abs(rhw-6.8041f)<0.060f)) ||
            (SpiderNativePause43_Abs(z-0.00098f)<0.00010f &&
             (SpiderNativePause43_Abs(rhw-12.686f)<0.30f ||
              SpiderNativePause43_Abs(rhw-10.3609f)<0.060f));
