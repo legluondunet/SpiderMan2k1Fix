@@ -132,3 +132,30 @@ def test_native_pause_motif_keeps_original_four_by_three_geometry():
     # A full-screen synthetic overlay is a DISTINCT optional layer,
     # not a stretched version of the original motif geometry.
     assert "ui_compositor_trial_enabled,0,0)!=1" in src
+
+
+
+def test_every_end_scene_has_bounded_compositor_status():
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    assert "static volatile LONG ui_comp_flushed_frames=0" in src
+    assert "InterlockedIncrement(&ui_comp_flushed_frames)" in src
+    assert "frame<=3 || frame%180==0 || !all_ok" in src
+    assert "UI-COMPOSITOR-FRAME: frame=" in src
+    # With a varying number of commands per frame, testing the cumulative
+    # primitive counter modulo 1200 could fail to log any successful replay.
+    flush=src.split("static void ui_comp_flush(",1)[1].split(
+        "static int ui_comp_capture(",1)[0]
+    assert "n%1200==0" not in flush
+
+
+def test_background_coverage_probe_is_passive_and_scene_scoped():
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    probe=src.split("static void ui_comp_probe_fullscreen_source(",1)[1].split(
+        "static HRESULT WINAPI hooked_draw_primitive(",1)[0]
+    assert "UI-COMPOSITOR-COVERAGE-PROBE:" in probe
+    assert "native_pause43_visible_near_flip(" in probe
+    assert "!ui_comp_scene_open || ui_comp_bailout || native_esc" in probe
+    assert "D3DRENDERSTATE_ALPHABLENDENABLE" in probe
+    assert "IDirect3DDevice7_SetRenderState(" not in probe
+    assert "original_draw_primitive(" not in probe
+    assert "ui_comp_probe_fullscreen_source(self,type,fvf,verts,count,native_esc_primitive)" in src
