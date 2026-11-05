@@ -329,42 +329,61 @@ def test_venom_matches_1920x1080_reference_bar_and_portrait(api):
 
 
 @pytest.mark.parametrize("texture,z,rhw,color,bounds", [
-    # Hypothetical original right-side 1920x1200 Mary-Jane portrait.
-    # These are *geometry trial* quads, not proven source signatures.
-    ((64, 64), .0002, 21.3309, 0xFFFFFFFF, (1680, 350, 1848.8, 505)),
-    ((32, 32), .0002, 21.3309, 0xFFFFFFFF, (1687.5, 490, 1785, 565)),
-    ((0, 0), .0010, 12.6862, 0xFF8888FF, (1720, 565, 1770, 790)),
-    ((0, 0), .0007, 15.6029, 0xFF000000, (1720, 565, 1770, 620)),
+    # Actual source quads from Wine 2026-11-05 1920x1080 F9 trace.
+    ((64, 64), .00073, 14.1343, 0xFFFFFFFF,
+     (1668.8, 319.5, 1856.2, 454.5)),  # Mary-Jane portrait
+    ((32, 32), .00073, 14.1340, 0xFFFFFFFF,
+     (1725.0, 652.5, 1815.0, 715.5)),  # vertical bar frame
+    ((0, 0), .00098, 12.1569, 0xFF000000,
+     (1751.2, 445.5, 1796.2, 697.5)),  # black vertical fill
 ])
-def test_vertical_objective_right_side_43_reprojection(
+def test_captured_mary_jane_objective_4_3_reprojection(
         api, texture, z, rhw, color, bounds):
     source = quad(*bounds, z=z, rhw=rhw, diffuse=color)
-    kind, result = mapped(api, source, tex=texture, output=(1920, 1200))
+    kind, result = mapped(api, source, tex=texture, output=(1920, 1080))
     assert kind == 4
     for original, transformed in zip(source, result):
         assert transformed.x == pytest.approx(
-            960 + (original.x - 960) * (5 / 6), abs=.03)
+            960 + (original.x - 960) * .75, abs=.03)
     check_other_coordinates_unchanged(source, result)
-    assert mapped(api, source, tex=texture, output=(1600, 1200))[0] == 0
+    assert mapped(api, source, tex=texture, output=(1440, 1080))[0] == 0
 
 
-def test_objective_classifier_fails_closed_outside_rhs_and_hud_layers(api):
-    valid = quad(1680, 350, 1848.8, 505, z=.0002,
-                 rhw=21.3309, diffuse=0xFFFFFFFF)
+def test_objective_classifier_rejects_unverified_layers_and_world(api):
+    portrait = quad(1668.8, 319.5, 1856.2, 454.5,
+                    z=.00073, rhw=14.1343,
+                    diffuse=0xFFFFFFFF)
+    assert mapped(api, portrait, tex=(64, 64))[0] == 4
     for texture in [(0, 0), (32, 32), (64, 32)]:
-        assert mapped(api, valid, tex=texture, output=(1920, 1200))[0] == 0
-    world = quad(1680, 350, 1848.8, 505, z=.9983,
-                 rhw=.0229, diffuse=0xFFFFFFFF)
-    assert mapped(api, world, tex=(64, 64), output=(1920, 1200))[0] == 0
-    center_scene = quad(880, 350, 1048.8, 505, z=.0002,
-                        rhw=21.3309, diffuse=0xFFFFFFFF)
-    assert mapped(api, center_scene, tex=(64, 64), output=(1920, 1200))[0] == 0
-    too_low = quad(1680, 910, 1848.8, 1065, z=.0002,
-                   rhw=21.3309, diffuse=0xFFFFFFFF)
-    assert mapped(api, too_low, tex=(64, 64), output=(1920, 1200))[0] == 0
-    too_large = quad(1520, 350, 1848.8, 505, z=.0002,
-                     rhw=21.3309, diffuse=0xFFFFFFFF)
-    assert mapped(api, too_large, tex=(64, 64), output=(1920, 1200))[0] == 0
+        assert mapped(api, portrait, tex=texture)[0] == 0
+    for z, rhw in [(.00024, 20.9475), (.00100, 12.1569),
+                   (.9983, .0229), (.00073, 19.0)]:
+        wrong = quad(1668.8, 319.5, 1856.2, 454.5,
+                     z=z, rhw=rhw, diffuse=0xFFFFFFFF)
+        assert mapped(api, wrong, tex=(64, 64))[0] == 0
+    assert mapped(api, portrait, tex=(64, 64),
+                  rva=0x00102C71)[0] == 0
+
+    fill = quad(1751.2, 445.5, 1796.2, 697.5,
+                z=.00098, rhw=12.1569, diffuse=0xFF000000)
+    assert mapped(api, fill, tex=(0, 0))[0] == 4
+    # The corresponding other-colour fill is not yet measured.
+    # Fail closed rather than change unknown layers based on colour alone.
+    fill[0].diffuse = 0xFF8888FF
+    assert mapped(api, fill, tex=(0, 0))[0] == 0
+    fill[0].diffuse = 0xFF000000
+    fill[0].rhw = 15.6029
+    assert mapped(api, fill, tex=(0, 0))[0] == 0
+
+    center_scene = quad(880, 319.5, 1067.4, 454.5,
+                        z=.00073, rhw=14.1343, diffuse=0xFFFFFFFF)
+    assert mapped(api, center_scene, tex=(64, 64))[0] == 0
+    too_low = quad(1668.8, 910, 1856.2, 1045,
+                   z=.00073, rhw=14.1343, diffuse=0xFFFFFFFF)
+    assert mapped(api, too_low, tex=(64, 64))[0] == 0
+    too_large = quad(1520, 319.5, 1856.2, 454.5,
+                     z=.00073, rhw=14.1343, diffuse=0xFFFFFFFF)
+    assert mapped(api, too_large, tex=(64, 64))[0] == 0
 
 
 def test_boss_mismatch_or_world_primitives_are_never_transformed(api):
