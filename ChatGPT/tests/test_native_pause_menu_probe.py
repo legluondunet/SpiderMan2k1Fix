@@ -45,10 +45,10 @@ def test_native_pause_classifies_original_banner_border_and_text_without_touchin
                   "rva!=0x00102C72UL", "D3DPT_TRIANGLEFAN",
                   "fvf!=0x144UL", "count!=4", "tw==8 && th==8",
                   "tw==16 || tw==32 || tw==64",
-                  "copy[i].x=mapped", "1439.0f/1479.0f",
-                  "1439.0f/1448.5f"):
+                  "copy[i].x=center+(v[i].x-center)*aspect_scale"):
         assert token in PAUSE
-    for forbidden in ("PostMessage(", "SendInput(", "SetTexture(",
+    for forbidden in ("1439.0f/1479.0f", "1439.0f/1448.5f",
+                      "PostMessage(", "SendInput(", "SetTexture(",
                       "keybd_event(", "src[i].x=", "copy[i].y="):
         assert forbidden not in PAUSE
     assert "8x8" in DOC and "ribbon" in DOC
@@ -59,7 +59,7 @@ def test_motif_requires_untextured_original_alpha_quads_at_exact_depth():
                   "native_pause43_enabled", "!native_esc43_supported_monitor()",
                   "gameplay_4x3_active",
                   "menu_upscale_active", "rva!=0x00102C72UL",
-                  "fabsf(v[0].z-0.00146f)", "fabsf(v[0].rhw-9.988f)",
+                  "SpiderNativePause43_MotifLayer(v[0].z,v[0].rhw)",
                   "(color&0xFF000000UL)!=0x80000000UL",
                   "vertex_color&0xFF000000UL",
                   "IDirect3DDevice7_GetTexture(", "IDirectDrawSurface7_Release(tex)",
@@ -138,7 +138,7 @@ def test_native_esc_43_geometry_at_16_9_16_10_and_classic_4_3():
     assert "InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0" in PAUSE
     assert "InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0" in MOTIF
     assert "InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0" in CURSOR
-    assert "return desktop_w==1920 && (desktop_h==1080 || desktop_h==1200)" in CORE
+    assert "return SpiderNativePause43_Widescreen((unsigned)desktop_w," in CORE
     assert "native_esc43_left_gutter(void)" in CORE
     assert "native_esc43_scale(void)" in CORE
 

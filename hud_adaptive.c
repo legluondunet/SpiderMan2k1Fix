@@ -97,12 +97,17 @@ int SpiderHudAdaptive_Transform(const SpiderMenuVertex *src,
     centery = (miny + maxy) * 0.5f;
     color = src[0].diffuse;
 
-    /* Compass has its own depth layers. Restrict to right/bottom section.
-     * 64x64 halves are horizontally mirrored in UV, not arbitrary sprites. */
-    if (minx > (float)screen_w * 0.65f &&
-        centerx > (float)screen_w * 0.75f &&
-        miny > (float)screen_h * 0.70f &&
-        maxy < (float)screen_h * 0.96f &&
+    /* Compass is not anchored to the bottom-right in every scene:
+     * cutscenes and aim sequences move it up/left. The previous hard
+     * miny>70% / centerx>75% gate rejected the same 64x64 halves
+     * even though their Z/RHW, mirrored UV, and size still matched.
+     * Keep a generous right-side HUD region, while retaining all
+     * specific texture/depth/UV/size guards below. Do not classify
+     * reticles from shape or position alone. */
+    if (minx > (float)screen_w * 0.48f &&
+        centerx > (float)screen_w * 0.55f &&
+        miny > (float)screen_h * 0.25f &&
+        maxy < (float)screen_h * 0.985f &&
         hud_near(src[0].z, 0.0f, 0.0001f)) {
         if (tex_w == 64u && tex_h == 64u &&
             hud_near(src[0].rhw, 27.6000f, 0.10f) &&

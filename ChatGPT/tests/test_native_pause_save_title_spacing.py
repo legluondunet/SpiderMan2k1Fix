@@ -28,7 +28,7 @@ def test_native_title_classifier_stays_inside_existing_safe_d3d_owner():
         "native_pause43_enabled", "menu_upscale_active", "gameplay_4x3_active",
         "rva!=0x00102C72UL", "count!=4", "fvf!=0x144UL",
         "native_pause43_banner_flip", "tw==16 || tw==32 || tw==64",
-        "fabsf(z-0.00098f)", "fabsf(rhw-12.686f)",
+        "SpiderNativePause43_TextLayer(z,rhw)",
         "right-left<10.0f", "bottom-top<24.0f",
     ):
         assert gate in block

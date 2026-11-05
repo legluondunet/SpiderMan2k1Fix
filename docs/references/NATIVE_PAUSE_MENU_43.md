@@ -1,5 +1,23 @@
 # Native gameplay ESC menu: 4:3 presentation in widescreen
 
+> **2026-11-04, PR #109 (runtime NOT validated):** The Dreamcast
+> reference has a centered native Pause panel; screenshots `scrn0020.png`
+> and `scrn0021.png` show the same distorted full-width panel. Direct
+> analysis of the original 1920×1080 files places the border at
+> **y≈398..681**, not y≈342..585 as incorrectly estimated from a smaller
+> preview. The bottom already exceeded 55% of display H: relaxing the
+> previous bound was not a fix, and the original >=55% bound is retained.
+> Matching must still pass the original caller, triangle fan, FVF,
+> no-texture, Z/RHW and same-Flip checks; a corresponding Log=1 runtime
+> journal is needed to identify the failing gate.
+> A pure helper now maps the whole native ESC artwork to a centered
+> 4:3 region for any valid widescreen output resolution; border/font
+> tolerances and selector candidates also scale with the output size.
+> Existing 1920×1080 and 1920×1200 signatures retain their validated
+> guards. The level-2 1920×1080 case was **visually observed failing**
+> after the preceding code change. New resolutions are not validated. No arbitrary D3D7
+> geometry or the underlying 3D scene is transformed.
+
 The original **Spider-Man PC (2001)** 3D gameplay ESC screen has a
 full-screen translucent orange/blue geometric motif, a purple options ribbon,
 text, and a red spider-shaped selector. These are 2D Direct3D7 primitives

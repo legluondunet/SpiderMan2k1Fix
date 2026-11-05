@@ -14,7 +14,12 @@
 #include <d3d.h>
 #include "hud_widescreen.h"
 #include "hud_adaptive.h"
+#include "hud_visual_candidates.h"
+#include "hud_aim_reticle.h"
+#include "hud_boss_probe.h"
+#include "hud_boss_native.h"
 #include "native_pause_title_bounds.h"
+#include "native_pause_43_policy.h"
 #include "frame_limiter.h"
 #include "display_plan.h"
 #include "menu_scale.h"
@@ -1034,13 +1039,16 @@ static int native_esc43_hud_setting_enabled(const char *key,
   return SpiderHudWidescreen_Installed()!=0;
 }
 
-/* Guard the original native ESC draw signatures to the two measured
- * 1920-wide outputs. Other monitor sizes remain untouched. */
+/* Accept native widescreen outputs of any resolution, but only when
+ * exact game-owned D3D7 caller/texture/layer signatures ALSO match.
+ * The menu's 4:3 proportion is independent of pixel dimensions. */
 static int native_esc43_supported_monitor(void) {
-  return desktop_w==1920 && (desktop_h==1080 || desktop_h==1200);
+  return SpiderNativePause43_Widescreen((unsigned)desktop_w,
+                                        (unsigned)desktop_h);
 }
 static float native_esc43_scale(void) {
-  return ((float)desktop_h*(4.0f/3.0f))/(float)desktop_w;
+  return SpiderNativePause43_Scale((unsigned)desktop_w,
+                                   (unsigned)desktop_h);
 }
 static float native_esc43_left_gutter(void) {
   return ((float)desktop_w-(float)desktop_h*(4.0f/3.0f))*0.5f;
@@ -1055,6 +1063,10 @@ static float native_esc43_left_gutter(void) {
  */
 static volatile LONG native_pause43_enabled=0;
 static volatile LONG native_pause43_banner_flip=-1;
+/* Read-only probe family derived from verified source ribbon RHW, not
+ * any game level or scene name. Separate sample budgets allow a later
+ * depth family to be observed after 80 earlier glyph samples. */
+static volatile LONG native_pause43_banner_probe_family=0;
 static volatile LONG native_pause43_banner_hits=0;
 static volatile LONG native_pause43_border_hits=0;
 static volatile LONG native_pause43_banner_top=0;
@@ -1113,22 +1125,21 @@ static const void *maybe_correct_native_pause43(void *device,
    * for native ESC and y~432..634 for QUIT confirmation.
    * The tolerance supports animation, NOT arbitrary full-width draws.
    */
-  ribbon=(left>=-30.0f && left<=20.0f &&
-       right>=(float)desktop_w-25.0f &&
-       right<=(float)desktop_w+35.0f &&
-       top>=(float)desktop_h*0.30f &&
-       top<=(float)desktop_h*0.52f &&
-       bottom>=(float)desktop_h*0.55f &&
-       bottom<(float)desktop_h*0.72f &&
-       (bottom-top)>(float)desktop_h*0.11f &&
-       fabsf(z-0.00122f)<0.00010f &&
-       fabsf(rhw-11.176f)<0.25f);
+  /* GE-Proton 11-12 / level-2 native ESC: same verified caller, Z,
+   * untextured wide ribbon and geometry, but distinct RHW=8.9615.
+   * Retain legacy RHW=11.176 exactly; never accept RHW in between.
+   * Original 4:3 gameplay remains excluded at function entry. */
+  ribbon=SpiderNativePause43_RibbonBounds(
+       left,right,top,bottom,(unsigned)desktop_w,(unsigned)desktop_h) &&
+       SpiderNativePause43_RibbonLayer(z,rhw);
   if(ribbon) {
     /* The banner has no texture. Recheck the live bound texture here
      * rather than relying solely on depth and broad geometry.
      */
     if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)) &&
        tex) { IDirectDrawSurface7_Release(tex);return source; }
+    InterlockedExchange(&native_pause43_banner_probe_family,
+       SpiderNativePause43_Abs(rhw-11.7760f)<0.060f?1:0);
     InterlockedExchange(&native_pause43_banner_top,(LONG)top);
     InterlockedExchange(&native_pause43_banner_bottom,(LONG)bottom);
     InterlockedExchange(&native_pause43_banner_flip,flip);
@@ -1143,8 +1154,9 @@ static const void *maybe_correct_native_pause43(void *device,
      */
     bt=InterlockedCompareExchange(&native_pause43_banner_top,0,0);
     bb=InterlockedCompareExchange(&native_pause43_banner_bottom,0,0);
-    if(!((fabsf(z-0.00098f)<0.00010f && fabsf(rhw-12.686f)<0.30f) ||
-         (fabsf(z-0.00122f)<0.00010f && fabsf(rhw-11.176f)<0.30f)))
+    /* Source-backed strict depth variants: old menu and level-2
+     * shadow/foreground glyphs measured in the maintainer's log. */
+    if(!SpiderNativePause43_TextLayer(z,rhw))
       return source;
     if(FAILED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)) ||
        !tex)return source;
@@ -1153,26 +1165,33 @@ static const void *maybe_correct_native_pause43(void *device,
       tw=desc.dwWidth;th=desc.dwHeight;
     }
     IDirectDrawSurface7_Release(tex);
-    if(tw==8 && th==8 && bb>bt+55 &&
-       fabsf(z-0.00122f)<0.00010f &&
-       fabsf(rhw-11.176f)<0.25f) {
-      int near_left=(left>=-42.0f && left<=-12.0f &&
-                     right>=7.0f && right<=38.0f);
-      int near_right=(left>=(float)desktop_w-17.0f &&
-                      left<=(float)desktop_w+13.0f &&
-                      right>=(float)desktop_w+16.0f &&
-                      right<=(float)desktop_w+70.0f);
-      int at_top=fabsf(top-((float)bt-4.5f))<5.0f;
-      int at_bottom=fabsf(top-((float)bb-9.0f))<5.0f;
-      int horizontal=(fabsf(left)<12.0f &&
-          fabsf(right-(float)desktop_w)<20.0f &&
-          bottom-top>=14.0f && bottom-top<=24.0f &&
-          (at_top || fabsf(top-(float)bb)<5.0f));
+    /* Normalize old pixel-sized border tolerances for other output
+     * resolutions. Preserve the two empirically verified 1920-wide
+     * geometries unchanged, including their 16:10 variation. */
+    if(tw==8 && th==8 &&
+       bb>bt+55.0f*(desktop_w==1920?1.0f:(float)desktop_h/1080.0f) &&
+       /* Borders share the verified ribbon depth, not arbitrary text
+        * shadow layers; accept only the two exact ribbon signatures. */
+       SpiderNativePause43_RibbonLayer(z,rhw)) {
+      float sx=(float)desktop_w/1920.0f;
+      float sy=desktop_w==1920?1.0f:(float)desktop_h/1080.0f;
+      int near_left=(left>=-42.0f*sx && left<=-12.0f*sx &&
+                     right>=7.0f*sx && right<=38.0f*sx);
+      int near_right=(left>=(float)desktop_w-17.0f*sx &&
+                      left<=(float)desktop_w+13.0f*sx &&
+                      right>=(float)desktop_w+16.0f*sx &&
+                      right<=(float)desktop_w+70.0f*sx);
+      int at_top=fabsf(top-((float)bt-4.5f*sy))<5.0f*sy;
+      int at_bottom=fabsf(top-((float)bb-9.0f*sy))<5.0f*sy;
+      int horizontal=(fabsf(left)<12.0f*sx &&
+          fabsf(right-(float)desktop_w)<20.0f*sx &&
+          bottom-top>=14.0f*sy && bottom-top<=24.0f*sy &&
+          (at_top || fabsf(top-(float)bb)<5.0f*sy));
       int side=(near_left || near_right) &&
-          fabsf((bottom-top)-((float)bb-(float)bt-9.0f))<18.0f &&
-          fabsf(top-((float)bt+4.5f))<8.0f;
+          fabsf((bottom-top)-((float)bb-(float)bt-9.0f*sy))<18.0f*sy &&
+          fabsf(top-((float)bt+4.5f*sy))<8.0f*sy;
       int corner=(near_left || near_right) &&
-          bottom-top>=18.0f && bottom-top<=30.0f &&
+          bottom-top>=18.0f*sy && bottom-top<=30.0f*sy &&
           (at_top || at_bottom);
       border=horizontal || side || corner;
     }
@@ -1185,8 +1204,10 @@ static const void *maybe_correct_native_pause43(void *device,
              left,right,top,bottom,(float)desktop_w,(float)desktop_h) ||
          top<(float)desktop_h*0.13f ||
          bottom>(float)desktop_h*0.63f ||
-         right-left<10.0f || right-left>84.0f ||
-         bottom-top<24.0f || bottom-top>83.0f)
+         right-left<10.0f*((float)desktop_w/1920.0f) ||
+         right-left>84.0f*((float)desktop_w/1920.0f) ||
+         bottom-top<24.0f*(desktop_w==1920?1.0f:(float)desktop_h/1080.0f) ||
+         bottom-top>83.0f*(desktop_w==1920?1.0f:(float)desktop_h/1080.0f))
         return source;
       glyph=(th==32 && (tw==16 || tw==32 || tw==64));
       if(!glyph)return source;
@@ -1195,33 +1216,28 @@ static const void *maybe_correct_native_pause43(void *device,
   center=(float)desktop_w*0.5f;
   aspect_scale=native_esc43_scale();
   memcpy(copy,v,4*sizeof(*copy));
-  for(i=0;i<4;i++) {
-    float mapped=center+(v[i].x-center)*aspect_scale;
-    /* Reference F9: original 4:3 outline x=241..1679 (1439px).
-     * The current 1920x1080 Auto outline is x=224..1702 (1479px),
-     * but the untextured fill is already much closer to 4:3. Do NOT
-     * indiscriminately shrink text or the entire HUD by 2.7%.
-     * Empirical calibration is intentionally exclusive to the one
-     * measured resolution until another mode is validated in-game.
-     */
-    if(desktop_w==1920 && desktop_h==1080) {
-      if(border)
-        mapped=960.0f+(mapped-963.0f)*(1439.0f/1479.0f);
-      else if(ribbon)
-        mapped=960.0f+(mapped-958.6f)*(1439.0f/1448.5f);
-    }
-    copy[i].x=mapped;
-  }
+  /* Dreamcast 1920x1080 reference (2026-11-04): native Pause outline
+   * x≈223..1702 (1480px). Previous empirical 1439px calibration
+   * artificially narrowed only the ribbon and its 8x8 border strokes:
+   * Wine screenshot scrn0024.png showed x=241..1679 (1439px).
+   * The original 8x8 edge stroke source quads (-22.5..15,
+   * 1912.5..1950) mapped with the canonical centered 4:3 factor
+   * produce x≈223..1703, matching Dreamcast without special offsets.
+   * Text has already been verified with this exact same transform.
+   * Do not alter the 3D scene, HUD, movie bars or native 4:3 output. */
+  for(i=0;i<4;i++)
+    copy[i].x=center+(v[i].x-center)*aspect_scale;
   if(ribbon) hit=InterlockedIncrement(&native_pause43_banner_hits);
   else if(border) hit=InterlockedIncrement(&native_pause43_border_hits);
   else hit=InterlockedIncrement(&native_pause43_glyph_hits);
   if(hit<=4 || (hit%600)==0) {
     char line[230];
     snprintf(line,sizeof(line),
-      "PAUSE-NATIVE-43: %s hit=%ld flip=%ld x=(%.1f..%.1f) scale=%.5f tex=%lux%lu [NATIVE-ESC-43]",
+      "PAUSE-NATIVE-43: %s hit=%ld flip=%ld x=(%.1f..%.1f) scale=%.5f tex=%lux%lu z=%.5f rhw=%.4f [NATIVE-ESC-43]",
       ribbon?"ribbon":border?"border":"glyph",(long)hit,(long)flip,
       (double)left,(double)right,(double)aspect_scale,
-      (unsigned long)tw,(unsigned long)th);
+      (unsigned long)tw,(unsigned long)th,
+      (double)z,(double)rhw);
     log_line(line);
   }
   return copy;
@@ -1265,8 +1281,9 @@ static const void *maybe_correct_native_motif43(void *device,
      InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
      type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4 ||
      !geom_rva(ret,&rva) || rva!=0x00102C72UL ||
-     fabsf(v[0].z-0.00146f)>0.00004f ||
-     fabsf(v[0].rhw-9.988f)>0.060f) return source;
+     /* Known original native motif layer: two RHW variants, same Z.
+      * The classifier is pure and tested across both variants. */
+     !SpiderNativePause43_MotifLayer(v[0].z,v[0].rhw)) return source;
   memcpy(&color,(const BYTE*)source+16,sizeof(color));
   if((color&0xFF000000UL)!=0x80000000UL)return source;
   l=r=v[0].x;t=b=v[0].y;
@@ -1444,7 +1461,7 @@ static void native_cursor43_init(void) {
       "NativeCursor4x3","SPIDERMAN2K1FIX_NATIVE_CURSOR_43");
   InterlockedExchange(&native_cursor43_enabled,enabled?1:0);
   log_line(enabled?
-    "NATIVE-CURSOR-43: native red selector 4:3 ON (1920x1080/1920x1200 Auto)" :
+    "NATIVE-CURSOR-43: 4:3 selector ON (any widescreen; signature-gated)" :
     "NATIVE-CURSOR-43: OFF (HUD master, NativeESC4x3 or NativeCursor4x3=0)");
 }
 static const void *maybe_correct_native_cursor43(void *device,
@@ -1486,14 +1503,15 @@ static const void *maybe_correct_native_cursor43(void *device,
    * original 32x32 texture format, white diffuse, exact native
    * draw call and active ESC ribbon in this same frame instead.
    * Native font glyphs are different sizes/Z/RHW. */
-  /* Allow the native 96x80 height-scaled form on 1920x1200 as well as
-   * the original 96x72 form. Exact owner, Z/RHW, diffuse, texture and
-   * same-Flip ribbon guards below remain mandatory. */
+  /* Allow two possible original height policies at any output size:
+   * scaled by screen H, or legacy height scaled by screen W. The same
+   * exact owner, Z/RHW, diffuse, texture and same-Flip ribbon guards
+   * remain mandatory. Center of the selector never moves. */
   expected_width=96.0f*((float)desktop_w/1920.0f);
   expected_height=72.0f*((float)desktop_h/1080.0f);
   if(fabsf((right-left)-expected_width)>0.8f ||
      (fabsf((bottom-top)-expected_height)>1.1f &&
-      !(desktop_h==1200 && fabsf((bottom-top)-72.0f)<0.8f)) ||
+      fabsf((bottom-top)-72.0f*((float)desktop_w/1920.0f))>0.8f) ||
      fabsf(z)>0.00005f ||
      fabsf(rhw-27.519f)>0.035f)return source;
   memcpy(&diffuse,(const BYTE*)source+16,sizeof(diffuse));
@@ -1526,6 +1544,413 @@ static const void *maybe_correct_native_cursor43(void *device,
   }
   return copy;
 }
+/* The original game draws red and green aiming rings through the same
+ * general-purpose D3D7 caller used by many other sprites. The maintainer's
+ * F9-matched Log=1 trace supplies an unambiguous COM texture, tint, Z,
+ * RHW and aspect signature for each ring. No generic HUD compression.
+ * This is not an INI feature: it follows the existing installed
+ * SHA-verified HUDWidescreenFix master switch.
+ */
+static volatile LONG hud_aim_red_hits=0;
+static volatile LONG hud_aim_green_hits=0;
+static const void *maybe_correct_aim_reticle(
+       void *device,D3DPRIMITIVETYPE type,DWORD fvf,
+       const void *source,DWORD count,void *caller,
+       SpiderMenuVertex *copy)
+{
+  DWORD rva=0,tw=0,th=0;
+  IDirectDrawSurface7 *texture=NULL;
+  DDSURFACEDESC2 desc;
+  int kind;
+  LONG hit;
+  char message[270];
+  if(!device || !source || !copy || count!=4 ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
+     !SpiderHudWidescreen_Installed() ||
+     !SpiderHudAimReticle_MightMatch((const SpiderMenuVertex*)source) ||
+     !geom_rva(caller,&rva) || rva!=0x00102C72UL)
+    return source;
+
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture))
+     && texture) {
+    if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc))) {
+      tw=desc.dwWidth;th=desc.dwHeight;
+    }
+    IDirectDrawSurface7_Release(texture);
+  }
+  if(tw!=64u || th!=64u) return source;
+  kind=SpiderHudAimReticle_Transform(
+        (const SpiderMenuVertex*)source,copy,(unsigned)count,
+        (unsigned)type,(uint32_t)fvf,(uint32_t)rva,
+        (unsigned)tw,(unsigned)th,
+        (unsigned)desktop_w,(unsigned)desktop_h);
+  if(kind==SPIDER_HUD_AIM_NONE)return source;
+  hit=InterlockedIncrement(kind==SPIDER_HUD_AIM_RED?
+                           &hud_aim_red_hits:&hud_aim_green_hits);
+  if(debug_log_enabled && (hit<=4 || hit%240==0)) {
+    const SpiderMenuVertex *original=(const SpiderMenuVertex*)source;
+    snprintf(message,sizeof(message),
+       "HUD-AIM: %s ring hit=%ld x=(%.1f..%.1f) -> (%.1f..%.1f) scale=%.5f z=%.5f rhw=%.4f tex=64x64 [SOURCE-VERIFIED]",
+       kind==SPIDER_HUD_AIM_RED?"red":"green",(long)hit,
+       (double)original[0].x,(double)original[1].x,
+       (double)copy[0].x,(double)copy[1].x,
+       (double)SpiderHudAim_AspectFactor((unsigned)desktop_w,
+                                         (unsigned)desktop_h),
+       (double)original[0].z,(double)original[0].rhw);
+    log_line(message);
+  }
+  return copy;
+}
+
+/* Boss bars require their own original D3D7 source evidence.
+ * We have a Rhino 32x32 border sample at RHW=17.1292 and a Dreamcast
+ * screenshot proving the full bar and portrait need a 4:3 correction.
+ * The existing Venom/Scorpion boss fix expects *different* RHW ranges;
+ * do not force any bar/portrait geometry without separately verifying
+ * the original tint, texture, size and depth of each source layer.
+ *
+ * This probe never changes vertices, input or render state. It samples
+ * at most 18 events of each boss kind, one every 45 native Flips. */
+/* Rhino-style boss bar/portrait: ALL three confirmed original D3D7
+ * layers map around the SCREEN center, not their individual centers.
+ * The observed caller, texture, color, z and RHW distinguish these
+ * objects from earlier Venom/Scorpion UI and game-world geometry.
+ * Fail closed for unknown black HP mask depths; source vertices intact.
+ */
+static volatile LONG boss_hud_native_hits[3]={0,0,0};
+static const void *maybe_correct_native_boss_hud(void *device,
+       D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
+       DWORD count,void *caller,SpiderMenuVertex *copy)
+{
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  IDirectDrawSurface7 *texture=NULL;
+  DDSURFACEDESC2 desc;
+  DWORD rva=0,tw=0,th=0;
+  HRESULT hr;
+  int kind;
+  LONG hit;
+  char line[300];
+  if(!device || !v || !copy || count!=4u ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
+     !SpiderHudWidescreen_Installed() ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     !SpiderHudBossNative_MightMatch(v) ||
+     !geom_rva(caller,&rva) || rva!=0x00102C72UL)
+    return source;
+
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  hr=IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&texture);
+  if(FAILED(hr)) return source; /* unknown texture is not no texture */
+  if(texture){
+    hr=IDirectDrawSurface7_GetSurfaceDesc(texture,&desc);
+    if(SUCCEEDED(hr)){tw=desc.dwWidth;th=desc.dwHeight;}
+    IDirectDrawSurface7_Release(texture);
+    if(FAILED(hr))return source;
+  }
+  kind=SpiderHudBossNative_Transform(v,copy,(unsigned)count,
+       (unsigned)type,(uint32_t)fvf,(uint32_t)rva,
+       (unsigned)tw,(unsigned)th,
+       (unsigned)desktop_w,(unsigned)desktop_h);
+  if(kind==SPIDER_HUD_BOSS_PROBE_NONE)return source;
+  hit=InterlockedIncrement(&boss_hud_native_hits[kind-1]);
+  if(debug_log_enabled && (hit<=4 || hit%240==0)){
+    float scale=(4.0f*(float)desktop_h)/(3.0f*(float)desktop_w);
+    snprintf(line,sizeof(line),
+      "HUD-BOSS-NATIVE: %s hit=%ld flip=%ld x=(%.1f..%.1f) -> (%.1f..%.1f) factor=%.5f z=%.5f rhw=%.4f texture=%lux%lu [ORIGINAL-GEOMETRY]",
+      kind==SPIDER_HUD_BOSS_PROBE_FILL?"fill":
+      kind==SPIDER_HUD_BOSS_PROBE_FRAME?"frame":"portrait",
+      (long)hit,(long)InterlockedCompareExchange(&flip_count,0,0),
+      (double)v[0].x,(double)v[1].x,
+      (double)copy[0].x,(double)copy[1].x,
+      (double)scale,(double)v[0].z,(double)v[0].rhw,
+      (unsigned long)tw,(unsigned long)th);
+    log_line(line);
+  }
+  return copy;
+}
+/* Track the three source bar appearances separately; sampling only the
+ * first fill each frame hides the green half and the black damage mask. */
+static volatile LONG boss_hud_probe_last_flip[5]={-100,-100,-100,-100,-100};
+static volatile LONG boss_hud_probe_hits[5]={0,0,0,0,0};
+static void maybe_log_boss_hud_candidate(void *device,
+       D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
+       DWORD count,void *caller,int already_corrected)
+{
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  IDirectDrawSurface7 *texture=NULL;
+  DDSURFACEDESC2 desc;
+  DWORD rva=0,tw=0,th=0;
+  float l,r,t,b;
+  unsigned i;
+  int kind,k;
+  LONG flip,last,hit;
+  char message[340];
+  if(!debug_log_enabled || !device || !source || count!=4u ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
+     !SpiderHudWidescreen_Installed() ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     !geom_rva(caller,&rva) || rva!=0x00102C72UL)
+    return;
+
+  l=r=v[0].x;t=b=v[0].y;
+  for(i=1;i<4u;i++){
+    if(v[i].x<l)l=v[i].x;
+    if(v[i].x>r)r=v[i].x;
+    if(v[i].y<t)t=v[i].y;
+    if(v[i].y>b)b=v[i].y;
+  }
+  if(!(l>=(float)desktop_w*0.46f &&
+       r<=(float)desktop_w+64.0f &&
+       t>=(float)desktop_h*0.045f &&
+       b<=(float)desktop_h*0.36f &&
+       r-l>16.0f &&
+       b-t>=(float)desktop_h*0.020f))
+    return;
+
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,
+                                            0,&texture)) && texture){
+    if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(texture,&desc))){
+      tw=desc.dwWidth;th=desc.dwHeight;
+    }
+    IDirectDrawSurface7_Release(texture);
+  }
+  kind=SpiderHudBossProbe_Classify(v,(unsigned)count,(unsigned)type,
+                (uint32_t)fvf,(uint32_t)rva,(unsigned)tw,(unsigned)th,
+                (unsigned)desktop_w,(unsigned)desktop_h);
+  if(kind==SPIDER_HUD_BOSS_PROBE_NONE)return;
+  if(kind==SPIDER_HUD_BOSS_PROBE_FILL){
+    /* Keep black missing HP, green full HP, and red/yellow color
+     * gradient independently visible; the appearance can vary as
+     * the boss takes damage. This changes diagnostics only. */
+    k=(v[0].diffuse==0xFF000000u)?0:
+      (((v[0].diffuse&0x00FF0000u)<0x00800000u &&
+        (v[0].diffuse&0x0000FF00u)>=0x00008000u)?1:2);
+  }else k=(kind==SPIDER_HUD_BOSS_PROBE_FRAME)?3:4;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  last=InterlockedCompareExchange(&boss_hud_probe_last_flip[k],0,0);
+  if(flip-last<45 ||
+     InterlockedCompareExchange(&boss_hud_probe_hits[k],0,0)>=18)
+    return;
+  InterlockedExchange(&boss_hud_probe_last_flip[k],flip);
+  hit=InterlockedIncrement(&boss_hud_probe_hits[k]);
+  if(hit>18)return;
+  snprintf(message,sizeof(message),
+      "HUD-BOSS-PROBE: %s sample=%ld flip=%ld corrected=%d caller=%08lX quad=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f color=%08lX tex=%lux%lu uv0=(%.3f,%.3f) [READ-ONLY]",
+      kind==SPIDER_HUD_BOSS_PROBE_FILL?
+          (k==0?"fill-black":k==1?"fill-green":"fill-other"):
+      kind==SPIDER_HUD_BOSS_PROBE_FRAME?"frame":"portrait",
+      (long)hit,(long)flip,already_corrected,
+      (unsigned long)rva,
+      (double)l,(double)r,(double)t,(double)b,
+      (double)v[0].z,(double)v[0].rhw,
+      (unsigned long)v[0].diffuse,
+      (unsigned long)tw,(unsigned long)th,
+      (double)v[0].u,(double)v[0].v);
+  log_line(message);
+}
+/* Read-only HUD-visual diagnostics while [Debug] Log=1.
+ * Trace only representative UNCORRECTED source quads, never change draw
+ * state, game input, texture contents or original vertex memory.
+ * The pure heuristic is a CANDIDATE sampler, not an object matcher:
+ * collected caller/Z/RHW/color/texture evidence gates future fixes. */
+static volatile LONG hud_visual_aim_last_flip=-500;
+static volatile LONG hud_visual_pause_last_flip=-500;
+static volatile LONG hud_visual_aim_samples=0;
+static volatile LONG hud_visual_pause_samples=0;
+static void maybe_log_hud_visual_candidate(void *device,
+                 D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
+                 DWORD count,void *caller) {
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  IDirectDrawSurface7 *tex=NULL;
+  DDSURFACEDESC2 desc;
+  DWORD rva=0,texw=0,texh=0;
+  float left,right,top,bottom;
+  volatile LONG *last_flip,*sample_count;
+  LONG flip,last,hit;
+  int candidate;
+  unsigned i;
+  char line[360];
+  if(!debug_log_enabled || !device || !v ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     !SpiderHudWidescreen_Installed())return;
+  candidate=SpiderHudVisual_Classify(v,(unsigned)count,
+               (unsigned)type,(uint32_t)fvf,
+               (unsigned)desktop_w,(unsigned)desktop_h);
+  if(candidate==SPIDER_HUD_VISUAL_NONE)return;
+  last_flip=candidate==SPIDER_HUD_VISUAL_AIM?
+            &hud_visual_aim_last_flip:&hud_visual_pause_last_flip;
+  sample_count=candidate==SPIDER_HUD_VISUAL_AIM?
+               &hud_visual_aim_samples:&hud_visual_pause_samples;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  last=InterlockedCompareExchange(last_flip,0,0);
+  /* Sampling is intentionally bounded to avoid flooding the player's log.
+   * Aim: one sample / 45 Flips, maximum 200. Native pause: one / 90,
+   * maximum 80. Keep the two budgets independent across level transitions. */
+  if(flip-last < (candidate==SPIDER_HUD_VISUAL_AIM?45:90))return;
+  hit=InterlockedIncrement(sample_count);
+  if(hit>(candidate==SPIDER_HUD_VISUAL_AIM?200:80))return;
+  InterlockedExchange(last_flip,flip);
+  left=right=v[0].x;top=bottom=v[0].y;
+  for(i=1;i<4;i++) {
+    if(v[i].x<left)left=v[i].x;
+    if(v[i].x>right)right=v[i].x;
+    if(v[i].y<top)top=v[i].y;
+    if(v[i].y>bottom)bottom=v[i].y;
+  }
+  /* Diagnostic-only COM reference obtained from current texture stage.
+   * Never call SetTexture or any game-owned state mutator. */
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)) && tex) {
+    if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(tex,&desc))) {
+      texw=desc.dwWidth;texh=desc.dwHeight;
+    }
+    IDirectDrawSurface7_Release(tex);
+  }
+  geom_rva(caller,&rva);
+  snprintf(line,sizeof(line),
+    "HUD-VISUAL: %s sample=%ld flip=%ld caller=%08lX quad=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f color=%08lX tex=%lux%lu uv0=(%.3f,%.3f) [READ-ONLY; CANDIDATE]",
+    candidate==SPIDER_HUD_VISUAL_AIM?"AIM":"PAUSE-RIBBON",
+    (long)hit,(long)flip,(unsigned long)rva,
+    (double)left,(double)right,(double)top,(double)bottom,
+    (double)v[0].z,(double)v[0].rhw,
+    (unsigned long)v[0].diffuse,(unsigned long)texw,(unsigned long)texh,
+    (double)v[0].u,(double)v[0].v);
+  log_line(line);
+}
+/* Snapshot the unmodified game-owned ESC text/border/selector quads after
+ * a verified native ribbon was seen, including quads rejected by our
+ * existing exact layer and format gates. This is a read-only investigation:
+ * no pointer scanning, texture modification, DrawPrimitive recursion,
+ * render-state changes or unbounded per-frame logging. */
+static volatile LONG native_pause43_detail_samples=0;
+/* The original 80 samples in the later Mysterio scene ended before
+ * the violet foreground choices were drawn; keep family=0 at 80,
+ * but allow 160 bounded read-only family=1 samples to capture both
+ * red heading and all choice colors in a single user test. */
+static volatile LONG native_pause43_detail_new_family_samples=0;
+static void maybe_log_native_pause43_detail(void *device,
+                  D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
+                  DWORD count,void *caller,int corrected) {
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  IDirectDrawSurface7 *tex=NULL;
+  DDSURFACEDESC2 desc;
+  DWORD rva=0,tw=0,th=0,pf=0;
+  float l,r,t,b;
+  LONG flip,sample,family;
+  volatile LONG *sample_budget;
+  unsigned i;
+  char line[345];
+  if(!debug_log_enabled || !device || !v || count!=4 ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
+     !native_esc43_supported_monitor() ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0)return;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  if(!native_pause43_visible_near_flip(flip) ||
+     !geom_rva(caller,&rva) || rva!=0x00102C72UL)
+    return;
+  family=InterlockedCompareExchange(&native_pause43_banner_probe_family,0,0);
+  sample_budget=family==1?&native_pause43_detail_new_family_samples:
+                         &native_pause43_detail_samples;
+  if(InterlockedCompareExchange(sample_budget,0,0)>=
+       (family==1?160:80))return;
+  l=r=v[0].x;t=b=v[0].y;
+  for(i=1;i<4;i++) {
+    if(v[i].x<l)l=v[i].x;
+    if(v[i].x>r)r=v[i].x;
+    if(v[i].y<t)t=v[i].y;
+    if(v[i].y>b)b=v[i].y;
+  }
+  /* Focus on native letter glyphs, the narrow 8x8 outlines, and the
+   * red 32x32 selector. Exclude large motif/world quads and player HUD. */
+  if(!(l>(float)desktop_w*0.15f && r<(float)desktop_w*0.85f &&
+       t>(float)desktop_h*0.10f && b<(float)desktop_h*0.70f &&
+       r-l>4.0f && r-l<(float)desktop_w*0.10f &&
+       b-t>8.0f && b-t<(float)desktop_h*0.11f))
+    return;
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(FAILED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex))
+     || !tex)return;
+  if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(tex,&desc))) {
+    tw=desc.dwWidth;th=desc.dwHeight;pf=desc.ddpfPixelFormat.dwFlags;
+  }
+  IDirectDrawSurface7_Release(tex);
+  if(!((th==32u && (tw==16u || tw==32u || tw==64u)) ||
+       (tw==8u && th==8u)))return;
+  sample=InterlockedIncrement(sample_budget);
+  if(sample>(family==1?160:80))return;
+  snprintf(line,sizeof(line),
+    "PAUSE-NATIVE-DETAIL: sample=%ld family=%ld flip=%ld corrected=%d quad=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f color=%08lX tex=%lux%lu fmt=%08lX [READ-ONLY]",
+    (long)sample,(long)family,(long)flip,corrected,
+    (double)l,(double)r,(double)t,(double)b,
+    (double)v[0].z,(double)v[0].rhw,
+    (unsigned long)v[0].diffuse,(unsigned long)tw,(unsigned long)th,
+    (unsigned long)pf);
+  log_line(line);
+}
+/* Separate limited border probe: the first native Pause detail sampler
+ * captured font quads but its center-X filter excluded edge strokes.
+ * 8x8 border sprites at the extreme left/right are collected only when
+ * the verified original game ribbon is present in this Flip. */
+static volatile LONG native_pause43_border_samples=0;
+static void maybe_log_native_pause43_border(void *device,
+              D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
+              DWORD count,void *caller,int corrected) {
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  IDirectDrawSurface7 *tex=NULL;
+  DDSURFACEDESC2 desc;
+  DWORD rva=0,tw=0,th=0;
+  float l,r,t,b;
+  LONG flip,n;
+  unsigned i;
+  char line[310];
+  if(!debug_log_enabled || !device || !v ||
+     count!=4 || type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
+     !native_esc43_supported_monitor() ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     InterlockedCompareExchange(&native_pause43_border_samples,0,0)>=40)
+    return;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  if(!native_pause43_visible_near_flip(flip) ||
+     !geom_rva(caller,&rva) || rva!=0x00102C72UL)return;
+  l=r=v[0].x;t=b=v[0].y;
+  for(i=1;i<4;i++) {
+    if(v[i].x<l)l=v[i].x;
+    if(v[i].x>r)r=v[i].x;
+    if(v[i].y<t)t=v[i].y;
+    if(v[i].y>b)b=v[i].y;
+  }
+  if(!((l<(float)desktop_w*0.05f) ||
+       (r>(float)desktop_w*0.95f) ||
+       (r-l>(float)desktop_w*0.85f)) ||
+     t<(float)desktop_h*0.28f || t>(float)desktop_h*0.75f ||
+     b-t<4.0f || b-t>(float)desktop_h*0.36f)return;
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  if(FAILED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex))
+     || !tex)return;
+  if(SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(tex,&desc))) {
+    tw=desc.dwWidth;th=desc.dwHeight;
+  }
+  IDirectDrawSurface7_Release(tex);
+  if(tw!=8u || th!=8u)return;
+  n=InterlockedIncrement(&native_pause43_border_samples);
+  if(n>40)return;
+  snprintf(line,sizeof(line),
+    "PAUSE-NATIVE-BORDER-PROBE: n=%ld flip=%ld corrected=%d box=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f tex=8x8 [READ-ONLY]",
+    (long)n,(long)flip,corrected,
+    (double)l,(double)r,(double)t,(double)b,
+    (double)v[0].z,(double)v[0].rhw);
+  log_line(line);
+}
 static void free_menu_vertices(SpiderMenuVertex *allocated) {
   if (allocated) HeapFree(GetProcessHeap(),0,allocated);
 }
@@ -1545,6 +1970,12 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       v=maybe_correct_adaptive_hud(self,type,fvf,verts,count,
                                    __builtin_return_address(0),small);
+    /* A second, independently observed boss-HUD variant: right-side
+     * 4:3 UI corrected about screen center. The previous adaptive
+     * variant retains precedence and its old right-edge policy. */
+    if(v==verts && count==4)
+      v=maybe_correct_native_boss_hud(self,type,fvf,verts,count,
+                                      __builtin_return_address(0),small);
     /* Correct the native translucent motif. Where these same alpha
      * primitives previously tinted the entire 16:9 frame, replay the
      * original triangles ONLY into the two outer 240px gutters first.
@@ -1564,6 +1995,29 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       v=maybe_correct_native_pause43(self,type,fvf,verts,count,
                                      __builtin_return_address(0),small);
+    /* The original native Pause glyphs can have different per-level RHW:
+     * capture original data regardless of whether the strict HUD path
+     * corrected this draw, once a verified ribbon is present. */
+    if(count==4) {
+      maybe_log_native_pause43_detail(self,type,fvf,verts,count,
+                       __builtin_return_address(0),v!=verts);
+      maybe_log_native_pause43_border(self,type,fvf,verts,count,
+                       __builtin_return_address(0),v!=verts);
+    }
+    /* Source-only boss UI probe remains active whether or not the
+     * previous adaptive HUD handler already corrected a known boss. */
+    if(count==4)
+      maybe_log_boss_hud_candidate(self,type,fvf,verts,count,
+                                  __builtin_return_address(0),v!=verts);
+    /* Uncorrected suspected aim/ribbon draws only. No rendering changes. */
+    if(v==verts && count==4)
+      maybe_log_hud_visual_candidate(self,type,fvf,verts,count,
+                                     __builtin_return_address(0));
+    /* Strict user-verified 64x64 red/green aim sprites only, after
+     * compass/native ESC precedence and before depth-tested Hor+. */
+    if(v==verts && count==4)
+      v=maybe_correct_aim_reticle(self,type,fvf,verts,count,
+                                  __builtin_return_address(0),small);
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
     HRESULT hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
     free_menu_vertices(allocated);
