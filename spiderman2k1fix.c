@@ -2200,6 +2200,9 @@ static DWORD ui_comp_tint_source=0;
 static void *ui_comp_device=NULL;
 static volatile LONG ui_comp_deferred=0,ui_comp_replayed=0,ui_comp_tints=0;
 static volatile LONG ui_comp_capture_failures=0,ui_comp_no_scene=0,ui_comp_replay_failures=0;
+/* Frame counters are independent of quad count; modulo on cumulative
+ * DrawPrimitive hits can otherwise miss every EndScene log indefinitely. */
+static volatile LONG ui_comp_flushed_frames=0,ui_comp_fullscreen_candidates=0;
 
 static void ui_comp_release(IDirect3DDevice7 *device) {
   unsigned i;
@@ -2329,13 +2332,38 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
   if(saved_texture)IDirectDrawSurface7_Release(saved_texture);
   IDirect3DDevice7_DeleteStateBlock(device,saved);
   n=InterlockedCompareExchange(&ui_comp_replayed,0,0);
-  if(debug_log_enabled && (n<=16 || n%1200==0 || !all_ok)) {
-    char msg[200];
-    snprintf(msg,sizeof(msg),
-      "UI-COMPOSITOR: EndScene frame commands=%u queued-total=%ld replay-total=%ld overlay-total=%ld order=SCENE/HUD>FULLSCREEN>4:3-DECOR>ESC all-ok=%d",
-      ui_comp_count,(long)InterlockedCompareExchange(&ui_comp_deferred,0,0),
-      (long)n,(long)InterlockedCompareExchange(&ui_comp_tints,0,0),all_ok);
-    log_line(msg);
+  {
+    LONG frame=InterlockedIncrement(&ui_comp_flushed_frames);
+    /* Source-only layer coverage, not a per-sprite material heuristic.
+     * On a 1920x1080 screen, a decoration bounded by x≈240..1680
+     * cannot physically colour the 240px gutters at either side. */
+    if(debug_log_enabled && (frame<=3 || frame%180==0 || !all_ok)) {
+      unsigned decor=0,menu=0,k;
+      float dl=(float)desktop_w,dr=0.0f,dt=(float)desktop_h,db=0.0f;
+      char msg[350];
+      for(i=0;i<ui_comp_count;i++) {
+        const SpiderUICompDraw *c=&ui_comp_draws[i];
+        if(c->layer==SPIDER_UI_COMP_PAUSE_DECOR) {
+          ++decor;
+          for(k=0;k<4;k++){
+            if(c->v[k].x<dl)dl=c->v[k].x;
+            if(c->v[k].x>dr)dr=c->v[k].x;
+            if(c->v[k].y<dt)dt=c->v[k].y;
+            if(c->v[k].y>db)db=c->v[k].y;
+          }
+        } else if(c->layer==SPIDER_UI_COMP_PAUSE_MENU) ++menu;
+      }
+      snprintf(msg,sizeof(msg),
+        "UI-COMPOSITOR-FRAME: frame=%ld commands=%u decor=%u menu=%u decor-box=(%.1f..%.1f,%.1f..%.1f) canvas=(%.1f..%.1f) candidate-coverage=%ld tint=%ld replay-total=%ld all-ok=%d",
+        (long)frame,ui_comp_count,decor,menu,
+        (double)dl,(double)dr,(double)dt,(double)db,
+        (double)((float)desktop_w-(float)desktop_h*4.0f/3.0f)*0.5,
+        (double)((float)desktop_w+(float)desktop_h*4.0f/3.0f)*0.5,
+        (long)InterlockedCompareExchange(&ui_comp_fullscreen_candidates,0,0),
+        (long)InterlockedCompareExchange(&ui_comp_tints,0,0),
+        (long)n,all_ok);
+      log_line(msg);
+    }
   }
   ui_comp_release(device);
 }
@@ -2408,6 +2436,56 @@ static HRESULT WINAPI ui_compositor_scene_finish(void *self) {
     ui_comp_flush((IDirect3DDevice7*)self);
   ui_comp_scene_open=0;ui_comp_device=NULL;
   return ui_original_end_scene(self);
+}
+
+/* Read-only candidate scan: looks for native full-viewport screen-space
+ * quads DURING ESC, excluding known game-owned ESC menu layers. This tests
+ * whether the game supplies a distinct screen-covering tint command.
+ * Never stretches or recolours any quad, and never assumes a material
+ * ID/level/name. A zero count means "none met THIS bound", not "none
+ * exists" (it may be tiled or rendered by another API).
+ */
+static void ui_comp_probe_fullscreen_source(void *device,
+                   D3DPRIMITIVETYPE type,DWORD fvf,
+                   const void *source,DWORD count,int native_esc)
+{
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  float l,r,t,b,w=(float)desktop_w,h=(float)desktop_h;
+  unsigned i;
+  LONG n;
+  DWORD blend=0;
+  char msg[276];
+  if(!debug_log_enabled || !device || !source ||
+     InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)!=1 ||
+     !ui_comp_scene_open || ui_comp_bailout || native_esc ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4 ||
+     w<640.0f || h<480.0f ||
+     !native_pause43_visible_near_flip(
+        InterlockedCompareExchange(&flip_count,0,0)))
+    return;
+  l=r=v[0].x;t=b=v[0].y;
+  for(i=0;i<4;i++) {
+    if(!(v[i].x>=-w*.1f && v[i].x<=w*1.1f &&
+         v[i].y>=-h*.1f && v[i].y<=h*1.1f &&
+         v[i].z>=0.0f && v[i].z<.02f))
+      return;
+    if(v[i].x<l)l=v[i].x;
+    if(v[i].x>r)r=v[i].x;
+    if(v[i].y<t)t=v[i].y;
+    if(v[i].y>b)b=v[i].y;
+  }
+  if(l>w*.12f || r<w*.88f || t>h*.12f || b<h*.88f)
+    return;
+  n=InterlockedIncrement(&ui_comp_fullscreen_candidates);
+  if(n>16 && n%180!=0)return;
+  IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
+                                   D3DRENDERSTATE_ALPHABLENDENABLE,&blend);
+  snprintf(msg,sizeof(msg),
+    "UI-COMPOSITOR-COVERAGE-PROBE: count=%ld source-box=(%.1f..%.1f,%.1f..%.1f) color=%08lX z=%.5f rhw=%.4f alpha-blend=%lu [READ-ONLY; NON-ESC]",
+    (long)n,(double)l,(double)r,(double)t,(double)b,
+    (unsigned long)v[0].diffuse,(double)v[0].z,(double)v[0].rhw,
+    (unsigned long)blend);
+  log_line(msg);
 }
 
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
@@ -2491,6 +2569,9 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       v=candidate;
     }
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
+    /* Probe any genuine independent screen-size native tint candidate.
+     * Log original source geometry, never a corrected copy. */
+    ui_comp_probe_fullscreen_source(self,type,fvf,verts,count,native_esc_primitive);
     /* Deferred ESC composition is active ONLY under both opt-in flags,
      * inside a confirmed game-owned BeginScene/EndScene pair. Otherwise
      * keep the original draw path (even if state blocks are unsupported).
