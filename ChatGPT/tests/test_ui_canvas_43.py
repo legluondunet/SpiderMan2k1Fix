@@ -217,3 +217,56 @@ def test_fullscreen_policy_has_a_trace_and_stays_opt_in():
     assert "SpiderUICanvas_43IsFullScreenEffect(" in host
     assert "SpiderUICanvas_43IsFullScreenEffect(" in code
     assert "SPIDERMAN2K1FIX_UI_CANVAS_TEST" in host
+
+
+@pytest.mark.parametrize("resolution", [(1920, 1080), (1920, 1200), (3440, 1440)])
+def test_spider_iris_black_edge_masks_preserve_full_screen_gutters(
+        transform, resolution):
+    w,h=resolution
+    # Several screen-space black quads build a single animated iris.
+    # They need the *edge attached* screen coordinates preserved, while
+    # their inner limits retain the same centered 4:3 interface mapping.
+    left=quad(0, h*.12, w*.40, h*.85,
+              z=0., rhw=27.6, colour=0xFF000000)
+    right=quad(w*.64, h*.12, w, h*.85,
+               z=0., rhw=27.6, colour=0xFF000000)
+    for src,edge,inner in ((left,0,1),(right,1,0)):
+        ok,mapped=apply(transform,src,screen=resolution)
+        assert ok==1
+        assert mapped[edge].x==pytest.approx(src[edge].x, abs=.05)
+        sx=(4*h)/(3*w)
+        assert mapped[inner].x==pytest.approx(
+            w/2+(src[inner].x-w/2)*sx, abs=.1)
+        assert_unchanged_except_x(src,mapped)
+
+
+def test_spider_iris_must_not_change_black_normal_hud_or_opaque_colors(transform):
+    black_gauge=quad(1751.2,445.5,1796.2,697.5,
+                     z=.00098,rhw=12.1569,colour=0xFF000000)
+    ok,mapped=apply(transform,black_gauge)
+    assert ok==1
+    assert mapped[0].x==pytest.approx(
+        960+(black_gauge[0].x-960)*.75, abs=.05)
+    # Edge-adjacent *non-wipe* UI may not get special edge-anchoring.
+    icon=quad(0,200,320,365,z=.00073,rhw=14.134,
+              colour=0xFF010101)
+    ok,mapped=apply(transform,icon)
+    assert ok==1
+    assert mapped[0].x==pytest.approx(240,abs=.05)
+    # An effect that isn't opaque black must not inherit the black-mask gate.
+    translucent=quad(0,200,320,365,z=0.,rhw=27.6,
+                     colour=0x80000000)
+    ok,mapped=apply(transform,translucent)
+    assert ok==1
+    assert mapped[0].x==pytest.approx(240,abs=.05)
+
+
+def test_full_width_pause_motif_and_order_probe_wiring():
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    assert "NATIVE-MOTIF-FULLWIDTH:" in src
+    assert "UI-CANVAS-WIPE-EDGE:" in src
+    assert "PAUSE-HUD-LAYER-PROBE:" in src
+    assert "maybe_probe_pause_hud_layer(self," in src
+    assert "D3DRENDERSTATE_ZFUNC" in src
+    assert "ui_canvas_trial_enabled" in src
+    assert "InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1" in src
