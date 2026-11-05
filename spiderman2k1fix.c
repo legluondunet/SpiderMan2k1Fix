@@ -15,6 +15,7 @@
 #include "hud_widescreen.h"
 #include "hud_adaptive.h"
 #include "ui_canvas_43.h"
+#include "ui_compositor_policy.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
 #include "hud_boss_probe.h"
@@ -975,6 +976,9 @@ static const void *maybe_correct_horplus(D3DPRIMITIVETYPE type,DWORD fvf,
 /* Opt-in common 4:3 gameplay UI canvas, applied only to source
  * screen-space D3D7 quads. No per-level/texture/color HUD rule. */
 static volatile LONG ui_canvas_trial_enabled=0;
+/* Additional opt-in trial: record native ESC commands, composite at EndScene. */
+static volatile LONG ui_compositor_trial_enabled=0;
+static volatile LONG ui_compositor_tint_enabled=1;
 static volatile LONG ui_canvas_trial_hits=0;
 static volatile LONG ui_canvas_wipe_edge_hits=0;
 static volatile LONG ui_canvas_fullscreen_kept=0;
@@ -1396,7 +1400,8 @@ static const void *maybe_correct_native_motif43(void *device,
    * Return a distinct copy to consume the draw in this stage and stop
    * the general canvas from compressing it a second time. No gutter
    * replay in this path: the original full-width quads draw once. */
-  if(InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)==1) {
+  if(InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)==1 &&
+     InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)!=1) {
     memcpy(copy,v,4*sizeof(*copy));
     hit=InterlockedIncrement(&native_motif43_hits);
     if(debug_log_enabled && (hit<=8 || hit%8000==0)) {
@@ -4487,6 +4492,23 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-CANVAS-43: EXPERIMENT ON; common centered 4:3 gameplay UI mapping, native HUD X edits skipped; HARDWARE UNVERIFIED");
     } else {
       log_line("UI-CANVAS-43: OFF; legacy verified HUD and native menus unchanged");
+    }
+  }
+  /* Separate compositor opt-in: the regular UI canvas trial remains
+   * testable without changing the render order. No INI schema changes. */
+  {
+    char opt[4]={0},tint[4]={0};
+    DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_COMPOSITOR_TEST",
+                                   opt,sizeof(opt));
+    if(n==1 && opt[0]=='1' &&
+       InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)==1) {
+      InterlockedExchange(&ui_compositor_trial_enabled,1);
+      if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_COMPOSITOR_TINT",
+                                  tint,sizeof(tint))==1 && tint[0]=='0')
+        InterlockedExchange(&ui_compositor_tint_enabled,0);
+      log_line("UI-COMPOSITOR: TRIAL ON (native ESC deferred to EndScene, original 4:3 motif; fullscreen tint sample experimental)");
+    } else {
+      log_line("UI-COMPOSITOR: OFF; existing UI canvas draw path unchanged");
     }
   }
   /* HUDWidescreenFix is the parent of the three native ESC children.
