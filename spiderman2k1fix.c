@@ -1682,6 +1682,10 @@ static const void *maybe_correct_native_boss_hud(void *device,
  * first fill each frame hides the green half and the black damage mask. */
 static volatile LONG boss_hud_probe_last_flip[5]={-100,-100,-100,-100,-100};
 static volatile LONG boss_hud_probe_hits[5]={0,0,0,0,0};
+/* Read-only lower-right escort HUD probes retain original source depth
+ * even if a conservative transform declined to touch the primitive. */
+static volatile LONG objective_probe_last_flip[3]={-100,-100,-100};
+static volatile LONG objective_probe_hits[3]={0,0,0};
 static void maybe_log_boss_hud_candidate(void *device,
        D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
        DWORD count,void *caller,int already_corrected)
@@ -1692,7 +1696,7 @@ static void maybe_log_boss_hud_candidate(void *device,
   DWORD rva=0,tw=0,th=0;
   float l,r,t,b;
   unsigned i;
-  int kind,k;
+  int kind,k,is_boss,is_objective;
   LONG flip,last,hit;
   char message[340];
   if(!debug_log_enabled || !device || !source || count!=4u ||
@@ -1710,13 +1714,23 @@ static void maybe_log_boss_hud_candidate(void *device,
     if(v[i].y<t)t=v[i].y;
     if(v[i].y>b)b=v[i].y;
   }
-  if(!(l>=(float)desktop_w*0.46f &&
-       r<=(float)desktop_w+64.0f &&
-       t>=(float)desktop_h*0.045f &&
-       b<=(float)desktop_h*0.36f &&
-       r-l>16.0f &&
-       b-t>=(float)desktop_h*0.020f))
-    return;
+  is_boss=(l>=(float)desktop_w*0.46f &&
+           r<=(float)desktop_w+64.0f &&
+           t>=(float)desktop_h*0.045f &&
+           b<=(float)desktop_h*0.36f &&
+           r-l>16.0f &&
+           b-t>=(float)desktop_h*0.020f);
+  is_objective=(l>=(float)desktop_w*0.77f &&
+                r<=(float)desktop_w+64.0f &&
+                t>=(float)desktop_h*0.26f &&
+                b<=(float)desktop_h*0.83f &&
+                r-l>=(float)desktop_h*0.009f &&
+                r-l<=(float)desktop_h*0.24f &&
+                b-t>=(float)desktop_h*0.02f &&
+                b-t<=(float)desktop_h*0.49f &&
+                v[0].z>=0.0f && v[0].z<0.01f &&
+                v[0].rhw>2.0f && v[0].rhw<100.0f);
+  if(!is_boss && !is_objective)return;
 
   memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
   if(SUCCEEDED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,
@@ -1726,6 +1740,56 @@ static void maybe_log_boss_hud_candidate(void *device,
     }
     IDirectDrawSurface7_Release(texture);
   }
+  if(is_objective) {
+    /* A bounded source-only inventory for the three Mary-Jane-like
+     * components. This is not a classifier or evidence of identity. */
+    int objective_kind=-1;
+    float width=r-l,height=b-t;
+    if(tw==64 && th==64 &&
+       width>=(float)desktop_h*.10f &&
+       width<=(float)desktop_h*.23f &&
+       height>=(float)desktop_h*.10f &&
+       height<=(float)desktop_h*.21f)
+      objective_kind=0; /* possible portrait */
+    else if(tw==32 && th==32 &&
+            width>=(float)desktop_h*.02f &&
+            width<=(float)desktop_h*.15f &&
+            height>=(float)desktop_h*.025f &&
+            height<=(float)desktop_h*.15f)
+      objective_kind=1; /* possible frame */
+    else if(tw==0 && th==0 &&
+            width>=(float)desktop_h*.009f &&
+            width<=(float)desktop_h*.11f &&
+            height>=(float)desktop_h*.02f &&
+            height<=(float)desktop_h*.48f)
+      objective_kind=2; /* possible fill/missing health */
+    if(objective_kind>=0) {
+      flip=InterlockedCompareExchange(&flip_count,0,0);
+      last=InterlockedCompareExchange(
+           &objective_probe_last_flip[objective_kind],0,0);
+      if(flip-last>=30 &&
+         InterlockedCompareExchange(
+           &objective_probe_hits[objective_kind],0,0)<18) {
+        InterlockedExchange(&objective_probe_last_flip[objective_kind],flip);
+        hit=InterlockedIncrement(&objective_probe_hits[objective_kind]);
+        if(hit<=18) {
+          snprintf(message,sizeof(message),
+             "HUD-OBJECTIVE-PROBE: %s sample=%ld flip=%ld corrected=%d caller=%08lX quad=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f color=%08lX tex=%lux%lu uv0=(%.3f,%.3f) [READ-ONLY; CANDIDATE]",
+             objective_kind==0?"portrait":
+             objective_kind==1?"frame":"vertical-fill",
+             (long)hit,(long)flip,already_corrected,
+             (unsigned long)rva,
+             (double)l,(double)r,(double)t,(double)b,
+             (double)v[0].z,(double)v[0].rhw,
+             (unsigned long)v[0].diffuse,
+             (unsigned long)tw,(unsigned long)th,
+             (double)v[0].u,(double)v[0].v);
+          log_line(message);
+        }
+      }
+    }
+  }
+  if(!is_boss)return;
   kind=SpiderHudBossProbe_Classify(v,(unsigned)count,(unsigned)type,
                 (uint32_t)fvf,(uint32_t)rva,(unsigned)tw,(unsigned)th,
                 (unsigned)desktop_w,(unsigned)desktop_h);
