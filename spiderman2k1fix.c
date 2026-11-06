@@ -2756,13 +2756,12 @@ static const void *maybe_correct_native_transition_fullscreen(
          (unsigned)desktop_w,(unsigned)desktop_h) ||
      ((const SpiderMenuVertex*)source)[0].diffuse!=0x00000000UL)
     return source;
-  /* Never remap the existing full-width opaque cinematic bars, and
-   * keep that presenter type outside the spider-iris layer. */
-  if(SpiderUICanvas_43IsFullScreenEffect(
-         (const SpiderMenuVertex*)source,(unsigned)count,
-         (unsigned)type,(uint32_t)fvf,(uint32_t)rva,
-         (unsigned)desktop_w,(unsigned)desktop_h))
-    return source;
+  /* The native iris is specifically ARGB=00000000. Its full-size
+   * and edge quads MUST share the same single transform as the inner
+   * shape, otherwise a geometric "fullscreen quad" shortcut can
+   * create another seam.  Opaque FF000000 cinema bars are already
+   * excluded by the source-colour guard above and keep their native
+   * physical presentation path. */
   tex_hr=IDirect3DDevice7_GetTexture(
               (IDirect3DDevice7*)device,0,&texture);
   hb=IDirect3DDevice7_GetRenderState(
