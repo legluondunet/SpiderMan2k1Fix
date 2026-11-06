@@ -143,6 +143,9 @@ static inline void SpiderTransition_MapInner43(
     unsigned i;
     float center=(float)screen_w*.5f;
     float scale=(float)screen_h*4.0f/(3.0f*(float)screen_w);
+    /* Complete out-of-place copy: preserve Y, Z, RHW, diffuse and UV
+     * even when the output buffer was not initialized by a prior pass. */
+    memcpy(mapped,src,4u*sizeof(*mapped));
     for(i=0u;i<4u;i++)
         mapped[i].x=center+(src[i].x-center)*scale;
 }
