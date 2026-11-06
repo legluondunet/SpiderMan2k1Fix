@@ -219,7 +219,7 @@ def test_actual_original_fan_animation_can_drive_curtain_to_zero(dll):
     original=one_sample_fan()
     centerx,centery=960.0,540.0
     prev=240.0
-    for scale in [0.25,0.5,1,2,3,4,5,6.5,8.0]:
+    for scale in [0.25,0.5,1,2,3,4,5,6.5,8.0,10.0,12.0]:
         scaled=vertices([(
             centerx+(v.x-centerx)*scale,
             centery+(v.y-centery)*scale) for v in original])
