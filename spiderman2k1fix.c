@@ -2627,7 +2627,8 @@ static int ui_comp_draw_native_fullscreen_backdrop(
 static void ui_comp_flush(IDirect3DDevice7 *device) {
   DWORD saved=0;
   IDirectDrawSurface7 *saved_texture=NULL;
-  unsigned i,layer,inner_quads=0u;
+  unsigned i,layer,pass,inner_quads=0u;
+  unsigned paint_background=0u,paint_spider=0u,paint_menu=0u;
   DWORD native_backdrop_argb=0u;
   float spider_source_left=0.0f,spider_source_right=0.0f;
   const SpiderUICompDraw *native_backdrop_material=NULL;
@@ -2711,29 +2712,62 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
       log_line(msg);
     }
   }
-  /* Stable semantic layer order. Within each layer, retain exact game
-   * order; scene and HUD are already in the physical framebuffer. */
-  for(layer=SPIDER_UI_COMP_PAUSE_DECOR;
-      layer<=SPIDER_UI_COMP_PAUSE_MENU;layer++){
-    for(i=0;i<ui_comp_count;i++) {
-      SpiderUICompDraw *c=&ui_comp_draws[i];
-      if((unsigned)c->layer!=layer)continue;
-      /* This source colour is now the ONE full-screen background
-       * primitive. Skip its native tiles to prevent double alpha
-       * blending; replay every inner spider vertex unchanged in 4:3. */
-      if(native_backdrop_drawn &&
-         layer==SPIDER_UI_COMP_PAUSE_DECOR &&
-         c->source_v[0].diffuse==native_backdrop_argb)
-        continue;
-      if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,c->state_token)) ||
-         FAILED(IDirect3DDevice7_SetTexture(device,0,c->texture)) ||
-         FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)) ||
-         FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE)) ||
-         FAILED(original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags))) {
-        all_ok=0;
-        InterlockedIncrement(&ui_comp_replay_failures);
-      } else InterlockedIncrement(&ui_comp_replayed);
+  /* This is the native Dreamcast-style painter order:
+   *   WORLD + gameplay HUD (already drawn into backbuffer)
+   *   -> original native fullscreen Pause veil (above)
+   *   -> original 4:3 spider artwork
+   *   -> PAUSED title, purple ribbon, text and native selector.
+   *
+   * The game's own translucent DECOR mesh interleaves backdrop tiles
+   * with spider pieces. Do not rely on that raw ordering: separate its
+   * TWO source-verified materials into explicit render passes. If the
+   * native full-screen background succeeded, omit the old background
+   * tiles entirely (no double alpha blend). If the background could not
+   * be drawn but its identity is proven, its original 4:3 tiles go
+   * first, below the inner spider. Unknown materials fall back to the
+   * original primitive order. No geometry/ARGB/alpha is changed here.
+   */
+  for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;
+      pass<=SPIDER_UI_COMP_REPLAY_MENU;pass++){
+    for(layer=SPIDER_UI_COMP_PAUSE_DECOR;
+        layer<=SPIDER_UI_COMP_PAUSE_MENU;layer++){
+      for(i=0;i<ui_comp_count;i++) {
+        SpiderUICompDraw *c=&ui_comp_draws[i];
+        int owner;
+        if((unsigned)c->layer!=layer)continue;
+        owner=SpiderUIComp_ReplayPassForDraw(
+             c->layer,(unsigned)c->source_v[0].diffuse,
+             native_backdrop_verified,native_backdrop_drawn,
+             (unsigned)native_backdrop_argb);
+        if(owner!=(int)pass)continue;
+        /* The native capture's full material and texture are restored
+         * for every primitive. Disable Z only for the composited
+         * screen-space layers, so they remain above the 3D/HUD. */
+        if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,c->state_token)) ||
+           FAILED(IDirect3DDevice7_SetTexture(device,0,c->texture)) ||
+           FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)) ||
+           FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE)) ||
+           FAILED(original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags))) {
+          all_ok=0;
+          InterlockedIncrement(&ui_comp_replay_failures);
+        } else {
+          InterlockedIncrement(&ui_comp_replayed);
+          if(pass==SPIDER_UI_COMP_REPLAY_BACKDROP)paint_background++;
+          else if(pass==SPIDER_UI_COMP_REPLAY_MOTIF)paint_spider++;
+          else paint_menu++;
+        }
+      }
     }
+  }
+  if(debug_log_enabled && ui_comp_motif &&
+     (InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)<4 ||
+      InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)%180==0 ||
+      !all_ok)) {
+    char msg[245];
+    snprintf(msg,sizeof(msg),
+      "UI-COMPOSITOR-ORDER: native-veil=%d backdrop-tiles=%u spider=%u menu=%u [WORLD/HUD -> VEIL -> SPIDER -> PAUSE; ORIGINAL ALPHA; 4:3 ARTWORK]",
+      native_backdrop_drawn,paint_background,paint_spider,paint_menu);
+    log_line(msg);
   }
   /* One-shot read-only 4:3 source/mapped comparison after a stable
    * native pause frame. Do not make a new render pass or infer a tint.
