@@ -2963,10 +2963,11 @@ static void ui_atomic_renderer_acquire_reference(void)
   }
   if(ui_atomic_reference_count==ui_atomic_peak &&
      InterlockedCompareExchange(&ui_atomic_contour_enabled,0,0)==1){
-    if(SpiderAtomicContour_Prepare(
+    SpiderAtomicContourDiagnostic failure;
+    if(SpiderAtomicContour_PrepareDetailed(
          ui_atomic_reference,ui_atomic_reference_count,
          (unsigned)desktop_w,(unsigned)desktop_h,
-         &ui_atomic_contour)){
+         &ui_atomic_contour,&failure)){
       char msg[230];
       InterlockedExchange(&ui_atomic_contour_ready,1);
       snprintf(msg,sizeof(msg),
@@ -2976,7 +2977,28 @@ static void ui_atomic_renderer_acquire_reference(void)
         (double)ui_atomic_contour.maximum);
       log_line(msg);
     }else{
-      log_line("UI-ATOMIC-CONTOUR: REJECTED native source is incomplete, closed at center or not star-shaped; V12 fallback");
+      unsigned diagnostic_index;
+      char msg[285];
+      snprintf(msg,sizeof(msg),
+        "UI-ATOMIC-CONTOUR: REJECTED reason=%u [1=invalid 2=center-black 3=ray-miss 4=radius-range 5=non-star-jump] quad=%u ray=%u first=%.4f second=%.4f; V12 fallback",
+        failure.reason,failure.quad_index,failure.ray_index,
+        (double)failure.first,(double)failure.second);
+      log_line(msg);
+      /* Capture the complete ORIGINAL native family ONCE, only on
+       * rejection, so a subsequent fix can trace its real topology.
+       * No readback, game-state changes, personal data or guessed art. */
+      for(diagnostic_index=0u;diagnostic_index<ui_atomic_reference_count;
+          diagnostic_index++){
+        const SpiderAtomicMaskQuad *q=&ui_atomic_reference[diagnostic_index];
+        snprintf(msg,sizeof(msg),
+          "UI-ATOMIC-CONTOUR-SOURCE: quad=%u xy=(%.2f,%.2f)(%.2f,%.2f)(%.2f,%.2f)(%.2f,%.2f) [ORIGINAL D3D7; READ ONLY]",
+          diagnostic_index,
+          (double)q->x[0],(double)q->y[0],
+          (double)q->x[1],(double)q->y[1],
+          (double)q->x[2],(double)q->y[2],
+          (double)q->x[3],(double)q->y[3]);
+        log_line(msg);
+      }
       InterlockedExchange(&ui_atomic_contour_ready,0);
     }
   }
