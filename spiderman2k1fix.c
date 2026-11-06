@@ -982,7 +982,7 @@ static volatile LONG ui_canvas_trial_enabled=0;
 static volatile LONG ui_compositor_trial_enabled=0;
 static volatile LONG ui_compositor_tint_enabled=0; /* Never synthesize an unverified pause tint by default. */
 static volatile LONG ui_compositor_native_gutters_enabled=0; /* Deprecated fragment-replay A/B, off by default. */
-static volatile LONG ui_compositor_native_backdrop_enabled=1; /* Source-verified backdrop-only warp, independently reversible. */
+static volatile LONG ui_compositor_native_backdrop_enabled=1; /* Source-verified fullscreen veil; save/restore 4:3 viewport. */
 static volatile LONG ui_canvas_trial_hits=0;
 static volatile LONG ui_canvas_wipe_edge_hits=0;
 /* Final V25: only original V19 polygons and physical source-tooth bounds.
@@ -2508,28 +2508,104 @@ static int ui_comp_native_backdrop_source(DWORD *native_argb,
  * before reaching here. If drawing fails the caller renders the entire
  * original 4:3 set instead (no missing menu / mixed partial screen).
  */
+/* Unlike screen-space XYZRHW coordinates, the D3D7 viewport STILL
+ * physically clips rasterization. The game's 4:3/menu viewport may be
+ * (240,0)-(1680,1080) even though the compositor passes (0..1920)
+ * pretransformed vertices. The driver returns success while pixels in
+ * the outer 240px strips are discarded.
+ *
+ * Temporarily switch ONLY the native source-colour veil pass to the
+ * native physical viewport and always restore the exact original
+ * viewport BEFORE the 4:3 spider/ribbon replay. No display mode switch,
+ * game view/HUD change, alpha invention or permanent viewport mutation.
+ *
+ * Fail closed if the active viewport is neither full output nor the
+ * expected centered 4:3 region. Any unexpected state is not a licence
+ * to change the game's render context.
+ */
 static int ui_comp_draw_native_fullscreen_backdrop(
     IDirect3DDevice7 *device,const SpiderUICompDraw *sample,DWORD argb)
 {
   SpiderMenuVertex v[4];
+  D3DVIEWPORT7 previous,fullscreen;
+  HRESULT draw_hr=E_FAIL,restore_hr=S_OK;
   unsigned k;
+  int changed=0;
   float w=(float)desktop_w,h=(float)desktop_h;
+  DWORD physical_w=(DWORD)desktop_w,physical_h=(DWORD)desktop_h;
+  DWORD center_w=(DWORD)(h*(4.0f/3.0f)+0.5f);
+  DWORD center_x=(physical_w-center_w)/2u;
+  LONG frame=InterlockedCompareExchange(&ui_comp_flushed_frames,0,0);
   if(!device || !sample || !sample->state_token || sample->texture ||
      sample->fvf!=0x144UL || sample->type!=D3DPT_TRIANGLEFAN ||
      sample->source_v[0].diffuse!=argb ||
-     (argb>>24)==0u || w<640.0f || h<480.0f)return 0;
-  if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)) ||
-     FAILED(IDirect3DDevice7_SetTexture(device,0,NULL)) ||
-     FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)) ||
-     FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE)))
+     (argb>>24)==0u || w<640.0f || h<480.0f ||
+     !original_set_viewport || center_w>physical_w)
     return 0;
+  if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)) ||
+     FAILED(IDirect3DDevice7_GetViewport(device,&previous)))
+    return 0;
+  fullscreen=previous;
+  if(previous.dwX==0u && previous.dwY==0u &&
+     previous.dwWidth==physical_w && previous.dwHeight==physical_h) {
+    /* Original game viewport already covers the real display. */
+  } else if(previous.dwX==center_x && previous.dwY==0u &&
+            previous.dwWidth==center_w &&
+            previous.dwHeight==physical_h &&
+            previous.dvMinZ<=previous.dvMaxZ) {
+    fullscreen.dwX=0u;fullscreen.dwY=0u;
+    fullscreen.dwWidth=physical_w;fullscreen.dwHeight=physical_h;
+    if(FAILED(original_set_viewport(device,&fullscreen))) {
+      if(debug_log_enabled && frame<4)
+        log_line("UI-COMPOSITOR-BACKDROP-VIEWPORT: original full-width SetViewport failed; source replay fallback");
+      return 0;
+    }
+    changed=1;
+  } else {
+    if(debug_log_enabled && frame<4) {
+      char line[240];
+      snprintf(line,sizeof(line),
+        "UI-COMPOSITOR-BACKDROP-VIEWPORT: unrecognized viewport %lux%lu+%lu+%lu; physical %lux%lu, native original replay",
+        (unsigned long)previous.dwWidth,(unsigned long)previous.dwHeight,
+        (unsigned long)previous.dwX,(unsigned long)previous.dwY,
+        (unsigned long)physical_w,(unsigned long)physical_h);
+      log_line(line);
+    }
+    return 0;
+  }
+  /* The original capture includes its native material and D3D7 alpha
+   * state. Copy the native first vertex as the uniform source and
+   * modify ONLY the fullscreen rectangle's positions. */
   for(k=0u;k<4u;k++)v[k]=sample->source_v[0];
   v[0].x=0.0f;v[0].y=0.0f;
   v[1].x=w;v[1].y=0.0f;
   v[2].x=w;v[2].y=h;
   v[3].x=0.0f;v[3].y=h;
-  return SUCCEEDED(original_draw_primitive(device,
-                   D3DPT_TRIANGLEFAN,0x144UL,v,4,sample->flags));
+  if(SUCCEEDED(IDirect3DDevice7_SetTexture(device,0,NULL)) &&
+     SUCCEEDED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)) &&
+     SUCCEEDED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE))) {
+    draw_hr=original_draw_primitive(device,
+                     D3DPT_TRIANGLEFAN,0x144UL,v,4,sample->flags);
+  }
+  /* Restore the exact original device viewport on every path,
+   * including a failed native DrawPrimitive / state modification. */
+  if(changed)
+    restore_hr=original_set_viewport(device,&previous);
+  if(debug_log_enabled && (frame<4 || frame%180==0)){
+    char line[270];
+    snprintf(line,sizeof(line),
+      "UI-COMPOSITOR-BACKDROP-VIEWPORT: original=%lux%lu+%lu+%lu physical=%lux%lu temporary-switch=%d draw=0x%08lX restore=0x%08lX",
+      (unsigned long)previous.dwWidth,(unsigned long)previous.dwHeight,
+      (unsigned long)previous.dwX,(unsigned long)previous.dwY,
+      (unsigned long)physical_w,(unsigned long)physical_h,
+      changed,(unsigned long)draw_hr,(unsigned long)restore_hr);
+    log_line(line);
+  }
+  if(FAILED(restore_hr)) {
+    log_line("UI-COMPOSITOR-BACKDROP-VIEWPORT: ERROR original viewport not restored");
+    return 0;
+  }
+  return SUCCEEDED(draw_hr);
 }
 
 /* Flush before native EndScene, not at DirectDraw Flip, so the entire
@@ -5559,7 +5635,7 @@ static DWORD initialize_body(LPVOID unused) {
            backdrop[0]=='0')
           InterlockedExchange(&ui_compositor_native_backdrop_enabled,0);
         log_line(InterlockedCompareExchange(&ui_compositor_native_backdrop_enabled,0,0)==1 ?
-          "UI-COMPOSITOR-NATIVE-BACKDROP: source-verified edge-only mesh warp ENABLED (no synthetic alpha pass)" :
+          "UI-COMPOSITOR-NATIVE-BACKDROP: source-verified fullscreen veil ENABLED (temporary full physical viewport; restore for 4:3 artwork)" :
           "UI-COMPOSITOR-NATIVE-BACKDROP: OFF (original 4:3 source mesh and legacy exterior comparison)");
       }
       /* A/B rollback. 0 disables native exterior color, without
