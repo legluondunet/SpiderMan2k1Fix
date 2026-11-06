@@ -144,7 +144,7 @@ def test_v20_only_supplements_verified_v19_native_draws():
     assert "ui_transition_native43_gutters_enabled=0" in src
     assert "UI-TRANSITION-GUTTER20: V20 ON" in src
     assert "UI-TRANSITION-GUTTER20: FRAME=" in src
-    assert "UI-TRANSITION-GUTTER20: DRAW FAILURE" in src
+    assert "UI-TRANSITION-GUTTER%s: DRAW FAILURE" in src
     assert "UI-TRANSITION-GUTTER20: GEOMETRY REJECTED" in src
     assert "SpiderNative43Gutter_Build(v," in src
     h=src[src.index("static int ui_transition_native43_handle_draw("):
