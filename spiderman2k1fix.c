@@ -2805,7 +2805,7 @@ static int ui_atomic_renderer_create_texture(void)
   if(!ui_atomic_ddraw || !ui_atomic_reference_count ||
      ui_atomic_texture || !original_surface_create)return 0;
   for(n=0u;n<2u;n++){
-    unsigned tw=sizes[n][0],th=sizes[n][1],painted,row;
+    unsigned tw=sizes[n][0],th=sizes[n][1],painted,covered,row;
     IDirectDrawSurface7 *surface=NULL;
     DDSURFACEDESC2 d,locked;
     HRESULT hr;
@@ -2815,9 +2815,19 @@ static int ui_atomic_renderer_create_texture(void)
     painted=SpiderAtomicMask_Rasterize(
         ui_atomic_reference,ui_atomic_reference_count,
         (unsigned)desktop_w,(unsigned)desktop_h,pixels,tw,th);
-    if(painted<(tw*th)/10u || painted>=(tw*th)*99u/100u){
+    /* The real game renders many mask triangles TWICE, in opposite
+     * winding directions. 'painted' is a count of raster writes and
+     * can exceed 100% of the texture. Coverage validation MUST use
+     * unique final opaque pixels rather than that overdraw count. */
+    covered=SpiderAtomicMask_CountOpaquePixels(pixels,tw,th);
+    snprintf(msg,sizeof(msg),
+      "UI-ATOMIC: MASK COVERAGE %ux%u distinct=%u/%u (%.2f%%) triangle-writes=%u [COUNT UNIQUE PIXELS]",
+      tw,th,covered,tw*th,
+      100.0*(double)covered/(double)(tw*th),painted);
+    log_line(msg);
+    if(covered<(tw*th)/10u || covered>=(tw*th)*99u/100u){
       free(pixels);
-      log_line("UI-ATOMIC: REFUSED template mask has implausible covered area");
+      log_line("UI-ATOMIC: REFUSED template mask has implausible UNIQUE covered area");
       return 0;
     }
     memset(&d,0,sizeof(d));d.dwSize=sizeof(d);
@@ -2873,8 +2883,8 @@ static int ui_atomic_renderer_create_texture(void)
     ui_atomic_texture=surface;
     ui_atomic_tex_w=tw;ui_atomic_tex_h=th;
     snprintf(msg,sizeof(msg),
-      "UI-ATOMIC: TEXTURE READY %ux%u mask-quads=%u painted=%u [ONE REF IMAGE, ONE UNIFORM ZOOM]",
-      tw,th,ui_atomic_reference_count,painted);
+      "UI-ATOMIC: TEXTURE READY %ux%u mask-quads=%u covered=%u triangle-writes=%u [ONE REF IMAGE, ONE UNIFORM ZOOM]",
+      tw,th,ui_atomic_reference_count,covered,painted);
     log_line(msg);
     return 1;
   }
