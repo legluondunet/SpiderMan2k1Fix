@@ -32,6 +32,10 @@ def policy(tmp_path_factory):
         'return SpiderUIComp_CoversFullHeight(sp,n,h);}\n'
         'int edge(float l,float r,float w,float g,int side){'
         'return SpiderUIComp_EdgeTileCoversGutter(l,r,w,g,side);}\n'
+        'int segment(float x0,float y0,float x1,float y1,'
+        'float x2,float y2,float edge,float h,SpiderUICompYSpan *out){'
+        'return SpiderUIComp_TriangleEdgeSpan(x0,y0,x1,y1,'
+        'x2,y2,edge,h,out);}\n'
     )
     subprocess.run(
         [cc,"-std=c11","-Wall","-Wextra","-Werror","-fPIC","-shared",
@@ -52,6 +56,8 @@ def policy(tmp_path_factory):
     lib.coverage.restype=ct.c_int
     lib.edge.argtypes=[ct.c_float]*4+[ct.c_int]
     lib.edge.restype=ct.c_int
+    lib.segment.argtypes=[ct.c_float]*8+[ct.POINTER(YSpan)]
+    lib.segment.restype=ct.c_int
     return lib
 
 
@@ -219,7 +225,7 @@ def test_native_source_exterior_y_coverage_requires_no_gaps(policy):
     assert policy.coverage(1080,ending,2)==0
 
 
-def test_compositor_uses_native_edge_palette_but_never_stretches_motif():
+def test_compositor_extends_each_original_source_edge_instead_of_flat_bands():
     source=(ROOT/"spiderman2k1fix.c").read_text()
     fn=source.split("static int ui_comp_draw_native_gutters(",1)[1].split(
         "/* Flush before native EndScene",1)[0]
@@ -227,31 +233,71 @@ def test_compositor_uses_native_edge_palette_but_never_stretches_motif():
     assert "c->layer!=SPIDER_UI_COMP_PAUSE_DECOR" in fn
     assert "c->texture" in fn
     assert "v[k].diffuse!=v[0].diffuse" in fn
-    assert "palette!=(unsigned)v[0].diffuse" in fn
-    assert "SpiderUIComp_CoversFullHeight(spans_left,left_count,h)" in fn
-    assert "SpiderUIComp_CoversFullHeight(spans_right,right_count,h)" in fn
-    assert "IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)" in fn
-    assert "vertices[k].diffuse=(DWORD)palette" in fn
-    assert "vertices[0].x=xl;vertices[0].y=0.0f;" in fn
-    assert "vertices[1].x=xr;vertices[1].y=0.0f;" in fn
-    assert "vertices[2].x=xr;vertices[2].y=h;" in fn
+    assert "SpiderUIComp_CoversFullHeight(left_spans,left_count,h)" in fn
+    assert "SpiderUIComp_CoversFullHeight(right_spans,right_count,h)" in fn
+    assert "SpiderUIComp_TriangleEdgeSpan(" in fn
+    assert "IDirect3DDevice7_ApplyStateBlock(device,c->state_token)" in fn
+    assert "out[k]=*v0" in fn
+    assert "out[0].x=xl;out[0].y=span.top;" in fn
+    assert "out[2].x=xr;out[2].y=span.bottom;" in fn
     assert "original_draw_primitive(" in fn
-    # This is NOT a full-screen native motif replay or a stretched
-    # independent spider. Only the two physical outside strips are drawn.
-    assert "for(side=0u;side<2u;side++)" in fn
+    assert "vertices[0].x=xl;vertices[0].y=0.0f;" not in fn
+    assert "palette!=(unsigned)v[0].diffuse" not in fn
+    # Source triangles are replayed ONLY along the outer strips.
+    assert "out[0].x=xl" in fn and "out[3].x=xl" in fn
     assert "c->v[k].x=" not in fn
     assert "c->source_v[k].x=" not in fn
-    assert "0x80868620" not in fn  # palette derives from actual source
+    assert "0x80868620" not in fn
     assert "UI-COMPOSITOR-NATIVE-GUTTERS:" in source
+    assert "source-edge-strips=%u" in source
     assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_GUTTERS" in source
     assert "gutters[0]=='0'" in source
     assert "static volatile LONG ui_compositor_native_gutters_enabled=1;" in source
     assert "if(!needs_tint && ui_comp_motif &&" in source
-    # Native exterior is composed before 4:3 decor and ESC foreground.
     flush=source.split("static void ui_comp_flush(",1)[1].split(
         "static int ui_comp_capture(",1)[0]
-    assert flush.index("ui_comp_draw_native_gutters(device,&native_color)")<flush.index(
-        "for(layer=SPIDER_UI_COMP_PAUSE_DECOR;")
+    assert flush.index("ui_comp_draw_native_gutters(device,&source_strips)") < (
+        flush.index("for(layer=SPIDER_UI_COMP_PAUSE_DECOR;"))
+
+
+def test_original_source_edge_triangle_preserves_vertical_segments(policy):
+    Y=policy.YSpan
+
+    def sample(vertices,edge,h=1080):
+        v=list(vertices)
+        out=Y()
+        result=policy.segment(*v,edge,h,ct.byref(out))
+        return result,out
+
+    # One of the game's native left border triangles with a full
+    # 0..234px source edge. Its exterior must not become 0..1080.
+    found,span=sample((0,0,281.2,0,0,234),0)
+    assert found==1
+    assert span.top==pytest.approx(0)
+    assert span.bottom==pytest.approx(234)
+
+    # Complementary triangle only touches the edge at one point;
+    # it must not paint the 240px exterior.
+    found,_=sample((281.2,0,281.2,234,0,234),0)
+    assert found==0
+
+    # Right monitor edge, a different source segment, same algorithm.
+    found,span=sample((1920,600,1638.8,810,1920,810),1920)
+    assert found==1
+    assert span.top==pytest.approx(600)
+    assert span.bottom==pytest.approx(810)
+
+    # Geometry between original 4:3/gutter boundaries is not an edge.
+    found,_=sample((240,0,480,0,240,234),0)
+    assert found==0
+
+    # A degenerate triangle cannot establish an exterior backdrop.
+    found,_=sample((0,0,0,0,0,234),0)
+    assert found==0
+
+    # Partial screen coverage cannot pass the full-height validator.
+    v=(Y*2)(Y(0,320),Y(450,1080))
+    assert policy.coverage(1080,v,2)==0
 
 
 
@@ -290,8 +336,12 @@ def test_runtime_refuses_partial_source_tile_before_material_and_y_checks():
     end=src.index("/* Flush before native EndScene",start)
     code=src[start:end]
     assert code.count("SpiderUIComp_EdgeTileCoversGutter(")==2
-    assert code.index("SpiderUIComp_EdgeTileCoversGutter(")<code.index(
-        "if(!c->state_token || c->texture")
-    assert "if(!on_left && !on_right)continue;" in code
-    assert "if((on_left && !SpiderUIComp_EdgeTileCoversGutter(" in code
-    assert "if(!sample || !have_palette" in code
+    assert code.index("SpiderUIComp_EdgeTileCoversGutter(") < code.index(
+        "!c->state_token || c->texture")
+    assert "if(!edge_left && !edge_right)continue;" in code
+    assert "SpiderUIComp_CoversFullHeight(left_spans,left_count,h)" in code
+    assert "SpiderUIComp_CoversFullHeight(right_spans,right_count,h)" in code
+    # Render passes only after BOTH full-height checks.
+    assert code.index("SpiderUIComp_CoversFullHeight(right_spans") < (
+        code.index("IDirect3DDevice7_ApplyStateBlock(device,c->state_token)"))
+    assert "return drawn!=0u;" in code
