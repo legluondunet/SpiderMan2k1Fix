@@ -455,40 +455,29 @@ def test_background_only_warp_preserves_spider_in_4_by_3(policy):
     assert policy.warp(123,1440,1080,255,1250)==pytest.approx(123)
 
 
-def test_native_veil_is_one_source_owned_fullscreen_pass_with_no_double_blend():
+def test_native_exterior_preserves_all_160_source_triangles():
     src=(ROOT/"spiderman2k1fix.c").read_text()
-    assert "ui_comp_native_backdrop_source(" in src
-    func=src.split("static int ui_comp_draw_native_fullscreen_backdrop(",1)[1].split(
+    fn=src.split("static int ui_comp_draw_native_exterior_gutters(",1)[1].split(
         "/* Flush before native EndScene",1)[0]
-    # Same original D3D7 state, tint and alpha from a validated source
-    # primitive. Only four positions are changed, not diffuse/alpha/UV.
-    assert "IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)" in func
-    assert "IDirect3DDevice7_SetTexture(device,0,NULL)" in func
-    assert "for(k=0u;k<4u;k++)v[k]=sample->source_v[0]" in func
-    for fragment in ("v[0].x=0.0f;v[0].y=0.0f",
-                     "v[1].x=w;v[1].y=0.0f",
-                     "v[2].x=w;v[2].y=h",
-                     "v[3].x=0.0f;v[3].y=h"):
-        assert fragment in func
-    assert "D3DPT_TRIANGLEFAN,0x144UL,v,4,sample->flags" in func
-    assert "0x80868620" not in func
-
+    for fragment in (
+        "IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)",
+        "for(k=0u;k<4u;k++)v[k]=sample->source_v[0]",
+        "for(side=0u;side<2u && SUCCEEDED(draw_hr);side++)",
+        "left=side==0u ? 0.0f:(float)(w-margin)",
+        "right=side==0u ? (float)margin:(float)w",
+        "D3DPT_TRIANGLEFAN,0x144UL,v,4,sample->flags",
+        "if(FAILED(draw_hr) || done!=2u)return 0;",
+    ):
+        assert fragment in fn
+    assert "0x80868620" not in fn
+    assert "ui_comp_draw_native_fullscreen_backdrop(" not in src
     flush=src.split("static void ui_comp_flush(",1)[1].split(
         "static int ui_comp_capture(",1)[0]
-    # Fill must be complete BEFORE the original game draws the 4:3
-    # spider and menu. Every native backdrop tile is skipped ONLY after
-    # a successful source-colour draw; otherwise the original mesh draws.
-    assert flush.index("ui_comp_draw_native_fullscreen_backdrop(") < (
-        flush.index("for(layer=SPIDER_UI_COMP_HUD;"))
-    assert "native_backdrop_drawn" in flush
-    assert "SpiderUIComp_ReplayPassForDraw(" in flush
-    assert "native_backdrop_verified,native_backdrop_drawn" in flush
+    assert flush.index("ui_comp_draw_native_exterior_gutters(") < flush.index(
+        "for(layer=SPIDER_UI_COMP_HUD;")
+    assert "0,0,(unsigned)native_backdrop_argb" in flush
     assert "original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags)" in flush
-    assert "source_material" in src
-    assert "!native_backdrop_drawn && ui_comp_motif" in flush
-    assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_BACKDROP" in src
-    assert "static volatile LONG ui_compositor_native_gutters_enabled=0;" in src
-    assert "0x80868620" not in flush
+    assert "ALL 160 NATIVE TRIANGLES REPLAYED" in flush
     assert "UI-COMPOSITOR-NATIVE-BACKDROP:" in flush
 
 
@@ -508,39 +497,27 @@ def test_non_pause_spider_geometry_and_hud_remain_native():
     assert "ui_transition_native43_handle_draw(" in src
 
 
-def test_fullscreen_pause_veil_escapes_4_by_3_viewport_then_restores_it():
+def test_exterior_only_viewport_restore():
     src=(ROOT/"spiderman2k1fix.c").read_text()
-    fn=src.split("static int ui_comp_draw_native_fullscreen_backdrop(",1)[1].split(
+    fn=src.split("static int ui_comp_draw_native_exterior_gutters(",1)[1].split(
         "/* Flush before native EndScene",1)[0]
-    assert "IDirect3DDevice7_GetViewport(device,&previous)" in fn
-    assert "previous.dwX==center_x" in fn
-    assert "previous.dwWidth==center_w" in fn
-    assert "previous.dwHeight==physical_h" in fn
-    assert "fullscreen.dwX=0u;fullscreen.dwY=0u" in fn
-    assert "fullscreen.dwWidth=physical_w;fullscreen.dwHeight=physical_h" in fn
-    assert "original_set_viewport(device,&fullscreen)" in fn
-    assert "restore_hr=original_set_viewport(device,&previous)" in fn
-    assert "UI-COMPOSITOR-BACKDROP-VIEWPORT:" in fn
-    assert "D3DRENDERSTATE_ZENABLE,D3DZB_FALSE" in fn
-    assert "draw_hr=original_draw_primitive" in fn
-    # State and original physical viewport must be restored even when
-    # the full-screen native draw has failed.
-    assert fn.index("restore_hr=original_set_viewport(device,&previous)") > (
-        fn.index("draw_hr=original_draw_primitive"))
-    assert "return SUCCEEDED(draw_hr);" in fn
-    assert "if(FAILED(restore_hr))" in fn
-    assert "original_set_viewport(device,&fullscreen)" in fn
-    # No user-facing display-mode changes or persistent viewport hooks
-    # should be added to this ESC-only local render function.
+    for fragment in (
+        "IDirect3DDevice7_GetViewport(device,&previous)",
+        "previous.dwX==margin",
+        "previous.dwWidth==center_w",
+        "physical.dwX=0u;physical.dwY=0u",
+        "physical.dwWidth=w;physical.dwHeight=h",
+        "original_set_viewport(device,&physical)",
+        "restore_hr=original_set_viewport(device,&previous)",
+        "if(FAILED(restore_hr))",
+        "if(FAILED(draw_hr) || done!=2u)return 0;",
+    ):
+        assert fragment in fn
+    assert fn.index("restore_hr=original_set_viewport(device,&previous)") > fn.index(
+        "draw_hr=original_draw_primitive")
     assert "SetDisplayMode(" not in fn
     assert "hooked_set_viewport(" not in fn
-    # The exception is confined to the native backdrop; subsequent
-    # 4:3 spider/menu replay retains its existing source coordinates.
-    flush=src.split("static void ui_comp_flush(",1)[1].split(
-        "static int ui_comp_capture(",1)[0]
-    assert flush.index("ui_comp_draw_native_fullscreen_backdrop(") < (
-        flush.index("for(layer=SPIDER_UI_COMP_HUD;"))
-    assert "original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags)" in flush
+
 
 def test_new_levels_are_recognized_without_new_depth_whitelist(policy):
     # The F9 screenshot scrn0099 is the first Pause encounter where
@@ -629,7 +606,7 @@ def test_compositor_keeps_spider_above_game_hud_and_below_title():
     src=(ROOT/"spiderman2k1fix.c").read_text()
     flush=src.split("static void ui_comp_flush(",1)[1].split(
         "static int ui_comp_capture(",1)[0]
-    assert flush.index("ui_comp_draw_native_fullscreen_backdrop(") < flush.index(
+    assert flush.index("ui_comp_draw_native_exterior_gutters(") < flush.index(
         "for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;")
     assert flush.index("for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;") < flush.index(
         "for(layer=SPIDER_UI_COMP_HUD;")
@@ -648,7 +625,7 @@ def test_compositor_keeps_spider_above_game_hud_and_below_title():
     # The foreground menubar and PAUSED title retain their native
     # PAUSE_MENU queue, above every PAUSE_DECOR primitive.
     assert "SPIDER_UI_COMP_PAUSE_MENU" in flush
-    assert "native_backdrop_drawn,paint_background,paint_hud,paint_spider,paint_menu" in flush
+    assert "exterior_quads,paint_spider,paint_hud,paint_menu" in flush
 
 
 def test_late_hud_draws_are_detected_without_touching_the_original_draw_path():
@@ -703,10 +680,10 @@ def test_native_pause_hud_is_replayed_once_after_veil_before_spider():
     assert "for(layer=SPIDER_UI_COMP_HUD;" in flush
     assert "SPIDER_UI_COMP_REPLAY_HUD" in flush
     assert "paint_hud++" in flush
-    assert flush.index("ui_comp_draw_native_fullscreen_backdrop(") < flush.index(
+    assert flush.index("ui_comp_draw_native_exterior_gutters(") < flush.index(
         "for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;")
     assert "UI-COMPOSITOR-ORDER:" in flush
-    assert "hud=%u spider=%u menu=%u" in flush
+    assert "native-decor=%u hud=%u menu=%u" in flush
     # Preserve motif geometry and original HUD texture/material per draw.
     assert "original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags)" in flush
     assert "IDirect3DDevice7_ApplyStateBlock(device,c->state_token)" in flush
@@ -723,3 +700,14 @@ def test_hud_only_scene_is_not_misidentified_as_pause():
     # Older code set ribbon on ANY non-decor command. Capturing the
     # gameplay HUD must not accidentally fabricate a native Pause state.
     assert "} else ui_comp_ribbon=1;" not in capture
+
+def test_exterior_only_does_not_reclassify_or_drop_native_decor():
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    flush=src.split("static void ui_comp_flush(",1)[1].split(
+        "static int ui_comp_capture(",1)[0]
+    assert "native_backdrop_verified=ui_comp_native_backdrop_source(" in flush
+    assert "ui_comp_draw_native_exterior_gutters(" in flush
+    assert "0,0,(unsigned)native_backdrop_argb" in flush
+    assert "c->source_v[0].diffuse==native_backdrop_argb" not in flush
+    assert "original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags)" in flush
+    assert "UI-COMPOSITOR-ORDER:" in flush
