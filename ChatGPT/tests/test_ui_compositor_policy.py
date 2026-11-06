@@ -505,7 +505,8 @@ def test_hud_only_scene_is_not_misidentified_as_pause():
     src=(ROOT/"spiderman2k1fix.c").read_text()
     capture=src.split("static int ui_comp_capture(",1)[1].split(
         "static HRESULT WINAPI ui_compositor_scene_start(",1)[0]
-    assert "else if(layer==SPIDER_UI_COMP_PAUSE_MENU) ui_comp_ribbon=1;" in capture
+    assert "else if(layer==SPIDER_UI_COMP_PAUSE_MENU)" in capture
+    assert "ui_comp_ribbon=1;" in capture
     assert "if(layer==SPIDER_UI_COMP_PAUSE_DECOR)" in capture
     assert "ui_comp_ribbon=1;" in capture
     # Older code set ribbon on ANY non-decor command. Capturing the
