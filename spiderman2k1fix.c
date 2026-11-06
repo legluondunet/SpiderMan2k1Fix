@@ -988,6 +988,8 @@ static volatile LONG ui_transition_native_gutter_fragments=0;
 static volatile LONG ui_transition_native_mask_draws=0;
 static volatile LONG ui_transition_rejected_textures=0;
 static volatile LONG ui_transition_draw_failures=0;
+static volatile LONG ui_transition_candidate_probe_hits=0;
+static volatile LONG ui_transition_edge_probe_hits=0;
 static volatile LONG ui_canvas_fullscreen_kept=0;
 static const void *maybe_correct_unified_ui_canvas(
                    D3DPRIMITIVETYPE type,DWORD fvf,
@@ -2720,6 +2722,63 @@ static void ui_comp_probe_fullscreen_source(void *device,
  * falls back to the previously validated 4:3 canvas behaviour.
  * There is no per-level list, no scene ID and no GPU state override.
  */
+/* Read-only first-frame investigation of the user's confirmed
+ * 2026-11-06 V4 opening-iris regression. The native canvas accepts
+ * thousands of Z=0/RHW≈27.6 primitives while the strict extra-gutter
+ * classifier accepts NONE. Observe per-vertex colour/shape and original
+ * texture binding before relaxing any classifier. Never draw here.
+ * Bounded: first 8 source candidates and first 8 edge-attached samples.
+ */
+static void ui_transition_probe_rejected_source(
+    void *device,D3DPRIMITIVETYPE type,DWORD fvf,
+    const void *source,DWORD count,void *caller)
+{
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  DWORD rva=0;
+  float l,r,t,b;
+  unsigned k;
+  int edge,match;
+  LONG hit;
+  IDirectDrawSurface7 *texture=NULL;
+  HRESULT tex_hr;
+  char msg[360];
+  if(!debug_log_enabled ||
+     InterlockedCompareExchange(&ui_transition_trial_enabled,0,0)!=1 ||
+     !device || !source || count!=4 || !geom_rva(caller,&rva) ||
+     rva!=0x00102C72UL || type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
+     fabsf(v[0].z)>.00004f || fabsf(v[0].rhw-27.6f)>.08f)
+    return;
+  l=r=v[0].x;t=b=v[0].y;
+  for(k=1u;k<4u;k++) {
+    if(v[k].x<l)l=v[k].x;
+    if(v[k].x>r)r=v[k].x;
+    if(v[k].y<t)t=v[k].y;
+    if(v[k].y>b)b=v[k].y;
+  }
+  edge=l<=((float)desktop_w*.03f) ||
+       r>=((float)desktop_w*.97f);
+  hit=edge ? InterlockedIncrement(&ui_transition_edge_probe_hits) :
+             InterlockedIncrement(&ui_transition_candidate_probe_hits);
+  if(hit>8) return;
+  match=SpiderTransition_IsNativeBlackMask(
+        v,(unsigned)count,(unsigned)type,(uint32_t)fvf,
+        (uint32_t)rva,(unsigned)desktop_w,(unsigned)desktop_h);
+  tex_hr=IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,
+                                    0,&texture);
+  snprintf(msg,sizeof(msg),
+    "UI-TRANSITION-PROBE: kind=%s sample=%ld bbox=(%.1f..%.1f,%.1f..%.1f) colors=%08lX/%08lX/%08lX/%08lX z=%.5f/%.5f/%.5f/%.5f rhw=%.3f/%.3f/%.3f/%.3f strict=%d tex-hr=%08lX textured=%d [READ-ONLY]",
+    edge?"edge":"inner",(long)hit,
+    (double)l,(double)r,(double)t,(double)b,
+    (unsigned long)v[0].diffuse,(unsigned long)v[1].diffuse,
+    (unsigned long)v[2].diffuse,(unsigned long)v[3].diffuse,
+    (double)v[0].z,(double)v[1].z,(double)v[2].z,(double)v[3].z,
+    (double)v[0].rhw,(double)v[1].rhw,
+    (double)v[2].rhw,(double)v[3].rhw,
+    match,(unsigned long)tex_hr,texture!=NULL);
+  log_line(msg);
+  if(texture)IDirectDrawSurface7_Release(texture);
+}
+
 static void maybe_restore_native_transition_gutters(
     void *device,D3DPRIMITIVETYPE type,DWORD fvf,
     const void *source,DWORD count,DWORD flags,void *caller)
@@ -2861,6 +2920,11 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       v=candidate;
     }
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
+    /* First observe which original native iris source primitives fail
+     * the current strict material classifier. No geometry is changed. */
+    if(v!=verts && count==4 && !native_esc_primitive)
+      ui_transition_probe_rejected_source(self,type,fvf,verts,count,
+                                           __builtin_return_address(0));
     /* Extra original-colour black fragments only in physical gutter
      * strips. The mapped opening remains untouched; this call draws no
      * global black rectangle and never changes Direct3D render states.
