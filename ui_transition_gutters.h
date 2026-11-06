@@ -146,6 +146,101 @@ static inline unsigned SpiderTransition_ClipToGutter(
     return n>=3u ? n : 0u;
 }
 
+/* Physical-gutter fill derived ONLY from the black mask's
+ * intersection with the ORIGINAL screen edge (source x=0 or x=W).
+ *
+ * The center viewport maps original x=0 to x=gutter (and original
+ * x=W to x=W-gutter). Replaying original source polygons clipped to
+ * physical x=[0,gutter] is inconsistent with this mapping: near the
+ * END of the expanding iris, source fragments can enter x=[0,gutter]
+ * without touching original x=0, leaving isolated black triangles in
+ * the physical margin even while the center's edge is already open.
+ *
+ * Instead, extend exactly the black vertical boundary intervals at
+ * original x=0 or x=W across their corresponding outside strips.
+ * A polygon not touching that screen edge returns 0 (not a dangling
+ * native-source fragment). No spider silhouette edge is stretched:
+ * only an existing screen-EDGE black band extends horizontally.
+ *
+ * The game-owned black polygons are convex TRIANGLEFAN quads. Reject
+ * non-convex geometry to avoid filling disjoint vertical segments.
+ * No level IDs, fixed transition duration or guessed fade parameters.
+ */
+static inline unsigned SpiderTransition_ExtendBlackEdge(
+    const SpiderMenuVertex *source,SpiderMenuVertex *out,
+    unsigned side,unsigned screen_w,unsigned screen_h)
+{
+    float xedge,w,h,gutter,miny=0.0f,maxy=0.0f;
+    float previous=0.0f;
+    unsigned i,count=0u;
+    if(!source || !out || side>1u || screen_w<640u ||
+       screen_h<480u || screen_w>16384u || screen_h>16384u ||
+       (uint64_t)screen_w*3u <= (uint64_t)screen_h*4u)
+        return 0u;
+    w=(float)screen_w;h=(float)screen_h;
+    gutter=(w-h*4.0f/3.0f)*0.5f;
+    if(!(gutter>0.0f && gutter<w*0.5f))return 0u;
+    xedge=side ? w : 0.0f;
+    /* Reject concave or bow-tie quads before taking a min/max span.
+     * The native mask consists of convex screen-space fans. */
+    for(i=0u;i<4u;i++){
+        const SpiderMenuVertex *a=&source[i],*b=&source[(i+1u)%4u],
+                               *c=&source[(i+2u)%4u];
+        float cross=(b->x-a->x)*(c->y-b->y) -
+                    (b->y-a->y)*(c->x-b->x);
+        if(cross>0.01f){
+            if(previous<0.0f)return 0u;
+            previous=1.0f;
+        }else if(cross<-.01f){
+            if(previous>0.0f)return 0u;
+            previous=-1.0f;
+        }
+    }
+    /* Accumulate exact edge vertices and edge-crossing intersections.
+     * Any accepted candidate must intersect the physical screen EDGE;
+     * isolated pixels in the source gutter are never replicated. */
+    for(i=0u;i<4u;i++){
+        const SpiderMenuVertex *a=&source[i],*b=&source[(i+1u)%4u];
+        float da=a->x-xedge,db=b->x-xedge,y;
+        int onedge=SpiderTransition_Abs(da)<=0.25f;
+        int crossing=(da<-.25f && db>.25f) ||
+                     (da>.25f && db<-.25f);
+        if(!onedge && !crossing)continue;
+        if(crossing){
+            float dx=b->x-a->x,t;
+            if(dx==0.0f)return 0u;
+            t=(xedge-a->x)/dx;
+            if(!(t>=0.0f && t<=1.0f))return 0u;
+            y=a->y+t*(b->y-a->y);
+        } else y=a->y;
+        if(count==0u)miny=maxy=y;
+        else {
+            if(y<miny)miny=y;
+            if(y>maxy)maxy=y;
+        }
+        ++count;
+    }
+    if(count<2u || maxy-miny<=0.5f || miny>=h || maxy<=0.0f)
+        return 0u;
+    if(miny<0.0f)miny=0.0f;
+    if(maxy>h)maxy=h;
+    if(maxy-miny<=0.5f)return 0u;
+    /* Leave source material untouched (FVF, RGB/alpha, depth, RHW,
+     * texcoords); only screen-space X/Y of this NEW gutter rectangle
+     * differ. Shared boundary uses exactly the canvas x=gutter.
+     * No widening into the center; no painted triangle disconnected
+     * from the center mask.
+     */
+    for(i=0u;i<4u;i++)out[i]=source[0];
+    out[0].x=side ? w-gutter : 0.0f;
+    out[1].x=side ? w : gutter;
+    out[2].x=out[1].x;
+    out[3].x=out[0].x;
+    out[0].y=out[1].y=miny;
+    out[2].y=out[3].y=maxy;
+    return 4u;
+}
+
 /* The previously approved 4:3 gameplay UI mapping is unmodified.
  * During the new explicit transition-only test, cancel only the old
  * physical-edge pinning of verified mask polygons. The actual shape
