@@ -100,6 +100,35 @@ New installations generate `[Input] ExperimentalSDL3UniversalGameplay=1`. When t
 
 To turn this functionality OFF, set `ExperimentalSDL3UniversalGameplay=0` in `[Input]` and restart. **Existing valid INIs are preserved**: users with a previous `=0` keep that setting until they manually change it to `=1`; the patch does not silently reinterpret a saved preference. The independent legacy experimental native-owner mode remains OFF by default.
 
+### GAME OVER native owner observer (2026-11-06)
+
+PR #110 now captures additional **bounded, read-only** original-engine
+state whenever the existing `ExperimentalSDL3GameOverConfirm=1` trial is
+enabled. No extra INI option is required, and this observer does not
+modify the existing candidate logic, input routing or default behavior.
+
+Its `SDL3-GAMEOVER-OWNER-PROBE` messages record up to eight ordinary
+3D baseline samples (first frame, then one per 180 game Flips) and
+transitions into/out of the candidate, the sixth stable frame, and
+the instant immediately before a fresh South-to-Enter action (global
+32-report maximum). They contain the documented original script-manager
+pointer `[0x006A9038]`, guarded context/active/IP/skip fields at
+`+0x1AC/+0x1B4/+0x1B8/+0x1A4`, the original request/task/input
+states, the native pause menu pointers, cutscene flags and game tick.
+
+These values are **research evidence only**. A script manager is not a
+GAME OVER menu object, and a difference between two samples is not a
+proven unique owner. Failed or inaccessible memory reads are marked
+`base=0` or `script-ok=0` and cannot authorize Enter injection.
+No original executable bytes or player game state are modified.
+
+The previous 2026-11-06 EasySMX and PS3 hardware tests established that
+**a fresh South-to-Enter pulse works** under GE-Proton11-12 with explicit
+opt-in; they did not establish that request `2` is exclusive to GAME OVER.
+Do not enable this feature by default until a distinct source-verified
+native owner is identified and negative tests cover normal level changes,
+cinematics and native Pause.
+
 ### GAME OVER controller confirmation: experimental research only (PR #110)
 
 The original GAME OVER `RETRY / QUIT` screen can retain the 3D renderer
