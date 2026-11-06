@@ -96,6 +96,51 @@ static inline unsigned SpiderAtomicMask_CountOpaquePixels(
             ++covered;
     return covered;
 }
+/* The original spider aperture is a 4:3 sprite, even when the D3D7
+ * gameplay scene is presented across a 16:9 or ultrawide desktop.
+ * The verified original PC quads give a WHOLE black/alpha composition,
+ * but their source X was expanded to physical widescreen dimensions.
+ *
+ * Re-establish the original 4:3 proportions ONCE in texture space,
+ * BEFORE any native game-driven uniform zoom. Never change an
+ * individual tooth, quad, scene, or animation time. The entire
+ * silhouette is sampled through ONE global affine inverse X map.
+ *
+ * Essential distinction from old V6-V9: the exterior of the finite
+ * reference canvas is OPAQUE BLACK, not transparent. This preserves
+ * its exterior matte even in the physical widescreen gutters.
+ * Input and output may not overlap.
+ */
+static inline int SpiderAtomicMask_CorrectReference43(
+    const uint32_t *native_rgba,uint32_t *corrected_rgba,
+    unsigned tex_w,unsigned tex_h,unsigned display_w,unsigned display_h)
+{
+    unsigned y,x;
+    float ratio,cx;
+    if(!native_rgba || !corrected_rgba || native_rgba==corrected_rgba ||
+       tex_w<64u || tex_h<64u || tex_w>4096u || tex_h>4096u ||
+       display_w<640u || display_h<480u ||
+       display_w>16384u || display_h>16384u ||
+       (uint64_t)display_w*3u < (uint64_t)display_h*4u)
+        return 0;
+    ratio=((float)display_h*4.0f)/((float)display_w*3.0f);
+    if(!(ratio>0.0f && ratio<=1.000001f))return 0;
+    cx=(float)tex_w*.5f;
+    for(y=0u;y<tex_h;y++){
+        const uint32_t *src=native_rgba+(size_t)y*tex_w;
+        uint32_t *dst=corrected_rgba+(size_t)y*tex_w;
+        for(x=0u;x<tex_w;x++){
+            /* Inverse of original 4:3 X squeeze, without scaling Y.
+             * Thus a connected original aperture remains a single
+             * connected image with the Dreamcast 4:3 silhouette. */
+            float sx=cx+((float)x+.5f-cx)/ratio-.5f;
+            int xi=(int)floorf(sx+.5f);
+            dst[x]=(xi<0 || xi>=(int)tex_w) ? 0xFF000000u : src[xi];
+        }
+    }
+    return 1;
+}
+
 /* Recover game-owned growth from a *source* quad by comparing it with
  * all reference quads. Native positions are quantized and culled near
  * the edges. Compare residuals after positive isotropic scaling about
