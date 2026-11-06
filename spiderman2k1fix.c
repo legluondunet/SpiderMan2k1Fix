@@ -2461,7 +2461,7 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
   DWORD saved=0;
   IDirectDrawSurface7 *saved_texture=NULL;
   unsigned i,layer,pass,inner_quads=0u;
-  unsigned paint_background=0u,paint_hud=0u,paint_spider=0u,paint_menu=0u;
+  unsigned paint_hud=0u,paint_spider=0u,paint_menu=0u;
   unsigned exterior_quads=0u;
   DWORD native_backdrop_argb=0u;
   float spider_source_left=0.0f,spider_source_right=0.0f;
@@ -2534,7 +2534,7 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
    * gutter-only primitives cover exterior pixels but NEVER centre.
    * Source colours and alpha are unmodified for every native triangle.
    */
-  for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;
+  for(pass=SPIDER_UI_COMP_REPLAY_HUD;
       pass<=SPIDER_UI_COMP_REPLAY_MENU;pass++){
     for(layer=SPIDER_UI_COMP_HUD;
         layer<=SPIDER_UI_COMP_PAUSE_MENU;layer++){
@@ -2542,12 +2542,10 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
         SpiderUICompDraw *c=&ui_comp_draws[i];
         int owner;
         if((unsigned)c->layer!=layer)continue;
-        /* The centre is NEVER split by palette again, even when the
-         * exterior-only gutter material was verified/drawn. Treat
-         * every source DECOR triangle as the same original-order pass. */
-        owner=SpiderUIComp_ReplayPassForDraw(
-             c->layer,(unsigned)c->source_v[0].diffuse,
-             0,0,(unsigned)native_backdrop_argb);
+        /* The complete native 160-tile motif (including its background)
+         * is one contiguous draw pass. Source colours are NEVER filtered
+         * or discarded; the separate gutters never cover centre 4:3. */
+        owner=SpiderUIComp_ReplayPassForDraw(c->layer);
         if(owner!=(int)pass)continue;
         /* The native capture's full material and texture are restored
          * for every primitive. Disable Z only for the composited
@@ -2561,8 +2559,7 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
           InterlockedIncrement(&ui_comp_replay_failures);
         } else {
           InterlockedIncrement(&ui_comp_replayed);
-          if(pass==SPIDER_UI_COMP_REPLAY_BACKDROP)paint_background++;
-          else if(pass==SPIDER_UI_COMP_REPLAY_HUD)paint_hud++;
+          if(pass==SPIDER_UI_COMP_REPLAY_HUD)paint_hud++;
           else if(pass==SPIDER_UI_COMP_REPLAY_MOTIF)paint_spider++;
           else paint_menu++;
         }
