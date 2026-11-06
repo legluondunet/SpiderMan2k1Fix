@@ -494,7 +494,7 @@ def test_non_pause_spider_geometry_and_hud_remain_native():
     assert "pass<=SPIDER_UI_COMP_REPLAY_MENU;pass++)" in flush
     assert "SpiderUIComp_ReplayPassForDraw(" in flush
     assert "native_backdrop_drawn" in flush
-    assert "for(layer=SPIDER_UI_COMP_PAUSE_DECOR;" in flush
+    assert "for(layer=SPIDER_UI_COMP_HUD;" in flush
     assert "layer<=SPIDER_UI_COMP_PAUSE_MENU" in flush
     assert "maybe_correct_aim_reticle(" in src
     assert "ui_transition_native43_handle_draw(" in src
@@ -596,23 +596,24 @@ def test_host_activates_compositor_before_generic_canvas_for_unknown_pause_depth
 def test_source_verified_spider_has_its_own_pass_above_veil_and_hud(
         policy,background,spider):
     replay=policy.replay_pass
-    # 0=backdrop, 1=spider, 2=menu, -1=skip.
+    # 0=backdrop, 1=HUD, 2=spider, 3=menu, -1=skip.
     # Successful fullscreen veil: skip original backdrop tiles,
     # preserve all inner spider pieces and foreground native menu.
     assert replay(3,background,1,1,background)==-1
-    assert replay(3,spider,1,1,background)==1
-    assert replay(4,0xFFFFFFFF,1,1,background)==2
+    assert replay(1,spider,1,1,background)==1
+    assert replay(3,spider,1,1,background)==2
+    assert replay(4,0xFFFFFFFF,1,1,background)==3
     # Fullscreen draw failed but source identity is proven: original
     # backdrop quads remain, underneath the independently replayed art.
     assert replay(3,background,1,0,background)==0
-    assert replay(3,spider,1,0,background)==1
-    assert replay(4,0xFF000000,1,0,background)==2
+    assert replay(3,spider,1,0,background)==2
+    assert replay(4,0xFF000000,1,0,background)==3
     # Unknown shape/material => do not guess or discard its pieces.
-    assert replay(3,background,0,0,background)==1
-    assert replay(3,spider,0,0,background)==1
-    assert replay(4,spider,0,0,background)==2
+    assert replay(3,background,0,0,background)==2
+    assert replay(3,spider,0,0,background)==2
+    assert replay(4,spider,0,0,background)==3
     assert replay(0,spider,1,1,background)==-1
-    assert replay(1,spider,1,1,background)==-1
+    assert replay(1,spider,1,1,background)==1
     assert replay(2,spider,1,1,background)==-1
 
 
@@ -624,6 +625,7 @@ def test_compositor_keeps_spider_above_game_hud_and_below_title():
         "for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;")
     assert flush.index("for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;") < flush.index(
         "for(layer=SPIDER_UI_COMP_PAUSE_DECOR;")
+    assert "SPIDER_UI_COMP_REPLAY_HUD" in flush
     assert "SPIDER_UI_COMP_REPLAY_MOTIF" in flush
     assert "SPIDER_UI_COMP_REPLAY_MENU" in flush
     assert "owner!=(int)pass" in flush
@@ -638,7 +640,7 @@ def test_compositor_keeps_spider_above_game_hud_and_below_title():
     # The foreground menubar and PAUSED title retain their native
     # PAUSE_MENU queue, above every PAUSE_DECOR primitive.
     assert "SPIDER_UI_COMP_PAUSE_MENU" in flush
-    assert "native_backdrop_drawn,paint_background,paint_spider,paint_menu" in flush
+    assert "native_backdrop_drawn,paint_background,paint_hud,paint_spider,paint_menu" in flush
 
 
 def test_late_hud_draws_are_detected_without_touching_the_original_draw_path():
@@ -661,3 +663,55 @@ def test_late_hud_draws_are_detected_without_touching_the_original_draw_path():
     assert "original_draw_primitive(" not in diag
     assert "ui_comp_capture(" not in diag
     assert "log_line(msg)" in diag
+
+
+def test_native_pause_hud_is_replayed_once_after_veil_before_spider():
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    policy=(ROOT/"ui_compositor_policy.h").read_text()
+    assert "SPIDER_UI_COMP_REPLAY_HUD = 1" in policy
+    assert "SPIDER_UI_COMP_REPLAY_MOTIF = 2" in policy
+    assert "SPIDER_UI_COMP_REPLAY_MENU = 3" in policy
+    assert "native_layer == SPIDER_UI_COMP_HUD" in policy
+    assert "SPIDER_UI_COMP_MAX_COMMANDS 384u" in policy
+    assert "UI-COMPOSITOR-HUD-ORDER: ON" in src
+    assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_HUD_OVER_VEIL" in src
+    hook=src.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
+        "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
+    assert "verified_hud_canvas=1" in hook
+    assert "native_pause43_visible_near_flip(" in hook
+    assert "native_esc_primitive && v!=verts" in hook
+    assert "SPIDER_UI_COMP_HUD" in hook
+    assert "SPIDER_UI_COMP_HUD))" in hook
+    assert hook.index("verified_hud_canvas &&") < hook.index(
+        "native_esc_primitive && v!=verts")
+    # The successful capture returns D3D_OK rather than drawing HUD early,
+    # avoiding unwanted dimming AND double alpha blending.
+    before=hook.split("if(!native_esc_primitive && verified_hud_canvas &&",1)[1].split(
+        "else if(native_esc_primitive && v!=verts",1)[0]
+    assert "hr=D3D_OK;" in before
+    assert "original_draw_primitive" not in before
+    flush=src.split("static void ui_comp_flush(",1)[1].split(
+        "static int ui_comp_capture(",1)[0]
+    assert "for(layer=SPIDER_UI_COMP_HUD;" in flush
+    assert "SPIDER_UI_COMP_REPLAY_HUD" in flush
+    assert "paint_hud++" in flush
+    assert flush.index("ui_comp_draw_native_fullscreen_backdrop(") < flush.index(
+        "for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;")
+    assert "UI-COMPOSITOR-ORDER:" in flush
+    assert "hud=%u spider=%u menu=%u" in flush
+    # Preserve motif geometry and original HUD texture/material per draw.
+    assert "original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags)" in flush
+    assert "IDirect3DDevice7_ApplyStateBlock(device,c->state_token)" in flush
+    assert "IDirect3DDevice7_SetTexture(device,0,c->texture)" in flush
+
+
+def test_hud_only_scene_is_not_misidentified_as_pause():
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    capture=src.split("static int ui_comp_capture(",1)[1].split(
+        "static HRESULT WINAPI ui_compositor_scene_start(",1)[0]
+    assert "else if(layer==SPIDER_UI_COMP_PAUSE_MENU) ui_comp_ribbon=1;" in capture
+    assert "if(layer==SPIDER_UI_COMP_PAUSE_DECOR)" in capture
+    assert "ui_comp_ribbon=1;" in capture
+    # Older code set ribbon on ANY non-decor command. Capturing the
+    # gameplay HUD must not accidentally fabricate a native Pause state.
+    assert "} else ui_comp_ribbon=1;" not in capture
