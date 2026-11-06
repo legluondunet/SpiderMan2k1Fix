@@ -992,6 +992,122 @@ static volatile LONG ui_transition_fullscreen_rejections=0;
 static volatile LONG ui_transition_seal_trial_enabled=0;
 static volatile LONG ui_transition_topology_trial_enabled=0;
 static volatile LONG ui_transition_topology_draws=0;
+
+/* EXPERIMENTAL, read-only V10 precursor: identify every primitive in
+ * the ORIGINAL spider-transition image, not only the zero-alpha teeth.
+ * We need this evidence before attempting an atomic offscreen mask
+ * texture (one image / one enlargement). Current V6-V9 mutate
+ * individual quads, which cannot guarantee the visual connections
+ * between different game-owned draw families.
+ *
+ * No SetRenderState / SetTexture / DrawPrimitive / vertex rewrite
+ * occurs in this diagnostic. Record max 128 candidate original
+ * screen-projected black quads per D3D7 scene (plus complete counters).
+ * Sample every third transition scene, max 75 scenes after the first
+ * verified native iris draw. No game/level names or personal data.
+ * Disabled by default; a single extra environment variable enables it.
+ */
+#define SPIDER_ATOMIC_PROBE_MAX 128u
+typedef struct SpiderAtomicProbeQuad {
+  float x[4],y[4];
+  DWORD color,caller;
+} SpiderAtomicProbeQuad;
+static volatile LONG ui_atomic_probe_trial_enabled=0;
+static SpiderAtomicProbeQuad ui_atomic_quads[SPIDER_ATOMIC_PROBE_MAX];
+static unsigned ui_atomic_count=0,ui_atomic_total=0;
+static unsigned ui_atomic_black_zero=0,ui_atomic_black_opaque=0;
+static unsigned ui_atomic_iris_seen=0,ui_atomic_scene_number=0;
+static unsigned ui_atomic_scenes_left=0,ui_atomic_logged_scenes=0;
+
+static void ui_atomic_probe_begin_scene(void)
+{
+  if(InterlockedCompareExchange(&ui_atomic_probe_trial_enabled,0,0)!=1)
+    return;
+  ui_atomic_count=0;ui_atomic_total=0;
+  ui_atomic_black_zero=0;ui_atomic_black_opaque=0;
+  ui_atomic_iris_seen=0;
+}
+
+static void ui_atomic_probe_raw_draw(
+    D3DPRIMITIVETYPE type,DWORD fvf,const void *vertices,DWORD count,void *caller)
+{
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)vertices;
+  DWORD rva=0,color;
+  unsigned i;
+  SpiderAtomicProbeQuad *p;
+  if(InterlockedCompareExchange(&ui_atomic_probe_trial_enabled,0,0)!=1 ||
+     !vertices || count!=4 || type!=D3DPT_TRIANGLEFAN ||
+     fvf!=0x144UL || desktop_w<640 || desktop_h<480)
+    return;
+  color=v[0].diffuse;
+  if(color!=0x00000000UL && color!=0xFF000000UL)
+    return;
+  for(i=0;i<4u;i++){
+    if(v[i].diffuse!=color ||
+       !(v[i].z>=-.00004f && v[i].z<=.00004f &&
+         v[i].rhw>=27.52f && v[i].rhw<=27.68f &&
+         v[i].x>=-(float)desktop_w*.10f &&
+         v[i].x<=(float)desktop_w*1.10f &&
+         v[i].y>=-(float)desktop_h*.10f &&
+         v[i].y<=(float)desktop_h*1.10f))
+      return;
+  }
+  ++ui_atomic_total;
+  if(color==0x00000000UL)++ui_atomic_black_zero;
+  else ++ui_atomic_black_opaque;
+  if(geom_rva(caller,&rva) &&
+     rva==SPIDER_TRANSITION_CALLER_RVA &&
+     color==0x00000000UL)
+    ui_atomic_iris_seen=1;
+  if(ui_atomic_count>=SPIDER_ATOMIC_PROBE_MAX)
+    return;
+  p=&ui_atomic_quads[ui_atomic_count++];
+  p->color=color;p->caller=rva;
+  for(i=0;i<4u;i++){p->x[i]=v[i].x;p->y[i]=v[i].y;}
+}
+
+static void ui_atomic_probe_finish_scene(void)
+{
+  unsigned i,scene;
+  char msg[355];
+  if(InterlockedCompareExchange(&ui_atomic_probe_trial_enabled,0,0)!=1)
+    return;
+  if(ui_atomic_iris_seen && ui_atomic_scenes_left==0u)
+    ui_atomic_scenes_left=75u;
+  if(ui_atomic_scenes_left==0u)
+    return;
+  scene=++ui_atomic_scene_number;
+  if(ui_atomic_logged_scenes>=75u){
+    ui_atomic_scenes_left=0u;
+    return;
+  }
+  ++ui_atomic_logged_scenes;
+  snprintf(msg,sizeof(msg),
+    "UI-ATOMIC-PROBE: frame=%u iris=%u zero=%u opaque=%u all=%u stored=%u [READ-ONLY; FULL NATIVE BLACK FAMILY]",
+    scene,ui_atomic_iris_seen,ui_atomic_black_zero,
+    ui_atomic_black_opaque,ui_atomic_total,ui_atomic_count);
+  log_line(msg);
+  /* One in three frames is sufficient to reconstruct whether teeth,
+   * side matte and cinematic top/bottom bars share the same source
+   * pass, while avoiding log storms at the original 30 FPS. */
+  if(scene==1u || scene%3u==0u){
+    for(i=0u;i<ui_atomic_count;i++){
+      const SpiderAtomicProbeQuad *p=&ui_atomic_quads[i];
+      snprintf(msg,sizeof(msg),
+        "UI-ATOMIC-PROBE: frame=%u quad=%u argb=%08lX caller=%08lX xy=(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f) [ORIGINAL UNMODIFIED]",
+        scene,i,(unsigned long)p->color,(unsigned long)p->caller,
+        (double)p->x[0],(double)p->y[0],
+        (double)p->x[1],(double)p->y[1],
+        (double)p->x[2],(double)p->y[2],
+        (double)p->x[3],(double)p->y[3]);
+      log_line(msg);
+    }
+  }
+  --ui_atomic_scenes_left;
+  if(ui_atomic_scenes_left==0u)
+    log_line("UI-ATOMIC-PROBE: CAP COMPLETE (75 scenes); experimental renderer unchanged");
+}
+
 static volatile LONG ui_transition_seal_draws=0;
 static volatile LONG ui_transition_seal_failures=0;
 static volatile LONG ui_transition_native_gutter_fragments=0;
@@ -2654,6 +2770,7 @@ capture_failed:
 
 static HRESULT WINAPI ui_compositor_scene_start(void *self) {
   HRESULT hr=ui_original_begin_scene(self);
+  if(SUCCEEDED(hr)) ui_atomic_probe_begin_scene();
   if(SUCCEEDED(hr) &&
      InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1) {
     if(ui_comp_count) {
@@ -2665,6 +2782,7 @@ static HRESULT WINAPI ui_compositor_scene_start(void *self) {
   return hr;
 }
 static HRESULT WINAPI ui_compositor_scene_finish(void *self) {
+  ui_atomic_probe_finish_scene();
   if(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
      ui_comp_scene_open && ui_comp_device==self)
     ui_comp_flush((IDirect3DDevice7*)self);
@@ -3038,6 +3156,7 @@ static void maybe_restore_native_transition_gutters(
 }
 
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
+  ui_atomic_probe_raw_draw(type,fvf,verts,count,__builtin_return_address(0));
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
      fvf==0x144UL && verts && count>=3 && count<=128)
     InterlockedIncrement(&menu_version_draws);
@@ -5477,6 +5596,22 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-TRANSITION-TOPOLOGY: TRIAL ON - continuous monotone 4:3 edge mapping; no Y crop or V8 rectangles");
     }else{
       log_line("UI-TRANSITION-TOPOLOGY: OFF - V7/V8 rendering unchanged");
+    }
+  }
+  /* V10 atomic-mask feasibility probe. The user's latest evidence
+   * shows the entire silhouette must be composed as one image BEFORE
+   * enlargement. Observe game-owned black materials and draw families
+   * in the same D3D frame, without applying a speculative tenth warp.
+   * OFF by default. This never changes native ESC or HUD draws. */
+  {
+    char atomic[4]={0};
+    if(InterlockedCompareExchange(&ui_transition_fullscreen_trial_enabled,0,0)==1 &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_TRANSITION_ATOMIC_PROBE",
+                                atomic,sizeof(atomic))==1 && atomic[0]=='1'){
+      InterlockedExchange(&ui_atomic_probe_trial_enabled,1);
+      log_line("UI-ATOMIC-PROBE: ON read-only whole-scene black-mask collection; render unchanged");
+    }else{
+      log_line("UI-ATOMIC-PROBE: OFF");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
