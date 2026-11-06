@@ -94,7 +94,7 @@ def test_native_vertices_use_one_common_affine_mapping(mesh, w, h, ratio):
         # Exterior matte precedes source mesh; last twelve are source quads.
         a, b = verts[-12:-6], verts[-6:]
         assert a[1] == pytest.approx(b[0], abs=.0001)
-        assert a[2] == pytest.approx(b[3], abs=.0001)
+        assert a[2] == pytest.approx(b[5], abs=.0001)
         assert a[1] == pytest.approx(b[0], abs=.0001)
         source = (320, 180)
         expected = (w / 2 + (source[0] - w / 2) * ratio * zoom,
