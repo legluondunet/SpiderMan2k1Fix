@@ -27,25 +27,15 @@ def policy(tmp_path_factory):
         'int eligible(int e,int open,int bailout,int layer,unsigned count,unsigned fvf){'
         'return SpiderUIComp_ShouldDefer(e,open,bailout,layer,count,fvf);'
         '}\n'
-        'unsigned tint(unsigned argb){return SpiderUIComp_Tint(argb);}\n'
         'int replay_pass(int layer,unsigned source_color,int proven,'
         'int drawn,unsigned background){'
         'return SpiderUIComp_ReplayPassForDraw(layer,source_color,proven,'
         'drawn,background);}\n'
-        'float gutter(unsigned w,unsigned h){return SpiderUIComp_GutterWidth(w,h);}\n'
         'int coverage(float h,const SpiderUICompYSpan *sp,unsigned n){'
         'return SpiderUIComp_CoversFullHeight(sp,n,h);}\n'
-        'int edge(float l,float r,float w,float g,int side){'
-        'return SpiderUIComp_EdgeTileCoversGutter(l,r,w,g,side);}\n'
-        'int segment(float x0,float y0,float x1,float y1,'
-        'float x2,float y2,float edge,float h,SpiderUICompYSpan *out){'
-        'return SpiderUIComp_TriangleEdgeSpan(x0,y0,x1,y1,'
-        'x2,y2,edge,h,out);}\n'
         'int native_backdrop(const SpiderUICompBackdropSample *s,'
         'unsigned n,float w,float h,unsigned *color){'
         'return SpiderUIComp_IdentifyNativeBackdrop(s,n,w,h,color);}\n'
-        'float warp(float x,float w,float h,float lo,float hi){'
-        'return SpiderUIComp_BackdropMapX(x,w,h,lo,hi);}\n'
         'int dynamic_ribbon(float z,float rhw,unsigned color){'
         'return SpiderNativePause43_CompositorRibbon(z,rhw,color);}\n'
         'int dynamic_motif(float z,float rhw,unsigned color){'
@@ -62,21 +52,13 @@ def policy(tmp_path_factory):
     lib=ct.CDLL(str(out))
     lib.eligible.argtypes=[ct.c_int]*4+[ct.c_uint]*2
     lib.eligible.restype=ct.c_int
-    lib.tint.argtypes=[ct.c_uint]
-    lib.tint.restype=ct.c_uint
     lib.replay_pass.argtypes=[ct.c_int,ct.c_uint,ct.c_int,ct.c_int,ct.c_uint]
     lib.replay_pass.restype=ct.c_int
-    lib.gutter.argtypes=[ct.c_uint,ct.c_uint]
-    lib.gutter.restype=ct.c_float
     class YSpan(ct.Structure):
         _fields_=[("top",ct.c_float),("bottom",ct.c_float)]
     lib.YSpan=YSpan
     lib.coverage.argtypes=[ct.c_float,ct.POINTER(YSpan),ct.c_uint]
     lib.coverage.restype=ct.c_int
-    lib.edge.argtypes=[ct.c_float]*4+[ct.c_int]
-    lib.edge.restype=ct.c_int
-    lib.segment.argtypes=[ct.c_float]*8+[ct.POINTER(YSpan)]
-    lib.segment.restype=ct.c_int
     class BackdropSample(ct.Structure):
         _fields_=[("left",ct.c_float),("right",ct.c_float),
                   ("top",ct.c_float),("bottom",ct.c_float),
@@ -85,8 +67,6 @@ def policy(tmp_path_factory):
     lib.native_backdrop.argtypes=[ct.POINTER(BackdropSample),ct.c_uint,
                                  ct.c_float,ct.c_float,ct.POINTER(ct.c_uint)]
     lib.native_backdrop.restype=ct.c_int
-    lib.warp.argtypes=[ct.c_float]*5
-    lib.warp.restype=ct.c_float
     for name in ("dynamic_ribbon","dynamic_motif"):
         fn=getattr(lib,name)
         fn.argtypes=[ct.c_float,ct.c_float,ct.c_uint]
@@ -121,12 +101,6 @@ def test_non_screen_space_vertex_formats_and_counts_fail_closed(policy):
     assert policy.eligible(1,1,0,4,4,0x112)==0
 
 
-def test_trial_tint_uses_source_color_without_blowing_up_opacity(policy):
-    assert policy.tint(0x80041010)==0x50041010
-    assert policy.tint(0x2078AA11)==0x2078AA11
-    assert policy.tint(0x00041010)==0x00041010
-
-
 def test_host_defers_native_esc_to_end_scene_with_original_state_restored():
     src=(ROOT/"spiderman2k1fix.c").read_text()
     start=src.index("/* Reversible Direct3D7 pause compositor.")
@@ -146,20 +120,18 @@ def test_host_defers_native_esc_to_end_scene_with_original_state_restored():
         "D3DRENDERSTATE_ZENABLE,D3DZB_FALSE",
         "SPIDER_UI_COMP_MAX_COMMANDS",
         "ui_comp_release(device)",
-        "SpiderUIComp_Tint(",
     ):
         assert marker in compositor
-    # Crucial order: tint must be drawn after 3D/HUD but before 4:3
-    # native motif/menu, and all before original EndScene call.
+    # Source-backed gutters must be drawn before any 4:3 HUD/decoration
+    # replay, all before the game's original EndScene call.
     flush=compositor.split("static void ui_comp_flush(",1)[1].split(
         "static int ui_comp_capture(",1)[0]
-    assert flush.index("ui_comp_draw_screen_tint(")<flush.index(
+    assert flush.index("ui_comp_draw_native_exterior_gutters(")<flush.index(
         "for(layer=SPIDER_UI_COMP_HUD;")
     assert compositor.index("ui_comp_flush((IDirect3DDevice7*)self);") < compositor.index(
         "return ui_original_end_scene(self);")
 
     assert 'SPIDERMAN2K1FIX_UI_COMPOSITOR_TEST' in src
-    assert 'SPIDERMAN2K1FIX_UI_COMPOSITOR_TINT' in src
     assert 'vt[5]=(void*)ui_compositor_scene_start;' in src
     assert 'vt[6]=(void*)ui_compositor_scene_finish;' in src
     assert 'ui_comp_capture((IDirect3DDevice7*)self' in src
@@ -178,22 +150,13 @@ def test_compositor_does_not_change_normal_main_menu_or_native_3d_path():
 
 
 
-def test_synthetic_tint_is_off_unless_explicitly_opted_in():
-    core=(ROOT/"spiderman2k1fix.c").read_text()
-    assert "static volatile LONG ui_compositor_tint_enabled=0;" in core
-    assert "UI-COMPOSITOR-TINT: OFF - no synthetic fullscreen veil" in core
-    assert "UI-COMPOSITOR-TINT: ON - A/B synthetic fullscreen veil" in core
-    assert "tint[0]=='1'" in core
-    assert "tint[0]=='0'" not in core[core.index("/* Separate compositor opt-in:"):]
-
-
 def test_native_pause_motif_keeps_original_four_by_three_geometry():
     core=(ROOT/"spiderman2k1fix.c").read_text()
     marker="static const void *maybe_correct_native_motif43("
     src=core.split(marker,1)[1].split("static volatile LONG native_motif43_gutter_hits",1)[0]
     assert "center+(v[i].x-center)*native_esc43_scale()" in src
-    # A full-screen synthetic overlay is a DISTINCT optional layer,
-    # not a stretched version of the original motif geometry.
+    # Source motif geometry must retain its native 4:3 proportional map;
+    # the physical outer margins are independent and do not stretch it.
     assert "ui_compositor_trial_enabled,0,0)!=1" in src
 
 
@@ -243,15 +206,6 @@ def test_native_spider_source_geometry_probe_is_one_shot_and_passive():
 
 
 
-@pytest.mark.parametrize("res,expected", [
-    ((1920,1080),240.0), ((1920,1200),160.0),
-    ((2560,1080),560.0), ((3440,1440),760.0),
-    ((640,480),0.0), ((1024,768),0.0),
-])
-def test_native_gutters_are_only_physical_exterior(policy,res,expected):
-    assert policy.gutter(*res)==pytest.approx(expected,abs=.03)
-
-
 def test_native_source_exterior_y_coverage_requires_no_gaps(policy):
     Y=policy.YSpan
     # Based on the native source geometry logged at 1920x1080, the
@@ -266,128 +220,6 @@ def test_native_source_exterior_y_coverage_requires_no_gaps(policy):
     assert policy.coverage(1080,beginning,1)==0
     ending=(Y*2)(Y(0,400),Y(400,1030))
     assert policy.coverage(1080,ending,2)==0
-
-
-def test_compositor_extends_each_original_source_edge_instead_of_flat_bands():
-    source=(ROOT/"spiderman2k1fix.c").read_text()
-    fn=source.split("static int ui_comp_draw_native_gutters(",1)[1].split(
-        "/* Flush before native EndScene",1)[0]
-    assert "c->source_v" in fn
-    assert "c->layer!=SPIDER_UI_COMP_PAUSE_DECOR" in fn
-    assert "c->texture" in fn
-    assert "v[k].diffuse!=v[0].diffuse" in fn
-    assert "SpiderUIComp_CoversFullHeight(left_spans,left_count,h)" in fn
-    assert "SpiderUIComp_CoversFullHeight(right_spans,right_count,h)" in fn
-    assert "SpiderUIComp_TriangleEdgeSpan(" in fn
-    assert "IDirect3DDevice7_ApplyStateBlock(device,c->state_token)" in fn
-    assert "out[k]=*v0" in fn
-    assert "out[0].x=xl;out[0].y=span.top;" in fn
-    assert "out[2].x=xr;out[2].y=span.bottom;" in fn
-    assert "original_draw_primitive(" in fn
-    assert "vertices[0].x=xl;vertices[0].y=0.0f;" not in fn
-    assert "palette!=(unsigned)v[0].diffuse" not in fn
-    # Source triangles are replayed ONLY along the outer strips.
-    assert "out[0].x=xl" in fn and "out[3].x=xl" in fn
-    assert "c->v[k].x=" not in fn
-    assert "c->source_v[k].x=" not in fn
-    assert "0x80868620" not in fn
-    assert "UI-COMPOSITOR-NATIVE-GUTTERS:" in source
-    assert "source-edge-strips=%u" in source
-    assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_GUTTERS" in source
-    assert "gutters[0]=='1'" in source
-    assert "static volatile LONG ui_compositor_native_gutters_enabled=0;" in source
-    assert "if(!needs_tint && ui_comp_motif &&" in source
-    flush=source.split("static void ui_comp_flush(",1)[1].split(
-        "static int ui_comp_capture(",1)[0]
-    assert flush.index("ui_comp_draw_native_gutters(device,&source_strips)") < (
-        flush.index("for(layer=SPIDER_UI_COMP_HUD;"))
-
-
-def test_original_source_edge_triangle_preserves_vertical_segments(policy):
-    Y=policy.YSpan
-
-    def sample(vertices,edge,h=1080):
-        v=list(vertices)
-        out=Y()
-        result=policy.segment(*v,edge,h,ct.byref(out))
-        return result,out
-
-    # One of the game's native left border triangles with a full
-    # 0..234px source edge. Its exterior must not become 0..1080.
-    found,span=sample((0,0,281.2,0,0,234),0)
-    assert found==1
-    assert span.top==pytest.approx(0)
-    assert span.bottom==pytest.approx(234)
-
-    # Complementary triangle only touches the edge at one point;
-    # it must not paint the 240px exterior.
-    found,_=sample((281.2,0,281.2,234,0,234),0)
-    assert found==0
-
-    # Right monitor edge, a different source segment, same algorithm.
-    found,span=sample((1920,600,1638.8,810,1920,810),1920)
-    assert found==1
-    assert span.top==pytest.approx(600)
-    assert span.bottom==pytest.approx(810)
-
-    # Geometry between original 4:3/gutter boundaries is not an edge.
-    found,_=sample((240,0,480,0,240,234),0)
-    assert found==0
-
-    # A degenerate triangle cannot establish an exterior backdrop.
-    found,_=sample((0,0,0,0,0,234),0)
-    assert found==0
-
-    # Partial screen coverage cannot pass the full-height validator.
-    v=(Y*2)(Y(0,320),Y(450,1080))
-    assert policy.coverage(1080,v,2)==0
-
-
-
-def test_full_physical_gutter_coverage_uses_source_geometry_not_artwork(policy):
-    # Native Windows PC draw captured with the approved 1920x1080 Wine
-    # screenshot: edge rectangles on both sides reach strictly past
-    # the 240px complement of the centered 4:3 interface.
-    assert policy.edge(0.0,281.2,1920,240,0)==1
-    assert policy.edge(1638.8,1920.0,1920,240,1)==1
-    # Critical false-positive previously accepted: a narrow opaque
-    # tile touching the extreme display edge but stopping before the
-    # entire 4:3 exterior must NOT be expanded into a whole strip.
-    assert policy.edge(0.0,120.0,1920,240,0)==0
-    assert policy.edge(1800.0,1920.0,1920,240,1)==0
-    # A sprite not attached to the monitor edge cannot become a gutter.
-    assert policy.edge(50.0,350.0,1920,240,0)==0
-    assert policy.edge(1570.0,1870.0,1920,240,1)==0
-
-
-@pytest.mark.parametrize("resolution",[
-    (1920,1080),(1920,1200),(2560,1080),(3440,1440)
-])
-def test_edge_guard_adapts_to_all_widescreen_resolutions(policy,resolution):
-    width,height=resolution
-    gutter=policy.gutter(width,height)
-    assert gutter>0
-    assert policy.edge(0,gutter+2,width,gutter,0)==1
-    assert policy.edge(width-gutter-2,width,width,gutter,1)==1
-    assert policy.edge(0,gutter*.5,width,gutter,0)==0
-    assert policy.edge(width-gutter*.5,width,width,gutter,1)==0
-
-
-def test_runtime_refuses_partial_source_tile_before_material_and_y_checks():
-    src=(ROOT/"spiderman2k1fix.c").read_text()
-    start=src.index("static int ui_comp_draw_native_gutters(")
-    end=src.index("/* Flush before native EndScene",start)
-    code=src[start:end]
-    assert code.count("SpiderUIComp_EdgeTileCoversGutter(")==3
-    assert code.index("SpiderUIComp_EdgeTileCoversGutter(") < code.index(
-        "!c->state_token || c->texture")
-    assert "if(!edge_left && !edge_right)continue;" in code
-    assert "SpiderUIComp_CoversFullHeight(left_spans,left_count,h)" in code
-    assert "SpiderUIComp_CoversFullHeight(right_spans,right_count,h)" in code
-    # Render passes only after BOTH full-height checks.
-    assert code.index("SpiderUIComp_CoversFullHeight(right_spans") < (
-        code.index("IDirect3DDevice7_ApplyStateBlock(device,c->state_token)"))
-    assert "return drawn!=0u;" in code
 
 
 def test_native_backdrop_is_derived_from_four_edge_source_not_spider(policy):
@@ -432,27 +264,6 @@ def test_native_backdrop_is_derived_from_four_edge_source_not_spider(policy):
     assert classify(tri_color)[0]==0
     assert classify(original,1440,1080)[0]==0
     assert classify(original,1920,2000)[0]==0
-
-
-def test_background_only_warp_preserves_spider_in_4_by_3(policy):
-    # Log-proven source spider is bounded by native 255..1665 in 1920
-    # screen pixels. All its vertices must obey the SAME 4:3 mapping
-    # they had before this PR, while the outer backdrop covers x=0..w.
-    w,h,lo,hi=1920,1080,255,1665
-    m=lambda x:policy.warp(x,w,h,lo,hi)
-    assert m(0)==pytest.approx(0)
-    assert m(1920)==pytest.approx(1920)
-    assert m(lo)==pytest.approx(431.25)
-    assert m(960)==pytest.approx(960)
-    assert m(hi)==pytest.approx(1488.75)
-    assert m(127.5)==pytest.approx(215.625)
-    assert m(1792.5)==pytest.approx(1704.375)
-    # 16:10 and an arbitrary wide native monitor use the same logic.
-    assert policy.warp(0,1920,1200,255,1665)==pytest.approx(0)
-    assert policy.warp(1920,1920,1200,255,1665)==pytest.approx(1920)
-    assert policy.warp(960,1920,1200,255,1665)==pytest.approx(960)
-    # In true 4:3 the native x positions stay untouched.
-    assert policy.warp(123,1440,1080,255,1250)==pytest.approx(123)
 
 
 def test_native_exterior_preserves_all_160_source_triangles():
@@ -721,3 +532,34 @@ def test_exterior_gutters_support_odd_physical_screen_widths():
     assert "float left=side==0u ? 0.0f:(float)right_begin;" in fn
     assert "float right=side==0u ? (float)margin:(float)w;" in fn
     assert "(w-center_w)!=2u*margin" not in fn
+
+
+def test_retired_veil_trials_cannot_change_validated_palette():
+    policy=(ROOT/"ui_compositor_policy.h").read_text()
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    for retired in (
+        "SpiderUIComp_Tint(",
+        "SpiderUIComp_GutterWidth(",
+        "SpiderUIComp_EdgeTileCoversGutter(",
+        "SpiderUIComp_TriangleEdgeSpan(",
+        "SpiderUIComp_BackdropMapX(",
+        "ui_comp_draw_screen_tint(",
+        "ui_comp_draw_native_gutters(",
+        "SPIDERMAN2K1FIX_UI_COMPOSITOR_TINT",
+        "SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_GUTTERS",
+    ):
+        assert retired not in policy
+        assert retired not in src
+    assert "ui_comp_draw_native_exterior_gutters(" in src
+    assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_BACKDROP" in src
+    assert "0,0,(unsigned)native_backdrop_argb" in src
+
+
+def test_unverified_hud_reorder_is_off_by_default_and_opt_in_only():
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    assert "static volatile LONG ui_compositor_hud_over_veil_enabled=0;" in src
+    assert 'SPIDERMAN2K1FIX_UI_COMPOSITOR_HUD_OVER_VEIL' in src
+    assert "hud_over_veil[0]=='1'" in src
+    assert "hud_over_veil[0]=='0'" not in src
+    assert "HUD-ORDER: OFF (validated native HUD path, default)" in src
+    assert "UI-COMPOSITOR-NATIVE-BACKDROP: source-verified OUTER GUTTERS enabled" in src
