@@ -150,9 +150,10 @@ def test_both_black_strips_shrink_only_outside_original_canvas(dll,w,h):
     assert 0<=band.value<=max_band
     out=((Vertex*4)*2)()
     assert dll.build(original,w,h,band.value,out)==1
-    assert {v.x for v in out[0]}=={0,pytest.approx(band.value)}
-    assert {v.x for v in out[1]}=={
-        w,pytest.approx(w-band.value)}
+    assert sorted({v.x for v in out[0]})==pytest.approx(
+        [0,band.value],abs=.001)
+    assert sorted({v.x for v in out[1]})==pytest.approx(
+        [w-band.value,w],abs=.001)
     assert {v.y for v in out[0]}=={0,h}
     assert {v.y for v in out[1]}=={0,h}
     assert all(v.diffuse==0 for q in out for v in q)
