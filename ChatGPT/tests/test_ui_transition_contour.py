@@ -25,6 +25,16 @@ class Contour(ct.Structure):
     ]
 
 
+class Diagnostic(ct.Structure):
+    _fields_ = [
+        ("reason", ct.c_uint),
+        ("quad_index", ct.c_uint),
+        ("ray_index", ct.c_uint),
+        ("first", ct.c_float),
+        ("second", ct.c_float),
+    ]
+
+
 class Point(ct.Structure):
     _fields_ = [("x", ct.c_float), ("y", ct.c_float)]
 
@@ -46,6 +56,10 @@ def api(tmp_path_factory):
         'int prepare(const SpiderAtomicMaskQuad*q,unsigned n,'
         'unsigned w,unsigned h,SpiderAtomicContour*c){'
         'return SpiderAtomicContour_Prepare(q,n,w,h,c);}\n'
+        'int prepare_detailed(const SpiderAtomicMaskQuad*q,unsigned n,'
+        'unsigned w,unsigned h,SpiderAtomicContour*c,'
+        'SpiderAtomicContourDiagnostic*d){'
+        'return SpiderAtomicContour_PrepareDetailed(q,n,w,h,c,d);}\n'
         'int make(const SpiderAtomicContour*c,unsigned w,unsigned h,'
         'float scale,SpiderAtomicVectorPoint*p,unsigned cap,unsigned*n){'
         'return SpiderAtomicContour_Build(c,w,h,scale,p,cap,n);}\n'
@@ -61,6 +75,11 @@ def api(tmp_path_factory):
         ct.POINTER(Contour),
     ]
     dll.prepare.restype = ct.c_int
+    dll.prepare_detailed.argtypes = [
+        ct.POINTER(Quad), ct.c_uint, ct.c_uint, ct.c_uint,
+        ct.POINTER(Contour), ct.POINTER(Diagnostic),
+    ]
+    dll.prepare_detailed.restype = ct.c_int
     dll.make.argtypes = [
         ct.POINTER(Contour), ct.c_uint, ct.c_uint, ct.c_float,
         ct.POINTER(Point), ct.c_uint, ct.POINTER(ct.c_uint),
@@ -162,3 +181,24 @@ def test_v13_strict_optin_uses_original_game_scale_and_safe_v12_fallback():
     assert "SpiderAtomicMask_Rasterize(" not in segment
     assert "SpiderAtomicMask_CorrectReference43(" not in segment
     assert "the CENTER-CONNECTED iris opening" in header
+
+
+def test_v13_diagnostics_distinguish_invalid_center_and_missing_ray(api):
+    contour, diagnostic = Contour(), Diagnostic()
+    # A single right-side strip leaves some rays without native black.
+    partial = (Quad * 1)(rectangle(500, 0, 800, 600))
+    assert api.prepare_detailed(partial, 1, 800, 600, ct.byref(contour),
+                                ct.byref(diagnostic)) == 0
+    assert diagnostic.reason == 3
+    assert diagnostic.ray_index < RAYS
+    # A full-screen black source cannot be a center-connected opening.
+    full_black = (Quad * 1)(rectangle(0, 0, 800, 600))
+    assert api.prepare_detailed(full_black, 1, 800, 600,
+                                ct.byref(contour), ct.byref(diagnostic)) == 0
+    assert diagnostic.reason == 2
+    assert diagnostic.quad_index == 0
+    # Complete ring still passes: the diagnostic addition changes no art.
+    complete = complete_source()
+    assert api.prepare_detailed(complete, 4, 800, 600, ct.byref(contour),
+                                ct.byref(diagnostic)) == 1
+    assert diagnostic.reason == 0
