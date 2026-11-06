@@ -26,6 +26,7 @@
 #include "ui_transition_native43_gutters.h"
 #include "ui_transition_native43_flank.h"
 #include "ui_transition_native43_hold.h"
+#include "ui_transition_native43_shrink.h"
 #include "ui_compositor_policy.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
@@ -1069,6 +1070,15 @@ static volatile LONG ui_transition_flank21_enabled=0;
  * both; no V20 tooth extension, no V21 early outer-flank removal.
  * Enabled independently of the legacy V20/V21 opt-ins. */
 static volatile LONG ui_transition_hold22_enabled=0;
+/* V23: original V19 untouched, V22 solid side curtains smoothly
+ * narrow based on source fan width of the animated genuine spider.
+ * No clock/timer, fallback remains unchanged V22 when disabled. */
+static volatile LONG ui_transition_shrink23_enabled=0;
+static float ui_transition_shrink23_half_width=0.0f;
+static float ui_transition_shrink23_scene_band_width=0.0f;
+static unsigned ui_transition_shrink23_scene_handled=0u;
+static unsigned ui_transition_shrink23_anchor_hits=0u;
+static unsigned ui_transition_shrink23_last_band_rounded=0xffffffffu;
 static volatile LONG ui_transition_hold22_failed=0;
 static unsigned ui_transition_hold22_scene_native=0u;
 static unsigned ui_transition_hold22_scene_gutters=0u;
@@ -3832,6 +3842,10 @@ static HRESULT WINAPI ui_compositor_scene_start(void *self) {
      InterlockedCompareExchange(&ui_transition_hold22_enabled,0,0)==1){
     ui_transition_hold22_scene_native=0u;
     ui_transition_hold22_scene_gutters=0u;
+    if(InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1){
+      ui_transition_shrink23_scene_handled=0u;
+      ui_transition_shrink23_scene_band_width=0.0f;
+    }
   }
   if(SUCCEEDED(hr) &&
      InterlockedCompareExchange(
@@ -3870,8 +3884,32 @@ static HRESULT WINAPI ui_compositor_scene_finish(void *self) {
           ui_transition_hold22_draws);
         log_line(msg);
       }
+      if(InterlockedCompareExchange(
+          &ui_transition_shrink23_enabled,0,0)==1){
+        unsigned rounded=(unsigned)(ui_transition_shrink23_scene_band_width+.5f);
+        if(debug_log_enabled &&
+           (frame<=8u || frame%8u==0u ||
+            rounded!=ui_transition_shrink23_last_band_rounded)){
+          char msg[230];
+          snprintf(msg,sizeof(msg),
+            "UI-TRANSITION-SHRINK23: FRAME=%u original=%u anchor-hits=%u aperture-half-x=%.1f curtain-width=%.1fpx each side [SMOOTH SOURCE-DRIVEN; NO TIMER, V19 UNCHANGED]",
+            frame,ui_transition_hold22_scene_native,
+            ui_transition_shrink23_anchor_hits,
+            (double)ui_transition_shrink23_half_width,
+            (double)ui_transition_shrink23_scene_band_width);
+          log_line(msg);
+        }
+        ui_transition_shrink23_last_band_rounded=rounded;
+      }
     }else if(ui_transition_hold22_last_active){
       log_line("UI-TRANSITION-HOLD22: RELEASE - first complete scene without any verified native iris draws; no fixed timer or zoom threshold");
+      if(InterlockedCompareExchange(
+          &ui_transition_shrink23_enabled,0,0)==1){
+        log_line("UI-TRANSITION-SHRINK23: RELEASE - native mask ended; reset source-driven curtain motion for next transition");
+        ui_transition_shrink23_half_width=0.0f;
+        ui_transition_shrink23_anchor_hits=0u;
+        ui_transition_shrink23_last_band_rounded=0xffffffffu;
+      }
     }
     ui_transition_hold22_last_active=active;
   }
@@ -4375,6 +4413,19 @@ static int ui_transition_native43_handle_draw(
   *result=original_draw_primitive(device,type,fvf,
               valid?(LPVOID)mapped:verts,count,flags);
   if(valid){
+    /* Native V23 motion sensor (passive): the actual central source fan
+     * supplies opening half-width. A late or offscreen fan can only
+     * INCREASE that measurement, never regrow the physical curtains. */
+    if(SUCCEEDED(*result) &&
+       InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1){
+      float radius=0.0f;
+      if(SpiderNativeShrink_AnchorHalfWidth(
+            v,(unsigned)desktop_w,(unsigned)desktop_h,&radius)){
+        ++ui_transition_shrink23_anchor_hits;
+        if(radius>ui_transition_shrink23_half_width)
+          ui_transition_shrink23_half_width=radius;
+      }
+    }
     /* V22 one opaque physical-margin pair per current-frame iris. The
      * source is the ORIGINAL game fan already checked for black material
      * and drawn above by V19. Its vertices, shape, winding and timed
@@ -4385,24 +4436,48 @@ static int ui_transition_native43_handle_draw(
        InterlockedCompareExchange(&ui_transition_hold22_enabled,0,0)==1 &&
        InterlockedCompareExchange(&ui_transition_hold22_failed,0,0)!=1){
       ++ui_transition_hold22_scene_native;
-      if(ui_transition_hold22_scene_gutters==0u){
-        SpiderMenuVertex two[2][4];
-        if(SpiderNativeHold_Build(v,(unsigned)desktop_w,
-                                  (unsigned)desktop_h,two)){
-          HRESULT lh=original_draw_primitive(
-             device,type,fvf,two[0],4u,flags);
-          HRESULT rh=SUCCEEDED(lh) ?
-             original_draw_primitive(device,type,fvf,two[1],4u,flags):lh;
-          if(SUCCEEDED(lh) && SUCCEEDED(rh)){
-            ui_transition_hold22_scene_gutters=2u;
-            ui_transition_hold22_draws+=2u;
+      {
+        const int shrink=
+          InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1;
+        if(ui_transition_hold22_scene_gutters==0u &&
+           (!shrink || !ui_transition_shrink23_scene_handled)){
+          SpiderMenuVertex two[2][4];
+          float width=0.0f;
+          int valid_side=0;
+          if(shrink){
+            ui_transition_shrink23_scene_handled=1u;
+            valid_side=SpiderNativeShrink_Width(
+              (unsigned)desktop_w,(unsigned)desktop_h,
+              ui_transition_shrink23_half_width,&width);
+            if(valid_side && width>=.5f)
+              valid_side=SpiderNativeShrink_Build(
+                v,(unsigned)desktop_w,(unsigned)desktop_h,width,two);
+            /* An opened curtain at width=0 is intentionally NOT drawn.
+             * Re-drawing it with stale geometry would restore black. */
+            ui_transition_shrink23_scene_band_width=width;
           }else{
-            char msg[195];
+            valid_side=SpiderNativeHold_Build(v,
+                (unsigned)desktop_w,(unsigned)desktop_h,two);
+          }
+          if(valid_side && (!shrink || width>=.5f)){
+            HRESULT lh=original_draw_primitive(
+               device,type,fvf,two[0],4u,flags);
+            HRESULT rh=SUCCEEDED(lh) ?
+               original_draw_primitive(device,type,fvf,two[1],4u,flags):lh;
+            if(SUCCEEDED(lh) && SUCCEEDED(rh)){
+              ui_transition_hold22_scene_gutters=2u;
+              ui_transition_hold22_draws+=2u;
+            }else{
+              char msg[195];
+              InterlockedExchange(&ui_transition_hold22_failed,1);
+              snprintf(msg,sizeof(msg),
+                "UI-TRANSITION-HOLD22: ERROR side gutters hr-left=0x%08lX hr-right=0x%08lX [disabled; native V19 iris unaffected]",
+                (unsigned long)lh,(unsigned long)rh);
+              log_line(msg);
+            }
+          }else if(!valid_side){
             InterlockedExchange(&ui_transition_hold22_failed,1);
-            snprintf(msg,sizeof(msg),
-              "UI-TRANSITION-HOLD22: ERROR side gutters hr-left=0x%08lX hr-right=0x%08lX [disabled; native V19 iris unaffected]",
-              (unsigned long)lh,(unsigned long)rh);
-            log_line(msg);
+            log_line("UI-TRANSITION-SHRINK23: invalid original source/gutter geometry; margin extension disabled, V19 unchanged");
           }
         }
       }
@@ -7201,6 +7276,26 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-TRANSITION-HOLD22: V22 ON - two solid black 16:9 side gutters for every active ORIGINAL V19 iris frame; release on first scene with no native iris; V20/V21 bypassed");
     }else{
       log_line("UI-TRANSITION-HOLD22: OFF - prior V19/V20/V21 behavior unchanged");
+    }
+  }
+  /* V23 original-geometry shrinking curtains: enabled only atop V22.
+   * Each authentic central iris fan supplies its actual half-width;
+   * smoothstep transitions the two opaque side curtain widths from
+   * full black to zero as the hole nears the physical display edges.
+   * No V19 mask geometry/limbs, gameplay, HUD or cinematic bars changed.
+   * V20 and V21 remain bypassed by V22 while this test is enabled.
+   * Removing SHRINK_GUTTERS_TEST restores V22 unchanged. */
+  {
+    char value[4]={0};
+    if(InterlockedCompareExchange(
+         &ui_transition_hold22_enabled,0,0)==1 &&
+       GetEnvironmentVariableA(
+         "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_SHRINK_GUTTERS_TEST",
+         value,sizeof(value))==1 && value[0]=='1'){
+      InterlockedExchange(&ui_transition_shrink23_enabled,1);
+      log_line("UI-TRANSITION-SHRINK23: V23 ON - original central fan drives SMOOTH shrinking of both black gutters; zero by full-screen iris; V19 spider untouched, V20/V21 bypassed");
+    }else{
+      log_line("UI-TRANSITION-SHRINK23: OFF - V22 solid gutters unchanged");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
