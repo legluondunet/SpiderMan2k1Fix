@@ -132,25 +132,13 @@ def test_reject_nonblack_and_degenerate_input(api):
         assert build(api,good,width,height)[0]==0
 
 
-def test_legacy_v20_v21_bypassed_and_release_requires_zero_native_fans():
-    source=(ROOT/"spiderman2k1fix.c").read_text()
-    header=(ROOT/"ui_transition_native43_hold.h").read_text()
-    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_HOLD_GUTTERS_TEST" in source
-    assert "UI-TRANSITION-HOLD22: V22 ON" in source
-    assert "ui_transition_hold22_enabled=0" in source
-    assert "SpiderNativeHold_Build(v," in source
-    assert "ui_transition_hold22_scene_gutters==0u" in source
-    assert "ui_transition_hold22_scene_gutters=2u" in source
-    assert "ui_transition_hold22_scene_native=0u;" in source
-    assert "ui_transition_hold22_scene_native>0u" in source
-    assert "UI-TRANSITION-HOLD22: RELEASE" in source
-    assert "no fixed timer" in source
-    assert "ui_transition_hold22_enabled,0,0)!=1" in source
-    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_EXTENTS_TEST" in source
-    assert "No artificial teeth" in header
-    iris=source[source.index("static int ui_transition_native43_handle_draw("):
-                source.index("static HRESULT WINAPI hooked_draw_primitive(")]
-    assert iris.index("*result=original_draw_primitive") < \
-           iris.index("SpiderNativeHold_Build(v,")
-    assert iris.index("SpiderNativeHold_Build(v,") < \
-           iris.index("SpiderNativeFlank_Build(v,")
+def test_internal_black_fan_builder_is_used_only_by_final_fallback():
+    main=(ROOT/"spiderman2k1fix.c").read_text()
+    sync=(ROOT/"ui_transition_native43_sync.h").read_text()
+    hold=(ROOT/"ui_transition_native43_hold.h").read_text()
+    assert "SpiderNativeHold_Build(source,width,height,gutters)" not in main
+    assert "SpiderNativeHold_Build(source,width,height,gutters)" in (
+        ROOT/"ui_transition_native43_shrink.h").read_text()
+    assert "SpiderNativeHold_Build(source,width,height,sides)" in sync
+    assert "No artificial teeth" in hold
+    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_HOLD_GUTTERS_TEST" not in main
