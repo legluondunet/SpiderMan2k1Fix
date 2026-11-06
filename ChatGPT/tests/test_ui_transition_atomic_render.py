@@ -147,7 +147,7 @@ def test_gpu_host_is_off_by_default_and_stores_only_native_black_mask():
     ref=source.split("static void ui_atomic_renderer_acquire_reference(",1)[1].split(
         "static int ui_atomic_renderer_skip_native(",1)[0]
     assert "color==0x00000000UL" in ref
-    assert "q->caller==SPIDER_TRANSITION_CALLER_RVA" in ref
+    assert "q->caller!=SPIDER_TRANSITION_CALLER_RVA" in ref
     assert "SpiderAtomicMask_Rasterize(" in source
     assert "SpiderAtomicMask_EstimateScale(" in source
     assert "SpiderAtomicMask_ScreenUV(" in source
