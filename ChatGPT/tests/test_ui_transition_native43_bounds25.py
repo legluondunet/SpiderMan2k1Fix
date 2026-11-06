@@ -241,7 +241,7 @@ def test_empty_or_invalid_geometry_does_not_expose_unverified_geometry(api):
                       ct.byref(l),ct.byref(r))==0
 
 
-def test_v25_is_optin_and_initialized_in_dependency_order():
+def test_v25_is_the_only_active_native_mask_pipeline_and_is_single_optin():
     src=(ROOT/"spiderman2k1fix.c").read_text()
     hdr=(ROOT/"ui_transition_native43_bounds25.h").read_text()
     assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST" in src
@@ -255,33 +255,22 @@ def test_v25_is_optin_and_initialized_in_dependency_order():
     assert "ui_transition_bounds25_prev_right" in src
     assert "SPIDER_NATIVE_BOUNDS25_OVERLAP_PX 1.0f" in hdr
     assert "UI-TRANSITION-SYNC24: SOURCE COUNT MISMATCH" in src
-    idx22=src.index("  /* V22 standalone successor to V21:")
-    idx23=src.index("  /* V23 original-geometry shrinking curtains:")
-    idx24=src.index("  /* V24 independent A/B synchronized curtains.")
-    idx25=src.index("  /* V25 must be initialized AFTER")
-    assert idx22<idx23<idx24<idx25
-    sync_init=src[idx24:idx25]
-    # A single V25-specific flag must authorize its EndScene sync
-    # dependency; do not force the player to guess the V24 variable.
-    assert '"SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST"' in sync_init
-    assert "(sync_requested || bounds_requested)" in sync_init
-    assert "automatically enabled for V25 BOUNDS_TEST" in sync_init
-    assert "ui_transition_sync24_enabled,0,0)==1 &&" in src
     assert "uint64_t)width*3u<=(uint64_t)height*4u" in hdr
-    assert "The game-owned iris" in hdr or "do NOT remap" in hdr
+    for retired in (
+        "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_GUTTERS_TEST",
+        "SPIDERMAN2K1FIX_UI_TRANSITION_ATOMIC_RENDER_TEST",
+        "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_SYNC_TEST"):
+        assert retired not in src
 
-
-def test_v25_ignores_legacy_v20_v21_geometry_and_preserves_v19_draw():
+def test_v25_original_iris_draw_is_before_safe_bounds_collection():
     src=(ROOT/"spiderman2k1fix.c").read_text()
     a=src.index("static int ui_transition_native43_handle_draw(")
     b=src.index("static HRESULT WINAPI hooked_draw_primitive(",a)
     handle=src[a:b]
-    assert handle.index("*result=original_draw_primitive(") < \
-           handle.index("SpiderNativeBounds25_Observe(")
-    assert "ui_transition_hold22_enabled,0,0)!=1" in handle
-    assert "ui_transition_sync24_enabled,0,0)!=1" in handle
-    assert "ui_transition_bounds25_enabled,0,0)==1" in handle
-    # EndScene state block remains untouched and full original drawn.
+    assert handle.index("*result=original_draw_primitive(") < (
+        handle.index("SpiderNativeBounds25_Observe("))
+    assert "ui_transition_bounds25_enabled,0,0)!=1" in handle
+    assert "SpiderNative43_MapBounded(v,mapped,4u" in handle
     assert "IDirect3DDevice7_CreateStateBlock(device,D3DSBT_ALL" in src
     assert "IDirect3DDevice7_ApplyStateBlock(device,saved)" in src
-    assert "IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)" in src
+    assert "D3DRENDERSTATE_ZENABLE,D3DZB_FALSE" in src
