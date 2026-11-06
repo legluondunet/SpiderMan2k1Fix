@@ -290,6 +290,74 @@ static inline int SpiderTransition_MapFullscreenCover43(
     return 1;
 }
 
+/* V9 topology-preserving presentation of the entire original 4:3 iris.
+ *
+ * The V7 "cover" zoom retains uniform aspect but crops original top
+ * and bottom edges by (W-4H/3)/2 * 3/4 screen pixels, removing parts of
+ * the exterior black body that connect its black spider teeth. V8's
+ * rectangular per-tooth extrapolations cannot guarantee connectivity.
+ *
+ * Rather than clipping or adding fragments, deform ONLY the mask's
+ * horizontal OUTER canvas region with a smooth, monotone, injective
+ * coordinate map. Keep the original 4:3 inner canvas map in the center
+ * and all original Y positions untouched. Map the exact original
+ * physical left/right source edges to the corresponding physical
+ * display edges (without cutting away attached black geometry).
+ *
+ * This preserves topology mathematically for every source polygon
+ * fully within the screen rectangle: it is a continuous one-to-one
+ * map, so shared vertices, connected black areas and tooth/body
+ * adjacency cannot be broken by the transformation itself.
+ *
+ * Important tradeoff: the IRIS outline in the exterior horizontal
+ * region is locally widened to cover the screen; its central region
+ * remains 4:3 proportional. This is a separate reversible experiment,
+ * NOT yet visually accepted or a claim of zero distortion.
+ *
+ * For x in [0,W], the native 4:3 map yields safe x in [g,W-g].
+ * On the left outer region [g,g+r], shift by -g(1-smoothstep(t)),
+ * t=(x-g)/r. On the right outer region [W-g-r,W-g], shift by
+ * +g*smoothstep(t). Since the derivative of smoothstep is positive,
+ * both derivatives stay >0, including at the smooth junctions.
+ *
+ * There is no level, frame, timing, or native sprite identifier here.
+ */
+static inline float SpiderTransition_Smooth01(float t)
+{
+    if(t<=0.0f)return 0.0f;
+    if(t>=1.0f)return 1.0f;
+    return t*t*(3.0f-2.0f*t);
+}
+static inline int SpiderTransition_MapTopology43(
+    const SpiderMenuVertex *source,SpiderMenuVertex *mapped,
+    unsigned screen_w,unsigned screen_h)
+{
+    float w=(float)screen_w,h=(float)screen_h,safe,g,r,center;
+    unsigned i;
+    if(!source || !mapped || screen_w<640u || screen_h<480u ||
+       screen_w>16384u || screen_h>16384u ||
+       (uint64_t)screen_w*3u <= (uint64_t)screen_h*4u)
+        return 0;
+    safe=4.0f*h/3.0f;
+    g=(w-safe)*0.5f;
+    center=w*0.5f;
+    r=safe*0.30f;
+    if(!(g>0.0f && r>0.0f && r<safe*0.5f))
+        return 0;
+    memcpy(mapped,source,4u*sizeof(*mapped));
+    for(i=0u;i<4u;i++){
+        float x=center+(source[i].x-center)*(safe/w);
+        if(x<g+r)
+            x-=g*(1.0f-SpiderTransition_Smooth01((x-g)/r));
+        else if(x>w-g-r)
+            x+=g*SpiderTransition_Smooth01((x-(w-g-r))/r);
+        mapped[i].x=x;
+        /* NO Y CROP: original top/bottom black mask body survives. */
+        mapped[i].y=source[i].y;
+    }
+    return 1;
+}
+
 /* V8 optional topology repair for the COHERENT V7 fullscreen iris.
  *
  * In the 1920x1080 V7 video, the black "teeth" occasionally float
