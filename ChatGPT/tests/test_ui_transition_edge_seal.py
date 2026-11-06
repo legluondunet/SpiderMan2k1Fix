@@ -79,10 +79,10 @@ def test_verified_outer_flat_teeth_connect_to_corresponding_screen_edge(seal,w,h
     l=result(seal,left,0,w,h)
     r=result(seal,right,1,w,h)
     assert len(l)==len(r)==4
-    assert {p.x for p in l}==pytest.approx({0.0,g*.45},abs=.05)
-    assert {p.x for p in r}==pytest.approx({w-g*.45,float(w)},abs=.05)
-    assert {p.y for p in l}==pytest.approx({h*.30,h*.60},abs=.05)
-    assert {p.y for p in r}==pytest.approx({h*.30,h*.60},abs=.05)
+    assert sorted({p.x for p in l})==pytest.approx([0.0,g*.45],abs=.05)
+    assert sorted({p.x for p in r})==pytest.approx([w-g*.45,float(w)],abs=.05)
+    assert sorted({p.y for p in l})==pytest.approx([h*.30,h*.60],abs=.05)
+    assert sorted({p.y for p in r})==pytest.approx([h*.30,h*.60],abs=.05)
     for v in l+r:
         assert v.diffuse==0 and v.z==0.0 and v.rhw==pytest.approx(27.6)
 
