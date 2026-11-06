@@ -476,3 +476,38 @@ def test_non_pause_spider_geometry_and_hud_remain_native():
     assert "layer<=SPIDER_UI_COMP_PAUSE_MENU" in flush
     assert "maybe_correct_aim_reticle(" in src
     assert "ui_transition_native43_handle_draw(" in src
+
+
+def test_fullscreen_pause_veil_escapes_4_by_3_viewport_then_restores_it():
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    fn=src.split("static int ui_comp_draw_native_fullscreen_backdrop(",1)[1].split(
+        "/* Flush before native EndScene",1)[0]
+    assert "IDirect3DDevice7_GetViewport(device,&previous)" in fn
+    assert "previous.dwX==center_x" in fn
+    assert "previous.dwWidth==center_w" in fn
+    assert "previous.dwHeight==physical_h" in fn
+    assert "fullscreen.dwX=0u;fullscreen.dwY=0u" in fn
+    assert "fullscreen.dwWidth=physical_w;fullscreen.dwHeight=physical_h" in fn
+    assert "original_set_viewport(device,&fullscreen)" in fn
+    assert "restore_hr=original_set_viewport(device,&previous)" in fn
+    assert "UI-COMPOSITOR-BACKDROP-VIEWPORT:" in fn
+    assert "D3DRENDERSTATE_ZENABLE,D3DZB_FALSE" in fn
+    assert "draw_hr=original_draw_primitive" in fn
+    # State and original physical viewport must be restored even when
+    # the full-screen native draw has failed.
+    assert fn.index("restore_hr=original_set_viewport(device,&previous)") > (
+        fn.index("draw_hr=original_draw_primitive"))
+    assert "return SUCCEEDED(draw_hr);" in fn
+    assert "if(FAILED(restore_hr))" in fn
+    assert "original_set_viewport(device,&fullscreen)" in fn
+    # No user-facing display-mode changes or persistent viewport hooks
+    # should be added to this ESC-only local render function.
+    assert "SetDisplayMode(" not in fn
+    assert "hooked_set_viewport(" not in fn
+    # The exception is confined to the native backdrop; subsequent
+    # 4:3 spider/menu replay retains its existing source coordinates.
+    flush=src.split("static void ui_comp_flush(",1)[1].split(
+        "static int ui_comp_capture(",1)[0]
+    assert flush.index("ui_comp_draw_native_fullscreen_backdrop(") < (
+        flush.index("for(layer=SPIDER_UI_COMP_PAUSE_DECOR;"))
+    assert "original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags)" in flush
