@@ -115,9 +115,13 @@ def test_original_outer_masks_and_oblique_teeth_are_not_size_anchors(dll):
     (0,240),
     (200,240),
     (518.4,240),
-    (720,120),  # Approx midpoint of 518.4 .. 921.6.
-    (921.6,0),
-    (1200,0),
+    (705.6,240), # Near original centered 4:3 frame edge.
+    (720,239.86),
+    (961.9,202.32), # V23b formerly finished here, far too early.
+    (1216.8,120), # Midpoint of 705.6 .. 1728 physical half-radius.
+    (1500,30.48),
+    (1728,0),
+    (1843.6,0),
 ])
 def test_smooth_progressive_band_width_tied_to_source_size(
     dll,aperture,expected_band
@@ -127,9 +131,35 @@ def test_smooth_progressive_band_width_tied_to_source_size(
     assert band.value==pytest.approx(expected_band,abs=1.5)
 
 
+def test_v23c_user_log_native_frame_timing_is_gradual(dll):
+    # Real 2026-11-06 Wine trace, first 32-frame native transition.
+    # V23b began shrinking at frame 15 and hit 0px at frame 21.
+    # V23c must remain black through the early iris then soften
+    # between the 4:3 crossing and the native last visible quads.
+    observations=[
+        (15,561.1,240.0),
+        (16,641.2,240.0),
+        (17,694.7,240.0),
+        (18,748.1,238.8),
+        (19,801.6,234.0),
+        (20,881.7,221.1),
+        (21,961.9,202.3),
+        (24,1175.6,134.5),
+        (32,1843.6,0.0),
+    ]
+    widths=[]
+    for frame,radius,expected in observations:
+        val=ct.c_float()
+        assert dll.width(1920,1080,radius,ct.byref(val))==1
+        assert val.value==pytest.approx(expected,abs=1.0),frame
+        widths.append(val.value)
+    assert widths==sorted(widths,reverse=True)
+    assert widths[2]==240.0 and widths[-1]==0.0
+
+
 def test_band_width_monotonically_diminishes_across_animation(dll):
     last=240.0
-    for radius in range(0,1200,3):
+    for radius in range(0,1950,3):
         band=ct.c_float()
         assert dll.width(1920,1080,float(radius),ct.byref(band))==1
         assert band.value<=last+1e-4
