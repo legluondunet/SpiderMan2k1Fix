@@ -1,25 +1,21 @@
 #ifndef SPIDERMAN2K1FIX_HUD_AIM_RETICLE_H
 #define SPIDERMAN2K1FIX_HUD_AIM_RETICLE_H
 
-/* Strict, source-verified red/green 3D aiming ring classifier.
- * GE-Proton11-12 F9 + matching Log=1 confirm three discrete render
- * depths in multiple gameplay contexts (not hardcoded level IDs):
+/* Source-verified red/green D3D7 targeting ring classifier.
+ * GE-Proton11-12 F9 + Log=1 identify the same ring family at several
+ * different perspective RHW depths: 9.9878, 7.8952, 5.9130, and now
+ * 9.4993 (scrn0090 / 2026-11-06 17:34:01). A fixed-depth whitelist
+ * missed the last ring and cannot cover arbitrary levels.
  *
- *  earlier scenes: scrn0028 red / scrn0029 green, RHW=9.9878;
- *  second scene: scrn0034 red and matching green, RHW=7.8952;
- *  Rhino boss: scrn0036 red, matching F9 2026-11-05 01:01:23,
- *       RHW=5.9130 (two independent HUD-VISUAL red samples).
+ * Identity is instead the combination of the original 00102C72 caller,
+ * triangle-fan FVF 0x144, 64x64 bound texture, Z=.00146, uniform
+ * red=B0FF4040 or green=B040FF40 tint, valid perspective RHW, and
+ * 4:3-to-widescreen-stretched circular geometry. No individual
+ * level, fixed screen coordinate, or discrete RHW value is required.
  *
- * Both use original caller=00102C72, triangle-fan FVF 0x144,
- * 64x64 texture, Z=.00146, and identical color codes:
- * red=B0FF4040; green=B040FF40. Level-2 red F9 at 00:56:55
- * correlates with log sample=39 flip=4687 and unchanged color/Z/RHW.
- *
- * Each circle was horizontally stretched by 4:3->16:9. Transform
- * X around the *object's own center* only; never move the target,
- * modify Y/texture/color/Z/RHW, or touch generic world/2D draws.
- * The host D3D7 wrapper additionally gates native gameplay state,
- * installed SHA-pinned HUD fix and the actual bound texture.
+ * Transform X around the ring's OWN center. Preserve its position,
+ * Y/UV/color/Z/RHW and do not touch arbitrary world or menu sprites.
+ * The host D3D7 wrapper also gates active gameplay and SHA-pinned HUD.
  */
 #include "hud_aim_geometry.h"
 #include "menu_scale.h"
@@ -36,16 +32,17 @@ static inline int SpiderHudAim_Near(float v,float reference,float tolerance)
     return v>=reference-tolerance && v<=reference+tolerance;
 }
 
-/* Cheap fail-closed prefilter before a D3D7 texture COM query. */
-/* Context-dependent RHW must match one of the three observed depths.
- * Never interpolate: native Pause motifs can share some depth layers,
- * but cannot pass the exact tint/texture/geometry gates. */
-static inline int SpiderHudAimReticle_ObservedDepth(float z,float rhw)
+/* Cheap prefilter: the retail renderer varies RHW continuously with
+ * camera/target depth. Require a valid perspective divisor, not a
+ * per-scene whitelist; the caller, texture, tint, Z, and stretched
+ * circular quad are checked separately before any vertex is touched.
+ * The upper bound rejects invalid or unrelated extreme perspective
+ * layers. NaN fails the ordered comparisons.
+ */
+static inline int SpiderHudAimReticle_PlausibleLayer(float z,float rhw)
 {
     return SpiderHudAim_Near(z,0.00146f,0.000035f) &&
-           (SpiderHudAim_Near(rhw,9.9878f,0.060f) ||
-            SpiderHudAim_Near(rhw,7.8952f,0.060f) ||
-            SpiderHudAim_Near(rhw,5.9130f,0.060f));
+           rhw>0.0f && rhw<=128.0f;
 }
 
 static inline int SpiderHudAimReticle_MightMatch(
@@ -54,7 +51,7 @@ static inline int SpiderHudAimReticle_MightMatch(
     return src &&
       (src[0].diffuse==0xB0FF4040u ||
        src[0].diffuse==0xB040FF40u) &&
-      SpiderHudAimReticle_ObservedDepth(src[0].z,src[0].rhw) &&
+      SpiderHudAimReticle_PlausibleLayer(src[0].z,src[0].rhw) &&
       SpiderHudAim_Near(src[0].u,0.0f,0.050f) &&
       SpiderHudAim_Near(src[0].v,0.0f,0.050f);
 }
