@@ -19,6 +19,7 @@
 #include "ui_transition_atomic_mask.h"
 #include "ui_transition_atomic_vector.h"
 #include "ui_transition_atomic_contour.h"
+#include "ui_transition_exact_union.h"
 #include "ui_compositor_policy.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
@@ -1034,6 +1035,9 @@ static volatile LONG ui_atomic_vector_enabled=0;
 static volatile LONG ui_atomic_contour_enabled=0;
 static volatile LONG ui_atomic_contour_ready=0;
 static SpiderAtomicContour ui_atomic_contour;
+/* V14: native polygon union with all hooked notches; never a radial approximation. */
+static volatile LONG ui_atomic_exact_enabled=0,ui_atomic_exact_ready=0;
+static SpiderExactTemplate ui_atomic_exact;
 static volatile LONG ui_atomic_renderer_failed=0;
 static IDirectDraw7 *ui_atomic_ddraw=NULL; /* owned COM ref, game lifetime */
 static IDirectDrawSurface7 *ui_atomic_texture=NULL;
@@ -3002,6 +3006,30 @@ static void ui_atomic_renderer_acquire_reference(void)
       InterlockedExchange(&ui_atomic_contour_ready,0);
     }
   }
+  if(ui_atomic_reference_count==ui_atomic_peak &&
+     InterlockedCompareExchange(&ui_atomic_exact_enabled,0,0)==1){
+    SpiderExactDiagnostic diagnostic;
+    if(SpiderExact_Prepare(ui_atomic_reference,ui_atomic_reference_count,
+           (unsigned)desktop_w,(unsigned)desktop_h,
+           &ui_atomic_exact,&diagnostic)){
+      char msg[240];
+      InterlockedExchange(&ui_atomic_exact_ready,1);
+      snprintf(msg,sizeof(msg),
+        "UI-ATOMIC-EXACT: READY original=%u unique=%u event-X=%u black-trapezoids=%u max-overlap=%u [EXACT NATIVE UNION; HOOKS RETAINED]",
+        ui_atomic_reference_count,ui_atomic_exact.unique_quads,
+        ui_atomic_exact.events,ui_atomic_exact.traps,
+        ui_atomic_exact.largest_intervals);
+      log_line(msg);
+    }else{
+      char msg[250];
+      InterlockedExchange(&ui_atomic_exact_ready,0);
+      snprintf(msg,sizeof(msg),
+        "UI-ATOMIC-EXACT: REJECTED reason=%u event=%u object=%u a=%.3f b=%.3f; V12 fallback",
+        diagnostic.reason,diagnostic.event,diagnostic.object,
+        (double)diagnostic.a,(double)diagnostic.b);
+      log_line(msg);
+    }
+  }
   if(ui_atomic_reference_count!=ui_atomic_peak ||
      !ui_atomic_renderer_create_texture()){
     ui_atomic_reference_count=0u;
@@ -3086,6 +3114,78 @@ static int ui_atomic_renderer_skip_native(
  * This is a conservative trial. If the original source is not a closed,
  * star-shaped aperture, preparation declines and V12 remains active.
  */
+/* V14: one original-source polygon UNION at final physical resolution.
+ * All native black quads merge to a single non-overlapping triangle mesh
+ * before applying 4:3 aspect and native scale. No interpolation of hooked
+ * teeth, radial jumps or enlarged alpha textures. The original V12 path
+ * is kept as an immediate same-frame fallback on unsupported D3D7 calls.
+ */
+static int ui_atomic_renderer_draw_exact(IDirect3DDevice7 *device)
+{
+  SpiderAtomicVectorPoint *points=NULL;
+  SpiderMenuVertex *vertices=NULL;
+  size_t capacity;
+  unsigned count=0u,i;
+  DWORD saved=0,restored_z=0;
+  IDirectDrawSurface7 *bound=NULL;
+  HRESULT hr;
+  int ok=1;
+  if(!device ||
+     InterlockedCompareExchange(&ui_atomic_exact_ready,0,0)!=1)
+    return 0;
+  capacity=((size_t)ui_atomic_exact.traps+4u)*6u;
+  if(capacity<6u || capacity>((size_t)SPIDER_EXACT_MAX_TRAPS+4u)*6u)
+    return 0;
+  points=(SpiderAtomicVectorPoint*)malloc(capacity*sizeof(*points));
+  vertices=(SpiderMenuVertex*)malloc(capacity*sizeof(*vertices));
+  if(!points || !vertices){free(points);free(vertices);return 0;}
+  if(!SpiderExact_Build(&ui_atomic_exact,(unsigned)desktop_w,
+       (unsigned)desktop_h,ui_atomic_scene_scale,points,
+       (unsigned)capacity,&count)){
+    free(points);free(vertices);return 0;
+  }
+  if(FAILED(IDirect3DDevice7_CreateStateBlock(device,D3DSBT_ALL,&saved)) ||
+     !saved){free(points);free(vertices);return 0;}
+  if(FAILED(IDirect3DDevice7_GetTexture(device,0,&bound))){
+    IDirect3DDevice7_DeleteStateBlock(device,saved);
+    free(points);free(vertices);return 0;
+  }
+  memset(vertices,0,(size_t)count*sizeof(*vertices));
+  for(i=0u;i<count;i++){
+    vertices[i].x=points[i].x;vertices[i].y=points[i].y;
+    vertices[i].z=0.0f;vertices[i].rhw=1.0f;
+    vertices[i].diffuse=0xFF000000UL;
+  }
+#define EXACT_REQUIRE(call) do {if(FAILED(call))ok=0;} while(0)
+  EXACT_REQUIRE(IDirect3DDevice7_SetTexture(device,0,NULL));
+  EXACT_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE));
+  EXACT_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE));
+  EXACT_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ALPHABLENDENABLE,FALSE));
+  EXACT_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ALPHATESTENABLE,FALSE));
+  EXACT_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_FOGENABLE,FALSE));
+  EXACT_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_CULLMODE,D3DCULL_NONE));
+  EXACT_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_COLOROP,D3DTOP_SELECTARG1));
+  EXACT_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_COLORARG1,D3DTA_DIFFUSE));
+  EXACT_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAOP,D3DTOP_SELECTARG1));
+  EXACT_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAARG1,D3DTA_DIFFUSE));
+  if(ok)EXACT_REQUIRE(original_draw_primitive(
+      device,D3DPT_TRIANGLELIST,0x144UL,vertices,(DWORD)count,0u));
+#undef EXACT_REQUIRE
+  hr=IDirect3DDevice7_ApplyStateBlock(device,saved);
+  if(FAILED(hr))ok=0;
+  hr=IDirect3DDevice7_SetTexture(device,0,bound);
+  if(FAILED(hr))ok=0;
+  if(bound)IDirectDrawSurface7_Release(bound);
+  IDirect3DDevice7_DeleteStateBlock(device,saved);
+  if(SUCCEEDED(IDirect3DDevice7_GetRenderState(
+      device,D3DRENDERSTATE_ZENABLE,&restored_z))){
+    InterlockedExchange(&fov_z_state_enabled,restored_z!=D3DZB_FALSE);
+    InterlockedExchange(&fov_z_state_known,1);
+  }
+  free(points);free(vertices);
+  return ok;
+}
+
 static int ui_atomic_renderer_draw_contour(IDirect3DDevice7 *device)
 {
   SpiderAtomicVectorPoint *points=NULL;
@@ -3276,11 +3376,23 @@ static void ui_atomic_renderer_finish_scene(IDirect3DDevice7 *device)
   if(ui_atomic_texture && ui_atomic_scene_mode==1u &&
      ui_atomic_scene_suppressed>0u){
     LONG frame;
-    if(!(InterlockedCompareExchange(&ui_atomic_contour_enabled,0,0)==1 &&
-          InterlockedCompareExchange(&ui_atomic_contour_ready,0,0)==1 ?
-          ui_atomic_renderer_draw_contour(device) :
-          (InterlockedCompareExchange(&ui_atomic_vector_enabled,0,0)==1 ?
-           ui_atomic_renderer_draw_vector(device) : ui_atomic_renderer_draw(device)))){
+    int drawn=0;
+    if(InterlockedCompareExchange(&ui_atomic_exact_enabled,0,0)==1){
+      if(InterlockedCompareExchange(&ui_atomic_exact_ready,0,0)==1){
+        drawn=ui_atomic_renderer_draw_exact(device);
+        if(!drawn){
+          InterlockedExchange(&ui_atomic_exact_ready,0);
+          log_line("UI-ATOMIC-EXACT: DRAW ERROR: V14 disabled; immediate SAME FRAME V12 fallback");
+        }
+      }
+      if(!drawn)drawn=ui_atomic_renderer_draw_vector(device);
+    }else if(InterlockedCompareExchange(&ui_atomic_contour_enabled,0,0)==1 &&
+             InterlockedCompareExchange(&ui_atomic_contour_ready,0,0)==1)
+      drawn=ui_atomic_renderer_draw_contour(device);
+    else if(InterlockedCompareExchange(&ui_atomic_vector_enabled,0,0)==1)
+      drawn=ui_atomic_renderer_draw_vector(device);
+    else drawn=ui_atomic_renderer_draw(device);
+    if(!drawn){
       InterlockedExchange(&ui_atomic_renderer_failed,1);
       log_line("UI-ATOMIC: ERROR atomic DrawPrimitive/state failed; disabled subsequent frames (restore native V9)");
       return;
@@ -3304,6 +3416,12 @@ static void ui_atomic_renderer_finish_scene(IDirect3DDevice7 *device)
           "UI-ATOMIC-CONTOUR: COMPOSED frame=%ld scale=%.5f suppressed=%u rays=%u [ONE CONNECTED BLACK EXTERIOR]",
           (long)frame,(double)ui_atomic_scene_scale,
           ui_atomic_scene_suppressed,SPIDER_ATOMIC_CONTOUR_SAMPLES);
+      if(InterlockedCompareExchange(&ui_atomic_exact_enabled,0,0)==1 &&
+         InterlockedCompareExchange(&ui_atomic_exact_ready,0,0)==1)
+        snprintf(msg,sizeof(msg),
+          "UI-ATOMIC-EXACT: COMPOSED frame=%ld scale=%.5f suppressed=%u union-traps=%u [ONE DIRECT BLACK TRIANGLE MESH]",
+          (long)frame,(double)ui_atomic_scene_scale,
+          ui_atomic_scene_suppressed,ui_atomic_exact.traps);
       log_line(msg);
     }
   }else if(ui_atomic_black_zero==0u){
@@ -6234,6 +6352,22 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-ATOMIC-CONTOUR: V13 TRIAL ON - derive center-connected spider hole from native polygon edges; V12 fallback if unsupported");
     }else{
       log_line("UI-ATOMIC-CONTOUR: OFF - V12 original triangles unchanged");
+    }
+  }
+  /* V14 strict opt-in. Unlike V13, accepts NON-STAR shaped native
+   * polygons with every original hooked edge. V14 has precedence over
+   * V13 even when the older contour flag is present. A failure reuses
+   * V12 immediately; removing only EXACT_TEST restores prior behavior. */
+  {
+    char exact[4]={0};
+    if(InterlockedCompareExchange(&ui_atomic_vector_enabled,0,0)==1 &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_TRANSITION_EXACT_TEST",
+                               exact,sizeof(exact))==1 &&
+       exact[0]=='1'){
+      InterlockedExchange(&ui_atomic_exact_enabled,1);
+      log_line("UI-ATOMIC-EXACT: V14 TRIAL ON - exact native black polygon union, non-star hooked limbs retained, same-frame V12 fallback");
+    }else{
+      log_line("UI-ATOMIC-EXACT: OFF - V13/V12 unchanged");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
