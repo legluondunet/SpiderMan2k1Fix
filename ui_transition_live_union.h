@@ -69,12 +69,12 @@ static inline void SpiderLiveUnion_MeasureDeviation(
     report->max_vertex_deviation=(float)max_dev;
 }
 
-static inline int SpiderLiveUnion_Prepare(
+static inline int SpiderLiveUnion_PrepareBounded(
     const SpiderAtomicMaskQuad *live,unsigned live_count,
     unsigned expected_count,unsigned w,unsigned h,
     const SpiderAtomicMaskQuad *reference,unsigned reference_count,
-    float estimated_scale,SpiderExactTemplate *out,
-    SpiderLiveUnionReport *report)
+    float estimated_scale,float overhang,int allow_native_culling,
+    SpiderExactTemplate *out,SpiderLiveUnionReport *report)
 {
     SpiderExactDiagnostic diagnostic;
     if(report)memset(report,0,sizeof(*report));
@@ -83,17 +83,25 @@ static inline int SpiderLiveUnion_Prepare(
        reference_count>SPIDER_ATOMIC_MASK_MAX ||
        expected_count<32u || expected_count>SPIDER_ATOMIC_MASK_MAX ||
        w<640u || h<480u || !(estimated_scale>=.015f &&
-                              estimated_scale<=24.0f)){
+                              estimated_scale<=24.0f) ||
+       !(overhang>=0.0f && overhang<=.100001f)){
         if(report)report->reason=1u;
         return 0;
     }
-    if(live_count!=expected_count || reference_count!=expected_count){
+    /* Later animation frames can naturally omit entirely off-screen
+     * black quads. Requiring all 92 freezes V15 on its first late frame.
+     * V16 allows fewer CURRENT quads only when the geometric sweep
+     * proves the native matte covers ALL physical source bounds.
+     * The caller independently verifies capture == suppressed draws. */
+    if(reference_count!=expected_count || live_count>expected_count ||
+       live_count<8u || (!allow_native_culling && live_count!=expected_count)){
         report->reason=2u;
         return 0;
     }
     SpiderLiveUnion_MeasureDeviation(live,live_count,
          reference,reference_count,w,h,estimated_scale,report);
-    if(!SpiderExact_Prepare(live,live_count,w,h,out,&diagnostic)){
+    if(!SpiderExact_PrepareBounded(live,live_count,w,h,out,
+                                  overhang,&diagnostic)){
         report->reason=3u;
         report->union_reason=diagnostic.reason;
         report->union_event=diagnostic.event;
@@ -106,5 +114,17 @@ static inline int SpiderLiveUnion_Prepare(
     report->unique=out->unique_quads;
     report->traps=out->traps;
     return 1;
+}
+/* Existing V15 strict behavior is intentionally unchanged by V16. */
+static inline int SpiderLiveUnion_Prepare(
+    const SpiderAtomicMaskQuad *live,unsigned live_count,
+    unsigned expected_count,unsigned w,unsigned h,
+    const SpiderAtomicMaskQuad *reference,unsigned reference_count,
+    float estimated_scale,SpiderExactTemplate *out,
+    SpiderLiveUnionReport *report)
+{
+    return SpiderLiveUnion_PrepareBounded(live,live_count,expected_count,
+        w,h,reference,reference_count,estimated_scale,
+        0.0f,0,out,report);
 }
 #endif
