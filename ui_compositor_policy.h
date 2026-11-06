@@ -14,7 +14,35 @@ enum SpiderUICompLayer {
     SPIDER_UI_COMP_PAUSE_MENU = 4
 };
 
-#define SPIDER_UI_COMP_MAX_COMMANDS 256u
+/* Explicit native Pause painter order. The physical outer gutters
+ * have ALREADY been filled by ui_comp_draw_native_exterior_gutters()
+ * before these passes. Both original backdrop and inner spider tiles
+ * MUST remain together in their original capture order: separating or
+ * skipping source colours corrupted the centre's alpha blending in
+ * hardware comparisons. No level-specific palette or RHW matching.
+ */
+enum SpiderUICompReplayPass {
+    SPIDER_UI_COMP_REPLAY_HUD = 0,
+    SPIDER_UI_COMP_REPLAY_MOTIF = 1,
+    SPIDER_UI_COMP_REPLAY_MENU = 2,
+    SPIDER_UI_COMP_REPLAY_SKIP = -1
+};
+
+static inline int SpiderUIComp_ReplayPassForDraw(int layer)
+{
+    if(layer==SPIDER_UI_COMP_PAUSE_MENU)
+        return SPIDER_UI_COMP_REPLAY_MENU;
+    if(layer==SPIDER_UI_COMP_HUD)
+        return SPIDER_UI_COMP_REPLAY_HUD;
+    if(layer==SPIDER_UI_COMP_PAUSE_DECOR)
+        return SPIDER_UI_COMP_REPLAY_MOTIF;
+    return SPIDER_UI_COMP_REPLAY_SKIP;
+}
+
+/* Full native Pause: up to 229 menu/decor primitives plus verified
+ * HUD sprites, captured only while the native ribbon is live.
+ * Keep a hard bound so a malformed frame fails closed. */
+#define SPIDER_UI_COMP_MAX_COMMANDS 384u
 
 static inline int SpiderUIComp_ShouldDefer(int trial_enabled,
         int scene_open, int scene_bailout, int native_layer,
@@ -22,20 +50,11 @@ static inline int SpiderUIComp_ShouldDefer(int trial_enabled,
 {
     return trial_enabled && scene_open && !scene_bailout &&
            (native_layer == SPIDER_UI_COMP_PAUSE_DECOR ||
-            native_layer == SPIDER_UI_COMP_PAUSE_MENU) &&
+            native_layer == SPIDER_UI_COMP_PAUSE_MENU ||
+            native_layer == SPIDER_UI_COMP_HUD) &&
            vertex_count == 4u && fvf == 0x144u;
 }
 
-/* Entire overlay is the screen; decoration remains in 4:3. Keep the
- * source RGB and limit alpha during a reversible first hardware trial.
- * This is NOT an exact reproduction of the game's native pause tint.
- */
-static inline unsigned SpiderUIComp_Tint(unsigned source_argb)
-{
-    unsigned alpha=(source_argb >> 24) & 0xffu;
-    if (alpha>0x50u) alpha=0x50u;
-    return (alpha<<24)|(source_argb & 0xffffffu);
-}
 /* Fail-closed proof that a set of game-owned native exterior
  * rectangles covers a physical screen edge all the way from top to
  * bottom. This is screen-space geometry, independent of boss/level,
@@ -74,44 +93,90 @@ static inline int SpiderUIComp_CoversFullHeight(
     return 0;
 }
 
-/* On a physical widescreen, the 4:3 gameplay UI is centered. The
- * exterior strips are simply the two complements of that canvas.
- * This never scales, reprojects or extends the spider decoration.
+/* Identify a source-backed, uniform native backdrop independently of
+ * the inner spider, without any hardcoded colour, camera depth or level.
+ *
+ * Source evidence 2026-11-06: the ESC motif has two flat diffuse
+ * colour families. The background one touches all four source edges,
+ * and the second is strictly interior. This proof authorizes ONLY
+ * two physical OUTER gutter quads. All 160 original source triangles
+ * must remain untouched; replacing the source backdrop made the
+ * centre's translucent colours incorrect (hardware A/B confirmed).
+ *
+ * AABB alone is not an authoritative proof of unique screen coverage:
+ * the caller also verifies untextured, same-vertex-colour D3D7 triangles
+ * and the saved original render-state owner on each source command.
+ * Reject >2 colours, missing edges, zero opacity or invalid geometry.
  */
-static inline float SpiderUIComp_GutterWidth(
-    unsigned screen_w,unsigned screen_h)
+typedef struct SpiderUICompBackdropSample {
+    float left,right,top,bottom;
+    unsigned color;
+} SpiderUICompBackdropSample;
+
+static inline int SpiderUIComp_IdentifyNativeBackdrop(
+    const SpiderUICompBackdropSample *samples,unsigned count,
+    float width,float height,unsigned *background)
 {
-    float outer;
-    if(screen_w<640u || screen_h<480u ||
-       screen_w>16384u || screen_h>16384u ||
-       (unsigned long long)screen_w*3u <=
-           (unsigned long long)screen_h*4u)return 0.0f;
-    outer=((float)screen_w-(float)screen_h*4.0f/3.0f)*0.5f;
-    return outer>0.0f ? outer : 0.0f;
+    SpiderUICompYSpan left[SPIDER_UI_COMP_MAX_COMMANDS];
+    SpiderUICompYSpan right[SPIDER_UI_COMP_MAX_COMMANDS];
+    SpiderUICompYSpan top[SPIDER_UI_COMP_MAX_COMMANDS];
+    SpiderUICompYSpan bottom[SPIDER_UI_COMP_MAX_COMMANDS];
+    unsigned nl=0u,nr=0u,nt=0u,nb=0u;
+    unsigned candidate=0u,inner=0u,i;
+    int have_candidate=0,have_inner=0;
+    if(background)*background=0u;
+    if(!samples || !background || count<4u ||
+       count>SPIDER_UI_COMP_MAX_COMMANDS ||
+       width<640.0f || height<480.0f ||
+       width>16384.0f || height>16384.0f ||
+       width*3.0f<=height*4.0f)return 0;
+    for(i=0u;i<count;i++) {
+        const SpiderUICompBackdropSample *q=&samples[i];
+        int on_left,on_right,on_top,on_bottom,on_edge;
+        if(!(q->left>=-width*.05f && q->right<=width*1.05f &&
+             q->top>=-height*.05f && q->bottom<=height*1.05f &&
+             q->right>q->left+0.5f &&
+             q->bottom>q->top+0.5f && (q->color>>24)!=0u))
+            return 0;
+        on_left=q->left<=width*.005f;
+        on_right=q->right>=width*.995f;
+        on_top=q->top<=height*.005f;
+        on_bottom=q->bottom>=height*.995f;
+        on_edge=on_left || on_right || on_top || on_bottom;
+        if(on_edge) {
+            if(!have_candidate){candidate=q->color;have_candidate=1;}
+            else if(candidate!=q->color)return 0;
+            if(on_left){
+                left[nl].top=q->top;left[nl++].bottom=q->bottom;
+            }
+            if(on_right){
+                right[nr].top=q->top;right[nr++].bottom=q->bottom;
+            }
+            if(on_top){
+                top[nt].top=q->left;top[nt++].bottom=q->right;
+            }
+            if(on_bottom){
+                bottom[nb].top=q->left;bottom[nb++].bottom=q->right;
+            }
+        }
+    }
+    if(!have_candidate || !nl || !nr || !nt || !nb ||
+       !SpiderUIComp_CoversFullHeight(left,nl,height) ||
+       !SpiderUIComp_CoversFullHeight(right,nr,height) ||
+       !SpiderUIComp_CoversFullHeight(top,nt,width) ||
+       !SpiderUIComp_CoversFullHeight(bottom,nb,width))
+        return 0;
+    for(i=0u;i<count;i++){
+        unsigned color=samples[i].color;
+        if(color!=candidate){
+            if(!have_inner){inner=color;have_inner=1;}
+            else if(color!=inner)return 0;
+        }
+    }
+    if(!have_inner)return 0; /* one flat fill is not a spider */
+    *background=candidate;
+    return 1;
 }
 
-/* A source quad attached to a physical edge is allowed to establish
- * exterior colour only if it covers the ENTIRE native 4:3 gutter width.
- * Touching the edge alone is insufficient: narrow tiles could otherwise
- * be erroneously expanded to the whole strip. This is a generic
- * source-geometry condition for every widescreen aspect ratio.
- *
- * right_side=0: [0,gutter], right_side=1: [width-gutter,width].
- * 0.5px tolerance avoids rejecting exact raster edge coordinates.
- */
-static inline int SpiderUIComp_EdgeTileCoversGutter(
-    float min_x,float max_x,float width,float gutter,int right_side)
-{
-    if(!(width>=640.0f && width<=16384.0f &&
-         gutter>0.0f && gutter<width*0.5f &&
-         min_x>=-width*0.05f && max_x<=width*1.05f &&
-         max_x>min_x))
-        return 0;
-    if(right_side)
-        return max_x>=width*0.995f &&
-               min_x<=width-gutter+0.5f;
-    return min_x<=width*0.005f &&
-           max_x>=gutter-0.5f;
-}
 
 #endif

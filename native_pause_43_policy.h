@@ -137,4 +137,33 @@ static inline int SpiderNativePause43_RibbonBounds(
            bottom<(float)h*0.72f &&
            bottom-top>(float)h*0.11f;
 }
+/* Compositor-only classification: original ESC perspective varies with
+ * camera and level. Verify caller/geometry/texture and current ESC menu
+ * context in the host before applying these depth and tint predicates. */
+static inline int SpiderNativePause43_Perspective(float z,float rhw,float target)
+{
+    return SpiderNativePause43_Abs(z-target)<0.000045f &&
+           rhw>0.5f && rhw<=128.0f;
+}
+static inline int SpiderNativePause43_CompositorRibbon(float z,float rhw,unsigned argb)
+{
+    unsigned alpha=(argb>>24)&255u;
+    unsigned red=(argb>>16)&255u;
+    unsigned green=(argb>>8)&255u;
+    unsigned blue=argb&255u;
+    return SpiderNativePause43_Perspective(z,rhw,0.00122f) &&
+           alpha>=32u && alpha<=208u &&
+           blue>red+20u && blue>green+20u;
+}
+static inline int SpiderNativePause43_CompositorMotif(float z,float rhw,unsigned argb)
+{
+    return SpiderNativePause43_Perspective(z,rhw,0.00146f) &&
+           ((argb>>24)&255u)==128u;
+}
+static inline int SpiderNativePause43_CompositorText(float z,float rhw)
+{
+    return SpiderNativePause43_Perspective(z,rhw,0.00122f) ||
+           SpiderNativePause43_Perspective(z,rhw,0.00098f);
+}
+
 #endif
