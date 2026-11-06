@@ -139,6 +139,10 @@ def test_owner_probe_does_not_modify_gameover_trial_or_3d_action_routing():
     assert '"CANDIDATE-CONTEXT-EXIT"' in BACKEND
     assert '"CANDIDATE-STABLE"' in BACKEND
     assert '"SOUTH-BEFORE-PULSE"' in BACKEND
+    assert '"SELECTED-PAD-CHANGE"' in BACKEND
+    assert "gameover_owner_probe_selected_id!=id" in BACKEND
+    assert "gameover_owner_probe_selected_id=0;" in BACKEND
+    assert "gameover_owner_probe_was_candidate=0;" in BACKEND
     assert "gameover_owner_probe_baselines<8u" in BACKEND
     assert "gameover_owner_probe_frames%180u==0u" in BACKEND
     assert "gameover_owner_probe_events=0;" in BACKEND
