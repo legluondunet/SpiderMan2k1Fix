@@ -1277,7 +1277,7 @@ static const void *maybe_correct_native_pause43(void *device,
         * shadow layers; accept only the two exact ribbon signatures. */
        (SpiderNativePause43_RibbonLayer(z,rhw) ||
         (InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
-         SpiderNativePause43_CompositorRibbon(z,rhw,0x7F3232A0u)))) {
+         SpiderNativePause43_Perspective(z,rhw,0.00122f)))) {
       float sx=(float)desktop_w/1920.0f;
       float sy=desktop_w==1920?1.0f:(float)desktop_h/1080.0f;
       int near_left=(left>=-42.0f*sx && left<=-12.0f*sx &&
