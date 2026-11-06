@@ -27,10 +27,7 @@ def policy(tmp_path_factory):
         'int eligible(int e,int open,int bailout,int layer,unsigned count,unsigned fvf){'
         'return SpiderUIComp_ShouldDefer(e,open,bailout,layer,count,fvf);'
         '}\n'
-        'int replay_pass(int layer,unsigned source_color,int proven,'
-        'int drawn,unsigned background){'
-        'return SpiderUIComp_ReplayPassForDraw(layer,source_color,proven,'
-        'drawn,background);}\n'
+        'int replay_pass(int layer){return SpiderUIComp_ReplayPassForDraw(layer);}\n'
         'int coverage(float h,const SpiderUICompYSpan *sp,unsigned n){'
         'return SpiderUIComp_CoversFullHeight(sp,n,h);}\n'
         'int native_backdrop(const SpiderUICompBackdropSample *s,'
@@ -52,7 +49,7 @@ def policy(tmp_path_factory):
     lib=ct.CDLL(str(out))
     lib.eligible.argtypes=[ct.c_int]*4+[ct.c_uint]*2
     lib.eligible.restype=ct.c_int
-    lib.replay_pass.argtypes=[ct.c_int,ct.c_uint,ct.c_int,ct.c_int,ct.c_uint]
+    lib.replay_pass.argtypes=[ct.c_int]
     lib.replay_pass.restype=ct.c_int
     class YSpan(ct.Structure):
         _fields_=[("top",ct.c_float),("bottom",ct.c_float)]
@@ -286,7 +283,7 @@ def test_native_exterior_preserves_all_160_source_triangles():
         "static int ui_comp_capture(",1)[0]
     assert flush.index("ui_comp_draw_native_exterior_gutters(") < flush.index(
         "for(layer=SPIDER_UI_COMP_HUD;")
-    assert "0,0,(unsigned)native_backdrop_argb" in flush
+    assert "owner=SpiderUIComp_ReplayPassForDraw(c->layer)" in flush
     assert "original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags)" in flush
     assert "ALL 160 NATIVE TRIANGLES REPLAYED" in flush
     assert "UI-COMPOSITOR-NATIVE-BACKDROP:" in flush
@@ -298,7 +295,7 @@ def test_non_pause_spider_geometry_and_hud_remain_native():
         "static int ui_comp_capture(",1)[0]
     # The only opt-out in replay is specific to a currently-verified
     # PAUSE_DECOR backdrop tint. No HUD, selector, text or world layer.
-    assert "for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;" in flush
+    assert "for(pass=SPIDER_UI_COMP_REPLAY_HUD;" in flush
     assert "pass<=SPIDER_UI_COMP_REPLAY_MENU;pass++)" in flush
     assert "SpiderUIComp_ReplayPassForDraw(" in flush
     assert "native_backdrop_drawn" in flush
@@ -385,32 +382,23 @@ def test_host_activates_compositor_before_generic_canvas_for_unknown_pause_depth
         "original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags)")
 
 
-@pytest.mark.parametrize("background,spider",[
-    (0x80868620,0x80208686),  # native source palette from Log=1
-    (0x80662299,0x80445588),  # changed native palette, same policy
+@pytest.mark.parametrize("colour", [
+    0x80868620, 0x80208686, 0x80662299, 0x80445588
 ])
-def test_source_verified_spider_has_its_own_pass_above_veil_and_hud(
-        policy,background,spider):
-    replay=policy.replay_pass
-    # 0=backdrop, 1=HUD, 2=spider, 3=menu, -1=skip.
-    # Successful fullscreen veil: skip original backdrop tiles,
-    # preserve all inner spider pieces and foreground native menu.
-    assert replay(3,background,1,1,background)==-1
-    assert replay(1,spider,1,1,background)==1
-    assert replay(3,spider,1,1,background)==2
-    assert replay(4,0xFFFFFFFF,1,1,background)==3
-    # Fullscreen draw failed but source identity is proven: original
-    # backdrop quads remain, underneath the independently replayed art.
-    assert replay(3,background,1,0,background)==0
-    assert replay(3,spider,1,0,background)==2
-    assert replay(4,0xFF000000,1,0,background)==3
-    # Unknown shape/material => do not guess or discard its pieces.
-    assert replay(3,background,0,0,background)==2
-    assert replay(3,spider,0,0,background)==2
-    assert replay(4,spider,0,0,background)==3
-    assert replay(0,spider,1,1,background)==-1
-    assert replay(1,spider,1,1,background)==1
-    assert replay(2,spider,1,1,background)==-1
+def test_all_original_native_spider_and_backdrop_tiles_use_one_pass(policy,colour):
+    # Even if the native source palette varies, semantic ownership
+    # must NOT filter out any of the 160 source decoration tiles.
+    assert policy.replay_pass(3)==1
+    assert policy.replay_pass(1)==0
+    assert policy.replay_pass(4)==2
+    for layer in (0,2,-1,5):
+        assert policy.replay_pass(layer)==-1
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    flush=src.split("static void ui_comp_flush(",1)[1].split(
+        "static int ui_comp_capture(",1)[0]
+    assert "owner=SpiderUIComp_ReplayPassForDraw(c->layer)" in flush
+    assert "c->source_v[0].diffuse==native_backdrop_argb" not in flush
+    assert "0,0,(unsigned)native_backdrop_argb" not in flush
 
 
 def test_compositor_keeps_spider_above_game_hud_and_below_title():
@@ -418,8 +406,8 @@ def test_compositor_keeps_spider_above_game_hud_and_below_title():
     flush=src.split("static void ui_comp_flush(",1)[1].split(
         "static int ui_comp_capture(",1)[0]
     assert flush.index("ui_comp_draw_native_exterior_gutters(") < flush.index(
-        "for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;")
-    assert flush.index("for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;") < flush.index(
+        "for(pass=SPIDER_UI_COMP_REPLAY_HUD;")
+    assert flush.index("for(pass=SPIDER_UI_COMP_REPLAY_HUD;") < flush.index(
         "for(layer=SPIDER_UI_COMP_HUD;")
     assert "SPIDER_UI_COMP_REPLAY_HUD" in flush
     assert "SPIDER_UI_COMP_REPLAY_MOTIF" in flush
@@ -464,9 +452,9 @@ def test_late_hud_draws_are_detected_without_touching_the_original_draw_path():
 def test_native_pause_hud_is_replayed_once_after_veil_before_spider():
     src=(ROOT/"spiderman2k1fix.c").read_text()
     policy=(ROOT/"ui_compositor_policy.h").read_text()
-    assert "SPIDER_UI_COMP_REPLAY_HUD = 1" in policy
-    assert "SPIDER_UI_COMP_REPLAY_MOTIF = 2" in policy
-    assert "SPIDER_UI_COMP_REPLAY_MENU = 3" in policy
+    assert "SPIDER_UI_COMP_REPLAY_HUD = 0" in policy
+    assert "SPIDER_UI_COMP_REPLAY_MOTIF = 1" in policy
+    assert "SPIDER_UI_COMP_REPLAY_MENU = 2" in policy
     assert "native_layer == SPIDER_UI_COMP_HUD" in policy
     assert "SPIDER_UI_COMP_MAX_COMMANDS 384u" in policy
     assert "UI-COMPOSITOR-HUD-ORDER: ON" in src
@@ -492,7 +480,7 @@ def test_native_pause_hud_is_replayed_once_after_veil_before_spider():
     assert "SPIDER_UI_COMP_REPLAY_HUD" in flush
     assert "paint_hud++" in flush
     assert flush.index("ui_comp_draw_native_exterior_gutters(") < flush.index(
-        "for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;")
+        "for(pass=SPIDER_UI_COMP_REPLAY_HUD;")
     assert "UI-COMPOSITOR-ORDER:" in flush
     assert "native-decor=%u hud=%u menu=%u" in flush
     # Preserve motif geometry and original HUD texture/material per draw.
@@ -519,7 +507,7 @@ def test_exterior_only_does_not_reclassify_or_drop_native_decor():
         "static int ui_comp_capture(",1)[0]
     assert "native_backdrop_verified=ui_comp_native_backdrop_source(" in flush
     assert "ui_comp_draw_native_exterior_gutters(" in flush
-    assert "0,0,(unsigned)native_backdrop_argb" in flush
+    assert "owner=SpiderUIComp_ReplayPassForDraw(c->layer)" in flush
     assert "c->source_v[0].diffuse==native_backdrop_argb" not in flush
     assert "original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags)" in flush
     assert "UI-COMPOSITOR-ORDER:" in flush
@@ -553,7 +541,7 @@ def test_retired_veil_trials_cannot_change_validated_palette():
         assert retired not in src
     assert "ui_comp_draw_native_exterior_gutters(" in src
     assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_BACKDROP" in src
-    assert "0,0,(unsigned)native_backdrop_argb" in src
+    assert "owner=SpiderUIComp_ReplayPassForDraw(c->layer)" in src
 
 
 def test_unverified_hud_reorder_is_off_by_default_and_opt_in_only():
