@@ -76,10 +76,12 @@ def api(tmp_path_factory):
         'float l,float r,SpiderMenuVertex out[2][4]){'
         'return SpiderNativeBounds25_Build(p,w,h,l,r,out);}\n'
     )
-    subprocess.run([cc,"-std=c11","-Wall","-Wextra","-Werror",
+    result=subprocess.run([cc,"-std=c11","-Wall","-Wextra","-Werror",
                     "-fPIC","-shared","-I",str(ROOT),
                     str(source),"-o",str(dll),"-lm"],
-                   capture_output=True,text=True,check=True)
+                   capture_output=True,text=True,check=False)
+    assert result.returncode==0, (
+        "V25 C header must compile cleanly:\n"+result.stderr)
     o=ct.CDLL(str(dll))
     o.reset.argtypes=[ct.POINTER(Frame)]
     o.matte.argtypes=[ct.POINTER(Vertex),ct.c_uint,ct.c_uint]
