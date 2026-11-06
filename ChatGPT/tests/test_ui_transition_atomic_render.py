@@ -45,6 +45,9 @@ def native(tmp_path_factory):
         'float*scale,float*error){'
         'return SpiderAtomicMask_EstimateScale(q,n,r,w,h,scale,error);'
         '}\n'
+        'unsigned covered(const uint32_t*px,unsigned w,unsigned h){'
+        'return SpiderAtomicMask_CountOpaquePixels(px,w,h);'
+        '}\n'
         'int uv(float s,float*u0,float*v0,float*u1,float*v1){'
         'return SpiderAtomicMask_ScreenUV(s,u0,v0,u1,v1);'
         '}\n'
@@ -58,6 +61,8 @@ def native(tmp_path_factory):
     lib.raster.argtypes=[p,ct.c_uint,ct.c_uint,ct.c_uint,
                          ct.POINTER(ct.c_uint32),ct.c_uint,ct.c_uint]
     lib.raster.restype=ct.c_uint
+    lib.covered.argtypes=[ct.POINTER(ct.c_uint32),ct.c_uint,ct.c_uint]
+    lib.covered.restype=ct.c_uint
     lib.estimate.argtypes=[p,ct.c_uint,p,ct.c_uint,ct.c_uint,
                            ct.POINTER(ct.c_float),ct.POINTER(ct.c_float)]
     lib.estimate.restype=ct.c_int
@@ -191,3 +196,55 @@ def test_no_level_specific_mask_hacks_and_ablate_to_v9():
     assert "if(!ui_atomic_texture)ui_atomic_renderer_acquire_reference();" in region
     assert "ui_atomic_scene_mode=2u" in region
     assert "native iris retained" in region
+
+
+def test_duplicated_winding_quads_do_not_inflate_mask_coverage(native):
+    # The Wine hardware native-quad probe saw 92 zero-black draw calls,
+    # with 46 pairs of identical polygons in opposite winding order.
+    # Raster writes can exceed the whole texture even though its
+    # DISTINCT opaque pixels are valid and the aperture is visible.
+    w,h=640,480
+    shapes=[
+        quad([(0,0),(w,0),(w,90),(0,90)]),
+        quad([(0,390),(w,390),(w,h),(0,h)]),
+        quad([(0,90),(275,90),(275,390),(0,390)]),
+        quad([(365,90),(w,90),(w,390),(365,390)]),
+    ]
+    duplicates=[]
+    for q in shapes:
+        duplicates.extend([q,quad([(q.x[i],q.y[i]) for i in (0,3,2,1)])])
+    source=(Quad*len(duplicates))(*duplicates)
+    tw,th=128,96
+    pixels=(ct.c_uint32*(tw*th))()
+    writes=native.raster(source,len(duplicates),w,h,pixels,tw,th)
+    unique=native.covered(pixels,tw,th)
+    assert writes>tw*th     # V10 used to reject this valid game rendering.
+    assert (tw*th)//10 < unique < (tw*th)*99//100
+    assert pixels[(th//2)*tw+(tw//2)]==0   # central opening is clear
+    assert pixels[0]==0xFF000000          # exterior is black
+    assert sum(bool(p&0xFF000000) for p in pixels)==unique
+
+
+def test_repeated_quads_do_not_change_unique_pixel_count(native):
+    q=quad([(0,0),(640,0),(640,200),(0,200)])
+    tw,th=128,96
+    a=(ct.c_uint32*(tw*th))()
+    b=(ct.c_uint32*(tw*th))()
+    one=native.raster((Quad*1)(q),1,640,480,a,tw,th)
+    two=native.raster((Quad*2)(q,q),2,640,480,b,tw,th)
+    assert two==2*one
+    assert native.covered(a,tw,th)==native.covered(b,tw,th)
+    assert bytes(a)==bytes(b)
+    assert native.covered(a,0,0)==0
+
+
+def test_real_v10_texture_gate_uses_unique_pixels_not_overdraw():
+    s=(ROOT/"spiderman2k1fix.c").read_text()
+    function=s.split("static int ui_atomic_renderer_create_texture(void)",1)[1].split(
+        "static void ui_atomic_renderer_acquire_reference(void)",1)[0]
+    assert "covered=SpiderAtomicMask_CountOpaquePixels(pixels,tw,th)" in function
+    assert "if(covered<(tw*th)/10u || covered>=(tw*th)*99u/100u)" in function
+    assert "if(painted<(tw*th)/10u" not in function
+    assert "UI-ATOMIC: MASK COVERAGE" in function
+    assert "triangle-writes=" in function
+    assert "UI-ATOMIC: TEXTURE READY" in function
