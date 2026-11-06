@@ -991,17 +991,14 @@ static volatile LONG ui_transition_bounds25_enabled=0,ui_transition_sync24_faile
 static SpiderNativeSync24Frame ui_transition_sync24_frame;
 static SpiderNativeBounds25Frame ui_transition_bounds25_frame;
 static DWORD ui_transition_sync24_flags=0u;
-static unsigned ui_transition_sync24_total_draws=0u;
 static unsigned ui_transition_hold22_scene_native=0u,ui_transition_hold22_scene_gutters=0u;
 static unsigned ui_transition_hold22_last_active=0u;
-static unsigned ui_transition_bounds25_frames=0u,ui_transition_bounds25_fallbacks=0u;
+static unsigned ui_transition_bounds25_frames=0u;
 static float ui_transition_bounds25_prev_left=0.0f,ui_transition_bounds25_prev_right=0.0f;
 static unsigned ui_transition_bounds25_have_prev=0u;
 static float ui_transition_bounds25_last_left=0.0f,ui_transition_bounds25_last_right=0.0f;
 static unsigned ui_transition_bounds25_last_fallback=0u;
 static volatile LONG ui_transition_native43_draws=0,ui_transition_native43_native=0;
-static float ui_transition_shrink23_scene_band_width=0.0f;
-static float ui_transition_shrink23_half_width=0.0f;
 static volatile LONG ui_canvas_fullscreen_kept=0;
 static const void *maybe_correct_unified_ui_canvas(
                    D3DPRIMITIVETYPE type,DWORD fvf,
@@ -2649,7 +2646,6 @@ static HRESULT WINAPI ui_compositor_scene_start(void *self) {
     SpiderNativeSync24_Reset(&ui_transition_sync24_frame);
     SpiderNativeBounds25_Reset(&ui_transition_bounds25_frame);
     ui_transition_sync24_flags=0u;
-    ui_transition_shrink23_scene_band_width=0.0f;
   }
   if(SUCCEEDED(hr) &&
      (InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 ||
@@ -2694,7 +2690,6 @@ static void ui_transition_sync24_finish(IDirect3DDevice7 *device)
   }
   if(bounds25){
     unsigned w=(unsigned)desktop_w,h=(unsigned)desktop_h;
-    float max_side=((float)w-(float)h*4.0f/3.0f)*.5f;
     int measured=0;
     /* 4:3 and portrait displays have NO horizontal gutters at all. */
     if((uint64_t)w*3u<=(uint64_t)h*4u){
@@ -2705,7 +2700,6 @@ static void ui_transition_sync24_finish(IDirect3DDevice7 *device)
       if(!measured){
         /* V24 remains a strictly separate safety fallback for a
          * source family with no visible eligible tooth triangles. */
-        ++ui_transition_bounds25_fallbacks;
         built=SpiderNativeSync24_Finish(
               &ui_transition_sync24_frame,w,h,sides,&band);
         left=right=band;
@@ -2745,9 +2739,6 @@ static void ui_transition_sync24_finish(IDirect3DDevice7 *device)
     built=SpiderNativeSync24_Finish(&ui_transition_sync24_frame,
            (unsigned)desktop_w,(unsigned)desktop_h,sides,&band);
   }
-  ui_transition_shrink23_scene_band_width=
-       bounds25?(left+right)*.5f:band;
-  ui_transition_shrink23_half_width=ui_transition_sync24_frame.radius;
   /* A valid zero-width curtain is the desired last-phase state. */
   if(built==2)return;
   if(built==0){
@@ -2811,8 +2802,6 @@ done:
   }
   if(ok){
     ui_transition_hold22_scene_gutters=drawn;
-    ui_transition_hold22_draws+=drawn;
-    ui_transition_sync24_total_draws+=drawn;
   }else{
     InterlockedExchange(&ui_transition_sync24_failed,1);
     log_line("UI-TRANSITION-SYNC24: END-SCENE D3D7 DRAW/STATE ERROR, side overlay disabled, native V19 intact");
