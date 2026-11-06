@@ -28,6 +28,7 @@
 #include "ui_transition_native43_hold.h"
 #include "ui_transition_native43_shrink.h"
 #include "ui_transition_native43_sync.h"
+#include "ui_transition_native43_bounds25.h"
 #include "ui_compositor_policy.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
@@ -1080,6 +1081,19 @@ static volatile LONG ui_transition_shrink23_enabled=0;
  * before the remaining source fans arrived (one-frame phase lag).
  * Original V19 draw calls and V23c smoothstep remain unchanged. */
 static volatile LONG ui_transition_sync24_enabled=0;
+/* V25 opt-in native tooth envelope (AFTER V19). This fixes V24's
+ * overlong flat curtains and their visible 4:3 seam.
+ * Separate A/B switch; no changes to V19/V23c/V24 unless ON. */
+static volatile LONG ui_transition_bounds25_enabled=0;
+static SpiderNativeBounds25Frame ui_transition_bounds25_frame;
+static float ui_transition_bounds25_prev_left=0.0f;
+static float ui_transition_bounds25_prev_right=0.0f;
+static unsigned ui_transition_bounds25_have_prev=0u;
+static unsigned ui_transition_bounds25_frames=0u;
+static unsigned ui_transition_bounds25_fallbacks=0u;
+static float ui_transition_bounds25_last_left=0.0f;
+static float ui_transition_bounds25_last_right=0.0f;
+static unsigned ui_transition_bounds25_last_fallback=0u;
 static volatile LONG ui_transition_sync24_failed=0;
 static SpiderNativeSync24Frame ui_transition_sync24_frame;
 static DWORD ui_transition_sync24_flags=0u;
@@ -3861,6 +3875,8 @@ static HRESULT WINAPI ui_compositor_scene_start(void *self) {
     if(InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)==1){
       SpiderNativeSync24_Reset(&ui_transition_sync24_frame);
       ui_transition_sync24_flags=0u;
+      if(InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1)
+        SpiderNativeBounds25_Reset(&ui_transition_bounds25_frame);
     }
     if(InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1){
       ui_transition_shrink23_scene_handled=0u;
@@ -4566,6 +4582,9 @@ static int ui_transition_native43_handle_draw(
       unsigned anchors_before=ui_transition_sync24_frame.anchors;
       SpiderNativeSync24_Observe(&ui_transition_sync24_frame,v,
              (unsigned)desktop_w,(unsigned)desktop_h);
+      if(InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1)
+        SpiderNativeBounds25_Observe(&ui_transition_bounds25_frame,mapped,
+                  (unsigned)desktop_w,(unsigned)desktop_h);
       if(!was_ready && ui_transition_sync24_frame.ready)
         ui_transition_sync24_flags=flags;
       ui_transition_shrink23_half_width=
@@ -7436,24 +7455,6 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-TRANSITION-FLANK21: OFF - V20/V19 original behavior unchanged");
     }
   }
-  /* V24 independent A/B synchronized curtains. Native V19 geometry
-   * and V23c smoothstep thresholds are exactly unchanged; only move
-   * rendering of two black physical side rectangles from the first
-   * source DrawPrimitive to EndScene AFTER the last native iris fan.
-   * Requires the working V23c opt-in; removing SYNC_TEST restores the
-   * previously recorded V23c behavior without modifying other flags. */
-  {
-    char value[4]={0};
-    if(InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1 &&
-       GetEnvironmentVariableA(
-         "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_SYNC_TEST",
-         value,sizeof(value))==1 && value[0]=='1'){
-      InterlockedExchange(&ui_transition_sync24_enabled,1);
-      log_line("UI-TRANSITION-SYNC24: V24 ON - sample ALL native V19 iris fans, draw two black side curtains AFTER full CURRENT scene geometry in EndScene, V23c smoothing unchanged");
-    }else{
-      log_line("UI-TRANSITION-SYNC24: OFF - V23c native first-draw curtains unchanged");
-    }
-  }
   /* V22 standalone successor to V21: hold both FULL physical black
    * side gutters while the game's genuine source iris is being drawn;
    * only release when the next scene contains no verified source fans.
@@ -7492,6 +7493,42 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-TRANSITION-SHRINK23: V23 ON - original central fan drives SMOOTH shrinking of both black gutters; zero by full-screen iris; V19 spider untouched, V20/V21 bypassed");
     }else{
       log_line("UI-TRANSITION-SHRINK23: OFF - V22 solid gutters unchanged");
+    }
+  }
+  /* V24 independent A/B synchronized curtains. Native V19 geometry
+   * and V23c smoothstep thresholds are exactly unchanged; only move
+   * rendering of two black physical side rectangles from the first
+   * source DrawPrimitive to EndScene AFTER the last native iris fan.
+   * Requires the working V23c opt-in; removing SYNC_TEST restores the
+   * previously recorded V23c behavior without modifying other flags. */
+  {
+    char value[4]={0};
+    if(InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1 &&
+       GetEnvironmentVariableA(
+         "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_SYNC_TEST",
+         value,sizeof(value))==1 && value[0]=='1'){
+      InterlockedExchange(&ui_transition_sync24_enabled,1);
+      log_line("UI-TRANSITION-SYNC24: V24 ON - sample ALL native V19 iris fans, draw two black side curtains AFTER full CURRENT scene geometry in EndScene, V23c smoothing unchanged");
+    }else{
+      log_line("UI-TRANSITION-SYNC24: OFF - V23c native first-draw curtains unchanged");
+    }
+  }
+  /* V25 must be initialized AFTER V19 -> V22 -> V23 -> V24, because
+   * each mode is a strict opt-in dependency. The original V24 init was
+   * accidentally BEFORE V22/V23 and therefore silently stayed OFF.
+   * Enabling SYNC_TEST and BOUNDS_TEST after their parent flags
+   * guarantees the user really tests the intended synchronized path. */
+  {
+    char enabled[4]={0};
+    if(InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)==1 &&
+       GetEnvironmentVariableA(
+          "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST",
+          enabled,sizeof(enabled))==1 && enabled[0]=='1'){
+      InterlockedExchange(&ui_transition_bounds25_enabled,1);
+      SpiderNativeBounds25_Reset(&ui_transition_bounds25_frame);
+      log_line("UI-TRANSITION-BOUNDS25: V25 ON - real current-frame visible native hooked-tooth bounds, asymmetric side margins, 1 physical pixel overlap; V19 mesh untouched");
+    }else{
+      log_line("UI-TRANSITION-BOUNDS25: OFF - V24 previous behavior unchanged");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
