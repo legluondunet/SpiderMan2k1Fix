@@ -23,6 +23,7 @@ def policy(tmp_path_factory):
     out=folder/"test.so"
     source.write_text(
         '#include "ui_compositor_policy.h"\n'
+        '#include "native_pause_43_policy.h"\n'
         'int eligible(int e,int open,int bailout,int layer,unsigned count,unsigned fvf){'
         'return SpiderUIComp_ShouldDefer(e,open,bailout,layer,count,fvf);'
         '}\n'
@@ -41,6 +42,13 @@ def policy(tmp_path_factory):
         'return SpiderUIComp_IdentifyNativeBackdrop(s,n,w,h,color);}\n'
         'float warp(float x,float w,float h,float lo,float hi){'
         'return SpiderUIComp_BackdropMapX(x,w,h,lo,hi);}\n'
+        'int dynamic_ribbon(float z,float rhw,unsigned color){'
+        'return SpiderNativePause43_CompositorRibbon(z,rhw,color);}\n'
+        'int dynamic_motif(float z,float rhw,unsigned color){'
+        'return SpiderNativePause43_CompositorMotif(z,rhw,color);}\n'
+        'int dynamic_text(float z,float rhw){'
+        'return SpiderNativePause43_CompositorText(z,rhw);}\n'
+
     )
     subprocess.run(
         [cc,"-std=c11","-Wall","-Wextra","-Werror","-fPIC","-shared",
@@ -73,6 +81,12 @@ def policy(tmp_path_factory):
     lib.native_backdrop.restype=ct.c_int
     lib.warp.argtypes=[ct.c_float]*5
     lib.warp.restype=ct.c_float
+    for name in ("dynamic_ribbon","dynamic_motif"):
+        fn=getattr(lib,name)
+        fn.argtypes=[ct.c_float,ct.c_float,ct.c_uint]
+        fn.restype=ct.c_int
+    lib.dynamic_text.argtypes=[ct.c_float,ct.c_float]
+    lib.dynamic_text.restype=ct.c_int
     return lib
 
 
@@ -511,3 +525,57 @@ def test_fullscreen_pause_veil_escapes_4_by_3_viewport_then_restores_it():
     assert flush.index("ui_comp_draw_native_fullscreen_backdrop(") < (
         flush.index("for(layer=SPIDER_UI_COMP_PAUSE_DECOR;"))
     assert "original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags)" in flush
+
+def test_new_levels_are_recognized_without_new_depth_whitelist(policy):
+    # The F9 screenshot scrn0099 is the first Pause encounter where
+    # these source RHW values are NOT in the five fixed-depth variants.
+    assert policy.dynamic_ribbon(0.00122,13.1453,0x7F3232A0)==1
+    assert policy.dynamic_motif(0.00146,11.8990,0x80208686)==1
+    assert policy.dynamic_motif(0.00146,11.8990,0x80868620)==1
+    assert policy.dynamic_text(0.00098,14.6833)==1
+    # Values from other observed levels and hypothetical camera
+    # placements work with the same Z/source material conditions.
+    assert policy.dynamic_ribbon(0.00122,6.8041,0x7F3232A0)==1
+    assert policy.dynamic_ribbon(0.00122,18.25,0x6F4545B5)==1
+    assert policy.dynamic_motif(0.00146,20.7,0x80868620)==1
+    assert policy.dynamic_text(0.00122,9.9878)==1
+    # The other guards remain strict. This predicate cannot itself
+    # authorize a draw: the host also checks exact native caller,
+    # untextured material, original geometry and recent ESC ribbon.
+    assert policy.dynamic_ribbon(0.00146,13.1453,0x7F3232A0)==0
+    assert policy.dynamic_ribbon(0.00122,13.1453,0x7FFF2020)==0
+    assert policy.dynamic_ribbon(0.00122,13.1453,0x000000C0)==0
+    assert policy.dynamic_ribbon(0.00122,-1.0,0x7F3232A0)==0
+    assert policy.dynamic_ribbon(0.00122,129.0,0x7F3232A0)==0
+    assert policy.dynamic_motif(0.00146,11.8990,0xFF208686)==0
+    assert policy.dynamic_motif(0.00246,11.8990,0x80208686)==0
+    assert policy.dynamic_text(0.00146,14.6833)==0
+    assert policy.dynamic_text(0.00098,0.0)==0
+
+
+def test_host_activates_compositor_before_generic_canvas_for_unknown_pause_depth():
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    pane=src.split("static const void *maybe_correct_native_pause43(",1)[1].split(
+        "/* Native ESC translucent geometric motif correction",1)[0]
+    motif=src.split("static const void *maybe_correct_native_motif43(",1)[1].split(
+        "/* Preserve native full-width scene tint",1)[0]
+    assert "SpiderNativePause43_CompositorRibbon(z,rhw,v[0].diffuse)" in pane
+    assert "SpiderNativePause43_CompositorText(z,rhw)" in pane
+    assert "SpiderNativePause43_CompositorMotif(" in motif
+    assert "native_pause43_visible_near_flip(" in motif
+    assert "ui_compositor_trial_enabled" in pane
+    assert "ui_compositor_trial_enabled" in motif
+    # The same original COM material and FVF/caller signature are still
+    # checked before anything can be classified as an ESC-owned draw.
+    assert "rva!=0x00102C72UL" in pane
+    assert "rva!=0x00102C72UL" in motif
+    assert "IDirect3DDevice7_GetTexture(" in pane
+    assert "IDirect3DDevice7_GetTexture(" in motif
+    hook=src.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
+        "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
+    assert hook.index("v=maybe_correct_native_motif43(")<hook.index(
+        "v=maybe_correct_unified_ui_canvas(")
+    assert hook.index("v=maybe_correct_native_pause43(")<hook.index(
+        "v=maybe_correct_unified_ui_canvas(")
+    assert hook.index("ui_comp_capture((IDirect3DDevice7*)self")<hook.index(
+        "original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags)")
