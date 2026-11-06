@@ -131,7 +131,7 @@ static inline int SpiderAtomicContour_Build(
     SpiderAtomicVectorPoint *out,unsigned capacity,unsigned *used)
 {
     unsigned i,n=0u;
-    float cx,cy,far;
+    float cx,cy,outer_radius;
     if(used)*used=0u;
     if(!contour || !out || !used ||
        w<640u || h<480u || !(zoom>=.015f && zoom<=24.0f) ||
@@ -139,7 +139,7 @@ static inline int SpiderAtomicContour_Build(
        !(contour->minimum>0.0f && contour->maximum>=contour->minimum))
         return 0;
     cx=(float)w*.5f;cy=(float)h*.5f;
-    far=fmaxf((float)(w+h)*4.0f,contour->maximum*zoom*4.0f);
+    outer_radius=fmaxf((float)(w+h)*4.0f,contour->maximum*zoom*4.0f);
     for(i=0u;i<SPIDER_ATOMIC_CONTOUR_SAMPLES;i++){
         unsigned next=(i+1u)%SPIDER_ATOMIC_CONTOUR_SAMPLES;
         float a0=(2.0f*SPIDER_ATOMIC_CONTOUR_PI*(float)i)/
@@ -152,8 +152,8 @@ static inline int SpiderAtomicContour_Build(
         in0.y=cy+y0*contour->radius[i]*zoom;
         in1.x=cx+x1*contour->radius[next]*zoom;
         in1.y=cy+y1*contour->radius[next]*zoom;
-        out0.x=cx+x0*far;out0.y=cy+y0*far;
-        out1.x=cx+x1*far;out1.y=cy+y1*far;
+        out0.x=cx+x0*outer_radius;out0.y=cy+y0*outer_radius;
+        out1.x=cx+x1*outer_radius;out1.y=cy+y1*outer_radius;
         if(!SpiderAtomicVector_AppendTriangle(out,capacity,&n,in0,out0,out1) ||
            !SpiderAtomicVector_AppendTriangle(out,capacity,&n,in0,out1,in1))
             return 0;
