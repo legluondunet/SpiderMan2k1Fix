@@ -165,7 +165,7 @@ def test_every_end_scene_has_bounded_compositor_status():
 def test_background_coverage_probe_is_passive_and_scene_scoped():
     src=(ROOT/"spiderman2k1fix.c").read_text()
     probe=src.split("static void ui_comp_probe_fullscreen_source(",1)[1].split(
-        "static HRESULT WINAPI hooked_draw_primitive(",1)[0]
+        "static void maybe_restore_native_transition_gutters(",1)[0]
     assert "UI-COMPOSITOR-COVERAGE-PROBE:" in probe
     assert "native_pause43_visible_near_flip(" in probe
     assert "!ui_comp_scene_open || ui_comp_bailout || native_esc" in probe
