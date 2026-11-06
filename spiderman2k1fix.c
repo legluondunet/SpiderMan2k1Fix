@@ -1044,7 +1044,7 @@ static volatile LONG ui_atomic_live_enabled=0;
 static SpiderExactTemplate ui_atomic_live_mesh;
 static unsigned ui_atomic_live_success=0u,ui_atomic_live_fallbacks=0u;
 static unsigned ui_atomic_live_current_traps=0u;
-static float ui_atomic_live_current_rms=0.0f,ui_atomic_live_current_max=0.0f;
+static float ui_atomic_live_current_rms=0.0f;
 static unsigned ui_atomic_live_last_mode=0u; /* 1=V15, 2=V12 fallback */
 static volatile LONG ui_atomic_renderer_failed=0;
 static IDirectDraw7 *ui_atomic_ddraw=NULL; /* owned COM ref, game lifetime */
@@ -3212,7 +3212,6 @@ static int ui_atomic_renderer_draw_current_scene(IDirect3DDevice7 *device)
   SpiderAtomicMaskQuad live[SPIDER_ATOMIC_MASK_MAX];
   SpiderLiveUnionReport report;
   unsigned i,j,count=0u;
-  DWORD started=GetTickCount();
   int prepared=0,drawn=0;
   memset(&report,0,sizeof(report));
   for(i=0u;i<ui_atomic_count;i++){
@@ -3245,17 +3244,15 @@ static int ui_atomic_renderer_draw_current_scene(IDirect3DDevice7 *device)
     ++ui_atomic_live_success;ui_atomic_live_last_mode=1u;
     ui_atomic_live_current_traps=report.traps;
     ui_atomic_live_current_rms=report.rms_vertex_deviation;
-    ui_atomic_live_current_max=report.max_vertex_deviation;
     if(debug_log_enabled &&
        (ui_atomic_live_success<=12u || ui_atomic_live_success%90u==0u)){
       char msg[320];
       snprintf(msg,sizeof(msg),
-        "UI-ATOMIC-PERFRAME: COMPOSED live=%u unique=%u traps=%u global-scale=%.5f residual-rms=%.3fpx residual-max=%.3fpx cost-ms=%lu [ORIGINAL CURRENT-FRAME; 4:3 ONLY]",
+        "UI-ATOMIC-PERFRAME: COMPOSED live=%u unique=%u traps=%u global-scale=%.5f residual-rms=%.3fpx residual-max=%.3fpx [ORIGINAL CURRENT-FRAME; 4:3 ONLY]",
         report.seen,report.unique,report.traps,
         (double)ui_atomic_scene_scale,
         (double)report.rms_vertex_deviation,
-        (double)report.max_vertex_deviation,
-        (unsigned long)(GetTickCount()-started));
+        (double)report.max_vertex_deviation);
       log_line(msg);
     }
     return 1;
@@ -3265,12 +3262,11 @@ static int ui_atomic_renderer_draw_current_scene(IDirect3DDevice7 *device)
      (ui_atomic_live_fallbacks<=12u || ui_atomic_live_fallbacks%90u==0u)){
     char msg[320];
     snprintf(msg,sizeof(msg),
-      "UI-ATOMIC-PERFRAME: FALLBACK reason=%u [1=invalid 2=incomplete 3=union-rejected] native=%u expected=%u suppressed=%u probe-overflow=%u exact-reason=%u event=%u object=%u a=%.2f b=%.2f cost-ms=%lu [SAME SCENE V12]",
+      "UI-ATOMIC-PERFRAME: FALLBACK reason=%u [1=invalid 2=incomplete 3=union-rejected] native=%u expected=%u suppressed=%u probe-overflow=%u exact-reason=%u event=%u object=%u a=%.2f b=%.2f [SAME SCENE V12]",
       report.reason?report.reason:4u,
       count,ui_atomic_reference_count,ui_atomic_scene_suppressed,
       ui_atomic_overflow,report.union_reason,report.union_event,
-      report.union_object,(double)report.union_a,(double)report.union_b,
-      (unsigned long)(GetTickCount()-started));
+      report.union_object,(double)report.union_a,(double)report.union_b);
     log_line(msg);
   }
   return ui_atomic_renderer_draw_vector(device);
