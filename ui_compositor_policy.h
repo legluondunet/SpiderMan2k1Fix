@@ -14,40 +14,29 @@ enum SpiderUICompLayer {
     SPIDER_UI_COMP_PAUSE_MENU = 4
 };
 
-/* Direct3D7 EndScene replay order: scene/HUD has already drawn.
- * Keep the native translucent backdrop below its inner spider artwork,
- * and the entire Pause menu ABOVE that artwork. Within each semantic
- * pass, preserve native capture order and original materials.
+/* Explicit native Pause painter order. The physical outer gutters
+ * have ALREADY been filled by ui_comp_draw_native_exterior_gutters()
+ * before these passes. Both original backdrop and inner spider tiles
+ * MUST remain together in their original capture order: separating or
+ * skipping source colours corrupted the centre's alpha blending in
+ * hardware comparisons. No level-specific palette or RHW matching.
  */
 enum SpiderUICompReplayPass {
-    SPIDER_UI_COMP_REPLAY_BACKDROP = 0,
-    SPIDER_UI_COMP_REPLAY_HUD = 1,
-    SPIDER_UI_COMP_REPLAY_MOTIF = 2,
-    SPIDER_UI_COMP_REPLAY_MENU = 3,
+    SPIDER_UI_COMP_REPLAY_HUD = 0,
+    SPIDER_UI_COMP_REPLAY_MOTIF = 1,
+    SPIDER_UI_COMP_REPLAY_MENU = 2,
     SPIDER_UI_COMP_REPLAY_SKIP = -1
 };
 
-/* Native material identity comes from four-edge coverage and the
- * detected inner silhouette, never a fixed RGB value or level number.
- * If that source classification is unproven, retain exact original
- * decoration order in the motif pass (fail closed).
- */
-static inline int SpiderUIComp_ReplayPassForDraw(
-    int layer,unsigned source_color,int backdrop_verified,
-    int backdrop_drawn,unsigned backdrop_color)
+static inline int SpiderUIComp_ReplayPassForDraw(int layer)
 {
     if(layer==SPIDER_UI_COMP_PAUSE_MENU)
         return SPIDER_UI_COMP_REPLAY_MENU;
     if(layer==SPIDER_UI_COMP_HUD)
         return SPIDER_UI_COMP_REPLAY_HUD;
-    if(layer!=SPIDER_UI_COMP_PAUSE_DECOR)
-        return SPIDER_UI_COMP_REPLAY_SKIP;
-    if(!backdrop_verified)
+    if(layer==SPIDER_UI_COMP_PAUSE_DECOR)
         return SPIDER_UI_COMP_REPLAY_MOTIF;
-    if(source_color==backdrop_color)
-        return backdrop_drawn ? SPIDER_UI_COMP_REPLAY_SKIP :
-                                SPIDER_UI_COMP_REPLAY_BACKDROP;
-    return SPIDER_UI_COMP_REPLAY_MOTIF;
+    return SPIDER_UI_COMP_REPLAY_SKIP;
 }
 
 /* Full native Pause: up to 229 menu/decor primitives plus verified
