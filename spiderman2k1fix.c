@@ -990,6 +990,8 @@ static volatile LONG ui_transition_fullscreen_trial_enabled=0;
 static volatile LONG ui_transition_fullscreen_draws=0;
 static volatile LONG ui_transition_fullscreen_rejections=0;
 static volatile LONG ui_transition_seal_trial_enabled=0;
+static volatile LONG ui_transition_topology_trial_enabled=0;
+static volatile LONG ui_transition_topology_draws=0;
 static volatile LONG ui_transition_seal_draws=0;
 static volatile LONG ui_transition_seal_failures=0;
 static volatile LONG ui_transition_native_gutter_fragments=0;
@@ -2785,6 +2787,26 @@ static const void *maybe_correct_native_transition_fullscreen(
     return source;
   }
   if(texture)IDirectDrawSurface7_Release(texture);
+  /* V9 is an alternative to the V7 physical-screen "cover" crop:
+   * Preserve every source polygon's topology and its Y coordinates
+   * with a smooth monotone horizontal edge map. V8 extra connector
+   * rectangles are explicitly forbidden in the V9 trial below. */
+  if(InterlockedCompareExchange(&ui_transition_topology_trial_enabled,0,0)==1) {
+    if(!SpiderTransition_MapTopology43(
+          (const SpiderMenuVertex*)source,mapped,
+          (unsigned)desktop_w,(unsigned)desktop_h))
+      return source;
+    hit=InterlockedIncrement(&ui_transition_topology_draws);
+    if(debug_log_enabled && (hit<=12 || hit%360==0)){
+      const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+      snprintf(msg,sizeof(msg),
+        "UI-TRANSITION-TOPOLOGY: mapped=%ld src=(%.1f,%.1f) out=(%.1f,%.1f) [NO Y CROP, NO ADDED POLYGONS]",
+        (long)hit,(double)v[0].x,(double)v[0].y,
+        (double)mapped[0].x,(double)mapped[0].y);
+      log_line(msg);
+    }
+    return mapped;
+  }
   if(!SpiderTransition_MapFullscreenCover43(
           (const SpiderMenuVertex*)source,mapped,
           (unsigned)desktop_w,(unsigned)desktop_h))
@@ -2821,7 +2843,8 @@ static void maybe_seal_native_transition_teeth(
   char msg[220];
   if(!device || !mapped ||
      InterlockedCompareExchange(&ui_transition_seal_trial_enabled,0,0)!=1 ||
-     InterlockedCompareExchange(&ui_transition_fullscreen_trial_enabled,0,0)!=1)
+     InterlockedCompareExchange(&ui_transition_fullscreen_trial_enabled,0,0)!=1 ||
+     InterlockedCompareExchange(&ui_transition_topology_trial_enabled,0,0)==1)
     return;
   for(side=0u;side<2u;side++){
     unsigned n=SpiderTransition_SealOuterToothEdge(
@@ -5437,6 +5460,23 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-TRANSITION-SEAL: TRIAL ON - seal flat native tooth edges to physical screen edge, no tooth deformation");
     }else{
       log_line("UI-TRANSITION-SEAL: OFF - V7 coherent fullscreen mask unmodified");
+    }
+  }
+  /* V9 alternative topology-preserving iris mapping, default OFF.
+   * All source black quads use the same smooth edge-only map without
+   * the top/bottom crop of V7 or any separate V8 tooth connectors.
+   * Explicitly add this SIXTH switch to inspect against the V8 video;
+   * removing it restores V8 exactly, including previous flags.
+   * Keep native HUD, ESC and 3D draw state unchanged. */
+  {
+    char topo[4]={0};
+    if(InterlockedCompareExchange(&ui_transition_fullscreen_trial_enabled,0,0)==1 &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_TRANSITION_TOPOLOGY_TEST",
+                                topo,sizeof(topo))==1 && topo[0]=='1') {
+      InterlockedExchange(&ui_transition_topology_trial_enabled,1);
+      log_line("UI-TRANSITION-TOPOLOGY: TRIAL ON - continuous monotone 4:3 edge mapping; no Y crop or V8 rectangles");
+    }else{
+      log_line("UI-TRANSITION-TOPOLOGY: OFF - V7/V8 rendering unchanged");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
