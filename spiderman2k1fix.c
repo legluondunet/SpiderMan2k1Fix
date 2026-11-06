@@ -23,6 +23,7 @@
 #include "ui_transition_live_union.h"
 #include "ui_transition_live_direct.h"
 #include "ui_transition_native43.h"
+#include "ui_transition_native43_gutters.h"
 #include "ui_compositor_policy.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
@@ -1053,6 +1054,18 @@ static volatile LONG ui_transition_native43_enabled=0;
  * physical clip rectangle; V18 had a 10% bound that mixed X coordinate
  * spaces once hooked limbs crossed it. */
 static volatile LONG ui_transition_native43_extended_enabled=0;
+/* V20 extension only: keep V19's original iris untouched and fill just
+ * the two physical 16:9 gutters where NATIVE source black crosses x=0/W.
+ * Once the game iris opens past an edge, that side's fill disappears. */
+static volatile LONG ui_transition_native43_gutters_enabled=0;
+static volatile LONG ui_transition_native43_gutters_failed=0;
+static unsigned ui_transition_native43_gutters_drawn=0u;
+static unsigned ui_transition_native43_gutters_frames=0u;
+static unsigned ui_transition_native43_gutters_scene_native=0u;
+static unsigned ui_transition_native43_gutters_scene_left=0u;
+static unsigned ui_transition_native43_gutters_scene_right=0u;
+static unsigned ui_transition_native43_gutters_last_left=0u;
+static unsigned ui_transition_native43_gutters_last_right=0u;
 static volatile LONG ui_transition_native43_draws=0;
 static volatile LONG ui_transition_native43_native=0;
 static SpiderAtomicMaskQuad ui_atomic_direct_source[SPIDER_ATOMIC_MASK_MAX];
@@ -3791,6 +3804,13 @@ static void ui_atomic_renderer_finish_scene(IDirect3DDevice7 *device)
 
 static HRESULT WINAPI ui_compositor_scene_start(void *self) {
   HRESULT hr=ui_original_begin_scene(self);
+  if(SUCCEEDED(hr) &&
+     InterlockedCompareExchange(
+       &ui_transition_native43_gutters_enabled,0,0)==1){
+    ui_transition_native43_gutters_scene_native=0u;
+    ui_transition_native43_gutters_scene_left=0u;
+    ui_transition_native43_gutters_scene_right=0u;
+  }
   if(SUCCEEDED(hr)) ui_atomic_probe_begin_scene();
   if(SUCCEEDED(hr) &&
      InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1) {
@@ -3805,6 +3825,30 @@ static HRESULT WINAPI ui_compositor_scene_start(void *self) {
 static HRESULT WINAPI ui_compositor_scene_finish(void *self) {
   ui_atomic_renderer_finish_scene((IDirect3DDevice7*)self);
   ui_atomic_probe_finish_scene();
+  if(InterlockedCompareExchange(
+       &ui_transition_native43_gutters_enabled,0,0)==1 &&
+     ui_transition_native43_gutters_scene_native>0u){
+    unsigned frame=++ui_transition_native43_gutters_frames;
+    if(debug_log_enabled &&
+       (frame<=12u || frame%60u==0u ||
+        ui_transition_native43_gutters_scene_left!=
+             ui_transition_native43_gutters_last_left ||
+        ui_transition_native43_gutters_scene_right!=
+             ui_transition_native43_gutters_last_right)){
+      char msg[220];
+      snprintf(msg,sizeof(msg),
+        "UI-TRANSITION-GUTTER20: FRAME=%u native=%u left=%u right=%u total-draws=%u [BLACK SIDE STRIPS ONLY; V19 IRIS UNCHANGED]",
+        frame,ui_transition_native43_gutters_scene_native,
+        ui_transition_native43_gutters_scene_left,
+        ui_transition_native43_gutters_scene_right,
+        ui_transition_native43_gutters_drawn);
+      log_line(msg);
+    }
+    ui_transition_native43_gutters_last_left=
+         ui_transition_native43_gutters_scene_left;
+    ui_transition_native43_gutters_last_right=
+         ui_transition_native43_gutters_scene_right;
+  }
   if(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
      ui_comp_scene_open && ui_comp_device==self)
     ui_comp_flush((IDirect3DDevice7*)self);
@@ -4235,6 +4279,46 @@ static int ui_transition_native43_handle_draw(
   *result=original_draw_primitive(device,type,fvf,
               valid?(LPVOID)mapped:verts,count,flags);
   if(valid){
+    /* Reuse the verified original black-material state from this SAME
+     * native D3D7 call. A gutter rectangle is an extension of ONLY the
+     * portion of source black which actually crosses source x=0 or W.
+     * No other 4:3 geometry is changed or redrawn, unlike V6/V17.
+     * Never cover the actual spider opening in x=[gutter,W-gutter]. */
+    if(SUCCEEDED(*result) &&
+       InterlockedCompareExchange(
+          &ui_transition_native43_gutters_enabled,0,0)==1 &&
+       InterlockedCompareExchange(
+          &ui_transition_native43_gutters_failed,0,0)!=1){
+      SpiderMenuVertex gutters[SPIDER_NATIVE43_GUTTER_MAX][4];
+      unsigned patches=0u,left=0u,right=0u,q;
+      if(SpiderNative43Gutter_Build(v,
+            (unsigned)desktop_w,(unsigned)desktop_h,
+            gutters,&patches,&left,&right)){
+        ++ui_transition_native43_gutters_scene_native;
+        for(q=0u;q<patches;q++){
+          HRESULT gh=original_draw_primitive(
+             device,type,fvf,gutters[q],4u,flags);
+          if(FAILED(gh)){
+            char message[185];
+            InterlockedExchange(
+               &ui_transition_native43_gutters_failed,1);
+            snprintf(message,sizeof(message),
+              "UI-TRANSITION-GUTTER20: DRAW FAILURE hr=0x%08lX; disabled further side fills, V19 native iris unaffected",
+              (unsigned long)gh);
+            log_line(message);
+            break;
+          }
+          ++ui_transition_native43_gutters_drawn;
+        }
+        if(q==patches){
+          ui_transition_native43_gutters_scene_left+=left;
+          ui_transition_native43_gutters_scene_right+=right;
+        }
+      }else{
+        InterlockedExchange(&ui_transition_native43_gutters_failed,1);
+        log_line("UI-TRANSITION-GUTTER20: GEOMETRY REJECTED - disabled supplemental gutters; V19 native iris unchanged");
+      }
+    }
     n=InterlockedIncrement(&ui_transition_native43_draws);
     if(debug_log_enabled && (n<=12 || n%360==0)){
       char message[210];
@@ -6899,6 +6983,27 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-TRANSITION-NATIVE43-EXTENTS: V19 ON - map ALL verified current-frame iris quads up to +/-32 viewports (including clipped hooks); opaque FF000000 cinematic bars unchanged");
     }else{
       log_line("UI-TRANSITION-NATIVE43-EXTENTS: OFF - V18 original +/-10% clipping gate unchanged");
+    }
+  }
+  /* V20: supplementary native BLACK strip filling outside the centered
+   * 4:3 mask, derived from real game-owned black triangle intersections
+   * with source x=0/W. At startup the physical side strips are black.
+   * As the original iris expands, strip coverage retreats naturally.
+   * No change to original V19 polygons, order, transform, materials,
+   * cinematic bars, 3D world, HUD or ESC. Native D3D7 call context.
+   * Strict independent A/B opt-in, requires V19. Remove only GUTTERS_TEST
+   * to restore the validated V19 behavior. */
+  {
+    char value[4]={0};
+    if(InterlockedCompareExchange(
+         &ui_transition_native43_extended_enabled,0,0)==1 &&
+       GetEnvironmentVariableA(
+         "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_GUTTERS_TEST",
+         value,sizeof(value))==1 && value[0]=='1'){
+      InterlockedExchange(&ui_transition_native43_gutters_enabled,1);
+      log_line("UI-TRANSITION-GUTTER20: V20 ON - supplement only the two physical 16:9 black margins using CURRENT native iris edge intersections; V19 spider untouched");
+    }else{
+      log_line("UI-TRANSITION-GUTTER20: OFF - validated V19 original iris unchanged");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
