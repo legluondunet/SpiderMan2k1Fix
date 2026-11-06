@@ -260,6 +260,12 @@ def test_v25_is_optin_and_initialized_in_dependency_order():
     idx24=src.index("  /* V24 independent A/B synchronized curtains.")
     idx25=src.index("  /* V25 must be initialized AFTER")
     assert idx22<idx23<idx24<idx25
+    sync_init=src[idx24:idx25]
+    # A single V25-specific flag must authorize its EndScene sync
+    # dependency; do not force the player to guess the V24 variable.
+    assert '"SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST"' in sync_init
+    assert "(sync_requested || bounds_requested)" in sync_init
+    assert "automatically enabled for V25 BOUNDS_TEST" in sync_init
     assert "ui_transition_sync24_enabled,0,0)==1 &&" in src
     assert "uint64_t)width*3u<=(uint64_t)height*4u" in hdr
     assert "The game-owned iris" in hdr or "do NOT remap" in hdr
