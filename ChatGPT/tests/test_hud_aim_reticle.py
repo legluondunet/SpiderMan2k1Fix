@@ -2,9 +2,10 @@
 
 The GE-Proton Log=1 records below are aligned with original
 F9 shots scrn0028/scrn0029 (first scene), scrn0034 (second),
-and scrn0036 (Rhino). Three exact RHW contexts (9.9878, 7.8952,
-5.9130) are observed, never interpolated. The
-ring shader/color/depth combination must never match native pause motifs,
+and scrn0036 (Rhino). The 2026-11-06 scrn0090 red ring also
+has RHW=9.4993 and was missed by the old fixed-depth whitelist.
+The source-verified tint/texture/Z/caller/geometry combination, rather
+than the variable RHW, must distinguish the ring from native pause motifs,
 other HUD widgets or general-purpose 3D world sprites.
 """
 from pathlib import Path
@@ -117,6 +118,33 @@ def test_source_verified_reticles_preserve_other_vertex_attributes(tmp_path):
                    ==SPIDER_HUD_AIM_RED);
             check(src,dst,1920,1080);
 
+
+            /* New source-backed fullscreen example (scrn0090):
+             * at RHW=9.4993 the red ring was 213.7x162 px before
+             * correction and stayed oval in main's first F9 capture.
+             * Both red and green share the geometry-based policy. */
+            quad(src,858.8f,468.0f,1072.5f,630.0f,0xB0FF4040u);
+            set_rhw(src,9.4993f);
+            assert(SpiderHudAimReticle_MightMatch(src));
+            assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)
+                   ==SPIDER_HUD_AIM_RED);
+            check(src,dst,1920,1080);
+            for(unsigned i=0;i<4u;i++)src[i].diffuse=0xB040FF40u;
+            assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)
+                   ==SPIDER_HUD_AIM_GREEN);
+            check(src,dst,1920,1080);
+
+            /* Perspective is continuous: these values are valid when
+             * all OTHER original reticle identity gates are satisfied. */
+            set_rhw(src,6.90f);
+            assert(SpiderHudAimReticle_MightMatch(src));
+            assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)
+                   ==SPIDER_HUD_AIM_GREEN);
+            set_rhw(src,8.90f);
+            assert(SpiderHudAimReticle_MightMatch(src));
+            assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)
+                   ==SPIDER_HUD_AIM_GREEN);
+
             /* Rhino-shared depth is never sufficient by itself:
              * the Pause motif at 5.9130 has alpha 0x80 and different
              * color/texture, and must remain untouched. */
@@ -124,15 +152,13 @@ def test_source_verified_reticles_preserve_other_vertex_attributes(tmp_path):
             assert(!SpiderHudAimReticle_MightMatch(src));
             assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)==0);
             for(unsigned i=0;i<4u;i++)src[i].diffuse=0xB0FF4040u;
-            set_rhw(src,6.90f);
+            set_rhw(src,0.0f); /* invalid perspective */
             assert(!SpiderHudAimReticle_MightMatch(src));
             assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)==0);
-
-            /* Strict depth selection: an intermediate RHW (8.9)
-             * must never match just because both endpoints exist. */
-            set_rhw(src,8.90f);
+            set_rhw(src,-1.0f);
             assert(!SpiderHudAimReticle_MightMatch(src));
-            assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)==0);
+            set_rhw(src,129.0f); /* unrelated extreme perspective */
+            assert(!SpiderHudAimReticle_MightMatch(src));
             set_rhw(src,7.8952f);
             src[0].rhw=9.9878f; /* inconsistent corner depth */
             assert(run(src,dst,1920,1080,64,64,6,0x144,0x00102C72)==0);
