@@ -2713,11 +2713,14 @@ static void ui_comp_probe_fullscreen_source(void *device,
 }
 
 /* Full-viewport native iris reconstruction, trial-only.
- * Same original D3D7 render pass and material: we draw only the source
- * black mask's clipped original polygons in the two physical gutters.
+ * Same original D3D7 render pass and material: draw ONLY the black
+ * intervals on the existing 4:3 canvas LEFT/RIGHT EDGE into physical
+ * gutters. Unlike clipping ORIGINAL x coordinates directly to gutters,
+ * this guarantees the outside and center have the same binary mask at
+ * their shared boundary even as the opening grows off-screen.
  * The original 4:3 polygon continues to draw *once* in the center.
- * This avoids both stretching the spider's contour and inventing a
- * black fullscreen mask that would conceal the opening.
+ * No spider silhouette is stretched and no guessed fullscreen mask
+ * is introduced.
  *
  * Strict family/material guard is intentionally conservative.
  * An unsupported texture, render signature, clip or draw simply
@@ -2786,7 +2789,7 @@ static void maybe_restore_native_transition_gutters(
     const void *source,DWORD count,DWORD flags,void *caller)
 {
   IDirectDrawSurface7 *texture=NULL;
-  SpiderMenuVertex clipped[SPIDER_TRANSITION_MAX_VERTS];
+  SpiderMenuVertex extended[4];
   DWORD rva=0,alpha_blend=0,alpha_test=0;
   unsigned side;
   LONG hit;
@@ -2851,11 +2854,11 @@ static void maybe_restore_native_transition_gutters(
   }
   InterlockedIncrement(&ui_transition_native_mask_draws);
   for(side=0u;side<2u;side++){
-    unsigned n=SpiderTransition_ClipToGutter(
-       (const SpiderMenuVertex*)source,clipped,side,
+    unsigned n=SpiderTransition_ExtendBlackEdge(
+       (const SpiderMenuVertex*)source,extended,side,
        (unsigned)desktop_w,(unsigned)desktop_h);
     if(n<3u)continue;
-    if(FAILED(original_draw_primitive(device,type,fvf,(LPVOID)clipped,
+    if(FAILED(original_draw_primitive(device,type,fvf,(LPVOID)extended,
                                       (DWORD)n,flags))) {
       LONG failed=InterlockedIncrement(&ui_transition_draw_failures);
       if(debug_log_enabled && failed<=6)
@@ -2865,7 +2868,7 @@ static void maybe_restore_native_transition_gutters(
     hit=InterlockedIncrement(&ui_transition_native_gutter_fragments);
     if(debug_log_enabled && (hit<=14 || hit%360==0)) {
       snprintf(msg,sizeof(msg),
-         "UI-TRANSITION-GUTTERS: clipped=%ld side=%s fan-vertices=%u source-x=%.1f z=%.5f rhw=%.3f [SOURCE BLACK MASK; NO STRETCH]",
+         "UI-TRANSITION-GUTTERS: edge-extended=%ld side=%s fan-vertices=%u source-x=%.1f z=%.5f rhw=%.3f [MATCH CANVAS EDGE; NO DETACHED FRAGMENTS]",
          (long)hit,side==0u?"left":"right",n,
          (double)((const SpiderMenuVertex*)source)[0].x,
          (double)((const SpiderMenuVertex*)source)[0].z,
@@ -5248,7 +5251,7 @@ static DWORD initialize_body(LPVOID unused) {
        GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_TRANSITION_TEST",
                                 val,sizeof(val))==1 && val[0]=='1') {
       InterlockedExchange(&ui_transition_trial_enabled,1);
-      log_line("UI-TRANSITION-GUTTERS: TRIAL ON (native black mask clipped to physical gutters; centered 4:3 spider unchanged)");
+      log_line("UI-TRANSITION-GUTTERS: TRIAL ON (black edge spans extended into physical gutters; centered 4:3 spider unchanged)");
     } else {
       log_line("UI-TRANSITION-GUTTERS: OFF (approved HUD/ESC render path unchanged)");
     }
