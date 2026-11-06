@@ -2261,17 +2261,16 @@ static void ui_comp_release(IDirect3DDevice7 *device) {
   ui_comp_ribbon=ui_comp_motif=0;
 }
 
-/* Native 3D ESC draws one contiguous 160-triangle colour mesh. The
- * outer (backdrop) native ARGB reaches all four physical edges, while
- * the second family is an interior spider silhouette. Verify the
- * distinction EVERY frame using original source geometry, saved
- * material/texture and exactly uniform vertex colours. No level ID,
- * ARGB constant or RHW whitelist.
+/* Original Pause decoration has 160 translucent primitives in two
+ * source colour families. The perimeter material reaches all four
+ * physical source edges while the inner spider is strictly interior.
+ * Verify that relationship every frame using the untouched source
+ * geometry, texture and original D3D7 state (no level/RHW/ARGB list).
  *
- * Instead of a solid rectangle (double alpha-blending under the spider),
- * deform only BACKDROP triangles outside the measured inner spider
- * bounds so they reach x=0 and x=desktop_width. Preserve original
- * native draw count/order/blend and all interior motif geometry.
+ * This detector supplies ONLY the exterior gutter colour and material:
+ * every native source primitive is replayed intact. We must never
+ * replace, recolour or separate the original centre 4:3 mesh because
+ * hardware A/B showed that it changes the Dreamcast-like alpha mix.
  */
 static int ui_comp_native_backdrop_source(DWORD *native_argb,
     float *inner_left,float *inner_right,unsigned *inner_quads,
@@ -2520,12 +2519,10 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
    *   -> original native 160-triangle translucent 4:3 decoration
    *   -> PAUSED title, purple ribbon, text and native selector.
    * 
-   * Source evidence: native pre-veil F9 scrn0064 has red HUD portrait
-   * median 154 versus 84 with the full-screen veil in scrn0101, while
-   * PAUSED title red remains 215 in both. Drawing the veil over already
-   * rendered HUD had unintentionally tinted it. Replaying its original
-   * D3D7 quads once, in an explicit middle pass, fixes the ordering
-   * without guessing gamma or changing original source RGB/alpha.
+   * HUD deferral is experimental and defaults OFF. Both hardware
+   * validated scenes replayed zero HUD quads and retained the game's
+   * original HUD drawing order. No extra colour correction is needed
+   * when only the physical gutters are painted.
    *
    * Preserve the exact original native geometry and ordering for all
    * 160 translucent decoration triangles. The Dreamcast reference and
