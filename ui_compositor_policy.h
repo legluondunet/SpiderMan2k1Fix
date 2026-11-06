@@ -21,8 +21,9 @@ enum SpiderUICompLayer {
  */
 enum SpiderUICompReplayPass {
     SPIDER_UI_COMP_REPLAY_BACKDROP = 0,
-    SPIDER_UI_COMP_REPLAY_MOTIF = 1,
-    SPIDER_UI_COMP_REPLAY_MENU = 2,
+    SPIDER_UI_COMP_REPLAY_HUD = 1,
+    SPIDER_UI_COMP_REPLAY_MOTIF = 2,
+    SPIDER_UI_COMP_REPLAY_MENU = 3,
     SPIDER_UI_COMP_REPLAY_SKIP = -1
 };
 
@@ -37,6 +38,8 @@ static inline int SpiderUIComp_ReplayPassForDraw(
 {
     if(layer==SPIDER_UI_COMP_PAUSE_MENU)
         return SPIDER_UI_COMP_REPLAY_MENU;
+    if(layer==SPIDER_UI_COMP_HUD)
+        return SPIDER_UI_COMP_REPLAY_HUD;
     if(layer!=SPIDER_UI_COMP_PAUSE_DECOR)
         return SPIDER_UI_COMP_REPLAY_SKIP;
     if(!backdrop_verified)
@@ -47,7 +50,10 @@ static inline int SpiderUIComp_ReplayPassForDraw(
     return SPIDER_UI_COMP_REPLAY_MOTIF;
 }
 
-#define SPIDER_UI_COMP_MAX_COMMANDS 256u
+/* Full native Pause: up to 229 menu/decor primitives plus verified
+ * HUD sprites, captured only while the native ribbon is live.
+ * Keep a hard bound so a malformed frame fails closed. */
+#define SPIDER_UI_COMP_MAX_COMMANDS 384u
 
 static inline int SpiderUIComp_ShouldDefer(int trial_enabled,
         int scene_open, int scene_bailout, int native_layer,
@@ -55,7 +61,8 @@ static inline int SpiderUIComp_ShouldDefer(int trial_enabled,
 {
     return trial_enabled && scene_open && !scene_bailout &&
            (native_layer == SPIDER_UI_COMP_PAUSE_DECOR ||
-            native_layer == SPIDER_UI_COMP_PAUSE_MENU) &&
+            native_layer == SPIDER_UI_COMP_PAUSE_MENU ||
+            native_layer == SPIDER_UI_COMP_HUD) &&
            vertex_count == 4u && fvf == 0x144u;
 }
 
