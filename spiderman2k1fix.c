@@ -2417,29 +2417,30 @@ static int ui_comp_draw_native_gutters(IDirect3DDevice7 *device,
   return drawn!=0u;
 }
 
-/* The original ESC backdrop and spider are two INTERLEAVED palettes of
- * the same untextured native 160-triangle tessellation. The palette
- * touching ALL FOUR screen edges is the backdrop; it is not a colour
- * sampled from the spider. Identify it from the game's own captured
- * original source geometry, then fill the screen with that native colour
- * under the proportional 4:3 spider.
+/* Native 3D ESC draws one contiguous 160-triangle colour mesh. The
+ * outer (backdrop) native ARGB reaches all four physical edges, while
+ * the second family is an interior spider silhouette. Verify the
+ * distinction EVERY frame using original source geometry, saved
+ * material/texture and exactly uniform vertex colours. No level ID,
+ * ARGB constant or RHW whitelist.
  *
- * Do NOT use a fixed ARGB, per-level RHW, synthetic tint, or the earlier
- * triangle-edge gutter extension when this proof succeeds. This is a
- * fail-closed per-frame observation: any new geometry/material or palette
- * mismatch leaves the existing renderer unchanged.
+ * Instead of a solid rectangle (double alpha-blending under the spider),
+ * deform only BACKDROP triangles outside the measured inner spider
+ * bounds so they reach x=0 and x=desktop_width. Preserve original
+ * native draw count/order/blend and all interior motif geometry.
  */
 static int ui_comp_native_backdrop_source(DWORD *native_argb,
-    const SpiderUICompDraw **sample_out,unsigned *inner_quads)
+    float *inner_left,float *inner_right,unsigned *inner_quads)
 {
   SpiderUICompBackdropSample samples[SPIDER_UI_COMP_MAX_COMMANDS];
   unsigned count=0u,i,k,background=0u,inner=0u;
-  const SpiderUICompDraw *representative=NULL;
+  float linner=(float)desktop_w,rinner=0.0f;
   float w=(float)desktop_w,h=(float)desktop_h;
   if(native_argb)*native_argb=0u;
-  if(sample_out)*sample_out=NULL;
+  if(inner_left)*inner_left=0.0f;
+  if(inner_right)*inner_right=0.0f;
   if(inner_quads)*inner_quads=0u;
-  if(!native_argb || !sample_out || !ui_comp_motif ||
+  if(!native_argb || !inner_left || !inner_right || !ui_comp_motif ||
      ui_comp_bailout || ui_comp_count>SPIDER_UI_COMP_MAX_COMMANDS)
     return 0;
   for(i=0u;i<ui_comp_count;i++){
@@ -2466,49 +2467,19 @@ static int ui_comp_native_backdrop_source(DWORD *native_argb,
   }
   if(!SpiderUIComp_IdentifyNativeBackdrop(samples,count,w,h,&background))
     return 0;
-  for(i=0u;i<ui_comp_count;i++){
-    const SpiderUICompDraw *c=&ui_comp_draws[i];
-    if(c->layer!=SPIDER_UI_COMP_PAUSE_DECOR)continue;
-    if((unsigned)c->source_v[0].diffuse==background){
-      if(!representative)representative=c;
-    }else inner++;
+  for(i=0u;i<count;i++){
+    if(samples[i].color==background)continue;
+    if(samples[i].left<linner)linner=samples[i].left;
+    if(samples[i].right>rinner)rinner=samples[i].right;
+    inner++;
   }
-  if(!representative || !inner)return 0;
+  if(!inner || linner<=1.0f || rinner>=w-1.0f ||
+     !(rinner>linner))return 0;
   *native_argb=(DWORD)background;
-  *sample_out=representative;
+  *inner_left=linner;
+  *inner_right=rinner;
   if(inner_quads)*inner_quads=inner;
   return 1;
-}
-
-/* Draw the native edge-derived colour with its ORIGINAL Direct3D7
- * state block, texture disabled as on the native backdrop quads.
- * The 4:3 artwork is then rendered separately from unchanged mapped
- * original vertices. Alpha, blend, colour operation and Z/RHW are
- * inherited from the game's source, never guessed.
- */
-static int ui_comp_draw_native_backdrop(IDirect3DDevice7 *device,
-    const SpiderUICompDraw *sample,DWORD native_argb)
-{
-  SpiderMenuVertex corners[4];
-  unsigned k;
-  float w=(float)desktop_w,h=(float)desktop_h;
-  if(!device || !sample || !sample->state_token ||
-     sample->texture || !native_argb || w<640.0f || h<480.0f ||
-     sample->source_v[0].diffuse!=native_argb)return 0;
-  if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)) ||
-     FAILED(IDirect3DDevice7_SetTexture(device,0,NULL)) ||
-     FAILED(IDirect3DDevice7_SetRenderState(device,
-                       D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)) ||
-     FAILED(IDirect3DDevice7_SetRenderState(device,
-                       D3DRENDERSTATE_ZWRITEENABLE,FALSE)))
-    return 0;
-  for(k=0u;k<4u;k++)corners[k]=sample->source_v[0];
-  corners[0].x=0.0f;corners[0].y=0.0f;
-  corners[1].x=w;corners[1].y=0.0f;
-  corners[2].x=w;corners[2].y=h;
-  corners[3].x=0.0f;corners[3].y=h;
-  return SUCCEEDED(original_draw_primitive(device,
-         D3DPT_TRIANGLEFAN,0x144UL,corners,4,sample->flags));
 }
 
 /* Flush before native EndScene, not at DirectDraw Flip, so the entire
@@ -2518,9 +2489,9 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
   IDirectDrawSurface7 *saved_texture=NULL;
   unsigned i,layer,inner_quads=0u;
   DWORD native_backdrop_argb=0u;
-  const SpiderUICompDraw *native_backdrop_sample=NULL;
+  float spider_source_left=0.0f,spider_source_right=0.0f;
   LONG n;
-  int needs_tint,all_ok=1,native_backdrop_drawn=0;
+  int needs_tint,all_ok=1,native_backdrop_mapped=0;
   if(ui_comp_count==0)return;
   if(!device || ui_comp_device!=device){
     log_line("UI-COMPOSITOR: scene owner mismatch; discarding deferred commands");
@@ -2552,31 +2523,27 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
     else if(debug_log_enabled && InterlockedIncrement(&ui_comp_replay_failures)<=3)
       log_line("UI-COMPOSITOR: fullscreen overlay unsupported this frame");
   }
-  /* A native PAUSE framebuffer-wide background must be drawn ONCE
-   * from the exact edge palette, before the original centered artwork.
-   * Unlike guessed tinted rectangles, this does not double-blend the
-   * original exterior quads. It is conditional on FOUR-SIDED source
-   * coverage, two complementary palettes and source render ownership. */
-  if(!needs_tint && ui_comp_motif &&
-     ui_comp_native_backdrop_source(&native_backdrop_argb,
-                              &native_backdrop_sample,&inner_quads)) {
-    native_backdrop_drawn=ui_comp_draw_native_backdrop(
-        device,native_backdrop_sample,native_backdrop_argb);
-    if(debug_log_enabled &&
-       (InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)<4 ||
-        InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)%180==0)){
-      char msg[240];
-      snprintf(msg,sizeof(msg),
-        "UI-COMPOSITOR-NATIVE-BACKDROP: %s argb=%08lX artwork-quads=%u frame=%ld [SOURCE-VERIFIED ALL FOUR EDGES; ORIGINAL D3D7 BLEND]",
-        native_backdrop_drawn?"drawn":"failed",
-        (unsigned long)native_backdrop_argb,inner_quads,
-        (long)InterlockedCompareExchange(&ui_comp_flushed_frames,0,0));
-      log_line(msg);
-    }
+  /* All original translucent polygons remain in native D3D7 order.
+   * Only backdrop edge coordinates expand to physical screen bounds. */
+  if(!needs_tint && ui_comp_motif)
+    native_backdrop_mapped=ui_comp_native_backdrop_source(
+      &native_backdrop_argb,&spider_source_left,&spider_source_right,
+      &inner_quads);
+  if(debug_log_enabled && ui_comp_motif &&
+     (InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)<4 ||
+      InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)%180==0)){
+    char msg[270];
+    snprintf(msg,sizeof(msg),
+      "UI-COMPOSITOR-NATIVE-BACKDROP: %s argb=%08lX spider-bounds=(%.1f..%.1f) spider-quads=%u [SOURCE-VERIFIED FOUR EDGES, WARP BACKDROP ONLY, NO SECOND ALPHA PASS]",
+      native_backdrop_mapped?"verified":"not-proven",
+      (unsigned long)native_backdrop_argb,
+      (double)spider_source_left,(double)spider_source_right,
+      inner_quads);
+    log_line(msg);
   }
   /* Fail-closed fallback on unrecognized source geometry. Preserve
    * the existing opt-in edge reconstruction rather than invent a veil. */
-  if(!needs_tint && !native_backdrop_drawn && ui_comp_motif &&
+  if(!needs_tint && !native_backdrop_mapped && ui_comp_motif &&
      InterlockedCompareExchange(&ui_compositor_native_gutters_enabled,0,0)==1) {
     unsigned source_strips=0u;
     int painted=ui_comp_draw_native_gutters(device,&source_strips);
@@ -2599,18 +2566,27 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
       layer<=SPIDER_UI_COMP_PAUSE_MENU;layer++){
     for(i=0;i<ui_comp_count;i++) {
       SpiderUICompDraw *c=&ui_comp_draws[i];
+      SpiderMenuVertex backdrop_v[4];
+      const void *draw_vertices=c->v;
       if((unsigned)c->layer!=layer)continue;
-      /* The edge palette already covers the physical screen under
-       * the motif. Replaying those same translucent background tiles
-       * would double-blend and recreate visible seams. */
-      if(native_backdrop_drawn && layer==SPIDER_UI_COMP_PAUSE_DECOR &&
-         c->source_v[0].diffuse==native_backdrop_argb)
-        continue;
+      if(native_backdrop_mapped && layer==SPIDER_UI_COMP_PAUSE_DECOR &&
+         c->source_v[0].diffuse==native_backdrop_argb) {
+        unsigned k;
+        /* Preserve original ARGB/Z/RHW/UV and native blend; only the
+         * background X coordinates change. Central spider untouched. */
+        for(k=0u;k<4u;k++) {
+          backdrop_v[k]=c->v[k];
+          backdrop_v[k].x=SpiderUIComp_BackdropMapX(
+            c->source_v[k].x,(float)desktop_w,(float)desktop_h,
+            spider_source_left,spider_source_right);
+        }
+        draw_vertices=backdrop_v;
+      }
       if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,c->state_token)) ||
          FAILED(IDirect3DDevice7_SetTexture(device,0,c->texture)) ||
          FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)) ||
          FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE)) ||
-         FAILED(original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags))) {
+         FAILED(original_draw_primitive(device,c->type,c->fvf,(LPVOID)draw_vertices,4,c->flags))) {
         all_ok=0;
         InterlockedIncrement(&ui_comp_replay_failures);
       } else InterlockedIncrement(&ui_comp_replayed);
