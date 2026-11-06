@@ -209,7 +209,7 @@ def test_native_spider_source_geometry_probe_is_one_shot_and_passive():
     # The original geometry is never submitted as a new rendering layer.
     flush=core.split("static void ui_comp_flush(",1)[1].split(
         "static int ui_comp_capture(",1)[0]
-    assert "original_draw_primitive(device,c->type,c->fvf,(LPVOID)draw_vertices,4,c->flags)" in flush
+    assert "original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags)" in flush
     assert "original_draw_primitive(device,c->type,c->fvf,c->source_v" not in flush
     assert "ui_compositor_trial_enabled,0,0)==1" in core
 
@@ -266,8 +266,8 @@ def test_compositor_extends_each_original_source_edge_instead_of_flat_bands():
     assert "UI-COMPOSITOR-NATIVE-GUTTERS:" in source
     assert "source-edge-strips=%u" in source
     assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_GUTTERS" in source
-    assert "gutters[0]=='0'" in source
-    assert "static volatile LONG ui_compositor_native_gutters_enabled=1;" in source
+    assert "gutters[0]=='1'" in source
+    assert "static volatile LONG ui_compositor_native_gutters_enabled=0;" in source
     assert "if(!needs_tint && ui_comp_motif &&" in source
     flush=source.split("static void ui_comp_flush(",1)[1].split(
         "static int ui_comp_capture(",1)[0]
@@ -427,26 +427,52 @@ def test_background_only_warp_preserves_spider_in_4_by_3(policy):
     assert policy.warp(123,1440,1080,255,1250)==pytest.approx(123)
 
 
-def test_native_veil_replays_original_mesh_no_new_translucent_layer():
+def test_native_veil_is_one_source_owned_fullscreen_pass_with_no_double_blend():
     src=(ROOT/"spiderman2k1fix.c").read_text()
-    policy_src=(ROOT/"ui_compositor_policy.h").read_text()
-    assert "SpiderUIComp_IdentifyNativeBackdrop(" in policy_src
-    assert "SpiderUIComp_BackdropMapX(" in policy_src
     assert "ui_comp_native_backdrop_source(" in src
-    assert "SpiderUIComp_BackdropMapX(" in src
-    assert "ui_comp_draw_native_backdrop(" not in src
-    assert "UI-COMPOSITOR-NATIVE-BACKDROP:" in src
-    fn=src.split("static void ui_comp_flush(",1)[1].split(
-        "static int ui_comp_capture(",1)[0]
-    assert "native_backdrop_mapped && layer==SPIDER_UI_COMP_PAUSE_DECOR" in fn
-    assert "c->source_v[0].diffuse==native_backdrop_argb" in fn
-    assert "backdrop_v[k]=c->v[k]" in fn
-    assert "draw_vertices=backdrop_v" in fn
-    assert "(LPVOID)draw_vertices,4,c->flags)" in fn
-    assert "!native_backdrop_mapped && ui_comp_motif" in fn
-    # Native material/palette inherited from the game; no guessed tint,
-    # fullscreen rectangle or second alpha blend is introduced.
-    assert "0x80868620" not in fn
-    assert "ui_comp_draw_screen_tint(device,tint)" in fn  # opt-in A/B only
-    assert "needs_tint=ui_comp_ribbon && ui_comp_motif" in fn
+    func=src.split("static int ui_comp_draw_native_fullscreen_backdrop(",1)[1].split(
+        "/* Flush before native EndScene",1)[0]
+    # Same original D3D7 state, tint and alpha from a validated source
+    # primitive. Only four positions are changed, not diffuse/alpha/UV.
+    assert "IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)" in func
+    assert "IDirect3DDevice7_SetTexture(device,0,NULL)" in func
+    assert "for(k=0u;k<4u;k++)v[k]=sample->source_v[0]" in func
+    for fragment in ("v[0].x=0.0f;v[0].y=0.0f",
+                     "v[1].x=w;v[1].y=0.0f",
+                     "v[2].x=w;v[2].y=h",
+                     "v[3].x=0.0f;v[3].y=h"):
+        assert fragment in func
+    assert "D3DPT_TRIANGLEFAN,0x144UL,v,4,sample->flags" in func
+    assert "0x80868620" not in func
 
+    flush=src.split("static void ui_comp_flush(",1)[1].split(
+        "static int ui_comp_capture(",1)[0]
+    # Fill must be complete BEFORE the original game draws the 4:3
+    # spider and menu. Every native backdrop tile is skipped ONLY after
+    # a successful source-colour draw; otherwise the original mesh draws.
+    assert flush.index("ui_comp_draw_native_fullscreen_backdrop(") < (
+        flush.index("for(layer=SPIDER_UI_COMP_PAUSE_DECOR;"))
+    assert "native_backdrop_drawn &&" in flush
+    assert "c->source_v[0].diffuse==native_backdrop_argb" in flush
+    assert "original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags)" in flush
+    assert "source_material" in src
+    assert "!native_backdrop_drawn && ui_comp_motif" in flush
+    assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_BACKDROP" in src
+    assert "static volatile LONG ui_compositor_native_gutters_enabled=0;" in src
+    assert "0x80868620" not in flush
+    assert "UI-COMPOSITOR-NATIVE-BACKDROP:" in flush
+
+
+def test_non_pause_spider_geometry_and_hud_remain_native():
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    flush=src.split("static void ui_comp_flush(",1)[1].split(
+        "static int ui_comp_capture(",1)[0]
+    # The only opt-out in replay is specific to a currently-verified
+    # PAUSE_DECOR backdrop tint. No HUD, selector, text or world layer.
+    assert "layer==SPIDER_UI_COMP_PAUSE_DECOR" in flush
+    assert "c->source_v[0].diffuse==native_backdrop_argb" in flush
+    assert "native_backdrop_drawn" in flush
+    assert "for(layer=SPIDER_UI_COMP_PAUSE_DECOR;" in flush
+    assert "layer<=SPIDER_UI_COMP_PAUSE_MENU" in flush
+    assert "maybe_correct_aim_reticle(" in src
+    assert "ui_transition_native43_handle_draw(" in src
