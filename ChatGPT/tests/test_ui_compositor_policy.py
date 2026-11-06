@@ -39,6 +39,8 @@ def policy(tmp_path_factory):
         'int native_backdrop(const SpiderUICompBackdropSample *s,'
         'unsigned n,float w,float h,unsigned *color){'
         'return SpiderUIComp_IdentifyNativeBackdrop(s,n,w,h,color);}\n'
+        'float warp(float x,float w,float h,float lo,float hi){'
+        'return SpiderUIComp_BackdropMapX(x,w,h,lo,hi);}\n'
     )
     subprocess.run(
         [cc,"-std=c11","-Wall","-Wextra","-Werror","-fPIC","-shared",
@@ -69,6 +71,8 @@ def policy(tmp_path_factory):
     lib.native_backdrop.argtypes=[ct.POINTER(BackdropSample),ct.c_uint,
                                  ct.c_float,ct.c_float,ct.POINTER(ct.c_uint)]
     lib.native_backdrop.restype=ct.c_int
+    lib.warp.argtypes=[ct.c_float]*5
+    lib.warp.restype=ct.c_float
     return lib
 
 
@@ -205,7 +209,7 @@ def test_native_spider_source_geometry_probe_is_one_shot_and_passive():
     # The original geometry is never submitted as a new rendering layer.
     flush=core.split("static void ui_comp_flush(",1)[1].split(
         "static int ui_comp_capture(",1)[0]
-    assert "original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags)" in flush
+    assert "original_draw_primitive(device,c->type,c->fvf,(LPVOID)draw_vertices,4,c->flags)" in flush
     assert "original_draw_primitive(device,c->type,c->fvf,c->source_v" not in flush
     assert "ui_compositor_trial_enabled,0,0)==1" in core
 
@@ -402,25 +406,47 @@ def test_native_backdrop_is_derived_from_four_edge_source_not_spider(policy):
     assert classify(original,1920,2000)[0]==0
 
 
-def test_native_veil_is_one_original_alpha_blended_fullscreen_layer():
+def test_background_only_warp_preserves_spider_in_4_by_3(policy):
+    # Log-proven source spider is bounded by native 255..1665 in 1920
+    # screen pixels. All its vertices must obey the SAME 4:3 mapping
+    # they had before this PR, while the outer backdrop covers x=0..w.
+    w,h,lo,hi=1920,1080,255,1665
+    m=lambda x:policy.warp(x,w,h,lo,hi)
+    assert m(0)==pytest.approx(0)
+    assert m(1920)==pytest.approx(1920)
+    assert m(lo)==pytest.approx(431.25)
+    assert m(960)==pytest.approx(960)
+    assert m(hi)==pytest.approx(1488.75)
+    assert m(127.5)==pytest.approx(215.625)
+    assert m(1792.5)==pytest.approx(1704.375)
+    # 16:10 and an arbitrary wide native monitor use the same logic.
+    assert policy.warp(0,1920,1200,255,1665)==pytest.approx(0)
+    assert policy.warp(1920,1920,1200,255,1665)==pytest.approx(1920)
+    assert policy.warp(960,1920,1200,255,1665)==pytest.approx(960)
+    # In true 4:3 the native x positions stay untouched.
+    assert policy.warp(123,1440,1080,255,1250)==pytest.approx(123)
+
+
+def test_native_veil_replays_original_mesh_no_new_translucent_layer():
     src=(ROOT/"spiderman2k1fix.c").read_text()
     policy_src=(ROOT/"ui_compositor_policy.h").read_text()
     assert "SpiderUIComp_IdentifyNativeBackdrop(" in policy_src
+    assert "SpiderUIComp_BackdropMapX(" in policy_src
     assert "ui_comp_native_backdrop_source(" in src
-    fn=src.split("static int ui_comp_draw_native_backdrop(",1)[1].split(
-        "/* Flush before native EndScene",1)[0]
-    assert "IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)" in fn
-    assert "corners[k]=sample->source_v[0]" in fn
-    assert "corners[0].x=0.0f;corners[0].y=0.0f" in fn
-    assert "corners[2].x=w;corners[2].y=h" in fn
-    assert "original_draw_primitive(" in fn
-    assert "0x80868620" not in fn  # never hardcode the logged palette
-    flush=src.split("static void ui_comp_flush(",1)[1].split(
+    assert "SpiderUIComp_BackdropMapX(" in src
+    assert "ui_comp_draw_native_backdrop(" not in src
+    assert "UI-COMPOSITOR-NATIVE-BACKDROP:" in src
+    fn=src.split("static void ui_comp_flush(",1)[1].split(
         "static int ui_comp_capture(",1)[0]
-    assert flush.index("ui_comp_draw_native_backdrop(") < flush.index(
-        "for(layer=SPIDER_UI_COMP_PAUSE_DECOR;")
-    assert "native_backdrop_drawn && layer==SPIDER_UI_COMP_PAUSE_DECOR" in flush
-    assert "c->source_v[0].diffuse==native_backdrop_argb" in flush
-    assert "!native_backdrop_drawn && ui_comp_motif" in flush
-    assert "UI-COMPOSITOR-NATIVE-BACKDROP:" in flush
+    assert "native_backdrop_mapped && layer==SPIDER_UI_COMP_PAUSE_DECOR" in fn
+    assert "c->source_v[0].diffuse==native_backdrop_argb" in fn
+    assert "backdrop_v[k]=c->v[k]" in fn
+    assert "draw_vertices=backdrop_v" in fn
+    assert "(LPVOID)draw_vertices,4,c->flags)" in fn
+    assert "!native_backdrop_mapped && ui_comp_motif" in fn
+    # Native material/palette inherited from the game; no guessed tint,
+    # fullscreen rectangle or second alpha blend is introduced.
+    assert "0x80868620" not in fn
+    assert "ui_comp_draw_screen_tint(device,tint)" in fn  # opt-in A/B only
+    assert "needs_tint=ui_comp_ribbon && ui_comp_motif" in fn
 
