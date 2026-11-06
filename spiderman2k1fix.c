@@ -1021,6 +1021,11 @@ static volatile LONG ui_atomic_probe_trial_enabled=0;
  * This explicit trial is OFF by default. Never owns native ESC/HUD.
  */
 static volatile LONG ui_atomic_renderer_enabled=0;
+/* V11 experimental original-4:3 silhouette fidelity. The WHOLE
+ * canonical mask is re-aspected ONCE, BEFORE V10's uniform zoom.
+ * Opt-in, no per-tooth edits, no change to HUD/ESC and no source
+ * changes when disabled. */
+static volatile LONG ui_atomic_fidelity_enabled=0;
 static volatile LONG ui_atomic_renderer_failed=0;
 static IDirectDraw7 *ui_atomic_ddraw=NULL; /* owned COM ref, game lifetime */
 static IDirectDrawSurface7 *ui_atomic_texture=NULL;
@@ -2800,11 +2805,16 @@ capture_failed:
  * growth increments are involved. */
 static int ui_atomic_renderer_create_texture(void)
 {
-  unsigned sizes[2][2]={{1024u,512u},{512u,256u}};
+  /* V11 first tries a higher-resolution canonical alpha texture.
+   * V10 without the V11 flag preserves exactly its original 1024x512
+   * first choice. Every unsupported higher texture size falls through
+   * to the older, verified smaller surface sizes and format checks. */
+  unsigned sizes[3][2]={{2048u,1024u},{1024u,512u},{512u,256u}};
   unsigned n;
+  int fidelity=InterlockedCompareExchange(&ui_atomic_fidelity_enabled,0,0)==1;
   if(!ui_atomic_ddraw || !ui_atomic_reference_count ||
      ui_atomic_texture || !original_surface_create)return 0;
-  for(n=0u;n<2u;n++){
+  for(n=fidelity?0u:1u;n<3u;n++){
     unsigned tw=sizes[n][0],th=sizes[n][1],painted,covered,row;
     IDirectDrawSurface7 *surface=NULL;
     DDSURFACEDESC2 d,locked;
@@ -2815,6 +2825,26 @@ static int ui_atomic_renderer_create_texture(void)
     painted=SpiderAtomicMask_Rasterize(
         ui_atomic_reference,ui_atomic_reference_count,
         (unsigned)desktop_w,(unsigned)desktop_h,pixels,tw,th);
+    if(fidelity){
+      uint32_t *corrected=(uint32_t*)malloc((size_t)tw*th*sizeof(uint32_t));
+      if(!corrected ||
+         !SpiderAtomicMask_CorrectReference43(
+           pixels,corrected,tw,th,(unsigned)desktop_w,(unsigned)desktop_h)){
+        free(corrected);
+        free(pixels);
+        log_line("UI-ATOMIC-FIDELITY: FAILED reference aspect transform; V11 disabled, retain original V10 fallback");
+        InterlockedExchange(&ui_atomic_fidelity_enabled,0);
+        fidelity=0;
+        continue;
+      }
+      free(pixels);
+      pixels=corrected;
+      snprintf(msg,sizeof(msg),
+        "UI-ATOMIC-FIDELITY: 4:3 source aspect restored once; X factor=%.6f; image=%ux%u [ONE COMPLETE MASK; UNIFORM GAME ZOOM UNCHANGED]",
+        (double)((float)desktop_h*4.0f/((float)desktop_w*3.0f)),
+        tw,th);
+      log_line(msg);
+    }
     /* The real game renders many mask triangles TWICE, in opposite
      * winding directions. 'painted' is a count of raster writes and
      * can exceed 100% of the texture. Coverage validation MUST use
@@ -5956,6 +5986,23 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-ATOMIC: TRIAL ON - native mask reference composed ONCE then uniformly zoomed as ONE textured fullscreen quad");
     }else{
       log_line("UI-ATOMIC: OFF - V9/V8/V7 source rendering unchanged");
+    }
+  }
+  /* V11 higher fidelity of the ORIGINAL Dreamcast-like 4:3 spider.
+   * Only applicable to the already opted-in atomic V10 renderer.
+   * The source image is 4:3 re-aspected as ONE complete texture; ALL
+   * subsequent native-driven UV zooms remain isotropic. Disabling
+   * ONLY this flag restores the old V10 build behavior. */
+  {
+    char fidelity[4]={0};
+    if(InterlockedCompareExchange(&ui_atomic_renderer_enabled,0,0)==1 &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_TRANSITION_ATOMIC_FIDELITY_TEST",
+                                fidelity,sizeof(fidelity))==1 &&
+       fidelity[0]=='1'){
+      InterlockedExchange(&ui_atomic_fidelity_enabled,1);
+      log_line("UI-ATOMIC-FIDELITY: V11 TRIAL ON - original 4:3 spider silhouette, one high-resolution alpha mask, uniform zoom retained");
+    }else{
+      log_line("UI-ATOMIC-FIDELITY: OFF - V10 mask geometry and texture choice unchanged");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
