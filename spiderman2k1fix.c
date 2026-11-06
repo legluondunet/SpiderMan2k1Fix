@@ -2547,7 +2547,7 @@ static int ui_comp_draw_native_exterior_gutters(
   D3DVIEWPORT7 previous,physical;
   HRESULT draw_hr=S_OK,restore_hr=S_OK;
   DWORD w=(DWORD)desktop_w,h=(DWORD)desktop_h;
-  DWORD center_w,margin;
+  DWORD center_w,margin,right_begin;
   unsigned k,side,done=0u;
   int changed=0;
   LONG frame=InterlockedCompareExchange(&ui_comp_flushed_frames,0,0);
@@ -2561,8 +2561,12 @@ static int ui_comp_draw_native_exterior_gutters(
     return 0;
   center_w=(DWORD)((float)h*(4.0f/3.0f)+0.5f);
   if(center_w>=w)return 0;
+  /* Integer 4:3 fitting is not always symmetric for odd-sized
+   * desktops. Keep the original centred viewport and allow the
+   * right margin to be exactly one pixel wider if required. */
   margin=(w-center_w)/2u;
-  if(margin==0u || (w-center_w)!=2u*margin)return 0;
+  right_begin=margin+center_w;
+  if(margin==0u || right_begin>=w)return 0;
   if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)) ||
      FAILED(IDirect3DDevice7_GetViewport(device,&previous)))
     return 0;
@@ -2600,7 +2604,7 @@ static int ui_comp_draw_native_exterior_gutters(
                                D3DRENDERSTATE_ZWRITEENABLE,FALSE)))
     draw_hr=E_FAIL;
   for(side=0u;side<2u && SUCCEEDED(draw_hr);side++){
-    float left=side==0u ? 0.0f:(float)(w-margin);
+    float left=side==0u ? 0.0f:(float)right_begin;
     float right=side==0u ? (float)margin:(float)w;
     v[0].x=left;v[0].y=0.0f;
     v[1].x=right;v[1].y=0.0f;
