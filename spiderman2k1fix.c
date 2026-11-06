@@ -2369,7 +2369,13 @@ static int ui_comp_draw_native_gutters(IDirect3DDevice7 *device,
     const SpiderUICompDraw *c=&ui_comp_draws[i];
     const SpiderMenuVertex *v=c->source_v;
     SpiderMenuVertex out[4];
+    float l,r;
     if(c->layer!=SPIDER_UI_COMP_PAUSE_DECOR)continue;
+    l=r=v[0].x;
+    for(k=1u;k<4u;k++) {
+      if(v[k].x<l)l=v[k].x;
+      if(v[k].x>r)r=v[k].x;
+    }
     for(tri=0u;tri<2u;tri++) {
       const SpiderMenuVertex *v0=&v[0];
       const SpiderMenuVertex *v1=&v[tri ? 2u:1u];
@@ -2379,6 +2385,11 @@ static int ui_comp_draw_native_gutters(IDirect3DDevice7 *device,
         float edge=side==0u ? 0.0f:w;
         float xl=side==0u ? 0.0f:w-gutter;
         float xr=side==0u ? gutter:w;
+        /* The draw loop must obey the SAME source coverage guard
+         * proven in the dry run. A narrow edge tile may never
+         * expand into a whole physical gutter. */
+        if(!SpiderUIComp_EdgeTileCoversGutter(
+                l,r,w,gutter,(int)side))continue;
         if(!SpiderUIComp_TriangleEdgeSpan(
              v0->x,v0->y,v1->x,v1->y,v2->x,v2->y,edge,h,&span))
           continue;
