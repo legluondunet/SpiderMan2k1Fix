@@ -195,4 +195,4 @@ def test_v15_read_only_capture_and_same_scene_fallback_guards():
     assert "D3DPT_TRIANGLELIST" in fragment
     assert "IDirect3DDevice7_ApplyStateBlock" in fragment
     assert "D3DRENDERSTATE_ZENABLE,D3DZB_FALSE" in fragment
-    assert "CURRENT native quads" in header
+    assert "uses CURRENT" in header
