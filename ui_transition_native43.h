@@ -21,6 +21,9 @@
 #include <string.h>
 #include <math.h>
 
+/* SHA-verified original SpideyPC.exe call site that draws the iris. */
+#define SPIDER_TRANSITION_CALLER_RVA 0x00102C72u
+
 /* V19 experimental: native quads may legitimately extend FAR beyond
  * the viewport as the game animates the iris. D3D7 clips those vertices.
  * V18 accidentally mapped only the +/-10% quads and forwarded the rest
