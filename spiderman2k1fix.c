@@ -1041,6 +1041,8 @@ static volatile LONG ui_atomic_exact_enabled=0,ui_atomic_exact_ready=0;
 static SpiderExactTemplate ui_atomic_exact;
 /* V15 strict opt-in: recompute exact union from CURRENT native quads each scene. */
 static volatile LONG ui_atomic_live_enabled=0;
+/* V16 opt-in: accept a safely clipped CURRENT source family; strict V15 unchanged. */
+static volatile LONG ui_atomic_partial_enabled=0;
 static SpiderExactTemplate ui_atomic_live_mesh;
 static unsigned ui_atomic_live_success=0u,ui_atomic_live_fallbacks=0u;
 static unsigned ui_atomic_live_current_traps=0u;
@@ -3054,6 +3056,40 @@ static void ui_atomic_renderer_acquire_reference(void)
  * subsequent source 0-black quads are omitted only if a pre-existing
  * texture and a verified source scale authorize this atomic frame.
  * The frame is NEVER half V9 / half V10 by geometry selection. */
+/* V16 only: the game's native iris family can move slightly beyond the
+ * screen as its hooked limbs grow. The V12 mask classifier allows only
+ * +/-5%, while the existing read-only source probe accepts +/-10%.
+ * Use the SAME verified family in this opt-in path, but only AFTER a
+ * strict first draw has armed this D3D scene. Degenerate zero-area
+ * quads are allowed (they draw no pixels). This never changes other
+ * native UI, HUD or ESC classifiers.
+ */
+static int ui_atomic_renderer_is_partial_native_black(
+     D3DPRIMITIVETYPE type,DWORD fvf,const SpiderMenuVertex *v,
+     DWORD count,DWORD rva)
+{
+  unsigned i;
+  if(InterlockedCompareExchange(&ui_atomic_partial_enabled,0,0)!=1 ||
+     ui_atomic_scene_mode!=1u || !v ||
+     count!=4u || type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
+     rva!=SPIDER_TRANSITION_CALLER_RVA ||
+     desktop_w<640 || desktop_h<480 ||
+     (uint64_t)desktop_w*3u<=(uint64_t)desktop_h*4u ||
+     v[0].diffuse!=0x00000000UL)
+    return 0;
+  for(i=0u;i<4u;i++){
+    if(v[i].diffuse!=0x00000000UL ||
+       !(v[i].z>=-.00004f && v[i].z<=.00004f &&
+         v[i].rhw>=27.52f && v[i].rhw<=27.68f &&
+         v[i].x>=-(float)desktop_w*.10f &&
+         v[i].x<=(float)desktop_w*1.10f &&
+         v[i].y>=-(float)desktop_h*.10f &&
+         v[i].y<=(float)desktop_h*1.10f))
+      return 0;
+  }
+  return 1;
+}
+
 static int ui_atomic_renderer_skip_native(
     IDirect3DDevice7 *device,D3DPRIMITIVETYPE type,DWORD fvf,
     const void *vertices,DWORD count,void *caller)
@@ -3070,8 +3106,10 @@ static int ui_atomic_renderer_skip_native(
      !ui_atomic_texture || !device || !v || count!=4u ||
      !ui_comp_scene_open || ui_comp_device!=device ||
      !geom_rva(caller,&rva) ||
-     !SpiderTransition_IsNativeBlackMask(v,(unsigned)count,(unsigned)type,
-           (uint32_t)fvf,(uint32_t)rva,(unsigned)desktop_w,(unsigned)desktop_h) ||
+     (!SpiderTransition_IsNativeBlackMask(v,(unsigned)count,(unsigned)type,
+           (uint32_t)fvf,(uint32_t)rva,(unsigned)desktop_w,(unsigned)desktop_h) &&
+      !ui_atomic_renderer_is_partial_native_black(
+           type,fvf,v,count,rva)) ||
      v[0].diffuse!=0x00000000UL)
     return 0;
   if(ui_atomic_scene_mode==2u)return 0;
@@ -3228,12 +3266,21 @@ static int ui_atomic_renderer_draw_current_scene(IDirect3DDevice7 *device)
    * complete verified polygon family. A truncated probe would produce
    * an invented hole, so never render an incomplete live mesh. */
   if(ui_atomic_overflow==0u && count==ui_atomic_scene_suppressed &&
-     count==ui_atomic_reference_count){
-    prepared=SpiderLiveUnion_Prepare(
-        live,count,ui_atomic_reference_count,
-        (unsigned)desktop_w,(unsigned)desktop_h,
-        ui_atomic_reference,ui_atomic_reference_count,
-        ui_atomic_scene_scale,&ui_atomic_live_mesh,&report);
+     count<=ui_atomic_reference_count &&
+     (count==ui_atomic_reference_count ||
+      InterlockedCompareExchange(&ui_atomic_partial_enabled,0,0)==1)){
+    if(InterlockedCompareExchange(&ui_atomic_partial_enabled,0,0)==1)
+      prepared=SpiderLiveUnion_PrepareBounded(
+          live,count,ui_atomic_reference_count,
+          (unsigned)desktop_w,(unsigned)desktop_h,
+          ui_atomic_reference,ui_atomic_reference_count,
+          ui_atomic_scene_scale,.10f,1,&ui_atomic_live_mesh,&report);
+    else
+      prepared=SpiderLiveUnion_Prepare(
+          live,count,ui_atomic_reference_count,
+          (unsigned)desktop_w,(unsigned)desktop_h,
+          ui_atomic_reference,ui_atomic_reference_count,
+          ui_atomic_scene_scale,&ui_atomic_live_mesh,&report);
   }else{
     report.reason=2u;report.seen=count;
     report.expected=ui_atomic_reference_count;
@@ -3254,6 +3301,15 @@ static int ui_atomic_renderer_draw_current_scene(IDirect3DDevice7 *device)
         (double)report.rms_vertex_deviation,
         (double)report.max_vertex_deviation);
       log_line(msg);
+      if(InterlockedCompareExchange(&ui_atomic_partial_enabled,0,0)==1 &&
+         (ui_atomic_live_success<=12u || ui_atomic_live_success%90u==0u ||
+          count<ui_atomic_reference_count)){
+        snprintf(msg,sizeof(msg),
+          "UI-ATOMIC-PARTIAL: V16 VALID source=%u reference=%u culled=%u traps=%u [NATIVE OVERHANG<=10%%; COMPLETE BLACK EXTERIOR VERIFIED]",
+          count,ui_atomic_reference_count,
+          ui_atomic_reference_count-count,report.traps);
+        log_line(msg);
+      }
     }
     return 1;
   }
@@ -6548,6 +6604,24 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-ATOMIC-PERFRAME: V15 TRIAL ON - original native quad family each EndScene, union recomputed, 4:3 only, V12 immediate fallback");
     }else{
       log_line("UI-ATOMIC-PERFRAME: OFF - V14/V13/V12 unchanged");
+    }
+  }
+  /* V16 is optional on top of V15. Accept the engine's current native
+   * quad family after offscreen culling, only if every recorded source
+   * draw was suppressed and the exact union mathematically covers
+   * the full black exterior. Reject incomplete or conflicting frames;
+   * never infer missing teeth or modify game-owned animation timing.
+   * Remove only PARTIAL_TEST to restore byte-for-byte V15 behavior. */
+  {
+    char partial[4]={0};
+    if(InterlockedCompareExchange(&ui_atomic_live_enabled,0,0)==1 &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_TRANSITION_PARTIAL_TEST",
+                               partial,sizeof(partial))==1 &&
+       partial[0]=='1'){
+      InterlockedExchange(&ui_atomic_partial_enabled,1);
+      log_line("UI-ATOMIC-PARTIAL: V16 TRIAL ON - culling-aware original per-frame polygons, +10% source classifier, strict full-screen union proof; V12 fallback");
+    }else{
+      log_line("UI-ATOMIC-PARTIAL: OFF - V15 remains strictly 92-quads");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
