@@ -204,12 +204,10 @@ def test_scene_reset_and_no_original_iris_never_paints(api):
     assert finish(api,frame)[0]==0
 
 
-def test_strict_only_d3d7_current_end_scene_draw_and_state_restore():
+def test_v25_scene_sync_uses_native_current_frame_and_restores_all_d3d7_states():
     src=(ROOT/"spiderman2k1fix.c").read_text()
     hdr=(ROOT/"ui_transition_native43_sync.h").read_text()
-    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_SYNC_TEST" in src
-    assert "UI-TRANSITION-SYNC24: V24 ON" in src
-    assert "ui_transition_sync24_enabled=0" in src
+    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST" in src
     assert "SpiderNativeSync24_Reset(&ui_transition_sync24_frame)" in src
     assert "SpiderNativeSync24_Observe(&ui_transition_sync24_frame,v," in src
     assert "ui_transition_sync24_finish((IDirect3DDevice7*)self)" in src
@@ -218,16 +216,9 @@ def test_strict_only_d3d7_current_end_scene_draw_and_state_restore():
     assert "IDirect3DDevice7_SetTexture(device,0,NULL)" in src
     assert "D3DRENDERSTATE_ALPHABLENDENABLE,FALSE" in src
     assert "D3DRENDERSTATE_ZENABLE,D3DZB_FALSE" in src
-    assert "UI-TRANSITION-SYNC24: FRAME=" in src
-    assert "ui_transition_sync24_frame.native_fans" in src
     handle=src[src.index("static int ui_transition_native43_handle_draw("):
                src.index("static HRESULT WINAPI hooked_draw_primitive(")]
-    assert handle.index("*result=original_draw_primitive(") < \
-           handle.index("SpiderNativeSync24_Observe(")
-    assert "ui_transition_sync24_enabled,0,0)!=1" in handle
-    end=src[src.index("static HRESULT WINAPI ui_compositor_scene_finish("):
-            src.index("/* Read-only candidate scan:",src.index(
-                "static HRESULT WINAPI ui_compositor_scene_finish("))]
-    assert end.index("ui_transition_sync24_finish(") < end.index(
-        "unsigned frame=++ui_transition_hold22_frames;")
-    assert "FIRST SOURCE DrawPrimitive" not in hdr
+    assert handle.index("*result=original_draw_primitive(") < (
+           handle.index("SpiderNativeSync24_Observe("))
+    assert "InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)!=1" in handle
+    assert "Only after the entire family is observed" in hdr
