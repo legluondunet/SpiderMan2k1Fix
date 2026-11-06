@@ -251,6 +251,7 @@ Additional technical information is available for users and developers:
 - [Development and Reverse Engineering](docs/DEVELOPMENT.md)
 - [Automatic Keyboard Layout Detection](docs/references/KEYBOARD_LAYOUT_TECHNICAL.md)
 - [F9 PNG Screenshot Capture](docs/references/F9_PNG_CAPTURE.md)
+- [Experimental native widescreen spider transition (V25)](docs/references/UI_TRANSITION_NATIVE.md) — opt-in, Wine 1920×1080 visually validated; other formats pending hardware tests
 - [Changelog](CHANGELOG.md)
 
 ## Credits
