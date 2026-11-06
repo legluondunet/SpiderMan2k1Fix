@@ -142,7 +142,10 @@ def test_host_is_separate_opt_in_and_falls_back_to_v6_without_extra_draws():
     assert "ui_transition_trial_enabled,0,0)==1" in src
     assert "SpiderTransition_IsNativeBlackMask(" in hook
     assert "diffuse!=0x00000000UL" in hook
-    assert "SpiderUICanvas_43IsFullScreenEffect(" in hook
+    # All zero-alpha native iris quads, including full-width edge
+    # members, must take one transform. Opaque letterbox quads are
+    # rejected separately by the exact native colour.
+    assert "SpiderUICanvas_43IsFullScreenEffect(" not in hook
     assert "IDirect3DDevice7_GetTexture(" in hook
     assert "D3DRENDERSTATE_ALPHABLENDENABLE" in hook
     assert "D3DRENDERSTATE_ALPHATESTENABLE" in hook
