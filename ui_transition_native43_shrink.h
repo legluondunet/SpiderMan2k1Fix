@@ -41,7 +41,7 @@ static inline int SpiderNativeShrink_AnchorHalfWidth(
     float *half_width)
 {
     float minx,maxx,miny,maxy,span,hspan,centerx,centery,ratio;
-    unsigned i,columns[2]={0,0},rows[2]={0,0};
+    unsigned i,columns[2]={0,0};
     if(half_width)*half_width=0.0f;
     if(!source || !half_width || width<640u || height<480u)
         return 0;
@@ -70,14 +70,13 @@ static inline int SpiderNativeShrink_AnchorHalfWidth(
     for(i=0u;i<4u;i++){
         int col=fabsf(source[i].x-minx)<.51f ? 0 :
                 (fabsf(source[i].x-maxx)<.51f ? 1 : -1);
-        int row=fabsf(source[i].y-miny)<.51f ? 0 :
-                (fabsf(source[i].y-maxy)<.51f ? 1 : -1);
-        if(col<0 || row<0)return 0;
+        if(col<0)return 0;
         ++columns[col];
-        ++rows[row];
     }
-    if(columns[0]!=2u || columns[1]!=2u ||
-       rows[0]<1u || rows[1]<1u)
+    /* The original fan is a trapezoid: its center-side upper
+     * corner lies between its minimum and maximum Y. Do NOT mistake
+     * it for an axis-aligned rectangle requiring two Y levels! */
+    if(columns[0]!=2u || columns[1]!=2u)
         return 0;
     ratio=4.0f*(float)height/(3.0f*(float)width);
     *half_width=span*9.5f*ratio;
