@@ -3915,10 +3915,13 @@ static HRESULT WINAPI ui_compositor_scene_start(void *self) {
 static void ui_transition_sync24_finish(IDirect3DDevice7 *device)
 {
   SpiderMenuVertex sides[2][4];
-  float band=0.0f;
+  float band=0.0f,left=0.0f,right=0.0f;
   DWORD saved=0u,restored_z=0u;
   IDirectDrawSurface7 *bound=NULL;
-  int built,ok=1;
+  const int bounds25=
+    InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1;
+  int built,ok=1,draw_left=1,draw_right=1;
+  unsigned drawn=0u;
   HRESULT hr;
   unsigned total=ui_transition_sync24_frame.native_fans;
   if(InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)!=1 ||
@@ -3931,9 +3934,61 @@ static void ui_transition_sync24_finish(IDirect3DDevice7 *device)
       log_line("UI-TRANSITION-SYNC24: SOURCE COUNT MISMATCH; no side draw (native V19 kept)");
     return;
   }
-  built=SpiderNativeSync24_Finish(&ui_transition_sync24_frame,
-         (unsigned)desktop_w,(unsigned)desktop_h,sides,&band);
-  ui_transition_shrink23_scene_band_width=band;
+  if(bounds25){
+    unsigned w=(unsigned)desktop_w,h=(unsigned)desktop_h;
+    float max_side=((float)w-(float)h*4.0f/3.0f)*.5f;
+    int measured=0;
+    /* 4:3 and portrait displays have NO horizontal gutters at all. */
+    if((uint64_t)w*3u<=(uint64_t)h*4u){
+      built=2;
+    }else{
+      measured=SpiderNativeBounds25_Widths(
+          &ui_transition_bounds25_frame,w,h,&left,&right);
+      if(!measured){
+        /* V24 remains a strictly separate safety fallback for a
+         * source family with no visible eligible tooth triangles. */
+        ++ui_transition_bounds25_fallbacks;
+        built=SpiderNativeSync24_Finish(
+              &ui_transition_sync24_frame,w,h,sides,&band);
+        left=right=band;
+      }else{
+        built=1;
+      }
+      if(built==1){
+        if(ui_transition_bounds25_have_prev){
+          if(left>ui_transition_bounds25_prev_left)
+            left=ui_transition_bounds25_prev_left;
+          if(right>ui_transition_bounds25_prev_right)
+            right=ui_transition_bounds25_prev_right;
+        }
+        /* Both side margins use a real one-PHYSICAL-pixel overlap at
+         * the original 4:3 seam; never extend beyond a visible tooth.
+         * When V24 fallback is involved, clamp its pixels to the same
+         * previously proved nonincreasing source-envelope bounds. */
+        if(!SpiderNativeBounds25_Build(
+               ui_transition_sync24_frame.prototype,w,h,
+               left,right,sides))
+          built=-1;
+        else if(left<.5f && right<.5f)
+          built=2;
+      }
+      if(built==1 || built==2){
+        ui_transition_bounds25_have_prev=1u;
+        ui_transition_bounds25_prev_left=left;
+        ui_transition_bounds25_prev_right=right;
+      }
+    }
+    draw_left=left>=.5f;
+    draw_right=right>=.5f;
+    ui_transition_bounds25_last_left=left;
+    ui_transition_bounds25_last_right=right;
+    ui_transition_bounds25_last_fallback=!measured;
+  }else{
+    built=SpiderNativeSync24_Finish(&ui_transition_sync24_frame,
+           (unsigned)desktop_w,(unsigned)desktop_h,sides,&band);
+  }
+  ui_transition_shrink23_scene_band_width=
+       bounds25?(left+right)*.5f:band;
   ui_transition_shrink23_half_width=ui_transition_sync24_frame.radius;
   /* A valid zero-width curtain is the desired last-phase state. */
   if(built==2)return;
@@ -3965,13 +4020,17 @@ static void ui_transition_sync24_finish(IDirect3DDevice7 *device)
   SYNC24_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_COLORARG1,D3DTA_DIFFUSE));
   SYNC24_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAOP,D3DTOP_SELECTARG1));
   SYNC24_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAARG1,D3DTA_DIFFUSE));
-  if(ok){
-    SYNC24_REQUIRE(original_draw_primitive(device,D3DPT_TRIANGLEFAN,
-                0x144UL,sides[0],4u,ui_transition_sync24_flags));
+  if(ok && draw_left){
+    HRESULT hleft=original_draw_primitive(device,D3DPT_TRIANGLEFAN,
+                      0x144UL,sides[0],4u,ui_transition_sync24_flags);
+    if(SUCCEEDED(hleft))++drawn;
+    else ok=0;
   }
-  if(ok){
-    SYNC24_REQUIRE(original_draw_primitive(device,D3DPT_TRIANGLEFAN,
-                0x144UL,sides[1],4u,ui_transition_sync24_flags));
+  if(ok && draw_right){
+    HRESULT hright=original_draw_primitive(device,D3DPT_TRIANGLEFAN,
+                      0x144UL,sides[1],4u,ui_transition_sync24_flags);
+    if(SUCCEEDED(hright))++drawn;
+    else ok=0;
   }
 #undef SYNC24_REQUIRE
 done:
@@ -3993,9 +4052,9 @@ done:
     InterlockedExchange(&fov_z_state_known,1);
   }
   if(ok){
-    ui_transition_hold22_scene_gutters=2u;
-    ui_transition_hold22_draws+=2u;
-    ui_transition_sync24_total_draws+=2u;
+    ui_transition_hold22_scene_gutters=drawn;
+    ui_transition_hold22_draws+=drawn;
+    ui_transition_sync24_total_draws+=drawn;
   }else{
     InterlockedExchange(&ui_transition_sync24_failed,1);
     log_line("UI-TRANSITION-SYNC24: END-SCENE D3D7 DRAW/STATE ERROR, side overlay disabled, native V19 intact");
@@ -4015,6 +4074,27 @@ static HRESULT WINAPI ui_compositor_scene_finish(void *self) {
     unsigned active=ui_transition_hold22_scene_native>0u;
     if(active){
       unsigned frame=++ui_transition_hold22_frames;
+      if(InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1){
+        unsigned n=++ui_transition_bounds25_frames;
+        if(debug_log_enabled &&
+           (n<=10u || n%4u==0u ||
+            ui_transition_bounds25_last_left<.5f ||
+            ui_transition_bounds25_last_right<.5f)){
+          char msg[320];
+          snprintf(msg,sizeof(msg),
+            "UI-TRANSITION-BOUNDS25: FRAME=%u native=%u eligible-tri=%u matte-skip=%u inner-left=%.2f inner-right=%.2f left-curtain=%.2f right-curtain=%.2f overlap=1.0 fallback=%u drawn=%u [V19 ORIGINAL]",
+            n,ui_transition_sync24_frame.native_fans,
+            ui_transition_bounds25_frame.eligible,
+            ui_transition_bounds25_frame.excluded_matte,
+            (double)ui_transition_bounds25_frame.min_x,
+            (double)ui_transition_bounds25_frame.max_x,
+            (double)ui_transition_bounds25_last_left,
+            (double)ui_transition_bounds25_last_right,
+            ui_transition_bounds25_last_fallback,
+            ui_transition_hold22_scene_gutters);
+          log_line(msg);
+        }
+      }
       if(InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)==1){
         ++ui_transition_sync24_scenes;
         if(debug_log_enabled && (frame<=10u ||
@@ -4060,6 +4140,12 @@ static HRESULT WINAPI ui_compositor_scene_finish(void *self) {
       }
     }else if(ui_transition_hold22_last_active){
       log_line("UI-TRANSITION-HOLD22: RELEASE - first complete scene without any verified native iris draws; no fixed timer or zoom threshold");
+      if(InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1){
+        ui_transition_bounds25_prev_left=0.0f;
+        ui_transition_bounds25_prev_right=0.0f;
+        ui_transition_bounds25_have_prev=0u;
+        log_line("UI-TRANSITION-BOUNDS25: RELEASE - reset per-transition left/right bounds and black side widths");
+      }
       if(InterlockedCompareExchange(
           &ui_transition_shrink23_enabled,0,0)==1){
         log_line("UI-TRANSITION-SHRINK23: RELEASE - native mask ended; reset source-driven curtain motion for next transition");
