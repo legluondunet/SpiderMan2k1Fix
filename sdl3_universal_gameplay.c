@@ -1046,10 +1046,12 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
         gameover_owner_probe_was_candidate=candidate;
       }
       if(candidate) {
+        unsigned stable_probe_before=gameover_owner_probe_stable_frames;
         if(gameover_owner_probe_stable_frames<
            SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES)
           ++gameover_owner_probe_stable_frames;
-        if(gameover_owner_probe_stable_frames==
+        if(stable_probe_before<SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES &&
+           gameover_owner_probe_stable_frames==
            SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES)
           gameover_owner_probe_dump("CANDIDATE-STABLE",id,context,1);
       } else gameover_owner_probe_stable_frames=0;
