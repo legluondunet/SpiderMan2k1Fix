@@ -2279,43 +2279,43 @@ static int ui_comp_draw_screen_tint(IDirect3DDevice7 *device,DWORD argb) {
                                               v,4,0));
 }
 
-/* Native screen-edge backdrop, NOT a stretched pause decoration.
+/* Seam-free native ESC exterior.
  *
- * The original pause pattern is composed from many opaque-geometry,
- * alpha-blended, untextured quads. When their source geometry spans
- * both sides of the physical display, ALL game-owned quads at either
- * edge must have the SAME FLAT ARGB, and their source Y intervals must
- * cover the whole screen height. Those strict source-derived facts
- * permit a TWO-RECTANGLE backdrop in the physical left/right gutters,
- * using the EXACT native edge ARGB and the original D3D7 stateblock.
- * It is never drawn over the 4:3 canvas or reprojects spider pixels.
- * Zero eligible candidates, a non-flat vertex, inconsistent palettes,
- * textured edges or incomplete height coverage => draw NOTHING.
- * This rule has no boss, scene, asset or fixed-colour dependency.
+ * The game's spider backdrop is NOT a flat ARGB tint: the screenshot and
+ * source dump show 160 translucent triangles in TWO different palettes.
+ * A uniform 240px rectangle on each side therefore introduces obvious
+ * vertical discontinuities at the 4:3 join.
+ *
+ * Keep the native 4:3-mapped spider as a single connected motif inside
+ * the canvas. For each original triangle that touches physical x=0/w,
+ * extend only its actual edge-colour segment across the neighbouring
+ * gutter. Original triangle ordering, colour, alpha and D3D7 state are
+ * preserved; no whole-screen overlay, stretched motif or guessed tint.
+ *
+ * Verify that native source edge spans cover BOTH full display heights
+ * before any drawing. Malformed/partial geometry fails closed with no
+ * exterior replay. No level, boss, depth or palette whitelist.
  */
 static int ui_comp_draw_native_gutters(IDirect3DDevice7 *device,
-                                      DWORD *native_color)
+                                      unsigned *strips_drawn)
 {
-  SpiderUICompYSpan spans_left[SPIDER_UI_COMP_MAX_COMMANDS];
-  SpiderUICompYSpan spans_right[SPIDER_UI_COMP_MAX_COMMANDS];
-  const SpiderUICompDraw *sample=NULL;
-  unsigned left_count=0,right_count=0,i,k,palette=0u;
+  SpiderUICompYSpan left_spans[SPIDER_UI_COMP_MAX_COMMANDS];
+  SpiderUICompYSpan right_spans[SPIDER_UI_COMP_MAX_COMMANDS];
+  unsigned left_count=0u,right_count=0u,i,k,tri,side,drawn=0u;
   float w=(float)desktop_w,h=(float)desktop_h;
   float gutter=SpiderUIComp_GutterWidth((unsigned)desktop_w,
                                        (unsigned)desktop_h);
-  int have_palette=0;
-  SpiderMenuVertex vertices[4];
-  unsigned side;
-  if(native_color)*native_color=0u;
+  if(strips_drawn)*strips_drawn=0u;
   if(!device || gutter<=0.0f || ui_comp_count==0u ||
      !ui_comp_motif || ui_comp_bailout ||
      InterlockedCompareExchange(&ui_compositor_native_gutters_enabled,0,0)!=1)
     return 0;
+  /* Pure read-only proof, before submitting any render command. */
   for(i=0u;i<ui_comp_count;i++) {
     const SpiderUICompDraw *c=&ui_comp_draws[i];
     const SpiderMenuVertex *v=c->source_v;
     float l,r,t,b;
-    int on_left,on_right;
+    int edge_left,edge_right;
     if(c->layer!=SPIDER_UI_COMP_PAUSE_DECOR)continue;
     l=r=v[0].x;t=b=v[0].y;
     for(k=1u;k<4u;k++) {
@@ -2324,79 +2324,86 @@ static int ui_comp_draw_native_gutters(IDirect3DDevice7 *device,
       if(v[k].y<t)t=v[k].y;
       if(v[k].y>b)b=v[k].y;
     }
-    on_left=l<=w*.005f && r>w*.025f;
-    on_right=r>=w*.995f && l<w*.975f;
-    if(!on_left && !on_right)continue;
-    /* An edge-attached quad which does not actually span the whole
-     * physical gutter invalidates the blanket two-strip reconstruction.
-     * Refuse the entire exterior layer, rather than silently turning
-     * a narrow tile into a full-width tinted band. Source-driven and
-     * resolution-independent; proven 1920x1080 scene has 16 per-side
-     * native edge quads extending past each 240px gutter. */
-    if((on_left && !SpiderUIComp_EdgeTileCoversGutter(
-                          l,r,w,gutter,0)) ||
-       (on_right && !SpiderUIComp_EdgeTileCoversGutter(
-                           l,r,w,gutter,1)))
-      return 0;
-    /* No inferred translucent color: the original four vertices must
-     * all use the same ARGB and the native draw must be untextured. */
-    if(!c->state_token || c->texture || c->type!=D3DPT_TRIANGLEFAN ||
-       c->fvf!=0x144UL || !(t>=-h*.05f && b<=h*1.05f && t<b))
+    edge_left=l<=w*.005f && r>w*.025f;
+    edge_right=r>=w*.995f && l<w*.975f;
+    if(!edge_left && !edge_right)continue;
+    /* An edge-attached sprite too narrow to span the original gutter
+     * cannot prove that this scene supports an exterior extension. */
+    if((edge_left && !SpiderUIComp_EdgeTileCoversGutter(l,r,w,gutter,0)) ||
+       (edge_right && !SpiderUIComp_EdgeTileCoversGutter(l,r,w,gutter,1)) ||
+       !c->state_token || c->texture || c->type!=D3DPT_TRIANGLEFAN ||
+       c->fvf!=0x144UL || !(t>=-h*.05f && b<=h*1.05f && t<b) ||
+       (v[0].diffuse>>24)==0u)
       return 0;
     for(k=1u;k<4u;k++)
       if(v[k].diffuse!=v[0].diffuse ||
          fabsf(v[k].z-v[0].z)>.00005f ||
          fabsf(v[k].rhw-v[0].rhw)>.080f)
         return 0;
-    if(!have_palette) {
-      palette=(unsigned)v[0].diffuse;
-      sample=c;
-      have_palette=1;
-    } else if(palette!=(unsigned)v[0].diffuse)
-      return 0;
-    if(on_left) {
-      if(left_count>=SPIDER_UI_COMP_MAX_COMMANDS)return 0;
-      spans_left[left_count].top=t;
-      spans_left[left_count].bottom=b;
-      left_count++;
-    }
-    if(on_right) {
-      if(right_count>=SPIDER_UI_COMP_MAX_COMMANDS)return 0;
-      spans_right[right_count].top=t;
-      spans_right[right_count].bottom=b;
-      right_count++;
+    for(tri=0u;tri<2u;tri++) {
+      const SpiderMenuVertex *v0=&v[0];
+      const SpiderMenuVertex *v1=&v[tri ? 2u:1u];
+      const SpiderMenuVertex *v2=&v[tri ? 3u:2u];
+      SpiderUICompYSpan span;
+      if(edge_left && SpiderUIComp_TriangleEdgeSpan(
+           v0->x,v0->y,v1->x,v1->y,v2->x,v2->y,0.0f,h,&span)) {
+        if(left_count>=SPIDER_UI_COMP_MAX_COMMANDS)return 0;
+        left_spans[left_count++]=span;
+      }
+      if(edge_right && SpiderUIComp_TriangleEdgeSpan(
+           v0->x,v0->y,v1->x,v1->y,v2->x,v2->y,w,h,&span)) {
+        if(right_count>=SPIDER_UI_COMP_MAX_COMMANDS)return 0;
+        right_spans[right_count++]=span;
+      }
     }
   }
-  if(!sample || !have_palette || ((palette>>24)&255u)==0u ||
-     !SpiderUIComp_CoversFullHeight(spans_left,left_count,h) ||
-     !SpiderUIComp_CoversFullHeight(spans_right,right_count,h))
+  if(!SpiderUIComp_CoversFullHeight(left_spans,left_count,h) ||
+     !SpiderUIComp_CoversFullHeight(right_spans,right_count,h))
     return 0;
-
-  /* From here the owner and native material state are VERIFIED.
-   * No custom alpha is guessed and none of the 160 motif quads moves. */
-  if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)) ||
-     FAILED(IDirect3DDevice7_SetTexture(device,0,NULL)) ||
-     FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)) ||
-     FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE)))
-    return 0;
-  memset(vertices,0,sizeof(vertices));
-  for(k=0u;k<4u;k++) {
-    vertices[k]=sample->source_v[0];
-    vertices[k].diffuse=(DWORD)palette;
+  /* Draw per native triangle, NOT one rectangle per physical side.
+   * Each seam-edge colour extends horizontally, and its Y boundaries
+   * remain exactly those of its matching mapped 4:3 source primitive.
+   * The original blend/state block is reapplied for every source draw
+   * so different native palettes do not get flattened into one. */
+  for(i=0u;i<ui_comp_count;i++) {
+    const SpiderUICompDraw *c=&ui_comp_draws[i];
+    const SpiderMenuVertex *v=c->source_v;
+    SpiderMenuVertex out[4];
+    if(c->layer!=SPIDER_UI_COMP_PAUSE_DECOR)continue;
+    for(tri=0u;tri<2u;tri++) {
+      const SpiderMenuVertex *v0=&v[0];
+      const SpiderMenuVertex *v1=&v[tri ? 2u:1u];
+      const SpiderMenuVertex *v2=&v[tri ? 3u:2u];
+      for(side=0u;side<2u;side++) {
+        SpiderUICompYSpan span;
+        float edge=side==0u ? 0.0f:w;
+        float xl=side==0u ? 0.0f:w-gutter;
+        float xr=side==0u ? gutter:w;
+        if(!SpiderUIComp_TriangleEdgeSpan(
+             v0->x,v0->y,v1->x,v1->y,v2->x,v2->y,edge,h,&span))
+          continue;
+        if(!c->state_token || c->texture ||
+           FAILED(IDirect3DDevice7_ApplyStateBlock(device,c->state_token)) ||
+           FAILED(IDirect3DDevice7_SetTexture(device,0,NULL)) ||
+           FAILED(IDirect3DDevice7_SetRenderState(
+                           device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)) ||
+           FAILED(IDirect3DDevice7_SetRenderState(
+                           device,D3DRENDERSTATE_ZWRITEENABLE,FALSE)))
+          return 0;
+        for(k=0u;k<4u;k++)out[k]=*v0;
+        out[0].x=xl;out[0].y=span.top;
+        out[1].x=xr;out[1].y=span.top;
+        out[2].x=xr;out[2].y=span.bottom;
+        out[3].x=xl;out[3].y=span.bottom;
+        if(FAILED(original_draw_primitive(
+             device,D3DPT_TRIANGLEFAN,0x144UL,out,4,c->flags)))
+          return 0;
+        drawn++;
+      }
+    }
   }
-  for(side=0u;side<2u;side++) {
-    float xl=side==0u ? 0.0f : w-gutter;
-    float xr=side==0u ? gutter : w;
-    vertices[0].x=xl;vertices[0].y=0.0f;
-    vertices[1].x=xr;vertices[1].y=0.0f;
-    vertices[2].x=xr;vertices[2].y=h;
-    vertices[3].x=xl;vertices[3].y=h;
-    if(FAILED(original_draw_primitive(
-        device,D3DPT_TRIANGLEFAN,0x144UL,vertices,4,0)))
-      return 0;
-  }
-  if(native_color)*native_color=(DWORD)palette;
-  return 1;
+  if(strips_drawn)*strips_drawn=drawn;
+  return drawn!=0u;
 }
 
 /* Flush before native EndScene, not at DirectDraw Flip, so the entire
@@ -2443,18 +2450,18 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
    * Status is optional, bounded, and never modifies HUD geometry. */
   if(!needs_tint && ui_comp_motif &&
      InterlockedCompareExchange(&ui_compositor_native_gutters_enabled,0,0)==1) {
-    DWORD native_color=0;
-    int painted=ui_comp_draw_native_gutters(device,&native_color);
+    unsigned source_strips=0u;
+    int painted=ui_comp_draw_native_gutters(device,&source_strips);
     LONG total=painted ?
        InterlockedIncrement(&ui_comp_native_gutters_ok) :
        InterlockedIncrement(&ui_comp_native_gutters_rejected);
     if(debug_log_enabled && (total<=3 || total%180==0)) {
-      char msg[225];
+      char msg[245];
       snprintf(msg,sizeof(msg),
-        "UI-COMPOSITOR-NATIVE-GUTTERS: %s count=%ld width=%.1f native-argb=%08lX [SOURCE EDGE PALETTE, TWO PHYSICAL STRIPS; NO SPIDER STRETCH]",
+        "UI-COMPOSITOR-NATIVE-GUTTERS: %s count=%ld width=%.1f source-edge-strips=%u [PER-TRIANGLE ORIGINAL PALETTE AND ORDER; NO UNIFORM ARGB]",
         painted?"drawn":"not-proven",(long)total,
         (double)SpiderUIComp_GutterWidth((unsigned)desktop_w,(unsigned)desktop_h),
-        (unsigned long)native_color);
+        source_strips);
       log_line(msg);
     }
   }
