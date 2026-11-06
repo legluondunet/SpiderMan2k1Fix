@@ -77,6 +77,11 @@ static inline int SpiderAtomicContour_Prepare(
             x[k]=(quads[j].x[ids[k]]-cx)*aspect;
             y[k]=quads[j].y[ids[k]]-cy;
         }
+        /* The native renderer can submit degenerate fan triangles.
+         * They cover no pixels and must not masquerade as center fill. */
+        if(fabsf(SpiderAtomicContour_Cross(
+             x[1]-x[0],y[1]-y[0],x[2]-x[0],y[2]-y[0]))<.00001f)
+            continue;
         if(SpiderAtomicContour_ContainsCenter(x[0],y[0],x[1],y[1],x[2],y[2]))
             return 0;
     }
