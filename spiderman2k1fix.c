@@ -27,6 +27,7 @@
 #include "ui_transition_native43_flank.h"
 #include "ui_transition_native43_hold.h"
 #include "ui_transition_native43_shrink.h"
+#include "ui_transition_native43_sync.h"
 #include "ui_compositor_policy.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
@@ -1074,6 +1075,16 @@ static volatile LONG ui_transition_hold22_enabled=0;
  * narrow based on source fan width of the animated genuine spider.
  * No clock/timer, fallback remains unchanged V22 when disabled. */
 static volatile LONG ui_transition_shrink23_enabled=0;
+/* V24: calculate side-curtain width AFTER all game-owned native iris
+ * fans in the CURRENT scene have been measured. V23c calculated it
+ * before the remaining source fans arrived (one-frame phase lag).
+ * Original V19 draw calls and V23c smoothstep remain unchanged. */
+static volatile LONG ui_transition_sync24_enabled=0;
+static volatile LONG ui_transition_sync24_failed=0;
+static SpiderNativeSync24Frame ui_transition_sync24_frame;
+static DWORD ui_transition_sync24_flags=0u;
+static unsigned ui_transition_sync24_scenes=0u;
+static unsigned ui_transition_sync24_total_draws=0u;
 static float ui_transition_shrink23_half_width=0.0f;
 static float ui_transition_shrink23_scene_band_width=0.0f;
 static unsigned ui_transition_shrink23_scene_handled=0u;
@@ -3847,6 +3858,10 @@ static HRESULT WINAPI ui_compositor_scene_start(void *self) {
      InterlockedCompareExchange(&ui_transition_hold22_enabled,0,0)==1){
     ui_transition_hold22_scene_native=0u;
     ui_transition_hold22_scene_gutters=0u;
+    if(InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)==1){
+      SpiderNativeSync24_Reset(&ui_transition_sync24_frame);
+      ui_transition_sync24_flags=0u;
+    }
     if(InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1){
       ui_transition_shrink23_scene_handled=0u;
       ui_transition_shrink23_scene_band_width=0.0f;
@@ -3873,13 +3888,132 @@ static HRESULT WINAPI ui_compositor_scene_start(void *self) {
   }
   return hr;
 }
+/* V24 EndScene black physical-gutters-only overlay. Source aperture,
+ * teeth, black 4:3 triangles and their original D3D7 draw order were
+ * already rendered by the game; they are NEVER redrawn or replaced.
+ *
+ * D3D7 state is saved/restored around these TWO opaque black strips,
+ * so EndScene's camera/material/HUD/ESC state cannot leak into or out
+ * of this narrow supplemental rectangle pair.
+ */
+static void ui_transition_sync24_finish(IDirect3DDevice7 *device)
+{
+  SpiderMenuVertex sides[2][4];
+  float band=0.0f;
+  DWORD saved=0u,restored_z=0u;
+  IDirectDrawSurface7 *bound=NULL;
+  int built,ok=1;
+  HRESULT hr;
+  unsigned total=ui_transition_sync24_frame.native_fans;
+  if(InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)!=1 ||
+     !device || !total)return;
+  /* This must be the same verified original source family already
+   * counted by the old V22 diagnostics. A mismatch is not a reason to
+   * invent any side geometry. */
+  if(total!=ui_transition_hold22_scene_native){
+    if(debug_log_enabled)
+      log_line("UI-TRANSITION-SYNC24: SOURCE COUNT MISMATCH; no side draw (native V19 kept)");
+    return;
+  }
+  built=SpiderNativeSync24_Finish(&ui_transition_sync24_frame,
+         (unsigned)desktop_w,(unsigned)desktop_h,sides,&band);
+  ui_transition_shrink23_scene_band_width=band;
+  ui_transition_shrink23_half_width=ui_transition_sync24_frame.radius;
+  /* A valid zero-width curtain is the desired last-phase state. */
+  if(built==2)return;
+  if(built==0){
+    if(debug_log_enabled)
+      log_line("UI-TRANSITION-SYNC24: NO NONDEGENERATE SOURCE; skip supplemental strips this scene");
+    return;
+  }
+  if(built<0 ||
+     InterlockedCompareExchange(&ui_transition_sync24_failed,0,0)==1){
+    if(built<0 && debug_log_enabled)
+      log_line("UI-TRANSITION-SYNC24: INVALID PHYSICAL GUTTER GEOMETRY; native V19 unchanged");
+    return;
+  }
+  if(FAILED(IDirect3DDevice7_CreateStateBlock(device,D3DSBT_ALL,&saved)) ||
+     !saved){ok=0;goto done;}
+  if(FAILED(IDirect3DDevice7_GetTexture(device,0,&bound))){
+    ok=0;goto done;
+  }
+#define SYNC24_REQUIRE(call) do {if(FAILED(call))ok=0;} while(0)
+  SYNC24_REQUIRE(IDirect3DDevice7_SetTexture(device,0,NULL));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ALPHABLENDENABLE,FALSE));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ALPHATESTENABLE,FALSE));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_FOGENABLE,FALSE));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_CULLMODE,D3DCULL_NONE));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_COLOROP,D3DTOP_SELECTARG1));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_COLORARG1,D3DTA_DIFFUSE));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAOP,D3DTOP_SELECTARG1));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAARG1,D3DTA_DIFFUSE));
+  if(ok){
+    SYNC24_REQUIRE(original_draw_primitive(device,D3DPT_TRIANGLEFAN,
+                0x144UL,sides[0],4u,ui_transition_sync24_flags));
+  }
+  if(ok){
+    SYNC24_REQUIRE(original_draw_primitive(device,D3DPT_TRIANGLEFAN,
+                0x144UL,sides[1],4u,ui_transition_sync24_flags));
+  }
+#undef SYNC24_REQUIRE
+done:
+  if(saved){
+    hr=IDirect3DDevice7_ApplyStateBlock(device,saved);
+    if(FAILED(hr))ok=0;
+    /* Match the proven earlier EndScene compositors: explicitly
+     * rebind the previous texture after ApplyStateBlock. */
+    if(bound){
+      hr=IDirect3DDevice7_SetTexture(device,0,bound);
+      if(FAILED(hr))ok=0;
+    }
+    IDirect3DDevice7_DeleteStateBlock(device,saved);
+  }
+  if(bound)IDirectDrawSurface7_Release(bound);
+  if(SUCCEEDED(IDirect3DDevice7_GetRenderState(
+       device,D3DRENDERSTATE_ZENABLE,&restored_z))){
+    InterlockedExchange(&fov_z_state_enabled,restored_z!=D3DZB_FALSE);
+    InterlockedExchange(&fov_z_state_known,1);
+  }
+  if(ok){
+    ui_transition_hold22_scene_gutters=2u;
+    ui_transition_hold22_draws+=2u;
+    ui_transition_sync24_total_draws+=2u;
+  }else{
+    InterlockedExchange(&ui_transition_sync24_failed,1);
+    log_line("UI-TRANSITION-SYNC24: END-SCENE D3D7 DRAW/STATE ERROR, side overlay disabled, native V19 intact");
+  }
+}
+
 static HRESULT WINAPI ui_compositor_scene_finish(void *self) {
   ui_atomic_renderer_finish_scene((IDirect3DDevice7*)self);
   ui_atomic_probe_finish_scene();
+  /* V24 only: measure first, then draw the two black supplemental
+   * curtains from THIS scene's complete original native iris family.
+   * Must precede end-scene diagnostics, so reported curtain-width is
+   * the width that was ACTUALLY rendered, not a one-frame-old value. */
+  if(InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)==1)
+    ui_transition_sync24_finish((IDirect3DDevice7*)self);
   if(InterlockedCompareExchange(&ui_transition_hold22_enabled,0,0)==1){
     unsigned active=ui_transition_hold22_scene_native>0u;
     if(active){
       unsigned frame=++ui_transition_hold22_frames;
+      if(InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)==1){
+        ++ui_transition_sync24_scenes;
+        if(debug_log_enabled && (frame<=10u ||
+             frame%4u==0u || ui_transition_shrink23_scene_band_width<5.0f)){
+          char msg[250];
+          snprintf(msg,sizeof(msg),
+            "UI-TRANSITION-SYNC24: FRAME=%u original=%u anchors=%u aperture-half-x=%.1f curtain-width=%.1fpx drawn=%u [CURRENT-FRAME END-SCENE]",
+            frame,ui_transition_sync24_frame.native_fans,
+            ui_transition_sync24_frame.anchors,
+            (double)ui_transition_sync24_frame.radius,
+            (double)ui_transition_shrink23_scene_band_width,
+            ui_transition_hold22_scene_gutters);
+          log_line(msg);
+        }
+      }
       if(debug_log_enabled && (frame<=8u || frame%60u==0u ||
                                ui_transition_hold22_last_active!=active)){
         char msg[240];
@@ -4424,6 +4558,22 @@ static int ui_transition_native43_handle_draw(
      * supplies opening half-width. A late or offscreen fan can only
      * INCREASE that measurement, never regrow the physical curtains. */
     if(SUCCEEDED(*result) &&
+       InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)==1){
+      /* Observe ALL already-verified original iris fans from THIS
+       * scene. The two side rectangles are deferred to EndScene,
+       * after this family is complete; no V19 geometry changes. */
+      unsigned was_ready=ui_transition_sync24_frame.ready;
+      SpiderNativeSync24_Observe(&ui_transition_sync24_frame,v,
+             (unsigned)desktop_w,(unsigned)desktop_h);
+      if(!was_ready && ui_transition_sync24_frame.ready)
+        ui_transition_sync24_flags=flags;
+      ui_transition_shrink23_half_width=
+        ui_transition_sync24_frame.radius;
+      ui_transition_shrink23_anchor_hits+=
+        ui_transition_sync24_frame.anchors>0u &&
+        (ui_transition_shrink23_half_width>0.0f &&
+         ui_transition_sync24_frame.native_fans==1u)?1u:0u;
+    }else if(SUCCEEDED(*result) &&
        InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1){
       float radius=0.0f;
       if(SpiderNativeShrink_AnchorHalfWidth(
@@ -4445,7 +4595,8 @@ static int ui_transition_native43_handle_draw(
        * rectangle cannot yet be built or a true D3D7 error occurred.
        * The game-owned iris is never responsible for our helper failure. */
       ++ui_transition_hold22_scene_native;
-      if(InterlockedCompareExchange(&ui_transition_hold22_failed,0,0)!=1){
+      if(InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)!=1 &&
+         InterlockedCompareExchange(&ui_transition_hold22_failed,0,0)!=1){
         const int shrink=
           InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1;
         if(ui_transition_hold22_scene_gutters==0u &&
@@ -7283,6 +7434,24 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-TRANSITION-FLANK21: V21 ON - full-height original outer side matte only, NO limb-generated gutters, V19 iris untouched; first reduced native frame coordinates logged once");
     }else{
       log_line("UI-TRANSITION-FLANK21: OFF - V20/V19 original behavior unchanged");
+    }
+  }
+  /* V24 independent A/B synchronized curtains. Native V19 geometry
+   * and V23c smoothstep thresholds are exactly unchanged; only move
+   * rendering of two black physical side rectangles from the first
+   * source DrawPrimitive to EndScene AFTER the last native iris fan.
+   * Requires the working V23c opt-in; removing SYNC_TEST restores the
+   * previously recorded V23c behavior without modifying other flags. */
+  {
+    char value[4]={0};
+    if(InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1 &&
+       GetEnvironmentVariableA(
+         "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_SYNC_TEST",
+         value,sizeof(value))==1 && value[0]=='1'){
+      InterlockedExchange(&ui_transition_sync24_enabled,1);
+      log_line("UI-TRANSITION-SYNC24: V24 ON - sample ALL native V19 iris fans, draw two black side curtains AFTER full CURRENT scene geometry in EndScene, V23c smoothing unchanged");
+    }else{
+      log_line("UI-TRANSITION-SYNC24: OFF - V23c native first-draw curtains unchanged");
     }
   }
   /* V22 standalone successor to V21: hold both FULL physical black
