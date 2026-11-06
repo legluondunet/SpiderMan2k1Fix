@@ -135,7 +135,7 @@ def test_original_four_three_or_invalid_geometry_fails_closed(transform,width,he
 def test_host_is_separate_opt_in_and_falls_back_to_v6_without_extra_draws():
     src=(ROOT/"spiderman2k1fix.c").read_text()
     start=src.index("static const void *maybe_correct_native_transition_fullscreen(")
-    end=src.index("/* Full-viewport native iris reconstruction",start)
+    end=src.index("static void maybe_seal_native_transition_teeth(",start)
     hook=src[start:end]
     assert 'SPIDERMAN2K1FIX_UI_TRANSITION_FULLSCREEN_TEST' in src
     assert "static volatile LONG ui_transition_fullscreen_trial_enabled=0" in src
