@@ -109,7 +109,7 @@ def test_current_frame_complete_source_corrects_one_frame_lag(api):
     assert frame.native_fans==2 and frame.anchors==1
     code,current_width,bands=finish(api,frame)
     assert code==1 and current_width<240
-    assert current_width==pytest.approx(179.14,abs=1.0)
+    assert current_width==pytest.approx(208.45,abs=1.0)
     assert sorted({v.x for v in bands[0]})==pytest.approx(
         [0,current_width],abs=.001)
     assert sorted({v.x for v in bands[1]})==pytest.approx(
@@ -132,6 +132,47 @@ def test_early_degenerate_sources_do_not_abort_same_frame(api):
     code,band,_=finish(api,frame)
     assert code==1 and band==pytest.approx(240,abs=.001)
     assert frame.native_fans==2 and frame.ready==1
+
+
+def test_v24_gutters_do_not_disappear_before_last_original_iris_frame(api):
+    # User's last 1920x1080 Wine log. An observed source radius of
+    # 1843.6 at ORIGINAL frame 32 is the last full native iris family.
+    # With V23c's first-draw/one-frame-lag issue, a simple same-frame
+    # change would close the curtains a frame EARLIER. Our synchronized
+    # V24 starts later, retracts smoothly, and reaches zero on frame 32.
+    original=true_native_center_fan()
+    observations=[
+        (16,641.2,240.0),
+        (18,748.1,240.0),
+        (19,801.6,240.0),
+        (20,881.7,236.39),
+        (21,961.9,225.42),
+        (24,1175.6,170.38),
+        (27,1416.1,88.63),
+        (29,1576.4,39.50),
+        (30,1656.6,20.52),
+        (31,1763.4,4.05),
+        (32,1843.6,0.0),
+    ]
+    # We test the original recorded radii directly through the
+    # V24 header, and also with an actual scaled source family.
+    for frame_no,radius,expected in observations:
+        frame=Frame()
+        api.reset(ct.byref(frame))
+        api.observe(ct.byref(frame),
+                    source([(0,0),(320,0),(320,1080),(0,1080)]),
+                    1920,1080)
+        scale=radius/160.3125
+        fan=source([
+            (960+(x-960)*scale,540+(y-540)*scale)
+            for x,y in original
+        ])
+        api.observe(ct.byref(frame),fan,1920,1080)
+        result,width,_=finish(api,frame)
+        assert width==pytest.approx(expected,abs=.3),frame_no
+        assert result==(2 if expected==0 else 1),frame_no
+    # Verify there is no final-frame hard cut. A 4px side remnant
+    # precedes the entirely clear frame, not a 50px+ discontinuity.
 
 
 def test_end_of_animation_removes_full_gutters_no_final_pop(api):
