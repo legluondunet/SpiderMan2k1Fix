@@ -25,6 +25,7 @@
 #include "ui_transition_native43.h"
 #include "ui_transition_native43_gutters.h"
 #include "ui_transition_native43_flank.h"
+#include "ui_transition_native43_hold.h"
 #include "ui_compositor_policy.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
@@ -1062,6 +1063,18 @@ static volatile LONG ui_transition_native43_gutters_enabled=0;
 /* V21: replace EVERY-TRIANGLE V20 rectangles with side matte only.
  * No polygon resembling a spider leg may generate a gutter rectangle. */
 static volatile LONG ui_transition_flank21_enabled=0;
+/* V22 independent A/B: leave original V19 iris alone, retain both
+ * full-height physical black gutters while verified native iris draws
+ * exist in the CURRENT game scene. On first source-free scene release
+ * both; no V20 tooth extension, no V21 early outer-flank removal.
+ * Enabled independently of the legacy V20/V21 opt-ins. */
+static volatile LONG ui_transition_hold22_enabled=0;
+static volatile LONG ui_transition_hold22_failed=0;
+static unsigned ui_transition_hold22_scene_native=0u;
+static unsigned ui_transition_hold22_scene_gutters=0u;
+static unsigned ui_transition_hold22_frames=0u;
+static unsigned ui_transition_hold22_draws=0u;
+static unsigned ui_transition_hold22_last_active=0u;
 static unsigned ui_transition_flank21_scenes=0u;
 static unsigned ui_transition_flank21_last_state=0u;
 /* Passive one-shot dump of the first reduced source family (e.g. 84/92)
@@ -3816,6 +3829,11 @@ static void ui_atomic_renderer_finish_scene(IDirect3DDevice7 *device)
 static HRESULT WINAPI ui_compositor_scene_start(void *self) {
   HRESULT hr=ui_original_begin_scene(self);
   if(SUCCEEDED(hr) &&
+     InterlockedCompareExchange(&ui_transition_hold22_enabled,0,0)==1){
+    ui_transition_hold22_scene_native=0u;
+    ui_transition_hold22_scene_gutters=0u;
+  }
+  if(SUCCEEDED(hr) &&
      InterlockedCompareExchange(
        &ui_transition_native43_gutters_enabled,0,0)==1){
     ui_transition_native43_gutters_scene_native=0u;
@@ -3838,6 +3856,25 @@ static HRESULT WINAPI ui_compositor_scene_start(void *self) {
 static HRESULT WINAPI ui_compositor_scene_finish(void *self) {
   ui_atomic_renderer_finish_scene((IDirect3DDevice7*)self);
   ui_atomic_probe_finish_scene();
+  if(InterlockedCompareExchange(&ui_transition_hold22_enabled,0,0)==1){
+    unsigned active=ui_transition_hold22_scene_native>0u;
+    if(active){
+      unsigned frame=++ui_transition_hold22_frames;
+      if(debug_log_enabled && (frame<=8u || frame%60u==0u ||
+                               ui_transition_hold22_last_active!=active)){
+        char msg[240];
+        snprintf(msg,sizeof(msg),
+          "UI-TRANSITION-HOLD22: FRAME=%u original=%u side-rects=%u total-side-draws=%u [LATCHED UNTIL IRIS ENDS; NO TOOTH EXTENSION]",
+          frame,ui_transition_hold22_scene_native,
+          ui_transition_hold22_scene_gutters,
+          ui_transition_hold22_draws);
+        log_line(msg);
+      }
+    }else if(ui_transition_hold22_last_active){
+      log_line("UI-TRANSITION-HOLD22: RELEASE - first complete scene without any verified native iris draws; no fixed timer or zoom threshold");
+    }
+    ui_transition_hold22_last_active=active;
+  }
   if(InterlockedCompareExchange(
        &ui_transition_native43_gutters_enabled,0,0)==1 &&
      ui_transition_native43_gutters_scene_native>0u){
@@ -4338,6 +4375,38 @@ static int ui_transition_native43_handle_draw(
   *result=original_draw_primitive(device,type,fvf,
               valid?(LPVOID)mapped:verts,count,flags);
   if(valid){
+    /* V22 one opaque physical-margin pair per current-frame iris. The
+     * source is the ORIGINAL game fan already checked for black material
+     * and drawn above by V19. Its vertices, shape, winding and timed
+     * animation are never changed. At scene end, absence of source fans
+     * releases both margins naturally with the game's own transition.
+     * Skip legacy V20/V21 supplements completely when this is active. */
+    if(SUCCEEDED(*result) &&
+       InterlockedCompareExchange(&ui_transition_hold22_enabled,0,0)==1 &&
+       InterlockedCompareExchange(&ui_transition_hold22_failed,0,0)!=1){
+      ++ui_transition_hold22_scene_native;
+      if(ui_transition_hold22_scene_gutters==0u){
+        SpiderMenuVertex two[2][4];
+        if(SpiderNativeHold_Build(v,(unsigned)desktop_w,
+                                  (unsigned)desktop_h,two)){
+          HRESULT lh=original_draw_primitive(
+             device,type,fvf,two[0],4u,flags);
+          HRESULT rh=SUCCEEDED(lh) ?
+             original_draw_primitive(device,type,fvf,two[1],4u,flags):lh;
+          if(SUCCEEDED(lh) && SUCCEEDED(rh)){
+            ui_transition_hold22_scene_gutters=2u;
+            ui_transition_hold22_draws+=2u;
+          }else{
+            char msg[195];
+            InterlockedExchange(&ui_transition_hold22_failed,1);
+            snprintf(msg,sizeof(msg),
+              "UI-TRANSITION-HOLD22: ERROR side gutters hr-left=0x%08lX hr-right=0x%08lX [disabled; native V19 iris unaffected]",
+              (unsigned long)lh,(unsigned long)rh);
+            log_line(msg);
+          }
+        }
+      }
+    }
     /* Reuse the verified original black-material state from this SAME
      * native D3D7 call. A gutter rectangle is an extension of ONLY the
      * portion of source black which actually crosses source x=0 or W.
@@ -4346,6 +4415,8 @@ static int ui_transition_native43_handle_draw(
     if(SUCCEEDED(*result) &&
        InterlockedCompareExchange(
           &ui_transition_native43_gutters_enabled,0,0)==1 &&
+       InterlockedCompareExchange(
+          &ui_transition_hold22_enabled,0,0)!=1 &&
        InterlockedCompareExchange(
           &ui_transition_native43_gutters_failed,0,0)!=1){
       SpiderMenuVertex gutters[SPIDER_NATIVE43_GUTTER_MAX][4];
@@ -7110,6 +7181,26 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-TRANSITION-FLANK21: V21 ON - full-height original outer side matte only, NO limb-generated gutters, V19 iris untouched; first reduced native frame coordinates logged once");
     }else{
       log_line("UI-TRANSITION-FLANK21: OFF - V20/V19 original behavior unchanged");
+    }
+  }
+  /* V22 standalone successor to V21: hold both FULL physical black
+   * side gutters while the game's genuine source iris is being drawn;
+   * only release when the next scene contains no verified source fans.
+   * V19 geometry and gameplay remain unchanged, legacy V20/V21 edge
+   * extension paths are bypassed even if their flags remain on.
+   * Just remove HOLD_GUTTERS_TEST to revert to previous V21/V20 state.
+   * Requires V19 extents so all native fans share one X mapping. */
+  {
+    char value[4]={0};
+    if(InterlockedCompareExchange(
+         &ui_transition_native43_extended_enabled,0,0)==1 &&
+       GetEnvironmentVariableA(
+         "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_HOLD_GUTTERS_TEST",
+         value,sizeof(value))==1 && value[0]=='1'){
+      InterlockedExchange(&ui_transition_hold22_enabled,1);
+      log_line("UI-TRANSITION-HOLD22: V22 ON - two solid black 16:9 side gutters for every active ORIGINAL V19 iris frame; release on first scene with no native iris; V20/V21 bypassed");
+    }else{
+      log_line("UI-TRANSITION-HOLD22: OFF - prior V19/V20/V21 behavior unchanged");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
