@@ -32,22 +32,36 @@ static inline float SpiderTransition_Abs(float x)
 { return x<0.0f ? -x : x; }
 
 /* Family observed during native expanding spider transition in the
- * original game: opaque black, screen-projected, z≈0, RHW≈27.6.
- * This identifies the render pass, never the spider's geometry.
+ * original game: RGB black (actual vertex ARGB=0x00000000),
+ * screen-projected, z≈0, RHW≈27.6.  The earlier unverified
+ * expectation 0xFF000000 rejected EVERY real spider mask!
+ *
+ * The classifier accepts only uniform RGBA black, with alpha 0 or
+ * 255. Alpha 0 is safe to draw as a solid black mask ONLY when the
+ * native Direct3D7 alpha blending and alpha tests are disabled.
+ * The live D3D render-state validation belongs to the caller.
+ * This identifies a render family, never a level or a particular
+ * spider silhouette.
  */
 static inline int SpiderTransition_IsNativeBlackMask(
     const SpiderMenuVertex *v,unsigned count,unsigned primitive,
     uint32_t fvf,uint32_t caller_rva,unsigned w,unsigned h)
 {
     unsigned i;
+    uint32_t color;
     float minx,maxx,miny,maxy;
     if(!v || count!=4u || primitive!=6u || fvf!=0x144u ||
        caller_rva!=SPIDER_TRANSITION_CALLER_RVA ||
        w<640u || h<480u || w>16384u || h>16384u ||
        (uint64_t)w*3u <= (uint64_t)h*4u)return 0;
+    color=v[0].diffuse;
+    /* Two known, strictly uniform vertex encodings for black.
+     * Do not treat translucent black/zero-alpha gradients or
+     * dark sprites as native scene masks. */
+    if(color!=0x00000000u && color!=0xFF000000u)return 0;
     minx=maxx=v[0].x;miny=maxy=v[0].y;
     for(i=0u;i<4u;i++){
-        if(v[i].diffuse!=0xFF000000u ||
+        if(v[i].diffuse!=color ||
            SpiderTransition_Abs(v[i].z)>0.00004f ||
            SpiderTransition_Abs(v[i].rhw-27.6f)>0.08f ||
            !(v[i].x>=-(float)w*.05f && v[i].x<=(float)w*1.05f &&
@@ -71,8 +85,8 @@ static inline SpiderMenuVertex SpiderTransition_Interpolate(
     out.rhw=a->rhw+t*(b->rhw-a->rhw);
     out.u=a->u+t*(b->u-a->u);
     out.v=a->v+t*(b->v-a->v);
-    /* The gated material has the same opaque-black diffuse on every
-     * vertex. There is no colour-gradient interpolation to approximate. */
+    /* The gated material has uniform RGB black at every vertex.
+     * Its original alpha is kept; no colour interpolation is needed. */
     return out;
 }
 
