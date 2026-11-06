@@ -290,6 +290,99 @@ static inline int SpiderTransition_MapFullscreenCover43(
     return 1;
 }
 
+/* V8 optional topology repair for the COHERENT V7 fullscreen iris.
+ *
+ * In the 1920x1080 V7 video, the black "teeth" occasionally float
+ * about 60-100 physical pixels away from the nearest exterior black
+ * area near the END of the opening. The V7 similarity transform is
+ * mathematically consistent, but cannot repair disconnected source
+ * geometry. Preserve all existing tooth vertices and seal ONLY the
+ * small gap from the outermost V7 tooth edge to the corresponding
+ * physical screen border.
+ *
+ * This is not a whole-mask stretch. It creates a new black connector
+ * quad, derived solely from existing flat vertical edges of verified
+ * black geometry already inside the computed 4:3 exterior gutter.
+ * It deliberately REFUSES an isolated triangle tip: with only one
+ * extremal vertex the safe vertical connector interval is unknown.
+ *
+ * side=0: physical left strip from x=0 to the polygon's minimum x.
+ * side=1: physical right strip from max x to the physical screen W.
+ * Only a flat polygon edge within the corresponding physical gutter
+ * may be extended. No original vertices or render states are changed.
+ * Paint with the same game-owned native material/alpha guard as V7.
+ * No level, scene, animation time, sprite, or boss identifiers.
+ * Experimental and OFF unless separately opted in.
+ */
+static inline unsigned SpiderTransition_SealOuterToothEdge(
+    const SpiderMenuVertex *mapped,SpiderMenuVertex *connector,
+    unsigned side,unsigned screen_w,unsigned screen_h)
+{
+    float w=(float)screen_w,h=(float)screen_h,gutter,edge;
+    float top=0.0f,bottom=0.0f;
+    float minx,maxx;
+    unsigned i,matching=0u;
+    if(!mapped || !connector || side>1u ||
+       screen_w<640u || screen_h<480u ||
+       screen_w>16384u || screen_h>16384u ||
+       (uint64_t)screen_w*3u <= (uint64_t)screen_h*4u)
+        return 0u;
+    gutter=(w-h*4.0f/3.0f)*.5f;
+    if(!(gutter>1.0f && gutter<w*.5f))
+        return 0u;
+    minx=maxx=mapped[0].x;
+    for(i=0u;i<4u;i++){
+        if(!(mapped[i].x>=-w*.10f && mapped[i].x<=w*1.10f &&
+             mapped[i].y>=-h*.60f && mapped[i].y<=h*1.60f &&
+             SpiderTransition_Abs(mapped[i].z)<=0.00004f &&
+             SpiderTransition_Abs(mapped[i].rhw-27.6f)<=0.08f) ||
+           mapped[i].diffuse!=0x00000000u)
+            return 0u;
+        if(mapped[i].x<minx)minx=mapped[i].x;
+        if(mapped[i].x>maxx)maxx=mapped[i].x;
+    }
+    if(maxx-minx<=1.0f)return 0u;
+    edge=side ? maxx : minx;
+    /* An exact 4:3 exterior is NOT an arbitrary distance threshold:
+     * its geometry comes from the actual physical display dimensions.
+     * Avoid creating connectors from mid-screen mask pieces. */
+    if(side){
+        if(!(edge<w-1.0f && edge>=w-gutter*.92f))
+            return 0u;
+    }else{
+        if(!(edge>1.0f && edge<=gutter*.92f))
+            return 0u;
+    }
+    /* Only connect a real native VERTICAL border edge (two vertices
+     * sharing this X). Never synthesize broad rectangular fills from
+     * a pointed triangular tooth; that would change its silhouette. */
+    for(i=0u;i<4u;i++){
+        if(SpiderTransition_Abs(mapped[i].x-edge)>.6f)continue;
+        if(matching==0u)top=bottom=mapped[i].y;
+        else{
+            if(mapped[i].y<top)top=mapped[i].y;
+            if(mapped[i].y>bottom)bottom=mapped[i].y;
+        }
+        matching++;
+    }
+    if(matching<2u || bottom-top<=1.0f || bottom<=0.0f || top>=h)
+        return 0u;
+    if(top<0.0f)top=0.0f;
+    if(bottom>h)bottom=h;
+    if(bottom-top<=1.0f)return 0u;
+    /* A separate connector is drawn only in the physical OUTER
+     * margin. Native black tooth positions, depth, RHW, UV, and
+     * alpha remain intact. */
+    for(i=0u;i<4u;i++)connector[i]=mapped[0];
+    connector[0].x=side ? edge : 0.0f;
+    connector[1].x=side ? w : edge;
+    connector[2].x=connector[1].x;
+    connector[3].x=connector[0].x;
+    connector[0].y=connector[1].y=top;
+    connector[2].y=connector[3].y=bottom;
+    return 4u;
+}
+
 /* The previously approved 4:3 gameplay UI mapping is unmodified.
  * During the new explicit transition-only test, cancel only the old
  * physical-edge pinning of verified mask polygons. The actual shape
