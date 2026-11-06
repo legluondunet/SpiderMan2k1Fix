@@ -89,7 +89,8 @@ def real_quads(duplicates=True):
             both.extend((q, (q[0], q[3], q[2], q[1])))
         coords = both
     return (Quad * len(coords))(*[
-        Quad([x for x, _ in q], [y for _, y in q]) for q in coords
+        Quad((ct.c_float * 4)(*[x for x, _ in q]),
+             (ct.c_float * 4)(*[y for _, y in q])) for q in coords
     ])
 
 
