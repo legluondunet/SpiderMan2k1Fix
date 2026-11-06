@@ -335,7 +335,7 @@ def test_runtime_refuses_partial_source_tile_before_material_and_y_checks():
     start=src.index("static int ui_comp_draw_native_gutters(")
     end=src.index("/* Flush before native EndScene",start)
     code=src[start:end]
-    assert code.count("SpiderUIComp_EdgeTileCoversGutter(")==2
+    assert code.count("SpiderUIComp_EdgeTileCoversGutter(")==3
     assert code.index("SpiderUIComp_EdgeTileCoversGutter(") < code.index(
         "!c->state_token || c->texture")
     assert "if(!edge_left && !edge_right)continue;" in code
