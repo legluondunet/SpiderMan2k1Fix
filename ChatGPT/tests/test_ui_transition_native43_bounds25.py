@@ -147,7 +147,11 @@ def test_real_native_spider_front_retracts_margins_before_touching_hooks(api):
         assert l<=max(0.0,frame.min_x+1.0)+.015
         assert r<=max(0.0,w-frame.max_x+1.0)+.015
     assert values[0][1]==pytest.approx(241,abs=.01)
-    assert values[5][1]==pytest.approx(159.4375,abs=.2)
+    # Original V19 has hooked teeth that reach the physical edge
+    # EARLIER than the naive 4:3 aperture radius predicted in V24.
+    # Their actual onscreen XY extremities must win over that estimate.
+    assert any(0.0 < v[1] < 241.0 for v in values)
+    assert values[5][1]==0.0
     assert values[7][1]==0.0
     assert values[7][2]==0.0
     assert [v[1] for v in values]==sorted(
