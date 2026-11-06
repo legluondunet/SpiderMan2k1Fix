@@ -154,7 +154,8 @@ def test_host_is_separate_opt_in_and_falls_back_to_v6_without_extra_draws():
     assert "SetTexture" not in hook
     assert "UI-TRANSITION-COVER: unified-mask=" in hook
     assert "transition_cover_draw=1;" in src
-    assert "&& !transition_cover_draw)" in src
+    assert "&& !transition_cover_draw &&" in src
+    assert "ui_transition_fullscreen_trial_enabled,0,0)!=1)" in src
     # Existing native ESC and HUD presentation pipeline must remain.
     assert "ui_comp_capture((IDirect3DDevice7*)self" in src
     assert "maybe_correct_native_pause43(" in src
