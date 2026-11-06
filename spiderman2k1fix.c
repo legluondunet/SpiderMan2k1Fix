@@ -3026,8 +3026,8 @@ static int ui_atomic_renderer_draw(IDirect3DDevice7 *device)
   ATOMIC_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAARG1,D3DTA_TEXTURE));
   ATOMIC_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ADDRESSU,D3DTADDRESS_CLAMP));
   ATOMIC_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ADDRESSV,D3DTADDRESS_CLAMP));
-  ATOMIC_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_MAGFILTER,D3DTEXF_LINEAR));
-  ATOMIC_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_MINFILTER,D3DTEXF_LINEAR));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_MAGFILTER,D3DTFG_LINEAR));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_MINFILTER,D3DTFN_LINEAR));
   if(ok)ATOMIC_REQUIRE(original_draw_primitive(
         device,D3DPT_TRIANGLEFAN,0x144UL,v,4u,0u));
 #undef ATOMIC_REQUIRE
@@ -3062,8 +3062,9 @@ static void ui_atomic_renderer_finish_scene(IDirect3DDevice7 *device)
     if(debug_log_enabled && (frame<=12 || frame%180==0)){
       char msg[210];
       snprintf(msg,sizeof(msg),
-        "UI-ATOMIC: COMPOSED frame=%ld scale=%.5f suppressed-source=%u [ONE TEXTURED QUAD; NO DETACHED PATCHES]",
-        (long)frame,(double)ui_atomic_scene_scale,ui_atomic_scene_suppressed);
+        "UI-ATOMIC: COMPOSED frame=%ld scale=%.5f suppressed-source=%u texture=%ux%u [ONE TEXTURED QUAD; NO DETACHED PATCHES]",
+        (long)frame,(double)ui_atomic_scene_scale,ui_atomic_scene_suppressed,
+        ui_atomic_tex_w,ui_atomic_tex_h);
       log_line(msg);
     }
   }else if(ui_atomic_black_zero==0u){
