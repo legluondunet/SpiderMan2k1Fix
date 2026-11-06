@@ -15,6 +15,7 @@
 #include "hud_widescreen.h"
 #include "hud_adaptive.h"
 #include "ui_canvas_43.h"
+#include "ui_transition_gutters.h"
 #include "ui_compositor_policy.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
@@ -982,6 +983,11 @@ static volatile LONG ui_compositor_tint_enabled=0; /* Never synthesize an unveri
 static volatile LONG ui_compositor_native_gutters_enabled=1; /* Only inside the explicitly opted-in compositor trial; A/B opt-out. */
 static volatile LONG ui_canvas_trial_hits=0;
 static volatile LONG ui_canvas_wipe_edge_hits=0;
+static volatile LONG ui_transition_trial_enabled=0;
+static volatile LONG ui_transition_native_gutter_fragments=0;
+static volatile LONG ui_transition_native_mask_draws=0;
+static volatile LONG ui_transition_rejected_textures=0;
+static volatile LONG ui_transition_draw_failures=0;
 static volatile LONG ui_canvas_fullscreen_kept=0;
 static const void *maybe_correct_unified_ui_canvas(
                    D3DPRIMITIVETYPE type,DWORD fvf,
@@ -1023,6 +1029,18 @@ static const void *maybe_correct_unified_ui_canvas(
         (unsigned)count,(unsigned)type,(uint32_t)fvf,
         (uint32_t)rva,(unsigned)desktop_w,(unsigned)desktop_h))
     return source;
+  /* In the separate, opt-in iris trial, never pin or enlarge one
+   * vertex of the central spider contour to cover physical gutters.
+   * The original source polygons will be CLIPPED to those exterior
+   * regions and drawn in their own pass instead. This exactly avoids
+   * deformation of the original 4:3-shaped opening. */
+  if(InterlockedCompareExchange(&ui_transition_trial_enabled,0,0)==1 &&
+     SpiderTransition_IsNativeBlackMask(
+        (const SpiderMenuVertex*)source,(unsigned)count,
+        (unsigned)type,(uint32_t)fvf,(uint32_t)rva,
+        (unsigned)desktop_w,(unsigned)desktop_h))
+    SpiderTransition_MapInner43((const SpiderMenuVertex*)source,
+                                 copy,(unsigned)desktop_w,(unsigned)desktop_h);
   if(SpiderUICanvas_43IsWipeEdgeMask(
         (const SpiderMenuVertex*)source,(unsigned)count,
         (unsigned)type,(uint32_t)fvf,(uint32_t)rva,
@@ -2690,6 +2708,78 @@ static void ui_comp_probe_fullscreen_source(void *device,
   log_line(msg);
 }
 
+/* Full-viewport native iris reconstruction, trial-only.
+ * Same original D3D7 render pass and material: we draw only the source
+ * black mask's clipped original polygons in the two physical gutters.
+ * The original 4:3 polygon continues to draw *once* in the center.
+ * This avoids both stretching the spider's contour and inventing a
+ * black fullscreen mask that would conceal the opening.
+ *
+ * Strict family/material guard is intentionally conservative.
+ * An unsupported texture, render signature, clip or draw simply
+ * falls back to the previously validated 4:3 canvas behaviour.
+ * There is no per-level list, no scene ID and no GPU state override.
+ */
+static void maybe_restore_native_transition_gutters(
+    void *device,D3DPRIMITIVETYPE type,DWORD fvf,
+    const void *source,DWORD count,DWORD flags,void *caller)
+{
+  IDirectDrawSurface7 *texture=NULL;
+  SpiderMenuVertex clipped[SPIDER_TRANSITION_MAX_VERTS];
+  DWORD rva=0;
+  unsigned side;
+  LONG hit;
+  char msg[235];
+  if(InterlockedCompareExchange(&ui_transition_trial_enabled,0,0)!=1 ||
+     !device || !source || count!=4 || !geom_rva(caller,&rva) ||
+     !SpiderTransition_IsNativeBlackMask(
+          (const SpiderMenuVertex*)source,(unsigned)count,
+          (unsigned)type,(uint32_t)fvf,(uint32_t)rva,
+          (unsigned)desktop_w,(unsigned)desktop_h))
+    return;
+  /* No per-item palette guessing: the observed native mask is opaque
+   * black and must not have a bound texture. GetTexture returns a
+   * ref-counted pointer; always release it. */
+  if(FAILED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,
+                                         0,&texture))) {
+    if(debug_log_enabled &&
+       InterlockedIncrement(&ui_transition_rejected_textures)<=3)
+      log_line("UI-TRANSITION-GUTTERS: texture state unavailable; mask unchanged");
+    return;
+  }
+  if(texture) {
+    IDirectDrawSurface7_Release(texture);
+    if(debug_log_enabled &&
+       InterlockedIncrement(&ui_transition_rejected_textures)<=3)
+      log_line("UI-TRANSITION-GUTTERS: textured primitive rejected; original draw retained");
+    return;
+  }
+  InterlockedIncrement(&ui_transition_native_mask_draws);
+  for(side=0u;side<2u;side++){
+    unsigned n=SpiderTransition_ClipToGutter(
+       (const SpiderMenuVertex*)source,clipped,side,
+       (unsigned)desktop_w,(unsigned)desktop_h);
+    if(n<3u)continue;
+    if(FAILED(original_draw_primitive(device,type,fvf,(LPVOID)clipped,
+                                      (DWORD)n,flags))) {
+      LONG failed=InterlockedIncrement(&ui_transition_draw_failures);
+      if(debug_log_enabled && failed<=6)
+        log_line("UI-TRANSITION-GUTTERS: WARNING native clipped mask draw rejected");
+      continue;
+    }
+    hit=InterlockedIncrement(&ui_transition_native_gutter_fragments);
+    if(debug_log_enabled && (hit<=14 || hit%360==0)) {
+      snprintf(msg,sizeof(msg),
+         "UI-TRANSITION-GUTTERS: clipped=%ld side=%s fan-vertices=%u source-x=%.1f z=%.5f rhw=%.3f [SOURCE BLACK MASK; NO STRETCH]",
+         (long)hit,side==0u?"left":"right",n,
+         (double)((const SpiderMenuVertex*)source)[0].x,
+         (double)((const SpiderMenuVertex*)source)[0].z,
+         (double)((const SpiderMenuVertex*)source)[0].rhw);
+      log_line(msg);
+    }
+  }
+}
+
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
      fvf==0x144UL && verts && count>=3 && count<=128)
@@ -2771,6 +2861,13 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       v=candidate;
     }
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
+    /* Extra original-colour black fragments only in physical gutter
+     * strips. The mapped opening remains untouched; this call draws no
+     * global black rectangle and never changes Direct3D render states.
+     * Run only when the normal canvas actually made a corrected copy. */
+    if(v!=verts && count==4 && !native_esc_primitive)
+      maybe_restore_native_transition_gutters(self,type,fvf,verts,count,
+                        flags,__builtin_return_address(0));
     /* Probe any genuine independent screen-size native tint candidate.
      * Log original source geometry, never a corrected copy. */
     ui_comp_probe_fullscreen_source(self,type,fvf,verts,count,native_esc_primitive);
@@ -5040,6 +5137,20 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-CANVAS-43: EXPERIMENT ON; common centered 4:3 gameplay UI mapping, native HUD X edits skipped; HARDWARE UNVERIFIED");
     } else {
       log_line("UI-CANVAS-43: OFF; legacy verified HUD and native menus unchanged");
+    }
+  }
+  /* Third independent switch: the cinematic mask owns the entire
+   * monitor, not just the 4:3 UI canvas. Default remains OFF, so all
+   * earlier Dreamcast-style ESC/HUD hardware results are unchanged. */
+  {
+    char val[4]={0};
+    if(InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)==1 &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_TRANSITION_TEST",
+                                val,sizeof(val))==1 && val[0]=='1') {
+      InterlockedExchange(&ui_transition_trial_enabled,1);
+      log_line("UI-TRANSITION-GUTTERS: TRIAL ON (native black mask clipped to physical gutters; centered 4:3 spider unchanged)");
+    } else {
+      log_line("UI-TRANSITION-GUTTERS: OFF (approved HUD/ESC render path unchanged)");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
