@@ -288,13 +288,19 @@ def test_iris_end_does_not_draw_disconnected_native_gutter_triangles(native):
     # Clipping native x=150..260 would leave a detached black triangle.
     # We must only paint gutters where the centered mask touches
     # its ACTUAL edge (source x=0 / source x=W).
+    # These actually overlap the original physical left gutter but
+    # not the transformed canvas edge, so the legacy clipping helper
+    # would incorrectly create disconnected black pieces.
     for source in [
         quad(50,100,300,700),
         quad(150,400,270,870),
-        quad(450,20,940,1000),
     ]:
         assert clipped(native,source,0)
         assert extended(native,source,0)==[]
+    # This polygon is not even in the original gutter; it must also
+    # be rejected by edge extension.
+    assert clipped(native,quad(450,20,940,1000),0)==[]
+    assert extended(native,quad(450,20,940,1000),0)==[]
     for source in [
         quad(1650,100,1800,800),
         quad(1730,50,1850,700),
