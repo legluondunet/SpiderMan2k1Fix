@@ -57,7 +57,7 @@ static inline int SpiderNativeBounds25_IsOuterMatte(
 {
     float minx,maxx,miny,maxy,dx,dy;
     unsigned i,corners[2][2]={{0u,0u},{0u,0u}};
-    if(!p)return 0;
+    if(!p || width<640u || height<480u)return 0;
     minx=maxx=p[0].x;
     miny=maxy=p[0].y;
     for(i=1u;i<4u;i++){
