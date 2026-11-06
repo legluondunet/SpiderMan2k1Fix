@@ -124,9 +124,9 @@ static inline int SpiderExact_AppendTrap(SpiderExactTemplate *m,
  * black polygon intersection with a vertical line has constant topology.
  * Merge its Y intervals and reconstruct their exact endpoint trapezoids.
  * Split at ALL segment intersections: never approximate hooked geometry. */
-static inline int SpiderExact_Prepare(
+static inline int SpiderExact_PrepareBounded(
     const SpiderAtomicMaskQuad *source,unsigned count,unsigned w,unsigned h,
-    SpiderExactTemplate *out,SpiderExactDiagnostic *diag)
+    SpiderExactTemplate *out,float overhang,SpiderExactDiagnostic *diag)
 {
     SpiderAtomicMaskQuad *unique=NULL;
     SpiderExactEdge *edges=NULL;
@@ -138,7 +138,8 @@ static inline int SpiderExact_Prepare(
     if(diag)memset(diag,0,sizeof(*diag));
     if(!source || !out || count<8u || count>SPIDER_EXACT_MAX_QUADS ||
        w<640u || h<480u || w>16384u || h>16384u ||
-       (uint64_t)w*3u<(uint64_t)h*4u)
+       (uint64_t)w*3u<(uint64_t)h*4u ||
+       !(overhang>=0.0f && overhang<=.100001f))
         return SpiderExact_Fail(diag,1u,0u,count,(float)w,(float)h);
     unique=(SpiderAtomicMaskQuad*)malloc(count*sizeof(*unique));
     edges=(SpiderExactEdge*)malloc(SPIDER_EXACT_MAX_EDGES*sizeof(*edges));
@@ -161,10 +162,19 @@ static inline int SpiderExact_Prepare(
             SpiderExactEdge *e;
             float ax=source[i].x[j],ay=source[i].y[j];
             float bx=source[i].x[next],by=source[i].y[next];
-            if(!(ax>=-.01f && ax<=(float)w+.01f &&
-                 bx>=-.01f && bx<=(float)w+.01f &&
-                 ay>=-.01f && ay<=(float)h+.01f &&
-                 by>=-.01f && by<=(float)h+.01f)){
+            /* V14 uses zero overhang. V16 alone accepts original native
+             * D3D7 vertices up to 10% outside the physical viewport.
+             * Their exact edge intersections are still cropped by the
+             * sweep's [0,w] X events and the GPU viewport. Never clamp
+             * individual vertices or change the original hook shapes. */
+            if(!(ax>=-(float)w*overhang-.01f &&
+                 ax<=(float)w*(1.0f+overhang)+.01f &&
+                 bx>=-(float)w*overhang-.01f &&
+                 bx<=(float)w*(1.0f+overhang)+.01f &&
+                 ay>=-(float)h*overhang-.01f &&
+                 ay<=(float)h*(1.0f+overhang)+.01f &&
+                 by>=-(float)h*overhang-.01f &&
+                 by<=(float)h*(1.0f+overhang)+.01f)){
                 SpiderExact_Fail(diag,1u,0u,i,ax,ay);goto done;
             }
             if(!SpiderExact_AddEvent(events,&nx,ax,(float)w)){
@@ -290,6 +300,14 @@ static inline int SpiderExact_Prepare(
 done:
     free(events);free(intervals);free(edges);free(unique);
     return ok;
+}
+/* Public V14 wrapper is exactly the old strict input domain.
+ * V16 is the only caller allowed a bounded 10% native overhang. */
+static inline int SpiderExact_Prepare(
+    const SpiderAtomicMaskQuad *source,unsigned count,unsigned w,unsigned h,
+    SpiderExactTemplate *out,SpiderExactDiagnostic *diag)
+{
+    return SpiderExact_PrepareBounded(source,count,w,h,out,0.0f,diag);
 }
 /* The original matte is black outside its finite source frame. Its
  * four mathematical exterior strips share the same affine map, rather
