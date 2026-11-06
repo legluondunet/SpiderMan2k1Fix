@@ -40,7 +40,7 @@ static inline int SpiderNativeFlank_Build(
     const SpiderMenuVertex *source,unsigned width,unsigned height,
     SpiderMenuVertex result[4],unsigned *side)
 {
-    unsigned i,k,grid[2][2]={{0,0},{0,0}};
+    unsigned i,grid[2][2]={{0,0},{0,0}};
     float minx,maxx,miny,maxy,eps=.5f,cx,gutter,area;
     int left=0,right=0;
     if(side)*side=0u;
