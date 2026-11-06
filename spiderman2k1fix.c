@@ -2310,6 +2310,17 @@ static int ui_comp_draw_native_gutters(IDirect3DDevice7 *device,
     on_left=l<=w*.005f && r>w*.025f;
     on_right=r>=w*.995f && l<w*.975f;
     if(!on_left && !on_right)continue;
+    /* An edge-attached quad which does not actually span the whole
+     * physical gutter invalidates the blanket two-strip reconstruction.
+     * Refuse the entire exterior layer, rather than silently turning
+     * a narrow tile into a full-width tinted band. Source-driven and
+     * resolution-independent; proven 1920x1080 scene has 16 per-side
+     * native edge quads extending past each 240px gutter. */
+    if((on_left && !SpiderUIComp_EdgeTileCoversGutter(
+                          l,r,w,gutter,0)) ||
+       (on_right && !SpiderUIComp_EdgeTileCoversGutter(
+                           l,r,w,gutter,1)))
+      return 0;
     /* No inferred translucent color: the original four vertices must
      * all use the same ARGB and the native draw must be untextured. */
     if(!c->state_token || c->texture || c->type!=D3DPT_TRIANGLEFAN ||
