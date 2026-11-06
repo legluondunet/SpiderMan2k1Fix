@@ -76,6 +76,26 @@ static inline unsigned SpiderAtomicMask_Rasterize(
     }
     return painted;
 }
+/* Native source-iris geometry often replays the same polygon twice
+ * in opposite triangle-fan orientation. Rasterize() returns the number
+ * of TRIANGLE SAMPLE WRITES, which intentionally includes overlaps
+ * and must NEVER be treated as the fraction of the texture covered.
+ * Count final alpha pixels instead: each screen pixel is counted once
+ * irrespective of how many original game primitives wrote to it.
+ */
+static inline unsigned SpiderAtomicMask_CountOpaquePixels(
+    const uint32_t *pixels,unsigned width,unsigned height)
+{
+    size_t i,area;
+    unsigned covered=0u;
+    if(!pixels || width==0u || height==0u ||
+       width>4096u || height>4096u)return 0u;
+    area=(size_t)width*height;
+    for(i=0u;i<area;i++)
+        if((pixels[i]&0xFF000000u)==0xFF000000u)
+            ++covered;
+    return covered;
+}
 /* Recover game-owned growth from a *source* quad by comparing it with
  * all reference quads. Native positions are quantized and culled near
  * the edges. Compare residuals after positive isotropic scaling about
