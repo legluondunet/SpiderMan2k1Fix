@@ -1077,6 +1077,11 @@ static volatile LONG ui_transition_shrink23_enabled=0;
 static float ui_transition_shrink23_half_width=0.0f;
 static float ui_transition_shrink23_scene_band_width=0.0f;
 static unsigned ui_transition_shrink23_scene_handled=0u;
+/* Nondegenerate, original game-owned iris fans may be preceded by
+ * a legitimate collapsed/degenerate first fan. No permanent failure
+ * or duplicate curtain draws when skipping those early candidates. */
+static unsigned ui_transition_shrink23_scene_deferred=0u;
+static unsigned ui_transition_shrink23_deferred_total=0u;
 static unsigned ui_transition_shrink23_anchor_hits=0u;
 static unsigned ui_transition_shrink23_last_band_rounded=0xffffffffu;
 static volatile LONG ui_transition_hold22_failed=0;
@@ -3845,6 +3850,7 @@ static HRESULT WINAPI ui_compositor_scene_start(void *self) {
     if(InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1){
       ui_transition_shrink23_scene_handled=0u;
       ui_transition_shrink23_scene_band_width=0.0f;
+      ui_transition_shrink23_scene_deferred=0u;
     }
   }
   if(SUCCEEDED(hr) &&
@@ -3892,11 +3898,12 @@ static HRESULT WINAPI ui_compositor_scene_finish(void *self) {
             rounded!=ui_transition_shrink23_last_band_rounded)){
           char msg[230];
           snprintf(msg,sizeof(msg),
-            "UI-TRANSITION-SHRINK23: FRAME=%u original=%u anchor-hits=%u aperture-half-x=%.1f curtain-width=%.1fpx each side [SMOOTH SOURCE-DRIVEN; NO TIMER, V19 UNCHANGED]",
+            "UI-TRANSITION-SHRINK23: FRAME=%u original=%u anchor-hits=%u aperture-half-x=%.1f curtain-width=%.1fpx each side deferred=%u [SMOOTH SOURCE-DRIVEN; NO TIMER, V19 UNCHANGED]",
             frame,ui_transition_hold22_scene_native,
             ui_transition_shrink23_anchor_hits,
             (double)ui_transition_shrink23_half_width,
-            (double)ui_transition_shrink23_scene_band_width);
+            (double)ui_transition_shrink23_scene_band_width,
+            ui_transition_shrink23_scene_deferred);
           log_line(msg);
         }
         ui_transition_shrink23_last_band_rounded=rounded;
@@ -4433,31 +4440,43 @@ static int ui_transition_native43_handle_draw(
      * releases both margins naturally with the game's own transition.
      * Skip legacy V20/V21 supplements completely when this is active. */
     if(SUCCEEDED(*result) &&
-       InterlockedCompareExchange(&ui_transition_hold22_enabled,0,0)==1 &&
-       InterlockedCompareExchange(&ui_transition_hold22_failed,0,0)!=1){
+       InterlockedCompareExchange(&ui_transition_hold22_enabled,0,0)==1){
+      /* Always count the ORIGINAL source fan, even if a supplementary
+       * rectangle cannot yet be built or a true D3D7 error occurred.
+       * The game-owned iris is never responsible for our helper failure. */
       ++ui_transition_hold22_scene_native;
-      {
+      if(InterlockedCompareExchange(&ui_transition_hold22_failed,0,0)!=1){
         const int shrink=
           InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1;
         if(ui_transition_hold22_scene_gutters==0u &&
            (!shrink || !ui_transition_shrink23_scene_handled)){
           SpiderMenuVertex two[2][4];
           float width=0.0f;
-          int valid_side=0;
+          int valid_side=0,wait_for_source=0;
           if(shrink){
-            ui_transition_shrink23_scene_handled=1u;
             valid_side=SpiderNativeShrink_Width(
               (unsigned)desktop_w,(unsigned)desktop_h,
               ui_transition_shrink23_half_width,&width);
-            if(valid_side && width>=.5f)
-              valid_side=SpiderNativeShrink_Build(
-                v,(unsigned)desktop_w,(unsigned)desktop_h,width,two);
-            /* An opened curtain at width=0 is intentionally NOT drawn.
-             * Re-drawing it with stale geometry would restore black. */
-            ui_transition_shrink23_scene_band_width=width;
+            if(valid_side && width>=.5f &&
+               !SpiderNativeShrink_Build(
+                 v,(unsigned)desktop_w,(unsigned)desktop_h,width,two)){
+              /* Early animated fans legitimately collapse to a line or
+               * point; NEVER latch off the entire side curtain on that
+               * harmless geometry. Try the NEXT verified fan this frame.
+               * Width is still derived from the original game's motion. */
+              wait_for_source=1;
+              valid_side=0;
+            }
+            if(valid_side){
+              ui_transition_shrink23_scene_handled=1u;
+              ui_transition_shrink23_scene_band_width=width;
+            }
           }else{
-            valid_side=SpiderNativeHold_Build(v,
-                (unsigned)desktop_w,(unsigned)desktop_h,two);
+            if(SpiderNativeHold_Build(v,(unsigned)desktop_w,
+                                      (unsigned)desktop_h,two))
+              valid_side=1;
+            else
+              wait_for_source=1;
           }
           if(valid_side && (!shrink || width>=.5f)){
             HRESULT lh=original_draw_primitive(
@@ -4475,9 +4494,17 @@ static int ui_transition_native43_handle_draw(
                 (unsigned long)lh,(unsigned long)rh);
               log_line(msg);
             }
+          }else if(wait_for_source){
+            if(shrink){
+              ++ui_transition_shrink23_scene_deferred;
+              ++ui_transition_shrink23_deferred_total;
+              if(debug_log_enabled &&
+                 ui_transition_shrink23_deferred_total<=5u)
+                log_line("UI-TRANSITION-SHRINK23: WAIT VALID SOURCE FAN - early native iris fan is degenerate, retrying next original fan; NOT disabled");
+            }
           }else if(!valid_side){
             InterlockedExchange(&ui_transition_hold22_failed,1);
-            log_line("UI-TRANSITION-SHRINK23: invalid original source/gutter geometry; margin extension disabled, V19 unchanged");
+            log_line("UI-TRANSITION-SHRINK23: ERROR invalid physical display geometry; side supplemental rendering disabled, native V19 intact");
           }
         }
       }
