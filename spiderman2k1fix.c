@@ -984,6 +984,11 @@ static volatile LONG ui_compositor_native_gutters_enabled=1; /* Only inside the 
 static volatile LONG ui_canvas_trial_hits=0;
 static volatile LONG ui_canvas_wipe_edge_hits=0;
 static volatile LONG ui_transition_trial_enabled=0;
+/* Alternative scene-mask overlay: one coherent aspect-preserving
+ * screen-cover transform, no V6 physical gutter rectangles. */
+static volatile LONG ui_transition_fullscreen_trial_enabled=0;
+static volatile LONG ui_transition_fullscreen_draws=0;
+static volatile LONG ui_transition_fullscreen_rejections=0;
 static volatile LONG ui_transition_native_gutter_fragments=0;
 static volatile LONG ui_transition_native_mask_draws=0;
 static volatile LONG ui_transition_rejected_textures=0;
@@ -2712,6 +2717,89 @@ static void ui_comp_probe_fullscreen_source(void *device,
   log_line(msg);
 }
 
+/* Verified scene-iris presentation layer: whole-mask "cover".
+ * All four source vertices receive ONE similarity transform. This
+ * retains original polygon connectivity (including spider legs),
+ * as opposed to the V6 central canvas + added edge rectangles.
+ *
+ * The full-screen mask path is deliberately limited to original native
+ * ARGB=00000000 source: the first Wine diagnostics proved these are
+ * the real spider aperture quads. The FF000000 bars are separate
+ * cinematic fullscreen effects and must preserve their original path.
+ *
+ * Strict fail-closed material checks parallel the V6 compositor.
+ * Unlike V6 no new DrawPrimitive calls are generated here. A
+ * successfully mapped mask is drawn exactly ONCE by the existing
+ * original_draw_primitive after all known HUD/ESC precedence checks.
+ */
+static const void *maybe_correct_native_transition_fullscreen(
+    void *device,D3DPRIMITIVETYPE type,DWORD fvf,
+    const void *source,DWORD count,void *caller,
+    SpiderMenuVertex *mapped)
+{
+  DWORD rva=0,blend=0,atest=0;
+  IDirectDrawSurface7 *texture=NULL;
+  HRESULT tex_hr,hb,ht;
+  LONG hit;
+  char msg[222];
+  if(InterlockedCompareExchange(&ui_transition_fullscreen_trial_enabled,0,0)!=1 ||
+     InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1 ||
+     !SpiderHudWidescreen_Installed() ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
+     !device || !source || !mapped || count!=4 ||
+     !geom_rva(caller,&rva) ||
+     !SpiderTransition_IsNativeBlackMask(
+         (const SpiderMenuVertex*)source,(unsigned)count,(unsigned)type,
+         (uint32_t)fvf,(uint32_t)rva,
+         (unsigned)desktop_w,(unsigned)desktop_h) ||
+     ((const SpiderMenuVertex*)source)[0].diffuse!=0x00000000UL)
+    return source;
+  /* Never remap the existing full-width opaque cinematic bars, and
+   * keep that presenter type outside the spider-iris layer. */
+  if(SpiderUICanvas_43IsFullScreenEffect(
+         (const SpiderMenuVertex*)source,(unsigned)count,
+         (unsigned)type,(uint32_t)fvf,(uint32_t)rva,
+         (unsigned)desktop_w,(unsigned)desktop_h))
+    return source;
+  tex_hr=IDirect3DDevice7_GetTexture(
+              (IDirect3DDevice7*)device,0,&texture);
+  hb=IDirect3DDevice7_GetRenderState(
+              (IDirect3DDevice7*)device,D3DRENDERSTATE_ALPHABLENDENABLE,&blend);
+  ht=IDirect3DDevice7_GetRenderState(
+              (IDirect3DDevice7*)device,D3DRENDERSTATE_ALPHATESTENABLE,&atest);
+  if(FAILED(tex_hr) || texture || FAILED(hb) || FAILED(ht) || blend || atest) {
+    LONG reject=InterlockedIncrement(&ui_transition_fullscreen_rejections);
+    if(debug_log_enabled && reject<=6) {
+      snprintf(msg,sizeof(msg),
+        "UI-TRANSITION-COVER: FAIL CLOSED=%ld tex=%d tex-ok=%d blend=%lu alpha-test=%lu state-ok=%d",
+        (long)reject,texture!=NULL,SUCCEEDED(tex_hr),
+        (unsigned long)blend,(unsigned long)atest,
+        SUCCEEDED(hb)&&SUCCEEDED(ht));
+      log_line(msg);
+    }
+    if(texture)IDirectDrawSurface7_Release(texture);
+    return source;
+  }
+  if(texture)IDirectDrawSurface7_Release(texture);
+  if(!SpiderTransition_MapFullscreenCover43(
+          (const SpiderMenuVertex*)source,mapped,
+          (unsigned)desktop_w,(unsigned)desktop_h))
+    return source;
+  hit=InterlockedIncrement(&ui_transition_fullscreen_draws);
+  if(debug_log_enabled && (hit<=12 || hit%360==0)) {
+    const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+    snprintf(msg,sizeof(msg),
+      "UI-TRANSITION-COVER: unified-mask=%ld src=(%.1f,%.1f) mapped=(%.1f,%.1f) zoomY=%.4f [ONE CONTIGUOUS TRANSFORM; NO GUTTER REPLAY]",
+      (long)hit,(double)v[0].x,(double)v[0].y,
+      (double)mapped[0].x,(double)mapped[0].y,
+      (double)(3.0f*(float)desktop_w/(4.0f*(float)desktop_h)));
+    log_line(msg);
+  }
+  return mapped;
+}
+
 /* Full-viewport native iris reconstruction, trial-only.
  * Same original D3D7 render pass and material: draw ONLY the black
  * intervals on the existing 4:3 canvas LEFT/RIGHT EDGE into physical
@@ -2951,6 +3039,15 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       v=maybe_correct_aim_reticle(self,type,fvf,verts,count,
                                   __builtin_return_address(0),small);
     /* Aiming glyphs retain their original 3D-target center. */
+    int transition_cover_draw=0;
+    if(v==verts && count==4) {
+      const void *candidate=maybe_correct_native_transition_fullscreen(
+        self,type,fvf,verts,count,__builtin_return_address(0),small);
+      if(candidate!=verts) {
+        v=candidate;
+        transition_cover_draw=1;
+      }
+    }
     if(v==verts && count==4) {
       const void *candidate=maybe_correct_unified_ui_canvas(
         type,fvf,verts,count,__builtin_return_address(0),small);
@@ -2961,14 +3058,14 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
     /* First observe which original native iris source primitives fail
      * the current strict material classifier. No geometry is changed. */
-    if(v!=verts && count==4 && !native_esc_primitive)
+    if(v!=verts && count==4 && !native_esc_primitive && !transition_cover_draw)
       ui_transition_probe_rejected_source(self,type,fvf,verts,count,
                                            __builtin_return_address(0));
     /* Extra original-colour black fragments only in physical gutter
      * strips. The mapped opening remains untouched; this call draws no
      * global black rectangle and never changes Direct3D render states.
      * Run only when the normal canvas actually made a corrected copy. */
-    if(v!=verts && count==4 && !native_esc_primitive)
+    if(v!=verts && count==4 && !native_esc_primitive && !transition_cover_draw)
       maybe_restore_native_transition_gutters(self,type,fvf,verts,count,
                         flags,__builtin_return_address(0));
     /* Probe any genuine independent screen-size native tint candidate.
@@ -5254,6 +5351,21 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-TRANSITION-GUTTERS: TRIAL ON (black edge spans extended into physical gutters; centered 4:3 spider unchanged)");
     } else {
       log_line("UI-TRANSITION-GUTTERS: OFF (approved HUD/ESC render path unchanged)");
+    }
+  }
+  /* New V7 single-geometry-mask A/B trial. Requires the existing
+   * V6 transition opt-in but overrides its edge-strip reconstruction
+   * ONLY for positively verified native zero-alpha black iris quads.
+   * Removing this extra variable immediately restores V6 behavior. */
+  {
+    char cover[4]={0};
+    if(InterlockedCompareExchange(&ui_transition_trial_enabled,0,0)==1 &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_TRANSITION_FULLSCREEN_TEST",
+                                cover,sizeof(cover))==1 && cover[0]=='1') {
+      InterlockedExchange(&ui_transition_fullscreen_trial_enabled,1);
+      log_line("UI-TRANSITION-COVER: TRIAL ON - one coherent fullscreen 4:3 aspect-preserving iris; V6 gutter replay bypassed for verified masks");
+    } else {
+      log_line("UI-TRANSITION-COVER: OFF - previous V6 central mask and source-edge gutters unchanged");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
