@@ -99,17 +99,16 @@ def test_invalid_and_pathologically_large_source_stays_fail_closed(api):
     assert api.map(source([0,20,1800,1920]),out,4,1920,1080,100)==0
 
 
-def test_v19_is_optional_only_for_exact_original_iris_not_bars_or_ui():
-    main=(ROOT/"spiderman2k1fix.c").read_text()
+def test_final_v25_retains_original_game_guard_and_full_extent_mapping():
+    src=(ROOT/"spiderman2k1fix.c").read_text()
     h=(ROOT/"ui_transition_native43.h").read_text()
-    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_EXTENTS_TEST" in main
-    assert "ui_transition_native43_extended_enabled=0" in main
-    assert "SPIDER_TRANSITION_CALLER_RVA" in main
-    assert "v[0].diffuse!=0x00000000UL" in main
-    assert "SpiderNative43_MapBounded(v,mapped,4u" in main
-    assert "SpiderNative43_Map(v,mapped,4u" in main
-    assert "UI-TRANSITION-NATIVE43: NATIVE-UNCHANGED=" in main
-    assert "reason=%d [1=scene 2=vertex 3=extents 4=material]" in main
-    assert "opaque FF000000 cinematic bars unchanged" in main
+    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST" in src
+    assert "SPIDER_TRANSITION_CALLER_RVA" in src
+    assert "v[0].diffuse!=0x00000000UL" in src
+    assert "SpiderNative43_MapBounded(v,mapped,4u" in src
+    assert "32.0f" in src
+    assert "UI-TRANSITION-NATIVE43: NATIVE-UNCHANGED=" in src
+    assert "reason=%d [1=scene 2=vertex 3=extents 4=material]" in src
     assert "return SpiderNative43_MapBounded(" in h
     assert "source,destination,count,width,height,.1f" in h
+    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_EXTENTS_TEST" not in src
