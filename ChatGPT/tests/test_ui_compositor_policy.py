@@ -27,6 +27,9 @@ def policy(tmp_path_factory):
         'return SpiderUIComp_ShouldDefer(e,open,bailout,layer,count,fvf);'
         '}\n'
         'unsigned tint(unsigned argb){return SpiderUIComp_Tint(argb);}\n'
+        'float gutter(unsigned w,unsigned h){return SpiderUIComp_GutterWidth(w,h);}\n'
+        'int coverage(float h,const SpiderUICompYSpan *sp,unsigned n){'
+        'return SpiderUIComp_CoversFullHeight(sp,n,h);}\n'
     )
     subprocess.run(
         [cc,"-std=c11","-Wall","-Wextra","-Werror","-fPIC","-shared",
@@ -38,6 +41,13 @@ def policy(tmp_path_factory):
     lib.eligible.restype=ct.c_int
     lib.tint.argtypes=[ct.c_uint]
     lib.tint.restype=ct.c_uint
+    lib.gutter.argtypes=[ct.c_uint,ct.c_uint]
+    lib.gutter.restype=ct.c_float
+    class YSpan(ct.Structure):
+        _fields_=[("top",ct.c_float),("bottom",ct.c_float)]
+    lib.YSpan=YSpan
+    lib.coverage.argtypes=[ct.c_float,ct.POINTER(YSpan),ct.c_uint]
+    lib.coverage.restype=ct.c_int
     return lib
 
 
@@ -177,3 +187,64 @@ def test_native_spider_source_geometry_probe_is_one_shot_and_passive():
     assert "original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags)" in flush
     assert "original_draw_primitive(device,c->type,c->fvf,c->source_v" not in flush
     assert "ui_compositor_trial_enabled,0,0)==1" in core
+
+
+
+@pytest.mark.parametrize("res,expected", [
+    ((1920,1080),240.0), ((1920,1200),160.0),
+    ((2560,1080),560.0), ((3440,1440),760.0),
+    ((640,480),0.0), ((1024,768),0.0),
+])
+def test_native_gutters_are_only_physical_exterior(policy,res,expected):
+    assert policy.gutter(*res)==pytest.approx(expected,abs=.03)
+
+
+def test_native_source_exterior_y_coverage_requires_no_gaps(policy):
+    Y=policy.YSpan
+    # Based on the native source geometry logged at 1920x1080, the
+    # original exterior rectangles overlap vertically to cover both
+    # edge bands; there is no guessed independent fullscreen colour.
+    complete=(Y*5)(Y(0,234),Y(0,333),Y(306,657),
+                   Y(625.5,904.5),Y(904.5,1080))
+    assert policy.coverage(1080,complete,5)==1
+    missing=(Y*2)(Y(0,390),Y(402,1080))
+    assert policy.coverage(1080,missing,2)==0
+    beginning=(Y*1)(Y(20,1080))
+    assert policy.coverage(1080,beginning,1)==0
+    ending=(Y*2)(Y(0,400),Y(400,1030))
+    assert policy.coverage(1080,ending,2)==0
+
+
+def test_compositor_uses_native_edge_palette_but_never_stretches_motif():
+    source=(ROOT/"spiderman2k1fix.c").read_text()
+    fn=source.split("static int ui_comp_draw_native_gutters(",1)[1].split(
+        "/* Flush before native EndScene",1)[0]
+    assert "c->source_v" in fn
+    assert "c->layer!=SPIDER_UI_COMP_PAUSE_DECOR" in fn
+    assert "c->texture" in fn
+    assert "v[k].diffuse!=v[0].diffuse" in fn
+    assert "palette!=(unsigned)v[0].diffuse" in fn
+    assert "SpiderUIComp_CoversFullHeight(spans_left,left_count,h)" in fn
+    assert "SpiderUIComp_CoversFullHeight(spans_right,right_count,h)" in fn
+    assert "IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)" in fn
+    assert "vertices[k].diffuse=(DWORD)palette" in fn
+    assert "vertices[0].x=xl;vertices[0].y=0.0f;" in fn
+    assert "vertices[1].x=xr;vertices[1].y=0.0f;" in fn
+    assert "vertices[2].x=xr;vertices[2].y=h;" in fn
+    assert "original_draw_primitive(" in fn
+    # This is NOT a full-screen native motif replay or a stretched
+    # independent spider. Only the two physical outside strips are drawn.
+    assert "for(side=0u;side<2u;side++)" in fn
+    assert "c->v[k].x=" not in fn
+    assert "c->source_v[k].x=" not in fn
+    assert "0x80868620" not in fn  # palette derives from actual source
+    assert "UI-COMPOSITOR-NATIVE-GUTTERS:" in source
+    assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_GUTTERS" in source
+    assert "gutters[0]=='0'" in source
+    assert "static volatile LONG ui_compositor_native_gutters_enabled=1;" in source
+    assert "if(!needs_tint && ui_comp_motif &&" in source
+    # Native exterior is composed before 4:3 decor and ESC foreground.
+    flush=source.split("static void ui_comp_flush(",1)[1].split(
+        "static int ui_comp_capture(",1)[0]
+    assert flush.index("ui_comp_draw_native_gutters(device,&native_color)")<flush.index(
+        "for(layer=SPIDER_UI_COMP_PAUSE_DECOR;")
