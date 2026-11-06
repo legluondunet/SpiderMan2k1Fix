@@ -21,10 +21,16 @@
  * so changes in offscreen native culling cannot make black strips
  * grow back. Preserve flat black, original material and winding.
  *
- * Begin shrinking only when the native opening approaches the 4:3
- * edge (72% of the centered 4:3 half width); finish just before
- * the aperture fills the physical display (96% of W/2).
- * Smoothstep avoids a visible abrupt change of the band width.
+ * V23c timing, calibrated against the user's Wine log and 60fps
+ * screen recording (6 Nov 2026): the earlier 72% -> 96% thresholds
+ * made the curtains collapse in only six game frames, while native
+ * iris polygons still animated for ~11 further frames.
+ * Start just as the expanding opening reaches the original centered
+ * 4:3 canvas boundary (98% of the 4:3 half width), and shrink to zero
+ * as the native iris has expanded well beyond the physical frame
+ * (180% of the physical half width). A source-driven smoothstep
+ * follows the actual growing fan, without elapsed-time guesses.
+ * V19 original polygon coordinates/materials remain untouched.
  * A source-free scene releases any remaining bands immediately.
  *
  * The 9.5 calibration comes from the captured REAL source geometry,
@@ -101,8 +107,12 @@ static inline int SpiderNativeShrink_Width(
         return 0;
     fit_half=(float)height*2.0f/3.0f;
     max_gutter=(float)width*.5f-fit_half;
-    start=fit_half*.72f;
-    end=(float)width*.48f;
+    /* V23c: preserve full black gutters until the native aperture
+     * nearly reaches the centered 4:3 boundary, then soften their
+     * retreat for the rest of the native 16:9 transition. Source
+     * geometry is monotonic, so side curtains never regrow. */
+    start=fit_half*.98f;
+    end=(float)width*.90f;
     if(!(max_gutter>0.0f && end>start))
         return 0;
     p=(estimated_half_width-start)/(end-start);
