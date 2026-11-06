@@ -69,7 +69,11 @@ static inline int SpiderNativeBounds25_IsOuterMatte(
     dx=maxx-minx;dy=maxy-miny;
     /* Big matte, not a diagonal tooth. Width/height tests are ratios
      * of the physical output size and work at all widescreen formats. */
-    if(!(dx>=(float)width*.15f && dy>=(float)height*.35f))
+    /* Compare X against the physical 4:3 canvas width, not the entire
+     * ultrawide framebuffer: the same genuine outer matte must still
+     * be rejected on 21:9 and 32:9 displays. */
+    if(!(dx>=((float)height*4.0f/3.0f)*.15f &&
+         dy>=(float)height*.35f))
         return 0;
     for(i=0u;i<4u;i++){
         int col=fabsf(p[i].x-minx)<.02f?0:
