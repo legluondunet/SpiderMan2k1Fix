@@ -989,6 +989,9 @@ static volatile LONG ui_transition_trial_enabled=0;
 static volatile LONG ui_transition_fullscreen_trial_enabled=0;
 static volatile LONG ui_transition_fullscreen_draws=0;
 static volatile LONG ui_transition_fullscreen_rejections=0;
+static volatile LONG ui_transition_seal_trial_enabled=0;
+static volatile LONG ui_transition_seal_draws=0;
+static volatile LONG ui_transition_seal_failures=0;
 static volatile LONG ui_transition_native_gutter_fragments=0;
 static volatile LONG ui_transition_native_mask_draws=0;
 static volatile LONG ui_transition_rejected_textures=0;
@@ -2799,6 +2802,52 @@ static const void *maybe_correct_native_transition_fullscreen(
   return mapped;
 }
 
+/* V8 topology connector: add back ONLY the physical OUTER black
+ * pixels between an actual V7 tooth's flat edge and its screen edge.
+ * Requires successful V7 source-material validation first, so these
+ * extra two-rectangle maximum draws inherit the ORIGINAL native
+ * Direct3D7 material/alpha/depth state. They never touch the visible
+ * tooth polygon itself and do not change its draw order or shape.
+ *
+ * Disabled by default. V7 and V6 use their previous untouched paths
+ * if SPIDERMAN2K1FIX_UI_TRANSITION_EDGE_SEAL_TEST is unset.
+ */
+static void maybe_seal_native_transition_teeth(
+    void *device,D3DPRIMITIVETYPE type,DWORD fvf,
+    const SpiderMenuVertex *mapped,DWORD flags)
+{
+  unsigned side;
+  SpiderMenuVertex connector[4];
+  char msg[220];
+  if(!device || !mapped ||
+     InterlockedCompareExchange(&ui_transition_seal_trial_enabled,0,0)!=1 ||
+     InterlockedCompareExchange(&ui_transition_fullscreen_trial_enabled,0,0)!=1)
+    return;
+  for(side=0u;side<2u;side++){
+    unsigned n=SpiderTransition_SealOuterToothEdge(
+        mapped,connector,side,
+        (unsigned)desktop_w,(unsigned)desktop_h);
+    LONG count;
+    if(n!=4u)continue;
+    if(FAILED(original_draw_primitive(
+        device,type,fvf,(LPVOID)connector,n,flags))){
+      count=InterlockedIncrement(&ui_transition_seal_failures);
+      if(debug_log_enabled && count<=6)
+        log_line("UI-TRANSITION-SEAL: WARNING native tooth connector draw failed");
+      continue;
+    }
+    count=InterlockedIncrement(&ui_transition_seal_draws);
+    if(debug_log_enabled && (count<=16 || count%360==0)) {
+      snprintf(msg,sizeof(msg),
+        "UI-TRANSITION-SEAL: connector=%ld side=%s x=(%.1f..%.1f) y=(%.1f..%.1f) [NATIVE BLACK, OUTER GUTTER ONLY]",
+        (long)count,side==0u?"left":"right",
+        (double)connector[0].x,(double)connector[1].x,
+        (double)connector[0].y,(double)connector[2].y);
+      log_line(msg);
+    }
+  }
+}
+
 /* Full-viewport native iris reconstruction, trial-only.
  * Same original D3D7 render pass and material: draw ONLY the black
  * intervals on the existing 4:3 canvas LEFT/RIGHT EDGE into physical
@@ -3055,6 +3104,13 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       v=candidate;
     }
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
+    /* The separate V8 outer-edge connector may run only after V7
+     * verified the exact original mask material; never on guessed HUD
+     * or a V7 material rejection. The existing mapped tooth is then
+     * drawn exactly once by the original path below. */
+    if(transition_cover_draw && v!=verts)
+      maybe_seal_native_transition_teeth(
+          self,type,fvf,(const SpiderMenuVertex*)v,flags);
     /* First observe which original native iris source primitives fail
      * the current strict material classifier. No geometry is changed. */
     if(v!=verts && count==4 && !native_esc_primitive && !transition_cover_draw)
@@ -5367,6 +5423,20 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-TRANSITION-COVER: TRIAL ON - one coherent fullscreen 4:3 aspect-preserving iris; V6 gutter replay bypassed for verified masks");
     } else {
       log_line("UI-TRANSITION-COVER: OFF - previous V6 central mask and source-edge gutters unchanged");
+    }
+  }
+  /* V8 optional topology repair: only after the coherent V7 iris
+   * is enabled. Removing this ONE flag restores the prior V7 rendering
+   * without changing the approved 4:3 HUD/ESC scene compositor. */
+  {
+    char seal[4]={0};
+    if(InterlockedCompareExchange(&ui_transition_fullscreen_trial_enabled,0,0)==1 &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_TRANSITION_EDGE_SEAL_TEST",
+                                seal,sizeof(seal))==1 && seal[0]=='1') {
+      InterlockedExchange(&ui_transition_seal_trial_enabled,1);
+      log_line("UI-TRANSITION-SEAL: TRIAL ON - seal flat native tooth edges to physical screen edge, no tooth deformation");
+    }else{
+      log_line("UI-TRANSITION-SEAL: OFF - V7 coherent fullscreen mask unmodified");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
