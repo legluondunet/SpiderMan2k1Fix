@@ -114,4 +114,54 @@ static inline int SpiderUIComp_EdgeTileCoversGutter(
            max_x>=gutter-0.5f;
 }
 
+/* Reconstruct one original motif TRIANGLE's exact colour at the left or
+ * right monitor edge. Each game-owned 4-vertex triangle fan has triangles
+ * (0,1,2) and (0,2,3). Only a NONDEGENERATE triangle intersecting the
+ * physical edge over a positive Y interval can contribute an exterior
+ * strip. A point-only intersection must not paint an entire band.
+ *
+ * The replay projects that SOURCE EDGE vertically across the outside
+ * gutter. It does not stretch the motif geometry or invent one uniform
+ * ARGB for the whole height. Diffuse and native blending come from the
+ * source command and its original state block.
+ */
+static inline int SpiderUIComp_TriangleEdgeSpan(
+    float x0,float y0,float x1,float y1,float x2,float y2,
+    float edge,float height,SpiderUICompYSpan *span)
+{
+    const float xs[3]={x0,x1,x2};
+    const float ys[3]={y0,y1,y2};
+    float minimum=height+1.0f,maximum=-1.0f;
+    float area=(x1-x0)*(y2-y0)-(x2-x0)*(y1-y0);
+    unsigned i;
+    if(!span || !(height>=480.0f && height<=16384.0f) ||
+       !(edge>=0.0f && edge<=16384.0f) ||
+       !(area>0.1f || area < -0.1f))
+        return 0;
+    for(i=0u;i<3u;i++) {
+        unsigned j=(i+1u)%3u;
+        float xa=xs[i]-edge,xb=xs[j]-edge;
+        /* Vertex exactly on the physical edge. */
+        if(xa>=-0.25f && xa<=0.25f) {
+            if(ys[i]<minimum)minimum=ys[i];
+            if(ys[i]>maximum)maximum=ys[i];
+        }
+        /* An original triangle crossing the physical edge can have
+         * neither of its endpoints lying precisely on the border. */
+        if((xa < -0.25f && xb > 0.25f) ||
+           (xa > 0.25f && xb < -0.25f)) {
+            float y=ys[i]+(ys[j]-ys[i])*(-xa)/(xb-xa);
+            if(y<minimum)minimum=y;
+            if(y>maximum)maximum=y;
+        }
+    }
+    if(!(maximum>minimum+0.5f) ||
+       maximum<=0.0f || minimum>=height ||
+       minimum < -height*.05f || maximum > height*1.05f)
+        return 0;
+    span->top=minimum<0.0f?0.0f:minimum;
+    span->bottom=maximum>height?height:maximum;
+    return span->bottom>span->top+0.5f;
+}
+
 #endif
