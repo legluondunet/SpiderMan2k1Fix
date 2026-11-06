@@ -103,9 +103,17 @@ def test_menu_and_decoration_are_replayed_only_inside_verified_scene(policy,laye
         assert policy.eligible(*args,layer,4,0x144)==0
 
 
-@pytest.mark.parametrize("layer", [0,1,2,-1,5])
-def test_world_hud_and_fullscreen_overlay_are_never_queued_as_menu(policy,layer):
+@pytest.mark.parametrize("layer", [0,2,-1,5])
+def test_world_and_fullscreen_overlay_are_never_queued_as_menu(policy,layer):
     assert policy.eligible(1,1,0,layer,4,0x144)==0
+
+
+def test_hud_layer_is_eligible_only_with_native_context_and_valid_quad(policy):
+    assert policy.eligible(1,1,0,1,4,0x144)==1
+    for args in ((0,1,0),(1,0,0),(1,1,1)):
+        assert policy.eligible(*args,1,4,0x144)==0
+    assert policy.eligible(1,1,0,1,3,0x144)==0
+    assert policy.eligible(1,1,0,1,4,0x112)==0
 
 
 def test_non_screen_space_vertex_formats_and_counts_fail_closed(policy):
@@ -146,7 +154,7 @@ def test_host_defers_native_esc_to_end_scene_with_original_state_restored():
     flush=compositor.split("static void ui_comp_flush(",1)[1].split(
         "static int ui_comp_capture(",1)[0]
     assert flush.index("ui_comp_draw_screen_tint(")<flush.index(
-        "for(layer=SPIDER_UI_COMP_PAUSE_DECOR;")
+        "for(layer=SPIDER_UI_COMP_HUD;")
     assert compositor.index("ui_comp_flush((IDirect3DDevice7*)self);") < compositor.index(
         "return ui_original_end_scene(self);")
 
@@ -292,7 +300,7 @@ def test_compositor_extends_each_original_source_edge_instead_of_flat_bands():
     flush=source.split("static void ui_comp_flush(",1)[1].split(
         "static int ui_comp_capture(",1)[0]
     assert flush.index("ui_comp_draw_native_gutters(device,&source_strips)") < (
-        flush.index("for(layer=SPIDER_UI_COMP_PAUSE_DECOR;"))
+        flush.index("for(layer=SPIDER_UI_COMP_HUD;"))
 
 
 def test_original_source_edge_triangle_preserves_vertical_segments(policy):
@@ -471,7 +479,7 @@ def test_native_veil_is_one_source_owned_fullscreen_pass_with_no_double_blend():
     # spider and menu. Every native backdrop tile is skipped ONLY after
     # a successful source-colour draw; otherwise the original mesh draws.
     assert flush.index("ui_comp_draw_native_fullscreen_backdrop(") < (
-        flush.index("for(layer=SPIDER_UI_COMP_PAUSE_DECOR;"))
+        flush.index("for(layer=SPIDER_UI_COMP_HUD;"))
     assert "native_backdrop_drawn" in flush
     assert "SpiderUIComp_ReplayPassForDraw(" in flush
     assert "native_backdrop_verified,native_backdrop_drawn" in flush
@@ -531,7 +539,7 @@ def test_fullscreen_pause_veil_escapes_4_by_3_viewport_then_restores_it():
     flush=src.split("static void ui_comp_flush(",1)[1].split(
         "static int ui_comp_capture(",1)[0]
     assert flush.index("ui_comp_draw_native_fullscreen_backdrop(") < (
-        flush.index("for(layer=SPIDER_UI_COMP_PAUSE_DECOR;"))
+        flush.index("for(layer=SPIDER_UI_COMP_HUD;"))
     assert "original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags)" in flush
 
 def test_new_levels_are_recognized_without_new_depth_whitelist(policy):
@@ -624,7 +632,7 @@ def test_compositor_keeps_spider_above_game_hud_and_below_title():
     assert flush.index("ui_comp_draw_native_fullscreen_backdrop(") < flush.index(
         "for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;")
     assert flush.index("for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;") < flush.index(
-        "for(layer=SPIDER_UI_COMP_PAUSE_DECOR;")
+        "for(layer=SPIDER_UI_COMP_HUD;")
     assert "SPIDER_UI_COMP_REPLAY_HUD" in flush
     assert "SPIDER_UI_COMP_REPLAY_MOTIF" in flush
     assert "SPIDER_UI_COMP_REPLAY_MENU" in flush
