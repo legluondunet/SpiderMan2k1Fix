@@ -27,8 +27,9 @@ def test_experimental_trial_is_absent_from_generated_defaults_and_does_not_overr
     assert "if(pulse_scan!=0x1cu)" in BACKEND
     assert 'if(pause_edge)pulse(0x01u,"3D Pause");' in BACKEND
     assert "if(!update_keys(desired,scans))" in BACKEND
-    assert BACKEND.index("if(gameover_trial_enabled) {\n    int candidate=") < BACKEND.index(
+    assert BACKEND.index("if(gameover_trial_enabled || gameover_owner_probe_enabled) {") < BACKEND.index(
         'if(!update_keys(desired,scans))')
+    assert "if(gameover_trial_enabled)\n      trial=spider_sdl3_gameover_trial_step(" in BACKEND
     assert "spider_sdl3_gameover_trial_reset(&gameover_trial);" in BACKEND
     assert "SDL3-GAMEOVER-TRIAL: ENTER PULSE accepted by OS" in BACKEND
     assert "game reception unverified" in BACKEND
@@ -121,7 +122,7 @@ def test_owner_observer_is_read_only_and_not_a_game_over_detector():
     assert "script-ok=%u" in owner
     assert "[PASSIVE; NO CONFIRMED GAME-OVER OWNER]" in owner
     assert "gameover_owner_probe_events>=32u" in owner
-    assert "if(!gameover_trial_enabled || !report ||" in owner
+    assert "if(!gameover_owner_probe_enabled || !report ||" in owner
     assert "report(msg);" in owner
     for forbidden in (
         "SendInput(", "send_scan(", "update_keys(", "VirtualProtect(",
@@ -142,6 +143,11 @@ def test_owner_probe_does_not_modify_gameover_trial_or_3d_action_routing():
     assert '"SELECTED-PAD-CHANGE"' in BACKEND
     assert "gameover_owner_probe_selected_id!=id" in BACKEND
     assert "gameover_owner_probe_selected_id=0;" in BACKEND
+    assert "gameover_owner_probe_stable_frames=0;" in BACKEND
+    assert "stable_probe_before<SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES" in BACKEND
+    assert '"ExperimentalSDL3GameOverOwnerProbe"' in BACKEND
+    assert "gameover_owner_probe_enabled=ini &&" in BACKEND
+    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverOwnerProbe",0,ini)==1' in BACKEND
     assert "gameover_owner_probe_was_candidate=0;" in BACKEND
     assert "gameover_owner_probe_baselines<8u" in BACKEND
     assert "gameover_owner_probe_frames%180u==0u" in BACKEND
@@ -153,3 +159,20 @@ def test_owner_probe_does_not_modify_gameover_trial_or_3d_action_routing():
     assert 'pulse(0x1cu,"opt-in GAME OVER Return trial");' in BACKEND
     assert "if(!update_keys(desired,scans))" in BACKEND
     assert "if(pause_edge)pulse(0x01u,\"3D Pause\");" in BACKEND
+
+
+def test_passive_owner_probe_is_independent_of_enter_injection():
+    """Enabling passive state sampling must not implicitly enable the
+    separately tested experimental GAME OVER Enter action."""
+    validation=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
+    generated=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
+    assert '"ExperimentalSDL3GameOverOwnerProbe"' in validation
+    assert "ExperimentalSDL3GameOverOwnerProbe=1" not in generated
+    assert "ExperimentalSDL3GameOverConfirm=1" not in generated
+    assert "if(gameover_trial_enabled || gameover_owner_probe_enabled)" in BACKEND
+    assert "if(gameover_trial_enabled)\n      trial=spider_sdl3_gameover_trial_step(" in BACKEND
+    assert "if(trial) {" in BACKEND
+    assert "if(trial==1u)" in BACKEND
+    assert "gameover_owner_probe_dump(" in BACKEND
+    assert "SDL3-GAMEOVER-OWNER-PROBE: passive native state observation enabled" in BACKEND
+    assert "gameover_owner_probe_stable_frames" in BACKEND
