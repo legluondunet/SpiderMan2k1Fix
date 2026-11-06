@@ -24,6 +24,7 @@
 #include "ui_transition_live_direct.h"
 #include "ui_transition_native43.h"
 #include "ui_transition_native43_gutters.h"
+#include "ui_transition_native43_flank.h"
 #include "ui_compositor_policy.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
@@ -1058,6 +1059,16 @@ static volatile LONG ui_transition_native43_extended_enabled=0;
  * the two physical 16:9 gutters where NATIVE source black crosses x=0/W.
  * Once the game iris opens past an edge, that side's fill disappears. */
 static volatile LONG ui_transition_native43_gutters_enabled=0;
+/* V21: replace EVERY-TRIANGLE V20 rectangles with side matte only.
+ * No polygon resembling a spider leg may generate a gutter rectangle. */
+static volatile LONG ui_transition_flank21_enabled=0;
+static unsigned ui_transition_flank21_scenes=0u;
+static unsigned ui_transition_flank21_last_state=0u;
+/* Passive one-shot dump of the first reduced source family (e.g. 84/92)
+ * for investigating discontinuities, without another collection build. */
+static SpiderAtomicMaskQuad ui_transition_flank21_current[SPIDER_ATOMIC_MASK_MAX];
+static unsigned ui_transition_flank21_count=0u;
+static volatile LONG ui_transition_flank21_dumped=0;
 static volatile LONG ui_transition_native43_gutters_failed=0;
 static unsigned ui_transition_native43_gutters_drawn=0u;
 static unsigned ui_transition_native43_gutters_frames=0u;
@@ -3810,6 +3821,8 @@ static HRESULT WINAPI ui_compositor_scene_start(void *self) {
     ui_transition_native43_gutters_scene_native=0u;
     ui_transition_native43_gutters_scene_left=0u;
     ui_transition_native43_gutters_scene_right=0u;
+    if(InterlockedCompareExchange(&ui_transition_flank21_enabled,0,0)==1)
+      ui_transition_flank21_count=0u;
   }
   if(SUCCEEDED(hr)) ui_atomic_probe_begin_scene();
   if(SUCCEEDED(hr) &&
@@ -3836,18 +3849,64 @@ static HRESULT WINAPI ui_compositor_scene_finish(void *self) {
         ui_transition_native43_gutters_scene_right!=
              ui_transition_native43_gutters_last_right)){
       char msg[220];
-      snprintf(msg,sizeof(msg),
-        "UI-TRANSITION-GUTTER20: FRAME=%u native=%u left=%u right=%u total-draws=%u [BLACK SIDE STRIPS ONLY; V19 IRIS UNCHANGED]",
-        frame,ui_transition_native43_gutters_scene_native,
-        ui_transition_native43_gutters_scene_left,
-        ui_transition_native43_gutters_scene_right,
-        ui_transition_native43_gutters_drawn);
+      if(InterlockedCompareExchange(
+            &ui_transition_flank21_enabled,0,0)==1){
+        snprintf(msg,sizeof(msg),
+          "UI-TRANSITION-FLANK21: FRAME=%u native=%u flank-left=%u flank-right=%u total-draws=%u [FULL-HEIGHT OUTER MATTE ONLY; NO TOOTH RECTS; V19 UNCHANGED]",
+          frame,ui_transition_native43_gutters_scene_native,
+          ui_transition_native43_gutters_scene_left,
+          ui_transition_native43_gutters_scene_right,
+          ui_transition_native43_gutters_drawn);
+      }else{
+        snprintf(msg,sizeof(msg),
+          "UI-TRANSITION-GUTTER20: FRAME=%u native=%u left=%u right=%u total-draws=%u [BLACK SIDE STRIPS ONLY; V19 IRIS UNCHANGED]",
+          frame,ui_transition_native43_gutters_scene_native,
+          ui_transition_native43_gutters_scene_left,
+          ui_transition_native43_gutters_scene_right,
+          ui_transition_native43_gutters_drawn);
+      }
       log_line(msg);
     }
     ui_transition_native43_gutters_last_left=
          ui_transition_native43_gutters_scene_left;
     ui_transition_native43_gutters_last_right=
          ui_transition_native43_gutters_scene_right;
+    if(InterlockedCompareExchange(&ui_transition_flank21_enabled,0,0)==1){
+      unsigned state=
+          (ui_transition_native43_gutters_scene_left?1u:0u) |
+          (ui_transition_native43_gutters_scene_right?2u:0u);
+      if(debug_log_enabled && state!=ui_transition_flank21_last_state){
+        char msg[185];
+        snprintf(msg,sizeof(msg),
+          "UI-TRANSITION-FLANK21: OUTER-MATTE STATE %u -> %u, source=%u [check for sudden side reveal]",
+          ui_transition_flank21_last_state,state,
+          ui_transition_flank21_count);
+        log_line(msg);
+      }
+      ui_transition_flank21_last_state=state;
+      if(debug_log_enabled && ui_transition_flank21_count>0u &&
+         ui_transition_flank21_count<92u &&
+         InterlockedCompareExchange(
+            &ui_transition_flank21_dumped,1,0)==0){
+        char msg[300];
+        unsigned i,j;
+        snprintf(msg,sizeof(msg),
+          "UI-TRANSITION-FLANK21-SOURCE: BEGIN first reduced native frame count=%u (read-only; exactly verified source quads)",
+          ui_transition_flank21_count);
+        log_line(msg);
+        for(i=0u;i<ui_transition_flank21_count;i++){
+          SpiderAtomicMaskQuad *q=&ui_transition_flank21_current[i];
+          snprintf(msg,sizeof(msg),
+            "UI-TRANSITION-FLANK21-SOURCE: q=%u xy=(%.2f,%.2f) (%.2f,%.2f) (%.2f,%.2f) (%.2f,%.2f)",
+            i,(double)q->x[0],(double)q->y[0],
+            (double)q->x[1],(double)q->y[1],
+            (double)q->x[2],(double)q->y[2],
+            (double)q->x[3],(double)q->y[3]);
+          log_line(msg);
+        }
+        log_line("UI-TRANSITION-FLANK21-SOURCE: END");
+      }
+    }
   }
   if(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
      ui_comp_scene_open && ui_comp_device==self)
@@ -4291,20 +4350,45 @@ static int ui_transition_native43_handle_draw(
           &ui_transition_native43_gutters_failed,0,0)!=1){
       SpiderMenuVertex gutters[SPIDER_NATIVE43_GUTTER_MAX][4];
       unsigned patches=0u,left=0u,right=0u,q;
-      if(SpiderNative43Gutter_Build(v,
-            (unsigned)desktop_w,(unsigned)desktop_h,
-            gutters,&patches,&left,&right)){
+      const int flank_only=
+         InterlockedCompareExchange(&ui_transition_flank21_enabled,0,0)==1;
+      int geometry_valid=0;
+      if(flank_only){
+        unsigned side=0u;
+        /* We capture only ORIGINAL game-verified V19 quads, never the
+         * supplemental DrawPrimitive() call we make ourselves. */
+        if(ui_transition_flank21_count<SPIDER_ATOMIC_MASK_MAX){
+          SpiderAtomicMaskQuad *snapshot=
+            &ui_transition_flank21_current[ui_transition_flank21_count++];
+          unsigned j;
+          for(j=0u;j<4u;j++){
+            snapshot->x[j]=v[j].x;
+            snapshot->y[j]=v[j].y;
+          }
+        }
+        geometry_valid=SpiderNativeFlank_Build(v,
+          (unsigned)desktop_w,(unsigned)desktop_h,
+          gutters[0],&side);
+        patches=side?1u:0u;
+        left=side==1u?1u:0u;
+        right=side==2u?1u:0u;
+      }else{
+        geometry_valid=SpiderNative43Gutter_Build(v,
+          (unsigned)desktop_w,(unsigned)desktop_h,
+          gutters,&patches,&left,&right);
+      }
+      if(geometry_valid){
         ++ui_transition_native43_gutters_scene_native;
         for(q=0u;q<patches;q++){
           HRESULT gh=original_draw_primitive(
              device,type,fvf,gutters[q],4u,flags);
           if(FAILED(gh)){
-            char message[185];
+            char message[200];
             InterlockedExchange(
                &ui_transition_native43_gutters_failed,1);
             snprintf(message,sizeof(message),
-              "UI-TRANSITION-GUTTER20: DRAW FAILURE hr=0x%08lX; disabled further side fills, V19 native iris unaffected",
-              (unsigned long)gh);
+              "UI-TRANSITION-GUTTER%s: DRAW FAILURE hr=0x%08lX; supplement disabled, V19 original iris unaffected",
+              flank_only?"21":"20",(unsigned long)gh);
             log_line(message);
             break;
           }
@@ -4316,7 +4400,9 @@ static int ui_transition_native43_handle_draw(
         }
       }else{
         InterlockedExchange(&ui_transition_native43_gutters_failed,1);
-        log_line("UI-TRANSITION-GUTTER20: GEOMETRY REJECTED - disabled supplemental gutters; V19 native iris unchanged");
+        log_line(flank_only?
+          "UI-TRANSITION-FLANK21: INPUT REJECTED; supplemental margins disabled, V19 iris intact":
+          "UI-TRANSITION-GUTTER20: GEOMETRY REJECTED - disabled supplemental gutters; V19 native iris unchanged");
       }
     }
     n=InterlockedIncrement(&ui_transition_native43_draws);
@@ -7004,6 +7090,26 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-TRANSITION-GUTTER20: V20 ON - supplement only the two physical 16:9 black margins using CURRENT native iris edge intersections; V19 spider untouched");
     }else{
       log_line("UI-TRANSITION-GUTTER20: OFF - validated V19 original iris unchanged");
+    }
+  }
+  /* V21 experimental restriction: use ONLY the original full-height
+   * left/right native black matte rectangles, never the hooked limb
+   * triangles. The V19 iris remains bit-identical; removing this flag
+   * alone restores prior V20 and removing GUTTERS_TEST restores V19.
+   * If the game retires its side-matte quads, the supplemental margins
+   * vanish; log this event and source geometry for a follow-up test,
+   * rather than invent an ungrounded animation/zoom time constant. */
+  {
+    char value[4]={0};
+    if(InterlockedCompareExchange(
+          &ui_transition_native43_gutters_enabled,0,0)==1 &&
+       GetEnvironmentVariableA(
+          "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_FLANK_ONLY_TEST",
+          value,sizeof(value))==1 && value[0]=='1'){
+      InterlockedExchange(&ui_transition_flank21_enabled,1);
+      log_line("UI-TRANSITION-FLANK21: V21 ON - full-height original outer side matte only, NO limb-generated gutters, V19 iris untouched; first reduced native frame coordinates logged once");
+    }else{
+      log_line("UI-TRANSITION-FLANK21: OFF - V20/V19 original behavior unchanged");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
