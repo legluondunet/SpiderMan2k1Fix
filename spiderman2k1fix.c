@@ -7588,13 +7588,23 @@ static DWORD initialize_body(LPVOID unused) {
    * Requires the working V23c opt-in; removing SYNC_TEST restores the
    * previously recorded V23c behavior without modifying other flags. */
   {
-    char value[4]={0};
+    char value[4]={0},bounds[4]={0};
+    const int sync_requested=
+        GetEnvironmentVariableA(
+          "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_SYNC_TEST",
+          value,sizeof(value))==1 && value[0]=='1';
+    const int bounds_requested=
+        GetEnvironmentVariableA(
+          "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST",
+          bounds,sizeof(bounds))==1 && bounds[0]=='1';
+    /* The V25 test itself explicitly requests the V24 same-scene
+     * EndScene hook, avoiding an easy-to-miss extra environment flag. */
     if(InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1 &&
-       GetEnvironmentVariableA(
-         "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_SYNC_TEST",
-         value,sizeof(value))==1 && value[0]=='1'){
+       (sync_requested || bounds_requested)){
       InterlockedExchange(&ui_transition_sync24_enabled,1);
-      log_line("UI-TRANSITION-SYNC24: V24 ON - sample ALL native V19 iris fans, draw two black side curtains AFTER full CURRENT scene geometry in EndScene, V23c smoothing unchanged");
+      log_line(bounds_requested?
+        "UI-TRANSITION-SYNC24: V24 ON - automatically enabled for V25 BOUNDS_TEST; original V19 frame synchronization":
+        "UI-TRANSITION-SYNC24: V24 ON - sample ALL native V19 iris fans, draw two black side curtains AFTER full CURRENT scene geometry in EndScene, V23c smoothing unchanged");
     }else{
       log_line("UI-TRANSITION-SYNC24: OFF - V23c native first-draw curtains unchanged");
     }
