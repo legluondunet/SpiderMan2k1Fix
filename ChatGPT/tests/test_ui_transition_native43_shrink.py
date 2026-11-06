@@ -248,7 +248,10 @@ def test_opt_in_and_native_v19_remain_untouched_by_shrink_geometry():
     assert "wait_for_source=1;" in s
     assert "++ui_transition_hold22_scene_native;" in s
     assert s.index("++ui_transition_hold22_scene_native;") < s.index(
-        "if(InterlockedCompareExchange(&ui_transition_hold22_failed,0,0)!=1)")
+        "InterlockedCompareExchange(&ui_transition_hold22_failed,0,0)!=1){")
+    # V24 can skip immediate V23 draw, but must never stop native
+    # counting or disable the V19 iris when the overlays fail.
+    assert "ui_transition_sync24_enabled,0,0)!=1 &&" in s
     section=s[s.index("/* V22 one opaque physical-margin pair"):
               s.index("/* Reuse the verified original black-material state",s.index(
                   "/* V22 one opaque physical-margin pair"))]
