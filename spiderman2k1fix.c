@@ -17,6 +17,7 @@
 #include "ui_canvas_43.h"
 #include "ui_transition_gutters.h"
 #include "ui_transition_atomic_mask.h"
+#include "ui_transition_atomic_vector.h"
 #include "ui_compositor_policy.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
@@ -1026,6 +1027,8 @@ static volatile LONG ui_atomic_renderer_enabled=0;
  * Opt-in, no per-tooth edits, no change to HUD/ESC and no source
  * changes when disabled. */
 static volatile LONG ui_atomic_fidelity_enabled=0;
+/* V12 opt-in: rasterize native source polygons directly at output resolution. */
+static volatile LONG ui_atomic_vector_enabled=0;
 static volatile LONG ui_atomic_renderer_failed=0;
 static IDirectDraw7 *ui_atomic_ddraw=NULL; /* owned COM ref, game lifetime */
 static IDirectDrawSurface7 *ui_atomic_texture=NULL;
@@ -3022,6 +3025,69 @@ static int ui_atomic_renderer_skip_native(
   return 1;
 }
 
+/* V12 vector compositor: game-owned reference triangles, one affine
+ * aspect/zoom and one D3D7 draw at final resolution. This bypasses V11's
+ * bitmap pixel quantization and texture enlargement, but DOES NOT claim
+ * multisample antialiasing on D3D7 hardware. Exterior black coverage is
+ * generated analytically from the exact same source-image transform.
+ * The native ESC, HUD, cinematic bars, and source scale remain untouched.
+ */
+static int ui_atomic_renderer_draw_vector(IDirect3DDevice7 *device)
+{
+  SpiderAtomicVectorPoint points[SPIDER_ATOMIC_VECTOR_MAX];
+  SpiderMenuVertex vertices[SPIDER_ATOMIC_VECTOR_MAX];
+  unsigned n=0u,i;
+  DWORD saved=0,restored_z=0;
+  IDirectDrawSurface7 *bound=NULL;
+  HRESULT hr;
+  int ok=1;
+  if(!device || !ui_atomic_reference_count ||
+     !SpiderAtomicVector_Build(
+       ui_atomic_reference,ui_atomic_reference_count,
+       (unsigned)desktop_w,(unsigned)desktop_h,ui_atomic_scene_scale,
+       points,SPIDER_ATOMIC_VECTOR_MAX,&n))
+    return 0;
+  if(FAILED(IDirect3DDevice7_CreateStateBlock(device,D3DSBT_ALL,&saved)) ||
+     !saved)return 0;
+  if(FAILED(IDirect3DDevice7_GetTexture(device,0,&bound))){
+    IDirect3DDevice7_DeleteStateBlock(device,saved);
+    return 0;
+  }
+  memset(vertices,0,(size_t)n*sizeof(*vertices));
+  for(i=0u;i<n;i++){
+    vertices[i].x=points[i].x;vertices[i].y=points[i].y;
+    vertices[i].z=0.0f;vertices[i].rhw=1.0f;
+    vertices[i].diffuse=0xFF000000UL;
+  }
+#define VECTOR_REQUIRE(call) do { if(FAILED(call))ok=0; } while(0)
+  VECTOR_REQUIRE(IDirect3DDevice7_SetTexture(device,0,NULL));
+  VECTOR_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE));
+  VECTOR_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE));
+  VECTOR_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ALPHABLENDENABLE,FALSE));
+  VECTOR_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ALPHATESTENABLE,FALSE));
+  VECTOR_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_FOGENABLE,FALSE));
+  VECTOR_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_CULLMODE,D3DCULL_NONE));
+  VECTOR_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_COLOROP,D3DTOP_SELECTARG1));
+  VECTOR_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_COLORARG1,D3DTA_DIFFUSE));
+  VECTOR_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAOP,D3DTOP_SELECTARG1));
+  VECTOR_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAARG1,D3DTA_DIFFUSE));
+  if(ok) VECTOR_REQUIRE(original_draw_primitive(
+        device,D3DPT_TRIANGLELIST,0x144UL,vertices,(DWORD)n,0u));
+#undef VECTOR_REQUIRE
+  hr=IDirect3DDevice7_ApplyStateBlock(device,saved);
+  if(FAILED(hr))ok=0;
+  hr=IDirect3DDevice7_SetTexture(device,0,bound);
+  if(FAILED(hr))ok=0;
+  if(bound)IDirectDrawSurface7_Release(bound);
+  IDirect3DDevice7_DeleteStateBlock(device,saved);
+  if(SUCCEEDED(IDirect3DDevice7_GetRenderState(
+       device,D3DRENDERSTATE_ZENABLE,&restored_z))){
+    InterlockedExchange(&fov_z_state_enabled,restored_z!=D3DZB_FALSE);
+    InterlockedExchange(&fov_z_state_known,1);
+  }
+  return ok;
+}
+
 static int ui_atomic_renderer_draw(IDirect3DDevice7 *device)
 {
   DWORD saved=0,restored_z=0;
@@ -3092,7 +3158,8 @@ static void ui_atomic_renderer_finish_scene(IDirect3DDevice7 *device)
   if(ui_atomic_texture && ui_atomic_scene_mode==1u &&
      ui_atomic_scene_suppressed>0u){
     LONG frame;
-    if(!ui_atomic_renderer_draw(device)){
+    if(!(InterlockedCompareExchange(&ui_atomic_vector_enabled,0,0)==1 ?
+         ui_atomic_renderer_draw_vector(device) : ui_atomic_renderer_draw(device))){
       InterlockedExchange(&ui_atomic_renderer_failed,1);
       log_line("UI-ATOMIC: ERROR atomic DrawPrimitive/state failed; disabled subsequent frames (restore native V9)");
       return;
@@ -3105,6 +3172,11 @@ static void ui_atomic_renderer_finish_scene(IDirect3DDevice7 *device)
         "UI-ATOMIC: COMPOSED frame=%ld scale=%.5f suppressed-source=%u texture=%ux%u [ONE TEXTURED QUAD; NO DETACHED PATCHES]",
         (long)frame,(double)ui_atomic_scene_scale,ui_atomic_scene_suppressed,
         ui_atomic_tex_w,ui_atomic_tex_h);
+      if(InterlockedCompareExchange(&ui_atomic_vector_enabled,0,0)==1)
+        snprintf(msg,sizeof(msg),
+          "UI-ATOMIC-VECTOR: COMPOSED frame=%ld scale=%.5f suppressed-source=%u triangles<=%u [DIRECT NATIVE GEOMETRY; NO BITMAP UPSCALE]",
+          (long)frame,(double)ui_atomic_scene_scale,ui_atomic_scene_suppressed,
+          SPIDER_ATOMIC_VECTOR_MAX/3u);
       log_line(msg);
     }
   }else if(ui_atomic_black_zero==0u){
@@ -6003,6 +6075,23 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-ATOMIC-FIDELITY: V11 TRIAL ON - original 4:3 spider silhouette, one high-resolution alpha mask, uniform zoom retained");
     }else{
       log_line("UI-ATOMIC-FIDELITY: OFF - V10 mask geometry and texture choice unchanged");
+    }
+  }
+  /* V12: draw the entire original silhouette from geometric triangles
+   * at the output resolution rather than zooming V11's alpha bitmap.
+   * Explicitly requires V10 + V11. Removing ONLY this new flag restores
+   * V11 exactly; no default, HUD, ESC or input changes. */
+  {
+    char vector[4]={0};
+    if(InterlockedCompareExchange(&ui_atomic_renderer_enabled,0,0)==1 &&
+       InterlockedCompareExchange(&ui_atomic_fidelity_enabled,0,0)==1 &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_TRANSITION_VECTOR_TEST",
+                               vector,sizeof(vector))==1 &&
+       vector[0]=='1'){
+      InterlockedExchange(&ui_atomic_vector_enabled,1);
+      log_line("UI-ATOMIC-VECTOR: V12 TRIAL ON - native polygons drawn at final resolution with ONE 4:3 + game-scale transform");
+    }else{
+      log_line("UI-ATOMIC-VECTOR: OFF - V11/V10 bitmap renderer unchanged");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
