@@ -4563,16 +4563,16 @@ static int ui_transition_native43_handle_draw(
        * scene. The two side rectangles are deferred to EndScene,
        * after this family is complete; no V19 geometry changes. */
       unsigned was_ready=ui_transition_sync24_frame.ready;
+      unsigned anchors_before=ui_transition_sync24_frame.anchors;
       SpiderNativeSync24_Observe(&ui_transition_sync24_frame,v,
              (unsigned)desktop_w,(unsigned)desktop_h);
       if(!was_ready && ui_transition_sync24_frame.ready)
         ui_transition_sync24_flags=flags;
       ui_transition_shrink23_half_width=
         ui_transition_sync24_frame.radius;
+      /* Keep the original cumulative V23 debug counter accurate. */
       ui_transition_shrink23_anchor_hits+=
-        ui_transition_sync24_frame.anchors>0u &&
-        (ui_transition_shrink23_half_width>0.0f &&
-         ui_transition_sync24_frame.native_fans==1u)?1u:0u;
+        ui_transition_sync24_frame.anchors-anchors_before;
     }else if(SUCCEEDED(*result) &&
        InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1){
       float radius=0.0f;
