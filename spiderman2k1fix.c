@@ -983,6 +983,10 @@ static volatile LONG ui_compositor_trial_enabled=0;
 static volatile LONG ui_compositor_tint_enabled=0; /* Never synthesize an unverified pause tint by default. */
 static volatile LONG ui_compositor_native_gutters_enabled=0; /* Deprecated fragment-replay A/B, off by default. */
 static volatile LONG ui_compositor_native_backdrop_enabled=1; /* Source-verified fullscreen veil; save/restore 4:3 viewport. */
+/* Preserve the native gameplay HUD brightness by replaying its verified
+ * D3D7 screen-space sprites AFTER the translucent veil but BEFORE the
+ * 4:3 spider and Pause menu. Independent A/B opt-out is available. */
+static volatile LONG ui_compositor_hud_over_veil_enabled=1;
 static volatile LONG ui_canvas_trial_hits=0;
 static volatile LONG ui_canvas_wipe_edge_hits=0;
 /* Final V25: only original V19 polygons and physical source-tooth bounds.
@@ -2634,7 +2638,7 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
   DWORD saved=0;
   IDirectDrawSurface7 *saved_texture=NULL;
   unsigned i,layer,pass,inner_quads=0u;
-  unsigned paint_background=0u,paint_spider=0u,paint_menu=0u;
+  unsigned paint_background=0u,paint_hud=0u,paint_spider=0u,paint_menu=0u;
   DWORD native_backdrop_argb=0u;
   float spider_source_left=0.0f,spider_source_right=0.0f;
   const SpiderUICompDraw *native_backdrop_material=NULL;
@@ -2719,10 +2723,18 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
     }
   }
   /* This is the native Dreamcast-style painter order:
-   *   WORLD + gameplay HUD (already drawn into backbuffer)
-   *   -> original native fullscreen Pause veil (above)
+   *   WORLD (game-owned)
+   *   -> original native fullscreen Pause veil
+   *   -> source-verified game HUD, replayed ONCE at EndScene
    *   -> original 4:3 spider artwork
    *   -> PAUSED title, purple ribbon, text and native selector.
+   * 
+   * Source evidence: native pre-veil F9 scrn0064 has red HUD portrait
+   * median 154 versus 84 with the full-screen veil in scrn0101, while
+   * PAUSED title red remains 215 in both. Drawing the veil over already
+   * rendered HUD had unintentionally tinted it. Replaying its original
+   * D3D7 quads once, in an explicit middle pass, fixes the ordering
+   * without guessing gamma or changing original source RGB/alpha.
    *
    * The game's own translucent DECOR mesh interleaves backdrop tiles
    * with spider pieces. Do not rely on that raw ordering: separate its
@@ -2759,6 +2771,7 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
         } else {
           InterlockedIncrement(&ui_comp_replayed);
           if(pass==SPIDER_UI_COMP_REPLAY_BACKDROP)paint_background++;
+          else if(pass==SPIDER_UI_COMP_REPLAY_HUD)paint_hud++;
           else if(pass==SPIDER_UI_COMP_REPLAY_MOTIF)paint_spider++;
           else paint_menu++;
         }
@@ -2774,8 +2787,8 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
       !all_ok)) {
     char msg[245];
     snprintf(msg,sizeof(msg),
-      "UI-COMPOSITOR-ORDER: native-veil=%d backdrop-tiles=%u spider=%u menu=%u [WORLD/HUD -> VEIL -> SPIDER -> PAUSE; ORIGINAL ALPHA; 4:3 ARTWORK]",
-      native_backdrop_drawn,paint_background,paint_spider,paint_menu);
+      "UI-COMPOSITOR-ORDER: native-veil=%d backdrop-tiles=%u hud=%u spider=%u menu=%u [WORLD -> VEIL -> HUD -> SPIDER -> PAUSE; ORIGINAL MATERIAL AND ALPHA]",
+      native_backdrop_drawn,paint_background,paint_hud,paint_spider,paint_menu);
     log_line(msg);
   }
   /* One-shot read-only 4:3 source/mapped comparison after a stable
@@ -2925,7 +2938,7 @@ static int ui_comp_capture(IDirect3DDevice7 *device,D3DPRIMITIVETYPE type,
   if(layer==SPIDER_UI_COMP_PAUSE_DECOR) {
     if(!ui_comp_motif) ui_comp_tint_source=c->v[0].diffuse;
     ui_comp_motif=1;
-  } else ui_comp_ribbon=1;
+  } else if(layer==SPIDER_UI_COMP_PAUSE_MENU) ui_comp_ribbon=1;
   if(InterlockedIncrement(&ui_comp_deferred)<=8 && debug_log_enabled)
     log_line("UI-COMPOSITOR: native ESC primitive captured, deferred until EndScene");
   return 1;
@@ -3302,6 +3315,7 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       v=maybe_correct_native_comic(self,type,fvf,verts,count,
                                    __builtin_return_address(0),small);
     }
+    int verified_hud_canvas=0;
     /* In the unified trial, bypass older fragment-level HUD scaling. */
     if(InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1) {
     /* BD has precedence and a separate signature; never rescale it. */
@@ -3366,8 +3380,14 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4) {
       const void *candidate=maybe_correct_unified_ui_canvas(
         type,fvf,verts,count,__builtin_return_address(0),small);
-      if(candidate!=verts)
+      if(candidate!=verts) {
         maybe_probe_pause_hud_layer(self,(const SpiderMenuVertex*)candidate);
+        /* The generic screen-space classifier already excluded
+         * fullscreen effects, cinematics and native ESC elements.
+         * It identifies the same gameplay HUD quads whose colours were
+         * unintentionally altered by the EndScene veil. */
+        verified_hud_canvas=1;
+      }
       v=candidate;
     }
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
@@ -3407,7 +3427,17 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
      * keep the original draw path (even if state blocks are unsupported).
      * The old depth-only experiment stays disabled in compositor mode. */
     HRESULT hr;
-    if(native_esc_primitive && v!=verts &&
+    if(!native_esc_primitive && verified_hud_canvas &&
+       InterlockedCompareExchange(&ui_compositor_hud_over_veil_enabled,0,0)==1 &&
+       native_pause43_visible_near_flip(
+          InterlockedCompareExchange(&flip_count,0,0)) &&
+       type==D3DPT_TRIANGLEFAN && fvf==0x144UL &&
+       ui_comp_capture((IDirect3DDevice7*)self,type,fvf,v,verts,count,flags,
+                       SPIDER_UI_COMP_HUD)) {
+      /* HUD pixels must NOT be drawn before the translucent backdrop,
+       * or they will be dimmed and then double-blended on replay. */
+      hr=D3D_OK;
+    } else if(native_esc_primitive && v!=verts &&
        ui_comp_capture((IDirect3DDevice7*)self,type,fvf,v,verts,count,flags,
                        native_esc_primitive)) {
       hr=D3D_OK;
@@ -5722,6 +5752,18 @@ static DWORD initialize_body(LPVOID unused) {
         log_line(InterlockedCompareExchange(&ui_compositor_native_backdrop_enabled,0,0)==1 ?
           "UI-COMPOSITOR-NATIVE-BACKDROP: source-verified fullscreen veil ENABLED (temporary full physical viewport; restore for 4:3 artwork)" :
           "UI-COMPOSITOR-NATIVE-BACKDROP: OFF (original 4:3 source mesh and legacy exterior comparison)");
+      }
+      /* Independent rollback for the native HUD's original brightness.
+       * 0 restores the prior order for an exact same-build comparison. */
+      {
+        char hud_over_veil[4]={0};
+        if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_COMPOSITOR_HUD_OVER_VEIL",
+                                   hud_over_veil,sizeof(hud_over_veil))==1 &&
+           hud_over_veil[0]=='0')
+          InterlockedExchange(&ui_compositor_hud_over_veil_enabled,0);
+        log_line(InterlockedCompareExchange(&ui_compositor_hud_over_veil_enabled,0,0)==1 ?
+          "UI-COMPOSITOR-HUD-ORDER: ON (verified native HUD deferred AFTER fullscreen veil, BEFORE spider)" :
+          "UI-COMPOSITOR-HUD-ORDER: OFF (HUD native early draw, veil may dim it; A/B only)");
       }
       /* A/B rollback. 0 disables native exterior color, without
        * disabling safe original 4:3 motif + late ESC replay. */
