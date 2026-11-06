@@ -36,6 +36,9 @@ def policy(tmp_path_factory):
         'float x2,float y2,float edge,float h,SpiderUICompYSpan *out){'
         'return SpiderUIComp_TriangleEdgeSpan(x0,y0,x1,y1,'
         'x2,y2,edge,h,out);}\n'
+        'int native_backdrop(const SpiderUICompBackdropSample *s,'
+        'unsigned n,float w,float h,unsigned *color){'
+        'return SpiderUIComp_IdentifyNativeBackdrop(s,n,w,h,color);}\n'
     )
     subprocess.run(
         [cc,"-std=c11","-Wall","-Wextra","-Werror","-fPIC","-shared",
@@ -58,6 +61,14 @@ def policy(tmp_path_factory):
     lib.edge.restype=ct.c_int
     lib.segment.argtypes=[ct.c_float]*8+[ct.POINTER(YSpan)]
     lib.segment.restype=ct.c_int
+    class BackdropSample(ct.Structure):
+        _fields_=[("left",ct.c_float),("right",ct.c_float),
+                  ("top",ct.c_float),("bottom",ct.c_float),
+                  ("color",ct.c_uint)]
+    lib.BackdropSample=BackdropSample
+    lib.native_backdrop.argtypes=[ct.POINTER(BackdropSample),ct.c_uint,
+                                 ct.c_float,ct.c_float,ct.POINTER(ct.c_uint)]
+    lib.native_backdrop.restype=ct.c_int
     return lib
 
 
@@ -345,3 +356,71 @@ def test_runtime_refuses_partial_source_tile_before_material_and_y_checks():
     assert code.index("SpiderUIComp_CoversFullHeight(right_spans") < (
         code.index("IDirect3DDevice7_ApplyStateBlock(device,c->state_token)"))
     assert "return drawn!=0u;" in code
+
+
+def test_native_backdrop_is_derived_from_four_edge_source_not_spider(policy):
+    B=policy.BackdropSample
+    # Recorded screen dimensions 1920x1080. Native perimeter palette
+    # 80868620; interior spider palette 80208686, from F9/Log=1.
+    # A small equivalent tessellation tests the resolution-independent
+    # colour/coverage policy without storing a hardcoded level pattern.
+    original=[
+        (0,0,281.2,333,0x80868620),
+        (0,300,281.2,700,0x80868620),
+        (0,660,281.2,1080,0x80868620),
+        (1638.8,0,1920,333,0x80868620),
+        (1638.8,300,1920,700,0x80868620),
+        (1638.8,660,1920,1080,0x80868620),
+        (281.2,0,1638.8,150,0x80868620),
+        (281.2,900,1638.8,1080,0x80868620),
+        (800,200,1200,800,0x80208686),
+    ]
+    def classify(boxes,w=1920,h=1080):
+        array=(B*len(boxes))(*(B(*v) for v in boxes))
+        result=ct.c_uint(0)
+        ok=policy.native_backdrop(array,len(boxes),w,h,ct.byref(result))
+        return ok,result.value
+    assert classify(original)==(1,0x80868620)
+    # The exact source colour may change by game version/level.
+    recolored=[(*v[:4],(0x80662299 if v[4]==0x80868620 else 0x80445588))
+               for v in original]
+    assert classify(recolored)==(1,0x80662299)
+    # A mere left/right band does not prove an independent full veil.
+    assert classify(original[:-2]+original[-1:])[0]==0
+    # Distinct edge palette, alpha=0 or three colour families reject.
+    mismatch=original.copy()
+    mismatch[3]=(*mismatch[3][:4],0x80EEFFFF)
+    assert classify(mismatch)[0]==0
+    transparent=original.copy()
+    transparent[0]=(*transparent[0][:4],0x00868620)
+    assert classify(transparent)[0]==0
+    tri_color=original.copy()
+    tri_color[-1]=(*tri_color[-1][:4],0x80334455)
+    tri_color.append((700,300,900,700,0x80556677))
+    assert classify(tri_color)[0]==0
+    assert classify(original,1440,1080)[0]==0
+    assert classify(original,1920,2000)[0]==0
+
+
+def test_native_veil_is_one_original_alpha_blended_fullscreen_layer():
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    policy_src=(ROOT/"ui_compositor_policy.h").read_text()
+    assert "SpiderUIComp_IdentifyNativeBackdrop(" in policy_src
+    assert "ui_comp_native_backdrop_source(" in src
+    fn=src.split("static int ui_comp_draw_native_backdrop(",1)[1].split(
+        "/* Flush before native EndScene",1)[0]
+    assert "IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)" in fn
+    assert "corners[k]=sample->source_v[0]" in fn
+    assert "corners[0].x=0.0f;corners[0].y=0.0f" in fn
+    assert "corners[2].x=w;corners[2].y=h" in fn
+    assert "original_draw_primitive(" in fn
+    assert "0x80868620" not in fn  # never hardcode the logged palette
+    flush=src.split("static void ui_comp_flush(",1)[1].split(
+        "static int ui_comp_capture(",1)[0]
+    assert flush.index("ui_comp_draw_native_backdrop(") < flush.index(
+        "for(layer=SPIDER_UI_COMP_PAUSE_DECOR;")
+    assert "native_backdrop_drawn && layer==SPIDER_UI_COMP_PAUSE_DECOR" in flush
+    assert "c->source_v[0].diffuse==native_backdrop_argb" in flush
+    assert "!native_backdrop_drawn && ui_comp_motif" in flush
+    assert "UI-COMPOSITOR-NATIVE-BACKDROP:" in flush
+
