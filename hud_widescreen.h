@@ -27,6 +27,9 @@ BOOL SpiderHudWidescreen_Installed(void);
 BOOL SpiderHudWidescreen_InstallScopesOnly(BOOL image_verified);
 /* TRUE only while the current game thread is inside an identified HUD scope. */
 BOOL SpiderHudWidescreen_InScope(void);
+/* Optional test: retain verified native HUD scopes without doing their
+ * earlier X transforms. The common D3D7 canvas then owns the X mapping. */
+void SpiderHudWidescreen_SetUICanvasPrototype(BOOL enabled);
 /* Read-only scope entry counter for the experimental HUD pipeline trace. */
 LONG SpiderHudWidescreen_TakeScopeEntryCount(void);
 

@@ -14,6 +14,10 @@
 #include <d3d.h>
 #include "hud_widescreen.h"
 #include "hud_adaptive.h"
+#include "ui_canvas_43.h"
+#include "ui_transition_native43.h"
+#include "ui_transition_native43_bounds25.h"
+#include "ui_compositor_policy.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
 #include "hud_boss_probe.h"
@@ -971,6 +975,102 @@ static const void *maybe_correct_horplus(D3DPRIMITIVETYPE type,DWORD fvf,
   return copy;
 }
 
+/* Opt-in common 4:3 gameplay UI canvas, applied only to source
+ * screen-space D3D7 quads. No per-level/texture/color HUD rule. */
+static volatile LONG ui_canvas_trial_enabled=0;
+/* Additional opt-in trial: record native ESC commands, composite at EndScene. */
+static volatile LONG ui_compositor_trial_enabled=0;
+static volatile LONG ui_compositor_native_backdrop_enabled=1; /* Source-verified outer margins only; centre mesh untouched. */
+/* Preserve the native gameplay HUD brightness by replaying its verified
+ * D3D7 screen-space sprites AFTER the translucent veil but BEFORE the
+ * 4:3 spider and Pause menu. Independent A/B opt-out is available. */
+static volatile LONG ui_compositor_hud_over_veil_enabled=0; /* opt-in only; field validation used OFF */
+static volatile LONG ui_canvas_trial_hits=0;
+static volatile LONG ui_canvas_wipe_edge_hits=0;
+/* Final V25: only original V19 polygons and physical source-tooth bounds.
+ * Former V6–V24 alternative mask renderers are retired.
+ */
+static volatile LONG ui_transition_bounds25_enabled=0,ui_transition_sync24_failed=0;
+static SpiderNativeSync24Frame ui_transition_sync24_frame;
+static SpiderNativeBounds25Frame ui_transition_bounds25_frame;
+static DWORD ui_transition_sync24_flags=0u;
+static unsigned ui_transition_hold22_scene_native=0u,ui_transition_hold22_scene_gutters=0u;
+static unsigned ui_transition_hold22_last_active=0u;
+static unsigned ui_transition_bounds25_frames=0u;
+static float ui_transition_bounds25_prev_left=0.0f,ui_transition_bounds25_prev_right=0.0f;
+static unsigned ui_transition_bounds25_have_prev=0u;
+static float ui_transition_bounds25_last_left=0.0f,ui_transition_bounds25_last_right=0.0f;
+static unsigned ui_transition_bounds25_last_fallback=0u;
+static volatile LONG ui_transition_native43_draws=0,ui_transition_native43_native=0;
+static volatile LONG ui_canvas_fullscreen_kept=0;
+static const void *maybe_correct_unified_ui_canvas(
+                   D3DPRIMITIVETYPE type,DWORD fvf,
+                   const void *source,DWORD count,void *caller,
+                   SpiderMenuVertex *copy)
+{
+  DWORD rva=0;
+  LONG hit;
+  char message[250];
+  if(InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1 ||
+     !SpiderHudWidescreen_Installed() ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
+     !source || !copy || count!=4 ||
+     !geom_rva(caller,&rva))
+    return source;
+  /* Generic presentation-surface guard. An original quad that spans
+   * the display horizontally and covers the frame or an edge letterbox
+   * band stays full width, outside the virtual 4:3 HUD canvas. */
+  if(SpiderUICanvas_43IsFullScreenEffect(
+        (const SpiderMenuVertex*)source,(unsigned)count,
+        (unsigned)type,(uint32_t)fvf,(uint32_t)rva,
+        (unsigned)desktop_w,(unsigned)desktop_h)) {
+    hit=InterlockedIncrement(&ui_canvas_fullscreen_kept);
+    if(debug_log_enabled && (hit<=8 || hit%360==0)) {
+      const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+      snprintf(message,sizeof(message),
+        "UI-CANVAS-FULLSCREEN: keep=%ld x0=%.1f y0=%.1f color=%08lX z=%.5f rhw=%.4f [PRESENTATION; ORIGINAL X]",
+        (long)hit,(double)v[0].x,(double)v[0].y,
+        (unsigned long)v[0].diffuse,
+        (double)v[0].z,(double)v[0].rhw);
+      log_line(message);
+    }
+    return source;
+  }
+  if(!SpiderUICanvas_43Transform(
+        (const SpiderMenuVertex*)source,copy,
+        (unsigned)count,(unsigned)type,(uint32_t)fvf,
+        (uint32_t)rva,(unsigned)desktop_w,(unsigned)desktop_h))
+    return source;
+  if(SpiderUICanvas_43IsWipeEdgeMask(
+        (const SpiderMenuVertex*)source,(unsigned)count,
+        (unsigned)type,(uint32_t)fvf,(uint32_t)rva,
+        (unsigned)desktop_w,(unsigned)desktop_h)) {
+    LONG edge=InterlockedIncrement(&ui_canvas_wipe_edge_hits);
+    if(debug_log_enabled && (edge<=20 || edge%360==0)) {
+      const SpiderMenuVertex *a=(const SpiderMenuVertex*)source;
+      snprintf(message,sizeof(message),
+        "UI-CANVAS-WIPE-EDGE: hit=%ld source-x=%.1f mapped-x=%.1f black=z%.5f rhw=%.4f [CINEMATIC-EDGE]",
+        (long)edge,(double)a[0].x,(double)copy[0].x,
+        (double)a[0].z,(double)a[0].rhw);
+      log_line(message);
+    }
+  }
+  hit=InterlockedIncrement(&ui_canvas_trial_hits);
+  if(debug_log_enabled && (hit<=12 || hit%480==0)) {
+    const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+    snprintf(message,sizeof(message),
+      "UI-CANVAS-43: draw=%ld caller=%08lX source-x=%.1f mapped-x=%.1f z=%.5f rhw=%.4f native-scope=%d [EXPERIMENT; SCREEN-SPACE-CANDIDATE]",
+      (long)hit,(unsigned long)rva,
+      (double)v[0].x,(double)copy[0].x,
+      (double)v[0].z,(double)v[0].rhw,
+      (int)SpiderHudWidescreen_InScope());
+    log_line(message);
+  }
+  return copy;
+}
+
 /* Source-verified gameplay HUD quads only. Enabled by default unless
  * HUDWidescreenFix=0 is explicitly configured; always SHA-gated and a
  * no-op in original 4:3. No game-owned vertex memory is changed. */
@@ -1131,7 +1231,9 @@ static const void *maybe_correct_native_pause43(void *device,
    * Original 4:3 gameplay remains excluded at function entry. */
   ribbon=SpiderNativePause43_RibbonBounds(
        left,right,top,bottom,(unsigned)desktop_w,(unsigned)desktop_h) &&
-       SpiderNativePause43_RibbonLayer(z,rhw);
+       (SpiderNativePause43_RibbonLayer(z,rhw) ||
+        (InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
+         SpiderNativePause43_CompositorRibbon(z,rhw,v[0].diffuse)));
   if(ribbon) {
     /* The banner has no texture. Recheck the live bound texture here
      * rather than relying solely on depth and broad geometry.
@@ -1157,7 +1259,9 @@ static const void *maybe_correct_native_pause43(void *device,
     bb=InterlockedCompareExchange(&native_pause43_banner_bottom,0,0);
     /* Source-backed strict depth variants: old menu and level-2
      * shadow/foreground glyphs measured in the maintainer's log. */
-    if(!SpiderNativePause43_TextLayer(z,rhw))
+    if(!SpiderNativePause43_TextLayer(z,rhw) &&
+       !(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
+         SpiderNativePause43_CompositorText(z,rhw)))
       return source;
     if(FAILED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)) ||
        !tex)return source;
@@ -1173,7 +1277,9 @@ static const void *maybe_correct_native_pause43(void *device,
        bb>bt+55.0f*(desktop_w==1920?1.0f:(float)desktop_h/1080.0f) &&
        /* Borders share the verified ribbon depth, not arbitrary text
         * shadow layers; accept only the two exact ribbon signatures. */
-       SpiderNativePause43_RibbonLayer(z,rhw)) {
+       (SpiderNativePause43_RibbonLayer(z,rhw) ||
+        (InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
+         SpiderNativePause43_Perspective(z,rhw,0.00122f)))) {
       float sx=(float)desktop_w/1920.0f;
       float sy=desktop_w==1920?1.0f:(float)desktop_h/1080.0f;
       int near_left=(left>=-42.0f*sx && left<=-12.0f*sx &&
@@ -1282,9 +1388,17 @@ static const void *maybe_correct_native_motif43(void *device,
      InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
      type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4 ||
      !geom_rva(ret,&rva) || rva!=0x00102C72UL ||
-     /* Known original native motif layer: two RHW variants, same Z.
-      * The classifier is pure and tested across both variants. */
-     !SpiderNativePause43_MotifLayer(v[0].z,v[0].rhw)) return source;
+     /* Legacy verified depth remains intact. When the native ESC
+      * ribbon has actually been observed in the current/preceding
+      * Flip, the compositor also recognizes new levels through Z,
+      * original alpha, geometry and untextured material. RHW may vary
+      * continuously, exactly as for the validated target reticles. */
+     !(SpiderNativePause43_MotifLayer(v[0].z,v[0].rhw) ||
+       (InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
+        native_pause43_visible_near_flip(
+          InterlockedCompareExchange(&flip_count,0,0)) &&
+        SpiderNativePause43_CompositorMotif(
+            v[0].z,v[0].rhw,v[0].diffuse)))) return source;
   memcpy(&color,(const BYTE*)source+16,sizeof(color));
   if((color&0xFF000000UL)!=0x80000000UL)return source;
   l=r=v[0].x;t=b=v[0].y;
@@ -1314,6 +1428,26 @@ static const void *maybe_correct_native_motif43(void *device,
      && tex) {
     IDirectDrawSurface7_Release(tex);
     return source;
+  }
+  /* The translucent ESC motif is a screen-covering presentation layer,
+   * NOT a HUD sprite. In the unified canvas trial keep the source
+   * physical X positions so tint / graphics reach the monitor edges.
+   * Return a distinct copy to consume the draw in this stage and stop
+   * the general canvas from compressing it a second time. No gutter
+   * replay in this path: the original full-width quads draw once. */
+  if(InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)==1 &&
+     InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)!=1) {
+    memcpy(copy,v,4*sizeof(*copy));
+    hit=InterlockedIncrement(&native_motif43_hits);
+    if(debug_log_enabled && (hit<=8 || hit%8000==0)) {
+      char line[230];
+      snprintf(line,sizeof(line),
+        "NATIVE-MOTIF-FULLWIDTH: original X preserved hit=%ld rect=(%.1f..%.1f,%.1f..%.1f) color=%08lX [PRESENTATION, NOT HUD]",
+        (long)hit,(double)l,(double)r,(double)t,(double)b,
+        (unsigned long)color);
+      log_line(line);
+    }
+    return copy;
   }
   center=(float)desktop_w*0.5f;
   memcpy(copy,v,4*sizeof(*copy));
@@ -1956,21 +2090,1018 @@ static void maybe_log_native_pause43_border(void *device,
     (double)v[0].z,(double)v[0].rhw);
   log_line(line);
 }
+/* Does the original game draw world HUD after its ESC ribbon?
+ * These read-only samples identify drawing order and Z/blend state before
+ * attempting an unsafe menu-depth rewrite or any texture replay. The
+ * Dreamcast reference requires the ESC interface to own the foreground.
+ * The renderer may use overlapping depth and/or later player HUD draws,
+ * so do not guess an occlusion policy from screenshot ordering alone. */
+static volatile LONG ui_pause_layer_overlap_samples=0;
+static void maybe_probe_pause_hud_layer(void *device,
+                                        const SpiderMenuVertex *v)
+{
+  float l,r,t,b,canvas_left,canvas_right;
+  LONG n,flip,bt,bb;
+  DWORD ze=0,zw=0,zf=0,ab=0;
+  char msg[340];
+  unsigned i;
+  if(!debug_log_enabled || !device || !v ||
+     InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1 ||
+     InterlockedCompareExchange(&ui_pause_layer_overlap_samples,0,0)>=64)
+    return;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  if(!native_pause43_visible_near_flip(flip)) return;
+  bt=InterlockedCompareExchange(&native_pause43_banner_top,0,0);
+  bb=InterlockedCompareExchange(&native_pause43_banner_bottom,0,0);
+  if(bb<=bt) return;
+  l=r=v[0].x;t=b=v[0].y;
+  for(i=1;i<4;i++) {
+    if(v[i].x<l)l=v[i].x;
+    if(v[i].x>r)r=v[i].x;
+    if(v[i].y<t)t=v[i].y;
+    if(v[i].y>b)b=v[i].y;
+  }
+  canvas_left=native_esc43_left_gutter()-50.0f;
+  canvas_right=(float)desktop_w-canvas_left;
+  if(l>=canvas_right || r<=canvas_left || t>=(float)bb || b<=(float)bt)
+    return;
+  n=InterlockedIncrement(&ui_pause_layer_overlap_samples);
+  if(n>64)return;
+  IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
+                                   D3DRENDERSTATE_ZENABLE,&ze);
+  IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
+                                   D3DRENDERSTATE_ZWRITEENABLE,&zw);
+  IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
+                                   D3DRENDERSTATE_ZFUNC,&zf);
+  IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
+                                   D3DRENDERSTATE_ALPHABLENDENABLE,&ab);
+  snprintf(msg,sizeof(msg),
+    "PAUSE-HUD-LAYER-PROBE: n=%ld flip=%ld ribbon-flip=%ld OVERLAP-AFTER-RIBBON box=(%.1f..%.1f,%.1f..%.1f) menu-y=(%ld..%ld) z=%.5f rhw=%.4f color=%08lX zen=%lu zw=%lu zfunc=%lu alpha=%lu [READ-ONLY]",
+    (long)n,(long)flip,
+    (long)InterlockedCompareExchange(&native_pause43_banner_flip,0,0),
+    (double)l,(double)r,(double)t,(double)b,(long)bt,(long)bb,
+    (double)v[0].z,(double)v[0].rhw,
+    (unsigned long)v[0].diffuse,
+    (unsigned long)ze,(unsigned long)zw,(unsigned long)zf,
+    (unsigned long)ab);
+  log_line(msg);
+}
+
 static void free_menu_vertices(SpiderMenuVertex *allocated) {
   if (allocated) HeapFree(GetProcessHeap(),0,allocated);
 }
 
+/* Opt-in native ESC foreground: use the game's original menu draw
+ * and original alpha blend, but force the identified menu primitive to
+ * pass depth testing above gameplay HUD (Dreamcast layering reference).
+ * No persistent render-state changes, no 3D/UI ownership heuristics.
+ * Native ESC draw order still matters; probe any HUD submitted later. */
+static volatile LONG ui_esc_front_draw_hits=0,ui_esc_front_draw_fallbacks=0;
+static HRESULT draw_native_esc_in_front(void *device,
+                  D3DPRIMITIVETYPE type,DWORD fvf,
+                  LPVOID vertices,DWORD count,DWORD flags,int native_esc)
+{
+  IDirect3DDevice7 *dev=(IDirect3DDevice7*)device;
+  DWORD zen=0,zfunc=0,zw=0;
+  HRESULT hr;
+  if(!device || !native_esc ||
+     InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1)
+    return original_draw_primitive(device,type,fvf,vertices,count,flags);
+  if(FAILED(IDirect3DDevice7_GetRenderState(dev,D3DRENDERSTATE_ZENABLE,&zen)) ||
+     zen==D3DZB_FALSE ||
+     FAILED(IDirect3DDevice7_GetRenderState(dev,D3DRENDERSTATE_ZFUNC,&zfunc)) ||
+     FAILED(IDirect3DDevice7_GetRenderState(dev,D3DRENDERSTATE_ZWRITEENABLE,&zw)) ||
+     FAILED(IDirect3DDevice7_SetRenderState(dev,D3DRENDERSTATE_ZFUNC,D3DCMP_ALWAYS))) {
+    LONG n=InterlockedIncrement(&ui_esc_front_draw_fallbacks);
+    if(debug_log_enabled && n<=3)
+      log_line("ESC-FOREGROUND: native Z disabled/unavailable, original draw retained");
+    return original_draw_primitive(device,type,fvf,vertices,count,flags);
+  }
+  if(FAILED(IDirect3DDevice7_SetRenderState(dev,D3DRENDERSTATE_ZWRITEENABLE,FALSE))) {
+    IDirect3DDevice7_SetRenderState(dev,D3DRENDERSTATE_ZFUNC,zfunc);
+    if(debug_log_enabled && InterlockedIncrement(&ui_esc_front_draw_fallbacks)<=3)
+      log_line("ESC-FOREGROUND: ZWRITE setup failed, original draw retained");
+    return original_draw_primitive(device,type,fvf,vertices,count,flags);
+  }
+  hr=original_draw_primitive(device,type,fvf,vertices,count,flags);
+  {
+    HRESULT rw=IDirect3DDevice7_SetRenderState(dev,D3DRENDERSTATE_ZWRITEENABLE,zw);
+    HRESULT rz=IDirect3DDevice7_SetRenderState(dev,D3DRENDERSTATE_ZFUNC,zfunc);
+    if((FAILED(rw)||FAILED(rz)) && debug_log_enabled &&
+       InterlockedIncrement(&ui_esc_front_draw_fallbacks)<=3)
+      log_line("ESC-FOREGROUND: WARNING native Z state restoration failed");
+  }
+  {
+    LONG n=InterlockedIncrement(&ui_esc_front_draw_hits);
+    if(debug_log_enabled && (n<=8 || n%1200==0)) {
+      char message[200];
+      snprintf(message,sizeof(message),
+        "ESC-FOREGROUND: draw=%ld source-ZEN=%lu ZFUNC=%lu ZWRITE=%lu temporary=ALWAYS/NO-ZWRITE [EXPERIMENT]",
+        (long)n,(unsigned long)zen,(unsigned long)zfunc,(unsigned long)zw);
+      log_line(message);
+    }
+  }
+  return hr;
+}
+
+/* Reversible Direct3D7 pause compositor.
+ * Snapshot each game-owned ESC draw (vertices + ALL stateblock + texture).
+ * Do NOT draw it at its original point. At EndScene, after the HUD and
+ * scene have been submitted, draw an optional physical-viewport tint,
+ * then replay the original ESC motif in centered 4:3 and the native menu.
+ * No boss/level-specific ordering, no GPU render-target readback, no
+ * synthetic transparent object identification. Calls are bounded and
+ * fail back to the original native draw path if capture is unsupported.
+ *
+ * D3D7 state blocks capture device states, but the bound texture is held
+ * explicitly by one GetTexture COM reference per command. The final
+ * stateblock plus texture restores the game's original states on exit.
+ * A temporary ZENABLE=FALSE is safe for 2D replay even on a device with
+ * an already disabled native depth test.
+ */
+typedef HRESULT (WINAPI *D3DSceneFn)(void *);
+static D3DSceneFn ui_original_begin_scene=NULL,ui_original_end_scene=NULL;
+typedef struct {
+  SpiderMenuVertex v[4];
+  /* Raw native screen-space geometry before the 4:3 canvas mapping.
+   * Captured for a single read-only scene-motif diagnostic, never drawn. */
+  SpiderMenuVertex source_v[4];
+  DWORD fvf,flags,state_token;
+  D3DPRIMITIVETYPE type;
+  IDirectDrawSurface7 *texture;
+  int layer;
+} SpiderUICompDraw;
+static SpiderUICompDraw ui_comp_draws[SPIDER_UI_COMP_MAX_COMMANDS];
+static unsigned ui_comp_count=0;
+static int ui_comp_scene_open=0,ui_comp_bailout=0,ui_comp_ribbon=0,ui_comp_motif=0;
+static void *ui_comp_device=NULL;
+static volatile LONG ui_comp_deferred=0,ui_comp_replayed=0;
+static volatile LONG ui_comp_capture_failures=0,ui_comp_no_scene=0,ui_comp_replay_failures=0;
+/* Frame counters are independent of quad count; modulo on cumulative
+ * DrawPrimitive hits can otherwise miss every EndScene log indefinitely. */
+static volatile LONG ui_comp_flushed_frames=0,ui_comp_fullscreen_candidates=0;
+static volatile LONG ui_comp_source_dump_once=0;
+/* Read-only check for another game-owned HUD pass AFTER our EndScene
+ * Pause overlay, within the same original DirectDraw Flip. If detected,
+ * an overlay-order change at EndScene alone cannot guarantee final
+ * foreground precedence. Never intercept or reorder those draws. */
+static volatile LONG ui_comp_last_overlay_flip=-1;
+static volatile LONG ui_comp_late_draw_samples=0;
+
+static void ui_comp_release(IDirect3DDevice7 *device) {
+  unsigned i;
+  for(i=0;i<ui_comp_count;i++){
+    if(ui_comp_draws[i].state_token && device)
+      IDirect3DDevice7_DeleteStateBlock(device,ui_comp_draws[i].state_token);
+    if(ui_comp_draws[i].texture)
+      IDirectDrawSurface7_Release(ui_comp_draws[i].texture);
+    memset(&ui_comp_draws[i],0,sizeof(ui_comp_draws[i]));
+  }
+  ui_comp_count=0;
+  ui_comp_ribbon=ui_comp_motif=0;
+}
+
+/* Original Pause decoration has 160 translucent primitives in two
+ * source colour families. The perimeter material reaches all four
+ * physical source edges while the inner spider is strictly interior.
+ * Verify that relationship every frame using the untouched source
+ * geometry, texture and original D3D7 state (no level/RHW/ARGB list).
+ *
+ * This detector supplies ONLY the exterior gutter colour and material:
+ * every native source primitive is replayed intact. We must never
+ * replace, recolour or separate the original centre 4:3 mesh because
+ * hardware A/B showed that it changes the Dreamcast-like alpha mix.
+ */
+static int ui_comp_native_backdrop_source(DWORD *native_argb,
+    float *inner_left,float *inner_right,unsigned *inner_quads,
+    const SpiderUICompDraw **source_material)
+{
+  SpiderUICompBackdropSample samples[SPIDER_UI_COMP_MAX_COMMANDS];
+  unsigned count=0u,i,k,background=0u,inner=0u;
+  float linner=(float)desktop_w,rinner=0.0f;
+  float w=(float)desktop_w,h=(float)desktop_h;
+  if(native_argb)*native_argb=0u;
+  if(inner_left)*inner_left=0.0f;
+  if(inner_right)*inner_right=0.0f;
+  if(inner_quads)*inner_quads=0u;
+  if(source_material)*source_material=NULL;
+  if(!native_argb || !inner_left || !inner_right || !source_material ||
+     !ui_comp_motif ||
+     ui_comp_bailout || ui_comp_count>SPIDER_UI_COMP_MAX_COMMANDS)
+    return 0;
+  for(i=0u;i<ui_comp_count;i++){
+    const SpiderUICompDraw *c=&ui_comp_draws[i];
+    const SpiderMenuVertex *v=c->source_v;
+    float l,r,t,b;
+    if(c->layer!=SPIDER_UI_COMP_PAUSE_DECOR)continue;
+    if(!c->state_token || c->texture ||
+       c->type!=D3DPT_TRIANGLEFAN || c->fvf!=0x144UL ||
+       count>=SPIDER_UI_COMP_MAX_COMMANDS)return 0;
+    l=r=v[0].x;t=b=v[0].y;
+    for(k=1u;k<4u;k++){
+      if(v[k].diffuse!=v[0].diffuse ||
+         fabsf(v[k].z-v[0].z)>0.00005f ||
+         fabsf(v[k].rhw-v[0].rhw)>0.080f)return 0;
+      if(v[k].x<l)l=v[k].x;
+      if(v[k].x>r)r=v[k].x;
+      if(v[k].y<t)t=v[k].y;
+      if(v[k].y>b)b=v[k].y;
+    }
+    samples[count].left=l;samples[count].right=r;
+    samples[count].top=t;samples[count].bottom=b;
+    samples[count++].color=(unsigned)v[0].diffuse;
+  }
+  if(!SpiderUIComp_IdentifyNativeBackdrop(samples,count,w,h,&background))
+    return 0;
+  for(i=0u;i<count;i++){
+    if(samples[i].color==background)continue;
+    if(samples[i].left<linner)linner=samples[i].left;
+    if(samples[i].right>rinner)rinner=samples[i].right;
+    inner++;
+  }
+  if(!inner || linner<=1.0f || rinner>=w-1.0f ||
+     !(rinner>linner))return 0;
+  for(i=0u;i<ui_comp_count;i++){
+    const SpiderUICompDraw *c=&ui_comp_draws[i];
+    if(c->layer==SPIDER_UI_COMP_PAUSE_DECOR &&
+       c->source_v[0].diffuse==(DWORD)background) {
+      *source_material=c;
+      break;
+    }
+  }
+  if(!*source_material)return 0;
+  *native_argb=(DWORD)background;
+  *inner_left=linner;
+  *inner_right=rinner;
+  if(inner_quads)*inner_quads=inner;
+  return 1;
+}
+
+/* Source-colour exterior completion only.
+ *
+ * A/B field evidence (2026-11-06 F9 scrn0103 and scrn0104, same
+ * 05d2804 build): source centre keeps correct RGB when ALL 160 native
+ * decoration triangles are replayed. Replacing its 84 perimeter
+ * triangles with one alpha-blended fullscreen quad causes dull
+ * colours, even with HUD replay OFF. Therefore NEVER draw a colour
+ * overlay over the already correct 4:3 centre or discard source tiles.
+ *
+ * Reconstruct only the PHYSICAL exterior [0,gutter) and
+ * (width-gutter,width] from the ORIGINAL game's edge-owned material.
+ * Source-backed palette and D3D7 blend state are validated upstream
+ * every frame. Centre source geometry, order and alpha are preserved
+ * byte-for-byte. Independent widescreen sizes use the actual monitor
+ * dimensions; no levels, RHW, RGB or alpha constants are hardcoded.
+ *
+ * The render state block is saved by ui_comp_flush() before this
+ * operation and restored after the native Pause replay. This helper
+ * restores the precise original viewport on all paths.
+ */
+static int ui_comp_draw_native_exterior_gutters(
+    IDirect3DDevice7 *device,const SpiderUICompDraw *sample,DWORD argb,
+    unsigned *quads_drawn)
+{
+  SpiderMenuVertex v[4];
+  D3DVIEWPORT7 previous,physical;
+  HRESULT draw_hr=S_OK,restore_hr=S_OK;
+  DWORD w=(DWORD)desktop_w,h=(DWORD)desktop_h;
+  DWORD center_w,margin,right_begin;
+  unsigned k,side,done=0u;
+  int changed=0;
+  LONG frame=InterlockedCompareExchange(&ui_comp_flushed_frames,0,0);
+  if(quads_drawn)*quads_drawn=0u;
+  if(!quads_drawn || !device || !sample ||
+     !sample->state_token || sample->texture ||
+     sample->fvf!=0x144UL || sample->type!=D3DPT_TRIANGLEFAN ||
+     sample->source_v[0].diffuse!=argb ||
+     (argb>>24)==0u || !original_set_viewport ||
+     w<640u || h<480u || w>16384u || h>16384u)
+    return 0;
+  center_w=(DWORD)((float)h*(4.0f/3.0f)+0.5f);
+  if(center_w>=w)return 0;
+  /* Integer 4:3 fitting is not always symmetric for odd-sized
+   * desktops. Keep the original centred viewport and allow the
+   * right margin to be exactly one pixel wider if required. */
+  margin=(w-center_w)/2u;
+  right_begin=margin+center_w;
+  if(margin==0u || right_begin>=w)return 0;
+  if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)) ||
+     FAILED(IDirect3DDevice7_GetViewport(device,&previous)))
+    return 0;
+  physical=previous;
+  if(previous.dwX==0u && previous.dwY==0u &&
+     previous.dwWidth==w && previous.dwHeight==h) {
+    /* Already drawing to the full physical backbuffer. */
+  } else if(previous.dwX==margin && previous.dwY==0u &&
+            previous.dwWidth==center_w && previous.dwHeight==h &&
+            previous.dvMinZ<=previous.dvMaxZ) {
+    physical.dwX=0u;physical.dwY=0u;
+    physical.dwWidth=w;physical.dwHeight=h;
+    if(FAILED(original_set_viewport(device,&physical)))
+      return 0;
+    changed=1;
+  } else {
+    if(debug_log_enabled && frame<4){
+      char msg[215];
+      snprintf(msg,sizeof(msg),
+        "UI-COMPOSITOR-BACKDROP-VIEWPORT: gutter-only rejected unexpected %lux%lu+%lu+%lu",
+        (unsigned long)previous.dwWidth,(unsigned long)previous.dwHeight,
+        (unsigned long)previous.dwX,(unsigned long)previous.dwY);
+      log_line(msg);
+    }
+    return 0;
+  }
+  /* Original material is restored, and only the two side gutters
+   * receive a single alpha pass. All original 4:3 decoration is still
+   * replayed AFTER this call, untouched and without double blending. */
+  for(k=0u;k<4u;k++)v[k]=sample->source_v[0];
+  if(FAILED(IDirect3DDevice7_SetTexture(device,0,NULL)) ||
+     FAILED(IDirect3DDevice7_SetRenderState(device,
+                               D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)) ||
+     FAILED(IDirect3DDevice7_SetRenderState(device,
+                               D3DRENDERSTATE_ZWRITEENABLE,FALSE)))
+    draw_hr=E_FAIL;
+  for(side=0u;side<2u && SUCCEEDED(draw_hr);side++){
+    float left=side==0u ? 0.0f:(float)right_begin;
+    float right=side==0u ? (float)margin:(float)w;
+    v[0].x=left;v[0].y=0.0f;
+    v[1].x=right;v[1].y=0.0f;
+    v[2].x=right;v[2].y=(float)h;
+    v[3].x=left;v[3].y=(float)h;
+    draw_hr=original_draw_primitive(device,
+                     D3DPT_TRIANGLEFAN,0x144UL,v,4,sample->flags);
+    if(SUCCEEDED(draw_hr))done++;
+  }
+  if(changed)
+    restore_hr=original_set_viewport(device,&previous);
+  if(debug_log_enabled && (frame<4 || frame%180==0 ||
+                            FAILED(draw_hr) || FAILED(restore_hr))){
+    char msg[300];
+    snprintf(msg,sizeof(msg),
+      "UI-COMPOSITOR-BACKDROP-VIEWPORT: gutter-only viewport=%lux%lu+%lu+%lu physical=%lux%lu temporary-switch=%d draw=0x%08lX restore=0x%08lX quads=%u",
+      (unsigned long)previous.dwWidth,(unsigned long)previous.dwHeight,
+      (unsigned long)previous.dwX,(unsigned long)previous.dwY,
+      (unsigned long)w,(unsigned long)h,
+      changed,(unsigned long)draw_hr,(unsigned long)restore_hr,done);
+    log_line(msg);
+  }
+  if(FAILED(restore_hr)) {
+    log_line("UI-COMPOSITOR-BACKDROP-VIEWPORT: ERROR original viewport not restored");
+    return 0;
+  }
+  if(FAILED(draw_hr) || done!=2u)return 0;
+  *quads_drawn=done;
+  return 1;
+}
+
+/* Flush before native EndScene, not at DirectDraw Flip, so the entire
+ * replay remains inside the original legal BeginScene/EndScene pair. */
+static void ui_comp_flush(IDirect3DDevice7 *device) {
+  DWORD saved=0;
+  IDirectDrawSurface7 *saved_texture=NULL;
+  unsigned i,layer,pass,inner_quads=0u;
+  unsigned paint_hud=0u,paint_spider=0u,paint_menu=0u;
+  unsigned exterior_quads=0u;
+  DWORD native_backdrop_argb=0u;
+  float spider_source_left=0.0f,spider_source_right=0.0f;
+  const SpiderUICompDraw *native_backdrop_material=NULL;
+  LONG n;
+  int all_ok=1,native_backdrop_verified=0,native_backdrop_drawn=0;
+  if(ui_comp_count==0)return;
+  if(!device || ui_comp_device!=device){
+    log_line("UI-COMPOSITOR: scene owner mismatch; discarding deferred commands");
+    ui_comp_release(device);ui_comp_bailout=1;return;
+  }
+  if(FAILED(IDirect3DDevice7_CreateStateBlock(device,D3DSBT_ALL,&saved)) ||
+     !saved) {
+    log_line("UI-COMPOSITOR: cannot save end-scene state; disabling deferred path");
+    ui_comp_release(device);ui_comp_bailout=1;
+    InterlockedIncrement(&ui_comp_capture_failures);
+    return;
+  }
+  /* GetTexture() supplies one owned COM reference when non-NULL. */
+  if(FAILED(IDirect3DDevice7_GetTexture(device,0,&saved_texture))) {
+    IDirect3DDevice7_DeleteStateBlock(device,saved);
+    ui_comp_release(device);ui_comp_bailout=1;
+    log_line("UI-COMPOSITOR: cannot save bound end-scene texture; fallback");
+    return;
+  }
+  /* Validate the original perimeter material but NEVER replace its
+   * native 84 decoration tiles. The A/B test proved that a fullscreen
+   * substitute destroys the central source colour and blend fidelity.
+   * Fill just the physical side margins, retaining all 160 source
+   * triangles over the original 4:3 centre. */
+  if(ui_comp_motif &&
+     InterlockedCompareExchange(&ui_compositor_native_backdrop_enabled,0,0)==1)
+    native_backdrop_verified=ui_comp_native_backdrop_source(
+      &native_backdrop_argb,&spider_source_left,&spider_source_right,
+      &inner_quads,&native_backdrop_material);
+  if(native_backdrop_verified)
+    native_backdrop_drawn=ui_comp_draw_native_exterior_gutters(
+      device,native_backdrop_material,native_backdrop_argb,&exterior_quads);
+  if(debug_log_enabled && ui_comp_motif &&
+     (InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)<4 ||
+      InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)%180==0)){
+    char msg[300];
+    snprintf(msg,sizeof(msg),
+      "UI-COMPOSITOR-NATIVE-BACKDROP: %s verified=%d drawn=%d quads=%u argb=%08lX spider-bounds=(%.1f..%.1f) inner-quads=%u physical=%ux%u [SOURCE CENTRE UNCHANGED: ALL 160 NATIVE TRIANGLES REPLAYED]",
+      native_backdrop_drawn?"gutter-only":"native-only",
+      native_backdrop_verified,native_backdrop_drawn,exterior_quads,
+      (unsigned long)native_backdrop_argb,
+      (double)spider_source_left,(double)spider_source_right,
+      inner_quads,(unsigned)desktop_w,(unsigned)desktop_h);
+    log_line(msg);
+  }
+  /* This is the native Dreamcast-style painter order:
+   *   WORLD (game-owned)
+   *   -> source-derived side gutter completion OUTSIDE centre 4:3
+   *   -> source-verified game HUD, replayed ONCE if explicitly enabled
+   *   -> original native 160-triangle translucent 4:3 decoration
+   *   -> PAUSED title, purple ribbon, text and native selector.
+   * 
+   * HUD deferral is experimental and defaults OFF. Both hardware
+   * validated scenes replayed zero HUD quads and retained the game's
+   * original HUD drawing order. No extra colour correction is needed
+   * when only the physical gutters are painted.
+   *
+   * Preserve the exact original native geometry and ordering for all
+   * 160 translucent decoration triangles. The Dreamcast reference and
+   * A/B F9 capture show that replacing or separating the native 84
+   * backdrop tiles modifies the visible central colour mix. Two new
+   * gutter-only primitives cover exterior pixels but NEVER centre.
+   * Source colours and alpha are unmodified for every native triangle.
+   */
+  for(pass=SPIDER_UI_COMP_REPLAY_HUD;
+      pass<=SPIDER_UI_COMP_REPLAY_MENU;pass++){
+    for(layer=SPIDER_UI_COMP_HUD;
+        layer<=SPIDER_UI_COMP_PAUSE_MENU;layer++){
+      for(i=0;i<ui_comp_count;i++) {
+        SpiderUICompDraw *c=&ui_comp_draws[i];
+        int owner;
+        if((unsigned)c->layer!=layer)continue;
+        /* The complete native 160-tile motif (including its background)
+         * is one contiguous draw pass. Source colours are NEVER filtered
+         * or discarded; the separate gutters never cover centre 4:3. */
+        owner=SpiderUIComp_ReplayPassForDraw(c->layer);
+        if(owner!=(int)pass)continue;
+        /* The native capture's full material and texture are restored
+         * for every primitive. Disable Z only for the composited
+         * screen-space layers, so they remain above the 3D/HUD. */
+        if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,c->state_token)) ||
+           FAILED(IDirect3DDevice7_SetTexture(device,0,c->texture)) ||
+           FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)) ||
+           FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE)) ||
+           FAILED(original_draw_primitive(device,c->type,c->fvf,c->v,4,c->flags))) {
+          all_ok=0;
+          InterlockedIncrement(&ui_comp_replay_failures);
+        } else {
+          InterlockedIncrement(&ui_comp_replayed);
+          if(pass==SPIDER_UI_COMP_REPLAY_HUD)paint_hud++;
+          else if(pass==SPIDER_UI_COMP_REPLAY_MOTIF)paint_spider++;
+          else paint_menu++;
+        }
+      }
+    }
+  }
+  if(paint_spider && paint_menu && all_ok)
+    InterlockedExchange(&ui_comp_last_overlay_flip,
+       InterlockedCompareExchange(&flip_count,0,0));
+  if(debug_log_enabled && ui_comp_motif &&
+     (InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)<4 ||
+      InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)%180==0 ||
+      !all_ok)) {
+    char msg[245];
+    snprintf(msg,sizeof(msg),
+      "UI-COMPOSITOR-ORDER: exterior-gutter-quads=%u native-decor=%u hud=%u menu=%u [WORLD -> GUTTERS OUTSIDE 4:3 -> HUD -> 160 SOURCE TRIANGLES -> PAUSE; NO FULLSCREEN OVERLAY]",
+      exterior_quads,paint_spider,paint_hud,paint_menu);
+    log_line(msg);
+  }
+  /* One-shot read-only 4:3 source/mapped comparison after a stable
+   * native pause frame. Do not make a new render pass or infer a tint.
+   * This tells us whether 160 native motif pieces contain background
+   * coverage, colour gradients, or only decorative geometry. */
+  if(debug_log_enabled && ui_comp_ribbon && ui_comp_motif &&
+     InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)>=59 &&
+     InterlockedCompareExchange(&ui_comp_source_dump_once,1,0)==0) {
+    unsigned q,k,found=0,source_left=0,source_right=0,source_full=0;
+    float width=(float)desktop_w,height=(float)desktop_h;
+    float raw_min=width,raw_max=0.0f,raw_top=height,raw_bottom=0.0f;
+    char msg[340];
+    for(q=0;q<ui_comp_count;q++) {
+      const SpiderUICompDraw *c=&ui_comp_draws[q];
+      float l,r,t,b;
+      if(c->layer!=SPIDER_UI_COMP_PAUSE_DECOR)continue;
+      found++;
+      l=r=c->source_v[0].x;t=b=c->source_v[0].y;
+      for(k=1;k<4;k++) {
+        if(c->source_v[k].x<l)l=c->source_v[k].x;
+        if(c->source_v[k].x>r)r=c->source_v[k].x;
+        if(c->source_v[k].y<t)t=c->source_v[k].y;
+        if(c->source_v[k].y>b)b=c->source_v[k].y;
+      }
+      if(l<raw_min)raw_min=l;
+      if(r>raw_max)raw_max=r;
+      if(t<raw_top)raw_top=t;
+      if(b>raw_bottom)raw_bottom=b;
+      if(l<=width*.03f)source_left++;
+      if(r>=width*.97f)source_right++;
+      if(l<=width*.03f && r>=width*.97f)source_full++;
+      /* Capture ALL vertex diffuse colours: important for native
+       * translucent gradients which cannot be reconstructed from
+       * the first vertex of the first motif quad. */
+      snprintf(msg,sizeof(msg),
+        "UI-COMPOSITOR-MOTIF-SOURCE: q=%u raw=(%.1f..%.1f,%.1f..%.1f) mapped-x=(%.1f..%.1f) ARGB=%08lX/%08lX/%08lX/%08lX z=%.5f rhw=%.3f [READ-ONLY]",
+        q,(double)l,(double)r,(double)t,(double)b,
+        (double)c->v[0].x,(double)c->v[1].x,
+        (unsigned long)c->source_v[0].diffuse,
+        (unsigned long)c->source_v[1].diffuse,
+        (unsigned long)c->source_v[2].diffuse,
+        (unsigned long)c->source_v[3].diffuse,
+        (double)c->source_v[0].z,(double)c->source_v[0].rhw);
+      log_line(msg);
+    }
+    snprintf(msg,sizeof(msg),
+      "UI-COMPOSITOR-MOTIF-SUMMARY: quads=%u raw-extents=(%.1f..%.1f,%.1f..%.1f) edge-left=%u edge-right=%u fullwidth-quads=%u physical=%ux%u [SOURCE BEFORE 4:3 TRANSFORM]",
+      found,(double)raw_min,(double)raw_max,
+      (double)raw_top,(double)raw_bottom,
+      source_left,source_right,source_full,
+      (unsigned)desktop_w,(unsigned)desktop_h);
+    log_line(msg);
+  }
+  if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,saved))) {
+    all_ok=0;log_line("UI-COMPOSITOR: WARNING end-scene state restore failed");
+  }
+  /* ApplyStateBlock bypasses hooked_set_render_state. Resample the
+   * actual restored Z state so the existing Hor+ 3D FOV guard does
+   * not accidentally retain our temporary 2D ZENABLE=FALSE. */
+  {
+    DWORD restored_z=0;
+    if(SUCCEEDED(IDirect3DDevice7_GetRenderState(device,
+                                                 D3DRENDERSTATE_ZENABLE,&restored_z))) {
+      InterlockedExchange(&fov_z_state_enabled,restored_z!=D3DZB_FALSE);
+      InterlockedExchange(&fov_z_state_known,1);
+    }
+  }
+  if(FAILED(IDirect3DDevice7_SetTexture(device,0,saved_texture))) {
+    all_ok=0;log_line("UI-COMPOSITOR: WARNING end-scene texture restore failed");
+  }
+  if(saved_texture)IDirectDrawSurface7_Release(saved_texture);
+  IDirect3DDevice7_DeleteStateBlock(device,saved);
+  n=InterlockedCompareExchange(&ui_comp_replayed,0,0);
+  {
+    LONG frame=InterlockedIncrement(&ui_comp_flushed_frames);
+    /* Source-only layer coverage, not a per-sprite material heuristic.
+     * On a 1920x1080 screen, a decoration bounded by x≈240..1680
+     * cannot physically colour the 240px gutters at either side. */
+    if(debug_log_enabled && (frame<=3 || frame%180==0 || !all_ok)) {
+      unsigned decor=0,menu=0,k;
+      float dl=(float)desktop_w,dr=0.0f,dt=(float)desktop_h,db=0.0f;
+      char msg[350];
+      for(i=0;i<ui_comp_count;i++) {
+        const SpiderUICompDraw *c=&ui_comp_draws[i];
+        if(c->layer==SPIDER_UI_COMP_PAUSE_DECOR) {
+          ++decor;
+          for(k=0;k<4;k++){
+            if(c->v[k].x<dl)dl=c->v[k].x;
+            if(c->v[k].x>dr)dr=c->v[k].x;
+            if(c->v[k].y<dt)dt=c->v[k].y;
+            if(c->v[k].y>db)db=c->v[k].y;
+          }
+        } else if(c->layer==SPIDER_UI_COMP_PAUSE_MENU) ++menu;
+      }
+      snprintf(msg,sizeof(msg),
+        "UI-COMPOSITOR-FRAME: frame=%ld commands=%u decor=%u menu=%u decor-box=(%.1f..%.1f,%.1f..%.1f) canvas=(%.1f..%.1f) candidate-coverage=%ld replay-total=%ld all-ok=%d",
+        (long)frame,ui_comp_count,decor,menu,
+        (double)dl,(double)dr,(double)dt,(double)db,
+        (double)((float)desktop_w-(float)desktop_h*4.0f/3.0f)*0.5,
+        (double)((float)desktop_w+(float)desktop_h*4.0f/3.0f)*0.5,
+        (long)InterlockedCompareExchange(&ui_comp_fullscreen_candidates,0,0),
+        (long)n,all_ok);
+      log_line(msg);
+    }
+  }
+  ui_comp_release(device);
+}
+
+/* Called from DrawPrimitive only for verified native ESC-owned quads.
+ * Any unsupported capture falls through to the original immediate draw
+ * without changing global device state; no silent missing menu on
+ * unsupported stateblocks. */
+static int ui_comp_capture(IDirect3DDevice7 *device,D3DPRIMITIVETYPE type,
+             DWORD fvf,const void *vertices,const void *source_vertices,
+             DWORD count,DWORD flags,int layer)
+{
+  SpiderUICompDraw *c;
+  DWORD block=0;
+  IDirectDrawSurface7 *texture=NULL;
+  if(!SpiderUIComp_ShouldDefer(
+       InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1,
+       ui_comp_scene_open && ui_comp_device==device,ui_comp_bailout,
+       layer,(unsigned)count,(unsigned)fvf)) {
+    if(debug_log_enabled && ui_comp_scene_open==0 &&
+       InterlockedIncrement(&ui_comp_no_scene)<=4)
+      log_line("UI-COMPOSITOR: menu draw outside BeginScene, original draw retained");
+    return 0;
+  }
+  if(ui_comp_count>=SPIDER_UI_COMP_MAX_COMMANDS) {
+    log_line("UI-COMPOSITOR: frame budget exceeded, flushing safely and bypassing");
+    ui_comp_flush(device);ui_comp_bailout=1;return 0;
+  }
+  if(FAILED(IDirect3DDevice7_CreateStateBlock(device,D3DSBT_ALL,&block)) || !block)
+    goto capture_failed;
+  if(FAILED(IDirect3DDevice7_GetTexture(device,0,&texture)))
+    goto capture_failed;
+  c=&ui_comp_draws[ui_comp_count++];
+  memset(c,0,sizeof(*c));
+  memcpy(c->v,vertices,4u*sizeof(SpiderMenuVertex));
+  /* This is a passive snapshot; only the corrected c->v is replayed. */
+  if(source_vertices)
+    memcpy(c->source_v,source_vertices,4u*sizeof(SpiderMenuVertex));
+  c->fvf=fvf;c->flags=flags;c->type=type;c->layer=layer;
+  c->state_token=block;c->texture=texture;
+  if(layer==SPIDER_UI_COMP_PAUSE_DECOR)
+    ui_comp_motif=1;
+  else if(layer==SPIDER_UI_COMP_PAUSE_MENU)
+    ui_comp_ribbon=1;
+  if(InterlockedIncrement(&ui_comp_deferred)<=8 && debug_log_enabled)
+    log_line("UI-COMPOSITOR: native ESC primitive captured, deferred until EndScene");
+  return 1;
+capture_failed:
+  if(block)IDirect3DDevice7_DeleteStateBlock(device,block);
+  if(texture)IDirectDrawSurface7_Release(texture);
+  if(debug_log_enabled && InterlockedIncrement(&ui_comp_capture_failures)<=5)
+    log_line("UI-COMPOSITOR: D3D7 stateblock/texture capture failed, native draw fallback");
+  /* Draw already deferred commands in their same original scene, then
+   * disable captures until next BeginScene. */
+  ui_comp_flush(device);ui_comp_bailout=1;
+  return 0;
+}
+
+static HRESULT WINAPI ui_compositor_scene_start(void *self) {
+  HRESULT hr=ui_original_begin_scene(self);
+  if(SUCCEEDED(hr) &&
+     InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1){
+    ui_transition_hold22_scene_native=0u;
+    ui_transition_hold22_scene_gutters=0u;
+    SpiderNativeSync24_Reset(&ui_transition_sync24_frame);
+    SpiderNativeBounds25_Reset(&ui_transition_bounds25_frame);
+    ui_transition_sync24_flags=0u;
+  }
+  if(SUCCEEDED(hr) &&
+     (InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 ||
+      InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1)){
+    if(ui_comp_count){
+      log_line("UI-COMPOSITOR: stale scene discarded on next BeginScene");
+      ui_comp_release((IDirect3DDevice7*)ui_comp_device);
+    }
+    ui_comp_scene_open=1;ui_comp_device=self;ui_comp_bailout=0;
+  }
+  return hr;
+}
+/* V24 EndScene black physical-gutters-only overlay. Source aperture,
+ * teeth, black 4:3 triangles and their original D3D7 draw order were
+ * already rendered by the game; they are NEVER redrawn or replaced.
+ *
+ * D3D7 state is saved/restored around these TWO opaque black strips,
+ * so EndScene's camera/material/HUD/ESC state cannot leak into or out
+ * of this narrow supplemental rectangle pair.
+ */
+static void ui_transition_sync24_finish(IDirect3DDevice7 *device)
+{
+  SpiderMenuVertex sides[2][4];
+  float band=0.0f,left=0.0f,right=0.0f;
+  DWORD saved=0u,restored_z=0u;
+  IDirectDrawSurface7 *bound=NULL;
+  const int bounds25=
+    InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1;
+  int built,ok=1,draw_left=1,draw_right=1;
+  unsigned drawn=0u;
+  HRESULT hr;
+  unsigned total=ui_transition_sync24_frame.native_fans;
+  if(InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)!=1 ||
+     !device || !total)return;
+  /* This must be the same verified original source family already
+   * counted by the old V22 diagnostics. A mismatch is not a reason to
+   * invent any side geometry. */
+  if(total!=ui_transition_hold22_scene_native){
+    if(debug_log_enabled)
+      log_line("UI-TRANSITION-SYNC24: SOURCE COUNT MISMATCH; no side draw (native V19 kept)");
+    return;
+  }
+  if(bounds25){
+    unsigned w=(unsigned)desktop_w,h=(unsigned)desktop_h;
+    int measured=0;
+    /* 4:3 and portrait displays have NO horizontal gutters at all. */
+    if((uint64_t)w*3u<=(uint64_t)h*4u){
+      built=2;
+    }else{
+      measured=SpiderNativeBounds25_Widths(
+          &ui_transition_bounds25_frame,w,h,&left,&right);
+      if(!measured){
+        /* V24 remains a strictly separate safety fallback for a
+         * source family with no visible eligible tooth triangles. */
+        built=SpiderNativeSync24_Finish(
+              &ui_transition_sync24_frame,w,h,sides,&band);
+        left=right=band;
+      }else{
+        built=1;
+      }
+      if(built==1){
+        if(ui_transition_bounds25_have_prev){
+          if(left>ui_transition_bounds25_prev_left)
+            left=ui_transition_bounds25_prev_left;
+          if(right>ui_transition_bounds25_prev_right)
+            right=ui_transition_bounds25_prev_right;
+        }
+        /* Both side margins use a real one-PHYSICAL-pixel overlap at
+         * the original 4:3 seam; never extend beyond a visible tooth.
+         * When V24 fallback is involved, clamp its pixels to the same
+         * previously proved nonincreasing source-envelope bounds. */
+        if(!SpiderNativeBounds25_Build(
+               ui_transition_sync24_frame.prototype,w,h,
+               left,right,sides))
+          built=-1;
+        else if(left<.5f && right<.5f)
+          built=2;
+      }
+      if(built==1 || built==2){
+        ui_transition_bounds25_have_prev=1u;
+        ui_transition_bounds25_prev_left=left;
+        ui_transition_bounds25_prev_right=right;
+      }
+    }
+    draw_left=left>=.5f;
+    draw_right=right>=.5f;
+    ui_transition_bounds25_last_left=left;
+    ui_transition_bounds25_last_right=right;
+    ui_transition_bounds25_last_fallback=!measured;
+  }else{
+    built=SpiderNativeSync24_Finish(&ui_transition_sync24_frame,
+           (unsigned)desktop_w,(unsigned)desktop_h,sides,&band);
+  }
+  /* A valid zero-width curtain is the desired last-phase state. */
+  if(built==2)return;
+  if(built==0){
+    if(debug_log_enabled)
+      log_line("UI-TRANSITION-SYNC24: NO NONDEGENERATE SOURCE; skip supplemental strips this scene");
+    return;
+  }
+  if(built<0 ||
+     InterlockedCompareExchange(&ui_transition_sync24_failed,0,0)==1){
+    if(built<0 && debug_log_enabled)
+      log_line("UI-TRANSITION-SYNC24: INVALID PHYSICAL GUTTER GEOMETRY; native V19 unchanged");
+    return;
+  }
+  if(FAILED(IDirect3DDevice7_CreateStateBlock(device,D3DSBT_ALL,&saved)) ||
+     !saved){ok=0;goto done;}
+  if(FAILED(IDirect3DDevice7_GetTexture(device,0,&bound))){
+    ok=0;goto done;
+  }
+#define SYNC24_REQUIRE(call) do {if(FAILED(call))ok=0;} while(0)
+  SYNC24_REQUIRE(IDirect3DDevice7_SetTexture(device,0,NULL));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ALPHABLENDENABLE,FALSE));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ALPHATESTENABLE,FALSE));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_FOGENABLE,FALSE));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_CULLMODE,D3DCULL_NONE));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_COLOROP,D3DTOP_SELECTARG1));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_COLORARG1,D3DTA_DIFFUSE));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAOP,D3DTOP_SELECTARG1));
+  SYNC24_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAARG1,D3DTA_DIFFUSE));
+  if(ok && draw_left){
+    HRESULT hleft=original_draw_primitive(device,D3DPT_TRIANGLEFAN,
+                      0x144UL,sides[0],4u,ui_transition_sync24_flags);
+    if(SUCCEEDED(hleft))++drawn;
+    else ok=0;
+  }
+  if(ok && draw_right){
+    HRESULT hright=original_draw_primitive(device,D3DPT_TRIANGLEFAN,
+                      0x144UL,sides[1],4u,ui_transition_sync24_flags);
+    if(SUCCEEDED(hright))++drawn;
+    else ok=0;
+  }
+#undef SYNC24_REQUIRE
+done:
+  if(saved){
+    hr=IDirect3DDevice7_ApplyStateBlock(device,saved);
+    if(FAILED(hr))ok=0;
+    /* Match the proven earlier EndScene compositors: explicitly
+     * rebind the previous texture after ApplyStateBlock. */
+    if(bound){
+      hr=IDirect3DDevice7_SetTexture(device,0,bound);
+      if(FAILED(hr))ok=0;
+    }
+    IDirect3DDevice7_DeleteStateBlock(device,saved);
+  }
+  if(bound)IDirectDrawSurface7_Release(bound);
+  if(SUCCEEDED(IDirect3DDevice7_GetRenderState(
+       device,D3DRENDERSTATE_ZENABLE,&restored_z))){
+    InterlockedExchange(&fov_z_state_enabled,restored_z!=D3DZB_FALSE);
+    InterlockedExchange(&fov_z_state_known,1);
+  }
+  if(ok){
+    ui_transition_hold22_scene_gutters=drawn;
+  }else{
+    InterlockedExchange(&ui_transition_sync24_failed,1);
+    log_line("UI-TRANSITION-SYNC24: END-SCENE D3D7 DRAW/STATE ERROR, side overlay disabled, native V19 intact");
+  }
+}
+
+static HRESULT WINAPI ui_compositor_scene_finish(void *self) {
+  if(InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1){
+    unsigned active=ui_transition_hold22_scene_native>0u;
+    if(active){
+      unsigned frame=++ui_transition_bounds25_frames;
+      ui_transition_sync24_finish((IDirect3DDevice7*)self);
+      if(debug_log_enabled && (frame<=10u || frame%4u==0u ||
+          ui_transition_bounds25_last_left<.5f ||
+          ui_transition_bounds25_last_right<.5f)){
+        char msg[345];
+        snprintf(msg,sizeof(msg),
+          "UI-TRANSITION-BOUNDS25: FRAME=%u native=%u eligible-tri=%u matte-skip=%u inner-left=%.2f inner-right=%.2f left-curtain=%.2f right-curtain=%.2f overlap=1.0 fallback=%u drawn=%u [V19 ORIGINAL]",
+          frame,ui_transition_sync24_frame.native_fans,
+          ui_transition_bounds25_frame.eligible,
+          ui_transition_bounds25_frame.excluded_matte,
+          (double)ui_transition_bounds25_frame.min_x,
+          (double)ui_transition_bounds25_frame.max_x,
+          (double)ui_transition_bounds25_last_left,
+          (double)ui_transition_bounds25_last_right,
+          ui_transition_bounds25_last_fallback,
+          ui_transition_hold22_scene_gutters);
+        log_line(msg);
+      }
+    }else if(ui_transition_hold22_last_active){
+      ui_transition_bounds25_prev_left=0.0f;
+      ui_transition_bounds25_prev_right=0.0f;
+      ui_transition_bounds25_have_prev=0u;
+      log_line("UI-TRANSITION-BOUNDS25: RELEASE - reset per-transition left/right bounds and black side widths");
+    }
+    ui_transition_hold22_last_active=active;
+  }
+  if(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
+     ui_comp_scene_open && ui_comp_device==self)
+    ui_comp_flush((IDirect3DDevice7*)self);
+  ui_comp_scene_open=0;ui_comp_device=NULL;
+  return ui_original_end_scene(self);
+}
+/* Read-only candidate scan: looks for native full-viewport screen-space
+ * quads DURING ESC, excluding known game-owned ESC menu layers. This tests
+ * whether the game supplies a distinct screen-covering tint command.
+ * Never stretches or recolours any quad, and never assumes a material
+ * ID/level/name. A zero count means "none met THIS bound", not "none
+ * exists" (it may be tiled or rendered by another API).
+ */
+static void ui_comp_probe_fullscreen_source(void *device,
+                   D3DPRIMITIVETYPE type,DWORD fvf,
+                   const void *source,DWORD count,int native_esc)
+{
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  float l,r,t,b,w=(float)desktop_w,h=(float)desktop_h;
+  unsigned i;
+  LONG n;
+  DWORD blend=0;
+  char msg[276];
+  if(!debug_log_enabled || !device || !source ||
+     InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)!=1 ||
+     !ui_comp_scene_open || ui_comp_bailout || native_esc ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4 ||
+     w<640.0f || h<480.0f ||
+     !native_pause43_visible_near_flip(
+        InterlockedCompareExchange(&flip_count,0,0)))
+    return;
+  l=r=v[0].x;t=b=v[0].y;
+  for(i=0;i<4;i++) {
+    if(!(v[i].x>=-w*.1f && v[i].x<=w*1.1f &&
+         v[i].y>=-h*.1f && v[i].y<=h*1.1f &&
+         v[i].z>=0.0f && v[i].z<.02f))
+      return;
+    if(v[i].x<l)l=v[i].x;
+    if(v[i].x>r)r=v[i].x;
+    if(v[i].y<t)t=v[i].y;
+    if(v[i].y>b)b=v[i].y;
+  }
+  if(l>w*.12f || r<w*.88f || t>h*.12f || b<h*.88f)
+    return;
+  n=InterlockedIncrement(&ui_comp_fullscreen_candidates);
+  if(n>16 && n%180!=0)return;
+  IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
+                                   D3DRENDERSTATE_ALPHABLENDENABLE,&blend);
+  snprintf(msg,sizeof(msg),
+    "UI-COMPOSITOR-COVERAGE-PROBE: count=%ld source-box=(%.1f..%.1f,%.1f..%.1f) color=%08lX z=%.5f rhw=%.4f alpha-blend=%lu [READ-ONLY; NON-ESC]",
+    (long)n,(double)l,(double)r,(double)t,(double)b,
+    (unsigned long)v[0].diffuse,(double)v[0].z,(double)v[0].rhw,
+    (unsigned long)blend);
+  log_line(msg);
+}
+
+/* V18 high priority: play back the ORIGINAL game's black iris draws,
+ * in ORIGINAL order, with ORIGINAL vertex animation and render states.
+ * The only intervention is centering their 4:3 X coordinates within the
+ * physical 16:9 world. The original game remains the renderer/animator.
+ * Any unexpected material is passed through UNMODIFIED (not V12/V17).
+ */
+/* Final V19/V25: one immutable game-owned iris fan per real
+ * DrawPrimitive, centered 4:3 X transform only. The two side curtains
+ * are calculated at EndScene from CURRENT mapped original polygon bounds.
+ * Unsafe/unrecognised material passes to its original draw unchanged.
+ */
+static int ui_transition_native43_handle_draw(
+    void *device,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,
+    DWORD count,DWORD flags,void *caller,HRESULT *result)
+{
+  DWORD rva=0,blend=1,atest=1;
+  IDirectDrawSurface7 *tex=NULL;
+  HRESULT a,b,c;
+  SpiderMenuVertex mapped[4];
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)verts;
+  LONG n;
+  unsigned i;
+  int valid=1,reject=0;
+  if(InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)!=1 ||
+     !device || !verts || !result || type!=D3DPT_TRIANGLEFAN ||
+     fvf!=0x144UL || count!=4u || !geom_rva(caller,&rva) ||
+     rva!=SPIDER_TRANSITION_CALLER_RVA ||
+     v[0].diffuse!=0x00000000UL)
+    return 0;
+  if(!ui_comp_scene_open || ui_comp_device!=device ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0){
+    valid=0;reject=1;
+  }
+  for(i=0u;i<4u;i++)
+    if(v[i].diffuse!=0x00000000UL ||
+       !(v[i].z>=-.00004f && v[i].z<=.00004f &&
+         v[i].rhw>=27.52f && v[i].rhw<=27.68f)){
+      valid=0;reject=2;
+    }
+  if(valid && !SpiderNative43_MapBounded(v,mapped,4u,
+                    (unsigned)desktop_w,(unsigned)desktop_h,32.0f)){
+    valid=0;reject=3;
+  }
+  if(valid){
+    a=IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex);
+    b=IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
+                     D3DRENDERSTATE_ALPHABLENDENABLE,&blend);
+    c=IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
+                     D3DRENDERSTATE_ALPHATESTENABLE,&atest);
+    if(FAILED(a)||FAILED(b)||FAILED(c)||tex||blend||atest){
+      valid=0;reject=4;
+    }
+    if(tex)IDirectDrawSurface7_Release(tex);
+  }
+  *result=original_draw_primitive(device,type,fvf,
+                 valid?(LPVOID)mapped:verts,count,flags);
+  if(valid && SUCCEEDED(*result)){
+    unsigned was_ready=ui_transition_sync24_frame.ready;
+    SpiderNativeSync24_Observe(&ui_transition_sync24_frame,v,
+             (unsigned)desktop_w,(unsigned)desktop_h);
+    SpiderNativeBounds25_Observe(&ui_transition_bounds25_frame,mapped,
+             (unsigned)desktop_w,(unsigned)desktop_h);
+    if(!was_ready && ui_transition_sync24_frame.ready)
+      ui_transition_sync24_flags=flags;
+    ++ui_transition_hold22_scene_native;
+    n=InterlockedIncrement(&ui_transition_native43_draws);
+    if(debug_log_enabled && (n<=12 || n%360==0)){
+      char msg[210];
+      snprintf(msg,sizeof(msg),
+        "UI-TRANSITION-NATIVE43: DRAW=%ld x=(%.2f -> %.2f) y=%.2f [ORIGINAL NATIVE GAME; NO RECOMPOSITION]",
+        (long)n,(double)v[0].x,(double)mapped[0].x,(double)v[0].y);
+      log_line(msg);
+    }
+  }else if(!valid){
+    n=InterlockedIncrement(&ui_transition_native43_native);
+    if(debug_log_enabled && (n<=12 || n%360==0)){
+      char msg[240];
+      snprintf(msg,sizeof(msg),
+        "UI-TRANSITION-NATIVE43: NATIVE-UNCHANGED=%ld reason=%d [1=scene 2=vertex 3=extents 4=material] x=%.1f y=%.1f [UNMODIFIED ORIGINAL]",
+        (long)n,reject,(double)v[0].x,(double)v[0].y);
+      log_line(msg);
+    }
+  }
+  return 1;
+}
+
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
+  HRESULT native43_result;
+  if(ui_transition_native43_handle_draw(self,type,fvf,verts,count,flags,
+              __builtin_return_address(0),&native43_result))
+    return native43_result;
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
      fvf==0x144UL && verts && count>=3 && count<=128)
     InterlockedIncrement(&menu_version_draws);
   {
     SpiderMenuVertex small[64],*allocated=NULL;
+    int native_esc_primitive=0;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
     if(v==verts && count==4) {
       v=maybe_correct_native_comic(self,type,fvf,verts,count,
                                    __builtin_return_address(0),small);
     }
+    int verified_hud_canvas=0;
+    /* In the unified trial, bypass older fragment-level HUD scaling. */
+    if(InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1) {
     /* BD has precedence and a separate signature; never rescale it. */
     if(v==verts && count==4)
       v=maybe_correct_adaptive_hud(self,type,fvf,verts,count,
@@ -1981,6 +3112,7 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       v=maybe_correct_native_boss_hud(self,type,fvf,verts,count,
                                       __builtin_return_address(0),small);
+    }
     /* Correct the native translucent motif. Where these same alpha
      * primitives previously tinted the entire 16:9 frame, replay the
      * original triangles ONLY into the two outer 240px gutters first.
@@ -1988,18 +3120,23 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4) {
       v=maybe_correct_native_motif43(self,type,fvf,verts,count,
                                     __builtin_return_address(0),small);
-      if(v!=verts)
+      if(v!=verts) native_esc_primitive=SPIDER_UI_COMP_PAUSE_DECOR;
+      if(v!=verts && InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)!=1)
         native_motif43_restore_gutters(self,(const SpiderMenuVertex*)verts,flags);
     }
     /* Native red selector uses exact texture and quad signature.
      * The older Wine stack-owner hypothesis has been retired. */
-    if(v==verts && count==4)
+    if(v==verts && count==4) {
       v=maybe_correct_native_cursor43(self,type,fvf,verts,count,
                                       __builtin_return_address(0),small);
+      if(v!=verts) native_esc_primitive=SPIDER_UI_COMP_PAUSE_MENU;
+    }
     /* Native ESC after known comic/HUD precedence. */
-    if(v==verts && count==4)
+    if(v==verts && count==4) {
       v=maybe_correct_native_pause43(self,type,fvf,verts,count,
                                      __builtin_return_address(0),small);
+      if(v!=verts) native_esc_primitive=SPIDER_UI_COMP_PAUSE_MENU;
+    }
     /* The original native Pause glyphs can have different per-level RHW:
      * capture original data regardless of whether the strict HUD path
      * corrected this draw, once a verified ribbon is present. */
@@ -2023,8 +3160,77 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v==verts && count==4)
       v=maybe_correct_aim_reticle(self,type,fvf,verts,count,
                                   __builtin_return_address(0),small);
+    /* The game-owned iris is handled before other HUD/ESC draws. */
+    if(v==verts && count==4) {
+      const void *candidate=maybe_correct_unified_ui_canvas(
+        type,fvf,verts,count,__builtin_return_address(0),small);
+      if(candidate!=verts) {
+        maybe_probe_pause_hud_layer(self,(const SpiderMenuVertex*)candidate);
+        /* The generic screen-space classifier already excluded
+         * fullscreen effects, cinematics and native ESC elements.
+         * It identifies the same gameplay HUD quads whose colours were
+         * unintentionally altered by the EndScene veil. */
+        verified_hud_canvas=1;
+      }
+      v=candidate;
+    }
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
-    HRESULT hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
+    /* Probe any genuine independent screen-size native tint candidate.
+     * Log original source geometry, never a corrected copy. */
+    ui_comp_probe_fullscreen_source(self,type,fvf,verts,count,native_esc_primitive);
+    /* Check for a separate native HUD pass submitted after our
+     * EndScene replay but before the next Flip. Such draws could appear
+     * above the spider regardless of the compositor's pass order.
+     * This probe logs ONLY; it never changes their game-owned drawing. */
+    if(debug_log_enabled &&
+       InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
+       InterlockedCompareExchange(&ui_comp_last_overlay_flip,0,0)==
+         InterlockedCompareExchange(&flip_count,0,0) &&
+       count==4 && fvf==0x144UL && type==D3DPT_TRIANGLEFAN &&
+       !native_esc_primitive && verts) {
+      DWORD late_rva=0;
+      const SpiderMenuVertex *candidate=(const SpiderMenuVertex*)verts;
+      if(candidate[0].z>=0.0f && candidate[0].z<0.02f &&
+         geom_rva(__builtin_return_address(0),&late_rva) &&
+         late_rva==0x00102C72UL) {
+        LONG sample=InterlockedIncrement(&ui_comp_late_draw_samples);
+        if(sample<=16) {
+          char msg[270];
+          snprintf(msg,sizeof(msg),
+            "UI-COMPOSITOR-LATE-DRAW: n=%ld flip=%ld x=%.1f y=%.1f z=%.5f rhw=%.4f ARGB=%08lX [ORIGINAL POST-PAUSE PRIMITIVE; DIAGNOSTIC ONLY]",
+            (long)sample,(long)InterlockedCompareExchange(&flip_count,0,0),
+            (double)candidate[0].x,(double)candidate[0].y,
+            (double)candidate[0].z,(double)candidate[0].rhw,
+            (unsigned long)candidate[0].diffuse);
+          log_line(msg);
+        }
+      }
+    }
+    /* Deferred ESC composition is active ONLY under both opt-in flags,
+     * inside a confirmed game-owned BeginScene/EndScene pair. Otherwise
+     * keep the original draw path (even if state blocks are unsupported).
+     * The old depth-only experiment stays disabled in compositor mode. */
+    HRESULT hr;
+    if(!native_esc_primitive && verified_hud_canvas &&
+       InterlockedCompareExchange(&ui_compositor_hud_over_veil_enabled,0,0)==1 &&
+       native_pause43_visible_near_flip(
+          InterlockedCompareExchange(&flip_count,0,0)) &&
+       type==D3DPT_TRIANGLEFAN && fvf==0x144UL &&
+       ui_comp_capture((IDirect3DDevice7*)self,type,fvf,v,verts,count,flags,
+                       SPIDER_UI_COMP_HUD)) {
+      /* HUD pixels must NOT be drawn before the translucent backdrop,
+       * or they will be dimmed and then double-blended on replay. */
+      hr=D3D_OK;
+    } else if(native_esc_primitive && v!=verts &&
+       ui_comp_capture((IDirect3DDevice7*)self,type,fvf,v,verts,count,flags,
+                       native_esc_primitive)) {
+      hr=D3D_OK;
+    } else if(native_esc_primitive &&
+       InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)!=1)
+      hr=draw_native_esc_in_front(self,type,fvf,(LPVOID)v,
+                                 count,flags,native_esc_primitive);
+    else
+      hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
     free_menu_vertices(allocated);
     return hr;
   }
@@ -2061,6 +3267,10 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
   if(InterlockedCompareExchange(&device_ready,1,0)==0) {
     memcpy(patched_device_vtable,vt,sizeof(patched_device_vtable));
     original_set_viewport=(D3DViewportFn)vt[13];
+    /* DirectX 7 SDK IDirect3DDevice7 vtable: BeginScene slot 5,
+     * EndScene slot 6. Hook only under explicit compositor trial. */
+    ui_original_begin_scene=(D3DSceneFn)vt[5];
+    ui_original_end_scene=(D3DSceneFn)vt[6];
     original_set_render_state=(D3DSetRenderStateFn)vt[20];
     {
       DWORD zmode=0;
@@ -2088,7 +3298,9 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
   if(device_ready==2 && vt[13]==(void*)original_set_viewport &&
      vt[20]==(void*)original_set_render_state &&
      vt[25]==(void*)original_draw_primitive &&
-     vt[26]==(void*)original_draw_indexed_primitive) {
+     vt[26]==(void*)original_draw_indexed_primitive &&
+     vt[5]==(void*)ui_original_begin_scene &&
+     vt[6]==(void*)ui_original_end_scene) {
     DWORD protection=0,unused=0;
     if(VirtualProtect(vt,sizeof(patched_device_vtable),
                       PAGE_READWRITE,&protection)) {
@@ -2096,9 +3308,17 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
       vt[20]=(void*)hooked_set_render_state;
       vt[25]=(void*)hooked_draw_primitive;
       vt[26]=(void*)hooked_draw_indexed_primitive;
+      if(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 ||
+         InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1) {
+        vt[5]=(void*)ui_compositor_scene_start;
+        vt[6]=(void*)ui_compositor_scene_finish;
+      }
       if(!VirtualProtect(vt,sizeof(patched_device_vtable),protection,&unused))
         log_line("D3D7: WARNING native vtable protection restore failed");
-      log_line("D3D7: native device vtable patched in place (default; all four hooks ON)");
+      log_line((InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 ||
+          InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1) ?
+          "D3D7: native device vtable patched in place (four original hooks + scoped BeginScene/EndScene for V25/compositor)" :
+          "D3D7: native device vtable patched in place (default; all four hooks ON)");
     } else {
       char line[160];
       snprintf(line,sizeof(line),
@@ -2110,7 +3330,11 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
             vt[13]==(void*)hooked_set_viewport &&
             vt[20]==(void*)hooked_set_render_state &&
             vt[25]==(void*)hooked_draw_primitive &&
-            vt[26]==(void*)hooked_draw_indexed_primitive) {
+            vt[26]==(void*)hooked_draw_indexed_primitive &&
+            ((InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)!=1 &&
+              InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)!=1) ||
+              (vt[5]==(void*)ui_compositor_scene_start &&
+               vt[6]==(void*)ui_compositor_scene_finish))) {
     /* COM object shares a vtable that was already patched by this fix. */
   } else {
     log_line("D3D7: WARNING device vtable differs from captured hooks; leaving pointer untouched");
@@ -4246,6 +5470,82 @@ static DWORD initialize_body(LPVOID unused) {
     }
   }
   install_player_hud(TRUE);
+  /* Launch-only opt-in: no INI repair or changes to the default setup.
+   * Disable early native HUD X changes so D3D7 receives source vertices
+   * and transforms each accepted screen-space primitive exactly once. */
+  {
+    char setting[4]={0};
+    DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_CANVAS_TEST",
+                                     setting,sizeof(setting));
+    if(n==1 && setting[0]=='1' &&
+       SpiderHudWidescreen_Installed() &&
+       lstrcmpiA(display_aspect_setting,"4:3")!=0) {
+      SpiderHudWidescreen_SetUICanvasPrototype(TRUE);
+      InterlockedExchange(&ui_canvas_trial_enabled,1);
+      log_line("UI-CANVAS-43: EXPERIMENT ON; common centered 4:3 gameplay UI mapping, native HUD X edits skipped; HARDWARE UNVERIFIED");
+    } else {
+      log_line("UI-CANVAS-43: OFF; legacy verified HUD and native menus unchanged");
+    }
+  }
+  /* Final original-native V25 trial. Earlier V6–V24 environment flags
+   * are intentionally ignored. Keep explicitly opted in until native
+   * Windows and ultrawide visual coverage has been verified.
+   */
+  {
+    char flag[4]={0};
+    if(InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)==1 &&
+       GetEnvironmentVariableA(
+          "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST",
+          flag,sizeof(flag))==1 && flag[0]=='1'){
+      InterlockedExchange(&ui_transition_bounds25_enabled,1);
+      SpiderNativeSync24_Reset(&ui_transition_sync24_frame);
+      SpiderNativeBounds25_Reset(&ui_transition_bounds25_frame);
+      log_line("UI-TRANSITION-BOUNDS25: V25 ON - original native V19 iris, same-frame physical left/right curtains; legacy V6–V24 pipelines removed");
+    }else{
+      log_line("UI-TRANSITION-BOUNDS25: OFF - original native iris unchanged");
+    }
+  }
+  /* Separate compositor opt-in: the regular UI canvas trial remains
+   * testable without changing the render order. No INI schema changes. */
+  {
+    char opt[4]={0};
+    DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_COMPOSITOR_TEST",
+                                   opt,sizeof(opt));
+    if(n==1 && opt[0]=='1' &&
+       InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)==1) {
+      InterlockedExchange(&ui_compositor_trial_enabled,1);
+      /* Native Pause art remains exactly the original source material.
+       * Only the independently validated physical outer gutters are
+       * added at EndScene. No synthetic colour/tint passes. */
+      log_line("UI-COMPOSITOR: TRIAL ON (native ESC deferred to EndScene; original 4:3 decor; source-backed exterior gutters)");
+      /* Independent, reversible A/B opt-out for two physical outer
+       * gutters. Explicit 0 replays only the original 4:3 decoration. */
+      {
+        char backdrop[4]={0};
+        if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_BACKDROP",
+                                   backdrop,sizeof(backdrop))==1 &&
+           backdrop[0]=='0')
+          InterlockedExchange(&ui_compositor_native_backdrop_enabled,0);
+        log_line(InterlockedCompareExchange(&ui_compositor_native_backdrop_enabled,0,0)==1 ?
+          "UI-COMPOSITOR-NATIVE-BACKDROP: source-verified OUTER GUTTERS enabled (all 160 source 4:3 triangles preserved)" :
+          "UI-COMPOSITOR-NATIVE-BACKDROP: OFF (original 4:3 source mesh only)");
+      }
+      /* Unvalidated HUD deferral remains opt-IN and is not necessary
+       * for the hardware-validated native 4:3 Pause composition. */
+      {
+        char hud_over_veil[4]={0};
+        if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_COMPOSITOR_HUD_OVER_VEIL",
+                                   hud_over_veil,sizeof(hud_over_veil))==1 &&
+           hud_over_veil[0]=='1')
+          InterlockedExchange(&ui_compositor_hud_over_veil_enabled,1);
+        log_line(InterlockedCompareExchange(&ui_compositor_hud_over_veil_enabled,0,0)==1 ?
+          "UI-COMPOSITOR-HUD-ORDER: ON (experimental opt-in, defer recognized HUD to after exterior gutters)" :
+          "UI-COMPOSITOR-HUD-ORDER: OFF (validated native HUD path, default)");
+      }
+    } else {
+      log_line("UI-COMPOSITOR: OFF; existing UI canvas draw path unchanged");
+    }
+  }
   /* HUDWidescreenFix is the parent of the three native ESC children.
    * Read hidden [HUD] child opt-outs only AFTER the verified HUD
    * installation, so master=0 or failed HUD install disables all. */

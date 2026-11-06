@@ -110,6 +110,13 @@ static BYTE *g_code = NULL;
 static uintptr_t g_cleanup = 0;
 /* 0=not installed, 1=full HUD correction, 2=passive HUD scopes only. */
 static volatile LONG g_installed = 0;
+static volatile LONG g_ui_canvas_prototype = 0;
+
+void SpiderHudWidescreen_SetUICanvasPrototype(BOOL enabled)
+{
+    InterlockedExchange(&g_ui_canvas_prototype, enabled ? 1 : 0);
+}
+
 static volatile LONG g_scope_entries = 0;
 
 static HudThread *hud_get_thread(BOOL create)
@@ -162,6 +169,11 @@ static void __cdecl hud_transform(uint32_t kind, float *args)
 {
     float a = hud_alpha();
     HudThread *t;
+
+    /* On the opt-in unified trial, the native 16-site hooks only identify
+     * source scopes. Avoid transforming X here and again in DrawPrimitive. */
+    if (InterlockedCompareExchange(&g_ui_canvas_prototype, 0, 0) == 1)
+        return;
 
     if (a >= 1.0f)
         return;
