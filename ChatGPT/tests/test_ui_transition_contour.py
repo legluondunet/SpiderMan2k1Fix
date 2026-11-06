@@ -165,7 +165,7 @@ def test_v13_strict_optin_uses_original_game_scale_and_safe_v12_fallback():
     assert "SPIDERMAN2K1FIX_UI_TRANSITION_CONTOUR_TEST" in source
     assert "ui_atomic_contour_enabled=0" in source
     assert "ui_atomic_contour_ready=0" in source
-    assert "SpiderAtomicContour_Prepare(" in source
+    assert "SpiderAtomicContour_PrepareDetailed(" in source
     assert "UI-ATOMIC-CONTOUR: REJECTED" in source
     assert "ui_atomic_renderer_draw_vector(device)" in source
     assert "ui_atomic_renderer_draw_contour(device)" in source
