@@ -3137,6 +3137,7 @@ static int ui_atomic_renderer_skip_native(
  * Do not rezoom the actual animated coordinates: that would double zoom.
  * Keep V14 renderer untouched for A/B and use V12 on any failure.
  */
+static int ui_atomic_renderer_draw_vector(IDirect3DDevice7 *device);
 static int ui_atomic_renderer_draw_live(IDirect3DDevice7 *device,
                                         const SpiderExactTemplate *mesh)
 {
