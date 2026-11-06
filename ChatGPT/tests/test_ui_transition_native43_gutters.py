@@ -157,4 +157,4 @@ def test_v20_only_supplements_verified_v19_native_draws():
     assert "v[0].diffuse!=0x00000000UL" in h
     assert "blend||atest" in h
     assert "ui_transition_native43_extended_enabled,0,0)==1" in src
-    assert "No other 4:3 geometry is changed" in header
+    assert "Never modify the input vertices" in header
