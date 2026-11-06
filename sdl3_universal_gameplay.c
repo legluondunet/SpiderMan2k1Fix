@@ -77,6 +77,13 @@ static uint32_t gameover_probe_owner=0;
  * test of Return on an observed, narrowly gated pending request 2. */
 static int gameover_trial_enabled=0;
 static unsigned gameover_trial_reports=0;
+/* Bounded passive owner-context comparison. No new gameplay gate here:
+ * the existing explicit opt-in is the ONLY permitted Return injection.
+ * Do not infer that [0x0060CFA4] alone means GAME OVER. */
+static unsigned gameover_owner_probe_frames=0;
+static unsigned gameover_owner_probe_baselines=0;
+static unsigned gameover_owner_probe_events=0;
+static int gameover_owner_probe_was_candidate=0;
 static SpiderSDL3GameOverTrial gameover_trial;
 static void (*report)(const char *)=NULL;
 static void log_universal(const char *msg) {
@@ -380,6 +387,10 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   gameover_probe_f9_reports=0;gameover_probe_owner=0;
   gameover_probe_post_f9_confirm=0;
   gameover_trial_reports=0;
+  gameover_owner_probe_frames=0;
+  gameover_owner_probe_baselines=0;
+  gameover_owner_probe_events=0;
+  gameover_owner_probe_was_candidate=0;
   spider_sdl3_gameover_trial_reset(&gameover_trial);
   gameover_trial_enabled=ini &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverConfirm",0,ini)==1;
@@ -533,6 +544,54 @@ static int gameover_trial_confirm_only(
     if(sample->axis[i] <= -9000 || sample->axis[i] >= 9000)return 0;
   return 1;
 }
+/* Sample ORIGINAL game-owned state without changing native memory, hooking
+ * an unknown engine routine, or reading arbitrary script contents. The
+ * existing binary research verified the manager pointer [0x006A9038]
+ * and the CutSceneScript offsets. Presence/absence of those structures
+ * is NOT a unique GAME OVER identity. We need both ordinary 3D and
+ * death-screen observations before any default-on behavior is justified.
+ *
+ * Each read uses the same 32-bit exact-image guarded VirtualQuery reader
+ * as the original controller probe. Failed reads are marked unavailable. */
+static void gameover_owner_probe_dump(const char *phase,uint32_t owner,
+    unsigned context,int candidate) {
+  uint32_t request=0,task=0,input_active=0,script=0;
+  uint32_t script_ctx=0,script_active=0,script_ip=0,script_skip=0;
+  uint32_t pause_menu=0,restart_menu=0,flags=0,tick=0;
+  unsigned base_ok=0,script_ok=0;
+  char msg[720];
+  if(!gameover_trial_enabled || !report ||
+     gameover_owner_probe_events>=32u)return;
+  ++gameover_owner_probe_events;
+  base_ok=
+    gameover_probe_read_u32(0x0060CFA4u,&request) &&
+    gameover_probe_read_u32(0x0054A510u,&task) &&
+    gameover_probe_read_u32(0x006B78F0u,&input_active) &&
+    gameover_probe_read_u32(0x006A9038u,&script) &&
+    gameover_probe_read_u32(0x00682968u,&pause_menu) &&
+    gameover_probe_read_u32(0x00682960u,&restart_menu) &&
+    gameover_probe_read_u32(0x02E0988Cu,&flags) &&
+    gameover_probe_read_u32(0x006B4CA0u,&tick);
+  if(base_ok && script>=0x10000u && script<=0x7fff0000u) {
+    uintptr_t ptr=(uintptr_t)script;
+    script_ok=
+      gameover_probe_read_u32(ptr+0x1ACu,&script_ctx) &&
+      gameover_probe_read_u32(ptr+0x1B4u,&script_active) &&
+      gameover_probe_read_u32(ptr+0x1B8u,&script_ip) &&
+      gameover_probe_read_u32(ptr+0x1A4u,&script_skip);
+  }
+  snprintf(msg,sizeof(msg),
+    "SDL3-GAMEOVER-OWNER-PROBE: phase=%s selected=%lu ctx=%u candidate=%d request=%08lX task=%08lX input=%08lX script=%08lX context=%08lX active=%08lX ip=%08lX skip=%08lX pause-menu=%08lX restart-menu=%08lX flags=%08lX tick=%08lX base=%u script-ok=%u [PASSIVE; NO CONFIRMED GAME-OVER OWNER]",
+    phase?phase:"unknown",(unsigned long)owner,context,candidate,
+    (unsigned long)request,(unsigned long)task,(unsigned long)input_active,
+    (unsigned long)script,(unsigned long)script_ctx,
+    (unsigned long)script_active,(unsigned long)script_ip,
+    (unsigned long)script_skip,(unsigned long)pause_menu,
+    (unsigned long)restart_menu,(unsigned long)flags,
+    (unsigned long)tick,base_ok,script_ok);
+  report(msg);
+}
+
 static void gameover_probe_snapshot(uint32_t owner,unsigned context,
     int menu,int gameplay,int bink,int native_pause,
     const SpiderSDL3ControllerProfile *profile,
@@ -853,6 +912,18 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
    * inject Enter until a unique game-owned state is established. */
   gameover_probe_snapshot(id,context,menu,gameplay,bink,native_pause,
                           profile,&sample);
+  /* Low-volume control samples of unmodified original 3D gameplay:
+   * compare these to candidate-armed/South samples in the SAME run.
+   * Do not log continuously or classify a menu from these fields. */
+  if(gameover_trial_enabled && context==SPIDER_UNIVERSAL_CTX_3D) {
+    ++gameover_owner_probe_frames;
+    if(gameover_owner_probe_baselines<8u &&
+       (gameover_owner_probe_frames==1u ||
+        gameover_owner_probe_frames%180u==0u)) {
+      ++gameover_owner_probe_baselines;
+      gameover_owner_probe_dump("3D-BASELINE",id,context,0);
+    }
+  }
   if(context!=previous_context) {
     /* Entering the native 3D Pause screen is NOT a gameplay frame.
      * Reset action edges; a fully released controller must arm menu
@@ -873,6 +944,9 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   }
   if(context!=SPIDER_UNIVERSAL_CTX_3D) {
     unsigned i;
+    if(gameover_owner_probe_was_candidate)
+      gameover_owner_probe_dump("CANDIDATE-CONTEXT-EXIT",id,context,0);
+    gameover_owner_probe_was_candidate=0;
     spider_sdl3_gameover_trial_reset(&gameover_trial);
     /* Context controls are independent from the seven 3D game actions.
      * Keyboard remains available throughout menus and cinematics. */
@@ -939,6 +1013,11 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   if(gameover_trial_enabled) {
     int candidate=gameover_trial_candidate(context,menu,gameplay,bink,native_pause);
     unsigned stable_before=gameover_trial.stable_frames;
+    if(candidate!=gameover_owner_probe_was_candidate) {
+      gameover_owner_probe_dump(candidate?"CANDIDATE-ENTER":
+        "CANDIDATE-EXIT",id,context,candidate);
+      gameover_owner_probe_was_candidate=candidate;
+    }
     unsigned trial=spider_sdl3_gameover_trial_step(&gameover_trial,candidate,
       spider_sdl3_universal_neutral(&sample),
       gameover_trial_confirm_only(profile,&sample));
@@ -947,6 +1026,9 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
        gameover_trial.stable_frames==SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES &&
        report && gameover_trial_reports++<12u)
       report("SDL3-GAMEOVER-TRIAL: CANDIDATE stable request=2 for six game Flips; awaiting neutral then one fresh South (NOT proven unique)");
+    if(candidate && stable_before<SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES &&
+       gameover_trial.stable_frames==SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES)
+      gameover_owner_probe_dump("CANDIDATE-STABLE",id,context,1);
     if(trial) {
       /* Never combine 3D Jump/Space with the experiment's Enter,
        * nor repeat Enter while the physical button is held. */
@@ -955,6 +1037,7 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
         return;
       }
       if(trial==1u) {
+        gameover_owner_probe_dump("SOUTH-BEFORE-PULSE",id,context,candidate);
         pulse(0x1cu,"opt-in GAME OVER Return trial");
         if(pulse_scan!=0x1cu) {
           restore_original("GAME OVER trial Enter pulse failed");
