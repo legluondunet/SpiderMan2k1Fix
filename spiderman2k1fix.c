@@ -21,6 +21,7 @@
 #include "ui_transition_atomic_contour.h"
 #include "ui_transition_exact_union.h"
 #include "ui_transition_live_union.h"
+#include "ui_transition_live_direct.h"
 #include "ui_compositor_policy.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
@@ -1043,6 +1044,12 @@ static SpiderExactTemplate ui_atomic_exact;
 static volatile LONG ui_atomic_live_enabled=0;
 /* V16 opt-in: accept a safely clipped CURRENT source family; strict V15 unchanged. */
 static volatile LONG ui_atomic_partial_enabled=0;
+/* V17: keep only confirmed suppressed native source quads per scene. */
+static volatile LONG ui_atomic_direct_enabled=0;
+static SpiderAtomicMaskQuad ui_atomic_direct_source[SPIDER_ATOMIC_MASK_MAX];
+static unsigned ui_atomic_direct_count=0u,ui_atomic_direct_overflow=0u;
+static unsigned ui_atomic_direct_frames=0u,ui_atomic_direct_fallbacks=0u;
+static unsigned ui_atomic_direct_last_count=0u;
 static SpiderExactTemplate ui_atomic_live_mesh;
 static unsigned ui_atomic_live_success=0u,ui_atomic_live_fallbacks=0u;
 static unsigned ui_atomic_live_current_traps=0u;
@@ -1073,6 +1080,7 @@ static void ui_atomic_probe_begin_scene(void)
   ui_atomic_scene_scale=0.0f;
   ui_atomic_scene_suppressed=0u;
   ui_atomic_count=0;ui_atomic_total=0;ui_atomic_overflow=0;
+  ui_atomic_direct_count=0u;ui_atomic_direct_overflow=0u;
   ui_atomic_live_last_mode=0u;
   ui_atomic_black_zero=0;ui_atomic_black_opaque=0;
   ui_atomic_iris_seen=0;
@@ -3144,6 +3152,15 @@ static int ui_atomic_renderer_skip_native(
       log_line(msg);
     }
   }
+  /* V17 capture happens AFTER material, caller and scene gates have
+   * authorized suppression. No unverified raw-probe polygons enter the
+   * direct mesh. This explains V16 observed=84 vs suppressed=80. */
+  if(InterlockedCompareExchange(&ui_atomic_direct_enabled,0,0)==1){
+    if(ui_atomic_direct_count<SPIDER_ATOMIC_MASK_MAX){
+      SpiderAtomicMaskQuad *q=&ui_atomic_direct_source[ui_atomic_direct_count++];
+      for(i=0u;i<4u;i++){q->x[i]=v[i].x;q->y[i]=v[i].y;}
+    }else ++ui_atomic_direct_overflow;
+  }
   ++ui_atomic_scene_suppressed;
   return 1;
 }
@@ -3245,6 +3262,98 @@ static int ui_atomic_renderer_draw_live(IDirect3DDevice7 *device,
  * vertices into a different frame, even if a source component is absent.
  * The diagnostic measured against frozen V14 zoom is passive only.
  */
+/* V17 direct CURRENT-frame mask. Native quads that leave the viewport
+ * are allowed to disappear: there is no reference 92-quad requirement,
+ * no V16 all-edges-covered rule and no inferred reference zoom.
+ * Only polygons whose actual draw calls were safely suppressed by
+ * the existing original-material/scene gate are submitted here.
+ * The gutter spans are derived from their ORIGINAL screen-edge hits.
+ */
+static int ui_atomic_renderer_draw_direct(IDirect3DDevice7 *device)
+{
+  SpiderAtomicVectorPoint *points=NULL;
+  SpiderMenuVertex *vertices=NULL;
+  unsigned count=0u,left=0u,right=0u,i;
+  DWORD saved=0,restored_z=0;
+  IDirectDrawSurface7 *bound=NULL;
+  HRESULT hr;
+  int ok=1;
+  unsigned native_count=ui_atomic_direct_count;
+  if(!device || !native_count || native_count>SPIDER_ATOMIC_MASK_MAX ||
+     ui_atomic_direct_overflow || native_count!=ui_atomic_scene_suppressed)
+    return 0;
+  points=(SpiderAtomicVectorPoint*)malloc(
+      SPIDER_LIVE_DIRECT_MAX_VERTS*sizeof(*points));
+  vertices=(SpiderMenuVertex*)malloc(
+      SPIDER_LIVE_DIRECT_MAX_VERTS*sizeof(*vertices));
+  if(!points || !vertices){free(points);free(vertices);return 0;}
+  if(!SpiderLiveDirect_Build(
+       ui_atomic_direct_source,native_count,
+       (unsigned)desktop_w,(unsigned)desktop_h,points,
+       SPIDER_LIVE_DIRECT_MAX_VERTS,&count,&left,&right)){
+    free(points);free(vertices);return 0;
+  }
+  if(FAILED(IDirect3DDevice7_CreateStateBlock(device,D3DSBT_ALL,&saved)) ||
+     !saved){free(points);free(vertices);return 0;}
+  if(FAILED(IDirect3DDevice7_GetTexture(device,0,&bound))){
+    IDirect3DDevice7_DeleteStateBlock(device,saved);
+    free(points);free(vertices);return 0;
+  }
+  memset(vertices,0,(size_t)count*sizeof(*vertices));
+  for(i=0u;i<count;i++){
+    vertices[i].x=points[i].x;vertices[i].y=points[i].y;
+    vertices[i].z=0.0f;vertices[i].rhw=1.0f;
+    vertices[i].diffuse=0xFF000000UL;
+  }
+#define DIRECT_REQUIRE(call) do {if(FAILED(call))ok=0;} while(0)
+  DIRECT_REQUIRE(IDirect3DDevice7_SetTexture(device,0,NULL));
+  DIRECT_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE));
+  DIRECT_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE));
+  DIRECT_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ALPHABLENDENABLE,FALSE));
+  DIRECT_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ALPHATESTENABLE,FALSE));
+  DIRECT_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_FOGENABLE,FALSE));
+  DIRECT_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_CULLMODE,D3DCULL_NONE));
+  DIRECT_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_COLOROP,D3DTOP_SELECTARG1));
+  DIRECT_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_COLORARG1,D3DTA_DIFFUSE));
+  DIRECT_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAOP,D3DTOP_SELECTARG1));
+  DIRECT_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAARG1,D3DTA_DIFFUSE));
+  if(ok)DIRECT_REQUIRE(original_draw_primitive(
+      device,D3DPT_TRIANGLELIST,0x144UL,vertices,(DWORD)count,0u));
+#undef DIRECT_REQUIRE
+  hr=IDirect3DDevice7_ApplyStateBlock(device,saved);
+  if(FAILED(hr))ok=0;
+  hr=IDirect3DDevice7_SetTexture(device,0,bound);
+  if(FAILED(hr))ok=0;
+  if(bound)IDirectDrawSurface7_Release(bound);
+  IDirect3DDevice7_DeleteStateBlock(device,saved);
+  if(SUCCEEDED(IDirect3DDevice7_GetRenderState(
+       device,D3DRENDERSTATE_ZENABLE,&restored_z))){
+    InterlockedExchange(&fov_z_state_enabled,restored_z!=D3DZB_FALSE);
+    InterlockedExchange(&fov_z_state_known,1);
+  }
+  free(points);free(vertices);
+  if(ok){
+    ++ui_atomic_direct_frames;
+    if(debug_log_enabled && (ui_atomic_direct_frames<=12u ||
+        ui_atomic_direct_frames%90u==0u ||
+        native_count!=ui_atomic_direct_last_count)){
+      char msg[305];
+      unsigned obs=0u,k;
+      for(k=0u;k<ui_atomic_count;k++)
+        if(ui_atomic_quads[k].color==0x00000000UL &&
+           ui_atomic_quads[k].caller==SPIDER_TRANSITION_CALLER_RVA)
+          ++obs;
+      snprintf(msg,sizeof(msg),
+        "UI-ATOMIC-DIRECT: COMPOSED frame=%u captured=%u suppressed=%u observed=%u triangles=%u gutter-left=%u gutter-right=%u [LIVE NATIVE; NO FULL-EDGE REQUIREMENT; NO ZOOM]",
+        ui_atomic_direct_frames,native_count,ui_atomic_scene_suppressed,
+        obs,count/3u,left,right);
+      log_line(msg);
+    }
+    ui_atomic_direct_last_count=native_count;
+  }
+  return ok;
+}
+
 static int ui_atomic_renderer_draw_current_scene(IDirect3DDevice7 *device)
 {
   SpiderAtomicMaskQuad live[SPIDER_ATOMIC_MASK_MAX];
@@ -3585,7 +3694,22 @@ static void ui_atomic_renderer_finish_scene(IDirect3DDevice7 *device)
      ui_atomic_scene_suppressed>0u){
     LONG frame;
     int drawn=0;
-    if(InterlockedCompareExchange(&ui_atomic_live_enabled,0,0)==1){
+    if(InterlockedCompareExchange(&ui_atomic_direct_enabled,0,0)==1){
+      drawn=ui_atomic_renderer_draw_direct(device);
+      if(!drawn){
+        ++ui_atomic_direct_fallbacks;
+        if(debug_log_enabled && (ui_atomic_direct_fallbacks<=12u ||
+            ui_atomic_direct_fallbacks%90u==0u)){
+          char msg[225];
+          snprintf(msg,sizeof(msg),
+            "UI-ATOMIC-DIRECT: FALLBACK captured=%u suppressed=%u overflow=%u [SAME FRAME V12]",
+            ui_atomic_direct_count,ui_atomic_scene_suppressed,
+            ui_atomic_direct_overflow);
+          log_line(msg);
+        }
+        drawn=ui_atomic_renderer_draw_vector(device);
+      }
+    }else if(InterlockedCompareExchange(&ui_atomic_live_enabled,0,0)==1){
       drawn=ui_atomic_renderer_draw_current_scene(device);
     }else if(InterlockedCompareExchange(&ui_atomic_exact_enabled,0,0)==1){
       if(InterlockedCompareExchange(&ui_atomic_exact_ready,0,0)==1){
@@ -3632,13 +3756,18 @@ static void ui_atomic_renderer_finish_scene(IDirect3DDevice7 *device)
           "UI-ATOMIC-EXACT: COMPOSED frame=%ld scale=%.5f suppressed=%u union-traps=%u [ONE DIRECT BLACK TRIANGLE MESH]",
           (long)frame,(double)ui_atomic_scene_scale,
           ui_atomic_scene_suppressed,ui_atomic_exact.traps);
-      if(InterlockedCompareExchange(&ui_atomic_live_enabled,0,0)==1)
+      if(InterlockedCompareExchange(&ui_atomic_live_enabled,0,0)==1 &&
+         InterlockedCompareExchange(&ui_atomic_direct_enabled,0,0)!=1)
         snprintf(msg,sizeof(msg),
           "UI-ATOMIC-PERFRAME: FRAME=%ld mode=%s scale-probe=%.5f source=%u traps=%u rms-to-V14=%.3fpx [V15 HAS NO SECOND ZOOM]",
           (long)frame,ui_atomic_live_last_mode==1u?"V15":"V12-FALLBACK",
           (double)ui_atomic_scene_scale,ui_atomic_scene_suppressed,
           ui_atomic_live_last_mode==1u?ui_atomic_live_current_traps:0u,
           (double)ui_atomic_live_current_rms);
+      if(InterlockedCompareExchange(&ui_atomic_direct_enabled,0,0)==1)
+        snprintf(msg,sizeof(msg),
+          "UI-ATOMIC-DIRECT: FRAME=%ld suppressed=%u source-quads=%u [SCREEN EDGE COVERAGE IS NATIVE]",
+          (long)frame,ui_atomic_scene_suppressed,ui_atomic_direct_count);
       log_line(msg);
     }
   }else if(ui_atomic_black_zero==0u){
@@ -6622,6 +6751,24 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-ATOMIC-PARTIAL: V16 TRIAL ON - culling-aware original per-frame polygons, +10% source classifier, strict full-screen union proof; V12 fallback");
     }else{
       log_line("UI-ATOMIC-PARTIAL: OFF - V15 remains strictly 92-quads");
+    }
+  }
+  /* V17: no static reference mask or arbitrary coverage requirement.
+   * Source is the exact family whose native D3D7 draws were suppressed
+   * in this scene. Direct triangles use only common 4:3 X transform;
+   * add gutters only where the ORIGINAL source touches X=0 or X=W.
+   * Strict opt-in. Removing DIRECT_TEST restores V16 unchanged. */
+  {
+    char direct[4]={0};
+    if(InterlockedCompareExchange(&ui_atomic_live_enabled,0,0)==1 &&
+       InterlockedCompareExchange(&ui_atomic_partial_enabled,0,0)==1 &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_TRANSITION_DIRECT_TEST",
+                               direct,sizeof(direct))==1 &&
+       direct[0]=='1'){
+      InterlockedExchange(&ui_atomic_direct_enabled,1);
+      log_line("UI-ATOMIC-DIRECT: V17 TRIAL ON - draw only suppressed CURRENT original black polygons with 4:3 X and source-edge gutter continuation; no fixed 92 or coverage proof");
+    }else{
+      log_line("UI-ATOMIC-DIRECT: OFF - V16/V15/V12 original paths unchanged");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
