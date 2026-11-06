@@ -639,3 +639,25 @@ def test_compositor_keeps_spider_above_game_hud_and_below_title():
     # PAUSE_MENU queue, above every PAUSE_DECOR primitive.
     assert "SPIDER_UI_COMP_PAUSE_MENU" in flush
     assert "native_backdrop_drawn,paint_background,paint_spider,paint_menu" in flush
+
+
+def test_late_hud_draws_are_detected_without_touching_the_original_draw_path():
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    assert "ui_comp_last_overlay_flip=-1" in src
+    assert "ui_comp_late_draw_samples=0" in src
+    flush=src.split("static void ui_comp_flush(",1)[1].split(
+        "static int ui_comp_capture(",1)[0]
+    assert "InterlockedExchange(&ui_comp_last_overlay_flip" in flush
+    assert "if(paint_spider && paint_menu && all_ok)" in flush
+    hook=src.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
+        "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
+    assert "UI-COMPOSITOR-LATE-DRAW:" in hook
+    assert "sample<=16" in hook
+    assert "late_rva==0x00102C72UL" in hook
+    assert "original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags)" in hook
+    # This path must NEVER issue an extra draw or skip native HUD.
+    diag=hook.split("/* Check for a separate native HUD pass",1)[1].split(
+        "/* Deferred ESC composition is active",1)[0]
+    assert "original_draw_primitive(" not in diag
+    assert "ui_comp_capture(" not in diag
+    assert "log_line(msg)" in diag
