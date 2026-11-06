@@ -2643,34 +2643,18 @@ capture_failed:
 static HRESULT WINAPI ui_compositor_scene_start(void *self) {
   HRESULT hr=ui_original_begin_scene(self);
   if(SUCCEEDED(hr) &&
-     InterlockedCompareExchange(&ui_transition_hold22_enabled,0,0)==1){
+     InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1){
     ui_transition_hold22_scene_native=0u;
     ui_transition_hold22_scene_gutters=0u;
-    if(InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)==1){
-      SpiderNativeSync24_Reset(&ui_transition_sync24_frame);
-      ui_transition_sync24_flags=0u;
-      if(InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1)
-        SpiderNativeBounds25_Reset(&ui_transition_bounds25_frame);
-    }
-    if(InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1){
-      ui_transition_shrink23_scene_handled=0u;
-      ui_transition_shrink23_scene_band_width=0.0f;
-      ui_transition_shrink23_scene_deferred=0u;
-    }
+    SpiderNativeSync24_Reset(&ui_transition_sync24_frame);
+    SpiderNativeBounds25_Reset(&ui_transition_bounds25_frame);
+    ui_transition_sync24_flags=0u;
+    ui_transition_shrink23_scene_band_width=0.0f;
   }
   if(SUCCEEDED(hr) &&
-     InterlockedCompareExchange(
-       &ui_transition_native43_gutters_enabled,0,0)==1){
-    ui_transition_native43_gutters_scene_native=0u;
-    ui_transition_native43_gutters_scene_left=0u;
-    ui_transition_native43_gutters_scene_right=0u;
-    if(InterlockedCompareExchange(&ui_transition_flank21_enabled,0,0)==1)
-      ui_transition_flank21_count=0u;
-  }
-  if(SUCCEEDED(hr)) ui_atomic_probe_begin_scene();
-  if(SUCCEEDED(hr) &&
-     InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1) {
-    if(ui_comp_count) {
+     (InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 ||
+      InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1)){
+    if(ui_comp_count){
       log_line("UI-COMPOSITOR: stale scene discarded on next BeginScene");
       ui_comp_release((IDirect3DDevice7*)ui_comp_device);
     }
@@ -2698,7 +2682,7 @@ static void ui_transition_sync24_finish(IDirect3DDevice7 *device)
   unsigned drawn=0u;
   HRESULT hr;
   unsigned total=ui_transition_sync24_frame.native_fans;
-  if(InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)!=1 ||
+  if(InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)!=1 ||
      !device || !total)return;
   /* This must be the same verified original source family already
    * counted by the old V22 diagnostics. A mismatch is not a reason to
@@ -2836,169 +2820,35 @@ done:
 }
 
 static HRESULT WINAPI ui_compositor_scene_finish(void *self) {
-  ui_atomic_renderer_finish_scene((IDirect3DDevice7*)self);
-  ui_atomic_probe_finish_scene();
-  /* V24 only: measure first, then draw the two black supplemental
-   * curtains from THIS scene's complete original native iris family.
-   * Must precede end-scene diagnostics, so reported curtain-width is
-   * the width that was ACTUALLY rendered, not a one-frame-old value. */
-  if(InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)==1)
-    ui_transition_sync24_finish((IDirect3DDevice7*)self);
-  if(InterlockedCompareExchange(&ui_transition_hold22_enabled,0,0)==1){
+  if(InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1){
     unsigned active=ui_transition_hold22_scene_native>0u;
     if(active){
-      unsigned frame=++ui_transition_hold22_frames;
-      if(InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1){
-        unsigned n=++ui_transition_bounds25_frames;
-        if(debug_log_enabled &&
-           (n<=10u || n%4u==0u ||
-            ui_transition_bounds25_last_left<.5f ||
-            ui_transition_bounds25_last_right<.5f)){
-          char msg[320];
-          snprintf(msg,sizeof(msg),
-            "UI-TRANSITION-BOUNDS25: FRAME=%u native=%u eligible-tri=%u matte-skip=%u inner-left=%.2f inner-right=%.2f left-curtain=%.2f right-curtain=%.2f overlap=1.0 fallback=%u drawn=%u [V19 ORIGINAL]",
-            n,ui_transition_sync24_frame.native_fans,
-            ui_transition_bounds25_frame.eligible,
-            ui_transition_bounds25_frame.excluded_matte,
-            (double)ui_transition_bounds25_frame.min_x,
-            (double)ui_transition_bounds25_frame.max_x,
-            (double)ui_transition_bounds25_last_left,
-            (double)ui_transition_bounds25_last_right,
-            ui_transition_bounds25_last_fallback,
-            ui_transition_hold22_scene_gutters);
-          log_line(msg);
-        }
-      }
-      if(InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)==1){
-        ++ui_transition_sync24_scenes;
-        if(debug_log_enabled && (frame<=10u ||
-             frame%4u==0u || ui_transition_shrink23_scene_band_width<5.0f)){
-          char msg[250];
-          snprintf(msg,sizeof(msg),
-            "UI-TRANSITION-SYNC24: FRAME=%u original=%u anchors=%u aperture-half-x=%.1f curtain-width=%.1fpx drawn=%u [CURRENT-FRAME END-SCENE]",
-            frame,ui_transition_sync24_frame.native_fans,
-            ui_transition_sync24_frame.anchors,
-            (double)ui_transition_sync24_frame.radius,
-            (double)ui_transition_shrink23_scene_band_width,
-            ui_transition_hold22_scene_gutters);
-          log_line(msg);
-        }
-      }
-      if(debug_log_enabled && (frame<=8u || frame%60u==0u ||
-                               ui_transition_hold22_last_active!=active)){
-        char msg[240];
+      unsigned frame=++ui_transition_bounds25_frames;
+      ui_transition_sync24_finish((IDirect3DDevice7*)self);
+      if(debug_log_enabled && (frame<=10u || frame%4u==0u ||
+          ui_transition_bounds25_last_left<.5f ||
+          ui_transition_bounds25_last_right<.5f)){
+        char msg[345];
         snprintf(msg,sizeof(msg),
-          "UI-TRANSITION-HOLD22: FRAME=%u original=%u side-rects=%u total-side-draws=%u [LATCHED UNTIL IRIS ENDS; NO TOOTH EXTENSION]",
-          frame,ui_transition_hold22_scene_native,
-          ui_transition_hold22_scene_gutters,
-          ui_transition_hold22_draws);
+          "UI-TRANSITION-BOUNDS25: FRAME=%u native=%u eligible-tri=%u matte-skip=%u inner-left=%.2f inner-right=%.2f left-curtain=%.2f right-curtain=%.2f overlap=1.0 fallback=%u drawn=%u [V19 ORIGINAL]",
+          frame,ui_transition_sync24_frame.native_fans,
+          ui_transition_bounds25_frame.eligible,
+          ui_transition_bounds25_frame.excluded_matte,
+          (double)ui_transition_bounds25_frame.min_x,
+          (double)ui_transition_bounds25_frame.max_x,
+          (double)ui_transition_bounds25_last_left,
+          (double)ui_transition_bounds25_last_right,
+          ui_transition_bounds25_last_fallback,
+          ui_transition_hold22_scene_gutters);
         log_line(msg);
-      }
-      if(InterlockedCompareExchange(
-          &ui_transition_shrink23_enabled,0,0)==1){
-        unsigned rounded=(unsigned)(ui_transition_shrink23_scene_band_width+.5f);
-        if(debug_log_enabled &&
-           (frame<=8u || frame%8u==0u ||
-            rounded!=ui_transition_shrink23_last_band_rounded)){
-          char msg[230];
-          snprintf(msg,sizeof(msg),
-            "UI-TRANSITION-SHRINK23: FRAME=%u original=%u anchor-hits=%u aperture-half-x=%.1f curtain-width=%.1fpx each side deferred=%u [SMOOTH SOURCE-DRIVEN; NO TIMER, V19 UNCHANGED]",
-            frame,ui_transition_hold22_scene_native,
-            ui_transition_shrink23_anchor_hits,
-            (double)ui_transition_shrink23_half_width,
-            (double)ui_transition_shrink23_scene_band_width,
-            ui_transition_shrink23_scene_deferred);
-          log_line(msg);
-        }
-        ui_transition_shrink23_last_band_rounded=rounded;
       }
     }else if(ui_transition_hold22_last_active){
-      log_line("UI-TRANSITION-HOLD22: RELEASE - first complete scene without any verified native iris draws; no fixed timer or zoom threshold");
-      if(InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1){
-        ui_transition_bounds25_prev_left=0.0f;
-        ui_transition_bounds25_prev_right=0.0f;
-        ui_transition_bounds25_have_prev=0u;
-        log_line("UI-TRANSITION-BOUNDS25: RELEASE - reset per-transition left/right bounds and black side widths");
-      }
-      if(InterlockedCompareExchange(
-          &ui_transition_shrink23_enabled,0,0)==1){
-        log_line("UI-TRANSITION-SHRINK23: RELEASE - native mask ended; reset source-driven curtain motion for next transition");
-        ui_transition_shrink23_half_width=0.0f;
-        ui_transition_shrink23_anchor_hits=0u;
-        ui_transition_shrink23_last_band_rounded=0xffffffffu;
-      }
+      ui_transition_bounds25_prev_left=0.0f;
+      ui_transition_bounds25_prev_right=0.0f;
+      ui_transition_bounds25_have_prev=0u;
+      log_line("UI-TRANSITION-BOUNDS25: RELEASE - reset per-transition left/right bounds and black side widths");
     }
     ui_transition_hold22_last_active=active;
-  }
-  if(InterlockedCompareExchange(
-       &ui_transition_native43_gutters_enabled,0,0)==1 &&
-     ui_transition_native43_gutters_scene_native>0u){
-    unsigned frame=++ui_transition_native43_gutters_frames;
-    if(debug_log_enabled &&
-       (frame<=12u || frame%60u==0u ||
-        ui_transition_native43_gutters_scene_left!=
-             ui_transition_native43_gutters_last_left ||
-        ui_transition_native43_gutters_scene_right!=
-             ui_transition_native43_gutters_last_right)){
-      char msg[220];
-      if(InterlockedCompareExchange(
-            &ui_transition_flank21_enabled,0,0)==1){
-        snprintf(msg,sizeof(msg),
-          "UI-TRANSITION-FLANK21: FRAME=%u native=%u flank-left=%u flank-right=%u total-draws=%u [FULL-HEIGHT OUTER MATTE ONLY; NO TOOTH RECTS; V19 UNCHANGED]",
-          frame,ui_transition_native43_gutters_scene_native,
-          ui_transition_native43_gutters_scene_left,
-          ui_transition_native43_gutters_scene_right,
-          ui_transition_native43_gutters_drawn);
-      }else{
-        snprintf(msg,sizeof(msg),
-          "UI-TRANSITION-GUTTER20: FRAME=%u native=%u left=%u right=%u total-draws=%u [BLACK SIDE STRIPS ONLY; V19 IRIS UNCHANGED]",
-          frame,ui_transition_native43_gutters_scene_native,
-          ui_transition_native43_gutters_scene_left,
-          ui_transition_native43_gutters_scene_right,
-          ui_transition_native43_gutters_drawn);
-      }
-      log_line(msg);
-    }
-    ui_transition_native43_gutters_last_left=
-         ui_transition_native43_gutters_scene_left;
-    ui_transition_native43_gutters_last_right=
-         ui_transition_native43_gutters_scene_right;
-    if(InterlockedCompareExchange(&ui_transition_flank21_enabled,0,0)==1){
-      unsigned state=
-          (ui_transition_native43_gutters_scene_left?1u:0u) |
-          (ui_transition_native43_gutters_scene_right?2u:0u);
-      if(debug_log_enabled && state!=ui_transition_flank21_last_state){
-        char msg[185];
-        snprintf(msg,sizeof(msg),
-          "UI-TRANSITION-FLANK21: OUTER-MATTE STATE %u -> %u, source=%u [check for sudden side reveal]",
-          ui_transition_flank21_last_state,state,
-          ui_transition_flank21_count);
-        log_line(msg);
-      }
-      ui_transition_flank21_last_state=state;
-      if(debug_log_enabled && ui_transition_flank21_count>0u &&
-         ui_transition_flank21_count<92u &&
-         InterlockedCompareExchange(
-            &ui_transition_flank21_dumped,1,0)==0){
-        char msg[300];
-        unsigned i,j;
-        snprintf(msg,sizeof(msg),
-          "UI-TRANSITION-FLANK21-SOURCE: BEGIN first reduced native frame count=%u (read-only; exactly verified source quads)",
-          ui_transition_flank21_count);
-        log_line(msg);
-        for(i=0u;i<ui_transition_flank21_count;i++){
-          SpiderAtomicMaskQuad *q=&ui_transition_flank21_current[i];
-          snprintf(msg,sizeof(msg),
-            "UI-TRANSITION-FLANK21-SOURCE: q=%u xy=(%.2f,%.2f) (%.2f,%.2f) (%.2f,%.2f) (%.2f,%.2f)",
-            i,(double)q->x[0],(double)q->y[0],
-            (double)q->x[1],(double)q->y[1],
-            (double)q->x[2],(double)q->y[2],
-            (double)q->x[3],(double)q->y[3]);
-          log_line(msg);
-        }
-        log_line("UI-TRANSITION-FLANK21-SOURCE: END");
-      }
-    }
   }
   if(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
      ui_comp_scene_open && ui_comp_device==self)
@@ -3006,7 +2856,6 @@ static HRESULT WINAPI ui_compositor_scene_finish(void *self) {
   ui_comp_scene_open=0;ui_comp_device=NULL;
   return ui_original_end_scene(self);
 }
-
 /* Read-only candidate scan: looks for native full-viewport screen-space
  * quads DURING ESC, excluding known game-owned ESC menu layers. This tests
  * whether the game supplies a distinct screen-covering tint command.
@@ -3063,6 +2912,11 @@ static void ui_comp_probe_fullscreen_source(void *device,
  * physical 16:9 world. The original game remains the renderer/animator.
  * Any unexpected material is passed through UNMODIFIED (not V12/V17).
  */
+/* Final V19/V25: one immutable game-owned iris fan per real
+ * DrawPrimitive, centered 4:3 X transform only. The two side curtains
+ * are calculated at EndScene from CURRENT mapped original polygon bounds.
+ * Unsafe/unrecognised material passes to its original draw unchanged.
+ */
 static int ui_transition_native43_handle_draw(
     void *device,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,
     DWORD count,DWORD flags,void *caller,HRESULT *result)
@@ -3075,7 +2929,7 @@ static int ui_transition_native43_handle_draw(
   LONG n;
   unsigned i;
   int valid=1,reject=0;
-  if(InterlockedCompareExchange(&ui_transition_native43_enabled,0,0)!=1 ||
+  if(InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)!=1 ||
      !device || !verts || !result || type!=D3DPT_TRIANGLEFAN ||
      fvf!=0x144UL || count!=4u || !geom_rva(caller,&rva) ||
      rva!=SPIDER_TRANSITION_CALLER_RVA ||
@@ -3085,21 +2939,17 @@ static int ui_transition_native43_handle_draw(
      InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
      InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
      InterlockedCompareExchange(&fov_game_height,0,0)<=0){
-    valid=0;reject=1; /* Scene is not a verified gameplay 3D frame. */
+    valid=0;reject=1;
   }
   for(i=0u;i<4u;i++)
     if(v[i].diffuse!=0x00000000UL ||
        !(v[i].z>=-.00004f && v[i].z<=.00004f &&
          v[i].rhw>=27.52f && v[i].rhw<=27.68f)){
-      valid=0;reject=2; /* Not the material of a verified iris fan. */
+      valid=0;reject=2;
     }
-  if(valid && !(InterlockedCompareExchange(
-                     &ui_transition_native43_extended_enabled,0,0)==1 ?
-            SpiderNative43_MapBounded(v,mapped,4u,
-                   (unsigned)desktop_w,(unsigned)desktop_h,32.0f) :
-            SpiderNative43_Map(v,mapped,4u,
-                   (unsigned)desktop_w,(unsigned)desktop_h))){
-    valid=0;reject=3; /* Out of V18's +/-10% viewport or invalid. */
+  if(valid && !SpiderNative43_MapBounded(v,mapped,4u,
+                    (unsigned)desktop_w,(unsigned)desktop_h,32.0f)){
+    valid=0;reject=3;
   }
   if(valid){
     a=IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex);
@@ -3108,211 +2958,42 @@ static int ui_transition_native43_handle_draw(
     c=IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
                      D3DRENDERSTATE_ALPHATESTENABLE,&atest);
     if(FAILED(a)||FAILED(b)||FAILED(c)||tex||blend||atest){
-      valid=0;reject=4; /* Wrong/unconfirmed original D3D7 state. */
+      valid=0;reject=4;
     }
     if(tex)IDirectDrawSurface7_Release(tex);
   }
   *result=original_draw_primitive(device,type,fvf,
-              valid?(LPVOID)mapped:verts,count,flags);
-  if(valid){
-    /* Native V23 motion sensor (passive): the actual central source fan
-     * supplies opening half-width. A late or offscreen fan can only
-     * INCREASE that measurement, never regrow the physical curtains. */
-    if(SUCCEEDED(*result) &&
-       InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)==1){
-      /* Observe ALL already-verified original iris fans from THIS
-       * scene. The two side rectangles are deferred to EndScene,
-       * after this family is complete; no V19 geometry changes. */
-      unsigned was_ready=ui_transition_sync24_frame.ready;
-      unsigned anchors_before=ui_transition_sync24_frame.anchors;
-      SpiderNativeSync24_Observe(&ui_transition_sync24_frame,v,
+                 valid?(LPVOID)mapped:verts,count,flags);
+  if(valid && SUCCEEDED(*result)){
+    unsigned was_ready=ui_transition_sync24_frame.ready;
+    SpiderNativeSync24_Observe(&ui_transition_sync24_frame,v,
              (unsigned)desktop_w,(unsigned)desktop_h);
-      if(InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1)
-        SpiderNativeBounds25_Observe(&ui_transition_bounds25_frame,mapped,
-                  (unsigned)desktop_w,(unsigned)desktop_h);
-      if(!was_ready && ui_transition_sync24_frame.ready)
-        ui_transition_sync24_flags=flags;
-      ui_transition_shrink23_half_width=
-        ui_transition_sync24_frame.radius;
-      /* Keep the original cumulative V23 debug counter accurate. */
-      ui_transition_shrink23_anchor_hits+=
-        ui_transition_sync24_frame.anchors-anchors_before;
-    }else if(SUCCEEDED(*result) &&
-       InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1){
-      float radius=0.0f;
-      if(SpiderNativeShrink_AnchorHalfWidth(
-            v,(unsigned)desktop_w,(unsigned)desktop_h,&radius)){
-        ++ui_transition_shrink23_anchor_hits;
-        if(radius>ui_transition_shrink23_half_width)
-          ui_transition_shrink23_half_width=radius;
-      }
-    }
-    /* V22 one opaque physical-margin pair per current-frame iris. The
-     * source is the ORIGINAL game fan already checked for black material
-     * and drawn above by V19. Its vertices, shape, winding and timed
-     * animation are never changed. At scene end, absence of source fans
-     * releases both margins naturally with the game's own transition.
-     * Skip legacy V20/V21 supplements completely when this is active. */
-    if(SUCCEEDED(*result) &&
-       InterlockedCompareExchange(&ui_transition_hold22_enabled,0,0)==1){
-      /* Always count the ORIGINAL source fan, even if a supplementary
-       * rectangle cannot yet be built or a true D3D7 error occurred.
-       * The game-owned iris is never responsible for our helper failure. */
-      ++ui_transition_hold22_scene_native;
-      if(InterlockedCompareExchange(&ui_transition_sync24_enabled,0,0)!=1 &&
-         InterlockedCompareExchange(&ui_transition_hold22_failed,0,0)!=1){
-        const int shrink=
-          InterlockedCompareExchange(&ui_transition_shrink23_enabled,0,0)==1;
-        if(ui_transition_hold22_scene_gutters==0u &&
-           (!shrink || !ui_transition_shrink23_scene_handled)){
-          SpiderMenuVertex two[2][4];
-          float width=0.0f;
-          int valid_side=0,wait_for_source=0;
-          if(shrink){
-            valid_side=SpiderNativeShrink_Width(
-              (unsigned)desktop_w,(unsigned)desktop_h,
-              ui_transition_shrink23_half_width,&width);
-            if(valid_side && width>=.5f &&
-               !SpiderNativeShrink_Build(
-                 v,(unsigned)desktop_w,(unsigned)desktop_h,width,two)){
-              /* Early animated fans legitimately collapse to a line or
-               * point; NEVER latch off the entire side curtain on that
-               * harmless geometry. Try the NEXT verified fan this frame.
-               * Width is still derived from the original game's motion. */
-              wait_for_source=1;
-              valid_side=0;
-            }
-            if(valid_side){
-              ui_transition_shrink23_scene_handled=1u;
-              ui_transition_shrink23_scene_band_width=width;
-            }
-          }else{
-            if(SpiderNativeHold_Build(v,(unsigned)desktop_w,
-                                      (unsigned)desktop_h,two))
-              valid_side=1;
-            else
-              wait_for_source=1;
-          }
-          if(valid_side && (!shrink || width>=.5f)){
-            HRESULT lh=original_draw_primitive(
-               device,type,fvf,two[0],4u,flags);
-            HRESULT rh=SUCCEEDED(lh) ?
-               original_draw_primitive(device,type,fvf,two[1],4u,flags):lh;
-            if(SUCCEEDED(lh) && SUCCEEDED(rh)){
-              ui_transition_hold22_scene_gutters=2u;
-              ui_transition_hold22_draws+=2u;
-            }else{
-              char msg[195];
-              InterlockedExchange(&ui_transition_hold22_failed,1);
-              snprintf(msg,sizeof(msg),
-                "UI-TRANSITION-HOLD22: ERROR side gutters hr-left=0x%08lX hr-right=0x%08lX [disabled; native V19 iris unaffected]",
-                (unsigned long)lh,(unsigned long)rh);
-              log_line(msg);
-            }
-          }else if(wait_for_source){
-            if(shrink){
-              ++ui_transition_shrink23_scene_deferred;
-              ++ui_transition_shrink23_deferred_total;
-              if(debug_log_enabled &&
-                 ui_transition_shrink23_deferred_total<=5u)
-                log_line("UI-TRANSITION-SHRINK23: WAIT VALID SOURCE FAN - early native iris fan is degenerate, retrying next original fan; NOT disabled");
-            }
-          }else if(!valid_side){
-            InterlockedExchange(&ui_transition_hold22_failed,1);
-            log_line("UI-TRANSITION-SHRINK23: ERROR invalid physical display geometry; side supplemental rendering disabled, native V19 intact");
-          }
-        }
-      }
-    }
-    /* Reuse the verified original black-material state from this SAME
-     * native D3D7 call. A gutter rectangle is an extension of ONLY the
-     * portion of source black which actually crosses source x=0 or W.
-     * No other 4:3 geometry is changed or redrawn, unlike V6/V17.
-     * Never cover the actual spider opening in x=[gutter,W-gutter]. */
-    if(SUCCEEDED(*result) &&
-       InterlockedCompareExchange(
-          &ui_transition_native43_gutters_enabled,0,0)==1 &&
-       InterlockedCompareExchange(
-          &ui_transition_hold22_enabled,0,0)!=1 &&
-       InterlockedCompareExchange(
-          &ui_transition_native43_gutters_failed,0,0)!=1){
-      SpiderMenuVertex gutters[SPIDER_NATIVE43_GUTTER_MAX][4];
-      unsigned patches=0u,left=0u,right=0u,q;
-      const int flank_only=
-         InterlockedCompareExchange(&ui_transition_flank21_enabled,0,0)==1;
-      int geometry_valid=0;
-      if(flank_only){
-        unsigned side=0u;
-        /* We capture only ORIGINAL game-verified V19 quads, never the
-         * supplemental DrawPrimitive() call we make ourselves. */
-        if(ui_transition_flank21_count<SPIDER_ATOMIC_MASK_MAX){
-          SpiderAtomicMaskQuad *snapshot=
-            &ui_transition_flank21_current[ui_transition_flank21_count++];
-          unsigned j;
-          for(j=0u;j<4u;j++){
-            snapshot->x[j]=v[j].x;
-            snapshot->y[j]=v[j].y;
-          }
-        }
-        geometry_valid=SpiderNativeFlank_Build(v,
-          (unsigned)desktop_w,(unsigned)desktop_h,
-          gutters[0],&side);
-        patches=side?1u:0u;
-        left=side==1u?1u:0u;
-        right=side==2u?1u:0u;
-      }else{
-        geometry_valid=SpiderNative43Gutter_Build(v,
-          (unsigned)desktop_w,(unsigned)desktop_h,
-          gutters,&patches,&left,&right);
-      }
-      if(geometry_valid){
-        ++ui_transition_native43_gutters_scene_native;
-        for(q=0u;q<patches;q++){
-          HRESULT gh=original_draw_primitive(
-             device,type,fvf,gutters[q],4u,flags);
-          if(FAILED(gh)){
-            char message[200];
-            InterlockedExchange(
-               &ui_transition_native43_gutters_failed,1);
-            snprintf(message,sizeof(message),
-              "UI-TRANSITION-GUTTER%s: DRAW FAILURE hr=0x%08lX; supplement disabled, V19 original iris unaffected",
-              flank_only?"21":"20",(unsigned long)gh);
-            log_line(message);
-            break;
-          }
-          ++ui_transition_native43_gutters_drawn;
-        }
-        if(q==patches){
-          ui_transition_native43_gutters_scene_left+=left;
-          ui_transition_native43_gutters_scene_right+=right;
-        }
-      }else{
-        InterlockedExchange(&ui_transition_native43_gutters_failed,1);
-        log_line(flank_only?
-          "UI-TRANSITION-FLANK21: INPUT REJECTED; supplemental margins disabled, V19 iris intact":
-          "UI-TRANSITION-GUTTER20: GEOMETRY REJECTED - disabled supplemental gutters; V19 native iris unchanged");
-      }
-    }
+    SpiderNativeBounds25_Observe(&ui_transition_bounds25_frame,mapped,
+             (unsigned)desktop_w,(unsigned)desktop_h);
+    if(!was_ready && ui_transition_sync24_frame.ready)
+      ui_transition_sync24_flags=flags;
+    ++ui_transition_hold22_scene_native;
     n=InterlockedIncrement(&ui_transition_native43_draws);
     if(debug_log_enabled && (n<=12 || n%360==0)){
-      char message[210];
-      snprintf(message,sizeof(message),
+      char msg[210];
+      snprintf(msg,sizeof(msg),
         "UI-TRANSITION-NATIVE43: DRAW=%ld x=(%.2f -> %.2f) y=%.2f [ORIGINAL NATIVE GAME; NO RECOMPOSITION]",
         (long)n,(double)v[0].x,(double)mapped[0].x,(double)v[0].y);
-      log_line(message);
+      log_line(msg);
     }
-  }else{
+  }else if(!valid){
     n=InterlockedIncrement(&ui_transition_native43_native);
     if(debug_log_enabled && (n<=12 || n%360==0)){
-      char message[240];
-      snprintf(message,sizeof(message),
+      char msg[240];
+      snprintf(msg,sizeof(msg),
         "UI-TRANSITION-NATIVE43: NATIVE-UNCHANGED=%ld reason=%d [1=scene 2=vertex 3=extents 4=material] x=%.1f y=%.1f [UNMODIFIED ORIGINAL]",
         (long)n,reject,(double)v[0].x,(double)v[0].y);
-      log_line(message);
+      log_line(msg);
     }
   }
   return 1;
 }
+
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
   HRESULT native43_result;
   if(ui_transition_native43_handle_draw(self,type,fvf,verts,count,flags,
@@ -3493,14 +3174,16 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
       vt[20]=(void*)hooked_set_render_state;
       vt[25]=(void*)hooked_draw_primitive;
       vt[26]=(void*)hooked_draw_indexed_primitive;
-      if(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1) {
+      if(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 ||
+         InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1) {
         vt[5]=(void*)ui_compositor_scene_start;
         vt[6]=(void*)ui_compositor_scene_finish;
       }
       if(!VirtualProtect(vt,sizeof(patched_device_vtable),protection,&unused))
         log_line("D3D7: WARNING native vtable protection restore failed");
-      log_line(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 ?
-          "D3D7: native device vtable patched in place (four original hooks + scoped BeginScene/EndScene compositor)" :
+      log_line((InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 ||
+          InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)==1) ?
+          "D3D7: native device vtable patched in place (four original hooks + scoped BeginScene/EndScene for V25/compositor)" :
           "D3D7: native device vtable patched in place (default; all four hooks ON)");
     } else {
       char line[160];
@@ -3514,7 +3197,8 @@ static void instrument_d3d_device(IDirect3DDevice7 *device) {
             vt[20]==(void*)hooked_set_render_state &&
             vt[25]==(void*)hooked_draw_primitive &&
             vt[26]==(void*)hooked_draw_indexed_primitive &&
-            (InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)!=1 ||
+            ((InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)!=1 &&
+              InterlockedCompareExchange(&ui_transition_bounds25_enabled,0,0)!=1) ||
               (vt[5]==(void*)ui_compositor_scene_start &&
                vt[6]==(void*)ui_compositor_scene_finish))) {
     /* COM object shares a vtable that was already patched by this fix. */
