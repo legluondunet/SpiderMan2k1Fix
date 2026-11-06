@@ -100,3 +100,52 @@ def test_trial_requires_stability_neutral_and_one_press(tmp_path):
     subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
                     "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
+
+
+def test_owner_observer_is_read_only_and_not_a_game_over_detector():
+    # The newly traced script manager is known from native disassembly,
+    # but has NOT been proven to be the owner of the GAME OVER screen.
+    # It must never gate a new Return action or mutate engine memory.
+    owner=BACKEND.split("static void gameover_owner_probe_dump(",1)[1].split(
+        "static void gameover_probe_snapshot(",1)[0]
+    for address in (
+        "0x0060CFA4u", "0x0054A510u", "0x006B78F0u",
+        "0x006A9038u", "0x00682968u", "0x00682960u",
+        "0x02E0988Cu", "0x006B4CA0u",
+    ):
+        assert address in owner
+    for offset in ("0x1ACu", "0x1B4u", "0x1B8u", "0x1A4u"):
+        assert offset in owner
+    assert "gameover_probe_read_u32(" in owner
+    assert "script>=0x10000u && script<=0x7fff0000u" in owner
+    assert "script-ok=%u" in owner
+    assert "[PASSIVE; NO CONFIRMED GAME-OVER OWNER]" in owner
+    assert "gameover_owner_probe_events>=32u" in owner
+    assert "if(!gameover_trial_enabled || !report ||" in owner
+    assert "report(msg);" in owner
+    for forbidden in (
+        "SendInput(", "send_scan(", "update_keys(", "VirtualProtect(",
+        "WriteProcessMemory(", "InterlockedExchangePointer(",
+        "pulse(", "gameover_trial_enabled=1",
+    ):
+        assert forbidden not in owner, forbidden
+
+
+def test_owner_probe_does_not_modify_gameover_trial_or_3d_action_routing():
+    assert 'gameover_owner_probe_dump("3D-BASELINE",id,context,0);' in BACKEND
+    assert 'gameover_owner_probe_dump("CANDIDATE-ENTER"' in BACKEND or (
+        '"CANDIDATE-ENTER"' in BACKEND)
+    assert '"CANDIDATE-EXIT"' in BACKEND
+    assert '"CANDIDATE-CONTEXT-EXIT"' in BACKEND
+    assert '"CANDIDATE-STABLE"' in BACKEND
+    assert '"SOUTH-BEFORE-PULSE"' in BACKEND
+    assert "gameover_owner_probe_baselines<8u" in BACKEND
+    assert "gameover_owner_probe_frames%180u==0u" in BACKEND
+    assert "gameover_owner_probe_events=0;" in BACKEND
+    # The original opt-in gate and one-shot Space suppression stay
+    # unchanged. No automatic/native menu ownership is claimed.
+    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverConfirm",0,ini)==1' in BACKEND
+    assert "gameover_trial_candidate(context,menu,gameplay,bink,native_pause)" in BACKEND
+    assert 'pulse(0x1cu,"opt-in GAME OVER Return trial");' in BACKEND
+    assert "if(!update_keys(desired,scans))" in BACKEND
+    assert "if(pause_edge)pulse(0x01u,\"3D Pause\");" in BACKEND
