@@ -56,8 +56,10 @@ def test_probe_cannot_guess_gameover_or_change_menu_routing():
         "spider_sdl3_universal_step(", "update_keys(",
     ):
         assert prohibited not in block, prohibited
-    # Read only retail documented scalar addresses; original pointer
-    # fields are interpreted as presence, never dereferenced.
+    # Read only retail documented scalar addresses. The separate
+    # bounded owner probe MAY read four documented script-manager
+    # offsets, but only with individually guarded VirtualQuery reads.
+    # Neither that pointer nor these fields prove GAME OVER ownership.
     for known in (
         "0x0060CFA4u", "0x0054A510u", "0x006B78F0u",
         "0x00682950u", "0x00682948u",
