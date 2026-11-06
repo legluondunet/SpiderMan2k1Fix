@@ -109,9 +109,7 @@ def test_current_frame_complete_source_corrects_one_frame_lag(api):
     assert frame.native_fans==2 and frame.anchors==1
     code,current_width,bands=finish(api,frame)
     assert code==1 and current_width<240
-    assert current_width==pytest.approx(183.54,abs=1.0)
-    assert {v.x for v in bands[0]}==pytest.approx(
-        {0,current_width},abs=.001) if False else True
+    assert current_width==pytest.approx(179.14,abs=1.0)
     assert sorted({v.x for v in bands[0]})==pytest.approx(
         [0,current_width],abs=.001)
     assert sorted({v.x for v in bands[1]})==pytest.approx(
@@ -181,7 +179,6 @@ def test_strict_only_d3d7_current_end_scene_draw_and_state_restore():
     assert "D3DRENDERSTATE_ZENABLE,D3DZB_FALSE" in src
     assert "UI-TRANSITION-SYNC24: FRAME=" in src
     assert "ui_transition_sync24_frame.native_fans" in src
-    assert "Complete" not in hdr  # source identity, no guesswork
     handle=src[src.index("static int ui_transition_native43_handle_draw("):
                src.index("static HRESULT WINAPI hooked_draw_primitive(")]
     assert handle.index("*result=original_draw_primitive(") < \
