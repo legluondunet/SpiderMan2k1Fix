@@ -21,6 +21,22 @@ typedef struct SpiderAtomicContour {
     float radius[SPIDER_ATOMIC_CONTOUR_SAMPLES];
     float minimum,maximum;
 } SpiderAtomicContour;
+typedef struct SpiderAtomicContourDiagnostic {
+    unsigned reason,quad_index,ray_index;
+    float first,second;
+} SpiderAtomicContourDiagnostic;
+/* Diagnostic reason:
+ * 1 invalid input, 2 center covered, 3 ray misses black,
+ * 4 implausible radii, 5 contour discontinuity.
+ * All diagnostic data comes from the ORIGINAL captured native source. */
+static inline void SpiderAtomicContour_Failure(
+    SpiderAtomicContourDiagnostic *d,unsigned reason,unsigned quad,
+    unsigned ray,float first,float second)
+{
+    if(!d)return;
+    d->reason=reason;d->quad_index=quad;d->ray_index=ray;
+    d->first=first;d->second=second;
+}
 
 static inline float SpiderAtomicContour_Cross(float ax,float ay,float bx,float by)
 {
@@ -57,15 +73,20 @@ static inline int SpiderAtomicContour_ContainsCenter(
 /* Fail closed when source isn't a central open star-shaped aperture.
  * Quads are original game-owned sources; no texture pixels, no timer,
  * no per-boss or per-level artwork. */
-static inline int SpiderAtomicContour_Prepare(
+static inline int SpiderAtomicContour_PrepareDetailed(
     const SpiderAtomicMaskQuad *quads,unsigned count,
-    unsigned w,unsigned h,SpiderAtomicContour *contour)
+    unsigned w,unsigned h,SpiderAtomicContour *contour,
+    SpiderAtomicContourDiagnostic *diagnostic)
 {
     unsigned i,j,k,tri;
     float cx,cy,aspect,minr=1.0e30f,maxr=0.0f;
+    if(diagnostic)memset(diagnostic,0,sizeof(*diagnostic));
     if(!quads || !contour || !count || count>SPIDER_ATOMIC_MASK_MAX ||
        w<640u || h<480u || w>16384u || h>16384u ||
-       (uint64_t)w*3u<(uint64_t)h*4u)return 0;
+       (uint64_t)w*3u<(uint64_t)h*4u){
+        SpiderAtomicContour_Failure(diagnostic,1u,count,0u,(float)w,(float)h);
+        return 0;
+    }
     cx=(float)w*.5f;cy=(float)h*.5f;
     aspect=((float)h*4.0f)/((float)w*3.0f);
     /* Never overwrite a live contour until the complete original frame
@@ -82,8 +103,10 @@ static inline int SpiderAtomicContour_Prepare(
         if(fabsf(SpiderAtomicContour_Cross(
              x[1]-x[0],y[1]-y[0],x[2]-x[0],y[2]-y[0]))<.00001f)
             continue;
-        if(SpiderAtomicContour_ContainsCenter(x[0],y[0],x[1],y[1],x[2],y[2]))
+        if(SpiderAtomicContour_ContainsCenter(x[0],y[0],x[1],y[1],x[2],y[2])){
+            SpiderAtomicContour_Failure(diagnostic,2u,j,tri,x[0],y[0]);
             return 0;
+        }
     }
     for(i=0u;i<SPIDER_ATOMIC_CONTOUR_SAMPLES;i++){
         float angle=(2.0f*SPIDER_ATOMIC_CONTOUR_PI*(float)i)/
@@ -105,21 +128,38 @@ static inline int SpiderAtomicContour_Prepare(
         }
         /* Missing ray means original material did NOT supply a closed
          * aperture. Never invent a silhouette from unsupported sources. */
-        if(!(nearest>1.0f && nearest<(float)(w+h)*4.0f))return 0;
+        if(!(nearest>1.0f && nearest<(float)(w+h)*4.0f)){
+            SpiderAtomicContour_Failure(diagnostic,3u,0u,i,nearest,angle);
+            return 0;
+        }
         contour->radius[i]=nearest;
         if(nearest<minr)minr=nearest;
         if(nearest>maxr)maxr=nearest;
     }
-    if(!(maxr<minr*32.0f))return 0;
+    if(!(maxr<minr*32.0f)){
+        SpiderAtomicContour_Failure(diagnostic,4u,0u,0u,minr,maxr);
+        return 0;
+    }
     /* Sudden large jumps indicate islands or a non-star-shaped source,
      * where first-ray-hit would not preserve the native contour. */
     for(i=0u;i<SPIDER_ATOMIC_CONTOUR_SAMPLES;i++){
         float a=contour->radius[i];
         float b=contour->radius[(i+1u)%SPIDER_ATOMIC_CONTOUR_SAMPLES];
-        if(fabsf(a-b)>fmaxf(8.0f,fmaxf(a,b)*.22f))return 0;
+        if(fabsf(a-b)>fmaxf(8.0f,fmaxf(a,b)*.22f)){
+            SpiderAtomicContour_Failure(diagnostic,5u,0u,i,a,b);
+            return 0;
+        }
     }
     contour->minimum=minr;contour->maximum=maxr;
     return 1;
+}
+/* Source-compatible API: all existing validated V13 behavior is unchanged. */
+static inline int SpiderAtomicContour_Prepare(
+    const SpiderAtomicMaskQuad *quads,unsigned count,
+    unsigned w,unsigned h,SpiderAtomicContour *contour)
+{
+    return SpiderAtomicContour_PrepareDetailed(
+        quads,count,w,h,contour,NULL);
 }
 /* One connected black exterior, ONE D3D7 TRIANGLELIST batch. The
  * outer ring is analytically infinite black matte clipped by viewport;
