@@ -1,0 +1,131 @@
+#ifndef SPIDERMAN_UI_TRANSITION_ATOMIC_MASK_H
+#define SPIDERMAN_UI_TRANSITION_ATOMIC_MASK_H
+/* Portable CPU portion of the opt-in D3D7 V10 atomically composited iris.
+ * Original zero-alpha black source polygons are rasterized just ONCE into
+ * one black/transparent texture. Each live frame ONLY changes a SINGLE
+ * uniformly-scaled UV rectangle for the whole image. No per-quad motion.
+ * Original black cinema bars are explicitly excluded by the caller.
+ */
+#include <stdint.h>
+#include <string.h>
+#include <math.h>
+#define SPIDER_ATOMIC_MASK_MAX 128u
+typedef struct SpiderAtomicMaskQuad {
+    float x[4],y[4];
+} SpiderAtomicMaskQuad;
+static inline float SpiderAtomicMask_Edge(float ax,float ay,float bx,float by,
+                                          float px,float py)
+{
+    return (px-ax)*(by-ay)-(py-ay)*(bx-ax);
+}
+static inline unsigned SpiderAtomicMask_Rasterize(
+    const SpiderAtomicMaskQuad *quads,unsigned count,
+    unsigned source_w,unsigned source_h,
+    uint32_t *pixels,unsigned tex_w,unsigned tex_h)
+{
+    unsigned q,tri,painted=0u;
+    float sx,sy;
+    if(!quads || !pixels || !count || count>SPIDER_ATOMIC_MASK_MAX ||
+       source_w<640u || source_h<480u || tex_w<64u || tex_h<64u ||
+       tex_w>4096u || tex_h>4096u)return 0u;
+    if((uint64_t)tex_w*tex_h>4096u*4096u)return 0u;
+    memset(pixels,0,(size_t)tex_w*tex_h*sizeof(*pixels));
+    sx=(float)tex_w/(float)source_w;
+    sy=(float)tex_h/(float)source_h;
+    for(q=0u;q<count;q++){
+        for(tri=0u;tri<2u;tri++){
+            unsigned inds[3],i,x,y,lo_x,hi_x,lo_y,hi_y;
+            float vx[3],vy[3],minx,maxx,miny,maxy,area;
+            inds[0]=0u;inds[1]=tri==0u?1u:2u;
+            inds[2]=tri==0u?2u:3u;
+            for(i=0u;i<3u;i++){
+                vx[i]=quads[q].x[inds[i]]*sx;
+                vy[i]=quads[q].y[inds[i]]*sy;
+                if(!(vx[i]>-8192.0f && vx[i]<8192.0f &&
+                     vy[i]>-8192.0f && vy[i]<8192.0f))return 0u;
+            }
+            area=SpiderAtomicMask_Edge(vx[0],vy[0],vx[1],vy[1],vx[2],vy[2]);
+            if(area<.00001f && area>-.00001f)continue;
+            minx=maxx=vx[0];miny=maxy=vy[0];
+            for(i=1u;i<3u;i++){
+                if(vx[i]<minx)minx=vx[i];
+                if(vx[i]>maxx)maxx=vx[i];
+                if(vy[i]<miny)miny=vy[i];
+                if(vy[i]>maxy)maxy=vy[i];
+            }
+            if(maxx<=0.0f || maxy<=0.0f || minx>=(float)tex_w ||
+               miny>=(float)tex_h)continue;
+            lo_x=minx<=0.0f?0u:(unsigned)minx;
+            lo_y=miny<=0.0f?0u:(unsigned)miny;
+            hi_x=maxx>=(float)tex_w?tex_w:(unsigned)maxx+1u;
+            hi_y=maxy>=(float)tex_h?tex_h:(unsigned)maxy+1u;
+            for(y=lo_y;y<hi_y;y++){
+                for(x=lo_x;x<hi_x;x++){
+                    float px=(float)x+.5f,py=(float)y+.5f;
+                    float a=SpiderAtomicMask_Edge(vx[0],vy[0],vx[1],vy[1],px,py);
+                    float b=SpiderAtomicMask_Edge(vx[1],vy[1],vx[2],vy[2],px,py);
+                    float c=SpiderAtomicMask_Edge(vx[2],vy[2],vx[0],vy[0],px,py);
+                    if((a>=-.0001f && b>=-.0001f && c>=-.0001f) ||
+                       (a<=.0001f && b<=.0001f && c<=.0001f)){
+                        pixels[(size_t)y*tex_w+x]=0xFF000000u;
+                        painted++;
+                    }
+                }
+            }
+        }
+    }
+    return painted;
+}
+/* Recover game-owned growth from a *source* quad by comparing it with
+ * all reference quads. Native positions are quantized and culled near
+ * the edges. Compare residuals after positive isotropic scaling about
+ * the ORIGINAL source center. No timer and no previously corrected UI.
+ */
+static inline int SpiderAtomicMask_EstimateScale(
+    const SpiderAtomicMaskQuad *reference,unsigned ref_count,
+    const SpiderAtomicMaskQuad *observed,unsigned source_w,unsigned source_h,
+    float *out_scale,float *out_error)
+{
+    unsigned j,k;
+    float best_error=1.0e20f,best_scale=0.0f;
+    float cx=(float)source_w*.5f,cy=(float)source_h*.5f;
+    if(!reference || !observed || !out_scale || !ref_count ||
+       ref_count>SPIDER_ATOMIC_MASK_MAX || source_w<640u || source_h<480u)
+        return 0;
+    for(j=0u;j<ref_count;j++){
+        float dot=0.0f,energy=0.0f,err=0.0f,scale;
+        for(k=0u;k<4u;k++){
+            float rx=reference[j].x[k]-cx,ry=reference[j].y[k]-cy;
+            float ox=observed->x[k]-cx,oy=observed->y[k]-cy;
+            dot+=rx*ox+ry*oy;
+            energy+=rx*rx+ry*ry;
+        }
+        if(energy<100.0f)continue;
+        scale=dot/energy;
+        if(!(scale>=.015f && scale<=24.0f))continue;
+        for(k=0u;k<4u;k++){
+            float dx=observed->x[k]-cx-(reference[j].x[k]-cx)*scale;
+            float dy=observed->y[k]-cy-(reference[j].y[k]-cy)*scale;
+            err+=dx*dx+dy*dy;
+        }
+        err=sqrtf(err*.25f);
+        if(err<best_error){best_error=err;best_scale=scale;}
+    }
+    if(!(best_scale>.0f && best_error <= 2.5f+2.5f*best_scale &&
+         best_error <= (float)source_w*.015f))return 0;
+    *out_scale=best_scale;
+    if(out_error)*out_error=best_error;
+    return 1;
+}
+static inline int SpiderAtomicMask_ScreenUV(float scale,float *umin,
+                                          float *vmin,float *umax,float *vmax)
+{
+    float half;
+    if(!umin || !vmin || !umax || !vmax ||
+       !(scale>=.015f && scale<=24.0f))return 0;
+    half=.5f/scale;
+    *umin=*vmin=.5f-half;
+    *umax=*vmax=.5f+half;
+    return 1;
+}
+#endif
