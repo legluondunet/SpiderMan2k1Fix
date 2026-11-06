@@ -979,6 +979,7 @@ static volatile LONG ui_canvas_trial_enabled=0;
 /* Additional opt-in trial: record native ESC commands, composite at EndScene. */
 static volatile LONG ui_compositor_trial_enabled=0;
 static volatile LONG ui_compositor_tint_enabled=0; /* Never synthesize an unverified pause tint by default. */
+static volatile LONG ui_compositor_native_gutters_enabled=1; /* Only inside the explicitly opted-in compositor trial; A/B opt-out. */
 static volatile LONG ui_canvas_trial_hits=0;
 static volatile LONG ui_canvas_wipe_edge_hits=0;
 static volatile LONG ui_canvas_fullscreen_kept=0;
@@ -2207,6 +2208,7 @@ static volatile LONG ui_comp_capture_failures=0,ui_comp_no_scene=0,ui_comp_repla
  * DrawPrimitive hits can otherwise miss every EndScene log indefinitely. */
 static volatile LONG ui_comp_flushed_frames=0,ui_comp_fullscreen_candidates=0;
 static volatile LONG ui_comp_source_dump_once=0;
+static volatile LONG ui_comp_native_gutters_ok=0,ui_comp_native_gutters_rejected=0;
 
 static void ui_comp_release(IDirect3DDevice7 *device) {
   unsigned i;
@@ -2260,6 +2262,115 @@ static int ui_comp_draw_screen_tint(IDirect3DDevice7 *device,DWORD argb) {
                                               v,4,0));
 }
 
+/* Native screen-edge backdrop, NOT a stretched pause decoration.
+ *
+ * The original pause pattern is composed from many opaque-geometry,
+ * alpha-blended, untextured quads. When their source geometry spans
+ * both sides of the physical display, ALL game-owned quads at either
+ * edge must have the SAME FLAT ARGB, and their source Y intervals must
+ * cover the whole screen height. Those strict source-derived facts
+ * permit a TWO-RECTANGLE backdrop in the physical left/right gutters,
+ * using the EXACT native edge ARGB and the original D3D7 stateblock.
+ * It is never drawn over the 4:3 canvas or reprojects spider pixels.
+ * Zero eligible candidates, a non-flat vertex, inconsistent palettes,
+ * textured edges or incomplete height coverage => draw NOTHING.
+ * This rule has no boss, scene, asset or fixed-colour dependency.
+ */
+static int ui_comp_draw_native_gutters(IDirect3DDevice7 *device,
+                                      DWORD *native_color)
+{
+  SpiderUICompYSpan spans_left[SPIDER_UI_COMP_MAX_COMMANDS];
+  SpiderUICompYSpan spans_right[SPIDER_UI_COMP_MAX_COMMANDS];
+  const SpiderUICompDraw *sample=NULL;
+  unsigned left_count=0,right_count=0,i,k,palette=0u;
+  float w=(float)desktop_w,h=(float)desktop_h;
+  float gutter=SpiderUIComp_GutterWidth((unsigned)desktop_w,
+                                       (unsigned)desktop_h);
+  int have_palette=0;
+  SpiderMenuVertex vertices[4];
+  unsigned side;
+  if(native_color)*native_color=0u;
+  if(!device || gutter<=0.0f || ui_comp_count==0u ||
+     !ui_comp_motif || ui_comp_bailout ||
+     InterlockedCompareExchange(&ui_compositor_native_gutters_enabled,0,0)!=1)
+    return 0;
+  for(i=0u;i<ui_comp_count;i++) {
+    const SpiderUICompDraw *c=&ui_comp_draws[i];
+    const SpiderMenuVertex *v=c->source_v;
+    float l,r,t,b;
+    int on_left,on_right;
+    if(c->layer!=SPIDER_UI_COMP_PAUSE_DECOR)continue;
+    l=r=v[0].x;t=b=v[0].y;
+    for(k=1u;k<4u;k++) {
+      if(v[k].x<l)l=v[k].x;
+      if(v[k].x>r)r=v[k].x;
+      if(v[k].y<t)t=v[k].y;
+      if(v[k].y>b)b=v[k].y;
+    }
+    on_left=l<=w*.005f && r>w*.025f;
+    on_right=r>=w*.995f && l<w*.975f;
+    if(!on_left && !on_right)continue;
+    /* No inferred translucent color: the original four vertices must
+     * all use the same ARGB and the native draw must be untextured. */
+    if(!c->state_token || c->texture || c->type!=D3DPT_TRIANGLEFAN ||
+       c->fvf!=0x144UL || !(t>=-h*.05f && b<=h*1.05f && t<b))
+      return 0;
+    for(k=1u;k<4u;k++)
+      if(v[k].diffuse!=v[0].diffuse ||
+         fabsf(v[k].z-v[0].z)>.00005f ||
+         fabsf(v[k].rhw-v[0].rhw)>.080f)
+        return 0;
+    if(!have_palette) {
+      palette=(unsigned)v[0].diffuse;
+      sample=c;
+      have_palette=1;
+    } else if(palette!=(unsigned)v[0].diffuse)
+      return 0;
+    if(on_left) {
+      if(left_count>=SPIDER_UI_COMP_MAX_COMMANDS)return 0;
+      spans_left[left_count].top=t;
+      spans_left[left_count].bottom=b;
+      left_count++;
+    }
+    if(on_right) {
+      if(right_count>=SPIDER_UI_COMP_MAX_COMMANDS)return 0;
+      spans_right[right_count].top=t;
+      spans_right[right_count].bottom=b;
+      right_count++;
+    }
+  }
+  if(!sample || !have_palette || ((palette>>24)&255u)==0u ||
+     !SpiderUIComp_CoversFullHeight(spans_left,left_count,h) ||
+     !SpiderUIComp_CoversFullHeight(spans_right,right_count,h))
+    return 0;
+
+  /* From here the owner and native material state are VERIFIED.
+   * No custom alpha is guessed and none of the 160 motif quads moves. */
+  if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)) ||
+     FAILED(IDirect3DDevice7_SetTexture(device,0,NULL)) ||
+     FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)) ||
+     FAILED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE)))
+    return 0;
+  memset(vertices,0,sizeof(vertices));
+  for(k=0u;k<4u;k++) {
+    vertices[k]=sample->source_v[0];
+    vertices[k].diffuse=(DWORD)palette;
+  }
+  for(side=0u;side<2u;side++) {
+    float xl=side==0u ? 0.0f : w-gutter;
+    float xr=side==0u ? gutter : w;
+    vertices[0].x=xl;vertices[0].y=0.0f;
+    vertices[1].x=xr;vertices[1].y=0.0f;
+    vertices[2].x=xr;vertices[2].y=h;
+    vertices[3].x=xl;vertices[3].y=h;
+    if(FAILED(original_draw_primitive(
+        device,D3DPT_TRIANGLEFAN,0x144UL,vertices,4,0)))
+      return 0;
+  }
+  if(native_color)*native_color=(DWORD)palette;
+  return 1;
+}
+
 /* Flush before native EndScene, not at DirectDraw Flip, so the entire
  * replay remains inside the original legal BeginScene/EndScene pair. */
 static void ui_comp_flush(IDirect3DDevice7 *device) {
@@ -2298,6 +2409,26 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
       InterlockedIncrement(&ui_comp_tints);
     else if(debug_log_enabled && InterlockedIncrement(&ui_comp_replay_failures)<=3)
       log_line("UI-COMPOSITOR: fullscreen overlay unsupported this frame");
+  }
+  /* Native source-backed gutters are independent of the proportional
+   * 4:3 motif. Never combine them with the historical guessed tint.
+   * Status is optional, bounded, and never modifies HUD geometry. */
+  if(!needs_tint && ui_comp_motif &&
+     InterlockedCompareExchange(&ui_compositor_native_gutters_enabled,0,0)==1) {
+    DWORD native_color=0;
+    int painted=ui_comp_draw_native_gutters(device,&native_color);
+    LONG total=painted ?
+       InterlockedIncrement(&ui_comp_native_gutters_ok) :
+       InterlockedIncrement(&ui_comp_native_gutters_rejected);
+    if(debug_log_enabled && (total<=3 || total%180==0)) {
+      char msg[225];
+      snprintf(msg,sizeof(msg),
+        "UI-COMPOSITOR-NATIVE-GUTTERS: %s count=%ld width=%.1f native-argb=%08lX [SOURCE EDGE PALETTE, TWO PHYSICAL STRIPS; NO SPIDER STRETCH]",
+        painted?"drawn":"not-proven",(long)total,
+        (double)SpiderUIComp_GutterWidth((unsigned)desktop_w,(unsigned)desktop_h),
+        (unsigned long)native_color);
+      log_line(msg);
+    }
   }
   /* Stable semantic layer order. Within each layer, retain exact game
    * order; scene and HUD are already in the physical framebuffer. */
@@ -4920,6 +5051,17 @@ static DWORD initialize_body(LPVOID unused) {
       log_line(InterlockedCompareExchange(&ui_compositor_tint_enabled,0,0)==1 ?
          "UI-COMPOSITOR-TINT: ON - A/B synthetic fullscreen veil from motif vertex (NOT native fidelity)" :
          "UI-COMPOSITOR-TINT: OFF - no synthetic fullscreen veil, observe native pause decor coverage");
+      /* A/B rollback. 0 disables native exterior color, without
+       * disabling safe original 4:3 motif + late ESC replay. */
+      {
+        char gutters[4]={0};
+        if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_GUTTERS",
+                                   gutters,sizeof(gutters))==1 && gutters[0]=='0')
+          InterlockedExchange(&ui_compositor_native_gutters_enabled,0);
+        log_line(InterlockedCompareExchange(&ui_compositor_native_gutters_enabled,0,0)==1 ?
+          "UI-COMPOSITOR-NATIVE-GUTTERS: ON (native source-edge ARGB and blend, two physical 4:3 exterior strips; experimental)" :
+          "UI-COMPOSITOR-NATIVE-GUTTERS: OFF (existing compositor comparison)");
+      }
     } else {
       log_line("UI-COMPOSITOR: OFF; existing UI canvas draw path unchanged");
     }
