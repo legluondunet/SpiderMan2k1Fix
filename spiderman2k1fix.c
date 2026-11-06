@@ -2241,6 +2241,12 @@ static volatile LONG ui_comp_capture_failures=0,ui_comp_no_scene=0,ui_comp_repla
 static volatile LONG ui_comp_flushed_frames=0,ui_comp_fullscreen_candidates=0;
 static volatile LONG ui_comp_source_dump_once=0;
 static volatile LONG ui_comp_native_gutters_ok=0,ui_comp_native_gutters_rejected=0;
+/* Read-only check for another game-owned HUD pass AFTER our EndScene
+ * Pause overlay, within the same original DirectDraw Flip. If detected,
+ * an overlay-order change at EndScene alone cannot guarantee final
+ * foreground precedence. Never intercept or reorder those draws. */
+static volatile LONG ui_comp_last_overlay_flip=-1;
+static volatile LONG ui_comp_late_draw_samples=0;
 
 static void ui_comp_release(IDirect3DDevice7 *device) {
   unsigned i;
@@ -2759,6 +2765,9 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
       }
     }
   }
+  if(paint_spider && paint_menu && all_ok)
+    InterlockedExchange(&ui_comp_last_overlay_flip,
+       InterlockedCompareExchange(&flip_count,0,0));
   if(debug_log_enabled && ui_comp_motif &&
      (InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)<4 ||
       InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)%180==0 ||
@@ -3365,6 +3374,34 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     /* Probe any genuine independent screen-size native tint candidate.
      * Log original source geometry, never a corrected copy. */
     ui_comp_probe_fullscreen_source(self,type,fvf,verts,count,native_esc_primitive);
+    /* Check for a separate native HUD pass submitted after our
+     * EndScene replay but before the next Flip. Such draws could appear
+     * above the spider regardless of the compositor's pass order.
+     * This probe logs ONLY; it never changes their game-owned drawing. */
+    if(debug_log_enabled &&
+       InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
+       InterlockedCompareExchange(&ui_comp_last_overlay_flip,0,0)==
+         InterlockedCompareExchange(&flip_count,0,0) &&
+       count==4 && fvf==0x144UL && type==D3DPT_TRIANGLEFAN &&
+       !native_esc_primitive && verts) {
+      DWORD late_rva=0;
+      const SpiderMenuVertex *candidate=(const SpiderMenuVertex*)verts;
+      if(candidate[0].z>=0.0f && candidate[0].z<0.02f &&
+         geom_rva(__builtin_return_address(0),&late_rva) &&
+         late_rva==0x00102C72UL) {
+        LONG sample=InterlockedIncrement(&ui_comp_late_draw_samples);
+        if(sample<=16) {
+          char msg[270];
+          snprintf(msg,sizeof(msg),
+            "UI-COMPOSITOR-LATE-DRAW: n=%ld flip=%ld x=%.1f y=%.1f z=%.5f rhw=%.4f ARGB=%08lX [ORIGINAL POST-PAUSE PRIMITIVE; DIAGNOSTIC ONLY]",
+            (long)sample,(long)InterlockedCompareExchange(&flip_count,0,0),
+            (double)candidate[0].x,(double)candidate[0].y,
+            (double)candidate[0].z,(double)candidate[0].rhw,
+            (unsigned long)candidate[0].diffuse);
+          log_line(msg);
+        }
+      }
+    }
     /* Deferred ESC composition is active ONLY under both opt-in flags,
      * inside a confirmed game-owned BeginScene/EndScene pair. Otherwise
      * keep the original draw path (even if state blocks are unsupported).
