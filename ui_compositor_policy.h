@@ -90,4 +90,28 @@ static inline float SpiderUIComp_GutterWidth(
     return outer>0.0f ? outer : 0.0f;
 }
 
+/* A source quad attached to a physical edge is allowed to establish
+ * exterior colour only if it covers the ENTIRE native 4:3 gutter width.
+ * Touching the edge alone is insufficient: narrow tiles could otherwise
+ * be erroneously expanded to the whole strip. This is a generic
+ * source-geometry condition for every widescreen aspect ratio.
+ *
+ * right_side=0: [0,gutter], right_side=1: [width-gutter,width].
+ * 0.5px tolerance avoids rejecting exact raster edge coordinates.
+ */
+static inline int SpiderUIComp_EdgeTileCoversGutter(
+    float min_x,float max_x,float width,float gutter,int right_side)
+{
+    if(!(width>=640.0f && width<=16384.0f &&
+         gutter>0.0f && gutter<width*0.5f &&
+         min_x>=-width*0.05f && max_x<=width*1.05f &&
+         max_x>min_x))
+        return 0;
+    if(right_side)
+        return max_x>=width*0.995f &&
+               min_x<=width-gutter+0.5f;
+    return min_x<=width*0.005f &&
+           max_x>=gutter-0.5f;
+}
+
 #endif
