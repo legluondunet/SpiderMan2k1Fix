@@ -66,16 +66,6 @@ static inline int SpiderUIComp_ShouldDefer(int trial_enabled,
            vertex_count == 4u && fvf == 0x144u;
 }
 
-/* Entire overlay is the screen; decoration remains in 4:3. Keep the
- * source RGB and limit alpha during a reversible first hardware trial.
- * This is NOT an exact reproduction of the game's native pause tint.
- */
-static inline unsigned SpiderUIComp_Tint(unsigned source_argb)
-{
-    unsigned alpha=(source_argb >> 24) & 0xffu;
-    if (alpha>0x50u) alpha=0x50u;
-    return (alpha<<24)|(source_argb & 0xffffffu);
-}
 /* Fail-closed proof that a set of game-owned native exterior
  * rectangles covers a physical screen edge all the way from top to
  * bottom. This is screen-space geometry, independent of boss/level,
@@ -114,104 +104,15 @@ static inline int SpiderUIComp_CoversFullHeight(
     return 0;
 }
 
-/* On a physical widescreen, the 4:3 gameplay UI is centered. The
- * exterior strips are simply the two complements of that canvas.
- * This never scales, reprojects or extends the spider decoration.
- */
-static inline float SpiderUIComp_GutterWidth(
-    unsigned screen_w,unsigned screen_h)
-{
-    float outer;
-    if(screen_w<640u || screen_h<480u ||
-       screen_w>16384u || screen_h>16384u ||
-       (unsigned long long)screen_w*3u <=
-           (unsigned long long)screen_h*4u)return 0.0f;
-    outer=((float)screen_w-(float)screen_h*4.0f/3.0f)*0.5f;
-    return outer>0.0f ? outer : 0.0f;
-}
-
-/* A source quad attached to a physical edge is allowed to establish
- * exterior colour only if it covers the ENTIRE native 4:3 gutter width.
- * Touching the edge alone is insufficient: narrow tiles could otherwise
- * be erroneously expanded to the whole strip. This is a generic
- * source-geometry condition for every widescreen aspect ratio.
- *
- * right_side=0: [0,gutter], right_side=1: [width-gutter,width].
- * 0.5px tolerance avoids rejecting exact raster edge coordinates.
- */
-static inline int SpiderUIComp_EdgeTileCoversGutter(
-    float min_x,float max_x,float width,float gutter,int right_side)
-{
-    if(!(width>=640.0f && width<=16384.0f &&
-         gutter>0.0f && gutter<width*0.5f &&
-         min_x>=-width*0.05f && max_x<=width*1.05f &&
-         max_x>min_x))
-        return 0;
-    if(right_side)
-        return max_x>=width*0.995f &&
-               min_x<=width-gutter+0.5f;
-    return min_x<=width*0.005f &&
-           max_x>=gutter-0.5f;
-}
-
-/* Reconstruct one original motif TRIANGLE's exact colour at the left or
- * right monitor edge. Each game-owned 4-vertex triangle fan has triangles
- * (0,1,2) and (0,2,3). Only a NONDEGENERATE triangle intersecting the
- * physical edge over a positive Y interval can contribute an exterior
- * strip. A point-only intersection must not paint an entire band.
- *
- * The replay projects that SOURCE EDGE vertically across the outside
- * gutter. It does not stretch the motif geometry or invent one uniform
- * ARGB for the whole height. Diffuse and native blending come from the
- * source command and its original state block.
- */
-static inline int SpiderUIComp_TriangleEdgeSpan(
-    float x0,float y0,float x1,float y1,float x2,float y2,
-    float edge,float height,SpiderUICompYSpan *span)
-{
-    const float xs[3]={x0,x1,x2};
-    const float ys[3]={y0,y1,y2};
-    float minimum=height+1.0f,maximum=-1.0f;
-    float area=(x1-x0)*(y2-y0)-(x2-x0)*(y1-y0);
-    unsigned i;
-    if(!span || !(height>=480.0f && height<=16384.0f) ||
-       !(edge>=0.0f && edge<=16384.0f) ||
-       !(area>0.1f || area < -0.1f))
-        return 0;
-    for(i=0u;i<3u;i++) {
-        unsigned j=(i+1u)%3u;
-        float xa=xs[i]-edge,xb=xs[j]-edge;
-        /* Vertex exactly on the physical edge. */
-        if(xa>=-0.25f && xa<=0.25f) {
-            if(ys[i]<minimum)minimum=ys[i];
-            if(ys[i]>maximum)maximum=ys[i];
-        }
-        /* An original triangle crossing the physical edge can have
-         * neither of its endpoints lying precisely on the border. */
-        if((xa < -0.25f && xb > 0.25f) ||
-           (xa > 0.25f && xb < -0.25f)) {
-            float y=ys[i]+(ys[j]-ys[i])*(-xa)/(xb-xa);
-            if(y<minimum)minimum=y;
-            if(y>maximum)maximum=y;
-        }
-    }
-    if(!(maximum>minimum+0.5f) ||
-       maximum<=0.0f || minimum>=height ||
-       minimum < -height*.05f || maximum > height*1.05f)
-        return 0;
-    span->top=minimum<0.0f?0.0f:minimum;
-    span->bottom=maximum>height?height:maximum;
-    return span->bottom>span->top+0.5f;
-}
-
 /* Identify a source-backed, uniform native backdrop independently of
  * the inner spider, without any hardcoded colour, camera depth or level.
  *
- * Source evidence 2026-11-06: the ESC motif has two flat diffuse colour
- * families. The background one reaches every physical screen edge,
- * continuously, while the other is strictly interior. A fullscreen
- * overlay may replace ONLY that proven background family; the interior
- * artwork remains native and is mapped as one 4:3 object.
+ * Source evidence 2026-11-06: the ESC motif has two flat diffuse
+ * colour families. The background one touches all four source edges,
+ * and the second is strictly interior. This proof authorizes ONLY
+ * two physical OUTER gutter quads. All 160 original source triangles
+ * must remain untouched; replacing the source backdrop made the
+ * centre's translucent colours incorrect (hardware A/B confirmed).
  *
  * AABB alone is not an authoritative proof of unique screen coverage:
  * the caller also verifies untextured, same-vertex-colour D3D7 triangles
@@ -288,34 +189,5 @@ static inline int SpiderUIComp_IdentifyNativeBackdrop(
     return 1;
 }
 
-/* Piecewise continuous native-background projection:
- * the INTERIOR spider keeps the normal centered 4:3 map exactly,
- * whereas only the original backdrop outside its measured source
- * bounding box is extended to the physical left/right edges.
- *
- * Mapping shared source coordinates identically avoids gaps between
- * tessellated backdrop triangles. It NEVER adds a second translucent
- * pass beneath the spider (which would double-blend its alpha).
- */
-static inline float SpiderUIComp_BackdropMapX(
-    float x,float width,float height,float inner_left,float inner_right)
-{
-    float scale,center,mapped_left,mapped_right;
-    if(width<640.0f || height<480.0f || width>16384.0f ||
-       height>16384.0f || width*3.0f<=height*4.0f ||
-       !(inner_left>1.0f && inner_left<inner_right &&
-         inner_right<width-1.0f))
-        return x;
-    scale=(height*4.0f)/(width*3.0f);
-    center=width*.5f;
-    mapped_left=center+(inner_left-center)*scale;
-    mapped_right=center+(inner_right-center)*scale;
-    if(x<inner_left)
-        return x*mapped_left/inner_left;
-    if(x>inner_right)
-        return mapped_right+(x-inner_right)*
-              (width-mapped_right)/(width-inner_right);
-    return center+(x-center)*scale;
-}
 
 #endif
