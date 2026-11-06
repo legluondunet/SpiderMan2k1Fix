@@ -84,6 +84,7 @@ static unsigned gameover_owner_probe_frames=0;
 static unsigned gameover_owner_probe_baselines=0;
 static unsigned gameover_owner_probe_events=0;
 static int gameover_owner_probe_was_candidate=0;
+static uint32_t gameover_owner_probe_selected_id=0;
 static SpiderSDL3GameOverTrial gameover_trial;
 static void (*report)(const char *)=NULL;
 static void log_universal(const char *msg) {
@@ -332,6 +333,9 @@ static void restore_original(const char *reason) {
    * in BeforeUI and before any new joystick gameplay injection. */
   menu_previous=0;menu_arm=0;
   previous_context=SPIDER_UNIVERSAL_CTX_3D;
+  gameover_owner_probe_was_candidate=0;
+  gameover_owner_probe_selected_id=0;
+  gameover_owner_probe_frames=0;
   spider_sdl3_gameover_trial_reset(&gameover_trial);
   spider_sdl3_universal_reset(&state);
 }
@@ -391,6 +395,7 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   gameover_owner_probe_baselines=0;
   gameover_owner_probe_events=0;
   gameover_owner_probe_was_candidate=0;
+  gameover_owner_probe_selected_id=0;
   spider_sdl3_gameover_trial_reset(&gameover_trial);
   gameover_trial_enabled=ini &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverConfirm",0,ini)==1;
@@ -912,6 +917,15 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
    * inject Enter until a unique game-owned state is established. */
   gameover_probe_snapshot(id,context,menu,gameplay,bink,native_pause,
                           profile,&sample);
+  /* Keep diagnostics attached to the selected controller identity.
+   * A Start-driven handoff and focus restoration must not carry a
+   * previous controller's GAME OVER candidate evidence. */
+  if(gameover_trial_enabled && gameover_owner_probe_selected_id!=id) {
+    gameover_owner_probe_selected_id=id;
+    gameover_owner_probe_frames=0;
+    gameover_owner_probe_was_candidate=0;
+    gameover_owner_probe_dump("SELECTED-PAD-CHANGE",id,context,0);
+  }
   /* Low-volume control samples of unmodified original 3D gameplay:
    * compare these to candidate-armed/South samples in the SAME run.
    * Do not log continuously or classify a menu from these fields. */
