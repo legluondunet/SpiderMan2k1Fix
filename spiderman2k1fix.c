@@ -16,6 +16,7 @@
 #include "hud_adaptive.h"
 #include "ui_canvas_43.h"
 #include "ui_transition_gutters.h"
+#include "ui_transition_atomic_mask.h"
 #include "ui_compositor_policy.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
@@ -1013,6 +1014,23 @@ typedef struct SpiderAtomicProbeQuad {
   DWORD color,caller;
 } SpiderAtomicProbeQuad;
 static volatile LONG ui_atomic_probe_trial_enabled=0;
+/* V10: one native scene-opening spider silhouette, one precomposed
+ * alpha texture, one uniformly zoomed screen quad. ALL previous
+ * per-quad V6-V9 corrections are bypassed only for confirmed source
+ * iris draws once a valid template texture has been constructed.
+ * This explicit trial is OFF by default. Never owns native ESC/HUD.
+ */
+static volatile LONG ui_atomic_renderer_enabled=0;
+static volatile LONG ui_atomic_renderer_failed=0;
+static IDirectDraw7 *ui_atomic_ddraw=NULL; /* owned COM ref, game lifetime */
+static IDirectDrawSurface7 *ui_atomic_texture=NULL;
+static SpiderAtomicMaskQuad ui_atomic_reference[SPIDER_ATOMIC_MASK_MAX];
+static unsigned ui_atomic_reference_count=0u,ui_atomic_peak=0u;
+static unsigned ui_atomic_stable=0u,ui_atomic_tex_w=0u,ui_atomic_tex_h=0u;
+static unsigned ui_atomic_scene_mode=0u,ui_atomic_scene_suppressed=0u;
+static float ui_atomic_scene_scale=0.0f,ui_atomic_previous_scale=0.0f;
+static volatile LONG ui_atomic_rendered_frames=0;
+
 static SpiderAtomicProbeQuad ui_atomic_quads[SPIDER_ATOMIC_PROBE_MAX];
 static unsigned ui_atomic_count=0,ui_atomic_total=0;
 static unsigned ui_atomic_black_zero=0,ui_atomic_black_opaque=0;
@@ -1021,8 +1039,12 @@ static unsigned ui_atomic_scenes_left=0,ui_atomic_logged_scenes=0;
 
 static void ui_atomic_probe_begin_scene(void)
 {
-  if(InterlockedCompareExchange(&ui_atomic_probe_trial_enabled,0,0)!=1)
+  if(InterlockedCompareExchange(&ui_atomic_probe_trial_enabled,0,0)!=1 &&
+     InterlockedCompareExchange(&ui_atomic_renderer_enabled,0,0)!=1)
     return;
+  ui_atomic_scene_mode=0u;
+  ui_atomic_scene_scale=0.0f;
+  ui_atomic_scene_suppressed=0u;
   ui_atomic_count=0;ui_atomic_total=0;
   ui_atomic_black_zero=0;ui_atomic_black_opaque=0;
   ui_atomic_iris_seen=0;
@@ -1035,7 +1057,8 @@ static void ui_atomic_probe_raw_draw(
   DWORD rva=0,color;
   unsigned i;
   SpiderAtomicProbeQuad *p;
-  if(InterlockedCompareExchange(&ui_atomic_probe_trial_enabled,0,0)!=1 ||
+  if((InterlockedCompareExchange(&ui_atomic_probe_trial_enabled,0,0)!=1 &&
+      InterlockedCompareExchange(&ui_atomic_renderer_enabled,0,0)!=1) ||
      !vertices || count!=4 || type!=D3DPT_TRIANGLEFAN ||
      fvf!=0x144UL || desktop_w<640 || desktop_h<480)
     return;
@@ -1064,6 +1087,287 @@ static void ui_atomic_probe_raw_draw(
   p=&ui_atomic_quads[ui_atomic_count++];
   p->color=color;p->caller=rva;
   for(i=0;i<4u;i++){p->x[i]=v[i].x;p->y[i]=v[i].y;}
+}
+
+/* V10 renderer: D3D7 managed A8R8G8B8 texture is the ONLY
+ * extra silhouette object. Its black alpha mask is rasterized from a
+ * complete, source-verified native frame; both opaque letterbox bars
+ * (FF000000) remain in the game's original separate render pass.
+ * Native quad pairs may be degenerate and the rasterizer safely
+ * skips those. No arbitrary sprites, levels, frame clocks or fixed
+ * growth increments are involved. */
+static int ui_atomic_renderer_create_texture(void)
+{
+  unsigned sizes[2][2]={{1024u,512u},{512u,256u}};
+  unsigned n;
+  if(!ui_atomic_ddraw || !ui_atomic_reference_count ||
+     ui_atomic_texture || !original_surface_create)return 0;
+  for(n=0u;n<2u;n++){
+    unsigned tw=sizes[n][0],th=sizes[n][1],painted,row;
+    IDirectDrawSurface7 *surface=NULL;
+    DDSURFACEDESC2 d,locked;
+    HRESULT hr;
+    uint32_t *pixels=(uint32_t*)calloc((size_t)tw*th,sizeof(uint32_t));
+    char msg[226];
+    if(!pixels)break;
+    painted=SpiderAtomicMask_Rasterize(
+        ui_atomic_reference,ui_atomic_reference_count,
+        (unsigned)desktop_w,(unsigned)desktop_h,pixels,tw,th);
+    if(painted<(tw*th)/10u || painted>=(tw*th)*99u/100u){
+      free(pixels);
+      log_line("UI-ATOMIC: REFUSED template mask has implausible covered area");
+      return 0;
+    }
+    memset(&d,0,sizeof(d));d.dwSize=sizeof(d);
+    d.dwFlags=DDSD_CAPS|DDSD_WIDTH|DDSD_HEIGHT|DDSD_PIXELFORMAT;
+    d.dwWidth=tw;d.dwHeight=th;
+    d.ddsCaps.dwCaps=DDSCAPS_TEXTURE;
+    d.ddsCaps.dwCaps2=DDSCAPS2_TEXTUREMANAGE;
+    d.ddpfPixelFormat.dwSize=sizeof(DDPIXELFORMAT);
+    d.ddpfPixelFormat.dwFlags=DDPF_RGB|DDPF_ALPHAPIXELS;
+    d.ddpfPixelFormat.dwRGBBitCount=32;
+    d.ddpfPixelFormat.dwRBitMask=0x00FF0000UL;
+    d.ddpfPixelFormat.dwGBitMask=0x0000FF00UL;
+    d.ddpfPixelFormat.dwBBitMask=0x000000FFUL;
+    d.ddpfPixelFormat.dwRGBAlphaBitMask=0xFF000000UL;
+    hr=original_surface_create(ui_atomic_ddraw,&d,&surface,NULL);
+    if(FAILED(hr) || !surface){
+      /* Some Wine or legacy Windows DDraw HALs do not support
+       * texture-manage caps. System-memory fallback is intentional
+       * but remains strictly validated with SetTexture at draw time. */
+      d.ddsCaps.dwCaps=DDSCAPS_TEXTURE|DDSCAPS_SYSTEMMEMORY;
+      d.ddsCaps.dwCaps2=0u;
+      surface=NULL;
+      hr=original_surface_create(ui_atomic_ddraw,&d,&surface,NULL);
+    }
+    if(FAILED(hr) || !surface){
+      snprintf(msg,sizeof(msg),
+        "UI-ATOMIC: texture creation unsupported %ux%u hr=%08lX [FALLBACK]",
+        tw,th,(unsigned long)hr);
+      log_line(msg);
+      free(pixels);
+      continue;
+    }
+    memset(&locked,0,sizeof(locked));locked.dwSize=sizeof(locked);
+    hr=IDirectDrawSurface7_Lock(surface,NULL,&locked,DDLOCK_WAIT,NULL);
+    if(FAILED(hr) || !locked.lpSurface ||
+       locked.lPitch<(LONG)(tw*sizeof(uint32_t)) ||
+       locked.ddpfPixelFormat.dwRGBBitCount!=32 ||
+       locked.ddpfPixelFormat.dwRGBAlphaBitMask!=0xFF000000UL){
+      snprintf(msg,sizeof(msg),
+        "UI-ATOMIC: texture Lock/format rejected %ux%u hr=%08lX [FALLBACK]",
+        tw,th,(unsigned long)hr);
+      log_line(msg);
+      if(SUCCEEDED(hr))IDirectDrawSurface7_Unlock(surface,NULL);
+      IDirectDrawSurface7_Release(surface);
+      free(pixels);
+      continue;
+    }
+    for(row=0u;row<th;row++)
+      memcpy((unsigned char*)locked.lpSurface+(size_t)row*locked.lPitch,
+             pixels+(size_t)row*tw,(size_t)tw*sizeof(uint32_t));
+    IDirectDrawSurface7_Unlock(surface,NULL);
+    free(pixels);
+    ui_atomic_texture=surface;
+    ui_atomic_tex_w=tw;ui_atomic_tex_h=th;
+    snprintf(msg,sizeof(msg),
+      "UI-ATOMIC: TEXTURE READY %ux%u mask-quads=%u painted=%u [ONE REF IMAGE, ONE UNIFORM ZOOM]",
+      tw,th,ui_atomic_reference_count,painted);
+    log_line(msg);
+    return 1;
+  }
+  return 0;
+}
+
+static void ui_atomic_renderer_acquire_reference(void)
+{
+  unsigned i,n=0u;
+  if(InterlockedCompareExchange(&ui_atomic_renderer_enabled,0,0)!=1 ||
+     InterlockedCompareExchange(&ui_atomic_renderer_failed,0,0)!=0 ||
+     ui_atomic_texture || ui_atomic_count<32u ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0)
+    return;
+  for(i=0u;i<ui_atomic_count;i++)
+    if(ui_atomic_quads[i].color==0x00000000UL &&
+       ui_atomic_quads[i].caller==SPIDER_TRANSITION_CALLER_RVA)
+      ++n;
+  if(n<32u || n>SPIDER_ATOMIC_MASK_MAX)return;
+  if(n>ui_atomic_peak){ui_atomic_peak=n;ui_atomic_stable=1u;}
+  else if(n==ui_atomic_peak)++ui_atomic_stable;
+  else ui_atomic_stable=0u;
+  /* Choose a grown-but-complete source picture, rather than the
+   * initial tiny opening whose pixel-rounded vertices are unstable.
+   * This is a geometric completeness criterion, not a time-driven
+   * synthetic animation: the source game still drives all motion. */
+  if(ui_atomic_stable<6u)return;
+  for(i=0u;i<ui_atomic_count;i++){
+    const SpiderAtomicProbeQuad *q=&ui_atomic_quads[i];
+    SpiderAtomicMaskQuad *r;
+    unsigned v;
+    if(q->color!=0x00000000UL ||
+       q->caller!=SPIDER_TRANSITION_CALLER_RVA)continue;
+    if(ui_atomic_reference_count>=SPIDER_ATOMIC_MASK_MAX)break;
+    r=&ui_atomic_reference[ui_atomic_reference_count++];
+    for(v=0u;v<4u;v++){r->x[v]=q->x[v];r->y[v]=q->y[v];}
+  }
+  if(ui_atomic_reference_count!=ui_atomic_peak ||
+     !ui_atomic_renderer_create_texture()){
+    ui_atomic_reference_count=0u;
+    InterlockedExchange(&ui_atomic_renderer_failed,1);
+    log_line("UI-ATOMIC: DISABLED native reference/texture acquisition failed, preserving prior V9 path");
+  }
+}
+
+/* Game-owned geometry progress: estimate positive single scale from
+ * the first verified original iris polygon of the D3D scene. All
+ * subsequent source 0-black quads are omitted only if a pre-existing
+ * texture and a verified source scale authorize this atomic frame.
+ * The frame is NEVER half V9 / half V10 by geometry selection. */
+static int ui_atomic_renderer_skip_native(
+    IDirect3DDevice7 *device,D3DPRIMITIVETYPE type,DWORD fvf,
+    const void *vertices,DWORD count,void *caller)
+{
+  DWORD rva=0,blend=1,atest=1;
+  IDirectDrawSurface7 *texture=NULL;
+  HRESULT ht,hb,ha;
+  SpiderAtomicMaskQuad candidate;
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)vertices;
+  unsigned i;
+  float scale=0.0f,error=0.0f;
+  if(InterlockedCompareExchange(&ui_atomic_renderer_enabled,0,0)!=1 ||
+     InterlockedCompareExchange(&ui_atomic_renderer_failed,0,0)!=0 ||
+     !ui_atomic_texture || !device || !v || count!=4u ||
+     !ui_comp_scene_open || ui_comp_device!=device ||
+     !geom_rva(caller,&rva) ||
+     !SpiderTransition_IsNativeBlackMask(v,(unsigned)count,(unsigned)type,
+           (uint32_t)fvf,(uint32_t)rva,(unsigned)desktop_w,(unsigned)desktop_h) ||
+     v[0].diffuse!=0x00000000UL)
+    return 0;
+  if(ui_atomic_scene_mode==2u)return 0;
+  if(ui_atomic_scene_mode==0u){
+    for(i=0u;i<4u;i++){candidate.x[i]=v[i].x;candidate.y[i]=v[i].y;}
+    if(!SpiderAtomicMask_EstimateScale(
+         ui_atomic_reference,ui_atomic_reference_count,&candidate,
+         (unsigned)desktop_w,(unsigned)desktop_h,&scale,&error)){
+      ui_atomic_scene_mode=2u;
+      return 0;
+    }
+    /* One source material read before the ENTIRE scene is suppressed.
+     * If alpha semantics change, preserve native original graphics. */
+    ht=IDirect3DDevice7_GetTexture(device,0,&texture);
+    hb=IDirect3DDevice7_GetRenderState(
+       device,D3DRENDERSTATE_ALPHABLENDENABLE,&blend);
+    ha=IDirect3DDevice7_GetRenderState(
+       device,D3DRENDERSTATE_ALPHATESTENABLE,&atest);
+    if(texture)IDirectDrawSurface7_Release(texture);
+    if(FAILED(ht) || texture || FAILED(hb) || FAILED(ha) || blend || atest){
+      ui_atomic_scene_mode=2u;
+      log_line("UI-ATOMIC: source material/state rejected; native iris retained");
+      return 0;
+    }
+    ui_atomic_scene_scale=scale;
+    ui_atomic_scene_mode=1u;
+    if(debug_log_enabled){
+      char msg[190];
+      snprintf(msg,sizeof(msg),
+         "UI-ATOMIC: GAME SCALE=%.5f fit-error=%.3f [NATIVE GEOMETRY, NO TIMER]",
+         (double)scale,(double)error);
+      log_line(msg);
+    }
+  }
+  ++ui_atomic_scene_suppressed;
+  return 1;
+}
+
+static int ui_atomic_renderer_draw(IDirect3DDevice7 *device)
+{
+  DWORD saved=0,restored_z=0;
+  IDirectDrawSurface7 *bound=NULL;
+  SpiderMenuVertex v[4];
+  float u0,v0,u1,v1;
+  HRESULT hr;
+  int ok=1;
+  unsigned i;
+  if(!device || !ui_atomic_texture ||
+     !SpiderAtomicMask_ScreenUV(ui_atomic_scene_scale,&u0,&v0,&u1,&v1))
+    return 0;
+  if(FAILED(IDirect3DDevice7_CreateStateBlock(device,D3DSBT_ALL,&saved)) || !saved)
+    return 0;
+  if(FAILED(IDirect3DDevice7_GetTexture(device,0,&bound))){
+    IDirect3DDevice7_DeleteStateBlock(device,saved);
+    return 0;
+  }
+  memset(v,0,sizeof(v));
+  for(i=0u;i<4u;i++){
+    v[i].z=0.0f;v[i].rhw=1.0f;v[i].diffuse=0xFFFFFFFFUL;
+  }
+  v[0].x=0.0f;v[0].y=0.0f;v[0].u=u0;v[0].v=v0;
+  v[1].x=(float)desktop_w;v[1].y=0.0f;v[1].u=u1;v[1].v=v0;
+  v[2].x=(float)desktop_w;v[2].y=(float)desktop_h;v[2].u=u1;v[2].v=v1;
+  v[3].x=0.0f;v[3].y=(float)desktop_h;v[3].u=u0;v[3].v=v1;
+  /* ApplyStageState/RenderState calls are used only INSIDE one saved
+   * game-owned D3D7 scene stateblock, never globally. The native ESC
+   * compositor is flushed AFTER this image so the ESC menu stays above
+   * the iris, and no sprite/level-specific draw is replayed. */
+#define ATOMIC_REQUIRE(call) do { if(FAILED(call))ok=0; } while(0)
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetTexture(device,0,ui_atomic_texture));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ALPHABLENDENABLE,TRUE));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ALPHATESTENABLE,FALSE));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_SRCBLEND,D3DBLEND_SRCALPHA));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_DESTBLEND,D3DBLEND_INVSRCALPHA));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_COLOROP,D3DTOP_SELECTARG1));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_COLORARG1,D3DTA_TEXTURE));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAOP,D3DTOP_SELECTARG1));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ALPHAARG1,D3DTA_TEXTURE));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ADDRESSU,D3DTADDRESS_CLAMP));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_ADDRESSV,D3DTADDRESS_CLAMP));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_MAGFILTER,D3DTEXF_LINEAR));
+  ATOMIC_REQUIRE(IDirect3DDevice7_SetTextureStageState(device,0,D3DTSS_MINFILTER,D3DTEXF_LINEAR));
+  if(ok)ATOMIC_REQUIRE(original_draw_primitive(
+        device,D3DPT_TRIANGLEFAN,0x144UL,v,4u,0u));
+#undef ATOMIC_REQUIRE
+  hr=IDirect3DDevice7_ApplyStateBlock(device,saved);
+  if(FAILED(hr))ok=0;
+  hr=IDirect3DDevice7_SetTexture(device,0,bound);
+  if(FAILED(hr))ok=0;
+  if(bound)IDirectDrawSurface7_Release(bound);
+  IDirect3DDevice7_DeleteStateBlock(device,saved);
+  if(SUCCEEDED(IDirect3DDevice7_GetRenderState(
+       device,D3DRENDERSTATE_ZENABLE,&restored_z))){
+    InterlockedExchange(&fov_z_state_enabled,restored_z!=D3DZB_FALSE);
+    InterlockedExchange(&fov_z_state_known,1);
+  }
+  return ok;
+}
+static void ui_atomic_renderer_finish_scene(IDirect3DDevice7 *device)
+{
+  if(InterlockedCompareExchange(&ui_atomic_renderer_enabled,0,0)!=1 ||
+     InterlockedCompareExchange(&ui_atomic_renderer_failed,0,0)!=0)
+    return;
+  if(ui_atomic_texture && ui_atomic_scene_mode==1u &&
+     ui_atomic_scene_suppressed>0u){
+    LONG frame;
+    if(!ui_atomic_renderer_draw(device)){
+      InterlockedExchange(&ui_atomic_renderer_failed,1);
+      log_line("UI-ATOMIC: ERROR atomic DrawPrimitive/state failed; disabled subsequent frames (restore native V9)");
+      return;
+    }
+    frame=InterlockedIncrement(&ui_atomic_rendered_frames);
+    ui_atomic_previous_scale=ui_atomic_scene_scale;
+    if(debug_log_enabled && (frame<=12 || frame%180==0)){
+      char msg[210];
+      snprintf(msg,sizeof(msg),
+        "UI-ATOMIC: COMPOSED frame=%ld scale=%.5f suppressed-source=%u [ONE TEXTURED QUAD; NO DETACHED PATCHES]",
+        (long)frame,(double)ui_atomic_scene_scale,ui_atomic_scene_suppressed);
+      log_line(msg);
+    }
+  }else if(ui_atomic_black_zero==0u){
+    ui_atomic_previous_scale=0.0f;
+  }
+  if(!ui_atomic_texture)ui_atomic_renderer_acquire_reference();
 }
 
 static void ui_atomic_probe_finish_scene(void)
@@ -2782,6 +3086,7 @@ static HRESULT WINAPI ui_compositor_scene_start(void *self) {
   return hr;
 }
 static HRESULT WINAPI ui_compositor_scene_finish(void *self) {
+  ui_atomic_renderer_finish_scene((IDirect3DDevice7*)self);
   ui_atomic_probe_finish_scene();
   if(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
      ui_comp_scene_open && ui_comp_device==self)
@@ -3157,6 +3462,9 @@ static void maybe_restore_native_transition_gutters(
 
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
   ui_atomic_probe_raw_draw(type,fvf,verts,count,__builtin_return_address(0));
+  if(ui_atomic_renderer_skip_native((IDirect3DDevice7*)self,type,fvf,verts,count,
+                                    __builtin_return_address(0)))
+    return D3D_OK;
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
      fvf==0x144UL && verts && count>=3 && count<=128)
     InterlockedIncrement(&menu_version_draws);
@@ -5005,6 +5313,14 @@ static void instrument_surface(IDirectDrawSurface7 *surface) {
 static HRESULT WINAPI hooked_surface_create(void *self, DDSURFACEDESC2 *desc,
                                             IDirectDrawSurface7 **out, IUnknown *outer) {
   HRESULT hr; LONG count=InterlockedIncrement(&surface_create_count);
+  /* Hold exactly one COM reference to the DirectDraw7 interface used by
+   * the game. V10 creates its one managed texture through the ORIGINAL
+   * CreateSurface so the proxy cannot recursively instrument itself. */
+  if(self && !ui_atomic_ddraw &&
+     InterlockedCompareExchange(&ui_atomic_renderer_enabled,0,0)==1){
+    IDirectDraw7_AddRef((IDirectDraw7*)self);
+    ui_atomic_ddraw=(IDirectDraw7*)self;
+  }
   if(debug_log_enabled && count<=48) log_surface_desc(desc);
   /* Exclusive primary with backbuffer count 1 is unavailable with
    * DDSCL_NORMAL. Replace it with a *real* windowed primary + an offscreen
@@ -5612,6 +5928,23 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-ATOMIC-PROBE: ON read-only whole-scene black-mask collection; render unchanged");
     }else{
       log_line("UI-ATOMIC-PROBE: OFF");
+    }
+  }
+  /* V10 atomic reference-image renderer. Requires the existing
+   * compositor and the original source-vertex diagnostic infrastructure.
+   * This is intentionally a new independent flag: users can remove it
+   * to restore exactly the previously used V9 rendering. */
+  {
+    char atomic_renderer[4]={0};
+    if(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
+       InterlockedCompareExchange(&ui_transition_fullscreen_trial_enabled,0,0)==1 &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_TRANSITION_ATOMIC_RENDER_TEST",
+                                atomic_renderer,sizeof(atomic_renderer))==1 &&
+       atomic_renderer[0]=='1'){
+      InterlockedExchange(&ui_atomic_renderer_enabled,1);
+      log_line("UI-ATOMIC: TRIAL ON - native mask reference composed ONCE then uniformly zoomed as ONE textured fullscreen quad");
+    }else{
+      log_line("UI-ATOMIC: OFF - V9/V8/V7 source rendering unchanged");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
