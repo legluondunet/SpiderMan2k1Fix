@@ -241,6 +241,55 @@ static inline unsigned SpiderTransition_ExtendBlackEdge(
     return 4u;
 }
 
+/* Fullscreen coherent iris layer (additional explicit experiment).
+ *
+ * In native physical coordinates, all known opaque/zero-alpha black
+ * mask quads collectively describe the complete spider-shaped wipe.
+ * The existing 4:3 correction maps (x,y) to:
+ *    ((x-W/2)*k+W/2, y), k=4H/(3W)
+ * which preserves its original aspect but leaves the physical gutters.
+ *
+ * A SINGLE similarity transform of that corrected shape can "cover"
+ * the physical screen: zoom BOTH corrected axes by 1/k about the
+ * center.  This simplifies exactly to:
+ *    X = source.x
+ *    Y = H/2 + (source.y-H/2) / k
+ *
+ * Crucially EVERY source mask vertex follows the SAME continuous map.
+ * The original polygon adjacency/connectivity is retained; unlike
+ * independent edge rectangles, no new detached black "spider legs"
+ * are constructed. On 1920x1080, k=0.75: X is unchanged and Y zooms
+ * 4/3 about the center. The top/bottom 180px are simply off-screen.
+ *
+ * This deliberately changes the visible field of the original 4:3
+ * iris relative to the "contain" mode. It is an alternative visual
+ * strategy, NOT yet Dreamcast-validated. HUD, native ESC and gameplay
+ * keep their existing mapping; only the verified scene-iris quads are
+ * eligible, after independent native D3D texture/alpha checks.
+ */
+static inline int SpiderTransition_MapFullscreenCover43(
+    const SpiderMenuVertex *source,SpiderMenuVertex *mapped,
+    unsigned screen_w,unsigned screen_h)
+{
+    float w=(float)screen_w,h=(float)screen_h;
+    float zoom;
+    unsigned i;
+    if(!source || !mapped || screen_w<640u || screen_h<480u ||
+       screen_w>16384u || screen_h>16384u ||
+       (uint64_t)screen_w*3u <= (uint64_t)screen_h*4u)
+        return 0;
+    zoom=(3.0f*w)/(4.0f*h);
+    if(!(zoom>1.0f && zoom<8.0f))return 0;
+    memcpy(mapped,source,4u*sizeof(*mapped));
+    for(i=0u;i<4u;i++){
+        /* Preserve exact native source X: the width-filling result
+         * of composing center-4:3 with uniform screen-cover zoom. */
+        mapped[i].x=source[i].x;
+        mapped[i].y=h*.5f+(source[i].y-h*.5f)*zoom;
+    }
+    return 1;
+}
+
 /* The previously approved 4:3 gameplay UI mapping is unmodified.
  * During the new explicit transition-only test, cancel only the old
  * physical-edge pinning of verified mask polygons. The actual shape
