@@ -170,6 +170,38 @@ def test_invalid_aspect_or_source_fails_closed(dll):
     assert dll.build(original,1920,1080,999,out)==0
 
 
+def test_early_collapsed_source_is_nonfatal_and_next_source_recovers(dll):
+    # Actual Wine 2026-11-06 14:34:15.362: first native DRAW had
+    # x=960 y=553.50 and an early degenerate fan; old V23 did a
+    # one-shot helper call, set hold22_failed=1 and never retried.
+    collapsed=vertices([(960.0,553.5)]*4)
+    valid=one_sample_fan()
+    curtains=((Vertex*4)*2)()
+    assert dll.build(collapsed,1920,1080,240.0,curtains)==0
+    assert dll.build(valid,1920,1080,240.0,curtains)==1
+    for v in curtains[0]:
+        assert v.x in (0.0,240.0)
+    for v in curtains[1]:
+        assert v.x in (1680.0,1920.0)
+
+
+def test_actual_original_fan_animation_can_drive_curtain_to_zero(dll):
+    original=one_sample_fan()
+    centerx,centery=960.0,540.0
+    prev=240.0
+    for scale in [0.25,0.5,1,2,3,4,5,6.5,8.0]:
+        scaled=vertices([(
+            centerx+(v.x-centerx)*scale,
+            centery+(v.y-centery)*scale) for v in original])
+        radius=ct.c_float()
+        band=ct.c_float()
+        assert dll.measure(scaled,1920,1080,ct.byref(radius))==1
+        assert dll.width(1920,1080,radius,ct.byref(band))==1
+        assert band.value<=prev+.001
+        prev=band.value
+    assert prev==0.0
+
+
 def test_opt_in_and_native_v19_remain_untouched_by_shrink_geometry():
     s=(ROOT/"spiderman2k1fix.c").read_text()
     h=(ROOT/"ui_transition_native43_shrink.h").read_text()
@@ -181,6 +213,19 @@ def test_opt_in_and_native_v19_remain_untouched_by_shrink_geometry():
     assert "SpiderNativeShrink_AnchorHalfWidth(" in s
     assert "SpiderNativeShrink_Width(" in s
     assert "SpiderNativeShrink_Build(" in s
+    assert "UI-TRANSITION-SHRINK23: WAIT VALID SOURCE FAN" in s
+    assert "ui_transition_shrink23_scene_deferred" in s
+    assert "wait_for_source=1;" in s
+    assert "++ui_transition_hold22_scene_native;" in s
+    assert s.index("++ui_transition_hold22_scene_native;") < s.index(
+        "if(InterlockedCompareExchange(&ui_transition_hold22_failed,0,0)!=1)")
+    section=s[s.index("/* V22 one opaque physical-margin pair"):
+              s.index("/* Reuse the verified original black-material state",s.index(
+                  "/* V22 one opaque physical-margin pair"))]
+    assert section.index("wait_for_source=1;") < section.index(
+        "if(valid_side && (!shrink || width>=.5f))")
+    assert "ui_transition_shrink23_scene_handled=1u;" in section
+    assert "UI-TRANSITION-SHRINK23: invalid original source/gutter geometry;" not in s
     assert "if(ui_transition_hold22_scene_gutters==0u &&" in s
     assert "ui_transition_shrink23_half_width=0.0f;" in s
     assert "ui_transition_hold22_scene_native>0u" in s
