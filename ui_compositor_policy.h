@@ -248,4 +248,34 @@ static inline int SpiderUIComp_IdentifyNativeBackdrop(
     return 1;
 }
 
+/* Piecewise continuous native-background projection:
+ * the INTERIOR spider keeps the normal centered 4:3 map exactly,
+ * whereas only the original backdrop outside its measured source
+ * bounding box is extended to the physical left/right edges.
+ *
+ * Mapping shared source coordinates identically avoids gaps between
+ * tessellated backdrop triangles. It NEVER adds a second translucent
+ * pass beneath the spider (which would double-blend its alpha).
+ */
+static inline float SpiderUIComp_BackdropMapX(
+    float x,float width,float height,float inner_left,float inner_right)
+{
+    float scale,center,mapped_left,mapped_right;
+    if(width<640.0f || height<480.0f || width>16384.0f ||
+       height>16384.0f || width*3.0f<=height*4.0f ||
+       !(inner_left>1.0f && inner_left<inner_right &&
+         inner_right<width-1.0f))
+        return x;
+    scale=(height*4.0f)/(width*3.0f);
+    center=width*.5f;
+    mapped_left=center+(inner_left-center)*scale;
+    mapped_right=center+(inner_right-center)*scale;
+    if(x<inner_left)
+        return x*mapped_left/inner_left;
+    if(x>inner_right)
+        return mapped_right+(x-inner_right)*
+              (width-mapped_right)/(width-inner_right);
+    return center+(x-center)*scale;
+}
+
 #endif
