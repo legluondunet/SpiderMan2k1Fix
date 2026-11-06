@@ -232,41 +232,12 @@ def test_actual_original_fan_animation_can_drive_curtain_to_zero(dll):
     assert prev==0.0
 
 
-def test_opt_in_and_native_v19_remain_untouched_by_shrink_geometry():
+def test_shrink_curve_retained_only_as_internal_fallback():
     s=(ROOT/"spiderman2k1fix.c").read_text()
+    sync=(ROOT/"ui_transition_native43_sync.h").read_text()
     h=(ROOT/"ui_transition_native43_shrink.h").read_text()
-    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_SHRINK_GUTTERS_TEST" in s
-    assert "ui_transition_shrink23_enabled=0" in s
-    assert "UI-TRANSITION-SHRINK23: V23 ON" in s
-    assert "UI-TRANSITION-SHRINK23: FRAME=" in s
-    assert "UI-TRANSITION-SHRINK23: RELEASE" in s
-    assert "SpiderNativeShrink_AnchorHalfWidth(" in s
-    assert "SpiderNativeShrink_Width(" in s
-    assert "SpiderNativeShrink_Build(" in s
-    assert "UI-TRANSITION-SHRINK23: WAIT VALID SOURCE FAN" in s
-    assert "ui_transition_shrink23_scene_deferred" in s
-    assert "wait_for_source=1;" in s
-    assert "++ui_transition_hold22_scene_native;" in s
-    assert s.index("++ui_transition_hold22_scene_native;") < s.index(
-        "InterlockedCompareExchange(&ui_transition_hold22_failed,0,0)!=1){")
-    # V24 can skip immediate V23 draw, but must never stop native
-    # counting or disable the V19 iris when the overlays fail.
-    assert "ui_transition_sync24_enabled,0,0)!=1 &&" in s
-    section=s[s.index("/* V22 one opaque physical-margin pair"):
-              s.index("/* Reuse the verified original black-material state",s.index(
-                  "/* V22 one opaque physical-margin pair"))]
-    assert section.index("wait_for_source=1;") < section.index(
-        "if(valid_side && (!shrink || width>=.5f))")
-    assert "ui_transition_shrink23_scene_handled=1u;" in section
-    assert "UI-TRANSITION-SHRINK23: invalid original source/gutter geometry;" not in s
-    assert "if(ui_transition_hold22_scene_gutters==0u &&" in s
-    assert "ui_transition_shrink23_half_width=0.0f;" in s
-    assert "ui_transition_hold22_scene_native>0u" in s
-    assert "V20 and V21 remain bypassed by V22" in s
+    assert "SpiderNativeSync24_Finish(" in s
+    assert "SpiderNativeSync24_Width(" in sync
+    assert "SpiderNativeShrink_Width(width,height,native_radius,&existing)" in sync
+    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_SHRINK_GUTTERS_TEST" not in s
     assert "No synthetic teeth" in h
-    handle=s[s.index("static int ui_transition_native43_handle_draw("):
-             s.index("static HRESULT WINAPI hooked_draw_primitive(")]
-    assert handle.index("*result=original_draw_primitive") < \
-           handle.index("SpiderNativeShrink_AnchorHalfWidth(") < \
-           handle.index("SpiderNativeShrink_Build(") < \
-           handle.index("SpiderNative43Gutter_Build(v,")
