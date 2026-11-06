@@ -987,6 +987,8 @@ static volatile LONG ui_transition_trial_enabled=0;
 static volatile LONG ui_transition_native_gutter_fragments=0;
 static volatile LONG ui_transition_native_mask_draws=0;
 static volatile LONG ui_transition_rejected_textures=0;
+static volatile LONG ui_transition_alpha_state_rejections=0;
+static volatile LONG ui_transition_source_accepts=0;
 static volatile LONG ui_transition_draw_failures=0;
 static volatile LONG ui_transition_candidate_probe_hits=0;
 static volatile LONG ui_transition_edge_probe_hits=0;
@@ -2785,7 +2787,7 @@ static void maybe_restore_native_transition_gutters(
 {
   IDirectDrawSurface7 *texture=NULL;
   SpiderMenuVertex clipped[SPIDER_TRANSITION_MAX_VERTS];
-  DWORD rva=0;
+  DWORD rva=0,alpha_blend=0,alpha_test=0;
   unsigned side;
   LONG hit;
   char msg[235];
@@ -2812,6 +2814,40 @@ static void maybe_restore_native_transition_gutters(
        InterlockedIncrement(&ui_transition_rejected_textures)<=3)
       log_line("UI-TRANSITION-GUTTERS: textured primitive rejected; original draw retained");
     return;
+  }
+  /* The verified original spider aperture uses vertex 0x00000000,
+   * i.e. RGB black with alpha=0. When game alpha blending is disabled,
+   * the original draw writes RGB black despite this alpha. Never
+   * replay a zero-alpha quad if the live device uses alpha blending or
+   * alpha test: that might make the new gutter fragments invisible or
+   * change their original semantics. Preserve the game render states.
+   * Opaque FF000000 masks are not subject to this extra condition. */
+  if(((const SpiderMenuVertex*)source)[0].diffuse==0x00000000UL) {
+    HRESULT hb=IDirect3DDevice7_GetRenderState(
+         (IDirect3DDevice7*)device,D3DRENDERSTATE_ALPHABLENDENABLE,&alpha_blend);
+    HRESULT ht=IDirect3DDevice7_GetRenderState(
+         (IDirect3DDevice7*)device,D3DRENDERSTATE_ALPHATESTENABLE,&alpha_test);
+    if(FAILED(hb) || FAILED(ht) || alpha_blend || alpha_test) {
+      LONG n=InterlockedIncrement(&ui_transition_alpha_state_rejections);
+      if(debug_log_enabled && n<=5) {
+        snprintf(msg,sizeof(msg),
+          "UI-TRANSITION-GUTTERS: zero-alpha native black rejected alpha-blend=%lu alpha-test=%lu state-ok=%d [FAIL CLOSED]",
+          (unsigned long)alpha_blend,(unsigned long)alpha_test,
+          SUCCEEDED(hb)&&SUCCEEDED(ht));
+        log_line(msg);
+      }
+      return;
+    }
+  }
+  {
+    LONG n=InterlockedIncrement(&ui_transition_source_accepts);
+    if(debug_log_enabled && n<=5) {
+      snprintf(msg,sizeof(msg),
+        "UI-TRANSITION-GUTTERS: SOURCE ACCEPTED=%ld vertex-argb=%08lX alpha-blend=%lu alpha-test=%lu [native state unchanged]",
+        (long)n,(unsigned long)((const SpiderMenuVertex*)source)[0].diffuse,
+        (unsigned long)alpha_blend,(unsigned long)alpha_test);
+      log_line(msg);
+    }
   }
   InterlockedIncrement(&ui_transition_native_mask_draws);
   for(side=0u;side<2u;side++){
