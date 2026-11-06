@@ -1049,6 +1049,10 @@ static volatile LONG ui_atomic_partial_enabled=0;
 static volatile LONG ui_atomic_direct_enabled=0;
 /* V18 native iris trial: never recompose, replay, or synthesize polygons. */
 static volatile LONG ui_transition_native43_enabled=0;
+/* V19 independent A/B: extend valid original source polygons past the
+ * physical clip rectangle; V18 had a 10% bound that mixed X coordinate
+ * spaces once hooked limbs crossed it. */
+static volatile LONG ui_transition_native43_extended_enabled=0;
 static volatile LONG ui_transition_native43_draws=0;
 static volatile LONG ui_transition_native43_native=0;
 static SpiderAtomicMaskQuad ui_atomic_direct_source[SPIDER_ATOMIC_MASK_MAX];
@@ -4190,7 +4194,7 @@ static int ui_transition_native43_handle_draw(
   const SpiderMenuVertex *v=(const SpiderMenuVertex*)verts;
   LONG n;
   unsigned i;
-  int valid=1;
+  int valid=1,reject=0;
   if(InterlockedCompareExchange(&ui_transition_native43_enabled,0,0)!=1 ||
      !device || !verts || !result || type!=D3DPT_TRIANGLEFAN ||
      fvf!=0x144UL || count!=4u || !geom_rva(caller,&rva) ||
@@ -4200,23 +4204,32 @@ static int ui_transition_native43_handle_draw(
   if(!ui_comp_scene_open || ui_comp_device!=device ||
      InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
      InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
-     InterlockedCompareExchange(&fov_game_height,0,0)<=0)
-    valid=0;
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0){
+    valid=0;reject=1; /* Scene is not a verified gameplay 3D frame. */
+  }
   for(i=0u;i<4u;i++)
     if(v[i].diffuse!=0x00000000UL ||
        !(v[i].z>=-.00004f && v[i].z<=.00004f &&
-         v[i].rhw>=27.52f && v[i].rhw<=27.68f))
-      valid=0;
-  if(valid && !SpiderNative43_Map(v,mapped,4u,
-                   (unsigned)desktop_w,(unsigned)desktop_h))
-    valid=0;
+         v[i].rhw>=27.52f && v[i].rhw<=27.68f)){
+      valid=0;reject=2; /* Not the material of a verified iris fan. */
+    }
+  if(valid && !(InterlockedCompareExchange(
+                     &ui_transition_native43_extended_enabled,0,0)==1 ?
+            SpiderNative43_MapBounded(v,mapped,4u,
+                   (unsigned)desktop_w,(unsigned)desktop_h,32.0f) :
+            SpiderNative43_Map(v,mapped,4u,
+                   (unsigned)desktop_w,(unsigned)desktop_h))){
+    valid=0;reject=3; /* Out of V18's +/-10% viewport or invalid. */
+  }
   if(valid){
     a=IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex);
     b=IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
                      D3DRENDERSTATE_ALPHABLENDENABLE,&blend);
     c=IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
                      D3DRENDERSTATE_ALPHATESTENABLE,&atest);
-    if(FAILED(a)||FAILED(b)||FAILED(c)||tex||blend||atest)valid=0;
+    if(FAILED(a)||FAILED(b)||FAILED(c)||tex||blend||atest){
+      valid=0;reject=4; /* Wrong/unconfirmed original D3D7 state. */
+    }
     if(tex)IDirectDrawSurface7_Release(tex);
   }
   *result=original_draw_primitive(device,type,fvf,
@@ -4233,10 +4246,10 @@ static int ui_transition_native43_handle_draw(
   }else{
     n=InterlockedIncrement(&ui_transition_native43_native);
     if(debug_log_enabled && (n<=12 || n%360==0)){
-      char message[150];
+      char message[240];
       snprintf(message,sizeof(message),
-        "UI-TRANSITION-NATIVE43: NATIVE-UNCHANGED=%ld (state or geometry unverified)",
-        (long)n);
+        "UI-TRANSITION-NATIVE43: NATIVE-UNCHANGED=%ld reason=%d [1=scene 2=vertex 3=extents 4=material] x=%.1f y=%.1f [UNMODIFIED ORIGINAL]",
+        (long)n,reject,(double)v[0].x,(double)v[0].y);
       log_line(message);
     }
   }
@@ -6868,6 +6881,24 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-TRANSITION-NATIVE43: V18 TRIAL ON - original game DrawPrimitive, 4:3 centered X only, native animation and material, no mask recomposition or gutter filling");
     }else{
       log_line("UI-TRANSITION-NATIVE43: OFF - existing V6..V17 behavior unchanged");
+    }
+  }
+  /* V19 opt-in source-coordinate consistency: late game-owned iris
+   * polygons are geometrically valid even when their animated vertices
+   * are outside the output viewport. The rasterizer clips them naturally.
+   * This changes ONLY the x remapping eligibility, never cinema bars,
+   * 3D world, HUD, sprites, alpha or drawing order. One flag rollback. */
+  {
+    char extents[4]={0};
+    if(InterlockedCompareExchange(&ui_transition_native43_enabled,0,0)==1 &&
+       GetEnvironmentVariableA(
+         "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_EXTENTS_TEST",
+          extents,sizeof(extents))==1 &&
+       extents[0]=='1'){
+      InterlockedExchange(&ui_transition_native43_extended_enabled,1);
+      log_line("UI-TRANSITION-NATIVE43-EXTENTS: V19 ON - map ALL verified current-frame iris quads up to +/-32 viewports (including clipped hooks); opaque FF000000 cinematic bars unchanged");
+    }else{
+      log_line("UI-TRANSITION-NATIVE43-EXTENTS: OFF - V18 original +/-10% clipping gate unchanged");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
