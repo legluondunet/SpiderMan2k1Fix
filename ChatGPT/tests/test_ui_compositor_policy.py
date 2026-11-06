@@ -30,6 +30,8 @@ def policy(tmp_path_factory):
         'float gutter(unsigned w,unsigned h){return SpiderUIComp_GutterWidth(w,h);}\n'
         'int coverage(float h,const SpiderUICompYSpan *sp,unsigned n){'
         'return SpiderUIComp_CoversFullHeight(sp,n,h);}\n'
+        'int edge(float l,float r,float w,float g,int side){'
+        'return SpiderUIComp_EdgeTileCoversGutter(l,r,w,g,side);}\n'
     )
     subprocess.run(
         [cc,"-std=c11","-Wall","-Wextra","-Werror","-fPIC","-shared",
@@ -48,6 +50,8 @@ def policy(tmp_path_factory):
     lib.YSpan=YSpan
     lib.coverage.argtypes=[ct.c_float,ct.POINTER(YSpan),ct.c_uint]
     lib.coverage.restype=ct.c_int
+    lib.edge.argtypes=[ct.c_float]*4+[ct.c_int]
+    lib.edge.restype=ct.c_int
     return lib
 
 
@@ -248,3 +252,46 @@ def test_compositor_uses_native_edge_palette_but_never_stretches_motif():
         "static int ui_comp_capture(",1)[0]
     assert flush.index("ui_comp_draw_native_gutters(device,&native_color)")<flush.index(
         "for(layer=SPIDER_UI_COMP_PAUSE_DECOR;")
+
+
+
+def test_full_physical_gutter_coverage_uses_source_geometry_not_artwork(policy):
+    # Native Windows PC draw captured with the approved 1920x1080 Wine
+    # screenshot: edge rectangles on both sides reach strictly past
+    # the 240px complement of the centered 4:3 interface.
+    assert policy.edge(0.0,281.2,1920,240,0)==1
+    assert policy.edge(1638.8,1920.0,1920,240,1)==1
+    # Critical false-positive previously accepted: a narrow opaque
+    # tile touching the extreme display edge but stopping before the
+    # entire 4:3 exterior must NOT be expanded into a whole strip.
+    assert policy.edge(0.0,120.0,1920,240,0)==0
+    assert policy.edge(1800.0,1920.0,1920,240,1)==0
+    # A sprite not attached to the monitor edge cannot become a gutter.
+    assert policy.edge(50.0,350.0,1920,240,0)==0
+    assert policy.edge(1570.0,1870.0,1920,240,1)==0
+
+
+@pytest.mark.parametrize("resolution",[
+    (1920,1080),(1920,1200),(2560,1080),(3440,1440)
+])
+def test_edge_guard_adapts_to_all_widescreen_resolutions(policy,resolution):
+    width,height=resolution
+    gutter=policy.gutter(width,height)
+    assert gutter>0
+    assert policy.edge(0,gutter+2,width,gutter,0)==1
+    assert policy.edge(width-gutter-2,width,width,gutter,1)==1
+    assert policy.edge(0,gutter*.5,width,gutter,0)==0
+    assert policy.edge(width-gutter*.5,width,width,gutter,1)==0
+
+
+def test_runtime_refuses_partial_source_tile_before_material_and_y_checks():
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    start=src.index("static int ui_comp_draw_native_gutters(")
+    end=src.index("/* Flush before native EndScene",start)
+    code=src[start:end]
+    assert code.count("SpiderUIComp_EdgeTileCoversGutter(")==2
+    assert code.index("SpiderUIComp_EdgeTileCoversGutter(")<code.index(
+        "if(!c->state_token || c->texture")
+    assert "if(!on_left && !on_right)continue;" in code
+    assert "if((on_left && !SpiderUIComp_EdgeTileCoversGutter(" in code
+    assert "if(!sample || !have_palette" in code
