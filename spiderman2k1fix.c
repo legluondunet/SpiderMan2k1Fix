@@ -981,7 +981,8 @@ static volatile LONG ui_canvas_trial_enabled=0;
 /* Additional opt-in trial: record native ESC commands, composite at EndScene. */
 static volatile LONG ui_compositor_trial_enabled=0;
 static volatile LONG ui_compositor_tint_enabled=0; /* Never synthesize an unverified pause tint by default. */
-static volatile LONG ui_compositor_native_gutters_enabled=1; /* Only inside the explicitly opted-in compositor trial; A/B opt-out. */
+static volatile LONG ui_compositor_native_gutters_enabled=1; /* Legacy source-edge fallback only. */
+static volatile LONG ui_compositor_native_backdrop_enabled=1; /* Source-verified backdrop-only warp, independently reversible. */
 static volatile LONG ui_canvas_trial_hits=0;
 static volatile LONG ui_canvas_wipe_edge_hits=0;
 /* Final V25: only original V19 polygons and physical source-tooth bounds.
@@ -2525,7 +2526,8 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
   }
   /* All original translucent polygons remain in native D3D7 order.
    * Only backdrop edge coordinates expand to physical screen bounds. */
-  if(!needs_tint && ui_comp_motif)
+  if(!needs_tint && ui_comp_motif &&
+     InterlockedCompareExchange(&ui_compositor_native_backdrop_enabled,0,0)==1)
     native_backdrop_mapped=ui_comp_native_backdrop_source(
       &native_backdrop_argb,&spider_source_left,&spider_source_right,
       &inner_quads);
@@ -5497,6 +5499,18 @@ static DWORD initialize_body(LPVOID unused) {
       log_line(InterlockedCompareExchange(&ui_compositor_tint_enabled,0,0)==1 ?
          "UI-COMPOSITOR-TINT: ON - A/B synthetic fullscreen veil from motif vertex (NOT native fidelity)" :
          "UI-COMPOSITOR-TINT: OFF - no synthetic fullscreen veil, observe native pause decor coverage");
+      /* Independent A/B rollback for the native full-screen backdrop.
+       * Explicit 0 disables ONLY the new source-backed mesh warping. */
+      {
+        char backdrop[4]={0};
+        if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_BACKDROP",
+                                   backdrop,sizeof(backdrop))==1 &&
+           backdrop[0]=='0')
+          InterlockedExchange(&ui_compositor_native_backdrop_enabled,0);
+        log_line(InterlockedCompareExchange(&ui_compositor_native_backdrop_enabled,0,0)==1 ?
+          "UI-COMPOSITOR-NATIVE-BACKDROP: source-verified edge-only mesh warp ENABLED (no synthetic alpha pass)" :
+          "UI-COMPOSITOR-NATIVE-BACKDROP: OFF (original 4:3 source mesh and legacy exterior comparison)");
+      }
       /* A/B rollback. 0 disables native exterior color, without
        * disabling safe original 4:3 motif + late ESC replay. */
       {
