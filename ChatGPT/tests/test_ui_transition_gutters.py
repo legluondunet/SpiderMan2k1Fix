@@ -186,3 +186,23 @@ def test_runtime_rolls_back_without_extra_environment_flag():
     assert "D3DRENDERSTATE_Z" not in fn
     assert "memcpy(" not in fn
     assert "SetRenderState" not in fn
+
+
+
+def test_rejected_source_probe_is_read_only_and_bounded():
+    src=(ROOT/"spiderman2k1fix.c").read_text()
+    marker="static void ui_transition_probe_rejected_source("
+    body=src.split(marker,1)[1].split(
+        "static void maybe_restore_native_transition_gutters(",1)[0]
+    assert "UI-TRANSITION-PROBE:" in body
+    assert "ui_transition_trial_enabled,0,0)!=1" in body
+    assert "if(hit>8) return;" in body
+    assert "SpiderTransition_IsNativeBlackMask(" in body
+    assert "IDirect3DDevice7_GetTexture(" in body
+    assert "IDirectDrawSurface7_Release(texture)" in body
+    assert "original_draw_primitive(" not in body
+    assert "SetRenderState" not in body
+    assert "SetTexture" not in body
+    assert "memcpy(" not in body
+    assert src.index("ui_transition_probe_rejected_source(self,type,fvf,verts,count,") < src.index(
+        "maybe_restore_native_transition_gutters(self,type,fvf,verts,count,")
