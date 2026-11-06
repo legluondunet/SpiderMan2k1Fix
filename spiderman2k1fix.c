@@ -22,6 +22,7 @@
 #include "ui_transition_exact_union.h"
 #include "ui_transition_live_union.h"
 #include "ui_transition_live_direct.h"
+#include "ui_transition_native43.h"
 #include "ui_compositor_policy.h"
 #include "hud_visual_candidates.h"
 #include "hud_aim_reticle.h"
@@ -1046,6 +1047,10 @@ static volatile LONG ui_atomic_live_enabled=0;
 static volatile LONG ui_atomic_partial_enabled=0;
 /* V17: keep only confirmed suppressed native source quads per scene. */
 static volatile LONG ui_atomic_direct_enabled=0;
+/* V18 native iris trial: never recompose, replay, or synthesize polygons. */
+static volatile LONG ui_transition_native43_enabled=0;
+static volatile LONG ui_transition_native43_draws=0;
+static volatile LONG ui_transition_native43_native=0;
 static SpiderAtomicMaskQuad ui_atomic_direct_source[SPIDER_ATOMIC_MASK_MAX];
 static unsigned ui_atomic_direct_count=0u,ui_atomic_direct_overflow=0u;
 static unsigned ui_atomic_direct_frames=0u,ui_atomic_direct_fallbacks=0u;
@@ -3109,6 +3114,8 @@ static int ui_atomic_renderer_skip_native(
   const SpiderMenuVertex *v=(const SpiderMenuVertex*)vertices;
   unsigned i;
   float scale=0.0f,error=0.0f;
+  if(InterlockedCompareExchange(&ui_transition_native43_enabled,0,0)==1)
+    return 0; /* Native game owns the iris in V18, never suppress it. */
   if(InterlockedCompareExchange(&ui_atomic_renderer_enabled,0,0)!=1 ||
      InterlockedCompareExchange(&ui_atomic_renderer_failed,0,0)!=0 ||
      !ui_atomic_texture || !device || !v || count!=4u ||
@@ -3687,6 +3694,8 @@ static int ui_atomic_renderer_draw(IDirect3DDevice7 *device)
 }
 static void ui_atomic_renderer_finish_scene(IDirect3DDevice7 *device)
 {
+  if(InterlockedCompareExchange(&ui_transition_native43_enabled,0,0)==1)
+    return; /* No EndScene compositor/reference upload for V18. */
   if(InterlockedCompareExchange(&ui_atomic_renderer_enabled,0,0)!=1 ||
      InterlockedCompareExchange(&ui_atomic_renderer_failed,0,0)!=0)
     return;
@@ -4164,8 +4173,81 @@ static void maybe_restore_native_transition_gutters(
   }
 }
 
+/* V18 high priority: play back the ORIGINAL game's black iris draws,
+ * in ORIGINAL order, with ORIGINAL vertex animation and render states.
+ * The only intervention is centering their 4:3 X coordinates within the
+ * physical 16:9 world. The original game remains the renderer/animator.
+ * Any unexpected material is passed through UNMODIFIED (not V12/V17).
+ */
+static int ui_transition_native43_handle_draw(
+    void *device,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,
+    DWORD count,DWORD flags,void *caller,HRESULT *result)
+{
+  DWORD rva=0,blend=1,atest=1;
+  IDirectDrawSurface7 *tex=NULL;
+  HRESULT a,b,c;
+  SpiderMenuVertex mapped[4];
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)verts;
+  LONG n;
+  unsigned i;
+  int valid=1;
+  if(InterlockedCompareExchange(&ui_transition_native43_enabled,0,0)!=1 ||
+     !device || !verts || !result || type!=D3DPT_TRIANGLEFAN ||
+     fvf!=0x144UL || count!=4u || !geom_rva(caller,&rva) ||
+     rva!=SPIDER_TRANSITION_CALLER_RVA ||
+     v[0].diffuse!=0x00000000UL)
+    return 0;
+  if(!ui_comp_scene_open || ui_comp_device!=device ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0)
+    valid=0;
+  for(i=0u;i<4u;i++)
+    if(v[i].diffuse!=0x00000000UL ||
+       !(v[i].z>=-.00004f && v[i].z<=.00004f &&
+         v[i].rhw>=27.52f && v[i].rhw<=27.68f))
+      valid=0;
+  if(valid && !SpiderNative43_Map(v,mapped,4u,
+                   (unsigned)desktop_w,(unsigned)desktop_h))
+    valid=0;
+  if(valid){
+    a=IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex);
+    b=IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
+                     D3DRENDERSTATE_ALPHABLENDENABLE,&blend);
+    c=IDirect3DDevice7_GetRenderState((IDirect3DDevice7*)device,
+                     D3DRENDERSTATE_ALPHATESTENABLE,&atest);
+    if(FAILED(a)||FAILED(b)||FAILED(c)||tex||blend||atest)valid=0;
+    if(tex)IDirectDrawSurface7_Release(tex);
+  }
+  *result=original_draw_primitive(device,type,fvf,
+              valid?(LPVOID)mapped:verts,count,flags);
+  if(valid){
+    n=InterlockedIncrement(&ui_transition_native43_draws);
+    if(debug_log_enabled && (n<=12 || n%360==0)){
+      char message[210];
+      snprintf(message,sizeof(message),
+        "UI-TRANSITION-NATIVE43: DRAW=%ld x=(%.2f -> %.2f) y=%.2f [ORIGINAL NATIVE GAME; NO RECOMPOSITION]",
+        (long)n,(double)v[0].x,(double)mapped[0].x,(double)v[0].y);
+      log_line(message);
+    }
+  }else{
+    n=InterlockedIncrement(&ui_transition_native43_native);
+    if(debug_log_enabled && (n<=12 || n%360==0)){
+      char message[150];
+      snprintf(message,sizeof(message),
+        "UI-TRANSITION-NATIVE43: NATIVE-UNCHANGED=%ld (state or geometry unverified)",
+        (long)n);
+      log_line(message);
+    }
+  }
+  return 1;
+}
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
+  HRESULT native43_result;
   ui_atomic_probe_raw_draw(type,fvf,verts,count,__builtin_return_address(0));
+  if(ui_transition_native43_handle_draw(self,type,fvf,verts,count,flags,
+              __builtin_return_address(0),&native43_result))
+    return native43_result;
   if(ui_atomic_renderer_skip_native((IDirect3DDevice7*)self,type,fvf,verts,count,
                                     __builtin_return_address(0)))
     return D3D_OK;
@@ -6769,6 +6851,23 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("UI-ATOMIC-DIRECT: V17 TRIAL ON - draw only suppressed CURRENT original black polygons with 4:3 X and source-edge gutter continuation; no fixed 92 or coverage proof");
     }else{
       log_line("UI-ATOMIC-DIRECT: OFF - V16/V15/V12 original paths unchanged");
+    }
+  }
+  /* V18 Dreamcast widescreen comparison: original native PC D3D7
+   * iris polygons pass through with X corrected to the central 4:3
+   * canvas. No rasterization/union/polygon extensions and no EndScene
+   * reference sprite. Exact iris source takes priority over V6..V17.
+   * This opt-in remains independent of HUD, ESC and unrelated UI. */
+  {
+    char value[4]={0};
+    if(InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)==1 &&
+       GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_TEST",
+                               value,sizeof(value))==1 &&
+       value[0]=='1'){
+      InterlockedExchange(&ui_transition_native43_enabled,1);
+      log_line("UI-TRANSITION-NATIVE43: V18 TRIAL ON - original game DrawPrimitive, 4:3 centered X only, native animation and material, no mask recomposition or gutter filling");
+    }else{
+      log_line("UI-TRANSITION-NATIVE43: OFF - existing V6..V17 behavior unchanged");
     }
   }
   /* Separate compositor opt-in: the regular UI canvas trial remains
