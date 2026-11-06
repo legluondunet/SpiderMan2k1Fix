@@ -3061,11 +3061,13 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
     if(v!=verts && count==4 && !native_esc_primitive && !transition_cover_draw)
       ui_transition_probe_rejected_source(self,type,fvf,verts,count,
                                            __builtin_return_address(0));
-    /* Extra original-colour black fragments only in physical gutter
-     * strips. The mapped opening remains untouched; this call draws no
-     * global black rectangle and never changes Direct3D render states.
-     * Run only when the normal canvas actually made a corrected copy. */
-    if(v!=verts && count==4 && !native_esc_primitive && !transition_cover_draw)
+    /* V6 edge strips and V7 full-mask "cover" are ALTERNATIVE
+     * presentation pipelines. NEVER mix them in the same frame:
+     * a rejected fullscreen candidate may retain the 4:3 source
+     * fallback, but must not spawn disjoint V6 black polygons.
+     * Removing only the V7 opt-in restores V6 unchanged. */
+    if(v!=verts && count==4 && !native_esc_primitive && !transition_cover_draw &&
+       InterlockedCompareExchange(&ui_transition_fullscreen_trial_enabled,0,0)!=1)
       maybe_restore_native_transition_gutters(self,type,fvf,verts,count,
                         flags,__builtin_return_address(0));
     /* Probe any genuine independent screen-size native tint candidate.
