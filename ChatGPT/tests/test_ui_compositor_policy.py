@@ -574,8 +574,8 @@ def test_host_activates_compositor_before_generic_canvas_for_unknown_pause_depth
     hook=src.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
         "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
     assert hook.index("v=maybe_correct_native_motif43(")<hook.index(
-        "v=maybe_correct_unified_ui_canvas(")
+        "candidate=maybe_correct_unified_ui_canvas(")
     assert hook.index("v=maybe_correct_native_pause43(")<hook.index(
-        "v=maybe_correct_unified_ui_canvas(")
+        "candidate=maybe_correct_unified_ui_canvas(")
     assert hook.index("ui_comp_capture((IDirect3DDevice7*)self")<hook.index(
         "original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags)")
