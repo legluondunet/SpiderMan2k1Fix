@@ -2747,7 +2747,7 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
    */
   for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;
       pass<=SPIDER_UI_COMP_REPLAY_MENU;pass++){
-    for(layer=SPIDER_UI_COMP_PAUSE_DECOR;
+    for(layer=SPIDER_UI_COMP_HUD;
         layer<=SPIDER_UI_COMP_PAUSE_MENU;layer++){
       for(i=0;i<ui_comp_count;i++) {
         SpiderUICompDraw *c=&ui_comp_draws[i];
