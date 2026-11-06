@@ -1229,7 +1229,9 @@ static const void *maybe_correct_native_pause43(void *device,
    * Original 4:3 gameplay remains excluded at function entry. */
   ribbon=SpiderNativePause43_RibbonBounds(
        left,right,top,bottom,(unsigned)desktop_w,(unsigned)desktop_h) &&
-       SpiderNativePause43_RibbonLayer(z,rhw);
+       (SpiderNativePause43_RibbonLayer(z,rhw) ||
+        (InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
+         SpiderNativePause43_CompositorRibbon(z,rhw,v[0].diffuse)));
   if(ribbon) {
     /* The banner has no texture. Recheck the live bound texture here
      * rather than relying solely on depth and broad geometry.
@@ -1255,7 +1257,9 @@ static const void *maybe_correct_native_pause43(void *device,
     bb=InterlockedCompareExchange(&native_pause43_banner_bottom,0,0);
     /* Source-backed strict depth variants: old menu and level-2
      * shadow/foreground glyphs measured in the maintainer's log. */
-    if(!SpiderNativePause43_TextLayer(z,rhw))
+    if(!SpiderNativePause43_TextLayer(z,rhw) &&
+       !(InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
+         SpiderNativePause43_CompositorText(z,rhw)))
       return source;
     if(FAILED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,&tex)) ||
        !tex)return source;
@@ -1271,7 +1275,9 @@ static const void *maybe_correct_native_pause43(void *device,
        bb>bt+55.0f*(desktop_w==1920?1.0f:(float)desktop_h/1080.0f) &&
        /* Borders share the verified ribbon depth, not arbitrary text
         * shadow layers; accept only the two exact ribbon signatures. */
-       SpiderNativePause43_RibbonLayer(z,rhw)) {
+       (SpiderNativePause43_RibbonLayer(z,rhw) ||
+        (InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
+         SpiderNativePause43_CompositorRibbon(z,rhw,0x7F3232A0u)))) {
       float sx=(float)desktop_w/1920.0f;
       float sy=desktop_w==1920?1.0f:(float)desktop_h/1080.0f;
       int near_left=(left>=-42.0f*sx && left<=-12.0f*sx &&
@@ -1380,9 +1386,17 @@ static const void *maybe_correct_native_motif43(void *device,
      InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
      type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4 ||
      !geom_rva(ret,&rva) || rva!=0x00102C72UL ||
-     /* Known original native motif layer: two RHW variants, same Z.
-      * The classifier is pure and tested across both variants. */
-     !SpiderNativePause43_MotifLayer(v[0].z,v[0].rhw)) return source;
+     /* Legacy verified depth remains intact. When the native ESC
+      * ribbon has actually been observed in the current/preceding
+      * Flip, the compositor also recognizes new levels through Z,
+      * original alpha, geometry and untextured material. RHW may vary
+      * continuously, exactly as for the validated target reticles. */
+     !(SpiderNativePause43_MotifLayer(v[0].z,v[0].rhw) ||
+       (InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)==1 &&
+        native_pause43_visible_near_flip(
+          InterlockedCompareExchange(&flip_count,0,0)) &&
+        SpiderNativePause43_CompositorMotif(
+            v[0].z,v[0].rhw,v[0].diffuse)))) return source;
   memcpy(&color,(const BYTE*)source+16,sizeof(color));
   if((color&0xFF000000UL)!=0x80000000UL)return source;
   l=r=v[0].x;t=b=v[0].y;
