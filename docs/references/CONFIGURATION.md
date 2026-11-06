@@ -89,6 +89,7 @@ The example `RawHex` line is **illustrative only**: the generated file contains 
 | `[Input] KeyboardLayout` | `Auto` detects the Windows/Wine input layout, `Off` leaves original QWERTY positions. |
 | `[Input] ExperimentalSDL3UniversalGameplay` | **Default `1`**: use SDL3's mapped controller profile for game menus, videos and 3D after explicit Start and neutral input. Set `0` to disable the universal bridge and preserve native behavior. |
 | `[Input] ExperimentalSDL3GameOverConfirm` | **Default `0` (not generated)**: *unsafe-to-generalize research trial*, not a verified GAME OVER detector. Under one narrowly observed pending native request `2`, send **one Enter** for a fresh, neutral-gated South/A/Cross press; requires separately enabled universal SDL3 gameplay. For maintainer-only hardware testing; keep OFF for normal play. |
+| `[Input] ExperimentalSDL3GameOverOwnerProbe` | **Default `0` (not generated)**: independent, strictly read-only native-owner state correlation for GAME OVER research. Records bounded 3D baseline and candidate snapshots, with **no Enter injection**, even while `GameOverConfirm=0`. |
 | `[Input] ExperimentalSDL3NativeOwner` | Default `0`; unrelated legacy experimental native-owner path, not required for universal gameplay. |
 | `[Audio]` | Music/effects, voice and movie volumes (0..100%); `Stereo=1` selects stereo. |
 | `[Keyboard]` / `[Joystick]` | The eleven original keyboard actions and seven joystick button bindings, also saved from the game's menus. |
@@ -102,16 +103,28 @@ To turn this functionality OFF, set `ExperimentalSDL3UniversalGameplay=0` in `[I
 
 ### GAME OVER native owner observer (2026-11-06)
 
-PR #110 now captures additional **bounded, read-only** original-engine
-state whenever the existing `ExperimentalSDL3GameOverConfirm=1` trial is
-enabled. No extra INI option is required, and this observer does not
-modify the existing candidate logic, input routing or default behavior.
+PR #110 now supports an **independent, bounded, read-only** original-engine
+state observer. To use it safely without activating the experimental Enter
+injection, set both keys in the existing `[Input]` section:
+
+```ini
+ExperimentalSDL3UniversalGameplay=1
+ExperimentalSDL3GameOverOwnerProbe=1
+ExperimentalSDL3GameOverConfirm=0
+```
+
+The passive observer is OFF by default. Its native-state candidate test
+does NOT call the one-shot confirmation policy and cannot send Enter.
+You may also enable the independent confirmation trial to correlate
+a *previously validated* South-to-Enter action, but it remains unsafe
+to enable this automatically for all users.
 
 Its `SDL3-GAMEOVER-OWNER-PROBE` messages record up to eight ordinary
 3D baseline samples (first frame, then one per 180 game Flips) and
 transitions into/out of the candidate, the sixth stable frame, and
-the instant immediately before a fresh South-to-Enter action (global
-32-report maximum). They contain the documented original script-manager
+(if the separate confirmation trial is also enabled) the instant
+immediately before a fresh South-to-Enter action (global 32-report
+maximum). They contain the documented original script-manager
 pointer `[0x006A9038]`, guarded context/active/IP/skip fields at
 `+0x1AC/+0x1B4/+0x1B8/+0x1A4`, the original request/task/input
 states, the native pause menu pointers, cutscene flags and game tick.
