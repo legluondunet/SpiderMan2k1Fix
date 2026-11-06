@@ -982,7 +982,7 @@ static volatile LONG ui_canvas_trial_enabled=0;
 static volatile LONG ui_compositor_trial_enabled=0;
 static volatile LONG ui_compositor_tint_enabled=0; /* Never synthesize an unverified pause tint by default. */
 static volatile LONG ui_compositor_native_gutters_enabled=0; /* Deprecated fragment-replay A/B, off by default. */
-static volatile LONG ui_compositor_native_backdrop_enabled=1; /* Source-verified fullscreen veil; save/restore 4:3 viewport. */
+static volatile LONG ui_compositor_native_backdrop_enabled=1; /* Source-verified outer margins only; centre mesh untouched. */
 /* Preserve the native gameplay HUD brightness by replaying its verified
  * D3D7 screen-space sprites AFTER the translucent veil but BEFORE the
  * 4:3 spider and Pause menu. Independent A/B opt-out is available. */
@@ -2519,117 +2519,117 @@ static int ui_comp_native_backdrop_source(DWORD *native_argb,
   return 1;
 }
 
-/* A scene-wide native ESC veil must cover the REAL framebuffer,
- * not only a source-backed triangle tessellation that may leave side
- * seams after the 4:3 centre correction.
+/* Source-colour exterior completion only.
  *
- * Use the *game's original* colour/alpha/material and draw a physical
- * viewport-size quad ONCE before the native 4:3 spider and menu. All
- * original backdrop-colour tiles are then omitted: never apply the
- * translucent veil twice or distort the inner spider silhouettes.
- * 
- * Material/primitive owner is verified by the 4-sided source classifier
- * before reaching here. If drawing fails the caller renders the entire
- * original 4:3 set instead (no missing menu / mixed partial screen).
+ * A/B field evidence (2026-11-06 F9 scrn0103 and scrn0104, same
+ * 05d2804 build): source centre keeps correct RGB when ALL 160 native
+ * decoration triangles are replayed. Replacing its 84 perimeter
+ * triangles with one alpha-blended fullscreen quad causes dull
+ * colours, even with HUD replay OFF. Therefore NEVER draw a colour
+ * overlay over the already correct 4:3 centre or discard source tiles.
+ *
+ * Reconstruct only the PHYSICAL exterior [0,gutter) and
+ * (width-gutter,width] from the ORIGINAL game's edge-owned material.
+ * Source-backed palette and D3D7 blend state are validated upstream
+ * every frame. Centre source geometry, order and alpha are preserved
+ * byte-for-byte. Independent widescreen sizes use the actual monitor
+ * dimensions; no levels, RHW, RGB or alpha constants are hardcoded.
+ *
+ * The render state block is saved by ui_comp_flush() before this
+ * operation and restored after the native Pause replay. This helper
+ * restores the precise original viewport on all paths.
  */
-/* Unlike screen-space XYZRHW coordinates, the D3D7 viewport STILL
- * physically clips rasterization. The game's 4:3/menu viewport may be
- * (240,0)-(1680,1080) even though the compositor passes (0..1920)
- * pretransformed vertices. The driver returns success while pixels in
- * the outer 240px strips are discarded.
- *
- * Temporarily switch ONLY the native source-colour veil pass to the
- * native physical viewport and always restore the exact original
- * viewport BEFORE the 4:3 spider/ribbon replay. No display mode switch,
- * game view/HUD change, alpha invention or permanent viewport mutation.
- *
- * Fail closed if the active viewport is neither full output nor the
- * expected centered 4:3 region. Any unexpected state is not a licence
- * to change the game's render context.
- */
-static int ui_comp_draw_native_fullscreen_backdrop(
-    IDirect3DDevice7 *device,const SpiderUICompDraw *sample,DWORD argb)
+static int ui_comp_draw_native_exterior_gutters(
+    IDirect3DDevice7 *device,const SpiderUICompDraw *sample,DWORD argb,
+    unsigned *quads_drawn)
 {
   SpiderMenuVertex v[4];
-  D3DVIEWPORT7 previous,fullscreen;
-  HRESULT draw_hr=E_FAIL,restore_hr=S_OK;
-  unsigned k;
+  D3DVIEWPORT7 previous,physical;
+  HRESULT draw_hr=S_OK,restore_hr=S_OK;
+  DWORD w=(DWORD)desktop_w,h=(DWORD)desktop_h;
+  DWORD center_w,margin;
+  unsigned k,side,done=0u;
   int changed=0;
-  float w=(float)desktop_w,h=(float)desktop_h;
-  DWORD physical_w=(DWORD)desktop_w,physical_h=(DWORD)desktop_h;
-  DWORD center_w=(DWORD)(h*(4.0f/3.0f)+0.5f);
-  DWORD center_x=(physical_w-center_w)/2u;
   LONG frame=InterlockedCompareExchange(&ui_comp_flushed_frames,0,0);
-  if(!device || !sample || !sample->state_token || sample->texture ||
+  if(quads_drawn)*quads_drawn=0u;
+  if(!quads_drawn || !device || !sample ||
+     !sample->state_token || sample->texture ||
      sample->fvf!=0x144UL || sample->type!=D3DPT_TRIANGLEFAN ||
      sample->source_v[0].diffuse!=argb ||
-     (argb>>24)==0u || w<640.0f || h<480.0f ||
-     !original_set_viewport || center_w>physical_w)
+     (argb>>24)==0u || !original_set_viewport ||
+     w<640u || h<480u || w>16384u || h>16384u)
     return 0;
+  center_w=(DWORD)((float)h*(4.0f/3.0f)+0.5f);
+  if(center_w>=w)return 0;
+  margin=(w-center_w)/2u;
+  if(margin==0u || (w-center_w)!=2u*margin)return 0;
   if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)) ||
      FAILED(IDirect3DDevice7_GetViewport(device,&previous)))
     return 0;
-  fullscreen=previous;
+  physical=previous;
   if(previous.dwX==0u && previous.dwY==0u &&
-     previous.dwWidth==physical_w && previous.dwHeight==physical_h) {
-    /* Original game viewport already covers the real display. */
-  } else if(previous.dwX==center_x && previous.dwY==0u &&
-            previous.dwWidth==center_w &&
-            previous.dwHeight==physical_h &&
+     previous.dwWidth==w && previous.dwHeight==h) {
+    /* Already drawing to the full physical backbuffer. */
+  } else if(previous.dwX==margin && previous.dwY==0u &&
+            previous.dwWidth==center_w && previous.dwHeight==h &&
             previous.dvMinZ<=previous.dvMaxZ) {
-    fullscreen.dwX=0u;fullscreen.dwY=0u;
-    fullscreen.dwWidth=physical_w;fullscreen.dwHeight=physical_h;
-    if(FAILED(original_set_viewport(device,&fullscreen))) {
-      if(debug_log_enabled && frame<4)
-        log_line("UI-COMPOSITOR-BACKDROP-VIEWPORT: original full-width SetViewport failed; source replay fallback");
+    physical.dwX=0u;physical.dwY=0u;
+    physical.dwWidth=w;physical.dwHeight=h;
+    if(FAILED(original_set_viewport(device,&physical)))
       return 0;
-    }
     changed=1;
   } else {
-    if(debug_log_enabled && frame<4) {
-      char line[240];
-      snprintf(line,sizeof(line),
-        "UI-COMPOSITOR-BACKDROP-VIEWPORT: unrecognized viewport %lux%lu+%lu+%lu; physical %lux%lu, native original replay",
+    if(debug_log_enabled && frame<4){
+      char msg[215];
+      snprintf(msg,sizeof(msg),
+        "UI-COMPOSITOR-BACKDROP-VIEWPORT: gutter-only rejected unexpected %lux%lu+%lu+%lu",
         (unsigned long)previous.dwWidth,(unsigned long)previous.dwHeight,
-        (unsigned long)previous.dwX,(unsigned long)previous.dwY,
-        (unsigned long)physical_w,(unsigned long)physical_h);
-      log_line(line);
+        (unsigned long)previous.dwX,(unsigned long)previous.dwY);
+      log_line(msg);
     }
     return 0;
   }
-  /* The original capture includes its native material and D3D7 alpha
-   * state. Copy the native first vertex as the uniform source and
-   * modify ONLY the fullscreen rectangle's positions. */
+  /* Original material is restored, and only the two side gutters
+   * receive a single alpha pass. All original 4:3 decoration is still
+   * replayed AFTER this call, untouched and without double blending. */
   for(k=0u;k<4u;k++)v[k]=sample->source_v[0];
-  v[0].x=0.0f;v[0].y=0.0f;
-  v[1].x=w;v[1].y=0.0f;
-  v[2].x=w;v[2].y=h;
-  v[3].x=0.0f;v[3].y=h;
-  if(SUCCEEDED(IDirect3DDevice7_SetTexture(device,0,NULL)) &&
-     SUCCEEDED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)) &&
-     SUCCEEDED(IDirect3DDevice7_SetRenderState(device,D3DRENDERSTATE_ZWRITEENABLE,FALSE))) {
+  if(FAILED(IDirect3DDevice7_SetTexture(device,0,NULL)) ||
+     FAILED(IDirect3DDevice7_SetRenderState(device,
+                               D3DRENDERSTATE_ZENABLE,D3DZB_FALSE)) ||
+     FAILED(IDirect3DDevice7_SetRenderState(device,
+                               D3DRENDERSTATE_ZWRITEENABLE,FALSE)))
+    draw_hr=E_FAIL;
+  for(side=0u;side<2u && SUCCEEDED(draw_hr);side++){
+    float left=side==0u ? 0.0f:(float)(w-margin);
+    float right=side==0u ? (float)margin:(float)w;
+    v[0].x=left;v[0].y=0.0f;
+    v[1].x=right;v[1].y=0.0f;
+    v[2].x=right;v[2].y=(float)h;
+    v[3].x=left;v[3].y=(float)h;
     draw_hr=original_draw_primitive(device,
                      D3DPT_TRIANGLEFAN,0x144UL,v,4,sample->flags);
+    if(SUCCEEDED(draw_hr))done++;
   }
-  /* Restore the exact original device viewport on every path,
-   * including a failed native DrawPrimitive / state modification. */
   if(changed)
     restore_hr=original_set_viewport(device,&previous);
-  if(debug_log_enabled && (frame<4 || frame%180==0)){
-    char line[270];
-    snprintf(line,sizeof(line),
-      "UI-COMPOSITOR-BACKDROP-VIEWPORT: original=%lux%lu+%lu+%lu physical=%lux%lu temporary-switch=%d draw=0x%08lX restore=0x%08lX",
+  if(debug_log_enabled && (frame<4 || frame%180==0 ||
+                            FAILED(draw_hr) || FAILED(restore_hr))){
+    char msg[300];
+    snprintf(msg,sizeof(msg),
+      "UI-COMPOSITOR-BACKDROP-VIEWPORT: gutter-only viewport=%lux%lu+%lu+%lu physical=%lux%lu temporary-switch=%d draw=0x%08lX restore=0x%08lX quads=%u",
       (unsigned long)previous.dwWidth,(unsigned long)previous.dwHeight,
       (unsigned long)previous.dwX,(unsigned long)previous.dwY,
-      (unsigned long)physical_w,(unsigned long)physical_h,
-      changed,(unsigned long)draw_hr,(unsigned long)restore_hr);
-    log_line(line);
+      (unsigned long)w,(unsigned long)h,
+      changed,(unsigned long)draw_hr,(unsigned long)restore_hr,done);
+    log_line(msg);
   }
   if(FAILED(restore_hr)) {
     log_line("UI-COMPOSITOR-BACKDROP-VIEWPORT: ERROR original viewport not restored");
     return 0;
   }
-  return SUCCEEDED(draw_hr);
+  if(FAILED(draw_hr) || done!=2u)return 0;
+  *quads_drawn=done;
+  return 1;
 }
 
 /* Flush before native EndScene, not at DirectDraw Flip, so the entire
@@ -2639,6 +2639,7 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
   IDirectDrawSurface7 *saved_texture=NULL;
   unsigned i,layer,pass,inner_quads=0u;
   unsigned paint_background=0u,paint_hud=0u,paint_spider=0u,paint_menu=0u;
+  unsigned exterior_quads=0u;
   DWORD native_backdrop_argb=0u;
   float spider_source_left=0.0f,spider_source_right=0.0f;
   const SpiderUICompDraw *native_backdrop_material=NULL;
@@ -2675,36 +2676,34 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
     else if(debug_log_enabled && InterlockedIncrement(&ui_comp_replay_failures)<=3)
       log_line("UI-COMPOSITOR: fullscreen overlay unsupported this frame");
   }
-  /* The outer palette's original translucent draw state is the one
-   * authoritative veil source. It is only applied to the entire screen
-   * when every original edge and inner spider family were observed.
-   * One physical quad replaces the corresponding backdrop tessellation.
-   * Unlike the old edge warp, this guarantees 0..width pixel coverage.
-   */
+  /* Validate the original perimeter material but NEVER replace its
+   * native 84 decoration tiles. The A/B test proved that a fullscreen
+   * substitute destroys the central source colour and blend fidelity.
+   * Fill just the physical side margins, retaining all 160 source
+   * triangles over the original 4:3 centre. */
   if(!needs_tint && ui_comp_motif &&
      InterlockedCompareExchange(&ui_compositor_native_backdrop_enabled,0,0)==1)
     native_backdrop_verified=ui_comp_native_backdrop_source(
       &native_backdrop_argb,&spider_source_left,&spider_source_right,
       &inner_quads,&native_backdrop_material);
   if(native_backdrop_verified)
-    native_backdrop_drawn=ui_comp_draw_native_fullscreen_backdrop(
-      device,native_backdrop_material,native_backdrop_argb);
+    native_backdrop_drawn=ui_comp_draw_native_exterior_gutters(
+      device,native_backdrop_material,native_backdrop_argb,&exterior_quads);
   if(debug_log_enabled && ui_comp_motif &&
      (InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)<4 ||
       InterlockedCompareExchange(&ui_comp_flushed_frames,0,0)%180==0)){
     char msg[300];
     snprintf(msg,sizeof(msg),
-      "UI-COMPOSITOR-NATIVE-BACKDROP: %s verified=%d drawn=%d argb=%08lX spider-bounds=(%.1f..%.1f) spider-quads=%u physical=%ux%u [ONE SOURCE-MATERIAL FULLSCREEN QUAD; ORIGINAL BACKDROP TILES EXCLUDED]",
-      native_backdrop_drawn?"fullwidth":"fallback",
-      native_backdrop_verified,native_backdrop_drawn,
+      "UI-COMPOSITOR-NATIVE-BACKDROP: %s verified=%d drawn=%d quads=%u argb=%08lX spider-bounds=(%.1f..%.1f) inner-quads=%u physical=%ux%u [SOURCE CENTRE UNCHANGED: ALL 160 NATIVE TRIANGLES REPLAYED]",
+      native_backdrop_drawn?"gutter-only":"native-only",
+      native_backdrop_verified,native_backdrop_drawn,exterior_quads,
       (unsigned long)native_backdrop_argb,
       (double)spider_source_left,(double)spider_source_right,
       inner_quads,(unsigned)desktop_w,(unsigned)desktop_h);
     log_line(msg);
   }
-  /* Deprecated A/B source-edge gutter renderer: disabled by default
-   * because its alpha/geometry diverged from the original design.
-   * A new user test must explicitly opt in to restore that comparison. */
+  /* Deprecated A/B edge-fragment renderer: disabled by default.
+   * Never run it after our validated two-gutter completion. */
   if(!needs_tint && !native_backdrop_drawn && ui_comp_motif &&
      InterlockedCompareExchange(&ui_compositor_native_gutters_enabled,0,0)==1) {
     unsigned source_strips=0u;
@@ -2724,9 +2723,9 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
   }
   /* This is the native Dreamcast-style painter order:
    *   WORLD (game-owned)
-   *   -> original native fullscreen Pause veil
-   *   -> source-verified game HUD, replayed ONCE at EndScene
-   *   -> original 4:3 spider artwork
+   *   -> source-derived side gutter completion OUTSIDE centre 4:3
+   *   -> source-verified game HUD, replayed ONCE if explicitly enabled
+   *   -> original native 160-triangle translucent 4:3 decoration
    *   -> PAUSED title, purple ribbon, text and native selector.
    * 
    * Source evidence: native pre-veil F9 scrn0064 has red HUD portrait
@@ -2736,14 +2735,12 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
    * D3D7 quads once, in an explicit middle pass, fixes the ordering
    * without guessing gamma or changing original source RGB/alpha.
    *
-   * The game's own translucent DECOR mesh interleaves backdrop tiles
-   * with spider pieces. Do not rely on that raw ordering: separate its
-   * TWO source-verified materials into explicit render passes. If the
-   * native full-screen background succeeded, omit the old background
-   * tiles entirely (no double alpha blend). If the background could not
-   * be drawn but its identity is proven, its original 4:3 tiles go
-   * first, below the inner spider. Unknown materials fall back to the
-   * original primitive order. No geometry/ARGB/alpha is changed here.
+   * Preserve the exact original native geometry and ordering for all
+   * 160 translucent decoration triangles. The Dreamcast reference and
+   * A/B F9 capture show that replacing or separating the native 84
+   * backdrop tiles modifies the visible central colour mix. Two new
+   * gutter-only primitives cover exterior pixels but NEVER centre.
+   * Source colours and alpha are unmodified for every native triangle.
    */
   for(pass=SPIDER_UI_COMP_REPLAY_BACKDROP;
       pass<=SPIDER_UI_COMP_REPLAY_MENU;pass++){
@@ -2753,10 +2750,12 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
         SpiderUICompDraw *c=&ui_comp_draws[i];
         int owner;
         if((unsigned)c->layer!=layer)continue;
+        /* The centre is NEVER split by palette again, even when the
+         * exterior-only gutter material was verified/drawn. Treat
+         * every source DECOR triangle as the same original-order pass. */
         owner=SpiderUIComp_ReplayPassForDraw(
              c->layer,(unsigned)c->source_v[0].diffuse,
-             native_backdrop_verified,native_backdrop_drawn,
-             (unsigned)native_backdrop_argb);
+             0,0,(unsigned)native_backdrop_argb);
         if(owner!=(int)pass)continue;
         /* The native capture's full material and texture are restored
          * for every primitive. Disable Z only for the composited
@@ -2787,8 +2786,8 @@ static void ui_comp_flush(IDirect3DDevice7 *device) {
       !all_ok)) {
     char msg[245];
     snprintf(msg,sizeof(msg),
-      "UI-COMPOSITOR-ORDER: native-veil=%d backdrop-tiles=%u hud=%u spider=%u menu=%u [WORLD -> VEIL -> HUD -> SPIDER -> PAUSE; ORIGINAL MATERIAL AND ALPHA]",
-      native_backdrop_drawn,paint_background,paint_hud,paint_spider,paint_menu);
+      "UI-COMPOSITOR-ORDER: exterior-gutter-quads=%u native-decor=%u hud=%u menu=%u [WORLD -> GUTTERS OUTSIDE 4:3 -> HUD -> 160 SOURCE TRIANGLES -> PAUSE; NO FULLSCREEN OVERLAY]",
+      exterior_quads,paint_spider,paint_hud,paint_menu);
     log_line(msg);
   }
   /* One-shot read-only 4:3 source/mapped comparison after a stable
@@ -5750,7 +5749,7 @@ static DWORD initialize_body(LPVOID unused) {
            backdrop[0]=='0')
           InterlockedExchange(&ui_compositor_native_backdrop_enabled,0);
         log_line(InterlockedCompareExchange(&ui_compositor_native_backdrop_enabled,0,0)==1 ?
-          "UI-COMPOSITOR-NATIVE-BACKDROP: source-verified fullscreen veil ENABLED (temporary full physical viewport; restore for 4:3 artwork)" :
+          "UI-COMPOSITOR-NATIVE-BACKDROP: source-verified OUTER GUTTERS enabled (all 160 source 4:3 triangles preserved)" :
           "UI-COMPOSITOR-NATIVE-BACKDROP: OFF (original 4:3 source mesh and legacy exterior comparison)");
       }
       /* Independent rollback for the native HUD's original brightness.
