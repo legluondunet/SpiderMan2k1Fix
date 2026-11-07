@@ -1130,12 +1130,9 @@ static const void *maybe_correct_adaptive_hud(void *device,
  * Scopes-only Hor+ installs are not enough: HUDWidescreenFix=0
  * must disable ALL dependent native ESC geometry changes.
  */
-static int native_esc43_hud_setting_enabled(const char *key,
-                                            const char *legacy_env) {
-  /* All native ESC/HUD aspect corrections are permanent when the validated
-   * HUD native patch is installed; old INI/environment switches are inert. */
-  (void)key;
-  (void)legacy_env;
+static int native_esc43_hud_setting_enabled(void) {
+  /* Native ESC, motif and cursor 4:3 correction have no user opt-outs.
+   * The exact original game HUD hook remains mandatory. */
   return SpiderHudWidescreen_Installed()!=0;
 }
 
@@ -1187,8 +1184,7 @@ static int native_pause43_visible_near_flip(LONG now_flip) {
     now_flip-ribbon_flip<=1;
 }
 static void native_pause43_init(void) {
-  int enabled=native_esc43_hud_setting_enabled(
-       "NativeESC4x3","SPIDERMAN2K1FIX_NATIVE_ESC_43");
+  int enabled=native_esc43_hud_setting_enabled();
   InterlockedExchange(&native_pause43_enabled,enabled?1:0);
   log_line(enabled?
     "PAUSE-NATIVE-43: 4:3 ribbon+borders+glyphs ON (HUDWidescreenFix master)" :
@@ -1365,12 +1361,11 @@ static volatile LONG native_motif43_enabled=0;
 static volatile LONG native_motif43_hits=0;
 static void native_motif43_init(void) {
   int enabled=InterlockedCompareExchange(&native_pause43_enabled,0,0)==1 &&
-    native_esc43_hud_setting_enabled(
-      "NativeMotif4x3","SPIDERMAN2K1FIX_NATIVE_MOTIF_43");
+    native_esc43_hud_setting_enabled();
   InterlockedExchange(&native_motif43_enabled,enabled?1:0);
   log_line(enabled?
     "NATIVE-MOTIF-43: 4:3 motif + full-screen original tint ON (HUD master)" :
-    "NATIVE-MOTIF-43: OFF (HUD master, NativeESC4x3 or NativeMotif4x3=0)");
+    "NATIVE-MOTIF-43: inactive (verified HUD unavailable)");
 }
 static const void *maybe_correct_native_motif43(void *device,
     D3DPRIMITIVETYPE type,DWORD fvf,const void *source,DWORD count,
@@ -1592,12 +1587,11 @@ static volatile LONG native_cursor43_enabled=0;
 static volatile LONG native_cursor43_hits=0;
 static void native_cursor43_init(void) {
   int enabled=InterlockedCompareExchange(&native_pause43_enabled,0,0)==1 &&
-    native_esc43_hud_setting_enabled(
-      "NativeCursor4x3","SPIDERMAN2K1FIX_NATIVE_CURSOR_43");
+    native_esc43_hud_setting_enabled();
   InterlockedExchange(&native_cursor43_enabled,enabled?1:0);
   log_line(enabled?
     "NATIVE-CURSOR-43: 4:3 selector ON (any widescreen; signature-gated)" :
-    "NATIVE-CURSOR-43: OFF (HUD master, NativeESC4x3 or NativeCursor4x3=0)");
+    "NATIVE-CURSOR-43: inactive (verified HUD unavailable)");
 }
 static const void *maybe_correct_native_cursor43(void *device,
     D3DPRIMITIVETYPE type,DWORD fvf,const void *source,DWORD count,
