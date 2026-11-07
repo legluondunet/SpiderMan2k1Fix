@@ -87,6 +87,12 @@ static unsigned gameover_owner_probe_events=0;
 static int gameover_owner_probe_was_candidate=0;
 static uint32_t gameover_owner_probe_selected_id=0;
 static unsigned gameover_owner_probe_stable_frames=0;
+/* Source-recovered exact native "game over" text draw prerequisite.
+ * This source confirmation is telemetry ONLY, no automatic routing. */
+static int gameover_owner_probe_title_active=0;
+static uint32_t gameover_owner_probe_title_actor=0;
+static unsigned gameover_owner_probe_title_frame=0;
+
 static SpiderSDL3GameOverTrial gameover_trial;
 static void (*report)(const char *)=NULL;
 static void log_universal(const char *msg) {
@@ -339,6 +345,9 @@ static void restore_original(const char *reason) {
   gameover_owner_probe_selected_id=0;
   gameover_owner_probe_frames=0;
   gameover_owner_probe_stable_frames=0;
+  gameover_owner_probe_title_active=0;
+  gameover_owner_probe_title_actor=0;
+  gameover_owner_probe_title_frame=0;
   spider_sdl3_gameover_trial_reset(&gameover_trial);
   spider_sdl3_universal_reset(&state);
 }
@@ -400,6 +409,9 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   gameover_owner_probe_was_candidate=0;
   gameover_owner_probe_selected_id=0;
   gameover_owner_probe_stable_frames=0;
+  gameover_owner_probe_title_active=0;
+  gameover_owner_probe_title_actor=0;
+  gameover_owner_probe_title_frame=0;
   spider_sdl3_gameover_trial_reset(&gameover_trial);
   gameover_trial_enabled=ini &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverConfirm",0,ini)==1;
@@ -521,6 +533,43 @@ static int gameover_probe_read_u32(uintptr_t address,uint32_t *out) {
   memcpy(out,(const void *)address,sizeof(*out));
   return 1;
 }
+/* Exact-hash 2001 PC retail disassembly:
+ * 0x440B9C: player = [0x006A9038];
+ * 0x440BA5: signed short [player+0xE2] <= 0;
+ * 0x440BAF: DWORD [0x005FB1B0] == 1;
+ * 0x440BDF: fetch original "game over" text pointer for its draw.
+ * 0x4B28A5..0x4B28BD may subsequently clear that display flag and
+ * issue request=2 after 0x6A7F98>=0x78; three other writers of
+ * request=2 are present. Do not grant routing authority from these
+ * fields without matching field hardware evidence. */
+static int gameover_probe_native_title_now(uint32_t *actor_out,
+    int *health_out,uint32_t *mode_out,uint32_t *timer_out) {
+  uint32_t actor=0,hpword=0,mode=0,timer=0;
+  int health=0;
+  if(actor_out)*actor_out=0;
+  if(health_out)*health_out=0;
+  if(mode_out)*mode_out=0;
+  if(timer_out)*timer_out=0;
+  if(!gameover_probe_read_u32(0x006A9038u,&actor) ||
+     !gameover_probe_read_u32(0x005FB1B0u,&mode) ||
+     !gameover_probe_read_u32(0x006A7F98u,&timer))
+    return 0;
+  if(actor_out)*actor_out=actor;
+  if(mode_out)*mode_out=mode;
+  if(timer_out)*timer_out=timer;
+  if(actor<0x10000u || actor>0x7fff0000u ||
+     !gameover_probe_read_u32((uintptr_t)actor+0xE0u,&hpword))
+    return 0;
+  health=(int)(int16_t)(hpword>>16);
+  if(health_out)*health_out=health;
+  return health<=0 && mode==1u;
+}
+static int gameover_probe_native_title_recent(uint32_t actor) {
+  return gameover_owner_probe_title_frame!=0u &&
+    actor!=0u && actor==gameover_owner_probe_title_actor &&
+    gameover_owner_probe_frames>=gameover_owner_probe_title_frame &&
+    gameover_owner_probe_frames-gameover_owner_probe_title_frame<=300u;
+}
 /* Read-only candidate correlation, also callable by the independent
  * passive owner observer. [0x60CFA4] is a pending transition request,
  * NOT an authoritative GAME OVER owner. The only caller that can inject
@@ -571,8 +620,10 @@ static void gameover_owner_probe_dump(const char *phase,uint32_t owner,
   uint32_t request=0,task=0,input_active=0,script=0;
   uint32_t script_ctx=0,script_active=0,script_ip=0,script_skip=0;
   uint32_t pause_menu=0,restart_menu=0,flags=0,tick=0;
+  uint32_t title_actor=0,title_mode=0,title_timer=0;
+  int title_health=0,title_now=0,title_recent=0;
   unsigned base_ok=0,script_ok=0;
-  char msg[720];
+  char msg[900];
   if(!gameover_owner_probe_enabled || !report ||
      gameover_owner_probe_events>=32u)return;
   ++gameover_owner_probe_events;
@@ -593,15 +644,20 @@ static void gameover_owner_probe_dump(const char *phase,uint32_t owner,
       gameover_probe_read_u32(ptr+0x1B8u,&script_ip) &&
       gameover_probe_read_u32(ptr+0x1A4u,&script_skip);
   }
+  title_now=gameover_probe_native_title_now(&title_actor,
+    &title_health,&title_mode,&title_timer);
+  title_recent=gameover_probe_native_title_recent(title_actor);
   snprintf(msg,sizeof(msg),
-    "SDL3-GAMEOVER-OWNER-PROBE: phase=%s selected=%lu ctx=%u candidate=%d request=%08lX task=%08lX input=%08lX script=%08lX context=%08lX active=%08lX ip=%08lX skip=%08lX pause-menu=%08lX restart-menu=%08lX flags=%08lX tick=%08lX base=%u script-ok=%u [PASSIVE; NO CONFIRMED GAME-OVER OWNER]",
+    "SDL3-GAMEOVER-OWNER-PROBE: phase=%s selected=%lu ctx=%u candidate=%d request=%08lX task=%08lX input=%08lX script=%08lX context=%08lX active=%08lX ip=%08lX skip=%08lX pause-menu=%08lX restart-menu=%08lX flags=%08lX tick=%08lX title-actor=%08lX title-hp=%d title-mode=%08lX title-timer=%08lX title-now=%d title-recent=%d base=%u script-ok=%u [PASSIVE; NO CONFIRMED GAME-OVER OWNER]",
     phase?phase:"unknown",(unsigned long)owner,context,candidate,
     (unsigned long)request,(unsigned long)task,(unsigned long)input_active,
     (unsigned long)script,(unsigned long)script_ctx,
     (unsigned long)script_active,(unsigned long)script_ip,
     (unsigned long)script_skip,(unsigned long)pause_menu,
     (unsigned long)restart_menu,(unsigned long)flags,
-    (unsigned long)tick,base_ok,script_ok);
+    (unsigned long)tick,(unsigned long)title_actor,title_health,
+    (unsigned long)title_mode,(unsigned long)title_timer,
+    title_now,title_recent,base_ok,script_ok);
   report(msg);
 }
 
@@ -933,6 +989,9 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     gameover_owner_probe_frames=0;
     gameover_owner_probe_was_candidate=0;
     gameover_owner_probe_stable_frames=0;
+    gameover_owner_probe_title_active=0;
+    gameover_owner_probe_title_actor=0;
+    gameover_owner_probe_title_frame=0;
     gameover_owner_probe_dump("SELECTED-PAD-CHANGE",id,context,0);
   }
   /* Low-volume control samples of unmodified original 3D gameplay:
@@ -941,6 +1000,19 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   if(gameover_owner_probe_enabled &&
      context==SPIDER_UNIVERSAL_CTX_3D) {
     ++gameover_owner_probe_frames;
+    {
+      uint32_t actor=0;
+      int title=gameover_probe_native_title_now(&actor,NULL,NULL,NULL);
+      if(title) {
+        gameover_owner_probe_title_frame=gameover_owner_probe_frames;
+        gameover_owner_probe_title_actor=actor;
+      }
+      if(title!=gameover_owner_probe_title_active) {
+        gameover_owner_probe_title_active=title;
+        gameover_owner_probe_dump(title?"SOURCE-GAMEOVER-TITLE-ON":
+          "SOURCE-GAMEOVER-TITLE-OFF",id,context,0);
+      }
+    }
     if(gameover_owner_probe_baselines<8u &&
        (gameover_owner_probe_frames==1u ||
         gameover_owner_probe_frames%180u==0u)) {
@@ -972,6 +1044,9 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
       gameover_owner_probe_dump("CANDIDATE-CONTEXT-EXIT",id,context,0);
     gameover_owner_probe_was_candidate=0;
     gameover_owner_probe_stable_frames=0;
+    gameover_owner_probe_title_active=0;
+    gameover_owner_probe_title_actor=0;
+    gameover_owner_probe_title_frame=0;
     spider_sdl3_gameover_trial_reset(&gameover_trial);
     /* Context controls are independent from the seven 3D game actions.
      * Keyboard remains available throughout menus and cinematics. */
