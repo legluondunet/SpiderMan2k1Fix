@@ -583,7 +583,7 @@ def test_universal_mapped_ps4_uses_generic_identity_without_native_rebind():
     assert "if(accepted)" in modal
     assert "generic_selected_id=requested_id;" in modal
     assert "selection.active=requested_id;" not in modal
-    native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
+    assert not (ROOT/"native_joystick_reconnect.c").exists()
     assert "SpiderNativeReconnect_" not in probe
 
 
