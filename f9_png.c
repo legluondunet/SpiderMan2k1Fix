@@ -96,7 +96,7 @@ static DWORD WINAPI spider_png_thread(void *ctx) {
   DWORD error=0;
   LONG serial=InterlockedIncrement(&spider_png_serial);
   UINT n;
-  int saved=0;
+  int saved=0,path_len;
   char msg[320];
 
   if(!job)goto done;
@@ -137,8 +137,11 @@ static DWORD WINAPI spider_png_thread(void *ctx) {
                     L"Cannot create screenshots folder (game or LOCALAPPDATA)");
     goto done;
   }
-  if(swprintf(temp,MAX_PATH,L"%ls\\SpiderF9PNG-%lu-%ld.tmp",
-              exe,(unsigned long)GetCurrentProcessId(),(long)serial)>=MAX_PATH) {
+  path_len=swprintf(temp,MAX_PATH,L"%ls\\SpiderF9PNG-%lu-%ld.tmp",
+                    exe,(unsigned long)GetCurrentProcessId(),(long)serial);
+  /* MSVCRT can return -1 for truncation instead of the required length.
+   * Never pass a possibly unterminated temporary path to GDI+. */
+  if(path_len<=0 || path_len>=MAX_PATH) {
     spider_png_fail(job,"F9-PNG: temporary filename too long",L"Screenshot file path is too long");
     goto done;
   }
@@ -151,7 +154,11 @@ static DWORD WINAPI spider_png_thread(void *ctx) {
   /* Non-overwriting atomic publication. The GDI+ intermediate has PNG bytes,
    * not a legacy BMP; no BMP is ever created by our encoder. */
   for(n=0;n<10000u;n++) {
-    if(swprintf(dest,MAX_PATH,L"%ls\\scrn%04u.png",exe,n)>=MAX_PATH)break;
+    path_len=swprintf(dest,MAX_PATH,L"%ls\\scrn%04u.png",exe,n);
+    if(path_len<=0 || path_len>=MAX_PATH) {
+      error=ERROR_FILENAME_EXCED_RANGE;
+      break;
+    }
     if(MoveFileExW(temp,dest,MOVEFILE_WRITE_THROUGH)) {
       if(!spider_png_verify(dest)) {
         spider_png_fail(job,"F9-PNG: final PNG verification failed",
@@ -179,6 +186,8 @@ static DWORD WINAPI spider_png_thread(void *ctx) {
                     L"Access denied while saving PNG":
                     (error==ERROR_DISK_FULL || error==ERROR_HANDLE_DISK_FULL)?
                     L"Disk full while saving PNG":
+                    (error==ERROR_FILENAME_EXCED_RANGE)?
+                    L"Screenshot file path is too long":
                     L"Cannot write screenshot PNG");
     DeleteFileW(temp);
   }
