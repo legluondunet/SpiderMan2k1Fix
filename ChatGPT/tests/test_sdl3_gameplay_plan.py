@@ -144,32 +144,25 @@ def test_portable_semantic_3d_gate_and_transitions(tmp_path):
     subprocess.run([str(out)],check=True)
 
 
-def test_stage_is_explicitly_readonly_and_ordered_after_native_handoff():
+def test_research_only_native_plan_is_unwired_but_independent_traces_survive():
     probe=(ROOT/"sdl3_gameplay_plan_probe.c").read_text(encoding="utf-8")
     h=(ROOT/"sdl3_gameplay_plan.h").read_text(encoding="utf-8")
     game=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
-    sdl=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
-    ini=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
     build=(ROOT/"build.sh").read_text(encoding="utf-8")
-    assert '"SDL3GameplayPlan"' in ini
-    assert 'GetPrivateProfileIntA("Debug","SDL3GameplayPlan",0,ini)==1' in probe
-    assert '"ExperimentalSDL3NativeOwner",0,ini)==1' in probe
     assert "sdl3_gameplay_plan_probe.c" in build
-    assert "SpiderSDL3Probe_SelectedSample(" in sdl
-    assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in probe
-    assert "SpiderSDL3Probe_SetupProfile(vid,pid)" in probe
-    assert "spider_sdl3_gameplay_plan_step(" in probe
-    assert "GetForegroundWindow()!=hwnd" in probe
-    assert "SPIDER_PLAN_WAIT_NEUTRAL" in probe
-    assert "[NO NATIVE INJECTION]" in probe
-    assert "SDL3-3D-PLAN: REFUSED" in probe
-    assert "spider_sdl3_gameplay_plan_reset(s)" in h
-    before=game.index("SpiderNativeReconnect_OnFlip(count,game_hwnd);")
-    after=game.index("SpiderSDL3GameplayPlan_OnFlip(game_hwnd,")
-    assert after>before
+    assert "native_joystick_reconnect.c" not in build
     assert "SpiderSDL3GameplayPlan_Init(ini,log_line);" in game
     assert "SpiderSDL3GameplayPlan_Init(NULL,log_line);" in game
-    for forbidden in ("VirtualProtect(", "SendInput(", "WriteProcessMemory(",
-                      "IDirectInputDevice8_", "memcpy((void *)(uintptr_t)",
-                      "spider_ps1_write_word(", "CreateThread("):
-        assert forbidden not in probe and forbidden not in h
+    assert "SpiderSDL3GameplayPlan_OnFlip(game_hwnd," in game
+    assert "spider_latch_trace_init(ini,logger);" in probe
+    assert "spider_source_trace_init(ini,logger);" in probe
+    assert "SpiderSDL3GameplayLive_OnFlip(hwnd,menu2d,gameplay3d,bink,pause);" in probe
+    assert "spider_latch_trace_flip(hwnd,menu2d,gameplay3d,bink,pause);" in probe
+    assert "spider_source_trace_flip(hwnd,menu2d,gameplay3d,bink,pause);" in probe
+    assert "SpiderNativeReconnect_" not in probe+game
+    assert "spider_sdl3_gameplay_plan_step(" not in probe
+    assert "spider_sdl3_gameplay_plan_reset(s)" in h
+    for unsafe in ("VirtualProtect(", "SendInput(", "WriteProcessMemory(",
+                   "IDirectInputDevice8_", "CreateThread("):
+        assert unsafe not in probe
+
