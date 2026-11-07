@@ -17,7 +17,6 @@
 #include "sdl3_gameplay_plan.h"
 #include "sdl3_gameplay_live.h"
 #include "sdl3_gamepad_probe.h"
-#include "native_joystick_reconnect.h"
 #include "quick_exit_f12.h"
 #include "sdl3_native_latch_trace.h"
 #include "sdl3_native_source_trace.h"
@@ -65,7 +64,9 @@ void SpiderSDL3GameplayPlan_OnFlip(HWND hwnd,int menu2d,int gameplay3d,
     spider_sdl3_gameplay_plan_reset(&state);
     return;
   }
-  ready=SpiderNativeReconnect_SDL3SelectionReady(vid,pid);
+  /* The old DirectInput owner audit is retired with native reconnect.
+   * Do not infer a physical game-owned joystick from an SDL3 selection. */
+  ready=0;
   if(!ready) {
     SpiderQuickExitF12_CutscenePhysicalSample(0,0,0,0,0);
     spider_sdl3_gameplay_plan_reset(&state);
