@@ -88,6 +88,9 @@ The example `RawHex` line is **illustrative only**: the generated file contains 
 | `[Display] FPSLimit` | **Player-controlled frame limit.** Default `30`; `0` disables the limiter, `1..240` sets a target. Higher FPS can expose timing issues in the original game. |
 | `[Input] KeyboardLayout` | `Auto` detects the Windows/Wine input layout, `Off` leaves original QWERTY positions. |
 | `[Input] ExperimentalSDL3UniversalGameplay` | **Default `1`**: use SDL3's mapped controller profile for game menus, videos and 3D after explicit Start and neutral input. Set `0` to disable the universal bridge and preserve native behavior. |
+| `[Input] ExperimentalSDL3GameOverConfirm` | **Default `1`**: GAME OVER confirmation using SDL3 A/Cross, with an exact-source-verified original game-owner wrapper, six stable frames, neutral input and one press. **Set `0` to disable.** Invalid signatures or unavailable owner always fail closed; no request-2-only fallback. |
+| `[Input] ExperimentalSDL3GameOverOwnerProbe` | **Default `0` (not generated)**: independent, strictly read-only native-owner state correlation for GAME OVER research. Records bounded 3D baseline and candidate snapshots, with **no Enter injection**, even while `GameOverConfirm=0`. |
+| `[Input] ExperimentalSDL3GameOverNativeOwner` | **Default `0` (not generated)**: optional hook-only diagnostic mode. **Not required** with `GameOverConfirm=1`, which installs the same exact verified owner wrapper automatically. Hook-only mode never sends Enter by itself. |
 | `[Input] ExperimentalSDL3NativeOwner` | Default `0`; unrelated legacy experimental native-owner path, not required for universal gameplay. |
 | `[Audio]` | Music/effects, voice and movie volumes (0..100%); `Stereo=1` selects stereo. |
 | `[Keyboard]` / `[Joystick]` | The eleven original keyboard actions and seven joystick button bindings, also saved from the game's menus. |
@@ -98,6 +101,100 @@ The example `RawHex` line is **illustrative only**: the generated file contains 
 New installations generate `[Input] ExperimentalSDL3UniversalGameplay=1`. When the key is absent, the SDL3 runtime also defaults to `1`, provided `ExperimentalSDL3Probe=1` and `ExperimentalSDL3ControllerSetup=1`. The controller must be mapped by SDL3, explicitly selected with **Start**, and returned to neutral before it can drive gameplay. The original keyboard remains available. Disconnects, Alt+Tab and controller handoffs use the existing fail-closed guards; no automatic selection or hardware identity guess is introduced.
 
 To turn this functionality OFF, set `ExperimentalSDL3UniversalGameplay=0` in `[Input]` and restart. **Existing valid INIs are preserved**: users with a previous `=0` keep that setting until they manually change it to `=1`; the patch does not silently reinterpret a saved preference. The independent legacy experimental native-owner mode remains OFF by default.
+
+### GAME OVER native owner observer (2026-11-06)
+
+PR #110 now supports an **independent, bounded, read-only** original-engine
+state observer. To use it safely without activating the experimental Enter
+injection, set both keys in the existing `[Input]` section:
+
+```ini
+ExperimentalSDL3UniversalGameplay=1
+ExperimentalSDL3GameOverOwnerProbe=1
+ExperimentalSDL3GameOverConfirm=0
+```
+
+The passive observer is OFF by default. Its native-state candidate test
+does NOT call the one-shot confirmation policy and cannot send Enter.
+You may also enable the independent confirmation trial to correlate
+a *previously validated* South-to-Enter action, but it remains unsafe
+to enable this automatically for all users.
+
+Its `SDL3-GAMEOVER-OWNER-PROBE` messages record up to eight ordinary
+3D baseline samples (first frame, then one per 180 game Flips) and
+transitions into/out of the candidate, the sixth stable frame, and
+(if the separate confirmation trial is also enabled) the instant
+immediately before a fresh South-to-Enter action (global 32-report
+maximum). They contain the documented original script-manager
+pointer `[0x006A9038]`, guarded context/active/IP/skip fields at
+`+0x1AC/+0x1B4/+0x1B8/+0x1A4`, the original request/task/input
+states, the native pause menu pointers, cutscene flags and game tick.
+
+These values are **research evidence only**. A script manager is not a
+GAME OVER menu object, and a difference between two samples is not a
+proven unique owner. Failed or inaccessible memory reads are marked
+`base=0` or `script-ok=0` and cannot authorize Enter injection.
+No original executable bytes or player game state are modified.
+
+The previous 2026-11-06 EasySMX and PS3 hardware tests established that
+**a fresh South-to-Enter pulse works** under GE-Proton11-12 with explicit
+opt-in; they did not establish that request `2` is exclusive to GAME OVER.
+Do not enable this feature by default until a distinct source-verified
+native owner is identified and negative tests cover normal level changes,
+cinematics and native Pause.
+
+### GAME OVER: source-verified SDL3 confirmation enabled by default
+
+The game's original GAME OVER screen is owned by the source-verified
+original retail CALL `0x00455F91 → 0x0047D830`, which renders the
+authentic `game over` text and polls the original input system. It is
+**not** identified solely by the non-unique pending request `2`.
+See the [native code investigation](SDL3_GAMEOVER_NATIVE_OWNER.md).
+
+With SDL3 universal gameplay enabled, pressing the mapped **South/A/Cross**
+button confirms RETRY or QUIT. The fix is **ON by default**, including
+existing INIs that lack its key. Newly generated INIs contain:
+
+```ini
+[Input]
+ExperimentalSDL3UniversalGameplay=1
+ExperimentalSDL3GameOverConfirm=1
+```
+
+Set `ExperimentalSDL3GameOverConfirm=0` and restart to opt out.
+No additional GAME OVER option is needed.
+
+Safety conditions:
+- Exact supported original EXE SHA and five-byte CALL signature, correct
+  32-bit base address and valid relative hook displacement must match;
+  otherwise the hook logs `SDL3-GAMEOVER-NATIVE: hook REFUSED` and
+  GAME OVER Enter is **not** injected.
+- The original GAME OVER function must currently be executing inside
+  the verified wrapper; the original controller transition request
+  `[0x0060CFA4]=2` is **not** sufficient by itself.
+- The original task/input/menu/pause state and SDL3 foreground/selected
+  controller checks must match; six stable game Flips and a full
+  neutral input frame precede one new isolated South press.
+- The active South press is consumed instead of also issuing Space/Jump,
+  and release/focus change reverts to ordinary controller routing.
+
+The source-verified wrapper executes the **original native function
+exactly once**, preserves the native return value and does not modify
+the original EXE on disk. The resulting automatic fix has been exercised
+under GE-Proton11-12 with an Xbox 360 (2026-11-07): two owner entry/exit
+pairs, two single Enter pulses confined to the owner, and transitions
+consistent with RETRY and QUIT. Native Windows hardware validation
+remains separate from this Proton observation.
+
+For diagnostics, `[Debug] Log=1` exposes `SDL3-GAMEOVER-NATIVE`
+(owner enter/exit or hook refusal) and `SDL3-GAMEOVER` (stable
+candidate and one-shot Enter pulse). Note that `SendInput` acceptance
+does not itself prove the game handled an action: observe the visible
+RETRY/QUIT result too. The optional
+`ExperimentalSDL3GameOverOwnerProbe=1` is a bounded, read-only
+native-state tracer; `ExperimentalSDL3GameOverNativeOwner=1` enables
+a standalone hook-only diagnostic when confirmation is explicitly
+disabled. Neither diagnostic is required for normal play.
 
 ### Display resolution: native monitor first
 

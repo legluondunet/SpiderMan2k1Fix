@@ -233,4 +233,45 @@ static inline int spider_sdl3_universal_step(SpiderSDL3UniversalState *state,
   *desired=mask;
   return 1;
 }
+
+/* Strictly opt-in GAME OVER/RETRY/QUIT Enter trial.
+ * The native pending request 2 is NOT a unique scene identifier. The
+ * caller must additionally verify exact runtime state and foreground;
+ * we only produce one edge after six stable candidate frames and a full
+ * neutral frame, never by carrying an already held South across scenes.
+ * 0=normal gameplay, 1=Enter once, 2=consume until fully neutral. */
+#define SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES 6u
+typedef struct {
+  unsigned stable_frames;
+  unsigned armed;
+  unsigned consumed;
+} SpiderSDL3GameOverTrial;
+static inline void spider_sdl3_gameover_trial_reset(
+    SpiderSDL3GameOverTrial *s) {
+  if(s)memset(s,0,sizeof(*s));
+}
+static inline unsigned spider_sdl3_gameover_trial_step(
+    SpiderSDL3GameOverTrial *s,int candidate,int neutral,
+    int confirm_only) {
+  if(!s)return 0;
+  if(!candidate) {
+    spider_sdl3_gameover_trial_reset(s);
+    return 0;
+  }
+  if(s->stable_frames<SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES)
+    ++s->stable_frames;
+  if(s->stable_frames<SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES)
+    return 0;
+  if(neutral) {
+    s->armed=1;
+    s->consumed=0;
+    return 0;
+  }
+  if(s->consumed)return 2;
+  if(!s->armed || !confirm_only)return 0;
+  s->armed=0;
+  s->consumed=1;
+  return 1;
+}
+
 #endif

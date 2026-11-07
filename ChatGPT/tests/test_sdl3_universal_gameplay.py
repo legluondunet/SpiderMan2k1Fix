@@ -123,10 +123,21 @@ def test_universal_runtime_is_opt_in_and_mutually_exclusive():
     assert "SPIDER_UNIVERSAL_DI_SLOT" in backend
     assert "KEYEVENTF_SCANCODE" in backend
     assert "KEYEVENTF_EXTENDEDKEY" in backend
+    # The one explicitly opted-in GAME OVER CALL-site owner wrapper
+    # is the sole permitted code-page write. Ordinary SDL3 gameplay
+    # and DirectInput ownership must continue to use no code patching.
+    hook=backend.split(
+        "static int spider_gameover_owner_install_hook(void)",1
+    )[1].split("/* Exact retail PE32: keyboard GetDeviceData",1)[0]
+    rest=backend.replace(hook, "")
+    assert "VirtualProtect(" in hook
+    assert "original[5]={0xE8,0x9A,0x78,0x02,0x00}" in hook
+    assert "memcmp(site,original,sizeof(original))" in hook
+    assert "gameover_native_owner_trial_enabled" in backend
     for forbidden in ("VirtualProtect(", "WriteProcessMemory(",
                       "IDirectInputDevice8_Release(", "IDirectInputDevice8_Acquire(",
                       "SetWindowsHookEx(", "CreateThread("):
-        assert forbidden not in backend
+        assert forbidden not in rest
 
 
 def test_universal_native_di_is_neutral_gated_and_modal_safe():

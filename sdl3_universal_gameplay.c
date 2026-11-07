@@ -58,6 +58,47 @@ static unsigned pause_menu_trace_reports=0;
  * already been verified. Wine can keep GetForegroundWindow()==game even
  * while Firefox owns real X11 focus. */
 static int native_host_focus_blocked=0;
+/* Read-only diagnostic for the original 3D GAME OVER / RETRY / QUIT UI.
+ * Its black screen may retain the 3D renderer, so classifying it by the
+ * renderer alone would incorrectly interpret South/A/Cross as Jump.
+ * NO input routing changes until a native, distinctive state is proven.
+ * This probe logs raw retail-engine scalars on South/Confirm rising edges
+ * and a foreground F9 press; raw values are not assumed menu identity. */
+static unsigned gameover_probe_confirm_prev=0;
+static unsigned gameover_probe_f9_prev=0;
+static unsigned gameover_probe_confirm_edges=0;
+static unsigned gameover_probe_confirm_reports=0;
+static unsigned gameover_probe_f9_reports=0;
+/* One mandatory read-only South snapshot after each captured F9,
+ * even if routine gameplay presses have exhausted periodic sampling. */
+static unsigned gameover_probe_post_f9_confirm=0;
+static uint32_t gameover_probe_owner=0;
+/* Source-verified default-on GAME OVER confirmation for SDL3 pads.
+ * User can explicitly disable it in the INI (=0). No request-2-only
+ * Enter path: installed original owner + live call depth are mandatory. */
+static int gameover_trial_enabled=0;
+static int gameover_owner_probe_enabled=0; /* independent READ-ONLY opt-in */
+static int gameover_native_owner_trial_enabled=0; /* guarded original CALL wrapper */
+static volatile LONG gameover_native_owner_depth=0;
+static int gameover_native_owner_hook_installed=0;
+static unsigned gameover_native_owner_enter_reports=0;
+static unsigned gameover_trial_reports=0;
+/* Bounded passive owner-context comparison. No new gameplay gate here:
+ * the existing explicit opt-in is the ONLY permitted Return injection.
+ * Do not infer that [0x0060CFA4] alone means GAME OVER. */
+static unsigned gameover_owner_probe_frames=0;
+static unsigned gameover_owner_probe_baselines=0;
+static unsigned gameover_owner_probe_events=0;
+static int gameover_owner_probe_was_candidate=0;
+static uint32_t gameover_owner_probe_selected_id=0;
+static unsigned gameover_owner_probe_stable_frames=0;
+/* Source-recovered exact native "game over" text draw prerequisite.
+ * This source confirmation is telemetry ONLY, no automatic routing. */
+static int gameover_owner_probe_title_active=0;
+static uint32_t gameover_owner_probe_title_actor=0;
+static unsigned gameover_owner_probe_title_frame=0;
+
+static SpiderSDL3GameOverTrial gameover_trial;
 static void (*report)(const char *)=NULL;
 static void log_universal(const char *msg) {
   if(report && trace++<100u)report(msg);
@@ -65,10 +106,62 @@ static void log_universal(const char *msg) {
 static void log_native_pause_menu(const char *msg) {
   if(report && pause_menu_trace_reports++<48u)report(msg);
 }
+/* Exact supported PE32 only. Observes BSS/task bytes already cataloged
+ * in quick_exit_f12.c; never dereference opaque engine/menu objects. */
 static void log_focus_release(const char *msg) {
   /* Focus transitions are safety-critical; preserve diagnostics even
    * after the normal 100-line game-action trace budget is exhausted. */
   if(report && focus_release_reports++<24u)report(msg);
+}
+/* Authentic original GAME OVER owner (retail SHA-verified).
+ * 0x455F91 is the SINGLE x86 CALL to 0x47D830. The function owns
+ * native GAME OVER text and polls original game input, not a guessed
+ * pending transition. The 5-byte source-verified CALL-site wrapper
+ * executes the exact original 0x47D830 once and returns original EAX.
+ * Install only when SDL3 universal gameplay and the GAME OVER fix are
+ * enabled. Any signature/relocation error fails closed.
+ * No changes to original game files on disk. */
+static int __cdecl spider_gameover_owner_call_wrapper(void) {
+  int result;
+  InterlockedIncrement(&gameover_native_owner_depth);
+  if(report && gameover_native_owner_enter_reports++<5u)
+    report("SDL3-GAMEOVER-NATIVE: entered exact original 0x47D830 owner via 0x455F91 CALL (source-verified)");
+  result=((int (__cdecl *)(void))(uintptr_t)0x0047D830u)();
+  InterlockedDecrement(&gameover_native_owner_depth);
+  if(report && gameover_native_owner_enter_reports++<5u)
+    report("SDL3-GAMEOVER-NATIVE: exited exact original 0x47D830 owner (native result preserved)");
+  return result;
+}
+static int spider_gameover_owner_install_hook(void) {
+  static const BYTE original[5]={0xE8,0x9A,0x78,0x02,0x00};
+  BYTE patch[5]={0xE8,0,0,0,0};
+  BYTE *const site=(BYTE *)(uintptr_t)0x00455F91u;
+  MEMORY_BASIC_INFORMATION mbi;
+  DWORD protect,discard;
+  int64_t displacement;
+  int32_t rel;
+  if(gameover_native_owner_hook_installed)return 1;
+  if(sizeof(void*)!=4 || (uintptr_t)GetModuleHandleA(NULL)!=0x00400000u ||
+     VirtualQuery(site,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_NOACCESS|PAGE_GUARD)) ||
+     memcmp(site,original,sizeof(original))!=0)
+    return 0;
+  displacement=(int64_t)(uintptr_t)&spider_gameover_owner_call_wrapper -
+               ((int64_t)(uintptr_t)site+5);
+  if(displacement>INT32_MAX || displacement<INT32_MIN)return 0;
+  rel=(int32_t)displacement;
+  memcpy(patch+1,&rel,sizeof(rel));
+  if(!VirtualProtect(site,sizeof(patch),PAGE_EXECUTE_READWRITE,&protect))
+    return 0;
+  if(memcmp(site,original,sizeof(original))!=0) {
+    VirtualProtect(site,sizeof(patch),protect,&discard);
+    return 0;
+  }
+  memcpy(site,patch,sizeof(patch));
+  FlushInstructionCache(GetCurrentProcess(),site,sizeof(patch));
+  VirtualProtect(site,sizeof(patch),protect,&discard);
+  gameover_native_owner_hook_installed=memcmp(site,patch,sizeof(patch))==0;
+  return gameover_native_owner_hook_installed;
 }
 /* Exact retail PE32: keyboard GetDeviceData writes its own 256-byte
  * buffered key latch at 0x006B792C. This is DISTINCT from the original
@@ -303,6 +396,14 @@ static void restore_original(const char *reason) {
    * in BeforeUI and before any new joystick gameplay injection. */
   menu_previous=0;menu_arm=0;
   previous_context=SPIDER_UNIVERSAL_CTX_3D;
+  gameover_owner_probe_was_candidate=0;
+  gameover_owner_probe_selected_id=0;
+  gameover_owner_probe_frames=0;
+  gameover_owner_probe_stable_frames=0;
+  gameover_owner_probe_title_active=0;
+  gameover_owner_probe_title_actor=0;
+  gameover_owner_probe_title_frame=0;
+  spider_sdl3_gameover_trial_reset(&gameover_trial);
   spider_sdl3_universal_reset(&state);
 }
 void SpiderSDL3Universal_SetHostFocusBlocked(int blocked) {
@@ -352,6 +453,33 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   sent_mask=0;pulse_scan=0;menu_previous=menu_arm=0;
   previous_context=SPIDER_UNIVERSAL_CTX_3D;
   pause_context_reports=0;pause_command_reports=0;
+  gameover_probe_confirm_prev=gameover_probe_f9_prev=0;
+  gameover_probe_confirm_edges=gameover_probe_confirm_reports=0;
+  gameover_probe_f9_reports=0;gameover_probe_owner=0;
+  gameover_probe_post_f9_confirm=0;
+  gameover_trial_reports=0;
+  gameover_native_owner_enter_reports=0;
+  gameover_owner_probe_frames=0;
+  gameover_owner_probe_baselines=0;
+  gameover_owner_probe_events=0;
+  gameover_owner_probe_was_candidate=0;
+  gameover_owner_probe_selected_id=0;
+  gameover_owner_probe_stable_frames=0;
+  gameover_owner_probe_title_active=0;
+  gameover_owner_probe_title_actor=0;
+  gameover_owner_probe_title_frame=0;
+  spider_sdl3_gameover_trial_reset(&gameover_trial);
+  gameover_trial_enabled=ini &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverConfirm",1,ini)==1;
+  /* The confirmation opt-in ALWAYS requests the authenticated owner:
+   * never silently fall back to the legacy request-2-only action.
+   * The optional NativeOwner key is retained for owner-hook diagnostics
+   * without confirmation, but is no longer required for end users. */
+  gameover_native_owner_trial_enabled=gameover_trial_enabled ||
+    (ini && GetPrivateProfileIntA("Input",
+      "ExperimentalSDL3GameOverNativeOwner",0,ini)==1);
+  gameover_owner_probe_enabled=ini &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverOwnerProbe",0,ini)==1;
   spider_sdl3_universal_reset(&state);
   requested=ini &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1 &&
@@ -361,6 +489,16 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
     "SDL3-UNIVERSAL: default-on gameplay enabled for ANY mapped SDL3 gamepad; "
     "11 game keyboard actions + native Pause; original DirectInput "
     "suspended only while selected, strict neutral-first and focus release");
+  if(requested && gameover_trial_enabled && report)
+    report("SDL3-GAMEOVER: default-on SDL3 South/A/Cross confirmation; authenticated original native owner is mandatory; request-2-only fallback forbidden");
+  if(requested && gameover_native_owner_trial_enabled) {
+    int installed=spider_gameover_owner_install_hook();
+    if(report)report(installed?
+      "SDL3-GAMEOVER-NATIVE: SOURCE-VERIFIED exact 0x455F91 CALL wrapper installed; owner 0x47D830 (guarded)":
+      "SDL3-GAMEOVER-NATIVE: hook REFUSED; native owner unverified, source-based trial fails closed");
+  }
+  if(requested && gameover_owner_probe_enabled && report)
+    report("SDL3-GAMEOVER-OWNER-PROBE: passive native state observation enabled; independent of Enter trial; GAME OVER identity unverified");
 }
 int SpiderSDL3Universal_Enabled(void) {return requested;}
 int SpiderSDL3Universal_SuppressesNative(void) {return requested && suspended;}
@@ -448,6 +586,213 @@ static int binding_held(SpiderSDL3Binding b,
      b.index<SPIDER_SDL3_AXIS_COUNT)
     return sample->axis[b.index]>=11000;
   return 0;
+}
+static int gameover_probe_read_u32(uintptr_t address,uint32_t *out) {
+  MEMORY_BASIC_INFORMATION mbi;
+  uintptr_t base;
+  if(!out || sizeof(void*)!=4 ||
+     (uintptr_t)GetModuleHandleA(NULL)!=0x00400000u ||
+     VirtualQuery((const void *)address,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)))
+    return 0;
+  base=(uintptr_t)mbi.BaseAddress;
+  if(address<base || address-base>=mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(address-base)<sizeof(uint32_t))
+    return 0;
+  memcpy(out,(const void *)address,sizeof(*out));
+  return 1;
+}
+/* Exact-hash 2001 PC retail disassembly:
+ * 0x440B9C: player = [0x006A9038];
+ * 0x440BA5: signed short [player+0xE2] <= 0;
+ * 0x440BAF: DWORD [0x005FB1B0] == 1;
+ * 0x440BDF: fetch original "game over" text pointer for its draw.
+ * 0x4B28A5..0x4B28BD may subsequently clear that display flag and
+ * issue request=2 after 0x6A7F98>=0x78; three other writers of
+ * request=2 are present. Do not grant routing authority from these
+ * fields without matching field hardware evidence. */
+static int gameover_probe_native_title_now(uint32_t *actor_out,
+    int *health_out,uint32_t *mode_out,uint32_t *timer_out) {
+  uint32_t actor=0,hpword=0,mode=0,timer=0;
+  int health=0;
+  if(actor_out)*actor_out=0;
+  if(health_out)*health_out=0;
+  if(mode_out)*mode_out=0;
+  if(timer_out)*timer_out=0;
+  if(!gameover_probe_read_u32(0x006A9038u,&actor) ||
+     !gameover_probe_read_u32(0x005FB1B0u,&mode) ||
+     !gameover_probe_read_u32(0x006A7F98u,&timer))
+    return 0;
+  if(actor_out)*actor_out=actor;
+  if(mode_out)*mode_out=mode;
+  if(timer_out)*timer_out=timer;
+  if(actor<0x10000u || actor>0x7fff0000u ||
+     !gameover_probe_read_u32((uintptr_t)actor+0xE0u,&hpword))
+    return 0;
+  health=(int)(int16_t)(hpword>>16);
+  if(health_out)*health_out=health;
+  return health<=0 && mode==1u;
+}
+static int gameover_probe_native_title_recent(uint32_t actor) {
+  return gameover_owner_probe_title_frame!=0u &&
+    actor!=0u && actor==gameover_owner_probe_title_actor &&
+    gameover_owner_probe_frames>=gameover_owner_probe_title_frame &&
+    gameover_owner_probe_frames-gameover_owner_probe_title_frame<=300u;
+}
+/* Read-only candidate correlation, also callable by the independent
+ * passive owner observer. [0x60CFA4] is a pending transition request,
+ * NOT an authoritative GAME OVER owner. The only caller that can inject
+ * Return remains guarded by gameover_trial_enabled below. */
+static int gameover_trial_candidate(unsigned context,int menu,int gameplay,
+    int bink,int native_pause) {
+  uint32_t request=0,task=0,input_active=0,pause_ctx=0,menu_ctx=0;
+  uint32_t dispatcher=0,transition=0;
+  if(context!=SPIDER_UNIVERSAL_CTX_3D ||
+     menu || !gameplay || bink || native_pause)return 0;
+  if(!gameover_probe_read_u32(0x0060CFA4u,&request) ||
+     !gameover_probe_read_u32(0x0054A510u,&task) ||
+     !gameover_probe_read_u32(0x006B78F0u,&input_active) ||
+     !gameover_probe_read_u32(0x00682950u,&pause_ctx) ||
+     !gameover_probe_read_u32(0x00682948u,&menu_ctx) ||
+     !gameover_probe_read_u32(0x0068293Cu,&dispatcher) ||
+     !gameover_probe_read_u32(0x0054D38Cu,&transition))
+    return 0;
+  return request==2u && task==0x14u && input_active==1u &&
+         !pause_ctx && !menu_ctx && !dispatcher && !transition;
+}
+static int gameover_trial_confirm_only(
+    const SpiderSDL3ControllerProfile *profile,
+    const SpiderSDL3ControllerSample *sample) {
+  unsigned i,buttons;
+  if(!profile || !sample ||
+     !binding_held(profile->context[SPIDER_SDL3_CONTEXT_CONFIRM],sample))
+    return 0;
+  buttons=sample->buttons;
+  /* Only one digital button and no stick/trigger/D-pad accompaniment.
+   * An ambiguous chord never invokes Return; keyboard stays available. */
+  if(!buttons || (buttons&(buttons-1u)))return 0;
+  for(i=0;i<SPIDER_SDL3_AXIS_COUNT;i++)
+    if(sample->axis[i] <= -9000 || sample->axis[i] >= 9000)return 0;
+  return 1;
+}
+/* Sample ORIGINAL game-owned state without changing native memory, hooking
+ * an unknown engine routine, or reading arbitrary script contents. The
+ * existing binary research verified the manager pointer [0x006A9038]
+ * and the CutSceneScript offsets. Presence/absence of those structures
+ * is NOT a unique GAME OVER identity. We need both ordinary 3D and
+ * death-screen observations before any default-on behavior is justified.
+ *
+ * Each read uses the same 32-bit exact-image guarded VirtualQuery reader
+ * as the original controller probe. Failed reads are marked unavailable. */
+static void gameover_owner_probe_dump(const char *phase,uint32_t owner,
+    unsigned context,int candidate) {
+  uint32_t request=0,task=0,input_active=0,script=0;
+  uint32_t script_ctx=0,script_active=0,script_ip=0,script_skip=0;
+  uint32_t pause_menu=0,restart_menu=0,flags=0,tick=0;
+  uint32_t title_actor=0,title_mode=0,title_timer=0;
+  int title_health=0,title_now=0,title_recent=0;
+  unsigned base_ok=0,script_ok=0;
+  char msg[900];
+  if(!gameover_owner_probe_enabled || !report ||
+     gameover_owner_probe_events>=32u)return;
+  ++gameover_owner_probe_events;
+  base_ok=
+    gameover_probe_read_u32(0x0060CFA4u,&request) &&
+    gameover_probe_read_u32(0x0054A510u,&task) &&
+    gameover_probe_read_u32(0x006B78F0u,&input_active) &&
+    gameover_probe_read_u32(0x006A9038u,&script) &&
+    gameover_probe_read_u32(0x00682968u,&pause_menu) &&
+    gameover_probe_read_u32(0x00682960u,&restart_menu) &&
+    gameover_probe_read_u32(0x02E0988Cu,&flags) &&
+    gameover_probe_read_u32(0x006B4CA0u,&tick);
+  if(base_ok && script>=0x10000u && script<=0x7fff0000u) {
+    uintptr_t ptr=(uintptr_t)script;
+    script_ok=
+      gameover_probe_read_u32(ptr+0x1ACu,&script_ctx) &&
+      gameover_probe_read_u32(ptr+0x1B4u,&script_active) &&
+      gameover_probe_read_u32(ptr+0x1B8u,&script_ip) &&
+      gameover_probe_read_u32(ptr+0x1A4u,&script_skip);
+  }
+  title_now=gameover_probe_native_title_now(&title_actor,
+    &title_health,&title_mode,&title_timer);
+  title_recent=gameover_probe_native_title_recent(title_actor);
+  snprintf(msg,sizeof(msg),
+    "SDL3-GAMEOVER-OWNER-PROBE: phase=%s selected=%lu ctx=%u candidate=%d request=%08lX task=%08lX input=%08lX script=%08lX context=%08lX active=%08lX ip=%08lX skip=%08lX pause-menu=%08lX restart-menu=%08lX flags=%08lX tick=%08lX title-actor=%08lX title-hp=%d title-mode=%08lX title-timer=%08lX title-now=%d title-recent=%d base=%u script-ok=%u [PASSIVE; NO CONFIRMED GAME-OVER OWNER]",
+    phase?phase:"unknown",(unsigned long)owner,context,candidate,
+    (unsigned long)request,(unsigned long)task,(unsigned long)input_active,
+    (unsigned long)script,(unsigned long)script_ctx,
+    (unsigned long)script_active,(unsigned long)script_ip,
+    (unsigned long)script_skip,(unsigned long)pause_menu,
+    (unsigned long)restart_menu,(unsigned long)flags,
+    (unsigned long)tick,(unsigned long)title_actor,title_health,
+    (unsigned long)title_mode,(unsigned long)title_timer,
+    title_now,title_recent,base_ok,script_ok);
+  report(msg);
+}
+
+static void gameover_probe_snapshot(uint32_t owner,unsigned context,
+    int menu,int gameplay,int bink,int native_pause,
+    const SpiderSDL3ControllerProfile *profile,
+    const SpiderSDL3ControllerSample *sample) {
+  uint32_t engine_mode=0,task=0,input_active=0;
+  uint32_t pause_context=0,menu_context=0,dispatcher=0,transition=0;
+  unsigned confirm=0,f9=0,confirm_edge,f9_edge,confirm_after_f9=0;
+  int good;
+  char line[450];
+  if(!report || !profile || !sample)return;
+  /* Passive edge tracking is owner-specific; no inherited held South
+   * on controller handoff or a false first frame. */
+  if(gameover_probe_owner!=owner) {
+    gameover_probe_owner=owner;
+    gameover_probe_confirm_prev=0;
+    gameover_probe_f9_prev=0;
+    gameover_probe_post_f9_confirm=0;
+  }
+  confirm=(unsigned)binding_held(
+      profile->context[SPIDER_SDL3_CONTEXT_CONFIRM],sample);
+  f9=(GetAsyncKeyState(VK_F9)&0x8000)!=0;
+  confirm_edge=confirm && !gameover_probe_confirm_prev;
+  f9_edge=f9 && !gameover_probe_f9_prev;
+  gameover_probe_confirm_prev=confirm;
+  gameover_probe_f9_prev=f9;
+  if(confirm_edge)++gameover_probe_confirm_edges;
+  /* Each recorded F9 arms exactly one following South/Confirm snapshot.
+   * This is bounded by the independent 8-F9 budget, and ensures the
+   * actual GAME OVER Confirm is not lost to earlier combat presses. */
+  if(f9_edge && gameover_probe_f9_reports<8u)
+    gameover_probe_post_f9_confirm=1u;
+  if(!f9_edge && confirm_edge && gameover_probe_post_f9_confirm) {
+    confirm_after_f9=1u;
+    gameover_probe_post_f9_confirm=0;
+  }
+  /* Otherwise bound ordinary combat noise: first 3, then every 16th
+   * confirm edge, with a separate 12-event allowance. */
+  if(!((f9_edge && gameover_probe_f9_reports<8u) ||
+       (confirm_edge && (confirm_after_f9 ||
+        (gameover_probe_confirm_reports<12u &&
+         (gameover_probe_confirm_edges<=3u ||
+          gameover_probe_confirm_edges%16u==0u))))))return;
+  good=
+    gameover_probe_read_u32(0x0060CFA4u,&engine_mode) &&
+    gameover_probe_read_u32(0x0054A510u,&task) &&
+    gameover_probe_read_u32(0x006B78F0u,&input_active) &&
+    gameover_probe_read_u32(0x00682950u,&pause_context) &&
+    gameover_probe_read_u32(0x00682948u,&menu_context) &&
+    gameover_probe_read_u32(0x0068293Cu,&dispatcher) &&
+    gameover_probe_read_u32(0x0054D38Cu,&transition);
+  if(f9_edge && gameover_probe_f9_reports<8u)
+    ++gameover_probe_f9_reports;
+  else if(confirm_edge && gameover_probe_confirm_reports<12u)
+    ++gameover_probe_confirm_reports;
+  snprintf(line,sizeof(line),
+    "SDL3-GAMEOVER-PROBE: %s selected=%lu ctx=%u renderer(menu=%d 3d=%d bink=%d native-pause=%d) south-edges=%u after-f9=%u engine-mode=%08lX task=%08lX input-active=%08lX pause-ctx=%u menu-ctx=%u dispatcher=%08lX transition=%08lX raw=%s [READ-ONLY; NOT A GAME-OVER DETECTOR]",
+    f9_edge?"F9":"CONFIRM",(unsigned long)owner,context,
+    menu,gameplay,bink,native_pause,gameover_probe_confirm_edges,
+    confirm_after_f9,(unsigned long)engine_mode,(unsigned long)task,
+    (unsigned long)input_active,(unsigned)(pause_context!=0u),
+    (unsigned)(menu_context!=0u),(unsigned long)dispatcher,
+    (unsigned long)transition,good?"OK":"UNAVAILABLE");
+  report(line);
 }
 static void pulse(unsigned scan,const char *context) {
   if(pulse_scan || !send_scan(scan,0))return;
@@ -700,6 +1045,50 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   }
   context=spider_sdl3_universal_route_context(
     menu,gameplay,bink,native_pause);
+  /* F9/physical South read-only evidence for a possible original
+   * GAME OVER overlay still running under the 3D renderer.  Do NOT
+   * inject Enter until a unique game-owned state is established. */
+  gameover_probe_snapshot(id,context,menu,gameplay,bink,native_pause,
+                          profile,&sample);
+  /* Keep diagnostics attached to the selected controller identity.
+   * A Start-driven handoff and focus restoration must not carry a
+   * previous controller's GAME OVER candidate evidence. */
+  if(gameover_owner_probe_enabled && gameover_owner_probe_selected_id!=id) {
+    gameover_owner_probe_selected_id=id;
+    gameover_owner_probe_frames=0;
+    gameover_owner_probe_was_candidate=0;
+    gameover_owner_probe_stable_frames=0;
+    gameover_owner_probe_title_active=0;
+    gameover_owner_probe_title_actor=0;
+    gameover_owner_probe_title_frame=0;
+    gameover_owner_probe_dump("SELECTED-PAD-CHANGE",id,context,0);
+  }
+  /* Low-volume control samples of unmodified original 3D gameplay:
+   * compare these to candidate-armed/South samples in the SAME run.
+   * Do not log continuously or classify a menu from these fields. */
+  if(gameover_owner_probe_enabled &&
+     context==SPIDER_UNIVERSAL_CTX_3D) {
+    ++gameover_owner_probe_frames;
+    {
+      uint32_t actor=0;
+      int title=gameover_probe_native_title_now(&actor,NULL,NULL,NULL);
+      if(title) {
+        gameover_owner_probe_title_frame=gameover_owner_probe_frames;
+        gameover_owner_probe_title_actor=actor;
+      }
+      if(title!=gameover_owner_probe_title_active) {
+        gameover_owner_probe_title_active=title;
+        gameover_owner_probe_dump(title?"SOURCE-GAMEOVER-TITLE-ON":
+          "SOURCE-GAMEOVER-TITLE-OFF",id,context,0);
+      }
+    }
+    if(gameover_owner_probe_baselines<8u &&
+       (gameover_owner_probe_frames==1u ||
+        gameover_owner_probe_frames%180u==0u)) {
+      ++gameover_owner_probe_baselines;
+      gameover_owner_probe_dump("3D-BASELINE",id,context,0);
+    }
+  }
   if(context!=previous_context) {
     /* Entering the native 3D Pause screen is NOT a gameplay frame.
      * Reset action edges; a fully released controller must arm menu
@@ -720,6 +1109,14 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   }
   if(context!=SPIDER_UNIVERSAL_CTX_3D) {
     unsigned i;
+    if(gameover_owner_probe_was_candidate)
+      gameover_owner_probe_dump("CANDIDATE-CONTEXT-EXIT",id,context,0);
+    gameover_owner_probe_was_candidate=0;
+    gameover_owner_probe_stable_frames=0;
+    gameover_owner_probe_title_active=0;
+    gameover_owner_probe_title_actor=0;
+    gameover_owner_probe_title_frame=0;
+    spider_sdl3_gameover_trial_reset(&gameover_trial);
     /* Context controls are independent from the seven 3D game actions.
      * Keyboard remains available throughout menus and cinematics. */
     spider_sdl3_universal_reset(&state);
@@ -781,6 +1178,65 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
       restore_original("neutral rearm KEYUP failed");
     }
     return;
+  }
+  if(gameover_trial_enabled || gameover_owner_probe_enabled) {
+    /* A request-2 transition is only passive evidence. It is never
+     * sufficient to synthesize Return, even when the user opts into the
+     * confirmation trial without the new native-owner option. */
+    int candidate=gameover_trial_candidate(context,menu,gameplay,bink,native_pause);
+    int owner_confirm=candidate && gameover_native_owner_trial_enabled &&
+      gameover_native_owner_hook_installed &&
+      InterlockedCompareExchange(&gameover_native_owner_depth,0,0)>0;
+    unsigned stable_before=gameover_trial.stable_frames;
+    unsigned trial=0u;
+    if(gameover_owner_probe_enabled) {
+      if(candidate!=gameover_owner_probe_was_candidate) {
+        gameover_owner_probe_dump(candidate?"CANDIDATE-ENTER":
+          "CANDIDATE-EXIT",id,context,candidate);
+        gameover_owner_probe_was_candidate=candidate;
+      }
+      if(candidate) {
+        unsigned stable_probe_before=gameover_owner_probe_stable_frames;
+        if(gameover_owner_probe_stable_frames<
+           SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES)
+          ++gameover_owner_probe_stable_frames;
+        if(stable_probe_before<SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES &&
+           gameover_owner_probe_stable_frames==
+           SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES)
+          gameover_owner_probe_dump("CANDIDATE-STABLE",id,context,1);
+      } else gameover_owner_probe_stable_frames=0;
+    }
+    /* Return is evaluated only while the default-enabled, explicitly
+     * disableable GAME OVER option is on. Passive owner diagnostics
+     * NEVER invoke the one-shot policy or dispatch any key. */
+    if(gameover_trial_enabled)
+      trial=spider_sdl3_gameover_trial_step(&gameover_trial,owner_confirm,
+        spider_sdl3_universal_neutral(&sample),
+        gameover_trial_confirm_only(profile,&sample));
+    if(owner_confirm &&
+       stable_before<SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES &&
+       gameover_trial.stable_frames==SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES &&
+       report && gameover_trial_reports++<12u)
+      report("SDL3-GAMEOVER: CANDIDATE stable within source-verified native GAME OVER owner for six Flips; awaiting neutral then one fresh South");
+    if(trial) {
+      /* Never combine 3D Jump/Space with the experiment's Enter,
+       * nor repeat Enter while the physical button is held. */
+      if(!update_keys(0u,scans)) {
+        restore_original("GAME OVER trial action release failed");
+        return;
+      }
+      if(trial==1u) {
+        gameover_owner_probe_dump("SOUTH-BEFORE-PULSE",id,context,owner_confirm);
+        pulse(0x1cu,"native GAME OVER Return confirmation");
+        if(pulse_scan!=0x1cu) {
+          restore_original("GAME OVER trial Enter pulse failed");
+          return;
+        }
+        if(report && gameover_trial_reports++<12u)
+          report("SDL3-GAMEOVER: ENTER PULSE accepted by OS after fresh South inside authenticated native owner (game reception unverified)");
+      }
+      return;
+    }
   }
   if(!update_keys(desired,scans)) {
     log_universal("SDL3-UNIVERSAL: SendInput failure; releasing and restoring native owner");
