@@ -2147,7 +2147,7 @@ def test_default_generated_ini_omits_development_f10_shortcut():
 def test_movie4_input_release_safety_remains_enabled_when_f10_shortcut_off():
     """Regression: Enter on Bink #4 must not skip 3D intro with F10 disabled."""
     source=SRC
-    off=source[source.index('if(strcmp(val,"1")!=0) {',source.index("void SpiderQuickExitF12_Init(")):
+    off=source[source.index('if(!shortcut_enabled) {',source.index("void SpiderQuickExitF12_Init(")):
                source.index('/* Shell_MainMenu has 8 entries.',source.index("void SpiderQuickExitF12_Init("))]
     assert "install_intro_tick_hooks()" in off
     assert "install_movie4_safety_only_game_input_hook()" in off
