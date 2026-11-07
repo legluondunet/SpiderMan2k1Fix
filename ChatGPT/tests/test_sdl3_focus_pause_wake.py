@@ -26,7 +26,8 @@ def test_sdl3_wake_uses_selected_owner_and_same_game_thread():
     assert "sdl3_game_thread!=GetCurrentThreadId()" in begin
     assert "SpiderSDL3Probe_NativeOwnerEnabled()" in begin
     assert "SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id)" in begin
-    assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in begin
+    assert "SpiderNativeReconnect_SDL3SelectionReady(" not in begin
+    assert "SpiderSDL3Probe_SelectedMappedSample(" in begin
     assert "sdl_connected(pads[i].handle)" in begin
     assert "GetForegroundWindow()!=hwnd" in poll
     assert poll.index("GetForegroundWindow()!=hwnd") < poll.index("sdl_pump();")
@@ -73,7 +74,8 @@ def test_selected_universal_ps3_wake_is_strictly_digital_and_keeps_native_path()
     assert "SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample)" in begin
     assert "sdl_pause_universal=1;" in begin
     assert "else if(!SpiderSDL3Probe_NativeOwnerEnabled()" in begin
-    assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in begin
+    assert "SpiderNativeReconnect_SDL3SelectionReady(" not in begin
+    assert "SpiderSDL3Probe_SelectedMappedSample(" in begin
     assert "sdl_pause_id=id;sdl_pause_vid=vid;sdl_pause_pid=pid;" in begin
     assert "selected universal mapped pad armed" in begin
     assert "GetForegroundWindow()!=hwnd" in poll
