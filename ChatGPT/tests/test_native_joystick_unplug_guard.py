@@ -85,13 +85,13 @@ def test_stub_preserves_all_other_hresult_error_paths():
     for banned in ("ExitProcess(", "TerminateProcess(", "SetWindowsHookEx(",
                    "IDirectInputDevice8_Acquire(", "IDirectInput8_CreateDevice("):
         assert banned not in SOURCE
-    assert "GetPrivateProfileIntA(\"Input\"," in SOURCE
+    assert "InterlockedExchange(&requested,1);" in SOURCE
 
 
 def test_ini_and_build_integration_enabled_by_default_with_explicit_opt_out():
-    assert 'ExperimentalNativeJoystickUnplugGuard=1' in TEMPLATE
+    assert 'ExperimentalNativeJoystickUnplugGuard=1' not in TEMPLATE
     assert '"ExperimentalNativeJoystickUnplugGuard"' in INI
-    assert '"ExperimentalNativeJoystickUnplugGuard",1,ini)==1' in SOURCE
+    assert 'GetPrivateProfileIntA("Input","ExperimentalNativeJoystickUnplugGuard"' not in SOURCE
     assert "#include \"native_joystick_unplug.h\"" in MAIN
     assert MAIN.index("if (!supported_exe())") < MAIN.index("SpiderNativeUnplug_Init(ini,log_line);")
     assert "SpiderNativeUnplug_OnFlip(count);" in MAIN

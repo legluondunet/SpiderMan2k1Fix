@@ -43,7 +43,7 @@ def test_default_on_universal_and_native_device_safety_still_separate():
     adapter=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
     core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
     native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3UniversalGameplay",1,ini)==1' in adapter
+    assert "requested=1; /* SDL3-only gameplay, no legacy-INI opt-out. */" in adapter
     assert "SpiderNativeUnplug_OnFlip(count);" in core
     assert "SpiderNativeReconnect_OnFlip(count,game_hwnd);" in core
     assert "if(SpiderSDL3Universal_Enabled())return;" in native

@@ -35,11 +35,11 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **Widescreen HUD:** Corrects the proportions and positioning of HUD elements, including health and web gauges, compass, mission objectives, boss health bars, and in-game pause menus. Tested at 1920×1080 (16:9) and 1920×1200 (16:10).
 - **FPS limiter:** Configurable frame-rate cap, set to **30 FPS by default**. Lower limits, such as 20 FPS, can be selected for timing-sensitive gameplay.
 - **Alt+Tab stability:** Background game pause, synchronized Bink/DirectSound, and keyboard/gamepad resume. Press and release any key or an eligible selected controller button after returning. The OS desktop cursor is restored. See [focus details](docs/references/CONFIGURATION.md).
-- **Universal SDL3 gamepads (ON by default):** SDL3 recognizes mapped controllers with customizable per-model profiles. Press **Start** on a neutral pad to select it for menus, videos and 3D gameplay. Hot-unplug cannot silently switch controller ownership; the keyboard still works. Old hard-coded Xbox/DS4 presets are retired. Set `[Input] ExperimentalSDL3UniversalGameplay=0` to opt out. Xbox 360, PS3 and DS4 passed GE-Proton hardware tests; native Windows testing remains deferred.
+- **Universal SDL3 gamepads (the only supported controller backend):** SDL3 recognizes mapped controllers with customizable per-model profiles. Press **Start** on a neutral pad to select it for menus, videos and 3D gameplay. Unknown or unmapped devices are not given legacy DirectInput button mappings. Game/Win32 safety checks and original keyboard controls remain in place. Xbox 360, PS3 and DS4 passed GE-Proton hardware tests; native Windows testing remains separate.
 - **Keyboard layouts:** Automatically detects the active keyboard layout and adapts the game's controls, keyboard labels, and cheat-code entry. The original game only supported QWERTY layouts.
 - **No game mouse:** Keyboard/gamepad only. Game cursor, clicks and polling are permanently off. Desktop pointer unaffected; legacy `MouseEnabled` ignored.
 - **DPI awareness:** Handles Windows display scaling to ensure correct window dimensions and rendering on high-DPI displays.
-- **Settings preservation:** Keyboard, gamepad, audio, and brightness settings are managed through `SpiderMan2k1Fix.ini`, with automatic recovery of invalid settings and a single rolling `.ini.old` backup. The original `Spidey.cfg` file is no longer needed.
+- **Settings preservation:** Keyboard, audio, and brightness settings are managed through `SpiderMan2k1Fix.ini`; SDL3 controller mappings are stored separately per model, with automatic recovery of invalid settings and a single rolling `.ini.old` backup. The original `Spidey.cfg` file is no longer needed.
 - **PNG screenshots:** Press **F9** to save lossless screenshots (`scrnNNNN.png`) under `SpiderMan2k1Fix/screenshots/` (per-user fallback when the game folder is read-only).
 - **Debug logging:** With `[Debug] Log=1`, `SpiderMan2k1Fix.log` automatically includes a one-shot `SYS-INFO` configuration report: OS/Win32 version, detected Wine and Proton hints, Linux kernel as reported by Wine, CPU and core counts, RAM, GPU and D3D9 driver metadata, display resolution/count/refresh, available Linux desktop session hints, plus XInput/DirectInput gamepads. No extra log option is needed.
 - **Build identification:** Displays the patch version and source commit in the game's main menu and diagnostic logs.
@@ -47,7 +47,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 
 Successfully tested on Windows 11 and Linux/Wine.
 
-**First-time Xbox setup:** no controller profile or INI edit is needed for a normally recognized Xbox 360 gamepad. Launch the game, let the controller return to neutral, then press Start to select it. You may still customize the per-model profile. Original `[Joystick]` defaults remain untouched.
+**First-time Xbox setup:** no controller INI edit is needed for a normally recognized Xbox 360 gamepad. Launch the game, let the controller return to neutral, then press Start to select it. You may still customize the per-model profile. Original `[Joystick]` defaults remain untouched.
 
 ## Bugs Resolved
 
@@ -122,7 +122,7 @@ game build or sound configuration.
 1. Install the original *Spider-Man (2001)* PC game.
 2. Download the latest version of SpiderMan2k1Fix from the [GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases) page.
 3. Extract the archive **without flattening its folders** into the game's installation directory. Place only `winmm.dll` alongside `SpideyPC.exe`; the archive places `SpiderMan2k1Fix.dll`, **official Windows x86 `SDL3.dll`**, its license and the project documentation inside `SpiderMan2k1Fix/`.
-   - No separate SDL3 download is needed. SDL3 discovery, setup and universal gameplay are ON by default for mapped controllers; Start and neutral-first ownership are still required. Explicit `[Input] ExperimentalSDL3UniversalGameplay=0` disables universal gameplay. Unsupported or ambiguous devices retain fail-closed handling.
+   - No separate SDL3 download is needed. SDL3 discovery, setup and universal gameplay are built in and no longer controlled by INI switches. Start and neutral-first ownership are still required. Unsupported or ambiguous devices are refused; no legacy controller mapping fallback is offered.
    - Do not move the original game's executable, data or resources.
 4. Launch the game normally under Windows.
 

@@ -184,33 +184,23 @@ void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
   spider_sdl3_universal_reset(&generic_actions);
   bindings_trace_requested=ini &&
     GetPrivateProfileIntA("Debug","SDL3BindingTrace",0,ini)==1;
-  requested=ini && GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1;
-  universal_requested=requested && ini &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3UniversalGameplay",1,ini)==1;
-  SpiderSDL3ProfileStore_Init(requested && ini &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3ControllerSetup",1,ini)==1,logger);
+  /* SDL3 is the only supported mapping backend. Old INI toggles no longer
+   * change whether discovery, profiles, or universal gameplay run. */
+  requested=1;
+  universal_requested=1;
+  SpiderSDL3ProfileStore_Init(1,logger);
   if(bindings_trace_requested && !requested) {
     bindings_trace_requested=0;
     say("SDL3-BINDINGS: disabled because ExperimentalSDL3Probe=0");
   }
   if(bindings_trace_requested)
     say("SDL3-BINDINGS: optional semantic action probe ENABLED (read-only; no gameplay remap, no UI changes; max 48 events)");
-  native_owner_requested=requested &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1;
-  /* Native ownership is a legacy opt-in distinct from the universal
-   * SDL3 keyboard bridge. The removed fixed-button MappingSwap switch is
-   * no longer a dependency: recovery must never rewrite any action map. */
-  if(native_owner_requested &&
-     (GetPrivateProfileIntA("Input","ExperimentalNativeJoystickUnplugGuard",1,ini)!=1 ||
-      GetPrivateProfileIntA("Input","ExperimentalNativeJoystickReconnect",1,ini)!=1)) {
-    native_owner_requested=0;
-    say("SDL3-OWNER: REFUSED missing native UnplugGuard+Reconnect opt-ins; SDL3 stays passive");
-  }
+  /* Retire the legacy SDL3-identity -> native DirectInput rebind: mapped
+   * SDL3 input goes through the universal adapter exclusively. */
+  native_owner_requested=0;
   if(requested)say("SDL3-PROBE: enabled by default; discovery and selection available (explicit INI opt-out supported)");
   if(universal_requested)
     say("SDL3-UNIVERSAL: default-on logical Start selection for mapped SDL3 pads; no unverified native DI rebind");
-  if(native_owner_requested)
-    say("SDL3-OWNER: EXPERIMENT requested; selected SDL3 identity may authorize opt-in DirectInput native + UI bridge (STRICT, FAIL-CLOSED)");
 }
 
 int SpiderSDL3Probe_NativeOwnerEnabled(void) {

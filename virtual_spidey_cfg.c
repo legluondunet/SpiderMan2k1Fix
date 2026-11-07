@@ -403,36 +403,11 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "[Input]\r\n"
     "; Auto = OS keyboard layout; Off = original physical QWERTY positions.\r\n"
     "KeyboardLayout=Auto\r\n"
-    "; SDL3 detection/setup is ON; legacy native-owner rebinding is OFF.\r\n"
-    "; Universal SDL3 gameplay is ON by default; use =0 to disable.\r\n"
-    "; Unknown, ambiguous or invalid input devices remain fail-closed.\r\n"
-    "ExperimentalSDL3Probe=1\r\n"
-    "ExperimentalSDL3NativeOwner=0\r\n"
-    "ExperimentalSDL3ControllerSetup=1\r\n"
-
-    "; Universal SDL3 profile-to-gameplay keyboard adapter.\r\n"
-    "; ON by default; an explicit 0 keeps native game controls.\r\n"
-    "ExperimentalSDL3UniversalGameplay=1\r\n"
-    "; GAME OVER South/A/Cross confirmation: authenticated native owner.\r\n"
-    "; Default ON; =0 disables. Exact original CALL signature required.\r\n"
-    "; No request-2-only Enter fallback, no unverified EXE patches.\r\n"
-    "ExperimentalSDL3GameOverConfirm=1\r\n"
-    "; Exact game-owned Left Alt recovery after confirmed Alt+Tab only.\r\n"
-    "; Default ON; native opcode/OS modifier safety gates remain enforced.\r\n"
+    "; SDL3 detection, setup and universal gameplay are built-in.\r\n"
+    "; Only SDL3-mapped controllers are supported; mappings live in controllers/.\r\n"
+    "; Original game joystick bytes stay preserved in [Internal] RawHex.\r\n"
+    "; Left Alt recovery after Alt+Tab remains configurable.\r\n"
     "ExperimentalAltLatchRecovery=1\r\n"
-    "; Mouse input is permanently disabled IN-GAME (keyboard/gamepad only).\r\n"
-    "; Windows/Linux desktop pointer behavior remains unchanged.\r\n"
-    "; SDL3 discovers known Xbox, Sony and other mapped controllers using\r\n"
-    "; its own gamepad database. First-use mappings use generic semantic\r\n"
-    "; defaults until the user customizes their model profile.\r\n"
-    "; Old hard-coded PS1/Xbox preview and DirectInput button presets are\r\n"
-    "; retired; no fixed per-vendor gameplay action mapping is applied.\r\n"
-    "; Native gamepad safety: prevent original unplug crash (default ON).\r\n"
-    "; The reconnect owner is controlled and verified independently.\r\n"
-    "ExperimentalNativeJoystickUnplugGuard=1\r\n"
-    "; Native gamepad reconnect on supported, verified controller (default ON).\r\n"
-    "; Requires ExperimentalNativeJoystickUnplugGuard=1.\r\n"
-    "ExperimentalNativeJoystickReconnect=1\r\n"
     "\r\n"
     "[Audio]\r\n"
     "; All levels are 0..100 percent, with lossless raw values kept below.\r\n";
@@ -526,6 +501,15 @@ static const struct {const char *section,*key;} deprecated_ini_keys[]={
   {"Input","PauseOnFocusLoss"},{"Input","PauseBinkOnFocusLoss"},
   {"Input","PauseDirectSoundOnFocusLoss"},{"Input","PauseOverlay"},
   {"Input","PauseDim"},
+  /* SDL3 is mandatory; remove retired opt-outs and native controller
+   * recovery flags when rebuilding older INIs. Preserve user settings. */
+  {"Input","ExperimentalSDL3Probe"},
+  {"Input","ExperimentalSDL3NativeOwner"},
+  {"Input","ExperimentalSDL3ControllerSetup"},
+  {"Input","ExperimentalSDL3UniversalGameplay"},
+  {"Input","ExperimentalSDL3GameOverConfirm"},
+  {"Input","ExperimentalNativeJoystickUnplugGuard"},
+  {"Input","ExperimentalNativeJoystickReconnect"},
   {"Input","ControllerProfile"},
   {"Input","ControllerXbox360Preview"},
   {"Input","ControllerPS1Preview"},

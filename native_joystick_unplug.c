@@ -166,12 +166,13 @@ long SpiderNativeUnplug_Events(void) { return snapshot(&detached_events); }
 int SpiderNativeUnplug_Installed(void) { return snapshot(&installed)==1; }
 void SpiderNativeUnplug_Init(const char *ini,void (*logger)(const char *)) {
   write_log=logger;
-  InterlockedExchange(&requested,
-    (ini && GetPrivateProfileIntA("Input",
-      "ExperimentalNativeJoystickUnplugGuard",1,ini)==1)?1:0);
-  if(write_log)write_log(snapshot(&requested)?
-    "NATIVE-UNPLUG: experimental guard requested, will verify/install at Flip #120":
-    "NATIVE-UNPLUG: guard OFF by default, original native joystick error handling preserved");
+  (void)ini;
+  /* Keep the original game's fatal-unplug guard while native DI still
+   * exists internally. This is crash containment, not a controller
+   * mapping fallback. Exact original signatures remain mandatory. */
+  InterlockedExchange(&requested,1);
+  if(write_log)write_log(
+    "NATIVE-UNPLUG: built-in safety guard requested; signature-gated installation at Flip #120");
 }
 void SpiderNativeUnplug_OnFlip(long flip_index) {
   if(!snapshot(&requested))return;
