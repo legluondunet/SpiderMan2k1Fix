@@ -47,7 +47,8 @@ def test_removed_old_ui_synthetic_return_cannot_steal_sdl3_owner():
 
 def test_scripted_bink_south_wait_uses_live_selected_sdl3_id():
     assert "int SpiderSDL3Probe_NewGameBinkWaitSouthRelease(HWND hwnd)" in PROBE
-    assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in PROBE
+    assert "SpiderNativeReconnect_SDL3SelectionReady(" not in PROBE
+    assert "!native_owner_requested" in PROBE
     assert "sdl_button(pad,0)" in PROBE
     assert "GetTickCount()" in PROBE
     assert "GetForegroundWindow()!=hwnd" in PROBE
