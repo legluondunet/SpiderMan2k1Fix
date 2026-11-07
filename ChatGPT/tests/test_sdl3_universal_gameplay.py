@@ -291,7 +291,7 @@ def test_integrated_panel_preserved_and_generic_owner_is_explicit_only():
     assert "return SpiderSDL3Probe_SelectedSample(" not in selected
     assert "SpiderSDL3Universal_BeforeUI(game_hwnd);" in game
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in game
-    assert "SpiderSDL3Universal_Enabled()" in (
+    assert "SPIDER_UNIVERSAL_DI_SLOT" in (
         ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
     assert "sdl3_generic_ui_on_flip(" not in (
         ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
