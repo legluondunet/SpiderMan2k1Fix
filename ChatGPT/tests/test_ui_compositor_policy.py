@@ -421,7 +421,8 @@ def test_compositor_keeps_spider_above_game_hud_and_below_title():
     assert "UI-COMPOSITOR-ORDER:" in flush
     # The game owns the 4:3 geometry and alpha of its spider.
     assert "backdrop_v[k].x" not in flush
-    assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_BACKDROP" in src
+    assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_BACKDROP" not in src
+    assert 'InterlockedExchange(&ui_compositor_native_backdrop_enabled,1);' in src
     # The foreground menubar and PAUSED title retain their native
     # PAUSE_MENU queue, above every PAUSE_DECOR primitive.
     assert "SPIDER_UI_COMP_PAUSE_MENU" in flush
@@ -458,7 +459,8 @@ def test_native_pause_hud_is_replayed_once_after_veil_before_spider():
     assert "SPIDER_UI_COMP_REPLAY_MENU = 2" in policy
     assert "native_layer == SPIDER_UI_COMP_HUD" in policy
     assert "SPIDER_UI_COMP_MAX_COMMANDS 384u" in policy
-    assert "UI-COMPOSITOR-HUD-ORDER: ON" in src
+    assert "UI-COMPOSITOR-HUD-ORDER: ON" not in src
+    assert 'InterlockedExchange(&ui_compositor_hud_over_veil_enabled,0);' in src
     assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_HUD_OVER_VEIL" in src
     hook=src.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
         "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
@@ -548,8 +550,7 @@ def test_retired_veil_trials_cannot_change_validated_palette():
 def test_unverified_hud_reorder_is_off_by_default_and_opt_in_only():
     src=(ROOT/"spiderman2k1fix.c").read_text()
     assert "static volatile LONG ui_compositor_hud_over_veil_enabled=0;" in src
-    assert 'SPIDERMAN2K1FIX_UI_COMPOSITOR_HUD_OVER_VEIL' in src
-    assert "hud_over_veil[0]=='1'" in src
-    assert "hud_over_veil[0]=='0'" not in src
-    assert "HUD-ORDER: OFF (validated native HUD path, default)" in src
-    assert "UI-COMPOSITOR-NATIVE-BACKDROP: source-verified OUTER GUTTERS enabled" in src
+    assert 'SPIDERMAN2K1FIX_UI_COMPOSITOR_HUD_OVER_VEIL' not in src
+    assert "hud_over_veil[0]=='1'" not in src
+    assert 'InterlockedExchange(&ui_compositor_hud_over_veil_enabled,0);' in src
+    assert 'UI-COMPOSITOR: BUILT-IN source veil' in src
