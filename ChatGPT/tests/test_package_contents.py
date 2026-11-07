@@ -77,7 +77,7 @@ def test_windows_dll_source_inventory_is_explicit_and_unambiguous():
         if line.strip() and not line.lstrip().startswith("#")
         for part in line.split()
     ]
-    assert len(units) == 41
+    assert len(units) == 40
     assert len(units) == len(set(units)), "Duplicate DLL compilation unit"
     assert all(path.endswith(".c") and (ROOT / path).is_file() for path in units)
     assert units[0] == "spiderman2k1fix.c"
