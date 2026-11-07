@@ -42,7 +42,7 @@ def test_old_controller_preset_options_are_ignored_not_synthesized():
                 "ControllerPauseButton",
                 "ExperimentalSDL3GameplayBindings","ExperimentalSDL3XboxRTSwing"):
         assert f'{{"Input","{key}"}}' in SRC
-    assert "swap_mapping_enabled=0;" in RECONNECT
+    assert not (ROOT/"native_joystick_reconnect.c").exists()
     assert "swap_native_gameplay_mapping(" not in RECONNECT
     assert '"ExperimentalNativeJoystickMappingSwap=1' not in SRC
     assert "sdl3_generic_ui_on_flip(" not in (
