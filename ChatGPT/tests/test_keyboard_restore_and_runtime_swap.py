@@ -37,23 +37,18 @@ def test_modern_keyboard_restore_changes_only_original_default_source():
     assert "memcpy(replacements[2],live_sites[2].original,live_sites[2].size);" in MENU
 
 
-def test_native_reconnect_never_applies_fixed_joystick_mapping_or_overrides_keyboard():
+def test_native_reconnect_is_retired_without_overriding_keyboard():
     assert "ExperimentalNativeJoystickMappingSwap=1" not in CFG
-    assert "swap_mapping_enabled=0;" in NATIVE
-    assert "swap_native_gameplay_mapping(" not in NATIVE
-    assert "spider_ps1_buttons" not in NATIVE
-    assert "spider_xbox360_buttons" not in NATIVE
-    assert "spider_native_swap_preset(" not in NATIVE
-    assert "SPIDER_NATIVE_ACTION_TABLE 0x00568408u" in NATIVE
-    assert "if(!neutral_and_flush(candidate))" in NATIVE
-    assert "InterlockedCompareExchangePointer((PVOID volatile *)game_device_slot()" in NATIVE
-    assert "spider_native_swap_read(" in NATIVE
-    assert "SPIDER_NATIVE_SWAP_SLOTS=14" in PROBE
-    assert "SpiderSDL3Probe_NativeOwnerEnabled()" in NATIVE
-    assert "VirtualProtect((void *)address,0x70u,PAGE_READWRITE,&old)" not in NATIVE
+    for forbidden in ("EnumDevices(", "CreateDevice(", "Acquire(",
+                      "swap_native_gameplay_mapping(", "spider_ps1_buttons",
+                      "spider_xbox360_buttons", "SPIDER_NATIVE_ACTION_TABLE",
+                      "try_rebind(", "detach_stale_native("):
+        assert forbidden not in NATIVE
+    assert "SpiderNativeReconnect_SDL3SelectionReady" in NATIVE
     assert "spider_ps1_apply(" not in CFG
     assert "spider_xbox360_apply(" not in CFG
     assert "SPIDEY-KEYBOARD-DEFAULT: ACTIVE" in CFG
+
 
 def test_keyboard_and_joystick_are_independently_locked():
     assert "0x00AC129Cu!=0u" in MENU
