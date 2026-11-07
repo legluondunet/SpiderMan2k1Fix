@@ -1,10 +1,12 @@
-/* SDL3 experimental read-only reconnaissance for Spider-Man (PC 2001).
- * This does NOT replace the validated DirectInput backend. We use the DLL
- * ABI dynamically: SDL3.dll is optional and never copied from the system PATH.
- * Default ON; [Input] ExperimentalSDL3Probe=0 disables SDL3 selection.\n * [Debug] Log=1 is optional diagnostics only.
- *
- * No SDL window, audio, renderer, game mapping writes or synthetic keys.
- * SDL3's instance ID is the only controller identity used here. */
+/* SDL3 controller discovery and explicit selection for Spider-Man (PC 2001).
+ * The bundled SDL3.dll is loaded dynamically, never from the system PATH.
+ * This module samples controllers and manages their saved profiles; it does
+ * not create an SDL window, audio device or renderer. The separate default-on
+ * universal gameplay bridge handles guarded input after explicit Start
+ * selection, while the original DirectInput backend remains a fallback.
+ * [Input] ExperimentalSDL3Probe=0 disables the discovery/selection probe.
+ * [Debug] Log=1 enables optional diagnostics.
+ * SDL3 instance IDs identify selected controller instances. */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "spider_fix_paths.h"

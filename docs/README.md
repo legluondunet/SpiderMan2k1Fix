@@ -80,6 +80,6 @@ The [ChatGPT workspace](../ChatGPT/README.md) contains the automated regression 
 
 ## Repository root
 
-The main project files at the repository root are [README.md](../README.md) and [CHANGELOG.md](../CHANGELOG.md). Development builds are available through GitHub Actions; no stable release is available for the current project state.
+The main project files at the repository root are [README.md](../README.md) and [CHANGELOG.md](../CHANGELOG.md). The published stable version is [v1.1.0](https://github.com/legluondunet/SpiderMan2k1Fix/releases/tag/v1.1.0). The `main` branch also contains unreleased changes; current development builds are available through GitHub Actions and are not official releases.
 
 Historical external URLs to the previous file paths (issues, commits and comments) are not automatically updated by this move.
