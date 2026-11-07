@@ -147,7 +147,8 @@ def test_wiring_is_independent_of_existing_gameplay_and_defaults_off():
     assert 'spider_source_trace_init(ini,logger);' in runtime
     assert 'spider_source_trace_flip(hwnd,menu2d,gameplay3d,bink,pause);' in runtime
     assert runtime.index('SpiderSDL3GameplayLive_OnFlip(hwnd,') < runtime.index(
-        'spider_source_trace_flip(hwnd,') < runtime.index('if(!requested)return;')
+        'spider_source_trace_flip(hwnd,')
+    assert 'SpiderNativeReconnect_' not in runtime
     assert '"SDL3NativeSourceTrace"' in ini
     for path in ROOT.glob("*.ini"):
         assert 'SDL3NativeSourceTrace=1' not in path.read_text(
