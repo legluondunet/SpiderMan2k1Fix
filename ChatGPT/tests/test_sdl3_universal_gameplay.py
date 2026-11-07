@@ -89,7 +89,7 @@ def test_universal_runtime_is_built_in_and_mutually_exclusive():
     live=(ROOT/"sdl3_gameplay_live.c").read_text(encoding="utf-8")
     ui=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
-    native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
+    assert not (ROOT/"native_joystick_reconnect.c").exists()
     backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
     cfg=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
     ini=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
@@ -105,7 +105,7 @@ def test_universal_runtime_is_built_in_and_mutually_exclusive():
         "SpiderSDL3Universal_BeforeUI(game_hwnd);") < game.index(
         "SpiderGamepadUI_OnFlip(game_hwnd")
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in game
-    assert "SpiderSDL3Universal_Enabled()" in native
+    assert "SpiderNativeReconnect_" not in game
     assert "begin_scancode(" not in ui
     assert "sdl3_generic_ui_on_flip(" not in ui
     # PR #96 retains its validated SDL3 mapped-device panel. The raw
@@ -281,8 +281,8 @@ def test_integrated_panel_preserved_and_generic_owner_is_explicit_only():
     assert "SpiderSDL3Universal_BeforeModal(owner);" in ui
     assert "generic_selected_id" in probe
     assert "selection.active=previous;" in probe
-    assert "universal_requested && vid && pid && matches==1u" in probe
-    assert "spider_reconnect_kind(vid,pid)==SPIDER_RECONNECT_NONE" in probe
+    assert "vid && pid && matches==1u" in probe
+    assert "spider_reconnect_kind(" not in probe
     assert "!generic_selected_id" in probe
     assert "return SpiderSDL3Probe_GenericSelectedSample(" in probe
     selected=probe.split("int SpiderSDL3Probe_SelectedMappedSample(",1)[1].split(
@@ -291,8 +291,7 @@ def test_integrated_panel_preserved_and_generic_owner_is_explicit_only():
     assert "return SpiderSDL3Probe_SelectedSample(" not in selected
     assert "SpiderSDL3Universal_BeforeUI(game_hwnd);" in game
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in game
-    assert "SpiderSDL3Universal_Enabled()" in (
-        ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
+    assert not (ROOT/"native_joystick_reconnect.c").exists()
     assert "sdl3_generic_ui_on_flip(" not in (
         ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
 
@@ -564,15 +563,15 @@ def test_universal_mapped_ps4_uses_generic_identity_without_native_rebind():
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     start=probe.split("      uint32_t previous=selection.active;",1)[1].split(
         "      if(selection.active==pads[i].id",1)[0]
-    assert "universal_requested?" in start
+    assert "universal_requested?" not in start
     assert "spider_sdl3_selection_start_edge(&selection,pads[i].id,pressed)" in start
-    assert "spider_sdl3_selection_start(&selection,pads[i].id,pressed)" in start
-    assert "if(universal_requested ||" in start
+    assert "spider_sdl3_selection_start(&selection,pads[i].id,pressed)" not in start
+    assert "if(universal_requested ||" not in start
     assert "selection.active=previous;" in start
     assert "generic_selected_id=pads[i].id;" in start
     generic=probe.split("int SpiderSDL3Probe_GenericSelectedSample(",1)[1].split(
-        "int SpiderSDL3Probe_SelectedRT(",1)[0]
-    assert "if(!universal_requested &&" in generic
+        "/* Universal SDL3 selection",1)[0]
+    assert "if(!universal_requested &&" not in generic
     assert "spider_sdl3_selected_model_unique(" in generic
     select=probe.split("int SpiderSDL3Probe_SelectedMappedSample(",1)[1].split(
         "/* The player may hold physical Cross",1)[0]
@@ -581,11 +580,11 @@ def test_universal_mapped_ps4_uses_generic_identity_without_native_rebind():
     assert "return SpiderSDL3Probe_GenericSelectedSample(" in select
     modal=probe.split("if(setup_owner_pending)",1)[1].split(
         "sdl3_trace_native_owner(now);",1)[0]
-    assert "(universal_requested ||" in modal
+    assert "if(accepted)" in modal
     assert "generic_selected_id=requested_id;" in modal
-    assert "selection.active=requested_id;" in modal
+    assert "selection.active=requested_id;" not in modal
     native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
-    assert "if(SpiderSDL3Universal_Enabled())return;" in native
+    assert "SpiderNativeReconnect_" not in probe
 
 
 def test_native_x11_focus_disarms_universal_input_before_paused_even_when_wine_hwnd_stale():
