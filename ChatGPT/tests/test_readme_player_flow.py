@@ -57,3 +57,9 @@ def test_readme_preserves_required_disclaimers_and_credit():
     assert "own legally obtained copy" in README
     assert "not affiliated with, sponsored by, or endorsed by Activision" in README
     assert "[Krystalgamer](https://krystalgamer.github.io/index.html)" in README
+
+def test_developer_index_distinguishes_published_and_unreleased_builds():
+    docs = (ROOT / "docs/README.md").read_text(encoding="utf-8")
+    assert "releases/tag/v1.1.0" in docs
+    assert "unreleased changes" in docs
+    assert "no stable release is available" not in docs.lower()
