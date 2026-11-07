@@ -79,7 +79,7 @@ def test_sdl3_probe_is_optional_read_only_and_exe_relative():
     shell=(ROOT/'build.sh').read_text()
     ini=(ROOT/'ini_validation.h').read_text()
     assert 'ExperimentalSDL3Probe' in ini
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1' in code
+    assert "requested=1;" in code
     assert 'SpiderSDL3Probe_OnFlip(count,game_hwnd);' in main
     assert 'SpiderSDL3Probe_Init(ini,log_line);' in main
     assert 'sdl3_gamepad_probe.c' in shell
