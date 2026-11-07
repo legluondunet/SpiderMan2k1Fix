@@ -299,36 +299,22 @@ def test_mouse_free_keyboard_and_selected_gamepad_setup_navigation():
         assert forbidden not in ui
 
 
-def test_modal_initial_pad_follows_verified_gameplay_owner_not_first_detected():
-    """Two pads: DS4 enumerated first, Xbox selected via Start in-game."""
+def test_modal_initial_pad_prefers_explicit_sdl3_owner_not_first_detected():
     ui=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     body=ui.split("static void refresh_pads(",1)[1].split(
         "static void sample_device(",1)[0]
-    # At first open there is no dialog-local selection, so prefer the
-    # already verified selected gamepad instance AND its VID:PID.
-    assert "if(!old_id)" in body
-    assert "SpiderSDL3Probe_SelectedIdentity(&gameplay_vid,&gameplay_pid,&gameplay_id);" in body
+    assert "if(!old_id &&" in body
+    assert "SpiderSDL3Probe_GenericSelectedSample(&gameplay_id," in body
+    assert "SpiderSDL3Probe_SelectedIdentity(" not in body
+    assert "previous-explicit-generic-selection" in body
     assert "if(old_id && id==old_id)desired=i;" in body
     assert "else if(!old_id && gameplay_id && id==gameplay_id &&" in body
     assert "vid==gameplay_vid && pid==gameplay_pid)" in body
-    assert "desired=i;" in body
     assert 'matched_owner?owner_source:"fallback-first-mapped"' in body
-    assert 'owner_source="verified-gameplay-owner";' in body
-    # A previously Start-confirmed unsupported SDL3 pad can be previewed
-    # on the next visit, but is not silently adopted as a native DI owner.
-    assert 'SpiderSDL3Probe_GenericSelectedSample(' in body
-    assert 'owner_source="previous-explicit-generic-selection";' in body
     assert "select_slot(ui,desired);" in body
-    # The owner identity is independently checked for unique models and
-    # live SDL3 handles; never infer ownership from first enumerated pad.
-    owner=probe.split("int SpiderSDL3Probe_SelectedIdentity(",1)[1].split(
-        "static int sdl_load(",1)[0]
-    assert "spider_sdl3_selected_model_unique(" in owner
-    assert "!selection.active" in owner
-    # Manual L1/R1 model selection must survive later hotplug refreshes.
+    assert "spider_sdl3_selected_model_unique(" in probe
     assert "old_id=ui->instance;" in body
-    assert "if(old_id && id==old_id)desired=i;" in body
 
 
 def test_modal_close_cannot_destroy_dialog_inside_sdl3_timer_callback():
