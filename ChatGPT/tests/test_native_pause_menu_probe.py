@@ -232,27 +232,30 @@ def test_native_esc_children_are_permanent_but_depend_on_validated_hud():
     assert "supported_exe()" in startup
     assert "SpiderCfg_ValidateCurrentIni(log_line)" in startup
 
-def test_native_esc_hidden_manual_ini_children_and_parent_chain():
+def test_native_esc_pause_motif_and_cursor_are_permanently_hud_gated():
     pause=CORE.split("static void native_pause43_init(void)",1)[1].split(
         "static const void *maybe_correct_native_pause43(",1)[0]
     motif=CORE.split("static void native_motif43_init(void)",1)[1].split(
         "static const void *maybe_correct_native_motif43(",1)[0]
     cursor=CORE.split("static void native_cursor43_init(void)",1)[1].split(
         "static const void *maybe_correct_native_cursor43(",1)[0]
-    assert '"NativeESC4x3","SPIDERMAN2K1FIX_NATIVE_ESC_43"' in pause
-    assert '"NativeMotif4x3","SPIDERMAN2K1FIX_NATIVE_MOTIF_43"' in motif
-    assert '"NativeCursor4x3","SPIDERMAN2K1FIX_NATIVE_CURSOR_43"' in cursor
-    assert "InterlockedCompareExchange(&native_pause43_enabled,0,0)==1" in motif
-    assert "InterlockedCompareExchange(&native_pause43_enabled,0,0)==1" in cursor
-    for name in ("NativeESC4x3","NativeMotif4x3","NativeCursor4x3"):
-        assert name in DOC
-        for ini in ("ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini","ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini",
-                    "ChatGPT/tests/fixtures/SpiderMan2k1Fix.user-clean.ini"):
-            assert name not in (ROOT / ini).read_text(encoding="utf-8")
-        assert f'"{name}=' not in (ROOT / "virtual_spidey_cfg.c").read_text(encoding="utf-8")
-    for env in ("SPIDERMAN2K1FIX_NATIVE_ESC_43",
+    guard=CORE.split("static int native_esc43_hud_setting_enabled(void)",1)[1].split("}",1)[0]
+    assert "SpiderHudWidescreen_Installed()!=0" in guard
+    assert "native_esc43_hud_setting_enabled()" in pause
+    assert "native_esc43_hud_setting_enabled()" in motif
+    assert "native_esc43_hud_setting_enabled()" in cursor
+    for old in ("SPIDERMAN2K1FIX_NATIVE_ESC_43",
                 "SPIDERMAN2K1FIX_NATIVE_MOTIF_43",
                 "SPIDERMAN2K1FIX_NATIVE_CURSOR_43"):
-        assert env not in INI
+        assert old not in CORE
+    assert "InterlockedCompareExchange(&native_pause43_enabled,0,0)==1" in motif
+    assert "InterlockedCompareExchange(&native_pause43_enabled,0,0)==1" in cursor
+    for key in ("NativeESC4x3", "NativeMotif4x3", "NativeCursor4x3"):
+        assert key in DOC  # migration compatibility only
+        for ini in ("ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini",
+                    "ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini",
+                    "ChatGPT/tests/fixtures/SpiderMan2k1Fix.user-clean.ini"):
+            assert key not in (ROOT/ini).read_text(encoding="utf-8")
+        assert f'"{key}=' not in (ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
     assert "menu_upscale_active" in CURSOR and "gameplay_4x3_active" in CURSOR
     assert "menu_upscale_active" in MOTIF and "gameplay_4x3_active" in MOTIF
