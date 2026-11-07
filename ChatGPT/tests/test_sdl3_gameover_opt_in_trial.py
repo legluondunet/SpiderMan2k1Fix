@@ -176,3 +176,49 @@ def test_passive_owner_probe_is_independent_of_enter_injection():
     assert "gameover_owner_probe_dump(" in BACKEND
     assert "SDL3-GAMEOVER-OWNER-PROBE: passive native state observation enabled" in BACKEND
     assert "gameover_owner_probe_stable_frames" in BACKEND
+
+
+def test_native_gameover_owner_wrapper_is_exact_retained_call_not_a_new_menu():
+    wrapper=BACKEND.split(
+        "static int __cdecl spider_gameover_owner_call_wrapper(void)",1
+    )[1].split("static int spider_gameover_owner_install_hook(void)",1)[0]
+    assert "InterlockedIncrement(&gameover_native_owner_depth)" in wrapper
+    assert "InterlockedDecrement(&gameover_native_owner_depth)" in wrapper
+    assert "((int (__cdecl *)(void))(uintptr_t)0x0047D830u)()" in wrapper
+    assert "return result;" in wrapper
+    for forbidden in ("WriteProcessMemory(", "VirtualProtect(",
+                      "SendInput(", "send_scan(", "update_keys("):
+        assert forbidden not in wrapper
+
+    installer=BACKEND.split(
+        "static int spider_gameover_owner_install_hook(void)",1
+    )[1].split("/* Exact retail PE32: keyboard GetDeviceData",1)[0]
+    assert "original[5]={0xE8,0x9A,0x78,0x02,0x00}" in installer
+    assert "0x00455F91u" in installer
+    assert "sizeof(void*)!=4" in installer
+    assert "GetModuleHandleA(NULL)!=0x00400000u" in installer
+    assert "memcmp(site,original,sizeof(original))" in installer
+    assert "VirtualProtect(" in installer
+    assert "FlushInstructionCache(" in installer
+    assert "int64_t displacement;" in installer
+    assert "displacement>INT32_MAX || displacement<INT32_MIN" in installer
+    assert "gameover_native_owner_hook_installed=memcmp(" in installer
+
+
+def test_strict_owner_is_separate_opt_in_and_fails_closed():
+    assert '"ExperimentalSDL3GameOverNativeOwner"' in (
+        ROOT/"ini_validation.h"
+    ).read_text()
+    assert "ExperimentalSDL3GameOverNativeOwner=1" not in (
+        ROOT/"virtual_spidey_cfg.c"
+    ).read_text()
+    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverNativeOwner",0,ini)==1' in BACKEND
+    assert "if(requested && gameover_native_owner_trial_enabled)" in BACKEND
+    assert "int installed=spider_gameover_owner_install_hook();" in BACKEND
+    assert "SDL3-GAMEOVER-NATIVE: hook REFUSED" in BACKEND
+    assert "if(gameover_native_owner_trial_enabled &&" in BACKEND
+    assert "!gameover_native_owner_hook_installed ||" in BACKEND
+    assert "InterlockedCompareExchange(&gameover_native_owner_depth,0,0)<=0" in BACKEND
+    assert "candidate=0;" in BACKEND
+    assert "if(gameover_trial_enabled)" in BACKEND
+    assert 'pulse(0x1cu,"opt-in GAME OVER Return trial");' in BACKEND
