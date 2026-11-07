@@ -218,7 +218,7 @@ def test_strict_owner_is_separate_opt_in_and_fails_closed():
     assert "if(requested && gameover_native_owner_trial_enabled)" in BACKEND
     assert "int installed=spider_gameover_owner_install_hook();" in BACKEND
     assert "SDL3-GAMEOVER-NATIVE: hook REFUSED" in BACKEND
-     assert "int owner_confirm=candidate && gameover_native_owner_trial_enabled &&" in BACKEND
+    assert "int owner_confirm=candidate && gameover_native_owner_trial_enabled &&" in BACKEND
     assert "gameover_native_owner_hook_installed &&" in BACKEND
     assert "InterlockedCompareExchange(&gameover_native_owner_depth,0,0)>0;" in BACKEND
     assert "trial=spider_sdl3_gameover_trial_step(&gameover_trial,owner_confirm," in BACKEND
