@@ -52,6 +52,12 @@ SIGNATURES = {
         (0x004BE027, "c7 05 a4 cf 60 00 02 00 00 00"),
     "controller_mode_two_jump_target":
         (0x00455F5D, "53"),
+    "native_gameover_screen_owner_call":
+        (0x00455F91, "e8 9a 78 02 00"),
+    "controller_mode_two_sets_task_20":
+        (0x00455F5E, "c7 05 10 a5 54 00 14 00 00 00"),
+    "native_gameover_screen_seh_function_entry":
+        (0x0047D830, "6a ff 68 eb 7e 53 00"),
     "mode_two_gameover_screen_draws_source_text":
         (0x0047D93A, "a1 48 b7 54 00"),
     "mode_two_gameover_screen_polls_native_input":
@@ -132,11 +138,13 @@ def inspect(data: bytes) -> dict:
             "0x004459BD", "0x00455BE9", "0x004BE027"
         ],
         "controller_mode_two_screen": {
+            "source_verified_exclusive_call": "0x00455F91 -> 0x0047D830",
+            "original_task_write": "[0x0054A510] = 0x14 at 0x00455F5E",
             "screen_entry": "0x0047D830",
             "game_over_source_text_draw": "0x0047D93A",
             "game_native_input_poll": "0x0047D9B8 -> 0x0050C180",
         },
-        "runtime_owner_claim": "NOT ESTABLISHED: inspect live frame sequences",
+        "runtime_owner_claim": "Exact original callsite owns the GAME OVER screen; runtime wrapper activation still requires hardware verification",
         "safe_default_controller_injection": False,
     }
 
