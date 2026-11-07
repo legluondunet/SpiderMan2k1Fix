@@ -61,6 +61,6 @@ def test_reference_unwired_no_native_memory_access():
                       "VirtualProtect","WriteProcessMemory","SendInput"):
         assert forbidden not in src
     for name in ("spiderman2k1fix.c","sdl3_gameplay_live.c",
-                 "native_joystick_reconnect.c"):
+                 "sdl3_universal_gameplay.c"):
         assert '#include "sdl3_generic_engine_latch_reference.h"' not in (
             ROOT/name).read_text(encoding="utf-8")
