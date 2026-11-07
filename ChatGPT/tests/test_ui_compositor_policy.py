@@ -461,7 +461,7 @@ def test_native_pause_hud_is_replayed_once_after_veil_before_spider():
     assert "SPIDER_UI_COMP_MAX_COMMANDS 384u" in policy
     assert "UI-COMPOSITOR-HUD-ORDER: ON" not in src
     assert 'InterlockedExchange(&ui_compositor_hud_over_veil_enabled,0);' in src
-    assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_HUD_OVER_VEIL" in src
+    assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_HUD_OVER_VEIL" not in src
     hook=src.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
         "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
     assert "verified_hud_canvas=1" in hook
@@ -543,7 +543,7 @@ def test_retired_veil_trials_cannot_change_validated_palette():
         assert retired not in policy
         assert retired not in src
     assert "ui_comp_draw_native_exterior_gutters(" in src
-    assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_BACKDROP" in src
+    assert "SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_BACKDROP" not in src
     assert "owner=SpiderUIComp_ReplayPassForDraw(c->layer)" in src
 
 
