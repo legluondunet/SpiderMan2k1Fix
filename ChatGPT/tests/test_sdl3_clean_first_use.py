@@ -29,11 +29,10 @@ def test_old_hardcoded_profile_files_are_deleted():
 def test_no_pre_sdl3_custom_preset_in_original_game_config():
     core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
     cfg=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
-    native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
     ui=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
     live=(ROOT/"sdl3_gameplay_live.c").read_text(encoding="utf-8")
-    probe=(ROOT/"native_joystick_swap_probe.h").read_text(encoding="utf-8")
-    for src in (core,cfg,native,ui,live,probe):
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    for src in (core,cfg,ui,live,probe):
         for token in (
             "spider_ps1_buttons", "spider_xbox360_buttons",
             "spider_ps1_apply", "spider_xbox360_apply",
@@ -47,10 +46,8 @@ def test_no_pre_sdl3_custom_preset_in_original_game_config():
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in core
     assert "SpiderSDL3_InstallDirectJoystickEntry" in ui
     assert "SpiderPS1Mouse_OnFlip(hwnd);" in ui
-    assert "swap_mapping_enabled=0;" in native
-    assert "SpiderNativeReconnect_CanonicalXboxMapping(void) {return 0;}" in native
-    assert "SpiderNativeReconnect_CanonicalDS4Mapping(void) {return 0;}" in native
-    assert "spider_native_swap_read(" in probe
+    assert not (ROOT/"native_joystick_reconnect.c").exists()
+    assert "SpiderNativeReconnect_" not in core + probe
     assert "spider_ps1_buttons" not in probe
     assert "SpiderCfg_EnableXbox360Preview(void) {return 0;}" in cfg
     assert "SpiderCfg_EnablePS1Preview(void) {return 0;}" in cfg
