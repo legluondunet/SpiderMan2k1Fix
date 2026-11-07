@@ -485,8 +485,12 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
     "SDL3-UNIVERSAL: default-on gameplay enabled for ANY mapped SDL3 gamepad; "
     "11 game keyboard actions + native Pause; original DirectInput "
     "suspended only while selected, strict neutral-first and focus release");
-  if(requested && gameover_trial_enabled && report)
-    report("SDL3-GAMEOVER-TRIAL: explicit INI opt-in enabled; request 2 alone is NOT a GAME OVER identity");
+  if(requested && gameover_trial_enabled && report) {
+    if(!gameover_native_owner_trial_enabled)
+      report("SDL3-GAMEOVER-NATIVE: CONFIRM BLOCKED: enable ExperimentalSDL3GameOverNativeOwner=1 as well; request-2-only Return is no longer permitted");
+    else
+      report("SDL3-GAMEOVER-TRIAL: explicit INI opt-in enabled; native GAME OVER owner is required before any Return pulse");
+  }
   if(requested && gameover_native_owner_trial_enabled) {
     int installed=spider_gameover_owner_install_hook();
     if(report)report(installed?
@@ -1176,15 +1180,13 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     return;
   }
   if(gameover_trial_enabled || gameover_owner_probe_enabled) {
+    /* A request-2 transition is only passive evidence. It is never
+     * sufficient to synthesize Return, even when the user opts into the
+     * confirmation trial without the new native-owner option. */
     int candidate=gameover_trial_candidate(context,menu,gameplay,bink,native_pause);
-    /* An additional *opt-in* mode requires the native GAME OVER owner,
-     * actively executing inside the signature-verified 0x47D830 CALL.
-     * If it cannot be intercepted, no synthetic Return is permitted.
-     * The former heuristic trial is retained for A/B comparison only. */
-    if(gameover_native_owner_trial_enabled &&
-       (!gameover_native_owner_hook_installed ||
-        InterlockedCompareExchange(&gameover_native_owner_depth,0,0)<=0))
-      candidate=0;
+    int owner_confirm=candidate && gameover_native_owner_trial_enabled &&
+      gameover_native_owner_hook_installed &&
+      InterlockedCompareExchange(&gameover_native_owner_depth,0,0)>0;
     unsigned stable_before=gameover_trial.stable_frames;
     unsigned trial=0u;
     if(gameover_owner_probe_enabled) {
@@ -1208,14 +1210,14 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
      * gameover_trial_enabled switch. The passive owner probe MUST NEVER
      * call the one-shot policy step or dispatch Return on its own. */
     if(gameover_trial_enabled)
-      trial=spider_sdl3_gameover_trial_step(&gameover_trial,candidate,
+      trial=spider_sdl3_gameover_trial_step(&gameover_trial,owner_confirm,
         spider_sdl3_universal_neutral(&sample),
         gameover_trial_confirm_only(profile,&sample));
-    if(candidate &&
+    if(owner_confirm &&
        stable_before<SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES &&
        gameover_trial.stable_frames==SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES &&
        report && gameover_trial_reports++<12u)
-      report("SDL3-GAMEOVER-TRIAL: CANDIDATE stable request=2 for six game Flips; awaiting neutral then one fresh South (NOT proven unique)");
+      report("SDL3-GAMEOVER-TRIAL: CANDIDATE stable within source-verified native GAME OVER owner for six Flips; awaiting neutral then one fresh South");
     if(trial) {
       /* Never combine 3D Jump/Space with the experiment's Enter,
        * nor repeat Enter while the physical button is held. */
@@ -1224,7 +1226,7 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
         return;
       }
       if(trial==1u) {
-        gameover_owner_probe_dump("SOUTH-BEFORE-PULSE",id,context,candidate);
+        gameover_owner_probe_dump("SOUTH-BEFORE-PULSE",id,context,owner_confirm);
         pulse(0x1cu,"opt-in GAME OVER Return trial");
         if(pulse_scan!=0x1cu) {
           restore_original("GAME OVER trial Enter pulse failed");
