@@ -184,7 +184,7 @@ def test_pad_close_transfers_displayed_profile_only_after_destroy():
     assert "final_foreground==owner ? ui.start_owner_id:0u," in loop
     flip=probe.split("void SpiderSDL3Probe_OnFlip(",1)[1]
     assert "spider_sdl3_selected_model_unique(opened,num_pads," in flip
-    assert "SDL3-PROBE: SETUP RETURN COMMITTED verified modal owner" in flip
+    assert "SDL3-GENERIC: SELECTED explicit modal Start" in flip
     assert "SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous" in flip
     assert "SpiderNativeReconnect_" not in close
     assert "SendInput(" not in close
@@ -243,8 +243,9 @@ def test_modal_start_defers_original_owner_until_next_verified_game_flip():
     flip=probe.split("void SpiderSDL3Probe_OnFlip(",1)[1]
     assert "if(setup_owner_pending)" in flip
     assert "spider_sdl3_selected_model_unique(opened,num_pads," in flip
-    assert "selection.active=requested_id;" in flip
-    assert 'SDL3-PROBE: SETUP RETURN COMMITTED verified modal owner' in flip
+    assert "generic_selected_id=requested_id;" in flip
+    assert "selection.active=requested_id;" not in flip
+    assert 'SDL3-GENERIC: SELECTED explicit modal Start' in flip
     assert 'SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous' in flip
     assert flip.index("if(setup_owner_pending)")<flip.index(
         "for(i=0;i<num_pads;i++)if(pads[i].handle) {")
