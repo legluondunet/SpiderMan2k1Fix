@@ -45,7 +45,7 @@ def test_generated_example_factory_consistency():
     assert "KeyboardLayout=" not in (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text()
     assert not config.has_option('Input','DirectInputReacquire')
     assert not config.has_option('Input','PauseOnFocusLoss')
-    assert list(config['Input']) == ['keyboardlayout','experimentalaltlatchrecovery']
+    assert list(config['Input']) == ['keyboardlayout']
     assert not config.has_option('Input','ExperimentalSDL3NativeOwner')
     assert not config.has_option('Input','ExperimentalSDL3UniversalGameplay')
     assert 'ControllerProfile' not in config['Input']
