@@ -60,8 +60,8 @@ def test_sdl3_multicontroller_owner_is_explicit_generic_not_native_preset():
     ui=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
     assert '#include "sdl3_gamepad_identity.h"' in probe
     assert "spider_sdl3_selected_model_unique(" in probe
-    assert "open[i].vendor=sdl_vendor(pads[i].id);" in probe
-    assert "open[i].product=sdl_product(pads[i].id);" in probe
+    assert "opened[j].vendor=sdl_vendor(pads[j].id);" in probe
+    assert "opened[j].product=sdl_product(pads[j].id);" in probe
     assert "SpiderSDL3Probe_SelectedMappedSample(" in backend
     assert "spider_sdl3_universal_neutral(&sample)" in backend
     assert "SDL3-UNIVERSAL: START selected generic" in probe
