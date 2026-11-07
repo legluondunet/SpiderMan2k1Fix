@@ -68,8 +68,8 @@ def test_ci_builds_without_retaining_the_completed_one_shot_release_workflow():
 
 def test_windows_dll_source_inventory_is_explicit_and_unambiguous():
     build = (ROOT / "build.sh").read_text(encoding="utf-8")
-    start = build.index("fix_sources=(\\n") + len("fix_sources=(\\n")
-    end = build.index("\\n)", start)
+    start = build.index("fix_sources=(\n") + len("fix_sources=(\n")
+    end = build.index("\n)", start)
     inventory = build[start:end]
     units = [
         part
