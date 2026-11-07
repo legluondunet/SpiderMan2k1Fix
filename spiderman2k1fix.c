@@ -1577,8 +1577,8 @@ static void native_motif43_restore_gutters(void *device,
  * ESC banner drawn in the SAME Flip. This is independent of the
  * the original game menu or ordinary gameplay HUD.
  *
- * Enabled by default through HUDWidescreenFix, unless manually disabled in
- * [HUD] NativeCursor4x3=0. Match the validated
+ * Built in whenever the original HUD hook passes its signatures.
+ * Match the validated
  * signature instead of ephemeral texture pointer identities. Limit this
  * strictly to the Wine-tested 1920x1080 mode. Only X vertex coordinates
  * are modified; keep Y, Z, RHW, UV, texture, game input unchanged.
