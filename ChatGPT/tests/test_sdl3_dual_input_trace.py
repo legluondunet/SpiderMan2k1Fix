@@ -20,6 +20,8 @@ def test_legacy_secondary_directinput_view_is_removed():
 
 
 def test_native_rebind_probe_is_removed_without_disabling_read_only_sdl3_trace():
+    native=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    helper=(ROOT/"sdl3_controller_profile.h").read_text(encoding="utf-8")
     assert not (ROOT/"native_joystick_swap_probe.h").exists()
     assert not (ROOT/"native_joystick_reconnect.c").exists()
     assert "SpiderNativeReconnect_" not in native
