@@ -36,32 +36,33 @@ def test_ci_release_package_contains_required_dlls_and_public_docs():
     assert "docs/" not in artifact_section
 
 
-def test_workflow_only_builds_and_does_not_publish_releases():
+def test_ci_builds_without_retaining_the_completed_one_shot_release_workflow():
     workflows = ROOT / ".github/workflows"
-    assert list(workflows.glob("publish-*.yml")) == []
-    assert sorted(p.name for p in workflows.glob("*release*.yml")) == ["spiderman2k1fix-v1.1.0-release.yml"]
-    assert sorted(p.name for p in ROOT.glob("RELEASE_NOTES_*.md")) == ["RELEASE_NOTES_1.0.0.md", "RELEASE_NOTES_1.1.0.md"]
+    # v1.1.0 was published on 2026-10-27. Its one-shot publisher must not
+    # continue running (even as a skipped job) after the tag exists.
+    assert sorted(p.name for p in workflows.glob("*.yml")) == [
+        "spiderman2k1fix-windows-x86.yml"
+    ]
+    assert sorted(p.name for p in ROOT.glob("RELEASE_NOTES_*.md")) == [
+        "RELEASE_NOTES_1.0.0.md",
+        "RELEASE_NOTES_1.1.0.md",
+    ]
     new_notes = (ROOT / "RELEASE_NOTES_1.1.0.md").read_text(encoding="utf-8")
     assert "# SpiderMan2k1Fix v1.1.0" in new_notes
     assert "Linux/Wine" in new_notes
     assert "Windows" in new_notes
-    notes=(ROOT/"RELEASE_NOTES_1.0.0.md").read_text(encoding="utf-8")
+    notes = (ROOT / "RELEASE_NOTES_1.0.0.md").read_text(encoding="utf-8")
     assert "# SpiderMan2k1Fix v1.0.0" in notes
     assert "## Known Issues" in notes
     assert "Not published" not in notes
     assert "release candidate" not in notes.lower()
-    for path in workflows.glob("*.yml"):
-        src = path.read_text(encoding="utf-8")
-        if path.name == "spiderman2k1fix-v1.1.0-release.yml":
-            assert "startsWith(github.event.head_commit.message, 'release: publish SpiderMan2k1Fix v1.1.0')" in src
-            assert "github.repository == 'legluondunet/SpiderMan2k1Fix'" in src
-            assert "python3 -m pytest -q ChatGPT/tests" in src
-            assert "bash ./build-native-msvcrt.sh" in src
-            assert "gh release create v1.1.0" in src
-            assert "RELEASE_NOTES_1.1.0.md" in src
-        else:
-            assert "gh release create" not in src
-            assert "gh release upload" not in src
+
+    ci = CI_PATH.read_text(encoding="utf-8")
+    assert "permissions:\n  contents: read\n" in ci
+    assert "python3 -m pytest -q ChatGPT/tests" in ci
+    assert "bash ./build-native-msvcrt.sh" in ci
+    assert "gh release create" not in ci
+    assert "gh release upload" not in ci
 
 
 def test_ci_runs_developer_regression_tests():
