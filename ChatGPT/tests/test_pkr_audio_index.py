@@ -39,6 +39,22 @@ def test_optin_and_readonly_sound_pipeline():
                       'SDL_Audio_Play('):
         assert forbidden not in SRC
 
+
+def test_data_pkr_path_uses_bounded_shared_helpers():
+    # A supported SpideyPC.exe basename is longer than "data.pkr", but the
+    # audio index should not assume that filename length or construct a
+    # different unchecked path from the common proxy/core path policy.
+    init = SRC.split("void SpiderPKRAudioIndex_Init(", 1)[1].split(
+        "void SpiderPKRAudioIndex_Probe(", 1
+    )[0]
+    assert '#include "spider_fix_paths.h"' in SRC
+    assert 'spider_path_exe_dir_a(game_dir,sizeof(game_dir))' in init
+    assert 'spider_path_join_a(path,sizeof(path),game_dir,"data.pkr")' in init
+    assert 'PKR-AUDIO: REFUSED game data.pkr path unavailable or too long' in init
+    assert 'strcpy(slash+1,"data.pkr")' not in SRC
+    assert 'GetModuleFileNameA(NULL,path,sizeof(path))' not in init
+
+
 def test_pkr_layout_and_boundary_examples():
     assert struct.calcsize("<4sI")==8
     assert struct.calcsize("<III")==12
