@@ -15,8 +15,8 @@ def test_trace_wired_only_to_existing_game_flip_and_opt_in():
     assert 'spider_latch_trace_flip(hwnd,menu2d,gameplay3d,bink,pause);' in p
     assert p.index('SpiderSDL3GameplayLive_OnFlip(hwnd,') < p.index(
         'spider_latch_trace_flip(hwnd,')
-    assert p.index('spider_latch_trace_flip(hwnd,') < p.index(
-        'if(!requested)return;')
+    assert 'SpiderNativeReconnect_' not in p
+    assert 'spider_latch_trace_flip(hwnd,menu2d,gameplay3d,bink,pause);' in p
     assert 'GetPrivateProfileIntA("Debug","SDL3NativeStateTrace",0,ini)==1' in h
     assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",0,ini)==1' in h
     assert 'spider_latch_trace_binary_ok()' in h
