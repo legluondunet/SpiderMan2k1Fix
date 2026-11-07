@@ -45,3 +45,27 @@ def test_native_reacquire_and_pause_are_builtin():
     assert "InterlockedExchange(&pause_on_focus_loss,1);" in core
     assert "SpiderFocusMedia_Pause();" in core
     assert "SpiderFocusDSound_Pause();" in core
+
+def test_unused_legacy_state_is_removed_but_native_patch_lifetime_is_kept():
+    cfg = (ROOT / 'virtual_spidey_cfg.c').read_text(encoding='utf-8')
+    retry = (ROOT / 'input_notacquired_retry.c').read_text(encoding='utf-8')
+    menu_c = (ROOT / 'ps1_joystick_readonly_menu.c').read_text(encoding='utf-8')
+    menu_h = (ROOT / 'ps1_joystick_readonly_menu.h').read_text(encoding='utf-8')
+    escape = (ROOT / 'sdl3_physical_escape.h').read_text(encoding='utf-8')
+
+    # These were write-only globals, confirmed by compiler warnings.
+    assert 'stdio_opens' not in cfg
+    assert 'readonly_xbox_rt_alias' not in menu_c
+    assert 'SpiderXbox360_SetRTAlias' not in menu_c + menu_h
+    assert 'retained_executable_page' not in retry
+
+    # The executable trampoline is still retained on installed branches,
+    # and freed only on safe installation failure / successful rollback.
+    assert 'VirtualAlloc(NULL,4096,MEM_RESERVE|MEM_COMMIT,PAGE_READWRITE)' in retry
+    assert 'if(restore_original_jne((BYTE *)(uintptr_t)SPIDER_KEY_JNE))' in retry
+    assert 'VirtualFree(page,0,MEM_RELEASE);' in retry
+    assert 'InterlockedExchange(&installed,1);' in retry
+
+    # Logical grouping is explicit; preserve the original acceptance rule.
+    assert '(got!=(UINT)sizeof(packet) &&' in escape
+    assert 'got<(UINT)(sizeof(RAWINPUTHEADER)+sizeof(RAWKEYBOARD))))' in escape
