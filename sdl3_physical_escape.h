@@ -47,8 +47,9 @@ static int spider_sdl3_escape_key(HRAWINPUT input) {
   if(!input)return 0;
   got=GetRawInputData(input,RID_INPUT,&packet,&size,
                       sizeof(RAWINPUTHEADER));
-  if(got==(UINT)-1 || got!=(UINT)sizeof(packet) &&
-     got<(UINT)(sizeof(RAWINPUTHEADER)+sizeof(RAWKEYBOARD)))return 0;
+  if(got==(UINT)-1 ||
+     (got!=(UINT)sizeof(packet) &&
+      got<(UINT)(sizeof(RAWINPUTHEADER)+sizeof(RAWKEYBOARD))))return 0;
   if(packet.header.dwType!=RIM_TYPEKEYBOARD)return 0;
   return packet.data.keyboard.VKey==VK_ESCAPE &&
          !(packet.data.keyboard.Flags&RI_KEY_BREAK) &&
