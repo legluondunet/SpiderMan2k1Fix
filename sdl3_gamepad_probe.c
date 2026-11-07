@@ -1,12 +1,9 @@
-/* SDL3 controller discovery and explicit selection for Spider-Man (PC 2001).
- * The bundled SDL3.dll is loaded dynamically, never from the system PATH.
- * This module samples controllers and manages their saved profiles; it does
- * not create an SDL window, audio device or renderer. The separate default-on
- * universal gameplay bridge handles guarded input after explicit Start
- * selection, while the original DirectInput backend remains a fallback.
- * [Input] ExperimentalSDL3Probe=0 disables the discovery/selection probe.
- * [Debug] Log=1 enables optional diagnostics.
- * SDL3 instance IDs identify selected controller instances. */
+/* SDL3 controller discovery and explicit Start selection for Spider-Man 2001.
+ * Load the bundled SDL3.dll at the first safe foreground game Flip, never
+ * from system PATH, and pump only on that original game thread. SDL3 is the
+ * sole gamepad mapping backend; DirectInput remains only for original-game
+ * internals and safety. No SDL video/audio subsystem or extra threads.
+ * [Debug] Log=1 enables diagnostics; SDL3 instance IDs identify pads. */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "spider_fix_paths.h"
@@ -189,16 +186,12 @@ void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
   requested=1;
   universal_requested=1;
   SpiderSDL3ProfileStore_Init(1,logger);
-  if(bindings_trace_requested && !requested) {
-    bindings_trace_requested=0;
-    say("SDL3-BINDINGS: disabled because ExperimentalSDL3Probe=0");
-  }
   if(bindings_trace_requested)
     say("SDL3-BINDINGS: optional semantic action probe ENABLED (read-only; no gameplay remap, no UI changes; max 48 events)");
   /* Retire the legacy SDL3-identity -> native DirectInput rebind: mapped
    * SDL3 input goes through the universal adapter exclusively. */
   native_owner_requested=0;
-  if(requested)say("SDL3-PROBE: enabled by default; discovery and selection available (explicit INI opt-out supported)");
+  if(requested)say("SDL3-PROBE: built-in discovery and explicit Start selection; ready on first safe foreground Flip");
   if(universal_requested)
     say("SDL3-UNIVERSAL: default-on logical Start selection for mapped SDL3 pads; no unverified native DI rebind");
 }
@@ -1257,7 +1250,13 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
   DWORD now;
   unsigned i;
   char line[230];
-  if(!requested || flip<120)return;
+  /* Discovery starts on the FIRST safe foreground original-game Flip.
+   * Delaying until Flip #120 made Start unavailable through most of the
+   * opening movie, because Bink can produce fewer Flips than gameplay.
+   * Keep same-thread SDL init, foreground checks, neutral-to-Start gate
+   * and no asynchronous SDL pumping. The separate SHA-gated native
+   * DIERR_UNPLUGGED guard retains its independent Flip #120 safety gate. */
+  if(!requested || flip<1)return;
   if(!sdl3_game_thread)sdl3_game_thread=GetCurrentThreadId();
   if(sdl3_game_thread!=GetCurrentThreadId())return;
   if(!game_hwnd || !IsWindowVisible(game_hwnd) ||
@@ -1270,7 +1269,14 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
     spider_sdl3_universal_reset(&generic_actions);
     return;
   }
-  if(!attempted && !sdl_load())return;
+  if(!attempted) {
+    char notice[180];
+    snprintf(notice,sizeof(notice),
+      "SDL3-PROBE: first safe foreground game Flip #%ld; initializing bundled SDL3 on game thread=%lu",
+      flip,(unsigned long)GetCurrentThreadId());
+    say(notice);
+    if(!sdl_load())return;
+  }
   if(!ready)return;
   /* SDL3's event pump and initialization stay on the game/Flip thread. */
   sdl_pump();
