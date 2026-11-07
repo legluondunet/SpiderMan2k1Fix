@@ -495,6 +495,11 @@ static const struct {const char *section,*key;} deprecated_ini_keys[]={
   {"Input","ExperimentalSDL3GameOverOwnerProbe"},
   {"Input","ExperimentalSDL3GameOverNativeOwner"},
   {"Input","ExperimentalAltLatchRecovery"},
+  /* The obsolete original DirectInput per-action [Joystick] section
+   * no longer has a live controller backend. Keep RawHex losslessly. */
+  {"Joystick","Jump"},{"Joystick","Kick"},{"Joystick","Punch"},
+  {"Joystick","Web"},{"Joystick","Aim"},{"Joystick","Zipline"},
+  {"Joystick","Swing"},
   {"Debug","F10VerboseTrace"},
   {"Display","Resolution"},{"Display","FOV"},
   {"Display","ExperimentalFOVAspect"},{"Display","ExperimentalFOVHorPlus"},
