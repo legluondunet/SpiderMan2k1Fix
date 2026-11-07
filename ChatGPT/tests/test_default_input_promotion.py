@@ -73,7 +73,7 @@ def test_default_config_preserves_original_retained_game_settings():
     cfg=_new_ini()
     assert cfg["Input"]["KeyboardLayout"]=="Auto"
     assert cfg["Display"]["AspectRatio"]=="Auto"
-    assert "Joystick" in cfg
+    assert "Joystick" not in cfg
     assert "Internal" in cfg and len(cfg["Internal"]["RawHex"])==504
     assert "Keyboard" in cfg
     validator=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
