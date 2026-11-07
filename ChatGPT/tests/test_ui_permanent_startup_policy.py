@@ -12,7 +12,13 @@ def test_permanent_ui_activation_is_after_hud_install_and_widescreen_only():
     init=CORE[start:finish]
     assert "if(SpiderHudWidescreen_Installed() &&" in init
     assert 'lstrcmpiA(display_aspect_setting,"4:3")!=0' in init
-    assert "native_esc43_supported_monitor()" in init
+    assert "native_esc43_supported_monitor()" not in init
+    assert "desktop_w/desktop_h are still ZERO here" in init
+    # Monitor dimensions are captured later by DirectDraw, never before.
+    assert "static DWORD desktop_w=0, desktop_h=0;" in CORE
+    assert CORE.index("static void probe_desktop_mode(HWND hwnd)") < CORE.index("  install_player_hud(TRUE);")
+    assert "probe_desktop_mode(hwnd);" in CORE
+    assert "native_esc43_supported_monitor() &&" in CORE
     assert init.index("install_player_hud(TRUE);") < init.index("SpiderHudWidescreen_SetUICanvasPrototype(TRUE);")
     for flag in ("ui_canvas_trial_enabled", "ui_transition_bounds25_enabled",
                  "ui_compositor_trial_enabled", "ui_compositor_native_backdrop_enabled"):
