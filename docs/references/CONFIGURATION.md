@@ -81,6 +81,19 @@ The example `RawHex` line is **illustrative only**: the generated file contains 
 | `[Keyboard]` | The eleven original keyboard actions, editable through the game's keyboard menu. |
 | `[Internal] RawHex` | Lossless copy of the game's original 252-byte configuration record (including inactive original joystick bytes). Not a player-facing control. |
 
+**Permanent native Pause, veil and scene-entry animation:** on verified widescreen
+gameplay the native Pause/ESC menu and source material keep their 4:3
+proportions; the compositor uses the game's original veil and adds only
+source-verified physical outer gutters. The original entry-iris animation
+is preserved with the V25 synchronized side curtains. This behavior is
+built in, not controlled by `SPIDERMAN2K1FIX_UI_CANVAS_TEST`,
+`SPIDERMAN2K1FIX_UI_COMPOSITOR_TEST`, or
+`SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST`.
+For a 4:3 presentation or an unavailable verified HUD hook, original
+rendering is retained. The unvalidated HUD-over-veil reordering remains
+disabled; enabling the permanent Pause rendering must not alter native HUD
+brightness or draw order.
+
 **Permanent Left Alt repair:** after a verified Alt+Tab return, source-verified one-byte latch recovery runs automatically when safe. It is not a configurable player option.
 
 ### Universal SDL3 controllers: built in (no fallback backend)
