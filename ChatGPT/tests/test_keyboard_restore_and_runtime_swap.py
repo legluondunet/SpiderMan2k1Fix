@@ -4,8 +4,8 @@ ROOT=Path(__file__).resolve().parents[2]
 CFG=(ROOT/"virtual_spidey_cfg.c").read_text()
 CFG_H=(ROOT/"virtual_spidey_cfg.h").read_text()
 MENU=(ROOT/"ps1_joystick_readonly_menu.c").read_text()
-NATIVE=(ROOT/"native_joystick_reconnect.c").read_text()
-PROBE=(ROOT/"native_joystick_swap_probe.h").read_text()
+SDL=(ROOT/"sdl3_gamepad_probe.c").read_text()
+ADAPTER=(ROOT/"sdl3_universal_gameplay.c").read_text()
 MAIN=(ROOT/"spiderman2k1fix.c").read_text()
 INI=(ROOT/"ini_validation.h").read_text()
 
@@ -37,23 +37,21 @@ def test_modern_keyboard_restore_changes_only_original_default_source():
     assert "memcpy(replacements[2],live_sites[2].original,live_sites[2].size);" in MENU
 
 
-def test_native_reconnect_never_applies_fixed_joystick_mapping_or_overrides_keyboard():
+def test_controller_mapping_has_no_native_reconnect_or_keyboard_override():
     assert "ExperimentalNativeJoystickMappingSwap=1" not in CFG
-    assert "swap_mapping_enabled=0;" in NATIVE
-    assert "swap_native_gameplay_mapping(" not in NATIVE
-    assert "spider_ps1_buttons" not in NATIVE
-    assert "spider_xbox360_buttons" not in NATIVE
-    assert "spider_native_swap_preset(" not in NATIVE
-    assert "SPIDER_NATIVE_ACTION_TABLE 0x00568408u" in NATIVE
-    assert "if(!neutral_and_flush(candidate))" in NATIVE
-    assert "InterlockedCompareExchangePointer((PVOID volatile *)game_device_slot()" in NATIVE
-    assert "spider_native_swap_read(" in NATIVE
-    assert "SPIDER_NATIVE_SWAP_SLOTS=14" in PROBE
-    assert "SpiderSDL3Probe_NativeOwnerEnabled()" in NATIVE
-    assert "VirtualProtect((void *)address,0x70u,PAGE_READWRITE,&old)" not in NATIVE
+    assert not (ROOT/"native_joystick_reconnect.c").exists()
+    assert not (ROOT/"native_joystick_reconnect_policy.h").exists()
+    assert "SpiderNativeReconnect_" not in MAIN
+    assert "SpiderNativeReconnect_" not in SDL
+    assert "SpiderSDL3Probe_SelectedMappedSample" in SDL
+    assert "SpiderSDL3Universal_OnFlip(game_hwnd," in MAIN
+    assert "SPIDER_UNIVERSAL_DI_SLOT" in ADAPTER
+    assert "suspend_original()" in ADAPTER
+    assert "restore_original(" in ADAPTER
     assert "spider_ps1_apply(" not in CFG
     assert "spider_xbox360_apply(" not in CFG
     assert "SPIDEY-KEYBOARD-DEFAULT: ACTIVE" in CFG
+
 
 def test_keyboard_and_joystick_are_independently_locked():
     assert "0x00AC129Cu!=0u" in MENU
