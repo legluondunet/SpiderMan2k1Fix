@@ -105,7 +105,8 @@ def test_selected_physical_cross_square_edge_requires_neutral_owner():
     assert "IDirectInputDevice8_" not in section
     assert "SendInput(" not in section
     assert 'SpiderQuickExitF12_CutscenePhysicalSample(id,vid,pid,sample.buttons,ready);' in plan
-    assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in plan
+    assert "SpiderNativeReconnect_SDL3SelectionReady(" not in plan
+    assert "ready=0;" in plan
     assert plan.count("SpiderQuickExitF12_CutscenePhysicalSample(0,0,0,0,0);") >= 4
     assert plan.index("GetForegroundWindow()!=hwnd") < plan.index(
         "SpiderQuickExitF12_CutscenePhysicalSample(id,vid,pid,sample.buttons,ready)")
