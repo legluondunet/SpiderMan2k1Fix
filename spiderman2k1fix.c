@@ -39,7 +39,6 @@
 #include "input_notacquired_retry.h"
 #include "alt_latch_recovery.h"
 #include "native_joystick_unplug.h"
-#include "native_joystick_reconnect.h"
 #include "sdl3_gamepad_probe.h"
 #include "sdl3_gameplay_plan_probe.h"
 #include "sdl3_gameplay_live.h"
@@ -4692,12 +4691,9 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
   }
   SpiderDI8Retry_OnFlip(count);
   SpiderNativeUnplug_OnFlip(count);
-  /* Restore temporary SDL3 3D remap BEFORE the original device changes;
-   * otherwise the canonical native hot-swap would see a custom map. */
-  SpiderSDL3GameplayLive_PreNativeOnFlip(game_hwnd);
-  /* SDL3 selection was pumped before UI. Native device replacement now
-   * runs after its SHA-guarded disconnect patch, on the same Flip thread. */
-  SpiderNativeReconnect_OnFlip(count,game_hwnd);
+  /* SDL3 is the only supported controller mapping backend. The game's
+   * fatal native unplug protection remains, but no replacement native
+   * DirectInput controller is ever enumerated or rebound by the fix. */
   /* Separate default-OFF Left Alt-only native focus-latch experiment.
    * Actual confirmed external loss/return is recorded by FOCUS-PAUSE,
    * never inferred from mere SDL3 sample-eligibility transitions. */
@@ -4721,8 +4717,8 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       native_pause43_visible_near_flip(count) ||
       InterlockedCompareExchange(&pause_latched,0,0)==1 ||
       InterlockedCompareExchange(&pause_in_progress,0,0)==1));
-  /* Experimental OFF-by-default normalized SDL3 profile -> game
-   * keyboard adapter, after polling and native-reconnect safety gates. */
+  /* Built-in SDL3 profile -> game keyboard adapter. Original game-owned
+   * joystick activity is independently isolated by the universal bridge. */
   SpiderSDL3Universal_OnFlip(game_hwnd,
     InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
     InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
@@ -4732,12 +4728,6 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       native_pause43_visible_near_flip(count) ||
       InterlockedCompareExchange(&pause_latched,0,0)==1 ||
       InterlockedCompareExchange(&pause_in_progress,0,0)==1));
-  /* Passive, bounded post-hotplug heartbeat: menu -> 3D -> menu. */
-  SpiderNativeReconnect_ObserveMode(count,
-    InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
-    InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
-      InterlockedCompareExchange(&fov_game_height,0,0)>0,
-    (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u);
   /* Observe the physical F9 press early; the game's screenshot code can
    * run between two Flip calls, so surface hooks also sample F9. */
   if(InterlockedCompareExchange(&f9_trace_enabled,0,0)==1)
@@ -5320,20 +5310,18 @@ static DWORD initialize_body(LPVOID unused) {
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
    * No COM-vtable interception. The actual patch is delayed to Flip #120. */
   SpiderDI8Retry_Init(log_line);
-  /* Experimental: the original game exits on joystick DIERR_UNPLUGGED.
-   * Opt-in, SHA-pinned, game-thread-only mitigation; no native rebind yet. */
+  /* The original game can exit on joystick DIERR_UNPLUGGED.
+   * Retain the signature-gated native crash guard, not native reconnection. */
   {
     char ini[MAX_PATH];
     if(spider_path_ini_a(ini,sizeof(ini))) {
       SpiderNativeUnplug_Init(ini,log_line);
-      SpiderNativeReconnect_Init(ini,log_line);
       SpiderSDL3Probe_Init(ini,log_line);
       SpiderSDL3Universal_Init(ini,log_line);
       SpiderSDL3GameplayPlan_Init(ini,log_line);
       SpiderAltLatch_Init(ini,log_line);
     } else {
       SpiderNativeUnplug_Init(NULL,log_line);
-      SpiderNativeReconnect_Init(NULL,log_line);
       SpiderSDL3Probe_Init(NULL,log_line);
       SpiderSDL3Universal_Init(NULL,log_line);
       SpiderSDL3GameplayPlan_Init(NULL,log_line);
