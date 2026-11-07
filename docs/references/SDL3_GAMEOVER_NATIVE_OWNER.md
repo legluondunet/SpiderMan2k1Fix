@@ -74,9 +74,12 @@ Enter for a fresh isolated South/Cross/A press only when:
   six stable Flips plus a fully neutral frame precede a fresh isolated
   confirmation.
 
-The original injection is OFF unless `ExperimentalSDL3GameOverConfirm=1`.
+The original injection is OFF unless `ExperimentalSDL3GameOverConfirm=1`
+**and** `ExperimentalSDL3GameOverNativeOwner=1`. If the second option is
+missing, the runtime explicitly logs `SDL3-GAMEOVER-NATIVE: CONFIRM BLOCKED`.
+There is no longer any legacy request-2-only Return injection path.
 If byte verification, relocation bounds or protection change fails,
-the owner hook refuses and **the new owner-gated mode cannot inject**.
+the owner hook refuses and **no GAME OVER Return is injected**.
 The independent `ExperimentalSDL3GameOverOwnerProbe=1` mode retains
 its non-mutating telemetry; it can separately compare native 3D title
 presence and screen-owner entry/exit.
@@ -89,6 +92,14 @@ new hook work. Those tests **do not validate** the new source-owner
 hook, so it must remain experimental until one fresh runtime test
 confirms both RETRY and QUIT, ordinary jumps and native Pause/Alt+Tab,
 with no false Enter in game transitions.
+
+The user's 2026-11-07 initial test using build `v1.1.0-1c713de`
+(Windows x86 compiled under CI #42346599890) logged two legacy
+`SDL3-GAMEOVER-TRIAL: ENTER PULSE` events but **no**
+`SDL3-GAMEOVER-NATIVE: ... wrapper installed` or `entered ... owner`
+record, because the strict owner flag was not active. This cannot
+validate the new call wrapper. The fallback has since been **disabled**;
+a correctly configured new build cannot silently repeat that situation.
 
 The next acceptance test should enable the strict owner gate and
 existing confirmation trial, with `[Debug] Log=1`. A new
