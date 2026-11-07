@@ -5469,14 +5469,18 @@ static DWORD initialize_body(LPVOID unused) {
    * and V25's original-native scene-entry iris curtains.
    *
    * Install only after the exact-game HUD signature guard succeeds and
-   * for the widescreen presentation. 4:3 retains the original drawing.
+   * for non-4:3 logical gameplay. Physical monitor geometry is tested
+   * later by the source- and draw-site guards. 4:3 remains original.
    * Former UI_*_TEST environment switches are ignored.
    *
    * Keep the unvalidated HUD-over-veil deferral OFF: the verified native
    * HUD ordering must not change when the Pause composition is promoted. */
+  /* desktop_w/desktop_h are still ZERO here: probe_desktop_mode()
+   * runs later, at the first DirectDrawCreateEx/SetCooperativeLevel.
+   * Never use the runtime-monitor guard to decide startup activation.
+   * Geometry/path-specific checks defer until the real monitor is known. */
   if(SpiderHudWidescreen_Installed() &&
-     lstrcmpiA(display_aspect_setting,"4:3")!=0 &&
-     native_esc43_supported_monitor()) {
+     lstrcmpiA(display_aspect_setting,"4:3")!=0) {
     SpiderHudWidescreen_SetUICanvasPrototype(TRUE);
     InterlockedExchange(&ui_canvas_trial_enabled,1);
     InterlockedExchange(&ui_transition_bounds25_enabled,1);
@@ -5488,7 +5492,7 @@ static DWORD initialize_body(LPVOID unused) {
     log_line("UI-TRANSITION-BOUNDS25: BUILT-IN original V19 scene iris with same-frame source-tooth V25 outer curtains");
     log_line("UI-COMPOSITOR: BUILT-IN source veil, native 4:3 Pause menu and verified black outer gutters; HUD order preserved");
   } else {
-    log_line("UI-CANVAS-43/UI-COMPOSITOR/UI-TRANSITION: native 4:3 or HUD guard unavailable; original rendering preserved");
+    log_line("UI-CANVAS-43/UI-COMPOSITOR/UI-TRANSITION: classic 4:3 requested or verified HUD unavailable; original rendering preserved");
   }
   InterlockedExchange(&ui_compositor_hud_over_veil_enabled,0);
   /* Native ESC/Pause/Motif/Cursor remain built-in. Each requires the
