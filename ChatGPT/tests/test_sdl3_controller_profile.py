@@ -141,7 +141,7 @@ def test_profile_model_cannot_change_native_game_while_in_design_phase():
         "SDL_UpdateGamepads", "SDL_PumpEvents",
     ):
         assert forbidden not in h
-    native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
+    native=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
     assert "swap_native_gameplay_mapping(" not in native
     assert "spider_native_swap_preset(" not in native
     assert "spider_native_swap_read(" in native
