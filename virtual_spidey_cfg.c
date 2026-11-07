@@ -305,72 +305,9 @@ static int save_keyboard(void) {
   }
   return 1;
 }
-/* The joystick menu has separate button assignments from keyboard.
- * These DWORDs store zero-based button indexes (Jump=3, Kick=4, etc.).
- * Only seven button bindings have been verified; do not interpret the
- * four preceding 0x4000 values as button IDs or directional axis names. */
-static const char *joystick_actions[7]={"Jump","Kick","Punch","Web","Aim","Zipline","Swing"};
-static const DWORD joystick_offsets[7]={0x50,0x54,0x58,0x5C,0x60,0x64,0x68};
-static int decode_joystick_button(const char *name,DWORD *button) {
-  /* User-facing BUTTONn uses the game's zero-based button numbering.
-   * The hex form remains available to preserve unknown future encodings. */
-  if(name && strlen(name)>=7) {
-    static const char prefix[]="BUTTON";
-    unsigned i;
-    int prefix_ok=1;
-    for(i=0;i<6;i++) {
-      char a=name[i],b=prefix[i];
-      if(a>='a' && a<='z') a=(char)(a-'a'+'A');
-      if(a!=b) {prefix_ok=0;break;}
-    }
-    if(prefix_ok) {
-      char *end=NULL;
-      unsigned long n;
-      const char *digits=name+6;
-      if(*digits<'0' || *digits>'9') return 0;
-      errno=0;
-      n=strtoul(digits,&end,10);
-      if(!errno && end && *end=='\0' && n<=127) {
-        *button=(DWORD)n;
-        return 1;
-      }
-      return 0;
-    }
-  }
-  if(name && name[0]=='0' && (name[1]=='x'||name[1]=='X')) {
-    char *end=NULL;
-    unsigned long n;
-    errno=0;
-    n=strtoul(name+2,&end,16);
-    if(!errno && end && end!=name+2 && *end=='\0' && n<=0xFFFFFFFFUL) {
-      *button=(DWORD)n;
-      return 1;
-    }
-  }
-  return 0;
-}
-static void load_joystick(void) {
-  unsigned i; char value[64],msg[160]; DWORD button;
-  for(i=0;i<7;i++) {
-    GetPrivateProfileStringA("Joystick",joystick_actions[i],"",value,sizeof(value),ini_file);
-    if(!value[0]) continue; /* Keep factory/RawHex binding if not specified. */
-    if(decode_joystick_button(value,&button)) set_word(joystick_offsets[i],button);
-    else {
-      snprintf(msg,sizeof(msg),"SPIDEY-CFG: unrecognized [Joystick] %s=%s; keeping existing binding",joystick_actions[i],value);
-      report(msg);
-    }
-  }
-}
-static int save_joystick(void) {
-  unsigned i; char name[32];
-  for(i=0;i<7;i++) {
-    DWORD code=get_word(joystick_offsets[i]);
-    if(code<=127) snprintf(name,sizeof(name),"BUTTON%lu",(unsigned long)code);
-    else snprintf(name,sizeof(name),"0x%08lX",(unsigned long)code);
-    if(!WritePrivateProfileStringA("Joystick",joystick_actions[i],name,ini_file)) return 0;
-  }
-  return 1;
-}
+/* Original joystick bytes remain losslessly carried by [Internal] RawHex.
+ * SDL3 per-model profiles are stored separately; no legacy [Joystick]
+ * overrides or duplicate button keys are read or written here. */
 /* Volume offsets and limits established by controlled in-game INI captures:
  * Music/SFX = uint32 LE at 0xEC (0..0x3FFF); movie = 0xF0 (0..255);
  * voice = 0xF4 (0..255); 0xF8 holds mono=1 / stereo=0.
@@ -505,10 +442,6 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "; Letter names follow [Input] KeyboardLayout; 0xNN bypasses layout.\r\n"
     "; Use names like SPACE, F, M, UP or numeric 0xNNNNNNNN.\r\n"
     "; Unrecognized raw binding codes are preserved as 0xNNNNNNNN.\r\n";
-  static const char joystick_header[]=
-    "\r\n[Joystick]\r\n"
-    "; Buttons are numbered from zero, as shown in the game menu.\r\n"
-    "; Joystick movement/axis parameters are preserved in [Internal] RawHex.\r\n";
   static const char internal_header[]=
     "\r\n[Internal]\r\n"
     "; Raw 252-byte Spidey.cfg image, including unidentified settings.\r\n"
@@ -544,17 +477,6 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     name=encode_key(raw);
     if(name)snprintf(line,sizeof(line),"%s=%s\r\n",action_names[i],name);
     else snprintf(line,sizeof(line),"%s=0x%02lX\r\n",action_names[i],(unsigned long)raw);
-    if(!write_ini_text(file,line))goto write_fail;
-  }
-  if(!write_ini_text(file,joystick_header))goto write_fail;
-  for(i=0;i<7;i++) {
-    DWORD off=joystick_offsets[i];
-    DWORD code=(DWORD)spidey_cfg_factory[off] |
-       ((DWORD)spidey_cfg_factory[off+1]<<8) |
-       ((DWORD)spidey_cfg_factory[off+2]<<16) |
-       ((DWORD)spidey_cfg_factory[off+3]<<24);
-    if(code<=127) snprintf(line,sizeof(line),"%s=BUTTON%lu\r\n",joystick_actions[i],(unsigned long)code);
-    else snprintf(line,sizeof(line),"%s=0x%08lX\r\n",joystick_actions[i],(unsigned long)code);
     if(!write_ini_text(file,line))goto write_fail;
   }
   if(!write_ini_text(file,internal_header))goto write_fail;
@@ -934,7 +856,6 @@ static void load_settings(void) {
   apply_locked_display();
   load_keyboard_layout();
   load_keyboard();
-  load_joystick();
   load_audio();
   /* Never let GetPrivateProfileIntA turn an invalid string into brightness=0. */
   {
@@ -999,16 +920,16 @@ static int save_settings(void) {
   /* Never let in-game changes to screen size or color depth persist. */
   apply_locked_display();
   memcpy(saved_cfg,cfg,CFG_SIZE);
-  /* Save only the player's own untouched original-game joystick map. */
+  /* Preserve the entire original configuration, including inactive joystick
+   * bytes, in one lossless RawHex record; SDL3 mappings live separately. */
   for(i=0;i<CFG_SIZE;i++) sprintf(hex+i*2,"%02X",(unsigned)saved_cfg[i]);
   if(!WritePrivateProfileStringA("Internal","RawHex",hex,ini_file)) goto fail;
   snprintf(value,sizeof(value),"%lu",(unsigned long)get_word(12));
   if(!WritePrivateProfileStringA("Display","Brightness",value,ini_file)) goto fail;
   if(!save_keyboard()) goto fail;
-  if(!save_joystick()) goto fail;
   if(!save_audio()) goto fail;
   dirty=0;
-  report("SPIDEY-CFG: game keyboard/joystick/audio/brightness saved; resolution and color depth locked by [Display] policy");
+  report("SPIDEY-CFG: game keyboard/audio/brightness and original RawHex saved; resolution and color depth locked by [Display] policy");
   return 1;
 fail:
   snprintf(msg,sizeof(msg),"SPIDEY-CFG: ERROR saving INI Win32=%lu (data still in memory)",(unsigned long)GetLastError());
