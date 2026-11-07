@@ -469,22 +469,18 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   gameover_owner_probe_title_actor=0;
   gameover_owner_probe_title_frame=0;
   spider_sdl3_gameover_trial_reset(&gameover_trial);
-  gameover_trial_enabled=ini &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverConfirm",1,ini)==1;
+  /* Mandatory SDL3 controller path, including exact-owner GAME OVER
+   * confirmation; hook installation itself remains signature-gated. */
+  gameover_trial_enabled=1;
   /* The confirmation opt-in ALWAYS requests the authenticated owner:
    * never silently fall back to the legacy request-2-only action.
    * The optional NativeOwner key is retained for owner-hook diagnostics
    * without confirmation, but is no longer required for end users. */
-  gameover_native_owner_trial_enabled=gameover_trial_enabled ||
-    (ini && GetPrivateProfileIntA("Input",
-      "ExperimentalSDL3GameOverNativeOwner",0,ini)==1);
+  gameover_native_owner_trial_enabled=1;
   gameover_owner_probe_enabled=ini &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverOwnerProbe",0,ini)==1;
   spider_sdl3_universal_reset(&state);
-  requested=ini &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3ControllerSetup",1,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3UniversalGameplay",1,ini)==1;
+  requested=1; /* SDL3-only gameplay, no legacy-INI opt-out. */
   if(requested)log_universal(
     "SDL3-UNIVERSAL: default-on gameplay enabled for ANY mapped SDL3 gamepad; "
     "11 game keyboard actions + native Pause; original DirectInput "
