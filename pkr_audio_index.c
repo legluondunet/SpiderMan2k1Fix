@@ -320,9 +320,9 @@ void SpiderPKRAudioIndex_Init(void (*logger)(const char*),int enabled){
   char path[MAX_PATH],game_dir[MAX_PATH];
   diag=logger;
   if(enabled!=1)return;
-  /* The game archive belongs beside SpideyPC.exe. Construct the complete
-   * filename with bounds checks: replacing the EXE basename in-place can
-   * overflow MAX_PATH in an otherwise valid long installation directory. */
+  /* The game archive belongs beside SpideyPC.exe. Use the common
+   * bounded path helpers rather than relying on the EXE basename length
+   * when replacing a filename inside a MAX_PATH buffer. */
   if(!spider_path_exe_dir_a(game_dir,sizeof(game_dir)) ||
      !spider_path_join_a(path,sizeof(path),game_dir,"data.pkr")) {
     if(diag)diag("PKR-AUDIO: REFUSED game data.pkr path unavailable or too long");
