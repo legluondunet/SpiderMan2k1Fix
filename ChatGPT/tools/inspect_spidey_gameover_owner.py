@@ -71,7 +71,7 @@ def map_pe_sections(data: bytes):
     if data[:2] != b"MZ":
         raise InvalidExecutable("missing DOS header")
     pe = struct.unpack_from("<I", data, 0x3C)[0]
-    if data[pe:pe + 4] != b"PE\\0\\0":
+    if data[pe:pe + 4] != b"PE\0\0":
         raise InvalidExecutable("missing PE signature")
     count, optional_size = struct.unpack_from("<H", data, pe + 6)[0], struct.unpack_from("<H", data, pe + 20)[0]
     optional = pe + 24
@@ -84,7 +84,7 @@ def map_pe_sections(data: bytes):
         entry = pe + 24 + optional_size + i * 40
         name, virtual_size, rva, raw_size, raw_offset = struct.unpack_from(
             "<8sIIII", data, entry)
-        sections.append((name.rstrip(b"\\0").decode("ascii", "replace"),
+        sections.append((name.rstrip(b"\0").decode("ascii", "replace"),
                          rva, virtual_size, raw_offset, raw_size))
     return sections
 
@@ -109,7 +109,7 @@ def inspect(data: bytes) -> dict:
     pointer = struct.unpack("<I", read_va(data, sections, SOURCE_PTR_ENTRY, 4))[0]
     if pointer != SOURCE_TEXT_VA:
         raise InvalidExecutable("the source GAME OVER text pointer changed")
-    if read_va(data, sections, pointer, 10) != b"game over\\0":
+    if read_va(data, sections, pointer, 10) != b"game over\0":
         raise InvalidExecutable("the original GAME OVER string changed")
     return {
         "verified_original_sha256": RETAIL_SHA256,
