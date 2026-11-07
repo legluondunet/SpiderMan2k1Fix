@@ -10,6 +10,17 @@
 #include <string.h>
 #include <wchar.h>
 
+/* Copy a selected path only when the complete string fits. On failure,
+ * leave the destination untouched so the caller can fail closed. */
+static inline int spider_path_copy_a(char *out,size_t cap,const char *src) {
+  size_t length;
+  if(!out || !cap || !src)return 0;
+  length=strlen(src);
+  if(length>=cap)return 0;
+  memcpy(out,src,length+1u);
+  return 1;
+}
+
 static inline int spider_path_join_a(char *out,size_t cap,
                                      const char *dir,const char *name) {
   int n;
@@ -121,40 +132,33 @@ static inline int spider_path_ini_a(char *out,size_t cap) {
   if(spider_path_dir_a(game,0) &&
      spider_path_join_a(target,sizeof(target),game,"SpiderMan2k1Fix.ini") &&
      spider_path_file_a(target)) {
-    if(strlen(target)+1u>cap)return 0;
-    strcpy(out,target);return 1;
+    return spider_path_copy_a(out,cap,target);
   }
   if(spider_path_dir_a(local,0) &&
      spider_path_join_a(target,sizeof(target),local,"SpiderMan2k1Fix.ini") &&
      spider_path_file_a(target)) {
-    if(strlen(target)+1u>cap)return 0;
-    strcpy(out,target);return 1;
+    return spider_path_copy_a(out,cap,target);
   }
   if(spider_path_file_a(legacy)) {
     if(spider_path_dir_a(game,1) &&
        spider_path_join_a(target,sizeof(target),game,"SpiderMan2k1Fix.ini") &&
        spider_path_migrate_ini_a(legacy,target)) {
-      if(strlen(target)+1u>cap)return 0;
-      strcpy(out,target);return 1;
+      return spider_path_copy_a(out,cap,target);
     }
     if(spider_path_dir_a(local,1) &&
        spider_path_join_a(target,sizeof(target),local,"SpiderMan2k1Fix.ini") &&
        spider_path_migrate_ini_a(legacy,target)) {
-      if(strlen(target)+1u>cap)return 0;
-      strcpy(out,target);return 1;
+      return spider_path_copy_a(out,cap,target);
     }
-    if(strlen(legacy)+1u>cap)return 0;
-    strcpy(out,legacy);return 1;
+    return spider_path_copy_a(out,cap,legacy);
   }
   if(spider_path_dir_a(game,1) && spider_path_writable_a(game) &&
      spider_path_join_a(target,sizeof(target),game,"SpiderMan2k1Fix.ini")) {
-    if(strlen(target)+1u>cap)return 0;
-    strcpy(out,target);return 1;
+    return spider_path_copy_a(out,cap,target);
   }
   if(spider_path_dir_a(local,1) && spider_path_writable_a(local) &&
      spider_path_join_a(target,sizeof(target),local,"SpiderMan2k1Fix.ini")) {
-    if(strlen(target)+1u>cap)return 0;
-    strcpy(out,target);return 1;
+    return spider_path_copy_a(out,cap,target);
   }
   return 0;
 }
@@ -176,8 +180,7 @@ static inline int spider_path_log_a(char *out,size_t cap) {
        !(attr&(FILE_ATTRIBUTE_DIRECTORY|FILE_ATTRIBUTE_REPARSE_POINT|
                 FILE_ATTRIBUTE_READONLY))) ||
       (attr==INVALID_FILE_ATTRIBUTES && spider_path_writable_a(exe)))) {
-    if(strlen(target)+1u>cap)return 0;
-    strcpy(out,target);return 1;
+    return spider_path_copy_a(out,cap,target);
   }
   if(!spider_path_roots_a(game,sizeof(game),local,sizeof(local)) ||
      !spider_path_dir_a(local,1) || !spider_path_writable_a(local) ||
@@ -187,9 +190,7 @@ static inline int spider_path_log_a(char *out,size_t cap) {
   if(attr!=INVALID_FILE_ATTRIBUTES &&
      (attr&(FILE_ATTRIBUTE_DIRECTORY|FILE_ATTRIBUTE_REPARSE_POINT|
             FILE_ATTRIBUTE_READONLY)))return 0;
-  if(strlen(target)+1u>cap)return 0;
-  strcpy(out,target);
-  return 1;
+  return spider_path_copy_a(out,cap,target);
 }
 /* Prefer new subfolder, accept root-only legacy installs until replaced.
  * Never fall back to a different DLL if the preferred file exists but
@@ -200,14 +201,9 @@ static inline int spider_path_code_asset_a(const char *filename,
   if(!filename || !spider_path_asset_a(filename,preferred,sizeof(preferred)) ||
      !spider_path_exe_dir_a(root,sizeof(root)) ||
      !spider_path_join_a(legacy,sizeof(legacy),root,filename))return 0;
-  if(spider_path_file_a(preferred) || !spider_path_file_a(legacy)) {
-    if(strlen(preferred)+1u>cap)return 0;
-    strcpy(out,preferred);
-  } else {
-    if(strlen(legacy)+1u>cap)return 0;
-    strcpy(out,legacy);
-  }
-  return 1;
+  if(spider_path_file_a(preferred) || !spider_path_file_a(legacy))
+    return spider_path_copy_a(out,cap,preferred);
+  return spider_path_copy_a(out,cap,legacy);
 }
 static inline int spider_path_dir_w(const WCHAR *path,int create) {
   DWORD attr;
