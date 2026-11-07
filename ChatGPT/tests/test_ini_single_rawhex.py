@@ -15,7 +15,7 @@ def read_ini(filename):
     p.read_string(data)
     assert data.count("\nRawHex=") == 1
     assert len(p['Internal']['RawHex']) == 504
-    expected = ({'Debug','Display','Input','Audio','Keyboard','Joystick','Internal'}
+    expected = ({'Debug','Display','Input','Audio','Keyboard','Internal'}
                 if 'generated-example' in filename else
                 {'Debug','Display','HUD','Input','Audio','Keyboard','Joystick','Internal'})
     assert set(p.sections()) == expected
@@ -35,8 +35,11 @@ def read_ini(filename):
     assert struct.unpack_from('<I',raw,0xF8)[0] == 0
     assert [p['Audio'][k] for k in ('MusicSFXLevel','VoiceLevel','MovieLevel','Stereo')] == (['69','79','69','1'] if old_preferences else ['40','60','40','1'])
     assert [p['Keyboard'][k] for k in ACTIONS] == ['UP','DOWN','LEFT','RIGHT','SPACE','X','C','V','D','F','G']
-    for i,key in enumerate(('Jump','Kick','Punch','Web','Aim','Zipline','Swing')):
-        assert p['Joystick'][key] == f'BUTTON{struct.unpack_from("<I",raw,0x50+i*4)[0]}'
+    if p.has_section('Joystick'):
+        for i,key in enumerate(('Jump','Kick','Punch','Web','Aim','Zipline','Swing')):
+            assert p['Joystick'][key] == f'BUTTON{struct.unpack_from("<I",raw,0x50+i*4)[0]}'
+    else:
+        assert struct.unpack_from('<7I', raw, 0x50) == (3,4,0,1,6,9,7)
     return raw
 
 
@@ -58,6 +61,6 @@ def test_runtime_generator_uses_factory_and_one_internal_section():
     assert r'"\r\n[Internal]\r\n"' in src
     assert src.count('"RawHex=";') == 1
     assert r'"\r\n[Keyboard]\r\n"' in src
-    assert r'"\r\n[Joystick]\r\n"' in src
+    assert r'"\r\n[Joystick]\r\n"' not in src
     assert r'"\r\n[Controls]\r\n"' not in src
     assert 'CreateFileA(ini,GENERIC_WRITE,FILE_SHARE_READ,NULL,CREATE_NEW,' in src
