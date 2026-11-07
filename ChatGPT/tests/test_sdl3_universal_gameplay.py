@@ -105,7 +105,7 @@ def test_universal_runtime_is_built_in_and_mutually_exclusive():
         "SpiderSDL3Universal_BeforeUI(game_hwnd);") < game.index(
         "SpiderGamepadUI_OnFlip(game_hwnd")
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in game
-    assert "SpiderSDL3Universal_Enabled()" in native
+    assert "CreateDevice(" not in native
     assert "begin_scancode(" not in ui
     assert "sdl3_generic_ui_on_flip(" not in ui
     # PR #96 retains its validated SDL3 mapped-device panel. The raw
@@ -291,7 +291,7 @@ def test_integrated_panel_preserved_and_generic_owner_is_explicit_only():
     assert "return SpiderSDL3Probe_SelectedSample(" not in selected
     assert "SpiderSDL3Universal_BeforeUI(game_hwnd);" in game
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in game
-    assert "SpiderSDL3Universal_Enabled()" in (
+    assert "CreateDevice(" not in (
         ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
     assert "sdl3_generic_ui_on_flip(" not in (
         ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
@@ -585,7 +585,7 @@ def test_universal_mapped_ps4_uses_generic_identity_without_native_rebind():
     assert "generic_selected_id=requested_id;" in modal
     assert "selection.active=requested_id;" in modal
     native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
-    assert "if(SpiderSDL3Universal_Enabled())return;" in native
+    assert "CreateDevice(" not in native
 
 
 def test_native_x11_focus_disarms_universal_input_before_paused_even_when_wine_hwnd_stale():

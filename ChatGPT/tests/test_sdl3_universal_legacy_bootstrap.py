@@ -46,5 +46,5 @@ def test_default_on_universal_and_native_device_safety_still_separate():
     assert "requested=1; /* SDL3-only gameplay, no legacy-INI opt-out. */" in adapter
     assert "SpiderNativeUnplug_OnFlip(count);" in core
     assert "SpiderNativeReconnect_OnFlip(count,game_hwnd);" in core
-    assert "if(SpiderSDL3Universal_Enabled())return;" in native
+    assert 'try_rebind(' not in native
     assert "SpiderNativeReconnect_SDL3SelectionReady(" in native

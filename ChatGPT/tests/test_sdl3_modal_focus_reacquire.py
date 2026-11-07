@@ -84,5 +84,5 @@ def test_next_foreground_flip_claims_only_explicit_selected_sdl3_pad():
     assert "if(!suspended && !spider_sdl3_universal_neutral(&sample))" in adapter
     assert "SpiderSDL3Probe_GenericSelectedSample(" in probe
     assert "spider_sdl3_selection_focus_lost(&selection)" in probe
-    assert "target.matches!=1u" in native
+    assert "CreateDevice(" not in native
     assert "swap_native_gameplay_mapping(" not in native
