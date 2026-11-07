@@ -88,9 +88,9 @@ The example `RawHex` line is **illustrative only**: the generated file contains 
 | `[Display] FPSLimit` | **Player-controlled frame limit.** Default `30`; `0` disables the limiter, `1..240` sets a target. Higher FPS can expose timing issues in the original game. |
 | `[Input] KeyboardLayout` | `Auto` detects the Windows/Wine input layout, `Off` leaves original QWERTY positions. |
 | `[Input] ExperimentalSDL3UniversalGameplay` | **Default `1`**: use SDL3's mapped controller profile for game menus, videos and 3D after explicit Start and neutral input. Set `0` to disable the universal bridge and preserve native behavior. |
-| `[Input] ExperimentalSDL3GameOverConfirm` | **Default `0` (not generated)**: experimental neutral-gated one-shot Enter for fresh South/A/Cross while the verified original GAME OVER owner runs. Also requires `ExperimentalSDL3GameOverNativeOwner=1` and universal SDL3 gameplay. The old request-2-only injection is blocked; keep OFF for normal play until runtime validated. |
+| `[Input] ExperimentalSDL3GameOverConfirm` | **Default `0` (not generated)**: a single opt-in automatically attempts to install the exact GAME OVER owner wrapper; a fresh South/A/Cross can send one Enter only while the authenticated native owner executes. If installation fails, no Enter is sent. Requires universal SDL3 gameplay; keep OFF for normal play until runtime validated. |
 | `[Input] ExperimentalSDL3GameOverOwnerProbe` | **Default `0` (not generated)**: independent, strictly read-only native-owner state correlation for GAME OVER research. Records bounded 3D baseline and candidate snapshots, with **no Enter injection**, even while `GameOverConfirm=0`. |
-| `[Input] ExperimentalSDL3GameOverNativeOwner` | **Default `0` (not generated)**: install an exact-instruction-verified pass-through wrapper for the original `0x00455F91 → 0x0047D830` GAME OVER screen call. When combined with the separate confirmation trial, requires this authenticated owner to be actively executing before allowing one Enter. Experimental until new hardware validation. |
+| `[Input] ExperimentalSDL3GameOverNativeOwner` | **Default `0` (not generated)**: optional hook-only diagnostic mode. **Not required** with `GameOverConfirm=1`, which installs the same exact verified owner wrapper automatically. Hook-only mode never sends Enter by itself. |
 | `[Input] ExperimentalSDL3NativeOwner` | Default `0`; unrelated legacy experimental native-owner path, not required for universal gameplay. |
 | `[Audio]` | Music/effects, voice and movie volumes (0..100%); `Stereo=1` selects stereo. |
 | `[Keyboard]` / `[Joystick]` | The eleven original keyboard actions and seven joystick button bindings, also saved from the game's menus. |
@@ -152,31 +152,28 @@ the original input reader at `0x0047D9B8`; it is not just a guessed
 `request=2` transition. Detailed proof and offline verifier:
 [SDL3_GAMEOVER_NATIVE_OWNER.md](SDL3_GAMEOVER_NATIVE_OWNER.md).
 
-A new *separate, disabled-by-default* test mode installs a small
-signature-checked wrapper at that original CALL site; the wrapper
-preserves the native callee, return value, thread and execution order,
-and records when the actual GAME OVER owner is running. The stricter
-test requires both:
+The disabled-by-default `ExperimentalSDL3GameOverConfirm=1`
+switch now **automatically installs** a signature-checked pass-through
+wrapper at that original CALL site. The wrapper preserves the native
+callee and its return value, and tracks when the actual GAME OVER owner
+is running. A single explicit opt-in is sufficient:
 ```ini
 [Input]
 ExperimentalSDL3UniversalGameplay=1
-ExperimentalSDL3GameOverNativeOwner=1
 ExperimentalSDL3GameOverConfirm=1
-ExperimentalSDL3GameOverOwnerProbe=1
 
 [Debug]
 Log=1
 ```
-This is **not yet the default**. If the native CALL cannot be hooked,
-the stricter path fails closed: no Return. **The legacy
-`GameOverConfirm=1` / `NativeOwner=0` path is now blocked entirely**:
-the 2026-11-07 Proton log demonstrated that accidentally leaving out
-`NativeOwner=1` still produced two Enter pulses from the non-unique
-`request=2` heuristic. A clear `SDL3-GAMEOVER-NATIVE: CONFIRM BLOCKED`
-startup log now explains the missing setting instead of silently
-using the unverified path.
-The independent `GameOverOwnerProbe=1` remains genuinely read-only:
-it never sends Enter on its own, even without `GameOverConfirm`.
+`ExperimentalSDL3GameOverNativeOwner=1` is optional and retained for
+hook-only diagnostics, not required for confirmation. If the original
+CALL signature cannot be verified or patched, a `hook REFUSED` line
+appears and **no synthetic Enter** is sent. There is no legacy
+request-2-only fallback; that unsafe behavior was retired after the
+2026-11-07 Proton field logs. The optional independent
+`ExperimentalSDL3GameOverOwnerProbe=1` enables further read-only
+telemetry without controlling injection. None of these experimental
+features is enabled by default.
 
 ### GAME OVER controller confirmation: experimental research only (PR #110)
 
@@ -193,13 +190,12 @@ For a **single maintainer test only**, edit the existing
 ```ini
 [Input]
 ExperimentalSDL3UniversalGameplay=1
-ExperimentalSDL3GameOverNativeOwner=1
 ExperimentalSDL3GameOverConfirm=1
 ```
 
-Both GAME OVER keys are absent from automatically generated INIs, and
-their runtime default is `0`. If only `GameOverConfirm=1` is set,
-confirmation is blocked until `GameOverNativeOwner=1` is also enabled. The trial requires an explicitly Start-selected
+The confirmation key is absent from automatically generated INIs and
+defaults to `0`. When enabled, the exact native-owner verification is
+mandatory and attempted automatically. It fails closed if unavailable. The trial requires an explicitly Start-selected
 mapped pad, foreground game 3D, six consecutive original Flip frames
 with the *entire* observed candidate state matching (pending request
 `2`, task `0x14`, active input `1`, no native Pause, no Bink,
