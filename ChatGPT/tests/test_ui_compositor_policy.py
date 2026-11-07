@@ -142,7 +142,7 @@ def test_compositor_does_not_change_normal_main_menu_or_native_3d_path():
     assert "original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags)" in src
     assert "if(v==verts) v=maybe_correct_horplus(" in src
     assert "scale_menu_vertices(fvf,verts,count" in src
-    assert 'UI-CANVAS-43/UI-COMPOSITOR/UI-TRANSITION: native 4:3 or HUD guard unavailable' in src
+    assert 'UI-CANVAS-43/UI-COMPOSITOR/UI-TRANSITION: classic 4:3 requested or verified HUD unavailable' in src
     assert 'UI-COMPOSITOR: menu draw outside BeginScene, original draw retained' in src
     assert 'UI-COMPOSITOR: D3D7 stateblock/texture capture failed, native draw fallback' in src
 
