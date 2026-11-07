@@ -572,7 +572,7 @@ void SpiderQuickExitF12_ObserveComicRender(LONG flip_index, DWORD caller_rva,
  * No new native code hook, object access, VTable edits, or control writes.
  * Throttle to mode/quit/async transitions and a five-second heartbeat.
  * Useful for correlating static startup screens, comic mode and 3D with
- * real top-level switch 0x455F24. Opt-in QuickExitF12=1 only. */
+ * real top-level switch 0x455F24. F10Shortcut opt-in only. */
 void SpiderQuickExitF12_ObserveEngineState(LONG flip_index,
                                           LONG renderer_menu) {
   static LONG previous_mode=-1,previous_quit=-1;
@@ -3365,9 +3365,9 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
 }
 
 void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
-  char ini[MAX_PATH],val[24],trace[8],static_trace[8],movie_trial[8],comic_trial[8];
+  char ini[MAX_PATH],trace[8],static_trace[8],movie_trial[8],comic_trial[8];
   HANDLE thread;
-  int f10_shortcut;
+  int f10_shortcut,shortcut_enabled=0;
   logger=log_fn;
   if(!spider_path_ini_a(ini,sizeof(ini))) {
     say("QUICK-EXIT-F12: disabled (INI path unavailable)");
@@ -3402,20 +3402,17 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     InterlockedExchange(&f10_verbose_trace,1);
     say("QUICK-EXIT-F12: F10VerboseTrace=1 detailed original-game probes enabled");
   }
-  /* Old F12 INI names remain compatibility ALIASES for activating
-   * the NEW F10 shortcut. They do not make F12 a shortcut again. */
-  GetPrivateProfileStringA("System","QuickExitF12","0",val,sizeof(val),ini);
-  if(GetPrivateProfileIntA("System","QuickExitF10",0,ini)==1)
-    strcpy(val,"1");
-  if(f10_shortcut ||
-     GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1 ||
-     GetPrivateProfileIntA("Debug","F10TestMode",0,ini)==1) {
-    /* Keep legacy debug switches readable for existing user INIs. */
+  /* F10Shortcut is the only player-facing toggle. Historical F10/F12
+   * test modes are retained for diagnostic workflows, but [System]
+   * QuickExitF10 and QuickExitF12 no longer affect the runtime. */
+  shortcut_enabled=f10_shortcut ||
+    GetPrivateProfileIntA("Debug","F10TestMode",0,ini)==1 ||
+    GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1;
+  if(shortcut_enabled) {
     InterlockedExchange(&debug_f12_test_mode,1);
-    strcpy(val,"1");
     say(f10_shortcut
         ? "QUICK-EXIT-F12: HOTKEY=F10 [Debug] F10Shortcut=1: intro -> main menu; New Game -> gameplay; gameplay -> main menu; Log independent"
-        : "QUICK-EXIT-F12: HOTKEY=F10 legacy F10TestMode/F12TestMode; legacy cinematic/menu toggles remain separate");
+        : "QUICK-EXIT-F12: HOTKEY=F10 legacy Debug test mode; individual experimental controls remain separate");
   }
   memset(trace,0,sizeof(trace));
   if(GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
@@ -3425,7 +3422,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     say("QUICK-EXIT-F12: optional passive native Bink parent trace armed (one sample after interactive menu)");
   }
   memset(static_trace,0,sizeof(static_trace));
-  if(strcmp(val,"1")==0 &&
+  if(shortcut_enabled &&
      GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
      GetEnvironmentVariableA("SPIDERMAN2K1FIX_F12_STATIC_TRACE",
                              static_trace,sizeof(static_trace))==1 &&
@@ -3434,7 +3431,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     say("QUICK-EXIT-F12: STARTUP-STATIC-PROBE opt-in enabled (passive, no extra hooks; 90s/61 samples max)");
   }
   /* Separate extra opt-in for risky native gameplay shutdown prototype.
-   * Enabling QuickExitF12 alone retains the previous menu/Bink behavior. */
+   * F10Shortcut alone keeps the validated menu/Bink behavior. */
   InterlockedExchange(&experimental_game3d_enabled,
     (InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 ||
      (GetPrivateProfileIntA("System","ExperimentalQuickExitF12In3D",0,ini)==1 ||
@@ -3465,8 +3462,8 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
    * to configure. Keep the original one-process environment switches
    * as backwards-compatible alternatives for controlled experiments.
    * Both independent stages remain OFF by default, and neither
-   * bypasses the existing QuickExitF12, 3D and Debug Log gates. */
-  if(strcmp(val,"1")==0 &&
+   * bypasses the existing F10Shortcut, 3D and Debug Log gates. */
+  if(shortcut_enabled &&
      GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
      InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
      ((GetPrivateProfileIntA("System","ExperimentalQuickExitF12InNewGameMovie",0,ini)==1 ||
@@ -3487,7 +3484,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     InterlockedExchange(&comic_exit_opt_in,1);
     say("QUICK-EXIT-F12: COMIC F12 deferred-to-Bink experiment armed (12s timeout; comic native timing unchanged) [EXPERIMENTAL; NOT YET WINDOWS-VALIDATED]");
   }
-  if(strcmp(val,"1")==0 &&
+  if(shortcut_enabled &&
      (InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 ||
       (GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
        (GetPrivateProfileIntA("System","ExperimentalQuickExitF12InIntroStills",0,ini)==1 ||
@@ -3500,7 +3497,7 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
    * original WM_KEYDOWN(VK_F12) maps to PostMessageA sending WM_CLOSE
    * at 0x515373. We keep suppressing this even though our NEW
    * physical hotkey uses F10 exclusively. */
-  if(strcmp(val,"1")!=0) {
+  if(!shortcut_enabled) {
     if(suppress_unsafe_native_f12())
       say("QUICK-EXIT-F12: OFF; unsafe original F12 WM_CLOSE suppressed");
     else
@@ -3733,5 +3730,5 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   if(InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1)
     say("QUICK-EXIT-F12: EXPERIMENTAL 3D native exit enabled (game-thread cleanup then controller-7 final branch); not Windows-validated");
   else
-    say("QUICK-EXIT-F12: menu native Quit validated; 3D native exit OFF by default (ExperimentalQuickExitF12In3D=0); comics unsupported");
+    say("QUICK-EXIT-F12: menu native Quit validated; 3D experimental native exit OFF by default; comics unsupported");
 }
