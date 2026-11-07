@@ -216,9 +216,34 @@ def test_strict_owner_is_separate_opt_in_and_fails_closed():
     assert "if(requested && gameover_native_owner_trial_enabled)" in BACKEND
     assert "int installed=spider_gameover_owner_install_hook();" in BACKEND
     assert "SDL3-GAMEOVER-NATIVE: hook REFUSED" in BACKEND
-    assert "if(gameover_native_owner_trial_enabled &&" in BACKEND
-    assert "!gameover_native_owner_hook_installed ||" in BACKEND
-    assert "InterlockedCompareExchange(&gameover_native_owner_depth,0,0)<=0" in BACKEND
-    assert "candidate=0;" in BACKEND
+    assert "SDL3-GAMEOVER-NATIVE: CONFIRM BLOCKED:" in BACKEND
+    assert "int owner_confirm=candidate && gameover_native_owner_trial_enabled &&" in BACKEND
+    assert "gameover_native_owner_hook_installed &&" in BACKEND
+    assert "InterlockedCompareExchange(&gameover_native_owner_depth,0,0)>0;" in BACKEND
+    assert "trial=spider_sdl3_gameover_trial_step(&gameover_trial,owner_confirm," in BACKEND
+    assert "if(owner_confirm &&" in BACKEND
+    assert 'gameover_owner_probe_dump("SOUTH-BEFORE-PULSE",id,context,owner_confirm);' in BACKEND
     assert "if(gameover_trial_enabled)" in BACKEND
     assert 'pulse(0x1cu,"opt-in GAME OVER Return trial");' in BACKEND
+
+
+def test_no_legacy_fallback_in_current_main_gameover_runtime():
+    """The old positive PS3/Xbox heuristic tests cannot authorize Enter
+    from an arbitrary request-2 transition with NativeOwner=0."""
+    assert "if(!gameover_native_owner_trial_enabled)" in BACKEND
+    assert "CONFIRM BLOCKED: enable ExperimentalSDL3GameOverNativeOwner=1" in BACKEND
+    gate=BACKEND.split("if(gameover_trial_enabled || gameover_owner_probe_enabled) {",1)[1].split(
+        "if(!update_keys(desired,scans))",1)[0]
+    assert "int candidate=gameover_trial_candidate(" in gate
+    assert "int owner_confirm=candidate && gameover_native_owner_trial_enabled &&" in gate
+    assert "gameover_native_owner_hook_installed &&" in gate
+    assert "InterlockedCompareExchange(&gameover_native_owner_depth,0,0)>0" in gate
+    assert "spider_sdl3_gameover_trial_step(&gameover_trial,owner_confirm," in gate
+    assert "spider_sdl3_gameover_trial_step(&gameover_trial,candidate," not in gate
+    assert "if(owner_confirm &&" in gate
+    assert "if(trial==1u)" in gate
+    assert "pulse(0x1cu" in gate
+    # Passive evidence still sees the raw seven-word candidate but it
+    # never changes owner_confirm or enables a synthetic key.
+    assert 'gameover_owner_probe_dump("CANDIDATE-STABLE"' in gate
+    assert "gameover_owner_probe_was_candidate=candidate;" in gate
