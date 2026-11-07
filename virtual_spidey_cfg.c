@@ -41,7 +41,7 @@ static int policy_is_auto=1;
 static char configured_resolution[64]="Auto";
 static char configured_aspect[16]="Auto";
 static void (*note)(const char *);
-static DWORD opens=0,reads=0,writes=0,stdio_opens=0;
+static DWORD opens=0,reads=0,writes=0;
 static volatile LONG bootstrap_attempted=0;
 
 typedef struct { HANDLE h; LONG pos; DWORD access; } VHandle;
@@ -1206,7 +1206,6 @@ static FILE * __cdecl hooked_fopen(const char *path,const char *mode) {
   if(f) {
     fwrite(cfg,1,CFG_SIZE,f);fflush(f);fseek(f,0,SEEK_SET);
     streams[i].f=f;streams[i].writable=writable;
-    stdio_opens++;
     report("SPIDEY-CFG: virtual fopen intercepted (private temporary stream)");
   }
   LeaveCriticalSection(&guard);
