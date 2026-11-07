@@ -72,11 +72,29 @@ if ! printf '%s\n' "$imports" | grep -Eiq 'DLL Name:[[:space:]]*msvcrt\.dll'; th
 fi
 printf 'CRT-PROBE: MSVCRT import verified; building DLLs.\n'
 
+# Explicit, ordered DLL source inventory (no glob: experimental helpers stay out).
+fix_sources=(
+  # Core, front-end, and display
+  spiderman2k1fix.c wine_focus_autostart.c quick_exit_f12.c f9_png.c
+  f9_toast.c menu_version.c hud_widescreen.c hud_adaptive.c
+  frame_limiter.c display_plan.c menu_scale.c comic_native.c
+  virtual_spidey_cfg.c keyboard_names.c display_policy.c display_menu_lock.c
+  fov_aspect.c fov_aspect_win.c
+  # DirectInput and SDL3 controllers
+  input_focus_trace.c input_notacquired_retry.c native_joystick_unplug.c native_joystick_reconnect.c
+  sdl3_gamepad_probe.c sdl3_controller_setup.c sdl3_raw_wizard.c sdl3_controller_profile_store.c
+  sdl3_gameplay_plan_probe.c sdl3_gameplay_live.c sdl3_universal_gameplay.c
+  # Focus, pause, native audio, legacy UI, diagnostics
+  pause_any_key.c pause_surface.c focus_media_pause.c focus_dsound_pause.c
+  pkr_audio_play_hook.c pkr_audio_index.c pkr_audio_loader.c gamepad_ui_profile.c
+  ps1_joystick_readonly_menu.c ps1_mouse_mode.c system_diagnostics.c third_party/miniz/miniz_tinfl.c
+)
+
 # Build to temporary paths. Old DLLs stay intact if compilation or runtime
 # validation fails; do not let a partially compiled pair reach the game.
 "$CC" -std=gnu11 -O2 -fno-pie -mno-sse -mno-sse2 -mfpmath=387 -Wall -Wextra \
   -static-libgcc "$version_define" -shared -o "$probe_dir/SpiderMan2k1Fix.dll" \
-  spiderman2k1fix.c wine_focus_autostart.c quick_exit_f12.c f9_png.c f9_toast.c menu_version.c hud_widescreen.c hud_adaptive.c frame_limiter.c display_plan.c menu_scale.c comic_native.c virtual_spidey_cfg.c keyboard_names.c display_policy.c display_menu_lock.c fov_aspect.c fov_aspect_win.c input_focus_trace.c input_notacquired_retry.c native_joystick_unplug.c native_joystick_reconnect.c sdl3_gamepad_probe.c sdl3_controller_setup.c sdl3_raw_wizard.c sdl3_controller_profile_store.c sdl3_gameplay_plan_probe.c sdl3_gameplay_live.c sdl3_universal_gameplay.c pause_any_key.c pause_surface.c focus_media_pause.c focus_dsound_pause.c pkr_audio_play_hook.c pkr_audio_index.c pkr_audio_loader.c gamepad_ui_profile.c ps1_joystick_readonly_menu.c ps1_mouse_mode.c system_diagnostics.c third_party/miniz/miniz_tinfl.c \
+  "${fix_sources[@]}" \
   -ladvapi32 -ldinput8 -ldxguid -lgdi32 -lmsimg32 -lshell32 -Wl,--subsystem,windows
 "$CC" -std=gnu11 -O2 -fno-pie -Wall -Wextra \
   -static-libgcc "$version_define" -shared -o "$probe_dir/winmm.dll" \

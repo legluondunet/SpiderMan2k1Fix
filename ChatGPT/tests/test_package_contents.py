@@ -65,6 +65,29 @@ def test_ci_builds_without_retaining_the_completed_one_shot_release_workflow():
     assert "gh release upload" not in ci
 
 
+
+def test_windows_dll_source_inventory_is_explicit_and_unambiguous():
+    build = (ROOT / "build.sh").read_text(encoding="utf-8")
+    start = build.index("fix_sources=(\n") + len("fix_sources=(\n")
+    end = build.index("\n)", start)
+    inventory = build[start:end]
+    units = [
+        part
+        for line in inventory.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+        for part in line.split()
+    ]
+    assert len(units) == 41
+    assert len(units) == len(set(units)), "Duplicate DLL compilation unit"
+    assert all(path.endswith(".c") and (ROOT / path).is_file() for path in units)
+    assert units[0] == "spiderman2k1fix.c"
+    assert units[-1] == "third_party/miniz/miniz_tinfl.c"
+    assert "sdl3_universal_gameplay.c" in units
+    assert "input_notacquired_retry.c" in units
+    assert "pkr_audio_loader.c" in units
+    assert "winmm_proxy.c" not in units  # separate proxy build
+    assert '"${fix_sources[@]}"' in build
+
 def test_ci_runs_developer_regression_tests():
     workflow = CI_PATH.read_text(encoding="utf-8")
     assert "python3 -m pytest -q ChatGPT/tests" in workflow
