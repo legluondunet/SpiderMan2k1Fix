@@ -73,6 +73,23 @@ def test_core_uses_same_resolver_for_every_main_ini_subsystem():
     assert "SPIDER_SDL3" not in paths
 
 
+
+def test_focus_diagnostics_use_the_same_bounded_ini_resolver():
+    focus = read("input_focus_trace.c")
+    install = focus.split("void SpiderInputFocus_Install(", 1)[1]
+    assert '#include "spider_fix_paths.h"' in focus
+    assert "have_ini=spider_path_ini_a(ini,sizeof(ini));" in install
+    assert 'have_ini && GetPrivateProfileIntA("Debug","Log",0,ini)==1' in install
+    assert 'have_ini && GetPrivateProfileIntA("Input","ExperimentalFocusTrace",0,ini)==1' in install
+    assert 'have_ini && GetPrivateProfileIntA("Input","ExperimentalDI8EntryTrace",0,ini)==1' in install
+    assert 'GetModuleFileNameA(NULL,exe' not in install
+    assert 'strcpy(ini' not in install
+    # Missing INI path leaves optional diagnostics off, but the independent
+    # default cursor-on-focus-loss safety mechanism must still run.
+    assert "want_cursor=1;" in install
+    assert "if(!want_trace && !want_fix && want_cursor)" in install
+
+
 def test_ini_migration_is_lossless_atomic_and_fallback_safe():
     p=read("spider_fix_paths.h")
     assert 'spider_path_join_a(legacy,sizeof(legacy),exe_dir,"SpiderMan2k1Fix.ini")' in p
