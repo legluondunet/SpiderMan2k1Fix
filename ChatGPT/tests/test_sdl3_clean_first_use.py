@@ -47,7 +47,7 @@ def test_no_pre_sdl3_custom_preset_in_original_game_config():
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in core
     assert "SpiderSDL3_InstallDirectJoystickEntry" in ui
     assert "SpiderPS1Mouse_OnFlip(hwnd);" in ui
-    assert "swap_mapping_enabled=0;" in native
+    assert 'try_rebind(' not in native
     assert "SpiderNativeReconnect_CanonicalXboxMapping(void) {return 0;}" in native
     assert "SpiderNativeReconnect_CanonicalDS4Mapping(void) {return 0;}" in native
     assert "spider_native_swap_read(" in probe
