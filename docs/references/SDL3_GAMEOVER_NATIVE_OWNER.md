@@ -61,11 +61,12 @@ it invokes `0x0047D830` **exactly once** on the original game thread,
 returns its actual `EAX`, and tracks whether that precise original
 menu function is currently executing.
 
-A new **disabled-by-default** opt-in
-`[Input] ExperimentalSDL3GameOverNativeOwner=1` selects the strict
-owner-gated trial. It requires the existing
-`ExperimentalSDL3GameOverConfirm=1`, which sends one buffered
-Enter for a fresh isolated South/Cross/A press only when:
+One disabled-by-default switch
+`[Input] ExperimentalSDL3GameOverConfirm=1` now automatically attempts
+the **source-authenticated owner hook**. The separate
+`ExperimentalSDL3GameOverNativeOwner=1` switch is retained only for
+hook-only diagnostics and is not required for confirmation. A buffered
+Enter can be sent for a fresh isolated South/Cross/A press only when:
 - The authentic `0x0047D830` wrapper is executing.
 - Original game is foreground and the SDL3-mapped controller was
   explicitly Start-selected and neutral-armed.
@@ -74,12 +75,12 @@ Enter for a fresh isolated South/Cross/A press only when:
   six stable Flips plus a fully neutral frame precede a fresh isolated
   confirmation.
 
-The original injection is OFF unless `ExperimentalSDL3GameOverConfirm=1`
-**and** `ExperimentalSDL3GameOverNativeOwner=1`. If the second option is
-missing, the runtime explicitly logs `SDL3-GAMEOVER-NATIVE: CONFIRM BLOCKED`.
-There is no longer any legacy request-2-only Return injection path.
-If byte verification, relocation bounds or protection change fails,
-the owner hook refuses and **no GAME OVER Return is injected**.
+The original injection is OFF unless `ExperimentalSDL3GameOverConfirm=1`.
+Enabling it attempts the authenticated owner hook automatically. There is
+no legacy request-2-only Return injection path: an absent optional owner
+INI key does **not** enable the old heuristic, and a failed signature,
+relocation or protection verification logs `hook REFUSED` and **does
+not** inject GAME OVER Return.
 The independent `ExperimentalSDL3GameOverOwnerProbe=1` mode retains
 its non-mutating telemetry; it can separately compare native 3D title
 presence and screen-owner entry/exit.
@@ -101,8 +102,14 @@ record, because the strict owner flag was not active. This cannot
 validate the new call wrapper. The fallback has since been **disabled**;
 a correctly configured new build cannot silently repeat that situation.
 
-The next acceptance test should enable the strict owner gate and
-existing confirmation trial, with `[Debug] Log=1`. A new
+The 2026-11-07 follow-up log using `v1.1.0-3e42ce6` confirmed
+the fallback is blocked: startup reported `CONFIRM BLOCKED` with
+`GameOverConfirm=1` and the owner key absent; zero synthetic GAME OVER
+Return pulses occurred. This was **safe, but confusing**, so the owner
+hook is now automatically attempted whenever Confirm=1.
+
+The next acceptance test needs only the single strict confirmation
+opt-in `ExperimentalSDL3GameOverConfirm=1`, with `[Debug] Log=1`. A new
 `SDL3-GAMEOVER-NATIVE: entered exact original 0x47D830 owner` log
 must precede the GAME OVER candidate and the single Enter pulse.
 Only after this exact gated path passes on hardware can it replace the
