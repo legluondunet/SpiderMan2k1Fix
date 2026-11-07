@@ -16,18 +16,18 @@ def _read(path):
 def test_legacy_native_owner_cannot_be_enabled_as_sdl3_fallback():
     ini=_read("virtual_spidey_cfg.c")
     probe=_read("sdl3_gamepad_probe.c")
-    native=_read("native_joystick_reconnect.c")
+    native=_read("sdl3_universal_gameplay.c")
     assert '"ExperimentalSDL3NativeOwner=0' not in ini
     assert '"ExperimentalSDL3UniversalGameplay=1' not in ini
     assert 'native_owner_requested=0;' in probe
     assert "requested=1;" in probe
     assert "universal_requested=1;" in probe
-    assert "if(SpiderSDL3Universal_Enabled())return;" in native
+    assert "SPIDER_UNIVERSAL_DI_SLOT" in native
     assert '"ExperimentalNativeJoystickMappingSwap",1,ini)!=1' not in probe
 
 
 def test_native_owner_uses_verified_original_game_device_only():
-    native=_read("native_joystick_reconnect.c")
+    native=_read("sdl3_universal_gameplay.c")
     main=_read("spiderman2k1fix.c")
     assert "#define SPIDER_NATIVE_DEVICE 0x006B7A2Cu" in native
     assert "valid_binary_layout()" in native
@@ -51,7 +51,7 @@ def test_native_owner_uses_verified_original_game_device_only():
 
 
 def test_original_native_reconnect_writes_no_custom_profiles_or_synthetic_input():
-    native=_read("native_joystick_reconnect.c")
+    native=_read("sdl3_universal_gameplay.c")
     probe=_read("sdl3_gamepad_probe.c")
     assert "IDirectInputDevice8_GetDeviceInfo" not in probe
     for token in ("SendInput(", "SetWindowLong", "CreateThread(",
@@ -64,7 +64,7 @@ def test_original_native_reconnect_writes_no_custom_profiles_or_synthetic_input(
 def test_universal_owner_and_native_focus_guards_remain_fail_closed():
     policy=_read("sdl3_gamepad_selection.h")
     probe=_read("sdl3_gamepad_probe.c")
-    native=_read("native_joystick_reconnect.c")
+    native=_read("sdl3_universal_gameplay.c")
     adapter=_read("sdl3_universal_gameplay.c")
     assert "spider_sdl3_selection_focus_lost(" in policy
     assert "spider_sdl3_selection_focus_lost(&selection)" in probe
