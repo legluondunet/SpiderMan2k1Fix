@@ -77,6 +77,10 @@ static uint32_t gameover_probe_owner=0;
  * test of Return on an observed, narrowly gated pending request 2. */
 static int gameover_trial_enabled=0;
 static int gameover_owner_probe_enabled=0; /* independent READ-ONLY opt-in */
+static int gameover_native_owner_trial_enabled=0; /* guarded original CALL wrapper */
+static volatile LONG gameover_native_owner_depth=0;
+static int gameover_native_owner_hook_installed=0;
+static unsigned gameover_native_owner_enter_reports=0;
 static unsigned gameover_trial_reports=0;
 /* Bounded passive owner-context comparison. No new gameplay gate here:
  * the existing explicit opt-in is the ONLY permitted Return injection.
@@ -107,6 +111,58 @@ static void log_focus_release(const char *msg) {
   /* Focus transitions are safety-critical; preserve diagnostics even
    * after the normal 100-line game-action trace budget is exhausted. */
   if(report && focus_release_reports++<24u)report(msg);
+}
+/* Authentic original GAME OVER owner (retail SHA-verified).
+ * 0x455F91 is the SINGLE x86 CALL to 0x47D830. This function owns
+ * native GAME OVER text and polls 0x50C180 itself; it is not a
+ * pending-request heuristic. A 5-byte CALL-site wrapper changes ONLY
+ * where the call goes, while invoking the exact same 0x47D830 once and
+ * returning the original result (EAX), with unchanged cdecl stack.
+ *
+ * The wrapper is installed ONLY by explicit experimental INI opt-in.
+ * Never install on unrecognized, relocated or already-modified code.
+ * Do not touch the source EXE on disk. */
+static int __cdecl spider_gameover_owner_call_wrapper(void) {
+  int result;
+  InterlockedIncrement(&gameover_native_owner_depth);
+  if(report && gameover_native_owner_enter_reports++<5u)
+    report("SDL3-GAMEOVER-NATIVE: entered exact original 0x47D830 owner via 0x455F91 CALL (source-verified)");
+  result=((int (__cdecl *)(void))(uintptr_t)0x0047D830u)();
+  InterlockedDecrement(&gameover_native_owner_depth);
+  if(report && gameover_native_owner_enter_reports++<5u)
+    report("SDL3-GAMEOVER-NATIVE: exited exact original 0x47D830 owner (native result preserved)");
+  return result;
+}
+static int spider_gameover_owner_install_hook(void) {
+  static const BYTE original[5]={0xE8,0x9A,0x78,0x02,0x00};
+  BYTE patch[5]={0xE8,0,0,0,0};
+  BYTE *const site=(BYTE *)(uintptr_t)0x00455F91u;
+  MEMORY_BASIC_INFORMATION mbi;
+  DWORD protect,discard;
+  int64_t displacement;
+  int32_t rel;
+  if(gameover_native_owner_hook_installed)return 1;
+  if(sizeof(void*)!=4 || (uintptr_t)GetModuleHandleA(NULL)!=0x00400000u ||
+     VirtualQuery(site,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_NOACCESS|PAGE_GUARD)) ||
+     memcmp(site,original,sizeof(original))!=0)
+    return 0;
+  displacement=(int64_t)(uintptr_t)&spider_gameover_owner_call_wrapper -
+               ((int64_t)(uintptr_t)site+5);
+  if(displacement>INT32_MAX || displacement<INT32_MIN)return 0;
+  rel=(int32_t)displacement;
+  memcpy(patch+1,&rel,sizeof(rel));
+  if(!VirtualProtect(site,sizeof(patch),PAGE_EXECUTE_READWRITE,&protect))
+    return 0;
+  if(memcmp(site,original,sizeof(original))!=0) {
+    VirtualProtect(site,sizeof(patch),protect,&discard);
+    return 0;
+  }
+  memcpy(site,patch,sizeof(patch));
+  FlushInstructionCache(GetCurrentProcess(),site,sizeof(patch));
+  VirtualProtect(site,sizeof(patch),protect,&discard);
+  gameover_native_owner_hook_installed=memcmp(site,patch,sizeof(patch))==0;
+  return gameover_native_owner_hook_installed;
 }
 /* Exact retail PE32: keyboard GetDeviceData writes its own 256-byte
  * buffered key latch at 0x006B792C. This is DISTINCT from the original
@@ -403,6 +459,7 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   gameover_probe_f9_reports=0;gameover_probe_owner=0;
   gameover_probe_post_f9_confirm=0;
   gameover_trial_reports=0;
+  gameover_native_owner_enter_reports=0;
   gameover_owner_probe_frames=0;
   gameover_owner_probe_baselines=0;
   gameover_owner_probe_events=0;
@@ -415,6 +472,8 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   spider_sdl3_gameover_trial_reset(&gameover_trial);
   gameover_trial_enabled=ini &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverConfirm",0,ini)==1;
+  gameover_native_owner_trial_enabled=ini &&
+    GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverNativeOwner",0,ini)==1;
   gameover_owner_probe_enabled=ini &&
     GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverOwnerProbe",0,ini)==1;
   spider_sdl3_universal_reset(&state);
@@ -427,7 +486,13 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
     "11 game keyboard actions + native Pause; original DirectInput "
     "suspended only while selected, strict neutral-first and focus release");
   if(requested && gameover_trial_enabled && report)
-    report("SDL3-GAMEOVER-TRIAL: explicit INI opt-in enabled; request 2 is NOT a confirmed GAME OVER identity; native ESC/menu behavior unchanged");
+    report("SDL3-GAMEOVER-TRIAL: explicit INI opt-in enabled; request 2 alone is NOT a GAME OVER identity");
+  if(requested && gameover_native_owner_trial_enabled) {
+    int installed=spider_gameover_owner_install_hook();
+    if(report)report(installed?
+      "SDL3-GAMEOVER-NATIVE: SOURCE-VERIFIED exact 0x455F91 CALL wrapper installed; owner 0x47D830 (experimental)":
+      "SDL3-GAMEOVER-NATIVE: hook REFUSED; native owner unverified, source-based trial fails closed");
+  }
   if(requested && gameover_owner_probe_enabled && report)
     report("SDL3-GAMEOVER-OWNER-PROBE: passive native state observation enabled; independent of Enter trial; GAME OVER identity unverified");
 }
@@ -1112,6 +1177,14 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   }
   if(gameover_trial_enabled || gameover_owner_probe_enabled) {
     int candidate=gameover_trial_candidate(context,menu,gameplay,bink,native_pause);
+    /* An additional *opt-in* mode requires the native GAME OVER owner,
+     * actively executing inside the signature-verified 0x47D830 CALL.
+     * If it cannot be intercepted, no synthetic Return is permitted.
+     * The former heuristic trial is retained for A/B comparison only. */
+    if(gameover_native_owner_trial_enabled &&
+       (!gameover_native_owner_hook_installed ||
+        InterlockedCompareExchange(&gameover_native_owner_depth,0,0)<=0))
+      candidate=0;
     unsigned stable_before=gameover_trial.stable_frames;
     unsigned trial=0u;
     if(gameover_owner_probe_enabled) {
