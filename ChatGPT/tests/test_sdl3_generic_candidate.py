@@ -123,7 +123,7 @@ def test_policy_does_not_modify_runtime_input_or_assume_native_ds3_layout():
     h=(ROOT/"sdl3_generic_candidate.h").read_text(encoding="utf-8")
     doc=(ROOT/"docs/references/SDL3_GENERIC_BRIDGE_RESEARCH.md").read_text(
         encoding="utf-8")
-    original=(ROOT/"native_joystick_reconnect_policy.h").read_text(
+    original=(ROOT/"sdl3_gamepad_probe.c").read_text(
         encoding="utf-8")
     assert "spider_sdl3_selection_start_edge(" in h
     assert "p->candidate_id=p->claim_id;" in h
@@ -131,8 +131,8 @@ def test_policy_does_not_modify_runtime_input_or_assume_native_ds3_layout():
     assert "SpiderSDL3Selection selection;" in h
     assert "DirectInput" in doc
     assert "NEVER" in doc or "Never" in doc
-    assert "spider_reconnect_kind" in original
-    assert "0x0268u" not in original
+    assert "spider_reconnect_kind" not in original
+    assert "SpiderSDL3Probe_SelectedMappedSample(" in original
     for unsafe in ("windows.h","dinput.h","VirtualProtect","WriteProcessMemory",
                    "SendInput","IDirectInputDevice8","SDL_OpenGamepad",
                    "SpiderNativeReconnect_"):
