@@ -56,7 +56,7 @@ def test_unique_selected_vid_pid_c99(tmp_path):
 def test_sdl3_multicontroller_owner_is_explicit_generic_not_native_preset():
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
-    native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
+    native=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
     ui=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
     assert '#include "sdl3_gamepad_identity.h"' in probe
     assert "spider_sdl3_selected_model_unique(" in probe
@@ -65,7 +65,7 @@ def test_sdl3_multicontroller_owner_is_explicit_generic_not_native_preset():
     assert "SpiderSDL3Probe_SelectedMappedSample(" in backend
     assert "spider_sdl3_universal_neutral(&sample)" in backend
     assert "SDL3-UNIVERSAL: START selected generic" in probe
-    assert "target.matches!=1u" in native
+    assert "SPIDER_UNIVERSAL_DI_SLOT" in native
     assert "swap_native_gameplay_mapping(" not in native
     assert "spider_sdl3_context_menu_reset(&sdl3_context_bridge)" not in ui
     assert "begin_scancode(" not in ui

@@ -77,12 +77,12 @@ def test_next_foreground_flip_claims_only_explicit_selected_sdl3_pad():
     ui=text("gamepad_ui_profile.c")
     probe=text("sdl3_gamepad_probe.c")
     adapter=text("sdl3_universal_gameplay.c")
-    native=text("native_joystick_reconnect.c")
+    native=text("sdl3_universal_gameplay.c")
     assert "IDirectInput8_CreateDevice(" not in ui
     assert "SpiderNativeReconnect_OnFlip(" not in ui
     assert "SpiderSDL3Probe_SelectedMappedSample(" in adapter
     assert "if(!suspended && !spider_sdl3_universal_neutral(&sample))" in adapter
     assert "SpiderSDL3Probe_GenericSelectedSample(" in probe
     assert "spider_sdl3_selection_focus_lost(&selection)" in probe
-    assert "target.matches!=1u" in native
+    assert "native_unclaimed_guard" in native
     assert "swap_native_gameplay_mapping(" not in native

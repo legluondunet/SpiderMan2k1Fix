@@ -6,7 +6,7 @@ import textwrap
 
 ROOT=Path(__file__).resolve().parents[2]
 HEADER=(ROOT/"native_joystick_swap_probe.h").read_text(encoding="utf-8")
-NATIVE=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
+BRIDGE=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
 
 
 def test_c99_native_table_integrity_does_not_assume_xbox_or_ds4(tmp_path):
@@ -55,18 +55,12 @@ def test_c99_native_table_integrity_does_not_assume_xbox_or_ds4(tmp_path):
     subprocess.run([str(binary)],check=True)
 
 
-def test_reconnect_stays_read_only_and_does_not_assume_physical_preset():
+def test_old_swap_helper_remains_pure_data_and_is_not_part_of_runtime():
     assert "spider_native_swap_read(" in HEADER
     assert "spider_native_swap_preset(" not in HEADER
     assert "spider_ps1_buttons" not in HEADER
     assert "spider_xbox360_buttons" not in HEADER
-    observe=NATIVE.split("static void observe_native_swap_table(",1)[1].split(
-        "int SpiderNativeReconnect_CanonicalXboxMapping(",1)[0]
-    assert "VirtualQuery(table,&mbi,sizeof(mbi))" in observe
-    assert "mbi.State==MEM_COMMIT" in observe
-    assert "spider_native_swap_read(table," in observe
-    assert "swap_probe_reports>=24u" in observe
-    for forbidden in ("WriteProcessMemory(", "VirtualProtect(", "SendInput(",
-                      "InterlockedExchange(", "IDirectInputDevice8_", "memcpy(table"):
-        assert forbidden not in observe
-    assert "swap_mapping_enabled=0;" in NATIVE
+    assert not (ROOT/"native_joystick_reconnect.c").exists()
+    assert "native_joystick_reconnect.c" not in (ROOT/"build.sh").read_text()
+    assert "spider_native_swap_read(" not in BRIDGE
+    assert "suspend_original()" in BRIDGE

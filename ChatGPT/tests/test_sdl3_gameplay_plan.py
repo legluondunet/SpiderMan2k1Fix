@@ -156,7 +156,8 @@ def test_stage_is_explicitly_readonly_and_ordered_after_native_handoff():
     assert '"ExperimentalSDL3NativeOwner",0,ini)==1' in probe
     assert "sdl3_gameplay_plan_probe.c" in build
     assert "SpiderSDL3Probe_SelectedSample(" in sdl
-    assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in probe
+    assert "SpiderNativeReconnect_SDL3SelectionReady(" not in probe
+    assert "ready=0;" in probe
     assert "SpiderSDL3Probe_SetupProfile(vid,pid)" in probe
     assert "spider_sdl3_gameplay_plan_step(" in probe
     assert "GetForegroundWindow()!=hwnd" in probe
@@ -164,9 +165,8 @@ def test_stage_is_explicitly_readonly_and_ordered_after_native_handoff():
     assert "[NO NATIVE INJECTION]" in probe
     assert "SDL3-3D-PLAN: REFUSED" in probe
     assert "spider_sdl3_gameplay_plan_reset(s)" in h
-    before=game.index("SpiderNativeReconnect_OnFlip(count,game_hwnd);")
-    after=game.index("SpiderSDL3GameplayPlan_OnFlip(game_hwnd,")
-    assert after>before
+    assert "SpiderNativeReconnect_" not in game
+    assert "SpiderSDL3GameplayPlan_OnFlip(game_hwnd," in game
     assert "SpiderSDL3GameplayPlan_Init(ini,log_line);" in game
     assert "SpiderSDL3GameplayPlan_Init(NULL,log_line);" in game
     for forbidden in ("VirtualProtect(", "SendInput(", "WriteProcessMemory(",

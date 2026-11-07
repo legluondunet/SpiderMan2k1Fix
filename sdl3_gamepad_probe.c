@@ -21,7 +21,6 @@
 #include "sdl3_controller_profile.h"
 #include "sdl3_universal_actions.h"
 #include "sdl3_controller_profile_store.h"
-#include "native_joystick_reconnect.h"
 #include "native_joystick_reconnect_policy.h"
 #include "sdl3_raw_mapping.h"
 #include "ps1_focus_pause_wake.h"
@@ -975,7 +974,7 @@ int SpiderSDL3Probe_NewGameBinkWaitSouthRelease(HWND hwnd) {
      !sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId() ||
      !SpiderSDL3Probe_NativeOwnerEnabled() ||
      !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
-     !id || !SpiderNativeReconnect_SDL3SelectionReady(vid,pid))return 0;
+     !id || !native_owner_requested)return 0;
   if(!((vid==0x054cu &&
         (pid==0x05c4u || pid==0x09ccu || pid==0x0ba0u)) ||
        (vid==0x045eu && pid==0x028eu)))return 0;
@@ -1049,8 +1048,7 @@ int SpiderSDL3Probe_PauseWake_Begin(void) {
       return 0;
     sdl_pause_universal=1;
   } else if(!SpiderSDL3Probe_NativeOwnerEnabled() ||
-            !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
-            !SpiderNativeReconnect_SDL3SelectionReady(vid,pid))
+            !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id))
     return 0;
   for(i=0;i<num_pads;i++)
     if(pads[i].id==id && pads[i].handle &&
