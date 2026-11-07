@@ -51,68 +51,74 @@ One original death/transition path at `0x004B28A5` checks a
 neither guaranteed to persist into the later interactive screen nor
 suitable as the sole input owner.
 
-## Narrow runtime interception, experimental
+## Original-call interception and guarded default-on routing
 
-PR #110 can replace **only** the original five-byte relative CALL at
-`0x00455F91` with an exact-EXE signature-checked relative CALL into a
-small wrapper. This wrapper does **not** change the native menu,
-write original game-state fields, or bypass the original function:
-it invokes `0x0047D830` **exactly once** on the original game thread,
-returns its actual `EAX`, and tracks whether that precise original
-menu function is currently executing.
+The SDL3 bridge replaces **only** the original five-byte relative CALL
+at `0x00455F91` with an exact-EXE-signature-checked relative CALL into
+a small wrapper. That wrapper does not replace or bypass the original
+game-owned menu: it invokes `0x0047D830` **exactly once** on the
+original game thread, returns its unchanged `EAX`, and tracks whether
+the specific original GAME OVER function is currently executing.
 
-One disabled-by-default switch
-`[Input] ExperimentalSDL3GameOverConfirm=1` now automatically attempts
-the **source-authenticated owner hook**. The separate
-`ExperimentalSDL3GameOverNativeOwner=1` switch is retained only for
-hook-only diagnostics and is not required for confirmation. A buffered
-Enter can be sent for a fresh isolated South/Cross/A press only when:
-- The authentic `0x0047D830` wrapper is executing.
-- Original game is foreground and the SDL3-mapped controller was
-  explicitly Start-selected and neutral-armed.
-- Normal 3D/gameplay renderer is active; native 2D/Pause/Bink are not.
-- The legacy seven-word candidate guard still matches, then
-  six stable Flips plus a fully neutral frame precede a fresh isolated
-  confirmation.
+`[Input] ExperimentalSDL3GameOverConfirm=1` is now **the default** for
+SDL3 universal gameplay, including valid legacy INIs missing the key.
+Newly generated INIs write `=1`. **Explicit `=0` disables** this
+feature. The name remains for backward compatibility with old INIs.
+The optional `ExperimentalSDL3GameOverNativeOwner=1` is a
+hook-only diagnostic and is never required for confirmation.
 
-The original injection is OFF unless `ExperimentalSDL3GameOverConfirm=1`.
-Enabling it attempts the authenticated owner hook automatically. There is
-no legacy request-2-only Return injection path: an absent optional owner
-INI key does **not** enable the old heuristic, and a failed signature,
-relocation or protection verification logs `hook REFUSED` and **does
-not** inject GAME OVER Return.
-The independent `ExperimentalSDL3GameOverOwnerProbe=1` mode retains
-its non-mutating telemetry; it can separately compare native 3D title
-presence and screen-owner entry/exit.
+The bridge can send one buffered Enter for a new, isolated
+South/Cross/A press only when all of these conditions hold:
 
-### Current acceptance status
+- The original `0x0047D830` GAME OVER owner is actively executing
+  inside the authentic, exact-signature-verified CALL wrapper.
+- The game is foreground; a mapped controller has been explicitly
+  Start-selected, neutral-armed, and is still the active owner.
+- The original 3D/gameplay renderer is active; native 2D, Pause,
+  Bink/video and other known input owners are not.
+- The original seven-word state corroboration passes (including
+  request 2, task 0x14 and active input). It is **never** accepted on
+  its own; a native owner is independently mandatory.
+- Six stable game Flips precede a full neutral frame followed by
+  one new South press; a held/chorded button or ambiguous axis input
+  is not a confirmation.
 
-The prior opt-in *heuristic* confirmation was positively observed on
-EasySMX and PS3 under Proton, and 925 automated tests passed before this
-new hook work. Those tests **do not validate** the new source-owner
-hook, so it must remain experimental until one fresh runtime test
-confirms both RETRY and QUIT, ordinary jumps and native Pause/Alt+Tab,
-with no false Enter in game transitions.
+The button press is consumed so it cannot simultaneously cause
+Space/Jump. On focus loss, controller handoff and owner exit, input
+routing returns to normal. The original EXE file is never modified
+on disk; source signature, relative displacement and memory page
+protection failures log `hook REFUSED` and **block any Enter**.
+No legacy request-2-only injection survives.
 
-The user's 2026-11-07 initial test using build `v1.1.0-1c713de`
-(Windows x86 compiled under CI #42346599890) logged two legacy
-`SDL3-GAMEOVER-TRIAL: ENTER PULSE` events but **no**
-`SDL3-GAMEOVER-NATIVE: ... wrapper installed` or `entered ... owner`
-record, because the strict owner flag was not active. This cannot
-validate the new call wrapper. The fallback has since been **disabled**;
-a correctly configured new build cannot silently repeat that situation.
+### Hardware evidence and remaining validation
 
-The 2026-11-07 follow-up log using `v1.1.0-3e42ce6` confirmed
-the fallback is blocked: startup reported `CONFIRM BLOCKED` with
-`GameOverConfirm=1` and the owner key absent; zero synthetic GAME OVER
-Return pulses occurred. This was **safe, but confusing**, so the owner
-hook is now automatically attempted whenever Confirm=1.
+**2026-11-07 GE-Proton11-12 / Xbox 360**, release-trial build
+`v1.1.0-29e5b88`: the logged hook installation succeeded, and two
+**independent** original GAME OVER owner entries (`09:08:14.621`
+and `09:08:31.853`) each preceded exactly one stable six-Flip
+candidate and **one accepted Enter pulse** (at `09:08:16.429` and
+`09:08:32.733`). Both owners exited normally; the first transition
+resumed gameplay/cinematic activity, the second returned to the
+main menu. This supports successful RETRY followed by QUIT. The log
+alone does not contain selected RETRY/QUIT text: a maintainer's
+screen observation remains needed to label both options conclusively.
 
-The next acceptance test needs only the single strict confirmation
-opt-in `ExperimentalSDL3GameOverConfirm=1`, with `[Debug] Log=1`. A new
-`SDL3-GAMEOVER-NATIVE: entered exact original 0x47D830 owner` log
-must precede the GAME OVER candidate and the single Enter pulse.
-Only after this exact gated path passes on hardware can it replace the
-legacy heuristic and be considered for default-on integration.
+There were **zero** GAME OVER Enter pulses outside the two native
+owner invocations. Regular gamepad South was mapped to Space/Jump,
+and directional input continued to function normally in gameplay.
+No game crash, invalid-INI repair or unverified hook attempt appeared
+in that log.
+
+The default-on integration is based on this successful source-verified
+opt-in runtime test, plus regression tests for strict owner checking.
+A **fresh default-on build** must still receive one consolidated
+hardware smoke test (RETRY, QUIT, movement, Jump, ESC Pause,
+focus/Alt+Tab, opt-out `=0`). Native Windows hardware behavior
+is not yet verified by the Proton trace. Do not merge until final
+review, CI and this final smoke are complete.
+
+The independent `ExperimentalSDL3GameOverOwnerProbe=1` enables
+bounded, read-only native-state comparison and may remain disabled
+during ordinary play.
 
 legluondunet assisted by ChatGPT (OpenAI)
