@@ -1,57 +1,48 @@
-"""Regressions for separate keyboard and joystick menu bindings."""
+"""Regression: SDL3 profiles own gamepad mapping; original joystick bytes stay in RawHex."""
 from pathlib import Path
 import configparser
-import re
 import struct
 
 ROOT = Path(__file__).resolve().parents[2]
 VIRTUAL = (ROOT / "virtual_spidey_cfg.c").read_text()
-INI = (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text()
+LEGACY = (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini").read_text()
 DEFAULT = (ROOT / "ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text()
-ACTIONS = ("Up", "Down", "Left", "Right", "Jump", "Kick", "Punch", "Web", "Aim", "Zipline", "Swing")
-BUTTON_ACTIONS = ("Jump", "Kick", "Punch", "Web", "Aim", "Zipline", "Swing")
+ACTIONS = ("Up", "Down", "Left", "Right", "Jump", "Kick", "Punch",
+           "Web", "Aim", "Zipline", "Swing")
 
 
-def test_two_independent_sections():
-    for content in (INI, DEFAULT):
-        parsed = configparser.ConfigParser(interpolation=None)
-        parsed.read_string(content)
-        assert "Keyboard" in parsed and "Joystick" in parsed
-        assert "Internal" in parsed
-        assert not parsed.has_section("Controls")
-        assert not parsed.has_section("Gamepad")
-        assert not parsed.has_section("GameConfig")
-        assert set(parsed["Keyboard"]) == {k.lower() for k in ACTIONS}
-        assert set(parsed["Joystick"]) == {k.lower() for k in BUTTON_ACTIONS}
-        assert content.count("\nRawHex=") == 1
-        assert len(bytes.fromhex(parsed["Internal"]["RawHex"])) == 252
-        assert {key: parsed["Keyboard"][key] for key in ACTIONS} == {
-            "Up":"UP", "Down":"DOWN", "Left":"LEFT", "Right":"RIGHT",
-            "Jump":"SPACE", "Kick":"X", "Punch":"C", "Web":"V",
-            "Aim":"D", "Zipline":"F", "Swing":"G"
-        }
-        assert [int(parsed["Audio"][k]) for k in ("MusicSFXLevel","VoiceLevel","MovieLevel")] == [40,60,40]
-        raw=bytes.fromhex(parsed["Internal"]["RawHex"])
-        for i,key in enumerate(BUTTON_ACTIONS):
-            code=struct.unpack_from('<I',raw,0x50+i*4)[0]
-            assert parsed["Joystick"][key] == f"BUTTON{code}"
-        # Unidentified joystick movement values are never touched by the mapping.
-        assert struct.unpack_from('<4I',raw,0x40) == (16384,)*4
+def parse(text):
+    p = configparser.ConfigParser(interpolation=None)
+    p.read_string(text)
+    return p
 
 
-def test_read_write_and_auto_ini():
-    for token in ('GetPrivateProfileStringA("Keyboard",action_names[i]',
-                  'WritePrivateProfileStringA("Keyboard",action_names[i]',
-                  'GetPrivateProfileStringA("Joystick",joystick_actions[i]',
-                  'WritePrivateProfileStringA("Joystick",joystick_actions[i]',
-                  'GetPrivateProfileStringA("Internal","RawHex"',
-                  'WritePrivateProfileStringA("Internal","RawHex"',
-                  'load_keyboard();', 'load_joystick();', 'save_keyboard()', 'save_joystick()',
-                  'decode_joystick_button', 'joystick_offsets[7]={0x50,0x54,0x58,0x5C,0x60,0x64,0x68}',
-                  r'"\r\n[Keyboard]\r\n"', r'"\r\n[Joystick]\r\n"'):
-        assert token in VIRTUAL, token
-    assert 'GetPrivateProfileStringA("Input","KeyboardLayout","Off"' in VIRTUAL
-    assert 'load_keyboard_layout();' in VIRTUAL
-    assert VIRTUAL.index('load_keyboard_layout();') < VIRTUAL.index('load_keyboard();')
-    assert '"Controls"' not in VIRTUAL
-    assert 'GetPrivateProfileStringA("GameConfig",' not in VIRTUAL
+def test_new_ini_exposes_keyboard_but_no_original_joystick_bindings():
+    cfg = parse(DEFAULT)
+    assert "Keyboard" in cfg and "Internal" in cfg
+    assert not cfg.has_section("Joystick")
+    assert not cfg.has_section("Gamepad")
+    assert not cfg.has_section("Controls")
+    assert set(cfg["Keyboard"]) == {k.lower() for k in ACTIONS}
+    assert DEFAULT.count("\nRawHex=") == 1
+    raw = bytes.fromhex(cfg["Internal"]["RawHex"])
+    assert len(raw) == 252
+    # Original native joystick map and axis metadata are kept byte-for-byte.
+    assert struct.unpack_from('<7I',raw,0x50) == (3,4,0,1,6,9,7)
+    assert struct.unpack_from('<4I',raw,0x40) == (16384,)*4
+    assert cfg["Keyboard"]["Jump"] == "SPACE"
+
+
+def test_old_ini_still_parses_but_joystick_is_not_a_runtime_override():
+    old = parse(LEGACY)
+    assert old.has_section("Joystick")  # Legacy user inputs remain accepted.
+    assert old["Joystick"]["Jump"] == "BUTTON3"
+    assert 'GetPrivateProfileStringA("Joystick",' not in VIRTUAL
+    assert 'WritePrivateProfileStringA("Joystick",' not in VIRTUAL
+    assert 'load_joystick();' not in VIRTUAL
+    assert 'save_joystick()' not in VIRTUAL
+    assert 'joystick_header' not in VIRTUAL
+    assert 'GetPrivateProfileStringA("Internal","RawHex"' in VIRTUAL
+    assert 'WritePrivateProfileStringA("Internal","RawHex"' in VIRTUAL
+    assert 'memcpy(saved_cfg,cfg,CFG_SIZE);' in VIRTUAL
+    assert 'load_keyboard();' in VIRTUAL and 'save_keyboard()' in VIRTUAL
