@@ -51,7 +51,7 @@ Successfully tested on Windows 11 and Linux/Wine.
 
 ## Bugs Resolved
 
-- **Alt+Tab crashes and input loss:** Combined Windows 11 hardware tests passed 20/20 checks, including six actual gated repairs of the original stuck Left Alt with the now default-on `ExperimentalAltLatchRecovery=1`. Under Wine, absent or delayed background PAUSED is tolerated only if return works normally.
+- **Alt+Tab crashes and input loss:** Combined Windows 11 hardware tests passed 20/20 checks, including six actual gated repairs of the original stuck Left Alt with the built-in, signature-guarded Left Alt latch recovery. Under Wine, absent or delayed background PAUSED is tolerated only if return works normally.
 - **Focus-loss instability:** Added automatic game pausing with synchronized video and audio playback, preventing gameplay and media synchronization issues while the game is in the background.
 - **Crash on exit:** Fixed a crash that could occur when quitting the game.
 - **Broken F9 screenshots on Windows:** Fixed screenshots that appeared entirely purple or contained no visible game graphics.

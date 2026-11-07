@@ -16,7 +16,7 @@ def test_readonly_native_probe_is_explicit_and_independent_from_f10():
     assert 'GetPrivateProfileIntA("Debug","NativeMenuReturnProbe",0,ini)==1' in MENU
     assert 'GetPrivateProfileIntA("Debug","Log",0,ini)==1' in MENU
     assert "static volatile LONG native_menu_probe_only=0;" in MENU
-    off=MENU.split('if(strcmp(val,"1")!=0) {',1)[1].split(
+    off=MENU.split('if(!shortcut_enabled) {',1)[1].split(
         '/* Shell_MainMenu has 8 entries.',1)[0]
     assert "install_real_menu_hook()" in off
     assert "install_debug_menu_wait_exit_probe()" in off
