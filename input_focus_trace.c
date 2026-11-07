@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include "input_focus_trace.h"
 #include "wine_focus_autostart.h"
+#include "spider_fix_paths.h"
 
 typedef HRESULT (WINAPI *DICreate8Fn)(HINSTANCE,DWORD,REFIID,LPVOID *,LPUNKNOWN);
 typedef HRESULT (WINAPI *DIInterfaceCreateDeviceFn)(void *,REFGUID,void **,LPUNKNOWN);
@@ -424,19 +425,21 @@ static HRESULT WINAPI focus_directinput8_create(HINSTANCE h,DWORD version,REFIID
   return hr;
 }
 void SpiderInputFocus_Install(void (*log_fn)(const char *)) {
-  char exe[MAX_PATH],ini[MAX_PATH],*sep,line[200];DWORD n;
+  char ini[MAX_PATH],line[200];
+  int have_ini;
   BYTE *base=(BYTE*)GetModuleHandleA(NULL);
   IMAGE_DOS_HEADER *dos;IMAGE_NT_HEADERS32 *nt;
   void **slot;HMODULE dll;FARPROC target;DWORD old,ignored;LONG want_trace,want_fix,want_cursor,want_probe,want_interface_probe;
   log_msg=log_fn;
-  n=GetModuleFileNameA(NULL,exe,sizeof(exe));
-  if(!n || n>=sizeof(exe) || !(sep=strrchr(exe,'\\'))) return;
-  strcpy(ini,exe);strcpy(ini+(sep-exe)+1,"SpiderMan2k1Fix.ini");
-  input_debug_logging=GetPrivateProfileIntA("Debug","Log",0,ini)==1;
-  want_trace=GetPrivateProfileIntA("Input","ExperimentalFocusTrace",0,ini)==1;
-  want_fix=GetPrivateProfileIntA("Input","ExperimentalAltTabReacquire",0,ini)==1;
-  want_probe=GetPrivateProfileIntA("Input","ExperimentalDI8EntryTrace",0,ini)==1;
-  want_interface_probe=GetPrivateProfileIntA("Input","ExperimentalDI8CreateDeviceTrace",0,ini)==1;
+  /* Read the same migrated/per-user INI as the proxy and core. A missing
+   * writable INI directory must not disable default cursor recovery: leave
+   * optional diagnostic switches off and continue with safe defaults. */
+  have_ini=spider_path_ini_a(ini,sizeof(ini));
+  input_debug_logging=have_ini && GetPrivateProfileIntA("Debug","Log",0,ini)==1;
+  want_trace=have_ini && GetPrivateProfileIntA("Input","ExperimentalFocusTrace",0,ini)==1;
+  want_fix=have_ini && GetPrivateProfileIntA("Input","ExperimentalAltTabReacquire",0,ini)==1;
+  want_probe=have_ini && GetPrivateProfileIntA("Input","ExperimentalDI8EntryTrace",0,ini)==1;
+  want_interface_probe=have_ini && GetPrivateProfileIntA("Input","ExperimentalDI8CreateDeviceTrace",0,ini)==1;
   /* Windows 11 regression confirmed 2026-10-21: replacing the native
    * IDirectInput8 vtable causes CreateDevice to return E_INVALIDARG
    * (0x80070057), and the game fails during initialization.
