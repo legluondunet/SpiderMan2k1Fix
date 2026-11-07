@@ -53,7 +53,7 @@ def test_ds3_probe_is_bounded_read_only_and_preserves_xbox_ds4_owner():
     assert "spider_reconnect_kind(vendor,product)==SPIDER_RECONNECT_NONE" in s
     assert "SDL3-GENERIC: SELECTED explicit modal Start" in s
     assert "SpiderSDL3Probe_GenericSelectedSample(" in s
-    assert "SpiderNativeReconnect_OnFlip(count,game_hwnd);" in (
+    assert "SpiderNativeReconnect_" not in (
         ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
     live=(ROOT/"sdl3_gameplay_live.c").read_text(encoding="utf-8")
     universal=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
