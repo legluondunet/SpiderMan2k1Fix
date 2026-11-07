@@ -158,7 +158,8 @@ def test_host_wiring_and_original_main_menu_isolated():
     source = (ROOT / "spiderman2k1fix.c").read_text()
     native = (ROOT / "hud_widescreen.c").read_text()
     assert '#include "ui_canvas_43.h"' in source
-    assert "SPIDERMAN2K1FIX_UI_CANVAS_TEST" in source
+    assert "SPIDERMAN2K1FIX_UI_CANVAS_TEST" not in source
+    assert 'UI-CANVAS-43: BUILT-IN' in source
     assert "SpiderUICanvas_43Transform(" in source
     assert "SpiderHudWidescreen_SetUICanvasPrototype(TRUE)" in source
     assert 'SpiderHudWidescreen_Installed()' in source
@@ -210,13 +211,13 @@ def test_black_hud_fills_and_middle_world_art_not_lost(transform):
     assert apply(transform, panel)[0] == 1
 
 
-def test_fullscreen_policy_has_a_trace_and_stays_opt_in():
+def test_fullscreen_policy_has_a_trace_and_is_built_in():
     host = (ROOT / "spiderman2k1fix.c").read_text()
     code = (ROOT / "ui_canvas_43.h").read_text()
     assert "UI-CANVAS-FULLSCREEN: keep=" in host
     assert "SpiderUICanvas_43IsFullScreenEffect(" in host
     assert "SpiderUICanvas_43IsFullScreenEffect(" in code
-    assert "SPIDERMAN2K1FIX_UI_CANVAS_TEST" in host
+    assert "SPIDERMAN2K1FIX_UI_CANVAS_TEST" not in host
 
 
 @pytest.mark.parametrize("resolution", [(1920, 1080), (1920, 1200), (3440, 1440)])

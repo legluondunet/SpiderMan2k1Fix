@@ -241,11 +241,12 @@ def test_empty_or_invalid_geometry_does_not_expose_unverified_geometry(api):
                       ct.byref(l),ct.byref(r))==0
 
 
-def test_v25_is_the_only_active_native_mask_pipeline_and_is_single_optin():
+def test_v25_is_the_only_permanent_native_mask_pipeline():
     src=(ROOT/"spiderman2k1fix.c").read_text()
     hdr=(ROOT/"ui_transition_native43_bounds25.h").read_text()
-    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST" in src
-    assert "UI-TRANSITION-BOUNDS25: V25 ON" in src
+    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST" not in src
+    assert "InterlockedExchange(&ui_transition_bounds25_enabled,1);" in src
+    assert "UI-TRANSITION-BOUNDS25: BUILT-IN" in src
     assert "UI-TRANSITION-BOUNDS25: FRAME=" in src
     assert "UI-TRANSITION-BOUNDS25: RELEASE" in src
     assert "SpiderNativeBounds25_Observe(&ui_transition_bounds25_frame,mapped" in src

@@ -102,7 +102,8 @@ def test_invalid_and_pathologically_large_source_stays_fail_closed(api):
 def test_final_v25_retains_original_game_guard_and_full_extent_mapping():
     src=(ROOT/"spiderman2k1fix.c").read_text()
     h=(ROOT/"ui_transition_native43.h").read_text()
-    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST" in src
+    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST" not in src
+    assert "UI-TRANSITION-BOUNDS25: BUILT-IN" in src
     assert "SPIDER_TRANSITION_CALLER_RVA" in src
     assert "v[0].diffuse!=0x00000000UL" in src
     assert "SpiderNative43_MapBounded(v,mapped,4u" in src
