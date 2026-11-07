@@ -456,7 +456,7 @@ def test_f12_debug_fast_test_mode_default_off_and_valid_ini_key():
     assert "static volatile LONG debug_f12_test_mode=0;" in SRC
 
     init=SRC[SRC.index("void SpiderQuickExitF12_Init("):]
-    assert 'strcpy(val,"1");' in init
+    assert 'shortcut_enabled=f10_shortcut ||' in init
     assert 'InterlockedExchange(&debug_f12_test_mode,1)' in init
     assert "debug_f12_test_mode,0,0)==1 ||" in init
     assert "intro_still_opt_in,1" in init
@@ -2123,9 +2123,9 @@ def test_f10_shortcut_single_hidden_debug_flag_all_stages_no_log_needed():
     """One manual [Debug] flag enables all validated F10 actions."""
     init=SRC[SRC.index("void SpiderQuickExitF12_Init(void (*log_fn)(const char *))"):]
     assert 'f10_shortcut=GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1;' in init
-    assert "if(f10_shortcut ||" in init
+    assert "shortcut_enabled=f10_shortcut ||" in init
     assert 'InterlockedExchange(&debug_f12_test_mode,1);' in init
-    assert 'strcpy(val,"1");' in init
+    assert 'shortcut_enabled=f10_shortcut ||' in init
     scene=init[init.index("/* F10Shortcut enables ALL tested stages.") :
                init.index("memset(movie_trial,0,sizeof(movie_trial));")]
     assert scene.count("f10_shortcut ||")==2
