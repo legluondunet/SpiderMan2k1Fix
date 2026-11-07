@@ -1,10 +1,9 @@
 /* SDL3 controller discovery and explicit selection for Spider-Man (PC 2001).
  * The bundled SDL3.dll is loaded dynamically, never from the system PATH.
  * This module samples controllers and manages their saved profiles; it does
- * not create an SDL window, audio device or renderer. The separate default-on
- * universal gameplay bridge handles guarded input after explicit Start
- * selection, while the original DirectInput backend remains a fallback.
- * [Input] ExperimentalSDL3Probe=0 disables the discovery/selection probe.
+ * not create an SDL window, audio device or renderer. The built-in
+ * universal bridge handles guarded input after explicit Start selection.
+ * No legacy DirectInput controller mapping or reconnect fallback exists.
  * [Debug] Log=1 enables optional diagnostics.
  * SDL3 instance IDs identify selected controller instances. */
 #define WIN32_LEAN_AND_MEAN
@@ -351,7 +350,7 @@ static int has_id(const uint32_t *ids,unsigned count,uint32_t id) {
 }
 /* Read-only diagnostic of the ORIGINAL game's selected joystick.
  * The SDL3 selection does not drive this game-owned DirectInput pointer.
- * The fixed global is known from the SHA-verified native reconnect module.
+ * The fixed game-owned global is known from the supported retail binary.
  * No COM invocation, pointer replacement or action table writes here. */
 #define SPIDER_NATIVE_JOYSTICK_PTR 0x006B7A2Cu
 static void sdl3_trace_native_owner(DWORD now) {
@@ -787,9 +786,9 @@ int SpiderSDL3Probe_SetupRead(unsigned slot,uint32_t *instance_id,
     snprintf(name,capacity,"%s",text_name?text_name:"Mapped SDL3 gamepad");
   return 1;
 }
-/* Explicit logical SDL3 selection for unknown native DirectInput layouts
- * and, in universal opt-in mode, ALL uniquely identified mapped devices.
- * This is NOT an alias of SelectedIdentity(): no native DI ownership.
+/* Explicit SDL3 selection for every uniquely identified mapped device.
+ * Physical button layouts come exclusively from SDL3 model profiles.
+ * No game-owned DirectInput controller is ever selected/rebound here.
  *
  * Caller must be on the game/Flip thread, with SDL3 already pumped and
  * the exact selected instance still connected and unique by VID:PID.
@@ -833,19 +832,11 @@ int SpiderSDL3Probe_GenericSelectedSample(uint32_t *instance,
   *pid=generic_selected_product;
   return 1;
 }
-/* SDL3 exposes each trigger as a separate 0..32767 axis. The
- * legacy XUSB DirectInput driver may instead combine LT and RT on lZ,
- * which varies with a device rebind and driver. Read the ALREADY-open,
- * SELECTED SDL3 handle only, on the original game/Flip thread.
- * This never updates SDL, polls the game device or consumes events. */
-/* Universal SDL3 selection is separate from game-owned DirectInput.
- * Require an EXPLICIT Start (or validated modal handoff) for universal
- * keyboard injection, even if native selection has auto-selected the
- * only connected controller. When detached, a stale instance still
- * fails GenericSelectedSample until the next explicit Start.
- *
- * Never fall back to SelectedSample(): native auto-selection is passive
- * and must NEVER authorize keyboard events or native DI suspension. */
+/* SDL3 gamepad input requires EXPLICIT Start (or verified modal handoff)
+ * even if the passive selection state auto-selected a sole connected pad.
+ * Detached/unselected controllers cannot inject actions. Missing SDL3
+ * leaves the original keyboard usable. Never fall back to SelectedSample():
+ * the retired DirectInput mapping path is not available. */
 int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
     uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample) {
   if(instance)*instance=0;
