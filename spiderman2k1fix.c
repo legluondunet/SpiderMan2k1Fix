@@ -1192,7 +1192,7 @@ static void native_pause43_init(void) {
   InterlockedExchange(&native_pause43_enabled,enabled?1:0);
   log_line(enabled?
     "PAUSE-NATIVE-43: 4:3 ribbon+borders+glyphs ON (HUDWidescreenFix master)" :
-    "PAUSE-NATIVE-43: OFF (HUD master or [HUD] NativeESC4x3=0)");
+    "PAUSE-NATIVE-43: inactive (native HUD unavailable)");
 }
 static const void *maybe_correct_native_pause43(void *device,
             D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
@@ -5470,85 +5470,35 @@ static DWORD initialize_body(LPVOID unused) {
     }
   }
   install_player_hud(TRUE);
-  /* Launch-only opt-in: no INI repair or changes to the default setup.
-   * Disable early native HUD X changes so D3D7 receives source vertices
-   * and transforms each accepted screen-space primitive exactly once. */
-  {
-    char setting[4]={0};
-    DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_CANVAS_TEST",
-                                     setting,sizeof(setting));
-    if(n==1 && setting[0]=='1' &&
-       SpiderHudWidescreen_Installed() &&
-       lstrcmpiA(display_aspect_setting,"4:3")!=0) {
-      SpiderHudWidescreen_SetUICanvasPrototype(TRUE);
-      InterlockedExchange(&ui_canvas_trial_enabled,1);
-      log_line("UI-CANVAS-43: EXPERIMENT ON; common centered 4:3 gameplay UI mapping, native HUD X edits skipped; HARDWARE UNVERIFIED");
-    } else {
-      log_line("UI-CANVAS-43: OFF; legacy verified HUD and native menus unchanged");
-    }
+  /* Permanent centered 4:3 gameplay UI canvas, original native Pause
+   * composition (including the source veil and physical outer gutters),
+   * and V25's original-native scene-entry iris curtains.
+   *
+   * Install only after the exact-game HUD signature guard succeeds and
+   * for the widescreen presentation. 4:3 retains the original drawing.
+   * Former UI_*_TEST environment switches are ignored.
+   *
+   * Keep the unvalidated HUD-over-veil deferral OFF: the verified native
+   * HUD ordering must not change when the Pause composition is promoted. */
+  if(SpiderHudWidescreen_Installed() &&
+     lstrcmpiA(display_aspect_setting,"4:3")!=0 &&
+     native_esc43_supported_monitor()) {
+    SpiderHudWidescreen_SetUICanvasPrototype(TRUE);
+    InterlockedExchange(&ui_canvas_trial_enabled,1);
+    InterlockedExchange(&ui_transition_bounds25_enabled,1);
+    SpiderNativeSync24_Reset(&ui_transition_sync24_frame);
+    SpiderNativeBounds25_Reset(&ui_transition_bounds25_frame);
+    InterlockedExchange(&ui_compositor_trial_enabled,1);
+    InterlockedExchange(&ui_compositor_native_backdrop_enabled,1);
+    log_line("UI-CANVAS-43: BUILT-IN centered 4:3 game UI (widescreen, verified HUD)");
+    log_line("UI-TRANSITION-BOUNDS25: BUILT-IN original V19 scene iris with same-frame source-tooth V25 outer curtains");
+    log_line("UI-COMPOSITOR: BUILT-IN source veil, native 4:3 Pause menu and verified black outer gutters; HUD order preserved");
+  } else {
+    log_line("UI-CANVAS-43/UI-COMPOSITOR/UI-TRANSITION: native 4:3 or HUD guard unavailable; original rendering preserved");
   }
-  /* Final original-native V25 trial. Earlier V6–V24 environment flags
-   * are intentionally ignored. Keep explicitly opted in until native
-   * Windows and ultrawide visual coverage has been verified.
-   */
-  {
-    char flag[4]={0};
-    if(InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)==1 &&
-       GetEnvironmentVariableA(
-          "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST",
-          flag,sizeof(flag))==1 && flag[0]=='1'){
-      InterlockedExchange(&ui_transition_bounds25_enabled,1);
-      SpiderNativeSync24_Reset(&ui_transition_sync24_frame);
-      SpiderNativeBounds25_Reset(&ui_transition_bounds25_frame);
-      log_line("UI-TRANSITION-BOUNDS25: V25 ON - original native V19 iris, same-frame physical left/right curtains; legacy V6–V24 pipelines removed");
-    }else{
-      log_line("UI-TRANSITION-BOUNDS25: OFF - original native iris unchanged");
-    }
-  }
-  /* Separate compositor opt-in: the regular UI canvas trial remains
-   * testable without changing the render order. No INI schema changes. */
-  {
-    char opt[4]={0};
-    DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_COMPOSITOR_TEST",
-                                   opt,sizeof(opt));
-    if(n==1 && opt[0]=='1' &&
-       InterlockedCompareExchange(&ui_canvas_trial_enabled,0,0)==1) {
-      InterlockedExchange(&ui_compositor_trial_enabled,1);
-      /* Native Pause art remains exactly the original source material.
-       * Only the independently validated physical outer gutters are
-       * added at EndScene. No synthetic colour/tint passes. */
-      log_line("UI-COMPOSITOR: TRIAL ON (native ESC deferred to EndScene; original 4:3 decor; source-backed exterior gutters)");
-      /* Independent, reversible A/B opt-out for two physical outer
-       * gutters. Explicit 0 replays only the original 4:3 decoration. */
-      {
-        char backdrop[4]={0};
-        if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_COMPOSITOR_NATIVE_BACKDROP",
-                                   backdrop,sizeof(backdrop))==1 &&
-           backdrop[0]=='0')
-          InterlockedExchange(&ui_compositor_native_backdrop_enabled,0);
-        log_line(InterlockedCompareExchange(&ui_compositor_native_backdrop_enabled,0,0)==1 ?
-          "UI-COMPOSITOR-NATIVE-BACKDROP: source-verified OUTER GUTTERS enabled (all 160 source 4:3 triangles preserved)" :
-          "UI-COMPOSITOR-NATIVE-BACKDROP: OFF (original 4:3 source mesh only)");
-      }
-      /* Unvalidated HUD deferral remains opt-IN and is not necessary
-       * for the hardware-validated native 4:3 Pause composition. */
-      {
-        char hud_over_veil[4]={0};
-        if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_UI_COMPOSITOR_HUD_OVER_VEIL",
-                                   hud_over_veil,sizeof(hud_over_veil))==1 &&
-           hud_over_veil[0]=='1')
-          InterlockedExchange(&ui_compositor_hud_over_veil_enabled,1);
-        log_line(InterlockedCompareExchange(&ui_compositor_hud_over_veil_enabled,0,0)==1 ?
-          "UI-COMPOSITOR-HUD-ORDER: ON (experimental opt-in, defer recognized HUD to after exterior gutters)" :
-          "UI-COMPOSITOR-HUD-ORDER: OFF (validated native HUD path, default)");
-      }
-    } else {
-      log_line("UI-COMPOSITOR: OFF; existing UI canvas draw path unchanged");
-    }
-  }
-  /* HUDWidescreenFix is the parent of the three native ESC children.
-   * Read hidden [HUD] child opt-outs only AFTER the verified HUD
-   * installation, so master=0 or failed HUD install disables all. */
+  InterlockedExchange(&ui_compositor_hud_over_veil_enabled,0);
+  /* Native ESC/Pause/Motif/Cursor remain built-in. Each requires the
+   * supported game + verified HUD and exact draw-source safety gates. */
   native_pause43_init();
   native_cursor43_init();
   native_motif43_init();
