@@ -15,9 +15,14 @@ def test_new_dll_names_are_consistent():
     assert (ROOT / 'spiderman2k1fix.c').exists()
 
 def test_ini_and_logs_are_consistent():
-    for name in ('spider_fix_paths.h', 'input_focus_trace.c', 'virtual_spidey_cfg.c'):
+    for name in ('spider_fix_paths.h', 'virtual_spidey_cfg.c'):
         data=(ROOT / name).read_text()
         assert 'SpiderMan2k1Fix.ini' in data
+    # Focus diagnostics must use the same migrated INI path as the core,
+    # not reconstruct a hard-coded root INI name.
+    focus = (ROOT / 'input_focus_trace.c').read_text()
+    assert '#include "spider_fix_paths.h"' in focus
+    assert 'have_ini=spider_path_ini_a(ini,sizeof(ini));' in focus
     for name in ('spider_fix_paths.h',):
         assert 'SpiderMan2k1Fix.log' in (ROOT / name).read_text()
     assert (ROOT / 'ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini').exists()
