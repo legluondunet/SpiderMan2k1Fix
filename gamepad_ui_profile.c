@@ -33,9 +33,6 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
 void SpiderGamepadUI_AfterControllerSetup(HWND hwnd) {(void)hwnd;}
 /* The engine's SDL3 focus wake and keyboard release are independent
  * from the old Sony-only DirectInput pause helper. */
-int SpiderGamepadUI_PauseWake_Begin(void) {return 0;}
-unsigned SpiderGamepadUI_PauseWake_Poll(HWND hwnd) {(void)hwnd;return 0;}
-void SpiderGamepadUI_PauseWake_End(void) {}
 int SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(HWND hwnd) {
   return SpiderSDL3Universal_ReleaseSyntheticReturnBefore3D(hwnd);
 }

@@ -201,10 +201,8 @@ def test_previously_explicit_ps3_is_previewed_without_native_ownership():
     """PS3 054C:0268 stays the displayed profile on reopening SDL3 setup."""
     refresh=UI.split("static void refresh_pads(",1)[1].split(
         "static int modal_start_handoff(",1)[0]
-    assert "SpiderSDL3Probe_SelectedIdentity(" in refresh
+    assert "SpiderSDL3Probe_SelectedIdentity(" not in refresh
     assert "SpiderSDL3Probe_GenericSelectedSample(" in refresh
-    assert refresh.index("SpiderSDL3Probe_SelectedIdentity(") < refresh.index(
-        "SpiderSDL3Probe_GenericSelectedSample(")
     assert "previous-explicit-generic-selection" in refresh
     assert "id==gameplay_id" in refresh
     assert "vid==gameplay_vid && pid==gameplay_pid" in refresh

@@ -7,7 +7,7 @@ SRC=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
 EXAMPLE=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text(encoding="utf-8")
 PROBE=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
 ADAPTER=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
-RECONNECT=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
+CORE=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
 UNPLUG=(ROOT/"native_joystick_unplug.c").read_text(encoding="utf-8")
 ALT=(ROOT/"alt_latch_recovery.h").read_text(encoding="utf-8")
 
@@ -42,8 +42,8 @@ def test_old_controller_preset_options_are_ignored_not_synthesized():
                 "ControllerPauseButton",
                 "ExperimentalSDL3GameplayBindings","ExperimentalSDL3XboxRTSwing"):
         assert f'{{"Input","{key}"}}' in SRC
-    assert "swap_mapping_enabled=0;" in RECONNECT
-    assert "swap_native_gameplay_mapping(" not in RECONNECT
+    assert not (ROOT/"native_joystick_reconnect.c").exists()
+    assert "SpiderNativeReconnect_" not in CORE
     assert '"ExperimentalNativeJoystickMappingSwap=1' not in SRC
     assert "sdl3_generic_ui_on_flip(" not in (
         ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
@@ -52,12 +52,12 @@ def test_old_controller_preset_options_are_ignored_not_synthesized():
 def test_native_safety_and_universal_default_remain_guarded():
     assert "requested=1;" in PROBE
     assert "universal_requested=1;" in PROBE
-    assert "native_owner_requested=0;" in PROBE
+    assert "SpiderSDL3Probe_NativeOwnerEnabled" not in PROBE
     assert "requested=1; /* SDL3-only gameplay, no legacy-INI opt-out. */" in ADAPTER
     assert "gameover_trial_enabled=1;" in ADAPTER
     assert "SpiderSDL3ProfileStore_Init(1,logger)" in PROBE
     assert "InterlockedExchange(&requested,1);" in UNPLUG
-    assert "if(SpiderSDL3Universal_Enabled())return;" in RECONNECT
+    assert "SpiderSDL3Universal_OnFlip(game_hwnd," in CORE
     assert "spider_alt_latch_preflight()" in ALT
     assert "GetAsyncKeyState(VK_TAB)" in ALT
 

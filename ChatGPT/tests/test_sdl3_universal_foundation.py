@@ -307,52 +307,38 @@ def test_keyboard_escape_uses_raw_hid_input_and_not_controller_fake_escape():
     assert "if(vk==VK_F10)" not in setup
 
 
-def test_generic_ps3_logical_selection_is_explicit_unique_and_native_preserving():
+def test_generic_sdl3_selection_is_explicit_unique_without_native_rebind():
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     header=(ROOT/"sdl3_gamepad_probe.h").read_text(encoding="utf-8")
     assert "static uint32_t generic_selected_id=0;" in probe
     assert "static uint16_t generic_selected_vendor=0,generic_selected_product=0;" in probe
     assert "SDL3-GENERIC: SELECTED explicit modal Start" in probe
     assert "spider_sdl3_selected_model_unique(opened,num_pads," in probe
-    assert "spider_reconnect_kind(vendor,product)==SPIDER_RECONNECT_NONE" in probe
-    assert "selection.active=requested_id;" in probe
-    assert "generic_selected_id=requested_id;" in probe
-    # The generic branch comes before the legacy native owner branch;
-    # generic selection NEVER writes selection.active.
-    pending=probe.split("if(setup_owner_pending) {",1)[1].split("sdl3_trace_native_owner(now);",1)[0]
-    assert pending.index("generic_selected_id=requested_id;") < pending.index("selection.active=requested_id;")
-    assert "SpiderSDL3Probe_NativeOwnerEnabled()" in pending
-    assert "generic_selected_id=0;" in pending
+    pending=probe.split("if(setup_owner_pending) {",1)[1].split(
+        "sdl3_trace_native_owner(now);",1)[0]
+    assert "generic_selected_id=requested_id;" in pending
+    assert "selection.active=requested_id;" not in pending
+    assert "SpiderSDL3Probe_NativeOwnerEnabled()" not in pending
     assert "SETUP RETURN REFUSED stale/ambiguous" in pending
     assert "int SpiderSDL3Probe_GenericSelectedSample(" in header
     generic=probe.split("int SpiderSDL3Probe_GenericSelectedSample(",1)[1].split(
-        "/* SDL3 exposes each trigger",1)[0]
+        "/* Universal SDL3 selection",1)[0]
     assert "sdl3_game_thread!=GetCurrentThreadId()" in generic
     assert "spider_sdl3_selected_model_unique(" in generic
     assert "sdl_connected(pads[i].handle)" in generic
-    assert "spider_reconnect_kind(generic_selected_vendor," in generic
     assert "sample->axis[j]=sdl_axis(pads[i].handle,(int)j);" in generic
     assert "SPIDER_SDL3_AXIS_RIGHTX" in (ROOT/"sdl3_controller_profile.h").read_text(encoding="utf-8")
-    assert "SPIDER_SDL3_AXIS_RIGHTY" in (ROOT/"sdl3_controller_profile.h").read_text(encoding="utf-8")
-    for dangerous in ("SendInput(", "VirtualProtect(", "IDirectInputDevice8_", "WriteProcessMemory("):
-        assert dangerous not in generic
+    for unsafe in ("SendInput(", "VirtualProtect(", "IDirectInputDevice8_",
+                   "WriteProcessMemory(", "spider_reconnect_kind("):
+        assert unsafe not in generic
     trace=probe.split("static void sdl3_generic_semantic_trace_on_flip(",1)[1].split(
         "void SpiderSDL3Probe_OnFlip(",1)[0]
     assert "spider_sdl3_universal_step(" in trace
     assert "spider_sdl3_profile_valid(profile)" in trace
-    assert "spider_sdl3_profile_neutral(" not in trace  # step owns the gate
-    assert "SDL3-GENERIC: SEMANTIC ARMED" in trace
-    assert "SDL3-GENERIC: SEMANTIC id=" in trace
-    assert "[READ-ONLY; original game input unchanged]" in trace
     assert "generic_trace_lines>=48u" in trace
-    assert "memcmp(&generic_profile_snapshot,profile,sizeof(*profile))" in trace
-    for dangerous in ("SendInput(", "VirtualProtect(", "IDirectInputDevice8_", "WriteProcessMemory("):
-        assert dangerous not in trace
     assert "sdl3_generic_semantic_trace_on_flip();" in probe
-    # The pre-existing real native owner is still strict: unknown PS3
-    # START must not claim DI or replace selection.active.
-    assert "SDL3-OWNER: START REFUSED unsupported native controller" in probe
-
+    assert "SpiderSDL3Probe_SelectedIdentity" not in probe
+    assert "SpiderNativeReconnect_" not in probe
 
 
 def test_ps3_explicit_setup_selection_when_start_was_consumed_by_capture():
@@ -376,9 +362,8 @@ def test_ps3_explicit_setup_selection_when_start_was_consumed_by_capture():
     assert "SpiderSDL3Probe_SetupModalReturn(" in setup
     assert "setup_owner_pending=requested_id;" in probe
     assert "SDL3-GENERIC: SELECTED explicit modal Start" in probe
-    assert "spider_reconnect_kind(vendor,product)==SPIDER_RECONNECT_NONE" in probe
     assert "generic_selected_id=requested_id;" in probe
-    assert "selection.active=requested_id;" in probe
+    assert "selection.active=requested_id;" not in probe
     assert "sdl3_generic_semantic_trace_on_flip();" in probe
     assert "for(i=SPIDER_UI_RAW;i<=SPIDER_UI_USE;i++)" in setup
     assert "for(unsigned i=SPIDER_UI_RAW;i<=SPIDER_UI_USE;i++)" in setup

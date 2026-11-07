@@ -141,10 +141,10 @@ def test_profile_model_cannot_change_native_game_while_in_design_phase():
         "SDL_UpdateGamepads", "SDL_PumpEvents",
     ):
         assert forbidden not in h
-    native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
-    assert "swap_native_gameplay_mapping(" not in native
-    assert "spider_native_swap_preset(" not in native
-    assert "spider_native_swap_read(" in native
+    assert not (ROOT/"native_joystick_reconnect.c").exists()
+    adapter=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    assert "spider_sdl3_universal_step(" in adapter
+    assert "SPIDER_NATIVE_ACTION_TABLE" not in adapter
     lock=(ROOT/"ps1_joystick_readonly_menu.c").read_text(encoding="utf-8")
     assert "joystick-only mapping branch" in lock
 

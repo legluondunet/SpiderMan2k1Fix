@@ -1,12 +1,12 @@
 #ifndef SPIDERMAN2K1FIX_SDL3_GAMEPAD_IDENTITY_H
 #define SPIDERMAN2K1FIX_SDL3_GAMEPAD_IDENTITY_H
-/* A selected SDL3 instance must have a UNIQUE VID:PID in the currently
- * opened mapped gamepads before the old DirectInput8 native owner can be
- * associated with it.  Different VID:PID gamepads may coexist.
+/* Existing strict single-owner policy: a selected SDL3 instance must
+ * have a unique VID:PID among currently opened mapped gamepads. Different
+ * models may coexist. This deliberately conservative rule is retained
+ * during removal of the legacy native DirectInput rebind, so no controller
+ * handoff behavior changes in the same PR.
  *
- * This pure C99 function never reads input and never changes game state.
- * A pair of identical controllers cannot be reliably distinguished via
- * native DI product VID:PID alone: reject all operations for that model. */
+ * Pure C99 identity checks; never reads input or changes game state. */
 #include <stdint.h>
 typedef struct {
   uint32_t instance_id;

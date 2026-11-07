@@ -5,9 +5,10 @@
 #include <stddef.h>
 #include "sdl3_controller_profile.h"
 
-/* OFF-by-default SDL3 discovery and selection telemetry only.
- * NO game input writes, synthetic keys, hooks or native DI device mutations.
- * SDL3.dll is optional and is only loaded from the executable directory. */
+/* Built-in SDL3 mapped-controller discovery and selection.
+ * SDL3 is the sole supported gamepad mapping backend. The original
+ * keyboard remains independent, including when no controller is found.
+ * SDL3 input is only polled on the verified game/Flip thread. */
 void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *));
 void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd);
 /* The Flip-blocking Alt+Tab PAUSED screen uses the same selected SDL3
@@ -17,37 +18,19 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd);
 int SpiderSDL3Probe_PauseWake_Begin(void);
 unsigned SpiderSDL3Probe_PauseWake_Poll(HWND game_hwnd);
 void SpiderSDL3Probe_PauseWake_End(void);
-/* Opt-in native ownership experiment. Read only from the same Flip thread.
- * 'Available' means SDL initialized and selected an instance; it does NOT
- * mean DirectInput has been rebound. Duplicate VID/PID must fail closed. */
-int SpiderSDL3Probe_NativeOwnerEnabled(void);
-unsigned SpiderSDL3Probe_MappedCount(void);
-int SpiderSDL3Probe_SelectedIdentity(uint16_t *vid,uint16_t *pid,
-                                     uint32_t *instance_id);
-/* Passive normalized RT value 0..32767 for the current selected SDL pad.
- * No events consumed, no SDL/window state created; fails closed when
- * no active mapped controller is available or RT axis is invalid. */
-int SpiderSDL3Probe_SelectedRT(int *normalized_rt);
-/* Passive selected SDL3 input snapshot, only on the original Flip thread
- * after its SDL3 event pump. Includes both triggers and semantic buttons.
- * No native DirectInput ownership writes, no event queue consumption. */
-/* Explicit modal Start selects an unknown controller only for the
- * normalized semantic action adapter (read-only). Native DirectInput
- * owner and gameplay remain unchanged. Unique connected SDL ID+VID/PID
- * and same-game-thread checks are mandatory. */
-/* Opt-in keyboard adapter: one selected, uniquely identified mapped SDL3
+/* The universal adapter accepts only a selected, connected,
+ * uniquely identified SDL3-mapped pad (explicit Start, neutral first).
+ * No legacy DirectInput gamepad mapping or device rebind is available. */
+/* Built-in keyboard adapter: one selected, uniquely identified mapped SDL3
  * controller, including explicit PS3 selection (never native DI ownership).
  * Reject disconnected or ambiguous generic devices without fallback. */
 int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
     uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample);
 int SpiderSDL3Probe_GenericSelectedSample(uint32_t *instance,
     uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample);
-int SpiderSDL3Probe_SelectedSample(uint32_t *instance,uint16_t *vid,
-                                  uint16_t *pid,
-                                  SpiderSDL3ControllerSample *sample);
-/* Verified New Game Bink #4 -> first native 3D input handoff only.
- * A held physical DS4 Cross/Xbox A is also the game's native Jump/scene
- * action. Refresh the ALREADY-open SDL3 selected gamepad on the same game
+/* Verified New Game Bink #4 -> first 3D input handoff only.
+ * A held SDL3-mapped South/A/Cross may affect the first Jump/skip action.
+ * Refresh the ALREADY-open selected SDL3 gamepad on the same game
  * thread and wait (max 5s) for SOUTH to release before first 3D input.
  * Return 1 on observed held->released, 0 when no pad/SOUTH held,
  * -1 on lost identity/focus, -2 on bounded timeout. Diagnostics log

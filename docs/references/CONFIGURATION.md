@@ -89,7 +89,9 @@ SDL3 is the sole supported gamepad mapping backend. A controller must be recogni
 
 The generated player INI does **not** contain `ExperimentalSDL3Probe`, `ExperimentalSDL3NativeOwner`, `ExperimentalSDL3ControllerSetup`, `ExperimentalSDL3UniversalGameplay`, or `ExperimentalSDL3GameOverConfirm`. Old copies of these switches are accepted during INI migration but no longer control the SDL3 runtime. Rebuilding an older INI removes them while preserving user audio, keyboard, display and `RawHex` preferences.
 
-The original game's DirectInput device pointer, fatal-unplug guard, and focus-loss cleanup may still be used internally to keep the supported 2001 executable stable; they **do not** provide a second supported gamepad mapping backend.
+The original game's DirectInput device pointer, fatal-unplug guard, and focus-loss cleanup may still be used internally to keep the supported 2001 executable stable; they **do not** provide a second supported gamepad mapping backend. SpiderMan2k1Fix no longer enumerates, releases, or rebinds the original joystick through its retired native reconnect module. SDL3 profile mapping remains separate from the original lossless `RawHex` bytes.
+
+**Keyboard-only sessions:** when SDL3 is absent, initialization fails, the controller is unmapped, no controller was explicitly selected with Start, or the selected controller disconnects, SDL3 injects no gamepad actions. The original keyboard and Any-key focus-pause wake remain available. The gamepad wake path has no DirectInput fallback.
 
 ### GAME OVER native owner observer (2026-11-06)
 

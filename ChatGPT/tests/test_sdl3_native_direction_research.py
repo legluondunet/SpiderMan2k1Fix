@@ -66,6 +66,6 @@ def test_research_model_unwired_and_sha_grounded():
                       "WriteProcessMemory","SendInput","SDL_OpenGamepad"):
         assert forbidden not in p
     for native in ("spiderman2k1fix.c","sdl3_gamepad_probe.c",
-                   "native_joystick_reconnect.c"):
+                   "sdl3_universal_gameplay.c"):
         assert '#include "sdl3_native_direction_research.h"' not in (
             ROOT/native).read_text(encoding="utf-8")

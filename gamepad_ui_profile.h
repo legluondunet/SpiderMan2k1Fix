@@ -8,9 +8,6 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *));
 void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active);
 void SpiderGamepadUI_AfterControllerSetup(HWND game_window);
-int SpiderGamepadUI_PauseWake_Begin(void);
-unsigned SpiderGamepadUI_PauseWake_Poll(HWND hwnd);
-void SpiderGamepadUI_PauseWake_End(void);
 int SpiderGamepadUI_ReleaseSyntheticReturnBefore3D(HWND hwnd);
 void SpiderGamepadUI_SDL3GameplayPause(HWND hwnd);
 #endif

@@ -1,10 +1,9 @@
 /* SDL3 controller discovery and explicit selection for Spider-Man (PC 2001).
  * The bundled SDL3.dll is loaded dynamically, never from the system PATH.
  * This module samples controllers and manages their saved profiles; it does
- * not create an SDL window, audio device or renderer. The separate default-on
- * universal gameplay bridge handles guarded input after explicit Start
- * selection, while the original DirectInput backend remains a fallback.
- * [Input] ExperimentalSDL3Probe=0 disables the discovery/selection probe.
+ * not create an SDL window, audio device or renderer. The built-in
+ * universal bridge handles guarded input after explicit Start selection.
+ * No legacy DirectInput controller mapping or reconnect fallback exists.
  * [Debug] Log=1 enables optional diagnostics.
  * SDL3 instance IDs identify selected controller instances. */
 #define WIN32_LEAN_AND_MEAN
@@ -21,8 +20,6 @@
 #include "sdl3_controller_profile.h"
 #include "sdl3_universal_actions.h"
 #include "sdl3_controller_profile_store.h"
-#include "native_joystick_reconnect.h"
-#include "native_joystick_reconnect_policy.h"
 #include "sdl3_raw_mapping.h"
 #include "ps1_focus_pause_wake.h"
 
@@ -70,7 +67,6 @@ static SpiderSDL3Opened pads[SPIDER_SDL3_MAX_GAMEPADS];
 static SpiderSDL3Selection selection={0};
 static unsigned num_pads=0;
 static int requested=0,attempted=0,ready=0,scanned=0;
-static int native_owner_requested=0;
 static int universal_requested=0;
 static int bindings_trace_requested=0;
 /* One SDL3 semantic profile per VID:PID; persisted for opted-in
@@ -128,7 +124,6 @@ static SDL_CloseGamepadFn sdl_close=NULL;
 static SDL_GetGamepadButtonFn sdl_button=NULL;
 static SDL_GamepadConnectedFn sdl_connected=NULL;
 static SpiderPausePadWake sdl_pause_wake={0};
-static int sdl_pause_universal=0;
 static uint32_t sdl_pause_id=0;
 static uint16_t sdl_pause_vid=0,sdl_pause_pid=0;
 static int sdl_pause_active=0,sdl_pause_lost_reported=0;
@@ -197,48 +192,9 @@ void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
     say("SDL3-BINDINGS: optional semantic action probe ENABLED (read-only; no gameplay remap, no UI changes; max 48 events)");
   /* Retire the legacy SDL3-identity -> native DirectInput rebind: mapped
    * SDL3 input goes through the universal adapter exclusively. */
-  native_owner_requested=0;
-  if(requested)say("SDL3-PROBE: enabled by default; discovery and selection available (explicit INI opt-out supported)");
+  if(requested)say("SDL3-PROBE: SDL3-only gamepad backend; explicit Start and neutral input required");
   if(universal_requested)
     say("SDL3-UNIVERSAL: default-on logical Start selection for mapped SDL3 pads; no unverified native DI rebind");
-}
-
-int SpiderSDL3Probe_NativeOwnerEnabled(void) {
-  return native_owner_requested && ready && scanned;
-}
-unsigned SpiderSDL3Probe_MappedCount(void) {
-  return SpiderSDL3Probe_NativeOwnerEnabled()?selection.count:0;
-}
-int SpiderSDL3Probe_SelectedIdentity(uint16_t *vid,uint16_t *pid,
-                                     uint32_t *instance_id) {
-  SpiderSDL3Identity open[SPIDER_SDL3_MAX_GAMEPADS]={{0}};
-  unsigned i;
-  uint16_t v,p;
-  if(vid)*vid=0;
-  if(pid)*pid=0;
-  if(instance_id)*instance_id=0;
-  if(!SpiderSDL3Probe_NativeOwnerEnabled() || !selection.active ||
-     !sdl_vendor || !sdl_product)return 0;
-  v=sdl_vendor(selection.active);p=sdl_product(selection.active);
-  if(!v || !p)return 0; /* A synthetic/unknown product has no safe DI match. */
-  /* A single-player session can contain several DISTINCT controllers.
-   * It is safe to bind their selected native DI device by exact VID:PID.
-   * Two open pads with the same model are ambiguous under the original
-   * game's DirectInput8 product-only identity: fail closed for both. */
-  for(i=0;i<num_pads && i<SPIDER_SDL3_MAX_GAMEPADS;i++) {
-    if(pads[i].id && pads[i].handle &&
-       (!sdl_connected || sdl_connected(pads[i].handle))) {
-      open[i].instance_id=pads[i].id;
-      open[i].vendor=sdl_vendor(pads[i].id);
-      open[i].product=sdl_product(pads[i].id);
-    }
-  }
-  if(!spider_sdl3_selected_model_unique(
-       open,num_pads,selection.active,v,p))return 0;
-  if(vid)*vid=v;
-  if(pid)*pid=p;
-  if(instance_id)*instance_id=selection.active;
-  return 1;
 }
 
 /* Per-user fallback when game files are installed under Program Files.
@@ -394,7 +350,7 @@ static int has_id(const uint32_t *ids,unsigned count,uint32_t id) {
 }
 /* Read-only diagnostic of the ORIGINAL game's selected joystick.
  * The SDL3 selection does not drive this game-owned DirectInput pointer.
- * The fixed global is known from the SHA-verified native reconnect module.
+ * The fixed game-owned global is known from the supported retail binary.
  * No COM invocation, pointer replacement or action table writes here. */
 #define SPIDER_NATIVE_JOYSTICK_PTR 0x006B7A2Cu
 static void sdl3_trace_native_owner(DWORD now) {
@@ -830,9 +786,9 @@ int SpiderSDL3Probe_SetupRead(unsigned slot,uint32_t *instance_id,
     snprintf(name,capacity,"%s",text_name?text_name:"Mapped SDL3 gamepad");
   return 1;
 }
-/* Explicit logical SDL3 selection for unknown native DirectInput layouts
- * and, in universal opt-in mode, ALL uniquely identified mapped devices.
- * This is NOT an alias of SelectedIdentity(): no native DI ownership.
+/* Explicit SDL3 selection for every uniquely identified mapped device.
+ * Physical button layouts come exclusively from SDL3 model profiles.
+ * No game-owned DirectInput controller is ever selected/rebound here.
  *
  * Caller must be on the game/Flip thread, with SDL3 already pumped and
  * the exact selected instance still connected and unique by VID:PID.
@@ -852,13 +808,6 @@ int SpiderSDL3Probe_GenericSelectedSample(uint32_t *instance,
      !sdl_vendor || !sdl_product || !sdl_axis || !sdl_button ||
      !sdl_connected || !id || !generic_selected_vendor ||
      !generic_selected_product)return 0;
-  /* Outside universal mode, retain the legacy native Sony/Xbox owner
-   * isolation. Opt-in universal mode instead routes all mapped pads
-   * through ONE keyboard source, with native rebind disabled. */
-  if(!universal_requested &&
-     spider_reconnect_kind(generic_selected_vendor,
-                           generic_selected_product)!=SPIDER_RECONNECT_NONE)
-    return 0;
   for(i=0;i<num_pads && i<SPIDER_SDL3_MAX_GAMEPADS;i++) {
     if(!pads[i].handle || !pads[i].id ||
        !sdl_connected(pads[i].handle))continue;
@@ -883,64 +832,11 @@ int SpiderSDL3Probe_GenericSelectedSample(uint32_t *instance,
   *pid=generic_selected_product;
   return 1;
 }
-/* SDL3 exposes each trigger as a separate 0..32767 axis. The
- * legacy XUSB DirectInput driver may instead combine LT and RT on lZ,
- * which varies with a device rebind and driver. Read the ALREADY-open,
- * SELECTED SDL3 handle only, on the original game/Flip thread.
- * This never updates SDL, polls the game device or consumes events. */
-int SpiderSDL3Probe_SelectedRT(int *normalized_rt) {
-  unsigned i;
-  uint32_t selected;
-  int axis;
-  if(normalized_rt)*normalized_rt=0;
-  if(!normalized_rt || !SpiderSDL3Probe_NativeOwnerEnabled() ||
-     !selection.active || !sdl_axis)return 0;
-  selected=selection.active;
-  for(i=0;i<num_pads;i++) {
-    if(pads[i].id!=selected || !pads[i].handle)continue;
-    axis=(int)sdl_axis(pads[i].handle,SPIDER_SDL_AXIS_RIGHT_TRIGGER);
-    if(axis<0 || axis>32767)return 0;
-    *normalized_rt=axis;
-    return 1;
-  }
-  return 0;
-}
-int SpiderSDL3Probe_SelectedSample(uint32_t *instance,uint16_t *vid,
-                                  uint16_t *pid,
-                                  SpiderSDL3ControllerSample *sample) {
-  unsigned i,j;
-  uint32_t id=0;
-  uint16_t v=0,p=0;
-  if(instance)*instance=0;
-  if(vid)*vid=0;
-  if(pid)*pid=0;
-  if(sample)memset(sample,0,sizeof(*sample));
-  if(!instance || !vid || !pid || !sample ||
-     !ready || !scanned || !sdl3_game_thread ||
-     sdl3_game_thread!=GetCurrentThreadId() ||
-     !sdl_axis || !sdl_button ||
-     !SpiderSDL3Probe_SelectedIdentity(&v,&p,&id))return 0;
-  for(i=0;i<num_pads;i++)
-    if(pads[i].id==id && pads[i].handle)break;
-  if(i==num_pads)return 0;
-  for(j=0;j<SPIDER_SDL3_BUTTON_COUNT;j++)
-    if(sdl_button(pads[i].handle,(int)j))sample->buttons|=1u<<j;
-  /* Native owner verification remains unchanged; add normalized axes. */
-  for(j=0;j<SPIDER_SDL3_AXIS_COUNT;j++)
-    sample->axis[j]=sdl_axis(pads[i].handle,(int)j);
-  if(sample->axis[SPIDER_SDL3_AXIS_LT]<0 ||
-     sample->axis[SPIDER_SDL3_AXIS_RT]<0)return 0;
-  *instance=id;*vid=v;*pid=p;
-  return 1;
-}
-/* Universal SDL3 selection is separate from game-owned DirectInput.
- * Require an EXPLICIT Start (or validated modal handoff) for universal
- * keyboard injection, even if native selection has auto-selected the
- * only connected controller. When detached, a stale instance still
- * fails GenericSelectedSample until the next explicit Start.
- *
- * Never fall back to SelectedSample(): native auto-selection is passive
- * and must NEVER authorize keyboard events or native DI suspension. */
+/* SDL3 gamepad input requires EXPLICIT Start (or verified modal handoff)
+ * even if the passive selection state auto-selected a sole connected pad.
+ * Detached/unselected controllers cannot inject actions. Missing SDL3
+ * leaves the original keyboard usable. Never fall back to SelectedSample():
+ * the retired DirectInput mapping path is not available. */
 int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
     uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample) {
   if(instance)*instance=0;
@@ -965,6 +861,7 @@ int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
 int SpiderSDL3Probe_NewGameBinkWaitSouthRelease(HWND hwnd) {
   uint32_t id=0,live_id=0;
   uint16_t vid=0,pid=0,live_vid=0,live_pid=0;
+  SpiderSDL3ControllerSample sample;
   unsigned i;
   void *pad=NULL;
   DWORD started,elapsed;
@@ -973,12 +870,8 @@ int SpiderSDL3Probe_NewGameBinkWaitSouthRelease(HWND hwnd) {
      GetForegroundWindow()!=hwnd || !ready || !scanned ||
      !sdl_pump || !sdl_update || !sdl_button || !sdl_connected ||
      !sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId() ||
-     !SpiderSDL3Probe_NativeOwnerEnabled() ||
-     !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
-     !id || !SpiderNativeReconnect_SDL3SelectionReady(vid,pid))return 0;
-  if(!((vid==0x054cu &&
-        (pid==0x05c4u || pid==0x09ccu || pid==0x0ba0u)) ||
-       (vid==0x045eu && pid==0x028eu)))return 0;
+     !SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample))
+    return 0;
   for(i=0;i<num_pads;i++)
     if(pads[i].id==id && pads[i].handle &&
        sdl_connected(pads[i].handle)) {pad=pads[i].handle;break;}
@@ -996,7 +889,7 @@ int SpiderSDL3Probe_NewGameBinkWaitSouthRelease(HWND hwnd) {
   for(;;) {
     if(!IsWindow(hwnd) || !IsWindowVisible(hwnd) ||
        GetForegroundWindow()!=hwnd ||
-       !SpiderSDL3Probe_SelectedIdentity(&live_vid,&live_pid,&live_id) ||
+       !SpiderSDL3Probe_SelectedMappedSample(&live_id,&live_vid,&live_pid,&sample) ||
        live_id!=id || live_vid!=vid || live_pid!=pid ||
        !sdl_connected(pad)) {
       say("SDL3-BINK-4-SOUTH: ABORT owner/device/focus changed; no input mutation");
@@ -1033,7 +926,6 @@ int SpiderSDL3Probe_PauseWake_Begin(void) {
   uint16_t vid=0,pid=0;
   unsigned i;
   SpiderSDL3ControllerSample sample;
-  sdl_pause_universal=0;
   sdl_pause_active=0;sdl_pause_id=0;
   sdl_pause_vid=0;sdl_pause_pid=0;sdl_pause_lost_reported=0;
   memset(&sdl_pause_wake,0,sizeof(sdl_pause_wake));
@@ -1041,16 +933,9 @@ int SpiderSDL3Probe_PauseWake_Begin(void) {
      !sdl_button || !sdl_pump || !sdl_update ||
      !sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId())
     return 0;
-  if(universal_requested) {
-    /* Opt-in adapter selected the precise SDL3-mapped controller. PS3
-     * is not a verified native DI owner, but a digital SDL3 wake
-     * requires neither native acquisition nor any injected key. */
-    if(!SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample))
-      return 0;
-    sdl_pause_universal=1;
-  } else if(!SpiderSDL3Probe_NativeOwnerEnabled() ||
-            !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
-            !SpiderNativeReconnect_SDL3SelectionReady(vid,pid))
+  /* Only the selected mapped SDL3 handle may wake PAUSED. No native
+   * DirectInput fallback is attempted if the pad disappears. */
+  if(!SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample))
     return 0;
   for(i=0;i<num_pads;i++)
     if(pads[i].id==id && pads[i].handle &&
@@ -1058,17 +943,14 @@ int SpiderSDL3Probe_PauseWake_Begin(void) {
   if(i==num_pads)return 0;
   sdl_pause_id=id;sdl_pause_vid=vid;sdl_pause_pid=pid;
   sdl_pause_active=1;
-  say(sdl_pause_universal?
-    "FOCUS-PAUSE-SDL3: selected universal mapped pad armed (foreground-only; neutral + fresh digital press/release; NO native DirectInput ownership)":
-    "FOCUS-PAUSE-SDL3: selected game-owned controller armed (foreground-only; fresh digital press+release; no DirectInput Acquire)");
+  say("FOCUS-PAUSE-SDL3: selected mapped pad armed (foreground-only; neutral/fresh digital press/release; no DirectInput mapping fallback)");
   return 1;
 }
 unsigned SpiderSDL3Probe_PauseWake_Poll(HWND hwnd) {
-  unsigned i,j,buttons=0;
+  unsigned j,buttons=0;
   uint32_t id=0;
   uint16_t vid=0,pid=0;
   SpiderSDL3ControllerSample sample;
-  void *handle=NULL;
   if(!sdl_pause_active)return 0;
   if(!hwnd || !IsWindow(hwnd) || !IsWindowVisible(hwnd) ||
      GetForegroundWindow()!=hwnd) {
@@ -1077,37 +959,19 @@ unsigned SpiderSDL3Probe_PauseWake_Poll(HWND hwnd) {
   }
   if(!sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId())
     goto lost;
-  if(sdl_pause_universal) {
-    /* Regular OnFlip is blocked inside this pause loop. After checking
-     * foreground, update SDL3 on the same thread and revalidate the
-     * chosen instance and VID:PID: no silent fallback to the DS4. */
-    sdl_pump();sdl_update();
-    if(!SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample) ||
-       id!=sdl_pause_id || vid!=sdl_pause_vid || pid!=sdl_pause_pid)
-      goto lost;
-    for(j=0;j<12u;j++) {
-      if(j==SPIDER_SDL3_BUTTON_GUIDE ||
-         j==SPIDER_SDL3_BUTTON_START)continue;
-      if(sample.buttons&(1u<<j))buttons|=1u<<j;
-    }
-  } else {
-    if(!SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
-       id!=sdl_pause_id || vid!=sdl_pause_vid || pid!=sdl_pause_pid)
-      goto lost;
-    for(i=0;i<num_pads;i++)
-      if(pads[i].id==id && pads[i].handle) {handle=pads[i].handle;break;}
-    if(!handle || !sdl_connected(handle))goto lost;
-    sdl_pump();sdl_update();
-    if(!sdl_connected(handle))goto lost;
-    for(j=0;j<12u;j++) {
-      if(j==SPIDER_SDL3_BUTTON_GUIDE ||
-         j==SPIDER_SDL3_BUTTON_START)continue;
-      if(sdl_button(handle,(int)j))buttons|=1u<<j;
-    }
+  /* Refresh SDL on the same game/Flip thread and revalidate the exact
+   * selected SDL3 instance. Missing or unselected pads do not wake PAUSED. */
+  sdl_pump();sdl_update();
+  if(!SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample) ||
+     id!=sdl_pause_id || vid!=sdl_pause_vid || pid!=sdl_pause_pid)
+    goto lost;
+  for(j=0;j<12u;j++) {
+    if(j==SPIDER_SDL3_BUTTON_GUIDE ||
+       j==SPIDER_SDL3_BUTTON_START)continue;
+    if(sample.buttons&(1u<<j))buttons|=1u<<j;
   }
   return spider_pause_pad_wake_step(&sdl_pause_wake,buttons);
 lost:
-  sdl_pause_universal=0;
   sdl_pause_active=0;
   memset(&sdl_pause_wake,0,sizeof(sdl_pause_wake));
   if(!sdl_pause_lost_reported) {
@@ -1117,7 +981,6 @@ lost:
   return 0;
 }
 void SpiderSDL3Probe_PauseWake_End(void) {
-  sdl_pause_universal=0;
   sdl_pause_active=0;sdl_pause_id=0;
   sdl_pause_vid=0;sdl_pause_pid=0;sdl_pause_lost_reported=0;
   memset(&sdl_pause_wake,0,sizeof(sdl_pause_wake));
@@ -1280,11 +1143,9 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
     last_scan=now;
     rescan();
   }
-  /* The setup modal never rebinds the game-owned DirectInput device.
-   * On the NEXT safe foreground game Flip, validate the requested modal
-   * Start's instance and its unique VID:PID before changing SDL identity.
-   * Native reconnect subsequently verifies/rebinds the original device
-   * using its existing strict single-owner policy (no new COM hooks). */
+  /* Modal Start handoff: verify that the same uniquely identified SDL3
+   * mapped device is still connected before granting universal ownership.
+   * The original DirectInput joystick is never rebound. */
   if(setup_owner_pending) {
     SpiderSDL3Identity opened[SPIDER_SDL3_MAX_GAMEPADS]={{0}};
     uint32_t requested_id=setup_owner_pending;
@@ -1304,33 +1165,16 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
     }
     accepted=spider_sdl3_selected_model_unique(opened,num_pads,
                                                 requested_id,vendor,product);
-    if(accepted &&
-       (universal_requested ||
-        spider_reconnect_kind(vendor,product)==SPIDER_RECONNECT_NONE)) {
-      /* In opt-in universal mode, even a supported native Sony/Xbox
-       * model uses the same SDL3 keyboard bridge. Original game-owned
-       * DirectInput selection.active and native mappings survive. */
+    if(accepted) {
       generic_selected_id=requested_id;
       generic_selected_vendor=vendor;
       generic_selected_product=product;
       generic_profile_snapshot_valid=0;
       spider_sdl3_universal_reset(&generic_actions);
       snprintf(line,sizeof(line),
-        "SDL3-GENERIC: SELECTED explicit modal Start id=%lu VID:PID=%04X:%04X; read-only semantic frames, native DirectInput owner unchanged",
+        "SDL3-GENERIC: SELECTED explicit modal Start id=%lu VID:PID=%04X:%04X; SDL3-only keyboard bridge, native DirectInput unchanged",
         (unsigned long)requested_id,(unsigned)vendor,(unsigned)product);
       say(line);
-    } else if(accepted && SpiderSDL3Probe_NativeOwnerEnabled()) {
-      /* Selecting a supported native device revokes any previous
-       * generic-only selection so no independent source can survive. */
-      generic_selected_id=0;generic_selected_vendor=0;
-      generic_selected_product=0;generic_profile_snapshot_valid=0;
-      spider_sdl3_universal_reset(&generic_actions);
-      selection.active=requested_id;
-      /* Any stale gameplay Start edges are still disarmed by modal exit.
-       * The real native owner will be rebound later in this Flip. */
-      snprintf(line,sizeof(line),
-        "SDL3-PROBE: SETUP RETURN COMMITTED verified modal owner selected-id=%lu VID:PID=%04X:%04X; native ownership to reconcile",
-        (unsigned long)requested_id,(unsigned)vendor,(unsigned)product);
     } else {
       snprintf(line,sizeof(line),
         "SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous modal owner id=%lu VID:PID=%04X:%04X; previous game and generic owners preserved",
@@ -1366,47 +1210,29 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
     }
     {
       uint32_t previous=selection.active;
-      if(universal_requested?
-          spider_sdl3_selection_start_edge(&selection,pads[i].id,pressed):
-          spider_sdl3_selection_start(&selection,pads[i].id,pressed)) {
-        /* After unplug, selection_sync may auto-select the only DS4.
-         * A FRESH Start on that same DS4 must still claim opt-in
-         * universal ownership, not be discarded as 'unchanged'. */
-        if(universal_requested ||
-           spider_reconnect_kind(vid,pid)==SPIDER_RECONNECT_NONE) {
-          /* One strict SDL3 normalized keyboard source across all mapped
-           * models; never claim native game DI. Reject duplicates. */
-          unsigned matches=0,k;
-          selection.active=previous;
-          for(k=0;k<num_pads;k++)
-            if(pads[k].id && pads[k].handle &&
-               (!sdl_connected || sdl_connected(pads[k].handle)) &&
-               sdl_vendor(pads[k].id)==vid &&
-               sdl_product(pads[k].id)==pid)matches++;
-          if(universal_requested && vid && pid && matches==1u) {
-            generic_selected_id=pads[i].id;
-            generic_selected_vendor=(uint16_t)vid;
-            generic_selected_product=(uint16_t)pid;
-            generic_profile_snapshot_valid=0;
-            spider_sdl3_universal_reset(&generic_actions);
-            snprintf(line,sizeof(line),
-              "SDL3-UNIVERSAL: START selected generic id=%lu VID:PID=%04X:%04X (keyboard bridge only; native DI unchanged)",
-              (unsigned long)pads[i].id,vid,pid);
-          } else snprintf(line,sizeof(line),
-              "SDL3-OWNER: START REFUSED unsupported native controller id=%lu VID:PID=%04X:%04X; previous selected-id=%lu preserved (SDL3 probe only)",
-              (unsigned long)pads[i].id,vid,pid,
-              (unsigned long)previous);
-          say(line);
-        } else {
-          generic_selected_id=0;generic_selected_vendor=0;
-          generic_selected_product=0;generic_profile_snapshot_valid=0;
+      if(spider_sdl3_selection_start_edge(&selection,pads[i].id,pressed)) {
+        unsigned matches=0,k;
+        /* Preserve the game's native selection; Start owns only the
+         * universal SDL3 adapter after exact-model uniqueness checks. */
+        selection.active=previous;
+        for(k=0;k<num_pads;k++)
+          if(pads[k].id && pads[k].handle &&
+             (!sdl_connected || sdl_connected(pads[k].handle)) &&
+             sdl_vendor(pads[k].id)==vid &&
+             sdl_product(pads[k].id)==pid)matches++;
+        if(vid && pid && matches==1u) {
+          generic_selected_id=pads[i].id;
+          generic_selected_vendor=(uint16_t)vid;
+          generic_selected_product=(uint16_t)pid;
+          generic_profile_snapshot_valid=0;
           spider_sdl3_universal_reset(&generic_actions);
           snprintf(line,sizeof(line),
-            "SDL3-PROBE: START selected logical id=%lu VID:PID=%04X:%04X (other gamepads ignored; %s)",
-            (unsigned long)selection.active,vid,pid,
-            universal_requested?"universal keyboard bridge":"READ-ONLY");
-          say(line);
-        }
+            "SDL3-UNIVERSAL: START selected generic id=%lu VID:PID=%04X:%04X (keyboard bridge only; native DI unchanged)",
+            (unsigned long)pads[i].id,vid,pid);
+        } else snprintf(line,sizeof(line),
+            "SDL3-UNIVERSAL: START REFUSED ambiguous/unidentified mapped pad id=%lu VID:PID=%04X:%04X; previous selected-id=%lu preserved",
+            (unsigned long)pads[i].id,vid,pid,(unsigned long)previous);
+        say(line);
       }
     }
     if(selection.active==pads[i].id &&

@@ -393,18 +393,13 @@ static void refresh_pads(SpiderSDL3SetupUI *ui) {
   char selection_line[220];
   if(!ui || !ui->pads)return;
   old_id=ui->instance;
-  /* Prefer a verified native owner. Unknown PS3-style controllers are
-   * deliberately excluded from native ownership, but their explicitly
-   * selected SDL3 semantic identity remains safe to show as a *preview*
-   * on the next modal visit. No native DI or gameplay owner is changed. */
-  if(!old_id) {
-    SpiderSDL3Probe_SelectedIdentity(&gameplay_vid,&gameplay_pid,&gameplay_id);
-    if(gameplay_id)
-      owner_source="verified-gameplay-owner";
-    else if(SpiderSDL3Probe_GenericSelectedSample(&gameplay_id,
-                &gameplay_vid,&gameplay_pid,&remembered_sample))
-      owner_source="previous-explicit-generic-selection";
-  }
+  /* Prefer only the previously explicitly selected SDL3-mapped pad.
+   * Do not inspect/rebind the original game's native DirectInput owner.
+   * Without a prior Start, the first row is an unconfirmed UI preview. */
+  if(!old_id &&
+     SpiderSDL3Probe_GenericSelectedSample(&gameplay_id,
+         &gameplay_vid,&gameplay_pid,&remembered_sample))
+    owner_source="previous-explicit-generic-selection";
   n=SpiderSDL3Probe_SetupCount();
   SendMessageA(ui->pads,CB_RESETCONTENT,0,0);
   for(i=0;i<n;i++) {
