@@ -212,12 +212,13 @@ def test_strict_owner_is_separate_opt_in_and_fails_closed():
     assert "ExperimentalSDL3GameOverNativeOwner=1" not in (
         ROOT/"virtual_spidey_cfg.c"
     ).read_text()
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverNativeOwner",0,ini)==1' in BACKEND
+    assert '"ExperimentalSDL3GameOverNativeOwner",0,ini)==1' in BACKEND
+    assert "gameover_native_owner_trial_enabled=gameover_trial_enabled ||" in BACKEND
+    assert "secure native GAME OVER owner hook mandatory" in BACKEND
     assert "if(requested && gameover_native_owner_trial_enabled)" in BACKEND
     assert "int installed=spider_gameover_owner_install_hook();" in BACKEND
     assert "SDL3-GAMEOVER-NATIVE: hook REFUSED" in BACKEND
-    assert "SDL3-GAMEOVER-NATIVE: CONFIRM BLOCKED:" in BACKEND
-    assert "int owner_confirm=candidate && gameover_native_owner_trial_enabled &&" in BACKEND
+     assert "int owner_confirm=candidate && gameover_native_owner_trial_enabled &&" in BACKEND
     assert "gameover_native_owner_hook_installed &&" in BACKEND
     assert "InterlockedCompareExchange(&gameover_native_owner_depth,0,0)>0;" in BACKEND
     assert "trial=spider_sdl3_gameover_trial_step(&gameover_trial,owner_confirm," in BACKEND
@@ -228,10 +229,13 @@ def test_strict_owner_is_separate_opt_in_and_fails_closed():
 
 
 def test_no_legacy_fallback_in_current_main_gameover_runtime():
-    """The old positive PS3/Xbox heuristic tests cannot authorize Enter
-    from an arbitrary request-2 transition with NativeOwner=0."""
-    assert "if(!gameover_native_owner_trial_enabled)" in BACKEND
-    assert "CONFIRM BLOCKED: enable ExperimentalSDL3GameOverNativeOwner=1" in BACKEND
+    """Even an omitted owner flag cannot activate the unsafe request-2
+    fallback: Confirm=1 ALWAYS enables the authenticated hook attempt."""
+    assert "gameover_native_owner_trial_enabled=gameover_trial_enabled ||" in BACKEND
+    assert "if(requested && gameover_native_owner_trial_enabled)" in BACKEND
+    assert "spider_gameover_owner_install_hook()" in BACKEND
+    assert "SDL3-GAMEOVER-NATIVE: hook REFUSED" in BACKEND
+    assert "CONFIRM BLOCKED: enable ExperimentalSDL3GameOverNativeOwner" not in BACKEND
     gate=BACKEND.split("if(gameover_trial_enabled || gameover_owner_probe_enabled) {",1)[1].split(
         "if(!update_keys(desired,scans))",1)[0]
     assert "int candidate=gameover_trial_candidate(" in gate
@@ -247,3 +251,22 @@ def test_no_legacy_fallback_in_current_main_gameover_runtime():
     # never changes owner_confirm or enables a synthetic key.
     assert 'gameover_owner_probe_dump("CANDIDATE-STABLE"' in gate
     assert "gameover_owner_probe_was_candidate=candidate;" in gate
+
+
+def test_confirm_auto_install_never_bypasses_native_owner():
+    """A single user opt-in is enough to try the source-verified hook,
+    while the menu owner remains mandatory for any synthetic Enter."""
+    init=BACKEND.split("void SpiderSDL3Universal_Init(",1)[1].split(
+        "int SpiderSDL3Universal_Enabled(",1)[0]
+    assert init.index('GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverConfirm",0,ini)==1') < (
+        init.index("gameover_native_owner_trial_enabled=gameover_trial_enabled ||"))
+    assert "if(requested && gameover_native_owner_trial_enabled)" in init
+    assert "spider_gameover_owner_install_hook()" in init
+    assert "experimental" in BACKEND.lower()
+    gate=BACKEND.split("if(gameover_trial_enabled || gameover_owner_probe_enabled) {",1)[1].split(
+        "if(!update_keys(desired,scans))",1)[0]
+    assert "gameover_native_owner_hook_installed &&" in gate
+    assert "InterlockedCompareExchange(&gameover_native_owner_depth,0,0)>0" in gate
+    assert "spider_sdl3_gameover_trial_step(&gameover_trial,owner_confirm," in gate
+    assert "spider_sdl3_gameover_trial_step(&gameover_trial,candidate," not in gate
+    assert "if(gameover_trial_enabled)" in gate
