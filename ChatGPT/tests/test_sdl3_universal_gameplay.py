@@ -105,7 +105,7 @@ def test_universal_runtime_is_built_in_and_mutually_exclusive():
         "SpiderSDL3Universal_BeforeUI(game_hwnd);") < game.index(
         "SpiderGamepadUI_OnFlip(game_hwnd")
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in game
-    assert "SpiderSDL3Universal_Enabled()" in native
+    assert "SPIDER_UNIVERSAL_DI_SLOT" in native
     assert "begin_scancode(" not in ui
     assert "sdl3_generic_ui_on_flip(" not in ui
     # PR #96 retains its validated SDL3 mapped-device panel. The raw
