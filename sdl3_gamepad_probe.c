@@ -1257,8 +1257,10 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
    * and no asynchronous SDL pumping. The separate SHA-gated native
    * DIERR_UNPLUGGED guard retains its independent Flip #120 safety gate. */
   if(!requested || flip<1)return;
-  if(!sdl3_game_thread)sdl3_game_thread=GetCurrentThreadId();
-  if(sdl3_game_thread!=GetCurrentThreadId())return;
+  /* A nonforeground first frame must not pin a transient presentation
+   * thread forever. Once SDL3 is initialized, only its owning thread
+   * may ever pump, select, or clear a controller's Start-arming state. */
+  if(sdl3_game_thread && sdl3_game_thread!=GetCurrentThreadId())return;
   if(!game_hwnd || !IsWindowVisible(game_hwnd) ||
      GetForegroundWindow()!=game_hwnd) {
     /* Never inherit a Start press acquired during the custom focus pause.
@@ -1269,6 +1271,7 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
     spider_sdl3_universal_reset(&generic_actions);
     return;
   }
+  if(!sdl3_game_thread)sdl3_game_thread=GetCurrentThreadId();
   if(!attempted) {
     char notice[180];
     snprintf(notice,sizeof(notice),
