@@ -25,7 +25,7 @@ def to_raw(pct, maximum):
 def test_generated_example_factory_consistency():
     assert len(bytes_data) == 252
     assert bytes.fromhex(config['Internal']['RawHex']) == bytes_data
-    assert set(config.sections()) == {'Debug','Display','Input','Audio','Keyboard','Joystick','Internal'}
+    assert set(config.sections()) == {'Debug','Display','Input','Audio','Keyboard' ,'Internal'}
     assert config['Debug']['Log'] == '0'
     for key in ('F10Shortcut','F10TestMode','F10Auto3DScripts','F10GameplayExit'):
         assert not config.has_option('Debug',key)
@@ -65,15 +65,14 @@ def test_generated_example_factory_consistency():
     assert [config['Keyboard'][key] for key in ('Kick','Punch','Web','Aim','Zipline','Swing')] == ['X','C','V','D','F','G']
     assert [config.getint('Audio',k) for k in ('MusicSFXLevel','VoiceLevel','MovieLevel')] == [40,60,40]
     assert not config.has_section('Gamepad')
-    assert config['Joystick']['Jump'] == 'BUTTON3'
-    assert config['Joystick']['Punch'] == 'BUTTON0'
+    assert not config.has_section('Joystick')
     assert not config.has_section('GameConfig')
     assert not config.has_section('Controls')
     assert example.count('\nRawHex=') == 1
     assert 'GameConfig' not in example and '[Controls]' not in example
     assert 'GetPrivateProfileStringA("Keyboard",action_names[i]' in virtual
     assert 'WritePrivateProfileStringA("Keyboard",action_names[i]' in virtual
-    assert 'GetPrivateProfileStringA("Joystick",joystick_actions[i]' in virtual
+    assert 'GetPrivateProfileStringA("Joystick",' not in virtual
     assert 'GetPrivateProfileStringA("Internal","RawHex"' in virtual
     assert 'WritePrivateProfileStringA("Internal","RawHex"' in virtual
 

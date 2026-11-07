@@ -19,7 +19,7 @@ VALIDATOR=(ROOT/"ini_validation.h").read_text()
 def test_player_only_ini_keeps_fps_as_real_control():
     cfg=configparser.ConfigParser(interpolation=None)
     cfg.read_string(EXAMPLE)
-    assert set(cfg.sections())=={"Debug","Display","Input","Audio","Keyboard","Joystick","Internal"}
+    assert set(cfg.sections())=={"Debug","Display","Input","Audio","Keyboard","Internal"}
     assert list(cfg["Display"])==["aspectratio","brightness","fpslimit"]
     assert cfg["Display"]["FPSLimit"]=="30"
     assert cfg["Input"]["KeyboardLayout"]=="Auto"
