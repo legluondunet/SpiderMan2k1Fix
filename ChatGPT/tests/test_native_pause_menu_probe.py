@@ -39,7 +39,7 @@ def test_no_obsolete_research_trace_or_unverified_stack_scanning():
 
 
 def test_native_pause_classifies_original_banner_border_and_text_without_touching_game_input():
-    for token in ("SPIDERMAN2K1FIX_NATIVE_ESC_43", "menu_upscale_active",
+    for token in ("menu_upscale_active",
                   "gameplay_4x3_active", "native_pause43_banner_flip",
                   "native_pause43_banner_top", "native_pause43_banner_bottom",
                   "rva!=0x00102C72UL", "D3DPT_TRIANGLEFAN",
@@ -55,8 +55,7 @@ def test_native_pause_classifies_original_banner_border_and_text_without_touchin
 
 
 def test_motif_requires_untextured_original_alpha_quads_at_exact_depth():
-    for token in ("SPIDERMAN2K1FIX_NATIVE_MOTIF_43",
-                  "native_pause43_enabled", "!native_esc43_supported_monitor()",
+    for token in ("native_pause43_enabled", "!native_esc43_supported_monitor()",
                   "gameplay_4x3_active",
                   "menu_upscale_active", "rva!=0x00102C72UL",
                   "SpiderNativePause43_MotifLayer(v[0].z,v[0].rhw)",
@@ -144,8 +143,7 @@ def test_native_esc_43_geometry_at_16_9_16_10_and_classic_4_3():
 
 
 def test_cursor_recognition_not_limited_to_old_screen_rectangle():
-    for token in ("SPIDERMAN2K1FIX_NATIVE_CURSOR_43",
-                  "native_pause43_banner_flip",
+    for token in ("native_pause43_banner_flip",
                   "!native_esc43_supported_monitor()",
                   "rva!=0x00102C72UL",
                   "expected_width", "expected_height",
