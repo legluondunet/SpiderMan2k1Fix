@@ -4392,7 +4392,6 @@ static void pause_at_flip_if_background(void) {
   HWND hwnd=game_hwnd;
   MSG msg;
   RECT pause_present_rect,pause_content_rect;
-  int pause_gamepad_available=0;
   int pause_sdl3_available=0;
   int pause_previous_foreground=0;
   /* Terminal observer failure: allow a manual keyboard/gamepad wake only
@@ -4466,19 +4465,14 @@ static void pause_at_flip_if_background(void) {
     return;
   }
   log_line("FOCUS-PAUSE: Any keyboard resume ARMED; consumes press and release");
-  /* While Flip is blocked, the regular SDL3 OnFlip and UI poll cannot run.
-   * Prefer the selected SDL3 handle (same game thread, validated native
-   * owner), not the secondary DirectInput handle that can become INPUTLOST
-   * on Alt+Tab. Retain the old DI8 wake for disabled/unavailable SDL3.
-   * Both require neutral->fresh digital press->release in foreground. */
+  /* While Flip is blocked, SDL3 is polled from its selected, verified
+   * mapped handle only. Missing/disconnected controllers never fall back
+   * to game-owned DirectInput; keyboard Any-key wake remains available. */
   pause_sdl3_available=SpiderSDL3Probe_PauseWake_Begin();
-  pause_gamepad_available=pause_sdl3_available?1:SpiderGamepadUI_PauseWake_Begin();
   if(pause_sdl3_available)
     log_line("FOCUS-PAUSE: SDL3 selected-gamepad wake ARMED; foreground-only, release-gated, no injected key (keyboard always available)");
-  else if(pause_gamepad_available)
-    log_line("FOCUS-PAUSE: DS4 DirectInput digital-button fallback ARMED; foreground-only, release-gated, no injected key (keyboard always available)");
   else
-    log_line("FOCUS-PAUSE: no verified gamepad wake device; PAUSED hint remains keyboard-only");
+    log_line("FOCUS-PAUSE: no selected mapped SDL3 pad; keyboard Any-key wake remains available");
   /* The Flip pause alone does not suspend Bink or secondary DirectSound. */
   SpiderFocusMedia_Pause();
   SpiderFocusDSound_Pause();
@@ -4515,14 +4509,13 @@ static void pause_at_flip_if_background(void) {
     SpiderPauseSurface_Begin(borderless_back,borderless_primary,
                              &pause_present_rect,&pause_content_rect,
                              (SpiderPauseBltFn)original_blt,
-                             pause_gamepad_available);
+                             pause_sdl3_available);
   pause_previous_foreground=(GetForegroundWindow()==hwnd);
   while(IsWindow(hwnd) && InterlockedCompareExchange(&pause_latched,0,0)==1) {
     while(PeekMessageA(&msg,NULL,0,0,PM_REMOVE)) {
       if(msg.message==WM_QUIT) {
         PostQuitMessage((int)msg.wParam);
         SpiderPauseAny_End();
-        SpiderGamepadUI_PauseWake_End();
         SpiderSDL3Probe_PauseWake_End();
         SpiderPauseSurface_End();
         SpiderFocusDSound_Resume();
@@ -4596,12 +4589,11 @@ static void pause_at_flip_if_background(void) {
         (pause_x11_bridge_enabled() && x11_state!=1 &&
          !fallback_wake_armed)?0:
         (pause_sdl3_available?
-          SpiderSDL3Probe_PauseWake_Poll(hwnd):
-          SpiderGamepadUI_PauseWake_Poll(hwnd));
+          SpiderSDL3Probe_PauseWake_Poll(hwnd):0u);
       if(resumed_buttons) {
         char line[155];
         snprintf(line,sizeof(line),
-          "FOCUS-PAUSE: gamepad digital press/release consumed buttons=0x%03X (selected SDL3 or verified DI8; no native key injection)",
+          "FOCUS-PAUSE: gamepad digital press/release consumed buttons=0x%03X (selected mapped SDL3 only; no native key injection)",
           resumed_buttons);
         log_line(line);
         InterlockedExchange(&pause_latched,0);
@@ -4620,7 +4612,6 @@ static void pause_at_flip_if_background(void) {
     log_line(line);
   }
   SpiderPauseAny_End();
-  SpiderGamepadUI_PauseWake_End();
   SpiderSDL3Probe_PauseWake_End();
   SpiderPauseSurface_End();
   SpiderFocusDSound_Resume();
