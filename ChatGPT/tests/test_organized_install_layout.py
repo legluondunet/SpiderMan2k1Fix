@@ -4,12 +4,55 @@ These are cross-platform source contracts; they do not claim hardware Wine
 or Windows path/permissions testing without a native runtime.
 """
 from pathlib import Path
+import shutil
+import subprocess
+import textwrap
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def read(name):
     return (ROOT / name).read_text(encoding="utf-8")
+
+
+
+def test_bounded_path_copy_handles_exact_fit_and_rejects_overflow(tmp_path):
+    # Compile the platform-independent helper itself, not a Python mirror.
+    # The normal Windows cross-build separately verifies header integration.
+    cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc:
+        return
+    paths = read("spider_fix_paths.h")
+    helper = "static inline int spider_path_copy_a(" + paths.split(
+        "static inline int spider_path_copy_a(", 1
+    )[1].split("static inline int spider_path_join_a(", 1)[0]
+    source = tmp_path / "path_copy.c"
+    binary = tmp_path / "path_copy"
+    source.write_text(textwrap.dedent("""
+        #include <assert.h>
+        #include <stddef.h>
+        #include <string.h>
+    """) + helper + textwrap.dedent("""
+        int main(void) {
+            char out[5]={'x','x','x','x','x'};
+            unsigned i;
+            assert(spider_path_copy_a(out,sizeof(out),"abcd"));
+            assert(memcmp(out,"abcd",5)==0);
+            memset(out,'x',sizeof(out));
+            assert(!spider_path_copy_a(out,4,"abcd"));
+            for(i=0;i<5;i++)assert(out[i]=='x');
+            assert(!spider_path_copy_a(out,0,""));
+            assert(!spider_path_copy_a(NULL,sizeof(out),"x"));
+            assert(!spider_path_copy_a(out,sizeof(out),NULL));
+            assert(spider_path_copy_a(out,sizeof(out),""));
+            assert(out[0]==0);
+            return 0;
+        }
+    """), encoding="utf-8")
+    subprocess.run([cc, "-std=c99", "-Wall", "-Wextra", "-Werror",
+                    str(source), "-o", str(binary)], check=True)
+    subprocess.run([str(binary)], check=True)
+    assert "strcpy(out," not in paths
 
 
 def test_proxy_keeps_root_winmm_but_uses_nested_core_and_early_diagnostics():
