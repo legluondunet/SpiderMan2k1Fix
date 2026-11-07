@@ -64,6 +64,16 @@ def test_filename_and_failure_safety():
     assert "InterlockedExchange(&spider_png_busy,0)" in ENC
     assert "if(!worker)" in ENC
     assert "if(!saved)" in ENC
+    # MSVCRT swprintf can return -1 when a MAX_PATH buffer is too small.
+    # Treat both negative and oversized path results as failure, before
+    # GDI+ receives the temporary path or MoveFileExW sees the destination.
+    assert "path_len=swprintf(temp,MAX_PATH" in ENC
+    assert "path_len=swprintf(dest,MAX_PATH" in ENC
+    assert ENC.count("if(path_len<=0 || path_len>=MAX_PATH)") == 2
+    assert "error=ERROR_FILENAME_EXCED_RANGE;" in ENC
+    assert 'L"Screenshot file path is too long"' in ENC
+    assert "if(swprintf(temp,MAX_PATH" not in ENC
+    assert "if(swprintf(dest,MAX_PATH" not in ENC
 
 
 def test_no_format_switch_and_both_original_calls_verified():
