@@ -27,14 +27,14 @@ def test_universal_gameplay_is_single_input_owner():
     core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
     adapter=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
     ui=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
-    native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
+    assert not (ROOT/"native_joystick_reconnect.c").exists()
     live=(ROOT/"sdl3_gameplay_live.c").read_text(encoding="utf-8")
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in core
     assert "SpiderSDL3Probe_SelectedMappedSample(" in adapter
     assert "sdl3_generic_ui_on_flip(" not in ui
     assert "begin_scancode(" not in ui
     assert "spider_ps1_apply(" not in ui
-    assert "swap_native_gameplay_mapping(" not in native
+    assert "SpiderNativeReconnect_" not in core
     assert "void SpiderSDL3GameplayLive_OnFlip(" in live
     assert "native action-map backend retired" in live
 
@@ -45,6 +45,5 @@ def test_default_on_universal_and_native_device_safety_still_separate():
     native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
     assert "requested=1; /* SDL3-only gameplay, no legacy-INI opt-out. */" in adapter
     assert "SpiderNativeUnplug_OnFlip(count);" in core
-    assert "SpiderNativeReconnect_OnFlip(count,game_hwnd);" in core
-    assert "if(SpiderSDL3Universal_Enabled())return;" in native
-    assert "SpiderNativeReconnect_SDL3SelectionReady(" in native
+    assert "SpiderNativeReconnect_" not in core
+    assert "native_unclaimed_guard" in adapter
