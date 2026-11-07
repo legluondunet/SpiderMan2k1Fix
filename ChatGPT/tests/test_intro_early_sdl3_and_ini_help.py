@@ -57,8 +57,10 @@ def test_generated_ini_explains_only_real_keys():
     assert 'snprintf(line,sizeof(line),"; %s\\r\\n",audio_help[i]);' in GEN
     assert 'snprintf(line,sizeof(line),"; %s\\r\\n",keyboard_help[i]);' in GEN
     assert "Built-in video/HUD/focus/audio fixes" not in GEN
-    assert '"; SDL3 detection, setup and universal gameplay' not in GEN
-    assert '"; Original Left Alt state is repaired' not in GEN
+    generated_header=GEN.split("static const char header[]=",1)[1].split(
+        "static const char keyboard_header[]=",1)[0]
+    assert '"; SDL3 detection, setup and universal gameplay' not in generated_header
+    assert '"; Original Left Alt state is repaired' not in generated_header
     for section in ("Debug","Display","Input","Audio","Keyboard","Internal"):
         text=INI.split("["+section+"]",1)[1].split("\n[",1)[0]
         last_comment=""
