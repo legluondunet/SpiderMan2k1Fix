@@ -90,6 +90,7 @@ The example `RawHex` line is **illustrative only**: the generated file contains 
 | `[Input] ExperimentalSDL3UniversalGameplay` | **Default `1`**: use SDL3's mapped controller profile for game menus, videos and 3D after explicit Start and neutral input. Set `0` to disable the universal bridge and preserve native behavior. |
 | `[Input] ExperimentalSDL3GameOverConfirm` | **Default `0` (not generated)**: *unsafe-to-generalize research trial*, not a verified GAME OVER detector. Under one narrowly observed pending native request `2`, send **one Enter** for a fresh, neutral-gated South/A/Cross press; requires separately enabled universal SDL3 gameplay. For maintainer-only hardware testing; keep OFF for normal play. |
 | `[Input] ExperimentalSDL3GameOverOwnerProbe` | **Default `0` (not generated)**: independent, strictly read-only native-owner state correlation for GAME OVER research. Records bounded 3D baseline and candidate snapshots, with **no Enter injection**, even while `GameOverConfirm=0`. |
+| `[Input] ExperimentalSDL3GameOverNativeOwner` | **Default `0` (not generated)**: install an exact-instruction-verified pass-through wrapper for the original `0x00455F91 → 0x0047D830` GAME OVER screen call. When combined with the separate confirmation trial, requires this authenticated owner to be actively executing before allowing one Enter. Experimental until new hardware validation. |
 | `[Input] ExperimentalSDL3NativeOwner` | Default `0`; unrelated legacy experimental native-owner path, not required for universal gameplay. |
 | `[Audio]` | Music/effects, voice and movie volumes (0..100%); `Stereo=1` selects stereo. |
 | `[Keyboard]` / `[Joystick]` | The eleven original keyboard actions and seven joystick button bindings, also saved from the game's menus. |
@@ -141,6 +142,37 @@ opt-in; they did not establish that request `2` is exclusive to GAME OVER.
 Do not enable this feature by default until a distinct source-verified
 native owner is identified and negative tests cover normal level changes,
 cinematics and native Pause.
+
+### Verified native GAME OVER owner (source-level, draft PR #110)
+
+A fresh SHA-matched offline disassembly found the original GAME OVER
+screen's specific native owner call `0x00455F91 → 0x0047D830`.
+The original screen renders `game over` at `0x0047D93A` and uses
+the original input reader at `0x0047D9B8`; it is not just a guessed
+`request=2` transition. Detailed proof and offline verifier:
+[SDL3_GAMEOVER_NATIVE_OWNER.md](SDL3_GAMEOVER_NATIVE_OWNER.md).
+
+A new *separate, disabled-by-default* test mode installs a small
+signature-checked wrapper at that original CALL site; the wrapper
+preserves the native callee, return value, thread and execution order,
+and records when the actual GAME OVER owner is running. The stricter
+test requires both:
+```ini
+[Input]
+ExperimentalSDL3UniversalGameplay=1
+ExperimentalSDL3GameOverNativeOwner=1
+ExperimentalSDL3GameOverConfirm=1
+ExperimentalSDL3GameOverOwnerProbe=1
+
+[Debug]
+Log=1
+```
+This is **not yet the default**. If the native CALL cannot be hooked,
+the stricter path fails closed: no Return. The legacy
+`GameOverConfirm=1` / `NativeOwner=0` path remains available for
+A/B comparison but is **not sufficiently safe for default use**.
+The independent `GameOverOwnerProbe=1` remains genuinely read-only:
+it never sends Enter on its own, even without `GameOverConfirm`.
 
 ### GAME OVER controller confirmation: experimental research only (PR #110)
 
