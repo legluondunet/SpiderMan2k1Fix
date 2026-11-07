@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include "third_party/miniz/miniz_tinfl.h"
 #include "pkr_audio_index.h"
+#include "spider_fix_paths.h"
 
 #define PKR_HEADER_BYTES 8u
 #define PKR_FOOTER_BYTES 12u
@@ -316,13 +317,17 @@ finished:
   return decoded>0 && crc_fail==0;
 }
 void SpiderPKRAudioIndex_Init(void (*logger)(const char*),int enabled){
-  char path[MAX_PATH],*slash;
-  DWORD n;
+  char path[MAX_PATH],game_dir[MAX_PATH];
   diag=logger;
   if(enabled!=1)return;
-  n=GetModuleFileNameA(NULL,path,sizeof(path));
-  if(!n||n>=sizeof(path)||(slash=strrchr(path,'\\'))==NULL)return;
-  strcpy(slash+1,"data.pkr");
+  /* The game archive belongs beside SpideyPC.exe. Construct the complete
+   * filename with bounds checks: replacing the EXE basename in-place can
+   * overflow MAX_PATH in an otherwise valid long installation directory. */
+  if(!spider_path_exe_dir_a(game_dir,sizeof(game_dir)) ||
+     !spider_path_join_a(path,sizeof(path),game_dir,"data.pkr")) {
+    if(diag)diag("PKR-AUDIO: REFUSED game data.pkr path unavailable or too long");
+    return;
+  }
   index_ready=load_audio_index(path);
   if(index_ready && diag)
     diag("PKR-AUDIO: PROBE ARMED - passive format+length+PCM prefix matching on native game Play; NATIVE PLAY UNCHANGED");
