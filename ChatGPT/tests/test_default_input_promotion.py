@@ -7,7 +7,7 @@ SRC=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
 EXAMPLE=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text(encoding="utf-8")
 PROBE=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
 ADAPTER=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
-RECONNECT=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
+RECONNECT=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
 UNPLUG=(ROOT/"native_joystick_unplug.c").read_text(encoding="utf-8")
 ALT=(ROOT/"alt_latch_recovery.h").read_text(encoding="utf-8")
 
@@ -57,7 +57,7 @@ def test_native_safety_and_universal_default_remain_guarded():
     assert "gameover_trial_enabled=1;" in ADAPTER
     assert "SpiderSDL3ProfileStore_Init(1,logger)" in PROBE
     assert "InterlockedExchange(&requested,1);" in UNPLUG
-    assert "if(SpiderSDL3Universal_Enabled())return;" in RECONNECT
+    assert 'restore_original("no selected mapped controller");' in RECONNECT
     assert "spider_alt_latch_preflight()" in ALT
     assert "GetAsyncKeyState(VK_TAB)" in ALT
 
