@@ -55,18 +55,10 @@ def test_c99_native_table_integrity_does_not_assume_xbox_or_ds4(tmp_path):
     subprocess.run([str(binary)],check=True)
 
 
-def test_reconnect_stays_read_only_and_does_not_assume_physical_preset():
-    assert "spider_native_swap_read(" in HEADER
-    assert "spider_native_swap_preset(" not in HEADER
-    assert "spider_ps1_buttons" not in HEADER
-    assert "spider_xbox360_buttons" not in HEADER
-    observe=NATIVE.split("static void observe_native_swap_table(",1)[1].split(
-        "int SpiderNativeReconnect_CanonicalXboxMapping(",1)[0]
-    assert "VirtualQuery(table,&mbi,sizeof(mbi))" in observe
-    assert "mbi.State==MEM_COMMIT" in observe
-    assert "spider_native_swap_read(table," in observe
-    assert "swap_probe_reports>=24u" in observe
-    for forbidden in ("WriteProcessMemory(", "VirtualProtect(", "SendInput(",
-                      "InterlockedExchange(", "IDirectInputDevice8_", "memcpy(table"):
-        assert forbidden not in observe
-    assert "swap_mapping_enabled=0;" in NATIVE
+def test_native_reconnect_no_longer_reads_or_patches_game_joystick_table():
+    assert "spider_native_swap_read(" in HEADER  # Historical pure C helper.
+    for removed in ("observe_native_swap_table(", "SPIDER_NATIVE_ACTION_TABLE",
+                    "spider_native_swap_read(", "VirtualQuery(",
+                    "EnumDevices(", "CreateDevice(", "swap_mapping_enabled"):
+        assert removed not in NATIVE
+    assert "SpiderNativeReconnect_CanonicalXboxMapping(void) {return 0;}" in NATIVE
