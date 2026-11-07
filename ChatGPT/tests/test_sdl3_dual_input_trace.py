@@ -19,18 +19,11 @@ def test_legacy_secondary_directinput_view_is_removed():
     assert "SpiderSDL3ControllerSample" in probe
 
 
-def test_native_probe_is_bounded_and_never_assumes_old_vendor_mappings():
-    native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
-    helper=(ROOT/"native_joystick_swap_probe.h").read_text(encoding="utf-8")
-    src=native.split("static void observe_native_swap_table(",1)[1].split(
-        "int SpiderNativeReconnect_CanonicalXboxMapping(",1)[0]
-    assert "swap_probe_reports>=24u" in src
-    assert "spider_native_swap_read(table," in src
-    assert "spider_native_swap_preset(" not in src
-    assert "VirtualQuery(table,&mbi,sizeof(mbi))" in src
-    assert "native-table=%s buttons[7]=" in src
-    assert "spider_xbox360_buttons" not in helper
-    assert "spider_ps1_buttons" not in helper
-    for forbidden in ("SendInput(", "VirtualProtect(", "WriteFile(",
-                      "IDirectInputDevice8_Acquire(", "memcpy(table"):
-        assert forbidden not in src
+def test_native_rebind_probe_is_removed_without_disabling_read_only_sdl3_trace():
+    assert not (ROOT/"native_joystick_swap_probe.h").exists()
+    assert not (ROOT/"native_joystick_reconnect.c").exists()
+    assert "SpiderNativeReconnect_" not in native
+    assert "sdl3_binding_trace_on_flip();" in native
+    assert "sdl3_trace_native_owner(now);" in native
+    assert "spider_sdl3_profile_valid(" in helper
+
