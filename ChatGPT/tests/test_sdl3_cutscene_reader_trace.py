@@ -77,8 +77,8 @@ def test_second_passive_owner_boundary_probe_is_noninvasive():
     assert 0<=a<b<c
     assert owner.count("SPIDER_NATIVE_GAME_INPUT_UPDATE();")==1
     plan=(ROOT/"sdl3_gameplay_plan_probe.c").read_text(encoding="utf-8")
-    assert "LT=%d RT=%d ms=%lu [NO NATIVE INJECTION]" in plan
-    assert "(unsigned long)GetTickCount());" in plan
+    assert "SpiderNativeReconnect_" not in plan
+    assert "spider_source_trace_flip(hwnd,menu2d,gameplay3d,bink,pause);" in plan
 
 
 def test_selected_physical_cross_square_edge_requires_neutral_owner():
@@ -104,11 +104,11 @@ def test_selected_physical_cross_square_edge_requires_neutral_owner():
     assert "SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST" not in section
     assert "IDirectInputDevice8_" not in section
     assert "SendInput(" not in section
-    assert 'SpiderQuickExitF12_CutscenePhysicalSample(id,vid,pid,sample.buttons,ready);' in plan
-    assert "SpiderNativeReconnect_SDL3SelectionReady(vid,pid)" in plan
-    assert plan.count("SpiderQuickExitF12_CutscenePhysicalSample(0,0,0,0,0);") >= 4
-    assert plan.index("GetForegroundWindow()!=hwnd") < plan.index(
-        "SpiderQuickExitF12_CutscenePhysicalSample(id,vid,pid,sample.buttons,ready)")
+    # Retired native-owner bridge never supplies a physical-controller
+    # sample; the optional tracer remains inert, not a keyboard fallback.
+    assert "SpiderQuickExitF12_CutscenePhysicalSample(" not in plan
+    assert "SpiderNativeReconnect_" not in plan
+    assert "SpiderSDL3GameplayLive_OnFlip(hwnd," in plan
     for forbidden in ("SendInput(", "VirtualProtect(", "WriteProcessMemory("):
         assert forbidden not in plan
 
