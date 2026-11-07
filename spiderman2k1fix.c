@@ -5315,7 +5315,7 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("GAMEPAD-UI: OFF missing executable-relative INI path");
     }
   }
-  SpiderQuickExitF12_Init(log_line); /* Optional [System] QuickExitF12=1 only. */
+  SpiderQuickExitF12_Init(log_line); /* Only [Debug] F10Shortcut=1 enables user F10. */
   pause_apply_windows_ghosting_option(); /* Opt-in fix experiment for spurious Windows Ghost focus. */
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
    * No COM-vtable interception. The actual patch is delayed to Flip #120. */
