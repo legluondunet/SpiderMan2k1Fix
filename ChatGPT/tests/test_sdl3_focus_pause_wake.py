@@ -42,20 +42,20 @@ def test_sdl3_wake_uses_only_selected_pad_on_original_flip_thread():
         assert forbidden not in begin+poll+end
 
 
-def test_pause_prefers_sdl3_and_keeps_keyboard_and_di8_fallback():
+def test_pause_uses_sdl3_only_and_keeps_keyboard_any_key_fallback():
     main=read("spiderman2k1fix.c")
     p=main.split("static void pause_at_flip_if_background(void) {",1)[1].split(
         "static HRESULT WINAPI hooked_flip(",1)[0]
     assert "SpiderPauseAny_Begin(hwnd)" in p
     assert "pause_sdl3_available=SpiderSDL3Probe_PauseWake_Begin();" in p
-    assert "pause_gamepad_available=pause_sdl3_available?1:SpiderGamepadUI_PauseWake_Begin();" in p
+    assert "SpiderGamepadUI_PauseWake_Begin" not in p
     assert "pause_sdl3_available?" in p
     assert "SpiderSDL3Probe_PauseWake_Poll(hwnd)" in p
-    assert "SpiderGamepadUI_PauseWake_Poll(hwnd)" in p
+    assert "SpiderGamepadUI_PauseWake_Poll(hwnd)" not in p
     assert p.count("SpiderSDL3Probe_PauseWake_End();")==2
-    assert p.count("SpiderGamepadUI_PauseWake_End();")==2
+    assert "SpiderGamepadUI_PauseWake_End();" not in p
     assert "SpiderPauseAny_Completed()" in p
-    assert "pause_gamepad_available);" in p
+    assert "pause_sdl3_available);" in p
     assert "SendInput(" not in p
     assert "IDirectInputDevice8_Acquire(" not in p
 
