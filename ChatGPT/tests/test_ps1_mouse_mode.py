@@ -77,7 +77,14 @@ def test_native_keyboard_gamepad_and_desktop_pointer_untouched():
         assert banned not in MODE
     assert "desktop untouched" in MODE
     assert "desktop pointer unchanged" in MODE
-    assert "gamepad_ui_profile.c ps1_joystick_readonly_menu.c ps1_mouse_mode.c" in BUILD
+    # Keep these translation units in their original compilation order,
+    # regardless of whitespace or line breaks in the explicit source list.
+    units = BUILD.split("fix_sources=(", 1)[1].split("\n)", 1)[0].split()
+    positions = [units.index(name) for name in (
+        "gamepad_ui_profile.c", "ps1_joystick_readonly_menu.c",
+        "ps1_mouse_mode.c"
+    )]
+    assert positions == sorted(positions)
     assert '#include "ps1_mouse_mode.h"' in BRIDGE
     assert 'void SpiderPS1Mouse_OnFlip(HWND game_hwnd);' in HEADER
     assert "MouseEnabled=1" not in README  # no live opt-in documented
