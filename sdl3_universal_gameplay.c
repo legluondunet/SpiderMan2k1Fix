@@ -73,8 +73,9 @@ static unsigned gameover_probe_f9_reports=0;
  * even if routine gameplay presses have exhausted periodic sampling. */
 static unsigned gameover_probe_post_f9_confirm=0;
 static uint32_t gameover_probe_owner=0;
-/* Not an auto-detected GAME OVER scene. Explicit INI-only single-press
- * test of Return on an observed, narrowly gated pending request 2. */
+/* Source-verified default-on GAME OVER confirmation for SDL3 pads.
+ * User can explicitly disable it in the INI (=0). No request-2-only
+ * Enter path: installed original owner + live call depth are mandatory. */
 static int gameover_trial_enabled=0;
 static int gameover_owner_probe_enabled=0; /* independent READ-ONLY opt-in */
 static int gameover_native_owner_trial_enabled=0; /* guarded original CALL wrapper */
@@ -113,15 +114,13 @@ static void log_focus_release(const char *msg) {
   if(report && focus_release_reports++<24u)report(msg);
 }
 /* Authentic original GAME OVER owner (retail SHA-verified).
- * 0x455F91 is the SINGLE x86 CALL to 0x47D830. This function owns
- * native GAME OVER text and polls 0x50C180 itself; it is not a
- * pending-request heuristic. A 5-byte CALL-site wrapper changes ONLY
- * where the call goes, while invoking the exact same 0x47D830 once and
- * returning the original result (EAX), with unchanged cdecl stack.
- *
- * The wrapper is installed ONLY by explicit experimental INI opt-in.
- * Never install on unrecognized, relocated or already-modified code.
- * Do not touch the source EXE on disk. */
+ * 0x455F91 is the SINGLE x86 CALL to 0x47D830. The function owns
+ * native GAME OVER text and polls original game input, not a guessed
+ * pending transition. The 5-byte source-verified CALL-site wrapper
+ * executes the exact original 0x47D830 once and returns original EAX.
+ * Install only when SDL3 universal gameplay and the GAME OVER fix are
+ * enabled. Any signature/relocation error fails closed.
+ * No changes to original game files on disk. */
 static int __cdecl spider_gameover_owner_call_wrapper(void) {
   int result;
   InterlockedIncrement(&gameover_native_owner_depth);
@@ -471,7 +470,7 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   gameover_owner_probe_title_frame=0;
   spider_sdl3_gameover_trial_reset(&gameover_trial);
   gameover_trial_enabled=ini &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverConfirm",0,ini)==1;
+    GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverConfirm",1,ini)==1;
   /* The confirmation opt-in ALWAYS requests the authenticated owner:
    * never silently fall back to the legacy request-2-only action.
    * The optional NativeOwner key is retained for owner-hook diagnostics
@@ -491,11 +490,11 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
     "11 game keyboard actions + native Pause; original DirectInput "
     "suspended only while selected, strict neutral-first and focus release");
   if(requested && gameover_trial_enabled && report)
-    report("SDL3-GAMEOVER-TRIAL: explicit INI opt-in; secure native GAME OVER owner hook mandatory; no request-2-only Return fallback");
+    report("SDL3-GAMEOVER: default-on SDL3 South/A/Cross confirmation; authenticated original native owner is mandatory; request-2-only fallback forbidden");
   if(requested && gameover_native_owner_trial_enabled) {
     int installed=spider_gameover_owner_install_hook();
     if(report)report(installed?
-      "SDL3-GAMEOVER-NATIVE: SOURCE-VERIFIED exact 0x455F91 CALL wrapper installed; owner 0x47D830 (experimental)":
+      "SDL3-GAMEOVER-NATIVE: SOURCE-VERIFIED exact 0x455F91 CALL wrapper installed; owner 0x47D830 (guarded)":
       "SDL3-GAMEOVER-NATIVE: hook REFUSED; native owner unverified, source-based trial fails closed");
   }
   if(requested && gameover_owner_probe_enabled && report)
@@ -1207,9 +1206,9 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
           gameover_owner_probe_dump("CANDIDATE-STABLE",id,context,1);
       } else gameover_owner_probe_stable_frames=0;
     }
-    /* Injection logic is evaluated ONLY with the explicit separate
-     * gameover_trial_enabled switch. The passive owner probe MUST NEVER
-     * call the one-shot policy step or dispatch Return on its own. */
+    /* Return is evaluated only while the default-enabled, explicitly
+     * disableable GAME OVER option is on. Passive owner diagnostics
+     * NEVER invoke the one-shot policy or dispatch any key. */
     if(gameover_trial_enabled)
       trial=spider_sdl3_gameover_trial_step(&gameover_trial,owner_confirm,
         spider_sdl3_universal_neutral(&sample),
@@ -1218,7 +1217,7 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
        stable_before<SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES &&
        gameover_trial.stable_frames==SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES &&
        report && gameover_trial_reports++<12u)
-      report("SDL3-GAMEOVER-TRIAL: CANDIDATE stable within source-verified native GAME OVER owner for six Flips; awaiting neutral then one fresh South");
+      report("SDL3-GAMEOVER: CANDIDATE stable within source-verified native GAME OVER owner for six Flips; awaiting neutral then one fresh South");
     if(trial) {
       /* Never combine 3D Jump/Space with the experiment's Enter,
        * nor repeat Enter while the physical button is held. */
@@ -1228,13 +1227,13 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
       }
       if(trial==1u) {
         gameover_owner_probe_dump("SOUTH-BEFORE-PULSE",id,context,owner_confirm);
-        pulse(0x1cu,"opt-in GAME OVER Return trial");
+        pulse(0x1cu,"native GAME OVER Return confirmation");
         if(pulse_scan!=0x1cu) {
           restore_original("GAME OVER trial Enter pulse failed");
           return;
         }
         if(report && gameover_trial_reports++<12u)
-          report("SDL3-GAMEOVER-TRIAL: ENTER PULSE accepted by OS after fresh South (game reception unverified)");
+          report("SDL3-GAMEOVER: ENTER PULSE accepted by OS after fresh South inside authenticated native owner (game reception unverified)");
       }
       return;
     }
