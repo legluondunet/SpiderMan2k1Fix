@@ -54,7 +54,6 @@ static volatile LONG requested=0, installed=0;
 static volatile LONG retries_keyboard=0, retries_mouse=0;
 static LONG reported_keyboard=0, reported_mouse=0;
 static void (*write_log)(const char *)=NULL;
-static BYTE *retained_executable_page=NULL;
 
 static LONG snapshot(volatile LONG *v) {
   return InterlockedCompareExchange(v,0,0);
@@ -214,13 +213,14 @@ static void try_install(void) {
      * the live branch pointing at freed memory. */
     if(restore_original_jne((BYTE *)(uintptr_t)SPIDER_KEY_JNE))
       VirtualFree(page,0,MEM_RELEASE);
-    else retained_executable_page=page;
+    /* Otherwise the live keyboard branch may still target this RX page:
+     * deliberately retain it until process termination. */
     if(write_log)
       write_log("DI8-RETRY: DISABLED: mouse patch failed; keyboard rollback attempted");
     return;
   }
 
-  retained_executable_page=page;
+  /* Both installed branches now target page: keep RX memory until exit. */
   InterlockedExchange(&installed,1);
   if(write_log)
     write_log("DI8-RETRY: active at Flip #120; exact x86 branch patch verified; original Acquire/retry reused, foreground only");
