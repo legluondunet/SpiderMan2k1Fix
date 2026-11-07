@@ -28,7 +28,7 @@ def test_native_gameover_confirmation_is_mandatory_and_exact_owner_gated():
     assert "if(pulse_scan!=0x1cu)" in BACKEND
     assert 'if(pause_edge)pulse(0x01u,"3D Pause");' in BACKEND
     assert "if(!update_keys(desired,scans))" in BACKEND
-    assert BACKEND.index("if(gameover_trial_enabled || gameover_owner_probe_enabled) {") < BACKEND.index(
+    assert BACKEND.index("if(gameover_trial_enabled) {") < BACKEND.index(
         'if(!update_keys(desired,scans))')
     assert "if(gameover_trial_enabled)\n      trial=spider_sdl3_gameover_trial_step(" in BACKEND
     assert "spider_sdl3_gameover_trial_reset(&gameover_trial);" in BACKEND
@@ -104,79 +104,18 @@ def test_trial_requires_stability_neutral_and_one_press(tmp_path):
     subprocess.run([str(exe)],check=True)
 
 
-def test_owner_observer_is_read_only_and_not_a_game_over_detector():
-    # The newly traced script manager is known from native disassembly,
-    # but has NOT been proven to be the owner of the GAME OVER screen.
-    # It must never gate a new Return action or mutate engine memory.
-    owner=BACKEND.split("static void gameover_owner_probe_dump(",1)[1].split(
-        "static void gameover_probe_snapshot(",1)[0]
-    for address in (
-        "0x0060CFA4u", "0x0054A510u", "0x006B78F0u",
-        "0x006A9038u", "0x00682968u", "0x00682960u",
-        "0x02E0988Cu", "0x006B4CA0u",
-    ):
-        assert address in owner
-    for offset in ("0x1ACu", "0x1B4u", "0x1B8u", "0x1A4u"):
-        assert offset in owner
-    assert "gameover_probe_read_u32(" in owner
-    assert "script>=0x10000u && script<=0x7fff0000u" in owner
-    assert "script-ok=%u" in owner
-    assert "[PASSIVE; NO CONFIRMED GAME-OVER OWNER]" in owner
-    assert "gameover_owner_probe_events>=32u" in owner
-    assert "if(!gameover_owner_probe_enabled || !report ||" in owner
-    assert "report(msg);" in owner
-    for forbidden in (
-        "SendInput(", "send_scan(", "update_keys(", "VirtualProtect(",
-        "WriteProcessMemory(", "InterlockedExchangePointer(",
-        "pulse(", "gameover_trial_enabled=1",
-    ):
-        assert forbidden not in owner, forbidden
-
-
-def test_owner_probe_does_not_modify_gameover_trial_or_3d_action_routing():
-    assert 'gameover_owner_probe_dump("3D-BASELINE",id,context,0);' in BACKEND
-    assert 'gameover_owner_probe_dump("CANDIDATE-ENTER"' in BACKEND or (
-        '"CANDIDATE-ENTER"' in BACKEND)
-    assert '"CANDIDATE-EXIT"' in BACKEND
-    assert '"CANDIDATE-CONTEXT-EXIT"' in BACKEND
-    assert '"CANDIDATE-STABLE"' in BACKEND
-    assert '"SOUTH-BEFORE-PULSE"' in BACKEND
-    assert '"SELECTED-PAD-CHANGE"' in BACKEND
-    assert "gameover_owner_probe_selected_id!=id" in BACKEND
-    assert "gameover_owner_probe_selected_id=0;" in BACKEND
-    assert "gameover_owner_probe_stable_frames=0;" in BACKEND
-    assert "stable_probe_before<SPIDER_GAMEOVER_TRIAL_STABLE_FRAMES" in BACKEND
-    assert '"ExperimentalSDL3GameOverOwnerProbe"' in BACKEND
-    assert "gameover_owner_probe_enabled=ini &&" in BACKEND
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverOwnerProbe",0,ini)==1' in BACKEND
-    assert "gameover_owner_probe_was_candidate=0;" in BACKEND
-    assert "gameover_owner_probe_baselines<8u" in BACKEND
-    assert "gameover_owner_probe_frames%180u==0u" in BACKEND
-    assert "gameover_owner_probe_events=0;" in BACKEND
-    # The original opt-in gate and one-shot Space suppression stay
-    # unchanged. No automatic/native menu ownership is claimed.
-    assert "gameover_trial_enabled=1;" in BACKEND
-    assert "gameover_trial_candidate(context,menu,gameplay,bink,native_pause)" in BACKEND
-    assert 'pulse(0x1cu,"native GAME OVER Return confirmation");' in BACKEND
-    assert "if(!update_keys(desired,scans))" in BACKEND
-    assert "if(pause_edge)pulse(0x01u,\"3D Pause\");" in BACKEND
-
-
-def test_passive_owner_probe_is_independent_of_enter_injection():
-    """Enabling passive state sampling must not implicitly enable the
-    separately tested experimental GAME OVER Enter action."""
+def test_obsolete_independent_owner_probe_is_completely_retired():
+    # Only the original, authenticated CALL-site owner may authorize Return.
     validation=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
-    generated=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
+    migrator=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
     assert '"ExperimentalSDL3GameOverOwnerProbe"' in validation
-    assert "ExperimentalSDL3GameOverOwnerProbe=1" not in generated
-    assert "ExperimentalSDL3GameOverConfirm=1\\r\\n" not in generated
-    assert "if(gameover_trial_enabled || gameover_owner_probe_enabled)" in BACKEND
-    assert "if(gameover_trial_enabled)\n      trial=spider_sdl3_gameover_trial_step(" in BACKEND
-    assert "if(trial) {" in BACKEND
-    assert "if(trial==1u)" in BACKEND
-    assert "gameover_owner_probe_dump(" in BACKEND
-    assert "SDL3-GAMEOVER-OWNER-PROBE: passive native state observation enabled" in BACKEND
-    assert "gameover_owner_probe_stable_frames" in BACKEND
+    assert '{"Input","ExperimentalSDL3GameOverOwnerProbe"}' in migrator
+    assert "gameover_owner_probe_" not in BACKEND
+    assert "gameover_probe_native_title_now" not in BACKEND
+    assert "SDL3-GAMEOVER-OWNER-PROBE:" not in BACKEND
+    assert "gameover_trial_enabled=1;" in BACKEND
+    assert "gameover_native_owner_hook_installed &&" in BACKEND
+    assert "spider_sdl3_gameover_trial_step(&gameover_trial,owner_confirm," in BACKEND
 
 
 def test_native_gameover_owner_wrapper_is_exact_retained_call_not_a_new_menu():
@@ -227,7 +166,6 @@ def test_strict_gameover_owner_is_always_required_and_fails_closed():
     assert "InterlockedCompareExchange(&gameover_native_owner_depth,0,0)>0;" in BACKEND
     assert "trial=spider_sdl3_gameover_trial_step(&gameover_trial,owner_confirm," in BACKEND
     assert "if(owner_confirm &&" in BACKEND
-    assert 'gameover_owner_probe_dump("SOUTH-BEFORE-PULSE",id,context,owner_confirm);' in BACKEND
     assert "if(gameover_trial_enabled)" in BACKEND
     assert 'pulse(0x1cu,"native GAME OVER Return confirmation");' in BACKEND
 
@@ -240,7 +178,7 @@ def test_no_legacy_fallback_in_current_main_gameover_runtime():
     assert "spider_gameover_owner_install_hook()" in BACKEND
     assert "SDL3-GAMEOVER-NATIVE: hook REFUSED" in BACKEND
     assert "CONFIRM BLOCKED: enable ExperimentalSDL3GameOverNativeOwner" not in BACKEND
-    gate=BACKEND.split("if(gameover_trial_enabled || gameover_owner_probe_enabled) {",1)[1].split(
+    gate=BACKEND.split("if(gameover_trial_enabled) {",1)[1].split(
         "if(!update_keys(desired,scans))",1)[0]
     assert "int candidate=gameover_trial_candidate(" in gate
     assert "int owner_confirm=candidate && gameover_native_owner_trial_enabled &&" in gate
@@ -251,10 +189,8 @@ def test_no_legacy_fallback_in_current_main_gameover_runtime():
     assert "if(owner_confirm &&" in gate
     assert "if(trial==1u)" in gate
     assert "pulse(0x1cu" in gate
-    # Passive evidence still sees the raw seven-word candidate but it
-    # never changes owner_confirm or enables a synthetic key.
-    assert 'gameover_owner_probe_dump("CANDIDATE-STABLE"' in gate
-    assert "gameover_owner_probe_was_candidate=candidate;" in gate
+    # No passive owner probe can lower the source-verified confirmation gate.
+    assert "gameover_owner_probe_" not in gate
 
 
 def test_confirm_auto_install_never_bypasses_native_owner():
@@ -267,7 +203,7 @@ def test_confirm_auto_install_never_bypasses_native_owner():
     assert "if(requested && gameover_native_owner_trial_enabled)" in init
     assert "spider_gameover_owner_install_hook()" in init
     assert "experimental" in BACKEND.lower()
-    gate=BACKEND.split("if(gameover_trial_enabled || gameover_owner_probe_enabled) {",1)[1].split(
+    gate=BACKEND.split("if(gameover_trial_enabled) {",1)[1].split(
         "if(!update_keys(desired,scans))",1)[0]
     assert "gameover_native_owner_hook_installed &&" in gate
     assert "InterlockedCompareExchange(&gameover_native_owner_depth,0,0)>0" in gate
@@ -281,7 +217,7 @@ def test_built_in_gameover_mode_preserves_exact_owner_and_neutral_state():
     assert "gameover_native_owner_trial_enabled=1;" in BACKEND
     assert "if(requested && gameover_native_owner_trial_enabled)" in BACKEND
     assert "if(gameover_trial_enabled)" in BACKEND
-    gate=BACKEND.split("if(gameover_trial_enabled || gameover_owner_probe_enabled) {",1)[1].split(
+    gate=BACKEND.split("if(gameover_trial_enabled) {",1)[1].split(
         "if(!update_keys(desired,scans))",1)[0]
     assert "owner_confirm=candidate && gameover_native_owner_trial_enabled &&" in gate
     assert "gameover_native_owner_hook_installed &&" in gate
