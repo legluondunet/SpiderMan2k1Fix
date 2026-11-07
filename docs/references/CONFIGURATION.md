@@ -64,19 +64,12 @@ Aim=D
 Zipline=F
 Swing=G
 
-[Joystick]
-Jump=BUTTON3
-Kick=BUTTON4
-Punch=BUTTON0
-Web=BUTTON1
-Aim=BUTTON6
-Zipline=BUTTON9
-Swing=BUTTON7
-
 [Internal]
 ; 252 original configuration bytes, written automatically
 RawHex=<504 hexadecimal characters>
 ```
+
+The original game's seven DirectInput joystick binding keys are **not generated or applied**: SDL3 per-model mappings are stored separately under `controllers/`. Old INIs with a `[Joystick]` section remain accepted for compatibility, but that section no longer overrides the virtual game configuration. The underlying original bytes are still preserved in `RawHex`.
 
 The example `RawHex` line is **illustrative only**: the generated file contains a genuine 504-character value. Do not manually delete, replace or edit it: unrecognized original-game settings are still preserved there.
 
@@ -93,8 +86,8 @@ The example `RawHex` line is **illustrative only**: the generated file contains 
 | `[Input] ExperimentalSDL3GameOverNativeOwner` | **Default `0` (not generated)**: optional hook-only diagnostic mode. **Not required** with `GameOverConfirm=1`, which installs the same exact verified owner wrapper automatically. Hook-only mode never sends Enter by itself. |
 | `[Input] ExperimentalSDL3NativeOwner` | Default `0`; unrelated legacy experimental native-owner path, not required for universal gameplay. |
 | `[Audio]` | Music/effects, voice and movie volumes (0..100%); `Stereo=1` selects stereo. |
-| `[Keyboard]` / `[Joystick]` | The eleven original keyboard actions and seven joystick button bindings, also saved from the game's menus. |
-| `[Internal] RawHex` | Lossless copy of the game's original 252-byte configuration record. Not a player-facing control. |
+| `[Keyboard]` | The eleven original keyboard actions, editable through the game's keyboard menu. |
+| `[Internal] RawHex` | Lossless copy of the game's original 252-byte configuration record (including inactive original joystick bytes). Not a player-facing control. |
 
 ### Universal SDL3 controllers: enabled by default
 
