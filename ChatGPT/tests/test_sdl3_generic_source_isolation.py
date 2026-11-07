@@ -101,6 +101,6 @@ def test_source_policy_is_sandboxed_and_wont_rewire_existing_controller():
                    "GetDeviceData"):
         assert unsafe not in src
     for runtime in ("spiderman2k1fix.c","sdl3_gameplay_live.c",
-                    "native_joystick_reconnect.c"):
+                    "sdl3_universal_gameplay.c"):
         assert '#include "sdl3_generic_source_isolation.h"' not in (
             ROOT/runtime).read_text(encoding="utf-8")
