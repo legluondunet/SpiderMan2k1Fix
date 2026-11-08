@@ -914,7 +914,7 @@ def test_universal_mapped_sample_requires_explicit_start_only():
         "int SpiderSDL3Probe_SelectedRT(",1)[0]
     assert "spider_sdl3_selected_model_unique(" in generic
     assert "sdl_connected(pads[i].handle)" in generic
-    assert "generic_selected_id=pads[i].id;" in probe
+    assert "generic_selected_id=start_claims.instance_id;" in probe
     assert "spider_sdl3_selection_start_edge(&selection,pads[i].id,pressed)" in probe
 
 
