@@ -53,6 +53,11 @@ def test_save_game_confirm_holds_input_without_changing_video_or_pause():
     assert 'pulse(0x01u,"menu Back/Pause resume")' in menu
     assert 'pulse(0x1cu,"menu Confirm")' in menu
     assert "spider_sdl3_menu_confirm_defer_keyup(" in before
+    assert "menu_confirm_deferred_this_flip=1;" in before
+    preinput=source.split("if(active && pulse_scan) {",1)[1].split("  /* No native pointer manipulation",1)[0]
+    assert "if(!menu_confirm_deferred_this_flip)" in preinput
+    assert "send_scan(pulse_scan,1)" in preinput
+    assert "restore_original(\"pulse KEYUP failed before next gameplay action\")" in preinput
     assert before.index("if(pulse_scan && menu_confirm_pending &&") < (
         before.index("else if(pulse_scan && !send_scan(pulse_scan,1))"))
     assert "GetForegroundWindow()!=hwnd" in before

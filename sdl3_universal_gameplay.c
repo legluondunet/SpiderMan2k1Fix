@@ -44,6 +44,7 @@ static unsigned menu_previous=0,menu_arm=0;
 /* A synthetic menu Confirm key must survive one additional original-game
  * Flip. BeforeUI otherwise releases it before the game's next input poll. */
 static unsigned menu_confirm_hold_flips=0,menu_confirm_pending=0;
+static unsigned menu_confirm_deferred_this_flip=0;
 static unsigned menu_confirm_unarmed_reported=0,menu_confirm_reports=0;
 static unsigned previous_context=SPIDER_UNIVERSAL_CTX_3D;
 static unsigned pause_context_reports=0,pause_command_reports=0;
@@ -273,6 +274,7 @@ static int release_all(void) {
   /* Focus, owner loss and shutdown must release immediately regardless of
    * any bounded menu-confirm hold interval. Failed KEYUP is still retried. */
   menu_confirm_hold_flips=0;
+  menu_confirm_deferred_this_flip=0;
   if(pulse_scan) {
     if(send_scan(pulse_scan,1)) {
       pulse_scan=0;
@@ -394,6 +396,7 @@ static void restore_original(const char *reason) {
    * in BeforeUI and before any new joystick gameplay injection. */
   menu_previous=0;menu_arm=0;
   menu_confirm_unarmed_reported=0;
+  menu_confirm_deferred_this_flip=0;
   previous_context=SPIDER_UNIVERSAL_CTX_3D;
   spider_sdl3_gameover_trial_reset(&gameover_trial);
   spider_sdl3_universal_reset(&state);
@@ -445,6 +448,7 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   memset(held_scans,0,sizeof(held_scans));
   sent_mask=0;pulse_scan=0;menu_previous=menu_arm=0;
   menu_confirm_hold_flips=menu_confirm_pending=0;
+  menu_confirm_deferred_this_flip=0;
   menu_confirm_unarmed_reported=menu_confirm_reports=0;
   previous_context=SPIDER_UNIVERSAL_CTX_3D;
   pause_context_reports=0;pause_command_reports=0;
@@ -529,6 +533,8 @@ void SpiderSDL3Universal_BeforeUI(HWND hwnd) {
   if(!requested)return;
   if(!game_thread)game_thread=GetCurrentThreadId();
   if(game_thread!=GetCurrentThreadId())return;
+  /* Never inherit a prior Flip's menu deferral into an unrelated pulse. */
+  menu_confirm_deferred_this_flip=0;
   /* MUST run before focus pause blocks the original game render thread.
    * Critical: no externally held synthetic keys may survive Alt+Tab. */
   if(native_host_focus_blocked || !hwnd || !IsWindowVisible(hwnd) ||
@@ -537,6 +543,9 @@ void SpiderSDL3Universal_BeforeUI(HWND hwnd) {
       restore_original("focus or window lost");
   } else if(pulse_scan && menu_confirm_pending &&
             spider_sdl3_menu_confirm_defer_keyup(&menu_confirm_hold_flips)) {
+    /* OnFlip executes after BeforeUI, in the same original game Flip.
+     * Its generic pending-pulse retry must also respect this deferral. */
+    menu_confirm_deferred_this_flip=1;
     log_menu_confirm("SDL3-MENU-CONFIRM: holding injected Enter for one additional original Flip (DI reception unverified)");
   } else if(pulse_scan && !send_scan(pulse_scan,1)) {
     if(menu_confirm_pending)
@@ -798,13 +807,18 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
       log_universal("SDL3-UNIVERSAL: prior synthetic keys released before safe neutral reentry");
   }
   if(active && pulse_scan) {
-    /* BeforeUI attempts the pulse KEYUP on every Flip; if Proton/Win32
-     * refused it, do not process a new action while Escape/Enter is held. */
-    if(!send_scan(pulse_scan,1)) {
-      restore_original("pulse KEYUP failed before next gameplay action");
-      return;
+    /* BeforeUI owns KEYUP scheduling. The sole 2D Confirm deferral must
+     * survive THIS OnFlip so the retail game gets another input poll.
+     * If BeforeUI failed KEYUP, do not process any new action until its
+     * safe retry succeeds (the legacy path below remains fail closed). */
+    if(!menu_confirm_deferred_this_flip) {
+      if(!send_scan(pulse_scan,1)) {
+        restore_original("pulse KEYUP failed before next gameplay action");
+        return;
+      }
+      pulse_scan=0;
+      menu_confirm_hold_flips=menu_confirm_pending=0;
     }
-    pulse_scan=0;
   }
   /* No native pointer manipulation or key injection until the physical
    * gamepad has returned to neutral after Start/selection/menu changes.
