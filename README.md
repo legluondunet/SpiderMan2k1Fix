@@ -89,35 +89,21 @@ The game uses its original **DirectSound** engine. The built-in WAV/PKR correcti
 
 ## Built-in native WAV audio correction
 
-The original game can truncate WAV resources by reading only complete
-2,048-byte sectors from `data.pkr`. SpiderMan2k1Fix now **corrects this
-automatically**, using the game's native PKR reader and independently
-CRC-verified original WAV contents. Each missing remainder is verified
-before writing only the exact bytes into the game's allocated buffer.
-Even duplicate WAV sources must agree byte-for-byte; unsafe matches
-are skipped. The original DirectSound playback engine is preserved.
+The original game's PKR loader can truncate WAV resources at 2,048-byte
+sector boundaries. The built-in repair restores only verified missing bytes
+using CRC-checked original audio data; native DirectSound playback is retained.
+It is enabled by default and requires **no new INI setting**.
 
-**No audio-fix setting is required or written to the factory
-`SpiderMan2k1Fix.ini`.** The correction is enabled automatically on
-the supported, SHA-256-verified `SpideyPC.exe`. If troubleshooting
-requires turning it off, advanced users may manually add
-`ExperimentalAudioLoaderTail=0` to `[Debug]`. This is a hidden
-compatibility override, not a default configuration setting.
+For troubleshooting only, `[Debug] ExperimentalAudioLoaderTail=0` disables
+the loader fix. The optional `ExperimentalAudioHeli1Declick=1` adjusts two
+original helicopter samples; read-only `ExperimentalPKRAudioIndex=1` and
+`ExperimentalPKRAudioPlayTrace=1` aid diagnosis. See the
+[technical audio guide](docs/references/diagnostics/audio/PKR_NATIVE_AUDIO_REPAIR.md).
 
-The separate, optional `ExperimentalAudioHeli1Declick=1` still corrects
-two known original samples in `Heli1.wav`. Optional read-only audio
-diagnostics remain available through `ExperimentalPKRAudioIndex=1`
-and `ExperimentalPKRAudioPlayTrace=1`.
-
-The former late DirectSound-buffer repair
-(`ExperimentalAudioPKRTailRestore`) has been removed. This built-in native
-loader correction is introduced in **SpiderMan2k1Fix v1.1.0**. The
-correction and duplicate-source repairs have been validated without
-audible crackling under Linux/Wine. On Windows 11, the combined integration
-test also confirmed **37/37 actively playing DirectSound voices** restored
-after focus return across four pauses. This verifies focus audio recovery on
-the tested setup; it does not establish compatibility with every audio device,
-game build or sound configuration.
+First released in **v1.1.0**, the native audio repair passed listening tests
+under Wine. Separately, Windows 11 focus recovery restored **37/37 active
+DirectSound voices** in the reported test sessions; this does not guarantee
+every audio device or game configuration.
 
 ## Installation on Windows and Linux (Wine)
 
