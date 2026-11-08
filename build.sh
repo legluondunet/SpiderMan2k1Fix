@@ -21,7 +21,7 @@ if [[ ! "$build_commit" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$ ]]; then
 fi
 version_define="-DSPIDERMAN2K1FIX_COMMIT=\"${build_commit}\""
 build_version=$(sed -n 's/^#define SPIDERMAN2K1FIX_VERSION "\([^"]*\)"/\1/p' version_info.h)
-if [[ ! "$build_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+if [[ ! "$build_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[1-9][0-9]*)?$ ]]; then
   echo "ERROR: invalid version in version_info.h: $build_version" >&2
   exit 1
 fi
