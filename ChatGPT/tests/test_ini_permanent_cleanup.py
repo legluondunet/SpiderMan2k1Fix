@@ -23,7 +23,7 @@ def test_player_only_ini_keeps_fps_as_real_control():
     assert list(cfg["Display"])==["aspectratio","brightness","fpslimit"]
     assert cfg["Display"]["FPSLimit"]=="30"
     assert cfg["Input"]["KeyboardLayout"]=="Auto"
-    assert list(cfg["Input"])== ['keyboardlayout','experimentalaltlatchrecovery']
+    assert list(cfg["Input"])== ['keyboardlayout']
     assert "ExperimentalSDL3NativeOwner" not in cfg["Input"]
     assert "ExperimentalSDL3UniversalGameplay" not in cfg["Input"]
     assert "ControllerProfile" not in cfg["Input"]

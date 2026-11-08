@@ -20,7 +20,7 @@ def _new_ini():
 
 def test_new_generated_config_matches_only_live_controller_settings():
     cfg=_new_ini()
-    expected={"ExperimentalAltLatchRecovery":"1"}
+    expected={}
     for key,value in expected.items():
         assert cfg["Input"][key]==value
         assert f'"{key}={value}\\r\\n"' in SRC

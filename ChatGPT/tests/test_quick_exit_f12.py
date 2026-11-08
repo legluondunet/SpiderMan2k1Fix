@@ -58,7 +58,7 @@ def test_startup_static_screen_probe_is_extra_opt_in_bounded_and_read_only():
     assert "static_trace[0]=='1'" in SRC
     init=SRC[SRC.index("void SpiderQuickExitF12_Init("):]
     assert 'GetPrivateProfileIntA("Debug","Log",0,ini)==1' in init
-    assert 'strcmp(val,"1")==0' in init
+    assert 'shortcut_enabled' in init
     assert "STARTUP-STATIC-PROBE opt-in enabled" in init
 
     observer=SRC[SRC.index("void SpiderQuickExitF12_ObserveEngineState("):
@@ -365,7 +365,7 @@ def test_new_game_movie_and_comic_ini_require_existing_f12_and_debug_gates():
     comic=init[init.index('GetPrivateProfileIntA("System","ExperimentalQuickExitF12InNewGameComic"'):]
     assert 'GetPrivateProfileIntA("Debug","Log",0,ini)==1' in init
     assert 'InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1' in init
-    assert 'strcmp(val,"1")==0' in init
+    assert 'shortcut_enabled' in init
     assert "postmovie_opt_in,1" in movie
     assert "comic_exit_opt_in,1" in comic
     assert "postmovie_opt_in,0,0)==1" in init
@@ -428,7 +428,7 @@ def test_default_off_and_ini_section_validated():
     assert '"[System]\\r\\n"' not in GEN
     assert '"QuickExitF10=0\\r\\n"' not in GEN
     assert '"Debug","System","Display"' in VAL
-    assert 'spider_ini_system[]={"QuickExitF10","ExperimentalQuickExitF10In3D","ExperimentalQuickExitF10InNewGameMovie","ExperimentalQuickExitF10InNewGameComic","ExperimentalQuickExitF10InIntroStills","QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic","ExperimentalQuickExitF12InIntroStills"}' in VAL
+    assert 'spider_ini_legacy_system[]={"QuickExitF10","QuickExitF12"}' in VAL
     for option in ("ExperimentalQuickExitF10InNewGameMovie",
                    "ExperimentalQuickExitF10InNewGameComic"):
         assert f"{option}=" not in INI
@@ -437,8 +437,8 @@ def test_default_off_and_ini_section_validated():
     assert "ExperimentalQuickExitF10In3D=" not in INI
     assert '"ExperimentalQuickExitF10In3D=0\\r\\n"' not in GEN
     assert 'GetPrivateProfileIntA("System","ExperimentalQuickExitF12In3D",0,ini)' in SRC
-    assert 'GetPrivateProfileStringA("System","QuickExitF12","0"' in SRC
-    assert 'if(strcmp(val,"1")!=0)' in SRC
+    assert 'GetPrivateProfileStringA("System","QuickExitF12","0"' not in SRC
+    assert 'if(!shortcut_enabled)' in SRC
     assert 'OFF; unsafe original F12 WM_CLOSE suppressed' in SRC
 
 
@@ -456,7 +456,7 @@ def test_f12_debug_fast_test_mode_default_off_and_valid_ini_key():
     assert "static volatile LONG debug_f12_test_mode=0;" in SRC
 
     init=SRC[SRC.index("void SpiderQuickExitF12_Init("):]
-    assert 'strcpy(val,"1");' in init
+    assert 'shortcut_enabled=f10_shortcut ||' in init
     assert 'InterlockedExchange(&debug_f12_test_mode,1)' in init
     assert "debug_f12_test_mode,0,0)==1 ||" in init
     assert "intro_still_opt_in,1" in init
@@ -1205,7 +1205,7 @@ def test_3d_f12_is_separately_opted_in_and_menu_keeps_priority():
     assert "GetPrivateProfileIntA(\"System\",\"ExperimentalQuickExitF12In3D\",0,ini)" in SRC
     assert "QuickExitF10=" not in INI
     assert "ExperimentalQuickExitF10In3D=" not in INI
-    assert 'if(strcmp(val,"1")!=0)' in SRC
+    assert 'if(!shortcut_enabled)' in SRC
     assert "game3d_exit_state,1,0" in SRC
     assert "last_native_game_input_ms" in SRC
     assert "last_game3d_flip_ms" in SRC
@@ -2123,9 +2123,9 @@ def test_f10_shortcut_single_hidden_debug_flag_all_stages_no_log_needed():
     """One manual [Debug] flag enables all validated F10 actions."""
     init=SRC[SRC.index("void SpiderQuickExitF12_Init(void (*log_fn)(const char *))"):]
     assert 'f10_shortcut=GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1;' in init
-    assert "if(f10_shortcut ||" in init
+    assert "shortcut_enabled=f10_shortcut ||" in init
     assert 'InterlockedExchange(&debug_f12_test_mode,1);' in init
-    assert 'strcpy(val,"1");' in init
+    assert 'shortcut_enabled=f10_shortcut ||' in init
     scene=init[init.index("/* F10Shortcut enables ALL tested stages.") :
                init.index("memset(movie_trial,0,sizeof(movie_trial));")]
     assert scene.count("f10_shortcut ||")==2
@@ -2147,7 +2147,7 @@ def test_default_generated_ini_omits_development_f10_shortcut():
 def test_movie4_input_release_safety_remains_enabled_when_f10_shortcut_off():
     """Regression: Enter on Bink #4 must not skip 3D intro with F10 disabled."""
     source=SRC
-    off=source[source.index('if(strcmp(val,"1")!=0) {',source.index("void SpiderQuickExitF12_Init(")):
+    off=source[source.index('if(!shortcut_enabled) {',source.index("void SpiderQuickExitF12_Init(")):
                source.index('/* Shell_MainMenu has 8 entries.',source.index("void SpiderQuickExitF12_Init("))]
     assert "install_intro_tick_hooks()" in off
     assert "install_movie4_safety_only_game_input_hook()" in off
@@ -2197,4 +2197,4 @@ def test_f10_cleanup_omits_obsolete_generated_system_switches():
         assert f"{option}=" not in INI
         assert option in VAL
     assert "[System]" not in INI
-    assert 'GetPrivateProfileIntA("System","QuickExitF10",0,ini)==1' in SRC
+    assert 'GetPrivateProfileIntA("System","QuickExitF10",0,ini)==1' not in SRC

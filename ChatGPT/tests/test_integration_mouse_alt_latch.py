@@ -23,7 +23,8 @@ def test_combined_opt_in_alt_and_permanent_mouse_coexist():
     assert "GAME MOUSE OFF (permanent)" in MOUSE
     assert 'SpiderPS1Mouse_EnsureDisabled();' in MOUSE
     assert 'GAME MOUSE RESTORED' not in MOUSE
-    assert 'ExperimentalAltLatchRecovery' in ALT
+    assert 'ExperimentalAltLatchRecovery' not in ALT
+    assert 'spider_alt_latch_enabled=1;' in ALT
     assert 'MouseEnabled=1 is always IGNORED' in INI
 
 def test_separate_native_scope_and_no_mouse_reenable():

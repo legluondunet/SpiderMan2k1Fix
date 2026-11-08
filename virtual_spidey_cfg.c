@@ -406,8 +406,7 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "; SDL3 detection, setup and universal gameplay are built-in.\r\n"
     "; Only SDL3-mapped controllers are supported; mappings live in controllers/.\r\n"
     "; Original game joystick bytes stay preserved in [Internal] RawHex.\r\n"
-    "; Left Alt recovery after Alt+Tab remains configurable.\r\n"
-    "ExperimentalAltLatchRecovery=1\r\n"
+    "; Original Left Alt state is repaired automatically after verified Alt+Tab.\r\n"
     "\r\n"
     "[Audio]\r\n"
     "; All levels are 0..100 percent, with lossless raw values kept below.\r\n";
@@ -488,6 +487,12 @@ int SpiderCfg_EnsureDefaultIni(void (*logger)(const char *)) {
  * Accept them in the strict parser solely to migrate existing configurations.
  * Never remove gameplay bindings, audio, FPS, aspect, brightness or RawHex. */
 static const struct {const char *section,*key;} deprecated_ini_keys[]={
+  /* Obsolete player switches are recognized only to migrate existing INIs.
+   * F10Shortcut remains the sole user-facing F10 activation key. */
+  {"System","QuickExitF10"},{"System","QuickExitF12"},
+  {"Input","ExperimentalSDL3GameOverOwnerProbe"},
+  {"Input","ExperimentalSDL3GameOverNativeOwner"},
+  {"Input","ExperimentalAltLatchRecovery"},
   {"Debug","F10VerboseTrace"},
   {"Display","Resolution"},{"Display","FOV"},
   {"Display","ExperimentalFOVAspect"},{"Display","ExperimentalFOVHorPlus"},

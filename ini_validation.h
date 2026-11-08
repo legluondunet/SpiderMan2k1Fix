@@ -55,7 +55,15 @@ static const char *const spider_ini_sections[]={"Debug","System","Display","HUD"
  * ON; recognize pre-existing values without adding it to generated INIs. */
 static const char *const spider_ini_debug[]={"Log","F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit","F10VerboseTrace","F12TestMode","F12Auto3DScripts","ExperimentalPKRAudioIndex","ExperimentalPKRAudioPlayTrace","ExperimentalAudioHeli1Declick","ExperimentalAudioLoaderTail","Xbox360TriggerProbe","NativeMenuReturnProbe","NativeJoystickSwapProbe","SDL3GameplayTrace","SDL3BindingTrace","SDL3GameplayPlan","SDL3NativeStateTrace","SDL3NativeSourceTrace","SDL3CutsceneReaderTrace"};
 /* Keep all pre-existing INIs valid without regenerating saved controls. */
-static const char *const spider_ini_system[]={"QuickExitF10","ExperimentalQuickExitF10In3D","ExperimentalQuickExitF10InNewGameMovie","ExperimentalQuickExitF10InNewGameComic","ExperimentalQuickExitF10InIntroStills","QuickExitF12","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic","ExperimentalQuickExitF12InIntroStills"};
+static const char *const spider_ini_system[]={"ExperimentalQuickExitF10In3D","ExperimentalQuickExitF10InNewGameMovie","ExperimentalQuickExitF10InNewGameComic","ExperimentalQuickExitF10InIntroStills","ExperimentalQuickExitF12In3D","ExperimentalQuickExitF12InNewGameMovie","ExperimentalQuickExitF12InNewGameComic","ExperimentalQuickExitF12InIntroStills"};
+/* Obsolete switches accepted exclusively to migrate older valid INIs.
+ * They are not current player options and are never consulted at runtime. */
+static const char *const spider_ini_legacy_system[]={"QuickExitF10","QuickExitF12"};
+static const char *const spider_ini_legacy_input[]={
+  "ExperimentalSDL3GameOverOwnerProbe",
+  "ExperimentalSDL3GameOverNativeOwner",
+  "ExperimentalAltLatchRecovery"
+};
 static const char *const spider_ini_display[]={
   "Resolution","AspectRatio","Brightness","FPSLimit","FOV",
   "ExperimentalFOVAspect","ExperimentalFOVHorPlus",
@@ -78,8 +86,8 @@ static const char *const spider_ini_hud[]={
 static const char *const spider_ini_input[]={
   "KeyboardLayout","DirectInputReacquire","DisableWindowsGhosting","PauseOnFocusLoss","PauseBinkOnFocusLoss","PauseDirectSoundOnFocusLoss","PauseOverlay","PauseDim","PauseDimOpacity","PauseKey",
   "RestoreCursorOnFocusLoss","ExperimentalFocusTrace","ExperimentalDI8EntryTrace",
-  "ExperimentalAltTabReacquire","ExperimentalAltLatchRecovery","ExperimentalDI8CreateDeviceTrace",
-  "ExperimentalGamepadStart","ControllerProfile","ControllerEnterButtons","ControllerBackButton","ControllerPauseButton","ControllerPS1Preview","ControllerXbox360Preview","ControllerXbox360RTSwing","ControllerPS1OptionsSkip","ControllerPS1DeepStartProbe","ControllerPS1DisableNativeStart","ControllerPS1ReadOnlyJoystick","ControllerAutoDisableMouse","MouseEnabled","ControllerPS1QuitTrace","ControllerPS1PostQuitGuard","ControllerPS1InputFlightRecorder","ControllerPS1TransitionEdgeOwnership","ExperimentalNativeJoystickUnplugGuard","ExperimentalNativeJoystickReconnect","ExperimentalNativeJoystickMappingSwap","ExperimentalSDL3Probe","ExperimentalSDL3NativeOwner","ExperimentalSDL3ControllerSetup","ExperimentalSDL3ContextBridge","ExperimentalSDL3GameplayBindings","ExperimentalSDL3XboxRTSwing","ExperimentalSDL3UniversalGameplay","ExperimentalSDL3GameOverConfirm","ExperimentalSDL3GameOverOwnerProbe","ExperimentalSDL3GameOverNativeOwner"
+  "ExperimentalAltTabReacquire","ExperimentalDI8CreateDeviceTrace",
+  "ExperimentalGamepadStart","ControllerProfile","ControllerEnterButtons","ControllerBackButton","ControllerPauseButton","ControllerPS1Preview","ControllerXbox360Preview","ControllerXbox360RTSwing","ControllerPS1OptionsSkip","ControllerPS1DeepStartProbe","ControllerPS1DisableNativeStart","ControllerPS1ReadOnlyJoystick","ControllerAutoDisableMouse","MouseEnabled","ControllerPS1QuitTrace","ControllerPS1PostQuitGuard","ControllerPS1InputFlightRecorder","ControllerPS1TransitionEdgeOwnership","ExperimentalNativeJoystickUnplugGuard","ExperimentalNativeJoystickReconnect","ExperimentalNativeJoystickMappingSwap","ExperimentalSDL3Probe","ExperimentalSDL3NativeOwner","ExperimentalSDL3ControllerSetup","ExperimentalSDL3ContextBridge","ExperimentalSDL3GameplayBindings","ExperimentalSDL3XboxRTSwing","ExperimentalSDL3UniversalGameplay","ExperimentalSDL3GameOverConfirm"
 };
 /* Preserve the audio-routing prototype key in old INIs without enabling
   * its suspended Windows endpoint hook on this SDL3 development branch. */
@@ -89,10 +97,10 @@ static const char *const spider_ini_joy[]={"Jump","Kick","Punch","Web","Aim","Zi
 static const char *const spider_ini_internal[]={"RawHex"};
 static int spider_ini_key_known(const char *section,const char *key) {
   if(!spider_ini_icmp(section,"Debug"))return SPIDER_INI_IN(key,spider_ini_debug);
-  if(!spider_ini_icmp(section,"System"))return SPIDER_INI_IN(key,spider_ini_system);
+  if(!spider_ini_icmp(section,"System"))return SPIDER_INI_IN(key,spider_ini_system) || SPIDER_INI_IN(key,spider_ini_legacy_system);
   if(!spider_ini_icmp(section,"Display"))return SPIDER_INI_IN(key,spider_ini_display);
   if(!spider_ini_icmp(section,"HUD"))return SPIDER_INI_IN(key,spider_ini_hud);
-  if(!spider_ini_icmp(section,"Input"))return SPIDER_INI_IN(key,spider_ini_input);
+  if(!spider_ini_icmp(section,"Input"))return SPIDER_INI_IN(key,spider_ini_input) || SPIDER_INI_IN(key,spider_ini_legacy_input);
   if(!spider_ini_icmp(section,"Audio"))return SPIDER_INI_IN(key,spider_ini_audio);
   if(!spider_ini_icmp(section,"Keyboard"))return SPIDER_INI_IN(key,spider_ini_keys);
   if(!spider_ini_icmp(section,"Joystick"))return SPIDER_INI_IN(key,spider_ini_joy);
