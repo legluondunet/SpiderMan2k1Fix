@@ -34,7 +34,8 @@ def test_sdl3_is_loaded_on_first_safe_foreground_flip_not_after_120():
 
 def test_early_start_selection_still_requires_neutral_fresh_press():
     assert "spider_sdl3_selection_start_edge(&selection,pads[i].id,pressed)" in PROBE
-    assert "matches==1u" in PROBE
+    assert "start_claims.count==1u" in PROBE
+    assert "spider_sdl3_selected_instance_valid(opened,num_pads," in PROBE
     assert "generic_selected_id=pads[i].id;" in PROBE
     assert "selection.active=previous;" in PROBE
     assert "if(!requested || flip<1)return;" in PROBE
