@@ -43,6 +43,11 @@ def test_old_ini_still_parses_but_joystick_is_not_a_runtime_override():
     assert 'save_joystick()' not in VIRTUAL
     assert 'joystick_header' not in VIRTUAL
     assert 'GetPrivateProfileStringA("Internal","RawHex"' in VIRTUAL
+    # Old [Joystick] keys are accepted by the parser but are removed
+    # when an existing config is migrated to SDL3-only operation.
+    for key in ("Jump","Kick","Punch","Web","Aim","Zipline","Swing"):
+        assert '{"Joystick","'+key+'"}' in VIRTUAL
+    assert "if(deprecated_ini_key(e->section,e->key))continue;" in VIRTUAL
     assert 'WritePrivateProfileStringA("Internal","RawHex"' in VIRTUAL
     assert 'memcpy(saved_cfg,cfg,CFG_SIZE);' in VIRTUAL
     assert 'load_keyboard();' in VIRTUAL and 'save_keyboard()' in VIRTUAL

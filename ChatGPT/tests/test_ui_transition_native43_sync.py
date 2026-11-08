@@ -207,7 +207,8 @@ def test_scene_reset_and_no_original_iris_never_paints(api):
 def test_v25_scene_sync_uses_native_current_frame_and_restores_all_d3d7_states():
     src=(ROOT/"spiderman2k1fix.c").read_text()
     hdr=(ROOT/"ui_transition_native43_sync.h").read_text()
-    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST" in src
+    assert "SPIDERMAN2K1FIX_UI_TRANSITION_NATIVE43_BOUNDS_TEST" not in src
+    assert "UI-TRANSITION-BOUNDS25: BUILT-IN" in src
     assert "SpiderNativeSync24_Reset(&ui_transition_sync24_frame)" in src
     assert "SpiderNativeSync24_Observe(&ui_transition_sync24_frame,v," in src
     assert "ui_transition_sync24_finish((IDirect3DDevice7*)self)" in src

@@ -72,6 +72,9 @@ def test_permanent_graphics_and_legacy_ini_migration_safe():
     assert "InterlockedExchange(&media_native_blt_anysize_enabled,0);" in CORE
     assert 'strcpy(configured_resolution,"Auto");' in GEN
     assert "deprecated_ini_count(ini)" in GEN
+    assert '{"Joystick","Jump"}' in GEN
+    assert '{"Joystick","Swing"}' in GEN
+    assert 'SPIDERMAN2K1FIX_VERSION_LABEL' in GEN
     assert "if(deprecated_ini_key(e->section,e->key))continue;" in GEN
     assert 'WritePrivateProfileStringA("Input","KeyboardLayout","Off",tmp)' in GEN
     assert 'snprintf(backup,sizeof(backup),"%s.old",ini)' in GEN

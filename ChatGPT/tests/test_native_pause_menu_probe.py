@@ -39,7 +39,7 @@ def test_no_obsolete_research_trace_or_unverified_stack_scanning():
 
 
 def test_native_pause_classifies_original_banner_border_and_text_without_touching_game_input():
-    for token in ("SPIDERMAN2K1FIX_NATIVE_ESC_43", "menu_upscale_active",
+    for token in ("menu_upscale_active",
                   "gameplay_4x3_active", "native_pause43_banner_flip",
                   "native_pause43_banner_top", "native_pause43_banner_bottom",
                   "rva!=0x00102C72UL", "D3DPT_TRIANGLEFAN",
@@ -55,8 +55,7 @@ def test_native_pause_classifies_original_banner_border_and_text_without_touchin
 
 
 def test_motif_requires_untextured_original_alpha_quads_at_exact_depth():
-    for token in ("SPIDERMAN2K1FIX_NATIVE_MOTIF_43",
-                  "native_pause43_enabled", "!native_esc43_supported_monitor()",
+    for token in ("native_pause43_enabled", "!native_esc43_supported_monitor()",
                   "gameplay_4x3_active",
                   "menu_upscale_active", "rva!=0x00102C72UL",
                   "SpiderNativePause43_MotifLayer(v[0].z,v[0].rhw)",
@@ -144,8 +143,7 @@ def test_native_esc_43_geometry_at_16_9_16_10_and_classic_4_3():
 
 
 def test_cursor_recognition_not_limited_to_old_screen_rectangle():
-    for token in ("SPIDERMAN2K1FIX_NATIVE_CURSOR_43",
-                  "native_pause43_banner_flip",
+    for token in ("native_pause43_banner_flip",
                   "!native_esc43_supported_monitor()",
                   "rva!=0x00102C72UL",
                   "expected_width", "expected_height",
@@ -232,27 +230,30 @@ def test_native_esc_children_are_permanent_but_depend_on_validated_hud():
     assert "supported_exe()" in startup
     assert "SpiderCfg_ValidateCurrentIni(log_line)" in startup
 
-def test_native_esc_hidden_manual_ini_children_and_parent_chain():
+def test_native_esc_pause_motif_and_cursor_are_permanently_hud_gated():
     pause=CORE.split("static void native_pause43_init(void)",1)[1].split(
         "static const void *maybe_correct_native_pause43(",1)[0]
     motif=CORE.split("static void native_motif43_init(void)",1)[1].split(
         "static const void *maybe_correct_native_motif43(",1)[0]
     cursor=CORE.split("static void native_cursor43_init(void)",1)[1].split(
         "static const void *maybe_correct_native_cursor43(",1)[0]
-    assert '"NativeESC4x3","SPIDERMAN2K1FIX_NATIVE_ESC_43"' in pause
-    assert '"NativeMotif4x3","SPIDERMAN2K1FIX_NATIVE_MOTIF_43"' in motif
-    assert '"NativeCursor4x3","SPIDERMAN2K1FIX_NATIVE_CURSOR_43"' in cursor
-    assert "InterlockedCompareExchange(&native_pause43_enabled,0,0)==1" in motif
-    assert "InterlockedCompareExchange(&native_pause43_enabled,0,0)==1" in cursor
-    for name in ("NativeESC4x3","NativeMotif4x3","NativeCursor4x3"):
-        assert name in DOC
-        for ini in ("ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini","ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini",
-                    "ChatGPT/tests/fixtures/SpiderMan2k1Fix.user-clean.ini"):
-            assert name not in (ROOT / ini).read_text(encoding="utf-8")
-        assert f'"{name}=' not in (ROOT / "virtual_spidey_cfg.c").read_text(encoding="utf-8")
-    for env in ("SPIDERMAN2K1FIX_NATIVE_ESC_43",
+    guard=CORE.split("static int native_esc43_hud_setting_enabled(void)",1)[1].split("}",1)[0]
+    assert "SpiderHudWidescreen_Installed()!=0" in guard
+    assert "native_esc43_hud_setting_enabled()" in pause
+    assert "native_esc43_hud_setting_enabled()" in motif
+    assert "native_esc43_hud_setting_enabled()" in cursor
+    for old in ("SPIDERMAN2K1FIX_NATIVE_ESC_43",
                 "SPIDERMAN2K1FIX_NATIVE_MOTIF_43",
                 "SPIDERMAN2K1FIX_NATIVE_CURSOR_43"):
-        assert env not in INI
+        assert old not in CORE
+    assert "InterlockedCompareExchange(&native_pause43_enabled,0,0)==1" in motif
+    assert "InterlockedCompareExchange(&native_pause43_enabled,0,0)==1" in cursor
+    for key in ("NativeESC4x3", "NativeMotif4x3", "NativeCursor4x3"):
+        assert key in DOC  # migration compatibility only
+        for ini in ("ChatGPT/tests/fixtures/SpiderMan2k1Fix.ini",
+                    "ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini",
+                    "ChatGPT/tests/fixtures/SpiderMan2k1Fix.user-clean.ini"):
+            assert key not in (ROOT/ini).read_text(encoding="utf-8")
+        assert f'"{key}=' not in (ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
     assert "menu_upscale_active" in CURSOR and "gameplay_4x3_active" in CURSOR
     assert "menu_upscale_active" in MOTIF and "gameplay_4x3_active" in MOTIF

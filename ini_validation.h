@@ -72,10 +72,9 @@ static const char *const spider_ini_display[]={
   "ExperimentalComicNativeAspect",
   "ExperimentalDisplayMenuLock"
 };
-/* Hidden debug opt-outs for the native ESC 4:3 children.
- * All are default ON under the HUDWidescreenFix master, but must
- * validate and survive INI recovery if explicitly set to 0.
- * Never emit these keys in a generated/default INI. */
+/* Historical native 4:3 ESC/HUD switches remain parseable solely for
+ * compatibility migration; all visual fixes are built in and exact-game
+ * verified. The flags are not consulted by rendering and never generated. */
 static const char *const spider_ini_hud[]={
   "HUDWidescreenFix","NativeESC4x3","NativeMotif4x3","NativeCursor4x3"
 };
