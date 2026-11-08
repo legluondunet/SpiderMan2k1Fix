@@ -689,11 +689,10 @@ static void gameover_probe_snapshot(uint32_t owner,unsigned context,
     (unsigned long)transition,good?"OK":"UNAVAILABLE");
   report(line);
 }
-static int pulse(unsigned scan,const char *context) {
-  if(pulse_scan || !send_scan(scan,0))return 0;
+static void pulse(unsigned scan,const char *context) {
+  if(pulse_scan || !send_scan(scan,0))return;
   pulse_scan=scan;
   (void)context;
-  return 1;
 }
 void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
                                  int bink,int native_pause) {
@@ -1027,11 +1026,16 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
         pulse(0x01u,"menu Back/Pause resume");
       else if((menu_buttons&(1u<<4)) && !(menu_previous&(1u<<4))) {
         if(context==SPIDER_UNIVERSAL_CTX_MENU) {
-          if(pulse(0x1cu,"menu Confirm")) {
-            menu_confirm_pending=1;
-            menu_confirm_hold_flips=1u;
-            log_menu_confirm("SDL3-MENU-CONFIRM: South/Confirm injected Enter KEYDOWN accepted by OS; delayed KEYUP armed (DI reception unverified)");
-          } else log_menu_confirm("SDL3-MENU-CONFIRM: Enter KEYDOWN refused (pending prior pulse or SendInput failure)");
+          /* Keep the old void pulse() API used by movie/3D safety hooks,
+           * and authorize the delayed release ONLY for a new menu pulse. */
+          if(!pulse_scan) {
+            pulse(0x1cu,"menu Confirm");
+            if(pulse_scan==0x1cu) {
+              menu_confirm_pending=1;
+              menu_confirm_hold_flips=1u;
+              log_menu_confirm("SDL3-MENU-CONFIRM: South/Confirm injected Enter KEYDOWN accepted by OS; delayed KEYUP armed (DI reception unverified)");
+            } else log_menu_confirm("SDL3-MENU-CONFIRM: Enter KEYDOWN refused by SendInput");
+          } else log_menu_confirm("SDL3-MENU-CONFIRM: Enter KEYDOWN deferred while prior pulse pending");
         } else pulse(0x1cu,"menu Confirm");
       }
     }

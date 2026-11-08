@@ -43,7 +43,8 @@ def test_save_game_confirm_holds_input_without_changing_video_or_pause():
         "int SpiderSDL3Universal_ReleaseSyntheticReturnBefore3D(",1)[0]
     menu=source.split("if(context!=SPIDER_UNIVERSAL_CTX_3D) {",1)[1].split(
         "  menu_arm=0;menu_previous=0;",1)[0]
-    assert 'if(pulse(0x1cu,"menu Confirm"))' in menu
+    assert 'if(!pulse_scan)' in menu
+    assert 'if(pulse_scan==0x1cu)' in menu
     assert 'if(context==SPIDER_UNIVERSAL_CTX_MENU)' in menu
     assert "menu_confirm_hold_flips=1u;" in menu
     assert "menu_confirm_pending=1;" in menu
