@@ -13,20 +13,17 @@ def _read(path):
     return (ROOT/path).read_text(encoding="utf-8")
 
 
-def test_native_owner_remains_separate_opt_in_without_mapping_swap():
+def test_legacy_native_owner_cannot_be_enabled_as_sdl3_fallback():
     ini=_read("virtual_spidey_cfg.c")
     probe=_read("sdl3_gamepad_probe.c")
     native=_read("native_joystick_reconnect.c")
-    assert '"ExperimentalSDL3NativeOwner=0\\r\\n"' in ini
-    assert '"ExperimentalSDL3UniversalGameplay=1\\r\\n"' in ini
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3NativeOwner",1,ini)==1' in probe
-    for key in ("ExperimentalNativeJoystickUnplugGuard",
-                "ExperimentalNativeJoystickReconnect"):
-        assert f'GetPrivateProfileIntA("Input","{key}",1,ini)!=1' in probe
-    assert '"ExperimentalNativeJoystickMappingSwap",1,ini)!=1' not in probe
+    assert '"ExperimentalSDL3NativeOwner=0' not in ini
+    assert '"ExperimentalSDL3UniversalGameplay=1' not in ini
     assert 'native_owner_requested=0;' in probe
-    assert "SDL3-OWNER: REFUSED missing native UnplugGuard+Reconnect" in probe
-    assert "if(SpiderSDL3Probe_NativeOwnerEnabled())" in native
+    assert "requested=1;" in probe
+    assert "universal_requested=1;" in probe
+    assert "if(SpiderSDL3Universal_Enabled())return;" in native
+    assert '"ExperimentalNativeJoystickMappingSwap",1,ini)!=1' not in probe
 
 
 def test_native_owner_uses_verified_original_game_device_only():

@@ -69,5 +69,5 @@ def test_unclaimed_guard_restores_native_on_focus_or_modal_loss():
     assert "native_unclaimed_guard=0;" in restore
     assert 'restore_original("focus or window lost");' in focus
     assert 'restore_original("opening controller configuration modal");' in modal
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3UniversalGameplay",1,ini)==1' in src
+    assert "requested=1; /* SDL3-only gameplay, no legacy-INI opt-out. */" in src
     assert "native_unclaimed_guard=0;native_guard_reports=0;" in src

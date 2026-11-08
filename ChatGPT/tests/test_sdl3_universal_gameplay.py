@@ -84,7 +84,7 @@ def test_universal_profile_actions_axes_dpad_and_pause_edges(tmp_path):
     subprocess.run([str(exe)],check=True)
 
 
-def test_universal_runtime_is_opt_in_and_mutually_exclusive():
+def test_universal_runtime_is_built_in_and_mutually_exclusive():
     game=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
     live=(ROOT/"sdl3_gameplay_live.c").read_text(encoding="utf-8")
     ui=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
@@ -94,9 +94,9 @@ def test_universal_runtime_is_opt_in_and_mutually_exclusive():
     cfg=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
     ini=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
     build=(ROOT/"build.sh").read_text(encoding="utf-8")
-    assert 'ExperimentalSDL3UniversalGameplay=1' in cfg
+    assert '"ExperimentalSDL3UniversalGameplay=1' not in cfg
     assert '"ExperimentalSDL3UniversalGameplay"' in ini
-    assert '"ExperimentalSDL3UniversalGameplay",1,ini)==1' in backend
+    assert "requested=1; /* SDL3-only gameplay, no legacy-INI opt-out. */" in backend
     assert "old fixed native action-map backend retired" in live
     assert 'sdl3_universal_gameplay.c' in build
     assert '#include "sdl3_universal_gameplay.h"' in game

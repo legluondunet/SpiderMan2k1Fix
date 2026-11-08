@@ -98,11 +98,10 @@ static const char *const button_names[SPIDER_SDL3_BUTTON_COUNT]={
 void SpiderSDL3ControllerSetup_Init(const char *ini,
                                     void (*logger)(const char *)) {
   setup_report=logger;
-  setup_enabled=ini &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3ControllerSetup",1,ini)==1 &&
-    GetPrivateProfileIntA("Input","ExperimentalSDL3Probe",1,ini)==1;
+  (void)ini; /* SDL3 setup is a core feature; the INI cannot disable it. */
+  setup_enabled=1;
   if(setup_enabled && setup_report)
-    setup_report("SDL3-SETUP: experimental native Joystick menu ENABLED (persistent model profiles; original gameplay unchanged)");
+    setup_report("SDL3-SETUP: built-in controller configuration enabled (persistent SDL3 model profiles)");
 }
 int SpiderSDL3ControllerSetup_Enabled(void) {return setup_enabled;}
 static void status(SpiderSDL3SetupUI *ui,const char *message) {

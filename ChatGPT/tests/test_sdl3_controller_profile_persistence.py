@@ -139,7 +139,7 @@ def test_win32_controller_storage_is_atomic_isolated_and_fallback_safe():
             assert '"Spidey.cfg"' not in store
         else:
             assert forbidden not in store
-    assert "SpiderSDL3ProfileStore_Init(requested && ini &&" in probe
+    assert "SpiderSDL3ProfileStore_Init(1,logger);" in probe
     assert "bindings_loaded[slot]" in probe
     assert "SpiderSDL3ProfileStore_Load(vid,pid,&trial)" in probe
     assert "SpiderSDL3ProfileStore_Save(candidate)" in probe

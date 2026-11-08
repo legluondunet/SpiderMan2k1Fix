@@ -16,11 +16,11 @@ VALIDATION=(ROOT/"ini_validation.h").read_text(encoding="utf-8")
 GENERATED=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
 
 
-def test_native_gameover_confirmation_defaults_on_but_keeps_user_optout():
-    assert "ExperimentalSDL3GameOverConfirm=1\\r\\n" in GENERATED
+def test_native_gameover_confirmation_is_mandatory_and_exact_owner_gated():
+    assert "ExperimentalSDL3GameOverConfirm=1\\r\\n" not in GENERATED
     assert "ExperimentalSDL3GameOverConfirm=0" not in GENERATED
     assert '"ExperimentalSDL3GameOverConfirm"' in VALIDATION
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverConfirm",1,ini)==1' in BACKEND
+    assert "gameover_trial_enabled=1;" in BACKEND
     assert "if(gameover_trial_enabled)" in BACKEND
     assert "gameover_trial_candidate(context,menu,gameplay,bink,native_pause)" in BACKEND
     assert "if(context!=SPIDER_UNIVERSAL_CTX_3D)" in BACKEND
@@ -155,7 +155,7 @@ def test_owner_probe_does_not_modify_gameover_trial_or_3d_action_routing():
     assert "gameover_owner_probe_events=0;" in BACKEND
     # The original opt-in gate and one-shot Space suppression stay
     # unchanged. No automatic/native menu ownership is claimed.
-    assert 'GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverConfirm",1,ini)==1' in BACKEND
+    assert "gameover_trial_enabled=1;" in BACKEND
     assert "gameover_trial_candidate(context,menu,gameplay,bink,native_pause)" in BACKEND
     assert 'pulse(0x1cu,"native GAME OVER Return confirmation");' in BACKEND
     assert "if(!update_keys(desired,scans))" in BACKEND
@@ -169,7 +169,7 @@ def test_passive_owner_probe_is_independent_of_enter_injection():
     generated=(ROOT/"virtual_spidey_cfg.c").read_text(encoding="utf-8")
     assert '"ExperimentalSDL3GameOverOwnerProbe"' in validation
     assert "ExperimentalSDL3GameOverOwnerProbe=1" not in generated
-    assert "ExperimentalSDL3GameOverConfirm=1\\r\\n" in generated
+    assert "ExperimentalSDL3GameOverConfirm=1\\r\\n" not in generated
     assert "if(gameover_trial_enabled || gameover_owner_probe_enabled)" in BACKEND
     assert "if(gameover_trial_enabled)\n      trial=spider_sdl3_gameover_trial_step(" in BACKEND
     assert "if(trial) {" in BACKEND
@@ -206,18 +206,18 @@ def test_native_gameover_owner_wrapper_is_exact_retained_call_not_a_new_menu():
     assert "gameover_native_owner_hook_installed=memcmp(" in installer
 
 
-def test_strict_owner_is_separate_opt_in_and_fails_closed():
+def test_strict_gameover_owner_is_always_required_and_fails_closed():
     assert '"ExperimentalSDL3GameOverNativeOwner"' in (
         ROOT/"ini_validation.h"
     ).read_text()
     assert "ExperimentalSDL3GameOverNativeOwner=1" not in (
         ROOT/"virtual_spidey_cfg.c"
     ).read_text()
-    assert "ExperimentalSDL3GameOverConfirm=1\\r\\n" in (
+    assert "ExperimentalSDL3GameOverConfirm=1\\r\\n" not in (
         ROOT/"virtual_spidey_cfg.c"
     ).read_text()
-    assert '"ExperimentalSDL3GameOverNativeOwner",0,ini)==1' in BACKEND
-    assert "gameover_native_owner_trial_enabled=gameover_trial_enabled ||" in BACKEND
+    assert "gameover_native_owner_trial_enabled=1;" in BACKEND
+    assert "gameover_native_owner_trial_enabled=1;" in BACKEND
     assert "authenticated original native owner is mandatory" in BACKEND
     assert "if(requested && gameover_native_owner_trial_enabled)" in BACKEND
     assert "int installed=spider_gameover_owner_install_hook();" in BACKEND
@@ -235,7 +235,7 @@ def test_strict_owner_is_separate_opt_in_and_fails_closed():
 def test_no_legacy_fallback_in_current_main_gameover_runtime():
     """Neither the default mode nor an explicit confirm=1 may permit a
     request-2-only Return: the original game-owner hook is mandatory."""
-    assert "gameover_native_owner_trial_enabled=gameover_trial_enabled ||" in BACKEND
+    assert "gameover_native_owner_trial_enabled=1;" in BACKEND
     assert "if(requested && gameover_native_owner_trial_enabled)" in BACKEND
     assert "spider_gameover_owner_install_hook()" in BACKEND
     assert "SDL3-GAMEOVER-NATIVE: hook REFUSED" in BACKEND
@@ -262,8 +262,8 @@ def test_confirm_auto_install_never_bypasses_native_owner():
     owner hook. No unverified candidate can authorize Return."""
     init=BACKEND.split("void SpiderSDL3Universal_Init(",1)[1].split(
         "int SpiderSDL3Universal_Enabled(",1)[0]
-    assert init.index('GetPrivateProfileIntA("Input","ExperimentalSDL3GameOverConfirm",1,ini)==1') < (
-        init.index("gameover_native_owner_trial_enabled=gameover_trial_enabled ||"))
+    assert init.index("gameover_trial_enabled=1;") < (
+        init.index("gameover_native_owner_trial_enabled=1;"))
     assert "if(requested && gameover_native_owner_trial_enabled)" in init
     assert "spider_gameover_owner_install_hook()" in init
     assert "experimental" in BACKEND.lower()
@@ -276,9 +276,9 @@ def test_confirm_auto_install_never_bypasses_native_owner():
     assert "if(gameover_trial_enabled)" in gate
 
 
-def test_default_on_gameover_mode_preserves_exact_owner_and_disabled_state():
-    assert "GetPrivateProfileIntA(\"Input\",\"ExperimentalSDL3GameOverConfirm\",1,ini)==1" in BACKEND
-    assert "gameover_native_owner_trial_enabled=gameover_trial_enabled ||" in BACKEND
+def test_built_in_gameover_mode_preserves_exact_owner_and_neutral_state():
+    assert "gameover_trial_enabled=1;" in BACKEND
+    assert "gameover_native_owner_trial_enabled=1;" in BACKEND
     assert "if(requested && gameover_native_owner_trial_enabled)" in BACKEND
     assert "if(gameover_trial_enabled)" in BACKEND
     gate=BACKEND.split("if(gameover_trial_enabled || gameover_owner_probe_enabled) {",1)[1].split(
@@ -290,4 +290,4 @@ def test_default_on_gameover_mode_preserves_exact_owner_and_disabled_state():
     assert "spider_sdl3_gameover_trial_step(&gameover_trial,candidate," not in gate
     assert "pulse(0x1cu,\"native GAME OVER Return confirmation\")" in gate
     assert "ExperimentalSDL3GameOverConfirm=0" not in GENERATED
-    assert "ExperimentalSDL3GameOverConfirm=1\\r\\n" in GENERATED
+    assert "ExperimentalSDL3GameOverConfirm=1\\r\\n" not in GENERATED

@@ -20,15 +20,7 @@ def _new_ini():
 
 def test_new_generated_config_matches_only_live_controller_settings():
     cfg=_new_ini()
-    expected={
-      "ExperimentalSDL3Probe":"1",
-      "ExperimentalSDL3NativeOwner":"0",
-      "ExperimentalSDL3ControllerSetup":"1",
-      "ExperimentalSDL3UniversalGameplay":"1",
-      "ExperimentalNativeJoystickUnplugGuard":"1",
-      "ExperimentalNativeJoystickReconnect":"1",
-      "ExperimentalAltLatchRecovery":"1",
-    }
+    expected={"ExperimentalAltLatchRecovery":"1"}
     for key,value in expected.items():
         assert cfg["Input"][key]==value
         assert f'"{key}={value}\\r\\n"' in SRC
@@ -58,13 +50,14 @@ def test_old_controller_preset_options_are_ignored_not_synthesized():
 
 
 def test_native_safety_and_universal_default_remain_guarded():
-    assert '"ExperimentalSDL3Probe",1,ini)==1' in PROBE
-    assert '"ExperimentalSDL3NativeOwner",1,ini)==1' in PROBE
-    assert '"ExperimentalSDL3UniversalGameplay",1,ini)==1' in ADAPTER
-    assert '"ExperimentalNativeJoystickUnplugGuard",1,ini)==1' in UNPLUG
-    assert '"ExperimentalNativeJoystickReconnect",1,ini)==1' in RECONNECT
+    assert "requested=1;" in PROBE
+    assert "universal_requested=1;" in PROBE
     assert "native_owner_requested=0;" in PROBE
-    assert "SDL3-OWNER: REFUSED missing native UnplugGuard+Reconnect" in PROBE
+    assert "requested=1; /* SDL3-only gameplay, no legacy-INI opt-out. */" in ADAPTER
+    assert "gameover_trial_enabled=1;" in ADAPTER
+    assert "SpiderSDL3ProfileStore_Init(1,logger)" in PROBE
+    assert "InterlockedExchange(&requested,1);" in UNPLUG
+    assert "if(SpiderSDL3Universal_Enabled())return;" in RECONNECT
     assert "spider_alt_latch_preflight()" in ALT
     assert "GetAsyncKeyState(VK_TAB)" in ALT
 
