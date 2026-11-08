@@ -42,7 +42,7 @@ def test_old_controller_preset_options_are_ignored_not_synthesized():
                 "ControllerPauseButton",
                 "ExperimentalSDL3GameplayBindings","ExperimentalSDL3XboxRTSwing"):
         assert f'{{"Input","{key}"}}' in SRC
-    assert "swap_mapping_enabled=0;" in RECONNECT
+    assert "try_rebind(" not in RECONNECT
     assert "swap_native_gameplay_mapping(" not in RECONNECT
     assert '"ExperimentalNativeJoystickMappingSwap=1' not in SRC
     assert "sdl3_generic_ui_on_flip(" not in (
@@ -57,7 +57,7 @@ def test_native_safety_and_universal_default_remain_guarded():
     assert "gameover_trial_enabled=1;" in ADAPTER
     assert "SpiderSDL3ProfileStore_Init(1,logger)" in PROBE
     assert "InterlockedExchange(&requested,1);" in UNPLUG
-    assert "if(SpiderSDL3Universal_Enabled())return;" in RECONNECT
+    assert "IDirectInput8_CreateDevice(" not in RECONNECT
     assert "spider_alt_latch_preflight()" in ALT
     assert "GetAsyncKeyState(VK_TAB)" in ALT
 

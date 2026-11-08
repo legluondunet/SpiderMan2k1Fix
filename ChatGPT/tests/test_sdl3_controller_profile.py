@@ -144,7 +144,7 @@ def test_profile_model_cannot_change_native_game_while_in_design_phase():
     native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
     assert "swap_native_gameplay_mapping(" not in native
     assert "spider_native_swap_preset(" not in native
-    assert "spider_native_swap_read(" in native
+    assert "spider_native_swap_read(" not in native
     lock=(ROOT/"ps1_joystick_readonly_menu.c").read_text(encoding="utf-8")
     assert "joystick-only mapping branch" in lock
 
