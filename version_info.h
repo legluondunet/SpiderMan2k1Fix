@@ -2,7 +2,7 @@
 #define SPIDERMAN2K1FIX_VERSION_INFO_H
 
 /* Semantic version; build.sh appends the exact source commit for traceability. */
-#define SPIDERMAN2K1FIX_VERSION "1.1.0"
+#define SPIDERMAN2K1FIX_VERSION "2.0.0-rc.1"
 #ifndef SPIDERMAN2K1FIX_COMMIT
 #define SPIDERMAN2K1FIX_COMMIT "local"
 #endif

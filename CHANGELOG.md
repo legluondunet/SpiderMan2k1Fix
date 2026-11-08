@@ -1,108 +1,60 @@
 # Changelog
 
-## Unreleased — Universal SDL3 gameplay enabled by default
+## Unreleased — v2.0.0-rc.1 (November 8, 2026)
 
-- Promote the hardware-validated SDL3 universal keyboard bridge to the **factory default** (`ExperimentalSDL3UniversalGameplay=1`) and to the runtime fallback when the setting is absent. Both SDL3 discovery and controller setup remain enabled; old fixed per-vendor mappings remain retired.
-- Preserve an explicit `ExperimentalSDL3UniversalGameplay=0` for players who want to disable the universal bridge. Existing valid INIs are not overwritten, including earlier configurations containing `=0`.
-- Keep explicit Start selection, neutral-first input ownership, safe native DirectInput isolation, disconnected-device protection, focus-loss key release and keyboard fallback. No controller is claimed automatically.
-- The preceding PR #92 was validated on GE-Proton with Xbox 360, PS3 and DS4 hardware, including handoff and Alt+Tab. Native Windows hardware validation remains deferred.
+**Release candidate; not yet a published v2.0.0 stable release.** Only the
+Windows 11 and Wine/Proton smoke tests of this exact RC package remain to
+authorize the final release. The former v1.1.0 release remains available.
 
-## Historical — first-use SDL3 refactor PR #107 (merged through #92, not separately released)
+### Controls and SDL3
 
-This experimental refactor physically removes the previous Sony DS4 / Xbox 360
-hard-coded DirectInput action mapping tables, boot-time configuration overlays,
-old secondary menu/3D button bridge, vendor-specific native RAM button-table
-swaps, and associated obsolete tests. SDL3's normal built-in controller
-recognition remains unchanged: a controller with no saved per-model profile
-receives generic SDL3 semantic defaults. The retail game retains its original
-Joystick settings; universal SDL3 gameplay now defaults ON (with explicit
-`=0` opt-out) and still requires fresh Start ownership.
+- SDL3 is the **only supported controller mapping backend**, enabled by default
+  without player-facing experimental switches. Press **Start** on a mapped
+  controller, then release controls to neutral before playing; keyboard
+  fallback remains independent. Per-model profiles remain supported.
+- Start selection is available from the **first safe foreground intro frame**.
+  SDL3 handles menus, skippable Bink movies, gameplay, Pause and GAME OVER.
+- Controller switching and unplug/replug remain guarded by neutral-first
+  selection, foreground ownership, unique mapped device checks and the
+  original game's separately preserved fatal-DirectInput-unplug safety hook.
+  Unreachable legacy native reconnect code was retired.
+- Remove obsolete `[Joystick]`, QuickExit F10/F12, native-owner and SDL3
+  experimental settings from fresh INIs while preserving valid player
+  preferences and the original 252-byte `[Internal] RawHex`; update explanatory
+  comments and one-time migration of recognized older generated INIs.
+- Built-in guarded Left Alt recovery and background focus pause protect
+  keyboard/gamepad input; Bink and DirectSound media are synchronized.
 
-The old preview/RT-Swing/native-mapping options are retired for new INIs.
-Relevant source contracts now test clean first-use Xbox, PS3 neutral gating,
-legacy handoff removal, native disconnect safety, and the owned Bink Return
-release. **This was the pre-validation status; CI and GE-Proton hardware acceptance subsequently passed in PR #92.**
-Historical tests/claims below describe earlier staging builds, not PR #107.
+### Graphics, compatibility and packaging
 
-### Earlier SDL3 staging integration (historical tests)
+- Permanent source-verified widescreen HUD, centered 4:3 native Pause/ESC
+  artwork, original veil/outer gutters and synchronized entry-iris curtains;
+  original 4:3 rendering and HUD draw ordering are preserved.
+- Keep the previously released No-CD, native resolution/borderless,
+  30 FPS default limiter, original PNG capture and native WAV-loader
+  corrections.
+- Bundle the official unmodified SDL3 3.4.18 Windows x86 runtime, its license,
+  `winmm.dll`, `SpiderMan2k1Fix.dll`, and the optional native Linux X11
+  focus helper in a single directly extractable CI artifact.
 
-**Not released or merged.** This staging branch combines the tested PR #91
-runtime with new **default-enabled SDL3 and Left Alt recovery**. The default
-settings have now been exercised in a **PR #92 test-merge build**
-on Windows 11 and Wine/GE-Proton, with physical DS4/Xbox 3D controls
-confirmed. A freshly generated INI and the latest Bink handoff
-adjustment still require on-device verification. The released
-v1.1.0 executable and its defaults remain unchanged.
+### Verification scope and release gate
 
-### Tested changes in the combined branch
-
-- **Sony DualShock 4 and Xbox 360-compatible gamepads:** Default-on SDL3
-  selection and handoff to the original DirectInput game controller,
-  controller-specific profiles, menu/video Cross/A confirmation and
-  Circle/B cancellation, native 3D controls and guarded Xbox RT Swing.
-  The supported DS4 `054C:09CC` and Xbox `045E:028E` controllers were
-  tested individually and together on Windows 11. Wine/Proton trials
-  also exercised Xbox 3D gameplay and controller-backed focus wake.
-  **These controller features are enabled by default in new INIs**;
-  explicit `=0` overrides remain respected. Runtime identity and native
-  input/mapping guards remain fail-closed.
-  Generic DS3, Steam Deck and arbitrary controllers are not validated.
-- **Permanent game-only mouse disable:** Original mouse cursor, menu
-  hit-testing and mouse polling are OFF even if an old INI contains
-  `MouseEnabled=1`; keyboard/controller navigation remains available.
-  The operating-system desktop pointer is not disabled and is
-  restored when switching away from the game.
-- **Default-on Left Alt recovery after Alt+Tab:** Strictly guarded,
-  `[Input] ExperimentalAltLatchRecovery=1` repairs a
-  stale *original game* Left Alt latch after a confirmed external
-  focus-return; it does not rewrite real keyboard state or synthesize
-  global Alt/Tab keys. The combined native Windows 11 test logged
-  **six actual `0x7F->0x80` repairs** and no stuck keys reported.
-- **Focus pause and media stability:** The combined Windows 11 test
-  completed **9/9 background PAUSED/resume cycles**, restored **37/37
-  active DirectSound voices** and recorded seven successful Bink
-  pause/resume pairs, supported by the maintainer's **20/20 physical
-  checks**. Under Wine/Proton, the background PAUSED ribbon may be
-  delayed until a video transition or late/absent in 3D. This is an
-  **accepted limitation only when game controls, rendering and audio
-  resume without functional regressions**.
-- **Bink #4 to first 3D frame:** When SDL3 has injected a short
-  synthetic Return key press to skip the movie, release that
-  *owned* Return before the original game input safety wait.
-  The physical Enter/Space key-up barrier stays intact and
-  continues to avoid unintended 3D cutscene skipping. This
-  **latest runtime change requires its own game test**.
-- **Configuration and diagnostics:** Obsolete mouse keys are recognized
-  for migration but ignored at runtime. An INI auto-repair triggered
-  by **two duplicate `MouseEnabled` entries** was correctly diagnosed
-  and the regenerated file was subsequently validated. Detailed
-  controller, native input and focus telemetry remains behind opt-in
-  debug settings.
-- **Documentation:** Updated installation/gamepad information and
-  a player-focused FAQ separating intentional lack of game cursor
-  from a missing desktop pointer, and distinguishing game-audio faults.
-  Installation now packages the official Windows x86 SDL3 runtime
-  under the patch subdirectory.
-
-### Release and research boundaries
-
-The previous combined opt-in build passed **744 regression tests and
-Windows x86 CI packaging**, plus Windows 11 and Wine/Proton game tests
-on the reported hardware. **No release is authorized by these results
-alone:** the final merged tree now derives from the newer `main`, but
-**first-run factory INI and post-Bink-fix game checks remain required**,
-along with exact-head CI and an approved release version/tag.
-Previously generated log files are not evidence that the INI was newly
-generated. The separate DS4 audio-routing PR #86, Xbox profile
-prototype #78, and generic controller research remain outside the
-tested-release claims.
-
-For full source-linked evidence see
-[combined hardware acceptance](docs/references/INTEGRATION_XBOX_MOUSE_ALT_FOCUS_ACCEPTANCE.md)
-and the [release-readiness audit](docs/references/INTEGRATION_RELEASE_READINESS_20261101.md).
-The complete superseded development diary (including experimental
-hypotheses and earlier unvalidated statements) is preserved
-[verbatim in the historical changelog archive](docs/references/CHANGELOG_EXPERIMENT_HISTORY_PRE_20261101.md).
+- **Accepted before RC:** Windows 11 native DS4 (`054C:09CC`) and Xbox 360
+  (`045E:028E`), repeated Alt+Tab and controller changes, plus earlier
+  Linux Wine/Proton controller/graphics regression sessions. The source
+  tested as `v1.1.0-b66c6c4` was file-identical to final merged `main`
+  at `c746080d`.
+- **Required for final v2.0.0:** a green *exact RC commit* Windows x86 CI
+  (tests, DLLs, SDL3, Linux helper and package), followed by the maintainer's
+  real Windows and Wine smoke test of that downloaded RC.
+- **Not yet claimed:** Steam Deck/Steam Input hardware, native analog-axis
+  preservation, every SDL3 device, and native Windows PS3 hardware. These
+  do not become implicitly validated by a Windows build.
+- No automatic release or tag is created by the CI workflow. See
+  [RC test plan](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
+- Historical development reports and superseded experimental findings remain
+  in the [research archive](docs/references/CHANGELOG_EXPERIMENT_HISTORY_PRE_20261101.md)
+  and [integration acceptance](docs/references/INTEGRATION_XBOX_MOUSE_ALT_FOCUS_ACCEPTANCE.md).
 
 ## 1.1.0 — October 27, 2026
 

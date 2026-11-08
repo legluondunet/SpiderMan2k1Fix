@@ -2,6 +2,7 @@
 from pathlib import Path
 import subprocess
 import shutil
+import re
 
 ROOT=Path(__file__).resolve().parents[2]
 CORE=(ROOT/"spiderman2k1fix.c").read_text()
@@ -18,7 +19,7 @@ def test_version_in_both_dlls():
     assert '#include "version_info.h"' in CORE
     assert '#include "version_info.h"' in MENU
     assert '#include "version_info.h"' in (ROOT/"winmm_proxy.c").read_text()
-    assert '"1.1.0"' in (ROOT/"version_info.h").read_text()
+    assert re.search(r'#define SPIDERMAN2K1FIX_VERSION "2\\.0\\.0(?:-rc\\.\\d+)?"', (ROOT/"version_info.h").read_text())
 
 def test_menu_classifier_blocks_movies_and_gameplay():
     assert "menu_active && menu_draws>=3 && movie_blits==0" in CORE
@@ -44,7 +45,8 @@ def test_preprocessor_version_expansion():
     src='#include "version_info.h"\nconst char *v=SPIDERMAN2K1FIX_VERSION_LABEL;\n'
     result=subprocess.run(["gcc","-E","-P","-x","c","-I",str(ROOT),"-"],
                           input=src,text=True,capture_output=True,check=True)
-    assert '"SpiderMan2k1Fix v" "1.1.0" "-" "local"' in result.stdout
+    version=re.search(r'#define SPIDERMAN2K1FIX_VERSION "([^"]+)"', (ROOT/"version_info.h").read_text()).group(1)
+    assert f'"SpiderMan2k1Fix v" "{version}" "-" "local"' in result.stdout
 
 def test_comic_style_matches_original_menu_without_changing_version():
     # Visual effect is limited to GDI glyphs in the existing menu footer.

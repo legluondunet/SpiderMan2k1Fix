@@ -1,30 +1,29 @@
-"""The public changelog must not turn the research diary into release claims."""
+"""The public changelog must describe live policy, not superseded test plans."""
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
 CHANGELOG=(ROOT/"CHANGELOG.md").read_text(encoding="utf-8")
 ARCHIVE=(ROOT/"docs/references/CHANGELOG_EXPERIMENT_HISTORY_PRE_20261101.md").read_text(encoding="utf-8")
 README=(ROOT/"README.md").read_text(encoding="utf-8")
+RC_PLAN=(ROOT/"docs/references/RELEASE_2_0_RC_TEST_PLAN.md").read_text(encoding="utf-8")
 
 
-def test_unreleased_integration_documents_default_on_without_release_claim():
-    assert CHANGELOG.startswith("# Changelog\n\n## Unreleased")
+def test_candidate_explains_current_sdl3_policy_and_no_early_release():
+    assert CHANGELOG.startswith("# Changelog\n\n## Unreleased — v2.0.0-rc.1")
     head=CHANGELOG.split("## 1.1.0 — October 27, 2026",1)[0]
-    assert "## Unreleased — Universal SDL3 gameplay enabled by default" in head
-    assert "merged through #92" in head
-    assert "Existing valid INIs are not overwritten" in head
-    assert "enabled by default" in head
-    assert "ExperimentalAltLatchRecovery=1" in head
-    assert "Default-on" in head
-    assert "20/20 physical" in head
-    assert "37/37" in head
-    assert "DS3, Steam Deck and arbitrary controllers are not validated" in head
-    assert "PAUSED ribbon may be" in head
-    assert "MouseEnabled=1" in head
-    assert "release is authorized by these results" in head
+    for phrase in ("only supported controller mapping backend", "first safe foreground",
+                   "neutral-first", "DirectInput", "QuickExit F10/F12", "RawHex",
+                   "Windows 11", "Wine/Proton", "Steam Deck", "final v2.0.0",
+                   "original veil", "SDL3 3.4.18", "not yet a published"):
+        assert phrase in head, phrase
+    assert "ExperimentalSDL3UniversalGameplay=0" not in head
+    assert "Native Windows hardware validation remains deferred" not in head
+    assert "Not released or merged" not in head
+    assert "README" in RC_PLAN and "Windows" in RC_PLAN and "Wine" in RC_PLAN
+    assert "not published" in RC_PLAN.lower()
 
 
-def test_published_changelog_entries_survive_below_unreleased():
+def test_historical_release_entries_remain_intact():
     assert CHANGELOG.count("## 1.1.0 — October 27, 2026")==1
     assert CHANGELOG.count("## 1.0.0 — October 25, 2026")==1
     assert CHANGELOG.index("## 1.1.0")<CHANGELOG.index("## 1.0.0")
@@ -34,12 +33,12 @@ def test_published_changelog_entries_survive_below_unreleased():
     assert "docs/references/diagnostics/audio/PKR_NATIVE_AUDIO_REPAIR.md" in CHANGELOG
 
 
-def test_old_research_diary_preserved_as_explicitly_superseded_archive():
+def test_research_archive_is_retained_not_release_policy():
     assert len(ARCHIVE)>52000
     assert "preserved verbatim" in ARCHIVE
     assert "not the authoritative" in ARCHIVE
-    assert "## Unreleased — experimental SDL3-selected DirectInput owner (DRAFT PR #80, NOT hardware-validated)" in ARCHIVE
-    assert "MouseEnabled=1" in ARCHIVE  # historical obsolete policy allowed here, NOT promoted
+    assert "## Unreleased — experimental SDL3-selected DirectInput owner" in ARCHIVE
+    assert "MouseEnabled=1" in ARCHIVE
     assert "## 1.1.0 — October 27, 2026" in ARCHIVE
     assert "## 1.0.0 — October 25, 2026" in ARCHIVE
     assert "CHANGELOG_EXPERIMENT_HISTORY_PRE_20261101.md" in CHANGELOG

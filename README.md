@@ -1,5 +1,7 @@
 # SpiderMan2k1Fix
 
+**Release candidate:** v2.0.0-rc.1 is available from the [GitHub Actions RC build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml) once its checks pass. The latest **published stable release remains v1.1.0** until Windows and Wine testing of the candidate is accepted. See the [2.0 RC test plan](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
+
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 [![Linux Wine / Proton compatible](https://img.shields.io/badge/Linux%20Wine%20%2F%20Proton-compatible-428b40?logo=linux&logoColor=white)](#installation-on-windows-and-linux-wine)
 
@@ -35,7 +37,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **Widescreen HUD:** Corrects the proportions and positioning of HUD elements, including health and web gauges, compass, mission objectives, boss health bars, and in-game pause menus, with native scene-entry iris. Tested at 1920×1080 (16:9) and 1920×1200 (16:10).
 - **FPS limiter:** Configurable frame-rate cap, set to **30 FPS by default**. Lower limits, such as 20 FPS, can be selected for timing-sensitive gameplay.
 - **Alt+Tab stability:** Background game pause, synchronized Bink/DirectSound, and keyboard/gamepad resume. Press and release any key or an eligible selected controller button after returning. The OS desktop cursor is restored. See [focus details](docs/references/CONFIGURATION.md).
-- **Universal SDL3 gamepads (the only supported controller backend):** SDL3 recognizes mapped controllers with customizable per-model profiles. Press **Start** on a neutral pad to select it for menus, videos and 3D gameplay. Unknown or unmapped devices are not given legacy DirectInput button mappings. Game/Win32 safety checks and original keyboard controls remain in place. Xbox 360, PS3 and DS4 passed GE-Proton hardware tests; native Windows testing remains separate.
+- **Universal SDL3 gamepads (the only supported controller backend):** SDL3 recognizes mapped controllers with customizable per-model profiles. Press **Start** on a neutral pad to select it for menus, videos and 3D gameplay. Unknown or unmapped devices are not given legacy DirectInput button mappings. Game/Win32 safety checks and original keyboard controls remain in place. Xbox 360, PS3 and DS4 passed GE-Proton hardware tests; DS4 and Xbox 360 were also validated on native Windows 11, including repeated Alt+Tab and controller switching. Steam Deck and native Windows PS3 are not yet validated.
 - **Keyboard layouts:** Automatically detects the active keyboard layout and adapts the game's controls, keyboard labels, and cheat-code entry. The original game only supported QWERTY layouts.
 - **No game mouse:** Keyboard/gamepad only. Game cursor, clicks and polling are permanently off. Desktop pointer unaffected; legacy `MouseEnabled` ignored.
 - **DPI awareness:** Handles Windows display scaling to ensure correct window dimensions and rendering on high-DPI displays.
@@ -47,7 +49,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 
 Successfully tested on Windows 11 and Linux/Wine.
 
-**First-time Xbox setup:** no controller INI edit is needed for a normally recognized Xbox 360 gamepad. Launch the game, let the controller return to neutral, then press Start to select it. You may still customize the per-model profile. Original `[Joystick]` defaults remain untouched.
+**First-time Xbox setup:** no controller INI edit is needed for a normally recognized Xbox 360 gamepad. Launch the game, let the controller return to neutral, then press Start to select it. You may still customize the per-model profile. The original game's joystick bytes remain preserved in `[Internal] RawHex`, but legacy `[Joystick]` INI bindings no longer affect SDL3.
 
 ## Bugs Resolved
 
@@ -142,7 +144,7 @@ Other versions or modified copies of the executable are not supported.
 
 **No original game files are included in this project.** You must provide your own legally obtained copy of the game.
 
-**Bundled open-source runtime:** Upcoming release archives include the unmodified **SDL3 3.4.18 Windows x86** `SDL3.dll` and its original zlib license as `SpiderMan2k1Fix/SDL3-LICENSE.txt`. Packaging checks the upstream archive SHA-256 and PE32/i386 architecture. SDL3 is a separate third-party project, not part of the original game.
+**Bundled open-source runtime:** The v2.0 release-candidate archive includes the unmodified **SDL3 3.4.18 Windows x86** `SDL3.dll` and its original zlib license as `SpiderMan2k1Fix/SDL3-LICENSE.txt`. Packaging checks the upstream archive SHA-256 and PE32/i386 architecture. SDL3 is a separate third-party project, not part of the original game.
 
 ## Configuration
 
