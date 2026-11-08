@@ -19,7 +19,7 @@ def test_version_in_both_dlls():
     assert '#include "version_info.h"' in CORE
     assert '#include "version_info.h"' in MENU
     assert '#include "version_info.h"' in (ROOT/"winmm_proxy.c").read_text()
-    assert re.search(r'#define SPIDERMAN2K1FIX_VERSION "2\\.0\\.0(?:-rc\\.\\d+)?"', (ROOT/"version_info.h").read_text())
+    assert re.search(r'#define SPIDERMAN2K1FIX_VERSION "2\.0\.0(?:-rc\.\d+)?"', (ROOT/"version_info.h").read_text())
 
 def test_menu_classifier_blocks_movies_and_gameplay():
     assert "menu_active && menu_draws>=3 && movie_blits==0" in CORE
