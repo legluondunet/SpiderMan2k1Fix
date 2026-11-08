@@ -163,6 +163,14 @@ enum {
   SPIDER_UNIVERSAL_CTX_BINK=2,
   SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE=3
 };
+/* Keep a menu-confirm synthetic key down during one additional original
+ * Flip so DirectInput can observe it. Never defer release more than once.
+ * This applies ONLY to menu Confirm, not Bink/3D/Game Over/Pause pulses. */
+static inline int spider_sdl3_menu_confirm_defer_keyup(unsigned *flips) {
+  if(!flips || !*flips)return 0;
+  --*flips;
+  return 1;
+}
 static inline unsigned spider_sdl3_universal_route_context(
     int menu,int gameplay,int bink,int native_pause) {
   if(native_pause)return SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE;
