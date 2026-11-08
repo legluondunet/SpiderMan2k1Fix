@@ -89,5 +89,7 @@ def test_cheats_table_is_guarded_and_reuses_original_letter_names():
 
 def test_action_controls_and_other_devices_remain_physical():
     assert 'set_word(action_offsets[i],code);' in VIRTUAL
-    assert "joystick_offsets[7]={0x50,0x54,0x58,0x5C,0x60,0x64,0x68}" in VIRTUAL
+    assert 'memcpy(cfg,spidey_cfg_factory,CFG_SIZE);' in VIRTUAL
+    assert 'GetPrivateProfileStringA("Internal","RawHex"' in VIRTUAL
+    assert 'GetPrivateProfileStringA("Joystick",' not in VIRTUAL
     assert "virtual mode ENABLED" in VIRTUAL
