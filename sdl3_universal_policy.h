@@ -178,6 +178,37 @@ static inline unsigned spider_sdl3_universal_route_context(
   if(menu || !gameplay)return SPIDER_UNIVERSAL_CTX_MENU;
   return SPIDER_UNIVERSAL_CTX_3D;
 }
+/* Native retail Save Game slot list can be drawn with the 3D renderer
+ * still active. F9 screenshot scrn0112.png (2026-11-08, Flip 4118)
+ * correlates with request=3, task=0x14, input-active=1,
+ * menu-context-present=1, pause-context=0, dispatcher=0, transition=0.
+ *
+ * This is an experimentally OBSERVED shell-like state, NOT a source-proven
+ * unique Save Game owner. Do not accept menu_ctx alone: it is only pointer
+ * presence. Require the full tuple and an already-validated 3D renderer.
+ * Native Pause/Bink always win through the outer context policy. */
+static inline int spider_sdl3_native_shell_menu_candidate(
+    int menu,int gameplay,int bink,int native_pause,
+    uint32_t request,uint32_t task,uint32_t input_active,
+    uint32_t pause_ctx,uint32_t menu_ctx,
+    uint32_t dispatcher,uint32_t transition) {
+  return !menu && gameplay && !bink && !native_pause &&
+         request==3u && task==0x14u && input_active==1u &&
+         !pause_ctx && menu_ctx!=0u && !dispatcher && !transition;
+}
+/* Two consecutive eligible original-game Flip samples required before
+ * switching a 3D renderer into the safe menu-keyboard route. Reset on
+ * any invalid sample, focus loss, or explicit owner change. */
+static inline int spider_sdl3_native_shell_menu_stable(
+    unsigned *consecutive,int matched) {
+  if(!consecutive)return 0;
+  if(!matched) {
+    *consecutive=0;
+    return 0;
+  }
+  if(*consecutive<2u)++*consecutive;
+  return *consecutive>=2u;
+}
 typedef struct {
   uint32_t selected_id;
   uint32_t held_actions;
