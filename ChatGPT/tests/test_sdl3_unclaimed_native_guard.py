@@ -48,13 +48,13 @@ def test_unclaimed_sdl3_controller_cannot_reenable_native_joystick():
 def test_unclaimed_native_guard_requires_neutral_fresh_start():
     src = (ROOT / "sdl3_universal_gameplay.c").read_text(encoding="utf-8")
     callback = src.split("void SpiderSDL3Universal_OnFlip(", 1)[1]
-    gate = "if(native_unclaimed_guard && !spider_sdl3_universal_neutral(&sample))"
+    gate = "if(native_unclaimed_guard && !spider_sdl3_universal_owner_neutral(&sample))"
     transfer = "native_unclaimed_guard=0;"
     assert gate in callback
     assert callback.index(gate) < callback.index("if(!suspend_original())")
     assert callback.index(gate) < callback.index(transfer)
     assert "UNCLAIMED native DI guard transferred to explicitly Started SDL3 controller" in callback
-    assert "if(!suspended && !spider_sdl3_universal_neutral(&sample))" in callback
+    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in callback
 
 
 def test_unclaimed_guard_restores_native_on_focus_or_modal_loss():
