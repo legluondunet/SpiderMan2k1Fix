@@ -1,16 +1,19 @@
-# SpiderMan2k1Fix v2.0.0-rc.1 — release candidate validation
+# SpiderMan2k1Fix v2.0.0-rc.2 — release candidate validation
 
 Status: **RC build only; v2.0.0 is not published**. This checklist does not
 authorize creating a tag or release until the real-game tests below succeed.
 
 ## Provenance and package
 
-- Base tree: tested and merged `main` commit `c746080dd5f9263d6eb2e063255c46af3290a7bc`.
-  The earlier accepted Windows artifact identified itself as `v1.1.0-b66c6c4`;
-  GitHub compare reported zero changed files relative to that merged tree.
-- This RC changes only the version stamp, public docs and regression tests.
-  It must not change original-game hooks, graphics, controller policies,
-  audio paths, SDL3 runtime pin or focus recovery implementation.
+- Integrated baseline: `main` commit `7e0526f6ee70e61739fecdcb4844584227999c00`,
+  containing the native Save Game controller fix (#138) validated with
+  PS3 Cross on GE-Proton11-12 and Xbox 360 A on native Windows 11.
+- RC2 additionally stages experimental duplicate-VID:PID SDL3
+  keyboard-only selection from the separately open PR #137, plus the RC1
+  version/documentation work. No new graphics/audio/media/focus patch,
+  SDL3 runtime version or original game EXE patch is intended.
+- Individual feature acceptance is **not** automatic validation of this
+  combined RC2 build. Do not merge #137 or publish 2.0.0 solely on CI.
 - Obtain the exact RC-head artifact from
   [Windows x86 GitHub Actions](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml).
   Confirm the workflow succeeded for the RC commit before testing.
@@ -25,13 +28,18 @@ authorize creating a tag or release until the real-game tests below succeed.
 
 ## One consolidated real Windows 11 test
 
-- [ ] Launch and verify the menu version/log prefix contains **v2.0.0-rc.1**.
+- [ ] Launch and verify the menu version/log prefix contains **v2.0.0-rc.2**.
 - [ ] Start-select the DS4 during the opening movie; confirm movie skip,
   main menu, Pause, GAME OVER and normal 3D gameplay buttons.
 - [ ] Alt+Tab from a movie and 3D gameplay; resume with no frozen window,
   stuck motion/Alt key, audio loss or missing desktop cursor.
 - [ ] Switch DS4 ↔ Xbox 360, unplug/replug and confirm only the selected pad
   drives the game; verify keyboard-only fallback.
+- [ ] Enter **SAVE GAME**, select a slot and accept the **YES** confirmation
+  with controller South/A/Cross, without using physical keyboard Enter.
+- [ ] If two `045E:028E` devices coexist, press Start on each one
+  separately from neutral, confirm only the selected SDL3 instance controls
+  the game, then try an ambiguous simultaneous Start (must fail closed).
 - [ ] Confirm original menu/comic/video 4:3, gameplay widescreen HUD, scene
   iris and native ESC 4:3 menu at the tested monitor resolution.
 - [ ] Exit cleanly. Attach the `SpiderMan2k1Fix.log` with `[Debug] Log=1`
@@ -43,6 +51,11 @@ authorize creating a tag or release until the real-game tests below succeed.
   or an already validated Proton launch configuration.
 - [ ] Validate early Start, movie skip, menu controls, normal gameplay and
   Pause/return using an SDL3 mapped controller.
+- [ ] Verify **SAVE GAME / YES** with South/Cross and the log line
+  `SDL3-NATIVE-SHELL: ACTIVE` while the game still renders the menu in 3D.
+- [ ] Verify duplicate-VID:PID per-instance Start selection, safe handoff
+  and fail-closed simultaneous claims; note separately if one physical
+  device is mirrored into multiple SDL handles.
 - [ ] Alt+Tab during video and gameplay; verify working input, audio and
   display on return. The background PAUSED overlay may be delayed under
   Wine/Proton, provided it does not break normal behavior.
@@ -52,8 +65,8 @@ authorize creating a tag or release until the real-game tests below succeed.
 
 ## Separate follow-up, not silently claimed as complete
 
-Steam Deck/Steam Input hardware, real analog-axis preservation, identical
-virtual controller identities and untested gamepads remain subjects of
+Steam Deck/Steam Input hardware, real analog-axis preservation, ambiguous
+mirrored controller identities and untested gamepads remain subjects of
 [issue #120](https://github.com/legluondunet/SpiderMan2k1Fix/issues/120),
 which must remain open. Other existing issues must remain unchanged.
 

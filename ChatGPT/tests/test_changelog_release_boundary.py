@@ -9,7 +9,7 @@ RC_PLAN=(ROOT/"docs/references/RELEASE_2_0_RC_TEST_PLAN.md").read_text(encoding=
 
 
 def test_candidate_explains_current_sdl3_policy_and_no_early_release():
-    assert CHANGELOG.startswith("# Changelog\n\n## Unreleased — v2.0.0-rc.1")
+    assert CHANGELOG.startswith("# Changelog\n\n## Unreleased — v2.0.0-rc.2")
     head=CHANGELOG.split("## 1.1.0 — October 27, 2026",1)[0]
     for phrase in ("only supported controller mapping backend", "first safe foreground",
                    "neutral-first", "DirectInput", "QuickExit F10/F12", "RawHex",

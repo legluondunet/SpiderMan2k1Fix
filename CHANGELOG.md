@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased — v2.0.0-rc.1 (November 8, 2026)
+## Unreleased — v2.0.0-rc.2 (November 8, 2026)
 
-**Release candidate; not yet a published v2.0.0 stable release.** Only the
-Windows 11 and Wine/Proton smoke tests of this exact RC package remain to
-authorize the final release. The former v1.1.0 release remains available.
+**Integrated release candidate; not a published v2.0.0 stable release.**
+This candidate combines merged Save Game confirmation PR #138, experimental
+duplicate-instance selection from still-open PR #137, and release metadata.
+Exact RC2 package tests on Windows 11 and Wine/Proton are mandatory.
+The previously published stable v1.1.0 remains available.
 
 ### Controls and SDL3
 
@@ -14,9 +16,18 @@ authorize the final release. The former v1.1.0 release remains available.
   fallback remains independent. Per-model profiles remain supported.
 - Start selection is available from the **first safe foreground intro frame**.
   SDL3 handles menus, skippable Bink movies, gameplay, Pause and GAME OVER.
+- **Save Game controller confirmation (merged PR #138):** South/Cross/A can
+  accept a native save slot and its YES confirmation while the renderer
+  still reports 3D; hardware-confirmed on GE-Proton (PS3) and Windows 11
+  (Xbox 360).
+- **Same-model SDL3 pads (experimental PR #137):** the universal keyboard
+  bridge can identify a unique connected instance even if other devices
+  share its VID:PID; simultaneous competing Start presses fail closed and
+  the original DirectInput owner retains its strict unique-model policy.
+  The combined RC2 still needs real-hardware validation.
 - Controller switching and unplug/replug remain guarded by neutral-first
-  selection, foreground ownership, unique mapped device checks and the
-  original game's separately preserved fatal-DirectInput-unplug safety hook.
+  selection, foreground ownership, strict live SDL3 instance identity and
+  the original game's separately preserved fatal-DirectInput-unplug safety hook.
   Unreachable legacy native reconnect code was retired.
 - Remove obsolete `[Joystick]`, QuickExit F10/F12, native-owner and SDL3
   experimental settings from fresh INIs while preserving valid player
@@ -44,7 +55,7 @@ authorize the final release. The former v1.1.0 release remains available.
   Linux Wine/Proton controller/graphics regression sessions. The source
   tested as `v1.1.0-b66c6c4` was file-identical to final merged `main`
   at `c746080d`.
-- **Required for final v2.0.0:** a green *exact RC commit* Windows x86 CI
+- **Required for final v2.0.0:** a green *exact RC2 commit* Windows x86 CI
   (tests, DLLs, SDL3, Linux helper and package), followed by the maintainer's
   real Windows and Wine smoke test of that downloaded RC.
 - **Not yet claimed:** Steam Deck/Steam Input hardware, native analog-axis
