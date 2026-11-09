@@ -151,8 +151,8 @@ def test_universal_native_di_is_neutral_gated_and_modal_safe():
     assert modal.index("SpiderSDL3Universal_BeforeModal(owner);") < modal.index(
         "if(!SpiderSDL3Probe_SetupPump()) {",modal.index(
             "void SpiderSDL3ControllerSetup_Open(void)"))
-    assert "if(!suspended && !spider_sdl3_universal_neutral(&sample))" in backend
-    assert backend.index("if(!suspended && !spider_sdl3_universal_neutral(&sample))") < (
+    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in backend
+    assert backend.index("if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))") < (
         backend.index("if(!suspend_original())"))
     assert "SendInput failure; releasing and restoring native owner" in backend
     assert 'restore_original("SendInput failed");' in backend
@@ -480,10 +480,10 @@ def test_universal_fail_closed_reentry_after_failed_keyup():
     assert "if(!release_all())" in preowner
     assert "REENTRY BLOCKED pending synthetic KEYUP" in preowner
     assert preowner.index("if(!active && (sent_mask || pulse_scan))") < (
-        preowner.index("if(!suspended && !spider_sdl3_universal_neutral"))
+        preowner.index("if(!suspended && !spider_sdl3_universal_owner_neutral"))
     assert "if(active && pulse_scan)" in preowner
     assert 'restore_original("pulse KEYUP failed before next gameplay action");' in preowner
-    assert "if(!suspended && !spider_sdl3_universal_neutral(&sample))" in preowner
+    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in preowner
     assert "if(!release_all())" in backend.split("static void restore_original(",1)[1].split(
         "static int suspend_original(",1)[0]
     beforeui=backend.split("void SpiderSDL3Universal_BeforeUI(",1)[1].split(
@@ -722,7 +722,7 @@ def test_foreground_focus_cleanup_blocks_native_di_and_new_gameplay():
         onflip.index("if(focus_release.frames_remaining) {"))
     assert onflip.index("if(!suspend_original())") < (
         onflip.index("if(focus_release.frames_remaining) {"))
-    assert onflip.index("if(!suspended && !spider_sdl3_universal_neutral") < (
+    assert onflip.index("if(!suspended && !spider_sdl3_universal_owner_neutral") < (
         onflip.index("if(focus_release.frames_remaining) {"))
     assert onflip.index("if(focus_release.frames_remaining) {") < (
         onflip.index("context=spider_sdl3_universal_route_context("))
@@ -841,7 +841,7 @@ def test_buffered_direction_fix_is_bounded_to_foreground_owned_3d_scans():
     # Stable selected SDL3 device only, does NOT ever claim native
     # input before a fresh neutral sample and suspend_original().
     assert "focus_dir_controller_id=selected_id;" in backend
-    assert "if(!suspended && !spider_sdl3_universal_neutral(&sample))" in onflip
+    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in onflip
 
 
 def test_focus_direction_pulse_is_released_on_any_owner_loss_or_context_switch():

@@ -217,9 +217,35 @@ typedef struct {
 static inline void spider_sdl3_universal_reset(SpiderSDL3UniversalState *state) {
   if(state)memset(state,0,sizeof(*state));
 }
-static inline int spider_sdl3_universal_neutral(
+/* Claiming/reclaiming the game's DirectInput slot after a fresh Start
+ * still requires the original strict physical neutral (<5000 on LT/RT).
+ * Do not weaken the acquisition or setup wizard's security policy. */
+static inline int spider_sdl3_universal_owner_neutral(
     const SpiderSDL3ControllerSample *sample) {
   if(!sample || !spider_sdl3_profile_neutral(sample))return 0;
+  return sample->axis[SPIDER_SDL3_AXIS_LEFTX]>-9000 &&
+         sample->axis[SPIDER_SDL3_AXIS_LEFTX]<9000 &&
+         sample->axis[SPIDER_SDL3_AXIS_LEFTY]>-9000 &&
+         sample->axis[SPIDER_SDL3_AXIS_LEFTY]<9000;
+}
+/* Scene/menu/Pause *rearm* has a different requirement: no NEW SDL3
+ * input may be active. A real Bluetooth pad (045E:02E0, issue #60)
+ * has observed LT idle drift around 6000..8500. At that level the
+ * original <5000 'fully released' check could block menu_arm forever,
+ * although trigger bindings cannot first activate below 11000.
+ *
+ * The 11000 bound must match the initial trigger-press threshold in
+ * spider_sdl3_profile_actions(). Treat any button (including Start),
+ * noncentered left stick, negative or active trigger as non-neutral.
+ * Never silently recalibrate axes, create a trigger press or bypass
+ * the strict fresh-Start owner gate above. */
+static inline int spider_sdl3_universal_neutral(
+    const SpiderSDL3ControllerSample *sample) {
+  if(!sample || sample->buttons!=0 ||
+     sample->axis[SPIDER_SDL3_AXIS_LT]<0 ||
+     sample->axis[SPIDER_SDL3_AXIS_RT]<0 ||
+     sample->axis[SPIDER_SDL3_AXIS_LT]>=11000 ||
+     sample->axis[SPIDER_SDL3_AXIS_RT]>=11000)return 0;
   return sample->axis[SPIDER_SDL3_AXIS_LEFTX]>-9000 &&
          sample->axis[SPIDER_SDL3_AXIS_LEFTX]<9000 &&
          sample->axis[SPIDER_SDL3_AXIS_LEFTY]>-9000 &&
