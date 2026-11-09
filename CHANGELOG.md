@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased — v2.0.0-rc.2 (November 8, 2026)
+## Unreleased — v2.0.0-rc.2 (November 9, 2026)
 
-**Integrated release candidate; not a published v2.0.0 stable release.**
+**Integrated release candidate; not yet a published v2.0.0 stable release.**
 This candidate combines merged Save Game confirmation PR #138, experimental
 duplicate-instance selection from still-open PR #137, and release metadata.
 Exact RC2 package tests on Windows 11 and Wine/Proton are mandatory.
