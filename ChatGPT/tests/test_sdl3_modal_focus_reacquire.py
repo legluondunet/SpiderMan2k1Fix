@@ -81,7 +81,7 @@ def test_next_foreground_flip_claims_only_explicit_selected_sdl3_pad():
     assert "IDirectInput8_CreateDevice(" not in ui
     assert "SpiderNativeReconnect_OnFlip(" not in ui
     assert "SpiderSDL3Probe_SelectedMappedSample(" in adapter
-    assert "if(!suspended && !spider_sdl3_universal_neutral(&sample))" in adapter
+    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in adapter
     assert "SpiderSDL3Probe_GenericSelectedSample(" in probe
     assert "spider_sdl3_selection_focus_lost(&selection)" in probe
     assert "CreateDevice(" not in native
