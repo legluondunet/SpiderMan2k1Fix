@@ -875,12 +875,12 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
    * The policy also enforces neutral before producing 3D action bits. */
   /* A native joystick held in the unclaimed guard is suspended already,
    * but this must NOT bypass the fresh neutral gate after physical Start. */
-  if(native_unclaimed_guard && !spider_sdl3_universal_neutral(&sample)) {
+  if(native_unclaimed_guard && !spider_sdl3_universal_owner_neutral(&sample)) {
     if(owner_reports++<10u)
       log_universal("SDL3-UNIVERSAL: explicit Start selected pad awaits neutral before unclaimed DI guard can transfer");
     return;
   }
-  if(!suspended && !spider_sdl3_universal_neutral(&sample)) {
+  if(!suspended && !spider_sdl3_universal_owner_neutral(&sample)) {
     if(owner_reports++<10u)
       log_universal("SDL3-UNIVERSAL: selected pad awaits complete neutral before any DI suspension/injection");
     return;
