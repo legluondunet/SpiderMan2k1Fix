@@ -41,7 +41,17 @@ static unsigned sent_mask=0;
 static unsigned pulse_scan=0,trace=0;
 static unsigned key_transition_reports=0,owner_reports=0,refusal_reports=0;
 static unsigned menu_previous=0,menu_arm=0;
+/* A synthetic menu Confirm key must survive one additional original-game
+ * Flip. BeforeUI otherwise releases it before the game's next input poll. */
+static unsigned menu_confirm_hold_flips=0,menu_confirm_pending=0;
+static unsigned menu_confirm_deferred_this_flip=0;
+static unsigned menu_confirm_unarmed_reported=0,menu_confirm_reports=0;
 static unsigned previous_context=SPIDER_UNIVERSAL_CTX_3D;
+/* Independent F9-correlated native Save Game / shell-state routing.
+ * Never infer menu identity from renderer or menu-pointer presence alone. */
+static unsigned native_shell_consecutive=0;
+static int native_shell_routed=0;
+static unsigned native_shell_trace_reports=0;
 static unsigned pause_context_reports=0,pause_command_reports=0;
 static SpiderSDL3UniversalState state;
 static SpiderSDL3UniversalFocusRelease focus_release;
@@ -89,6 +99,14 @@ static void log_universal(const char *msg) {
 }
 static void log_native_pause_menu(const char *msg) {
   if(report && pause_menu_trace_reports++<48u)report(msg);
+}
+static void log_menu_confirm(const char *msg) {
+  /* Separate, bounded late-menu diagnostics: ordinary universal trace
+   * may be exhausted by the time a player opens the Save Game screen. */
+  if(report && menu_confirm_reports++<24u)report(msg);
+}
+static void log_native_shell_route(const char *msg) {
+  if(report && native_shell_trace_reports++<16u)report(msg);
 }
 /* Exact supported PE32 only. Observes BSS/task bytes already cataloged
  * in quick_exit_f12.c; never dereference opaque engine/menu objects. */
@@ -261,10 +279,16 @@ static int release_all(void) {
       sent_mask&=~(1u<<i);held_scans[i]=0;
     } else remaining++;
   }
+  /* Focus, owner loss and shutdown must release immediately regardless of
+   * any bounded menu-confirm hold interval. Failed KEYUP is still retried. */
+  menu_confirm_hold_flips=0;
+  menu_confirm_deferred_this_flip=0;
   if(pulse_scan) {
-    if(send_scan(pulse_scan,1))pulse_scan=0;
-    else remaining++;
-  }
+    if(send_scan(pulse_scan,1)) {
+      pulse_scan=0;
+      menu_confirm_pending=0;
+    } else remaining++;
+  } else menu_confirm_pending=0;
   if(remaining)log_universal("SDL3-UNIVERSAL: WARNING synthetic key release failed; retry scheduled on next Flip");
   return remaining==0;
 }
@@ -379,6 +403,10 @@ static void restore_original(const char *reason) {
   /* Preserve sent_mask and pulse_scan if KEYUP failed. They are retried
    * in BeforeUI and before any new joystick gameplay injection. */
   menu_previous=0;menu_arm=0;
+  native_shell_consecutive=0;
+  native_shell_routed=0;
+  menu_confirm_unarmed_reported=0;
+  menu_confirm_deferred_this_flip=0;
   previous_context=SPIDER_UNIVERSAL_CTX_3D;
   spider_sdl3_gameover_trial_reset(&gameover_trial);
   spider_sdl3_universal_reset(&state);
@@ -429,6 +457,11 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   native_unclaimed_guard=0;native_guard_reports=0;
   memset(held_scans,0,sizeof(held_scans));
   sent_mask=0;pulse_scan=0;menu_previous=menu_arm=0;
+  menu_confirm_hold_flips=menu_confirm_pending=0;
+  menu_confirm_deferred_this_flip=0;
+  menu_confirm_unarmed_reported=menu_confirm_reports=0;
+  native_shell_consecutive=native_shell_trace_reports=0;
+  native_shell_routed=0;
   previous_context=SPIDER_UNIVERSAL_CTX_3D;
   pause_context_reports=0;pause_command_reports=0;
   gameover_probe_confirm_prev=gameover_probe_f9_prev=0;
@@ -512,15 +545,30 @@ void SpiderSDL3Universal_BeforeUI(HWND hwnd) {
   if(!requested)return;
   if(!game_thread)game_thread=GetCurrentThreadId();
   if(game_thread!=GetCurrentThreadId())return;
+  /* Never inherit a prior Flip's menu deferral into an unrelated pulse. */
+  menu_confirm_deferred_this_flip=0;
   /* MUST run before focus pause blocks the original game render thread.
    * Critical: no externally held synthetic keys may survive Alt+Tab. */
   if(native_host_focus_blocked || !hwnd || !IsWindowVisible(hwnd) ||
      GetForegroundWindow()!=hwnd) {
     if(active || suspended || sent_mask || pulse_scan)
       restore_original("focus or window lost");
+  } else if(pulse_scan && menu_confirm_pending &&
+            spider_sdl3_menu_confirm_defer_keyup(&menu_confirm_hold_flips)) {
+    /* OnFlip executes after BeforeUI, in the same original game Flip.
+     * Its generic pending-pulse retry must also respect this deferral. */
+    menu_confirm_deferred_this_flip=1;
+    log_menu_confirm("SDL3-MENU-CONFIRM: holding injected Enter for one additional original Flip (DI reception unverified)");
   } else if(pulse_scan && !send_scan(pulse_scan,1)) {
+    if(menu_confirm_pending)
+      log_menu_confirm("SDL3-MENU-CONFIRM: injected Enter KEYUP refused by OS; retry scheduled");
     log_universal("SDL3-UNIVERSAL: warning Pause/Return KEYUP failed, retry before next action");
-  } else pulse_scan=0;
+  } else {
+    if(menu_confirm_pending && pulse_scan)
+      log_menu_confirm("SDL3-MENU-CONFIRM: injected Enter KEYUP accepted by OS (game reception unverified)");
+    pulse_scan=0;
+    menu_confirm_hold_flips=menu_confirm_pending=0;
+  }
 }
 int SpiderSDL3Universal_ReleaseSyntheticReturnBefore3D(HWND hwnd) {
   if(!requested || !game_thread ||
@@ -533,6 +581,7 @@ int SpiderSDL3Universal_ReleaseSyntheticReturnBefore3D(HWND hwnd) {
     return 0;
   }
   pulse_scan=0;
+  menu_confirm_hold_flips=menu_confirm_pending=0;
   log_universal("SDL3-UNIVERSAL: BINK-4 pending synthetic Return balanced before original game input");
   return 1;
 }
@@ -661,6 +710,42 @@ static void gameover_probe_snapshot(uint32_t owner,unsigned context,
     (unsigned long)transition,good?"OK":"UNAVAILABLE");
   report(line);
 }
+/* Never inject directly from this detector. Only reclassify an already
+ * verified, foreground, Start-selected SDL3 owner's normal keyboard bridge.
+ * The source addresses below were pre-existing read-only probes and the
+ * retail screenshot independently pins this exact seven-value tuple. */
+static int native_shell_menu_context(int menu,int gameplay,
+    int bink,int native_pause) {
+  uint32_t request=0,task=0,input_active=0,pause_ctx=0,menu_ctx=0;
+  uint32_t dispatcher=0,transition=0;
+  int matching=0,routed;
+  char line[240];
+  if(!menu && gameplay && !bink && !native_pause &&
+     gameover_probe_read_u32(0x0060CFA4u,&request) &&
+     gameover_probe_read_u32(0x0054A510u,&task) &&
+     gameover_probe_read_u32(0x006B78F0u,&input_active) &&
+     gameover_probe_read_u32(0x00682950u,&pause_ctx) &&
+     gameover_probe_read_u32(0x00682948u,&menu_ctx) &&
+     gameover_probe_read_u32(0x0068293Cu,&dispatcher) &&
+     gameover_probe_read_u32(0x0054D38Cu,&transition)) {
+    matching=spider_sdl3_native_shell_menu_candidate(
+      menu,gameplay,bink,native_pause,request,task,input_active,
+      pause_ctx,menu_ctx,dispatcher,transition);
+  }
+  routed=spider_sdl3_native_shell_menu_stable(
+    &native_shell_consecutive,matching);
+  if(routed!=native_shell_routed) {
+    native_shell_routed=routed;
+    snprintf(line,sizeof(line),
+      "SDL3-NATIVE-SHELL: %s 3D-renderer shell-like menu route; raw request=%lu task=%lu input=%lu menu_ctx=%u pause_ctx=%u dispatcher=%lu transition=%lu (observed F9 tuple, not unique menu proof)",
+      routed?"ACTIVE":"INACTIVE",(unsigned long)request,(unsigned long)task,
+      (unsigned long)input_active,(unsigned)(menu_ctx!=0u),
+      (unsigned)(pause_ctx!=0u),(unsigned long)dispatcher,
+      (unsigned long)transition);
+    log_native_shell_route(line);
+  }
+  return routed;
+}
 static void pulse(unsigned scan,const char *context) {
   if(pulse_scan || !send_scan(scan,0))return;
   pulse_scan=scan;
@@ -674,7 +759,7 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   SpiderSDL3ControllerSample sample;
   SpiderSDL3ControllerProfile *profile;
   unsigned menu_buttons=0,context;
-  int result;
+  int result,native_shell_menu=0;
   if(!requested || game_thread!=GetCurrentThreadId())return;
   /* X11 can report OTHER/UNKNOWN even when Wine's HWND stays foreground.
    * Never synthesize a direction or reclaim native DI during this state. */
@@ -695,6 +780,8 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     if(!--focus_latch_follow_frames)focus_latch_follow_scan=0;
   }
   if(!SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample)) {
+    native_shell_consecutive=0;
+    native_shell_routed=0;
     if(refusal_reports++<6u)
       log_universal("SDL3-UNIVERSAL: waiting for selected SDL3 mapped pad (press Start on desired pad)");
     /* A passive SDL3 singleton selection is NOT an explicit Start owner.
@@ -770,13 +857,18 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
       log_universal("SDL3-UNIVERSAL: prior synthetic keys released before safe neutral reentry");
   }
   if(active && pulse_scan) {
-    /* BeforeUI attempts the pulse KEYUP on every Flip; if Proton/Win32
-     * refused it, do not process a new action while Escape/Enter is held. */
-    if(!send_scan(pulse_scan,1)) {
-      restore_original("pulse KEYUP failed before next gameplay action");
-      return;
+    /* BeforeUI owns KEYUP scheduling. The sole 2D Confirm deferral must
+     * survive THIS OnFlip so the retail game gets another input poll.
+     * If BeforeUI failed KEYUP, do not process any new action until its
+     * safe retry succeeds (the legacy path below remains fail closed). */
+    if(!menu_confirm_deferred_this_flip) {
+      if(!send_scan(pulse_scan,1)) {
+        restore_original("pulse KEYUP failed before next gameplay action");
+        return;
+      }
+      pulse_scan=0;
+      menu_confirm_hold_flips=menu_confirm_pending=0;
     }
-    pulse_scan=0;
   }
   /* No native pointer manipulation or key injection until the physical
    * gamepad has returned to neutral after Start/selection/menu changes.
@@ -855,9 +947,12 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     }
     return;
   }
+  /* Check the native shell before any pending direction resync is emitted,
+   * not just before the later menu/gameplay action switch. */
+  native_shell_menu=native_shell_menu_context(menu,gameplay,bink,native_pause);
   if(focus_dir.phase &&
-     spider_sdl3_universal_route_context(menu,gameplay,bink,native_pause)
-       !=SPIDER_UNIVERSAL_CTX_3D) {
+     (spider_sdl3_universal_route_context(menu,gameplay,bink,native_pause)
+       !=SPIDER_UNIVERSAL_CTX_3D || native_shell_menu)) {
     if(focus_dir.phase==SPIDER_FOCUS_DIR_UP &&
        !send_scan(focus_dir.scans[focus_dir.index],1)) {
       log_focus_release("SDL3-UNIVERSAL: FOCUS-DIR context changed, pending KEYUP retry");
@@ -912,12 +1007,26 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   }
   context=spider_sdl3_universal_route_context(
     menu,gameplay,bink,native_pause);
+  if(native_shell_menu && context==SPIDER_UNIVERSAL_CTX_3D)
+    context=SPIDER_UNIVERSAL_CTX_MENU;
   /* F9/physical South read-only evidence for a possible original
    * GAME OVER overlay still running under the 3D renderer.  Do NOT
    * inject Enter until a unique game-owned state is established. */
   gameover_probe_snapshot(id,context,menu,gameplay,bink,native_pause,
                           profile,&sample);
   if(context!=previous_context) {
+    /* Do not carry a delayed menu Enter into a movie, gameplay, or a
+     * different menu ownership context. A failed release aborts input. */
+    if(menu_confirm_pending && pulse_scan) {
+      if(!send_scan(pulse_scan,1)) {
+        restore_original("menu Confirm KEYUP failed on context change");
+        return;
+      }
+      pulse_scan=0;
+      menu_confirm_hold_flips=menu_confirm_pending=0;
+      log_menu_confirm("SDL3-MENU-CONFIRM: injected Enter released on context change (OS accepted)");
+    }
+    menu_confirm_unarmed_reported=0;
     /* Entering the native 3D Pause screen is NOT a gameplay frame.
      * Reset action edges; a fully released controller must arm menu
      * navigation so the physical Pause button cannot instantly
@@ -942,7 +1051,15 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
      * Keyboard remains available throughout menus and cinematics. */
     spider_sdl3_universal_reset(&state);
     if(!menu_arm) {
-      if(spider_sdl3_universal_neutral(&sample))menu_arm=1;
+      if(spider_sdl3_universal_neutral(&sample)) {
+        menu_arm=1;
+        menu_confirm_unarmed_reported=0;
+      } else if(context==SPIDER_UNIVERSAL_CTX_MENU &&
+                !menu_confirm_unarmed_reported &&
+                binding_held(profile->context[SPIDER_SDL3_CONTEXT_CONFIRM],&sample)) {
+        log_menu_confirm("SDL3-MENU-CONFIRM: South/Confirm ignored; menu has not observed neutral input since context switch");
+        menu_confirm_unarmed_reported=1;
+      }
       menu_previous=0;
     } else {
       int confirm=binding_held(
@@ -976,8 +1093,20 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
       }
       if((menu_buttons&(1u<<5)) && !(menu_previous&(1u<<5)))
         pulse(0x01u,"menu Back/Pause resume");
-      else if((menu_buttons&(1u<<4)) && !(menu_previous&(1u<<4)))
-        pulse(0x1cu,"menu Confirm");
+      else if((menu_buttons&(1u<<4)) && !(menu_previous&(1u<<4))) {
+        if(context==SPIDER_UNIVERSAL_CTX_MENU) {
+          /* Keep the old void pulse() API used by movie/3D safety hooks,
+           * and authorize the delayed release ONLY for a new menu pulse. */
+          if(!pulse_scan) {
+            pulse(0x1cu,"menu Confirm");
+            if(pulse_scan==0x1cu) {
+              menu_confirm_pending=1;
+              menu_confirm_hold_flips=1u;
+              log_menu_confirm("SDL3-MENU-CONFIRM: South/Confirm injected Enter KEYDOWN accepted by OS; delayed KEYUP armed (DI reception unverified)");
+            } else log_menu_confirm("SDL3-MENU-CONFIRM: Enter KEYDOWN refused by SendInput");
+          } else log_menu_confirm("SDL3-MENU-CONFIRM: Enter KEYDOWN deferred while prior pulse pending");
+        } else pulse(0x1cu,"menu Confirm");
+      }
     }
     if(!update_keys(menu_buttons&0x0fu,scans)) {
       log_universal("SDL3-UNIVERSAL: menu SendInput failure; restoring native owner");

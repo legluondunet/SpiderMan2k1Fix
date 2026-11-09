@@ -373,7 +373,8 @@ def test_native_pause_menu_must_rearm_after_release_and_not_autoresume():
     assert "previous_context=context;" in transition
     menu=body.split("if(context!=SPIDER_UNIVERSAL_CTX_3D)",1)[1].split(
         "menu_arm=0;menu_previous=0;",1)[0]
-    assert "if(spider_sdl3_universal_neutral(&sample))menu_arm=1;" in menu
+    assert "if(spider_sdl3_universal_neutral(&sample)) {" in menu
+    assert "menu_arm=1;" in menu
     assert "menu_previous=0;" in menu
     assert "if(back || resume)" in menu
 
