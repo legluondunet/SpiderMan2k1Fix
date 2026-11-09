@@ -101,11 +101,22 @@ jobs:
       - name: Bundle pinned upstream SDL3 Windows x86 runtime and license
         run: |
           set -euo pipefail
-          curl --fail --location --retry 4 --retry-all-errors \
-            --output "$RUNNER_TEMP/SDL3-3.4.18-win32-x86.zip" \
-            https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18-win32-x86.zip
+          sdl_archive="$RUNNER_TEMP/SDL3-3.4.18-win32-x86.zip"
+          # Both locations are upstream-owned SDL hosts, never third-party
+          # binaries. The packaging script checks the fixed official asset
+          # size and SHA-256; a stale/corrupt download always fails closed.
+          if ! curl --fail --location --retry 2 --retry-all-errors \
+            --connect-timeout 15 --max-time 75 \
+            --output "$sdl_archive" \
+            https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18-win32-x86.zip; then
+            echo "::warning::SDL GitHub Releases returned an error; using official www.libsdl.org/release fallback (SHA-256 verified below)"
+            curl --fail --location --retry 4 --retry-all-errors \
+              --connect-timeout 15 --max-time 75 \
+              --output "$sdl_archive" \
+              https://www.libsdl.org/release/SDL3-3.4.18-win32-x86.zip
+          fi
           python3 scripts/package_sdl3_x86.py dist/package/SpiderMan2k1Fix \
-            --archive "$RUNNER_TEMP/SDL3-3.4.18-win32-x86.zip"
+            --archive "$sdl_archive"
           test -s dist/package/SpiderMan2k1Fix/SDL3.dll
           test -s dist/package/SpiderMan2k1Fix/SDL3-LICENSE.txt
 
