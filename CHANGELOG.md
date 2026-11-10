@@ -3,7 +3,8 @@
 ## Unreleased — v2.0.0-rc.2 (November 9, 2026)
 
 **Integrated release candidate; not yet a published v2.0.0 stable release.**
-This candidate combines merged Save Game confirmation PR #138, experimental
+This candidate combines merged Save Game confirmation PR #138, the
+Pause/cutscene SDL3 trigger-drift correction from merged PR #139, experimental
 duplicate-instance selection from still-open PR #137, and release metadata.
 Exact RC2 package tests on Windows 11 and Wine/Proton are mandatory.
 The previously published stable v1.1.0 remains available.
@@ -20,6 +21,12 @@ The previously published stable v1.1.0 remains available.
   accept a native save slot and its YES confirmation while the renderer
   still reports 3D; hardware-confirmed on GE-Proton (PS3) and Windows 11
   (Xbox 360).
+- **Pause/cutscene rearm (merged PR #139, issue #60):** mapped controllers
+  no longer remain disarmed after context transitions solely because of an
+  LT/RT midrange value from 5000 to 10999. Trigger actions retain their original
+  11000 press / 5000 release hysteresis and fresh Start/DirectInput ownership
+  retains its strict neutral gate. The user confirmed improved behavior on
+  Windows 10, with further RC2 regression testing required.
 - **Same-model SDL3 pads (experimental PR #137):** the universal keyboard
   bridge can identify a unique connected instance even if other devices
   share its VID:PID; simultaneous competing Start presses fail closed and
