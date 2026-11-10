@@ -5,9 +5,11 @@ authorize creating a tag or release until the real-game tests below succeed.
 
 ## Provenance and package
 
-- Integrated baseline: `main` commit `7e0526f6ee70e61739fecdcb4844584227999c00`,
-  containing the native Save Game controller fix (#138) validated with
-  PS3 Cross on GE-Proton11-12 and Xbox 360 A on native Windows 11.
+- Integrated baseline: `main` commit `003f32ab252e7930d32e2563ba96e8cb2e8bdd6a`,
+  containing the native Save Game controller fix (#138), validated with
+  PS3 Cross on GE-Proton11-12 and Xbox 360 A on native Windows 11,
+  and the trigger-drift fix (#139, issue #60) first validated by the
+  reporter on Windows 10 with a mapped `045E:02E0` controller.
 - RC2 additionally stages experimental duplicate-VID:PID SDL3
   keyboard-only selection from the separately open PR #137, plus the RC1
   version/documentation work. No new graphics/audio/media/focus patch,
@@ -40,6 +42,10 @@ authorize creating a tag or release until the real-game tests below succeed.
 - [ ] If two `045E:028E` devices coexist, press Start on each one
   separately from neutral, confirm only the selected SDL3 instance controls
   the game, then try an ambiguous simultaneous Start (must fail closed).
+- [ ] Recheck issue #60 after a Bink cutscene and native Pause: LT/RT
+  in the 5000..10999 idle range must not block context rearming;
+  genuine trigger presses (>=11000) must not auto-trigger or stick;
+  the initial Start/DirectInput handoff must remain strictly neutral-gated.
 - [ ] Confirm original menu/comic/video 4:3, gameplay widescreen HUD, scene
   iris and native ESC 4:3 menu at the tested monitor resolution.
 - [ ] Exit cleanly. Attach the `SpiderMan2k1Fix.log` with `[Debug] Log=1`
@@ -61,6 +67,8 @@ authorize creating a tag or release until the real-game tests below succeed.
   Wine/Proton, provided it does not break normal behavior.
 - [ ] Disconnect/reconnect or change the controller once; confirm no
   spontaneous second-controller activation or stuck actions.
+- [ ] Validate neutral-first SDL3 rearm after Bink and Pause with partially
+  depressed LT/RT; verify no unwanted injected action or stuck keys.
 - [ ] Confirm widescreen/4:3 placement, usable audio and a clean exit.
 
 ## Separate follow-up, not silently claimed as complete
