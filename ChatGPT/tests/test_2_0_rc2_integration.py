@@ -1,4 +1,4 @@
-"""2.0 RC2 must contain BOTH SDL3 improvements, not only a version bump.
+"""2.0 RC2 must integrate all three SDL3 improvements, not only a version bump.
 CI source regression does not replace live game hardware acceptance.
 """
 from pathlib import Path
@@ -23,3 +23,12 @@ def test_combined_rc2_contains_save_confirmation_and_duplicate_instances():
     assert "spider_sdl3_native_shell_menu_candidate(" in policy
     assert "spider_sdl3_menu_confirm_defer_keyup(" in policy
     assert 'pulse(0x1cu,"menu Confirm")' in universal
+    # Issue #60: post-selection rearm below the trigger press threshold
+    # must not weaken initial Start/DirectInput owner acquisition.
+    assert "spider_sdl3_universal_owner_neutral(" in policy
+    assert "spider_sdl3_universal_neutral(" in policy
+    assert "sample->axis[SPIDER_SDL3_AXIS_LT]>=11000" in policy
+    assert "sample->axis[SPIDER_SDL3_AXIS_RT]>=11000" in policy
+    assert "if(native_unclaimed_guard && !spider_sdl3_universal_owner_neutral(&sample))" in universal
+    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in universal
+    assert "if(spider_sdl3_universal_neutral(&sample))" in universal
