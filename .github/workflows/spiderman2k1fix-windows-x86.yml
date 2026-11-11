@@ -55,7 +55,10 @@ jobs:
           mkdir -p dist/package/SpiderMan2k1Fix/linux
           # Build against glibc 2.35, NOT the Ubuntu 24.04 host's newer ABI.
           # The helper is ELF x86_64 even though the Wine game is Win32 x86.
-          docker run --rm --platform linux/amd64 \
+          # GitHub-hosted Ubuntu 24.04 runners can have broken Docker-bridge DNS.
+          # Host networking keeps Jammy's glibc 2.35 build environment intact
+          # while using the runner's working DNS/network for apt.
+          docker run --rm --network host --platform linux/amd64 \
             --mount "type=bind,source=$PWD,target=/src" \
             --workdir /src ubuntu:22.04 sh -ec '
               export DEBIAN_FRONTEND=noninteractive
