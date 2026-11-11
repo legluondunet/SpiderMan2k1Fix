@@ -81,6 +81,14 @@ The following issues are inherited from the original game and remain unresolved:
 
 If the **Windows/Linux desktop cursor** disappears **after Alt+Tab**, that is a different fault. Enable `[Debug] Log=1`, note your OS/Wine version and attach the complete log.
 
+### How do I enable the Steam Deck controls when launching through Lutris in Desktop Mode?
+
+SteamOS may initially use the Steam Deck controls as a **desktop keyboard/mouse layout**, rather than presenting them as gamepad buttons to Lutris and Wine. Switch Steam Input to a **Gamepad** layout, then press **Start** inside the game to select the controller for SpiderMan2k1Fix's SDL3 input.
+
+In one Steam Deck / Lutris Desktop Mode test, pressing the **`…` (Quick Access)** button together with **`X`** displayed a **"Gamepad"** notification and made the built-in controller usable in-game. This is an observed SteamOS shortcut, **not a SpiderMan2k1Fix key combination**; Steam Input shortcuts and layouts may vary. If it does not work, inspect your SteamOS desktop controller layout. Launching the game through Steam's Gaming Mode with a suitable gamepad layout is another option.
+
+The patch detected the built-in Steam Deck controller as SDL3 **`28DE:1205`** under GE-Proton11-12. This confirms device detection and input for that test, **not full validation of every Steam Deck game feature**. See the ongoing [Steam Deck compatibility issue #120](https://github.com/legluondunet/SpiderMan2k1Fix/issues/120).
+
 ### Why is there no sound?
 
 First distinguish **total silence** from missing **music, movie audio, or effects**, and whether it occurs before or after Alt+Tab. Check the selected system output, system/app/game volume, supported executable, paired DLL versions and whether the INI passed validation.
