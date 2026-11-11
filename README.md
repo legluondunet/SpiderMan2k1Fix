@@ -81,17 +81,11 @@ The following issues are inherited from the original game and remain unresolved:
 
 If the **Windows/Linux desktop cursor** disappears **after Alt+Tab**, that is a different fault. Enable `[Debug] Log=1`, note your OS/Wine version and attach the complete log.
 
-### How do I enable the Steam Deck controls when launching through Lutris in Desktop Mode?
+### How do I enable Steam Deck controls in Desktop Mode?
 
-SteamOS may initially use the Steam Deck controls as a **desktop keyboard/mouse layout**, rather than presenting them as gamepad buttons to Lutris and Wine. Switch Steam Input to a **Gamepad** layout, then press **Start** inside the game to select the controller for SpiderMan2k1Fix's SDL3 input.
+Steam Deck support is being investigated **after the v2.0.0 release**. In Desktop Mode, keep Steam running; hold **☰** (~3 seconds) to switch the Desktop/Gamepad layout, then press and release **Start** to select the SDL3 controller.
 
-**Keep the Steam client running in Desktop Mode.** On the tested Steam Deck, holding the **`☰` (Menu/Start)** button for about three seconds toggles the **Desktop / Gamepad** Steam Input layouts when Steam is running. The toggle did not work when Steam was closed; it worked again after launching Steam. Then press **Start** in Spider-Man to select the gamepad for SDL3. The tester's initial `… + X` / "Gamepad" notification report was later clarified: on **this** Steam Deck, **`…` (Quick Access) + `X` opens the on-screen keyboard in Desktop Mode**. Do not rely on `… + X` as a universal layout-toggle shortcut; Steam Input layouts may vary.
-
-**Verified Steam-library keyboard workaround:** the tester could open the SteamOS keyboard on the Desktop with **`… + X`**, but could **not** open it while Spider-Man had foreground focus after being launched directly from Lutris, even with Steam running. **Launching the installed game through the Steam library instead** provided a working route: press the **`…` (Quick Access)** button while playing, open the right-hand quick-access panel, then select its **keyboard icon**. The on-screen keyboard **appeared, accepted input in Spider-Man, and did not cause focus-loss PAUSED mode** in the observed session. **A CHEATS code was subsequently entered successfully and worked in the game.** However, the Steam keyboard **overlaps the game's CHEATS input field**, hiding the typed characters; the tester reports that this method is **awkward and unreliable**, so the **CHEATS usability issue remains open**. Moving the keyboard to the top of the screen may help: on some SteamOS versions, use **`☰` (Menu/Start) while the keyboard is displayed**, or **`Shift` then `Move`** in the keyboard itself. This repositioning feature is itself unreliable in some SteamOS versions and is **not yet tested** on the maintainer's current setup. Entering and committing a **save-game name** remains a separate unverified test. Do not infer that this behavior has been validated in every Desktop/Gaming Mode configuration.
-
-**F9 remains a separate limitation:** the Steam on-screen keyboard used in this test **has no function-key (F1–F12) row**, so it cannot directly send the patch's **F9 PNG screenshot shortcut**. As a workaround to test, edit this game's **Steam Input controller layout** and map an unused **rear grip button** (for example R4) to **keyboard F9**; verify that a SpiderMan2k1Fix PNG is actually created. Steam's separate screenshot function is not the patch's F9 PNG. No new in-game keyboard, loss-of-focus bypass or global Windows/Wine input change is implemented. See [Steam Deck issue #120](https://github.com/legluondunet/SpiderMan2k1Fix/issues/120).
-
-The patch detected the built-in Steam Deck controller as SDL3 **`28DE:1205`** under GE-Proton11-12. This confirms device detection and input for that test, **not full validation of every Steam Deck game feature**. See the ongoing [Steam Deck compatibility issue #120](https://github.com/legluondunet/SpiderMan2k1Fix/issues/120).
+On the tested Deck, **Steam library → game → … → keyboard icon** enabled text input without focus loss, but the overlay obscured fields and omitted **F9**. Direct Lutris launch lacked this in-game keyboard. Test observations and follow-up plans: [Steam Deck issue #120](https://github.com/legluondunet/SpiderMan2k1Fix/issues/120).
 
 ### Why is there no sound?
 
@@ -101,21 +95,9 @@ The game uses its original **DirectSound** engine. The built-in WAV/PKR correcti
 
 ## Built-in native WAV audio correction
 
-The original game's PKR loader can truncate WAV resources at 2,048-byte
-sector boundaries. The built-in repair restores only verified missing bytes
-using CRC-checked original audio data; native DirectSound playback is retained.
-It is enabled by default and requires **no new INI setting**.
+The default fix repairs verified truncated WAV data in original PKR resources, using CRC-checked bytes and retaining native DirectSound. No INI option is required. First released in **v1.1.0**, it passed Wine listening tests; Windows 11 focus recovery restored **37/37** DirectSound voices in reported tests (not a guarantee for all hardware).
 
-For troubleshooting only, `[Debug] ExperimentalAudioLoaderTail=0` disables
-the loader fix. The optional `ExperimentalAudioHeli1Declick=1` adjusts two
-original helicopter samples; read-only `ExperimentalPKRAudioIndex=1` and
-`ExperimentalPKRAudioPlayTrace=1` aid diagnosis. See the
-[technical audio guide](docs/references/diagnostics/audio/PKR_NATIVE_AUDIO_REPAIR.md).
-
-First released in **v1.1.0**, the native audio repair passed listening tests
-under Wine. Separately, Windows 11 focus recovery restored **37/37 active
-DirectSound voices** in the reported test sessions; this does not guarantee
-every audio device or game configuration.
+Diagnostic switches and implementation: [technical audio guide](docs/references/diagnostics/audio/PKR_NATIVE_AUDIO_REPAIR.md).
 
 ## Installation on Windows and Linux (Wine)
 
@@ -227,20 +209,7 @@ This system report never intentionally collects usernames, computer names, email
 
 ## Ideas for Future Versions
 
-The following are possible improvements under consideration, subject to technical feasibility. **None are guaranteed to be implemented.**
-
-- **Widescreen:** Correct 3D elements that appear misaligned near the edges of the screen.
-- **Performance:** Explore 60 FPS support and fixes for FPS-dependent boss and level issues.
-- **Quick saves:** Investigate instant game saving.
-- **Audio:** Investigate any remaining sound anomalies not addressed by the built-in native WAV-sector repair.
-- **Subtitles:** Explore subtitle support for pre-rendered movies, in-game cinematics, and gameplay dialogue.
-- **Cheats:** Add optional INI settings for costumes, God Mode, What If? mode, and other cheats.
-- **Additional content:** Explore support for *Spider-Man 2: Enter Electro*.
-- **Graphics and modding:** Improve sprites, explore HD enhancements, and investigate mod support.
-- **Achievements:** Explore an achievement system.
-- **Other game version bonus:** Add bonus from other game versions non present in PC version, like Fantastic Four torch...
-- **Shaders:** Add CRT shaders.
-- **Rendering engine:** Explore support for Vulkan or DirectX 9 and later.
+Ideas for later releases (none are guaranteed): better widescreen alignment and performance/60 FPS; quick saves; remaining audio issues; subtitles; optional cheat toggles; *Spider-Man 2: Enter Electro* research; sprites/HD graphics and modding; achievements; bonuses from other game editions (e.g. Fantastic Four); CRT shaders; and Vulkan or newer DirectX backends.
 
 ## Documentation
 
