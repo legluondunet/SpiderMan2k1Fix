@@ -16,7 +16,7 @@ concurrency:
 jobs:
   windows-x86:
     name: Build SpiderMan2k1Fix (32-bit MSVCRT)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
       - name: Check out sources
@@ -53,26 +53,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/package/SpiderMan2k1Fix/linux
-          # Build against glibc 2.35, NOT the Ubuntu 24.04 host's newer ABI.
-          # The helper is ELF x86_64 even though the Wine game is Win32 x86.
-          # GitHub-hosted Ubuntu 24.04 runners can have broken Docker-bridge DNS.
-          # Host networking keeps Jammy's glibc 2.35 build environment intact
-          # while using the runner's working DNS/network for apt.
-          docker run --rm --network host --platform linux/amd64 \
-            --mount "type=bind,source=$PWD,target=/src" \
-            --workdir /src ubuntu:22.04 sh -ec '
-              export DEBIAN_FRONTEND=noninteractive
-              apt-get update -qq
-              apt-get install -y -qq --no-install-recommends build-essential libx11-dev
-              cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 -fstack-protector-strong \
-                -o dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper \
-                linux/spiderman-focus-helper.c -lX11
-            '
+          # Use GitHub's Ubuntu 22.04 runner directly: it ships glibc 2.35,
+          # so we do not need a separate Docker Jammy image or apt downloads
+          # inside Docker (which have had intermittent DNS failures).
+          test -f /usr/include/X11/Xlib.h
+          cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 -fstack-protector-strong \
+            -o dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper \
+            linux/spiderman-focus-helper.c -lX11
           helper=dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper
           file "$helper" | grep 'ELF 64-bit'
           ldd "$helper"
           test -x "$helper"
-          # Fail CI if any dependency on the host's newer glibc sneaks in.
+          # Keep the glibc ABI gate even though the runner is Ubuntu 22.04.
           python3 - <<'PY'
           import re
           import subprocess
