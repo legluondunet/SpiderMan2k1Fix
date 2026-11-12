@@ -15,6 +15,7 @@
 #include "hud_widescreen.h"
 #include "hud_adaptive.h"
 #include "ui_canvas_43.h"
+#include "shell_background_43.h"
 #include "ui_transition_native43.h"
 #include "ui_transition_native43_bounds25.h"
 #include "ui_compositor_policy.h"
@@ -3087,6 +3088,89 @@ static int ui_transition_native43_handle_draw(
   return 1;
 }
 
+/* Experimental 4:3 completion for the original native shell background
+ * draw family. Active ONLY with an explicit process environment variable.
+ * The retail binary identifies its deferred 2D shell menu through original
+ * state scalars; the GPU still reports 3D. Independently source-gate the
+ * immediate D3D7 draw call (ret RVA 0x00103389), so previously mapped UI
+ * sprites (0x00102C72) are NEVER compressed a second time.
+ */
+static volatile LONG shell_bg43_trial_enabled=0;
+static volatile LONG shell_bg43_trial_hits=0;
+static volatile LONG shell_bg43_trial_rejects=0;
+static int shell_bg43_read_original_scalar(uintptr_t address,DWORD *out)
+{
+  MEMORY_BASIC_INFORMATION mbi;
+  uintptr_t base;
+  if(!out || sizeof(void*)!=4 ||
+     (uintptr_t)GetModuleHandleA(NULL)!=0x00400000u ||
+     VirtualQuery((const void *)address,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_GUARD|PAGE_NOACCESS)))
+    return 0;
+  base=(uintptr_t)mbi.BaseAddress;
+  if(address<base || address-base>=mbi.RegionSize ||
+     mbi.RegionSize-(size_t)(address-base)<sizeof(DWORD))
+    return 0;
+  memcpy(out,(const void *)address,sizeof(*out));
+  return 1;
+}
+static int shell_bg43_native_shell_candidate(void)
+{
+  DWORD request=0,task=0,input=0,pause=0,menu=0,dispatch=0,transition=0;
+  return
+    shell_bg43_read_original_scalar(0x0060CFA4u,&request) &&
+    shell_bg43_read_original_scalar(0x0054A510u,&task) &&
+    shell_bg43_read_original_scalar(0x006B78F0u,&input) &&
+    shell_bg43_read_original_scalar(0x00682950u,&pause) &&
+    shell_bg43_read_original_scalar(0x00682948u,&menu) &&
+    shell_bg43_read_original_scalar(0x0068293Cu,&dispatch) &&
+    shell_bg43_read_original_scalar(0x0054D38Cu,&transition) &&
+    request==3u && task==0x14u && input==1u &&
+    !pause && menu && !dispatch && !transition;
+}
+static const void *maybe_correct_shell_background43(
+    D3DPRIMITIVETYPE type,DWORD fvf,
+    const void *source,DWORD count,void *caller,SpiderMenuVertex *copy)
+{
+  DWORD rva=0;
+  int shell=0,hit;
+  LONG n;
+  char line[300];
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  if(InterlockedCompareExchange(&shell_bg43_trial_enabled,0,0)!=1 ||
+     !source || !copy || count!=4u ||
+     fvf!=0x144UL || type!=D3DPT_TRIANGLEFAN ||
+     !geom_rva(caller,&rva) || rva!=SPIDER_SHELL_BG43_CALLER_RVA ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
+     !SpiderHudWidescreen_Installed())
+    return source;
+  shell=shell_bg43_native_shell_candidate();
+  hit=SpiderShellBackground43_Transform(
+    v,copy,(unsigned)type,(uint32_t)fvf,(uint32_t)rva,
+    (unsigned)desktop_w,(unsigned)desktop_h,shell);
+  n=InterlockedIncrement(hit?&shell_bg43_trial_hits:&shell_bg43_trial_rejects);
+  if(debug_log_enabled && (n<=12 || (hit && n%120==0))) {
+    float l=v[0].x,r=v[0].x,t=v[0].y,b=v[0].y;
+    unsigned k;
+    for(k=1u;k<4u;k++) {
+      if(v[k].x<l)l=v[k].x;
+      if(v[k].x>r)r=v[k].x;
+      if(v[k].y<t)t=v[k].y;
+      if(v[k].y>b)b=v[k].y;
+    }
+    snprintf(line,sizeof(line),
+      "SHELL-BG43-TRIAL: %s n=%ld shell=%d caller=%08lX box=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f screen=%ux%u [OPT-IN]",
+      hit?"MAPPED":"REJECT",(long)n,shell,(unsigned long)rva,
+      (double)l,(double)r,(double)t,(double)b,
+      (double)v[0].z,(double)v[0].rhw,
+      (unsigned)desktop_w,(unsigned)desktop_h);
+    log_line(line);
+  }
+  return hit?copy:source;
+}
+
 /* Optional, bounded, READ-ONLY diagnostic for Save Game shell graphics.
  * Its menu remains in the original 3D renderer: do not apply an inferred
  * all-UI remap to unknown 3D or 2D material. The test is armed explicitly
@@ -3304,6 +3388,12 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       }
       v=candidate;
     }
+    /* Opt-in A/B shell background trial. This other *original* D3D7
+     * draw family never passes the existing common 4:3 UI classifier.
+     * A failed native-shell or source geometry check preserves original. */
+    if(v==verts && count==4)
+      v=maybe_correct_shell_background43(
+        type,fvf,verts,count,__builtin_return_address(0),small);
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
     /* Probe any genuine independent screen-size native tint candidate.
      * Log original source geometry, never a corrected copy. */
@@ -5594,6 +5684,16 @@ static DWORD initialize_body(LPVOID unused) {
    * If the two exact original CALLs cannot be patched, leave game code
    * untouched and report the safety fallback when logging is enabled. */
   install_f9_png_only_dispatch();
+  {
+    char setting[8]={0};
+    if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_SHELL_BG43_TRIAL",
+                               setting,sizeof(setting))==1 &&
+       setting[0]=='1') {
+      InterlockedExchange(&shell_bg43_trial_enabled,1);
+      log_line("SHELL-BG43-TRIAL: ACTIVE opt-in original D3D7 immediate shell backdrop family; original UI/3D preserved on failed guards");
+    } else
+      log_line("SHELL-BG43-TRIAL: OFF (default)");
+  }
   if(debug_log_enabled) {
     char setting[8]={0};
     if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_SAVE_UI_TRACE",
