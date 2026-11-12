@@ -50,6 +50,7 @@ static void verify(unsigned w,unsigned h) {
     assert(!SpiderMenubg43_Transform(v,out,4,6,0x144u,w,h));
     v[0].z=0.7f;
     v[0].x=(float)w*0.31f;v[3].x=v[0].x;
+    v[1].x=(float)w*0.70f;v[2].x=v[1].x;
     assert(!SpiderMenubg43_Transform(v,out,4,6,0x144u,w,h));
     v[0].x=0.0f;v[3].x=0.0f;
     v[1].x=INFINITY;
