@@ -973,10 +973,21 @@ static int menubg43_validate_bytes(
 {
   MEMORY_BASIC_INFORMATION mem;
   uintptr_t offset;
-  char message[220],actual[32]={0},expected[32]={0};
+  /* Keep the maximum accepted signature length in sync with the byte
+   * dump buffers. Eleven bytes are required by the real queue flush site.
+   * Neither invalid lengths nor inaccessible pages may be read. */
+  enum { MAX_SIGNATURE_BYTES=16 };
+  char message[220],actual[3*MAX_SIGNATURE_BYTES+1]={0};
+  char expected[3*MAX_SIGNATURE_BYTES+1]={0};
   size_t i;
-  if(!site || !sig || n==0u || n>10u ||
-     VirtualQuery(site,&mem,sizeof(mem))!=sizeof(mem) ||
+  if(!site || !sig || n==0u || n>MAX_SIGNATURE_BYTES) {
+    snprintf(message,sizeof(message),
+      "MENUBG43-PREFLIGHT: FAIL %s invalid signature length=%lu",
+      label,(unsigned long)n);
+    log_line(message);
+    return 0;
+  }
+  if(VirtualQuery(site,&mem,sizeof(mem))!=sizeof(mem) ||
      mem.State!=MEM_COMMIT ||
      (mem.Protect&(PAGE_NOACCESS|PAGE_GUARD)) ||
      (uintptr_t)site<(uintptr_t)mem.BaseAddress) {
