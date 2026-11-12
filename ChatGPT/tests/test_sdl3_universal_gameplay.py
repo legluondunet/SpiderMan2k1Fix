@@ -281,7 +281,8 @@ def test_integrated_panel_preserved_and_generic_owner_is_explicit_only():
     assert "SpiderSDL3Universal_BeforeModal(owner);" in ui
     assert "generic_selected_id" in probe
     assert "selection.active=previous;" in probe
-    assert "universal_requested && vid && pid && matches==1u" in probe
+    assert "start_claims.count==1u" in probe
+    assert "spider_sdl3_selected_instance_valid(opened,num_pads," in probe
     assert "spider_reconnect_kind(vid,pid)==SPIDER_RECONNECT_NONE" in probe
     assert "!generic_selected_id" in probe
     assert "return SpiderSDL3Probe_GenericSelectedSample(" in probe
@@ -568,9 +569,10 @@ def test_universal_mapped_ps4_uses_generic_identity_without_native_rebind():
     assert "universal_requested?" in start
     assert "spider_sdl3_selection_start_edge(&selection,pads[i].id,pressed)" in start
     assert "spider_sdl3_selection_start(&selection,pads[i].id,pressed)" in start
-    assert "if(universal_requested ||" in start
+    assert "if(universal_requested)" in start
     assert "selection.active=previous;" in start
-    assert "generic_selected_id=pads[i].id;" in start
+    assert "spider_sdl3_start_claim_add(&start_claims,pads[i].id," in start
+    assert "generic_selected_id=start_claims.instance_id;" in probe
     generic=probe.split("int SpiderSDL3Probe_GenericSelectedSample(",1)[1].split(
         "int SpiderSDL3Probe_SelectedRT(",1)[0]
     assert "if(!universal_requested &&" in generic
@@ -913,7 +915,7 @@ def test_universal_mapped_sample_requires_explicit_start_only():
         "int SpiderSDL3Probe_SelectedRT(",1)[0]
     assert "spider_sdl3_selected_model_unique(" in generic
     assert "sdl_connected(pads[i].handle)" in generic
-    assert "generic_selected_id=pads[i].id;" in probe
+    assert "generic_selected_id=start_claims.instance_id;" in probe
     assert "spider_sdl3_selection_start_edge(&selection,pads[i].id,pressed)" in probe
 
 
