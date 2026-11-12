@@ -52,7 +52,7 @@ static void verify(unsigned w,unsigned h) {
     v[0].x=(float)w*0.31f;v[3].x=v[0].x;
     assert(!SpiderMenubg43_Transform(v,out,4,6,0x144u,w,h));
     v[0].x=0.0f;v[3].x=0.0f;
-    v[1].x=(float)w/0.0f;
+    v[1].x=INFINITY;
     assert(!SpiderMenubg43_Transform(v,out,4,6,0x144u,w,h));
 }
 int main(void) {
