@@ -1,18 +1,18 @@
-"""2.0 RC2 must integrate all three SDL3 improvements, not only a version bump.
-CI source regression does not replace live game hardware acceptance.
+"""Stable 2.0 must retain all three validated SDL3 improvements.
+CI source regression does not replace prior real-game hardware acceptance.
 """
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
 
 
-def test_combined_rc2_contains_save_confirmation_and_duplicate_instances():
+def test_stable_2_0_retains_save_confirmation_and_duplicate_instances():
     ver=(ROOT/"version_info.h").read_text(encoding="utf-8")
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     universal=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
     policy=(ROOT/"sdl3_universal_policy.h").read_text(encoding="utf-8")
     identity=(ROOT/"sdl3_gamepad_identity.h").read_text(encoding="utf-8")
-    assert '#define SPIDERMAN2K1FIX_VERSION "2.0.0-rc.2"' in ver
+    assert '#define SPIDERMAN2K1FIX_VERSION "2.0.0"' in ver
     assert "spider_sdl3_selected_instance_valid(" in identity
     assert "spider_sdl3_selected_model_unique(" in identity
     assert "spider_sdl3_start_claim_add(" in probe
