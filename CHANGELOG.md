@@ -1,13 +1,14 @@
 # Changelog
 
-## Unreleased — v2.0.0-rc.2 (November 9, 2026)
+## 2.0.0 — November 12, 2026
 
-**Integrated release candidate; not yet a published v2.0.0 stable release.**
-This candidate combines merged Save Game confirmation PR #138, the
-Pause/cutscene SDL3 trigger-drift correction from merged PR #139,
-duplicate-instance selection from merged PR #137, and release metadata.
-Exact RC2 package tests on Windows 11 and Wine/Proton are mandatory.
-The previously published stable v1.1.0 remains available.
+Release 2.0.0 integrates controller Save Game confirmation (PR #138),
+Pause/cutscene SDL3 trigger-drift correction (PR #139), selection of
+multiple same-model SDL3 controllers (PR #137), and the accumulated display,
+focus and gameplay improvements from the accepted RC2. The maintainer accepted
+real-game testing on Windows 11 and Wine/GE-Proton on November 12, 2026.
+The final version bump is metadata-only and must pass its own build and
+package verification before the v2.0.0 tag or GitHub release is published.
 
 ### Controls and SDL3
 
@@ -26,7 +27,7 @@ The previously published stable v1.1.0 remains available.
   LT/RT midrange value from 5000 to 10999. Trigger actions retain their original
   11000 press / 5000 release hysteresis and fresh Start/DirectInput ownership
   retains its strict neutral gate. The user confirmed improved behavior on
-  Windows 10, with further RC2 regression testing required.
+  Windows 10; further hardware-specific regression coverage is welcome.
 - **Same-model SDL3 pads (merged PR #137):** the universal keyboard
   bridge identifies connected instances independently even when other devices
   share the same VID:PID; competing simultaneous Start edges fail closed and
@@ -65,15 +66,18 @@ The previously published stable v1.1.0 remains available.
   Linux Wine/Proton controller/graphics regression sessions. The source
   tested as `v1.1.0-b66c6c4` was file-identical to final merged `main`
   at `c746080d`.
-- **Required for final v2.0.0:** a green *exact RC2 commit* Windows x86 CI
-  (tests, DLLs, SDL3, Linux helper and package), followed by the maintainer's
-  real Windows and Wine smoke test of that downloaded RC.
+- **Accepted for final v2.0.0 preparation:** RC2 CI passed 951 tests on
+  the exact candidate head (run #43264908738), with the Windows x86 DLLs,
+  SDL3 runtime, Linux X11 helper and package verified. The maintainer
+  confirmed final Windows 11 and Wine/Proton smoke tests, including gamepad
+  switching, native Pause, SAVE GAME / YES, video/audio resume, Alt+Tab and
+  normal exit. The stable-version package still requires its own CI.
 - **Not yet claimed:** full Steam Deck/Steam Input compatibility, native
   analog-axis preservation, every SDL3 device, and native Windows PS3
   hardware. Limited Steam Deck hardware observations are tracked in issue #120
   for follow-up after v2.0.0; none imply complete compatibility.
 - No automatic release or tag is created by the CI workflow. See
-  [RC test plan](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
+  [accepted RC2 test history](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
 - Historical development reports and superseded experimental findings remain
   in the [research archive](docs/references/CHANGELOG_EXPERIMENT_HISTORY_PRE_20261101.md)
   and [integration acceptance](docs/references/INTEGRATION_XBOX_MOUSE_ALT_FOCUS_ACCEPTANCE.md).
