@@ -175,3 +175,24 @@ def test_queue_flush_matches_observed_original_push_sequence():
     expected = bytes([0x8D, 0x57, 0x10, 0x52, 0x68, 0x44, 0x01,
                       0x00, 0x00, 0x6A, 0x06])
     assert observed == expected
+
+
+
+def test_real_queue_flush_signature_fits_preflight_and_error_dump_buffers():
+    """Regression: an 11-byte native signature used to be rejected as unreadable.
+
+    The former n>10 check triggered before VirtualQuery. Byte dump buffers
+    were also only 32 bytes, too small for 11 formatted hex values.
+    """
+    assert "enum { MAX_SIGNATURE_BYTES=16 };" in SOURCE
+    assert "n>MAX_SIGNATURE_BYTES" in SOURCE
+    assert "n>10u" not in SOURCE
+    assert "actual[3*MAX_SIGNATURE_BYTES+1]" in SOURCE
+    assert "expected[3*MAX_SIGNATURE_BYTES+1]" in SOURCE
+    assert "invalid signature length=%lu" in SOURCE
+    assert "memory not readable" in SOURCE
+    assert "const BYTE draw_signature[11]" in SOURCE
+    assert 11 <= 16
+    for n in (5, 6, 10, 11, 16):
+        # Every byte is logged as 'HH ' and a final NUL terminator.
+        assert 3 * n + 1 <= 3 * 16 + 1
