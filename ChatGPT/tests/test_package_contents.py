@@ -46,7 +46,13 @@ def test_ci_builds_without_retaining_the_completed_one_shot_release_workflow():
     assert sorted(p.name for p in ROOT.glob("RELEASE_NOTES_*.md")) == [
         "RELEASE_NOTES_1.0.0.md",
         "RELEASE_NOTES_1.1.0.md",
+        "RELEASE_NOTES_2.0.0.md",
     ]
+    stable_notes = (ROOT / "RELEASE_NOTES_2.0.0.md").read_text(encoding="utf-8")
+    assert "# SpiderMan2k1Fix v2.0.0" in stable_notes
+    assert "Windows 11" in stable_notes and "Wine" in stable_notes
+    assert "SDL3" in stable_notes and "Game Over" in stable_notes
+    assert "0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea" in stable_notes
     new_notes = (ROOT / "RELEASE_NOTES_1.1.0.md").read_text(encoding="utf-8")
     assert "# SpiderMan2k1Fix v1.1.0" in new_notes
     assert "Linux/Wine" in new_notes

@@ -5,6 +5,8 @@ This directory contains the maintained technical documentation and an index of s
 ## Main documentation
 
 - [Development and original EXE reverse engineering](DEVELOPMENT.md) — synthesized architecture, implementation decisions, and known limitations
+- [v2.0.0 release notes](../RELEASE_NOTES_2.0.0.md) — stable-version feature summary, installation and known limitations
+- [v2.0.0 RC2 acceptance history](references/RELEASE_2_0_RC_TEST_PLAN.md) — verified Windows/Wine tests and package provenance
 - [Version 1.0.0 candidate — source/code audit and release-readiness gates](references/RELEASE_1_0_AUDIT.md) — evidence, cleanup, regression risks and publication checklist
 
 ## Current integration and preserved experimental history

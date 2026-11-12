@@ -1,7 +1,12 @@
 # SpiderMan2k1Fix v2.0.0-rc.2 — release candidate validation
 
-Status: **RC build only; v2.0.0 is not published**. This checklist does not
-authorize creating a tag or release until the real-game tests below succeed.
+Status: **historical RC2 acceptance record**. The maintainer accepted the final
+clean-exit and Windows 11 package tests on November 12, 2026, after earlier
+Wine/Proton, Pause, Save Game, controller and focus validations. PR #136 was
+merged into `main` at `0d5ae792`. The unchecked boxes below preserve the
+original test requests and are not an assertion of missing approval. The
+stable 2.0.0 version-bump PR has independent CI and package gates; this RC
+history does not create a tag or GitHub release.
 
 ## Provenance and package
 
