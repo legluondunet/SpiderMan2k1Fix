@@ -3176,7 +3176,7 @@ static void save_ui_trace_draw(const char *api,void *device,
       (IDirect3DDevice7*)device,&viewport)))
     good_view=1;
   snprintf(msg,sizeof(msg),
-    "SAVE-UI-TRACE: %s n=%ld caller=%08lX primitive=%lu fvf=%08lX quad=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.3f tex=%lu color=%08lX mapped=%d viewport=%lux%lu+%lu+%lu%s",
+    "SAVE-UI-TRACE: %s n=%ld caller=%08lX primitive=%lu fvf=%08lX quad=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.3f indices=%lu color=%08lX mapped=%d viewport=%lux%lu+%lu+%lu%s",
     api,(long)n,(unsigned long)rva,(unsigned long)type,
     (unsigned long)fvf,(double)l,(double)r,(double)t,(double)b,
     (double)v[0].z,(double)v[0].rhw,
