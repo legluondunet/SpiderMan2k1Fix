@@ -31,7 +31,10 @@ def test_save_screen_probe_is_bounded_and_draw_path_unchanged():
         "static HRESULT WINAPI hooked_draw_primitive(",1)[0]
     assert 'SAVE-UI-TRACE: OTHER' in fn
     assert 'SAVE-UI-TRACE: %s' in fn
-    assert "if(n<=16)" in fn
+    assert "if(n<=24)" in fn
+    assert "v && fvf==0x144UL && count>=4u" in fn
+    assert "[UNKNOWN FVF; NO VERTEX DEREFERENCE]" in fn
+    assert "[UNCLASSIFIED; READ-ONLY]" in fn
     assert "if(n>100)return;" in fn
     assert "IDirect3DDevice7_GetViewport(" in fn
     assert "geom_rva(caller,&rva)" in fn
