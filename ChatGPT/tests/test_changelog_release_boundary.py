@@ -8,19 +8,20 @@ README=(ROOT/"README.md").read_text(encoding="utf-8")
 RC_PLAN=(ROOT/"docs/references/RELEASE_2_0_RC_TEST_PLAN.md").read_text(encoding="utf-8")
 
 
-def test_candidate_explains_current_sdl3_policy_and_no_early_release():
-    assert CHANGELOG.startswith("# Changelog\n\n## Unreleased — v2.0.0-rc.2")
+def test_stable_2_0_explains_current_sdl3_policy_and_preserves_release_gate():
+    assert CHANGELOG.startswith("# Changelog\n\n## 2.0.0 — November 12, 2026")
     head=CHANGELOG.split("## 1.1.0 — October 27, 2026",1)[0]
     for phrase in ("only supported controller mapping backend", "first safe foreground",
                    "neutral-first", "DirectInput", "QuickExit F10/F12", "RawHex",
                    "Windows 11", "Wine/Proton", "Steam Deck", "final v2.0.0",
-                   "original veil", "SDL3 3.4.18", "not yet a published"):
+                   "original veil", "SDL3 3.4.18", "own CI"):
         assert phrase in head, phrase
     assert "ExperimentalSDL3UniversalGameplay=0" not in head
     assert "Native Windows hardware validation remains deferred" not in head
     assert "Not released or merged" not in head
     assert "README" in RC_PLAN and "Windows" in RC_PLAN and "Wine" in RC_PLAN
-    assert "not published" in RC_PLAN.lower()
+    assert "historical RC2 acceptance record" in RC_PLAN
+    assert "0d5ae792" in RC_PLAN
 
 
 def test_historical_release_entries_remain_intact():
