@@ -3152,11 +3152,36 @@ static void save_ui_trace_draw(const char *api,void *device,
      count!=4u || !(v[0].z>=0.0f && v[0].z<0.02f &&
                      v[0].rhw>=2.0f && v[0].rhw<=64.0f)) {
     n=InterlockedIncrement(&save_ui_trace_other);
-    if(n<=16) {
-      snprintf(msg,sizeof(msg),
-        "SAVE-UI-TRACE: OTHER n=%ld api=%s caller=%08lX primitive=%lu fvf=%08lX vertices=%lu indices=%lu [UNCLASSIFIED, UNMODIFIED]",
-        (long)n,api,(unsigned long)rva,(unsigned long)type,
-        (unsigned long)fvf,(unsigned long)count,(unsigned long)index_count);
+    if(n<=24) {
+      /* The first F9 run proved SAVE GAME panel/text already mapped=1,
+       * but these rejects carried NO source XY, Z, RHW or mapping detail.
+       * Read only the four vertex records when their FVF layout permits.
+       * Geometry is a 4-vertex SAMPLE even for larger primitive batches.
+       * Never treat a depth-rejected primitive as identified SAVE GAME UI.
+       */
+      if(v && fvf==0x144UL && count>=4u) {
+        l=r=v[0].x;t=b=v[0].y;
+        for(k=1u;k<4u;k++) {
+          if(v[k].x<l)l=v[k].x;
+          if(v[k].x>r)r=v[k].x;
+          if(v[k].y<t)t=v[k].y;
+          if(v[k].y>b)b=v[k].y;
+        }
+        snprintf(msg,sizeof(msg),
+          "SAVE-UI-TRACE: OTHER n=%ld api=%s caller=%08lX primitive=%lu fvf=%08lX vertices=%lu indices=%lu v0..3=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.4f color=%08lX mapped=%d [UNCLASSIFIED; READ-ONLY]",
+          (long)n,api,(unsigned long)rva,(unsigned long)type,
+          (unsigned long)fvf,(unsigned long)count,
+          (unsigned long)index_count,
+          (double)l,(double)r,(double)t,(double)b,
+          (double)v[0].z,(double)v[0].rhw,
+          (unsigned long)v[0].diffuse,drawn!=source);
+      } else {
+        snprintf(msg,sizeof(msg),
+          "SAVE-UI-TRACE: OTHER n=%ld api=%s caller=%08lX primitive=%lu fvf=%08lX vertices=%lu indices=%lu mapped=%d [UNKNOWN FVF; NO VERTEX DEREFERENCE]",
+          (long)n,api,(unsigned long)rva,(unsigned long)type,
+          (unsigned long)fvf,(unsigned long)count,
+          (unsigned long)index_count,drawn!=source);
+      }
       log_line(msg);
     }
     return;
