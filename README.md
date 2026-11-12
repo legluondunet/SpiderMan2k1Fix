@@ -1,6 +1,6 @@
 # SpiderMan2k1Fix
 
-**Integrated release candidate (test build, not stable):** v2.0.0-rc.2 combines the merged controller Save Game fix (#138) with the experimental same-model SDL3 device selection (#137). Use the [exact successful RC build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml). The **published stable release remains v1.1.0** until the combined candidate passes Windows and Wine tests. See the [2.0 RC test plan](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
+**Integrated release candidate (test build, not stable):** v2.0.0-rc.2 combines the merged controller Save Game fix (#138) with the merged same-model SDL3 device selection (#137). Use the [exact successful RC build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml). The **published stable release remains v1.1.0** until the combined candidate passes Windows and Wine tests. See the [2.0 RC test plan](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 [![Linux Wine / Proton compatible](https://img.shields.io/badge/Linux%20Wine%20%2F%20Proton-compatible-428b40?logo=linux&logoColor=white)](#installation-on-windows-and-linux-wine)

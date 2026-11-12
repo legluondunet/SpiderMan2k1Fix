@@ -4,8 +4,8 @@
 
 **Integrated release candidate; not yet a published v2.0.0 stable release.**
 This candidate combines merged Save Game confirmation PR #138, the
-Pause/cutscene SDL3 trigger-drift correction from merged PR #139, experimental
-duplicate-instance selection from still-open PR #137, and release metadata.
+Pause/cutscene SDL3 trigger-drift correction from merged PR #139,
+duplicate-instance selection from merged PR #137, and release metadata.
 Exact RC2 package tests on Windows 11 and Wine/Proton are mandatory.
 The previously published stable v1.1.0 remains available.
 
@@ -27,11 +27,14 @@ The previously published stable v1.1.0 remains available.
   11000 press / 5000 release hysteresis and fresh Start/DirectInput ownership
   retains its strict neutral gate. The user confirmed improved behavior on
   Windows 10, with further RC2 regression testing required.
-- **Same-model SDL3 pads (experimental PR #137):** the universal keyboard
-  bridge can identify a unique connected instance even if other devices
-  share its VID:PID; simultaneous competing Start presses fail closed and
-  the original DirectInput owner retains its strict unique-model policy.
-  The combined RC2 still needs real-hardware validation.
+- **Same-model SDL3 pads (merged PR #137):** the universal keyboard
+  bridge identifies connected instances independently even when other devices
+  share the same VID:PID; competing simultaneous Start edges fail closed and
+  native DirectInput keeps its strict unique-model safety policy.
+  Two Xbox-compatible devices sharing `045E:028E` were tested with successful
+  Start handoffs on Windows 11 (November 9) and Wine/GE-Proton (November 12,
+  alongside a PS4 controller). Mirrored physical-device identities and
+  deliberately simultaneous Start presses remain unconfirmed on hardware.
 - Controller switching and unplug/replug remain guarded by neutral-first
   selection, foreground ownership, strict live SDL3 instance identity and
   the original game's separately preserved fatal-DirectInput-unplug safety hook.
@@ -65,9 +68,10 @@ The previously published stable v1.1.0 remains available.
 - **Required for final v2.0.0:** a green *exact RC2 commit* Windows x86 CI
   (tests, DLLs, SDL3, Linux helper and package), followed by the maintainer's
   real Windows and Wine smoke test of that downloaded RC.
-- **Not yet claimed:** Steam Deck/Steam Input hardware, native analog-axis
-  preservation, every SDL3 device, and native Windows PS3 hardware. These
-  do not become implicitly validated by a Windows build.
+- **Not yet claimed:** full Steam Deck/Steam Input compatibility, native
+  analog-axis preservation, every SDL3 device, and native Windows PS3
+  hardware. Limited Steam Deck hardware observations are tracked in issue #120
+  for follow-up after v2.0.0; none imply complete compatibility.
 - No automatic release or tag is created by the CI workflow. See
   [RC test plan](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
 - Historical development reports and superseded experimental findings remain

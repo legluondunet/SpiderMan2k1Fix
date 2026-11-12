@@ -5,17 +5,25 @@ authorize creating a tag or release until the real-game tests below succeed.
 
 ## Provenance and package
 
-- Integrated baseline: `main` commit `003f32ab252e7930d32e2563ba96e8cb2e8bdd6a`,
+- Integrated baseline: `main` commit `a5e13c66bf4b5e5c47c452758f5669124d166d96`,
   containing the native Save Game controller fix (#138), validated with
   PS3 Cross on GE-Proton11-12 and Xbox 360 A on native Windows 11,
   and the trigger-drift fix (#139, issue #60) first validated by the
   reporter on Windows 10 with a mapped `045E:02E0` controller.
-- RC2 additionally stages experimental duplicate-VID:PID SDL3
-  keyboard-only selection from the separately open PR #137, plus the RC1
-  version/documentation work. No new graphics/audio/media/focus patch,
-  SDL3 runtime version or original game EXE patch is intended.
-- Individual feature acceptance is **not** automatic validation of this
-  combined RC2 build. Do not merge #137 or publish 2.0.0 solely on CI.
+- RC2 includes the **already merged PR #137** for SDL3 duplicate-VID:PID
+  keyboard-only selection, plus version/documentation/CI work. No new
+  graphics/audio/media/focus patch, SDL3 runtime or game EXE patch is intended.
+- Real Windows 11 tests (November 9, `v2.0.0-rc.2-2d73879`) confirmed
+  two Xbox-compatible `045E:028E` devices alternating through Start without
+  cross-talk and SAVE GAME / YES via controller A.
+- Real Wine/GE-Proton tests (November 12, `v2.0.0-rc.2-aee01fc`)
+  logged controller selection 4 → 3 → 1 → 4 → 3: two identical-model Xbox
+  devices plus a PS4 controller, with proper owner exit and activation.
+  The runtime source blobs matched the later CI head `02de842`; later changes
+  concerned documentation/CI, not the game runtime.
+- **These focused hardware results are accepted.** Do not interpret them
+  as proof of untested simultaneous Start edges or the entire release smoke
+  test. Do not publish v2.0.0 solely on CI.
 - Obtain the exact RC-head artifact from
   [Windows x86 GitHub Actions](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml).
   Confirm the workflow succeeded for the RC commit before testing.
@@ -27,6 +35,16 @@ authorize creating a tag or release until the real-game tests below succeed.
 - The game must be the supported original `SpideyPC.exe` with SHA-256
   `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
   Keep existing user settings and campaign saves.
+
+## Already accepted hardware evidence
+
+- [x] **Windows 11**: two `045E:028E` controllers selected alternately
+  with Start without interfering, and native SAVE GAME / YES confirmed with A.
+- [x] **Wine/GE-Proton**: two `045E:028E` controllers and one PS4 controller
+  selected in sequence with verified SDL3 owner handoffs (November 12 log).
+- [ ] **Not covered by those logs**: deliberately simultaneous Start claims,
+  complete game smoke tests on the final packaged artifact, Bink/Pause/Alt+Tab
+  and clean exit across all requested combinations.
 
 ## One consolidated real Windows 11 test
 
