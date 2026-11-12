@@ -46,6 +46,8 @@ authorize creating a tag or release until the real-game tests below succeed.
   complete game smoke tests on the final packaged artifact, Bink/Pause/Alt+Tab
   and clean exit across all requested combinations.
 
+**CI provenance:** post-PR-#137 main CI passed ([run #43263574600](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/43263574600)); the reconciled RC branch at `46d3e59` also passed ([run #43264265433](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/43264265433)). Documentation was then updated; accept a distributable RC artifact only from a new successful run on the exact subsequent release-branch head. Previous artifacts remain useful for comparison but are not the final package.
+
 ## One consolidated real Windows 11 test
 
 - [ ] Launch and verify the menu version/log prefix contains **v2.0.0-rc.2**.
