@@ -965,13 +965,47 @@ static const void *maybe_correct_menubg43_source(
   }
   return applied?copy:source;
 }
-static int menubg43_validate_callsite(BYTE *site,const BYTE sig[5])
+/* Authenticated original bytes must be readable and match exactly.
+ * Report the failed gate and its real bytes rather than silently declining
+ * every experimental test. No mismatch is accepted or bypassed. */
+static int menubg43_validate_bytes(
+    const BYTE *site,const BYTE *sig,size_t n,const char *label)
 {
   MEMORY_BASIC_INFORMATION mem;
-  return site && VirtualQuery(site,&mem,sizeof(mem))==sizeof(mem) &&
-    mem.State==MEM_COMMIT &&
-    !(mem.Protect&(PAGE_NOACCESS|PAGE_GUARD)) &&
-    memcmp(site,sig,5u)==0;
+  uintptr_t offset;
+  char message[220],actual[32]={0},expected[32]={0};
+  size_t i;
+  if(!site || !sig || n==0u || n>10u ||
+     VirtualQuery(site,&mem,sizeof(mem))!=sizeof(mem) ||
+     mem.State!=MEM_COMMIT ||
+     (mem.Protect&(PAGE_NOACCESS|PAGE_GUARD)) ||
+     (uintptr_t)site<(uintptr_t)mem.BaseAddress) {
+    snprintf(message,sizeof(message),
+      "MENUBG43-PREFLIGHT: FAIL %s memory not readable",label);
+    log_line(message);
+    return 0;
+  }
+  offset=(uintptr_t)site-(uintptr_t)mem.BaseAddress;
+  if(offset>mem.RegionSize || n>mem.RegionSize-offset) {
+    snprintf(message,sizeof(message),
+      "MENUBG43-PREFLIGHT: FAIL %s crosses readable memory region",label);
+    log_line(message);
+    return 0;
+  }
+  if(memcmp(site,sig,n)==0)return 1;
+  for(i=0u;i<n;i++) {
+    snprintf(actual+3u*i,sizeof(actual)-3u*i,"%02X ",site[i]);
+    snprintf(expected+3u*i,sizeof(expected)-3u*i,"%02X ",sig[i]);
+  }
+  snprintf(message,sizeof(message),
+    "MENUBG43-PREFLIGHT: FAIL %s signature actual=%s expected=%s",
+    label,actual,expected);
+  log_line(message);
+  return 0;
+}
+static int menubg43_validate_callsite(BYTE *site,const BYTE sig[5])
+{
+  return menubg43_validate_bytes(site,sig,5u,"CALL");
 }
 static int menubg43_install_source_hooks(void)
 {
@@ -983,36 +1017,51 @@ static int menubg43_install_source_hooks(void)
   BYTE patch_common[5]={0xE8,0,0,0,0};
   BYTE *const save=(BYTE *)(uintptr_t)0x0049FC98u;
   BYTE *const common=(BYTE *)(uintptr_t)0x0048DACCu;
-  int64_t d1,d2;
-  int32_t rel1,rel2;
+  DWORD rel1,rel2;
   DWORD old1,old2,discard;
   if(menubg43_call_hooks_installed)return 1;
   if(sizeof(void*)!=4 ||
-     (uintptr_t)GetModuleHandleA(NULL)!=0x00400000u ||
-     !menubg43_validate_callsite(save,orig_save) ||
-     !menubg43_validate_callsite(common,orig_common) ||
-     memcmp((const void *)(uintptr_t)0x0050768Fu,
-            queue_signature,sizeof(queue_signature))!=0 ||
-     memcmp((const void *)(uintptr_t)0x00502C63u,
-            draw_signature,sizeof(draw_signature))!=0)
+     (uintptr_t)GetModuleHandleA(NULL)!=0x00400000u) {
+    log_line("MENUBG43-PREFLIGHT: FAIL expected original x86 image at 0x00400000");
     return 0;
-  d1=(int64_t)(uintptr_t)&spider_menubg43_source_wrapper -
-     ((int64_t)(uintptr_t)save+5);
-  d2=(int64_t)(uintptr_t)&spider_menubg43_source_wrapper -
-     ((int64_t)(uintptr_t)common+5);
-  if(d1<INT32_MIN || d1>INT32_MAX || d2<INT32_MIN || d2>INT32_MAX)
+  }
+  if(!menubg43_validate_callsite(save,orig_save)) {
+    log_line("MENUBG43-PREFLIGHT: FAIL SAVE CALL 0x0049FC98");
     return 0;
-  rel1=(int32_t)d1;rel2=(int32_t)d2;
+  }
+  if(!menubg43_validate_callsite(common,orig_common)) {
+    log_line("MENUBG43-PREFLIGHT: FAIL COMMON CALL 0x0048DACC");
+    return 0;
+  }
+  if(!menubg43_validate_bytes(
+       (const BYTE *)(uintptr_t)0x0050768Fu,
+       queue_signature,sizeof(queue_signature),"QUEUE BUILDER 0x0050768F") ||
+     !menubg43_validate_bytes(
+       (const BYTE *)(uintptr_t)0x00502C63u,
+       draw_signature,sizeof(draw_signature),"QUEUE FLUSH 0x00502C63"))
+    return 0;
+  /* Like the existing F9 hook, x86 CALL rel32 uses a 32-bit modulo
+   * displacement. An apparent >INT32_MAX offset to a Wine-loaded DLL is
+   * valid in 32-bit address space, not a reason to refuse installation. */
+  rel1=(DWORD)((uintptr_t)&spider_menubg43_source_wrapper -
+               ((uintptr_t)save+5u));
+  rel2=(DWORD)((uintptr_t)&spider_menubg43_source_wrapper -
+               ((uintptr_t)common+5u));
+  log_line("MENUBG43-PREFLIGHT: PASS original CALLs, queue signatures, x86 rel32");
   memcpy(patch_save+1,&rel1,sizeof(rel1));
   memcpy(patch_common+1,&rel2,sizeof(rel2));
-  if(!VirtualProtect(save,5u,PAGE_EXECUTE_READWRITE,&old1))
+  if(!VirtualProtect(save,5u,PAGE_EXECUTE_READWRITE,&old1)) {
+    log_line("MENUBG43-PREFLIGHT: FAIL SAVE CALL VirtualProtect");
     return 0;
+  }
   if(!VirtualProtect(common,5u,PAGE_EXECUTE_READWRITE,&old2)) {
+    log_line("MENUBG43-PREFLIGHT: FAIL COMMON CALL VirtualProtect");
     VirtualProtect(save,5u,old1,&discard);
     return 0;
   }
   if(memcmp(save,orig_save,5u)!=0 ||
      memcmp(common,orig_common,5u)!=0) {
+    log_line("MENUBG43-PREFLIGHT: FAIL CALL bytes changed before write; refusing");
     VirtualProtect(common,5u,old2,&discard);
     VirtualProtect(save,5u,old1,&discard);
     return 0;
@@ -1026,6 +1075,8 @@ static int menubg43_install_source_hooks(void)
   menubg43_call_hooks_installed=
     memcmp(save,patch_save,5u)==0 &&
     memcmp(common,patch_common,5u)==0;
+  if(!menubg43_call_hooks_installed)
+    log_line("MENUBG43-PREFLIGHT: FAIL post-write CALL verification");
   return menubg43_call_hooks_installed;
 }
 
