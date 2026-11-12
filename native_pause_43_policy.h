@@ -32,6 +32,28 @@ static inline float SpiderNativePause43_MapX(
     return center+(x-center)*SpiderNativePause43_Scale(w,h);
 }
 
+/* Use the EXACT same floating-point edges as the native 4:3 Pause art
+ * when extending its original backdrop material into the side gutters.
+ * The physical D3D viewport uses integer pixel rectangles; its rounded
+ * x/width MUST NOT become geometry edges for pretransformed XYZRHW quads.
+ * At 1280x800 the native Pause is at 106.666..1173.333, while viewport
+ * integers 106..1173 leave a one-column gap/overlap on opposite sides.
+ * Reject unsupported/non-wide geometry without changing game state. */
+static inline int SpiderNativePause43_CanvasBounds(
+    unsigned w,unsigned h,float *left,float *right)
+{
+    float l,r;
+    if(!left || !right || !SpiderNativePause43_Widescreen(w,h))
+        return 0;
+    l=SpiderNativePause43_MapX(0.0f,w,h);
+    r=SpiderNativePause43_MapX((float)w,w,h);
+    if(!(l>0.0f && r>l && r<(float)w))
+        return 0;
+    *left=l;
+    *right=r;
+    return 1;
+}
+
 /* Five independently observed, tightly isolated native ESC depth layers.
  * The original game varies RHW with game context; the same original
  * caller, geometry, texture state and depth still must match in the hook.

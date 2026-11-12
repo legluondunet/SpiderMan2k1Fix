@@ -2360,6 +2360,7 @@ static int ui_comp_draw_native_exterior_gutters(
   HRESULT draw_hr=S_OK,restore_hr=S_OK;
   DWORD w=(DWORD)desktop_w,h=(DWORD)desktop_h;
   DWORD center_w,margin,right_begin;
+  float canvas_left=0.0f,canvas_right=0.0f;
   unsigned k,side,done=0u;
   int changed=0;
   LONG frame=InterlockedCompareExchange(&ui_comp_flushed_frames,0,0);
@@ -2378,7 +2379,10 @@ static int ui_comp_draw_native_exterior_gutters(
    * right margin to be exactly one pixel wider if required. */
   margin=(w-center_w)/2u;
   right_begin=margin+center_w;
-  if(margin==0u || right_begin>=w)return 0;
+  if(margin==0u || right_begin>=w ||
+     !SpiderNativePause43_CanvasBounds(
+         (unsigned)w,(unsigned)h,&canvas_left,&canvas_right))
+    return 0;
   if(FAILED(IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)) ||
      FAILED(IDirect3DDevice7_GetViewport(device,&previous)))
     return 0;
@@ -2415,9 +2419,14 @@ static int ui_comp_draw_native_exterior_gutters(
      FAILED(IDirect3DDevice7_SetRenderState(device,
                                D3DRENDERSTATE_ZWRITEENABLE,FALSE)))
     draw_hr=E_FAIL;
+  /* A single shared pair of native 4:3 edges closes the fractional
+   * pixel gap (left) and double-painted column (right) at 1280x800.
+   * Retain the original game's own source material and entire centre.
+   * Rounded integer viewport coordinates are for viewport validation
+   * above ONLY, never used as geometry boundaries for these quads. */
   for(side=0u;side<2u && SUCCEEDED(draw_hr);side++){
-    float left=side==0u ? 0.0f:(float)right_begin;
-    float right=side==0u ? (float)margin:(float)w;
+    float left=side==0u ? 0.0f:canvas_right;
+    float right=side==0u ? canvas_left:(float)w;
     v[0].x=left;v[0].y=0.0f;
     v[1].x=right;v[1].y=0.0f;
     v[2].x=right;v[2].y=(float)h;
@@ -2430,13 +2439,14 @@ static int ui_comp_draw_native_exterior_gutters(
     restore_hr=original_set_viewport(device,&previous);
   if(debug_log_enabled && (frame<4 || frame%180==0 ||
                             FAILED(draw_hr) || FAILED(restore_hr))){
-    char msg[300];
+    char msg[355];
     snprintf(msg,sizeof(msg),
-      "UI-COMPOSITOR-BACKDROP-VIEWPORT: gutter-only viewport=%lux%lu+%lu+%lu physical=%lux%lu temporary-switch=%d draw=0x%08lX restore=0x%08lX quads=%u",
+      "UI-COMPOSITOR-BACKDROP-VIEWPORT: gutter-only viewport=%lux%lu+%lu+%lu physical=%lux%lu temporary-switch=%d draw=0x%08lX restore=0x%08lX quads=%u canvas=(%.3f..%.3f) [NATIVE 4:3 FLOAT EDGES]",
       (unsigned long)previous.dwWidth,(unsigned long)previous.dwHeight,
       (unsigned long)previous.dwX,(unsigned long)previous.dwY,
       (unsigned long)w,(unsigned long)h,
-      changed,(unsigned long)draw_hr,(unsigned long)restore_hr,done);
+      changed,(unsigned long)draw_hr,(unsigned long)restore_hr,done,
+      (double)canvas_left,(double)canvas_right);
     log_line(msg);
   }
   if(FAILED(restore_hr)) {

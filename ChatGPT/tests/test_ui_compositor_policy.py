@@ -272,8 +272,8 @@ def test_native_exterior_preserves_all_160_source_triangles():
         "IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)",
         "for(k=0u;k<4u;k++)v[k]=sample->source_v[0]",
         "for(side=0u;side<2u && SUCCEEDED(draw_hr);side++)",
-        "left=side==0u ? 0.0f:(float)right_begin",
-        "right=side==0u ? (float)margin:(float)w",
+        "left=side==0u ? 0.0f:canvas_right",
+        "right=side==0u ? canvas_left:(float)w",
         "D3DPT_TRIANGLEFAN,0x144UL,v,4,sample->flags",
         "if(FAILED(draw_hr) || done!=2u)return 0;",
     ):
@@ -520,10 +520,66 @@ def test_exterior_gutters_support_odd_physical_screen_widths():
     fn=src.split("static int ui_comp_draw_native_exterior_gutters(",1)[1].split(
         "/* Flush before native EndScene",1)[0]
     assert "right_begin=margin+center_w" in fn
-    assert "if(margin==0u || right_begin>=w)return 0;" in fn
-    assert "float left=side==0u ? 0.0f:(float)right_begin;" in fn
-    assert "float right=side==0u ? (float)margin:(float)w;" in fn
+    assert "if(margin==0u || right_begin>=w ||" in fn
+    assert "SpiderNativePause43_CanvasBounds(" in fn
+    # Integer viewport bounds are allowed only for viewport recognition:
+    # geometry MUST use the same fractional limits as mapped ESC sprites.
+    assert "SpiderNativePause43_CanvasBounds(" in fn
+    assert "float left=side==0u ? 0.0f:canvas_right;" in fn
+    assert "float right=side==0u ? canvas_left:(float)w;" in fn
+    assert "float left=side==0u ? 0.0f:(float)right_begin;" not in fn
+    assert "float right=side==0u ? (float)margin:(float)w;" not in fn
     assert "(w-center_w)!=2u*margin" not in fn
+
+
+def test_pause_gutter_edges_match_native_fractional_canvas(tmp_path):
+    """A 16:10 deck viewport has unequal integer/float edges: no seam allowed."""
+    cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+    if not cc:
+        pytest.skip("C compiler required for native fractional gutter geometry")
+    source=tmp_path/"native_pause_seam.c"
+    executable=tmp_path/"native_pause_seam"
+    source.write_text(r"""
+#include <assert.h>
+#include <math.h>
+#include "native_pause_43_policy.h"
+
+static int near(float a,float b) {
+    return fabsf(a-b)<0.001f;
+}
+static void expect(unsigned w,unsigned h,float l,float r) {
+    float left=-1.0f,right=-1.0f;
+    assert(SpiderNativePause43_CanvasBounds(w,h,&left,&right));
+    assert(near(left,l) && near(right,r));
+    assert(near(left,SpiderNativePause43_MapX(0.0f,w,h)));
+    assert(near(right,SpiderNativePause43_MapX((float)w,w,h)));
+    assert(near(left+right,(float)w));
+    assert(left>0.0f && right<(float)w && right>left);
+}
+int main(void) {
+    /* Reproduced Steam Deck / Wine seam at original integer 106/1173. */
+    expect(1280u,800u,106.666667f,1173.333333f);
+    /* Integral 16:10, 16:9 and other fractional/odd output sizes. */
+    expect(1200u,750u,100.0f,1100.0f);
+    expect(1920u,1200u,160.0f,1760.0f);
+    expect(1920u,1080u,240.0f,1680.0f);
+    expect(1280u,720u,160.0f,1120.0f);
+    expect(1281u,800u,107.166667f,1173.833333f);
+    assert(!SpiderNativePause43_CanvasBounds(1440u,1080u,0,0));
+    {
+        float l=0.0f,r=0.0f;
+        assert(!SpiderNativePause43_CanvasBounds(1440u,1080u,&l,&r));
+        assert(!SpiderNativePause43_CanvasBounds(1280u,800u,0,&r));
+        assert(!SpiderNativePause43_CanvasBounds(1280u,800u,&l,0));
+        assert(!SpiderNativePause43_CanvasBounds(0u,800u,&l,&r));
+    }
+    return 0;
+}
+""",encoding="utf-8")
+    subprocess.run([cc,"-std=c11","-O2","-Wall","-Wextra","-Werror",
+                    "-I",str(ROOT),str(source),"-lm","-o",str(executable)],
+                   text=True,capture_output=True,check=True)
+    subprocess.run([str(executable)],check=True)
 
 
 def test_retired_veil_trials_cannot_change_validated_palette():
