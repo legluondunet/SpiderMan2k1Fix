@@ -157,3 +157,21 @@ def test_preflight_reports_exact_guard_without_relaxing_signatures():
     assert "FAIL post-write CALL verification" in SOURCE
     assert "VirtualQuery(site,&mem,sizeof(mem))" in SOURCE
     assert "memcmp(site,sig,n)==0" in SOURCE
+
+
+
+def test_queue_flush_matches_observed_original_push_sequence():
+    """Wine's SHA-pinned retail binary has PUSH EDX before PUSH 0x144.
+
+    The earlier guessed 10-byte signature incorrectly omitted byte 0x52,
+    so no menubg source hooks were installed in the user's SAVE GAME run.
+    """
+    assert (
+        "static const BYTE draw_signature[11]={"
+        "0x8D,0x57,0x10,0x52,0x68,0x44,0x01,0x00,0x00,0x6A,0x06};"
+    ) in SOURCE
+    assert "draw_signature,sizeof(draw_signature)" in SOURCE
+    observed = bytes.fromhex("8D 57 10 52 68 44 01 00 00 6A 06")
+    expected = bytes([0x8D, 0x57, 0x10, 0x52, 0x68, 0x44, 0x01,
+                      0x00, 0x00, 0x6A, 0x06])
+    assert observed == expected
