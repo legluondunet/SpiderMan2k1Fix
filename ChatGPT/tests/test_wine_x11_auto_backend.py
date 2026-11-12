@@ -101,9 +101,18 @@ def test_ci_ships_elf_directly_inside_flat_install_artifact_and_release_zip():
 
 def test_linux_helper_is_built_with_legacy_glibc_compatibility_floor():
     # ABI gate must be based on the shipped ELF, not the builder's libc.
-    assert 'ubuntu:22.04' in WORKFLOW
-    assert 'build-essential libx11-dev' in WORKFLOW
-    assert '--platform linux/amd64' in WORKFLOW
+    # Accept either a pinned Jammy container or a native Jammy Actions
+    # runner. Both must check the actual shipped ELF symbol-version floor.
+    jammy_container = (
+        'ubuntu:22.04' in WORKFLOW
+        and 'build-essential libx11-dev' in WORKFLOW
+        and '--platform linux/amd64' in WORKFLOW
+    )
+    jammy_runner = (
+        'runs-on: ubuntu-22.04' in WORKFLOW
+        and 'test -f /usr/include/X11/Xlib.h' in WORKFLOW
+    )
+    assert jammy_container or jammy_runner
     assert 'readelf", "--version-info", helper' in WORKFLOW
     assert 'max(versions) <= (2, 35)' in WORKFLOW
     assert 'sudo apt-get install -y -qq xvfb xauth libx11-dev' in WORKFLOW

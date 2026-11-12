@@ -16,7 +16,7 @@ concurrency:
 jobs:
   windows-x86:
     name: Build SpiderMan2k1Fix (32-bit MSVCRT)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
       - name: Check out sources
@@ -53,23 +53,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/package/SpiderMan2k1Fix/linux
-          # Build against glibc 2.35, NOT the Ubuntu 24.04 host's newer ABI.
-          # The helper is ELF x86_64 even though the Wine game is Win32 x86.
-          docker run --rm --platform linux/amd64 \
-            --mount "type=bind,source=$PWD,target=/src" \
-            --workdir /src ubuntu:22.04 sh -ec '
-              export DEBIAN_FRONTEND=noninteractive
-              apt-get update -qq
-              apt-get install -y -qq --no-install-recommends build-essential libx11-dev
-              cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 -fstack-protector-strong \
-                -o dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper \
-                linux/spiderman-focus-helper.c -lX11
-            '
+          # Use GitHub's Ubuntu 22.04 runner directly: it ships glibc 2.35,
+          # so we do not need a separate Docker Jammy image or apt downloads
+          # inside Docker (which have had intermittent DNS failures).
+          test -f /usr/include/X11/Xlib.h
+          cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 -fstack-protector-strong \
+            -o dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper \
+            linux/spiderman-focus-helper.c -lX11
           helper=dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper
           file "$helper" | grep 'ELF 64-bit'
           ldd "$helper"
           test -x "$helper"
-          # Fail CI if any dependency on the host's newer glibc sneaks in.
+          # Keep the glibc ABI gate even though the runner is Ubuntu 22.04.
           python3 - <<'PY'
           import re
           import subprocess
@@ -101,11 +96,22 @@ jobs:
       - name: Bundle pinned upstream SDL3 Windows x86 runtime and license
         run: |
           set -euo pipefail
-          curl --fail --location --retry 4 --retry-all-errors \
-            --output "$RUNNER_TEMP/SDL3-3.4.18-win32-x86.zip" \
-            https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18-win32-x86.zip
+          sdl_archive="$RUNNER_TEMP/SDL3-3.4.18-win32-x86.zip"
+          # Both locations are upstream-owned SDL hosts, never third-party
+          # binaries. The packaging script checks the fixed official asset
+          # size and SHA-256; a stale/corrupt download always fails closed.
+          if ! curl --fail --location --retry 2 --retry-all-errors \
+            --connect-timeout 15 --max-time 75 \
+            --output "$sdl_archive" \
+            https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18-win32-x86.zip; then
+            echo "::warning::SDL GitHub Releases returned an error; using official www.libsdl.org/release fallback (SHA-256 verified below)"
+            curl --fail --location --retry 4 --retry-all-errors \
+              --connect-timeout 15 --max-time 75 \
+              --output "$sdl_archive" \
+              https://www.libsdl.org/release/SDL3-3.4.18-win32-x86.zip
+          fi
           python3 scripts/package_sdl3_x86.py dist/package/SpiderMan2k1Fix \
-            --archive "$RUNNER_TEMP/SDL3-3.4.18-win32-x86.zip"
+            --archive "$sdl_archive"
           test -s dist/package/SpiderMan2k1Fix/SDL3.dll
           test -s dist/package/SpiderMan2k1Fix/SDL3-LICENSE.txt
 

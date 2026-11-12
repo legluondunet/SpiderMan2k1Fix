@@ -94,4 +94,8 @@ Cross/A once on a slot and then on the separate YES/NO confirmation;
 verify the highlighted YES actually saves, no multiple slots activate,
 and Back remains functional. Regress 3D Jump, native ESC Pause,
 Bink, Game Over, controller handoff, Alt+Tab/KEYUP, Wine and Windows.
-Do not merge or claim fixed before hardware confirmation.
+**Hardware result, 2026-11-09:** Save Game slot selection and YES
+confirmation were confirmed with PS3 Cross under GE-Proton11-12 and
+Xbox 360 A under native Windows 11 using v1.1.0-9970384.
+PR #138 has been merged into main at commit 7e0526f6.
+The combined RC2 (including PR #137) still needs its own test.

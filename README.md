@@ -1,5 +1,7 @@
 # SpiderMan2k1Fix
 
+**Integrated release candidate (test build, not stable):** v2.0.0-rc.2 combines the merged controller Save Game fix (#138) with the merged same-model SDL3 device selection (#137). Use the [exact successful RC build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml). The **published stable release remains v1.1.0** until the combined candidate passes Windows and Wine tests. See the [2.0 RC test plan](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
+
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 [![Linux Wine / Proton compatible](https://img.shields.io/badge/Linux%20Wine%20%2F%20Proton-compatible-428b40?logo=linux&logoColor=white)](#installation-on-windows-and-linux-wine)
 
@@ -35,7 +37,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **Widescreen HUD:** Corrects the proportions and positioning of HUD elements, including health and web gauges, compass, mission objectives, boss health bars, and in-game pause menus, with native scene-entry iris. Tested at 1920×1080 (16:9) and 1920×1200 (16:10).
 - **FPS limiter:** Configurable frame-rate cap, set to **30 FPS by default**. Lower limits, such as 20 FPS, can be selected for timing-sensitive gameplay.
 - **Alt+Tab stability:** Background game pause, synchronized Bink/DirectSound, and keyboard/gamepad resume. Press and release any key or an eligible selected controller button after returning. The OS desktop cursor is restored. See [focus details](docs/references/CONFIGURATION.md).
-- **Universal SDL3 gamepads (the only supported controller backend):** SDL3 recognizes mapped controllers with customizable per-model profiles. Press **Start** on a neutral pad to select it for menus, videos and 3D gameplay. Unknown or unmapped devices are not given legacy DirectInput button mappings. Game/Win32 safety checks and original keyboard controls remain in place. Xbox 360, PS3 and DS4 passed GE-Proton hardware tests; native Windows testing remains separate.
+- **Universal SDL3 gamepads (only supported controller backend):** Press **Start**, then release to neutral for SDL3 menus, video and gameplay; retain per-model mappings and keyboard fallback. RC2 adds guarded selection of duplicate-model SDL instances without weakening native DirectInput safety. The Save Game slot and YES prompt accept Cross/A on Windows 11 and Proton. [Details](docs/references/RELEASE_2_0_RC_TEST_PLAN.md). Xbox 360, PS3 and DS4 passed GE-Proton hardware tests; DS4 and Xbox 360 were also validated on native Windows 11, including repeated Alt+Tab and controller switching. Steam Deck and native Windows PS3 are not yet validated.
 - **Keyboard layouts:** Automatically detects the active keyboard layout and adapts the game's controls, keyboard labels, and cheat-code entry. The original game only supported QWERTY layouts.
 - **No game mouse:** Keyboard/gamepad only. Game cursor, clicks and polling are permanently off. Desktop pointer unaffected; legacy `MouseEnabled` ignored.
 - **DPI awareness:** Handles Windows display scaling to ensure correct window dimensions and rendering on high-DPI displays.
@@ -47,7 +49,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 
 Successfully tested on Windows 11 and Linux/Wine.
 
-**First-time Xbox setup:** no controller INI edit is needed for a normally recognized Xbox 360 gamepad. Launch the game, let the controller return to neutral, then press Start to select it. You may still customize the per-model profile. Original `[Joystick]` defaults remain untouched.
+**First-time Xbox setup:** no controller INI edit is needed for a normally recognized Xbox 360 gamepad. Launch the game, let the controller return to neutral, then press Start to select it. You may still customize the per-model profile. The original game's joystick bytes remain preserved in `[Internal] RawHex`, but legacy `[Joystick]` INI bindings no longer affect SDL3.
 
 ## Bugs Resolved
 
@@ -79,6 +81,12 @@ The following issues are inherited from the original game and remain unresolved:
 
 If the **Windows/Linux desktop cursor** disappears **after Alt+Tab**, that is a different fault. Enable `[Debug] Log=1`, note your OS/Wine version and attach the complete log.
 
+### How do I enable Steam Deck controls in Desktop Mode?
+
+Steam Deck support is being investigated **after the v2.0.0 release**. In Desktop Mode, keep Steam running; hold **☰** (~3 seconds) to switch the Desktop/Gamepad layout, then press and release **Start** to select the SDL3 controller.
+
+On the tested Deck, **Steam library → game → … → keyboard icon** enabled text input without focus loss, but the overlay obscured fields and omitted **F9**. Direct Lutris launch lacked this in-game keyboard. Test observations and follow-up plans: [Steam Deck issue #120](https://github.com/legluondunet/SpiderMan2k1Fix/issues/120).
+
 ### Why is there no sound?
 
 First distinguish **total silence** from missing **music, movie audio, or effects**, and whether it occurs before or after Alt+Tab. Check the selected system output, system/app/game volume, supported executable, paired DLL versions and whether the INI passed validation.
@@ -87,35 +95,9 @@ The game uses its original **DirectSound** engine. The built-in WAV/PKR correcti
 
 ## Built-in native WAV audio correction
 
-The original game can truncate WAV resources by reading only complete
-2,048-byte sectors from `data.pkr`. SpiderMan2k1Fix now **corrects this
-automatically**, using the game's native PKR reader and independently
-CRC-verified original WAV contents. Each missing remainder is verified
-before writing only the exact bytes into the game's allocated buffer.
-Even duplicate WAV sources must agree byte-for-byte; unsafe matches
-are skipped. The original DirectSound playback engine is preserved.
+The default fix repairs verified truncated WAV data in original PKR resources, using CRC-checked bytes and retaining native DirectSound. No INI option is required. First released in **v1.1.0**, it passed Wine listening tests; Windows 11 focus recovery restored **37/37** DirectSound voices in reported tests (not a guarantee for all hardware).
 
-**No audio-fix setting is required or written to the factory
-`SpiderMan2k1Fix.ini`.** The correction is enabled automatically on
-the supported, SHA-256-verified `SpideyPC.exe`. If troubleshooting
-requires turning it off, advanced users may manually add
-`ExperimentalAudioLoaderTail=0` to `[Debug]`. This is a hidden
-compatibility override, not a default configuration setting.
-
-The separate, optional `ExperimentalAudioHeli1Declick=1` still corrects
-two known original samples in `Heli1.wav`. Optional read-only audio
-diagnostics remain available through `ExperimentalPKRAudioIndex=1`
-and `ExperimentalPKRAudioPlayTrace=1`.
-
-The former late DirectSound-buffer repair
-(`ExperimentalAudioPKRTailRestore`) has been removed. This built-in native
-loader correction is introduced in **SpiderMan2k1Fix v1.1.0**. The
-correction and duplicate-source repairs have been validated without
-audible crackling under Linux/Wine. On Windows 11, the combined integration
-test also confirmed **37/37 actively playing DirectSound voices** restored
-after focus return across four pauses. This verifies focus audio recovery on
-the tested setup; it does not establish compatibility with every audio device,
-game build or sound configuration.
+Diagnostic switches and implementation: [technical audio guide](docs/references/diagnostics/audio/PKR_NATIVE_AUDIO_REPAIR.md).
 
 ## Installation on Windows and Linux (Wine)
 
@@ -142,7 +124,7 @@ Other versions or modified copies of the executable are not supported.
 
 **No original game files are included in this project.** You must provide your own legally obtained copy of the game.
 
-**Bundled open-source runtime:** Upcoming release archives include the unmodified **SDL3 3.4.18 Windows x86** `SDL3.dll` and its original zlib license as `SpiderMan2k1Fix/SDL3-LICENSE.txt`. Packaging checks the upstream archive SHA-256 and PE32/i386 architecture. SDL3 is a separate third-party project, not part of the original game.
+**Bundled open-source runtime:** The v2.0 release-candidate archive includes the unmodified **SDL3 3.4.18 Windows x86** `SDL3.dll` and its original zlib license as `SpiderMan2k1Fix/SDL3-LICENSE.txt`. Packaging checks the upstream archive SHA-256 and PE32/i386 architecture. SDL3 is a separate third-party project, not part of the original game.
 
 ## Configuration
 
@@ -227,20 +209,7 @@ This system report never intentionally collects usernames, computer names, email
 
 ## Ideas for Future Versions
 
-The following are possible improvements under consideration, subject to technical feasibility. **None are guaranteed to be implemented.**
-
-- **Widescreen:** Correct 3D elements that appear misaligned near the edges of the screen.
-- **Performance:** Explore 60 FPS support and fixes for FPS-dependent boss and level issues.
-- **Quick saves:** Investigate instant game saving.
-- **Audio:** Investigate any remaining sound anomalies not addressed by the built-in native WAV-sector repair.
-- **Subtitles:** Explore subtitle support for pre-rendered movies, in-game cinematics, and gameplay dialogue.
-- **Cheats:** Add optional INI settings for costumes, God Mode, What If? mode, and other cheats.
-- **Additional content:** Explore support for *Spider-Man 2: Enter Electro*.
-- **Graphics and modding:** Improve sprites, explore HD enhancements, and investigate mod support.
-- **Achievements:** Explore an achievement system.
-- **Other game version bonus:** Add bonus from other game versions non present in PC version, like Fantastic Four torch...
-- **Shaders:** Add CRT shaders.
-- **Rendering engine:** Explore support for Vulkan or DirectX 9 and later.
+Ideas for later releases (none are guaranteed): better widescreen alignment and performance/60 FPS; quick saves; remaining audio issues; subtitles; optional cheat toggles; *Spider-Man 2: Enter Electro* research; sprites/HD graphics and modding; achievements; bonuses from other game editions (e.g. Fantastic Four); CRT shaders; and Vulkan or newer DirectX backends.
 
 ## Documentation
 
