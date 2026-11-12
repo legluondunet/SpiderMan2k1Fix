@@ -128,3 +128,32 @@ def test_tagged_draw_has_precedence_guard_and_never_writes_game_vertices():
     assert draw.index("maybe_correct_unified_ui_canvas(") < draw.index(
         "maybe_correct_menubg43_source(") < draw.index(
         "maybe_correct_horplus(")
+
+
+def test_x86_rel32_displacements_wrap_modulo_2_32():
+    """A native 32-bit CALL can target a DLL above the signed-2GB boundary.
+
+    Do not regress to a signed-difference range check: the existing F9
+    hook already relies on the same modulo-32 arithmetic.
+    """
+    assert "DWORD rel1,rel2;" in SOURCE
+    assert "rel1=(DWORD)((uintptr_t)&spider_menubg43_source_wrapper -" in SOURCE
+    assert "rel2=(DWORD)((uintptr_t)&spider_menubg43_source_wrapper -" in SOURCE
+    assert "d1<INT32_MIN" not in SOURCE
+    assert "MENUBG43-PREFLIGHT: PASS original CALLs" in SOURCE
+    for callsite in (0x0049FC98, 0x0048DACC):
+        for target in (0x00600000, 0x7FFFFFFF, 0xF1234567):
+            relative = (target - (callsite + 5)) & 0xFFFFFFFF
+            assert ((callsite + 5 + relative) & 0xFFFFFFFF) == target
+
+
+def test_preflight_reports_exact_guard_without_relaxing_signatures():
+    assert "menubg43_validate_bytes(" in SOURCE
+    assert "FAIL SAVE CALL 0x0049FC98" in SOURCE
+    assert "FAIL COMMON CALL 0x0048DACC" in SOURCE
+    assert "QUEUE BUILDER 0x0050768F" in SOURCE
+    assert "QUEUE FLUSH 0x00502C63" in SOURCE
+    assert "actual=%s expected=%s" in SOURCE
+    assert "FAIL post-write CALL verification" in SOURCE
+    assert "VirtualQuery(site,&mem,sizeof(mem))" in SOURCE
+    assert "memcmp(site,sig,n)==0" in SOURCE
