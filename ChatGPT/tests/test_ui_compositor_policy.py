@@ -272,8 +272,8 @@ def test_native_exterior_preserves_all_160_source_triangles():
         "IDirect3DDevice7_ApplyStateBlock(device,sample->state_token)",
         "for(k=0u;k<4u;k++)v[k]=sample->source_v[0]",
         "for(side=0u;side<2u && SUCCEEDED(draw_hr);side++)",
-        "left=side==0u ? 0.0f:(float)right_begin",
-        "right=side==0u ? (float)margin:(float)w",
+        "left=side==0u ? 0.0f:canvas_right",
+        "right=side==0u ? canvas_left:(float)w",
         "D3DPT_TRIANGLEFAN,0x144UL,v,4,sample->flags",
         "if(FAILED(draw_hr) || done!=2u)return 0;",
     ):
@@ -520,7 +520,8 @@ def test_exterior_gutters_support_odd_physical_screen_widths():
     fn=src.split("static int ui_comp_draw_native_exterior_gutters(",1)[1].split(
         "/* Flush before native EndScene",1)[0]
     assert "right_begin=margin+center_w" in fn
-    assert "if(margin==0u || right_begin>=w)return 0;" in fn
+    assert "if(margin==0u || right_begin>=w ||" in fn
+    assert "SpiderNativePause43_CanvasBounds(" in fn
     # Integer viewport bounds are allowed only for viewport recognition:
     # geometry MUST use the same fractional limits as mapped ESC sprites.
     assert "SpiderNativePause43_CanvasBounds(" in fn
