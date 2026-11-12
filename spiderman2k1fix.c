@@ -15,6 +15,7 @@
 #include "hud_widescreen.h"
 #include "hud_adaptive.h"
 #include "ui_canvas_43.h"
+#include "menubg_provenance_43.h"
 #include "ui_transition_native43.h"
 #include "ui_transition_native43_bounds25.h"
 #include "ui_compositor_policy.h"
@@ -841,6 +842,193 @@ typedef HRESULT (WINAPI *DrawPrimitiveFn)(void *, D3DPRIMITIVETYPE, DWORD, LPVOI
 typedef HRESULT (WINAPI *DrawIndexedPrimitiveFn)(void *, D3DPRIMITIVETYPE, DWORD, LPVOID, DWORD, LPWORD, DWORD, DWORD);
 static DrawPrimitiveFn original_draw_primitive;
 static DrawIndexedPrimitiveFn original_draw_indexed_primitive;
+/* SHA-pinned original menubg source provenance. This is strictly opt-in.
+ * Rather than guessing by vertex color/z/size, both native original call
+ * sites to 0x509D20 are wrapped with their original 7-arg cdecl ABI.
+ * The source-verified builder at 0x50768F appends 240-byte records to
+ * 0x73C7B8 and increments 0xAC08F4; record+0x10 becomes the original
+ * DrawPrimitive vertex pointer at queued flush 0x502C6F.
+ *
+ * Tags belong to a record index in the exact original queue only.
+ * No game byte or user file is altered by the mapping. The two original
+ * callsites are patched exclusively while the trial env var is set.
+ */
+static int menubg43_trial_enabled=0;
+static int menubg43_call_hooks_installed=0;
+static volatile LONG menubg43_frame_tag[SPIDER_MENUBG43_RECORD_CAP];
+static DWORD menubg43_texture_tag[SPIDER_MENUBG43_RECORD_CAP];
+static float menubg43_x_tag[SPIDER_MENUBG43_RECORD_CAP];
+static float menubg43_y_tag[SPIDER_MENUBG43_RECORD_CAP];
+static volatile LONG menubg43_source_calls=0,menubg43_mapped=0;
+static volatile LONG menubg43_rejects=0;
+typedef DWORD (__cdecl *SpiderMenubgOriginalFn)(
+  DWORD,DWORD,DWORD,DWORD,DWORD,DWORD,DWORD);
+static DWORD __cdecl spider_menubg43_source_wrapper(
+    DWORD depth,DWORD resource,DWORD u,DWORD v,
+    DWORD width,DWORD height,DWORD alpha)
+{
+  DWORD before=*(const volatile DWORD *)(uintptr_t)SPIDER_MENUBG43_QUEUE_COUNT;
+  DWORD result=((SpiderMenubgOriginalFn)(uintptr_t)0x00509D20u)(
+      depth,resource,u,v,width,height,alpha);
+  DWORD after=*(const volatile DWORD *)(uintptr_t)SPIDER_MENUBG43_QUEUE_COUNT;
+  LONG calls=InterlockedIncrement(&menubg43_source_calls);
+  char message[230];
+  DWORD i;
+  LONG stamp=InterlockedCompareExchange(&flip_count,0,0)+1;
+  /* Even source-labelled geometry is not assumed valid if the original
+   * queue is saturated or the count changed non-monotonically. */
+  if(after>=before && after<=SPIDER_MENUBG43_RECORD_CAP &&
+     after-before<=32u && after>before && resource!=0u) {
+    for(i=before;i<after;i++) {
+      const BYTE *record=(const BYTE *)(uintptr_t)
+        (SPIDER_MENUBG43_RECORD_BASE +
+         (uintptr_t)i*SPIDER_MENUBG43_RECORD_STRIDE);
+      const SpiderMenuVertex *vertex=(const SpiderMenuVertex *)(record+16u);
+      DWORD texture;
+      memcpy(&texture,record+4u,sizeof(texture));
+      menubg43_texture_tag[i]=texture;
+      menubg43_x_tag[i]=vertex[0].x;
+      menubg43_y_tag[i]=vertex[0].y;
+      InterlockedExchange(&menubg43_frame_tag[i],stamp);
+    }
+  }
+  if(debug_log_enabled && calls<=16) {
+    snprintf(message,sizeof(message),
+      "MENUBG43-SOURCE: CALL n=%ld before=%lu after=%lu delta=%ld flip=%ld resource=%08lX [retail named resource; queued provenance]",
+      (long)calls,(unsigned long)before,(unsigned long)after,
+      (long)((int64_t)after-(int64_t)before),
+      (long)(stamp-1),(unsigned long)resource);
+    log_line(message);
+  }
+  return result;
+}
+static int menubg43_native_shell_state(void)
+{
+  /* The original engine can report gameplay 3D while SAVE GAME owns its
+   * input shell. A complete, source-verified tuple is required; a menu
+   * pointer or renderer mode alone is never sufficient. */
+  const volatile DWORD *request=(const volatile DWORD *)(uintptr_t)0x0060CFA4u;
+  const volatile DWORD *task=(const volatile DWORD *)(uintptr_t)0x0054A510u;
+  const volatile DWORD *input=(const volatile DWORD *)(uintptr_t)0x006B78F0u;
+  const volatile DWORD *pause=(const volatile DWORD *)(uintptr_t)0x00682950u;
+  const volatile DWORD *menu=(const volatile DWORD *)(uintptr_t)0x00682948u;
+  const volatile DWORD *dispatch=(const volatile DWORD *)(uintptr_t)0x0068293Cu;
+  const volatile DWORD *transition=(const volatile DWORD *)(uintptr_t)0x0054D38Cu;
+  return *request==3u && *task==0x14u && *input==1u &&
+         *pause==0u && *menu!=0u && *dispatch==0u &&
+         *transition==0u;
+}
+static const void *maybe_correct_menubg43_source(
+    D3DPRIMITIVETYPE type,DWORD fvf,const void *source,DWORD count,
+    SpiderMenuVertex *copy,int mapped_by_earlier_stage)
+{
+  uint32_t i;
+  DWORD texture=0;
+  LONG stamp,frame,n;
+  char message[260];
+  const SpiderMenuVertex *v=(const SpiderMenuVertex *)source;
+  int eligible=0,applied=0;
+  if(!menubg43_trial_enabled || !menubg43_call_hooks_installed ||
+     !source || !copy ||
+     !SpiderMenubg43_RecordIndex((uintptr_t)source,&i))
+    return source;
+  frame=InterlockedCompareExchange(&flip_count,0,0);
+  stamp=InterlockedCompareExchange(&menubg43_frame_tag[i],0,0);
+  if(stamp!=frame+1 && stamp!=frame)
+    return source; /* only current/just-finished original Flip */
+  /* The record pointer is source-authenticated; a slot reused by a
+   * different texture or different first vertex is NOT authenticated. */
+  memcpy(&texture,(const BYTE *)source-12u,sizeof(texture));
+  if(texture!=menubg43_texture_tag[i] ||
+     v[0].x!=menubg43_x_tag[i] || v[0].y!=menubg43_y_tag[i])
+    return source;
+  eligible=menubg43_native_shell_state() &&
+           InterlockedCompareExchange(&menu_upscale_active,0,0)==0 &&
+           InterlockedCompareExchange(&gameplay_4x3_active,0,0)==0 &&
+           InterlockedCompareExchange(&fov_game_height,0,0)>0 &&
+           SpiderHudWidescreen_Installed();
+  /* Never apply a second pass to geometry already transformed by HUD,
+   * native Pause or the existing 4:3 canvas. */
+  if(eligible && !mapped_by_earlier_stage)
+    applied=SpiderMenubg43_Transform(v,copy,(unsigned)count,
+         (unsigned)type,(uint32_t)fvf,
+         (unsigned)desktop_w,(unsigned)desktop_h);
+  n=InterlockedIncrement(applied?&menubg43_mapped:&menubg43_rejects);
+  if(debug_log_enabled && (n<=24 || (applied && n%120==0))) {
+    snprintf(message,sizeof(message),
+      "MENUBG43-DRAW: %s n=%ld index=%lu frame=%ld shell=%d already=%d xy=(%.1f,%.1f) z=%.5f rhw=%.3f fvf=%08lX type=%lu [SOURCE-TAGGED]",
+      applied?"MAPPED":(mapped_by_earlier_stage?"ALREADY-MAPPED":"REJECT"),
+      (long)n,(unsigned long)i,(long)frame,eligible,mapped_by_earlier_stage,
+      (double)v[0].x,(double)v[0].y,(double)v[0].z,
+      (double)v[0].rhw,(unsigned long)fvf,(unsigned long)type);
+    log_line(message);
+  }
+  return applied?copy:source;
+}
+static int menubg43_validate_callsite(BYTE *site,const BYTE sig[5])
+{
+  MEMORY_BASIC_INFORMATION mem;
+  return site && VirtualQuery(site,&mem,sizeof(mem))==sizeof(mem) &&
+    mem.State==MEM_COMMIT &&
+    !(mem.Protect&(PAGE_NOACCESS|PAGE_GUARD)) &&
+    memcmp(site,sig,5u)==0;
+}
+static int menubg43_install_source_hooks(void)
+{
+  static const BYTE orig_save[5]={0xE8,0x83,0xA0,0x06,0x00};
+  static const BYTE orig_common[5]={0xE8,0x4F,0xC2,0x07,0x00};
+  static const BYTE queue_signature[6]={0x81,0xC5,0xB8,0xC7,0x73,0x00};
+  static const BYTE draw_signature[10]={0x8D,0x57,0x10,0x68,0x44,0x01,0x00,0x00,0x6A,0x06};
+  BYTE patch_save[5]={0xE8,0,0,0,0};
+  BYTE patch_common[5]={0xE8,0,0,0,0};
+  BYTE *const save=(BYTE *)(uintptr_t)0x0049FC98u;
+  BYTE *const common=(BYTE *)(uintptr_t)0x0048DACCu;
+  int64_t d1,d2;
+  int32_t rel1,rel2;
+  DWORD old1,old2,discard;
+  if(menubg43_call_hooks_installed)return 1;
+  if(sizeof(void*)!=4 ||
+     (uintptr_t)GetModuleHandleA(NULL)!=0x00400000u ||
+     !menubg43_validate_callsite(save,orig_save) ||
+     !menubg43_validate_callsite(common,orig_common) ||
+     memcmp((const void *)(uintptr_t)0x0050768Fu,
+            queue_signature,sizeof(queue_signature))!=0 ||
+     memcmp((const void *)(uintptr_t)0x00502C63u,
+            draw_signature,sizeof(draw_signature))!=0)
+    return 0;
+  d1=(int64_t)(uintptr_t)&spider_menubg43_source_wrapper -
+     ((int64_t)(uintptr_t)save+5);
+  d2=(int64_t)(uintptr_t)&spider_menubg43_source_wrapper -
+     ((int64_t)(uintptr_t)common+5);
+  if(d1<INT32_MIN || d1>INT32_MAX || d2<INT32_MIN || d2>INT32_MAX)
+    return 0;
+  rel1=(int32_t)d1;rel2=(int32_t)d2;
+  memcpy(patch_save+1,&rel1,sizeof(rel1));
+  memcpy(patch_common+1,&rel2,sizeof(rel2));
+  if(!VirtualProtect(save,5u,PAGE_EXECUTE_READWRITE,&old1))
+    return 0;
+  if(!VirtualProtect(common,5u,PAGE_EXECUTE_READWRITE,&old2)) {
+    VirtualProtect(save,5u,old1,&discard);
+    return 0;
+  }
+  if(memcmp(save,orig_save,5u)!=0 ||
+     memcmp(common,orig_common,5u)!=0) {
+    VirtualProtect(common,5u,old2,&discard);
+    VirtualProtect(save,5u,old1,&discard);
+    return 0;
+  }
+  memcpy(save,patch_save,5u);
+  memcpy(common,patch_common,5u);
+  FlushInstructionCache(GetCurrentProcess(),save,5u);
+  FlushInstructionCache(GetCurrentProcess(),common,5u);
+  VirtualProtect(common,5u,old2,&discard);
+  VirtualProtect(save,5u,old1,&discard);
+  menubg43_call_hooks_installed=
+    memcmp(save,patch_save,5u)==0 &&
+    memcmp(common,patch_common,5u)==0;
+  return menubg43_call_hooks_installed;
+}
+
 static int geom_rva(void *ret,DWORD *rva) {
   uintptr_t base=(uintptr_t)GetModuleHandleA(NULL),addr=(uintptr_t)ret;
   IMAGE_DOS_HEADER *dos=(IMAGE_DOS_HEADER*)base;
@@ -3178,6 +3366,14 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       }
       v=candidate;
     }
+    /* Record-provenance menubg rendering is independent of the existing
+     * HUD/canvas classification. It only runs after existing 4:3 mapping
+     * declines a quad, so previously corrected sprites remain unchanged. */
+    if(count==4) {
+      const void *src_provenance=maybe_correct_menubg43_source(
+        type,fvf,verts,count,small,v!=verts);
+      if(v==verts)v=src_provenance;
+    }
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
     /* Probe any genuine independent screen-size native tint candidate.
      * Log original source geometry, never a corrected copy. */
@@ -5463,6 +5659,19 @@ static DWORD initialize_body(LPVOID unused) {
    * If the two exact original CALLs cannot be patched, leave game code
    * untouched and report the safety fallback when logging is enabled. */
   install_f9_png_only_dispatch();
+  {
+    char option[8]={0};
+    if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_MENUBG43_TRIAL",
+                               option,sizeof(option))==1 &&
+       option[0]=='1') {
+      menubg43_trial_enabled=menubg43_install_source_hooks();
+      log_line(menubg43_trial_enabled?
+        "MENUBG43: ACTIVE original two CALL sites verified; queued menubg provenance on; geometry opt-in":
+        "MENUBG43: REFUSED signature, original binary or hook installation mismatch; no patch");
+    } else {
+      log_line("MENUBG43: OFF by default (no game CALL patches)");
+    }
+  }
   /* Optional read-only F9 diagnostics remain independent of output format.
    * Legacy screenshot-format environment variables are intentionally ignored. */
   if(debug_log_enabled) {
