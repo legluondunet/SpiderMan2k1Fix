@@ -3087,6 +3087,107 @@ static int ui_transition_native43_handle_draw(
   return 1;
 }
 
+/* Optional, bounded, READ-ONLY diagnostic for Save Game shell graphics.
+ * Its menu remains in the original 3D renderer: do not apply an inferred
+ * all-UI remap to unknown 3D or 2D material. The test is armed explicitly
+ * with SPIDERMAN2K1FIX_SAVE_UI_TRACE=1 AND [Debug] Log=1; holding F9
+ * samples the current presentation for eight Flips. No game memory,
+ * textures, render states, vertex buffers or input events are modified.
+ */
+static volatile LONG save_ui_trace_enabled=0;
+static volatile LONG save_ui_trace_keydown=0;
+static volatile LONG save_ui_trace_until_flip=-1;
+static volatile LONG save_ui_trace_dp_ui=0;
+static volatile LONG save_ui_trace_dip_ui=0;
+static volatile LONG save_ui_trace_other=0;
+
+static int save_ui_trace_active(void)
+{
+  LONG flip,until;
+  int pressed;
+  if(!debug_log_enabled ||
+     InterlockedCompareExchange(&save_ui_trace_enabled,0,0)!=1 ||
+     desktop_w<640u || desktop_h<480u ||
+     (uint64_t)desktop_w*3u<=(uint64_t)desktop_h*4u ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0)
+    return 0;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  pressed=(GetAsyncKeyState(VK_F9)&0x8000)!=0;
+  if(pressed) {
+    if(InterlockedCompareExchange(&save_ui_trace_keydown,1,0)==0) {
+      char msg[170];
+      InterlockedExchange(&save_ui_trace_dp_ui,0);
+      InterlockedExchange(&save_ui_trace_dip_ui,0);
+      InterlockedExchange(&save_ui_trace_other,0);
+      snprintf(msg,sizeof(msg),
+        "SAVE-UI-TRACE: BEGIN F9 flip=%ld physical=%ux%u [READ-ONLY DP/DIP; 3D RENDERER]",
+        (long)flip,(unsigned)desktop_w,(unsigned)desktop_h);
+      log_line(msg);
+    }
+    InterlockedExchange(&save_ui_trace_until_flip,flip+8);
+  } else {
+    InterlockedExchange(&save_ui_trace_keydown,0);
+  }
+  until=InterlockedCompareExchange(&save_ui_trace_until_flip,0,0);
+  return until>=flip;
+}
+
+static void save_ui_trace_draw(const char *api,void *device,
+    D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
+    const void *drawn,DWORD count,DWORD index_count,void *caller)
+{
+  const SpiderMenuVertex *v=(const SpiderMenuVertex*)source;
+  LONG n;
+  DWORD rva=0;
+  float l,r,t,b;
+  unsigned k;
+  char msg[320];
+  D3DVIEWPORT7 viewport;
+  int good_view=0;
+  if(!save_ui_trace_active())return;
+  geom_rva(caller,&rva);
+  if(!v || fvf!=0x144UL || type!=D3DPT_TRIANGLEFAN ||
+     count!=4u || !(v[0].z>=0.0f && v[0].z<0.02f &&
+                     v[0].rhw>=2.0f && v[0].rhw<=64.0f)) {
+    n=InterlockedIncrement(&save_ui_trace_other);
+    if(n<=16) {
+      snprintf(msg,sizeof(msg),
+        "SAVE-UI-TRACE: OTHER n=%ld api=%s caller=%08lX primitive=%lu fvf=%08lX vertices=%lu indices=%lu [UNCLASSIFIED, UNMODIFIED]",
+        (long)n,api,(unsigned long)rva,(unsigned long)type,
+        (unsigned long)fvf,(unsigned long)count,(unsigned long)index_count);
+      log_line(msg);
+    }
+    return;
+  }
+  n=InterlockedIncrement(api[0]=='I'?&save_ui_trace_dip_ui:
+                                      &save_ui_trace_dp_ui);
+  if(n>100)return;
+  l=r=v[0].x;t=b=v[0].y;
+  for(k=1u;k<4u;k++) {
+    if(v[k].x<l)l=v[k].x;
+    if(v[k].x>r)r=v[k].x;
+    if(v[k].y<t)t=v[k].y;
+    if(v[k].y>b)b=v[k].y;
+  }
+  memset(&viewport,0,sizeof(viewport));
+  if(device && SUCCEEDED(IDirect3DDevice7_GetViewport(
+      (IDirect3DDevice7*)device,&viewport)))
+    good_view=1;
+  snprintf(msg,sizeof(msg),
+    "SAVE-UI-TRACE: %s n=%ld caller=%08lX primitive=%lu fvf=%08lX quad=(%.1f..%.1f,%.1f..%.1f) z=%.5f rhw=%.3f tex=%lu color=%08lX mapped=%d viewport=%lux%lu+%lu+%lu%s",
+    api,(long)n,(unsigned long)rva,(unsigned long)type,
+    (unsigned long)fvf,(double)l,(double)r,(double)t,(double)b,
+    (double)v[0].z,(double)v[0].rhw,
+    (unsigned long)index_count,(unsigned long)v[0].diffuse,
+    drawn!=source,
+    (unsigned long)viewport.dwWidth,(unsigned long)viewport.dwHeight,
+    (unsigned long)viewport.dwX,(unsigned long)viewport.dwY,
+    good_view?"":" [VIEWPORT UNAVAILABLE]");
+  log_line(msg);
+}
+
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
   HRESULT native43_result;
   if(ui_transition_native43_handle_draw(self,type,fvf,verts,count,flags,
@@ -3210,6 +3311,8 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
         }
       }
     }
+    save_ui_trace_draw("DP",(IDirect3DDevice7*)self,type,fvf,
+                       verts,v,count,0u,__builtin_return_address(0));
     /* Deferred ESC composition is active ONLY under both opt-in flags,
      * inside a confirmed game-owned BeginScene/EndScene pair. Otherwise
      * keep the original draw path (even if state blocks are unsupported).
@@ -3246,6 +3349,9 @@ static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE 
   {
     SpiderMenuVertex small[64],*allocated=NULL;
     const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
+    /* Capture render provenance only; do not change indexed primitive input. */
+    save_ui_trace_draw("IP",(IDirect3DDevice7*)self,type,fvf,
+                       verts,v,count,icount,__builtin_return_address(0));
     /* No indexed comic path was observed: keep it unchanged. */
     HRESULT hr=original_draw_indexed_primitive(self,type,fvf,(LPVOID)v,count,indices,icount,flags);
     free_menu_vertices(allocated);
@@ -5463,6 +5569,15 @@ static DWORD initialize_body(LPVOID unused) {
    * If the two exact original CALLs cannot be patched, leave game code
    * untouched and report the safety fallback when logging is enabled. */
   install_f9_png_only_dispatch();
+  if(debug_log_enabled) {
+    char setting[8]={0};
+    if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_SAVE_UI_TRACE",
+                               setting,sizeof(setting))==1 &&
+       setting[0]=='1') {
+      InterlockedExchange(&save_ui_trace_enabled,1);
+      log_line("SAVE-UI-TRACE: armed; press F9 on SAVE GAME for bounded read-only render provenance");
+    }
+  }
   /* Optional read-only F9 diagnostics remain independent of output format.
    * Legacy screenshot-format environment variables are intentionally ignored. */
   if(debug_log_enabled) {
