@@ -1167,7 +1167,8 @@ static void menubg43_probe_unmapped_art(void *device,const char *api,
   int queue_record=0;
   char line[320];
   unsigned i;
-  if(!menubg43_trial_enabled || !vertices || count<4u || count>128u ||
+  if(!debug_log_enabled || !menubg43_trial_enabled ||
+     !vertices || count<4u || count>128u ||
      type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
      desktop_w<640u || desktop_h<480u ||
      InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
