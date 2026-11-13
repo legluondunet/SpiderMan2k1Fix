@@ -1142,6 +1142,126 @@ static int geom_rva(void *ret,DWORD *rva) {
   if(nt->Signature!=IMAGE_NT_SIGNATURE || addr<base || addr-base>=nt->OptionalHeader.SizeOfImage) return 0;
   *rva=(DWORD)(addr-base);return 1;
 }
+/* The user's native SAVE/INPUT NAME render trace exposed a SECOND background
+ * queue record at 0x103389 (512x512 texture, 1920x1080 source quad).
+ * This is NOT one of the original menubg wrapper's record indices. Only
+ * map it when its original queue material equals the texture from a
+ * truly source-authenticated background mapped within the last two Flips.
+ * No 512x512-only or generic fullscreen conversion is allowed. */
+static volatile LONG menubg43_companion_draws=0;
+static volatile LONG menubg43_companion_mismatch=0;
+static volatile LONG menubg43_title_draws=0;
+static const void *maybe_correct_menubg43_companion(
+     D3DPRIMITIVETYPE type,DWORD fvf,const void *source,DWORD count,
+     void *ret,SpiderMenuVertex *copy)
+{
+  DWORD rva=0,material=0;
+  uint32_t record_index=0;
+  LONG frame,last,known,n;
+  char msg[255];
+  if(!menubg43_trial_enabled || !menubg43_call_hooks_installed ||
+     !source || !copy || count!=4u || type!=D3DPT_TRIANGLEFAN ||
+     fvf!=0x144UL || !menubg43_native_shell_state() ||
+     !SpiderHudWidescreen_Installed() ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
+     !SpiderMenubg43_RecordIndex((uintptr_t)source,&record_index) ||
+     !geom_rva(ret,&rva) || rva!=SPIDER_MENUBG43_COMPANION_CALLER)
+      return source;
+  memcpy(&material,(const BYTE *)source-12u,sizeof(material));
+  frame=InterlockedCompareExchange(&flip_count,0,0);
+  last=InterlockedCompareExchange(&menubg43_last_shell_frame,0,0);
+  known=InterlockedCompareExchange(&menubg43_last_shell_texture,0,0);
+  if(last<0 || !SpiderMenubg43_IsCompanionBackground(
+      (const SpiderMenuVertex *)source,(unsigned)count,(unsigned)type,
+      (uint32_t)fvf,(uint32_t)rva,(unsigned)desktop_w,(unsigned)desktop_h,
+      (uint32_t)material,(uint32_t)known,(uint32_t)frame,(uint32_t)last)) {
+    /* The observed second original path can share the same dimensions
+     * without sharing the original resource. If the handle differs, never
+     * silently call it "the same artwork": log the actual mismatch. */
+    if(debug_log_enabled && (n=InterlockedIncrement(
+        &menubg43_companion_mismatch))<=8) {
+      snprintf(msg,sizeof(msg),
+       "MENUBG43-COMPANION: REJECT n=%ld frame=%ld index=%lu material=%08lX verified=%08lX last=%ld [no size-only fallback]",
+       (long)n,(long)frame,(unsigned long)record_index,
+       (unsigned long)material,(unsigned long)known,(long)last);
+      log_line(msg);
+    }
+    return source;
+  }
+  if(!SpiderMenubg43_Transform((const SpiderMenuVertex *)source,copy,
+      (unsigned)count,(unsigned)type,(uint32_t)fvf,
+      (unsigned)desktop_w,(unsigned)desktop_h)) return source;
+  n=InterlockedIncrement(&menubg43_companion_draws);
+  if(debug_log_enabled && (n<=12 || n%120==0)) {
+    snprintf(msg,sizeof(msg),
+      "MENUBG43-COMPANION: MAPPED n=%ld frame=%ld index=%lu material=%08lX same-authenticated-source [4:3]",
+      (long)n,(long)frame,(unsigned long)record_index,
+      (unsigned long)material);
+    log_line(msg);
+  }
+  return copy;
+}
+
+/* Original title font geometry has a separate native queue ownership from
+ * the 512x512 menubg resource. Never move top-row letters solely because
+ * they occupy the top of a widescreen image: insist on the exact native
+ * shell, recently source-verified menubg, draw caller, queue and texture
+ * dimensions already observed in the Wine SAVE GAME trace. */
+static const void *maybe_correct_menubg43_title(
+     void *device,D3DPRIMITIVETYPE type,DWORD fvf,
+     const void *source,DWORD count,void *ret,SpiderMenuVertex *copy)
+{
+  DWORD rva=0,texw=0,texh=0;
+  uint32_t record_index;
+  LONG frame,last,n;
+  DDSURFACEDESC2 desc;
+  IDirectDrawSurface7 *texture=NULL;
+  HRESULT hr;
+  char msg[220];
+  const SpiderMenuVertex *v=(const SpiderMenuVertex *)source;
+  if(!menubg43_trial_enabled || !menubg43_call_hooks_installed ||
+     !source || !copy || !device || count!=4u ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
+     !menubg43_native_shell_state() ||
+     !SpiderHudWidescreen_Installed() ||
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
+     InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
+     InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
+     !SpiderMenubg43_RecordIndex((uintptr_t)source,&record_index) ||
+     !geom_rva(ret,&rva) || rva!=SPIDER_MENUBG43_TITLE_CALLER)
+    return source;
+  frame=InterlockedCompareExchange(&flip_count,0,0);
+  last=InterlockedCompareExchange(&menubg43_last_shell_frame,0,0);
+  if(last<0 || frame<last || frame-last>2 ||
+     !(v[0].z>=0.998f && v[0].z<=1.0f &&
+       v[0].rhw>0.020f && v[0].rhw<0.027f &&
+       v[0].y>=(float)desktop_h*0.05f &&
+       v[0].y<=(float)desktop_h*0.23f))
+    return source;
+  memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
+  hr=IDirect3DDevice7_GetTexture((IDirect3DDevice7 *)device,0,&texture);
+  if(FAILED(hr) || !texture)return source;
+  hr=IDirectDrawSurface7_GetSurfaceDesc(texture,&desc);
+  if(SUCCEEDED(hr)){texw=desc.dwWidth;texh=desc.dwHeight;}
+  IDirectDrawSurface7_Release(texture);
+  if(FAILED(hr) || !SpiderMenubg43_TitleGlyphTransform(
+       v,copy,(unsigned)count,(unsigned)type,(uint32_t)fvf,(uint32_t)rva,
+       (unsigned)desktop_w,(unsigned)desktop_h,
+       (unsigned)texw,(unsigned)texh))return source;
+  n=InterlockedIncrement(&menubg43_title_draws);
+  if(debug_log_enabled && (n<=12 || n%480==0)) {
+    snprintf(msg,sizeof(msg),
+      "MENUBG43-TITLE: MAPPED n=%ld frame=%ld index=%lu x=%.1f->%.1f y=%.1f tex=%lux%lu [same native save shell; XY only]",
+      (long)n,(long)frame,(unsigned long)record_index,
+      (double)v[0].x,(double)copy[0].x,(double)v[0].y,
+      (unsigned long)texw,(unsigned long)texh);
+    log_line(msg);
+  }
+  return copy;
+}
+
 /* READ-ONLY reconnaissance of the shared SAVE GAME / INPUT NAME art
  * and the top title glyphs. The original shell changes during name entry;
  * no new title or background is reprojected without its own authenticated
@@ -3563,6 +3683,14 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       const void *src_provenance=maybe_correct_menubg43_source(
         type,fvf,verts,count,small,v!=verts);
       if(v==verts)v=src_provenance;
+    }
+    /* Keep the original strict menubg source hook first. The additional
+     * pathways may only fill its proven gaps, never reapply its transform. */
+    if(v==verts && count==4) {
+      v=maybe_correct_menubg43_companion(
+          type,fvf,verts,count,__builtin_return_address(0),small);
+      if(v==verts) v=maybe_correct_menubg43_title(
+          self,type,fvf,verts,count,__builtin_return_address(0),small);
     }
     if(v==verts) v=maybe_correct_horplus(type,fvf,verts,count,small);
     menubg43_probe_unmapped_art(self,"DrawPrimitive",type,fvf,
