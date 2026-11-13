@@ -70,24 +70,45 @@ def test_both_logs_live_next_to_standalone_launcher_only():
     assert "SPIDERMAN2K1FIX_LAUNCHER_DIR" not in BUILD
 
 
-def test_standalone_installer_never_upgrades_existing_installation():
-    """The only writes of project payloads occur in private ISO staging."""
-    assert "deploy_payloads_to(staging)" in SRC
+def test_normal_launch_never_mutates_existing_game_and_explicit_update_is_receipted():
+    """Only --install-only may upgrade authenticated project-owned payloads."""
     assert "MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH)" in SRC
+    assert "write_install_receipt(staging)" in SRC
+    assert "verify_install_receipt(game_dir)" in SRC
+    assert "static int upgrade_recognized_payloads(void)" in SRC
+    assert "UPGRADE: missing/invalid prior receipt" in SRC
+    assert "UPGRADE: ROLLBACK FAILED" in SRC
+    assert "installed-resources.sha256" in SRC
+    assert "RETAIL_EXE_BYTES 1507328ULL" in SRC
+    assert "MOVEFILE_REPLACE_EXISTING" not in SRC
+    assert "previous DLL backup=" not in SRC
     main=SRC.split("int wmain(",1)[1]
     existing=main.split("if((argc==1 || install_only) && regular_file(gameexe))",1)[1].split(
         "scan=find_adjacent_iso",1)[0]
     assert "verified_retail(gameexe)" in existing
     assert "verify_payloads()" in existing
-    assert "deploy_payloads_to(" not in existing
+    assert "if(install_only){" in existing
+    assert "upgrade_recognized_payloads()" in existing
+    assert existing.index("if(install_only){") < existing.index("upgrade_recognized_payloads()")
     assert "resource_install(" not in existing
-    assert "CreateProcessW" in SRC
-    assert "MOVEFILE_REPLACE_EXISTING" not in SRC
-    assert "previous DLL backup=" not in SRC
+    assert "deploy_payloads_to(" not in existing
     assert "no automatic change" in SRC
-    assert 'if(!deploy_payloads_to(staging))' in SRC
-    assert "if(!MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH))" in SRC
+    assert "if(!deploy_payloads_to(staging) || !write_install_receipt(staging))" in SRC
     assert "resource_verify(RES_WINMM,game_dir" in SRC
+
+
+def test_upgrade_never_mutates_game_exe_or_user_ini_and_rolls_back():
+    upgrade=SRC.split("static int upgrade_recognized_payloads(void){",1)[1].split(
+        "static int launch_game(",1)[0]
+    assert "verify_install_receipt(game_dir)" in upgrade
+    assert "if(!deploy_payloads_to(staging)||!write_install_receipt(staging))" in upgrade
+    assert "MoveFileExW(dst,backup,MOVEFILE_WRITE_THROUGH)" in upgrade
+    assert "MoveFileExW(backup,dst,MOVEFILE_WRITE_THROUGH)" in upgrade
+    assert "DeleteFileW(backup)" in upgrade
+    assert "SpiderMan2k1Fix.updating" in upgrade
+    assert "SpideyPC.exe" not in SRC.split("static const wchar_t *owned_paths[",1)[1].split("};",1)[0]
+    assert "SpiderMan2k1Fix.ini" not in SRC.split("static const wchar_t *owned_paths[",1)[1].split("};",1)[0]
+    assert "data.pkr" not in SRC.split("static const wchar_t *owned_paths[",1)[1].split("};",1)[0]
 
 
 def test_original_wise_game_files_superset_and_same_cd_folder():
