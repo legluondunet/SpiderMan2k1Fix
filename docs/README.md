@@ -13,6 +13,7 @@ This directory contains the maintained technical documentation and an index of s
 
 - [Wise 2000/2001 installation scripts — file manifests, full-install `media.pkr`, registry and provenance](references/SPIDERMAN_RETAIL_WISE_INSTALL_MAP.md)
 - [Standalone ISO installer — layout, install-once safety and remaining source-validation gates](references/INSTALLER_2_0_DESIGN.md)
+- [v2.0.0 code cleanup audit and release gates](references/RELEASE_2_0_CODE_CLEANUP_AUDIT.md) — removed compatibility paths, missing game-asset verification and test requirements
 
 ## Current integration and preserved experimental history
 
