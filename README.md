@@ -1,6 +1,6 @@
 # SpiderMan2k1Fix
 
-**Version 2.0.0:** Adds universal SDL3 gamepad support, native Pause and Save Game controller confirmation, duplicate-model controller switching, improved widescreen 4:3 HUD/menu presentation and synchronized focus/media handling. The integrated RC2 was accepted on Windows 11 and Wine/GE-Proton. Download official stable packages from [GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases) once published; development builds are available from [GitHub Actions](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml). See the [v2.0.0 release notes](RELEASE_NOTES_2.0.0.md) and [historical RC2 test plan](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
+**Version 2.0.0 (upcoming):** SDL3 gamepads, controller Save Game confirmation, automatic 4:3 SAVE GAME / INPUT NAME screens, improved widescreen HUD and Alt+Tab handling. RC2 passed Windows 11 and Wine/GE-Proton tests. See [release notes](RELEASE_NOTES_2.0.0.md), [RC2 validation](docs/references/RELEASE_2_0_RC_TEST_PLAN.md), [CI builds](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml) and [official releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases) (v2.0.0 not yet published).
 
 [![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
 [![Linux Wine / Proton compatible](https://img.shields.io/badge/Linux%20Wine%20%2F%20Proton-compatible-428b40?logo=linux&logoColor=white)](#installation-on-windows-and-linux-wine)
@@ -33,7 +33,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **No-CD:** Bypasses the original CD-ROM check through an in-memory patch, without modifying the game executable.
 - **Modern display support:** Runs in borderless fullscreen at the monitor's native resolution, with automatic widescreen 3D (`Auto`) or a centered classic 4:3 mode. Also supports multi-monitor configurations.
 - **Automatic FOV adjustment:** Automatically adjusts the field of view to match the desktop resolution and aspect ratio, providing proper widescreen rendering without distorting the 3D scene.
-- **Aspect ratio corrections:** Preserves the original proportions of menus, cinematics, introductory videos, comic-book artwork, and other 2D elements.
+- **Aspect ratio corrections:** Original 4:3 menus, videos, comics and 2D elements. **SAVE GAME**, **INPUT NAME**, **SAVE COMPLETED** and frozen **PAUSED** backgrounds/titles retain 4:3 automatically on the verified executable ([PR #144](https://github.com/legluondunet/SpiderMan2k1Fix/pull/144)).
 - **Widescreen HUD:** Corrects the proportions and positioning of HUD elements, including health and web gauges, compass, mission objectives, boss health bars, and in-game pause menus, with native scene-entry iris. Tested at 1920×1080 (16:9) and 1920×1200 (16:10).
 - **FPS limiter:** Configurable frame-rate cap, set to **30 FPS by default**. Lower limits, such as 20 FPS, can be selected for timing-sensitive gameplay.
 - **Alt+Tab stability:** Background game pause, synchronized Bink/DirectSound, and keyboard/gamepad resume. Press and release any key or an eligible selected controller button after returning. The OS desktop cursor is restored. See [focus details](docs/references/CONFIGURATION.md).
@@ -69,8 +69,9 @@ The following issues are inherited from the original game and remain unresolved:
 
 - **FPS-dependent gameplay:** Certain bosses and levels may not work correctly at 30 FPS. Set `FPSLimit=20` in the INI file when needed.
 
-## Known Issue in SpiderMan2k1Fix
+## Known Issues Under Investigation
 
+- **Open investigations (causes unconfirmed):** NEW YORK W lightning ([#146](https://github.com/legluondunet/SpiderMan2k1Fix/issues/146)), moving shadows ([#147](https://github.com/legluondunet/SpiderMan2k1Fix/issues/147)), and bank window impact audio timing ([#145](https://github.com/legluondunet/SpiderMan2k1Fix/issues/145)).
 - **Scene-dependent focus pause under Wine/Proton:** The custom background PAUSED screen can appear immediately in menus, be deferred until a cinematic transition, or appear late/not at all in 3D. This remains a tolerated limitation **only when** switching back retains working controls, graphics and sound without crashes. Windows 11 native focus pause passed the combined hardware tests.
 
 ## Frequently Asked Questions

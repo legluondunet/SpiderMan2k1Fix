@@ -9,13 +9,14 @@ This release modernizes the original *Spider-Man (2001)* PC game on Windows and 
 - **Multiple identical controller models:** separate SDL3 instance IDs allow switching between two Xbox-compatible controllers with the same `045E:028E` VID:PID. Competing simultaneous Start claims are refused; the original DirectInput ownership safety rules are preserved.
 - **Focus and Alt+Tab:** borderless fullscreen, cursor recovery, guarded Left Alt release, background PAUSED screen, and synchronized Bink and DirectSound pause/resume. Includes an optional bundled native Linux X11 focus helper (launched automatically where supported).
 - **Native presentation:** proper widescreen 3D and FOV with preserved centered 4:3 video/menu/comic content, native 4:3 Pause overlay and widescreen HUD/scene iris.
+- **4:3 Save Game screens (merged [PR #144](https://github.com/legluondunet/SpiderMan2k1Fix/pull/144)):** the original **SAVE GAME**, **INPUT NAME** and **SAVE COMPLETED** background/title render paths are centered, including the background frozen beneath the external-focus **PAUSED** panel. This correction is **enabled automatically** on the supported retail executable; no experimental environment variable is required. Original graphics are left unmodified if strict binary/callsite checks fail.
 - **Safety and configuration:** automatic cleaning of obsolete generated INI options, preservation of user preferences and original binary configuration bytes, No-CD in-memory patch, F9 PNG screenshots and stable audio WAV-loader repair.
 
 ## Verification
 
 The integrated RC2 passed **951 automated regression tests** and was checked on **Windows 11** and **Wine/GE-Proton on Linux**, with maintainer confirmation of normal gameplay and controller operations, Alt+Tab, sound/video, Save Game/YES, native Pause, Game Over and normal exit. The two same-VID:PID Xbox controllers were tested on both systems; a PS4 controller was also used for Wine switching. See the [RC2 validation record](https://github.com/legluondunet/SpiderMan2k1Fix/blob/main/docs/references/RELEASE_2_0_RC_TEST_PLAN.md) and [PR #136](https://github.com/legluondunet/SpiderMan2k1Fix/pull/136).
 
-The stable `2.0.0` build must independently pass the repository's Windows x86 CI, packaging and SHA-256 checks before the official tag or GitHub release is published.
+After RC2, the SAVE GAME render fix from PR #144 passed targeted Wine 11.17 testing at 1920×1080 (including a real Alt+Tab focus-loss capture), and the merged `main` Windows x86 packaging workflow passed on November 13, 2026. The stable **default-enabled** implementation still requires a fresh CI and final smoke-test pass on Windows and Wine before the official tag or GitHub release is published.
 
 ## Installation — Windows and Linux (Wine)
 
@@ -30,6 +31,8 @@ For Wine users, from the game installation directory:
 WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe
 ```
 
+The SAVE GAME aspect correction is built in: do **not** set `SPIDERMAN2K1FIX_MENUBG43_TRIAL` or any other experimental option.
+
 Only the original supported `SpideyPC.exe` SHA-256 is accepted:
 
 ```text
@@ -40,6 +43,7 @@ No original game executable, game assets or copyrighted data are included in thi
 
 ## Known limitations and follow-up
 
+- The **NEW YORK sign's missing electric effect on W** ([#146](https://github.com/legluondunet/SpiderMan2k1Fix/issues/146)), **unexpected moving shadows** ([#147](https://github.com/legluondunet/SpiderMan2k1Fix/issues/147)) and **bank rooftop window sound order** ([#145](https://github.com/legluondunet/SpiderMan2k1Fix/issues/145)) are open investigation reports, not claimed fixes. Their origins (original game vs. patch or rendering environment) have not yet been established.
 - Advanced **Steam Deck/Steam Input**, virtual controller identity, analog-axis fidelity and untested controller models remain tracked in [issue #120](https://github.com/legluondunet/SpiderMan2k1Fix/issues/120); successful preliminary Deck experiments do not imply complete Deck support.
 - Native Windows 11 **DualShock 4 audio-output selection** has a separate unresolved follow-up in [issue #118](https://github.com/legluondunet/SpiderMan2k1Fix/issues/118). The game follows system audio routing unless separately configured.
 - A physical controller mirrored into multiple SDL3 handles and deliberately simultaneous competing Start presses have not been confirmed through hardware testing. Ambiguous ownership must fail closed.

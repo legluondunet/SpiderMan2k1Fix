@@ -1,8 +1,8 @@
-"""Source-authenticated original menubg queue geometry trial.
+"""Built-in source-authenticated original menubg queue geometry.
 
 No general HUD, SDL3, 3D, pause, or save input behavior is modified.
-A new experimental path must be explicit opt-in and fail closed if original
-callsite signatures or original source-record identity are invalid.
+The verified 4:3 save-screen fix must be enabled on supported original
+retail builds but fail closed on any callsite signature or queue mismatch.
 """
 from pathlib import Path
 import shutil
@@ -154,8 +154,13 @@ int main(void) {
 
 
 def test_original_menubg_callsite_hooks_are_strictly_gated():
-    assert "SPIDERMAN2K1FIX_MENUBG43_TRIAL" in SOURCE
-    assert "MENUBG43: OFF by default (no game CALL patches)" in SOURCE
+    # No experimental environment variable is required by stable 2.0.0.
+    # Original CALLs are patched only after source signatures pass.
+    assert "SPIDERMAN2K1FIX_MENUBG43_TRIAL" not in SOURCE
+    assert "MENUBG43: OFF by default" not in SOURCE
+    assert "menubg43_enabled=menubg43_install_source_hooks();" in SOURCE
+    assert "MENUBG43: ACTIVE built-in 4:3 SAVE/NAME background and title" in SOURCE
+    assert "MENUBG43: REFUSED original signature or hook installation mismatch" in SOURCE
     assert "static const BYTE orig_save[5]={0xE8,0x83,0xA0,0x06,0x00};" in SOURCE
     assert "static const BYTE orig_common[5]={0xE8,0x4F,0xC2,0x07,0x00};" in SOURCE
     assert "0x0049FC98u" in SOURCE and "0x0048DACCu" in SOURCE
@@ -294,7 +299,7 @@ def test_name_entry_and_title_diagnostics_cannot_modify_rendered_geometry():
     start=SOURCE.index("static void menubg43_probe_unmapped_art(")
     end=SOURCE.index("/* The observed menu draw path",start)
     probe=SOURCE[start:end]
-    assert "if(!debug_log_enabled || !menubg43_trial_enabled" in probe
+    assert "if(!debug_log_enabled || !menubg43_enabled" in probe
     assert "menubg43_native_shell_state()" in probe
     assert "frame-last<=2400" in probe
     assert "GetForegroundWindow()==game_hwnd" in probe
@@ -323,7 +328,7 @@ def test_new_menu_background_and_top_title_use_only_authenticated_provenance():
     assert "frame-verified_frame>2u" not in hdr
     assert "SPIDER_MENUBG43_TITLE_CALLER 0x00102C72u" in hdr
     assert "SpiderMenubg43_TitleGlyphTransform" in hdr
-    assert "if(!menubg43_trial_enabled || !menubg43_call_hooks_installed" in SOURCE
+    assert "if(!menubg43_enabled || !menubg43_call_hooks_installed" in SOURCE
     assert "if(!SpiderMenubg43_Transform((const SpiderMenuVertex *)source,copy" in SOURCE
     assert "MENUBG43-COMPANION: MAPPED" in SOURCE
     assert "MENUBG43-COMPANION: REJECT" in SOURCE
@@ -416,6 +421,24 @@ def test_paused_frame_logs_last_actually_mapped_title_and_background():
     assert "[READ-ONLY pre-composite]" in paused
     assert paused.index("MENUBG43-PAUSE-FRAME:") < paused.index(
         "SpiderPauseSurface_Begin(")
-    assert "if(menubg43_trial_enabled && debug_log_enabled)" in paused
+    assert "if(menubg43_enabled && debug_log_enabled)" in paused
     assert "menubg43_native_shell_state()" in paused
     assert "x11_state" in paused
+
+
+
+def test_stable_2_0_original_save_source_rejects_unsupported_bytes():
+    """Built-in feature remains hash/signature locked, never global 3D."""
+    anchor=SOURCE.index("install_f9_png_only_dispatch();")
+    setup=SOURCE[anchor:SOURCE.index("/* Optional read-only F9 diagnostics",anchor)]
+    assert "menubg43_enabled=menubg43_install_source_hooks();" in setup
+    assert "GetEnvironmentVariableA(" not in setup
+    assert "MENUBG43: REFUSED" in setup
+    preflight=SOURCE.split("static int menubg43_install_source_hooks(",1)[1].split(
+        "static int menubg43_proven_focus_tail(",1)[0]
+    assert "menubg43_validate_callsite(save,orig_save)" in preflight
+    assert "menubg43_validate_callsite(common,orig_common)" in preflight
+    assert "menubg43_validate_bytes(" in preflight
+    assert "return 0;" in preflight
+    # This should not introduce an INI option that could disable safe defaults.
+    assert "menubg43_enabled=menubg43_install_source_hooks();" in SOURCE
