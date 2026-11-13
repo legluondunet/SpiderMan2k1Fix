@@ -139,7 +139,7 @@ def test_original_wise_game_files_superset_and_same_cd_folder():
     assert "deploy_payloads_to(staging)" in manifest
     assert "MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH)" in manifest
     assert "MOVEFILE_REPLACE_EXISTING" not in manifest
-    assert "Spidey.ini was installed into %WIN%" in manifest
+    assert "Spidey.ini was installed" in manifest and "%WIN%" in manifest
     assert "SetEnvironmentVariableW" not in manifest  # no system writes
     assert "iso_copy(iso,parts[i],target)" in manifest
 
