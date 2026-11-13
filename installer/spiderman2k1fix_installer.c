@@ -512,11 +512,14 @@ static int verify_payloads(void){
          resource_verify(RES_README,code,L"README.md") &&
          resource_verify(RES_CHANGELOG,code,L"CHANGELOG.md");
 }
-static int launch_game(void){
+static int launch_game(int verify_exe){
   wchar_t path[SPIDER_INSTALLER_PATH],cmd[SPIDER_INSTALLER_PATH+4];
   STARTUPINFOW si;PROCESS_INFORMATION pi;DWORD exit_code=0;
-  if(!combine(path,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe")||
-     !verified_retail(path))return 0;
+  if(!combine(path,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe"))return 0;
+  /* Normal starts remain SHA-256 locked. The explicit diagnostic override
+   * skips all launcher-side checks without modifying/injecting any game
+   * executable. The OS still requires a real runnable process. */
+  if(verify_exe && !verified_retail(path))return 0;
   memset(&si,0,sizeof(si));memset(&pi,0,sizeof(pi));si.cb=sizeof(si);
   if(_snwprintf(cmd,sizeof(cmd)/sizeof(cmd[0]),L"\"%ls\"",path)<0)return 0;
   /* The winmm native proxy must be selected on Wine. Explicit child-only
@@ -547,7 +550,10 @@ static int launch_game(void){
 }
 static void usage(void){
   message(L"SpiderMan2k1Fix v%hs (ISO installer bootstrap; NOT retail-CD validated)",SPIDERMAN2K1FIX_VERSION);
-  message(L"Usage: SpiderMan2k1Fix.exe [--inspect | --verify | --version | --help]");
+  message(L"Usage: SpiderMan2k1Fix.exe [--inspect | --verify | --launch-no-verify | --version | --help]");
+  message(L"  --launch-no-verify  Launch installed game directly; skip presence and integrity checks.");
+  message(L"                      No ISO extraction or DLL repair; missing SpideyPC.exe");
+  message(L"                      will fail at CreateProcess (game DLL guards remain active).");
   message(L"Place exactly one original .iso beside the launcher. Safe inspection is ready;");
   message(L"retail Wise source file map supported provisionally; authentic ISO test required.");
   message(L"Logs next to launcher: SpiderMan2k1Fix_installer.log + SpiderMan2k1Fix.log");
@@ -568,6 +574,13 @@ int wmain(int argc,wchar_t **argv) {
   if(argc>2){usage();goto done;}
   if(argc==2 && (!wcscmp(argv[1],L"--help")||!wcscmp(argv[1],L"-h"))){usage();result=0;goto done;}
   if(argc==2 && !wcscmp(argv[1],L"--version")){result=0;goto done;}
+  /* Explicit user override: jump straight to CreateProcess. Do not scan an
+   * ISO, check file presence, hash the retail exe, or verify embedded DLLs.
+   * Import/loader checks inside winmm/core are intentionally untouched. */
+  if(argc==2 && !wcscmp(argv[1],L"--launch-no-verify")){
+    message(L"LAUNCH: --launch-no-verify selected; skipping all launcher file existence and integrity checks");
+    result=launch_game(0)?0:1;goto done;
+  }
   if(!combine(gameexe,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe"))goto done;
   if(argc==2 && !wcscmp(argv[1],L"--verify")){
     result=(verified_retail(gameexe)&&verify_payloads())?0:1;goto done;
@@ -578,7 +591,7 @@ int wmain(int argc,wchar_t **argv) {
     if(!verified_retail(gameexe) || !verify_payloads()){
       message(L"VERIFY: existing installation invalid; no automatic change");goto done;
     }
-    result=launch_game()?0:1;goto done;
+    result=launch_game(1)?0:1;goto done;
   }
   scan=find_adjacent_iso(path,SPIDER_INSTALLER_PATH);
   if(scan!=1){
@@ -603,7 +616,7 @@ int wmain(int argc,wchar_t **argv) {
   iso_close(&iso);
   /* The original game and bundled runtimes were staged and published
    * together. Never deploy or update components after publication. */
-  result=launch_game()?0:1;
+  result=launch_game(1)?0:1;
 done:
   message(L"END: status=%d",result);
   if(logfile)fclose(logfile);
