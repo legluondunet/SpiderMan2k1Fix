@@ -159,3 +159,29 @@ def test_no_verify_launch_skips_all_launcher_filesystem_guards():
     assert "no automatic change" in SRC
     assert "deploy_payloads_to(staging)" in SRC
     assert "SPIDERMAN2K1FIX_LAUNCHER_DIR" in launch
+
+
+
+def test_install_only_runs_iso_install_without_game_launch():
+    """Explicit install-only follows normal safe ISO installation and exits."""
+    assert 'L"--install-only"' in SRC
+    assert 'install_only=argc==2 && !wcscmp(argv[1],L"--install-only");' in SRC
+    assert 'if(argc==2 && wcscmp(argv[1],L"--inspect") && !install_only)' in SRC
+    main=SRC.split("int wmain(",1)[1]
+    assert main.index('install_only=argc==2') < main.index('scan=find_adjacent_iso(')
+    assert 'if(!prepare_game_from_iso(&iso))' in main
+    installed=main.split('if((argc==1 || install_only) && regular_file(gameexe))',1)[1].split(
+        'scan=find_adjacent_iso(',1)[0]
+    assert 'verified_retail(gameexe)' in installed
+    assert 'verify_payloads()' in installed
+    assert 'if(install_only){' in installed
+    assert 'result=0;goto done;' in installed
+    assert installed.index('if(install_only){') < installed.index('result=launch_game(1)?0:1;')
+    assert 'resource_install(' not in installed
+    assert 'deploy_payloads_to(' not in installed
+    fresh=main.split('if(!prepare_game_from_iso(&iso))',1)[1]
+    assert 'if(install_only){' in fresh
+    assert 'INSTALL: --install-only complete; game was not launched' in fresh
+    assert fresh.index('if(install_only){') < fresh.index('result=launch_game(1)?0:1;')
+    assert 'result=launch_game(0)?0:1;goto done;' in main  # existing bypass unchanged
+    assert 'result=launch_game(1)?0:1;' in main  # normal default unchanged
