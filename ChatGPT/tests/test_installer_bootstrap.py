@@ -6,6 +6,7 @@ Real-disc InstallShield/CAB recreation is a separate release blocker (#149).
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+PATHS = (ROOT / "spider_fix_paths.h").read_text(encoding="utf-8")
 SRC = (ROOT / "installer/spiderman2k1fix_installer.c").read_text(encoding="utf-8")
 BUILD = (ROOT / "scripts/build_installer.sh").read_text(encoding="utf-8")
 WORKFLOW = (ROOT / ".github/workflows/spiderman2k1fix-installer-prototype.yml").read_text(encoding="utf-8")
@@ -48,3 +49,46 @@ def test_project_payload_inventory():
     assert "Installer-Prototype" in WORKFLOW
     assert "SpiderMan2k1Fix.exe" in WORKFLOW
 
+
+
+
+def test_both_logs_live_next_to_standalone_launcher_only():
+    """winmm/core share a runtime log, not the installer's diagnostic log."""
+    assert 'L"SpiderMan2k1Fix_installer.log"' in SRC
+    assert 'L"SpiderMan2k1Fix.log"' in SRC
+    assert 'SetEnvironmentVariableW(L"SPIDERMAN2K1FIX_LAUNCHER_DIR",launcher_dir)' in SRC
+    assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_LAUNCHER_DIR"' in PATHS
+    resolver=PATHS.split("static inline int spider_path_log_a(",1)[1].split(
+        "static inline int spider_path_code_asset_a(",1)[0]
+    assert "spider_path_dir_a(launcher,0)" in resolver
+    assert "spider_path_join_a(target,sizeof(target),launcher," in resolver
+    assert "SpiderMan2k1Fix.log" in resolver
+    assert "spider_path_exe_dir_a(exe" in resolver  # legacy game-direct fallback
+    assert "SPIDERMAN2K1FIX_LAUNCHER_DIR" not in BUILD
+
+
+def test_standalone_installer_never_upgrades_existing_installation():
+    """The only writes of project payloads occur in private ISO staging."""
+    assert "deploy_payloads_to(staging)" in SRC
+    assert "MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH)" in SRC
+    main=SRC.split("int wmain(",1)[1]
+    existing=main.split("if(argc==1 && regular_file(gameexe))",1)[1].split(
+        "scan=find_adjacent_iso",1)[0]
+    assert "verified_retail(gameexe)" in existing
+    assert "verify_payloads()" in existing
+    assert "deploy_payloads_to(" not in existing
+    assert "resource_install(" not in existing
+    assert "CreateProcessW" in SRC
+    assert "MOVEFILE_REPLACE_EXISTING" not in SRC
+    assert "previous DLL backup=" not in SRC
+    assert "no automatic change" in SRC
+    assert 'if(!deploy_payloads_to(staging))' in SRC
+    assert "if(!MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH))" in SRC
+    assert "resource_verify(RES_WINMM,game_dir" in SRC
+
+
+def test_original_cd_install_manifest_is_not_claimed_complete():
+    """PKR payload listing is not evidence of a retail InstallShield recipe."""
+    assert "CD setup archive recipe not yet verified" in SRC
+    assert "CD image cannot yet be installed safely" in SRC
+    assert "Original retail game data is NEVER embedded" in SRC
