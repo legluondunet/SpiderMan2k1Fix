@@ -9,7 +9,8 @@ original disc is already supported by the first bootstrap executable.
 ```text
 SpiderMan2k1Fix.exe
 Spider-Man.iso
-SpiderMan2k1Fix_installer.log      # one-time install/verification
+SpiderMan2k1Fix_installer.log      # install, verification and explicit upgrades
+SpiderMan2k1Fix_inspect.log        # separate unsupported-CD diagnostic only
 SpiderMan2k1Fix.log                # game runtime log (same launcher directory)
 SpiderMan2k1Fix/
   SpideyPC.exe                     # SHA256-confirmed original retail game
@@ -22,6 +23,7 @@ SpiderMan2k1Fix/
     SDL3.dll                       # verified official SDL redistributable
     SDL3-LICENSE.txt
     README.md, CHANGELOG.md
+    installed-resources.sha256     # exact managed-runtime provenance
     SpiderMan2k1Fix.ini            # created by game, user-mutable
     linux/spiderman-focus-helper  # native observer; optional under Wine
 ```
@@ -31,18 +33,28 @@ any disc assets, save data, or the ISO. The exact supported retail executable
 is 1,507,328 bytes, SHA-256
 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
 
-## One-time installer prototype in draft PR #150
+## Standalone installer prototype in draft PR #150
 
-- Native PE32 Windows/Wine console launcher, `--help`, `--version`, `--inspect`,
-  `--verify`, `--install-only`, `--launch-no-verify`, and zero-argument automatic detection.
-- `--install-only` uses the same strict original-ISO discovery, Wise
-  complete-install file map, game SHA-256 validation and atomic staging as
-  the automatic first launch, but **does not call the game process** afterward.
-  If the installation already exists, it verifies the original EXE and
-  embedded runtime components read-only and exits successfully; on any
-  mismatch it fails without updates or repairs. The command never reinstalls
-  or overwrites existing game files. If the ISO is absent or invalid, it fails
-  with a nonzero exit and a diagnostic in `SpiderMan2k1Fix_installer.log`.
+- Native PE32 Windows/Wine launcher with identical public commands to
+  the other Fix installers: `--help`/`-h`, `--version`, `--verify`,
+  `--install-only`, `--launch-no-verify`, `--verbose` and
+  `--inspect image.iso | image.cue [track.bin|track.img]`.
+  Positional ISO/CUE installation parameters are not accepted.
+  Normal no-argument mode still discovers adjacent media.
+- `--inspect` reads ISO9660/Joliet or an explicit CUE/BIN/IMG data track
+  without launching or installing the game. It writes the **separate**
+  `SpiderMan2k1Fix_inspect.log` beside the launcher, including failures,
+  to help diagnose new CD editions. `--verbose` adds diagnostic output.
+- `--install-only` performs strict original-ISO discovery, the full Wise
+  Game Files installation and original game SHA-256 preflight without
+  starting the game. For existing supported game executables, it verifies
+  the installed game and can **explicitly upgrade the seven installer-owned
+  runtime/docs components** when their previous SHA-256 receipt proves their
+  origin and intact bytes. It stages complete new payloads and receipt,
+  backs up only known files, and attempts rollback on any failed publish.
+  Foreign, missing or user-modified prior managed files are **not**
+  overwritten; game EXE, CD data, user INI and saved games are not part of
+  this upgrade. Normal startup remains verify-and-launch, never updater.
 - `--launch-no-verify` explicitly runs `SpiderMan2k1Fix/SpideyPC.exe`
   without any **launcher-side** existence check, SHA-256 hash verification,
   companion resource checks or ISO discovery/installation. It does **not**
@@ -51,18 +63,16 @@ is 1,507,328 bytes, SHA-256
   compatibility guards. If the EXE is missing, `CreateProcessW` fails and
   the installer log reports the Win32 error. Normal automatic startup and
   `--verify` remain unchanged and strict.
-- Strictly bounded ISO9660/Joliet file inspection. Reject unknown/cyclic
-  records, invalid file extents, unsafe relative names, multiple adjacent
-  `.iso` files and unsupported raw-sector formats. Do not mount ISO or
-  execute the CD `Autorun.exe` / `Setup.exe`.
+- Bounded ISO9660/Joliet and read-only CUE raw-sector inspection. Reject
+  invalid extents, cyclic records, unsafe names and ambiguous adjacent
+  images. No CD mounting or execution of legacy `Autorun.exe`/`Setup.exe`.
 - Exact retail executable SHA-256 check before adopting or launching any
   game folder; fail closed on all mismatches.
-- Deploy project-owned/redistributable resources from embedded RCDATA
-  **once**, inside the same private staging directory as the validated
-  original CD files; publish the complete tree only after all assets pass.
-  No DLL backup, upgrade, repair or overwrite of an existing installation.
-  Existing installs are **verified read-only and launched**; missing or
-  changed runtime files trigger an explicit refusal.
+- First installation atomically publishes the verified original files,
+  embedded components and an exact `installed-resources.sha256` receipt.
+  Subsequent **normal launches** are verification-only; only an explicitly
+  requested `--install-only` may update receipt-authenticated components.
+  Unknown files or third-party binaries are never silently replaced.
 - Game working directory is the install directory. On Wine the game child
   receives `winmm=n,b` without altering the user's system registry.
 - Both logs are beside `SpiderMan2k1Fix.exe`: launcher resets only
