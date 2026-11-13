@@ -108,7 +108,7 @@ and optional Linux X11 helper embedded. Its original-disc installation is
 **still awaiting real-ISO tests on Windows 11 and Wine**; use official releases
 only after that validation.
 
-1. Obtain the launcher from [official releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases)
+1. Obtain the launcher from [GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases)
    once v2.0.0 is published. Place it beside **one legally owned original**
    `.iso` or `.cue` (keep the `.bin`/`.img` track referenced by the CUE).
 2. Run `SpiderMan2k1Fix.exe` on Windows or `wine SpiderMan2k1Fix.exe` on Linux.
@@ -122,15 +122,16 @@ only after that validation.
    `--verbose` can be combined with other commands.
 
 `SpiderMan2k1Fix_installer.log` and `SpiderMan2k1Fix.log` are both placed
-beside the launcher. No game files are bundled, and existing saves and INI
-preferences are never intentionally replaced. The supported original
+beside the launcher. No original game files are included in this project.
+You must provide your own legally obtained copy. Existing saves and INI
+preferences are preserved. The supported original
 `SpideyPC.exe` has SHA-256:
 
 ```text
 0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea
 ```
 
-Other original/modified executables are not supported. The bundled,
+Other versions or modified copies of the executable are not supported. The bundled,
 unchanged **SDL3 3.4.18 Windows x86** binary is checked against its upstream
 SHA-256; the original SDL3 zlib license is included.
 
