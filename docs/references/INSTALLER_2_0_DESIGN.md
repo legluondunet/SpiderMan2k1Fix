@@ -34,7 +34,15 @@ is 1,507,328 bytes, SHA-256
 ## One-time installer prototype in draft PR #150
 
 - Native PE32 Windows/Wine console launcher, `--help`, `--version`, `--inspect`,
-  `--verify`, `--launch-no-verify`, and zero-argument automatic detection.
+  `--verify`, `--install-only`, `--launch-no-verify`, and zero-argument automatic detection.
+- `--install-only` uses the same strict original-ISO discovery, Wise
+  complete-install file map, game SHA-256 validation and atomic staging as
+  the automatic first launch, but **does not call the game process** afterward.
+  If the installation already exists, it verifies the original EXE and
+  embedded runtime components read-only and exits successfully; on any
+  mismatch it fails without updates or repairs. The command never reinstalls
+  or overwrites existing game files. If the ISO is absent or invalid, it fails
+  with a nonzero exit and a diagnostic in `SpiderMan2k1Fix_installer.log`.
 - `--launch-no-verify` explicitly runs `SpiderMan2k1Fix/SpideyPC.exe`
   without any **launcher-side** existence check, SHA-256 hash verification,
   companion resource checks or ISO discovery/installation. It does **not**
