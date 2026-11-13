@@ -177,3 +177,17 @@ jobs:
           path: dist/package/
           if-no-files-found: error
           retention-days: 30
+
+      # Experimental 2.0 installer. Do not replace the proven DLL ZIP until
+      # the authentic retail CD's InstallShield recipe and Wine/Windows game
+      # installation tests pass issue #149.
+      - name: Build standalone installer prototype from verified payloads
+        run: bash scripts/build_installer.sh
+
+      - name: Upload standalone installer prototype (not a release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpiderMan2k1Fix-Installer-Prototype
+          path: dist/installer/SpiderMan2k1Fix.exe
+          if-no-files-found: error
+          retention-days: 30
