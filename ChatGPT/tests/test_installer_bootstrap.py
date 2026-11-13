@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SRC = (ROOT / "installer/spiderman2k1fix_installer.c").read_text(encoding="utf-8")
 BUILD = (ROOT / "scripts/build_installer.sh").read_text(encoding="utf-8")
-WORKFLOW = (ROOT / ".github/workflows/spiderman2k1fix-windows-x86.yml").read_text(encoding="utf-8")
+WORKFLOW = (ROOT / ".github/workflows/spiderman2k1fix-installer-prototype.yml").read_text(encoding="utf-8")
 
 
 def test_installer_names_and_paths():
