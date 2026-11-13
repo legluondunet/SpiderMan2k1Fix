@@ -63,6 +63,11 @@ static inline int SpiderMenubg43_FocusTailAllowed(
  * texture: require the EXACT original queue material handle previously
  * authenticated by the named resource wrapper, a recent actual source draw,
  * live native save shell and the observed fullscreen D3D7 vertex geometry.
+ * This is NOT a 2-Flip-only resource. The original Save Complete / name
+ * screens may keep drawing this same authenticated queue material after the
+ * first source-wrapper draw stops; while the full native shell stays valid
+ * the material identity is a stronger guard than a short frame timeout.
+ * Any focus-loss continuation is separately bounded to 16 Flips.
  * Material identity and native shell are checked by the caller as well. */
 #define SPIDER_MENUBG43_COMPANION_CALLER 0x00103389u
 static inline int SpiderMenubg43_IsCompanionBackground(
@@ -78,7 +83,7 @@ static inline int SpiderMenubg43_IsCompanionBackground(
        w<640u || h<480u || w>16384u || h>16384u ||
        (uint64_t)w*3u<=(uint64_t)h*4u ||
        !material || material!=verified_material ||
-       frame<verified_frame || frame-verified_frame>2u)
+       frame<verified_frame)
         return 0;
     l=r=v[0].x;t=b=v[0].y;
     for(i=0u;i<4u;i++){
