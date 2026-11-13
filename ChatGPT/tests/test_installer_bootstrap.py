@@ -166,7 +166,8 @@ def test_install_only_runs_iso_install_without_game_launch():
     """Explicit install-only follows normal safe ISO installation and exits."""
     assert 'L"--install-only"' in SRC
     assert 'install_only=argc==2 && !wcscmp(argv[1],L"--install-only");' in SRC
-    assert 'if(argc==2 && wcscmp(argv[1],L"--inspect") && !install_only)' in SRC
+    assert 'if(argc==2 && !install_only)' in SRC
+    assert 'if(inspect){' in SRC
     main=SRC.split("int wmain(",1)[1]
     assert main.index('install_only=argc==2') < main.index('scan=find_adjacent_iso(')
     assert 'if(!prepare_game_from_iso(&iso))' in main
