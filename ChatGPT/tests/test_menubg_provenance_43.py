@@ -72,6 +72,15 @@ int main(void) {
     verify(1280u,800u);
     verify(1200u,750u);
     verify(1281u,800u);
+    /* The same source must remain centred until the PAUSED Flip captures it,
+     * but ONLY during the brief external focus-loss transition. */
+    assert(SpiderMenubg43_FocusTailAllowed(100u,84u,0x1234u,0x1234u,1));
+    assert(SpiderMenubg43_FocusTailAllowed(101u,101u,0x1234u,0x1234u,1));
+    assert(!SpiderMenubg43_FocusTailAllowed(101u,84u,0x1234u,0x1234u,1));
+    assert(!SpiderMenubg43_FocusTailAllowed(100u,84u,0x1234u,0x1234u,0));
+    assert(!SpiderMenubg43_FocusTailAllowed(100u,84u,0x1235u,0x1234u,1));
+    assert(!SpiderMenubg43_FocusTailAllowed(100u,84u,0u,0u,1));
+    assert(!SpiderMenubg43_FocusTailAllowed(84u,100u,0x1234u,0x1234u,1));
     {
       SpiderMenuVertex src[4]={0},dst[4]={0};
       assert(!SpiderMenubg43_Transform(src,dst,4,6,0x144u,1440u,1080u));
@@ -196,3 +205,22 @@ def test_real_queue_flush_signature_fits_preflight_and_error_dump_buffers():
     for n in (5, 6, 10, 11, 16):
         # Every byte is logged as 'HH ' and a final NUL terminator.
         assert 3 * n + 1 <= 3 * 16 + 1
+
+
+
+def test_focus_loss_background_retention_is_source_verified_and_bounded():
+    """A lost native shell during Alt-Tab must not stretch the frozen frame."""
+    hdr=(ROOT / "menubg_provenance_43.h").read_text(encoding="utf-8")
+    assert "SPIDER_MENUBG43_FOCUS_TAIL_FLIPS 16u" in hdr
+    assert "focus_lost && verified_texture!=0u" in hdr
+    assert "texture==verified_texture" in hdr
+    assert "frame-last_shell_frame<=SPIDER_MENUBG43_FOCUS_TAIL_FLIPS" in hdr
+    assert "if(applied && shell)" in SOURCE
+    assert "if(!shell && InterlockedCompareExchange(&menubg43_last_shell_frame" in SOURCE
+    assert "pause_x11_bridge_state()==2" in SOURCE
+    assert "MENUBG43-FOCUS-TAIL: MAPPED" in SOURCE
+    assert "eligible=(shell || focus_tail)" in SOURCE
+    # All earlier original-image / render-geometry guards must survive.
+    assert "SpiderMenubg43_RecordIndex((uintptr_t)source,&i)" in SOURCE
+    assert "texture!=menubg43_texture_tag[i]" in SOURCE
+    assert "SpiderHudWidescreen_Installed()" in SOURCE
