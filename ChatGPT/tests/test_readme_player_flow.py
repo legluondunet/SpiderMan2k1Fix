@@ -28,11 +28,14 @@ def test_homepage_has_one_reader_focused_installation_path():
     assert "## Adaptive widescreen HUD" not in README
 
 
-def test_download_requirements_and_linux_override_remain_explicit():
+def test_download_requirements_and_single_exe_wine_launch_remain_explicit():
     assert "[GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases)" in README
     assert "0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea" in README
     assert "winmm.dll" in README and "SpiderMan2k1Fix.dll" in README
-    assert 'WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe' in README
+    assert "wine SpiderMan2k1Fix.exe" in README
+    assert "SpiderMan2k1Fix_installer.log" in README
+    assert "SpiderMan2k1Fix.log" in README
+    assert "WINEDLLOVERRIDES=" not in README
     assert "Other versions or modified copies of the executable are not supported." in README
 
 
