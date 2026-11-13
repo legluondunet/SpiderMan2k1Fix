@@ -14,7 +14,8 @@ SpiderMan2k1Fix.log                # game runtime log (same launcher directory)
 SpiderMan2k1Fix/
   SpideyPC.exe                     # SHA256-confirmed original retail game
   winmm.dll                        # built-in proxy from project
-  data.pkr, media.pkr, binkw32.dll # originals from user's media
+  data.pkr, media.pkr, texture.dat # full Wise Game Files set from user ISO
+  binkw32.dll, Anet.inf, SpideyPC.ico, Spider-Man Setup.exe
   # game log is beside the launcher, NOT inside this folder
   SpiderMan2k1Fix/
     SpiderMan2k1Fix.dll            # built-in fix DLL
@@ -30,7 +31,7 @@ any disc assets, save data, or the ISO. The exact supported retail executable
 is 1,507,328 bytes, SHA-256
 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
 
-## First bootstrap scope (PR forthcoming)
+## One-time installer prototype in draft PR #150
 
 - Native PE32 Windows/Wine console launcher, `--help`, `--version`, `--inspect`,
   `--verify`, and zero-argument automatic detection.
@@ -53,37 +54,51 @@ is 1,507,328 bytes, SHA-256
   launcher directory through `SPIDERMAN2K1FIX_LAUNCHER_DIR`, and
   both the winmm proxy and core share `SpiderMan2k1Fix.log`.
   A direct legacy `SpideyPC.exe` run retains its original log fallback.
-- During the bootstrap phase a genuinely packed retail InstallShield disc
-  must be **refused with a diagnostic**, rather than being declared
-  installed after a raw ISO copy. Do not merge an incomplete prototype.
+- An original **Wise** script, recovered from the uploaded 5,174,358-byte
+  installer, lists all needed **loose** Game Files under `%INST%\\...`.
+  The prototype now locates exactly one directory containing the entire
+  eight-file **full-install superset**, including `media.pkr` and
+  `texture.dat`; it rejects missing, duplicated and cross-directory source
+  files rather than publishing a partial installation.
+- The Wise installer also offers an optional Help Files group and performs
+  registry/shortcut/system INI/DirectX operations. We do not execute it or
+  perform these legacy side effects. Registry independence and actual
+  gameplay still require clean Windows/Wine runtime testing.
+- See the owner-binary-derived file and registry map:
+  [SPIDERMAN_RETAIL_WISE_INSTALL_MAP.md](SPIDERMAN_RETAIL_WISE_INSTALL_MAP.md).
 
-## Critical missing CD evidence
+## Original install source: reconstructed Wise script
 
-The currently accessible inputs include the exact supported original
-`SpideyPC.exe`, an inventory of 2,448 `data.pkr` resources, and
-existing game/runtime logs. These are NOT the retail CD installation files.
-No Spider-Man CD ISO, `Autorun.exe`, `Setup.exe` or InstallShield/CAB
-container from this game is presently accessible in the workspace/library.
-The installer is accordingly restricted to **inspection/fail-closed**
-for unverified disc layouts.
+The project maintainer has now supplied the original `Autorun.exe`,
+two `Setup.exe` variants, the main 5.17 MB Wise `Spider-Man Installation`
+package, the display-adapter selector and their INI/INF files. All uploaded
+EXEs are native **PE32**, not 16-bit NE programs. Offline parsing of
+the Wise overlay, with no execution, recovered a **38,646-byte** install
+script and an exact source-to-destination `Game Files` inventory.
 
-The maintainer's historical Lutris recipe extracts the ISO to a temporary
-folder, runs `Autorun.exe`, **then explicitly copies** `Setup/media.pkr`
-into the game directory. This suggests extra installer work, but does not
-establish whether the retail installer expands CAB archives, changes file
-names, creates essential directories, sets registry keys, or selects assets
-by install component. These facts need to be reconstructed from original
-media, not guessed from an unpacked game or third-party archive.
+The original script offers a small installation with `data.pkr` and
+a larger installation which **also copies `media.pkr`**. The default
+installation was the reason Lutris separately copied `Setup/media.pkr`.
+The new standalone installer is configured to install the **complete**
+list from one consistent ISO directory, including `texture.dat` and
+original support files, as established by the script.
 
-To claim original-CD installation complete, inspect the authentic user's ISO
-and its setup manifest, record installed tree with sizes/hash baselines,
-reconstruct those choices without executing any 16-bit installer, and run
-end-to-end install + gameplay tests under both Windows 11 and Wine 11.x.
-Do not guess from an Internet repack, and do not redistribute game binaries.
+We **still do not have the actual retail Spider-Man ISO**. The Wise
+source prefix `%INST%` identifies the directory of the source installer,
+but does not prove its concrete path within the ISO. Nor have the original
+ISO file sizes or the registry independence been checked in a new Wine
+prefix or on Windows 11. The uploaded installer script is strong evidence
+for the copy recipe, **not proof of a working complete installation**.
+
+More technical findings and SHA-256 provenance:
+[Original Wise installer evidence](SPIDERMAN_RETAIL_WISE_INSTALL_MAP.md).
+No game EXEs, PKR archives, installation archives, or ISO image are
+committed or distributed with this project.
 
 ## Release gate
 
-1. ISO source identification and required file map proven against original CD.
+1. Original Wise full-install file map recovered from uploaded PE32 setup;
+   **actual ISO folder/source sizes and Windows/Wine runtime still unverified**.
 2. Synthetic ISO tests (valid/Joliet, malformed record/extent, bad hash,
    multiple images, tampered embedded resources, failed stage/rollback).
 3. One-time embedded payload deployment; existing installation is verified
