@@ -5990,6 +5990,8 @@ static DWORD initialize_body(LPVOID unused) {
       log_line(menubg43_trial_enabled?
         "MENUBG43: ACTIVE original two CALL sites verified; queued menubg provenance on; geometry opt-in":
         "MENUBG43: REFUSED signature, original binary or hook installation mismatch; no patch");
+      if(menubg43_trial_enabled)
+        log_line("MENUBG43: companion background exact-material guard + source-proven title glyph 4:3 ON [SAVE/NAME TRIAL; no size-only fallback]");
     } else {
       log_line("MENUBG43: OFF by default (no game CALL patches)");
     }
