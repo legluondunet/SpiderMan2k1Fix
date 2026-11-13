@@ -55,7 +55,8 @@ def test_project_payload_inventory():
 def test_both_logs_live_next_to_standalone_launcher_only():
     """winmm/core share a runtime log, not the installer's diagnostic log."""
     assert 'L"SpiderMan2k1Fix_installer.log"' in SRC
-    assert 'L"SpiderMan2k1Fix.log"' in SRC
+    assert 'SpiderMan2k1Fix.log' in SRC
+    assert '"SpiderMan2k1Fix.log"' in PATHS
     assert 'SetEnvironmentVariableW(L"SPIDERMAN2K1FIX_LAUNCHER_DIR",launcher_dir)' in SRC
     assert 'GetEnvironmentVariableA("SPIDERMAN2K1FIX_LAUNCHER_DIR"' in PATHS
     resolver=PATHS.split("static inline int spider_path_log_a(",1)[1].split(
