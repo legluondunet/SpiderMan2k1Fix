@@ -40,7 +40,8 @@ is 1,507,328 bytes, SHA-256
   `--install-only`, `--launch-no-verify`, `--verbose` and
   `--inspect image.iso | image.cue [track.bin|track.img]`.
   Positional ISO/CUE installation parameters are not accepted.
-  Normal no-argument mode still discovers adjacent media.
+  Normal no-argument mode discovers exactly one adjacent ISO **or CUE**
+  image, which references its BIN/IMG track inside its own CUE metadata.
 - `--inspect` reads ISO9660/Joliet or an explicit CUE/BIN/IMG data track
   without launching or installing the game. It writes the **separate**
   `SpiderMan2k1Fix_inspect.log` beside the launcher, including failures,
@@ -54,7 +55,9 @@ is 1,507,328 bytes, SHA-256
   backs up only known files, and attempts rollback on any failed publish.
   Foreign, missing or user-modified prior managed files are **not**
   overwritten; game EXE, CD data, user INI and saved games are not part of
-  this upgrade. Normal startup remains verify-and-launch, never updater.
+  this upgrade. An installation without the original managed-resource
+  receipt is **rejected** rather than automatically adopted from an obsolete
+  test prototype. Normal startup remains verify-and-launch, never updater.
 - `--launch-no-verify` explicitly runs `SpiderMan2k1Fix/SpideyPC.exe`
   without any **launcher-side** existence check, SHA-256 hash verification,
   companion resource checks or ISO discovery/installation. It does **not**
@@ -66,12 +69,14 @@ is 1,507,328 bytes, SHA-256
 - Bounded ISO9660/Joliet and read-only CUE raw-sector inspection. Reject
   invalid extents, cyclic records, unsafe names and ambiguous adjacent
   images. No CD mounting or execution of legacy `Autorun.exe`/`Setup.exe`.
-- Exact retail executable SHA-256 check before adopting or launching any
-  game folder; fail closed on all mismatches.
+- Exact retail executable SHA-256 and managed-resource receipt required
+  before verifying or launching an installed game; refuse unverifiable
+  pre-release prototype directories rather than silently creating trust.
 - First installation atomically publishes the verified original files,
   embedded components and an exact `installed-resources.sha256` receipt.
-  Subsequent **normal launches** are verification-only; only an explicitly
-  requested `--install-only` may update receipt-authenticated components.
+  Subsequent **normal launches** and `--verify` require this receipt and
+  are verification-only; only explicitly requested `--install-only`
+  may update receipt-authenticated components.
   Unknown files or third-party binaries are never silently replaced.
 - Game working directory is the install directory. On Wine the game child
   receives `winmm=n,b` without altering the user's system registry.
@@ -82,7 +87,7 @@ is 1,507,328 bytes, SHA-256
   A direct legacy `SpideyPC.exe` run retains its original log fallback.
 - An original **Wise** script, recovered from the uploaded 5,174,358-byte
   installer, lists all needed **loose** Game Files under `%INST%\\...`.
-  The prototype now locates exactly one directory containing the entire
+  The launcher locates exactly one directory containing the entire
   eight-file **full-install superset**, including `media.pkr` and
   `texture.dat`; it rejects missing, duplicated and cross-directory source
   files rather than publishing a partial installation.
