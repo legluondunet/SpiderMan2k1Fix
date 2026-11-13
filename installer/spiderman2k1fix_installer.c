@@ -1,5 +1,4 @@
 #define WIN32_LEAN_AND_MEAN
-#define WIN32_EXTRA_LEAN
 #include <windows.h>
 #include <wincrypt.h>
 #include <stdio.h>
@@ -49,10 +48,8 @@ typedef struct DiscImage {
   DWORD physical_sector_bytes;
   DWORD sector_payload_offset;
   int raw_cue;
-  DWORD sector;
   DWORD count;
   int joliet;
-  int error;
   DiscEntry *entries;
   wchar_t volume[33];
   DWORD visited[SPIDER_INSTALLER_MAX_FILES];
@@ -349,7 +346,6 @@ static int iso_open(DiscImage *iso,const wchar_t *path,const wchar_t *raw_overri
   LARGE_INTEGER size;DWORD i;int saw_primary=0,selected=0;
   ULONGLONG index01=0;
   memset(iso,0,sizeof(*iso));iso->file=INVALID_HANDLE_VALUE;
-  iso->sector=SPIDER_INSTALLER_BLOCK;
   if(!regular_file(path))return 0;
   if(extension_is(path,L".cue")){
     iso->raw_cue=1;
@@ -465,8 +461,8 @@ static int prepare_game_from_iso(DiscImage *iso) {
    * 38,646-byte Wise script of the SHA-verified owner-supplied Setup EXE.
    * One install-size branch omits media.pkr; the other includes it.
    * We include media.pkr unconditionally for offline play, and include
-   * texture.dat plus the retail helper files (previous prototype omitted
-   * these original source records). Spidey.ini was installed into %WIN%,
+   * texture.dat plus original retail helper files. Spidey.ini was installed
+   * into %WIN%,
    * not into the game directory; never mutate a system location.
    * Wise help/DirectX/registry/shortcuts are not needed for first pass.
    * All files MUST reside in the SAME single directory on the user's CD.
