@@ -299,6 +299,8 @@ static int find_adjacent_iso(wchar_t *dest,size_t cap) {
   FindClose(search);
   return n==1?1:n? -1:0;
 }
+static int deploy_payloads_to(const wchar_t *root);
+static int verify_payloads(void);
 static int prepare_game_from_iso(DiscImage *iso) {
   /* Supported DIRECT-FILE images only. The real retail Spider-Man CD uses
    * an installer: until its CAB/layout recipe is verified against the
@@ -330,14 +332,34 @@ static int prepare_game_from_iso(DiscImage *iso) {
   }
   if(!combine(target,SPIDER_INSTALLER_PATH,staging,L"SpideyPC.exe")||
      !verified_retail(target))goto abort;
+  /* Bundled assets are written in private staging BEFORE publishing.
+   * No post-install update or repair mode exists. */
+  if(!deploy_payloads_to(staging)){
+    message(L"INSTALL: cannot stage bundled runtime files");goto abort;
+  }
   if(!MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH)){
     message(L"INSTALL: unable to publish staging directory (Win32 %lu)",GetLastError());goto abort;
   }
   ok=1;
 abort:
   if(!ok){
-    /* Only our freshly created staging folder, known four files. */
-    for(i=0;i<4;i++)if(combine(target,SPIDER_INSTALLER_PATH,staging,needed[i]))DeleteFileW(target);
+    /* Clean only names created in this unique private staging folder. */
+    static const wchar_t *names[]={
+      L"SpideyPC.exe",L"data.pkr",L"media.pkr",L"binkw32.dll",L"winmm.dll",
+      L"SpiderMan2k1Fix\\SpiderMan2k1Fix.dll",
+      L"SpiderMan2k1Fix\\SDL3.dll",
+      L"SpiderMan2k1Fix\\SDL3-LICENSE.txt",
+      L"SpiderMan2k1Fix\\README.md",
+      L"SpiderMan2k1Fix\\CHANGELOG.md",
+      L"SpiderMan2k1Fix\\linux\\spiderman-focus-helper"
+    };
+    for(i=0;i<sizeof(names)/sizeof(names[0]);i++)
+      if(combine(target,SPIDER_INSTALLER_PATH,staging,names[i]))
+        DeleteFileW(target);
+    if(combine(target,SPIDER_INSTALLER_PATH,staging,L"SpiderMan2k1Fix\\linux"))
+      RemoveDirectoryW(target);
+    if(combine(target,SPIDER_INSTALLER_PATH,staging,L"SpiderMan2k1Fix"))
+      RemoveDirectoryW(target);
     RemoveDirectoryW(staging);
   }
   return ok;
@@ -367,55 +389,74 @@ static int same_file(const wchar_t *dest,const BYTE *buf,DWORD len) {
   }
   CloseHandle(file);return 1;
 }
-static int resource_install(WORD id,const wchar_t *base,const wchar_t *name,int backup_previous){
+/* Initial installation only: no automatic update or DLL replacement.
+ * Never mutate an installation after it has been published. */
+static int resource_install(WORD id,const wchar_t *base,const wchar_t *name){
   const BYTE *bytes;DWORD len,done;
-  wchar_t dest[SPIDER_INSTALLER_PATH],temp[SPIDER_INSTALLER_PATH],bak[SPIDER_INSTALLER_PATH];
-  HANDLE output;int original=0;
-  if(!resource_bytes(id,&bytes,&len)||!combine(dest,SPIDER_INSTALLER_PATH,base,name))return 0;
-  if(same_file(dest,bytes,len))return 1;
-  if(GetFileAttributesW(dest)!=INVALID_FILE_ATTRIBUTES&&!regular_file(dest))return 0;
-  if(_snwprintf(temp,SPIDER_INSTALLER_PATH,L"%ls.new-%lu",dest,GetCurrentProcessId())<0 ||
-     _snwprintf(bak,SPIDER_INSTALLER_PATH,L"%ls.bak",dest)<0)return 0;
-  if(GetFileAttributesW(temp)!=INVALID_FILE_ATTRIBUTES){message(L"DEPLOY: stale staging file %ls",temp);return 0;}
-  output=CreateFileW(temp,GENERIC_WRITE,0,NULL,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,NULL);
+  wchar_t dest[SPIDER_INSTALLER_PATH],temp[SPIDER_INSTALLER_PATH];
+  HANDLE output;
+  if(!resource_bytes(id,&bytes,&len)||
+     !combine(dest,SPIDER_INSTALLER_PATH,base,name))return 0;
+  if(GetFileAttributesW(dest)!=INVALID_FILE_ATTRIBUTES){
+    message(L"INSTALL: refusing existing bundled asset %ls",name);return 0;
+  }
+  if(_snwprintf(temp,SPIDER_INSTALLER_PATH,L"%ls.new-%lu",
+                dest,GetCurrentProcessId())<0)return 0;
+  if(GetFileAttributesW(temp)!=INVALID_FILE_ATTRIBUTES)return 0;
+  output=CreateFileW(temp,GENERIC_WRITE,0,NULL,CREATE_NEW,
+                     FILE_ATTRIBUTE_NORMAL,NULL);
   if(output==INVALID_HANDLE_VALUE)return 0;
   if(!WriteFile(output,bytes,len,&done,NULL)||done!=len){
     CloseHandle(output);DeleteFileW(temp);return 0;
   }
-  FlushFileBuffers(output);CloseHandle(output);
+  if(!FlushFileBuffers(output)){CloseHandle(output);DeleteFileW(temp);return 0;}
+  CloseHandle(output);
   if(!same_file(temp,bytes,len)){DeleteFileW(temp);return 0;}
-  original=regular_file(dest);
-  if(original){
-    if(backup_previous){
-      if(GetFileAttributesW(bak)!=INVALID_FILE_ATTRIBUTES && !regular_file(bak)){
-        DeleteFileW(temp);return 0;
-      }
-      if(!MoveFileExW(dest,bak,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){
-        DeleteFileW(temp);return 0;
-      }
-    }
-  }
-  if(!MoveFileExW(temp,dest,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){
-    if(original&&backup_previous)MoveFileExW(bak,dest,MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH);
+  if(!MoveFileExW(temp,dest,MOVEFILE_WRITE_THROUGH)){
     DeleteFileW(temp);return 0;
   }
-  message(L"DEPLOY: %ls bytes=%lu updated (previous DLL backup=%d)",name,len,original&&backup_previous);
+  message(L"INSTALL: bundled %ls bytes=%lu",name,len);
   return 1;
 }
-static int deploy_payloads(void){
+static int resource_verify(WORD id,const wchar_t *base,const wchar_t *name){
+  const BYTE *bytes;DWORD len;wchar_t dest[SPIDER_INSTALLER_PATH];
+  if(!resource_bytes(id,&bytes,&len)||
+     !combine(dest,SPIDER_INSTALLER_PATH,base,name)||
+     !same_file(dest,bytes,len)){
+    message(L"VERIFY: missing or altered runtime %ls (no automatic repair)",name);
+    return 0;
+  }
+  return 1;
+}
+static int deploy_payloads_to(const wchar_t *root){
   wchar_t code[SPIDER_INSTALLER_PATH],linux[SPIDER_INSTALLER_PATH];
-  if(!safe_directory(game_dir,0) ||
-     !combine(code,SPIDER_INSTALLER_PATH,game_dir,L"SpiderMan2k1Fix")||
+  if(!safe_directory(root,0) ||
+     !combine(code,SPIDER_INSTALLER_PATH,root,L"SpiderMan2k1Fix")||
      !safe_directory(code,1)||
      !combine(linux,SPIDER_INSTALLER_PATH,code,L"linux")||
      !safe_directory(linux,1))return 0;
-  return resource_install(RES_WINMM,game_dir,L"winmm.dll",1) &&
-         resource_install(RES_FIX,code,L"SpiderMan2k1Fix.dll",1) &&
-         resource_install(RES_SDL3,code,L"SDL3.dll",1) &&
-         resource_install(RES_SDL3_LICENSE,code,L"SDL3-LICENSE.txt",0) &&
-         resource_install(RES_X11,linux,L"spiderman-focus-helper",0) &&
-         resource_install(RES_README,code,L"README.md",0) &&
-         resource_install(RES_CHANGELOG,code,L"CHANGELOG.md",0);
+  return resource_install(RES_WINMM,root,L"winmm.dll") &&
+         resource_install(RES_FIX,code,L"SpiderMan2k1Fix.dll") &&
+         resource_install(RES_SDL3,code,L"SDL3.dll") &&
+         resource_install(RES_SDL3_LICENSE,code,L"SDL3-LICENSE.txt") &&
+         resource_install(RES_X11,linux,L"spiderman-focus-helper") &&
+         resource_install(RES_README,code,L"README.md") &&
+         resource_install(RES_CHANGELOG,code,L"CHANGELOG.md");
+}
+static int verify_payloads(void){
+  wchar_t code[SPIDER_INSTALLER_PATH],linux[SPIDER_INSTALLER_PATH];
+  if(!safe_directory(game_dir,0) ||
+     !combine(code,SPIDER_INSTALLER_PATH,game_dir,L"SpiderMan2k1Fix")||
+     !safe_directory(code,0)||
+     !combine(linux,SPIDER_INSTALLER_PATH,code,L"linux")||
+     !safe_directory(linux,0))return 0;
+  return resource_verify(RES_WINMM,game_dir,L"winmm.dll") &&
+         resource_verify(RES_FIX,code,L"SpiderMan2k1Fix.dll") &&
+         resource_verify(RES_SDL3,code,L"SDL3.dll") &&
+         resource_verify(RES_SDL3_LICENSE,code,L"SDL3-LICENSE.txt") &&
+         resource_verify(RES_X11,linux,L"spiderman-focus-helper") &&
+         resource_verify(RES_README,code,L"README.md") &&
+         resource_verify(RES_CHANGELOG,code,L"CHANGELOG.md");
 }
 static int launch_game(void){
   wchar_t path[SPIDER_INSTALLER_PATH],cmd[SPIDER_INSTALLER_PATH+4];
@@ -435,7 +476,12 @@ static int launch_game(void){
         SetEnvironmentVariableW(L"WINEDLLOVERRIDES",value);
     }
   }
-  message(L"LAUNCH: %ls",path);
+  /* Pass the standalone launcher's directory to the game child so its
+   * winmm proxy and core write a shared log beside SpiderMan2k1Fix.exe. */
+  if(!SetEnvironmentVariableW(L"SPIDERMAN2K1FIX_LAUNCHER_DIR",launcher_dir)){
+    message(L"LAUNCH: cannot set runtime log directory");return 0;
+  }
+  message(L"LAUNCH: %ls; runtime log beside standalone launcher",path);
   if(!CreateProcessW(path,cmd,NULL,NULL,FALSE,0,NULL,game_dir,&si,&pi)){
     message(L"LAUNCH: CreateProcess failed Win32=%lu",GetLastError());return 0;
   }
@@ -450,7 +496,7 @@ static void usage(void){
   message(L"Usage: SpiderMan2k1Fix.exe [--inspect | --verify | --version | --help]");
   message(L"Place exactly one original .iso beside the launcher. Safe inspection is ready;");
   message(L"retail InstallShield/CAB layout requires source validation before installation.");
-  message(L"Installer log: SpiderMan2k1Fix_installer.log; game log: SpiderMan2k1Fix/SpiderMan2k1Fix.log");
+  message(L"Logs next to launcher: SpiderMan2k1Fix_installer.log + SpiderMan2k1Fix.log");
 }
 int wmain(int argc,wchar_t **argv) {
   wchar_t executable[SPIDER_INSTALLER_PATH],*slash,path[SPIDER_INSTALLER_PATH];
@@ -470,13 +516,13 @@ int wmain(int argc,wchar_t **argv) {
   if(argc==2 && !wcscmp(argv[1],L"--version")){result=0;goto done;}
   if(!combine(gameexe,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe"))goto done;
   if(argc==2 && !wcscmp(argv[1],L"--verify")){
-    result=verified_retail(gameexe)?0:1;goto done;
+    result=(verified_retail(gameexe)&&verify_payloads())?0:1;goto done;
   }
   if(argc==2 && wcscmp(argv[1],L"--inspect")){usage();goto done;}
   if(argc==1 && regular_file(gameexe)){
-    if(!verified_retail(gameexe))goto done;
-    if(!deploy_payloads()){
-      message(L"INSTALL: embedded runtime deployment failed; game not launched");goto done;
+    /* Existing installation: verify and launch. NEVER update or repair. */
+    if(!verified_retail(gameexe) || !verify_payloads()){
+      message(L"VERIFY: existing installation invalid; no automatic change");goto done;
     }
     result=launch_game()?0:1;goto done;
   }
@@ -501,9 +547,8 @@ int wmain(int argc,wchar_t **argv) {
     iso_close(&iso);goto done;
   }
   iso_close(&iso);
-  if(!deploy_payloads()){
-    message(L"INSTALL: payload deployment failed; installation retained for diagnosis");goto done;
-  }
+  /* The original game and bundled runtimes were staged and published
+   * together. Never deploy or update components after publication. */
   result=launch_game()?0:1;
 done:
   message(L"END: status=%d",result);
