@@ -550,7 +550,9 @@ static int launch_game(int verify_exe){
 }
 static void usage(void){
   message(L"SpiderMan2k1Fix v%hs (ISO installer bootstrap; NOT retail-CD validated)",SPIDERMAN2K1FIX_VERSION);
-  message(L"Usage: SpiderMan2k1Fix.exe [--inspect | --verify | --launch-no-verify | --version | --help]");
+  message(L"Usage: SpiderMan2k1Fix.exe [--inspect | --verify | --install-only | --launch-no-verify | --version | --help]");
+  message(L"  --install-only      Install from adjacent ISO without starting the game.");
+  message(L"                      If already installed, verify and exit without modifications.");
   message(L"  --launch-no-verify  Launch installed game directly; skip presence and integrity checks.");
   message(L"                      No ISO extraction or DLL repair; missing SpideyPC.exe");
   message(L"                      will fail at CreateProcess (game DLL guards remain active).");
@@ -561,7 +563,7 @@ static void usage(void){
 int wmain(int argc,wchar_t **argv) {
   wchar_t executable[SPIDER_INSTALLER_PATH],*slash,path[SPIDER_INSTALLER_PATH];
   wchar_t gameexe[SPIDER_INSTALLER_PATH];
-  DiscImage iso;int result=1,scan;
+  DiscImage iso;int result=1,scan,install_only=0;
   DWORD length=GetModuleFileNameW(NULL,executable,SPIDER_INSTALLER_PATH);
   if(!length||length>=SPIDER_INSTALLER_PATH)return 2;
   slash=wcsrchr(executable,L'\\');if(!slash)return 2;
@@ -585,11 +587,19 @@ int wmain(int argc,wchar_t **argv) {
   if(argc==2 && !wcscmp(argv[1],L"--verify")){
     result=(verified_retail(gameexe)&&verify_payloads())?0:1;goto done;
   }
-  if(argc==2 && wcscmp(argv[1],L"--inspect")){usage();goto done;}
-  if(argc==1 && regular_file(gameexe)){
-    /* Existing installation: verify and launch. NEVER update or repair. */
+  install_only=argc==2 && !wcscmp(argv[1],L"--install-only");
+  if(argc==2 && wcscmp(argv[1],L"--inspect") && !install_only){
+    usage();goto done;
+  }
+  if((argc==1 || install_only) && regular_file(gameexe)){
+    /* Existing installation: verify only; no updates or repairs.
+     * --install-only returns after verification and does NOT launch. */
     if(!verified_retail(gameexe) || !verify_payloads()){
       message(L"VERIFY: existing installation invalid; no automatic change");goto done;
+    }
+    if(install_only){
+      message(L"INSTALL: --install-only existing installation verified; no files changed, no game launch");
+      result=0;goto done;
     }
     result=launch_game(1)?0:1;goto done;
   }
@@ -616,6 +626,10 @@ int wmain(int argc,wchar_t **argv) {
   iso_close(&iso);
   /* The original game and bundled runtimes were staged and published
    * together. Never deploy or update components after publication. */
+  if(install_only){
+    message(L"INSTALL: --install-only complete; game was not launched");
+    result=0;goto done;
+  }
   result=launch_game(1)?0:1;
 done:
   message(L"END: status=%d",result);
