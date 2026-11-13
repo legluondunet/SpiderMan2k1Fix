@@ -437,7 +437,10 @@ done:
   if(!ok)DeleteFileW(dst);
   return ok;
 }
-static int find_adjacent_iso(wchar_t *dest,size_t cap) {
+/* Normal install takes exactly one adjacent original image. CUE metadata
+ * identifies its BIN/IMG track internally; users never pass media positional
+ * arguments unless performing --inspect. Do not follow reparse points. */
+static int find_adjacent_disc(wchar_t *dest,size_t cap) {
   WIN32_FIND_DATAW entry;HANDLE search;
   wchar_t pattern[SPIDER_INSTALLER_PATH];unsigned n=0;
   if(!combine(pattern,SPIDER_INSTALLER_PATH,launcher_dir,L"*"))return -1;
@@ -445,7 +448,8 @@ static int find_adjacent_iso(wchar_t *dest,size_t cap) {
   if(search==INVALID_HANDLE_VALUE)return 0;
   do{
     if((entry.dwFileAttributes&(FILE_ATTRIBUTE_DIRECTORY|FILE_ATTRIBUTE_REPARSE_POINT))||
-       !extension_is(entry.cFileName,L".iso"))continue;
+       (!extension_is(entry.cFileName,L".iso") &&
+        !extension_is(entry.cFileName,L".cue")))continue;
     if(++n==1&&!combine(dest,cap,launcher_dir,entry.cFileName))n=2;
   }while(FindNextFileW(search,&entry));
   FindClose(search);
@@ -590,8 +594,9 @@ static int same_file(const wchar_t *dest,const BYTE *buf,DWORD len) {
   }
   CloseHandle(file);return 1;
 }
-/* Initial installation only: no automatic update or DLL replacement.
- * Never mutate an installation after it has been published. */
+/* Write a bundled resource only into a newly created private staging tree.
+ * Published installations are changed solely by the explicit, receipt-
+ * authenticated --install-only upgrade path, never routine startup. */
 static int resource_install(WORD id,const wchar_t *base,const wchar_t *name){
   const BYTE *bytes;DWORD len,done;
   wchar_t dest[SPIDER_INSTALLER_PATH],temp[SPIDER_INSTALLER_PATH];
@@ -928,28 +933,24 @@ int wmain(int argc,wchar_t **argv) {
   }
   if(!combine(gameexe,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe"))goto done;
   if(argc==2 && !wcscmp(argv[1],L"--verify")){
-    result=(verified_retail(gameexe)&&verify_payloads())?0:1;goto done;
+    result=(verified_retail(gameexe)&&verify_install_receipt(game_dir)&&
+            verify_payloads())?0:1;goto done;
   }
   install_only=argc==2 && !wcscmp(argv[1],L"--install-only");
   if(argc==2 && !install_only){
     usage();goto done;
   }
   if((argc==1 || install_only) && regular_file(gameexe)){
-    /* Existing installation: verify only; no updates or repairs.
-     * --install-only returns after verification and does NOT launch. */
-    if(!verified_retail(gameexe))goto done;
+    /* Published installations MUST have an authenticated resource receipt.
+     * There was no stable pre-2.0 standalone installer: deliberately do not
+     * adopt arbitrary prototype/runtime directories based on matching names.
+     * Updates remain strictly opt-in, using only receipt-verified prior bytes. */
+    if(!verified_retail(gameexe) || !verify_install_receipt(game_dir)){
+      message(L"VERIFY: missing or invalid install receipt; no changes made");
+      goto done;
+    }
     if(install_only){
-      if(!verify_payloads()){
-        if(!upgrade_recognized_payloads())goto done;
-      }else{
-        wchar_t receipt[SPIDER_INSTALLER_PATH];
-        if(!combine(receipt,SPIDER_INSTALLER_PATH,game_dir,receipt_name))goto done;
-        /* Adopt an older prototype only when all bundled bytes match
-         * exactly; do not infer a trusted upgrade from unknown bytes. */
-        if(GetFileAttributesW(receipt)==INVALID_FILE_ATTRIBUTES &&
-           !write_install_receipt(game_dir))goto done;
-        if(!verify_install_receipt(game_dir))goto done;
-      }
+      if(!verify_payloads() && !upgrade_recognized_payloads())goto done;
       message(L"INSTALL: --install-only existing installation verified/updated; game not launched");
       result=0;goto done;
     }
@@ -958,12 +959,12 @@ int wmain(int argc,wchar_t **argv) {
     }
     result=launch_game(1)?0:1;goto done;
   }
-  scan=find_adjacent_iso(path,SPIDER_INSTALLER_PATH);
+  scan=find_adjacent_disc(path,SPIDER_INSTALLER_PATH);
   if(scan!=1){
-    message(L"ISO: expected one adjacent .iso; detected none or multiple (state=%d)",scan);
+    message(L"DISC: expected one adjacent .iso or .cue; detected none or multiple (state=%d)",scan);
     goto done;
   }
-  message(L"ISO: inspecting %ls",path);
+  message(L"DISC: inspecting %ls",path);
   if(!iso_open(&iso,path,NULL)){iso_close(&iso);goto done;}
   {DWORD n,listed=0;
     for(n=0;n<iso.count;n++)if(!iso.entries[n].directory){
@@ -979,8 +980,9 @@ int wmain(int argc,wchar_t **argv) {
     iso_close(&iso);goto done;
   }
   iso_close(&iso);
-  /* The original game and bundled runtimes were staged and published
-   * together. Never deploy or update components after publication. */
+  /* The original game and project resources are installed atomically.
+   * Normal launches never update them; explicit --install-only may upgrade
+   * authenticated project-owned resources in a later revision. */
   if(install_only){
     message(L"INSTALL: --install-only complete; game was not launched");
     result=0;goto done;
