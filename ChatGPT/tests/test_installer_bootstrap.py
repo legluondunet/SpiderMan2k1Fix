@@ -33,7 +33,7 @@ def test_installer_retail_validation_and_fail_closed():
     assert "Original retail game data is NEVER embedded" in SRC
     assert "original Wise Game Files source" in SRC
     assert "ISO: unsafe or unsupported directory records" in SRC
-    assert "ISO: expected one adjacent .iso" in SRC
+    assert "DISC: expected one adjacent .iso or .cue" in SRC
     assert "MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH)" in SRC
     assert "FILE_ATTRIBUTE_REPARSE_POINT" in SRC
 
@@ -84,15 +84,21 @@ def test_normal_launch_never_mutates_existing_game_and_explicit_update_is_receip
     assert "previous DLL backup=" not in SRC
     main=SRC.split("int wmain(",1)[1]
     existing=main.split("if((argc==1 || install_only) && regular_file(gameexe))",1)[1].split(
-        "scan=find_adjacent_iso",1)[0]
+        "scan=find_adjacent_disc",1)[0]
     assert "verified_retail(gameexe)" in existing
     assert "verify_payloads()" in existing
+    assert "verify_install_receipt(game_dir)" in existing
     assert "if(install_only){" in existing
     assert "upgrade_recognized_payloads()" in existing
     assert existing.index("if(install_only){") < existing.index("upgrade_recognized_payloads()")
     assert "resource_install(" not in existing
     assert "deploy_payloads_to(" not in existing
     assert "no automatic change" in SRC
+    # Obsolete experimental adoption of an installation with no signed receipt
+    # is eliminated before stable 2.0.0, even if the DLL bytes look correct.
+    assert "Adopt an older prototype" not in SRC
+    assert "if(GetFileAttributesW(receipt)==INVALID_FILE_ATTRIBUTES" not in SRC
+    assert "missing or invalid install receipt" in existing
     assert "if(!deploy_payloads_to(staging) || !write_install_receipt(staging))" in SRC
     assert "resource_verify(RES_WINMM,game_dir" in SRC
 
@@ -172,7 +178,7 @@ def test_no_verify_launch_skips_all_launcher_filesystem_guards():
     assert "verified_retail(" not in cli
     assert "verify_payloads(" not in cli
     assert "regular_file(" not in cli
-    assert "find_adjacent_iso(" not in cli
+    assert "find_adjacent_disc(" not in cli
     assert "prepare_game_from_iso(" not in cli
     assert main.index('L"--launch-no-verify"') < main.index('if(!combine(gameexe')
     assert 'result=launch_game(1)?0:1;' in main
@@ -190,10 +196,10 @@ def test_install_only_runs_iso_install_without_game_launch():
     assert 'if(argc==2 && !install_only)' in SRC
     assert 'if(inspect){' in SRC
     main=SRC.split("int wmain(",1)[1]
-    assert main.index('install_only=argc==2') < main.index('scan=find_adjacent_iso(')
+    assert main.index('install_only=argc==2') < main.index('scan=find_adjacent_disc(')
     assert 'if(!prepare_game_from_iso(&iso))' in main
     installed=main.split('if((argc==1 || install_only) && regular_file(gameexe))',1)[1].split(
-        'scan=find_adjacent_iso(',1)[0]
+        'scan=find_adjacent_disc(',1)[0]
     assert 'verified_retail(gameexe)' in installed
     assert 'verify_payloads()' in installed
     assert 'if(install_only){' in installed
@@ -233,3 +239,33 @@ def test_standard_inspect_commands_and_independent_report():
     # No naked ISO/CUE argument is ever accepted in non-inspect CLI dispatch.
     assert "if(argc>2){usage();goto done;}" in SRC
     assert "if(argc==2 && !install_only)" in SRC
+
+
+def test_default_discovery_supports_iso_and_cue_with_bounded_ambiguity():
+    """Normal install finds one adjacent ISO or CUE, never a loose BIN/IMG."""
+    code=SRC.split("static int find_adjacent_disc(",1)[1].split(
+        "static int deploy_payloads_to(",1)[0]
+    assert 'extension_is(entry.cFileName,L".iso")' in code
+    assert 'extension_is(entry.cFileName,L".cue")' in code
+    assert 'extension_is(entry.cFileName,L".bin")' not in code
+    assert "FILE_ATTRIBUTE_REPARSE_POINT" in code
+    assert "return n==1?1:n? -1:0" in code
+    assert "scan=find_adjacent_disc(path,SPIDER_INSTALLER_PATH)" in SRC
+    assert "iso_open(&iso,path,NULL)" in SRC
+    assert "cue_source(path,raw_override" in SRC
+    assert "find_adjacent_iso(" not in SRC
+
+
+def test_retail_receipt_required_without_any_legacy_adoption():
+    """First stable installer cannot trust old diagnostic prototypes."""
+    main=SRC.split("int wmain(",1)[1]
+    assert 'verified_retail(gameexe)&&verify_install_receipt(game_dir)&&' in main
+    existing=main.split(
+        "if((argc==1 || install_only) && regular_file(gameexe))",1)[1].split(
+        "scan=find_adjacent_disc(",1)[0]
+    assert "!verify_install_receipt(game_dir)" in existing
+    assert existing.index("!verify_install_receipt(game_dir)") < existing.index(
+        "if(install_only){")
+    assert "write_install_receipt(game_dir)" not in existing
+    assert "upgrade_recognized_payloads()" in existing
+    assert "read-only" not in existing or "Updates remain strictly" in existing
