@@ -1169,6 +1169,10 @@ static int menubg43_proven_focus_tail(LONG frame)
 static volatile LONG menubg43_companion_draws=0;
 static volatile LONG menubg43_companion_mismatch=0;
 static volatile LONG menubg43_title_draws=0;
+/* Read-only Flip stamps for the actual PAUSED snapshot; updated only after
+ * an out-of-place X-coordinate correction genuinely succeeded. */
+static volatile LONG menubg43_last_companion_mapped_frame=-1;
+static volatile LONG menubg43_last_title_mapped_frame=-1;
 static const void *maybe_correct_menubg43_companion(
      D3DPRIMITIVETYPE type,DWORD fvf,const void *source,DWORD count,
      void *ret,SpiderMenuVertex *copy)
@@ -1216,6 +1220,17 @@ static const void *maybe_correct_menubg43_companion(
   if(!SpiderMenubg43_Transform((const SpiderMenuVertex *)source,copy,
       (unsigned)count,(unsigned)type,(uint32_t)fvf,
       (unsigned)desktop_w,(unsigned)desktop_h)) return source;
+  InterlockedExchange(&menubg43_last_companion_mapped_frame,frame);
+  if(shell) {
+    /* An exact-material, exact-original-queue companion can remain visible
+     * for hundreds of Flips on SAVE COMPLETED / INPUT NAME without the
+     * original named-resource wrapper being invoked again. Refresh the
+     * verified shell stamp ONLY after this identity-and-geometry guarded
+     * mapping succeeds while the original native shell is still active.
+     * This keeps the existing 16-Flip out-of-focus grace meaningful after
+     * a long-lived save page, without extending it outside real focus loss. */
+    InterlockedExchange(&menubg43_last_shell_frame,frame);
+  }
   n=InterlockedIncrement(&menubg43_companion_draws);
   if(debug_log_enabled && (n<=12 || n%120==0)) {
     snprintf(msg,sizeof(msg),
@@ -1275,6 +1290,7 @@ static const void *maybe_correct_menubg43_title(
        v,copy,(unsigned)count,(unsigned)type,(uint32_t)fvf,(uint32_t)rva,
        (unsigned)desktop_w,(unsigned)desktop_h,
        (unsigned)texw,(unsigned)texh))return source;
+  InterlockedExchange(&menubg43_last_title_mapped_frame,frame);
   n=InterlockedIncrement(&menubg43_title_draws);
   if(debug_log_enabled && (n<=12 || n%480==0)) {
     snprintf(msg,sizeof(msg),
@@ -5058,6 +5074,26 @@ static void pause_at_flip_if_background(void) {
     pause_content_rect.top=game_map.top;
     pause_content_rect.right=game_map.right;
     pause_content_rect.bottom=game_map.bottom;
+  }
+  /* Exactly which original geometry was already mapped at the Flip that
+   * PAUSED freezes? Prior counters were global and mostly rate-limited,
+   * so an actual Alt+Tab capture could not be reconciled with title/menu
+   * draws on that frame. This is observational only, no new GDI or hooks. */
+  if(menubg43_trial_enabled && debug_log_enabled) {
+    char line[246];
+    LONG frozen_flip=InterlockedCompareExchange(&flip_count,0,0);
+    LONG source_last=InterlockedCompareExchange(
+      &menubg43_last_shell_frame,0,0);
+    LONG companion_last=InterlockedCompareExchange(
+      &menubg43_last_companion_mapped_frame,0,0);
+    LONG title_last=InterlockedCompareExchange(
+      &menubg43_last_title_mapped_frame,0,0);
+    snprintf(line,sizeof(line),
+      "MENUBG43-PAUSE-FRAME: frozen-flip=%ld authenticated-last=%ld companion-last=%ld title-last=%ld shell-now=%d x11-state=%d win32-foreground=%d [READ-ONLY pre-composite]",
+      (long)frozen_flip,(long)source_last,(long)companion_last,
+      (long)title_last,menubg43_native_shell_state(),x11_state,
+      win32_game_foreground);
+    log_line(line);
   }
   if(borderless_back && borderless_primary && original_blt)
     SpiderPauseSurface_Begin(borderless_back,borderless_primary,
