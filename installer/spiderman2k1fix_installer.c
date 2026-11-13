@@ -259,11 +259,20 @@ static int iso_open(DiscImage *iso,const wchar_t *path) {
     (unsigned long long)iso->length);
   return 1;
 }
+/* The Wise source %INST% is a single CD directory. Do not accept
+ * duplicate case-insensitive names within that directory. */
 static DiscEntry* find_disc_file(DiscImage *iso,const wchar_t *name){
-  DWORD i;for(i=0;i<iso->count;i++)
-    if(!iso->entries[i].directory&&!_wcsicmp(iso->entries[i].name,name))
-      return &iso->entries[i];
-  return NULL;
+  DWORD i;DiscEntry *hit=NULL;
+  for(i=0;i<iso->count;i++){
+    if(iso->entries[i].directory || _wcsicmp(iso->entries[i].name,name))
+      continue;
+    if(hit){
+      message(L"ISO: ambiguous duplicate source name %ls",name);
+      return NULL;
+    }
+    hit=&iso->entries[i];
+  }
+  return hit;
 }
 static int iso_copy(DiscImage *iso,const DiscEntry *item,const wchar_t *dst) {
   BYTE buffer[SPIDER_INSTALLER_BUFFER];
@@ -302,50 +311,92 @@ static int find_adjacent_iso(wchar_t *dest,size_t cap) {
 static int deploy_payloads_to(const wchar_t *root);
 static int verify_payloads(void);
 static int prepare_game_from_iso(DiscImage *iso) {
-  /* Supported DIRECT-FILE images only. The real retail Spider-Man CD uses
-   * an installer: until its CAB/layout recipe is verified against the
-   * user's media, an extracted ISO is not a complete game installation.
-   * Refuse instead of copying compressed archives as runnable assets. */
-  static const wchar_t *needed[]={L"SpideyPC.exe",L"data.pkr",L"media.pkr",L"binkw32.dll"};
-  DiscEntry *parts[4];
+  /* This is the COMPLETE Game Files superset recorded in the original
+   * 38,646-byte Wise script of the SHA-verified owner-supplied Setup EXE.
+   * One install-size branch omits media.pkr; the other includes it.
+   * We include media.pkr unconditionally for offline play, and include
+   * texture.dat plus the retail helper files (previous prototype omitted
+   * these original source records). Spidey.ini was installed into %WIN%,
+   * not into the game directory; never mutate a system location.
+   * Wise help/DirectX/registry/shortcuts are not needed for first pass.
+   * All files MUST reside in the SAME single directory on the user's CD.
+   * We still require real retail ISO and Windows/Wine smoke tests. */
+  static const wchar_t *needed[]={
+    L"SpideyPC.exe",L"data.pkr",L"media.pkr",L"texture.dat",
+    L"binkw32.dll",L"Anet.inf",L"SpideyPC.ico",L"Spider-Man Setup.exe"
+  };
+  enum { REQUIRED_COUNT=sizeof(needed)/sizeof(needed[0]) };
+  DiscEntry *parts[REQUIRED_COUNT],*spidey=NULL;
+  wchar_t prefix[256],source[256];
   wchar_t staging[SPIDER_INSTALLER_PATH],target[SPIDER_INSTALLER_PATH];
-  unsigned i;int ok=0;
-  for(i=0;i<4;i++){
-    parts[i]=find_disc_file(iso,needed[i]);
+  DWORD n;unsigned i;int ok=0;
+  /* Detect one, and only one, SpideyPC.exe source directory. Do not
+   * silently combine unrelated root/Setup/demo file trees. */
+  for(n=0;n<iso->count;n++){
+    const wchar_t *basename=wcsrchr(iso->entries[n].name,L'/');
+    basename=basename?basename+1:iso->entries[n].name;
+    if(iso->entries[n].directory || _wcsicmp(basename,L"SpideyPC.exe"))
+      continue;
+    if(spidey){
+      message(L"ISO: ambiguous SpideyPC.exe source directories");return 0;
+    }
+    spidey=&iso->entries[n];
+  }
+  if(!spidey){
+    message(L"ISO: original Wise source game executable absent");return 0;
+  }
+  if(spidey->bytes!=RETAIL_EXE_BYTES){
+    message(L"ISO: original game executable size mismatch=%lu",spidey->bytes);
+    return 0;
+  }
+  wcscpy(prefix,spidey->name);
+  {wchar_t *slash=wcsrchr(prefix,L'/');if(slash)*slash=0;else prefix[0]=0;}
+  message(L"WISE-SOURCE: original file directory=%ls; complete Game Files profile",
+          *prefix?prefix:L"(disc root)");
+  for(i=0;i<REQUIRED_COUNT;i++){
+    int count;
+    count=*prefix?_snwprintf(source,256,L"%ls/%ls",prefix,needed[i]):
+                   _snwprintf(source,256,L"%ls",needed[i]);
+    if(count<0 || count>=256)return 0;
+    parts[i]=find_disc_file(iso,source);
     if(!parts[i]){
-      message(L"ISO: missing directly installable %ls; CD setup archive recipe not yet verified",needed[i]);
+      message(L"ISO: missing original Wise Game Files source %ls",source);
+      return 0;
+    }
+    if(!parts[i]->bytes){
+      message(L"ISO: empty original Wise Game Files source %ls",source);
       return 0;
     }
   }
-  if(!combine(staging,SPIDER_INSTALLER_PATH,launcher_dir,L"SpiderMan2k1Fix.installing"))return 0;
+  if(!combine(staging,SPIDER_INSTALLER_PATH,launcher_dir,
+              L"SpiderMan2k1Fix.installing"))return 0;
   if(GetFileAttributesW(game_dir)!=INVALID_FILE_ATTRIBUTES ||
      GetFileAttributesW(staging)!=INVALID_FILE_ATTRIBUTES){
-    message(L"INSTALL: destination/staging already exists; refusing to overwrite user data");return 0;
+    message(L"INSTALL: target/staging already exists; refuse overwriting user data");
+    return 0;
   }
   if(!safe_directory(staging,1))return 0;
-  for(i=0;i<4;i++){
+  for(i=0;i<REQUIRED_COUNT;i++){
     if(!combine(target,SPIDER_INSTALLER_PATH,staging,needed[i])||
        !iso_copy(iso,parts[i],target)){
-      message(L"INSTALL: unable to extract verified file %ls",needed[i]);goto abort;
+      message(L"INSTALL: unable to copy original %ls",needed[i]);goto abort;
     }
     message(L"INSTALL: copied original %ls bytes=%lu",needed[i],parts[i]->bytes);
   }
   if(!combine(target,SPIDER_INSTALLER_PATH,staging,L"SpideyPC.exe")||
      !verified_retail(target))goto abort;
-  /* Bundled assets are written in private staging BEFORE publishing.
-   * No post-install update or repair mode exists. */
   if(!deploy_payloads_to(staging)){
-    message(L"INSTALL: cannot stage bundled runtime files");goto abort;
+    message(L"INSTALL: cannot stage embedded runtimes");goto abort;
   }
   if(!MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH)){
-    message(L"INSTALL: unable to publish staging directory (Win32 %lu)",GetLastError());goto abort;
+    message(L"INSTALL: cannot publish fully staged directory Win32=%lu",
+            GetLastError());goto abort;
   }
   ok=1;
 abort:
   if(!ok){
-    /* Clean only names created in this unique private staging folder. */
-    static const wchar_t *names[]={
-      L"SpideyPC.exe",L"data.pkr",L"media.pkr",L"binkw32.dll",L"winmm.dll",
+    static const wchar_t *bundled[]={
+      L"winmm.dll",
       L"SpiderMan2k1Fix\\SpiderMan2k1Fix.dll",
       L"SpiderMan2k1Fix\\SDL3.dll",
       L"SpiderMan2k1Fix\\SDL3-LICENSE.txt",
@@ -353,8 +404,11 @@ abort:
       L"SpiderMan2k1Fix\\CHANGELOG.md",
       L"SpiderMan2k1Fix\\linux\\spiderman-focus-helper"
     };
-    for(i=0;i<sizeof(names)/sizeof(names[0]);i++)
-      if(combine(target,SPIDER_INSTALLER_PATH,staging,names[i]))
+    for(i=0;i<REQUIRED_COUNT;i++)
+      if(combine(target,SPIDER_INSTALLER_PATH,staging,needed[i]))
+        DeleteFileW(target);
+    for(i=0;i<sizeof(bundled)/sizeof(bundled[0]);i++)
+      if(combine(target,SPIDER_INSTALLER_PATH,staging,bundled[i]))
         DeleteFileW(target);
     if(combine(target,SPIDER_INSTALLER_PATH,staging,L"SpiderMan2k1Fix\\linux"))
       RemoveDirectoryW(target);
@@ -495,7 +549,7 @@ static void usage(void){
   message(L"SpiderMan2k1Fix v%hs (ISO installer bootstrap; NOT retail-CD validated)",SPIDERMAN2K1FIX_VERSION);
   message(L"Usage: SpiderMan2k1Fix.exe [--inspect | --verify | --version | --help]");
   message(L"Place exactly one original .iso beside the launcher. Safe inspection is ready;");
-  message(L"retail InstallShield/CAB layout requires source validation before installation.");
+  message(L"retail Wise source file map supported provisionally; authentic ISO test required.");
   message(L"Logs next to launcher: SpiderMan2k1Fix_installer.log + SpiderMan2k1Fix.log");
 }
 int wmain(int argc,wchar_t **argv) {
@@ -543,7 +597,7 @@ int wmain(int argc,wchar_t **argv) {
   }
   if(argc==2 && !wcscmp(argv[1],L"--inspect")){iso_close(&iso);result=0;goto done;}
   if(!prepare_game_from_iso(&iso)){
-    message(L"INSTALL: CD image cannot yet be installed safely without the original setup recipe; no partial game was published");
+    message(L"INSTALL: original Wise source file map incomplete or unsafe; no partial game published");
     iso_close(&iso);goto done;
   }
   iso_close(&iso);
