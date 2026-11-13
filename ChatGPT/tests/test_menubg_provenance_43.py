@@ -68,6 +68,61 @@ int main(void) {
       (uintptr_t)SPIDER_MENUBG43_RECORD_BASE+16u+240u*SPIDER_MENUBG43_RECORD_CAP,&idx));
     assert(!SpiderMenubg43_RecordIndex(
       (uintptr_t)SPIDER_MENUBG43_RECORD_BASE+17u,&idx));
+    /* Second native original draw path: authenticated SAME-material
+     * fullscreen background, not a generic 512x512 texture exception. */
+    {
+      SpiderMenuVertex v[4]={
+        {0.0f,0.0f,0.99976f,0.0229f,0xFFFFFFFFu,0.0f,0.0f},
+        {1920.0f,0.0f,0.99976f,0.0229f,0xFFFFFFFFu,1.0f,0.0f},
+        {1920.0f,1080.0f,0.99976f,0.0229f,0xFFFFFFFFu,1.0f,1.0f},
+        {0.0f,1080.0f,0.99976f,0.0229f,0xFFFFFFFFu,0.0f,1.0f}
+      };
+      assert(SpiderMenubg43_IsCompanionBackground(v,4u,6u,0x144u,
+        SPIDER_MENUBG43_COMPANION_CALLER,1920u,1080u,
+        0x12345678u,0x12345678u,300u,299u));
+      assert(!SpiderMenubg43_IsCompanionBackground(v,4u,6u,0x144u,
+        SPIDER_MENUBG43_COMPANION_CALLER,1920u,1080u,
+        0x12345678u,0x87654321u,300u,299u));
+      assert(!SpiderMenubg43_IsCompanionBackground(v,4u,6u,0x144u,
+        SPIDER_MENUBG43_COMPANION_CALLER,1920u,1080u,
+        0x12345678u,0x12345678u,303u,299u));
+      assert(!SpiderMenubg43_IsCompanionBackground(v,4u,6u,0x144u,
+        SPIDER_MENUBG43_COMPANION_CALLER,1920u,1080u,
+        0x12345678u,0x12345678u,298u,299u));
+      assert(!SpiderMenubg43_IsCompanionBackground(v,4u,6u,0x144u,
+        SPIDER_MENUBG43_TITLE_CALLER,1920u,1080u,
+        0x12345678u,0x12345678u,300u,299u));
+      v[0].z=0.00122f;
+      assert(!SpiderMenubg43_IsCompanionBackground(v,4u,6u,0x144u,
+        SPIDER_MENUBG43_COMPANION_CALLER,1920u,1080u,
+        0x12345678u,0x12345678u,300u,299u));
+    }
+    /* The SOURCE-identified top title is a family of individual glyph
+     * quads with original 32/64x32 textures, not the menubg fullscreen. */
+    {
+      SpiderMenuVertex v[4]={
+        {170.0f,99.0f,0.99927f,0.0229f,0xFFFFFFFFu,0.0f,0.0f},
+        {230.0f,99.0f,0.99927f,0.0229f,0xFFFFFFFFu,1.0f,0.0f},
+        {230.0f,166.0f,0.99927f,0.0229f,0xFFFFFFFFu,1.0f,1.0f},
+        {170.0f,166.0f,0.99927f,0.0229f,0xFFFFFFFFu,0.0f,1.0f}
+      },out[4];
+      assert(SpiderMenubg43_TitleGlyphTransform(v,out,4u,6u,0x144u,
+        SPIDER_MENUBG43_TITLE_CALLER,1920u,1080u,32u,32u));
+      assert(near(out[0].x,367.5f));
+      assert(near(out[1].x,412.5f));
+      for(unsigned i=0u;i<4u;i++){
+        assert(out[i].y==v[i].y && out[i].z==v[i].z &&
+          out[i].rhw==v[i].rhw && out[i].diffuse==v[i].diffuse &&
+          out[i].u==v[i].u && out[i].v==v[i].v);
+      }
+      assert(!SpiderMenubg43_TitleGlyphTransform(v,out,4u,6u,0x144u,
+        SPIDER_MENUBG43_TITLE_CALLER,1920u,1080u,512u,512u));
+      assert(!SpiderMenubg43_TitleGlyphTransform(v,out,4u,6u,0x144u,
+        SPIDER_MENUBG43_COMPANION_CALLER,1920u,1080u,32u,32u));
+      v[0].z=0.00122f;
+      assert(!SpiderMenubg43_TitleGlyphTransform(v,out,4u,6u,0x144u,
+        SPIDER_MENUBG43_TITLE_CALLER,1920u,1080u,32u,32u));
+    }
     verify(1920u,1080u);
     verify(1280u,800u);
     verify(1200u,750u);
@@ -250,3 +305,40 @@ def test_name_entry_and_title_diagnostics_cannot_modify_rendered_geometry():
     for forbidden in ("VirtualProtect(", "memcpy(", "SetViewport(",
                       "SetRenderState(", "DrawPrimitive(", "DrawIndexedPrimitive("):
         assert forbidden not in probe
+
+
+
+def test_new_menu_background_and_top_title_use_only_authenticated_provenance():
+    hdr=(ROOT / "menubg_provenance_43.h").read_text(encoding="utf-8")
+    assert "SPIDER_MENUBG43_COMPANION_CALLER 0x00103389u" in hdr
+    assert "material!=verified_material" in hdr
+    assert "frame-verified_frame>2u" in hdr
+    assert "SPIDER_MENUBG43_TITLE_CALLER 0x00102C72u" in hdr
+    assert "SpiderMenubg43_TitleGlyphTransform" in hdr
+    assert "if(!menubg43_trial_enabled || !menubg43_call_hooks_installed" in SOURCE
+    assert "if(!SpiderMenubg43_Transform((const SpiderMenuVertex *)source,copy" in SOURCE
+    assert "MENUBG43-COMPANION: MAPPED" in SOURCE
+    assert "MENUBG43-COMPANION: REJECT" in SOURCE
+    assert "MENUBG43-TITLE: MAPPED" in SOURCE
+    assert "if(v==verts) v=maybe_correct_menubg43_title(" in SOURCE
+    draw=SOURCE.split("static HRESULT WINAPI hooked_draw_primitive(",1)[1].split(
+        "static HRESULT WINAPI hooked_draw_indexed_primitive(",1)[0]
+    assert draw.index("maybe_correct_menubg43_source(") < draw.index(
+        "maybe_correct_menubg43_companion(") < draw.index(
+        "maybe_correct_menubg43_title(") < draw.index(
+        "maybe_correct_horplus(")
+    # There is no content override, glyph-specific name/position hack, or
+    # native shell bypass. Only the X of out-of-place vertices is changed.
+    companion=SOURCE.split("static const void *maybe_correct_menubg43_companion(",1)[1].split(
+        "static const void *maybe_correct_menubg43_title(",1)[0]
+    assert "menubg43_native_shell_state()" in companion
+    assert "material,(uint32_t)known" in companion
+    title=SOURCE.split("static const void *maybe_correct_menubg43_title(",1)[1].split(
+        "/* READ-ONLY reconnaissance",1)[0]
+    assert "menubg43_native_shell_state()" in title
+    assert "SpiderMenubg43_RecordIndex(" in title
+    assert "IDirect3DDevice7_GetTexture(" in title
+    for fn in (companion,title):
+        assert "VirtualProtect(" not in fn
+        assert "SetViewport(" not in fn
+        assert "SetRenderState(" not in fn
