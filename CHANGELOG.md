@@ -1,14 +1,16 @@
 # Changelog
 
-## 2.0.0 — November 12, 2026
+## 2.0.0 — Unreleased
 
 Release 2.0.0 integrates controller Save Game confirmation (PR #138),
 Pause/cutscene SDL3 trigger-drift correction (PR #139), selection of
 multiple same-model SDL3 controllers (PR #137), and the accumulated display,
 focus and gameplay improvements from the accepted RC2. The maintainer accepted
 real-game testing on Windows 11 and Wine/GE-Proton on November 12, 2026.
-The final version bump is metadata-only and must pass its own build and
-package verification before the v2.0.0 tag or GitHub release is published.
+The v2.0.0 label is already present in source metadata. The final built-in
+save-screen correction is included after PR #144 and still requires a
+separate final build and smoke-test gate before the v2.0.0 tag or GitHub
+release is published.
 
 ### Controls and SDL3
 
@@ -49,6 +51,14 @@ package verification before the v2.0.0 tag or GitHub release is published.
 
 ### Graphics, compatibility and packaging
 
+- **SAVE GAME / INPUT NAME / SAVE COMPLETED (merged PR #144, Nov 13):**
+  keep the native background and title sprites centered in 4:3, including
+  the frozen image during an Alt+Tab PAUSED transition. The maintainer
+  validated normal and external-focus rendering under Wine 11.17 at
+  1920x1080. The fix is built in on the verified original executable;
+  no experimental environment variable or additional INI option is needed.
+  Original callsite signatures, queue provenance and texture identity
+  remain fail-closed; the lost-focus grace remains bounded.
 - Permanent source-verified widescreen HUD, centered 4:3 native Pause/ESC
   artwork, original veil/outer gutters and synchronized entry-iris curtains;
   original 4:3 rendering and HUD draw ordering are preserved.
@@ -76,6 +86,13 @@ package verification before the v2.0.0 tag or GitHub release is published.
   analog-axis preservation, every SDL3 device, and native Windows PS3
   hardware. Limited Steam Deck hardware observations are tracked in issue #120
   for follow-up after v2.0.0; none imply complete compatibility.
+- Subsequent PR #144 Windows x86 CI passed on merged main (`d517f4d0`);
+  the stable default-enabled follow-up requires its own CI and Windows/Wine
+  smoke test. Do not claim untested runtime environments have been verified
+  by build success alone.
+- Open post-release investigations: missing W lightning on the NEW YORK
+  sign (#146), unexpectedly moving shadows (#147) and bank window
+  glass-break audio order (#145). Their causes are not established.
 - No automatic release or tag is created by the CI workflow. See
   [accepted RC2 test history](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
 - Historical development reports and superseded experimental findings remain
