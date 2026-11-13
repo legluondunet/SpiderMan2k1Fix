@@ -861,6 +861,14 @@ static float menubg43_x_tag[SPIDER_MENUBG43_RECORD_CAP];
 static float menubg43_y_tag[SPIDER_MENUBG43_RECORD_CAP];
 static volatile LONG menubg43_source_calls=0,menubg43_mapped=0;
 static volatile LONG menubg43_rejects=0;
+/* Original source-backed background last drawn while the native save shell
+ * was verified. These stamps do not infer a screen from the texture alone. */
+static volatile LONG menubg43_last_shell_frame=-1;
+static volatile LONG menubg43_last_shell_texture=0;
+/* The X11 observer is defined with the main focus-pause implementation.
+ * Forward declarations only: this never changes focus or observer state. */
+static int pause_x11_bridge_enabled(void);
+static int pause_x11_bridge_state(void);
 typedef DWORD (__cdecl *SpiderMenubgOriginalFn)(
   DWORD,DWORD,DWORD,DWORD,DWORD,DWORD,DWORD);
 static DWORD __cdecl spider_menubg43_source_wrapper(
@@ -927,7 +935,7 @@ static const void *maybe_correct_menubg43_source(
   LONG stamp,frame,n;
   char message[260];
   const SpiderMenuVertex *v=(const SpiderMenuVertex *)source;
-  int eligible=0,applied=0;
+  int eligible=0,applied=0,shell=0,focus_tail=0;
   if(!menubg43_trial_enabled || !menubg43_call_hooks_installed ||
      !source || !copy ||
      !SpiderMenubg43_RecordIndex((uintptr_t)source,&i))
@@ -942,7 +950,23 @@ static const void *maybe_correct_menubg43_source(
   if(texture!=menubg43_texture_tag[i] ||
      v[0].x!=menubg43_x_tag[i] || v[0].y!=menubg43_y_tag[i])
     return source;
-  eligible=menubg43_native_shell_state() &&
+  shell=menubg43_native_shell_state();
+  if(!shell && InterlockedCompareExchange(&menubg43_last_shell_frame,0,0)>=0) {
+    /* Preserve only a just-verified menubg source during externally
+     * confirmed focus loss. The game's request/task tuple can clear 150ms
+     * before the Flip-boundary PAUSED image is frozen. In-focus menu changes
+     * and different source textures still fail closed. */
+    int focus_lost=game_hwnd && GetForegroundWindow()!=game_hwnd;
+    if(!focus_lost && pause_x11_bridge_enabled())
+      focus_lost=pause_x11_bridge_state()==2;
+    focus_tail=SpiderMenubg43_FocusTailAllowed(
+      (uint32_t)frame,
+      (uint32_t)InterlockedCompareExchange(&menubg43_last_shell_frame,0,0),
+      (uint32_t)texture,
+      (uint32_t)InterlockedCompareExchange(&menubg43_last_shell_texture,0,0),
+      focus_lost);
+  }
+  eligible=(shell || focus_tail) &&
            InterlockedCompareExchange(&menu_upscale_active,0,0)==0 &&
            InterlockedCompareExchange(&gameplay_4x3_active,0,0)==0 &&
            InterlockedCompareExchange(&fov_game_height,0,0)>0 &&
@@ -953,12 +977,27 @@ static const void *maybe_correct_menubg43_source(
     applied=SpiderMenubg43_Transform(v,copy,(unsigned)count,
          (unsigned)type,(uint32_t)fvf,
          (unsigned)desktop_w,(unsigned)desktop_h);
+  if(applied && shell) {
+    /* Stamp only an ACTUALLY corrected original menubg record. */
+    InterlockedExchange(&menubg43_last_shell_texture,(LONG)texture);
+    InterlockedExchange(&menubg43_last_shell_frame,frame);
+  }
+  if(applied && focus_tail && debug_log_enabled) {
+    static volatile LONG focus_tail_hits=0;
+    LONG hit=InterlockedIncrement(&focus_tail_hits);
+    if(hit<=8) {
+      snprintf(message,sizeof(message),
+        "MENUBG43-FOCUS-TAIL: MAPPED n=%ld flip=%ld authenticated-original texture=%08lX [max 16 Flips; focus lost]",
+        (long)hit,(long)frame,(unsigned long)texture);
+      log_line(message);
+    }
+  }
   n=InterlockedIncrement(applied?&menubg43_mapped:&menubg43_rejects);
   if(debug_log_enabled && (n<=24 || (applied && n%120==0))) {
     snprintf(message,sizeof(message),
-      "MENUBG43-DRAW: %s n=%ld index=%lu frame=%ld shell=%d already=%d xy=(%.1f,%.1f) z=%.5f rhw=%.3f fvf=%08lX type=%lu [SOURCE-TAGGED]",
+      "MENUBG43-DRAW: %s n=%ld index=%lu frame=%ld shell=%d focus-tail=%d already=%d xy=(%.1f,%.1f) z=%.5f rhw=%.3f fvf=%08lX type=%lu [SOURCE-TAGGED]",
       applied?"MAPPED":(mapped_by_earlier_stage?"ALREADY-MAPPED":"REJECT"),
-      (long)n,(unsigned long)i,(long)frame,eligible,mapped_by_earlier_stage,
+      (long)n,(unsigned long)i,(long)frame,shell,focus_tail,mapped_by_earlier_stage,
       (double)v[0].x,(double)v[0].y,(double)v[0].z,
       (double)v[0].rhw,(unsigned long)fvf,(unsigned long)type);
     log_line(message);
