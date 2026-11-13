@@ -175,8 +175,8 @@ static inline int spider_path_log_a(char *out,size_t cap) {
   DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_LAUNCHER_DIR",
                                   launcher,sizeof(launcher));
   if(n && n<sizeof(launcher) &&
-     ((launcher[1]==':' && launcher[2]=='\\\\') ||
-      (launcher[0]=='\\\\' && launcher[1]=='\\\\')) &&
+     ((n>=3 && launcher[1]==':' && launcher[2]=='\\') ||
+      (n>=2 && launcher[0]=='\\' && launcher[1]=='\\')) &&
      spider_path_dir_a(launcher,0) &&
      spider_path_join_a(target,sizeof(target),launcher,"SpiderMan2k1Fix.log")) {
     attr=GetFileAttributesA(target);
