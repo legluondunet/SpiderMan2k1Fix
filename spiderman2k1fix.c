@@ -1142,6 +1142,24 @@ static int geom_rva(void *ret,DWORD *rva) {
   if(nt->Signature!=IMAGE_NT_SIGNATURE || addr<base || addr-base>=nt->OptionalHeader.SizeOfImage) return 0;
   *rva=(DWORD)(addr-base);return 1;
 }
+/* The title and the companion use the same real focus-loss proof as
+ * original named menubg; never widen their native input-shell gate just
+ * because their texture dimensions look similar. */
+static int menubg43_proven_focus_tail(LONG frame)
+{
+  LONG last=InterlockedCompareExchange(&menubg43_last_shell_frame,0,0);
+  DWORD material=(DWORD)InterlockedCompareExchange(
+      &menubg43_last_shell_texture,0,0);
+  int focus_lost=0;
+  if(last<0 || !material || !game_hwnd)return 0;
+  focus_lost=GetForegroundWindow()!=game_hwnd;
+  if(!focus_lost && pause_x11_bridge_enabled())
+    focus_lost=pause_x11_bridge_state()==2;
+  return SpiderMenubg43_FocusTailAllowed(
+      (uint32_t)frame,(uint32_t)last,
+      (uint32_t)material,(uint32_t)material,focus_lost);
+}
+
 /* The user's native SAVE/INPUT NAME render trace exposed a SECOND background
  * queue record at 0x103389 (512x512 texture, 1920x1080 source quad).
  * This is NOT one of the original menubg wrapper's record indices. Only
@@ -1158,10 +1176,11 @@ static const void *maybe_correct_menubg43_companion(
   DWORD rva=0,material=0;
   uint32_t record_index=0;
   LONG frame,last,known,n;
+  int shell,focus_tail;
   char msg[255];
   if(!menubg43_trial_enabled || !menubg43_call_hooks_installed ||
      !source || !copy || count!=4u || type!=D3DPT_TRIANGLEFAN ||
-     fvf!=0x144UL || !menubg43_native_shell_state() ||
+     fvf!=0x144UL ||
      !SpiderHudWidescreen_Installed() ||
      InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
      InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
@@ -1173,7 +1192,10 @@ static const void *maybe_correct_menubg43_companion(
   frame=InterlockedCompareExchange(&flip_count,0,0);
   last=InterlockedCompareExchange(&menubg43_last_shell_frame,0,0);
   known=InterlockedCompareExchange(&menubg43_last_shell_texture,0,0);
-  if(last<0 || !SpiderMenubg43_IsCompanionBackground(
+  shell=menubg43_native_shell_state();
+  focus_tail=!shell && menubg43_proven_focus_tail(frame);
+  if((!shell && !focus_tail) || last<0 ||
+     !SpiderMenubg43_IsCompanionBackground(
       (const SpiderMenuVertex *)source,(unsigned)count,(unsigned)type,
       (uint32_t)fvf,(uint32_t)rva,(unsigned)desktop_w,(unsigned)desktop_h,
       (uint32_t)material,(uint32_t)known,(uint32_t)frame,(uint32_t)last)) {
@@ -1183,9 +1205,10 @@ static const void *maybe_correct_menubg43_companion(
     if(debug_log_enabled && (n=InterlockedIncrement(
         &menubg43_companion_mismatch))<=8) {
       snprintf(msg,sizeof(msg),
-       "MENUBG43-COMPANION: REJECT n=%ld frame=%ld index=%lu material=%08lX verified=%08lX last=%ld [no size-only fallback]",
+       "MENUBG43-COMPANION: REJECT n=%ld frame=%ld index=%lu shell=%d focus-tail=%d material=%08lX verified=%08lX last=%ld [no size-only fallback]",
        (long)n,(long)frame,(unsigned long)record_index,
-       (unsigned long)material,(unsigned long)known,(long)last);
+       shell,focus_tail,(unsigned long)material,
+       (unsigned long)known,(long)last);
       log_line(msg);
     }
     return source;
@@ -1196,9 +1219,9 @@ static const void *maybe_correct_menubg43_companion(
   n=InterlockedIncrement(&menubg43_companion_draws);
   if(debug_log_enabled && (n<=12 || n%120==0)) {
     snprintf(msg,sizeof(msg),
-      "MENUBG43-COMPANION: MAPPED n=%ld frame=%ld index=%lu material=%08lX same-authenticated-source [4:3]",
+      "MENUBG43-COMPANION: MAPPED n=%ld frame=%ld index=%lu shell=%d focus-tail=%d material=%08lX same-authenticated-source [4:3]",
       (long)n,(long)frame,(unsigned long)record_index,
-      (unsigned long)material);
+      shell,focus_tail,(unsigned long)material);
     log_line(msg);
   }
   return copy;
@@ -1216,6 +1239,7 @@ static const void *maybe_correct_menubg43_title(
   DWORD rva=0,texw=0,texh=0;
   uint32_t record_index;
   LONG frame,last,n;
+  int shell,focus_tail;
   DDSURFACEDESC2 desc;
   IDirectDrawSurface7 *texture=NULL;
   HRESULT hr;
@@ -1224,7 +1248,6 @@ static const void *maybe_correct_menubg43_title(
   if(!menubg43_trial_enabled || !menubg43_call_hooks_installed ||
      !source || !copy || !device || count!=4u ||
      type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
-     !menubg43_native_shell_state() ||
      !SpiderHudWidescreen_Installed() ||
      InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
      InterlockedCompareExchange(&gameplay_4x3_active,0,0)!=0 ||
@@ -1234,7 +1257,9 @@ static const void *maybe_correct_menubg43_title(
     return source;
   frame=InterlockedCompareExchange(&flip_count,0,0);
   last=InterlockedCompareExchange(&menubg43_last_shell_frame,0,0);
-  if(last<0 || frame<last || frame-last>2 ||
+  shell=menubg43_native_shell_state();
+  focus_tail=!shell && menubg43_proven_focus_tail(frame);
+  if((!shell && !focus_tail) || last<0 || frame<last ||
      !(v[0].z>=0.998f && v[0].z<=1.0f &&
        v[0].rhw>0.020f && v[0].rhw<0.027f &&
        v[0].y>=(float)desktop_h*0.05f &&
@@ -1253,10 +1278,10 @@ static const void *maybe_correct_menubg43_title(
   n=InterlockedIncrement(&menubg43_title_draws);
   if(debug_log_enabled && (n<=12 || n%480==0)) {
     snprintf(msg,sizeof(msg),
-      "MENUBG43-TITLE: MAPPED n=%ld frame=%ld index=%lu x=%.1f->%.1f y=%.1f tex=%lux%lu [same native save shell; XY only]",
+      "MENUBG43-TITLE: MAPPED n=%ld frame=%ld index=%lu shell=%d focus-tail=%d x=%.1f->%.1f y=%.1f tex=%lux%lu [same native save family; XY only]",
       (long)n,(long)frame,(unsigned long)record_index,
-      (double)v[0].x,(double)copy[0].x,(double)v[0].y,
-      (unsigned long)texw,(unsigned long)texh);
+      shell,focus_tail,(double)v[0].x,(double)copy[0].x,
+      (double)v[0].y,(unsigned long)texw,(unsigned long)texh);
     log_line(msg);
   }
   return copy;
