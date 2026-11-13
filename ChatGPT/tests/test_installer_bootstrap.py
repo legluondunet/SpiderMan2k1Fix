@@ -1,7 +1,9 @@
-"""Installer 2.0.0 prototype must not ship or pretend to install retail assets.
+"""Installer 2.0.0 bootstrap: standalone resources and owner-proven Wise map.
 
-The first builder packages only redistribution-safe project components.
-Real-disc InstallShield/CAB recreation is a separate release blocker (#149).
+The build embeds only redistributable project components. The original
+Wise script identifies a complete Game Files superset, but authentic ISO
+source layout and end-to-end Windows/Wine runtime testing remain release
+blockers (#149).
 """
 from pathlib import Path
 
@@ -29,7 +31,7 @@ def test_installer_retail_validation_and_fail_closed():
     assert "if(!verified_retail(target))" in SRC or "!verified_retail(target)" in SRC
     assert "!verified_retail(gameexe)" in SRC
     assert "Original retail game data is NEVER embedded" in SRC
-    assert "CD setup archive recipe not yet verified" in SRC
+    assert "original Wise Game Files source" in SRC
     assert "ISO: unsafe or unsupported directory records" in SRC
     assert "ISO: expected one adjacent .iso" in SRC
     assert "MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH)" in SRC
@@ -88,8 +90,47 @@ def test_standalone_installer_never_upgrades_existing_installation():
     assert "resource_verify(RES_WINMM,game_dir" in SRC
 
 
-def test_original_cd_install_manifest_is_not_claimed_complete():
-    """PKR payload listing is not evidence of a retail InstallShield recipe."""
-    assert "CD setup archive recipe not yet verified" in SRC
-    assert "CD image cannot yet be installed safely" in SRC
+def test_original_wise_game_files_superset_and_same_cd_folder():
+    """Source-side scan of the user-owned Wise installation script:
+    the second installation-size path includes media.pkr and texture.dat.
+    Avoid mixing contents from two directories/editions of the CD."""
+    manifest=SRC.split("static int prepare_game_from_iso(",1)[1].split(
+        "static int resource_bytes(",1)[0]
+    for name in (
+        "SpideyPC.exe", "data.pkr", "media.pkr", "texture.dat",
+        "binkw32.dll", "Anet.inf", "SpideyPC.ico",
+        "Spider-Man Setup.exe",
+    ):
+        assert f'L"{name}"' in manifest
+    assert "same single directory" in manifest.lower()
+    assert 'wcsrchr(iso->entries[n].name,L\'/\')' in manifest
+    assert "ISO: ambiguous SpideyPC.exe source directories" in manifest
+    assert "RETAIL_EXE_BYTES" in manifest
+    assert "find_disc_file(iso,source)" in manifest
+    assert "if(!parts[i]->bytes)" in manifest
+    assert "if(!verified_retail(target))" in manifest
+    assert "deploy_payloads_to(staging)" in manifest
+    assert "MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH)" in manifest
+    assert "MOVEFILE_REPLACE_EXISTING" not in manifest
+    assert "Spidey.ini was installed into %WIN%" in manifest
+    assert "SetEnvironmentVariableW" not in manifest  # no system writes
+    assert "iso_copy(iso,parts[i],target)" in manifest
+
+
+def test_wise_forensic_reference_is_based_on_supplied_original_setup():
+    ref=(ROOT / "docs/references/SPIDERMAN_RETAIL_WISE_INSTALL_MAP.md").read_text(
+        encoding="utf-8")
+    assert "20bea9fb79f10a2f693fb7f103fa6097d572866d6353b92d94accb080e6e9f16" in ref
+    assert "38,646-byte" in ref or "38,646 bytes" in ref
+    assert "two game-copy lists" in ref
+    assert "`media.pkr`" in ref
+    assert "Spidey.ini" in ref
+    assert "No actual original Spider-Man CD ISO" in ref or "actual original Spider-Man CD ISO" in ref
+
+
+def test_original_retail_iso_and_windows11_validation_are_still_pending():
+    """The owner uploaded setup EXEs but no original disc; do not publish."""
+    assert "We still require real retail ISO and Windows/Wine smoke tests" in SRC
+    assert "ISO: original Wise source game executable absent" in SRC
+    assert "ISO: missing original Wise Game Files source" in SRC
     assert "Original retail game data is NEVER embedded" in SRC
