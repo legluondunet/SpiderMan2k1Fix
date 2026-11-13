@@ -9,12 +9,13 @@ original disc is already supported by the first bootstrap executable.
 ```text
 SpiderMan2k1Fix.exe
 Spider-Man.iso
-SpiderMan2k1Fix_installer.log      # installer/update/verification
+SpiderMan2k1Fix_installer.log      # one-time install/verification
+SpiderMan2k1Fix.log                # game runtime log (same launcher directory)
 SpiderMan2k1Fix/
   SpideyPC.exe                     # SHA256-confirmed original retail game
   winmm.dll                        # built-in proxy from project
   data.pkr, media.pkr, binkw32.dll # originals from user's media
-  SpiderMan2k1Fix.log             # game/runtime events, never installer output
+  # game log is beside the launcher, NOT inside this folder
   SpiderMan2k1Fix/
     SpiderMan2k1Fix.dll            # built-in fix DLL
     SDL3.dll                       # verified official SDL redistributable
@@ -39,24 +40,40 @@ is 1,507,328 bytes, SHA-256
   execute the CD `Autorun.exe` / `Setup.exe`.
 - Exact retail executable SHA-256 check before adopting or launching any
   game folder; fail closed on all mismatches.
-- Deploy project-owned/redistributable resources from embedded RCDATA.
-  Use temporary files and preserve at most the immediately previous DLL as
-  `.bak`, without touching existing saves or user configuration.
+- Deploy project-owned/redistributable resources from embedded RCDATA
+  **once**, inside the same private staging directory as the validated
+  original CD files; publish the complete tree only after all assets pass.
+  No DLL backup, upgrade, repair or overwrite of an existing installation.
+  Existing installs are **verified read-only and launched**; missing or
+  changed runtime files trigger an explicit refusal.
 - Game working directory is the install directory. On Wine the game child
   receives `winmm=n,b` without altering the user's system registry.
-- The existing game's `SpiderMan2k1Fix.log` stays separate. The launcher
-  resets only `SpiderMan2k1Fix_installer.log` at its own startup.
+- Both logs are beside `SpiderMan2k1Fix.exe`: launcher resets only
+  `SpiderMan2k1Fix_installer.log`; the game child inherits the validated
+  launcher directory through `SPIDERMAN2K1FIX_LAUNCHER_DIR`, and
+  both the winmm proxy and core share `SpiderMan2k1Fix.log`.
+  A direct legacy `SpideyPC.exe` run retains its original log fallback.
 - During the bootstrap phase a genuinely packed retail InstallShield disc
   must be **refused with a diagnostic**, rather than being declared
   installed after a raw ISO copy. Do not merge an incomplete prototype.
 
 ## Critical missing CD evidence
 
-The maintainer's current Lutris recipe extracts ISO to a temporary folder,
-runs `Autorun.exe`, **then explicitly copies** `Setup/media.pkr` into the
-game directory. That does not establish whether the original installer
-expands CAB archives, changes file names, creates essential empty folders,
-sets registry values, or selects source assets by install component.
+The currently accessible inputs include the exact supported original
+`SpideyPC.exe`, an inventory of 2,448 `data.pkr` resources, and
+existing game/runtime logs. These are NOT the retail CD installation files.
+No Spider-Man CD ISO, `Autorun.exe`, `Setup.exe` or InstallShield/CAB
+container from this game is presently accessible in the workspace/library.
+The installer is accordingly restricted to **inspection/fail-closed**
+for unverified disc layouts.
+
+The maintainer's historical Lutris recipe extracts the ISO to a temporary
+folder, runs `Autorun.exe`, **then explicitly copies** `Setup/media.pkr`
+into the game directory. This suggests extra installer work, but does not
+establish whether the retail installer expands CAB archives, changes file
+names, creates essential directories, sets registry keys, or selects assets
+by install component. These facts need to be reconstructed from original
+media, not guessed from an unpacked game or third-party archive.
 
 To claim original-CD installation complete, inspect the authentic user's ISO
 and its setup manifest, record installed tree with sizes/hash baselines,
@@ -69,7 +86,8 @@ Do not guess from an Internet repack, and do not redistribute game binaries.
 1. ISO source identification and required file map proven against original CD.
 2. Synthetic ISO tests (valid/Joliet, malformed record/extent, bad hash,
    multiple images, tampered embedded resources, failed stage/rollback).
-3. Built-in update mode preserves settings and save games; one `.bak` only.
+3. One-time embedded payload deployment; existing installation is verified
+   read-only and never updated/repaired. No DLL `.bak` is created.
 4. Actual one-EXE Windows x86 CI artifact with verified embedded resources.
 5. Independent Windows 11 and Wine installation, normal launch and shutdown.
 6. Only then merge the installer and publish tag `v2.0.0`.
