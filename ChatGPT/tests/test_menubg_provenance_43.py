@@ -83,9 +83,12 @@ int main(void) {
       assert(!SpiderMenubg43_IsCompanionBackground(v,4u,6u,0x144u,
         SPIDER_MENUBG43_COMPANION_CALLER,1920u,1080u,
         0x12345678u,0x87654321u,300u,299u));
-      assert(!SpiderMenubg43_IsCompanionBackground(v,4u,6u,0x144u,
+      assert(SpiderMenubg43_IsCompanionBackground(v,4u,6u,0x144u,
         SPIDER_MENUBG43_COMPANION_CALLER,1920u,1080u,
         0x12345678u,0x12345678u,303u,299u));
+      assert(SpiderMenubg43_IsCompanionBackground(v,4u,6u,0x144u,
+        SPIDER_MENUBG43_COMPANION_CALLER,1920u,1080u,
+        0x12345678u,0x12345678u,5599u,299u));
       assert(!SpiderMenubg43_IsCompanionBackground(v,4u,6u,0x144u,
         SPIDER_MENUBG43_COMPANION_CALLER,1920u,1080u,
         0x12345678u,0x12345678u,298u,299u));
@@ -312,7 +315,12 @@ def test_new_menu_background_and_top_title_use_only_authenticated_provenance():
     hdr=(ROOT / "menubg_provenance_43.h").read_text(encoding="utf-8")
     assert "SPIDER_MENUBG43_COMPANION_CALLER 0x00103389u" in hdr
     assert "material!=verified_material" in hdr
-    assert "frame-verified_frame>2u" in hdr
+    # The exact original companion persists through SAVE COMPLETED / input
+    # pages after the named-resource source calls stop. Retain the material
+    # match for the live original shell; focus loss remains independently
+    # bounded by the existing 16-Flip policy.
+    assert "frame<verified_frame" in hdr
+    assert "frame-verified_frame>2u" not in hdr
     assert "SPIDER_MENUBG43_TITLE_CALLER 0x00102C72u" in hdr
     assert "SpiderMenubg43_TitleGlyphTransform" in hdr
     assert "if(!menubg43_trial_enabled || !menubg43_call_hooks_installed" in SOURCE
@@ -331,14 +339,37 @@ def test_new_menu_background_and_top_title_use_only_authenticated_provenance():
     # native shell bypass. Only the X of out-of-place vertices is changed.
     companion=SOURCE.split("static const void *maybe_correct_menubg43_companion(",1)[1].split(
         "static const void *maybe_correct_menubg43_title(",1)[0]
-    assert "menubg43_native_shell_state()" in companion
+    assert "shell=menubg43_native_shell_state()" in companion
+    assert "focus_tail=!shell && menubg43_proven_focus_tail(frame);" in companion
+    assert "(!shell && !focus_tail)" in companion
     assert "material,(uint32_t)known" in companion
     title=SOURCE.split("static const void *maybe_correct_menubg43_title(",1)[1].split(
         "/* READ-ONLY reconnaissance",1)[0]
-    assert "menubg43_native_shell_state()" in title
+    assert "shell=menubg43_native_shell_state()" in title
+    assert "focus_tail=!shell && menubg43_proven_focus_tail(frame);" in title
+    assert "(!shell && !focus_tail)" in title
     assert "SpiderMenubg43_RecordIndex(" in title
     assert "IDirect3DDevice7_GetTexture(" in title
     for fn in (companion,title):
         assert "VirtualProtect(" not in fn
         assert "SetViewport(" not in fn
         assert "SetRenderState(" not in fn
+
+
+
+def test_paused_snapshot_retains_authenticated_title_and_companion():
+    """The native request tuple clears ahead of the final frozen PAUSED Flip."""
+    start=SOURCE.index("static int menubg43_proven_focus_tail(")
+    end=SOURCE.index("/* The user's native SAVE/INPUT NAME",start)
+    tail=SOURCE[start:end]
+    assert "GetForegroundWindow()!=game_hwnd" in tail
+    assert "pause_x11_bridge_state()==2" in tail
+    assert "SpiderMenubg43_FocusTailAllowed(" in tail
+    assert "if(last<0 || !material || !game_hwnd)return 0;" in tail
+    for symbol in ("maybe_correct_menubg43_companion(", "maybe_correct_menubg43_title("):
+        block=SOURCE.split("static const void *"+symbol,1)[1].split("return copy;",1)[0]
+        assert "focus_tail=!shell && menubg43_proven_focus_tail(frame);" in block
+        assert "(!shell && !focus_tail)" in block
+        assert "SpiderMenubg43_RecordIndex(" in block
+    assert "MENUBG43-TITLE: MAPPED" in SOURCE
+    assert "shell=%d focus-tail=%d" in SOURCE
