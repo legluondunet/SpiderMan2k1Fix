@@ -108,7 +108,7 @@ def test_original_wise_game_files_superset_and_same_cd_folder():
     assert "RETAIL_EXE_BYTES" in manifest
     assert "find_disc_file(iso,source)" in manifest
     assert "if(!parts[i]->bytes)" in manifest
-    assert "if(!verified_retail(target))" in manifest
+    assert "!verified_retail(target))goto abort;" in manifest
     assert "deploy_payloads_to(staging)" in manifest
     assert "MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH)" in manifest
     assert "MOVEFILE_REPLACE_EXISTING" not in manifest
