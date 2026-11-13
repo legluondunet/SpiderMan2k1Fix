@@ -185,3 +185,29 @@ def test_install_only_runs_iso_install_without_game_launch():
     assert fresh.index('if(install_only){') < fresh.index('result=launch_game(1)?0:1;')
     assert 'result=launch_game(0)?0:1;goto done;' in main  # existing bypass unchanged
     assert 'result=launch_game(1)?0:1;' in main  # normal default unchanged
+
+
+
+def test_standard_inspect_commands_and_independent_report():
+    assert 'L"--inspect"' in SRC
+    assert 'L"SpiderMan2k1Fix_inspect.log"' in SRC
+    assert 'L".iso"' in SRC and 'L".cue"' in SRC
+    assert 'L".bin"' in SRC and 'L".img"' in SRC
+    assert "cue_source(" in SRC
+    assert "ISO9660/Joliet" in SRC
+    assert "sector*iso->physical_sector_bytes+iso->sector_payload_offset" in SRC
+    assert "INSPECT_RESULT=COMPLETE" in SRC
+    assert "INSPECT_RESULT=FAILED" in SRC
+    source=SRC.split("int wmain(",1)[1]
+    assert source.index('if(inspect){') < source.index('verified_retail(gameexe)')
+    inspect=source.split('if(inspect){',1)[1].split('if(argc>2)',1)[0]
+    assert "prepare_game_from_iso" not in inspect
+    assert "deploy_payloads_to" not in inspect
+    assert "launch_game(" not in inspect
+    assert "iso_open(&iso,path,*raw?raw:NULL)" in inspect
+    assert 'L"-h"' in SRC
+    assert 'L"--verbose"' in SRC
+    assert "verbose_mode=1" in SRC
+    # No naked ISO/CUE argument is ever accepted in non-inspect CLI dispatch.
+    assert "if(argc>2){usage();goto done;}" in SRC
+    assert "if(argc==2 && !install_only)" in SRC
