@@ -134,3 +134,28 @@ def test_original_retail_iso_and_windows11_validation_are_still_pending():
     assert "ISO: original Wise source game executable absent" in SRC
     assert "ISO: missing original Wise Game Files source" in SRC
     assert "Original retail game data is NEVER embedded" in SRC
+
+
+def test_no_verify_launch_skips_all_launcher_filesystem_guards():
+    """Explicit bypass only; default verify/install branches stay strict."""
+    assert 'L"--launch-no-verify"' in SRC
+    assert "static int launch_game(int verify_exe)" in SRC
+    launch=SRC.split("static int launch_game(int verify_exe)",1)[1].split(
+        "static void usage(",1)[0]
+    assert 'if(verify_exe && !verified_retail(path))return 0;' in launch
+    assert "CreateProcessW(path,cmd" in launch
+    main=SRC.split("int wmain(",1)[1]
+    cli=main.split('!wcscmp(argv[1],L"--launch-no-verify")',1)[1].split(
+        'if(!combine(gameexe',1)[0]
+    assert 'result=launch_game(0)?0:1;goto done;' in cli
+    assert "verified_retail(" not in cli
+    assert "verify_payloads(" not in cli
+    assert "regular_file(" not in cli
+    assert "find_adjacent_iso(" not in cli
+    assert "prepare_game_from_iso(" not in cli
+    assert main.index('L"--launch-no-verify"') < main.index('if(!combine(gameexe')
+    assert 'result=launch_game(1)?0:1;' in main
+    # Explicit no-verify neither installs nor attempts repair.
+    assert "no automatic change" in SRC
+    assert "deploy_payloads_to(staging)" in SRC
+    assert "SPIDERMAN2K1FIX_LAUNCHER_DIR" in launch
