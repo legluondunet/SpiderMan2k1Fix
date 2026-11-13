@@ -224,3 +224,29 @@ def test_focus_loss_background_retention_is_source_verified_and_bounded():
     assert "SpiderMenubg43_RecordIndex((uintptr_t)source,&i)" in SOURCE
     assert "texture!=menubg43_texture_tag[i]" in SOURCE
     assert "SpiderHudWidescreen_Installed()" in SOURCE
+
+
+
+def test_name_entry_and_title_diagnostics_cannot_modify_rendered_geometry():
+    """Probe native menu callsite/material before attempting a font fix.
+
+    A title offset based on screen coordinates alone is unsafe; INPUT NAME
+    may leave the verified SAVE GAME shell and use another draw path.
+    """
+    start=SOURCE.index("static void menubg43_probe_unmapped_art(")
+    end=SOURCE.index("/* The observed menu draw path",start)
+    probe=SOURCE[start:end]
+    assert "if(!debug_log_enabled || !menubg43_trial_enabled" in probe
+    assert "menubg43_native_shell_state()" in probe
+    assert "frame-last<=2400" in probe
+    assert "GetForegroundWindow()==game_hwnd" in probe
+    assert "MENUBG43-ART-PROBE: %s api=%s" in probe
+    assert "TOP-TITLE" in probe and "WIDE-BACKGROUND" in probe
+    assert "DrawIndexedPrimitive" in SOURCE
+    assert 'menubg43_probe_unmapped_art(self,"DrawPrimitive"' in SOURCE
+    assert 'menubg43_probe_unmapped_art(self,"DrawIndexedPrimitive"' in SOURCE
+    assert "IDirect3DDevice7_GetTexture(" in probe
+    assert "geom_rva(ret,&caller_rva)" in probe
+    for forbidden in ("VirtualProtect(", "memcpy(", "SetViewport(",
+                      "SetRenderState(", "DrawPrimitive(", "DrawIndexedPrimitive("):
+        assert forbidden not in probe
