@@ -39,6 +39,24 @@ static inline int SpiderMenubg43_RecordIndex(
  * Centre only large, finite screen-space source quads in a 4:3 canvas.
  * The record's menubg identity and live original native-shell context
  * MUST be separately verified before this helper is called. */
+/* The SHA-verified source may draw a few extra frames after Windows/Wine
+ * notifies the original input shell that focus has changed. Do not turn the
+ * temporary native-shell mismatch into a visible aspect-ratio jump before
+ * PAUSED captures the frame. This narrowly authorizes the SAME authenticated
+ * background texture during at most 16 original Flips of confirmed focus loss.
+ * No other menu, texture, world poly or in-focus scene transition is covered.
+ */
+#define SPIDER_MENUBG43_FOCUS_TAIL_FLIPS 16u
+static inline int SpiderMenubg43_FocusTailAllowed(
+    uint32_t frame,uint32_t last_shell_frame,
+    uint32_t texture,uint32_t verified_texture,int focus_lost)
+{
+    return focus_lost && verified_texture!=0u &&
+           texture==verified_texture &&
+           frame>=last_shell_frame &&
+           frame-last_shell_frame<=SPIDER_MENUBG43_FOCUS_TAIL_FLIPS;
+}
+
 static inline int SpiderMenubg43_Transform(
     const SpiderMenuVertex *source,SpiderMenuVertex *result,
     unsigned count,unsigned type,uint32_t fvf,
