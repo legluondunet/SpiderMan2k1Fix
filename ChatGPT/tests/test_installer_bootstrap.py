@@ -269,3 +269,16 @@ def test_retail_receipt_required_without_any_legacy_adoption():
     assert "write_install_receipt(game_dir)" not in existing
     assert "upgrade_recognized_payloads()" in existing
     assert "read-only" not in existing or "Updates remain strictly" in existing
+
+
+def test_release_cleanup_removes_obsolete_install_state():
+    """Do not revive dead ISO parser fields or adopt pre-release installs."""
+    assert "#define WIN32_EXTRA_LEAN" not in SRC
+    assert "DWORD sector;" not in SRC
+    assert "int error;" not in SRC
+    assert "iso->sector=" not in SRC
+    assert "Adopt an older prototype" not in SRC
+    main=SRC.split("int wmain(",1)[1]
+    assert "if(GetFileAttributesW(receipt)==INVALID_FILE_ATTRIBUTES" not in main
+    assert 'VERIFY: missing or invalid install receipt' in main
+    assert 'verify_install_receipt(game_dir)' in main
