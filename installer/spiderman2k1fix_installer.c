@@ -33,6 +33,7 @@ static wchar_t launcher_dir[SPIDER_INSTALLER_PATH];
 static wchar_t game_dir[SPIDER_INSTALLER_PATH];
 static wchar_t log_path[SPIDER_INSTALLER_PATH];
 static FILE *logfile;
+static int verbose_mode;
 
 typedef struct DiscEntry {
   wchar_t name[256];
@@ -41,8 +42,13 @@ typedef struct DiscEntry {
 } DiscEntry;
 typedef struct DiscImage {
   HANDLE file;
-  ULONGLONG length;
+  ULONGLONG length; /* ISO9660 logical 2048-byte view */
+  ULONGLONG physical_length;
   ULONGLONG volume_length;
+  ULONGLONG data_start;
+  DWORD physical_sector_bytes;
+  DWORD sector_payload_offset;
+  int raw_cue;
   DWORD sector;
   DWORD count;
   int joliet;
@@ -125,12 +131,35 @@ static int verified_retail(const wchar_t *path) {
   }
   return 1;
 }
+/* Logical ISO reads work on both plain 2048-sector ISO and read-only
+ * CUE-selected raw data tracks. No full BIN extraction is required for
+ * --inspect, so even unknown retail CDs can produce diagnostic inventories. */
 static int read_iso(DiscImage *iso,ULONGLONG offset,void *buf,DWORD bytes) {
-  LARGE_INTEGER pos;DWORD received=0;
+  LARGE_INTEGER pos;DWORD received=0,done=0;
+  BYTE *target=(BYTE*)buf;
   if(offset>iso->length||bytes>iso->length-offset)return 0;
-  pos.QuadPart=(LONGLONG)offset;
-  return SetFilePointerEx(iso->file,pos,NULL,FILE_BEGIN) &&
-         ReadFile(iso->file,buf,bytes,&received,NULL) && received==bytes;
+  if(!iso->raw_cue){
+    pos.QuadPart=(LONGLONG)offset;
+    return SetFilePointerEx(iso->file,pos,NULL,FILE_BEGIN) &&
+           ReadFile(iso->file,buf,bytes,&received,NULL) && received==bytes;
+  }
+  while(done<bytes){
+    ULONGLONG logical=offset+done;
+    ULONGLONG sector=logical/SPIDER_INSTALLER_BLOCK;
+    DWORD within=(DWORD)(logical%SPIDER_INSTALLER_BLOCK);
+    DWORD take=bytes-done;
+    if(take>SPIDER_INSTALLER_BLOCK-within)take=SPIDER_INSTALLER_BLOCK-within;
+    ULONGLONG physical=iso->data_start+
+      sector*iso->physical_sector_bytes+iso->sector_payload_offset+within;
+    if(physical>iso->physical_length ||
+       take>iso->physical_length-physical)return 0;
+    pos.QuadPart=(LONGLONG)physical;
+    if(!SetFilePointerEx(iso->file,pos,NULL,FILE_BEGIN) ||
+       !ReadFile(iso->file,target+done,take,&received,NULL) ||
+       received!=take)return 0;
+    done+=take;
+  }
+  return 1;
 }
 static uint32_t iso_le32(const BYTE *p){
   return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);
@@ -216,20 +245,134 @@ static void iso_close(DiscImage *iso){
   if(iso->file!=INVALID_HANDLE_VALUE)CloseHandle(iso->file);
   free(iso->entries);memset(iso,0,sizeof(*iso));iso->file=INVALID_HANDLE_VALUE;
 }
-static int iso_open(DiscImage *iso,const wchar_t *path) {
+/* Read-only CUE file metadata. Supports MODE1/2048, MODE1/2352
+ * and MODE2/2352 data tracks, plus an explicit raw BIN/IMG override.
+ * The ISO filesystem parser below remains the single data decoder. */
+static int cue_source(const wchar_t *cue,const wchar_t *override,
+                      wchar_t physical[SPIDER_INSTALLER_PATH],
+                      DWORD *sector_bytes,DWORD *user_offset,
+                      ULONGLONG *first_frame) {
+  FILE *in=_wfopen(cue,L"rb");
+  char line[1024],active[512]={0},selected[512]={0};
+  int track_is_data=0,have_track=0,have_index=0;
+  unsigned line_no=0;
+  if(!in){message(L"CUE: cannot read metadata file");return 0;}
+  while(fgets(line,sizeof(line),in)){
+    char *p=line;unsigned m=0,sec=0,frame=0;
+    size_t n;line_no++;
+    if(!strchr(line,'\n') && !feof(in))goto fail; /* bounded input */
+    while(*p==' '||*p=='\t')p++;
+    if(!_strnicmp(p,"FILE ",5)){
+      char *q=p+5,*end;char name[512]={0};
+      while(*q==' '||*q=='\t')q++;
+      if(*q=='"'){
+        q++;end=strchr(q,'"');
+        if(!end || (size_t)(end-q)>=sizeof(name))goto fail;
+        memcpy(name,q,(size_t)(end-q));name[end-q]=0;
+        q=end+1;
+      }else{
+        end=q;while(*end && *end!=' ' && *end!='\t')end++;
+        if(end==q || (size_t)(end-q)>=sizeof(name))goto fail;
+        memcpy(name,q,(size_t)(end-q));name[end-q]=0;
+        q=end;
+      }
+      while(*q==' '||*q=='\t')q++;
+      if(_strnicmp(q,"BINARY",6))goto fail;
+      if(!name[0]||strstr(name,"..")||strchr(name,':')||
+         name[0]=='/'||name[0]=='\\')goto fail;
+      strcpy(active,name);
+    }else if(!_strnicmp(p,"TRACK ",6)){
+      unsigned number=0;
+      char mode[32]={0};
+      if(sscanf(p+6,"%u %31s",&number,mode)!=2)goto fail;
+      track_is_data=(!_strnicmp(mode,"MODE1/",6)||
+                     !_strnicmp(mode,"MODE2/",6));
+      if(track_is_data){
+        if(have_track||!active[0])goto fail;
+        have_track=1;strcpy(selected,active);
+        if(!_stricmp(mode,"MODE1/2048")){
+          *sector_bytes=2048;*user_offset=0;
+        }else if(!_stricmp(mode,"MODE1/2352")){
+          *sector_bytes=2352;*user_offset=16;
+        }else if(!_stricmp(mode,"MODE2/2352")){
+          *sector_bytes=2352;*user_offset=24;
+        }else goto fail;
+      }
+    }else if(!_strnicmp(p,"INDEX ",6)&&track_is_data){
+      unsigned index=0;
+      if(sscanf(p+6,"%u %u:%u:%u",&index,&m,&sec,&frame)!=4 ||
+         sec>=60||frame>=75)goto fail;
+      if(index==1){
+        if(have_index)goto fail;
+        *first_frame=((ULONGLONG)m*60+sec)*75+frame;
+        have_index=1;
+      }
+    }
+    n=strlen(line);if(n==sizeof(line)-1&&!strchr(line,'\n'))goto fail;
+  }
+  fclose(in);
+  if(!have_track||!have_index)return 0;
+  if(override && *override){
+    if(!regular_file(override) ||
+       (!extension_is(override,L".bin")&&!extension_is(override,L".img")))
+      return 0;
+    if(wcslen(override)>=SPIDER_INSTALLER_PATH)return 0;
+    wcscpy(physical,override);
+  }else{
+    wchar_t directory[SPIDER_INSTALLER_PATH],rel[SPIDER_INSTALLER_PATH];
+    wchar_t *slash;
+    size_t j;
+    if(MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,selected,-1,
+                           rel,SPIDER_INSTALLER_PATH)==0){
+      if(MultiByteToWideChar(CP_ACP,0,selected,-1,
+                            rel,SPIDER_INSTALLER_PATH)==0)return 0;
+    }
+    for(j=0;rel[j];j++)if(rel[j]==L'/')rel[j]=L'\\';
+    if(wcslen(cue)>=SPIDER_INSTALLER_PATH)return 0;
+    wcscpy(directory,cue);
+    slash=wcsrchr(directory,L'\\');if(!slash)return 0;
+    *slash=0;
+    if(!combine(physical,SPIDER_INSTALLER_PATH,directory,rel)||
+       !regular_file(physical))return 0;
+  }
+  if(verbose_mode)message(L"CUE: source data=%ls sector=%lu offset=%lu first_index=%llu",
+         physical,*sector_bytes,*user_offset,(unsigned long long)*first_frame);
+  return 1;
+fail:
+  fclose(in);
+  message(L"CUE: malformed or unsafe metadata at line %u",line_no);
+  return 0;
+}
+static int iso_open(DiscImage *iso,const wchar_t *path,const wchar_t *raw_override) {
   BYTE sector[SPIDER_INSTALLER_BLOCK],root[34];
+  wchar_t physical[SPIDER_INSTALLER_PATH];
   LARGE_INTEGER size;DWORD i;int saw_primary=0,selected=0;
+  ULONGLONG index01=0;
   memset(iso,0,sizeof(*iso));iso->file=INVALID_HANDLE_VALUE;
   iso->sector=SPIDER_INSTALLER_BLOCK;
-  iso->file=CreateFileW(path,GENERIC_READ,FILE_SHARE_READ,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
-  if(iso->file==INVALID_HANDLE_VALUE){message(L"ISO: cannot open %ls",path);return 0;}
+  if(!regular_file(path))return 0;
+  if(extension_is(path,L".cue")){
+    iso->raw_cue=1;
+    if(!cue_source(path,raw_override,physical,
+                   &iso->physical_sector_bytes,&iso->sector_payload_offset,
+                   &index01))return 0;
+  }else if(extension_is(path,L".iso") && !raw_override){
+    wcscpy(physical,path);
+    iso->physical_sector_bytes=2048;
+  }else return 0;
+  iso->file=CreateFileW(physical,GENERIC_READ,FILE_SHARE_READ,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+  if(iso->file==INVALID_HANDLE_VALUE){message(L"ISO: cannot open %ls",physical);return 0;}
   if(!GetFileSizeEx(iso->file,&size)||size.QuadPart<18LL*SPIDER_INSTALLER_BLOCK){
     message(L"ISO: file too small or size unavailable");return 0;
   }
-  iso->length=(ULONGLONG)size.QuadPart;
-  /* First supported mode is sector-aligned ISO9660 (2048-byte logical
-   * sectors). Raw BIN/CUE and installer CAB reconstruction are separate
-   * requirements and must fail explicitly, never be guessed. */
+  iso->physical_length=(ULONGLONG)size.QuadPart;
+  if(iso->raw_cue){
+    iso->data_start=index01*iso->physical_sector_bytes;
+    if(iso->data_start>=iso->physical_length)return 0;
+    iso->length=((iso->physical_length-iso->data_start)/iso->physical_sector_bytes)*2048ULL;
+  }else iso->length=iso->physical_length;
+  /* ISO9660/Joliet is read through the logical 2048-byte sector view.
+   * CUE data tracks use bounded raw-sector mapping without writing an ISO. */
   for(i=16;i<80;i++){
     if(!read_iso(iso,(ULONGLONG)i*SPIDER_INSTALLER_BLOCK,sector,sizeof(sector)))return 0;
     if(memcmp(sector+1,"CD001",5)||sector[6]!=1){message(L"ISO: invalid volume descriptor at %lu",i);return 0;}
@@ -609,7 +752,7 @@ int wmain(int argc,wchar_t **argv) {
     goto done;
   }
   message(L"ISO: inspecting %ls",path);
-  if(!iso_open(&iso,path)){iso_close(&iso);goto done;}
+  if(!iso_open(&iso,path,NULL)){iso_close(&iso);goto done;}
   {DWORD n,listed=0;
     for(n=0;n<iso.count;n++)if(!iso.entries[n].directory){
       message(L"ISO-FILE: %ls size=%lu lba=%lu",iso.entries[n].name,
