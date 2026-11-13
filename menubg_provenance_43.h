@@ -57,6 +57,87 @@ static inline int SpiderMenubg43_FocusTailAllowed(
            frame-last_shell_frame<=SPIDER_MENUBG43_FOCUS_TAIL_FLIPS;
 }
 
+/* Two original D3D7 queue paths were observed drawing the same SAVE/NAME
+ * artwork: the source-wrapped record and an untagged companion at original
+ * DrawPrimitive caller RVA 0x103389. Never match an arbitrary 512x512
+ * texture: require the EXACT original queue material handle previously
+ * authenticated by the named resource wrapper, a recent actual source draw,
+ * live native save shell and the observed fullscreen D3D7 vertex geometry.
+ * Material identity and native shell are checked by the caller as well. */
+#define SPIDER_MENUBG43_COMPANION_CALLER 0x00103389u
+static inline int SpiderMenubg43_IsCompanionBackground(
+    const SpiderMenuVertex *v,unsigned count,unsigned type,uint32_t fvf,
+    uint32_t caller,unsigned w,unsigned h,
+    uint32_t material,uint32_t verified_material,
+    uint32_t frame,uint32_t verified_frame)
+{
+    unsigned i;
+    float l,r,t,b;
+    if(!v || count!=4u || type!=6u || fvf!=0x144u ||
+       caller!=SPIDER_MENUBG43_COMPANION_CALLER ||
+       w<640u || h<480u || w>16384u || h>16384u ||
+       (uint64_t)w*3u<=(uint64_t)h*4u ||
+       !material || material!=verified_material ||
+       frame<verified_frame || frame-verified_frame>2u)
+        return 0;
+    l=r=v[0].x;t=b=v[0].y;
+    for(i=0u;i<4u;i++){
+        if(!(v[i].x>=-2.0f && v[i].x<=(float)w+2.0f &&
+             v[i].y>=-2.0f && v[i].y<=(float)h+2.0f &&
+             v[i].z>=0.995f && v[i].z<=1.0f &&
+             v[i].rhw>0.010f && v[i].rhw<0.050f))
+            return 0;
+        if(v[i].x<l)l=v[i].x;
+        if(v[i].x>r)r=v[i].x;
+        if(v[i].y<t)t=v[i].y;
+        if(v[i].y>b)b=v[i].y;
+    }
+    return l<=2.0f && t<=2.0f &&
+           r>=(float)w-2.0f && b>=(float)h-2.0f;
+}
+
+/* Unlike the large background, title glyphs are small original queued
+ * sprites. The log identified native title quads at caller 0x102C72,
+ * Y=99..171, Z=0.99902/0.99927, RHW=0.0229, 32/64px glyph textures.
+ * This applies only inside the separately authenticated save shell and
+ * only alongside a recently mapped named menubg background.
+ * Preserve original Y,Z,RHW,colour and UV; no global text shift. */
+#define SPIDER_MENUBG43_TITLE_CALLER 0x00102C72u
+static inline int SpiderMenubg43_TitleGlyphTransform(
+    const SpiderMenuVertex *v,SpiderMenuVertex *out,
+    unsigned count,unsigned type,uint32_t fvf,uint32_t caller,
+    unsigned w,unsigned h,unsigned texw,unsigned texh)
+{
+    float l,r,t,b,scale;
+    unsigned i;
+    if(!v || !out || v==out || count!=4u || type!=6u ||
+       fvf!=0x144u || caller!=SPIDER_MENUBG43_TITLE_CALLER ||
+       w<640u || h<480u || w>16384u || h>16384u ||
+       (uint64_t)w*3u<=(uint64_t)h*4u ||
+       texw<8u || texw>128u || texh<8u || texh>128u)
+        return 0;
+    l=r=v[0].x;t=b=v[0].y;
+    for(i=0u;i<4u;i++){
+       if(!(v[i].x>=-(float)w*0.06f && v[i].x<(float)w*0.75f &&
+            v[i].y>=(float)h*0.05f && v[i].y<=(float)h*0.23f &&
+            v[i].z>=0.998f && v[i].z<=1.0f &&
+            v[i].rhw>0.020f && v[i].rhw<0.027f))
+            return 0;
+       if(v[i].x<l)l=v[i].x;
+       if(v[i].x>r)r=v[i].x;
+       if(v[i].y<t)t=v[i].y;
+       if(v[i].y>b)b=v[i].y;
+    }
+    if(!(r-l>=10.0f && r-l<=150.0f &&
+         b-t>=15.0f && b-t<=(float)h*0.11f))
+        return 0;
+    scale=4.0f*(float)h/(3.0f*(float)w);
+    memcpy(out,v,4u*sizeof(*out));
+    for(i=0u;i<4u;i++)
+       out[i].x=(float)w*0.5f+(v[i].x-(float)w*0.5f)*scale;
+    return 1;
+}
+
 static inline int SpiderMenubg43_Transform(
     const SpiderMenuVertex *source,SpiderMenuVertex *result,
     unsigned count,unsigned type,uint32_t fvf,
