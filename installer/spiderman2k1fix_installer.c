@@ -692,38 +692,101 @@ static int launch_game(int verify_exe){
   return exit_code==0;
 }
 static void usage(void){
-  message(L"SpiderMan2k1Fix v%hs (ISO installer bootstrap; NOT retail-CD validated)",SPIDERMAN2K1FIX_VERSION);
-  message(L"Usage: SpiderMan2k1Fix.exe [--inspect | --verify | --install-only | --launch-no-verify | --version | --help]");
-  message(L"  --install-only      Install from adjacent ISO without starting the game.");
-  message(L"                      If already installed, verify and exit without modifications.");
-  message(L"  --launch-no-verify  Launch installed game directly; skip presence and integrity checks.");
-  message(L"                      No ISO extraction or DLL repair; missing SpideyPC.exe");
-  message(L"                      will fail at CreateProcess (game DLL guards remain active).");
-  message(L"Place exactly one original .iso beside the launcher. Safe inspection is ready;");
-  message(L"retail Wise source file map supported provisionally; authentic ISO test required.");
-  message(L"Logs next to launcher: SpiderMan2k1Fix_installer.log + SpiderMan2k1Fix.log");
+  message(L"SpiderMan2k1Fix v%hs (retail ISO installer prototype)",SPIDERMAN2K1FIX_VERSION);
+  message(L"SpiderMan2k1Fix.exe                   Automatic install/verify/launch");
+  message(L"SpiderMan2k1Fix.exe --install-only    Install/verify recognized CD without playing");
+  message(L"SpiderMan2k1Fix.exe --launch-no-verify  Direct launch without file checks");
+  message(L"SpiderMan2k1Fix.exe --verify          Read-only installed-file checks");
+  message(L"SpiderMan2k1Fix.exe --inspect image.iso");
+  message(L"SpiderMan2k1Fix.exe --inspect image.cue [track.bin|track.img]");
+  message(L"SpiderMan2k1Fix.exe --verbose         Extra diagnostics (combinable)");
+  message(L"SpiderMan2k1Fix.exe --version");
+  message(L"SpiderMan2k1Fix.exe --help | -h");
+  message(L"Inspection report: SpiderMan2k1Fix_inspect.log beside the launcher");
+  message(L"Installer/runtime logs: SpiderMan2k1Fix_installer.log, SpiderMan2k1Fix.log");
+}
+static int abs_path(const wchar_t *p){
+  return p && ((p[0] && p[1]==L':') || (p[0]==L'\\' && p[1]==L'\\'));
+}
+static int resolved_path(wchar_t *out,size_t cap,const wchar_t *input){
+  if(!input||!*input)return 0;
+  if(abs_path(input)){
+    if(wcslen(input)>=cap)return 0;
+    wcscpy(out,input);return 1;
+  }
+  if(!wcscmp(input,L".")||!wcscmp(input,L"..")||
+     wcsstr(input,L"..\\")||wcsstr(input,L"../"))return 0;
+  return combine(out,cap,launcher_dir,input);
 }
 int wmain(int argc,wchar_t **argv) {
   wchar_t executable[SPIDER_INSTALLER_PATH],*slash,path[SPIDER_INSTALLER_PATH];
-  wchar_t gameexe[SPIDER_INSTALLER_PATH];
-  DiscImage iso;int result=1,scan,install_only=0;
+  wchar_t raw[SPIDER_INSTALLER_PATH],gameexe[SPIDER_INSTALLER_PATH];
+  DiscImage iso;int result=1,scan,install_only=0,inspect=0,i,clean=1;
   DWORD length=GetModuleFileNameW(NULL,executable,SPIDER_INSTALLER_PATH);
   if(!length||length>=SPIDER_INSTALLER_PATH)return 2;
   slash=wcsrchr(executable,L'\\');if(!slash)return 2;
   *slash=0;wcscpy(launcher_dir,executable);
+  /* Strip one optional --verbose modifier. Media parameters are ONLY legal
+   * following --inspect, never positional installation inputs. */
+  for(i=1;i<argc;i++){
+    if(!wcscmp(argv[i],L"--verbose")){
+      if(verbose_mode)return 2;
+      verbose_mode=1;
+    }else argv[clean++]=argv[i];
+  }
+  argc=clean;
+  inspect=(argc>=2 && !wcscmp(argv[1],L"--inspect"));
   if(!combine(game_dir,SPIDER_INSTALLER_PATH,launcher_dir,L"SpiderMan2k1Fix")||
-     !combine(log_path,SPIDER_INSTALLER_PATH,launcher_dir,L"SpiderMan2k1Fix_installer.log"))return 2;
+     !combine(log_path,SPIDER_INSTALLER_PATH,launcher_dir,
+              inspect?L"SpiderMan2k1Fix_inspect.log":L"SpiderMan2k1Fix_installer.log"))
+    return 2;
   logfile=_wfopen(log_path,L"w, ccs=UTF-8");
-  message(L"START: SpiderMan2k1Fix installer v%hs; Win32/Wine shared code; source ISO unchanged",SPIDERMAN2K1FIX_VERSION);
-  message(L"PATH: install root=%ls",game_dir);
+  if(!logfile)return 2;
+  message(L"START: SpiderMan2k1Fix v%hs mode=%ls verbose=%d",
+    SPIDERMAN2K1FIX_VERSION,inspect?L"inspect":L"installer",verbose_mode);
+  if(verbose_mode)message(L"VERBOSE: launcher=%ls game_directory=%ls",
+                           launcher_dir,game_dir);
+  if(inspect){
+    if((argc!=3 && argc!=4)||
+       (!extension_is(argv[2],L".iso")&&!extension_is(argv[2],L".cue")) ||
+       (argc==4 && (!extension_is(argv[2],L".cue")||
+          (!extension_is(argv[3],L".bin")&&!extension_is(argv[3],L".img"))))){
+      message(L"INSPECT: expected --inspect image.iso or image.cue [track.bin|track.img]");
+      goto done;
+    }
+    if(!resolved_path(path,SPIDER_INSTALLER_PATH,argv[2]) || !regular_file(path)){
+      message(L"INSPECT: ISO/CUE source missing or unsafe");goto done;
+    }
+    raw[0]=0;
+    if(argc==4 && (!resolved_path(raw,SPIDER_INSTALLER_PATH,argv[3])||
+                   !regular_file(raw))){
+      message(L"INSPECT: explicit BIN/IMG track missing or unsafe");goto done;
+    }
+    message(L"INSPECT: source=%ls raw_track=%ls",path,*raw?raw:L"(none)");
+    if(!iso_open(&iso,path,*raw?raw:NULL)){
+      message(L"INSPECT_RESULT=FAILED (cannot parse ISO/CUE)");
+      iso_close(&iso);goto done;
+    }
+    {
+      DWORD n,files=0;
+      message(L"INSPECT: volume=%ls Joliet=%d entries=%lu logical_bytes=%llu",
+        iso.volume,iso.joliet,iso.count,(unsigned long long)iso.length);
+      for(n=0;n<iso.count;n++){
+        const DiscEntry *e=&iso.entries[n];
+        message(L"ENTRY: path=%ls type=%ls size=%lu lba=%lu",
+          e->name,e->directory?L"DIR":L"FILE",e->bytes,e->lba);
+        if(!e->directory)files++;
+      }
+      message(L"INSPECT_RESULT=COMPLETE files=%lu",files);
+    }
+    iso_close(&iso);result=0;goto done;
+  }
   if(argc>2){usage();goto done;}
-  if(argc==2 && (!wcscmp(argv[1],L"--help")||!wcscmp(argv[1],L"-h"))){usage();result=0;goto done;}
+  if(argc==2 && (!wcscmp(argv[1],L"--help")||
+                 !wcscmp(argv[1],L"-h"))){usage();result=0;goto done;}
   if(argc==2 && !wcscmp(argv[1],L"--version")){result=0;goto done;}
-  /* Explicit user override: jump straight to CreateProcess. Do not scan an
-   * ISO, check file presence, hash the retail exe, or verify embedded DLLs.
-   * Import/loader checks inside winmm/core are intentionally untouched. */
   if(argc==2 && !wcscmp(argv[1],L"--launch-no-verify")){
-    message(L"LAUNCH: --launch-no-verify selected; skipping all launcher file existence and integrity checks");
+    message(L"LAUNCH: --launch-no-verify; no file presence or integrity preflight");
     result=launch_game(0)?0:1;goto done;
   }
   if(!combine(gameexe,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe"))goto done;
@@ -731,7 +794,7 @@ int wmain(int argc,wchar_t **argv) {
     result=(verified_retail(gameexe)&&verify_payloads())?0:1;goto done;
   }
   install_only=argc==2 && !wcscmp(argv[1],L"--install-only");
-  if(argc==2 && wcscmp(argv[1],L"--inspect") && !install_only){
+  if(argc==2 && !install_only){
     usage();goto done;
   }
   if((argc==1 || install_only) && regular_file(gameexe)){
@@ -761,7 +824,7 @@ int wmain(int argc,wchar_t **argv) {
     }
     message(L"ISO: inspected %lu regular files",listed);
   }
-  if(argc==2 && !wcscmp(argv[1],L"--inspect")){iso_close(&iso);result=0;goto done;}
+  /* --inspect is handled before any installation state or source scanning. */
   if(!prepare_game_from_iso(&iso)){
     message(L"INSTALL: original Wise source file map incomplete or unsafe; no partial game published");
     iso_close(&iso);goto done;
