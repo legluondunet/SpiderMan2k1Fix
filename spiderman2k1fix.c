@@ -842,7 +842,7 @@ typedef HRESULT (WINAPI *DrawPrimitiveFn)(void *, D3DPRIMITIVETYPE, DWORD, LPVOI
 typedef HRESULT (WINAPI *DrawIndexedPrimitiveFn)(void *, D3DPRIMITIVETYPE, DWORD, LPVOID, DWORD, LPWORD, DWORD, DWORD);
 static DrawPrimitiveFn original_draw_primitive;
 static DrawIndexedPrimitiveFn original_draw_indexed_primitive;
-/* SHA-pinned original menubg source provenance. This is strictly opt-in.
+/* SHA-pinned original menubg source provenance. Built-in after Wine
  * Rather than guessing by vertex color/z/size, both native original call
  * sites to 0x509D20 are wrapped with their original 7-arg cdecl ABI.
  * The source-verified builder at 0x50768F appends 240-byte records to
@@ -851,9 +851,9 @@ static DrawIndexedPrimitiveFn original_draw_indexed_primitive;
  *
  * Tags belong to a record index in the exact original queue only.
  * No game byte or user file is altered by the mapping. The two original
- * callsites are patched exclusively while the trial env var is set.
+ * callsites are patched only after the original retail signatures pass.
  */
-static int menubg43_trial_enabled=0;
+static int menubg43_enabled=0;
 static int menubg43_call_hooks_installed=0;
 static volatile LONG menubg43_frame_tag[SPIDER_MENUBG43_RECORD_CAP];
 static DWORD menubg43_texture_tag[SPIDER_MENUBG43_RECORD_CAP];
@@ -936,7 +936,7 @@ static const void *maybe_correct_menubg43_source(
   char message[260];
   const SpiderMenuVertex *v=(const SpiderMenuVertex *)source;
   int eligible=0,applied=0,shell=0,focus_tail=0;
-  if(!menubg43_trial_enabled || !menubg43_call_hooks_installed ||
+  if(!menubg43_enabled || !menubg43_call_hooks_installed ||
      !source || !copy ||
      !SpiderMenubg43_RecordIndex((uintptr_t)source,&i))
     return source;
@@ -1005,8 +1005,8 @@ static const void *maybe_correct_menubg43_source(
   return applied?copy:source;
 }
 /* Authenticated original bytes must be readable and match exactly.
- * Report the failed gate and its real bytes rather than silently declining
- * every experimental test. No mismatch is accepted or bypassed. */
+ * Report any failed gate and its real bytes instead of silently declining
+ * installation. No mismatch is accepted or bypassed. */
 static int menubg43_validate_bytes(
     const BYTE *site,const BYTE *sig,size_t n,const char *label)
 {
@@ -1182,7 +1182,7 @@ static const void *maybe_correct_menubg43_companion(
   LONG frame,last,known,n;
   int shell,focus_tail;
   char msg[255];
-  if(!menubg43_trial_enabled || !menubg43_call_hooks_installed ||
+  if(!menubg43_enabled || !menubg43_call_hooks_installed ||
      !source || !copy || count!=4u || type!=D3DPT_TRIANGLEFAN ||
      fvf!=0x144UL ||
      !SpiderHudWidescreen_Installed() ||
@@ -1260,7 +1260,7 @@ static const void *maybe_correct_menubg43_title(
   HRESULT hr;
   char msg[220];
   const SpiderMenuVertex *v=(const SpiderMenuVertex *)source;
-  if(!menubg43_trial_enabled || !menubg43_call_hooks_installed ||
+  if(!menubg43_enabled || !menubg43_call_hooks_installed ||
      !source || !copy || !device || count!=4u ||
      type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
      !SpiderHudWidescreen_Installed() ||
@@ -1328,7 +1328,7 @@ static void menubg43_probe_unmapped_art(void *device,const char *api,
   int queue_record=0;
   char line[320];
   unsigned i;
-  if(!debug_log_enabled || !menubg43_trial_enabled ||
+  if(!debug_log_enabled || !menubg43_enabled ||
      !vertices || count<4u || count>128u ||
      type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL ||
      desktop_w<640u || desktop_h<480u ||
@@ -5079,7 +5079,7 @@ static void pause_at_flip_if_background(void) {
    * PAUSED freezes? Prior counters were global and mostly rate-limited,
    * so an actual Alt+Tab capture could not be reconciled with title/menu
    * draws on that frame. This is observational only, no new GDI or hooks. */
-  if(menubg43_trial_enabled && debug_log_enabled) {
+  if(menubg43_enabled && debug_log_enabled) {
     char line[246];
     LONG frozen_flip=InterlockedCompareExchange(&flip_count,0,0);
     LONG source_last=InterlockedCompareExchange(
@@ -6043,19 +6043,15 @@ static DWORD initialize_body(LPVOID unused) {
    * untouched and report the safety fallback when logging is enabled. */
   install_f9_png_only_dispatch();
   {
-    char option[8]={0};
-    if(GetEnvironmentVariableA("SPIDERMAN2K1FIX_MENUBG43_TRIAL",
-                               option,sizeof(option))==1 &&
-       option[0]=='1') {
-      menubg43_trial_enabled=menubg43_install_source_hooks();
-      log_line(menubg43_trial_enabled?
-        "MENUBG43: ACTIVE original two CALL sites verified; queued menubg provenance on; geometry opt-in":
-        "MENUBG43: REFUSED signature, original binary or hook installation mismatch; no patch");
-      if(menubg43_trial_enabled)
-        log_line("MENUBG43: companion background exact-material guard + source-proven title glyph 4:3 ON [SAVE/NAME TRIAL; no size-only fallback]");
-    } else {
-      log_line("MENUBG43: OFF by default (no game CALL patches)");
-    }
+    /* Permanent 2.0 fix: the maintainer validated SAVE GAME, INPUT NAME
+     * and SAVE COMPLETED (including a real Alt+Tab PAUSED capture) on the
+     * original retail executable under Wine. The existing SHA-pinned
+     * original CALL/queue preflight remains mandatory; fail closed if
+     * this EXE is unsupported or the original bytes no longer match. */
+    menubg43_enabled=menubg43_install_source_hooks();
+    log_line(menubg43_enabled?
+      "MENUBG43: ACTIVE built-in 4:3 SAVE/NAME background and title; original source signatures verified":
+      "MENUBG43: REFUSED original signature or hook installation mismatch; original drawing preserved");
   }
   /* Optional read-only F9 diagnostics remain independent of output format.
    * Legacy screenshot-format environment variables are intentionally ignored. */
