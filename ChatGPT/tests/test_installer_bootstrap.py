@@ -75,7 +75,7 @@ def test_standalone_installer_never_upgrades_existing_installation():
     assert "deploy_payloads_to(staging)" in SRC
     assert "MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH)" in SRC
     main=SRC.split("int wmain(",1)[1]
-    existing=main.split("if(argc==1 && regular_file(gameexe))",1)[1].split(
+    existing=main.split("if((argc==1 || install_only) && regular_file(gameexe))",1)[1].split(
         "scan=find_adjacent_iso",1)[0]
     assert "verified_retail(gameexe)" in existing
     assert "verify_payloads()" in existing
