@@ -373,3 +373,49 @@ def test_paused_snapshot_retains_authenticated_title_and_companion():
         assert "SpiderMenubg43_RecordIndex(" in block
     assert "MENUBG43-TITLE: MAPPED" in SOURCE
     assert "shell=%d focus-tail=%d" in SOURCE
+
+
+
+def test_long_lived_verified_companion_refreshes_only_active_native_shell_stamp():
+    """Save Complete can continue after the named background stopped emitting.
+
+    Original queue identity and material must already be proven. Refresh
+    the last verified shell Flip only AFTER the companion's exact 4:3
+    transformation succeeded and only with native shell still active.
+    Never extend focus grace during the background-only out-of-focus tail.
+    """
+    start=SOURCE.index("static const void *maybe_correct_menubg43_companion(")
+    end=SOURCE.index("/* Original title font geometry",start)
+    companion=SOURCE[start:end]
+    mapped=companion.index("if(!SpiderMenubg43_Transform(")
+    refresh=companion.index("InterlockedExchange(&menubg43_last_shell_frame,frame);")
+    assert mapped < refresh
+    assert "InterlockedExchange(&menubg43_last_companion_mapped_frame,frame);" in companion
+    assert "if(shell) {" in companion
+    assert companion.index("if(shell) {") < refresh
+    assert "material,(uint32_t)known" in companion
+    assert "(!shell && !focus_tail)" in companion
+    # During a long-lived native page, the helper's 16-Flip focus tail
+    # should be measured from its most recent authenticated material draw,
+    # NOT from a named-resource callback several hundred Flips earlier.
+    assert "SPIDER_MENUBG43_FOCUS_TAIL_FLIPS 16u" in (
+        ROOT / "menubg_provenance_43.h").read_text(encoding="utf-8")
+    assert "frame-last_shell_frame<=SPIDER_MENUBG43_FOCUS_TAIL_FLIPS" in (
+        ROOT / "menubg_provenance_43.h").read_text(encoding="utf-8")
+
+
+def test_paused_frame_logs_last_actually_mapped_title_and_background():
+    """Reconstruct the frame frozen by Alt+Tab without guessing from samples."""
+    assert "InterlockedExchange(&menubg43_last_title_mapped_frame,frame);" in SOURCE
+    assert "InterlockedExchange(&menubg43_last_companion_mapped_frame,frame);" in SOURCE
+    start=SOURCE.index("static void pause_at_flip_if_background(")
+    end=SOURCE.index("static HRESULT WINAPI hooked_flip(",start)
+    paused=SOURCE[start:end]
+    assert "MENUBG43-PAUSE-FRAME: frozen-flip=" in paused
+    assert "authenticated-last=%ld companion-last=%ld title-last=%ld" in paused
+    assert "[READ-ONLY pre-composite]" in paused
+    assert paused.index("MENUBG43-PAUSE-FRAME:") < paused.index(
+        "SpiderPauseSurface_Begin(")
+    assert "if(menubg43_trial_enabled && debug_log_enabled)" in paused
+    assert "menubg43_native_shell_state()" in paused
+    assert "x11_state" in paused
