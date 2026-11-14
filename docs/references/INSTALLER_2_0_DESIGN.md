@@ -33,7 +33,7 @@ any disc assets, save data, or the ISO. The exact supported retail executable
 is 1,507,328 bytes, SHA-256
 `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`.
 
-## Standalone installer prototype in draft PR #150
+## Standalone installer merged from PR #150
 
 - Native PE32 Windows/Wine launcher with identical public commands to
   the other Fix installers: `--help`/`-h`, `--version`, `--verify`,
@@ -114,27 +114,36 @@ The new standalone installer is configured to install the **complete**
 list from one consistent ISO directory, including `texture.dat` and
 original support files, as established by the script.
 
-We **still do not have the actual retail Spider-Man ISO**. The Wise
-source prefix `%INST%` identifies the directory of the source installer,
-but does not prove its concrete path within the ISO. Nor have the original
-ISO file sizes or the registry independence been checked in a new Wine
-prefix or on Windows 11. The uploaded installer script is strong evidence
-for the copy recipe, **not proof of a working complete installation**.
+This paragraph originally described the pre-ISO reverse-engineering stage.
+On November 14, 2026, the maintainer supplied successful Wine inspection,
+installation and gameplay logs from an authentic retail Spider-Man ISO.
+The reader observed the concrete `Setup/` source directory, copied the
+eight-file Wise full-install list, and verified the exact original EXE hash.
+These field observations **do not** certify a native Windows 11 clean install,
+a complete source-authenticated game-data receipt or all negative paths.
+See `RELEASE_2_0_CODE_CLEANUP_AUDIT.md` for the reviewed evidence.
 
 More technical findings and SHA-256 provenance:
 [Original Wise installer evidence](SPIDERMAN_RETAIL_WISE_INSTALL_MAP.md).
 No game EXEs, PKR archives, installation archives, or ISO image are
 committed or distributed with this project.
 
-## Release gate
+## Release gate after merging #150 (November 14, 2026)
 
-1. Original Wise full-install file map recovered from uploaded PE32 setup;
-   **actual ISO folder/source sizes and Windows/Wine runtime still unverified**.
-2. Synthetic ISO tests (valid/Joliet, malformed record/extent, bad hash,
-   multiple images, tampered embedded resources, failed stage/rollback).
-3. One-time embedded payload deployment; existing installation is verified
-   read-only and never updated/repaired. No DLL `.bak` is created.
-4. Actual one-EXE Windows x86 CI artifact with verified embedded resources.
-5. Independent Windows 11 and Wine installation, normal launch and shutdown.
-6. Only then merge the installer and publish tag `v2.0.0`.
-
+1. The authentic Wise `Setup/` original-disc source layout and eight-file
+   installation succeeded under Wine. The original executable SHA-256 matched.
+2. Before calling `--verify` a full data-integrity audit, add a provenance
+   receipt and read-only hash checks for all eight retail game files, not
+   only the original EXE and seven embedded project resources.
+3. Exercise malformed ISO/CUE, missing source files, interrupted install,
+   receipt tampering and rollback paths with executable automated tests.
+4. The proposed standalone CI must confirm an actual PE32 x86 executable
+   with **all seven embedded RCDATA resources matching their staged
+   redistributable bytes**, and record the EXE SHA-256. Do not publish the
+   legacy developer DLL ZIP as the stable 2.0.0 distribution.
+5. The archived Wine gameplay log demonstrates actual graphics, audio,
+   controllers and Alt+Tab, but not a separate clean-process-exit trace.
+   A clean Windows 11 ISO installation was not demonstrated.
+6. Publication of `v2.0.0` is a separate, explicit action only after
+   the remaining acceptance limitations have been assessed. The CI
+   candidate workflow does **not** tag or publish releases.
