@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Standalone Windows x86 prototype: project code and redistributable runtimes
+# Standalone Windows x86 release candidate: project code and redistributable runtimes
 # embedded as RCDATA, with no original Spider-Man game files included.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -48,7 +48,7 @@ fi
 grep -Eiq 'DLL Name:[[:space:]]*msvcrt\.dll' dist/installer/pe-info.txt
 # Avoid publishing an executable without all seven embedded resource names.
 # Windres expands bytes as RCDATA in the PE32 .rsrc; source test inventories
-# the exact names and ID mapping. Only this EXE is uploaded in the prototype.
+# the exact names and ID mapping. Only this EXE is uploaded as a candidate artifact.
 echo 'INSTALLER: standalone Windows x86 resource-packed EXE successfully built'
 sha256sum dist/installer/SpiderMan2k1Fix.exe
 

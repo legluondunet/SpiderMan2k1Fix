@@ -1,12 +1,9 @@
-name: SpiderMan2k1Fix installer prototype
+name: SpiderMan2k1Fix standalone Windows x86
 
 on:
+  push:
+    branches: [main]
   pull_request:
-    paths:
-      - 'installer/**'
-      - 'scripts/build_installer.sh'
-      - 'ChatGPT/tests/test_installer_bootstrap.py'
-      - '.github/workflows/spiderman2k1fix-installer-prototype.yml'
   workflow_dispatch:
 
 permissions:
@@ -17,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  installer-prototype:
-    name: Standalone 32-bit installer bootstrap (NOT a release)
+  installer-x86:
+    name: Standalone 32-bit installer CI (NOT a release)
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
@@ -121,14 +118,28 @@ jobs:
           echo "README.md and CHANGELOG.md match the checked-out sources."
           sha256sum README.md dist/package/SpiderMan2k1Fix/README.md CHANGELOG.md dist/package/SpiderMan2k1Fix/CHANGELOG.md
 
-      # Non-release, separate from the proven DLL ZIP workflow.
+      # Release candidate CI remains read-only: no tag, no GitHub release.
       - name: Build RCDATA-packed single executable
         run: bash scripts/build_installer.sh
 
-      - name: Upload standalone installer prototype only
+      - name: Audit embedded resources and standalone executable SHA-256
+        run: |
+          set -euo pipefail
+          test -s dist/installer/SpiderMan2k1Fix.exe
+          test "$(find dist/installer -maxdepth 1 -type f -name '*.exe' | wc -l)" -eq 1
+          python3 scripts/verify_spiderman_installer_resources.py \
+            dist/installer/SpiderMan2k1Fix.exe dist/package
+          (
+            cd dist/installer
+            sha256sum SpiderMan2k1Fix.exe > SpiderMan2k1Fix.exe.sha256
+            sha256sum -c SpiderMan2k1Fix.exe.sha256
+            cat SpiderMan2k1Fix.exe.sha256
+          )
+
+      - name: Upload standalone executable only
         uses: actions/upload-artifact@v4
         with:
-          name: SpiderMan2k1Fix-Installer-Prototype
+          name: SpiderMan2k1Fix-Windows-x86-Standalone
           path: dist/installer/SpiderMan2k1Fix.exe
           if-no-files-found: error
           retention-days: 30
