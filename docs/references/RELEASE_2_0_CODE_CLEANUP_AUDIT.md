@@ -134,6 +134,35 @@ Wise-copy messages but puts per-file inventory under `--verbose`,
 while `--inspect` always emits its full independent CD inventory.
 This changes logging only, not validation/extraction.
 
+## Existing-install verification — November 14, 2026
+
+The owner exercised `WINEDEBUG=-all mangohud wine SpiderMan2k1Fix.exe --verify`
+under Wine; the terminal showed the supported retail EXE SHA-256 and
+`END: status=0`. The attached `SpiderMan2k1Fix_installer(2).log`
+records the separate `--install-only` invocation on an existing install,
+which returned `END: status=0`, did not start the game and reported
+`existing installation verified/updated`. **That earlier wording did not
+prove that an upgrade occurred.**
+
+Both uploaded runtime logs `SpiderMan2k1Fix(20261114-093029).log` and
+`SpiderMan2k1Fix(20261114-093106).log` were **byte-identical**
+(SHA-256 `bc1b1cc3d771ce86903e3da6eb44f7d16a4565fdfddcad0de94a5fff6c7e152d`,
+2,215 lines). They therefore **do not constitute two independent
+gameplay/exit tests**. This snapshot documents over 5,040 frames,
+active 3D and menu rendering and two successful focus/voice resume
+transitions (all documented `FOCUS-DSOUND` failed counts are zero).
+The final recorded event is a menu controller confirmation, **not an
+orderly game shutdown**. The early diagnostic
+`DDRAW: IAT target mismatch; hook not installed` remains visible;
+later DirectDraw7/D3D7 hooks and presentation succeeded.
+
+**Follow-up code adjustment:** The installer now prints explicit
+`VERIFY: OK` or `VERIFY: FAILED` result summaries for the original
+EXE, install receipt and seven bundled resources, and distinguishes
+`--install-only` **no update needed** from **authenticated resources
+updated**. These summaries intentionally do **not** claim to verify all
+original CD archives: that remains an independent release gate.
+
 ## Code-review findings that are NOT yet release-validated
 
 - **Original game data integrity:** the current `--verify` gate verifies
