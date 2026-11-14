@@ -102,30 +102,38 @@ Diagnostic switches and implementation: [technical audio guide](docs/references/
 
 ## Installation on Windows and Linux (Wine)
 
-1. Install the original *Spider-Man (2001)* PC game.
-2. Download the latest version of SpiderMan2k1Fix from the [GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases) page.
-3. Extract the archive **without flattening its folders** into the game's installation directory. Place only `winmm.dll` alongside `SpideyPC.exe`; the archive places `SpiderMan2k1Fix.dll`, **official Windows x86 `SDL3.dll`**, its license and the project documentation inside `SpiderMan2k1Fix/`.
-   - No separate SDL3 download is needed. SDL3 discovery, setup and universal gameplay are built in and no longer controlled by INI switches. Start and neutral-first ownership are still required. Unsupported or ambiguous devices are refused; no legacy controller mapping fallback is offered.
-   - Do not move the original game's executable, data or resources.
-4. Launch the game normally under Windows.
+**v2.0.0 (upcoming):** The planned distribution is **one standalone**
+`SpiderMan2k1Fix.exe` with our WinMM proxy, fix DLL, SDL3 x86 runtime/license
+and optional Linux X11 helper embedded. Its original-disc installation is
+**still awaiting real-ISO tests on Windows 11 and Wine**; use official releases
+only after that validation.
 
-   For Linux/Wine users, open a terminal in the game's installation directory and run:
+1. Obtain the launcher from [GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases)
+   once v2.0.0 is published. Place it beside **one legally owned original**
+   `.iso` or `.cue` (keep the `.bin`/`.img` track referenced by the CUE).
+2. Run `SpiderMan2k1Fix.exe` on Windows or `wine SpiderMan2k1Fix.exe` on Linux.
+   It installs into `SpiderMan2k1Fix/` beside the launcher, then verifies
+   and starts the game. The old Wise setup and graphics selector are not run.
+3. Later launches verify the game and bundled components without silently
+   replacing your files. `--install-only` installs or updates **recognized
+   installer-owned components** without starting the game. `--verify` only
+   checks, while `--inspect image.iso` or `--inspect image.cue [track.bin|track.img]`
+   creates `SpiderMan2k1Fix_inspect.log` for unsupported-disc reports.
+   `--verbose` can be combined with other commands.
 
-   ```bash
-   WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe
-   ```
-
-**Important:** The patch requires the original supported `SpideyPC.exe` executable (SHA-256):
+`SpiderMan2k1Fix_installer.log` and `SpiderMan2k1Fix.log` are both placed
+beside the launcher. No original game files are included in this project.
+You must provide your own legally obtained copy. Existing saves and INI
+preferences are preserved. The supported original
+`SpideyPC.exe` has SHA-256:
 
 ```text
 0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea
 ```
 
-Other versions or modified copies of the executable are not supported.
-
-**No original game files are included in this project.** You must provide your own legally obtained copy of the game.
-
-**Bundled open-source runtime:** The v2.0 release-candidate archive includes the unmodified **SDL3 3.4.18 Windows x86** `SDL3.dll` and its original zlib license as `SpiderMan2k1Fix/SDL3-LICENSE.txt`. Packaging checks the upstream archive SHA-256 and PE32/i386 architecture. SDL3 is a separate third-party project, not part of the original game.
+Other versions or modified copies of the executable are not supported. The bundled,
+unchanged **SDL3 3.4.18 Windows x86** binary is checked against its upstream
+SHA-256; the original SDL3 zlib license is included.
 
 ## Configuration
 

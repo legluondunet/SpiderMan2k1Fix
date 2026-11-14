@@ -16,30 +16,44 @@ This release modernizes the original *Spider-Man (2001)* PC game on Windows and 
 
 The integrated RC2 passed **951 automated regression tests** and was checked on **Windows 11** and **Wine/GE-Proton on Linux**, with maintainer confirmation of normal gameplay and controller operations, Alt+Tab, sound/video, Save Game/YES, native Pause, Game Over and normal exit. The two same-VID:PID Xbox controllers were tested on both systems; a PS4 controller was also used for Wine switching. See the [RC2 validation record](https://github.com/legluondunet/SpiderMan2k1Fix/blob/main/docs/references/RELEASE_2_0_RC_TEST_PLAN.md) and [PR #136](https://github.com/legluondunet/SpiderMan2k1Fix/pull/136).
 
-After RC2, the SAVE GAME render fix from PR #144 passed targeted Wine 11.17 testing at 1920×1080 (including a real Alt+Tab focus-loss capture), and the merged `main` Windows x86 packaging workflow passed on November 13, 2026. The stable **default-enabled** implementation still requires a fresh CI and final smoke-test pass on Windows and Wine before the official tag or GitHub release is published.
+After RC2, the SAVE GAME render fix from PR #144 passed targeted Wine 11.17 testing at 1920×1080 (including real Alt+Tab focus-loss capture). The merged `main` DLL workflow and draft standalone-installer workflows passed CI on November 13, 2026. **This does not validate the new ISO/CUE installer:** its original-disc extraction, registry independence, Windows 11 and Wine end-to-end behavior still require real-CD smoke tests before publishing the official v2.0.0 tag.
 
 ## Installation — Windows and Linux (Wine)
 
-1. Install a legally obtained copy of the original *Spider-Man (2001)* PC game.
-2. Obtain the **v2.0.0 Windows x86 ZIP** from the [official GitHub Releases page](https://github.com/legluondunet/SpiderMan2k1Fix/releases) when published.
-3. Extract the ZIP **into the game's directory**, keeping `winmm.dll` next to `SpideyPC.exe` and the `SpiderMan2k1Fix/` directory containing `SpiderMan2k1Fix.dll`, `SDL3.dll`, the SDL3 license and optional `linux/spiderman-focus-helper`. **Do not flatten the subdirectories.**
-4. Keep your existing `SpiderMan2k1Fix.ini` and saved games; the patch generates an INI on first run only if none exists. Launch `SpideyPC.exe` normally under Windows.
+The planned v2.0.0 distribution is **one `SpiderMan2k1Fix.exe`** embedding
+the project's WinMM proxy, fix DLL, SDL3 Windows x86 runtime, license and
+optional Linux X11 helper. It **does not** include copyrighted original
+game assets or an original game executable.
 
-For Wine users, from the game installation directory:
+1. Obtain `SpiderMan2k1Fix.exe` from the
+   [official release page](https://github.com/legluondunet/SpiderMan2k1Fix/releases)
+   **after final original-CD validation and publication**.
+2. Put it beside one legally obtained retail `.iso` or `.cue` image of
+   *Spider-Man (2001)*, with the CUE-referenced `.bin` or `.img` track.
+3. Run `SpiderMan2k1Fix.exe` (Windows) or `wine SpiderMan2k1Fix.exe`
+   (Linux). It installs the original game into `SpiderMan2k1Fix/`, deploys
+   the embedded components, verifies and launches. Later starts verify
+   before play; no original Wise/DirectX setup is executed.
 
-```bash
-WINEDLLOVERRIDES="winmm=n,b" wine SpideyPC.exe
-```
+Useful switches: `--install-only` (install or explicitly upgrade known
+bundled resources without playing), `--verify` (read-only check),
+`--launch-no-verify` (direct launch, no presence/hash preflight),
+`--inspect image.iso` or `--inspect image.cue [track.bin|track.img]`
+(read-only unsupported-disc report), `--verbose`, `--version`, `--help`
+and `-h`. ISO/CUE paths are accepted as arguments **only for `--inspect`**.
 
-The SAVE GAME aspect correction is built in: do **not** set `SPIDERMAN2K1FIX_MENUBG43_TRIAL` or any other experimental option.
+The launcher and gameplay logs are placed next to the standalone EXE:
+`SpiderMan2k1Fix_installer.log` and `SpiderMan2k1Fix.log`. The separate
+`SpiderMan2k1Fix_inspect.log` is for disc diagnostics.
 
-Only the original supported `SpideyPC.exe` SHA-256 is accepted:
+Only the approved original `SpideyPC.exe` SHA-256 is supported:
 
 ```text
 0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea
 ```
 
-No original game executable, game assets or copyrighted data are included in this patch.
+The SAVE GAME aspect correction is permanently enabled for the supported
+executable; do **not** set obsolete trial environment variables.
 
 ## Known limitations and follow-up
 

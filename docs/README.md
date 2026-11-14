@@ -9,6 +9,12 @@ This directory contains the maintained technical documentation and an index of s
 - [v2.0.0 RC2 acceptance history](references/RELEASE_2_0_RC_TEST_PLAN.md) — verified Windows/Wine tests and package provenance
 - [Version 1.0.0 candidate — source/code audit and release-readiness gates](references/RELEASE_1_0_AUDIT.md) — evidence, cleanup, regression risks and publication checklist
 
+## Original CD installer research (v2.0.0)
+
+- [Wise 2000/2001 installation scripts — file manifests, full-install `media.pkr`, registry and provenance](references/SPIDERMAN_RETAIL_WISE_INSTALL_MAP.md)
+- [Standalone ISO installer — layout, install-once safety and remaining source-validation gates](references/INSTALLER_2_0_DESIGN.md)
+- [v2.0.0 code cleanup audit and release gates](references/RELEASE_2_0_CODE_CLEANUP_AUDIT.md) — removed compatibility paths, missing game-asset verification and test requirements
+
 ## Current integration and preserved experimental history
 
 - [Combined Windows 11 / Wine / Proton test evidence](references/INTEGRATION_XBOX_MOUSE_ALT_FOCUS_ACCEPTANCE.md) — validated original Xbox/DS4 input, native Alt recovery and the bounded focus/audio scope on PR #91

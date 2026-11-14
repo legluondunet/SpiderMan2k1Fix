@@ -162,15 +162,33 @@ static inline int spider_path_ini_a(char *out,size_t cap) {
   }
   return 0;
 }
-/* Keep the diagnostic log beside SpideyPC.exe, independently of the INI
- * location (the INI and DLL remain in SpiderMan2k1Fix/).
- * A read-only game installation cannot write the root log: fall back to
- * LOCALAPPDATA\\SpiderMan2k1Fix, without moving/deleting an older log.
- * Both winmm proxy and core call this same resolver, so their lines cannot
- * diverge into separate files in a given process. Reject reparse points. */
+/* Launcher-driven launches write the shared game runtime log NEXT TO
+ * SpiderMan2k1Fix.exe, not beside the nested SpideyPC.exe. The launcher
+ * supplies its own verified executable directory to the child environment;
+ * the proxy and the core already share this resolver. Direct legacy launches
+ * (without our launcher) retain the existing game/fallback location.
+ * INI and runtime DLL paths are NOT changed. */
 static inline int spider_path_log_a(char *out,size_t cap) {
   char exe[MAX_PATH],game[MAX_PATH],local[MAX_PATH],target[MAX_PATH];
+  char launcher[MAX_PATH];
   DWORD attr;
+  DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_LAUNCHER_DIR",
+                                  launcher,sizeof(launcher));
+  if(n && n<sizeof(launcher) &&
+     ((n>=3 && launcher[1]==':' && launcher[2]=='\\') ||
+      (n>=2 && launcher[0]=='\\' && launcher[1]=='\\')) &&
+     spider_path_dir_a(launcher,0) &&
+     spider_path_join_a(target,sizeof(target),launcher,"SpiderMan2k1Fix.log")) {
+    attr=GetFileAttributesA(target);
+    if(((attr!=INVALID_FILE_ATTRIBUTES &&
+          !(attr&(FILE_ATTRIBUTE_DIRECTORY|FILE_ATTRIBUTE_REPARSE_POINT|
+                  FILE_ATTRIBUTE_READONLY))) ||
+         (attr==INVALID_FILE_ATTRIBUTES && spider_path_writable_a(launcher))) &&
+       spider_path_copy_a(out,cap,target))
+      return 1;
+  }
+  /* Direct launch or read-only launcher folder: keep a diagnostic log at
+   * the original game path (or its established LOCALAPPDATA fallback). */
   if(!out || !cap || !spider_path_exe_dir_a(exe,sizeof(exe)) ||
      !spider_path_join_a(target,sizeof(target),exe,"SpiderMan2k1Fix.log"))
     return 0;

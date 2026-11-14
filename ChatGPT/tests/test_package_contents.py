@@ -40,9 +40,17 @@ def test_ci_builds_without_retaining_the_completed_one_shot_release_workflow():
     workflows = ROOT / ".github/workflows"
     # v1.1.0 was published on 2026-10-27. Its one-shot publisher must not
     # continue running (even as a skipped job) after the tag exists.
+    # The experimental, separately permission-scoped installer workflow is
+    # deliberately NOT an automatic release publisher; the historical
+    # one-shot v1.1 release workflow must still be absent.
     assert sorted(p.name for p in workflows.glob("*.yml")) == [
-        "spiderman2k1fix-windows-x86.yml"
+        "spiderman2k1fix-installer-prototype.yml",
+        "spiderman2k1fix-windows-x86.yml",
     ]
+    prototype=(workflows/"spiderman2k1fix-installer-prototype.yml").read_text(encoding="utf-8")
+    assert "NOT a release" in prototype
+    assert "SpiderMan2k1Fix-Installer-Prototype" in prototype
+    assert "gh release create" not in prototype and "gh release upload" not in prototype
     assert sorted(p.name for p in ROOT.glob("RELEASE_NOTES_*.md")) == [
         "RELEASE_NOTES_1.0.0.md",
         "RELEASE_NOTES_1.1.0.md",
