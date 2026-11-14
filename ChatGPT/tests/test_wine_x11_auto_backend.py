@@ -92,10 +92,14 @@ def test_native_helper_reads_x11_without_typing_or_raising_windows():
         assert forbidden not in NATIVE
 
 
-def test_ci_ships_elf_directly_inside_flat_install_artifact_and_release_zip():
+def test_ci_ships_x11_helper_in_dev_artifact_and_standalone_exe():
     assert 'libx11-dev' in WORKFLOW
     assert 'linux/spiderman-focus-helper.c -lX11' in WORKFLOW
-    assert WORKFLOW.count('SpiderMan2k1Fix/linux/spiderman-focus-helper') >= 6
+    assert WORKFLOW.count('SpiderMan2k1Fix/linux/spiderman-focus-helper') >= 5
+    # The obsolete developer ZIP creation was dropped for v2.0, but the
+    # helper must still be bundled as RCDATA in the one-file installer.
+    installer=(ROOT/"scripts/build_installer.sh").read_text(encoding="utf-8")
+    assert '1105 RCDATA "dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper"' in installer
     assert 'SpiderMan2k1Fix-Windows-x86' in WORKFLOW
 
 
