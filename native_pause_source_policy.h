@@ -28,6 +28,19 @@ static inline float SpiderPauseSource_Abs(float n) {
   return n<0.0f?-n:n;
 }
 
+/* Non-finite coordinates must never be propagated into D3D7 transformed
+ * vertices. Use bounded comparisons (which also reject NaN) rather than
+ * relying on a platform-specific isfinite() or a particular compiler. */
+static inline int SpiderPauseSource_ValidVertex(
+    float x,float y,float z,float rhw,unsigned width,unsigned height) {
+  if(width<640u || height<480u || width>16384u || height>16384u)
+    return 0;
+  return x>=-(float)width*0.05f && x<=(float)width*1.05f &&
+         y>=-(float)height*0.10f && y<=(float)height*1.10f &&
+         z>=-0.01f && z<=1.01f &&
+         rhw>0.0f && rhw<=128.0f;
+}
+
 static inline int SpiderPauseSource_RibbonBounds(
     float left,float right,float top,float bottom,
     unsigned width,unsigned height) {
