@@ -113,8 +113,13 @@ under Windows CI before publication.
 1. Download the [published v2.0.0 launcher](https://github.com/legluondunet/SpiderMan2k1Fix/releases/download/v2.0.0/SpiderMan2k1Fix.exe). Place it beside **one legally owned original**
    `.iso` or `.cue` (keep the `.bin`/`.img` track referenced by the CUE).
 2. Run `SpiderMan2k1Fix.exe` on Windows or `wine SpiderMan2k1Fix.exe` on Linux.
-   It installs into `SpiderMan2k1Fix/` beside the launcher, then verifies
-   and starts the game. The old Wise setup and graphics selector are not run.
+   The game installs into `spiderman2001/` beside the launcher; its fix
+   DLLs live in `spiderman2001/SpiderMan2k1Fix/`. An existing verified
+   `SpiderMan2k1Fix/` game directory is renamed to `spiderman2001/`
+   on normal launch or `--install-only`, preserving saves and user files.
+   `--verify` never renames anything. If both folders already exist,
+   installation refuses to choose or overwrite either. The original Wise
+   setup and graphics selector are not run.
 3. Later launches verify all eight original game files against their
    receipt; original files are never auto-repaired. Stable v2.0.0 uses
    `--install-only` for manual updates. **Unreleased prototypes** update
