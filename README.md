@@ -112,7 +112,7 @@ under Windows CI before publication.
 
 1. Download the [published v2.0.0 launcher](https://github.com/legluondunet/SpiderMan2k1Fix/releases/download/v2.0.0/SpiderMan2k1Fix.exe). Place it beside **one legally owned original**
    `.iso` or `.cue` (keep the `.bin`/`.img` track referenced by the CUE).
-2. **Released v2.0.0** installs game data in `SpiderMan2k1Fix/`.
+2. Run `SpiderMan2k1Fix.exe` (Windows) or `wine SpiderMan2k1Fix.exe` (Linux). **Released v2.0.0** installs game data in `SpiderMan2k1Fix/`.
    **Next-version prototypes** use `spiderman2001/`, with patch files under
    `spiderman2001/SpiderMan2k1Fix/`. A verified old installation is renamed
    intact; `--verify` remains read-only. Both folders present: refuse.
