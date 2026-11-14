@@ -96,6 +96,38 @@ inside the loader lock.
 - The upstream reason DirectSound initialization was incomplete and
   `E_FAIL` was present remains a separate investigation.
 
+### Upstream startup failure hypothesis (not yet confirmed)
+
+The public source reconstruction in `krystalgamer/spidey-decomp`,
+`DXinit.cpp`: `DXINIT_DirectX8()` calls `initDirectDraw7()`
+and `initDirect3D7()` **before** `initDirectSound8()`. Its
+`DXINIT_ShutDown()` always calls `shutdownDirectSound8()`;
+`DXsound.cpp` marks `DXSOUND_ShutDown()` matching the original and
+unconditionally invokes `g_pDSBuffer->Stop()`.
+
+Thus the zero native sound-device/primary-buffer pointers in **both**
+crashes may be caused by an **earlier graphics error**, followed by
+generic shutdown, rather than by a DirectSound-specific API failure.
+`EDI=0x80004005` in both dumps is consistent with `E_FAIL`, but
+does **not** identify which API returned it. Do not report this as a
+proven DirectSound initialization failure.
+
+The WinMM proxy intentionally returns `E_FAIL` if its early
+`DirectDrawCreateEx` gate cannot load/resolve the core fix DLL;
+the core gate returns `DDERR_UNSUPPORTED` if core initialization
+fails. These are **candidate** upstream failure paths, not confirmed
+participants in either crash.
+
+The branch now logs the exact DirectDrawCreateEx result on the
+existing unsuccessful/non-DDraw7 path; it does not alter HRESULT
+or graphics/audio APIs. The existing **SHA-256 + size gated** original
+game forensic inspectors, Python and PowerShell, have both been
+extended to disassemble the newly proven caller `0x004FF9CA`
+and surrounding error handling, plus the possible deeper upstream
+stack address `0x004FDED9` (not a confirmed unwound frame).
+Only another original-EXE static analysis can classify the actual
+pre-shutdown branch conclusively.
+
 ## Integration
 
 The draft fix in PR #161 is stacked atop the unmerged directory migration
