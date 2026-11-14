@@ -42,6 +42,113 @@ static void patch_early(void) {
     early_patch_status=1;
 }
 
+/* Early original-game DirectSound primary-buffer NULL cleanup guard.
+ *
+ * Two independent native Windows WER dumps (one before the spiderman2001
+ * directory rename) identify the identical fault:
+ *   00503AF0  mov eax, [006BBF1C]     original primary sound buffer
+ *   00503AF5  push esi
+ *   00503AF6  push eax
+ *   00503AF7  mov ecx, [eax]          ACCESS_VIOLATION if eax == NULL
+ *   00503AF9  call [ecx+48h]          IDirectSoundBuffer::Stop
+ *   00503AFC  mov esi, eax           normal HRESULT handling
+ *   00503B24  push 1; push 0; call 00504050; add esp,8
+ *   00503B30  pop esi; ret           final original cleanup
+ *
+ * Replace ONLY the five-byte unsafe dereference + Stop call with an x86 JMP
+ * into the original game's 14 NOP bytes at 00503B32..00503B3F.
+ *   non-NULL: replay the original two instructions verbatim and return to
+ *             00503AFC, preserving the normal HRESULT and native logic.
+ *   NULL:     discard the pushed NULL argument with POP EAX, then jump to
+ *             the ORIGINAL 00503B24 final cleanup (and saved ESI POP/RET).
+ *             Never manufacture a successful DirectSound result.
+ *
+ * Both original opcodes and the entire code cave are checked byte-for-byte
+ * AFTER the existing native PE/No-CD signature gate. No file I/O, WinMM or
+ * COM calls, allocations, message boxes or waits under loader lock. The game
+ * executable on disk and its DirectSound implementation are unchanged.
+ *
+ * This prevents the proven NULL dereference only. It does NOT assert that
+ * the underlying E_FAIL / audio creation failure is fixed; continue
+ * investigating the upstream caller separately in issue #160.
+ */
+static volatile LONG early_primary_null_guard_status=0;
+static void install_early_primary_null_guard(void){
+    static const BYTE original[]={
+        0xA1,0x1C,0xBF,0x6B,0x00,0x56,0x50,
+        0x8B,0x08,0xFF,0x51,0x48,0x8B,0xF0,0x85,0xF6
+    };
+    static const BYTE cleanup[]={
+        0x6A,0x01,0x6A,0x00,0xE8,0x23,0x05,0x00,0x00,
+        0x83,0xC4,0x08,0x5E,0xC3
+    };
+    static const BYTE unused_cave[]={
+        0x90,0x90,0x90,0x90,0x90,0x90,0x90,
+        0x90,0x90,0x90,0x90,0x90,0x90,0x90
+    };
+    static const BYTE branch_to_cave[]={0xE9,0x36,0x00,0x00,0x00};
+    static const BYTE cave_program[]={
+        0x85,0xC0,       /* test eax,eax */
+        0x74,0x07,       /* jz 00503B3D */
+        0x8B,0x08,       /* mov ecx,[eax] -- original, non-NULL only */
+        0xFF,0x51,0x48,  /* call [ecx+48h] -- original Stop */
+        0xEB,0xBF,       /* jmp 00503AFC -- native HRESULT handling */
+        0x58,            /* pop eax -- remove the pushed NULL buffer */
+        0xEB,0xE4        /* jmp 00503B24 -- native final cleanup */
+    };
+    BYTE *base=(BYTE*)GetModuleHandleA(NULL);
+    BYTE *original_start,*site,*cave,*cleanup_start;
+    DWORD previous,ignored;
+    SIZE_T span;
+    unsigned i;
+    if(early_patch_status!=1 || !base || (ULONG_PTR)base!=0x00400000u){
+        early_primary_null_guard_status=-1;return;
+    }
+    original_start=base+0x103AF0;
+    site=base+0x103AF7;
+    cleanup_start=base+0x103B24;
+    cave=base+0x103B32;
+    if(memcmp(original_start,original,sizeof(original)) ||
+       memcmp(cleanup_start,cleanup,sizeof(cleanup)) ||
+       memcmp(cave,unused_cave,sizeof(unused_cave))){
+        early_primary_null_guard_status=-2;return;
+    }
+    /* Check all exact branch destinations independently of the literals;
+     * fail closed if this verified original code layout ever changes. */
+    if((site+sizeof(branch_to_cave)+0x36)!=cave ||
+       (cave+4+7)!=(cave+11) ||
+       (cave+11-0x41)!=(site+sizeof(branch_to_cave)) ||
+       (cave+sizeof(cave_program)-0x1C)!=cleanup_start ||
+       (cleanup_start+sizeof(cleanup))!=cave){
+        early_primary_null_guard_status=-3;return;
+    }
+    for(i=0;i<sizeof(unused_cave);i++)
+        if(cave[i]!=0x90){early_primary_null_guard_status=-2;return;}
+    span=(SIZE_T)((cave+sizeof(cave_program))-site);
+    if(!VirtualProtect(site,span,PAGE_EXECUTE_READWRITE,&previous)){
+        early_primary_null_guard_status=-4;return;
+    }
+    /* Publish the entire trampoline BEFORE redirecting the game thread. */
+    memcpy(cave,cave_program,sizeof(cave_program));
+    if(!FlushInstructionCache(GetCurrentProcess(),cave,sizeof(cave_program))){
+        memcpy(cave,unused_cave,sizeof(unused_cave));
+        FlushInstructionCache(GetCurrentProcess(),cave,sizeof(unused_cave));
+        VirtualProtect(site,span,previous,&ignored);
+        early_primary_null_guard_status=-5;return;
+    }
+    memcpy(site,branch_to_cave,sizeof(branch_to_cave));
+    if(!FlushInstructionCache(GetCurrentProcess(),site,sizeof(branch_to_cave))){
+        memcpy(site,original+7,sizeof(branch_to_cave));
+        memcpy(cave,unused_cave,sizeof(unused_cave));
+        FlushInstructionCache(GetCurrentProcess(),site,span);
+        VirtualProtect(site,span,previous,&ignored);
+        early_primary_null_guard_status=-6;return;
+    }
+    early_primary_null_guard_status=1;
+    if(!VirtualProtect(site,span,previous,&ignored))
+        early_primary_null_guard_status=-7; /* live guard, protection restore failed */
+}
+
 /* The initial loader-bound winmm proxy owns the game's very first
  * DirectDrawCreateEx call. A background DLL worker alone is not a startup
  * barrier: a broken INI used to show a modal MessageBox before the renderer
@@ -379,6 +486,13 @@ static DWORD WINAPI init_fix(LPVOID ignored) {
         log_proxy(status);
     }
     {
+        char sound_guard_status[160];
+        snprintf(sound_guard_status,sizeof(sound_guard_status),
+          "DSOUND-PRIMARY: early native NULL-cleanup guard status=%ld (1=armed; original non-NULL Stop preserved)",
+          (long)early_primary_null_guard_status);
+        log_proxy(sound_guard_status);
+    }
+    {
         char gate_status[120];
         snprintf(gate_status,sizeof(gate_status),
           "DDRAW-STARTUP: early IAT gate status=%ld (1=installed)",
@@ -426,6 +540,7 @@ BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID reserved) {
         HANDLE thread;
         DisableThreadLibraryCalls(instance);
         patch_early();
+        install_early_primary_null_guard(); /* Checked original opcode + NOP cave. */
         install_early_ddraw_gate(); /* No blocking or library loading under loader lock. */
         thread=CreateThread(NULL,0,init_fix,NULL,0,NULL);
         if (thread) CloseHandle(thread);
