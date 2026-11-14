@@ -12,7 +12,8 @@
 /* One PE32 Windows/Wine executable containing only project-owned/redistributable
  * runtime binaries. Original retail game data is NEVER embedded. The input
  * retail ISO is not modified and is refused if its layout cannot be verified.
- * The final retail CD installation recipe is under investigation (#149).
+ * The original Wise full-install recipe was observed on an authentic ISO under Wine.
+ * Native Windows 11 installation and comprehensive CD integrity remain unverified.
  */
 #define SPIDER_INSTALLER_MAX_FILES 4096u
 #define SPIDER_INSTALLER_BLOCK 2048u
@@ -466,7 +467,7 @@ static int prepare_game_from_iso(DiscImage *iso) {
    * not into the game directory; never mutate a system location.
    * Wise help/DirectX/registry/shortcuts are not needed for first pass.
    * All files MUST reside in the SAME single directory on the user's CD.
-   * We still require real retail ISO and Windows/Wine smoke tests. */
+   * Retail ISO/Wine installation observed; Windows 11 checks remain pending. */
   static const wchar_t *needed[]={
     L"SpideyPC.exe",L"data.pkr",L"media.pkr",L"texture.dat",
     L"binkw32.dll",L"Anet.inf",L"SpideyPC.ico",L"Spider-Man Setup.exe"
@@ -830,7 +831,7 @@ static int launch_game(int verify_exe){
   return exit_code==0;
 }
 static void usage(void){
-  message(L"SpiderMan2k1Fix v%hs (retail ISO installer prototype)",SPIDERMAN2K1FIX_VERSION);
+  message(L"SpiderMan2k1Fix v%hs (standalone retail ISO installer)",SPIDERMAN2K1FIX_VERSION);
   message(L"SpiderMan2k1Fix.exe                   Automatic install/verify/launch");
   message(L"SpiderMan2k1Fix.exe --install-only    Install/verify recognized CD without playing");
   message(L"SpiderMan2k1Fix.exe --launch-no-verify  Direct launch without file checks");
