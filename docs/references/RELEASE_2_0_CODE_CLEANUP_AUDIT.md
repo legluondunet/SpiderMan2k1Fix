@@ -273,3 +273,38 @@ A new `SpiderMan2k1Fix/installed-game.sha256` receipt, separate from
   input/focus activity, plus launcher game exit code 0. This corrects the
   earlier historical statement that only Wine ISO runs had been observed;
   it does **not** retroactively test this new receipt implementation.
+
+## Executable negative-path CI (follow-up to game-integrity PR)
+
+The standalone installer CI now builds and audits the **real public PE32
+candidate** on Linux, then executes that binary on a Windows Server 2022
+runner against generated, non-commercial ISO9660/CUE data. In parallel it
+creates a distinctly named `SpiderMan2k1Fix-TEST-ONLY.exe` from an
+**ephemeral, uncommitted source copy** whose approved EXE hash is replaced
+with a deterministic synthetic fixture hash. That copy also exposes one
+intentional mid-update failure point. Neither test substitution exists in
+the production source or in the 30-day standalone release-candidate asset;
+the fixture artifact has a one-day retention limit.
+
+The Windows process-level tests cover:
+
+- Read-only `--inspect` on a valid minimal ISO and MODE1/2352 CUE/BIN.
+- Production rejection of a forged `SpideyPC.exe` with the right length
+  but the wrong SHA-256, including complete first-install staging cleanup.
+- Missing required Wise file, duplicate case-insensitive source names,
+  forged out-of-volume extents, truncated/corrupt descriptors, missing BIN,
+  CUE parent-directory traversal and ambiguous adjacent ISO images.
+- Successful synthetic `--install-only` and `--verify` with the fixture
+  binary, changed `data.pkr` rejection, read-only verification, and
+  source-ISO-confirmed legacy game-receipt enrollment.
+- Refusal to replace a present but corrupted game receipt.
+- Deterministic injection of a failure after several resource updates,
+  asserting exact byte-for-byte restoration of the old runtime components,
+  removal of transient `.bak`/staging files and preserved original game
+  data. A subsequent normal upgrade and `--verify` must succeed.
+
+No official game or copyrighted assets are used in these automated
+tests. They do not replace a final smoke test using the authentic retail
+image, nor do they prove every possible system failure mode (disk
+removal, power loss, antivirus interference). **Never release the TEST-ONLY
+binary.**
