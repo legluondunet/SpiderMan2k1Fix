@@ -160,6 +160,31 @@ def test_true_native_43_pause_detected_without_unnecessary_remap():
     assert "copy[i].x=SpiderPauseSource_MapPhysicalX" in remap
 
 
+def test_detected_pause_reaches_the_real_sdl3_gameplay_input_owner():
+    """A detected native Pause must stop 3D A/Space and route to A/Enter.
+
+    The earlier prototype updated only SpiderGamepadUI_OnFlip, which
+    is NOT the final SDL3 keyboard injector. This catches that exact
+    regression across all four consumers of native pause eligibility.
+    """
+    for consumer in (
+        "SpiderGamepadUI_OnFlip(game_hwnd,",
+        "SpiderAltLatch_OnFlip(game_hwnd,",
+        "SpiderSDL3GameplayPlan_OnFlip(game_hwnd,",
+        "SpiderSDL3Universal_OnFlip(game_hwnd,",
+    ):
+        assert CORE.count(consumer) == 1, consumer
+        args = CORE.split(consumer, 1)[1].split("));", 1)[0]
+        assert "native_pause43_visible_near_flip(count)" in args, consumer
+        assert "native_pause_source_visible_near_flip(count)" in args, consumer
+        assert "0x00682950u" in args, consumer
+    assert CORE.count("native_pause_source_visible_near_flip(count)") == 4
+    universal = CORE.split("SpiderSDL3Universal_OnFlip(game_hwnd,", 1)[1].split(
+        "));", 1)[0]
+    assert universal.index("native_pause43_visible_near_flip(count)") < (
+        universal.index("native_pause_source_visible_near_flip(count)"))
+
+
 def test_native_pause_does_not_inject_second_transform_in_auto_or_known_logical_mode():
     # Precedence: source observation before per-primitive mapping, then
     # old original menu and gameplay render pipeline remains fallback.
