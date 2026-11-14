@@ -7,10 +7,10 @@ README = (ROOT / "README.md").read_text(encoding="utf-8")
 
 
 def test_windows_badge_links_to_real_build_workflow():
-    workflow = "actions/workflows/spiderman2k1fix-windows-x86.yml"
+    workflow = "actions/workflows/spiderman2k1fix-standalone-windows-x86.yml"
     assert f"{workflow}/badge.svg" in README
-    assert "[![Windows x86 build](" in README
-    assert (ROOT / ".github/workflows/spiderman2k1fix-windows-x86.yml").is_file()
+    assert "[![Standalone Windows x86 build](" in README
+    assert (ROOT / ".github/workflows/spiderman2k1fix-standalone-windows-x86.yml").is_file()
 
 
 def test_linux_wine_proton_badge_is_informational_and_has_instructions():
