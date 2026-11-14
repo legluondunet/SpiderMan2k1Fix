@@ -568,8 +568,8 @@ static int prepare_game_from_iso(DiscImage *iso) {
   if(!combine(target,SPIDER_INSTALLER_PATH,staging,L"SpideyPC.exe")||
      !verified_retail(target))goto abort;
   if(!deploy_payloads_to(staging) || !write_install_receipt(staging) ||
-     !write_game_receipt(staging)){
-    message(L"INSTALL: cannot stage embedded runtimes or owner receipt");goto abort;
+     !write_game_receipt(staging) || !verify_game_receipt(staging)){
+    message(L"INSTALL: cannot stage embedded runtimes or both integrity receipts");goto abort;
   }
   if(!MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH)){
     message(L"INSTALL: cannot publish fully staged directory Win32=%lu",
@@ -983,9 +983,9 @@ static int launch_game(int verify_exe){
 static void usage(void){
   message(L"SpiderMan2k1Fix v%hs (standalone retail ISO installer)",SPIDERMAN2K1FIX_VERSION);
   message(L"SpiderMan2k1Fix.exe                   Automatic install/verify/launch");
-  message(L"SpiderMan2k1Fix.exe --install-only    Install/verify recognized CD without playing");
+  message(L"SpiderMan2k1Fix.exe --install-only    Install/upgrade; enroll legacy game receipt from original ISO");
   message(L"SpiderMan2k1Fix.exe --launch-no-verify  Direct launch without file checks");
-  message(L"SpiderMan2k1Fix.exe --verify          Read-only installed-file checks");
+  message(L"SpiderMan2k1Fix.exe --verify          Read-only SHA-256 checks for 8 game files + 7 resources");
   message(L"SpiderMan2k1Fix.exe --inspect image.iso");
   message(L"SpiderMan2k1Fix.exe --inspect image.cue [track.bin|track.img]");
   message(L"SpiderMan2k1Fix.exe --verbose         Extra diagnostics (combinable)");
@@ -1081,11 +1081,11 @@ int wmain(int argc,wchar_t **argv) {
   if(!combine(gameexe,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe"))goto done;
   if(argc==2 && !wcscmp(argv[1],L"--verify")){
     if(verified_retail(gameexe)&&verify_install_receipt(game_dir)&&
-       verify_payloads()){
-      message(L"VERIFY: OK supported game EXE, installed resource receipt and 7 bundled components");
+       verify_game_receipt(game_dir)&&verify_payloads()){
+      message(L"VERIFY: OK original game EXE, 8 game files/receipt, 7 bundled components/receipt");
       result=0;
     }else{
-      message(L"VERIFY: FAILED game EXE, resource receipt or bundled components");
+      message(L"VERIFY: FAILED game EXE, 8 game files/receipt or bundled components");
     }
     goto done;
   }
@@ -1100,6 +1100,24 @@ int wmain(int argc,wchar_t **argv) {
      * Updates remain strictly opt-in, using only receipt-verified prior bytes. */
     if(!verified_retail(gameexe) || !verify_install_receipt(game_dir)){
       message(L"VERIFY: missing or invalid install receipt; no changes made");
+      goto done;
+    }
+    /* Legacy installations cannot mint a self-asserted game receipt.
+     * Only --install-only may enroll against an unchanged original ISO;
+     * a present but corrupt receipt must never be replaced or adopted. */
+    if(install_only && !verify_game_receipt(game_dir)){
+      wchar_t receipt[SPIDER_INSTALLER_PATH];DWORD attr;
+      if(!combine(receipt,SPIDER_INSTALLER_PATH,game_dir,game_receipt_name))
+        goto done;
+      attr=GetFileAttributesW(receipt);
+      if(attr!=INVALID_FILE_ATTRIBUTES || GetLastError()!=ERROR_FILE_NOT_FOUND){
+        message(L"VERIFY: existing game receipt invalid; refusing replacement");
+        goto done;
+      }
+      if(!enroll_game_receipt_from_disc())goto done;
+    }
+    if(!verify_game_receipt(game_dir)){
+      message(L"VERIFY: original game data missing/modified or receipt absent; no changes made");
       goto done;
     }
     if(install_only){
