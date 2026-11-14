@@ -1,9 +1,9 @@
-"""Installer 2.0.0 bootstrap: standalone resources and owner-proven Wise map.
+"""Standalone v2.0.0 installer safety contracts and original-file provenance.
 
-The build embeds only redistributable project components. The original
-Wise script identifies a complete Game Files superset, but authentic ISO
-source layout and end-to-end Windows/Wine runtime testing remain release
-blockers (#149).
+The build embeds only redistributable project components. Authentic retail
+ISO installs were observed on Windows 11 and Wine. These source-level tests
+are complemented by the Windows x86 cross-build and require executable
+negative-path tests before stable publication.
 """
 from pathlib import Path
 
@@ -123,18 +123,22 @@ def test_original_wise_game_files_superset_and_same_cd_folder():
     Avoid mixing contents from two directories/editions of the CD."""
     manifest=SRC.split("static int prepare_game_from_iso(",1)[1].split(
         "static int resource_bytes(",1)[0]
+    inventory=SRC.split("static const wchar_t *original_paths[ORIGINAL_COUNT]={",1)[1].split("};",1)[0]
+    lookup=SRC.split("static int find_wise_sources(",1)[1].split(
+        "static int prepare_game_from_iso(",1)[0]
     for name in (
         "SpideyPC.exe", "data.pkr", "media.pkr", "texture.dat",
         "binkw32.dll", "Anet.inf", "SpideyPC.ico",
         "Spider-Man Setup.exe",
     ):
-        assert f'L"{name}"' in manifest
+        assert f'L"{name}"' in inventory
     assert "same single directory" in manifest.lower()
-    assert 'wcsrchr(iso->entries[n].name,L\'/\')' in manifest
-    assert "ISO: ambiguous SpideyPC.exe source directories" in manifest
-    assert "RETAIL_EXE_BYTES" in manifest
-    assert "find_disc_file(iso,source)" in manifest
-    assert "if(!parts[i]->bytes)" in manifest
+    assert 'wcsrchr(iso->entries[n].name,L\'/\')' in lookup
+    assert "ISO: ambiguous SpideyPC.exe source directories" in lookup
+    assert "RETAIL_EXE_BYTES" in lookup
+    assert "find_disc_file(iso,source)" in lookup
+    assert "if(!parts[i]->bytes)" in lookup
+    assert "find_wise_sources(iso,parts)" in manifest
     assert "!verified_retail(target))goto abort;" in manifest
     assert "deploy_payloads_to(staging)" in manifest
     assert "MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH)" in manifest
@@ -155,9 +159,9 @@ def test_wise_forensic_reference_is_based_on_supplied_original_setup():
     assert "No actual original Spider-Man CD ISO" in ref or "actual original Spider-Man CD ISO" in ref
 
 
-def test_original_retail_iso_and_windows11_validation_are_still_pending():
-    """Original disc observed on Wine; full Windows acceptance is still pending."""
-    assert "Retail ISO/Wine installation observed; Windows 11 checks remain pending." in SRC
+def test_original_retail_iso_is_confirmed_on_wine_and_windows11():
+    """The native Win11 original-ISO install and game run were observed."""
+    assert "Original retail ISO installations observed under Wine and Windows 11." in SRC
     assert "ISO: original Wise source game executable absent" in SRC
     assert "ISO: missing original Wise Game Files source" in SRC
     assert "Original retail game data is NEVER embedded" in SRC
@@ -301,8 +305,8 @@ def test_normal_install_summarizes_cd_and_reserves_listing_for_verbose():
 def test_existing_install_status_differentiates_noop_from_update():
     """The supported retail EXE and seven project payloads remain separately described."""
     main=SRC.split("int wmain(",1)[1]
-    assert "VERIFY: OK supported game EXE, installed resource receipt and 7 bundled components" in main
-    assert "VERIFY: FAILED game EXE, resource receipt or bundled components" in main
+    assert "VERIFY: OK original game EXE, 8 game files/receipt, 7 bundled components/receipt" in main
+    assert "VERIFY: FAILED game EXE, 8 game files/receipt or bundled components" in main
     existing=main.split("if((argc==1 || install_only) && regular_file(gameexe))",1)[1].split(
         "scan=find_adjacent_disc(",1)[0]
     assert 'if(verify_payloads()){' in existing
@@ -311,3 +315,71 @@ def test_existing_install_status_differentiates_noop_from_update():
     assert existing.index("if(verify_payloads()){") < existing.index("upgrade_recognized_payloads()")
     assert "verified/updated" not in existing
     assert "result=0;goto done;" in existing
+
+
+def test_original_game_receipt_uses_fixed_eight_file_inventory_and_sha256():
+    """The receipt records all eight source files with an immutable order."""
+    manifest=SRC.split("static const wchar_t *original_paths[ORIGINAL_COUNT]={",1)[1].split("};",1)[0]
+    for filename in ("SpideyPC.exe", "data.pkr", "media.pkr", "texture.dat",
+                     "binkw32.dll", "Anet.inf", "SpideyPC.ico", "Spider-Man Setup.exe"):
+        assert f'L"{filename}"' in manifest
+    writer=SRC.split("static int write_game_receipt(const wchar_t *root){",1)[1].split(
+        "static int verify_game_receipt(",1)[0]
+    reader=SRC.split("static int verify_game_receipt(const wchar_t *root){",1)[1].split(
+        "static int enroll_game_receipt_from_disc(",1)[0]
+    assert "SpiderMan2k1Fix-Game-v1" in writer and "SpiderMan2k1Fix-Game-v1" in reader
+    assert "game_file_info(path,&bytes,hash)" in writer
+    assert 'snprintf(content+used,sizeof(content)-used,"%llu %s\\n"' in writer
+    assert "CryptGetHashParam" in SRC
+    assert "installed-game.sha256" in SRC
+    assert "CREATE_NEW" in writer
+    assert "MoveFileExW(temp,dest,MOVEFILE_WRITE_THROUGH)" in writer
+    assert "MOVEFILE_REPLACE_EXISTING" not in writer
+    assert "installed_bytes!=(ULONGLONG)size" in reader
+    assert "strcmp(expected,actual)" in reader
+    assert "fgetc(in)==EOF" in reader
+
+
+def test_legacy_game_enrollment_must_match_owner_iso_before_receipt_creation():
+    """A pre-existing installation must not be silently self-authenticated."""
+    enrollment=SRC.split("static int enroll_game_receipt_from_disc(void){",1)[1].split(
+        "static void discard_upgrade_staging(",1)[0]
+    assert "scan=find_adjacent_disc(" in enrollment
+    assert "iso_open(&iso,disc,NULL)" in enrollment
+    assert "find_wise_sources(&iso,parts)" in enrollment
+    assert "!sha256_iso_entry(&iso,parts[i],cdhash)" in enrollment
+    assert "installed_bytes!=parts[i]->bytes" in enrollment
+    assert "strcmp(filehash,cdhash)" in enrollment
+    assert "strcmp(cdhash,retail_sha)" in enrollment
+    assert enrollment.index("strcmp(filehash,cdhash)") < enrollment.index(
+        "write_game_receipt(game_dir)")
+    assert "write_game_receipt(game_dir)" in enrollment
+    assert "iso_copy(" not in enrollment
+    assert "MoveFileExW(staging,game_dir" not in enrollment
+
+
+def test_all_entry_points_require_game_receipt_except_explicit_bypass():
+    main=SRC.split("int wmain(",1)[1]
+    verify=main.split('!wcscmp(argv[1],L"--verify")',1)[1].split(
+        "install_only=argc==2",1)[0]
+    assert "verify_game_receipt(game_dir)" in verify
+    assert "verify_payloads()" in verify
+    existing=main.split("if((argc==1 || install_only) && regular_file(gameexe))",1)[1].split(
+        "scan=find_adjacent_disc(",1)[0]
+    assert "verify_game_receipt(game_dir)" in existing
+    assert "enroll_game_receipt_from_disc()" in existing
+    assert "if(install_only && !verify_game_receipt(game_dir))" in existing
+    assert "existing game receipt invalid; refusing replacement" in existing
+    assert existing.index("if(install_only && !verify_game_receipt(game_dir))") < existing.index(
+        "if(install_only){")
+    assert "no changes made" in existing
+    fresh=SRC.split("static int prepare_game_from_iso(",1)[1].split(
+        "static int resource_bytes(",1)[0]
+    assert "write_game_receipt(staging)" in fresh
+    assert "verify_game_receipt(staging)" in fresh
+    assert fresh.index("verify_game_receipt(staging)") < fresh.index(
+        "MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH)")
+    bypass=main.split('!wcscmp(argv[1],L"--launch-no-verify")',1)[1].split(
+        'if(!combine(gameexe',1)[0]
+    assert "verify_game_receipt(" not in bypass
+    assert "enroll_game_receipt_" not in bypass
