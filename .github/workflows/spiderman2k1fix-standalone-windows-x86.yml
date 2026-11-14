@@ -136,6 +136,33 @@ jobs:
             cat SpiderMan2k1Fix.exe.sha256
           )
 
+      # TEST-ONLY binary: deterministic synthetic original EXE checksum
+      # and a rollback fault-injection point. Never copy this EXE to the
+      # public standalone release artifact or include retail game files.
+      - name: Build TEST-ONLY fixture PE32 (not a release asset)
+        run: |
+          set -euo pipefail
+          python3 scripts/build_installer_test_fixture.py
+          tc="${XDG_CACHE_HOME:-$HOME/.cache}/spiderman2k1fix-toolchains/llvm-mingw-20261006-msvcrt-ubuntu-22.04-x86_64/bin"
+          mkdir -p dist/installer-test
+          "$tc/i686-w64-mingw32-clang" -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -static-libgcc -municode -Wl,--subsystem,console -I . \
+            -o dist/installer-test/SpiderMan2k1Fix-TEST-ONLY.exe \
+            installer/spiderman2k1fix_installer.fixture.c dist/installer/payload.o \
+            -ladvapi32 -luser32
+          test -s dist/installer-test/SpiderMan2k1Fix-TEST-ONLY.exe
+          cmp -s dist/installer/SpiderMan2k1Fix.exe \
+                 dist/installer-test/SpiderMan2k1Fix-TEST-ONLY.exe && exit 1
+          echo 'TEST-ONLY EXE isolated; unchanged production EXE passes resource audit.'
+
+      - name: Upload disposable fixture installer for Windows tests
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpiderMan2k1Fix-CI-TEST-ONLY
+          path: dist/installer-test/SpiderMan2k1Fix-TEST-ONLY.exe
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Upload standalone executable only
         uses: actions/upload-artifact@v4
         with:
@@ -143,3 +170,36 @@ jobs:
           path: dist/installer/SpiderMan2k1Fix.exe
           if-no-files-found: error
           retention-days: 30
+
+  installer-negative-windows:
+    name: PE32 Windows executable ISO/CUE and rollback tests
+    runs-on: windows-2022
+    needs: installer-x86
+    timeout-minutes: 15
+    steps:
+      - name: Check out test harness
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Get production standalone EXE
+        uses: actions/download-artifact@v4
+        with:
+          name: SpiderMan2k1Fix-Windows-x86-Standalone
+          path: ${{ runner.temp }}/spider-production
+
+      - name: Get disposable TEST-ONLY fixture
+        uses: actions/download-artifact@v4
+        with:
+          name: SpiderMan2k1Fix-CI-TEST-ONLY
+          path: ${{ runner.temp }}/spider-fixture
+
+      - name: Execute real PE32 C installer against synthetic ISO/CUE
+        shell: pwsh
+        run: |
+          python ChatGPT/tests/windows_installer_end_to_end.py `
+            "${{ runner.temp }}\spider-production\SpiderMan2k1Fix.exe" `
+            "${{ runner.temp }}\spider-fixture\SpiderMan2k1Fix-TEST-ONLY.exe"
