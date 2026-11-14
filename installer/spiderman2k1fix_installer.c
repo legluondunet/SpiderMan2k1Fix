@@ -750,6 +750,51 @@ static int verify_install_receipt(const wchar_t *root){
   if(fgetc(in)!=EOF){fclose(in);return 0;}
   fclose(in);return 1;
 }
+/* A previous installer-owned DLL may have been replaced by an older test
+ * build or by a third-party binary. The user explicitly requests that an
+ * unknown DLL be backed up as .bak and the bundled DLL installed instead.
+ * Only the three OWNED runtime DLL slots are eligible; all other installed
+ * project files must still match the recorded prior receipt exactly.
+ * A missing/invalid receipt cannot authorize adoption of an installation.
+ * This relaxed check is NEVER used for --verify or original game files.
+ */
+static int verify_install_receipt_allow_unknown_dll(const wchar_t *root){
+  wchar_t dest[SPIDER_INSTALLER_PATH],path[SPIDER_INSTALLER_PATH];
+  FILE *in;char line[160],hash[65];unsigned i;size_t n;
+  if(!combine(dest,SPIDER_INSTALLER_PATH,root,receipt_name)||
+     !regular_file(dest))return 0;
+  in=_wfopen(dest,L"rb");if(!in)return 0;
+  if(!fgets(line,sizeof(line),in)||
+     strcmp(line,"SpiderMan2k1Fix-Resources-v1\n")){
+    fclose(in);return 0;
+  }
+  for(i=0;i<OWNED_COUNT;i++){
+    DWORD attr;
+    if(!fgets(line,sizeof(line),in)){fclose(in);return 0;}
+    n=strcspn(line,"\r\n");line[n]=0;
+    if(n!=64 || strspn(line,"0123456789abcdef")!=64 ||
+       !combine(path,SPIDER_INSTALLER_PATH,root,owned_paths[i])){
+      fclose(in);return 0;
+    }
+    attr=GetFileAttributesW(path);
+    if(i<3u && attr==INVALID_FILE_ATTRIBUTES &&
+       GetLastError()==ERROR_FILE_NOT_FOUND){
+      message(L"UPGRADE: missing installer-owned runtime DLL %ls; will restore bundled file",
+              owned_paths[i]);
+      continue;
+    }
+    if(!regular_file(path) || !sha256_file(path,hash)){
+      fclose(in);return 0;
+    }
+    if(strcmp(line,hash)){
+      if(i>=3u){fclose(in);return 0;}
+      message(L"UPGRADE: unknown installer-owned DLL %ls; previous bytes will be preserved as .bak",
+              owned_paths[i]);
+    }
+  }
+  if(fgetc(in)!=EOF){fclose(in);return 0;}
+  fclose(in);return 1;
+}
 /* Independent immutable snapshot of the original eight Wise files.
  * These hashes describe the actual owner-supplied retail ISO; only the
  * original EXE has an independently known retail SHA-256 reference. */
