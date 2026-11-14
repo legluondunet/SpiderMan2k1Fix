@@ -929,8 +929,14 @@ int wmain(int argc,wchar_t **argv) {
   }
   if(!combine(gameexe,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe"))goto done;
   if(argc==2 && !wcscmp(argv[1],L"--verify")){
-    result=(verified_retail(gameexe)&&verify_install_receipt(game_dir)&&
-            verify_payloads())?0:1;goto done;
+    if(verified_retail(gameexe)&&verify_install_receipt(game_dir)&&
+       verify_payloads()){
+      message(L"VERIFY: OK supported game EXE, installed resource receipt and 7 bundled components");
+      result=0;
+    }else{
+      message(L"VERIFY: FAILED game EXE, resource receipt or bundled components");
+    }
+    goto done;
   }
   install_only=argc==2 && !wcscmp(argv[1],L"--install-only");
   if(argc==2 && !install_only){
@@ -946,8 +952,12 @@ int wmain(int argc,wchar_t **argv) {
       goto done;
     }
     if(install_only){
-      if(!verify_payloads() && !upgrade_recognized_payloads())goto done;
-      message(L"INSTALL: --install-only existing installation verified/updated; game not launched");
+      if(verify_payloads()){
+        message(L"INSTALL: --install-only existing installation verified; no update needed; game not launched");
+      }else{
+        if(!upgrade_recognized_payloads())goto done;
+        message(L"INSTALL: --install-only authenticated bundled components updated; game not launched");
+      }
       result=0;goto done;
     }
     if(!verify_payloads()){
