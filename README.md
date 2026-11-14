@@ -112,21 +112,16 @@ under Windows CI before publication.
 
 1. Download the [published v2.0.0 launcher](https://github.com/legluondunet/SpiderMan2k1Fix/releases/download/v2.0.0/SpiderMan2k1Fix.exe). Place it beside **one legally owned original**
    `.iso` or `.cue` (keep the `.bin`/`.img` track referenced by the CUE).
-2. Run the launcher. Game files go in `spiderman2001/`; fix resources
-   remain inside `spiderman2001/SpiderMan2k1Fix/`. Legacy installs
-   are renamed safely. `--verify` is read-only; ambiguous
-   folders are refused. Wise setup is skipped.
-3. Later launches verify all eight original game files against their
-   receipt; original files are never auto-repaired. Stable v2.0.0 uses
-   `--install-only` for manual updates. **Unreleased prototypes** update
-   bundled components after verifying both receipts. Unknown `winmm.dll`,
-   `SpiderMan2k1Fix.dll` or `SDL3.dll` bytes in installer-owned locations
-   become one `.bak` per DLL, overwriting any older `.bak`. Unknown
-   non-DLL files or invalid receipts block changes. `--install-only`
-   updates without launching (legacy game receipt enrollment needs the
-   unmodified ISO/CUE). `--verify` is read-only. `--inspect image.iso`
-   or `--inspect image.cue [track.bin|track.img]` creates the inspection
-   log; `--verbose` can be combined with commands.
+2. **Released v2.0.0** installs game data in `SpiderMan2k1Fix/`.
+   **Next-version prototypes** use `spiderman2001/`, with patch files under
+   `spiderman2001/SpiderMan2k1Fix/`. A verified old installation is renamed
+   intact; `--verify` remains read-only. Both folders present: refuse.
+3. Original game files and receipts stay hash-checked. Stable v2.0.0 uses
+   `--install-only` to upgrade. Next-version launchers update verified
+   project components automatically; unknown project DLLs get one replaceable
+   `.bak`. Modified non-DLL files block updates. `--install-only` never
+   launches; `--inspect image.iso` and `--inspect image.cue [track.bin|track.img]`
+   create reports; `--verbose` adds diagnostics.
 
 `SpiderMan2k1Fix_installer.log` and `SpiderMan2k1Fix.log` are both placed
 beside the launcher. No original game files are included in this project.
