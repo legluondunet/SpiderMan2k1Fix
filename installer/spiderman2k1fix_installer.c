@@ -29,6 +29,13 @@
 
 #define RETAIL_EXE_BYTES 1507328ULL
 static const char retail_sha[] = "0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea";
+/* The only original Wise full-install superset supported by this launcher.
+ * The fixed ordering also defines the on-disk game-integrity receipt. */
+#define ORIGINAL_COUNT 8
+static const wchar_t *original_paths[ORIGINAL_COUNT]={
+  L"SpideyPC.exe", L"data.pkr", L"media.pkr", L"texture.dat",
+  L"binkw32.dll", L"Anet.inf", L"SpideyPC.ico", L"Spider-Man Setup.exe"
+};
 static wchar_t launcher_dir[SPIDER_INSTALLER_PATH];
 static wchar_t game_dir[SPIDER_INSTALLER_PATH];
 static wchar_t log_path[SPIDER_INSTALLER_PATH];
@@ -434,6 +441,30 @@ done:
   if(!ok)DeleteFileW(dst);
   return ok;
 }
+/* Hash logical ISO file data directly; never copy a second 450 MB staging
+ * tree merely to authenticate a pre-existing game installation. */
+static int sha256_iso_entry(DiscImage *iso,const DiscEntry *item,char result[65]){
+  HCRYPTPROV provider=0;HCRYPTHASH hash=0;
+  BYTE buffer[SPIDER_INSTALLER_BUFFER],digest[32];
+  ULONGLONG offset=(ULONGLONG)item->lba*SPIDER_INSTALLER_BLOCK,remain=item->bytes;
+  DWORD chunk,sz=sizeof(digest),i;int ok=0;
+  if(!iso_extent(iso,item->lba,item->bytes))return 0;
+  if(!CryptAcquireContextW(&provider,NULL,NULL,PROV_RSA_AES,CRYPT_VERIFYCONTEXT))goto done;
+  if(!CryptCreateHash(provider,CALG_SHA_256,0,0,&hash))goto done;
+  while(remain){
+    chunk=(DWORD)(remain>sizeof(buffer)?sizeof(buffer):remain);
+    if(!read_iso(iso,offset,buffer,chunk)||
+       !CryptHashData(hash,buffer,chunk,0))goto done;
+    offset+=chunk;remain-=chunk;
+  }
+  if(!CryptGetHashParam(hash,HP_HASHVAL,digest,&sz,0)||sz!=32)goto done;
+  for(i=0;i<32;i++)sprintf(result+i*2,"%02x",digest[i]);
+  result[64]=0;ok=1;
+done:
+  if(hash)CryptDestroyHash(hash);
+  if(provider)CryptReleaseContext(provider,0);
+  return ok;
+}
 /* Normal install takes exactly one adjacent original image. CUE metadata
  * identifies its BIN/IMG track internally; users never pass media positional
  * arguments unless performing --inspect. Do not follow reparse points. */
@@ -456,29 +487,15 @@ static int deploy_payloads_to(const wchar_t *root);
 static int verify_payloads(void);
 static int write_install_receipt(const wchar_t *root);
 static int verify_install_receipt(const wchar_t *root);
+static int write_game_receipt(const wchar_t *root);
+static int verify_game_receipt(const wchar_t *root);
 static int upgrade_recognized_payloads(void);
-static int prepare_game_from_iso(DiscImage *iso) {
-  /* This is the COMPLETE Game Files superset recorded in the original
-   * 38,646-byte Wise script of the SHA-verified owner-supplied Setup EXE.
-   * One install-size branch omits media.pkr; the other includes it.
-   * We include media.pkr unconditionally for offline play, and include
-   * texture.dat plus original retail helper files. Spidey.ini was installed
-   * into %WIN%,
-   * not into the game directory; never mutate a system location.
-   * Wise help/DirectX/registry/shortcuts are not needed for first pass.
-   * All files MUST reside in the SAME single directory on the user's CD.
-   * Retail ISO/Wine installation observed; Windows 11 checks remain pending. */
-  static const wchar_t *needed[]={
-    L"SpideyPC.exe",L"data.pkr",L"media.pkr",L"texture.dat",
-    L"binkw32.dll",L"Anet.inf",L"SpideyPC.ico",L"Spider-Man Setup.exe"
-  };
-  enum { REQUIRED_COUNT=sizeof(needed)/sizeof(needed[0]) };
-  DiscEntry *parts[REQUIRED_COUNT],*spidey=NULL;
+/* Common source lookup for fresh installs AND authenticated legacy receipt
+ * enrollment. Do not combine files from multiple ISO directories/editions. */
+static int find_wise_sources(DiscImage *iso,DiscEntry *parts[ORIGINAL_COUNT]){
+  DiscEntry *spidey=NULL;
   wchar_t prefix[256],source[256];
-  wchar_t staging[SPIDER_INSTALLER_PATH],target[SPIDER_INSTALLER_PATH];
-  DWORD n;unsigned i;int ok=0;
-  /* Detect one, and only one, SpideyPC.exe source directory. Do not
-   * silently combine unrelated root/Setup/demo file trees. */
+  DWORD n;unsigned i;
   for(n=0;n<iso->count;n++){
     const wchar_t *basename=wcsrchr(iso->entries[n].name,L'/');
     basename=basename?basename+1:iso->entries[n].name;
@@ -500,10 +517,9 @@ static int prepare_game_from_iso(DiscImage *iso) {
   {wchar_t *slash=wcsrchr(prefix,L'/');if(slash)*slash=0;else prefix[0]=0;}
   message(L"WISE-SOURCE: original file directory=%ls; complete Game Files profile",
           *prefix?prefix:L"(disc root)");
-  for(i=0;i<REQUIRED_COUNT;i++){
-    int count;
-    count=*prefix?_snwprintf(source,256,L"%ls/%ls",prefix,needed[i]):
-                   _snwprintf(source,256,L"%ls",needed[i]);
+  for(i=0;i<ORIGINAL_COUNT;i++){
+    int count=*prefix?_snwprintf(source,256,L"%ls/%ls",prefix,original_paths[i]):
+                      _snwprintf(source,256,L"%ls",original_paths[i]);
     if(count<0 || count>=256)return 0;
     parts[i]=find_disc_file(iso,source);
     if(!parts[i]){
@@ -515,6 +531,25 @@ static int prepare_game_from_iso(DiscImage *iso) {
       return 0;
     }
   }
+  return 1;
+}
+static int prepare_game_from_iso(DiscImage *iso) {
+  /* This is the COMPLETE Game Files superset recorded in the original
+   * 38,646-byte Wise script of the SHA-verified owner-supplied Setup EXE.
+   * One install-size branch omits media.pkr; the other includes it.
+   * We include media.pkr unconditionally for offline play, and include
+   * texture.dat plus original retail helper files. Spidey.ini was installed
+   * into %WIN%,
+   * not into the game directory; never mutate a system location.
+   * Wise help/DirectX/registry/shortcuts are not needed for first pass.
+   * All files MUST reside in the SAME single directory on the user's CD.
+   * Original retail ISO installations observed under Wine and Windows 11. */
+  enum { REQUIRED_COUNT=ORIGINAL_COUNT };
+  DiscEntry *parts[REQUIRED_COUNT];
+  const wchar_t *const *needed=original_paths;
+  wchar_t staging[SPIDER_INSTALLER_PATH],target[SPIDER_INSTALLER_PATH];
+  unsigned i;int ok=0;
+  if(!find_wise_sources(iso,parts))return 0;
   if(!combine(staging,SPIDER_INSTALLER_PATH,launcher_dir,
               L"SpiderMan2k1Fix.installing"))return 0;
   if(GetFileAttributesW(game_dir)!=INVALID_FILE_ATTRIBUTES ||
@@ -532,8 +567,9 @@ static int prepare_game_from_iso(DiscImage *iso) {
   }
   if(!combine(target,SPIDER_INSTALLER_PATH,staging,L"SpideyPC.exe")||
      !verified_retail(target))goto abort;
-  if(!deploy_payloads_to(staging) || !write_install_receipt(staging)){
-    message(L"INSTALL: cannot stage embedded runtimes or owner receipt");goto abort;
+  if(!deploy_payloads_to(staging) || !write_install_receipt(staging) ||
+     !write_game_receipt(staging) || !verify_game_receipt(staging)){
+    message(L"INSTALL: cannot stage embedded runtimes or both integrity receipts");goto abort;
   }
   if(!MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH)){
     message(L"INSTALL: cannot publish fully staged directory Win32=%lu",
@@ -550,7 +586,8 @@ abort:
       L"SpiderMan2k1Fix\\README.md",
       L"SpiderMan2k1Fix\\CHANGELOG.md",
       L"SpiderMan2k1Fix\\linux\\spiderman-focus-helper",
-      L"SpiderMan2k1Fix\\installed-resources.sha256"
+      L"SpiderMan2k1Fix\\installed-resources.sha256",
+      L"SpiderMan2k1Fix\\installed-game.sha256"
     };
     for(i=0;i<REQUIRED_COUNT;i++)
       if(combine(target,SPIDER_INSTALLER_PATH,staging,needed[i]))
@@ -713,6 +750,119 @@ static int verify_install_receipt(const wchar_t *root){
   if(fgetc(in)!=EOF){fclose(in);return 0;}
   fclose(in);return 1;
 }
+/* Independent immutable snapshot of the original eight Wise files.
+ * These hashes describe the actual owner-supplied retail ISO; only the
+ * original EXE has an independently known retail SHA-256 reference. */
+static const wchar_t *game_receipt_name=L"SpiderMan2k1Fix\\installed-game.sha256";
+static int game_file_info(const wchar_t *path,ULONGLONG *bytes,char hash[65]){
+  WIN32_FILE_ATTRIBUTE_DATA attr;ULARGE_INTEGER size;
+  if(!regular_file(path) ||
+     !GetFileAttributesExW(path,GetFileExInfoStandard,&attr))return 0;
+  size.LowPart=attr.nFileSizeLow;size.HighPart=attr.nFileSizeHigh;
+  if(!sha256_file(path,hash))return 0;
+  *bytes=size.QuadPart;return 1;
+}
+/* CREATE_NEW + no replace: enrollment can only add a missing receipt.
+ * Interrupted creation leaves at most a distinct .new-PID file. */
+static int write_game_receipt(const wchar_t *root){
+  wchar_t dest[SPIDER_INSTALLER_PATH],temp[SPIDER_INSTALLER_PATH];
+  wchar_t path[SPIDER_INSTALLER_PATH];
+  char content[ORIGINAL_COUNT*100+64],hash[65];
+  size_t used;ULONGLONG bytes;unsigned i;
+  HANDLE file=INVALID_HANDLE_VALUE;DWORD written=0;
+  int n,ok=0;
+  if(!combine(dest,SPIDER_INSTALLER_PATH,root,game_receipt_name) ||
+     GetFileAttributesW(dest)!=INVALID_FILE_ATTRIBUTES)return 0;
+  n=snprintf(content,sizeof(content),"SpiderMan2k1Fix-Game-v1\n");
+  if(n<0||(size_t)n>=sizeof(content))return 0;
+  used=(size_t)n;
+  for(i=0;i<ORIGINAL_COUNT;i++){
+    if(!combine(path,SPIDER_INSTALLER_PATH,root,original_paths[i])||
+       !game_file_info(path,&bytes,hash))return 0;
+    n=snprintf(content+used,sizeof(content)-used,"%llu %s\n",
+               (unsigned long long)bytes,hash);
+    if(n<0||(size_t)n>=sizeof(content)-used)return 0;
+    used+=(size_t)n;
+  }
+  n=_snwprintf(temp,SPIDER_INSTALLER_PATH,L"%ls.new-%lu",dest,GetCurrentProcessId());
+  if(n<0||(size_t)n>=SPIDER_INSTALLER_PATH)return 0;
+  file=CreateFileW(temp,GENERIC_WRITE,0,NULL,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,NULL);
+  if(file==INVALID_HANDLE_VALUE)return 0;
+  if(WriteFile(file,content,(DWORD)used,&written,NULL) && written==used &&
+     FlushFileBuffers(file))ok=1;
+  CloseHandle(file);
+  if(ok && MoveFileExW(temp,dest,MOVEFILE_WRITE_THROUGH))return 1;
+  DeleteFileW(temp);return 0;
+}
+static int verify_game_receipt(const wchar_t *root){
+  wchar_t dest[SPIDER_INSTALLER_PATH],path[SPIDER_INSTALLER_PATH];
+  char line[160],expected[65],actual[65],extra;
+  unsigned long long size;ULONGLONG installed_bytes;
+  unsigned i;FILE *in;int good=0;
+  if(!combine(dest,SPIDER_INSTALLER_PATH,root,game_receipt_name)||
+     !regular_file(dest))return 0;
+  in=_wfopen(dest,L"rb");if(!in)return 0;
+  if(!fgets(line,sizeof(line),in) ||
+     strcmp(line,"SpiderMan2k1Fix-Game-v1\n"))goto done;
+  for(i=0;i<ORIGINAL_COUNT;i++){
+    if(!fgets(line,sizeof(line),in) ||
+       sscanf(line,"%llu %64[0-9a-f] %c",&size,expected,&extra)!=2 ||
+       strlen(expected)!=64 ||
+       !combine(path,SPIDER_INSTALLER_PATH,root,original_paths[i]) ||
+       !game_file_info(path,&installed_bytes,actual) ||
+       installed_bytes!=(ULONGLONG)size || strcmp(expected,actual)){
+      message(L"VERIFY: original game file missing/altered: %ls",original_paths[i]);
+      goto done;
+    }
+  }
+  if(fgetc(in)==EOF)good=1;
+done:
+  fclose(in);return good;
+}
+/* Enroll an installation made by the previous 2.0 prototype only when
+ * the user's ORIGINAL adjacent ISO/CUE is available. Every installed
+ * game byte is compared to its CD counterpart, never to a self-generated
+ * hash of an unverified existing directory. Never rewrite any game file. */
+static int enroll_game_receipt_from_disc(void){
+  wchar_t disc[SPIDER_INSTALLER_PATH],path[SPIDER_INSTALLER_PATH];
+  wchar_t receipt[SPIDER_INSTALLER_PATH];
+  DiscImage iso;DiscEntry *parts[ORIGINAL_COUNT];
+  char cdhash[65],filehash[65];ULONGLONG installed_bytes;
+  unsigned i;int scan,ok=0;
+  if(!combine(receipt,SPIDER_INSTALLER_PATH,game_dir,game_receipt_name))return 0;
+  if(GetFileAttributesW(receipt)!=INVALID_FILE_ATTRIBUTES){
+    message(L"VERIFY: game receipt already exists; refusing replacement");return 0;
+  }
+  scan=find_adjacent_disc(disc,SPIDER_INSTALLER_PATH);
+  if(scan!=1){
+    message(L"ENROLL: place exactly one original ISO/CUE beside launcher and retry --install-only (state=%d)",scan);
+    return 0;
+  }
+  message(L"ENROLL: checking existing eight game files against original ISO/CUE");
+  if(!iso_open(&iso,disc,NULL)){iso_close(&iso);return 0;}
+  if(!find_wise_sources(&iso,parts))goto done;
+  for(i=0;i<ORIGINAL_COUNT;i++){
+    if(!combine(path,SPIDER_INSTALLER_PATH,game_dir,original_paths[i])||
+       !game_file_info(path,&installed_bytes,filehash) ||
+       installed_bytes!=parts[i]->bytes ||
+       !sha256_iso_entry(&iso,parts[i],cdhash) ||
+       strcmp(filehash,cdhash) ||
+       (i==0 && strcmp(cdhash,retail_sha))){
+      message(L"ENROLL: original file mismatch or unreadable: %ls; no changes made",
+              original_paths[i]);
+      goto done;
+    }
+  }
+  if(!write_game_receipt(game_dir)){
+    message(L"ENROLL: cannot publish immutable game receipt; no game files touched");
+    goto done;
+  }
+  ok=verify_game_receipt(game_dir);
+  if(ok)message(L"ENROLL: OK eight original game files match CD, game receipt written");
+done:
+  iso_close(&iso);
+  return ok;
+}
 static void discard_upgrade_staging(const wchar_t *staging){
   wchar_t path[SPIDER_INSTALLER_PATH];unsigned i;
   for(i=0;i<OWNED_COUNT;i++){
@@ -833,9 +983,9 @@ static int launch_game(int verify_exe){
 static void usage(void){
   message(L"SpiderMan2k1Fix v%hs (standalone retail ISO installer)",SPIDERMAN2K1FIX_VERSION);
   message(L"SpiderMan2k1Fix.exe                   Automatic install/verify/launch");
-  message(L"SpiderMan2k1Fix.exe --install-only    Install/verify recognized CD without playing");
+  message(L"SpiderMan2k1Fix.exe --install-only    Install/upgrade; enroll legacy game receipt from original ISO");
   message(L"SpiderMan2k1Fix.exe --launch-no-verify  Direct launch without file checks");
-  message(L"SpiderMan2k1Fix.exe --verify          Read-only installed-file checks");
+  message(L"SpiderMan2k1Fix.exe --verify          Read-only SHA-256 checks for 8 game files + 7 resources");
   message(L"SpiderMan2k1Fix.exe --inspect image.iso");
   message(L"SpiderMan2k1Fix.exe --inspect image.cue [track.bin|track.img]");
   message(L"SpiderMan2k1Fix.exe --verbose         Extra diagnostics (combinable)");
@@ -931,11 +1081,11 @@ int wmain(int argc,wchar_t **argv) {
   if(!combine(gameexe,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe"))goto done;
   if(argc==2 && !wcscmp(argv[1],L"--verify")){
     if(verified_retail(gameexe)&&verify_install_receipt(game_dir)&&
-       verify_payloads()){
-      message(L"VERIFY: OK supported game EXE, installed resource receipt and 7 bundled components");
+       verify_game_receipt(game_dir)&&verify_payloads()){
+      message(L"VERIFY: OK original game EXE, 8 game files/receipt, 7 bundled components/receipt");
       result=0;
     }else{
-      message(L"VERIFY: FAILED game EXE, resource receipt or bundled components");
+      message(L"VERIFY: FAILED game EXE, 8 game files/receipt or bundled components");
     }
     goto done;
   }
@@ -950,6 +1100,24 @@ int wmain(int argc,wchar_t **argv) {
      * Updates remain strictly opt-in, using only receipt-verified prior bytes. */
     if(!verified_retail(gameexe) || !verify_install_receipt(game_dir)){
       message(L"VERIFY: missing or invalid install receipt; no changes made");
+      goto done;
+    }
+    /* Legacy installations cannot mint a self-asserted game receipt.
+     * Only --install-only may enroll against an unchanged original ISO;
+     * a present but corrupt receipt must never be replaced or adopted. */
+    if(install_only && !verify_game_receipt(game_dir)){
+      wchar_t receipt[SPIDER_INSTALLER_PATH];DWORD attr;
+      if(!combine(receipt,SPIDER_INSTALLER_PATH,game_dir,game_receipt_name))
+        goto done;
+      attr=GetFileAttributesW(receipt);
+      if(attr!=INVALID_FILE_ATTRIBUTES || GetLastError()!=ERROR_FILE_NOT_FOUND){
+        message(L"VERIFY: existing game receipt invalid; refusing replacement");
+        goto done;
+      }
+      if(!enroll_game_receipt_from_disc())goto done;
+    }
+    if(!verify_game_receipt(game_dir)){
+      message(L"VERIFY: original game data missing/modified or receipt absent; no changes made");
       goto done;
     }
     if(install_only){

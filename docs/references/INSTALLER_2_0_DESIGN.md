@@ -26,6 +26,7 @@ SpiderMan2k1Fix/
     SDL3-LICENSE.txt
     README.md, CHANGELOG.md
     installed-resources.sha256     # exact managed-runtime provenance
+    installed-game.sha256          # eight original game file sizes + SHA-256
     SpiderMan2k1Fix.ini            # created by game, user-mutable
     linux/spiderman-focus-helper  # native observer; optional under Wine
 ```
@@ -71,13 +72,18 @@ is 1,507,328 bytes, SHA-256
 - Bounded ISO9660/Joliet and read-only CUE raw-sector inspection. Reject
   invalid extents, cyclic records, unsafe names and ambiguous adjacent
   images. No CD mounting or execution of legacy `Autorun.exe`/`Setup.exe`.
-- Exact retail executable SHA-256 and managed-resource receipt required
-  before verifying or launching an installed game; refuse unverifiable
-  pre-release prototype directories rather than silently creating trust.
+- Exact retail executable SHA-256, seven-resource receipt and eight-original-file
+  SHA-256/size receipt required before verifying or launching an installed
+  game. Earlier standalone prototypes without a game receipt require
+  `--install-only` with the original adjacent ISO/CUE. Each of the eight
+  existing game files is SHA-compared directly against the image; an
+  invalid/present receipt is never overwritten. This proves equivalence
+  to that image, **not independently authenticated PKR hashes**.
 - First installation atomically publishes the verified original files,
-  embedded components and an exact `installed-resources.sha256` receipt.
-  Subsequent **normal launches** and `--verify` require this receipt and
-  are verification-only; only explicitly requested `--install-only`
+  embedded components and both `installed-resources.sha256` and
+  `installed-game.sha256` receipts. Subsequent **normal launches** and
+  `--verify` require both receipts and hash all eight game files plus
+  seven owned resources; only explicitly requested `--install-only`
   may update receipt-authenticated components.
   Unknown files or third-party binaries are never silently replaced.
 - Game working directory is the install directory. On Wine the game child
@@ -135,9 +141,10 @@ committed or distributed with this project.
 
 1. The authentic Wise `Setup/` original-disc source layout and eight-file
    installation succeeded under Wine. The original executable SHA-256 matched.
-2. Before calling `--verify` a full data-integrity audit, add a provenance
-   receipt and read-only hash checks for all eight retail game files, not
-   only the original EXE and seven embedded project resources.
+2. **Implemented in the integrity follow-up:** separate game-data receipt
+   with SHA-256/size for all eight Wise retail files; explicit legacy
+   enrollment is anchored to a matching adjacent ISO/CUE and the supported
+   original EXE hash. Runtime smoke testing of this change is still required.
 3. Exercise malformed ISO/CUE, missing source files, interrupted install,
    receipt tampering and rollback paths with executable automated tests.
 4. The [merged-main standalone CI](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/43583076518)
@@ -147,9 +154,10 @@ committed or distributed with this project.
    The developer DLL workflow remains useful, but its unused pre-2.0
    versioned release ZIP is now retired. It is not the stable installer.
 
-5. The archived Wine gameplay log demonstrates actual graphics, audio,
-   controllers and Alt+Tab, but not a separate clean-process-exit trace.
-   A clean Windows 11 ISO installation was not demonstrated.
+5. Newer Windows 11 logs demonstrate native original-ISO installation,
+   graphics, SDL3 controller selection, audio and Alt+Tab; the launcher
+   reported a game process exit code of 0. The runtime log does not
+   contain a distinct clean-shutdown marker.
 6. Publication of `v2.0.0` is a separate, explicit action only after
    the remaining acceptance limitations have been assessed. The CI
    candidate workflow does **not** tag or publish releases.

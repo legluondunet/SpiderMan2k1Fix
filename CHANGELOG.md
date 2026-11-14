@@ -99,11 +99,19 @@ release is published.
   [standalone](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/43583076518)
   and [DLL/regression](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/43583076531)
   CI passed on merged main `1e5b0d2`.
-- **Remaining gates:** original CD data-integrity checks, executable malformed
-  ISO/CUE and rollback tests, native Windows 11 original-ISO installation and
-  independently observed final game exit. `--verify` authenticates the game
-  EXE and bundled resources but does **not** verify all PKR/game data. Issue
-  #149 is closed after implementation; the stable release is not published.
+- **Original game integrity:** new `installed-game.sha256` receipt records
+  SHA-256 and size of all eight retail Wise files. Fresh ISO installs write
+  it before publishing; `--verify` and normal launches check it read-only.
+  Earlier v2 test installations can enroll **only** using `--install-only`
+  with the unchanged adjacent original ISO/CUE, after comparing every byte
+  hash and the known original EXE SHA-256; altered or missing files are refused.
+  Receipt hashes prove consistency with the supplied CD image, not independent
+  authenticity of the other seven retail assets.
+- **Remaining gates:** executable malformed ISO/CUE and interrupted-install
+  rollback tests. The maintainer has since confirmed an original-ISO native
+  Windows 11 installation, SDL3/gameplay and launcher exit code 0, but this
+  does not replace the remaining negative-path checks. Issue #149 is closed;
+  the stable release is not yet published.
 - Open post-release investigations: missing W lightning on the NEW YORK
   sign (#146), unexpectedly moving shadows (#147) and bank window
   glass-break audio order (#145). Their causes are not established.
