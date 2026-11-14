@@ -19,6 +19,8 @@
 #define SPIDER_INSTALLER_BLOCK 2048u
 #define SPIDER_INSTALLER_BUFFER 65536u
 #define SPIDER_INSTALLER_PATH 1024u
+#define SPIDER_GAME_DIR L"spiderman2001"
+#define SPIDER_LEGACY_DIR L"SpiderMan2k1Fix"
 #define RES_WINMM 1101
 #define RES_FIX 1102
 #define RES_SDL3 1103
@@ -41,6 +43,7 @@ static wchar_t game_dir[SPIDER_INSTALLER_PATH];
 static wchar_t log_path[SPIDER_INSTALLER_PATH];
 static FILE *logfile;
 static int verbose_mode;
+static int game_dir_is_legacy;
 
 typedef struct DiscEntry {
   wchar_t name[256];
@@ -93,6 +96,44 @@ static int safe_directory(const wchar_t *path,int make) {
   }
   return attr!=INVALID_FILE_ATTRIBUTES && (attr&FILE_ATTRIBUTE_DIRECTORY) &&
          !(attr&FILE_ATTRIBUTE_REPARSE_POINT);
+}
+/* Choose exactly one non-reparse game directory, never an ambiguous pair. */
+static int select_game_directory(void){
+  wchar_t next[SPIDER_INSTALLER_PATH],old[SPIDER_INSTALLER_PATH];
+  DWORD n,o;
+  if(!combine(next,SPIDER_INSTALLER_PATH,launcher_dir,SPIDER_GAME_DIR) ||
+     !combine(old,SPIDER_INSTALLER_PATH,launcher_dir,SPIDER_LEGACY_DIR))return 0;
+  n=GetFileAttributesW(next);o=GetFileAttributesW(old);
+  if(n!=INVALID_FILE_ATTRIBUTES && o!=INVALID_FILE_ATTRIBUTES){
+    message(L"INSTALL: both spiderman2001 and legacy SpiderMan2k1Fix exist; ambiguous; no changes made");
+    return 0;
+  }
+  if((n!=INVALID_FILE_ATTRIBUTES && !safe_directory(next,0)) ||
+     (o!=INVALID_FILE_ATTRIBUTES && !safe_directory(old,0))){
+    message(L"INSTALL: unsafe game directory; no changes made");return 0;
+  }
+  game_dir_is_legacy=o!=INVALID_FILE_ATTRIBUTES;
+  wcscpy(game_dir,game_dir_is_legacy?old:next);
+  return 1;
+}
+/* Only after original retail EXE + both receipts are verified: rename the
+ * whole game tree atomically, preserving saves, INI, extra files and DLLs.
+ * Never overwrite an occupied destination or copy partial game resources. */
+static int migrate_legacy_game_directory(void){
+  wchar_t next[SPIDER_INSTALLER_PATH];
+  if(!game_dir_is_legacy)return 1;
+  if(!combine(next,SPIDER_INSTALLER_PATH,launcher_dir,SPIDER_GAME_DIR) ||
+     !safe_directory(game_dir,0) ||
+     GetFileAttributesW(next)!=INVALID_FILE_ATTRIBUTES){
+    message(L"MIGRATE: unsafe source or occupied target; no changes made");return 0;
+  }
+  if(!MoveFileExW(game_dir,next,MOVEFILE_WRITE_THROUGH)){
+    message(L"MIGRATE: cannot rename old game folder to spiderman2001; Win32=%lu",
+            GetLastError());return 0;
+  }
+  wcscpy(game_dir,next);game_dir_is_legacy=0;
+  message(L"MIGRATE: verified legacy folder renamed to spiderman2001; saves/INI intact");
+  return 1;
 }
 static int extension_is(const wchar_t *s,const wchar_t *ext) {
   const wchar_t *dot=wcsrchr(s,L'.');return dot&&!_wcsicmp(dot,ext);
@@ -551,7 +592,7 @@ static int prepare_game_from_iso(DiscImage *iso) {
   unsigned i;int ok=0;
   if(!find_wise_sources(iso,parts))return 0;
   if(!combine(staging,SPIDER_INSTALLER_PATH,launcher_dir,
-              L"SpiderMan2k1Fix.installing"))return 0;
+              L"spiderman2001.installing"))return 0;
   if(GetFileAttributesW(game_dir)!=INVALID_FILE_ATTRIBUTES ||
      GetFileAttributesW(staging)!=INVALID_FILE_ATTRIBUTES){
     message(L"INSTALL: target/staging already exists; refuse overwriting user data");
@@ -1153,7 +1194,7 @@ static int launch_game(int verify_exe){
 }
 static void usage(void){
   message(L"SpiderMan2k1Fix v%hs (standalone retail ISO installer)",SPIDERMAN2K1FIX_VERSION);
-  message(L"SpiderMan2k1Fix.exe                   Automatic install/verify/launch");
+  message(L"SpiderMan2k1Fix.exe                   Install/verify/launch in spiderman2001/");
   message(L"SpiderMan2k1Fix.exe --install-only    Install/upgrade; enroll legacy game receipt from original ISO");
   message(L"SpiderMan2k1Fix.exe --launch-no-verify  Direct launch without file checks");
   message(L"SpiderMan2k1Fix.exe --verify          Read-only SHA-256 checks for 8 game files + 7 resources");
@@ -1196,7 +1237,7 @@ int wmain(int argc,wchar_t **argv) {
   }
   argc=clean;
   inspect=(argc>=2 && !wcscmp(argv[1],L"--inspect"));
-  if(!combine(game_dir,SPIDER_INSTALLER_PATH,launcher_dir,L"SpiderMan2k1Fix")||
+  if(!combine(game_dir,SPIDER_INSTALLER_PATH,launcher_dir,SPIDER_GAME_DIR)||
      !combine(log_path,SPIDER_INSTALLER_PATH,launcher_dir,
               inspect?L"SpiderMan2k1Fix_inspect.log":L"SpiderMan2k1Fix_installer.log"))
     return 2;
@@ -1204,8 +1245,6 @@ int wmain(int argc,wchar_t **argv) {
   if(!logfile)return 2;
   message(L"START: SpiderMan2k1Fix v%hs mode=%ls verbose=%d",
     SPIDERMAN2K1FIX_VERSION,inspect?L"inspect":L"installer",verbose_mode);
-  if(verbose_mode)message(L"VERBOSE: launcher=%ls game_directory=%ls",
-                           launcher_dir,game_dir);
   if(inspect){
     if((argc!=3 && argc!=4)||
        (!extension_is(argv[2],L".iso")&&!extension_is(argv[2],L".cue")) ||
@@ -1245,6 +1284,8 @@ int wmain(int argc,wchar_t **argv) {
   if(argc==2 && (!wcscmp(argv[1],L"--help")||
                  !wcscmp(argv[1],L"-h"))){usage();result=0;goto done;}
   if(argc==2 && !wcscmp(argv[1],L"--version")){result=0;goto done;}
+  if(!select_game_directory())goto done;
+  if(verbose_mode)message(L"VERBOSE: launcher=%ls game_directory=%ls",launcher_dir,game_dir);
   if(argc==2 && !wcscmp(argv[1],L"--launch-no-verify")){
     message(L"LAUNCH: --launch-no-verify; no file presence or integrity preflight");
     result=launch_game(0)?0:1;goto done;
@@ -1293,6 +1334,8 @@ int wmain(int argc,wchar_t **argv) {
       message(L"VERIFY: original game data missing/modified or receipt absent; no changes made");
       goto done;
     }
+    /* --verify is read-only; only valid game+receipt may move. */
+    if(!migrate_legacy_game_directory())goto done;
     if(install_only){
       if(verify_payloads()){
         message(L"INSTALL: --install-only existing installation verified; no update needed; game not launched");
