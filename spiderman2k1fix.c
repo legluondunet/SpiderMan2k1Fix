@@ -5302,6 +5302,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
     (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
     ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
       native_pause43_visible_near_flip(count) ||
+      native_pause_source_visible_near_flip(count) ||
       InterlockedCompareExchange(&pause_latched,0,0)==1 ||
       InterlockedCompareExchange(&pause_in_progress,0,0)==1));
   /* Experimental SDL3 semantic action probe is strictly read-only and
@@ -5313,6 +5314,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
     (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
     ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
       native_pause43_visible_near_flip(count) ||
+      native_pause_source_visible_near_flip(count) ||
       InterlockedCompareExchange(&pause_latched,0,0)==1 ||
       InterlockedCompareExchange(&pause_in_progress,0,0)==1));
   /* Experimental OFF-by-default normalized SDL3 profile -> game
@@ -5324,6 +5326,7 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
     (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
     ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
       native_pause43_visible_near_flip(count) ||
+      native_pause_source_visible_near_flip(count) ||
       InterlockedCompareExchange(&pause_latched,0,0)==1 ||
       InterlockedCompareExchange(&pause_in_progress,0,0)==1));
   /* Passive, bounded post-hotplug heartbeat: menu -> 3D -> menu. */
