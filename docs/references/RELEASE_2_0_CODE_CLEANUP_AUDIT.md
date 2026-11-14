@@ -49,6 +49,44 @@ validated original-CD installer based solely on source review or CI.
    and mixed ISO/CUE media discovery. Kept the existing DLL build/CI checks
    intact instead of removing active compatibility modules based on names.
 
+## First retail-ISO installation evidence — owner Wine log
+
+The maintainer supplied `SpiderMan2k1Fix_installer.log` from a first real
+installation using the draft standalone 2.0.0 launcher, dated November 14,
+2026 in the present review. This **is evidence of an end-to-end copy,
+verified original game executable and successful launcher process exit**,
+not of gameplay, all runtime features or a clean Windows 11 installation.
+
+- Original CD filesystem: `SPIDERMAN`, ISO9660+Joliet, 694,661,120
+  bytes (662.48 MiB). The reader enumerated 313 filesystem entries,
+  293 regular files.
+- Exact original Wise source directory is **`Setup/`**. Source names,
+  lengths (bytes) and file copy success:
+  `SpideyPC.exe` 1,507,328; `data.pkr` 166,992,524;
+  `media.pkr` 290,302,112; `texture.dat` 40;
+  `binkw32.dll` 299,571; `anet.inf` 289;
+  `SpideyPC.ico` 3,310; `Spider-Man Setup.exe` 45,056.
+- Retail executable SHA-256 after extraction:
+  `0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea`
+  (matched supported hash).
+- All seven bundled project-owned files were written; `winmm.dll`
+  173,568 bytes, `SpiderMan2k1Fix.dll` 1,043,456 bytes,
+  `SDL3.dll` 2,361,344 bytes; SDL3 license, Linux X11 helper,
+  README and CHANGELOG also deployed.
+- Launcher reports `LAUNCH: game exit code=0` and `END: status=0`.
+  **The owner did not run `--install-only` in this captured session**,
+  since `SpideyPC.exe` was started.
+- No filesystem errors, missing-file diagnostics or mismatched original
+  EXE signature were reported. The experiment does not establish the
+  game's actual rendered startup, audio/inputs, runtime log content,
+  source media checksums, or Windows 11 compatibility.
+
+This closes the **unknown CD source directory** gap for the owner's
+specific ISO and validates copying the recovered Wise full-install list
+in one Wine environment. Keep the other below-mentioned release gates.
+Never commit the original ISO, commercial game assets or the owner's
+local filesystem path.
+
 ## Code-review findings that are NOT yet release-validated
 
 - **Original game data integrity:** the current `--verify` gate verifies
@@ -58,11 +96,12 @@ validated original-CD installer based solely on source review or CI.
   per-file source hash/size receipt. A later-deleted data archive can escape
   this verifier. A full retail data receipt and read-only verification tests
   are needed before describing `--verify` as a complete game-integrity audit.
-- **Original image acceptance:** the original `Setup.exe` Wise script was
-  inspected and its file copy map recovered, but an actual supported ISO/CUE
-  has not been provided for end-to-end source layout, extraction and real-game
-  launch tests. This also blocks proving that legacy registry/DirectX/INI
-  actions can be omitted for this edition.
+- **Original image acceptance:** the owner's authentic Spider-Man ISO
+  has now been inspected and its exact `Setup/` source layout copied
+  successfully under Wine; the original EXE hash and game-process exit code
+  were confirmed. Still unproven: full in-game runtime/session behavior,
+  a second image edition, clean-prefix registry/DirectX/INI independence,
+  and a native Windows 11 installation.
 - **Negative tests:** static CLI checks and a successful cross-build are not
   substitutes for runnable synthetic/malformed ISO and CUE scenarios:
   missing files, duplicate names, forged extents, truncated media,
