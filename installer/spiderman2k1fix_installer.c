@@ -1156,10 +1156,45 @@ static int upgrade_recognized_payloads(void){
   discard_upgrade_staging(staging);
   return 0;
 }
+/* Preserve independent evidence of an actual game-process exception.
+ * The next ordinary launch truncates SpiderMan2k1Fix.log, which otherwise
+ * irreversibly erases the first-failure evidence. Never overwrite an older
+ * crash record or treat an unchanged, stale game log as new evidence. */
+static void preserve_crashed_game_log(
+    DWORD code,const wchar_t *runtime_log,
+    const WIN32_FILE_ATTRIBUTE_DATA *before,int existed){
+  WIN32_FILE_ATTRIBUTE_DATA after;
+  wchar_t target[SPIDER_INSTALLER_PATH];
+  if((code&0xC0000000UL)!=0xC0000000UL)return;
+  message(L"LAUNCH: child exception status=0x%08lX (Windows NTSTATUS; inspect runtime diagnostics)",
+          (unsigned long)code);
+  if(!GetFileAttributesExW(runtime_log,GetFileExInfoStandard,&after) ||
+     (after.dwFileAttributes&(FILE_ATTRIBUTE_DIRECTORY|FILE_ATTRIBUTE_REPARSE_POINT)) ||
+     (existed &&
+       CompareFileTime(&before->ftLastWriteTime,&after.ftLastWriteTime)==0 &&
+       before->nFileSizeLow==after.nFileSizeLow &&
+       before->nFileSizeHigh==after.nFileSizeHigh)){
+    message(L"LAUNCH: no fresh game runtime log; no crash snapshot copied");
+    return;
+  }
+  if(!combine(target,SPIDER_INSTALLER_PATH,launcher_dir,
+              L"SpiderMan2k1Fix_failed-launch.log"))return;
+  if(CopyFileW(runtime_log,target,TRUE))
+    message(L"LAUNCH: failed-run runtime log preserved as SpiderMan2k1Fix_failed-launch.log");
+  else if(GetLastError()==ERROR_FILE_EXISTS)
+    message(L"LAUNCH: previous failed-run log already preserved; not overwritten");
+  else
+    message(L"LAUNCH: cannot preserve failed-run log Win32=%lu",GetLastError());
+}
 static int launch_game(int verify_exe){
   wchar_t path[SPIDER_INSTALLER_PATH],cmd[SPIDER_INSTALLER_PATH+4];
   STARTUPINFOW si;PROCESS_INFORMATION pi;DWORD exit_code=0;
-  if(!combine(path,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe"))return 0;
+  wchar_t runtime_log[SPIDER_INSTALLER_PATH];
+  WIN32_FILE_ATTRIBUTE_DATA log_before;
+  int had_prior_log=0;
+  if(!combine(path,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe") ||
+     !combine(runtime_log,SPIDER_INSTALLER_PATH,launcher_dir,
+              L"SpiderMan2k1Fix.log"))return 0;
   /* Normal starts remain SHA-256 locked. The explicit diagnostic override
    * skips all launcher-side checks without modifying/injecting any game
    * executable. The OS still requires a real runnable process. */
@@ -1182,6 +1217,7 @@ static int launch_game(int verify_exe){
   if(!SetEnvironmentVariableW(L"SPIDERMAN2K1FIX_LAUNCHER_DIR",launcher_dir)){
     message(L"LAUNCH: cannot set runtime log directory");return 0;
   }
+  had_prior_log=GetFileAttributesExW(runtime_log,GetFileExInfoStandard,&log_before)!=0;
   message(L"LAUNCH: %ls; runtime log beside standalone launcher",path);
   if(!CreateProcessW(path,cmd,NULL,NULL,FALSE,0,NULL,game_dir,&si,&pi)){
     message(L"LAUNCH: CreateProcess failed Win32=%lu",GetLastError());return 0;
@@ -1190,6 +1226,7 @@ static int launch_game(int verify_exe){
   if(!GetExitCodeProcess(pi.hProcess,&exit_code)){CloseHandle(pi.hProcess);return 0;}
   CloseHandle(pi.hProcess);
   message(L"LAUNCH: game exit code=%lu",exit_code);
+  preserve_crashed_game_log(exit_code,runtime_log,&log_before,had_prior_log);
   return exit_code==0;
 }
 static void usage(void){
