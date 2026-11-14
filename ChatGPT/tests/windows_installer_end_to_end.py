@@ -390,12 +390,23 @@ def fixture_legacy_rename_and_ambiguity(base: Path, fixture: Path) -> None:
     log = execute(exe, "--verify", success=True)
     assert "VERIFY: OK original game EXE" in log
     assert old.exists() and not new.exists()
+    # Exercise the exact first-launch shape reported on Windows 11:
+    # an authentic legacy tree AND a changed installer-owned winmm.dll
+    # must be renamed and upgraded within one launcher invocation.
+    old_winmm = (old / "winmm.dll").read_bytes()
+    unknown_winmm = b"MZ-unknown-old-winmm-first-migration"
+    (old / "winmm.dll").write_bytes(unknown_winmm)
+    (old / "winmm.dll.bak").write_bytes(b"MZ-older-previous-backup")
     # Explicit install upgrades and migrates only after game receipts verify.
     log = execute(exe, "--install-only", success=True)
+    assert "UPGRADE: previous DLL winmm.dll saved as .bak" in log
     assert "MIGRATE: verified legacy folder renamed to spiderman2001" in log
     assert not old.exists() and new.is_dir()
     assert (new / "user-saves/slot.dat").read_bytes() == b"preserve-this-save"
     assert (new / "Spidey.ini").read_bytes() == b"custom-settings"
+    assert (new / "winmm.dll").read_bytes() == old_winmm
+    assert (new / "winmm.dll.bak").read_bytes() == unknown_winmm
+    assert len(list(new.glob("winmm.dll.bak*"))) == 1
     assert (new / "SpiderMan2k1Fix/installed-game.sha256").read_bytes() == old_manifest
     execute(exe, "--verify", success=True)
 
