@@ -107,7 +107,9 @@ static int native_pause_source_remap_original_4x3(
     IDirectDrawSurface7_Release(texture);
   }
   if(!SpiderPauseSource_Material(v[0].z,v[0].rhw,v[0].diffuse,
-                                 width,height,bound))return 0;
+                                 width,height,bound) &&
+     !( !bound && SpiderNativePause43_RibbonLayer(v[0].z,v[0].rhw)))
+    return 0;
   top=InterlockedCompareExchange(&native_pause_source_top,0,0);
   bottom=InterlockedCompareExchange(&native_pause_source_bottom,0,0);
   /* Relative bounds from the observed original ribbon, never a level. */
