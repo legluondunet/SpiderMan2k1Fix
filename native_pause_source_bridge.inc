@@ -30,6 +30,8 @@ static void native_pause_source_observe_ribbon(
      fvf!=0x144UL ||
      InterlockedCompareExchange(&menu_upscale_active,0,0)!=0 ||
      InterlockedCompareExchange(&fov_game_height,0,0)<=0 ||
+     /* Original GameFMV_Active: cinematic owner must never claim Pause. */
+     (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u ||
      !geom_rva(caller,&rva) || rva!=0x00102C72UL ||
      desktop_w<640u || desktop_h<480u)return;
   if(!SpiderPauseSource_RibbonMaterial(v[0].z,v[0].rhw,v[0].diffuse) &&
