@@ -165,6 +165,10 @@ $lines = New-Object 'System.Collections.Generic.List[string]'
 [void]$lines.Add("ImageBase: $(Format-HexVa $imageBase)")
 [void]$lines.Add('')
 [void]$lines.Add('VERIFIED ORIGINAL SIGNATURES AND KNOWN ADDRESSES')
+[void]$lines.Add('WER 2026-11-14: native crash EIP=0x00503AF7, EAX=0, original caller=0x004FF9CA.')
+[void]$lines.Add('EDI=0x80004005 is a clue, NOT proof of a DirectSound failure.')
+[void]$lines.Add('Graphics initialization may have failed before DirectSound creation.')
+[void]$lines.Add('A stack candidate at 0x004FDED9 is NOT an unwound frame.')
 
 foreach ($site in $known) {
     $count = if ($null -eq $site.Signature) { 16 } else { $site.Signature.Length }
