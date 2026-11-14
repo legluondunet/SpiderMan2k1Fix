@@ -785,7 +785,7 @@ static int write_game_receipt(const wchar_t *root){
     used+=(size_t)n;
   }
   n=_snwprintf(temp,SPIDER_INSTALLER_PATH,L"%ls.new-%lu",dest,GetCurrentProcessId());
-  if(n<0||n>=SPIDER_INSTALLER_PATH)return 0;
+  if(n<0||(size_t)n>=SPIDER_INSTALLER_PATH)return 0;
   file=CreateFileW(temp,GENERIC_WRITE,0,NULL,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,NULL);
   if(file==INVALID_HANDLE_VALUE)return 0;
   if(WriteFile(file,content,(DWORD)used,&written,NULL) && written==used &&
