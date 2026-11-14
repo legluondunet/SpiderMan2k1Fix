@@ -82,6 +82,10 @@ static void install_early_primary_null_guard(void){
         0x6A,0x01,0x6A,0x00,0xE8,0x23,0x05,0x00,0x00,
         0x83,0xC4,0x08,0x5E,0xC3
     };
+    static const BYTE final_cleanup_callee[]={
+        /* 00504050: mov eax,[esp+8]; push ebx/esi/edi; test eax,eax; jz */
+        0x8B,0x44,0x24,0x08,0x53,0x56,0x57,0x85,0xC0,0x74,0x4E
+    };
     static const BYTE unused_cave[]={
         0x90,0x90,0x90,0x90,0x90,0x90,0x90,
         0x90,0x90,0x90,0x90,0x90,0x90,0x90
@@ -110,6 +114,7 @@ static void install_early_primary_null_guard(void){
     cave=base+0x103B32;
     if(memcmp(original_start,original,sizeof(original)) ||
        memcmp(cleanup_start,cleanup,sizeof(cleanup)) ||
+       memcmp(base+0x104050,final_cleanup_callee,sizeof(final_cleanup_callee)) ||
        memcmp(cave,unused_cave,sizeof(unused_cave))){
         early_primary_null_guard_status=-2;return;
     }
