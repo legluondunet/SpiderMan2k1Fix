@@ -29,7 +29,8 @@ def test_homepage_has_one_reader_focused_installation_path():
 
 
 def test_download_requirements_and_single_exe_wine_launch_remain_explicit():
-    assert "[GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases)" in README
+    assert "https://github.com/legluondunet/SpiderMan2k1Fix/releases/download/v2.0.0/SpiderMan2k1Fix.exe" in README
+    assert "https://github.com/legluondunet/SpiderMan2k1Fix/releases/tag/v2.0.0" in README
     assert "0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea" in README
     assert "winmm.dll" in README and "SpiderMan2k1Fix.dll" in README
     assert "wine SpiderMan2k1Fix.exe" in README
