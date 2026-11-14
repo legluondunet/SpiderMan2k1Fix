@@ -750,6 +750,119 @@ static int verify_install_receipt(const wchar_t *root){
   if(fgetc(in)!=EOF){fclose(in);return 0;}
   fclose(in);return 1;
 }
+/* Independent immutable snapshot of the original eight Wise files.
+ * These hashes describe the actual owner-supplied retail ISO; only the
+ * original EXE has an independently known retail SHA-256 reference. */
+static const wchar_t *game_receipt_name=L"SpiderMan2k1Fix\\installed-game.sha256";
+static int game_file_info(const wchar_t *path,ULONGLONG *bytes,char hash[65]){
+  WIN32_FILE_ATTRIBUTE_DATA attr;ULARGE_INTEGER size;
+  if(!regular_file(path) ||
+     !GetFileAttributesExW(path,GetFileExInfoStandard,&attr))return 0;
+  size.LowPart=attr.nFileSizeLow;size.HighPart=attr.nFileSizeHigh;
+  if(!sha256_file(path,hash))return 0;
+  *bytes=size.QuadPart;return 1;
+}
+/* CREATE_NEW + no replace: enrollment can only add a missing receipt.
+ * Interrupted creation leaves at most a distinct .new-PID file. */
+static int write_game_receipt(const wchar_t *root){
+  wchar_t dest[SPIDER_INSTALLER_PATH],temp[SPIDER_INSTALLER_PATH];
+  wchar_t path[SPIDER_INSTALLER_PATH];
+  char content[ORIGINAL_COUNT*100+64],hash[65];
+  size_t used;ULONGLONG bytes;unsigned i;
+  HANDLE file=INVALID_HANDLE_VALUE;DWORD written=0;
+  int n,ok=0;
+  if(!combine(dest,SPIDER_INSTALLER_PATH,root,game_receipt_name) ||
+     GetFileAttributesW(dest)!=INVALID_FILE_ATTRIBUTES)return 0;
+  n=snprintf(content,sizeof(content),"SpiderMan2k1Fix-Game-v1\n");
+  if(n<0||(size_t)n>=sizeof(content))return 0;
+  used=(size_t)n;
+  for(i=0;i<ORIGINAL_COUNT;i++){
+    if(!combine(path,SPIDER_INSTALLER_PATH,root,original_paths[i])||
+       !game_file_info(path,&bytes,hash))return 0;
+    n=snprintf(content+used,sizeof(content)-used,"%llu %s\n",
+               (unsigned long long)bytes,hash);
+    if(n<0||(size_t)n>=sizeof(content)-used)return 0;
+    used+=(size_t)n;
+  }
+  n=_snwprintf(temp,SPIDER_INSTALLER_PATH,L"%ls.new-%lu",dest,GetCurrentProcessId());
+  if(n<0||n>=SPIDER_INSTALLER_PATH)return 0;
+  file=CreateFileW(temp,GENERIC_WRITE,0,NULL,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,NULL);
+  if(file==INVALID_HANDLE_VALUE)return 0;
+  if(WriteFile(file,content,(DWORD)used,&written,NULL) && written==used &&
+     FlushFileBuffers(file))ok=1;
+  CloseHandle(file);
+  if(ok && MoveFileExW(temp,dest,MOVEFILE_WRITE_THROUGH))return 1;
+  DeleteFileW(temp);return 0;
+}
+static int verify_game_receipt(const wchar_t *root){
+  wchar_t dest[SPIDER_INSTALLER_PATH],path[SPIDER_INSTALLER_PATH];
+  char line[160],expected[65],actual[65],extra;
+  unsigned long long size;ULONGLONG installed_bytes;
+  unsigned i;FILE *in;int good=0;
+  if(!combine(dest,SPIDER_INSTALLER_PATH,root,game_receipt_name)||
+     !regular_file(dest))return 0;
+  in=_wfopen(dest,L"rb");if(!in)return 0;
+  if(!fgets(line,sizeof(line),in) ||
+     strcmp(line,"SpiderMan2k1Fix-Game-v1\n"))goto done;
+  for(i=0;i<ORIGINAL_COUNT;i++){
+    if(!fgets(line,sizeof(line),in) ||
+       sscanf(line,"%llu %64[0-9a-f] %c",&size,expected,&extra)!=2 ||
+       strlen(expected)!=64 ||
+       !combine(path,SPIDER_INSTALLER_PATH,root,original_paths[i]) ||
+       !game_file_info(path,&installed_bytes,actual) ||
+       installed_bytes!=(ULONGLONG)size || strcmp(expected,actual)){
+      message(L"VERIFY: original game file missing/altered: %ls",original_paths[i]);
+      goto done;
+    }
+  }
+  if(fgetc(in)==EOF)good=1;
+done:
+  fclose(in);return good;
+}
+/* Enroll an installation made by the previous 2.0 prototype only when
+ * the user's ORIGINAL adjacent ISO/CUE is available. Every installed
+ * game byte is compared to its CD counterpart, never to a self-generated
+ * hash of an unverified existing directory. Never rewrite any game file. */
+static int enroll_game_receipt_from_disc(void){
+  wchar_t disc[SPIDER_INSTALLER_PATH],path[SPIDER_INSTALLER_PATH];
+  wchar_t receipt[SPIDER_INSTALLER_PATH];
+  DiscImage iso;DiscEntry *parts[ORIGINAL_COUNT];
+  char cdhash[65],filehash[65];ULONGLONG installed_bytes;
+  unsigned i;int scan,ok=0;
+  if(!combine(receipt,SPIDER_INSTALLER_PATH,game_dir,game_receipt_name))return 0;
+  if(GetFileAttributesW(receipt)!=INVALID_FILE_ATTRIBUTES){
+    message(L"VERIFY: game receipt already exists; refusing replacement");return 0;
+  }
+  scan=find_adjacent_disc(disc,SPIDER_INSTALLER_PATH);
+  if(scan!=1){
+    message(L"ENROLL: place exactly one original ISO/CUE beside launcher and retry --install-only (state=%d)",scan);
+    return 0;
+  }
+  message(L"ENROLL: checking existing eight game files against original ISO/CUE");
+  if(!iso_open(&iso,disc,NULL)){iso_close(&iso);return 0;}
+  if(!find_wise_sources(&iso,parts))goto done;
+  for(i=0;i<ORIGINAL_COUNT;i++){
+    if(!combine(path,SPIDER_INSTALLER_PATH,game_dir,original_paths[i])||
+       !game_file_info(path,&installed_bytes,filehash) ||
+       installed_bytes!=parts[i]->bytes ||
+       !sha256_iso_entry(&iso,parts[i],cdhash) ||
+       strcmp(filehash,cdhash) ||
+       (i==0 && strcmp(cdhash,retail_sha))){
+      message(L"ENROLL: original file mismatch or unreadable: %ls; no changes made",
+              original_paths[i]);
+      goto done;
+    }
+  }
+  if(!write_game_receipt(game_dir)){
+    message(L"ENROLL: cannot publish immutable game receipt; no game files touched");
+    goto done;
+  }
+  ok=verify_game_receipt(game_dir);
+  if(ok)message(L"ENROLL: OK eight original game files match CD, game receipt written");
+done:
+  iso_close(&iso);
+  return ok;
+}
 static void discard_upgrade_staging(const wchar_t *staging){
   wchar_t path[SPIDER_INSTALLER_PATH];unsigned i;
   for(i=0;i<OWNED_COUNT;i++){
