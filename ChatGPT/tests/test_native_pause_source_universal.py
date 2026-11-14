@@ -185,6 +185,38 @@ def test_detected_pause_reaches_the_real_sdl3_gameplay_input_owner():
         universal.index("native_pause_source_visible_near_flip(count)"))
 
 
+def test_native_pause_confirm_has_independent_trace_without_new_input_owner():
+    """The user log proves Pause entry and South/A edges but did not prove
+    native Enter was injected. Trace actual OS delivery separately from the
+    ordinary menu, without altering the existing one-flip pulse behavior.
+    """
+    keyboard=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    assert "static unsigned pause_confirm_reports=0;" in keyboard
+    assert "static void log_native_pause_confirm(" in keyboard
+    assert "pause_confirm_reports++<24u" in keyboard
+    assert "pause_confirm_reports=0;" in keyboard
+    assert "SDL3-PAUSE-CONFIRM: South/A Enter KEYDOWN accepted by OS" in keyboard
+    assert "SDL3-PAUSE-CONFIRM: South/A Enter KEYDOWN not issued" in keyboard
+    assert "SDL3-PAUSE-CONFIRM: Enter KEYUP accepted by OS" in keyboard
+    assert "SDL3-PAUSE-CONFIRM: Enter KEYUP refused by OS" in keyboard
+    assert "if(previous_context==SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE" in keyboard
+    confirm=keyboard.split(
+        "else if((menu_buttons&(1u<<4)) && !(menu_previous&(1u<<4))) {",1
+    )[1].split("if(!update_keys(",1)[0]
+    assert 'pulse(0x1cu,"menu Confirm")' in confirm
+    assert "unsigned previous_pulse=pulse_scan;" in confirm
+    assert "if(context==SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE)" in confirm
+    assert confirm.index('pulse(0x1cu,"menu Confirm")') < confirm.index(
+        "SDL3-PAUSE-CONFIRM: South/A Enter KEYDOWN accepted by OS")
+    # The release path remains in BeforeUI rather than synthesizing any
+    # additional alternate input owner.
+    before=keyboard.split("void SpiderSDL3Universal_BeforeUI(",1)[1].split(
+        "int SpiderSDL3Universal_ReleaseSyntheticReturnBefore3D(",1)[0]
+    assert "send_scan(pulse_scan,1)" in before
+    assert "menu_confirm_hold_flips=menu_confirm_pending=0" in before
+    assert "if(menu_confirm_pending && pulse_scan)" in before
+
+
 def test_native_pause_does_not_inject_second_transform_in_auto_or_known_logical_mode():
     # Precedence: source observation before per-primitive mapping, then
     # old original menu and gameplay render pipeline remains fallback.
