@@ -1,8 +1,10 @@
 # SpiderMan2k1Fix 2.0.0 — standalone installer design and evidence gate
 
 The maintainer requested one executable beside their own retail ISO, on the
-same model as Rayman2Fix. This is a **release blocker**, not a promise that the
-original disc is already supported by the first bootstrap executable.
+same model as Rayman2Fix. The source implementation is **merged** (PRs #150
+and #151). An authentic retail ISO was installed and played under Wine; a
+native Windows 11 original-ISO end-to-end test and complete CD-data verification
+remain release-acceptance items.
 
 ## Required user-facing layout
 
@@ -93,8 +95,9 @@ is 1,507,328 bytes, SHA-256
   files rather than publishing a partial installation.
 - The Wise installer also offers an optional Help Files group and performs
   registry/shortcut/system INI/DirectX operations. We do not execute it or
-  perform these legacy side effects. Registry independence and actual
-  gameplay still require clean Windows/Wine runtime testing.
+  perform these legacy side effects. Actual gameplay has been observed
+  after original-ISO installation under Wine-staging 11.17; clean native
+  Windows 11 and fresh-prefix registry-independence tests remain.
 - See the owner-binary-derived file and registry map:
   [SPIDERMAN_RETAIL_WISE_INSTALL_MAP.md](SPIDERMAN_RETAIL_WISE_INSTALL_MAP.md).
 
@@ -128,7 +131,7 @@ More technical findings and SHA-256 provenance:
 No game EXEs, PKR archives, installation archives, or ISO image are
 committed or distributed with this project.
 
-## Release gate after merging #150 (November 14, 2026)
+## Release gate after merging #150 and #151 (November 14, 2026)
 
 1. The authentic Wise `Setup/` original-disc source layout and eight-file
    installation succeeded under Wine. The original executable SHA-256 matched.
@@ -137,10 +140,13 @@ committed or distributed with this project.
    only the original EXE and seven embedded project resources.
 3. Exercise malformed ISO/CUE, missing source files, interrupted install,
    receipt tampering and rollback paths with executable automated tests.
-4. The proposed standalone CI must confirm an actual PE32 x86 executable
-   with **all seven embedded RCDATA resources matching their staged
-   redistributable bytes**, and record the EXE SHA-256. Do not publish the
-   legacy developer DLL ZIP as the stable 2.0.0 distribution.
+4. The [merged-main standalone CI](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/43583076518)
+   **passed** PE32 x86 verification and byte-for-byte matching of all
+   seven embedded RCDATA payloads, and recorded the EXE SHA-256
+   `5d3c87015e72c37ed43f6d08f0e43d67c7c30017e70c7fef881b1c7e5063700e`.
+   The developer DLL workflow remains useful, but its unused pre-2.0
+   versioned release ZIP is now retired. It is not the stable installer.
+
 5. The archived Wine gameplay log demonstrates actual graphics, audio,
    controllers and Alt+Tab, but not a separate clean-process-exit trace.
    A clean Windows 11 ISO installation was not demonstrated.
