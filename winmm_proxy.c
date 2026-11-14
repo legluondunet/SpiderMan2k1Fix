@@ -69,8 +69,10 @@ static void patch_early(void) {
  * executable on disk and its DirectSound implementation are unchanged.
  *
  * This prevents the proven NULL dereference only. It does NOT assert that
- * the underlying E_FAIL / audio creation failure is fixed; continue
- * investigating the upstream caller separately in issue #160.
+ * an upstream graphics-or-audio initialization failure is fixed:
+ * the original game initializes graphics before the native sound device,
+ * then may invoke general shutdown with a NULL primary sound buffer.
+ * Investigate the actual upstream failing API separately in issue #160.
  */
 static volatile LONG early_primary_null_guard_status=0;
 static void install_early_primary_null_guard(void){
