@@ -56,7 +56,8 @@ static inline unsigned SpiderPauseSource_Space(
   int logical,physical;
   if(!logical_width || !logical_height || !physical_width ||
      !physical_height || logical_height!=physical_height ||
-     (uint64_t)logical_width*3u!=(uint64_t)logical_height*4u ||
+     SpiderPauseSource_Abs((float)logical_width*3.0f-
+                           (float)logical_height*4.0f)>3.0f ||
      logical_width>physical_width)
     return SPIDER_PAUSE_SOURCE_NONE;
   logical=SpiderPauseSource_RibbonBounds(
