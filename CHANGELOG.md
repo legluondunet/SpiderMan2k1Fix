@@ -107,11 +107,16 @@ release is published.
   hash and the known original EXE SHA-256; altered or missing files are refused.
   Receipt hashes prove consistency with the supplied CD image, not independent
   authenticity of the other seven retail assets.
-- **Remaining gates:** executable malformed ISO/CUE and interrupted-install
-  rollback tests. The maintainer has since confirmed an original-ISO native
-  Windows 11 installation, SDL3/gameplay and launcher exit code 0, but this
-  does not replace the remaining negative-path checks. Issue #149 is closed;
-  the stable release is not yet published.
+- **Executable negative-path acceptance (PR #155):** Windows PE32 CI uses
+  synthetic ISO/CUE fixtures for malformed/duplicate/missing source cases,
+  forged original EXE rejection, exact eight-file receipt validation,
+  legacy ISO-backed enrollment and injected mid-upgrade rollback. The
+  production release candidate remains checksum-locked; its separate
+  TEST-ONLY fixture is never included in the published binary.
+- **Final gate:** the maintainer has confirmed authentic original-ISO
+  installation, SDL3/gameplay and launcher exit code 0 under native Windows
+  11. A brief smoke of the *new* full game-receipt build with the same ISO
+  is still required. No 2.0.0 release or tag has been published.
 - Open post-release investigations: missing W lightning on the NEW YORK
   sign (#146), unexpectedly moving shadows (#147) and bank window
   glass-break audio order (#145). Their causes are not established.

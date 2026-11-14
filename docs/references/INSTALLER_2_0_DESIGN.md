@@ -145,8 +145,12 @@ committed or distributed with this project.
    with SHA-256/size for all eight Wise retail files; explicit legacy
    enrollment is anchored to a matching adjacent ISO/CUE and the supported
    original EXE hash. Runtime smoke testing of this change is still required.
-3. Exercise malformed ISO/CUE, missing source files, interrupted install,
-   receipt tampering and rollback paths with executable automated tests.
+3. **Passed in merged PR #155:** real Windows PE32 executable tests cover
+   malformed ISO/CUE, missing/duplicate source files, forged extents,
+   interrupted first-install staging, receipt tampering, ISO-based enrollment
+   and a deterministic mid-update rollback with byte-for-byte restoration.
+   These tests use synthetic assets and a distinctly labeled TEST-ONLY fixture;
+   they cannot establish resilience to every real power-loss/filesystem fault.
 4. The [merged-main standalone CI](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/43583076518)
    **passed** PE32 x86 verification and byte-for-byte matching of all
    seven embedded RCDATA payloads, and recorded the EXE SHA-256

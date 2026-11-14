@@ -94,7 +94,7 @@ writes, DirectX installs, registration, autorun or uninstaller until a
 specific game runtime dependency is proven. Registry independence under
 Windows 11 and Wine requires a clean-prefix smoke test, not inference.
 
-## Planned 2.0 implementation and remaining gates
+## Historical 2.0 implementation plan (before receiving the retail ISO)
 
 1. Detect original ISO and discover the directory containing a **single,
    consistent set** of the above source files. Reject duplicates, ambiguous
@@ -114,5 +114,25 @@ Windows 11 and Wine requires a clean-prefix smoke test, not inference.
    under original game operation. Keep PR #150 a **draft**, do not
    merge/release before that test.
 
-This document is a **derived manifest**, not a claim that ISO installation
-has been tested. It does not contain or redistribute commercial game files.
+This document began as a **derived installer-script manifest**. The six
+items above preserve the original November 13 research plan as history:
+they are **not** the current release blockers. No original commercial game
+files are committed or redistributed.
+
+## Subsequent retail-ISO evidence — November 14, 2026
+
+An authentic owner-supplied `SPIDERMAN` ISO (694,661,120 bytes) confirmed
+the original source directory **`Setup/`** and all eight Wise full-install
+files, including `media.pkr` and `texture.dat`. Installations were
+observed under Wine-staging 11.17 and native Windows 11, including gameplay.
+The original supported `SpideyPC.exe` SHA-256 matched.
+
+The merged standalone installer (PR #150) now records two separate receipts:
+the seven project-owned resources and, after PR #154, **all eight original
+game files** with size and SHA-256. Legacy installations may enroll original
+data only by comparing each installed file with the unchanged owner's ISO,
+using explicit `--install-only`. PR #155 subsequently added executable
+Windows PE32 ISO/CUE corruption and rollback tests with wholly synthetic
+images. The final remaining acceptance is a brief hardware smoke test of
+the newest receipt-enabled build against the original ISO before publishing
+v2.0.0; it is not an obstacle to retaining this original forensic record.
