@@ -115,14 +115,21 @@ under Windows CI before publication.
 2. Run `SpiderMan2k1Fix.exe` on Windows or `wine SpiderMan2k1Fix.exe` on Linux.
    It installs into `SpiderMan2k1Fix/` beside the launcher, then verifies
    and starts the game. The old Wise setup and graphics selector are not run.
-3. Later launches verify the game and bundled components without silently
-   replacing your files. `--install-only` installs or updates **recognized
-   installer-owned components** without starting the game. It also enrolls
-   older installations' eight-file game receipt **only after matching the ISO
-   byte-for-byte**. `--verify` checks SHA-256/size for all eight original
-   game files and seven bundled components (read-only). Missing or altered
-   files cause refusal, never auto-repair. `--inspect image.iso` or
-   `--inspect image.cue [track.bin|track.img]`
+3. Later launches always verify the original **eight game files and their
+   integrity receipt**; they are never automatically repaired. The published
+   **v2.0.0** release requires `--install-only` to explicitly upgrade older
+   installer-owned components. **Unreleased next-version prototypes** update
+   only the seven installer-owned bundled components automatically when a newer
+   launcher is used, after verifying the original game and previous resource
+   receipt. Unknown `winmm.dll`, `SpiderMan2k1Fix.dll` or `SDL3.dll`
+   files in their installer-owned locations are renamed to one `.bak` each,
+   replacing any older `.bak`; unchanged DLLs are left untouched. Unknown or
+   modified non-DLL assets and invalid receipts still block replacement.
+   `--install-only` applies an eligible update without launching the game;
+   for legacy game-receipt enrollment it requires an unchanged adjacent
+   original ISO/CUE. `--verify` checks SHA-256/size of all eight game files
+   and seven bundled components (read-only, no repair).
+   `--inspect image.iso` or `--inspect image.cue [track.bin|track.img]`
    creates `SpiderMan2k1Fix_inspect.log` for unsupported-disc reports.
    `--verbose` can be combined with other commands.
 
