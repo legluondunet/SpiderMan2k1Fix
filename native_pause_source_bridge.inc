@@ -11,7 +11,8 @@ static int native_pause_source_visible_near_flip(LONG flip) {
   LONG last=InterlockedCompareExchange(&native_pause_source_flip,0,0);
   return InterlockedCompareExchange(&menu_upscale_active,0,0)==0 &&
          InterlockedCompareExchange(&fov_game_height,0,0)>0 &&
-         InterlockedCompareExchange(&native_pause_source_space,0,0)!=SPIDER_PAUSE_SOURCE_NONE &&
+         /* Detection is independent of transform eligibility. In native
+          * physical 4:3, space=NONE is expected, but Pause still exists. */
          last>=0 && flip>=last && flip-last<=1;
 }
 static void native_pause_source_reset(void) {
@@ -37,7 +38,11 @@ static void native_pause_source_observe_ribbon(
   if(!SpiderPauseSource_RibbonMaterial(v[0].z,v[0].rhw,v[0].diffuse) &&
      !SpiderNativePause43_RibbonLayer(v[0].z,v[0].rhw))return;
   left=right=v[0].x;top=bottom=v[0].y;
-  for(i=1u;i<4u;i++){
+  for(i=0u;i<4u;i++){
+    if(!SpiderPauseSource_ValidVertex(v[i].x,v[i].y,v[i].z,v[i].rhw,
+        (unsigned)desktop_w,(unsigned)desktop_h) ||
+       !(SpiderPauseSource_Abs(v[i].z-v[0].z)<0.00010f) ||
+       !(SpiderPauseSource_Abs(v[i].rhw-v[0].rhw)<0.30f))return;
     if(v[i].x<left)left=v[i].x;
     if(v[i].x>right)right=v[i].x;
     if(v[i].y<top)top=v[i].y;
@@ -51,7 +56,13 @@ static void native_pause_source_observe_ribbon(
   }
   space=SpiderPauseSource_Space(left,right,top,bottom,
     logical_w,logical_h,(unsigned)desktop_w,(unsigned)desktop_h);
-  if(space==SPIDER_PAUSE_SOURCE_NONE)return;
+  /* When the physical monitor itself is genuine 4:3, there is no
+   * physical/logical transform to distinguish. Still recognize the
+   * source-verified Pause menu for SDL3, but never remap its sprites. */
+  if(space==SPIDER_PAUSE_SOURCE_NONE &&
+     !((uint64_t)desktop_w*3u==(uint64_t)desktop_h*4u &&
+       SpiderPauseSource_RibbonBounds(left,right,top,bottom,
+         (unsigned)desktop_w,(unsigned)desktop_h)))return;
   /* The original Pause ribbon is a textureless fan. */
   if(FAILED(IDirect3DDevice7_GetTexture((IDirect3DDevice7*)device,0,
                                         &texture)))return;
@@ -68,7 +79,8 @@ static void native_pause_source_observe_ribbon(
       char msg[260];
       snprintf(msg,sizeof(msg),
         "PAUSE-SOURCE: original ribbon flip=%ld source=%s logical=%ux%u physical=%lux%lu bounds=(%.1f..%.1f,%.1f..%.1f) [READ-ONLY; ALL LEVELS]",
-        (long)flip,space==SPIDER_PAUSE_SOURCE_PHYSICAL?"physical":"logical",
+        (long)flip,space==SPIDER_PAUSE_SOURCE_PHYSICAL?"physical":
+        space==SPIDER_PAUSE_SOURCE_LOGICAL?"logical":"native-4:3",
         logical_w,logical_h,(unsigned long)desktop_w,(unsigned long)desktop_h,
         (double)left,(double)right,(double)top,(double)bottom);
       log_line(msg);
@@ -109,17 +121,28 @@ static int native_pause_source_remap_original_4x3(
     IDirectDrawSurface7_Release(texture);
   }
   if(!SpiderPauseSource_Material(v[0].z,v[0].rhw,v[0].diffuse,
-                                 width,height,bound) &&
-     !( !bound && SpiderNativePause43_RibbonLayer(v[0].z,v[0].rhw)))
-    return 0;
+                                 width,height,bound)){
+    float l=v[0].x,r=v[0].x,t=v[0].y,bt=v[0].y;
+    /* An inherited depth-family match alone is NOT authorization to
+     * transform arbitrary untextured native 3D/HUD primitives. It may
+     * select only the original full-width ribbon itself. */
+    if(bound || !SpiderNativePause43_RibbonLayer(v[0].z,v[0].rhw))
+      return 0;
+    for(i=1u;i<4u;i++){
+      if(v[i].x<l)l=v[i].x;if(v[i].x>r)r=v[i].x;
+      if(v[i].y<t)t=v[i].y;if(v[i].y>bt)bt=v[i].y;
+    }
+    if(!SpiderPauseSource_RibbonBounds(l,r,t,bt,
+       (unsigned)desktop_w,(unsigned)desktop_h))return 0;
+  }
   top=InterlockedCompareExchange(&native_pause_source_top,0,0);
   bottom=InterlockedCompareExchange(&native_pause_source_bottom,0,0);
   /* Relative bounds from the observed original ribbon, never a level. */
   for(i=0u;i<4u;i++){
-    if(SpiderPauseSource_Abs(v[i].z-v[0].z)>0.00010f ||
-       SpiderPauseSource_Abs(v[i].rhw-v[0].rhw)>0.30f ||
-       v[i].x<-(float)desktop_w*0.05f ||
-       v[i].x>(float)desktop_w*1.05f ||
+    if(!SpiderPauseSource_ValidVertex(v[i].x,v[i].y,v[i].z,v[i].rhw,
+        (unsigned)desktop_w,(unsigned)desktop_h) ||
+       !(SpiderPauseSource_Abs(v[i].z-v[0].z)<0.00010f) ||
+       !(SpiderPauseSource_Abs(v[i].rhw-v[0].rhw)<0.30f) ||
        (bound &&
         (v[i].y<(float)top-(float)desktop_h*0.10f ||
          v[i].y>(float)bottom+(float)desktop_h*0.12f)))return 0;
