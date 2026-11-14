@@ -104,10 +104,11 @@ Diagnostic switches and implementation: [technical audio guide](docs/references/
 
 **v2.0.0 (upcoming):** The planned distribution is **one standalone**
 `SpiderMan2k1Fix.exe` with our WinMM proxy, fix DLL, SDL3 x86 runtime/license
-and optional Linux X11 helper embedded. An authentic original retail ISO
-has already been inspected and installed under **Wine-staging 11.17**, followed
-by actual gameplay. A fresh **native Windows 11 ISO install**, complete game-data
-integrity negative/rollback tests are pending; CI alone is not release approval.
+and optional Linux X11 helper embedded. Authentic original-ISO installs
+and gameplay have been observed under **Wine-staging 11.17 and Windows 11**.
+The installer also passed executable ISO/CUE failure, game-integrity and
+rollback tests under Windows CI. Final validation of this build with the
+maintainer's original ISO remains; CI alone is not release approval.
 
 1. Obtain the launcher from [GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases)
    once v2.0.0 is published. Place it beside **one legally owned original**
