@@ -5818,7 +5818,18 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
        vtable[21]==(void*)original_mode)
       *object=patched_ddraw_vtable;
   } else {
-    log_line("DDRAW: DirectDrawCreateEx returned (non-DDraw7 interface or error)");
+    /* A native DirectDraw failure can happen BEFORE DirectSound exists.
+     * The original game's generic shutdown then attempts an unconditional
+     * primary-buffer Stop; preserve the exact upstream HRESULT so the
+     * early audio-NULL guard does not conceal the real startup failure.
+     * Diagnostics only: no retry, no result substitution, no COM change. */
+    char reason[176];
+    snprintf(reason,sizeof(reason),
+      "DDRAW-STARTUP: DirectDrawCreateEx result=0x%08lX out=%s IID_DirectDraw7=%s",
+      (unsigned long)(DWORD)hr,
+      (out && *out)?"present":"NULL",
+      (iid && IsEqualGUID(iid,&IID_IDirectDraw7))?"yes":"no");
+    log_line(reason);
   }
   return hr;
 }
