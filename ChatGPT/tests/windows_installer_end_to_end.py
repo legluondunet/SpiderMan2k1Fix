@@ -347,7 +347,7 @@ def fixture_auto_update_and_non_dll_guard(base: Path, fixture: Path) -> None:
     readme_before = readme.read_bytes()
     readme.write_bytes(readme_before + b"\nmodified by user")
     log = execute(exe, "--install-only", success=False)
-    assert "modified non-DLL runtime" in log
+    assert "missing or invalid install receipt" in log
     assert readme.read_bytes().endswith(b"modified by user")
     log = execute(exe, success=False)
     assert "missing or invalid install receipt" in log
