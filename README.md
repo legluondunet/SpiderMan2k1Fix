@@ -116,10 +116,9 @@ under Windows CI before publication.
    It installs into `SpiderMan2k1Fix/` beside the launcher, then verifies
    and starts the game. The old Wise setup and graphics selector are not run.
 3. Later launches verify all eight original game files against their
-   integrity receipt; original game files are never auto-repaired. Published
-   v2.0.0 uses `--install-only` for explicit project updates. **Unreleased
-   prototypes** update bundled components on normal launch only after game
-   and resource receipt validation. Unknown `winmm.dll`,
+   receipt; original files are never auto-repaired. Stable v2.0.0 uses
+   `--install-only` for manual updates. **Unreleased prototypes** update
+   bundled components after verifying both receipts. Unknown `winmm.dll`,
    `SpiderMan2k1Fix.dll` or `SDL3.dll` bytes in installer-owned locations
    become one `.bak` per DLL, overwriting any older `.bak`. Unknown
    non-DLL files or invalid receipts block changes. `--install-only`
