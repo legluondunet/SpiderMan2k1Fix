@@ -113,8 +113,8 @@ under Windows CI before publication.
 1. Download the [published v2.0.0 launcher](https://github.com/legluondunet/SpiderMan2k1Fix/releases/download/v2.0.0/SpiderMan2k1Fix.exe). Place it beside **one legally owned original**
    `.iso` or `.cue` (keep the `.bin`/`.img` track referenced by the CUE).
 2. Run the launcher. Game files go in `spiderman2001/`; fix resources
-   remain inside `spiderman2001/SpiderMan2k1Fix/`. Verified legacy installs
-   are renamed without deleting saves. `--verify` is read-only; ambiguous
+   remain inside `spiderman2001/SpiderMan2k1Fix/`. Legacy installs
+   are renamed safely. `--verify` is read-only; ambiguous
    folders are refused. Wise setup is skipped.
 3. Later launches verify all eight original game files against their
    receipt; original files are never auto-repaired. Stable v2.0.0 uses
