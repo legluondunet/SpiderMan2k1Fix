@@ -53,6 +53,7 @@ static unsigned native_shell_consecutive=0;
 static int native_shell_routed=0;
 static unsigned native_shell_trace_reports=0;
 static unsigned pause_context_reports=0,pause_command_reports=0;
+static unsigned pause_confirm_reports=0; /* independent of normal 100-line budget */
 static SpiderSDL3UniversalState state;
 static SpiderSDL3UniversalFocusRelease focus_release;
 static SpiderSDL3FocusDirectionResync focus_dir;
@@ -99,6 +100,9 @@ static void log_universal(const char *msg) {
 }
 static void log_native_pause_menu(const char *msg) {
   if(report && pause_menu_trace_reports++<48u)report(msg);
+}
+static void log_native_pause_confirm(const char *msg) {
+  if(report && pause_confirm_reports++<24u)report(msg);
 }
 static void log_menu_confirm(const char *msg) {
   /* Separate, bounded late-menu diagnostics: ordinary universal trace
@@ -464,6 +468,7 @@ void SpiderSDL3Universal_Init(const char *ini,void (*logger)(const char *)) {
   native_shell_routed=0;
   previous_context=SPIDER_UNIVERSAL_CTX_3D;
   pause_context_reports=0;pause_command_reports=0;
+  pause_confirm_reports=0;
   gameover_probe_confirm_prev=gameover_probe_f9_prev=0;
   gameover_probe_confirm_edges=gameover_probe_confirm_reports=0;
   gameover_probe_f9_reports=0;gameover_probe_owner=0;
@@ -560,10 +565,16 @@ void SpiderSDL3Universal_BeforeUI(HWND hwnd) {
     menu_confirm_deferred_this_flip=1;
     log_menu_confirm("SDL3-MENU-CONFIRM: holding injected Enter for one additional original Flip (DI reception unverified)");
   } else if(pulse_scan && !send_scan(pulse_scan,1)) {
+    if(previous_context==SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE &&
+       pulse_scan==0x1cu)
+      log_native_pause_confirm("SDL3-PAUSE-CONFIRM: Enter KEYUP refused by OS; retry scheduled");
     if(menu_confirm_pending)
       log_menu_confirm("SDL3-MENU-CONFIRM: injected Enter KEYUP refused by OS; retry scheduled");
     log_universal("SDL3-UNIVERSAL: warning Pause/Return KEYUP failed, retry before next action");
   } else {
+    if(previous_context==SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE &&
+       pulse_scan==0x1cu)
+      log_native_pause_confirm("SDL3-PAUSE-CONFIRM: Enter KEYUP accepted by OS (game reception unverified)");
     if(menu_confirm_pending && pulse_scan)
       log_menu_confirm("SDL3-MENU-CONFIRM: injected Enter KEYUP accepted by OS (game reception unverified)");
     pulse_scan=0;
@@ -1105,7 +1116,16 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
               log_menu_confirm("SDL3-MENU-CONFIRM: South/Confirm injected Enter KEYDOWN accepted by OS; delayed KEYUP armed (DI reception unverified)");
             } else log_menu_confirm("SDL3-MENU-CONFIRM: Enter KEYDOWN refused by SendInput");
           } else log_menu_confirm("SDL3-MENU-CONFIRM: Enter KEYDOWN deferred while prior pulse pending");
-        } else pulse(0x1cu,"menu Confirm");
+        } else {
+          unsigned previous_pulse=pulse_scan;
+          pulse(0x1cu,"menu Confirm");
+          if(context==SPIDER_UNIVERSAL_CTX_NATIVE_PAUSE) {
+            if(previous_pulse==0u && pulse_scan==0x1cu)
+              log_native_pause_confirm("SDL3-PAUSE-CONFIRM: South/A Enter KEYDOWN accepted by OS (game reception unverified)");
+            else
+              log_native_pause_confirm("SDL3-PAUSE-CONFIRM: South/A Enter KEYDOWN not issued (prior pulse pending or SendInput refused)");
+          }
+        }
       }
     }
     if(!update_keys(menu_buttons&0x0fu,scans)) {

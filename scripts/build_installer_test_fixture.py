@@ -18,7 +18,7 @@ FAKE_EXE = b"MZ" + b"A" * (EXE_BYTES - 2)
 ORIGINAL = "0a11a49f3f63d4bb15650f322d654553fc47234b01885b852a058ff074689dea"
 FAIL_SITE = "if(!MoveFileExW(src,dst,MOVEFILE_WRITE_THROUGH)){"
 FAIL_PATCH = (
-    'if((i==3 && GetEnvironmentVariableW(L"SPIDER_FIXTURE_FAIL_PUBLISH",NULL,0)>0) ||\n'
+    'if((i==OWNED_COUNT && GetEnvironmentVariableW(L"SPIDER_FIXTURE_FAIL_PUBLISH",NULL,0)>0) ||\n'
     '       !MoveFileExW(src,dst,MOVEFILE_WRITE_THROUGH)){'
 )
 

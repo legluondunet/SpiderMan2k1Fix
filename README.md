@@ -115,16 +115,17 @@ under Windows CI before publication.
 2. Run `SpiderMan2k1Fix.exe` on Windows or `wine SpiderMan2k1Fix.exe` on Linux.
    It installs into `SpiderMan2k1Fix/` beside the launcher, then verifies
    and starts the game. The old Wise setup and graphics selector are not run.
-3. Later launches verify the game and bundled components without silently
-   replacing your files. `--install-only` installs or updates **recognized
-   installer-owned components** without starting the game. It also enrolls
-   older installations' eight-file game receipt **only after matching the ISO
-   byte-for-byte**. `--verify` checks SHA-256/size for all eight original
-   game files and seven bundled components (read-only). Missing or altered
-   files cause refusal, never auto-repair. `--inspect image.iso` or
-   `--inspect image.cue [track.bin|track.img]`
-   creates `SpiderMan2k1Fix_inspect.log` for unsupported-disc reports.
-   `--verbose` can be combined with other commands.
+3. Later launches verify all eight original game files against their
+   receipt; original files are never auto-repaired. Stable v2.0.0 uses
+   `--install-only` for manual updates. **Unreleased prototypes** update
+   bundled components after verifying both receipts. Unknown `winmm.dll`,
+   `SpiderMan2k1Fix.dll` or `SDL3.dll` bytes in installer-owned locations
+   become one `.bak` per DLL, overwriting any older `.bak`. Unknown
+   non-DLL files or invalid receipts block changes. `--install-only`
+   updates without launching (legacy game receipt enrollment needs the
+   unmodified ISO/CUE). `--verify` is read-only. `--inspect image.iso`
+   or `--inspect image.cue [track.bin|track.img]` creates the inspection
+   log; `--verbose` can be combined with commands.
 
 `SpiderMan2k1Fix_installer.log` and `SpiderMan2k1Fix.log` are both placed
 beside the launcher. No original game files are included in this project.
