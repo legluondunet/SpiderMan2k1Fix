@@ -1,16 +1,19 @@
 # Changelog
 
-## 2.0.0 — Unreleased
+## 2.0.0 — November 14, 2026
 
 Release 2.0.0 integrates controller Save Game confirmation (PR #138),
 Pause/cutscene SDL3 trigger-drift correction (PR #139), selection of
 multiple same-model SDL3 controllers (PR #137), and the accumulated display,
 focus and gameplay improvements from the accepted RC2. The maintainer accepted
 real-game testing on Windows 11 and Wine/GE-Proton on November 12, 2026.
-The v2.0.0 label is already present in source metadata. The final built-in
-save-screen correction is included after PR #144 and still requires a
-separate final build and smoke-test gate before the v2.0.0 tag or GitHub
-release is published.
+The final v2.0.0 source includes the built-in save-screen correction after
+PR #144, full original-game SHA-256 receipt verification after PR #154,
+and executable Windows ISO/CUE and rollback tests after PR #155. The owner
+validated the new standalone build against the original CD on native Windows
+11, including gameplay and a zero launcher exit code. The official
+[v2.0.0 GitHub Release](https://github.com/legluondunet/SpiderMan2k1Fix/releases/tag/v2.0.0)
+now contains exactly one verified standalone executable.
 
 ### Controls and SDL3
 
@@ -113,10 +116,13 @@ release is published.
   legacy ISO-backed enrollment and injected mid-upgrade rollback. The
   production release candidate remains checksum-locked; its separate
   TEST-ONLY fixture is never included in the published binary.
-- **Final gate:** the maintainer has confirmed authentic original-ISO
-  installation, SDL3/gameplay and launcher exit code 0 under native Windows
-  11. A brief smoke of the *new* full game-receipt build with the same ISO
-  is still required. No 2.0.0 release or tag has been published.
+- **Final acceptance:** the maintainer confirmed the release build's original-ISO
+  installation, full eight-file integrity verification, native Windows 11
+  gameplay and launcher exit code 0. The public v2.0.0 tag points to
+  `6c82ccbe80feadf7634b43eaf566c2dd1586bc2f`; the sole release
+  executable has SHA-256
+  `ffc4c06640f1f8c5fd1701562bc1235162ca9cc518b13388e329bc8b423be36c`.
+  Original commercial game assets and TEST-ONLY fixture builds are excluded.
 - Open post-release investigations: missing W lightning on the NEW YORK
   sign (#146), unexpectedly moving shadows (#147) and bank window
   glass-break audio order (#145). Their causes are not established.
