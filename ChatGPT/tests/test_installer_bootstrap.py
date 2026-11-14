@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PATHS = (ROOT / "spider_fix_paths.h").read_text(encoding="utf-8")
 SRC = (ROOT / "installer/spiderman2k1fix_installer.c").read_text(encoding="utf-8")
 BUILD = (ROOT / "scripts/build_installer.sh").read_text(encoding="utf-8")
-WORKFLOW = (ROOT / ".github/workflows/spiderman2k1fix-installer-prototype.yml").read_text(encoding="utf-8")
+WORKFLOW = (ROOT / ".github/workflows/spiderman2k1fix-standalone-windows-x86.yml").read_text(encoding="utf-8")
 
 
 def test_installer_names_and_paths():
@@ -48,7 +48,7 @@ def test_project_payload_inventory():
     assert "-municode" in BUILD
     assert "-static-libgcc" in BUILD
     assert "grep -q '\\.rsrc'" in BUILD
-    assert "Installer-Prototype" in WORKFLOW
+    assert "SpiderMan2k1Fix-Windows-x86-Standalone" in WORKFLOW
     assert "SpiderMan2k1Fix.exe" in WORKFLOW
 
 
