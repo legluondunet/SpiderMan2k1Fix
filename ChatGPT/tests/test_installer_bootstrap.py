@@ -99,7 +99,8 @@ def test_normal_launch_never_mutates_existing_game_and_explicit_update_is_receip
     assert "Adopt an older prototype" not in SRC
     assert "if(GetFileAttributesW(receipt)==INVALID_FILE_ATTRIBUTES" not in SRC
     assert "missing or invalid install receipt" in existing
-    assert "if(!deploy_payloads_to(staging) || !write_install_receipt(staging))" in SRC
+    assert "if(!deploy_payloads_to(staging) || !write_install_receipt(staging) ||" in SRC
+    assert "!write_game_receipt(staging) || !verify_game_receipt(staging)" in SRC
     assert "resource_verify(RES_WINMM,game_dir" in SRC
 
 
