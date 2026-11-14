@@ -962,10 +962,14 @@ int wmain(int argc,wchar_t **argv) {
   }
   message(L"DISC: inspecting %ls",path);
   if(!iso_open(&iso,path,NULL)){iso_close(&iso);goto done;}
+  /* Keep routine install logs short. Detailed per-file CD inventories
+   * belong to --inspect, or to --verbose during normal installation.
+   * This is logging-only: never skip input validation or source copying. */
   {DWORD n,listed=0;
     for(n=0;n<iso.count;n++)if(!iso.entries[n].directory){
-      message(L"ISO-FILE: %ls size=%lu lba=%lu",iso.entries[n].name,
-        iso.entries[n].bytes,iso.entries[n].lba);
+      if(verbose_mode)
+        message(L"ISO-FILE: %ls size=%lu lba=%lu",iso.entries[n].name,
+                iso.entries[n].bytes,iso.entries[n].lba);
       listed++;
     }
     message(L"ISO: inspected %lu regular files",listed);
