@@ -296,3 +296,18 @@ def test_normal_install_summarizes_cd_and_reserves_listing_for_verbose():
     inspect=main.split("if(inspect){",1)[1].split("if(argc>2)",1)[0]
     assert 'ENTRY: path=' in inspect
     assert 'INSPECT_RESULT=COMPLETE' in inspect
+
+
+def test_existing_install_status_differentiates_noop_from_update():
+    """The supported retail EXE and seven project payloads remain separately described."""
+    main=SRC.split("int wmain(",1)[1]
+    assert "VERIFY: OK supported game EXE, installed resource receipt and 7 bundled components" in main
+    assert "VERIFY: FAILED game EXE, resource receipt or bundled components" in main
+    existing=main.split("if((argc==1 || install_only) && regular_file(gameexe))",1)[1].split(
+        "scan=find_adjacent_disc(",1)[0]
+    assert 'if(verify_payloads()){' in existing
+    assert "existing installation verified; no update needed; game not launched" in existing
+    assert "authenticated bundled components updated; game not launched" in existing
+    assert existing.index("if(verify_payloads()){") < existing.index("upgrade_recognized_payloads()")
+    assert "verified/updated" not in existing
+    assert "result=0;goto done;" in existing
