@@ -25,7 +25,7 @@ CODE_CAVE = 0x00503B32
 def code_bytes(name: str) -> bytes:
     section = SRC.split(f"static const BYTE {name}[]={{", 1)[1].split("};", 1)[0]
     # Embedded explanatory comments have no 0x-prefixed hex literals.
-    return bytes(int(v, 16) for v in re.findall(r"0x([a-fA-F0-9]{2})\\b", section))
+    return bytes(int(v, 16) for v in re.findall(r"0x([a-fA-F0-9]{2})", section))
 
 
 def jump8(ins_address: int, instruction_length: int, operand: int) -> int:
