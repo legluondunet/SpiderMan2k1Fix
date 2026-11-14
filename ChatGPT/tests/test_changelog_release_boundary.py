@@ -8,8 +8,11 @@ README=(ROOT/"README.md").read_text(encoding="utf-8")
 RC_PLAN=(ROOT/"docs/references/RELEASE_2_0_RC_TEST_PLAN.md").read_text(encoding="utf-8")
 
 
-def test_stable_2_0_explains_current_sdl3_policy_and_preserves_release_gate():
-    # This version is prepared but no official v2.0.0 release/tag exists yet.\n    assert CHANGELOG.startswith("# Changelog\n\n## 2.0.0 — Unreleased")
+def test_stable_2_0_explains_current_sdl3_policy_after_publication():
+    # The official v2.0.0 release was published on November 14, 2026.
+    assert CHANGELOG.startswith("# Changelog\n\n## 2.0.0 — November 14, 2026")
+    assert "releases/tag/v2.0.0" in CHANGELOG
+    assert "6c82ccbe80feadf7634b43eaf566c2dd1586bc2f" in CHANGELOG
     head=CHANGELOG.split("## 1.1.0 — October 27, 2026",1)[0]
     for phrase in ("only supported controller mapping backend", "first safe foreground",
                    "neutral-first", "DirectInput", "QuickExit F10/F12", "RawHex",

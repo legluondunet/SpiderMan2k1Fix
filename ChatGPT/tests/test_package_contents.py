@@ -131,6 +131,7 @@ def test_1_0_stable_readme_links_to_releases_without_candidate_warning():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert re.search(r'^#define SPIDERMAN2K1FIX_VERSION "2\.0\.0(?:-rc\.\d+)?"$', version_header, re.M)
     assert 'log_line("START: " SPIDERMAN2K1FIX_VERSION_LABEL);' in game
-    assert "[GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases)" in readme
+    assert "https://github.com/legluondunet/SpiderMan2k1Fix/releases/download/v2.0.0/SpiderMan2k1Fix.exe" in readme
+    assert "https://github.com/legluondunet/SpiderMan2k1Fix/releases/tag/v2.0.0" in readme
     assert "No stable release is available" not in readme
     assert "1.0.0 release candidate" not in readme

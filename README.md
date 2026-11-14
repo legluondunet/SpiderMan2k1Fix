@@ -1,6 +1,6 @@
 # SpiderMan2k1Fix
 
-**Version 2.0.0 (upcoming):** SDL3 gamepads, controller Save Game confirmation, automatic 4:3 SAVE GAME / INPUT NAME screens, improved widescreen HUD and Alt+Tab handling. RC2 passed Windows 11 and Wine/GE-Proton tests. See [release notes](RELEASE_NOTES_2.0.0.md), [RC2 validation](docs/references/RELEASE_2_0_RC_TEST_PLAN.md), [standalone installer CI](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-standalone-windows-x86.yml) and [official releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases) (v2.0.0 not yet published).
+**Version 2.0.0 — released November 14, 2026:** Download the [official standalone SpiderMan2k1Fix.exe](https://github.com/legluondunet/SpiderMan2k1Fix/releases/download/v2.0.0/SpiderMan2k1Fix.exe) or view the [v2.0.0 release and notes](https://github.com/legluondunet/SpiderMan2k1Fix/releases/tag/v2.0.0). SDL3 gamepads, Save Game confirmation, centered 4:3 SAVE GAME / INPUT NAME screens, widescreen HUD and stable Alt+Tab were tested on Windows 11 and Wine/GE-Proton. See also the [technical release notes](RELEASE_NOTES_2.0.0.md) and [RC2 validation history](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
 
 [![Standalone Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-standalone-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-standalone-windows-x86.yml)
 [![Linux Wine / Proton compatible](https://img.shields.io/badge/Linux%20Wine%20%2F%20Proton-compatible-428b40?logo=linux&logoColor=white)](#installation-on-windows-and-linux-wine)
@@ -102,16 +102,15 @@ Diagnostic switches and implementation: [technical audio guide](docs/references/
 
 ## Installation on Windows and Linux (Wine)
 
-**v2.0.0 (upcoming):** The planned distribution is **one standalone**
-`SpiderMan2k1Fix.exe` with our WinMM proxy, fix DLL, SDL3 x86 runtime/license
-and optional Linux X11 helper embedded. Authentic original-ISO installs
-and gameplay have been observed under **Wine-staging 11.17 and Windows 11**.
-The installer also passed executable ISO/CUE failure, game-integrity and
-rollback tests under Windows CI. Final validation of this build with the
-maintainer's original ISO remains; CI alone is not release approval.
+**v2.0.0 (released):** Download **one standalone**
+`SpiderMan2k1Fix.exe` with the WinMM proxy, fix DLL, SDL3 x86 runtime/license
+and optional Linux X11 helper embedded. Authentic original-ISO installation,
+eight-file SHA-256 verification, gameplay and clean launcher exit were observed
+under **Wine-staging 11.17 and native Windows 11**. The release candidate
+also passed executable ISO/CUE failure, game-integrity and rollback tests
+under Windows CI before publication.
 
-1. Obtain the launcher from [GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases)
-   once v2.0.0 is published. Place it beside **one legally owned original**
+1. Download the [published v2.0.0 launcher](https://github.com/legluondunet/SpiderMan2k1Fix/releases/download/v2.0.0/SpiderMan2k1Fix.exe). Place it beside **one legally owned original**
    `.iso` or `.cue` (keep the `.bin`/`.img` track referenced by the CUE).
 2. Run `SpiderMan2k1Fix.exe` on Windows or `wine SpiderMan2k1Fix.exe` on Linux.
    It installs into `SpiderMan2k1Fix/` beside the launcher, then verifies
