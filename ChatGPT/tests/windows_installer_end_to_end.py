@@ -264,35 +264,110 @@ def fixture_rollback_upgrade(base: Path, fixture: Path) -> None:
     execute(exe, "--install-only", success=True)
     game = directory / "SpiderMan2k1Fix"
     receipt = game / "SpiderMan2k1Fix/installed-resources.sha256"
-    # Make a formerly known runtime look like an older but receipt-authenticated
-    # bundled version. This is an isolated test fixture, not a user install.
     winmm = game / OWNED[0]
-    winmm.write_bytes(winmm.read_bytes() + b"old-version-fixture")
-    lines = receipt.read_text(encoding="ascii").splitlines()
-    assert lines[0] == "SpiderMan2k1Fix-Resources-v1" and len(lines) == 8
-    lines[1] = hashlib.sha256(winmm.read_bytes()).hexdigest()
-    receipt.write_bytes(("\n".join(lines) + "\n").encode("ascii"))  # exact LF on Windows
-    snapshot = {
-        item: (game / item).read_bytes() for item in OWNED
-    }
+    pristine_winmm = winmm.read_bytes()
+
+    # A DLL not present in the previous receipt MUST be backed up, not
+    # silently deleted. Even an old .bak can already exist, and user has
+    # requested it be overwritten by exactly the previous working DLL.
+    unknown_bytes = b"MZ-unknown-user-project-DLL-bytes"
+    stale_bak = b"previous-existing-single-bak"
+    winmm.write_bytes(unknown_bytes)
+    backup = winmm.with_name(winmm.name + ".bak")
+    backup.write_bytes(stale_bak)
+    snapshot = {item: (game / item).read_bytes() for item in OWNED}
     snapshot["receipt"] = receipt.read_bytes()
+    snapshot["old_backup"] = backup.read_bytes()
 
     log = execute(
         exe, "--install-only", success=False,
         environment={"SPIDER_FIXTURE_FAIL_PUBLISH": "1"},
     )
     assert "UPGRADE: cannot publish" in log, log
+    assert "unknown installer-owned DLL" in log, log
     for item in OWNED:
         assert (game / item).read_bytes() == snapshot[item], item
-        assert not (game / (item + ".bak")).exists(), item
+        if item != OWNED[0]:
+            assert not (game / (item + ".bak")).exists(), item
+    assert backup.read_bytes() == snapshot["old_backup"]
     assert receipt.read_bytes() == snapshot["receipt"]
     assert not (directory / "SpiderMan2k1Fix.updating").exists()
     assert (game / "data.pkr").read_bytes() == FILES["data.pkr"]
 
     log = execute(exe, "--install-only", success=True)
     assert "authenticated bundled components updated" in log
+    assert winmm.read_bytes() == pristine_winmm
+    assert backup.read_bytes() == unknown_bytes  # old .bak overwritten once
+    assert len(list(game.glob("winmm.dll.bak*"))) == 1
     execute(exe, "--verify", success=True)
     assert (game / "data.pkr").read_bytes() == FILES["data.pkr"]
+
+    # All three owned DLLs follow identical one-.bak behavior. The original
+    # retail Bink DLL is NEVER touched by the project updater.
+    other_backups = {}
+    for component in OWNED[:3]:
+        dll = game / component
+        original = dll.read_bytes()
+        foreign = b"MZ-third-party-" + component.encode("ascii")
+        dll.write_bytes(foreign)
+        bak = game / (component + ".bak")
+        bak.write_bytes(b"an-obsolete-backup")
+        other_backups[component] = (original, foreign)
+    log = execute(exe, "--install-only", success=True)
+    assert "unknown installer-owned DLL" in log
+    for component, (original, foreign) in other_backups.items():
+        assert (game / component).read_bytes() == original
+        assert (game / (component + ".bak")).read_bytes() == foreign
+        assert len(list((game / component).parent.glob(
+            (game / component).name + ".bak*"))) == 1
+    execute(exe, "--verify", success=True)
+
+
+def fixture_auto_update_and_non_dll_guard(base: Path, fixture: Path) -> None:
+    directory, exe = scenario(base, "fixture_autoupdate", fixture)
+    (directory / "original.iso").write_bytes(make_iso())
+    execute(exe, "--install-only", success=True)
+    game = directory / "SpiderMan2k1Fix"
+    winmm = game / OWNED[0]
+    original = winmm.read_bytes()
+    unknown = b"MZ-unrecognized-runtime"
+    winmm.write_bytes(unknown)
+
+    # A normal no-args launcher now upgrades ONLY after validating the
+    # original retail files. The synthetic game EXE cannot actually launch
+    # on Windows, so the final launcher status remains 1 in this test.
+    log = execute(exe, success=False)
+    assert "verified bundled runtimes automatically updated before launch" in log
+    assert winmm.read_bytes() == original
+    assert (game / "winmm.dll.bak").read_bytes() == unknown
+    execute(exe, "--verify", success=True)
+
+    # Unknown non-DLL component bytes are never adopted automatically.
+    readme = game / OWNED[-2]
+    readme_before = readme.read_bytes()
+    readme.write_bytes(readme_before + b"\nmodified by user")
+    log = execute(exe, "--install-only", success=False)
+    assert "modified non-DLL runtime" in log
+    assert readme.read_bytes().endswith(b"modified by user")
+    log = execute(exe, success=False)
+    assert "missing or invalid install receipt" in log
+    assert readme.read_bytes().endswith(b"modified by user")
+    readme.write_bytes(readme_before)
+    execute(exe, "--verify", success=True)
+
+    # A directory or reparse point at the DLL backup name is not blindly
+    # overwritten by MOVEFILE_REPLACE_EXISTING or removed recursively.
+    winmm.write_bytes(unknown)
+    bak = game / "winmm.dll.bak"
+    bak.unlink()
+    bak.mkdir()
+    log = execute(exe, "--install-only", success=False)
+    assert "unsafe backup" in log
+    assert bak.is_dir() and winmm.read_bytes() == unknown
+    bak.rmdir()
+    execute(exe, "--install-only", success=True)
+    assert (game / "winmm.dll.bak").read_bytes() == unknown
+    execute(exe, "--verify", success=True)
 
 
 def main() -> None:
@@ -311,7 +386,9 @@ def main() -> None:
         fixture_integrity_and_enrollment(base, fixture)
         print("PASS: eight-file receipt, read-only verify and ISO-based legacy enrollment")
         fixture_rollback_upgrade(base, fixture)
-        print("PASS: injected mid-publish failure restores all authenticated resources")
+        print("PASS: unknown DLL backup rotation and old .bak preserved by rollback")
+        fixture_auto_update_and_non_dll_guard(base, fixture)
+        print("PASS: automatic DLL update, unknown non-DLL refusal and unsafe .bak protection")
     print("PASS: all Windows PE32 executable negative-path tests")
 
 
