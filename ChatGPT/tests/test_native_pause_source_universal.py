@@ -60,6 +60,20 @@ def test_pause_source_space_invariant_across_levels_resolutions(tmp_path):
         /* Genuine 4:3 physical output already uses correct geometry. */
         assert(SpiderPauseSource_Space(0,1440,400,680,
                         1440,1080,1440,1080)==NONE);
+        assert(SpiderPauseSource_RibbonBounds(0,1440,400,680,1440,1080));
+        /* 4:3 physical Pause remains valid without any X scaling. */
+        assert(near(SpiderPauseSource_MapPhysicalX(0,1440,1080),0));
+        assert(near(SpiderPauseSource_MapPhysicalX(1440,1440,1080),1440));
+        /* An invalid/NaN source vertex must never reach a D3D7 draw. */
+        assert(SpiderPauseSource_ValidVertex(0,400,.00122f,11.176f,1440,1080));
+        assert(SpiderPauseSource_ValidVertex(1600,750,.00122f,8.9615f,1920,1200));
+        assert(!SpiderPauseSource_ValidVertex(NAN,500,.00122f,11.176f,1920,1080));
+        assert(!SpiderPauseSource_ValidVertex(100,NAN,.00122f,11.176f,1920,1080));
+        assert(!SpiderPauseSource_ValidVertex(100,500,NAN,11.176f,1920,1080));
+        assert(!SpiderPauseSource_ValidVertex(100,500,.00122f,NAN,1920,1080));
+        assert(!SpiderPauseSource_ValidVertex(INFINITY,500,.00122f,11.176f,1920,1080));
+        assert(!SpiderPauseSource_ValidVertex(100,-200,.00122f,11.176f,1920,1080));
+        assert(!SpiderPauseSource_ValidVertex(100,500,.00122f,11.176f,20000,1080));
         /* No magic level/RHW list; generic original purple material gate. */
         assert(SpiderPauseSource_RibbonMaterial(.00122f,6.8041f,0x806050d6u));
         assert(SpiderPauseSource_RibbonMaterial(.00122f,17.413f,0x806050d6u));
@@ -118,6 +132,32 @@ def test_native_pause_observer_is_readonly_shapegated_and_level_independent():
         assert forbidden not in BRIDGE
     assert "GameFMV_Active" in CORE
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in CORE
+
+
+def test_true_native_43_pause_detected_without_unnecessary_remap():
+    """Detection and scaling have separate proof requirements.
+
+    A 1440x1080 monitor must recognize its native Pause without creating
+    artificial side margins, especially when the optional widescreen HUD
+    hook is unavailable. Failed material authentication still leaves the
+    original renderer untouched.
+    """
+    observe = BRIDGE.split("static void native_pause_source_observe_ribbon(", 1)[1].split(
+        "static int native_pause_source_remap_original_4x3(", 1)[0]
+    visible = BRIDGE.split("static int native_pause_source_visible_near_flip(", 1)[1].split(
+        "static void native_pause_source_reset(", 1)[0]
+    remap = BRIDGE.split("static int native_pause_source_remap_original_4x3(", 1)[1]
+    assert "(uint64_t)desktop_w*3u==(uint64_t)desktop_h*4u" in observe
+    assert "SpiderPauseSource_RibbonBounds(left,right,top,bottom" in observe
+    assert "native-4:3" in observe
+    assert "native_pause_source_space" not in visible
+    assert "SPIDER_PAUSE_SOURCE_PHYSICAL" in remap
+    assert "native_pause_source_visible_near_flip(flip)" in remap
+    assert "SpiderPauseSource_ValidVertex" in observe
+    assert "SpiderPauseSource_ValidVertex" in remap
+    assert "if(bound || !SpiderNativePause43_RibbonLayer" in remap
+    assert "SpiderPauseSource_RibbonBounds(l,r,t,bt" in remap
+    assert "copy[i].x=SpiderPauseSource_MapPhysicalX" in remap
 
 
 def test_native_pause_does_not_inject_second_transform_in_auto_or_known_logical_mode():
