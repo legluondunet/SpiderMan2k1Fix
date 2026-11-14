@@ -37,8 +37,9 @@ def test_dump_proven_original_code_and_cave_bytes_are_exact():
         "A1 1C BF 6B 00 56 50 8B 08 FF 51 48 8B F0 85 F6")
     assert code_bytes("cleanup") == bytes.fromhex(
         "6A 01 6A 00 E8 23 05 00 00 83 C4 08 5E C3")
-    assert code_bytes("unused_cave") == b"\\x90" * 14
+    assert code_bytes("unused_cave") == bytes([0x90]) * 14
     assert CODE_CAVE == FINAL_CLEANUP + len(code_bytes("cleanup"))
+    assert code_bytes("final_cleanup_callee") == bytes.fromhex("8B 44 24 08 53 56 57 85 C0 74 4E")
     assert PATCH_SITE == ORIGINAL_START + 7
     assert NORMAL_CONTINUATION == PATCH_SITE + 5
 
@@ -83,6 +84,7 @@ def test_guard_fails_closed_on_wrong_image_or_changed_original_bytes():
     assert "(ULONG_PTR)base!=0x00400000u" in body
     assert "memcmp(original_start,original,sizeof(original))" in body
     assert "memcmp(cleanup_start,cleanup,sizeof(cleanup))" in body
+    assert "memcmp(base+0x104050,final_cleanup_callee,sizeof(final_cleanup_callee))" in body
     assert "memcmp(cave,unused_cave,sizeof(unused_cave))" in body
     assert body.index("memcmp(original_start") < body.index("VirtualProtect(site")
     assert body.index("memcpy(cave,cave_program") < body.index(
