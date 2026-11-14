@@ -1,0 +1,145 @@
+name: SpiderMan2k1Fix standalone Windows x86
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spiderman2k1fix-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer-x86:
+    name: Standalone 32-bit installer CI (NOT a release)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Prepare Python regression tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify installer safety contract
+        run: |
+          python3 -m pip install --disable-pip-version-check pytest
+          python3 -m pytest -q ChatGPT/tests/test_installer_bootstrap.py
+
+      - name: Build Windows x86 DLLs (portable LLVM-MinGW MSVCRT)
+        run: bash ./build-native-msvcrt.sh
+
+      - name: Build portable native Linux X11 helper (Ubuntu 22.04 ABI)
+        run: |
+          set -euo pipefail
+          mkdir -p dist/package/SpiderMan2k1Fix/linux
+          # Use GitHub's Ubuntu 22.04 runner directly: it ships glibc 2.35,
+          # so we do not need a separate Docker Jammy image or apt downloads
+          # inside Docker (which have had intermittent DNS failures).
+          test -f /usr/include/X11/Xlib.h
+          cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 -fstack-protector-strong \
+            -o dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper \
+            linux/spiderman-focus-helper.c -lX11
+          helper=dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper
+          file "$helper" | grep 'ELF 64-bit'
+          ldd "$helper"
+          test -x "$helper"
+          # Keep the glibc ABI gate even though the runner is Ubuntu 22.04.
+          python3 - <<'PY'
+          import re
+          import subprocess
+          helper = "dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper"
+          info = subprocess.check_output(["readelf", "--version-info", helper], text=True)
+          versions = {tuple(map(int, m.groups())) for m in re.finditer(r"GLIBC_(\d+)\.(\d+)", info)}
+          assert versions, "No glibc version information found in the ELF"
+          assert max(versions) <= (2, 35), f"Linux helper needs newer glibc: {max(versions)}"
+          print(f"Linux helper glibc floor verified: <= 2.35 (highest symbol: {max(versions)})")
+          PY
+
+      - name: Exercise real X11 focus changes and helper shutdown in Xvfb
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -qq xvfb xauth libx11-dev
+          cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 \
+            -o "$RUNNER_TEMP/test_focus_helper_runtime" \
+            linux/tests/focus_helper_runtime.c -lX11
+          xvfb-run -a -s "-screen 0 1024x768x24" \
+            "$RUNNER_TEMP/test_focus_helper_runtime" \
+            "$PWD/dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper"
+
+      - name: Prepare game installation files
+        run: |
+          mkdir -p dist/package/SpiderMan2k1Fix
+          cp winmm.dll dist/package/
+          cp SpiderMan2k1Fix.dll README.md CHANGELOG.md dist/package/SpiderMan2k1Fix/
+
+      - name: Bundle pinned upstream SDL3 Windows x86 runtime and license
+        run: |
+          set -euo pipefail
+          sdl_archive="$RUNNER_TEMP/SDL3-3.4.18-win32-x86.zip"
+          # Both locations are upstream-owned SDL hosts, never third-party
+          # binaries. The packaging script checks the fixed official asset
+          # size and SHA-256; a stale/corrupt download always fails closed.
+          if ! curl --fail --location --retry 2 --retry-all-errors \
+            --connect-timeout 15 --max-time 75 \
+            --output "$sdl_archive" \
+            https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18-win32-x86.zip; then
+            echo "::warning::SDL GitHub Releases returned an error; using official www.libsdl.org/release fallback (SHA-256 verified below)"
+            curl --fail --location --retry 4 --retry-all-errors \
+              --connect-timeout 15 --max-time 75 \
+              --output "$sdl_archive" \
+              https://www.libsdl.org/release/SDL3-3.4.18-win32-x86.zip
+          fi
+          python3 scripts/package_sdl3_x86.py dist/package/SpiderMan2k1Fix \
+            --archive "$sdl_archive"
+          test -s dist/package/SpiderMan2k1Fix/SDL3.dll
+          test -s dist/package/SpiderMan2k1Fix/SDL3-LICENSE.txt
+
+      - name: Verify packaged README and CHANGELOG
+        run: |
+          test -s dist/package/winmm.dll
+          test -s dist/package/SpiderMan2k1Fix/SpiderMan2k1Fix.dll
+          test -s dist/package/SpiderMan2k1Fix/README.md
+          test -s dist/package/SpiderMan2k1Fix/CHANGELOG.md
+          test -s dist/package/SpiderMan2k1Fix/SDL3.dll
+          test -s dist/package/SpiderMan2k1Fix/linux/spiderman-focus-helper
+          # No inner archives: GitHub Actions compresses dist/package/ once.
+          test -z "$(find dist/package -type f -iname '*.zip' -print -quit)"
+          cmp third_party/SDL3-LICENSE.txt dist/package/SpiderMan2k1Fix/SDL3-LICENSE.txt
+          cmp README.md dist/package/SpiderMan2k1Fix/README.md
+          cmp CHANGELOG.md dist/package/SpiderMan2k1Fix/CHANGELOG.md
+          python3 -c 'import pathlib,re; s=pathlib.Path("dist/package/SpiderMan2k1Fix/README.md").read_text(encoding="utf-8"); assert not re.search(r"(?m)^- \*\*\s", s), "Malformed bold Markdown bullet in README.md"'
+          echo "README.md and CHANGELOG.md match the checked-out sources."
+          sha256sum README.md dist/package/SpiderMan2k1Fix/README.md CHANGELOG.md dist/package/SpiderMan2k1Fix/CHANGELOG.md
+
+      # Release candidate CI remains read-only: no tag, no GitHub release.
+      - name: Build RCDATA-packed single executable
+        run: bash scripts/build_installer.sh
+
+      - name: Audit embedded resources and standalone executable SHA-256
+        run: |
+          set -euo pipefail
+          test -s dist/installer/SpiderMan2k1Fix.exe
+          test "$(find dist/installer -maxdepth 1 -type f -name '*.exe' | wc -l)" -eq 1
+          python3 scripts/verify_spiderman_installer_resources.py \
+            dist/installer/SpiderMan2k1Fix.exe dist/package
+          (
+            cd dist/installer
+            sha256sum SpiderMan2k1Fix.exe > SpiderMan2k1Fix.exe.sha256
+            sha256sum -c SpiderMan2k1Fix.exe.sha256
+            cat SpiderMan2k1Fix.exe.sha256
+          )
+
+      - name: Upload standalone executable only
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpiderMan2k1Fix-Windows-x86-Standalone
+          path: dist/installer/SpiderMan2k1Fix.exe
+          if-no-files-found: error
+          retention-days: 30
