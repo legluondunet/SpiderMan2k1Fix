@@ -24,6 +24,32 @@ def test_installer_names_and_paths():
     assert "CreateProcessW" in SRC
 
 
+def test_crashed_first_start_preserves_runtime_evidence_without_retrying():
+    """A migrated+upgraded first launch can fail with Windows 0xC0000005.
+    Never hide it with an automatic restart; save fresh diagnostics before
+    the second launch truncates the per-process runtime log.
+    """
+    assert "static void preserve_crashed_game_log(" in SRC
+    preserve=SRC.split("static void preserve_crashed_game_log(",1)[1].split(
+        "static int launch_game(",1)[0]
+    assert "(code&0xC0000000UL)!=0xC0000000UL" in preserve
+    assert "GetFileAttributesExW(runtime_log,GetFileExInfoStandard,&after)" in preserve
+    assert "CompareFileTime(&before->ftLastWriteTime,&after.ftLastWriteTime)" in preserve
+    assert "FILE_ATTRIBUTE_REPARSE_POINT" in preserve
+    assert 'L"SpiderMan2k1Fix_failed-launch.log"' in preserve
+    assert "CopyFileW(runtime_log,target,TRUE)" in preserve  # no overwrite
+    assert "CREATE_NEW" not in preserve
+    launch=SRC.split("static int launch_game(int verify_exe)",1)[1].split(
+        "static void usage(void)",1)[0]
+    assert 'L"SpiderMan2k1Fix.log"' in launch
+    assert "GetFileAttributesExW(runtime_log,GetFileExInfoStandard,&log_before)" in launch
+    assert launch.index("WaitForSingleObject(pi.hProcess,INFINITE)") < (
+        launch.index("preserve_crashed_game_log(exit_code"))
+    assert launch.index("preserve_crashed_game_log(exit_code") < (
+        launch.index("return exit_code==0"))
+    assert launch.count("CreateProcessW(")==1  # no automatic crash retry
+
+
 def test_game_data_directory_is_spiderman2001_and_legacy_is_migrated_safely():
     assert '#define SPIDER_GAME_DIR L"spiderman2001"' in SRC
     assert '#define SPIDER_LEGACY_DIR L"SpiderMan2k1Fix"' in SRC
