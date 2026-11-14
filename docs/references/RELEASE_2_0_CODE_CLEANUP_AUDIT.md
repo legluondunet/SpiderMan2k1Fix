@@ -238,3 +238,38 @@ tests, native Windows 11 original-ISO installation and independent clean
 process-exit evidence. The current `--verify` must not be represented as
 full PKR/media integrity verification. No v2.0.0 tag/release is published
 by this audit.
+
+## Follow-up: eight-file original-game integrity (PR #154)
+
+The original-installer SHA-256 gap is addressed in the source candidate.
+A new `SpiderMan2k1Fix/installed-game.sha256` receipt, separate from
+`installed-resources.sha256`, stores the byte size and SHA-256 of all
+**eight** files defined by the authenticated Wise full-install manifest
+(`SpideyPC.exe`, `data.pkr`, `media.pkr`, `texture.dat`, `binkw32.dll`,
+`Anet.inf`, `SpideyPC.ico`, `Spider-Man Setup.exe`).
+
+- On initial ISO/CUE installation, the game receipt is written and verified
+  in the private `.installing` directory **before** publishing the install.
+- Routine `--verify` and launch verify both receipts and all fifteen files
+  read-only. Unknown, missing, truncated or modified original data is refused,
+  not repaired, and original saves and user INI remain untouched.
+- Old prototype installations **without** the game receipt can enroll only
+  under explicit `--install-only` when exactly one retail ISO/CUE is placed
+  beside the launcher. A shared Wise source-mapping validator locates one
+  consistent folder, then streams SHA-256 directly from the image and compares
+  source size/hash with all eight installed files. The original source EXE
+  must independently match its known retail SHA-256. An existing invalid
+  receipt is never overwritten.
+- The hash record provides **integrity against the selected owner-supplied
+  image**, not independent verification of the other seven media assets
+  against an externally authenticated checksum list. The original supported
+  EXE remains independently SHA-256 locked.
+- The new code still requires Windows x86 cross-build and integration
+  validation. Malformed-media/rollback **executable behavior tests** are
+  tracked as a separate follow-up; source-level assertions do not establish
+  their runtime behavior.
+- The maintainer's November 14 Windows 11 native log now establishes a
+  real original ISO install, 1920x1200 DirectDraw/Direct3D display and SDL3
+  input/focus activity, plus launcher game exit code 0. This corrects the
+  earlier historical statement that only Wine ISO runs had been observed;
+  it does **not** retroactively test this new receipt implementation.
