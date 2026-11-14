@@ -271,7 +271,7 @@ def fixture_rollback_upgrade(base: Path, fixture: Path) -> None:
     lines = receipt.read_text(encoding="ascii").splitlines()
     assert lines[0] == "SpiderMan2k1Fix-Resources-v1" and len(lines) == 8
     lines[1] = hashlib.sha256(winmm.read_bytes()).hexdigest()
-    receipt.write_text("\n".join(lines) + "\n", encoding="ascii")
+    receipt.write_bytes(("\n".join(lines) + "\n").encode("ascii"))  # exact LF on Windows
     snapshot = {
         item: (game / item).read_bytes() for item in OWNED
     }
@@ -281,7 +281,7 @@ def fixture_rollback_upgrade(base: Path, fixture: Path) -> None:
         exe, "--install-only", success=False,
         environment={"SPIDER_FIXTURE_FAIL_PUBLISH": "1"},
     )
-    assert "UPGRADE: cannot publish" in log
+    assert "UPGRADE: cannot publish" in log, log
     for item in OWNED:
         assert (game / item).read_bytes() == snapshot[item], item
         assert not (game / (item + ".bak")).exists(), item
