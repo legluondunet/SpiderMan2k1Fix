@@ -1,8 +1,8 @@
 # SpiderMan2k1Fix
 
-**Version 2.0.0 (upcoming):** SDL3 gamepads, controller Save Game confirmation, automatic 4:3 SAVE GAME / INPUT NAME screens, improved widescreen HUD and Alt+Tab handling. RC2 passed Windows 11 and Wine/GE-Proton tests. See [release notes](RELEASE_NOTES_2.0.0.md), [RC2 validation](docs/references/RELEASE_2_0_RC_TEST_PLAN.md), [CI builds](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml) and [official releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases) (v2.0.0 not yet published).
+**Version 2.0.0 (upcoming):** SDL3 gamepads, controller Save Game confirmation, automatic 4:3 SAVE GAME / INPUT NAME screens, improved widescreen HUD and Alt+Tab handling. RC2 passed Windows 11 and Wine/GE-Proton tests. See [release notes](RELEASE_NOTES_2.0.0.md), [RC2 validation](docs/references/RELEASE_2_0_RC_TEST_PLAN.md), [standalone installer CI](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-standalone-windows-x86.yml) and [official releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases) (v2.0.0 not yet published).
 
-[![Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml)
+[![Standalone Windows x86 build](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-standalone-windows-x86.yml/badge.svg)](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-standalone-windows-x86.yml)
 [![Linux Wine / Proton compatible](https://img.shields.io/badge/Linux%20Wine%20%2F%20Proton-compatible-428b40?logo=linux&logoColor=white)](#installation-on-windows-and-linux-wine)
 
 SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spider-Man*, released by Activision in 2001. It improves compatibility with modern Windows systems and Linux/Wine while adding new features.
@@ -104,9 +104,11 @@ Diagnostic switches and implementation: [technical audio guide](docs/references/
 
 **v2.0.0 (upcoming):** The planned distribution is **one standalone**
 `SpiderMan2k1Fix.exe` with our WinMM proxy, fix DLL, SDL3 x86 runtime/license
-and optional Linux X11 helper embedded. Its original-disc installation is
-**still awaiting real-ISO tests on Windows 11 and Wine**; use official releases
-only after that validation.
+and optional Linux X11 helper embedded. An authentic original retail ISO
+has already been inspected and installed under **Wine-staging 11.17**, followed
+by actual gameplay. A fresh **native Windows 11 ISO install**, complete game-data
+integrity coverage and negative/rollback cases are still pending; a successful
+CI build is not a final release certification.
 
 1. Obtain the launcher from [GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases)
    once v2.0.0 is published. Place it beside **one legally owned original**
@@ -163,7 +165,7 @@ For advanced settings and detailed explanations, see the [Configuration and Trou
 
 ## Building from Source
 
-SpiderMan2k1Fix builds two 32-bit Windows DLLs (`SpiderMan2k1Fix.dll` and `winmm.dll`) using an MSVCRT-compatible MinGW-w64 toolchain.
+The source build produces two 32-bit Windows DLLs (`SpiderMan2k1Fix.dll` and `winmm.dll`) using an MSVCRT-compatible MinGW-w64 toolchain. The standalone release executable is built separately by `scripts/build_installer.sh` after seven redistributable payloads have been staged; the [installer workflow](.github/workflows/spiderman2k1fix-standalone-windows-x86.yml) is the reference packaging recipe. The legacy DLL workflow exists for development/debugging, **not** as the official v2.0.0 download.
 
 ### Linux
 
@@ -210,7 +212,7 @@ Make sure `winmm.dll` is alongside `SpideyPC.exe` and `SpiderMan2k1Fix.dll` is i
 
 Enable diagnostic logging by setting `Log=1` under `[Debug]` in `SpiderMan2k1Fix.ini`, then try to reproduce the issue.
 
-If the problem persists, report it through [GitHub Issues](https://github.com/legluondunet/SpiderMan2k1Fix/issues) and attach the generated `SpiderMan2k1Fix.log` file. **The log is written next to `SpideyPC.exe` in the game installation directory**, even when `SpiderMan2k1Fix.ini` and the main DLL are in `SpiderMan2k1Fix/`. If the game directory is read-only (such as an installation under `Program Files`), the log instead goes to `%LOCALAPPDATA%\\SpiderMan2k1Fix\\SpiderMan2k1Fix.log`. Existing logs are not moved or deleted.
+If the problem persists, report it through [GitHub Issues](https://github.com/legluondunet/SpiderMan2k1Fix/issues) and attach both `SpiderMan2k1Fix_installer.log` (launcher/install errors) and `SpiderMan2k1Fix.log` (runtime errors), when present. **When launched through the v2.0.0 standalone EXE, both logs are placed next to `SpiderMan2k1Fix.exe`**, even though the game executable resides in the nested install folder. For legacy direct `SpideyPC.exe` launches, the runtime log still falls back to the original game's directory or a writable `%LOCALAPPDATA%\\SpiderMan2k1Fix\\` location. Review logs for private local paths before sharing.
 
 The startup `SYS-INFO` report distinguishes native Windows from Wine/Proton hints and includes the display used by the game. See [detailed system-log interpretation](docs/references/CONFIGURATION.md#reading-sys-info-and-focus-diagnostics); Wine/DXVK-reported driver versions are not necessarily your host GPU driver's version.
 

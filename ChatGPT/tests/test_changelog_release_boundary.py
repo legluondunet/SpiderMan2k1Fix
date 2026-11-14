@@ -14,7 +14,7 @@ def test_stable_2_0_explains_current_sdl3_policy_and_preserves_release_gate():
     for phrase in ("only supported controller mapping backend", "first safe foreground",
                    "neutral-first", "DirectInput", "QuickExit F10/F12", "RawHex",
                    "Windows 11", "Wine/Proton", "Steam Deck", "final v2.0.0",
-                   "original veil", "SDL3 3.4.18", "own CI"):
+                   "original veil", "SDL3 3.4.18", "CI passed on merged main"):
         assert phrase in head, phrase
     assert "ExperimentalSDL3UniversalGameplay=0" not in head
     assert "Native Windows hardware validation remains deferred" not in head

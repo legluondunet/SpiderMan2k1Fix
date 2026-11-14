@@ -132,45 +132,11 @@ jobs:
           echo "README.md and CHANGELOG.md match the checked-out sources."
           sha256sum README.md dist/package/SpiderMan2k1Fix/README.md CHANGELOG.md dist/package/SpiderMan2k1Fix/CHANGELOG.md
 
-      - name: Build release-ready ZIP and SHA256 (do not publish)
-        run: |
-          set -euo pipefail
-          version=$(sed -n 's/^#define SPIDERMAN2K1FIX_VERSION "\([^"]*\)"/\1/p' version_info.h)
-          test -n "$version"
-          commit="${GITHUB_SHA:0:7}"
-          stem="SpiderMan2k1Fix-v${version}-${commit}-Windows-x86"
-          mkdir -p dist/release
-          (
-            cd dist/package
-            zip -q -9 "../release/${stem}.zip" \
-              winmm.dll \
-              SpiderMan2k1Fix/SpiderMan2k1Fix.dll \
-              SpiderMan2k1Fix/SDL3.dll \
-              SpiderMan2k1Fix/SDL3-LICENSE.txt \
-              SpiderMan2k1Fix/linux/spiderman-focus-helper \
-              SpiderMan2k1Fix/README.md \
-              SpiderMan2k1Fix/CHANGELOG.md
-          )
-          (
-            cd dist/release
-            sha256sum "${stem}.zip" > "${stem}.zip.sha256"
-            unzip -Z -1 "${stem}.zip" | sort > actual.txt
-            printf '%s\n' \
-              winmm.dll \
-              SpiderMan2k1Fix/SpiderMan2k1Fix.dll \
-              SpiderMan2k1Fix/SDL3.dll \
-              SpiderMan2k1Fix/SDL3-LICENSE.txt \
-              SpiderMan2k1Fix/linux/spiderman-focus-helper \
-              SpiderMan2k1Fix/README.md \
-              SpiderMan2k1Fix/CHANGELOG.md | sort > expected.txt
-            diff -u expected.txt actual.txt
-          )
-
-      # upload-artifact ALWAYS creates the ONE ZIP downloaded from Actions.
-      # Upload the install tree, not our own release .zip, to avoid ZIP-in-ZIP.
-      # The versioned release ZIP + SHA256 above remain available to a future
-      # official release/publish job, but are not uploaded as an Actions artifact.
-      - name: Upload installation files as one ZIP (no nested ZIP)
+      # This artifact is intentionally kept only for DLL-level development and
+      # backwards-compatible hardware debugging. The v2.0.0 distributable is
+      # exclusively the single EXE from the standalone installer workflow.
+      # Do not build or upload the superseded pre-2.0 versioned release ZIP.
+      - name: Upload developer DLL bundle (not a v2.0 release)
         uses: actions/upload-artifact@v4
         with:
           name: SpiderMan2k1Fix-Windows-x86

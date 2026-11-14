@@ -96,7 +96,7 @@ def test_docs_index_lists_every_reference():
 
 def test_short_homepage_delegates_to_detailed_documentation():
     homepage = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert len(homepage) < 19000
+    assert len(homepage) < 20000  # standalone v2 installation and log guidance is essential
     assert "### F10 development shortcut" not in homepage
     assert "docs/references/CONFIGURATION.md" in homepage
     assert "docs/references/F9_PNG_CAPTURE.md" in homepage

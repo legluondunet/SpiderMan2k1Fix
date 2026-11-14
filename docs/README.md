@@ -13,7 +13,7 @@ This directory contains the maintained technical documentation and an index of s
 
 - [Wise 2000/2001 installation scripts — file manifests, full-install `media.pkr`, registry and provenance](references/SPIDERMAN_RETAIL_WISE_INSTALL_MAP.md)
 - [Standalone ISO installer — layout, install-once safety and remaining source-validation gates](references/INSTALLER_2_0_DESIGN.md)
-- [v2.0.0 code cleanup audit and release gates](references/RELEASE_2_0_CODE_CLEANUP_AUDIT.md) — removed compatibility paths, missing game-asset verification and test requirements
+- [v2.0.0 code cleanup audit and release gates](references/RELEASE_2_0_CODE_CLEANUP_AUDIT.md) — merged installer and verified Wine original-ISO evidence, obsolete DLL ZIP cleanup and remaining release validation
 
 ## Current integration and preserved experimental history
 
@@ -88,6 +88,6 @@ The [ChatGPT workspace](../ChatGPT/README.md) contains the automated regression 
 
 ## Repository root
 
-The main project files at the repository root are [README.md](../README.md) and [CHANGELOG.md](../CHANGELOG.md). The published stable version is [v1.1.0](https://github.com/legluondunet/SpiderMan2k1Fix/releases/tag/v1.1.0). The `main` branch also contains unreleased changes; current development builds are available through GitHub Actions and are not official releases.
+The main project files at the repository root are [README.md](../README.md) and [CHANGELOG.md](../CHANGELOG.md). The published stable version is [v1.1.0](https://github.com/legluondunet/SpiderMan2k1Fix/releases/tag/v1.1.0). The `main` branch also contains unreleased changes; current [single-EXE Windows x86 installer candidates](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-standalone-windows-x86.yml) and developer-only [DLL test bundles](https://github.com/legluondunet/SpiderMan2k1Fix/actions/workflows/spiderman2k1fix-windows-x86.yml) are available through GitHub Actions, **not** as official releases. The installer implementation issue #149 is closed, but native Windows 11 installation and full original game-data verification remain open release criteria.
 
 Historical external URLs to the previous file paths (issues, commits and comments) are not automatically updated by this move.

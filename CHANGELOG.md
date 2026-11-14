@@ -65,9 +65,14 @@ release is published.
 - Keep the previously released No-CD, native resolution/borderless,
   30 FPS default limiter, original PNG capture and native WAV-loader
   corrections.
-- Bundle the official unmodified SDL3 3.4.18 Windows x86 runtime, its license,
-  `winmm.dll`, `SpiderMan2k1Fix.dll`, and the optional native Linux X11
-  focus helper in a single directly extractable CI artifact.
+- Distribute v2.0.0 as **one PE32 Windows x86 `SpiderMan2k1Fix.exe`**:
+  merged ISO/CUE installer and launcher (PR #150), with original Wise
+  eight-file installation from the user's own disc and separate installer/game
+  logs. Embed unmodified SDL3 3.4.18 x86, its license, the two project DLLs,
+  docs and the optional Linux X11 helper. No original game assets are bundled.
+- The standalone CI (PR #151) verifies all seven embedded PE32 RCDATA payloads
+  byte-for-byte and records the installer SHA-256. The developer DLL workflow
+  remains available but no longer builds its unused pre-2.0 release ZIP.
 
 ### Verification scope and release gate
 
@@ -81,18 +86,29 @@ release is published.
   SDL3 runtime, Linux X11 helper and package verified. The maintainer
   confirmed final Windows 11 and Wine/Proton smoke tests, including gamepad
   switching, native Pause, SAVE GAME / YES, video/audio resume, Alt+Tab and
-  normal exit. The stable-version package still requires its own CI.
+  normal exit. These are RC2 gameplay results, not a new ISO-installer
+  validation.
 - **Not yet claimed:** full Steam Deck/Steam Input compatibility, native
   analog-axis preservation, every SDL3 device, and native Windows PS3
   hardware. Limited Steam Deck hardware observations are tracked in issue #120
   for follow-up after v2.0.0; none imply complete compatibility.
-- Subsequent PR #144 Windows x86 CI passed on merged main (`d517f4d0`);
-  the stable default-enabled follow-up requires its own CI and Windows/Wine
-  smoke test. Do not claim untested runtime environments have been verified
-  by build success alone.
+- Subsequent PR #144 corrected SAVE GAME rendering with Wine hardware
+  validation. On November 14 an authentic original ISO was inspected and
+  installed under Wine-staging 11.17. The runtime log documented real 3D,
+  4:3 UI, SDL3, audio and Alt+Tab activity. PRs #150 and #151 are merged:
+  [standalone](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/43583076518)
+  and [DLL/regression](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/43583076531)
+  CI passed on merged main `1e5b0d2`.
+- **Remaining gates:** original CD data-integrity checks, executable malformed
+  ISO/CUE and rollback tests, native Windows 11 original-ISO installation and
+  independently observed final game exit. `--verify` authenticates the game
+  EXE and bundled resources but does **not** verify all PKR/game data. Issue
+  #149 is closed after implementation; the stable release is not published.
 - Open post-release investigations: missing W lightning on the NEW YORK
   sign (#146), unexpectedly moving shadows (#147) and bank window
   glass-break audio order (#145). Their causes are not established.
+- Automatic scene-specific Chase Venom 20 FPS limiting remains unimplemented
+  and is tracked separately in issue #152 (manual FPSLimit=20 is available).
 - No automatic release or tag is created by the CI workflow. See
   [accepted RC2 test history](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
 - Historical development reports and superseded experimental findings remain

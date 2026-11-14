@@ -95,7 +95,7 @@ def test_fail_closed_for_zip_slip_duplicate_dll_wrong_name_and_bad_pe():
         module.extract_verified_runtime(blob, hashlib.sha256(blob).hexdigest())
 
 
-def test_build_artifact_includes_game_folder_dll_license_and_release_zip():
+def test_developer_artifact_keeps_runtime_without_obsolete_release_zip():
     ci = (ROOT / ".github/workflows/spiderman2k1fix-windows-x86.yml").read_text()
     assert "Bundle pinned upstream SDL3 Windows x86 runtime and license" in ci
     assert "curl --fail --location --retry 4 --retry-all-errors" in ci
@@ -104,17 +104,15 @@ def test_build_artifact_includes_game_folder_dll_license_and_release_zip():
     assert "cmp third_party/SDL3-LICENSE.txt" in ci
     assert "SpiderMan2k1Fix/SDL3.dll" in ci
     assert "SpiderMan2k1Fix/SDL3-LICENSE.txt" in ci
-    assert "zip -q -9" in ci
-    assert "sha256sum" in ci
-    assert "unzip -Z -1" in ci
-    assert "Build release-ready ZIP and SHA256 (do not publish)" in ci
-    assert 'sha256sum "${stem}.zip" > "${stem}.zip.sha256"' in ci
-    assert "Upload installation files as one ZIP (no nested ZIP)" in ci
+    assert "dist/release/" not in ci
+    assert "Build release-ready ZIP" not in ci
+    assert "zip -q -9" not in ci
+    assert "Upload developer DLL bundle (not a v2.0 release)" in ci
     assert 'test -z "$(find dist/package -type f -iname \'*.zip\' -print -quit)"' in ci
     assert ci.count("uses: actions/upload-artifact@v4") == 1
     assert ci.count("name: SpiderMan2k1Fix-Windows-x86") == 1
     assert "name: SpiderMan2k1Fix-Release-ZIP" not in ci
-    upload=ci.split("      - name: Upload installation files as one ZIP (no nested ZIP)",1)[1]
+    upload=ci.split("      - name: Upload developer DLL bundle (not a v2.0 release)",1)[1]
     assert "path: dist/package/" in upload
     assert "dist/release/" not in upload
     assert "gh release create" not in ci
