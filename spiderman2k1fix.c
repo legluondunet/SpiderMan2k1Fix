@@ -25,6 +25,7 @@
 #include "hud_boss_native.h"
 #include "native_pause_title_bounds.h"
 #include "native_pause_43_policy.h"
+#include "native_pause_source_policy.h"
 #include "frame_limiter.h"
 #include "display_plan.h"
 #include "menu_scale.h"
@@ -1729,6 +1730,8 @@ static void native_pause43_init(void) {
     "PAUSE-NATIVE-43: 4:3 ribbon+borders+glyphs ON (HUDWidescreenFix master)" :
     "PAUSE-NATIVE-43: inactive (native HUD unavailable)");
 }
+#include "native_pause_source_bridge.inc"
+
 static const void *maybe_correct_native_pause43(void *device,
             D3DPRIMITIVETYPE type,DWORD fvf,const void *source,
             DWORD count,void *ret,SpiderMenuVertex *copy) {
@@ -3637,7 +3640,14 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
   {
     SpiderMenuVertex small[64],*allocated=NULL;
     int native_esc_primitive=0;
-    const void *v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
+    const void *v;
+    void *draw_caller=__builtin_return_address(0);
+    native_pause_source_observe_ribbon(self,type,fvf,verts,count,draw_caller);
+    if(native_pause_source_remap_original_4x3(
+           self,type,fvf,verts,count,draw_caller,small))
+      v=small;
+    else
+      v=scale_menu_vertices(fvf,verts,count,small,64,&allocated);
     if(v==verts && count==4) {
       v=maybe_correct_native_comic(self,type,fvf,verts,count,
                                    __builtin_return_address(0),small);
@@ -5253,7 +5263,8 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       InterlockedCompareExchange(&fov_game_height,0,0)>0,
     (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
     ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
-      native_pause43_visible_near_flip(count)));
+      native_pause43_visible_near_flip(count) ||
+      native_pause_source_visible_near_flip(count)));
   if(debug_log_enabled && count<=24) {
     char line[160]; snprintf(line,sizeof(line),"DDRAW: Surface7::Flip #%ld self=%p target=%p flags=0x%08lX",
                              (long)count,self,(void*)target,(unsigned long)flags); log_line(line);
@@ -5714,6 +5725,7 @@ static HRESULT WINAPI hooked_mode(void *self,DWORD w,DWORD h,DWORD bpp,DWORD hz,
     log_line(line);
     InterlockedIncrement(&borderless_legacy_mode_calls);
     borderless_window_apply();
+    native_pause_source_reset();
     InterlockedExchange(&menu_upscale_active,1);
     InterlockedExchange(&gameplay_4x3_active,0);
     InterlockedExchange(&fov_game_height,0);
@@ -5728,6 +5740,7 @@ static HRESULT WINAPI hooked_mode(void *self,DWORD w,DWORD h,DWORD bpp,DWORD hz,
   /* Match only the expected internal game mode. The physical output is
    * the selected display mode, NOT the internal 4:3 logical dimensions.
    * Never forward the unsupported logical mode after a failed native call. */
+  native_pause_source_reset(); /* no stale Pause owner across mode changes */
   if(InterlockedCompareExchange(&gameplay_4x3_enabled,0,0)==1 &&
      w==game_logical_w && h==game_logical_h && bpp==32) {
     snprintf(line,sizeof(line),
