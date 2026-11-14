@@ -282,3 +282,17 @@ def test_release_cleanup_removes_obsolete_install_state():
     assert "if(GetFileAttributesW(receipt)==INVALID_FILE_ATTRIBUTES" not in main
     assert 'VERIFY: missing or invalid install receipt' in main
     assert 'verify_install_receipt(game_dir)' in main
+
+
+def test_normal_install_summarizes_cd_and_reserves_listing_for_verbose():
+    """The 293-file original CD inventory belongs to --inspect, not every run."""
+    main=SRC.split("int wmain(",1)[1]
+    normal=main.split("scan=find_adjacent_disc(",1)[1].split(
+        "if(!prepare_game_from_iso(&iso))",1)[0]
+    assert 'if(verbose_mode)' in normal
+    assert 'message(L"ISO-FILE: %ls size=%lu lba=%lu"' in normal
+    assert 'message(L"ISO: inspected %lu regular files",listed);' in normal
+    assert normal.index('if(verbose_mode)') < normal.index('message(L"ISO-FILE:')
+    inspect=main.split("if(inspect){",1)[1].split("if(argc>2)",1)[0]
+    assert 'ENTRY: path=' in inspect
+    assert 'INSPECT_RESULT=COMPLETE' in inspect
