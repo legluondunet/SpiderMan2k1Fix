@@ -25,6 +25,12 @@ KNOWN = {
     "native DXSOUND_Play": (0x00504230, None),
     "native DXSOUND_Stop": (0x005042A0, bytes.fromhex("8B 44 24 04 56 8D 04 40")),
     "original native Play callsite": (0x00472870, bytes.fromhex("E8 BB 19 09 00")),
+    "WER crash direct caller: native shutdown Stop (16:52 and 21:05)": (
+        0x004FF9CA, bytes.fromhex("E8 21 41 00 00")),
+    "WER crash NULL dereference: original Stop vtable invocation": (
+        0x00503AF7, bytes.fromhex("8B 08 FF 51 48")),
+    "original NULL-aware final cleanup callee": (
+        0x00504050, bytes.fromhex("8B 44 24 08 53 56 57 85 C0 74 4E")),
 }
 WINDOW_START = 0x005039D0
 WINDOW_END = 0x00504340
@@ -272,7 +278,19 @@ def inspect(blob: bytes, exe: Path, out: Path) -> str:
              "VA 0x005004C0-0x00500640: graphics COM six-argument calls, NOT DuplicateSoundBuffer.",
              disassemble(exe, 0x00501480, 0x00501C20),
              disassemble(exe, 0x005027F0, 0x00502BB0),
-             disassemble(exe, 0x005004C0, 0x00500640)]
+             disassemble(exe, 0x005004C0, 0x00500640),
+             "",
+             "WER 2026-11-14: SAME NULL PRIMARY BUFFER CRASH ON TWO BUILDS",
+             "16:52 and 21:05 exception EIP=0x00503AF7, EAX=0; original caller=0x004FF9CA.",
+             "The shutdown may be a consequence of an earlier graphics API failure:",
+             "the native graphics initialization runs before DirectSound creation.",
+             "EDI=0x80004005 from both dumps is a clue, NOT proof of failing API.",
+             "The following disassemblies are read-only and SHA-256 gated.",
+             "DIRECT CALLER / PRECEDING ERROR HANDLING (0x004FF700-0x004FFB40)",
+             disassemble(exe, 0x004FF700, 0x004FFB40),
+             "POSSIBLE UPSTREAM RETURN SITE (0x004FDC80-0x004FE000)",
+             "Return-site 0x004FDED9 is a stack candidate, NOT an unwound frame.",
+             disassemble(exe, 0x004FDC80, 0x004FE000)]
     report = "\n".join(rows) + "\n"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report, encoding="utf-8")
