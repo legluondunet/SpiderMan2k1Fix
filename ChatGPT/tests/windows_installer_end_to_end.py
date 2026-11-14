@@ -417,7 +417,7 @@ def fixture_legacy_rename_and_ambiguity(base: Path, fixture: Path) -> None:
     archive = second_old / "data.pkr"
     archive.write_bytes(archive.read_bytes() + b"changed")
     log = execute(second_exe, "--install-only", success=False)
-    assert "original game data missing/modified" in log
+    assert "existing game receipt invalid; refusing replacement" in log
     assert second_old.exists() and not second_new.exists()
 
 def main() -> None:
