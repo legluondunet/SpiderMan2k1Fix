@@ -384,3 +384,27 @@ def test_all_entry_points_require_game_receipt_except_explicit_bypass():
         'if(!combine(gameexe',1)[0]
     assert "verify_game_receipt(" not in bypass
     assert "enroll_game_receipt_" not in bypass
+
+
+def test_windows_pe32_negative_paths_run_on_real_executable_in_ci():
+    """The TEST-ONLY checksum override must never enter the production EXE."""
+    builder=(ROOT/"scripts/build_installer_test_fixture.py").read_text(encoding="utf-8")
+    suite=(ROOT/"ChatGPT/tests/windows_installer_end_to_end.py").read_text(encoding="utf-8")
+    assert "SPIDER_FIXTURE_FAIL_PUBLISH" not in SRC
+    assert "SPIDER_FIXTURE_FAIL_PUBLISH" in builder
+    assert "SPIDER_FIXTURE_FAIL_PUBLISH" in suite
+    assert "ORIGINAL = " in builder and "FAKE_EXE" in builder
+    assert "source.replace(ORIGINAL" in builder
+    assert "SpiderMan2k1Fix-TEST-ONLY.exe" in WORKFLOW
+    assert "dist/installer-test/SpiderMan2k1Fix-TEST-ONLY.exe" in WORKFLOW
+    assert "path: dist/installer/SpiderMan2k1Fix.exe" in WORKFLOW
+    assert "name: SpiderMan2k1Fix-CI-TEST-ONLY" in WORKFLOW
+    assert "retention-days: 1" in WORKFLOW
+    assert "runs-on: windows-2022" in WORKFLOW
+    assert "needs: installer-x86" in WORKFLOW
+    assert "windows_installer_end_to_end.py" in WORKFLOW
+    assert "fixture_rollback_upgrade" in suite
+    assert "fixture_integrity_and_enrollment" in suite
+    assert "negative_media_cases" in suite
+    assert "No original commercial game" in suite or "original commercial game" in suite
+    assert "gh release create" not in WORKFLOW
