@@ -1,10 +1,13 @@
 # SpiderMan2k1Fix 2.0.0 — source cleanup and release gates
 
-Status: **implementation merged into `main`** (PRs #150 and #151); the official v2.0.0 release is **not yet published**.
-Initial audit performed November 13, 2026 on
-`feature/2.0.0-iso-installer-bootstrap`; reconciled against `main` on
-November 14. Do **not** announce complete original-CD compatibility from
-source review and CI alone: only the Wine original-ISO path has actual field evidence.
+Status: **integrity and negative-path work merged into `main`** (PRs
+#150, #151, #154, #155); the official v2.0.0 release is **not published**.
+The chronological findings below include historical statements from the
+November 13–14 prototype audit. Later Windows 11 original-ISO logs and
+the [Windows PE32 executable CI](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/43616844363)
+supersede those initial unknowns. The final pending gate is a maintainer
+smoke test with the new eight-file receipt build and authentic ISO; CI alone
+does not replace this test.
 
 ## Target behavior kept intact
 
@@ -232,12 +235,12 @@ gameplay/rendering/input behavior:
   is closed after merging #150/#151, **not** because the stable release
   validation gate has been waived.
 
-**Remaining release gates remain open:** source-authenticated hashes/receipt
-for all original retail data files, executable malformed ISO/CUE and rollback
-tests, native Windows 11 original-ISO installation and independent clean
-process-exit evidence. The current `--verify` must not be represented as
-full PKR/media integrity verification. No v2.0.0 tag/release is published
-by this audit.
+**Historical release-gate snapshot (superseded by PRs #154/#155):**
+the eight-file game receipt and synthetic Windows executable negative-path
+checks are now implemented, and native Windows 11 original-ISO installation
+has been observed. See the follow-up sections below. A final authentic
+retail-ISO smoke of the new receipt build and manual publication decision
+are still required; no v2.0.0 tag/release is created by this audit.
 
 ## Follow-up: eight-file original-game integrity (PR #154)
 
