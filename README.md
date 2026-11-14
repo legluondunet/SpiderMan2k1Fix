@@ -107,8 +107,7 @@ Diagnostic switches and implementation: [technical audio guide](docs/references/
 and optional Linux X11 helper embedded. An authentic original retail ISO
 has already been inspected and installed under **Wine-staging 11.17**, followed
 by actual gameplay. A fresh **native Windows 11 ISO install**, complete game-data
-integrity coverage and negative/rollback cases are still pending; a successful
-CI build is not a final release certification.
+integrity negative/rollback tests are pending; CI alone is not release approval.
 
 1. Obtain the launcher from [GitHub Releases](https://github.com/legluondunet/SpiderMan2k1Fix/releases)
    once v2.0.0 is published. Place it beside **one legally owned original**
@@ -118,8 +117,12 @@ CI build is not a final release certification.
    and starts the game. The old Wise setup and graphics selector are not run.
 3. Later launches verify the game and bundled components without silently
    replacing your files. `--install-only` installs or updates **recognized
-   installer-owned components** without starting the game. `--verify` only
-   checks, while `--inspect image.iso` or `--inspect image.cue [track.bin|track.img]`
+   installer-owned components** without starting the game. It also enrolls
+   older installations' eight-file game receipt **only after matching the ISO
+   byte-for-byte**. `--verify` checks SHA-256/size for all eight original
+   game files and seven bundled components (read-only). Missing or altered
+   files cause refusal, never auto-repair. `--inspect image.iso` or
+   `--inspect image.cue [track.bin|track.img]`
    creates `SpiderMan2k1Fix_inspect.log` for unsupported-disc reports.
    `--verbose` can be combined with other commands.
 
