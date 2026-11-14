@@ -16,7 +16,9 @@ This release modernizes the original *Spider-Man (2001)* PC game on Windows and 
 
 The integrated RC2 passed **951 automated regression tests** and was checked on **Windows 11** and **Wine/GE-Proton on Linux**, with maintainer confirmation of normal gameplay and controller operations, Alt+Tab, sound/video, Save Game/YES, native Pause, Game Over and normal exit. The two same-VID:PID Xbox controllers were tested on both systems; a PS4 controller was also used for Wine switching. See the [RC2 validation record](https://github.com/legluondunet/SpiderMan2k1Fix/blob/main/docs/references/RELEASE_2_0_RC_TEST_PLAN.md) and [PR #136](https://github.com/legluondunet/SpiderMan2k1Fix/pull/136).
 
-After RC2, the SAVE GAME render fix from PR #144 passed targeted Wine 11.17 testing at 1920×1080 (including real Alt+Tab focus-loss capture). The merged `main` DLL workflow and draft standalone-installer workflows passed CI on November 13, 2026. **This does not validate the new ISO/CUE installer:** its original-disc extraction, registry independence, Windows 11 and Wine end-to-end behavior still require real-CD smoke tests before publishing the official v2.0.0 tag.
+After RC2, the SAVE GAME render fix from PR #144 passed targeted Wine 11.17 testing at 1920×1080 (including real Alt+Tab focus-loss capture). The standalone original-ISO installer from merged PR #150 was subsequently inspected, run in install-only mode and verified against an authentic original ISO under Wine-staging 11.17 on November 14, 2026. Its Wise `Setup/` eight-file full-install layout, supported original EXE SHA-256 and real gameplay log were observed; these are **not native Windows 11 installer tests**. PR #151 added byte-for-byte PE32 RCDATA resource auditing. On merged `main` commit `1e5b0d2`, [standalone CI](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/43583076518) and [DLL/regression CI](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/43583076531) both passed.
+
+**Pre-release boundaries:** The current read-only `--verify` checks the supported original executable and seven installer-managed resources, **not all original retail PKR/game data**. The Wine runtime log does not independently prove a clean final process exit. Source-authenticated data checks, malformed ISO/CUE and interrupted-install tests, and a clean native Windows 11 original-ISO installation remain to be validated. The original-CD implementation issue #149 was closed after merge; this closure is **not** release approval. No v2.0.0 tag or public release has been published.
 
 ## Installation — Windows and Linux (Wine)
 
@@ -61,7 +63,7 @@ executable; do **not** set obsolete trial environment variables.
 - Advanced **Steam Deck/Steam Input**, virtual controller identity, analog-axis fidelity and untested controller models remain tracked in [issue #120](https://github.com/legluondunet/SpiderMan2k1Fix/issues/120); successful preliminary Deck experiments do not imply complete Deck support.
 - Native Windows 11 **DualShock 4 audio-output selection** has a separate unresolved follow-up in [issue #118](https://github.com/legluondunet/SpiderMan2k1Fix/issues/118). The game follows system audio routing unless separately configured.
 - A physical controller mirrored into multiple SDL3 handles and deliberately simultaneous competing Start presses have not been confirmed through hardware testing. Ambiguous ownership must fail closed.
-- As in earlier releases, game timing may depend on FPS in certain levels. If the default `FPSLimit=30` causes issues, try `FPSLimit=20` in `SpiderMan2k1Fix.ini`.
+- As in earlier releases, game timing may depend on FPS in certain levels. If the default `FPSLimit=30` causes issues, try `FPSLimit=20` in `SpiderMan2k1Fix.ini`. Automatic scene-specific 20 FPS limiting during Chase Venom is a **proposal**, not yet implemented (issue [#152](https://github.com/legluondunet/SpiderMan2k1Fix/issues/152)).
 
 ## Credits
 
