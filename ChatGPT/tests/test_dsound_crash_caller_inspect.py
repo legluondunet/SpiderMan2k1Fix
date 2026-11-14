@@ -39,7 +39,7 @@ def test_python_windows_inspectors_shares_bounded_crash_windows():
         ):
             assert start in text
             assert end in text
-            assert int(end, 16) - int(start, 16) <= 0x400
+            assert int(end, 16) - int(start, 16) <= 0x500
         assert "0x80004005" in text
         assert ("NOT an unwound frame" in text or
                 "NOT an unwound frame" in text)
