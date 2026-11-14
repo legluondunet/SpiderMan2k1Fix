@@ -149,8 +149,9 @@ def execute(exe: Path, *args: str, success: bool,
 
 
 def no_partial_install(directory: Path) -> None:
+    assert not (directory / "spiderman2001").exists()
+    assert not (directory / "spiderman2001.installing").exists()
     assert not (directory / "SpiderMan2k1Fix").exists()
-    assert not (directory / "SpiderMan2k1Fix.installing").exists()
     assert not (directory / "SpiderMan2k1Fix.updating").exists()
 
 
@@ -223,7 +224,7 @@ def fixture_integrity_and_enrollment(base: Path, fixture: Path) -> None:
     (directory / "original.iso").write_bytes(make_iso())
     log = execute(exe, "--install-only", success=True)
     assert "complete; game was not launched" in log
-    game = directory / "SpiderMan2k1Fix"
+    game = directory / "spiderman2001"
     receipt = game / "SpiderMan2k1Fix/installed-game.sha256"
     assert receipt.is_file()
     assert "SpiderMan2k1Fix-Game-v1" in receipt.read_text(encoding="ascii")
@@ -262,7 +263,7 @@ def fixture_rollback_upgrade(base: Path, fixture: Path) -> None:
     directory, exe = scenario(base, "fixture_upgrade_rollback", fixture)
     (directory / "original.iso").write_bytes(make_iso())
     execute(exe, "--install-only", success=True)
-    game = directory / "SpiderMan2k1Fix"
+    game = directory / "spiderman2001"
     receipt = game / "SpiderMan2k1Fix/installed-resources.sha256"
     winmm = game / OWNED[0]
     pristine_winmm = winmm.read_bytes()
@@ -327,7 +328,7 @@ def fixture_auto_update_and_non_dll_guard(base: Path, fixture: Path) -> None:
     directory, exe = scenario(base, "fixture_autoupdate", fixture)
     (directory / "original.iso").write_bytes(make_iso())
     execute(exe, "--install-only", success=True)
-    game = directory / "SpiderMan2k1Fix"
+    game = directory / "spiderman2001"
     winmm = game / OWNED[0]
     original = winmm.read_bytes()
     unknown = b"MZ-unrecognized-runtime"
@@ -370,6 +371,55 @@ def fixture_auto_update_and_non_dll_guard(base: Path, fixture: Path) -> None:
     execute(exe, "--verify", success=True)
 
 
+def fixture_legacy_rename_and_ambiguity(base: Path, fixture: Path) -> None:
+    directory, exe = scenario(base, "fixture_legacy_rename", fixture)
+    (directory / "original.iso").write_bytes(make_iso())
+    execute(exe, "--install-only", success=True)
+    new = directory / "spiderman2001"
+    old = directory / "SpiderMan2k1Fix"
+    assert new.is_dir()
+    # Simulate a user who installed with the published 2.0.0 version.
+    new.rename(old)
+    save = old / "user-saves"
+    save.mkdir()
+    (save / "slot.dat").write_bytes(b"preserve-this-save")
+    (old / "Spidey.ini").write_bytes(b"custom-settings")
+    old_manifest = (old / "SpiderMan2k1Fix/installed-game.sha256").read_bytes()
+
+    # --verify MUST remain read-only and should accept the legacy path.
+    log = execute(exe, "--verify", success=True)
+    assert "VERIFY: OK original game EXE" in log
+    assert old.exists() and not new.exists()
+    # Explicit install upgrades and migrates only after game receipts verify.
+    log = execute(exe, "--install-only", success=True)
+    assert "MIGRATE: verified legacy folder renamed to spiderman2001" in log
+    assert not old.exists() and new.is_dir()
+    assert (new / "user-saves/slot.dat").read_bytes() == b"preserve-this-save"
+    assert (new / "Spidey.ini").read_bytes() == b"custom-settings"
+    assert (new / "SpiderMan2k1Fix/installed-game.sha256").read_bytes() == old_manifest
+    execute(exe, "--verify", success=True)
+
+    # Both paths present: never guess which one to launch/overwrite.
+    old.mkdir()
+    (old / "user-data").write_bytes(b"do-not-touch")
+    log = execute(exe, "--install-only", success=False)
+    assert "ambiguous; no changes made" in log
+    assert (old / "user-data").read_bytes() == b"do-not-touch"
+    assert (new / "user-saves/slot.dat").read_bytes() == b"preserve-this-save"
+
+    # Legacy with modified original assets: absolutely no rename.
+    second, second_exe = scenario(base, "fixture_reject_legacy_corruption", fixture)
+    (second / "original.iso").write_bytes(make_iso())
+    execute(second_exe, "--install-only", success=True)
+    second_new = second / "spiderman2001"
+    second_old = second / "SpiderMan2k1Fix"
+    second_new.rename(second_old)
+    archive = second_old / "data.pkr"
+    archive.write_bytes(archive.read_bytes() + b"changed")
+    log = execute(second_exe, "--install-only", success=False)
+    assert "original game data missing/modified" in log
+    assert second_old.exists() and not second_new.exists()
+
 def main() -> None:
     if os.name != "nt":
         raise SystemExit("Windows-only executable integration harness")
@@ -389,6 +439,8 @@ def main() -> None:
         print("PASS: unknown DLL backup rotation and old .bak preserved by rollback")
         fixture_auto_update_and_non_dll_guard(base, fixture)
         print("PASS: automatic DLL update, unknown non-DLL refusal and unsafe .bak protection")
+        fixture_legacy_rename_and_ambiguity(base, fixture)
+        print("PASS: spiderman2001 install, verified legacy whole-tree rename and ambiguity refusal")
     print("PASS: all Windows PE32 executable negative-path tests")
 
 
