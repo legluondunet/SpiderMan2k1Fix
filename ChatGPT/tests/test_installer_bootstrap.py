@@ -156,8 +156,8 @@ def test_wise_forensic_reference_is_based_on_supplied_original_setup():
 
 
 def test_original_retail_iso_and_windows11_validation_are_still_pending():
-    """The owner uploaded setup EXEs but no original disc; do not publish."""
-    assert "We still require real retail ISO and Windows/Wine smoke tests" in SRC
+    """Original disc observed on Wine; full Windows acceptance is still pending."""
+    assert "Retail ISO/Wine installation observed; Windows 11 checks remain pending." in SRC
     assert "ISO: original Wise source game executable absent" in SRC
     assert "ISO: missing original Wise Game Files source" in SRC
     assert "Original retail game data is NEVER embedded" in SRC
