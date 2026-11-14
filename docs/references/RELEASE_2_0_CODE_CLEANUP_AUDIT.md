@@ -1,9 +1,10 @@
 # SpiderMan2k1Fix 2.0.0 — source cleanup and release gates
 
-Status: **draft PR #150**, not yet a stable 2.0.0 release.
-Audit performed November 13, 2026; source examined on
-`feature/2.0.0-iso-installer-bootstrap`. Do **not** tag, merge or announce a
-validated original-CD installer based solely on source review or CI.
+Status: **implementation merged into `main`** (PRs #150 and #151); the official v2.0.0 release is **not yet published**.
+Initial audit performed November 13, 2026 on
+`feature/2.0.0-iso-installer-bootstrap`; reconciled against `main` on
+November 14. Do **not** announce complete original-CD compatibility from
+source review and CI alone: only the Wine original-ISO path has actual field evidence.
 
 ## Target behavior kept intact
 
@@ -173,11 +174,12 @@ original CD archives: that remains an independent release gate.
   this verifier. A full retail data receipt and read-only verification tests
   are needed before describing `--verify` as a complete game-integrity audit.
 - **Original image acceptance:** the owner's authentic Spider-Man ISO
-  has now been inspected and its exact `Setup/` source layout copied
-  successfully under Wine; the original EXE hash and game-process exit code
-  were confirmed. Still unproven: full in-game runtime/session behavior,
-  a second image edition, clean-prefix registry/DirectX/INI independence,
-  and a native Windows 11 installation.
+  was inspected and its exact `Setup/` source layout copied under Wine;
+  the original EXE hash and installer-reported game-process exit code were
+  observed, and a separate runtime trace proves real gameplay. Still
+  unproven: all runtime functions on a clean native Windows 11 ISO install,
+  a second image edition, registry/DirectX/INI independence on fresh
+  prefixes, and an independently captured final clean game exit.
 - **Negative tests:** static CLI checks and a successful cross-build are not
   substitutes for runnable synthetic/malformed ISO and CUE scenarios:
   missing files, duplicate names, forged extents, truncated media,
@@ -187,13 +189,52 @@ original CD archives: that remains an independent release gate.
   installation, --install-only on both fresh/existing, --verify, default
   launch, --launch-no-verify negative case, sound/video/controller/Alt+Tab,
   normal exit and both logger locations checked with a genuine disc image.
-- **Release publishing:** the installer CI currently retains a separately
-  named **prototype** EXE artifact, while the older Windows x86 CI retains
-  a DLL ZIP for development/compatibility. The official v2.0.0 release must
-  publish the **one-file installer** as its primary asset only after all
-  above acceptance steps, without leaking original CD data.
+- **Release publishing:** the standalone main CI now publishes a candidate
+  **single-EXE** Actions artifact, independently checked against the seven
+  embedded payloads. The older DLL workflow retains a **developer-only**
+  artifact, never the v2.0.0 release distribution. Public release packaging
+  remains a separate explicit decision, without original CD data.
 
 Historical reverse-engineering documentation and diagnostic utilities are
 kept in source control but **not embedded in the release installer**. Avoid
 deleting them as "obsolete" when active tests, runtime call sites or user
 bug investigations still reference them.
+
+## November 14, 2026 — pre-release cleanup follow-up
+
+This is a **conservative source and CI audit**, not a change of the accepted
+gameplay/rendering/input behavior:
+
+- Examined the explicit DLL compilation inventory in `build.sh`: every root
+  C translation unit is accounted for, either in `fix_sources` or as the
+  independently built WinMM proxy. Do **not** delete diagnostic-looking C
+  units, SDL3 guards, 4:3 UI code, native-audio paths or vendored miniz
+  inflator solely on the basis of a historical name.
+- Retired the obsolete **versioned DLL release ZIP builder** in the legacy
+  Windows x86 workflow. GitHub Actions' developer-only DLL artifact remains
+  available for compatibility investigations, while the release candidate
+  artifact is exclusively the verified standalone EXE produced by the
+  separate workflow. This avoids building and checksumming a second archive
+  that is never uploaded or used by the release process.
+- Adapted regression contracts to require absence of the old `dist/release`
+  packaging, while preserving DLL, SDL3 upstream license/hash, Linux helper
+  runtime and full regression checks in the older CI job.
+- Corrected the public README, release notes, changelog and installer
+  design: real original-ISO Wine-staging 11.17 inspection/install/gameplay
+  has been observed; native Windows 11 original-ISO install is **not** yet
+  established. The standalone launcher places both installer and game logs
+  beside itself; only legacy direct game launches use the fallback.
+- Record [#57](https://github.com/legluondunet/SpiderMan2k1Fix/issues/57)
+  as closed following SDL3 integration, with unimplemented Chase Venom
+  automatic 20 FPS limiting tracked in
+  [#152](https://github.com/legluondunet/SpiderMan2k1Fix/issues/152).
+  The installer implementation [#149](https://github.com/legluondunet/SpiderMan2k1Fix/issues/149)
+  is closed after merging #150/#151, **not** because the stable release
+  validation gate has been waived.
+
+**Remaining release gates remain open:** source-authenticated hashes/receipt
+for all original retail data files, executable malformed ISO/CUE and rollback
+tests, native Windows 11 original-ISO installation and independent clean
+process-exit evidence. The current `--verify` must not be represented as
+full PKR/media integrity verification. No v2.0.0 tag/release is published
+by this audit.
