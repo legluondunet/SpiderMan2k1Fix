@@ -152,7 +152,10 @@ $known = @(
     [pscustomobject]@{ Name='DXSOUND_Open / duplicate path (signature-guarded)'; Va=0x00504110; Signature=[byte[]]@(0x8B,0x0D,0x20,0x79,0x6B,0,0x53,0x56,0x57) },
     [pscustomobject]@{ Name='native DXSOUND_Play (address only)'; Va=0x00504230; Signature=$null },
     [pscustomobject]@{ Name='native DXSOUND_Stop (signature-guarded)'; Va=0x005042A0; Signature=[byte[]]@(0x8B,0x44,0x24,0x04,0x56,0x8D,0x04,0x40) },
-    [pscustomobject]@{ Name='original native Play CALL (signature-guarded)'; Va=0x00472870; Signature=[byte[]]@(0xE8,0xBB,0x19,0x09,0) }
+    [pscustomobject]@{ Name='original native Play CALL (signature-guarded)'; Va=0x00472870; Signature=[byte[]]@(0xE8,0xBB,0x19,0x09,0) },
+    [pscustomobject]@{ Name='two WER dumps: exact 0x4FF9CA native sound shutdown CALL'; Va=0x004FF9CA; Signature=[byte[]]@(0xE8,0x21,0x41,0,0) },
+    [pscustomobject]@{ Name='two WER dumps: original 0x503AF7 primary-buffer Stop'; Va=0x00503AF7; Signature=[byte[]]@(0x8B,0x08,0xFF,0x51,0x48) },
+    [pscustomobject]@{ Name='original null-aware final cleanup 0x504050'; Va=0x00504050; Signature=[byte[]]@(0x8B,0x44,0x24,0x08,0x53,0x56,0x57,0x85,0xC0,0x74,0x4E) }
 )
 $lines = New-Object 'System.Collections.Generic.List[string]'
 [void]$lines.Add('SPIDER-MAN 2001 PC: NATIVE AUDIO LOADER ROOT-CAUSE RECONNAISSANCE')
@@ -377,7 +380,9 @@ if ($null -ne $disassembler) {
         [pscustomobject]@{ Label='candidate alternative DirectSound object consumer D (5007xx)'; Start=[long]0x00500700; End=[long]0x00500940 },
         [pscustomobject]@{ Label='CONFIRMED DirectInput input-device creation and SetDataFormat: NOT DirectSound'; Start=[long]0x00501480; End=[long]0x00501C20 },
         [pscustomobject]@{ Label='GRAPHICS COM +0x14/+0x2C methods: wrong object and ABI for DirectSound'; Start=[long]0x005027F0; End=[long]0x00502BB0 },
-        [pscustomobject]@{ Label='GRAPHICS COM +0x14 calls with six stack arguments: NOT DuplicateSoundBuffer'; Start=[long]0x005004C0; End=[long]0x00500640 }
+        [pscustomobject]@{ Label='GRAPHICS COM +0x14 calls with six stack arguments: NOT DuplicateSoundBuffer'; Start=[long]0x005004C0; End=[long]0x00500640 },
+        [pscustomobject]@{ Label='WER crash: exact original caller 0x004FF9CA and preceding error branches'; Start=[long]0x004FF700; End=[long]0x004FFB40 },
+        [pscustomobject]@{ Label='WER crash: possible upstream frame near 0x004FDED9 (stack candidate, NOT an unwound frame)'; Start=[long]0x004FDC80; End=[long]0x004FE000 }
     )
     foreach ($region in $regions) {
         [void]$lines.Add('')
