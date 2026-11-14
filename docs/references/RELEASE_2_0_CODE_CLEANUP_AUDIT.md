@@ -87,6 +87,53 @@ in one Wine environment. Keep the other below-mentioned release gates.
 Never commit the original ISO, commercial game assets or the owner's
 local filesystem path.
 
+## Second field test — original-CD inspection, install-only and real gameplay
+
+Owner-supplied logs dated November 14, 2026 provide **three independent
+traces** from Wine-staging 11.17 and the same authentic original retail ISO:
+
+1. `SpiderMan2k1Fix_inspect.log`:
+   `mode=inspect`, ISO9660+Joliet volume SPIDERMAN, 313 filesystem
+   entries, **293 regular files**, all original `Setup/` source entries
+   visible; `INSPECT_RESULT=COMPLETE files=293` and `END: status=0`.
+   Inspection is read-only and produces a separate report.
+2. `SpiderMan2k1Fix_installer.log`:
+   **fresh `--install-only` successful** for all eight original Wise
+   game files plus seven project resources. Source `SpideyPC.exe`
+   matches the supported exact SHA-256. Ending is
+   `INSTALL: --install-only complete; game was not launched`,
+   then `END: status=0`. This is distinct from the first test where
+   default install launched the game.
+3. `SpiderMan2k1Fix.log`:
+   `SpiderMan2k1Fix v2.0.0-b1f49a6` loaded through WinMM,
+   supported exe hash matched, native DirectDraw7/D3D7 initialized,
+   desktop 1920×1080 with borderless presentation and centered 4:3
+   UI, world FOV scale 0.75 on entering 3D gameplay,
+   SDL3 discovered two Xbox 360 and one PS4 controller, menu and
+   gameplay interactions occurred, native 4:3 pause and Save/Name UI
+   render paths were exercised, and two external-focus pause/resume
+   cycles were logged (secondary DirectSound voice failures=0).
+   Native WAV source index lists 656 valid sounds, with loader tail
+   repairs performed. These logs demonstrate real game activity, not
+   just a successful process spawn.
+
+**Caveats:** The 2,215-line runtime log ends during another controller
+menu confirmation. It contains **no final game-shutdown marker**;
+a running-process log snapshot cannot prove clean exit. The line
+`DDRAW: IAT target mismatch; hook not installed` occurred early but
+the later DirectDraw7/D3D7 bootstrap was successful; do not infer a
+crash or broken graphics from this isolated diagnostic. Game-over
+confirmation and F9 screenshot output were not directly exercised
+by the supplied log. Native Windows 11 and the read-only
+`--verify`/existing-install `--install-only` paths still need tests.
+
+**Final cleanup identified by this test:** Normal install used to
+write all 293 `ISO-FILE` records to the installer log even when
+`verbose=0`. The updated launcher preserves the count and detailed
+Wise-copy messages but puts per-file inventory under `--verbose`,
+while `--inspect` always emits its full independent CD inventory.
+This changes logging only, not validation/extraction.
+
 ## Code-review findings that are NOT yet release-validated
 
 - **Original game data integrity:** the current `--verify` gate verifies
