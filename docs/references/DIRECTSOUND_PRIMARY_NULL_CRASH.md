@@ -243,6 +243,48 @@ ensure that no retry, fake HRESULT or exclusive fullscreen path was
 introduced. Do not claim a permanent upstream E_FAIL resolution or
 a release until Windows acceptance.
 
+## Diagnostic revision after 15 November successful Windows baseline
+
+The maintainer's real native Windows 11 `v2.0.0-be94bc9` runtime log
+(`SpiderMan2k1Fix(20261115-114230).log`) provides a good reference:
+
+- `COOP-SUCCESS-PRE valid=1 top-level=1 child=0 owned=0`; window
+  owner thread equals the calling thread.
+- `COOP-SUCCESS-BACKEND module=DDRAW.dll`, `HRESULT=0x00000000`.
+- In contrast, the *two older failed processes* stored an
+  `original_coop` address within `apphelp.dll` and an `E_FAIL`.
+  The backend correlation is real; a malfunction in `apphelp.dll`
+  is **not established**. Windows compatibility shim infrastructure
+  can redirect API calls, but simply loading `apphelp.dll` proves
+  neither an active shim nor causality.
+
+For the next test build, `hooked_create` records the original
+`IDirectDraw7` vtable **before** replacing any method slot:
+
+```text
+DDRAW-STARTUP: COM-ORIGINS QueryInterface=... CreateSurface=... SetCooperativeLevel=... SetDisplayMode=... apphelp-loaded=0/1 compat-env-present=0/1
+```
+
+The first four created DirectDraw7 objects are sampled; source code uses
+`VirtualQuery` and `GetModuleFileNameA` to report only module basenames,
+not user paths or addresses. The environment indicator reports only whether
+`__COMPAT_LAYER` is set, not its contents. All probes are read-only.
+The late legacy IAT installer additionally recognizes an IAT slot already
+pointing into the verified early WinMM proxy and explains that no second
+hook is needed, replacing a misleading `IAT target mismatch` diagnostic;
+the actual interception and error handling are unchanged.
+
+On a *naturally occurring* startup failure, compare `COM-ORIGINS`,
+`COOP-FAIL-PRE`, `COOP-FAIL-CONTEXT` and `COOP-FAIL-BACKEND` against
+this successful baseline. Do **not** toggle compatibility settings,
+bypass `apphelp.dll`, auto-retry or substitute a successful HRESULT
+without establishing causality first. These diagnostics are test-only,
+not a fix for the root DirectDraw failure.
+
+Microsoft references:
+- https://learn.microsoft.com/en-us/windows/win32/api/ddraw/nf-ddraw-idirectdraw7-setcooperativelevel
+- https://learn.microsoft.com/en-us/windows/win32/devnotes/application-compatibility-database
+
 ## Offline minidump analysis (Linux or Windows, Python stdlib)
 
 `python3 ChatGPT/tools/inspect_spiderman_ddraw_dump.py /path/to/SpideyPC.exe.24668.dmp`
@@ -296,7 +338,7 @@ NULL dereference; it does not repair the initial error by itself.
 
 ## Integration
 
-The draft fix in PR #161 is stacked atop the unmerged directory migration
-PR #159 to make its standalone Windows artifact directly usable against the
-maintainer's existing `spiderman2001/` directory. Keep the release unchanged
-until native Windows and Wine runtime validation is accepted.
+PR #159 (verified game directory migration) has been merged into main.
+PR #161 is now a draft directly targeting main and retains the current
+`spiderman2001/` installation layout. Keep the release unchanged until
+native Windows and Wine runtime validation is accepted.
