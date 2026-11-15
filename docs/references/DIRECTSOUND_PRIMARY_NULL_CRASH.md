@@ -128,6 +128,42 @@ stack address `0x004FDED9` (not a confirmed unwound frame).
 Only another original-EXE static analysis can classify the actual
 pre-shutdown branch conclusively.
 
+## Linux: focused original-EXE analysis (no Wine / no game launch)
+
+The normal Windows/Wine runtime guard is unchanged. To determine
+what called native audio cleanup while no primary buffer existed,
+run the original-game inspector with the focused Linux option:
+
+~~~bash
+# Locate the original SpideyPC.exe under your installed games.
+find /mnt/LUTRIS/Games -type f -iname 'SpideyPC.exe' -print 2>/dev/null
+
+# From a checkout of PR #161 (branch fix/dsound-null-primary-160):
+python3 ChatGPT/tools/inspect_audio_load_x86.py \
+  "/absolute/path/to/SpideyPC.exe" \
+  --startup-crash-only \
+  --output "$HOME/spiderman-dsound-startup.txt"
+~~~
+
+Requirements: Python 3 (standard library only) and objdump or
+llvm-objdump (check with: command -v objdump llvm-objdump).
+The inspector rejects any file whose original size, SHA-256, image
+base, signature-checked native caller, Stop call or cleanup bytes
+differ from the supported retail EXE.
+
+The focused report contains only five bounded disassembly windows around
+native caller 0x004FF9CA, the possible upstream return address near
+0x004FDED9, original shutdown and graphics initialization. It contains
+no game assets and does not write anything to the game folder unless
+the caller explicitly chooses an output path there. It refuses an output
+file that aliases the original EXE, including symlinks and hard links.
+The original-game executable and its memory are never changed.
+
+Do not treat EDI=E_FAIL in the dumps as proof of a failed DirectSound
+API. We still need to identify the prior graphics or audio error
+from the actual x86 caller branches. The guard prevents the secondary
+NULL dereference; it does not repair the initial error by itself.
+
 ## Integration
 
 The draft fix in PR #161 is stacked atop the unmerged directory migration
