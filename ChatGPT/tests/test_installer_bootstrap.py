@@ -17,11 +17,66 @@ WORKFLOW = (ROOT / ".github/workflows/spiderman2k1fix-standalone-windows-x86.yml
 def test_installer_names_and_paths():
     for name in ("SpiderMan2k1Fix.exe", "SpideyPC.exe", "SpiderMan2k1Fix_installer.log",
                  "SpiderMan2k1Fix.log", "SpiderMan2k1Fix.dll", "winmm.dll", "SDL3.dll",
-                 "spiderman-focus-helper", "SpiderMan2k1Fix.installing"):
+                 "spiderman-focus-helper", "spiderman2001.installing"):
         assert name in SRC or name == "SpiderMan2k1Fix.log"
     assert "--inspect" in SRC and "--verify" in SRC
     assert 'SPIDERMAN2K1FIX_MENUBG43_TRIAL' not in SRC
     assert "CreateProcessW" in SRC
+
+
+def test_crashed_first_start_preserves_runtime_evidence_without_retrying():
+    """A migrated+upgraded first launch can fail with Windows 0xC0000005.
+    Never hide it with an automatic restart; save fresh diagnostics before
+    the second launch truncates the per-process runtime log.
+    """
+    assert "static void preserve_crashed_game_log(" in SRC
+    preserve=SRC.split("static void preserve_crashed_game_log(",1)[1].split(
+        "static int launch_game(",1)[0]
+    assert "(code&0xC0000000UL)!=0xC0000000UL" in preserve
+    assert "GetFileAttributesExW(runtime_log,GetFileExInfoStandard,&after)" in preserve
+    assert "CompareFileTime(&before->ftLastWriteTime,&after.ftLastWriteTime)" in preserve
+    assert "FILE_ATTRIBUTE_REPARSE_POINT" in preserve
+    assert 'L"SpiderMan2k1Fix_failed-launch.log"' in preserve
+    assert "CopyFileW(runtime_log,target,TRUE)" in preserve  # no overwrite
+    assert "CREATE_NEW" not in preserve
+    launch=SRC.split("static int launch_game(int verify_exe)",1)[1].split(
+        "static void usage(void)",1)[0]
+    assert 'L"SpiderMan2k1Fix.log"' in launch
+    assert "GetFileAttributesExW(runtime_log,GetFileExInfoStandard,&log_before)" in launch
+    assert launch.index("WaitForSingleObject(pi.hProcess,INFINITE)") < (
+        launch.index("preserve_crashed_game_log(exit_code"))
+    assert launch.index("preserve_crashed_game_log(exit_code") < (
+        launch.index("return exit_code==0"))
+    assert launch.count("CreateProcessW(")==1  # no automatic crash retry
+
+
+def test_game_data_directory_is_spiderman2001_and_legacy_is_migrated_safely():
+    assert '#define SPIDER_GAME_DIR L"spiderman2001"' in SRC
+    assert '#define SPIDER_LEGACY_DIR L"SpiderMan2k1Fix"' in SRC
+    assert 'combine(game_dir,SPIDER_INSTALLER_PATH,launcher_dir,SPIDER_GAME_DIR)' in SRC
+    assert 'L"spiderman2001.installing"' in SRC
+    assert "select_game_directory()" in SRC
+    assert "game_dir_is_legacy" in SRC
+    assert "static int migrate_legacy_game_directory(void)" in SRC
+    migration=SRC.split("static int migrate_legacy_game_directory(void)",1)[1].split(
+        "static int extension_is(",1)[0]
+    assert "MoveFileExW(game_dir,next,MOVEFILE_WRITE_THROUGH)" in migration
+    assert "GetFileAttributesW(next)!=INVALID_FILE_ATTRIBUTES" in migration
+    assert "safe_directory(game_dir,0)" in migration
+    assert "DeleteFileW(" not in migration
+    assert "SpideyPC.exe" not in migration  # migration is a whole-tree rename
+    selection=SRC.split("static int select_game_directory(void)",1)[1].split(
+        "static int migrate_legacy_game_directory(",1)[0]
+    assert "n!=INVALID_FILE_ATTRIBUTES && o!=INVALID_FILE_ATTRIBUTES" in selection
+    assert "safe_directory(next,0)" in selection
+    assert "safe_directory(old,0)" in selection
+    main=SRC.split("int wmain(",1)[1]
+    assert main.index("if(!select_game_directory())") < (
+        main.index('L"--launch-no-verify"'))
+    assert main.index("if(!verify_game_receipt(game_dir))") < (
+        main.index("if(!migrate_legacy_game_directory())"))
+    assert main.index('L"--verify"') < (
+        main.index("if(!migrate_legacy_game_directory())"))
 
 
 def test_installer_retail_validation_and_fail_closed():
