@@ -5707,6 +5707,27 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
       (unsigned long)GetCurrentThreadId(),
       (long)InterlockedCompareExchange(&ddraw_vtable_ready,0,0));
     log_line(line);
+    /* The two native WER crashes retained original_coop in apphelp.dll,
+     * a Windows application-compatibility component, instead of ddraw.dll.
+     * Identify the actual backend on a future HRESULT failure without
+     * assuming the compatibility shim itself caused the failure. */
+    {
+      MEMORY_BASIC_INFORMATION mem;
+      char module_path[MAX_PATH]={0};
+      const char *leaf="unavailable";
+      SIZE_T queried=original_coop?
+        VirtualQuery((LPCVOID)original_coop,&mem,sizeof(mem)):0;
+      if(queried==sizeof(mem) && mem.Type==MEM_IMAGE &&
+         GetModuleFileNameA((HMODULE)mem.AllocationBase,
+                            module_path,sizeof(module_path))) {
+        const char *slash=strrchr(module_path,'\\');
+        leaf=slash?slash+1:module_path;
+      }
+      snprintf(line,sizeof(line),
+        "BORDERLESS: COOP-FAIL-BACKEND module=%s allocation=%p",
+        leaf,queried==sizeof(mem)?mem.AllocationBase:NULL);
+      log_line(line);
+    }
   }
   return hr;
 }
