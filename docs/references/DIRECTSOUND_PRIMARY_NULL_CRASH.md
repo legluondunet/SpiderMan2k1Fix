@@ -285,6 +285,49 @@ Microsoft references:
 - https://learn.microsoft.com/en-us/windows/win32/api/ddraw/nf-ddraw-idirectdraw7-setcooperativelevel
 - https://learn.microsoft.com/en-us/windows/win32/devnotes/application-compatibility-database
 
+### Read-only Windows compatibility attribution (new test build)
+
+A separate observation from the COM method basenames is needed to avoid
+mistaking the absence of `__COMPAT_LAYER` for proof that no Windows
+compatibility fix is active. Microsoft documents both **per-executable**
+layer entries and **system-wide .sdb matching**, which can apply
+independently; `apphelp.dll` presence alone is insufficient to infer a
+particular compatibility rule.
+
+At the first intercepted native DirectDraw7 creation, after the game
+executable identity was verified and outside loader lock, the patch now
+queries **only the existence and type** of the full-path `SpideyPC.exe`
+value under:
+
+- `HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers`
+- The analogous `HKLM` key in the **32-bit** view
+- The analogous `HKLM` key in the **64-bit** view
+
+The executable path is used for exact registry lookup but is **never
+logged**. No registry contents, account paths, usernames, or compatibility
+strings are logged or modified. The new diagnostics are:
+
+```text
+DDRAW-STARTUP: APPCOMPAT-LAYERS HKCU=... HKLM32=... HKLM64=... (0=absent 1=text 2=other -1=unreadable; system SDB not covered)
+DDRAW-STARTUP: APPCOMPAT-MODULES apphelp=... AcLayers=... AcGenral=... AcXtrnal=... ShimEng=... (loaded presence only)
+```
+
+`0` means **that particular registry entry was absent**, not that
+the compatibility engine was inactive. `-1` means a read error, an
+unavailable registry view, or an unavailable executable path; it
+is never reported as a proven absence. Module fields indicate
+only *loaded presence* at that specific instant.
+
+This evidence may distinguish Windows manual compatibility modes
+from automatic database matching on future naturally failing launches.
+It is safe under Wine because it only uses Win32 read operations.
+**Do not disable the compatibility engine, change global machine
+policies, force an exclusive display mode, or fake a successful HRESULT.**
+
+References:
+- https://learn.microsoft.com/en-us/windows/win32/devnotes/application-compatibility-database
+- https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/d3d10-graphics-programming-guide-dxgi
+
 ## Offline minidump analysis (Linux or Windows, Python stdlib)
 
 `python3 ChatGPT/tools/inspect_spiderman_ddraw_dump.py /path/to/SpideyPC.exe.24668.dmp`
