@@ -5674,6 +5674,14 @@ static HRESULT WINAPI hooked_surface_create(void *self, DDSURFACEDESC2 *desc,
 static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
   char line[192];
   HRESULT hr;
+  /* Snapshot BEFORE the native call: on failure, the window may already
+   * have changed or been destroyed by Windows compatibility handling.
+   * These are read-only observations; no HWND or DDSCL manipulation. */
+  BOOL pre_valid;
+  DWORD pre_owner_pid=0,pre_owner_tid=0,pre_caller_tid;
+  LONG_PTR pre_style=0;
+  HWND pre_root=NULL;
+  BOOL pre_owned=FALSE;
   snprintf(line,sizeof(line),"BORDERLESS: intercept SetCooperativeLevel hwnd=%p requested=0x%08lX -> DDSCL_NORMAL (no exclusive)",
            (void*)hwnd,(unsigned long)flags);
   log_line(line);
@@ -5684,6 +5692,14 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
   SpiderF9Toast_SetGameWindow(hwnd,log_line);
   probe_desktop_mode(hwnd);
   log_monitor(hwnd);
+  pre_valid=(hwnd && IsWindow(hwnd))?TRUE:FALSE;
+  pre_caller_tid=GetCurrentThreadId();
+  if(pre_valid) {
+    pre_owner_tid=GetWindowThreadProcessId(hwnd,&pre_owner_pid);
+    pre_style=GetWindowLongPtrA(hwnd,GWL_STYLE);
+    pre_root=GetAncestor(hwnd,GA_ROOT);
+    pre_owned=GetWindow(hwnd,GW_OWNER)!=NULL;
+  }
   hr=original_coop(self,hwnd,DDSCL_NORMAL);
   if(SUCCEEDED(hr)) {
     /* Baseline once on a successful boot, useful for comparisons with
@@ -5701,6 +5717,34 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
         (unsigned long)owner_tid,(unsigned long)caller_tid,
         owner_tid && owner_tid==caller_tid,(unsigned long)hr);
       log_line(line);
+      snprintf(line,sizeof(line),
+        "BORDERLESS: COOP-SUCCESS-PRE valid=%d top-level=%d child=%d owned=%d owner-pid=%lu owner-tid=%lu caller-tid=%lu same-thread=%d",
+        pre_valid,pre_valid && pre_root==hwnd && !(pre_style&WS_CHILD),
+        (pre_style&WS_CHILD)!=0,pre_owned,
+        (unsigned long)pre_owner_pid,(unsigned long)pre_owner_tid,
+        (unsigned long)pre_caller_tid,
+        pre_owner_tid && pre_owner_tid==pre_caller_tid);
+      log_line(line);
+      /* A successful baseline must also identify the native COM
+       * implementation, otherwise apphelp.dll on failures cannot be
+       * compared meaningfully to successful Windows launches. */
+      {
+        MEMORY_BASIC_INFORMATION mem;
+        char module_path[MAX_PATH]={0};
+        const char *leaf="unavailable";
+        SIZE_T queried=original_coop?
+          VirtualQuery((LPCVOID)original_coop,&mem,sizeof(mem)):0;
+        if(queried==sizeof(mem) && mem.Type==MEM_IMAGE &&
+           GetModuleFileNameA((HMODULE)mem.AllocationBase,
+                              module_path,sizeof(module_path))) {
+          const char *slash=strrchr(module_path,'\\');
+          leaf=slash?slash+1:module_path;
+        }
+        snprintf(line,sizeof(line),
+          "BORDERLESS: COOP-SUCCESS-BACKEND module=%s allocation=%p",
+          leaf,queried==sizeof(mem)?mem.AllocationBase:NULL);
+        log_line(line);
+      }
     }
     borderless_window_apply();
     SpiderInputFocus_AttachWindow(hwnd);
@@ -5723,6 +5767,14 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
       (unsigned long)GetCurrentThreadId(),
       hwnd_thread_id && hwnd_thread_id==GetCurrentThreadId(),
       (long)InterlockedCompareExchange(&ddraw_vtable_ready,0,0));
+    log_line(line);
+    snprintf(line,sizeof(line),
+      "BORDERLESS: COOP-FAIL-PRE valid=%d top-level=%d child=%d owned=%d owner-pid=%lu owner-tid=%lu caller-tid=%lu same-thread=%d",
+      pre_valid,pre_valid && pre_root==hwnd && !(pre_style&WS_CHILD),
+      (pre_style&WS_CHILD)!=0,pre_owned,
+      (unsigned long)pre_owner_pid,(unsigned long)pre_owner_tid,
+      (unsigned long)pre_caller_tid,
+      pre_owner_tid && pre_owner_tid==pre_caller_tid);
     log_line(line);
     /* The two native WER crashes retained original_coop in apphelp.dll,
      * a Windows application-compatibility component, instead of ddraw.dll.
