@@ -150,6 +150,10 @@ def disassemble(exe: Path, start: int, stop: int) -> str:
 
 
 def inspect(blob: bytes, exe: Path, out: Path, startup_crash_only: bool = False) -> str:
+    # A report path may live beside the game, but must NEVER alias it,
+    # including relative paths, symlinks, and hard links on Linux.
+    if out.resolve() == exe.resolve() or (out.exists() and out.samefile(exe)):
+        raise ValueError("refusing to overwrite original SpideyPC.exe input")
     if len(blob) != EXPECTED_SIZE:
         raise ValueError(f"unsupported SpideyPC.exe length {len(blob)} (expected {EXPECTED_SIZE})")
     sha = hashlib.sha256(blob).hexdigest()
