@@ -137,7 +137,18 @@ native emergency cleanup, so the two context values identify the
 **failed COM method** and not merely a coincidental HRESULT.
 E_FAIL is negative and differs from the two accepted values; the
 original error branch therefore reaches `0x004FF9CA` exactly as
-the two dump return addresses record.
+the two dump return addresses record. The special accepted value
+`0x88760245` is `DDERR_EXCLUSIVEMODEALREADYSET` (an existing exclusive
+owner), not the error captured in these WER dumps.
+
+The official Microsoft DirectDraw7 cooperative-level contract requires
+`SetCooperativeLevel` to be called from the **window-creating thread**,
+with a top-level HWND. It allows `DDSCL_NORMAL` without an HWND,
+whereas original fullscreen/exclusive `0x11` requires the paired
+flags. Accordingly, the diagnostic branch records the HWND's owning
+thread and the calling thread on a first successful call and on every
+failure; it does not force or retry exclusive mode. Reference:
+https://learn.microsoft.com/en-us/windows/win32/api/ddraw/nf-ddraw-idirectdraw7-setcooperativelevel
 
 **Established:** `IDirectDraw7::SetCooperativeLevel` returned
 `0x80004005` in both crashes. The graphics initialization error path
