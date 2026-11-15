@@ -242,3 +242,26 @@ def test_native_ddraw_setcooplevel_efail_is_proven_upstream_error():
     assert "original_coop(self,hwnd,DDSCL_EXCLUSIVE" not in coop
     assert "Sleep(" not in coop
     assert "MessageBox" not in coop
+
+def test_directdraw_vtable_creation_distinguishes_actual_hook_from_prepared_table():
+    """A prepared vtable is not proof the COM object was redirected.
+
+    This is crucial for the original caller 0x004FF987: an unmodified
+    original object can still request fullscreen/exclusive DDSCL 0x11.
+    """
+    create = MAIN.split("static HRESULT WINAPI hooked_create(", 1)[1].split(
+        "static void install_ddraw_hook(", 1)[0]
+    assert "BOOL coop_hook_present=FALSE;" in create
+    assert "if(vtable==patched_ddraw_vtable" in create
+    assert "coop_hook_present=TRUE;" in create
+    assert "*object=patched_ddraw_vtable;" in create
+    assert create.index("*object=patched_ddraw_vtable;") < create.index(
+        'if(!coop_hook_present)')
+    assert "DDRAW-STARTUP: WARNING native IDirectDraw7 object not redirected" in create
+    assert "vtable[20]" in create
+    assert "return hr;" in create
+    # During this diagnostic phase there is no silent success substitution,
+    # retry or destructive release on a COM mismatch.
+    assert "hr=DD_OK;" not in create
+    assert "IDirectDraw7_Release" not in create
+    assert "Sleep(" not in create
