@@ -96,37 +96,79 @@ inside the loader lock.
 - The upstream reason DirectSound initialization was incomplete and
   `E_FAIL` was present remains a separate investigation.
 
-### Upstream startup failure hypothesis (not yet confirmed)
+### DirectDraw root error: confirmed by uploaded Linux original executable
 
-The public source reconstruction in `krystalgamer/spidey-decomp`,
-`DXinit.cpp`: `DXINIT_DirectX8()` calls `initDirectDraw7()`
-and `initDirect3D7()` **before** `initDirectSound8()`. Its
-`DXINIT_ShutDown()` always calls `shutdownDirectSound8()`;
-`DXsound.cpp` marks `DXSOUND_ShutDown()` matching the original and
-unconditionally invokes `g_pDSBuffer->Stop()`.
+On 15 November 2026 the maintainer supplied a read-only
+`--startup-crash-only` disassembly and the original supported
+`SpideyPC.exe`, matching the **exact pinned SHA-256**. The previously
+missing original caller `0x004FF9CA` is now proven to be in an
+**error branch of DirectDraw7::SetCooperativeLevel**, *before* any
+native DirectSound initialization. This corrects the earlier
+uncertain "audio initialization failure" interpretation.
 
-Thus the zero native sound-device/primary-buffer pointers in **both**
-crashes may be caused by an **earlier graphics error**, followed by
-generic shutdown, rather than by a DirectSound-specific API failure.
-`EDI=0x80004005` in both dumps is consistent with `E_FAIL`, but
-does **not** identify which API returned it. Do not report this as a
-proven DirectSound initialization failure.
+The exact original x86 bytes:
 
-The WinMM proxy intentionally returns `E_FAIL` if its early
-`DirectDrawCreateEx` gate cannot load/resolve the core fix DLL;
-the core gate returns `DDERR_UNSUPPORTED` if core initialization
-fails. These are **candidate** upstream failure paths, not confirmed
-participants in either crash.
+~~~asm
+004FF983  6A 11          push 0x11          ; DDSCL_EXCLUSIVE|DDSCL_FULLSCREEN
+004FF985  56             push esi           ; original HWND
+004FF986  50             push eax           ; original IDirectDraw7*
+004FF987  FF 52 50       call [edx+0x50]    ; IDirectDraw7::SetCooperativeLevel
+004FF98A  8B F8          mov edi,eax        ; HRESULT from that exact method
+004FF98C  81 FF 45 02 76 88  cmp edi,0x88760245
+004FF992  0F 84 B7 00 00 00  je 0x004FFA4F
+004FF998  3B FB          cmp edi,ebx       ; EBX == 0 in both dumps
+004FF99A  0F 84 AF 00 00 00  je 0x004FFA4F
+004FF9A0  ...            native error reporting
+004FF9B3  3B FB          cmp edi,ebx
+004FF9B5  0F 8D 94 00 00 00  jge 0x004FFA4F
+004FF9BB  E8 E0 2D 00 00  call 0x005027A0 ; graphics cleanup
+004FF9C0  6A 01          push 1
+004FF9C2  E8 89 DE FF FF  call 0x004FD850 ; further graphics cleanup
+004FF9C7  83 C4 04       add esp,4
+004FF9CA  E8 21 41 00 00  call 0x00503AF0 ; NULL-unsafe primary Stop
+004FF9CF  ...            release original DirectSound object, if any
+~~~
 
-The branch now logs the exact DirectDrawCreateEx result on the
-existing unsuccessful/non-DDraw7 path; it does not alter HRESULT
-or graphics/audio APIs. The existing **SHA-256 + size gated** original
-game forensic inspectors, Python and PowerShell, have both been
-extended to disassemble the newly proven caller `0x004FF9CA`
-and surrounding error handling, plus the possible deeper upstream
-stack address `0x004FDED9` (not a confirmed unwound frame).
-Only another original-EXE static analysis can classify the actual
-pre-shutdown branch conclusively.
+Both independent Windows WER dumps captured **`EDI=0x80004005`**
+at EIP `0x00503AF7`, along with `EBX=0` and the original
+primary sound buffer `[0x006BBF1C]=0`. The x86 caller holds the
+SetCooperativeLevel result in the *callee-saved* EDI register through
+native emergency cleanup, so the two context values identify the
+**failed COM method** and not merely a coincidental HRESULT.
+E_FAIL is negative and differs from the two accepted values; the
+original error branch therefore reaches `0x004FF9CA` exactly as
+the two dump return addresses record.
+
+**Established:** `IDirectDraw7::SetCooperativeLevel` returned
+`0x80004005` on both Windows failures; the game's graphics
+initialization abort called its generic DirectSound shutdown before
+the sound device/primary buffer existed, producing a secondary NULL
+dereference. **Not yet established:** why that DirectDraw call
+returned E_FAIL, or whether the patch's `hooked_coop` had
+intercepted it in either failing process. The original game requests
+full-screen exclusive flags `0x11`; the installed patch's
+`hooked_coop`, *when actually used*, calls
+`original_coop(self,hwnd,DDSCL_NORMAL)` instead and logs
+`BORDERLESS: ERROR DDSCL_NORMAL rejected hr=...` on failure.
+Successful startup logs show that hook being entered, but are
+not evidence that the hook was present in either crashed run.
+
+The previous candidate `DirectDrawCreateEx` startup-gate error
+cannot be substituted for this proven method result: this original
+code path had a valid DirectDraw7 interface to call
+`SetCooperativeLevel`. The branch's existing error logging remains
+useful for other failures but is **not the first failing API in
+these two dumps**.
+
+**Next safe step:** no speculative change to DDSCL flags, window
+styles or EXE control flow. Preserve the existing SHA/signature-
+gated primary NULL guard and, if another Windows repro occurs,
+compare same-process log lines for `DDRAW-STARTUP`,
+`BORDERLESS: intercept SetCooperativeLevel` and
+`BORDERLESS: ERROR DDSCL_NORMAL rejected`.
+This discriminates an unhooked original exclusive-mode call from a
+failure returned after the redirected DDSCL_NORMAL call. Until then,
+no claim of permanent upstream E_FAIL resolution or release.
 
 ## Linux: focused original-EXE analysis (no Wine / no game launch)
 
