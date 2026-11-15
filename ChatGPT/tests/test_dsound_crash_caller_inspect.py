@@ -160,6 +160,18 @@ def test_focused_linux_mode_executes_on_synthetic_sha_checked_pe(
         module.inspect(bytes(blob), exe, other_report, startup_crash_only=True)
     assert not other_report.exists()
 
+    # Explicit same-path and hard-link safety on Linux: refuse overwrite,
+    # even with synthetic test bytes, and leave original file unchanged.
+    monkeypatch.setattr(module, "EXPECTED_SHA256",
+                        hashlib.sha256(blob).hexdigest())
+    with pytest.raises(ValueError, match="refusing to overwrite"):
+        module.inspect(bytes(blob), exe, exe, startup_crash_only=True)
+    alias = tmp_path / "same-inode.exe"
+    alias.hardlink_to(exe)
+    with pytest.raises(ValueError, match="refusing to overwrite"):
+        module.inspect(bytes(blob), exe, alias, startup_crash_only=True)
+    assert exe.read_bytes() == before
+
 
 def test_cli_exposes_focused_linux_mode_without_changing_default_probe():
     assert 'parser.add_argument("--startup-crash-only", action="store_true"' in PYTOOL
