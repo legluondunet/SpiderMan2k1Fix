@@ -5901,6 +5901,59 @@ static void ddraw_native_method_module(const void *fn,char *dest,size_t cap) {
   leaf=strrchr(module_path,'\\');
   snprintf(dest,cap,"%s",leaf?leaf+1:module_path);
 }
+/* Windows supports per-executable compatibility layers independently of
+ * __COMPAT_LAYER. This is read-only evidence, not an AppCompat bypass.
+ * In particular the system SDB can also match an EXE WITHOUT a Layers
+ * registry value: 'absent' here never means 'no compatibility shim'.
+ *
+ * Called ONLY on the game thread during the first DirectDrawCreateEx,
+ * after our core startup gate (NOT inside DllMain/loader lock).
+ * The executable path is used as the exact registry value name but is
+ * never written to the runtime log. No compatibility contents are logged. */
+static int ddraw_compat_layer_entry(HKEY hive,REGSAM view,
+                                    const wchar_t *exe_path) {
+  static const wchar_t key_path[] =
+    L"Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers";
+  HKEY key=NULL;
+  LONG rc;
+  DWORD type=0,bytes=0;
+  if(!exe_path || !*exe_path)return -1;
+  rc=RegOpenKeyExW(hive,key_path,0,KEY_QUERY_VALUE|view,&key);
+  if(rc==ERROR_FILE_NOT_FOUND || rc==ERROR_PATH_NOT_FOUND)return 0;
+  if(rc!=ERROR_SUCCESS)return -1;
+  rc=RegQueryValueExW(key,exe_path,NULL,&type,NULL,&bytes);
+  RegCloseKey(key);
+  if(rc==ERROR_FILE_NOT_FOUND || rc==ERROR_PATH_NOT_FOUND)return 0;
+  if(rc!=ERROR_SUCCESS && rc!=ERROR_MORE_DATA)return -1;
+  /* 1 = text layer value present, 2 = another value type.
+   * Never print registry contents, usernames, directories or file paths. */
+  return (type==REG_SZ || type==REG_EXPAND_SZ)?1:2;
+}
+static void ddraw_log_compat_evidence(void) {
+  wchar_t exe[MAX_PATH];
+  char line[300];
+  DWORD len=GetModuleFileNameW(NULL,exe,MAX_PATH);
+  int user=-1,machine32=-1,machine64=-1;
+  if(len>0 && len<MAX_PATH) {
+    user=ddraw_compat_layer_entry(HKEY_CURRENT_USER,0,exe);
+    machine32=ddraw_compat_layer_entry(HKEY_LOCAL_MACHINE,
+                                       KEY_WOW64_32KEY,exe);
+    machine64=ddraw_compat_layer_entry(HKEY_LOCAL_MACHINE,
+                                       KEY_WOW64_64KEY,exe);
+  }
+  snprintf(line,sizeof(line),
+    "DDRAW-STARTUP: APPCOMPAT-LAYERS HKCU=%d HKLM32=%d HKLM64=%d (0=absent 1=text 2=other -1=unreadable; system SDB not covered)",
+    user,machine32,machine64);
+  log_line(line);
+  snprintf(line,sizeof(line),
+    "DDRAW-STARTUP: APPCOMPAT-MODULES apphelp=%d AcLayers=%d AcGenral=%d AcXtrnal=%d ShimEng=%d (loaded presence only)",
+    GetModuleHandleA("apphelp.dll")!=NULL,
+    GetModuleHandleA("AcLayers.dll")!=NULL,
+    GetModuleHandleA("AcGenral.dll")!=NULL,
+    GetModuleHandleA("AcXtrnal.dll")!=NULL,
+    GetModuleHandleA("ShimEng.dll")!=NULL);
+  log_line(line);
+}
 static void ddraw_log_original_vtable(void **vtable) {
   static volatile LONG count=0;
   char query[64],surface[64],coop[64],mode[64],line[360];
@@ -5920,6 +5973,7 @@ static void ddraw_log_original_vtable(void **vtable) {
     query,surface,coop,mode,GetModuleHandleA("apphelp.dll")!=NULL,
     GetEnvironmentVariableA("__COMPAT_LAYER",compat_probe,sizeof(compat_probe))>0);
   log_line(line);
+  if(attempt==1)ddraw_log_compat_evidence();
 }
 static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *outer) {
   /* The display device is created before SetCooperativeLevel. Determine the
