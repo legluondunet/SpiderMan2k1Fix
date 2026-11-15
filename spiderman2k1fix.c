@@ -5881,6 +5881,46 @@ static HRESULT WINAPI hooked_mode(void *self,DWORD w,DWORD h,DWORD bpp,DWORD hz,
   }
   return hr;
 }
+/* Identify actual COM implementations BEFORE replacing the instance vtable.
+ * DirectDraw7 startup E_FAIL was observed with apphelp.dll while a healthy
+ * Windows 11 launch used DDRAW.dll. A module match is correlation, NOT proof
+ * that the Windows compatibility layer is defective. Never load DLLs or
+ * alter the returned COM object while recording these diagnostics. */
+static void ddraw_native_method_module(const void *fn,char *dest,size_t cap) {
+  MEMORY_BASIC_INFORMATION mbi;
+  char module_path[MAX_PATH];
+  DWORD copied;
+  const char *leaf;
+  if(!dest || !cap) return;
+  snprintf(dest,cap,"unknown");
+  if(!fn || VirtualQuery(fn,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+     mbi.Type!=MEM_IMAGE || !mbi.AllocationBase)return;
+  copied=GetModuleFileNameA((HMODULE)mbi.AllocationBase,
+                            module_path,sizeof(module_path));
+  if(!copied || copied>=sizeof(module_path))return;
+  leaf=strrchr(module_path,'\\');
+  snprintf(dest,cap,"%s",leaf?leaf+1:module_path);
+}
+static void ddraw_log_original_vtable(void **vtable) {
+  static volatile LONG count=0;
+  char query[64],surface[64],coop[64],mode[64],line[360];
+  char compat_probe[2];
+  LONG attempt;
+  if(!vtable)return;
+  attempt=InterlockedIncrement(&count);
+  if(attempt>4)return; /* startup only; no noisy per-object probes */
+  ddraw_native_method_module(vtable[0],query,sizeof(query));
+  ddraw_native_method_module(vtable[6],surface,sizeof(surface));
+  ddraw_native_method_module(vtable[20],coop,sizeof(coop));
+  ddraw_native_method_module(vtable[21],mode,sizeof(mode));
+  /* Only boolean evidence: never log a full path or user-supplied
+   * compatibility environment contents. Presence does not prove shim use. */
+  snprintf(line,sizeof(line),
+    "DDRAW-STARTUP: COM-ORIGINS QueryInterface=%s CreateSurface=%s SetCooperativeLevel=%s SetDisplayMode=%s apphelp-loaded=%d compat-env-present=%d",
+    query,surface,coop,mode,GetModuleHandleA("apphelp.dll")!=NULL,
+    GetEnvironmentVariableA("__COMPAT_LAYER",compat_probe,sizeof(compat_probe))>0);
+  log_line(line);
+}
 static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *outer) {
   /* The display device is created before SetCooperativeLevel. Determine the
    * actual game-window monitor NOW, before the virtual Spidey.cfg is read
@@ -5906,6 +5946,7 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
     void ***object=(void ***)*out;
     void **vtable=*object;
     BOOL coop_hook_present=FALSE;
+    ddraw_log_original_vtable(vtable); /* read-only, before substitution */
     if(InterlockedCompareExchange(&ddraw_vtable_ready,1,0)==0) {
       memcpy(patched_ddraw_vtable,vtable,sizeof(patched_ddraw_vtable));
       original_dd_query=(DDQueryFn)vtable[0];
@@ -5981,7 +6022,19 @@ static void install_ddraw_hook(void) {
   if(!ddraw) { log_line("DDRAW: ddraw.dll not loaded yet; hook not installed"); return; }
   target=GetProcAddress(ddraw,"DirectDrawCreateEx");
   if(!target || *slot!=(void*)target) {
-    log_line("DDRAW: IAT target mismatch; hook not installed"); return;
+    MEMORY_BASIC_INFORMATION mbi;
+    HMODULE winmm_proxy=GetModuleHandleA("winmm.dll");
+    /* The early verified proxy intercepts this exact IAT slot first.
+     * Its address belongs to the already loaded local winmm.dll, not
+     * ddraw.dll; the late legacy installer must NEVER overwrite it. */
+    if(winmm_proxy && *slot &&
+       VirtualQuery(*slot,&mbi,sizeof(mbi))==sizeof(mbi) &&
+       mbi.Type==MEM_IMAGE && mbi.AllocationBase==(void*)winmm_proxy) {
+      log_line("DDRAW-STARTUP: early WinMM IAT gate owns DirectDrawCreateEx; redundant legacy hook skipped (expected)");
+    } else {
+      log_line("DDRAW-STARTUP: WARNING unexpected DirectDrawCreateEx IAT owner; legacy hook not installed");
+    }
+    return;
   }
   original_create=(CreateExFn)*slot;
   if(!VirtualProtect(slot,sizeof(*slot),PAGE_READWRITE,&old)) {
