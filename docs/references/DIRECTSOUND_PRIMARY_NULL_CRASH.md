@@ -140,18 +140,54 @@ original error branch therefore reaches `0x004FF9CA` exactly as
 the two dump return addresses record.
 
 **Established:** `IDirectDraw7::SetCooperativeLevel` returned
-`0x80004005` on both Windows failures; the game's graphics
-initialization abort called its generic DirectSound shutdown before
-the sound device/primary buffer existed, producing a secondary NULL
-dereference. **Not yet established:** why that DirectDraw call
-returned E_FAIL, or whether the patch's `hooked_coop` had
-intercepted it in either failing process. The original game requests
-full-screen exclusive flags `0x11`; the installed patch's
-`hooked_coop`, *when actually used*, calls
-`original_coop(self,hwnd,DDSCL_NORMAL)` instead and logs
-`BORDERLESS: ERROR DDSCL_NORMAL rejected hr=...` on failure.
-Successful startup logs show that hook being entered, but are
-not evidence that the hook was present in either crashed run.
+`0x80004005` in both crashes. The graphics initialization error path
+invoked native audio shutdown before a primary DirectSound buffer existed,
+then the unconditional native `Stop` dereferenced NULL. The game originally
+requests exclusive/full-screen flags `0x11`; our `hooked_coop` redirects
+these requests to `DDSCL_NORMAL`.
+
+### Newly recovered from both raw Windows minidumps: the hook WAS entered
+
+Earlier analysis could only confirm that `ddraw_vtable_ready=2`. A deeper
+read of the **original DLL's captured, initialized data** and the Win32
+`CONTEXT` resolves this uncertainty. A CI-built, unstripped PE32 DLL
+contains COFF symbols `_ddraw_vtable_ready`,
+`_patched_ddraw_vtable`, `_original_coop`, and `_game_hwnd`.
+The original `spiderman2k1fix.c` has **exactly one assignment**
+`game_hwnd=hwnd`, inside `hooked_coop` before calling
+`original_coop(self,hwnd,DDSCL_NORMAL)`.
+
+| Dump | ready=2 | saved hook `vtable[20]` | game ESI | patch `game_hwnd` |
+|---|---|---|---|---|
+| 16:52 (old folder) | `0x72C22AD8` | `0x72B65100` | `0x0018097C` | `0x0018097C` at `0x72C22E6C` |
+| 21:05 (new folder) | `0x72C25AE0` | `0x72B65100` | `0x00100478` | `0x00100478` at `0x72C25E88` |
+
+The matching, non-NULL game-window handle in the **single-writer**
+core `game_hwnd` establishes that `hooked_coop` was actually entered
+during *both* failing processes. Both core DLLs have
+`borderless_legacy_mode_calls=0` and
+`surface_create_count=0`: failure occurred before any patched
+display-mode transition or surface creation. Neither dump has the
+caller code page, but the uploaded SHA-verified original retail
+`SpideyPC.exe` now supplies the exact native instructions.
+
+Even more importantly, **both captured core DLLs stored**
+`original_coop=0x7AC428C0`; the minidump ModuleList resolves
+that address to **`C:\\Windows\\System32\\apphelp.dll`**,
+not `ddraw.dll`. The saved original query-interface,
+CreateSurface and SetDisplayMode methods also resolve there.
+This identifies a Windows application-compatibility indirection
+in the native COM vtable. **It does not establish that the
+compatibility component is defective** or why the method returned E_FAIL.
+
+Therefore the previous "missing early patch" hypothesis is superseded.
+Our `hooked_coop` was entered, and the game received `E_FAIL`
+from its `SetCooperativeLevel` call. Because a retained `game_hwnd`
+could theoretically originate from an earlier invocation, dump state
+alone cannot *mathematically exclude* a second unhooked call.
+The zero mode/surface counters and original initialization sequence
+make that possibility unlikely. Do **not** claim a specific invalid
+HWND, thread mismatch or apphelp bug without a direct diagnostic.
 
 The previous candidate `DirectDrawCreateEx` startup-gate error
 cannot be substituted for this proven method result: this original
@@ -166,9 +202,26 @@ gated primary NULL guard and, if another Windows repro occurs,
 compare same-process log lines for `DDRAW-STARTUP`,
 `BORDERLESS: intercept SetCooperativeLevel` and
 `BORDERLESS: ERROR DDSCL_NORMAL rejected`.
-This discriminates an unhooked original exclusive-mode call from a
-failure returned after the redirected DDSCL_NORMAL call. Until then,
-no claim of permanent upstream E_FAIL resolution or release.
+The failure-only logs now report the actual window's owner
+thread/process, caller thread and the module that owns the original
+COM method (such as apphelp.dll); the native `DDSCL_NORMAL`
+result remains unchanged. Do not claim a permanent upstream
+E_FAIL resolution or a release until Windows acceptance.
+
+## Offline minidump analysis (Linux or Windows, Python stdlib)
+
+`python3 ChatGPT/tools/inspect_spiderman_ddraw_dump.py /path/to/SpideyPC.exe.24668.dmp`
+
+The new read-only minidump analyzer parses only the standard Windows
+ModuleList, MemoryList and x86 ExceptionStream. It verifies the native
+fault signature, finds the core's **actual initialized DirectDraw
+vtable**, locates the saved original COM method's containing DLL,
+and checks the exact known `game_hwnd` layout against original ESI.
+It emits only bounded addresses and DLL **basenames**, not private paths
+or any process memory contents, and never modifies the input dump.
+No proprietary binary/dump is included in the repository.
+Synthetic-only tests create minimal fake MDMP streams to verify
+successful recovery, fail-closed behavior and the report format.
 
 ## Linux: focused original-EXE analysis (no Wine / no game launch)
 
