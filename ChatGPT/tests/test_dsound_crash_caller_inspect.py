@@ -231,6 +231,10 @@ def test_native_ddraw_setcooplevel_efail_is_proven_upstream_error():
     assert "hr=original_coop(self,hwnd,DDSCL_NORMAL);" in coop
     assert "if(SUCCEEDED(hr))" in coop
     assert "BORDERLESS: COOP-FAIL-CONTEXT" in coop
+    assert "BORDERLESS: COOP-FAIL-BACKEND" in coop
+    assert "VirtualQuery((LPCVOID)original_coop" in coop
+    assert "GetModuleFileNameA((HMODULE)mem.AllocationBase" in coop
+    assert "strrchr(module_path" in coop
     assert "GetWindowThreadProcessId(hwnd,&hwnd_process_id)" in coop
     assert "IsWindow(hwnd)" in coop
     assert "GetCurrentThreadId()" in coop
