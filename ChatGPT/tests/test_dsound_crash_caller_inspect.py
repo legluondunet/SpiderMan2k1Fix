@@ -265,3 +265,18 @@ def test_directdraw_vtable_creation_distinguishes_actual_hook_from_prepared_tabl
     assert "hr=DD_OK;" not in create
     assert "IDirectDraw7_Release" not in create
     assert "Sleep(" not in create
+
+def test_directdraw_coop_reports_hwnd_owner_thread_on_success_and_failure():
+    coop = MAIN.split("static HRESULT WINAPI hooked_coop(", 1)[1].split(
+        "static HRESULT WINAPI hooked_mode(", 1)[0]
+    assert "BORDERLESS: COOP-SUCCESS-CONTEXT" in coop
+    assert "BORDERLESS: COOP-FAIL-CONTEXT" in coop
+    assert "same-thread=%d" in coop
+    assert "owner_tid && owner_tid==caller_tid" in coop
+    assert "hwnd_thread_id && hwnd_thread_id==GetCurrentThreadId()" in coop
+    assert "GetWindowThreadProcessId(hwnd,&owner_pid)" in coop
+    assert "GetWindowThreadProcessId(hwnd,&hwnd_process_id)" in coop
+    assert "InterlockedCompareExchange(&success_context_logged,1,0)==0" in coop
+    assert "hr=original_coop(self,hwnd,DDSCL_NORMAL);" in coop
+    assert "return hr;" in coop
+    assert "DDSCL_EXCLUSIVE" not in coop.split("if(SUCCEEDED(hr))", 1)[0]
