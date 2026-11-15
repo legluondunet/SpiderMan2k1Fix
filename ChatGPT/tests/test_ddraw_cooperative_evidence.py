@@ -54,3 +54,44 @@ def test_success_and_failure_context_include_actual_vtable_backend():
     assert COOP.index("COOP-SUCCESS-BACKEND") < COOP.index(
         "borderless_window_apply();")
     assert COOP.index("COOP-FAIL-PRE") < COOP.index("COOP-FAIL-BACKEND")
+
+
+def test_original_vtable_diagnostics_run_before_any_substitution():
+    create = SOURCE.split("static HRESULT WINAPI hooked_create(", 1)[1].split(
+        "static void install_ddraw_hook(", 1)[0]
+    assert create.index("void **vtable=*object;") < create.index(
+        "ddraw_log_original_vtable(vtable);")
+    assert create.index("ddraw_log_original_vtable(vtable);") < create.index(
+        "*object=patched_ddraw_vtable;")
+    # Four original COM method owners, not addresses or private DLL paths.
+    origin = SOURCE.split("static void ddraw_native_method_module(", 1)[1].split(
+        "static HRESULT WINAPI hooked_create(", 1)[0]
+    for item in ("vtable[0]", "vtable[6]", "vtable[20]", "vtable[21]"):
+        assert item in origin
+    assert "DDRAW-STARTUP: COM-ORIGINS" in origin
+    assert "GetModuleFileNameA" in origin
+    assert "strrchr(module_path" in origin
+    assert 'GetModuleHandleA("apphelp.dll")!=NULL' in origin
+    assert 'GetEnvironmentVariableA("__COMPAT_LAYER",compat_probe' in origin
+    assert "attempt>4" in origin
+    assert "LoadLibrary" not in origin
+    assert "VirtualProtect" not in origin
+    assert "SetWindowLong" not in origin
+    assert "original_coop(" not in origin
+
+
+def test_late_legacy_iat_hook_preserves_early_winmm_gate():
+    legacy = SOURCE.split("static void install_ddraw_hook(", 1)[1].split(
+        "static void install_player_hud(", 1)[0]
+    assert 'GetModuleHandleA("winmm.dll")' in legacy
+    assert "VirtualQuery(*slot,&mbi,sizeof(mbi))" in legacy
+    assert "mbi.Type==MEM_IMAGE" in legacy
+    assert "mbi.AllocationBase==(void*)winmm_proxy" in legacy
+    assert "redundant legacy hook skipped (expected)" in legacy
+    assert "WARNING unexpected DirectDrawCreateEx IAT owner" in legacy
+    # Expected mismatch returns BEFORE the legacy IAT assignment.
+    assert legacy.index("redundant legacy hook skipped (expected)") < legacy.index(
+        "return;\n  }\n  original_create=(CreateExFn)*slot;")
+    assert legacy.index("return;\n  }\n  original_create=(CreateExFn)*slot;") < legacy.index(
+        "*slot=(void*)hooked_create;")
+    assert "IAT target mismatch; hook not installed" not in legacy
