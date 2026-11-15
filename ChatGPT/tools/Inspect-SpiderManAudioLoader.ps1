@@ -153,6 +153,9 @@ $known = @(
     [pscustomobject]@{ Name='native DXSOUND_Play (address only)'; Va=0x00504230; Signature=$null },
     [pscustomobject]@{ Name='native DXSOUND_Stop (signature-guarded)'; Va=0x005042A0; Signature=[byte[]]@(0x8B,0x44,0x24,0x04,0x56,0x8D,0x04,0x40) },
     [pscustomobject]@{ Name='original native Play CALL (signature-guarded)'; Va=0x00472870; Signature=[byte[]]@(0xE8,0xBB,0x19,0x09,0) },
+    [pscustomobject]@{ Name='two WER dumps: original 0x4FF987 DirectDraw7 SetCooperativeLevel 0x11'; Va=0x004FF983; Signature=[byte[]]@(0x6A,0x11,0x56,0x50,0xFF,0x52,0x50,0x8B,0xF8) },
+    [pscustomobject]@{ Name='two WER dumps: original DirectDraw7 HRESULT special-case and branch'; Va=0x004FF98C; Signature=[byte[]]@(0x81,0xFF,0x45,0x02,0x76,0x88,0x0F,0x84,0xB7,0,0,0) },
+    [pscustomobject]@{ Name='two WER dumps: original negative HRESULT cleanup'; Va=0x004FF9B3; Signature=[byte[]]@(0x3B,0xFB,0x0F,0x8D,0x94,0,0,0,0xE8,0xE0,0x2D,0,0) },
     [pscustomobject]@{ Name='two WER dumps: exact 0x4FF9CA native sound shutdown CALL'; Va=0x004FF9CA; Signature=[byte[]]@(0xE8,0x21,0x41,0,0) },
     [pscustomobject]@{ Name='two WER dumps: original 0x503AF7 primary-buffer Stop'; Va=0x00503AF7; Signature=[byte[]]@(0x8B,0x08,0xFF,0x51,0x48) },
     [pscustomobject]@{ Name='original null-aware final cleanup 0x504050'; Va=0x00504050; Signature=[byte[]]@(0x8B,0x44,0x24,0x08,0x53,0x56,0x57,0x85,0xC0,0x74,0x4E) }
@@ -166,8 +169,11 @@ $lines = New-Object 'System.Collections.Generic.List[string]'
 [void]$lines.Add('')
 [void]$lines.Add('VERIFIED ORIGINAL SIGNATURES AND KNOWN ADDRESSES')
 [void]$lines.Add('WER 2026-11-14: native crash EIP=0x00503AF7, EAX=0, original caller=0x004FF9CA.')
-[void]$lines.Add('EDI=0x80004005 is a clue, NOT proof of a DirectSound failure.')
-[void]$lines.Add('Graphics initialization may have failed before DirectSound creation.')
+[void]$lines.Add('ORIGINAL CALLER: 0x004FF987 IDirectDraw7::SetCooperativeLevel requests 0x11 (exclusive full screen).')
+[void]$lines.Add('0x004FF98A saves HRESULT in EDI; both dumps EDI=0x80004005 (E_FAIL).')
+[void]$lines.Add('Negative HRESULT takes 0x004FF9BB graphics cleanup -> 0x004FF9CA native audio shutdown.')
+[void]$lines.Add('The DirectDraw7 API failure is CONFIRMED; its underlying cause remains UNKNOWN.')
+[void]$lines.Add('It is unproven whether the patch redirected this call to DDSCL_NORMAL in either crash.')
 [void]$lines.Add('A stack candidate at 0x004FDED9 is NOT an unwound frame.')
 
 foreach ($site in $known) {
