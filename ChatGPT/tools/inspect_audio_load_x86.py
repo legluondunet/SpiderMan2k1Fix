@@ -25,6 +25,12 @@ KNOWN = {
     "native DXSOUND_Play": (0x00504230, None),
     "native DXSOUND_Stop": (0x005042A0, bytes.fromhex("8B 44 24 04 56 8D 04 40")),
     "original native Play callsite": (0x00472870, bytes.fromhex("E8 BB 19 09 00")),
+    "both WER failures: original DirectDraw7 SetCooperativeLevel 0x11": (
+        0x004FF983, bytes.fromhex("6A 11 56 50 FF 52 50 8B F8")),
+    "both WER failures: compare SetCooperativeLevel HRESULT": (
+        0x004FF98C, bytes.fromhex("81 FF 45 02 76 88 0F 84 B7 00 00 00")),
+    "both WER failures: negative HRESULT enters emergency cleanup": (
+        0x004FF9B3, bytes.fromhex("3B FB 0F 8D 94 00 00 00 E8 E0 2D 00 00")),
     "WER crash direct caller: native shutdown Stop (16:52 and 21:05)": (
         0x004FF9CA, bytes.fromhex("E8 21 41 00 00")),
     "WER crash NULL dereference: original Stop vtable invocation": (
@@ -194,9 +200,15 @@ def inspect(blob: bytes, exe: Path, out: Path, startup_crash_only: bool = False)
             "WER crashes: 2026-11-14 16:52 (legacy) and 21:05 (new location).",
             "Both: AV read NULL, EIP=0x00503AF7, EAX=0; primary sound buffer NULL.",
             "Both: return=0x004FF9CF -> CALL 0x004FF9CA (exact rel32 verified).",
-            "Both: EDI=0x80004005 (E_FAIL); failing API NOT yet identified.",
-            "The game initializes graphics BEFORE DirectSound; graphics failure",
-            "followed by generic cleanup is possible but NOT established.",
+            "Both: EDI=0x80004005 (E_FAIL), now attributed by original x86",
+            "caller to IDirectDraw7::SetCooperativeLevel at 0x004FF987.",
+            "Requested DDSCL_EXCLUSIVE|FULLSCREEN (0x11). Original 0x004FF98A",
+            "stores the API result in EDI; negative HRESULT triggers emergency",
+            "cleanup at 0x004FF9BB then native sound shutdown at 0x004FF9CA.",
+            "Graphics initialization happens before native DirectSound.",
+            "WHY SetCooperativeLevel returned E_FAIL remains unknown.",
+            "Whether the patch's DDSCL_NORMAL hook ran during either crash",
+            "is not established by these WER minidumps.",
             "Original file and runtime memory are never modified by this probe.",
             "",
             "1. EXACT NATIVE CALLER AND PRE-SHUTDOWN ERROR HANDLING",
@@ -332,7 +344,9 @@ def inspect(blob: bytes, exe: Path, out: Path, startup_crash_only: bool = False)
              "16:52 and 21:05 exception EIP=0x00503AF7, EAX=0; original caller=0x004FF9CA.",
              "The shutdown may be a consequence of an earlier graphics API failure:",
              "the native graphics initialization runs before DirectSound creation.",
-             "EDI=0x80004005 from both dumps is a clue, NOT proof of failing API.",
+             "EDI=0x80004005 from both dumps is the original DirectDraw7",
+             "SetCooperativeLevel result, per the SHA-verified original branch.",
+             "The cause of the failed API call remains unproven.",
              "The following disassemblies are read-only and SHA-256 gated.",
              "DIRECT CALLER / PRECEDING ERROR HANDLING (0x004FF700-0x004FFB40)",
              disassemble(exe, 0x004FF700, 0x004FFB40),
