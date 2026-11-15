@@ -213,7 +213,7 @@ def inspect(blob: bytes, exe: Path, out: Path, startup_crash_only: bool = False)
             "VA 0x005027F0..0x00503300",
             disassemble(exe, 0x005027F0, 0x00503300),
         ]
-        report="\\n".join(rows)+"\\n"
+        report="\n".join(rows)+"\n"
         out.parent.mkdir(parents=True,exist_ok=True)
         out.write_text(report,encoding="utf-8")
         return report
