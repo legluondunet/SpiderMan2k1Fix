@@ -149,7 +149,7 @@ def disassemble(exe: Path, start: int, stop: int) -> str:
     return result.stdout
 
 
-def inspect(blob: bytes, exe: Path, out: Path) -> str:
+def inspect(blob: bytes, exe: Path, out: Path, startup_crash_only: bool = False) -> str:
     if len(blob) != EXPECTED_SIZE:
         raise ValueError(f"unsupported SpideyPC.exe length {len(blob)} (expected {EXPECTED_SIZE})")
     sha = hashlib.sha256(blob).hexdigest()
@@ -173,6 +173,50 @@ def inspect(blob: bytes, exe: Path, out: Path) -> str:
             raise ValueError(f"native signature mismatch: {name}, VA 0x{addr:08X}")
         rows.append(f"{name} @ 0x{addr:08X}: {raw.hex(' ')}" +
                     (" [exact bytes MATCH]" if signature else " [address known; no code signature asserted]"))
+    if startup_crash_only:
+        # The WER dumps establish the fault site and immediate return
+        # address; they do NOT contain the whole original caller page.
+        # Only the separately SHA-verified retail EXE can supply those
+        # instructions. Keep this targeted report small and read-only.
+        crash_call=0x004FF9CA
+        crash_target=0x00503AF0
+        raw=pe.read(crash_call,5)
+        displacement=struct.unpack_from("<i",raw,1)[0]
+        if raw[0]!=0xE8 or crash_call+5+displacement!=crash_target:
+            raise ValueError("WER original startup crash caller signature mismatch")
+        rows += [
+            "",
+            "NATIVE STARTUP CRASH TRIAGE (two original Windows WER dumps)",
+            "WER crashes: 2026-11-14 16:52 (legacy) and 21:05 (new location).",
+            "Both: AV read NULL, EIP=0x00503AF7, EAX=0; primary sound buffer NULL.",
+            "Both: return=0x004FF9CF -> CALL 0x004FF9CA (exact rel32 verified).",
+            "Both: EDI=0x80004005 (E_FAIL); failing API NOT yet identified.",
+            "The game initializes graphics BEFORE DirectSound; graphics failure",
+            "followed by generic cleanup is possible but NOT established.",
+            "Original file and runtime memory are never modified by this probe.",
+            "",
+            "1. EXACT NATIVE CALLER AND PRE-SHUTDOWN ERROR HANDLING",
+            "VA 0x004FF700..0x004FFB40",
+            disassemble(exe, 0x004FF700, 0x004FFB40),
+            "",
+            "2. CANDIDATE HIGHER CALL STACK / INIT ERROR PATH",
+            "VA 0x004FDC80..0x004FE000",
+            "0x004FDED9 was a stack candidate, NOT a validated unwind frame.",
+            disassemble(exe, 0x004FDC80, 0x004FE000),
+            "",
+            "3. ORIGINAL NULL-UNSAFE SOUND STOP AND NULL-AWARE FINAL CLEANUP",
+            "VA 0x00503AE0..0x00503B45 / 0x00504050..0x00504110",
+            disassemble(exe, 0x00503AE0, 0x00503B45),
+            disassemble(exe, 0x00504050, 0x00504110),
+            "",
+            "4. GRAPHICS INITIALIZATION / ORIGINAL SHUTDOWN NEIGHBORHOOD",
+            "VA 0x005027F0..0x00503300",
+            disassemble(exe, 0x005027F0, 0x00503300),
+        ]
+        report="\\n".join(rows)+"\\n"
+        out.parent.mkdir(parents=True,exist_ok=True)
+        out.write_text(report,encoding="utf-8")
+        return report
     rows += ["", "KNOWN / HYPOTHESIZED STAGES",
              "DXSOUND_Open @ 0x00504110 duplicates a reference buffer (known from prior game probes).",
              "Source loader DXSOUND_CreateDSBuffer, loadWAV, ParseWavHeader: ADDRESSES NOT YET VERIFIED.",
@@ -302,9 +346,12 @@ def main() -> int:
     parser.add_argument("exe", type=Path, help="exact original SpideyPC.exe (unchanged)")
     parser.add_argument("--output", "-o", type=Path,
                         default=Path("spiderman-audio-root-disassembly.txt"))
+    parser.add_argument("--startup-crash-only", action="store_true",
+                        help="short, SHA-verified, read-only 0x4FF9CA crash caller and graphics-init disassembly")
     args = parser.parse_args()
     try:
-        report = inspect(args.exe.read_bytes(), args.exe, args.output)
+        report = inspect(args.exe.read_bytes(), args.exe, args.output,
+                         startup_crash_only=args.startup_crash_only)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(f"Verified original; saved {args.output} ({len(report)} characters).")
