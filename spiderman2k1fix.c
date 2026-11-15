@@ -5836,6 +5836,7 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
   if(SUCCEEDED(hr) && out && *out && iid && IsEqualGUID(iid,&IID_IDirectDraw7)) {
     void ***object=(void ***)*out;
     void **vtable=*object;
+    BOOL coop_hook_present=FALSE;
     if(InterlockedCompareExchange(&ddraw_vtable_ready,1,0)==0) {
       memcpy(patched_ddraw_vtable,vtable,sizeof(patched_ddraw_vtable));
       original_dd_query=(DDQueryFn)vtable[0];
@@ -5849,10 +5850,31 @@ static HRESULT WINAPI hooked_create(GUID *guid,void **out,REFIID iid,IUnknown *o
       log_line("BORDERLESS: IDirectDraw7 hooks ready; DDSCL_NORMAL + windowed PRIMARY/BACKBUFFER virtualization");
       InterlockedExchange(&ddraw_vtable_ready,2);
     }
-    if(ddraw_vtable_ready==2 && original_coop && original_mode && original_surface_create &&
-       vtable[0]==(void*)original_dd_query && vtable[6]==(void*)original_surface_create && vtable[20]==(void*)original_coop &&
-       vtable[21]==(void*)original_mode)
+    /* One native DirectDraw7 object can be returned through repeated
+     * CreateEx requests. If its vtable is already ours, do not flag it as
+     * an unprotected object. Otherwise record whether the substitution
+     * ACTUALLY occurred, not just whether the hook table was prepared.
+     * No COM release, HRESULT override, or forced exclusive fallback. */
+    if(vtable==patched_ddraw_vtable &&
+       InterlockedCompareExchange(&ddraw_vtable_ready,0,0)==2) {
+      coop_hook_present=TRUE;
+    } else if(InterlockedCompareExchange(&ddraw_vtable_ready,0,0)==2 &&
+       original_coop && original_mode && original_surface_create &&
+       vtable[0]==(void*)original_dd_query &&
+       vtable[6]==(void*)original_surface_create &&
+       vtable[20]==(void*)original_coop &&
+       vtable[21]==(void*)original_mode) {
       *object=patched_ddraw_vtable;
+      coop_hook_present=TRUE;
+    }
+    if(!coop_hook_present) {
+      char mismatch[256];
+      snprintf(mismatch,sizeof(mismatch),
+        "DDRAW-STARTUP: WARNING native IDirectDraw7 object not redirected; ready=%ld coop=%p expected=%p object=%p",
+        (long)InterlockedCompareExchange(&ddraw_vtable_ready,0,0),
+        vtable?(void*)vtable[20]:NULL,(void*)original_coop,(void*)*out);
+      log_line(mismatch);
+    }
   } else {
     /* A native DirectDraw failure can happen BEFORE DirectSound exists.
      * The original game's generic shutdown then attempts an unconditional
