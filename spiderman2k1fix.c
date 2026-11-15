@@ -5686,6 +5686,22 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
   log_monitor(hwnd);
   hr=original_coop(self,hwnd,DDSCL_NORMAL);
   if(SUCCEEDED(hr)) {
+    /* Baseline once on a successful boot, useful for comparisons with
+     * the intermittent Windows SetCooperativeLevel E_FAIL. The DirectDraw7
+     * contract requires this call on the thread that owns the HWND.
+     * Read-only observation; do not infer anything from a single success. */
+    static volatile LONG success_context_logged=0;
+    if(InterlockedCompareExchange(&success_context_logged,1,0)==0) {
+      DWORD owner_pid=0;
+      DWORD owner_tid=hwnd?GetWindowThreadProcessId(hwnd,&owner_pid):0;
+      DWORD caller_tid=GetCurrentThreadId();
+      snprintf(line,sizeof(line),
+        "BORDERLESS: COOP-SUCCESS-CONTEXT valid=%d owner-pid=%lu owner-tid=%lu caller-tid=%lu same-thread=%d hr=0x%08lX",
+        hwnd?IsWindow(hwnd):0,(unsigned long)owner_pid,
+        (unsigned long)owner_tid,(unsigned long)caller_tid,
+        owner_tid && owner_tid==caller_tid,(unsigned long)hr);
+      log_line(line);
+    }
     borderless_window_apply();
     SpiderInputFocus_AttachWindow(hwnd);
   }
@@ -5701,10 +5717,11 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
      * so an intermittent E_FAIL can be distinguished from a missed hook.
      * Do not change HRESULT or the DDSCL_NORMAL forwarding policy. */
     snprintf(line,sizeof(line),
-      "BORDERLESS: COOP-FAIL-CONTEXT hwnd=%p valid=%d owner-pid=%lu owner-tid=%lu caller-tid=%lu vtable-ready=%ld",
+      "BORDERLESS: COOP-FAIL-CONTEXT hwnd=%p valid=%d owner-pid=%lu owner-tid=%lu caller-tid=%lu same-thread=%d vtable-ready=%ld",
       (void*)hwnd,hwnd?IsWindow(hwnd):0,
       (unsigned long)hwnd_process_id,(unsigned long)hwnd_thread_id,
       (unsigned long)GetCurrentThreadId(),
+      hwnd_thread_id && hwnd_thread_id==GetCurrentThreadId(),
       (long)InterlockedCompareExchange(&ddraw_vtable_ready,0,0));
     log_line(line);
     /* The two native WER crashes retained original_coop in apphelp.dll,
