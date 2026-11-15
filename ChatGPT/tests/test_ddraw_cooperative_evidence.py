@@ -95,3 +95,51 @@ def test_late_legacy_iat_hook_preserves_early_winmm_gate():
     assert legacy.index("return;\n  }\n  original_create=(CreateExFn)*slot;") < legacy.index(
         "*slot=(void*)hooked_create;")
     assert "IAT target mismatch; hook not installed" not in legacy
+
+
+def test_native_appcompat_layers_observation_is_read_only_and_private():
+    block = SOURCE.split("static int ddraw_compat_layer_entry(", 1)[1].split(
+        "static void ddraw_log_original_vtable(", 1)[0]
+    for token in (
+        'L"Software\\\\Microsoft\\\\Windows NT\\\\CurrentVersion\\\\AppCompatFlags\\\\Layers"',
+        "RegOpenKeyExW(hive,key_path,0,KEY_QUERY_VALUE|view,&key)",
+        "RegQueryValueExW(key,exe_path,NULL,&type,NULL,&bytes)",
+        "RegCloseKey(key)",
+        "GetModuleFileNameW(NULL,exe,MAX_PATH)",
+        "HKEY_CURRENT_USER,0,exe",
+        "KEY_WOW64_32KEY,exe",
+        "KEY_WOW64_64KEY,exe",
+        "DDRAW-STARTUP: APPCOMPAT-LAYERS",
+        "DDRAW-STARTUP: APPCOMPAT-MODULES",
+        "system SDB not covered",
+    ):
+        assert token in block
+    for module in (
+        "apphelp.dll", "AcLayers.dll", "AcGenral.dll",
+        "AcXtrnal.dll", "ShimEng.dll",
+    ):
+        assert f'GetModuleHandleA("{module}")' in block
+    assert "RegSetValue" not in block
+    assert "RegCreateKey" not in block
+    assert "RegDelete" not in block
+    assert "RegQueryValueExW(key,exe_path,NULL,&type,NULL,&bytes)" in block
+    assert 'log_line(exe' not in block
+    assert "LogFlags" not in block
+    assert "DisableEngine" not in block
+    assert "ShimFlushCache" not in block
+    assert "LoadLibrary" not in block
+    assert "if(attempt==1)ddraw_log_compat_evidence();" in SOURCE
+
+
+def test_appcompat_probe_runs_on_directdraw_create_not_under_loader_lock():
+    origin = SOURCE.split("static void ddraw_log_original_vtable(", 1)[1].split(
+        "static HRESULT WINAPI hooked_create(", 1)[0]
+    create = SOURCE.split("static HRESULT WINAPI hooked_create(", 1)[1].split(
+        "static void install_ddraw_hook(", 1)[0]
+    dllmain = SOURCE.split("BOOL WINAPI DllMain(", 1)[1]
+    assert origin.index("DDRAW-STARTUP: COM-ORIGINS") < origin.index(
+        "if(attempt==1)ddraw_log_compat_evidence();")
+    assert create.index("ddraw_log_original_vtable(vtable);") < create.index(
+        "*object=patched_ddraw_vtable;")
+    assert "ddraw_log_compat_evidence(" not in dllmain
+    assert COOP.count("hr=original_coop(self,hwnd,DDSCL_NORMAL);") == 1
