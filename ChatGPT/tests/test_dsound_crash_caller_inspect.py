@@ -179,3 +179,50 @@ def test_cli_exposes_focused_linux_mode_without_changing_default_probe():
     assert "def inspect(blob: bytes, exe: Path, out: Path, startup_crash_only: bool = False)" in PYTOOL
     assert 'if startup_crash_only:' in PYTOOL
     assert "out.write_text(report,encoding=\"utf-8\")" in PYTOOL
+
+
+def test_native_ddraw_setcooplevel_efail_is_proven_upstream_error():
+    """Real WER EDI is the original DirectDraw7 vtable result, not audio.
+
+    Verified against the user's exact original SHA256 on Linux. The
+    method +0x50 is IDirectDraw7::SetCooperativeLevel. The native flag
+    0x11 requests DDSCL_EXCLUSIVE|DDSCL_FULLSCREEN; our existing
+    hooked_coop uses DDSCL_NORMAL if it intercepted the call.
+    """
+    call_sequence = bytes.fromhex(
+        "6A 11 56 50 FF 52 50 8B F8 81 FF 45 02 76 88"
+        " 0F 84 B7 00 00 00 3B FB 0F 84 AF 00 00 00")
+    assert call_sequence[:2] == bytes([0x6A, 0x11])
+    assert call_sequence[4:7] == bytes([0xFF, 0x52, 0x50])
+    assert call_sequence[7:9] == bytes([0x8B, 0xF8])  # mov edi,eax
+    # Both acceptance conditions for success/error exceptions jump to
+    # 0x4FFA4F; E_FAIL does not match either of them.
+    first_je = 0x4FF992
+    second_je = 0x4FF99A
+    first_disp = int.from_bytes(call_sequence[17:21], "little", signed=True)
+    second_disp = int.from_bytes(call_sequence[25:29], "little", signed=True)
+    assert first_je + 6 + first_disp == 0x4FFA4F
+    assert second_je + 6 + second_disp == 0x4FFA4F
+    # Original error shutdown uses JGE to avoid cleanup on non-negative.
+    # 0x80004005 is signed-negative: the JGE is not taken.
+    jge = bytes.fromhex("0F 8D 94 00 00 00")
+    assert 0x4FF9B5 + len(jge) + int.from_bytes(
+        jge[2:], "little", signed=True) == 0x4FFA4F
+    signed_failure = 0x80004005 - (1 << 32)
+    assert signed_failure < 0
+    assert 0x80004005 not in (0, 0x88760245)
+
+    assert "0x004FF983" in PYTOOL
+    assert "0x004FF98C" in PYTOOL
+    assert "0x004FF9B3" in PYTOOL
+    assert "0x004FF987" in PYTOOL
+    assert "0x004FF983" in PSTOOL
+    assert "0x004FF98C" in PSTOOL
+    assert "0x004FF9B3" in PSTOOL
+    assert "0x004FF987" in PSTOOL
+
+    # No claim that the game's 0x11 request reached native DirectDraw:
+    # when the patch hook is active, it must keep forwarding DDSCL_NORMAL.
+    assert "original_coop(self,hwnd,DDSCL_NORMAL)" in MAIN
+    assert "BORDERLESS: ERROR DDSCL_NORMAL rejected hr=" in MAIN
+    assert "BORDERLESS: intercept SetCooperativeLevel" in MAIN
