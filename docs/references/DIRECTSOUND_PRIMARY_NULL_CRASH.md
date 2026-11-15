@@ -93,8 +93,11 @@ inside the loader lock.
 - If startup still fails, inspect the preserved runtime log and WER event
   to distinguish a graceful original error path from another exception.
   Do not auto-restart or claim the missing original primary buffer exists.
-- The upstream reason DirectSound initialization was incomplete and
-  `E_FAIL` was present remains a separate investigation.
+- The original graphics initialization returned `E_FAIL` from
+  `IDirectDraw7::SetCooperativeLevel` before native DirectSound was
+  initialized. The reason the Windows backend rejected `DDSCL_NORMAL`
+  remains unknown; a NULL DirectSound buffer is a consequence, not the
+  upstream cause.
 
 ### DirectDraw root error: confirmed by uploaded Linux original executable
 
@@ -213,11 +216,32 @@ gated primary NULL guard and, if another Windows repro occurs,
 compare same-process log lines for `DDRAW-STARTUP`,
 `BORDERLESS: intercept SetCooperativeLevel` and
 `BORDERLESS: ERROR DDSCL_NORMAL rejected`.
-The failure-only logs now report the actual window's owner
-thread/process, caller thread and the module that owns the original
-COM method (such as apphelp.dll); the native `DDSCL_NORMAL`
-result remains unchanged. Do not claim a permanent upstream
-E_FAIL resolution or a release until Windows acceptance.
+The added diagnostics now snapshot the HWND **before** the original
+`SetCooperativeLevel` call, recording whether it is a valid top-level
+window, whether it has `WS_CHILD` or an owner, and the window-owner and
+calling thread IDs. A success baseline records these same attributes
+once and identifies the actual method's containing module. On failure,
+the previous post-call context and failure backend are also logged.
+This distinguishes an invalid pre-call window from any changes caused
+by the Windows backend; it does **not** prove which condition caused
+the error. The native `DDSCL_NORMAL` call, HRESULT, and original
+cleanup policy remain unchanged.
+
+Compare the following lines from a **successful** and a **failed**
+Windows 11 launch with `[Debug] Log=1`:
+
+- `BORDERLESS: COOP-SUCCESS-PRE` and `BORDERLESS: COOP-FAIL-PRE`
+  (valid, top-level, child/owned, owner thread versus caller thread).
+- `BORDERLESS: COOP-SUCCESS-BACKEND` and `BORDERLESS: COOP-FAIL-BACKEND`
+  (`apphelp.dll` versus `ddraw.dll` or another backend).
+- `BORDERLESS: COOP-FAIL-CONTEXT` and
+  `BORDERLESS: ERROR DDSCL_NORMAL rejected`.
+
+The new invariant tests are
+`ChatGPT/tests/test_ddraw_cooperative_evidence.py`; they also
+ensure that no retry, fake HRESULT or exclusive fullscreen path was
+introduced. Do not claim a permanent upstream E_FAIL resolution or
+a release until Windows acceptance.
 
 ## Offline minidump analysis (Linux or Windows, Python stdlib)
 
