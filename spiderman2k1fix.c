@@ -5690,7 +5690,22 @@ static HRESULT WINAPI hooked_coop(void *self, HWND hwnd, DWORD flags) {
     SpiderInputFocus_AttachWindow(hwnd);
   }
   else {
+    DWORD hwnd_process_id=0;
+    DWORD hwnd_thread_id=hwnd?GetWindowThreadProcessId(hwnd,&hwnd_process_id):0;
     snprintf(line,sizeof(line),"BORDERLESS: ERROR DDSCL_NORMAL rejected hr=0x%08lX",(unsigned long)hr);
+    log_line(line);
+    /* Failure-only observation, no retry: the original game can abort
+     * graphics startup here, invoke generic sound cleanup BEFORE creating
+     * its primary DirectSound buffer and crash in its original Stop.
+     * Report whether the HWND belongs to the expected process/thread,
+     * so an intermittent E_FAIL can be distinguished from a missed hook.
+     * Do not change HRESULT or the DDSCL_NORMAL forwarding policy. */
+    snprintf(line,sizeof(line),
+      "BORDERLESS: COOP-FAIL-CONTEXT hwnd=%p valid=%d owner-pid=%lu owner-tid=%lu caller-tid=%lu vtable-ready=%ld",
+      (void*)hwnd,hwnd?IsWindow(hwnd):0,
+      (unsigned long)hwnd_process_id,(unsigned long)hwnd_thread_id,
+      (unsigned long)GetCurrentThreadId(),
+      (long)InterlockedCompareExchange(&ddraw_vtable_ready,0,0));
     log_line(line);
   }
   return hr;
