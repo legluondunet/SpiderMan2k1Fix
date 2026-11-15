@@ -226,3 +226,15 @@ def test_native_ddraw_setcooplevel_efail_is_proven_upstream_error():
     assert "original_coop(self,hwnd,DDSCL_NORMAL)" in MAIN
     assert "BORDERLESS: ERROR DDSCL_NORMAL rejected hr=" in MAIN
     assert "BORDERLESS: intercept SetCooperativeLevel" in MAIN
+    coop = MAIN.split("static HRESULT WINAPI hooked_coop(", 1)[1].split(
+        "static HRESULT WINAPI hooked_mode(", 1)[0]
+    assert "hr=original_coop(self,hwnd,DDSCL_NORMAL);" in coop
+    assert "if(SUCCEEDED(hr))" in coop
+    assert "BORDERLESS: COOP-FAIL-CONTEXT" in coop
+    assert "GetWindowThreadProcessId(hwnd,&hwnd_process_id)" in coop
+    assert "IsWindow(hwnd)" in coop
+    assert "GetCurrentThreadId()" in coop
+    assert "return hr;" in coop
+    assert "original_coop(self,hwnd,DDSCL_EXCLUSIVE" not in coop
+    assert "Sleep(" not in coop
+    assert "MessageBox" not in coop
