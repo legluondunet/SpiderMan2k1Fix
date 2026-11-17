@@ -155,6 +155,30 @@ jobs:
           & $real --verify
           if ($LASTEXITCODE -eq 0) {throw 'empty unified install must not verify'}
           $global:LASTEXITCODE=0
+      - name: Diagnose child-only HighDpiAware compatibility environment without manifest
+        shell: pwsh
+        run: |
+          $dir=Join-Path $env:RUNNER_TEMP 'spider-dpi-compat-probe'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $exe=Join-Path $dir 'SpideyPC.exe'
+          Copy-Item 'dist/unified/dpi-manifest-test.exe' $exe
+          if (Test-Path "$exe.manifest") {throw 'unexpected companion manifest'}
+          $original=[Environment]::GetEnvironmentVariable('__COMPAT_LAYER','Process')
+          try {
+            [Environment]::SetEnvironmentVariable('__COMPAT_LAYER',$null,'Process')
+            & $exe
+            $baseline=$LASTEXITCODE
+            Write-Host "DPI-COMPAT: no-manifest baseline exit=$baseline (1 means unaware)"
+            [Environment]::SetEnvironmentVariable('__COMPAT_LAYER','HIGHDPIAWARE','Process')
+            & $exe
+            $aware=$LASTEXITCODE
+            Write-Host "DPI-COMPAT: no-manifest HIGHDPIAWARE exit=$aware (0 means aware)"
+            if ($aware -ne 0) {throw 'child HighDpiAware shim did not enable System DPI awareness'}
+            if ($baseline -eq 0) {throw 'probe already DPI aware without compatibility shim'}
+          } finally {
+            [Environment]::SetEnvironmentVariable('__COMPAT_LAYER',$original,'Process')
+            $global:LASTEXITCODE=0
+          }
       - name: Verify external System-DPI manifest activates before startup on Windows
         shell: pwsh
         run: |
