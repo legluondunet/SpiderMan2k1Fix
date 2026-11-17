@@ -82,7 +82,7 @@ def test_runtime_log_is_one_game_process_not_accumulated_across_sessions():
     assert "static BOOL CALLBACK game_log_prepare_session(" in core
     assert 'f=fopen(game_log_session_path,"w");' in core
     assert 'f=fopen(game_log_session_path,"a");' in core
-    assert "if(first_run_log_enabled)return TRUE;" in core
+    assert "if(!first_run_log_enabled){" in core
     assert "InitOnceExecuteOnce(&game_log_session_once," in core
     assert core.index('f=fopen(game_log_session_path,"w");') < core.index(
         'f=fopen(game_log_session_path,"a");'
@@ -105,7 +105,7 @@ def test_first_unified_launch_does_not_lose_pre_game_diagnostics():
     core=CORE.split("static BOOL CALLBACK game_log_prepare_session(",1)[1].split(
         "static void log_line(",1
     )[0]
-    assert 'if(first_run_log_enabled)return TRUE;' in core
+    assert 'if(!first_run_log_enabled){' in core
     launch=INSTALLER.split("static int launch_unified_game(",1)[1].split(
         "static int launch_game(",1
     )[0]
