@@ -112,16 +112,22 @@ static INIT_ONCE game_log_session_once=INIT_ONCE_STATIC_INIT;
 static char game_log_session_path[MAX_PATH];
 static BOOL CALLBACK game_log_prepare_session(
     PINIT_ONCE once,PVOID parameter,PVOID *context) {
-  FILE *f;
   (void)once;(void)parameter;(void)context;
   if(!spider_path_log_a(game_log_session_path,
                         sizeof(game_log_session_path)))return FALSE;
 #ifdef SPIDER_UNIFIED_FIX
-  if(first_run_log_enabled)return TRUE; /* launcher already seeded this log */
+  /* Unified: the first-run launcher already seeded the header. For later
+   * Log=1 sessions, discard the previous game's lines exactly once. */
+  if(!first_run_log_enabled){
+    FILE *f=fopen(game_log_session_path,"w");
+    if(!f)return FALSE;
+    return fclose(f)==0;
+  }
+#else
+  /* Legacy: winmm_proxy.c already truncates on its first early DPI/WinMM
+   * message. Do not truncate a second time and lose those startup lines. */
 #endif
-  f=fopen(game_log_session_path,"w");
-  if(!f)return FALSE;
-  return fclose(f)==0;
+  return TRUE;
 }
 static void log_line(const char *s) {
   FILE *f;
