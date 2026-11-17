@@ -8,7 +8,12 @@
 /* The original retail game's image base and one DDraw IAT slot were derived
  * from the original supported 1,507,328-byte PE32, not guessed at runtime. */
 #define SPIDER_IMAGE_BASE ((uintptr_t)0x00400000u)
+/* Exact authenticated retail PE32: .data has a large zero-filled virtual
+ * section, so SizeOfImage is much larger than the on-disk 1.5 MB EXE.
+ * Do not silently reject its legitimate 0x02A0D000-byte mapped image. */
+#define SPIDER_RETAIL_SIZE_OF_IMAGE 0x02A0D000u
 #define SPIDER_DDRAW_CREATE_IAT_RVA 0x0013b010u
+#define SPIDER_DDRAW_ENUM_EXA_IAT_RVA 0x0013b014u
 
 static int remote_read(HANDLE process,uintptr_t addr,void *dst,SIZE_T size) {
   SIZE_T got=0;
@@ -60,8 +65,7 @@ static int remote_supported_pe32(HANDLE process,IMAGE_NT_HEADERS32 *nt) {
      !(nt->FileHeader.Characteristics&IMAGE_FILE_EXECUTABLE_IMAGE) ||
      nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR32_MAGIC ||
      nt->OptionalHeader.ImageBase!=SPIDER_IMAGE_BASE ||
-     nt->OptionalHeader.SizeOfImage<=SPIDER_DDRAW_CREATE_IAT_RVA+4u ||
-     nt->OptionalHeader.SizeOfImage>0x02000000u ||
+     nt->OptionalHeader.SizeOfImage!=SPIDER_RETAIL_SIZE_OF_IMAGE ||
      nt->OptionalHeader.NumberOfRvaAndSizes<=IMAGE_DIRECTORY_ENTRY_IMPORT)
     return 0;
   return 1;
@@ -82,7 +86,7 @@ int SpiderUnified_AliasSuspendedDDraw(HANDLE process) {
   for(i=0;i<128 && (i+1u)*sizeof(IMAGE_IMPORT_DESCRIPTOR)<=table.Size;i++){
     IMAGE_IMPORT_DESCRIPTOR desc;
     char name[10];
-    DWORD j,matched=0,thunks_terminated=0;
+    DWORD j,matched=0,thunks_terminated=0; /* exact two-entry import mask */
     DWORD desc_rva=table.VirtualAddress+i*sizeof(desc);
     if(!remote_read(process,SPIDER_IMAGE_BASE+desc_rva,&desc,sizeof(desc)))
       return 0;
@@ -96,27 +100,34 @@ int SpiderUnified_AliasSuspendedDDraw(HANDLE process) {
     for(j=0;j<128;j++){
       IMAGE_THUNK_DATA32 thunk;
       DWORD rva=desc.OriginalFirstThunk+j*sizeof(DWORD);
-      char symbol[sizeof("DirectDrawCreateEx")];
+      char symbol[sizeof("DirectDrawEnumerateExA")];
+      DWORD bit=0,expected_slot=0;
       if(!rva_range(rva,sizeof(thunk),nt.OptionalHeader.SizeOfImage) ||
          !rva_range(desc.FirstThunk+j*sizeof(DWORD),sizeof(DWORD),
                     nt.OptionalHeader.SizeOfImage) ||
          !remote_read(process,SPIDER_IMAGE_BASE+rva,&thunk,sizeof(thunk)))
         return 0;
       if(thunk.u1.AddressOfData==0){thunks_terminated=1;break;}
-      /* fix.dll exports only DirectDrawCreateEx. Never alias a descriptor
-       * containing a second method/ordinal that would fail PE loading. */
+      /* The genuine retail executable imports EXACTLY two methods.
+       * Both must exist in fix.dll; reject unknown imports and ordinals. */
       if(IMAGE_SNAP_BY_ORDINAL32(thunk.u1.Ordinal))return 0;
       if(!rva_range(thunk.u1.AddressOfData+2u,sizeof(symbol),
                     nt.OptionalHeader.SizeOfImage) ||
          !remote_read(process,SPIDER_IMAGE_BASE+
            thunk.u1.AddressOfData+2u,symbol,sizeof(symbol)))
         return 0;
-      if(memcmp(symbol,"DirectDrawCreateEx",sizeof(symbol))!=0 ||
-         desc.FirstThunk+j*sizeof(DWORD)!=SPIDER_DDRAW_CREATE_IAT_RVA)
+      if(strcmp(symbol,"DirectDrawCreateEx")==0) {
+        bit=1u;expected_slot=SPIDER_DDRAW_CREATE_IAT_RVA;
+      }else if(strcmp(symbol,"DirectDrawEnumerateExA")==0) {
+        bit=2u;expected_slot=SPIDER_DDRAW_ENUM_EXA_IAT_RVA;
+      }else{
         return 0;
-      matched++;
+      }
+      if((matched&bit) ||
+         desc.FirstThunk+j*sizeof(DWORD)!=expected_slot)return 0;
+      matched|=bit;
     }
-    if(matched!=1 || !thunks_terminated)return 0;
+    if(matched!=3u || !thunks_terminated)return 0;
     found++;
     found_name_rva=desc.Name;
   }

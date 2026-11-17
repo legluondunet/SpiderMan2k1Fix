@@ -62,6 +62,7 @@ jobs:
           file dist/unified/fix.dll | grep -q 'PE32'
           objdump -p dist/unified/fix.dll > dist/unified/pe-info.txt
           grep -Eq '(^|[[:space:]])DirectDrawCreateEx([[:space:]]|$)' dist/unified/pe-info.txt
+          grep -Eq '(^|[[:space:]])DirectDrawEnumerateExA([[:space:]]|$)' dist/unified/pe-info.txt
           ! grep -Eiq 'DLL Name:[[:space:]]*(winmm|ddraw)\.dll' dist/unified/pe-info.txt
           sha256sum dist/unified/fix.dll
           echo 'This developer DLL is not a playable SpiderMan2k1Fix candidate.'

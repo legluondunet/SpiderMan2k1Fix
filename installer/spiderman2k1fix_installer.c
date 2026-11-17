@@ -1539,13 +1539,22 @@ static int launch_unified_game(int verify_exe) {
     goto restore_environment;
   }
   launched=1;
-  if(!SpiderUnified_AliasSuspendedDDraw(pi.hProcess) ||
-     !SpiderUnified_PatchSuspendedNoCD(pi.hProcess) ||
-     !SpiderUnified_PatchSuspendedPrimaryNullStop(pi.hProcess)) {
-    message(L"UNIFIED: unknown PE import/No-CD/primary Stop guard signature; terminating suspended game");
+  if(!SpiderUnified_AliasSuspendedDDraw(pi.hProcess)) {
+    message(L"UNIFIED: PE32 DirectDraw import alias failed (requires original two-method DDRAW import); terminating suspended game");
     goto stop_child;
   }
-  message(L"UNIFIED: import alias, No-CD and NULL-safe primary Stop guard installed in suspended process");
+  message(L"UNIFIED: PE32 DirectDraw import alias OK (CreateEx + EnumerateExA)");
+  if(!SpiderUnified_PatchSuspendedNoCD(pi.hProcess)) {
+    message(L"UNIFIED: No-CD signature/patch failed; terminating suspended game");
+    goto stop_child;
+  }
+  message(L"UNIFIED: No-CD memory patch OK");
+  if(!SpiderUnified_PatchSuspendedPrimaryNullStop(pi.hProcess)) {
+    message(L"UNIFIED: DirectSound primary NULL Stop guard failed; terminating suspended game");
+    goto stop_child;
+  }
+  message(L"UNIFIED: DirectSound primary NULL Stop guard OK");
+  message(L"UNIFIED: all three suspended-process startup patches installed");
   if(ResumeThread(pi.hThread)==(DWORD)-1) {
     message(L"UNIFIED: ResumeThread failed Win32=%lu",GetLastError());
     goto stop_child;

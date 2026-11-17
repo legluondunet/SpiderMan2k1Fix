@@ -11,6 +11,10 @@ def test_unified_bridge_exports_only_directdraw_factory():
     exports = (ROOT / "unified_directdraw.def").read_text()
     assert "SpiderUnified_DirectDrawCreateEx" in source
     assert "DirectDrawCreateEx = SpiderUnified_DirectDrawCreateEx@16" in exports
+    assert "DirectDrawEnumerateExA = SpiderUnified_DirectDrawEnumerateExA@12" in exports
+    assert "SpiderUnified_DirectDrawEnumerateExA(" in source
+    assert 'GetProcAddress(spider_system_ddraw_module,"DirectDrawEnumerateExA")' in source
+    assert "spider_system_ddraw_enumerate(callback,context,flags)" in source
     assert "SpiderMan2k1Fix_DirectDrawGate(" in source
     assert "GetSystemDirectoryW(path,MAX_PATH)" in source
     assert "LoadLibraryW(path)" in source

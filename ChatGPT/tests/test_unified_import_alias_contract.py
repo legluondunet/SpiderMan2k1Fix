@@ -12,11 +12,16 @@ def test_alias_requires_unique_original_import_descriptor_and_exact_thunk():
                   'IMAGE_NT_OPTIONAL_HDR32_MAGIC','IMAGE_DIRECTORY_ENTRY_IMPORT',
                   'SPIDER_DDRAW_CREATE_IAT_RVA 0x0013b010u',
                   '_stricmp(name,"ddraw.dll")',
-                  '"DirectDrawCreateEx"','found!=1','matched!=1',
+                  '"DirectDrawCreateEx"','"DirectDrawEnumerateExA"',
+                  'found!=1','matched!=3u',
                   'ReadProcessMemory','WriteProcessMemory','VirtualProtectEx',
                   'FlushInstructionCache','return remote_write_verified('):
         assert token in source or token in (ROOT/"installer/unified_import_alias.h").read_text()
-    assert "0x02000000u" in source  # bounded image size
+    assert "SPIDER_RETAIL_SIZE_OF_IMAGE 0x02A0D000u" in source
+    assert "SPIDER_DDRAW_ENUM_EXA_IAT_RVA 0x0013b014u" in source
+    assert "nt->OptionalHeader.SizeOfImage!=SPIDER_RETAIL_SIZE_OF_IMAGE" in source
+    assert 'strcmp(symbol,"DirectDrawEnumerateExA")==0' in source
+    assert "matched|=bit;" in source
     assert "ResumeThread" not in source  # only the verified parent may resume
     assert "CreateFile" not in source  # never write the original EXE
 

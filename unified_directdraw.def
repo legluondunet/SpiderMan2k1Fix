@@ -1,3 +1,4 @@
 LIBRARY fix.dll
 EXPORTS
     DirectDrawCreateEx = SpiderUnified_DirectDrawCreateEx@16
+    DirectDrawEnumerateExA = SpiderUnified_DirectDrawEnumerateExA@12

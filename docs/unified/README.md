@@ -111,3 +111,23 @@ to record verification, installation, updates and launch errors.
 Only merge PR #162 after native gameplay validation and the above critical
 startup guard integration. No release is implied by a green CI or a
 TEST-ONLY artifact.
+
+## Retail PE32 import compatibility (17 November 2026)
+
+The SHA-256-supported 1,507,328-byte original `SpideyPC.exe` maps an
+approximately 44 MB image (`SizeOfImage=0x02A0D000`). This large virtual
+image is normal for its zero-filled data section: it is NOT the size of the
+physical EXE file. The suspended-process verifier must match that exact
+value, not impose a 32 MB cap.
+
+The genuine `DDRAW.dll` import descriptor has **two functions**:
+`DirectDrawCreateEx` at IAT RVA `0x0013B010` and
+`DirectDrawEnumerateExA` at `0x0013B014`. The unified
+`game/fix.dll` now exports both. It forwards enumeration unchanged to the
+Windows/Wine system DirectDraw provider; the game fix starts at the actual
+DirectDrawCreateEx factory call. Unknown third imports are rejected.
+
+The launcher reports the result of each check separately (PE import alias,
+No-CD, DirectSound NULL Stop guard) and never resumes an unsupported process.
+This fixes compatibility with the original PE metadata, but is not proof of
+successful gameplay; native Windows and Wine tests remain required.
