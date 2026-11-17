@@ -15,6 +15,8 @@ spec.loader.exec_module(cleaner)
 class FakeAPI:
     def __init__(self):
         self.deleted = []
+        self.dispatched = []
+        self.remaining = 500
         self.runs = [
             {"id": 222, "status": "in_progress", "event": "push"},
             {"id": 221, "status": "completed", "event": "push",
@@ -52,6 +54,9 @@ class FakeAPI:
         if path == "/actions/runs?per_page=100":
             return {"workflow_runs": self.runs}
         raise AssertionError(f"Unmocked endpoint {path}")
+
+    def post(self, path, payload):
+        self.dispatched.append((path, payload))
 
     def delete(self, path):
         self.deleted.append(path)
@@ -124,3 +129,64 @@ def test_batch_limits_prevent_exhausting_github_token():
     assert cleaner.MAX_ARTIFACTS + cleaner.MAX_CACHES + cleaner.MAX_RUNS <= 800
     assert "GITHUB_REPOSITORY" in SCRIPT.read_text(encoding="utf-8")
     assert "GITHUB_RUN_ID" in SCRIPT.read_text(encoding="utf-8")
+
+
+def test_followup_requeues_when_old_completed_runs_remain():
+    fake = FakeAPI()
+    result = cleaner.queue_next_batch(
+        fake, keep=220, current=999, counts={"runs": 3, "artifacts": 0, "caches": 0}
+    )
+    assert result is True
+    assert fake.dispatched == [
+        ("/actions/workflows/spiderman2k1fix-actions-cleanup.yml/dispatches",
+         {"ref": "main"})
+    ]
+
+
+def test_no_requeue_after_history_fully_drained():
+    fake = FakeAPI()
+    fake.runs = [fake.runs[2], {"id": 999, "status": "in_progress",
+                               "name": cleaner.CLEANUP_NAME}]
+    counts = {"runs": 0, "artifacts": 0, "caches": 0}
+    assert cleaner.queue_next_batch(fake, keep=220, current=999, counts=counts) is False
+    assert fake.dispatched == []
+
+
+def test_no_extra_followup_when_cleanup_is_already_queued():
+    fake = FakeAPI()
+    fake.runs.insert(0, {"id": 1000, "name": cleaner.CLEANUP_NAME,
+                         "status": "queued"})
+    assert not cleaner.queue_next_batch(
+        fake, keep=220, current=999,
+        counts={"runs": 550, "artifacts": 120, "caches": 0}
+    )
+    assert fake.dispatched == []
+
+
+def test_rate_limit_stops_self_dispatch_but_existing_hourly_cron_remains():
+    fake = FakeAPI()
+    fake.remaining = cleaner.CONTINUE_RATE_REMAINING - 1
+    assert not cleaner.queue_next_batch(
+        fake, keep=220, current=999,
+        counts={"runs": 550, "artifacts": 0, "caches": 0}
+    )
+    assert fake.dispatched == []
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert 'cron: "23 * * * *"' in workflow
+    assert "actions: write" in workflow
+    assert "workflow_dispatch:" in workflow
+
+
+def test_followup_is_not_launched_if_newer_unified_build_appeared():
+    fake = FakeAPI()
+    newer = {"id": 224, "status": "completed", "event": "push",
+             "name": "SpiderMan2k1Fix x86 (unified development)"}
+    newer_artifact = {"id": 330, "name": "SpiderMan2k1Fix", "expired": False,
+                      "workflow_run": {"id": 224}}
+    fake.runs.insert(0, newer)
+    fake.artifacts.insert(0, newer_artifact)
+    assert not cleaner.queue_next_batch(
+        fake, keep=220, current=999,
+        counts={"runs": 550, "artifacts": 0, "caches": 0}
+    )
+    assert fake.dispatched == []
