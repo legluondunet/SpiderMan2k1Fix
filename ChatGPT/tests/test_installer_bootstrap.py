@@ -206,7 +206,9 @@ def test_new_launcher_replaces_unknown_owned_dll_with_single_overwriteable_bak()
         "scan=find_adjacent_disc",1)[0]
     assert "if(!verify_game_receipt(managed_root()))" in default
     assert "if(!upgrade_recognized_payloads())" in default
-    assert default.count("upgrade_recognized_payloads()")==2
+    # Two original branches (explicit update and legacy auto-update) plus
+    # the unified branch for an outdated game/fix.dll.
+    assert default.count("upgrade_recognized_payloads()")==3
     assert default.index("verified_retail(gameexe)") < default.index(
         "verify_game_receipt(managed_root())")
     assert default.index("verify_game_receipt(managed_root())") < default.rindex(
@@ -220,7 +222,7 @@ def test_upgrade_never_mutates_game_exe_or_user_ini_and_rolls_back():
     assert "if(!deploy_payloads_to(staging)||!write_install_receipt(staging))" in upgrade
     assert "MoveFileExW(dst,rollback_slot,MOVEFILE_WRITE_THROUGH)" in upgrade
     assert "const wchar_t *rollback_slot=replace_fix_without_backup(i)?previous:backup;" in upgrade
-    assert "MoveFileExW(backup,dst,MOVEFILE_WRITE_THROUGH)" in upgrade
+    assert "MoveFileExW(replace_fix_without_backup(j)?previous:backup," in upgrade
     assert "DeleteFileW(backup)" in upgrade
     assert "SpiderMan2k1Fix.updating" in upgrade
     assert not any(line.strip().endswith('SpideyPC.exe"')
