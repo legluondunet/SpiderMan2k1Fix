@@ -147,3 +147,74 @@ int SpiderUnified_PatchSuspendedNoCD(HANDLE process) {
   return remote_write_verified(process,SPIDER_IMAGE_BASE+0x001163E0u,
                                old,bypass,sizeof(bypass));
 }
+
+/* DirectSound primary NULL Stop guard ported, byte-for-byte, from the
+ * separately investigated PR #161. The parent verifies the approved retail
+ * EXE hash before creating the child; every original instruction and the
+ * unused cave is checked again here against the mapped suspended PE.
+ *
+ * This prevents a SECONDARY native NULL pointer crash when the graphics
+ * startup fails. It does NOT make IDirectDraw7::SetCooperativeLevel succeed.
+ * No Windows/Wine-specific bypass or substitute HRESULT is introduced.
+ *
+ * Original: 00503AF7 deref of primary sound buffer
+ * Cave:     00503B32-00503B3F 14 original NOP bytes
+ * Original final cleanup: 00503B24, callee 00504050
+ */
+int SpiderUnified_PatchSuspendedPrimaryNullStop(HANDLE process) {
+  IMAGE_NT_HEADERS32 nt;
+  static const BYTE before[16]={
+    0xA1,0x1C,0xBF,0x6B,0x00,0x56,0x50,0x8B,
+    0x08,0xFF,0x51,0x48,0x8B,0xF0,0x85,0xF6
+  };
+  static const BYTE cleanup[14]={
+    0x6A,0x01,0x6A,0x00,0xE8,0x23,0x05,0x00,0x00,
+    0x83,0xC4,0x08,0x5E,0xC3
+  };
+  static const BYTE native_cleanup_callee[11]={
+    0x8B,0x44,0x24,0x08,0x53,0x56,0x57,0x85,0xC0,0x74,0x4E
+  };
+  static const BYTE nops[14]={
+    0x90,0x90,0x90,0x90,0x90,0x90,0x90,
+    0x90,0x90,0x90,0x90,0x90,0x90,0x90
+  };
+  static const BYTE cave_program[14]={
+    0x85,0xC0,      /* test eax,eax */
+    0x74,0x07,      /* if NULL, skip original Stop */
+    0x8B,0x08,      /* original dereference, for non-NULL buffer */
+    0xFF,0x51,0x48, /* call original Stop */
+    0xEB,0xBF,      /* jump to original HRESULT handling */
+    0x58,           /* remove original pushed NULL buffer */
+    0xEB,0xE4       /* jump to original native final cleanup */
+  };
+  static const BYTE branch[5]={0xE9,0x36,0x00,0x00,0x00};
+  BYTE original[16],last_cleanup[14],callee[11],unused[14];
+  uintptr_t site=SPIDER_IMAGE_BASE+0x00103AF7u;
+  uintptr_t cave=SPIDER_IMAGE_BASE+0x00103B32u;
+  uintptr_t cleanup_start=SPIDER_IMAGE_BASE+0x00103B24u;
+  if(!remote_supported_pe32(process,&nt) ||
+     !rva_range(0x00103AF0u,sizeof(before),nt.OptionalHeader.SizeOfImage) ||
+     !rva_range(0x00103B24u,sizeof(cleanup),nt.OptionalHeader.SizeOfImage) ||
+     !rva_range(0x00103B32u,sizeof(nops),nt.OptionalHeader.SizeOfImage) ||
+     !rva_range(0x00104050u,sizeof(callee),nt.OptionalHeader.SizeOfImage) ||
+     cave!=site+sizeof(branch)+0x36u ||
+     cave+4u+7u!=cave+11u ||
+     cave+11u-0x41u!=site+sizeof(branch) ||
+     cave+sizeof(cave_program)-0x1Cu!=cleanup_start ||
+     cleanup_start+sizeof(cleanup)!=cave ||
+     !remote_read(process,SPIDER_IMAGE_BASE+0x00103AF0u,
+                  original,sizeof(original)) ||
+     !remote_read(process,cleanup_start,
+                  last_cleanup,sizeof(last_cleanup)) ||
+     !remote_read(process,SPIDER_IMAGE_BASE+0x00104050u,
+                  callee,sizeof(callee)) ||
+     !remote_read(process,cave,unused,sizeof(unused)) ||
+     memcmp(original,before,sizeof(before)) ||
+     memcmp(last_cleanup,cleanup,sizeof(cleanup)) ||
+     memcmp(callee,native_cleanup_callee,sizeof(callee)) ||
+     memcmp(unused,nops,sizeof(nops)))return 0;
+  /* The original game thread is still suspended, so there is no running
+   * consumer of either instruction site. Never resume if either patch fails. */
+  return remote_write_verified(process,cave,nops,cave_program,sizeof(nops)) &&
+         remote_write_verified(process,site,original+7,branch,sizeof(branch));
+}
