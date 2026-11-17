@@ -1490,6 +1490,16 @@ static int launch_unified_game(int verify_exe) {
     message(L"UNIFIED: fix.dll missing or differs from the installed launcher payload");
     return 0;
   }
+  /* First-run diagnostics append beside the launcher. Never follow a
+   * pre-existing junction/symlink or attempt to log into a directory. */
+  {
+    DWORD attr=GetFileAttributesW(runtime_log);
+    if(attr!=INVALID_FILE_ATTRIBUTES &&
+       (attr&(FILE_ATTRIBUTE_DIRECTORY|FILE_ATTRIBUTE_REPARSE_POINT))){
+      message(L"FIRST-RUN-LOG: unsafe existing log path; refusing launch");
+      return 0;
+    }
+  }
   old_len=GetEnvironmentVariableW(L"SPIDERMAN2K1FIX_LAUNCHER_DIR",
                                   old_launcher,SPIDER_INSTALLER_PATH);
   previous_last_error=GetLastError();
