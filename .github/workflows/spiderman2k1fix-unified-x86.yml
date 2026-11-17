@@ -30,7 +30,6 @@ jobs:
       - name: Compile current baseline plus opt-in unified DLL with MSVCRT
         env:
           SPIDER_UNIFIED_BUILD: '1'
-          SPIDERMAN2K1FIX_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: bash ./build-native-msvcrt.sh
       - name: Compile suspended-process import-alias helper (not activated)
         run: |
