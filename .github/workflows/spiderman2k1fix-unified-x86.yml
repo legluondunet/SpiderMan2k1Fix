@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           compiler="$HOME/.cache/spiderman2k1fix-toolchains/llvm-mingw-20261006-msvcrt-ubuntu-22.04-x86_64/bin/i686-w64-mingw32-clang"
-          "$compiler" -std=gnu11 -O2 -Wall -Wextra -Werror \\
+          "$compiler" -std=gnu11 -O2 -Wall -Wextra -Werror \
             -c installer/unified_import_alias.c -o dist/unified/unified_import_alias.o
       - name: Verify unified DLL but do not advertise a runnable installer
         run: |
@@ -43,7 +43,7 @@ jobs:
           file dist/unified/fix.dll | grep -q 'PE32'
           objdump -p dist/unified/fix.dll > dist/unified/pe-info.txt
           grep -Eq '(^|[[:space:]])DirectDrawCreateEx([[:space:]]|$)' dist/unified/pe-info.txt
-          ! grep -Eiq 'DLL Name:[[:space:]]*(winmm|ddraw)\\.dll' dist/unified/pe-info.txt
+          ! grep -Eiq 'DLL Name:[[:space:]]*(winmm|ddraw)\.dll' dist/unified/pe-info.txt
           sha256sum dist/unified/fix.dll
           echo 'This developer DLL is not a playable SpiderMan2k1Fix candidate.'
       - uses: actions/upload-artifact@v4
