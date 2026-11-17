@@ -146,6 +146,51 @@ def main():
         manifest.write_bytes(b"FOREIGN-PRESERVE-ME")
         execute(e,"--install-only",success=False)
         assert manifest.read_bytes()==b"FOREIGN-PRESERVE-ME"
+        # Plain launch auto-repairs an installer-owned fix.dll that differs
+        # from the embedded version. Never create persistent fix.dll.bak.
+        d,e=install(base,fixture,"auto_replace_fix")
+        fix=d/"game/fix.dll"; authentic=fix.read_bytes()
+        fix.write_bytes(b"UNKNOWN-OUTDATED-FIX")
+        assert not (d/"game/fix.dll.bak").exists()
+        execute(e,"--verify",success=False)  # read-only, always
+        assert fix.read_bytes()==b"UNKNOWN-OUTDATED-FIX"
+        repaired=execute(e,success=False)  # fake EXE cannot run
+        assert "replacing automatically without .bak" in repaired
+        assert "UPGRADE: replacing game\\fix.dll;" in repaired
+        assert fix.read_bytes()==authentic
+        assert not (d/"game/fix.dll.bak").exists()
+        assert not (d/"SpiderMan2k1Fix.updating").exists()
+        execute(e,"--verify",success=True)
+        # An already-existing .bak is NOT destroyed (possibly user-owned).
+        (d/"game/fix.dll.bak").write_bytes(b"PREEXISTING-BACKUP")
+        fix.write_bytes(b"OUTDATED-AGAIN")
+        execute(e,success=False)
+        assert fix.read_bytes()==authentic
+        assert (d/"game/fix.dll.bak").read_bytes()==b"PREEXISTING-BACKUP"
+        execute(e,"--verify",success=True)
+        (d/"game/fix.dll.bak").unlink()
+        # Missing fix.dll with a valid receipt is also restored silently.
+        fix.unlink()
+        execute(e,success=False)
+        assert fix.read_bytes()==authentic
+        assert not (d/"game/fix.dll.bak").exists()
+        execute(e,"--verify",success=True)
+        # If a later component fails in the staged transaction, restore the
+        # previous fix.dll bytes and the unmodified receipt; no backup.
+        d,e=install(base,fixture,"auto_replace_fix_rollback")
+        fix=d/"game/fix.dll"; sdl=d/"third_party/SDL3/SDL3.dll"
+        receipt=d/"state/installed-resources.sha256"
+        before_receipt=receipt.read_bytes()
+        fix.write_bytes(b"OLD-FIX-MUST-ROLL-BACK")
+        sdl.write_bytes(b"OLD-SDL-MUST-ROLL-BACK")
+        denied=execute(e,success=False,
+                       environment={"SPIDER_UNIFIED_TEST_UPGRADE_FAIL":"1"})
+        assert "automatic fix.dll replacement refused" in denied
+        assert fix.read_bytes()==b"OLD-FIX-MUST-ROLL-BACK"
+        assert sdl.read_bytes()==b"OLD-SDL-MUST-ROLL-BACK"
+        assert receipt.read_bytes()==before_receipt
+        assert not (d/"game/fix.dll.bak").exists()
+        assert not (d/"SpiderMan2k1Fix.updating").exists()
         d,e=scenario(base,"legacy_declined",fixture)
         (d/"original.iso").write_bytes(make_iso())
         legacy=d/"spiderman2001";legacy.mkdir()
