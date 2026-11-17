@@ -1,4 +1,4 @@
-name: SpiderMan2k1Fix unified x86 (NOT A RELEASE)
+name: SpiderMan2k1Fix x86 (unified development)
 
 on:
   push:
@@ -102,30 +102,35 @@ jobs:
              dist/unified/package/third_party/SDL3/LICENSE.txt
           cmp third_party/SDL3-LICENSE.txt dist/unified/package/third_party/SDL3/LICENSE.txt
           test -z "$(find dist/unified/package -name winmm.dll -print -quit)"
-      - name: Compile experimental unified installer and synthetic fixture
+      - name: Build SpiderMan2k1Fix.exe and separate CI-only fixture
         run: |
           bash scripts/build_unified_installer.sh production
           python3 scripts/build_unified_test_fixture.py
           bash scripts/build_unified_installer.sh fixture
-          test -s dist/unified/SpiderMan2k1Fix-UNIFIED-TEST.exe
+          test -s dist/unified/SpiderMan2k1Fix.exe
           test -s dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe
-      - uses: actions/upload-artifact@v4
+      # The only user-facing download contains exactly one file.
+      # It is a development build, not the published v2.0.0 release.
+      - name: Upload SpiderMan2k1Fix.exe only
+        uses: actions/upload-artifact@v4
         with:
-          name: SpiderMan2k1Fix-UNIFIED-EXE-TEST-ONLY
+          name: SpiderMan2k1Fix
+          path: dist/unified/SpiderMan2k1Fix.exe
+          retention-days: 30
+          if-no-files-found: error
+      # Test binaries are needed on the Windows runner, but never mixed
+      # into the downloadable launcher artifact.
+      - name: Upload internal Windows test harness (short-lived)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpiderMan2k1Fix-CI-Internal
           path: |
-            dist/unified/SpiderMan2k1Fix-UNIFIED-TEST.exe
             dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe
             dist/unified/suspended-pe32-test.exe
             dist/unified/first-run-log-policy-test.exe
             dist/unified/dpi-manifest-test.exe
-          retention-days: 7
+          retention-days: 1
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        with:
-          name: SpiderMan2k1Fix-UNIFIED-DLL-DEVELOPER-ONLY
-          path: dist/unified/fix.dll
-          if-no-files-found: error
-          retention-days: 7
 
   unified-windows-synthetic:
     name: Windows native PE32 synthetic ISO / multi-folder rollback
@@ -139,12 +144,16 @@ jobs:
           python-version: '3.12'
       - uses: actions/download-artifact@v4
         with:
-          name: SpiderMan2k1Fix-UNIFIED-EXE-TEST-ONLY
+          name: SpiderMan2k1Fix
+          path: dist/unified
+      - uses: actions/download-artifact@v4
+        with:
+          name: SpiderMan2k1Fix-CI-Internal
           path: dist/unified
       - name: Check real and synthetic installers remain distinct
         shell: pwsh
         run: |
-          $real='dist/unified/SpiderMan2k1Fix-UNIFIED-TEST.exe'
+          $real='dist/unified/SpiderMan2k1Fix.exe'
           $fixture='dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe'
           if (!(Test-Path $real) -or !(Test-Path $fixture)) {throw 'missing unified PE32 installers'}
           $a=(Get-FileHash $real -Algorithm SHA256).Hash
@@ -204,5 +213,5 @@ jobs:
       - name: Exercise synthetic ISO installer, rollback and read-only verification
         shell: pwsh
         run: |
-          python ChatGPT/tests/windows_unified_installer_end_to_end.py dist/unified/SpiderMan2k1Fix-UNIFIED-TEST.exe dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe
+          python ChatGPT/tests/windows_unified_installer_end_to_end.py dist/unified/SpiderMan2k1Fix.exe dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe
           if ($LASTEXITCODE -ne 0) {throw 'unified installer native integration tests failed'}

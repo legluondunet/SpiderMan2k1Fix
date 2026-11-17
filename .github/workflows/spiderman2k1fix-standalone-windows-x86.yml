@@ -1,9 +1,6 @@
-name: SpiderMan2k1Fix standalone Windows x86
+name: SpiderMan2k1Fix legacy v2.0.0 installer regression (manual)
 
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
