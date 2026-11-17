@@ -76,6 +76,30 @@ correct bundled `fix.dll`; it does not bypass the authenticity guard.
 suspended process. The on-disk `SpideyPC.exe` is never patched. Native
 Windows/Wine WinMM remains the operating-system version.
 
+## One-time first-launch diagnostic logging
+
+The installer always writes `SpiderMan2k1Fix_installer.log` beside the
+launcher during installation. The **first actual game launch**, when
+`SpiderMan2k1Fix.ini` is still absent, automatically writes
+`SpiderMan2k1Fix.log` as if **[Debug] Log=1**. The launcher records its
+startup first, even before the suspended game process starts; the core
+continues the same log after its verified DirectDraw bootstrap.
+
+The generated INI contains **[Debug] Log=0** permanently, so subsequent
+sessions do not produce additional runtime logs. The initial log remains
+available for diagnosis and is not removed after the game closes. No extra
+file is created in `state/`; its only contents remain the two SHA receipts.
+
+An **existing user INI is never changed or overridden**: `Log=1` keeps
+logging on every game session; `Log=0` keeps logging off. The first-launch
+automatic override applies only if the INI is entirely absent, so placing
+a user-configured INI before the first launch honors its setting. If the
+first game session crashes after generating an INI, the startup log is
+still available and the next launch uses the generated `Log=0`.
+
+The *installer log* is independent of the in-game debug switch and continues
+to record verification, installation, updates and launch errors.
+
 ## Diagnostic acceptance still outstanding
 
 - Real original-game import/No-CD path under Windows 11 and Wine.
