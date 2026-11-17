@@ -223,11 +223,25 @@ int SpiderWineFocusAutostart_TryStart(void (*logger)(const char *)) {
   /* The installation layout matches the existing patch DLL folder. */
   *slash=0;
   {
-    int size=swprintf(helper_path,MAX_PATH,
-                      L"%ls\\SpiderMan2k1Fix\\linux\\spiderman-focus-helper",
-                      game_path);
-    int state_size=swprintf(helper_state_path,MAX_PATH,
-                           L"%ls\\SpiderMan2k1Fix.x11-focus",game_path);
+    int size,state_size;
+#ifdef SPIDER_UNIFIED_FIX
+    WCHAR root[MAX_PATH],expected_game[MAX_PATH];
+    DWORD length=GetEnvironmentVariableW(L"SPIDERMAN2K1FIX_LAUNCHER_DIR",
+                                         root,MAX_PATH);
+    if(!length || length>=MAX_PATH)return 0;
+    if(swprintf(expected_game,MAX_PATH,L"%ls\\game",root)<=0 ||
+       _wcsicmp(game_path,expected_game)!=0)return 0;
+    size=swprintf(helper_path,MAX_PATH,
+                  L"%ls\\linux\\spiderman-focus-helper",root);
+#else
+    size=swprintf(helper_path,MAX_PATH,
+                  L"%ls\\SpiderMan2k1Fix\\linux\\spiderman-focus-helper",
+                  game_path);
+#endif
+    /* Native X11 helper derives this transient state file from argv[1],
+     * the full game EXE path, so preserve its original location. */
+    state_size=swprintf(helper_state_path,MAX_PATH,
+                        L"%ls\\SpiderMan2k1Fix.x11-focus",game_path);
     if(size<0 || size>=MAX_PATH || state_size<0 || state_size>=MAX_PATH)
       return 0;
   }

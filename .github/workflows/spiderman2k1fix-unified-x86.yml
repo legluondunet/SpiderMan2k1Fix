@@ -1,0 +1,208 @@
+name: Experimental SpiderMan2k1Fix unified DLL (NOT RELEASE)
+
+on:
+  push:
+    branches: [feat/unified-game-layout-state-docs]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spiderman2k1fix-unified-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unified-pe32:
+    name: Build and inspect experimental unified fix.dll (PE32)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install regression runner
+        run: python3 -m pip install --disable-pip-version-check pytest
+      - name: Check isolated startup contracts
+        run: python3 -m pytest -q ChatGPT/tests/test_unified_bootstrap_contract.py ChatGPT/tests/test_unified_import_alias_contract.py ChatGPT/tests/test_unified_installer_contract.py ChatGPT/tests/test_first_run_log_unified.py ChatGPT/tests/test_unified_cursor_focus.py
+      - name: Compile current baseline plus opt-in unified DLL with MSVCRT
+        env:
+          SPIDER_UNIFIED_BUILD: '1'
+        run: bash ./build-native-msvcrt.sh
+      - name: Compile suspended-process import-alias helper (not activated)
+        run: |
+          set -euo pipefail
+          compiler="$HOME/.cache/spiderman2k1fix-toolchains/llvm-mingw-20261006-msvcrt-ubuntu-22.04-x86_64/bin/i686-w64-mingw32-clang"
+          "$compiler" -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -c installer/unified_import_alias.c -o dist/unified/unified_import_alias.o
+      - name: Build native remote-memory synthetic child test (x86; no game assets)
+        run: |
+          set -euo pipefail
+          compiler="$HOME/.cache/spiderman2k1fix-toolchains/llvm-mingw-20261006-msvcrt-ubuntu-22.04-x86_64/bin/i686-w64-mingw32-clang"
+          "$compiler" -std=gnu11 -O2 -Wall -Wextra -Werror -municode \
+            -Wl,--image-base,0x10000000 -Wl,--disable-dynamicbase -Wl,--subsystem,console \
+            ChatGPT/tests/windows_unified_suspended_pe32.c \
+            installer/unified_import_alias.c -o dist/unified/suspended-pe32-test.exe
+          file dist/unified/suspended-pe32-test.exe | grep -q PE32
+          objdump -p dist/unified/suspended-pe32-test.exe | grep -E "ImageBase|DllCharacteristics"
+      - name: Build native Win32 first-run diagnostic policy test
+        run: |
+          set -euo pipefail
+          compiler="$HOME/.cache/spiderman2k1fix-toolchains/llvm-mingw-20261006-msvcrt-ubuntu-22.04-x86_64/bin/i686-w64-mingw32-clang"
+          "$compiler" -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -Wl,--subsystem,console \
+            ChatGPT/tests/windows_first_run_log_policy.c \
+            -o dist/unified/first-run-log-policy-test.exe
+          file dist/unified/first-run-log-policy-test.exe | grep -q PE32
+      - name: Compile native DPI external-manifest validation binary (no game content)
+        run: |
+          set -euo pipefail
+          compiler="$HOME/.cache/spiderman2k1fix-toolchains/llvm-mingw-20261006-msvcrt-ubuntu-22.04-x86_64/bin/i686-w64-mingw32-clang"
+          "$compiler" -std=gnu11 -O2 -Wall -Wextra -Werror -municode \
+            -Wl,--subsystem,console \
+            ChatGPT/tests/windows_unified_dpi_manifest.c \
+            -o dist/unified/dpi-manifest-test.exe
+          file dist/unified/dpi-manifest-test.exe | grep -q PE32
+      - name: Verify unified DLL but do not advertise a runnable installer
+        run: |
+          set -euo pipefail
+          file dist/unified/fix.dll | grep -q 'PE32'
+          objdump -p dist/unified/fix.dll > dist/unified/pe-info.txt
+          grep -Eq '(^|[[:space:]])DirectDrawCreateEx([[:space:]]|$)' dist/unified/pe-info.txt
+          grep -Eq '(^|[[:space:]])DirectDrawEnumerateExA([[:space:]]|$)' dist/unified/pe-info.txt
+          ! grep -Eiq 'DLL Name:[[:space:]]*(winmm|ddraw)\.dll' dist/unified/pe-info.txt
+          sha256sum dist/unified/fix.dll
+          echo 'This developer DLL is not a playable SpiderMan2k1Fix candidate.'
+      - name: Package exact unified resources (no game content)
+        run: |
+          set -euo pipefail
+          mkdir -p dist/unified/package/game dist/unified/package/docs \
+            dist/unified/package/third_party/SDL3 dist/unified/package/linux
+          cp dist/unified/fix.dll dist/unified/package/game/fix.dll
+          cp game_dpi.manifest dist/unified/package/game/SpideyPC.exe.manifest
+          cp CHANGELOG.md LICENSE dist/unified/package/docs/
+          cp docs/unified/README.md dist/unified/package/docs/README.md
+          cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 \
+            -fstack-protector-strong \
+            -o dist/unified/package/linux/spiderman-focus-helper \
+            linux/spiderman-focus-helper.c -lX11
+          archive="$RUNNER_TEMP/SDL3-3.4.18-win32-x86.zip"
+          if ! curl --fail --location --retry 2 --retry-all-errors \
+            --connect-timeout 15 --max-time 75 --output "$archive" \
+            https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18-win32-x86.zip; then
+            curl --fail --location --retry 4 --retry-all-errors \
+              --connect-timeout 15 --max-time 75 --output "$archive" \
+              https://www.libsdl.org/release/SDL3-3.4.18-win32-x86.zip
+          fi
+          python3 scripts/package_sdl3_x86.py dist/unified/package/third_party/SDL3 \
+            --archive "$archive"
+          mv dist/unified/package/third_party/SDL3/SDL3-LICENSE.txt \
+             dist/unified/package/third_party/SDL3/LICENSE.txt
+          cmp third_party/SDL3-LICENSE.txt dist/unified/package/third_party/SDL3/LICENSE.txt
+          test -z "$(find dist/unified/package -name winmm.dll -print -quit)"
+      - name: Compile experimental unified installer and synthetic fixture
+        run: |
+          bash scripts/build_unified_installer.sh production
+          python3 scripts/build_unified_test_fixture.py
+          bash scripts/build_unified_installer.sh fixture
+          test -s dist/unified/SpiderMan2k1Fix-UNIFIED-TEST.exe
+          test -s dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpiderMan2k1Fix-UNIFIED-EXE-TEST-ONLY
+          path: |
+            dist/unified/SpiderMan2k1Fix-UNIFIED-TEST.exe
+            dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe
+            dist/unified/suspended-pe32-test.exe
+            dist/unified/first-run-log-policy-test.exe
+            dist/unified/dpi-manifest-test.exe
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpiderMan2k1Fix-UNIFIED-DLL-DEVELOPER-ONLY
+          path: dist/unified/fix.dll
+          if-no-files-found: error
+          retention-days: 7
+
+  unified-windows-synthetic:
+    name: Windows native PE32 synthetic ISO / multi-folder rollback
+    runs-on: windows-latest
+    needs: unified-pe32
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: SpiderMan2k1Fix-UNIFIED-EXE-TEST-ONLY
+          path: dist/unified
+      - name: Check real and synthetic installers remain distinct
+        shell: pwsh
+        run: |
+          $real='dist/unified/SpiderMan2k1Fix-UNIFIED-TEST.exe'
+          $fixture='dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe'
+          if (!(Test-Path $real) -or !(Test-Path $fixture)) {throw 'missing unified PE32 installers'}
+          $a=(Get-FileHash $real -Algorithm SHA256).Hash
+          $b=(Get-FileHash $fixture -Algorithm SHA256).Hash
+          if ($a -eq $b) {throw 'production and synthetic fixture must differ'}
+          & $real --version
+          if ($LASTEXITCODE -ne 0) {throw 'version command failed'}
+          & $real --verify
+          if ($LASTEXITCODE -eq 0) {throw 'empty unified install must not verify'}
+          $global:LASTEXITCODE=0
+      - name: Diagnose child-only HighDpiAware compatibility environment without manifest
+        shell: pwsh
+        run: |
+          $dir=Join-Path $env:RUNNER_TEMP 'spider-dpi-compat-probe'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $exe=Join-Path $dir 'SpideyPC.exe'
+          Copy-Item 'dist/unified/dpi-manifest-test.exe' $exe
+          if (Test-Path "$exe.manifest") {throw 'unexpected companion manifest'}
+          $original=[Environment]::GetEnvironmentVariable('__COMPAT_LAYER','Process')
+          try {
+            [Environment]::SetEnvironmentVariable('__COMPAT_LAYER',$null,'Process')
+            & $exe
+            $baseline=$LASTEXITCODE
+            Write-Host "DPI-COMPAT: no-manifest baseline exit=$baseline (1 means unaware)"
+            [Environment]::SetEnvironmentVariable('__COMPAT_LAYER','HIGHDPIAWARE','Process')
+            & $exe
+            $aware=$LASTEXITCODE
+            Write-Host "DPI-COMPAT: no-manifest HIGHDPIAWARE exit=$aware (0 means aware)"
+            if ($aware -ne 0) {throw 'child HighDpiAware shim did not enable System DPI awareness'}
+            if ($baseline -eq 0) {throw 'probe already DPI aware without compatibility shim'}
+          } finally {
+            [Environment]::SetEnvironmentVariable('__COMPAT_LAYER',$original,'Process')
+            $global:LASTEXITCODE=0
+          }
+      - name: Verify external System-DPI manifest activates before startup on Windows
+        shell: pwsh
+        run: |
+          $dir=Join-Path $env:RUNNER_TEMP 'spider-dpi-manifest-probe'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item 'dist/unified/dpi-manifest-test.exe' (Join-Path $dir 'SpideyPC.exe')
+          Copy-Item 'game_dpi.manifest' (Join-Path $dir 'SpideyPC.exe.manifest')
+          & (Join-Path $dir 'SpideyPC.exe')
+          if ($LASTEXITCODE -ne 0) {throw 'sidecar EXE manifest did not activate System DPI awareness'}
+          $global:LASTEXITCODE=0
+      - name: Verify one-shot log and user INI preferences on native Windows
+        shell: pwsh
+        run: |
+          & 'dist/unified/first-run-log-policy-test.exe'
+          if ($LASTEXITCODE -ne 0) {throw 'Win32 first-run log / explicit user INI policy failed'}
+          $global:LASTEXITCODE=0
+      - name: Execute suspended child PE32 alias and startup guards on native Windows
+        shell: pwsh
+        run: |
+          & 'dist/unified/suspended-pe32-test.exe'
+          if ($LASTEXITCODE -ne 0) {throw 'synthetic suspended PE32 import/No-CD/DirectSound guard failed'}
+          $global:LASTEXITCODE=0
+      - name: Exercise synthetic ISO installer, rollback and read-only verification
+        shell: pwsh
+        run: |
+          python ChatGPT/tests/windows_unified_installer_end_to_end.py dist/unified/SpiderMan2k1Fix-UNIFIED-TEST.exe dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe
+          if ($LASTEXITCODE -ne 0) {throw 'unified installer native integration tests failed'}

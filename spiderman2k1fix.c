@@ -723,9 +723,48 @@ static void probe_desktop_mode(HWND hwnd) {
   log_line(line);
 }
 
+/* Runtime DPI evidence (no desktop mutation). Windows 10+ exposes
+ * per-HWND awareness; older Wine and Windows versions may lack these APIs.
+ * Values: 0 unaware, 1 system-aware, 2 per-monitor aware, -1 unavailable. */
+static void spider_log_runtime_dpi_context(HWND hwnd) {
+  HMODULE u=GetModuleHandleA("user32.dll");
+  HMODULE shcore=GetModuleHandleA("shcore.dll");
+  typedef HRESULT (WINAPI *ProcessAwareFn)(HANDLE,int *);
+  typedef HANDLE (WINAPI *WindowContextFn)(HWND);
+  typedef int (WINAPI *AwarenessFromContextFn)(HANDLE);
+  typedef UINT (WINAPI *DpiForWindowFn)(HWND);
+  ProcessAwareFn proc=NULL;
+  WindowContextFn window_context=NULL;
+  AwarenessFromContextFn from_context=NULL;
+  DpiForWindowFn window_dpi=NULL;
+  int process_mode=-1,window_mode=-1;
+  unsigned dpi=0;
+  char line[190];
+  if(!shcore)shcore=LoadLibraryA("shcore.dll");
+  if(shcore)proc=(ProcessAwareFn)(void *)GetProcAddress(
+    shcore,"GetProcessDpiAwareness");
+  if(proc && FAILED(proc(GetCurrentProcess(),&process_mode)))process_mode=-1;
+  if(u){
+    window_context=(WindowContextFn)(void *)GetProcAddress(
+      u,"GetWindowDpiAwarenessContext");
+    from_context=(AwarenessFromContextFn)(void *)GetProcAddress(
+      u,"GetAwarenessFromDpiAwarenessContext");
+    window_dpi=(DpiForWindowFn)(void *)GetProcAddress(u,"GetDpiForWindow");
+  }
+  if(window_context && from_context) {
+    HANDLE ctx=window_context(hwnd);
+    if(ctx)window_mode=from_context(ctx);
+  }
+  if(window_dpi)dpi=(unsigned)window_dpi(hwnd);
+  snprintf(line,sizeof(line),
+    "DISPLAY-DPI-CONTEXT: process=%d hwnd=%d window_dpi=%u (0=unaware,1=system,2=per-monitor,-1=unavailable)",
+    process_mode,window_mode,dpi);
+  log_line(line);
+}
 static void log_monitor(HWND hwnd) {
   MONITORINFO mi; HMONITOR mon; char line[220];
   if(!hwnd || !IsWindow(hwnd)) return;
+  spider_log_runtime_dpi_context(hwnd);
   memset(&mi,0,sizeof(mi)); mi.cbSize=sizeof(mi);
   mon=MonitorFromWindow(hwnd,MONITOR_DEFAULTTONEAREST);
   if(!GetMonitorInfoA(mon,&mi)) return;
@@ -6177,7 +6216,14 @@ static DWORD initialize_body(LPVOID unused) {
       SpiderDisplayMenu_Install(display_resolution_setting,display_aspect_setting,log_line);
     }
   }
+#ifndef SPIDER_UNIFIED_FIX
   install_ddraw_hook();
+#else
+  /* DirectDrawCreateEx is already imported from fix.dll through the
+   * mandatory launcher's in-memory PE import alias. Never redirect the IAT
+   * a second time while the initial native call is in progress. */
+  log_line("DDRAW-STARTUP: unified import alias owns DirectDrawCreateEx; legacy IAT install skipped");
+#endif
   /* Always pause on confirmed focus loss; legacy INI keys are ignored. */
   InterlockedExchange(&pause_on_focus_loss,1);
   log_line("FOCUS-PAUSE: permanent Flip-boundary pause ON; Any-key press/release resumes");
@@ -6216,9 +6262,18 @@ __declspec(dllexport) HRESULT __cdecl SpiderMan2k1Fix_DirectDrawGate(
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID reserved) {
   (void)reserved;
   if(reason==DLL_PROCESS_ATTACH) {
-    HANDLE t; DisableThreadLibraryCalls(instance);
-    t=CreateThread(NULL,0,initialize_worker,NULL,0,NULL);
-    if(t) CloseHandle(t);
+    DisableThreadLibraryCalls(instance);
+#ifndef SPIDER_UNIFIED_FIX
+    /* Compatibility with the existing WinMM-proxy startup architecture. */
+    {
+      HANDLE t=CreateThread(NULL,0,initialize_worker,NULL,0,NULL);
+      if(t)CloseHandle(t);
+    }
+#else
+    /* Unified import-alias mode: the launcher loads fix.dll before the
+     * original game starts. All expensive initialization happens on the
+     * first DirectDrawCreateEx call AFTER loader lock, not in DllMain. */
+#endif
   }
   return TRUE;
 }

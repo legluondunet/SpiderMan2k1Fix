@@ -153,5 +153,38 @@ if missing:
 print('EXPORTS: 49 required winmm entry points detected')
 PYEXPORT
 
+# Opt-in compile gate for the forthcoming mandatory-launcher architecture.
+# Existing package targets and the WinMM pair are unaffected by default.
+if [[ "${SPIDER_UNIFIED_BUILD:-0}" == "1" ]]; then
+  mkdir -p dist/unified
+  "$CC" -std=gnu11 -O2 -fno-pie -mno-sse -mno-sse2 -mfpmath=387 -Wall -Wextra \
+    -static-libgcc "$version_define" -DSPIDER_UNIFIED_FIX -shared \
+    -o "$probe_dir/fix.dll" \
+    "${fix_sources[@]}" unified_bootstrap.c unified_directdraw.def \
+    -ladvapi32 -ldinput8 -ldxguid -lgdi32 -lmsimg32 -lshell32 \
+    -Wl,--subsystem,windows
+  "$OBJDUMP" -f "$probe_dir/fix.dll" | grep -q 'pei-i386'
+  "$OBJDUMP" -p "$probe_dir/fix.dll" > "$probe_dir/unified-exports.txt"
+  if ! grep -Eq '(^|[[:space:]])DirectDrawCreateEx([[:space:]]|$)' "$probe_dir/unified-exports.txt"; then
+    echo 'ERROR: fix.dll must export the original undecorated DirectDrawCreateEx.' >&2
+    exit 1
+  fi
+  if ! grep -Eq '(^|[[:space:]])DirectDrawEnumerateExA([[:space:]]|$)' "$probe_dir/unified-exports.txt"; then
+    echo 'ERROR: fix.dll must export the original undecorated DirectDrawEnumerateExA.' >&2
+    exit 1
+  fi
+  imports=$("$OBJDUMP" -p "$probe_dir/fix.dll" | grep 'DLL Name:' || true)
+  if printf '%s\n' "$imports" | grep -Eiq 'DLL Name:[[:space:]]*(api-ms-win-crt-[^[:space:]]*|ucrtbase\.dll|libgcc_s[^[:space:]]*\.dll|winmm\.dll|ddraw\.dll)'; then
+    echo 'ERROR: unified fix.dll has an unexpected CRT, WinMM or DirectDraw import.' >&2
+    exit 1
+  fi
+  if ! printf '%s\n' "$imports" | grep -Eiq 'DLL Name:[[:space:]]*msvcrt\.dll'; then
+    echo 'ERROR: unified fix.dll must import MSVCRT.' >&2
+    exit 1
+  fi
+  cp "$probe_dir/fix.dll" dist/unified/fix.dll
+  echo 'UNIFIED: test-only fix.dll PE32 / DirectDraw export / imports verified.'
+fi
+
 cp "$probe_dir/SpiderMan2k1Fix.dll" "$probe_dir/winmm.dll" .
 echo 'OK: validated local Windows x86 DLLs (MSVCRT; static libgcc).'

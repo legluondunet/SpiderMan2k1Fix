@@ -73,7 +73,7 @@ def test_game_data_directory_is_spiderman2001_and_legacy_is_migrated_safely():
     main=SRC.split("int wmain(",1)[1]
     assert main.index("if(!select_game_directory())") < (
         main.index('L"--launch-no-verify"'))
-    assert main.index("if(!verify_game_receipt(game_dir))") < (
+    assert main.index("if(!verify_game_receipt(managed_root()))") < (
         main.index("if(!migrate_legacy_game_directory())"))
     assert main.index('L"--verify"') < (
         main.index("if(!migrate_legacy_game_directory())"))
@@ -129,7 +129,7 @@ def test_normal_launch_can_update_only_owned_runtime_dlls_with_receipted_rollbac
     """Normal launch updates installer-owned runtimes, never original game files."""
     assert "MoveFileExW(staging,game_dir,MOVEFILE_WRITE_THROUGH)" in SRC
     assert "write_install_receipt(staging)" in SRC
-    assert "verify_install_receipt(game_dir)" in SRC
+    assert "verify_install_receipt(managed_root())" in SRC
     assert "static int upgrade_recognized_payloads(void)" in SRC
     assert "UPGRADE: missing/invalid prior receipt" in SRC
     assert "UPGRADE: ROLLBACK FAILED" in SRC
@@ -145,7 +145,7 @@ def test_normal_launch_can_update_only_owned_runtime_dlls_with_receipted_rollbac
         "scan=find_adjacent_disc",1)[0]
     assert "verified_retail(gameexe)" in existing
     assert "verify_payloads()" in existing
-    assert "verify_install_receipt(game_dir)" in existing
+    assert "verify_install_receipt(managed_root())" in existing
     assert "if(install_only){" in existing
     assert "upgrade_recognized_payloads()" in existing
     assert existing.index("if(install_only){") < existing.index("upgrade_recognized_payloads()")
@@ -168,23 +168,25 @@ def test_new_launcher_replaces_unknown_owned_dll_with_single_overwriteable_bak()
     receipt_check=SRC.split(
         "static int verify_install_receipt_allow_unknown_dll(",1
     )[1].split("/* Independent immutable snapshot",1)[0]
-    assert "if(i>=3u){fclose(in);return 0;}" in receipt_check
+    assert "if(!owned_runtime_dll(i)){fclose(in);return 0;}" in receipt_check
+    assert "static int owned_runtime_dll(unsigned i)" in SRC
+    assert "return i<3u;" in SRC  # existing WinMM prototype keeps 3 DLLs
     assert "strspn(line,\"0123456789abcdef\")" in receipt_check
     assert "missing installer-owned runtime DLL" in receipt_check
     assert "unknown installer-owned DLL" in receipt_check
     upgrade=SRC.split("static int upgrade_recognized_payloads(void){",1)[1].split(
         "static int launch_game(",1)[0]
     for token in (
-        "verify_install_receipt(game_dir)",
-        "verify_install_receipt_allow_unknown_dll(game_dir)",
-        "verify_game_receipt(game_dir)",
+        "verify_install_receipt(managed_root())",
+        "verify_install_receipt_allow_unknown_dll(managed_root())",
+        "verify_game_receipt(managed_root())",
         "resource_ids[OWNED_COUNT]",
         "same_file(dst,bytes,len)",
         "stashed_old_bak",
         "MoveFileExW(backup,previous,MOVEFILE_WRITE_THROUGH)",
-        "MoveFileExW(dst,backup,MOVEFILE_WRITE_THROUGH)",
+        "MoveFileExW(dst,rollback_slot,MOVEFILE_WRITE_THROUGH)",
         "MoveFileExW(previous,backup,MOVEFILE_WRITE_THROUGH)",
-        "i<3u",
+        "owned_runtime_dll(i)",
         "if(!DeleteFileW(previous))",
         "if(rollback_ok)discard_upgrade_staging(staging)",
         "previous DLL %ls saved as .bak",
@@ -195,29 +197,36 @@ def test_new_launcher_replaces_unknown_owned_dll_with_single_overwriteable_bak()
     assert "binkw32.dll" not in owned
     for forbidden in ("SpideyPC.exe", "data.pkr", "installed-game.sha256",
                       "SpiderMan2k1Fix.ini"):
-        assert forbidden not in owned
+        # Match complete filename, not the project-owned sidecar
+        # "SpideyPC.exe.manifest", which deliberately preserves retail bytes.
+        assert not any(line.strip().endswith(f'{forbidden}"')
+                       for line in owned.splitlines())
     main=SRC.split("int wmain(",1)[1]
     default=main.split("if((argc==1 || install_only) && regular_file(gameexe))",1)[1].split(
         "scan=find_adjacent_disc",1)[0]
-    assert "if(!verify_game_receipt(game_dir))" in default
+    assert "if(!verify_game_receipt(managed_root()))" in default
     assert "if(!upgrade_recognized_payloads())" in default
-    assert default.count("upgrade_recognized_payloads()")==2
+    # Two original branches (explicit update and legacy auto-update) plus
+    # the unified branch for an outdated game/fix.dll.
+    assert default.count("upgrade_recognized_payloads()")==3
     assert default.index("verified_retail(gameexe)") < default.index(
-        "verify_game_receipt(game_dir)")
-    assert default.index("verify_game_receipt(game_dir)") < default.rindex(
+        "verify_game_receipt(managed_root())")
+    assert default.index("verify_game_receipt(managed_root())") < default.rindex(
         "upgrade_recognized_payloads()")
 
 
 def test_upgrade_never_mutates_game_exe_or_user_ini_and_rolls_back():
     upgrade=SRC.split("static int upgrade_recognized_payloads(void){",1)[1].split(
         "static int launch_game(",1)[0]
-    assert "verify_install_receipt(game_dir)" in upgrade
+    assert "verify_install_receipt(managed_root())" in upgrade
     assert "if(!deploy_payloads_to(staging)||!write_install_receipt(staging))" in upgrade
-    assert "MoveFileExW(dst,backup,MOVEFILE_WRITE_THROUGH)" in upgrade
-    assert "MoveFileExW(backup,dst,MOVEFILE_WRITE_THROUGH)" in upgrade
+    assert "MoveFileExW(dst,rollback_slot,MOVEFILE_WRITE_THROUGH)" in upgrade
+    assert "const wchar_t *rollback_slot=replace_fix_without_backup(i)?previous:backup;" in upgrade
+    assert "MoveFileExW(replace_fix_without_backup(j)?previous:backup," in upgrade
     assert "DeleteFileW(backup)" in upgrade
     assert "SpiderMan2k1Fix.updating" in upgrade
-    assert "SpideyPC.exe" not in SRC.split("static const wchar_t *owned_paths[",1)[1].split("};",1)[0]
+    assert not any(line.strip().endswith('SpideyPC.exe"')
+                   for line in SRC.split("static const wchar_t *owned_paths[",1)[1].split("};",1)[0].splitlines())
     assert "SpiderMan2k1Fix.ini" not in SRC.split("static const wchar_t *owned_paths[",1)[1].split("};",1)[0]
     assert "data.pkr" not in SRC.split("static const wchar_t *owned_paths[",1)[1].split("};",1)[0]
 
@@ -368,12 +377,12 @@ def test_default_discovery_supports_iso_and_cue_with_bounded_ambiguity():
 def test_retail_receipt_required_without_any_legacy_adoption():
     """First stable installer cannot trust old diagnostic prototypes."""
     main=SRC.split("int wmain(",1)[1]
-    assert 'verified_retail(gameexe)&&verify_install_receipt(game_dir)&&' in main
+    assert 'verified_retail(gameexe)&&verify_install_receipt(managed_root())&&' in main
     existing=main.split(
         "if((argc==1 || install_only) && regular_file(gameexe))",1)[1].split(
         "scan=find_adjacent_disc(",1)[0]
-    assert "!verify_install_receipt(game_dir)" in existing
-    assert existing.index("!verify_install_receipt(game_dir)") < existing.index(
+    assert "!verify_install_receipt(managed_root())" in existing
+    assert existing.index("!verify_install_receipt(managed_root())") < existing.index(
         "if(install_only){")
     assert "write_install_receipt(game_dir)" not in existing
     assert "upgrade_recognized_payloads()" in existing
@@ -390,7 +399,7 @@ def test_release_cleanup_removes_obsolete_install_state():
     main=SRC.split("int wmain(",1)[1]
     assert "if(GetFileAttributesW(receipt)==INVALID_FILE_ATTRIBUTES" not in main
     assert 'VERIFY: missing or invalid install receipt' in main
-    assert 'verify_install_receipt(game_dir)' in main
+    assert 'verify_install_receipt(managed_root())' in main
 
 
 def test_normal_install_summarizes_cd_and_reserves_listing_for_verbose():
@@ -457,8 +466,8 @@ def test_legacy_game_enrollment_must_match_owner_iso_before_receipt_creation():
     assert "strcmp(filehash,cdhash)" in enrollment
     assert "strcmp(cdhash,retail_sha)" in enrollment
     assert enrollment.index("strcmp(filehash,cdhash)") < enrollment.index(
-        "write_game_receipt(game_dir)")
-    assert "write_game_receipt(game_dir)" in enrollment
+        "write_game_receipt(managed_root())")
+    assert "write_game_receipt(managed_root())" in enrollment
     assert "iso_copy(" not in enrollment
     assert "MoveFileExW(staging,game_dir" not in enrollment
 
@@ -467,15 +476,15 @@ def test_all_entry_points_require_game_receipt_except_explicit_bypass():
     main=SRC.split("int wmain(",1)[1]
     verify=main.split('!wcscmp(argv[1],L"--verify")',1)[1].split(
         "install_only=argc==2",1)[0]
-    assert "verify_game_receipt(game_dir)" in verify
+    assert "verify_game_receipt(managed_root())" in verify
     assert "verify_payloads()" in verify
     existing=main.split("if((argc==1 || install_only) && regular_file(gameexe))",1)[1].split(
         "scan=find_adjacent_disc(",1)[0]
-    assert "verify_game_receipt(game_dir)" in existing
+    assert "verify_game_receipt(managed_root())" in existing
     assert "enroll_game_receipt_from_disc()" in existing
-    assert "if(install_only && !verify_game_receipt(game_dir))" in existing
+    assert "if(install_only && !verify_game_receipt(managed_root()))" in existing
     assert "existing game receipt invalid; refusing replacement" in existing
-    assert existing.index("if(install_only && !verify_game_receipt(game_dir))") < existing.index(
+    assert existing.index("if(install_only && !verify_game_receipt(managed_root()))") < existing.index(
         "if(install_only){")
     assert "no changes made" in existing
     fresh=SRC.split("static int prepare_game_from_iso(",1)[1].split(

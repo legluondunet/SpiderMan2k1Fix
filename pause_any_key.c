@@ -59,8 +59,15 @@ static LRESULT CALLBACK keyboard_proc(int code,WPARAM wp,LPARAM lp) {
 BOOL SpiderPauseAny_Begin(HWND game_hwnd) {
   HMODULE module;
   if(hook || !game_hwnd || !IsWindow(game_hwnd)) return FALSE;
-  module=GetModuleHandleA("SpiderMan2k1Fix.dll");
-  if(!module) return FALSE;
+  /* The runtime ships either as legacy SpiderMan2k1Fix.dll or unified
+   * fix.dll. Resolve the DLL which ACTUALLY owns this hook callback instead
+   * of guessing its filename (which broke unified focus pause on Win11).
+   * UNCHANGED_REFCOUNT means no FreeLibrary is required. */
+  module=NULL;
+  if(!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                         GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                         (LPCSTR)(uintptr_t)&keyboard_proc,&module) ||
+     !module)return FALSE;
   target=game_hwnd;
   memset(held,0,sizeof(held));
   first_key=0;
