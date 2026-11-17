@@ -1421,6 +1421,14 @@ static int upgrade_recognized_payloads(void){
     }
     installed_new[i]=1;
   }
+  /* Do not discard the temporary fix.dll rollback copy until BOTH the
+   * newly installed resources and their new authenticated receipt verify.
+   * On any post-publish mismatch restore the old project files and receipt. */
+  if(i==n && (!verify_payloads() ||
+              !verify_install_receipt(managed_root()))) {
+    message(L"UPGRADE: post-publish verification failed; rolling back project resources");
+    i=0; /* enter the same reverse-order transaction rollback below */
+  }
   if(i<n){
     for(k=n;k>0;k--){
       unsigned j=k-1;
