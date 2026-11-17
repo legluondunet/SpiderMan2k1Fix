@@ -157,11 +157,11 @@ PYEXPORT
 # Existing package targets and the WinMM pair are unaffected by default.
 if [[ "${SPIDER_UNIFIED_BUILD:-0}" == "1" ]]; then
   mkdir -p dist/unified
-  "$CC" -std=gnu11 -O2 -fno-pie -mno-sse -mno-sse2 -mfpmath=387 -Wall -Wextra \\
-    -static-libgcc "$version_define" -DSPIDER_UNIFIED_FIX -shared \\
-    -o "$probe_dir/fix.dll" \\
-    "${fix_sources[@]}" unified_bootstrap.c unified_directdraw.def \\
-    -ladvapi32 -ldinput8 -ldxguid -lgdi32 -lmsimg32 -lshell32 \\
+  "$CC" -std=gnu11 -O2 -fno-pie -mno-sse -mno-sse2 -mfpmath=387 -Wall -Wextra \
+    -static-libgcc "$version_define" -DSPIDER_UNIFIED_FIX -shared \
+    -o "$probe_dir/fix.dll" \
+    "${fix_sources[@]}" unified_bootstrap.c unified_directdraw.def \
+    -ladvapi32 -ldinput8 -ldxguid -lgdi32 -lmsimg32 -lshell32 \
     -Wl,--subsystem,windows
   "$OBJDUMP" -f "$probe_dir/fix.dll" | grep -q 'pei-i386'
   "$OBJDUMP" -p "$probe_dir/fix.dll" > "$probe_dir/unified-exports.txt"
