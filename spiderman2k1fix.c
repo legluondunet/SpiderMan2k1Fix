@@ -54,6 +54,9 @@
 #include "version_info.h"
 #include "f9_png.h"
 #include "spider_fix_paths.h"
+#ifdef SPIDER_UNIFIED_FIX
+#include "first_run_log_policy.h"
+#endif
 #include "system_diagnostics.h"
 #include "f9_toast.h"
 #include "quick_exit_f12.h"
@@ -68,6 +71,9 @@ static const BYTE expected_sha256[32] = {
   0x2a,0x05,0x8f,0xf0,0x74,0x68,0x9d,0xea
 };
 static int debug_log_enabled=0;
+#ifdef SPIDER_UNIFIED_FIX
+static int first_run_log_enabled=0;
+#endif
 /* Strictly opt-in: timestamp ALL log lines with a local wall-clock aligned
  * to xprop/date on the host. Add sparse Blt/Flip heartbeats for comparison.
  * This flag never changes game state, focus, or pause timing. */
@@ -76,8 +82,20 @@ static int focus_timeline_enabled=0;
 static void debug_log_load_setting(void) {
   char path[MAX_PATH];
   debug_log_enabled=0;
+#ifdef SPIDER_UNIFIED_FIX
+  first_run_log_enabled=0;
+#endif
   if(!spider_path_ini_a(path,sizeof(path)))return;
   debug_log_enabled=(GetPrivateProfileIntA("Debug","Log",0,path)==1);
+#ifdef SPIDER_UNIFIED_FIX
+  /* The first ever game session creates the INI later in initialize_body.
+   * Capture its startup without changing user-controlled [Debug] Log.
+   * A pre-existing INI, even Log=0, is an explicit/persistent choice. */
+  if(SpiderFirstRunLog_IniMissingA(path)) {
+    debug_log_enabled=1;
+    first_run_log_enabled=1;
+  }
+#endif
   focus_timeline_enabled=0;
   if(debug_log_enabled) {
     char opt[3]={0};
@@ -5887,6 +5905,10 @@ static DWORD initialize_body(LPVOID unused) {
   BYTE *base=(BYTE*)GetModuleHandleA(NULL);
   char line[160]; (void)unused;
   debug_log_load_setting();
+#ifdef SPIDER_UNIFIED_FIX
+  if(first_run_log_enabled)
+    log_line("FIRST-RUN-LOG: automatic initial startup diagnostics; future sessions use [Debug] Log=0 unless changed by user");
+#endif
   log_line("START: " SPIDERMAN2K1FIX_VERSION_LABEL);
   if (!supported_exe()) {
     log_line("ERROR: unsupported EXE SHA-256; do not use this proxy with this executable");
