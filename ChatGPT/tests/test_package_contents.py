@@ -45,6 +45,7 @@ def test_ci_builds_without_retaining_the_completed_one_shot_release_workflow():
     # deliberately NOT an automatic release publisher; the historical
     # one-shot v1.1 release workflow must still be absent.
     assert sorted(p.name for p in workflows.glob("*.yml")) == [
+        "spiderman2k1fix-actions-cleanup.yml",
         "spiderman2k1fix-standalone-windows-x86.yml",
         "spiderman2k1fix-unified-x86.yml",
         "spiderman2k1fix-windows-x86.yml",
