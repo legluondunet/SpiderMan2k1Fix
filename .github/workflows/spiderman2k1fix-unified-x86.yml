@@ -56,6 +56,15 @@ jobs:
             ChatGPT/tests/windows_first_run_log_policy.c \
             -o dist/unified/first-run-log-policy-test.exe
           file dist/unified/first-run-log-policy-test.exe | grep -q PE32
+      - name: Compile native DPI external-manifest validation binary (no game content)
+        run: |
+          set -euo pipefail
+          compiler="$HOME/.cache/spiderman2k1fix-toolchains/llvm-mingw-20261006-msvcrt-ubuntu-22.04-x86_64/bin/i686-w64-mingw32-clang"
+          "$compiler" -std=gnu11 -O2 -Wall -Wextra -Werror -municode \
+            -Wl,--subsystem,console \
+            ChatGPT/tests/windows_unified_dpi_manifest.c \
+            -o dist/unified/dpi-manifest-test.exe
+          file dist/unified/dpi-manifest-test.exe | grep -q PE32
       - name: Verify unified DLL but do not advertise a runnable installer
         run: |
           set -euo pipefail
@@ -107,6 +116,7 @@ jobs:
             dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe
             dist/unified/suspended-pe32-test.exe
             dist/unified/first-run-log-policy-test.exe
+            dist/unified/dpi-manifest-test.exe
           retention-days: 7
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
@@ -143,6 +153,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) {throw 'version command failed'}
           & $real --verify
           if ($LASTEXITCODE -eq 0) {throw 'empty unified install must not verify'}
+          $global:LASTEXITCODE=0
+      - name: Verify external System-DPI manifest activates before startup on Windows
+        shell: pwsh
+        run: |
+          $dir=Join-Path $env:RUNNER_TEMP 'spider-dpi-manifest-probe'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item 'dist/unified/dpi-manifest-test.exe' (Join-Path $dir 'SpideyPC.exe')
+          Copy-Item 'game_dpi.manifest' (Join-Path $dir 'SpideyPC.exe.manifest')
+          & (Join-Path $dir 'SpideyPC.exe')
+          if ($LASTEXITCODE -ne 0) {throw 'sidecar EXE manifest did not activate System DPI awareness'}
           $global:LASTEXITCODE=0
       - name: Verify one-shot log and user INI preferences on native Windows
         shell: pwsh
