@@ -89,6 +89,17 @@ def main():
             assert "FIRST-RUN-LOG: first game session" not in second
             assert runtime_log.read_bytes()==initial
             assert ini.read_bytes()==setting
+        # Do not append diagnostics through an unexpected directory/reparse
+        # destination. The launcher must refuse this unsafe log path.
+        preserved=d/"SpiderMan2k1Fix.log.preserved"
+        runtime_log.rename(preserved)
+        runtime_log.mkdir()
+        refused=execute(e,success=False)
+        assert "unsafe existing log path; refusing launch" in refused
+        assert runtime_log.is_dir()
+        runtime_log.rmdir()
+        preserved.rename(runtime_log)
+        assert runtime_log.read_bytes()==initial
         archive=d/"game/data.pkr"; original=archive.read_bytes()
         archive.write_bytes(original+b"corrupt")
         execute(e,"--verify",success=False)
