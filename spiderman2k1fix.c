@@ -99,16 +99,36 @@ static void debug_log_load_setting(void) {
     focus_timeline_enabled=(n==1 && opt[0]=='1');
   }
 }
+/* Keep precisely ONE game session in SpiderMan2k1Fix.log. The first
+ * logged line of a new game process truncates previous sessions; subsequent
+ * lines keep appending during that same process. INIT_ONCE prevents concurrent
+ * first log calls from truncating each other's startup diagnostics.
+ *
+ * Exception: on the first unified launch the installer already opens the
+ * fresh file and writes FIRST-RUN-LOG before CreateProcessW. Preserve those
+ * early diagnostics and append core output to that same session instead.
+ * No log file is created when [Debug] Log=0. */
+static INIT_ONCE game_log_session_once=INIT_ONCE_STATIC_INIT;
+static char game_log_session_path[MAX_PATH];
+static BOOL CALLBACK game_log_prepare_session(
+    PINIT_ONCE once,PVOID parameter,PVOID *context) {
+  FILE *f;
+  (void)once;(void)parameter;(void)context;
+  if(!spider_path_log_a(game_log_session_path,
+                        sizeof(game_log_session_path)))return FALSE;
+#ifdef SPIDER_UNIFIED_FIX
+  if(first_run_log_enabled)return TRUE; /* launcher already seeded this log */
+#endif
+  f=fopen(game_log_session_path,"w");
+  if(!f)return FALSE;
+  return fclose(f)==0;
+}
 static void log_line(const char *s) {
-  static char path[MAX_PATH];
-  static int resolved=0;
   FILE *f;
   if(!debug_log_enabled)return;
-  if(!resolved) {
-    if(!spider_path_log_a(path,sizeof(path)))return;
-    resolved=1;
-  }
-  f=fopen(path,"a");
+  if(!InitOnceExecuteOnce(&game_log_session_once,
+                          game_log_prepare_session,NULL,NULL))return;
+  f=fopen(game_log_session_path,"a");
   if(f) {
     if(focus_timeline_enabled) {
       SYSTEMTIME st;
