@@ -82,19 +82,14 @@ static int focus_timeline_enabled=0;
 static void debug_log_load_setting(void) {
   char path[MAX_PATH];
   debug_log_enabled=0;
-#ifdef SPIDER_UNIFIED_FIX
-  first_run_log_enabled=0;
-#endif
   if(!spider_path_ini_a(path,sizeof(path)))return;
   debug_log_enabled=(GetPrivateProfileIntA("Debug","Log",0,path)==1);
 #ifdef SPIDER_UNIFIED_FIX
-  /* The first ever game session creates the INI later in initialize_body.
-   * Capture its startup without changing user-controlled [Debug] Log.
-   * A pre-existing INI, even Log=0, is an explicit/persistent choice. */
-  if(SpiderFirstRunLog_IniMissingA(path)) {
-    debug_log_enabled=1;
-    first_run_log_enabled=1;
-  }
+  /* Latch for the whole FIRST GAME PROCESS, not merely until the generated
+   * factory INI appears. initialize_body() reloads settings after creating
+   * default Log=0: that must NOT silence the remainder of this first run. */
+  if(SpiderFirstRunLog_IniMissingA(path))first_run_log_enabled=1;
+  if(first_run_log_enabled)debug_log_enabled=1;
 #endif
   focus_timeline_enabled=0;
   if(debug_log_enabled) {
