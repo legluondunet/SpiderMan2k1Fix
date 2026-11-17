@@ -67,7 +67,7 @@ static int remote_supported_pe32(HANDLE process,IMAGE_NT_HEADERS32 *nt) {
 int SpiderUnified_AliasSuspendedDDraw(HANDLE process) {
   IMAGE_NT_HEADERS32 nt;
   IMAGE_DATA_DIRECTORY table;
-  DWORD i,found_name_rva=0,found=0;
+  DWORD i,found_name_rva=0,found=0,table_terminated=0;
   static const char replacement[10]={'f','i','x','.','d','l','l',0,0,0};
   char original[10];
   if(!remote_supported_pe32(process,&nt))return 0;
@@ -77,11 +77,11 @@ int SpiderUnified_AliasSuspendedDDraw(HANDLE process) {
   for(i=0;i<128 && (i+1u)*sizeof(IMAGE_IMPORT_DESCRIPTOR)<=table.Size;i++){
     IMAGE_IMPORT_DESCRIPTOR desc;
     char name[10];
-    DWORD j,matched=0;
+    DWORD j,matched=0,thunks_terminated=0;
     DWORD desc_rva=table.VirtualAddress+i*sizeof(desc);
     if(!remote_read(process,SPIDER_IMAGE_BASE+desc_rva,&desc,sizeof(desc)))
       return 0;
-    if(desc.Name==0 && desc.FirstThunk==0)break;
+    if(desc.Name==0 && desc.FirstThunk==0){table_terminated=1;break;}
     if(!rva_range(desc.Name,sizeof(name),nt.OptionalHeader.SizeOfImage))
       return 0;
     if(!remote_read(process,SPIDER_IMAGE_BASE+desc.Name,name,sizeof(name)))
@@ -97,24 +97,26 @@ int SpiderUnified_AliasSuspendedDDraw(HANDLE process) {
                     nt.OptionalHeader.SizeOfImage) ||
          !remote_read(process,SPIDER_IMAGE_BASE+rva,&thunk,sizeof(thunk)))
         return 0;
-      if(thunk.u1.AddressOfData==0)break;
-      if(IMAGE_SNAP_BY_ORDINAL32(thunk.u1.Ordinal))continue;
+      if(thunk.u1.AddressOfData==0){thunks_terminated=1;break;}
+      /* fix.dll exports only DirectDrawCreateEx. Never alias a descriptor
+       * containing a second method/ordinal that would fail PE loading. */
+      if(IMAGE_SNAP_BY_ORDINAL32(thunk.u1.Ordinal))return 0;
       if(!rva_range(thunk.u1.AddressOfData+2u,sizeof(symbol),
                     nt.OptionalHeader.SizeOfImage) ||
          !remote_read(process,SPIDER_IMAGE_BASE+
            thunk.u1.AddressOfData+2u,symbol,sizeof(symbol)))
         return 0;
-      if(!memcmp(symbol,"DirectDrawCreateEx",sizeof(symbol))) {
-        if(desc.FirstThunk+j*sizeof(DWORD)!=SPIDER_DDRAW_CREATE_IAT_RVA)
-          return 0;
-        matched++;
-      }
+      if(memcmp(symbol,"DirectDrawCreateEx",sizeof(symbol))!=0 ||
+         desc.FirstThunk+j*sizeof(DWORD)!=SPIDER_DDRAW_CREATE_IAT_RVA)
+        return 0;
+      matched++;
     }
-    if(matched!=1)return 0;
+    if(matched!=1 || !thunks_terminated)return 0;
     found++;
     found_name_rva=desc.Name;
   }
-  if(found!=1 || !rva_range(found_name_rva,sizeof(original),
+  if(found!=1 || !table_terminated ||
+     !rva_range(found_name_rva,sizeof(original),
                             nt.OptionalHeader.SizeOfImage) ||
      !remote_read(process,SPIDER_IMAGE_BASE+found_name_rva,
                   original,sizeof(original)) ||
