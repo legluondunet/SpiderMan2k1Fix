@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Experimental single-DLL installer; never a release.
+# Single-DLL development installer; only the production mode is user-facing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mode=production
 if test "$#" -gt 0; then mode="$1"; fi
 case "$mode" in
  production) source_file=installer/spiderman2k1fix_installer.c
-             output=dist/unified/SpiderMan2k1Fix-UNIFIED-TEST.exe ;;
+             output=dist/unified/SpiderMan2k1Fix.exe ;;
  fixture) source_file=installer/spiderman2k1fix_installer.fixture.c
           output=dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe ;;
  *) echo "usage: $0 [production|fixture]" >&2; exit 2 ;;
@@ -55,5 +55,5 @@ RCDATA
 ! grep -Eiq 'DLL Name:[[:space:]]*(ucrtbase\.dll|libgcc_s|winmm\.dll|ddraw\.dll)' \
  dist/unified/installer-pe-info.txt
 grep -Eiq 'DLL Name:[[:space:]]*msvcrt\.dll' dist/unified/installer-pe-info.txt
-echo "UNIFIED: compiled $output (EXPERIMENTAL, NOT RELEASE)"
+echo "UNIFIED: compiled $output (DEVELOPMENT BUILD, NOT RELEASE)"
 sha256sum "$output"
