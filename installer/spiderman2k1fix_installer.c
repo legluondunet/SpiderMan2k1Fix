@@ -8,6 +8,9 @@
 #include <wchar.h>
 #include <stdarg.h>
 #include "../version_info.h"
+#ifdef SPIDER_UNIFIED_INSTALL
+#include "unified_import_alias.h"
+#endif
 
 /* One PE32 Windows/Wine executable containing only project-owned/redistributable
  * runtime binaries. Original retail game data is NEVER embedded. The input
@@ -1186,7 +1189,91 @@ static void preserve_crashed_game_log(
   else
     message(L"LAUNCH: cannot preserve failed-run log Win32=%lu",GetLastError());
 }
+/* Experimental launcher-only path. Never compile it into the currently
+ * released WinMM installer. The original retail EXE is SHA checked before
+ * the Windows loader begins its import resolution.
+ *
+ * NOTE: This is a launch mechanism, not a substitute for the validated
+ * multi-directory game/state/docs installation protocol. */
+#ifdef SPIDER_UNIFIED_INSTALL
+static int launch_unified_game(int verify_exe) {
+  wchar_t path[SPIDER_INSTALLER_PATH],cmd[SPIDER_INSTALLER_PATH+4];
+  wchar_t runtime_log[SPIDER_INSTALLER_PATH];
+  wchar_t old_launcher[SPIDER_INSTALLER_PATH];
+  STARTUPINFOW si;PROCESS_INFORMATION pi;
+  WIN32_FILE_ATTRIBUTE_DATA log_before;
+  DWORD exit_code=1,old_len=0,previous_last_error=0;
+  int had_launcher=0,had_prior_log=0,launched=0,ok=0;
+  (void)verify_exe; /* Authenticated game EXE is always mandatory in unified mode. */
+  if(!combine(path,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe") ||
+     !combine(runtime_log,SPIDER_INSTALLER_PATH,launcher_dir,
+              L"SpiderMan2k1Fix.log"))return 0;
+  if(!verified_retail(path)) {
+    message(L"UNIFIED: unsupported or altered SpideyPC.exe; no game launch");
+    return 0;
+  }
+  if(!resource_verify(RES_FIX,game_dir,L"fix.dll")) {
+    message(L"UNIFIED: fix.dll missing or differs from the installed launcher payload");
+    return 0;
+  }
+  old_len=GetEnvironmentVariableW(L"SPIDERMAN2K1FIX_LAUNCHER_DIR",
+                                  old_launcher,SPIDER_INSTALLER_PATH);
+  previous_last_error=GetLastError();
+  if(old_len>=SPIDER_INSTALLER_PATH)return 0;
+  had_launcher=old_len>0 || previous_last_error!=ERROR_ENVVAR_NOT_FOUND;
+  if(!SetEnvironmentVariableW(L"SPIDERMAN2K1FIX_LAUNCHER_DIR",launcher_dir))
+    return 0;
+  memset(&si,0,sizeof(si));memset(&pi,0,sizeof(pi));si.cb=sizeof(si);
+  if(_snwprintf(cmd,sizeof(cmd)/sizeof(cmd[0]),L"\"%ls\"",path)<0)
+    goto restore_environment;
+  had_prior_log=GetFileAttributesExW(
+    runtime_log,GetFileExInfoStandard,&log_before)!=0;
+  /* The first resumed game instruction may only see a fully prepared in-
+   * memory import alias plus exact signature-gated No-CD patch. */
+  if(!CreateProcessW(path,cmd,NULL,NULL,FALSE,CREATE_SUSPENDED,
+                     NULL,game_dir,&si,&pi)) {
+    message(L"UNIFIED: CreateProcess(CREATE_SUSPENDED) failed Win32=%lu",
+            GetLastError());
+    goto restore_environment;
+  }
+  launched=1;
+  if(!SpiderUnified_AliasSuspendedDDraw(pi.hProcess) ||
+     !SpiderUnified_PatchSuspendedNoCD(pi.hProcess)) {
+    message(L"UNIFIED: unsupported import layout or No-CD opcode mismatch; terminating suspended game");
+    goto stop_child;
+  }
+  message(L"UNIFIED: authenticated PE32 import alias and No-CD bootstrap installed in process memory");
+  if(ResumeThread(pi.hThread)==(DWORD)-1) {
+    message(L"UNIFIED: ResumeThread failed Win32=%lu",GetLastError());
+    goto stop_child;
+  }
+  CloseHandle(pi.hThread);pi.hThread=NULL;
+  WaitForSingleObject(pi.hProcess,INFINITE);
+  if(!GetExitCodeProcess(pi.hProcess,&exit_code))goto stop_child;
+  message(L"UNIFIED: game exit code=%lu",(unsigned long)exit_code);
+  preserve_crashed_game_log(exit_code,runtime_log,&log_before,had_prior_log);
+  ok=exit_code==0;
+  goto close_child;
+ stop_child:
+  if(launched) {
+    TerminateProcess(pi.hProcess,0xC0000142u);
+    WaitForSingleObject(pi.hProcess,INFINITE);
+  }
+ close_child:
+  if(pi.hThread)CloseHandle(pi.hThread);
+  if(pi.hProcess)CloseHandle(pi.hProcess);
+ restore_environment:
+  if(had_launcher)
+    SetEnvironmentVariableW(L"SPIDERMAN2K1FIX_LAUNCHER_DIR",old_launcher);
+  else
+    SetEnvironmentVariableW(L"SPIDERMAN2K1FIX_LAUNCHER_DIR",NULL);
+  return ok;
+}
+#endif
 static int launch_game(int verify_exe){
+#ifdef SPIDER_UNIFIED_INSTALL
+  return launch_unified_game(verify_exe);
+#else
   wchar_t path[SPIDER_INSTALLER_PATH],cmd[SPIDER_INSTALLER_PATH+4];
   STARTUPINFOW si;PROCESS_INFORMATION pi;DWORD exit_code=0;
   wchar_t runtime_log[SPIDER_INSTALLER_PATH];
@@ -1228,6 +1315,7 @@ static int launch_game(int verify_exe){
   message(L"LAUNCH: game exit code=%lu",exit_code);
   preserve_crashed_game_log(exit_code,runtime_log,&log_before,had_prior_log);
   return exit_code==0;
+#endif
 }
 static void usage(void){
   message(L"SpiderMan2k1Fix v%hs (standalone retail ISO installer)",SPIDERMAN2K1FIX_VERSION);
