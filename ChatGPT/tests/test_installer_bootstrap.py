@@ -184,7 +184,7 @@ def test_new_launcher_replaces_unknown_owned_dll_with_single_overwriteable_bak()
         "same_file(dst,bytes,len)",
         "stashed_old_bak",
         "MoveFileExW(backup,previous,MOVEFILE_WRITE_THROUGH)",
-        "MoveFileExW(dst,backup,MOVEFILE_WRITE_THROUGH)",
+        "MoveFileExW(dst,rollback_slot,MOVEFILE_WRITE_THROUGH)",
         "MoveFileExW(previous,backup,MOVEFILE_WRITE_THROUGH)",
         "owned_runtime_dll(i)",
         "if(!DeleteFileW(previous))",
@@ -218,7 +218,8 @@ def test_upgrade_never_mutates_game_exe_or_user_ini_and_rolls_back():
         "static int launch_game(",1)[0]
     assert "verify_install_receipt(managed_root())" in upgrade
     assert "if(!deploy_payloads_to(staging)||!write_install_receipt(staging))" in upgrade
-    assert "MoveFileExW(dst,backup,MOVEFILE_WRITE_THROUGH)" in upgrade
+    assert "MoveFileExW(dst,rollback_slot,MOVEFILE_WRITE_THROUGH)" in upgrade
+    assert "const wchar_t *rollback_slot=replace_fix_without_backup(i)?previous:backup;" in upgrade
     assert "MoveFileExW(backup,dst,MOVEFILE_WRITE_THROUGH)" in upgrade
     assert "DeleteFileW(backup)" in upgrade
     assert "SpiderMan2k1Fix.updating" in upgrade
