@@ -32,6 +32,12 @@ jobs:
           SPIDER_UNIFIED_BUILD: '1'
           SPIDERMAN2K1FIX_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: bash ./build-native-msvcrt.sh
+      - name: Compile suspended-process import-alias helper (not activated)
+        run: |
+          set -euo pipefail
+          compiler="$HOME/.cache/spiderman2k1fix-toolchains/llvm-mingw-20261006-msvcrt-ubuntu-22.04-x86_64/bin/i686-w64-mingw32-clang"
+          "$compiler" -std=gnu11 -O2 -Wall -Wextra -Werror \\
+            -c installer/unified_import_alias.c -o dist/unified/unified_import_alias.o
       - name: Verify unified DLL but do not advertise a runnable installer
         run: |
           set -euo pipefail
