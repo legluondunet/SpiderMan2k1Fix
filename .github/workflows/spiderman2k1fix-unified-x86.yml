@@ -118,19 +118,19 @@ jobs:
           path: dist/unified/SpiderMan2k1Fix.exe
           retention-days: 30
           if-no-files-found: error
-      # Test binaries are needed on the Windows runner, but never mixed
-      # into the downloadable launcher artifact.
-      - name: Upload internal Windows test harness (short-lived)
-        uses: actions/upload-artifact@v4
+      # Internal PE32 fixtures are transferred to the Windows job through
+      # an ephemeral, per-run cross-OS cache rather than a second artifact.
+      # This leaves exactly one visible artifact: SpiderMan2k1Fix.exe.
+      - name: Cache internal Windows test harness for this run
+        uses: actions/cache/save@v4
         with:
-          name: SpiderMan2k1Fix-CI-Internal
+          key: spider-unified-internal-${{ github.run_id }}-${{ github.run_attempt }}
+          enableCrossOsArchive: true
           path: |
             dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe
             dist/unified/suspended-pe32-test.exe
             dist/unified/first-run-log-policy-test.exe
             dist/unified/dpi-manifest-test.exe
-          retention-days: 1
-          if-no-files-found: error
 
   unified-windows-synthetic:
     name: Windows native PE32 synthetic ISO / multi-folder rollback
@@ -146,10 +146,17 @@ jobs:
         with:
           name: SpiderMan2k1Fix
           path: dist/unified
-      - uses: actions/download-artifact@v4
+      - name: Restore internal Windows test harness from same-run cache
+        uses: actions/cache/restore@v4
         with:
-          name: SpiderMan2k1Fix-CI-Internal
-          path: dist/unified
+          key: spider-unified-internal-${{ github.run_id }}-${{ github.run_attempt }}
+          enableCrossOsArchive: true
+          fail-on-cache-miss: true
+          path: |
+            dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe
+            dist/unified/suspended-pe32-test.exe
+            dist/unified/first-run-log-policy-test.exe
+            dist/unified/dpi-manifest-test.exe
       - name: Check real and synthetic installers remain distinct
         shell: pwsh
         run: |
