@@ -17,7 +17,10 @@ class FakeAPI:
         self.deleted = []
         self.runs = [
             {"id": 222, "status": "in_progress", "event": "push"},
-            {"id": 220, "status": "completed", "event": "push"},
+            {"id": 221, "status": "completed", "event": "push",
+             "name": "SpiderMan2k1Fix Windows x86"},
+            {"id": 220, "status": "completed", "event": "push",
+             "name": "SpiderMan2k1Fix x86 (unified development)"},
             {"id": 219, "status": "completed", "event": "push"},
             {"id": 218, "status": "completed", "event": "pull_request"},
         ]
@@ -71,11 +74,23 @@ def test_preservation_requires_successful_unexpired_user_exe():
         cleaner.find_last_usable_build(fake)
 
 
-def test_older_runs_are_deleted_but_latest_newer_and_active_are_untouched():
+def test_legacy_runs_after_build_are_deleted_but_latest_and_active_are_untouched():
     fake = FakeAPI()
-    assert cleaner.prune_runs(fake, keep=220, current=999) == 2
-    assert fake.deleted == ["/actions/runs/219", "/actions/runs/218"]
+    assert cleaner.prune_runs(fake, keep=220, current=999) == 3
+    assert fake.deleted == [
+        "/actions/runs/221", "/actions/runs/219", "/actions/runs/218"
+    ]
     assert [r["id"] for r in fake.runs] == [222, 220]
+
+
+def test_newer_unified_build_is_held_for_next_cleanup_pass():
+    fake = FakeAPI()
+    fake.runs.insert(
+        0, {"id": 223, "status": "completed", "event": "push",
+            "name": "SpiderMan2k1Fix x86 (unified development)"}
+    )
+    assert cleaner.prune_runs(fake, keep=220, current=999) == 3
+    assert [r["id"] for r in fake.runs] == [223, 222, 220]
 
 
 def test_artifacts_preserve_latest_and_newer_builds():
