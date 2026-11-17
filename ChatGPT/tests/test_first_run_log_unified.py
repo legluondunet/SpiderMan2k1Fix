@@ -43,7 +43,8 @@ def test_launcher_writes_early_first_session_diagnostic_without_extra_state():
     assert "SpiderFirstRunLog_IniMissingW(first_ini)" in launch
     assert 'L"SpiderMan2k1Fix.ini"' in launch
     assert 'L"SpiderMan2k1Fix.log"' in launch
-    assert '_wfopen(runtime_log,L"ab")' in launch
+    assert '_wfopen(runtime_log,L"wb")' in launch
+    assert '_wfopen(runtime_log,L"ab")' not in launch
     assert "FIRST-RUN-LOG: initial launcher startup" in launch
     assert launch.index("SpiderFirstRunLog_IniMissingW(first_ini)") < launch.index(
         "CreateProcessW("
@@ -71,3 +72,45 @@ def test_first_session_log_is_latched_after_factory_ini_generation():
     assert "if(first_run_log_enabled)debug_log_enabled=1;" in load
     assert "first_run_log_enabled=0;" not in load
     assert CORE.count("debug_log_load_setting();") >= 2
+
+
+def test_runtime_log_is_one_game_process_not_accumulated_across_sessions():
+    core=CORE.split("static INIT_ONCE game_log_session_once=",1)[1].split(
+        "/* Windows creates a class=",1
+    )[0]
+    assert "INIT_ONCE_STATIC_INIT;" in core
+    assert "static BOOL CALLBACK game_log_prepare_session(" in core
+    assert 'f=fopen(game_log_session_path,"w");' in core
+    assert 'f=fopen(game_log_session_path,"a");' in core
+    assert "if(first_run_log_enabled)return TRUE;" in core
+    assert "InitOnceExecuteOnce(&game_log_session_once," in core
+    assert core.index('f=fopen(game_log_session_path,"w");') < core.index(
+        'f=fopen(game_log_session_path,"a");'
+    )
+    assert core.index("if(!debug_log_enabled)return;") < core.index(
+        "InitOnceExecuteOnce(&game_log_session_once,"
+    )
+    assert 'fopen(path,"a")' not in CORE
+    # No session rollover on --verify / --install-only (launcher only starts
+    # the game through launch_unified_game, not for verification).
+    launch=INSTALLER.split("static int launch_unified_game(",1)[1].split(
+        "static int launch_game(",1
+    )[0]
+    assert 'L"SpiderMan2k1Fix.log"' in launch
+    assert "CreateProcessW(path,cmd" in launch
+    assert '_wfopen(runtime_log,L"wb")' in launch
+
+
+def test_first_unified_launch_does_not_lose_pre_game_diagnostics():
+    core=CORE.split("static BOOL CALLBACK game_log_prepare_session(",1)[1].split(
+        "static void log_line(",1
+    )[0]
+    assert 'if(first_run_log_enabled)return TRUE;' in core
+    launch=INSTALLER.split("static int launch_unified_game(",1)[1].split(
+        "static int launch_game(",1
+    )[0]
+    assert launch.index('_wfopen(runtime_log,L"wb")') < launch.index(
+        'CreateProcessW(path,cmd'
+    )
+    assert 'FIRST-RUN-LOG: initial launcher startup' in launch
+    assert 'f=fopen(game_log_session_path,"a");' in CORE
