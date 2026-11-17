@@ -1,0 +1,47 @@
+name: Experimental SpiderMan2k1Fix unified DLL (NOT RELEASE)
+
+on:
+  push:
+    branches: [feat/unified-game-layout-state-docs]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spiderman2k1fix-unified-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unified-pe32:
+    name: Build and inspect experimental unified fix.dll (PE32)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check isolated startup contracts
+        run: python3 -m pytest -q ChatGPT/tests/test_unified_bootstrap_contract.py
+      - name: Compile current baseline plus opt-in unified DLL with MSVCRT
+        env:
+          SPIDER_UNIFIED_BUILD: '1'
+          SPIDERMAN2K1FIX_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash ./build-native-msvcrt.sh
+      - name: Verify unified DLL but do not advertise a runnable installer
+        run: |
+          set -euo pipefail
+          file dist/unified/fix.dll | grep -q 'PE32'
+          objdump -p dist/unified/fix.dll > dist/unified/pe-info.txt
+          grep -Eq '(^|[[:space:]])DirectDrawCreateEx([[:space:]]|$)' dist/unified/pe-info.txt
+          ! grep -Eiq 'DLL Name:[[:space:]]*(winmm|ddraw)\\.dll' dist/unified/pe-info.txt
+          sha256sum dist/unified/fix.dll
+          echo 'This developer DLL is not a playable SpiderMan2k1Fix candidate.'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpiderMan2k1Fix-UNIFIED-DLL-DEVELOPER-ONLY
+          path: dist/unified/fix.dll
+          if-no-files-found: error
+          retention-days: 7
