@@ -575,22 +575,63 @@ static void focus_probe_window_system(const char *stage) {
   focus_log(line);
 }
 #ifdef SPIDER_UNIFIED_FIX
-/* The verified game mouse is disabled at the original PCShell gates, so
- * leaving the Windows pointer hidden/captured serves NO gameplay purpose.
- * Unlike legacy mode, do not hide it again on returning to Spider-Man.
- * This runs on the game Flip thread, not in the loader or a foreign HWND.
- * Only remove a ClipCursor rectangle which exactly equals the GAME window
- * (and is smaller than the full virtual desktop). Leave other applications'
- * cursor visibility/clip and every unrelated cursor rectangle alone. */
+/* The verified original game mouse is disabled: keep the DESKTOP mouse
+ * free across the whole virtual desktop, but hide its pointer after
+ * 2.5 seconds without motion INSIDE the focused game HWND. This is cursor
+ * visibility only, not a game mouse input path or a pointer capture.
+ * The game Flip thread owns each ShowCursor counter adjustment. */
+#define SPIDER_UNIFIED_CURSOR_IDLE_MS 2500u
+static POINT unified_cursor_last_pos={0,0};
+static DWORD unified_cursor_last_motion_tick=0;
+static int unified_cursor_seen=0;
+static int unified_cursor_hide_calls=0;
+static int unified_cursor_idle_log_count=0;
+
+/* Balance exactly the decrements issued by the idle-hiding policy. */
+static void focus_unified_cursor_unhide_ours(void) {
+  while(unified_cursor_hide_calls>0) {
+    ShowCursor(TRUE);
+    --unified_cursor_hide_calls;
+  }
+}
+/* The game may still have hidden its OS cursor independently. Bring the
+ * display counter just to visible (bounded), only on our game thread and
+ * only while Spider-Man owns foreground. Do not change other HWND cursors. */
+static void focus_unified_cursor_show_foreground(void) {
+  CURSORINFO ci;
+  int i;
+  memset(&ci,0,sizeof(ci));ci.cbSize=sizeof(ci);
+  if(!GetCursorInfo(&ci))return;
+  if(!(ci.flags&CURSOR_SHOWING)) {
+    for(i=0;i<16;i++) {
+      int display=ShowCursor(TRUE);
+      ++cursor_display_increments;
+      if(display>=0)break;
+    }
+  }
+  /* Original PC code sometimes leaves no OS cursor handle. Only supply the
+   * ordinary desktop arrow when its own HWND currently has the foreground. */
+  if(GetForegroundWindow()==tracked_window && !ci.hCursor)
+    SetCursor(LoadCursorA(NULL,IDC_ARROW));
+}
 static void focus_unified_cursor_available(void) {
   CURSORINFO ci;
   RECT clipped={0},window={0},desktop;
-  int result=0;
-  int calls=0;
-  static int reported=0,release_reported=0;
-  if(!tracked_window || !IsWindow(tracked_window) ||
-     GetForegroundWindow()!=tracked_window ||
-     InterlockedCompareExchange(&cursor_visibility_test,0,0)!=1)return;
+  POINT pos;
+  DWORD now;
+  int foreground,inside=0,moved=0;
+  static int release_reported=0,show_reported=0;
+  foreground=tracked_window && IsWindow(tracked_window) &&
+             GetForegroundWindow()==tracked_window;
+  /* A cursor hidden by our policy must be restored whenever Spider-Man
+   * loses foreground, including during the blocking focus-pause loop.
+   * Do not call SetCursor while another application owns the desktop. */
+  if(!foreground) {
+    focus_unified_cursor_unhide_ours();
+    unified_cursor_seen=0;
+    return;
+  }
+  if(InterlockedCompareExchange(&cursor_visibility_test,0,0)!=1)return;
   desktop.left=GetSystemMetrics(SM_XVIRTUALSCREEN);
   desktop.top=GetSystemMetrics(SM_YVIRTUALSCREEN);
   desktop.right=desktop.left+GetSystemMetrics(SM_CXVIRTUALSCREEN);
@@ -603,23 +644,66 @@ static void focus_unified_cursor_available(void) {
       release_reported=1;
     }
   }
-  memset(&ci,0,sizeof(ci));ci.cbSize=sizeof(ci);
-  if(!GetCursorInfo(&ci) || (ci.flags&CURSOR_SHOWING))return;
-  /* ShowCursor uses a thread display counter; take just enough increments
-   * to make it nonnegative. Never undo these when game regains foreground.
-   * The original game may re-hide it, so check again on later Flips. */
-  for(calls=0;calls<16;calls++) {
-    result=ShowCursor(TRUE);
-    ++cursor_display_increments;
-    if(result>=0)break;
+  if(!GetCursorPos(&pos) || !GetWindowRect(tracked_window,&window)) {
+    /* If cursor coordinates are unavailable (e.g. Wine transition), do
+     * not accidentally hide the pointer based on an old position. */
+    focus_unified_cursor_unhide_ours();
+    unified_cursor_seen=0;
+    focus_unified_cursor_show_foreground();
+    return;
   }
-  /* Game code can leave the Win32 cursor handle NULL even after unhiding.
-   * Set the stock desktop arrow only while the game is foreground. */
-  if(GetForegroundWindow()==tracked_window && !ci.hCursor)
-    SetCursor(LoadCursorA(NULL,IDC_ARROW));
-  if(!reported) {
-    focus_log("INPUT-CURSOR: unified cursor restored; do not hide on game foreground (game mouse disabled)");
-    reported=1;
+  now=GetTickCount();
+  inside=PtInRect(&window,pos);
+  if(!unified_cursor_seen || !inside ||
+     pos.x!=unified_cursor_last_pos.x || pos.y!=unified_cursor_last_pos.y) {
+    moved=unified_cursor_seen && inside &&
+          (pos.x!=unified_cursor_last_pos.x ||
+           pos.y!=unified_cursor_last_pos.y);
+    unified_cursor_seen=inside;
+    unified_cursor_last_pos=pos;
+    unified_cursor_last_motion_tick=now;
+    if(unified_cursor_hide_calls && moved &&
+       unified_cursor_idle_log_count<8) {
+      focus_log("INPUT-CURSOR: pointer moved; showing desktop arrow again");
+      ++unified_cursor_idle_log_count;
+    }
+  }
+  /* Never hide the pointer outside the game, even if Spider-Man is still
+   * the foreground HWND and the user is heading to another monitor. */
+  if(!inside ||
+     (DWORD)(now-unified_cursor_last_motion_tick)<
+         SPIDER_UNIFIED_CURSOR_IDLE_MS) {
+    focus_unified_cursor_unhide_ours();
+    focus_unified_cursor_show_foreground();
+    if(!show_reported){
+      focus_log("INPUT-CURSOR: unified free pointer with 2500ms idle-hide inside game; movement restores it");
+      show_reported=1;
+    }
+    return;
+  }
+  /* Only on a stationary pointer INSIDE the game. No ClipCursor, no mouse
+   * message interception, no foreground switching. Hide with a balanced
+   * ShowCursor(FALSE) and restore on movement/exit/focus loss. */
+  memset(&ci,0,sizeof(ci));ci.cbSize=sizeof(ci);
+  if(unified_cursor_hide_calls>0)return;
+  if(GetCursorInfo(&ci) && (ci.flags&CURSOR_SHOWING)){
+    int i,display=0;
+    for(i=0;i<16;i++){
+      display=ShowCursor(FALSE);
+      ++unified_cursor_hide_calls;
+      if(display<0)break;
+    }
+    if(display>=0) {
+      /* Driver did not accept a bounded hide; do not leave our counter
+       * decrements behind and do not repeat until the pointer moves. */
+      focus_unified_cursor_unhide_ours();
+      unified_cursor_last_motion_tick=now;
+      return;
+    }
+    if(unified_cursor_idle_log_count<8) {
+      focus_log("INPUT-CURSOR: idle 2500ms over game; desktop pointer hidden until motion");
+      ++unified_cursor_idle_log_count;
+    }
   }
 }
 #endif
@@ -659,10 +743,10 @@ static void focus_window_transition(int foreground) {
     focus_log(line);
   }
 #else
-  /* New architecture: cursor remains freely available, not re-hidden on
-   * foreground; focus recovery never changes the game window Z-order. */
+  /* The unified cursor updater restores our idle-hide on focus loss and
+   * re-arms a fresh grace period when the game regains foreground. */
   (void)i;(void)result;(void)line;
-  if(foreground)focus_unified_cursor_available();
+  focus_unified_cursor_available();
 #endif
   if(foreground && InterlockedCompareExchange(&zorder_test,0,0)==1 &&
      GetForegroundWindow()==tracked_window && IsWindow(tracked_window) &&
@@ -690,9 +774,9 @@ void SpiderInputFocus_OnFlip(LONG flip_number) {
   SpiderWineFocusAutostart_TryRecover(focus_log);
   if(!diagnostic_active || !tracked_window) return;
 #ifdef SPIDER_UNIFIED_FIX
-  /* The initial window already exists at Flip #1. Restore the unused OS
-   * pointer even when no focus transition occurred, and recover if original
-   * Win32 cursor code hides it again while game remains foreground. */
+  /* Poll native cursor coordinates on the game Flip thread. Show during
+   * motion and on window exit; hide only after 2500ms idle over our HWND.
+   * This remains active without a focus transition or mouse input hook. */
   focus_unified_cursor_available();
 #endif
   fg=GetForegroundWindow();foreground=(fg==tracked_window)?1:0;
