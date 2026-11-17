@@ -541,6 +541,7 @@ done:
 }
 /* Hash logical ISO file data directly; never copy a second 450 MB staging
  * tree merely to authenticate a pre-existing game installation. */
+#ifndef SPIDER_UNIFIED_INSTALL
 static int sha256_iso_entry(DiscImage *iso,const DiscEntry *item,char result[65]){
   HCRYPTPROV provider=0;HCRYPTHASH hash=0;
   BYTE buffer[SPIDER_INSTALLER_BUFFER],digest[32];
@@ -563,6 +564,7 @@ done:
   if(provider)CryptReleaseContext(provider,0);
   return ok;
 }
+#endif /* legacy receipt enrollment intentionally disabled */
 /* Normal install takes exactly one adjacent original image. CUE metadata
  * identifies its BIN/IMG track internally; users never pass media positional
  * arguments unless performing --inspect. Do not follow reparse points. */
@@ -1145,6 +1147,7 @@ done:
  * the user's ORIGINAL adjacent ISO/CUE is available. Every installed
  * game byte is compared to its CD counterpart, never to a self-generated
  * hash of an unverified existing directory. Never rewrite any game file. */
+#ifndef SPIDER_UNIFIED_INSTALL
 static int enroll_game_receipt_from_disc(void){
   wchar_t disc[SPIDER_INSTALLER_PATH],path[SPIDER_INSTALLER_PATH];
   wchar_t receipt[SPIDER_INSTALLER_PATH];
@@ -1185,6 +1188,7 @@ done:
   iso_close(&iso);
   return ok;
 }
+#endif /* legacy receipt enrollment intentionally disabled */
 static void discard_upgrade_staging(const wchar_t *staging){
 #ifdef SPIDER_UNIFIED_INSTALL
   wchar_t file[SPIDER_INSTALLER_PATH],dir[SPIDER_INSTALLER_PATH];
