@@ -104,3 +104,25 @@ graphics initialization.
    DirectDraw errors and shutdown, both Windows 11 and Wine.
 
 **Do not merge until all gates pass.** No release implied.
+
+## Progress — 17 November 2026
+
+The experimental compile path now produces a real PE32 x86 standalone
+installer bundling a single `game/fix.dll`, pinned SDL3 runtime and license,
+project documentation and native Linux focus observer. It retains the original
+retail EXE hash gate, includes a suspended-process import-alias and No-CD
+bootstrap, verifies the two `state/` receipts, and stages all five top-level
+directories before ordered publication with rollback. Old installations are
+neither adopted nor automatically renamed.
+
+[GitHub Actions #44083007598](https://github.com/legluondunet/SpiderMan2k1Fix/actions/runs/44083007598)
+passed the unified PE32 build and native Windows synthetic ISO integration
+tests, including forced failure during directory publication, rollback,
+tampered SHA receipts, user-modified data and refusal to overwrite an existing
+directory. Original v2.0 WinMM installer tests also remain green.
+
+**Still not accepted:** these synthetic tests deliberately use a non-runnable
+fake game and do not exercise the real import alias with the original
+executable. The DirectSound NULL primary-buffer guard of PR #161 is not yet
+integrated into the unified process bootstrap. Cross-platform gameplay,
+SDL3, focus and audio tests remain necessary before merge.
