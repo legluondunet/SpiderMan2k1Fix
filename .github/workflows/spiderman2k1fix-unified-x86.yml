@@ -1,8 +1,8 @@
-name: Experimental SpiderMan2k1Fix unified DLL (NOT RELEASE)
+name: SpiderMan2k1Fix unified x86 (NOT A RELEASE)
 
 on:
   push:
-    branches: [feat/unified-game-layout-state-docs]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   unified-pe32:
-    name: Build and inspect experimental unified fix.dll (PE32)
+    name: Build and inspect unified fix.dll (PE32)
     runs-on: ubuntu-22.04
     timeout-minutes: 25
     steps:

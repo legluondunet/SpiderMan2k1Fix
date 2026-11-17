@@ -1,9 +1,13 @@
-# SpiderMan2k1Fix — experimental unified build (NOT A RELEASE)
+# SpiderMan2k1Fix — unified development build (NOT A RELEASE)
 
-This test-only Spider-Man 2001 compatibility launcher uses one project DLL
-(`game/fix.dll`) and does not install a local `winmm.dll`. It has passed
-native Windows PE32 **synthetic** installation and rollback tests, but not yet
-been approved for actual game sessions on Windows 11 or Wine/Proton.
+The single-DLL architecture was merged into `main` through PR #162 on
+17 November 2026. This test-only Spider-Man 2001 compatibility launcher
+uses one project DLL (`game/fix.dll`), without a local `winmm.dll`.
+Native Windows 11 gameplay, DPI-aware 1920×1200 rendering, pointer behavior,
+focus-pause and clean shutdown have been observed on real hardware; synthetic
+Windows PE32 installation and rollback checks have passed. Equivalent
+end-to-end Wine/Proton validation is still outstanding. The published v2.0.0
+release is separate and continues to use its earlier WinMM architecture.
 
 **Never use this candidate to modify your existing working installation.**
 Use a new empty folder with the test launcher and one legitimate retail ISO/CUE
@@ -112,17 +116,26 @@ The *installer log* and *inspection log* are independent of the in-game
 debug switch and each is also reset at its own invocation. They continue
 to record verification, installation, updates and launch errors.
 
-## Diagnostic acceptance still outstanding
+## Validation and release boundary
 
-- Real original-game import/No-CD path under Windows 11 and Wine.
-- DirectDraw7 cooperative level and intermittent Windows `E_FAIL` issue #160.
-- Preserve the null DirectSound cleanup guard under review in draft PR #161.
-- SDL3 controllers, cutscenes, pause audio, native 4:3 menus and widescreen,
-  F9 screenshots, Alt+Tab/focus, saves and shutdown.
+- **Windows 11:** real-game startup, centered DPI-aware 1920×1200 output,
+  multi-monitor pointer and focus-pause behavior, sound and clean exit were
+  exercised with the unified prototype. This is not a complete regression
+  pass across all levels and controller configurations.
+- **DirectDraw7 issue #160:** intermittent `SetCooperativeLevel E_FAIL`
+  was not reproduced on the latest Windows run. The exact-signature-gated
+  DirectSound NULL-cleanup guard investigated in closed PR #161 is included
+  in the unified suspended-process bootstrap, but the upstream cause is
+  not proven fixed. Keep issue #160 open for recurrence evidence.
+- **Wine/Proton:** end-to-end installation, startup, gameplay, SDL3 pads,
+  cutscenes, 4:3/widescreen, F9, Alt+Tab/focus, saves and exit still need
+  confirmation on the unified architecture.
+- **CI:** the unified PE32 and synthetic Windows installation/rollback
+  workflow runs on `main` and pull requests, in addition to legacy
+  compatibility workflows. CI does not substitute for real-game testing.
 
-Only merge PR #162 after native gameplay validation and the above critical
-startup guard integration. No release is implied by a green CI or a
-TEST-ONLY artifact.
+Merging PR #162 into `main` did not publish a release; developer artifacts
+remain explicitly TEST-ONLY and must not be presented as the v2.0.0 download.
 
 ## Retail PE32 import compatibility (17 November 2026)
 
@@ -258,6 +271,7 @@ The existing safety policy remains: pause only after confirmed focus loss,
 let OS Alt+Tab pass, and resume only on a fresh key press+release after
 the game regains focus (or the existing verified gamepad wake).
 
-CI builds both runtimes and checks source/contract tests. Runtime
-confirmation of cursor movement between monitors, freeze of video and
-secondary audio on focus loss, and keyboard return remains necessary.
+CI builds both runtimes and checks source/contract tests. Native Windows 11
+logging and manual tests have confirmed cursor movement between monitors,
+freeze of video and secondary audio on focus loss, and keyboard resume.
+Wine/Proton confirmation of the unified architecture is still pending.

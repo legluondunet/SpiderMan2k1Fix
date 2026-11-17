@@ -7,6 +7,8 @@
 
 SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spider-Man*, released by Activision in 2001. It improves compatibility with modern Windows systems and Linux/Wine while adding new features.
 
+**Development:** `main` has unified `game/fix.dll` ([PR #162](https://github.com/legluondunet/SpiderMan2k1Fix/pull/162)), not yet released. This page documents v2.0.0; see the [unified build guide](docs/unified/README.md).
+
 ## Screenshots
 
 <table>
