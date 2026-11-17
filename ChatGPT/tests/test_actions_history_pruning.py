@@ -36,8 +36,12 @@ class FakeAPI:
     def get(self, path):
         if path.startswith("/actions/workflows/"):
             return {"workflow_runs": self.runs}
-        if path.startswith("/actions/runs/220/artifacts"):
-            return {"artifacts": self.artifacts}
+        if path.startswith("/actions/runs/") and "/artifacts?" in path:
+            run_id = int(path.split("/")[3])
+            return {"artifacts": [
+                artifact for artifact in self.artifacts
+                if artifact.get("workflow_run", {}).get("id") == run_id
+            ]}
         if path.startswith("/actions/artifacts"):
             return {"artifacts": self.artifacts}
         if path.startswith("/actions/caches"):
