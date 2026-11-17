@@ -24,5 +24,7 @@ int wmain(void) {
   }
   wprintf(L"DPI-MANIFEST-TEST: process-awareness=%d hr=0x%08lx\n",awareness,(unsigned long)hr);
   if(mod)FreeLibrary(mod);
-  return SUCCEEDED(hr)&&awareness==1?0:1;
+  /* AppCompat HIGHDPIAWARE may select per-monitor DPI (2), whereas a
+   * sidecar manifest selects system-DPI (1). Both use real HWND pixels. */
+  return SUCCEEDED(hr)&&(awareness==1 || awareness==2)?0:1;
 }
