@@ -170,11 +170,11 @@ if [[ "${SPIDER_UNIFIED_BUILD:-0}" == "1" ]]; then
     exit 1
   fi
   imports=$("$OBJDUMP" -p "$probe_dir/fix.dll" | grep 'DLL Name:' || true)
-  if printf '%s\\n' "$imports" | grep -Eiq 'DLL Name:[[:space:]]*(api-ms-win-crt-[^[:space:]]*|ucrtbase\\.dll|libgcc_s[^[:space:]]*\\.dll|winmm\\.dll|ddraw\\.dll)'; then
+  if printf '%s\n' "$imports" | grep -Eiq 'DLL Name:[[:space:]]*(api-ms-win-crt-[^[:space:]]*|ucrtbase\.dll|libgcc_s[^[:space:]]*\.dll|winmm\.dll|ddraw\.dll)'; then
     echo 'ERROR: unified fix.dll has an unexpected CRT, WinMM or DirectDraw import.' >&2
     exit 1
   fi
-  if ! printf '%s\\n' "$imports" | grep -Eiq 'DLL Name:[[:space:]]*msvcrt\\.dll'; then
+  if ! printf '%s\n' "$imports" | grep -Eiq 'DLL Name:[[:space:]]*msvcrt\.dll'; then
     echo 'ERROR: unified fix.dll must import MSVCRT.' >&2
     exit 1
   fi
