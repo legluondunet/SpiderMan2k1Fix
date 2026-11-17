@@ -81,6 +81,7 @@ jobs:
           mkdir -p dist/unified/package/game dist/unified/package/docs \
             dist/unified/package/third_party/SDL3 dist/unified/package/linux
           cp dist/unified/fix.dll dist/unified/package/game/fix.dll
+          cp game_dpi.manifest dist/unified/package/game/SpideyPC.exe.manifest
           cp CHANGELOG.md LICENSE dist/unified/package/docs/
           cp docs/unified/README.md dist/unified/package/docs/README.md
           cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 \

@@ -62,3 +62,12 @@ def test_missing_ini_only_file_not_found_and_existing_choice_never_overwritten()
     assert "WritePrivateProfileString" not in POLICY
     assert "CreateFile" not in POLICY
     assert "DeleteFile" not in POLICY
+
+def test_first_session_log_is_latched_after_factory_ini_generation():
+    load=CORE.split("static void debug_log_load_setting(void) {",1)[1].split(
+        "static void log_line(",1
+    )[0]
+    assert "if(SpiderFirstRunLog_IniMissingA(path))first_run_log_enabled=1;" in load
+    assert "if(first_run_log_enabled)debug_log_enabled=1;" in load
+    assert "first_run_log_enabled=0;" not in load
+    assert CORE.count("debug_log_load_setting();") >= 2

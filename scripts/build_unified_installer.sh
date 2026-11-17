@@ -21,6 +21,7 @@ if test -n "$(printenv SPIDER_INSTALLER_WINDRES || true)"; then RC="$SPIDER_INST
 OBJDUMP="$(command -v i686-w64-mingw32-objdump || command -v objdump || true)"
 for p in \
  dist/unified/package/game/fix.dll \
+ dist/unified/package/game/SpideyPC.exe.manifest \
  dist/unified/package/third_party/SDL3/SDL3.dll \
  dist/unified/package/third_party/SDL3/LICENSE.txt \
  dist/unified/package/linux/spiderman-focus-helper \
@@ -41,6 +42,7 @@ cat > dist/unified/payload.rc <<'RCDATA'
 1106 RCDATA "dist/unified/package/docs/README.md"
 1107 RCDATA "dist/unified/package/docs/CHANGELOG.md"
 1108 RCDATA "dist/unified/package/docs/LICENSE"
+1109 RCDATA "dist/unified/package/game/SpideyPC.exe.manifest"
 RCDATA
 "$RC" -I . -O coff -i dist/unified/payload.rc -o dist/unified/payload.o
 "$CC" -std=gnu11 -O2 -Wall -Wextra -Werror -static-libgcc -municode \

@@ -26,6 +26,7 @@
 #ifdef SPIDER_UNIFIED_INSTALL
 #define SPIDER_GAME_DIR L"game"
 #define RES_LICENSE 1108
+#define RES_DPI_MANIFEST 1109
 #else
 #define SPIDER_GAME_DIR L"spiderman2001"
 #endif
@@ -642,6 +643,7 @@ static int discard_unified_new_install(const wchar_t *staging){
     L"game\\fix.dll",L"third_party\\SDL3\\SDL3.dll",
     L"third_party\\SDL3\\LICENSE.txt",L"linux\\spiderman-focus-helper",
     L"docs\\README.md",L"docs\\CHANGELOG.md",L"docs\\LICENSE",
+    L"game\\SpideyPC.exe.manifest",
     L"state\\installed-game.sha256",L"state\\installed-resources.sha256"
   };
   static const wchar_t *folders[]={
@@ -902,6 +904,7 @@ static int deploy_payloads_to(const wchar_t *root){
      !combine(state,SPIDER_INSTALLER_PATH,root,L"state") || !safe_directory(state,1))
     return 0;
   return resource_install(RES_FIX,game,L"fix.dll") &&
+         resource_install(RES_DPI_MANIFEST,game,L"SpideyPC.exe.manifest") &&
          resource_install(RES_SDL3,sdl,L"SDL3.dll") &&
          resource_install(RES_SDL3_LICENSE,sdl,L"LICENSE.txt") &&
          resource_install(RES_X11,linux,L"spiderman-focus-helper") &&
@@ -937,6 +940,7 @@ static int verify_payloads(void){
      !combine(linux,SPIDER_INSTALLER_PATH,launcher_dir,L"linux") || !safe_directory(linux,0))
     return 0;
   return resource_verify(RES_FIX,game_dir,L"fix.dll") &&
+         resource_verify(RES_DPI_MANIFEST,game_dir,L"SpideyPC.exe.manifest") &&
          resource_verify(RES_SDL3,sdl,L"SDL3.dll") &&
          resource_verify(RES_SDL3_LICENSE,sdl,L"LICENSE.txt") &&
          resource_verify(RES_X11,linux,L"spiderman-focus-helper") &&
@@ -964,7 +968,11 @@ static int verify_payloads(void){
 /* Explicit --install-only upgrades only installer-owned resource bytes.
  * A receipt records exact prior hashes. Unknown, modified or foreign files
  * are never replaced. INI/save/game files are not in this list. */
+#ifdef SPIDER_UNIFIED_INSTALL
+#define OWNED_COUNT 8
+#else
 #define OWNED_COUNT 7
+#endif
 #ifdef SPIDER_UNIFIED_INSTALL
 static const wchar_t *owned_paths[OWNED_COUNT]={
   L"game\\fix.dll",
@@ -973,7 +981,8 @@ static const wchar_t *owned_paths[OWNED_COUNT]={
   L"linux\\spiderman-focus-helper",
   L"docs\\README.md",
   L"docs\\CHANGELOG.md",
-  L"docs\\LICENSE"
+  L"docs\\LICENSE",
+  L"game\\SpideyPC.exe.manifest"
 };
 static const wchar_t *receipt_name=L"state\\installed-resources.sha256";
 #else
@@ -1046,7 +1055,21 @@ static int verify_install_receipt_allow_unknown_dll(const wchar_t *root){
   }
   for(i=0;i<OWNED_COUNT;i++){
     DWORD attr;
-    if(!fgets(line,sizeof(line),in)){fclose(in);return 0;}
+    if(!fgets(line,sizeof(line),in)){
+#ifdef SPIDER_UNIFIED_INSTALL
+      /* Older verified unified installations have seven hashes and NO
+       * manifest. Only the explicit --install-only path accepts this
+       * predecessor; --verify remains strict about all eight resources.
+       * Never claim a preexisting unknown manifest as an old installation. */
+      if(i==OWNED_COUNT-1u &&
+         combine(path,SPIDER_INSTALLER_PATH,root,owned_paths[i])) {
+        DWORD old=GetFileAttributesW(path);
+        if(old==INVALID_FILE_ATTRIBUTES &&
+           GetLastError()==ERROR_FILE_NOT_FOUND){fclose(in);return 1;}
+      }
+#endif
+      fclose(in);return 0;
+    }
     n=strcspn(line,"\r\n");line[n]=0;
     if(n!=64 || strspn(line,"0123456789abcdef")!=64 ||
        !combine(path,SPIDER_INSTALLER_PATH,root,owned_paths[i])){
@@ -1197,6 +1220,7 @@ static void discard_upgrade_staging(const wchar_t *staging){
     L"game\\fix.dll",L"third_party\\SDL3\\SDL3.dll",
     L"third_party\\SDL3\\LICENSE.txt",L"linux\\spiderman-focus-helper",
     L"docs\\README.md",L"docs\\CHANGELOG.md",L"docs\\LICENSE",
+    L"game\\SpideyPC.exe.manifest",
     L"state\\installed-resources.sha256"
   };
   static const wchar_t *folders[]={
@@ -1245,7 +1269,7 @@ static int upgrade_recognized_payloads(void){
   static const WORD resource_ids[OWNED_COUNT]={
 #ifdef SPIDER_UNIFIED_INSTALL
     RES_FIX,RES_SDL3,RES_SDL3_LICENSE,RES_X11,RES_README,
-    RES_CHANGELOG,RES_LICENSE
+    RES_CHANGELOG,RES_LICENSE,RES_DPI_MANIFEST
 #else
     RES_WINMM,RES_FIX,RES_SDL3,RES_SDL3_LICENSE,RES_X11,
     RES_README,RES_CHANGELOG
@@ -1316,7 +1340,13 @@ static int upgrade_recognized_payloads(void){
       goto abort_staging;
     attr=GetFileAttributesW(dst);
     if(attr==INVALID_FILE_ATTRIBUTES){
-      if(!owned_runtime_dll(i) || GetLastError()!=ERROR_FILE_NOT_FOUND){
+      int allow_missing=owned_runtime_dll(i);
+#ifdef SPIDER_UNIFIED_INSTALL
+      /* The new manifest is the ONLY allowed absent non-DLL resource
+       * when upgrading a receipt-authenticated seven-resource install. */
+      if(i==OWNED_COUNT-1u)allow_missing=1;
+#endif
+      if(!allow_missing || GetLastError()!=ERROR_FILE_NOT_FOUND){
         message(L"UPGRADE: missing non-DLL resource or inaccessible file %ls",all_paths[i]);
         goto abort_staging;
       }
@@ -1420,7 +1450,7 @@ static int upgrade_recognized_payloads(void){
     if(!combine(dst,SPIDER_INSTALLER_PATH,managed_root(),all_paths[i])||
        _snwprintf(backup,SPIDER_INSTALLER_PATH,L"%ls.bak",dst)<0)
       continue;
-    if(!DeleteFileW(backup))
+    if(moved_original[i] && !DeleteFileW(backup))
       message(L"UPGRADE: previous backup still present: %ls",backup);
   }
   discard_upgrade_staging(staging);
@@ -1488,6 +1518,10 @@ static int launch_unified_game(int verify_exe) {
   }
   if(!resource_verify(RES_FIX,game_dir,L"fix.dll")) {
     message(L"UNIFIED: fix.dll missing or differs from the installed launcher payload");
+    return 0;
+  }
+  if(!resource_verify(RES_DPI_MANIFEST,game_dir,L"SpideyPC.exe.manifest")) {
+    message(L"UNIFIED: system-DPI manifest absent or altered; refusing unprotected screen geometry");
     return 0;
   }
   /* First-run diagnostics append beside the launcher. Never follow a
@@ -1738,7 +1772,8 @@ int wmain(int argc,wchar_t **argv) {
   if(argc==2 && !wcscmp(argv[1],L"--verify")){
     if(verified_retail(gameexe)&&verify_install_receipt(managed_root())&&
        verify_game_receipt(managed_root())&&verify_payloads()){
-      message(L"VERIFY: OK original game EXE, 8 game files/receipt, 7 bundled components/receipt");
+      message(L"VERIFY: OK original game EXE, 8 game files/receipt, %u bundled components/receipt",
+              (unsigned)OWNED_COUNT);
       result=0;
     }else{
       message(L"VERIFY: FAILED game EXE, 8 game files/receipt or bundled components");

@@ -21,6 +21,10 @@ def test_unified_installer_is_opt_in_and_installs_root_receipts():
     assert "installer/unified_import_alias.c" in build
     assert '1102 RCDATA "dist/unified/package/game/fix.dll"' in build
     assert '1108 RCDATA "dist/unified/package/docs/LICENSE"' in build
+    assert '1109 RCDATA "dist/unified/package/game/SpideyPC.exe.manifest"' in build
+    assert 'L"game\\\\SpideyPC.exe.manifest"' in src
+    assert "RES_DPI_MANIFEST" in src
+    assert "OWNED_COUNT 8" in src
 
 def test_fixture_hash_is_exact_and_injected_failure_is_test_only():
     generator=(ROOT/"scripts/build_unified_test_fixture.py").read_text()

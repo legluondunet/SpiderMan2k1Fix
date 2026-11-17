@@ -10,15 +10,15 @@ import tempfile, sys
 from windows_installer_end_to_end import make_iso, execute, scenario, FILES
 
 DIRS=("game","third_party","docs","linux","state")
-OWNED=("game/fix.dll","third_party/SDL3/SDL3.dll",
+OWNED=("game/fix.dll","game/SpideyPC.exe.manifest","third_party/SDL3/SDL3.dll",
        "third_party/SDL3/LICENSE.txt","linux/spiderman-focus-helper",
        "docs/README.md","docs/CHANGELOG.md","docs/LICENSE")
 def empty(root):
     assert all(not (root/x).exists() for x in DIRS)
     assert not (root/"spiderman2k1fix.unified.installing").exists()
 
-def install(root,fixture):
-    d,e=scenario(root,"successful_install",fixture)
+def install(root,fixture,name="successful_install"):
+    d,e=scenario(root,name,fixture)
     (d/"original.iso").write_bytes(make_iso())
     log=execute(e,"--install-only",success=True)
     assert "UNIFIED: installed game/" in log,log
@@ -120,6 +120,32 @@ def main():
         assert lic.read_bytes().endswith(b"user-change")
         lic.write_bytes(license_bytes)
         execute(e,"--verify",success=True)
+        # Authenticated old unified seven-hash receipt: --verify rejects
+        # missing manifest, but --install-only upgrades atomically to eight.
+        d,e=install(base,fixture,"seven_receipt_upgrade")
+        receipt=d/"state/installed-resources.sha256"
+        manifest=d/"game/SpideyPC.exe.manifest"
+        original_manifest=manifest.read_bytes()
+        old=receipt.read_bytes().splitlines(keepends=True)
+        assert len(old)==9, len(old)  # header plus eight managed SHA-256
+        receipt.write_bytes(b"".join(old[:-1]))
+        manifest.unlink()
+        execute(e,"--verify",success=False)
+        upgraded=execute(e,"--install-only",success=True)
+        assert "UPGRADE:" in upgraded
+        assert manifest.read_bytes()==original_manifest
+        execute(e,"--verify",success=True)
+        assert len(receipt.read_bytes().splitlines())==9
+        # An unknown manifest accompanying a seven-hash receipt is NEVER
+        # silently adopted/overwritten.
+        d,e=install(base,fixture,"unknown_manifest_refused")
+        receipt=d/"state/installed-resources.sha256"
+        manifest=d/"game/SpideyPC.exe.manifest"
+        old=receipt.read_bytes().splitlines(keepends=True)
+        receipt.write_bytes(b"".join(old[:-1]))
+        manifest.write_bytes(b"FOREIGN-PRESERVE-ME")
+        execute(e,"--install-only",success=False)
+        assert manifest.read_bytes()==b"FOREIGN-PRESERVE-ME"
         d,e=scenario(base,"legacy_declined",fixture)
         (d/"original.iso").write_bytes(make_iso())
         legacy=d/"spiderman2001";legacy.mkdir()

@@ -131,3 +131,26 @@ The launcher reports the result of each check separately (PE import alias,
 No-CD, DirectSound NULL Stop guard) and never resumes an unsupported process.
 This fixes compatibility with the original PE metadata, but is not proof of
 successful gameplay; native Windows and Wine tests remain required.
+
+## DPI-aware geometry (Windows high-DPI / multiple monitors)
+
+The original 2001 EXE has **no embedded RT_MANIFEST**, and is DPI-unaware.
+The previous early `winmm.dll` proxy called `SetProcessDPIAware`
+*before* the original game window existed. The new single-DLL import-alias
+startup intentionally omits that proxy, so Windows 125% scaling otherwise
+mixes 1920×1200 DirectDraw physical pixels with a 1536×960 virtualized
+monitor rectangle. The resulting menu is offset and clipped.
+
+The unified installer bundles a project-owned *external application manifest*
+at `game/SpideyPC.exe.manifest`, declaring **System DPI awareness**. The
+original `SpideyPC.exe` byte sequence and SHA-256 remain untouched, with no
+global registry changes and no User32 calls from `fix.dll`'s DllMain. This
+matches the former proxy awareness level. The manifest is verified as the
+eighth project-owned resource in the SHA receipt; it is not a ninth original
+game file. The 7-to-8 resource receipt transition is allowed only through
+`--install-only` after validating all seven existing hashes and confirming
+that no unknown manifest occupies the destination.
+
+A native Windows CI test confirmed external-manifest activation using a
+retail-style synthetic EXE: `GetProcessDpiAwareness=PROCESS_SYSTEM_DPI_AWARE`.
+Real-game Windows 125% and Wine results still require acceptance testing.
