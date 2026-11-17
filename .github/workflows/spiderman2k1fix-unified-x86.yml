@@ -26,7 +26,7 @@ jobs:
       - name: Install regression runner
         run: python3 -m pip install --disable-pip-version-check pytest
       - name: Check isolated startup contracts
-        run: python3 -m pytest -q ChatGPT/tests/test_unified_bootstrap_contract.py
+        run: python3 -m pytest -q ChatGPT/tests/test_unified_bootstrap_contract.py ChatGPT/tests/test_unified_import_alias_contract.py ChatGPT/tests/test_unified_installer_contract.py
       - name: Compile current baseline plus opt-in unified DLL with MSVCRT
         env:
           SPIDER_UNIFIED_BUILD: '1'
@@ -46,9 +46,83 @@ jobs:
           ! grep -Eiq 'DLL Name:[[:space:]]*(winmm|ddraw)\.dll' dist/unified/pe-info.txt
           sha256sum dist/unified/fix.dll
           echo 'This developer DLL is not a playable SpiderMan2k1Fix candidate.'
+      - name: Package exact unified resources (no game content)
+        run: |
+          set -euo pipefail
+          mkdir -p dist/unified/package/game dist/unified/package/docs \
+            dist/unified/package/third_party/SDL3 dist/unified/package/linux
+          cp dist/unified/fix.dll dist/unified/package/game/fix.dll
+          cp README.md CHANGELOG.md LICENSE dist/unified/package/docs/
+          cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 \
+            -fstack-protector-strong \
+            -o dist/unified/package/linux/spiderman-focus-helper \
+            linux/spiderman-focus-helper.c -lX11
+          archive="$RUNNER_TEMP/SDL3-3.4.18-win32-x86.zip"
+          if ! curl --fail --location --retry 2 --retry-all-errors \
+            --connect-timeout 15 --max-time 75 --output "$archive" \
+            https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18-win32-x86.zip; then
+            curl --fail --location --retry 4 --retry-all-errors \
+              --connect-timeout 15 --max-time 75 --output "$archive" \
+              https://www.libsdl.org/release/SDL3-3.4.18-win32-x86.zip
+          fi
+          python3 scripts/package_sdl3_x86.py dist/unified/package/third_party/SDL3 \
+            --archive "$archive"
+          mv dist/unified/package/third_party/SDL3/SDL3-LICENSE.txt \
+             dist/unified/package/third_party/SDL3/LICENSE.txt
+          cmp third_party/SDL3-LICENSE.txt dist/unified/package/third_party/SDL3/LICENSE.txt
+          test -z "$(find dist/unified/package -name winmm.dll -print -quit)"
+      - name: Compile experimental unified installer and synthetic fixture
+        run: |
+          bash scripts/build_unified_installer.sh production
+          python3 scripts/build_unified_test_fixture.py
+          bash scripts/build_unified_installer.sh fixture
+          test -s dist/unified/SpiderMan2k1Fix-UNIFIED-TEST.exe
+          test -s dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpiderMan2k1Fix-UNIFIED-EXE-TEST-ONLY
+          path: |
+            dist/unified/SpiderMan2k1Fix-UNIFIED-TEST.exe
+            dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe
+          retention-days: 7
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: SpiderMan2k1Fix-UNIFIED-DLL-DEVELOPER-ONLY
           path: dist/unified/fix.dll
           if-no-files-found: error
           retention-days: 7
+
+  unified-windows-synthetic:
+    name: Windows native PE32 synthetic ISO / multi-folder rollback
+    runs-on: windows-latest
+    needs: unified-pe32
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: SpiderMan2k1Fix-UNIFIED-EXE-TEST-ONLY
+          path: dist/unified
+      - name: Check real and synthetic installers remain distinct
+        shell: pwsh
+        run: |
+          $real='dist/unified/SpiderMan2k1Fix-UNIFIED-TEST.exe'
+          $fixture='dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe'
+          if (!(Test-Path $real) -or !(Test-Path $fixture)) {throw 'missing unified PE32 installers'}
+          $a=(Get-FileHash $real -Algorithm SHA256).Hash
+          $b=(Get-FileHash $fixture -Algorithm SHA256).Hash
+          if ($a -eq $b) {throw 'production and synthetic fixture must differ'}
+          & $real --version
+          if ($LASTEXITCODE -ne 0) {throw 'version command failed'}
+          & $real --verify
+          if ($LASTEXITCODE -eq 0) {throw 'empty unified install must not verify'}
+          $global:LASTEXITCODE=0
+      - name: Exercise synthetic ISO installer, rollback and read-only verification
+        shell: pwsh
+        run: |
+          python ChatGPT/tests/windows_unified_installer_end_to_end.py dist/unified/SpiderMan2k1Fix-UNIFIED-TEST.exe dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe
+          if ($LASTEXITCODE -ne 0) {throw 'unified installer native integration tests failed'}
