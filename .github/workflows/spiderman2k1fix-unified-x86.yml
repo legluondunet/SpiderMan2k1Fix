@@ -37,6 +37,15 @@ jobs:
           compiler="$HOME/.cache/spiderman2k1fix-toolchains/llvm-mingw-20261006-msvcrt-ubuntu-22.04-x86_64/bin/i686-w64-mingw32-clang"
           "$compiler" -std=gnu11 -O2 -Wall -Wextra -Werror \
             -c installer/unified_import_alias.c -o dist/unified/unified_import_alias.o
+      - name: Build native remote-memory synthetic child test (x86; no game assets)
+        run: |
+          set -euo pipefail
+          compiler="$HOME/.cache/spiderman2k1fix-toolchains/llvm-mingw-20261006-msvcrt-ubuntu-22.04-x86_64/bin/i686-w64-mingw32-clang"
+          "$compiler" -std=gnu11 -O2 -Wall -Wextra -Werror -municode \
+            -Wl,--image-base,0x500000 -Wl,--subsystem,console \
+            ChatGPT/tests/windows_unified_suspended_pe32.c \
+            installer/unified_import_alias.c -o dist/unified/suspended-pe32-test.exe
+          file dist/unified/suspended-pe32-test.exe | grep -q PE32
       - name: Verify unified DLL but do not advertise a runnable installer
         run: |
           set -euo pipefail
@@ -85,6 +94,7 @@ jobs:
           path: |
             dist/unified/SpiderMan2k1Fix-UNIFIED-TEST.exe
             dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe
+            dist/unified/suspended-pe32-test.exe
           retention-days: 7
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
@@ -121,6 +131,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) {throw 'version command failed'}
           & $real --verify
           if ($LASTEXITCODE -eq 0) {throw 'empty unified install must not verify'}
+          $global:LASTEXITCODE=0
+      - name: Execute suspended child PE32 alias and startup guards on native Windows
+        shell: pwsh
+        run: |
+          & 'dist/unified/suspended-pe32-test.exe'
+          if ($LASTEXITCODE -ne 0) {throw 'synthetic suspended PE32 import/No-CD/DirectSound guard failed'}
           $global:LASTEXITCODE=0
       - name: Exercise synthetic ISO installer, rollback and read-only verification
         shell: pwsh
