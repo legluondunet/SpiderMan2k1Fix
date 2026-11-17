@@ -216,13 +216,24 @@ pointer *after* focus loss, then explicitly called `ShowCursor(FALSE)` on
 focus return. This made it unnecessarily difficult to leave the borderless
 game by mouse, despite native game mouse polling already being disabled.
 
-The **unified runtime only** now restores the native arrow on its first
-foreground Flip, keeps it visible while the game remains foreground, and
-never re-hides it on focus return. If Windows reports a genuine game-only
-`ClipCursor` rectangle (equal to the game HWND bounds but smaller than the
-virtual desktop), release that game-specific confinement only while the
-game is foreground. The full-desktop clip in the user log is NOT changed.
-Other windows and the legacy runtime are not affected.
+The **unified runtime only** restores the native arrow on its first
+foreground Flip and whenever the mouse moves. The pointer stays available
+on all monitors with **no capture**, but is automatically hidden after
+**2.5 seconds without mouse motion while it rests inside the game HWND**.
+Moving it again shows the cursor immediately and restarts the timeout.
+Leaving the game's rectangle or switching to another window restores it
+immediately, even if the focus-pause loop is blocking the game Flip.
+No configuration setting, Windows timer, extra hook or polling thread is
+required: it samples native cursor coordinates at the existing game Flip.
+
+The hide uses a counted `ShowCursor(FALSE)` only for the game, balances
+those calls with `ShowCursor(TRUE)` on mouse motion/exit/focus loss,
+and never suppresses cursor visibility while another window owns focus.
+If Windows reports a genuine game-only `ClipCursor` rectangle (equal
+to the game HWND bounds but smaller than the virtual desktop), release
+that game-specific confinement only while the game is foreground. The
+full-desktop clip in the user log is NOT changed. Other windows and
+the legacy runtime are not affected.
 
 The focus-pause keyboard hook formerly called
 `GetModuleHandleA("SpiderMan2k1Fix.dll")`, which stopped working when the
