@@ -67,6 +67,28 @@ def main():
         assert (d/"spiderman2k1fix.unified.installing"/"sentinel").read_text()=="keep"
         assert not (d/"game").exists()
         d,e=install(base,fixture)
+        # The synthetic retail EXE is deliberately NOT runnable, but the
+        # launcher still must create the one-shot runtime startup log before
+        # CreateProcessW. The default INI does not exist in this fixture.
+        ini=d/"SpiderMan2k1Fix.ini"
+        runtime_log=d/"SpiderMan2k1Fix.log"
+        assert not ini.exists()
+        launch=execute(e,success=False)
+        assert "FIRST-RUN-LOG: first game session" in launch
+        assert runtime_log.is_file()
+        initial=runtime_log.read_bytes()
+        assert b"FIRST-RUN-LOG: initial launcher startup" in initial
+        assert not ini.exists(), "fixture has no real game to create an INI"
+        # A user INI must suppress the automatic first-launch override,
+        # regardless of whether the user selects 0 or 1. The fake game
+        # cannot generate runtime logs itself; only the launcher is tested.
+        for setting in (b"[Debug]\r\nLog=0\r\n",
+                        b"[Debug]\r\nLog=1\r\n"):
+            ini.write_bytes(setting)
+            second=execute(e,success=False)
+            assert "FIRST-RUN-LOG: first game session" not in second
+            assert runtime_log.read_bytes()==initial
+            assert ini.read_bytes()==setting
         archive=d/"game/data.pkr"; original=archive.read_bytes()
         archive.write_bytes(original+b"corrupt")
         execute(e,"--verify",success=False)
