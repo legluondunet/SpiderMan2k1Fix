@@ -26,7 +26,7 @@ jobs:
       - name: Install regression runner
         run: python3 -m pip install --disable-pip-version-check pytest
       - name: Check isolated startup contracts
-        run: python3 -m pytest -q ChatGPT/tests/test_unified_bootstrap_contract.py ChatGPT/tests/test_unified_import_alias_contract.py ChatGPT/tests/test_unified_installer_contract.py ChatGPT/tests/test_first_run_log_unified.py
+        run: python3 -m pytest -q ChatGPT/tests/test_unified_bootstrap_contract.py ChatGPT/tests/test_unified_import_alias_contract.py ChatGPT/tests/test_unified_installer_contract.py ChatGPT/tests/test_first_run_log_unified.py ChatGPT/tests/test_unified_cursor_focus.py
       - name: Compile current baseline plus opt-in unified DLL with MSVCRT
         env:
           SPIDER_UNIFIED_BUILD: '1'

@@ -205,3 +205,36 @@ Windows session is the acceptance gate, not a green synthetic CI run.
 The companion manifest remains installer-owned for Windows/Wine fallbacks.
 The new per-process compatibility layer removes the dependency on Windows
 actually accepting the sidecar manifest on the supported Windows build.
+
+## Unified Windows pointer and focus-pause fix
+
+The mouse-disabled PCShell bit does not control the Windows OS pointer.
+A real Windows test with two 1920×1200 monitors reported `cursor-showing=0`,
+with `GetClipCursor=(0,-1200)-(1920,1200)` covering the full multi-monitor
+desktop, not just the game window. The older cursor policy only showed the
+pointer *after* focus loss, then explicitly called `ShowCursor(FALSE)` on
+focus return. This made it unnecessarily difficult to leave the borderless
+game by mouse, despite native game mouse polling already being disabled.
+
+The **unified runtime only** now restores the native arrow on its first
+foreground Flip, keeps it visible while the game remains foreground, and
+never re-hides it on focus return. If Windows reports a genuine game-only
+`ClipCursor` rectangle (equal to the game HWND bounds but smaller than the
+virtual desktop), release that game-specific confinement only while the
+game is foreground. The full-desktop clip in the user log is NOT changed.
+Other windows and the legacy runtime are not affected.
+
+The focus-pause keyboard hook formerly called
+`GetModuleHandleA("SpiderMan2k1Fix.dll")`, which stopped working when the
+unified runtime was renamed `fix.dll`. Windows returned error 126 every
+time an external window took focus; the game repeatedly attempted and
+aborted the pause. The hook now obtains the owning module **from the real
+keyboard callback address** (with `GetModuleHandleEx` and unchanged
+reference count), and therefore works with legacy and unified DLL names.
+The existing safety policy remains: pause only after confirmed focus loss,
+let OS Alt+Tab pass, and resume only on a fresh key press+release after
+the game regains focus (or the existing verified gamepad wake).
+
+CI builds both runtimes and checks source/contract tests. Runtime
+confirmation of cursor movement between monitors, freeze of video and
+secondary audio on focus loss, and keyboard return remains necessary.
