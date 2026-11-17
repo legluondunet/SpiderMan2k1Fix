@@ -257,9 +257,30 @@ static inline int spider_path_code_asset_a(const char *filename,
 #ifdef SPIDER_UNIFIED_FIX
   char root[MAX_PATH],dir[MAX_PATH];
   if(!filename || !spider_path_unified_root_a(root,sizeof(root)))return 0;
-  if(lstrcmpiA(filename,"SDL3.dll")==0)
-    return spider_path_join_a(dir,sizeof(dir),root,"third_party\\SDL3") &&
-           spider_path_join_a(out,cap,dir,"SDL3.dll");
+  /* Only vetted SDL3 dependency/mapping filenames may be routed to this
+   * folder. Avoid slashes, parent traversal and arbitrary writable paths.
+   * The wizard's own per-GUID names contain exactly 32 hex characters. */
+  {
+    int allowed=(lstrcmpiA(filename,"SDL3.dll")==0 ||
+                 lstrcmpiA(filename,"SDL3-gamecontrollerdb.txt")==0 ||
+                 strcmp(filename,"SDL3-mapping-*.txt")==0);
+    if(!allowed && strlen(filename)==49 &&
+       strncmp(filename,"SDL3-mapping-",13)==0 &&
+       strcmp(filename+45,".txt")==0) {
+      unsigned i;
+      allowed=1;
+      for(i=13;i<45;i++){
+        const char c=filename[i];
+        if(!((c>='0' && c<='9') || (c>='a' && c<='f') ||
+             (c>='A' && c<='F'))) {
+          allowed=0;break;
+        }
+      }
+    }
+    if(allowed)
+      return spider_path_join_a(dir,sizeof(dir),root,"third_party\\SDL3") &&
+             spider_path_join_a(out,cap,dir,filename);
+  }
   if(lstrcmpiA(filename,"linux/spiderman-focus-helper")==0 ||
      lstrcmpiA(filename,"linux\\spiderman-focus-helper")==0)
     return spider_path_join_a(dir,sizeof(dir),root,"linux") &&
