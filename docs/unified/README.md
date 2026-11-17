@@ -154,3 +154,23 @@ that no unknown manifest occupies the destination.
 A native Windows CI test confirmed external-manifest activation using a
 retail-style synthetic EXE: `GetProcessDpiAwareness=PROCESS_SYSTEM_DPI_AWARE`.
 Real-game Windows 125% and Wine results still require acceptance testing.
+
+## Unified fix.dll replacement on ordinary launch (no backup)
+
+When an existing installation has authenticated original game files and both
+installation receipts, the unified launcher compares `game/fix.dll` to its
+embedded project DLL. If they differ (or the DLL is missing), **normal launch
+automatically updates the bundled project runtime** and its resource receipt,
+then continues into the game. `--verify` remains read-only. Other resource
+mismatches alone still require an explicit `--install-only`.
+
+For a changed `game/fix.dll`, the previous bytes are held **only inside the
+private transaction directory** to recover from a failed upgrade; after a
+successful commit, they are discarded. No new `game/fix.dll.bak` is created
+or rotated. Pre-existing `.bak` files are left untouched, because their
+contents cannot be authenticated as project-owned. The legacy WinMM/SDL3
+backup behavior does not change.
+
+Never overwrite original game files, an unverified installation, or unknown
+non-DLL assets. Test fixture includes a forced mid-transaction failure to
+check rollback restores the old fix bytes and keeps the receipts unchanged.
