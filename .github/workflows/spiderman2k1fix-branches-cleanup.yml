@@ -1,0 +1,32 @@
+name: Prune stale branches (keep main and open PRs)
+
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: spiderman2k1fix-prune-stale-branches
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: Remove branches not attached to open PRs
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout trusted main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Delete stale branches safely
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/prune_stale_branches.py
