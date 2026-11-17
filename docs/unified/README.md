@@ -49,9 +49,12 @@ focus helper is stored under the launcher's `linux/` directory.
 ## Downloadable development executable
 
 GitHub Actions now builds the unified launcher as **`SpiderMan2k1Fix.exe`**.
-The **`SpiderMan2k1Fix`** artifact contains this one executable only; the
-32-bit Windows fixture and diagnostic executables are kept in a short-lived
-**`SpiderMan2k1Fix-CI-Internal`** artifact exclusively for automated tests.
+The workflow publishes exactly **one GitHub Actions artifact** named
+**`SpiderMan2k1Fix`**, containing only `SpiderMan2k1Fix.exe`.
+Synthetic PE32 fixtures and diagnostic executables are exchanged between
+Linux and Windows CI jobs through a per-run cross-OS cache, not published as
+downloadable artifacts. These internal executables remain necessary to
+exercise native Windows installation and rollback safety checks.
 The older v2.0.0 installer workflow runs manually only, not on each push.
 These development builds are not published releases and should be tested in
 an empty folder to preserve an existing installation.
