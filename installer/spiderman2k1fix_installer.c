@@ -22,7 +22,12 @@
 #define SPIDER_INSTALLER_BLOCK 2048u
 #define SPIDER_INSTALLER_BUFFER 65536u
 #define SPIDER_INSTALLER_PATH 1024u
+#ifdef SPIDER_UNIFIED_INSTALL
+#define SPIDER_GAME_DIR L"game"
+#define RES_LICENSE 1108
+#else
 #define SPIDER_GAME_DIR L"spiderman2001"
+#endif
 #define SPIDER_LEGACY_DIR L"SpiderMan2k1Fix"
 #define RES_WINMM 1101
 #define RES_FIX 1102
@@ -100,8 +105,48 @@ static int safe_directory(const wchar_t *path,int make) {
   return attr!=INVALID_FILE_ATTRIBUTES && (attr&FILE_ATTRIBUTE_DIRECTORY) &&
          !(attr&FILE_ATTRIBUTE_REPARSE_POINT);
 }
+/* Game files are nested under game/ only in the experimental unified mode. */
+static const wchar_t *managed_root(void) {
+#ifdef SPIDER_UNIFIED_INSTALL
+  return launcher_dir;
+#else
+  return game_dir;
+#endif
+}
+static int original_installed_path(wchar_t *out,size_t cap,
+                                   const wchar_t *root,const wchar_t *name) {
+#ifdef SPIDER_UNIFIED_INSTALL
+  wchar_t game[SPIDER_INSTALLER_PATH];
+  return combine(game,SPIDER_INSTALLER_PATH,root,L"game") &&
+         combine(out,cap,game,name);
+#else
+  return combine(out,cap,root,name);
+#endif
+}
+static int owned_runtime_dll(unsigned i) {
+#ifdef SPIDER_UNIFIED_INSTALL
+  return i<2u; /* game/fix.dll, third_party/SDL3/SDL3.dll */
+#else
+  return i<3u; /* original proxy, core and SDL3 */
+#endif
+}
+
 /* Choose exactly one non-reparse game directory, never an ambiguous pair. */
 static int select_game_directory(void){
+#ifdef SPIDER_UNIFIED_INSTALL
+  wchar_t old[SPIDER_INSTALLER_PATH];
+  if(!combine(game_dir,SPIDER_INSTALLER_PATH,launcher_dir,L"game") ||
+     !combine(old,SPIDER_INSTALLER_PATH,launcher_dir,L"spiderman2001"))return 0;
+  if(GetFileAttributesW(old)!=INVALID_FILE_ATTRIBUTES) {
+    message(L"UNIFIED: existing old game directory: use a separate empty test installation; no migration");
+    return 0;
+  }
+  if(GetFileAttributesW(game_dir)!=INVALID_FILE_ATTRIBUTES &&
+     !safe_directory(game_dir,0))return 0;
+  game_dir_is_legacy=0;
+  return 1;
+#else
+
   wchar_t next[SPIDER_INSTALLER_PATH],old[SPIDER_INSTALLER_PATH];
   DWORD n,o;
   if(!combine(next,SPIDER_INSTALLER_PATH,launcher_dir,SPIDER_GAME_DIR) ||
@@ -118,11 +163,17 @@ static int select_game_directory(void){
   game_dir_is_legacy=o!=INVALID_FILE_ATTRIBUTES;
   wcscpy(game_dir,game_dir_is_legacy?old:next);
   return 1;
+
+#endif
 }
 /* Only after original retail EXE + both receipts are verified: rename the
  * whole game tree atomically, preserving saves, INI, extra files and DLLs.
  * Never overwrite an occupied destination or copy partial game resources. */
 static int migrate_legacy_game_directory(void){
+#ifdef SPIDER_UNIFIED_INSTALL
+  return 1; /* No automatic migration of earlier installations. */
+#else
+
   wchar_t next[SPIDER_INSTALLER_PATH];
   if(!game_dir_is_legacy)return 1;
   if(!combine(next,SPIDER_INSTALLER_PATH,launcher_dir,SPIDER_GAME_DIR) ||
@@ -137,6 +188,8 @@ static int migrate_legacy_game_directory(void){
   wcscpy(game_dir,next);game_dir_is_legacy=0;
   message(L"MIGRATE: verified legacy folder renamed to spiderman2001; saves/INI intact");
   return 1;
+
+#endif
 }
 static int extension_is(const wchar_t *s,const wchar_t *ext) {
   const wchar_t *dot=wcsrchr(s,L'.');return dot&&!_wcsicmp(dot,ext);
@@ -537,6 +590,45 @@ static int upgrade_recognized_payloads(void);
 /* Common source lookup for fresh installs AND authenticated legacy receipt
  * enrollment. Do not combine files from multiple ISO directories/editions. */
 static int find_wise_sources(DiscImage *iso,DiscEntry *parts[ORIGINAL_COUNT]){
+#ifdef SPIDER_UNIFIED_INSTALL
+  wchar_t third[SPIDER_INSTALLER_PATH],sdl[SPIDER_INSTALLER_PATH];
+  wchar_t docs[SPIDER_INSTALLER_PATH],linux[SPIDER_INSTALLER_PATH];
+  if(!safe_directory(game_dir,0) ||
+     !combine(third,SPIDER_INSTALLER_PATH,launcher_dir,L"third_party") || !safe_directory(third,0) ||
+     !combine(sdl,SPIDER_INSTALLER_PATH,third,L"SDL3") || !safe_directory(sdl,0) ||
+     !combine(docs,SPIDER_INSTALLER_PATH,launcher_dir,L"docs") || !safe_directory(docs,0) ||
+     !combine(linux,SPIDER_INSTALLER_PATH,launcher_dir,L"linux") || !safe_directory(linux,0))
+    return 0;
+  return resource_verify(RES_FIX,game_dir,L"fix.dll") &&
+         resource_verify(RES_SDL3,sdl,L"SDL3.dll") &&
+         resource_verify(RES_SDL3_LICENSE,sdl,L"LICENSE.txt") &&
+         resource_verify(RES_X11,linux,L"spiderman-focus-helper") &&
+         resource_verify(RES_README,docs,L"README.md") &&
+         resource_verify(RES_CHANGELOG,docs,L"CHANGELOG.md") &&
+         resource_verify(RES_LICENSE,docs,L"LICENSE");
+#else
+
+#ifdef SPIDER_UNIFIED_INSTALL
+  wchar_t game[SPIDER_INSTALLER_PATH],third[SPIDER_INSTALLER_PATH];
+  wchar_t sdl[SPIDER_INSTALLER_PATH],docs[SPIDER_INSTALLER_PATH];
+  wchar_t linux[SPIDER_INSTALLER_PATH],state[SPIDER_INSTALLER_PATH];
+  if(!safe_directory(root,0) ||
+     !combine(game,SPIDER_INSTALLER_PATH,root,L"game") || !safe_directory(game,0) ||
+     !combine(third,SPIDER_INSTALLER_PATH,root,L"third_party") || !safe_directory(third,1) ||
+     !combine(sdl,SPIDER_INSTALLER_PATH,third,L"SDL3") || !safe_directory(sdl,1) ||
+     !combine(docs,SPIDER_INSTALLER_PATH,root,L"docs") || !safe_directory(docs,1) ||
+     !combine(linux,SPIDER_INSTALLER_PATH,root,L"linux") || !safe_directory(linux,1) ||
+     !combine(state,SPIDER_INSTALLER_PATH,root,L"state") || !safe_directory(state,1))
+    return 0;
+  return resource_install(RES_FIX,game,L"fix.dll") &&
+         resource_install(RES_SDL3,sdl,L"SDL3.dll") &&
+         resource_install(RES_SDL3_LICENSE,sdl,L"LICENSE.txt") &&
+         resource_install(RES_X11,linux,L"spiderman-focus-helper") &&
+         resource_install(RES_README,docs,L"README.md") &&
+         resource_install(RES_CHANGELOG,docs,L"CHANGELOG.md") &&
+         resource_install(RES_LICENSE,docs,L"LICENSE");
+#else
+
   DiscEntry *spidey=NULL;
   wchar_t prefix[256],source[256];
   DWORD n;unsigned i;
@@ -576,6 +668,10 @@ static int find_wise_sources(DiscImage *iso,DiscEntry *parts[ORIGINAL_COUNT]){
     }
   }
   return 1;
+
+#endif
+
+#endif
 }
 static int prepare_game_from_iso(DiscImage *iso) {
   /* This is the COMPLETE Game Files superset recorded in the original
@@ -746,6 +842,18 @@ static int verify_payloads(void){
  * A receipt records exact prior hashes. Unknown, modified or foreign files
  * are never replaced. INI/save/game files are not in this list. */
 #define OWNED_COUNT 7
+#ifdef SPIDER_UNIFIED_INSTALL
+static const wchar_t *owned_paths[OWNED_COUNT]={
+  L"game\\fix.dll",
+  L"third_party\\SDL3\\SDL3.dll",
+  L"third_party\\SDL3\\LICENSE.txt",
+  L"linux\\spiderman-focus-helper",
+  L"docs\\README.md",
+  L"docs\\CHANGELOG.md",
+  L"docs\\LICENSE"
+};
+static const wchar_t *receipt_name=L"state\\installed-resources.sha256";
+#else
 static const wchar_t *owned_paths[OWNED_COUNT]={
   L"winmm.dll",
   L"SpiderMan2k1Fix\\SpiderMan2k1Fix.dll",
@@ -756,6 +864,7 @@ static const wchar_t *owned_paths[OWNED_COUNT]={
   L"SpiderMan2k1Fix\\CHANGELOG.md"
 };
 static const wchar_t *receipt_name=L"SpiderMan2k1Fix\\installed-resources.sha256";
+#endif
 static int write_install_receipt(const wchar_t *root){
   wchar_t dest[SPIDER_INSTALLER_PATH],path[SPIDER_INSTALLER_PATH];
   FILE *out=NULL;unsigned i;char hash[65];int ok=0;
@@ -842,7 +951,11 @@ static int verify_install_receipt_allow_unknown_dll(const wchar_t *root){
 /* Independent immutable snapshot of the original eight Wise files.
  * These hashes describe the actual owner-supplied retail ISO; only the
  * original EXE has an independently known retail SHA-256 reference. */
+#ifdef SPIDER_UNIFIED_INSTALL
+static const wchar_t *game_receipt_name=L"state\\installed-game.sha256";
+#else
 static const wchar_t *game_receipt_name=L"SpiderMan2k1Fix\\installed-game.sha256";
+#endif
 static int game_file_info(const wchar_t *path,ULONGLONG *bytes,char hash[65]){
   WIN32_FILE_ATTRIBUTE_DATA attr;ULARGE_INTEGER size;
   if(!regular_file(path) ||
