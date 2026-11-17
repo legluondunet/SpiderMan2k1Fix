@@ -53,6 +53,11 @@ static int remote_supported_pe32(HANDLE process,IMAGE_NT_HEADERS32 *nt) {
   nt_addr=SPIDER_IMAGE_BASE+(uintptr_t)dos.e_lfanew;
   if(!remote_read(process,nt_addr,nt,sizeof(*nt)) ||
      nt->Signature!=IMAGE_NT_SIGNATURE ||
+     nt->FileHeader.Machine!=IMAGE_FILE_MACHINE_I386 ||
+     nt->FileHeader.SizeOfOptionalHeader!=sizeof(IMAGE_OPTIONAL_HEADER32) ||
+     nt->FileHeader.NumberOfSections==0 ||
+     nt->FileHeader.NumberOfSections>96 ||
+     !(nt->FileHeader.Characteristics&IMAGE_FILE_EXECUTABLE_IMAGE) ||
      nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR32_MAGIC ||
      nt->OptionalHeader.ImageBase!=SPIDER_IMAGE_BASE ||
      nt->OptionalHeader.SizeOfImage<=SPIDER_DDRAW_CREATE_IAT_RVA+4u ||
