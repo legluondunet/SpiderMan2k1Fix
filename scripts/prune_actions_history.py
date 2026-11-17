@@ -4,7 +4,8 @@
 GitHub has no bulk-delete endpoint for workflow runs. This script deletes
 bounded batches so scheduled invocations can eventually clear long history.
 It never deletes the latest successful unified build, this cleanup run,
-unfinished runs, or runs newer than the protected build.
+unfinished runs, or newer unified builds that may have just completed.
+Later-running legacy CI is not protected merely because its ID is higher.
 """
 import json
 import os
@@ -146,8 +147,15 @@ def prune_runs(api, keep, current):
         eligible = [
             x for x in page
             if x.get("status") == "completed"
-            and int(x["id"]) < keep
+            and int(x["id"]) != keep
             and int(x["id"]) != current
+            # A newer compatibility workflow must not survive just because
+            # its run ID exceeds the latest successful unified compilation.
+            # Guard newer unified runs against races with another push.
+            and (
+                int(x["id"]) < keep
+                or x.get("name") != "SpiderMan2k1Fix x86 (unified development)"
+            )
         ]
         if not eligible:
             break
@@ -168,7 +176,10 @@ def main():
     try:
         counts["artifacts"] = prune_artifacts(api, keep)
         counts["caches"] = prune_caches(api, keep)
-        counts["runs"] = prune_runs(api, keep, current)
+        if find_last_usable_build(api) == keep:
+            counts["runs"] = prune_runs(api, keep, current)
+        else:
+            print("Newer successful compilation found; run history pruning deferred", flush=True)
     except RateLimitPause as exc:
         print(f"Rate-limited batch ended safely: {exc}", flush=True)
     print(f"Removed this batch: {json.dumps(counts)}", flush=True)
