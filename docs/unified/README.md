@@ -174,3 +174,34 @@ backup behavior does not change.
 Never overwrite original game files, an unverified installation, or unknown
 non-DLL assets. Test fixture includes a forced mid-transaction failure to
 check rollback restores the old fix bytes and keeps the receipts unchanged.
+
+## Windows 125% DPI: child-only compatibility fix
+
+A real native Windows 11 1920×1200 test showed that the external
+`game/SpideyPC.exe.manifest` was verified and installed, **but ignored for
+the game's actual process DPI behavior**. Its core log still reported
+`DISPLAY-DPI: DirectDraw physical=1920x1200 HWND monitor=1536x960 pixels
+MISMATCH`. Menu surface mapping was correct; the HWND dimensions were not.
+
+To restore **physical pixel geometry before HWND creation**, the unified
+launcher now adds `HIGHDPIAWARE` to the **child process environment's**
+`__COMPAT_LAYER` immediately before `CreateProcessW(CREATE_SUSPENDED)`,
+then restores the parent's original environment as soon as the child is
+created. It keeps unrelated compatibility layers, refuses a preexisting
+`DPIUNAWARE` or `GDIDPISCALING` conflict, and never changes the registry,
+global Windows DPI settings or the original retail executable.
+
+A native Windows synthetic test confirmed actual DPI awareness:
+- no manifest / no compatibility layer: process awareness **0** (unaware);
+- no manifest / `HIGHDPIAWARE`: **2** (per-monitor aware);
+- companion application manifest only: **1** (system aware).
+
+Both 1 and 2 use physical coordinates for the game HWND. The runtime logs
+`DISPLAY-DPI-CONTEXT: process=N hwnd=N window_dpi=N` and the expected
+`DISPLAY-DPI ... MATCH`, as well as `BORDERLESS ... rect=...+1920x1200`.
+The second monitor's potential DPI scale must still be tested; a real
+Windows session is the acceptance gate, not a green synthetic CI run.
+
+The companion manifest remains installer-owned for Windows/Wine fallbacks.
+The new per-process compatibility layer removes the dependency on Windows
+actually accepting the sidecar manifest on the supported Windows build.

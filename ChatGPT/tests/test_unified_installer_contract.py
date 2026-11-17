@@ -50,3 +50,25 @@ def test_unified_fix_auto_repair_is_transactional_and_does_not_keep_backup():
     assert 'L"state\\\\installed-game.sha256"' in src
     assert "SPIDER_UNIFIED_TEST_UPGRADE_FAIL" in fixture
     assert "SPIDER_UNIFIED_TEST_UPGRADE_FAIL" not in src
+
+
+def test_unified_dpi_shim_is_child_scoped_and_before_createprocess():
+    src=(ROOT/"installer/spiderman2k1fix_installer.c").read_text()
+    core=(ROOT/"spiderman2k1fix.c").read_text()
+    start=src.split("static int launch_unified_game(int verify_exe) {",1)[1].split(
+        "static int launch_game(",1)[0]
+    assert 'GetEnvironmentVariableW(L"__COMPAT_LAYER",old_compat,' in start
+    assert 'spider_compat_has_token(old_compat,L"DPIUNAWARE")' in start
+    assert 'spider_compat_has_token(old_compat,L"GDIDPISCALING")' in start
+    assert 'spider_compat_has_token(old_compat,L"HIGHDPIAWARE")' in start
+    assert 'SetEnvironmentVariableW(L"__COMPAT_LAYER",child_compat)' in start
+    assert start.index('SetEnvironmentVariableW(L"__COMPAT_LAYER",child_compat)') < start.index(
+        "CreateProcessW(path,cmd"
+    )
+    assert start.count('SetEnvironmentVariableW(L"__COMPAT_LAYER",') >= 3
+    assert "DPI-LAUNCH: requested HIGHDPIAWARE for child only" in start
+    assert "spider_log_runtime_dpi_context(hwnd);" in core
+    assert "GetWindowDpiAwarenessContext" in core
+    assert "GetProcessDpiAwareness" in core
+    assert "RegSetValue" not in start
+    assert "SetProcessDPIAware" not in start
