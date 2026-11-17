@@ -30,3 +30,18 @@ def test_architecture_preserves_separate_dsound_diagnostic_and_state_receipts():
     assert "draft PR #161" in design
     assert "No automatic migration" in design
     assert "not a playable candidate" in design
+
+
+def test_unified_sdl_mappings_stay_available_without_path_traversal():
+    paths=(ROOT / "spider_fix_paths.h").read_text()
+    gamepad=(ROOT / "sdl3_gamepad_probe.c").read_text()
+    assert '"third_party\\\\SDL3"' in paths
+    for filename in ('SDL3.dll', 'SDL3-gamecontrollerdb.txt',
+                     'SDL3-mapping-*.txt'):
+        assert filename in paths
+    assert 'strlen(filename)==49' in paths
+    assert 'strncmp(filename,"SDL3-mapping-",13)==0' in paths
+    assert 'strcmp(filename+45,".txt")==0' in paths
+    assert 'spider_path_code_asset_a("SDL3-gamecontrollerdb.txt"' in gamepad
+    assert 'spider_path_code_asset_a("SDL3-mapping-*.txt"' in gamepad
+    assert 'spider_path_code_asset_a(filename,file,sizeof(file))' in gamepad
