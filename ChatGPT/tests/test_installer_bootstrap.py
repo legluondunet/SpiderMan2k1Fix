@@ -197,7 +197,10 @@ def test_new_launcher_replaces_unknown_owned_dll_with_single_overwriteable_bak()
     assert "binkw32.dll" not in owned
     for forbidden in ("SpideyPC.exe", "data.pkr", "installed-game.sha256",
                       "SpiderMan2k1Fix.ini"):
-        assert forbidden not in owned
+        # Match complete filename, not the project-owned sidecar
+        # "SpideyPC.exe.manifest", which deliberately preserves retail bytes.
+        assert not any(line.strip().endswith(f'{forbidden}"')
+                       for line in owned.splitlines())
     main=SRC.split("int wmain(",1)[1]
     default=main.split("if((argc==1 || install_only) && regular_file(gameexe))",1)[1].split(
         "scan=find_adjacent_disc",1)[0]
@@ -219,7 +222,8 @@ def test_upgrade_never_mutates_game_exe_or_user_ini_and_rolls_back():
     assert "MoveFileExW(backup,dst,MOVEFILE_WRITE_THROUGH)" in upgrade
     assert "DeleteFileW(backup)" in upgrade
     assert "SpiderMan2k1Fix.updating" in upgrade
-    assert "SpideyPC.exe" not in SRC.split("static const wchar_t *owned_paths[",1)[1].split("};",1)[0]
+    assert not any(line.strip().endswith('SpideyPC.exe"')
+                   for line in SRC.split("static const wchar_t *owned_paths[",1)[1].split("};",1)[0].splitlines())
     assert "SpiderMan2k1Fix.ini" not in SRC.split("static const wchar_t *owned_paths[",1)[1].split("};",1)[0]
     assert "data.pkr" not in SRC.split("static const wchar_t *owned_paths[",1)[1].split("};",1)[0]
 
