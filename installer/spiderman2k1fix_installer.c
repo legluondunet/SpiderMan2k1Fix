@@ -673,7 +673,124 @@ static int find_wise_sources(DiscImage *iso,DiscEntry *parts[ORIGINAL_COUNT]){
 
 #endif
 }
+/* Only paths created in the staging directory are cleaned. Never recursively
+ * delete arbitrary user directories on the installer's launch root. */
+#ifdef SPIDER_UNIFIED_INSTALL
+static int discard_unified_new_install(const wchar_t *staging){
+  static const wchar_t *bundled[]={
+    L"game\\fix.dll",L"third_party\\SDL3\\SDL3.dll",
+    L"third_party\\SDL3\\LICENSE.txt",L"linux\\spiderman-focus-helper",
+    L"docs\\README.md",L"docs\\CHANGELOG.md",L"docs\\LICENSE",
+    L"state\\installed-game.sha256",L"state\\installed-resources.sha256"
+  };
+  static const wchar_t *folders[]={
+    L"third_party\\SDL3",L"third_party",L"linux",L"docs",L"state",L"game"
+  };
+  wchar_t path[SPIDER_INSTALLER_PATH],game[SPIDER_INSTALLER_PATH];
+  unsigned i;
+  int good=1;
+  if(!safe_directory(staging,0) ||
+     !combine(game,SPIDER_INSTALLER_PATH,staging,L"game"))return 0;
+  for(i=0;i<ORIGINAL_COUNT;i++)
+    if(combine(path,SPIDER_INSTALLER_PATH,game,original_paths[i]) &&
+       regular_file(path) && !DeleteFileW(path))good=0;
+  for(i=0;i<sizeof(bundled)/sizeof(bundled[0]);i++)
+    if(combine(path,SPIDER_INSTALLER_PATH,staging,bundled[i]) &&
+       regular_file(path) && !DeleteFileW(path))good=0;
+  for(i=0;i<sizeof(folders)/sizeof(folders[0]);i++){
+    if(!combine(path,SPIDER_INSTALLER_PATH,staging,folders[i]))return 0;
+    if(safe_directory(path,0) && !RemoveDirectoryW(path))good=0;
+  }
+  if(!RemoveDirectoryW(staging))good=0;
+  return good;
+}
+#endif
 static int prepare_game_from_iso(DiscImage *iso) {
+#ifdef SPIDER_UNIFIED_INSTALL
+  /* Prepare the ENTIRE game, fix, dependencies, docs and BOTH receipts in a
+   * private sibling before publishing any final directory. state/ is moved
+   * last. A crash leaves an invalid/incomplete install that --verify refuses.
+   * Rollback is best-effort and never silently deletes an unknown target. */
+  static const wchar_t *publish[]={
+    L"game",L"third_party",L"docs",L"linux",L"state"
+  };
+  wchar_t stage[SPIDER_INSTALLER_PATH],stagegame[SPIDER_INSTALLER_PATH];
+  wchar_t src[SPIDER_INSTALLER_PATH],dst[SPIDER_INSTALLER_PATH];
+  wchar_t exe[SPIDER_INSTALLER_PATH];
+  DiscEntry *parts[ORIGINAL_COUNT];
+  unsigned i,moved=0;
+  int rollback_ok=1,ok=0;
+  if(!find_wise_sources(iso,parts))return 0;
+  if(!combine(stage,SPIDER_INSTALLER_PATH,launcher_dir,
+              L"spiderman2k1fix.unified.installing") ||
+     !combine(stagegame,SPIDER_INSTALLER_PATH,stage,L"game"))return 0;
+  if(GetFileAttributesW(stage)!=INVALID_FILE_ATTRIBUTES) {
+    message(L"UNIFIED: unfinished staging exists; refusing to overwrite it");
+    return 0;
+  }
+  for(i=0;i<sizeof(publish)/sizeof(publish[0]);i++){
+    if(!combine(dst,SPIDER_INSTALLER_PATH,launcher_dir,publish[i]) ||
+       GetFileAttributesW(dst)!=INVALID_FILE_ATTRIBUTES) {
+      message(L"UNIFIED: target directory occupied/unreadable: %ls; no automatic migration",
+              publish[i]);
+      return 0;
+    }
+  }
+  if(!safe_directory(stage,1))return 0;
+  if(!safe_directory(stagegame,1))goto abort_stage;
+  for(i=0;i<ORIGINAL_COUNT;i++){
+    if(!combine(dst,SPIDER_INSTALLER_PATH,stagegame,original_paths[i]) ||
+       !iso_copy(iso,parts[i],dst)) {
+      message(L"UNIFIED: cannot stage original Wise file %ls",original_paths[i]);
+      goto abort_stage;
+    }
+  }
+  if(!combine(exe,SPIDER_INSTALLER_PATH,stagegame,L"SpideyPC.exe") ||
+     !verified_retail(exe) ||
+     !deploy_payloads_to(stage) ||
+     !write_install_receipt(stage) || !write_game_receipt(stage) ||
+     !verify_install_receipt(stage) || !verify_game_receipt(stage)){
+    message(L"UNIFIED: payload/hash preflight failed; no final files published");
+    goto abort_stage;
+  }
+  for(i=0;i<sizeof(publish)/sizeof(publish[0]);i++){
+    if(!combine(src,SPIDER_INSTALLER_PATH,stage,publish[i]) ||
+       !combine(dst,SPIDER_INSTALLER_PATH,launcher_dir,publish[i]) ||
+       GetFileAttributesW(dst)!=INVALID_FILE_ATTRIBUTES ||
+       !MoveFileExW(src,dst,MOVEFILE_WRITE_THROUGH)) {
+      message(L"UNIFIED: cannot publish %ls; rolling back",publish[i]);
+      goto rollback;
+    }
+    moved++;
+  }
+  if(!verify_install_receipt(managed_root()) ||
+     !verify_game_receipt(managed_root()) || !verify_payloads()) {
+    message(L"UNIFIED: post-publish verification failed; rolling back");
+    goto rollback;
+  }
+  if(!RemoveDirectoryW(stage)) {
+    message(L"UNIFIED: published files OK; empty staging folder could not be removed");
+  }
+  message(L"UNIFIED: installed game/, third_party/, docs/, linux/, state/; receipts verified");
+  return 1;
+ rollback:
+  while(moved>0){
+    moved--;
+    if(!combine(src,SPIDER_INSTALLER_PATH,launcher_dir,publish[moved]) ||
+       !combine(dst,SPIDER_INSTALLER_PATH,stage,publish[moved]) ||
+       GetFileAttributesW(dst)!=INVALID_FILE_ATTRIBUTES ||
+       !MoveFileExW(src,dst,MOVEFILE_WRITE_THROUGH)) {
+      message(L"UNIFIED: rollback incomplete for %ls; manual recovery required",
+              publish[moved]);
+      rollback_ok=0;
+    }
+  }
+  if(!rollback_ok)return 0; /* Keep staging for recovery; never guess. */
+ abort_stage:
+  ok=discard_unified_new_install(stage);
+  if(!ok)message(L"UNIFIED: staged files retained; inspect before retrying");
+  return 0;
+#else\n
   /* This is the COMPLETE Game Files superset recorded in the original
    * 38,646-byte Wise script of the SHA-verified owner-supplied Setup EXE.
    * One install-size branch omits media.pkr; the other includes it.
@@ -742,6 +859,7 @@ abort:
     RemoveDirectoryW(staging);
   }
   return ok;
+#endif
 }
 static int resource_bytes(WORD id,const BYTE **data,DWORD *size) {
   HRSRC res=FindResourceW(NULL,MAKEINTRESOURCEW(id),RT_RCDATA);
