@@ -1537,14 +1537,34 @@ static void preserve_crashed_game_log(
  * NOTE: This is a launch mechanism, not a substitute for the validated
  * multi-directory game/state/docs installation protocol. */
 #ifdef SPIDER_UNIFIED_INSTALL
+/* Windows compatibility layers are applied at PROCESS STARTUP, before the
+ * game creates its HWND. The existing external game manifest is not enough
+ * on every Windows 11 installation. Never change the registry or the
+ * original retail EXE; the shim is inherited by the child only. */
+static int spider_compat_has_token(const wchar_t *layers,const wchar_t *name) {
+  const wchar_t *p=layers;size_t size=wcslen(name);
+  if(!p)return 0;
+  while(*p) {
+    const wchar_t *first;
+    size_t count;
+    while(*p==L' ' || *p==L'\t' || *p==L';')++p;
+    first=p;
+    while(*p && *p!=L' ' && *p!=L'\t' && *p!=L';')++p;
+    count=(size_t)(p-first);
+    if(count==size && _wcsnicmp(first,name,size)==0)return 1;
+  }
+  return 0;
+}
 static int launch_unified_game(int verify_exe) {
   wchar_t path[SPIDER_INSTALLER_PATH],cmd[SPIDER_INSTALLER_PATH+4];
   wchar_t runtime_log[SPIDER_INSTALLER_PATH],first_ini[SPIDER_INSTALLER_PATH];
   wchar_t old_launcher[SPIDER_INSTALLER_PATH];
+  wchar_t old_compat[SPIDER_INSTALLER_PATH],child_compat[SPIDER_INSTALLER_PATH];
   STARTUPINFOW si;PROCESS_INFORMATION pi;
   WIN32_FILE_ATTRIBUTE_DATA log_before;
-  DWORD exit_code=1,old_len=0,previous_last_error=0;
+  DWORD exit_code=1,old_len=0,previous_last_error=0,compat_len=0;
   int had_launcher=0,had_prior_log=0,launched=0,ok=0;
+  int had_compat=0,compat_changed=0;
   int first_run_auto_log=0;
   (void)verify_exe; /* Authenticated game EXE is always mandatory in unified mode. */
   if(!combine(path,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe") ||
@@ -1579,8 +1599,33 @@ static int launch_unified_game(int verify_exe) {
   previous_last_error=GetLastError();
   if(old_len>=SPIDER_INSTALLER_PATH)return 0;
   had_launcher=old_len>0 || previous_last_error!=ERROR_ENVVAR_NOT_FOUND;
-  if(!SetEnvironmentVariableW(L"SPIDERMAN2K1FIX_LAUNCHER_DIR",launcher_dir))
+  /* Explicitly avoid a process-unaware compatibility override: this game
+   * mixes physical DirectDraw buffers and Win32 HWND geometry. Preserve all
+   * unrelated compatibility flags, and restore the parent's environment
+   * immediately after the child is successfully created. */
+  compat_len=GetEnvironmentVariableW(L"__COMPAT_LAYER",old_compat,
+                                   SPIDER_INSTALLER_PATH);
+  previous_last_error=GetLastError();
+  if(compat_len>=SPIDER_INSTALLER_PATH)return 0;
+  had_compat=compat_len>0 || previous_last_error!=ERROR_ENVVAR_NOT_FOUND;
+  if(!compat_len)old_compat[0]=0;
+  if(spider_compat_has_token(old_compat,L"DPIUNAWARE") ||
+     spider_compat_has_token(old_compat,L"GDIDPISCALING")) {
+    message(L"DPI-LAUNCH: conflicting inherited DPI-unaware compatibility override; refusing unsafe geometry");
     return 0;
+  }
+  if(!spider_compat_has_token(old_compat,L"HIGHDPIAWARE")) {
+    size_t existing=wcslen(old_compat),addition=wcslen(L"HIGHDPIAWARE");
+    if(existing+addition+2u>=SPIDER_INSTALLER_PATH)return 0;
+    wcscpy(child_compat,old_compat);
+    if(existing)wcscat(child_compat,L" ");
+    wcscat(child_compat,L"HIGHDPIAWARE");
+    if(!SetEnvironmentVariableW(L"__COMPAT_LAYER",child_compat))
+      return 0;
+    compat_changed=1;
+  }
+  if(!SetEnvironmentVariableW(L"SPIDERMAN2K1FIX_LAUNCHER_DIR",launcher_dir))
+    goto restore_environment;
   memset(&si,0,sizeof(si));memset(&pi,0,sizeof(pi));si.cb=sizeof(si);
   if(_snwprintf(cmd,sizeof(cmd)/sizeof(cmd[0]),L"\"%ls\"",path)<0)
     goto restore_environment;
@@ -1613,6 +1658,15 @@ static int launch_unified_game(int verify_exe) {
     goto restore_environment;
   }
   launched=1;
+  /* The child inherited its environment at CreateProcessW. Do NOT leave a
+   * modified __COMPAT_LAYER active in the long-lived parent launcher. */
+  if(compat_changed) {
+    if(!SetEnvironmentVariableW(L"__COMPAT_LAYER",
+                                 had_compat?old_compat:NULL))
+      message(L"DPI-LAUNCH: warning cannot restore parent compatibility environment");
+    compat_changed=0;
+  }
+  message(L"DPI-LAUNCH: requested HIGHDPIAWARE for child only (Win32/Wine; no registry modification)");
   if(!SpiderUnified_AliasSuspendedDDraw(pi.hProcess)) {
     message(L"UNIFIED: PE32 DirectDraw import alias failed (requires original two-method DDRAW import); terminating suspended game");
     goto stop_child;
@@ -1649,6 +1703,8 @@ static int launch_unified_game(int verify_exe) {
   if(pi.hThread)CloseHandle(pi.hThread);
   if(pi.hProcess)CloseHandle(pi.hProcess);
  restore_environment:
+  if(compat_changed)
+    SetEnvironmentVariableW(L"__COMPAT_LAYER",had_compat?old_compat:NULL);
   if(had_launcher)
     SetEnvironmentVariableW(L"SPIDERMAN2K1FIX_LAUNCHER_DIR",old_launcher);
   else
