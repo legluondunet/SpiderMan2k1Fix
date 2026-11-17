@@ -33,3 +33,20 @@ def test_fixture_hash_is_exact_and_injected_failure_is_test_only():
     assert "output.write_text" in generator
     installer=(ROOT/"installer/spiderman2k1fix_installer.c").read_text()
     assert "SPIDER_UNIFIED_TEST_FAIL" not in installer
+
+
+
+def test_unified_fix_auto_repair_is_transactional_and_does_not_keep_backup():
+    src=(ROOT/"installer/spiderman2k1fix_installer.c").read_text()
+    fixture=(ROOT/"scripts/build_unified_test_fixture.py").read_text()
+    assert "static int replace_fix_without_backup(unsigned i)" in src
+    assert "return i==0u;" in src
+    assert "const wchar_t *rollback_slot=replace_fix_without_backup(i)?previous:backup;" in src
+    assert "MoveFileExW(replace_fix_without_backup(j)?previous:backup," in src
+    assert 'L"previous-bak-0"' in src
+    assert "DeleteFileW(previous)" in src
+    assert 'game\\\\fix.dll differs from embedded version; replacing automatically without .bak' in src
+    assert 'resource_verify(RES_FIX,game_dir,L"fix.dll")' in src
+    assert 'L"state\\\\installed-game.sha256"' in src
+    assert "SPIDER_UNIFIED_TEST_UPGRADE_FAIL" in fixture
+    assert "SPIDER_UNIFIED_TEST_UPGRADE_FAIL" not in src
