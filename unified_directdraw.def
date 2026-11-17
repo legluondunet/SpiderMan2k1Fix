@@ -1,0 +1,3 @@
+LIBRARY fix.dll
+EXPORTS
+    DirectDrawCreateEx = SpiderUnified_DirectDrawCreateEx@16
