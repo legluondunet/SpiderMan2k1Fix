@@ -93,7 +93,7 @@ def test_log_defaults_to_executable_directory_and_keeps_readonly_fallback():
     proxy=read("winmm_proxy.c")
     core=read("spiderman2k1fix.c")
     assert 'spider_path_log_a(path,sizeof(path))' in proxy
-    assert 'spider_path_log_a(path,sizeof(path))' in core
+    assert 'spider_path_log_a(game_log_session_path,' in core
     assert "reset_log_on_first_write" in proxy
 
 
@@ -105,7 +105,7 @@ def test_core_uses_same_resolver_for_every_main_ini_subsystem():
         assert '#include "spider_fix_paths.h"' in read(module), module
     assert '#include "spider_fix_paths.h"' in core
     assert "spider_path_ini_a(path,sizeof(path))" in core
-    assert "spider_path_log_a(path,sizeof(path))" in core
+    assert "spider_path_log_a(game_log_session_path," in core
     assert "spider_path_ini_a(input_ini,sizeof(input_ini))" in core
     assert "spider_path_ini_a(ini,sizeof(ini))" in core
     assert "spider_path_ini_a(ini_path,sizeof(ini_path))" in core
