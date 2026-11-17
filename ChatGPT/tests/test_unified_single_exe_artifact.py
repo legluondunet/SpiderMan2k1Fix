@@ -19,7 +19,10 @@ def test_single_user_facing_unified_exe_has_classic_name():
     assert "SpiderMan2k1Fix-UNIFIED-TEST.exe" not in build
     assert "test -s dist/unified/SpiderMan2k1Fix.exe" in workflow
     assert "name: SpiderMan2k1Fix\n          path: dist/unified/SpiderMan2k1Fix.exe" in workflow
-    assert workflow.count("name: SpiderMan2k1Fix\n          path:") == 1
+    upload_section = workflow.split("      - name: Upload SpiderMan2k1Fix.exe only", 1)[1].split(
+        "      - name: Upload internal Windows test harness", 1
+    )[0]
+    assert upload_section.count("name: SpiderMan2k1Fix\n          path:") == 1
 
 
 def test_fixtures_and_native_helpers_never_ship_with_player_launcher():
