@@ -132,6 +132,17 @@ static int owned_runtime_dll(unsigned i) {
   return i<3u; /* original proxy, core and SDL3 */
 #endif
 }
+/* Unified fix.dll is disposable after the replacement is verified.
+ * Hold its old bytes only in private staging until the transaction commits.
+ * Existing .bak files are not adopted or modified. Legacy behavior unchanged. */
+static int replace_fix_without_backup(unsigned i) {
+#ifdef SPIDER_UNIFIED_INSTALL
+  return i==0u;
+#else
+  (void)i;
+  return 0;
+#endif
+}
 
 /* Choose exactly one non-reparse game directory, never an ambiguous pair. */
 static int select_game_directory(void){
@@ -965,9 +976,9 @@ static int verify_payloads(void){
 
 #endif
 }
-/* Explicit --install-only upgrades only installer-owned resource bytes.
- * A receipt records exact prior hashes. Unknown, modified or foreign files
- * are never replaced. INI/save/game files are not in this list. */
+/* Installer-owned components only: no original game file, save or user INI
+ * is ever updated. In unified mode a mismatched fix.dll triggers a verified
+ * automatic replacement on ordinary launch; --verify remains read-only. */
 #ifdef SPIDER_UNIFIED_INSTALL
 #define OWNED_COUNT 8
 #else
@@ -1036,10 +1047,9 @@ static int verify_install_receipt(const wchar_t *root){
   fclose(in);return 1;
 }
 /* A previous installer-owned DLL may have been replaced by an older test
- * build or by a third-party binary. The user explicitly requests that an
- * unknown DLL be backed up as .bak and the bundled DLL installed instead.
- * Only the three OWNED runtime DLL slots are eligible; all other installed
- * project files must still match the recorded prior receipt exactly.
+ * build or by a third-party binary. Only installer-owned DLL slots may
+ * differ; all other project files must match the recorded prior receipt.
+ * Unified game/fix.dll is not retained as a permanent backup.
  * A missing/invalid receipt cannot authorize adoption of an installation.
  * This relaxed check is NEVER used for --verify or original game files.
  */
@@ -1221,7 +1231,8 @@ static void discard_upgrade_staging(const wchar_t *staging){
     L"third_party\\SDL3\\LICENSE.txt",L"linux\\spiderman-focus-helper",
     L"docs\\README.md",L"docs\\CHANGELOG.md",L"docs\\LICENSE",
     L"game\\SpideyPC.exe.manifest",
-    L"state\\installed-resources.sha256"
+    L"state\\installed-resources.sha256",
+    L"previous-bak-0" /* private rollback slot for replaced fix.dll */
   };
   static const wchar_t *folders[]={
     L"third_party\\SDL3",L"state",L"third_party",
@@ -1250,20 +1261,14 @@ static void discard_upgrade_staging(const wchar_t *staging){
 
 #endif
 }
-/* Upgrade only the seven installer-owned files plus their receipt.
+/* Upgrade only the installer-owned project files and receipt.
+ * Original game EXE/assets, saves and INI remain immutable. Require trusted
+ * prior receipts and verify staged bytes before changing anything.
  *
- * The installed retail EXE, eight game assets/receipt, saves and INI are
- * NEVER part of this transaction. A mismatched project DLL may be unknown,
- * but a prior authentic installer resources receipt is still required;
- * any unknown NON-DLL payload refuses upgrade. All new bytes are validated
- * in private staging before the first installed file is changed.
- *
- * Changed DLLs: old DLL -> one persistent .bak, replacing the previous
- * .bak. Previous .bak bytes live in private staging until full success so
- * a mid-transaction failure can restore both old DLL and old .bak.
- * Unchanged DLLs are never moved and their .bak is never touched.
- * Non-DLL project assets and the receipt use a transient rollback .bak,
- * removed after success; unknown original game files are not eligible.
+ * Unified fix.dll: hold old bytes ONLY in the private rollback staging
+ * slot, then discard after success. Never create or touch fix.dll.bak.
+ * Other DLLs retain legacy .bak behavior. Non-DLL assets and receipt use
+ * transient .bak for rollback and may never overwrite foreign content.
  */
 static int upgrade_recognized_payloads(void){
   static const WORD resource_ids[OWNED_COUNT]={
@@ -1354,6 +1359,15 @@ static int upgrade_recognized_payloads(void){
       message(L"UPGRADE: unsafe original destination %ls",all_paths[i]);
       goto abort_staging;
     }
+    if(replace_fix_without_backup(i)){
+      /* This slot is unique to a private, newly created staging directory.
+       * Any older game/fix.dll.bak is left untouched. */
+      if(_snwprintf(previous,SPIDER_INSTALLER_PATH,
+                    L"%ls\\previous-bak-%u",staging,i)<0 ||
+         GetFileAttributesW(previous)!=INVALID_FILE_ATTRIBUTES ||
+         GetLastError()!=ERROR_FILE_NOT_FOUND)goto abort_staging;
+      continue;
+    }
     bak_attr=GetFileAttributesW(backup);
     if(bak_attr!=INVALID_FILE_ATTRIBUTES){
       if(!owned_runtime_dll(i) || !regular_file(backup)){
@@ -1375,7 +1389,8 @@ static int upgrade_recognized_payloads(void){
                  staging,i)<0)break;
     old_attr=GetFileAttributesW(dst);
     bak_attr=GetFileAttributesW(backup);
-    if(owned_runtime_dll(i) && old_attr!=INVALID_FILE_ATTRIBUTES &&
+    if(!replace_fix_without_backup(i) &&
+       owned_runtime_dll(i) && old_attr!=INVALID_FILE_ATTRIBUTES &&
        bak_attr!=INVALID_FILE_ATTRIBUTES){
       /* Preserve existing .bak until all replacements succeed. */
       if(!MoveFileExW(backup,previous,MOVEFILE_WRITE_THROUGH)){
@@ -1386,13 +1401,16 @@ static int upgrade_recognized_payloads(void){
       stashed_old_bak[i]=1;
     }
     if(old_attr!=INVALID_FILE_ATTRIBUTES){
-      if(!MoveFileExW(dst,backup,MOVEFILE_WRITE_THROUGH)){
-        message(L"UPGRADE: cannot back up %ls (Win32=%lu)",
+      const wchar_t *rollback_slot=replace_fix_without_backup(i)?previous:backup;
+      if(!MoveFileExW(dst,rollback_slot,MOVEFILE_WRITE_THROUGH)){
+        message(L"UPGRADE: cannot stage previous %ls (Win32=%lu)",
                 all_paths[i],GetLastError());
         break;
       }
       moved_original[i]=1;
-      if(owned_runtime_dll(i))
+      if(replace_fix_without_backup(i))
+        message(L"UPGRADE: replacing game\\fix.dll; temporary rollback only, no .bak");
+      else if(owned_runtime_dll(i))
         message(L"UPGRADE: previous DLL %ls saved as .bak (older .bak replaced)",
                 all_paths[i]);
     }
@@ -1419,7 +1437,8 @@ static int upgrade_recognized_payloads(void){
         rollback_ok=0;continue;
       }
       if(moved_original[j] &&
-         !MoveFileExW(backup,dst,MOVEFILE_WRITE_THROUGH)){
+         !MoveFileExW(replace_fix_without_backup(j)?previous:backup,
+                      dst,MOVEFILE_WRITE_THROUGH)){
         message(L"UPGRADE: ROLLBACK FAILED for %ls; backup retained",all_paths[j]);
         rollback_ok=0;continue;
       }
@@ -1437,9 +1456,18 @@ static int upgrade_recognized_payloads(void){
   }
   for(i=0;i<n;i++){
     if(!changed[i])continue;
+    if(replace_fix_without_backup(i)){
+      /* The old fix.dll has no value once the new runtime and receipt are
+       * committed. Discard it; never create or rotate a permanent .bak. */
+      if(moved_original[i] &&
+         _snwprintf(previous,SPIDER_INSTALLER_PATH,
+                    L"%ls\\previous-bak-%u",staging,i)>=0 &&
+         !DeleteFileW(previous))
+        message(L"UPGRADE: warning could not discard temporary fix.dll rollback copy");
+      continue;
+    }
     if(owned_runtime_dll(i)){
-      /* Keep ONE most-recent previous DLL as .bak; old .bak was safely
-       * staged for rollback and is intentionally superseded on success. */
+      /* Other managed DLLs retain their one-backup policy. */
       if(!stashed_old_bak[i])continue;
       if(_snwprintf(previous,SPIDER_INSTALLER_PATH,
                     L"%ls\\previous-bak-%u",staging,i)<0)continue;
@@ -1454,7 +1482,11 @@ static int upgrade_recognized_payloads(void){
       message(L"UPGRADE: previous backup still present: %ls",backup);
   }
   discard_upgrade_staging(staging);
+#ifdef SPIDER_UNIFIED_INSTALL
+  message(L"UPGRADE: bundled resources updated; game\\fix.dll replaced without permanent backup; original game/INI/saves unchanged");
+#else
   message(L"UPGRADE: bundled runtimes updated; previous DLL saved as .bak; original game/INI/saves unchanged");
+#endif
   return verify_payloads() && verify_install_receipt(managed_root());
  abort_staging:
   discard_upgrade_staging(staging);
@@ -1838,8 +1870,22 @@ int wmain(int argc,wchar_t **argv) {
     }
     if(!verify_payloads()){
 #ifdef SPIDER_UNIFIED_INSTALL
-      message(L"UNIFIED: runtime resources differ; use --install-only for authenticated update");
-      goto done;
+      /* Automatic repair is restricted to a missing/mismatched fix.dll.
+       * The trusted multi-component transaction preserves version cohesion.
+       * All other discrepancies alone still require --install-only. */
+      if(resource_verify(RES_FIX,game_dir,L"fix.dll")){
+        message(L"UNIFIED: non-fix resources differ; use --install-only for authenticated update");
+        goto done;
+      }
+      message(L"UPGRADE: game\\fix.dll differs from embedded version; replacing automatically without .bak");
+      if(!upgrade_recognized_payloads()){
+        message(L"UNIFIED: automatic fix.dll replacement refused; original game and receipts preserved");
+        goto done;
+      }
+      if(!verify_payloads() || !verify_install_receipt(managed_root())){
+        message(L"UNIFIED: post-upgrade resources/receipt invalid; refusing launch");
+        goto done;
+      }
 #else
       /* A newer launcher updates only installer-owned resources, after
        * authenticating all eight original game files and receipt. Unknown
