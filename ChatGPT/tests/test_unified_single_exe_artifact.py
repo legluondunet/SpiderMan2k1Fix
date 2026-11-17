@@ -36,7 +36,7 @@ def test_fixtures_and_native_helpers_never_ship_with_player_launcher():
     assert "name: SpiderMan2k1Fix-CI-Internal" not in workflow
     assert workflow.count("uses: actions/upload-artifact@v4") == 1
     assert workflow.count("uses: actions/download-artifact@v4") == 1
-    assert "name: SpiderMan2k1Fix\\n          path: dist/unified" in workflow
+    assert "name: SpiderMan2k1Fix\n          path: dist/unified" in workflow
 
     # Pass the native PE32 test helpers between Linux and Windows without
     # uploading a second GitHub Actions Artifacts package.
