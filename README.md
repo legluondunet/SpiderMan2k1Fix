@@ -7,8 +7,7 @@
 
 SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spider-Man*, released by Activision in 2001. It improves compatibility with modern Windows systems and Linux/Wine while adding new features.
 
-**Development status (17 November 2026):** `main` now contains the unified
-single-`game/fix.dll` architecture merged in [PR #162](https://github.com/legluondunet/SpiderMan2k1Fix/pull/162). Its installer and layout differ from the **published v2.0.0** WinMM-based build described below. The unified architecture has been tested on native Windows 11, but Wine/Proton acceptance remains outstanding; no new release has been published. See the [unified build guide](docs/unified/README.md). **Do not replace an existing v2.0.0 installation with a development test artifact.**
+**Development:** `main` has unified `game/fix.dll` ([PR #162](https://github.com/legluondunet/SpiderMan2k1Fix/pull/162)), not yet released. This page documents v2.0.0; see the [unified build guide](docs/unified/README.md).
 
 ## Screenshots
 
@@ -168,7 +167,7 @@ For advanced settings and detailed explanations, see the [Configuration and Trou
 
 ## Building from Source
 
-The historical source build produces two 32-bit Windows DLLs (`SpiderMan2k1Fix.dll` and `winmm.dll`) using an MSVCRT-compatible MinGW-w64 toolchain. The standalone release executable is built separately by `scripts/build_installer.sh` after seven redistributable payloads have been staged; the [installer workflow](.github/workflows/spiderman2k1fix-standalone-windows-x86.yml) is the reference packaging recipe. The legacy DLL workflow exists for development/debugging, **not** as the official v2.0.0 download. The `main` branch's unified `fix.dll` build and synthetic Windows tests run via the [unified CI workflow](.github/workflows/spiderman2k1fix-unified-x86.yml); its archives are TEST-ONLY, not releases.
+The source build produces two 32-bit Windows DLLs (`SpiderMan2k1Fix.dll` and `winmm.dll`) using an MSVCRT-compatible MinGW-w64 toolchain. The standalone release executable is built separately by `scripts/build_installer.sh` after seven redistributable payloads have been staged; the [installer workflow](.github/workflows/spiderman2k1fix-standalone-windows-x86.yml) is the reference packaging recipe. The legacy DLL workflow exists for development/debugging, **not** as the official v2.0.0 download.
 
 ### Linux
 
@@ -209,7 +208,7 @@ Bug reports and contributions are welcome through [GitHub Issues](https://github
 
 **The patch does not load**
 
-For the **released v2.0.0**, make sure `winmm.dll` is alongside `SpideyPC.exe` and `SpiderMan2k1Fix.dll` is in `SpiderMan2k1Fix/`. Under Linux/Wine, verify that the `winmm=n,b` DLL override is active. **Unified development builds** instead load `game/fix.dll` through the root launcher, do not install a local WinMM proxy and should not be diagnosed using the old DLL-layout instructions; see the [unified guide](docs/unified/README.md).
+Make sure `winmm.dll` is alongside `SpideyPC.exe` and `SpiderMan2k1Fix.dll` is in `SpiderMan2k1Fix/`. Under Linux/Wine, verify that the `winmm=n,b` DLL override is active.
 
 **The game behaves unexpectedly**
 
