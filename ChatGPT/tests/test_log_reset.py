@@ -21,9 +21,17 @@ def test_no_second_reset_when_main_fix_dll_starts():
     # The proxy is first to log: its DPI-BOOT line precedes loading the main DLL.
     init_fix = PROXY[PROXY.index("static DWORD WINAPI init_fix("):]
     assert init_fix.index("enable_native_window_pixels();") < init_fix.index("LoadLibraryA(path)")
+    # Legacy WinMM already truncates the current session on its first
+    # early log line. The main core must NOT truncate it again.
+    prep = CORE[CORE.index("static BOOL CALLBACK game_log_prepare_session("):
+                CORE.index("static void log_line(", 1)]
+    assert '#ifdef SPIDER_UNIFIED_FIX' in prep
+    assert 'fopen(game_log_session_path,"w")' in prep
+    assert 'Legacy: winmm_proxy.c already truncates' in prep
+    assert 'return TRUE;' in prep.split("#else",1)[1]
     main_log = CORE[CORE.index("static void log_line("):CORE.index("static void log_line(") + 800]
-    assert 'fopen(path,"a")' in main_log
-    assert 'fopen(path,"w")' not in main_log
+    assert 'fopen(game_log_session_path,"a")' in main_log
+    assert 'fopen(game_log_session_path,"w")' not in main_log
 
 
 def test_proxy_dllmain_does_not_perform_file_io():
