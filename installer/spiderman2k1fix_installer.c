@@ -930,7 +930,7 @@ static int verify_install_receipt_allow_unknown_dll(const wchar_t *root){
       fclose(in);return 0;
     }
     attr=GetFileAttributesW(path);
-    if(i<3u && attr==INVALID_FILE_ATTRIBUTES &&
+    if(owned_runtime_dll(i) && attr==INVALID_FILE_ATTRIBUTES &&
        GetLastError()==ERROR_FILE_NOT_FOUND){
       message(L"UPGRADE: missing installer-owned runtime DLL %ls; will restore bundled file",
               owned_paths[i]);
@@ -940,7 +940,7 @@ static int verify_install_receipt_allow_unknown_dll(const wchar_t *root){
       fclose(in);return 0;
     }
     if(strcmp(line,hash)){
-      if(i>=3u){fclose(in);return 0;}
+      if(!owned_runtime_dll(i)){fclose(in);return 0;}
       message(L"UPGRADE: unknown installer-owned DLL %ls; previous bytes will be preserved as .bak",
               owned_paths[i]);
     }
@@ -979,7 +979,7 @@ static int write_game_receipt(const wchar_t *root){
   if(n<0||(size_t)n>=sizeof(content))return 0;
   used=(size_t)n;
   for(i=0;i<ORIGINAL_COUNT;i++){
-    if(!combine(path,SPIDER_INSTALLER_PATH,root,original_paths[i])||
+    if(!original_installed_path(path,SPIDER_INSTALLER_PATH,root,original_paths[i])||
        !game_file_info(path,&bytes,hash))return 0;
     n=snprintf(content+used,sizeof(content)-used,"%llu %s\n",
                (unsigned long long)bytes,hash);
@@ -1010,7 +1010,7 @@ static int verify_game_receipt(const wchar_t *root){
     if(!fgets(line,sizeof(line),in) ||
        sscanf(line,"%llu %64[0-9a-f] %c",&size,expected,&extra)!=2 ||
        strlen(expected)!=64 ||
-       !combine(path,SPIDER_INSTALLER_PATH,root,original_paths[i]) ||
+       !original_installed_path(path,SPIDER_INSTALLER_PATH,root,original_paths[i]) ||
        !game_file_info(path,&installed_bytes,actual) ||
        installed_bytes!=(ULONGLONG)size || strcmp(expected,actual)){
       message(L"VERIFY: original game file missing/altered: %ls",original_paths[i]);
@@ -1031,7 +1031,7 @@ static int enroll_game_receipt_from_disc(void){
   DiscImage iso;DiscEntry *parts[ORIGINAL_COUNT];
   char cdhash[65],filehash[65];ULONGLONG installed_bytes;
   unsigned i;int scan,ok=0;
-  if(!combine(receipt,SPIDER_INSTALLER_PATH,game_dir,game_receipt_name))return 0;
+  if(!combine(receipt,SPIDER_INSTALLER_PATH,managed_root(),game_receipt_name))return 0;
   if(GetFileAttributesW(receipt)!=INVALID_FILE_ATTRIBUTES){
     message(L"VERIFY: game receipt already exists; refusing replacement");return 0;
   }
@@ -1055,17 +1055,37 @@ static int enroll_game_receipt_from_disc(void){
       goto done;
     }
   }
-  if(!write_game_receipt(game_dir)){
+  if(!write_game_receipt(managed_root())){
     message(L"ENROLL: cannot publish immutable game receipt; no game files touched");
     goto done;
   }
-  ok=verify_game_receipt(game_dir);
+  ok=verify_game_receipt(managed_root());
   if(ok)message(L"ENROLL: OK eight original game files match CD, game receipt written");
 done:
   iso_close(&iso);
   return ok;
 }
 static void discard_upgrade_staging(const wchar_t *staging){
+#ifdef SPIDER_UNIFIED_INSTALL
+  wchar_t file[SPIDER_INSTALLER_PATH],dir[SPIDER_INSTALLER_PATH];
+  static const wchar_t *files[]={
+    L"game\\fix.dll",L"third_party\\SDL3\\SDL3.dll",
+    L"third_party\\SDL3\\LICENSE.txt",L"linux\\spiderman-focus-helper",
+    L"docs\\README.md",L"docs\\CHANGELOG.md",L"docs\\LICENSE",
+    L"state\\installed-resources.sha256"
+  };
+  static const wchar_t *folders[]={
+    L"third_party\\SDL3",L"state",L"third_party",
+    L"docs",L"linux",L"game"
+  };
+  unsigned i;
+  for(i=0;i<sizeof(files)/sizeof(files[0]);i++)
+    if(combine(file,SPIDER_INSTALLER_PATH,staging,files[i]))DeleteFileW(file);
+  for(i=0;i<sizeof(folders)/sizeof(folders[0]);i++)
+    if(combine(dir,SPIDER_INSTALLER_PATH,staging,folders[i]))RemoveDirectoryW(dir);
+  RemoveDirectoryW(staging);
+#else
+
   wchar_t path[SPIDER_INSTALLER_PATH];unsigned i;
   for(i=0;i<OWNED_COUNT;i++){
     if(combine(path,SPIDER_INSTALLER_PATH,staging,owned_paths[i]))
@@ -1078,6 +1098,8 @@ static void discard_upgrade_staging(const wchar_t *staging){
   if(combine(path,SPIDER_INSTALLER_PATH,staging,L"SpiderMan2k1Fix"))
     RemoveDirectoryW(path);
   RemoveDirectoryW(staging);
+
+#endif
 }
 /* Upgrade only the seven installer-owned files plus their receipt.
  *
@@ -1096,8 +1118,13 @@ static void discard_upgrade_staging(const wchar_t *staging){
  */
 static int upgrade_recognized_payloads(void){
   static const WORD resource_ids[OWNED_COUNT]={
+#ifdef SPIDER_UNIFIED_INSTALL
+    RES_FIX,RES_SDL3,RES_SDL3_LICENSE,RES_X11,RES_README,
+    RES_CHANGELOG,RES_LICENSE
+#else
     RES_WINMM,RES_FIX,RES_SDL3,RES_SDL3_LICENSE,RES_X11,
     RES_README,RES_CHANGELOG
+#endif
   };
   wchar_t staging[SPIDER_INSTALLER_PATH];
   wchar_t src[SPIDER_INSTALLER_PATH],dst[SPIDER_INSTALLER_PATH];
@@ -1110,13 +1137,13 @@ static int upgrade_recognized_payloads(void){
   unsigned i,k,n=OWNED_COUNT+1,changes=0u;
   int rollback_ok=1;
   const BYTE *bytes=NULL;DWORD len=0;
-  if(!verify_install_receipt(game_dir) &&
-     !verify_install_receipt_allow_unknown_dll(game_dir)){
+  if(!verify_install_receipt(managed_root()) &&
+     !verify_install_receipt_allow_unknown_dll(managed_root())){
     message(L"UPGRADE: missing/invalid prior receipt or modified non-DLL runtime; refusing any overwrite");
     return 0;
   }
   /* The original game receipt must be valid before even staging a DLL. */
-  if(!verify_game_receipt(game_dir)){
+  if(!verify_game_receipt(managed_root())){
     message(L"UPGRADE: original game receipt invalid; refusing project runtime update");
     return 0;
   }
@@ -1129,6 +1156,12 @@ static int upgrade_recognized_payloads(void){
     return 0;
   }
   if(!safe_directory(staging,1))return 0;
+#ifdef SPIDER_UNIFIED_INSTALL
+  { wchar_t game[SPIDER_INSTALLER_PATH];
+    if(!combine(game,SPIDER_INSTALLER_PATH,staging,L"game") ||
+       !safe_directory(game,1)){ discard_upgrade_staging(staging); return 0; }
+  }
+#endif
   if(!deploy_payloads_to(staging)||!write_install_receipt(staging)){
     message(L"UPGRADE: new bundled payload cannot be staged");
     discard_upgrade_staging(staging);return 0;
@@ -1137,14 +1170,14 @@ static int upgrade_recognized_payloads(void){
    * A new launcher may carry a newer DLL but identical SDL3/README.
    * Preserve .bak for an unchanged DLL instead of gratuitously rotating it. */
   for(i=0;i<OWNED_COUNT;i++){
-    if(!combine(dst,SPIDER_INSTALLER_PATH,game_dir,all_paths[i])||
+    if(!combine(dst,SPIDER_INSTALLER_PATH,managed_root(),all_paths[i])||
        !resource_bytes(resource_ids[i],&bytes,&len))goto abort_staging;
     changed[i]=!same_file(dst,bytes,len);
     if(changed[i])++changes;
   }
   if(!changes){
     discard_upgrade_staging(staging);
-    return verify_payloads() && verify_install_receipt(game_dir);
+    return verify_payloads() && verify_install_receipt(managed_root());
   }
   changed[OWNED_COUNT]=1; /* refresh receipt after component changes */
   /* All destination and backup paths are checked BEFORE any mutation.
@@ -1153,12 +1186,12 @@ static int upgrade_recognized_payloads(void){
   for(i=0;i<n;i++){
     DWORD attr,bak_attr;
     if(!changed[i])continue;
-    if(!combine(dst,SPIDER_INSTALLER_PATH,game_dir,all_paths[i])||
+    if(!combine(dst,SPIDER_INSTALLER_PATH,managed_root(),all_paths[i])||
        _snwprintf(backup,SPIDER_INSTALLER_PATH,L"%ls.bak",dst)<0)
       goto abort_staging;
     attr=GetFileAttributesW(dst);
     if(attr==INVALID_FILE_ATTRIBUTES){
-      if(i>=3u || GetLastError()!=ERROR_FILE_NOT_FOUND){
+      if(!owned_runtime_dll(i) || GetLastError()!=ERROR_FILE_NOT_FOUND){
         message(L"UPGRADE: missing non-DLL resource or inaccessible file %ls",all_paths[i]);
         goto abort_staging;
       }
@@ -1168,7 +1201,7 @@ static int upgrade_recognized_payloads(void){
     }
     bak_attr=GetFileAttributesW(backup);
     if(bak_attr!=INVALID_FILE_ATTRIBUTES){
-      if(i>=3u || !regular_file(backup)){
+      if(!owned_runtime_dll(i) || !regular_file(backup)){
         message(L"UPGRADE: existing non-DLL or unsafe backup %ls; refusing overwrite",backup);
         goto abort_staging;
       }
@@ -1181,13 +1214,13 @@ static int upgrade_recognized_payloads(void){
     DWORD old_attr,bak_attr;
     if(!changed[i])continue;
     if(!combine(src,SPIDER_INSTALLER_PATH,staging,all_paths[i])||
-       !combine(dst,SPIDER_INSTALLER_PATH,game_dir,all_paths[i])||
+       !combine(dst,SPIDER_INSTALLER_PATH,managed_root(),all_paths[i])||
        _snwprintf(backup,SPIDER_INSTALLER_PATH,L"%ls.bak",dst)<0||
        _snwprintf(previous,SPIDER_INSTALLER_PATH,L"%ls\\previous-bak-%u",
                  staging,i)<0)break;
     old_attr=GetFileAttributesW(dst);
     bak_attr=GetFileAttributesW(backup);
-    if(i<3u && old_attr!=INVALID_FILE_ATTRIBUTES &&
+    if(owned_runtime_dll(i) && old_attr!=INVALID_FILE_ATTRIBUTES &&
        bak_attr!=INVALID_FILE_ATTRIBUTES){
       /* Preserve existing .bak until all replacements succeed. */
       if(!MoveFileExW(backup,previous,MOVEFILE_WRITE_THROUGH)){
@@ -1204,7 +1237,7 @@ static int upgrade_recognized_payloads(void){
         break;
       }
       moved_original[i]=1;
-      if(i<3u)
+      if(owned_runtime_dll(i))
         message(L"UPGRADE: previous DLL %ls saved as .bak (older .bak replaced)",
                 all_paths[i]);
     }
@@ -1220,7 +1253,7 @@ static int upgrade_recognized_payloads(void){
       unsigned j=k-1;
       if(!changed[j] || (!installed_new[j] && !moved_original[j] &&
                           !stashed_old_bak[j]))continue;
-      if(!combine(dst,SPIDER_INSTALLER_PATH,game_dir,all_paths[j])||
+      if(!combine(dst,SPIDER_INSTALLER_PATH,managed_root(),all_paths[j])||
          _snwprintf(backup,SPIDER_INSTALLER_PATH,L"%ls.bak",dst)<0||
          _snwprintf(previous,SPIDER_INSTALLER_PATH,L"%ls\\previous-bak-%u",
                    staging,j)<0){
@@ -1249,7 +1282,7 @@ static int upgrade_recognized_payloads(void){
   }
   for(i=0;i<n;i++){
     if(!changed[i])continue;
-    if(i<3u){
+    if(owned_runtime_dll(i)){
       /* Keep ONE most-recent previous DLL as .bak; old .bak was safely
        * staged for rollback and is intentionally superseded on success. */
       if(!stashed_old_bak[i])continue;
@@ -1259,7 +1292,7 @@ static int upgrade_recognized_payloads(void){
         message(L"UPGRADE: obsolete prior DLL backup still present %ls",previous);
       continue;
     }
-    if(!combine(dst,SPIDER_INSTALLER_PATH,game_dir,all_paths[i])||
+    if(!combine(dst,SPIDER_INSTALLER_PATH,managed_root(),all_paths[i])||
        _snwprintf(backup,SPIDER_INSTALLER_PATH,L"%ls.bak",dst)<0)
       continue;
     if(!DeleteFileW(backup))
@@ -1267,7 +1300,7 @@ static int upgrade_recognized_payloads(void){
   }
   discard_upgrade_staging(staging);
   message(L"UPGRADE: bundled runtimes updated; previous DLL saved as .bak; original game/INI/saves unchanged");
-  return verify_payloads() && verify_install_receipt(game_dir);
+  return verify_payloads() && verify_install_receipt(managed_root());
  abort_staging:
   discard_upgrade_staging(staging);
   return 0;
@@ -1530,8 +1563,8 @@ int wmain(int argc,wchar_t **argv) {
   }
   if(!combine(gameexe,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe"))goto done;
   if(argc==2 && !wcscmp(argv[1],L"--verify")){
-    if(verified_retail(gameexe)&&verify_install_receipt(game_dir)&&
-       verify_game_receipt(game_dir)&&verify_payloads()){
+    if(verified_retail(gameexe)&&verify_install_receipt(managed_root())&&
+       verify_game_receipt(managed_root())&&verify_payloads()){
       message(L"VERIFY: OK original game EXE, 8 game files/receipt, 7 bundled components/receipt");
       result=0;
     }else{
@@ -1549,17 +1582,17 @@ int wmain(int argc,wchar_t **argv) {
      * adopt arbitrary prototype/runtime directories based on matching names.
      * Updates remain strictly opt-in, using only receipt-verified prior bytes. */
     if(!verified_retail(gameexe) ||
-       (!verify_install_receipt(game_dir) &&
-        !verify_install_receipt_allow_unknown_dll(game_dir))){
+       (!verify_install_receipt(managed_root()) &&
+        !verify_install_receipt_allow_unknown_dll(managed_root()))){
       message(L"VERIFY: missing or invalid install receipt; no changes made");
       goto done;
     }
     /* Legacy installations cannot mint a self-asserted game receipt.
      * Only --install-only may enroll against an unchanged original ISO;
      * a present but corrupt receipt must never be replaced or adopted. */
-    if(install_only && !verify_game_receipt(game_dir)){
+    if(install_only && !verify_game_receipt(managed_root())){
       wchar_t receipt[SPIDER_INSTALLER_PATH];DWORD attr;
-      if(!combine(receipt,SPIDER_INSTALLER_PATH,game_dir,game_receipt_name))
+      if(!combine(receipt,SPIDER_INSTALLER_PATH,managed_root(),game_receipt_name))
         goto done;
       attr=GetFileAttributesW(receipt);
       if(attr!=INVALID_FILE_ATTRIBUTES || GetLastError()!=ERROR_FILE_NOT_FOUND){
@@ -1568,7 +1601,7 @@ int wmain(int argc,wchar_t **argv) {
       }
       if(!enroll_game_receipt_from_disc())goto done;
     }
-    if(!verify_game_receipt(game_dir)){
+    if(!verify_game_receipt(managed_root())){
       message(L"VERIFY: original game data missing/modified or receipt absent; no changes made");
       goto done;
     }
