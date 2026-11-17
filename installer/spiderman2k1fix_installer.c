@@ -1583,7 +1583,11 @@ static int launch_game(int verify_exe){
 }
 static void usage(void){
   message(L"SpiderMan2k1Fix v%hs (standalone retail ISO installer)",SPIDERMAN2K1FIX_VERSION);
+#ifdef SPIDER_UNIFIED_INSTALL
+  message(L"EXPERIMENTAL UNIFIED INSTALLER (NOT RELEASE): install/verify/launch game/ with fix.dll");
+#else
   message(L"SpiderMan2k1Fix.exe                   Install/verify/launch in spiderman2001/");
+#endif
   message(L"SpiderMan2k1Fix.exe --install-only    Install/upgrade; enroll legacy game receipt from original ISO");
   message(L"SpiderMan2k1Fix.exe --launch-no-verify  Direct launch without file checks");
   message(L"SpiderMan2k1Fix.exe --verify          Read-only SHA-256 checks for 8 game files + 7 resources");
@@ -1632,6 +1636,9 @@ int wmain(int argc,wchar_t **argv) {
     return 2;
   logfile=_wfopen(log_path,L"w, ccs=UTF-8");
   if(!logfile)return 2;
+#ifdef SPIDER_UNIFIED_INSTALL
+  message(L"EXPERIMENTAL UNIFIED INSTALLER: TEST ONLY; no migration from previous layouts");
+#endif
   message(L"START: SpiderMan2k1Fix v%hs mode=%ls verbose=%d",
     SPIDERMAN2K1FIX_VERSION,inspect?L"inspect":L"installer",verbose_mode);
   if(inspect){
@@ -1708,6 +1715,14 @@ int wmain(int argc,wchar_t **argv) {
     /* Legacy installations cannot mint a self-asserted game receipt.
      * Only --install-only may enroll against an unchanged original ISO;
      * a present but corrupt receipt must never be replaced or adopted. */
+#ifdef SPIDER_UNIFIED_INSTALL
+    /* A new unified installation is never self-enrolled from a previous
+     * directory. Both receipts are minted only with original ISO extraction. */
+    if(!verify_game_receipt(managed_root())) {
+      message(L"UNIFIED: missing/corrupt game receipt; no automatic migration or enrollment");
+      goto done;
+    }
+#else
     if(install_only && !verify_game_receipt(managed_root())){
       wchar_t receipt[SPIDER_INSTALLER_PATH];DWORD attr;
       if(!combine(receipt,SPIDER_INSTALLER_PATH,managed_root(),game_receipt_name))
@@ -1719,6 +1734,7 @@ int wmain(int argc,wchar_t **argv) {
       }
       if(!enroll_game_receipt_from_disc())goto done;
     }
+#endif
     if(!verify_game_receipt(managed_root())){
       message(L"VERIFY: original game data missing/modified or receipt absent; no changes made");
       goto done;
@@ -1735,6 +1751,10 @@ int wmain(int argc,wchar_t **argv) {
       result=0;goto done;
     }
     if(!verify_payloads()){
+#ifdef SPIDER_UNIFIED_INSTALL
+      message(L"UNIFIED: runtime resources differ; use --install-only for authenticated update");
+      goto done;
+#else
       /* A newer launcher updates only installer-owned resources, after
        * authenticating all eight original game files and receipt. Unknown
        * project DLLs get one overwriteable .bak; no game file is touched. */
@@ -1743,6 +1763,7 @@ int wmain(int argc,wchar_t **argv) {
         goto done;
       }
       message(L"INSTALL: verified bundled runtimes automatically updated before launch");
+#endif
     }
     result=launch_game(1)?0:1;goto done;
   }
