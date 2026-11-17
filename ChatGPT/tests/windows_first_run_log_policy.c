@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <wchar.h>
 #include <stdio.h>
+#include <string.h>
 #include "../../first_run_log_policy.h"
 
 #define CHECK(e,msg) do { if(!(e)){ \
