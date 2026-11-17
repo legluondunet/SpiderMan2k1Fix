@@ -1,6 +1,6 @@
 /* Native Windows x86 synthetic suspended-process regression test.
  * No original game data is loaded or distributed. The child process runs at
- * IMAGE_BASE=0x500000, while a dummy PE32 image is allocated at 0x400000.
+ * IMAGE_BASE=0x10000000, while a synthetic retail-sized PE32 image is allocated at 0x400000.
  * The actual production remote-memory patcher is linked unchanged.
  *
  * Every failure kills the suspended child; NO thread is ever resumed.
@@ -14,11 +14,12 @@
 #include "../../installer/unified_import_alias.h"
 
 #define DUMMY_BASE ((uintptr_t)0x00400000u)
-#define DUMMY_SIZE 0x00150000u
+#define DUMMY_SIZE 0x02A0D000u /* exact retail mapped image, including huge .data BSS */
 #define IMPORT_DESC 0x00130000u
 #define IMPORT_NAME 0x00131000u
 #define ORIGINAL_THUNK 0x00132000u
 #define FUNCTION_NAME 0x00133000u
+#define FUNCTION_NAME2 0x00133100u
 #define IAT_THUNK 0x0013b010u
 
 static int put(HANDLE process,uintptr_t offset,const void *bytes,SIZE_T n) {
@@ -35,11 +36,14 @@ static int fixture(HANDLE p) {
   IMAGE_DOS_HEADER mz;
   IMAGE_NT_HEADERS32 nt;
   IMAGE_IMPORT_DESCRIPTOR desc[2];
-  IMAGE_THUNK_DATA32 thunk[2];
+  IMAGE_THUNK_DATA32 thunk[3];
   static const char dllname[10]="DDRAW.dll";
   static const BYTE symbol[]={
       0,0,'D','i','r','e','c','t','D','r','a','w',
       'C','r','e','a','t','e','E','x',0};
+  static const BYTE symbol2[]={
+      0,0,'D','i','r','e','c','t','D','r','a','w',
+      'E','n','u','m','e','r','a','t','e','E','x','A',0};
   static const BYTE nocd[]={0x81,0xEC,0x20,0x02,0,0,0x56,
                               0x8B,0xB4,0x24,0x28,0x02,0,0};
   static const BYTE call1[]={0xE8,0x2F,0x0A,0,0};
@@ -76,12 +80,14 @@ static int fixture(HANDLE p) {
   desc[0].FirstThunk=IAT_THUNK;
   memset(thunk,0,sizeof(thunk));
   thunk[0].u1.AddressOfData=FUNCTION_NAME;
+  thunk[1].u1.AddressOfData=FUNCTION_NAME2;
   return put(p,0,&mz,sizeof(mz)) &&
          put(p,0x80,&nt,sizeof(nt)) &&
          put(p,IMPORT_DESC,desc,sizeof(desc)) &&
          put(p,IMPORT_NAME,dllname,sizeof(dllname)) &&
          put(p,ORIGINAL_THUNK,thunk,sizeof(thunk)) &&
          put(p,FUNCTION_NAME,symbol,sizeof(symbol)) &&
+         put(p,FUNCTION_NAME2,symbol2,sizeof(symbol2)) &&
          put(p,0x1163E0,nocd,sizeof(nocd)) &&
          put(p,0x1159AC,call1,sizeof(call1)) &&
          put(p,0x115D85,call2,sizeof(call2)) &&
@@ -125,19 +131,25 @@ int wmain(void) {
         "reject non-i386 PE before any alias");
   nt.FileHeader.Machine=IMAGE_FILE_MACHINE_I386;
   CHECK(put(pi.hProcess,0x80,&nt,sizeof(nt)),"restore valid PE32");
-  /* An extra imported function would fail to load against fix.dll. Reject
+  nt.OptionalHeader.SizeOfImage=0x02000000u;
+  CHECK(put(pi.hProcess,0x80,&nt,sizeof(nt)),"tamper mapped image size");
+  CHECK(!SpiderUnified_AliasSuspendedDDraw(pi.hProcess),
+        "reject non-retail SizeOfImage before any alias");
+  nt.OptionalHeader.SizeOfImage=DUMMY_SIZE;
+  CHECK(put(pi.hProcess,0x80,&nt,sizeof(nt)),"restore exact retail image size");
+  /* A THIRD imported function would fail to load against fix.dll. Reject
    * any such descriptor without changing the original DLL name. */
   memset(&extra,0,sizeof(extra));extra.u1.AddressOfData=FUNCTION_NAME;
-  CHECK(put(pi.hProcess,ORIGINAL_THUNK+4u,&extra,sizeof(extra)),
-        "insert unexpected second DirectDraw import");
+  CHECK(put(pi.hProcess,ORIGINAL_THUNK+8u,&extra,sizeof(extra)),
+        "insert unexpected third DirectDraw import");
   CHECK(!SpiderUnified_AliasSuspendedDDraw(pi.hProcess),
-        "refuse import descriptor with extra method");
+        "refuse import descriptor with third method");
   CHECK(readback(pi.hProcess,IMPORT_NAME,dllname,sizeof(dllname)) &&
         strcmp(dllname,"DDRAW.dll")==0,
         "original import preserved on rejected second method");
   memset(&extra,0,sizeof(extra));
-  CHECK(put(pi.hProcess,ORIGINAL_THUNK+4u,&extra,sizeof(extra)),
-        "restore single import descriptor");
+  CHECK(put(pi.hProcess,ORIGINAL_THUNK+8u,&extra,sizeof(extra)),
+        "restore exactly two native DirectDraw methods");
   CHECK(SpiderUnified_AliasSuspendedDDraw(pi.hProcess),"apply alias");
   CHECK(readback(pi.hProcess,IMPORT_NAME,dllname,sizeof(dllname)),
         "read alias after patch");
