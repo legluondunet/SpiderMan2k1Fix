@@ -10,6 +10,7 @@
 #include "../version_info.h"
 #ifdef SPIDER_UNIFIED_INSTALL
 #include "unified_import_alias.h"
+#include "../first_run_log_policy.h"
 #endif
 
 /* One PE32 Windows/Wine executable containing only project-owned/redistributable
@@ -1468,16 +1469,19 @@ static void preserve_crashed_game_log(
 #ifdef SPIDER_UNIFIED_INSTALL
 static int launch_unified_game(int verify_exe) {
   wchar_t path[SPIDER_INSTALLER_PATH],cmd[SPIDER_INSTALLER_PATH+4];
-  wchar_t runtime_log[SPIDER_INSTALLER_PATH];
+  wchar_t runtime_log[SPIDER_INSTALLER_PATH],first_ini[SPIDER_INSTALLER_PATH];
   wchar_t old_launcher[SPIDER_INSTALLER_PATH];
   STARTUPINFOW si;PROCESS_INFORMATION pi;
   WIN32_FILE_ATTRIBUTE_DATA log_before;
   DWORD exit_code=1,old_len=0,previous_last_error=0;
   int had_launcher=0,had_prior_log=0,launched=0,ok=0;
+  int first_run_auto_log=0;
   (void)verify_exe; /* Authenticated game EXE is always mandatory in unified mode. */
   if(!combine(path,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe") ||
      !combine(runtime_log,SPIDER_INSTALLER_PATH,launcher_dir,
-              L"SpiderMan2k1Fix.log"))return 0;
+              L"SpiderMan2k1Fix.log") ||
+     !combine(first_ini,SPIDER_INSTALLER_PATH,launcher_dir,
+              L"SpiderMan2k1Fix.ini"))return 0;
   if(!verified_retail(path)) {
     message(L"UNIFIED: unsupported or altered SpideyPC.exe; no game launch");
     return 0;
@@ -1498,6 +1502,24 @@ static int launch_unified_game(int verify_exe) {
     goto restore_environment;
   had_prior_log=GetFileAttributesExW(
     runtime_log,GetFileExInfoStandard,&log_before)!=0;
+  /* This happens BEFORE the game creates its factory INI. The core reads
+   * the same missing-INI condition before generating the default Log=0.
+   * Do not touch any existing INI: [Debug] Log is solely user-controlled. */
+  first_run_auto_log=SpiderFirstRunLog_IniMissingW(first_ini);
+  if(first_run_auto_log){
+    FILE *startup=_wfopen(runtime_log,L"ab");
+    if(startup){
+      int wrote=fprintf(startup,
+        "FIRST-RUN-LOG: initial launcher startup; effective Log=1 for this session only; persistent INI default Log=0\\r\\n");
+      if(wrote<0 || fflush(startup)!=0)
+        message(L"FIRST-RUN-LOG: warning could not flush startup diagnostics");
+      if(fclose(startup)!=0)
+        message(L"FIRST-RUN-LOG: warning could not close startup diagnostics");
+    }else{
+      message(L"FIRST-RUN-LOG: warning cannot open SpiderMan2k1Fix.log");
+    }
+    message(L"FIRST-RUN-LOG: first game session; diagnostic log automatic, subsequent sessions use user INI Log value");
+  }
   /* The first resumed game instruction may only see a fully prepared in-
    * memory import alias plus exact signature-gated No-CD patch. */
   if(!CreateProcessW(path,cmd,NULL,NULL,FALSE,CREATE_SUSPENDED,
