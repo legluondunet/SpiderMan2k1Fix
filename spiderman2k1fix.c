@@ -6134,7 +6134,14 @@ static DWORD initialize_body(LPVOID unused) {
       SpiderDisplayMenu_Install(display_resolution_setting,display_aspect_setting,log_line);
     }
   }
+#ifndef SPIDER_UNIFIED_FIX
   install_ddraw_hook();
+#else
+  /* DirectDrawCreateEx is already imported from fix.dll through the
+   * mandatory launcher's in-memory PE import alias. Never redirect the IAT
+   * a second time while the initial native call is in progress. */
+  log_line("DDRAW-STARTUP: unified import alias owns DirectDrawCreateEx; legacy IAT install skipped");
+#endif
   /* Always pause on confirmed focus loss; legacy INI keys are ignored. */
   InterlockedExchange(&pause_on_focus_loss,1);
   log_line("FOCUS-PAUSE: permanent Flip-boundary pause ON; Any-key press/release resumes");
@@ -6173,9 +6180,18 @@ __declspec(dllexport) HRESULT __cdecl SpiderMan2k1Fix_DirectDrawGate(
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID reserved) {
   (void)reserved;
   if(reason==DLL_PROCESS_ATTACH) {
-    HANDLE t; DisableThreadLibraryCalls(instance);
-    t=CreateThread(NULL,0,initialize_worker,NULL,0,NULL);
-    if(t) CloseHandle(t);
+    DisableThreadLibraryCalls(instance);
+#ifndef SPIDER_UNIFIED_FIX
+    /* Compatibility with the existing WinMM-proxy startup architecture. */
+    {
+      HANDLE t=CreateThread(NULL,0,initialize_worker,NULL,0,NULL);
+      if(t)CloseHandle(t);
+    }
+#else
+    /* Unified import-alias mode: the launcher loads fix.dll before the
+     * original game starts. All expensive initialization happens on the
+     * first DirectDrawCreateEx call AFTER loader lock, not in DllMain. */
+#endif
   }
   return TRUE;
 }
