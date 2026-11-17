@@ -697,9 +697,48 @@ static void probe_desktop_mode(HWND hwnd) {
   log_line(line);
 }
 
+/* Runtime DPI evidence (no desktop mutation). Windows 10+ exposes
+ * per-HWND awareness; older Wine and Windows versions may lack these APIs.
+ * Values: 0 unaware, 1 system-aware, 2 per-monitor aware, -1 unavailable. */
+static void spider_log_runtime_dpi_context(HWND hwnd) {
+  HMODULE u=GetModuleHandleA("user32.dll");
+  HMODULE shcore=GetModuleHandleA("shcore.dll");
+  typedef HRESULT (WINAPI *ProcessAwareFn)(HANDLE,int *);
+  typedef HANDLE (WINAPI *WindowContextFn)(HWND);
+  typedef int (WINAPI *AwarenessFromContextFn)(HANDLE);
+  typedef UINT (WINAPI *DpiForWindowFn)(HWND);
+  ProcessAwareFn proc=NULL;
+  WindowContextFn window_context=NULL;
+  AwarenessFromContextFn from_context=NULL;
+  DpiForWindowFn window_dpi=NULL;
+  int process_mode=-1,window_mode=-1;
+  unsigned dpi=0;
+  char line[190];
+  if(!shcore)shcore=LoadLibraryA("shcore.dll");
+  if(shcore)proc=(ProcessAwareFn)(void *)GetProcAddress(
+    shcore,"GetProcessDpiAwareness");
+  if(proc && FAILED(proc(GetCurrentProcess(),&process_mode)))process_mode=-1;
+  if(u){
+    window_context=(WindowContextFn)(void *)GetProcAddress(
+      u,"GetWindowDpiAwarenessContext");
+    from_context=(AwarenessFromContextFn)(void *)GetProcAddress(
+      u,"GetAwarenessFromDpiAwarenessContext");
+    window_dpi=(DpiForWindowFn)(void *)GetProcAddress(u,"GetDpiForWindow");
+  }
+  if(window_context && from_context) {
+    HANDLE ctx=window_context(hwnd);
+    if(ctx)window_mode=from_context(ctx);
+  }
+  if(window_dpi)dpi=(unsigned)window_dpi(hwnd);
+  snprintf(line,sizeof(line),
+    "DISPLAY-DPI-CONTEXT: process=%d hwnd=%d window_dpi=%u (0=unaware,1=system,2=per-monitor,-1=unavailable)",
+    process_mode,window_mode,dpi);
+  log_line(line);
+}
 static void log_monitor(HWND hwnd) {
   MONITORINFO mi; HMONITOR mon; char line[220];
   if(!hwnd || !IsWindow(hwnd)) return;
+  spider_log_runtime_dpi_context(hwnd);
   memset(&mi,0,sizeof(mi)); mi.cbSize=sizeof(mi);
   mon=MonitorFromWindow(hwnd,MONITOR_DEFAULTTONEAREST);
   if(!GetMonitorInfoA(mon,&mi)) return;
