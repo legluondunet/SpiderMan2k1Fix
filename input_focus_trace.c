@@ -574,11 +574,61 @@ static void focus_probe_window_system(const char *stage) {
     (long)cursor_display_increments);
   focus_log(line);
 }
+#ifdef SPIDER_UNIFIED_FIX
+/* The verified game mouse is disabled at the original PCShell gates, so
+ * leaving the Windows pointer hidden/captured serves NO gameplay purpose.
+ * Unlike legacy mode, do not hide it again on returning to Spider-Man.
+ * This runs on the game Flip thread, not in the loader or a foreign HWND.
+ * Only remove a ClipCursor rectangle which exactly equals the GAME window
+ * (and is smaller than the full virtual desktop). Leave other applications'
+ * cursor visibility/clip and every unrelated cursor rectangle alone. */
+static void focus_unified_cursor_available(void) {
+  CURSORINFO ci;
+  RECT clipped={0},window={0},desktop;
+  int result=0;
+  int calls=0;
+  static int reported=0,release_reported=0;
+  if(!tracked_window || !IsWindow(tracked_window) ||
+     GetForegroundWindow()!=tracked_window ||
+     InterlockedCompareExchange(&cursor_visibility_test,0,0)!=1)return;
+  desktop.left=GetSystemMetrics(SM_XVIRTUALSCREEN);
+  desktop.top=GetSystemMetrics(SM_YVIRTUALSCREEN);
+  desktop.right=desktop.left+GetSystemMetrics(SM_CXVIRTUALSCREEN);
+  desktop.bottom=desktop.top+GetSystemMetrics(SM_CYVIRTUALSCREEN);
+  if(GetClipCursor(&clipped) && GetWindowRect(tracked_window,&window) &&
+     EqualRect(&clipped,&window) && !EqualRect(&clipped,&desktop) &&
+     GetForegroundWindow()==tracked_window) {
+    if(ClipCursor(NULL) && !release_reported) {
+      focus_log("INPUT-CURSOR: released game-window-only ClipCursor; desktop monitors accessible");
+      release_reported=1;
+    }
+  }
+  memset(&ci,0,sizeof(ci));ci.cbSize=sizeof(ci);
+  if(!GetCursorInfo(&ci) || (ci.flags&CURSOR_SHOWING))return;
+  /* ShowCursor uses a thread display counter; take just enough increments
+   * to make it nonnegative. Never undo these when game regains foreground.
+   * The original game may re-hide it, so check again on later Flips. */
+  for(calls=0;calls<16;calls++) {
+    result=ShowCursor(TRUE);
+    ++cursor_display_increments;
+    if(result>=0)break;
+  }
+  /* Game code can leave the Win32 cursor handle NULL even after unhiding.
+   * Set the stock desktop arrow only while the game is foreground. */
+  if(GetForegroundWindow()==tracked_window && !ci.hCursor)
+    SetCursor(LoadCursorA(NULL,IDC_ARROW));
+  if(!reported) {
+    focus_log("INPUT-CURSOR: unified cursor restored; do not hide on game foreground (game mouse disabled)");
+    reported=1;
+  }
+}
+#endif
 static void focus_window_transition(int foreground) {
   LONG i;
   int result=0;
   char line[220];
   focus_probe_window_system(foreground?"foreground-before":"background-before");
+#ifndef SPIDER_UNIFIED_FIX
   if(!foreground && InterlockedCompareExchange(&cursor_visibility_test,0,0)==1) {
     CURSORINFO ci;
     memset(&ci,0,sizeof(ci));ci.cbSize=sizeof(ci);
@@ -608,6 +658,12 @@ static void focus_window_transition(int foreground) {
       balanced,result);
     focus_log(line);
   }
+#else
+  /* New architecture: cursor remains freely available, not re-hidden on
+   * foreground; focus recovery never changes the game window Z-order. */
+  (void)i;(void)result;(void)line;
+  if(foreground)focus_unified_cursor_available();
+#endif
   if(foreground && InterlockedCompareExchange(&zorder_test,0,0)==1 &&
      GetForegroundWindow()==tracked_window && IsWindow(tracked_window) &&
      IsWindowVisible(tracked_window) && !IsIconic(tracked_window)) {
@@ -633,6 +689,12 @@ void SpiderInputFocus_OnFlip(LONG flip_number) {
    * Its ownership and freshness are checked by the Wine backend. */
   SpiderWineFocusAutostart_TryRecover(focus_log);
   if(!diagnostic_active || !tracked_window) return;
+#ifdef SPIDER_UNIFIED_FIX
+  /* The initial window already exists at Flip #1. Restore the unused OS
+   * pointer even when no focus transition occurred, and recover if original
+   * Win32 cursor code hides it again while game remains foreground. */
+  focus_unified_cursor_available();
+#endif
   fg=GetForegroundWindow();foreground=(fg==tracked_window)?1:0;
   previous=InterlockedExchange(&last_focus_foreground,foreground);
   if(foreground!=previous) {
