@@ -54,6 +54,9 @@
 #include "version_info.h"
 #include "f9_png.h"
 #include "spider_fix_paths.h"
+#ifdef SPIDER_UNIFIED_FIX
+#include "first_run_log_policy.h"
+#endif
 #include "system_diagnostics.h"
 #include "f9_toast.h"
 #include "quick_exit_f12.h"
@@ -68,6 +71,9 @@ static const BYTE expected_sha256[32] = {
   0x2a,0x05,0x8f,0xf0,0x74,0x68,0x9d,0xea
 };
 static int debug_log_enabled=0;
+#ifdef SPIDER_UNIFIED_FIX
+static int first_run_log_enabled=0;
+#endif
 /* Strictly opt-in: timestamp ALL log lines with a local wall-clock aligned
  * to xprop/date on the host. Add sparse Blt/Flip heartbeats for comparison.
  * This flag never changes game state, focus, or pause timing. */
@@ -78,6 +84,13 @@ static void debug_log_load_setting(void) {
   debug_log_enabled=0;
   if(!spider_path_ini_a(path,sizeof(path)))return;
   debug_log_enabled=(GetPrivateProfileIntA("Debug","Log",0,path)==1);
+#ifdef SPIDER_UNIFIED_FIX
+  /* Latch for the whole FIRST GAME PROCESS, not merely until the generated
+   * factory INI appears. initialize_body() reloads settings after creating
+   * default Log=0: that must NOT silence the remainder of this first run. */
+  if(SpiderFirstRunLog_IniMissingA(path))first_run_log_enabled=1;
+  if(first_run_log_enabled)debug_log_enabled=1;
+#endif
   focus_timeline_enabled=0;
   if(debug_log_enabled) {
     char opt[3]={0};
@@ -86,16 +99,42 @@ static void debug_log_load_setting(void) {
     focus_timeline_enabled=(n==1 && opt[0]=='1');
   }
 }
+/* Keep precisely ONE game session in SpiderMan2k1Fix.log. The first
+ * logged line of a new game process truncates previous sessions; subsequent
+ * lines keep appending during that same process. INIT_ONCE prevents concurrent
+ * first log calls from truncating each other's startup diagnostics.
+ *
+ * Exception: on the first unified launch the installer already opens the
+ * fresh file and writes FIRST-RUN-LOG before CreateProcessW. Preserve those
+ * early diagnostics and append core output to that same session instead.
+ * No log file is created when [Debug] Log=0. */
+static INIT_ONCE game_log_session_once=INIT_ONCE_STATIC_INIT;
+static char game_log_session_path[MAX_PATH];
+static BOOL CALLBACK game_log_prepare_session(
+    PINIT_ONCE once,PVOID parameter,PVOID *context) {
+  (void)once;(void)parameter;(void)context;
+  if(!spider_path_log_a(game_log_session_path,
+                        sizeof(game_log_session_path)))return FALSE;
+#ifdef SPIDER_UNIFIED_FIX
+  /* Unified: the first-run launcher already seeded the header. For later
+   * Log=1 sessions, discard the previous game's lines exactly once. */
+  if(!first_run_log_enabled){
+    FILE *f=fopen(game_log_session_path,"w");
+    if(!f)return FALSE;
+    return fclose(f)==0;
+  }
+#else
+  /* Legacy: winmm_proxy.c already truncates on its first early DPI/WinMM
+   * message. Do not truncate a second time and lose those startup lines. */
+#endif
+  return TRUE;
+}
 static void log_line(const char *s) {
-  static char path[MAX_PATH];
-  static int resolved=0;
   FILE *f;
   if(!debug_log_enabled)return;
-  if(!resolved) {
-    if(!spider_path_log_a(path,sizeof(path)))return;
-    resolved=1;
-  }
-  f=fopen(path,"a");
+  if(!InitOnceExecuteOnce(&game_log_session_once,
+                          game_log_prepare_session,NULL,NULL))return;
+  f=fopen(game_log_session_path,"a");
   if(f) {
     if(focus_timeline_enabled) {
       SYSTEMTIME st;
@@ -5887,6 +5926,10 @@ static DWORD initialize_body(LPVOID unused) {
   BYTE *base=(BYTE*)GetModuleHandleA(NULL);
   char line[160]; (void)unused;
   debug_log_load_setting();
+#ifdef SPIDER_UNIFIED_FIX
+  if(first_run_log_enabled)
+    log_line("FIRST-RUN-LOG: automatic initial startup diagnostics; future sessions use [Debug] Log=0 unless changed by user");
+#endif
   log_line("START: " SPIDERMAN2K1FIX_VERSION_LABEL);
   if (!supported_exe()) {
     log_line("ERROR: unsupported EXE SHA-256; do not use this proxy with this executable");
