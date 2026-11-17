@@ -1,0 +1,36 @@
+name: Prune old SpiderMan2k1Fix Actions history
+
+on:
+  # Keep the newest successful unified build whenever it finishes on main.
+  workflow_run:
+    workflows: ["SpiderMan2k1Fix x86 (unified development)"]
+    types: [completed]
+    branches: [main]
+  # There are thousands of old runs, so clear them in bounded API batches.
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: spiderman2k1fix-actions-prune
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out safe cleanup script
+        uses: actions/checkout@v4
+      - name: Preserve latest successful EXE and remove old Actions data
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/prune_actions_history.py
