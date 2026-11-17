@@ -46,6 +46,16 @@ No `mods/` directory is created until actual modding support is implemented.
 Screenshots are written beside the launcher when writable. The native X11
 focus helper is stored under the launcher's `linux/` directory.
 
+## Downloadable development executable
+
+GitHub Actions now builds the unified launcher as **`SpiderMan2k1Fix.exe`**.
+The **`SpiderMan2k1Fix`** artifact contains this one executable only; the
+32-bit Windows fixture and diagnostic executables are kept in a short-lived
+**`SpiderMan2k1Fix-CI-Internal`** artifact exclusively for automated tests.
+The older v2.0.0 installer workflow runs manually only, not on each push.
+These development builds are not published releases and should be tested in
+an empty folder to preserve an existing installation.
+
 ## Commands (experimental)
 
 Use the launcher from the **root**, never `game/SpideyPC.exe` directly:
