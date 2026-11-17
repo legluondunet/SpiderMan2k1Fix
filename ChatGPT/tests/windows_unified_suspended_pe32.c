@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
-#include "../installer/unified_import_alias.h"
+#include "../../installer/unified_import_alias.h"
 
 #define DUMMY_BASE ((uintptr_t)0x00400000u)
 #define DUMMY_SIZE 0x00150000u
