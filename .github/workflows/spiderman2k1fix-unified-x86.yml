@@ -42,10 +42,11 @@ jobs:
           set -euo pipefail
           compiler="$HOME/.cache/spiderman2k1fix-toolchains/llvm-mingw-20261006-msvcrt-ubuntu-22.04-x86_64/bin/i686-w64-mingw32-clang"
           "$compiler" -std=gnu11 -O2 -Wall -Wextra -Werror -municode \
-            -Wl,--image-base,0x500000 -Wl,--subsystem,console \
+            -Wl,--image-base,0x10000000 -Wl,--disable-dynamicbase -Wl,--subsystem,console \
             ChatGPT/tests/windows_unified_suspended_pe32.c \
             installer/unified_import_alias.c -o dist/unified/suspended-pe32-test.exe
           file dist/unified/suspended-pe32-test.exe | grep -q PE32
+          objdump -p dist/unified/suspended-pe32-test.exe | grep -E "ImageBase|DllCharacteristics"
       - name: Verify unified DLL but do not advertise a runnable installer
         run: |
           set -euo pipefail
