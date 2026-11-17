@@ -1631,12 +1631,14 @@ static int launch_unified_game(int verify_exe) {
     goto restore_environment;
   had_prior_log=GetFileAttributesExW(
     runtime_log,GetFileExInfoStandard,&log_before)!=0;
-  /* This happens BEFORE the game creates its factory INI. The core reads
-   * the same missing-INI condition before generating the default Log=0.
-   * Do not touch any existing INI: [Debug] Log is solely user-controlled. */
+  /* A fresh first-session log must NOT append to any stale diagnostic.
+   * Prepare it BEFORE the game starts, so the runtime can append its first
+   * startup messages to the launcher's pre-game FIRST-RUN-LOG line.
+   * Later Log=1 sessions are truncated by the core at their first log line.
+   * Do not touch existing INI: [Debug] Log remains user-controlled. */
   first_run_auto_log=SpiderFirstRunLog_IniMissingW(first_ini);
   if(first_run_auto_log){
-    FILE *startup=_wfopen(runtime_log,L"ab");
+    FILE *startup=_wfopen(runtime_log,L"wb");
     if(startup){
       int wrote=fprintf(startup,
         "FIRST-RUN-LOG: initial launcher startup; effective Log=1 for this session only; persistent INI default Log=0\r\n");
