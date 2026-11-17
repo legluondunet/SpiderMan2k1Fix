@@ -1772,8 +1772,11 @@ int wmain(int argc,wchar_t **argv) {
   if(argc==2 && !wcscmp(argv[1],L"--verify")){
     if(verified_retail(gameexe)&&verify_install_receipt(managed_root())&&
        verify_game_receipt(managed_root())&&verify_payloads()){
-      message(L"VERIFY: OK original game EXE, 8 game files/receipt, %u bundled components/receipt",
-              (unsigned)OWNED_COUNT);
+#ifdef SPIDER_UNIFIED_INSTALL
+      message(L"VERIFY: OK original game EXE, 8 game files/receipt, 8 bundled components/receipt");
+#else
+      message(L"VERIFY: OK original game EXE, 8 game files/receipt, 7 bundled components/receipt");
+#endif
       result=0;
     }else{
       message(L"VERIFY: FAILED game EXE, 8 game files/receipt or bundled components");
