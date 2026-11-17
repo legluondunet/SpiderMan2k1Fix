@@ -54,4 +54,6 @@ def test_primary_null_stop_guard_matches_original_machine_code_and_fails_closed(
     assert "SpiderUnified_PatchSuspendedPrimaryNullStop(HANDLE process);" in header
     assert "SpiderUnified_PatchSuspendedPrimaryNullStop(pi.hProcess)" in installer
     assert "DDSCL_EXCLUSIVE" not in source
-    assert "SetCooperativeLevel" not in source
+    # Do not manipulate the cooperative level in code (comments may name it).
+    assert "original_coop(" not in source
+    assert "DDSCL_NORMAL" not in source
