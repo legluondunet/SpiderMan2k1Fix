@@ -1510,7 +1510,7 @@ static int launch_unified_game(int verify_exe) {
     FILE *startup=_wfopen(runtime_log,L"ab");
     if(startup){
       int wrote=fprintf(startup,
-        "FIRST-RUN-LOG: initial launcher startup; effective Log=1 for this session only; persistent INI default Log=0\\r\\n");
+        "FIRST-RUN-LOG: initial launcher startup; effective Log=1 for this session only; persistent INI default Log=0\r\n");
       if(wrote<0 || fflush(startup)!=0)
         message(L"FIRST-RUN-LOG: warning could not flush startup diagnostics");
       if(fclose(startup)!=0)
