@@ -97,7 +97,19 @@ a user-configured INI before the first launch honors its setting. If the
 first game session crashes after generating an INI, the startup log is
 still available and the next launch uses the generated `Log=0`.
 
-The *installer log* is independent of the in-game debug switch and continues
+**The runtime log contains one game process only, never cumulative
+history.** For every new game process with `[Debug] Log=1`, the FIRST core
+logging call truncates `SpiderMan2k1Fix.log` and later messages append only
+to that current run. The first-launch exception preserves the launcher's
+early diagnostic line: the launcher creates/truncates the file before
+`CreateProcessW`, and the core appends without truncating that preamble.
+`INIT_ONCE` ensures only one reset even if multiple game threads write.
+When `Log=0`, the old log is left untouched rather than silently deleted,
+but no further game messages are added. To preserve a previous session for
+comparison, copy the log elsewhere before launching the next logged run.
+
+The *installer log* and *inspection log* are independent of the in-game
+debug switch and each is also reset at its own invocation. They continue
 to record verification, installation, updates and launch errors.
 
 ## Diagnostic acceptance still outstanding
