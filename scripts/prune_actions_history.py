@@ -2,7 +2,8 @@
 """Prune old Actions runs/artifacts and ephemeral caches, preserving the latest EXE.
 
 GitHub has no bulk-delete endpoint for workflow runs. This script deletes
-bounded batches so scheduled invocations can eventually clear long history.
+bounded batches, dispatching follow-up runs to finish the old history without
+repeated manual clicks. Hourly scheduling remains a rate-limit fallback.
 It never deletes the latest successful unified build, this cleanup run,
 unfinished runs, or newer unified builds that may have just completed.
 Later-running legacy CI is not protected merely because its ID is higher.
@@ -19,6 +20,9 @@ BUILD_WORKFLOW = "spiderman2k1fix-unified-x86.yml"
 MAX_ARTIFACTS = 120
 MAX_CACHES = 50
 MAX_RUNS = 550
+CLEANUP_WORKFLOW = "spiderman2k1fix-actions-cleanup.yml"
+CLEANUP_NAME = "Prune old SpiderMan2k1Fix Actions history"
+CONTINUE_RATE_REMAINING = 160
 
 
 class RateLimitPause(Exception):
@@ -31,7 +35,7 @@ class GitHub:
             raise ValueError("invalid repository")
         self.repo, self.token, self.remaining = repo, token, None
 
-    def request(self, method, path):
+    def request(self, method, path, payload=None):
         if self.remaining is not None and self.remaining < 120:
             raise RateLimitPause(f"Only {self.remaining} API requests left")
         if not path.startswith("/"):
@@ -39,8 +43,10 @@ class GitHub:
         req = Request(
             f"https://api.github.com/repos/{self.repo}{path}",
             method=method,
+            data=json.dumps(payload).encode("utf-8") if payload is not None else None,
             headers={
                 "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.token}",
                 "X-GitHub-Api-Version": "2022-11-28",
                 "User-Agent": "SpiderMan2k1Fix-storage-pruner",
@@ -79,6 +85,9 @@ class GitHub:
 
     def delete(self, path):
         return self.request("DELETE", path)
+
+    def post(self, path, payload):
+        return self.request("POST", path, payload)
 
 
 def find_last_usable_build(api):
@@ -165,6 +174,49 @@ def prune_runs(api, keep, current):
     return deleted
 
 
+
+def needs_cleanup(run, keep, current):
+    """Only completed runs other than the proven build and this cleaner."""
+    return (
+        run.get("status") == "completed"
+        and int(run["id"]) not in (keep, current)
+        and (
+            int(run["id"]) < keep
+            or run.get("name") != "SpiderMan2k1Fix x86 (unified development)"
+        )
+    )
+
+
+def queue_next_batch(api, keep, current, counts):
+    """Dispatch another bounded batch, without duplicates or API overuse."""
+    if api.remaining is not None and api.remaining < CONTINUE_RATE_REMAINING:
+        print("API quota too low to self-dispatch; hourly fallback enabled", flush=True)
+        return False
+    page = api.get("/actions/runs?per_page=100").get("workflow_runs", [])
+    for run in page:
+        if (
+            run.get("name") == CLEANUP_NAME
+            and int(run["id"]) != current
+            and run.get("status") != "completed"
+        ):
+            print("Another cleanup already queued/running; no duplicate dispatch", flush=True)
+            return False
+    pending = any(needs_cleanup(run, keep, current) for run in page)
+    bounded = (
+        counts["artifacts"] >= MAX_ARTIFACTS
+        or counts["caches"] >= MAX_CACHES
+        or counts["runs"] >= MAX_RUNS
+    )
+    if not pending and not bounded:
+        print("No remaining completed runs in recent page; stop chaining", flush=True)
+        return False
+    if find_last_usable_build(api) != keep:
+        print("Latest build changed; its own successful-build event handles cleanup", flush=True)
+        return False
+    api.post(f"/actions/workflows/{CLEANUP_WORKFLOW}/dispatches", {"ref": "main"})
+    print("Dispatched next cleanup batch on main (workflow_dispatch)", flush=True)
+    return True
+
 def main():
     api = GitHub(os.environ["GITHUB_REPOSITORY"], os.environ["GH_TOKEN"])
     current = int(os.environ["GITHUB_RUN_ID"])
@@ -183,6 +235,11 @@ def main():
     except RateLimitPause as exc:
         print(f"Rate-limited batch ended safely: {exc}", flush=True)
     print(f"Removed this batch: {json.dumps(counts)}", flush=True)
+    chained = False
+    try:
+        chained = queue_next_batch(api, keep, current, counts)
+    except RateLimitPause as exc:
+        print(f"Self-dispatch deferred by API rate limit: {exc}", flush=True)
     summary = os.getenv("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as stream:
@@ -194,6 +251,7 @@ def main():
                 f"{counts['runs']} old completed workflow runs.\n\n"
                 "Further batches may be needed due to GitHub API limits. "
                 "The current maintenance run remains visible while active.\n"
+                f"Follow-up batch dispatched: **{chained}**.\n"
             )
 
 
