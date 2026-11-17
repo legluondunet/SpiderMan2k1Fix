@@ -78,8 +78,29 @@ static inline int spider_path_writable_a(const char *dir) {
   }
   return 0;
 }
+/* Unified game process must be in ROOT\game, started by its own launcher. */
+#ifdef SPIDER_UNIFIED_FIX
+static inline int spider_path_unified_root_a(char *out,size_t cap) {
+  char exe_dir[MAX_PATH],launcher[MAX_PATH],*last;
+  DWORD n;
+  if(!out || !cap || !spider_path_exe_dir_a(exe_dir,sizeof(exe_dir)))return 0;
+  last=strrchr(exe_dir,'\\');
+  if(!last || lstrcmpiA(last+1,"game")!=0)return 0;
+  *last=0;
+  n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_LAUNCHER_DIR",
+                            launcher,sizeof(launcher));
+  if(!n || n>=sizeof(launcher) || lstrcmpiA(launcher,exe_dir)!=0 ||
+     !spider_path_dir_a(exe_dir,0))return 0;
+  return spider_path_copy_a(out,cap,exe_dir);
+}
+#endif
 static inline int spider_path_roots_a(char *game,size_t gamecap,
                                       char *local,size_t localcap) {
+#ifdef SPIDER_UNIFIED_FIX
+  if(local && localcap)local[0]=0;
+  return spider_path_unified_root_a(game,gamecap);
+#else
+
   char dir[MAX_PATH],app[MAX_PATH];
   DWORD n;
   if(game && gamecap)game[0]=0;
@@ -90,6 +111,8 @@ static inline int spider_path_roots_a(char *game,size_t gamecap,
   if(n && n<sizeof(app) && local && localcap)
     spider_path_join_a(local,localcap,app,"SpiderMan2k1Fix");
   return 1;
+
+#endif
 }
 static inline int spider_path_asset_a(const char *filename,
                                       char *out,size_t cap) {
@@ -122,6 +145,12 @@ static inline int spider_path_migrate_ini_a(const char *legacy,
  * legacy INI for this session, rather than silently resetting user settings.
  * New installs use a writable game subfolder, then LOCALAPPDATA fallback. */
 static inline int spider_path_ini_a(char *out,size_t cap) {
+#ifdef SPIDER_UNIFIED_FIX
+  char root[MAX_PATH];
+  return spider_path_unified_root_a(root,sizeof(root)) &&
+         spider_path_join_a(out,cap,root,"SpiderMan2k1Fix.ini");
+#else
+
   char game[MAX_PATH],local[MAX_PATH],legacy[MAX_PATH],target[MAX_PATH];
   char exe_dir[MAX_PATH];
   if(!out || !cap || !spider_path_roots_a(game,sizeof(game),
@@ -161,6 +190,8 @@ static inline int spider_path_ini_a(char *out,size_t cap) {
     return spider_path_copy_a(out,cap,target);
   }
   return 0;
+
+#endif
 }
 /* Launcher-driven launches write the shared game runtime log NEXT TO
  * SpiderMan2k1Fix.exe, not beside the nested SpideyPC.exe. The launcher
@@ -169,6 +200,12 @@ static inline int spider_path_ini_a(char *out,size_t cap) {
  * (without our launcher) retain the existing game/fallback location.
  * INI and runtime DLL paths are NOT changed. */
 static inline int spider_path_log_a(char *out,size_t cap) {
+#ifdef SPIDER_UNIFIED_FIX
+  char root[MAX_PATH];
+  return spider_path_unified_root_a(root,sizeof(root)) &&
+         spider_path_join_a(out,cap,root,"SpiderMan2k1Fix.log");
+#else
+
   char exe[MAX_PATH],game[MAX_PATH],local[MAX_PATH],target[MAX_PATH];
   char launcher[MAX_PATH];
   DWORD attr;
@@ -209,12 +246,27 @@ static inline int spider_path_log_a(char *out,size_t cap) {
      (attr&(FILE_ATTRIBUTE_DIRECTORY|FILE_ATTRIBUTE_REPARSE_POINT|
             FILE_ATTRIBUTE_READONLY)))return 0;
   return spider_path_copy_a(out,cap,target);
+
+#endif
 }
 /* Prefer new subfolder, accept root-only legacy installs until replaced.
  * Never fall back to a different DLL if the preferred file exists but
  * fails to load: such an installation needs an actionable error. */
 static inline int spider_path_code_asset_a(const char *filename,
                                             char *out,size_t cap) {
+#ifdef SPIDER_UNIFIED_FIX
+  char root[MAX_PATH],dir[MAX_PATH];
+  if(!filename || !spider_path_unified_root_a(root,sizeof(root)))return 0;
+  if(lstrcmpiA(filename,"SDL3.dll")==0)
+    return spider_path_join_a(dir,sizeof(dir),root,"third_party\\SDL3") &&
+           spider_path_join_a(out,cap,dir,"SDL3.dll");
+  if(lstrcmpiA(filename,"linux/spiderman-focus-helper")==0 ||
+     lstrcmpiA(filename,"linux\\spiderman-focus-helper")==0)
+    return spider_path_join_a(dir,sizeof(dir),root,"linux") &&
+           spider_path_join_a(out,cap,dir,"spiderman-focus-helper");
+  return 0;
+#else
+
   char preferred[MAX_PATH],root[MAX_PATH],legacy[MAX_PATH];
   if(!filename || !spider_path_asset_a(filename,preferred,sizeof(preferred)) ||
      !spider_path_exe_dir_a(root,sizeof(root)) ||
@@ -222,6 +274,8 @@ static inline int spider_path_code_asset_a(const char *filename,
   if(spider_path_file_a(preferred) || !spider_path_file_a(legacy))
     return spider_path_copy_a(out,cap,preferred);
   return spider_path_copy_a(out,cap,legacy);
+
+#endif
 }
 static inline int spider_path_dir_w(const WCHAR *path,int create) {
   DWORD attr;
@@ -255,6 +309,26 @@ static inline int spider_path_writable_w(const WCHAR *dir) {
  * unwritable, use per-user LOCALAPPDATA\SpiderMan2k1Fix\screenshots.
  * Both directory tests and temporary PNG publication use wide paths. */
 static inline int spider_path_screenshots_w(WCHAR *out,size_t cap) {
+#ifdef SPIDER_UNIFIED_FIX
+  WCHAR exe[MAX_PATH],launcher[MAX_PATH],*last;
+  DWORD n,m;
+  int rc;
+  if(!out || !cap)return 0;
+  n=GetModuleFileNameW(NULL,exe,MAX_PATH);
+  if(!n || n>=MAX_PATH)return 0;
+  last=wcsrchr(exe,L'\\');if(!last)return 0;
+  *last=0;last=wcsrchr(exe,L'\\');
+  if(!last || _wcsicmp(last+1,L"game")!=0)return 0;
+  *last=0;
+  m=GetEnvironmentVariableW(L"SPIDERMAN2K1FIX_LAUNCHER_DIR",
+                            launcher,MAX_PATH);
+  if(!m || m>=MAX_PATH || _wcsicmp(launcher,exe)!=0 ||
+     !spider_path_dir_w(exe,0))return 0;
+  rc=swprintf(out,cap,L"%ls\\screenshots",exe);
+  return rc>0 && (size_t)rc<cap && spider_path_dir_w(out,1) &&
+         spider_path_writable_w(out);
+#else
+
   WCHAR exe[MAX_PATH],game[MAX_PATH],local[MAX_PATH],app[MAX_PATH],*slash;
   DWORD n=GetModuleFileNameW(NULL,exe,MAX_PATH),m;
   int rc;
@@ -275,5 +349,7 @@ static inline int spider_path_screenshots_w(WCHAR *out,size_t cap) {
   rc=swprintf(out,cap,L"%ls\\screenshots",local);
   return rc>0 && (size_t)rc<cap && spider_path_dir_w(out,1) &&
          spider_path_writable_w(out);
+
+#endif
 }
 #endif
