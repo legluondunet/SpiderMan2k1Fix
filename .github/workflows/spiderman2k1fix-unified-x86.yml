@@ -26,7 +26,7 @@ jobs:
       - name: Install regression runner
         run: python3 -m pip install --disable-pip-version-check pytest
       - name: Check isolated startup contracts
-        run: python3 -m pytest -q ChatGPT/tests/test_unified_bootstrap_contract.py ChatGPT/tests/test_unified_import_alias_contract.py ChatGPT/tests/test_unified_installer_contract.py
+        run: python3 -m pytest -q ChatGPT/tests/test_unified_bootstrap_contract.py ChatGPT/tests/test_unified_import_alias_contract.py ChatGPT/tests/test_unified_installer_contract.py ChatGPT/tests/test_first_run_log_unified.py
       - name: Compile current baseline plus opt-in unified DLL with MSVCRT
         env:
           SPIDER_UNIFIED_BUILD: '1'
@@ -47,6 +47,15 @@ jobs:
             installer/unified_import_alias.c -o dist/unified/suspended-pe32-test.exe
           file dist/unified/suspended-pe32-test.exe | grep -q PE32
           objdump -p dist/unified/suspended-pe32-test.exe | grep -E "ImageBase|DllCharacteristics"
+      - name: Build native Win32 first-run diagnostic policy test
+        run: |
+          set -euo pipefail
+          compiler="$HOME/.cache/spiderman2k1fix-toolchains/llvm-mingw-20261006-msvcrt-ubuntu-22.04-x86_64/bin/i686-w64-mingw32-clang"
+          "$compiler" -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -Wl,--subsystem,console \
+            ChatGPT/tests/windows_first_run_log_policy.c \
+            -o dist/unified/first-run-log-policy-test.exe
+          file dist/unified/first-run-log-policy-test.exe | grep -q PE32
       - name: Verify unified DLL but do not advertise a runnable installer
         run: |
           set -euo pipefail
@@ -96,6 +105,7 @@ jobs:
             dist/unified/SpiderMan2k1Fix-UNIFIED-TEST.exe
             dist/unified/SpiderMan2k1Fix-UNIFIED-FIXTURE-TEST-ONLY.exe
             dist/unified/suspended-pe32-test.exe
+            dist/unified/first-run-log-policy-test.exe
           retention-days: 7
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
@@ -132,6 +142,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) {throw 'version command failed'}
           & $real --verify
           if ($LASTEXITCODE -eq 0) {throw 'empty unified install must not verify'}
+          $global:LASTEXITCODE=0
+      - name: Verify one-shot log and user INI preferences on native Windows
+        shell: pwsh
+        run: |
+          & 'dist/unified/first-run-log-policy-test.exe'
+          if ($LASTEXITCODE -ne 0) {throw 'Win32 first-run log / explicit user INI policy failed'}
           $global:LASTEXITCODE=0
       - name: Execute suspended child PE32 alias and startup guards on native Windows
         shell: pwsh
