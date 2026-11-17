@@ -23,6 +23,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install regression runner
+        run: python3 -m pip install --disable-pip-version-check pytest
       - name: Check isolated startup contracts
         run: python3 -m pytest -q ChatGPT/tests/test_unified_bootstrap_contract.py
       - name: Compile current baseline plus opt-in unified DLL with MSVCRT
