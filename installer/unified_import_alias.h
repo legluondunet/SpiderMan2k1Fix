@@ -17,4 +17,8 @@ int SpiderUnified_AliasSuspendedDDraw(HANDLE process);
 /* Apply the original game's existing signature-gated No-CD patch while the
  * game is suspended, before its original entry point can execute. */
 int SpiderUnified_PatchSuspendedNoCD(HANDLE process);
+
+/* Prevent the original native IDirectSoundBuffer::Stop NULL dereference
+ * during emergency cleanup; refuses unrecognized original code/cave. */
+int SpiderUnified_PatchSuspendedPrimaryNullStop(HANDLE process);
 #endif

@@ -1508,11 +1508,12 @@ static int launch_unified_game(int verify_exe) {
   }
   launched=1;
   if(!SpiderUnified_AliasSuspendedDDraw(pi.hProcess) ||
-     !SpiderUnified_PatchSuspendedNoCD(pi.hProcess)) {
-    message(L"UNIFIED: unsupported import layout or No-CD opcode mismatch; terminating suspended game");
+     !SpiderUnified_PatchSuspendedNoCD(pi.hProcess) ||
+     !SpiderUnified_PatchSuspendedPrimaryNullStop(pi.hProcess)) {
+    message(L"UNIFIED: unknown PE import/No-CD/primary Stop guard signature; terminating suspended game");
     goto stop_child;
   }
-  message(L"UNIFIED: authenticated PE32 import alias and No-CD bootstrap installed in process memory");
+  message(L"UNIFIED: import alias, No-CD and NULL-safe primary Stop guard installed in suspended process");
   if(ResumeThread(pi.hThread)==(DWORD)-1) {
     message(L"UNIFIED: ResumeThread failed Win32=%lu",GetLastError());
     goto stop_child;
