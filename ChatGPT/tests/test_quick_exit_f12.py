@@ -2119,21 +2119,21 @@ def test_enter_only_cannot_arm_intro_auto_skip_during_release_barrier():
     assert "InterlockedExchange(&debug_auto3d_state" not in segment
     assert "InterlockedExchange(&debug_auto3d_f10_origin" not in segment
 
-def test_f10_shortcut_single_hidden_debug_flag_all_stages_no_log_needed():
-    """One manual [Debug] flag enables all validated F10 actions."""
+def test_f10_features_skip_uses_native_intro_without_gameplay_exit():
+    """Player option skips safe intro stages without legacy gameplay-to-menu."""
     init=SRC[SRC.index("void SpiderQuickExitF12_Init(void (*log_fn)(const char *))"):]
-    assert 'f10_shortcut=GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1;' in init
+    assert 'feature_skip_cinematics=GetPrivateProfileIntA("Features","F10SkipCinematics",0,ini)==1;' in init
+    assert 'legacy_f10_shortcut=GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1;' in init
+    assert 'f10_shortcut=feature_skip_cinematics || legacy_f10_shortcut;' in init
     assert "shortcut_enabled=f10_shortcut ||" in init
     assert 'InterlockedExchange(&debug_f12_test_mode,1);' in init
-    assert 'shortcut_enabled=f10_shortcut ||' in init
-    scene=init[init.index("/* F10Shortcut enables ALL tested stages.") :
+    scene=init[init.index("/* F10 skip enables verified intro stages.") :
                init.index("memset(movie_trial,0,sizeof(movie_trial));")]
-    assert scene.count("f10_shortcut ||")==2
     assert "InterlockedExchange(&debug_auto3d_opt_in,1);" in scene
     assert "InterlockedExchange(&debug_f10_gameplay_exit_opt_in,1);" in scene
-    # Log only gates legacy separate opt-ins, not F10Shortcut.
+    assert "f10_shortcut ||" in scene.split("InterlockedExchange(&debug_auto3d_opt_in,1);")[0]
+    assert "legacy_f10_shortcut ||" in scene.split("InterlockedExchange(&debug_f10_gameplay_exit_opt_in,1);")[0]
     assert scene.count('GetPrivateProfileIntA("Debug","Log",0,ini)==1')==2
-    assert scene.index("f10_shortcut ||")<scene.index('GetPrivateProfileIntA("Debug","Log",0,ini)==1')
     for old in ("F10TestMode", "F10Auto3DScripts", "F10GameplayExit"):
         assert f'GetPrivateProfileIntA("Debug","{old}",0,ini)==1' in init
 
