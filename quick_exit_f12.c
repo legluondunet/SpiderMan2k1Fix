@@ -368,6 +368,8 @@ static volatile LONG debug_auto3d_begin_ms=0;
 /* Independent opt-in for F10 in-game exit. The two script endings
  * AND both original native skip request completions must be proven. */
 static volatile LONG debug_f10_gameplay_exit_opt_in=0;
+/* New player feature never uses the historical no-lifecycle 3D exit fallback. */
+static volatile LONG features_f10_cinematics_only=0;
 static volatile LONG debug_cutscene_lifecycle=0;
 /* -1=unknown/unreadable, 1=script active, 0=script idle.
  * Refresh EVERY original 3D game-input frame, even after the first
@@ -3255,6 +3257,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
             say(why);
           }
         } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
+                  InterlockedCompareExchange(&features_f10_cinematics_only,0,0)!=1 &&
                   InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
                   *SPIDER_ENGINE_MODE==0u &&
                   *SPIDER_GAME_BINK_ACTIVE==0u &&
@@ -3379,6 +3382,12 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   feature_skip_cinematics=GetPrivateProfileIntA("Features","F10SkipCinematics",0,ini)==1;
   legacy_f10_shortcut=GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1;
   f10_shortcut=feature_skip_cinematics || legacy_f10_shortcut;
+  /* Legacy explicit debug modes keep their earlier 3D-exit research.
+   * An ordinary Features-only setting cannot reach the old fallback. */
+  if(feature_skip_cinematics && !legacy_f10_shortcut &&
+     GetPrivateProfileIntA("Debug","F10TestMode",0,ini)!=1 &&
+     GetPrivateProfileIntA("Debug","F12TestMode",0,ini)!=1)
+    InterlockedExchange(&features_f10_cinematics_only,1);
   /* A deliberate read-only diagnostic, never enabled by SDL3 mappings
    * alone. It shares the existing five signature-checked pass-through
    * callsites, requires the native-owner/context experiment, and cannot
