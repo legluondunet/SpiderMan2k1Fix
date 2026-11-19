@@ -90,7 +90,7 @@ def test_focus_trace_only_does_not_hook_directinput():
 
 def test_legacy_pause_key_value_validation_keeps_old_inis_safe():
     specific=VALID.index('if(!spider_ini_icmp(section,"Input") && !spider_ini_icmp(key,"PauseKey"))')
-    boolean=VALID.index('if(!spider_ini_icmp(section,"Debug")||!spider_ini_icmp(section,"System")||')
+    boolean=VALID.index('if(!spider_ini_icmp(section,"Features")||!spider_ini_icmp(section,"Debug")||')
     assert specific < boolean
     assert 'spider_ini_icmp(value,"F9")' in VALID[specific:boolean]
     assert 'spider_ini_icmp(value,"Space")' in VALID[specific:boolean]
