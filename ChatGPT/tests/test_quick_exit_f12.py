@@ -427,7 +427,7 @@ def test_default_off_and_ini_section_validated():
     assert "QuickExitF10=" not in INI
     assert '"[System]\\r\\n"' not in GEN
     assert '"QuickExitF10=0\\r\\n"' not in GEN
-    assert '"Debug","System","Display"' in VAL
+    assert '"Debug","Features","System","Display"' in VAL
     assert 'spider_ini_legacy_system[]={"QuickExitF10","QuickExitF12"}' in VAL
     for option in ("ExperimentalQuickExitF10InNewGameMovie",
                    "ExperimentalQuickExitF10InNewGameComic"):
