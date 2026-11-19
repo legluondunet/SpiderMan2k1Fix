@@ -394,6 +394,11 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "; 1 = write SpiderMan2k1Fix.log; 0 = no log (default).\r\n"
     "Log=0\r\n"
     "\r\n"
+    "[Features]\r\n"
+    "; 1 = F10 skips opening cinematics and introductory scripts; 0 = off (default).\r\n"
+    "; Does not skip later level cinematics or exit active gameplay.\r\n"
+    "F10SkipCinematics=0\r\n"
+    "\r\n"
     "[Display]\r\n"
     "; Auto = monitor aspect ratio, 4:3 = original presentation.\r\n"
     "AspectRatio=Auto\r\n"
@@ -509,7 +514,8 @@ int SpiderCfg_EnsureDefaultIni(void (*logger)(const char *)) {
  * Never remove gameplay bindings, audio, FPS, aspect, brightness or RawHex. */
 static const struct {const char *section,*key;} deprecated_ini_keys[]={
   /* Obsolete player switches are recognized only to migrate existing INIs.
-   * F10Shortcut remains the sole user-facing F10 activation key. */
+   * Legacy F10Shortcut remains accepted; [Features] F10SkipCinematics
+   * is now the public opt-in. */
   {"System","QuickExitF10"},{"System","QuickExitF12"},
   {"Input","ExperimentalSDL3GameOverOwnerProbe"},
   {"Input","ExperimentalSDL3GameOverNativeOwner"},
