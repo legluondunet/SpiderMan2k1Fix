@@ -396,7 +396,7 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "\r\n"
     "[Features]\r\n"
     "; 1 = F10 skips opening cinematics and introductory scripts; 0 = off (default).\r\n"
-    "; Does not skip later level cinematics or exit active gameplay.\r\n"
+    "; Later in-level cinematics are unverified; does not exit gameplay.\r\n"
     "F10SkipCinematics=0\r\n"
     "\r\n"
     "[Display]\r\n"
