@@ -236,6 +236,7 @@ def test_complete_3d_opt_in_is_accepted_and_example_defaults_off(runner, tmp_pat
     for key in ("F10Shortcut","F10TestMode","F10Auto3DScripts","F10GameplayExit"):
         assert f"{key}=" not in ini
     assert validate(runner, tmp_path, ini)[0] == (0, 0, 1)
+    assert "[Features]\n" in ini and "F10SkipCinematics=0" in ini
     enabled = ini.replace("Log=0", "Log=0\nF10Shortcut=1", 1)
     assert validate(runner, tmp_path, enabled)[0] == (0, 0, 1)
     # Existing legacy INIs remain valid without resetting saved controls.
@@ -277,3 +278,12 @@ def test_f10_verbose_trace_strict_boolean(runner,tmp_path,value,valid):
         assert result==(0,0,1),detail
     else:
         assert result[0]>=1 and result[2]==0,detail
+
+
+@pytest.mark.parametrize("value,valid",[("0",True),("1",True),("2",False),("-1",False),("yes",False)])
+def test_features_f10_skip_cinematics_boolean(runner,tmp_path,value,valid):
+    outcome,detail=validate(runner,tmp_path,f"[Features]\\nF10SkipCinematics={value}\\n".replace("\\n","\n"))
+    if valid:
+        assert outcome==(0,0,1),detail
+    else:
+        assert outcome[0]>=1 and outcome[2]==0,detail
