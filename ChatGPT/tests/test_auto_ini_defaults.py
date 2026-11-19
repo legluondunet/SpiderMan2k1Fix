@@ -25,8 +25,10 @@ def to_raw(pct, maximum):
 def test_generated_example_factory_consistency():
     assert len(bytes_data) == 252
     assert bytes.fromhex(config['Internal']['RawHex']) == bytes_data
-    assert set(config.sections()) == {'Debug','Display','Input','Audio','Keyboard' ,'Internal'}
+    assert set(config.sections()) == {'Debug','Features','Display','Input','Audio','Keyboard' ,'Internal'}
     assert config['Debug']['Log'] == '0'
+    assert config['Features']['F10SkipCinematics'] == '0'
+    assert '"F10SkipCinematics=0\\r\\n"' in virtual
     for key in ('F10Shortcut','F10TestMode','F10Auto3DScripts','F10GameplayExit'):
         assert not config.has_option('Debug',key)
         assert f'"{key}=0\\r\\n"' not in virtual
