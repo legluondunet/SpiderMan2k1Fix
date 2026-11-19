@@ -99,8 +99,9 @@ The generated `SpiderMan2k1Fix.ini` has `[Features] F10SkipCinematics=0`.
 Set it to `1` while the game is closed to enable **F10** for skipping
 opening cinematics, the New Game comic/movie and the two original introductory
 3D scripts, using only the game's existing native skip/cleanup paths when
-permission is available. It does not skip unverified later in-level cinematics,
-and **F10 does not return from active gameplay to the menu** in this mode.
+permission is available. Later in-level cinematics are **not yet validated** (unknown native script
+owners are not force-skipped), and **F10 does not return from active gameplay
+to the menu** in this mode.
 The option is independent of `[Debug] Log=1` and applies on the next launch.
 
 Older `[Debug] F10Shortcut=1` is still accepted for existing diagnostic INIs,
