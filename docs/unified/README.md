@@ -93,6 +93,21 @@ correct bundled `fix.dll`; it does not bypass the authenticity guard.
 suspended process. The on-disk `SpideyPC.exe` is never patched. Native
 Windows/Wine WinMM remains the operating-system version.
 
+## Optional F10 cinematic skip
+
+The generated `SpiderMan2k1Fix.ini` has `[Features] F10SkipCinematics=0`.
+Set it to `1` while the game is closed to enable **F10** for skipping
+opening cinematics, the New Game comic/movie and the two original introductory
+3D scripts, using only the game's existing native skip/cleanup paths when
+permission is available. It does not skip unverified later in-level cinematics,
+and **F10 does not return from active gameplay to the menu** in this mode.
+The option is independent of `[Debug] Log=1` and applies on the next launch.
+
+Older `[Debug] F10Shortcut=1` is still accepted for existing diagnostic INIs,
+but also has the broader legacy gameplay-to-menu action. Keep it disabled if
+you want cinematic skipping only. This feature still requires a real Windows 11
+regression test before release.
+
 ## One-time first-launch diagnostic logging
 
 The installer always writes `SpiderMan2k1Fix_installer.log` beside the
