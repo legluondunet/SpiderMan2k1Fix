@@ -15,7 +15,7 @@ def read_ini(filename):
     p.read_string(data)
     assert data.count("\nRawHex=") == 1
     assert len(p['Internal']['RawHex']) == 504
-    expected = ({'Debug','Display','Input','Audio','Keyboard','Internal'}
+    expected = ({'Debug','Features','Display','Input','Audio','Keyboard','Internal'}
                 if 'generated-example' in filename else
                 {'Debug','Display','HUD','Input','Audio','Keyboard','Joystick','Internal'})
     assert set(p.sections()) == expected

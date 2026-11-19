@@ -19,7 +19,7 @@ VALIDATOR=(ROOT/"ini_validation.h").read_text()
 def test_player_only_ini_keeps_fps_as_real_control():
     cfg=configparser.ConfigParser(interpolation=None)
     cfg.read_string(EXAMPLE)
-    assert set(cfg.sections())=={"Debug","Display","Input","Audio","Keyboard","Internal"}
+    assert set(cfg.sections())=={"Debug","Features","Display","Input","Audio","Keyboard","Internal"}
     assert list(cfg["Display"])==["aspectratio","brightness","fpslimit"]
     assert cfg["Display"]["FPSLimit"]=="30"
     assert cfg["Input"]["KeyboardLayout"]=="Auto"
@@ -29,6 +29,7 @@ def test_player_only_ini_keeps_fps_as_real_control():
     assert "ControllerProfile" not in cfg["Input"]
     assert "ControllerXbox360Preview" not in cfg["Input"]
     assert cfg["Debug"]["Log"]=="0"
+    assert cfg["Features"]["F10SkipCinematics"]=="0"
     assert len(cfg["Internal"]["RawHex"])==504
     assert '"FPSLimit=30\\r\\n"' in GEN
     assert 'GetPrivateProfileStringA("Display","FPSLimit","",fps_value' in CORE

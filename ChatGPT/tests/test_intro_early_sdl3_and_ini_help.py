@@ -45,7 +45,7 @@ def test_early_start_selection_still_requires_neutral_fresh_press():
 def test_generated_ini_explains_only_real_keys():
     cfg=configparser.ConfigParser(interpolation=None)
     cfg.read_string(INI)
-    assert set(cfg.sections())=={"Debug","Display","Input","Audio","Keyboard","Internal"}
+    assert set(cfg.sections())=={"Debug","Features","Display","Input","Audio","Keyboard","Internal"}
     assert list(cfg["Input"])==["keyboardlayout"]
     assert "KeyboardLayout=Auto\n\n[Audio]" in INI
     assert "SDL3" not in INI
@@ -62,7 +62,7 @@ def test_generated_ini_explains_only_real_keys():
         "static const char keyboard_header[]=",1)[0]
     assert '"; SDL3 detection, setup and universal gameplay' not in generated_header
     assert '"; Original Left Alt state is repaired' not in generated_header
-    for section in ("Debug","Display","Input","Audio","Keyboard","Internal"):
+    for section in ("Debug","Features","Display","Input","Audio","Keyboard","Internal"):
         text=INI.split("["+section+"]",1)[1].split("\n[",1)[0]
         last_comment=""
         for raw in text.splitlines():

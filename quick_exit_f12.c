@@ -5,10 +5,11 @@
  * Native main menu: original Shell_MainMenu 0x00493990, game-thread
  * tick CALL 0x00493DD6 and original menu-item selection/cleanup.
  *
- * F10Shortcut is hidden under [Debug] and defaults OFF. F10 can skip
+ * [Features] F10SkipCinematics defaults OFF and enables F10 to skip
  * opening Bink movies to the menu, New Game comic/movie and permission-
- * gated original 3D scripts to gameplay, or return from playable 3D to
- * the original menu after native cleanup. Gameplay F10 never forces
+ * gated original 3D scripts to gameplay. The legacy [Debug] F10Shortcut
+ * also permits native gameplay-to-menu exit; the new [Features] switch
+ * does not. Gameplay F10 never forces
  * process exit. The Enter/Space key-up barrier is independently enabled
  * for the original movie #4 -> first 3D script transition even with F10 OFF.
  *
@@ -367,6 +368,8 @@ static volatile LONG debug_auto3d_begin_ms=0;
 /* Independent opt-in for F10 in-game exit. The two script endings
  * AND both original native skip request completions must be proven. */
 static volatile LONG debug_f10_gameplay_exit_opt_in=0;
+/* New player feature never uses the historical no-lifecycle 3D exit fallback. */
+static volatile LONG features_f10_cinematics_only=0;
 static volatile LONG debug_cutscene_lifecycle=0;
 /* -1=unknown/unreadable, 1=script active, 0=script idle.
  * Refresh EVERY original 3D game-input frame, even after the first
@@ -3254,6 +3257,7 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
             say(why);
           }
         } else if(InterlockedCompareExchange(&real_main_menu_seen,0,0)==1 &&
+                  InterlockedCompareExchange(&features_f10_cinematics_only,0,0)!=1 &&
                   InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1 &&
                   *SPIDER_ENGINE_MODE==0u &&
                   *SPIDER_GAME_BINK_ACTIVE==0u &&
@@ -3367,15 +3371,23 @@ static DWORD WINAPI f12_input_thread(LPVOID ignored) {
 void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   char ini[MAX_PATH],trace[8],static_trace[8],movie_trial[8],comic_trial[8];
   HANDLE thread;
-  int f10_shortcut,shortcut_enabled=0;
+  int f10_shortcut,feature_skip_cinematics,legacy_f10_shortcut,shortcut_enabled=0;
   logger=log_fn;
   if(!spider_path_ini_a(ini,sizeof(ini))) {
     say("QUICK-EXIT-F12: disabled (INI path unavailable)");
     return;
   }
-  /* Hidden development option: omitted from default generated INI,
-   * disabled when absent; Log=1 is not required for the unified F10. */
-  f10_shortcut=GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1;
+  /* Player-facing cinema skip is opt-in and independent of logging.
+   * Existing [Debug] F10Shortcut keeps its historical, broader behavior. */
+  feature_skip_cinematics=GetPrivateProfileIntA("Features","F10SkipCinematics",0,ini)==1;
+  legacy_f10_shortcut=GetPrivateProfileIntA("Debug","F10Shortcut",0,ini)==1;
+  f10_shortcut=feature_skip_cinematics || legacy_f10_shortcut;
+  /* Legacy explicit debug modes keep their earlier 3D-exit research.
+   * An ordinary Features-only setting cannot reach the old fallback. */
+  if(feature_skip_cinematics && !legacy_f10_shortcut &&
+     GetPrivateProfileIntA("Debug","F10TestMode",0,ini)!=1 &&
+     GetPrivateProfileIntA("Debug","F12TestMode",0,ini)!=1)
+    InterlockedExchange(&features_f10_cinematics_only,1);
   /* A deliberate read-only diagnostic, never enabled by SDL3 mappings
    * alone. It shares the existing five signature-checked pass-through
    * callsites, requires the native-owner/context experiment, and cannot
@@ -3402,17 +3414,19 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     InterlockedExchange(&f10_verbose_trace,1);
     say("QUICK-EXIT-F12: F10VerboseTrace=1 detailed original-game probes enabled");
   }
-  /* F10Shortcut is the only player-facing toggle. Historical F10/F12
-   * test modes are retained for diagnostic workflows, but [System]
+  /* [Features] F10SkipCinematics is the player-facing shortcut toggle.
+   * Historical F10/F12 test modes remain valid, but [System]
    * QuickExitF10 and QuickExitF12 no longer affect the runtime. */
   shortcut_enabled=f10_shortcut ||
     GetPrivateProfileIntA("Debug","F10TestMode",0,ini)==1 ||
     GetPrivateProfileIntA("Debug","F12TestMode",0,ini)==1;
   if(shortcut_enabled) {
     InterlockedExchange(&debug_f12_test_mode,1);
-    say(f10_shortcut
-        ? "QUICK-EXIT-F12: HOTKEY=F10 [Debug] F10Shortcut=1: intro -> main menu; New Game -> gameplay; gameplay -> main menu; Log independent"
-        : "QUICK-EXIT-F12: HOTKEY=F10 legacy Debug test mode; individual experimental controls remain separate");
+    say(feature_skip_cinematics
+        ? "QUICK-EXIT-F12: HOTKEY=F10 [Features] F10SkipCinematics=1: intro -> main menu; New Game -> gameplay; gameplay exit disabled unless legacy Debug option enabled"
+        : (legacy_f10_shortcut
+           ? "QUICK-EXIT-F12: HOTKEY=F10 legacy [Debug] F10Shortcut=1: intro -> menu; New Game -> gameplay; gameplay -> menu"
+           : "QUICK-EXIT-F12: HOTKEY=F10 legacy Debug test mode; individual experimental controls remain separate"));
   }
   memset(trace,0,sizeof(trace));
   if(GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
@@ -3430,13 +3444,13 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     InterlockedExchange(&static_screen_trace_enabled,1);
     say("QUICK-EXIT-F12: STARTUP-STATIC-PROBE opt-in enabled (passive, no extra hooks; 90s/61 samples max)");
   }
-  /* Separate extra opt-in for risky native gameplay shutdown prototype.
-   * F10Shortcut alone keeps the validated menu/Bink behavior. */
+  /* Preserve the separate original 3D exit guards; the Features option
+   * never forces a playable-level exit or replaces native cleanup. */
   InterlockedExchange(&experimental_game3d_enabled,
     (InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 ||
      (GetPrivateProfileIntA("System","ExperimentalQuickExitF12In3D",0,ini)==1 ||
        GetPrivateProfileIntA("System","ExperimentalQuickExitF10In3D",0,ini)==1)) ? 1 : 0);
-  /* F10Shortcut enables ALL tested stages. Old individual options
+  /* F10 skip enables verified intro stages. Old individual options
    * remain supported under their original Log=1 requirement. */
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
      (f10_shortcut ||
@@ -3445,16 +3459,16 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
         GetPrivateProfileIntA("Debug","F10Auto3DScripts",0,ini)==1)))) {
     InterlockedExchange(&debug_auto3d_opt_in,1);
     say(f10_shortcut
-       ? "QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE F10Shortcut=1; CutSceneSkipAllow required"
+       ? "QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE F10 skip enabled; CutSceneSkipAllow required"
        : "QUICK-EXIT-F12: DEBUG-3D-AUTO-NATIVE legacy auto-script opt-in");
   }
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
-     (f10_shortcut ||
+     (legacy_f10_shortcut ||
       (GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
        GetPrivateProfileIntA("Debug","F10GameplayExit",0,ini)==1))) {
     InterlockedExchange(&debug_f10_gameplay_exit_opt_in,1);
-    say(f10_shortcut
-       ? "QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-MENU F10Shortcut=1; native return to menu, NO QUIT"
+    say(legacy_f10_shortcut
+       ? "QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-MENU legacy F10Shortcut=1; native return to menu, NO QUIT"
        : "QUICK-EXIT-F12: DEBUG-F10-GAMEPLAY-MENU legacy F10GameplayExit=1");
   }
   memset(movie_trial,0,sizeof(movie_trial));
