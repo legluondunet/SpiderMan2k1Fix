@@ -127,7 +127,7 @@ static int original_installed_path(wchar_t *out,size_t cap,
 }
 static int owned_runtime_dll(unsigned i) {
 #ifdef SPIDER_UNIFIED_INSTALL
-  return i<2u; /* game/fix.dll, third_party/SDL3/SDL3.dll */
+  return i<2u; /* game/fix.dll and game/SDL3.dll */
 #else
   return i<3u; /* original proxy, core and SDL3 */
 #endif
@@ -651,14 +651,14 @@ static int find_wise_sources(DiscImage *iso,DiscEntry *parts[ORIGINAL_COUNT]){
 #ifdef SPIDER_UNIFIED_INSTALL
 static int discard_unified_new_install(const wchar_t *staging){
   static const wchar_t *bundled[]={
-    L"game\\fix.dll",L"third_party\\SDL3\\SDL3.dll",
-    L"third_party\\SDL3\\LICENSE.txt",L"linux\\spiderman-focus-helper",
+    L"game\\fix.dll",L"game\\SDL3.dll",
+    L"docs\\SDL3-LICENSE.txt",L"linux\\spiderman-focus-helper",
     L"docs\\README.md",L"docs\\CHANGELOG.md",L"docs\\LICENSE",
     L"game\\SpideyPC.exe.manifest",
     L"state\\installed-game.sha256",L"state\\installed-resources.sha256"
   };
   static const wchar_t *folders[]={
-    L"third_party\\SDL3",L"third_party",L"linux",L"docs",L"state",L"game"
+    L"linux",L"docs",L"state",L"game"
   };
   wchar_t path[SPIDER_INSTALLER_PATH],game[SPIDER_INSTALLER_PATH];
   unsigned i;
@@ -686,7 +686,7 @@ static int prepare_game_from_iso(DiscImage *iso) {
    * last. A crash leaves an invalid/incomplete install that --verify refuses.
    * Rollback is best-effort and never silently deletes an unknown target. */
   static const wchar_t *publish[]={
-    L"game",L"third_party",L"docs",L"linux",L"state"
+    L"game",L"docs",L"linux",L"state"
   };
   wchar_t stage[SPIDER_INSTALLER_PATH],stagegame[SPIDER_INSTALLER_PATH];
   wchar_t src[SPIDER_INSTALLER_PATH],dst[SPIDER_INSTALLER_PATH];
@@ -745,7 +745,7 @@ static int prepare_game_from_iso(DiscImage *iso) {
   if(!RemoveDirectoryW(stage)) {
     message(L"UNIFIED: published files OK; empty staging folder could not be removed");
   }
-  message(L"UNIFIED: installed game/, third_party/, docs/, linux/, state/; receipts verified");
+  message(L"UNIFIED: installed game/, docs/, linux/, state/; receipts verified");
   return 1;
  rollback:
   while(moved>0){
@@ -903,21 +903,18 @@ static int resource_verify(WORD id,const wchar_t *base,const wchar_t *name){
 }
 static int deploy_payloads_to(const wchar_t *root){
 #ifdef SPIDER_UNIFIED_INSTALL
-  wchar_t game[SPIDER_INSTALLER_PATH],third[SPIDER_INSTALLER_PATH];
-  wchar_t sdl[SPIDER_INSTALLER_PATH],docs[SPIDER_INSTALLER_PATH];
+  wchar_t game[SPIDER_INSTALLER_PATH],docs[SPIDER_INSTALLER_PATH];
   wchar_t linux[SPIDER_INSTALLER_PATH],state[SPIDER_INSTALLER_PATH];
   if(!safe_directory(root,0) ||
      !combine(game,SPIDER_INSTALLER_PATH,root,L"game") || !safe_directory(game,0) ||
-     !combine(third,SPIDER_INSTALLER_PATH,root,L"third_party") || !safe_directory(third,1) ||
-     !combine(sdl,SPIDER_INSTALLER_PATH,third,L"SDL3") || !safe_directory(sdl,1) ||
      !combine(docs,SPIDER_INSTALLER_PATH,root,L"docs") || !safe_directory(docs,1) ||
      !combine(linux,SPIDER_INSTALLER_PATH,root,L"linux") || !safe_directory(linux,1) ||
      !combine(state,SPIDER_INSTALLER_PATH,root,L"state") || !safe_directory(state,1))
     return 0;
   return resource_install(RES_FIX,game,L"fix.dll") &&
          resource_install(RES_DPI_MANIFEST,game,L"SpideyPC.exe.manifest") &&
-         resource_install(RES_SDL3,sdl,L"SDL3.dll") &&
-         resource_install(RES_SDL3_LICENSE,sdl,L"LICENSE.txt") &&
+         resource_install(RES_SDL3,game,L"SDL3.dll") &&
+         resource_install(RES_SDL3_LICENSE,docs,L"SDL3-LICENSE.txt") &&
          resource_install(RES_X11,linux,L"spiderman-focus-helper") &&
          resource_install(RES_README,docs,L"README.md") &&
          resource_install(RES_CHANGELOG,docs,L"CHANGELOG.md") &&
@@ -942,18 +939,15 @@ static int deploy_payloads_to(const wchar_t *root){
 }
 static int verify_payloads(void){
 #ifdef SPIDER_UNIFIED_INSTALL
-  wchar_t third[SPIDER_INSTALLER_PATH],sdl[SPIDER_INSTALLER_PATH];
   wchar_t docs[SPIDER_INSTALLER_PATH],linux[SPIDER_INSTALLER_PATH];
   if(!safe_directory(game_dir,0) ||
-     !combine(third,SPIDER_INSTALLER_PATH,launcher_dir,L"third_party") || !safe_directory(third,0) ||
-     !combine(sdl,SPIDER_INSTALLER_PATH,third,L"SDL3") || !safe_directory(sdl,0) ||
      !combine(docs,SPIDER_INSTALLER_PATH,launcher_dir,L"docs") || !safe_directory(docs,0) ||
      !combine(linux,SPIDER_INSTALLER_PATH,launcher_dir,L"linux") || !safe_directory(linux,0))
     return 0;
   return resource_verify(RES_FIX,game_dir,L"fix.dll") &&
          resource_verify(RES_DPI_MANIFEST,game_dir,L"SpideyPC.exe.manifest") &&
-         resource_verify(RES_SDL3,sdl,L"SDL3.dll") &&
-         resource_verify(RES_SDL3_LICENSE,sdl,L"LICENSE.txt") &&
+         resource_verify(RES_SDL3,game_dir,L"SDL3.dll") &&
+         resource_verify(RES_SDL3_LICENSE,docs,L"SDL3-LICENSE.txt") &&
          resource_verify(RES_X11,linux,L"spiderman-focus-helper") &&
          resource_verify(RES_README,docs,L"README.md") &&
          resource_verify(RES_CHANGELOG,docs,L"CHANGELOG.md") &&
@@ -987,8 +981,8 @@ static int verify_payloads(void){
 #ifdef SPIDER_UNIFIED_INSTALL
 static const wchar_t *owned_paths[OWNED_COUNT]={
   L"game\\fix.dll",
-  L"third_party\\SDL3\\SDL3.dll",
-  L"third_party\\SDL3\\LICENSE.txt",
+  L"game\\SDL3.dll",
+  L"docs\\SDL3-LICENSE.txt",
   L"linux\\spiderman-focus-helper",
   L"docs\\README.md",
   L"docs\\CHANGELOG.md",
@@ -1227,16 +1221,15 @@ static void discard_upgrade_staging(const wchar_t *staging){
 #ifdef SPIDER_UNIFIED_INSTALL
   wchar_t file[SPIDER_INSTALLER_PATH],dir[SPIDER_INSTALLER_PATH];
   static const wchar_t *files[]={
-    L"game\\fix.dll",L"third_party\\SDL3\\SDL3.dll",
-    L"third_party\\SDL3\\LICENSE.txt",L"linux\\spiderman-focus-helper",
+    L"game\\fix.dll",L"game\\SDL3.dll",
+    L"docs\\SDL3-LICENSE.txt",L"linux\\spiderman-focus-helper",
     L"docs\\README.md",L"docs\\CHANGELOG.md",L"docs\\LICENSE",
     L"game\\SpideyPC.exe.manifest",
     L"state\\installed-resources.sha256",
     L"previous-bak-0" /* private rollback slot for replaced fix.dll */
   };
   static const wchar_t *folders[]={
-    L"third_party\\SDL3",L"state",L"third_party",
-    L"docs",L"linux",L"game"
+    L"state",L"docs",L"linux",L"game"
   };
   unsigned i;
   for(i=0;i<sizeof(files)/sizeof(files[0]);i++)
