@@ -267,7 +267,7 @@ static int sdl_load(void) {
   }
   module=LoadLibraryA(path);
   if(!module) {
-    say("SDL3-PROBE: SDL3.dll absent/unloadable from fix folder or legacy root; native controller input untouched");
+    say("SDL3-PROBE: SDL3.dll absent/unloadable next to SpideyPC.exe; native controller input untouched");
     return 0;
   }
 #define LOAD_SDL(field,type,symbol) do { field=(type)GetProcAddress(module,symbol); if(!field)goto missing; }while(0)
