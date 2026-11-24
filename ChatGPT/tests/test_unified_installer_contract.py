@@ -12,7 +12,7 @@ def test_unified_installer_is_opt_in_and_installs_root_receipts():
                      "ResumeThread(pi.hThread)",
                      'L"state\\\\installed-game.sha256"',
                      'L"state\\\\installed-resources.sha256"',
-                     'L"third_party\\\\SDL3\\\\SDL3.dll"',
+                     'L"game\\\\SDL3.dll"',
                      'L"docs\\\\LICENSE"','L"linux\\\\spiderman-focus-helper"',
                      "original_installed_path(","write_game_receipt(stage)",
                      "verify_install_receipt(stage)","rolling back"):
@@ -21,6 +21,8 @@ def test_unified_installer_is_opt_in_and_installs_root_receipts():
     assert "installer/unified_import_alias.c" in build
     assert '1102 RCDATA "dist/unified/package/game/fix.dll"' in build
     assert '1108 RCDATA "dist/unified/package/docs/LICENSE"' in build
+    assert '1103 RCDATA "dist/unified/package/game/SDL3.dll"' in build
+    assert '1104 RCDATA "dist/unified/package/docs/SDL3-LICENSE.txt"' in build
     assert '1109 RCDATA "dist/unified/package/game/SpideyPC.exe.manifest"' in build
     assert 'L"game\\\\SpideyPC.exe.manifest"' in src
     assert "RES_DPI_MANIFEST" in src
