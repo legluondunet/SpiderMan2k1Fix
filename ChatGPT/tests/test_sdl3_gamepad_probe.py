@@ -22,8 +22,10 @@ int main(void) {
     assert(s.count==0 && s.active==0);
     spider_sdl3_selection_sync(&s,one,1);
     assert(s.count==1 && s.active==11);
+    assert(spider_sdl3_selection_singleton_candidate(&s)==11);
     spider_sdl3_selection_sync(&s,two,2);
     assert(s.count==2 && s.active==11); /* don't steal focus */
+    assert(spider_sdl3_selection_singleton_candidate(&s)==0);
     /* A fresh Start on another pad explicitly takes ownership. */
     spider_sdl3_selection_start(&s,22,0);
     assert(spider_sdl3_selection_start(&s,22,1)); /* 11 -> 22 */
@@ -43,10 +45,12 @@ int main(void) {
     assert(s.active==22);
     spider_sdl3_selection_sync(&s,singleton,1);
     assert(s.count==1 && s.active==33); /* auto fallback */
+    assert(spider_sdl3_selection_singleton_candidate(&s)==33);
     spider_sdl3_selection_sync(&s,dup,2);
     assert(s.count==1 && s.active==33); /* duplicate ignored */
     spider_sdl3_selection_sync(&s,NULL,0);
     assert(s.active==0 && s.count==0);
+    assert(spider_sdl3_selection_singleton_candidate(&s)==0);
     /* Fresh multi-pad session must release Start before it can claim. */
     memset(&s,0,sizeof(s));
     spider_sdl3_selection_sync(&s,two,2);
@@ -156,3 +160,27 @@ int main(void) {
                     '-I',str(ROOT),str(src),'-o',str(exe)],
                    capture_output=True,text=True,check=True)
     subprocess.run([str(exe)],check=True)
+
+def test_singleton_auto_claim_requires_connected_neutral_pad_and_preserves_start_for_multi():
+    """A passive singleton is NOT a gameplay owner until strict neutral validation."""
+    probe = (ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    policy = (ROOT/"sdl3_universal_policy.h").read_text(encoding="utf-8")
+    header = (ROOT/"sdl3_gamepad_selection.h").read_text(encoding="utf-8")
+    callback = probe.split("void SpiderSDL3Probe_OnFlip(", 1)[1]
+    section = callback.split("/* Single usable controller: no Start press needed.", 1)[1]
+    section = section.split("/* A Start or singleton claim", 1)[0]
+    assert "spider_sdl3_selection_singleton_candidate(&selection)" in section
+    assert "pads[k].id==candidate && pads[k].handle" in section
+    assert "sdl_connected(pads[k].handle)" in section
+    assert "spider_sdl3_universal_owner_neutral(&sample)" in section
+    assert section.index("spider_sdl3_universal_owner_neutral(&sample)") < section.index(
+        "generic_selected_id=candidate;"
+    )
+    assert "spider_sdl3_universal_reset(&generic_actions);" in section
+    assert "AUTO selected sole neutral mapped pad" in section
+    assert "if(universal_requested && start_claims.count)" in callback
+    assert "s->count!=1u" in header
+    assert "s->active!=s->slots[0].id" in header
+    assert "spider_sdl3_profile_neutral(sample)" in policy
+    assert "sample->axis[SPIDER_SDL3_AXIS_LEFTX]>-9000" in policy
+    assert "sample->axis[SPIDER_SDL3_AXIS_LEFTY]>-9000" in policy
