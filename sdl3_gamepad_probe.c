@@ -1397,6 +1397,21 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
           sample.buttons|=1u<<j;
       for(j=0;j<SPIDER_SDL3_AXIS_COUNT;j++)
         sample.axis[j]=sdl_axis(pads[i].handle,(int)j);
+      /* Preserve the bounded hardware-only PS3 diagnostic. Start is
+       * reported as an SDL button, never used for selection. */
+      if(vid==0x054cu && pid==0x0268u && ps3_trace_lines<48u) {
+        uint32_t buttons=sample.buttons;
+        if(ps3_trace_id!=pads[i].id || buttons!=ps3_trace_buttons) {
+          snprintf(line,sizeof(line),
+            "SDL3-PS3-PROBE: id=%lu VID:PID=054C:0268 buttons=0x%06lX changed=0x%06lX START=%u [SDL3 ONLY; no native DI rebind]",
+            (unsigned long)pads[i].id,(unsigned long)buttons,
+            (unsigned long)(buttons^(ps3_trace_id==pads[i].id?
+                                       ps3_trace_buttons:0u)),
+            (unsigned)((buttons>>SPIDER_SDL_BUTTON_START)&1u));
+          say(line);ps3_trace_lines++;
+          ps3_trace_id=pads[i].id;ps3_trace_buttons=buttons;
+        }
+      }
       if(sample.axis[SPIDER_SDL3_AXIS_LT]<0 ||
          sample.axis[SPIDER_SDL3_AXIS_RT]<0)continue;
       if(opened_n==1u) {
