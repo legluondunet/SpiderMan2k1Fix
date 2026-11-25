@@ -30,4 +30,7 @@ int SpiderSDL3Universal_ReleaseSyntheticReturnBefore3D(HWND hwnd);
 /* At normal Flip boundary, after native reconnect and SDL3 polling. */
 void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
                                 int bink,int native_pause);
+/* Log-only foreground Escape correlation; no input mutation. */
+void SpiderSDL3Universal_TraceEscape(long flip,HWND hwnd,int allowed,
+    int menu,int gameplay,int bink,int native_pause);
 #endif

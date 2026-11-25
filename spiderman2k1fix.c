@@ -5320,6 +5320,19 @@ static void pause_at_flip_if_background(void) {
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
   focus_timeline_pulse(1,count,self);
+  /* Temporary log-only Escape diagnosis, before any SDL3 pulse processing.
+   * Native X11 focus is authoritative when the bridge is active. */
+  if(debug_log_enabled)
+    SpiderSDL3Universal_TraceEscape(count,game_hwnd,
+      (!pause_x11_bridge_enabled() || pause_x11_bridge_state()==1) &&
+      InterlockedCompareExchange(&pause_latched,0,0)==0,
+      InterlockedCompareExchange(&menu_upscale_active,0,0)==1,
+      InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
+        InterlockedCompareExchange(&fov_game_height,0,0)>0,
+      (*(const volatile DWORD *)(uintptr_t)0x006151F8u)!=0u,
+      ((*(const volatile DWORD *)(uintptr_t)0x00682950u)!=0u ||
+        native_pause43_visible_near_flip(count) ||
+        native_pause_source_visible_near_flip(count)));
   if(debug_log_enabled &&
      InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1) {
     DWORD now=GetTickCount();
