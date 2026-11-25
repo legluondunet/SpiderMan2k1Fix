@@ -40,6 +40,9 @@ int SpiderSDL3Probe_SelectedRT(int *normalized_rt);
  * Reject disconnected or ambiguous generic devices without fallback. */
 /* Fresh, validated activity edge on this game Flip; never a held Start. */
 int SpiderSDL3Probe_FreshActivityClaim(uint32_t instance_id);
+/* Display-only SDL face labels, in SOUTH/EAST/WEST/NORTH order. */
+int SpiderSDL3Probe_SelectedGuideLabels(unsigned labels[4],uint16_t *vid,
+                                       uint32_t *instance);
 int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
     uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample);
 int SpiderSDL3Probe_GenericSelectedSample(uint32_t *instance,

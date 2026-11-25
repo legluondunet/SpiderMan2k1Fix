@@ -63,23 +63,45 @@ static int __cdecl spider_guide_menu_text(int x,int y,const char *s,int a,unsign
   return ((SpiderGuideText)(uintptr_t)0x00458700u)(x,y,s,a,b);
 }
 static void spider_guide_native_labels(void) {
-  /* Retail font has no slash glyph (renders as a black square).
-   * Use uppercase letters, digits and spaces only. Positions correspond
-   * to the 640x480 leader layout in sdl3_controller_setup.c. */
-  static const struct {int x,y; const char *s;} labels[]={
-    {25,80,"L1 LB AIM"},
-    {390,64,"R2 RT SWING"}, {390,88,"R1 RB ZIPLINE"},
+  /* One immutable action map, presentation only. The selected SDL
+   * controller supplies the physical face labels for this exact frame. */
+  unsigned family,i;
+  char punch[32],web[32],kick[32],jump[32],confirm[48],back[48];
+  struct {int x,y; const char *s;} labels[]={
+    {25,80,"AIM"},
+    {390,64,"SWING"}, {390,80,"ZIPLINE"},
     {25,112,"D PAD MOVE"}, {25,134,"STICK MOVE"},
-    {165,56,"SHARE BACK PAUSE"},
-    {390,109,"Y WEB"}, {390,126,"B KICK"}, {390,146,"A JUMP"},
-    {232,184,"X PUNCH"},
-    {171,202,"A CONFIRM OR SKIP"},
-    {172,218,"B OR ESC TO RETURN"}
+    {186,56,"BACK PAUSE"},
+    {390,97,punch}, {390,113,web}, {390,129,kick}, {390,144,jump},
+    {171,202,confirm}, {172,218,back}
   };
-  unsigned i;
+  SpiderSDL3ControllerSetup_RefreshGuide();
+  family=SpiderSDL3ControllerSetup_GuideFamily();
+  if(family==1) {
+    labels[0].s="L1 AIM";labels[1].s="R2 SWING";
+    labels[2].s="R1 ZIPLINE";labels[5].s="SHARE PAUSE";
+  } else if(family==2) {
+    labels[0].s="LB AIM";labels[1].s="RT SWING";
+    labels[2].s="RB ZIPLINE";labels[5].s="BACK PAUSE";
+  } else if(family==3) {
+    labels[0].s="L AIM";labels[1].s="ZR SWING";
+    labels[2].s="R ZIPLINE";labels[5].s="MINUS PAUSE";
+  } else {
+    labels[0].s="LB AIM";labels[1].s="RT SWING";
+    labels[2].s="RB ZIPLINE";labels[5].s="BACK PAUSE";
+  }
+  if(family==2 || family==3) {
+    labels[3].s="STICK MOVE";labels[4].s="D PAD MOVE";
+  }
+  snprintf(punch,sizeof(punch),"%s PUNCH",SpiderSDL3ControllerSetup_GuideButton(2));
+  snprintf(web,sizeof(web),"%s WEB",SpiderSDL3ControllerSetup_GuideButton(3));
+  snprintf(kick,sizeof(kick),"%s KICK",SpiderSDL3ControllerSetup_GuideButton(1));
+  snprintf(jump,sizeof(jump),"%s JUMP",SpiderSDL3ControllerSetup_GuideButton(0));
+  snprintf(confirm,sizeof(confirm),"%s CONFIRM OR SKIP",SpiderSDL3ControllerSetup_GuideButton(0));
+  snprintf(back,sizeof(back),"%s OR ESC TO RETURN",SpiderSDL3ControllerSetup_GuideButton(1));
   ((void (__cdecl *)(void))(uintptr_t)0x0047A370u)(); /* PShell_NormalFont */
   ((void (__cdecl *)(unsigned char))(uintptr_t)0x00458610u)(1);
-  ((void (__cdecl *)(int))(uintptr_t)0x00458620u)(156);
+  ((void (__cdecl *)(int))(uintptr_t)0x00458620u)(140);
   ((void (__cdecl *)(unsigned char,unsigned char,unsigned char,int))
      (uintptr_t)0x00458640u)(255,255,255,0);
   ((void (__cdecl *)(unsigned char,unsigned char,unsigned char))

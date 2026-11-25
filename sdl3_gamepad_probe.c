@@ -119,6 +119,7 @@ static SDL_GetJoystickNameForIDFn sdl_joystick_name=NULL;
 static uint32_t raw_last_ids[SPIDER_SDL3_MAX_GAMEPADS]={0};
 static unsigned raw_last_n=0;
 static SDL_GetGamepadNameForIDFn sdl_name=NULL;
+static int (__cdecl *sdl_button_label)(void *,int)=NULL;
 static SDL_GetGamepadVendorForIDFn sdl_vendor=NULL;
 static SDL_GetGamepadProductForIDFn sdl_product=NULL;
 static SDL_OpenGamepadFn sdl_open=NULL;
@@ -285,6 +286,7 @@ static int sdl_load(void) {
   SDL_RAW_LOAD(sdl_add_mapping,SDL_AddGamepadMappingFn,"SDL_AddGamepadMapping");
 #undef SDL_RAW_LOAD
   LOAD_SDL(sdl_name,SDL_GetGamepadNameForIDFn,"SDL_GetGamepadNameForID");
+  sdl_button_label=(int (__cdecl *)(void *,int))GetProcAddress(module,"SDL_GetGamepadButtonLabel");
   LOAD_SDL(sdl_vendor,SDL_GetGamepadVendorForIDFn,"SDL_GetGamepadVendorForID");
   LOAD_SDL(sdl_product,SDL_GetGamepadProductForIDFn,"SDL_GetGamepadProductForID");
   LOAD_SDL(sdl_open,SDL_OpenGamepadFn,"SDL_OpenGamepad");
@@ -922,6 +924,30 @@ int SpiderSDL3Probe_SelectedSample(uint32_t *instance,uint16_t *vid,
 int SpiderSDL3Probe_FreshActivityClaim(uint32_t id) {
   return id && sdl3_game_thread==GetCurrentThreadId() &&
          activity_fresh_claim_id==id;
+}
+/* Presentation only: same instance as the generic gameplay owner, not
+ * the first enumerated controller. No new sampling, pumping or claims. */
+int SpiderSDL3Probe_SelectedGuideLabels(unsigned labels[4],uint16_t *vid,
+                                       uint32_t *instance) {
+  unsigned i,j;
+  if(!labels || !vid || !instance)return 0;
+  *vid=0;*instance=0;
+  for(j=0;j<4;j++)labels[j]=0;
+  if(!ready || !scanned || !universal_requested || !generic_selected_id ||
+     !sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId() ||
+     !sdl_connected)return 0;
+  for(i=0;i<num_pads && i<SPIDER_SDL3_MAX_GAMEPADS;i++) {
+    if(pads[i].id!=generic_selected_id || !pads[i].handle ||
+       !sdl_connected(pads[i].handle))continue;
+    *vid=generic_selected_vendor;
+    *instance=generic_selected_id;
+    if(sdl_button_label)for(j=0;j<4;j++) {
+      int label=sdl_button_label(pads[i].handle,(int)j);
+      if(label>=1 && label<=8)labels[j]=(unsigned)label;
+    }
+    return 1;
+  }
+  return 0;
 }
 int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
     uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample) {

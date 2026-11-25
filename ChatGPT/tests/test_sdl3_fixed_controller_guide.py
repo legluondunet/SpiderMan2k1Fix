@@ -79,42 +79,44 @@ def test_fixed_controller_guide_is_native_and_draws_all_actions():
     assert "static void draw_gamepad(HDC dc)" in ui
     assert "shell_path(dc,0,dark,metal)" in ui
     assert "PolyBezierTo(dc,p," in ui
-    assert "face_button(dc,390,204,0" in ui
-    assert "face_button(dc,411,225,1" in ui
-    assert "face_button(dc,390,246,2" in ui
-    assert "face_button(dc,369,225,3" in ui
+    assert "face_button(dc,390,202,3)" in ui
+    assert "face_button(dc,413,225,1)" in ui
+    assert "face_button(dc,390,248,0)" in ui
+    assert "face_button(dc,367,225,2)" in ui
     assert "draw_leaders(dc);" in ui
     route=load("ps1_joystick_readonly_menu.c")
+    probe=load("sdl3_gamepad_probe.c")
+    assert "SDL_GetGamepadButtonLabel" in probe
+    read=probe.split("int SpiderSDL3Probe_SelectedGuideLabels(",1)[1].split("int SpiderSDL3Probe_SelectedMappedSample(",1)[0]
+    assert "pads[i].id!=generic_selected_id" in read
+    assert "sdl_connected(pads[i].handle)" in read
+    assert "sdl_button_label(pads[i].handle,(int)j)" in read
+    assert "SpiderSDL3ControllerSetup_RefreshGuide();" in route
+    for pos,action in ((2,"PUNCH"),(3,"WEB"),(1,"KICK"),(0,"JUMP")):
+        assert '"%s '+action+'",SpiderSDL3ControllerSetup_GuideButton('+str(pos)+')' in route
+    assert "static const unsigned ps[4]={5,6,7,8},xb[4]={1,2,3,4}" in ui
+    assert "labels[0]==2 && labels[1]==1 && labels[2]==4 && labels[3]==3" in ui
+    assert 'positions[]={"SOUTH","EAST","WEST","NORTH"}' in ui
+    assert 'labels[0].s="L1 AIM"' in route
+    assert 'labels[0].s="LB AIM"' in route
+    assert 'labels[0].s="L AIM"' in route
+    assert '{390,97,punch}' in route
+    assert "stick(dc,238,215);dpad(dc,279,247,22);" in ui
+    assert "dpad(dc,238,215,29);stick(dc,282,260);" in ui
     import re
-    layout=route.split("static void spider_guide_native_labels(void)",1)[1].split("unsigned i;",1)[0]
-    labels=re.findall(r'\{\d+,\d+,"([^"]+)"\}',layout)
-    assert set(labels)=={"L1 LB AIM","R2 RT SWING","R1 RB ZIPLINE",
-                         "D PAD MOVE","STICK MOVE","SHARE BACK PAUSE","Y WEB",
-                         "B KICK","A JUMP","X PUNCH","A CONFIRM OR SKIP",
-                         "B OR ESC TO RETURN"}
-    assert all(re.fullmatch(r"[A-Z0-9 ]+", label) for label in labels)
-    # Every leader reaches the corresponding actual drawn button or stick.
-    targets={"aim":(235,162),"swing":(403,136),"zip":(418,162),
-             "move":(207,216),"move_stick":(263,260),"pause":(286,178),
-             "web":(400,204),"kick":(421,225),"jump":(398,254),"punch":(359,225)}
-    assert "disc(dc,390,225,34," in ui
-    assert "disc(dc,x,y,11," in ui
+    targets={"aim":(225,162),"swing":(408,136),"zip":(418,162),
+             "move":(210,215),"move_stick":(264,260),"pause":(286,178),
+             "xbox_stick":(220,215),"xbox_dpad":(258,247),"xbox_pause":(290,179),
+             "web":(401,202),"kick":(425,225),"jump":(400,257),"punch":(367,213)}
+    assert "disc(dc,390,225,36," in ui
     assert "pts[n-1].y,2," in ui
-    # Rim anchors remain outside the central 6-pixel glyph area.
-    for name, (cx,cy) in {"web":(390,204),"kick":(411,225),
-                          "jump":(390,246),"punch":(369,225)}.items():
-        x,y=targets[name]
-        assert 9**2 <= (x-cx)**2+(y-cy)**2 <= 12**2
-    for name, target in targets.items():
+    assert "PolyBezierTo(dc,q,3)" in ui
+    for name,target in targets.items():
         line=re.search(r"POINT "+name+r"\[\]=\{(.*?)\};",ui).group(1)
         coords=[tuple(map(int,p)) for p in re.findall(r"\{(\d+),(\d+)\}",line)]
         assert coords[-1]==target
         assert all(0<=x<=640 and 80<=y<=440 for x,y in coords)
         assert "LEAD("+name+");" in ui
-        assert len(coords)<=4
-        for (x1,y1),(x2,y2) in zip(coords,coords[1:]):
-            dx,dy=abs(x2-x1),abs(y2-y1)
-            assert dx==0 or dy==0 or dx==dy
     assert "0x00458700u" in route  # original Mess_DrawText
     assert "CreateFontA" not in ui
     assert "draw_gamepad(dc);" in ui

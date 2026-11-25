@@ -11,6 +11,10 @@ void SpiderSDL3ControllerSetup_OnNativeEnter(void);
 void SpiderSDL3ControllerSetup_OnNativeExit(void);
 int SpiderSDL3ControllerSetup_IsNativeActive(void);
 void SpiderSDL3ControllerSetup_OnNativeFrame(void);
+/* One snapshot for both native text and GDI artwork on the same frame. */
+void SpiderSDL3ControllerSetup_RefreshGuide(void);
+unsigned SpiderSDL3ControllerSetup_GuideFamily(void);
+const char *SpiderSDL3ControllerSetup_GuideButton(unsigned position);
 int SpiderSDL3ControllerSetup_DrawToSurface(
     IDirectDrawSurface7 *surface,const RECT *content);
 /* Deprecated ABI kept nonoperational to avoid an accidental popup. */
