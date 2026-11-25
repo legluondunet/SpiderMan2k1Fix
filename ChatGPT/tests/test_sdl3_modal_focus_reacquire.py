@@ -53,6 +53,6 @@ def test_next_foreground_flip_claims_only_safe_selected_sdl3_pad():
     assert "spider_sdl3_selection_focus_lost(&selection)" in probe
     assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in probe
     assert "spider_sdl3_profile_neutral(&sample)" in probe
-    assert "start_claims.count==1u" in probe
+    assert "requests==1u && candidate && candidate!=owner" in probe
     assert "CreateDevice(" not in native
     assert "swap_native_gameplay_mapping(" not in native
