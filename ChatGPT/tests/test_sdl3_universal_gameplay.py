@@ -479,34 +479,18 @@ def test_universal_ps3_unplug_ps4_explicit_start_takes_over(tmp_path):
     subprocess.run([str(exe)],check=True)
 
 
-def test_universal_mapped_ps4_uses_generic_identity_without_native_rebind():
+def test_activity_based_universal_pad_is_instance_bound_without_native_rebind():
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
-    start=probe.split("      uint32_t previous=selection.active;",1)[1].split(
-        "      if(selection.active==pads[i].id",1)[0]
-    assert "universal_requested?" in start
-    assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in start
-    assert "spider_sdl3_selection_start(&selection,pads[i].id,pressed)" in start
-    assert "if(universal_requested)" in start
-    assert "selection.active=candidate;" in start
-    assert "spider_sdl3_start_claim_add(&start_claims,pads[i].id," in start
+    runtime=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
+    assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in probe
+    assert "spider_sdl3_selected_instance_valid(opened,opened_n,candidate" in probe
     assert "generic_selected_id=candidate;" in probe
-    generic=probe.split("int SpiderSDL3Probe_GenericSelectedSample(",1)[1].split(
-        "int SpiderSDL3Probe_SelectedRT(",1)[0]
-    assert "if(!universal_requested &&" in generic
-    assert "spider_sdl3_selected_model_unique(" in generic
-    select=probe.split("int SpiderSDL3Probe_SelectedMappedSample(",1)[1].split(
-        "/* The player may hold physical Cross",1)[0]
-    assert "!generic_selected_id" in select
-    assert "return SpiderSDL3Probe_SelectedSample(" not in select
-    assert "return SpiderSDL3Probe_GenericSelectedSample(" in select
-    modal=probe.split("if(setup_owner_pending)",1)[1].split(
-        "sdl3_trace_native_owner(now);",1)[0]
-    assert "(universal_requested ||" in modal
-    assert "generic_selected_id=requested_id;" in modal
-    assert "selection.active=requested_id;" in modal
-    native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
-    assert "CreateDevice(" not in native
-
+    assert "selection.active=candidate;" in probe
+    assert "activity_fresh_claim_id=candidate;" in probe
+    assert "SpiderSDL3Probe_FreshActivityClaim(id)" in runtime
+    assert "fresh_activity_claim" in runtime
+    assert "CreateDevice(" not in (
+        ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
 
 def test_native_x11_focus_disarms_universal_input_before_paused_even_when_wine_hwnd_stale():
     core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
