@@ -63,7 +63,7 @@ def test_external_focus_loss_releases_universal_keys_without_secondary_com():
     assert "release_all()" in adapter
     assert "SpiderSDL3Universal_SetHostFocusBlocked(" in adapter
 
-def test_next_foreground_flip_claims_only_explicit_selected_sdl3_pad():
+def test_next_foreground_flip_claims_only_safe_selected_sdl3_pad():
     ui=text("gamepad_ui_profile.c")
     probe=text("sdl3_gamepad_probe.c")
     adapter=text("sdl3_universal_gameplay.c")
@@ -74,5 +74,8 @@ def test_next_foreground_flip_claims_only_explicit_selected_sdl3_pad():
     assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in adapter
     assert "SpiderSDL3Probe_GenericSelectedSample(" in probe
     assert "spider_sdl3_selection_focus_lost(&selection)" in probe
+    assert "spider_sdl3_selection_singleton_candidate(&selection)" in probe
+    assert "spider_sdl3_profile_neutral(&sample)" in probe
+    assert "start_claims.count==1u" in probe
     assert "CreateDevice(" not in native
     assert "swap_native_gameplay_mapping(" not in native
