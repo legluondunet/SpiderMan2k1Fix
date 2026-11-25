@@ -101,7 +101,8 @@ def test_guide_reuses_original_joystick_menu_without_focus_takeover():
     assert "SpiderSDL3ControllerSetup_OnNativeEnter();" in route
     assert "SpiderSDL3_InstallGenericReadOnlyJoystick(ps1_menu_logger)" in route
     assert "SpiderSDL3_InstallGenericReadOnlyJoystick(logger)" in bridge
-    assert "SpiderSDL3_InstallGenericReadOnlyJoystick(ui_log)" in bridge
+    assert "SpiderSDL3_InstallGenericReadOnlyJoystick(logger)" in bridge
+    assert "SpiderSDL3_InstallDirectJoystickEntry(ui_log)" in bridge
     assert "SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(native_mode);" in route
     assert "const int is_joystick=(native_mode==0);" in route
     assert "Keyboard selected (mode=1); original game configuration preserved" in route
