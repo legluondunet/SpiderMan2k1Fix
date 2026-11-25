@@ -8,6 +8,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include "sdl3_controller_setup.h"
 #include "sdl3_gamepad_probe.h"
@@ -15,7 +16,7 @@
 #include "sdl3_setup_focus_policy.h"
 #include "gamepad_ui_profile.h"
 
-enum { GUIDE_WIDTH=780, GUIDE_HEIGHT=535, GUIDE_CLOSE=1001 };
+enum { GUIDE_WIDTH=780, GUIDE_HEIGHT=575, GUIDE_CLOSE=1001 };
 typedef struct {
   HWND owner,window,closing_foreground;
   unsigned closing_captured;
@@ -129,7 +130,7 @@ static LRESULT CALLBACK guide_wndproc(HWND hwnd,UINT msg,
       SetWindowLongPtrA(hwnd,GWLP_USERDATA,(LONG_PTR)(uintptr_t)ui);
       close=CreateWindowExA(0,"BUTTON","Close / Back to game",
         WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_DEFPUSHBUTTON,
-        565,497,185,28,hwnd,(HMENU)(uintptr_t)GUIDE_CLOSE,
+        565,508,185,30,hwnd,(HMENU)(uintptr_t)GUIDE_CLOSE,
         GetModuleHandleA(NULL),NULL);
       if(close) {
         SendMessageA(close,WM_SETFONT,
