@@ -79,10 +79,10 @@ def test_fixed_controller_guide_is_native_and_draws_all_actions():
     assert "static void draw_gamepad(HDC dc)" in ui
     assert "shell_path(dc,0,dark,metal)" in ui
     assert "PolyBezierTo(dc,p," in ui
-    assert "face_button(dc,390,202,3)" in ui
-    assert "face_button(dc,413,225,1)" in ui
-    assert "face_button(dc,390,248,0)" in ui
-    assert "face_button(dc,367,225,2)" in ui
+    assert "face_button(dc,390,205,3)" in ui
+    assert "face_button(dc,410,225,1)" in ui
+    assert "face_button(dc,390,245,0)" in ui
+    assert "face_button(dc,370,225,2)" in ui
     assert "draw_leaders(dc);" in ui
     route=load("ps1_joystick_readonly_menu.c")
     probe=load("sdl3_gamepad_probe.c")
@@ -100,23 +100,61 @@ def test_fixed_controller_guide_is_native_and_draws_all_actions():
     assert 'labels[0].s="L1 AIM"' in route
     assert 'labels[0].s="LB AIM"' in route
     assert 'labels[0].s="L AIM"' in route
-    assert '{390,97,punch}' in route
+    assert '{390,97,web}, {390,113,kick}, {390,129,jump}, {390,144,punch}' in route
+    assert '"%s RETURN",SpiderSDL3ControllerSetup_GuideButton(1)' in route
+    native_labels=route.split("static void spider_guide_native_labels(void)",1)[1].split("static void __fastcall spider_guide_display_left",1)[0]
+    assert "ESC" not in native_labels
     assert "stick(dc,238,215);dpad(dc,279,247,22);" in ui
     assert "dpad(dc,238,215,29);stick(dc,282,260);" in ui
     import re
     targets={"aim":(225,162),"swing":(408,136),"zip":(418,162),
              "move":(210,215),"move_stick":(264,260),"pause":(286,178),
              "xbox_stick":(220,215),"xbox_dpad":(258,247),"xbox_pause":(290,179),
-             "web":(401,202),"kick":(425,225),"jump":(400,257),"punch":(367,213)}
-    assert "disc(dc,390,225,36," in ui
+             "web":(397,198),"kick":(420,225),"jump":(400,245),"punch":(370,235)}
+    assert "disc(dc,390,225,30," in ui
+    assert "disc(dc,x,y,10,RGB(52,60,80)" in ui
     assert "pts[n-1].y,2," in ui
-    assert "PolyBezierTo(dc,q,3)" in ui
+    leader_code=ui.split("static void leader(",1)[1].split("static void draw_leaders(",1)[0]
+    assert "Polyline(dc,pts,n)" in leader_code
+    assert "PolyBezier" not in leader_code
+    assert "Arc(" not in leader_code
+    paths={}
     for name,target in targets.items():
         line=re.search(r"POINT "+name+r"\[\]=\{(.*?)\};",ui).group(1)
         coords=[tuple(map(int,p)) for p in re.findall(r"\{(\d+),(\d+)\}",line)]
         assert coords[-1]==target
         assert all(0<=x<=640 and 80<=y<=440 for x,y in coords)
         assert "LEAD("+name+");" in ui
+        paths[name]=coords
+        for (x1,y1),(x2,y2) in zip(coords,coords[1:]):
+            dx,dy=abs(x2-x1),abs(y2-y1)
+            assert dx==0 or dy==0 or dx==dy
+    # Verify no two leaders in either actual layout intersect.
+    def cross(a,b,c):
+        return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])
+    def intersect(a,b,c,d):
+        return (max(min(a[0],b[0]),min(c[0],d[0]))<=min(max(a[0],b[0]),max(c[0],d[0]))
+                and max(min(a[1],b[1]),min(c[1],d[1]))<=min(max(a[1],b[1]),max(c[1],d[1]))
+                and cross(a,b,c)*cross(a,b,d)<=0 and cross(c,d,a)*cross(c,d,b)<=0)
+    shared=("aim","swing","zip","web","kick","jump","punch")
+    for layout in (shared+("move","move_stick","pause"),
+                   shared+("xbox_stick","xbox_dpad","xbox_pause")):
+        for i,name in enumerate(layout):
+            for other in layout[i+1:]:
+                for a,b in zip(paths[name],paths[name][1:]):
+                    for c,d in zip(paths[other],paths[other][1:]):
+                        assert not intersect(a,b,c,d), (name,other)
+    # No leader traverses another face-button's disc (including anchor dots).
+    centers={"web":(390,205),"kick":(410,225),"jump":(390,245),"punch":(370,225)}
+    for name,center in centers.items():
+        x,y=paths[name][-1]
+        assert 9**2 <= (x-center[0])**2+(y-center[1])**2 <= 11**2
+        for other,(cx,cy) in centers.items():
+            if other==name: continue
+            for (ax,ay),(bx,by) in zip(paths[name],paths[name][1:]):
+                dx,dy=bx-ax,by-ay
+                t=max(0,min(1,((cx-ax)*dx+(cy-ay)*dy)/(dx*dx+dy*dy)))
+                assert (ax+t*dx-cx)**2+(ay+t*dy-cy)**2 > 12**2
     assert "0x00458700u" in route  # original Mess_DrawText
     assert "CreateFontA" not in ui
     assert "draw_gamepad(dc);" in ui

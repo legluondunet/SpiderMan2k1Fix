@@ -72,7 +72,7 @@ static void spider_guide_native_labels(void) {
     {390,64,"SWING"}, {390,80,"ZIPLINE"},
     {25,112,"D PAD MOVE"}, {25,134,"STICK MOVE"},
     {186,56,"BACK PAUSE"},
-    {390,97,punch}, {390,113,web}, {390,129,kick}, {390,144,jump},
+    {390,97,web}, {390,113,kick}, {390,129,jump}, {390,144,punch},
     {171,202,confirm}, {172,218,back}
   };
   SpiderSDL3ControllerSetup_RefreshGuide();
@@ -98,7 +98,7 @@ static void spider_guide_native_labels(void) {
   snprintf(kick,sizeof(kick),"%s KICK",SpiderSDL3ControllerSetup_GuideButton(1));
   snprintf(jump,sizeof(jump),"%s JUMP",SpiderSDL3ControllerSetup_GuideButton(0));
   snprintf(confirm,sizeof(confirm),"%s CONFIRM OR SKIP",SpiderSDL3ControllerSetup_GuideButton(0));
-  snprintf(back,sizeof(back),"%s OR ESC TO RETURN",SpiderSDL3ControllerSetup_GuideButton(1));
+  snprintf(back,sizeof(back),"%s RETURN",SpiderSDL3ControllerSetup_GuideButton(1));
   ((void (__cdecl *)(void))(uintptr_t)0x0047A370u)(); /* PShell_NormalFont */
   ((void (__cdecl *)(unsigned char))(uintptr_t)0x00458610u)(1);
   ((void (__cdecl *)(int))(uintptr_t)0x00458620u)(140);

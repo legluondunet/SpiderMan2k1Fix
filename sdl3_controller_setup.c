@@ -179,8 +179,8 @@ static void face_button(HDC dc,int x,int y,unsigned pos) {
   unsigned glyph=guide_labels[pos];
   HGDIOBJ old;
   HPEN pen;
-  disc(dc,x,y,12,RGB(52,60,80),RGB(135,146,165));
-  disc(dc,x,y,10,RGB(29,35,52),RGB(44,51,69));
+  disc(dc,x,y,10,RGB(52,60,80),RGB(135,146,165));
+  disc(dc,x,y,9,RGB(29,35,52),RGB(44,51,69));
   pen=CreatePen(PS_SOLID,2,colors[glyph<=8?glyph:0]);
   if(!pen)return;
   old=SelectObject(dc,pen);
@@ -263,11 +263,11 @@ static void draw_gamepad(HDC dc) {
     rounded(dc,350,178,359,194,5,dark,RGB(52,62,82));
   }
   stick(dc,348,260);
-  disc(dc,390,225,36,RGB(115,126,148),RGB(160,170,190));
-  face_button(dc,390,202,3); /* NORTH: Web */
-  face_button(dc,413,225,1); /* EAST: Kick */
-  face_button(dc,390,248,0); /* SOUTH: Jump */
-  face_button(dc,367,225,2); /* WEST: Punch */
+  disc(dc,390,225,30,RGB(115,126,148),RGB(160,170,190));
+  face_button(dc,390,205,3); /* NORTH: Web */
+  face_button(dc,410,225,1); /* EAST: Kick */
+  face_button(dc,390,245,0); /* SOUTH: Jump */
+  face_button(dc,370,225,2); /* WEST: Punch */
   SelectObject(dc,b);SelectObject(dc,p);
 }
 /* Two-pass high-contrast leader lines. Endpoints are on their actual
@@ -281,25 +281,9 @@ static void leader(HDC dc,const POINT *pts,int n) {
     if(light)DeleteObject(light);
     return;
   }
-  /* Rounded elbows via a short cubic at each bend. The last 1-2
-   * pixels of the curve never cover a glyph. */
-  old=SelectObject(dc,shadow);
-  for(int pass=0;pass<2;pass++) {
-    if(pass)SelectObject(dc,light);
-    MoveToEx(dc,pts[0].x,pts[0].y,NULL);
-    for(int i=1;i<n-1;i++) {
-      POINT a=pts[i-1],b=pts[i],c=pts[i+1],q[3];
-      int dx=b.x-a.x,dy=b.y-a.y,ex=c.x-b.x,ey=c.y-b.y;
-      int m=abs(dx)>abs(dy)?abs(dx):abs(dy);
-      int k=abs(ex)>abs(ey)?abs(ex):abs(ey);
-      int r=m/2<k/2?m/2:k/2;if(r>5)r=5;
-      if(!m||!k){LineTo(dc,b.x,b.y);continue;}
-      LineTo(dc,b.x-dx*r/m,b.y-dy*r/m);
-      q[0]=b;q[1]=b;q[2].x=b.x+ex*r/k;q[2].y=b.y+ey*r/k;
-      PolyBezierTo(dc,q,3);
-    }
-    LineTo(dc,pts[n-1].x,pts[n-1].y);
-  }
+  /* Straight segments only: no curves in any callout. */
+  old=SelectObject(dc,shadow);Polyline(dc,pts,n);
+  SelectObject(dc,light);Polyline(dc,pts,n);
   SelectObject(dc,old);DeleteObject(shadow);DeleteObject(light);
   {
     HGDIOBJ p=SelectObject(dc,GetStockObject(DC_PEN));
@@ -309,27 +293,28 @@ static void leader(HDC dc,const POINT *pts,int n) {
   }
 }
 static void draw_leaders(HDC dc) {
-  /* Four action labels occupy the same right column, in route order.
-   * Punch exits north of the diamond, avoiding all three other glyphs. */
-  static const POINT aim[]={{150,152},{205,152},{225,162}};
+  /* Straight horizontal, vertical and 45-degree segments. Punch
+   * exits below the WEST button through the gap between the right
+   * stick and SOUTH button, then runs below Jump without crossing it. */
+  static const POINT aim[]={{150,152},{215,152},{225,162}};
   static const POINT swing[]={{480,119},{425,119},{408,136}};
-  static const POINT zip[]={{480,151},{435,151},{418,162}};
+  static const POINT zip[]={{480,151},{429,151},{418,162}};
   static const POINT move[]={{150,215},{210,215}};
   static const POINT move_stick[]={{150,260},{264,260}};
   static const POINT xbox_stick[]={{150,215},{220,215}};
   static const POINT xbox_dpad[]={{150,260},{245,260},{258,247}};
   static const POINT pause[]={{286,115},{286,178}};
   static const POINT xbox_pause[]={{290,115},{290,179}};
-  static const POINT punch[]={{480,185},{383,185},{367,201},{367,213}};
-  static const POINT web[]={{480,218},{420,218},{401,202}};
-  static const POINT kick[]={{480,249},{448,249},{425,225}};
-  static const POINT jump[]={{480,280},{428,280},{400,257}};
+  static const POINT web[]={{480,185},{410,185},{397,198}};
+  static const POINT kick[]={{480,218},{427,218},{420,225}};
+  static const POINT jump[]={{480,249},{404,249},{400,245}};
+  static const POINT punch[]={{480,280},{390,280},{370,260},{370,235}};
 #define LEAD(a) leader(dc,a,(int)(sizeof(a)/sizeof(a[0])))
   LEAD(aim);LEAD(swing);LEAD(zip);
   if(guide_family==2 || guide_family==3) {
     LEAD(xbox_stick);LEAD(xbox_dpad);LEAD(xbox_pause);
   } else {LEAD(move);LEAD(move_stick);LEAD(pause);}
-  LEAD(punch);LEAD(web);LEAD(kick);LEAD(jump);
+  LEAD(web);LEAD(kick);LEAD(jump);LEAD(punch);
 #undef LEAD
 }
 /* Only controller artwork is drawn on the DirectDraw surface. Native
@@ -373,6 +358,6 @@ int SpiderSDL3ControllerSetup_DrawToSurface(
   drawn=draw_native_guide(dc,content);
   IDirectDrawSurface7_ReleaseDC(surface,dc);
   if(drawn && ++guide_draws==1 && guide_report)
-    guide_report("SDL3-GUIDE: drawn INSIDE original Joystick menu backbuffer; 4:3 active-controller glyphs and rounded leaders, no popup");
+    guide_report("SDL3-GUIDE: drawn INSIDE original Joystick menu backbuffer; 4:3 compact active-controller glyphs and straight leaders, no popup");
   return drawn?1:0;
 }
