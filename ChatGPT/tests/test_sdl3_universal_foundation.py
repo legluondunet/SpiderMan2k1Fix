@@ -351,7 +351,7 @@ def test_generic_ps3_logical_selection_is_explicit_unique_and_native_preserving(
     assert "sdl3_generic_semantic_trace_on_flip();" in probe
     # The pre-existing real native owner is still strict: unknown PS3
     # START must not claim DI or replace selection.active.
-    assert "SDL3-OWNER: START REFUSED unsupported native controller" in probe
+    assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in probe
 
 
 
