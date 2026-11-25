@@ -3,7 +3,7 @@
  * action-map overlays, and competing synthetic UI key bridges.
  * The original game's joystick defaults remain untouched when the
  * experimental universal adapter is not explicitly enabled.
- * Keep the permanent game-only mouse policy and SDL3 setup entry.
+ * Keep the permanent game-only mouse policy and a read-only guide.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -20,7 +20,7 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   SpiderSDL3ControllerSetup_Init(ini,logger);
   if(SpiderSDL3ControllerSetup_Enabled())
     SpiderSDL3_InstallDirectJoystickEntry(logger);
-  if(logger)logger("GAMEPAD-UI: retired pre-SDL3 Xbox/DS4 custom maps and synthetic keys; SDL3 per-model profile is the only patch-provided mapping");
+  if(logger)logger("GAMEPAD-UI: retired pre-SDL3 Xbox/DS4 custom maps and synthetic keys; SDL3 fixed PlayStation-style semantic controls are the only patch-provided mapping");
 }
 void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active) {
