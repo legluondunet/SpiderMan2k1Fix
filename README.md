@@ -39,7 +39,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **Widescreen HUD:** Corrects the proportions and positioning of HUD elements, including health and web gauges, compass, mission objectives, boss health bars, and in-game pause menus, with native scene-entry iris. Tested at 1920×1080 (16:9) and 1920×1200 (16:10).
 - **FPS limiter:** Configurable frame-rate cap, set to **30 FPS by default**. Lower limits, such as 20 FPS, can be selected for timing-sensitive gameplay.
 - **Alt+Tab stability:** Background game pause, synchronized Bink/DirectSound, and keyboard/gamepad resume. Press and release any key or an eligible selected controller button after returning. The OS desktop cursor is restored. See [focus details](docs/references/CONFIGURATION.md).
-- **SDL3 gamepads:** A single mapped controller activates automatically after releasing its controls. With multiple gamepads, press **Start** on the desired one. DS4, Xbox 360 and PS3 have been tested under Wine/Proton; DS4/Xbox 360 also on Windows 11. [Details](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
+- **SDL3 gamepads:** A sole mapped controller activates automatically after its controls return to neutral. With multiple pads, the first **deliberate button or stick input** selects the active pad; another can take over when the current pad is released. No Start selection. DS4, Xbox 360 and PS3 have been tested under Wine/Proton; DS4/Xbox 360 also on Windows 11. [Details](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
 - **Keyboard layouts:** Automatically detects the active keyboard layout and adapts the game's controls, keyboard labels, and cheat-code entry. The original game only supported QWERTY layouts.
 - **No game mouse:** Keyboard/gamepad only. Game cursor, clicks and polling are permanently off. Desktop pointer unaffected; legacy `MouseEnabled` ignored.
 - **DPI awareness:** Handles Windows display scaling to ensure correct window dimensions and rendering on high-DPI displays.
@@ -51,7 +51,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 
 Successfully tested on Windows 11 and Linux/Wine.
 
-**First-time Xbox setup:** no controller INI edit is needed for a normally recognized Xbox 360 gamepad. With one connected SDL3-mapped controller, release its buttons, sticks and triggers to activate it automatically. With multiple controllers, press Start on the desired one; an explicit selection still requires returning to neutral before gameplay. You may still customize the per-model profile. The original game's joystick bytes remain preserved in `[Internal] RawHex`, but legacy `[Joystick]` INI bindings no longer affect SDL3.
+**First-time Xbox setup:** no controller INI edit is needed for a normally recognized Xbox 360 gamepad. Release all controls when the game starts. With one connected mapped controller it activates automatically. With multiple pads, press a gameplay/menu button or intentionally move the left stick after a neutral frame to choose the active pad; only one pad can control the game at a time. You may still customize the per-model profile. The original game's joystick bytes remain preserved in `[Internal] RawHex`, but legacy `[Joystick]` INI bindings no longer affect SDL3.
 
 ## Bugs Resolved
 
@@ -86,7 +86,7 @@ If the **Windows/Linux desktop cursor** disappears **after Alt+Tab**, that is a 
 
 ### How do I enable Steam Deck controls in Desktop Mode?
 
-Steam Deck support is being investigated **after the v2.0.0 release**. In Desktop Mode, keep Steam running; hold **☰** (~3 seconds) to switch the Desktop/Gamepad layout, then press and release **Start** to select the SDL3 controller.
+Steam Deck support is being investigated **after the v2.0.0 release**. In Desktop Mode, keep Steam running; hold **☰** (~3 seconds) to switch the Desktop/Gamepad layout, release all controls once; use any gameplay button or left stick if several controllers are connected.
 
 On the tested Deck, **Steam library → game → … → keyboard icon** enabled text input without focus loss, but the overlay obscured fields and omitted **F9**. Direct Lutris launch lacked this in-game keyboard. Test observations and follow-up plans: [Steam Deck issue #120](https://github.com/legluondunet/SpiderMan2k1Fix/issues/120).
 
