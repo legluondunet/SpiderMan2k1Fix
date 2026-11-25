@@ -43,7 +43,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **Keyboard layouts:** Automatically detects the active keyboard layout and adapts the game's controls, keyboard labels, and cheat-code entry. The original game only supported QWERTY layouts.
 - **No game mouse:** Keyboard/gamepad only. Game cursor, clicks and polling are permanently off. Desktop pointer unaffected; legacy `MouseEnabled` ignored.
 - **DPI awareness:** Handles Windows display scaling to ensure correct window dimensions and rendering on high-DPI displays.
-- **Settings preservation:** Keyboard, audio, and brightness settings are managed through `SpiderMan2k1Fix.ini`; SDL3 controller mappings are stored separately per model, with automatic recovery of invalid settings and a single rolling `.ini.old` backup. The original `Spidey.cfg` file is no longer needed.
+- **Settings preservation:** Keyboard, audio, and brightness settings are managed through `SpiderMan2k1Fix.ini`; controller actions are fixed and do not require per-model profiles. INI recovery uses a rolling `.ini.old` backup. The original `Spidey.cfg` file is no longer needed.
 - **PNG screenshots:** Press **F9** to save lossless screenshots (`scrnNNNN.png`) under `SpiderMan2k1Fix/screenshots/` (per-user fallback when the game folder is read-only).
 - **Debug logging:** With `[Debug] Log=1`, `SpiderMan2k1Fix.log` automatically includes a one-shot `SYS-INFO` configuration report: OS/Win32 version, detected Wine and Proton hints, Linux kernel as reported by Wine, CPU and core counts, RAM, GPU and D3D9 driver metadata, display resolution/count/refresh, available Linux desktop session hints, plus XInput/DirectInput gamepads. No extra log option is needed.
 - **Build identification:** Displays the patch version and source commit in the game's main menu and diagnostic logs.
@@ -51,7 +51,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 
 Successfully tested on Windows 11 and Linux/Wine.
 
-**First-time Xbox setup:** no controller INI edit is needed for a normally recognized Xbox 360 gamepad. With one connected SDL3-mapped controller, release its buttons, sticks and triggers to activate it automatically. With multiple controllers, press Start on the desired one; an explicit selection still requires returning to neutral before gameplay. You may still customize the per-model profile. The original game's joystick bytes remain preserved in `[Internal] RawHex`, but legacy `[Joystick]` INI bindings no longer affect SDL3.
+**First-time Xbox setup:** no controller INI edit is needed for a normally recognized Xbox 360 gamepad. With one connected SDL3-mapped controller, release its buttons, sticks and triggers to activate it automatically. With multiple controllers, press Start on the desired one; an explicit selection still requires returning to neutral before gameplay. View the fixed button diagram under Options > Joystick; action remapping is no longer available. The original game's joystick bytes remain preserved in `[Internal] RawHex`, but legacy `[Joystick]` INI bindings no longer affect SDL3.
 
 ## Bugs Resolved
 
@@ -86,7 +86,7 @@ If the **Windows/Linux desktop cursor** disappears **after Alt+Tab**, that is a 
 
 ### How do I enable Steam Deck controls in Desktop Mode?
 
-Steam Deck support is being investigated **after the v2.0.0 release**. In Desktop Mode, keep Steam running; hold **☰** (~3 seconds) to switch the Desktop/Gamepad layout, then press and release **Start** to select the SDL3 controller.
+Steam Deck support is being investigated **after the v2.0.0 release**. In Desktop Mode, keep Steam running; hold **☰** (~3 seconds) to switch the Desktop/Gamepad layout, the only connected SDL3 gamepad activates automatically once its controls are neutral.
 
 On the tested Deck, **Steam library → game → … → keyboard icon** enabled text input without focus loss, but the overlay obscured fields and omitted **F9**. Direct Lutris launch lacked this in-game keyboard. Test observations and follow-up plans: [Steam Deck issue #120](https://github.com/legluondunet/SpiderMan2k1Fix/issues/120).
 
@@ -141,7 +141,7 @@ SHA-256; the original SDL3 zlib license is included.
 
 ## Configuration
 
-The original game's menus allow players to configure keyboard controls, gamepad bindings, audio levels, and other game settings.
+The original game's menus allow keyboard, audio, and other game settings; Options > Joystick displays the fixed SDL3 button diagram instead of an action editor.
 
 SpiderMan2k1Fix preserves these settings in `SpiderMan2k1Fix/SpiderMan2k1Fix.ini`, created automatically on first launch. On an upgrade, an existing root-level `SpiderMan2k1Fix.ini` is **copied without deletion** to this folder when there is no newer nested configuration. If the game folder is not writable, configuration, logs and screenshots use `%LOCALAPPDATA%/SpiderMan2k1Fix/`. This replaces the original `Spidey.cfg`, which is no longer used.
 
