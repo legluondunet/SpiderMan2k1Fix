@@ -54,7 +54,7 @@ def test_unclaimed_native_guard_requires_neutral_fresh_start():
     assert callback.index(gate) < callback.index("if(!suspend_original())")
     assert callback.index(gate) < callback.index(transfer)
     assert "UNCLAIMED native DI guard transferred to activity-selected SDL3 controller" in callback
-    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in callback
+    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&" in callback
 
 
 def test_unclaimed_guard_restores_native_on_focus_or_modal_loss():
