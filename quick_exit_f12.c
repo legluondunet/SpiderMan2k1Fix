@@ -384,6 +384,7 @@ static volatile LONG debug_f10_cutscene_skip_owner=0;
 static volatile LONG f10_verbose_trace=0;
 /* Narrow, independent 3D-cutscene DirectInput reader diagnostics. OFF by default. */
 static volatile LONG sdl3_cutscene_reader_trace=0;
+static volatile LONG escape_native_trace=0;
 /* SDL3 physical South/Cross=0, West/Square=2. Read-only timestamps. */
 static volatile LONG sdl3_cutscene_sample_ms=0;
 static volatile LONG sdl3_cutscene_button_bits=0;
@@ -1768,6 +1769,22 @@ static void spider_trace_sdl3_cutscene_reader(
     (unsigned long)ip,(unsigned long)now);
   say(line);
 }
+/* Temporary log-only Escape correlation on the original game thread.
+ * No input injection or modification of either original return value.
+ * Capture a short tail after release, including the native pause context. */
+static int spider_escape_native_window(DWORD *tick,unsigned *down) {
+  static DWORD last_down=0;
+  static int seen_down=0;
+  HWND hwnd;
+  if(InterlockedCompareExchange(&escape_native_trace,0,0)!=1)return 0;
+  hwnd=(HWND)InterlockedCompareExchangePointer(&game_hwnd,NULL,NULL);
+  if(!hwnd || GetForegroundWindow()!=hwnd || !IsWindowVisible(hwnd) ||
+     *SPIDER_GAME_BINK_ACTIVE!=0u) {seen_down=0;return 0;}
+  *tick=GetTickCount();
+  *down=(GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0;
+  if(*down){last_down=*tick;seen_down=1;}
+  return seen_down && (DWORD)(*tick-last_down)<=350u;
+}
 static BYTE __cdecl spider_probe_3d_native_input(
     DWORD mask,DWORD arg1,DWORD arg2) {
   BYTE request_before=0;
@@ -1775,6 +1792,20 @@ static BYTE __cdecl spider_probe_3d_native_input(
   if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)==1)
     request_before=*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST;
   original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);
+  {
+    static unsigned reports=0;
+    DWORD tick;unsigned down;
+    if(reports<600u && spider_escape_native_window(&tick,&down)) {
+      const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+      char line[270];
+      snprintf(line,sizeof(line),
+        "ESC-NATIVE-MASK: tick=%lu site=%08lX mask=%08lX args=%lu,%lu result=%u os=%u pause-ctx=%08lX [ORIGINAL RESULT]",
+        (unsigned long)tick,(unsigned long)(frame[1]-5u),
+        (unsigned long)mask,(unsigned long)arg1,(unsigned long)arg2,
+        (unsigned)original,down,(unsigned long)*SPIDER_PAUSE_CONTEXT);
+      say(line);reports++;
+    }
+  }
   if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)==1) {
     const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
     spider_trace_sdl3_cutscene_reader((DWORD)frame[1],mask,arg1,arg2,
@@ -1893,7 +1924,28 @@ static DWORD __cdecl spider_probe_3d_space_gate(
  * The original raw 0x501CB0 return is passed through unaltered.
  */
 static DWORD __cdecl spider_probe_native_raw_key(DWORD dik) {
+  DWORD tick=0;unsigned down=0;
+  static unsigned escape_reports=0;
+  int escape_watch=dik==0x01u && escape_reports<400u &&
+                   spider_escape_native_window(&tick,&down);
+  unsigned before=escape_watch?*(const volatile BYTE *)(uintptr_t)0x006B792Du:0u;
   DWORD result=SPIDER_NATIVE_KEY_READ(dik);
+  if(escape_watch) {
+    const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+    DWORD inner=(DWORD)frame[1],caller=(DWORD)frame[3];
+    DWORD caller_key=(DWORD)frame[4],caller_mode=(DWORD)frame[5];
+    if((inner==0x0050A662u || inner==0x0050A679u) &&
+       caller_key==dik && (caller_mode==0u || caller_mode==1u)) {
+      char line[300];
+      snprintf(line,sizeof(line),
+        "ESC-NATIVE-KEY: tick=%lu origin=%08lX mode=%lu os=%u before=%02X result=%08lX after=%02X pause-ctx=%08lX [ORIGINAL RESULT]",
+        (unsigned long)tick,(unsigned long)caller,(unsigned long)caller_mode,down,
+        before,(unsigned long)result,
+        (unsigned)*(const volatile BYTE *)(uintptr_t)0x006B792Du,
+        (unsigned long)*SPIDER_PAUSE_CONTEXT);
+      say(line);escape_reports++;
+    }
+  }
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
      InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
      InterlockedCompareExchange(&debug_newgame_lowlevel_key_probes_installed,0,0)==1) {
@@ -2793,6 +2845,7 @@ static void restore_debug_3d_space_gate_probes(void) {
  * New Game sessions. Install both READ-ONLY hooks or none.
  * The original game owns all KEY PRESS / KEY RELEASE semantics. */
 static int install_debug_raw_space_probes(void) {
+  if(InterlockedCompareExchange(&debug_newgame_lowlevel_key_probes_installed,0,0)==1)return 1;
   if(memcmp(SPIDER_NATIVE_KEY_EDGE_CALL,spider_native_key_edge_original,5)!=0 ||
      memcmp(SPIDER_NATIVE_KEY_LEVEL_CALL,spider_native_key_level_original,5)!=0)
     return 0;
@@ -2826,6 +2879,7 @@ static void restore_debug_raw_space_probes(void) {
  * to a synthetic SPACE or controller-7 process EXIT. */
 static int install_debug_3d_native_input_probes(void) {
   int i,j;
+  if(InterlockedCompareExchange(&debug_newgame_native_input_probes_installed,0,0)==1)return 1;
   for(i=0;i<SPIDER_NATIVE_3D_INPUT_SITES_COUNT;++i)
     if(memcmp(spider_native_3d_input_sites[i],
               spider_native_3d_input_original[i],5)!=0)
@@ -3376,6 +3430,21 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
   if(!spider_path_ini_a(ini,sizeof(ini))) {
     say("QUICK-EXIT-F12: disabled (INI path unavailable)");
     return;
+  }
+  /* Temporary investigation independent of F10: use the existing
+   * signature-checked callsites, all original results passed through.
+   * No new setting, active only in a Log=1 diagnostic session. */
+  if(GetPrivateProfileIntA("Debug","Log",0,ini)==1 &&
+     sizeof(void*)==4 && GetModuleHandleA(NULL)==(HMODULE)(uintptr_t)0x00400000u) {
+    if(install_debug_raw_space_probes()) {
+      if(install_debug_3d_native_input_probes()) {
+        InterlockedExchange(&escape_native_trace,1);
+        say("ESC-NATIVE: two original keyboard-read and five 3D input-mask callsites armed; pass-through only");
+      } else {
+        restore_debug_raw_space_probes();
+        say("ESC-NATIVE: input-mask signature mismatch; all diagnostic hooks restored");
+      }
+    } else say("ESC-NATIVE: keyboard-read signature mismatch; diagnostic not installed");
   }
   /* Player-facing cinema skip is opt-in and independent of logging.
    * Existing [Debug] F10Shortcut keeps its historical, broader behavior. */
