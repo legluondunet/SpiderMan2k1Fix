@@ -3741,8 +3741,14 @@ void SpiderQuickExitF12_Init(void (*log_fn)(const char *)) {
     return;
   }
   CloseHandle(thread);
-  if(InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1)
-    say("QUICK-EXIT-F12: EXPERIMENTAL 3D native exit enabled (game-thread cleanup then controller-7 final branch); not Windows-validated");
+  /* The [Features] option reuses native 3D script infrastructure without
+   * opting into the legacy gameplay/menu exit experiment. State that
+   * distinction explicitly in the runtime log. */
+  if(InterlockedCompareExchange(&features_f10_cinematics_only,0,0)==1 &&
+     InterlockedCompareExchange(&debug_f10_gameplay_exit_opt_in,0,0)!=1)
+    say("QUICK-EXIT-F12: [Features] F10 native 3D intro skip enabled; F10 gameplay exit DISABLED");
+  else if(InterlockedCompareExchange(&experimental_game3d_enabled,0,0)==1)
+    say("QUICK-EXIT-F12: EXPERIMENTAL 3D native exit enabled (legacy debug mode; not Windows-validated)");
   else
     say("QUICK-EXIT-F12: menu native Quit validated; 3D experimental native exit OFF by default; comics unsupported");
 }
