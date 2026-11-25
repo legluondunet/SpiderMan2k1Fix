@@ -69,38 +69,53 @@ def test_runtime_no_longer_reads_or_writes_per_model_action_profiles():
                       "Capture selected action"):
         assert forbidden not in ui
 
-def test_fixed_controller_guide_draws_real_pad_and_all_actions():
+def test_fixed_controller_guide_is_native_and_draws_all_actions():
     ui=load("sdl3_controller_setup.c")
-    assert "static void guide_paint(" in ui
-    assert "RoundRect(dc,244,135,537,301" in ui
-    assert "Ellipse(dc,183,146,365,338)" in ui
-    for text in ("CROSS  / A", "CIRCLE / B", "SQUARE / X",
-                 "TRIANGLE / Y", "L1 / LB", "R1 / RB",
-                 "R2 / RT", "Share / Back", "Jump", "Kick",
-                 "Punch", "Web", "Aim", "Zipline", "Swing", "Pause"):
-        assert text in ui
+    game=load("spiderman2k1fix.c")
+    assert "static BOOL draw_native_guide(HDC dc,const RECT *content)" in ui
+    assert "static void draw_gamepad(HDC dc)" in ui
+    assert "RoundRect(dc,255,161,385,258" in ui
+    assert "Ellipse(dc,231,170,318,281)" in ui
+    for label in ("CROIX / A", "ROND / B", "CARRE / X",
+                  "TRIANGLE / Y", "L1 / LB", "R1 / RB",
+                  "R2 / RT", "Share / Back",
+                  "Sauter", "Coup de pied", "Coup de poing",
+                  "Toile", "Viser", "Zipline", "Balancement", "Pause"):
+        assert label in ui
+    assert "SetWindowExtEx(dc,640,480,NULL);" in ui
+    assert "SetViewportOrgEx(dc,content->left,content->top,NULL);" in ui
+    assert "IDirectDrawSurface7_GetDC(surface,&dc)" in ui
+    assert "IDirectDrawSurface7_ReleaseDC(surface,dc)" in ui
+    assert "SpiderSDL3ControllerSetup_DrawToSurface(borderless_back,&content)" in game
+    assert game.index("SpiderSDL3ControllerSetup_DrawToSurface(borderless_back,&content)") < (
+        game.index("f9_capture_completed_menu_flip(count,f9_still_ready)"))
+    assert "CreateWindow" not in ui
     assert "SetTimer(" not in ui
-    assert "SpiderSDL3Probe_SetupRead" not in ui
-    assert "SpiderSDL3Probe_SetupPump()" not in ui
-    assert 'guide_text(dc,300,338,"Start  -  Select pad*")' in ui
-    assert 'Only needed when several controllers' in ui
+    assert "IsDialogMessage" not in ui
+    assert "Start  -  Select pad" not in ui
 
-def test_guide_remains_focus_safe_and_keyboard_config_unmodified():
+def test_guide_reuses_original_joystick_menu_without_focus_takeover():
     ui=load("sdl3_controller_setup.c")
     route=load("ps1_joystick_readonly_menu.c")
-    assert "SpiderSDL3Universal_BeforeModal(owner);" in ui
-    assert "spider_sdl3_setup_restore_focus(" in ui
-    assert "ui->closing_foreground=GetForegroundWindow();" in ui
-    assert "if(parent_enabled && IsWindow(owner))EnableWindow(owner,TRUE);" in ui
-    assert "SpiderSDL3Probe_SetupModalReturn(0,0,0);" in ui
-    assert "if(has_quit)PostQuitMessage(quit_code);" in ui
-    assert "GetForegroundWindow()!=owner" not in ui
-    assert "if(wp==VK_ESCAPE || wp==VK_RETURN)" in ui
-    assert "const int is_joystick=(native_mode==0);" in route
-    assert "if(is_joystick && SpiderSDL3ControllerSetup_Enabled())" in route
-    assert "SpiderSDL3ControllerSetup_Open();" in route
+    bridge=load("gamepad_ui_profile.c")
+    assert "SpiderSDL3ControllerSetup_OnNativeEnter();" in route
+    assert "SpiderSDL3_InstallGenericReadOnlyJoystick(ps1_menu_logger)" in route
+    assert "SpiderSDL3_InstallGenericReadOnlyJoystick(logger)" in bridge
+    assert "SpiderSDL3_InstallGenericReadOnlyJoystick(ui_log)" in bridge
     assert "SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(native_mode);" in route
+    assert "const int is_joystick=(native_mode==0);" in route
     assert "Keyboard selected (mode=1); original game configuration preserved" in route
+    assert "SPIDER_NATIVE_JOYSTICK_CONTEXT" in ui
+    assert "guide_seen_native" in ui
+    assert "guide_requested=0;" in ui
+    assert "SpiderSDL3ControllerSetup_Open();" not in route
+    assert "EnableWindow(" not in ui
+    assert "SetForegroundWindow(" not in ui
+    assert "SpiderSDL3Universal_BeforeModal" not in ui
+    assert "SpiderSDL3Probe_SetupModalReturn(" not in ui
+    assert "CreateWindowExA(" not in ui
+    assert "SendInput(" not in ui
+    assert "WritePrivateProfileString(" not in ui
 
 def test_guid_hardware_recognition_is_separate_from_action_profiles():
     probe=load("sdl3_gamepad_probe.c")
