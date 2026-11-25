@@ -49,6 +49,66 @@ enum { SPIDER_DIRECT_ENTRY_MAX_CALLS=4u };
 static int direct_entry_attempted=0,direct_entry_installed=0;
 typedef void (__cdecl *SpiderNativeControllerConfigFn)(int);
 
+/* These five exact CALL instructions are verified against the retail
+ * function archives for 0x50CE70, 0x50D2F0 and 0x4401B0. Keep native
+ * CMenu::Display (including expanding-box animation), but suppress its
+ * text only during the two Joystick-owned calls. Keyboard is untouched.
+ * Back is the separate original trigger at 0x50D397, never redirected. */
+static int guide_hide_rows=0;
+typedef void (__thiscall *SpiderGuideMenuMethod)(void *);
+typedef int (__cdecl *SpiderGuideText)(int,int,const char *,int,unsigned);
+typedef unsigned char (__cdecl *SpiderGuideTriggers)(unsigned,int,int);
+static int __cdecl spider_guide_menu_text(int x,int y,const char *s,int a,unsigned b) {
+  if(guide_hide_rows)return 0;
+  return ((SpiderGuideText)(uintptr_t)0x00458700u)(x,y,s,a,b);
+}
+static void spider_guide_native_labels(void) {
+  static const struct {int x,y; const char *s;} labels[]={
+    {25,62,"L1 / LB: AIM"}, {25,85,"R1 / RB: ZIPLINE"},
+    {25,108,"R2 / RT: SWING"}, {25,132,"STICK / D-PAD"},
+    {25,145,"MOVE"},
+    {336,62,"CROSS / A: JUMP"}, {336,85,"CIRCLE / B: KICK"},
+    {336,108,"SQUARE / X: PUNCH"}, {336,132,"TRIANGLE / Y"},
+    {336,145,"WEB"},
+    {25,185,"SHARE / BACK: PAUSE"},
+    {25,207,"CIRCLE / B OR ESC: RETURN"}
+  };
+  unsigned i;
+  ((void (__cdecl *)(void))(uintptr_t)0x0047A370u)(); /* PShell_NormalFont */
+  ((void (__cdecl *)(unsigned char))(uintptr_t)0x00458610u)(1);
+  ((void (__cdecl *)(int))(uintptr_t)0x00458620u)(156);
+  ((void (__cdecl *)(unsigned char,unsigned char,unsigned char,int))
+     (uintptr_t)0x00458640u)(255,255,255,0);
+  ((void (__cdecl *)(unsigned char,unsigned char,unsigned char))
+     (uintptr_t)0x00458670u)(190,185,255);
+  for(i=0;i<sizeof(labels)/sizeof(labels[0]);++i)
+    ((SpiderGuideText)(uintptr_t)0x00458700u)(
+       labels[i].x,labels[i].y,labels[i].s,0,0x1000u);
+  ((void (__cdecl *)(int))(uintptr_t)0x00458620u)(256);
+}
+static void __fastcall spider_guide_display_left(void *menu,void *unused) {
+  int old=guide_hide_rows;
+  (void)unused;
+  guide_hide_rows=SpiderSDL3ControllerSetup_IsNativeActive();
+  ((SpiderGuideMenuMethod)(uintptr_t)0x004401B0u)(menu);
+  guide_hide_rows=old;
+}
+static void __fastcall spider_guide_display_right(void *menu,void *unused) {
+  spider_guide_display_left(menu,unused);
+  if(SpiderSDL3ControllerSetup_IsNativeActive()) {
+    spider_guide_native_labels();
+    SpiderSDL3ControllerSetup_OnNativeFrame();
+  }
+}
+static void __fastcall spider_guide_update(void *menu,void *unused) {
+  (void)unused;
+  if(!SpiderSDL3ControllerSetup_IsNativeActive())
+    ((SpiderGuideMenuMethod)(uintptr_t)0x00440600u)(menu);
+}
+static unsigned char __cdecl spider_guide_confirm(unsigned mask,int a,int b) {
+  if(SpiderSDL3ControllerSetup_IsNativeActive())return 0;
+  return ((SpiderGuideTriggers)(uintptr_t)0x0050C180u)(mask,a,b);
+}
 static void __cdecl spider_sdl3_direct_controller_menu(int native_mode) {
   static unsigned logs=0u;
   char line[180];
@@ -78,6 +138,9 @@ static void __cdecl spider_sdl3_direct_controller_menu(int native_mode) {
     report("SDL3-DIRECT-ENTRY: Joystick selected (mode=0); enter native read-only controller menu with in-game guide");
     ((SpiderNativeControllerConfigFn)(uintptr_t)
       SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(native_mode);
+    /* Retail function contains the entire native controller-screen loop.
+     * Its return is the authoritative exit, not the persistent mode flag. */
+    SpiderSDL3ControllerSetup_OnNativeExit();
     return;
   } else if(native_mode==1) {
     if(logs<18u)
@@ -110,9 +173,16 @@ int SpiderSDL3_InstallDirectJoystickEntry(void (*logger)(const char *)) {
   IMAGE_DOS_HEADER *dos;
   IMAGE_NT_HEADERS32 *nt;
   IMAGE_SECTION_HEADER *section;
-  BYTE *found[SPIDER_DIRECT_ENTRY_MAX_CALLS]={NULL};
-  BYTE old_bytes[SPIDER_DIRECT_ENTRY_MAX_CALLS][5]={{0}};
-  unsigned i,j,count=0u,written=0u;
+  BYTE *found[SPIDER_DIRECT_ENTRY_MAX_CALLS+5u]={NULL};
+  BYTE old_bytes[SPIDER_DIRECT_ENTRY_MAX_CALLS+5u][5]={{0}};
+  const struct {uintptr_t va; BYTE bytes[5]; uintptr_t replacement;} guide_sites[]={
+    {0x0050CFBFu,{0xE8,0xEC,0x31,0xF3,0xFF},(uintptr_t)&spider_guide_display_left},
+    {0x0050CFCAu,{0xE8,0xE1,0x31,0xF3,0xFF},(uintptr_t)&spider_guide_display_right},
+    {0x00440486u,{0xE8,0x75,0x82,0x01,0x00},(uintptr_t)&spider_guide_menu_text},
+    {0x0050D338u,{0xE8,0xC3,0x32,0xF3,0xFF},(uintptr_t)&spider_guide_update},
+    {0x0050D3DBu,{0xE8,0xA0,0xED,0xFF,0xFF},(uintptr_t)&spider_guide_confirm}
+  };
+  unsigned i,j,count=0u,written=0u,entry_count=0u;
   char line[192];
   if(!SpiderSDL3ControllerSetup_Enabled())return 0;
   if(direct_entry_installed)return 1;
@@ -196,9 +266,26 @@ int SpiderSDL3_InstallDirectJoystickEntry(void (*logger)(const char *)) {
     report("SDL3-DIRECT-ENTRY: REFUSED no direct CALL rel32 to 0x0050CE70; possible indirect call; old menu preserved");
     return 0;
   }
+  entry_count=count;
+  /* All five native guide CALLs must match before any patch is written.
+   * The original direct-entry CALLs and guide hooks share one rollback. */
+  for(i=0;i<sizeof(guide_sites)/sizeof(guide_sites[0]);++i) {
+    BYTE *site=(BYTE *)guide_sites[i].va;
+    MEMORY_BASIC_INFORMATION mbi;
+    if(VirtualQuery(site,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+       mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_NOACCESS|PAGE_GUARD)) ||
+       memcmp(site,guide_sites[i].bytes,5u)!=0) {
+      report("SDL3-NATIVE-GUIDE: REFUSED original draw/update/confirm CALL mismatch; no guide hooks written");
+      return 0;
+    }
+    found[count++]=site;
+  }
   for(i=0;i<count;i++) {
     BYTE patch[5];
-    uint32_t rel=(uint32_t)(uintptr_t)&spider_sdl3_direct_controller_menu-
+    uintptr_t replacement=i<entry_count?
+      (uintptr_t)&spider_sdl3_direct_controller_menu:
+      guide_sites[i-entry_count].replacement;
+    uint32_t rel=(uint32_t)replacement-
       ((uint32_t)(uintptr_t)found[i]+5u);
     patch[0]=0xE8u;
     memcpy(patch+1,&rel,sizeof(rel));
@@ -223,8 +310,9 @@ int SpiderSDL3_InstallDirectJoystickEntry(void (*logger)(const char *)) {
   direct_entry_installed=1;
   snprintf(line,sizeof(line),
     "SDL3-DIRECT-ENTRY: ACTIVE intercepted original PCSHELL_DoControllerConfig CALL(s)=%u, function=0x%08X; Keyboard passthrough, Joystick -> SDL3",
-    count,SPIDER_NATIVE_CONTROLLER_CONFIG_VA);
+    entry_count,SPIDER_NATIVE_CONTROLLER_CONFIG_VA);
   report(line);
+  report("SDL3-NATIVE-GUIDE: verified five native CALL hooks; old rows hidden at source, selection/confirm disabled, original Back and expanding boxes retained");
   return 1;
 }
 

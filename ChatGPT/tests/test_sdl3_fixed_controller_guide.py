@@ -76,12 +76,15 @@ def test_fixed_controller_guide_is_native_and_draws_all_actions():
     assert "static void draw_gamepad(HDC dc)" in ui
     assert "RoundRect(dc,255,161,385,258" in ui
     assert "Ellipse(dc,231,170,318,281)" in ui
-    for label in ("CROIX / A", "ROND / B", "CARRE / X",
-                  "TRIANGLE / Y", "L1 / LB", "R1 / RB",
-                  "R2 / RT", "Share / Back",
-                  "Sauter", "Coup de pied", "Coup de poing",
-                  "Toile", "Viser", "Zipline", "Balancement", "Pause"):
-        assert label in ui
+    route=load("ps1_joystick_readonly_menu.c")
+    for label in ("CROSS / A: JUMP", "CIRCLE / B: KICK", "SQUARE / X: PUNCH",
+                  "TRIANGLE / Y", "L1 / LB: AIM", "R1 / RB: ZIPLINE",
+                  "R2 / RT: SWING", "SHARE / BACK: PAUSE", "WEB", "MOVE"):
+        assert label in route
+    assert "0x00458700u" in route  # original Mess_DrawText
+    assert "CreateFontA" not in ui
+    assert "draw_gamepad(dc);" in ui
+    assert "RoundRect(dc,54,104" not in ui
     assert "SetWindowExtEx(dc,640,480,NULL);" in ui
     assert "SetViewportOrgEx(dc,content->left,content->top,NULL);" in ui
     assert "IDirectDrawSurface7_GetDC(surface,&dc)" in ui
@@ -107,7 +110,17 @@ def test_guide_reuses_original_joystick_menu_without_focus_takeover():
     assert "const int is_joystick=(native_mode==0);" in route
     assert "Keyboard selected (mode=1); original game configuration preserved" in route
     assert "SPIDER_NATIVE_JOYSTICK_CONTEXT" in ui
-    assert "guide_seen_native" in ui
+    assert "guide_frame" in ui
+    assert "SpiderSDL3ControllerSetup_OnNativeExit();" in route
+    assert "SpiderSDL3ControllerSetup_OnNativeFrame();" in route
+    assert "if(guide_hide_rows)return 0;" in route
+    assert "if(!SpiderSDL3ControllerSetup_IsNativeActive())" in route
+    assert "if(SpiderSDL3ControllerSetup_IsNativeActive())return 0;" in route
+    for callsite in ("0x0050CFBFu", "0x0050CFCAu", "0x00440486u",
+                     "0x0050D338u", "0x0050D3DBu"):
+        assert callsite in route
+    assert "memcmp(site,guide_sites[i].bytes,5u)!=0" in route
+    assert "guide_frame=0;" in ui
     assert "guide_requested=0;" in ui
     assert "SpiderSDL3ControllerSetup_Open();" not in route
     assert "EnableWindow(" not in ui

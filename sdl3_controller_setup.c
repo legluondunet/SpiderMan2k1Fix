@@ -15,11 +15,11 @@
 
 static void (*guide_report)(const char *)=NULL;
 static int guide_enabled=0;
-static int guide_requested=0,guide_seen_native=0,guide_reported=0;
+static int guide_requested=0,guide_frame=0,guide_reported=0;
 static LONG guide_draws=0;
 
 /* The verified retail 2001 executable's gActionMapRelated owns the
- * joystick-vs-keyboard configuration screen. 0 means Keyboard/other.
+ * joystick-vs-keyboard configuration mode, NOT its screen lifetime.
  * Read-only inspection while the menu renders; never patch this value. */
 #define SPIDER_NATIVE_JOYSTICK_CONTEXT ((const volatile DWORD *)(uintptr_t)0x00AC129Cu)
 
@@ -29,7 +29,7 @@ void SpiderSDL3ControllerSetup_Init(const char *ini,
   guide_report=logger;
   guide_enabled=1;
   guide_requested=0;
-  guide_seen_native=0;
+  guide_frame=0;
   guide_reported=0;
   guide_draws=0;
   if(guide_report)
@@ -39,21 +39,30 @@ int SpiderSDL3ControllerSetup_Enabled(void) {return guide_enabled;}
 void SpiderSDL3ControllerSetup_OnNativeEnter(void) {
   if(!guide_enabled)return;
   guide_requested=1;
-  guide_seen_native=0;
+  guide_frame=0;
   guide_reported=0;
   guide_draws=0;
   if(guide_report)
     guide_report("SDL3-GUIDE: native Joystick screen entered; waiting for verified menu context before compositing");
+}
+int SpiderSDL3ControllerSetup_IsNativeActive(void) {
+  return guide_enabled && guide_requested;
+}
+void SpiderSDL3ControllerSetup_OnNativeFrame(void) {
+  if(SpiderSDL3ControllerSetup_IsNativeActive())guide_frame=1;
+}
+void SpiderSDL3ControllerSetup_OnNativeExit(void) {
+  guide_requested=0;
+  guide_frame=0;
+  if(guide_report)
+    guide_report("SDL3-GUIDE: original Joystick screen exited; native overlay deactivated");
 }
 /* Retained for ABI compatibility, never opens an external popup. */
 void SpiderSDL3ControllerSetup_Open(void) {
   if(guide_report)
     guide_report("SDL3-GUIDE: external window retired; use original Options > Joystick native screen");
 }
-static void gtext(HDC dc,int x,int y,const char *s) {
-  if(s)TextOutA(dc,x,y,s,(int)strlen(s));
-}
-static void gline(HDC dc,int x,int y,int x2,int y2) {
+ static void gline(HDC dc,int x,int y,int x2,int y2) {
   MoveToEx(dc,x,y,NULL);LineTo(dc,x2,y2);
 }
 static void pad_disc(HDC dc,int x,int y,int r,COLORREF fill) {
@@ -65,9 +74,9 @@ static void pad_disc(HDC dc,int x,int y,int r,COLORREF fill) {
 static void draw_gamepad(HDC dc) {
   HPEN stroke=CreatePen(PS_SOLID,3,RGB(37,33,68));
   HPEN detail=CreatePen(PS_SOLID,1,RGB(103,99,154));
-  HBRUSH grip=CreateSolidBrush(RGB(150,148,181));
-  HBRUSH shell=CreateSolidBrush(RGB(201,199,217));
-  HBRUSH shade=CreateSolidBrush(RGB(109,105,150));
+  HBRUSH grip=CreateSolidBrush(RGB(146,150,169));
+  HBRUSH shell=CreateSolidBrush(RGB(210,212,223));
+  HBRUSH shade=CreateSolidBrush(RGB(97,101,122));
   HGDIOBJ oldp=SelectObject(dc,stroke),oldb=SelectObject(dc,grip);
   /* PlayStation-style vector illustration, not a separate modal or bitmap.
    * Dual grips + central shell + bumpers preserve the native comic style. */
@@ -79,8 +88,12 @@ static void draw_gamepad(HDC dc) {
   RoundRect(dc,260,152,309,170,9,9); /* L1 */
   RoundRect(dc,331,152,380,170,9,9); /* R1 */
   SelectObject(dc,grip);
-  RoundRect(dc,280,192,299,242,5,5); /* d-pad vertical */
-  RoundRect(dc,264,208,315,226,5,5); /* d-pad horizontal */
+  {
+    POINT dpad[]={{282,184},{298,184},{298,199},{313,199},
+      {313,215},{298,215},{298,230},{282,230},{282,215},
+      {267,215},{267,199},{282,199}};
+    Polygon(dc,dpad,sizeof(dpad)/sizeof(dpad[0]));
+  }
   SelectObject(dc,detail);
   pad_disc(dc,297,244,12,RGB(92,89,136)); /* sticks */
   pad_disc(dc,343,244,12,RGB(92,89,136));
@@ -91,115 +104,49 @@ static void draw_gamepad(HDC dc) {
   SelectObject(dc,oldb);SelectObject(dc,oldp);
   DeleteObject(stroke);DeleteObject(detail);
   DeleteObject(grip);DeleteObject(shell);DeleteObject(shade);
-  SetBkMode(dc,TRANSPARENT);
-  SetTextColor(dc,RGB(244,242,252));
-  gtext(dc,353,180,"T");
-  gtext(dc,373,198,"O");
-  gtext(dc,353,218,"X");
-  gtext(dc,336,198,"S");
+  /* Real PlayStation glyph shapes instead of placeholder letters. */
+  {
+    HPEN glyph=CreatePen(PS_SOLID,2,RGB(250,250,255));
+    HGDIOBJ p=SelectObject(dc,glyph);
+    HGDIOBJ b=SelectObject(dc,GetStockObject(NULL_BRUSH));
+    POINT triangle[]={{357,178},{351,190},{363,190}};
+    Polygon(dc,triangle,3);
+    Ellipse(dc,370,197,382,209);
+    gline(dc,352,218,362,228);gline(dc,362,218,352,228);
+    Rectangle(dc,333,197,345,209);
+    SelectObject(dc,b);SelectObject(dc,p);DeleteObject(glyph);
+  }
 }
+/* Only controller artwork is drawn on the DirectDraw surface. Native
+ * title, frame, background and all action legends belong to the game. */
 static BOOL draw_native_guide(HDC dc,const RECT *content) {
-  int oldmode,oldBk;
-  SIZE windowext,viewext;
-  POINT org;
-  HPEN edge=CreatePen(PS_SOLID,2,RGB(166,138,239));
-  HPEN fine=CreatePen(PS_SOLID,1,RGB(113,94,192));
-  HBRUSH panel=CreateSolidBrush(RGB(24,16,76));
-  HBRUSH panel2=CreateSolidBrush(RGB(45,31,109));
-  HGDIOBJ oldp,oldb,oldf;
-  HFONT title=CreateFontA(21,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,
-                         DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
-                         CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,
-                         DEFAULT_PITCH|FF_SWISS,"Arial");
-  HFONT legend=CreateFontA(15,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,
-                          DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
-                          CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,
-                          DEFAULT_PITCH|FF_SWISS,"Arial");
-  HFONT small=CreateFontA(12,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,
-                         DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
-                         CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,
-                         DEFAULT_PITCH|FF_SWISS,"Arial");
+  int saved;
   if(!dc || !content || content->right<=content->left ||
      content->bottom<=content->top)return FALSE;
-  /* Preserve and restore the DirectDraw surface DC mapping. All gamepad
-   * art is in native 640x480 menu coordinates, never desktop geometry. */
-  oldmode=GetMapMode(dc);
-  GetWindowExtEx(dc,&windowext);
-  GetViewportExtEx(dc,&viewext);
-  GetViewportOrgEx(dc,&org);
-  oldBk=SetBkMode(dc,TRANSPARENT);
-  if(!SetMapMode(dc,MM_ANISOTROPIC))return FALSE;
+  saved=SaveDC(dc);
+  if(!saved)return FALSE;
+  if(!SetMapMode(dc,MM_ANISOTROPIC)) {
+    RestoreDC(dc,saved);
+    return FALSE;
+  }
   SetWindowExtEx(dc,640,480,NULL);
   SetViewportExtEx(dc,content->right-content->left,
                         content->bottom-content->top,NULL);
   SetViewportOrgEx(dc,content->left,content->top,NULL);
-  oldp=SelectObject(dc,edge);
-  oldb=SelectObject(dc,panel);
-  RoundRect(dc,54,104,586,437,16,16);
-  SelectObject(dc,panel2);
-  RoundRect(dc,62,112,578,429,13,13);
-  SelectObject(dc,fine);
-  gline(dc,77,147,563,147);
-  gline(dc,77,296,563,296);
-  oldf=SelectObject(dc,title?title:GetStockObject(DEFAULT_GUI_FONT));
-  SetTextColor(dc,RGB(244,224,255));
-  gtext(dc,82,120,"JOYSTICK  /  COMMANDES");
-  SelectObject(dc,small?small:GetStockObject(DEFAULT_GUI_FONT));
-  SetTextColor(dc,RGB(201,189,249));
-  gtext(dc,82,152,"Une manette active a la fois  |  commandes fixes");
-  gtext(dc,90,189,"L1 / LB");
-  gtext(dc,90,207,"Viser");
-  gtext(dc,462,189,"R1 / RB");
-  gtext(dc,462,207,"Zipline");
-  gtext(dc,90,260,"Stick / croix");
-  gtext(dc,90,275,"Deplacement");
-  gtext(dc,462,260,"R2 / RT");
-  gtext(dc,462,275,"Balancement");
   draw_gamepad(dc);
-  SelectObject(dc,legend?legend:GetStockObject(DEFAULT_GUI_FONT));
-  SetTextColor(dc,RGB(249,236,255));
-  gtext(dc,85,311,"CROIX / A");
-  gtext(dc,328,311,"Sauter");
-  gtext(dc,85,336,"ROND / B");
-  gtext(dc,328,336,"Coup de pied");
-  gtext(dc,85,361,"CARRE / X");
-  gtext(dc,328,361,"Coup de poing");
-  gtext(dc,85,386,"TRIANGLE / Y");
-  gtext(dc,328,386,"Toile");
-  SelectObject(dc,small?small:GetStockObject(DEFAULT_GUI_FONT));
-  SetTextColor(dc,RGB(200,187,246));
-  gtext(dc,85,409,"Share / Back : Pause     |     Manette active : derniere utilisee");
-  SelectObject(dc,oldf);
-  SelectObject(dc,oldb);SelectObject(dc,oldp);
-  if(title)DeleteObject(title);
-  if(legend)DeleteObject(legend);
-  if(small)DeleteObject(small);
-  DeleteObject(panel);DeleteObject(panel2);
-  DeleteObject(edge);DeleteObject(fine);
-  SetViewportOrgEx(dc,org.x,org.y,NULL);
-  SetViewportExtEx(dc,viewext.cx,viewext.cy,NULL);
-  SetWindowExtEx(dc,windowext.cx,windowext.cy,NULL);
-  SetMapMode(dc,oldmode);
-  SetBkMode(dc,oldBk);
+  RestoreDC(dc,saved);
   return TRUE;
 }
 int SpiderSDL3ControllerSetup_DrawToSurface(
     IDirectDrawSurface7 *surface,const RECT *content) {
-  DWORD native_context;
   HDC dc=NULL;
   HRESULT hr;
   BOOL drawn;
-  if(!guide_enabled || !guide_requested || !surface || !content)return 0;
-  native_context=*SPIDER_NATIVE_JOYSTICK_CONTEXT;
-  if(!native_context) {
-    if(guide_seen_native) {
-      guide_requested=0;
-      if(guide_report)
-        guide_report("SDL3-GUIDE: original Joystick screen exited; native overlay deactivated");
-    }
-    return 0;
-  }
-  guide_seen_native=1;
+  if(!SpiderSDL3ControllerSetup_IsNativeActive() || !guide_frame)return 0;
+  /* One fresh native display event authorizes exactly one presentation.
+   * Never rely on gActionMapRelated, which remains set after menu exit. */
+  guide_frame=0;
+  if(!surface || !content || !*SPIDER_NATIVE_JOYSTICK_CONTEXT)return 0;
   hr=IDirectDrawSurface7_GetDC(surface,&dc);
   if(FAILED(hr)||!dc) {
     if(!guide_reported && guide_report)

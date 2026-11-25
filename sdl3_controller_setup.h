@@ -8,6 +8,9 @@ void SpiderSDL3ControllerSetup_Init(const char *ini,
                                     void (*logger)(const char *));
 int SpiderSDL3ControllerSetup_Enabled(void);
 void SpiderSDL3ControllerSetup_OnNativeEnter(void);
+void SpiderSDL3ControllerSetup_OnNativeExit(void);
+int SpiderSDL3ControllerSetup_IsNativeActive(void);
+void SpiderSDL3ControllerSetup_OnNativeFrame(void);
 int SpiderSDL3ControllerSetup_DrawToSurface(
     IDirectDrawSurface7 *surface,const RECT *content);
 /* Deprecated ABI kept nonoperational to avoid an accidental popup. */
