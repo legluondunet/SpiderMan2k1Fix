@@ -74,13 +74,31 @@ def test_fixed_controller_guide_is_native_and_draws_all_actions():
     game=load("spiderman2k1fix.c")
     assert "static BOOL draw_native_guide(HDC dc,const RECT *content)" in ui
     assert "static void draw_gamepad(HDC dc)" in ui
-    assert "RoundRect(dc,255,161,385,258" in ui
-    assert "Ellipse(dc,231,170,318,281)" in ui
+    assert "shell_path(dc,0,dark,metal)" in ui
+    assert "PolyBezierTo(dc,p," in ui
+    assert "face_button(dc,390,198,0" in ui
+    assert "face_button(dc,413,225,1" in ui
+    assert "face_button(dc,390,252,2" in ui
+    assert "face_button(dc,367,225,3" in ui
+    assert "draw_leaders(dc);" in ui
     route=load("ps1_joystick_readonly_menu.c")
-    for label in ("CROSS / A: JUMP", "CIRCLE / B: KICK", "SQUARE / X: PUNCH",
-                  "TRIANGLE / Y", "L1 / LB: AIM", "R1 / RB: ZIPLINE",
-                  "R2 / RT: SWING", "SHARE / BACK: PAUSE", "WEB", "MOVE"):
-        assert label in route
+    import re
+    layout=route.split("static void spider_guide_native_labels(void)",1)[1].split("unsigned i;",1)[0]
+    labels=re.findall(r'\{\d+,\d+,"([^"]+)"\}',layout)
+    assert set(labels)=={"L1 LB AIM","R2 RT SWING","R1 RB ZIPLINE",
+                         "STICK D PAD","MOVE","SHARE BACK PAUSE","Y WEB",
+                         "B KICK","A JUMP","X PUNCH","B OR ESC TO RETURN"}
+    assert all(re.fullmatch(r"[A-Z0-9 ]+", label) for label in labels)
+    # Every leader reaches the corresponding actual drawn button or stick.
+    targets={"aim":(249,162),"swing":(403,136),"zip":(410,162),
+             "move":(238,215),"move_stick":(282,260),"pause":(286,186),
+             "web":(390,198),"kick":(413,225),"jump":(390,252),"punch":(367,225)}
+    for name, target in targets.items():
+        line=re.search(r"POINT "+name+r"\[\]=\{(.*?)\};",ui).group(1)
+        coords=[tuple(map(int,p)) for p in re.findall(r"\{(\d+),(\d+)\}",line)]
+        assert coords[-1]==target
+        assert all(0<=x<=640 and 80<=y<=440 for x,y in coords)
+        assert "LEAD("+name+");" in ui
     assert "0x00458700u" in route  # original Mess_DrawText
     assert "CreateFontA" not in ui
     assert "draw_gamepad(dc);" in ui

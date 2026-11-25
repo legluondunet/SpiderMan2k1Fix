@@ -62,60 +62,174 @@ void SpiderSDL3ControllerSetup_Open(void) {
   if(guide_report)
     guide_report("SDL3-GUIDE: external window retired; use original Options > Joystick native screen");
 }
- static void gline(HDC dc,int x,int y,int x2,int y2) {
+/* Original artwork: a continuous, sculpted dual-analog shell, no game or
+ * manufacturer bitmap, no external asset or font. All points are 640x480
+ * logical coordinates. Native labels are 512x240 (see paired layout in
+ * spider_guide_native_labels); their visual baseline is about 8px above
+ * 2*y. Draw callouts after the shell so each terminates on its own control. */
+static void gline(HDC dc,int x,int y,int x2,int y2) {
   MoveToEx(dc,x,y,NULL);LineTo(dc,x2,y2);
 }
-static void pad_disc(HDC dc,int x,int y,int r,COLORREF fill) {
-  HBRUSH b=CreateSolidBrush(fill);
-  HGDIOBJ old=SelectObject(dc,b);
-  Ellipse(dc,x-r,y-r,x+r,y+r);
-  SelectObject(dc,old);DeleteObject(b);
+static void ink(HDC dc,COLORREF pen,COLORREF brush) {
+  SetDCPenColor(dc,pen);SetDCBrushColor(dc,brush);
+}
+static void disc(HDC dc,int x,int y,int r,COLORREF edge,COLORREF fill) {
+  ink(dc,edge,fill);Ellipse(dc,x-r,y-r,x+r+1,y+r+1);
+}
+static void rounded(HDC dc,int x,int y,int x2,int y2,int r,
+                    COLORREF edge,COLORREF fill) {
+  ink(dc,edge,fill);RoundRect(dc,x,y,x2,y2,r,r);
+}
+/* A single Bezier silhouette; the inner face is another continuous path,
+ * not a rectangle pasted over two circular grips. */
+static void shell_path(HDC dc,int dy,COLORREF edge,COLORREF fill) {
+  static const POINT points[]={
+    {219,152},{245,150},{268,156}, {291,163},{349,163},{372,156},
+    {395,150},{421,152},{433,174}, {449,199},{457,259},{452,289},
+    {447,317},{431,335},{414,333}, {394,331},{380,307},{368,289},
+    {355,273},{347,278},{320,278}, {293,278},{285,273},{272,289},
+    {260,307},{246,331},{226,333}, {209,335},{193,317},{188,289},
+    {183,259},{191,199},{207,174}, {210,164},{214,158},{219,152}
+  };
+  POINT p[sizeof(points)/sizeof(points[0])];
+  unsigned i;
+  for(i=0;i<sizeof(points)/sizeof(points[0]);i++) {
+    p[i]=points[i];p[i].y+=dy;
+  }
+  ink(dc,edge,fill);
+  if(BeginPath(dc)) {
+    MoveToEx(dc,219,152+dy,NULL);
+    /* Twelve cubic segments close the shell. */
+    PolyBezierTo(dc,p,(DWORD)(sizeof(p)/sizeof(p[0])));
+    CloseFigure(dc);EndPath(dc);StrokeAndFillPath(dc);
+  }
+}
+static void face_path(HDC dc) {
+  const POINT p[]={
+    {245,159},{265,166},{280,170},
+    {302,177},{338,177},{360,170},
+    {384,161},{415,158},{427,183},
+    {442,210},{442,258},{432,280},
+    {423,300},{409,303},{396,282},
+    {383,260},{372,249},{352,257},
+    {338,263},{302,263},{288,257},
+    {268,249},{257,260},{244,282},
+    {231,303},{217,300},{208,280},
+    {198,258},{198,210},{213,183},
+    {218,170},{233,159},{245,159}
+  };
+  ink(dc,RGB(109,117,139),RGB(202,209,224));
+  if(BeginPath(dc)) {
+    MoveToEx(dc,245,159,NULL);
+    PolyBezierTo(dc,p,(DWORD)(sizeof(p)/sizeof(p[0])));
+    CloseFigure(dc);EndPath(dc);StrokeAndFillPath(dc);
+  }
+}
+static void stick(HDC dc,int x,int y) {
+  disc(dc,x,y,19,RGB(53,60,82),RGB(115,124,144));
+  disc(dc,x,y,15,RGB(32,38,52),RGB(47,53,70));
+  disc(dc,x,y,11,RGB(105,114,134),RGB(78,87,107));
+  SetDCPenColor(dc,RGB(139,150,170));
+  Arc(dc,x-9,y-9,x+10,y+10,x+8,y-6,x-7,y-8);
+}
+static void face_button(HDC dc,int x,int y,int glyph,COLORREF color) {
+  HGDIOBJ old;
+  HPEN pen;
+  disc(dc,x,y,13,RGB(61,69,91),RGB(128,137,156));
+  disc(dc,x,y,11,RGB(31,38,54),RGB(45,52,70));
+  pen=CreatePen(PS_SOLID,2,color);
+  if(!pen)return;
+  old=SelectObject(dc,pen);
+  if(glyph==0) {
+    MoveToEx(dc,x,y-6,NULL);LineTo(dc,x-6,y+5);
+    LineTo(dc,x+6,y+5);LineTo(dc,x,y-6);
+  } else if(glyph==1) {
+    HGDIOBJ b=SelectObject(dc,GetStockObject(NULL_BRUSH));
+    Ellipse(dc,x-6,y-6,x+7,y+7);SelectObject(dc,b);
+  } else if(glyph==2) {
+    gline(dc,x-5,y-5,x+6,y+6);gline(dc,x+5,y-5,x-6,y+6);
+  } else {
+    HGDIOBJ b=SelectObject(dc,GetStockObject(NULL_BRUSH));
+    Rectangle(dc,x-5,y-5,x+6,y+6);SelectObject(dc,b);
+  }
+  SelectObject(dc,old);DeleteObject(pen);
 }
 static void draw_gamepad(HDC dc) {
-  HPEN stroke=CreatePen(PS_SOLID,3,RGB(37,33,68));
-  HPEN detail=CreatePen(PS_SOLID,1,RGB(103,99,154));
-  HBRUSH grip=CreateSolidBrush(RGB(146,150,169));
-  HBRUSH shell=CreateSolidBrush(RGB(210,212,223));
-  HBRUSH shade=CreateSolidBrush(RGB(97,101,122));
-  HGDIOBJ oldp=SelectObject(dc,stroke),oldb=SelectObject(dc,grip);
-  /* PlayStation-style vector illustration, not a separate modal or bitmap.
-   * Dual grips + central shell + bumpers preserve the native comic style. */
-  Ellipse(dc,231,170,318,281);
-  Ellipse(dc,321,170,408,281);
-  SelectObject(dc,shell);
-  RoundRect(dc,255,161,385,258,31,27);
-  SelectObject(dc,shade);
-  RoundRect(dc,260,152,309,170,9,9); /* L1 */
-  RoundRect(dc,331,152,380,170,9,9); /* R1 */
-  SelectObject(dc,grip);
-  {
-    POINT dpad[]={{282,184},{298,184},{298,199},{313,199},
-      {313,215},{298,215},{298,230},{282,230},{282,215},
-      {267,215},{267,199},{282,199}};
-    Polygon(dc,dpad,sizeof(dpad)/sizeof(dpad[0]));
+  const COLORREF dark=RGB(29,35,52),metal=RGB(162,174,196);
+  HGDIOBJ p=SelectObject(dc,GetStockObject(DC_PEN));
+  HGDIOBJ b=SelectObject(dc,GetStockObject(DC_BRUSH));
+  /* Trigger row is physically distinct from the bumper row. */
+  rounded(dc,218,133,280,157,12,dark,RGB(83,94,118));
+  rounded(dc,360,126,422,157,12,dark,RGB(83,94,118));
+  rounded(dc,222,137,276,149,8,RGB(112,125,149),RGB(125,137,161));
+  rounded(dc,365,130,417,146,8,RGB(112,125,149),RGB(125,137,161));
+  shell_path(dc,4,dark,RGB(37,43,64));
+  shell_path(dc,0,dark,metal);
+  face_path(dc);
+  rounded(dc,218,151,280,174,12,dark,RGB(115,126,151));
+  rounded(dc,360,151,422,174,12,dark,RGB(115,126,151));
+  rounded(dc,223,154,275,163,7,RGB(160,174,196),RGB(156,169,192));
+  rounded(dc,365,154,417,163,7,RGB(160,174,196),RGB(156,169,192));
+  /* D-pad: four discrete beveled direction keys on a circular recess. */
+  disc(dc,238,215,31,RGB(115,126,148),RGB(160,170,190));
+  rounded(dc,229,187,247,209,5,dark,RGB(51,59,76));
+  rounded(dc,229,221,247,243,5,dark,RGB(51,59,76));
+  rounded(dc,210,206,232,224,5,dark,RGB(51,59,76));
+  rounded(dc,244,206,266,224,5,dark,RGB(51,59,76));
+  disc(dc,238,215,5,dark,RGB(72,82,101));
+  SetDCPenColor(dc,RGB(156,169,192));
+  gline(dc,233,195,238,190);gline(dc,238,190,243,195);
+  gline(dc,233,235,238,240);gline(dc,238,240,243,235);
+  gline(dc,218,210,213,215);gline(dc,213,215,218,220);
+  gline(dc,258,210,263,215);gline(dc,263,215,258,220);
+  /* Central pad and Share/Back key, right-hand menu key not mapped. */
+  rounded(dc,290,178,350,217,10,RGB(90,101,126),RGB(123,137,161));
+  rounded(dc,282,178,291,194,5,dark,RGB(52,62,82));
+  rounded(dc,350,178,359,194,5,dark,RGB(52,62,82));
+  stick(dc,282,260);stick(dc,348,260);
+  disc(dc,390,225,43,RGB(115,126,148),RGB(160,170,190));
+  face_button(dc,390,198,0,RGB(106,232,181)); /* Triangle / Y */
+  face_button(dc,413,225,1,RGB(250,125,140)); /* Circle / B */
+  face_button(dc,390,252,2,RGB(139,190,255)); /* Cross / A */
+  face_button(dc,367,225,3,RGB(243,166,226)); /* Square / X */
+  SelectObject(dc,b);SelectObject(dc,p);
+}
+/* Two-pass high-contrast leader lines. Endpoints are on their actual
+ * semantic controls; route around neighboring controls, not through them. */
+static void leader(HDC dc,const POINT *pts,int n) {
+  HPEN shadow=CreatePen(PS_SOLID,3,RGB(29,30,66));
+  HPEN light=CreatePen(PS_SOLID,1,RGB(218,216,252));
+  HGDIOBJ old;
+  if(!shadow||!light) {
+    if(shadow)DeleteObject(shadow);
+    if(light)DeleteObject(light);
+    return;
   }
-  SelectObject(dc,detail);
-  pad_disc(dc,297,244,12,RGB(92,89,136)); /* sticks */
-  pad_disc(dc,343,244,12,RGB(92,89,136));
-  pad_disc(dc,357,185,11,RGB(89,130,168)); /* triangle */
-  pad_disc(dc,376,203,11,RGB(179,84,111)); /* circle */
-  pad_disc(dc,357,223,11,RGB(88,143,134)); /* cross */
-  pad_disc(dc,339,203,11,RGB(148,100,172)); /* square */
-  SelectObject(dc,oldb);SelectObject(dc,oldp);
-  DeleteObject(stroke);DeleteObject(detail);
-  DeleteObject(grip);DeleteObject(shell);DeleteObject(shade);
-  /* Real PlayStation glyph shapes instead of placeholder letters. */
+  old=SelectObject(dc,shadow);Polyline(dc,pts,n);
+  SelectObject(dc,light);Polyline(dc,pts,n);
+  SelectObject(dc,old);DeleteObject(shadow);DeleteObject(light);
   {
-    HPEN glyph=CreatePen(PS_SOLID,2,RGB(250,250,255));
-    HGDIOBJ p=SelectObject(dc,glyph);
-    HGDIOBJ b=SelectObject(dc,GetStockObject(NULL_BRUSH));
-    POINT triangle[]={{357,178},{351,190},{363,190}};
-    Polygon(dc,triangle,3);
-    Ellipse(dc,370,197,382,209);
-    gline(dc,352,218,362,228);gline(dc,362,218,352,228);
-    Rectangle(dc,333,197,345,209);
-    SelectObject(dc,b);SelectObject(dc,p);DeleteObject(glyph);
+    HGDIOBJ p=SelectObject(dc,GetStockObject(DC_PEN));
+    HGDIOBJ b=SelectObject(dc,GetStockObject(DC_BRUSH));
+    disc(dc,pts[n-1].x,pts[n-1].y,3,RGB(38,41,75),RGB(239,237,255));
+    SelectObject(dc,b);SelectObject(dc,p);
   }
+}
+static void draw_leaders(HDC dc) {
+  static const POINT aim[]={{150,152},{198,152},{218,162},{249,162}};
+  static const POINT swing[]={{480,120},{435,120},{403,136}};
+  static const POINT zip[]={{480,168},{442,168},{410,162}};
+  static const POINT move[]={{150,216},{201,216},{238,215}};
+  static const POINT move_stick[]={{174,216},{174,260},{282,260}};
+  static const POINT pause[]={{320,115},{320,137},{286,171},{286,186}};
+  static const POINT web[]={{480,210},{451,210},{433,198},{390,198}};
+  static const POINT kick[]={{480,244},{456,244},{437,225},{413,225}};
+  static const POINT jump[]={{480,284},{441,284},{410,252},{390,252}};
+  static const POINT punch[]={{333,368},{333,309},{326,291},{326,238},{352,225},{367,225}};
+#define LEAD(a) leader(dc,a,(int)(sizeof(a)/sizeof(a[0])))
+  LEAD(aim);LEAD(swing);LEAD(zip);LEAD(move);LEAD(move_stick);
+  LEAD(pause);LEAD(web);LEAD(kick);LEAD(jump);LEAD(punch);
+#undef LEAD
 }
 /* Only controller artwork is drawn on the DirectDraw surface. Native
  * title, frame, background and all action legends belong to the game. */
@@ -134,6 +248,7 @@ static BOOL draw_native_guide(HDC dc,const RECT *content) {
                         content->bottom-content->top,NULL);
   SetViewportOrgEx(dc,content->left,content->top,NULL);
   draw_gamepad(dc);
+  draw_leaders(dc);
   RestoreDC(dc,saved);
   return TRUE;
 }
@@ -157,6 +272,6 @@ int SpiderSDL3ControllerSetup_DrawToSurface(
   drawn=draw_native_guide(dc,content);
   IDirectDrawSurface7_ReleaseDC(surface,dc);
   if(drawn && ++guide_draws==1 && guide_report)
-    guide_report("SDL3-GUIDE: drawn INSIDE original Joystick menu backbuffer; 4:3 coordinates, no popup");
+    guide_report("SDL3-GUIDE: drawn INSIDE original Joystick menu backbuffer; 4:3 sculpted pad and semantic leaders, no popup");
   return drawn?1:0;
 }

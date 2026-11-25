@@ -63,15 +63,17 @@ static int __cdecl spider_guide_menu_text(int x,int y,const char *s,int a,unsign
   return ((SpiderGuideText)(uintptr_t)0x00458700u)(x,y,s,a,b);
 }
 static void spider_guide_native_labels(void) {
+  /* Retail font has no slash glyph (renders as a black square).
+   * Use uppercase letters, digits and spaces only. Positions correspond
+   * to the 640x480 leader layout in sdl3_controller_setup.c. */
   static const struct {int x,y; const char *s;} labels[]={
-    {25,62,"L1 / LB: AIM"}, {25,85,"R1 / RB: ZIPLINE"},
-    {25,108,"R2 / RT: SWING"}, {25,132,"STICK / D-PAD"},
-    {25,145,"MOVE"},
-    {336,62,"CROSS / A: JUMP"}, {336,85,"CIRCLE / B: KICK"},
-    {336,108,"SQUARE / X: PUNCH"}, {336,132,"TRIANGLE / Y"},
-    {336,145,"WEB"},
-    {25,185,"SHARE / BACK: PAUSE"},
-    {25,207,"CIRCLE / B OR ESC: RETURN"}
+    {25,80,"L1 LB AIM"},
+    {390,64,"R2 RT SWING"}, {390,88,"R1 RB ZIPLINE"},
+    {25,103,"STICK D PAD"}, {25,115,"MOVE"},
+    {192,56,"SHARE BACK PAUSE"},
+    {390,109,"Y WEB"}, {390,126,"B KICK"}, {390,146,"A JUMP"},
+    {234,193,"X PUNCH"},
+    {172,218,"B OR ESC TO RETURN"}
   };
   unsigned i;
   ((void (__cdecl *)(void))(uintptr_t)0x0047A370u)(); /* PShell_NormalFont */
