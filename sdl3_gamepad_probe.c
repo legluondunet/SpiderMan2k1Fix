@@ -67,6 +67,7 @@ typedef int (__cdecl *SDL_AddGamepadMappingFn)(const char *);
 static SpiderSDL3Opened pads[SPIDER_SDL3_MAX_GAMEPADS];
 static SpiderSDL3Selection selection={0};
 static SpiderSDL3ActivityOwners activity_owners={0};
+static uint32_t activity_fresh_claim_id=0;
 static unsigned num_pads=0;
 static int requested=0,attempted=0,ready=0,scanned=0;
 static int native_owner_requested=0;
@@ -944,6 +945,14 @@ int SpiderSDL3Probe_SelectedSample(uint32_t *instance,uint16_t *vid,
  *
  * Never fall back to SelectedSample(): its passive native selection alone
  * must NEVER authorize keyboard events or native DI suspension. */
+/* Exactly one fresh, neutral-armed deliberate activity claim was accepted
+ * on THIS game Flip. The universal adapter can honor its first action
+ * immediately without weakening the ordinary startup/focus neutral gate.
+ * Start/GUIDE, held-input inheritance and ambiguous claims never qualify. */
+int SpiderSDL3Probe_FreshActivityClaim(uint32_t id) {
+  return id && sdl3_game_thread==GetCurrentThreadId() &&
+         activity_fresh_claim_id==id;
+}
 int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
     uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample) {
   if(instance)*instance=0;
@@ -1271,6 +1280,7 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
    * thread forever. Once SDL3 is initialized, only its owning thread
    * may ever pump, select, or clear a controller's Start-arming state. */
   if(sdl3_game_thread && sdl3_game_thread!=GetCurrentThreadId())return;
+  activity_fresh_claim_id=0;
   if(!game_hwnd || !IsWindowVisible(game_hwnd) ||
      GetForegroundWindow()!=game_hwnd) {
     /* Never inherit a Start press acquired during the custom focus pause.
@@ -1439,6 +1449,7 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
       generic_selected_id=candidate;
       generic_selected_vendor=chosen_vendor;
       generic_selected_product=chosen_product;
+      if(opened_n>1u)activity_fresh_claim_id=candidate;
       selection.active=candidate;
       generic_profile_snapshot_valid=0;
       spider_sdl3_universal_reset(&generic_actions);
