@@ -17,7 +17,6 @@
 #include "sdl3_gamepad_identity.h"
 #include "sdl3_controller_profile.h"
 #include "sdl3_universal_actions.h"
-#include "sdl3_controller_profile_store.h"
 #include "native_joystick_reconnect.h"
 #include "native_joystick_reconnect_policy.h"
 #include "sdl3_raw_mapping.h"
@@ -73,7 +72,6 @@ static int bindings_trace_requested=0;
 /* One SDL3 semantic profile per VID:PID; persisted for opted-in
  * controller setup only. No game-owned DirectInput action writes. */
 static SpiderSDL3ProfileBank bindings_bank;
-static uint8_t bindings_loaded[SPIDER_SDL3_PROFILE_BANK_CAPACITY];
 static uint32_t bindings_trace_id=0,bindings_previous=0;
 static int bindings_trace_armed=0;
 static unsigned bindings_trace_lines=0;
@@ -148,29 +146,17 @@ static void *raw_handle=NULL;
 static uint32_t raw_session_id=0;
 
 static void say(const char *line) {if(report)report(line);}
-/* Load once per model, including a profile created earlier by the passive
- * binding trace. A corrupted file is ignored without modifying the disk. */
+/* Fixed PS1-style SDL3 semantic actions for every mapped controller.
+ * Existing per-model action INIs remain untouched on disk but are never
+ * loaded: they cannot silently override the documented game controls.
+ * This does NOT affect SDL's separate per-GUID hardware recognition maps. */
 static SpiderSDL3ControllerProfile *spider_sdl3_get_profile(
     uint16_t vid,uint16_t pid) {
-  SpiderSDL3ControllerProfile trial,*profile;
-  unsigned slot;
-  int load_status;
-  profile=spider_sdl3_bank_get(&bindings_bank,vid,pid);
-  if(!profile)return NULL;
-  slot=(unsigned)(profile-bindings_bank.slots);
-  if(slot>=SPIDER_SDL3_PROFILE_BANK_CAPACITY)return NULL;
-  if(!bindings_loaded[slot]) {
-    bindings_loaded[slot]=1;
-    load_status=SpiderSDL3ProfileStore_Load(vid,pid,&trial);
-    if(load_status==1 && spider_sdl3_profile_valid(&trial))
-      *profile=trial;
-  }
-  return profile;
+  return spider_sdl3_bank_get(&bindings_bank,vid,pid);
 }
 void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
   report=logger;
   spider_sdl3_bank_reset(&bindings_bank);
-  memset(bindings_loaded,0,sizeof(bindings_loaded));
   bindings_trace_id=0;bindings_previous=0;
   bindings_trace_armed=0;bindings_trace_lines=0;
   generic_selected_id=0;
@@ -185,7 +171,7 @@ void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *)) {
    * change whether discovery, profiles, or universal gameplay run. */
   requested=1;
   universal_requested=1;
-  SpiderSDL3ProfileStore_Init(1,logger);
+  say("SDL3-PROFILE: fixed PS1-inspired semantic controls; saved action profiles ignored (hardware SDL mappings unchanged)");
   if(bindings_trace_requested)
     say("SDL3-BINDINGS: optional semantic action probe ENABLED (read-only; no gameplay remap, no UI changes; max 48 events)");
   /* Retire the legacy SDL3-identity -> native DirectInput rebind: mapped
@@ -588,19 +574,6 @@ SpiderSDL3ControllerProfile *SpiderSDL3Probe_SetupProfile(uint16_t vid,uint16_t 
   if(!ready || !scanned || !sdl3_game_thread ||
      sdl3_game_thread!=GetCurrentThreadId())return NULL;
   return spider_sdl3_get_profile(vid,pid);
-}
-int SpiderSDL3Probe_SetupCommit(const SpiderSDL3ControllerProfile *candidate) {
-  SpiderSDL3ControllerProfile *profile;
-  if(!candidate || !spider_sdl3_profile_valid(candidate) ||
-     !ready || !scanned || !sdl3_game_thread ||
-     sdl3_game_thread!=GetCurrentThreadId())return 0;
-  profile=spider_sdl3_get_profile(candidate->vendor,candidate->product);
-  if(!profile || !SpiderSDL3ProfileStore_Save(candidate))return 0;
-  *profile=*candidate;
-  bindings_trace_armed=0;bindings_previous=0;
-  generic_profile_snapshot_valid=0;
-  spider_sdl3_universal_reset(&generic_actions);
-  return 1;
 }
 
 static int spider_raw_ui_thread(void) {
