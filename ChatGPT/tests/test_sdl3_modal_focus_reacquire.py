@@ -14,41 +14,18 @@ def text(path):
 def scoped(src, begin, end):
     return src.split(begin,1)[1].split(end,1)[0]
 
-def test_modal_close_preserves_focus_owner_and_retires_secondary_on_return():
+def test_native_controller_guide_never_enters_secondary_modal_or_takes_focus():
     guide=text("sdl3_controller_setup.c")
     ui=text("gamepad_ui_profile.c")
-    header=text("gamepad_ui_profile.h")
-    assert '#include "gamepad_ui_profile.h"' in guide
-    assert "void SpiderGamepadUI_AfterControllerSetup(HWND game_window);" in header
-    restored=guide.split("if(IsWindow(window))DestroyWindow(window);",1)[1]
-    assert restored.index("DestroyWindow(window)") < restored.index(
-        "EnableWindow(owner,TRUE)") if "DestroyWindow(window)" in restored else (
-        "if(parent_enabled && IsWindow(owner))EnableWindow(owner,TRUE);" in restored
-    )
-    assert restored.index("EnableWindow(owner,TRUE)") < restored.index(
-        "SetActiveWindow(owner)")
-    assert restored.index("SetActiveWindow(owner)") < restored.index(
-        "SetForegroundWindow(owner)")
-    assert "previous=GetForegroundWindow()" in restored
-    close=scoped(guide,"case WM_CLOSE:", "case WM_NCDESTROY:")
-    assert "ui->closing_foreground=GetForegroundWindow();" in close
-    assert "ui->closing_captured=1;" in close
-    assert close.index("ui->closing_foreground=GetForegroundWindow();") < close.index(
-        "DestroyWindow(hwnd);")
-    assert "restore_allowed=spider_sdl3_setup_restore_focus(" in restored
-    assert "ui.closing_captured" in restored
-    assert "preclose_owned=ui.closing_foreground==owner" in restored
-    assert "previous_owned=previous==owner" in restored
-    assert "ui.closing_foreground==NULL,previous==NULL" in restored
-    assert "has_quit" in restored
-    assert "SpiderGamepadUI_AfterControllerSetup(owner)" in restored
-    assert restored.index("SetForegroundWindow(owner)") < restored.index(
-        "SpiderGamepadUI_AfterControllerSetup(owner)")
-    assert "AttachThreadInput" not in restored
-    assert "void SpiderGamepadUI_AfterControllerSetup(HWND hwnd) {(void)hwnd;}" in ui
+    game=text("spiderman2k1fix.c")
+    assert 'SpiderSDL3ControllerSetup_DrawToSurface(borderless_back,&content)' in game
+    assert "SPIDER_NATIVE_JOYSTICK_CONTEXT" in guide
+    assert "CreateWindowExA(" not in guide
+    assert "SetForegroundWindow(" not in guide
+    assert "SpiderSDL3Universal_BeforeModal(owner);" not in guide
+    assert "SpiderSDL3Probe_SetupModalReturn(" not in guide
     assert "IDirectInput8_CreateDevice(" not in ui
     assert "IDirectInputDevice8_Acquire(" not in ui
-    assert "SpiderSDL3Universal_BeforeModal(owner);" in guide
 
 def test_external_focus_loss_releases_universal_keys_without_secondary_com():
     ui=text("gamepad_ui_profile.c")
