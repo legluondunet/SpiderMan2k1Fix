@@ -29,6 +29,6 @@ def test_stable_2_0_retains_save_confirmation_and_duplicate_instances():
     assert "spider_sdl3_universal_neutral(" in policy
     assert "sample->axis[SPIDER_SDL3_AXIS_LT]>=11000" in policy
     assert "sample->axis[SPIDER_SDL3_AXIS_RT]>=11000" in policy
-    assert "if(native_unclaimed_guard && !spider_sdl3_universal_owner_neutral(&sample))" in universal
+    assert "if(native_unclaimed_guard && !spider_sdl3_universal_owner_neutral(&sample) &&" in universal
     assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in universal
     assert "if(spider_sdl3_universal_neutral(&sample))" in universal
