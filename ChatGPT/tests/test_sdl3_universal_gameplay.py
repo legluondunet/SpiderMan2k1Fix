@@ -153,7 +153,7 @@ def test_universal_native_di_is_neutral_gated_and_modal_safe():
             "void SpiderSDL3ControllerSetup_Open(void)"))
     assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&" in backend
     assert "!fresh_activity_claim" in backend
-    assert backend.index("if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))") < (
+    assert backend.index("if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&") < (
         backend.index("if(!suspend_original())"))
     assert "SendInput failure; releasing and restoring native owner" in backend
     assert 'restore_original("SendInput failed");' in backend
@@ -214,7 +214,7 @@ def test_no_gameplay_actions_or_pause_on_non_neutral_start(tmp_path):
 
 def test_universal_hardware_logs_explain_why_gameplay_adapter_abstains():
     backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
-    assert "SDL3-UNIVERSAL: waiting for selected SDL3 mapped pad" in backend
+    assert "SDL3-UNIVERSAL: waiting for neutral or deliberate activity on a connected SDL3 pad" in backend
     assert "SDL3-UNIVERSAL: REFUSED no valid normalized profile" in backend
     assert "SDL3-UNIVERSAL: REFUSED unverified writable native joystick slot" in backend
     assert "SDL3-UNIVERSAL: REFUSED original keyboard table invalid" in backend
@@ -476,7 +476,7 @@ def test_universal_fail_closed_reentry_after_failed_keyup():
     preowner=onflip.split("if(!suspend_original())",1)[0]
     assert 'restore_original("game HWND not foreground");' in preowner
     assert 'restore_original("no selected mapped controller");' in preowner
-    assert 'restore_original("SDL3 Start owner changed");' in preowner
+    assert 'restore_original("SDL3 activity owner changed");' in preowner
     assert "if(!active && (sent_mask || pulse_scan))" in preowner
     assert "if(!release_all())" in preowner
     assert "REENTRY BLOCKED pending synthetic KEYUP" in preowner
@@ -484,7 +484,7 @@ def test_universal_fail_closed_reentry_after_failed_keyup():
         preowner.index("if(!suspended && !spider_sdl3_universal_owner_neutral"))
     assert "if(active && pulse_scan)" in preowner
     assert 'restore_original("pulse KEYUP failed before next gameplay action");' in preowner
-    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in preowner
+    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&" in preowner
     assert "if(!release_all())" in backend.split("static void restore_original(",1)[1].split(
         "static int suspend_original(",1)[0]
     beforeui=backend.split("void SpiderSDL3Universal_BeforeUI(",1)[1].split(
@@ -834,7 +834,7 @@ def test_buffered_direction_fix_is_bounded_to_foreground_owned_3d_scans():
     # Stable selected SDL3 device only, does NOT ever claim native
     # input before a fresh neutral sample and suspend_original().
     assert "focus_dir_controller_id=selected_id;" in backend
-    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in onflip
+    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&" in onflip
 
 
 def test_focus_direction_pulse_is_released_on_any_owner_loss_or_context_switch():
