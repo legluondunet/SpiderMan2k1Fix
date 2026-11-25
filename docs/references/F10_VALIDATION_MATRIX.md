@@ -12,26 +12,29 @@ MangoHud on Linux. Legacy F12 INI names are compatibility aliases.
 
 **F10 is the only physical SpiderMan2k1Fix development shortcut.** The original game's F12 → `PostMessageA(WM_CLOSE)` is still suppressed for safe window handling; F11/F12 can therefore remain available to other Linux overlays such as MangoHud. Historical F12-named settings are compatibility aliases only: they do **not** activate physical F12.
 
-`[Debug] F10Shortcut=1` is **not generated** in default INIs and, when absent, **defaults to `0`**. The shortcut is independent of `Log=1`. Older `F10TestMode`, `F10Auto3DScripts`, `F10GameplayExit` and `[System] QuickExitF10` options remain accepted from some old INIs but are not needed for the unified shortcut; `F10VerboseTrace=1` only adds diagnostic traces. To disable F10, remove the setting or use `F10Shortcut=0` and disable any separate legacy opt-ins.
+`[Features] F10SkipCinematics=0` is generated in the player INI. Set it to `1` to enable physical **F10** for opening Bink cinematics, the New Game comic/movie and the two original introductory 3D scripts when native skip permission exists. It is independent of `Log=1` and defaults to `0` to preserve native playback. It does **not** skip arbitrary later in-level cinematics and does **not** return from active gameplay to the main menu. This new INI route requires native Windows retesting before release.
+
+Legacy `[Debug] F10Shortcut=1` is **not generated** in new INIs and, when absent, defaults to `0`. Existing users can keep it: unlike the new `[Features]` option it also enables F10's native gameplay-to-menu action. Older `F10TestMode`, `F10Auto3DScripts`, `F10GameplayExit` and `[System] QuickExitF10` options remain accepted from some old INIs; `F10VerboseTrace=1` only adds diagnostic traces. To disable both modes use `F10SkipCinematics=0` and `F10Shortcut=0`, and disable any separate legacy opt-ins.
 
 The **Bink-to-first-3D Enter/Space release safeguard** passed development testing with F10 disabled in **build #713**, without synthetic key presses or rewriting native input buffers. This is not general Windows 11 certification or proof that later in-level cinematics are supported.
 
 ## Test configuration
 
 ```ini
+[Features]
+F10SkipCinematics=1
+
 [Debug]
 Log=1
-F10Shortcut=1
 F10VerboseTrace=0
 ```
 
-**Important:** `F10Shortcut` is not generated, and its absent
-value defaults to 0. Add `F10Shortcut=1` manually to `[Debug]`;
-`Log=1` is optional, for diagnostics only. Older F10TestMode,
-F10Auto3DScripts and F10GameplayExit keys stay accepted in existing
-INIs under their original requirements. Set `F10VerboseTrace=1`
-for detailed read-only diagnostics. Unverified later in-level
-cinematics are outside the validated New Game behavior.
+**Important:** `F10SkipCinematics` is generated as `0` and is opt-in.
+`Log=1` is optional, for diagnostics only. Older `[Debug] F10Shortcut=1`
+and F10TestMode, F10Auto3DScripts and F10GameplayExit keys remain
+accepted for existing INIs under their original requirements. Set
+`F10VerboseTrace=1` for detailed read-only diagnostics. Unverified later
+in-level cinematics are outside the validated New Game behavior.
 
 ## Confirmed baseline
 
@@ -110,8 +113,9 @@ than the old process exit. Test the new behavior separately.
 | Repeat gameplay F10 after return | New Game → F10 on comic → F10 in gameplay → New Game again | F10 works in the next comic and gameplay, with menu reset between sessions |
 | Windows 11 native | Repeat these actions without Wine | Not yet validated for this F10 consolidated build |
 
-For unexpected behavior, remove `F10Shortcut=1`
-or explicitly set `F10Shortcut=0`, and retain the last known working build. Attach the complete
+For unexpected behavior with the new player option, set `F10SkipCinematics=0`;
+for the legacy option, remove `F10Shortcut=1` or set `F10Shortcut=0`.
+Retain the last known working build. Attach the complete
 `SpiderMan2k1Fix*.log`; native script lifecycle and exit
 decisions are retained even in compact log mode. Do not use
 `taskkill`, `TerminateProcess` or synthetic Space as
