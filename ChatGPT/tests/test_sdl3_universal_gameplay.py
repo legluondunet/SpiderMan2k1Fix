@@ -113,7 +113,7 @@ def test_universal_runtime_is_built_in_and_mutually_exclusive():
     assert "SpiderSDL3Probe_GenericSelectedSample" in probe
     assert "!generic_selected_id" in probe
     assert "universal_requested" in probe
-    assert "SDL3-UNIVERSAL: START selected generic" in probe
+    assert "SDL3-UNIVERSAL: ACTIVITY selected id=" in probe
     assert "SpiderSDL3Probe_SelectedMappedSample" in probe
     assert "InterlockedCompareExchangePointer(SPIDER_UNIVERSAL_DI_SLOT" in backend
     assert "restored" in backend.lower()
@@ -151,7 +151,8 @@ def test_universal_native_di_is_neutral_gated_and_modal_safe():
     assert modal.index("SpiderSDL3Universal_BeforeModal(owner);") < modal.index(
         "if(!SpiderSDL3Probe_SetupPump()) {",modal.index(
             "void SpiderSDL3ControllerSetup_Open(void)"))
-    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in backend
+    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&" in backend
+    assert "!fresh_activity_claim" in backend
     assert backend.index("if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))") < (
         backend.index("if(!suspend_original())"))
     assert "SendInput failure; releasing and restoring native owner" in backend
@@ -280,10 +281,10 @@ def test_integrated_panel_preserved_and_generic_owner_is_explicit_only():
     assert "ACTION-ROW CROSS CAPTURE ARMED" in ui
     assert "SpiderSDL3Universal_BeforeModal(owner);" in ui
     assert "generic_selected_id" in probe
-    assert "selection.active=previous;" in probe
-    assert "start_claims.count==1u" in probe
-    assert "spider_sdl3_selected_instance_valid(opened,num_pads," in probe
-    assert "spider_reconnect_kind(vid,pid)==SPIDER_RECONNECT_NONE" in probe
+    assert "selection.active=candidate;" in probe
+    assert "requests==1u && candidate && candidate!=owner" in probe
+    assert "spider_sdl3_selected_instance_valid(opened,opened_n,candidate" in probe
+    assert "owner_neutral &&" in probe
     assert "!generic_selected_id" in probe
     assert "return SpiderSDL3Probe_GenericSelectedSample(" in probe
     selected=probe.split("int SpiderSDL3Probe_SelectedMappedSample(",1)[1].split(
@@ -562,34 +563,26 @@ def test_universal_ps3_unplug_ps4_explicit_start_takes_over(tmp_path):
     subprocess.run([str(exe)],check=True)
 
 
-def test_universal_mapped_ps4_uses_generic_identity_without_native_rebind():
+def test_universal_activity_owner_is_exact_instance_without_native_rebind():
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
-    start=probe.split("      uint32_t previous=selection.active;",1)[1].split(
-        "      if(selection.active==pads[i].id",1)[0]
-    assert "universal_requested?" in start
-    assert "spider_sdl3_selection_start_edge(&selection,pads[i].id,pressed)" in start
-    assert "spider_sdl3_selection_start(&selection,pads[i].id,pressed)" in start
-    assert "if(universal_requested)" in start
-    assert "selection.active=previous;" in start
-    assert "spider_sdl3_start_claim_add(&start_claims,pads[i].id," in start
-    assert "generic_selected_id=start_claims.instance_id;" in probe
+    callback=probe.split("void SpiderSDL3Probe_OnFlip(",1)[1]
+    assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in callback
+    assert "spider_sdl3_selected_instance_valid(opened,opened_n,candidate" in callback
+    assert "requests==1u && candidate && candidate!=owner" in callback
+    assert "owner_neutral" in callback
+    assert "selection.active=candidate;" in callback
+    assert "activity_fresh_claim_id=candidate;" in callback
+    assert "generic_selected_id=candidate;" in callback
     generic=probe.split("int SpiderSDL3Probe_GenericSelectedSample(",1)[1].split(
         "int SpiderSDL3Probe_SelectedRT(",1)[0]
-    assert "if(!universal_requested &&" in generic
     assert "spider_sdl3_selected_model_unique(" in generic
     select=probe.split("int SpiderSDL3Probe_SelectedMappedSample(",1)[1].split(
         "/* The player may hold physical Cross",1)[0]
     assert "!generic_selected_id" in select
     assert "return SpiderSDL3Probe_SelectedSample(" not in select
     assert "return SpiderSDL3Probe_GenericSelectedSample(" in select
-    modal=probe.split("if(setup_owner_pending)",1)[1].split(
-        "sdl3_trace_native_owner(now);",1)[0]
-    assert "(universal_requested ||" in modal
-    assert "generic_selected_id=requested_id;" in modal
-    assert "selection.active=requested_id;" in modal
     native=(ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
     assert "CreateDevice(" not in native
-
 
 def test_native_x11_focus_disarms_universal_input_before_paused_even_when_wine_hwnd_stale():
     core=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
@@ -915,8 +908,8 @@ def test_universal_mapped_sample_requires_explicit_start_only():
         "int SpiderSDL3Probe_SelectedRT(",1)[0]
     assert "spider_sdl3_selected_model_unique(" in generic
     assert "sdl_connected(pads[i].handle)" in generic
-    assert "generic_selected_id=start_claims.instance_id;" in probe
-    assert "spider_sdl3_selection_start_edge(&selection,pads[i].id,pressed)" in probe
+    assert "generic_selected_id=candidate;" in probe
+    assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in probe
 
 
 def test_singleton_native_autoselection_is_not_explicit_universal_start(tmp_path):
