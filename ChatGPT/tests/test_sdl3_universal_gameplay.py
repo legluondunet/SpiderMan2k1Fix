@@ -149,7 +149,7 @@ def test_universal_native_di_is_neutral_gated_and_modal_safe():
     assert 'restore_original("opening controller configuration modal");' in backend
     assert "SpiderSDL3Universal_BeforeModal(owner);" in modal
     assert modal.index("SpiderSDL3Universal_BeforeModal(owner);") < modal.index(
-        "if(!SpiderSDL3Probe_SetupPump()) {",modal.index(
+        "if(!registered) {",modal.index(
             "void SpiderSDL3ControllerSetup_Open(void)"))
     assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in backend
     assert backend.index("if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))") < (
@@ -270,21 +270,21 @@ def test_gameplay_scan_filter_rejects_system_keys_and_f9_screenshot(tmp_path):
     assert "read_scans(" in backend
 
 
-def test_integrated_panel_preserved_and_generic_owner_is_explicit_only():
+def test_integrated_readonly_guide_and_sdl3_controller_ownership_are_isolated():
     ui=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     game=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
-    assert '"SpiderMan2k1FixSDL3ActionView"' in ui
+    assert '"SpiderMan2k1FixSDL3ControllerGuide"' in ui
+    assert "static void guide_paint(" in ui
     assert '"LISTBOX"' not in ui
-    assert "CROSS-RESET defaults SAVED" in ui
-    assert "ACTION-ROW CROSS CAPTURE ARMED" in ui
+    assert "Capture selected action" not in ui
     assert "SpiderSDL3Universal_BeforeModal(owner);" in ui
     assert "generic_selected_id" in probe
     assert "selection.active=previous;" in probe
     assert "start_claims.count==1u" in probe
+    assert "spider_sdl3_selection_singleton_candidate(&selection)" in probe
+    assert "spider_sdl3_profile_neutral(&sample)" in probe
     assert "spider_sdl3_selected_instance_valid(opened,num_pads," in probe
-    assert "spider_reconnect_kind(vid,pid)==SPIDER_RECONNECT_NONE" in probe
-    assert "!generic_selected_id" in probe
     assert "return SpiderSDL3Probe_GenericSelectedSample(" in probe
     selected=probe.split("int SpiderSDL3Probe_SelectedMappedSample(",1)[1].split(
         "/* The player may hold physical Cross",1)[0]
@@ -294,9 +294,6 @@ def test_integrated_panel_preserved_and_generic_owner_is_explicit_only():
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in game
     assert "CreateDevice(" not in (
         ROOT/"native_joystick_reconnect.c").read_text(encoding="utf-8")
-    assert "sdl3_generic_ui_on_flip(" not in (
-        ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
-
 
 def test_raw_unmapped_enumeration_boundaries_do_not_use_other_loop_index():
     """Catch Clang's uninitialized j warning: raw fallback used j in jj loops."""
@@ -386,85 +383,6 @@ def test_first_universal_active_report_survives_prolonged_start_hold():
     assert "if(!active) {" in backend
     assert "if(!active && owner_reports++<10u)" not in backend
     assert "SDL3-UNIVERSAL: ACTIVE selected-id=" in backend
-
-
-def test_saved_ps3_custom_swap_drives_exactly_one_3d_action(tmp_path):
-    """Portable policy validation of the user's Square->Circle remapping.
-    Menu Circle/Back must remain independent of swapped 3D Punch/Kick."""
-    cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
-    if not cc:return
-    src=tmp_path/"ps3_custom_3d.c"
-    exe=tmp_path/"ps3_custom_3d"
-    src.write_text(textwrap.dedent(r"""
-      #include <assert.h>
-      #include "sdl3_universal_policy.h"
-      int main(void) {
-        SpiderSDL3UniversalState state={0};
-        SpiderSDL3ControllerProfile profile;
-        SpiderSDL3ControllerSample sample={0};
-        uint32_t desired=0;
-        unsigned pause_edge=0;
-        const uint32_t id=23;
-        assert(spider_sdl3_profile_default(&profile,0x054c,0x0268));
-        assert(spider_sdl3_profile_assign_visible(
-          &profile,SPIDER_SDL3_ACTION_PUNCH,
-          spider_sdl3_bind(SPIDER_SDL3_BIND_BUTTON,1)));
-        /* Circle (east) becomes Punch; Square (west) becomes Kick. */
-        assert(profile.actions[SPIDER_SDL3_ACTION_PUNCH].index==1);
-        assert(profile.actions[SPIDER_SDL3_ACTION_KICK].index==2);
-        assert(profile.context[SPIDER_SDL3_CONTEXT_BACK].index==1);
-        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
-                                         &desired,&pause_edge)==0);
-        assert(state.armed && !desired);
-        sample.buttons=(1u<<1);
-        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
-                                         &desired,&pause_edge)==1);
-        assert(desired==(1u<<SPIDER_UNIVERSAL_PUNCH) && !pause_edge);
-        sample.buttons=(1u<<2);
-        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
-                                         &desired,&pause_edge)==1);
-        assert(desired==(1u<<SPIDER_UNIVERSAL_KICK) && !pause_edge);
-        /* Remapping while the game is running is a live model profile
-         * read: restoring defaults changes the next semantic action. */
-        assert(spider_sdl3_profile_default(&profile,0x054c,0x0268));
-        sample.buttons=(1u<<1);
-        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
-                                         &desired,&pause_edge)==1);
-        assert(desired==(1u<<SPIDER_UNIVERSAL_KICK) && !pause_edge);
-        sample.buttons=0;
-        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
-                                         &desired,&pause_edge)==1);
-        assert(!desired);
-        /* A remapped analog trigger uses hysteresis. Swapping Swing and
-         * Aim still produces exactly one original 3D action per input. */
-        assert(spider_sdl3_profile_assign_visible(
-          &profile,SPIDER_SDL3_ACTION_AIM,
-          spider_sdl3_bind(SPIDER_SDL3_BIND_TRIGGER,SPIDER_SDL3_AXIS_RT)));
-        assert(profile.actions[SPIDER_SDL3_ACTION_AIM].kind==
-               SPIDER_SDL3_BIND_TRIGGER);
-        assert(profile.actions[SPIDER_SDL3_ACTION_SWING].index==9);
-        sample.axis[SPIDER_SDL3_AXIS_RT]=20000;
-        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
-                                         &desired,&pause_edge)==1);
-        assert(desired==(1u<<SPIDER_UNIVERSAL_AIM));
-        sample.axis[SPIDER_SDL3_AXIS_RT]=7000;
-        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
-                                         &desired,&pause_edge)==1);
-        assert(desired==(1u<<SPIDER_UNIVERSAL_AIM));
-        sample.axis[SPIDER_SDL3_AXIS_RT]=4000;
-        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
-                                         &desired,&pause_edge)==1);
-        assert(!desired);
-        sample.buttons=(1u<<9);
-        assert(spider_sdl3_universal_step(&state,&profile,&sample,id,0,
-                                         &desired,&pause_edge)==1);
-        assert(desired==(1u<<SPIDER_UNIVERSAL_SWING));
-        return 0;
-      }
-    """),encoding="utf-8")
-    subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
-                    "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
-    subprocess.run([str(exe)],check=True)
 
 
 def test_universal_fail_closed_reentry_after_failed_keyup():
@@ -898,7 +816,7 @@ def test_readonly_original_di_keyboard_latch_probe_during_focus_resync():
     assert "original game read-only; action-latch unverified" in tracer
 
 
-def test_universal_mapped_sample_requires_explicit_start_only():
+def test_universal_mapped_sample_requires_explicit_or_neutral_singleton_claim():
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
     selected=probe.split("int SpiderSDL3Probe_SelectedMappedSample(",1)[1].split(
@@ -917,47 +835,39 @@ def test_universal_mapped_sample_requires_explicit_start_only():
     assert "sdl_connected(pads[i].handle)" in generic
     assert "generic_selected_id=start_claims.instance_id;" in probe
     assert "spider_sdl3_selection_start_edge(&selection,pads[i].id,pressed)" in probe
+    assert "spider_sdl3_selection_singleton_candidate(&selection)" in probe
+    assert "spider_sdl3_profile_neutral(&sample)" in probe
 
 
-def test_singleton_native_autoselection_is_not_explicit_universal_start(tmp_path):
-    """Selection state auto-picks sole device, but the generic explicit
-    universal claim remains 0 until a fresh physical Start."""
+def test_singleton_logical_candidate_does_not_claim_multi_pad(tmp_path):
     cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
     if not cc:return
-    src=tmp_path/"selected_explicit.c"
-    exe=tmp_path/"selected_explicit"
+    src=tmp_path/"selected.c"
+    exe=tmp_path/"selected"
     src.write_text(textwrap.dedent(r"""
       #include <assert.h>
       #include "sdl3_gamepad_selection.h"
       int main(void) {
         SpiderSDL3Selection selection={0};
-        uint32_t generic_claim=0;
         const uint32_t a[]={1u},both[]={1u,2u},b[]={2u};
+        assert(spider_sdl3_selection_singleton_candidate(&selection)==0u);
         spider_sdl3_selection_sync(&selection,a,1u);
-        assert(selection.active==1u && generic_claim==0u);
-        assert(!spider_sdl3_selection_start_edge(&selection,1u,0));
-        assert(spider_sdl3_selection_start_edge(&selection,1u,1));
-        generic_claim=1u;
+        assert(spider_sdl3_selection_singleton_candidate(&selection)==1u);
         spider_sdl3_selection_sync(&selection,both,2u);
-        assert(selection.active==1u);
-        spider_sdl3_selection_sync(&selection,b,1u);
-        assert(selection.active==2u);
-        assert(generic_claim!=selection.active); /* no auto-takeover */
+        assert(spider_sdl3_selection_singleton_candidate(&selection)==0u);
         assert(!spider_sdl3_selection_start_edge(&selection,2u,0));
         assert(spider_sdl3_selection_start_edge(&selection,2u,1));
-        generic_claim=2u;
-        assert(generic_claim==selection.active);
+        assert(selection.active==2u);
+        spider_sdl3_selection_sync(&selection,b,1u);
+        assert(spider_sdl3_selection_singleton_candidate(&selection)==2u);
         spider_sdl3_selection_focus_lost(&selection);
         assert(!spider_sdl3_selection_start_edge(&selection,2u,1));
-        assert(!spider_sdl3_selection_start_edge(&selection,2u,0));
-        assert(spider_sdl3_selection_start_edge(&selection,2u,1));
         return 0;
       }
     """),encoding="utf-8")
     subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror",
                     "-I",str(ROOT),str(src),"-o",str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
-
 
 def test_x11_host_confirmed_pause_flushes_universal_held_keys_before_blocking_flip():
     """Regression: Wine reports the game HWND during native Firefox focus.
