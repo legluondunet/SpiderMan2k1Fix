@@ -55,7 +55,8 @@ def test_native_safety_and_universal_default_remain_guarded():
     assert "native_owner_requested=0;" in PROBE
     assert "requested=1; /* SDL3-only gameplay, no legacy-INI opt-out. */" in ADAPTER
     assert "gameover_trial_enabled=1;" in ADAPTER
-    assert "SpiderSDL3ProfileStore_Init(1,logger)" in PROBE
+    assert "SDL3-PROFILE: fixed PS1-inspired semantic controls" in PROBE
+    assert "SpiderSDL3ProfileStore_Init" not in PROBE
     assert "InterlockedExchange(&requested,1);" in UNPLUG
     assert "IDirectInput8_CreateDevice(" not in RECONNECT
     assert "spider_alt_latch_preflight()" in ALT

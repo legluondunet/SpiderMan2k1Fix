@@ -91,26 +91,3 @@ def test_fixed_south_and_east_without_rewriting_saved_v2(tmp_path):
     subprocess.run([str(exe)],check=True)
 
 
-def test_wizard_eight_3d_rows_and_no_live_native_input_mutation():
-    ui=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
-    model=(ROOT/"sdl3_controller_profile.h").read_text(encoding="utf-8")
-    ini=(ROOT/"sdl3_controller_profile_ini.h").read_text(encoding="utf-8")
-    core=(ROOT/"gamepad_ui_profile.c").read_text(encoding="utf-8")
-    assert "for(i=0;i<SPIDER_SDL3_VISIBLE_ACTION_COUNT;i++)" in ui
-    assert "SPIDER_SDL3_VISIBLE_ACTION_COUNT=SPIDER_SDL3_ACTION_COUNT," in model
-    assert "spider_sdl3_profile_shared_confirm_binding(p,&shared)" not in ui
-    assert "spider_sdl3_profile_assign_visible(&trial,ui->action,candidate)" in ui
-    assert "Cross/A Confirm, Circle/B Back fixed" in ui
-    assert "Back / Cancel" not in ui
-    assert "MIXED (Capture to unify)" not in ui
-    assert '"[MenuBindings]' in ini and 'Version=2' in ini
-    assert "SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE" in model  # old v2 codec
-    assert "spider_sdl3_context_cutscene_step(" not in core
-    assert "sdl3_cutscene_context_on_flip(" not in core
-    assert "begin_scancode(" not in core
-    universal=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
-    assert "SpiderSDL3Probe_SelectedMappedSample(" in universal
-    assert "static int send_scan(" in universal
-    for denied in ("SendInput(", "VirtualProtect(", "WriteProcessMemory(",
-                   "IDirectInputDevice8_", "CreateThread("):
-        assert denied not in ui
