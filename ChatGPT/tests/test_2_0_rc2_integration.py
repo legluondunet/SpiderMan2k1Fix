@@ -15,8 +15,8 @@ def test_stable_2_0_retains_save_confirmation_and_duplicate_instances():
     assert '#define SPIDERMAN2K1FIX_VERSION "2.0.0"' in ver
     assert "spider_sdl3_selected_instance_valid(" in identity
     assert "spider_sdl3_selected_model_unique(" in identity
-    assert "spider_sdl3_start_claim_add(" in probe
-    assert "start_claims.count==1u" in probe
+    assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in probe
+    assert "requests==1u && candidate && candidate!=owner" in probe
     assert "spider_sdl3_selected_instance_valid(opened,num_pads," in probe
     assert "native_shell_menu=native_shell_menu_context(" in universal
     assert "if(native_shell_menu && context==SPIDER_UNIVERSAL_CTX_3D)" in universal
@@ -29,6 +29,6 @@ def test_stable_2_0_retains_save_confirmation_and_duplicate_instances():
     assert "spider_sdl3_universal_neutral(" in policy
     assert "sample->axis[SPIDER_SDL3_AXIS_LT]>=11000" in policy
     assert "sample->axis[SPIDER_SDL3_AXIS_RT]>=11000" in policy
-    assert "if(native_unclaimed_guard && !spider_sdl3_universal_owner_neutral(&sample))" in universal
-    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in universal
+    assert "if(native_unclaimed_guard && !spider_sdl3_universal_owner_neutral(&sample) &&" in universal
+    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&" in universal
     assert "if(spider_sdl3_universal_neutral(&sample))" in universal

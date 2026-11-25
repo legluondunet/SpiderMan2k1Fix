@@ -64,7 +64,7 @@ def test_sdl3_multicontroller_owner_is_explicit_generic_not_native_preset():
     assert "open[i].product=sdl_product(pads[i].id);" in probe
     assert "SpiderSDL3Probe_SelectedMappedSample(" in backend
     assert "spider_sdl3_universal_neutral(&sample)" in backend
-    assert "SDL3-UNIVERSAL: START selected generic" in probe
+    assert "SDL3-UNIVERSAL: ACTIVITY selected id=" in probe
     assert "CreateDevice(" not in native
     assert "swap_native_gameplay_mapping(" not in native
     assert "spider_sdl3_context_menu_reset(&sdl3_context_bridge)" not in ui

@@ -22,8 +22,10 @@ int main(void) {
     assert(s.count==0 && s.active==0);
     spider_sdl3_selection_sync(&s,one,1);
     assert(s.count==1 && s.active==11);
+    assert(spider_sdl3_selection_singleton_candidate(&s)==11);
     spider_sdl3_selection_sync(&s,two,2);
     assert(s.count==2 && s.active==11); /* don't steal focus */
+    assert(spider_sdl3_selection_singleton_candidate(&s)==0);
     /* A fresh Start on another pad explicitly takes ownership. */
     spider_sdl3_selection_start(&s,22,0);
     assert(spider_sdl3_selection_start(&s,22,1)); /* 11 -> 22 */
@@ -43,10 +45,12 @@ int main(void) {
     assert(s.active==22);
     spider_sdl3_selection_sync(&s,singleton,1);
     assert(s.count==1 && s.active==33); /* auto fallback */
+    assert(spider_sdl3_selection_singleton_candidate(&s)==33);
     spider_sdl3_selection_sync(&s,dup,2);
     assert(s.count==1 && s.active==33); /* duplicate ignored */
     spider_sdl3_selection_sync(&s,NULL,0);
     assert(s.active==0 && s.count==0);
+    assert(spider_sdl3_selection_singleton_candidate(&s)==0);
     /* Fresh multi-pad session must release Start before it can claim. */
     memset(&s,0,sizeof(s));
     spider_sdl3_selection_sync(&s,two,2);
@@ -156,3 +160,21 @@ int main(void) {
                     '-I',str(ROOT),str(src),'-o',str(exe)],
                    capture_output=True,text=True,check=True)
     subprocess.run([str(exe)],check=True)
+
+def test_live_selection_uses_activity_not_start():
+    probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
+    header=(ROOT/"sdl3_activity_owner.h").read_text(encoding="utf-8")
+    callback=probe.split("void SpiderSDL3Probe_OnFlip(",1)[1]
+    assert "spider_sdl3_activity_sync(&activity_owners,opened_ids,opened_n)" in probe
+    assert "spider_sdl3_activity_focus_lost(&activity_owners)" in probe
+    assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in callback
+    assert "opened_n==1u && sole_neutral" in callback
+    assert "requests==1u && candidate && candidate!=owner" in callback
+    assert "owner_neutral" in callback
+    assert "spider_sdl3_selected_instance_valid(opened,opened_n,candidate" in callback
+    assert "generic_selected_id=candidate;" in callback
+    assert "start_claims" not in callback
+    assert "SPIDER_SDL3_BUTTON_START" in header
+    assert "SPIDER_SDL3_BUTTON_GUIDE" in header
+    assert "spider_sdl3_activity_neutral" in header
+    assert "spider_sdl3_profile_neutral(s)" in header

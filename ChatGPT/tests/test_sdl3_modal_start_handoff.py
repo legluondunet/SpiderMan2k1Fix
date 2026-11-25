@@ -247,7 +247,7 @@ def test_modal_start_defers_original_owner_until_next_verified_game_flip():
     assert 'SDL3-PROBE: SETUP RETURN COMMITTED verified modal owner' in flip
     assert 'SDL3-PROBE: SETUP RETURN REFUSED stale/ambiguous' in flip
     assert flip.index("if(setup_owner_pending)")<flip.index(
-        "for(i=0;i<num_pads;i++)if(pads[i].handle) {")
+        "/* Per-frame activity selection.")
     # Manual L1/R1 browsing selects a profile but never requests transfer.
     select=modal.split("static void select_slot(",1)[1].split(
         "static void refresh_pads(",1)[0]
