@@ -29,17 +29,17 @@ spiderman2k1fix/
     README.md
     CHANGELOG.md
     LICENSE
-  third_party/
-    SDL3/
-      SDL3.dll
-      LICENSE.txt
+    SDL3-LICENSE.txt      # third-party DLL license
   linux/
     spiderman-focus-helper
   game/
     SpideyPC.exe
     fix.dll
+    SDL3.dll              # bundled x86 runtime alongside game executable
     ... original disc files and game-generated files
 ```
+
+The game runtime `SDL3.dll` lives next to `game/SpideyPC.exe` and `game/fix.dll`. DLL license documentation resides in `docs/`; no `third_party/` directory is installed. Existing unified installations with the former `third_party/SDL3/` layout are **not** migrated automatically: use a separate clean test folder with a legitimate disc image. The old installation is left untouched.
 
 No `mods/` directory is created until actual modding support is implemented.
 `state/` contains only two installer-owned SHA-256 receipts; do not edit them.

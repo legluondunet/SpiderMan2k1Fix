@@ -22,8 +22,8 @@ OBJDUMP="$(command -v i686-w64-mingw32-objdump || command -v objdump || true)"
 for p in \
  dist/unified/package/game/fix.dll \
  dist/unified/package/game/SpideyPC.exe.manifest \
- dist/unified/package/third_party/SDL3/SDL3.dll \
- dist/unified/package/third_party/SDL3/LICENSE.txt \
+ dist/unified/package/game/SDL3.dll \
+ dist/unified/package/docs/SDL3-LICENSE.txt \
  dist/unified/package/linux/spiderman-focus-helper \
  dist/unified/package/docs/README.md \
  dist/unified/package/docs/CHANGELOG.md \
@@ -36,8 +36,8 @@ test -s "$source_file"
 mkdir -p dist/unified
 cat > dist/unified/payload.rc <<'RCDATA'
 1102 RCDATA "dist/unified/package/game/fix.dll"
-1103 RCDATA "dist/unified/package/third_party/SDL3/SDL3.dll"
-1104 RCDATA "dist/unified/package/third_party/SDL3/LICENSE.txt"
+1103 RCDATA "dist/unified/package/game/SDL3.dll"
+1104 RCDATA "dist/unified/package/docs/SDL3-LICENSE.txt"
 1105 RCDATA "dist/unified/package/linux/spiderman-focus-helper"
 1106 RCDATA "dist/unified/package/docs/README.md"
 1107 RCDATA "dist/unified/package/docs/CHANGELOG.md"

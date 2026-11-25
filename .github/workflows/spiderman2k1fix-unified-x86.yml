@@ -79,7 +79,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/unified/package/game dist/unified/package/docs \
-            dist/unified/package/third_party/SDL3 dist/unified/package/linux
+            dist/unified/package/linux
           cp dist/unified/fix.dll dist/unified/package/game/fix.dll
           cp game_dpi.manifest dist/unified/package/game/SpideyPC.exe.manifest
           cp CHANGELOG.md LICENSE dist/unified/package/docs/
@@ -96,11 +96,11 @@ jobs:
               --connect-timeout 15 --max-time 75 --output "$archive" \
               https://www.libsdl.org/release/SDL3-3.4.18-win32-x86.zip
           fi
-          python3 scripts/package_sdl3_x86.py dist/unified/package/third_party/SDL3 \
+          python3 scripts/package_sdl3_x86.py dist/unified/package/game \
             --archive "$archive"
-          mv dist/unified/package/third_party/SDL3/SDL3-LICENSE.txt \
-             dist/unified/package/third_party/SDL3/LICENSE.txt
-          cmp third_party/SDL3-LICENSE.txt dist/unified/package/third_party/SDL3/LICENSE.txt
+          mv dist/unified/package/game/SDL3-LICENSE.txt \
+             dist/unified/package/docs/SDL3-LICENSE.txt
+          cmp third_party/SDL3-LICENSE.txt dist/unified/package/docs/SDL3-LICENSE.txt
           test -z "$(find dist/unified/package -name winmm.dll -print -quit)"
       - name: Build SpiderMan2k1Fix.exe and separate CI-only fixture
         run: |
