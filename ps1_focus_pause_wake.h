@@ -40,4 +40,62 @@ static unsigned spider_pause_pad_wake_step(SpiderPausePadWake *w,
   w->initial_press=0u;
   return result;
 }
+/* Multi-pad SDL3 wake: state follows exact instance identity rather than
+ * array order. Invalid/detached instances disappear on the next sample.
+ * A new device or focus epoch must observe full neutral before any press.
+ * Competing pending presses cancel all candidates until a new neutral. */
+#include <stdint.h>
+#include <string.h>
+#define SPIDER_PAUSE_MAX_PADS 16u
+typedef struct {
+  uint32_t id;
+  uint16_t vid,pid;
+  unsigned buttons,neutral;
+} SpiderPausePadSample;
+typedef struct {
+  SpiderPausePadSample identity;
+  SpiderPausePadWake wake;
+} SpiderPausePadSlot;
+typedef struct {
+  SpiderPausePadSlot slots[SPIDER_PAUSE_MAX_PADS];
+  unsigned count;
+} SpiderPausePads;
+static inline void spider_pause_pads_reset(SpiderPausePads *s) {
+  memset(s,0,sizeof(*s));
+}
+static inline unsigned spider_pause_pads_step(SpiderPausePads *s,
+    const SpiderPausePadSample *samples,unsigned count,SpiderPausePadSample *winner) {
+  SpiderPausePads next={0};
+  unsigned i,j,contenders=0,result=0;
+  memset(winner,0,sizeof(*winner));
+  if(count>SPIDER_PAUSE_MAX_PADS) {spider_pause_pads_reset(s);return 0;}
+  for(i=0;i<count;i++) {
+    SpiderPausePadSlot *slot=&next.slots[next.count];
+    unsigned completed;
+    if(!samples[i].id || !samples[i].vid || !samples[i].pid)continue;
+    for(j=0;j<next.count;j++)if(next.slots[j].identity.id==samples[i].id) {
+      spider_pause_pads_reset(s);return 0;
+    }
+    slot->identity=samples[i];
+    for(j=0;j<s->count;j++)if(s->slots[j].identity.id==samples[i].id &&
+        s->slots[j].identity.vid==samples[i].vid &&
+        s->slots[j].identity.pid==samples[i].pid) {
+      slot->wake=s->slots[j].wake;break;
+    }
+    next.count++;
+    /* Full neutral before arming and after release. Analog movement or
+     * ignored buttons alone cannot complete a digital wake. */
+    if(!samples[i].buttons && !samples[i].neutral) {
+      memset(&slot->wake,0,sizeof(slot->wake));continue;
+    }
+    completed=spider_pause_pad_wake_step(&slot->wake,samples[i].buttons);
+    if(slot->wake.pending || completed)contenders++;
+    if(completed) {result=completed;*winner=samples[i];}
+  }
+  if(contenders>1u) {
+    spider_pause_pads_reset(s);memset(winner,0,sizeof(*winner));return 0;
+  }
+  *s=next;
+  return result;
+}
 #endif

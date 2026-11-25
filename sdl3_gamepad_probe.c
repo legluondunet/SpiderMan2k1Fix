@@ -127,6 +127,7 @@ static SDL_CloseGamepadFn sdl_close=NULL;
 static SDL_GetGamepadButtonFn sdl_button=NULL;
 static SDL_GamepadConnectedFn sdl_connected=NULL;
 static SpiderPausePadWake sdl_pause_wake={0};
+static SpiderPausePads sdl_pause_pads={0};
 static int sdl_pause_universal=0;
 static uint32_t sdl_pause_id=0;
 static uint16_t sdl_pause_vid=0,sdl_pause_pid=0;
@@ -1040,22 +1041,23 @@ int SpiderSDL3Probe_PauseWake_Begin(void) {
   uint32_t id=0;
   uint16_t vid=0,pid=0;
   unsigned i;
-  SpiderSDL3ControllerSample sample;
   sdl_pause_universal=0;
   sdl_pause_active=0;sdl_pause_id=0;
   sdl_pause_vid=0;sdl_pause_pid=0;sdl_pause_lost_reported=0;
   memset(&sdl_pause_wake,0,sizeof(sdl_pause_wake));
+  spider_pause_pads_reset(&sdl_pause_pads);
   if(!requested || !ready || !scanned || !sdl_connected ||
      !sdl_button || !sdl_pump || !sdl_update ||
      !sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId())
     return 0;
   if(universal_requested) {
-    /* Opt-in adapter selected the precise SDL3-mapped controller. PS3
-     * is not a verified native DI owner, but a digital SDL3 wake
-     * requires neither native acquisition nor any injected key. */
-    if(!SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample))
-      return 0;
+    /* Even with no current owner, a newly attached mapped pad may
+     * wake after foreground + neutral + digital press/release. */
+    if(!sdl_vendor || !sdl_product || !sdl_axis)return 0;
     sdl_pause_universal=1;
+    sdl_pause_active=1;
+    say("FOCUS-PAUSE-SDL3: all mapped pads eligible; foreground-only neutral press/release; no native DI or key injection");
+    return 1;
   } else if(!SpiderSDL3Probe_NativeOwnerEnabled() ||
             !SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
             !SpiderNativeReconnect_SDL3SelectionReady(vid,pid))
@@ -1066,38 +1068,68 @@ int SpiderSDL3Probe_PauseWake_Begin(void) {
   if(i==num_pads)return 0;
   sdl_pause_id=id;sdl_pause_vid=vid;sdl_pause_pid=pid;
   sdl_pause_active=1;
-  say(sdl_pause_universal?
-    "FOCUS-PAUSE-SDL3: selected universal mapped pad armed (foreground-only; neutral + fresh digital press/release; NO native DirectInput ownership)":
-    "FOCUS-PAUSE-SDL3: selected game-owned controller armed (foreground-only; fresh digital press+release; no DirectInput Acquire)");
+  say("FOCUS-PAUSE-SDL3: selected game-owned controller armed (foreground-only; fresh digital press+release; no DirectInput Acquire)");
   return 1;
 }
 unsigned SpiderSDL3Probe_PauseWake_Poll(HWND hwnd) {
   unsigned i,j,buttons=0;
   uint32_t id=0;
   uint16_t vid=0,pid=0;
-  SpiderSDL3ControllerSample sample;
   void *handle=NULL;
   if(!sdl_pause_active)return 0;
   if(!hwnd || !IsWindow(hwnd) || !IsWindowVisible(hwnd) ||
      GetForegroundWindow()!=hwnd) {
     memset(&sdl_pause_wake,0,sizeof(sdl_pause_wake));
+    spider_pause_pads_reset(&sdl_pause_pads);
     return 0;
   }
   if(!sdl3_game_thread || sdl3_game_thread!=GetCurrentThreadId())
     goto lost;
   if(sdl_pause_universal) {
-    /* Regular OnFlip is blocked inside this pause loop. After checking
-     * foreground, update SDL3 on the same thread and revalidate the
-     * chosen instance and VID:PID: no silent fallback to the DS4. */
+    SpiderPausePadSample samples[SPIDER_PAUSE_MAX_PADS]={{0}},winner={0};
+    SpiderSDL3Identity opened[SPIDER_SDL3_MAX_GAMEPADS]={{0}};
+    unsigned n=0,result;
+    DWORD now;
     sdl_pump();sdl_update();
-    if(!SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample) ||
-       id!=sdl_pause_id || vid!=sdl_pause_vid || pid!=sdl_pause_pid)
-      goto lost;
-    for(j=0;j<12u;j++) {
-      if(j==SPIDER_SDL3_BUTTON_GUIDE ||
-         j==SPIDER_SDL3_BUTTON_START)continue;
-      if(sample.buttons&(1u<<j))buttons|=1u<<j;
+    now=GetTickCount();
+    if((DWORD)(now-last_scan)>=SPIDER_SDL_SCAN_MS) {
+      last_scan=now;rescan();
     }
+    for(i=0;i<num_pads && n<SPIDER_PAUSE_MAX_PADS;i++) {
+      SpiderSDL3ControllerSample sample={0};
+      if(!pads[i].id || !pads[i].handle || !sdl_connected(pads[i].handle))continue;
+      id=pads[i].id;vid=sdl_vendor(id);pid=sdl_product(id);
+      if(!vid || !pid)continue;
+      for(j=0;j<SPIDER_SDL3_BUTTON_COUNT;j++)
+        if(sdl_button(pads[i].handle,(int)j))sample.buttons|=1u<<j;
+      for(j=0;j<SPIDER_SDL3_AXIS_COUNT;j++)
+        sample.axis[j]=sdl_axis(pads[i].handle,(int)j);
+      if(sample.axis[SPIDER_SDL3_AXIS_LT]<0 || sample.axis[SPIDER_SDL3_AXIS_RT]<0)continue;
+      samples[n].id=id;samples[n].vid=vid;samples[n].pid=pid;
+      samples[n].neutral=(unsigned)spider_sdl3_activity_neutral(&sample);
+      samples[n].buttons=sample.buttons & SPIDER_PAUSE_PAD_DIGITAL_MASK &
+          ~((1u<<SPIDER_SDL3_BUTTON_GUIDE)|(1u<<SPIDER_SDL3_BUTTON_START));
+      opened[n].instance_id=id;opened[n].vendor=vid;opened[n].product=pid;n++;
+    }
+    result=spider_pause_pads_step(&sdl_pause_pads,samples,n,&winner);
+    if(result && spider_sdl3_selected_instance_valid(opened,n,winner.id,winner.vid,winner.pid)) {
+      char line[180];
+      generic_selected_id=winner.id;
+      generic_selected_vendor=winner.vid;
+      generic_selected_product=winner.pid;
+      selection.active=winner.id;
+      /* The wake is consumed, not a fresh gameplay claim. Disarm ALL
+       * candidates until the normal Flip observes neutral again. */
+      activity_fresh_claim_id=0;
+      spider_sdl3_activity_focus_lost(&activity_owners);
+      generic_profile_snapshot_valid=0;
+      spider_sdl3_universal_reset(&generic_actions);
+      snprintf(line,sizeof(line),"FOCUS-PAUSE-SDL3: wake consumed; new active id=%lu VID:PID=%04X:%04X",
+        (unsigned long)winner.id,(unsigned)winner.vid,(unsigned)winner.pid);
+      say(line);
+      return result;
+    }
+    return 0;
   } else {
     if(!SpiderSDL3Probe_SelectedIdentity(&vid,&pid,&id) ||
        id!=sdl_pause_id || vid!=sdl_pause_vid || pid!=sdl_pause_pid)
@@ -1129,6 +1161,9 @@ void SpiderSDL3Probe_PauseWake_End(void) {
   sdl_pause_active=0;sdl_pause_id=0;
   sdl_pause_vid=0;sdl_pause_pid=0;sdl_pause_lost_reported=0;
   memset(&sdl_pause_wake,0,sizeof(sdl_pause_wake));
+  spider_pause_pads_reset(&sdl_pause_pads);
+  activity_fresh_claim_id=0;
+  spider_sdl3_activity_focus_lost(&activity_owners);
   spider_sdl3_selection_focus_lost(&selection);
   bindings_trace_armed=0;bindings_previous=0;
 }

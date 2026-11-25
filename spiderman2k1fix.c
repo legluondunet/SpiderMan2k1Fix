@@ -5127,7 +5127,7 @@ static void pause_at_flip_if_background(void) {
   pause_sdl3_available=SpiderSDL3Probe_PauseWake_Begin();
   pause_gamepad_available=pause_sdl3_available?1:SpiderGamepadUI_PauseWake_Begin();
   if(pause_sdl3_available)
-    log_line("FOCUS-PAUSE: SDL3 selected-gamepad wake ARMED; foreground-only, release-gated, no injected key (keyboard always available)");
+    log_line("FOCUS-PAUSE: SDL3 mapped-gamepad wake ARMED; foreground-only, release-gated, no injected key (keyboard always available)");
   else if(pause_gamepad_available)
     log_line("FOCUS-PAUSE: DS4 DirectInput digital-button fallback ARMED; foreground-only, release-gated, no injected key (keyboard always available)");
   else
@@ -5184,6 +5184,14 @@ static void pause_at_flip_if_background(void) {
       win32_game_foreground);
     log_line(line);
   }
+  /* Finish the same native Joystick frame before PAUSED saves its
+   * pixels. The fresh native frame token prevents drawing in other menus;
+   * End restores these pixels and the normal Flip cannot draw twice. */
+  if(borderless_back && borderless_primary && original_blt &&
+     InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
+     menu_map.right>menu_map.left && menu_map.bottom>menu_map.top &&
+     SpiderSDL3ControllerSetup_DrawToSurface(borderless_back,&pause_content_rect))
+    log_line("FOCUS-PAUSE: native Joystick guide composited before frozen frame");
   if(borderless_back && borderless_primary && original_blt)
     SpiderPauseSurface_Begin(borderless_back,borderless_primary,
                              &pause_present_rect,&pause_content_rect,
@@ -5262,6 +5270,11 @@ static void pause_at_flip_if_background(void) {
         pause_previous_foreground=pause_now_foreground;
       }
     }
+    /* X11 can report external focus while Wine still reports our HWND.
+     * Reset per-pad wake state even when the poll is skipped. */
+    if(pause_sdl3_available && pause_x11_bridge_enabled() &&
+       x11_state!=1 && !fallback_wake_armed)
+      SpiderSDL3Probe_PauseWake_Poll(NULL);
     if(SpiderPauseAny_Completed())
       InterlockedExchange(&pause_latched,0);
     else {
