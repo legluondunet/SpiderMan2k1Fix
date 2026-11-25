@@ -33,10 +33,11 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   (void)menu_2d;(void)gameplay_3d;
   (void)bink_active;(void)native_pause_active;
   SpiderPS1Mouse_OnFlip(hwnd);
-  if(SpiderSDL3ControllerSetup_Enabled()) {
-    SpiderSDL3_InstallGenericReadOnlyJoystick(ui_log);
+  if(SpiderSDL3ControllerSetup_Enabled())
     SpiderSDL3_InstallDirectJoystickEntry(ui_log);
-  }
+  /* Native read-only guard is attempted at initialization, then checked
+   * again only when Joystick is opened. No signature scans/allocation on
+   * every Flip if the original executable unexpectedly refuses a patch. */
 }
 void SpiderGamepadUI_AfterControllerSetup(HWND hwnd) {(void)hwnd;}
 /* The engine's SDL3 focus wake and keyboard release are independent
