@@ -66,11 +66,18 @@ static void __cdecl spider_sdl3_direct_controller_menu(int native_mode) {
     report(line);
   }
   if(is_joystick && SpiderSDL3ControllerSetup_Enabled()) {
-    /* The read-only button guide has no SDL init or mapping dependency.
-     * Do not fall back to a native joystick rebinding menu when no
-     * controller is connected: the displayed controls are fixed. */
-    report("SDL3-DIRECT-ENTRY: Joystick selected (mode=0); open fixed read-only controller guide (Keyboard unchanged)");
-    SpiderSDL3ControllerSetup_Open();
+    /* Open the ORIGINAL game's Joystick configuration screen. Its mapping
+     * mutation/capture is disabled by our SHA-guarded native patch, while
+     * the controller guide is composited on the game's DirectDraw surface.
+     * If the native guard is unavailable, do not expose writable bindings. */
+    if(!SpiderSDL3_InstallGenericReadOnlyJoystick(ps1_menu_logger)) {
+      report("SDL3-NATIVE-GUIDE: REFUSED unsafe writable Joystick menu; original options screen preserved");
+      return;
+    }
+    SpiderSDL3ControllerSetup_OnNativeEnter();
+    report("SDL3-DIRECT-ENTRY: Joystick selected (mode=0); enter native read-only controller menu with in-game guide");
+    ((SpiderNativeControllerConfigFn)(uintptr_t)
+      SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(native_mode);
     return;
   } else if(native_mode==1) {
     if(logs<18u)
@@ -235,11 +242,6 @@ static void __cdecl spider_joystick_restore_denied(void) {
    * In the experimental user-wizard mode it becomes a safe menu command,
    * NEVER the original restore-defaults action. Native seven-action
    * assignments stay locked until SDL3 gameplay bridge is validated. */
-  if(SpiderSDL3ControllerSetup_Enabled() &&
-     *(const volatile DWORD *)(uintptr_t)0x00AC129Cu!=0u) {
-    SpiderSDL3ControllerSetup_Open();
-    return;
-  }
   LONG n=InterlockedIncrement(&blocked);
   if(n<=8 || n%64==0) {
     char line[195];
@@ -268,11 +270,11 @@ static void __fastcall spider_joystick_restore_row_addentry(
       /* Keep left/right CMenu rows aligned; no altered action indexes.
        * The original RestoreDefaults call is already replaced above. */
       const void *left=*(void *const volatile *)(uintptr_t)0x00AC11B4u;
-      const char *text=native_menu==left?
-                         "SDL3 TEST (PREVIEW)":" ";
+      const char *text=" "; /* no extra selectable setup action */
+      (void)left;
       ((SpiderCMenuAddEntry)(uintptr_t)0x0043FFF0u)(native_menu,text);
       if(InterlockedIncrement(&suppressed)==1)
-        report("SDL3-SETUP: native Joystick preview row replaces Restore Default (paired columns; keyboard menu unchanged)");
+        report("SDL3-NATIVE-GUIDE: obsolete Restore Defaults row neutralized in original Joystick menu; keyboard unchanged");
     } else {
       if(InterlockedIncrement(&suppressed)==1)
         report("GAMEPAD-READONLY: Restore Default ROW OMITTED in Joystick (and matching placeholder); 14 action entries kept, Keyboard restore preserved");
