@@ -51,7 +51,7 @@ def test_next_foreground_flip_claims_only_safe_selected_sdl3_pad():
     assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&" in adapter
     assert "SpiderSDL3Probe_GenericSelectedSample(" in probe
     assert "spider_sdl3_selection_focus_lost(&selection)" in probe
-    assert "spider_sdl3_selection_singleton_candidate(&selection)" in probe
+    assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in probe
     assert "spider_sdl3_profile_neutral(&sample)" in probe
     assert "start_claims.count==1u" in probe
     assert "CreateDevice(" not in native
