@@ -51,6 +51,18 @@ static void spider_sdl3_selection_sync(SpiderSDL3Selection *s,
   if(!s->active && n==1u)s->active=s->slots[0].id;
 }
 
+/* The universal adapter may claim a controller without Start only when
+ * a single distinct SDL3 instance is opened and already selected logically.
+ * This returns an ID, not permission to inject keys: the caller must check
+ * the live SDL handle, foreground and *fully neutral* input sample before
+ * taking ownership. Multiple opened devices always require Start. */
+static inline uint32_t spider_sdl3_selection_singleton_candidate(
+    const SpiderSDL3Selection *s) {
+  if(!s || s->count!=1u || !s->slots[0].id ||
+     s->active!=s->slots[0].id)return 0u;
+  return s->active;
+}
+
 /* Focus loss preserves the selected controller but invalidates any Start
  * edge that might be held/re-pressed while the game is in the background.
  * On return, every controller must be sampled released before a new Start
