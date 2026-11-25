@@ -44,7 +44,7 @@ def test_keyboard_remains_available_when_no_sdl3_gamepad_selected():
     assert "native_owner_requested=0;" in PROBE
     assert "SpiderSDL3Probe_SelectedMappedSample(&id,&vid,&pid,&sample)" in UNIVERSAL
     assert 'restore_original("no selected mapped controller");' in UNIVERSAL
-    assert "UNCLAIMED native DirectInput joystick held inactive until explicit SDL3 Start (keyboard unaffected)" in UNIVERSAL
+    assert "UNCLAIMED native DirectInput joystick held inactive until valid SDL3 activity selection (keyboard unaffected)" in UNIVERSAL
     assert "if(!suspended && writable_slot() && suspend_original())" in UNIVERSAL
     assert "SpiderNativeUnplug_OnFlip(count);" in CORE
     assert "if(flip_index==120)install_guard();" in UNPLUG

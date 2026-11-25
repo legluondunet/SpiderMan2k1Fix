@@ -38,6 +38,8 @@ int SpiderSDL3Probe_SelectedRT(int *normalized_rt);
 /* Opt-in keyboard adapter: one selected, uniquely identified mapped SDL3
  * controller, including explicit PS3 selection (never native DI ownership).
  * Reject disconnected or ambiguous generic devices without fallback. */
+/* Fresh, validated activity edge on this game Flip; never a held Start. */
+int SpiderSDL3Probe_FreshActivityClaim(uint32_t instance_id);
 int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
     uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample);
 int SpiderSDL3Probe_GenericSelectedSample(uint32_t *instance,

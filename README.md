@@ -39,7 +39,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **Widescreen HUD:** Corrects the proportions and positioning of HUD elements, including health and web gauges, compass, mission objectives, boss health bars, and in-game pause menus, with native scene-entry iris. Tested at 1920×1080 (16:9) and 1920×1200 (16:10).
 - **FPS limiter:** Configurable frame-rate cap, set to **30 FPS by default**. Lower limits, such as 20 FPS, can be selected for timing-sensitive gameplay.
 - **Alt+Tab stability:** Background game pause, synchronized Bink/DirectSound, and keyboard/gamepad resume. Press and release any key or an eligible selected controller button after returning. The OS desktop cursor is restored. See [focus details](docs/references/CONFIGURATION.md).
-- **SDL3 gamepads:** A single mapped controller activates automatically after releasing its controls. With multiple gamepads, press **Start** on the desired one. DS4, Xbox 360 and PS3 have been tested under Wine/Proton; DS4/Xbox 360 also on Windows 11. [Details](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
+- **SDL3 gamepads:** Start-free selection: one pad connects after neutral; with several, the first deliberately used pad becomes active. Others can take over after release. DS4/Xbox 360/PS3 tested under Wine; DS4/Xbox 360 also under Windows. [Details](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
 - **Keyboard layouts:** Automatically detects the active keyboard layout and adapts the game's controls, keyboard labels, and cheat-code entry. The original game only supported QWERTY layouts.
 - **No game mouse:** Keyboard/gamepad only. Game cursor, clicks and polling are permanently off. Desktop pointer unaffected; legacy `MouseEnabled` ignored.
 - **DPI awareness:** Handles Windows display scaling to ensure correct window dimensions and rendering on high-DPI displays.
@@ -51,7 +51,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 
 Successfully tested on Windows 11 and Linux/Wine.
 
-**First-time Xbox setup:** no controller INI edit is needed for a normally recognized Xbox 360 gamepad. With one connected SDL3-mapped controller, release its buttons, sticks and triggers to activate it automatically. With multiple controllers, press Start on the desired one; an explicit selection still requires returning to neutral before gameplay. View the fixed button diagram under Options > Joystick; action remapping is no longer available. The original game's joystick bytes remain preserved in `[Internal] RawHex`, but legacy `[Joystick]` INI bindings no longer affect SDL3.
+**First-time Xbox setup:** no controller INI edit is needed for a normally recognized Xbox 360 gamepad. Release all controls when the game starts. With one connected mapped controller it activates automatically. With multiple pads, press a gameplay/menu button or intentionally move the left stick after a neutral frame to choose the active pad; only one pad can control the game at a time. View the fixed PS1-style controls under Options > Joystick; user-action remapping has been removed. The original game's joystick bytes remain preserved in `[Internal] RawHex`, but legacy `[Joystick]` INI bindings no longer affect SDL3.
 
 ## Bugs Resolved
 

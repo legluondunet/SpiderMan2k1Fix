@@ -142,4 +142,4 @@ def test_legacy_context_bridge_is_not_a_second_input_owner():
     assert "spider_sdl3_universal_neutral(&sample)" in universal
     assert "SpiderSDL3Probe_OnFlip(count,game_hwnd);" in core
     assert "SpiderSDL3Universal_OnFlip(game_hwnd," in core
-    assert "SDL3-UNIVERSAL: START selected generic" in probe
+    assert "SDL3-UNIVERSAL: ACTIVITY selected id=" in probe

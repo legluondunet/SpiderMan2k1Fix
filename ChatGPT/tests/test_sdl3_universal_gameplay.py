@@ -113,7 +113,7 @@ def test_universal_runtime_is_built_in_and_mutually_exclusive():
     assert "SpiderSDL3Probe_GenericSelectedSample" in probe
     assert "!generic_selected_id" in probe
     assert "universal_requested" in probe
-    assert "SDL3-UNIVERSAL: START selected generic" in probe
+    assert "SDL3-UNIVERSAL: ACTIVITY selected id=" in probe
     assert "SpiderSDL3Probe_SelectedMappedSample" in probe
     assert "InterlockedCompareExchangePointer(SPIDER_UNIVERSAL_DI_SLOT" in backend
     assert "restored" in backend.lower()
@@ -151,8 +151,8 @@ def test_universal_native_di_is_neutral_gated_and_modal_safe():
     assert modal.index("SpiderSDL3Universal_BeforeModal(owner);") < modal.index(
         "if(!registered) {",modal.index(
             "void SpiderSDL3ControllerSetup_Open(void)"))
-    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in backend
-    assert backend.index("if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))") < (
+    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&" in backend
+    assert backend.index("if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&") < (
         backend.index("if(!suspend_original())"))
     assert "SendInput failure; releasing and restoring native owner" in backend
     assert 'restore_original("SendInput failed");' in backend
@@ -280,9 +280,9 @@ def test_integrated_readonly_guide_and_sdl3_controller_ownership_are_isolated():
     assert "Capture selected action" not in ui
     assert "SpiderSDL3Universal_BeforeModal(owner);" in ui
     assert "generic_selected_id" in probe
-    assert "selection.active=previous;" in probe
-    assert "start_claims.count==1u" in probe
-    assert "spider_sdl3_selection_singleton_candidate(&selection)" in probe
+    assert "selection.active=candidate;" in probe
+    assert "requests==1u && candidate && candidate!=owner" in probe
+    assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in probe
     assert "spider_sdl3_profile_neutral(&sample)" in probe
     assert "spider_sdl3_selected_instance_valid(opened,num_pads," in probe
     assert "return SpiderSDL3Probe_GenericSelectedSample(" in probe
@@ -401,7 +401,7 @@ def test_universal_fail_closed_reentry_after_failed_keyup():
         preowner.index("if(!suspended && !spider_sdl3_universal_owner_neutral"))
     assert "if(active && pulse_scan)" in preowner
     assert 'restore_original("pulse KEYUP failed before next gameplay action");' in preowner
-    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in preowner
+    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&" in preowner
     assert "if(!release_all())" in backend.split("static void restore_original(",1)[1].split(
         "static int suspend_original(",1)[0]
     beforeui=backend.split("void SpiderSDL3Universal_BeforeUI(",1)[1].split(
@@ -485,12 +485,12 @@ def test_universal_mapped_ps4_uses_generic_identity_without_native_rebind():
     start=probe.split("      uint32_t previous=selection.active;",1)[1].split(
         "      if(selection.active==pads[i].id",1)[0]
     assert "universal_requested?" in start
-    assert "spider_sdl3_selection_start_edge(&selection,pads[i].id,pressed)" in start
+    assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in start
     assert "spider_sdl3_selection_start(&selection,pads[i].id,pressed)" in start
     assert "if(universal_requested)" in start
-    assert "selection.active=previous;" in start
+    assert "selection.active=candidate;" in start
     assert "spider_sdl3_start_claim_add(&start_claims,pads[i].id," in start
-    assert "generic_selected_id=start_claims.instance_id;" in probe
+    assert "generic_selected_id=candidate;" in probe
     generic=probe.split("int SpiderSDL3Probe_GenericSelectedSample(",1)[1].split(
         "int SpiderSDL3Probe_SelectedRT(",1)[0]
     assert "if(!universal_requested &&" in generic
@@ -759,7 +759,7 @@ def test_buffered_direction_fix_is_bounded_to_foreground_owned_3d_scans():
     # Stable selected SDL3 device only, does NOT ever claim native
     # input before a fresh neutral sample and suspend_original().
     assert "focus_dir_controller_id=selected_id;" in backend
-    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in onflip
+    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&" in onflip
 
 
 def test_focus_direction_pulse_is_released_on_any_owner_loss_or_context_switch():
@@ -833,9 +833,9 @@ def test_universal_mapped_sample_requires_explicit_or_neutral_singleton_claim():
         "int SpiderSDL3Probe_SelectedRT(",1)[0]
     assert "spider_sdl3_selected_model_unique(" in generic
     assert "sdl_connected(pads[i].handle)" in generic
-    assert "generic_selected_id=start_claims.instance_id;" in probe
-    assert "spider_sdl3_selection_start_edge(&selection,pads[i].id,pressed)" in probe
-    assert "spider_sdl3_selection_singleton_candidate(&selection)" in probe
+    assert "generic_selected_id=candidate;" in probe
+    assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in probe
+    assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in probe
     assert "spider_sdl3_profile_neutral(&sample)" in probe
 
 
