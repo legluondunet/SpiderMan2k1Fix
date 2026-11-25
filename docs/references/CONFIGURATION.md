@@ -65,7 +65,7 @@ Swing=G
 RawHex=<504 hexadecimal characters>
 ```
 
-The original game's seven DirectInput joystick binding keys are **not generated or applied**: SDL3 per-model mappings are stored separately under `controllers/`. Existing `[Joystick]` entries are recognized during migration but the obsolete section is **removed** from the upgraded INI: SDL3 is the only supported controller backend. The original game's 252-byte image, including joystick-related bytes, remains preserved losslessly in `[Internal] RawHex`.
+The original game's seven DirectInput joystick binding keys are **not generated or applied**: SDL3 gameplay actions now use a fixed PlayStation-style mapping; old saved per-model action profiles are ignored. Existing `[Joystick]` entries are recognized during migration but the obsolete section is **removed** from the upgraded INI: SDL3 is the only supported controller backend. The original game's 252-byte image, including joystick-related bytes, remains preserved losslessly in `[Internal] RawHex`.
 
 The example `RawHex` line is **illustrative only**: the generated file contains a genuine 504-character value. Do not manually delete, replace or edit it: unrecognized original-game settings are still preserved there.
 
@@ -76,7 +76,7 @@ The example `RawHex` line is **illustrative only**: the generated file contains 
 | `[Display] Brightness` | Game brightness from 0 through 9. |
 | `[Display] FPSLimit` | **Player-controlled frame limit.** Default `30`; `0` disables the limiter, `1..240` sets a target. Higher FPS can expose timing issues in the original game. |
 | `[Input] KeyboardLayout` | `Auto` detects the Windows/Wine input layout, `Off` leaves original QWERTY positions. |
-| SDL3 controllers | Built in: mapped SDL3 devices only. Configure per-model profiles in `controllers/`, not in this INI. |
+| SDL3 controllers | Built in: mapped SDL3 devices only. Action mapping is fixed; Options > Joystick displays a read-only diagram. Hardware recognition continues to use SDL3 and optional GUID mapping data. |
 | `[Audio]` | Music/effects, voice and movie volumes (0..100%); `Stereo=1` selects stereo. |
 | `[Keyboard]` | The eleven original keyboard actions, editable through the game's keyboard menu. |
 | `[Internal] RawHex` | Lossless copy of the game's original 252-byte configuration record (including inactive original joystick bytes). Not a player-facing control. |
