@@ -1,4 +1,4 @@
-/* SDL3 controller discovery and explicit Start selection for Spider-Man 2001.
+/* SDL3 controller discovery; Start selects among multiple pads in Spider-Man 2001.
  * Load the bundled SDL3.dll at the first safe foreground game Flip, never
  * from system PATH, and pump only on that original game thread. SDL3 is the
  * sole gamepad mapping backend; DirectInput remains only for original-game
@@ -17,6 +17,7 @@
 #include "sdl3_gamepad_identity.h"
 #include "sdl3_controller_profile.h"
 #include "sdl3_universal_actions.h"
+#include "sdl3_universal_policy.h"
 #include "sdl3_controller_profile_store.h"
 #include "native_joystick_reconnect.h"
 #include "native_joystick_reconnect_policy.h"
@@ -931,13 +932,14 @@ int SpiderSDL3Probe_SelectedSample(uint32_t *instance,uint16_t *vid,
   return 1;
 }
 /* Universal SDL3 selection is separate from game-owned DirectInput.
- * Require an EXPLICIT Start (or validated modal handoff) for universal
- * keyboard injection, even if native selection has auto-selected the
- * only connected controller. When detached, a stale instance still
- * fails GenericSelectedSample until the next explicit Start.
+ * Ownership requires an explicit Start/modal claim when multiple mapped
+ * devices are present. A sole connected mapped SDL3 instance may instead
+ * be claimed automatically, but ONLY after a fresh foreground sample has
+ * shown all buttons, sticks and triggers neutral. When detached, a stale
+ * instance fails GenericSelectedSample until a new safe claim.
  *
- * Never fall back to SelectedSample(): native auto-selection is passive
- * and must NEVER authorize keyboard events or native DI suspension. */
+ * Never fall back to SelectedSample(): its passive native selection alone
+ * must NEVER authorize keyboard events or native DI suspension. */
 int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
     uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample) {
   if(instance)*instance=0;
@@ -1459,7 +1461,47 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
     }
     say(line);
   }
-  /* A Start claim may have changed logical ownership after the scan. */
+  /* Single usable controller: no Start press needed. A previous owner
+   * remains authoritative while it is still connected, including when a
+   * second pad appears. With multiple pads there is NO automatic claim.
+   * After unplug, the last remaining pad is eligible only after releasing
+   * all controls; never inherit the old pad's held buttons or trigger.
+   *
+   * Read the already-open SDL handle on the game Flip thread, after SDL3's
+   * event pump, with the SAME strict neutral gate as native DI transfer.
+   * Neither passive selection nor mere attachment permits injection. */
+  if(universal_requested) {
+    uint32_t candidate=spider_sdl3_selection_singleton_candidate(&selection);
+    unsigned k,j;
+    for(k=0;candidate && k<num_pads;k++)
+      if(pads[k].id==candidate && pads[k].handle &&
+         (!sdl_connected || sdl_connected(pads[k].handle)))break;
+    if(candidate && k<num_pads) {
+      uint16_t vendor=sdl_vendor(candidate),product=sdl_product(candidate);
+      if(vendor && product &&
+         (generic_selected_id!=candidate ||
+          generic_selected_vendor!=vendor ||
+          generic_selected_product!=product)) {
+        SpiderSDL3ControllerSample sample={0};
+        for(j=0;j<SPIDER_SDL3_BUTTON_COUNT;j++)
+          if(sdl_button(pads[k].handle,(int)j))sample.buttons|=1u<<j;
+        for(j=0;j<SPIDER_SDL3_AXIS_COUNT;j++)
+          sample.axis[j]=sdl_axis(pads[k].handle,(int)j);
+        if(spider_sdl3_universal_owner_neutral(&sample)) {
+          generic_selected_id=candidate;
+          generic_selected_vendor=vendor;
+          generic_selected_product=product;
+          generic_profile_snapshot_valid=0;
+          spider_sdl3_universal_reset(&generic_actions);
+          snprintf(line,sizeof(line),
+            "SDL3-UNIVERSAL: AUTO selected sole neutral mapped pad id=%lu VID:PID=%04X:%04X (keyboard bridge; no Start needed)",
+            (unsigned long)candidate,(unsigned)vendor,(unsigned)product);
+          say(line);
+        }
+      }
+    }
+  }
+  /* A Start or singleton claim may have changed logical ownership. */
   sdl3_trace_native_owner(now);
   sdl3_binding_trace_on_flip();
   sdl3_generic_semantic_trace_on_flip();
