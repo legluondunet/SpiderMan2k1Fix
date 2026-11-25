@@ -37,6 +37,9 @@ def test_immutable_factory_actions_match_ps1_and_xbox_equivalents(tmp_path):
         assert(x.actions[SPIDER_SDL3_ACTION_PAUSE].index==4); /* Share/Back */
         assert(x.context[SPIDER_SDL3_CONTEXT_CONFIRM].index==0);
         assert(x.context[SPIDER_SDL3_CONTEXT_BACK].index==1);
+        assert(x.context[SPIDER_SDL3_CONTEXT_SKIP_VIDEO].index==0);
+        assert(x.context[SPIDER_SDL3_CONTEXT_NEXT_STILL].index==0);
+        assert(x.context[SPIDER_SDL3_CONTEXT_SKIP_CUTSCENE].index==0);
       }
       int main(void) {
         check(0x054c,0x05c4); /* DualShock 4 */
@@ -76,29 +79,42 @@ def test_fixed_controller_guide_is_native_and_draws_all_actions():
     assert "static void draw_gamepad(HDC dc)" in ui
     assert "shell_path(dc,0,dark,metal)" in ui
     assert "PolyBezierTo(dc,p," in ui
-    assert "face_button(dc,390,198,0" in ui
-    assert "face_button(dc,413,225,1" in ui
-    assert "face_button(dc,390,252,2" in ui
-    assert "face_button(dc,367,225,3" in ui
+    assert "face_button(dc,390,204,0" in ui
+    assert "face_button(dc,411,225,1" in ui
+    assert "face_button(dc,390,246,2" in ui
+    assert "face_button(dc,369,225,3" in ui
     assert "draw_leaders(dc);" in ui
     route=load("ps1_joystick_readonly_menu.c")
     import re
     layout=route.split("static void spider_guide_native_labels(void)",1)[1].split("unsigned i;",1)[0]
     labels=re.findall(r'\{\d+,\d+,"([^"]+)"\}',layout)
     assert set(labels)=={"L1 LB AIM","R2 RT SWING","R1 RB ZIPLINE",
-                         "STICK D PAD","MOVE","SHARE BACK PAUSE","Y WEB",
-                         "B KICK","A JUMP","X PUNCH","B OR ESC TO RETURN"}
+                         "D PAD MOVE","STICK MOVE","SHARE BACK PAUSE","Y WEB",
+                         "B KICK","A JUMP","X PUNCH","A CONFIRM OR SKIP",
+                         "B OR ESC TO RETURN"}
     assert all(re.fullmatch(r"[A-Z0-9 ]+", label) for label in labels)
     # Every leader reaches the corresponding actual drawn button or stick.
-    targets={"aim":(249,162),"swing":(403,136),"zip":(410,162),
-             "move":(238,215),"move_stick":(282,260),"pause":(286,186),
-             "web":(390,198),"kick":(413,225),"jump":(390,252),"punch":(367,225)}
+    targets={"aim":(235,162),"swing":(403,136),"zip":(418,162),
+             "move":(207,216),"move_stick":(263,260),"pause":(286,178),
+             "web":(400,204),"kick":(421,225),"jump":(398,254),"punch":(359,225)}
+    assert "disc(dc,390,225,34," in ui
+    assert "disc(dc,x,y,11," in ui
+    assert "pts[n-1].y,2," in ui
+    # Rim anchors remain outside the central 6-pixel glyph area.
+    for name, (cx,cy) in {"web":(390,204),"kick":(411,225),
+                          "jump":(390,246),"punch":(369,225)}.items():
+        x,y=targets[name]
+        assert 9**2 <= (x-cx)**2+(y-cy)**2 <= 12**2
     for name, target in targets.items():
         line=re.search(r"POINT "+name+r"\[\]=\{(.*?)\};",ui).group(1)
         coords=[tuple(map(int,p)) for p in re.findall(r"\{(\d+),(\d+)\}",line)]
         assert coords[-1]==target
         assert all(0<=x<=640 and 80<=y<=440 for x,y in coords)
         assert "LEAD("+name+");" in ui
+        assert len(coords)<=4
+        for (x1,y1),(x2,y2) in zip(coords,coords[1:]):
+            dx,dy=abs(x2-x1),abs(y2-y1)
+            assert dx==0 or dy==0 or dx==dy
     assert "0x00458700u" in route  # original Mess_DrawText
     assert "CreateFontA" not in ui
     assert "draw_gamepad(dc);" in ui

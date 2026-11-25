@@ -135,8 +135,8 @@ static void stick(HDC dc,int x,int y) {
 static void face_button(HDC dc,int x,int y,int glyph,COLORREF color) {
   HGDIOBJ old;
   HPEN pen;
-  disc(dc,x,y,13,RGB(61,69,91),RGB(128,137,156));
-  disc(dc,x,y,11,RGB(31,38,54),RGB(45,52,70));
+  disc(dc,x,y,11,RGB(61,69,91),RGB(128,137,156));
+  disc(dc,x,y,9,RGB(31,38,54),RGB(45,52,70));
   pen=CreatePen(PS_SOLID,2,color);
   if(!pen)return;
   old=SelectObject(dc,pen);
@@ -187,17 +187,17 @@ static void draw_gamepad(HDC dc) {
   rounded(dc,282,178,291,194,5,dark,RGB(52,62,82));
   rounded(dc,350,178,359,194,5,dark,RGB(52,62,82));
   stick(dc,282,260);stick(dc,348,260);
-  disc(dc,390,225,43,RGB(115,126,148),RGB(160,170,190));
-  face_button(dc,390,198,0,RGB(106,232,181)); /* Triangle / Y */
-  face_button(dc,413,225,1,RGB(250,125,140)); /* Circle / B */
-  face_button(dc,390,252,2,RGB(139,190,255)); /* Cross / A */
-  face_button(dc,367,225,3,RGB(243,166,226)); /* Square / X */
+  disc(dc,390,225,34,RGB(115,126,148),RGB(160,170,190));
+  face_button(dc,390,204,0,RGB(106,232,181)); /* Triangle / Y */
+  face_button(dc,411,225,1,RGB(250,125,140)); /* Circle / B */
+  face_button(dc,390,246,2,RGB(139,190,255)); /* Cross / A */
+  face_button(dc,369,225,3,RGB(243,166,226)); /* Square / X */
   SelectObject(dc,b);SelectObject(dc,p);
 }
 /* Two-pass high-contrast leader lines. Endpoints are on their actual
  * semantic controls; route around neighboring controls, not through them. */
 static void leader(HDC dc,const POINT *pts,int n) {
-  HPEN shadow=CreatePen(PS_SOLID,3,RGB(29,30,66));
+  HPEN shadow=CreatePen(PS_SOLID,2,RGB(29,30,66));
   HPEN light=CreatePen(PS_SOLID,1,RGB(218,216,252));
   HGDIOBJ old;
   if(!shadow||!light) {
@@ -211,21 +211,24 @@ static void leader(HDC dc,const POINT *pts,int n) {
   {
     HGDIOBJ p=SelectObject(dc,GetStockObject(DC_PEN));
     HGDIOBJ b=SelectObject(dc,GetStockObject(DC_BRUSH));
-    disc(dc,pts[n-1].x,pts[n-1].y,3,RGB(38,41,75),RGB(239,237,255));
+    disc(dc,pts[n-1].x,pts[n-1].y,2,RGB(38,41,75),RGB(239,237,255));
     SelectObject(dc,b);SelectObject(dc,p);
   }
 }
 static void draw_leaders(HDC dc) {
-  static const POINT aim[]={{150,152},{198,152},{218,162},{249,162}};
-  static const POINT swing[]={{480,120},{435,120},{403,136}};
-  static const POINT zip[]={{480,168},{442,168},{410,162}};
-  static const POINT move[]={{150,216},{201,216},{238,215}};
-  static const POINT move_stick[]={{174,216},{174,260},{282,260}};
-  static const POINT pause[]={{320,115},{320,137},{286,171},{286,186}};
-  static const POINT web[]={{480,210},{451,210},{433,198},{390,198}};
-  static const POINT kick[]={{480,244},{456,244},{437,225},{413,225}};
-  static const POINT jump[]={{480,284},{441,284},{410,252},{390,252}};
-  static const POINT punch[]={{333,368},{333,309},{326,291},{326,238},{352,225},{367,225}};
+  /* Horizontal/vertical runs and 45-degree elbows; short rim anchors
+   * leave the four PlayStation symbols unobstructed. Separate movement
+   * labels remove the long shared branch over the controller. */
+  static const POINT aim[]={{150,152},{208,152},{218,162},{235,162}};
+  static const POINT swing[]={{480,120},{419,120},{403,136}};
+  static const POINT zip[]={{480,168},{424,168},{418,162}};
+  static const POINT move[]={{150,216},{207,216}};
+  static const POINT move_stick[]={{165,260},{263,260}};
+  static const POINT pause[]={{286,115},{286,178}};
+  static const POINT web[]={{480,210},{406,210},{400,204}};
+  static const POINT kick[]={{480,244},{440,244},{421,225}};
+  static const POINT jump[]={{480,284},{428,284},{398,254}};
+  static const POINT punch[]={{330,350},{330,249},{354,225},{359,225}};
 #define LEAD(a) leader(dc,a,(int)(sizeof(a)/sizeof(a[0])))
   LEAD(aim);LEAD(swing);LEAD(zip);LEAD(move);LEAD(move_stick);
   LEAD(pause);LEAD(web);LEAD(kick);LEAD(jump);LEAD(punch);
@@ -272,6 +275,6 @@ int SpiderSDL3ControllerSetup_DrawToSurface(
   drawn=draw_native_guide(dc,content);
   IDirectDrawSurface7_ReleaseDC(surface,dc);
   if(drawn && ++guide_draws==1 && guide_report)
-    guide_report("SDL3-GUIDE: drawn INSIDE original Joystick menu backbuffer; 4:3 sculpted pad and semantic leaders, no popup");
+    guide_report("SDL3-GUIDE: drawn INSIDE original Joystick menu backbuffer; 4:3 compact face buttons and refined semantic leaders, no popup");
   return drawn?1:0;
 }

@@ -69,10 +69,11 @@ static void spider_guide_native_labels(void) {
   static const struct {int x,y; const char *s;} labels[]={
     {25,80,"L1 LB AIM"},
     {390,64,"R2 RT SWING"}, {390,88,"R1 RB ZIPLINE"},
-    {25,103,"STICK D PAD"}, {25,115,"MOVE"},
-    {192,56,"SHARE BACK PAUSE"},
+    {25,112,"D PAD MOVE"}, {25,134,"STICK MOVE"},
+    {165,56,"SHARE BACK PAUSE"},
     {390,109,"Y WEB"}, {390,126,"B KICK"}, {390,146,"A JUMP"},
-    {234,193,"X PUNCH"},
+    {232,184,"X PUNCH"},
+    {171,202,"A CONFIRM OR SKIP"},
     {172,218,"B OR ESC TO RETURN"}
   };
   unsigned i;
