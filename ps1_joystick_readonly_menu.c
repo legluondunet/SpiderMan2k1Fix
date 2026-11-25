@@ -66,12 +66,12 @@ static void __cdecl spider_sdl3_direct_controller_menu(int native_mode) {
     report(line);
   }
   if(is_joystick && SpiderSDL3ControllerSetup_Enabled()) {
-    if(SpiderSDL3Probe_SetupPump()) {
-      report("SDL3-DIRECT-ENTRY: Joystick selected (mode=0); bypass original seven-action submenu and open SDL3 window");
-      SpiderSDL3ControllerSetup_Open();
-      return;
-    }
-    report("SDL3-DIRECT-ENTRY: SDL3 not ready; fallback to original Joystick menu");
+    /* The read-only button guide has no SDL init or mapping dependency.
+     * Do not fall back to a native joystick rebinding menu when no
+     * controller is connected: the displayed controls are fixed. */
+    report("SDL3-DIRECT-ENTRY: Joystick selected (mode=0); open fixed read-only controller guide (Keyboard unchanged)");
+    SpiderSDL3ControllerSetup_Open();
+    return;
   } else if(native_mode==1) {
     if(logs<18u)
       report("SDL3-DIRECT-ENTRY: Keyboard selected (mode=1); original game configuration preserved");
