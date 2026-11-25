@@ -9,9 +9,9 @@ from pathlib import Path
 import tempfile, sys
 from windows_installer_end_to_end import make_iso, execute, scenario, FILES
 
-DIRS=("game","third_party","docs","linux","state")
-OWNED=("game/fix.dll","game/SpideyPC.exe.manifest","third_party/SDL3/SDL3.dll",
-       "third_party/SDL3/LICENSE.txt","linux/spiderman-focus-helper",
+DIRS=("game","docs","linux","state")
+OWNED=("game/fix.dll","game/SpideyPC.exe.manifest","game/SDL3.dll",
+       "docs/SDL3-LICENSE.txt","linux/spiderman-focus-helper",
        "docs/README.md","docs/CHANGELOG.md","docs/LICENSE")
 def empty(root):
     assert all(not (root/x).exists() for x in DIRS)
@@ -27,6 +27,7 @@ def install(root,fixture,name="successful_install"):
     for item in ("installed-game.sha256","installed-resources.sha256"):
         assert (d/"state"/item).is_file(),item
     assert not (d/"spiderman2k1fix.unified.installing").exists()
+    assert not (d/"third_party").exists()
     execute(e,"--verify",success=True)
     return d,e
 
@@ -113,7 +114,7 @@ def main():
         assert receipt.read_bytes()==data+b"tampered"
         receipt.write_bytes(data)
         execute(e,"--verify",success=True)
-        lic=d/"third_party/SDL3/LICENSE.txt"; license_bytes=lic.read_bytes()
+        lic=d/"docs/SDL3-LICENSE.txt"; license_bytes=lic.read_bytes()
         lic.write_bytes(license_bytes+b"user-change")
         execute(e,"--verify",success=False)
         execute(e,"--install-only",success=False)
@@ -178,7 +179,7 @@ def main():
         # If a later component fails in the staged transaction, restore the
         # previous fix.dll bytes and the unmodified receipt; no backup.
         d,e=install(base,fixture,"auto_replace_fix_rollback")
-        fix=d/"game/fix.dll"; sdl=d/"third_party/SDL3/SDL3.dll"
+        fix=d/"game/fix.dll"; sdl=d/"game/SDL3.dll"
         receipt=d/"state/installed-resources.sha256"
         before_receipt=receipt.read_bytes()
         fix.write_bytes(b"OLD-FIX-MUST-ROLL-BACK")

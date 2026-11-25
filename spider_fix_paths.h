@@ -278,7 +278,7 @@ static inline int spider_path_code_asset_a(const char *filename,
       }
     }
     if(allowed)
-      return spider_path_join_a(dir,sizeof(dir),root,"third_party\\SDL3") &&
+      return spider_path_join_a(dir,sizeof(dir),root,"game") &&
              spider_path_join_a(out,cap,dir,filename);
   }
   if(lstrcmpiA(filename,"linux/spiderman-focus-helper")==0 ||

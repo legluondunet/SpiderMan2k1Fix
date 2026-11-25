@@ -39,7 +39,8 @@ def test_architecture_preserves_separate_dsound_diagnostic_and_state_receipts():
 def test_unified_sdl_mappings_stay_available_without_path_traversal():
     paths=(ROOT / "spider_fix_paths.h").read_text()
     gamepad=(ROOT / "sdl3_gamepad_probe.c").read_text()
-    assert '"third_party\\\\SDL3"' in paths
+    assert 'spider_path_join_a(dir,sizeof(dir),root,"game")' in paths
+    assert '"third_party\\\\SDL3"' not in paths
     for filename in ('SDL3.dll', 'SDL3-gamecontrollerdb.txt',
                      'SDL3-mapping-*.txt'):
         assert filename in paths
