@@ -82,7 +82,7 @@ fix_sources=(
   fov_aspect.c fov_aspect_win.c
   # DirectInput and SDL3 controllers
   input_focus_trace.c input_notacquired_retry.c native_joystick_unplug.c native_joystick_reconnect.c
-  sdl3_gamepad_probe.c sdl3_controller_setup.c sdl3_raw_wizard.c sdl3_controller_profile_store.c
+  sdl3_gamepad_probe.c sdl3_controller_setup.c
   sdl3_gameplay_plan_probe.c sdl3_gameplay_live.c sdl3_universal_gameplay.c
   # Focus, pause, native audio, legacy UI, diagnostics
   pause_any_key.c pause_surface.c focus_media_pause.c focus_dsound_pause.c
