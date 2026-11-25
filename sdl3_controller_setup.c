@@ -225,6 +225,17 @@ void SpiderSDL3ControllerSetup_Open(void) {
       if(ok==0) {has_quit=1;quit_code=(int)msg.wParam;}
       break;
     }
+    /* Dialog-message translation may consume Escape on a focused
+     * child without sending WM_KEYDOWN to our guide window. Handle a
+     * fresh keyboard Escape/Enter before that translation, including
+     * when the Close button owns keyboard focus. */
+    if(msg.message==WM_KEYDOWN &&
+       (msg.hwnd==window || IsChild(window,msg.hwnd)) &&
+       (msg.wParam==VK_ESCAPE || msg.wParam==VK_RETURN) &&
+       !(msg.lParam&(1L<<30))) {
+      PostMessageA(window,WM_CLOSE,0,0);
+      continue;
+    }
     if(IsDialogMessageA(window,&msg))continue;
     TranslateMessage(&msg);
     DispatchMessageA(&msg);
