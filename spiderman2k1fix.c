@@ -43,6 +43,7 @@
 #include "native_joystick_unplug.h"
 #include "native_joystick_reconnect.h"
 #include "sdl3_gamepad_probe.h"
+#include "sdl3_controller_setup.h"
 #include "sdl3_gameplay_plan_probe.h"
 #include "sdl3_gameplay_live.h"
 #include "sdl3_universal_gameplay.h"
@@ -5461,6 +5462,14 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
     back_drawn=SpiderMenuVersion_DrawToSurface(borderless_back,&content);
     if(back_drawn && InterlockedCompareExchange(&menu_version_logged,1,0)==0)
       log_line("MENU-VERSION: drawn on DirectDraw backbuffer: " SPIDERMAN2K1FIX_VERSION_LABEL);
+  }
+  /* Keep the controller reference entirely INSIDE the verified original
+   * Joystick menu. Composite after native menu drawing but before F9
+   * capture and PRIMARY presentation. No second HWND, modal pump or focus
+   * transfer. A lost DirectDraw DC safely leaves the native menu intact. */
+  if(permitted && borderless_back) {
+    RECT content={menu_map.left,menu_map.top,menu_map.right,menu_map.bottom};
+    SpiderSDL3ControllerSetup_DrawToSurface(borderless_back,&content);
   }
   /* F9 also supports the two static title/slate screens before the main
    * menu: these draw a single 3D primitive each frame. Keep the stricter
