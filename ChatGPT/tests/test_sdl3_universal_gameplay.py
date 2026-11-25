@@ -270,21 +270,20 @@ def test_gameplay_scan_filter_rejects_system_keys_and_f9_screenshot(tmp_path):
     assert "read_scans(" in backend
 
 
-def test_integrated_readonly_guide_and_sdl3_controller_ownership_are_isolated():
+def test_integrated_native_guide_and_sdl3_owner_are_isolated():
     ui=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
     probe=(ROOT/"sdl3_gamepad_probe.c").read_text(encoding="utf-8")
     game=(ROOT/"spiderman2k1fix.c").read_text(encoding="utf-8")
-    assert '"SpiderMan2k1FixSDL3ControllerGuide"' in ui
-    assert "static void guide_paint(" in ui
-    assert '"LISTBOX"' not in ui
-    assert "Capture selected action" not in ui
-    assert "SpiderSDL3Universal_BeforeModal(owner);" in ui
+    assert "SpiderSDL3ControllerSetup_DrawToSurface(" in ui
+    assert "SPIDER_NATIVE_JOYSTICK_CONTEXT" in ui
+    assert "CreateWindowExA(" not in ui
+    assert "SpiderSDL3Universal_BeforeModal(" not in ui
     assert "generic_selected_id" in probe
-    assert "selection.active=candidate;" in probe
-    assert "requests==1u && candidate && candidate!=owner" in probe
     assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in probe
-    assert "spider_sdl3_profile_neutral(&sample)" in probe
-    assert "spider_sdl3_selected_instance_valid(opened,num_pads," in probe
+    assert "requests==1u && candidate && candidate!=owner" in probe
+    assert "spider_sdl3_selected_instance_valid(opened,opened_n,candidate" in probe
+    assert "owner_neutral &&" in probe
+    assert "!generic_selected_id" in probe
     assert "return SpiderSDL3Probe_GenericSelectedSample(" in probe
     selected=probe.split("int SpiderSDL3Probe_SelectedMappedSample(",1)[1].split(
         "/* The player may hold physical Cross",1)[0]
