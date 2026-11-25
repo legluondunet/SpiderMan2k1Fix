@@ -16,23 +16,22 @@ ROOT=Path(__file__).resolve().parents[2]
 def test_wm_close_owns_snapshot_before_destroy_and_guarded_restore():
     src=(ROOT/"sdl3_controller_setup.c").read_text(encoding="utf-8")
     assert '#include "sdl3_setup_focus_policy.h"' in src
-    handler=src.split("case WM_CLOSE:",1)[1].split("case WM_DESTROY:",1)[0]
+    handler=src.split("case WM_CLOSE:",1)[1].split("case WM_NCDESTROY:",1)[0]
     assert handler.index("ui->closing_foreground=GetForegroundWindow();") < handler.index(
         "DestroyWindow(hwnd)")
-    assert "ui->closing_foreground_captured=1u;" in handler
-    outer=src.split("if(setup_report)setup_report(\"SDL3-SETUP: modal message loop EXIT",1)[1]
-    assert outer.index("prior_foreground=GetForegroundWindow();") < outer.index(
+    assert "ui->closing_captured=1;" in handler
+    outer=src.split("if(IsWindow(window))DestroyWindow(window);",1)[1]
+    assert outer.index("previous=GetForegroundWindow();") < outer.index(
         "restore_allowed=spider_sdl3_setup_restore_focus(")
     assert outer.index("restore_allowed=spider_sdl3_setup_restore_focus(") < outer.index(
         "SetForegroundWindow(owner)")
     assert "if(restore_allowed && IsWindow(owner) && IsWindowVisible(owner))" in outer
-    assert "if(GetForegroundWindow()==owner)SetFocus(owner);" in outer
-    assert "preclose=%p" in outer
+    assert "if(SetForegroundWindow(owner) && GetForegroundWindow()==owner)" in outer
+    assert "ui.closing_foreground==NULL,previous==NULL" in outer
     for banned in ("AttachThreadInput", "AllowSetForegroundWindow",
                    "SetWindowPos", "BringWindowToTop", "Sleep(",
                    "GetAsyncKeyState"):
         assert banned not in outer
-
 
 def test_c99_owned_dialog_close_but_explorer_after_destroy_is_authorized(tmp_path):
     cc=shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
