@@ -102,9 +102,9 @@ def test_duplicate_models_use_instance_only_on_universal_path():
     assert "spider_sdl3_selected_model_unique(" in generic
     assert "spider_sdl3_selected_instance_valid(" in modal
     assert "spider_sdl3_selected_model_unique(" in modal
-    assert "start_claims.count==1u" in loop
-    assert "spider_sdl3_start_claim_add(&start_claims,pads[i].id," in loop
-    assert "generic_selected_id=start_claims.instance_id;" in loop
+    assert "requests==1u && candidate && candidate!=owner" in loop
+    assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in loop
+    assert "generic_selected_id=candidate;" in loop
     assert "selected-id=%lu" in universal
     assert "if(active && selected_id!=id)restore_original(" in universal
     assert "release_all()" in universal
