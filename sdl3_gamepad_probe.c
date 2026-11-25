@@ -17,7 +17,6 @@
 #include "sdl3_gamepad_identity.h"
 #include "sdl3_controller_profile.h"
 #include "sdl3_universal_actions.h"
-#include "sdl3_universal_policy.h"
 #include "sdl3_controller_profile_store.h"
 #include "native_joystick_reconnect.h"
 #include "native_joystick_reconnect_policy.h"
@@ -1487,7 +1486,15 @@ void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd) {
           if(sdl_button(pads[k].handle,(int)j))sample.buttons|=1u<<j;
         for(j=0;j<SPIDER_SDL3_AXIS_COUNT;j++)
           sample.axis[j]=sdl_axis(pads[k].handle,(int)j);
-        if(spider_sdl3_universal_owner_neutral(&sample)) {
+        /* Match the native handoff gate without importing its unrelated
+         * universal-policy names (which overlap the probe's read-only
+         * actions type). Every button/trigger plus both movement axes
+         * must be idle before any singleton claim. */
+        if(spider_sdl3_profile_neutral(&sample) &&
+           sample.axis[SPIDER_SDL3_AXIS_LEFTX]>-9000 &&
+           sample.axis[SPIDER_SDL3_AXIS_LEFTX]<9000 &&
+           sample.axis[SPIDER_SDL3_AXIS_LEFTY]>-9000 &&
+           sample.axis[SPIDER_SDL3_AXIS_LEFTY]<9000) {
           generic_selected_id=candidate;
           generic_selected_vendor=vendor;
           generic_selected_product=product;
