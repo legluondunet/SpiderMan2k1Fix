@@ -9,6 +9,7 @@
 #include <windows.h>
 #include <ddraw.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 #include "sdl3_controller_setup.h"
 
