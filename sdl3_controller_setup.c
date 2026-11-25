@@ -1,272 +1,214 @@
-/* Read-only controller guide for the fixed, PS1-inspired SDL3 controls.
- * The original retail Options -> Joystick menu redirects here through
- * the SHA-verified PCShell caller; Keyboard remains native and editable.
- * This is a drawn reference diagram, NOT a controller configuration modal:
- * no remapping, profiles, captures, calibration, file writes or SDL claims.
- * All gameplay ownership, neutral gating and focus protection remain in
- * the existing SDL3 probe/universal adapter on the original Flip thread. */
+/* Integrated, read-only PS1-inspired controller reference.
+ * Paint onto the ORIGINAL 2001 joystick menu's completed DirectDraw
+ * backbuffer, on the SAME game Flip thread, before windowed presentation.
+ * No Win32 window, modal message loop, graphics DLL, SDL input pumping,
+ * controller file writes, or independent focus/keyboard ownership.
+ * The retail menu retains its own Back/Escape/cursor/transition behavior;
+ * its joystick rebinding/capture is separately SHA-gated and disabled. */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <stdint.h>
+#include <ddraw.h>
 #include <stdio.h>
 #include <string.h>
 #include "sdl3_controller_setup.h"
-#include "sdl3_gamepad_probe.h"
-#include "sdl3_universal_gameplay.h"
-#include "sdl3_setup_focus_policy.h"
-#include "gamepad_ui_profile.h"
 
-enum { GUIDE_WIDTH=780, GUIDE_HEIGHT=575, GUIDE_CLOSE=1001 };
-typedef struct {
-  HWND owner,window,closing_foreground;
-  unsigned closing_captured;
-} SpiderSDL3Guide;
-static int guide_enabled=0,guide_open=0;
 static void (*guide_report)(const char *)=NULL;
+static int guide_enabled=0;
+static int guide_requested=0,guide_seen_native=0,guide_reported=0;
+static LONG guide_draws=0;
+
+/* The verified retail 2001 executable's gActionMapRelated owns the
+ * joystick-vs-keyboard configuration screen. 0 means Keyboard/other.
+ * Read-only inspection while the menu renders; never patch this value. */
+#define SPIDER_NATIVE_JOYSTICK_CONTEXT ((const volatile DWORD *)(uintptr_t)0x00AC129Cu)
 
 void SpiderSDL3ControllerSetup_Init(const char *ini,
-                                    void (*logger)(const char *)) {
+                                     void (*logger)(const char *)) {
   (void)ini;
   guide_report=logger;
   guide_enabled=1;
+  guide_requested=0;
+  guide_seen_native=0;
+  guide_reported=0;
+  guide_draws=0;
   if(guide_report)
-    guide_report("SDL3-GUIDE: fixed PS1-inspired controls; read-only Joystick reference, no remapping or profile writes");
+    guide_report("SDL3-GUIDE: native Joystick reference overlay armed (no external window, action remapping or profile write)");
 }
 int SpiderSDL3ControllerSetup_Enabled(void) {return guide_enabled;}
-
-static void guide_text(HDC dc,int x,int y,const char *str) {
-  if(str)TextOutA(dc,x,y,str,(int)strlen(str));
-}
-static void guide_ring(HDC dc,int x,int y,int size,const char *glyph) {
-  Ellipse(dc,x,y,x+size,y+size);
-  guide_text(dc,x+size/2-8,y+size/2-7,glyph);
-}
-static void guide_paint(HDC dc,HWND hwnd) {
-  RECT area,caption;
-  HBRUSH bg=CreateSolidBrush(RGB(249,249,250));
-  HBRUSH pad=CreateSolidBrush(RGB(205,207,215));
-  HBRUSH button=CreateSolidBrush(RGB(232,233,237));
-  HPEN outline=CreatePen(PS_SOLID,2,RGB(77,81,92));
-  HGDIOBJ old_brush,old_pen,old_font;
-  HFONT gui=(HFONT)GetStockObject(DEFAULT_GUI_FONT);
-  GetClientRect(hwnd,&area);
-  FillRect(dc,&area,bg);
-  SetBkMode(dc,TRANSPARENT);
-  SetTextColor(dc,RGB(34,39,48));
-  old_font=SelectObject(dc,gui);
-  guide_text(dc,24,17,"SPIDER-MAN 2001  |  CONTROLLER REFERENCE");
-  SetTextColor(dc,RGB(80,84,93));
-  guide_text(dc,24,40,"Fixed PlayStation-style controls - same actions on DS4 and Xbox 360");
-
-  old_pen=SelectObject(dc,outline);
-  old_brush=SelectObject(dc,pad);
-  /* Vector illustration: both grips, central shell and shoulder buttons.
-   * Drawn with Win32 GDI, so no third-party image, asset or font is needed. */
-  Ellipse(dc,183,146,365,338);
-  Ellipse(dc,414,146,596,338);
-  RoundRect(dc,244,135,537,301,47,41);
-  RoundRect(dc,224,125,350,151,16,12);
-  RoundRect(dc,429,125,555,151,16,12);
-  SelectObject(dc,button);
-  RoundRect(dc,329,167,376,190,14,11);
-  RoundRect(dc,404,167,451,190,14,11);
-  /* Directional cross on the left and two thumbsticks. */
-  RoundRect(dc,276,198,302,272,7,7);
-  RoundRect(dc,251,223,327,246,7,7);
-  Ellipse(dc,314,265,355,306);
-  Ellipse(dc,422,265,463,306);
-  /* Sony face cluster (glyph names are also printed in the legend). */
-  guide_ring(dc,474,179,27,"T");
-  guide_ring(dc,503,206,27,"O");
-  guide_ring(dc,474,234,27,"X");
-  guide_ring(dc,446,206,27,"S");
-
-  SelectObject(dc,old_brush);
-  SelectObject(dc,old_pen);
-  SetTextColor(dc,RGB(34,39,48));
-  guide_text(dc,46,112,"L1 / LB  -  Aim");
-  guide_text(dc,541,112,"R1 / RB  -  Zipline");
-  guide_text(dc,46,166,"Left stick / D-pad");
-  guide_text(dc,46,187,"Move / navigate");
-  guide_text(dc,554,164,"Right trigger");
-  guide_text(dc,554,184,"R2 / RT  -  Swing");
-  guide_text(dc,300,319,"Share / Back  -  Pause");
-  guide_text(dc,300,338,"Start  -  Select pad*");
-
-  caption.left=25;caption.top=370;
-  caption.right=750;caption.bottom=458;
-  FillRect(dc,&caption,(HBRUSH)(COLOR_3DFACE+1));
-  SetTextColor(dc,RGB(33,39,48));
-  guide_text(dc,44,378,"CROSS  / A       Jump");
-  guide_text(dc,44,399,"CIRCLE / B       Kick");
-  guide_text(dc,44,420,"SQUARE / X      Punch");
-  guide_text(dc,44,441,"TRIANGLE / Y    Web");
-  guide_text(dc,401,378,"L1 / LB       Aim");
-  guide_text(dc,401,399,"R1 / RB       Zipline");
-  guide_text(dc,401,420,"R2 / RT       Swing");
-  guide_text(dc,401,441,"Share / Back   Pause");
-  SetTextColor(dc,RGB(88,91,100));
-  guide_text(dc,25,465,
-    "*Only needed when several controllers are connected. With one pad: automatic activation after neutral.");
-  guide_text(dc,25,483,
-    "Menu: Cross/A confirms, Circle/B goes back. Keyboard bindings remain editable separately.");
-  SelectObject(dc,old_font);
-  DeleteObject(outline);
-  DeleteObject(button);
-  DeleteObject(pad);
-  DeleteObject(bg);
-}
-static LRESULT CALLBACK guide_wndproc(HWND hwnd,UINT msg,
-                                       WPARAM wp,LPARAM lp) {
-  SpiderSDL3Guide *ui=(SpiderSDL3Guide *)(uintptr_t)
-    GetWindowLongPtrA(hwnd,GWLP_USERDATA);
-  switch(msg) {
-    case WM_CREATE: {
-      CREATESTRUCTA *cs=(CREATESTRUCTA *)lp;
-      HWND close;
-      ui=(SpiderSDL3Guide *)cs->lpCreateParams;
-      if(!ui)return -1;
-      ui->window=hwnd;
-      SetWindowLongPtrA(hwnd,GWLP_USERDATA,(LONG_PTR)(uintptr_t)ui);
-      close=CreateWindowExA(0,"BUTTON","Close / Back to game",
-        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_DEFPUSHBUTTON,
-        565,508,185,30,hwnd,(HMENU)(uintptr_t)GUIDE_CLOSE,
-        GetModuleHandleA(NULL),NULL);
-      if(close) {
-        SendMessageA(close,WM_SETFONT,
-          (WPARAM)GetStockObject(DEFAULT_GUI_FONT),TRUE);
-        SetFocus(close);
-      }
-      return 0;
-    }
-    case WM_PAINT: {
-      PAINTSTRUCT ps;
-      HDC dc=BeginPaint(hwnd,&ps);
-      guide_paint(dc,hwnd);
-      EndPaint(hwnd,&ps);
-      return 0;
-    }
-    case WM_COMMAND:
-      if(LOWORD(wp)==GUIDE_CLOSE && HIWORD(wp)==BN_CLICKED) {
-        PostMessageA(hwnd,WM_CLOSE,0,0);
-        return 0;
-      }
-      break;
-    case WM_KEYDOWN:
-      if(wp==VK_ESCAPE || wp==VK_RETURN) {
-        PostMessageA(hwnd,WM_CLOSE,0,0);
-        return 0;
-      }
-      break;
-    case WM_CLOSE:
-      if(ui) {
-        ui->closing_foreground=GetForegroundWindow();
-        ui->closing_captured=1;
-      }
-      DestroyWindow(hwnd);
-      return 0;
-    case WM_NCDESTROY:
-      SetWindowLongPtrA(hwnd,GWLP_USERDATA,0);
-      return 0;
-  }
-  return DefWindowProcA(hwnd,msg,wp,lp);
-}
-void SpiderSDL3ControllerSetup_Open(void) {
-  static const char *const cls="SpiderMan2k1FixSDL3ControllerGuide";
-  static int registered=0;
-  WNDCLASSA wc;
-  SpiderSDL3Guide ui;
-  HWND owner,window,previous,final_foreground;
-  RECT owner_rect;
-  DWORD pid=0;
-  MSG msg;
-  int parent_enabled,has_quit=0,quit_code=0;
-  int restore_allowed,preclose_owned,previous_owned;
-  if(!guide_enabled || guide_open)return;
-  owner=GetForegroundWindow();
-  if(!owner || !IsWindow(owner) || !IsWindowVisible(owner) ||
-     !GetWindowThreadProcessId(owner,&pid) ||
-     pid!=GetCurrentProcessId())return;
-  /* Same safe modal handoff as the old SDL3 config window: release
-   * synthetic keys and return the native DI pointer before blocking
-   * the original game thread. No SDL3 input is pumped in this guide. */
-  SpiderSDL3Universal_BeforeModal(owner);
-  if(!registered) {
-    memset(&wc,0,sizeof(wc));
-    wc.lpfnWndProc=guide_wndproc;
-    wc.hInstance=GetModuleHandleA(NULL);
-    wc.hCursor=LoadCursor(NULL,IDC_ARROW);
-    wc.hbrBackground=(HBRUSH)(COLOR_BTNFACE+1);
-    wc.lpszClassName=cls;
-    if(!RegisterClassA(&wc))return;
-    registered=1;
-  }
-  memset(&ui,0,sizeof(ui));
-  ui.owner=owner;
-  GetWindowRect(owner,&owner_rect);
-  guide_open=1;
-  window=CreateWindowExA(WS_EX_DLGMODALFRAME,cls,
-    "SpiderMan2k1Fix - Gamepad Controls",
-    WS_CAPTION|WS_SYSMENU|WS_POPUP,
-    owner_rect.left+((owner_rect.right-owner_rect.left)-GUIDE_WIDTH)/2,
-    owner_rect.top+((owner_rect.bottom-owner_rect.top)-GUIDE_HEIGHT)/2,
-    GUIDE_WIDTH,GUIDE_HEIGHT,
-    owner,NULL,GetModuleHandleA(NULL),&ui);
-  if(!window) {guide_open=0;return;}
-  parent_enabled=IsWindowEnabled(owner)!=0;
-  if(parent_enabled)EnableWindow(owner,FALSE);
-  ShowWindow(window,SW_SHOW);
-  UpdateWindow(window);
+void SpiderSDL3ControllerSetup_OnNativeEnter(void) {
+  if(!guide_enabled)return;
+  guide_requested=1;
+  guide_seen_native=0;
+  guide_reported=0;
+  guide_draws=0;
   if(guide_report)
-    guide_report("SDL3-GUIDE: read-only PS1-style diagram opened from Options > Joystick; no controller selection or binding write");
-  while(IsWindow(window)) {
-    BOOL ok=GetMessageA(&msg,NULL,0,0);
-    if(ok<=0) {
-      if(ok==0) {has_quit=1;quit_code=(int)msg.wParam;}
-      break;
+    guide_report("SDL3-GUIDE: native Joystick screen entered; waiting for verified menu context before compositing");
+}
+/* Retained for ABI compatibility, never opens an external popup. */
+void SpiderSDL3ControllerSetup_Open(void) {
+  if(guide_report)
+    guide_report("SDL3-GUIDE: external window retired; use original Options > Joystick native screen");
+}
+static void gtext(HDC dc,int x,int y,const char *s) {
+  if(s)TextOutA(dc,x,y,s,(int)strlen(s));
+}
+static void gline(HDC dc,int x,int y,int x2,int y2) {
+  MoveToEx(dc,x,y,NULL);LineTo(dc,x2,y2);
+}
+static void pad_disc(HDC dc,int x,int y,int r,COLORREF fill) {
+  HBRUSH b=CreateSolidBrush(fill);
+  HGDIOBJ old=SelectObject(dc,b);
+  Ellipse(dc,x-r,y-r,x+r,y+r);
+  SelectObject(dc,old);DeleteObject(b);
+}
+static void draw_gamepad(HDC dc) {
+  HPEN stroke=CreatePen(PS_SOLID,3,RGB(37,33,68));
+  HPEN detail=CreatePen(PS_SOLID,1,RGB(103,99,154));
+  HBRUSH grip=CreateSolidBrush(RGB(150,148,181));
+  HBRUSH shell=CreateSolidBrush(RGB(201,199,217));
+  HBRUSH shade=CreateSolidBrush(RGB(109,105,150));
+  HGDIOBJ oldp=SelectObject(dc,stroke),oldb=SelectObject(dc,grip);
+  /* PlayStation-style vector illustration, not a separate modal or bitmap.
+   * Dual grips + central shell + bumpers preserve the native comic style. */
+  Ellipse(dc,231,170,318,281);
+  Ellipse(dc,321,170,408,281);
+  SelectObject(dc,shell);
+  RoundRect(dc,255,161,385,258,31,27);
+  SelectObject(dc,shade);
+  RoundRect(dc,260,152,309,170,9,9); /* L1 */
+  RoundRect(dc,331,152,380,170,9,9); /* R1 */
+  SelectObject(dc,grip);
+  RoundRect(dc,280,192,299,242,5,5); /* d-pad vertical */
+  RoundRect(dc,264,208,315,226,5,5); /* d-pad horizontal */
+  SelectObject(dc,detail);
+  pad_disc(dc,297,244,12,RGB(92,89,136)); /* sticks */
+  pad_disc(dc,343,244,12,RGB(92,89,136));
+  pad_disc(dc,357,185,11,RGB(89,130,168)); /* triangle */
+  pad_disc(dc,376,203,11,RGB(179,84,111)); /* circle */
+  pad_disc(dc,357,223,11,RGB(88,143,134)); /* cross */
+  pad_disc(dc,339,203,11,RGB(148,100,172)); /* square */
+  SelectObject(dc,oldb);SelectObject(dc,oldp);
+  DeleteObject(stroke);DeleteObject(detail);
+  DeleteObject(grip);DeleteObject(shell);DeleteObject(shade);
+  SetBkMode(dc,TRANSPARENT);
+  SetTextColor(dc,RGB(244,242,252));
+  gtext(dc,353,180,"T");
+  gtext(dc,373,198,"O");
+  gtext(dc,353,218,"X");
+  gtext(dc,336,198,"S");
+}
+static BOOL draw_native_guide(HDC dc,const RECT *content) {
+  int oldmode,oldBk;
+  SIZE windowext,viewext;
+  POINT org;
+  HPEN edge=CreatePen(PS_SOLID,2,RGB(166,138,239));
+  HPEN fine=CreatePen(PS_SOLID,1,RGB(113,94,192));
+  HBRUSH panel=CreateSolidBrush(RGB(24,16,76));
+  HBRUSH panel2=CreateSolidBrush(RGB(45,31,109));
+  HGDIOBJ oldp,oldb,oldf;
+  HFONT title=CreateFontA(21,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,
+                         DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
+                         CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,
+                         DEFAULT_PITCH|FF_SWISS,"Arial");
+  HFONT legend=CreateFontA(15,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,
+                          DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
+                          CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,
+                          DEFAULT_PITCH|FF_SWISS,"Arial");
+  HFONT small=CreateFontA(12,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,
+                         DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
+                         CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,
+                         DEFAULT_PITCH|FF_SWISS,"Arial");
+  if(!dc || !content || content->right<=content->left ||
+     content->bottom<=content->top)return FALSE;
+  /* Preserve and restore the DirectDraw surface DC mapping. All gamepad
+   * art is in native 640x480 menu coordinates, never desktop geometry. */
+  oldmode=GetMapMode(dc);
+  GetWindowExtEx(dc,&windowext);
+  GetViewportExtEx(dc,&viewext);
+  GetViewportOrgEx(dc,&org);
+  oldBk=SetBkMode(dc,TRANSPARENT);
+  if(!SetMapMode(dc,MM_ANISOTROPIC))return FALSE;
+  SetWindowExtEx(dc,640,480,NULL);
+  SetViewportExtEx(dc,content->right-content->left,
+                        content->bottom-content->top,NULL);
+  SetViewportOrgEx(dc,content->left,content->top,NULL);
+  oldp=SelectObject(dc,edge);
+  oldb=SelectObject(dc,panel);
+  RoundRect(dc,54,104,586,437,16,16);
+  SelectObject(dc,panel2);
+  RoundRect(dc,62,112,578,429,13,13);
+  SelectObject(dc,fine);
+  gline(dc,77,147,563,147);
+  gline(dc,77,296,563,296);
+  oldf=SelectObject(dc,title?title:GetStockObject(DEFAULT_GUI_FONT));
+  SetTextColor(dc,RGB(244,224,255));
+  gtext(dc,82,120,"JOYSTICK  /  COMMANDES");
+  SelectObject(dc,small?small:GetStockObject(DEFAULT_GUI_FONT));
+  SetTextColor(dc,RGB(201,189,249));
+  gtext(dc,82,152,"Une manette active a la fois  |  commandes fixes");
+  gtext(dc,90,189,"L1 / LB");
+  gtext(dc,90,207,"Viser");
+  gtext(dc,462,189,"R1 / RB");
+  gtext(dc,462,207,"Zipline");
+  gtext(dc,90,260,"Stick / croix");
+  gtext(dc,90,275,"Deplacement");
+  gtext(dc,462,260,"R2 / RT");
+  gtext(dc,462,275,"Balancement");
+  draw_gamepad(dc);
+  SelectObject(dc,legend?legend:GetStockObject(DEFAULT_GUI_FONT));
+  SetTextColor(dc,RGB(249,236,255));
+  gtext(dc,85,311,"CROIX / A");
+  gtext(dc,328,311,"Sauter");
+  gtext(dc,85,336,"ROND / B");
+  gtext(dc,328,336,"Coup de pied");
+  gtext(dc,85,361,"CARRE / X");
+  gtext(dc,328,361,"Coup de poing");
+  gtext(dc,85,386,"TRIANGLE / Y");
+  gtext(dc,328,386,"Toile");
+  SelectObject(dc,small?small:GetStockObject(DEFAULT_GUI_FONT));
+  SetTextColor(dc,RGB(200,187,246));
+  gtext(dc,85,409,"Share / Back : Pause     |     Manette active : derniere utilisee");
+  SelectObject(dc,oldf);
+  SelectObject(dc,oldb);SelectObject(dc,oldp);
+  if(title)DeleteObject(title);
+  if(legend)DeleteObject(legend);
+  if(small)DeleteObject(small);
+  DeleteObject(panel);DeleteObject(panel2);
+  DeleteObject(edge);DeleteObject(fine);
+  SetViewportOrgEx(dc,org.x,org.y,NULL);
+  SetViewportExtEx(dc,viewext.cx,viewext.cy,NULL);
+  SetWindowExtEx(dc,windowext.cx,windowext.cy,NULL);
+  SetMapMode(dc,oldmode);
+  SetBkMode(dc,oldBk);
+  return TRUE;
+}
+int SpiderSDL3ControllerSetup_DrawToSurface(
+    IDirectDrawSurface7 *surface,const RECT *content) {
+  DWORD native_context;
+  HDC dc=NULL;
+  HRESULT hr;
+  BOOL drawn;
+  if(!guide_enabled || !guide_requested || !surface || !content)return 0;
+  native_context=*SPIDER_NATIVE_JOYSTICK_CONTEXT;
+  if(!native_context) {
+    if(guide_seen_native) {
+      guide_requested=0;
+      if(guide_report)
+        guide_report("SDL3-GUIDE: original Joystick screen exited; native overlay deactivated");
     }
-    /* Dialog-message translation may consume Escape on a focused
-     * child without sending WM_KEYDOWN to our guide window. Handle a
-     * fresh keyboard Escape/Enter before that translation, including
-     * when the Close button owns keyboard focus. */
-    if(msg.message==WM_KEYDOWN &&
-       (msg.hwnd==window || IsChild(window,msg.hwnd)) &&
-       (msg.wParam==VK_ESCAPE || msg.wParam==VK_RETURN) &&
-       !(msg.lParam&(1L<<30))) {
-      PostMessageA(window,WM_CLOSE,0,0);
-      continue;
-    }
-    if(IsDialogMessageA(window,&msg))continue;
-    TranslateMessage(&msg);
-    DispatchMessageA(&msg);
+    return 0;
   }
-  if(IsWindow(window))DestroyWindow(window);
-  previous=GetForegroundWindow();
-  preclose_owned=ui.closing_foreground==owner ||
-                 ui.closing_foreground==window;
-  previous_owned=previous==owner || previous==window;
-  restore_allowed=spider_sdl3_setup_restore_focus(
-    has_quit,ui.closing_captured,preclose_owned,previous_owned,
-    ui.closing_foreground==NULL,previous==NULL);
-  if(parent_enabled && IsWindow(owner))EnableWindow(owner,TRUE);
-  if(restore_allowed && IsWindow(owner) && IsWindowVisible(owner)) {
-    SetActiveWindow(owner);
-    if(SetForegroundWindow(owner) && GetForegroundWindow()==owner)
-      SetFocus(owner);
+  guide_seen_native=1;
+  hr=IDirectDrawSurface7_GetDC(surface,&dc);
+  if(FAILED(hr)||!dc) {
+    if(!guide_reported && guide_report)
+      guide_report("SDL3-GUIDE: native surface GetDC unavailable; original menu preserved");
+    guide_reported=1;
+    return 0;
   }
-  final_foreground=GetForegroundWindow();
-  guide_open=0;
-  /* Disarm any physical Start held during the modal; with one mapped
-   * pad, the automatic selector still waits for a neutral game Flip.
-   * This read-only guide can NEVER claim another controller. */
-  SpiderSDL3Probe_SetupModalReturn(0,0,0);
-  if(has_quit)PostQuitMessage(quit_code);
-  else if(IsWindow(owner))SpiderGamepadUI_AfterControllerSetup(owner);
-  if(guide_report) {
-    char note[172];
-    snprintf(note,sizeof(note),
-      "SDL3-GUIDE: closed; focus restored=%d foreground-owned=%d; fixed mappings retained",
-      restore_allowed,final_foreground==owner);
-    guide_report(note);
-  }
+  drawn=draw_native_guide(dc,content);
+  IDirectDrawSurface7_ReleaseDC(surface,dc);
+  if(drawn && ++guide_draws==1 && guide_report)
+    guide_report("SDL3-GUIDE: drawn INSIDE original Joystick menu backbuffer; 4:3 coordinates, no popup");
+  return drawn?1:0;
 }
