@@ -147,7 +147,7 @@ def test_universal_native_di_is_neutral_gated_and_modal_safe():
     assert "void SpiderSDL3Universal_BeforeModal(HWND game_hwnd)" in header
     assert "void SpiderSDL3Universal_BeforeModal(HWND game_hwnd) {" in backend
     assert 'restore_original("opening controller configuration modal");' in backend
-    assert "SpiderSDL3Universal_BeforeModal(owner);" in modal
+    assert "SpiderSDL3ControllerSetup_DrawToSurface(" in modal
     assert modal.index("SpiderSDL3Universal_BeforeModal(owner);") < modal.index(
         "if(!registered) {",modal.index(
             "void SpiderSDL3ControllerSetup_Open(void)"))
@@ -213,7 +213,7 @@ def test_no_gameplay_actions_or_pause_on_non_neutral_start(tmp_path):
 
 def test_universal_hardware_logs_explain_why_gameplay_adapter_abstains():
     backend=(ROOT/"sdl3_universal_gameplay.c").read_text(encoding="utf-8")
-    assert "SDL3-UNIVERSAL: waiting for selected SDL3 mapped pad" in backend
+    assert "SDL3-UNIVERSAL: waiting for neutral or deliberate activity on a connected SDL3 pad" in backend
     assert "SDL3-UNIVERSAL: REFUSED no valid normalized profile" in backend
     assert "SDL3-UNIVERSAL: REFUSED unverified writable native joystick slot" in backend
     assert "SDL3-UNIVERSAL: REFUSED original keyboard table invalid" in backend
@@ -392,7 +392,7 @@ def test_universal_fail_closed_reentry_after_failed_keyup():
     preowner=onflip.split("if(!suspend_original())",1)[0]
     assert 'restore_original("game HWND not foreground");' in preowner
     assert 'restore_original("no selected mapped controller");' in preowner
-    assert 'restore_original("SDL3 Start owner changed");' in preowner
+    assert 'restore_original("SDL3 activity owner changed");' in preowner
     assert "if(!active && (sent_mask || pulse_scan))" in preowner
     assert "if(!release_all())" in preowner
     assert "REENTRY BLOCKED pending synthetic KEYUP" in preowner
