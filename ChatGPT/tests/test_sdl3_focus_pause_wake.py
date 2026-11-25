@@ -137,7 +137,11 @@ def test_escape_diagnostic_is_passive_bounded_and_foreground_only():
     assert f.index("GetForegroundWindow()!=hwnd") < f.index("GetAsyncKeyState(VK_ESCAPE)")
     assert "GetAsyncKeyState(VK_ESCAPE)&0x8000" in f
     assert "read_native_keyboard_latch(0x01u,&raw)" in f
-    assert "reports>=240u" in f and "tail=12u" in f
+    assert "reports>=8192u" in f and "tail=12u" in f
+    assert "previous-pause=%d" in f
+    assert "native_pause!=prior_pause" in f
+    assert "raw==prior_raw" in f
+    assert "diagnostic safety limit reached" in f
     for token in ("SendInput(", "send_scan(", "WriteProcessMemory(", "SetWindowsHookEx", "GetDeviceData(", "Acquire("):
         assert token not in f
     main=read("spiderman2k1fix.c")

@@ -629,24 +629,38 @@ static int gameover_probe_read_u32(uintptr_t address,uint32_t *out) {
 void SpiderSDL3Universal_TraceEscape(long flip,HWND hwnd,int allowed,
     int menu,int gameplay,int bink,int native_pause) {
   static unsigned prior_down=0,tail=0,reports=0,armed=0;
+  static unsigned prior_raw=0,prior_raw_ok=0,have_sample=0;
+  static int prior_pause=0,prior_menu=0,prior_gameplay=0,prior_bink=0;
   unsigned down,raw=0,raw_ok;
+  int context_changed,old_pause;
   uint32_t request=0,task=0,input_active=0,pause_ctx=0,menu_ctx=0;
   uint32_t dispatcher=0,transition=0;
   int state_ok;
   char line[380];
   if(!allowed || !hwnd || GetForegroundWindow()!=hwnd ||
      !IsWindowVisible(hwnd) || !report) {
-    armed=0;prior_down=0;tail=0;return;
+    armed=0;prior_down=0;tail=0;have_sample=0;return;
   }
-  if(reports>=240u)return;
+  if(reports>=8192u) {
+    if(reports==8192u){++reports;report("ESC-DIAG: diagnostic safety limit reached; later transitions not captured");}
+    return;
+  }
   down=(GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0;
   if(!armed) {
     if(down)return; /* never infer a new press from an inherited hold */
     armed=1;prior_down=0;
   }
+  context_changed=!have_sample || native_pause!=prior_pause ||
+    menu!=prior_menu || gameplay!=prior_gameplay || bink!=prior_bink;
+  old_pause=have_sample?prior_pause:native_pause;
   if(down!=prior_down)tail=12u;
-  if(!tail && !down)return;
+  if(!tail && !down && !context_changed)return;
   raw_ok=(unsigned)read_native_keyboard_latch(0x01u,&raw);
+  if(tail)tail--;
+  if(!context_changed && down==prior_down && raw==prior_raw &&
+     raw_ok==prior_raw_ok)return;
+  prior_raw=raw;prior_raw_ok=raw_ok;
+  prior_pause=native_pause;prior_menu=menu;prior_gameplay=gameplay;prior_bink=bink;have_sample=1;
   state_ok=gameover_probe_read_u32(0x0060CFA4u,&request) &&
     gameover_probe_read_u32(0x0054A510u,&task) &&
     gameover_probe_read_u32(0x006B78F0u,&input_active) &&
@@ -655,14 +669,14 @@ void SpiderSDL3Universal_TraceEscape(long flip,HWND hwnd,int allowed,
     gameover_probe_read_u32(0x0068293Cu,&dispatcher) &&
     gameover_probe_read_u32(0x0054D38Cu,&transition);
   snprintf(line,sizeof(line),
-    "ESC-DIAG: flip=%ld tick=%lu os=%s edge=%s native-latch=%s%02X menu=%d 3d=%d bink=%d pause-visible=%d state=%s request=%08lX task=%08lX input=%08lX pause-ctx=%u menu-ctx=%u dispatcher=%08lX transition=%08lX SDL-owner=%lu SDL-pulse=%02X [READ-ONLY]",
+    "ESC-DIAG: flip=%ld tick=%lu os=%s edge=%s native-latch=%s%02X menu=%d 3d=%d bink=%d pause-visible=%d previous-pause=%d state=%s request=%08lX task=%08lX input=%08lX pause-ctx=%u menu-ctx=%u dispatcher=%08lX transition=%08lX SDL-owner=%lu SDL-pulse=%02X [READ-ONLY]",
     flip,(unsigned long)GetTickCount(),down?"DOWN":"UP",
     down!=prior_down?(down?"PRESS":"RELEASE"):"NONE",
-    raw_ok?"":"UNAVAILABLE/",raw,menu,gameplay,bink,native_pause,
+    raw_ok?"":"UNAVAILABLE/",raw,menu,gameplay,bink,native_pause,old_pause,
     state_ok?"OK":"UNAVAILABLE",(unsigned long)request,(unsigned long)task,
     (unsigned long)input_active,(unsigned)(pause_ctx!=0u),(unsigned)(menu_ctx!=0u),
     (unsigned long)dispatcher,(unsigned long)transition,(unsigned long)selected_id,pulse_scan);
-  report(line);reports++;prior_down=down;if(tail)tail--;
+  report(line);reports++;prior_down=down;
 }
 /* Read-only candidate correlation, also callable by the independent
  * passive owner observer. [0x60CFA4] is a pending transition request,

@@ -1782,8 +1782,44 @@ static int spider_escape_native_window(DWORD *tick,unsigned *down) {
      *SPIDER_GAME_BINK_ACTIVE!=0u) {seen_down=0;return 0;}
   *tick=GetTickCount();
   *down=(GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0;
-  if(*down){last_down=*tick;seen_down=1;}
+  if(*down || *(const volatile BYTE *)(uintptr_t)0x006B792Du==0xFFu ||
+     *(const volatile BYTE *)(uintptr_t)0x006B792Du==0x80u) {
+    last_down=*tick;seen_down=1;
+  }
   return seen_down && (DWORD)(*tick-last_down)<=350u;
+}
+/* Keep one last sample per original callsite/mode. Repeated held-key
+ * reads add no evidence. A new window, changed value or changed context
+ * is always logged. No per-press frame spam. */
+typedef struct {
+  DWORD site,mode,value,aux,context,tick;
+  unsigned valid;
+} SpiderEscapeTraceSample;
+static int spider_escape_native_changed(DWORD site,DWORD mode,DWORD value,
+    DWORD aux,DWORD context,DWORD tick) {
+  static SpiderEscapeTraceSample cache[32];
+  unsigned i,slot=32;
+  for(i=0;i<32u;i++) {
+    if(cache[i].valid && cache[i].site==site && cache[i].mode==mode) {slot=i;break;}
+    if(!cache[i].valid && slot==32u)slot=i;
+  }
+  if(slot==32u)slot=(unsigned)(site^mode)%32u;
+  {
+    SpiderEscapeTraceSample *p=&cache[slot];
+    int changed=!p->valid || p->site!=site || p->mode!=mode ||
+      p->value!=value || p->aux!=aux || p->context!=context ||
+      (DWORD)(tick-p->tick)>350u;
+    p->site=site;p->mode=mode;p->value=value;p->aux=aux;
+    p->context=context;p->tick=tick;p->valid=1;
+    return changed;
+  }
+}
+static int spider_escape_trace_budget(unsigned *reports) {
+  if(*reports<8192u){++*reports;return 1;}
+  if(*reports==8192u){
+    ++*reports;say("ESC-NATIVE: diagnostic safety limit reached; later transitions not captured");
+  }
+  return 0;
 }
 static BYTE __cdecl spider_probe_3d_native_input(
     DWORD mask,DWORD arg1,DWORD arg2) {
@@ -1795,15 +1831,22 @@ static BYTE __cdecl spider_probe_3d_native_input(
   {
     static unsigned reports=0;
     DWORD tick;unsigned down;
-    if(reports<600u && spider_escape_native_window(&tick,&down)) {
+    if(spider_escape_native_window(&tick,&down)) {
       const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+      DWORD site=(DWORD)(frame[1]-5u);
+      DWORD context=*SPIDER_PAUSE_CONTEXT;
+      unsigned raw=*(const volatile BYTE *)(uintptr_t)0x006B792Du;
       char line[270];
+      if(spider_escape_native_changed(site,mask,(DWORD)original,
+          (DWORD)(down|(raw<<8)),context,tick) &&
+         spider_escape_trace_budget(&reports)) {
       snprintf(line,sizeof(line),
         "ESC-NATIVE-MASK: tick=%lu site=%08lX mask=%08lX args=%lu,%lu result=%u os=%u pause-ctx=%08lX [ORIGINAL RESULT]",
         (unsigned long)tick,(unsigned long)(frame[1]-5u),
         (unsigned long)mask,(unsigned long)arg1,(unsigned long)arg2,
         (unsigned)original,down,(unsigned long)*SPIDER_PAUSE_CONTEXT);
-      say(line);reports++;
+      say(line);
+      }
     }
   }
   if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)==1) {
@@ -1926,7 +1969,7 @@ static DWORD __cdecl spider_probe_3d_space_gate(
 static DWORD __cdecl spider_probe_native_raw_key(DWORD dik) {
   DWORD tick=0;unsigned down=0;
   static unsigned escape_reports=0;
-  int escape_watch=dik==0x01u && escape_reports<400u &&
+  int escape_watch=dik==0x01u &&
                    spider_escape_native_window(&tick,&down);
   unsigned before=escape_watch?*(const volatile BYTE *)(uintptr_t)0x006B792Du:0u;
   DWORD result=SPIDER_NATIVE_KEY_READ(dik);
@@ -1935,7 +1978,10 @@ static DWORD __cdecl spider_probe_native_raw_key(DWORD dik) {
     DWORD inner=(DWORD)frame[1],caller=(DWORD)frame[3];
     DWORD caller_key=(DWORD)frame[4],caller_mode=(DWORD)frame[5];
     if((inner==0x0050A662u || inner==0x0050A679u) &&
-       caller_key==dik && (caller_mode==0u || caller_mode==1u)) {
+       caller_key==dik && (caller_mode==0u || caller_mode==1u) &&
+       spider_escape_native_changed(caller,caller_mode,result,
+         (DWORD)(down|(before<<8)|((unsigned)*(const volatile BYTE *)(uintptr_t)0x006B792Du<<16)),
+         *SPIDER_PAUSE_CONTEXT,tick) && spider_escape_trace_budget(&escape_reports)) {
       char line[300];
       snprintf(line,sizeof(line),
         "ESC-NATIVE-KEY: tick=%lu origin=%08lX mode=%lu os=%u before=%02X result=%08lX after=%02X pause-ctx=%08lX [ORIGINAL RESULT]",
@@ -1943,7 +1989,7 @@ static DWORD __cdecl spider_probe_native_raw_key(DWORD dik) {
         before,(unsigned long)result,
         (unsigned)*(const volatile BYTE *)(uintptr_t)0x006B792Du,
         (unsigned long)*SPIDER_PAUSE_CONTEXT);
-      say(line);escape_reports++;
+      say(line);
     }
   }
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&

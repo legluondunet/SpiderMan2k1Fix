@@ -2207,15 +2207,19 @@ def test_escape_native_diagnostic_reuses_original_readers_without_mutation():
     assert "ESC-NATIVE: two original keyboard-read and five 3D input-mask callsites armed" in SRC
     raw=SRC.split("static DWORD __cdecl spider_probe_native_raw_key(DWORD dik) {",1)[1].split("/* PASSIVE owner cleanup checkpoint",1)[0]
     assert raw.count("SPIDER_NATIVE_KEY_READ(dik)")==1
-    assert "dik==0x01u" in raw and "escape_reports<400u" in raw
+    assert "dik==0x01u" in raw and "spider_escape_trace_budget(&escape_reports)" in raw
+    assert "spider_escape_native_changed(caller,caller_mode,result," in raw
     assert "ESC-NATIVE-KEY:" in raw and "return result;" in raw
     mask=SRC.split("static BYTE __cdecl spider_probe_3d_native_input(",1)[1].split("/* The original 3D update",1)[0]
     assert mask.count("SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2)")==1
-    assert "ESC-NATIVE-MASK:" in mask and "reports<600u" in mask
+    assert "ESC-NATIVE-MASK:" in mask and "spider_escape_trace_budget(&reports)" in mask
+    assert "spider_escape_native_changed(site,mask," in mask
     assert "return original;" in mask
     gate=SRC.split("static int spider_escape_native_window(",1)[1].split("static BYTE __cdecl spider_probe_3d_native_input",1)[0]
     assert "GetForegroundWindow()!=hwnd" in gate
     assert "GetAsyncKeyState(VK_ESCAPE)&0x8000" in gate
     assert "<=350u" in gate
+    assert "p->value!=value || p->aux!=aux || p->context!=context" in gate
+    assert "diagnostic safety limit reached" in gate and "*reports<8192u" in gate
     for forbidden in ("SendInput(", "WriteProcessMemory(", "SetWindowsHookEx", "keybd_event("):
         assert forbidden not in raw+mask+gate
