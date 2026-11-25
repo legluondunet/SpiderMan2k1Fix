@@ -2136,6 +2136,7 @@ def test_f10_features_skip_uses_native_intro_without_gameplay_exit():
     assert "static volatile LONG features_f10_cinematics_only=0;" in SRC
     assert 'InterlockedCompareExchange(&features_f10_cinematics_only,0,0)!=1 &&' in SRC
     assert 'GetPrivateProfileIntA("Features","F10SkipCinematics",0,ini)==1' in init
+    assert 'F10 native 3D intro skip enabled; F10 gameplay exit DISABLED' in init
     assert scene.count('GetPrivateProfileIntA("Debug","Log",0,ini)==1')==2
     for old in ("F10TestMode", "F10Auto3DScripts", "F10GameplayExit"):
         assert f'GetPrivateProfileIntA("Debug","{old}",0,ini)==1' in init
