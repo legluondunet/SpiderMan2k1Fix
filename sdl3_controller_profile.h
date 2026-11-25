@@ -1,4 +1,6 @@
-/* Portable SDL3 controller profile policy for Spider-Man PC (2001).
+/* Portable SDL3 semantic controller policy for Spider-Man PC (2001).
+ * Runtime always selects the fixed default action mapping; historical
+ * profile edit helpers remain pure and cannot write or alter gameplay.
  * This is ONLY a semantic mapping model. It does NOT inject input,
  * change DirectInput state, enable the native joystick menu, or write INI.
  * SDL3 button values follow SDL_GamepadButton, axes SDL_GamepadAxis.
@@ -7,10 +9,8 @@
  * for the OS. LEFTX/LEFTY/RIGHTX/RIGHTY axes are analog movement, never
  * digital triggers in this first version. LT and RT are independent.
  *
- * Model-level VID/PID identity is deliberate. Identical products cannot
- * yet have distinct settings; a future GUID/serial discriminator must be
- * validated before supporting that feature. Not for live gameplay until
- * the SDL3 action -> original game input bridge is implemented and tested.
+ * Per-model identities are retained for safe device discovery and factory
+ * defaults, not for configurable gameplay profiles.
  */
 #ifndef SPIDERMAN2K1FIX_SDL3_CONTROLLER_PROFILE_H
 #define SPIDERMAN2K1FIX_SDL3_CONTROLLER_PROFILE_H
