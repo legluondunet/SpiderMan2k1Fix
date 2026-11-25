@@ -172,10 +172,12 @@ def test_singleton_auto_claim_requires_connected_neutral_pad_and_preserves_start
     assert "spider_sdl3_selection_singleton_candidate(&selection)" in section
     assert "pads[k].id==candidate && pads[k].handle" in section
     assert "sdl_connected(pads[k].handle)" in section
-    assert "spider_sdl3_universal_owner_neutral(&sample)" in section
-    assert section.index("spider_sdl3_universal_owner_neutral(&sample)") < section.index(
+    assert "spider_sdl3_profile_neutral(&sample)" in section
+    assert section.index("spider_sdl3_profile_neutral(&sample)") < section.index(
         "generic_selected_id=candidate;"
     )
+    assert "sample.axis[SPIDER_SDL3_AXIS_LEFTX]>-9000" in section
+    assert "sample.axis[SPIDER_SDL3_AXIS_LEFTY]>-9000" in section
     assert "spider_sdl3_universal_reset(&generic_actions);" in section
     assert "AUTO selected sole neutral mapped pad" in section
     assert "if(universal_requested && start_claims.count)" in callback
