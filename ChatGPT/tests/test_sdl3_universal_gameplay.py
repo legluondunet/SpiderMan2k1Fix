@@ -148,9 +148,8 @@ def test_universal_native_di_is_neutral_gated_and_modal_safe():
     assert "void SpiderSDL3Universal_BeforeModal(HWND game_hwnd) {" in backend
     assert 'restore_original("opening controller configuration modal");' in backend
     assert "SpiderSDL3ControllerSetup_DrawToSurface(" in modal
-    assert modal.index("SpiderSDL3Universal_BeforeModal(owner);") < modal.index(
-        "if(!registered) {",modal.index(
-            "void SpiderSDL3ControllerSetup_Open(void)"))
+    assert "CreateWindowExA(" not in modal
+    assert "SpiderSDL3ControllerSetup_OnNativeEnter(" in modal
     assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&" in backend
     assert backend.index("if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&") < (
         backend.index("if(!suspend_original())"))
