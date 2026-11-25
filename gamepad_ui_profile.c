@@ -19,12 +19,12 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   SpiderPS1Mouse_Configure(logger);
   SpiderSDL3ControllerSetup_Init(ini,logger);
   if(SpiderSDL3ControllerSetup_Enabled()) {
-    /* Lock native joystick reassignment before routing Options > Joystick
-     * to the original game menu. Keyboard configuration stays editable. */
-    if(SpiderSDL3_InstallGenericReadOnlyJoystick(logger))
-      SpiderSDL3_InstallDirectJoystickEntry(logger);
-    else if(logger)
-      logger("SDL3-NATIVE-GUIDE: original Joystick mutation guard unavailable; no direct entry installed");
+    /* Install the direct entry even when the native read-only patch
+     * refuses: the redirect then refuses unsafe Joystick access instead
+     * of exposing the old writable bindings. Keyboard remains untouched. */
+    if(!SpiderSDL3_InstallGenericReadOnlyJoystick(logger) && logger)
+      logger("SDL3-NATIVE-GUIDE: original Joystick mutation guard unavailable; read-only menu entry will refuse");
+    SpiderSDL3_InstallDirectJoystickEntry(logger);
   }
   if(logger)logger("GAMEPAD-UI: retired pre-SDL3 Xbox/DS4 custom maps and synthetic keys; SDL3 fixed PlayStation-style semantic controls are the only patch-provided mapping");
 }
@@ -33,9 +33,10 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   (void)menu_2d;(void)gameplay_3d;
   (void)bink_active;(void)native_pause_active;
   SpiderPS1Mouse_OnFlip(hwnd);
-  if(SpiderSDL3ControllerSetup_Enabled() &&
-     SpiderSDL3_InstallGenericReadOnlyJoystick(ui_log))
+  if(SpiderSDL3ControllerSetup_Enabled()) {
+    SpiderSDL3_InstallGenericReadOnlyJoystick(ui_log);
     SpiderSDL3_InstallDirectJoystickEntry(ui_log);
+  }
 }
 void SpiderGamepadUI_AfterControllerSetup(HWND hwnd) {(void)hwnd;}
 /* The engine's SDL3 focus wake and keyboard release are independent
