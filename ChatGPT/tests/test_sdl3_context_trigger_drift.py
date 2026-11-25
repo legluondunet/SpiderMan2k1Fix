@@ -107,7 +107,7 @@ def test_original_owner_gates_remain_strict_after_drift_fix():
     policy = (ROOT/"sdl3_universal_policy.h").read_text(encoding="utf-8")
     body = src.split("void SpiderSDL3Universal_OnFlip(",1)[1]
     assert "if(native_unclaimed_guard && !spider_sdl3_universal_owner_neutral(&sample) &&" in body
-    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample))" in body
+    assert "if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&" in body
     assert "spider_sdl3_profile_neutral(sample)" in policy
     assert "sample->axis[SPIDER_SDL3_AXIS_LT]>=11000" in policy
     assert "sample->axis[SPIDER_SDL3_AXIS_RT]>=11000" in policy
