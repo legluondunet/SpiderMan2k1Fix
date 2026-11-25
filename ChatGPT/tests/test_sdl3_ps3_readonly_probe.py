@@ -45,7 +45,7 @@ def test_ds3_probe_is_bounded_read_only_and_preserves_xbox_ds4_owner():
     assert "vid==0x054cu && pid==0x0268u && ps3_trace_lines<48u" in flip
     assert "SDL3-PS3-PROBE: id=%lu VID:PID=054C:0268" in flip
     assert "buttons=0x%06lX changed=0x%06lX START=%u" in flip
-    assert "spider_reconnect_kind(vid,pid)==SPIDER_RECONNECT_NONE" in flip
+    assert "spider_sdl3_selected_instance_valid(opened,opened_n,candidate" in flip
     assert "spider_sdl3_activity_edge(&activity_owners,pads[i].id,&sample)" in flip
     assert "owner_neutral &&" in flip
     # Generic selection of unsupported pads is read-only, distinct from
