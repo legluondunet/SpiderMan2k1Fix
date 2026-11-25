@@ -770,7 +770,7 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   SpiderSDL3ControllerSample sample;
   SpiderSDL3ControllerProfile *profile;
   unsigned menu_buttons=0,context;
-  int result,native_shell_menu=0;
+  int result,native_shell_menu=0,fresh_activity_claim=0;
   if(!requested || game_thread!=GetCurrentThreadId())return;
   /* X11 can report OTHER/UNKNOWN even when Wine's HWND stays foreground.
    * Never synthesize a direction or reclaim native DI during this state. */
@@ -794,7 +794,7 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     native_shell_consecutive=0;
     native_shell_routed=0;
     if(refusal_reports++<6u)
-      log_universal("SDL3-UNIVERSAL: waiting for selected SDL3 mapped pad (press Start on desired pad)");
+      log_universal("SDL3-UNIVERSAL: waiting for neutral or deliberate activity on a connected SDL3 pad");
     /* A passive SDL3 singleton selection is NOT an explicit Start owner.
      * Previously restore_original() exposed the old DirectInput joystick
      * here, allowing the remaining PS3 to control Spider-Man with its
@@ -830,10 +830,11 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     if(!suspended && writable_slot() && suspend_original()) {
       native_unclaimed_guard=1;
       if(report && native_guard_reports++<16u)
-        report("SDL3-UNIVERSAL: UNCLAIMED native DirectInput joystick held inactive until explicit SDL3 Start (keyboard unaffected)");
+        report("SDL3-UNIVERSAL: UNCLAIMED native DirectInput joystick held inactive until valid SDL3 activity selection (keyboard unaffected)");
     }
     return;
   }
+  fresh_activity_claim=SpiderSDL3Probe_FreshActivityClaim(id);
   profile=SpiderSDL3Probe_SetupProfile(vid,pid);
   if(!profile || !spider_sdl3_profile_valid(profile)) {
     if(refusal_reports++<6u)
@@ -853,7 +854,7 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     restore_original("game keyboard table not proven");
     return;
   }
-  if(active && selected_id!=id)restore_original("SDL3 Start owner changed");
+  if(active && selected_id!=id)restore_original("SDL3 activity owner changed");
   /* A failed KEYUP after focus loss/disconnect must never be treated as
    * a new playable frame. Retry ALL previously injected keys BEFORE the
    * native DI pointer can be borrowed again. Previous mask and pulse are
@@ -886,12 +887,14 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
    * The policy also enforces neutral before producing 3D action bits. */
   /* A native joystick held in the unclaimed guard is suspended already,
    * but this must NOT bypass the fresh neutral gate after physical Start. */
-  if(native_unclaimed_guard && !spider_sdl3_universal_owner_neutral(&sample)) {
+  if(native_unclaimed_guard && !spider_sdl3_universal_owner_neutral(&sample) &&
+     !fresh_activity_claim) {
     if(owner_reports++<10u)
-      log_universal("SDL3-UNIVERSAL: explicit Start selected pad awaits neutral before unclaimed DI guard can transfer");
+      log_universal("SDL3-UNIVERSAL: selected pad awaits neutral before unclaimed DI guard transfer");
     return;
   }
-  if(!suspended && !spider_sdl3_universal_owner_neutral(&sample)) {
+  if(!suspended && !spider_sdl3_universal_owner_neutral(&sample) &&
+     !fresh_activity_claim) {
     if(owner_reports++<10u)
       log_universal("SDL3-UNIVERSAL: selected pad awaits complete neutral before any DI suspension/injection");
     return;
@@ -903,7 +906,7 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   if(native_unclaimed_guard) {
     native_unclaimed_guard=0;
     if(report && native_guard_reports++<16u)
-      report("SDL3-UNIVERSAL: UNCLAIMED native DI guard transferred to explicitly Started SDL3 controller");
+      report("SDL3-UNIVERSAL: UNCLAIMED native DI guard transferred to activity-selected SDL3 controller");
   }
   /* Do not share the neutral-wait suppression budget with the first
    * successful ACTIVE report: a held Start can consume all ten entries. */
@@ -916,7 +919,7 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
   }
   active=1;selected_id=id;
   if(focus_dir.phase && id!=focus_dir_controller_id) {
-    /* A different explicitly selected pad must never inherit a
+    /* A different activity-selected pad must never inherit a
      * synthesized movement press intended for the old owner. */
     if(focus_dir.phase==SPIDER_FOCUS_DIR_UP &&
        !send_scan(focus_dir.scans[focus_dir.index],1)) {
@@ -1061,6 +1064,10 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     /* Context controls are independent from the seven 3D game actions.
      * Keyboard remains available throughout menus and cinematics. */
     spider_sdl3_universal_reset(&state);
+    /* The FIRST fresh neutral-armed activity edge may perform its normal
+     * menu action: the activity selector already proved prior neutral,
+     * focus and a unique physical owner in this very Flip. */
+    if(fresh_activity_claim && !native_pause)menu_arm=1;
     if(!menu_arm) {
       if(spider_sdl3_universal_neutral(&sample)) {
         menu_arm=1;
@@ -1137,6 +1144,14 @@ void SpiderSDL3Universal_OnFlip(HWND hwnd,int menu,int gameplay,
     return;
   }
   menu_arm=0;menu_previous=0;
+  /* Preserve the first movement/action after automatic selection. This
+   * exception is ONLY for a new foreground activity edge following a
+   * fully neutral sample; ordinary focus/context rearm stays strict. */
+  if(fresh_activity_claim) {
+    state.selected_id=id;
+    state.held_actions=0u;
+    state.armed=1u;
+  }
   result=spider_sdl3_universal_step(&state,profile,&sample,id,
                                       native_pause,&desired,&pause_edge);
   if(result!=1) {
