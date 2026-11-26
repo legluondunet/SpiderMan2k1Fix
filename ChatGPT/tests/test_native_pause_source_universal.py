@@ -178,13 +178,7 @@ def test_detected_pause_reaches_the_real_sdl3_gameplay_input_owner():
         assert "native_pause43_visible_near_flip(count)" in args, consumer
         assert "native_pause_source_visible_near_flip(count)" in args, consumer
         assert "0x00682950u" in args, consumer
-    # The fifth read belongs to the temporary log-only ESC diagnostic,
-    # not an additional input owner. Keep all four consumer checks above.
-    diagnostic = CORE.split("SpiderSDL3Universal_TraceEscape(count,game_hwnd,", 1)[1].split("));", 1)[0]
-    assert "native_pause43_visible_near_flip(count)" in diagnostic
-    assert "native_pause_source_visible_near_flip(count)" in diagnostic
-    assert "0x00682950u" in diagnostic
-    assert CORE.count("native_pause_source_visible_near_flip(count)") == 5
+    assert CORE.count("native_pause_source_visible_near_flip(count)") == 4
     universal = CORE.split("SpiderSDL3Universal_OnFlip(game_hwnd,", 1)[1].split(
         "));", 1)[0]
     assert universal.index("native_pause43_visible_near_flip(count)") < (

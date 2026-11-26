@@ -130,22 +130,3 @@ def test_multi_pad_wake_handoff_hotplug_and_ambiguity(tmp_path):
     """,encoding="utf-8")
     subprocess.run([cc,"-std=c99","-Wall","-Wextra","-Werror","-I",str(ROOT),str(src),"-o",str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
-
-def test_escape_diagnostic_is_passive_bounded_and_foreground_only():
-    c=read("sdl3_universal_gameplay.c")
-    f=c.split("void SpiderSDL3Universal_TraceEscape(",1)[1].split("/* Read-only candidate correlation",1)[0]
-    assert f.index("GetForegroundWindow()!=hwnd") < f.index("GetAsyncKeyState(VK_ESCAPE)")
-    assert "GetAsyncKeyState(VK_ESCAPE)&0x8000" in f
-    assert "read_native_keyboard_latch(0x01u,&raw)" in f
-    assert "reports>=8192u" in f and "tail=12u" in f
-    assert "previous-pause=%d" in f
-    assert "native_pause!=prior_pause" in f
-    assert "raw==prior_raw" in f
-    assert "diagnostic safety limit reached" in f
-    for token in ("SendInput(", "send_scan(", "WriteProcessMemory(", "SetWindowsHookEx", "GetDeviceData(", "Acquire("):
-        assert token not in f
-    main=read("spiderman2k1fix.c")
-    flip=main.split("static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {",1)[1]
-    assert flip.index("SpiderSDL3Universal_TraceEscape(") < flip.index("SpiderSDL3Probe_OnFlip(")
-    assert "if(debug_log_enabled)" in flip[:flip.index("SpiderSDL3Universal_TraceEscape(")]
-    assert "pause_x11_bridge_state()==1" in flip[:flip.index("SpiderSDL3Probe_OnFlip(")]
