@@ -72,6 +72,7 @@ static const BYTE expected_sha256[32] = {
   0x2a,0x05,0x8f,0xf0,0x74,0x68,0x9d,0xea
 };
 static int debug_log_enabled=0;
+static int render_canvas_trace_enabled=0; /* opt-in, read-only F9 evidence */
 #ifdef SPIDER_UNIFIED_FIX
 static int first_run_log_enabled=0;
 #endif
@@ -93,6 +94,8 @@ static void debug_log_load_setting(void) {
   if(first_run_log_enabled)debug_log_enabled=1;
 #endif
   focus_timeline_enabled=0;
+  render_canvas_trace_enabled=debug_log_enabled &&
+    GetPrivateProfileIntA("Debug","RenderCanvasTrace",0,path)==1;
   if(debug_log_enabled) {
     char opt[3]={0};
     DWORD n=GetEnvironmentVariableA("SPIDERMAN2K1FIX_FOCUS_TIMELINE",
@@ -1622,6 +1625,89 @@ static float ui_transition_bounds25_last_left=0.0f,ui_transition_bounds25_last_r
 static unsigned ui_transition_bounds25_last_fallback=0u;
 static volatile LONG ui_transition_native43_draws=0,ui_transition_native43_native=0;
 static volatile LONG ui_canvas_fullscreen_kept=0;
+/* Keep at most two Flip epochs of already-authenticated canvas candidates.
+ * A Flip stamp describes the observation interval, not a proven scene or
+ * the exact frame captured by F9. No driver queries, vertex writes, new
+ * render hooks, allocations or per-draw logging. Default OFF. */
+#define CANVAS_TRACE_CAP 128u
+#define CANVAS_TRACE_SHOTS 8u
+typedef struct CanvasTraceSample {
+  DWORD rva,colour;
+  int scope,z_enabled;
+  float z,rhw,x0,y0,x1,y1,mapped_x0,mapped_x1;
+} CanvasTraceSample;
+typedef struct CanvasTraceFrame {
+  LONG flip;
+  unsigned valid,total,stored;
+  CanvasTraceSample samples[CANVAS_TRACE_CAP];
+} CanvasTraceFrame;
+static CanvasTraceFrame canvas_trace_frames[2];
+static unsigned canvas_trace_shots=0;
+static void canvas_trace_observe(DWORD rva,const SpiderMenuVertex *src,
+                                 const SpiderMenuVertex *dst) {
+  LONG flip;
+  CanvasTraceFrame *frame;
+  CanvasTraceSample *sample;
+  unsigned i;
+  if(!render_canvas_trace_enabled || canvas_trace_shots>=CANVAS_TRACE_SHOTS)return;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  frame=&canvas_trace_frames[(unsigned)flip&1u];
+  if(!frame->valid || frame->flip!=flip) {
+    frame->valid=1;frame->flip=flip;frame->total=frame->stored=0;
+  }
+  if(frame->total<UINT_MAX)++frame->total;
+  if(frame->stored>=CANVAS_TRACE_CAP)return;
+  sample=&frame->samples[frame->stored++];
+  sample->rva=rva;sample->colour=src[0].diffuse;
+  sample->scope=SpiderHudWidescreen_InScope()!=0;
+  sample->z_enabled=InterlockedCompareExchange(&fov_z_state_known,0,0)==1?
+      (int)InterlockedCompareExchange(&fov_z_state_enabled,0,0):-1;
+  sample->z=src[0].z;sample->rhw=src[0].rhw;
+  sample->x0=sample->x1=src[0].x;sample->y0=sample->y1=src[0].y;
+  sample->mapped_x0=sample->mapped_x1=dst[0].x;
+  for(i=1;i<4;i++){
+    if(src[i].x<sample->x0)sample->x0=src[i].x;
+    if(src[i].x>sample->x1)sample->x1=src[i].x;
+    if(src[i].y<sample->y0)sample->y0=src[i].y;
+    if(src[i].y>sample->y1)sample->y1=src[i].y;
+    if(dst[i].x<sample->mapped_x0)sample->mapped_x0=dst[i].x;
+    if(dst[i].x>sample->mapped_x1)sample->mapped_x1=dst[i].x;
+  }
+}
+static void canvas_trace_f9(void) {
+  LONG flip;
+  unsigned age,i;
+  char msg[320];
+  if(!render_canvas_trace_enabled || canvas_trace_shots>=CANVAS_TRACE_SHOTS)return;
+  ++canvas_trace_shots;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  snprintf(msg,sizeof(msg),"CANVAS-TRACE: screenshot=%u capture-flip=%ld monitor=%dx%d [candidate mapping only; not proven HUD/world ownership]",
+           canvas_trace_shots,(long)flip,desktop_w,desktop_h);
+  log_line(msg);
+  for(age=1;;--age){
+    LONG epoch=(LONG)((DWORD)flip-age);
+    const CanvasTraceFrame *frame=&canvas_trace_frames[(unsigned)epoch&1u];
+    if(!frame->valid || frame->flip!=epoch){
+      snprintf(msg,sizeof(msg),"CANVAS-TRACE: flip=%ld no candidate mapping recorded",(long)epoch);
+      log_line(msg);
+    }else{
+      snprintf(msg,sizeof(msg),"CANVAS-TRACE: flip=%ld total=%u stored=%u omitted=%u",
+               (long)epoch,frame->total,frame->stored,frame->total-frame->stored);
+      log_line(msg);
+      for(i=0;i<frame->stored;i++){
+        const CanvasTraceSample *sample=&frame->samples[i];
+        snprintf(msg,sizeof(msg),
+          "CANVAS-TRACE: flip=%ld idx=%u caller=%08lX color=%08lX scope=%d z-enabled=%d z=%.5f rhw=%.4f src=(%.1f,%.1f)-(%.1f,%.1f) mapped-x=%.1f..%.1f",
+          (long)epoch,i,(unsigned long)sample->rva,(unsigned long)sample->colour,
+          sample->scope,sample->z_enabled,(double)sample->z,(double)sample->rhw,
+          (double)sample->x0,(double)sample->y0,(double)sample->x1,(double)sample->y1,
+          (double)sample->mapped_x0,(double)sample->mapped_x1);
+        log_line(msg);
+      }
+    }
+    if(!age)break;
+  }
+}
 static const void *maybe_correct_unified_ui_canvas(
                    D3DPRIMITIVETYPE type,DWORD fvf,
                    const void *source,DWORD count,void *caller,
@@ -1662,6 +1748,7 @@ static const void *maybe_correct_unified_ui_canvas(
         (unsigned)count,(unsigned)type,(uint32_t)fvf,
         (uint32_t)rva,(unsigned)desktop_w,(unsigned)desktop_h))
     return source;
+  canvas_trace_observe(rva,(const SpiderMenuVertex*)source,copy);
   if(SpiderUICanvas_43IsWipeEdgeMask(
         (const SpiderMenuVertex*)source,(unsigned)count,
         (unsigned)type,(uint32_t)fvf,(uint32_t)rva,
@@ -4666,6 +4753,7 @@ static void __cdecl hooked_f9_png_only(void) {
       (unsigned long)desc.dwWidth,(unsigned long)desc.dwHeight,
       (unsigned long)unlock_hr);
     log_line(msg);
+    if(queued)canvas_trace_f9();
   } else {
     snprintf(msg,sizeof(msg),
       "F9-PNG-ONLY: backbuffer Lock failed hr=0x%08lX; no BMP created",
@@ -6183,6 +6271,8 @@ static DWORD initialize_body(LPVOID unused) {
       log_line("F9-TRACE: optional native screenshot readback observation armed");
     }
   }
+  if(render_canvas_trace_enabled)
+    log_line("CANVAS-TRACE: opt-in F9 mapping observation armed; maximum 8 captures, two Flip intervals, 128 candidates per interval");
   install_player_hud(TRUE);
   /* Permanent centered 4:3 gameplay UI canvas, original native Pause
    * composition (including the source veil and physical outer gutters),
