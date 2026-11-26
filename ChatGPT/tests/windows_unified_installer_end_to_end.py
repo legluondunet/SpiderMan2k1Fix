@@ -68,6 +68,10 @@ def main():
         assert (d/"spiderman2k1fix.unified.installing"/"sentinel").read_text()=="keep"
         assert not (d/"game").exists()
         d,e=install(base,fixture)
+        help_log=execute(e,"--help",success=True)
+        assert "8 game files + 8 resources" in help_log
+        assert "no legacy migration" in help_log
+        assert "retail EXE and bundled fix.dll still checked" in help_log
         # The synthetic retail EXE is deliberately NOT runnable, but the
         # launcher still must create the one-shot runtime startup log before
         # CreateProcessW. The default INI does not exist in this fixture.
@@ -109,7 +113,9 @@ def main():
         execute(e,"--verify",success=True)
         receipt=d/"state/installed-resources.sha256"; data=receipt.read_bytes()
         receipt.write_bytes(data+b"tampered")
-        execute(e,"--verify",success=False)
+        strict=execute(e,"--verify",success=False)
+        assert "VERIFY: unexpected trailing data in" in strict
+        assert receipt.read_bytes()==data+b"tampered"
         rejected=execute(e,"--install-only",success=False)
         assert "RECEIPT: unexpected trailing data" in rejected
         assert receipt.read_bytes()==data+b"tampered"
@@ -117,7 +123,8 @@ def main():
         execute(e,"--verify",success=True)
         lic=d/"docs/SDL3-LICENSE.txt"; license_bytes=lic.read_bytes()
         lic.write_bytes(license_bytes+b"user-change")
-        execute(e,"--verify",success=False)
+        strict=execute(e,"--verify",success=False)
+        assert "VERIFY: resource hash mismatch: docs\\SDL3-LICENSE.txt" in strict
         rejected=execute(e,"--install-only",success=False)
         assert "RECEIPT: non-DLL resource hash mismatch: docs\\SDL3-LICENSE.txt" in rejected
         assert lic.read_bytes().endswith(b"user-change")
@@ -138,13 +145,33 @@ def main():
         sdl.write_bytes(sdl_bytes)
         # Separate missing receipt and malformed header failures.
         receipt.unlink()
+        strict=execute(e,"--verify",success=False)
+        assert "VERIFY: resource receipt missing or unsafe" in strict
+        assert not receipt.exists()
         rejected=execute(e,"--install-only",success=False)
         assert "RECEIPT: resource receipt missing or unsafe" in rejected
         assert not receipt.exists()
         receipt.write_bytes(b"invalid-header\n"+data.split(b"\n",1)[1])
+        strict=execute(e,"--verify",success=False)
+        assert "VERIFY: invalid resource receipt header" in strict
         rejected=execute(e,"--install-only",success=False)
         assert "RECEIPT: invalid resource receipt header" in rejected
         receipt.write_bytes(data)
+        execute(e,"--verify",success=True)
+        game_receipt=d/"state/installed-game.sha256"
+        game_data=game_receipt.read_bytes()
+        game_receipt.unlink()
+        strict=execute(e,"--verify",success=False)
+        assert "VERIFY: game receipt missing or unsafe" in strict
+        assert not game_receipt.exists()
+        game_receipt.write_bytes(b"invalid-header\n"+game_data.split(b"\n",1)[1])
+        strict=execute(e,"--verify",success=False)
+        assert "VERIFY: invalid game receipt header" in strict
+        game_receipt.write_bytes(game_data+b"extra")
+        strict=execute(e,"--verify",success=False)
+        assert "VERIFY: unexpected trailing data in state\\installed-game.sha256" in strict
+        assert game_receipt.read_bytes()==game_data+b"extra"
+        game_receipt.write_bytes(game_data)
         execute(e,"--verify",success=True)
         # Authenticated old unified seven-hash receipt: --verify rejects
         # missing manifest, but --install-only upgrades atomically to eight.
