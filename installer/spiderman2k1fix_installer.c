@@ -1534,7 +1534,7 @@ static int upgrade_recognized_payloads(void){
   }
   discard_upgrade_staging(staging);
 #ifdef SPIDER_UNIFIED_INSTALL
-  message(L"UPGRADE: bundled resources updated; game\\fix.dll replaced without permanent backup; original game/INI/saves unchanged");
+  message(L"UPGRADE: bundled resources updated; original game/INI/saves unchanged");
 #else
   message(L"UPGRADE: bundled runtimes updated; previous DLL saved as .bak; original game/INI/saves unchanged");
 #endif
@@ -1986,16 +1986,24 @@ int wmain(int argc,wchar_t **argv) {
     }
     if(!verify_payloads()){
 #ifdef SPIDER_UNIFIED_INSTALL
-      /* Automatic repair is restricted to a missing/mismatched fix.dll.
-       * The trusted multi-component transaction preserves version cohesion.
-       * All other discrepancies alone still require --install-only. */
-      if(resource_verify(RES_FIX,game_dir,L"fix.dll")){
-        message(L"UNIFIED: non-fix resources differ; use --install-only for authenticated update");
+      /* Only a missing/mismatched managed runtime DLL triggers automatic
+       * repair. The same receipt-gated transaction preserves version cohesion.
+       * Non-DLL discrepancies alone still require --install-only. */
+      int fix_current=resource_verify(RES_FIX,game_dir,L"fix.dll");
+      int sdl_current=resource_verify(RES_SDL3,game_dir,L"SDL3.dll");
+      if(fix_current && sdl_current){
+        message(L"UNIFIED: non-runtime resources differ; use --install-only for authenticated update");
         goto done;
       }
-      message(L"UPGRADE: game\\fix.dll differs from embedded version; replacing automatically without .bak");
+      if(!fix_current)
+        message(L"UPGRADE: game\\fix.dll differs from embedded version; replacing automatically without .bak");
+      if(!sdl_current)
+        message(L"UPGRADE: game\\SDL3.dll differs from embedded version; repairing automatically");
       if(!upgrade_recognized_payloads()){
-        message(L"UNIFIED: automatic fix.dll replacement refused; original game and receipts preserved");
+        if(!fix_current)
+          message(L"UNIFIED: automatic fix.dll replacement refused; original game and receipts preserved");
+        else
+          message(L"UNIFIED: automatic SDL3.dll repair refused; original game and receipts preserved");
         goto done;
       }
       if(!verify_payloads() || !verify_install_receipt(managed_root())){
