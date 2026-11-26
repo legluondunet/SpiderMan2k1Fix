@@ -201,6 +201,40 @@ def main():
         assert fix.read_bytes()==authentic
         assert not (d/"game/fix.dll.bak").exists()
         execute(e,"--verify",success=True)
+        # A missing or mismatched SDL3.dll alone now uses the same transaction.
+        d,e=install(base,fixture,"auto_repair_sdl3")
+        fix=d/"game/fix.dll"; sdl=d/"game/SDL3.dll"
+        receipt=d/"state/installed-resources.sha256"
+        game_receipt=d/"state/installed-game.sha256"
+        fix_bytes=fix.read_bytes(); sdl_bytes=sdl.read_bytes()
+        original_receipt=receipt.read_bytes()
+        original_game_receipt=game_receipt.read_bytes()
+        backup=d/"game/SDL3.dll.bak"
+        backup.write_bytes(b"KEEP-EXISTING-BACKUP")
+        sdl.unlink()
+        execute(e,"--verify",success=False)
+        assert not sdl.exists()
+        denied=execute(e,success=False,
+                       environment={"SPIDER_UNIFIED_TEST_UPGRADE_FAIL":"1"})
+        assert "automatic SDL3.dll repair refused" in denied
+        assert not sdl.exists() and receipt.read_bytes()==original_receipt
+        assert backup.read_bytes()==b"KEEP-EXISTING-BACKUP"
+        assert not (d/"SpiderMan2k1Fix.updating").exists()
+        repaired=execute(e,success=False)  # synthetic game cannot start
+        assert "SDL3.dll differs from embedded version; repairing automatically" in repaired
+        assert sdl.read_bytes()==sdl_bytes
+        assert backup.read_bytes()==b"KEEP-EXISTING-BACKUP"
+        assert fix.read_bytes()==fix_bytes
+        execute(e,"--verify",success=True)
+        sdl.write_bytes(b"UNKNOWN-SDL3")
+        execute(e,success=False)
+        assert sdl.read_bytes()==sdl_bytes
+        assert backup.read_bytes()==b"UNKNOWN-SDL3"
+        assert fix.read_bytes()==fix_bytes
+        assert not (d/"game/fix.dll.bak").exists()
+        assert receipt.read_bytes()==original_receipt
+        assert game_receipt.read_bytes()==original_game_receipt
+        execute(e,"--verify",success=True)
         # If a later component fails in the staged transaction, restore the
         # previous fix.dll bytes and the unmodified receipt; no backup.
         d,e=install(base,fixture,"auto_replace_fix_rollback")
