@@ -49,6 +49,91 @@ enum { SPIDER_DIRECT_ENTRY_MAX_CALLS=4u };
 static int direct_entry_attempted=0,direct_entry_installed=0;
 typedef void (__cdecl *SpiderNativeControllerConfigFn)(int);
 
+/* These five exact CALL instructions are verified against the retail
+ * function archives for 0x50CE70, 0x50D2F0 and 0x4401B0. Keep native
+ * CMenu::Display (including expanding-box animation), but suppress its
+ * text only during the two Joystick-owned calls. Keyboard is untouched.
+ * Back is the separate original trigger at 0x50D397, never redirected. */
+static int guide_hide_rows=0;
+typedef void (__thiscall *SpiderGuideMenuMethod)(void *);
+typedef int (__cdecl *SpiderGuideText)(int,int,const char *,int,unsigned);
+typedef unsigned char (__cdecl *SpiderGuideTriggers)(unsigned,int,int);
+static int __cdecl spider_guide_menu_text(int x,int y,const char *s,int a,unsigned b) {
+  if(guide_hide_rows)return 0;
+  return ((SpiderGuideText)(uintptr_t)0x00458700u)(x,y,s,a,b);
+}
+static void spider_guide_native_labels(void) {
+  /* One immutable action map, presentation only. The selected SDL
+   * controller supplies the physical face labels for this exact frame. */
+  unsigned family,i;
+  char punch[32],web[32],kick[32],jump[32],confirm[48],back[48];
+  struct {int x,y; const char *s;} labels[]={
+    {25,80,"AIM"},
+    {390,64,"SWING"}, {390,80,"ZIPLINE"},
+    {25,112,"D PAD MOVE"}, {25,134,"STICK MOVE"},
+    {186,56,"BACK PAUSE"},
+    {390,97,web}, {390,113,kick}, {390,129,jump}, {390,144,punch},
+    {171,202,confirm}, {172,218,back}
+  };
+  SpiderSDL3ControllerSetup_RefreshGuide();
+  family=SpiderSDL3ControllerSetup_GuideFamily();
+  if(family==1) {
+    labels[0].s="L1 AIM";labels[1].s="R2 SWING";
+    labels[2].s="R1 ZIPLINE";labels[5].s="SHARE PAUSE";
+  } else if(family==2) {
+    labels[0].s="LB AIM";labels[1].s="RT SWING";
+    labels[2].s="RB ZIPLINE";labels[5].s="BACK PAUSE";
+  } else if(family==3) {
+    labels[0].s="L AIM";labels[1].s="ZR SWING";
+    labels[2].s="R ZIPLINE";labels[5].s="MINUS PAUSE";
+  } else {
+    labels[0].s="LB AIM";labels[1].s="RT SWING";
+    labels[2].s="RB ZIPLINE";labels[5].s="BACK PAUSE";
+  }
+  if(family==2 || family==3) {
+    labels[3].s="STICK MOVE";labels[4].s="D PAD MOVE";
+  }
+  snprintf(punch,sizeof(punch),"%s PUNCH",SpiderSDL3ControllerSetup_GuideButton(2));
+  snprintf(web,sizeof(web),"%s WEB",SpiderSDL3ControllerSetup_GuideButton(3));
+  snprintf(kick,sizeof(kick),"%s KICK",SpiderSDL3ControllerSetup_GuideButton(1));
+  snprintf(jump,sizeof(jump),"%s JUMP",SpiderSDL3ControllerSetup_GuideButton(0));
+  snprintf(confirm,sizeof(confirm),"%s CONFIRM OR SKIP",SpiderSDL3ControllerSetup_GuideButton(0));
+  snprintf(back,sizeof(back),"%s RETURN",SpiderSDL3ControllerSetup_GuideButton(1));
+  ((void (__cdecl *)(void))(uintptr_t)0x0047A370u)(); /* PShell_NormalFont */
+  ((void (__cdecl *)(unsigned char))(uintptr_t)0x00458610u)(1);
+  ((void (__cdecl *)(int))(uintptr_t)0x00458620u)(140);
+  ((void (__cdecl *)(unsigned char,unsigned char,unsigned char,int))
+     (uintptr_t)0x00458640u)(255,255,255,0);
+  ((void (__cdecl *)(unsigned char,unsigned char,unsigned char))
+     (uintptr_t)0x00458670u)(190,185,255);
+  for(i=0;i<sizeof(labels)/sizeof(labels[0]);++i)
+    ((SpiderGuideText)(uintptr_t)0x00458700u)(
+       labels[i].x,labels[i].y,labels[i].s,0,0x1000u);
+  ((void (__cdecl *)(int))(uintptr_t)0x00458620u)(256);
+}
+static void __fastcall spider_guide_display_left(void *menu,void *unused) {
+  int old=guide_hide_rows;
+  (void)unused;
+  guide_hide_rows=SpiderSDL3ControllerSetup_IsNativeActive();
+  ((SpiderGuideMenuMethod)(uintptr_t)0x004401B0u)(menu);
+  guide_hide_rows=old;
+}
+static void __fastcall spider_guide_display_right(void *menu,void *unused) {
+  spider_guide_display_left(menu,unused);
+  if(SpiderSDL3ControllerSetup_IsNativeActive()) {
+    spider_guide_native_labels();
+    SpiderSDL3ControllerSetup_OnNativeFrame();
+  }
+}
+static void __fastcall spider_guide_update(void *menu,void *unused) {
+  (void)unused;
+  if(!SpiderSDL3ControllerSetup_IsNativeActive())
+    ((SpiderGuideMenuMethod)(uintptr_t)0x00440600u)(menu);
+}
+static unsigned char __cdecl spider_guide_confirm(unsigned mask,int a,int b) {
+  if(SpiderSDL3ControllerSetup_IsNativeActive())return 0;
+  return ((SpiderGuideTriggers)(uintptr_t)0x0050C180u)(mask,a,b);
+}
 static void __cdecl spider_sdl3_direct_controller_menu(int native_mode) {
   static unsigned logs=0u;
   char line[180];
@@ -66,12 +151,22 @@ static void __cdecl spider_sdl3_direct_controller_menu(int native_mode) {
     report(line);
   }
   if(is_joystick && SpiderSDL3ControllerSetup_Enabled()) {
-    if(SpiderSDL3Probe_SetupPump()) {
-      report("SDL3-DIRECT-ENTRY: Joystick selected (mode=0); bypass original seven-action submenu and open SDL3 window");
-      SpiderSDL3ControllerSetup_Open();
+    /* Open the ORIGINAL game's Joystick configuration screen. Its mapping
+     * mutation/capture is disabled by our SHA-guarded native patch, while
+     * the controller guide is composited on the game's DirectDraw surface.
+     * If the native guard is unavailable, do not expose writable bindings. */
+    if(!SpiderSDL3_InstallGenericReadOnlyJoystick(ps1_menu_logger)) {
+      report("SDL3-NATIVE-GUIDE: REFUSED unsafe writable Joystick menu; original options screen preserved");
       return;
     }
-    report("SDL3-DIRECT-ENTRY: SDL3 not ready; fallback to original Joystick menu");
+    SpiderSDL3ControllerSetup_OnNativeEnter();
+    report("SDL3-DIRECT-ENTRY: Joystick selected (mode=0); enter native read-only controller menu with in-game guide");
+    ((SpiderNativeControllerConfigFn)(uintptr_t)
+      SPIDER_NATIVE_CONTROLLER_CONFIG_VA)(native_mode);
+    /* Retail function contains the entire native controller-screen loop.
+     * Its return is the authoritative exit, not the persistent mode flag. */
+    SpiderSDL3ControllerSetup_OnNativeExit();
+    return;
   } else if(native_mode==1) {
     if(logs<18u)
       report("SDL3-DIRECT-ENTRY: Keyboard selected (mode=1); original game configuration preserved");
@@ -103,9 +198,16 @@ int SpiderSDL3_InstallDirectJoystickEntry(void (*logger)(const char *)) {
   IMAGE_DOS_HEADER *dos;
   IMAGE_NT_HEADERS32 *nt;
   IMAGE_SECTION_HEADER *section;
-  BYTE *found[SPIDER_DIRECT_ENTRY_MAX_CALLS]={NULL};
-  BYTE old_bytes[SPIDER_DIRECT_ENTRY_MAX_CALLS][5]={{0}};
-  unsigned i,j,count=0u,written=0u;
+  BYTE *found[SPIDER_DIRECT_ENTRY_MAX_CALLS+5u]={NULL};
+  BYTE old_bytes[SPIDER_DIRECT_ENTRY_MAX_CALLS+5u][5]={{0}};
+  const struct {uintptr_t va; BYTE bytes[5]; uintptr_t replacement;} guide_sites[]={
+    {0x0050CFBFu,{0xE8,0xEC,0x31,0xF3,0xFF},(uintptr_t)&spider_guide_display_left},
+    {0x0050CFCAu,{0xE8,0xE1,0x31,0xF3,0xFF},(uintptr_t)&spider_guide_display_right},
+    {0x00440486u,{0xE8,0x75,0x82,0x01,0x00},(uintptr_t)&spider_guide_menu_text},
+    {0x0050D338u,{0xE8,0xC3,0x32,0xF3,0xFF},(uintptr_t)&spider_guide_update},
+    {0x0050D3DBu,{0xE8,0xA0,0xED,0xFF,0xFF},(uintptr_t)&spider_guide_confirm}
+  };
+  unsigned i,j,count=0u,written=0u,entry_count=0u;
   char line[192];
   if(!SpiderSDL3ControllerSetup_Enabled())return 0;
   if(direct_entry_installed)return 1;
@@ -189,9 +291,26 @@ int SpiderSDL3_InstallDirectJoystickEntry(void (*logger)(const char *)) {
     report("SDL3-DIRECT-ENTRY: REFUSED no direct CALL rel32 to 0x0050CE70; possible indirect call; old menu preserved");
     return 0;
   }
+  entry_count=count;
+  /* All five native guide CALLs must match before any patch is written.
+   * The original direct-entry CALLs and guide hooks share one rollback. */
+  for(i=0;i<sizeof(guide_sites)/sizeof(guide_sites[0]);++i) {
+    BYTE *site=(BYTE *)guide_sites[i].va;
+    MEMORY_BASIC_INFORMATION mbi;
+    if(VirtualQuery(site,&mbi,sizeof(mbi))!=sizeof(mbi) ||
+       mbi.State!=MEM_COMMIT || (mbi.Protect&(PAGE_NOACCESS|PAGE_GUARD)) ||
+       memcmp(site,guide_sites[i].bytes,5u)!=0) {
+      report("SDL3-NATIVE-GUIDE: REFUSED original draw/update/confirm CALL mismatch; no guide hooks written");
+      return 0;
+    }
+    found[count++]=site;
+  }
   for(i=0;i<count;i++) {
     BYTE patch[5];
-    uint32_t rel=(uint32_t)(uintptr_t)&spider_sdl3_direct_controller_menu-
+    uintptr_t replacement=i<entry_count?
+      (uintptr_t)&spider_sdl3_direct_controller_menu:
+      guide_sites[i-entry_count].replacement;
+    uint32_t rel=(uint32_t)replacement-
       ((uint32_t)(uintptr_t)found[i]+5u);
     patch[0]=0xE8u;
     memcpy(patch+1,&rel,sizeof(rel));
@@ -216,8 +335,9 @@ int SpiderSDL3_InstallDirectJoystickEntry(void (*logger)(const char *)) {
   direct_entry_installed=1;
   snprintf(line,sizeof(line),
     "SDL3-DIRECT-ENTRY: ACTIVE intercepted original PCSHELL_DoControllerConfig CALL(s)=%u, function=0x%08X; Keyboard passthrough, Joystick -> SDL3",
-    count,SPIDER_NATIVE_CONTROLLER_CONFIG_VA);
+    entry_count,SPIDER_NATIVE_CONTROLLER_CONFIG_VA);
   report(line);
+  report("SDL3-NATIVE-GUIDE: verified five native CALL hooks; old rows hidden at source, selection/confirm disabled, original Back and expanding boxes retained");
   return 1;
 }
 
@@ -235,11 +355,6 @@ static void __cdecl spider_joystick_restore_denied(void) {
    * In the experimental user-wizard mode it becomes a safe menu command,
    * NEVER the original restore-defaults action. Native seven-action
    * assignments stay locked until SDL3 gameplay bridge is validated. */
-  if(SpiderSDL3ControllerSetup_Enabled() &&
-     *(const volatile DWORD *)(uintptr_t)0x00AC129Cu!=0u) {
-    SpiderSDL3ControllerSetup_Open();
-    return;
-  }
   LONG n=InterlockedIncrement(&blocked);
   if(n<=8 || n%64==0) {
     char line[195];
@@ -268,11 +383,11 @@ static void __fastcall spider_joystick_restore_row_addentry(
       /* Keep left/right CMenu rows aligned; no altered action indexes.
        * The original RestoreDefaults call is already replaced above. */
       const void *left=*(void *const volatile *)(uintptr_t)0x00AC11B4u;
-      const char *text=native_menu==left?
-                         "SDL3 TEST (PREVIEW)":" ";
+      const char *text=" "; /* no extra selectable setup action */
+      (void)left;
       ((SpiderCMenuAddEntry)(uintptr_t)0x0043FFF0u)(native_menu,text);
       if(InterlockedIncrement(&suppressed)==1)
-        report("SDL3-SETUP: native Joystick preview row replaces Restore Default (paired columns; keyboard menu unchanged)");
+        report("SDL3-NATIVE-GUIDE: obsolete Restore Defaults row neutralized in original Joystick menu; keyboard unchanged");
     } else {
       if(InterlockedIncrement(&suppressed)==1)
         report("GAMEPAD-READONLY: Restore Default ROW OMITTED in Joystick (and matching placeholder); 14 action entries kept, Keyboard restore preserved");

@@ -3,7 +3,7 @@
  * action-map overlays, and competing synthetic UI key bridges.
  * The original game's joystick defaults remain untouched when the
  * experimental universal adapter is not explicitly enabled.
- * Keep the permanent game-only mouse policy and SDL3 setup entry.
+ * Keep the permanent game-only mouse policy and a read-only guide.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -18,9 +18,15 @@ void SpiderGamepadUI_Init(const char *ini,void (*logger)(const char *)) {
   ui_log=logger;
   SpiderPS1Mouse_Configure(logger);
   SpiderSDL3ControllerSetup_Init(ini,logger);
-  if(SpiderSDL3ControllerSetup_Enabled())
+  if(SpiderSDL3ControllerSetup_Enabled()) {
+    /* Install the direct entry even when the native read-only patch
+     * refuses: the redirect then refuses unsafe Joystick access instead
+     * of exposing the old writable bindings. Keyboard remains untouched. */
+    if(!SpiderSDL3_InstallGenericReadOnlyJoystick(logger) && logger)
+      logger("SDL3-NATIVE-GUIDE: original Joystick mutation guard unavailable; read-only menu entry will refuse");
     SpiderSDL3_InstallDirectJoystickEntry(logger);
-  if(logger)logger("GAMEPAD-UI: retired pre-SDL3 Xbox/DS4 custom maps and synthetic keys; SDL3 per-model profile is the only patch-provided mapping");
+  }
+  if(logger)logger("GAMEPAD-UI: retired pre-SDL3 Xbox/DS4 custom maps and synthetic keys; SDL3 fixed PlayStation-style semantic controls are the only patch-provided mapping");
 }
 void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
                             int bink_active,int native_pause_active) {
@@ -29,6 +35,9 @@ void SpiderGamepadUI_OnFlip(HWND hwnd,int menu_2d,int gameplay_3d,
   SpiderPS1Mouse_OnFlip(hwnd);
   if(SpiderSDL3ControllerSetup_Enabled())
     SpiderSDL3_InstallDirectJoystickEntry(ui_log);
+  /* Native read-only guard is attempted at initialization, then checked
+   * again only when Joystick is opened. No signature scans/allocation on
+   * every Flip if the original executable unexpectedly refuses a patch. */
 }
 void SpiderGamepadUI_AfterControllerSetup(HWND hwnd) {(void)hwnd;}
 /* The engine's SDL3 focus wake and keyboard release are independent

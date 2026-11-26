@@ -10,10 +10,10 @@
  * SDL3.dll is optional and is only loaded from the executable directory. */
 void SpiderSDL3Probe_Init(const char *ini,void (*logger)(const char *));
 void SpiderSDL3Probe_OnFlip(long flip,HWND game_hwnd);
-/* The Flip-blocking Alt+Tab PAUSED screen uses the same selected SDL3
- * handle on the same game thread, with no key injection or DirectInput
- * Acquire. Begin requires a verified game-owned selected device; Poll
- * requires foreground and a new neutral->press->release digital sequence. */
+/* Flip-blocking Alt+Tab PAUSED screen: any validated mapped SDL3 pad
+ * may wake and become the owner, on the original game thread. Poll(NULL)
+ * resets wake candidates on host focus loss; no key injection/DI Acquire.
+ * Foreground neutral->fresh digital press->release is mandatory. */
 int SpiderSDL3Probe_PauseWake_Begin(void);
 unsigned SpiderSDL3Probe_PauseWake_Poll(HWND game_hwnd);
 void SpiderSDL3Probe_PauseWake_End(void);
@@ -38,9 +38,11 @@ int SpiderSDL3Probe_SelectedRT(int *normalized_rt);
 /* Opt-in keyboard adapter: one selected, uniquely identified mapped SDL3
  * controller, including explicit PS3 selection (never native DI ownership).
  * Reject disconnected or ambiguous generic devices without fallback. */
-/* True only for an intentional activity edge accepted this same game Flip
- * after a physical neutral sample. Used to honor the first user action. */
+/* Fresh, validated activity edge on this game Flip; never a held Start. */
 int SpiderSDL3Probe_FreshActivityClaim(uint32_t instance_id);
+/* Display-only SDL face labels, in SOUTH/EAST/WEST/NORTH order. */
+int SpiderSDL3Probe_SelectedGuideLabels(unsigned labels[4],uint16_t *vid,
+                                       uint32_t *instance);
 int SpiderSDL3Probe_SelectedMappedSample(uint32_t *instance,
     uint16_t *vid,uint16_t *pid,SpiderSDL3ControllerSample *sample);
 int SpiderSDL3Probe_GenericSelectedSample(uint32_t *instance,
@@ -62,9 +64,6 @@ int SpiderSDL3Probe_NewGameBinkWaitSouthRelease(HWND game_window);
  * selection, native joystick or UI synthetic events. No auto init. */
 /* Shared IN-MEMORY profile bank with optional SDL3BindingTrace. */
 SpiderSDL3ControllerProfile *SpiderSDL3Probe_SetupProfile(uint16_t vid,uint16_t pid);
-/* Transactional per-model profile commit. On write failure the current
- * in-memory profile stays unchanged; game-owned DirectInput untouched. */
-int SpiderSDL3Probe_SetupCommit(const SpiderSDL3ControllerProfile *candidate);
 int SpiderSDL3Probe_SetupPump(void);
 /* After the modal window closes, invalidate Start edges sampled while
  * gameplay Flip was suspended. An explicit Start OR physical Circle/B
