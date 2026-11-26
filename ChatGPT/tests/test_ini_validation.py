@@ -287,3 +287,21 @@ def test_features_f10_skip_cinematics_boolean(runner,tmp_path,value,valid):
         assert outcome==(0,0,1),detail
     else:
         assert outcome[0]>=1 and outcome[2]==0,detail
+
+@pytest.mark.parametrize("value,valid",[("0",True),("1",True),("2",False),("-1",False),("yes",False),("",False)])
+@pytest.mark.parametrize("key",["RenderCanvasTrace","ExperimentalWideCulling"])
+def test_render_canvas_trace_is_known_and_strict_boolean(runner,tmp_path,value,valid,key):
+    result,detail=validate(runner,tmp_path,f"[Debug]\nLog=1\n{key}={value}\n")
+    if valid:
+        assert result==(0,0,1),detail
+    else:
+        assert result[0]>=1 and result[2]==0,detail
+    assert "Unknown key" not in detail
+
+def test_render_canvas_trace_preserves_complete_player_ini(runner,tmp_path):
+    ini=(ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text()
+    assert "RenderCanvasTrace=" not in ini
+    assert "Log=0" in ini
+    assert "ExperimentalWideCulling=" not in ini
+    enabled=ini.replace("Log=0","Log=1\nRenderCanvasTrace=1\nExperimentalWideCulling=1",1)
+    assert validate(runner,tmp_path,enabled)[0]==(0,0,1)
