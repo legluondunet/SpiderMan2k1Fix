@@ -186,7 +186,7 @@ selected monitor's active Windows/Wine resolution.
 
 The supported executable receives **automatic desktop resolution**, borderless fullscreen, centered 4:3 intro/menu media, native comic correction, automatic FOV/aspect adjustment, adaptive widescreen HUD and the verified in-game Display menu lock. These are no longer enabled or disabled through experimental flags; the original 4:3 mode retains its original geometry where a widescreen transform is unnecessary.
 
-**Alt+Tab and pause are permanent features:** once another application's focus loss is confirmed, the game latches pause at the original DirectDraw Flip boundary; a **press and release of any keyboard key after returning** resumes it; with an **already detected Sony DualShock 4**, a fresh **digital button press followed by full release** also wakes our custom PAUSED screen (not the original 3D Escape pause). The DS4 button is polled from our independent nonexclusive DirectInput device while Flip is blocked; no synthetic keyboard event reaches the game. The focus-loss pause now shows **only `PAUSED`** in the **identical bottom-left, flush-left violet notification panel used by F9 screenshots**, with the original 32×32 game icon, lavender three-sided border and white bold-italic text. There is no on-screen wake instruction; keyboard and eligible selected-gamepad wake-up remain unchanged. The label contains no device-specific status, so hotplugging does not need to update visual instructions. No controller button can resume while another application is foreground, no held-before-resume button is inherited, and a keyboard key always remains a fallback. This does **not** add hotplugging or Xbox/DS2 support. The frozen game frame receives the compact F9-style **PAUSED** notification and **60% black shading by default**, with no grid. This behavior also coordinates the game's native Bink video/music streams and its game-owned secondary DirectSound voices. The native `DIERR_NOTACQUIRED` keyboard/mouse retry is requested automatically and installed only after its verified signature check at Flip #120; desktop cursor restoration is automatic. The old unsafe DirectInput COM-vtable hook stays disabled.
+**Alt+Tab and pause are permanent features:** confirmed external focus loss latches pause at the original DirectDraw Flip boundary. After returning to the game, a complete keyboard press/release or a fresh eligible digital button press/release from any recognized SDL3 gamepad resumes our custom PAUSED screen (not the original 3D Escape pause). The gamepad used to resume becomes active, even if another controller was active before the pause. A newly connected mapped gamepad can be detected while paused. A neutral sample is required before a fresh press; competing simultaneous presses are refused. No wake button is injected into the game, no controller can resume in the background, and the keyboard always remains a fallback. The frozen game frame, including the native Joystick guide if open, receives the compact F9-style **PAUSED** notification and **60% black shading by default**, with no grid or device-specific wake instruction. The pause coordinates native Bink streams and game-owned secondary DirectSound voices. The native `DIERR_NOTACQUIRED` keyboard/mouse retry is requested automatically and installed only after its verified signature check at Flip #120; desktop cursor restoration is automatic. The old unsafe DirectInput COM-vtable hook stays disabled. SDL3 wake and controller handoff were validated with DS4 and Xbox 360 under Wine 11.19; native Windows hardware validation is still outstanding.
 
 **Windows-specific behavior:** the patch requests `DisableProcessWindowsGhosting` automatically on systems providing the API, avoiding Windows' false Ghost-window foreground transitions. This also disables Windows' normal ghost-window handling for a genuinely hung game **until the process exits**; it does not solve a real hang. Wine implementation details may differ.
 
@@ -261,14 +261,16 @@ from the generated file does not disable these features.
 
 At the original DirectDraw Flip boundary, confirmed external focus loss
 latches pause; its screenshot-style PAUSED label uses the optional 60%-by-default
-shading described above. A complete keyboard press/release, or a new
-press/release of an already acquired Sony DS4 digital button after returning
-to the game, resumes our custom PAUSED screen. The gamepad wake waits for a
-neutral reading and full physical release; it never synthesizes a key in
-the original game and is independent from the original 3D pause menu.
-The maintainer confirmed physical DS4 wake of our custom PAUSED screen
-under Wine on 28 October 2026. The same session revealed the desktop
-mouse pointer remained visible until wake. The follow-up fix now balances
+shading described above. After returning to the foreground, a complete
+keyboard press/release or a fresh eligible digital press/release from any
+recognized SDL3 gamepad resumes our custom PAUSED screen. Each gamepad
+must first be neutral; simultaneous competing requests are refused. The
+winning gamepad becomes active, including a newly connected mapped pad
+once detected. No wake key is synthesized in the original game, and this
+is independent of the original 3D pause menu. The complete Joystick guide
+is drawn before the frame is frozen. DS4/Xbox 360 wake and handoff were
+validated under Wine 11.19; Windows hardware remains untested for this
+change. The earlier desktop cursor fix balances
 any temporary desktop-pointer visibility restoration **during** the
 PAUSED loop as soon as the game becomes foreground again, rather than
 waiting for a keyboard/controller press. Independently, the game
