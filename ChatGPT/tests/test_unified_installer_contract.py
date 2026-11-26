@@ -74,3 +74,14 @@ def test_unified_dpi_shim_is_child_scoped_and_before_createprocess():
     assert "GetProcessDpiAwareness" in core
     assert "RegSetValue" not in start
     assert "SetProcessDPIAware" not in start
+
+def test_sdl3_only_repair_uses_existing_receipt_gated_transaction():
+    src=(ROOT/"installer/spiderman2k1fix_installer.c").read_text()
+    main=src.split("int wmain(",1)[1]
+    normal=main.split("if(!verify_payloads()){",1)[1].split("#else",1)[0]
+    assert 'int fix_current=resource_verify(RES_FIX,game_dir,L"fix.dll");' in normal
+    assert 'int sdl_current=resource_verify(RES_SDL3,game_dir,L"SDL3.dll");' in normal
+    assert "if(fix_current && sdl_current)" in normal
+    assert "upgrade_recognized_payloads()" in normal
+    assert normal.index("upgrade_recognized_payloads()") < normal.index("!verify_install_receipt(managed_root())")
+    assert "automatic SDL3.dll repair refused" in normal
