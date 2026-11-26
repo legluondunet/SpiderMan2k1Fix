@@ -34,7 +34,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 
 - **No-CD:** Bypasses the original CD-ROM check through an in-memory patch, without modifying the game executable.
 - **Modern display support:** Runs in borderless fullscreen at the monitor's native resolution, with automatic widescreen 3D (`Auto`) or a centered classic 4:3 mode. Also supports multi-monitor configurations.
-- **Automatic FOV adjustment:** Automatically adjusts the field of view to match the desktop resolution and aspect ratio, providing proper widescreen rendering without distorting the 3D scene.
+- **Automatic FOV adjustment:** Matches the desktop aspect ratio for undistorted widescreen 3D.
 - **Aspect ratio corrections:** Original 4:3 menus, videos, comics and 2D elements. **SAVE GAME**, **INPUT NAME**, **SAVE COMPLETED** and frozen **PAUSED** backgrounds/titles retain 4:3 automatically on the verified executable ([PR #144](https://github.com/legluondunet/SpiderMan2k1Fix/pull/144)).
 - **Widescreen HUD:** Corrects the proportions and positioning of HUD elements, including health and web gauges, compass, mission objectives, boss health bars, and in-game pause menus, with native scene-entry iris. Tested at 1920×1080 (16:9) and 1920×1200 (16:10).
 - **FPS limiter:** Configurable frame-rate cap, set to **30 FPS by default**. Lower limits, such as 20 FPS, can be selected for timing-sensitive gameplay.
@@ -42,7 +42,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 - **SDL3 gamepads:** Start-free selection: one pad connects after neutral; with several, the first deliberately used pad becomes active. Others can take over after release. DS4/Xbox 360/PS3 tested under Wine; DS4/Xbox 360 also under Windows. [Details](docs/references/RELEASE_2_0_RC_TEST_PLAN.md).
 - **Keyboard layouts:** Automatically detects the active keyboard layout and adapts the game's controls, keyboard labels, and cheat-code entry. The original game only supported QWERTY layouts.
 - **No game mouse:** Keyboard/gamepad only. Game cursor, clicks and polling are permanently off. Desktop pointer unaffected; legacy `MouseEnabled` ignored.
-- **DPI awareness:** Handles Windows display scaling to ensure correct window dimensions and rendering on high-DPI displays.
+- **DPI awareness:** Correct window dimensions and rendering on high-DPI displays.
 - **Settings preservation:** Keyboard, audio, and brightness settings are managed through `SpiderMan2k1Fix.ini`; controller actions are fixed and do not require per-model profiles. INI recovery uses a rolling `.ini.old` backup. The original `Spidey.cfg` file is no longer needed.
 - **PNG screenshots:** Press **F9** to save lossless screenshots (`scrnNNNN.png`) under `SpiderMan2k1Fix/screenshots/` (per-user fallback when the game folder is read-only).
 - **Debug logging:** With `[Debug] Log=1`, `SpiderMan2k1Fix.log` automatically includes a one-shot `SYS-INFO` configuration report: OS/Win32 version, detected Wine and Proton hints, Linux kernel as reported by Wine, CPU and core counts, RAM, GPU and D3D9 driver metadata, display resolution/count/refresh, available Linux desktop session hints, plus XInput/DirectInput gamepads. No extra log option is needed.
@@ -51,7 +51,7 @@ SpiderMan2k1Fix is an **unofficial fan-made patch** for the PC version of *Spide
 
 Successfully tested on Windows 11 and Linux/Wine.
 
-**First-time Xbox setup:** no controller INI edit is needed for a normally recognized Xbox 360 gamepad. Release all controls when the game starts. With one connected mapped controller it activates automatically. With multiple pads, press a gameplay/menu button or intentionally move the left stick after a neutral frame to choose the active pad; only one pad can control the game at a time. View the fixed PS1-style controls under Options > Joystick; the illustration and button labels adapt to the active controller, and user-action remapping has been removed. The original game's joystick bytes remain preserved in `[Internal] RawHex`, but legacy `[Joystick]` INI bindings no longer affect SDL3.
+**First-time Xbox setup:** no INI edit needed. Release all controls at startup. One mapped pad activates automatically; with several, a fresh button press or deliberate left-stick movement selects the active pad. Options > Joystick displays the fixed PS1-style controls with adaptive artwork and labels. Legacy `[Joystick]` bindings are ignored; original joystick bytes remain in `[Internal] RawHex`.
 
 ## Bugs Resolved
 
