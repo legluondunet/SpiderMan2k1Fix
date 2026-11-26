@@ -32,4 +32,4 @@ def test_trace_records_only_successful_canvas_mapping_and_queued_f9():
     assert 'frame->flip!=epoch' in dump
     assert 'frame->total-frame->stored' in dump
     assert 'canvas_trace_shots>=CANVAS_TRACE_SHOTS' in dump
-    assert "if(queued)canvas_trace_f9();" in SRC
+    assert "if(queued && !f9_static_comic_capture)canvas_trace_f9();" in SRC

@@ -84,6 +84,7 @@ static int focus_timeline_enabled=0;
 static void debug_log_load_setting(void) {
   char path[MAX_PATH];
   debug_log_enabled=0;
+  render_canvas_trace_enabled=0;
   if(!spider_path_ini_a(path,sizeof(path)))return;
   debug_log_enabled=(GetPrivateProfileIntA("Debug","Log",0,path)==1);
 #ifdef SPIDER_UNIFIED_FIX
@@ -1681,8 +1682,8 @@ static void canvas_trace_f9(void) {
   if(!render_canvas_trace_enabled || canvas_trace_shots>=CANVAS_TRACE_SHOTS)return;
   ++canvas_trace_shots;
   flip=InterlockedCompareExchange(&flip_count,0,0);
-  snprintf(msg,sizeof(msg),"CANVAS-TRACE: screenshot=%u capture-flip=%ld monitor=%dx%d [candidate mapping only; not proven HUD/world ownership]",
-           canvas_trace_shots,(long)flip,desktop_w,desktop_h);
+  snprintf(msg,sizeof(msg),"CANVAS-TRACE: screenshot=%u capture-flip=%ld monitor=%lux%lu [candidate mapping only; not proven HUD/world ownership]",
+           canvas_trace_shots,(long)flip,(unsigned long)desktop_w,(unsigned long)desktop_h);
   log_line(msg);
   for(age=1;;--age){
     LONG epoch=(LONG)((DWORD)flip-age);
@@ -4753,7 +4754,7 @@ static void __cdecl hooked_f9_png_only(void) {
       (unsigned long)desc.dwWidth,(unsigned long)desc.dwHeight,
       (unsigned long)unlock_hr);
     log_line(msg);
-    if(queued)canvas_trace_f9();
+    if(queued && !f9_static_comic_capture)canvas_trace_f9();
   } else {
     snprintf(msg,sizeof(msg),
       "F9-PNG-ONLY: backbuffer Lock failed hr=0x%08lX; no BMP created",
