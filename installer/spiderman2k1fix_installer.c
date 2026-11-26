@@ -1050,11 +1050,17 @@ static int verify_install_receipt(const wchar_t *root){
 static int verify_install_receipt_allow_unknown_dll(const wchar_t *root){
   wchar_t dest[SPIDER_INSTALLER_PATH],path[SPIDER_INSTALLER_PATH];
   FILE *in;char line[160],hash[65];unsigned i;size_t n;
-  if(!combine(dest,SPIDER_INSTALLER_PATH,root,receipt_name)||
-     !regular_file(dest))return 0;
-  in=_wfopen(dest,L"rb");if(!in)return 0;
+  if(!combine(dest,SPIDER_INSTALLER_PATH,root,receipt_name)){
+    message(L"RECEIPT: resource receipt path too long: %ls",receipt_name);return 0;
+  }
+  if(!regular_file(dest)){
+    message(L"RECEIPT: resource receipt missing or unsafe: %ls",receipt_name);return 0;
+  }
+  in=_wfopen(dest,L"rb");
+  if(!in){message(L"RECEIPT: cannot read resource receipt: %ls",receipt_name);return 0;}
   if(!fgets(line,sizeof(line),in)||
      strcmp(line,"SpiderMan2k1Fix-Resources-v1\n")){
+    message(L"RECEIPT: invalid resource receipt header: %ls",receipt_name);
     fclose(in);return 0;
   }
   for(i=0;i<OWNED_COUNT;i++){
@@ -1072,30 +1078,40 @@ static int verify_install_receipt_allow_unknown_dll(const wchar_t *root){
            GetLastError()==ERROR_FILE_NOT_FOUND){fclose(in);return 1;}
       }
 #endif
+      message(L"RECEIPT: missing resource hash for %ls (entry %u of %u)",
+              owned_paths[i],i+1u,(unsigned)OWNED_COUNT);
       fclose(in);return 0;
     }
     n=strcspn(line,"\r\n");line[n]=0;
     if(n!=64 || strspn(line,"0123456789abcdef")!=64 ||
        !combine(path,SPIDER_INSTALLER_PATH,root,owned_paths[i])){
+      message(L"RECEIPT: invalid resource hash or path: %ls (entry %u)",
+              owned_paths[i],i+1u);
       fclose(in);return 0;
     }
     attr=GetFileAttributesW(path);
     if(owned_runtime_dll(i) && attr==INVALID_FILE_ATTRIBUTES &&
        GetLastError()==ERROR_FILE_NOT_FOUND){
-      message(L"UPGRADE: missing installer-owned runtime DLL %ls; will restore bundled file",
+      message(L"UPGRADE: missing installer-owned runtime DLL %ls; eligible for repair if all receipts pass",
               owned_paths[i]);
       continue;
     }
     if(!regular_file(path) || !sha256_file(path,hash)){
+      message(L"RECEIPT: resource missing, unsafe or unreadable: %ls",owned_paths[i]);
       fclose(in);return 0;
     }
     if(strcmp(line,hash)){
+      if(!owned_runtime_dll(i))
+        message(L"RECEIPT: non-DLL resource hash mismatch: %ls",owned_paths[i]);
       if(!owned_runtime_dll(i)){fclose(in);return 0;}
-      message(L"UPGRADE: unknown installer-owned DLL %ls; previous bytes will be preserved as .bak",
+      message(L"UPGRADE: unknown installer-owned DLL %ls; eligible for replacement if all receipts pass",
               owned_paths[i]);
     }
   }
-  if(fgetc(in)!=EOF){fclose(in);return 0;}
+  if(fgetc(in)!=EOF){
+    message(L"RECEIPT: unexpected trailing data in %ls",receipt_name);
+    fclose(in);return 0;
+  }
   fclose(in);return 1;
 }
 /* Independent immutable snapshot of the original eight Wise files.

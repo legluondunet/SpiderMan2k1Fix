@@ -110,16 +110,41 @@ def main():
         receipt=d/"state/installed-resources.sha256"; data=receipt.read_bytes()
         receipt.write_bytes(data+b"tampered")
         execute(e,"--verify",success=False)
-        execute(e,"--install-only",success=False)
+        rejected=execute(e,"--install-only",success=False)
+        assert "RECEIPT: unexpected trailing data" in rejected
         assert receipt.read_bytes()==data+b"tampered"
         receipt.write_bytes(data)
         execute(e,"--verify",success=True)
         lic=d/"docs/SDL3-LICENSE.txt"; license_bytes=lic.read_bytes()
         lic.write_bytes(license_bytes+b"user-change")
         execute(e,"--verify",success=False)
-        execute(e,"--install-only",success=False)
+        rejected=execute(e,"--install-only",success=False)
+        assert "RECEIPT: non-DLL resource hash mismatch: docs\\SDL3-LICENSE.txt" in rejected
         assert lic.read_bytes().endswith(b"user-change")
         lic.write_bytes(license_bytes)
+        execute(e,"--verify",success=True)
+        # The reported incident: a missing DLL alone is repairable, but
+        # a later non-DLL mismatch must refuse all writes and explain why.
+        sdl=d/"game/SDL3.dll"; sdl_bytes=sdl.read_bytes()
+        sdl.unlink()
+        lic.write_bytes(license_bytes+b"user-change")
+        rejected=execute(e,success=False)
+        assert "missing installer-owned runtime DLL game\\SDL3.dll; eligible for repair if all receipts pass" in rejected
+        assert "RECEIPT: non-DLL resource hash mismatch: docs\\SDL3-LICENSE.txt" in rejected
+        assert not sdl.exists() and receipt.read_bytes()==data
+        assert lic.read_bytes().endswith(b"user-change")
+        assert not (d/"SpiderMan2k1Fix.updating").exists()
+        lic.write_bytes(license_bytes)
+        sdl.write_bytes(sdl_bytes)
+        # Separate missing receipt and malformed header failures.
+        receipt.unlink()
+        rejected=execute(e,"--install-only",success=False)
+        assert "RECEIPT: resource receipt missing or unsafe" in rejected
+        assert not receipt.exists()
+        receipt.write_bytes(b"invalid-header\n"+data.split(b"\n",1)[1])
+        rejected=execute(e,"--install-only",success=False)
+        assert "RECEIPT: invalid resource receipt header" in rejected
+        receipt.write_bytes(data)
         execute(e,"--verify",success=True)
         # Authenticated old unified seven-hash receipt: --verify rejects
         # missing manifest, but --install-only upgrades atomically to eight.
