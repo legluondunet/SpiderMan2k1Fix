@@ -53,6 +53,7 @@ static wchar_t game_dir[SPIDER_INSTALLER_PATH];
 static wchar_t log_path[SPIDER_INSTALLER_PATH];
 static FILE *logfile;
 static int verbose_mode;
+static int verify_only_mode; /* precise strict receipt diagnostics, never repair */
 static int game_dir_is_legacy;
 
 typedef struct DiscEntry {
@@ -896,7 +897,7 @@ static int resource_verify(WORD id,const wchar_t *base,const wchar_t *name){
   if(!resource_bytes(id,&bytes,&len)||
      !combine(dest,SPIDER_INSTALLER_PATH,base,name)||
      !same_file(dest,bytes,len)){
-    message(L"VERIFY: missing or altered runtime %ls (no automatic repair)",name);
+    message(L"VERIFY: resource differs from embedded version or is missing: %ls",name);
     return 0;
   }
   return 1;
@@ -1023,21 +1024,43 @@ static int verify_install_receipt(const wchar_t *root){
   wchar_t dest[SPIDER_INSTALLER_PATH],path[SPIDER_INSTALLER_PATH];
   FILE *in;char line[160],hash[65];unsigned i;size_t n;
   if(!combine(dest,SPIDER_INSTALLER_PATH,root,receipt_name)||
-     !regular_file(dest))return 0;
-  in=_wfopen(dest,L"rb");if(!in)return 0;
+     !regular_file(dest)){
+    if(verify_only_mode)message(L"VERIFY: resource receipt missing or unsafe: %ls",receipt_name);
+    return 0;
+  }
+  in=_wfopen(dest,L"rb");
+  if(!in){
+    if(verify_only_mode)message(L"VERIFY: cannot read resource receipt: %ls",receipt_name);
+    return 0;
+  }
   if(!fgets(line,sizeof(line),in)||
      strcmp(line,"SpiderMan2k1Fix-Resources-v1\n")){
+    if(verify_only_mode)message(L"VERIFY: invalid resource receipt header: %ls",receipt_name);
     fclose(in);return 0;
   }
   for(i=0;i<OWNED_COUNT;i++){
-    if(!fgets(line,sizeof(line),in)){fclose(in);return 0;}
+    if(!fgets(line,sizeof(line),in)){
+      if(verify_only_mode)message(L"VERIFY: missing resource hash for %ls",owned_paths[i]);
+      fclose(in);return 0;
+    }
     n=strcspn(line,"\r\n");line[n]=0;
-    if(n!=64 ||
-       !combine(path,SPIDER_INSTALLER_PATH,root,owned_paths[i])||
-       !regular_file(path)||!sha256_file(path,hash)||
-       strcmp(line,hash)){fclose(in);return 0;}
+    if(n!=64 || !combine(path,SPIDER_INSTALLER_PATH,root,owned_paths[i])){
+      if(verify_only_mode)message(L"VERIFY: invalid resource hash or path: %ls",owned_paths[i]);
+      fclose(in);return 0;
+    }
+    if(!regular_file(path)||!sha256_file(path,hash)){
+      if(verify_only_mode)message(L"VERIFY: resource missing, unsafe or unreadable: %ls",owned_paths[i]);
+      fclose(in);return 0;
+    }
+    if(strcmp(line,hash)){
+      if(verify_only_mode)message(L"VERIFY: resource hash mismatch: %ls",owned_paths[i]);
+      fclose(in);return 0;
+    }
   }
-  if(fgetc(in)!=EOF){fclose(in);return 0;}
+  if(fgetc(in)!=EOF){
+    if(verify_only_mode)message(L"VERIFY: unexpected trailing data in %ls",receipt_name);
+    fclose(in);return 0;
+  }
   fclose(in);return 1;
 }
 /* A previous installer-owned DLL may have been replaced by an older test
@@ -1168,10 +1191,20 @@ static int verify_game_receipt(const wchar_t *root){
   unsigned long long size;ULONGLONG installed_bytes;
   unsigned i;FILE *in;int good=0;
   if(!combine(dest,SPIDER_INSTALLER_PATH,root,game_receipt_name)||
-     !regular_file(dest))return 0;
-  in=_wfopen(dest,L"rb");if(!in)return 0;
+     !regular_file(dest)){
+    if(verify_only_mode)message(L"VERIFY: game receipt missing or unsafe: %ls",game_receipt_name);
+    return 0;
+  }
+  in=_wfopen(dest,L"rb");
+  if(!in){
+    if(verify_only_mode)message(L"VERIFY: cannot read game receipt: %ls",game_receipt_name);
+    return 0;
+  }
   if(!fgets(line,sizeof(line),in) ||
-     strcmp(line,"SpiderMan2k1Fix-Game-v1\n"))goto done;
+     strcmp(line,"SpiderMan2k1Fix-Game-v1\n")){
+    if(verify_only_mode)message(L"VERIFY: invalid game receipt header: %ls",game_receipt_name);
+    goto done;
+  }
   for(i=0;i<ORIGINAL_COUNT;i++){
     if(!fgets(line,sizeof(line),in) ||
        sscanf(line,"%llu %64[0-9a-f] %c",&size,expected,&extra)!=2 ||
@@ -1184,6 +1217,7 @@ static int verify_game_receipt(const wchar_t *root){
     }
   }
   if(fgetc(in)==EOF)good=1;
+  else if(verify_only_mode)message(L"VERIFY: unexpected trailing data in %ls",game_receipt_name);
 done:
   fclose(in);return good;
 }
@@ -1777,9 +1811,15 @@ static void usage(void){
 #else
   message(L"SpiderMan2k1Fix.exe                   Install/verify/launch in spiderman2001/");
 #endif
+#ifdef SPIDER_UNIFIED_INSTALL
+  message(L"SpiderMan2k1Fix.exe --install-only    Install/upgrade without launching; no legacy migration");
+  message(L"SpiderMan2k1Fix.exe --launch-no-verify  Skip receipts; retail EXE and bundled fix.dll still checked");
+  message(L"SpiderMan2k1Fix.exe --verify          Read-only SHA-256 checks for 8 game files + 8 resources");
+#else
   message(L"SpiderMan2k1Fix.exe --install-only    Install/upgrade; enroll legacy game receipt from original ISO");
   message(L"SpiderMan2k1Fix.exe --launch-no-verify  Direct launch without file checks");
   message(L"SpiderMan2k1Fix.exe --verify          Read-only SHA-256 checks for 8 game files + 7 resources");
+#endif
   message(L"SpiderMan2k1Fix.exe --inspect image.iso");
   message(L"SpiderMan2k1Fix.exe --inspect image.cue [track.bin|track.img]");
   message(L"SpiderMan2k1Fix.exe --verbose         Extra diagnostics (combinable)");
@@ -1877,6 +1917,7 @@ int wmain(int argc,wchar_t **argv) {
   }
   if(!combine(gameexe,SPIDER_INSTALLER_PATH,game_dir,L"SpideyPC.exe"))goto done;
   if(argc==2 && !wcscmp(argv[1],L"--verify")){
+    verify_only_mode=1;
     if(verified_retail(gameexe)&&verify_install_receipt(managed_root())&&
        verify_game_receipt(managed_root())&&verify_payloads()){
 #ifdef SPIDER_UNIFIED_INSTALL
