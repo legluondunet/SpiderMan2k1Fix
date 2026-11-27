@@ -19,4 +19,6 @@ int SpiderFOV_InstallWorldQuadTrial(void);
 void SpiderFOV_SetWorldQuadObserver(void (*observer)(int));
 void SpiderFOV_SetShadowSelectorObserver(void (*observer)(unsigned));
 int SpiderFOV_InstallShadowSelector(void);
+void SpiderFOV_SetShadowResolveObserver(void (*observer)(unsigned,DWORD));
+int SpiderFOV_InstallShadowResolver(void);
 #endif

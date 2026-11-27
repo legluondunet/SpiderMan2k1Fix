@@ -76,6 +76,7 @@ static void shadow_trace_native_code(void) {
     {0x004097E0u,0xBA0u,"world-quad-transform-submit"},
     {0x00508550u,0xA00u,"world-quad-submit-clip"},
     {0x00506440u,0x300u,"native-texture-selector"},
+    {0x0050F3C0u,0x200u,"native-index-to-surface"},
     {0x00507680u,0x200u,"queue-record-builder"},
     {0x00502B20u,0x280u,"D3D7-queue-flush"}
   };

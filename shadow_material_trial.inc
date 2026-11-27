@@ -9,7 +9,24 @@ static unsigned shadow_descriptor_match_logs,shadow_descriptor_miss_logs;
 static unsigned shadow_scope_draw_logs,shadow_scope_submit_logs;
 static DWORD shadow_scope_global_before;
 #include "shadow_hd_trial.inc"
-static DWORD shadow_hd_submit_material;
+#include "shadow_resolve_scope.h"
+static SpiderShadowResolveScope shadow_hd_scope;
+static unsigned shadow_hd_resolve_logs,shadow_hd_tag_logs,shadow_hd_link_logs;
+/* Only original converter results inside a validated native submit scope
+ * may authorize an HD tag. A mixed index or pointer invalidates the scope. */
+static void shadow_hd_observe_resolve(unsigned index,DWORD result) {
+  LONG flip=InterlockedCompareExchange(&flip_count,0,0);
+  if(!shadow_hd_enabled || shadow_material_thread!=GetCurrentThreadId() ||
+     shadow_material_nest!=1u || shadow_material_before>SPIDER_MENUBG43_RECORD_CAP ||
+     shadow_material_frame!=flip || !shadow_hd_scope.index)return;
+  SpiderShadowResolve_Observe(&shadow_hd_scope,index,result);
+  if(shadow_hd_resolve_logs<24u){
+    char msg[180];++shadow_hd_resolve_logs;
+    snprintf(msg,sizeof(msg),"SHADOW-HD-RESOLVE: flip=%ld index=%u surface=%08lX valid=%d",
+      (long)flip,index,(unsigned long)result,shadow_hd_scope.invalid==0);
+    log_line(msg);
+  }
+}
 typedef struct ShadowMaterialRecord {
   LONG stamp;
   DWORD material;
@@ -28,12 +45,13 @@ static void shadow_material_observe_submit(int phase) {
   if(!phase) {
     if(shadow_material_nest++!=0u)return;
     shadow_material_before=SPIDER_MENUBG43_RECORD_CAP+1u;
+    SpiderShadowResolve_Begin(&shadow_hd_scope,0);
     if(!SpiderFOV_GameplayReady() ||
        *(const volatile DWORD *)(uintptr_t)0x006151F8u ||
        *(const volatile DWORD *)(uintptr_t)0x00682950u)return;
     shadow_material_frame=InterlockedCompareExchange(&flip_count,0,0);
     shadow_scope_global_before=0;
-    shadow_hd_submit_material=shadow_hd_current_material(shadow_material_frame);
+    SpiderShadowResolve_Begin(&shadow_hd_scope,shadow_hd_current_index(shadow_material_frame));
     shadow_trace_read(0x00628614u,&shadow_scope_global_before,sizeof(shadow_scope_global_before));
     if(!shadow_trace_read(SPIDER_MENUBG43_QUEUE_COUNT,&shadow_material_before,sizeof(DWORD)))
       shadow_material_before=SPIDER_MENUBG43_RECORD_CAP+1u;
@@ -66,10 +84,20 @@ static void shadow_material_observe_submit(int phase) {
     tag->stamp=0;
     tag->native_global_before=shadow_scope_global_before;
     tag->native_global_after=global_after;
-    tag->hd_material=shadow_hd_submit_material;
+    tag->hd_material=0;
     if(shadow_trace_read(record+4u,&tag->material,sizeof(tag->material)) &&
-       shadow_trace_read(record+16u,tag->verts,sizeof(tag->verts)))
+       shadow_trace_read(record+16u,tag->verts,sizeof(tag->verts))){
       tag->stamp=flip+1;
+      if(SpiderShadowResolve_Match(&shadow_hd_scope,tag->material)){
+        tag->hd_material=tag->material;
+        if(shadow_hd_tag_logs<24u){
+          char msg[180];++shadow_hd_tag_logs;
+          snprintf(msg,sizeof(msg),"SHADOW-HD-TAG: flip=%ld record=%u index=%u surface=%08lX",
+            (long)flip,(unsigned)i,(unsigned)shadow_hd_scope.index,(unsigned long)tag->material);
+          log_line(msg);
+        }
+      }
+    }
   }
 }
 
@@ -130,6 +158,12 @@ static HRESULT shadow_material_draw(void *self,D3DPRIMITIVETYPE type,DWORD fvf,
   if(shadow_hd_enabled && tag->hd_material && material==tag->hd_material &&
      bound_texture==(uintptr_t)material){
     HRESULT hd_result;
+    if(shadow_hd_link_logs<16u){
+      char msg[160];++shadow_hd_link_logs;
+      snprintf(msg,sizeof(msg),"SHADOW-HD-LINK: flip=%ld record=%u bound=%08lX [native converter verified]",
+        (long)flip,(unsigned)idx,(unsigned long)bound_texture);
+      log_line(msg);
+    }
     if(shadow_hd_draw(device,tex,type,fvf,drawn,count,flags,&hd_result)){
       IDirectDrawSurface7_Release(tex);
       return hd_result;

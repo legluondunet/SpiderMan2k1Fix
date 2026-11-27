@@ -261,6 +261,52 @@ int SpiderFOV_InstallShadowSelector(void) {
   installed=1;say("SHADOW-HD: native texture selector observation installed");
   return 1;
 }
+/* Both original queue builders pass the selected index on the stack
+ * and store the converter's EAX return at record+4. The following
+ * instructions overwrite ECX/EDX. Keep the original CALL/return ABI. */
+typedef DWORD (__cdecl *SpiderNativeTextureResolve)(DWORD);
+static SpiderNativeTextureResolve const shadow_resolve_original=(SpiderNativeTextureResolve)(uintptr_t)0x0050F3C0u;
+static void (*shadow_resolve_observer)(unsigned,DWORD)=NULL;
+void SpiderFOV_SetShadowResolveObserver(void (*observer)(unsigned,DWORD)) {
+  shadow_resolve_observer=observer;
+}
+static DWORD __cdecl shadow_resolve(DWORD index) {
+  DWORD result=shadow_resolve_original(index);
+  if(shadow_resolve_observer)shadow_resolve_observer(index,result);
+  return result;
+}
+int SpiderFOV_InstallShadowResolver(void) {
+  static int installed;
+  static const BYTE first[]={0x50,0xe8,0xec,0x7b,0x00,0x00,0x83,0xc4,0x04,0x89,0x45,0x04,0x66,0x8b,0x0d,0x20,0xc7,0x71,0x00};
+  static const BYTE second[]={0x50,0xe8,0x3b,0x65,0x00,0x00,0x83,0xc4,0x04,0x89,0x43,0x04,0x66,0x8b,0x0d,0x20,0xc7,0x71,0x00};
+  BYTE *base=(BYTE*)GetModuleHandleA(NULL),*sites[2];
+  BYTE replacement[2][5]={{0xe8,0,0,0,0},{0xe8,0,0,0,0}};
+  DWORD old[2],restored,rel;
+  unsigned i;
+  if(installed)return 1;
+  if(!shadow_resolve_observer || (uintptr_t)base!=0x400000u ||
+     memcmp(base+0x1077ce,first,sizeof(first)) ||
+     memcmp(base+0x108e7f,second,sizeof(second))){
+    say("SHADOW-HD: resolver refused; native signature mismatch");return 0;
+  }
+  sites[0]=base+0x1077cf;sites[1]=base+0x108e80;
+  for(i=0;i<2;i++){
+    rel=(DWORD)((uintptr_t)shadow_resolve-(uintptr_t)(sites[i]+5));
+    memcpy(replacement[i]+1,&rel,4);
+  }
+  if(!VirtualProtect(sites[0],5,PAGE_EXECUTE_READWRITE,&old[0]))return 0;
+  if(!VirtualProtect(sites[1],5,PAGE_EXECUTE_READWRITE,&old[1])){
+    VirtualProtect(sites[0],5,old[0],&restored);return 0;
+  }
+  for(i=0;i<2;i++){
+    memcpy(sites[i],replacement[i],5);
+    FlushInstructionCache(GetCurrentProcess(),sites[i],5);
+    if(!VirtualProtect(sites[i],5,old[i],&restored))
+      say("SHADOW-HD: resolver page protection restore warning");
+  }
+  installed=1;say("SHADOW-HD: both native index-to-surface CALLs installed");
+  return 1;
+}
 static unsigned quad_logged,quad_refused;
 static void (*world_quad_observer)(int)=NULL;
 void SpiderFOV_SetWorldQuadObserver(void (*observer)(int)) { world_quad_observer=observer; }

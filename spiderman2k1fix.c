@@ -6055,7 +6055,10 @@ static DWORD initialize_body(LPVOID unused) {
         shadow_trace_native_code(); /* before installing native world-quad CALL wrappers */
         SpiderFOV_SetWorldQuadObserver(shadow_material_observe_submit);
         shadow_hd_enabled=GetPrivateProfileIntA("Debug","ExperimentalHDShadows",0,escape_ini)==1;
-        if(shadow_hd_enabled)SpiderFOV_SetShadowSelectorObserver(shadow_hd_observe_selector);
+        if(shadow_hd_enabled){
+          SpiderFOV_SetShadowSelectorObserver(shadow_hd_observe_selector);
+          SpiderFOV_SetShadowResolveObserver(shadow_hd_observe_resolve);
+        }
         log_line(shadow_material_soft?"SHADOW-MATERIAL: provenance probe + scoped linear-filter trial":"SHADOW-MATERIAL: provenance probe only");
       }
     }
@@ -6153,8 +6156,12 @@ static DWORD initialize_body(LPVOID unused) {
           SpiderFOV_InstallWideCulling();
         if(lstrcmpiA(aspect,"Auto")==0 &&
            GetPrivateProfileIntA("Debug","ExperimentalWorldQuadFOV",0,ini)==1)
-          if(SpiderFOV_InstallWorldQuadTrial() && shadow_hd_enabled)
-            SpiderFOV_InstallShadowSelector();
+          if(SpiderFOV_InstallWorldQuadTrial() && shadow_hd_enabled){
+            if(!SpiderFOV_InstallShadowSelector() || !SpiderFOV_InstallShadowResolver()){
+              shadow_hd_enabled=0;
+              log_line("SHADOW-HD: incomplete native provenance hooks; disabled");
+            }
+          }
         if(lstrcmpiA(aspect,"4:3")==0)
           log_line("DISPLAY-ASPECT-43: automatic FOV uses original 4:3 baseline 1.0");
 

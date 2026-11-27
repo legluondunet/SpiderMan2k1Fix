@@ -4,7 +4,7 @@
  * queue record and actual stage-0 surface must agree. No size-only matches. */
 #include "shadow_alpha_reconstruct.h"
 static int shadow_hd_enabled;
-static DWORD shadow_hd_selected;
+static DWORD shadow_hd_selected; /* index, never a COM pointer */
 static LONG shadow_hd_selected_flip=-1;
 static unsigned shadow_hd_selector_logs,shadow_hd_refusal_logs,shadow_hd_draw_logs;
 static IDirectDrawSurface7 *shadow_hd_source,*shadow_hd_surface;
@@ -26,11 +26,11 @@ static void shadow_hd_observe_selector(unsigned index) {
        (shadow_descriptor_words[i][0]>>16)==index &&
        shadow_trace_read((uintptr_t)shadow_trace_materials[i]+2u,&live,sizeof(live)) &&
        live==index){
-      if(shadow_trace_read(0x00568170u,&candidate,sizeof(candidate)) && candidate){
+      if(shadow_trace_read(0x00568170u,&candidate,sizeof(candidate)) && candidate==index && candidate>2u){
         shadow_hd_selected=candidate;shadow_hd_selected_flip=flip;
         if(shadow_hd_selector_logs<24u){
           char msg[180];++shadow_hd_selector_logs;
-          snprintf(msg,sizeof(msg),"SHADOW-HD-SELECT: flip=%ld index=%u descriptor=%08X material=%08X",
+          snprintf(msg,sizeof(msg),"SHADOW-HD-SELECT: flip=%ld index=%u descriptor=%08X selected-index=%08X",
             (long)flip,index,(unsigned)shadow_trace_materials[i],(unsigned)candidate);
           log_line(msg);
         }
@@ -39,7 +39,7 @@ static void shadow_hd_observe_selector(unsigned index) {
     }
   }
 }
-static DWORD shadow_hd_current_material(LONG flip) {
+static DWORD shadow_hd_current_index(LONG flip) {
   DWORD current=0;
   if(!shadow_hd_enabled || !shadow_hd_selected || flip!=shadow_hd_selected_flip ||
      !shadow_trace_read(0x00568170u,&current,sizeof(current)) ||
