@@ -405,7 +405,7 @@ log if the problem persists.
 
 **The game has visual or audio glitches**
 
-Try the original `AspectRatio=4:3` mode to help isolate widescreen-specific problems. Some edge-of-screen 3D rendering issues and audio artifacts are still being investigated; see the roadmap below.
+Try the original `AspectRatio=4:3` mode to help isolate widescreen-specific problems. In current development builds, the native horizontal visibility planes are widened automatically with the gameplay aspect scalar (#181), preserving vertical and depth culling. For developer comparisons only, `[Debug] ExperimentalWideCulling=0` restores the former visibility behavior; no new setting is generated. The retired `RenderCanvasTrace` key is accepted but ignored in this integration. See the [native visibility investigation](diagnostics/WIDE_CULLING_TRIAL.md). Other rendering and audio issues remain under investigation.
 
 ## Further technical references
 
