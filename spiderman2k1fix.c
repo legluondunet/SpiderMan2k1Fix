@@ -6136,6 +6136,9 @@ static DWORD initialize_body(LPVOID unused) {
         if(lstrcmpiA(aspect,"Auto")==0 &&
            GetPrivateProfileIntA("Debug","ExperimentalWideCulling",1,ini)==1)
           SpiderFOV_InstallWideCulling();
+        if(lstrcmpiA(aspect,"Auto")==0 &&
+           GetPrivateProfileIntA("Debug","ExperimentalWorldQuadFOV",0,ini)==1)
+          SpiderFOV_InstallWorldQuadTrial();
         if(lstrcmpiA(aspect,"4:3")==0)
           log_line("DISPLAY-ASPECT-43: automatic FOV uses original 4:3 baseline 1.0");
 

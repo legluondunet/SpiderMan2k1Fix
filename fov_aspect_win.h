@@ -14,4 +14,6 @@ void SpiderFOV_DisableUnsafeHorPlus(void);
 int SpiderFOV_GameplayReady(void);
 /* Native widescreen visibility correction #181; caller must authenticate retail EXE first. */
 int SpiderFOV_InstallWideCulling(void);
+/* Experimental #147, authenticated world-quad submission only. */
+int SpiderFOV_InstallWorldQuadTrial(void);
 #endif

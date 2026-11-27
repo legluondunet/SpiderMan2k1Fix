@@ -42,3 +42,43 @@ Send log and two screenshots. If the quad stays anchored in world
 space while its apparent position changes, examine projection path,
 rather than rewriting object coordinates. If native anchor moves,
 investigate its writer. No fix is claimed.
+
+
+## Field evidence and first projection trial
+
+Session 66d0582: 27 snapshots, 77 verified quad observations; each
+observed owner retained unchanged world position, ground anchor and
+four corners; center-minus-ground-x4=(0,0,0). F9 images at 945,1100,1524
+show displacement roughly proportional to horizontal screen-center
+distance, consistent with the successful .75 gameplay FOV scalar.
+
+Authenticated disassembly: 0x46DBC0 computes integer perspective
+using 0x54F03C focal length and 0x54F040 logical width/2 (512/2).
+At 0x4098E0 and the other three calls the native renderer uses this
+fixed-point projection, independent of the float 0x550064.
+The renderer copies X/Y from packed output into shorts at 0x654F54.
+0x40A021..0x40A046 and 0x40A221..0x40A255 compute X pixel scale from
+0x568154 (native output width) / 0x61B5FC (logical width).
+0x40A1A9 and 0x40A367 submit both native passes to 0x508550, four
+groups of six DWORDs (X,Y,depth,U,V,color), caller cleanup. The callee
+copies these into private vertices and performs original clipping.
+The earlier floating transform is used for depth, not the submitted X.
+This explains the missing horizontal aspect factor; visual validation
+still needed. The trial changes four X arguments at these two exact
+calls only, using center+scalar*(X-center). All other DWORDs forwarded
+bit-for-bit, original function called exactly once. No global
+fixed-point projection or world coordinate changes. All world quads
+submitted by this native renderer share this correction, not just
+the tutorial pickups. No per-level or object-specific workaround.
+
+Enable [Debug] ExperimentalWorldQuadFOV=1 (default off) and Log=1
+with AspectRatio=Auto. Keep ShadowWorldTrace=1 and EscapeBatchTrace=1.
+Both signatures preflight before writing either call; successful
+gameplay FOV, actual width equality, native logical width 512 and
+matching fixed projection width, no FMV/Pause context, finite complete
+quad required. Original preserved on mismatch, first eight mappings
+logged. 4:3 and menu unchanged. No keyboard behavior changes.
+Repeat previous screenshots of the same pickup shadows from
+different directions, look for correctly anchored shadows and any
+world-effect regression; send log and PNGs. Disable experimental
+option for baseline comparison if needed. No confirmed fix yet.
