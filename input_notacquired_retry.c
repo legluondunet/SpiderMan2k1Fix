@@ -381,7 +381,8 @@ void SpiderDI8Retry_OnFlip(long flip_index) {
   if(snapshot(&requested)!=1) return;
   /* The original game calls Flip on its render thread. Delayed install
    * avoids patching keyboard/mouse while startup devices are being created. */
-  if(flip_index==120) {try_install();install_escape_batch_trace();}
+  if(flip_index==120) try_install();
+  if(flip_index==120) install_escape_batch_trace();
   escape_trace_on_flip(flip_index);
   if(snapshot(&installed)!=1 || flip_index%120!=0) return;
   {

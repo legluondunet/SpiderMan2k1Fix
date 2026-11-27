@@ -50,7 +50,8 @@ def test_escape_observation_exact_epilogue_and_independent_retry():
     assert "emit_jmp(&p,site+5);" in s
     assert "memcmp(site,native_exit,sizeof(native_exit))" in s
     assert "0x00501C6Cu,native_loop,sizeof(native_loop)" in s
-    assert "try_install();install_escape_batch_trace();" in s
+    assert "if(flip_index==120) try_install();" in s
+    assert "if(flip_index==120) install_escape_batch_trace();" in s
     assert 'GetPrivateProfileIntA("Debug","EscapeBatchTrace",0,escape_ini)==1' in m
     assert "if(debug_log_enabled && spider_path_ini_a(escape_ini,sizeof(escape_ini)))" in m
     observe=s.split("static void __cdecl escape_observe(",1)[1].split(
