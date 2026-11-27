@@ -281,14 +281,15 @@ def test_f10_verbose_trace_strict_boolean(runner,tmp_path,value,valid):
 
 
 @pytest.mark.parametrize("value,valid",[("0",True),("1",True),("2",False),("-1",False),("yes",False)])
-def test_features_f10_skip_cinematics_boolean(runner,tmp_path,value,valid):
-    outcome,detail=validate(runner,tmp_path,f"[Features]\\nF10SkipCinematics={value}\\n".replace("\\n","\n"))
+@pytest.mark.parametrize("key",["F10SkipCinematics","EnhancedShadows"])
+def test_features_boolean(runner,tmp_path,value,valid,key):
+    outcome,detail=validate(runner,tmp_path,f"[Features]\\n{key}={value}\\n".replace("\\n","\n"))
     if valid:
         assert outcome==(0,0,1),detail
     else:
         assert outcome[0]>=1 and outcome[2]==0,detail
 
-@pytest.mark.parametrize("key",["RenderCanvasTrace","ExperimentalWideCulling","EscapeBatchTrace","ExperimentalEscapeEdgeRecovery","ShadowWorldTrace","ExperimentalSoftShadows","ExperimentalWorldQuadFOV"])
+@pytest.mark.parametrize("key",["RenderCanvasTrace","ExperimentalWideCulling","EscapeBatchTrace","ExperimentalEscapeEdgeRecovery","ShadowWorldTrace","ExperimentalSoftShadows","ExperimentalHDShadows","ExperimentalProceduralShadows","ShadowDiagnostics","ExperimentalWorldQuadFOV"])
 @pytest.mark.parametrize("value,valid",[("0",True),("1",True),("2",False),("-1",False),("yes",False),("",False)])
 def test_legacy_graphics_diagnostic_keys_are_known_booleans(runner,tmp_path,key,value,valid):
     result,detail=validate(runner,tmp_path,f"[Debug]\nLog=0\n{key}={value}\n")

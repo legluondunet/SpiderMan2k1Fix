@@ -3713,6 +3713,7 @@ static int ui_transition_native43_handle_draw(
 
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
   HRESULT native43_result;
+  if(shadow_hd_audit)shadow_hd_probe_draw(self,type,fvf,verts,count,0,0,__builtin_return_address(0));
   if(ui_transition_native43_handle_draw(self,type,fvf,verts,count,flags,
               __builtin_return_address(0),&native43_result))
     return native43_result;
@@ -3882,16 +3883,19 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
        InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)!=1)
       hr=draw_native_esc_in_front(self,type,fvf,(LPVOID)v,
                                  count,flags,native_esc_primitive);
-    else if(shadow_trace_enabled && v==verts)
-       hr=shadow_material_draw(self,type,fvf,verts,(LPVOID)v,count,flags,
-                              __builtin_return_address(0));
-     else
+    else if(!native_esc_primitive && !verified_hud_canvas &&
+       shadow_hd_registry_draw(self,type,fvf,verts,(LPVOID)v,count,flags,
+                               __builtin_return_address(0),&hr)) {
+      /* HD draw already completed; original stage-0 binding restored. */
+    }
+    else
        hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
     free_menu_vertices(allocated);
     return hr;
   }
 }
 static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,LPWORD indices,DWORD icount,DWORD flags) {
+  if(shadow_hd_audit)shadow_hd_probe_draw(self,type,fvf,verts,count,icount,1,__builtin_return_address(0));
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
      fvf==0x144UL && verts && count>=3 && count<=128)
     InterlockedIncrement(&menu_version_draws);
@@ -4672,6 +4676,8 @@ static void __cdecl hooked_f9_png_only(void) {
       (unsigned long)desc.dwWidth,(unsigned long)desc.dwHeight,
       (unsigned long)unlock_hr);
     log_line(msg);
+    if(queued && SUCCEEDED(unlock_hr) && !f9_static_comic_capture)
+      shadow_hd_capture_report(InterlockedCompareExchange(&flip_count,0,0));
     if(queued && SUCCEEDED(unlock_hr) && !f9_static_comic_capture &&
        shadow_trace_enabled && debug_log_enabled &&
        !(*(const volatile DWORD *)(uintptr_t)0x006151F8u) &&
@@ -5330,6 +5336,7 @@ static void pause_at_flip_if_background(void) {
 }
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
+  shadow_hd_finish_frame(count);
   focus_timeline_pulse(1,count,self);
   if(debug_log_enabled &&
      InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1) {
@@ -6023,6 +6030,9 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  /* A repaired INI can change Log. Honor the effective setting before
+   * initializing optional diagnostics; retain first-process log latch. */
+  debug_log_load_setting();
   /* The supported executable is already SHA-verified and the logger is
    * enabled only with [Debug] Log=1. Read-only inventory, never DllMain. */
   if(debug_log_enabled)SpiderSystemDiagnostics_Log(log_line);
@@ -6044,18 +6054,29 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderDI8Retry_Init(log_line);
   {
     char escape_ini[MAX_PATH];
-    if(debug_log_enabled && spider_path_ini_a(escape_ini,sizeof(escape_ini))) {
-      SpiderDI8Retry_RequestEscapeBatchTrace(
-        GetPrivateProfileIntA("Debug","EscapeBatchTrace",0,escape_ini)==1);
-      SpiderDI8Retry_RequestEscapeEdgeRecovery(
-        GetPrivateProfileIntA("Debug","ExperimentalEscapeEdgeRecovery",0,escape_ini)==1);
-      shadow_trace_init(GetPrivateProfileIntA("Debug","ShadowWorldTrace",0,escape_ini)==1,log_line);
-      if(shadow_trace_enabled) {
-        shadow_material_soft=GetPrivateProfileIntA("Debug","ExperimentalSoftShadows",0,escape_ini)==1;
-        shadow_trace_native_code(); /* before installing native world-quad CALL wrappers */
-        SpiderFOV_SetWorldQuadObserver(shadow_material_observe_submit);
-        log_line(shadow_material_soft?"SHADOW-MATERIAL: provenance probe + scoped linear-filter trial":"SHADOW-MATERIAL: provenance probe only");
+    if(spider_path_ini_a(escape_ini,sizeof(escape_ini))) {
+      int feature,legacy_hd;
+      if(debug_log_enabled){
+        SpiderDI8Retry_RequestEscapeBatchTrace(
+          GetPrivateProfileIntA("Debug","EscapeBatchTrace",0,escape_ini)==1);
+        SpiderDI8Retry_RequestEscapeEdgeRecovery(
+          GetPrivateProfileIntA("Debug","ExperimentalEscapeEdgeRecovery",0,escape_ini)==1);
       }
+      /* Explicit public setting wins; old HD opt-in remains valid if absent.
+       * Fresh INIs stay off until native Windows validation. Legacy procedural
+       * and soft-shadow switches are accepted by the validator but retired. */
+      feature=(int)GetPrivateProfileIntA("Features","EnhancedShadows",2,escape_ini);
+      legacy_hd=GetPrivateProfileIntA("Debug","ExperimentalHDShadows",0,escape_ini)==1;
+      shadow_hd_enabled=feature==2?legacy_hd:feature==1;
+      shadow_hd_audit=debug_log_enabled && GetPrivateProfileIntA("Debug","ShadowDiagnostics",0,escape_ini)==1;
+      if(shadow_hd_enabled && !shadow_hd_registry_init())shadow_hd_enabled=0;
+      /* Old pickup probe remains read-only, only when explicitly requested.
+       * No native code-window dump or obsolete texture selection hooks. */
+      shadow_trace_init(debug_log_enabled &&
+          (shadow_hd_audit || (!shadow_hd_enabled &&
+           GetPrivateProfileIntA("Debug","ShadowWorldTrace",0,escape_ini)==1)),log_line);
+      log_line(shadow_hd_enabled?(shadow_hd_audit?"SHADOW-HD: enabled; detailed audit ON":"SHADOW-HD: enabled; detailed audit OFF"):
+        "SHADOW-HD: disabled");
     }
   }
   /* Experimental: the original game exits on joystick DIERR_UNPLUGGED.
@@ -6150,7 +6171,7 @@ static DWORD initialize_body(LPVOID unused) {
            GetPrivateProfileIntA("Debug","ExperimentalWideCulling",1,ini)==1)
           SpiderFOV_InstallWideCulling();
         if(lstrcmpiA(aspect,"Auto")==0 &&
-           GetPrivateProfileIntA("Debug","ExperimentalWorldQuadFOV",0,ini)==1)
+           (shadow_hd_enabled || GetPrivateProfileIntA("Debug","ExperimentalWorldQuadFOV",0,ini)==1))
           SpiderFOV_InstallWorldQuadTrial();
         if(lstrcmpiA(aspect,"4:3")==0)
           log_line("DISPLAY-ASPECT-43: automatic FOV uses original 4:3 baseline 1.0");

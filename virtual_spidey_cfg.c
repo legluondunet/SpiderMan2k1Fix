@@ -398,6 +398,8 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "; 1 = F10 skips opening cinematics and introductory scripts; 0 = off (default).\r\n"
     "; Later in-level cinematics are unverified; does not exit gameplay.\r\n"
     "F10SkipCinematics=0\r\n"
+    "; 1 = smooth procedural HD shadows; 0 = original textures (default).\r\n"
+    "EnhancedShadows=0\r\n"
     "\r\n"
     "[Display]\r\n"
     "; Auto = monitor aspect ratio, 4:3 = original presentation.\r\n"
@@ -689,6 +691,14 @@ static int SpiderCfg_RepairIni(const char *ini,const SpiderIniResult *check,
       if(logger)logger(msg);
       DeleteFileA(tmp);goto done;
     }
+  }
+  /* Canonicalize the recovered HD opt-in after overlaying the old values.
+   * In particular, the new default 0 must not override a legacy opt-in
+   * unless an explicit valid Features value already did so. */
+  if(!WritePrivateProfileStringA("Features","EnhancedShadows",
+       SpiderIni_RecoveredEnhancedShadows(values)?"1":"0",tmp)) {
+    if(logger)logger("INI-REPAIR: failed preserving EnhancedShadows");
+    DeleteFileA(tmp);goto done;
   }
   /* Flush Win32 profile cache before manipulating the replacement file. */
   WritePrivateProfileStringA(NULL,NULL,NULL,tmp);

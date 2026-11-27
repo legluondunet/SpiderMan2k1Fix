@@ -13,12 +13,12 @@ def test_native_path_only_observes_authenticated_process():
                  "0x00507680u","0x00502B20u"):
         assert addr in h
     assert "if(!shadow_trace_enabled || !shadow_trace_log)return;" in h
-    assert "shadow_trace_native_code();" in c
-    assert c.index("shadow_trace_native_code();") < c.index("SpiderFOV_SetWorldQuadObserver(shadow_material_observe_submit)")
-    assert "SHADOW-IN-SUBMIT:" in s and "SHADOW-SUBMIT-STATE:" in s
-    assert "if(!shadow_material_soft || !matched || !known" in s
+    assert "shadow_trace_native_code();" not in c
+    assert "SpiderFOV_SetWorldQuadObserver(shadow_material_observe_submit)" not in c
+    assert "SHADOW-IN-SUBMIT:" not in s and "SHADOW-SUBMIT-STATE:" not in s
     assert "shadow_alpha_reconstruct.h" not in c
     assert "SpiderShadow_Alpha4To8" not in s
+    assert "shadow_hd_trial.inc" in s
 
 def test_monotone_shadow_alpha_reconstruction(tmp_path):
     if not shutil.which("gcc"): pytest.skip("host compiler absent")

@@ -30,6 +30,7 @@ def test_player_only_ini_keeps_fps_as_real_control():
     assert "ControllerXbox360Preview" not in cfg["Input"]
     assert cfg["Debug"]["Log"]=="0"
     assert cfg["Features"]["F10SkipCinematics"]=="0"
+    assert cfg["Features"]["EnhancedShadows"]=="0"
     assert len(cfg["Internal"]["RawHex"])==504
     assert '"FPSLimit=30\\r\\n"' in GEN
     assert 'GetPrivateProfileStringA("Display","FPSLimit","",fps_value' in CORE

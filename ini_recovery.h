@@ -61,5 +61,23 @@ static int SpiderIni_Recover(const char *path,SpiderIniRecovered *out) {
   fclose(file);return 1;
 }
 
+/* Repair overlays recovered values onto fresh defaults. Resolve the legacy
+ * shadow opt-in before the new factory 0 can silently mask it. The parser
+ * has already removed invalid values and duplicate entries. */
+static inline int SpiderIni_RecoveredEnhancedShadows(const SpiderIniRecovered *values) {
+  unsigned i;
+  int feature=-1,legacy=0;
+  if(!values)return 0;
+  for(i=0;i<values->count;i++) {
+    const SpiderIniRecoveredEntry *e=&values->entries[i];
+    if(!spider_ini_icmp(e->section,"Features") &&
+       !spider_ini_icmp(e->key,"EnhancedShadows"))
+      feature=strtoul(e->value,NULL,10)==1;
+    else if(!spider_ini_icmp(e->section,"Debug") &&
+            !spider_ini_icmp(e->key,"ExperimentalHDShadows"))
+      legacy=strtoul(e->value,NULL,10)==1;
+  }
+  return feature<0?legacy:feature;
+}
 
 #endif

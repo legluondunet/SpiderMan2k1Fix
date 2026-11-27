@@ -53,7 +53,11 @@ def test_escape_observation_exact_epilogue_and_independent_retry():
     assert "if(flip_index==120) try_install();" in s
     assert "if(flip_index==120) install_escape_batch_trace();" in s
     assert 'GetPrivateProfileIntA("Debug","EscapeBatchTrace",0,escape_ini)==1' in m
-    assert "if(debug_log_enabled && spider_path_ini_a(escape_ini,sizeof(escape_ini)))" in m
+    init=m.split("if(spider_path_ini_a(escape_ini,sizeof(escape_ini))) {",1)[1]
+    diagnostic=init.split("if(debug_log_enabled){",1)[1].split("}",1)[0]
+    assert "SpiderDI8Retry_RequestEscapeBatchTrace(" in diagnostic
+    assert "SpiderDI8Retry_RequestEscapeEdgeRecovery(" in diagnostic
+    assert 'GetPrivateProfileIntA("Debug","EscapeBatchTrace",0,escape_ini)==1' in diagnostic
     observe=s.split("static void __cdecl escape_observe(",1)[1].split(
         "static void install_escape_batch_trace(",1)[0]
     assert "count>16u" in observe
