@@ -39,6 +39,7 @@
 #include "wine_focus_autostart.h"
 #include "gamepad_ui_profile.h"
 #include "input_notacquired_retry.h"
+#include "pickup_shadow_trace.h"
 #include "alt_latch_recovery.h"
 #include "native_joystick_unplug.h"
 #include "native_joystick_reconnect.h"
@@ -4666,6 +4667,11 @@ static void __cdecl hooked_f9_png_only(void) {
       (unsigned long)desc.dwWidth,(unsigned long)desc.dwHeight,
       (unsigned long)unlock_hr);
     log_line(msg);
+    if(queued && SUCCEEDED(unlock_hr) && !f9_static_comic_capture &&
+       shadow_trace_enabled && debug_log_enabled &&
+       !(*(const volatile DWORD *)(uintptr_t)0x006151F8u) &&
+       !(*(const volatile DWORD *)(uintptr_t)0x00682950u))
+      shadow_trace_snapshot(InterlockedCompareExchange(&flip_count,0,0),1);
   } else {
     snprintf(msg,sizeof(msg),
       "F9-PNG-ONLY: backbuffer Lock failed hr=0x%08lX; no BMP created",
@@ -5376,6 +5382,12 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
        InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1)
       SpiderInputFocus_OnFlip(count);
   }
+  if(shadow_trace_enabled && debug_log_enabled &&
+     InterlockedCompareExchange(&menu_upscale_active,0,0)!=1 &&
+     InterlockedCompareExchange(&fov_game_height,0,0)>0 &&
+     !(*(const volatile DWORD *)(uintptr_t)0x006151F8u) &&
+     !(*(const volatile DWORD *)(uintptr_t)0x00682950u))
+    shadow_trace_snapshot(count,0);
   SpiderDI8Retry_OnFlip(count);
   if(count==120 && SpiderDI8Retry_EscapeTraceActive())
     SpiderQuickExitF12_InstallEscapeReaderTrace();
@@ -6027,9 +6039,11 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderDI8Retry_Init(log_line);
   {
     char escape_ini[MAX_PATH];
-    if(debug_log_enabled && spider_path_ini_a(escape_ini,sizeof(escape_ini)))
+    if(debug_log_enabled && spider_path_ini_a(escape_ini,sizeof(escape_ini))) {
       SpiderDI8Retry_RequestEscapeBatchTrace(
         GetPrivateProfileIntA("Debug","EscapeBatchTrace",0,escape_ini)==1);
+      shadow_trace_init(GetPrivateProfileIntA("Debug","ShadowWorldTrace",0,escape_ini)==1,log_line);
+    }
   }
   /* Experimental: the original game exits on joystick DIERR_UNPLUGGED.
    * Opt-in, SHA-pinned, game-thread-only mitigation; no native rebind yet. */
