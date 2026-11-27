@@ -46,8 +46,8 @@ def test_recovery_is_exact_and_opt_in():
     m=(ROOT/"spiderman2k1fix.c").read_text()
     for gate in ("0x00440F39u","mask==0x40040u","arg1==1u && arg2==1u",
                  "frame[1]==0x0050A662u","frame[3]==0x0050C23Fu",
-                 "GetForegroundWindow()==hwnd","*SPIDER_PAUSE_CONTEXT==0u",
-                 "*SPIDER_GAME_BINK_ACTIVE==0u","escape_pause_scope=previous"):
+                 "GetForegroundWindow()==hwnd","(*SPIDER_PAUSE_CONTEXT == 0u)",
+                 "(*SPIDER_GAME_BINK_ACTIVE == 0u)","escape_pause_scope=previous"):
         assert gate in q
     assert "SpiderDI8Retry_TakeEscapePauseEdge((unsigned)result,1)" in q
     assert "(GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0" in i
