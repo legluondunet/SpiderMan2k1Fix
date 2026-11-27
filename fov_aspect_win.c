@@ -6,12 +6,14 @@
 #include "fov_aspect.h"
 #include "fov_aspect_win.h"
 #include "wide_culling.h"
+#include "world_quad_projection.h"
 
 static int active=0;
 static int horplus_mode=0;
 static volatile LONG horplus_stage=0;
 static volatile LONG gameplay_scalar_ready=0;
 static float horplus_value=1.f;
+static unsigned world_quad_gameplay_width=0;
 static SpiderFOVSetting requested=SPIDER_FOV_AUTO;
 static double manual_degrees=0;
 static void (*log_fn)(const char *);
@@ -50,6 +52,7 @@ void SpiderFOV_Init(const char *setting,int experiment,int horplus,void (*logger
   InterlockedExchange(&horplus_stage,0);
   InterlockedExchange(&gameplay_scalar_ready,0);
   horplus_value=1.f;
+  world_quad_gameplay_width=0;
   if(requested==SPIDER_FOV_INVALID) {
     say("FOV: invalid setting; original projection retained (valid: Auto, 10..170 degrees)");
   } else if(requested==SPIDER_FOV_DEGREES) {
@@ -68,6 +71,7 @@ void SpiderFOV_SetStage(int gameplay,unsigned screen_w,unsigned screen_h) {
   float value=1.0f;
   char msg[180];
   if(!active) return;
+  world_quad_gameplay_width=0;
   InterlockedExchange(&horplus_stage,0);
   InterlockedExchange(&gameplay_scalar_ready,0);
   if(gameplay && !SpiderFOV_AspectScalar(screen_w,screen_h,&value)) {
@@ -81,7 +85,10 @@ void SpiderFOV_SetStage(int gameplay,unsigned screen_w,unsigned screen_h) {
     return;
   }
   horplus_value=value;
-  if(gameplay) InterlockedExchange(&gameplay_scalar_ready,1);
+  if(gameplay) {
+    world_quad_gameplay_width=screen_w;
+    InterlockedExchange(&gameplay_scalar_ready,1);
+  }
   if(gameplay && horplus_mode) InterlockedExchange(&horplus_stage,1);
   snprintf(msg,sizeof(msg),"FOV: aspect scalar=%.6g stage=%s target=%ux%u [EXPERIMENTAL, not measured degrees]",
            (double)value,gameplay?"GAMEPLAY":"MENU",screen_w,screen_h);
@@ -201,5 +208,118 @@ int SpiderFOV_InstallWideCulling(void) {
   if(!VirtualProtect(site,sizeof(replacement),old,&restored))
     say("WIDE-CULL: warning: original code-page protection restoration failed");
   say("WIDE-CULL: horizontal visibility-plane correction installed; no distance or vertical change");
+  return 1;
+}
+
+
+/* #147: two exact native world-quad submissions from 0x4097E0.
+ * 0x46DBC0 constructs integer screen X with focal length and half
+ * width 0x54F040; no read of 0x550064. The caller converts to pixels
+ * by 0x568154 / 0x61B5FC (40A021,40A221).
+ * 0x508550 receives four consecutive {x,y,depth,u,v,color} records
+ * as 24 stack DWORDs. Its original clipping and rendering stay intact.
+ * The wrapper changes only four X arguments. Bitwise forwarding of
+ * every other argument, no float conversion of colors/depth/UV. */
+typedef void (__cdecl *SpiderQuadSubmit)(
+    uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,
+    uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,
+    uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,
+    uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t);
+static SpiderQuadSubmit const quad_original=(SpiderQuadSubmit)(uintptr_t)0x00508550u;
+static unsigned quad_logged,quad_refused;
+static void __cdecl quad_submit(
+    uint32_t x0,uint32_t y0,uint32_t z0,uint32_t u0,uint32_t v0,uint32_t c0,
+    uint32_t x1,uint32_t y1,uint32_t z1,uint32_t u1,uint32_t v1,uint32_t c1,
+    uint32_t x2,uint32_t y2,uint32_t z2,uint32_t u2,uint32_t v2,uint32_t c2,
+    uint32_t x3,uint32_t y3,uint32_t z3,uint32_t u3,uint32_t v3,uint32_t c3) {
+  if(SpiderFOV_GameplayReady() && horplus_value>=0.3f && horplus_value<1.f &&
+     *(const volatile DWORD *)(uintptr_t)0x006151F8u==0u &&
+     *(const volatile DWORD *)(uintptr_t)0x00682950u==0u){
+    unsigned width=*(const volatile DWORD *)(uintptr_t)0x00568154u;
+    unsigned logical=*(const volatile DWORD *)(uintptr_t)0x0061B5FCu;
+    unsigned native_center_width=*(const volatile DWORD *)(uintptr_t)0x0054F040u;
+    uint32_t raw[4]={x0,x1,x2,x3};
+    float source[4],mapped[4];
+    memcpy(source,raw,sizeof(source));
+    if(width==world_quad_gameplay_width && logical==512u &&
+       native_center_width==logical &&
+       SpiderWorldQuad_MapX(source,width,horplus_value,mapped)){
+      memcpy(raw,mapped,sizeof(raw));
+      x0=raw[0];x1=raw[1];x2=raw[2];x3=raw[3];
+      if(quad_logged<8u){
+        char line[256];
+        ++quad_logged;
+        snprintf(line,sizeof(line),
+          "WORLD-QUAD-FOV: width=%u scalar=%.5f x=(%.2f,%.2f,%.2f,%.2f)->(%.2f,%.2f,%.2f,%.2f)",
+          width,(double)horplus_value,
+          (double)source[0],(double)source[1],(double)source[2],(double)source[3],
+          (double)mapped[0],(double)mapped[1],(double)mapped[2],(double)mapped[3]);
+        say(line);
+      }
+    }else if(!quad_refused){
+      char line[180];
+      quad_refused=1;
+      snprintf(line,sizeof(line),
+        "WORLD-QUAD-FOV: original preserved; width=%u expected=%u logical=%u center-width=%u or invalid quad",
+        width,world_quad_gameplay_width,logical,native_center_width);
+      say(line);
+    }
+  }
+  quad_original(x0,y0,z0,u0,v0,c0,x1,y1,z1,u1,v1,c1,
+                x2,y2,z2,u2,v2,c2,x3,y3,z3,u3,v3,c3);
+}
+
+int SpiderFOV_InstallWorldQuadCorrection(void) {
+  BYTE *base=(BYTE*)GetModuleHandleA(NULL);
+  BYTE *first,*second;
+  BYTE replacement[2][5]={{0xe8,0,0,0,0},{0xe8,0,0,0,0}};
+  DWORD old,restored,rel;
+  static int installed=0;
+  static const BYTE projection1[]={
+    0xdb,0x05,0x54,0x81,0x56,0x00,0xd9,0x5c,0x24,0x14,
+    0xdf,0xac,0x24,0xa8,0x00,0x00,0x00,0xd9,0x5c,0x24,0x1c,
+    0xd9,0x44,0x24,0x14,0xd8,0x74,0x24,0x1c
+  };
+  static const BYTE projection2[]={
+    0xdb,0x05,0x54,0x81,0x56,0x00,0x0f,0xbf,0x50,0x0a,
+    0xd9,0x5c,0x24,0x14,0xdf,0xac,0x24,0x94,0x00,0x00,0x00,
+    0x68,0xa4,0x70,0x7d,0x3f,0x68,0xa4,0x70,0x7d,0x3f,0x53,
+    0xd9,0x5c,0x24,0x38,0xd9,0x44,0x24,0x20,0xd8,0x74,0x24,0x38
+  };
+  static const BYTE submit1[]={0x50,0x51,0x52,0xe8,0xa2,0xe3,0x0f,0x00,
+    0xdb,0x05,0x58,0x81,0x56,0x00,0xa1,0x14,0x86,0x62,0x00,0x83,0xc4,0x68};
+  static const BYTE submit2[]={0x50,0x51,0x52,0xe8,0xe4,0xe1,0x0f,0x00,
+    0x8b,0x76,0x08,0x83,0xc4,0x60,0x85,0xf6};
+  static const BYTE callee[]={0x81,0xec,0x40,0x01,0x00,0x00,0x53,0x55,0x56,0x57,
+    0x8b,0xac,0x24,0x6c,0x01,0x00,0x00,0x8b,0x84,0x24,0x5c,0x01,0x00,0x00};
+  static const BYTE fixed[]={0x8b,0x3d,0x3c,0xf0,0x54,0x00,0x8b,0xc7,0x0f,0xaf,0xc2,
+    0x99,0xf7,0xfe,0x8b,0xd8,0xa1,0x40,0xf0,0x54,0x00,0x99,0x2b,0xc2,0xd1,0xf8,0x03,0xd8};
+  if(installed)return 1;
+  if(!active || (uintptr_t)base!=0x400000u ||
+     memcmp(base+0xa021,projection1,sizeof(projection1)) ||
+     memcmp(base+0xa221,projection2,sizeof(projection2)) ||
+     memcmp(base+0xa1a6,submit1,sizeof(submit1)) ||
+     memcmp(base+0xa364,submit2,sizeof(submit2)) ||
+     memcmp(base+0x108550,callee,sizeof(callee)) ||
+     memcmp(base+0x6dc8d,fixed,sizeof(fixed))){
+    say("WORLD-QUAD-FOV: correction refused; original signature mismatch");return 0;
+  }
+  first=base+0xa1a9;second=base+0xa367;
+  rel=(DWORD)((uintptr_t)quad_submit-(uintptr_t)(first+5));
+  memcpy(replacement[0]+1,&rel,4);
+  rel=(DWORD)((uintptr_t)quad_submit-(uintptr_t)(second+5));
+  memcpy(replacement[1]+1,&rel,4);
+  /* Both CALLs are on the same native 4 KiB page. Preflight both,
+   * make the complete span writable once, then publish both. */
+  if(!VirtualProtect(first,(SIZE_T)(second+5-first),PAGE_EXECUTE_READWRITE,&old)){
+    say("WORLD-QUAD-FOV: correction refused; cannot protect original CALLs");return 0;
+  }
+  memcpy(first,replacement[0],5);
+  memcpy(second,replacement[1],5);
+  FlushInstructionCache(GetCurrentProcess(),first,(SIZE_T)(second+5-first));
+  if(!VirtualProtect(first,(SIZE_T)(second+5-first),old,&restored))
+    say("WORLD-QUAD-FOV: warning: native page protection restoration failed");
+  installed=1;
+  say("WORLD-QUAD-FOV: native world-quad projection correction installed; two exact calls, X only");
   return 1;
 }
