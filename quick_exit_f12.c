@@ -805,7 +805,7 @@ static void spider_newgame_enter_release_barrier(int confirmed_movie4) {
  * the physical Enter/Space key-up; no F10 state or request-7 writes. */
 static void __cdecl spider_movie4_safety_only_game_input(void) {
   if(InterlockedCompareExchange(&movie4_input_release_state,0,0)==1 &&
-     (*SPIDER_GAME_BINK_ACTIVE == 0u) &&
+     *SPIDER_GAME_BINK_ACTIVE==0u &&
      *SPIDER_BINK_VIDEO_HANDLE==0u &&
      InterlockedCompareExchange(&movie4_input_release_state,2,1)==1)
     spider_newgame_enter_release_barrier(1);
@@ -1786,7 +1786,7 @@ static BYTE __cdecl spider_probe_3d_native_input(
     escape_pause_scope=escape_reader_trace && SpiderDI8Retry_EscapeTraceActive() &&
       (DWORD)frame[1]==0x00440F39u && mask==0x40040u && arg1==1u && arg2==1u &&
       (*SPIDER_ENGINE_MODE == 0u) && (*SPIDER_PAUSE_CONTEXT == 0u) &&
-      *SPIDER_GAME_BINK_ACTIVE==0u && (*SPIDER_TRACE_TRANSITION_RAW == 0u) &&
+      (*SPIDER_GAME_BINK_ACTIVE == 0u) && (*SPIDER_TRACE_TRANSITION_RAW == 0u) &&
       hwnd && GetForegroundWindow()==hwnd;
     original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);
     escape_pause_scope=previous;
