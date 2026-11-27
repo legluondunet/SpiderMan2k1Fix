@@ -3882,6 +3882,11 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
        InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)!=1)
       hr=draw_native_esc_in_front(self,type,fvf,(LPVOID)v,
                                  count,flags,native_esc_primitive);
+    else if(!native_esc_primitive && !verified_hud_canvas &&
+       shadow_hd_registry_draw(self,type,fvf,verts,(LPVOID)v,count,flags,
+                               __builtin_return_address(0),&hr)) {
+      /* HD draw already completed; original stage-0 binding restored. */
+    }
     else if(shadow_trace_enabled && v==verts)
        hr=shadow_material_draw(self,type,fvf,verts,(LPVOID)v,count,flags,
                               __builtin_return_address(0));
@@ -4672,6 +4677,8 @@ static void __cdecl hooked_f9_png_only(void) {
       (unsigned long)desc.dwWidth,(unsigned long)desc.dwHeight,
       (unsigned long)unlock_hr);
     log_line(msg);
+    if(queued && SUCCEEDED(unlock_hr) && !f9_static_comic_capture)
+      shadow_hd_capture_report(InterlockedCompareExchange(&flip_count,0,0));
     if(queued && SUCCEEDED(unlock_hr) && !f9_static_comic_capture &&
        shadow_trace_enabled && debug_log_enabled &&
        !(*(const volatile DWORD *)(uintptr_t)0x006151F8u) &&
@@ -5330,6 +5337,7 @@ static void pause_at_flip_if_background(void) {
 }
 static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD flags) {
   HRESULT hr; LONG count=InterlockedIncrement(&flip_count);
+  shadow_hd_finish_frame(count);
   focus_timeline_pulse(1,count,self);
   if(debug_log_enabled &&
      InterlockedCompareExchange(&pause_on_focus_loss,0,0)==1) {
@@ -6056,6 +6064,7 @@ static DWORD initialize_body(LPVOID unused) {
         SpiderFOV_SetWorldQuadObserver(shadow_material_observe_submit);
         shadow_hd_enabled=GetPrivateProfileIntA("Debug","ExperimentalHDShadows",0,escape_ini)==1;
         if(shadow_hd_enabled){
+          shadow_hd_registry_init();
           SpiderFOV_SetShadowSelectorObserver(shadow_hd_observe_selector);
           SpiderFOV_SetShadowResolveObserver(shadow_hd_observe_resolve);
         }
@@ -6158,8 +6167,8 @@ static DWORD initialize_body(LPVOID unused) {
            GetPrivateProfileIntA("Debug","ExperimentalWorldQuadFOV",0,ini)==1)
           if(SpiderFOV_InstallWorldQuadTrial() && shadow_hd_enabled){
             if(!SpiderFOV_InstallShadowSelector() || !SpiderFOV_InstallShadowResolver()){
-              shadow_hd_enabled=0;
-              log_line("SHADOW-HD: incomplete native provenance hooks; disabled");
+              if(!shadow_hd_registry_ready)shadow_hd_enabled=0;
+              log_line("SHADOW-HD: incomplete scoped provenance hooks; registry mode only if verified");
             }
           }
         if(lstrcmpiA(aspect,"4:3")==0)

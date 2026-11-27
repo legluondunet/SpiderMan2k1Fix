@@ -101,6 +101,41 @@ static void shadow_material_observe_submit(int phase) {
   }
 }
 
+/* Independent from bounded pickup snapshots and scoped converter logs.
+ * Same native flush, exact queue record, live named material and bound
+ * surface. Preserve the vertices selected by the existing draw path,
+ * including its prior aspect corrections. Never classify by size. */
+static int shadow_hd_registry_draw(void *self,D3DPRIMITIVETYPE type,DWORD fvf,
+    LPVOID source,LPVOID drawn,DWORD count,DWORD flags,void *caller,HRESULT *result){
+  DWORD rva=0,material=0,named=0;
+  uint32_t idx;
+  LONG flip;
+  IDirectDrawSurface7 *tex=NULL;
+  IDirect3DDevice7 *device=(IDirect3DDevice7*)self;
+  int replaced=0;
+  if(!shadow_hd_registry_ready || !shadow_hd_enabled || !source || !drawn ||
+     type!=D3DPT_TRIANGLEFAN || fvf!=0x144UL || count!=4u ||
+     !SpiderFOV_GameplayReady() ||
+     *(const volatile DWORD *)(uintptr_t)0x006151F8u ||
+     *(const volatile DWORD *)(uintptr_t)0x00682950u ||
+     !geom_rva(caller,&rva) || rva!=0x00102C72UL ||
+     !SpiderMenubg43_RecordIndex((uintptr_t)source,&idx) ||
+     !shadow_trace_read((uintptr_t)source-12u,&material,sizeof(material)) || !material)return 0;
+  flip=InterlockedCompareExchange(&flip_count,0,0);
+  named=shadow_hd_registry_surface(flip);
+  if(!named || material!=named)return 0;
+  ++shadow_hd_frame_candidates;++shadow_hd_total_candidates;
+  if(SUCCEEDED(IDirect3DDevice7_GetTexture(device,0,&tex)) && tex &&
+     (uintptr_t)tex==(uintptr_t)named)
+    replaced=shadow_hd_draw(device,tex,type,fvf,drawn,count,flags,result);
+  if(tex)IDirectDrawSurface7_Release(tex);
+  if(replaced && SUCCEEDED(*result) && shadow_hd_enabled){
+    ++shadow_hd_frame_draws;++shadow_hd_total_draws;
+  }else{
+    ++shadow_hd_frame_fallback;++shadow_hd_total_fallback;
+  }
+  return replaced;
+}
 static HRESULT shadow_material_draw(void *self,D3DPRIMITIVETYPE type,DWORD fvf,
     LPVOID source,LPVOID drawn,DWORD count,DWORD flags,void *caller) {
   IDirect3DDevice7 *device=(IDirect3DDevice7 *)self;
@@ -155,7 +190,7 @@ static HRESULT shadow_material_draw(void *self,D3DPRIMITIVETYPE type,DWORD fvf,
     return original_draw_primitive(self,type,fvf,drawn,count,flags);
   }
   bound_texture=(uintptr_t)tex;
-  if(shadow_hd_enabled && tag->hd_material && material==tag->hd_material &&
+  if(!shadow_hd_registry_ready && shadow_hd_enabled && tag->hd_material && material==tag->hd_material &&
      bound_texture==(uintptr_t)material){
     HRESULT hd_result;
     if(shadow_hd_link_logs<16u){

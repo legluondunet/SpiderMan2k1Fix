@@ -3,7 +3,96 @@
  * authenticated pickup descriptor. Its resulting current material, tagged
  * queue record and actual stage-0 surface must agree. No size-only matches. */
 #include "shadow_alpha_reconstruct.h"
+#include "shadow_registry.h"
 static int shadow_hd_enabled;
+static int shadow_hd_registry_ready;
+static DWORD shadow_hd_registry_thread;
+static LONG shadow_hd_registry_flip=-1;
+static SpiderShadowRegistry shadow_hd_registry;
+static unsigned shadow_hd_registry_logs,shadow_hd_registry_misses;
+static unsigned shadow_hd_frame_candidates,shadow_hd_frame_draws,shadow_hd_frame_fallback;
+static unsigned shadow_hd_total_candidates,shadow_hd_total_draws,shadow_hd_total_fallback;
+static unsigned shadow_hd_frames,shadow_hd_full_frames,shadow_hd_partial_frames;
+static LONG shadow_hd_last_completed=-1;
+static unsigned shadow_hd_last_candidates,shadow_hd_last_draws,shadow_hd_last_fallback;
+static int shadow_hd_registry_read(uintptr_t address,void *out,size_t bytes){
+  return shadow_trace_read(address,out,(SIZE_T)bytes);
+}
+static int shadow_hd_registry_init(void){
+  static const BYTE names[]={0xbf,0xb8,0x90,0x6a,0x00,0x8d,0x74,0x24,0x10,0x8d,0x47,0x01};
+  static const BYTE loop[]={0x83,0xc7,0x28,0x45,0x81,0xff,0xb8,0xb8,0x6a,0x00,0x7c,0xb7};
+  static const BYTE key[]={0x8d,0x44,0xad,0x00,0x8b,0x0c,0xc5,0xdc,0x90,0x6a,0x00,0x8b,0xd1,0x81,0xe2,0xff,0x01,0x00,0x00,0x8b,0x04,0x95,0x34,0xb9,0x6a,0x00};
+  static const BYTE chain[]={0x39,0x48,0x14,0x74,0x09,0x8b,0x40,0x20,0x85,0xc0,0x75,0xf4};
+  static const BYTE resolver[]={0x8b,0x44,0x24,0x04,0x8d,0x0c,0x40,0x8d,0x14,0x88,0x8b,0x04,0xd5,0xf4,0x12,0xac,0x00,0xc3};
+  shadow_hd_registry_ready=shadow_trace_enabled &&
+    shadow_trace_signature(0x004c94f1u,names,sizeof(names)) &&
+    shadow_trace_signature(0x004c9533u,loop,sizeof(loop)) &&
+    shadow_trace_signature(0x004c955bu,key,sizeof(key)) &&
+    shadow_trace_signature(0x004c9579u,chain,sizeof(chain)) &&
+    shadow_trace_signature(0x0050f3c0u,resolver,sizeof(resolver));
+  log_line(shadow_hd_registry_ready?"SHADOW-HD: live named registry verified; continuous mode":
+    "SHADOW-HD: named registry signature refused; previous scoped trial only");
+  return shadow_hd_registry_ready;
+}
+static DWORD shadow_hd_registry_surface(LONG flip){
+  uint32_t surface=0;
+  uint16_t index=0;
+  if(!shadow_hd_registry_ready || !shadow_hd_enabled)return 0;
+  if(!shadow_hd_registry_thread)shadow_hd_registry_thread=GetCurrentThreadId();
+  if(shadow_hd_registry_thread!=GetCurrentThreadId())return 0;
+  if(shadow_hd_registry_flip!=flip){
+    shadow_hd_registry_flip=flip;
+    if(SpiderShadowRegistry_Find(shadow_hd_registry_read,&shadow_hd_registry)){
+      if(shadow_hd_registry_logs<8u){
+        char msg[180];++shadow_hd_registry_logs;
+        snprintf(msg,sizeof(msg),"SHADOW-HD-REGISTRY: flip=%ld descriptor=%08X index=%u surface=%08X",
+          (long)flip,(unsigned)shadow_hd_registry.descriptor,(unsigned)shadow_hd_registry.index,(unsigned)shadow_hd_registry.surface);
+        log_line(msg);
+      }
+    }else if(shadow_hd_registry_misses<8u){
+      ++shadow_hd_registry_misses;
+      log_line("SHADOW-HD-REGISTRY: exact live Shadow2 absent; original preserved");
+    }
+  }
+  if(!shadow_hd_registry.surface ||
+     !shadow_trace_read(shadow_hd_registry.descriptor+2u,&index,sizeof(index)) ||
+     index!=shadow_hd_registry.index ||
+     !shadow_trace_read(SPIDER_SHADOW_SURFACES+(uintptr_t)index*SPIDER_SHADOW_SURFACE_STRIDE,&surface,sizeof(surface)) ||
+     surface!=shadow_hd_registry.surface)return 0;
+  return surface;
+}
+static void shadow_hd_finish_frame(LONG next_flip){
+  char msg[300];
+  if(!shadow_hd_registry_ready ||
+     (shadow_hd_registry_thread && shadow_hd_registry_thread!=GetCurrentThreadId()))return;
+  shadow_hd_last_completed=next_flip-1;
+  shadow_hd_last_candidates=shadow_hd_frame_candidates;
+  shadow_hd_last_draws=shadow_hd_frame_draws;
+  shadow_hd_last_fallback=shadow_hd_frame_fallback;
+  if(shadow_hd_frame_candidates){
+    ++shadow_hd_frames;
+    if(shadow_hd_frame_draws==shadow_hd_frame_candidates)++shadow_hd_full_frames;
+    else ++shadow_hd_partial_frames;
+    if(shadow_hd_frames<=8u || shadow_hd_frames%120u==0u){
+      snprintf(msg,sizeof(msg),"SHADOW-HD-COVERAGE: render-flip=%ld candidates=%u hd=%u fallback=%u total=%u/%u fallback-total=%u frames=%u full=%u partial=%u",
+        (long)shadow_hd_last_completed,shadow_hd_frame_candidates,shadow_hd_frame_draws,shadow_hd_frame_fallback,
+        shadow_hd_total_draws,shadow_hd_total_candidates,shadow_hd_total_fallback,
+        shadow_hd_frames,shadow_hd_full_frames,shadow_hd_partial_frames);
+      log_line(msg);
+    }
+  }
+  shadow_hd_frame_candidates=shadow_hd_frame_draws=shadow_hd_frame_fallback=0;
+}
+static void shadow_hd_capture_report(LONG flip){
+  char msg[320];
+  if(!shadow_hd_registry_ready || !shadow_hd_registry_thread ||
+     shadow_hd_registry_thread!=GetCurrentThreadId())return;
+  snprintf(msg,sizeof(msg),"SHADOW-HD-CAPTURE: flip=%ld current=%u/%u fallback=%u last-completed-flip=%ld last=%u/%u fallback=%u session=%u/%u frames=%u full=%u partial=%u",
+    (long)flip,shadow_hd_frame_draws,shadow_hd_frame_candidates,shadow_hd_frame_fallback,
+    (long)shadow_hd_last_completed,shadow_hd_last_draws,shadow_hd_last_candidates,shadow_hd_last_fallback,
+    shadow_hd_total_draws,shadow_hd_total_candidates,shadow_hd_frames,shadow_hd_full_frames,shadow_hd_partial_frames);
+  log_line(msg);
+}
 static DWORD shadow_hd_selected; /* index, never a COM pointer */
 static LONG shadow_hd_selected_flip=-1;
 static unsigned shadow_hd_selector_logs,shadow_hd_refusal_logs,shadow_hd_draw_logs;
