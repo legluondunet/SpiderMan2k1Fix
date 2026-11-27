@@ -5377,6 +5377,8 @@ static HRESULT WINAPI hooked_flip(void *self, IDirectDrawSurface7 *target, DWORD
       SpiderInputFocus_OnFlip(count);
   }
   SpiderDI8Retry_OnFlip(count);
+  if(count==120 && SpiderDI8Retry_EscapeTraceActive())
+    SpiderQuickExitF12_InstallEscapeReaderTrace();
   SpiderNativeUnplug_OnFlip(count);
   /* Restore temporary SDL3 3D remap BEFORE the original device changes;
    * otherwise the canonical native hot-swap would see a custom map. */

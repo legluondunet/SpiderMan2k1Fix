@@ -29,6 +29,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "quick_exit_f12.h"
+#include "input_notacquired_retry.h"
 #include "gamepad_ui_profile.h"
 #include "sdl3_gamepad_probe.h"
 
@@ -409,6 +410,7 @@ static volatile LONG debug_newgame_3d_space_edges=0;
 static volatile LONG debug_newgame_native_input_probes_installed=0;
 static volatile LONG debug_newgame_space_gate_probes_installed=0;
 static volatile LONG debug_newgame_lowlevel_key_probes_installed=0;
+static int escape_reader_trace=0;
 static volatile LONG debug_newgame_raw_key_reads=0;
 static volatile LONG debug_newgame_raw_space_reads=0;
 static volatile LONG last_native_game_input_ms=0;
@@ -1772,9 +1774,17 @@ static BYTE __cdecl spider_probe_3d_native_input(
     DWORD mask,DWORD arg1,DWORD arg2) {
   BYTE request_before=0;
   BYTE original;
+  int esc_observe=escape_reader_trace && SpiderDI8Retry_EscapeReaderWindow();
+  unsigned esc_before=esc_observe?*(const volatile BYTE *)(uintptr_t)0x006B792Du:0u;
   if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)==1)
     request_before=*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST;
   original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);
+  if(esc_observe) {
+    const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+    SpiderDI8Retry_ObserveEscapeReader(2u,(unsigned)frame[1]-5u,
+      (unsigned)mask,(unsigned)arg1,(unsigned)arg2,(unsigned)original,
+      esc_before,(unsigned)*SPIDER_PAUSE_CONTEXT);
+  }
   if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)==1) {
     const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
     spider_trace_sdl3_cutscene_reader((DWORD)frame[1],mask,arg1,arg2,
@@ -1893,7 +1903,19 @@ static DWORD __cdecl spider_probe_3d_space_gate(
  * The original raw 0x501CB0 return is passed through unaltered.
  */
 static DWORD __cdecl spider_probe_native_raw_key(DWORD dik) {
+  int esc_observe=escape_reader_trace && dik==1u && SpiderDI8Retry_EscapeReaderWindow();
+  unsigned esc_before=esc_observe?*(const volatile BYTE *)(uintptr_t)0x006B792Du:0u;
   DWORD result=SPIDER_NATIVE_KEY_READ(dik);
+  if(esc_observe) {
+    const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+    DWORD inner=(DWORD)frame[1],caller=(DWORD)frame[3];
+    DWORD caller_key=(DWORD)frame[4],caller_mode=(DWORD)frame[5];
+    if((inner==0x0050A662u || inner==0x0050A679u) &&
+       caller_key==dik && (caller_mode==0u || caller_mode==1u))
+      SpiderDI8Retry_ObserveEscapeReader(1u,(unsigned)caller,
+        (unsigned)dik,(unsigned)caller_mode,(unsigned)inner,(unsigned)result,
+        esc_before,(unsigned)*SPIDER_PAUSE_CONTEXT);
+  }
   if(InterlockedCompareExchange(&debug_f12_test_mode,0,0)==1 &&
      InterlockedCompareExchange(&debug_newgame_progress,0,0)==3 &&
      InterlockedCompareExchange(&debug_newgame_lowlevel_key_probes_installed,0,0)==1) {
@@ -2841,6 +2863,27 @@ static int install_debug_3d_native_input_probes(void) {
     }
   InterlockedExchange(&debug_newgame_native_input_probes_installed,1);
   return 1;
+}
+
+/* Reuse the already validated pass-through hooks. F10 can be OFF;
+ * do not enable any shortcut, input injection or legacy test mode.
+ * Called once, at Flip 120 after the batch trace was installed. */
+void SpiderQuickExitF12_InstallEscapeReaderTrace(void) {
+  int keys,masks;
+  if(escape_reader_trace || !SpiderDI8Retry_EscapeTraceActive())return;
+  keys=InterlockedCompareExchange(&debug_newgame_lowlevel_key_probes_installed,0,0)==1 ||
+       install_debug_raw_space_probes();
+  masks=InterlockedCompareExchange(&debug_newgame_native_input_probes_installed,0,0)==1 ||
+        install_debug_3d_native_input_probes();
+  if(keys || masks)escape_reader_trace=1;
+  if(keys && masks)
+    say("ESC-READER: both raw-key and five native mask callsites active; original results unchanged");
+  else if(keys)
+    say("ESC-READER: raw-key active; mask signature/install refused");
+  else if(masks)
+    say("ESC-READER: mask active; raw-key signature/install refused");
+  else
+    say("ESC-READER: all reader signatures/install refused; batch trace only");
 }
 
 static void restore_debug_3d_native_input_probes(void) {

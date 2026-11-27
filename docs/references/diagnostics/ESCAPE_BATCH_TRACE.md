@@ -28,3 +28,32 @@ Send the session log; no screenshots or video required. A nonzero
 down-overwritten together with latch=80 documents a lost native press
 edge in that batch, not by itself a complete pause-action attribution.
 This diagnostic does not change any key semantics.
+
+
+## Second field diagnostic: downstream native reads
+
+First field test fa1c267 yielded 33 native Escape downs (FF) and 33 ups
+(80), zero same-batch overwrites, three intentionally consumed wake keys.
+A down at Flip 1621 after focus resume did not visibly open Pause, while
+the next at 1646 did. This narrows the next observation to the downstream
+readers, not a proven correction.
+
+No extra INI key: EscapeBatchTrace=1 with Log=1 also arms the existing
+signature-checked raw-key and five native 3D mask pass-through wrappers
+at Flip 120, independently of F10. Existing wrappers are reused if
+already installed. Each native call executes exactly once and returns
+unchanged. For up to eight completed polls and four Flip intervals
+after a native Escape down, capture raw DIK 1 reads (caller return VA,
+mode, inner return VA, result) and native mask reads (callsite, mask,
+two arguments, result). Also record latch before/after and native
+pause-context candidate. Global order and poll serial correlate records
+with ESC-BATCH, even though queues drain separately. No OS key injection,
+no native state change, no file logging inside reader callbacks.
+128 reader entries per interval, 4096 total, explicit omission counts.
+No observed reader is evidence only within the stated window and
+successful hook coverage; it does not prove the action was never read.
+
+Repeat normal Escape open/close during focused gameplay and after two
+or three Alt+Tab returns. Resume the external-focus pause with Enter
+rather than Escape to distinguish wake consumption from a missed native
+Pause request. Note any ignored presses, send only the log.

@@ -237,7 +237,7 @@ static void try_install(void) {
 #define ESC_BATCH_CAP 64u
 #define ESC_BATCH_LIMIT 512u
 typedef struct EscapeObservation {
-  unsigned serial,count;
+  unsigned serial,count,order;
   SpiderEscapeBatch edges;
   unsigned latch;
 } EscapeObservation;
@@ -248,6 +248,42 @@ static unsigned escape_reported=0,escape_samples=0;
 static long escape_previous_flip=0;
 static int escape_last_physical=-1,escape_last_latch=-1;
 static EscapeObservation escape_records[ESC_BATCH_CAP];
+/* Correlate downstream reads with the captured original keydown, without
+ * extending the lifetime of the native edge or doing file I/O in a reader. */
+#define ESC_READER_CAP 128u
+#define ESC_READER_LIMIT 4096u
+#define ESC_READER_POLLS 8u
+#define ESC_READER_FLIPS 4u
+typedef struct EscapeReaderObservation {
+  unsigned order,poll,kind,site,arg1,arg2,arg3,result,before,after,context;
+} EscapeReaderObservation;
+static EscapeReaderObservation escape_readers[ESC_READER_CAP];
+static unsigned escape_order,escape_down_poll,escape_reader_used,escape_reader_lost;
+static unsigned escape_reader_reported;
+static long escape_down_flip;
+static int escape_down_seen;
+
+int SpiderDI8Retry_EscapeTraceActive(void) {
+  return escape_installed && GetCurrentThreadId()==escape_thread;
+}
+int SpiderDI8Retry_EscapeReaderWindow(void) {
+  return escape_installed && escape_down_seen &&
+    escape_reported<ESC_BATCH_LIMIT && escape_reader_reported<ESC_READER_LIMIT &&
+    (unsigned)(escape_poll-escape_down_poll)<=ESC_READER_POLLS &&
+    (unsigned)(escape_previous_flip-escape_down_flip)<=ESC_READER_FLIPS &&
+    GetCurrentThreadId()==escape_thread;
+}
+void SpiderDI8Retry_ObserveEscapeReader(unsigned kind,unsigned site,
+    unsigned arg1,unsigned arg2,unsigned arg3,unsigned result,unsigned before,
+    unsigned context) {
+  EscapeReaderObservation *r;
+  if(!SpiderDI8Retry_EscapeReaderWindow())return;
+  if(escape_reader_used>=ESC_READER_CAP){++escape_reader_lost;return;}
+  r=&escape_readers[escape_reader_used++];
+  r->order=++escape_order;r->poll=escape_poll;r->kind=kind;r->site=site;
+  r->arg1=arg1;r->arg2=arg2;r->arg3=arg3;r->result=result;r->before=before;
+  r->after=*(const volatile BYTE *)(uintptr_t)ESC_BATCH_LATCH;r->context=context;
+}
 
 static void __cdecl escape_observe(const uint32_t *events,unsigned count) {
   SpiderEscapeBatch edges;
@@ -259,7 +295,8 @@ static void __cdecl escape_observe(const uint32_t *events,unsigned count) {
   if(!SpiderEscapeBatch_Decode(events,count,&edges))return;
   if(escape_used>=ESC_BATCH_CAP){++escape_lost;return;}
   r=&escape_records[escape_used++];
-  r->serial=escape_poll;r->count=count;r->edges=edges;
+  r->serial=escape_poll;r->count=count;r->edges=edges;r->order=++escape_order;
+  if(edges.down){escape_down_seen=1;escape_down_poll=escape_poll;escape_down_flip=escape_previous_flip;}
   r->latch=*(const volatile BYTE *)(uintptr_t)ESC_BATCH_LATCH;
 }
 static void install_escape_batch_trace(void) {
@@ -324,8 +361,8 @@ static void escape_trace_on_flip(long flip_index) {
   for(i=0;i<escape_used && escape_reported<ESC_BATCH_LIMIT;i++){
     const EscapeObservation *r=&escape_records[i];
     snprintf(line,sizeof(line),
-      "ESC-BATCH: after-flip=%ld before-flip=%ld poll=%u count=%u down=%04X up=%04X latch=%02X down-overwritten=%d",
-      escape_previous_flip,flip_index,r->serial,r->count,(unsigned)r->edges.down,
+      "ESC-BATCH: after-flip=%ld before-flip=%ld poll=%u order=%u count=%u down=%04X up=%04X latch=%02X down-overwritten=%d",
+      escape_previous_flip,flip_index,r->serial,r->order,r->count,(unsigned)r->edges.down,
       (unsigned)r->edges.up,r->latch,SpiderEscapeBatch_DownOverwritten(r->edges));
     if(write_log)write_log(line);
     ++escape_reported;
@@ -335,6 +372,22 @@ static void escape_trace_on_flip(long flip_index) {
     if(write_log)write_log(line);
   }
   escape_used=escape_lost=escape_bad=0;
+  for(i=0;i<escape_reader_used && escape_reader_reported<ESC_READER_LIMIT;i++){
+    const EscapeReaderObservation *r=&escape_readers[i];
+    snprintf(line,sizeof(line),
+      "ESC-READER: after-flip=%ld before-flip=%ld order=%u poll=%u kind=%s site=%08X args=%08X,%08X,%08X result=%08X latch-before=%02X latch-after=%02X ctx=%u",
+      escape_previous_flip,flip_index,r->order,r->poll,r->kind==1u?"key":"mask",
+      r->site,r->arg1,r->arg2,r->arg3,r->result,r->before,r->after,r->context);
+    if(write_log)write_log(line);
+    ++escape_reader_reported;
+  }
+  if(escape_reader_lost){
+    snprintf(line,sizeof(line),"ESC-READER: omitted=%u",escape_reader_lost);
+    if(write_log)write_log(line);
+  }
+  if(escape_reader_used && escape_reader_reported>=ESC_READER_LIMIT && write_log)
+    write_log("ESC-READER: report cap reached; further reads not observed");
+  escape_reader_used=escape_reader_lost=0;
   if(escape_reported>=ESC_BATCH_LIMIT){
     if(write_log)write_log("ESC-BATCH: report cap reached; further batches not observed");
     return;

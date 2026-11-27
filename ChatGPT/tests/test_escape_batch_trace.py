@@ -62,3 +62,44 @@ def test_escape_observation_exact_epilogue_and_independent_retry():
     for forbidden in ("write_log(", "GetDeviceData(", "SendInput(", "keybd_event(", "VirtualProtect("):
         assert forbidden not in observe
     assert "ESC-BATCH: report cap reached" in s
+
+
+def test_escape_reader_correlation_is_bounded_and_passive():
+    c=(ROOT/"input_notacquired_retry.c").read_text()
+    q=(ROOT/"quick_exit_f12.c").read_text()
+    m=(ROOT/"spiderman2k1fix.c").read_text()
+    assert "#define ESC_READER_CAP 128u" in c
+    assert "#define ESC_READER_LIMIT 4096u" in c
+    assert "#define ESC_READER_POLLS 8u" in c
+    assert "#define ESC_READER_FLIPS 4u" in c
+    assert "escape_poll-escape_down_poll" in c
+    assert "escape_previous_flip-escape_down_flip" in c
+    assert "r->order=++escape_order" in c
+    assert "ESC-READER: omitted=" in c
+    observe=c.split("void SpiderDI8Retry_ObserveEscapeReader(",1)[1].split(
+        "static void __cdecl escape_observe(",1)[0]
+    assert "SpiderDI8Retry_EscapeReaderWindow()" in observe
+    assert "escape_reader_used>=ESC_READER_CAP" in observe
+    assert "const volatile BYTE" in observe
+    assert "write_log(" not in observe
+    assert "SendInput(" not in observe
+    assert "if(count==120 && SpiderDI8Retry_EscapeTraceActive())" in m
+    install=q.split("void SpiderQuickExitF12_InstallEscapeReaderTrace(void) {",1)[1].split(
+        "static void restore_debug_3d_native_input_probes",1)[0]
+    assert "install_debug_raw_space_probes()" in install
+    assert "install_debug_3d_native_input_probes()" in install
+    assert "debug_newgame_lowlevel_key_probes_installed" in install
+    assert "debug_newgame_native_input_probes_installed" in install
+    assert "debug_f12_test_mode" not in install
+    assert "InterlockedExchange(" not in install
+    raw=q.split("static DWORD __cdecl spider_probe_native_raw_key(",1)[1].split(
+        "/* PASSIVE owner cleanup checkpoint",1)[0]
+    assert raw.count("SPIDER_NATIVE_KEY_READ(dik)")==1
+    assert "escape_reader_trace && dik==1u" in raw
+    assert "SpiderDI8Retry_ObserveEscapeReader(1u" in raw
+    assert "return result;" in raw
+    mask=q.split("static BYTE __cdecl spider_probe_3d_native_input(",1)[1].split(
+        "/* The original 3D update",1)[0]
+    assert mask.count("SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2)")==1
+    assert "SpiderDI8Retry_ObserveEscapeReader(2u" in mask
+    assert "return original;" in mask
