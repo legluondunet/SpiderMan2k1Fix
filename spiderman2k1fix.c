@@ -3882,9 +3882,11 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
        InterlockedCompareExchange(&ui_compositor_trial_enabled,0,0)!=1)
       hr=draw_native_esc_in_front(self,type,fvf,(LPVOID)v,
                                  count,flags,native_esc_primitive);
-    else
+    else if(shadow_trace_enabled && v==verts)
        hr=shadow_material_draw(self,type,fvf,verts,(LPVOID)v,count,flags,
                               __builtin_return_address(0));
+     else
+       hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
     free_menu_vertices(allocated);
     return hr;
   }
