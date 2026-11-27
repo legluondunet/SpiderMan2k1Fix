@@ -6109,6 +6109,11 @@ static DWORD initialize_body(LPVOID unused) {
         if(lstrcmpiA(aspect,"4:3")==0)
           log_line("DISPLAY-ASPECT-43: logical 4:3 resolution will be computed from the selected game monitor");
         SpiderFOV_Init("Auto",1,0,log_line);
+        /* Match native horizontal visibility to the successful gameplay FOV.
+         * Historical debug opt-out remains available; logging is irrelevant. */
+        if(lstrcmpiA(aspect,"Auto")==0 &&
+           GetPrivateProfileIntA("Debug","ExperimentalWideCulling",1,ini)==1)
+          SpiderFOV_InstallWideCulling();
         if(lstrcmpiA(aspect,"4:3")==0)
           log_line("DISPLAY-ASPECT-43: automatic FOV uses original 4:3 baseline 1.0");
 

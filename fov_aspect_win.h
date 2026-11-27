@@ -12,4 +12,6 @@ int SpiderFOV_GetHorPlusScalar(float *out);
 void SpiderFOV_DisableUnsafeHorPlus(void);
 /* Confirm the protected camera update succeeded before pillarboxing. */
 int SpiderFOV_GameplayReady(void);
+/* Native widescreen visibility correction #181; caller must authenticate retail EXE first. */
+int SpiderFOV_InstallWideCulling(void);
 #endif
