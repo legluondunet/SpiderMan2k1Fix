@@ -6,6 +6,8 @@
  * Called on game render thread after SHA-256 verification. */
 void SpiderDI8Retry_Init(void (*log_fn)(const char *));
 void SpiderDI8Retry_OnFlip(long flip_index);
+/* Developer-only, read-only native Escape batch observation. */
+void SpiderDI8Retry_RequestEscapeBatchTrace(int enable);
 /* Diagnostic gating hint only: incremented before the game's native
  * keyboard Acquire. Zero when no retry was needed; never an ACK. */
 unsigned SpiderDI8Retry_KeyboardRecoveryAttempts(void);

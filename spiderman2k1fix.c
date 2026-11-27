@@ -6023,6 +6023,12 @@ static DWORD initialize_body(LPVOID unused) {
   /* Native DIERR_NOTACQUIRED retry remains opt-in; read the validated INI.
    * No COM-vtable interception. The actual patch is delayed to Flip #120. */
   SpiderDI8Retry_Init(log_line);
+  {
+    char escape_ini[MAX_PATH];
+    if(debug_log_enabled && spider_path_ini_a(escape_ini,sizeof(escape_ini)))
+      SpiderDI8Retry_RequestEscapeBatchTrace(
+        GetPrivateProfileIntA("Debug","EscapeBatchTrace",0,escape_ini)==1);
+  }
   /* Experimental: the original game exits on joystick DIERR_UNPLUGGED.
    * Opt-in, SHA-pinned, game-thread-only mitigation; no native rebind yet. */
   {
