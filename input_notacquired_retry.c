@@ -30,6 +30,7 @@
 #include <string.h>
 #include "input_notacquired_retry.h"
 #include "escape_batch_trace.h"
+#include "escape_pause_edge.h"
 
 #define SPIDER_IMAGE_BASE 0x00400000u
 #define SPIDER_GAME_ACTIVE 0x006B78F0u
@@ -262,6 +263,9 @@ static unsigned escape_order,escape_down_poll,escape_reader_used,escape_reader_l
 static unsigned escape_reader_reported;
 static long escape_down_flip;
 static int escape_down_seen;
+static int escape_recovery_requested;
+static SpiderEscapePauseEdge escape_pause_edge;
+static unsigned escape_recovered,escape_recovered_reported;
 
 int SpiderDI8Retry_EscapeTraceActive(void) {
   return escape_installed && GetCurrentThreadId()==escape_thread;
@@ -291,8 +295,11 @@ static void __cdecl escape_observe(const uint32_t *events,unsigned count) {
   if(!escape_installed||escape_reported>=ESC_BATCH_LIMIT||
      GetCurrentThreadId()!=escape_thread)return;
   ++escape_poll;
-  if(count>16u){++escape_bad;return;}
+  if(count>16u){++escape_bad;escape_pause_edge.pending=0;return;}
   if(!SpiderEscapeBatch_Decode(events,count,&edges))return;
+  if(escape_recovery_requested)
+    SpiderEscapePauseEdge_Batch(&escape_pause_edge,edges,escape_poll,
+      escape_previous_flip,*(const volatile BYTE *)(uintptr_t)ESC_BATCH_LATCH);
   if(escape_used>=ESC_BATCH_CAP){++escape_lost;return;}
   r=&escape_records[escape_used++];
   r->serial=escape_poll;r->count=count;r->edges=edges;r->order=++escape_order;
@@ -358,6 +365,11 @@ static void escape_trace_on_flip(long flip_index) {
   int physical,latch;
   if(!escape_installed||GetCurrentThreadId()!=escape_thread)return;
   if(escape_reported>=ESC_BATCH_LIMIT)return;
+  if(escape_recovered!=escape_recovered_reported){
+    snprintf(line,sizeof(line),"ESC-RECOVERY: flip=%ld recovered-total=%u delta=%u [one native Pause edge only]",flip_index,escape_recovered,escape_recovered-escape_recovered_reported);
+    if(write_log)write_log(line);
+    escape_recovered_reported=escape_recovered;
+  }
   for(i=0;i<escape_used && escape_reported<ESC_BATCH_LIMIT;i++){
     const EscapeObservation *r=&escape_records[i];
     snprintf(line,sizeof(line),
@@ -410,6 +422,19 @@ static void escape_trace_on_flip(long flip_index) {
 }
 void SpiderDI8Retry_RequestEscapeBatchTrace(int enable) {
   escape_requested=enable!=0;
+}
+void SpiderDI8Retry_RequestEscapeEdgeRecovery(int enable) {
+  escape_recovery_requested=enable!=0;
+}
+int SpiderDI8Retry_TakeEscapePauseEdge(unsigned raw,int eligible) {
+  int result;
+  if(!escape_recovery_requested || !SpiderDI8Retry_EscapeTraceActive() ||
+     escape_reported>=ESC_BATCH_LIMIT)return 0;
+  result=SpiderEscapePauseEdge_Take(&escape_pause_edge,escape_poll,escape_previous_flip,raw,
+      eligible && *(const volatile DWORD *)(uintptr_t)SPIDER_GAME_ACTIVE==1u &&
+      (GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0);
+  if(result)++escape_recovered;
+  return result;
 }
 
 void SpiderDI8Retry_Init(void (*log_fn)(const char *)) {
