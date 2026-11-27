@@ -6114,6 +6114,11 @@ static DWORD initialize_body(LPVOID unused) {
         if(lstrcmpiA(aspect,"Auto")==0 &&
            GetPrivateProfileIntA("Debug","ExperimentalWideCulling",1,ini)==1)
           SpiderFOV_InstallWideCulling();
+        /* Field-validated native world-quad horizontal projection (#147).
+         * Historical developer opt-out; independent of runtime logging. */
+        if(lstrcmpiA(aspect,"Auto")==0 &&
+           GetPrivateProfileIntA("Debug","ExperimentalWorldQuadFOV",1,ini)==1)
+          SpiderFOV_InstallWorldQuadCorrection();
         if(lstrcmpiA(aspect,"4:3")==0)
           log_line("DISPLAY-ASPECT-43: automatic FOV uses original 4:3 baseline 1.0");
 
