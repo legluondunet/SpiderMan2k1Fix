@@ -3888,10 +3888,7 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
                                __builtin_return_address(0),&hr)) {
       /* HD draw already completed; original stage-0 binding restored. */
     }
-    else if(shadow_trace_enabled && v==verts)
-       hr=shadow_material_draw(self,type,fvf,verts,(LPVOID)v,count,flags,
-                              __builtin_return_address(0));
-     else
+    else
        hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
     free_menu_vertices(allocated);
     return hr;
@@ -6062,32 +6059,19 @@ static DWORD initialize_body(LPVOID unused) {
         SpiderDI8Retry_RequestEscapeEdgeRecovery(
           GetPrivateProfileIntA("Debug","ExperimentalEscapeEdgeRecovery",0,escape_ini)==1);
       }
-      /* Explicit public setting wins; old opt-in remains valid if absent.
-       * Keep experimental feature off for fresh INIs pending Windows/4:3 tests. */
+      /* Explicit public setting wins; old HD opt-in remains valid if absent.
+       * Fresh INIs stay off until native Windows validation. Legacy procedural
+       * and soft-shadow switches are accepted by the validator but retired. */
       feature=(int)GetPrivateProfileIntA("Features","EnhancedShadows",2,escape_ini);
       legacy_hd=GetPrivateProfileIntA("Debug","ExperimentalHDShadows",0,escape_ini)==1;
       shadow_hd_enabled=feature==2?legacy_hd:feature==1;
-      shadow_hd_procedural=GetPrivateProfileIntA("Debug","ExperimentalProceduralShadows",1,escape_ini)==1;
       shadow_hd_audit=debug_log_enabled && GetPrivateProfileIntA("Debug","ShadowDiagnostics",0,escape_ini)==1;
-      if(shadow_hd_enabled)shadow_hd_registry_init();
-      /* Preserve stand-alone legacy probes when HD is not requested; in
-       * HD mode only explicit ShadowDiagnostics enables the old probes. */
+      if(shadow_hd_enabled && !shadow_hd_registry_init())shadow_hd_enabled=0;
+      /* Old pickup probe remains read-only, only when explicitly requested.
+       * No native code-window dump or obsolete texture selection hooks. */
       shadow_trace_init(debug_log_enabled &&
           (shadow_hd_audit || (!shadow_hd_enabled &&
            GetPrivateProfileIntA("Debug","ShadowWorldTrace",0,escape_ini)==1)),log_line);
-      if(shadow_trace_enabled) {
-        shadow_material_soft=!shadow_hd_enabled &&
-          GetPrivateProfileIntA("Debug","ExperimentalSoftShadows",0,escape_ini)==1;
-        shadow_trace_native_code(); /* before installing native world-quad CALL wrappers */
-        SpiderFOV_SetWorldQuadObserver(shadow_material_observe_submit);
-        if(shadow_hd_enabled && shadow_hd_audit && !shadow_hd_registry_ready){
-          SpiderFOV_SetShadowSelectorObserver(shadow_hd_observe_selector);
-          SpiderFOV_SetShadowResolveObserver(shadow_hd_observe_resolve);
-        }
-        log_line(shadow_material_soft?"SHADOW-MATERIAL: provenance probe + scoped linear-filter trial":"SHADOW-MATERIAL: provenance probe only");
-      }
-      if(shadow_hd_enabled && !shadow_hd_registry_ready &&
-         !(shadow_hd_audit && shadow_trace_enabled))shadow_hd_enabled=0;
       log_line(shadow_hd_enabled?(shadow_hd_audit?"SHADOW-HD: enabled; detailed audit ON":"SHADOW-HD: enabled; detailed audit OFF"):
         "SHADOW-HD: disabled");
     }
@@ -6184,16 +6168,8 @@ static DWORD initialize_body(LPVOID unused) {
            GetPrivateProfileIntA("Debug","ExperimentalWideCulling",1,ini)==1)
           SpiderFOV_InstallWideCulling();
         if(lstrcmpiA(aspect,"Auto")==0 &&
-           (shadow_hd_enabled || GetPrivateProfileIntA("Debug","ExperimentalWorldQuadFOV",0,ini)==1)){
-          int quad_ok=SpiderFOV_InstallWorldQuadTrial();
-          if(shadow_hd_enabled && !shadow_hd_registry_ready &&
-             (!quad_ok || !SpiderFOV_InstallShadowSelector() || !SpiderFOV_InstallShadowResolver())){
-            shadow_hd_enabled=0;
-            log_line("SHADOW-HD: incomplete scoped provenance hooks; original preserved");
-          }
-        }
-        if(lstrcmpiA(aspect,"4:3")==0 && shadow_hd_enabled && !shadow_hd_registry_ready)
-          shadow_hd_enabled=0;
+           (shadow_hd_enabled || GetPrivateProfileIntA("Debug","ExperimentalWorldQuadFOV",0,ini)==1))
+          SpiderFOV_InstallWorldQuadTrial();
         if(lstrcmpiA(aspect,"4:3")==0)
           log_line("DISPLAY-ASPECT-43: automatic FOV uses original 4:3 baseline 1.0");
 

@@ -48,8 +48,7 @@ def test_continuous_path_is_independent_and_guarded():
                  "surface!=shadow_hd_registry.surface","SHADOW-HD-COVERAGE:","SHADOW-HD-CAPTURE:"):
         assert gate in h
     start=s.index("static int shadow_hd_registry_draw")
-    end=s.index("static HRESULT shadow_material_draw",start)
-    scope=s[start:end]
+    scope=s[start:]
     for gate in ("rva!=0x00102C72UL","SpiderMenubg43_RecordIndex","material!=named",
                  "(uintptr_t)tex==(uintptr_t)named","shadow_hd_draw","SpiderFOV_GameplayReady"):
         assert gate in scope

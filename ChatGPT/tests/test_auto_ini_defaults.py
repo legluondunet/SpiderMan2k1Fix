@@ -28,6 +28,8 @@ def test_generated_example_factory_consistency():
     assert set(config.sections()) == {'Debug','Features','Display','Input','Audio','Keyboard' ,'Internal'}
     assert config['Debug']['Log'] == '0'
     assert config['Features']['F10SkipCinematics'] == '0'
+    assert config['Features']['EnhancedShadows'] == '0'
+    assert '"EnhancedShadows=0\\r\\n"' in virtual
     assert '"F10SkipCinematics=0\\r\\n"' in virtual
     for key in ('F10Shortcut','F10TestMode','F10Auto3DScripts','F10GameplayExit'):
         assert not config.has_option('Debug',key)

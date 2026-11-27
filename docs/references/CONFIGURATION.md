@@ -8,6 +8,12 @@ This is the detailed companion to the [project README](../../README.md). For the
 - **Migrating from an older SpiderManFix beta:** remove the obsolete `SpiderManFix.dll`. To preserve settings, back up your old `SpiderManFix.ini` and rename it to `SpiderMan2k1Fix.ini` **before** launching the new fix (only if no new-named INI already exists). Otherwise the patch generates fresh defaults.
 - **Other proxy mods:** `winmm.dll` is a filename shared by many mods. Back up an existing file and check for conflicts; two different proxies cannot normally occupy the same directory under that name.
 
+## Enhanced shadows
+
+Set `[Features] EnhancedShadows=1` to enable dynamically reconstructed 256 × 256 soft shadows for the original named Shadow2 texture. No additional game assets or logging are required. The original opacity, geometry and texture coordinates are retained; unsupported texture formats or failed identity checks keep the original rendering. The procedural profile falls back to cubic reconstruction if the fit fails.
+
+The option defaults to 0 in newly generated INIs while native Windows gameplay is being validated. Auto and 4:3 have been tested under Wine 11.19. Older experimental INIs with `[Debug] ExperimentalHDShadows=1` still opt in if the new key is absent; the explicit Features key wins. The old soft/procedural trial switches are accepted for compatibility but no longer select alternate render paths. `[Debug] ShadowDiagnostics=1` with `Log=1` enables optional read-only draw auditing.
+
 ## Game progress saves are separate from the patch INI
 
 The original game's campaign/progress slots live in

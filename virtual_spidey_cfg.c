@@ -398,6 +398,8 @@ static int SpiderCfg_WriteDefaultIniAt(const char *ini,int allow_existing,void (
     "; 1 = F10 skips opening cinematics and introductory scripts; 0 = off (default).\r\n"
     "; Later in-level cinematics are unverified; does not exit gameplay.\r\n"
     "F10SkipCinematics=0\r\n"
+    "; 1 = smooth procedural HD shadows; 0 = original textures (default).\r\n"
+    "EnhancedShadows=0\r\n"
     "\r\n"
     "[Display]\r\n"
     "; Auto = monitor aspect ratio, 4:3 = original presentation.\r\n"

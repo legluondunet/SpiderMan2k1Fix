@@ -1,14 +1,11 @@
-/* Opt-in shadow-only replacement, never changes original resource or vertices.
- * The native selector must receive a current live Shadow2 index from an
- * authenticated pickup descriptor. Its resulting current material, tagged
- * queue record and actual stage-0 surface must agree. No size-only matches. */
+/* Enhanced shadows: named Shadow2 resource only. Original geometry, UV,
+ * RGB and render state remain untouched; restore the original binding. */
 #include "shadow_alpha_reconstruct.h"
 #include "shadow_alpha_procedural.h"
 #include "shadow_registry.h"
 #include "shadow_draw_paths.h"
 static int shadow_hd_enabled;
-static int shadow_hd_audit; /* expensive all-draw and native submission diagnostics */
-static int shadow_hd_procedural=1;
+static int shadow_hd_audit;
 static int shadow_hd_procedural_active;
 static int shadow_hd_registry_ready;
 static DWORD shadow_hd_registry_thread;
@@ -64,7 +61,7 @@ static int shadow_hd_registry_init(void){
     shadow_trace_signature(0x004c9579u,chain,sizeof(chain)) &&
     shadow_trace_signature(0x0050f3c0u,resolver,sizeof(resolver));
   log_line(shadow_hd_registry_ready?"SHADOW-HD: live named registry verified; continuous mode":
-    "SHADOW-HD: named registry signature refused; original preserved unless developer scoped trial enabled");
+    "SHADOW-HD: named registry signature refused; original preserved");
   return shadow_hd_registry_ready;
 }
 static DWORD shadow_hd_registry_surface(LONG flip){
@@ -118,7 +115,7 @@ static void shadow_hd_finish_frame(LONG next_flip){
     ++shadow_hd_frames;
     if(shadow_hd_frame_draws==shadow_hd_frame_candidates)++shadow_hd_full_frames;
     else ++shadow_hd_partial_frames;
-    if(shadow_hd_frames<=8u || shadow_hd_frames%120u==0u){
+    if(debug_log_enabled && (shadow_hd_frames<=8u || shadow_hd_frames%120u==0u)){
       snprintf(msg,sizeof(msg),"SHADOW-HD-COVERAGE: render-flip=%ld candidates=%u hd=%u fallback=%u total=%u/%u fallback-total=%u frames=%u full=%u partial=%u",
         (long)shadow_hd_last_completed,shadow_hd_frame_candidates,shadow_hd_frame_draws,shadow_hd_frame_fallback,
         shadow_hd_total_draws,shadow_hd_total_candidates,shadow_hd_total_fallback,
@@ -130,7 +127,7 @@ static void shadow_hd_finish_frame(LONG next_flip){
 }
 static void shadow_hd_capture_report(LONG flip){
   char msg[320];
-  if(!shadow_hd_registry_ready || !shadow_hd_registry_thread ||
+  if(!debug_log_enabled || !shadow_hd_registry_ready || !shadow_hd_registry_thread ||
      shadow_hd_registry_thread!=GetCurrentThreadId())return;
   snprintf(msg,sizeof(msg),"SHADOW-HD-CAPTURE: flip=%ld current=%u/%u fallback=%u last-completed-flip=%ld last=%u/%u fallback=%u session=%u/%u frames=%u full=%u partial=%u",
     (long)flip,shadow_hd_frame_draws,shadow_hd_frame_candidates,shadow_hd_frame_fallback,
@@ -159,48 +156,10 @@ static void shadow_hd_capture_report(LONG flip){
     }
   }
 }
-static DWORD shadow_hd_selected; /* index, never a COM pointer */
-static LONG shadow_hd_selected_flip=-1;
-static unsigned shadow_hd_selector_logs,shadow_hd_refusal_logs,shadow_hd_draw_logs;
+static unsigned shadow_hd_refusal_logs,shadow_hd_draw_logs;
 static IDirectDrawSurface7 *shadow_hd_source,*shadow_hd_surface;
 static uint8_t shadow_hd_a4[64u*64u],shadow_hd_a8[256u*256u];
 
-static void shadow_hd_observe_selector(unsigned index) {
-  unsigned i;
-  LONG flip=InterlockedCompareExchange(&flip_count,0,0);
-  uint32_t candidate=0;
-  if(!shadow_hd_enabled)return;
-  shadow_hd_selected=0;shadow_hd_selected_flip=-1;
-  if(!SpiderFOV_GameplayReady() || !shadow_trace_enabled ||
-     shadow_trace_thread!=GetCurrentThreadId() ||
-     shadow_trace_material_flip<0 || flip<shadow_trace_material_flip ||
-     flip-shadow_trace_material_flip>60 || index>65535u)return;
-  for(i=0;i<shadow_trace_material_count;i++){
-    uint16_t live=0;
-    if(shadow_descriptor_valid[i] &&
-       (shadow_descriptor_words[i][0]>>16)==index &&
-       shadow_trace_read((uintptr_t)shadow_trace_materials[i]+2u,&live,sizeof(live)) &&
-       live==index){
-      if(shadow_trace_read(0x00568170u,&candidate,sizeof(candidate)) && candidate==index && candidate>2u){
-        shadow_hd_selected=candidate;shadow_hd_selected_flip=flip;
-        if(shadow_hd_selector_logs<24u){
-          char msg[180];++shadow_hd_selector_logs;
-          snprintf(msg,sizeof(msg),"SHADOW-HD-SELECT: flip=%ld index=%u descriptor=%08X selected-index=%08X",
-            (long)flip,index,(unsigned)shadow_trace_materials[i],(unsigned)candidate);
-          log_line(msg);
-        }
-      }
-      break;
-    }
-  }
-}
-static DWORD shadow_hd_current_index(LONG flip) {
-  DWORD current=0;
-  if(!shadow_hd_enabled || !shadow_hd_selected || flip!=shadow_hd_selected_flip ||
-     !shadow_trace_read(0x00568170u,&current,sizeof(current)) ||
-     current!=shadow_hd_selected)return 0;
-  return current;
-}
 static void shadow_hd_clear(void) {
   if(shadow_hd_surface)IDirectDrawSurface7_Release(shadow_hd_surface);
   if(shadow_hd_source)IDirectDrawSurface7_Release(shadow_hd_source);
@@ -264,7 +223,7 @@ static int shadow_hd_make(IDirectDrawSurface7 *source) {
   if(!ok || lo==hi){
     shadow_hd_refuse("source is not a uniform-RGB varying-alpha mask");return 0;
   }
-  if(shadow_hd_procedural){
+  {
     char msg[420];
     procedural=SpiderShadow_Procedural(shadow_hd_a4,shadow_hd_a8,&fit);
     snprintf(msg,sizeof(msg),"SHADOW-HD-PROFILE: mode=%s reason=%u bbox=%u,%u-%u,%u peak-a4=%u source-sum-a4=%u output-sum-a8=%u shape-error-permille=%u profile=%u mix-permille=%u",

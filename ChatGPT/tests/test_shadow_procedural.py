@@ -85,5 +85,5 @@ def test_runtime_profile_and_fallback():
     assert "if(!procedural && !SpiderShadow_Alpha4To8" in h
     assert "SHADOW-HD-PROFILE:" in h and "SHADOW-HD-CAPTURE-PROFILE:" in h
     assert "SHADOW-HD-ALPHA:" in h
-    assert 'GetPrivateProfileIntA("Debug","ExperimentalProceduralShadows",1,escape_ini)==1' in m
+    assert 'GetPrivateProfileIntA("Debug","ExperimentalProceduralShadows"' not in m
     assert "ExperimentalProceduralShadows=" not in (ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text()
