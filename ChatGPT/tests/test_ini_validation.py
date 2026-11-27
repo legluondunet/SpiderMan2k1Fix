@@ -288,7 +288,7 @@ def test_features_f10_skip_cinematics_boolean(runner,tmp_path,value,valid):
     else:
         assert outcome[0]>=1 and outcome[2]==0,detail
 
-@pytest.mark.parametrize("key",["RenderCanvasTrace","ExperimentalWideCulling","EscapeBatchTrace","ExperimentalEscapeEdgeRecovery","ShadowWorldTrace","ExperimentalSoftShadows","ExperimentalWorldQuadFOV"])
+@pytest.mark.parametrize("key",["RenderCanvasTrace","ExperimentalWideCulling","EscapeBatchTrace","ExperimentalEscapeEdgeRecovery","ShadowWorldTrace","ExperimentalSoftShadows","ExperimentalHDShadows","ExperimentalWorldQuadFOV"])
 @pytest.mark.parametrize("value,valid",[("0",True),("1",True),("2",False),("-1",False),("yes",False),("",False)])
 def test_legacy_graphics_diagnostic_keys_are_known_booleans(runner,tmp_path,key,value,valid):
     result,detail=validate(runner,tmp_path,f"[Debug]\nLog=0\n{key}={value}\n")

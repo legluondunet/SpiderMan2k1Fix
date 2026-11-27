@@ -8,10 +8,13 @@ static unsigned shadow_material_draw_logs,shadow_material_match_logs,shadow_mate
 static unsigned shadow_descriptor_match_logs,shadow_descriptor_miss_logs;
 static unsigned shadow_scope_draw_logs,shadow_scope_submit_logs;
 static DWORD shadow_scope_global_before;
+#include "shadow_hd_trial.inc"
+static DWORD shadow_hd_submit_material;
 typedef struct ShadowMaterialRecord {
   LONG stamp;
   DWORD material;
   DWORD native_global_before,native_global_after;
+  DWORD hd_material;
   SpiderMenuVertex verts[4];
 } ShadowMaterialRecord;
 static ShadowMaterialRecord shadow_material_tags[SPIDER_MENUBG43_RECORD_CAP];
@@ -30,6 +33,7 @@ static void shadow_material_observe_submit(int phase) {
        *(const volatile DWORD *)(uintptr_t)0x00682950u)return;
     shadow_material_frame=InterlockedCompareExchange(&flip_count,0,0);
     shadow_scope_global_before=0;
+    shadow_hd_submit_material=shadow_hd_current_material(shadow_material_frame);
     shadow_trace_read(0x00628614u,&shadow_scope_global_before,sizeof(shadow_scope_global_before));
     if(!shadow_trace_read(SPIDER_MENUBG43_QUEUE_COUNT,&shadow_material_before,sizeof(DWORD)))
       shadow_material_before=SPIDER_MENUBG43_RECORD_CAP+1u;
@@ -62,6 +66,7 @@ static void shadow_material_observe_submit(int phase) {
     tag->stamp=0;
     tag->native_global_before=shadow_scope_global_before;
     tag->native_global_after=global_after;
+    tag->hd_material=shadow_hd_submit_material;
     if(shadow_trace_read(record+4u,&tag->material,sizeof(tag->material)) &&
        shadow_trace_read(record+16u,tag->verts,sizeof(tag->verts)))
       tag->stamp=flip+1;
@@ -113,7 +118,7 @@ static HRESULT shadow_material_draw(void *self,D3DPRIMITIVETYPE type,DWORD fvf,
     return original_draw_primitive(self,type,fvf,drawn,count,flags);
   matched=shadow_trace_material_match(material,flip);
   descriptor_material=shadow_descriptor_offset(material,flip);
-  if(!matched && descriptor_material<0 && shadow_material_draw_logs>=32u &&
+  if(!tag->hd_material && !matched && descriptor_material<0 && shadow_material_draw_logs>=32u &&
      (shadow_trace_material_count==0 || shadow_descriptor_miss_logs>=64u))
     return original_draw_primitive(self,type,fvf,drawn,count,flags);
   memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
@@ -122,6 +127,14 @@ static HRESULT shadow_material_draw(void *self,D3DPRIMITIVETYPE type,DWORD fvf,
     return original_draw_primitive(self,type,fvf,drawn,count,flags);
   }
   bound_texture=(uintptr_t)tex;
+  if(shadow_hd_enabled && tag->hd_material && material==tag->hd_material &&
+     bound_texture==(uintptr_t)material){
+    HRESULT hd_result;
+    if(shadow_hd_draw(device,tex,type,fvf,drawn,count,flags,&hd_result)){
+      IDirectDrawSurface7_Release(tex);
+      return hd_result;
+    }
+  }
   descriptor_texture=shadow_descriptor_offset((uint32_t)bound_texture,flip);
   known=SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(tex,&desc));
   IDirectDrawSurface7_Release(tex);

@@ -226,6 +226,41 @@ typedef void (__cdecl *SpiderQuadSubmit)(
     uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,
     uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t);
 static SpiderQuadSubmit const quad_original=(SpiderQuadSubmit)(uintptr_t)0x00508550u;
+/* 0x409F48 reads quad+60; 0x409F51 reads its +2 word;
+ * 0x409F8C passes that index plus the native mode to 0x506440.
+ * The next instructions overwrite EAX and ECX. Preserve both args
+ * and original return; only observe after the original selector. */
+typedef DWORD (__cdecl *SpiderNativeTextureSelector)(DWORD,DWORD);
+static SpiderNativeTextureSelector const shadow_selector_original=(SpiderNativeTextureSelector)(uintptr_t)0x00506440u;
+static void (*shadow_selector_observer)(unsigned)=NULL;
+void SpiderFOV_SetShadowSelectorObserver(void (*observer)(unsigned)) {shadow_selector_observer=observer;}
+static DWORD __cdecl shadow_selector(DWORD index,DWORD mode) {
+  DWORD result=shadow_selector_original(index,mode);
+  if(shadow_selector_observer)shadow_selector_observer(index);
+  return result;
+}
+int SpiderFOV_InstallShadowSelector(void) {
+  static int installed;
+  static const BYTE source[]={0x8b,0x46,0x60,0x85,0xc0,0x74,0x08,0x33,0xd2,0x66,0x8b,0x50,0x02};
+  static const BYTE call[]={0x50,0x52,0xe8,0xaf,0xc4,0x0f,0x00,0x33,0xc0,0x8b,0x0d,0x14,0x86,0x62,0x00};
+  BYTE *base=(BYTE*)GetModuleHandleA(NULL),*site;
+  BYTE replacement[5]={0xe8,0,0,0,0};
+  DWORD rel,old,restored;
+  if(installed)return 1;
+  if(!shadow_selector_observer || (uintptr_t)base!=0x400000u ||
+     memcmp(base+0x9f48,source,sizeof(source)) ||
+     memcmp(base+0x9f8a,call,sizeof(call))){
+    say("SHADOW-HD: selector refused; native signature mismatch");return 0;
+  }
+  site=base+0x9f8c;
+  rel=(DWORD)((uintptr_t)shadow_selector-(uintptr_t)(site+5));
+  memcpy(replacement+1,&rel,4);
+  if(!VirtualProtect(site,5,PAGE_EXECUTE_READWRITE,&old))return 0;
+  memcpy(site,replacement,5);FlushInstructionCache(GetCurrentProcess(),site,5);
+  if(!VirtualProtect(site,5,old,&restored))say("SHADOW-HD: selector page protection restore warning");
+  installed=1;say("SHADOW-HD: native texture selector observation installed");
+  return 1;
+}
 static unsigned quad_logged,quad_refused;
 static void (*world_quad_observer)(int)=NULL;
 void SpiderFOV_SetWorldQuadObserver(void (*observer)(int)) { world_quad_observer=observer; }

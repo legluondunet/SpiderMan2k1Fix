@@ -19,6 +19,7 @@ def test_native_path_only_observes_authenticated_process():
     assert "if(!shadow_material_soft || !matched || !known" in s
     assert "shadow_alpha_reconstruct.h" not in c
     assert "SpiderShadow_Alpha4To8" not in s
+    assert "shadow_hd_trial.inc" in s
 
 def test_monotone_shadow_alpha_reconstruction(tmp_path):
     if not shutil.which("gcc"): pytest.skip("host compiler absent")
