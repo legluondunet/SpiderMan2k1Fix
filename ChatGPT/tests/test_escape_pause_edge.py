@@ -71,7 +71,11 @@ def test_shadow_descriptor_observation_not_authorization():
     s=(ROOT/"shadow_material_trial.inc").read_text()
     h=(ROOT/"pickup_shadow_trace.h").read_text()
     assert "shadow_descriptor_words[SPIDER_SHADOW_PICKUPS][16]" in h
-    assert "SHADOW-DESC-LINK:" in s
-    assert "candidate only" in s
-    assert "matched=shadow_trace_material_match(material,flip)" in s
-    assert "if(!shadow_material_soft || !matched || !known" in s
+    assert "shadow_descriptor_words" not in s
+    assert "shadow_trace_material_match(" not in s
+    assert "shadow_material_draw(" not in s
+    scope=s.split("static int shadow_hd_registry_draw",1)[1]
+    assert "named=shadow_hd_registry_surface(flip);" in scope
+    assert "material!=named" in scope
+    assert "(uintptr_t)tex==(uintptr_t)named" in scope
+    assert "SpiderShadowDraw_Eligible(path,type,fvf,count,record_count,material,named)" in scope
