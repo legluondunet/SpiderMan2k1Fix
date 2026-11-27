@@ -255,11 +255,19 @@ static int shadow_hd_make(IDirectDrawSurface7 *source) {
     shadow_hd_refuse("source is not a uniform-RGB varying-alpha mask");return 0;
   }
   if(shadow_hd_procedural){
-    char msg[320];
+    char msg[420];
     procedural=SpiderShadow_Procedural(shadow_hd_a4,shadow_hd_a8,&fit);
     snprintf(msg,sizeof(msg),"SHADOW-HD-PROFILE: mode=%s reason=%u bbox=%u,%u-%u,%u peak-a4=%u source-sum-a4=%u output-sum-a8=%u shape-error-permille=%u profile=%u mix-permille=%u",
       procedural?"procedural":"cubic-fallback",fit.reason,fit.left,fit.top,fit.right,fit.bottom,
       fit.peak,fit.source_sum,fit.output_sum,fit.error_permille,fit.profile,fit.mix_permille);
+    log_line(msg);
+    snprintf(msg,sizeof(msg),"SHADOW-HD-ALPHA: hist=%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u edge-sum=%u/252 corner-sum=%u/4 center-sum=%u/4 baseline-a4=%u full-domain=%u radius-permille=%u edge-error-a4-permille=%u",
+      fit.histogram[0],fit.histogram[1],fit.histogram[2],fit.histogram[3],
+      fit.histogram[4],fit.histogram[5],fit.histogram[6],fit.histogram[7],
+      fit.histogram[8],fit.histogram[9],fit.histogram[10],fit.histogram[11],
+      fit.histogram[12],fit.histogram[13],fit.histogram[14],fit.histogram[15],
+      fit.edge_sum,fit.corner_sum,fit.center_sum,fit.baseline,fit.edge_mode,
+      fit.radius_permille,fit.edge_error_permille);
     log_line(msg);
   }
   if(!procedural && !SpiderShadow_Alpha4To8(shadow_hd_a4,shadow_hd_a8)){

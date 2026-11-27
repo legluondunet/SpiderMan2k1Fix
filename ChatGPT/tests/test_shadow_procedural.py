@@ -35,6 +35,32 @@ int main(void){
   for(x=129;x<256u;x++)assert(dst[127*256u+x]<=dst[127*256u+x-1u]);
   assert(fit.output_sum*100ull>=fit.source_sum*272ull*97ull);
   assert(fit.output_sum*100ull<=fit.source_sum*272ull*103ull);
+  /* Synthetic full-support mask, with native low alpha and nonzero
+   * background: exercises the field failure without inventing asset data. */
+  for(y=0;y<64u;y++)for(x=0;x<64u;x++){
+    double q=SpiderShadow_Radius2(x+0.5,y+0.5,32.0,32.0,34.0,34.0);
+    src[y*64u+x]=(uint8_t)(1.0+3.0*SpiderShadow_Profile(q,4)+0.5);
+  }
+  assert(SpiderShadow_Procedural(src,dst,&fit));
+  assert(fit.edge_mode==1u && fit.baseline==1u && fit.peak==4u);
+  assert(fit.histogram[0]==0u && fit.corner_sum==4u && fit.center_sum==16u);
+  assert(fit.edge_error_permille<=550u);
+  assert(dst[0]==17u && dst[127*256+127]==68u);
+  assert(fit.output_sum*100ull>=fit.source_sum*272ull*97ull);
+  assert(fit.output_sum*100ull<=fit.source_sum*272ull*103ull);
+  for(y=0;y<256u;y++)for(x=0;x<256u;x++){
+    unsigned v=dst[y*256u+x];
+    assert(v>=17u && v<=68u && v==dst[y*256u+255u-x] && v==dst[(255u-y)*256u+x]);
+  }
+  /* A broad mask without a uniform positive baseline also reaches all
+   * four sides, but has transparent corners. */
+  for(y=0;y<64u;y++)for(x=0;x<64u;x++){
+    double q=SpiderShadow_Radius2(x+0.5,y+0.5,32.0,32.0,46.0,46.0);
+    src[y*64u+x]=(uint8_t)(4.0*SpiderShadow_Profile(q,4)+0.5);
+  }
+  assert(SpiderShadow_Procedural(src,dst,&fit));
+  assert(fit.edge_mode==1u && fit.baseline==0u && fit.peak==4u);
+  assert(fit.edge_error_permille<=550u && fit.error_permille<=300u);
   memset(src,0,sizeof(src));
   assert(!SpiderShadow_Procedural(src,dst,&fit)&&fit.reason==2u);
   memset(src,15,sizeof(src));
@@ -58,5 +84,6 @@ def test_runtime_profile_and_fallback():
     assert "SpiderShadow_Procedural(shadow_hd_a4,shadow_hd_a8,&fit)" in h
     assert "if(!procedural && !SpiderShadow_Alpha4To8" in h
     assert "SHADOW-HD-PROFILE:" in h and "SHADOW-HD-CAPTURE-PROFILE:" in h
+    assert "SHADOW-HD-ALPHA:" in h
     assert 'GetPrivateProfileIntA("Debug","ExperimentalProceduralShadows",1,escape_ini)==1' in m
     assert "ExperimentalProceduralShadows=" not in (ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text()
