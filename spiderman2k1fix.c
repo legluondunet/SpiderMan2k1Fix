@@ -3709,6 +3709,8 @@ static int ui_transition_native43_handle_draw(
   return 1;
 }
 
+#include "shadow_material_trial.inc"
+
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
   HRESULT native43_result;
   if(ui_transition_native43_handle_draw(self,type,fvf,verts,count,flags,
@@ -3881,7 +3883,8 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
       hr=draw_native_esc_in_front(self,type,fvf,(LPVOID)v,
                                  count,flags,native_esc_primitive);
     else
-      hr=original_draw_primitive(self,type,fvf,(LPVOID)v,count,flags);
+       hr=shadow_material_draw(self,type,fvf,verts,(LPVOID)v,count,flags,
+                              __builtin_return_address(0));
     free_menu_vertices(allocated);
     return hr;
   }
@@ -6043,6 +6046,11 @@ static DWORD initialize_body(LPVOID unused) {
       SpiderDI8Retry_RequestEscapeBatchTrace(
         GetPrivateProfileIntA("Debug","EscapeBatchTrace",0,escape_ini)==1);
       shadow_trace_init(GetPrivateProfileIntA("Debug","ShadowWorldTrace",0,escape_ini)==1,log_line);
+      if(shadow_trace_enabled) {
+        shadow_material_soft=GetPrivateProfileIntA("Debug","ExperimentalSoftShadows",0,escape_ini)==1;
+        SpiderFOV_SetWorldQuadObserver(shadow_material_observe_submit);
+        log_line(shadow_material_soft?"SHADOW-MATERIAL: provenance probe + scoped linear-filter trial":"SHADOW-MATERIAL: provenance probe only");
+      }
     }
   }
   /* Experimental: the original game exits on joystick DIERR_UNPLUGGED.

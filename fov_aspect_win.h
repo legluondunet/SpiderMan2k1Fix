@@ -16,4 +16,5 @@ int SpiderFOV_GameplayReady(void);
 int SpiderFOV_InstallWideCulling(void);
 /* Experimental #147, authenticated world-quad submission only. */
 int SpiderFOV_InstallWorldQuadTrial(void);
+void SpiderFOV_SetWorldQuadObserver(void (*observer)(int));
 #endif
