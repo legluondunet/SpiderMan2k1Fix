@@ -3,9 +3,12 @@
  * authenticated pickup descriptor. Its resulting current material, tagged
  * queue record and actual stage-0 surface must agree. No size-only matches. */
 #include "shadow_alpha_reconstruct.h"
+#include "shadow_alpha_procedural.h"
 #include "shadow_registry.h"
 #include "shadow_draw_paths.h"
 static int shadow_hd_enabled;
+static int shadow_hd_procedural=1;
+static int shadow_hd_procedural_active;
 static int shadow_hd_registry_ready;
 static DWORD shadow_hd_registry_thread;
 static LONG shadow_hd_registry_flip=-1;
@@ -128,6 +131,7 @@ static void shadow_hd_capture_report(LONG flip){
     (long)shadow_hd_last_completed,shadow_hd_last_draws,shadow_hd_last_candidates,shadow_hd_last_fallback,
     shadow_hd_total_draws,shadow_hd_total_candidates,shadow_hd_frames,shadow_hd_full_frames,shadow_hd_partial_frames);
   log_line(msg);
+  log_line(shadow_hd_procedural_active?"SHADOW-HD-CAPTURE-PROFILE: procedural":"SHADOW-HD-CAPTURE-PROFILE: cubic or not allocated");
   shadow_probe_summary("capture-current",flip,&shadow_probe_frame);
   shadow_probe_summary("capture-last",shadow_hd_last_completed,&shadow_probe_last);
   shadow_probe_summary("capture-session",flip,&shadow_probe_total);
@@ -190,7 +194,7 @@ static DWORD shadow_hd_current_index(LONG flip) {
 static void shadow_hd_clear(void) {
   if(shadow_hd_surface)IDirectDrawSurface7_Release(shadow_hd_surface);
   if(shadow_hd_source)IDirectDrawSurface7_Release(shadow_hd_source);
-  shadow_hd_surface=NULL;shadow_hd_source=NULL;
+  shadow_hd_surface=NULL;shadow_hd_source=NULL;shadow_hd_procedural_active=0;
 }
 static void shadow_hd_refuse(const char *reason) {
   if(shadow_hd_refusal_logs<12u){
@@ -206,7 +210,8 @@ static int shadow_hd_make(IDirectDrawSurface7 *source) {
   IDirectDrawSurface7 *out=NULL;
   unsigned x,y,lo=15,hi=0;
   uint16_t rgb=0;
-  int ok=1;
+  int ok=1,procedural=0;
+  SpiderShadowFit fit={0};
   HRESULT hr;
   if(source==shadow_hd_source){
     if(!shadow_hd_surface)return 0; /* a failed attempt is not retried per draw */
@@ -246,8 +251,19 @@ static int shadow_hd_make(IDirectDrawSurface7 *source) {
     }
   }
   if(FAILED(IDirectDrawSurface7_Unlock(source,NULL)))ok=0;
-  if(!ok || lo==hi || !SpiderShadow_Alpha4To8(shadow_hd_a4,shadow_hd_a8)){
+  if(!ok || lo==hi){
     shadow_hd_refuse("source is not a uniform-RGB varying-alpha mask");return 0;
+  }
+  if(shadow_hd_procedural){
+    char msg[320];
+    procedural=SpiderShadow_Procedural(shadow_hd_a4,shadow_hd_a8,&fit);
+    snprintf(msg,sizeof(msg),"SHADOW-HD-PROFILE: mode=%s reason=%u bbox=%u,%u-%u,%u peak-a4=%u source-sum-a4=%u output-sum-a8=%u shape-error-permille=%u profile=%u mix-permille=%u",
+      procedural?"procedural":"cubic-fallback",fit.reason,fit.left,fit.top,fit.right,fit.bottom,
+      fit.peak,fit.source_sum,fit.output_sum,fit.error_permille,fit.profile,fit.mix_permille);
+    log_line(msg);
+  }
+  if(!procedural && !SpiderShadow_Alpha4To8(shadow_hd_a4,shadow_hd_a8)){
+    shadow_hd_refuse("alpha reconstruction failed");return 0;
   }
   if(FAILED(IDirectDrawSurface7_GetDDInterface(source,(void**)&owner)) || !owner){
     if(owner)owner->lpVtbl->Release(owner);
@@ -288,8 +304,9 @@ static int shadow_hd_make(IDirectDrawSurface7 *source) {
   }
   if(FAILED(IDirectDrawSurface7_Unlock(out,NULL)))ok=0;
   if(!ok){IDirectDrawSurface7_Release(out);shadow_hd_refuse("replacement format or pitch mismatch");return 0;}
-  shadow_hd_surface=out;
-  log_line("SHADOW-HD: generated 256x256 A8R8G8B8 from original 64x64 A4 mask");
+  shadow_hd_surface=out;shadow_hd_procedural_active=procedural;
+  log_line(procedural?"SHADOW-HD: generated 256x256 procedural A8R8G8B8 from calibrated original mask":
+    "SHADOW-HD: generated 256x256 A8R8G8B8 from original 64x64 A4 mask (cubic)");
   return 1;
 }
 static int shadow_hd_draw(IDirect3DDevice7 *device,IDirectDrawSurface7 *source,

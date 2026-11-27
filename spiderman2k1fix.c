@@ -6065,6 +6065,7 @@ static DWORD initialize_body(LPVOID unused) {
         shadow_trace_native_code(); /* before installing native world-quad CALL wrappers */
         SpiderFOV_SetWorldQuadObserver(shadow_material_observe_submit);
         shadow_hd_enabled=GetPrivateProfileIntA("Debug","ExperimentalHDShadows",0,escape_ini)==1;
+        shadow_hd_procedural=GetPrivateProfileIntA("Debug","ExperimentalProceduralShadows",1,escape_ini)==1;
         if(shadow_hd_enabled){
           shadow_hd_registry_init();
           SpiderFOV_SetShadowSelectorObserver(shadow_hd_observe_selector);
