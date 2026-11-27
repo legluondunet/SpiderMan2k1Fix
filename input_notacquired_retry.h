@@ -11,6 +11,7 @@ void SpiderDI8Retry_RequestEscapeBatchTrace(int enable);
 void SpiderDI8Retry_RequestEscapeEdgeRecovery(int enable);
 /* Only from the exact scoped native Pause edge reader. */
 int SpiderDI8Retry_TakeEscapePauseEdge(unsigned raw,int eligible);
+void SpiderDI8Retry_AcknowledgeEscapePauseClose(void);
 /* Only valid on the authenticated game thread after native trace install. */
 int SpiderDI8Retry_EscapeTraceActive(void);
 int SpiderDI8Retry_EscapeReaderWindow(void);

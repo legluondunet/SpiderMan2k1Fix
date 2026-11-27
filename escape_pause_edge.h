@@ -16,6 +16,13 @@ static inline void SpiderEscapePauseEdge_Batch(SpiderEscapePauseEdge *p,
     p->pending=1;p->poll=poll;p->flip=flip;
   }
 }
+/* Native close already consumed the physical edge; never replay it on
+ * the next gameplay tick. Return whether there was a pending token. */
+static inline int SpiderEscapePauseEdge_AckClose(SpiderEscapePauseEdge *p) {
+  if(!p || !p->pending)return 0;
+  p->pending=0;
+  return 1;
+}
 static inline int SpiderEscapePauseEdge_Take(SpiderEscapePauseEdge *p,
     unsigned poll,long flip,unsigned raw,int eligible) {
   int result;

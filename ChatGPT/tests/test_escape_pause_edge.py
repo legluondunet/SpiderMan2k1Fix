@@ -31,6 +31,15 @@ int main(void){
   assert(!SpiderEscapePauseEdge_Take(&p,101,11,127,1));
   SpiderEscapePauseEdge_Batch(&p,ambiguous,100,10,255);
   assert(!SpiderEscapePauseEdge_Take(&p,101,11,127,1));
+  /* Actual failing sequence: close consumed native FF in poll 367,
+   * next poll 368 sees 7F in gameplay. No reopening is allowed. */
+  SpiderEscapePauseEdge_Batch(&p,down,367,316,255);
+  assert(SpiderEscapePauseEdge_AckClose(&p));
+  assert(!SpiderEscapePauseEdge_AckClose(&p));
+  assert(!SpiderEscapePauseEdge_Take(&p,368,317,127,1));
+  /* A fresh physical down remains eligible. */
+  SpiderEscapePauseEdge_Batch(&p,down,400,349,255);
+  assert(SpiderEscapePauseEdge_Take(&p,401,350,127,1));
   SpiderEscapePauseEdge_Batch(&p,down,100,10,127);
   assert(!SpiderEscapePauseEdge_Take(&p,101,11,127,1));
   return 0;
@@ -50,6 +59,10 @@ def test_recovery_is_exact_and_opt_in():
                  "(*SPIDER_GAME_BINK_ACTIVE == 0u)","escape_pause_scope=previous"):
         assert gate in q
     assert "SpiderDI8Retry_TakeEscapePauseEdge((unsigned)result,1)" in q
+    assert "(DWORD)frame[1]==0x00440F7Cu" in q
+    assert "SpiderDI8Retry_AcknowledgeEscapePauseClose();" in q
+    assert "SpiderEscapePauseEdge_AckClose(&escape_pause_edge)" in i
+    assert "ESC-CLOSE-ACK:" in i
     assert "(GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0" in i
     assert 'GetPrivateProfileIntA("Debug","ExperimentalEscapeEdgeRecovery",0,escape_ini)==1' in m
     assert "ExperimentalEscapeEdgeRecovery=" not in (ROOT/"ChatGPT/tests/fixtures/SpiderMan2k1Fix.generated-example.ini").read_text()
