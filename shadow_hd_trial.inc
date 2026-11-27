@@ -7,6 +7,7 @@
 #include "shadow_registry.h"
 #include "shadow_draw_paths.h"
 static int shadow_hd_enabled;
+static int shadow_hd_audit; /* expensive all-draw and native submission diagnostics */
 static int shadow_hd_procedural=1;
 static int shadow_hd_procedural_active;
 static int shadow_hd_registry_ready;
@@ -53,14 +54,17 @@ static int shadow_hd_registry_init(void){
   static const BYTE key[]={0x8d,0x44,0xad,0x00,0x8b,0x0c,0xc5,0xdc,0x90,0x6a,0x00,0x8b,0xd1,0x81,0xe2,0xff,0x01,0x00,0x00,0x8b,0x04,0x95,0x34,0xb9,0x6a,0x00};
   static const BYTE chain[]={0x39,0x48,0x14,0x74,0x09,0x8b,0x40,0x20,0x85,0xc0,0x75,0xf4};
   static const BYTE resolver[]={0x8b,0x44,0x24,0x04,0x8d,0x0c,0x40,0x8d,0x14,0x88,0x8b,0x04,0xd5,0xf4,0x12,0xac,0x00,0xc3};
-  shadow_hd_registry_ready=shadow_trace_enabled &&
+  /* Called only after supported_exe() authenticated the original image.
+   * Registry identity is independent from logging and pickup snapshots. */
+  shadow_hd_registry_ready=sizeof(void*)==4 &&
+    (uintptr_t)GetModuleHandleA(NULL)==0x400000u &&
     shadow_trace_signature(0x004c94f1u,names,sizeof(names)) &&
     shadow_trace_signature(0x004c9533u,loop,sizeof(loop)) &&
     shadow_trace_signature(0x004c955bu,key,sizeof(key)) &&
     shadow_trace_signature(0x004c9579u,chain,sizeof(chain)) &&
     shadow_trace_signature(0x0050f3c0u,resolver,sizeof(resolver));
   log_line(shadow_hd_registry_ready?"SHADOW-HD: live named registry verified; continuous mode":
-    "SHADOW-HD: named registry signature refused; previous scoped trial only");
+    "SHADOW-HD: named registry signature refused; original preserved unless developer scoped trial enabled");
   return shadow_hd_registry_ready;
 }
 static DWORD shadow_hd_registry_surface(LONG flip){
@@ -98,6 +102,7 @@ static void shadow_hd_finish_frame(LONG next_flip){
   shadow_hd_last_candidates=shadow_hd_frame_candidates;
   shadow_hd_last_draws=shadow_hd_frame_draws;
   shadow_hd_last_fallback=shadow_hd_frame_fallback;
+  if(shadow_hd_audit){
   shadow_probe_last=shadow_probe_frame;
   if(shadow_probe_count(&shadow_probe_frame)){
     ++shadow_probe_frames;
@@ -108,6 +113,7 @@ static void shadow_hd_finish_frame(LONG next_flip){
   }else if(shadow_hd_registry_thread && SpiderFOV_GameplayReady())
     ++shadow_probe_empty_frames;
   memset(&shadow_probe_frame,0,sizeof(shadow_probe_frame));
+  }
   if(shadow_hd_frame_candidates){
     ++shadow_hd_frames;
     if(shadow_hd_frame_draws==shadow_hd_frame_candidates)++shadow_hd_full_frames;
@@ -132,6 +138,10 @@ static void shadow_hd_capture_report(LONG flip){
     shadow_hd_total_draws,shadow_hd_total_candidates,shadow_hd_frames,shadow_hd_full_frames,shadow_hd_partial_frames);
   log_line(msg);
   log_line(shadow_hd_procedural_active?"SHADOW-HD-CAPTURE-PROFILE: procedural":"SHADOW-HD-CAPTURE-PROFILE: cubic or not allocated");
+  if(!shadow_hd_audit){
+    log_line("SHADOW-HD-CAPTURE-AUDIT: off; counts cover recognized queue candidates only");
+    return;
+  }
   shadow_probe_summary("capture-current",flip,&shadow_probe_frame);
   shadow_probe_summary("capture-last",shadow_hd_last_completed,&shadow_probe_last);
   shadow_probe_summary("capture-session",flip,&shadow_probe_total);

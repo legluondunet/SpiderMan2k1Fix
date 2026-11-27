@@ -113,7 +113,7 @@ static void shadow_hd_probe_draw(void *self,D3DPRIMITIVETYPE type,DWORD fvf,
   unsigned path,i,queue_match=0;
   IDirectDrawSurface7 *tex=NULL;
   IDirect3DDevice7 *device=(IDirect3DDevice7*)self;
-  if(!shadow_hd_registry_ready || !shadow_hd_enabled ||
+  if(!shadow_hd_audit || !shadow_hd_registry_ready || !shadow_hd_enabled ||
      !SpiderFOV_GameplayReady() ||
      *(const volatile DWORD *)(uintptr_t)0x006151F8u ||
      *(const volatile DWORD *)(uintptr_t)0x00682950u ||
@@ -185,6 +185,12 @@ static int shadow_hd_registry_draw(void *self,D3DPRIMITIVETYPE type,DWORD fvf,
      !shadow_trace_read((uintptr_t)source-12u,&material,sizeof(material)) || !material ||
      !shadow_trace_read((uintptr_t)source-4u,&record_count,sizeof(record_count)))return 0;
   flip=InterlockedCompareExchange(&flip_count,0,0);
+  /* Resolve once per Flip; reject unrelated queue materials before any
+   * repeated descriptor/table read or COM GetTexture. Positive matches
+   * still revalidate against the live native descriptor and table. */
+  if(shadow_hd_registry_flip!=flip)shadow_hd_registry_surface(flip);
+  if(shadow_hd_registry_thread!=GetCurrentThreadId() ||
+     material!=shadow_hd_registry.surface)return 0;
   named=shadow_hd_registry_surface(flip);
   path=SpiderShadowDraw_Path(rva,0);
   if(!named || material!=named ||
@@ -196,7 +202,7 @@ static int shadow_hd_registry_draw(void *self,D3DPRIMITIVETYPE type,DWORD fvf,
   if(tex)IDirectDrawSurface7_Release(tex);
   if(replaced && SUCCEEDED(*result) && shadow_hd_enabled){
     ++shadow_hd_frame_draws;++shadow_hd_total_draws;
-    ++shadow_probe_frame.hd[path];++shadow_probe_total.hd[path];
+    if(shadow_hd_audit){++shadow_probe_frame.hd[path];++shadow_probe_total.hd[path];}
   }else{
     ++shadow_hd_frame_fallback;++shadow_hd_total_fallback;
   }

@@ -3713,7 +3713,7 @@ static int ui_transition_native43_handle_draw(
 
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
   HRESULT native43_result;
-  shadow_hd_probe_draw(self,type,fvf,verts,count,0,0,__builtin_return_address(0));
+  if(shadow_hd_audit)shadow_hd_probe_draw(self,type,fvf,verts,count,0,0,__builtin_return_address(0));
   if(ui_transition_native43_handle_draw(self,type,fvf,verts,count,flags,
               __builtin_return_address(0),&native43_result))
     return native43_result;
@@ -3898,7 +3898,7 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
   }
 }
 static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,LPWORD indices,DWORD icount,DWORD flags) {
-  shadow_hd_probe_draw(self,type,fvf,verts,count,icount,1,__builtin_return_address(0));
+  if(shadow_hd_audit)shadow_hd_probe_draw(self,type,fvf,verts,count,icount,1,__builtin_return_address(0));
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
      fvf==0x144UL && verts && count>=3 && count<=128)
     InterlockedIncrement(&menu_version_draws);
@@ -6054,25 +6054,42 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderDI8Retry_Init(log_line);
   {
     char escape_ini[MAX_PATH];
-    if(debug_log_enabled && spider_path_ini_a(escape_ini,sizeof(escape_ini))) {
-      SpiderDI8Retry_RequestEscapeBatchTrace(
-        GetPrivateProfileIntA("Debug","EscapeBatchTrace",0,escape_ini)==1);
-      SpiderDI8Retry_RequestEscapeEdgeRecovery(
-        GetPrivateProfileIntA("Debug","ExperimentalEscapeEdgeRecovery",0,escape_ini)==1);
-      shadow_trace_init(GetPrivateProfileIntA("Debug","ShadowWorldTrace",0,escape_ini)==1,log_line);
+    if(spider_path_ini_a(escape_ini,sizeof(escape_ini))) {
+      int feature,legacy_hd;
+      if(debug_log_enabled){
+        SpiderDI8Retry_RequestEscapeBatchTrace(
+          GetPrivateProfileIntA("Debug","EscapeBatchTrace",0,escape_ini)==1);
+        SpiderDI8Retry_RequestEscapeEdgeRecovery(
+          GetPrivateProfileIntA("Debug","ExperimentalEscapeEdgeRecovery",0,escape_ini)==1);
+      }
+      /* Explicit public setting wins; old opt-in remains valid if absent.
+       * Keep experimental feature off for fresh INIs pending Windows/4:3 tests. */
+      feature=(int)GetPrivateProfileIntA("Features","EnhancedShadows",2,escape_ini);
+      legacy_hd=GetPrivateProfileIntA("Debug","ExperimentalHDShadows",0,escape_ini)==1;
+      shadow_hd_enabled=feature==2?legacy_hd:feature==1;
+      shadow_hd_procedural=GetPrivateProfileIntA("Debug","ExperimentalProceduralShadows",1,escape_ini)==1;
+      shadow_hd_audit=debug_log_enabled && GetPrivateProfileIntA("Debug","ShadowDiagnostics",0,escape_ini)==1;
+      if(shadow_hd_enabled)shadow_hd_registry_init();
+      /* Preserve stand-alone legacy probes when HD is not requested; in
+       * HD mode only explicit ShadowDiagnostics enables the old probes. */
+      shadow_trace_init(debug_log_enabled &&
+          (shadow_hd_audit || (!shadow_hd_enabled &&
+           GetPrivateProfileIntA("Debug","ShadowWorldTrace",0,escape_ini)==1)),log_line);
       if(shadow_trace_enabled) {
-        shadow_material_soft=GetPrivateProfileIntA("Debug","ExperimentalSoftShadows",0,escape_ini)==1;
+        shadow_material_soft=!shadow_hd_enabled &&
+          GetPrivateProfileIntA("Debug","ExperimentalSoftShadows",0,escape_ini)==1;
         shadow_trace_native_code(); /* before installing native world-quad CALL wrappers */
         SpiderFOV_SetWorldQuadObserver(shadow_material_observe_submit);
-        shadow_hd_enabled=GetPrivateProfileIntA("Debug","ExperimentalHDShadows",0,escape_ini)==1;
-        shadow_hd_procedural=GetPrivateProfileIntA("Debug","ExperimentalProceduralShadows",1,escape_ini)==1;
-        if(shadow_hd_enabled){
-          shadow_hd_registry_init();
+        if(shadow_hd_enabled && shadow_hd_audit && !shadow_hd_registry_ready){
           SpiderFOV_SetShadowSelectorObserver(shadow_hd_observe_selector);
           SpiderFOV_SetShadowResolveObserver(shadow_hd_observe_resolve);
         }
         log_line(shadow_material_soft?"SHADOW-MATERIAL: provenance probe + scoped linear-filter trial":"SHADOW-MATERIAL: provenance probe only");
       }
+      if(shadow_hd_enabled && !shadow_hd_registry_ready &&
+         !(shadow_hd_audit && shadow_trace_enabled))shadow_hd_enabled=0;
+      log_line(shadow_hd_enabled?(shadow_hd_audit?"SHADOW-HD: enabled; detailed audit ON":"SHADOW-HD: enabled; detailed audit OFF"):
+        "SHADOW-HD: disabled");
     }
   }
   /* Experimental: the original game exits on joystick DIERR_UNPLUGGED.
@@ -6167,13 +6184,16 @@ static DWORD initialize_body(LPVOID unused) {
            GetPrivateProfileIntA("Debug","ExperimentalWideCulling",1,ini)==1)
           SpiderFOV_InstallWideCulling();
         if(lstrcmpiA(aspect,"Auto")==0 &&
-           GetPrivateProfileIntA("Debug","ExperimentalWorldQuadFOV",0,ini)==1)
-          if(SpiderFOV_InstallWorldQuadTrial() && shadow_hd_enabled){
-            if(!SpiderFOV_InstallShadowSelector() || !SpiderFOV_InstallShadowResolver()){
-              if(!shadow_hd_registry_ready)shadow_hd_enabled=0;
-              log_line("SHADOW-HD: incomplete scoped provenance hooks; registry mode only if verified");
-            }
+           (shadow_hd_enabled || GetPrivateProfileIntA("Debug","ExperimentalWorldQuadFOV",0,ini)==1)){
+          int quad_ok=SpiderFOV_InstallWorldQuadTrial();
+          if(shadow_hd_enabled && !shadow_hd_registry_ready &&
+             (!quad_ok || !SpiderFOV_InstallShadowSelector() || !SpiderFOV_InstallShadowResolver())){
+            shadow_hd_enabled=0;
+            log_line("SHADOW-HD: incomplete scoped provenance hooks; original preserved");
           }
+        }
+        if(lstrcmpiA(aspect,"4:3")==0 && shadow_hd_enabled && !shadow_hd_registry_ready)
+          shadow_hd_enabled=0;
         if(lstrcmpiA(aspect,"4:3")==0)
           log_line("DISPLAY-ASPECT-43: automatic FOV uses original 4:3 baseline 1.0");
 
