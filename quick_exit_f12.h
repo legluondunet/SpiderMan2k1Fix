@@ -9,6 +9,8 @@
  * are retained for compatibility with the existing game hooks/tests. */
 void SpiderQuickExitF12_Init(void (*log_fn)(const char *));
 void SpiderQuickExitF12_AttachWindow(HWND game_window);
+/* Developer-only passive reader correlation; independent of F10. */
+void SpiderQuickExitF12_InstallEscapeReaderTrace(void);
 int SpiderQuickExitF12_Enabled(void);
 void SpiderQuickExitF12_ObserveMovieFrame(void);
 /* Rendering diagnostic only: this is NOT a native comic-scene owner. */
