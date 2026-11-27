@@ -19,6 +19,17 @@
 static int shadow_trace_enabled=0;
 static unsigned shadow_trace_periodic=0,shadow_trace_f9=0;
 static DWORD shadow_trace_thread=0;
+static uint32_t shadow_trace_materials[SPIDER_SHADOW_PICKUPS];
+static unsigned shadow_trace_material_count;
+static LONG shadow_trace_material_flip=-1;
+static int shadow_trace_material_match(uint32_t material,LONG flip) {
+  unsigned i;
+  if(!material || !shadow_trace_enabled || shadow_trace_thread!=GetCurrentThreadId() ||
+     shadow_trace_material_flip<0 || flip<shadow_trace_material_flip ||
+     flip-shadow_trace_material_flip>60)return 0;
+  for(i=0;i<shadow_trace_material_count;i++)if(shadow_trace_materials[i]==material)return 1;
+  return 0;
+}
 static void (*shadow_trace_log)(const char *)=NULL;
 
 static int shadow_trace_read(uintptr_t address,void *out,SIZE_T length) {
@@ -77,6 +88,7 @@ static void shadow_trace_snapshot(LONG flip,int f9) {
   if(!shadow_trace_thread)shadow_trace_thread=GetCurrentThreadId();
   if(shadow_trace_thread!=GetCurrentThreadId())return;
   if(f9)++shadow_trace_f9;else ++shadow_trace_periodic;
+  shadow_trace_material_count=0;shadow_trace_material_flip=flip;
   if(shadow_trace_read(0x56F1B4u,camera,sizeof(camera))){
     snprintf(line,sizeof(line),"SHADOW-WORLD: snapshot flip=%ld trigger=%s camera-native=(%ld,%ld,%ld)",
       (long)flip,f9?"F9":"periodic",(long)camera[0],(long)camera[1],(long)camera[2]);
@@ -106,9 +118,15 @@ static void shadow_trace_snapshot(LONG flip,int f9) {
         child=shadow_trace_u32(owner+0xcc);
         if(child && shadow_trace_read(child,quad,sizeof(quad)) &&
            shadow_trace_u32(quad)==SPIDER_SHADOW_QUAD_VTABLE){
+          uint32_t material=shadow_trace_u32(quad+0x60);
           int32_t xyz[4][3];
           int64_t d[3]={0,0,0};
           unsigned v,a;
+          if(material && shadow_trace_material_count<SPIDER_SHADOW_PICKUPS)
+            shadow_trace_materials[shadow_trace_material_count++]=material;
+          snprintf(line,sizeof(line),"SHADOW-MATERIAL: native flip=%ld owner=%08X quad=%08X Shadow2=%08X",
+            (long)flip,(unsigned)p,(unsigned)child,(unsigned)material);
+          shadow_trace_log(line);
           for(v=0;v<4u;v++)for(a=0;a<3u;a++){
             xyz[v][a]=shadow_trace_i32(quad+offsets[v]+4u*a);
             d[a]+=(int64_t)xyz[v][a];

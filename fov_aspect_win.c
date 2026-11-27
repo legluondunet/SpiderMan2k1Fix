@@ -227,6 +227,8 @@ typedef void (__cdecl *SpiderQuadSubmit)(
     uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t);
 static SpiderQuadSubmit const quad_original=(SpiderQuadSubmit)(uintptr_t)0x00508550u;
 static unsigned quad_logged,quad_refused;
+static void (*world_quad_observer)(int)=NULL;
+void SpiderFOV_SetWorldQuadObserver(void (*observer)(int)) { world_quad_observer=observer; }
 static void __cdecl quad_submit(
     uint32_t x0,uint32_t y0,uint32_t z0,uint32_t u0,uint32_t v0,uint32_t c0,
     uint32_t x1,uint32_t y1,uint32_t z1,uint32_t u1,uint32_t v1,uint32_t c1,
@@ -265,8 +267,10 @@ static void __cdecl quad_submit(
       say(line);
     }
   }
+  if(world_quad_observer)world_quad_observer(0);
   quad_original(x0,y0,z0,u0,v0,c0,x1,y1,z1,u1,v1,c1,
                 x2,y2,z2,u2,v2,c2,x3,y3,z3,u3,v3,c3);
+  if(world_quad_observer)world_quad_observer(1);
 }
 
 int SpiderFOV_InstallWorldQuadTrial(void) {
