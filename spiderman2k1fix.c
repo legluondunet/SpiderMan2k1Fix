@@ -6047,6 +6047,8 @@ static DWORD initialize_body(LPVOID unused) {
     if(debug_log_enabled && spider_path_ini_a(escape_ini,sizeof(escape_ini))) {
       SpiderDI8Retry_RequestEscapeBatchTrace(
         GetPrivateProfileIntA("Debug","EscapeBatchTrace",0,escape_ini)==1);
+      SpiderDI8Retry_RequestEscapeEdgeRecovery(
+        GetPrivateProfileIntA("Debug","ExperimentalEscapeEdgeRecovery",0,escape_ini)==1);
       shadow_trace_init(GetPrivateProfileIntA("Debug","ShadowWorldTrace",0,escape_ini)==1,log_line);
       if(shadow_trace_enabled) {
         shadow_material_soft=GetPrivateProfileIntA("Debug","ExperimentalSoftShadows",0,escape_ini)==1;

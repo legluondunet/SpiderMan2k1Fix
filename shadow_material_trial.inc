@@ -5,6 +5,7 @@ static DWORD shadow_material_thread;
 static unsigned shadow_material_nest,shadow_material_before,shadow_material_submit_logs;
 static LONG shadow_material_frame;
 static unsigned shadow_material_draw_logs,shadow_material_match_logs,shadow_material_linear_logs;
+static unsigned shadow_descriptor_match_logs,shadow_descriptor_miss_logs;
 typedef struct ShadowMaterialRecord {
   LONG stamp;
   DWORD material;
@@ -60,6 +61,8 @@ static HRESULT shadow_material_draw(void *self,D3DPRIMITIVETYPE type,DWORD fvf,
   uint32_t idx;
   LONG flip;
   int matched,known,mag_changed=0,min_changed=0,restored=1;
+  int descriptor_material,descriptor_texture;
+  uintptr_t bound_texture;
   HRESULT hr;
   ShadowMaterialRecord *tag;
   if(!shadow_trace_enabled || shadow_material_thread!=GetCurrentThreadId() ||
@@ -77,15 +80,28 @@ static HRESULT shadow_material_draw(void *self,D3DPRIMITIVETYPE type,DWORD fvf,
      material!=tag->material || memcmp(source,tag->verts,sizeof(tag->verts)))
     return original_draw_primitive(self,type,fvf,drawn,count,flags);
   matched=shadow_trace_material_match(material,flip);
-  if(!matched && shadow_material_draw_logs>=32u)
+  descriptor_material=shadow_descriptor_offset(material,flip);
+  if(!matched && descriptor_material<0 && shadow_material_draw_logs>=32u &&
+     (shadow_trace_material_count==0 || shadow_descriptor_miss_logs>=64u))
     return original_draw_primitive(self,type,fvf,drawn,count,flags);
   memset(&desc,0,sizeof(desc));desc.dwSize=sizeof(desc);
   if(FAILED(IDirect3DDevice7_GetTexture(device,0,&tex)) || !tex){
     if(tex)IDirectDrawSurface7_Release(tex);
     return original_draw_primitive(self,type,fvf,drawn,count,flags);
   }
+  bound_texture=(uintptr_t)tex;
+  descriptor_texture=shadow_descriptor_offset((uint32_t)bound_texture,flip);
   known=SUCCEEDED(IDirectDrawSurface7_GetSurfaceDesc(tex,&desc));
   IDirectDrawSurface7_Release(tex);
+  if(shadow_trace_material_count &&
+     ((descriptor_material>=0 || descriptor_texture>=0) ? shadow_descriptor_match_logs<32u : shadow_descriptor_miss_logs<64u)){
+    char msg[300];
+    if(descriptor_material>=0 || descriptor_texture>=0)++shadow_descriptor_match_logs;
+    else ++shadow_descriptor_miss_logs;
+    snprintf(msg,sizeof(msg),"SHADOW-DESC-LINK: flip=%ld record=%u queue-material=%08lX bound-texture=%08lX desc-material-offset=%d desc-texture-offset=%d [candidate only]",
+      (long)flip,(unsigned)idx,(unsigned long)material,(unsigned long)bound_texture,descriptor_material,descriptor_texture);
+    log_line(msg);
+  }
   known=known &&
     SUCCEEDED(IDirect3DDevice7_GetTextureStageState(device,0,D3DTSS_MAGFILTER,&mag)) &&
     SUCCEEDED(IDirect3DDevice7_GetTextureStageState(device,0,D3DTSS_MINFILTER,&min)) &&

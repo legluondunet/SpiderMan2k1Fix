@@ -22,6 +22,19 @@ static DWORD shadow_trace_thread=0;
 static uint32_t shadow_trace_materials[SPIDER_SHADOW_PICKUPS];
 static unsigned shadow_trace_material_count;
 static LONG shadow_trace_material_flip=-1;
+static uint32_t shadow_descriptor_words[SPIDER_SHADOW_PICKUPS][16];
+static unsigned shadow_descriptor_valid[SPIDER_SHADOW_PICKUPS];
+static unsigned shadow_descriptor_reports;
+/* Correlation only. A matching word is not proof of material identity. */
+static int shadow_descriptor_offset(uint32_t candidate,LONG flip) {
+  unsigned i,j;
+  if(!candidate || shadow_trace_thread!=GetCurrentThreadId() ||
+     shadow_trace_material_flip<0 || flip<shadow_trace_material_flip ||
+     flip-shadow_trace_material_flip>60)return -1;
+  for(i=0;i<shadow_trace_material_count;i++)if(shadow_descriptor_valid[i])
+    for(j=0;j<16u;j++)if(shadow_descriptor_words[i][j]==candidate)return (int)(4u*j);
+  return -1;
+}
 static int shadow_trace_material_match(uint32_t material,LONG flip) {
   unsigned i;
   if(!material || !shadow_trace_enabled || shadow_trace_thread!=GetCurrentThreadId() ||
@@ -122,8 +135,18 @@ static void shadow_trace_snapshot(LONG flip,int f9) {
           int32_t xyz[4][3];
           int64_t d[3]={0,0,0};
           unsigned v,a;
-          if(material && shadow_trace_material_count<SPIDER_SHADOW_PICKUPS)
-            shadow_trace_materials[shadow_trace_material_count++]=material;
+          if(material && shadow_trace_material_count<SPIDER_SHADOW_PICKUPS){
+            unsigned slot=shadow_trace_material_count++;
+            shadow_trace_materials[slot]=material;
+            shadow_descriptor_valid[slot]=shadow_trace_read(material,shadow_descriptor_words[slot],sizeof(shadow_descriptor_words[slot]));
+            if(shadow_descriptor_valid[slot] && shadow_descriptor_reports<12u){
+              const uint32_t *w=shadow_descriptor_words[slot];
+              ++shadow_descriptor_reports;
+              snprintf(line,sizeof(line),"SHADOW-DESC: flip=%ld ptr=%08X words=%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X [read-only; layout unknown]",
+                (long)flip,(unsigned)material,w[0],w[1],w[2],w[3],w[4],w[5],w[6],w[7],w[8],w[9],w[10],w[11],w[12],w[13],w[14],w[15]);
+              shadow_trace_log(line);
+            }
+          }
           snprintf(line,sizeof(line),"SHADOW-MATERIAL: native flip=%ld owner=%08X quad=%08X Shadow2=%08X",
             (long)flip,(unsigned)p,(unsigned)child,(unsigned)material);
           shadow_trace_log(line);

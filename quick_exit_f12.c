@@ -411,6 +411,7 @@ static volatile LONG debug_newgame_native_input_probes_installed=0;
 static volatile LONG debug_newgame_space_gate_probes_installed=0;
 static volatile LONG debug_newgame_lowlevel_key_probes_installed=0;
 static int escape_reader_trace=0;
+static int escape_pause_scope=0;
 static volatile LONG debug_newgame_raw_key_reads=0;
 static volatile LONG debug_newgame_raw_space_reads=0;
 static volatile LONG last_native_game_input_ms=0;
@@ -1778,7 +1779,18 @@ static BYTE __cdecl spider_probe_3d_native_input(
   unsigned esc_before=esc_observe?*(const volatile BYTE *)(uintptr_t)0x006B792Du:0u;
   if(InterlockedCompareExchange(&sdl3_cutscene_reader_trace,0,0)==1)
     request_before=*SPIDER_NATIVE_CUTSCENE_SKIP_REQUEST;
-  original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);
+  {
+    const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+    HWND hwnd=(HWND)InterlockedCompareExchangePointer(&game_hwnd,NULL,NULL);
+    int previous=escape_pause_scope;
+    escape_pause_scope=escape_reader_trace && SpiderDI8Retry_EscapeTraceActive() &&
+      (DWORD)frame[1]==0x00440F39u && mask==0x40040u && arg1==1u && arg2==1u &&
+      *SPIDER_ENGINE_MODE==0u && *SPIDER_PAUSE_CONTEXT==0u &&
+      *SPIDER_GAME_BINK_ACTIVE==0u && *SPIDER_TRACE_TRANSITION_RAW==0u &&
+      hwnd && GetForegroundWindow()==hwnd;
+    original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);
+    escape_pause_scope=previous;
+  }
   if(esc_observe) {
     const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
     SpiderDI8Retry_ObserveEscapeReader(2u,(unsigned)frame[1]-5u,
@@ -1963,6 +1975,12 @@ static DWORD __cdecl spider_probe_native_raw_key(DWORD dik) {
       last_code[index]=code;
       last_physical[index]=physical;
     }
+  }
+  if(escape_pause_scope && dik==1u){
+    const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);
+    if(frame[1]==0x0050A662u && frame[3]==0x0050C23Fu && frame[4]==1u && frame[5]==1u &&
+       SpiderDI8Retry_TakeEscapePauseEdge((unsigned)result,1))
+      return 0xffu;
   }
   return result;
 }
