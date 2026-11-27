@@ -109,11 +109,11 @@ static int shadow_hd_make(IDirectDrawSurface7 *source) {
     shadow_hd_refuse("source is not a uniform-RGB varying-alpha mask");return 0;
   }
   if(FAILED(IDirectDrawSurface7_GetDDInterface(source,(void**)&owner)) || !owner){
-    if(owner)IUnknown_Release(owner);
+    if(owner)owner->lpVtbl->Release(owner);
     shadow_hd_refuse("cannot obtain owning DirectDraw");return 0;
   }
-  hr=IUnknown_QueryInterface(owner,&IID_IDirectDraw7,(void**)&dd);
-  IUnknown_Release(owner);
+  hr=owner->lpVtbl->QueryInterface(owner,&IID_IDirectDraw7,(void**)&dd);
+  owner->lpVtbl->Release(owner);
   if(FAILED(hr) || !dd){if(dd)IDirectDraw7_Release(dd);shadow_hd_refuse("DirectDraw7 unavailable");return 0;}
   memset(&d,0,sizeof(d));d.dwSize=sizeof(d);
   d.dwFlags=DDSD_CAPS|DDSD_WIDTH|DDSD_HEIGHT|DDSD_PIXELFORMAT;
