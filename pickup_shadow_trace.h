@@ -65,6 +65,45 @@ static int shadow_trace_signature(uintptr_t address,const BYTE *bytes,SIZE_T n) 
   return n<=sizeof(actual) && shadow_trace_read(address,actual,n) &&
       !memcmp(actual,bytes,n);
 }
+/* Collect only small, fixed, source-referenced native code ranges once.
+ * Output is local to the authenticated owner's diagnostic log. No executable
+ * data are shipped, no memory protection changes, no arbitrary pointer walks.
+ * These are byte windows, not claimed function boundaries. */
+static void shadow_trace_native_code(void) {
+  static const struct { uintptr_t start; unsigned size; const char *role; } ranges[]={
+    {0x00409144u,0x80u,"named-resource-constructor"},
+    {0x004C94B0u,0x300u,"named-resource-lookup"},
+    {0x004097E0u,0xBA0u,"world-quad-transform-submit"},
+    {0x00508550u,0xA00u,"world-quad-submit-clip"},
+    {0x00507680u,0x200u,"queue-record-builder"},
+    {0x00502B20u,0x280u,"D3D7-queue-flush"}
+  };
+  static const char hex[]="0123456789ABCDEF";
+  unsigned i,off,j,n;
+  BYTE bytes[32];
+  char line[192], encoded[65];
+  if(!shadow_trace_enabled || !shadow_trace_log)return;
+  shadow_trace_log("SHADOW-X86: begin fixed native code windows [local diagnostics only; not function boundaries]");
+  for(i=0;i<sizeof(ranges)/sizeof(ranges[0]);i++){
+    snprintf(line,sizeof(line),"SHADOW-X86-RANGE: va=%08lX length=%u role=%s",
+      (unsigned long)ranges[i].start,ranges[i].size,ranges[i].role);
+    shadow_trace_log(line);
+    for(off=0;off<ranges[i].size;off+=32u){
+      n=ranges[i].size-off;if(n>32u)n=32u;
+      if(!shadow_trace_read(ranges[i].start+off,bytes,n)){
+        snprintf(line,sizeof(line),"SHADOW-X86-REFUSED: va=%08lX",
+          (unsigned long)(ranges[i].start+off));
+        shadow_trace_log(line);break;
+      }
+      for(j=0;j<n;j++){encoded[2u*j]=hex[bytes[j]>>4];encoded[2u*j+1u]=hex[bytes[j]&15u];}
+      encoded[2u*n]=0;
+      snprintf(line,sizeof(line),"SHADOW-X86: va=%08lX bytes=%s",
+        (unsigned long)(ranges[i].start+off),encoded);
+      shadow_trace_log(line);
+    }
+  }
+  shadow_trace_log("SHADOW-X86: end fixed native code windows");
+}
 static void shadow_trace_init(int enabled,void (*logger)(const char *)) {
   static const BYTE owner[]={0xc7,0x06,0x5c,0xbc,0x53,0x00,0x66,0x89,0x46,0x38};
   static const BYTE link[]={0x68,0x94,0xfb,0x60,0x00,0x8b,0xce,0xe8,0x02,0x4f,0xff,0xff};

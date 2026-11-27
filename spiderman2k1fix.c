@@ -6052,6 +6052,7 @@ static DWORD initialize_body(LPVOID unused) {
       shadow_trace_init(GetPrivateProfileIntA("Debug","ShadowWorldTrace",0,escape_ini)==1,log_line);
       if(shadow_trace_enabled) {
         shadow_material_soft=GetPrivateProfileIntA("Debug","ExperimentalSoftShadows",0,escape_ini)==1;
+        shadow_trace_native_code(); /* before installing native world-quad CALL wrappers */
         SpiderFOV_SetWorldQuadObserver(shadow_material_observe_submit);
         log_line(shadow_material_soft?"SHADOW-MATERIAL: provenance probe + scoped linear-filter trial":"SHADOW-MATERIAL: provenance probe only");
       }

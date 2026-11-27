@@ -1790,6 +1790,12 @@ static BYTE __cdecl spider_probe_3d_native_input(
       hwnd && GetForegroundWindow()==hwnd;
     original=SPIDER_NATIVE_3D_INPUT(mask,arg1,arg2);
     escape_pause_scope=previous;
+    /* Field-confirmed Pause close: native 0x440F77 already accepted the
+     * physical FF edge. It must not be replayed as a new open at 0x440F34
+     * on the immediately following gameplay poll. No native state write. */
+    if(escape_reader_trace && original && (DWORD)frame[1]==0x00440F7Cu &&
+       mask==0x40040u && arg1==1u && arg2==1u)
+      SpiderDI8Retry_AcknowledgeEscapePauseClose();
   }
   if(esc_observe) {
     const uintptr_t *frame=(const uintptr_t *)__builtin_frame_address(0);

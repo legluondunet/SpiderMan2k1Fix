@@ -266,6 +266,7 @@ static int escape_down_seen;
 static int escape_recovery_requested;
 static SpiderEscapePauseEdge escape_pause_edge;
 static unsigned escape_recovered,escape_recovered_reported;
+static unsigned escape_close_consumed,escape_close_reported;
 
 int SpiderDI8Retry_EscapeTraceActive(void) {
   return escape_installed && GetCurrentThreadId()==escape_thread;
@@ -370,6 +371,11 @@ static void escape_trace_on_flip(long flip_index) {
     if(write_log)write_log(line);
     escape_recovered_reported=escape_recovered;
   }
+  if(escape_close_consumed!=escape_close_reported){
+    snprintf(line,sizeof(line),"ESC-CLOSE-ACK: flip=%ld consumed-total=%u delta=%u [native close edge; no replay]",flip_index,escape_close_consumed,escape_close_consumed-escape_close_reported);
+    if(write_log)write_log(line);
+    escape_close_reported=escape_close_consumed;
+  }
   for(i=0;i<escape_used && escape_reported<ESC_BATCH_LIMIT;i++){
     const EscapeObservation *r=&escape_records[i];
     snprintf(line,sizeof(line),
@@ -425,6 +431,11 @@ void SpiderDI8Retry_RequestEscapeBatchTrace(int enable) {
 }
 void SpiderDI8Retry_RequestEscapeEdgeRecovery(int enable) {
   escape_recovery_requested=enable!=0;
+}
+void SpiderDI8Retry_AcknowledgeEscapePauseClose(void) {
+  if(escape_recovery_requested && SpiderDI8Retry_EscapeTraceActive() &&
+     SpiderEscapePauseEdge_AckClose(&escape_pause_edge))
+    ++escape_close_consumed;
 }
 int SpiderDI8Retry_TakeEscapePauseEdge(unsigned raw,int eligible) {
   int result;
