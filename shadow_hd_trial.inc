@@ -4,6 +4,7 @@
  * queue record and actual stage-0 surface must agree. No size-only matches. */
 #include "shadow_alpha_reconstruct.h"
 #include "shadow_registry.h"
+#include "shadow_draw_paths.h"
 static int shadow_hd_enabled;
 static int shadow_hd_registry_ready;
 static DWORD shadow_hd_registry_thread;
@@ -15,6 +16,31 @@ static unsigned shadow_hd_total_candidates,shadow_hd_total_draws,shadow_hd_total
 static unsigned shadow_hd_frames,shadow_hd_full_frames,shadow_hd_partial_frames;
 static LONG shadow_hd_last_completed=-1;
 static unsigned shadow_hd_last_candidates,shadow_hd_last_draws,shadow_hd_last_fallback;
+/* All hooked native primitive calls are observed before HUD / queue gates.
+ * Counters are independent of whether the replacement is authorized. */
+typedef struct ShadowDrawProbeCounts {
+  unsigned named[4],eligible[4],hd[4],texture_query_fail;
+} ShadowDrawProbeCounts;
+static ShadowDrawProbeCounts shadow_probe_frame,shadow_probe_last,shadow_probe_total;
+typedef struct ShadowDrawProbeShape {
+  DWORD rva,fvf,count,icount,type,record_count;
+  unsigned indexed,queue_match,hits;
+} ShadowDrawProbeShape;
+static ShadowDrawProbeShape shadow_probe_shapes[32];
+static unsigned shadow_probe_shape_count,shadow_probe_overflow;
+static unsigned shadow_probe_frames,shadow_probe_empty_frames;
+static void shadow_probe_summary(const char *label,LONG flip,const ShadowDrawProbeCounts *p){
+  char msg[360];
+  snprintf(msg,sizeof(msg),
+    "SHADOW-PATHS: %s flip=%ld named(primary/companion/other/indexed)=%u/%u/%u/%u eligible=%u/%u/%u/%u hd=%u/%u/%u/%u texture-query-fail=%u",
+    label,(long)flip,p->named[1],p->named[2],p->named[0],p->named[3],
+    p->eligible[1],p->eligible[2],p->eligible[0],p->eligible[3],
+    p->hd[1],p->hd[2],p->hd[0],p->hd[3],p->texture_query_fail);
+  log_line(msg);
+}
+static unsigned shadow_probe_count(const ShadowDrawProbeCounts *p){
+  return p->named[0]+p->named[1]+p->named[2]+p->named[3];
+}
 static int shadow_hd_registry_read(uintptr_t address,void *out,size_t bytes){
   return shadow_trace_read(address,out,(SIZE_T)bytes);
 }
@@ -69,6 +95,16 @@ static void shadow_hd_finish_frame(LONG next_flip){
   shadow_hd_last_candidates=shadow_hd_frame_candidates;
   shadow_hd_last_draws=shadow_hd_frame_draws;
   shadow_hd_last_fallback=shadow_hd_frame_fallback;
+  shadow_probe_last=shadow_probe_frame;
+  if(shadow_probe_count(&shadow_probe_frame)){
+    ++shadow_probe_frames;
+    if(shadow_probe_frames<=8u || shadow_probe_frames%120u==0u){
+      shadow_probe_summary("frame",next_flip-1,&shadow_probe_frame);
+      shadow_probe_summary("session",next_flip-1,&shadow_probe_total);
+    }
+  }else if(shadow_hd_registry_thread && SpiderFOV_GameplayReady())
+    ++shadow_probe_empty_frames;
+  memset(&shadow_probe_frame,0,sizeof(shadow_probe_frame));
   if(shadow_hd_frame_candidates){
     ++shadow_hd_frames;
     if(shadow_hd_frame_draws==shadow_hd_frame_candidates)++shadow_hd_full_frames;
@@ -92,6 +128,22 @@ static void shadow_hd_capture_report(LONG flip){
     (long)shadow_hd_last_completed,shadow_hd_last_draws,shadow_hd_last_candidates,shadow_hd_last_fallback,
     shadow_hd_total_draws,shadow_hd_total_candidates,shadow_hd_frames,shadow_hd_full_frames,shadow_hd_partial_frames);
   log_line(msg);
+  shadow_probe_summary("capture-current",flip,&shadow_probe_frame);
+  shadow_probe_summary("capture-last",shadow_hd_last_completed,&shadow_probe_last);
+  shadow_probe_summary("capture-session",flip,&shadow_probe_total);
+  snprintf(msg,sizeof(msg),"SHADOW-PATHS-FRAMES: named=%u empty-gameplay=%u unique-shapes=%u overflow=%u",
+    shadow_probe_frames,shadow_probe_empty_frames,shadow_probe_shape_count,shadow_probe_overflow);
+  log_line(msg);
+  {
+    unsigned i;
+    for(i=0;i<shadow_probe_shape_count;i++){
+      const ShadowDrawProbeShape *s=&shadow_probe_shapes[i];
+      snprintf(msg,sizeof(msg),"SHADOW-PATH-SHAPE: rva=%08lX indexed=%u type=%lu fvf=%08lX vertices=%lu indices=%lu record-count=%lu queue-match=%u total=%u",
+        (unsigned long)s->rva,s->indexed,(unsigned long)s->type,(unsigned long)s->fvf,
+        (unsigned long)s->count,(unsigned long)s->icount,(unsigned long)s->record_count,s->queue_match,s->hits);
+      log_line(msg);
+    }
+  }
 }
 static DWORD shadow_hd_selected; /* index, never a COM pointer */
 static LONG shadow_hd_selected_flip=-1;

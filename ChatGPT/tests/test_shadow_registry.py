@@ -57,3 +57,44 @@ def test_continuous_path_is_independent_and_guarded():
     assert "shadow_hd_finish_frame(count)" in m
     assert "shadow_hd_capture_report(" in m
     assert "!native_esc_primitive && !verified_hud_canvas" in m
+
+def test_native_shadow_paths_and_vertex_bounds(tmp_path):
+    if not shutil.which("gcc"): pytest.skip("host compiler absent")
+    source=tmp_path/"test.c"
+    source.write_text(r'''
+#include <assert.h>
+#include "shadow_draw_paths.h"
+int main(void){
+    unsigned p=SpiderShadowDraw_Path(0x102c72,0),q=SpiderShadowDraw_Path(0x103389,0);
+    uint32_t tex=0x07d2c008;
+    assert(p==1 && q==2);
+    assert(SpiderShadowDraw_Eligible(p,6,0x144,4,4,tex,tex));
+    assert(SpiderShadowDraw_Eligible(q,6,0x144,4,4,tex,tex));
+    assert(SpiderShadowDraw_Eligible(q,6,0x144,3,3,tex,tex));
+    assert(SpiderShadowDraw_Eligible(q,6,0x144,8,8,tex,tex));
+    assert(!SpiderShadowDraw_Eligible(q,6,0x144,9,9,tex,tex));
+    assert(!SpiderShadowDraw_Eligible(q,6,0x144,4,3,tex,tex));
+    assert(!SpiderShadowDraw_Eligible(q,6,0x144,4,4,tex,tex+4));
+    assert(!SpiderShadowDraw_Eligible(q,6,0x144,4,4,0,0));
+    assert(!SpiderShadowDraw_Eligible(q,4,0x144,4,4,tex,tex));
+    assert(!SpiderShadowDraw_Eligible(q,6,0x112,4,4,tex,tex));
+    assert(!SpiderShadowDraw_Eligible(SpiderShadowDraw_Path(0x103389,1),6,0x144,4,4,tex,tex));
+    assert(!SpiderShadowDraw_Eligible(SpiderShadowDraw_Path(0x100000,0),6,0x144,4,4,tex,tex));
+    return 0;
+}
+''')
+    exe=tmp_path/"test"
+    subprocess.run(["gcc","-std=c99","-Wall","-Wextra","-Werror","-I",str(ROOT),str(source),"-o",str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
+
+def test_probe_precedes_ui_and_reports_actual_binding():
+    m=(ROOT/"spiderman2k1fix.c").read_text()
+    s=(ROOT/"shadow_material_trial.inc").read_text()
+    h=(ROOT/"shadow_hd_trial.inc").read_text()
+    assert m.index("shadow_hd_probe_draw(self,type,fvf,verts,count,0,0,") < m.index("if(ui_transition_native43_handle_draw")
+    assert "shadow_hd_probe_draw(self,type,fvf,verts,count,icount,1," in m
+    assert "rva!=0x00102C72UL && rva!=0x00103389UL" in s
+    assert "SpiderShadowDraw_Eligible(path,type,fvf,count,record_count,material,named)" in s
+    assert "SHADOW-PATH-NEW:" in s and "SHADOW-PATH-SHAPE:" in h
+    assert 'shadow_probe_summary("capture-current"' in h
+    assert 'shadow_probe_summary("capture-last"' in h

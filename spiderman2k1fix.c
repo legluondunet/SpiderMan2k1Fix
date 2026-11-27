@@ -3713,6 +3713,7 @@ static int ui_transition_native43_handle_draw(
 
 static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,DWORD flags) {
   HRESULT native43_result;
+  shadow_hd_probe_draw(self,type,fvf,verts,count,0,0,__builtin_return_address(0));
   if(ui_transition_native43_handle_draw(self,type,fvf,verts,count,flags,
               __builtin_return_address(0),&native43_result))
     return native43_result;
@@ -3897,6 +3898,7 @@ static HRESULT WINAPI hooked_draw_primitive(void *self,D3DPRIMITIVETYPE type,DWO
   }
 }
 static HRESULT WINAPI hooked_draw_indexed_primitive(void *self,D3DPRIMITIVETYPE type,DWORD fvf,LPVOID verts,DWORD count,LPWORD indices,DWORD icount,DWORD flags) {
+  shadow_hd_probe_draw(self,type,fvf,verts,count,icount,1,__builtin_return_address(0));
   if(InterlockedCompareExchange(&menu_upscale_active,0,0)==1 &&
      fvf==0x144UL && verts && count>=3 && count<=128)
     InterlockedIncrement(&menu_version_draws);
