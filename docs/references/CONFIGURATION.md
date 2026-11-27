@@ -12,7 +12,7 @@ This is the detailed companion to the [project README](../../README.md). For the
 
 Set `[Features] EnhancedShadows=1` to enable dynamically reconstructed 256 × 256 soft shadows for the original named Shadow2 texture. No additional game assets or logging are required. The original opacity, geometry and texture coordinates are retained; unsupported texture formats or failed identity checks keep the original rendering. The procedural profile falls back to cubic reconstruction if the fit fails.
 
-The option defaults to 0 in newly generated INIs while native Windows gameplay is being validated. Auto and 4:3 have been tested under Wine 11.19. Older experimental INIs with `[Debug] ExperimentalHDShadows=1` still opt in if the new key is absent; the explicit Features key wins. The old soft/procedural trial switches are accepted for compatibility but no longer select alternate render paths. `[Debug] ShadowDiagnostics=1` with `Log=1` enables optional read-only draw auditing.
+The option defaults to 0 in newly generated INIs while native Windows gameplay is being validated. Auto and 4:3 have been tested under Wine 11.19. Older experimental INIs with `[Debug] ExperimentalHDShadows=1` still opt in if the new key is absent; the explicit Features key wins. If an INI needs automatic repair, the resolved preference is preserved in the canonical Features key. With an existing valid INI and `Log=0`, a previously generated runtime log may remain on disk unchanged; automatic first-run diagnostics are the exception. The old soft/procedural trial switches are accepted for compatibility but no longer select alternate render paths. `[Debug] ShadowDiagnostics=1` with `Log=1` enables optional read-only draw auditing.
 
 ## Game progress saves are separate from the patch INI
 

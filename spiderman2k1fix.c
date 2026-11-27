@@ -6030,6 +6030,9 @@ static DWORD initialize_body(LPVOID unused) {
   SpiderCfg_EnsureDefaultIni(log_line);
   /* Repair invalid/unknown INI entries before reading any game settings. */
   SpiderCfg_ValidateCurrentIni(log_line);
+  /* A repaired INI can change Log. Honor the effective setting before
+   * initializing optional diagnostics; retain first-process log latch. */
+  debug_log_load_setting();
   /* The supported executable is already SHA-verified and the logger is
    * enabled only with [Debug] Log=1. Read-only inventory, never DllMain. */
   if(debug_log_enabled)SpiderSystemDiagnostics_Log(log_line);

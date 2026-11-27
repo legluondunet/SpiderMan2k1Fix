@@ -692,6 +692,14 @@ static int SpiderCfg_RepairIni(const char *ini,const SpiderIniResult *check,
       DeleteFileA(tmp);goto done;
     }
   }
+  /* Canonicalize the recovered HD opt-in after overlaying the old values.
+   * In particular, the new default 0 must not override a legacy opt-in
+   * unless an explicit valid Features value already did so. */
+  if(!WritePrivateProfileStringA("Features","EnhancedShadows",
+       SpiderIni_RecoveredEnhancedShadows(values)?"1":"0",tmp)) {
+    if(logger)logger("INI-REPAIR: failed preserving EnhancedShadows");
+    DeleteFileA(tmp);goto done;
+  }
   /* Flush Win32 profile cache before manipulating the replacement file. */
   WritePrivateProfileStringA(NULL,NULL,NULL,tmp);
   /* Validate the entire replacement, including its 504-character RawHex. */
